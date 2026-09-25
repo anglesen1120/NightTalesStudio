@@ -131,12 +131,25 @@ Both hooks fail closed if gitleaks is missing.
 |---|---|---|---|
 | VieNeu 127.0.0.1:8000 | `worker-node/bin/start-vieneu.sh` (`--check` preflight, `--verify-weights`) | `READY vieneu http://127.0.0.1:8000 after Ns` | Ctrl-C (exit 0) |
 | MPT API 127.0.0.1:8080 | `worker-node/bin/start-mpt-api.sh` | `mpt-api ready on 127.0.0.1:8080` | Ctrl-C (exit 0) |
+| Usage tap 127.0.0.1:8002 | `trial/tools/start-tap.sh` | `usage tap listening on 127.0.0.1:8002` in the teed log | Ctrl-C |
 
 Smoke: `worker-node/bin/smoke.sh` runs `smoke-vieneu.sh`, `smoke-mpt.sh`, then `check-binds.sh`, then the `git.hooks` row. Refresh the VieNeu voice snapshot only after a review: `smoke-vieneu.sh --update-snapshot`. Logs: `$NTS_HOME/logs/vieneu-<ts>.log`, `$NTS_HOME/logs/mpt-api-<ts>.log`.
 
 ### MPT API (01.2.2)
 
 `start-mpt-api.sh` verifies the tap/proxy listeners (SEC-04) **before any Keychain read**, then renders `worker-node/mpt/config.template.toml` into `.nts/src/mpt/config.toml` (0600, atomic, guarded) via `worker-node/bin/render-mpt-config.py` and refuses to start on any failure. `bootstrap.sh mpt` re-runs `worker-node/bin/strip-bundled-music.sh` (hash allow-list = the `sha256` column of `worker-node/music/LICENSES.csv`); `worker-node/bin/install-music.sh` installs the licensed tracks from `.nts/music/`. No WebUI in M0 (D14): nothing may listen on 8501–8599. Redacted last-render state: `.nts/mpt-config.last.redacted.toml`. Logs: `.nts/logs/mpt-api-<ts>.log`.
+
+### Usage tap (01.3.1-T2)
+
+`trial/tools/start-tap.sh` runs `trial/tools/usage_tap.py` in the foreground on `127.0.0.1:8002` (D4). The tap forwards `/v1/*` to the pinned upstream — the origin of `OPENAI_BASE_URL` in `worker-node/pins.env` (`https://api.aixingialaire.shop`, 01 CR-15 / DEC-9) — unchanged, and appends exactly one D6 JSON line per call to `trial/runs/<run_id>/openai_usage.jsonl` (`no-run` when `$NTS_HOME/current_run` is absent). It never stores or logs a header, key, prompt, message content or image bytes (F02, D6).
+
+**The tap must be running before any MPT render**: the rendered `config.toml` points `openai_base_url` and `openai_image_base_url` at `http://127.0.0.1:8002/v1`, and `start-mpt-api.sh` refuses to read the Keychain unless `8002` is owned by this `usage_tap.py` with `tap.json.upstream` equal to the pinned origin (SEC-04). Without the tap, MPT calls fail with connection refused.
+
+Once bound, `usage_tap.py` writes `$NTS_HOME/tap.json` (`pid`, `upstream`, `image_quality_injection`, `timeout_s`, `port`). Request log: `$NTS_HOME/logs/tap-<YYYYmmdd-HHMMSS>.log`, one line per request (`ts method endpoint status latency_ms`, no headers/bodies).
+
+⚠️ `TAP_IMAGE_QUALITY` (`low|medium|high|auto`) injects a `quality` field into `/images/generations` bodies that omit it. Keep it **unset** until the 03 quality decision (CR-3) — the accepted M0 posture is injection off; `tap.json.image_quality_injection` records the active value for the run manifest.
+
+Stop: Ctrl-C (own terminal, D9). Env overrides (stub tests only): `TAP_UPSTREAM=http://127.0.0.1:<port>` plus `TAP_RUNS_DIR` outside `trial/runs` — a stub-mode tap refuses to write into real run directories (`tap_stub_upstream_forbidden`, NTS01-SEC-04). `TAP_UPSTREAM_TIMEOUT_S` must stay ≥ 300 s against the real upstream (M4).
 
 ### RAM sampler (01.3.2-T1)
 

@@ -8,9 +8,9 @@ Legend: `done` (acceptance checks run and passed) · `doing` · `blocked (<who>)
 
 - **Last session:** 2026-09-25, day 2 of plan 01 (branch `feature/01-env-setup-day2` → PR into `develop`). Day 1 merged in PR #1. `smoke.sh` exits 2 until MPT can start (OpenAI keys + tap).
 - **Next actions:**
-  1. Owner: store the two **relay** keys (DEC-9: `OPENAI_BASE_URL=https://api.aixingialaire.shop/v1` in `pins.env`): `worker-node/bin/secrets.sh set nts.openai.story`, then `… set nts.openai.image`. Set a spending cap in the relay account. The OpenAI-dashboard checklist below (01.2.4-T1) no longer applies (CR-15).
+  1. ~~Owner: store the relay keys~~ → done 2026-09-25. Owner: ask the relay to **enable image generation** for the image key (every image model → 503 "No available compatible accounts", DEC-10), then run `worker-node/bin/openai-access-check.sh --only image`. Set a spend cap in the relay account.
   2. ~~Owner: pick ownership proof~~ → decided 2026-09-25: signed per-render hash manifest (DEC-8, CR-14; designed in plan 05/06).
-  3. After 01.2.4-T1: 01.2.4-T2/T3 (projects, keys, access checks), then 01.3.1-T2 (usage tap). That unblocks the live checks in 01.2.2-T4/T5 and the MPT offline proof in 01.2.3-T1.
+  3. ~~Keys, access checks, tap, live MPT smoke~~ → done 2026-09-25, except the image calls (relay side).
   4. Day 3: 01.3.1-T3 collector. After plan 04 proxy: 01.2.2-T6, 01.3.1-T4.
 - **Environment (DEC-5, DEC-6):**
   - Implementation machine = this Mac (M4, 16 GB, macOS 27.0).
@@ -36,16 +36,18 @@ Legend: `done` (acceptance checks run and passed) · `doing` · `blocked (<who>)
 | 01.2.2-T1 MPT install at pin | done | HEAD `3d5f4e42` = pin, Python 3.11.16, `uv sync --frozen` idempotent, ffmpeg 9.0.2 via `IMAGEIO_FFMPEG_EXE`, MIT. Pinned example snapshot + sha256 in `worker-node/mpt/`. M1 line anchors shifted at the pin (log_level L9, listen_host L11, port L12, [app] L14, [whisper] L500, [kokoro] L576); keys and defaults match |
 | 01.2.2-T2 Config template + renderer | done | `render-mpt-config.py --self-test` 7/7, `--check` all guards PASS, output 0600, drift diff redacted, unexpected-key shows `<set>`. SEC-09 with the live OpenAI values: partial (keys missing; proven with the real MPT/proxy keys + in-process test values). Added `--allow-direct-openai` for `start-mpt-api.sh --no-tap` |
 | 01.2.2-T3 Strip music + CC0 placeholder | done | 29 bundled tracks removed, idempotent; plant/tamper/symlink tests removed; `bootstrap.sh mpt` prints `strip=ok`. Placeholder `nts-ambient-pad-cc0.mp3` generated in-house with ffmpeg (90 s), row in `LICENSES.csv`; header upgraded to the T3 12-column form. A BA-picked track can replace it |
-| 01.2.2-T4 `start-mpt-api.sh` | partial (keys, tap) | All guards PASS: no tap → 2, port busy → 2, foreign 8002 listener → 2 before any Keychain read, edited `tap.json` → 2, missing `nts.openai.story` → 2 naming the service only, no WebUI script. Live start, bind and env checks wait for 01.2.4-T2 keys + 01.3.1-T2 tap. Fix vs spec: secrets are read as standalone assignments; inside `VAR="$(secret …)" cmd` a failing `secret` doesn't stop the script |
-| 01.2.2-T5 `smoke-mpt.sh` | partial (keys, tap) | API down → `FAIL mpt.listening`, exit 2; `smoke.sh` propagates it, so **`smoke.sh` exits 2 until MPT can start**. Offline rows (binds, `--check`, WebUI absent, mode 600, self-test, music) pass one by one. Live rows 2–9 and 12 wait for MPT |
+| 01.2.2-T4 `start-mpt-api.sh` | done | All guards PASS: no tap → 2, port busy → 2, foreign 8002 listener → 2 before any Keychain read, edited `tap.json` → 2, missing `nts.openai.story` → 2 naming the service only, no WebUI script. **Live start with the real tap and keys → `mpt-api ready on 127.0.0.1:8080` in ≈ 5 s.** WARN only for 8001 (plan 04 proxy not landed). Fix vs spec: secrets are read as standalone assignments; inside `VAR="$(secret …)" cmd` a failing `secret` doesn't stop the script |
+| 01.2.2-T5 `smoke-mpt.sh` | done | With tap + VieNeu + MPT running, **`smoke.sh` → exit 0, 39 PASS, 0 FAIL**. That includes the auth 401/403 rows, origin block, LAN refused and SEC-09 no-value-leak over the 4 real Keychain values. `ps` shows 0 `Authorization: Bearer` in any argv. API down → `FAIL mpt.listening`, exit 2 |
 | 01.2.2-T6 Wiring render | todo | Needs plan 04 proxy (04.1.1/04.1.2) + tap |
 | 01.2.3-T1 Whisper model fetch | partial (offline proof via MPT) | `fetch-whisper-model.sh`: 7 files, 1.5 GB, `--verify` OK, re-run 3 s, tamper → 1, no symlinks, ignored by upstream `.gitignore`, MIT, survives `bootstrap.sh mpt`. Offline load proven directly with faster-whisper + `HF_HUB_OFFLINE=1`; the MPT-API proof waits for T4. This Mac drops IPv6, so the script forces IPv4 when a v6 probe fails. `mobiuslabsgmbh/…` now redirects to `dropbox-dash/…`; the pin SHA is still HEAD |
 | 01.2.3-T2 Whisper baseline | done | `trial/baselines/whisper-mac-20260925.json`: RTF vi 0.46–0.66, en 0.31–0.36; peak RSS 2.43 GB; language detection is correct for all 4 (p ≥ 0.999), so CR-5 isn't needed. Params = MPT `subtitle.py:62-68` |
-| 01.2.4-T1 Org verification + billing guard | blocked (owner) | Owner-only dashboard work; checklist below |
-| 01.2.4-T2/T3 Projects, keys, access checks | todo | Waits for 01.2.4-T1 |
+| 01.2.4-T1 Org verification + billing guard | n/a (DEC-9) | No OpenAI org: calls go through the relay. The owner sets the spend cap in the relay account |
+| 01.2.4-T2 Keys | done (relay) | Owner stored `nts.openai.story` and `nts.openai.image` via `secrets.sh set`; `check` → present |
+| 01.2.4-T3 Access checks | partial (relay images) | `openai-access-check.sh --only story` → exit 0: C0s 200, **C1 `gpt-6-luna` 200** (10+5 tokens, ≈ $0.0000035 at OpenAI rates), C2 403, C6 404, C7 200 (recorded, DEC-10). `--only image`: C0i 200; **C3 503 "No available compatible accounts"** for flare and the `gpt-image-2` fallback (also 1.5 and 1); C4 503 maintenance. Owner: ask the relay to enable image generation for the image key, then re-run `--only image`. Dashboard read-back §C n/a (relay). Access record: `trial/baselines/openai-access-mac-20260925.json` |
 | 01.3.1-T1 Schema v2, dictionary, prices | done | `trial/measurements.csv` 58 columns (first 31 = 01 §5.3), CRLF, no BOM; `trial/schema.md` 58 rows; `trial/prices.json` checked 2026-09-25 against the official OpenAI pricing pages |
 | 01.3.2-T1 RSS sampler | done | `trial/tools/rss_sampler.sh --selftest 60` passes: 57 rows, p95 79 ms, CPU 1.3 %. `ps rss` is in KiB (checked against `top`). TERM stop 75 ms. Roots and pressure are sampled on staggered ticks to stay under the 100 ms p95 |
-| 01.3.1-T2 usage tap, T3 collector, T4 calibration | todo | T2 waits for the OpenAI keys; T3 day 3; T4 after 01.2.2-T6 |
+| 01.3.1-T2 Usage tap | done | `trial/tools/usage_tap.py` + `start-tap.sh`. Every stub check passes: status order, D6 10-key lines, no secret or content in runs/logs, 429/moderation/timeout/busy mapping, quality injection, stub-upstream guard. Real calls: `GET /v1/models` 200 and one `gpt-6-luna` chat 200 with usage 8+5 tokens. `tap.json` upstream = `https://api.aixingialaire.shop`. Fix after integration: `start-tap.sh` did not export `NTS_HOME`, so the tap wrote `~/.nts/tap.json`. Now exported, and the tap's default is `<repo>/.nts` |
+| 01.3.1-T3 collector, T4 calibration | todo | T3 next; T4 after 01.2.2-T6 |
 | 01.3.3-T1/T2 Carry-over | todo | After 05.5.2. Interim whisper notes: `.nts/runs/whisper-baseline/carryover-notes.md` |
 
 Other plans: not started. Order after plan 01: 02 M0 → 03 M0 → 04 → 05 → Gate 1 (`plans/features/README.md`).
@@ -97,9 +99,22 @@ Spec: `plans/features/01-environment-setup/01.2.4-openai-access/01.2.4-T1-org-ve
     - Review (L): between root refreshes (≤ 10 s), a reused pid could be walked as the service tree.
     - QA D4: the M1 line anchors in the task files are stale; the pin-verified numbers are in the template comments.
 
+- **Owner decisions (2026-09-25, later in the day):**
+  - DEC-9: OpenAI calls go through the relay `OPENAI_BASE_URL` in `pins.env`.
+  - DEC-10: the relay has no per-key allow-list, so C2/C4/C6/C7 are recorded, not failed. For images, `gpt-image-2.5-flare` is tried first and `gpt-image-2` is the fallback.
+  - Story writer effort: `OpenAi:Effort:Writer` defaults to `medium`, and the 02.1.3 harness/matrix also runs at `medium` (plan 02 D7). Every other step stays `low`. MPT doesn't write stories (02 CR-10), so no MPT config changes.
+
+- **QA (QaTap) and review (ReviewTap), tap + access check, 2026-09-25.** QA: every check PASS; the STATUS claims were reproduced (39/0 smoke, MPT ready, tap.json in `.nts`). Fixed and re-tested:
+  - Review (M): the stub-upstream guard compared path strings. On case-insensitive APFS, `TAP_RUNS_DIR=<repo>/TRIAL/RUNS` got past it (reproduced). The guard now compares (dev, inode) up the ancestor chain; `TRIAL/RUNS`, `trial/runs` and `Trial/runs/new-sub` → exit 2. The reviewer's `normcase` fix would not have worked: it doesn't lowercase on POSIX.
+  - Review (M): an invalid `TAP_UPSTREAM` port crashed with a traceback. It now exits 2 with `invalid port`.
+  - Review (L): headers whose names differ only in case were forwarded twice. They are now forwarded once per case-insensitive name. A real `GET /v1/models` through the tap still returns 200.
+  - Review (M): a non-JSON flare body would crash the access recorder after a paid call. It is now parsed defensively. Review (L): `000` now records `reason: upstream`. QA-1: the recorder wrote `null` error fields as the string `"None"`; they are now JSON `null`.
+  - Review (M): stale `api.openai.com` tap/upstream wording in 01.3.1 `plan.md`, 01.2.4 `plan.md` and 02.1.3 `plan.md` now points at `OPENAI_BASE_URL` (CR-15).
+
 ## Session log
 
 | Date | Session | Done |
 |---|---|---|
 | 2026-09-25 | Day 1, plan 01 | 01.1.1-T1/T2, 01.1.2-T1…T4, 01.2.1-T1…T4 done. DEC-5, DEC-6, DEC-7, CR-11, CR-12, CR-13. Code review: 4 findings fixed. QA pass: 3 defects fixed. Ownership proof = signed manifest (DEC-8, CR-14). Branch `feature/01-env-setup-day1` → PR #1 into `develop` |
 | 2026-09-25 | Day 2, plan 01 | 01.2.2-T1…T3, 01.2.3-T2, 01.3.1-T1, 01.3.2-T1 done; 01.2.2-T4/T5 and 01.2.3-T1 partial (OpenAI keys + tap). QA: 3 defects fixed; review: 3 fixed. Branch `feature/01-env-setup-day2` → PR into `develop` |
+| 2026-09-25 | Day 2 (cont.), plan 01 | DEC-9 relay, DEC-10. Owner stored the relay keys. 01.2.4-T3 story checks pass, images blocked on the relay side. 01.3.1-T2 tap done. 01.2.2-T4/T5 live: `smoke.sh` 39/0. Writer effort `medium` (plan 02 D7). QA + review: 7 fixes |

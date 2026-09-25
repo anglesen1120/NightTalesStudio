@@ -231,7 +231,7 @@ prompts/
 - One adapter, `OpenAiTextClient` (Infrastructure/OpenAI), on the **Responses API** (`ResponsesClient`) with strict JSON schema (O2). Responses is chosen because 02.7 option A needs `web_search` (W1).
 - Every call sets:
   - `model` from config `OpenAi:Models:{Writer|Review|Revision|Facts|Bible|Ideas|Novelty|Finder}` (default `gpt-6-luna` for all until 02.1.3 and 02.6.1-T2 decide)
-  - `reasoning.effort` from `OpenAi:Effort:{step}` (default `low` ⚠️ measured in 02.1.3)
+  - `reasoning.effort` from `OpenAi:Effort:{step}`. **`Writer` defaults to `medium`** (owner, 2026-09-25). Every other step defaults to `low` ⚠️, measured in 02.1.3. `max_output_tokens` includes reasoning (O4), so `medium` spends more of the Writer budget: 02.1.3 re-checks the `writer_max_output` tiers
   - `max_output_tokens` from D4 / `price_versions.limits`
   - `store = false` (O5)
   - `safety_identifier = sha256(user_id)` (hex)
