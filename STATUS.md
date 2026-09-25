@@ -111,6 +111,14 @@ Spec: `plans/features/01-environment-setup/01.2.4-openai-access/01.2.4-T1-org-ve
   - Review (M): a non-JSON flare body would crash the access recorder after a paid call. It is now parsed defensively. Review (L): `000` now records `reason: upstream`. QA-1: the recorder wrote `null` error fields as the string `"None"`; they are now JSON `null`.
   - Review (M): stale `api.openai.com` tap/upstream wording in 01.3.1 `plan.md`, 01.2.4 `plan.md` and 02.1.3 `plan.md` now points at `OPENAI_BASE_URL` (CR-15).
 
+- **TechLead advisories, 2026-09-25.** All of them were checked against the repo.
+  - Applied: DEC-10 now says the relay scopes access per key group, not per model within a group. C4 (503, maintenance) is recorded as inconclusive rather than "not denied".
+  - `OpenAiOptions.BaseUrl` in 02.2.1-T2 and the moderator in 02.4.1-T1 now use the pinned `OPENAI_BASE_URL` in every environment. Before this change the relay would have been refused in Production.
+  - Stale `api.openai.com` upstream wording was also fixed in 01 README D6, 01.2.2 `plan.md` and T4, and 02.1.3-T0 (CR-15).
+  - Already covered: the flare→`gpt-image-2` fallback and the stop after 503, the 02.1.3 harness running at `medium`, and MPT auth (`mpt.auth.right_key` PASS).
+  - Rejected: the guard "crashes if `trial/runs` is missing". `os.stat(root)` sits inside a `try` and returns False.
+  - Open: relay prices in `prices.json` depend on the relay's price list (owner).
+
 ## Session log
 
 | Date | Session | Done |

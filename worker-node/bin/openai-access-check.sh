@@ -110,7 +110,7 @@ uv run --no-project --python 3.12 python - "$OUT" "$REC" "$OPENAI_BASE_URL" "$C3
 import base64, json, os, sys
 out, rec, base, c3_model, flare = sys.argv[1:6]
 ids = sys.argv[6:]
-DENY = {"C2", "C4", "C6", "C7"}   # recorded only: relay has no per-key allow-list (01 DEC-10)
+DENY = {"C2", "C4", "C6", "C7"}   # recorded only: relay scopes per group, not per key/model (01 DEC-10)
 LABEL = {"C0s": "story models", "C0i": "image models", "C1": "story chat", "C2": "story images",
          "C3": "image images", "C4": "image chat", "C6": "story files", "C7": "story astra"}
 
@@ -134,7 +134,9 @@ for i in ids:
     ok2 = st == "200"
     if i in DENY:
         c["pass"] = True
-        c["note"] = "denied" if st.startswith("4") else "not denied: relay has no per-key allow-list (01 DEC-10)"
+        c["note"] = ("denied" if st.startswith("4") else
+                     "inconclusive: upstream error" if st.startswith("5") or st == "000" else
+                     "not denied: relay scopes per group, not per key/model (01 DEC-10)")
     elif i == "C1":
         u = body.get("usage", {}) if isinstance(body, dict) else {}
         c["pass"] = ok2 and "prompt_tokens" in u and "completion_tokens" in u

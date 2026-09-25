@@ -73,7 +73,7 @@
         "message": "Service is temporarily under maintenance. Please try again later."
       },
       "pass": true,
-      "note": "not denied: relay has no per-key allow-list (01 DEC-10)"
+      "note": "inconclusive: upstream error"
     },
     {
       "id": "C6",
@@ -92,7 +92,7 @@
         "total_tokens": 15
       },
       "pass": true,
-      "note": "not denied: relay has no per-key allow-list (01 DEC-10)"
+      "note": "not denied: relay scopes per group, not per key/model (01 DEC-10)"
     }
   ]
 }
