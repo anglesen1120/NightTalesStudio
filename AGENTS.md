@@ -4,7 +4,7 @@
 
 Night Tales Studio turns story ideas into narrated videos (story → images → voice → subtitles → MP4 → YouTube). The owner's channel is built first (**personal phase P**, one owner account, autopilot). The public SaaS (**phase S**) is built only after a go decision (`plans/00-overview.md` §1.3, §4.1).
 
-**Current state: planning only.** The repo has no source code, no build and no tests yet. It contains the plans that the code will be built from. `src/`, `tests/`, `web/`, `worker-node/` and `tools/` are the target layout; they do not exist yet.
+**Current state: implementation started (2026-09-25).** Plan 01 (environment setup, M0) is being built on the owner's Mac. Tracked code: `worker-node/` (bash scripts, pins, runbook `worker-node/README.md`), `trial/` (fixtures, bench tools, baselines) and `.githooks/` (gitleaks). There is no .NET or Angular code yet; `src/`, `tests/`, `web/` and `tools/` are the target layout. **Progress lives in `STATUS.md`** (done / doing / blocked / next); read it first and update it with every change. Runtime state is in `<repo>/.nts/` (gitignored, `NTS_HOME`). API keys live only in the macOS Keychain and must never be committed or pushed (plan 01 DEC-6).
 
 ## Architecture & Data Flow
 
@@ -42,7 +42,7 @@ Angular SPA ──REST + SignalR──► NightTales.Api ──► PostgreSQL 17
 
 ## Development Commands
 
-There is nothing to build today. For doc work:
+Worker node (plan 01): `git config core.hooksPath .githooks` once per clone, then `worker-node/bin/bootstrap.sh all`, `worker-node/bin/start-vieneu.sh` (in its own terminal), `worker-node/bin/smoke.sh`. Scripts are bash 3.2-compatible (macOS `/bin/bash`), `shellcheck -x` clean. There is no build yet. For doc work:
 
 ```bash
 grep -rn "Idempotency → UnitOfWork" plans          # find text that contradicts a contract

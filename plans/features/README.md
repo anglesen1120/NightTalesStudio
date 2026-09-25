@@ -11,7 +11,7 @@ No feature is built from a high-level plan alone.
 
 ## Readiness for implementation
 
-A plan folder is **ready for implementation** when it has a TL Definition-of-Ready review and an owner sign-off. Implementation itself is a later step: this repo currently holds plans only (no `src/`, no build, no tests).
+A plan folder is **ready for implementation** when it has a TL Definition-of-Ready review and an owner sign-off. Implementation started on 2026-09-25 with plan 01. Execution progress per task is tracked in `/STATUS.md`, not in this table.
 
 | Plan | Ready for implementation? | Blocking what remains |
 |---|---|---|

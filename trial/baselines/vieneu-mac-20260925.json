@@ -1,0 +1,302 @@
+{
+  "schema_version": 1,
+  "component": "vieneu",
+  "tag": "plain",
+  "date": "2026-09-25T06:47:48Z",
+  "host": {
+    "model": "Mac",
+    "macos": "27.0",
+    "cpu_count": 10,
+    "ram_gb": 16
+  },
+  "pins": {
+    "vieneu_commit": "c1390abbdb2eedcdf58eafb546966c06ce27af71",
+    "model_repo": "pnnbao-ump/VieNeu-TTS-v3-Turbo",
+    "model_revision": "61b85e3d937fbbacb387714180e8182823512523",
+    "codec_repo": "OpenMOSS-Team/MOSS-Audio-Tokenizer-Nano-ONNX",
+    "codec_revision": "ceff0d0749bfb3fa2d61149794ec6feef0d1e1ae"
+  },
+  "server": {
+    "backend": "onnx",
+    "precision": "fp32",
+    "max_streams": 1,
+    "health": {
+      "before": {
+        "status": "ok",
+        "backend": "onnx",
+        "max_streams": 1,
+        "active": 0,
+        "waiting": 0,
+        "sample_rate": 48000
+      },
+      "after": {
+        "status": "ok",
+        "backend": "onnx",
+        "max_streams": 1,
+        "active": 0,
+        "waiting": 0,
+        "sample_rate": 48000
+      }
+    }
+  },
+  "watermark": {
+    "env": "1",
+    "extra_installed": false,
+    "effective": "off",
+    "evidence": "class C: resemble-perth not installed (import perth -> ModuleNotFoundError); src/vieneu/base.py:128-131 catches ImportError, logs at DEBUG only",
+    "decision": "pending owner+TL (proposal: Mac M0 trial without watermark, audio never published; plan 11 worker MUST install --extra watermark and verify class D; CARRY-OVER via 01.3.3-T1). Extra cost not measured yet (T4 step 4)"
+  },
+  "cold_start_s": [
+    4.0,
+    2.0
+  ],
+  "idle_rss_mb": 511.78125,
+  "runs": [
+    {
+      "fixture": "tts-vi-1000.txt",
+      "lang": "vi",
+      "chars": 1004,
+      "units": 232,
+      "unit_kind": "syllables",
+      "voice": "Hải Đăng",
+      "repeat": 0,
+      "http_status": 200,
+      "bytes": 5115884,
+      "wall_s": 9.764897,
+      "ttfb_s": 0.002236,
+      "audio_s": 53.29,
+      "audio_s_source": "decoded",
+      "ffprobe_duration_s": 53.29,
+      "rtf": 0.18324070182022892,
+      "units_per_min": 261.21223494088946,
+      "peak_rss_mb": 1440.8125
+    },
+    {
+      "fixture": "tts-vi-1000.txt",
+      "lang": "vi",
+      "chars": 1004,
+      "units": 232,
+      "unit_kind": "syllables",
+      "voice": "Hải Đăng",
+      "repeat": 1,
+      "http_status": 200,
+      "bytes": 5078444,
+      "wall_s": 9.315247,
+      "ttfb_s": 0.001021,
+      "audio_s": 52.9,
+      "audio_s_source": "decoded",
+      "ffprobe_duration_s": 52.9,
+      "rtf": 0.17609162570888467,
+      "units_per_min": 263.13799621928166,
+      "peak_rss_mb": 1439.984375
+    },
+    {
+      "fixture": "tts-vi-1000.txt",
+      "lang": "vi",
+      "chars": 1004,
+      "units": 232,
+      "unit_kind": "syllables",
+      "voice": "Hải Đăng",
+      "repeat": 2,
+      "http_status": 200,
+      "bytes": 5244524,
+      "wall_s": 9.640905,
+      "ttfb_s": 0.001028,
+      "audio_s": 54.63,
+      "audio_s_source": "decoded",
+      "ffprobe_duration_s": 54.63,
+      "rtf": 0.1764763866007688,
+      "units_per_min": 254.8050521691378,
+      "peak_rss_mb": 1437.09375
+    },
+    {
+      "fixture": "tts-en-1000.txt",
+      "lang": "en",
+      "chars": 984,
+      "units": 180,
+      "unit_kind": "words",
+      "voice": "Hải Đăng",
+      "repeat": 1,
+      "http_status": 200,
+      "bytes": 5130284,
+      "wall_s": 9.392403,
+      "ttfb_s": 0.001081,
+      "audio_s": 53.44,
+      "audio_s_source": "decoded",
+      "ffprobe_duration_s": 53.44,
+      "rtf": 0.17575604416167664,
+      "units_per_min": 202.09580838323356,
+      "peak_rss_mb": 1444.71875
+    },
+    {
+      "fixture": "tts-en-1000.txt",
+      "lang": "en",
+      "chars": 984,
+      "units": 180,
+      "unit_kind": "words",
+      "voice": "Hải Đăng",
+      "repeat": 2,
+      "http_status": 200,
+      "bytes": 5117804,
+      "wall_s": 9.515372,
+      "ttfb_s": 0.001429,
+      "audio_s": 53.31,
+      "audio_s_source": "decoded",
+      "ffprobe_duration_s": 53.31,
+      "rtf": 0.17849131495029072,
+      "units_per_min": 202.58863252673044,
+      "peak_rss_mb": 1426.75
+    },
+    {
+      "fixture": "tts-vi-5min.txt",
+      "lang": "vi",
+      "chars": 3763,
+      "units": 850,
+      "unit_kind": "syllables",
+      "voice": "Hải Đăng",
+      "repeat": 1,
+      "http_status": 200,
+      "bytes": 18694124,
+      "wall_s": 35.014013,
+      "ttfb_s": 0.001193,
+      "audio_s": 194.73,
+      "audio_s_source": "decoded",
+      "ffprobe_duration_s": 194.73,
+      "rtf": 0.17980800595696605,
+      "units_per_min": 261.9010938222154,
+      "peak_rss_mb": 1423.078125
+    },
+    {
+      "fixture": "tts-vi-5min.txt",
+      "lang": "vi",
+      "chars": 3763,
+      "units": 850,
+      "unit_kind": "syllables",
+      "voice": "Hải Đăng",
+      "repeat": 2,
+      "http_status": 200,
+      "bytes": 18543404,
+      "wall_s": 36.981394,
+      "ttfb_s": 0.001508,
+      "audio_s": 193.16,
+      "audio_s_source": "decoded",
+      "ffprobe_duration_s": 193.16,
+      "rtf": 0.19145472147442535,
+      "units_per_min": 264.0298198384759,
+      "peak_rss_mb": 1407.5
+    },
+    {
+      "fixture": "tts-en-5min.txt",
+      "lang": "en",
+      "chars": 4033,
+      "units": 741,
+      "unit_kind": "words",
+      "voice": "Hải Đăng",
+      "repeat": 1,
+      "http_status": 200,
+      "bytes": 21415724,
+      "wall_s": 41.59661,
+      "ttfb_s": 0.001797,
+      "audio_s": 223.08,
+      "audio_s_source": "decoded",
+      "ffprobe_duration_s": 223.08,
+      "rtf": 0.18646499013806705,
+      "units_per_min": 199.30069930069928,
+      "peak_rss_mb": 1391.734375
+    },
+    {
+      "fixture": "tts-en-5min.txt",
+      "lang": "en",
+      "chars": 4033,
+      "units": 741,
+      "unit_kind": "words",
+      "voice": "Hải Đăng",
+      "repeat": 2,
+      "http_status": 200,
+      "bytes": 21279404,
+      "wall_s": 40.573368,
+      "ttfb_s": 0.001848,
+      "audio_s": 221.66,
+      "audio_s_source": "decoded",
+      "ffprobe_duration_s": 221.66,
+      "rtf": 0.18304325543625374,
+      "units_per_min": 200.57746097626998,
+      "peak_rss_mb": 1388.953125
+    }
+  ],
+  "summary": {
+    "tts-vi-1000.txt": {
+      "wall_s_median": 9.478076,
+      "audio_s": 53.765,
+      "rtf_median": 0.17628400615482676,
+      "peak_rss_mb_max": 1439.984375
+    },
+    "tts-en-1000.txt": {
+      "wall_s_median": 9.4538875,
+      "audio_s": 53.375,
+      "rtf_median": 0.17712367955598368,
+      "peak_rss_mb_max": 1444.71875
+    },
+    "tts-vi-5min.txt": {
+      "wall_s_median": 35.9977035,
+      "audio_s": 193.945,
+      "rtf_median": 0.18563136371569572,
+      "peak_rss_mb_max": 1423.078125
+    },
+    "tts-en-5min.txt": {
+      "wall_s_median": 41.084989,
+      "audio_s": 222.37,
+      "rtf_median": 0.1847541227871604,
+      "peak_rss_mb_max": 1391.734375
+    }
+  },
+  "gate_120s": {
+    "rule": "rtf_5min_max * 300 < 100",
+    "rtf_5min_max": 0.18563136371569572,
+    "projected_wall_s": 55.68940911470872,
+    "threshold_s": 100,
+    "result": "pass",
+    "decision": "recorded, informational (04 CR-2): pass, projected 55.7 s per 300 s audio (RTF 0.186); capacity input for 04.1.2 sizing; the pass/fail check is 04.1.2-T3",
+    "decided_by": "TL-agent",
+    "decided_on": "2026-09-25"
+  },
+  "samples": [
+    {
+      "path": "/Volumes/Project/NightTalesStudio/.nts/runs/samples/vieneu-vi-1000.wav",
+      "sha256": "e8a49bbfc30caea2564be8c92791806134d086f48e2e03e6e68e3b8c6cbbb392",
+      "riff_size_hex": "ffffffff",
+      "data_size_hex": "ffffffff",
+      "ffmpeg_f_null_exit": 0
+    },
+    {
+      "path": "/Volumes/Project/NightTalesStudio/.nts/runs/samples/vieneu-en-1000.wav",
+      "sha256": "81ea1841c98a43ddd727aee7ebe798898ba4d7e58cdf4c71ccbe05850be2e2b4",
+      "riff_size_hex": "ffffffff",
+      "data_size_hex": "ffffffff",
+      "ffmpeg_f_null_exit": 0
+    },
+    {
+      "path": "/Volumes/Project/NightTalesStudio/.nts/runs/samples/vieneu-vi-5min.wav",
+      "sha256": "2e730139b2e69a3985c2475d795743c439bb9efa48af5ba19f9059365abb1191",
+      "riff_size_hex": "ffffffff",
+      "data_size_hex": "ffffffff",
+      "ffmpeg_f_null_exit": 0
+    },
+    {
+      "path": "/Volumes/Project/NightTalesStudio/.nts/runs/samples/vieneu-en-5min.wav",
+      "sha256": "d6e0ac82b69f858d9586efa959545607b4cf810982b4f6d8f043e6c6009fb9c1",
+      "riff_size_hex": "ffffffff",
+      "data_size_hex": "ffffffff",
+      "ffmpeg_f_null_exit": 0
+    }
+  ],
+  "notes": [
+    "cold_start[1] file cache state not asserted (spec: not required after reboot/purge)",
+    "en voice: voice objects carry no language field; default 'Hải Đăng' used for en (failure table); 04.2.1 picks en voices",
+    "narration rate (speed ignored, 04 F4): vi 263 syllables/min, en 200 words/min (plan 02 assumed 170 / 150)",
+    "rtf 1000 vs 5min: 0.176 vs 0.186 (+5 %, below the 20 % linearity note)",
+    "10-minute question (04 §10): rtf_5min_max x 600 = 111 s",
+    "memory: vm_stat swapouts grew 583367 -> 617843 pages during the run (other apps open); peak RSS may be understated",
+    "hub message to plan 04 owner: n/a (no live 04 agent); result recorded here and in STATUS.md"
+  ]
+}
