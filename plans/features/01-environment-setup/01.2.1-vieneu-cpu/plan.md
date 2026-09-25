@@ -217,4 +217,4 @@ New tracked names introduced (D1/D9 compliant): `worker-node/bin/start-vieneu.sh
   - Corrupt venv → `rm -rf "$NTS_HOME/src/vieneu/.venv"` then `bootstrap.sh vieneu`.
   - Bad weights → `rm -rf "$NTS_HOME/hf/hub/models--pnnbao-ump--VieNeu-TTS-v3-Turbo" "$NTS_HOME/hf/hub/models--OpenMOSS-Team--MOSS-Audio-Tokenizer-Nano"` then `fetch-vieneu-weights.sh` (pinned). Re-pinning = 01.1.1-T2 procedure, then T1 steps 4–6.
   - Watermark extra removed → `uv sync --frozen` in `$NTS_HOME/src/vieneu` and revert the `--extra watermark` flag in `start-vieneu.sh`.
-- **Carry-over (01.3.3):** pins, `weights.sha256`, `env.example`, `voices.snapshot.json`, baseline JSON, gate decision, watermark decision; Mac → node differences (ONNX-CPU → PyTorch CUDA `--extra cuda`, `VIENEU_MAX_STREAMS`, bind to private interface; CR-9).
+- **Carry-over (01.3.3):** pins, `weights.sha256`, `env.example`, `voices.snapshot.json`, baseline JSON, gate decision, watermark decision; Mac → node differences (ONNX-CPU → PyTorch CUDA `--extra cuda --extra watermark` (01 CR-13; fail closed unless `Audio watermarking initialized (Perth)` is logged), `VIENEU_MAX_STREAMS`, bind to private interface; CR-9).
