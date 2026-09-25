@@ -43,7 +43,7 @@ Legend: `done` (acceptance checks run and passed) · `doing` · `blocked (<who>)
 | 01.2.3-T2 Whisper baseline | done | `trial/baselines/whisper-mac-20260925.json`: RTF vi 0.46–0.66, en 0.31–0.36; peak RSS 2.43 GB; language detection is correct for all 4 (p ≥ 0.999), so CR-5 isn't needed. Params = MPT `subtitle.py:62-68` |
 | 01.2.4-T1 Org verification + billing guard | n/a (DEC-9) | No OpenAI org: calls go through the relay. The owner sets the spend cap in the relay account |
 | 01.2.4-T2 Keys | done (relay) | Owner stored `nts.openai.story` and `nts.openai.image` via `secrets.sh set`; `check` → present |
-| 01.2.4-T3 Access checks | partial (relay images) | `openai-access-check.sh --only story` → exit 0: C0s 200, **C1 `gpt-6-luna` 200** (10+5 tokens, ≈ $0.0000035 at OpenAI rates), C2 403, C6 404, C7 200 (recorded, DEC-10). `--only image`: C0i 200; **C3 503 "No available compatible accounts"** for flare and the `gpt-image-2` fallback (also 1.5 and 1); C4 503 maintenance. Owner: ask the relay to enable image generation for the image key, then re-run `--only image`. Dashboard read-back §C n/a (relay). Access record: `trial/baselines/openai-access-mac-20260925.json` |
+| 01.2.4-T3 Access checks | done (01 DEC-11) | `openai-access-check.sh` → exit 0, 8/8 PASS. C1/C4/C7 send `reasoning_effort` = `OPENAI_EFFORT_CHAT` (now `medium`; `--only story` re-run 2026-09-25 → C1/C7 200 at medium). **C3 = one paid call to `/v1/responses` with the `image_generation` tool (`gpt-image-2`, host `gpt-6-luna`, effort low) → 200**, image 1536x1024 medium. Relay-side `/images/generations` is still broken (see Findings). Record: `trial/baselines/openai-access-mac-20260925.json` |
 | 01.3.1-T1 Schema v2, dictionary, prices | done | `trial/measurements.csv` 58 columns (first 31 = 01 §5.3), CRLF, no BOM; `trial/schema.md` 58 rows; `trial/prices.json` checked 2026-09-25 against the official OpenAI pricing pages |
 | 01.3.2-T1 RSS sampler | done | `trial/tools/rss_sampler.sh --selftest 60` passes: 57 rows, p95 79 ms, CPU 1.3 %. `ps rss` is in KiB (checked against `top`). TERM stop 75 ms. Roots and pressure are sampled on staggered ticks to stay under the 100 ms p95 |
 | 01.3.1-T2 Usage tap | done | `trial/tools/usage_tap.py` + `start-tap.sh`. Every stub check passes: status order, D6 10-key lines, no secret or content in runs/logs, 429/moderation/timeout/busy mapping, quality injection, stub-upstream guard. Real calls: `GET /v1/models` 200 and one `gpt-6-luna` chat 200 with usage 8+5 tokens. `tap.json` upstream = `https://api.aixingialaire.shop`. Fix after integration: `start-tap.sh` did not export `NTS_HOME`, so the tap wrote `~/.nts/tap.json`. Now exported, and the tap's default is `<repo>/.nts` |
@@ -132,6 +132,29 @@ Spec: `plans/features/01-environment-setup/01.2.4-openai-access/01.2.4-T1-org-ve
     - The relay ignores the requested `size` (1024x1024) and `quality` (low); every result reports quality `medium`, so cost per image is higher than requested. Usage reports only host tokens (~6.7k in + ~120 out); image tokens are not shown.
     - Whether the tool honours `model` is unverified [INFERENCE: the different size for image-1 suggests it does].
 
+- **01 DEC-11: images via Responses + `gpt-image-2`, effort on every call (owner, 2026-09-25).**
+  - Pins: 14 → 18 (`OPENAI_IMAGE_API=responses`, `OPENAI_IMAGE_HOST_MODEL=gpt-6-luna`, `OPENAI_EFFORT_IMAGE_HOST=low`, `OPENAI_EFFORT_CHAT=medium`: owner, story writing must not run at low; MPT `generate_script` writes the trial story via chat).
+  - The tap translates MPT's `images/generations` into `/v1/responses` with the image tool and maps the reply back to `data[0].b64_json`. It injects effort into chat and responses calls that do not set one. D6 adds `via` and `request.reasoning_effort`.
+  - Live: MPT's own `_parse_openai_image_response` + `_save_openai_image_file` accepted the tap's reply (1370x1148 PNG), and `smoke.sh` stayed at 39/0.
+  - The tap now changes chat bodies (effort), so it is no longer a pure pass-through. This is documented in D6 / `worker-node/README.md`.
+  - `--no-tap` with `responses` only warns. It is a non-measured test hook; images fail in that mode.
+- **Relay image backend = `gpt-image-2-codex`, output not configurable (verified 2026-09-25).** Every Responses reply echoes the tool as `model gpt-image-2-codex, size auto, quality auto`, whatever model, size or quality is asked. Returned sizes vary (1536x1024, 1672x941, 1370x1148). This matches the open upstream bug [openai/codex#28723](https://github.com/openai/codex/issues/28723): the Codex/ChatGPT-OAuth image path ignores size and quality. The official API documents them as configurable. Consequences:
+  - frame size is not deterministic;
+  - CR-3 quality cannot be enforced on this relay [OPEN];
+  - image cost is `n/a:no-price` until the relay prices `gpt-image-2` [OPEN, owner];
+  - an OpenAI API key, or a relay backed by an API account, is needed for deterministic output.
+
+- **QA (QaImageResp) and review (ReviewImageResp), DEC-11 change.**
+  - QA: PASS on all 5 checks (pins, tap translation/effort vs stub, no leak, shellcheck, spec vs code). Two spec drifts fixed: the `tap.json` key list in T2 and `tap_image_request_invalid` added to T2/CR-16.
+  - Review fixes:
+    - (M) `plans/01-environment-setup.md` §5.2 `openai_image_base_url` now points at the tap.
+    - (L) D6 `reasoning_effort` on `/chat/completions` now reads only `reasoning_effort`, so it matches what was sent.
+    - (L) the tap's `read_pins` uses the same rules as `load_pins`: duplicate keys and malformed lines (e.g. `KEY = val`) → exit 2 (TechLead advisory; tested).
+    - (L) T3 doc: C3 records `api` + `reasoning_effort`, not `via`.
+    - All re-tested against the stub.
+  - Not changed: D6 cannot tell injected effort from client-sent effort (informational; the contract says "effort sent").
+  - Open for plan 11: the `plans/11-worker-deployment.md:75` egress allow-list still names `api.openai.com`; it needs a CR for the relay host (phase P).
+
 ## Session log
 
 | Date | Session | Done |
@@ -139,3 +162,4 @@ Spec: `plans/features/01-environment-setup/01.2.4-openai-access/01.2.4-T1-org-ve
 | 2026-09-25 | Day 1, plan 01 | 01.1.1-T1/T2, 01.1.2-T1…T4, 01.2.1-T1…T4 done. DEC-5, DEC-6, DEC-7, CR-11, CR-12, CR-13. Code review: 4 findings fixed. QA pass: 3 defects fixed. Ownership proof = signed manifest (DEC-8, CR-14). Branch `feature/01-env-setup-day1` → PR #1 into `develop` |
 | 2026-09-25 | Day 2, plan 01 | 01.2.2-T1…T3, 01.2.3-T2, 01.3.1-T1, 01.3.2-T1 done; 01.2.2-T4/T5 and 01.2.3-T1 partial (OpenAI keys + tap). QA: 3 defects fixed; review: 3 fixed. Branch `feature/01-env-setup-day2` → PR into `develop` |
 | 2026-09-25 | Day 2 (cont.), plan 01 | DEC-9 relay, DEC-10. Owner stored the relay keys. 01.2.4-T3 story checks pass, images blocked on the relay side. 01.3.1-T2 tap done. 01.2.2-T4/T5 live: `smoke.sh` 39/0. Writer effort `medium` (plan 02 D7). QA + review: 7 fixes |
+| 2026-09-25 | 01 DEC-11 | Images via the Responses tool + `gpt-image-2`; effort pins for every call. Access check 8/8. MPT image path live through the tap. Smoke 39/0. Relay forces `gpt-image-2-codex` with size/quality auto (codex#28723). QA + review: 6 fixes |

@@ -35,7 +35,7 @@ An automated pipeline for **faceless** YouTube (and TikTok) videos, published as
 |---|---|---|---|---|
 | Pipeline framework | **MoneyPrinterTurbo** (MPT) | Local | MIT ✅ | **Configure only**, no fork |
 | Story writing | OpenAI **gpt-6-luna** (upgrade to gpt-6-sol if quality is insufficient); written by the backend via the Responses API with strict `story.v1` output, not by MPT (02 CR-10). Default writer/review model per language decided by 02.1.3 per `plans/features/02-story-writing/README.md` D15 — pending | OpenAI | — | M0 harness calls OpenAI directly; MPT receives `video_script`/`video_terms` ✅ |
-| Images | OpenAI **gpt-image-2.5-flare**, `medium` quality | OpenAI | — | MPT has an `openai_image` material source ✅ |
+| Images | OpenAI **gpt-image-2**, `medium` quality (advisory on the relay — it ignores requested size/quality/model, codex#28723; quality value per §4 CR-3) | OpenAI (relay, 01 DEC-9) | — | MPT has an `openai_image` material source ✅. **Owner amendment 2026-09-25 (01 DEC-11):** supersedes `gpt-image-2.5-flare`; images go through the relay's Responses API `image_generation` tool (host `gpt-6-luna`), not `/images/generations` (broken relay-side); per-image cost [OPEN] |
 | Voice | **VieNeu-TTS v3 Turbo** (vi + en, 48 kHz; preset voice count: **25** in SDK 3.8.3 (default "Hải Đăng") ✅, 23 on the older HF card (SDK 3.7.1); the pinned server's `GET /v1/voices` is authoritative (`plans/features/01-environment-setup/` README §1 V5) | Local | Apache-2.0 ✅, FAQ allows monetized use ✅ | Needs a small proxy (section 5.3). **Do not use v4** (proprietary). Fact note: all 25 presets are Vietnamese regional speakers with no language field (`features/04-voice-proxy/README.md` V8); English narration quality is ⚠️ unverified; rule (04 O2, accepted 2026-09-24): if no en voice passes the 04.2.1 audition, launch en with the best-rated voice when its mean naturalness ≥ 3.0, otherwise postpone the en channel; this decision stays locked (04 CR-15) |
 | Subtitles | faster-whisper `large-v3-turbo` | Local | — | Configured inside MPT ✅ |
 | Background music | CC0 / YouTube Audio Library tracks | — | Per track | **Delete MPT's bundled music** (section 5.5) |
@@ -51,13 +51,13 @@ Prices from the [OpenAI pricing page](https://developers.openai.com/api/docs/pri
 |---|---|---|
 | gpt-6-luna | $0.10 / 1M input tokens, $0.50 / 1M output tokens | < $0.01 per 2,500-word story (inference) |
 | gpt-6-sol (fallback) | $2 / 1M input, $10 / 1M output | ~$0.05 per story (inference) |
-| GPT Image 2.5 | $30 / 1M image output tokens | 1024×1024: low ~$0.006 · **medium ~$0.013** · high ~$0.053 per image |
+| GPT Image (gpt-image-2) | $30 / 1M image output tokens ⚠️ priced on `gpt-image-2.5-flare` — superseded (01 DEC-11); relay price for `gpt-image-2` [OPEN] | 1024×1024: low ~$0.006 · **medium ~$0.013** · high ~$0.053 per image |
 | One long video (~60 images, medium) | | ~$0.79 |
 | **~13 long videos / month** (3/week) | | **~$10–11 / month** |
 
 ⚠️ These are **floor** prices. With `openai_image_size = ""`, MPT picks **1536x1024** (landscape) or **1024x1536** (portrait) per video aspect (`config.example.toml:199-204`), which costs more tokens than 1024×1024 — **not measured yet**. Measure via the response `usage` field in phase 1.
 
-⚠️ **Quality is not selectable through MPT** ✅: its `openai_image` request body is only `{model, prompt, n: 1, size}`, so the API default `quality = auto` applies (`plans/features/01-environment-setup/` README §1 M4, O6). The "medium ~$0.013" figure above is therefore an assumption, not what the trial pays; plan 03 CR-3 decides how quality is set — **decided 2026-09-24 (03 D9, owner O1/O3):** the node image relay injects `quality`; the value and the measured cost per image per aspect are recorded here by 03.3.1-T2 after the M0 contact sheet (03 CR-12). **Rate limit:** Tier 1 allows **5 images/min** for `gpt-image-2.5-flare` ✅ (O8), and MPT skips a keyword silently after 3 retries on 429 (M4) — see plan 03 G7.
+⚠️ **Quality is not selectable through MPT** ✅: its `openai_image` request body is only `{model, prompt, n: 1, size}`, so the API default `quality = auto` applies (`plans/features/01-environment-setup/` README §1 M4, O6). The "medium ~$0.013" figure above is therefore an assumption, not what the trial pays; plan 03 CR-3 decides how quality is set — **decided 2026-09-24 (03 D9, owner O1/O3):** the node image relay injects `quality`; the value and the measured cost per image per aspect are recorded here by 03.3.1-T2 after the M0 contact sheet (03 CR-12). **Rate limit:** Tier 1 allows **5 images/min** for `gpt-image-2.5-flare` ✅ (O8 — superseded by `gpt-image-2`, 01 DEC-11; rate re-check [OPEN]), and MPT skips a keyword silently after 3 retries on 429 (M4) — see plan 03 G7.
 - [DECISION] **Credit pricing:** 1 credit = US$0.01 of price; see §10.5 for the payment provider, FX rule and funding model (12 CR-10).
 
 ## 5. Integration details per stage
