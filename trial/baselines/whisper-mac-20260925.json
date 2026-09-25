@@ -1,0 +1,90 @@
+{
+  "schema_version": 1,
+  "component": "faster-whisper",
+  "date": "2026-09-25",
+  "host": {
+    "model": "Mac",
+    "chip": "Apple M4",
+    "macos": "27.0",
+    "cpu_count": 10,
+    "ram_gb": 16
+  },
+  "faster_whisper": "1.1.0",
+  "ctranslate2": "4.7.1",
+  "model_repo": "mobiuslabsgmbh/faster-whisper-large-v3-turbo",
+  "model_revision": "0a363e9161cbc7ed1431c9597a8ceaf0c4f78fcf",
+  "device": "cpu",
+  "compute_type": "int8",
+  "params": {
+    "beam_size": 5,
+    "word_timestamps": true,
+    "vad_filter": true,
+    "min_silence_duration_ms": 500,
+    "language": null
+  },
+  "omp_num_threads": "unset",
+  "offline": "HF_HUB_OFFLINE=1; model pre-placed at $NTS_HOME/src/mpt/models/whisper-large-v3-turbo",
+  "samples": [
+    {
+      "file": "vieneu-vi-1000.wav",
+      "lang_expected": "vi",
+      "audio_s": 52.81,
+      "load_s": 1.79,
+      "transcribe_s": 34.61,
+      "wall_s": 36.88,
+      "rtf": 0.655,
+      "peak_rss_mb": 2132.6,
+      "lang_detected": "vi",
+      "lang_prob": 0.999,
+      "segments": 10
+    },
+    {
+      "file": "vieneu-en-1000.wav",
+      "lang_expected": "en",
+      "audio_s": 52.63,
+      "load_s": 2.75,
+      "transcribe_s": 19.05,
+      "wall_s": 22.13,
+      "rtf": 0.362,
+      "peak_rss_mb": 2134.4,
+      "lang_detected": "en",
+      "lang_prob": 0.9998,
+      "segments": 14
+    },
+    {
+      "file": "vieneu-vi-5min.wav",
+      "lang_expected": "vi",
+      "audio_s": 194.82,
+      "load_s": 2.22,
+      "transcribe_s": 89.78,
+      "wall_s": 92.32,
+      "rtf": 0.461,
+      "peak_rss_mb": 2425.6,
+      "lang_detected": "vi",
+      "lang_prob": 0.9991,
+      "segments": 37
+    },
+    {
+      "file": "vieneu-en-5min.wav",
+      "lang_expected": "en",
+      "audio_s": 222.79,
+      "load_s": 2.9,
+      "transcribe_s": 70.0,
+      "wall_s": 73.29,
+      "rtf": 0.314,
+      "peak_rss_mb": 2278.7,
+      "lang_detected": "en",
+      "lang_prob": 0.9999,
+      "segments": 52
+    }
+  ],
+  "notes": [
+    "rtf = transcribe_s / audio_s (load excluded); wall_s = /usr/bin/time -l real for the whole uv+python process (includes interpreter + model load); load_s = WhisperModel() init inside the process.",
+    "peak_rss_mb = /usr/bin/time -l 'maximum resident set size' / 1048576; includes uv wrapper + interpreter + model.",
+    "Language detection correct on all 4 samples (vi p>=0.999, en p>=0.9998); no misdetection to flag for CR-5.",
+    "RAM budget (R1): whisper peak ~2.43 GB (vi-5min); + VieNeu idle RSS ~512 MB = ~2.9 GB, fits 16 GB budget alongside a render with ample headroom.",
+    "All runs offline (HF_HUB_OFFLINE=1); model loaded from local dir, no hub call — this also substitutes for T1's MPT-API offline proof, which is partial pending the MPT start script (01.2.2-T4 waits on nts.openai.* keys).",
+    "OMP_NUM_THREADS not swept (optional step skipped); single default config run.",
+    "Mac baseline only (R4); GPU node re-baselines with device=cuda/compute_type=float16 (CR-9)."
+  ]
+}

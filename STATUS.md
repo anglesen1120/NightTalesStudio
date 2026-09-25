@@ -6,11 +6,12 @@ Legend: `done` (acceptance checks run and passed) · `doing` · `blocked (<who>)
 
 ## Resume here
 
-- **Last session:** 2026-09-25, day 1 of plan 01 (`plans/features/01-environment-setup/README.md` §5, "Suggested order"). Branch `feature/01-env-setup-day1` → PR into `develop`.
+- **Last session:** 2026-09-25, day 2 of plan 01 (branch `feature/01-env-setup-day2` → PR into `develop`). Day 1 merged in PR #1. `smoke.sh` exits 2 until MPT can start (OpenAI keys + tap).
 - **Next actions:**
   1. Owner: **01.2.4-T1** (OpenAI dashboard checklist below). This is an external wait, so start it first.
   2. ~~Owner: pick ownership proof~~ → decided 2026-09-25: signed per-render hash manifest (DEC-8, CR-14; designed in plan 05/06).
-  3. Day 2 (after 01.2.4-T1): 01.2.2-T1…T5 (MPT), 01.2.3 (whisper), 01.2.4-T2/T3 (projects, keys, access checks), 01.3.1-T1, 01.3.2-T1.
+  3. After 01.2.4-T1: 01.2.4-T2/T3 (projects, keys, access checks), then 01.3.1-T2 (usage tap). That unblocks the live checks in 01.2.2-T4/T5 and the MPT offline proof in 01.2.3-T1.
+  4. Day 3: 01.3.1-T3 collector. After plan 04 proxy: 01.2.2-T6, 01.3.1-T4.
 - **Environment (DEC-5, DEC-6):**
   - Implementation machine = this Mac (M4, 16 GB, macOS 27.0).
   - `NTS_HOME=<repo>/.nts` (gitignored; `lib.sh` default).
@@ -32,11 +33,20 @@ Legend: `done` (acceptance checks run and passed) · `doing` · `blocked (<who>)
 | 01.2.1-T2 `start-vieneu.sh` | done | READY after 2–4 s. Listens only on `127.0.0.1:8000`. The key is in the server env and in no process argv: the child env is built with builtins after the review finding. Caller variables are dropped (canary and `HF_TOKEN` absent). Second start → exit 2. `HOST=0.0.0.0` from the caller is ignored. Env-file guards (HOST, int8, key in file) → exit 2. Ctrl-C → exit 0, port freed. The Wi-Fi-off check was replaced by `HF_HUB_OFFLINE=1` with 0 Hub requests in the log |
 | 01.2.1-T3 Smoke scripts | done | `smoke-vieneu.sh`: every line PASS/INFO. Voices 25. `POST /v1/voices` unauthenticated → 401 ×2. `GET /v1/voices` without a key → 401. RIFF size `ffffffff` (04 F3). `pcm_s16le,48000,1`. Snapshot committed; the drift test FAILs as intended. `check-binds.sh` flags `*:8001` and 8505. `smoke.sh` → exit 0 |
 | 01.2.1-T4 Mac baseline, 120 s gate, watermark | done | `trial/baselines/vieneu-mac-20260925.json`: RTF 0.176–0.186, **gate 120 s pass** (projected 55.7 s per 300 s audio; informational, 04 CR-2), cold start 4 s / 2 s, idle RSS 512 MB, peak RSS ≈ 1.44 GB, 9 runs all 200. Narration rate: vi 263 syllables/min, en 200 words/min (01.2.1-T4 step 1 assumed 170 / 150 [INFERENCE]). Four WAV samples in `$NTS_HOME/runs/samples/` (RIFF/data `ffffffff`, decode ok). `-2.json` = the `--extra watermark` run. Watermark: DEC-7 / CR-13 |
-| 01.2.2-T1…T6 MPT | todo | Day 2. The MPT clone is already at its pin (bootstrap) |
-| 01.2.3-T1/T2 Whisper | todo | Day 2 |
+| 01.2.2-T1 MPT install at pin | done | HEAD `3d5f4e42` = pin, Python 3.11.16, `uv sync --frozen` idempotent, ffmpeg 9.0.2 via `IMAGEIO_FFMPEG_EXE`, MIT. Pinned example snapshot + sha256 in `worker-node/mpt/`. M1 line anchors shifted at the pin (log_level L9, listen_host L11, port L12, [app] L14, [whisper] L500, [kokoro] L576); keys and defaults match |
+| 01.2.2-T2 Config template + renderer | done | `render-mpt-config.py --self-test` 7/7, `--check` all guards PASS, output 0600, drift diff redacted, unexpected-key shows `<set>`. SEC-09 with the live OpenAI values: partial (keys missing; proven with the real MPT/proxy keys + in-process test values). Added `--allow-direct-openai` for `start-mpt-api.sh --no-tap` |
+| 01.2.2-T3 Strip music + CC0 placeholder | done | 29 bundled tracks removed, idempotent; plant/tamper/symlink tests removed; `bootstrap.sh mpt` prints `strip=ok`. Placeholder `nts-ambient-pad-cc0.mp3` generated in-house with ffmpeg (90 s), row in `LICENSES.csv`; header upgraded to the T3 12-column form. A BA-picked track can replace it |
+| 01.2.2-T4 `start-mpt-api.sh` | partial (keys, tap) | All guards PASS: no tap → 2, port busy → 2, foreign 8002 listener → 2 before any Keychain read, edited `tap.json` → 2, missing `nts.openai.story` → 2 naming the service only, no WebUI script. Live start, bind and env checks wait for 01.2.4-T2 keys + 01.3.1-T2 tap. Fix vs spec: secrets are read as standalone assignments; inside `VAR="$(secret …)" cmd` a failing `secret` doesn't stop the script |
+| 01.2.2-T5 `smoke-mpt.sh` | partial (keys, tap) | API down → `FAIL mpt.listening`, exit 2; `smoke.sh` propagates it, so **`smoke.sh` exits 2 until MPT can start**. Offline rows (binds, `--check`, WebUI absent, mode 600, self-test, music) pass one by one. Live rows 2–9 and 12 wait for MPT |
+| 01.2.2-T6 Wiring render | todo | Needs plan 04 proxy (04.1.1/04.1.2) + tap |
+| 01.2.3-T1 Whisper model fetch | partial (offline proof via MPT) | `fetch-whisper-model.sh`: 7 files, 1.5 GB, `--verify` OK, re-run 3 s, tamper → 1, no symlinks, ignored by upstream `.gitignore`, MIT, survives `bootstrap.sh mpt`. Offline load proven directly with faster-whisper + `HF_HUB_OFFLINE=1`; the MPT-API proof waits for T4. This Mac drops IPv6, so the script forces IPv4 when a v6 probe fails. `mobiuslabsgmbh/…` now redirects to `dropbox-dash/…`; the pin SHA is still HEAD |
+| 01.2.3-T2 Whisper baseline | done | `trial/baselines/whisper-mac-20260925.json`: RTF vi 0.46–0.66, en 0.31–0.36; peak RSS 2.43 GB; language detection is correct for all 4 (p ≥ 0.999), so CR-5 isn't needed. Params = MPT `subtitle.py:62-68` |
 | 01.2.4-T1 Org verification + billing guard | blocked (owner) | Owner-only dashboard work; checklist below |
 | 01.2.4-T2/T3 Projects, keys, access checks | todo | Waits for 01.2.4-T1 |
-| 01.3.1-T1…T4, 01.3.2-T1, 01.3.3-T1/T2 Measurement, carry-over | todo | Days 2–3 |
+| 01.3.1-T1 Schema v2, dictionary, prices | done | `trial/measurements.csv` 58 columns (first 31 = 01 §5.3), CRLF, no BOM; `trial/schema.md` 58 rows; `trial/prices.json` checked 2026-09-25 against the official OpenAI pricing pages |
+| 01.3.2-T1 RSS sampler | done | `trial/tools/rss_sampler.sh --selftest 60` passes: 57 rows, p95 79 ms, CPU 1.3 %. `ps rss` is in KiB (checked against `top`). TERM stop 75 ms. Roots and pressure are sampled on staggered ticks to stay under the 100 ms p95 |
+| 01.3.1-T2 usage tap, T3 collector, T4 calibration | todo | T2 waits for the OpenAI keys; T3 day 3; T4 after 01.2.2-T6 |
+| 01.3.3-T1/T2 Carry-over | todo | After 05.5.2. Interim whisper notes: `.nts/runs/whisper-baseline/carryover-notes.md` |
 
 Other plans: not started. Order after plan 01: 02 M0 → 03 M0 → 04 → 05 → Gate 1 (`plans/features/README.md`).
 
@@ -76,8 +86,20 @@ Spec: `plans/features/01-environment-setup/01.2.4-openai-access/01.2.4-T1-org-ve
     - F6: bare `shellcheck` prints SC1091; use `shellcheck -x`.
     - The SEC-07 negative test cannot fail: an item created by `/usr/bin/security` always trusts `/usr/bin/security`, even without `-T`.
 
+- **QA pass (QaDay2) and code review (ReviewDay2), day 2, 2026-09-25.** QA reproduced every STATUS claim for the 8 tasks; the live-API rows are legitimately partial. Fixed and re-tested:
+  - QA D1 (M): the sampler self-test sampled a foreign tree when 18099 was already taken. It now requires the port free (busy → exit 2) and only accepts its own listener.
+  - QA D2 (M): the self-test printed criteria but always exited 0. It now prints `selftest: PASS|FAIL` and exits 1 on any failed criterion.
+  - QA D3 (L): the load buffer was compressible. It now uses `os.urandom`.
+  - Review (M): `start-mpt-api.sh --no-tap` also skipped the 8001 proxy-listener ownership check, while the proxy key still goes to 8001. Now only the 8002 check is skipped; a foreign 8001 listener → exit 2.
+  - Review (L): `smoke-mpt.sh` `mpt.no_value_leak` passed after checking nothing. A missing redacted state file is now a FAIL.
+  - Review (L): `--template`, `--mpt-root` and `--source` given with no value fell back to the default. Now exit 2.
+  - Noted, not fixed:
+    - Review (L): between root refreshes (≤ 10 s), a reused pid could be walked as the service tree.
+    - QA D4: the M1 line anchors in the task files are stale; the pin-verified numbers are in the template comments.
+
 ## Session log
 
 | Date | Session | Done |
 |---|---|---|
 | 2026-09-25 | Day 1, plan 01 | 01.1.1-T1/T2, 01.1.2-T1…T4, 01.2.1-T1…T4 done. DEC-5, DEC-6, DEC-7, CR-11, CR-12, CR-13. Code review: 4 findings fixed. QA pass: 3 defects fixed. Ownership proof = signed manifest (DEC-8, CR-14). Branch `feature/01-env-setup-day1` → PR #1 into `develop` |
+| 2026-09-25 | Day 2, plan 01 | 01.2.2-T1…T3, 01.2.3-T2, 01.3.1-T1, 01.3.2-T1 done; 01.2.2-T4/T5 and 01.2.3-T1 partial (OpenAI keys + tap). QA: 3 defects fixed; review: 3 fixed. Branch `feature/01-env-setup-day2` → PR into `develop` |
