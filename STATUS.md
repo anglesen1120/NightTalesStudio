@@ -126,6 +126,11 @@ Spec: `plans/features/01-environment-setup/01.2.4-openai-access/01.2.4-T1-org-ve
   - Manual probe `POST /v1/responses` (host `gpt-6-luna` + tool `image_generation`, quality low) → 200 with a correct image. The returned size is 1536x1024, although 1024x1024 was asked. Usage is 6652+106 tokens; the tool's image usage is not reported separately.
   - Consequence: MPT generates images only through `images/generations` (01.2.2 M-facts), so the MPT image path does not work on this relay today. Owner decision [OPEN]: ask the relay to fix `images/generations`, or change the plan 03 image client to the Responses tool (a CR to 03 and 01.2.2).
   - Probe `POST /v1/images/generations` with `model: gpt-6-luna` on the image key → 400 "images endpoint requires an image model, got \"gpt-6-luna\"", rejected before any spend. Luna produces images only as the host of the Responses `image_generation` tool.
+  - gpt-image probes on the image key, 2026-09-25:
+    - `images/generations`: `gpt-image-1` and `gpt-image-1.5` → 400 (the same `gpt-5.4-mini`/Codex error); `gpt-image-2` → 503 "No available compatible accounts".
+    - `/v1/responses` (host `gpt-6-luna`, tool `image_generation` with `model` = gpt-image-1/1.5/2): all three → 200, one PNG each. Sizes: 1672x941 for image-1; 1536x1024 for image-1.5 and image-2.
+    - The relay ignores the requested `size` (1024x1024) and `quality` (low); every result reports quality `medium`, so cost per image is higher than requested. Usage reports only host tokens (~6.7k in + ~120 out); image tokens are not shown.
+    - Whether the tool honours `model` is unverified [INFERENCE: the different size for image-1 suggests it does].
 
 ## Session log
 
