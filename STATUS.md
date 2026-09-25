@@ -119,6 +119,13 @@ Spec: `plans/features/01-environment-setup/01.2.4-openai-access/01.2.4-T1-org-ve
   - Rejected: the guard "crashes if `trial/runs` is missing". `os.stat(root)` sits inside a `try` and returns False.
   - Open: relay prices in `prices.json` depend on the relay's price list (owner).
 
+- **New image key, 2026-09-25 10:44Z.** `openai-access-check.sh --only image` results:
+  - C0i 200. The key is in a "Codex" group with 15 models, including `gpt-image-1/1.5/2`; no flare.
+  - C4 chat 200: this key can also chat.
+  - C3 `POST /v1/images/generations` → 400 for both flare and the `gpt-image-2` fallback: "The 'gpt-5.4-mini' model is not supported when using Codex with a ChatGPT account". The relay serves images from a ChatGPT/Codex account and wraps the call around an unsupported host model. This is a relay-side defect.
+  - Manual probe `POST /v1/responses` (host `gpt-6-luna` + tool `image_generation`, quality low) → 200 with a correct image. The returned size is 1536x1024, although 1024x1024 was asked. Usage is 6652+106 tokens; the tool's image usage is not reported separately.
+  - Consequence: MPT generates images only through `images/generations` (01.2.2 M-facts), so the MPT image path does not work on this relay today. Owner decision [OPEN]: ask the relay to fix `images/generations`, or change the plan 03 image client to the Responses tool (a CR to 03 and 01.2.2).
+
 ## Session log
 
 | Date | Session | Done |
