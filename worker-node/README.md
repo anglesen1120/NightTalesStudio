@@ -70,7 +70,7 @@ Versions on 2026-09-25: Homebrew 7.0.6, git 2.49.0, uv 0.12.18, ffmpeg 9.0.2 (`l
 
 ## Pins
 
-`worker-node/pins.env` is the only place versions live (D2). `lib.sh` `load_pins` accepts exactly 14 keys (`OPENAI_BASE_URL` must be `https://<host>/v1`, 01 DEC-9), 40-hex SHAs and `3.x` Pythons. Resolved 2026-09-25 (01.1.1-T2):
+`worker-node/pins.env` is the only place versions live (D2). `lib.sh` `load_pins` accepts exactly 18 keys (`OPENAI_BASE_URL` must be `https://<host>/v1`, 01 DEC-9; `OPENAI_IMAGE_API` `images|responses`, `OPENAI_IMAGE_HOST_MODEL`, `OPENAI_EFFORT_IMAGE_HOST`/`OPENAI_EFFORT_CHAT` `none|minimal|low|medium|high|xhigh`, 01 DEC-11), 40-hex SHAs and `3.x` Pythons. Resolved 2026-09-25 (01.1.1-T2):
 
 | Repo | Pin | `.python-version` | `requires-python` | `uv.lock` | Version | Note |
 |---|---|---|---|---|---|---|
@@ -141,13 +141,15 @@ Smoke: `worker-node/bin/smoke.sh` runs `smoke-vieneu.sh`, `smoke-mpt.sh`, then `
 
 ### Usage tap (01.3.1-T2)
 
-`trial/tools/start-tap.sh` runs `trial/tools/usage_tap.py` in the foreground on `127.0.0.1:8002` (D4). The tap forwards `/v1/*` to the pinned upstream — the origin of `OPENAI_BASE_URL` in `worker-node/pins.env` (`https://api.aixingialaire.shop`, 01 CR-15 / DEC-9) — unchanged, and appends exactly one D6 JSON line per call to `trial/runs/<run_id>/openai_usage.jsonl` (`no-run` when `$NTS_HOME/current_run` is absent). It never stores or logs a header, key, prompt, message content or image bytes (F02, D6).
+`trial/tools/start-tap.sh` runs `trial/tools/usage_tap.py` in the foreground on `127.0.0.1:8002` (D4). The tap forwards `/v1/*` to the pinned upstream — the origin of `OPENAI_BASE_URL` in `worker-node/pins.env` (`https://api.aixingialaire.shop`, 01 CR-15 / DEC-9). Bodies pass through unchanged except for the 01 DEC-11 image translation and effort injection described below. It appends exactly one D6 JSON line per call to `trial/runs/<run_id>/openai_usage.jsonl` (`no-run` when `$NTS_HOME/current_run` is absent). It never stores or logs a header, key, prompt, message content or image bytes (F02, D6).
+
+**Image path and effort (01 DEC-11).** With `OPENAI_IMAGE_API=responses` in `pins.env`, the tap translates MPT's `POST /v1/images/generations {model, prompt, n:1, size}` into `POST /v1/responses` on `OPENAI_IMAGE_HOST_MODEL` with `reasoning.effort = OPENAI_EFFORT_IMAGE_HOST` and the `image_generation` tool (`model`, `size`, `quality`). It maps the reply back to `{"data":[{"b64_json":…}]}`. `n > 1` → 400 `tap_image_n_unsupported`; a 200 without a completed image → 502 `tap_image_missing`; any other upstream error passes through. `/chat/completions` and `/responses` bodies without an effort get `OPENAI_EFFORT_CHAT`. D6 lines add `request.reasoning_effort` and `via` (`responses` or null). The relay ignores the requested size and quality and reports only host-model tokens, so image cost stays `n/a:no-price` ([OPEN]). `start-mpt-api.sh --no-tap` bypasses the translation, and images then fail.
 
 **The tap must be running before any MPT render**: the rendered `config.toml` points `openai_base_url` and `openai_image_base_url` at `http://127.0.0.1:8002/v1`, and `start-mpt-api.sh` refuses to read the Keychain unless `8002` is owned by this `usage_tap.py` with `tap.json.upstream` equal to the pinned origin (SEC-04). Without the tap, MPT calls fail with connection refused.
 
-Once bound, `usage_tap.py` writes `$NTS_HOME/tap.json` (`pid`, `upstream`, `image_quality_injection`, `timeout_s`, `port`). Request log: `$NTS_HOME/logs/tap-<YYYYmmdd-HHMMSS>.log`, one line per request (`ts method endpoint status latency_ms`, no headers/bodies).
+Once bound, `usage_tap.py` writes `$NTS_HOME/tap.json` (`pid`, `upstream`, `image_quality_injection`, `image_api`, `image_host_model`, `effort_image_host`, `effort_chat`, `timeout_s`, `port`). Request log: `$NTS_HOME/logs/tap-<YYYYmmdd-HHMMSS>.log`, one line per request (`ts method endpoint status latency_ms`, no headers/bodies).
 
-⚠️ `TAP_IMAGE_QUALITY` (`low|medium|high|auto`) injects a `quality` field into `/images/generations` bodies that omit it. Keep it **unset** until the 03 quality decision (CR-3) — the accepted M0 posture is injection off; `tap.json.image_quality_injection` records the active value for the run manifest.
+⚠️ `TAP_IMAGE_QUALITY` (`low|medium|high|auto`) injects a `quality` field into `/images/generations` bodies that omit it. Keep it **unset** until the 03 quality decision (CR-3) — the accepted M0 posture is injection off; `tap.json.image_quality_injection` records the active value for the run manifest. With `OPENAI_IMAGE_API=responses` the injected value is copied into the `image_generation` tool, but the relay ignores it (asked `low`, got `medium` on 2026-09-25). It does **not** cap cost.
 
 Stop: Ctrl-C (own terminal, D9). Env overrides (stub tests only): `TAP_UPSTREAM=http://127.0.0.1:<port>` plus `TAP_RUNS_DIR` outside `trial/runs` — a stub-mode tap refuses to write into real run directories (`tap_stub_upstream_forbidden`, NTS01-SEC-04). `TAP_UPSTREAM_TIMEOUT_S` must stay ≥ 300 s against the real upstream (M4).
 

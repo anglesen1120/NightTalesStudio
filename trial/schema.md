@@ -104,6 +104,12 @@ column's n/a rules.
   with `text_in` = col 43, `image_in` = col 44, `out` = col 16, rates of
   `gpt-image-2.5-flare` (cached-input rates unused: image `usage` reports no
   cached field, O6).
+  (01 DEC-11) With `OPENAI_IMAGE_API=responses` the image model is `gpt-image-2` and D6 image
+  lines carry `via = "responses"`: their `usage` holds only the host model's tokens
+  (`OPENAI_IMAGE_HOST_MODEL`, luna rates), and the relay reports no image tokens. So
+  `image_cost_usd = n/a:no-price` until a relay price for `gpt-image-2` is known ([OPEN], owner),
+  and the host tokens are reported apart, never priced at image rates. D6 lines also carry
+  `request.reasoning_effort` (the effort sent, or null).
 - `image_cost_per_image_usd` (col 46) = `image_cost_usd / image_count`.
 - `usd_per_output_minute` (col 55) = `(story_cost_usd + image_cost_usd) / (output_duration_sec / 60)`;
   `story_cost_usd = n/a:story-source-plan02` counts as 0 (issue

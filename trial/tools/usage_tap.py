@@ -26,6 +26,16 @@ Config comes from the environment once at startup; anything invalid exits 2:
   NTS_HOME               ${NTS_HOME:-<repo>/.nts} (tap.json, current_run)
   TAP_RUNS_DIR           <repo>/trial/runs
   TAP_MAX_CONCURRENCY    4 (NTS01-SEC-10)
+
+From pins.env (01 DEC-11), not the environment:
+  OPENAI_IMAGE_API         images = pass-through; responses = POST /v1/images/generations
+                           is translated to POST /v1/responses with the image_generation
+                           tool on OPENAI_IMAGE_HOST_MODEL, and the reply is mapped back to
+                           {"data":[{"b64_json":...}]} (the relay's images endpoint is broken).
+  OPENAI_EFFORT_IMAGE_HOST reasoning.effort of the translated call.
+  OPENAI_EFFORT_CHAT       injected into /chat/completions (reasoning_effort) and
+                           /responses (reasoning.effort) bodies that do not set it.
+D6 lines carry request.reasoning_effort (effort sent) and via ("responses" | null).
 """
 
 import argparse
@@ -48,6 +58,15 @@ REAL_RUNS_DIR = os.path.realpath(str(REPO / "trial" / "runs"))
 D10_RUN_ID = re.compile(r"^\d{8}-\d{4}-(vi|en)-(landscape|portrait)-\d{2}$")
 STUB_UPSTREAM = re.compile(r"^http://127\.0\.0\.1:\d+/?$")
 QUALITIES = ("low", "medium", "high", "auto")
+EFFORTS = ("none", "minimal", "low", "medium", "high", "xhigh")
+IMAGE_APIS = ("images", "responses")
+MODEL_ID = re.compile(r"^[a-z0-9][a-z0-9.-]*$")
+PIN_LINE = re.compile(r"^[A-Z_]+=\S*$")
+PIN_KEYS = ("OPENAI_BASE_URL", "OPENAI_IMAGE_API", "OPENAI_IMAGE_HOST_MODEL",
+            "OPENAI_EFFORT_IMAGE_HOST", "OPENAI_EFFORT_CHAT")
+# Tool options copied from the images/generations body (never the prompt).
+IMAGE_TOOL_KEYS = ("size", "quality", "background", "output_format",
+                   "output_compression", "moderation")
 HOP_HEADERS = frozenset(
     (
         "connection",
@@ -90,22 +109,38 @@ def die_config(msg):
     sys.exit(2)
 
 
-def pinned_upstream():
-    """Origin of OPENAI_BASE_URL from worker-node/pins.env (01 CR-15, DEC-9)."""
-    pins = REPO / "worker-node" / "pins.env"
+def read_pins():
+    """The tap's keys from worker-node/pins.env (01 CR-15/DEC-9, DEC-11); lib.sh load_pins rules."""
+    path = REPO / "worker-node" / "pins.env"
+    pins = {}
     try:
-        for raw in pins.read_text(encoding="utf-8").splitlines():
-            line = raw.strip()
-            if line.startswith("OPENAI_BASE_URL="):
-                url = line.split("=", 1)[1].strip()
-                if not (url.startswith("https://") and url.endswith("/v1")):
-                    die_config(
-                        "pins.env OPENAI_BASE_URL is not of the form https://host/v1"
-                    )
-                return url[: -len("/v1")]
+        for raw in path.read_text(encoding="utf-8").splitlines():
+            if not raw or raw.startswith("#"):
+                continue
+            # Same line rule as lib.sh load_pins: ^[A-Z_]+=[^[:space:]]*$
+            if not PIN_LINE.match(raw):
+                die_config(f"pins.env: malformed line: {raw.partition('=')[0].strip()}")
+            key, sep, val = raw.partition("=")
+            if key in PIN_KEYS:
+                if key in pins:
+                    die_config(f"pins.env: {key}: duplicate key")
+                pins[key] = val.strip()
     except OSError as e:
-        die_config(f"cannot read {pins}: {type(e).__name__}")
-    die_config("pins.env has no OPENAI_BASE_URL")
+        die_config(f"cannot read {path}: {type(e).__name__}")
+    for key in PIN_KEYS:
+        if key not in pins:
+            die_config(f"pins.env has no {key}")
+    url = pins["OPENAI_BASE_URL"]
+    if not (url.startswith("https://") and url.endswith("/v1")):
+        die_config("pins.env OPENAI_BASE_URL is not of the form https://host/v1")
+    if pins["OPENAI_IMAGE_API"] not in IMAGE_APIS:
+        die_config("pins.env OPENAI_IMAGE_API must be images|responses")
+    if not MODEL_ID.match(pins["OPENAI_IMAGE_HOST_MODEL"]):
+        die_config("pins.env OPENAI_IMAGE_HOST_MODEL is not a model id")
+    for key in ("OPENAI_EFFORT_IMAGE_HOST", "OPENAI_EFFORT_CHAT"):
+        if pins[key] not in EFFORTS:
+            die_config(f"pins.env {key} must be one of {'|'.join(EFFORTS)}")
+    return pins
 
 
 def env_int(name, default, lo, hi):
@@ -122,7 +157,8 @@ def env_int(name, default, lo, hi):
 
 
 def load_config():
-    pinned = pinned_upstream()
+    pins = read_pins()
+    pinned = pins["OPENAI_BASE_URL"][: -len("/v1")]
     upstream = os.environ.get("TAP_UPSTREAM") or pinned
     is_stub = bool(STUB_UPSTREAM.match(upstream))
     if upstream != pinned and not is_stub:
@@ -172,6 +208,10 @@ def load_config():
         "max_body": env_int("TAP_MAX_BODY_BYTES", 1048576, 1, 1 << 40),
         "max_response": env_int("TAP_MAX_RESPONSE_BYTES", 67108864, 1, 1 << 40),
         "quality": quality,
+        "image_api": pins["OPENAI_IMAGE_API"],
+        "image_host_model": pins["OPENAI_IMAGE_HOST_MODEL"],
+        "effort_image_host": pins["OPENAI_EFFORT_IMAGE_HOST"],
+        "effort_chat": pins["OPENAI_EFFORT_CHAT"],
         "nts_home": nts_home,
         "runs_dir": Path(runs_dir),
         "concurrency": env_int("TAP_MAX_CONCURRENCY", 4, 1, 1024),
@@ -241,7 +281,8 @@ class UpstreamError(Exception):
 
 
 def _empty_req_params():
-    return {"size": None, "quality": None, "moderation": None, "n": None}
+    return {"size": None, "quality": None, "moderation": None, "n": None,
+            "reasoning_effort": None}
 
 
 def _empty_resp_params():
@@ -352,7 +393,7 @@ class TapHandler(http.server.BaseHTTPRequestHandler):
                          _empty_resp_params(), None, status, code, t0, t_wall)
 
     def _finish(self, endpoint, model, req_params, resp_params, usage, status,
-                error_code, t0, t_wall):
+                error_code, t0, t_wall, via=None):
         latency = int((time.monotonic() - t0) * 1000)
         rec = {
             "ts": datetime.fromtimestamp(t_wall, timezone.utc)
@@ -367,6 +408,7 @@ class TapHandler(http.server.BaseHTTPRequestHandler):
             "request": req_params,
             "response": resp_params,
             "usage": usage,
+            "via": via,
         }
         write_jsonl(rec)
         shown = endpoint if endpoint else self.path.partition("?")[0]
@@ -396,6 +438,7 @@ class TapHandler(http.server.BaseHTTPRequestHandler):
             "usage": None,
             "status": 502,
             "error_code": "tap_internal",
+            "via": None,
         }
         try:
             self._forward(st)
@@ -425,7 +468,7 @@ class TapHandler(http.server.BaseHTTPRequestHandler):
             try:
                 self._finish(st["endpoint"], st["model"], st["request"],
                              st["response"], st["usage"], st["status"],
-                             st["error_code"], t0, t_wall)
+                             st["error_code"], t0, t_wall, st["via"])
             finally:
                 BUSY.release()
 
@@ -436,6 +479,12 @@ class TapHandler(http.server.BaseHTTPRequestHandler):
                 val = parsed.get(key)
                 if _scalar(val) is not None or val is None:
                     params[key] = val if _scalar(val) is not None else None
+            # Chat Completions carries reasoning_effort; Responses carries reasoning.effort.
+            effort = parsed.get("reasoning_effort")
+            reasoning = parsed.get("reasoning")
+            if isinstance(reasoning, dict) and effort is None and self.path.startswith("/v1/responses"):
+                effort = reasoning.get("effort")
+            params["reasoning_effort"] = effort if isinstance(effort, str) else None
         return params
 
     def _forward(self, st):
@@ -480,20 +529,74 @@ class TapHandler(http.server.BaseHTTPRequestHandler):
             st["model"] = parsed["model"]
         st["request"] = self._request_params(parsed)
 
+        mutated = False
+        is_json_post = (self.command == "POST" and "json" in req_ct
+                        and isinstance(parsed, dict))
         # Optional quality injection (CR-3: off unless TAP_IMAGE_QUALITY set).
         if (
             CFG["quality"]
             and endpoint == "/images/generations"
-            and "json" in req_ct
-            and isinstance(parsed, dict)
+            and is_json_post
             and "quality" not in parsed
         ):
             parsed["quality"] = CFG["quality"]
             st["request"]["quality"] = CFG["quality"]
+            mutated = True
+        # Reasoning effort on every chat/responses call that does not set it (01 DEC-11).
+        if is_json_post and endpoint == "/chat/completions" and "reasoning_effort" not in parsed:
+            parsed["reasoning_effort"] = CFG["effort_chat"]
+            mutated = True
+        elif is_json_post and endpoint == "/responses":
+            reasoning = parsed.get("reasoning")
+            if reasoning is None:
+                parsed["reasoning"] = {"effort": CFG["effort_chat"]}
+                mutated = True
+            elif isinstance(reasoning, dict) and "effort" not in reasoning:
+                reasoning["effort"] = CFG["effort_chat"]
+                mutated = True
+        if mutated:
+            st["request"] = self._request_params(parsed)
             body = json.dumps(parsed, ensure_ascii=False,
                               separators=(",", ":")).encode("utf-8")
 
         upstream_path = path + (("?" + query) if query else "")
+        # images/generations -> responses + image_generation tool (01 DEC-11).
+        translate = (CFG["image_api"] == "responses"
+                     and endpoint == "/images/generations"
+                     and self.command == "POST")
+        if translate:
+            prompt = parsed.get("prompt") if isinstance(parsed, dict) else None
+            model = parsed.get("model") if isinstance(parsed, dict) else None
+            if not (isinstance(prompt, str) and prompt and isinstance(model, str) and model):
+                self._tap_reply(400, "tap_image_request_invalid",
+                                "images/generations needs JSON model and prompt",
+                                endpoint=endpoint)
+                st["status"], st["error_code"] = 400, "tap_image_request_invalid"
+                return
+            if parsed.get("n", 1) not in (1, None):
+                self._tap_reply(400, "tap_image_n_unsupported",
+                                "only n=1 is supported via responses",
+                                endpoint=endpoint)
+                st["status"], st["error_code"] = 400, "tap_image_n_unsupported"
+                return
+            tool = {"type": "image_generation", "model": model}
+            for key in IMAGE_TOOL_KEYS:
+                if _scalar(parsed.get(key)) is not None:
+                    tool[key] = parsed[key]
+            body = json.dumps(
+                {
+                    "model": CFG["image_host_model"],
+                    "input": prompt,
+                    "reasoning": {"effort": CFG["effort_image_host"]},
+                    "tools": [tool],
+                    "tool_choice": {"type": "image_generation"},
+                },
+                ensure_ascii=False,
+                separators=(",", ":"),
+            ).encode("utf-8")
+            st["via"] = "responses"
+            st["request"]["reasoning_effort"] = CFG["effort_image_host"]
+            upstream_path = "/v1/responses"
         headers = self._forward_headers(len(body))
         try:
             status, reason, rheaders, rbody = self._upstream_call(
@@ -533,6 +636,46 @@ class TapHandler(http.server.BaseHTTPRequestHandler):
             out_headers.append((name, value))
 
         rparsed = None
+        if translate and status == 200:
+            try:
+                rparsed = json.loads(rbody)
+            except Exception as e:
+                print(f"response_json_parse {type(e).__name__}", file=sys.stderr)
+            item = None
+            if isinstance(rparsed, dict) and isinstance(rparsed.get("output"), list):
+                item = next(
+                    (o for o in rparsed["output"]
+                     if isinstance(o, dict) and o.get("type") == "image_generation_call"
+                     and o.get("status") == "completed"
+                     and isinstance(o.get("result"), str) and o["result"]),
+                    None,
+                )
+            if item is None:
+                self._tap_reply(502, "tap_image_missing",
+                                "responses reply has no completed image",
+                                endpoint=endpoint)
+                st["status"], st["error_code"] = 502, "tap_image_missing"
+                st["usage"] = numeric_leaves(rparsed.get("usage")) if isinstance(rparsed, dict) else None
+                return
+            created = rparsed.get("created_at")
+            mapped = {
+                "created": created if isinstance(created, int) else int(time.time()),
+                "data": [{"b64_json": item["result"]}],
+                "usage": rparsed.get("usage"),
+            }
+            for key in ("size", "quality", "output_format", "background"):
+                if _scalar(item.get(key)) is not None:
+                    mapped[key] = item[key]
+                    if key in st["response"]:
+                        st["response"][key] = item[key]
+            st["usage"] = numeric_leaves(rparsed.get("usage"))
+            rbody = json.dumps(mapped, separators=(",", ":")).encode("utf-8")
+            out_headers = [(n, v) for n, v in out_headers
+                           if n.lower() != "content-type"]
+            out_headers.append(("Content-Type", "application/json"))
+            self._respond(200, "OK", out_headers, rbody)
+            st["status"], st["error_code"] = 200, None
+            return
         if "json" in resp_ct and rbody:
             try:
                 rparsed = json.loads(rbody)
@@ -652,6 +795,10 @@ def main():
         "port": CFG["port"],
         "upstream": CFG["upstream"],
         "image_quality_injection": CFG["quality"],
+        "image_api": CFG["image_api"],
+        "image_host_model": CFG["image_host_model"],
+        "effort_image_host": CFG["effort_image_host"],
+        "effort_chat": CFG["effort_chat"],
         "timeout_s": CFG["timeout"],
         "pid": os.getpid(),
     }

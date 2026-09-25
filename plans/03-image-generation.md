@@ -25,7 +25,7 @@
 | A1 | `medium` quality is good enough | ⚠️ Compare low/medium/high side-by-side in M0 (03.3.2) |
 | G6 | MPT cannot choose image quality: its `openai_image` body is only `{model, prompt, n: 1, size}` (no `quality`, no `moderation`) ✅ (01 README §1 M4, MPT `material.py` @ `3d5f4e42`), so the API default `quality = auto` applies ✅ (O6). The DECISIONS §4 price "medium ~$0.013" is therefore not what M0 pays | [OPEN] CR-3 decision in §10 before 03.3.1 numbers feed pricing (12) |
 | G8 | MPT skips a blocked or failed image, uses the next term, loops clips and reports success; image count = `ceil(audio ÷ video_clip_duration)` (default clip 5 s); clip order is shuffled by default (`video_concat_mode = random`) ✅ (feature README I4–I13) | Relay report `images.v1` + outcome table D7; clip 10 s; sequential order (03 CR-10) |
-| G7 | Tier 1 allows **5 images/min** for `gpt-image-2.5-flare` ✅ (O8); MPT retries a 429 only 3× (waits 5 s and 15 s, ≈ 20 s in total; 03 CR-8) and then **skips the keyword silently** ✅ (M4) → a video can render with missing images and still "succeed" | Count skipped keywords per run (01.3.1 `image_failed_count`, `image_http_429_count`); a run with any skipped keyword is invalid; pacing by the relay token bucket (D5) and a tier increase request before M1 (owner O4) (01 F24, 03 CR-10) |
+| G7 | Tier 1 allows **5 images/min** for `gpt-image-2.5-flare` ✅ (O8 — superseded by `gpt-image-2`, 01 DEC-11; rate re-check [OPEN]); MPT retries a 429 only 3× (waits 5 s and 15 s, ≈ 20 s in total; 03 CR-8) and then **skips the keyword silently** ✅ (M4) → a video can render with missing images and still "succeed" | Count skipped keywords per run (01.3.1 `image_failed_count`, `image_http_429_count`); a run with any skipped keyword is invalid; pacing by the relay token bucket (D5) and a tier increase request before M1 (owner O4) (01 F24, 03 CR-10) |
 
 ## 3. Requirements
 
@@ -80,7 +80,7 @@
 
 ### 5.1 Config (MPT, per worker — ✅ keys)
 
-`video_source = "openai_image"`, `openai_image_base_url = "https://api.openai.com/v1"`, `openai_image_api_keys = [...]`, `openai_image_model = "gpt-image-2.5-flare"`, `openai_image_size = ""`, `openai_image_prompt_template` = **default** template (the per-series template is applied by the backend, see 5.2).
+`video_source = "openai_image"`, `openai_image_base_url` = the trial tap / node relay `/v1` (01 DEC-9 — not `api.openai.com`), `openai_image_api_keys = [...]`, `openai_image_model = "gpt-image-2"` (01 DEC-11; advisory on the relay, which serves `gpt-image-2-codex`), `openai_image_size = ""`, `openai_image_prompt_template` = **default** template (the per-series template is applied by the backend, see 5.2).
 
 `openai_image_api_keys` and `openai_image_model` are **node-managed** deploy config [DECISION]: the key comes from a separate OpenAI project limited to image models with its own hard budget (not the backend's text project), is not editable in the admin settings (listed there read-only as "node-managed, rotate via runbook"), and is rotated through the "suspected key leak" runbook one node at a time (11.3.2).
 
@@ -94,7 +94,7 @@ MPT's template is a **global** config key ✅, but `video_terms` is per request 
 
 ### 5.3 Cost guard
 
-Superseded by feature D8 (03 CR-10): worst case = `MaxTerms × (tokens_per_image_p95[aspect:quality] × $30/1M + 200 × $5/1M)` from `price_versions.rates.image`; actual cost per billed image = text/image-input/output tokens × their rates from the relay report. Credits (plan 12, S) reserve the worst case.
+Superseded by feature D8 (03 CR-10): worst case = `MaxTerms × (tokens_per_image_p95[aspect:quality] × $30/1M + 200 × $5/1M)` ⚠️ rates priced on `gpt-image-2.5-flare`, superseded — relay price for `gpt-image-2` [OPEN] (01 DEC-11); from `price_versions.rates.image`; actual cost per billed image = text/image-input/output tokens × their rates from the relay report. Credits (plan 12, S) reserve the worst case.
 
 ### 5.4 Error codes
 

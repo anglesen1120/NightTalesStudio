@@ -129,7 +129,7 @@ The adapter itself (code) is 11.3.5-T1; the image relay inside it is 03.4.3-T1; 
 | `pexels_api_keys`, `pixabay_api_keys` | `[]` | no stock sources |
 | `openai_image_base_url` | `"http://127.0.0.1:8091/v1"` | image relay (03 D5) |
 | `openai_image_api_keys` | `[]` | the relay holds the key (03 F09) |
-| `openai_image_model` | `"gpt-image-2.5-flare"` | DECISIONS §3 |
+| `openai_image_model` | `"gpt-image-2"` (was `gpt-image-2.5-flare`, superseded 01 DEC-11) | DECISIONS §3 |
 | `openai_image_size`, `openai_image_prompt_template`, `material_directory`, `endpoint` | `""` | 03 D4; C6 |
 | `twelvelabs_rerank_terms` | `false` | 03 I12 |
 | `llm_provider` / `openai_api_key` / `openai_base_url` | `"openai"` / `""` / `""` | C19: the node never calls an LLM; an accidental call fails without spending |
