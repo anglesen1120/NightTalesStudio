@@ -106,6 +106,7 @@ unset K_MPT K_STORY K_IMAGE K_PROXY
 
 # --no-tap additionally requires the rendered file to bypass the tap entirely.
 if [ "$NO_TAP" -eq 1 ]; then
+  [ "$OPENAI_IMAGE_API" = responses ] && log "WARN --no-tap: MPT image calls go straight to the relay's /images/generations, which the tap would translate (OPENAI_IMAGE_API=responses, 01 DEC-11); expect image failures"
   uv run --no-project --python 3.12 python - "$ROOT/config.toml" "$OPENAI_BASE_URL" <<'PY' \
     || die 2 "--no-tap: rendered config does not point at $OPENAI_BASE_URL"
 import sys, tomllib

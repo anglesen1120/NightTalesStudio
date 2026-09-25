@@ -20,7 +20,7 @@ pixabay_api_keys = []          # pin L88 — guard
 # images via usage tap D6 (pin L192-208)
 openai_image_base_url = "http://127.0.0.1:8002/v1"      # pin L192; empty → ValueError (M4) — guard
 openai_image_api_keys = ["${NTS_OPENAI_IMAGE_KEY}"]     # pin L195; project nts-trial-image (D7) — guard
-openai_image_model = "gpt-image-2.5-flare"              # pin L198; 01.2.4 story — guard
+openai_image_model = "gpt-image-2"                      # pin L198; 01 DEC-11 (tap translates to /responses) — guard
 openai_image_size = ""                                  # pin L204; "" = auto per aspect (landscape 1536x1024)
 # TEMPORARY neutral style until plan 03 delivers the style template (03 §5.2); {term} = MPT keyword
 openai_image_prompt_template = "Atmospheric cinematic illustration of {term}. Muted colours, soft low-key light, painterly detail, no text, no letters, no watermark, no logos."  # pin L208

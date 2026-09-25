@@ -30,7 +30,7 @@ Consumers of the numbers:
 | ✅ M3 | whisper runs inside the MPT process; logs `detected language: '<l>', probability: <p>` and `complete, elapsed: <s> s` | `subtitle_detected_language`; RAM attribution by window, not by process |
 | ✅ O6 | image `quality` default `auto`; response echoes resolved quality; `usage` = `input_tokens`, `input_tokens_details{text_tokens,image_tokens}`, `output_tokens`, `total_tokens`, optional `output_tokens_details`; **may be absent** | Tap copies `usage` as-is (numbers only); collector marks cost `n/a:usage-absent` if any successful image call lacks it |
 | ✅ O7 | Usage/Costs APIs need an Admin key; costs only 1-day buckets | Per-run numbers come from the tap (F02); dashboard used only for a next-day cross-check (`dashboard_cost_usd_check`) |
-| ✅ O8 | `gpt-image-2.5-flare`: text in $5, image in $8, image out $30 per 1M; Tier 1 = 5 images/min. `gpt-6-luna`: $0.10 in / $0.50 out per 1M; cached $0.01 (OpenAiControlsFacts O8) | `trial/prices.json`; 429s expected on image bursts → `image_http_429_count` |
+| ✅ O8 | `gpt-image-2.5-flare`: text in $5, image in $8, image out $30 per 1M; Tier 1 = 5 images/min. ⚠️ priced on `gpt-image-2.5-flare` (superseded by `gpt-image-2`, 01 DEC-11); relay price/rate [OPEN]. `gpt-6-luna`: $0.10 in / $0.50 out per 1M; cached $0.01 (OpenAiControlsFacts O8) | `trial/prices.json`; 429s expected on image bursts → `image_http_429_count` |
 | ✅ M1 | `openai_base_url`, `openai_image_base_url` are `[app]` keys | MPT points both at `http://127.0.0.1:8002/v1` (D6, 01.2.2-T2; confirmed with MptPlan) |
 | ✅ M8/M11 | config at MPT root; empty `api_key` = auth off | Collector hashes the rendered config with secret values redacted; never copies it |
 | ✅ E1 | `/Volumes/Project` unencrypted, ownership disabled | Media, script text and raw samples stay in `$NTS_HOME/runs/<id>/` (D1); tracked run files hold numbers only |
@@ -69,7 +69,7 @@ No database. Tracked files under `trial/` (D1), untracked under `$NTS_HOME` (D1)
 | `trial/runs/<run_id>/notes.md` | ✅ | operator | D11 conditions, anomalies, dashboard comparison |
 | `trial/runs/no-run/openai_usage.jsonl` | ❌ (git-ignored, agreed with 01.1.2-T1) | `usage_tap.py` | Calls made while no run is active |
 | `$NTS_HOME/current_run` | ❌ | `start_run.sh` writes, `finish_run.py` clears | One line: active `run_id` |
-| `$NTS_HOME/tap.json` | ❌ | `start-tap.sh` | `{"started_at", "port": 8002, "upstream": "<origin of OPENAI_BASE_URL>" (01 CR-15), "image_quality_injection": null\|"<q>", "timeout_s": 610}` — copied into `run.json.tap` |
+| `$NTS_HOME/tap.json` | ❌ | `start-tap.sh` | `{"started_at", "port": 8002, "upstream": "<origin of OPENAI_BASE_URL>" (01 CR-15), "image_quality_injection": null\|"<q>", "image_api": "responses" (01 DEC-11), "timeout_s": 610}` — copied into `run.json.tap` |
 | `$NTS_HOME/runs/<run_id>/rss_raw.csv`, `rss_sampler.pid`, `rss_sampler.log` | ❌ | `rss_sampler.sh` | 1 s samples |
 | `$NTS_HOME/runs/<run_id>/final-1.mp4`, `script.txt` | ❌ | `finish_run.py` (copies) | Media and story text (content, not tracked) |
 | `$NTS_HOME/logs/tap-<YYYYmmdd-HHMMSS>.log` | ❌ | `start-tap.sh` (tee) | One line per request: ts, method, endpoint, status, latency; no bodies/headers |
@@ -91,9 +91,9 @@ No database. Tracked files under `trial/` (D1), untracked under `$NTS_HOME` (D1)
     "path": "$NTS_HOME/src/mpt/config.toml",
     "sha256_redacted": "…", "redacted_keys": ["app.api_key", "app.openai_api_key", "app.openai_image_api_keys", "kokoro.api_key"],
     "template_sha256": "…",
-    "settings": { "openai_base_url": "http://127.0.0.1:8002/v1", "openai_image_base_url": "http://127.0.0.1:8002/v1", "openai_model_name": "gpt-6-luna", "openai_image_model": "gpt-image-2.5-flare", "openai_image_size": "", "whisper.model_size": "large-v3-turbo", "whisper.device": "cpu", "whisper.compute_type": "int8", "max_concurrent_tasks": 1, "log_level": "INFO" }
+    "settings": { "openai_base_url": "http://127.0.0.1:8002/v1", "openai_image_base_url": "http://127.0.0.1:8002/v1", "openai_model_name": "gpt-6-luna", "openai_image_model": "gpt-image-2", "openai_image_size": "", "whisper.model_size": "large-v3-turbo", "whisper.device": "cpu", "whisper.compute_type": "int8", "max_concurrent_tasks": 1, "log_level": "INFO" }
   },
-  "tap": { "port": 8002, "image_quality_injection": null, "timeout_s": 610 },
+  "tap": { "port": 8002, "image_quality_injection": null, "image_api": "responses", "timeout_s": 610 },
   "vieneu": { "VIENEU_PRECISION": "fp32", "VIENEU_MAX_STREAMS": "1" },
   "sampler": { "interval_s": 1, "roots": { "vieneu": 8000, "proxy": 8001, "mpt": 8080, "webui": 8501 } },
   "mpt_task_id": null,
@@ -127,13 +127,14 @@ Authorization: local operator only; all listeners on `127.0.0.1` (D4). Idempoten
 
 ## 5. API and events
 
-Usage tap HTTP surface (`127.0.0.1:8002`, D4/D6):
+Usage tap HTTP surface (`127.0.0.1:8002`, D4/D6; 01 DEC-11/CR-16: with `OPENAI_IMAGE_API=responses` the tap translates `/v1/images/generations` into `POST /v1/responses` with an `image_generation` tool (host `OPENAI_IMAGE_HOST_MODEL`, `reasoning.effort = OPENAI_EFFORT_IMAGE_HOST`), maps the completed `image_generation_call.result` back to `data[0].b64_json`, answers 502 `tap_image_missing` when a 200 has no image, rejects `n > 1` with 400 `tap_image_n_unsupported`, and injects `OPENAI_EFFORT_CHAT` into chat/responses bodies lacking an effort field; requested model/size/quality advisory on the relay — echo `gpt-image-2-codex`/`auto`, codex#28723 ✅):
 
 | Request | Behaviour | Status |
 |---|---|---|
 | `POST /v1/*`, `GET /v1/*` | Forward to `$OPENAI_BASE_URL/*` (01 CR-15) with body and headers (minus hop-by-hop), `Authorization` passed through, `Accept-Encoding: identity` | Upstream status/body unchanged |
 | Other methods | Not forwarded | 405 `{"error":{"type":"tap_error","code":"tap_method_not_allowed"}}` |
 | Path not under `/v1/` | Not forwarded | 404 `…"code":"tap_path_not_allowed"` |
+| Image call with `n > 1` (`responses` mode) | Not forwarded | 400 `tap_image_n_unsupported` |
 | `Content-Length` > `TAP_MAX_BODY_BYTES` (1 MiB) or chunked request | Not forwarded | 413 `tap_body_too_large` / 411 `tap_length_required` |
 | Upstream connect/TLS/timeout error | Logged | 502 `tap_upstream_connect` / `tap_upstream_tls` / `tap_upstream_timeout` |
 | Upstream response > `TAP_MAX_RESPONSE_BYTES` (64 MiB) | Logged | 502 `tap_upstream_too_large` |
@@ -141,7 +142,7 @@ Usage tap HTTP surface (`127.0.0.1:8002`, D4/D6):
 JSONL line (D6 fields exactly; example, synthetic numbers):
 
 ```json
-{"ts":"2026-09-25T03:31:02.114Z","run_id":"20260925-1030-vi-landscape-01","endpoint":"/images/generations","model":"gpt-image-2.5-flare","http_status":200,"error_code":null,"latency_ms":41230,"request":{"size":"1536x1024","quality":null,"moderation":null,"n":1},"response":{"quality":"medium","size":"1536x1024"},"usage":{"input_tokens":61,"input_tokens_details":{"text_tokens":61,"image_tokens":0},"output_tokens":1056,"total_tokens":1117}}
+{"ts":"2026-09-25T03:31:02.114Z","run_id":"20260925-1030-vi-landscape-01","endpoint":"/images/generations","model":"gpt-image-2","http_status":200,"error_code":null,"latency_ms":41230,"request":{"size":"1536x1024","quality":null,"moderation":null,"n":1,"reasoning_effort":"low"},"via":"responses","response":{"quality":"medium","size":"1536x1024"},"usage":{"input_tokens":61,"input_tokens_details":{"text_tokens":61,"image_tokens":0},"output_tokens":1056,"total_tokens":1117}}
 ```
 
 CLI contracts (D9 exit codes 0/1/2; `--help` on all): see §4 and task files. `start_run.sh` args agreed with MptPlan (01.2.2-T6). No events/outbox.
@@ -168,7 +169,7 @@ N/A — CLI and files only; no WebUI changes.
 | Tap sees API keys in transit | Keys pass through in the `Authorization` header only; the tap holds no key, never stores or logs headers; exceptions logged as type name only (no `repr` of request); no `set -x` in `start-tap.sh` |
 | Tap as an open proxy / SSRF | Bound to `127.0.0.1` only; upstream fixed to `${OPENAI_BASE_URL%/v1}` from `pins.env` (today `https://api.aixingialaire.shop`, 01 CR-15); `TAP_UPSTREAM` override accepted only for `http://127.0.0.1:<port>` (tests); only `/v1/` paths; no `CONNECT`; TLS verified with `ssl.create_default_context()` and **no** option to disable it |
 | Local process uses the tap | It must bring its own key; the tap adds no privilege [INFERENCE]; every call is logged to the active run |
-| Prompts/content leak into git | JSONL keeps only D6 fields; request parsing extracts `model, size, quality, moderation, n`; response parsing extracts `quality, size, usage` (numeric leaves only) and `error.code`; no prompt, messages, b64, URLs |
+| Prompts/content leak into git | JSONL keeps only D6 fields; request parsing extracts `model, size, quality, moderation, n, reasoning_effort`; response parsing extracts `quality, size, usage` (numeric leaves only) and `error.code`; no prompt, messages, b64, URLs |
 | Secrets in run manifest | `run_manifest.py` redacts values of keys matching `(^|_)(api_key|api_keys|key|secret|token|password)$` before hashing; stores key names only; config itself is never copied |
 | Story text / media on the unencrypted USB volume (E1) | Script text and video copies go to `$NTS_HOME/runs/<id>/` (FileVault disk); CSV holds the owner-entered `topic` only — owner keeps topics free of personal data (true-crime names) |
 | User name / paths in tracked files | Paths written with literal `$NTS_HOME`; `ffprobe.json` filename reduced to basename; `env` block contains no paths (BaseTooling contract) |
@@ -183,7 +184,7 @@ N/A — CLI and files only; no WebUI changes.
 | T-P2 | unit | Failure path: `task failed, task_id: X, stage: subtitle` → `run_status = failed`, later-stage columns `n/a:run-failed-at-subtitle` | fixture `mpt-api-failed.log` |
 | T-P3 | unit | Other task's lines before `started_at` and a second task after end are ignored; wrong task id → exit 1 | fixture |
 | T-P4 | unit | Image counts: 200s, 429s, `moderation_blocked`, `openai image generation failed` lines; usage absent on 1 of N → `image_cost_usd = n/a:usage-absent`, `image_count` still numeric | `fixtures/openai_usage-sample.jsonl` |
-| T-P5 | unit | Cost formulas vs hand-computed values (6 decimals), snapshot model name `gpt-image-2.5-flare-2026-09-08` matched by prefix; unknown model → `n/a:no-price` | `fixtures/prices-test.json` |
+| T-P5 | unit | Cost formulas vs hand-computed values (6 decimals), snapshot model name `gpt-image-2-2026-09-08` matched by prefix (the flare-era snapshot name superseded, 01 DEC-11); unknown model → `n/a:no-price` | `fixtures/prices-test.json` |
 | T-P6 | unit | Word count: vi `"Đêm ấy, trời mưa… rất to!"` → 6; en `"It's late—very late."` → 4 (`It's` one token, em dash splits); `"— 1990 —"` → 1 (digits count, dash-only tokens dropped); WPM = words / (seconds/60) | inline cases |
 | T-P7 | unit | Stage RAM attribution: window boundaries inclusive of start, exclusive of end; window with 0 samples → `n/a:no-samples-in-window` | `fixtures/rss_raw-sample.csv` |
 | T-P8 | unit | Row validation: blank cell, bad n/a reason, header drift → exit 1, CSV unchanged (byte-compare) | temp dir |

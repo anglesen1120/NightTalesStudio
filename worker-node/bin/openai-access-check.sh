@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 # openai-access-check.sh — direct access tests for the two OpenAI(-compatible) keys (01.2.4-T3).
 # Calls go to the pinned OPENAI_BASE_URL (pins.env, 01 DEC-9/CR-15), never through the usage tap.
-# Denial checks C2/C4/C6/C7 are recorded but not failed: the relay has no per-key allow-list
-# (owner, 01 DEC-10). The image model is tried as gpt-image-2.5-flare first and falls back to
-# IMAGE_FALLBACK_MODEL only on a model-not-available 4xx (owner, DEC-10).
+# Denial checks C2/C4/C6/C7 are recorded but not failed: the relay scopes per group, not per
+# key/model (owner, 01 DEC-10). C3 is one paid call for gpt-image-2 (01 DEC-11): with
+# OPENAI_IMAGE_API=responses it goes to /responses with the image_generation tool on
+# OPENAI_IMAGE_HOST_MODEL (the relay's /images/generations is broken), else to /images/generations.
+# Every chat call sends reasoning_effort = OPENAI_EFFORT_CHAT (pins.env, 01 DEC-11).
 set -euo pipefail
 case "$-" in *x*) echo "openai-access-check.sh: refusing to run with xtrace (keys would be traced)" >&2; exit 2 ;; esac
 
@@ -11,8 +13,7 @@ case "$-" in *x*) echo "openai-access-check.sh: refusing to run with xtrace (key
 . "$(dirname "$0")/lib.sh"
 
 STORY_MODEL="gpt-6-luna"
-IMAGE_MODEL="gpt-image-2.5-flare"
-IMAGE_FALLBACK_MODEL="gpt-image-2"
+IMAGE_MODEL="gpt-image-2"
 DENIED_STORY_MODEL="gpt-6-astra"
 
 usage() {
@@ -69,8 +70,14 @@ call() {
   esac
 }
 
-chat_body() { printf '{"model":"%s","messages":[{"role":"user","content":"Reply with OK."}],"max_completion_tokens":16}' "$1"; }
-img_body() { printf '{"model":"%s","prompt":"A foggy empty village road at dusk, illustration","n":1,"size":"1024x1024","quality":"low"}' "$1"; }
+IMG_PROMPT="A foggy empty village road at dusk, illustration"
+chat_body() { printf '{"model":"%s","messages":[{"role":"user","content":"Reply with OK."}],"max_completion_tokens":16,"reasoning_effort":"%s"}' "$1" "$OPENAI_EFFORT_CHAT"; }
+img_body() { printf '{"model":"%s","prompt":"%s","n":1,"size":"1024x1024","quality":"low"}' "$1" "$IMG_PROMPT"; }
+# Same shape the usage tap sends when it translates images/generations (01 DEC-11).
+img_resp_body() {
+  printf '{"model":"%s","input":"%s","reasoning":{"effort":"%s"},"tools":[{"type":"image_generation","model":"%s","size":"1024x1024","quality":"low"}],"tool_choice":{"type":"image_generation"}}' \
+    "$OPENAI_IMAGE_HOST_MODEL" "$IMG_PROMPT" "$OPENAI_EFFORT_IMAGE_HOST" "$1"
+}
 
 chat_body "$STORY_MODEL" >"$OUT/chat.req.json"
 chat_body "$DENIED_STORY_MODEL" >"$OUT/C7.req.json"
@@ -84,21 +91,14 @@ if [ "$ONLY" != image ]; then
   call C6 nts.openai.story GET /files; IDS+=(C6)
   call C7 nts.openai.story POST /chat/completions "$OUT/C7.req.json"; IDS+=(C7)
 fi
-C3_MODEL=""
 if [ "$ONLY" != story ]; then
   call C0i nts.openai.image GET /models; IDS+=(C0i)
   if [ "$NO_IMG" -eq 0 ]; then
-    C3_MODEL="$IMAGE_MODEL"
-    api nts.openai.image C3 POST /images/generations "$OUT/img.req.json"   # paid: no automatic retry
-    st="$(cat "$OUT/C3.status")"
-    # Fallback on "model not available": a 4xx naming the model, or the relay's 503
-    # "No available compatible accounts" (no upstream account serves that model; seen 2026-09-25).
-    if { [ "${st#4}" != "$st" ] && grep -qiE 'model|not (found|supported|available)' "$OUT/C3.body"; } \
-       || { [ "$st" = 503 ] && grep -qi 'no available compatible accounts' "$OUT/C3.body"; }; then
-      mv "$OUT/C3.body" "$OUT/C3-flare.body"; mv "$OUT/C3.status" "$OUT/C3-flare.status"
-      C3_MODEL="$IMAGE_FALLBACK_MODEL"
-      img_body "$IMAGE_FALLBACK_MODEL" >"$OUT/img-fallback.req.json"
-      api nts.openai.image C3 POST /images/generations "$OUT/img-fallback.req.json"
+    if [ "$OPENAI_IMAGE_API" = responses ]; then
+      img_resp_body "$IMAGE_MODEL" >"$OUT/C3.req.json"
+      api nts.openai.image C3 POST /responses "$OUT/C3.req.json"            # paid: no automatic retry
+    else
+      api nts.openai.image C3 POST /images/generations "$OUT/img.req.json"  # paid: no automatic retry
     fi
     IDS+=(C3)
   fi
@@ -106,10 +106,10 @@ if [ "$ONLY" != story ]; then
 fi
 
 REC="$NTS_REPO_ROOT/trial/baselines/openai-access-mac-$(date -u +%Y%m%d).json"
-uv run --no-project --python 3.12 python - "$OUT" "$REC" "$OPENAI_BASE_URL" "$C3_MODEL" "$IMAGE_MODEL" "${IDS[@]}" <<'PY'
+uv run --no-project --python 3.12 python - "$OUT" "$REC" "$OPENAI_BASE_URL" "$IMAGE_MODEL" "$OPENAI_IMAGE_API" "$OPENAI_EFFORT_CHAT" "$OPENAI_EFFORT_IMAGE_HOST" "${IDS[@]}" <<'PY'
 import base64, json, os, sys
-out, rec, base, c3_model, flare = sys.argv[1:6]
-ids = sys.argv[6:]
+out, rec, base, c3_model, image_api, effort_chat, effort_img = sys.argv[1:8]
+ids = sys.argv[8:]
 DENY = {"C2", "C4", "C6", "C7"}   # recorded only: relay scopes per group, not per key/model (01 DEC-10)
 LABEL = {"C0s": "story models", "C0i": "image models", "C1": "story chat", "C2": "story images",
          "C3": "image images", "C4": "image chat", "C6": "story files", "C7": "story astra"}
@@ -132,6 +132,8 @@ for i in ids:
     if isinstance(body, dict) and "usage" in body:
         c["usage"] = body["usage"]
     ok2 = st == "200"
+    if i in ("C1", "C4", "C7"):
+        c["reasoning_effort"] = effort_chat
     if i in DENY:
         c["pass"] = True
         c["note"] = ("denied" if st.startswith("4") else
@@ -145,25 +147,31 @@ for i in ids:
             c["model_echoed"] = body.get("model")
     elif i == "C3":
         c["model_requested"] = c3_model
-        if c3_model != flare:
-            fb = os.path.join(out, "C3-flare.status")
-            try:
-                fl = json.load(open(os.path.join(out, "C3-flare.body"), encoding="utf-8"))
-            except Exception:
-                fl = {}
-            if not isinstance(fl, dict):
-                fl = {}
-            c["flare_attempt"] = {"status": int(open(fb).read().strip()),
-                                  "error": {k: (str(v)[:200] if (v := (fl.get("error") or {}).get(k)) is not None else None) for k in ("code", "type", "message")}}
-        data = body.get("data") if isinstance(body, dict) else None
-        png = bool(data and data[0].get("b64_json"))
+        c["api"] = image_api
+        if image_api == "responses":
+            c["reasoning_effort"] = effort_img
+            items = body.get("output") if isinstance(body, dict) else None
+            item = next((o for o in (items or []) if isinstance(o, dict)
+                         and o.get("type") == "image_generation_call" and o.get("result")), None)
+            b64 = item.get("result") if item else None
+            meta = item or {}
+            if item:
+                item.pop("result", None)
+                item.pop("revised_prompt", None)
+        else:
+            data = body.get("data") if isinstance(body, dict) else None
+            entry = data[0] if isinstance(data, list) and data and isinstance(data[0], dict) else {}
+            b64 = entry.get("b64_json")
+            meta = body if isinstance(body, dict) else {}
+            if b64:
+                body.pop("data", None)
+        png = bool(b64)
         if png:
-            open(os.path.join(out, "C3.png"), "wb").write(base64.b64decode(data[0]["b64_json"]))
-            body.pop("data", None)
+            open(os.path.join(out, "C3.png"), "wb").write(base64.b64decode(b64))
             json.dump(body, open(os.path.join(out, "C3.body"), "w"))
         for k in ("quality", "size", "output_format"):
-            if isinstance(body, dict) and k in body:
-                c[k] = body[k]
+            if k in meta:
+                c[k] = meta[k]
         if "usage" not in c:
             c["usage"] = "n/a:absent"
         u = c["usage"] if isinstance(c["usage"], dict) else None

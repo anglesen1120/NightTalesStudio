@@ -29,7 +29,7 @@
 | Q2 | Rates: text in $5, image in $8, image out $30 per 1M; Tier 1 = 5 images/min | O8 ✅ |
 | Q3 | Sheet schema v2 columns: `image_count`, `moderation_blocked_count`, `image_http_429_count`, `image_failed_count`, `image_tokens_per_image_avg`, `image_cost_per_image_usd`; one aspect per run | 01.3.1-T1 ✅ (P2) |
 | Q4 | Run ids `YYYYMMDD-HHMM-<vi|en>-<landscape|portrait>-<nn>`; the tap takes the run id from `$NTS_HOME/current_run` | 01 README D10, D6 ✅ |
-| Q5 | Image project `nts-trial-image`: allow-list `gpt-image-2.5-flare`, hard limit **$25**; key in Keychain `nts.openai.image` | 01 README D7, D3 ✅ |
+| Q5 | Image project `nts-trial-image`: allow-list `gpt-image-2` (`gpt-image-2.5-flare` superseded, 01 DEC-11), hard limit **$25**; key in Keychain `nts.openai.image` | 01 README D7, D3 ✅ |
 | Q6 | DECISIONS §4 floor prices at 1024²: low ≈ $0.006, medium ≈ $0.013, high ≈ $0.053 → ≈ 200 / 433 / 1,767 output tokens [INFERENCE from $30/1M] | DECISIONS §4 ✅ / [INFERENCE] |
 | Q7 | 05.5.2 renders one 5-min vi and one 5-min en ghost video (landscape) | 05 §4 05.5.2 ✅ |
 
