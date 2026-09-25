@@ -52,7 +52,7 @@ No new persisted domain entities in this folder (no database, no ORM). Data arti
 - **UC3 — Unknown or malformed voice/body.** Proxy rejects before any upstream call, per D3 order; MPT logs the D6 code and fails after 3 immediate attempts (M2, M8). (04.1.2-T2.)
 - **UC4 — VieNeu momentarily busy (429).** Proxy retries upstream itself inside `ADMISSION_WAIT_S` so MPT's first attempt usually succeeds; if the budget runs out, 429 `upstream_busy`/`proxy_busy` is returned once. (D5, 04.1.2-T2.)
 - **UC5 — Upstream or ffmpeg dies mid-stream (post-commit).** Connection is aborted without a final chunk; MPT's `requests` raises `ChunkedEncodingError` and retries (X2, F02); proxy logs `status: 502` with the specific `error_code`. (D4, 04.1.2-T1/T2.)
-- **UC6 — MPT gives up and disconnects.** Proxy cancels all three pipeline tasks, kills ffmpeg, closes the upstream connection, logs `status: 499` `client_disconnected`; 04.1.1-T1 measures how fast VieNeu's own slot frees so D5's 60 s admission budget is sized correctly (F17). (04.1.1-T1, D4.)
+- **UC6 — MPT gives up and disconnects.** Proxy cancels the writer and stderr tasks, kills ffmpeg, and **drains** the upstream stream to its end while holding its slot (README §10 T15: VieNeu leaks its slot for 82–>400 s after a disconnect, `SPIKE.md` (d)); logs `status: 499` `client_disconnected`. (04.1.1-T1, D4.)
 - **UC7 — Zero speakable audio.** VieNeu returns 200 with no PCM samples (e.g. whitespace-only text slips through, or all content stripped upstream); proxy must not commit a 200 with an empty body — 502 `upstream_empty_audio` (F11). (D4, 04.1.2-T1.)
 - **UC8 — Baseline / regression proof.** 04.1.2-T3 exercises UC1/UC2 through MPT's actual client code (not a synthetic `requests` script) and publishes the CR-2 pass/fail numbers that supersede the informational 01.2.1-T4 gate.
 
@@ -118,7 +118,7 @@ Equals README §9 row "04.1.1 + 04.1.2 speech endpoint" = 2.5 d (high-level 1.75
 - [RULED — README §10 T1] Module name `reqlog.py`; README D1 updated.
 - [RULED — README §10 T2] `ffmpeg_stderr_tail` and `warnings: ["pcm_odd_tail"]` are failure-only D7 keys; README D7 updated.
 - `UpstreamSpeech.error_message()` (on the object yielded by `speech_stream`, not a new client method) is needed for `upstream_rejected` message relay (D6). [DECISION]
-- F17 outcome (slot release delay) may exceed what D5's 60 s budget absorbs; if 04.1.1-T1 measures > 30 s, TL decides whether to raise `ADMISSION_WAIT_S` (max 80, D13) before 04.1.2-T2. [RULED — README §10 T12]
+- F17 outcome (slot release delay): measured 82–>400 s (`SPIKE.md` (d)) → drain instead of disconnect, `ADMISSION_WAIT_S` = 80. [RULED — README §10 T12, T15]
 
 ## 11. Rollout
 
