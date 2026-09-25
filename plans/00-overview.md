@@ -392,6 +392,7 @@ any non-terminal → failed            (unrecoverable only, e.g. account suspend
 **Design first (owner rule, 2026-09-25):** every web/UI task or feature has an approved UI design before implementation starts — wireframes + hi-fi mockups (states loading/empty/error/success, breakpoints 360/768/1280, vi + en text, dark/light, focus order and a11y notes, built from the 10 D11 design-system tokens/components), linked from the feature `plan.md` §6 UI and approved by the owner. Each UI feature folder carries a design task `<story>-T0 — UI design` (Area `UX`) that every implementation task in the folder depends on.
 
 **Definition of Done (story):**
+- **Per-task QA and review before push (owner rule, 2026-09-25):** every task, one at a time, ends with (1) a separate QA agent that re-reads the plan, feature `plan.md` and task file and runs the acceptance checks plus negative/edge cases, then (2) a code review by a reviewer agent; QA runs before review, never in parallel. Findings are fixed and re-tested and both passes are recorded in `STATUS.md` **before** the commit is pushed. A task is not `done` without both.
 - Code reviewed; builds in CI; unit tests for domain rules and use cases; integration test for each new endpoint (Testcontainers PostgreSQL).
 - Angular: component tests for logic-heavy components; strings in both vi and en; accessible (keyboard, labels, contrast).
 - ProblemDetails errors mapped to user-friendly messages in the UI.
