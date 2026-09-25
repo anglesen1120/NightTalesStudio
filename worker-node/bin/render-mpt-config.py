@@ -15,6 +15,7 @@ import difflib
 import json
 import os
 import re
+from pathlib import Path
 import secrets
 import stat
 import string
@@ -31,7 +32,18 @@ REQUIRED_VARS = (
 VALUE_RE = re.compile(r"^[A-Za-z0-9._-]{16,512}$")
 SECRET_NAME_RE = re.compile(r"(^|_)(api_key|api_keys|key|keys|token|secret|password)$")
 TAP_URL = "http://127.0.0.1:8002/v1"
-DIRECT_URL = "https://api.openai.com/v1"
+
+
+def _pinned_base_url():
+    """OPENAI_BASE_URL from worker-node/pins.env (01 DEC-9); the only place the upstream lives."""
+    pins = Path(__file__).resolve().parents[1] / "pins.env"
+    for line in pins.read_text(encoding="utf-8").splitlines():
+        if line.startswith("OPENAI_BASE_URL="):
+            return line.split("=", 1)[1].strip()
+    raise SystemExit("render-mpt-config.py: OPENAI_BASE_URL missing in worker-node/pins.env")
+
+
+DIRECT_URL = _pinned_base_url()
 
 
 def eprint(*a):
@@ -401,7 +413,7 @@ def main():
     p.add_argument(
         "--allow-direct-openai",
         action="store_true",
-        help="also accept https://api.openai.com/v1 base URLs (used by start-mpt-api.sh --no-tap)",
+        help="also accept the pinned OPENAI_BASE_URL (pins.env) as base URL (used by start-mpt-api.sh --no-tap)",
     )
     args = p.parse_args()
 

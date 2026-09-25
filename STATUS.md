@@ -8,7 +8,7 @@ Legend: `done` (acceptance checks run and passed) · `doing` · `blocked (<who>)
 
 - **Last session:** 2026-09-25, day 2 of plan 01 (branch `feature/01-env-setup-day2` → PR into `develop`). Day 1 merged in PR #1. `smoke.sh` exits 2 until MPT can start (OpenAI keys + tap).
 - **Next actions:**
-  1. Owner: **01.2.4-T1** (OpenAI dashboard checklist below). This is an external wait, so start it first.
+  1. Owner: store the two **relay** keys (DEC-9: `OPENAI_BASE_URL=https://api.aixingialaire.shop/v1` in `pins.env`): `worker-node/bin/secrets.sh set nts.openai.story`, then `… set nts.openai.image`. Set a spending cap in the relay account. The OpenAI-dashboard checklist below (01.2.4-T1) no longer applies (CR-15).
   2. ~~Owner: pick ownership proof~~ → decided 2026-09-25: signed per-render hash manifest (DEC-8, CR-14; designed in plan 05/06).
   3. After 01.2.4-T1: 01.2.4-T2/T3 (projects, keys, access checks), then 01.3.1-T2 (usage tap). That unblocks the live checks in 01.2.2-T4/T5 and the MPT offline proof in 01.2.3-T1.
   4. Day 3: 01.3.1-T3 collector. After plan 04 proxy: 01.2.2-T6, 01.3.1-T4.

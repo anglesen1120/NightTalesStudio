@@ -17,8 +17,8 @@ Commands:
   --help                   This text.
 
 Services (D3, account $USER):
-  nts.openai.story    OpenAI key, project nts-trial-story   (owner: set)
-  nts.openai.image    OpenAI key, project nts-trial-image   (owner: set)
+  nts.openai.story    relay key (DEC-9), story calls        (owner: set)
+  nts.openai.image    relay key (DEC-9), image calls        (owner: set)
   nts.mpt.api_key     MPT app.api_key                       (init-local)
   nts.vieneu.api_key  VIENEU_API_KEY                        (init-local)
   nts.proxy.api_key   PROXY_API_KEY = MPT [kokoro] api_key  (init-local)
@@ -70,8 +70,8 @@ cmd_set() {
   [ -t 0 ] || die 2 "set needs an interactive terminal (the key is typed at the prompt)"
   _require_trusted
   case "$svc" in
-    nts.openai.story) echo "Paste the OpenAI key of project nts-trial-story at the prompt." >&2 ;;
-    nts.openai.image) echo "Paste the OpenAI key of project nts-trial-image at the prompt." >&2 ;;
+    nts.openai.story) echo "Paste the relay key for story calls (OPENAI_BASE_URL in pins.env) at the prompt." >&2 ;;
+    nts.openai.image) echo "Paste the relay key for image calls (OPENAI_BASE_URL in pins.env) at the prompt." >&2 ;;
     *) echo "Enter the value for $svc at the prompt." >&2 ;;
   esac
   security add-generic-password -U -a "$USER" -s "$svc" -l "$svc" -T /usr/bin/security -w

@@ -11,7 +11,7 @@ usage() {
 Usage: worker-node/bin/start-mpt-api.sh [--template PATH] [--no-tap] [--help]
   --template PATH   test hook: passed through to render-mpt-config.py --template
   --no-tap          test hook, never in measured runs: skip the 8002 tap check and require
-                    the rendered base URLs to be https://api.openai.com/v1
+                    the rendered base URLs to be OPENAI_BASE_URL (pins.env)
 Exit codes: 0 ok · 1 check failed · 2 usage/environment error (D9).
 Secrets: the four Keychain values exist only in the renderer's environment and in
 config.toml; MPT gets no secret env var. Never echoes a value.
@@ -60,11 +60,11 @@ if [ "$NO_TAP" -eq 0 ]; then
     || die 2 "tap not verified: port 8002 listener is not usage_tap.py"
   TAP_JSON="$NTS_HOME/tap.json"
   [ -f "$TAP_JSON" ] || die 2 "tap not verified: $TAP_JSON missing (usage_tap.py writes it)"
-  uv run --no-project --python 3.12 python - "$TAP_JSON" "$tap_pid" <<'PY' \
+  uv run --no-project --python 3.12 python - "$TAP_JSON" "$tap_pid" "${OPENAI_BASE_URL%/v1}" <<'PY' \
     || die 2 "tap not verified: tap.json upstream or pid mismatch"
 import json, sys
 d = json.load(open(sys.argv[1], encoding="utf-8"))
-assert d.get("upstream") == "https://api.openai.com", "upstream"
+assert d.get("upstream") == sys.argv[3], "upstream"   # origin of OPENAI_BASE_URL (01 DEC-9)
 assert str(d.get("pid")) == sys.argv[2], "pid"
 PY
 fi
@@ -106,13 +106,13 @@ unset K_MPT K_STORY K_IMAGE K_PROXY
 
 # --no-tap additionally requires the rendered file to bypass the tap entirely.
 if [ "$NO_TAP" -eq 1 ]; then
-  uv run --no-project --python 3.12 python - "$ROOT/config.toml" <<'PY' \
-    || die 2 "--no-tap: rendered config does not point at https://api.openai.com/v1"
+  uv run --no-project --python 3.12 python - "$ROOT/config.toml" "$OPENAI_BASE_URL" <<'PY' \
+    || die 2 "--no-tap: rendered config does not point at $OPENAI_BASE_URL"
 import sys, tomllib
 cfg = tomllib.loads(open(sys.argv[1], encoding="utf-8").read())
 app = cfg["app"]
-assert app["openai_base_url"] == "https://api.openai.com/v1", "openai_base_url"
-assert app["openai_image_base_url"] == "https://api.openai.com/v1", "openai_image_base_url"
+assert app["openai_base_url"] == sys.argv[2], "openai_base_url"
+assert app["openai_image_base_url"] == sys.argv[2], "openai_image_base_url"
 PY
 fi
 

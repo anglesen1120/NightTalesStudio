@@ -70,7 +70,7 @@ Versions on 2026-09-25: Homebrew 7.0.6, git 2.49.0, uv 0.12.18, ffmpeg 9.0.2 (`l
 
 ## Pins
 
-`worker-node/pins.env` is the only place versions live (D2). `lib.sh` `load_pins` accepts exactly 13 keys, 40-hex SHAs and `3.x` Pythons. Resolved 2026-09-25 (01.1.1-T2):
+`worker-node/pins.env` is the only place versions live (D2). `lib.sh` `load_pins` accepts exactly 14 keys (`OPENAI_BASE_URL` must be `https://<host>/v1`, 01 DEC-9), 40-hex SHAs and `3.x` Pythons. Resolved 2026-09-25 (01.1.1-T2):
 
 | Repo | Pin | `.python-version` | `requires-python` | `uv.lock` | Version | Note |
 |---|---|---|---|---|---|---|
