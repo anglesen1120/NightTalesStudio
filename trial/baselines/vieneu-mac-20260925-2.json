@@ -1,0 +1,225 @@
+{
+  "schema_version": 1,
+  "component": "vieneu",
+  "tag": "watermark-extra",
+  "date": "2026-09-25T06:50:58Z",
+  "host": {
+    "model": "Mac",
+    "macos": "27.0",
+    "cpu_count": 10,
+    "ram_gb": 16
+  },
+  "pins": {
+    "vieneu_commit": "c1390abbdb2eedcdf58eafb546966c06ce27af71",
+    "model_repo": "pnnbao-ump/VieNeu-TTS-v3-Turbo",
+    "model_revision": "61b85e3d937fbbacb387714180e8182823512523",
+    "codec_repo": "OpenMOSS-Team/MOSS-Audio-Tokenizer-Nano-ONNX",
+    "codec_revision": "ceff0d0749bfb3fa2d61149794ec6feef0d1e1ae"
+  },
+  "server": {
+    "backend": "onnx",
+    "precision": "fp32",
+    "max_streams": 1,
+    "health": {
+      "before": {
+        "status": "ok",
+        "backend": "onnx",
+        "max_streams": 1,
+        "active": 0,
+        "waiting": 0,
+        "sample_rate": 48000
+      },
+      "after": {
+        "status": "ok",
+        "backend": "onnx",
+        "max_streams": 1,
+        "active": 0,
+        "waiting": 0,
+        "sample_rate": 48000
+      }
+    }
+  },
+  "watermark": {
+    "env": "1",
+    "extra_installed": true,
+    "effective": "off",
+    "evidence": "class B with --extra watermark: server log 'Watermarker init failed — output audio will NOT be watermarked: module perth has no PerthImplicitWatermarker … torch/torchaudio dependencies are missing' (src/vieneu/base.py:134-144); the extra adds resemble-perth (+36 MB venv) but no torch at this lock",
+    "decision": "DEC-7 (owner, 2026-09-25): keep the watermark as an AI-provenance mark; required in production (plan 11 node: uv sync --frozen --no-dev --extra cuda --extra watermark, fail closed unless 'Audio watermarking initialized (Perth)' is logged); the Mac M0 trial runs without it (audio never published). Perth carries no owner payload, so ownership proof is [OPEN] (01 CR-13)"
+  },
+  "cold_start_s": [
+    4.0,
+    2.0
+  ],
+  "idle_rss_mb": 662.0625,
+  "runs": [
+    {
+      "fixture": "tts-vi-1000.txt",
+      "lang": "vi",
+      "chars": 1004,
+      "units": 232,
+      "unit_kind": "syllables",
+      "voice": "Hải Đăng",
+      "repeat": 0,
+      "http_status": 200,
+      "bytes": 5082284,
+      "wall_s": 11.05795,
+      "ttfb_s": 0.00257,
+      "audio_s": 52.94,
+      "audio_s_source": "decoded",
+      "ffprobe_duration_s": 52.94,
+      "rtf": 0.20887703060068002,
+      "units_per_min": 262.9391764261428,
+      "peak_rss_mb": 1386.796875
+    },
+    {
+      "fixture": "tts-vi-1000.txt",
+      "lang": "vi",
+      "chars": 1004,
+      "units": 232,
+      "unit_kind": "syllables",
+      "voice": "Hải Đăng",
+      "repeat": 1,
+      "http_status": 200,
+      "bytes": 5069804,
+      "wall_s": 11.241026,
+      "ttfb_s": 0.00121,
+      "audio_s": 52.81,
+      "audio_s_source": "decoded",
+      "ffprobe_duration_s": 52.81,
+      "rtf": 0.21285790569967808,
+      "units_per_min": 263.5864419617497,
+      "peak_rss_mb": 1417.953125
+    },
+    {
+      "fixture": "tts-en-1000.txt",
+      "lang": "en",
+      "chars": 984,
+      "units": 180,
+      "unit_kind": "words",
+      "voice": "Hải Đăng",
+      "repeat": 1,
+      "http_status": 200,
+      "bytes": 5052524,
+      "wall_s": 11.556625,
+      "ttfb_s": 0.001916,
+      "audio_s": 52.63,
+      "audio_s_source": "decoded",
+      "ffprobe_duration_s": 52.63,
+      "rtf": 0.21958246247387422,
+      "units_per_min": 205.2061561846855,
+      "peak_rss_mb": 1392.734375
+    },
+    {
+      "fixture": "tts-vi-5min.txt",
+      "lang": "vi",
+      "chars": 3763,
+      "units": 850,
+      "unit_kind": "syllables",
+      "voice": "Hải Đăng",
+      "repeat": 1,
+      "http_status": 200,
+      "bytes": 18702764,
+      "wall_s": 40.121552,
+      "ttfb_s": 0.002425,
+      "audio_s": 194.82,
+      "audio_s_source": "decoded",
+      "ffprobe_duration_s": 194.82,
+      "rtf": 0.2059416487013654,
+      "units_per_min": 261.7801047120419,
+      "peak_rss_mb": 1403.765625
+    },
+    {
+      "fixture": "tts-en-5min.txt",
+      "lang": "en",
+      "chars": 4033,
+      "units": 741,
+      "unit_kind": "words",
+      "voice": "Hải Đăng",
+      "repeat": 1,
+      "http_status": 200,
+      "bytes": 21387884,
+      "wall_s": 46.228513,
+      "ttfb_s": 0.001977,
+      "audio_s": 222.79,
+      "audio_s_source": "decoded",
+      "ffprobe_duration_s": 222.79,
+      "rtf": 0.20749815072489788,
+      "units_per_min": 199.56012388347773,
+      "peak_rss_mb": 1406.796875
+    }
+  ],
+  "summary": {
+    "tts-vi-1000.txt": {
+      "wall_s_median": 11.241026,
+      "audio_s": 52.81,
+      "rtf_median": 0.21285790569967808,
+      "peak_rss_mb_max": 1417.953125
+    },
+    "tts-en-1000.txt": {
+      "wall_s_median": 11.556625,
+      "audio_s": 52.63,
+      "rtf_median": 0.21958246247387422,
+      "peak_rss_mb_max": 1392.734375
+    },
+    "tts-vi-5min.txt": {
+      "wall_s_median": 40.121552,
+      "audio_s": 194.82,
+      "rtf_median": 0.2059416487013654,
+      "peak_rss_mb_max": 1403.765625
+    },
+    "tts-en-5min.txt": {
+      "wall_s_median": 46.228513,
+      "audio_s": 222.79,
+      "rtf_median": 0.20749815072489788,
+      "peak_rss_mb_max": 1406.796875
+    }
+  },
+  "gate_120s": {
+    "rule": "rtf_5min_max * 300 < 100",
+    "rtf_5min_max": 0.20749815072489788,
+    "projected_wall_s": 62.249445217469365,
+    "threshold_s": 100,
+    "result": "pass",
+    "decision": "informational (04 CR-2), watermark-extra comparison run only; the gate of record is vieneu-mac-20260925.json",
+    "decided_by": "TL-agent",
+    "decided_on": "2026-09-25"
+  },
+  "samples": [
+    {
+      "path": "/Volumes/Project/NightTalesStudio/.nts/runs/samples/vieneu-vi-1000.wav",
+      "sha256": "f060d9214dfc04717644dd8ccc104fc9cffd70d32cea910ede4a721753c2796a",
+      "riff_size_hex": "ffffffff",
+      "data_size_hex": "ffffffff",
+      "ffmpeg_f_null_exit": 0
+    },
+    {
+      "path": "/Volumes/Project/NightTalesStudio/.nts/runs/samples/vieneu-en-1000.wav",
+      "sha256": "c74250ae2ae244cdc4ed54dca3a0ecf0df68f7a0c4fdce021c9d12cc37303bca",
+      "riff_size_hex": "ffffffff",
+      "data_size_hex": "ffffffff",
+      "ffmpeg_f_null_exit": 0
+    },
+    {
+      "path": "/Volumes/Project/NightTalesStudio/.nts/runs/samples/vieneu-vi-5min.wav",
+      "sha256": "c7bf499002977327ca6ffee67a57454faa04e10a12e1ab0c5fb381234fae2b6b",
+      "riff_size_hex": "ffffffff",
+      "data_size_hex": "ffffffff",
+      "ffmpeg_f_null_exit": 0
+    },
+    {
+      "path": "/Volumes/Project/NightTalesStudio/.nts/runs/samples/vieneu-en-5min.wav",
+      "sha256": "01262292a47daf65a7783a8e860a754577b49b60ad9e461c4b0b492bac93ab0e",
+      "riff_size_hex": "ffffffff",
+      "data_size_hex": "ffffffff",
+      "ffmpeg_f_null_exit": 0
+    }
+  ],
+  "notes": [
+    "cold_start[1] file cache state not asserted (spec: not required after reboot/purge)",
+    "tts-vi-1000.txt: rtf plain 0.176 vs extra 0.213",
+    "tts-en-1000.txt: rtf plain 0.177 vs extra 0.220",
+    "tts-vi-5min.txt: rtf plain 0.186 vs extra 0.206",
+    "tts-en-5min.txt: rtf plain 0.185 vs extra 0.207",
+    "idle_rss_mb plain 512 vs extra 662; cold_start plain [4.0, 2.0] vs extra [4.0, 2.0]"
+  ]
+}

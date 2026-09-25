@@ -1,0 +1,212 @@
+{
+  "data": [
+    {
+      "aliases": [],
+      "description": "Nam · Bắc · Phong cách tự nhiên",
+      "featured": 1,
+      "gender": "male",
+      "id": "Adam bựa",
+      "name": "Adam bựa"
+    },
+    {
+      "aliases": [],
+      "description": "Nữ · Bắc · Phong cách tự nhiên",
+      "featured": 2,
+      "gender": "female",
+      "id": "Trúc Ly",
+      "name": "Trúc Ly"
+    },
+    {
+      "aliases": [
+        "Anh Khôi"
+      ],
+      "description": "Nam · Bắc · Phong cách kể chuyện",
+      "featured": 3,
+      "gender": "male",
+      "id": "Thiện Minh",
+      "name": "Thiện Minh"
+    },
+    {
+      "aliases": [],
+      "description": "Nữ · Bắc · Phong cách tin tức",
+      "featured": 4,
+      "gender": "female",
+      "id": "Mai Anh",
+      "name": "Mai Anh"
+    },
+    {
+      "aliases": [
+        "Minh Quân Pro",
+        "Minh Quân"
+      ],
+      "description": "Nam · Bắc · Phong cách tự nhiên",
+      "featured": 5,
+      "gender": "male",
+      "id": "Hải Đăng",
+      "name": "Hải Đăng"
+    },
+    {
+      "aliases": [],
+      "description": "Nữ · Nam · Phong cách tin tức",
+      "featured": 6,
+      "gender": "female",
+      "id": "Thùy Dung",
+      "name": "Thùy Dung"
+    },
+    {
+      "aliases": [],
+      "description": "Nam · Bắc · Phong cách kể chuyện",
+      "featured": 7,
+      "gender": "male",
+      "id": "Thiền Tâm Đức",
+      "name": "Thiền Tâm Đức"
+    },
+    {
+      "aliases": [],
+      "description": "Nữ · Bắc · Giọng đọc tự nhiên",
+      "featured": 8,
+      "gender": "female",
+      "id": "Ngọc Huyền",
+      "name": "Ngọc Huyền"
+    },
+    {
+      "aliases": [],
+      "description": "Nam · Trung · Phong cách tự nhiên",
+      "featured": 9,
+      "gender": "male",
+      "id": "Quang Sơn",
+      "name": "Quang Sơn"
+    },
+    {
+      "aliases": [],
+      "description": "Nữ · Trung · Phong cách tự nhiên",
+      "featured": 10,
+      "gender": "female",
+      "id": "Ngọc Trân",
+      "name": "Ngọc Trân"
+    },
+    {
+      "aliases": [],
+      "description": "Nam · Bắc · Phong cách tin tức",
+      "featured": null,
+      "gender": "male",
+      "id": "Minh Đức",
+      "name": "Minh Đức"
+    },
+    {
+      "aliases": [],
+      "description": "Nam · Bắc · Phong cách tự nhiên",
+      "featured": null,
+      "gender": "male",
+      "id": "Phạm Tuyên",
+      "name": "Phạm Tuyên"
+    },
+    {
+      "aliases": [],
+      "description": "Nam · Nam · Phong cách kể chuyện",
+      "featured": null,
+      "gender": "male",
+      "id": "Thái Sơn",
+      "name": "Thái Sơn"
+    },
+    {
+      "aliases": [],
+      "description": "Nam · Bắc · Phong cách tự nhiên",
+      "featured": null,
+      "gender": "male",
+      "id": "Xuân Vĩnh",
+      "name": "Xuân Vĩnh"
+    },
+    {
+      "aliases": [],
+      "description": "Nam · Bắc · Phong cách kể chuyện",
+      "featured": null,
+      "gender": "male",
+      "id": "Thanh Bình",
+      "name": "Thanh Bình"
+    },
+    {
+      "aliases": [],
+      "description": "Nữ · Bắc · Phong cách kể chuyện",
+      "featured": null,
+      "gender": "female",
+      "id": "Ngọc Linh",
+      "name": "Ngọc Linh"
+    },
+    {
+      "aliases": [],
+      "description": "Nữ · Bắc · Phong cách tự nhiên",
+      "featured": null,
+      "gender": "female",
+      "id": "Đoan Trang",
+      "name": "Đoan Trang"
+    },
+    {
+      "aliases": [],
+      "description": "Nữ · Nam · Phong cách kể chuyện",
+      "featured": null,
+      "gender": "female",
+      "id": "Thục Đoan",
+      "name": "Thục Đoan"
+    },
+    {
+      "aliases": [],
+      "description": "Nam · Nam · Phong cách tin tức",
+      "featured": null,
+      "gender": "male",
+      "id": "Minh Triết",
+      "name": "Minh Triết"
+    },
+    {
+      "aliases": [],
+      "description": "Nữ · Nam · Phong cách đọc truyện",
+      "featured": null,
+      "gender": "female",
+      "id": "Mỹ Duyên",
+      "name": "Mỹ Duyên"
+    },
+    {
+      "aliases": [],
+      "description": "Nữ · Bắc · Phong cách đọc truyện",
+      "featured": null,
+      "gender": "female",
+      "id": "Quỳnh Anh",
+      "name": "Quỳnh Anh"
+    },
+    {
+      "aliases": [],
+      "description": "Nam · Nam · Phong cách đọc truyện",
+      "featured": null,
+      "gender": "male",
+      "id": "Đức Trí",
+      "name": "Đức Trí"
+    },
+    {
+      "aliases": [],
+      "description": "Nữ · Nam · Phong cách đọc truyện",
+      "featured": null,
+      "gender": "female",
+      "id": "Kim Thanh",
+      "name": "Kim Thanh"
+    },
+    {
+      "aliases": [],
+      "description": "Nam · Nam · Giọng đọc tự nhiên",
+      "featured": null,
+      "gender": "male",
+      "id": "Adam",
+      "name": "Adam"
+    },
+    {
+      "aliases": [
+        "Mạnh Dũng"
+      ],
+      "description": "Nam · Bắc · Phong cách tự nhiên",
+      "featured": null,
+      "gender": "male",
+      "id": "Quốc Tuấn",
+      "name": "Quốc Tuấn"
+    }
+  ],
+  "object": "list"
+}

@@ -2,6 +2,8 @@
 config.toml
 *.env
 .env*
+# Runtime state: $NTS_HOME = <repo>/.nts (01 CR-11, DEC-5): clones, venvs, weights, logs, media, rendered config
+.nts/
 
 # Generated media and model files
 output/
@@ -15,3 +17,51 @@ models/
 .venv/
 __pycache__/
 .DS_Store
+
+# --- 01.1.2-T1 (README F16, D1) ---
+# Env files: real ones are ignored above (*.env, .env*); templates are named env.example (not .env.example)
+# Images
+*.png
+*.jpg
+*.jpeg
+*.webp
+*.gif
+*.heic
+# Other audio / video
+*.m4a
+*.aac
+*.flac
+*.ogg
+*.opus
+*.wma
+*.mov
+*.webm
+*.mkv
+# Model weights and archives
+*.onnx
+*.bin
+*.safetensors
+*.pt
+*.pth
+*.ckpt
+*.gguf
+*.npz
+*.tar
+*.tar.gz
+*.zip
+# Logs and runtime state
+*.log
+logs/
+current_run
+# Music: only the licence register is tracked
+worker-node/music/*
+!worker-node/music/LICENSES.csv
+# pins.env is tracked (D2) but matches *.env above (01 CR-11 note, found at implementation 2026-09-25)
+!worker-node/pins.env
+# Trial runs: keep metadata (run.json, *.jsonl, *.csv, stages.json, ffprobe.json, notes.md), never media
+trial/runs/no-run/
+trial/runs/*/media/
+# Python / tooling
+.ruff_cache/
+.pytest_cache/
+*.pyc

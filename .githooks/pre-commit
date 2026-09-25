@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# Blocks commits that stage secrets (NFR-01-1, 01.1.2-T4). Installed by: git config core.hooksPath .githooks
+set -euo pipefail
+if ! command -v gitleaks >/dev/null 2>&1; then
+  echo "pre-commit: gitleaks not found; install it (brew install gitleaks) — commit blocked" >&2
+  exit 1
+fi
+exec gitleaks git --pre-commit --staged --redact --no-banner --verbose

@@ -4,7 +4,7 @@
 
 Night Tales Studio turns story ideas into narrated videos (story → images → voice → subtitles → MP4 → YouTube). The owner's channel is built first (**personal phase P**, one owner account, autopilot). The public SaaS (**phase S**) is built only after a go decision (`plans/00-overview.md` §1.3, §4.1).
 
-**Current state: planning only.** The repo has no source code, no build and no tests yet. It contains the plans that the code will be built from. `src/`, `tests/`, `web/`, `worker-node/` and `tools/` are the target layout; they do not exist yet.
+**Current state: implementation started (2026-09-25).** Plan 01 (environment setup, M0) is being built on the owner's Mac. Tracked code: `worker-node/` (bash scripts, pins, runbook `worker-node/README.md`), `trial/` (fixtures, bench tools, baselines) and `.githooks/` (gitleaks). There is no .NET or Angular code yet; `src/`, `tests/`, `web/` and `tools/` are the target layout. **Progress lives in `STATUS.md`** (done / doing / blocked / next); read it first and update it with every change. Runtime state is in `<repo>/.nts/` (gitignored, `NTS_HOME`). API keys live only in the macOS Keychain and must never be committed or pushed (plan 01 DEC-6).
 
 ## Architecture & Data Flow
 
@@ -42,7 +42,7 @@ Angular SPA ──REST + SignalR──► NightTales.Api ──► PostgreSQL 17
 
 ## Development Commands
 
-There is nothing to build today. For doc work:
+Worker node (plan 01): `git config core.hooksPath .githooks` once per clone, then `worker-node/bin/bootstrap.sh all`, `worker-node/bin/start-vieneu.sh` (in its own terminal), `worker-node/bin/smoke.sh`. Scripts are bash 3.2-compatible (macOS `/bin/bash`), `shellcheck -x` clean. There is no build yet. For doc work:
 
 ```bash
 grep -rn "Idempotency → UnitOfWork" plans          # find text that contradicts a contract
@@ -106,4 +106,12 @@ Planned (09 README N10/N11, D2):
 - Flaky tests are quarantined with `[Trait("Category","Quarantine")]`. Never retry until green.
 - Definition of Done (`WORKFLOW.md` §8.1): CI green, unit tests for domain rules and use cases, one integration test per endpoint, strings in vi + en, logs and metrics for new jobs, OpenAPI updated.
 - A feature starts only after its detailed plan passes Definition of Ready and the owner signs it off.
+- **QA agent after every implementation (owner rule, 2026-09-25):** when code is implemented, a **separate QA/test agent** that did not write it must:
+  - re-read the plan, the feature `plan.md` and the task files, including Acceptance checks and README amendments;
+  - run every runnable acceptance check on the real system;
+  - add negative, boundary and exploratory tests;
+  - verify `STATUS.md` against what it observes;
+  - report a pass/fail matrix and a defects list.
+
+  Defects are fixed and re-verified before the commit or PR. Every implementation todo list includes this step explicitly, after the implementation items and before review, commit and PR. The reviewer pass (code reading) is additional; it does not replace the QA pass.
 - **Design first (owner rule, 2026-09-25):** every web/UI task or feature has an approved UI design before implementation starts — wireframes + hi-fi mockups (states loading/empty/error/success, breakpoints 360/768/1280, vi + en text, dark/light, focus order and a11y notes, built from the 10 D11 design-system tokens/components), linked from the feature `plan.md` §6 UI and approved by the owner. Each UI feature folder carries a design task `<story>-T0 — UI design` (Area `UX`) that every implementation task in the folder depends on. (`plans/00-overview.md` §10, `WORKFLOW.md` §8.1)

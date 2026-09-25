@@ -1,0 +1,3 @@
+# plans/00-overview.md:412 false positive: generic-api-key matched the prose "outbox/SignalR events" (no secret) 2026-09-25 TL-agent
+2870dbc7e8b6219d017d81622731e1238bde7ad0:plans/00-overview.md:generic-api-key:412
+plans/00-overview.md:generic-api-key:412

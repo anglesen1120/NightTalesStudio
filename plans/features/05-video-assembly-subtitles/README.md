@@ -537,6 +537,7 @@ Lean options if the owner rejects the increase:
 | O5 | Long cues (MPT has no line cap; a clause > 2 lines stays > 2 lines): (a) advisory hint only in P; (b) ask plan 02's writer prompt for clauses ≤ 80 (landscape) / 52 (portrait) chars | (a) now; revisit with the 05.2.1-T1 counts |
 | O6 | Cancel: MPT cannot stop a running task (C11). Cancel refunds, stops image spend (plan release), discards the output; GPU work runs to its end | Accept |
 | O7 | No per-series music choice in P: the track is picked automatically from the topic moods (D8); a series-level mood or pinned track would be a new `series` field plus a 10.4 UI change | Accept automatic selection for P; revisit after 10 episodes |
+| O8 | (01 CR-14) Ownership proof: a signed per-render hash manifest over the render's `assets` rows (01 DEC-8, owner 2026-09-25) | [OPEN] design at 05 detailing: key type/rotation, manifest storage, dispute export; 06 appends the platform video id |
 
 **TL rulings on feature-plan open items and review findings (2026-09-24).** They override older text in the feature plans; the D-sections above already include them. Feature-plan lines carry `[RULED — README §10 Tn]`.
 

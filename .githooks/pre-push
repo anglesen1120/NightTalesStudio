@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# Scans exactly the commits being pushed (SEC-12, 01.1.2-T4); fails closed.
+set -euo pipefail
+command -v gitleaks >/dev/null 2>&1 || { echo "pre-push: gitleaks not found — push blocked" >&2; exit 1; }
+z=0000000000000000000000000000000000000000
+while read -r lref lsha _rref rsha; do
+  [ "$lsha" = "$z" ] && continue                      # branch deletion: nothing to scan
+  if [ "$rsha" = "$z" ]; then range="$lsha"; else range="$rsha..$lsha"; fi   # new branch: full history of lsha
+  gitleaks git --redact --no-banner --log-opts="$range" || { echo "pre-push: secret in $lref ($range)" >&2; exit 1; }
+done
