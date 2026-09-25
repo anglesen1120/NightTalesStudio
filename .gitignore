@@ -1,0 +1,17 @@
+# Secrets — API keys live only on this machine
+config.toml
+*.env
+.env*
+
+# Generated media and model files
+output/
+storage/
+models/
+*.mp3
+*.wav
+*.mp4
+
+# Python / tooling
+.venv/
+__pycache__/
+.DS_Store
