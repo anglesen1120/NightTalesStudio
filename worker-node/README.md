@@ -165,6 +165,24 @@ Probes (2026-09-25, macOS 27, M4): `ps -o rss` **is KiB** — `loginwindow` ps r
 
 Measurement limits (also in `trial/schema.md`): tree RSS counts shared/mmap'd pages per process → peaks are **upper bounds** of private use; 1 s sampling misses sub-second spikes → peaks are **lower bounds** of the true max for bursts; whisper/render share the MPT process (window attribution only); `footprint`/`vmmap --summary` noted as optional private-memory comparison in T4, not in the loop.
 
+## Measured run (01.3.1-T3)
+
+One run = one MPT task = one row in `trial/measurements.csv` (D8: written only by `finish_run.py`, never by hand). Needs the tap (8002), VieNeu (8000), the plan 04 proxy (8001) and the MPT API (8080) running, the rendered MPT config pointing at the tap, and no other active run (`$NTS_HOME/current_run`, D11).
+
+```bash
+RUN_ID="$(trial/tools/start_run.sh vi landscape "<topic>" 5 --status calibration --voice <name>)"   # prints only the id
+# … submit the render to the MPT API (video_count = 1), note the task id …
+uv run --no-project --python 3.12 trial/tools/finish_run.py "$RUN_ID" --task-id <mpt task id> --dry-run   # 58 name=value lines, writes nothing
+uv run --no-project --python 3.12 trial/tools/finish_run.py "$RUN_ID" --task-id <mpt task id>             # appends the row
+# next day (UTC day, Q10), from the relay/OpenAI dashboard:
+uv run --no-project --python 3.12 trial/tools/finish_run.py "$RUN_ID" --dashboard-cost <usd> --dashboard-day <YYYY-MM-DD>
+```
+
+- `start_run.sh` writes `trial/runs/<id>/run.json` (pins, heads, `env-versions.sh`, redacted config digest, tap settings), sets `current_run` and starts the RAM sampler. Exit 2: bad args, a run already active, a service port not listening, or 8002 not owned by the tap. Exit 1: a head differs from its pin, or the MPT config base URLs are not the tap (`--no-tap`: they must not be).
+- `finish_run.py` stops the sampler, parses the MPT log (stage windows from the `## …` markers, 01 CR-17), the tap JSONL, the proxy log and the sampler file, probes the video, validates the row and only then writes `stages.json`, `ffprobe.json`, `rss.csv` stage rows, `run.json` finish fields and the CSV row. Validation failure → exit 1, nothing written. Script text and the video copy go to `$NTS_HOME/runs/<id>/`, never under `trial/`.
+- Failed MPT task: add `--status failed` (the failure is data). Crash or abandoned run: `finish_run.py <id> --abort` (no row; clears `current_run`).
+- Parser tests: `uv run --no-project --python 3.12 -m unittest discover -s trial/tools/tests -v`.
+
 ## Undo
 
 | What | Command |

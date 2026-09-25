@@ -113,5 +113,5 @@ Planned (09 README N10/N11, D2):
   - verify `STATUS.md` against what it observes;
   - report a pass/fail matrix and a defects list.
 
-  Defects are fixed and re-verified before the commit or PR. Every implementation todo list includes this step explicitly, after the implementation items and before review, commit and PR. The reviewer pass (code reading) is additional; it does not replace the QA pass.
+  Defects are fixed and re-verified before the commit or PR. Every implementation todo list includes this step explicitly, after the implementation items and before review, commit and PR. The reviewer pass (code reading) is additional; it does not replace the QA pass. Both run for **every task** and both finish before any `git push` (owner rule, 2026-09-25).
 - **Design first (owner rule, 2026-09-25):** every web/UI task or feature has an approved UI design before implementation starts — wireframes + hi-fi mockups (states loading/empty/error/success, breakpoints 360/768/1280, vi + en text, dark/light, focus order and a11y notes, built from the 10 D11 design-system tokens/components), linked from the feature `plan.md` §6 UI and approved by the owner. Each UI feature folder carries a design task `<story>-T0 — UI design` (Area `UX`) that every implementation task in the folder depends on. (`plans/00-overview.md` §10, `WORKFLOW.md` §8.1)

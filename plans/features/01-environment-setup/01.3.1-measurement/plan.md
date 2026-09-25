@@ -42,7 +42,7 @@ Open ⚠️ (closed in T4 unless stated):
 | # | Item | Default until confirmed |
 |---|---|---|
 | Q1 | End-of-audio log line (in `app/services/voice.py`, not read) | Audio window ends at `## generating subtitle` |
-| Q2 | Final video, audio and script file names in `$NTS_HOME/src/mpt/storage/tasks/<task_id>/` | `final-1.mp4`, `audio.mp3`, `script.json` key `script` [INFERENCE]; overridable with `--output`, `--script` |
+| Q2 | ✅ Closed (01 CR-17): `final-{index}.mp4` (`task.py:968`), `audio.mp3` (`task.py:532`), `script.json` key `script` (`task.py:357`) at the pin | Defaults; overridable with `--output`, `--script` |
 | Q3 | Chat Completions usage field names for cached tokens (`usage.prompt_tokens_details.cached_tokens`) | Missing → `story_cached_input_tokens = 0` + issue `cached-tokens-field-absent` |
 | Q4 | Images response top-level `quality`/`size` echo present for flare | Missing → `image_quality_returned = n/a:not-echoed` |
 | Q5 | Non-200 image calls are not billed | [INFERENCE]; verified by the dashboard cross-check |

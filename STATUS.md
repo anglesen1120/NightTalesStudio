@@ -11,7 +11,7 @@ Legend: `done` (acceptance checks run and passed) · `doing` · `blocked (<who>)
   1. ~~Owner: store the relay keys~~ → done 2026-09-25. Owner: ask the relay to **enable image generation** for the image key (every image model → 503 "No available compatible accounts", DEC-10), then run `worker-node/bin/openai-access-check.sh --only image`. Set a spend cap in the relay account.
   2. ~~Owner: pick ownership proof~~ → decided 2026-09-25: signed per-render hash manifest (DEC-8, CR-14; designed in plan 05/06).
   3. ~~Keys, access checks, tap, live MPT smoke~~ → done 2026-09-25, except the image calls (relay side).
-  4. Day 3: 01.3.1-T3 collector. After plan 04 proxy: 01.2.2-T6, 01.3.1-T4.
+  4. ~~Day 3: 01.3.1-T3 collector~~ → done 2026-09-25 (branch `feature/01-measurement-collector`). After plan 04 proxy: 01.2.2-T6, 01.3.1-T4.
 - **Environment (DEC-5, DEC-6):**
   - Implementation machine = this Mac (M4, 16 GB, macOS 27.0).
   - `NTS_HOME=<repo>/.nts` (gitignored; `lib.sh` default).
@@ -47,7 +47,8 @@ Legend: `done` (acceptance checks run and passed) · `doing` · `blocked (<who>)
 | 01.3.1-T1 Schema v2, dictionary, prices | done | `trial/measurements.csv` 58 columns (first 31 = 01 §5.3), CRLF, no BOM; `trial/schema.md` 58 rows; `trial/prices.json` checked 2026-09-25 against the official OpenAI pricing pages |
 | 01.3.2-T1 RSS sampler | done | `trial/tools/rss_sampler.sh --selftest 60` passes: 57 rows, p95 79 ms, CPU 1.3 %. `ps rss` is in KiB (checked against `top`). TERM stop 75 ms. Roots and pressure are sampled on staggered ticks to stay under the 100 ms p95 |
 | 01.3.1-T2 Usage tap | done | `trial/tools/usage_tap.py` + `start-tap.sh`. Every stub check passes: status order, D6 10-key lines, no secret or content in runs/logs, 429/moderation/timeout/busy mapping, quality injection, stub-upstream guard. Real calls: `GET /v1/models` 200 and one `gpt-6-luna` chat 200 with usage 8+5 tokens. `tap.json` upstream = `https://api.aixingialaire.shop`. Fix after integration: `start-tap.sh` did not export `NTS_HOME`, so the tap wrote `~/.nts/tap.json`. Now exported, and the tap's default is `<repo>/.nts` |
-| 01.3.1-T3 collector, T4 calibration | todo | T3 next; T4 after 01.2.2-T6 |
+| 01.3.1-T3 Run collector | done (live row in T4) | `trial/tools/start_run.sh`, `run_manifest.py`, `finish_run.py`, 25 unittest cases (T-P1…T-P10 + regressions) OK, shellcheck clean, stdlib only. Plan review first: 01 CR-17 (markers `## generating video: <n> =>` / `## combining video: <n> =>`, Q2 closed, glued log records, `via=responses` → image cost `n/a:no-price`). QA (QaCollector): every runnable acceptance check PASS in a throwaway worktree with decoy listeners (8001 proxy not built yet): guards 2/1, run.json no secret/home path, dry-run 58 lines, real finish +1 row, re-finish exit 1 byte-identical, abort, dashboard. Review (ReviewCollector; its output failed schema validation but the findings payload was complete and was used): 15 findings, 14 fixed and re-tested, 1 rejected (LoomLoom marker: trials use `## downloading videos from`) |
+| 01.3.1-T4 Calibration | todo | After 01.2.2-T6 (plan 04 proxy) |
 | 01.3.3-T1/T2 Carry-over | todo | After 05.5.2. Interim whisper notes: `.nts/runs/whisper-baseline/carryover-notes.md` |
 
 Other plans: not started. Order after plan 01: 02 M0 → 03 M0 → 04 → 05 → Gate 1 (`plans/features/README.md`).
@@ -155,6 +156,10 @@ Spec: `plans/features/01-environment-setup/01.2.4-openai-access/01.2.4-T1-org-ve
   - Not changed: D6 cannot tell injected effort from client-sent effort (informational; the contract says "effort sent").
   - Open for plan 11: the `plans/11-worker-deployment.md:75` egress allow-list still names `api.openai.com`; it needs a CR for the relay host (phase P).
 
+- **Per-task QA + review before push (owner rule, 2026-09-25):** recorded in `WORKFLOW.md` §8.1, `plans/00-overview.md` DoD, 01 README §6 and `AGENTS.md`.
+- **01.3.1-T3 review fixes:** the sampler is stopped only when the row is committed (dry-run and a failed validation leave it running); the I2 check and the append share one CSV lock, and so does `--dashboard-cost`; an unfinished task ends at its own last record; run NN = max suffix + 1; log paths in `run.json` are `$NTS_HOME/…`, repo-relative or a basename; the sampler pid is checked before SIGTERM; `terms` parse failure → `n/a:marker-missing`; input errors exit 1/2 without traceback; `rm -rf` guards `${run_id:?}`.
+- **Incident (QA'd tree, 2026-09-25):** during development an agent's `rm -rf` with an empty variable removed `trial/runs/` (only the git-ignored `no-run/openai_usage.jsonl` of today's unmetered calls was lost; `.gitkeep` restored, `$NTS_HOME` untouched). A `--dashboard-cost` cross-check for 2026-09-25 would under-count those calls. Guards added (`${run_id:?}`).
+
 ## Session log
 
 | Date | Session | Done |
@@ -162,4 +167,5 @@ Spec: `plans/features/01-environment-setup/01.2.4-openai-access/01.2.4-T1-org-ve
 | 2026-09-25 | Day 1, plan 01 | 01.1.1-T1/T2, 01.1.2-T1…T4, 01.2.1-T1…T4 done. DEC-5, DEC-6, DEC-7, CR-11, CR-12, CR-13. Code review: 4 findings fixed. QA pass: 3 defects fixed. Ownership proof = signed manifest (DEC-8, CR-14). Branch `feature/01-env-setup-day1` → PR #1 into `develop` |
 | 2026-09-25 | Day 2, plan 01 | 01.2.2-T1…T3, 01.2.3-T2, 01.3.1-T1, 01.3.2-T1 done; 01.2.2-T4/T5 and 01.2.3-T1 partial (OpenAI keys + tap). QA: 3 defects fixed; review: 3 fixed. Branch `feature/01-env-setup-day2` → PR into `develop` |
 | 2026-09-25 | Day 2 (cont.), plan 01 | DEC-9 relay, DEC-10. Owner stored the relay keys. 01.2.4-T3 story checks pass, images blocked on the relay side. 01.3.1-T2 tap done. 01.2.2-T4/T5 live: `smoke.sh` 39/0. Writer effort `medium` (plan 02 D7). QA + review: 7 fixes |
+| 2026-09-25 | Day 3, plan 01 | 01.3.1-T3 collector done (CR-17 plan review). QA PASS; review: 14 fixed. Chat effort pin `medium` (owner). Per-task QA + review rule recorded |
 | 2026-09-25 | 01 DEC-11 | Images via the Responses tool + `gpt-image-2`; effort pins for every call. Access check 8/8. MPT image path live through the tap. Smoke 39/0. Relay forces `gpt-image-2-codex` with size/quality auto (codex#28723). QA + review: 6 fixes |
