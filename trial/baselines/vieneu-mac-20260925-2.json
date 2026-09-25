@@ -44,7 +44,7 @@
     "extra_installed": true,
     "effective": "off",
     "evidence": "class B with --extra watermark: server log 'Watermarker init failed — output audio will NOT be watermarked: module perth has no PerthImplicitWatermarker … torch/torchaudio dependencies are missing' (src/vieneu/base.py:134-144); the extra adds resemble-perth (+36 MB venv) but no torch at this lock",
-    "decision": "see vieneu-mac-20260925.json; the extra alone does not enable the watermark on the Mac"
+    "decision": "DEC-7 (owner, 2026-09-25): keep the watermark as an AI-provenance mark; required in production (plan 11 node: uv sync --frozen --no-dev --extra cuda --extra watermark, fail closed unless 'Audio watermarking initialized (Perth)' is logged); the Mac M0 trial runs without it (audio never published). Perth carries no owner payload, so ownership proof is [OPEN] (01 CR-13)"
   },
   "cold_start_s": [
     4.0,
@@ -180,9 +180,9 @@
     "projected_wall_s": 62.249445217469365,
     "threshold_s": 100,
     "result": "pass",
-    "decision": "",
-    "decided_by": "",
-    "decided_on": ""
+    "decision": "informational (04 CR-2), watermark-extra comparison run only; the gate of record is vieneu-mac-20260925.json",
+    "decided_by": "TL-agent",
+    "decided_on": "2026-09-25"
   },
   "samples": [
     {

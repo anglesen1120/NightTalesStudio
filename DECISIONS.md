@@ -102,7 +102,7 @@ openai_model_name = "gpt-6-luna"
 
 - In option A, **never** return WAV bytes labelled as mp3: that file flows straight into MPT's mixer (`os.replace(temporary_audio, voice_file)`), and downstream readers were not checked → always transcode for real.
 - Run VieNeu with **`HOST=127.0.0.1`** (default `0.0.0.0` exposes it to the whole network) and set `VIENEU_API_KEY`.
-- `VIENEU_WATERMARK=1` is on by default → **keep it** (⚠️ watermark nature not read in detail; presumed to be an inaudible AI-voice marker).
+- `VIENEU_WATERMARK=1` is on by default → **keep it** (⚠️ watermark nature not read in detail; presumed to be an inaudible AI-voice marker). Owner 2026-09-25 (01 DEC-7): keep it as an **AI-provenance mark**. ✅ It is the same mark for every Perth user and carries no owner ID: `resemble-perth` 1.0.1 `perth_net_implicit/perth_watermarker.py:25` is `apply_watermark(self, signal, sample_rate, **_)` with no payload, and `get_watermark` returns presence only. So it **cannot prove NightTales ownership**; ownership/copyright proof is [OPEN] (01 DEC-7). It is **required in production** (the plan 11 node: `--extra cuda --extra watermark`, fail closed unless `Audio watermarking initialized (Perth)` is logged). The Mac M0 trial runs **without** it: the pinned `[watermark]` extra lacks torch, so it stays off (01 CR-13), and M0 audio is never published.
 - Install VieNeu on CPU/Apple Silicon via ONNX: `uv sync`.
 
 ### 5.4 Subtitles ✅

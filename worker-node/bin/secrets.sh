@@ -48,13 +48,19 @@ _store() {
   [ "$(secret "$svc")" = "$v" ] || die 1 "keychain verify failed: $svc"
 }
 
+# _acl_dump <file> — one dump of the login keychain's attributes and access lists (never -d, so
+# no secret data). One dump per `check --acl` run (QA F2: a dump per service took ≈ 70 s each and
+# an occasional dump came back incomplete).
+# dump-keychain can exit non-zero (seen once in QA) while still listing every block: judge the output.
+_acl_dump() { security dump-keychain -a >"$1" 2>/dev/null || true; [ -s "$1" ]; }
+
+# _acl_ok <service> <dump-file> — /usr/bin/security is a trusted app in that item's own block.
 _acl_ok() {
-  # dump-keychain -a lists attributes and access lists, never secret data (no -d).
-  security dump-keychain -a 2>/dev/null | awk -v svc="\"svce\"<blob>=\"$1\"" '
+  awk -v svc="\"svce\"<blob>=\"$1\"" '
     /^keychain: / { if (hit && app) found=1; hit=0; app=0 }
     index($0, svc) { hit=1 }
     /\/usr\/bin\/security/ { app=1 }
-    END { if (hit && app) found=1; exit found ? 0 : 1 }'
+    END { if (hit && app) found=1; exit found ? 0 : 1 }' "$2"
 }
 
 cmd_set() {
@@ -74,6 +80,7 @@ cmd_set() {
 }
 
 cmd_init_local() {
+  [ $# -eq 0 ] || die 2 "init-local takes no arguments"
   _require_trusted
   local svc v
   while IFS= read -r svc; do
@@ -86,7 +93,7 @@ cmd_init_local() {
 }
 
 cmd_check() {
-  local local_only=0 acl=0 svc rc=0
+  local local_only=0 acl=0 svc rc=0 dump="" retried=0
   local -a list
   for a in "$@"; do
     case "$a" in
@@ -97,15 +104,21 @@ cmd_check() {
   done
   if [ "$local_only" -eq 1 ]; then list=("${NTS_LOCAL_SERVICES[@]}"); else list=("${NTS_SERVICES[@]}"); fi
   [ -n "${NTS_TEST_SERVICE:-}" ] && list=("$NTS_TEST_SERVICE")
+  if [ "$acl" -eq 1 ]; then
+    NTS_ACL_DUMP="$(mktemp)"; dump="$NTS_ACL_DUMP"
+    trap 'rm -f "$NTS_ACL_DUMP"' EXIT
+    _acl_dump "$dump" || die 2 "security dump-keychain -a failed (keychain locked?)"
+  fi
   for svc in "${list[@]}"; do
-    if _present "$svc"; then
-      echo "$svc present"
-      if [ "$acl" -eq 1 ]; then
-        if _acl_ok "$svc"; then echo "$svc acl ok"; else echo "$svc acl missing"; rc=1; fi
-      fi
-    else
-      echo "$svc missing"; rc=1
+    if ! _present "$svc"; then echo "$svc missing"; rc=1; continue; fi
+    echo "$svc present"
+    [ "$acl" -eq 1 ] || continue
+    if ! _acl_ok "$svc" "$dump" && [ "$retried" -eq 0 ]; then
+      # One fresh dump before reporting a miss, so an incomplete dump cannot fail the check.
+      retried=1
+      _acl_dump "$dump" || die 2 "security dump-keychain -a failed (keychain locked?)"
     fi
+    if _acl_ok "$svc" "$dump"; then echo "$svc acl ok"; else echo "$svc acl missing"; rc=1; fi
   done
   return "$rc"
 }
@@ -139,7 +152,7 @@ main() {
   [ $# -gt 0 ] && shift
   case "$c" in
     set) cmd_set "$@" ;;
-    init-local) cmd_init_local ;;
+    init-local) cmd_init_local "$@" ;;
     check) cmd_check "$@" ;;
     rotate-local) cmd_rotate_local "$@" ;;
     --help|-h|help) usage ;;

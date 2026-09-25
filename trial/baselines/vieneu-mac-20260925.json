@@ -44,7 +44,7 @@
     "extra_installed": false,
     "effective": "off",
     "evidence": "class C: resemble-perth not installed (import perth -> ModuleNotFoundError); src/vieneu/base.py:128-131 catches ImportError, logs at DEBUG only",
-    "decision": "pending owner+TL (proposal: Mac M0 trial without watermark, audio never published; plan 11 worker MUST install --extra watermark and verify class D; CARRY-OVER via 01.3.3-T1). Extra cost not measured yet (T4 step 4)"
+    "decision": "DEC-7 (owner, 2026-09-25): keep the watermark as an AI-provenance mark; required in production (plan 11 node: uv sync --frozen --no-dev --extra cuda --extra watermark, fail closed unless 'Audio watermarking initialized (Perth)' is logged); the Mac M0 trial runs without it (audio never published). Perth carries no owner payload, so ownership proof is [OPEN] (01 CR-13)"
   },
   "cold_start_s": [
     4.0,
