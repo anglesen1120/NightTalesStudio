@@ -66,10 +66,11 @@ Versions on 2026-09-25: Homebrew 7.0.6, git 2.49.0, uv 0.12.18, ffmpeg 9.0.2 (`l
 | gitleaks | MIT | `brew info --json=v2 gitleaks`; https://github.com/gitleaks/gitleaks/blob/master/LICENSE | 2026-09-25 |
 | uv | Apache-2.0 OR MIT | `brew info --json=v2 uv` | 2026-09-25 |
 | shellcheck | GPL-3.0-or-later (local dev tool only, never shipped or linked) | `brew info --json=v2 shellcheck` | 2026-09-25 |
+| MPT (MoneyPrinterTurbo, in `.nts`) | MIT @ `3d5f4e421927d61f3eac729cf4b711ac0b69d688` | `.nts/src/mpt/LICENSE`; `app/services/upload_post.py` is never enabled or called (renderer guards upload_post_*) | 2026-09-25 |
 
 ## Pins
 
-`worker-node/pins.env` is the only place versions live (D2). `lib.sh` `load_pins` accepts exactly 13 keys, 40-hex SHAs and `3.x` Pythons. Resolved 2026-09-25 (01.1.1-T2):
+`worker-node/pins.env` is the only place versions live (D2). `lib.sh` `load_pins` accepts exactly 14 keys (`OPENAI_BASE_URL` must be `https://<host>/v1`, 01 DEC-9), 40-hex SHAs and `3.x` Pythons. Resolved 2026-09-25 (01.1.1-T2):
 
 | Repo | Pin | `.python-version` | `requires-python` | `uv.lock` | Version | Note |
 |---|---|---|---|---|---|---|
@@ -104,6 +105,8 @@ Summary per project: `<project> <sha> python=<x.y> sync=<frozen|unlocked> strip=
 
 VieNeu weights: `worker-node/bin/fetch-vieneu-weights.sh --fetch|--record|--verify` (`worker-node/vieneu/weights.sha256`, 15 files).
 
+Whisper model: `worker-node/bin/fetch-whisper-model.sh [--verify]` → `$NTS_HOME/src/mpt/models/whisper-large-v3-turbo/` (order: `bootstrap.sh mpt` → `fetch-whisper-model.sh`). Pin `WHISPER_MODEL_REVISION` + sha256 list `worker-node/mpt/whisper-large-v3-turbo.sha256` (7 files, ~1.5 GB, licence MIT at pin `0a363e91`, 2026-09-25; upstream repo renamed to `dropbox-dash/faster-whisper-large-v3-turbo`, `mobiuslabsgmbh` redirects). Offline: MPT picks up `models/whisper-<model_size>` with `HF_HUB_OFFLINE=1`, no hub call. Note: this Mac has blackholed IPv6 — the script probes v6 and falls back to an AF_INET `snapshot_download` (same call `hf download` makes).
+
 ## Secret scanning
 
 gitleaks 8.30.1 (v8.19+ syntax). Activation per clone: `git config core.hooksPath .githooks`.
@@ -127,8 +130,38 @@ Both hooks fail closed if gitleaks is missing.
 | Service | Start (own terminal, foreground) | Ready when | Stop |
 |---|---|---|---|
 | VieNeu 127.0.0.1:8000 | `worker-node/bin/start-vieneu.sh` (`--check` preflight, `--verify-weights`) | `READY vieneu http://127.0.0.1:8000 after Ns` | Ctrl-C (exit 0) |
+| MPT API 127.0.0.1:8080 | `worker-node/bin/start-mpt-api.sh` | `mpt-api ready on 127.0.0.1:8080` | Ctrl-C (exit 0) |
+| Usage tap 127.0.0.1:8002 | `trial/tools/start-tap.sh` | `usage tap listening on 127.0.0.1:8002` in the teed log | Ctrl-C |
 
-Smoke: `worker-node/bin/smoke.sh` runs `smoke-vieneu.sh`, then `check-binds.sh`, then the `git.hooks` row. Refresh the VieNeu voice snapshot only after a review: `smoke-vieneu.sh --update-snapshot`. Logs: `$NTS_HOME/logs/vieneu-<ts>.log`.
+Smoke: `worker-node/bin/smoke.sh` runs `smoke-vieneu.sh`, `smoke-mpt.sh`, then `check-binds.sh`, then the `git.hooks` row. Refresh the VieNeu voice snapshot only after a review: `smoke-vieneu.sh --update-snapshot`. Logs: `$NTS_HOME/logs/vieneu-<ts>.log`, `$NTS_HOME/logs/mpt-api-<ts>.log`.
+
+### MPT API (01.2.2)
+
+`start-mpt-api.sh` verifies the tap/proxy listeners (SEC-04) **before any Keychain read**, then renders `worker-node/mpt/config.template.toml` into `.nts/src/mpt/config.toml` (0600, atomic, guarded) via `worker-node/bin/render-mpt-config.py` and refuses to start on any failure. `bootstrap.sh mpt` re-runs `worker-node/bin/strip-bundled-music.sh` (hash allow-list = the `sha256` column of `worker-node/music/LICENSES.csv`); `worker-node/bin/install-music.sh` installs the licensed tracks from `.nts/music/`. No WebUI in M0 (D14): nothing may listen on 8501–8599. Redacted last-render state: `.nts/mpt-config.last.redacted.toml`. Logs: `.nts/logs/mpt-api-<ts>.log`.
+
+### Usage tap (01.3.1-T2)
+
+`trial/tools/start-tap.sh` runs `trial/tools/usage_tap.py` in the foreground on `127.0.0.1:8002` (D4). The tap forwards `/v1/*` to the pinned upstream — the origin of `OPENAI_BASE_URL` in `worker-node/pins.env` (`https://api.aixingialaire.shop`, 01 CR-15 / DEC-9) — unchanged, and appends exactly one D6 JSON line per call to `trial/runs/<run_id>/openai_usage.jsonl` (`no-run` when `$NTS_HOME/current_run` is absent). It never stores or logs a header, key, prompt, message content or image bytes (F02, D6).
+
+**The tap must be running before any MPT render**: the rendered `config.toml` points `openai_base_url` and `openai_image_base_url` at `http://127.0.0.1:8002/v1`, and `start-mpt-api.sh` refuses to read the Keychain unless `8002` is owned by this `usage_tap.py` with `tap.json.upstream` equal to the pinned origin (SEC-04). Without the tap, MPT calls fail with connection refused.
+
+Once bound, `usage_tap.py` writes `$NTS_HOME/tap.json` (`pid`, `upstream`, `image_quality_injection`, `timeout_s`, `port`). Request log: `$NTS_HOME/logs/tap-<YYYYmmdd-HHMMSS>.log`, one line per request (`ts method endpoint status latency_ms`, no headers/bodies).
+
+⚠️ `TAP_IMAGE_QUALITY` (`low|medium|high|auto`) injects a `quality` field into `/images/generations` bodies that omit it. Keep it **unset** until the 03 quality decision (CR-3) — the accepted M0 posture is injection off; `tap.json.image_quality_injection` records the active value for the run manifest.
+
+Stop: Ctrl-C (own terminal, D9). Env overrides (stub tests only): `TAP_UPSTREAM=http://127.0.0.1:<port>` plus `TAP_RUNS_DIR` outside `trial/runs` — a stub-mode tap refuses to write into real run directories (`tap_stub_upstream_forbidden`, NTS01-SEC-04). `TAP_UPSTREAM_TIMEOUT_S` must stay ≥ 300 s against the real upstream (M4).
+
+### RAM sampler (01.3.2-T1)
+
+`trial/tools/rss_sampler.sh <run_id> [--interval 1] [--duration <s>]` — started in the background by `trial/tools/start_run.sh` (01.3.1-T3), one per active run. It samples every second and writes `$NTS_HOME/runs/<run_id>/rss_raw.csv` (17 cols: per-tree pid/RSS-KiB/nproc for VieNeu:8000, proxy:8001, MPT:8080, WebUI:8501, `swap_used_mb`, `pressure_level`, `free_pct`, `sample_ms`). Roots are the TCP listeners on the D4 ports, refreshed every 10 s; a tree = listener + all descendants (covers ffmpeg children, F04). Whisper runs inside the MPT process, so its RAM is only attributable by stage window, not by process (M3).
+
+Stop: SIGTERM/SIGINT, `--duration`, or `$NTS_HOME/current_run` changing/cleared — whichever first. On stop it appends the `all` summary row (peaks MiB, swap start/peak, worst pressure, min free %, `mpt_nproc_max`, `sample_ms` p95) to the tracked `trial/runs/<run_id>/rss.csv`; `finish_run.py` appends `stage:<key>` rows later. Service down → `pid` empty, `rss`/`nproc` 0, loop keeps running. Log: `$NTS_HOME/runs/<run_id>/rss_sampler.log`; pid file removed on exit.
+
+Probes (2026-09-25, macOS 27, M4): `ps -o rss` **is KiB** — `loginwindow` ps rss 20048 KiB vs `top -l 1` `19.6m` (Q7 ✅). `vm.swapusage` → `used = 3915.12M` parses per spec regex. `kern.memorystatus_vm_pressure_level` → `1` and `memory_pressure` → `System-wide memory free percentage: 51%` both work without sudo (Q6 ✅). `sample_ms` tick cost ≈ 30–50 ms mean / ~110 ms cold-start spike; selftest report prints measured mean/p95 and sampler CPU.
+
+`--selftest <s>` needs no run: spawns a throwaway HTTP server on 127.0.0.1:18099 with a 50 MiB child, samples it as `mpt`, prints tree RSS/nproc and overhead, kills the tree. Self-test dir stays under `$NTS_HOME/runs/sampler-selftest-<ts>/`.
+
+Measurement limits (also in `trial/schema.md`): tree RSS counts shared/mmap'd pages per process → peaks are **upper bounds** of private use; 1 s sampling misses sub-second spikes → peaks are **lower bounds** of the true max for bursts; whisper/render share the MPT process (window attribution only); `footprint`/`vmmap --summary` noted as optional private-memory comparison in T4, not in the loop.
 
 ## Undo
 

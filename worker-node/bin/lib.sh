@@ -9,7 +9,7 @@ NTS_SERVICES=(nts.openai.story nts.openai.image nts.mpt.api_key nts.vieneu.api_k
 NTS_LOCAL_SERVICES=(nts.mpt.api_key nts.vieneu.api_key nts.proxy.api_key)
 NTS_PIN_KEYS=(MPT_REPO MPT_COMMIT MPT_PYTHON VIENEU_REPO VIENEU_COMMIT VIENEU_PYTHON
   VIENEU_MODEL_REPO VIENEU_MODEL_REVISION VIENEU_CODEC_REPO VIENEU_CODEC_REVISION
-  WHISPER_MODEL_REPO WHISPER_MODEL_REVISION PROXY_PYTHON)
+  WHISPER_MODEL_REPO WHISPER_MODEL_REVISION PROXY_PYTHON OPENAI_BASE_URL)
 export NTS_REPO_ROOT
 
 # log <msg…> — timestamped line on stderr. Never pass secret values.
@@ -73,7 +73,7 @@ nts_home_init() {
   fi
 }
 
-# load_pins — parse worker-node/pins.env line by line (never sourced) and export the 13 D2 keys.
+# load_pins — parse worker-node/pins.env line by line (never sourced) and export the 14 D2 keys (OPENAI_BASE_URL: 01 DEC-9).
 load_pins() {
   local f="$NTS_REPO_ROOT/worker-node/pins.env" line key val k n=0
   local -a seen=()
@@ -87,6 +87,7 @@ load_pins() {
     case "$key" in
       *_COMMIT|*_REVISION) [[ "$val" =~ ^[0-9a-f]{40}$ ]] || die 2 "pins.env: $key: not a 40-char lowercase hex SHA" ;;
       *_PYTHON) [[ "$val" =~ ^3\.[0-9]+$ ]] || die 2 "pins.env: $key: not a major.minor Python version" ;;
+      *_BASE_URL) [[ "$val" =~ ^https://[a-z0-9.-]+/v1$ ]] || die 2 "pins.env: $key: not https://<host>/v1" ;;
       *) [ -n "$val" ] || die 2 "pins.env: $key: empty value" ;;
     esac
     seen+=("$key")

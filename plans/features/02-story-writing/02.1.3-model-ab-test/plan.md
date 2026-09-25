@@ -175,8 +175,8 @@ External contracts consumed only:
 
 | Contract | Shape |
 |---|---|
-| Usage tap (01 D6) | `POST http://127.0.0.1:8002/v1/responses`, forwarded to `https://api.openai.com/v1/responses`. TLS verified by the tap; `Authorization: Bearer <key>` added by the harness in memory. |
-| Responses API | `{ model, input: [ {role, content}, … ], text: {format:{type:"json_schema", name:"story", schema:<story.v1.json>, strict:true}}, reasoning:{effort:"low"}, max_output_tokens, store:false, safety_identifier, prompt_cache_key }` + header `X-Client-Request-Id: <run_id>:writer:1`. |
+| Usage tap (01 D6) | `POST http://127.0.0.1:8002/v1/responses`, forwarded to `$OPENAI_BASE_URL/responses` (pinned relay `https://api.aixingialaire.shop/v1`, 01 CR-15). TLS verified by the tap; `Authorization: Bearer <key>` added by the harness in memory. |
+| Responses API | `{ model, input: [ {role, content}, … ], text: {format:{type:"json_schema", name:"story", schema:<story.v1.json>, strict:true}}, reasoning:{effort:"medium"} (Writer, owner 2026-09-25), max_output_tokens, store:false, safety_identifier, prompt_cache_key }` + header `X-Client-Request-Id: <run_id>:writer:1`. |
 | MPT hand-off (M3) | `video_script` (from `video_script.txt`), `video_terms` (from `video_terms.json`) sent in `VideoParams` — skips MPT's LLM entirely. |
 
 `prompt_version` string written into `metrics.json`/`request.json` uses the D5 composite form, minus the steps this spike does not run: `rel=<manifest release>;sys=writer.v1;preset=<topic>.<lang>.v1;schema=story.v1`.
@@ -191,7 +191,7 @@ No scheduler, no Hangfire, no container. Runtime prerequisites and their failure
 
 | Prerequisite | Check | Failure behaviour |
 |---|---|---|
-| Usage tap listening | `lsof -nP -iTCP:8002 -sTCP:LISTEN` before the batch | exit 2 with "usage tap not listening on 8002 (01 D6)" — the harness must **not** call `api.openai.com` directly, or the trial's spend/usage evidence is lost |
+| Usage tap listening | `lsof -nP -iTCP:8002 -sTCP:LISTEN` before the batch | exit 2 with "usage tap not listening on 8002 (01 D6)" — the harness must **not** call the upstream (`OPENAI_BASE_URL`, 01 CR-15) directly, or the trial's spend/usage evidence is lost |
 | Keychain item `nts.openai.story` | `security find-generic-password -a "$USER" -s nts.openai.story -w` | exit 2 naming the service; never echo the value |
 | `uv` + Python 3.12 | `uv run --no-project --python 3.12 -c "import sys;print(sys.version)"` | exit 2 |
 | `$NTS_HOME/current_run` | read from env/`$NTS_HOME` | not fatal: the tap files usage under `no-run`; `metrics.json` still carries the real numbers, so the batch continues with a warning |

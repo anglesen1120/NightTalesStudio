@@ -69,7 +69,7 @@ No database. Tracked files under `trial/` (D1), untracked under `$NTS_HOME` (D1)
 | `trial/runs/<run_id>/notes.md` | ✅ | operator | D11 conditions, anomalies, dashboard comparison |
 | `trial/runs/no-run/openai_usage.jsonl` | ❌ (git-ignored, agreed with 01.1.2-T1) | `usage_tap.py` | Calls made while no run is active |
 | `$NTS_HOME/current_run` | ❌ | `start_run.sh` writes, `finish_run.py` clears | One line: active `run_id` |
-| `$NTS_HOME/tap.json` | ❌ | `start-tap.sh` | `{"started_at", "port": 8002, "upstream": "https://api.openai.com", "image_quality_injection": null\|"<q>", "timeout_s": 610}` — copied into `run.json.tap` |
+| `$NTS_HOME/tap.json` | ❌ | `start-tap.sh` | `{"started_at", "port": 8002, "upstream": "<origin of OPENAI_BASE_URL>" (01 CR-15), "image_quality_injection": null\|"<q>", "timeout_s": 610}` — copied into `run.json.tap` |
 | `$NTS_HOME/runs/<run_id>/rss_raw.csv`, `rss_sampler.pid`, `rss_sampler.log` | ❌ | `rss_sampler.sh` | 1 s samples |
 | `$NTS_HOME/runs/<run_id>/final-1.mp4`, `script.txt` | ❌ | `finish_run.py` (copies) | Media and story text (content, not tracked) |
 | `$NTS_HOME/logs/tap-<YYYYmmdd-HHMMSS>.log` | ❌ | `start-tap.sh` (tee) | One line per request: ts, method, endpoint, status, latency; no bodies/headers |
@@ -131,7 +131,7 @@ Usage tap HTTP surface (`127.0.0.1:8002`, D4/D6):
 
 | Request | Behaviour | Status |
 |---|---|---|
-| `POST /v1/*`, `GET /v1/*` | Forward to `https://api.openai.com/v1/*` with body and headers (minus hop-by-hop), `Authorization` passed through, `Accept-Encoding: identity` | Upstream status/body unchanged |
+| `POST /v1/*`, `GET /v1/*` | Forward to `$OPENAI_BASE_URL/*` (01 CR-15) with body and headers (minus hop-by-hop), `Authorization` passed through, `Accept-Encoding: identity` | Upstream status/body unchanged |
 | Other methods | Not forwarded | 405 `{"error":{"type":"tap_error","code":"tap_method_not_allowed"}}` |
 | Path not under `/v1/` | Not forwarded | 404 `…"code":"tap_path_not_allowed"` |
 | `Content-Length` > `TAP_MAX_BODY_BYTES` (1 MiB) or chunked request | Not forwarded | 413 `tap_body_too_large` / 411 `tap_length_required` |
@@ -154,7 +154,7 @@ N/A — CLI and files only; no WebUI changes.
 
 | Integration | Direction | Timeouts / retries | Failure mapping |
 |---|---|---|---|
-| OpenAI via tap | MPT → tap → `api.openai.com` | Tap: connect 30 s, total read `TAP_UPSTREAM_TIMEOUT_S = 610` (≥ MPT image 300 s ✅ M4 and ≥ OpenAI SDK default ⚠️); **no retries in the tap** (MPT retries, M4/M5) | Upstream status returned unchanged; tap-side errors → 502 `tap_upstream_*` (MPT retries 502 for images, M4 — a timeout after the request reached OpenAI could double-bill; logged, visible in JSONL) |
+| OpenAI via tap | MPT → tap → `${OPENAI_BASE_URL%/v1}` from `pins.env` (today `https://api.aixingialaire.shop`, 01 CR-15) | Tap: connect 30 s, total read `TAP_UPSTREAM_TIMEOUT_S = 610` (≥ MPT image 300 s ✅ M4 and ≥ OpenAI SDK default ⚠️); **no retries in the tap** (MPT retries, M4/M5) | Upstream status returned unchanged; tap-side errors → 502 `tap_upstream_*` (MPT retries 502 for images, M4 — a timeout after the request reached OpenAI could double-bill; logged, visible in JSONL) |
 | MPT log | file → collector | — | Missing marker → stage `n/a:marker-missing`; missing end marker → exit 1 unless `--status failed` |
 | Proxy log (CR-1, 04) | file → collector | — | Missing/no `ts` → fallback ffprobe of the task audio; else `n/a:no-proxy-log` |
 | RSS sampler | background process started by `start_run.sh` | 1 s loop; lsof root refresh every 10 s; pressure every 5 s | Service down → zeros + `*_pid` empty; stopped by SIGTERM, by `current_run` change, or `--duration` |
@@ -166,7 +166,7 @@ N/A — CLI and files only; no WebUI changes.
 | Threat | Control |
 |---|---|
 | Tap sees API keys in transit | Keys pass through in the `Authorization` header only; the tap holds no key, never stores or logs headers; exceptions logged as type name only (no `repr` of request); no `set -x` in `start-tap.sh` |
-| Tap as an open proxy / SSRF | Bound to `127.0.0.1` only; upstream fixed to `https://api.openai.com`; `TAP_UPSTREAM` override accepted only for `http://127.0.0.1:<port>` (tests); only `/v1/` paths; no `CONNECT`; TLS verified with `ssl.create_default_context()` and **no** option to disable it |
+| Tap as an open proxy / SSRF | Bound to `127.0.0.1` only; upstream fixed to `${OPENAI_BASE_URL%/v1}` from `pins.env` (today `https://api.aixingialaire.shop`, 01 CR-15); `TAP_UPSTREAM` override accepted only for `http://127.0.0.1:<port>` (tests); only `/v1/` paths; no `CONNECT`; TLS verified with `ssl.create_default_context()` and **no** option to disable it |
 | Local process uses the tap | It must bring its own key; the tap adds no privilege [INFERENCE]; every call is logged to the active run |
 | Prompts/content leak into git | JSONL keeps only D6 fields; request parsing extracts `model, size, quality, moderation, n`; response parsing extracts `quality, size, usage` (numeric leaves only) and `error.code`; no prompt, messages, b64, URLs |
 | Secrets in run manifest | `run_manifest.py` redacts values of keys matching `(^|_)(api_key|api_keys|key|secret|token|password)$` before hashing; stores key names only; config itself is never copied |
@@ -218,5 +218,5 @@ New files introduced (fit D1/D9): `trial/tools/usage_tap.py`, `trial/tools/start
 4. 01.2.2-T6 wiring render inside `start_run.sh … --status calibration` → 01.3.1-T4 → gate **01-ready** (a complete calibration row; `dashboard_cost_usd_check` may still be `n/a:pending-dashboard`, but MUST be filled before 05.5.2 prices are used and before **01-closed**).
 5. 05.5.2 trial rows (`--status trial`), one vi, one en → **01-closed** (D12).
 6. Monitoring during runs: `tail -f trial/runs/$(cat "$NTS_HOME/current_run")/openai_usage.jsonl`, tap terminal log, `$NTS_HOME/runs/<id>/rss_sampler.log`.
-7. Rollback: if the tap misbehaves, stop it, re-render the MPT config with both base URLs = `https://api.openai.com/v1` (template change in 01.2.2-T2), and fall back to the README §9 lean option (dashboard daily totals, one run per day per project); the collector then writes `n/a:no-tap` for token/cost columns — `start_run.sh` requires `--no-tap` to allow this [DECISION].
+7. Rollback: if the tap misbehaves, stop it, re-render the MPT config with both base URLs = `OPENAI_BASE_URL` (`start-mpt-api.sh --no-tap`, 01 CR-15), and fall back to the README §9 lean option (dashboard daily totals, one run per day per project); the collector then writes `n/a:no-tap` for token/cost columns — `start_run.sh` requires `--no-tap` to allow this [DECISION].
 8. Close: tap stopped and not carried to the worker (D6, CR-4); `CARRY-OVER.md` (01.3.3) records the measured numbers and that production metering is open.

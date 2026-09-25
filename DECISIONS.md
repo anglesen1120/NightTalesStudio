@@ -22,7 +22,7 @@ An automated pipeline for **faceless** YouTube (and TikTok) videos, published as
 
 | Constraint | Detail |
 |---|---|
-| Software | Prefer open source, run locally. **Only exception: OpenAI API** (story writing + image generation) |
+| Software | Prefer open source, run locally. **Only exception: OpenAI API** (story writing + image generation), reached in phase P through the owner's OpenAI-compatible relay `https://api.aixingialaire.shop/v1` (01 DEC-9, 2026-09-25; phase S [OPEN]) |
 | License | Every model/tool must **allow commercial use** (monetized channel) |
 | Hardware | Mac M4, **16 GB RAM** = development and phase-1 trial only (one model at a time). Public traffic needs a separate worker server (section 10.4) |
 | Secrets | API keys live only in the macOS Keychain and one rendered, git-ignored `config.toml` (0600, outside the repo), **never committed**, never pasted into chat. Hard spend limits per OpenAI project (plan 01 D3, D5, D7) |

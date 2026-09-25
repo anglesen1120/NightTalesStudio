@@ -98,7 +98,7 @@ Rule: **the developer may not be an org Owner** (O3 needs Owner). U1–U6 and U8
 
 ## 5. API and events
 
-External calls only (no own API). All go direct to `https://api.openai.com/v1` in T3; after 01.3.1-T2, MPT goes through the tap (D6), which uses the same endpoints.
+External calls only (no own API). All go direct to the pinned `OPENAI_BASE_URL` in T3 (relay, 01 DEC-9/CR-15); after 01.3.1-T2, MPT goes through the tap (D6), which uses the same endpoints.
 
 | Call | Used by | Body (T3) | Expected |
 |---|---|---|---|
