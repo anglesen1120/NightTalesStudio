@@ -149,7 +149,7 @@ Spec: `plans/features/01-environment-setup/01.2.4-openai-access/01.2.4-T1-org-ve
   - Review fixes:
     - (M) `plans/01-environment-setup.md` §5.2 `openai_image_base_url` now points at the tap.
     - (L) D6 `reasoning_effort` on `/chat/completions` now reads only `reasoning_effort`, so it matches what was sent.
-    - (L) the tap's `read_pins` rejects duplicate keys like `load_pins` does.
+    - (L) the tap's `read_pins` uses the same rules as `load_pins`: duplicate keys and malformed lines (e.g. `KEY = val`) → exit 2 (TechLead advisory; tested).
     - (L) T3 doc: C3 records `api` + `reasoning_effort`, not `via`.
     - All re-tested against the stub.
   - Not changed: D6 cannot tell injected effort from client-sent effort (informational; the contract says "effort sent").

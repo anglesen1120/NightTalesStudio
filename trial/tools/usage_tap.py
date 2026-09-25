@@ -61,6 +61,7 @@ QUALITIES = ("low", "medium", "high", "auto")
 EFFORTS = ("none", "minimal", "low", "medium", "high", "xhigh")
 IMAGE_APIS = ("images", "responses")
 MODEL_ID = re.compile(r"^[a-z0-9][a-z0-9.-]*$")
+PIN_LINE = re.compile(r"^[A-Z_]+=\S*$")
 PIN_KEYS = ("OPENAI_BASE_URL", "OPENAI_IMAGE_API", "OPENAI_IMAGE_HOST_MODEL",
             "OPENAI_EFFORT_IMAGE_HOST", "OPENAI_EFFORT_CHAT")
 # Tool options copied from the images/generations body (never the prompt).
@@ -114,8 +115,13 @@ def read_pins():
     pins = {}
     try:
         for raw in path.read_text(encoding="utf-8").splitlines():
-            key, sep, val = raw.strip().partition("=")
-            if sep and key in PIN_KEYS:
+            if not raw or raw.startswith("#"):
+                continue
+            # Same line rule as lib.sh load_pins: ^[A-Z_]+=[^[:space:]]*$
+            if not PIN_LINE.match(raw):
+                die_config(f"pins.env: malformed line: {raw.partition('=')[0].strip()}")
+            key, sep, val = raw.partition("=")
+            if key in PIN_KEYS:
                 if key in pins:
                     die_config(f"pins.env: {key}: duplicate key")
                 pins[key] = val.strip()
