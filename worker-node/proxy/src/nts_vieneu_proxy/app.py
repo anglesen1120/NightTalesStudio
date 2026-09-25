@@ -1,9 +1,11 @@
 """FastAPI app: ``POST /v1/audio/speech`` streaming pipeline (D2–D7).
 
-Auth (D2) runs before the body is read; D3 checks run in order (step 1's
-body-size limit and D5's retry/budget handling land in 04.1.2-T2). After
-commit, any failure aborts the connection (X2); exactly one D7 log line is
-emitted per request.
+Auth (D2) runs before the body is read; D3 checks run in order (step 1 is
+the counting ``read_body`` limit). D5 admission (semaphore + upstream-429
+retry inside one ``ADMISSION_WAIT_S`` budget) lives in
+``SpeechPipeline.admit``; ``_RouteGate`` enforces the D2 allow-list before
+any route. After commit, any failure aborts the connection (X2); exactly
+one D7 log line is emitted per request.
 """
 
 from __future__ import annotations
@@ -20,18 +22,32 @@ from typing import Any, AsyncIterator
 
 import httpx
 from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, Response, StreamingResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.requests import ClientDisconnect
-from starlette.types import Message, Send
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from .catalog import Catalog
 from .config import Settings
-from .errors import AbortStream, ProxyError, error_body
+from .errors import AbortStream, ProxyError, error_body, map_upstream_status
+from .health import build_health
 from .reqlog import RequestLog, emit
 from .transcode import Mp3Encoder
-from .upstream import UpstreamSpeech, VieneuClient
+from .upstream import UpstreamSpeech, VieneuClient, parse_retry_after
+from .voice_cache import UpstreamVoiceCache
 
 ROUTE = "/v1/audio/speech"
+ROUTE_VOICES = "/v1/audio/voices"  # 04.1.3-T1
+ROUTE_HEALTH = "/health"  # 04.1.4-T1
+# D2 allow-list: path -> allowed methods (the contract, not the router —
+# the gate must answer 405 even for routes a later task has not added yet).
+_ALLOWED_ROUTES: dict[str, frozenset[str]] = {
+    ROUTE: frozenset({"POST"}),
+    ROUTE_VOICES: frozenset({"GET"}),
+    ROUTE_HEALTH: frozenset({"GET"}),
+}
+MAX_BODY_BYTES = 262_144  # D3 step 1
 _MAX_INPUT_CHARS = 20_000
 _KNOWN_FIELDS = {"input", "voice", "response_format"}
 _UPSTREAM_SAMPLE_RATE = "48000"
@@ -73,8 +89,33 @@ def _check_auth(request: Request, settings: Settings) -> None:
         raise ProxyError("proxy_unauthorized", 401, "invalid or missing bearer token")
 
 
+async def read_body(request: Request, limit: int = MAX_BODY_BYTES) -> bytes:
+    """D3 step 1: count bytes as they arrive; never buffer past ``limit``.
+
+    A declared ``Content-Length`` over the limit is rejected before reading;
+    otherwise the stream is counted and 413 ``body_too_large`` is raised as
+    soon as the count exceeds the limit — the rest is never consumed.
+    """
+    try:
+        declared = int(request.headers.get("content-length", "-1"))
+    except ValueError:
+        declared = -1  # malformed: let the counting read decide
+    if declared > limit:
+        raise ProxyError(
+            "body_too_large", 413, f"request body exceeds {limit} bytes"
+        )
+    buf = bytearray()
+    async for chunk in request.stream():
+        buf.extend(chunk)
+        if len(buf) > limit:
+            raise ProxyError(
+                "body_too_large", 413, f"request body exceeds {limit} bytes"
+            )
+    return bytes(buf)
+
+
 def _parse_and_check(body: bytes, catalog: Catalog) -> SpeechRequest:
-    """D3 steps 2–6 (step 1's MAX_BODY_BYTES limit is 04.1.2-T2)."""
+    """D3 steps 2–6; step 1 (MAX_BODY_BYTES) is ``read_body``."""
     try:
         data = json.loads(body)
     except (json.JSONDecodeError, UnicodeDecodeError):
@@ -104,16 +145,6 @@ def _parse_and_check(body: bytes, catalog: Catalog) -> SpeechRequest:
     return SpeechRequest(input=text, voice=v, ignored_fields=ignored)
 
 
-def _map_upstream_status(up: UpstreamSpeech, message: str | None) -> ProxyError:
-    """D6 rows for a non-200 upstream status before commit."""
-    s = up.status
-    if s == 400:
-        return ProxyError("upstream_rejected", 400, message or "upstream rejected the request")
-    if s in (401, 403):
-        return ProxyError("upstream_auth_failed", 502, "upstream rejected the proxy key")
-    if s == 429:
-        return ProxyError("upstream_busy", 429, "upstream is busy", retry_after=5)
-    return ProxyError("upstream_unavailable", 502, "upstream returned an unexpected status")
 
 
 class SpeechPipeline:
@@ -156,7 +187,9 @@ class SpeechPipeline:
         self._upstream_post_sent: float | None = None
         self._last_upstream_byte: float | None = None
         self._ffmpeg_done: float | None = None
-        self._upstream_pcm = False
+        # D4/T15: set the moment VieNeu answers 200 — before (and independent
+        # of) the PCM header checks, because its stream slot is already held.
+        self._upstream_200 = False
         self._upstream_eof = False
         self._draining = False
         self._feed_error: OSError | None = None
@@ -165,11 +198,73 @@ class SpeechPipeline:
     # --- admission -----------------------------------------------------------
 
     async def admit(self) -> None:
-        slots: asyncio.Semaphore = self._slots
-        t = _loop().time()
-        await slots.acquire()
+        """D5: proxy slot + upstream-429 retries inside ONE budget.
+
+        ``ADMISSION_WAIT_S`` counts from arrival; the commit deadline
+        (``FIRST_AUDIO_DEADLINE_S``, always > the budget, D13) bounds the
+        headers wait of every upstream attempt — the httpx read timeout
+        deliberately does not (QA note L2). VieNeu 429 → sleep
+        ``min(Retry-After or 2, 5, budget left)`` and retry (V3).
+        """
+        budget_end = self.t0 + self.settings.admission_wait_s
+        # A free slot is taken unconditionally — wait_for(timeout=0) would
+        # otherwise race the timeout callback against an instant acquire.
+        if self._slots.locked():
+            try:
+                await asyncio.wait_for(
+                    self._slots.acquire(),
+                    timeout=max(budget_end - _loop().time(), 0.0),
+                )
+            except TimeoutError:
+                raise ProxyError(
+                    "proxy_busy", 429, "proxy admission budget spent", retry_after=5
+                ) from None
+        else:
+            await self._slots.acquire()
         self.slot_held = True
-        self.log.admission_wait_ms = int((_loop().time() - t) * 1000)
+
+        while True:
+            try:
+                async with asyncio.timeout_at(self.deadline):
+                    self._upstream_post_sent = _loop().time()
+                    cm = self.vieneu.speech_stream(self.req.upstream_body())
+                    up = await cm.__aenter__()
+            except TimeoutError:
+                raise ProxyError(
+                    "upstream_first_audio_timeout",
+                    504,
+                    "no upstream audio before the deadline",
+                ) from None
+            except httpx.HTTPError as exc:
+                raise ProxyError(
+                    "upstream_unavailable",
+                    502,
+                    f"upstream connect failed: {type(exc).__name__}",
+                ) from exc
+            if up.status != 429:
+                # Keep the response open through the pipeline's exit stack.
+                self.stack.push_async_exit(cm.__aexit__)
+                self.up = up
+                self.log.admission_wait_ms = int(
+                    (_loop().time() - self.t0) * 1000
+                )
+                return
+            # VieNeu saturated (V3): close this response and retry inside
+            # the shared admission budget.
+            await cm.__aexit__(None, None, None)
+            wait = min(
+                parse_retry_after(up.headers) or 2.0,
+                5.0,
+                budget_end - _loop().time(),
+            )
+            if wait <= 0:
+                raise ProxyError(
+                    "upstream_busy",
+                    429,
+                    "upstream admission budget spent",
+                    retry_after=5,
+                )
+            await asyncio.sleep(wait)
 
     # --- pipeline phases -----------------------------------------------------
 
@@ -178,26 +273,16 @@ class SpeechPipeline:
         if self.settings.ffmpeg_path is None:
             # Missing binary is not a startup error (D8); fail here instead.
             raise ProxyError("transcode_failed", 500, "ffmpeg binary not found")
-        await self.admit()  # D5 budget/429 handling is 04.1.2-T2
-        try:
-            async with asyncio.timeout_at(self.deadline):
-                self._upstream_post_sent = _loop().time()
-                self.up = await self.stack.enter_async_context(
-                    self.vieneu.speech_stream(self.req.upstream_body())
-                )
-        except TimeoutError:
-            raise ProxyError(
-                "upstream_first_audio_timeout", 504, "no upstream audio before the deadline"
-            ) from None
-        except httpx.HTTPError as exc:
-            raise ProxyError(
-                "upstream_unavailable", 502, f"upstream connect failed: {type(exc).__name__}"
-            ) from exc
-
+        await self.admit()  # D5: semaphore + upstream-429 retries, one budget
         assert self.up is not None
         self.log.upstream_rid = self.up.request_id
         if self.up.status != 200:
-            raise _map_upstream_status(self.up, await self.up.error_message())
+            raise map_upstream_status(
+                self.up.status, await self.up.error_message()
+            )
+        # D4/T15: from here VieNeu holds its synthesis slot until the body is
+        # read to EOF — the drain gate is this 200, not the format checks.
+        self._upstream_200 = True
         ctype = self.up.headers.get("content-type", "")
         if not ctype.startswith("audio/pcm"):
             raise ProxyError(
@@ -205,7 +290,6 @@ class SpeechPipeline:
             )
         if self.up.headers.get("x-sample-rate") != _UPSTREAM_SAMPLE_RATE:
             raise ProxyError("upstream_bad_format", 502, "unexpected upstream sample rate")
-        self._upstream_pcm = True
 
         self.enc = Mp3Encoder(self.settings.ffmpeg_path, self.settings.mp3_bitrate)
         try:
@@ -426,8 +510,14 @@ class SpeechPipeline:
             await asyncio.shield(finish)
 
     def needs_drain(self) -> bool:
-        """Upstream answered 200 PCM and its stream is not finished (T15)."""
-        return self.up is not None and self._upstream_pcm and not self._upstream_eof
+        """Upstream answered 200 and its stream is not finished (D4/T15).
+
+        The gate is the 200 itself, not whether the PCM header checks passed:
+        VieNeu holds its stream slot from the moment it answers, so a 200
+        whose Content-Type/X-Sample-Rate fail validation is still drained to
+        EOF instead of being closed early.
+        """
+        return self.up is not None and self._upstream_200 and not self._upstream_eof
 
     def close_detached(self) -> None:
         """Fire-and-forget close for a pre-commit error after a valid 200.
@@ -460,16 +550,15 @@ class SpeechPipeline:
     async def _cleanup(self) -> None:
         """Kill local resources, drain upstream (T15), release the slot.
 
-        On a valid upstream 200 PCM stream we keep reading and discarding
-        PCM until the stream ends, so VieNeu finishes the synthesis and
+        Once the upstream answered 200 we keep reading and discarding its
+        body until the stream ends, so VieNeu finishes the synthesis and
         releases its slot — disconnecting early leaked the upstream slot for
-        minutes (SPIKE). Bounded by UPSTREAM_READ_GAP_S without a byte and
+        minutes (SPIKE), and the same holds for a 200 that fails the PCM
+        header checks. Bounded by UPSTREAM_READ_GAP_S without a byte and
         REQUEST_MAX_S since arrival; a read error or bound hit means we just
         close upstream — nothing else is possible.
         """
-        drain = (
-            self.up is not None and self._upstream_pcm and not self._upstream_eof
-        )
+        drain = self.needs_drain()
         try:
             if drain:
                 # The pump keeps reading but discards instead of feeding ffmpeg.
@@ -497,11 +586,13 @@ class SpeechPipeline:
                 self.slot_held = False
 
     async def _drain_upstream(self) -> None:
-        """Consume/discard the rest of the upstream PCM stream (T15).
+        """Consume/discard the rest of the upstream body (T15).
 
         With a live pump it keeps reading (``_draining`` makes it discard
         instead of feed) and we bound its finish. With no live pump
-        (pre-commit failure, or pump already dead) we read directly.
+        (pre-commit failure — including a 200 that failed the PCM header
+        checks, so no pump was ever started — or the pump already dead) we
+        read directly.
         """
         pump = self.pump
         gap = float(self.settings.upstream_read_gap_s)
@@ -646,6 +737,110 @@ class _BoundedStreamResponse(StreamingResponse):
             with suppress(BaseException):
                 await self._pipe.close()
 
+class _RouteGate:
+    """D2 allow-list as pure ASGI: runs before FastAPI's router, so a
+    rejected request never reaches a handler or ``VieneuClient``.
+
+    Unknown path → 404 ``route_not_found``; known path + other method →
+    405 ``method_not_allowed`` + ``Allow``. Every rejection emits one D7
+    line (``route`` = the D2 route for a 405, ``"other"`` for a 404 — the
+    raw path is never logged).
+    """
+
+    def __init__(self, app: ASGIApp) -> None:
+        self._app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self._app(scope, receive, send)
+            return
+        path = scope["path"]
+        method = scope["method"]
+        allowed = _ALLOWED_ROUTES.get(path)
+        if allowed is not None and method in allowed:
+            await self._app(scope, receive, send)
+            return
+        if allowed is None:
+            _emit_reject_log(scope, 404, "route_not_found")
+            await _raw_json(
+                send, 404, error_body("route_not_found", "route not found")
+            )
+        else:
+            allow = ", ".join(sorted(allowed))
+            _emit_reject_log(scope, 405, "method_not_allowed")
+            await _raw_json(
+                send,
+                405,
+                error_body("method_not_allowed", "method not allowed"),
+                [(b"allow", allow.encode())],
+            )
+
+
+def _emit_reject_log(scope: Scope, status: int, code: str) -> None:
+    """D7 line for a request rejected before any handler ran."""
+    emit(
+        RequestLog(
+            ts=_utc_ms(),
+            rid=f"px-{secrets.token_hex(4)}",
+            route=scope["path"] if scope["path"] in _ALLOWED_ROUTES else "other",
+            method=scope["method"],
+            status=status,
+            http_status=status,
+            error_code=code,
+            wall_ms=0,
+        )
+    )
+
+
+async def _raw_json(
+    send: Send, status: int, body: dict, extra_headers: list | None = None
+) -> None:
+    payload = json.dumps(body, ensure_ascii=False).encode("utf-8")
+    headers = [(b"content-type", b"application/json")] + (extra_headers or [])
+    await send(
+        {
+            "type": "http.response.start",
+            "status": status,
+            "headers": headers,
+        }
+    )
+    await send({"type": "http.response.body", "body": payload})
+
+
+async def _on_proxy_error(request: Request, exc: ProxyError) -> JSONResponse:
+    """ProxyError escaping a route (future endpoints); speech handles its own."""
+    status = exc.http_status
+    _emit_reject_log(request.scope, status, exc.code)
+    headers = (
+        {"Retry-After": str(exc.retry_after)} if exc.retry_after is not None else None
+    )
+    return JSONResponse(error_body(exc.code, exc.message), status_code=status, headers=headers)
+
+
+async def _on_http_exception(
+    request: Request, exc: StarletteHTTPException
+) -> JSONResponse:
+    """Router-level 404/405 → the D6 shape (the gate normally answers first)."""
+    if exc.status_code == 404:
+        status, code = 404, "route_not_found"
+    elif exc.status_code == 405:
+        status, code = 405, "method_not_allowed"
+    else:
+        status, code = 500, "internal_error"
+    _emit_reject_log(request.scope, status, code)
+    return JSONResponse(
+        error_body(code, getattr(exc, "detail", "") or code),
+        status_code=status,
+        headers=getattr(exc, "headers", None),
+    )
+
+
+async def _on_validation_error(
+    request: Request, exc: RequestValidationError
+) -> JSONResponse:
+    _emit_reject_log(request.scope, 400, "invalid_request")
+    return JSONResponse(error_body("invalid_request", "invalid request"), status_code=400)
+
 
 def create_app(
     settings: Settings,
@@ -654,22 +849,34 @@ def create_app(
     vieneu_transport: httpx.AsyncBaseTransport | None = None,
 ) -> FastAPI:
     vieneu = VieneuClient(settings, transport=vieneu_transport)
+    voice_cache = UpstreamVoiceCache(vieneu, settings.catalog_check_interval_s)
     state = _AppState(settings, catalog, vieneu)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-        yield
+        # 04.1.3-T1: warm the upstream voice cache before serving requests;
+        # stop its refresh task on shutdown (it owns no request resources).
+        await voice_cache.start()
+        try:
+            yield
+        finally:
+            await voice_cache.stop()
         await vieneu.aclose()
 
     app = FastAPI(
         docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan
     )
+    app.add_middleware(_RouteGate)
+    app.add_exception_handler(ProxyError, _on_proxy_error)
+    app.add_exception_handler(StarletteHTTPException, _on_http_exception)
+    app.add_exception_handler(RequestValidationError, _on_validation_error)
     app.state.app_state = state
     app.state.settings = settings
     app.state.catalog = catalog
     app.state.vieneu = vieneu
     app.state.speech_slots = state.speech_slots
     app.state.active_pipelines = state.active_pipelines
+    app.state.voice_cache = voice_cache
 
     @app.post(ROUTE, response_model=None)
     async def speech(request: Request) -> Response:
@@ -683,7 +890,7 @@ def create_app(
         p: SpeechPipeline | None = None
         try:
             _check_auth(request, settings)
-            req = _parse_and_check(await request.body(), catalog)
+            req = _parse_and_check(await read_body(request), catalog)
             log.voice = req.voice
             log.chars = len(req.input)
             log.ignored_fields = req.ignored_fields
@@ -752,6 +959,70 @@ def create_app(
                 "X-Request-Id": log.rid,
             },
         )
+    # --- 04.1.3-T1: voices endpoint + upstream voice cache (separate block) ---
+
+    @app.get("/v1/audio/voices", response_model=None)
+    async def list_voices(request: Request) -> JSONResponse:
+        # D2 auth first (same helper as /v1/audio/speech); the request path
+        # never calls VieNeu — it reads the lifespan-owned cache only (D9).
+        # One D7 line per request, same as the speech route.
+        log = RequestLog(
+            ts=_utc_ms(),
+            rid=f"px-{secrets.token_hex(4)}",
+            route="/v1/audio/voices",
+            method="GET",
+        )
+        t0 = _loop().time()
+        try:
+            _check_auth(request, settings)
+        except ProxyError as exc:
+            log.status = exc.http_status
+            log.http_status = exc.http_status
+            log.error_code = exc.code
+            log.wall_ms = int((_loop().time() - t0) * 1000)
+            emit(log)
+            return JSONResponse(
+                error_body(exc.code, exc.message), status_code=exc.http_status
+            )
+        upstream_names = await request.app.state.voice_cache.names()
+        cat: Catalog = request.app.state.catalog
+        voices = [
+            {
+                "id": v.id,
+                "name": v.display_name,
+                "language": v.language,
+                "gender": v.gender,
+            }
+            for v in cat.voices
+            if v.active and v.id in upstream_names
+        ]
+        log.status = 200
+        log.http_status = 200
+        log.wall_ms = int((_loop().time() - t0) * 1000)
+        emit(log)
+        return JSONResponse({"voices": voices})
+
+    # --- 04.1.4-T1: GET /health (proxy-health.v1, D8) — separate block ---
+    # D2: no auth (loopback only) and the body carries no secrets (D8).
+    # `app.state.ffmpeg_probe` is set by the entry point (`__main__.py`) before
+    # uvicorn starts: the D8 ffmpeg probe is process-start I/O, not request work.
+    app.state.started_at = datetime.now(timezone.utc)
+
+    @app.get("/health", response_model=None)
+    async def health(request: Request) -> JSONResponse:
+        log = RequestLog(
+            ts=_utc_ms(),
+            rid=f"px-{secrets.token_hex(4)}",
+            route="/health",
+            method="GET",
+        )
+        t0 = _loop().time()
+        status_code, body = await build_health(request.app.state)
+        log.status = status_code
+        log.http_status = status_code
+        log.wall_ms = int((_loop().time() - t0) * 1000)
+        emit(log)  # D7: one line per request, every route
+        return JSONResponse(body, status_code=status_code)
 
     return app
 

@@ -49,15 +49,37 @@ def catalog(tmp_path: Path):
     return load_catalog(SEED_FILE)
 
 
-def pytest_collection_modifyitems(items):
-    """pytest-asyncio strict-mode fallback: the pinned run command executes
-    pytest from the repo root, where worker-node/proxy/pyproject.toml's
-    asyncio_mode="auto" is not picked up."""
-    import inspect
+PROXY_TESTS_DIR = Path(__file__).resolve().parent
 
-    for item in items:
-        if inspect.iscoroutinefunction(getattr(item, "function", None)):
-            item.add_marker(pytest.mark.asyncio)
+
+def pytest_configure(config: pytest.Config) -> None:
+    """Force pytest-asyncio auto mode.
+
+    The pinned D14 command runs pytest from the repo root, where
+    worker-node/proxy/pyproject.toml (``asyncio_mode = "auto"``,
+    ``testpaths = ["tests"]``) is not discovered. pytest-asyncio >= 1.4 only
+    converts a coroutine test into an async item at collection time
+    (``pytest_pycollect_makeitem``), keyed off the marker **or** the mode, so
+    adding ``@pytest.mark.asyncio`` after collection cannot work; the mode
+    option must be set here, before this directory is collected.
+    """
+    config.option.asyncio_mode = "auto"
+
+
+def pytest_collection_modifyitems(config: pytest.Config, items: list) -> None:
+    """Scope the session to this suite when no pytest config was discovered.
+
+    That is the D14 root invocation (``uv run --project worker-node/proxy
+    pytest -q`` run from the repo root): pytest is invoked with no path, so it
+    walks the whole repo and would also pull in unrelated sibling test trees.
+    """
+    if config.inifile is not None:
+        return
+    items[:] = [
+        item
+        for item in items
+        if Path(str(item.path)).resolve().is_relative_to(PROXY_TESTS_DIR)
+    ]
 
 
 @pytest.fixture

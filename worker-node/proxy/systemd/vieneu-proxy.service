@@ -1,0 +1,44 @@
+# nts-vieneu-proxy on the node (04 D13, CR-12). Written at M0; installed and activated by
+# 11.3.1-T2 (it runs `systemd-analyze verify` first). Hardening flags are the D13 list —
+# do not weaken them without a new review.
+[Unit]
+Description=NightTalesStudio VieNeu voice proxy
+After=network.target vieneu.service
+Requires=vieneu.service
+
+[Service]
+Type=simple
+User=nts-proxy
+Group=nts-proxy
+# 0640 root:nts-proxy, written from the node secret store (11.3.2). Holds PROXY_API_KEY,
+# VIENEU_API_KEY, VOICE_CATALOG_FILE=/opt/nts/current/seed/voices.v1.json,
+# FFMPEG_PATH=/usr/bin/ffmpeg and any non-default D13 overrides.
+EnvironmentFile=/etc/nts/vieneu-proxy.env
+Environment=VIENEU_BASE_URL=http://127.0.0.1:8000
+# Node venv path fixed by 11 D8 (11 CR-6).
+ExecStart=/opt/nts/current/venvs/proxy/bin/python -m nts_vieneu_proxy
+Restart=on-failure
+RestartSec=2
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+# Loopback only (D1); `localhost` is not allowed — it admits the resolver stub 127.0.0.53
+# (11 D20 H4, 11 CR-6).
+IPAddressDeny=any
+IPAddressAllow=127.0.0.1 ::1
+LimitNOFILE=4096
+# 04 D13 amendment (P2/P3 security review): defence-in-depth. Keep the D13 list above intact.
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+CapabilityBoundingSet=
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictNamespaces=yes
+LockPersonality=yes
+SystemCallArchitectures=native
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

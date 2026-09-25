@@ -87,6 +87,12 @@ class FakeVieneu:
             parsed = json.loads(body)
         except json.JSONDecodeError:
             parsed = None
+        if request.url.path == "/v1/voices":
+            # Lifespan voice-cache refresh (04.1.3-T1): a speech fake must
+            # still answer this cheaply — a scripted PCM stream here would
+            # hang the warmup GET on delays meant for audio chunks. Not
+            # recorded in ``requests``: ``call_count`` counts speech calls.
+            return httpx.Response(200, json={"object": "list", "data": []})
         self.requests.append(
             {
                 "path": request.url.path,

@@ -4,7 +4,7 @@
 
 Night Tales Studio turns story ideas into narrated videos (story → images → voice → subtitles → MP4 → YouTube). The owner's channel is built first (**personal phase P**, one owner account, autopilot). The public SaaS (**phase S**) is built only after a go decision (`plans/00-overview.md` §1.3, §4.1).
 
-**Current state: implementation started (2026-09-25).** Plan 01 (environment setup, M0) is being built on the owner's Mac. Tracked code: `worker-node/` (bash scripts, pins, runbook `worker-node/README.md`), `trial/` (fixtures, bench tools, baselines) and `.githooks/` (gitleaks). There is no .NET or Angular code yet; `src/`, `tests/`, `web/` and `tools/` are the target layout. **Progress lives in `STATUS.md`** (done / doing / blocked / next); read it first and update it with every change. Runtime state is in `<repo>/.nts/` (gitignored, `NTS_HOME`). API keys live only in the macOS Keychain and must never be committed or pushed (plan 01 DEC-6).
+**Current state:** implementation started 2026-09-25 on the owner's Mac; which plans are in progress is recorded only in `STATUS.md`. Tracked code: `worker-node/` (bash scripts, pins, runbook `worker-node/README.md`), `trial/` (fixtures, bench tools, baselines) and `.githooks/` (gitleaks). There is no .NET or Angular code yet; `src/`, `tests/`, `web/` and `tools/` are the target layout. **Progress lives in `STATUS.md`** (done / doing / blocked / next); read it first and update it with every change. Runtime state is in `<repo>/.nts/` (gitignored, `NTS_HOME`). API keys live only in the macOS Keychain and must never be committed or pushed (plan 01 DEC-6).
 
 ## Architecture & Data Flow
 
@@ -46,7 +46,7 @@ Worker node (plan 01): `git config core.hooksPath .githooks` once per clone, the
 
 ```bash
 grep -rn "Idempotency → UnitOfWork" plans          # find text that contradicts a contract
-tar -czf ~/.nts-snapshots/plans-$(date +%Y%m%d-%H%M%S).tgz plans DECISIONS.md   # snapshot before bulk edits (tree is untracked)
+tar -czf ~/.nts-snapshots/plans-$(date +%Y%m%d-%H%M%S).tgz plans DECISIONS.md   # snapshot uncommitted work before bulk edits
 ```
 
 Diagrams: 61 mermaid blocks across 30 files, all currently render (checked 2026-09-25, after the S-phase plans). A `;` inside a `sequenceDiagram` message breaks the parser even inside quotes (it is the statement separator) — use `,`. Edge labels with `:`, `(`, `)`, `<`, `>` must be quoted. After editing a block in `DIAGRAMS.md`, re-export its SVG to `docs/diagrams/NN-<slug>.svg`, because the SVGs are checked in and reviewed.
@@ -88,12 +88,12 @@ CI is two jobs plus a migration check: `build-test` (restore `--locked-mode`, Re
 
 ## Runtime/Tooling Preferences
 
-- .NET SDK 10.0.401 pinned in `global.json` (`rollForward: latestPatch`); .NET 11 is not used. NuGet uses central package management (`Directory.Packages.props`) plus lock files (`RestorePackagesWithLockFile` in `Directory.Build.props`, committed `packages.lock.json`; CI restores with `--locked-mode`).
-- Web: Angular 22 with the Angular CLI and npm (`npm run api:gen` regenerates `shared/api/` from the CI `openapi.json`); bundle budgets live in `angular.json` (10 §10.1.1). No other runtime is required for the repo today.
+- Planned, not in the repo yet: .NET SDK 10.0.401 pinned in `global.json` (`rollForward: latestPatch`); .NET 11 is not used. NuGet uses central package management (`Directory.Packages.props`) plus lock files (`RestorePackagesWithLockFile` in `Directory.Build.props`, committed `packages.lock.json`; CI restores with `--locked-mode`).
+- Planned: Web: Angular 22 with the Angular CLI and npm (`npm run api:gen` regenerates `shared/api/` from the CI `openapi.json`); bundle budgets will live in `angular.json` (10 §10.1.1). Today's tooling is the worker-node set (`worker-node/README.md`).
 - Worker (personal phase): MPT, VieNeu and faster-whisper are Python 3.11/3.12 pinned in `worker-node/pins.env` (`MPT_PYTHON`, `VIENEU_PYTHON`) — versions live only there.
-- PostgreSQL 17 in dev, CI and production. CI is GitHub Actions (`.github/workflows/backend.yml`), with third-party actions pinned by SHA.
+- PostgreSQL 17 in dev, CI and production. Planned: CI is GitHub Actions (`.github/workflows/backend.yml`), with third-party actions pinned by SHA.
 - Licences must allow commercial SaaS use. No AGPL, RPL or non-commercial licences; MediatR and AutoMapper are rejected. Hangfire LGPL-3.0 is accepted only as unmodified NuGet packages.
-- Local worker: runtime state lives in `NTS_HOME="${NTS_HOME:-$HOME/.nts}"`, never in the repo. Secrets live only in the macOS Keychain and are never printed. Services bind to `127.0.0.1` only (ports 8000/8001/8002/8080).
+- Local worker: runtime state lives in `NTS_HOME="${NTS_HOME:-<repo>/.nts}"` (gitignored; default set in `worker-node/bin/lib.sh`, CR-11). Secrets live only in the macOS Keychain and are never printed. Services bind to `127.0.0.1` only (ports 8000/8001/8002/8080).
 - OpenAI is the only paid provider.
 
 ## Testing & QA

@@ -17,6 +17,7 @@ def main() -> int:
     from .catalog import load_catalog
     from .config import Settings
     from .errors import CatalogError, ConfigError
+    from .health import probe_ffmpeg
 
     try:
         settings = Settings.from_env(os.environ)
@@ -31,6 +32,10 @@ def main() -> int:
         return 2
 
     app = create_app(settings, catalog)
+    # D8/D13: probe ffmpeg once, before uvicorn (and the event loop) starts, so
+    # it can never block it. A missing binary is not a startup failure: it is
+    # a `ffmpeg_missing` / `libmp3lame_missing` /health reason (D8).
+    app.state.ffmpeg_probe = probe_ffmpeg(settings.ffmpeg_path)
     uvicorn.run(
         app,
         host=settings.proxy_host,

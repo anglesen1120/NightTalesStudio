@@ -101,7 +101,7 @@ Local values are stored through `security -i` on stdin (the value is never in ar
 worker-node/bin/bootstrap.sh [mpt|vieneu|proxy|all]    # default all
 ```
 
-Summary per project: `<project> <sha> python=<x.y> sync=<frozen|unlocked> strip=<ok|skipped|n/a>`. Exit codes: 0 ok · 1 HEAD ≠ pin, local changes, Python mismatch, frozen sync failed, strip left audio · 2 bad argument, missing tool, invalid pins, non-clone dir, wrong remote, fetch failure, pin not found. The `proxy` target is skipped until 04.1.5-T1. Never edit `$NTS_HOME/src/*` by hand: an upstream change is a new pin.
+Summary per project: `<project> <sha> python=<x.y> sync=<frozen|unlocked> strip=<ok|skipped|n/a>`. Exit codes: 0 ok · 1 HEAD ≠ pin, local changes, Python mismatch, frozen sync failed, strip left audio · 2 bad argument, missing tool, invalid pins, non-clone dir, wrong remote, fetch failure, pin not found. The `proxy` target (04 CR-4) runs `uv sync --frozen --project worker-node/proxy` into `$NTS_HOME/src/proxy-venv` and is skipped only while `worker-node/proxy/` is absent. Never edit `$NTS_HOME/src/*` by hand: an upstream change is a new pin.
 
 VieNeu weights: `worker-node/bin/fetch-vieneu-weights.sh --fetch|--record|--verify` (`worker-node/vieneu/weights.sha256`, 15 files).
 
@@ -130,10 +130,11 @@ Both hooks fail closed if gitleaks is missing.
 | Service | Start (own terminal, foreground) | Ready when | Stop |
 |---|---|---|---|
 | VieNeu 127.0.0.1:8000 | `worker-node/bin/start-vieneu.sh` (`--check` preflight, `--verify-weights`) | `READY vieneu http://127.0.0.1:8000 after Ns` | Ctrl-C (exit 0) |
+| VieNeu proxy 127.0.0.1:8001 | `worker-node/bin/start-proxy.sh` (`--check` validates config + catalog without binding) | `GET /health` → 200 `proxy-health.v1` | Ctrl-C (proxy's exit code returned) |
 | MPT API 127.0.0.1:8080 | `worker-node/bin/start-mpt-api.sh` | `mpt-api ready on 127.0.0.1:8080` | Ctrl-C (exit 0) |
 | Usage tap 127.0.0.1:8002 | `trial/tools/start-tap.sh` | `usage tap listening on 127.0.0.1:8002` in the teed log | Ctrl-C |
 
-Smoke: `worker-node/bin/smoke.sh` runs `smoke-vieneu.sh`, `smoke-mpt.sh`, then `check-binds.sh`, then the `git.hooks` row. Refresh the VieNeu voice snapshot only after a review: `smoke-vieneu.sh --update-snapshot`. Logs: `$NTS_HOME/logs/vieneu-<ts>.log`, `$NTS_HOME/logs/mpt-api-<ts>.log`.
+Smoke: `worker-node/bin/smoke.sh` runs `smoke-vieneu.sh`, `smoke-mpt.sh`, `smoke-proxy.sh` (sorted glob), then `check-binds.sh`, then the `git.hooks` row. Refresh the VieNeu voice snapshot only after a review: `smoke-vieneu.sh --update-snapshot`. Logs: `$NTS_HOME/logs/vieneu-<ts>.log`, `$NTS_HOME/logs/proxy-<ts>.log`, `$NTS_HOME/logs/mpt-api-<ts>.log`.
 
 ### MPT API (01.2.2)
 
@@ -164,6 +165,14 @@ Probes (2026-09-25, macOS 27, M4): `ps -o rss` **is KiB** — `loginwindow` ps r
 `--selftest <s>` needs no run: spawns a throwaway HTTP server on 127.0.0.1:18099 with a 50 MiB child, samples it as `mpt`, prints tree RSS/nproc and overhead, kills the tree. Self-test dir stays under `$NTS_HOME/runs/sampler-selftest-<ts>/`.
 
 Measurement limits (also in `trial/schema.md`): tree RSS counts shared/mmap'd pages per process → peaks are **upper bounds** of private use; 1 s sampling misses sub-second spikes → peaks are **lower bounds** of the true max for bursts; whisper/render share the MPT process (window attribution only); `footprint`/`vmmap --summary` noted as optional private-memory comparison in T4, not in the loop.
+
+### VieNeu proxy (04.1)
+
+`worker-node/bin/start-proxy.sh` runs `nts_vieneu_proxy` in the foreground on `127.0.0.1:8001` (04 D1/D13): `require_port_free 8001`, then `nts.proxy.api_key` and `nts.vieneu.api_key` from the Keychain into the child's environment only (never argv, never logged), `VIENEU_BASE_URL=http://127.0.0.1:8000`, `VOICE_CATALOG_FILE=$NTS_REPO_ROOT/seed/voices.v1.json`, `PROXY_MAX_CONCURRENT=2`. The child is `$NTS_HOME/src/proxy-venv/bin/python -m nts_vieneu_proxy` (04 CR-6), output tee'd to `$NTS_HOME/logs/proxy-<YYYYmmdd-HHMMSS>.log`, child's exit code returned.
+
+`start-proxy.sh --check` runs `Settings.from_env` + `load_catalog` in-process and prints `config OK` without binding 8001 — safe while the proxy runs. Smoke: `worker-node/bin/smoke-proxy.sh` (also run by `smoke.sh`). Common failures: port busy → exit 2 from `require_port_free` before any Keychain read; `VieNeu is not listening on 127.0.0.1:8000` → start VieNeu first; `proxy venv missing` → `bootstrap.sh proxy`; `invalid: …` from `--check` → fix the named env var or `seed/voices.v1.json`.
+
+Node (M1): `worker-node/proxy/systemd/vieneu-proxy.service` (D13 hardening), installed by 11.3.1-T2. Package docs and licence table: `worker-node/proxy/README.md`, `worker-node/proxy/LICENSES.md`.
 
 ## Measured run (01.3.1-T3)
 

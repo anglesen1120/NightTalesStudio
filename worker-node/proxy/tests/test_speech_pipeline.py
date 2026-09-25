@@ -241,7 +241,9 @@ async def test_speech_bad_sample_rate_header_502(settings, catalog, capsys):
         resp = await client.post("/v1/audio/speech", json=_body(), headers=AUTH)
     assert resp.status_code == 502
     assert resp.json()["error"]["code"] == "upstream_bad_format"
-    assert _logs(capsys)[0]["status"] == 502
+    # D4/T15: the 200 is drained detached, so the D7 line lands at drain end.
+    line = await _await_log_line(capsys, "upstream_bad_format")
+    assert line["status"] == 502
 
 
 @pytest.mark.asyncio
@@ -517,6 +519,54 @@ def test_disconnect_drain_gap_timeout_closes_upstream(
     finally:
         server.should_exit = True
         thread.join(timeout=10)
+
+
+@pytest.mark.asyncio
+async def test_bad_format_200_drains_upstream_detached_and_holds_slot(
+    settings, catalog, capsys
+):
+    """D4/T15: the drain gate is "upstream answered 200", not "the PCM header
+    checks passed". A 200 with ``Content-Type: text/plain`` still answers 502
+    ``upstream_bad_format`` at once, but the body is drained detached to EOF
+    and the slot stays held until the drain ends (VieNeu frees its own slot
+    only when its stream ends)."""
+    chunks = [b"not-pcm" * 512 for _ in range(4)]
+    fake = FakeVieneu(
+        headers={"content-type": "text/plain", "x-sample-rate": "48000"},
+        chunks=chunks,
+        delays=[0.0, 0.5, 0.5, 0.5],
+    )
+    s = fast_settings(
+        settings, proxy_max_concurrent=1, admission_wait_s=0.2, upstream_read_gap_s=5
+    )
+    app = _app(s, catalog, fake)
+    t0 = time.monotonic()
+    async with await _client(app) as client:
+        resp = await client.post("/v1/audio/speech", json=_body(), headers=AUTH)
+        elapsed = time.monotonic() - t0
+        # Answer promptly: no drain time on the error response.
+        assert elapsed < 0.5
+        assert resp.status_code == 502
+        assert resp.json()["error"]["code"] == "upstream_bad_format"
+        assert fake.call_count == 1
+        assert fake.consumed < len(chunks)  # the drain is still running
+        assert len(app.state.active_pipelines) == 1  # held by the detached drain
+        assert app.state.speech_slots.locked()
+        # The single slot is unavailable for the whole drain.
+        second = await client.post("/v1/audio/speech", json=_body(), headers=AUTH)
+        assert second.status_code == 429
+        assert second.json()["error"]["code"] == "proxy_busy"
+
+    for _ in range(200):
+        if not app.state.active_pipelines:
+            break
+        await asyncio.sleep(0.02)
+    assert app.state.active_pipelines == set()
+    assert fake.consumed == len(chunks)  # drained to EOF, not closed early
+    assert not app.state.speech_slots.locked()
+    line = await _await_log_line(capsys, "upstream_bad_format")
+    assert line["status"] == 502  # the D7 line lands at drain end
+    assert line["http_status"] == 502
 
 
 # --- P1 review regressions ---------------------------------------------------
