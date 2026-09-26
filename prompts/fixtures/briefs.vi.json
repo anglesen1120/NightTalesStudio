@@ -1,0 +1,83 @@
+[
+  {
+    "id": "b1",
+    "topic": "ghost",
+    "title": "Nhật ký cuối của người giữ hải đăng",
+    "brief": "Người giữ hải đăng ghi lại những đêm ngọn đèn tự bật dù ông đã tháo cầu chì từ tuần trước. Trang cuối của cuốn nhật ký không phải nét chữ của ông. Không khí: lạnh, ẩm, tiếng sóng xa dần.",
+    "tier": "standard",
+    "language": "vi",
+    "synthetic": true
+  },
+  {
+    "id": "b2",
+    "topic": "ghost",
+    "title": "Căn hộ trên tầng thượng",
+    "brief": "Người thuê căn hộ cuối hành lang nghe tiếng ghế kéo mỗi đêm, dù tầng trên chỉ là sân thượng bỏ trống. Đêm ông lên kiểm tra, cửa sân thượng đã mở sẵn từ bên trong. Không khí: oi, chật, mùi sơn cũ.",
+    "tier": "standard",
+    "language": "vi",
+    "synthetic": true
+  },
+  {
+    "id": "b3",
+    "topic": "ghost",
+    "title": "Lớp học số bảy",
+    "brief": "Ngôi trường cũ đã đóng cửa nhiều năm, nhưng bảng đen trong lớp số bảy vẫn hiện tên người giáo viên dạy ca tối mất tích năm ấy. Người bảo vệ chỉ thấy phấn còn ướt sau mỗi lần lau bảng. Không khí: tĩnh, bụi, đèn hành lang nhấp nháy.",
+    "tier": "standard",
+    "language": "vi",
+    "synthetic": true
+  },
+  {
+    "id": "b4",
+    "topic": "spiritual",
+    "title": "Lời hứa chưa trả",
+    "brief": "Người con hứa sẽ đưa mẹ về lại ngôi làng cũ, nhưng công việc giữ anh ở thành phố mười năm. Đêm nào anh cũng mơ thấy căn nhà quê sáng đèn dù chìa khoá vẫn nằm trong túi anh. Không khí: nặng, ấm, mùi hương tàn.",
+    "tier": "standard",
+    "language": "vi",
+    "synthetic": true
+  },
+  {
+    "id": "b5",
+    "topic": "spiritual",
+    "title": "Miếu nhỏ ven đường",
+    "brief": "Người lái xe đường dài dừng nghỉ ở miếu nhỏ, để lại chai nước rồi đi tiếp. Mỗi chuyến sau anh đều thấy chai nước đầy lại và một vệt chân nhỏ in trên bụi. Không khí: vắng, mát, tiếng dế gần.",
+    "tier": "standard",
+    "language": "vi",
+    "synthetic": true
+  },
+  {
+    "id": "b6",
+    "topic": "spiritual",
+    "title": "Bát hương xê dịch",
+    "brief": "Gia đình dọn về nhà mới, bát hương trên bàn thờ tự xoay về phía cửa sổ mỗi sáng. Người con gái nhận ra hướng đó chỉ về căn nhà cũ đã bán. Không khí: lạnh gáy, im, mùi gỗ mới.",
+    "tier": "standard",
+    "language": "vi",
+    "synthetic": true
+  },
+  {
+    "id": "b7",
+    "topic": "true_crime",
+    "title": "Hồ sơ mở lại",
+    "brief": "Một vụ mất tích ở thị trấn ven sông được mở lại sau hai mươi năm, khi lá thư nặc danh đến toà soạn địa phương. Trong hồ sơ, trang lời khai của người cuối cùng thấy người mất tích đã bị thay bằng bản khác. Không khí: hanh khô, giấy bụi, giọng kể chậm.",
+    "tier": "standard",
+    "language": "vi",
+    "synthetic": true
+  },
+  {
+    "id": "b8",
+    "topic": "true_crime",
+    "title": "Lời khai đầu tiên",
+    "brief": "Trong một vụ án oan cũ, lời khai đầu tiên tại đồn khác hoàn toàn với lời khai đọc trước toà. Người ghi biên bản năm đó vẫn giữ cuốn sổ của mình. Không khí: ngột, tiếng quạt trần, giấy ố vàng.",
+    "tier": "standard",
+    "language": "vi",
+    "synthetic": true
+  },
+  {
+    "id": "b9",
+    "topic": "true_crime",
+    "title": "Khúc đường ven biển",
+    "brief": "Hai vụ tai nạn trên cùng một khúc đường ven biển cách nhau mười năm, cả hai đều không có dấu phanh. Điều tra viên mới nhận ra cả hai tài xế đều nhận cùng một cuộc gọi trước đó. Không khí: gió mặn, đường vắng, đèn pha xa.",
+    "tier": "standard",
+    "language": "vi",
+    "synthetic": true
+  }
+]

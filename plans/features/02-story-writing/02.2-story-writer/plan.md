@@ -50,16 +50,17 @@ All under `src/NightTales.Domain/` (folders per 00 §5.2 / F38):
 
 | Rule id | Check (D3) |
 |---|---|
-| `title_too_long`, `title_has_markup` | ≤ 100 chars, no `<` `>` |
+| `title_too_long`, `metadata_has_markup` | ≤ 100 chars; `title`/`description` carry no markup, URL/domain, @handle, #hashtag, e-mail or phone number (02 T70) |
 | `hook_too_long` | hook ≤ 3 sentences |
-| `keyword_invalid`, `keyword_count_out_of_range` | each keyword passes `KeywordRules` (English, 3–12 words, no person names, no gore list); 1–2 per segment |
+| `keyword_invalid`, `keyword_count_out_of_range` | each keyword passes `KeywordRules` (English, 3–12 words, no person names, no gore list); 1–2 per segment (exactly 1 at `short`; 02 T65) |
 | `segment_count_out_of_range` | within `LengthTarget.MinSegments..MaxSegments` |
 | `length_out_of_range`, `length_advisory` | tokens > 15 % outside `MinTokens..MaxTokens` (blocking) / inside 15 % (advisory) |
-| `text_has_markup` | no markdown, brackets, list markers or URLs in `text` |
-| `description_too_long`, `tags_invalid` | description ≤ 1,000 chars; ≤ 15 tags, each ≤ 30 chars, total ≤ 400 (F36, same limits as 06.2.1) |
+| `text_has_markup` | no markdown, brackets (incl. `(` `)` — 02 T72), list markers or URLs in `text` |
+| `description_too_long`, `tags_invalid` | description ≤ 1,000 chars; ≤ 15 tags, each ≤ 30 chars, total ≤ 400 (F36, same limits as 06.2.1); a tag rejects URL, `<`, `>`, `,`, `#` (02 T70) |
 | `fact_ref_unknown` | `fact_refs` ⊆ approved sheet ids (true crime) or empty |
 | `beat_invalid`, `narrator_mode_invalid`, `warning_invalid` | D3 enums |
-| `structure_vocab_unknown` | free string not in `structure-vocab.v1.json` → stored `other:<text>` (advisory, not a failure) |
+| `structure_vocab_unknown` | free string not in `structure-vocab.v1.json` → stored `other:<text>` by the mapper only (the model emits the plain string); advisory, never fails a run |
+| `structure_text_invalid` | unmapped structure free string > 40 chars or with URL/markup — blocking; the mapper strips a model-supplied `other:` prefix (02 T71) |
 
 The validator never throws and never truncates: it returns issues; the job decides (D21, D7 `InvalidOutput`).
 
@@ -67,11 +68,11 @@ The validator never throws and never truncates: it returns issues; the job decid
 
 | Tier | vi tokens | en tokens | Segments | writer / review / revision `max_output_tokens` |
 |---|---|---|---|---|
-| `short` | 120–160 | 110–145 | 4–5 | 1,500 / 1,200 / 1,500 |
+| `short` | 120–160 | 110–145 | 4–5 | 2,500 / 1,200 / 1,500 |
 | `standard` | 800–1,280 | 725–1,160 | 20–32 | 6,000 / 2,500 / 6,000 |
 | `long` | 1,600–2,400 | 1,450–2,175 | 40–60 | 10,000 / 3,500 / 10,000 |
 
-Token rule: NFC-normalise, split on Unicode whitespace, each non-empty token = 1 (vi token = syllable, V1). `Story:Length:Rate:vi` = 160, `:en` = 145 ⚠️ calibrate from 01 `words_per_minute_measured` and 02.1.3. K = 6 → segments ≈ `ceil(D × K ÷ 1.5)`.
+Token rule: NFC-normalise, split on Unicode whitespace, each non-empty token = 1 (vi token = syllable, V1). `Story:Length:Rate:vi` = 160, `:en` = 145 ⚠️ calibrate from 01 `words_per_minute_measured` and 02.1.3. K = 6 → segments ≈ `ceil(D × K ÷ 1.5)` for `standard`/`long`; the `short` row is set by its beat floor (`setup → twist → reveal`, one paragraph each, `reveal` optionally folded into `ending`; 02 T65). `short` writer cap is 2,500 (02 T66).
 
 ### 3.4 Data
 
@@ -134,8 +135,8 @@ None. No route, no DTO the UI reads. Per D1 there is **no credits UI in P**; `ge
 
 ## 8. Security and privacy
 
-- **Injection (D6, F21):** all untrusted material (brief, bible, facts, avoid-plots, structure plan, corrective note) travels in **one JSON object** in the user message, serialised with `System.Text.Json`; the system prompt declares every string value as material, never instructions. No untrusted text is substituted into a template placeholder; the placeholder list is closed (D5): `language_name`, `tier_minutes`, `token_range`, `segment_range`, `keyword_rules`, `ear_rules`, `overused_phrases`, `structure_vocab` — all server-derived.
-- **Caching order (O9):** system (static, ≥ 1,024 tokens) → preset → shared rules → data object **last**. `store = false` (O5).
+- **Injection (D6, F21):** all untrusted material (brief, bible, facts, avoid-plots, structure plan, corrective note) travels in **one JSON object** in the user message, serialised with `System.Text.Json`; the system prompt states the two-tier rule — the control keys (`task`, `length`, `structure_plan`, fact ids) are parameters to follow, every material string is written about and never an instruction (02 T69). No untrusted text is substituted into a template placeholder; the placeholder list is closed (D5): `language_name`, `tier_minutes`, `token_range`, `segment_range`, `keyword_rules`, `ear_rules`, `overused_phrases`, `structure_vocab` — all server-derived.
+- **Caching order (O9):** system (static) → preset → shared rules → data object **last**; the first three together are the cacheable head (≥ 1,024 tokens — 02 T67). `store = false` (O5).
 - **Logging (D19):** no prompt, brief, story/fact/bible text, source text, title or URL is ever logged — logs carry ids, codes, token counts, model, latency, `prompt_version`, registrable domains only.
 - **Attribution and keys:** `safety_identifier = sha256(user_id)` (hex); `OPENAI_API_KEY` from the runtime secret manager (01/11), never in `appsettings.json`.
 - **Cost safety:** every call sets `max_output_tokens` from the run's `price_version` (D14); `IBudgetGuard` (D1) runs before dispatch; the 272K-input surcharge (O3) is a calculator/estimator rule, never a silent 2× surprise.

@@ -6,7 +6,7 @@ Legend: `done` (acceptance checks run and passed) · `doing` · `blocked (<who>)
 
 ## Resume here
 
-- **Last session:** 2026-09-26. PR #9 (plan 04 post-merge gates for PR #7) and PR #10 (01.2.2-T6 wiring render + 01.3.1-T4 calibration) merged into `develop` (`e5d9129`, `9057327`). Follow-up: CR-22 wording in 01.3.1 `plan.md` / T3, this STATUS refresh.
+- **Last session:** 2026-09-26. PR #9 and PR #10 merged into `develop` (`e5d9129`, `9057327`); doc follow-up PR #11 (`chore/01-cr22-status`). Plan 02 M0 on branch `feature/02-m0-prompts` (stacked on #11) → **draft PR #12**: prompts tree, preset spec, shared rules, six presets and the story harness, each through QA → code/perf/security reviews → fixes → re-test; 118 offline tests OK. Draft because the preset QA gate T34 has not passed (next action 7).
 - **Next actions:**
   1. ~~Owner: review and merge PR #6~~ → merged 2026-09-26 (`e1046ff`). ~~PR #7~~ → merged 2026-09-26 (`dda2b56`).
   2. ~~Owner: merge the PR #7 gate-fix PR (#9) and PR #10~~ → merged 2026-09-26 (`e5d9129`, `9057327`). #10 also carried two post-gate commits, re-tested only: `887a554` (`start_run.sh` rejects an empty `--voice` with exit 2; shellcheck + 4 cases) and `721d810` (CR-22 wording).
@@ -14,6 +14,9 @@ Legend: `done` (acceptance checks run and passed) · `doing` · `blocked (<who>)
   4. Owner + raters: fill the 04.2.1-T1 rater sheets (`trial/voice-audition/README.md`), then pick the voice set → unblocks 04.2.2-T1.
   5. ~~01.2.2-T6 wiring render, then 01.3.1-T4 calibration~~ → done 2026-09-26 (branch `feature/01-wiring-calibration`, stacked on `fix/04-pr7-gates`). Owner, remaining for 01.3.1-T4: **(a)** quiet the Mac (close the Virtualization VM, Chrome, `VBCSCompiler`; at 09:15 local, pressure level was 2 (warn) and swap 3.98 GB), then re-run the 1-minute render so the sheet gets a D11-clean row; the first row is structural calibration only (perf review). **(b)** The relay has no dashboard (DEC-9), so `dashboard_cost_usd_check` stays `n/a:pending-dashboard` until the owner reads the relay's cost for 2026-09-26 UTC.
   6. ~~Ask the relay to enable image generation (DEC-10)~~ → proven by run `20260926-0818-en-landscape-01`: 5 image calls through tap → relay, all 200 (`via=responses`), 5 `image material rendered:` lines. Still owner: **set a spend cap** in the relay account, and the relay's `gpt-image-2` price (image cost stays `n/a:no-price`, so the T6 "cost ≤ ceiling" check stays open).
+  7. **Owner/TL decision — plan 02 D4 `standard` length (blocks the 02.1.1 preset gate T34 and the 02.1.3-T1 A/B):** after three live sweeps (QA 1: 15/18 ok, 6 blocking; after T93 floor: 18/18 ok, 8 blocking; after T97 per-segment budget: 3 of 10 blocking) `gpt-6-luna` writes ~31 units per segment and every **en** `standard` story lands under the 725-word floor (median ≈ 650); vi mostly reaches 800. D4's rates (vi 160 / en 145 tokens/min) are unmeasured defaults, while 01.2.1-T4 measured VieNeu at vi 263 syllables/min and en 200 words/min, so at the real voice rate the current floors already give only ~3.6 min (en) / ~3.0 min (vi). Options: recalibrate D4 to minutes-at-measured-rate (bands go **up**, needs a stronger length mechanism such as a second "expand" pass), lower the en floor / make length advisory for M0, or keep iterating the presets. Evidence (gitignored): `.nts/qa-02d/report.json`, `.nts/qa-02d2/report.md`, `.nts/qa-02d3/report.md`, run dirs `.nts/qa-02d*/stories/`.
+  8. Owner: add official `gpt-6-sol` (and `gpt-6-luna` cache-write) prices to `trial/prices.json` (02 CR-27) before the 02.1.3-T1 `--matrix` run; add `gpt-6-sol` to the story allow-list (02 README §12 step 6); name 2 native raters per language (step 7).
+  9. Owner: `.NET 10 SDK` is not installed on this Mac, so 02.5.2-T0 (SmartReader vs trafilatura spike) is blocked; it arrives with 09.1 (`global.json` 10.0.401) unless installed earlier.
 - **Environment (DEC-5, DEC-6):**
   - Implementation machine = this Mac (M4, 16 GB, macOS 27.0).
   - `NTS_HOME=<repo>/.nts` (gitignored; `lib.sh` default).
@@ -70,7 +73,23 @@ Legend: `done` (acceptance checks run and passed) · `doing` · `blocked (<who>)
 | 04.2.2-T2 Catalog rules + seeder (C#) | todo | Needs 09.2.2-T1 and 09.2.5-T1 |
 | 04.2.3-T1 Preview generation + upload | todo | Needs 04.2.2-T1 and 11.4.1-T1 (bucket) |
 
-Other plans: not started. Order: 02 M0 → 03 M0 → rest of 04 → 05 → Gate 1 (`plans/features/README.md`).
+## Plan 02 — Story writing (M0 slice)
+
+Branch `feature/02-m0-prompts` → draft PR #12 (merge #11 first). Gates per task: QA agent → code, performance and security reviews → fixes → re-test. Plan text amendments: 02 README §10 **T65–T98**, §4 **CR-25…CR-27**; T73 minors wording applied to `plans/02-story-writing.md` :57, :152.
+
+| Task | Status | Evidence / note |
+|---|---|---|
+| 02.1.4-T1 `prompts/` skeleton | done | 13 D5 directories (9 `.gitkeep`), `manifest.json` release `2026.10.1` (15 runtime files, sha256 verified; excludes `fixtures/**`, `tools/**`, `REFERENCES.md`, dotfiles, T75), `REFERENCES.md` (InkOS AGPL: idea only), `.github/pull_request_template.md` provenance checkboxes. QA-02A-1..8, CR-02A-1..4, SEC-02A-1..6, PERF-02A-1..5 fixed |
+| 02.1.1-T0 Preset spec | done | `system/writer.v1.md` (two-tier data rule T69, metadata rule T70, minors T73, self-harm T74), `schemas/story.v1.json` (strict), `shared/structure-vocab.v1.json`, `shared/preset-spec.v1.md`. Short tier = setup → twist → reveal (T65), short writer cap 2,500 (T66), cache head = schema + system + preset + shared (T67, supersedes T36) |
+| 02.1.2-T1 Keyword rules | done | `shared/keyword-rules.v1.md` R1–R13 (R3 no punctuation/digits T76, R6 widened T78, R7 text-bearing objects T79, R12 place identifiers T80, R13 no instructions T81), 30 good/30 bad examples, only model-facing text injected (T83). `test_prompt_shared_rules.py` 21 tests |
+| 02.1.5-T1 Ear rules + overused lists | done | `shared/ear-rules.{vi,en}.v1.md` E1–E10, `shared/overused.{vi,en}.v1.txt` 30 lines each. Q1–Q6 naturalness questions live in the task file (for 02.6.1-T1) |
+| 02.1.3-T0 M0 story harness | done | `trial/tools/story_harness.py` + `story_validator.py` + `LENGTH.v1.json`, 114 offline tests OK. Live: 19/19 cells ok and schema-valid after T91 (`--timeout` 240 s, no retry on transport timeout, every attempt charged), cost exact from the response body. Fixes: redirects not followed (T95), manifest sha256 check (T96), per-brief facts + `--validate-only --brief-id` (T92), safe run ids, atomic metrics, D6 `units_per_segment` (T97). Usage: `trial/README.md` |
+| 02.1.1-T1/T2/T3 Presets (ghost, spiritual, true crime; vi + en) | partial (owner decision, next action 7) | Six presets written to preset-spec; all four shared-block placeholders (T49), two-tier data rule, tone rules, CTA. Gate T34 (each preset passes its 3 briefs) **fails on length**: en `standard` stories under the D4 floor. Spend for all live QA: ≈ $0.084 |
+| 02.5.2-T0 Extraction/robots spike | blocked (owner) | No .NET SDK on this Mac (next action 9) |
+
+Environment findings (02.1.3 `plan.md` open items): relay latency is bimodal (17–58 s vs 102–216 s) with 502s at 154–181 s; the relay bills abandoned calls; it rewrites `safety_identifier`/`prompt_cache_key`, drops `max_output_tokens`, and injects ~21 k chars of its own instructions (billed input ≈ 2.5× our prompt). The tap attributes a call to the run holding `current_run` when the response completes (CR-25 → 01.3.1-T2).
+
+Other plans: not started. Order: rest of 02 M0 (A/B) → 03 M0 → rest of 04 → 05 → Gate 1 (`plans/features/README.md`).
 
 ## Owner checklist — 01.2.4-T1 (OpenAI dashboard, start first: external wait)
 
@@ -214,3 +233,4 @@ Spec: `plans/features/01-environment-setup/01.2.4-openai-access/01.2.4-T1-org-ve
 | 2026-09-26 | Plan 04 (cont.) | PR #6 merged (`e1046ff`). Child-env allow-list (`4b49a9a`) and 04.1.2-T3 baseline tools (`fdb5d90`) → PR #7 (`dda2b56`), opened as a draft before the gates at the owner's request and merged by the owner; QA, code, perf and security reviews are still owed |
 | 2026-09-26 | Plan 04 gates | PR #7 post-merge gates closed on `fix/04-pr7-gates`: QA → code/perf/security reviews → 21 fixes → bench re-run PASS. 04 D13.1 (child-env allow-list) and 04 CR-17 `[OPEN]` (overhead metric) recorded. codebase-memory MCP index created for the repo |
 | 2026-09-26 | Plan 01 T6/T4 | Wiring render + calibration row on the live stack (1 chat + 5 image calls via the relay). QA → code/perf/security reviews → fixes; 01 CR-18…CR-21. Quiet re-run and relay cost check → owner |
+| 2026-09-26 | Plan 02 M0 | 02.1.4-T1, 02.1.1-T0, 02.1.2-T1, 02.1.5-T1, 02.1.3-T0 done; presets 02.1.1-T1..T3 written, gate T34 fails on en `standard` length (owner decision). Each task: QA → code/perf/security reviews → fixes → re-test; README T65–T97, CR-25…CR-27. Live QA spend ≈ $0.084. 02.5.2-T0 blocked (no .NET SDK) |

@@ -1,0 +1,45 @@
+{
+  "facts": [
+    {
+      "id": "f1",
+      "brief_id": "b7",
+      "statement": "The disappearance was reported on a Tuesday morning, two days after the man was last seen at the river market.",
+      "sources": ["s1"]
+    },
+    {
+      "id": "f2",
+      "brief_id": "b7",
+      "statement": "A second, unsigned version of the last witness statement appears in the reopened case file.",
+      "sources": ["s1", "s2"]
+    },
+    {
+      "id": "f3",
+      "brief_id": "b8",
+      "statement": "The original statement notebook is still held by the clerk who took it that year.",
+      "sources": ["s2"]
+    },
+    {
+      "id": "f4",
+      "brief_id": "b9",
+      "statement": "Both crashes on the coastal road happened at night, in clear weather, on the same stretch of road.",
+      "sources": ["s3"]
+    },
+    {
+      "id": "f5",
+      "brief_id": "b9",
+      "statement": "Neither crash site showed brake marks on the road surface.",
+      "sources": ["s3"]
+    },
+    {
+      "id": "f6",
+      "brief_id": "b9",
+      "statement": "Phone records place both drivers on the same incoming call shortly before the two crashes.",
+      "sources": ["s2", "s3"]
+    }
+  ],
+  "sources": [
+    { "alias": "s1", "title": "Reopened case file (fictional fixture)" },
+    { "alias": "s2", "title": "Local newspaper archive (fictional fixture)" },
+    { "alias": "s3", "title": "Road investigation summary (fictional fixture)" }
+  ]
+}

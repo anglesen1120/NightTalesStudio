@@ -1,0 +1,83 @@
+[
+  {
+    "id": "b1",
+    "topic": "ghost",
+    "title": "The lighthouse keeper's last log",
+    "brief": "The keeper wrote down the nights the lamp turned itself on even though he had pulled the fuse the week before. The last page of the log is not in his handwriting. Atmosphere: cold, damp, the sound of waves fading.",
+    "tier": "standard",
+    "language": "en",
+    "synthetic": true
+  },
+  {
+    "id": "b2",
+    "topic": "ghost",
+    "title": "The flat above the roof terrace",
+    "brief": "The tenant at the end of the corridor heard a chair drag every night, though the floor above is an empty roof terrace. The night he went up to check, the terrace door was already open from the inside. Atmosphere: close, humid, the smell of old paint.",
+    "tier": "standard",
+    "language": "en",
+    "synthetic": true
+  },
+  {
+    "id": "b3",
+    "topic": "ghost",
+    "title": "Classroom number seven",
+    "brief": "The old school has been closed for years, yet the blackboard in classroom seven keeps showing the name of the evening-shift teacher who vanished that year. The caretaker only finds the chalk still wet after he wipes it. Atmosphere: still, dusty, a flickering corridor light.",
+    "tier": "standard",
+    "language": "en",
+    "synthetic": true
+  },
+  {
+    "id": "b4",
+    "topic": "spiritual",
+    "title": "A promise unpaid",
+    "brief": "The son promised to take his mother back to their old village, but work kept him in the city for ten years. Every night he dreams of the village house with its lights on, though the key is still in his pocket. Atmosphere: heavy, warm, the smell of burnt incense.",
+    "tier": "standard",
+    "language": "en",
+    "synthetic": true
+  },
+  {
+    "id": "b5",
+    "topic": "spiritual",
+    "title": "The shrine by the road",
+    "brief": "A long-haul driver stopped to rest at a small roadside shrine, left a bottle of water there and drove on. On every later trip the bottle is full again and small footprints mark the dust. Atmosphere: empty, cool, crickets close by.",
+    "tier": "standard",
+    "language": "en",
+    "synthetic": true
+  },
+  {
+    "id": "b6",
+    "topic": "spiritual",
+    "title": "The moved offering",
+    "brief": "When the family moved into a new house, the incense bowl on the altar turned towards the window every morning. The daughter realised the window faces the old house they had sold. Atmosphere: cold at the neck, silent, new wood.",
+    "tier": "standard",
+    "language": "en",
+    "synthetic": true
+  },
+  {
+    "id": "b7",
+    "topic": "true_crime",
+    "title": "The file reopened",
+    "brief": "A disappearance in a riverside town was reopened after twenty years, when an unsigned letter reached the local paper. In the file, the statement of the last person to see the missing man has been swapped for a different page. Atmosphere: dry air, dusty paper, a slow voice.",
+    "tier": "standard",
+    "language": "en",
+    "synthetic": true
+  },
+  {
+    "id": "b8",
+    "topic": "true_crime",
+    "title": "The first statement",
+    "brief": "In an old wrongful-conviction case, the first statement taken at the station reads nothing like the one later read out in court. The clerk who took it that year still keeps his own notebook. Atmosphere: stifling, a ceiling fan, yellowed paper.",
+    "tier": "standard",
+    "language": "en",
+    "synthetic": true
+  },
+  {
+    "id": "b9",
+    "topic": "true_crime",
+    "title": "The coastal road",
+    "brief": "Two crashes on the same stretch of coastal road, ten years apart, and neither one left brake marks. A new investigator noticed both drivers took the same phone call beforehand. Atmosphere: salt wind, empty road, distant headlights.",
+    "tier": "standard",
+    "language": "en",
+    "synthetic": true
+  }
+]
