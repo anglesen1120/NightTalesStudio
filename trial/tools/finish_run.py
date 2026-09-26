@@ -18,6 +18,8 @@ import argparse
 import ast
 import csv
 import fcntl
+import hashlib
+import io
 import json
 import os
 import re
@@ -77,6 +79,14 @@ NA_RE = re.compile(r"^n/a:[a-z0-9-]+$")
 HOP_TOLERANCE_S = 5
 
 RUN_ID_RE = re.compile(r"^\d{8}-\d{4}-(vi|en)-(landscape|portrait)-\d{2}$")
+# MPT task ids are UUIDs. --task-id is joined into $NTS_HOME/src/mpt/storage/
+# tasks/<id> and written into tracked run.json/stages.json, so it is validated
+# before any path join or write (SEC-T6-1: pathlib drops the base on an
+# absolute right-hand side, and '..' walks out of storage/tasks). Matched with
+# fullmatch so a trailing newline cannot slip past the `$` anchor.
+TASK_ID_RE = re.compile(
+    r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+    re.IGNORECASE)
 
 # MPT log record headers (M9; level is NOT padded in the tee'd log, CR-17):
 #   2026-09-25 18:41:20 | INFO | "app/services/task.py:920": combine - msg
@@ -579,20 +589,42 @@ def aggregate_tap(jsonl_path, prices_path, story_source, tap_disabled):
         else:
             out_tok = sum(_num(l["usage"].get("output_tokens"))
                           for l in img200)
-            t_in = sum(_num((l["usage"].get("input_tokens_details") or {})
-                            .get("text_tokens")) for l in img200)
-            i_in = sum(_num((l["usage"].get("input_tokens_details") or {})
-                            .get("image_tokens")) for l in img200)
+            dets = [(l["usage"].get("input_tokens_details") or {})
+                    for l in img200]
+            # O6 splits image input into text_tokens/image_tokens. The relay
+            # (DEC-11 responses path) answers with input_tokens +
+            # cached_tokens instead (observed 2026-09-26, T4), so the split
+            # is unknowable: n/a, never a silent 0 (cols 43/44) and never a
+            # cost that silently drops the input component (col 17). Both
+            # keys are required: a line carrying only one of them is as
+            # split-less as an empty details object (D-2/L-1). One such line
+            # is enough — summing only the others would under-report.
+            split_absent = any(
+                not ("text_tokens" in d and "image_tokens" in d)
+                for d in dets)
             cols["image_output_tokens_total"] = str(int(out_tok))
-            cols["image_input_text_tokens_total"] = str(int(t_in))
-            cols["image_input_image_tokens_total"] = str(int(i_in))
+            if split_absent:
+                for name in ("image_input_text_tokens_total",
+                             "image_input_image_tokens_total"):
+                    cols[name] = _na("usage-split-absent")
+            else:
+                t_in = sum(_num((l["usage"].get("input_tokens_details") or {})
+                                .get("text_tokens")) for l in img200)
+                i_in = sum(_num((l["usage"].get("input_tokens_details") or {})
+                                .get("image_tokens")) for l in img200)
+                cols["image_input_text_tokens_total"] = str(int(t_in))
+                cols["image_input_image_tokens_total"] = str(int(i_in))
             cost = 0.0
             for l in img200:
                 line_cost = _line_cost(l, prices)
                 cost = None if (cost is None or line_cost is None) \
                     else cost + line_cost
-            cols["image_cost_usd"] = (_na("no-price") if cost is None
-                                      else f"{cost:.6f}")
+            if cost is None:
+                cols["image_cost_usd"] = _na("no-price")
+            elif split_absent:
+                cols["image_cost_usd"] = _na("usage-split-absent")
+            else:
+                cols["image_cost_usd"] = f"{cost:.6f}"
 
     # Derived per-image columns (45, 46).
     count = int(cols.get("image_count", "0") or 0)
@@ -750,9 +782,37 @@ def _window_stats(rows, start, end):
     }
 
 
-def stage_peaks(raw_rows, windows):
-    """windows: stages['windows'] dict (ISO Z strings).
-    Returns (cols, csv_rows) — cols 24-26, 52-54 plus stage rss.csv rows."""
+def _rss_row(scope, start, end, st):
+    """One rss.csv row (15 columns); a window without samples keeps the
+    auxiliary file's bare ``NA`` convention (schema.md, D-10)."""
+    if st is None:
+        return [scope, start, end, "0"] + ["NA"] * 11
+    return [
+        scope, start, end, str(st["samples"]),
+        f"{st['vieneu_peak_mb']:.1f}", f"{st['proxy_peak_mb']:.1f}",
+        f"{st['mpt_peak_mb']:.1f}", f"{st['webui_peak_mb']:.1f}",
+        f"{st['total_peak_mb']:.1f}",
+        ("NA" if st["swap_start_mb"] is None
+         else f"{st['swap_start_mb']:.1f}"),
+        f"{st['swap_peak_mb']:.1f}",
+        st["pressure_max"] or "NA",
+        ("NA" if st["free_pct_min"] is None else str(st["free_pct_min"])),
+        str(st["mpt_nproc_max"]), str(st["sample_ms_p95"]),
+    ]
+
+
+def stage_peaks(raw_rows, windows, coverage):
+    """windows: stages['windows'], coverage: stages['coverage'] (ISO Z).
+
+    Returns (cols, csv_rows) — cols 24-26, 52-54 plus the rss.csv rows: the
+    whole-run ``all`` row first, then one row per stage window.
+
+    Cols 52-54 and the ``all`` row are bounded by the task window
+    (``coverage.first_marker`` -> ``coverage.end``), not the sampler's
+    lifetime (perf review P3): the sampler outlives the task, and a heavier
+    post-run tail (a second task in the shared MPT log, a peer bench, agent
+    work) must not be attributed to this run.
+    """
     cols = {}
     csv_rows = []
 
@@ -785,7 +845,10 @@ def stage_peaks(raw_rows, windows):
                                 if render_vals
                                 else _na("no-samples-in-window"))
 
-    whole = _window_stats(raw_rows, None, None)
+    whole = _window_stats(raw_rows, _parse_iso_z(coverage["first_marker"]),
+                          _parse_iso_z(coverage["end"]))
+    csv_rows.append(_rss_row("all", coverage["first_marker"],
+                             coverage["end"], whole))
     if whole is None:
         cols["ram_peak_total_mb"] = _na("no-samples-in-window")
         cols["swap_peak_mb"] = _na("no-samples-in-window")
@@ -800,23 +863,8 @@ def stage_peaks(raw_rows, windows):
         b = bounds(key)
         if b is None:
             continue
-        st = _window_stats(raw_rows, b[0], b[1])
-        if st is None:
-            csv_rows.append([f"stage:{key}", _utc_z(b[0]), _utc_z(b[1]),
-                             "0"] + ["NA"] * 11)
-            continue
-        csv_rows.append([
-            f"stage:{key}", _utc_z(b[0]), _utc_z(b[1]), str(st["samples"]),
-            f"{st['vieneu_peak_mb']:.1f}", f"{st['proxy_peak_mb']:.1f}",
-            f"{st['mpt_peak_mb']:.1f}", f"{st['webui_peak_mb']:.1f}",
-            f"{st['total_peak_mb']:.1f}",
-            ("NA" if st["swap_start_mb"] is None
-             else f"{st['swap_start_mb']:.1f}"),
-            f"{st['swap_peak_mb']:.1f}",
-            st["pressure_max"] or "NA",
-            ("NA" if st["free_pct_min"] is None else str(st["free_pct_min"])),
-            str(st["mpt_nproc_max"]), str(st["sample_ms_p95"]),
-        ])
+        csv_rows.append(_rss_row(f"stage:{key}", _utc_z(b[0]), _utc_z(b[1]),
+                                 _window_stats(raw_rows, b[0], b[1])))
     return cols, csv_rows
 
 
@@ -1057,7 +1105,9 @@ def build_issues(issues, extra_issues):
     items = set(issues)
     for text in extra_issues or []:
         clean = re.sub(r"[\r\n]+", " ", text).replace(";", ",")
-        items.add(f"note:{clean}")
+        # An --issue that already carries the collector's note: prefix is
+        # not prefixed twice (L-5).
+        items.add(clean if clean.startswith("note:") else f"note:{clean}")
     if not items:
         return "none"
     return ";".join(sorted(items))
@@ -1186,6 +1236,22 @@ def _append_csv_row(path, row, run_id):
                 fcntl.flock(f.fileno(), fcntl.LOCK_UN)
     die(f"measurements.csv inode kept changing; row for {run_id} "
         "not written (retry the finish)")
+
+
+def _collector_revision():
+    """sha256 of the collector sources at finish time (L-4), so a recorded
+    row is attributable to a tool revision from run.json alone. ``null`` when
+    a source cannot be read."""
+    out = {}
+    for name in ("finish_run.py", "run_manifest.py"):
+        try:
+            digest = hashlib.sha256(
+                Path(__file__).resolve().with_name(name).read_bytes()
+            ).hexdigest()
+        except OSError:
+            digest = None
+        out[name[:-3] + "_sha256"] = digest
+    return out
 
 
 def _stop_sampler(nts_home, run_id):
@@ -1382,6 +1448,9 @@ def do_finish(args, nts_home, trial_dir, prices_path, probe_fn):
     run_id = args.run_id
     if not RUN_ID_RE.match(run_id):
         die(f"bad run_id '{run_id}'", 2)
+    if not TASK_ID_RE.fullmatch(args.task_id or ""):
+        die(f"bad --task-id {args.task_id!r} (want an MPT task UUID, "
+            "8-4-4-4-12 hex)", 2)
     csv_path = Path(trial_dir) / "measurements.csv"
     if not csv_path.is_file():
         die(f"measurements.csv missing: {csv_path}", 2)
@@ -1444,7 +1513,8 @@ def do_finish(args, nts_home, trial_dir, prices_path, probe_fn):
     script_text = _read_script(args.script, task_dir)
 
     raw_rows = _read_rss_raw(run_dir_nts / "rss_raw.csv")
-    ram_cols, rss_stage_rows = stage_peaks(raw_rows, stages["windows"])
+    ram_cols, rss_rows = stage_peaks(raw_rows, stages["windows"],
+                                     stages["coverage"])
 
     output_path = Path(args.output) if args.output \
         else task_dir / "final-1.mp4"
@@ -1482,18 +1552,16 @@ def do_finish(args, nts_home, trial_dir, prices_path, probe_fn):
                 fmt["filename"] = os.path.basename(str(fmt["filename"]))
             p["format"] = fmt
         _atomic_write_json(run_dir_trial / "ffprobe.json", p)
+    # Full atomic rewrite (D-3): header + the windowed `all` row + one row
+    # per stage window. The sampler appends its own lifetime `all` row on
+    # TERM, which _stop_sampler has already waited for; replacing it keeps
+    # rss.csv consistent with cols 52-54 (perf P3) and makes a retried
+    # finish idempotent instead of appending duplicate stage rows.
     rss_csv = run_dir_trial / "rss.csv"
-    with open(rss_csv, "a", newline="", encoding="utf-8") as f:
-        fcntl.flock(f.fileno(), fcntl.LOCK_EX)
-        try:
-            need_header = os.fstat(f.fileno()).st_size == 0
-            if need_header:
-                f.write(RSS_CSV_HEADER + "\n")
-            w = csv.writer(f, lineterminator="\n")
-            for r in rss_stage_rows:
-                w.writerow(r)
-        finally:
-            fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+    buf = io.StringIO()
+    buf.write(RSS_CSV_HEADER + "\n")
+    csv.writer(buf, lineterminator="\n").writerows(rss_rows)
+    _atomic_write(rss_csv, buf.getvalue())
 
     if script_text is not None:
         run_dir_nts.mkdir(parents=True, exist_ok=True)
@@ -1511,6 +1579,7 @@ def do_finish(args, nts_home, trial_dir, prices_path, probe_fn):
     run["mpt_task_id"] = task_id
     run["run_status"] = run_status
     run["sources"] = sources
+    run["collector"] = _collector_revision()
     _atomic_write_json(run_dir_trial / "run.json", run)
 
     _append_csv_row(csv_path, row, run_id)
@@ -1541,7 +1610,7 @@ def build_parser():
         description="Collect one finished MPT task into a "
                     "measurements.csv row.")
     p.add_argument("run_id", help="D10 run id")
-    p.add_argument("--task-id", help="MPT task id")
+    p.add_argument("--task-id", help="MPT task UUID (8-4-4-4-12 hex)")
     p.add_argument("--mpt-log",
                    help="path to mpt-api log (default: newest "
                         "$NTS_HOME/logs/mpt-api-*.log)")

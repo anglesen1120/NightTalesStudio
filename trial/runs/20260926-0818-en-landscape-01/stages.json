@@ -1,0 +1,59 @@
+{
+  "marker_set": 1,
+  "tz_offset": "+07:00",
+  "task_id": "35ab583d-35d9-489a-89b6-ee8b89e28c8b",
+  "windows": {
+    "script": {
+      "start": "2026-09-26T01:18:57Z",
+      "end": "2026-09-26T01:18:57Z",
+      "seconds": 0.0
+    },
+    "terms": {
+      "start": "2026-09-26T01:18:57Z",
+      "end": "2026-09-26T01:19:00Z",
+      "seconds": 3.0
+    },
+    "audio": {
+      "start": "2026-09-26T01:19:00Z",
+      "end": "2026-09-26T01:19:06Z",
+      "seconds": 6.0
+    },
+    "subtitle": {
+      "start": "2026-09-26T01:19:06Z",
+      "end": "2026-09-26T01:19:25Z",
+      "seconds": 19.0
+    },
+    "materials": {
+      "start": "2026-09-26T01:19:25Z",
+      "end": "2026-09-26T01:22:23Z",
+      "seconds": 178.0
+    },
+    "combine": {
+      "start": "2026-09-26T01:22:23Z",
+      "end": "2026-09-26T01:23:03Z",
+      "seconds": 40.0
+    },
+    "final": {
+      "start": "2026-09-26T01:23:03Z",
+      "end": "2026-09-26T01:23:33Z",
+      "seconds": 30.0
+    }
+  },
+  "total_seconds": 276.0,
+  "counts": {
+    "image_failed": 0,
+    "image_rendered": 5,
+    "terms_count": 5
+  },
+  "whisper": {
+    "language": "en",
+    "probability": 1.0,
+    "elapsed_s": 11.35
+  },
+  "coverage": {
+    "first_marker": "2026-09-26T01:18:57Z",
+    "end": "2026-09-26T01:23:33Z",
+    "gaps_seconds": 0.0
+  },
+  "failed_stage": null
+}

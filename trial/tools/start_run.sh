@@ -38,12 +38,12 @@ EOF
 
 # ---- A1: args ----------------------------------------------------------------
 case "${1:-}" in --help|-h) usage; exit 0 ;; esac
-STATUS=trial; VOICE=""; STORY_SOURCE=mpt; NO_TAP=0
+STATUS=trial; VOICE=""; VOICE_GIVEN=0; STORY_SOURCE=mpt; NO_TAP=0
 POS=()
 while (( $# )); do
   case "$1" in
     --status)       STATUS=${2:-}; shift 2 || die 2 "--status needs a value" ;;
-    --voice)        VOICE=${2:-}; shift 2 || die 2 "--voice needs a value" ;;
+    --voice)        VOICE=${2:-}; VOICE_GIVEN=1; shift 2 || die 2 "--voice needs a value" ;;
     --story-source) STORY_SOURCE=${2:-}; shift 2 || die 2 "--story-source needs a value" ;;
     --no-tap)       NO_TAP=1; shift ;;
     --*)            die 2 "unknown option $1 (see --help)" ;;
@@ -63,10 +63,20 @@ esac
 awk -v v="$TMIN" 'BEGIN{exit !(v>=0.5 && v<=30)}' || die 2 "target_minutes must be 0.5-30, got '$TMIN'"
 [ "$STATUS" = calibration ] || [ "$STATUS" = trial ] || die 2 "--status must be calibration or trial, got '$STATUS'"
 [ "$STORY_SOURCE" = mpt ] || [ "$STORY_SOURCE" = plan02 ] || die 2 "--story-source must be mpt or plan02, got '$STORY_SOURCE'"
-if [ -n "$VOICE" ]; then
+if [ "$VOICE_GIVEN" -eq 1 ]; then
   case "$VOICE" in
     *$'\n'*|*$'\r'*) die 2 "--voice must not contain a newline" ;;
   esac
+  # Same rule as run_manifest.normalize_voice: strip repeated kokoro: prefixes
+  # (any case); an empty name is a usage error, never n/a:not-given.
+  voice_name="$VOICE"
+  while :; do
+    voice_name="${voice_name#"${voice_name%%[![:space:]]*}"}"
+    lower="$(printf '%s' "${voice_name:0:7}" | tr '[:upper:]' '[:lower:]')"
+    [ "$lower" = "kokoro:" ] || break
+    voice_name="${voice_name:7}"
+  done
+  [ -n "${voice_name//[[:space:]]/}" ] || die 2 "--voice needs a non-empty voice name"
 fi
 
 NTS_HOME="$(nts_home 2>/dev/null)"

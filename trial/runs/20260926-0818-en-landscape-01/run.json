@@ -1,0 +1,119 @@
+{
+  "schema_version": 1,
+  "run_id": "20260926-0818-en-landscape-01",
+  "run_status": "calibration",
+  "started_at": "2026-09-26T01:18:22Z",
+  "finished_at": "2026-09-26T01:30:04Z",
+  "lang": "en",
+  "aspect": "landscape",
+  "topic": "wiring render: night walk",
+  "target_minutes": 1,
+  "voice_name": "kokoro:Ngọc Huyền",
+  "story_source": "plan02",
+  "pins": {
+    "MPT_REPO": "https://github.com/harry0703/MoneyPrinterTurbo.git",
+    "MPT_COMMIT": "3d5f4e421927d61f3eac729cf4b711ac0b69d688",
+    "MPT_PYTHON": "3.11",
+    "VIENEU_REPO": "https://github.com/pnnbao97/VieNeu-TTS.git",
+    "VIENEU_COMMIT": "c1390abbdb2eedcdf58eafb546966c06ce27af71",
+    "VIENEU_PYTHON": "3.12",
+    "VIENEU_MODEL_REPO": "pnnbao-ump/VieNeu-TTS-v3-Turbo",
+    "VIENEU_MODEL_REVISION": "61b85e3d937fbbacb387714180e8182823512523",
+    "VIENEU_CODEC_REPO": "OpenMOSS-Team/MOSS-Audio-Tokenizer-Nano-ONNX",
+    "VIENEU_CODEC_REVISION": "ceff0d0749bfb3fa2d61149794ec6feef0d1e1ae",
+    "WHISPER_MODEL_REPO": "mobiuslabsgmbh/faster-whisper-large-v3-turbo",
+    "WHISPER_MODEL_REVISION": "0a363e9161cbc7ed1431c9597a8ceaf0c4f78fcf",
+    "PROXY_PYTHON": "3.12",
+    "OPENAI_BASE_URL": "https://api.aixingialaire.shop/v1",
+    "OPENAI_IMAGE_API": "responses",
+    "OPENAI_IMAGE_HOST_MODEL": "gpt-6-luna",
+    "OPENAI_EFFORT_IMAGE_HOST": "low",
+    "OPENAI_EFFORT_CHAT": "medium"
+  },
+  "heads": {
+    "mpt": "3d5f4e421927d61f3eac729cf4b711ac0b69d688",
+    "vieneu": "c1390abbdb2eedcdf58eafb546966c06ce27af71"
+  },
+  "env": {
+    "schema_version": 1,
+    "captured_at": "2026-09-26T01:18:22Z",
+    "macos_version": "27.0",
+    "macos_build": "26A428",
+    "hw_model": "Mac16,10",
+    "cpu_brand": "Apple M4",
+    "memory_bytes": 17179869184,
+    "git": "2.49.0",
+    "uv": "0.12.18",
+    "ffmpeg": "9.0.2",
+    "gitleaks": "8.30.1",
+    "ffmpeg_encoders": [
+      "aac",
+      "libmp3lame"
+    ],
+    "uv_pythons": [
+      "3.9.6",
+      "3.11.16",
+      "3.12.14"
+    ],
+    "mpt_commit": "3d5f4e421927d61f3eac729cf4b711ac0b69d688",
+    "vieneu_commit": "c1390abbdb2eedcdf58eafb546966c06ce27af71",
+    "nts_home_on_internal_disk": false
+  },
+  "config": {
+    "path": "$NTS_HOME/src/mpt/config.toml",
+    "sha256_redacted": "fa11c1444285b0553f91828e7a0adab73fd9b7e4ff527b4d026ed9ef132537f8",
+    "redacted_keys": [
+      "app.api_key",
+      "app.pexels_api_keys",
+      "app.pixabay_api_keys",
+      "app.openai_image_api_keys",
+      "app.openai_api_key",
+      "app.upload_post_api_key",
+      "kokoro.api_key"
+    ],
+    "template_sha256": "374f48b3fb3d9fff5899f42f525ebce7b50ca6a718790031d1a7f28b315bc0da",
+    "settings": {
+      "openai_base_url": "http://127.0.0.1:8002/v1",
+      "openai_image_base_url": "http://127.0.0.1:8002/v1",
+      "openai_model_name": "gpt-6-luna",
+      "openai_image_model": "gpt-image-2",
+      "openai_image_size": "",
+      "whisper.model_size": "large-v3-turbo",
+      "whisper.device": "cpu",
+      "whisper.compute_type": "int8",
+      "max_concurrent_tasks": 1,
+      "log_level": "INFO"
+    }
+  },
+  "tap": {
+    "started_at": "2026-09-26T01:03:16.957Z",
+    "host": "127.0.0.1",
+    "port": 8002,
+    "upstream": "https://api.aixingialaire.shop",
+    "image_quality_injection": null,
+    "image_api": "responses",
+    "image_host_model": "gpt-6-luna",
+    "effort_image_host": "low",
+    "effort_chat": "medium",
+    "timeout_s": 610,
+    "pid": 18627
+  },
+  "vieneu": {
+    "VIENEU_PRECISION": "fp32",
+    "VIENEU_MAX_STREAMS": "1"
+  },
+  "sampler": {
+    "interval_s": 1,
+    "roots": {
+      "vieneu": 8000,
+      "proxy": 8001,
+      "mpt": 8080,
+      "webui": 8501
+    }
+  },
+  "mpt_task_id": "35ab583d-35d9-489a-89b6-ee8b89e28c8b",
+  "sources": {
+    "tts_seconds_audio": "proxy-log",
+    "mpt_log": "$NTS_HOME/logs/mpt-api-20260926-080321.log"
+  }
+}

@@ -27,6 +27,9 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[2]
 TAP_BASE_URL = "http://127.0.0.1:8002/v1"
 RUN_ID_RE = re.compile(r"^\d{8}-\d{4}-(vi|en)-(landscape|portrait)-\d{2}$")
+# Provider prefix of a voice id (schema col 36); matched case-insensitively
+# and collapsed when repeated (D-1).
+KOKORO_PREFIX_RE = re.compile(r"^kokoro:", re.IGNORECASE)
 # Redaction: any TOML key whose name ends in one of these words (01.3.1-T3 B).
 SECRET_KEY_RE = re.compile(r"(^|_)(api_key|api_keys|key|secret|token|password)$")
 TOML_KV_RE = re.compile(r"^\s*([A-Za-z0-9_]+)\s*=\s*(.+)$")
@@ -64,6 +67,38 @@ Exit codes: 0 ok, 1 check failed, 2 usage/env error.
 def die(code, msg):
     print(f"run_manifest.py: {msg}", file=sys.stderr)
     sys.exit(code)
+
+
+def normalize_voice(voice):
+    """run.json voice id, schema col 36: ``<provider>:<voice>``.
+
+    ``None`` (no --voice) -> ``n/a:not-given``. Accepts the bare VieNeu name
+    (``--voice "Ngọc Huyền"``) or an already prefixed id, so passing
+    ``kokoro:Ngọc Huyền`` (01.2.2-T6 step 4) cannot end up as
+    ``kokoro:kokoro:Ngọc Huyền``. The ``kokoro:`` prefix is matched
+    case-insensitively and repeated prefixes collapse to one canonical
+    ``kokoro:`` (D-1): ``KOKORO:x``/``kokoro:kokoro:x`` -> ``kokoro:x``.
+
+    A given-but-empty name (``--voice ""``, ``"   "`` or ``"kokoro:"``)
+    raises ValueError; cmd_start turns that into exit 2, because the id is
+    written verbatim into run.json and sheet col 36 and D8 rows are never
+    hand-edited.
+    """
+    if voice is None:
+        return "n/a:not-given"
+    v = voice.strip()
+    if not v:
+        raise ValueError("--voice needs a non-empty name "
+                         "(omit the flag for n/a:not-given)")
+    while True:
+        m = KOKORO_PREFIX_RE.match(v)
+        if m is None:
+            break
+        v = v[m.end():].strip()
+    if not v:
+        raise ValueError("--voice has an empty name after the 'kokoro:' "
+                         "prefix")
+    return v if ":" in v else f"kokoro:{v}"
 
 
 def nts_home():
@@ -154,6 +189,12 @@ def cmd_start(a):
     if not RUN_ID_RE.match(a.run_id):
         die(2, f"bad --run-id {a.run_id!r} (want D10 "
                "YYYYMMDD-HHMM-<vi|en>-<landscape|portrait>-NN)")
+    # Before any side effect (git/TOML/tap reads): a bad --voice must not
+    # write a run.json with a non-normalised or empty voice id (D-1).
+    try:
+        voice_name = normalize_voice(a.voice)
+    except ValueError as e:
+        die(2, str(e))
     nts = nts_home()
     run_dir = REPO / "trial" / "runs" / a.run_id
     if not run_dir.is_dir():
@@ -220,7 +261,7 @@ def cmd_start(a):
         "target_minutes": (int(a.target_minutes)
                            if float(a.target_minutes).is_integer()
                            else float(a.target_minutes)),
-        "voice_name": f"kokoro:{a.voice}" if a.voice else "n/a:not-given",
+        "voice_name": voice_name,
         "story_source": a.story_source,
         "pins": pins,
         "heads": heads,
@@ -266,7 +307,9 @@ def main(argv):
         p.add_argument("--target-minutes", required=True)
         p.add_argument("--status", default="trial",
                        choices=("calibration", "trial"))
-        p.add_argument("--voice", default="")
+        p.add_argument("--voice", default=None,
+                       help="VieNeu voice name (bare) or kokoro:<name>; "
+                            "omit for n/a:not-given")
         p.add_argument("--story-source", default="mpt",
                        choices=("mpt", "plan02"))
         p.add_argument("--no-tap", action="store_true")

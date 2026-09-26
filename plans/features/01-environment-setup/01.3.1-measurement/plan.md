@@ -39,18 +39,18 @@ Consumers of the numbers:
 
 Open ⚠️ (closed in T4 unless stated):
 
-| # | Item | Default until confirmed |
-|---|---|---|
-| Q1 | End-of-audio log line (in `app/services/voice.py`, not read) | Audio window ends at `## generating subtitle` |
-| Q2 | ✅ Closed (01 CR-17): `final-{index}.mp4` (`task.py:968`), `audio.mp3` (`task.py:532`), `script.json` key `script` (`task.py:357`) at the pin | Defaults; overridable with `--output`, `--script` |
-| Q3 | Chat Completions usage field names for cached tokens (`usage.prompt_tokens_details.cached_tokens`) | Missing → `story_cached_input_tokens = 0` + issue `cached-tokens-field-absent` |
-| Q4 | Images response top-level `quality`/`size` echo present for flare | Missing → `image_quality_returned = n/a:not-echoed` |
-| Q5 | Non-200 image calls are not billed | [INFERENCE]; verified by the dashboard cross-check |
-| Q6 | `memory_pressure` output line `System-wide memory free percentage: NN%` and `sysctl -n kern.memorystatus_vm_pressure_level` (1/2/4) exist on macOS 27 without sudo | 01.3.2-T1 step 1 checks; absent → `n/a:pressure-unavailable` |
-| Q7 | `ps -o rss` unit is KiB on macOS | 01.3.2-T1 checks against Activity Monitor once |
-| Q8 | ✅ Resolved by 04: path `$NTS_HOME/logs/proxy-<YYYYmmdd-HHMMSS>.log`, `ts` = request arrival, `status` = logical outcome (04 D7); no code change (04 CR-7) | Closed; fallback (ffprobe of the MPT task audio file) kept for a missing log |
-| Q9 | With `story_source = plan02` (script supplied as `video_script`) MPT skips the script LLM call and possibly the `## generating video script` marker; with `video_terms` omitted the terms call still runs (01.2.2-T6, agreed with MptPlan) | Story columns hold the terms call(s) only; 0 chat lines → `n/a:story-source-plan02`; every plan02 row gets issue `story-cost-terms-only`; missing script marker tolerated |
-| Q10 | Dashboard cost day boundary is UTC | [INFERENCE from O7 1-day buckets]; noted in `notes.md` |
+| # | Item | Default until confirmed | T4 outcome (2026-09-26, run `20260926-0818-en-landscape-01`) |
+|---|---|---|---|
+| Q1 | End-of-audio log line (in `app/services/voice.py`, not read) | Audio window ends at `## generating subtitle` | **changed / closed**: no provider-independent line exists (`voice.py:2212`, `voice.py:1357` are provider-specific and absent on `custom_audio_file`); `AUDIO_END_RE` stays `None`; window `## generating audio` → `## generating subtitle` = 6.0 s (01 CR-18) |
+| Q2 | ✅ Closed (01 CR-17): `final-{index}.mp4` (`task.py:968`), `audio.mp3` (`task.py:532`), `script.json` key `script` (`task.py:357`) at the pin | Defaults; overridable with `--output`, `--script` | ✅ **confirmed**: `final-1.mp4`, `audio.mp3`, `script.json`, `subtitle.srt`; the defaults worked with no `--output`/`--script` |
+| Q3 | Chat Completions usage field names for cached tokens (`usage.prompt_tokens_details.cached_tokens`) | Missing → `story_cached_input_tokens = 0` + issue `cached-tokens-field-absent` | ✅ **confirmed (field absent)**: chat usage = `{prompt_tokens 319, completion_tokens 35, total_tokens 354}` with no `prompt_tokens_details` anywhere → `story_cached_input_tokens = 0` + issue; no code change |
+| Q4 | Images response top-level `quality`/`size` echo present for flare | Missing → `image_quality_returned = n/a:not-echoed` | **changed**: echoed, but the relay forces quality `auto` **per call** (`low:3\|medium:2` in one run, `image_quality = low`), and one call echoed `1370x1148` ≠ requested `1536x1024` → `image_size = 1370x1148+1536x1024`; `n/a:not-echoed` does not apply (01 CR-19 → 03 CR-3) |
+| Q5 | Non-200 image calls are not billed | [INFERENCE]; verified by the dashboard cross-check | ⚠️ **still open** (owner-blocked): 0 non-200 lines (0×429, 0×5xx, 0 moderation) — needs the DEC-9 dashboard |
+| Q6 | `memory_pressure` output line `System-wide memory free percentage: NN%` and `sysctl -n kern.memorystatus_vm_pressure_level` (1/2/4) exist on macOS 27 without sudo | 01.3.2-T1 step 1 checks; absent → `n/a:pressure-unavailable` | n/a here (01.3.2-T1): the sampler's sources worked — `pressure_level`/`free_pct` parsed, `memory_pressure_max = warn` |
+| Q7 | `ps -o rss` unit is KiB on macOS | 01.3.2-T1 checks against Activity Monitor once | n/a here (01.3.2-T1). ⚠️ **Numbering note:** `notes.md` / `.nts/wiring-calib.json` label the **SDK timeout** as Q7 instead — that one is **confirmed** (openai 2.24.0 read 600 s ≤ `TAP_UPSTREAM_TIMEOUT_S` 610, `llm.py:618`; T4 step 7) |
+| Q8 | ✅ Resolved by 04: path `$NTS_HOME/logs/proxy-<YYYYmmdd-HHMMSS>.log`, `ts` = request arrival, `status` = logical outcome (04 D7); no code change (04 CR-7) | Closed; fallback (ffprobe of the MPT task audio file) kept for a missing log | ✅ **confirmed**: proxy line `01:19:00.398Z` (voice `Ngọc Huyền`, chars 557, audio_seconds 31.8, vieneu_ms 6001, ffmpeg_ms 4, status 200) inside the audio window → `sources.tts_seconds_audio = proxy-log`; no ffprobe fallback (01 CR-20) |
+| Q9 | With `story_source = plan02` (script supplied as `video_script`) MPT skips the script LLM call and possibly the `## generating video script` marker; with `video_terms` omitted the terms call still runs (01.2.2-T6, agreed with MptPlan) | Story columns hold the terms call(s) only; 0 chat lines → `n/a:story-source-plan02`; every plan02 row gets issue `story-cost-terms-only`; missing script marker tolerated | ✅ **confirmed**: `## generating video script` **is** logged (`task.py:293`) while its LLM call is skipped; the terms call runs (5 terms, `ast.literal_eval`) → 1 chat call, `story_wall_seconds = 3.0`, issue `story-cost-terms-only`; no missing-marker tolerance needed (01 CR-18) |
+| Q10 | Dashboard cost day boundary is UTC | [INFERENCE from O7 1-day buckets]; noted in `notes.md` | ⚠️ **still open** (owner-blocked): the relay has no OpenAI dashboard (DEC-9) → `n/a:pending-dashboard`; the UTC boundary stays [INFERENCE] |
 
 ## 3. Domain and data
 

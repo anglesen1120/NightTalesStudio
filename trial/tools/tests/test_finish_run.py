@@ -34,6 +34,19 @@ RUN_ID = "20260925-1141-vi-landscape-01"
 STARTED_AT = "2026-09-25T04:41:02Z"  # = 11:41:02 fixture-local
 STARTED_DT = datetime(2026, 9, 25, 4, 41, 2, tzinfo=timezone.utc)
 SCRIPT = "Đêm ấy, trời mưa… rất to!"
+# --task-id must be an MPT task UUID (SEC-T6-1); the fixture logs keep short
+# ids, so tests substitute a UUID into a copy of the log.
+TASK_ID = "35ab583d-35d9-489a-89b6-ee8b89e28c8b"           # mpt-api-sample
+TASK_ID_FAILED = "0e6b2c47-9f1a-4d3e-8b57-2c9d4e7a1f60"    # mpt-api-failed
+
+
+def rewrite_log(fixture, tmp, old="t-0001", task_id=TASK_ID):
+    """Copy of a fixture MPT log with `old` replaced by `task_id`."""
+    text = (FIXTURES / fixture).read_text(encoding="utf-8")
+    out = Path(tmp) / f"mpt-api-{task_id}-{fixture}"
+    out.write_text(text.replace(old, task_id), encoding="utf-8")
+    return out
+
 
 FAKE_PROBE = {
     "streams": [{"codec_type": "video"}],
@@ -88,7 +101,7 @@ def make_env(tmp, *, run=None, jsonl="openai_usage-sample.jsonl",
         (FIXTURES / "rss_raw-sample.csv").read_text(), encoding="utf-8")
     (nts / "current_run").write_text(RUN_ID + "\n", encoding="utf-8")
     # task dir with script.json + dummy output
-    task_dir = nts / "src" / "mpt" / "storage" / "tasks" / "t-0001"
+    task_dir = nts / "src" / "mpt" / "storage" / "tasks" / TASK_ID
     task_dir.mkdir(parents=True)
     (task_dir / "script.json").write_text(
         json.dumps({"script": SCRIPT}), encoding="utf-8")
@@ -101,6 +114,28 @@ def shasum(path):
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
 
+# Stage windows / coverage of the mpt-api-sample.log fixture (T-P1).
+SAMPLE_WINDOWS = {
+    "script": {"start": "2026-09-25T04:41:05Z",
+               "end": "2026-09-25T04:41:40Z"},
+    "terms": {"start": "2026-09-25T04:41:40Z",
+              "end": "2026-09-25T04:42:10Z"},
+    "audio": {"start": "2026-09-25T04:42:10Z",
+              "end": "2026-09-25T04:44:00Z"},
+    "subtitle": {"start": "2026-09-25T04:44:00Z",
+                 "end": "2026-09-25T04:46:10Z"},
+    "materials": {"start": "2026-09-25T04:46:10Z",
+                  "end": "2026-09-25T04:50:00Z"},
+    "combine": {"start": "2026-09-25T04:50:00Z",
+                "end": "2026-09-25T04:52:00Z"},
+    "final": {"start": "2026-09-25T04:52:00Z",
+              "end": "2026-09-25T04:53:00Z"},
+}
+SAMPLE_COVERAGE = {"first_marker": "2026-09-25T04:41:05Z",
+                   "end": "2026-09-25T04:53:00Z",
+                   "gaps_seconds": 0}
+
+
 class LogParserTests(unittest.TestCase):
     """T-P1, T-P2 (parser part), T-P3."""
 
@@ -109,14 +144,15 @@ class LogParserTests(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         self.trial, self.nts = make_env(self.tmp.name)
 
-    def parse(self, fixture, task_id="t-0001"):
-        return fr.parse_mpt_log(FIXTURES / fixture, task_id, STARTED_DT)
+    def parse(self, fixture, task_id=TASK_ID, old="t-0001"):
+        log = rewrite_log(fixture, self.tmp.name, old=old)
+        return fr.parse_mpt_log(log, task_id, STARTED_DT)
 
     def test_t_p1_windows_counts_and_coverage(self):
         st = self.parse("mpt-api-sample.log")
         self.assertEqual(st["marker_set"], 1)
         self.assertEqual(st["tz_offset"], "+07:00")
-        self.assertEqual(st["task_id"], "t-0001")
+        self.assertEqual(st["task_id"], TASK_ID)
         secs = {k: st["windows"][k]["seconds"] for k in st["windows"]}
         self.assertEqual(secs, {
             "script": 35.0, "terms": 30.0, "audio": 110.0,
@@ -146,7 +182,7 @@ class LogParserTests(unittest.TestCase):
             self.parse("mpt-api-sample.log", task_id="t-9999")
 
     def test_t_p2_failed_task_stages(self):
-        st = self.parse("mpt-api-failed.log", task_id="t-0002")
+        st = self.parse("mpt-api-failed.log", old="t-0002")
         self.assertEqual(st["failed_stage"], "subtitle")
         self.assertIn("subtitle", st["windows"])
         self.assertNotIn("materials", st["windows"])
@@ -209,6 +245,92 @@ class TapTests(unittest.TestCase):
         self.assertEqual(cols["image_output_tokens_total"], "330")
         self.assertEqual(cols["image_tokens_per_image_avg"], "110.0")
 
+    def test_image_input_split_absent_is_na_not_zero(self):
+        # Relay shape observed on the real run (01.3.1-T4, 2026-09-26):
+        # input_tokens + cached_tokens, no O6 text_tokens/image_tokens split.
+        cols, _ = self.agg("openai_usage-relay-split-absent.jsonl")
+        self.assertEqual(cols["image_count"], "2")
+        self.assertEqual(cols["image_output_tokens_total"], "254")
+        self.assertEqual(cols["image_input_text_tokens_total"],
+                         "n/a:usage-split-absent")
+        self.assertEqual(cols["image_input_image_tokens_total"],
+                         "n/a:usage-split-absent")
+        # unpriced relay host model -> CR-17 reason, not the token shape.
+        self.assertEqual(cols["image_cost_usd"], "n/a:no-price")
+        # a priced model with the same missing split must not understate cost
+        with tempfile.TemporaryDirectory() as tmp:
+            lines = (FIXTURES / "openai_usage-relay-split-absent.jsonl"
+                     ).read_text(encoding="utf-8").splitlines()
+            p = Path(tmp) / "u.jsonl"
+            p.write_text("\n".join(
+                json.dumps({**json.loads(l),
+                            "model": "gpt-image-2.5-flare",
+                            "via": None}) for l in lines)
+                + "\n", encoding="utf-8")
+            cols2, _ = fr.aggregate_tap(p, FIXTURES / "prices-test.json",
+                                        "mpt", False)
+        self.assertEqual(cols2["image_cost_usd"], "n/a:usage-split-absent")
+        self.assertEqual(cols2["image_cost_per_image_usd"],
+                         "n/a:component-na")
+
+    def test_image_input_split_absent_wins_when_mixed(self):
+        # One line with the O6 split and one without: summing only the first
+        # would under-report, so both columns go n/a.
+        lines = (FIXTURES / "openai_usage-relay-split-absent.jsonl"
+                 ).read_text(encoding="utf-8").splitlines()
+        with tempfile.TemporaryDirectory() as tmp:
+            p = Path(tmp) / "u.jsonl"
+            mixed = [json.loads(lines[0]),
+                     json.loads(lines[1])]
+            mixed[1]["usage"]["input_tokens_details"] = {
+                "text_tokens": 6600, "image_tokens": 0}
+            p.write_text("\n".join(json.dumps(d) for d in mixed) + "\n",
+                         encoding="utf-8")
+            cols, _ = fr.aggregate_tap(p, FIXTURES / "prices-test.json",
+                                       "mpt", False)
+        self.assertEqual(cols["image_input_text_tokens_total"],
+                         "n/a:usage-split-absent")
+        self.assertEqual(cols["image_input_image_tokens_total"],
+                         "n/a:usage-split-absent")
+
+    def test_half_filled_input_split_is_na_not_zero(self):
+        # D-2/L-1: a 200 image line whose input_tokens_details carries only
+        # one of the two O6 keys is as split-less as an empty object; the old
+        # `or` guard let it through and priced the missing half at 0.
+        lines = (FIXTURES / "openai_usage-relay-split-absent.jsonl"
+                 ).read_text(encoding="utf-8").splitlines()
+
+        def rewrite(tmp, details):
+            p = Path(tmp) / "u.jsonl"
+            p.write_text("\n".join(
+                json.dumps({**json.loads(l), "model": "gpt-image-2.5-flare",
+                            "via": None,
+                            "usage": {**json.loads(l)["usage"],
+                                      "input_tokens_details": details}})
+                for l in lines) + "\n", encoding="utf-8")
+            return p
+
+        with tempfile.TemporaryDirectory() as tmp:
+            p = rewrite(tmp, {"text_tokens": 6600})
+            cols, _ = fr.aggregate_tap(p, FIXTURES / "prices-test.json",
+                                       "mpt", False)
+        self.assertEqual(cols["image_input_text_tokens_total"],
+                         "n/a:usage-split-absent")
+        self.assertEqual(cols["image_input_image_tokens_total"],
+                         "n/a:usage-split-absent")
+        self.assertEqual(cols["image_cost_usd"], "n/a:usage-split-absent")
+        self.assertEqual(cols["image_cost_per_image_usd"],
+                         "n/a:component-na")
+        # contrast: both keys present -> numeric (same lines, complete split)
+        with tempfile.TemporaryDirectory() as tmp:
+            p = rewrite(tmp, {"text_tokens": 6600, "image_tokens": 0})
+            cols2, _ = fr.aggregate_tap(p, FIXTURES / "prices-test.json",
+                                        "mpt", False)
+        self.assertEqual(cols2["image_input_text_tokens_total"], "13200")
+        self.assertEqual(cols2["image_input_image_tokens_total"], "0")
+        # (2 x 6600 x 5 + 0 x 8 + 254 x 30) / 1e6
+        self.assertEqual(cols2["image_cost_usd"], "0.073620")
+
     def test_t_p10_branch_matrix(self):
         # chat-only + mpt: story numeric, image side n/a:no-images
         cols, issues = self.agg("openai_usage-chat-only.jsonl", "mpt")
@@ -267,37 +389,70 @@ class MiscUnitTests(unittest.TestCase):
     def test_t_p7_stage_peaks_windows(self):
         rows = fr._read_rss_raw(FIXTURES / "rss_raw-sample.csv")
         self.assertEqual(len(rows), 60)
-        windows = {
-            "script": {"start": "2026-09-25T04:41:05Z",
-                       "end": "2026-09-25T04:41:40Z"},
-            "terms": {"start": "2026-09-25T04:41:40Z",
-                      "end": "2026-09-25T04:42:10Z"},
-            "audio": {"start": "2026-09-25T04:42:10Z",
-                      "end": "2026-09-25T04:44:00Z"},
-            "subtitle": {"start": "2026-09-25T04:44:00Z",
-                         "end": "2026-09-25T04:46:10Z"},
-            "materials": {"start": "2026-09-25T04:46:10Z",
-                          "end": "2026-09-25T04:50:00Z"},
-            "combine": {"start": "2026-09-25T04:50:00Z",
-                        "end": "2026-09-25T04:52:00Z"},
-            "final": {"start": "2026-09-25T04:52:00Z",
-                      "end": "2026-09-25T04:53:00Z"},
-        }
-        cols, csv_rows = fr.stage_peaks(rows, windows)
+        cols, csv_rows = fr.stage_peaks(rows, SAMPLE_WINDOWS,
+                                        SAMPLE_COVERAGE)
         self.assertEqual(cols["ram_peak_vieneu_mb"], "300.0")
         self.assertEqual(cols["ram_peak_whisper_mb"], "500.0")
         self.assertEqual(cols["ram_peak_render_mb"], "2048.0")
         self.assertEqual(cols["ram_peak_total_mb"], "2198.0")
         self.assertEqual(cols["swap_peak_mb"], "259.0")
         self.assertEqual(cols["memory_pressure_max"], "warn")
-        self.assertEqual(len(csv_rows), 7)
-        self.assertTrue(all(r[0].startswith("stage:") for r in csv_rows))
-        # empty window -> n/a:no-samples-in-window
-        cols2, _ = fr.stage_peaks(rows, {
+        # rows: the whole-run `all` row first, then one per stage window
+        self.assertEqual(len(csv_rows), 8)
+        self.assertEqual(csv_rows[0][0], "all")
+        self.assertTrue(all(r[0].startswith("stage:")
+                            for r in csv_rows[1:]))
+        # the `all` row is bounded by the task window and matches cols 52-54
+        self.assertEqual(csv_rows[0][1], SAMPLE_COVERAGE["first_marker"])
+        self.assertEqual(csv_rows[0][2], SAMPLE_COVERAGE["end"])
+        self.assertEqual(csv_rows[0][3], "59")  # 60 rows minus 04:41:00Z
+        self.assertEqual(csv_rows[0][8], cols["ram_peak_total_mb"])
+        self.assertEqual(csv_rows[0][10], cols["swap_peak_mb"])
+        self.assertEqual(csv_rows[0][11], cols["memory_pressure_max"])
+        # empty window -> n/a:no-samples-in-window + bare NA in the row
+        cols2, rows2 = fr.stage_peaks(rows, {
             "audio": {"start": "2026-09-26T00:00:00Z",
-                      "end": "2026-09-26T00:01:00Z"}})
+                      "end": "2026-09-26T00:01:00Z"}}, SAMPLE_COVERAGE)
         self.assertEqual(cols2["ram_peak_vieneu_mb"],
                          "n/a:no-samples-in-window")
+        self.assertEqual(rows2[1][0], "stage:audio")
+        self.assertEqual(rows2[1][3], "0")
+        self.assertEqual(rows2[1][4:], ["NA"] * 11)
+
+    def test_whole_run_window_excludes_post_run_tail(self):
+        # Perf P3: cols 52-54 and the `all` row must ignore samples taken
+        # after the task ended (a peer bench / a second MPT task in the
+        # shared log), which the old lifetime aggregate counted.
+        raw = (FIXTURES / "rss_raw-sample.csv").read_text(
+            encoding="utf-8").splitlines()
+        tail = []
+        for ts in ("2026-09-25T04:53:12Z", "2026-09-25T04:53:24Z"):
+            cells = raw[-1].split(",")
+            cells[0] = ts
+            cells[2] = str(8 * 1024 * 1024)   # vieneu 8 GiB
+            cells[13] = "9999.0"              # swap
+            cells[14] = "4"                   # pressure critical
+            cells[15] = "8"                   # free %
+            tail.append(",".join(cells))
+        with tempfile.TemporaryDirectory() as tmp:
+            p = Path(tmp) / "rss_raw-tail.csv"
+            p.write_text("\n".join(raw + tail) + "\n", encoding="utf-8")
+            rows = fr._read_rss_raw(p)
+        # the tail really is heavier than the run (non-vacuous check)
+        lifetime = fr._window_stats(rows, None, None)
+        # 8 GiB vieneu + 50 MiB proxy + 2 GiB mpt
+        self.assertEqual(f"{lifetime['total_peak_mb']:.1f}", "10290.0")
+        self.assertEqual(lifetime["swap_peak_mb"], 9999.0)
+        self.assertEqual(lifetime["pressure_max"], "critical")
+        cols, csv_rows = fr.stage_peaks(rows, SAMPLE_WINDOWS,
+                                        SAMPLE_COVERAGE)
+        self.assertEqual(cols["ram_peak_total_mb"], "2198.0")
+        self.assertEqual(cols["swap_peak_mb"], "259.0")
+        self.assertEqual(cols["memory_pressure_max"], "warn")
+        # the `all` row carries exactly the windowed column values
+        self.assertEqual(csv_rows[0][8], cols["ram_peak_total_mb"])
+        self.assertEqual(csv_rows[0][10], cols["swap_peak_mb"])
+        self.assertEqual(csv_rows[0][11], cols["memory_pressure_max"])
 
     def test_t_p8_validate_row_rejects(self):
         row = ["x"] * len(fr.COLUMNS)
@@ -366,10 +521,11 @@ class EndToEndTests(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         self.trial, self.nts = make_env(self.tmp.name)
         self.csv = self.trial / "measurements.csv"
+        self.sample_log = rewrite_log("mpt-api-sample.log", self.tmp.name)
 
     def finish_args(self, *extra):
-        return [RUN_ID, "--task-id", "t-0001",
-                "--mpt-log", str(FIXTURES / "mpt-api-sample.log"),
+        return [RUN_ID, "--task-id", TASK_ID,
+                "--mpt-log", str(self.sample_log),
                 "--proxy-log", str(FIXTURES / "proxy-sample.log"),
                 *extra]
 
@@ -432,13 +588,13 @@ class EndToEndTests(unittest.TestCase):
         self.assertFalse((self.nts / "current_run").exists())
         run = json.loads((self.trial / "runs" / RUN_ID / "run.json")
                          .read_text())
-        self.assertEqual(run["mpt_task_id"], "t-0001")
+        self.assertEqual(run["mpt_task_id"], TASK_ID)
         self.assertEqual(run["run_status"], "trial")
         self.assertIsNotNone(run["finished_at"])
         self.assertEqual(run["sources"]["tts_seconds_audio"], "proxy-log")
         # I4: an absolute --mpt-log outside $NTS_HOME/repo is stored as
         # basename only
-        self.assertEqual(run["sources"]["mpt_log"], "mpt-api-sample.log")
+        self.assertEqual(run["sources"]["mpt_log"], self.sample_log.name)
         self.assertTrue((self.trial / "runs" / RUN_ID /
                          "stages.json").is_file())
         ffprobe = json.loads((self.trial / "runs" / RUN_ID / "ffprobe.json")
@@ -459,16 +615,100 @@ class EndToEndTests(unittest.TestCase):
         self.assertEqual(rc, 1)
         self.assertEqual(shasum(self.csv), after)
 
+    def test_task_id_must_be_an_mpt_uuid(self):
+        # SEC-T6-1: the id is joined into $NTS_HOME/src/mpt/storage/tasks/
+        # <id> and written into tracked JSON, so it is rejected before any
+        # path join or write — including on the --status failed path, where
+        # the log-equality check does not apply. Exit 2 = usage error.
+        # --mpt-log + --dry-run make the exit 2 non-vacuous: without the
+        # UUID check the same call succeeds (rc 0), so it is not a missing
+        # log that refuses.
+        before = shasum(self.csv)
+        raw_log = FIXTURES / "mpt-api-sample.log"     # holds t-0001
+        for bad in ("t-0001", "../../../etc", "/etc/passwd",
+                    "35ab583d-35d9-489a-89b6-ee8b89e28c8",
+                    "35ab583d35d9489a89b6ee8b89e28c8b",
+                    TASK_ID + "\n", ""):
+            with self.subTest(task_id=bad):
+                with redirect_stdout(io.StringIO()):
+                    rc = self.run_main([RUN_ID, "--task-id", bad,
+                                        "--status", "failed",
+                                        "--mpt-log", str(raw_log),
+                                        "--dry-run"])
+                self.assertEqual(rc, 2)
+        # contrast: the UUID the tree uses gets past the check (rc 0)
+        with redirect_stdout(io.StringIO()):
+            self.assertEqual(self.run_main(self.finish_args("--dry-run")), 0)
+        self.assertEqual(shasum(self.csv), before)
+        self.assertFalse(
+            (self.trial / "runs" / RUN_ID / "stages.json").exists())
+
+    def test_retried_finish_replaces_rss_rows(self):
+        # D-3: the sampler appends its own lifetime `all` row on TERM; the
+        # collector then rewrites the whole file (windowed `all` + stage
+        # rows), so a retried finish must replace, not append.
+        rss = self.trial / "runs" / RUN_ID / "rss.csv"
+        rss.write_text(
+            fr.RSS_CSV_HEADER + "\n"
+            "all,2026-09-25T04:41:00Z,2026-09-25T04:53:00Z,60,"
+            "9999.0,0.0,0.0,0.0,9999.0,NA,0.0,normal,NA,0,0\n",
+            encoding="utf-8")
+        with redirect_stdout(io.StringIO()):
+            self.assertEqual(self.run_main(self.finish_args()), 0)
+        first = rss.read_text()
+        scopes = [r[0] for r in csv.reader(first.splitlines())]
+        self.assertEqual(scopes[0], "scope")
+        self.assertEqual(scopes.count("all"), 1)
+        self.assertEqual(scopes.count("stage:audio"), 1)
+        self.assertEqual(len(scopes), 9)  # header + all + 7 stage rows
+        self.assertNotIn("9999.0", first)  # lifetime row replaced
+        # retried finish (QA repro: the sheet row was lost, run re-armed)
+        with open(self.csv, "w", newline="", encoding="utf-8") as f:
+            csv.writer(f, lineterminator="\r\n").writerow(fr.COLUMNS)
+        (self.nts / "current_run").write_text(RUN_ID + "\n",
+                                              encoding="utf-8")
+        with redirect_stdout(io.StringIO()):
+            self.assertEqual(self.run_main(self.finish_args()), 0)
+        self.assertEqual(rss.read_text(), first)
+
+    def test_run_json_records_collector_revision(self):
+        # L-4: the row is attributable to a tool revision from run.json.
+        with redirect_stdout(io.StringIO()):
+            self.assertEqual(self.run_main(self.finish_args()), 0)
+        run = json.loads((self.trial / "runs" / RUN_ID / "run.json")
+                         .read_text())
+        self.assertEqual(run["collector"]["finish_run_sha256"],
+                         shasum(Path(fr.__file__).resolve()))
+        self.assertEqual(run["collector"]["run_manifest_sha256"],
+                         shasum(TOOLS / "run_manifest.py"))
+
+    def test_issue_note_prefix_is_not_doubled(self):
+        # L-5: an --issue that already carries note: is stored as given.
+        with redirect_stdout(io.StringIO()):
+            rc = self.run_main(self.finish_args(
+                "--issue", "note:handwritten",
+                "--issue", "plain note"))
+        self.assertEqual(rc, 0)
+        with open(self.csv, newline="", encoding="utf-8") as f:
+            rows = list(csv.reader(f))
+        issues = rows[1][fr.COLUMNS.index("issues")]
+        self.assertIn("note:handwritten", issues)
+        self.assertNotIn("note:note:", issues)
+        self.assertIn("note:plain note", issues)
+
     def test_t_p2_failed_run_row(self):
-        task_dir = self.nts / "src" / "mpt" / "storage" / "tasks" / "t-0002"
+        task_dir = (self.nts / "src" / "mpt" / "storage" / "tasks"
+                    / TASK_ID_FAILED)
         task_dir.mkdir(parents=True)
         (task_dir / "script.json").write_text(json.dumps({"script": SCRIPT}))
         (task_dir / "audio.mp3").write_bytes(b"x")
         buf = io.StringIO()
         with redirect_stdout(buf):
-            rc = fr.main([RUN_ID, "--task-id", "t-0002",
+            rc = fr.main([RUN_ID, "--task-id", TASK_ID_FAILED,
                           "--mpt-log",
-                          str(FIXTURES / "mpt-api-failed.log"),
+                          str(rewrite_log("mpt-api-failed.log", self.tmp.name,
+                                          old="t-0002",
+                                          task_id=TASK_ID_FAILED)),
                           "--status", "failed", "--dry-run"],
                          trial_dir=self.trial, nts_home=self.nts,
                          prices_path=FIXTURES / "prices-test.json",
@@ -578,6 +818,7 @@ class ReviewRegressionTests(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         self.trial, self.nts = make_env(self.tmp.name)
         self.csv = self.trial / "measurements.csv"
+        self.sample_log = rewrite_log("mpt-api-sample.log", self.tmp.name)
         self.proc = None
 
     def tearDown(self):
@@ -607,8 +848,8 @@ class ReviewRegressionTests(unittest.TestCase):
         csv_before = shasum(self.csv)
         run_json = self.trial / "runs" / RUN_ID / "run.json"
         run_json_before = shasum(run_json)
-        args = [RUN_ID, "--task-id", "t-0001",
-                "--mpt-log", str(FIXTURES / "mpt-api-sample.log"),
+        args = [RUN_ID, "--task-id", TASK_ID,
+                "--mpt-log", str(self.sample_log),
                 "--proxy-log", str(FIXTURES / "proxy-sample.log")]
         with redirect_stdout(io.StringIO()):
             rc = self.run_main(args + ["--dry-run"])
@@ -635,8 +876,8 @@ class ReviewRegressionTests(unittest.TestCase):
         csv_before = shasum(self.csv)
         with redirect_stdout(io.StringIO()):
             rc = self.run_main(
-                [RUN_ID, "--task-id", "t-0001",
-                 "--mpt-log", str(FIXTURES / "mpt-api-sample.log")])
+                [RUN_ID, "--task-id", TASK_ID,
+                 "--mpt-log", str(self.sample_log)])
         self.assertEqual(rc, 1)
         self.assertIsNone(self.proc.poll())
         self.assertEqual(shasum(self.csv), csv_before)
@@ -644,9 +885,11 @@ class ReviewRegressionTests(unittest.TestCase):
             (self.trial / "runs" / RUN_ID / "rss.csv").exists())
 
     def test_unfinished_end_ts_is_this_tasks_last_record(self):
-        st = fr.parse_mpt_log(FIXTURES / "mpt-api-unfinished.log",
-                              "t-0005", STARTED_DT, allow_unfinished=True)
-        # last t-0005 record is 11:41:55 local; foreign-task records at
+        st = fr.parse_mpt_log(
+            rewrite_log("mpt-api-unfinished.log", self.tmp.name,
+                        old="t-0005"),
+            TASK_ID, STARTED_DT, allow_unfinished=True)
+        # last task record is 11:41:55 local; foreign-task records at
         # 11:50/11:51 must not stretch the window (old code used last_ts)
         self.assertEqual(st["coverage"]["end"], "2026-09-25T04:41:55Z")
         self.assertEqual(st["total_seconds"], 50.0)
@@ -656,7 +899,7 @@ class ReviewRegressionTests(unittest.TestCase):
         log = Path(self.tmp.name) / "mpt-api-termsbad.log"
         log.write_text(
             '2026-09-25 11:41:02 | INFO | "app/api.py:88": submit - '
-            'task t-0007 submitted\n'
+            f'task {TASK_ID} submitted\n'
             '2026-09-25 11:41:05 | INFO | "app/services/task.py:301": '
             'run - \n\n## generating video script\n'
             '2026-09-25 11:41:40 | INFO | "app/services/task.py:390": '
@@ -664,15 +907,14 @@ class ReviewRegressionTests(unittest.TestCase):
             '2026-09-25 11:41:55 | INFO | "app/services/task.py:421": '
             'terms - completed:\n[unquoted term]\n'
             '2026-09-25 11:53:00 | SUCCESS | '
-            '"app/services/task.py:1100": run - task t-0007 finished\n')
-        st = fr.parse_mpt_log(log, "t-0007", STARTED_DT)
+            f'"app/services/task.py:1100": run - task {TASK_ID} finished\n')
+        st = fr.parse_mpt_log(log, TASK_ID, STARTED_DT)
         self.assertIsNone(st["counts"]["terms_count"])
-        # row level: n/a:marker-missing, not 0 (schema.md col 38)
-        task_dir = self.nts / "src" / "mpt" / "storage" / "tasks" / "t-0007"
-        task_dir.mkdir(parents=True)
+        # row level: n/a:marker-missing, not 0 (schema.md col 38); the task
+        # dir already exists from make_env.
         buf = io.StringIO()
         with redirect_stdout(buf):
-            rc = self.run_main([RUN_ID, "--task-id", "t-0007",
+            rc = self.run_main([RUN_ID, "--task-id", TASK_ID,
                                 "--mpt-log", str(log), "--dry-run"])
         self.assertEqual(rc, 0)
         pairs = dict(l.split("=", 1) for l in buf.getvalue().splitlines())
@@ -686,8 +928,8 @@ class ReviewRegressionTests(unittest.TestCase):
         buf = io.StringIO()
         with redirect_stdout(buf):
             rc = self.run_main(
-                [RUN_ID, "--task-id", "t-0001",
-                 "--mpt-log", str(FIXTURES / "mpt-api-sample.log"),
+                [RUN_ID, "--task-id", TASK_ID,
+                 "--mpt-log", str(self.sample_log),
                  "--proxy-log", str(FIXTURES / "proxy-sample.log"),
                  "--dry-run"])
         self.assertEqual(rc, 0)
@@ -696,10 +938,10 @@ class ReviewRegressionTests(unittest.TestCase):
 
     def test_sources_store_nts_home_relative_path(self):
         log = self.nts / "logs" / "mpt-api-x.log"
-        log.write_text((FIXTURES / "mpt-api-sample.log").read_text())
+        log.write_text(self.sample_log.read_text(encoding="utf-8"))
         with redirect_stdout(io.StringIO()):
             rc = self.run_main(
-                [RUN_ID, "--task-id", "t-0001", "--mpt-log", str(log),
+                [RUN_ID, "--task-id", TASK_ID, "--mpt-log", str(log),
                  "--proxy-log", str(FIXTURES / "proxy-sample.log")])
         self.assertEqual(rc, 0)
         run = json.loads(
