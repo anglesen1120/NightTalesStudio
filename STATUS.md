@@ -6,7 +6,7 @@ Legend: `done` (acceptance checks run and passed) · `doing` · `blocked (<who>)
 
 ## Resume here
 
-- **Last session:** 2026-09-26. PR #9 and PR #10 merged into `develop` (`e5d9129`, `9057327`); doc follow-up PR #11 (`chore/01-cr22-status`). Plan 02 M0 started on branch `feature/02-m0-prompts` (stacked on #11): prompts tree, preset spec, shared rules, six presets and the story harness, each through QA → code/perf/security reviews → fixes → re-test.
+- **Last session:** 2026-09-26. PR #9 and PR #10 merged into `develop` (`e5d9129`, `9057327`); doc follow-up PR #11 (`chore/01-cr22-status`). Plan 02 M0 on branch `feature/02-m0-prompts` (stacked on #11) → **draft PR #12**: prompts tree, preset spec, shared rules, six presets and the story harness, each through QA → code/perf/security reviews → fixes → re-test; 118 offline tests OK. Draft because the preset QA gate T34 has not passed (next action 7).
 - **Next actions:**
   1. ~~Owner: review and merge PR #6~~ → merged 2026-09-26 (`e1046ff`). ~~PR #7~~ → merged 2026-09-26 (`dda2b56`).
   2. ~~Owner: merge the PR #7 gate-fix PR (#9) and PR #10~~ → merged 2026-09-26 (`e5d9129`, `9057327`). #10 also carried two post-gate commits, re-tested only: `887a554` (`start_run.sh` rejects an empty `--voice` with exit 2; shellcheck + 4 cases) and `721d810` (CR-22 wording).
@@ -75,7 +75,7 @@ Legend: `done` (acceptance checks run and passed) · `doing` · `blocked (<who>)
 
 ## Plan 02 — Story writing (M0 slice)
 
-Branch `feature/02-m0-prompts`. Gates per task: QA agent → code, performance and security reviews → fixes → re-test. Plan text amendments: 02 README §10 **T65–T97**, §4 **CR-25…CR-27**.
+Branch `feature/02-m0-prompts` → draft PR #12 (merge #11 first). Gates per task: QA agent → code, performance and security reviews → fixes → re-test. Plan text amendments: 02 README §10 **T65–T98**, §4 **CR-25…CR-27**; T73 minors wording applied to `plans/02-story-writing.md` :57, :152.
 
 | Task | Status | Evidence / note |
 |---|---|---|
