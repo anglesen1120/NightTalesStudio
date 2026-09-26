@@ -6,15 +6,23 @@ Legend: `done` (acceptance checks run and passed) · `doing` · `blocked (<who>)
 
 ## Resume here
 
-- **Last session:** 2026-09-26, plan 04 (VieNeu proxy). Branch `feature/04-voice-proxy`, commits `9d51285` (P1) and `8bd9b76` (P2/P3), pushed → **PR #6 into `develop`** (open, not merged). Checked on that head in a clean worktree: `pytest` 172 passed, `shellcheck -x` clean on the proxy scripts, `gitleaks` over `origin/develop..HEAD` no leaks. The QA → code → performance → security gates for those commits are stated only in the commit messages; no gate record was written here at the time.
+- **Last session:** 2026-09-26, plan 04 (VieNeu proxy). PR #6 (`9d51285` P1, `8bd9b76` P2/P3, `c84637b` STATUS) **merged into `develop`** as `e1046ff`. Checked on `8bd9b76` in a clean worktree before push: `pytest` 172 passed, `shellcheck -x` clean on the proxy scripts, `gitleaks` no leaks. The QA → code → performance → security gates for those commits are stated only in the commit messages; no gate record was written here at the time.
 - **Next actions:**
-  1. Owner: review and merge PR #6.
-  2. **Uncommitted plan-04 work on `feature/04-voice-proxy` (not in PR #6, no gate run yet)** — run QA → code review → performance review → security review, fix, then commit and open a second PR:
+  1. ~~Owner: review and merge PR #6~~ → merged 2026-09-26.
+  2. **Uncommitted plan-04 work, now on branch `feature/04-baseline-child-env` (from `develop`)** — run QA → code review → performance review → security review, fix, then commit and open a second PR:
      - 04.1.2-T3 MPT-side baseline: `trial/tools/bench-proxy.sh`, `trial/tools/bench_proxy_mpt.py`, `worker-node/proxy/tools/mpt_decode_check.py`, `trial/baselines/proxy-mac-20260926.json`.
      - ffmpeg child-env allow-list (D13, no key inherited by ffmpeg): `transcode.py` (`child_env`), `health.py`, `tools/audition.py`, `tests/test_subprocess_env.py`, `tests/test_audition_tool.py`.
   3. Record the plan-04 gate results (QA matrix, review findings) in this file when those gates run.
+     **Resume recipe (stopped 2026-09-26 before the QA gate started):**
+     - Branch `feature/04-baseline-child-env` (from `develop` `e1046ff`); the 9 WIP files are uncommitted in the working tree. Stage by path only, never `git add -A`.
+     - Gate order per task: QA agent (did not write the code; re-reads `04.1.2-T3-mpt-side-acceptance-perf-baseline.md` + 04 README D4/D13/T15) → then code, performance and security review in parallel → fixes re-tested → commit → push → PR into `develop`.
+     - Unit tests: `.nts/src/proxy-venv/bin/python -m pytest` in `worker-node/proxy/`. That venv imports `nts_vieneu_proxy` from the **main tree** `src/`; to test another checkout set `PYTHONPATH=<checkout>/worker-node/proxy/src` and assert `nts_vieneu_proxy.__file__`.
+     - Live bench: no service was listening at stop time. Start `start-vieneu.sh`, `start-proxy.sh`, `start-tap.sh`, `start-mpt-api.sh` (each in its own terminal), then `trial/tools/bench-proxy.sh --repeats 2 --inject-failure` → expect exit 0 and `PASS 04.1.2-T3`; overwrite `trial/baselines/proxy-mac-<date>.json` from the gated tree.
+     - Old baseline overheads: vi-5min −2.08 %, en-5min 2.47 % (pass rule), vi-1000 4.81 %, en-1000 6.55 % (informational).
+     - QA scope (TL): `bench-proxy.sh:889-892` `overhead_le_5pct` is vacuously true when `--fixtures` omits every `-5min` fixture → a subset run reports `result: pass` without checking NFR-04-3. Treat an empty set as fail or as an explicit `skipped` check.
+     - Perf scope (TL): raw-wall `overhead_pct` (task line 43) is noise-dominated — VieNeu samples at t=0.8, so audio length varies per run (vi-5min −2.08 %; en-5min 235.2 s audio via proxy vs 222.4 s direct, +5.8 %). Also report RTF-normalised overhead (wall ÷ audio seconds); if that is the sounder metric, raise a CR against 04.1.2-T3 — do not change the pass rule silently.
   4. Owner + raters: fill the 04.2.1-T1 rater sheets (`trial/voice-audition/README.md`), then pick the voice set → unblocks 04.2.2-T1.
-  5. After PR #6: 01.2.2-T6 wiring render (the proxy now exists), then 01.3.1-T4 calibration.
+  5. 01.2.2-T6 wiring render (the proxy is on `develop`), then 01.3.1-T4 calibration.
   6. Still open from plan 01: ask the relay to **enable image generation** for the image key (DEC-10), then `worker-node/bin/openai-access-check.sh --only image`; set a spend cap in the relay account.
 - **Environment (DEC-5, DEC-6):**
   - Implementation machine = this Mac (M4, 16 GB, macOS 27.0).
@@ -62,7 +70,7 @@ Legend: `done` (acceptance checks run and passed) · `doing` · `blocked (<who>)
 | 04.1.1-T1 Spike | done (`9d51285`) | `worker-node/proxy/SPIKE.md`: **D4 GO**. PCM→MP3 +36 ms, first MP3 272 ms, max gap 441 ms, RTF 0.193, MPT `requests` sees `ChunkedEncodingError` on abort. VieNeu slot release after a client disconnect: 81.8 s · > 90 s · ≈ 210 s · > 400 s → TL ruling T15 (drain the upstream, `ADMISSION_WAIT_S` 80 s) |
 | 04.1.2-T1 Speech endpoint | done (`9d51285`) | `POST /v1/audio/speech`, streaming ffmpeg transcode, T15 drain, catalog revision 0 (`seed/voices.v1.json`, 2 entries), request log |
 | 04.1.2-T2 Errors, admission, allow-list | done (`8bd9b76`) | Error mapping, admission wait, limits, route allow-list, wire-semantics tests |
-| 04.1.2-T3 MPT-side baseline | **doing — uncommitted, no gate run** | `bench-proxy.sh`, `bench_proxy_mpt.py`, `mpt_decode_check.py` written; `trial/baselines/proxy-mac-20260926.json` (run 2026-09-25T20:39Z) says `result: pass` with all 7 checks true, failure injection 3 × 502 → MPT task fails at stage `audio`, T15 live disconnect drained. QA must confirm the overhead rule: `en-1000` shows `overhead_pct` 6.55 while `overhead_le_5pct` is true |
+| 04.1.2-T3 MPT-side baseline | **doing — uncommitted, no gate run** | `bench-proxy.sh`, `bench_proxy_mpt.py`, `mpt_decode_check.py` written. `trial/baselines/proxy-mac-20260926.json` (run 2026-09-25T20:39Z) says `result: pass` with all 7 checks true (failure injection 3 × 502 → MPT task fails at stage `audio`; T15 live disconnect drained). That run measured the **uncommitted tree** (the `child_env` edit to `transcode.py` predates it), not `8bd9b76` → re-run the bench after the child-env gates close. Overhead per the task's rule (5-min fixtures only, ≤ 5 %): en-5min 2.47 %; the 1000-char fixtures (vi 4.81 %, en 6.55 %) are informational |
 | 04.1.3-T1 Voices endpoint + cache | done (`8bd9b76`) | `GET /v1/voices`, `voice_cache.py` |
 | 04.1.4-T1 Health | done (`8bd9b76`) | `/health` → `proxy-health.v1` |
 | 04.1.5-T1 Packaging | done (`8bd9b76`) | `start-proxy.sh`, `smoke-proxy.sh` (wired into `smoke.sh`), systemd unit, `LICENSES.md`, `env.example` |
