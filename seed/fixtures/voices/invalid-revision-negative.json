@@ -1,0 +1,32 @@
+{
+  "schema": "voices.v1",
+  "revision": -1,
+  "vieneuCommit": "c1390abbdb2eedcdf58eafb546966c06ce27af71",
+  "voices": [
+    {
+      "id": "Hải Đăng",
+      "slug": "hai-dang",
+      "displayName": "Hải Đăng",
+      "language": "vi",
+      "gender": "male",
+      "tags": [
+        "storyteller",
+        "northern"
+      ],
+      "active": true,
+      "previewStorageKey": null
+    },
+    {
+      "id": "Ngọc Huyền",
+      "slug": "ngoc-huyen",
+      "displayName": "Ngọc Huyền",
+      "language": "en",
+      "gender": "female",
+      "tags": [
+        "calm"
+      ],
+      "active": true,
+      "previewStorageKey": null
+    }
+  ]
+}

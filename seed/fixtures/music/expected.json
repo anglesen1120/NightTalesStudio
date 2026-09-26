@@ -1,0 +1,42 @@
+{
+  "valid-catalog": {
+    "ok": true,
+    "code": null
+  },
+  "invalid-id": {
+    "ok": false,
+    "code": "track_id_format"
+  },
+  "invalid-license": {
+    "ok": false,
+    "code": "license_unknown"
+  },
+  "invalid-attribution": {
+    "ok": false,
+    "code": "attribution_required"
+  },
+  "invalid-scope": {
+    "ok": false,
+    "code": "scope_license_mismatch"
+  },
+  "invalid-moods": {
+    "ok": false,
+    "code": "moods_unknown"
+  },
+  "invalid-duration": {
+    "ok": false,
+    "code": "duration_below_minimum"
+  },
+  "invalid-sha256": {
+    "ok": false,
+    "code": "sha256_format"
+  },
+  "invalid-duplicate-file": {
+    "ok": false,
+    "code": "file_duplicate"
+  },
+  "invalid-revision": {
+    "ok": false,
+    "code": "revision_not_positive"
+  }
+}

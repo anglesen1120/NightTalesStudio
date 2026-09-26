@@ -1,0 +1,67 @@
+{
+  "schema": "music-tracks.v1",
+  "revision": 1,
+  "tracks": [
+    {
+      "id": "fixture-dark-ambient",
+      "file": "fixture-dark-ambient.mp3",
+      "title": "Fixture fixture-dark-ambient",
+      "artist": "Fixture Artist",
+      "sourceUrl": "https://example.invalid/tracks/fixture-dark-ambient",
+      "license": "YouTube-Audio-Library",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "attribution": null,
+      "platformScope": "youtube",
+      "moods": [
+        "dark_ambient",
+        "suspense"
+      ],
+      "durationSec": 184.2,
+      "loudnessLufs": -17.3,
+      "bgmVolume": 0.146,
+      "sha256": "b0e423cf52750909cf74f9712dd6a98142e47f51bb57fb323895a4eca24ef238",
+      "active": true
+    },
+    {
+      "id": "fixture-temple-calm",
+      "file": "fixture-temple-calm.mp3",
+      "title": "Fixture fixture-temple-calm",
+      "artist": "Fixture Artist",
+      "sourceUrl": "https://example.invalid/tracks/fixture-temple-calm",
+      "license": "CC0-1.0",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "attribution": null,
+      "platformScope": "any",
+      "moods": [
+        "temple",
+        "meditation",
+        "calm"
+      ],
+      "durationSec": 132.5,
+      "loudnessLufs": -22.4,
+      "bgmVolume": 0.263,
+      "sha256": "619bc9777af3781b687ace8a746bf71972fb0e5845dd2973d465e7b4c73d4781",
+      "active": true
+    },
+    {
+      "id": "fixture-noir-suspense",
+      "file": "fixture-noir-suspense.mp3",
+      "title": "Fixture fixture-noir-suspense",
+      "artist": "Fixture Artist",
+      "sourceUrl": "https://example.invalid/tracks/fixture-noir-suspense",
+      "license": "CC-BY-4.0",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "attribution": "Fixture Artist \u2014 'Fixture noir-suspense', licensed CC-BY-4.0 (fixture attribution, not a real track)",
+      "platformScope": "any",
+      "moods": [
+        "noir",
+        "suspense"
+      ],
+      "durationSec": 90.0,
+      "loudnessLufs": -30.1,
+      "bgmVolume": 0.4,
+      "sha256": "d56ea03e104b7c9d53bdc7332c38a5fe5576384dd54b843da9b6a2cf80fa75d7",
+      "active": true
+    }
+  ]
+}

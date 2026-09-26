@@ -1,0 +1,50 @@
+{
+  "schema": "spike-terms.v1",
+  "note": "M0 spike fixture for 03.4.1-T1 (03 README D4: terms carry the styled prompt; a global prompt template is not used by the spike profile).",
+  "clip_seconds": 10,
+  "style_template": "Atmospheric cinematic illustration of {term}. Muted colours, soft low-key light, painterly detail, subtle film grain, distant mist, restrained composition, aged texture, quiet dread, gentle depth of field and vignette.",
+  "negative_clause": "No gore, no blood, no text, no letters, no logos, no watermark, no real person likeness.",
+  "terms": [
+    {
+      "id": "t01",
+      "keyword": "a lighthouse keeper",
+      "prompt": "Atmospheric cinematic illustration of a lighthouse keeper. Muted colours, soft low-key light, painterly detail, subtle film grain, distant mist, restrained composition, aged texture, quiet dread, gentle depth of field and vignette. No gore, no blood, no text, no letters, no logos, no watermark, no real person likeness."
+    },
+    {
+      "id": "t02",
+      "keyword": "seven lamps on a cliff road",
+      "prompt": "Atmospheric cinematic illustration of seven lamps on a cliff road. Muted colours, soft low-key light, painterly detail, subtle film grain, distant mist, restrained composition, aged texture, quiet dread, gentle depth of field and vignette. No gore, no blood, no text, no letters, no logos, no watermark, no real person likeness."
+    },
+    {
+      "id": "t03",
+      "keyword": "a lantern by the harbour",
+      "prompt": "Atmospheric cinematic illustration of a lantern by the harbour. Muted colours, soft low-key light, painterly detail, subtle film grain, distant mist, restrained composition, aged texture, quiet dread, gentle depth of field and vignette. No gore, no blood, no text, no letters, no logos, no watermark, no real person likeness."
+    },
+    {
+      "id": "t04",
+      "keyword": "fog rolling over a quiet bell tower",
+      "prompt": "Atmospheric cinematic illustration of fog rolling over a quiet bell tower. Muted colours, soft low-key light, painterly detail, subtle film grain, distant mist, restrained composition, aged texture, quiet dread, gentle depth of field and vignette. No gore, no blood, no text, no letters, no logos, no watermark, no real person likeness."
+    },
+    {
+      "id": "t05",
+      "keyword": "an open logbook on a wet desk",
+      "prompt": "Atmospheric cinematic illustration of an open logbook on a wet desk. Muted colours, soft low-key light, painterly detail, subtle film grain, distant mist, restrained composition, aged texture, quiet dread, gentle depth of field and vignette. No gore, no blood, no text, no letters, no logos, no watermark, no real person likeness."
+    },
+    {
+      "id": "t06",
+      "keyword": "a village abandoned at dusk",
+      "prompt": "Atmospheric cinematic illustration of a village abandoned at dusk. Muted colours, soft low-key light, painterly detail, subtle film grain, distant mist, restrained composition, aged texture, quiet dread, gentle depth of field and vignette. No gore, no blood, no text, no letters, no logos, no watermark, no real person likeness."
+    },
+    {
+      "id": "t07",
+      "keyword": "a single boat in calm water",
+      "prompt": "Atmospheric cinematic illustration of a single boat in calm water. Muted colours, soft low-key light, painterly detail, subtle film grain, distant mist, restrained composition, aged texture, quiet dread, gentle depth of field and vignette. No gore, no blood, no text, no letters, no logos, no watermark, no real person likeness."
+    },
+    {
+      "id": "t08",
+      "keyword": "a folded map with no destination",
+      "prompt": "Atmospheric cinematic illustration of a folded map with no destination. Muted colours, soft low-key light, painterly detail, subtle film grain, distant mist, restrained composition, aged texture, quiet dread, gentle depth of field and vignette. No gore, no blood, no text, no letters, no logos, no watermark, no real person likeness."
+    }
+  ],
+  "string_form": "Atmospheric cinematic illustration of a lighthouse keeper. Muted colours, soft low-key light, painterly detail, subtle film grain, distant mist, restrained composition, aged texture, quiet dread, gentle depth of field and vignette. No gore, no blood, no text, no letters, no logos, no watermark, no real person likeness.,Atmospheric cinematic illustration of seven lamps on a cliff road. Muted colours, soft low-key light, painterly detail, subtle film grain, distant mist, restrained composition, aged texture, quiet dread, gentle depth of field and vignette. No gore, no blood, no text, no letters, no logos, no watermark, no real person likeness.,Atmospheric cinematic illustration of a lantern by the harbour. Muted colours, soft low-key light, painterly detail, subtle film grain, distant mist, restrained composition, aged texture, quiet dread, gentle depth of field and vignette. No gore, no blood, no text, no letters, no logos, no watermark, no real person likeness.,Atmospheric cinematic illustration of fog rolling over a quiet bell tower. Muted colours, soft low-key light, painterly detail, subtle film grain, distant mist, restrained composition, aged texture, quiet dread, gentle depth of field and vignette. No gore, no blood, no text, no letters, no logos, no watermark, no real person likeness.,Atmospheric cinematic illustration of an open logbook on a wet desk. Muted colours, soft low-key light, painterly detail, subtle film grain, distant mist, restrained composition, aged texture, quiet dread, gentle depth of field and vignette. No gore, no blood, no text, no letters, no logos, no watermark, no real person likeness.,Atmospheric cinematic illustration of a village abandoned at dusk. Muted colours, soft low-key light, painterly detail, subtle film grain, distant mist, restrained composition, aged texture, quiet dread, gentle depth of field and vignette. No gore, no blood, no text, no letters, no logos, no watermark, no real person likeness.,Atmospheric cinematic illustration of a single boat in calm water. Muted colours, soft low-key light, painterly detail, subtle film grain, distant mist, restrained composition, aged texture, quiet dread, gentle depth of field and vignette. No gore, no blood, no text, no letters, no logos, no watermark, no real person likeness.,Atmospheric cinematic illustration of a folded map with no destination. Muted colours, soft low-key light, painterly detail, subtle film grain, distant mist, restrained composition, aged texture, quiet dread, gentle depth of field and vignette. No gore, no blood, no text, no letters, no logos, no watermark, no real person likeness."
+}

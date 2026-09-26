@@ -1,2 +1,2 @@
-file,title,artist,source_url,license,license_url,attribution,mood_tags,sha256,duration_s,loudness_lufs,added_at
+file,title,artist,source_url,license,license_url,attribution,mood_tags,sha256,duration_s,loudness_lufs,added_at,track_id,platform_scope,evidence_url,retrieved_at
 nts-ambient-pad-cc0.mp3,NTS Ambient Pad (placeholder),NightTalesStudio,n/a:generated-in-house,CC0-1.0,https://creativecommons.org/publicdomain/zero/1.0/,n/a:cc0,calm;ambient;pad,575ea4c4f779bdf0f3e1c7ca333f1e2d73556c55e74ca6ccd112ce4bb7a3d66d,90.0,-37.4,2026-09-25T15:48:00Z
