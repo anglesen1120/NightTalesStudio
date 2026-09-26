@@ -1,0 +1,16 @@
+{
+  "status": 200,
+  "message": "success",
+  "data": {
+    "task_id": "e31d0a7d-f86f-4719-a353-73f94a82c5d6",
+    "state": -1,
+    "progress": 40,
+    "videos": null,
+    "combined_videos": null,
+    "failed_stage": "materials",
+    "error": "failed to download video materials from openai_image",
+    "cross_post_state": null,
+    "cross_post_results": null,
+    "cross_post_error": null
+  }
+}

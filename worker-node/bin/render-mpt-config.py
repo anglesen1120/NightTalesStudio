@@ -8,6 +8,13 @@ Exit codes (D9): 0 ok · 1 guard/substitution/value check failed (nothing writte
                  2 usage/environment error.
 Secret values are read only from the four NTS_* environment variables, are never
 printed and never appear in argv, diffs or the state file.
+
+--profile spike (03.4.1-T1): renders config.spike.toml instead. Five lines differ from
+a normal render: openai_image_base_url = the local image stub (127.0.0.1:18003),
+openai_image_api_keys = [] (no auth header, I15), openai_image_prompt_template = ""
+(raw term, so stub prompt_sha256 maps 1:1 to the fixture terms), openai_base_url = the
+same stub (a stray LLM call hits a 404, never a paid upstream) and listen_port = 18080 so
+the spike can run beside the live MPT.
 """
 
 import argparse
@@ -32,6 +39,8 @@ REQUIRED_VARS = (
 VALUE_RE = re.compile(r"^[A-Za-z0-9._-]{16,512}$")
 SECRET_NAME_RE = re.compile(r"(^|_)(api_key|api_keys|key|keys|token|secret|password)$")
 TAP_URL = "http://127.0.0.1:8002/v1"
+SPIKE_IMAGE_BASE_URL = "http://127.0.0.1:18003/v1"
+SPIKE_LISTEN_PORT = 18080
 
 
 def _pinned_base_url():
@@ -140,16 +149,83 @@ def gather_mapping():
     return mapping, failures
 
 
-def guards(cfg, allow_direct=False):
+def apply_spike(rendered):
+    """Rewrite the five spike-only lines for --profile spike (03.4.1-T1).
+
+    The image upstream becomes the local stub, the image key list becomes
+    empty (no Authorization header, I15), the prompt template is cleared so
+    the raw term is sent (I3) and prompt_sha256 maps 1:1 to the fixture, the
+    LLM upstream openai_base_url also becomes the stub so a stray LLM call
+    hits a 404 and never a paid upstream, and MPT listens on
+    SPIKE_LISTEN_PORT so it can run beside the live 8080 instance. Exits 1
+    when the template drifts so the profile cannot go silently half-applied.
+    """
+    out = []
+    n_base = n_keys = n_tpl = n_port = n_llm = 0
+    for line in rendered.splitlines():
+        if line.startswith("openai_image_base_url ="):
+            line = f'openai_image_base_url = "{SPIKE_IMAGE_BASE_URL}"  # spike: local stub (03.4.1-T1)'
+            n_base += 1
+        elif line.startswith("openai_image_api_keys ="):
+            line = "openai_image_api_keys = []  # spike: no auth header (03.4.1-T1, I15)"
+            n_keys += 1
+        elif line.startswith("openai_image_prompt_template ="):
+            line = 'openai_image_prompt_template = ""  # spike: raw term (03.4.1-T1, I3)'
+            n_tpl += 1
+        elif line.startswith("openai_base_url ="):
+            line = f'openai_base_url = "{SPIKE_IMAGE_BASE_URL}"  # spike: a stray LLM call hits a 404, never a paid upstream (03.4.1-T1)'
+            n_llm += 1
+        elif line.startswith("listen_port ="):
+            line = f"listen_port = {SPIKE_LISTEN_PORT}  # spike: beside the live 8080 MPT (03.4.1-T1)"
+            n_port += 1
+        out.append(line)
+    if (n_base, n_keys, n_tpl, n_port, n_llm) != (1, 1, 1, 1, 1):
+        eprint(
+            "FAIL spike profile: template must hold exactly one openai_image_base_url,"
+            f" openai_image_api_keys, openai_image_prompt_template, openai_base_url and"
+            f" listen_port line (got image={n_base} keys={n_keys} template={n_tpl}"
+            f" port={n_port} openai={n_llm})"
+        )
+        sys.exit(1)
+    return "\n".join(out) + ("\n" if rendered.endswith("\n") else "")
+
+
+def guards(cfg, allow_direct=False, profile="normal"):
     """Every guard prints PASS/FAIL (names only). Returns list of failed names."""
     app = cfg.get("app", {})
     whisper = cfg.get("whisper", {})
     kokoro = cfg.get("kokoro", {})
     url_ok = (TAP_URL, DIRECT_URL) if allow_direct else (TAP_URL,)
+    spike = profile == "spike"
+
+    # In the spike profile the image upstream is the local stub (18003) and the
+    # image key list must be empty (I15). Everything else is identical to the
+    # normal guards so the spike exercises the same shape.
+    if spike:
+        port_ok = cfg.get("listen_port") == SPIKE_LISTEN_PORT
+        img_url_ok = app.get("openai_image_base_url") == SPIKE_IMAGE_BASE_URL
+        img_url_want = SPIKE_IMAGE_BASE_URL
+        llm_url_ok = app.get("openai_base_url") == SPIKE_IMAGE_BASE_URL
+        llm_url_want = SPIKE_IMAGE_BASE_URL
+        img_keys_ok = app.get("openai_image_api_keys") == []
+        img_keys_want = "[] (empty: stub sends no Authorization)"
+    else:
+        port_ok = cfg.get("listen_port") == 8080
+        img_url_ok = app.get("openai_image_base_url") in url_ok
+        img_url_want = " ".join(url_ok)
+        llm_url_ok = app.get("openai_base_url") in url_ok
+        llm_url_want = " ".join(url_ok)
+        img_keys_ok = (
+            isinstance(app.get("openai_image_api_keys"), list)
+            and len(app["openai_image_api_keys"]) == 1
+            and isinstance(app["openai_image_api_keys"][0], str)
+            and len(app["openai_image_api_keys"][0]) > 0
+        )
+        img_keys_want = "exactly 1 non-empty"
 
     checks = [
         ("listen_host", cfg.get("listen_host") == "127.0.0.1", '"127.0.0.1"'),
-        ("listen_port", cfg.get("listen_port") == 8080, "8080"),
+        ("listen_port", port_ok, str(SPIKE_LISTEN_PORT) if spike else "8080"),
         ("no_host_in_app", "listen_host" not in app, "absent"),
         ("log_level", cfg.get("log_level") == "INFO", '"INFO"'),
         ("api_key", isinstance(app.get("api_key"), str) and len(app["api_key"]) >= 32, "set, len>=32"),
@@ -160,16 +236,9 @@ def guards(cfg, allow_direct=False):
         ("openai_api_key", isinstance(app.get("openai_api_key"), str) and len(app["openai_api_key"]) > 0, "set"),
         ("openai_model_name", bool(app.get("openai_model_name")), "non-empty"),
         ("openai_image_model", bool(app.get("openai_image_model")), "non-empty"),
-        ("openai_base_url", app.get("openai_base_url") in url_ok, " ".join(url_ok)),
-        ("openai_image_base_url", app.get("openai_image_base_url") in url_ok, " ".join(url_ok)),
-        (
-            "openai_image_api_keys",
-            isinstance(app.get("openai_image_api_keys"), list)
-            and len(app["openai_image_api_keys"]) == 1
-            and isinstance(app["openai_image_api_keys"][0], str)
-            and len(app["openai_image_api_keys"][0]) > 0,
-            "exactly 1 non-empty",
-        ),
+        ("openai_base_url", llm_url_ok, llm_url_want),
+        ("openai_image_base_url", img_url_ok, img_url_want),
+        ("openai_image_api_keys", img_keys_ok, img_keys_want),
         ("subtitle_provider", app.get("subtitle_provider") == "whisper", '"whisper"'),
         ("whisper.model_size", whisper.get("model_size") == "large-v3-turbo", '"large-v3-turbo"'),
         ("enable_redis", app.get("enable_redis") is False, "false"),
@@ -235,12 +304,14 @@ def render(args):
     if failures:
         sys.exit(1)
     rendered = tpl.substitute(mapping)
+    if args.profile == "spike":
+        rendered = apply_spike(rendered)
     try:
         cfg = tomllib.loads(rendered)
     except tomllib.TOMLDecodeError as exc:
         eprint(f"FAIL toml: rendered config does not parse: {exc}")
         sys.exit(1)
-    failed = guards(cfg, allow_direct=args.allow_direct_openai)
+    failed = guards(cfg, allow_direct=args.allow_direct_openai, profile=args.profile)
     if failed:
         sys.exit(1)
 
@@ -292,14 +363,16 @@ def check(args):
     except (tomllib.TOMLDecodeError, UnicodeDecodeError) as exc:
         eprint(f"FAIL toml: {exc}")
         return 1
-    failed_names += guards(cfg, allow_direct=args.allow_direct_openai)
+    failed_names += guards(
+        cfg, allow_direct=args.allow_direct_openai, profile=args.profile
+    )
     if failed_names:
         return 1
     eprint("check ok: config.toml passes every guard")
     return 0
 
 
-def run_render(template, out, state, env_extra, unset=(), allow_direct=False):
+def run_render(template, out, state, env_extra, unset=(), allow_direct=False, profile="normal"):
     """Self-test helper: run the render logic in-process. Returns exit code."""
     saved = {}
     for k in REQUIRED_VARS:
@@ -311,7 +384,8 @@ def run_render(template, out, state, env_extra, unset=(), allow_direct=False):
     for k in unset:
         os.environ.pop(k, None)
     args = argparse.Namespace(
-        template=template, out=out, state=state, allow_direct_openai=allow_direct
+        template=template, out=out, state=state, allow_direct_openai=allow_direct,
+        profile=profile,
     )
     try:
         code = render(args)
@@ -396,6 +470,22 @@ def self_test():
         code = run_render(tpl_path, vol_out, state, vals)
         expect("volumes-out", code == 2)
 
+        # (h) spike profile -> stub URL, empty keys, port 18080; the same config
+        # must fail the normal guard set (start-mpt-api.sh refuses to start the
+        # normal profile while the spike file is in place).
+        spike_out = os.path.join(root, "config.spike.toml")
+        spike_state = os.path.join(td, "spike-state.toml")
+        code = run_render(tpl_path, spike_out, spike_state, vals, profile="spike")
+        expect("spike-render", code == 0)
+        if code == 0:
+            cfg = tomllib.loads(open(spike_out, "rb").read().decode("utf-8"))
+            expect("spike-llm-url-stub", cfg["app"]["openai_base_url"] == SPIKE_IMAGE_BASE_URL)
+            expect("spike-image-url", cfg["app"]["openai_image_base_url"] == SPIKE_IMAGE_BASE_URL)
+            expect("spike-keys-empty", cfg["app"]["openai_image_api_keys"] == [])
+            expect("spike-port", cfg["listen_port"] == SPIKE_LISTEN_PORT)
+            expect("spike-template-empty", cfg["app"]["openai_image_prompt_template"] == "")
+            expect("spike-fails-normal", "openai_image_base_url" in guards(cfg))
+
     return 0 if not failures else 1
 
 
@@ -406,9 +496,15 @@ def main():
     repo = repo_root()
     home = default_nts_home(repo)
     p.add_argument("--template", default=os.path.join(repo, "worker-node/mpt/config.template.toml"))
-    p.add_argument("--out", default=os.path.join(home, "src/mpt/config.toml"))
-    p.add_argument("--state", default=os.path.join(home, "mpt-config.last.redacted.toml"))
-    p.add_argument("--check", action="store_true", help="validate the existing config.toml, write nothing")
+    p.add_argument("--out", default="")
+    p.add_argument("--state", default="")
+    p.add_argument(
+        "--profile",
+        choices=("normal", "spike"),
+        default="normal",
+        help="normal = config.toml; spike = config.spike.toml with the local image stub (03.4.1-T1)",
+    )
+    p.add_argument("--check", action="store_true", help="validate the existing out file, write nothing")
     p.add_argument("--self-test", action="store_true", help="run the in-process guard cases")
     p.add_argument(
         "--allow-direct-openai",
@@ -416,6 +512,19 @@ def main():
         help="also accept the pinned OPENAI_BASE_URL (pins.env) as base URL (used by start-mpt-api.sh --no-tap)",
     )
     args = p.parse_args()
+
+    if not args.out:
+        args.out = os.path.join(
+            home,
+            "src/mpt/config.spike.toml" if args.profile == "spike" else "src/mpt/config.toml",
+        )
+    if not args.state:
+        args.state = os.path.join(
+            home,
+            "mpt-config.spike.last.redacted.toml"
+            if args.profile == "spike"
+            else "mpt-config.last.redacted.toml",
+        )
 
     if args.self_test:
         sys.exit(self_test())

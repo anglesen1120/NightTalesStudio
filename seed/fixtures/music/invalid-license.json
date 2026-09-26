@@ -1,0 +1,25 @@
+{
+  "schema": "music-tracks.v1",
+  "revision": 1,
+  "tracks": [
+    {
+      "id": "fixture-license",
+      "file": "fixture-license.mp3",
+      "title": "Fixture fixture-license",
+      "artist": "Fixture Artist",
+      "sourceUrl": "https://example.invalid/tracks/fixture-license",
+      "license": "MIT",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "attribution": null,
+      "platformScope": "any",
+      "moods": [
+        "calm"
+      ],
+      "durationSec": 120.0,
+      "loudnessLufs": -20.0,
+      "bgmVolume": 0.2,
+      "sha256": "1579edd0959d2037170b9df6807ae73311e4bb621d0db77b5bf380a2e0d1e082",
+      "active": true
+    }
+  ]
+}

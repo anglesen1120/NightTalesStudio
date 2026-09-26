@@ -1,0 +1,26 @@
+{
+  "schema": "music-tracks.v1",
+  "revision": 1,
+  "tracks": [
+    {
+      "id": "fixture-moods",
+      "file": "fixture-moods.mp3",
+      "title": "Fixture fixture-moods",
+      "artist": "Fixture Artist",
+      "sourceUrl": "https://example.invalid/tracks/fixture-moods",
+      "license": "CC0-1.0",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "attribution": null,
+      "platformScope": "any",
+      "moods": [
+        "calm",
+        "epic"
+      ],
+      "durationSec": 120.0,
+      "loudnessLufs": -20.0,
+      "bgmVolume": 0.2,
+      "sha256": "4b523829ca15c8271be3e7d39cc7c0c24cfc40a830051ba0479123622fa2c128",
+      "active": true
+    }
+  ]
+}

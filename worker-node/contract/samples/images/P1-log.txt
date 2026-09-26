@@ -1,0 +1,122 @@
+[32m2026-09-26 19:40:32[0m | [1mINFO[0m | "./app/controllers/manager/base_manager.py:57":[34m add_task[0m - [1madd task: start, current_tasks: 0[0m
+[32m2026-09-26 19:40:32[0m | [1mINFO[0m | "./app/services/task.py:1387":[34m _run_pipeline[0m - [1mstart task: d78484be-84e9-4d25-aace-ac74b682e21e, stop_at: video[0m
+[32m2026-09-26 19:40:32[0m | [32m[1mSUCCESS[0m | "./app/controllers/v1/video.py:226":[34m create_task[0m - [32m[1mTask created: {
+    "task_id": "d78484be-84e9-4d25-aace-ac74b682e21e",
+    "request_id": "fbf18045-1fc4-48ac-8a03-ccb94d67bd3e",
+    "params": {
+        "video_subject": "03.4.1-T1 spike fixture",
+        "video_script": "<prompt sha256=5e2792fc772b8bf3>",
+        "video_terms": [
+            "<prompt sha256=d521100fca5df975>",
+            "<prompt sha256=967c912c886ae589>",
+            "<prompt sha256=ada680194323ff7f>",
+            "<prompt sha256=3a3a01d215d2939b>",
+            "<prompt sha256=b97485d6ee5ec0dc>",
+            "<prompt sha256=a15caf0eefc69d76>",
+            "<prompt sha256=b99dbf1c904795b7>",
+            "<prompt sha256=1fd2d1084eac1ec8>"
+        ],
+        "video_aspect": "16:9",
+        "video_fit_mode": "cover",
+        "video_concat_mode": "sequential",
+        "video_transition_mode": null,
+        "video_clip_duration": 10,
+        "video_clip_speed": 1.0,
+        "match_materials_to_script": true,
+        "video_count": 1,
+        "video_source": "openai_image",
+        "video_materials": null,
+        "custom_audio_file": null,
+        "video_language": "en",
+        "voice_name": "kokoro:Ngọc Huyền",
+        "voice_volume": 1.0,
+        "voice_rate": 1.0,
+        "bgm_type": "",
+        "bgm_file": "",
+        "bgm_volume": 0.0,
+        "video_music_prompt": "",
+        "sonilo_bgm_prompt": "",
+        "subtitle_enabled": true,
+        "subtitle_position": "bottom",
+        "subtitle_display_mode": "sentence",
+        "subtitle_animation": "none",
+        "custom_position": 70.0,
+        "font_name": "STHeitiMedium.ttc",
+        "text_fore_color": "#FFFFFF",
+        "text_background_color": false,
+        "rounded_subtitle_background": false,
+        "font_size": 60,
+        "stroke_color": "#000000",
+        "stroke_width": 1.5,
+        "n_threads": 2,
+        "paragraph_number": 1,
+        "video_script_prompt": "",
+        "custom_system_prompt": ""
+    }
+}[0m
+[32m2026-09-26 19:40:32[0m | [1mINFO[0m | "./app/utils/utils.py:234":[34m check_ffmpeg_ready[0m - [1mffmpeg check passed, using: /opt/homebrew/bin/ffmpeg[0m
+[32m2026-09-26 19:40:32[0m | [1mINFO[0m | "./app/services/task.py:293":[34m generate_script[0m - [1m
+
+## generating video script[0m
+[32m2026-09-26 19:40:32[0m | [1mINFO[0m | "./app/services/task.py:314":[34m generate_terms[0m - [1m
+
+## generating video terms[0m
+[32m2026-09-26 19:40:33[0m | [1mINFO[0m | "./app/services/task.py:503":[34m generate_audio[0m - [1m
+
+## generating audio[0m
+[32m2026-09-26 19:40:33[0m | [1mINFO[0m | "./app/services/task.py:531":[34m generate_audio[0m - [1mno custom audio file provided, using TTS to generate audio.[0m
+[32m2026-09-26 19:40:33[0m | [1mINFO[0m | "./app/services/voice.py:2180":[34m _openai_compatible_tts[0m - [1mstart kokoro tts, voice: Ngọc Huyền, try: 1[0m
+[32m2026-09-26 19:40:40[0m | [32m[1mSUCCESS[0m | "./app/services/voice.py:2212":[34m _openai_compatible_tts[0m - [32m[1mkokoro tts succeeded: ./storage/tasks/d78484be-84e9-4d25-aace-ac74b682e21e/audio.mp3[0m
+[32m2026-09-26 19:40:40[0m | [1mINFO[0m | "./app/services/task.py:588":[34m generate_subtitle[0m - [1m
+
+## generating subtitle[0m
+[32m2026-09-26 19:40:40[0m | [1mINFO[0m | "./app/services/task.py:594":[34m generate_subtitle[0m - [1m
+
+## generating subtitle, provider: whisper[0m
+[32m2026-09-26 19:40:40[0m | [1mINFO[0m | "./app/services/subtitle.py:39":[34m create[0m - [1mloading model: ./models/whisper-large-v3-turbo, device: cpu, compute_type: int8[0m
+[32m2026-09-26 19:40:43[0m | [1mINFO[0m | "./app/services/subtitle.py:58":[34m create[0m - [1mstart, output file: ./storage/tasks/d78484be-84e9-4d25-aace-ac74b682e21e/subtitle.srt[0m
+[32m2026-09-26 19:40:50[0m | [1mINFO[0m | "./app/services/subtitle.py:71":[34m create[0m - [1mdetected language: 'en', probability: 1.00[0m
+[32m2026-09-26 19:41:02[0m | [1mINFO[0m | "./app/services/subtitle.py:142":[34m create[0m - [1mcomplete, elapsed: 12.26 s[0m
+[32m2026-09-26 19:41:02[0m | [1mINFO[0m | "./app/services/subtitle.py:160":[34m create[0m - [1msubtitle file created: ./storage/tasks/d78484be-84e9-4d25-aace-ac74b682e21e/subtitle.srt[0m
+[32m2026-09-26 19:41:02[0m | [1mINFO[0m | "./app/services/task.py:637":[34m generate_subtitle[0m - [1m
+
+## correcting subtitle[0m
+[32m2026-09-26 19:41:02[0m | [33m[1mWARNING[0m | "./app/services/subtitle.py:274":[34m correct[0m - [33m[1mMerged/Corrected - Script: <prompt sha256=e997ac95ea88816c>, Subtitle: <prompt sha256=35e2c6a503a34f5b>
+[32m2026-09-26 19:41:02[0m | [33m[1mWARNING[0m | "./app/services/subtitle.py:274":[34m correct[0m - [33m[1mMerged/Corrected - Script: <prompt sha256=045f9b739612b4a5>, Subtitle: <prompt sha256=5d97aa97fc8bc25b>
+[32m2026-09-26 19:41:02[0m | [33m[1mWARNING[0m | "./app/services/subtitle.py:274":[34m correct[0m - [33m[1mMerged/Corrected - Script: <prompt sha256=aa63b3be8fbbe4d4>, Subtitle: <prompt sha256=d17e4dbff8413fd4>
+[32m2026-09-26 19:41:02[0m | [33m[1mWARNING[0m | "./app/services/subtitle.py:286":[34m correct[0m - [33m[1mMismatch - Script: <prompt sha256=b0d8fcd0d82e44a2>, Subtitle: <prompt sha256=fb6f69cfae7f33fd>
+[32m2026-09-26 19:41:02[0m | [33m[1mWARNING[0m | "./app/services/subtitle.py:274":[34m correct[0m - [33m[1mMerged/Corrected - Script: <prompt sha256=bf72ba07c3f04cb0>, Subtitle: <prompt sha256=78c50fe35f99c38d>
+[32m2026-09-26 19:41:02[0m | [1mINFO[0m | "./app/services/subtitle.py:328":[34m correct[0m - [1mSubtitle corrected[0m
+[32m2026-09-26 19:41:02[0m | [1mINFO[0m | "./app/services/task.py:730":[34m get_video_materials[0m - [1m
+
+## downloading videos from openai_image[0m
+[32m2026-09-26 19:41:02[0m | [1mINFO[0m | "./app/services/material.py:1458":[34m generate_images_openai[0m - [1mgenerating image via openai-compatible endpoint: model=gpt-image-2, term=<prompt sha256=2590a2147192d5ee>, size=1536x1024[0m
+[32m2026-09-26 19:41:13[0m | [1mINFO[0m | "./app/services/material.py:1563":[34m _download_videos_openai_image_on_demand[0m - [1mimage material rendered: ./storage/tasks/d78484be-84e9-4d25-aace-ac74b682e21e/openai-image-f71ce9014059.png.mp4[0m
+[32m2026-09-26 19:41:13[0m | [1mINFO[0m | "./app/services/material.py:1458":[34m generate_images_openai[0m - [1mgenerating image via openai-compatible endpoint: model=gpt-image-2, term=<prompt sha256=80662f8827549424>, size=1536x1024[0m
+[32m2026-09-26 19:41:25[0m | [1mINFO[0m | "./app/services/material.py:1563":[34m _download_videos_openai_image_on_demand[0m - [1mimage material rendered: ./storage/tasks/d78484be-84e9-4d25-aace-ac74b682e21e/openai-image-2a70ed56be3a.png.mp4[0m
+[32m2026-09-26 19:41:25[0m | [1mINFO[0m | "./app/services/material.py:1458":[34m generate_images_openai[0m - [1mgenerating image via openai-compatible endpoint: model=gpt-image-2, term=<prompt sha256=bf021f0bdabc68e7>, size=1536x1024[0m
+[32m2026-09-26 19:41:36[0m | [1mINFO[0m | "./app/services/material.py:1563":[34m _download_videos_openai_image_on_demand[0m - [1mimage material rendered: ./storage/tasks/d78484be-84e9-4d25-aace-ac74b682e21e/openai-image-03ffa201e01f.png.mp4[0m
+[32m2026-09-26 19:41:36[0m | [1mINFO[0m | "./app/services/material.py:1458":[34m generate_images_openai[0m - [1mgenerating image via openai-compatible endpoint: model=gpt-image-2, term=<prompt sha256=3745142148f39efd>, size=1536x1024[0m
+[32m2026-09-26 19:41:47[0m | [1mINFO[0m | "./app/services/material.py:1563":[34m _download_videos_openai_image_on_demand[0m - [1mimage material rendered: ./storage/tasks/d78484be-84e9-4d25-aace-ac74b682e21e/openai-image-8888ff253318.png.mp4[0m
+[32m2026-09-26 19:41:47[0m | [1mINFO[0m | "./app/services/material.py:1581":[34m _download_videos_openai_image_on_demand[0m - [1mgenerated image materials cover the required duration, stop generating more images: generated=40.0s, required=34.0s[0m
+[32m2026-09-26 19:41:47[0m | [32m[1mSUCCESS[0m | "./app/services/material.py:1588":[34m _download_videos_openai_image_on_demand[0m - [32m[1mgenerated and rendered 4 image materials[0m
+[32m2026-09-26 19:41:47[0m | [1mINFO[0m | "./app/services/material.py:145":[34m _persist_material_sources[0m - [1msaved material source records: task_id=d78484be-84e9-4d25-aace-ac74b682e21e, count=4[0m
+[32m2026-09-26 19:41:47[0m | [1mINFO[0m | "./app/services/task.py:920":[34m generate_final_videos[0m - [1m
+
+## combining video: 1 => ./storage/tasks/d78484be-84e9-4d25-aace-ac74b682e21e/combined-1.mp4[0m
+[32m2026-09-26 19:41:47[0m | [1mINFO[0m | "./app/services/video.py:766":[34m combine_videos[0m - [1maudio duration: 33.02 seconds[0m
+[32m2026-09-26 19:41:47[0m | [1mINFO[0m | "./app/services/video.py:767":[34m combine_videos[0m - [1mmaximum clip duration: 10 seconds[0m
+[32m2026-09-26 19:41:47[0m | [1mINFO[0m | "./app/services/video.py:769":[34m combine_videos[0m - [1mrequired video duration: 33.12 seconds (audio duration + 0.10s safety margin)[0m
+[32m2026-09-26 19:42:14[0m | [1mINFO[0m | "./app/services/video.py:953":[34m combine_videos[0m - [1mstarting clip merging process[0m
+[32m2026-09-26 19:42:14[0m | [1mINFO[0m | "./app/services/video.py:959":[34m combine_videos[0m - [1mconcatenating 4 clips with ffmpeg[0m
+[32m2026-09-26 19:42:17[0m | [1mINFO[0m | "./app/services/video.py:979":[34m combine_videos[0m - [1mvideo combining completed[0m
+[32m2026-09-26 19:42:17[0m | [1mINFO[0m | "./app/services/task.py:999":[34m generate_final_videos[0m - [1m
+
+## generating video: 1 => ./storage/tasks/d78484be-84e9-4d25-aace-ac74b682e21e/final-1.mp4[0m
+[32m2026-09-26 19:42:17[0m | [1mINFO[0m | "./app/services/video.py:1227":[34m generate_video[0m - [1mgenerating video: 1920 x 1080[0m
+[32m2026-09-26 19:42:17[0m | [1mINFO[0m | "./app/services/video.py:1228":[34m generate_video[0m - [1m  ① video: ./storage/tasks/d78484be-84e9-4d25-aace-ac74b682e21e/combined-1.mp4[0m
+[32m2026-09-26 19:42:17[0m | [1mINFO[0m | "./app/services/video.py:1229":[34m generate_video[0m - [1m  ② audio: ./storage/tasks/d78484be-84e9-4d25-aace-ac74b682e21e/audio.mp3[0m
+[32m2026-09-26 19:42:17[0m | [1mINFO[0m | "./app/services/video.py:1230":[34m generate_video[0m - [1m  ③ subtitle: ./storage/tasks/d78484be-84e9-4d25-aace-ac74b682e21e/subtitle.srt[0m
+[32m2026-09-26 19:42:17[0m | [1mINFO[0m | "./app/services/video.py:1231":[34m generate_video[0m - [1m  ④ output: ./storage/tasks/d78484be-84e9-4d25-aace-ac74b682e21e/final-1.mp4[0m
+[32m2026-09-26 19:42:17[0m | [1mINFO[0m | "./app/services/video.py:1246":[34m generate_video[0m - [1m  ⑤ font: ./resource/fonts/STHeitiMedium.ttc[0m
+[32m2026-09-26 19:42:51[0m | [32m[1mSUCCESS[0m | "./app/services/task.py:1639":[34m _run_pipeline[0m - [32m[1mtask d78484be-84e9-4d25-aace-ac74b682e21e finished, generated 1 videos.[0m

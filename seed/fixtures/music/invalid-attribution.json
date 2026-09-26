@@ -1,0 +1,25 @@
+{
+  "schema": "music-tracks.v1",
+  "revision": 1,
+  "tracks": [
+    {
+      "id": "fixture-attribution",
+      "file": "fixture-attribution.mp3",
+      "title": "Fixture fixture-attribution",
+      "artist": "Fixture Artist",
+      "sourceUrl": "https://example.invalid/tracks/fixture-attribution",
+      "license": "CC-BY-4.0",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "attribution": null,
+      "platformScope": "any",
+      "moods": [
+        "calm"
+      ],
+      "durationSec": 120.0,
+      "loudnessLufs": -20.0,
+      "bgmVolume": 0.2,
+      "sha256": "0c6140f37f68fe6e1aab138960f67512c6900decb8c6ef0b223cc46c9ad8c3a4",
+      "active": true
+    }
+  ]
+}

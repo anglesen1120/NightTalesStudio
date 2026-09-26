@@ -1,3 +1,5 @@
 # plans/00-overview.md:412 false positive: generic-api-key matched the prose "outbox/SignalR events" (no secret) 2026-09-25 TL-agent
 2870dbc7e8b6219d017d81622731e1238bde7ad0:plans/00-overview.md:generic-api-key:412
 plans/00-overview.md:generic-api-key:412
+# trial/tools/aggregate_scores.py:212 false positive: generic-api-key matched the CSV column name "latency_p50_ms" (no secret) 2026-09-26 M0-wave-1
+trial/tools/aggregate_scores.py:generic-api-key:212

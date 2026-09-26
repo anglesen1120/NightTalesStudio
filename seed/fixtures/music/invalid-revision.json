@@ -1,0 +1,25 @@
+{
+  "schema": "music-tracks.v1",
+  "revision": 0,
+  "tracks": [
+    {
+      "id": "fixture-revision",
+      "file": "fixture-revision.mp3",
+      "title": "Fixture fixture-revision",
+      "artist": "Fixture Artist",
+      "sourceUrl": "https://example.invalid/tracks/fixture-revision",
+      "license": "CC0-1.0",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "attribution": null,
+      "platformScope": "any",
+      "moods": [
+        "calm"
+      ],
+      "durationSec": 120.0,
+      "loudnessLufs": -20.0,
+      "bgmVolume": 0.2,
+      "sha256": "9b222824a049e8b96385ef2937e38d77a41c54afceaccf312de1d66c8fd0e218",
+      "active": true
+    }
+  ]
+}

@@ -271,14 +271,15 @@ class ValidateTest(unittest.TestCase):
         self.assertEqual(issue[0]["severity"], "blocking")
         self.assertEqual(issue[0]["segment"], "hook")
 
-    def test_validate_too_few_segments_returns_blocking_issue(self):
+    def test_validate_too_few_segments_returns_advisory_issue(self):
         issues = sv.validate(story(), "standard", "vi", limits_for("standard"))
         issue = [i for i in issues if i["rule"] == "segment_count_out_of_range"]
         self.assertTrue(issue)
-        self.assertEqual(issue[0]["severity"], "blocking")
+        # 02 T99: advisory in the M0 trial validator pending the post-A/B D4 decision.
+        self.assertEqual(issue[0]["severity"], "advisory")
         self.assertIn("4 segments", issue[0]["evidence"])
 
-    def test_validate_length_16_percent_out_is_blocking_and_8_percent_is_advisory(self):
+    def test_validate_length_out_is_advisory_outside_15_percent_and_in(self):
         wide = limits_for("standard", min_tokens=1000, max_tokens=2000,
                           min_segments=4, max_segments=5)
         sixteen = story()
@@ -289,7 +290,8 @@ class ValidateTest(unittest.TestCase):
         length = [i for i in sv.validate(sixteen, "standard", "vi", wide)
                   if i["rule"] == "length_out_of_range"]
         self.assertEqual(len(length), 1)
-        self.assertEqual(length[0]["severity"], "blocking")
+        # 02 T99: advisory in the M0 trial validator pending the post-A/B D4 decision.
+        self.assertEqual(length[0]["severity"], "advisory")
         self.assertIn("840 tokens", length[0]["evidence"])
 
         eight = story()

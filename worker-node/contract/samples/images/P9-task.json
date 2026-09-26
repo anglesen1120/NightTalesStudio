@@ -1,0 +1,41 @@
+{
+  "status": 200,
+  "message": "success",
+  "data": {
+    "task_id": "a5adfcfc-ba00-40a1-9c63-0d5d77681c33",
+    "state": 1,
+    "progress": 100,
+    "videos": [
+      "/tasks/a5adfcfc-ba00-40a1-9c63-0d5d77681c33/final-1.mp4"
+    ],
+    "combined_videos": [
+      "/tasks/a5adfcfc-ba00-40a1-9c63-0d5d77681c33/combined-1.mp4"
+    ],
+    "failed_stage": null,
+    "error": null,
+    "cross_post_state": null,
+    "cross_post_results": null,
+    "cross_post_error": null,
+    "script": "<prompt sha256=bccb8756662418c3>",
+    "terms": [
+      "<prompt sha256=2590a2147192d5ee>",
+      "<prompt sha256=80662f8827549424>",
+      "<prompt sha256=bf021f0bdabc68e7>",
+      "<prompt sha256=3745142148f39efd>",
+      "<prompt sha256=207007b0eeb9fc26>",
+      "<prompt sha256=0739201301592015>",
+      "<prompt sha256=f4bce78575bb62ba>",
+      "<prompt sha256=86c6780238056ab6>"
+    ],
+    "audio_file": "/tasks/a5adfcfc-ba00-40a1-9c63-0d5d77681c33/audio.mp3",
+    "audio_duration": 35,
+    "subtitle_path": "",
+    "materials": [
+      "/tasks/a5adfcfc-ba00-40a1-9c63-0d5d77681c33/openai-image-379e5d5e0a32.png.mp4",
+      "/tasks/a5adfcfc-ba00-40a1-9c63-0d5d77681c33/openai-image-7c8d48a69838.png.mp4",
+      "/tasks/a5adfcfc-ba00-40a1-9c63-0d5d77681c33/openai-image-7a718da5aead.png.mp4",
+      "/tasks/a5adfcfc-ba00-40a1-9c63-0d5d77681c33/openai-image-20245b0b9fb8.png.mp4"
+    ],
+    "warnings": null
+  }
+}
