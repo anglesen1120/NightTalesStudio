@@ -543,7 +543,7 @@ Known failure modes → behaviour; rollback.
 
 ## 7. Gates
 
-- **02-M0** (part of M0 exit): `prompts/` presets v1 for 6 `topic × language` pairs, validated by the harness. 36 stories scored. D15 decision recorded. Token/latency numbers per tier handed to D4 and 12.1.1.
+- **02-M0** (part of M0 exit): `prompts/` presets v1 for 6 `topic × language` pairs, validated by the harness (schema-valid `story.v1`, 6/6 cells per preset — measured 2026-09-26: 18/18 cells, 0 blocking, **length and segment findings advisory per 02 T99** until the D4 decision after the A/B). 36 stories scored. D15 decision recorded. Token/latency numbers per tier handed to D4 and 12.1.1.
 - **02-M1-core**: generate → edit → approve works end-to-end through the API, with metering (`usage_records` per call) and idempotency. Self-review + at most one revision run on every draft. §7 tests of plan 02 pass.
 - **02-M1-research**: the true-crime path works from sources → fetcher (pull model) → fact sheet → story with backend-built `fact_sources`. The SSRF suite (02.5.2-T4) is green. The fetcher egress test (11.2.2-T2) is green.
 - **02-M1-autopilot**: 02.7.1 go/no-go recorded. A fiction series on autopilot produces and schedules episodes on its cadence with no manual step. A true-crime series stops for approval. Gate failures and spend caps pause the series with an e-mail alert.
