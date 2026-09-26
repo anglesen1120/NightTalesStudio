@@ -6,14 +6,14 @@ Legend: `done` (acceptance checks run and passed) · `doing` · `blocked (<who>)
 
 ## Resume here
 
-- **Last session:** 2026-09-26, plan 04 post-merge gates. PR #7 (`dda2b56`, merged ungated) now has its four gates closed on branch `fix/04-pr7-gates`: QA (QaPr7Gates) → code (CodeRevPr7), performance (PerfRevPr7) and security (SecRevPr7) reviews → fixes → re-test → PR into `develop`.
+- **Last session:** 2026-09-26. PR #9 (plan 04 post-merge gates for PR #7) and PR #10 (01.2.2-T6 wiring render + 01.3.1-T4 calibration) merged into `develop` (`e5d9129`, `9057327`). Follow-up: CR-22 wording in 01.3.1 `plan.md` / T3, this STATUS refresh.
 - **Next actions:**
   1. ~~Owner: review and merge PR #6~~ → merged 2026-09-26 (`e1046ff`). ~~PR #7~~ → merged 2026-09-26 (`dda2b56`).
-  2. Owner: review and merge the PR #7 gate-fix PR (`fix/04-pr7-gates`).
+  2. ~~Owner: merge the PR #7 gate-fix PR (#9) and PR #10~~ → merged 2026-09-26 (`e5d9129`, `9057327`). #10 also carried two post-gate commits, re-tested only: `887a554` (`start_run.sh` rejects an empty `--voice` with exit 2; shellcheck + 4 cases) and `721d810` (CR-22 wording).
   3. Owner/TL: decide **04 CR-17** `[OPEN]` (NFR-04-3 evidence: RTF-normalised and/or in-request overhead instead of raw wall; the pass rule is unchanged until then). Evidence: re-run 2026-09-26T01:47Z raw vs RTF-normalised — vi-5min 0.76 % / 0.49 %, en-5min 3.76 % / −1.34 %, vi-1000 2.69 % / 4.46 %, en-1000 9.04 % / 6.33 % (1000-char rows informational); in-request `(wall − vieneu)/vieneu` 0.008–0.031 % on every fixture. The en denominator is a `Hải Đăng` (vi voice) direct run (`direct_baseline_voice`).
   4. Owner + raters: fill the 04.2.1-T1 rater sheets (`trial/voice-audition/README.md`), then pick the voice set → unblocks 04.2.2-T1.
   5. ~~01.2.2-T6 wiring render, then 01.3.1-T4 calibration~~ → done 2026-09-26 (branch `feature/01-wiring-calibration`, stacked on `fix/04-pr7-gates`). Owner, remaining for 01.3.1-T4: **(a)** quiet the Mac (close the Virtualization VM, Chrome, `VBCSCompiler`; at 09:15 local, pressure level was 2 (warn) and swap 3.98 GB), then re-run the 1-minute render so the sheet gets a D11-clean row; the first row is structural calibration only (perf review). **(b)** The relay has no dashboard (DEC-9), so `dashboard_cost_usd_check` stays `n/a:pending-dashboard` until the owner reads the relay's cost for 2026-09-26 UTC.
-  6. Still open from plan 01: ask the relay to **enable image generation** for the image key (DEC-10), then `worker-node/bin/openai-access-check.sh --only image`; set a spend cap in the relay account.
+  6. ~~Ask the relay to enable image generation (DEC-10)~~ → proven by run `20260926-0818-en-landscape-01`: 5 image calls through tap → relay, all 200 (`via=responses`), 5 `image material rendered:` lines. Still owner: **set a spend cap** in the relay account, and the relay's `gpt-image-2` price (image cost stays `n/a:no-price`, so the T6 "cost ≤ ceiling" check stays open).
 - **Environment (DEC-5, DEC-6):**
   - Implementation machine = this Mac (M4, 16 GB, macOS 27.0).
   - `NTS_HOME=<repo>/.nts` (gitignored; `lib.sh` default).
@@ -144,7 +144,7 @@ Spec: `plans/features/01-environment-setup/01.2.4-openai-access/01.2.4-T1-org-ve
   - C4 chat 200: this key can also chat.
   - C3 `POST /v1/images/generations` → 400 for both flare and the `gpt-image-2` fallback: "The 'gpt-5.4-mini' model is not supported when using Codex with a ChatGPT account". The relay serves images from a ChatGPT/Codex account and wraps the call around an unsupported host model. This is a relay-side defect.
   - Manual probe `POST /v1/responses` (host `gpt-6-luna` + tool `image_generation`, quality low) → 200 with a correct image. The returned size is 1536x1024, although 1024x1024 was asked. Usage is 6652+106 tokens; the tool's image usage is not reported separately.
-  - Consequence: MPT generates images only through `images/generations` (01.2.2 M-facts), so the MPT image path does not work on this relay today. Owner decision [OPEN]: ask the relay to fix `images/generations`, or change the plan 03 image client to the Responses tool (a CR to 03 and 01.2.2).
+  - Consequence: MPT generates images only through `images/generations` (01.2.2 M-facts), so the MPT image path did not work on this relay directly. **Closed by 01 DEC-11:** the tap translates to the Responses tool; the MPT image path works end-to-end (01.2.2-T6 run `20260926-0818-en-landscape-01`, 5 × 200, 2026-09-26).
   - Probe `POST /v1/images/generations` with `model: gpt-6-luna` on the image key → 400 "images endpoint requires an image model, got \"gpt-6-luna\"", rejected before any spend. Luna produces images only as the host of the Responses `image_generation` tool.
   - gpt-image probes on the image key, 2026-09-25:
     - `images/generations`: `gpt-image-1` and `gpt-image-1.5` → 400 (the same `gpt-5.4-mini`/Codex error); `gpt-image-2` → 503 "No available compatible accounts".
