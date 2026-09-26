@@ -31,6 +31,8 @@ note on v1. **Additive** changes stay inside v1 and get a changelog row. Any D3/
 by a spike becomes a README §10 ruling **first**, then the fixtures; `render-node.v1.md` cites the
 ruling id on each changed line.
 
+**Doc format the checker depends on** (`--coverage`): `render-node.v1.md` must keep each route as a table row opening with `` `METHOD /path` `` in the first cell, and every contract data token (field names, schema names, outcome codes) in backticks — that is all the parser keys on; it exits 2 rather than silently passing if a doc edit drops the route-row form.
+
 ## Changelog
 
 | Date | Change | README §10 ruling | Fixtures touched |
