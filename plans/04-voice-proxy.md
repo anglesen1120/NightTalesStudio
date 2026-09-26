@@ -34,7 +34,7 @@
 - **FR-04-4** Auth: require `Authorization: Bearer <PROXY_API_KEY>` from MPT; call VieNeu with `Bearer <VIENEU_API_KEY>`.
 - **FR-04-5** Error mapping: node-internal error codes only (D6), never a platform passthrough — e.g. `voice_not_in_catalog`/`unsupported_format` → 400, `upstream_busy`/`proxy_busy` → 429 `Retry-After: 5`, `upstream_unavailable`/`upstream_bad_format`/`transcode_failed` → 502/500, `upstream_first_audio_timeout` → 504; the full table is 04 README D6 (04 CR-1).
 - **NFR-04-1** Bind `127.0.0.1:8001` on the Mac **and** on the node; the config loader refuses any other host (exit 2, D1). Never public, never a private-LAN interface (04 README D1, F22) (04 CR-1).
-- **NFR-04-2** MPT's `timeout=120` is an **idle** timeout, not a request-length limit (R1). Budget against it: admission ≤ 60 s, first audio (commit) ≤ 90 s from arrival, then read gaps ≤ 60 s (D4); max body 20,000 chars (VieNeu limit ✅ `max_length=20_000`) (04 README D4) (04 CR-1).
+- **NFR-04-2** MPT's `timeout=120` is an **idle** timeout, not a request-length limit (R1). Budget against it: admission ≤ 80 s (04 T15), first audio (commit) ≤ 90 s from arrival, then read gaps ≤ 60 s (D4); max body 20,000 chars (VieNeu limit ✅ `max_length=20_000`) (04 README D4) (04 CR-1).
 - **NFR-04-3** Transcode adds < 5 % to TTS wall time (measure).
 - **NFR-04-4** Structured JSON logs without the input text (privacy): one line per request with `ts` (ISO-8601 UTC), `route`, `voice`, `chars` (input length), `audio_seconds`, `vieneu_ms`, `ffmpeg_ms`, `status`; written to stdout and tee'd by the start script to `$NTS_HOME/logs/proxy-<YYYYmmdd-HHMMSS>.log` (01 CR-1: the 01.3.1-T3 collector reads it for `tts_seconds_audio` / `tts_wall_seconds`).
 - **FR-04-6** Route allow-list (01 CR-2): the proxy exposes only `POST /v1/audio/speech`, `GET /v1/audio/voices` and `GET /health`, and calls only VieNeu `POST /v1/audio/speech`, `GET /v1/voices` and `GET /health`. It never forwards VieNeu `POST /v1/voices` (voice-clone upload) or any other route; unknown routes → 404, other methods → 405.
@@ -49,7 +49,7 @@
 **04.1.2 Speech endpoint** — *As MPT I want to call one OpenAI-compatible endpoint so that the kokoro slot works unchanged.* Must · M
 - Given a valid request with a known voice, When posted, Then the response is `200 audio/mpeg`, decodable by MoviePy `AudioFileClip` (the check MPT runs ✅ `voice.py:2202`).
 - Given an unknown voice, When posted, Then 400 is returned and MPT logs it (no retry storm: MPT retries 3× ✅).
-- Given VieNeu is busy (429), When posted, Then the proxy retries upstream within `ADMISSION_WAIT_S` (60 s) and only then returns 429 `upstream_busy` with `Retry-After: 5` (MPT ignores it and retries at once, D5) (04 CR-1).
+- Given VieNeu is busy (429), When posted, Then the proxy retries upstream within `ADMISSION_WAIT_S` (80 s, 04 T15) and only then returns 429 `upstream_busy` with `Retry-After: 5` (MPT ignores it and retries at once, D5) (04 CR-1).
 
 **04.1.3 Voices endpoint** — *As MPT I want the voice list so that the WebUI and API accept `kokoro:<name>`.* Must · S
 - Given VieNeu presets, When `GET /v1/audio/voices` is called, Then only active catalog voices that exist upstream appear, in MPT's accepted shape ✅ (04 README D9) (04 CR-1).

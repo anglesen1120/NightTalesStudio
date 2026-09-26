@@ -6,12 +6,16 @@ Legend: `done` (acceptance checks run and passed) · `doing` · `blocked (<who>)
 
 ## Resume here
 
-- **Last session:** 2026-09-25, day 2 of plan 01 (branch `feature/01-env-setup-day2` → PR into `develop`). Day 1 merged in PR #1. `smoke.sh` exits 2 until MPT can start (OpenAI keys + tap).
+- **Last session:** 2026-09-26, plan 04 (VieNeu proxy). Branch `feature/04-voice-proxy`, commits `9d51285` (P1) and `8bd9b76` (P2/P3), pushed → **PR #6 into `develop`** (open, not merged). Checked on that head in a clean worktree: `pytest` 172 passed, `shellcheck -x` clean on the proxy scripts, `gitleaks` over `origin/develop..HEAD` no leaks. The QA → code → performance → security gates for those commits are stated only in the commit messages; no gate record was written here at the time.
 - **Next actions:**
-  1. ~~Owner: store the relay keys~~ → done 2026-09-25. Owner: ask the relay to **enable image generation** for the image key (every image model → 503 "No available compatible accounts", DEC-10), then run `worker-node/bin/openai-access-check.sh --only image`. Set a spend cap in the relay account.
-  2. ~~Owner: pick ownership proof~~ → decided 2026-09-25: signed per-render hash manifest (DEC-8, CR-14; designed in plan 05/06).
-  3. ~~Keys, access checks, tap, live MPT smoke~~ → done 2026-09-25, except the image calls (relay side).
-  4. ~~Day 3: 01.3.1-T3 collector~~ → done 2026-09-25 (branch `feature/01-measurement-collector`). After plan 04 proxy: 01.2.2-T6, 01.3.1-T4.
+  1. Owner: review and merge PR #6.
+  2. **Uncommitted plan-04 work on `feature/04-voice-proxy` (not in PR #6, no gate run yet)** — run QA → code review → performance review → security review, fix, then commit and open a second PR:
+     - 04.1.2-T3 MPT-side baseline: `trial/tools/bench-proxy.sh`, `trial/tools/bench_proxy_mpt.py`, `worker-node/proxy/tools/mpt_decode_check.py`, `trial/baselines/proxy-mac-20260926.json`.
+     - ffmpeg child-env allow-list (D13, no key inherited by ffmpeg): `transcode.py` (`child_env`), `health.py`, `tools/audition.py`, `tests/test_subprocess_env.py`, `tests/test_audition_tool.py`.
+  3. Record the plan-04 gate results (QA matrix, review findings) in this file when those gates run.
+  4. Owner + raters: fill the 04.2.1-T1 rater sheets (`trial/voice-audition/README.md`), then pick the voice set → unblocks 04.2.2-T1.
+  5. After PR #6: 01.2.2-T6 wiring render (the proxy now exists), then 01.3.1-T4 calibration.
+  6. Still open from plan 01: ask the relay to **enable image generation** for the image key (DEC-10), then `worker-node/bin/openai-access-check.sh --only image`; set a spend cap in the relay account.
 - **Environment (DEC-5, DEC-6):**
   - Implementation machine = this Mac (M4, 16 GB, macOS 27.0).
   - `NTS_HOME=<repo>/.nts` (gitignored; `lib.sh` default).
@@ -38,7 +42,7 @@ Legend: `done` (acceptance checks run and passed) · `doing` · `blocked (<who>)
 | 01.2.2-T3 Strip music + CC0 placeholder | done | 29 bundled tracks removed, idempotent; plant/tamper/symlink tests removed; `bootstrap.sh mpt` prints `strip=ok`. Placeholder `nts-ambient-pad-cc0.mp3` generated in-house with ffmpeg (90 s), row in `LICENSES.csv`; header upgraded to the T3 12-column form. A BA-picked track can replace it |
 | 01.2.2-T4 `start-mpt-api.sh` | done | All guards PASS: no tap → 2, port busy → 2, foreign 8002 listener → 2 before any Keychain read, edited `tap.json` → 2, missing `nts.openai.story` → 2 naming the service only, no WebUI script. **Live start with the real tap and keys → `mpt-api ready on 127.0.0.1:8080` in ≈ 5 s.** WARN only for 8001 (plan 04 proxy not landed). Fix vs spec: secrets are read as standalone assignments; inside `VAR="$(secret …)" cmd` a failing `secret` doesn't stop the script |
 | 01.2.2-T5 `smoke-mpt.sh` | done | With tap + VieNeu + MPT running, **`smoke.sh` → exit 0, 39 PASS, 0 FAIL**. That includes the auth 401/403 rows, origin block, LAN refused and SEC-09 no-value-leak over the 4 real Keychain values. `ps` shows 0 `Authorization: Bearer` in any argv. API down → `FAIL mpt.listening`, exit 2 |
-| 01.2.2-T6 Wiring render | todo | Needs plan 04 proxy (04.1.1/04.1.2) + tap |
+| 01.2.2-T6 Wiring render | todo | Unblocked once PR #6 (plan 04 proxy) merges; needs the tap |
 | 01.2.3-T1 Whisper model fetch | partial (offline proof via MPT) | `fetch-whisper-model.sh`: 7 files, 1.5 GB, `--verify` OK, re-run 3 s, tamper → 1, no symlinks, ignored by upstream `.gitignore`, MIT, survives `bootstrap.sh mpt`. Offline load proven directly with faster-whisper + `HF_HUB_OFFLINE=1`; the MPT-API proof waits for T4. This Mac drops IPv6, so the script forces IPv4 when a v6 probe fails. `mobiuslabsgmbh/…` now redirects to `dropbox-dash/…`; the pin SHA is still HEAD |
 | 01.2.3-T2 Whisper baseline | done | `trial/baselines/whisper-mac-20260925.json`: RTF vi 0.46–0.66, en 0.31–0.36; peak RSS 2.43 GB; language detection is correct for all 4 (p ≥ 0.999), so CR-5 isn't needed. Params = MPT `subtitle.py:62-68` |
 | 01.2.4-T1 Org verification + billing guard | n/a (DEC-9) | No OpenAI org: calls go through the relay. The owner sets the spend cap in the relay account |
@@ -51,7 +55,24 @@ Legend: `done` (acceptance checks run and passed) · `doing` · `blocked (<who>)
 | 01.3.1-T4 Calibration | todo | After 01.2.2-T6 (plan 04 proxy) |
 | 01.3.3-T1/T2 Carry-over | todo | After 05.5.2. Interim whisper notes: `.nts/runs/whisper-baseline/carryover-notes.md` |
 
-Other plans: not started. Order after plan 01: 02 M0 → 03 M0 → 04 → 05 → Gate 1 (`plans/features/README.md`).
+## Plan 04 — Voice proxy (12 tasks)
+
+| Task | Status | Evidence / note |
+|---|---|---|
+| 04.1.1-T1 Spike | done (`9d51285`) | `worker-node/proxy/SPIKE.md`: **D4 GO**. PCM→MP3 +36 ms, first MP3 272 ms, max gap 441 ms, RTF 0.193, MPT `requests` sees `ChunkedEncodingError` on abort. VieNeu slot release after a client disconnect: 81.8 s · > 90 s · ≈ 210 s · > 400 s → TL ruling T15 (drain the upstream, `ADMISSION_WAIT_S` 80 s) |
+| 04.1.2-T1 Speech endpoint | done (`9d51285`) | `POST /v1/audio/speech`, streaming ffmpeg transcode, T15 drain, catalog revision 0 (`seed/voices.v1.json`, 2 entries), request log |
+| 04.1.2-T2 Errors, admission, allow-list | done (`8bd9b76`) | Error mapping, admission wait, limits, route allow-list, wire-semantics tests |
+| 04.1.2-T3 MPT-side baseline | **doing — uncommitted, no gate run** | `bench-proxy.sh`, `bench_proxy_mpt.py`, `mpt_decode_check.py` written; `trial/baselines/proxy-mac-20260926.json` (run 2026-09-25T20:39Z) says `result: pass` with all 7 checks true, failure injection 3 × 502 → MPT task fails at stage `audio`, T15 live disconnect drained. QA must confirm the overhead rule: `en-1000` shows `overhead_pct` 6.55 while `overhead_le_5pct` is true |
+| 04.1.3-T1 Voices endpoint + cache | done (`8bd9b76`) | `GET /v1/voices`, `voice_cache.py` |
+| 04.1.4-T1 Health | done (`8bd9b76`) | `/health` → `proxy-health.v1` |
+| 04.1.5-T1 Packaging | done (`8bd9b76`) | `start-proxy.sh`, `smoke-proxy.sh` (wired into `smoke.sh`), systemd unit, `LICENSES.md`, `env.example` |
+| 04.3.1-T1 Option B note | done (`9d51285`) | `worker-node/proxy/FALLBACK-voxcpm.md` |
+| 04.2.1-T1 Audition + selection | partial | Machine part done: 48/48 samples, mean RTF 0.209. Rater sheets not collected (`results.csv` header only); selection is owner + raters (D11). The `audition.py` child-env change is uncommitted (see Next actions 2) |
+| 04.2.2-T1 Catalog revision 1 + fixtures | todo | After the 04.2.1-T1 selection |
+| 04.2.2-T2 Catalog rules + seeder (C#) | todo | Needs 09.2.2-T1 and 09.2.5-T1 |
+| 04.2.3-T1 Preview generation + upload | todo | Needs 04.2.2-T1 and 11.4.1-T1 (bucket) |
+
+Other plans: not started. Order: 02 M0 → 03 M0 → rest of 04 → 05 → Gate 1 (`plans/features/README.md`).
 
 ## Owner checklist — 01.2.4-T1 (OpenAI dashboard, start first: external wait)
 
@@ -169,3 +190,4 @@ Spec: `plans/features/01-environment-setup/01.2.4-openai-access/01.2.4-T1-org-ve
 | 2026-09-25 | Day 2 (cont.), plan 01 | DEC-9 relay, DEC-10. Owner stored the relay keys. 01.2.4-T3 story checks pass, images blocked on the relay side. 01.3.1-T2 tap done. 01.2.2-T4/T5 live: `smoke.sh` 39/0. Writer effort `medium` (plan 02 D7). QA + review: 7 fixes |
 | 2026-09-25 | Day 3, plan 01 | 01.3.1-T3 collector done (CR-17 plan review). QA PASS; review: 14 fixed. Chat effort pin `medium` (owner). Per-task QA + review rule recorded |
 | 2026-09-25 | 01 DEC-11 | Images via the Responses tool + `gpt-image-2`; effort pins for every call. Access check 8/8. MPT image path live through the tap. Smoke 39/0. Relay forces `gpt-image-2-codex` with size/quality auto (codex#28723). QA + review: 6 fixes |
+| 2026-09-26 | Plan 04 | 04.1.1-T1, 04.1.2-T1/T2, 04.1.3-T1, 04.1.4-T1, 04.1.5-T1, 04.3.1-T1 committed; 04.2.1-T1 machine part. Branch `feature/04-voice-proxy` → PR #6 into `develop`. Left uncommitted, not gated: 04.1.2-T3 baseline tools and the ffmpeg child-env fix |

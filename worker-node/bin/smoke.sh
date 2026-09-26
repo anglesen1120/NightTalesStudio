@@ -30,6 +30,8 @@ for s in "$BIN"/smoke-*.sh; do
   case "$(basename "$s")" in smoke-vieneu.sh|smoke-mpt.sh) continue ;; esac
   ordered+=("$s")
 done
+# smoke-proxy.sh is picked up by the sorted glob (04 CR-6): its listener_entry_point row
+# asserts the 8001 listener's command line contains `nts_vieneu_proxy`.
 for s in "${ordered[@]+"${ordered[@]}"}"; do run "$s"; done
 if [ -x "$BIN/check-binds.sh" ]; then run "$BIN/check-binds.sh"; else echo "FAIL binds-all: check-binds.sh missing"; worst=$(( worst > 1 ? worst : 1 )); fi
 

@@ -1,0 +1,28 @@
+[project]
+name = "nts-vieneu-proxy"
+version = "0.1.0"
+description = "Loopback OpenAI-compatible speech proxy in front of VieNeu-TTS (NTS plan 04)."
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "fastapi",
+    "uvicorn",
+    "httpx",
+]
+
+[dependency-groups]
+dev = [
+    "pytest",
+    "pytest-asyncio",
+    "requests",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/nts_vieneu_proxy"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
