@@ -54,7 +54,7 @@ Legend: `done` (acceptance checks run and passed) · `doing` · `blocked (<who>)
 | 01.3.1-T2 Usage tap | done | `trial/tools/usage_tap.py` + `start-tap.sh`. Every stub check passes: status order, D6 10-key lines, no secret or content in runs/logs, 429/moderation/timeout/busy mapping, quality injection, stub-upstream guard. Real calls: `GET /v1/models` 200 and one `gpt-6-luna` chat 200 with usage 8+5 tokens. `tap.json` upstream = `https://api.aixingialaire.shop`. Fix after integration: `start-tap.sh` did not export `NTS_HOME`, so the tap wrote `~/.nts/tap.json`. Now exported, and the tap's default is `<repo>/.nts` |
 | 01.3.1-T3 Run collector | done (live row in T4) | `trial/tools/start_run.sh`, `run_manifest.py`, `finish_run.py`, 25 unittest cases (T-P1…T-P10 + regressions) OK, shellcheck clean, stdlib only. Plan review first: 01 CR-17 (markers `## generating video: <n> =>` / `## combining video: <n> =>`, Q2 closed, glued log records, `via=responses` → image cost `n/a:no-price`). QA (QaCollector): every runnable acceptance check PASS in a throwaway worktree with decoy listeners (8001 proxy not built yet): guards 2/1, run.json no secret/home path, dry-run 58 lines, real finish +1 row, re-finish exit 1 byte-identical, abort, dashboard. Review (ReviewCollector; its output failed schema validation but the findings payload was complete and was used): 15 findings, 14 fixed and re-tested, 1 rejected (LoomLoom marker: trials use `## downloading videos from`) |
 | 01.3.1-T4 Calibration | partial (owner: quiet re-run + relay cost) | First sheet row, `run_status=calibration`: 58 fields, 6 `n/a` values each explained in `notes.md`, stage gaps 0 s, Σ windows = total 276 s, `image_count` 5 = rendered lines, wpm 192.5. Q1–Q10 recorded in `trial/runs/<id>/notes.md` and the 01.3.1 `plan.md` §2: no end-of-audio line, so `AUDIO_END_RE` stays `None` (Q1); the script marker is logged under `plan02` (Q9); the relay forces image quality/size (Q4); CR-1 proxy line present (Q8). Hand-offs **01 CR-18** (→ 05), **CR-19** (→ 03), **CR-20** (→ 04), **CR-21** (01 text). Not D11-clean (peer sessions, swap 1.8 GB), so the row can't serve as a RAM/wall baseline yet |
-| 01.3.3-T1/T2 Carry-over | todo | After 05.5.2. Interim whisper notes: `.nts/runs/whisper-baseline/carryover-notes.md` |
+| 01.3.3-T1/T2 Carry-over | T1 partial (§11 `[OPEN]`, see *Plan 01 — leftovers advanced*); T2 todo | T2 after 05.5.2. Interim whisper notes: `.nts/runs/whisper-baseline/carryover-notes.md` |
 
 ## Plan 04 — Voice proxy (12 tasks)
 
@@ -69,9 +69,9 @@ Legend: `done` (acceptance checks run and passed) · `doing` · `blocked (<who>)
 | 04.1.5-T1 Packaging | done (`8bd9b76`) | `start-proxy.sh`, `smoke-proxy.sh` (wired into `smoke.sh`), systemd unit, `LICENSES.md`, `env.example` |
 | 04.3.1-T1 Option B note | done (`9d51285`) | `worker-node/proxy/FALLBACK-voxcpm.md` |
 | 04.2.1-T1 Audition + selection | partial | Machine part done: 48/48 samples, mean RTF 0.209. Rater sheets not collected (`results.csv` header only); selection is owner + raters (D11). `audition.py` child env = D13.1 allow-list (gated 2026-09-26; missing ffmpeg now exits 2 before any synthesis) |
-| 04.2.2-T1 Catalog revision 1 + fixtures | todo | After the 04.2.1-T1 selection |
+| 04.2.2-T1 Catalog revision 1 + fixtures | partial (tool leg done, M0 wave 1) | 30 fixtures + runner delivered and gated; the catalog revision itself waits for the 04.2.1-T1 voice selection (raters) |
 | 04.2.2-T2 Catalog rules + seeder (C#) | todo | Needs 09.2.2-T1 and 09.2.5-T1 |
-| 04.2.3-T1 Preview generation + upload | todo | Needs 04.2.2-T1 and 11.4.1-T1 (bucket) |
+| 04.2.3-T1 Preview generation + upload | partial (tool leg done, M0 wave 1) | Preview tool (`worker-node/proxy/tools/make_previews.py`) delivered and tested against a fake proxy; real previews need the 04.2.2-T1 catalog, upload needs 11.4.1-T1 (bucket) |
 
 ## Plan 02 — Story writing (M0 slice)
 
@@ -104,7 +104,7 @@ Branch `feature/02-m0-prompts` merged into `develop` via PR #12 (`f84c415`, 2026
 | 05.2.2-T1 Font licence + glyph check | done | `worker-node/fonts/FONTS.csv` (measured sha256 at the pin, OFL-1.1), `OFL-BeVietnamPro.txt` byte-identical to upstream, `worker-node/mpt/tools/font_glyph_check.py` (NFC input, fails closed when the font cannot be loaded — a wrong "ok" is worse than a wrong "fail"), `worker-node/bin/check-fonts.sh` (4 lines: 2 × `hash ok`, 2 × `glyphs ok 196/196`), `trial/fixtures/vi-glyphs.txt` (197 lines). STHeitiMedium misses 92/196 (measured) |
 | 05.3.1-T1 `check-music.sh` | done (gate row `[OPEN]`) | 15-case hermetic suite; exit-code matrix 0/1/2; `--json` 5-key single line incl. the exit-2 shape (`catalog_revision: null`). The 05-M0 gate row stays `[OPEN]`: the catalog is legally empty (`tracks: []`), so the gate passes vacuously until the owner curates 20–30 tracks |
 | 05.3.2-T1 Music curation (tool leg) | partial (owner) | `seed/music-tracks.v1.json` schema + `worker-node/music/tools/check_catalog.py` (56-case self-test, 23 rule codes) + 10 fixtures + the 16-column `LICENSES.csv` header. **Owner: choose 20–30 tracks** with licence evidence + the listening session |
-| 05.4.1-T1/T2, 05.1.1, 05.2.x, 05.5.x | todo | The spine is now unblocked by 03.4.1-T1; 05.5.2 additionally needs 04.2.2-T1 (raters) + 03.3.2-T1 |
+| 05.4.1-T1/T2, 05.1.1, 05.2.x, 05.5.x | 05.4.1-T1 in progress (not on PR #14); rest todo | The spine is now unblocked by 03.4.1-T1; 05.5.2 additionally needs 04.2.2-T1 (raters) + 03.3.2-T1 |
 
 ## Plan 01 — leftovers advanced
 
