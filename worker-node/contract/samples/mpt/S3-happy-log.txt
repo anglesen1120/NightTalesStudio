@@ -54,7 +54,7 @@
 }[0m
 [32m2026-09-26 22:11:24[0m | [32m[1mSUCCESS[0m | "./app/services/task.py:1639":[34m _run_pipeline[0m - [32m[1mtask d8666553-3c5e-4987-9698-bca6eb944bb0 finished, generated 1 videos.[0m
 [32m2026-09-26 22:11:24[0m | [1mINFO[0m | "./app/services/task.py:1387":[34m _run_pipeline[0m - [1mstart task: 67b5ecfe-c283-47d1-a265-382224c1c207, stop_at: video[0m
-[32m2026-09-26 22:11:24[0m | [1mINFO[0m | "./app/utils/utils.py:234":[34m check_ffmpeg_ready[0m - [1mffmpeg check passed, using: /opt/homebrew/bin/ffmpeg[0m
+[32m2026-09-26 22:11:24[0m | [1mINFO[0m | "./app/utils/utils.py:234":[34m check_ffmpeg_ready[0m - [1mffmpeg check passed, using: <host-path>/ffmpeg[0m
 [32m2026-09-26 22:11:24[0m | [1mINFO[0m | "./app/services/task.py:293":[34m generate_script[0m - [1m
 
 ## generating video script[0m

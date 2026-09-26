@@ -74,6 +74,15 @@ NARRATION_RE = re.compile(
     re.MULTILINE,
 )
 
+# Host-local executable paths (D15 S5; T66): MPT logs the resolved ffmpeg path
+# (`check_ffmpeg_ready - ffmpeg check passed, using: /opt/homebrew/bin/ffmpeg`),
+# a host fact that must not be published. Rewritten to `<host-path>/<basename>`
+# for readability. MPT URIs ("/api", "/tasks", "/v1") never match.
+HOST_PATH_RE = re.compile(
+    r"(?:/opt/homebrew|/opt/local|/usr/local|/usr/bin|/bin)/"
+    r"[\w.\-]+(?:/[\w.\-]+)*"
+)
+
 
 def eprint(*a):
     print(*a, file=sys.stderr)
@@ -202,6 +211,11 @@ def redact_text(text):
     text = NARRATION_RE.sub(
         lambda m: f'{m.group("head")}{marker(m.group("script"))}'
         f', Subtitle: {marker(m.group("subtitle"))}',
+        text,
+    )
+
+    text = HOST_PATH_RE.sub(
+        lambda m: f"<host-path>/{m.group(0).rstrip('/').rsplit('/', 1)[-1]}",
         text,
     )
 
@@ -379,6 +393,12 @@ def self_test():
     old = '    "script": "<prompt sha256=0123456789abcdef>"\n'
     expect("old-marker-kept", redact_text(old) == old, redact_text(old))
 
+
+    # (l) host paths are rewritten (T66) and the rewrite is stable.
+    out = redact_text('ffmpeg check passed, using: /opt/homebrew/bin/ffmpeg')
+    expect("hostpath-redacted", "/opt/homebrew" not in out and "<host-path>/ffmpeg" in out, out)
+    expect("hostpath-idempotent", redact_text(out) == out, out)
+    expect("hostpath-mpt-uri-kept", redact_text("GET /api/v1/tasks/x") == "GET /api/v1/tasks/x")
 
     return 0 if not failures else 1
 
