@@ -1,0 +1,68 @@
+{
+  "schema": "render-status.v1",
+  "task_id": "0192f3c1-8a4b-7c2d-9e10-3f5a6b7c8d90",
+  "render_job_id": "0192f3c1-7a3b-7d1e-8f20-4a5b6c7d8e9f",
+  "state": "failed",
+  "stage": "images",
+  "percent": 40,
+  "cancel_requested": false,
+  "submitted_at": "2026-09-26T15:11:20Z",
+  "started_at": "2026-09-26T15:11:23Z",
+  "finished_at": "2026-09-26T15:13:31Z",
+  "outcome": {
+    "code": "image_generation_failed",
+    "detail": "materials",
+    "message": "Image generation failed for all required scenes."
+  },
+  "output": null,
+  "check": null,
+  "images": {
+    "schema": "images.v1",
+    "planned": 4,
+    "needed": 4,
+    "called": 4,
+    "succeeded": 0,
+    "failed": [
+      {
+        "slot": 0,
+        "http_status": 500,
+        "error_code": "generation_failed"
+      },
+      {
+        "slot": 1,
+        "http_status": 500,
+        "error_code": "generation_failed"
+      },
+      {
+        "slot": 2,
+        "http_status": 500,
+        "error_code": "generation_failed"
+      },
+      {
+        "slot": 3,
+        "http_status": 500,
+        "error_code": "generation_failed"
+      }
+    ],
+    "unattempted": 0,
+    "quality_sent": "medium",
+    "quality_echoed": [
+      "medium"
+    ],
+    "size": "1536x1024",
+    "model": "gpt-image-2",
+    "usage": [],
+    "relay_rejections": {
+      "relay_prompt_unstyled": 0,
+      "relay_unknown_prompt": 0,
+      "relay_image_cap_reached": 0,
+      "relay_rate_limited": 0
+    }
+  },
+  "mpt": {
+    "state": -1,
+    "progress": 40,
+    "failed_stage": "materials",
+    "warnings": []
+  }
+}

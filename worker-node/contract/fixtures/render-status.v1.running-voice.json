@@ -1,0 +1,22 @@
+{
+  "schema": "render-status.v1",
+  "task_id": "0192f3c1-8a4b-7c2d-9e10-3f5a6b7c8d90",
+  "render_job_id": "0192f3c1-7a3b-7d1e-8f20-4a5b6c7d8e9f",
+  "state": "running",
+  "stage": "voice",
+  "percent": 20,
+  "cancel_requested": false,
+  "submitted_at": "2026-09-26T15:11:20Z",
+  "started_at": "2026-09-26T15:11:23Z",
+  "finished_at": null,
+  "outcome": null,
+  "output": null,
+  "check": null,
+  "images": null,
+  "mpt": {
+    "state": 4,
+    "progress": 20,
+    "failed_stage": null,
+    "warnings": []
+  }
+}

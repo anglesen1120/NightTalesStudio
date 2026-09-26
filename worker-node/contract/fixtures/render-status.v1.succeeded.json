@@ -1,0 +1,156 @@
+{
+  "schema": "render-status.v1",
+  "task_id": "0192f3c1-8a4b-7c2d-9e10-3f5a6b7c8d90",
+  "render_job_id": "0192f3c1-7a3b-7d1e-8f20-4a5b6c7d8e9f",
+  "state": "succeeded",
+  "stage": "done",
+  "percent": 100,
+  "cancel_requested": false,
+  "submitted_at": "2026-09-26T15:11:20Z",
+  "started_at": "2026-09-26T15:11:23Z",
+  "finished_at": "2026-09-26T15:13:31Z",
+  "outcome": null,
+  "output": {
+    "video": {
+      "bytes": 98100000,
+      "sha256": "a84ae8a10fc22f6222e8e85ce2d0b2b5675ede40ee4a824df338b170fdbac371"
+    },
+    "subtitles": {
+      "bytes": 8421,
+      "sha256": "e3acef87d3206b0535775fcf1dd282f76c496f33fea4bdb14fc2413d406f899a",
+      "cues": 212
+    },
+    "narration_seconds": 301.37
+  },
+  "check": {
+    "schema": "render-check.v1",
+    "tool_version": "1.0.0",
+    "ffmpeg_version": "9.0.2",
+    "input": {
+      "file": "final-1.mp4",
+      "bytes": 98123456,
+      "sha256": "3715442a24ff535f7e4f21693189d2e3b2df2845ece3847b7a011e2ebc7cbb1f"
+    },
+    "output": {
+      "file": "final-1.norm.mp4",
+      "bytes": 98100000,
+      "sha256": "a84ae8a10fc22f6222e8e85ce2d0b2b5675ede40ee4a824df338b170fdbac371",
+      "normalized": true
+    },
+    "container": {
+      "format": "mov,mp4,m4a,3gp,3g2,mj2",
+      "duration_s": 302.1,
+      "faststart": true
+    },
+    "video": {
+      "codec": "h264",
+      "pix_fmt": "yuv420p",
+      "width": 1920,
+      "height": 1080,
+      "fps": 30.0
+    },
+    "audio": {
+      "codec": "aac",
+      "sample_rate": 48000,
+      "channels": 1
+    },
+    "narration": {
+      "duration_s": 301.37
+    },
+    "loudness": {
+      "before": {
+        "integrated_lufs": -19.8,
+        "true_peak_dbtp": -3.1,
+        "lra": 6.2
+      },
+      "after": {
+        "integrated_lufs": -15.0,
+        "true_peak_dbtp": -1.6,
+        "lra": 6.0
+      },
+      "normalization_type": "linear"
+    },
+    "silence": {
+      "longest_s": 1.2,
+      "total_s": 3.4
+    },
+    "subtitles": {
+      "present": true,
+      "cues": 212,
+      "zero_duration": 0,
+      "overlapping": 0,
+      "non_monotonic": 0,
+      "out_of_range": 0,
+      "coverage_share": 0.86,
+      "max_cue_chars": 78,
+      "long_cues": 3,
+      "cps_p95": 17.2,
+      "sync_suspect": 2,
+      "text_matches_script": true,
+      "text_mismatch_cues": 0
+    },
+    "warnings": [],
+    "errors": []
+  },
+  "images": {
+    "schema": "images.v1",
+    "planned": 4,
+    "needed": 4,
+    "called": 4,
+    "succeeded": 4,
+    "failed": [],
+    "unattempted": 0,
+    "quality_sent": "medium",
+    "quality_echoed": [
+      "medium"
+    ],
+    "size": "1536x1024",
+    "model": "gpt-image-2",
+    "usage": [
+      {
+        "slot": 0,
+        "request_id": "req_fixture_0",
+        "text_tokens": 92,
+        "image_tokens": 0,
+        "output_tokens": 1056,
+        "estimated": false
+      },
+      {
+        "slot": 1,
+        "request_id": "req_fixture_1",
+        "text_tokens": 92,
+        "image_tokens": 0,
+        "output_tokens": 1056,
+        "estimated": false
+      },
+      {
+        "slot": 2,
+        "request_id": "req_fixture_2",
+        "text_tokens": 92,
+        "image_tokens": 0,
+        "output_tokens": 1056,
+        "estimated": false
+      },
+      {
+        "slot": 3,
+        "request_id": "req_fixture_3",
+        "text_tokens": 92,
+        "image_tokens": 0,
+        "output_tokens": 1056,
+        "estimated": false
+      }
+    ],
+    "relay_rejections": {
+      "relay_prompt_unstyled": 0,
+      "relay_unknown_prompt": 0,
+      "relay_image_cap_reached": 0,
+      "relay_rate_limited": 0
+    }
+  },
+  "mpt": {
+    "state": 1,
+    "progress": 100,
+    "failed_stage": null,
+    "warnings": []
+  }
+}

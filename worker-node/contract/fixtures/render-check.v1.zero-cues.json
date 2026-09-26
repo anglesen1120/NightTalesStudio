@@ -1,0 +1,70 @@
+{
+  "schema": "render-check.v1",
+  "tool_version": "1.0.0",
+  "ffmpeg_version": "9.0.2",
+  "input": {
+    "file": "final-1.mp4",
+    "bytes": 98123456,
+    "sha256": "3715442a24ff535f7e4f21693189d2e3b2df2845ece3847b7a011e2ebc7cbb1f"
+  },
+  "output": {
+    "file": "final-1.norm.mp4",
+    "bytes": 98100000,
+    "sha256": "a84ae8a10fc22f6222e8e85ce2d0b2b5675ede40ee4a824df338b170fdbac371",
+    "normalized": true
+  },
+  "container": {
+    "format": "mov,mp4,m4a,3gp,3g2,mj2",
+    "duration_s": 302.1,
+    "faststart": true
+  },
+  "video": {
+    "codec": "h264",
+    "pix_fmt": "yuv420p",
+    "width": 1920,
+    "height": 1080,
+    "fps": 30.0
+  },
+  "audio": {
+    "codec": "aac",
+    "sample_rate": 48000,
+    "channels": 1
+  },
+  "narration": {
+    "duration_s": 301.37
+  },
+  "loudness": {
+    "before": {
+      "integrated_lufs": -19.8,
+      "true_peak_dbtp": -3.1,
+      "lra": 6.2
+    },
+    "after": {
+      "integrated_lufs": -15.0,
+      "true_peak_dbtp": -1.6,
+      "lra": 6.0
+    },
+    "normalization_type": "linear"
+  },
+  "silence": {
+    "longest_s": 1.2,
+    "total_s": 3.4
+  },
+  "subtitles": {
+    "present": true,
+    "cues": 4,
+    "zero_duration": 4,
+    "overlapping": 0,
+    "non_monotonic": 0,
+    "out_of_range": 0,
+    "coverage_share": 0.0,
+    "max_cue_chars": 60,
+    "long_cues": 0,
+    "cps_p95": 0.0,
+    "sync_suspect": 0,
+    "text_matches_script": true,
+    "text_mismatch_cues": 0
+  },
+  "warnings": [],
+  "errors": []
+}

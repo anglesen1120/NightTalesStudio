@@ -1,0 +1,82 @@
+{
+  "schema": "render-quality.v1",
+  "pass": false,
+  "policy_version": 1,
+  "check_tool_version": "1.0.0",
+  "duration_sec": 302.1,
+  "tts_duration_sec": 301.37,
+  "integrated_lufs": -11.2,
+  "true_peak_dbtp": -1.6,
+  "width": 1920,
+  "height": 1080,
+  "subtitles_present": true,
+  "sha256": "a84ae8a10fc22f6222e8e85ce2d0b2b5675ede40ee4a824df338b170fdbac371",
+  "normalized": true,
+  "subtitles": {
+    "cues": 212,
+    "coverage_share": 0.86,
+    "sync_suspect_share": 0.009,
+    "long_cues": 3,
+    "text_matches_script": true
+  },
+  "checks": [
+    {
+      "id": "container_valid",
+      "value": 1,
+      "threshold": 1,
+      "pass": true
+    },
+    {
+      "id": "streams",
+      "value": 1,
+      "threshold": 1,
+      "pass": true
+    },
+    {
+      "id": "resolution",
+      "value": 1,
+      "threshold": 1,
+      "pass": true
+    },
+    {
+      "id": "duration",
+      "value": 0.0024,
+      "threshold": 0.05,
+      "pass": true
+    },
+    {
+      "id": "loudness",
+      "value": -11.2,
+      "threshold": -14.0,
+      "pass": false
+    },
+    {
+      "id": "true_peak",
+      "value": -1.6,
+      "threshold": -1.0,
+      "pass": true
+    },
+    {
+      "id": "silence",
+      "value": 1.2,
+      "threshold": 10,
+      "pass": true
+    },
+    {
+      "id": "subtitles_present",
+      "value": 212,
+      "threshold": 1,
+      "pass": true
+    },
+    {
+      "id": "subtitle_text",
+      "value": 1,
+      "threshold": 1,
+      "pass": true
+    }
+  ],
+  "hints": [
+    "subtitle_cues_long"
+  ],
+  "images": null
+}

@@ -1,0 +1,22 @@
+{
+  "schema": "render-check.v1",
+  "tool_version": "1.0.0",
+  "ffmpeg_version": "9.0.2",
+  "input": {
+    "file": "final-1.mp4",
+    "bytes": 98123456,
+    "sha256": "3715442a24ff535f7e4f21693189d2e3b2df2845ece3847b7a011e2ebc7cbb1f"
+  },
+  "output": null,
+  "container": null,
+  "video": null,
+  "audio": null,
+  "narration": null,
+  "loudness": null,
+  "silence": null,
+  "subtitles": null,
+  "warnings": [],
+  "errors": [
+    "container_invalid"
+  ]
+}
