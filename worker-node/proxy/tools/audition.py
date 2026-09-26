@@ -7,7 +7,8 @@ unicodedata, argparse). Run:
 
 Exit 0 ok · 1 runtime failure · 2 usage/config.
 VIENEU_API_KEY is read from the environment only (Authorization: Bearer built
-in-process); it is never printed, logged, or placed on any argv.
+in-process); it is never printed, logged, placed on any argv, or inherited by
+the ffmpeg child (see ``child_env``).
 """
 from __future__ import annotations
 
@@ -85,6 +86,28 @@ def api_key() -> str:
 
 def ffmpeg_bin() -> str:
     return os.environ.get("FFMPEG_PATH", "ffmpeg")
+
+
+# D13: this tool holds VIENEU_API_KEY in its own environment; the ffmpeg child
+# must never inherit it (or any other credential). Allow-list only; stdlib so
+# the tool stays self-contained (no import of the proxy package).
+CHILD_ENV_KEYS = ("PATH", "HOME", "LANG", "LC_ALL", "TMPDIR")
+
+
+def child_env() -> dict:
+    """Minimal allow-list env for the ffmpeg child (D13)."""
+    return {k: os.environ[k] for k in CHILD_ENV_KEYS if k in os.environ}
+
+
+def _start_ffmpeg(mp3) -> subprocess.Popen:
+    """D4 encoder child: PCM on stdin, MP3 to ``mp3``, scrubbed environment."""
+    return subprocess.Popen([
+        ffmpeg_bin(), "-hide_banner", "-loglevel", "error",
+        "-f", "s16le", "-ar", str(SAMPLE_RATE), "-ac", "1",
+        "-i", "pipe:0", "-vn", "-c:a", "libmp3lame", "-b:a", "192k",
+        "-write_xing", "0", "-id3v2_version", "0",
+        "-flush_packets", "1", "-f", "mp3", str(mp3),
+    ], stdin=subprocess.PIPE, stderr=subprocess.PIPE, env=child_env())
 
 
 def read_text(lang: str) -> str:
@@ -175,13 +198,7 @@ def cmd_generate(a) -> int:
             if resp.headers.get("X-Sample-Rate") != str(SAMPLE_RATE):
                 failures.append((vid, lang, "X-Sample-Rate != 48000"))
                 continue
-            ff = subprocess.Popen([
-                ffmpeg_bin(), "-hide_banner", "-loglevel", "error",
-                "-f", "s16le", "-ar", str(SAMPLE_RATE), "-ac", "1",
-                "-i", "pipe:0", "-vn", "-c:a", "libmp3lame", "-b:a", "192k",
-                "-write_xing", "0", "-id3v2_version", "0",
-                "-flush_packets", "1", "-f", "mp3", str(mp3),
-            ], stdin=subprocess.PIPE, stderr=subprocess.PIPE)
+            ff = _start_ffmpeg(mp3)
             pcm_bytes = 0
             try:
                 while True:

@@ -9,10 +9,27 @@ drained into a bounded last-8-KiB buffer.
 from __future__ import annotations
 
 import asyncio
+import os
 from contextlib import suppress
 
 _STDERR_LIMIT = 8192
 _READ_CHUNK = 16384
+
+# F-ENV/D13: the proxy process holds PROXY_API_KEY and VIENEU_API_KEY in its
+# environment; ffmpeg must never inherit them (or any other credential). The
+# child env is built from this allow-list only, so a secret cannot leak by
+# accident — not even under a name that no key/token/secret/password regex
+# would have matched.
+_CHILD_ENV_KEYS = ("PATH", "HOME", "LANG", "LC_ALL", "TMPDIR")
+
+
+def child_env() -> dict[str, str]:
+    """Minimal allow-list env for every ffmpeg child (D13).
+
+    Returns a fresh dict of only ``PATH``/``HOME``/``LANG``/``LC_ALL``/
+    ``TMPDIR`` taken from :data:`os.environ`; absent keys are simply omitted.
+    """
+    return {key: os.environ[key] for key in _CHILD_ENV_KEYS if key in os.environ}
 
 
 def ffmpeg_args(ffmpeg_path: str, bitrate: str) -> list[str]:
@@ -63,6 +80,7 @@ class Mp3Encoder:
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
+            env=child_env(),
         )
         self._stderr_task = asyncio.create_task(self._drain_stderr())
 

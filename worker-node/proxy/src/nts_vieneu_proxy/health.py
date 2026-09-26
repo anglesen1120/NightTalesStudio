@@ -26,6 +26,7 @@ from typing import Any
 
 from . import __version__
 from .errors import ProxyError
+from .transcode import child_env
 
 PROXY_VERSION = __version__
 SCHEMA = "proxy-health.v1"
@@ -55,6 +56,7 @@ def _run_ffmpeg(ffmpeg_path: str, *args: str) -> tuple[str, int]:
             [ffmpeg_path, *args],
             capture_output=True,
             timeout=FFMPEG_PROBE_TIMEOUT_S,
+            env=child_env(),
         )
     except (OSError, subprocess.SubprocessError):  # missing binary, 5 s timeout
         return "", -1

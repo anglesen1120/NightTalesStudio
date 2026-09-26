@@ -4,8 +4,10 @@ No network: every test drives the CLI via subprocess against synthetic
 snapshots/sheets; the real VieNeu is never touched.
 """
 import csv
+import importlib.util
 import json
 import os
+import shlex
 import subprocess
 import sys
 from pathlib import Path
@@ -188,3 +190,40 @@ def test_audition_opener_ignores_env_proxy():
     r = subprocess.run([sys.executable, "-c", code],
                        capture_output=True, text=True, env=env)
     assert r.returncode == 0, r.stderr
+
+
+def test_audition_ffmpeg_child_env_has_no_vieneu_key(tmp_path, monkeypatch):
+    """D13/F-ENV: the ffmpeg child must not inherit VIENEU_API_KEY."""
+    secret = "vk-vieneu-" + "B" * 40
+    dump = tmp_path / "ffmpeg.env"
+    stub = tmp_path / "ffmpeg-stub"
+    stub.write_text(
+        "#!/bin/sh\n"
+        f"env > {shlex.quote(str(dump))}\n"
+        "cat >/dev/null\n"
+        "exit 0\n",
+        encoding="utf-8",
+    )
+    stub.chmod(0o755)
+    monkeypatch.setenv("VIENEU_API_KEY", secret)
+    monkeypatch.setenv("NTS_LEAK_MARKER", "must-not-travel")
+    monkeypatch.setenv("FFMPEG_PATH", str(stub))
+
+    spec = importlib.util.spec_from_file_location("audition", TOOL)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+
+    proc = mod._start_ffmpeg(tmp_path / "sample.mp3")
+    try:
+        proc.stdin.close()
+        proc.wait()
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+            proc.wait()
+
+    child = dump.read_text(encoding="utf-8")
+    assert "PATH=" in child  # the stub ran and dumped a real environment
+    assert "VIENEU_API_KEY" not in child
+    assert secret not in child
+    assert "NTS_LEAK_MARKER" not in child
