@@ -18,6 +18,7 @@ import csv
 import json
 import random
 import secrets
+import shutil
 import subprocess
 import sys
 import time
@@ -88,9 +89,17 @@ def ffmpeg_bin() -> str:
     return os.environ.get("FFMPEG_PATH", "ffmpeg")
 
 
-# D13: this tool holds VIENEU_API_KEY in its own environment; the ffmpeg child
-# must never inherit it (or any other credential). Allow-list only; stdlib so
-# the tool stays self-contained (no import of the proxy package).
+def require_ffmpeg() -> str:
+    """QA-PR7-4: missing encoder is an environment error (exit 2), not a traceback."""
+    binary = ffmpeg_bin()
+    if shutil.which(binary) is None:
+        die(2, f"ffmpeg not found: {binary!r} (set FFMPEG_PATH)")
+    return binary
+
+
+# D13.1 (04 README §3): this tool holds VIENEU_API_KEY in its own environment;
+# the ffmpeg child must never inherit it (or any other credential). Allow-list
+# only; stdlib so the tool stays self-contained (no import of the proxy package).
 CHILD_ENV_KEYS = ("PATH", "HOME", "LANG", "LC_ALL", "TMPDIR")
 
 
@@ -159,6 +168,7 @@ def _open_vieneu(key: str, voice: str, text: str):
 
 def cmd_generate(a) -> int:
     key = api_key()
+    require_ffmpeg()  # QA-PR7-4: preflight so no VieNeu synthesis is wasted
     langs = ["vi", "en"] if a.lang == "both" else [a.lang]
     texts = {l: read_text(l) for l in langs}
     snap = load_snapshot(a.snapshot)
@@ -198,7 +208,11 @@ def cmd_generate(a) -> int:
             if resp.headers.get("X-Sample-Rate") != str(SAMPLE_RATE):
                 failures.append((vid, lang, "X-Sample-Rate != 48000"))
                 continue
-            ff = _start_ffmpeg(mp3)
+            try:
+                ff = _start_ffmpeg(mp3)
+            except OSError as e:  # binary vanished after require_ffmpeg() (QA-PR7-4)
+                failures.append((vid, lang, f"ffmpeg spawn: {type(e).__name__}"))
+                continue
             pcm_bytes = 0
             try:
                 while True:

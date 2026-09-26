@@ -193,7 +193,7 @@ def test_audition_opener_ignores_env_proxy():
 
 
 def test_audition_ffmpeg_child_env_has_no_vieneu_key(tmp_path, monkeypatch):
-    """D13/F-ENV: the ffmpeg child must not inherit VIENEU_API_KEY."""
+    """D13.1 (04 README): the ffmpeg child must not inherit VIENEU_API_KEY."""
     secret = "vk-vieneu-" + "B" * 40
     dump = tmp_path / "ffmpeg.env"
     stub = tmp_path / "ffmpeg-stub"
@@ -227,3 +227,28 @@ def test_audition_ffmpeg_child_env_has_no_vieneu_key(tmp_path, monkeypatch):
     assert "VIENEU_API_KEY" not in child
     assert secret not in child
     assert "NTS_LEAK_MARKER" not in child
+
+
+def test_audition_allowlist_matches_the_proxy_allowlist():
+    """D13.1 (04 README): the standalone tool may not drift from the proxy's list."""
+    from nts_vieneu_proxy import transcode
+
+    spec = importlib.util.spec_from_file_location("audition", TOOL)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    assert tuple(mod.CHILD_ENV_KEYS) == tuple(transcode._CHILD_ENV_KEYS)  # noqa: SLF001
+
+
+def test_audition_missing_ffmpeg_exits_2_before_any_synthesis(tmp_path):
+    """QA-PR7-4: a missing encoder fails cleanly (exit 2), with no traceback."""
+    snap = snap_file(tmp_path, [
+        {"id": "Adam", "description": "Nam · Bắc · kể chuyện"},
+    ])
+    r = run("generate", "--snapshot", str(snap), "--lang", "vi",
+            "--out", str(tmp_path),
+            env_extra={"VIENEU_API_KEY": "vk-not-a-real-key",
+                       "FFMPEG_PATH": str(tmp_path / "no-such-ffmpeg")})
+    assert r.returncode == 2, r.stderr
+    assert "ffmpeg not found" in r.stderr
+    assert "Traceback" not in r.stderr
+    assert not list(tmp_path.glob("*.mp3"))

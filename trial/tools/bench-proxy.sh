@@ -6,7 +6,10 @@
 # that the running VieNeu proxy delivers complete, decodable MP3 for the short and
 # 5-minute vi/en fixtures, measures every request against the direct-VieNeu
 # baseline of 01.2.1-T4, and publishes the CR-2 numbers (ttfb_ms, max_gap_ms) plus
-# the NFR-04-3 proxy overhead in trial/baselines/proxy-mac-<YYYYMMDD>.json.
+# the NFR-04-3 proxy overhead in trial/baselines/proxy-mac-<YYYYMMDD>.json (the run
+# start date; --out/--force override the name). The baseline also carries the
+# RTF-normalised overhead, the in-request (D7 wall_ms - vieneu_ms) overhead and the
+# direct baseline's voice, so the raw-wall overhead can be read against them.
 #
 # --inject-failure additionally proves the failure path (D4/F02, M2, M8): VieNeu is
 # killed mid-request, MPT makes three attempts, and the task fails at stage "audio".
@@ -27,42 +30,59 @@ usage() {
   cat <<'EOF'
 Usage: trial/tools/bench-proxy.sh [--repeats N] [--fixtures <list>]
                                    [--inject-failure] [--direct-baseline <file>]
+                                   [--out <file>] [--force]
 
 MPT-side acceptance + performance baseline for the VieNeu speech proxy (04.1.2-T3).
 Each run calls MPT's `voice.tts()` in MPT's venv against the running proxy; the
 proxy's D7 log line of that request supplies ttfb_ms/max_gap_ms/audio_seconds.
-Writes trial/baselines/proxy-mac-<YYYYMMDD>.json (metrics only; no text, no keys).
+Writes trial/baselines/proxy-mac-<YYYYMMDD>.json for the run's START date (local;
+started_at_utc stays UTC). Metrics only; no text, no keys. When that name is taken
+the run keeps it and falls back to -2, -3, … and prints the path it used; --force
+overwrites instead.
 
 Requires, already running: VieNeu on 127.0.0.1:8000 (start-vieneu.sh) and the proxy
 on 127.0.0.1:8001 (start-proxy.sh); with --inject-failure also the MPT API on
 127.0.0.1:8080 (start-mpt-api.sh, itself requiring the usage tap).
 
   --repeats N            counted repeats per fixture (default 2)
-  --fixtures <list>      comma-separated subset of vi-1000,en-1000,vi-5min,en-5min
-                         (default: all four in that order)
+  --fixtures <list>      comma-separated non-empty subset of
+                         vi-1000,en-1000,vi-5min,en-5min (default: all four in that
+                         order); an empty/whitespace value is a usage error (exit 2)
   --inject-failure       prove the failure path and run the live T15 checks; SIGKILLs
                          the VieNeu listener mid-request (SIGTERM would let uvicorn
                          finish the stream) and restarts it at the end
   --direct-baseline <f>  direct-VieNeu baseline JSON used for overhead_pct
                          (default trial/baselines/vieneu-mac-20260925.json, 01.2.1-T4)
+  --out <file>           write the baseline to <file> instead of the
+                         trial/baselines/proxy-mac-<YYYYMMDD>.json default; refuses
+                         to overwrite an existing file unless --force is given
+  --force                overwrite the output file when it already exists (the
+                         default name otherwise falls back to a -N suffix)
   -h, --help             this text
 
 MP3s, curl logs and the raw per-run evidence stay in
-$NTS_HOME/runs/bench-proxy/<YYYYmmdd-HHMMSS>/.
-Exit codes: 0 pass · 1 a check failed · 2 usage/environment error (D9).
+$NTS_HOME/runs/bench-proxy/<YYYYmmdd-HHMMSS>/. Baseline paths are recorded
+relative to $NTS_HOME (`paths_relative_to`).
+Exit codes: 0 pass · 1 a check failed (or a skipped check) · 2 usage/environment
+error (D9).
 EOF
 }
 
 REPEATS=2
 FIXLIST=""
+FIXLIST_GIVEN=0
 INJECT=0
 DIRECT_BASELINE=""
+OUT_PATH=""
+FORCE=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --repeats) [ $# -ge 2 ] || die 2 "--repeats needs a value"; REPEATS="$2"; shift 2 ;;
-    --fixtures) [ $# -ge 2 ] || die 2 "--fixtures needs a value"; FIXLIST="$2"; shift 2 ;;
+    --fixtures) [ $# -ge 2 ] || die 2 "--fixtures needs a value"; FIXLIST="$2"; FIXLIST_GIVEN=1; shift 2 ;;
     --inject-failure) INJECT=1; shift ;;
     --direct-baseline) [ $# -ge 2 ] || die 2 "--direct-baseline needs a value"; DIRECT_BASELINE="$2"; shift 2 ;;
+    --out) [ $# -ge 2 ] || die 2 "--out needs a value"; OUT_PATH="$2"; shift 2 ;;
+    --force) FORCE=1; shift ;;
     -h|--help) usage; exit 0 ;;
     *) usage >&2; die 2 "unknown argument: $1 (try --help)" ;;
   esac
@@ -89,6 +109,10 @@ DEFAULT_FIXTURES="vi-1000,en-1000,vi-5min,en-5min"
 # PY <args…> — repo convention (01 D9): stdlib-only helpers run on 3.12 via uv.
 PY() { uv run --quiet --no-project --python 3.12 python "$@"; }
 
+# CURL — every bench request goes to 127.0.0.1; --noproxy '*' keeps an operator's
+# http_proxy/ALL_PROXY from ever seeing the Authorization/x-api-key header (SEC-PR7-2).
+CURL=(curl --noproxy '*')
+
 # jget <json-file> <python-expr> — print one value out of a JSON object; the
 # expression sees it as `d`. Used only on proxy/MPT JSON we produced ourselves.
 jget() {
@@ -114,7 +138,7 @@ newest_log() {
 }
 
 ### 1. Preflight (exit 2 = usage/environment).
-for t in curl ffmpeg ffprobe lsof uv ps pgrep wc sed; do
+for t in curl ffmpeg lsof uv pgrep wc sed; do
   command -v "$t" >/dev/null 2>&1 || die 2 "tool missing: $t"
 done
 [ -x "$MPT_PY" ] || die 2 "MPT venv missing: $MPT_PY (run worker-node/bin/bootstrap.sh mpt)"
@@ -122,22 +146,51 @@ for f in "$HELPER" "$DECODE" "$START_VIENEU" "$REPO/seed/voices.v1.json" "$DIREC
   [ -f "$f" ] || die 2 "missing file: $f"
 done
 
-TMP="$(mktemp -d)"
+TMP="$(mktemp -d "${TMPDIR:-/tmp}/nts-bench-proxy.XXXXXX")" \
+  || die 2 "cannot create a temp dir under ${TMPDIR:-/tmp}"
 OUT="$NTS_HOME/runs/bench-proxy/$(date +%Y%m%d-%H%M%S)"
 mkdir -p "$OUT"
 KEY_PROXY=""
 KEY_MPT=""
+AUTH=""
+MPT_AUTH=""
 VN_PID=""
-# shellcheck disable=SC2329  # invoked indirectly by the EXIT/INT/TERM trap below
+VIENEU_KILLED=0
+VN_RESTARTING=0
+CLEANUP_DONE=0
+# shellcheck disable=SC2329  # invoked indirectly by the traps below
 cleanup() {
+  # Runs at most once: a signal trap calls it, then exit fires the EXIT trap.
+  [ "${CLEANUP_DONE:-0}" -eq 0 ] || return 0
+  CLEANUP_DONE=1
   unset KEY_PROXY KEY_MPT 2>/dev/null || true
-  case "${TMP:-}" in /var/folders/*|/tmp/*) rm -rf -- "$TMP" ;; esac
+  rm -f -- "${AUTH:-/nonexistent}" "${MPT_AUTH:-/nonexistent}" 2>/dev/null || true
+  # P2 (code review): a kill the run never undid must not leave VieNeu down.
+  if [ "${VIENEU_KILLED:-0}" -eq 1 ]; then
+    if [ "${VN_RESTARTING:-0}" -eq 1 ]; then
+      log "WARN VieNeu restart is already in flight (start-vieneu.sh); leaving it to finish"
+    else
+      log "WARN VieNeu was killed by this bench and not restarted; restarting it now"
+      if restart_vieneu cleanup >/dev/null 2>&1; then
+        log "INFO VieNeu restarted after the interrupted run"
+      else
+        log "WARN VieNeu restart failed; run worker-node/bin/start-vieneu.sh manually"
+      fi
+    fi
+  fi
+  # SEC-PR7-1: recognise our own directory by the template name, never by a
+  # parent-prefix allow-list (that fails open for any other $TMPDIR).
+  if [ -n "${TMP:-}" ] && [ -d "${TMP}" ]; then
+    case "${TMP##*/}" in nts-bench-proxy.*) rm -rf -- "${TMP:?}" ;; esac
+  fi
 }
-trap 'cleanup' EXIT INT TERM
+trap 'cleanup' EXIT
+trap 'cleanup; exit 130' INT TERM
+trap 'cleanup; exit 129' HUP
 
-curl -fsS --max-time 5 "$VIENEU_BASE/health" -o "$OUT/vieneu-health-before.json" \
+"${CURL[@]}" -fsS --max-time 5 "$VIENEU_BASE/health" -o "$OUT/vieneu-health-before.json" \
   || die 2 "VieNeu is not healthy on $VIENEU_BASE (worker-node/bin/start-vieneu.sh)"
-curl -fsS --max-time 5 "$PROXY_BASE/health" -o "$OUT/proxy-health.json" \
+"${CURL[@]}" -fsS --max-time 5 "$PROXY_BASE/health" -o "$OUT/proxy-health.json" \
   || die 2 "proxy is not healthy on $PROXY_BASE (worker-node/bin/start-proxy.sh)"
 PROXY_PID="$(lsof -nP -iTCP:8001 -sTCP:LISTEN -t 2>/dev/null | head -n 1)"
 [ -n "$PROXY_PID" ] || die 2 "no listener on 8001"
@@ -156,7 +209,7 @@ with open(sys.argv[1], "rb") as fh:
     kokoro = tomllib.load(fh).get("kokoro", {})
 print(f'{kokoro.get("base_url", "")}\t{kokoro.get("model_id", "")}')
 PYEOF
-)"
+)" || die 2 "cannot read MPT config $MPT_ROOT/config.toml (run worker-node/bin/bootstrap.sh mpt)"
 IFS=$'\t' read -r MPT_CFG_URL MPT_CFG_MODEL <<<"$MPT_CFG_TSV"
 [ "$MPT_CFG_URL" = "http://127.0.0.1:8001/v1" ] \
   || die 2 "MPT [kokoro] base_url=$MPT_CFG_URL, expected http://127.0.0.1:8001/v1 (re-render: start-mpt-api.sh)"
@@ -179,7 +232,16 @@ else
 fi
 
 # Fixtures, voices (from the catalog the proxy serves) and the direct baseline.
-[ -n "$FIXLIST" ] || FIXLIST="$DEFAULT_FIXTURES"
+if [ "$FIXLIST_GIVEN" -eq 1 ]; then
+  # QA-PR7-7: an explicit --fixtures is honoured as given, and an empty or
+  # whitespace-only value is a usage error — it must never widen silently to the
+  # full (most expensive) fixture set.
+  FIXLIST="${FIXLIST#"${FIXLIST%%[![:space:]]*}"}"
+  FIXLIST="${FIXLIST%"${FIXLIST##*[![:space:]]}"}"
+  [ -n "$FIXLIST" ] || die 2 "--fixtures is empty"
+else
+  FIXLIST="$DEFAULT_FIXTURES"
+fi
 IFS=',' read -r -a FIXARR <<<"$FIXLIST"
 [ "${#FIXARR[@]}" -ge 1 ] || die 2 "--fixtures is empty"
 for fx in "${FIXARR[@]}"; do
@@ -201,7 +263,7 @@ for v in doc["voices"]:
 for lang, vid in sorted(seen.items()):
     print(f"{lang}\t{vid}")
 PYEOF
-)"
+)" || die 2 "cannot read the voice catalog $REPO/seed/voices.v1.json"
 VOICE_VI=""
 VOICE_EN=""
 while IFS=$'\t' read -r lang vid; do
@@ -224,7 +286,7 @@ with open(sys.argv[1], encoding="utf-8") as fh:
 for name, summary in doc["summary"].items():
     print(f"{name}\t{int(round(summary['wall_s_median'] * 1000))}\t{summary['audio_s']}")
 PYEOF
-)"
+)" || die 2 "not a direct-VieNeu baseline: $DIRECT_BASELINE (needs summary[*].wall_s_median and audio_s)"
 direct_ms_for() { # <fixture-file> — exit 2 when the baseline lacks it (never substitute)
   local want="$1" name ms audio
   # shellcheck disable=SC2034  # only the median wall ms is needed; audio_s stays in the TSV
@@ -305,14 +367,14 @@ PYEOF
 }
 
 proxy_speech_curl() { # <body-file> <out-mp3> <max-time-s> — prints curl's -w line
-  curl -sS -H "@$AUTH" -H 'Content-Type: application/json' \
+  "${CURL[@]}" -sS -H "@$AUTH" -H 'Content-Type: application/json' \
     --max-time "$3" --data-binary "@$1" -o "$2" \
     -w '%{http_code}\t%{time_starttransfer}\t%{time_total}\t%{size_download}\n' \
     "$PROXY_BASE/v1/audio/speech"
 }
 
 vieneu_active() {
-  curl -s --max-time 5 "$VIENEU_BASE/health" 2>/dev/null \
+  "${CURL[@]}" -s --max-time 5 "$VIENEU_BASE/health" 2>/dev/null \
     | sed -n 's/.*"active"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p'
 }
 
@@ -351,6 +413,7 @@ kill_vieneu() { # SIGKILL the 8000 listener; 0 when the port is free again
   while IFS= read -r p; do
     [ -n "$p" ] && kill -KILL "$p" 2>/dev/null || true
   done <<<"$pids"
+  VIENEU_KILLED=1  # P2: the cleanup trap must undo this kill if the run dies first
   while [ "$t" -lt 30 ]; do
     lsof -nP -iTCP:8000 -sTCP:LISTEN -t >/dev/null 2>&1 || return 0
     sleep 1
@@ -361,18 +424,22 @@ kill_vieneu() { # SIGKILL the 8000 listener; 0 when the port is free again
 
 restart_vieneu() { # <tag> — start-vieneu.sh in the background; prints seconds to READY
   local log="$OUT/vieneu-restart-$1.log" t=0
+  VN_RESTARTING=1  # cleanup() must not start a second start-vieneu.sh alongside this
   printf '%s\n' 'start-vieneu.sh (04.1.2-T3 restart after the injected kill)' >"$log"
   "$START_VIENEU" >>"$log" 2>&1 &
   VN_PID=$!
   while [ "$t" -lt 300 ]; do
     if grep -q '^READY vieneu http://127\.0\.0\.1:8000 after ' "$log" 2>/dev/null; then
+      VIENEU_KILLED=0  # P2: the injected kill has been undone
+      VN_RESTARTING=0
       printf '%s\n' "$t"
       return 0
     fi
-    kill -0 "$VN_PID" 2>/dev/null || return 1
+    if ! kill -0 "$VN_PID" 2>/dev/null; then VN_RESTARTING=0; return 1; fi
     sleep 1
     t=$((t + 1))
   done
+  VN_RESTARTING=0
   return 1
 }
 
@@ -380,6 +447,36 @@ KEY_PROXY="$(secret nts.proxy.api_key)"
 [ "${#KEY_PROXY}" -ge 32 ] || { unset KEY_PROXY; die 2 "nts.proxy.api_key too short"; }
 AUTH="$TMP/proxy.hdr"
 ( umask 077; printf 'Authorization: Bearer %s\n' "$KEY_PROXY" >"$AUTH" )
+
+# QA-PR7-3: wall-clock start of the measured phase. The baseline's started_at_utc,
+# date and default filename all come from this instant, never from assembly time.
+# started_at_utc is UTC ISO-8601; BENCH_START_DAY is the LOCAL date, the convention
+# of every existing proxy-mac-<YYYYMMDD>.json name (a UTC-derived name would file a
+# run started before 07:00 local under the previous day).
+BENCH_STARTED_UTC="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+BENCH_START_DAY="$(date +%Y-%m-%d)"
+BENCH_START_DATE="${BENCH_START_DAY//-/}"
+
+# QA-PR7-2: resolve the output path here, before the expensive runs. The run's START
+# date names the default file; --out overrides the name and refuses to clobber an
+# existing file without --force, while the default name keeps its -2/-3 fallback.
+DATESTR="$BENCH_START_DATE"
+DEFAULT_OUTFILE="$BASEDIR/proxy-mac-$DATESTR.json"
+if [ -n "$OUT_PATH" ]; then
+  OUTFILE="$OUT_PATH"
+  if [ -e "$OUTFILE" ] && [ "$FORCE" -ne 1 ]; then
+    die 2 "refusing to overwrite $OUTFILE without --force"
+  fi
+elif [ -e "$DEFAULT_OUTFILE" ] && [ "$FORCE" -ne 1 ]; then
+  n=2
+  while [ -e "$BASEDIR/proxy-mac-$DATESTR-$n.json" ]; do n=$((n + 1)); done
+  OUTFILE="$BASEDIR/proxy-mac-$DATESTR-$n.json"
+else
+  OUTFILE="$DEFAULT_OUTFILE"
+fi
+[ -d "$(dirname "$OUTFILE")" ] || die 2 "output directory missing: $(dirname "$OUTFILE")"
+[ "$OUTFILE" = "$DEFAULT_OUTFILE" ] \
+  || log "INFO baseline will be written to $OUTFILE (default path: $DEFAULT_OUTFILE)"
 
 ### 3. Runs: fixture × repeat through MPT's own code path.
 : >"$OUT/runs.tsv"
@@ -628,7 +725,7 @@ PYEOF
     build_mpt_body "$FIXDIR/tts-vi-5min.txt" "$VOICE_VI" "$body"
     before_speech="$(speech_count)"
     before_mpt="$(wc -l <"$MPT_LOG" | tr -d ' ')"
-    http="$(curl -sS -H "@$MPT_AUTH" -H 'Content-Type: application/json' \
+    http="$("${CURL[@]}" -sS -H "@$MPT_AUTH" -H 'Content-Type: application/json' \
       --max-time 30 --data-binary "@$body" -o "$submit" -w '%{http_code}' "$MPT_BASE/audio")"
     [ "$http" = 200 ] || { log "WARN injection submit: HTTP $http"; return 1; }
     task_id="$(jget "$submit" 'd["data"]["task_id"]')"
@@ -642,7 +739,7 @@ PYEOF
     # Wait for the MPT task to reach a terminal state (state -1 failed, 1 complete).
     local waited=0 state=""
     while [ "$waited" -lt 300 ]; do
-      curl -sS -H "@$MPT_AUTH" --max-time 10 -o "$task_json" "$MPT_BASE/tasks/$task_id" >/dev/null 2>&1 || true
+      "${CURL[@]}" -sS -H "@$MPT_AUTH" --max-time 10 -o "$task_json" "$MPT_BASE/tasks/$task_id" >/dev/null 2>&1 || true
       state="$(jget "$task_json" 'd["data"]["state"]' 2>/dev/null || true)"
       [ -n "$state" ] && [ "$state" != 4 ] && break
       sleep 2
@@ -753,39 +850,35 @@ PYEOF
 fi
 
 ### 6. Assemble the baseline and print the verdict.
-# Machine and pin facts for the baseline header.
-BENCH_DATE="$(date +%Y-%m-%d)"
-BENCH_STARTED_UTC="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+# Machine and pin facts for the baseline header. BENCH_STARTED_UTC/BENCH_START_DAY
+# were captured before the first run (QA-PR7-3); finished_at_utc brackets them here.
+BENCH_FINISHED_UTC="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+BENCH_DATE="$BENCH_START_DAY"
 BENCH_MODEL="$(sysctl -n hw.model 2>/dev/null || echo unknown)"
 BENCH_CPU="$(sysctl -n machdep.cpu.brand_string 2>/dev/null || true)"
 [ -n "$BENCH_CPU" ] || BENCH_CPU="$BENCH_MODEL"
-BENCH_RAM_GB="$(PY -c 'import os; print(round(os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES") / 1024**3))')"
+BENCH_RAM_GB="$(PY -c 'import os; print(round(os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES") / 1024**3))')" \
+  || die 2 "cannot read the machine RAM (uv run --python 3.12 failed)"
 BENCH_OS="macOS $(sw_vers -productVersion 2>/dev/null) ($(sw_vers -buildVersion 2>/dev/null))"
 BENCH_FFMPEG="$(ffmpeg -version 2>/dev/null | awk 'NR==1{print $3}')"
 BENCH_VIENEU_COMMIT="${VIENEU_COMMIT:-}"
-MPT_VER_TSV="$(cd "$MPT_ROOT" && "$MPT_PY" -c 'import app, importlib.metadata as m; print(app.__version__, m.version("requests"), m.version("moviepy"))')"
+MPT_VER_TSV="$(cd "$MPT_ROOT" && "$MPT_PY" -c 'import app, importlib.metadata as m; print(app.__version__, m.version("requests"), m.version("moviepy"))')" \
+  || die 2 "MPT venv cannot report app/requests/moviepy versions (run worker-node/bin/bootstrap.sh mpt)"
 read -r BENCH_MPT_VERSION BENCH_REQUESTS BENCH_MOVIEPY <<<"$MPT_VER_TSV"
 BENCH_MP3_BITRATE="${MP3_BITRATE:-192k}"
 BENCH_PROXY_MAX_CONCURRENT="$(sed -n 's/^export PROXY_MAX_CONCURRENT=\([0-9][0-9]*\).*$/\1/p' "$REPO/worker-node/bin/start-proxy.sh" | head -n 1)"
 [ -n "$BENCH_PROXY_MAX_CONCURRENT" ] || BENCH_PROXY_MAX_CONCURRENT=4
-DATESTR="$(date +%Y%m%d)"
-OUTFILE="$BASEDIR/proxy-mac-$DATESTR.json"
-if [ -e "$OUTFILE" ]; then
-  n=2
-  while [ -e "$BASEDIR/proxy-mac-$DATESTR-$n.json" ]; do n=$((n + 1)); done
-  OUTFILE="$BASEDIR/proxy-mac-$DATESTR-$n.json"
-fi
-BENCH_NOTES="MPT-side runs via trial/tools/bench_proxy_mpt.py (MPT venv, moviepy decode) + worker-node/proxy/tools/mpt_decode_check.py; direct wall from $(basename "$DIRECT_BASELINE") (01.2.1-T4 median wall_s x 1000). mp3_bitrate from the bench env or the D13 default 192k; proxy_max_concurrent read from start-proxy.sh."
+BENCH_NOTES="MPT-side runs via trial/tools/bench_proxy_mpt.py (MPT venv, moviepy decode) + worker-node/proxy/tools/mpt_decode_check.py; direct wall from $(basename "$DIRECT_BASELINE") (01.2.1-T4 median wall_s x 1000). mp3_bitrate from the bench env or the D13 default 192k; proxy_max_concurrent read from start-proxy.sh. overhead_pct keeps its rule (CR-2/NFR-04-3); proxy_rtf, direct_rtf and rtf_normalised_overhead_pct are added for CR-17, in_request_overhead_pct is the median of (wall_ms - vieneu_ms)/vieneu_ms*100 from the same D7 lines."
 
 export BENCH_OUT="$OUT" BENCH_OUTFILE="$OUTFILE" BENCH_RUNS_TSV="$OUT/runs.tsv" \
   BENCH_DIRECT_BASELINE="$DIRECT_BASELINE" BENCH_PROXY_HEALTH="$OUT/proxy-health.json" \
-  BENCH_DATE BENCH_STARTED_UTC BENCH_MODEL BENCH_CPU BENCH_RAM_GB BENCH_OS BENCH_FFMPEG \
+  BENCH_DATE BENCH_STARTED_UTC BENCH_FINISHED_UTC BENCH_MODEL BENCH_CPU BENCH_RAM_GB BENCH_OS BENCH_FFMPEG \
   BENCH_VIENEU_COMMIT BENCH_MPT_VERSION BENCH_REQUESTS BENCH_MOVIEPY BENCH_MP3_BITRATE \
   BENCH_PROXY_MAX_CONCURRENT BENCH_NOTES BENCH_FI="$FI_FILE" BENCH_T15="$T15_FILE" \
   BENCH_INJ_ATTEMPTS="${INJ_ATTEMPTS:-0}" BENCH_MPT_CFG_URL="$MPT_CFG_URL" BENCH_FIXLIST="$FIXLIST" \
-  BENCH_REPEATS="$REPEATS" BENCH_PROXY_PID="$PROXY_PID"
+  BENCH_REPEATS="$REPEATS" BENCH_PROXY_PID="$PROXY_PID" BENCH_NTS_HOME="$NTS_HOME"
 VERDICT="$(PY - <<'PYEOF'
-import json, os, statistics
+import json, os, statistics, sys
 
 out = os.environ["BENCH_OUT"]
 outfile = os.environ["BENCH_OUTFILE"]
@@ -804,6 +897,42 @@ def load_json(path):
 direct = load_json(os.environ["BENCH_DIRECT_BASELINE"]) or {}
 direct_ms = {name: int(round(s["wall_s_median"] * 1000)) for name, s in direct.get("summary", {}).items()}
 direct_audio = {name: s.get("audio_s") for name, s in direct.get("summary", {}).items()}
+
+
+def rel_to_home(path):
+    """SEC-PR7-3: paths under $NTS_HOME are recorded relative to it, not absolute."""
+    home = os.environ.get("BENCH_NTS_HOME", "")
+    if not path or not home:
+        return path
+    try:
+        rel = os.path.relpath(path, home)
+    except ValueError:
+        return path
+    return path if rel.startswith("..") else rel
+
+
+def direct_baseline_voice():
+    """The voice the direct-VieNeu baseline was measured with (perf finding 2)."""
+    voices = []
+    for row in direct.get("runs", []) or []:
+        v = row.get("voice")
+        if isinstance(v, str) and v.strip() and v not in voices:
+            voices.append(v)
+    if not voices and isinstance(direct.get("voice"), str) and direct["voice"].strip():
+        voices.append(direct["voice"])
+    if not voices:
+        return "unknown"
+    return voices[0] if len(voices) == 1 else ", ".join(sorted(voices))
+
+
+# QA-PR7-8: the 04.1.2-T3 Tests ids, each mapped to the fixture/check it names.
+TEST_IDS = {
+    "mpt_tts_short_vi_200_decodes": "vi-1000",
+    "mpt_tts_short_en_200_decodes": "en-1000",
+    "mpt_tts_5min_vi_under_idle_timeout": "vi-5min",
+    "mpt_tts_5min_en_under_idle_timeout": "en-5min",
+    "mpt_tts_vieneu_killed_three_attempts_task_fails_audio": "failure_injection",
+}
 
 runs = []
 with open(os.environ["BENCH_RUNS_TSV"], encoding="utf-8") as fh:
@@ -845,34 +974,58 @@ with open(os.environ["BENCH_RUNS_TSV"], encoding="utf-8") as fh:
             "direct_vieneu_wall_ms": direct_ms.get("tts-%s.txt" % fx),
             "overhead_pct": None,
             "rid": line.get("rid"),
-            "mp3_path": mp3,
+            "mp3_path": rel_to_home(mp3),
             "mp3_bytes": int(mp3_bytes),
             "decode_exit": int(drc),
             "bench_helper_exit": int(call_rc),
         })
 
-# Per-fixture medians and the NFR-04-3 overhead.
+# Per-fixture medians, the NFR-04-3 overhead and the added CR-17 metrics.
 summary = {}
+in_request_missing = []
 for fx in sorted({r["fixture"] for r in runs}):
     group = [r for r in runs if r["fixture"] == fx]
     walls = [r["wall_ms"] for r in group if isinstance(r["wall_ms"], (int, float))]
     clients = [r["client_wall_ms"] for r in group if isinstance(r["client_wall_ms"], (int, float))]
+    audios = [r["audio_seconds"] for r in group if isinstance(r["audio_seconds"], (int, float))]
     direct_wall = direct_ms.get("tts-%s.txt" % fx)
+    direct_audio_s = direct_audio.get("tts-%s.txt" % fx)
     median_wall = statistics.median(walls) if walls else None
     overhead = None
     if median_wall is not None and direct_wall:
         overhead = round((median_wall - direct_wall) / direct_wall * 100, 2)
     for r in group:
         r["overhead_pct"] = overhead
+
+    # CR-17: the RTF-normalised overhead (audio length cancels) and the in-request
+    # (wall_ms - vieneu_ms) overhead that the D7 line already carries.
+    proxy_rtfs = [r["wall_ms"] / (r["audio_seconds"] * 1000.0) for r in group
+                  if isinstance(r["wall_ms"], (int, float))
+                  and isinstance(r["audio_seconds"], (int, float)) and r["audio_seconds"] > 0]
+    proxy_rtf = statistics.median(proxy_rtfs) if proxy_rtfs else None
+    direct_rtf = None
+    if isinstance(direct_wall, (int, float)) and isinstance(direct_audio_s, (int, float)) and direct_audio_s > 0:
+        direct_rtf = direct_wall / (direct_audio_s * 1000.0)
+    rtf_overhead = None
+    if proxy_rtf is not None and direct_rtf:
+        rtf_overhead = round((proxy_rtf - direct_rtf) / direct_rtf * 100, 2)
+    in_request = [(r["wall_ms"] - r["vieneu_ms"]) / r["vieneu_ms"] * 100 for r in group
+                  if isinstance(r["wall_ms"], (int, float))
+                  and isinstance(r["vieneu_ms"], (int, float)) and r["vieneu_ms"] > 0]
+    if not in_request:
+        in_request_missing.append(fx)
+
     summary[fx] = {
         "wall_ms_median": median_wall,
         "client_wall_ms_median": statistics.median(clients) if clients else None,
-        "audio_seconds_median": statistics.median(
-            [r["audio_seconds"] for r in group if isinstance(r["audio_seconds"], (int, float))]
-        ) if any(isinstance(r["audio_seconds"], (int, float)) for r in group) else None,
+        "audio_seconds_median": statistics.median(audios) if audios else None,
         "direct_vieneu_wall_ms": direct_wall,
-        "direct_vieneu_audio_s": direct_audio.get("tts-%s.txt" % fx),
+        "direct_vieneu_audio_s": direct_audio_s,
         "overhead_pct": overhead,
+        "proxy_rtf": round(proxy_rtf, 4) if proxy_rtf is not None else None,
+        "direct_rtf": round(direct_rtf, 4) if direct_rtf is not None else None,
+        "rtf_normalised_overhead_pct": rtf_overhead,
+        "in_request_overhead_pct": round(statistics.median(in_request), 4) if in_request else None,
         "runs": len(group),
     }
 
@@ -887,17 +1040,37 @@ checks = {
     "duration_within_0_1s": bool(runs) and all(r["duration_within_0_1s"] for r in runs),
 }
 five_min = [fx for fx in summary if fx.endswith("-5min")]
-checks["overhead_le_5pct"] = all(
-    summary[fx]["overhead_pct"] is not None and summary[fx]["overhead_pct"] <= 5 for fx in five_min
-)
+skipped_checks = []
+if five_min:
+    checks["overhead_le_5pct"] = all(
+        summary[fx]["overhead_pct"] is not None and summary[fx]["overhead_pct"] <= 5 for fx in five_min
+    )
+else:
+    # QA-PR7-1: with no -5min fixture the NFR-04-3 rule never ran at all, and
+    # all([]) is True — so report the check skipped instead of vacuously passing.
+    checks["overhead_le_5pct"] = None
+    skipped_checks.append("overhead_le_5pct")
 if fi is not None:
     checks["failure_injection_ok"] = bool(fi.get("ok"))
-result = "pass" if all(checks.values()) else "fail"
+failed = [k for k, v in checks.items() if v is False]
+if failed:
+    result = "fail"
+elif skipped_checks:
+    result = "incomplete"
+else:
+    result = "pass"
+
+# "Say so" when a fixture carried no usable D7 wall_ms/vieneu_ms pair.
+notes = os.environ["BENCH_NOTES"]
+if in_request_missing:
+    notes += (" in_request_overhead_pct is null for %s: no D7 wall_ms+vieneu_ms pair in those runs."
+              % ", ".join(sorted(in_request_missing)))
 
 doc = {
     "schema": "proxy-baseline.v1",
     "date": os.environ["BENCH_DATE"],
     "started_at_utc": os.environ["BENCH_STARTED_UTC"],
+    "finished_at_utc": os.environ["BENCH_FINISHED_UTC"],
     "machine": {
         "model": os.environ["BENCH_MODEL"],
         "cpu": os.environ["BENCH_CPU"],
@@ -924,6 +1097,9 @@ doc = {
         "watermark_extra_installed": (direct.get("watermark") or {}).get("extra_installed"),
         "overhead_rule": "(median(wall_ms) - direct_vieneu_wall_ms) / direct_vieneu_wall_ms * 100",
     },
+    "direct_baseline_voice": direct_baseline_voice(),
+    "paths_relative_to": "$NTS_HOME",
+    "test_ids": dict(TEST_IDS),
     "run_options": {
         "repeats": int(os.environ["BENCH_REPEATS"]),
         "fixtures": os.environ["BENCH_FIXLIST"],
@@ -934,17 +1110,34 @@ doc = {
     "runs": runs,
     "summary": summary,
     "checks": checks,
+    "skipped_checks": skipped_checks,
     "failure_injection": fi,
     "t15_live": t15,
     "result": result,
-    "notes": os.environ["BENCH_NOTES"],
+    "notes": notes,
 }
 with open(outfile, "w", encoding="utf-8") as fh:
     json.dump(doc, fh, indent=2, ensure_ascii=False)
     fh.write("\n")
 
-failed = [k for k, v in checks.items() if not v]
-print("pass" if result == "pass" else "fail:" + ",".join(failed))
+# Operator-facing summary of the CR-17 metrics (stderr; stdout stays the verdict).
+for fx in sorted(summary):
+    s = summary[fx]
+    print(
+        "SUMMARY %s: overhead_pct=%s proxy_rtf=%s direct_rtf=%s rtf_normalised_overhead_pct=%s in_request_overhead_pct=%s"
+        % (fx, s["overhead_pct"], s["proxy_rtf"], s["direct_rtf"],
+           s["rtf_normalised_overhead_pct"], s["in_request_overhead_pct"]),
+        file=sys.stderr,
+    )
+print("SUMMARY direct_baseline_voice=%s paths_relative_to=$NTS_HOME skipped_checks=%s"
+      % (doc["direct_baseline_voice"], ",".join(skipped_checks) or "-"), file=sys.stderr)
+
+if result == "pass":
+    print("pass")
+elif result == "incomplete":
+    print("incomplete:" + ",".join(skipped_checks))
+else:
+    print("fail:" + ",".join(failed))
 PYEOF
 )" || die 1 "baseline assembly failed (see $OUT)"
 
@@ -952,6 +1145,7 @@ log "baseline written: $OUTFILE"
 log "raw evidence: $OUT"
 case "$VERDICT" in
   pass) echo "PASS 04.1.2-T3"; exit 0 ;;
+  incomplete:*) echo "INCOMPLETE 04.1.2-T3: skipped ${VERDICT#incomplete:} (no -5min fixture ran)"; exit 1 ;;
   fail:*) echo "FAIL 04.1.2-T3: ${VERDICT#fail:}"; exit 1 ;;
   *) die 1 "unexpected assembler verdict: $VERDICT" ;;
 esac

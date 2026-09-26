@@ -12,23 +12,29 @@ Run with MPT's own interpreter (the venv MPT runs its tasks in):
 
 Prints exactly one JSON line on stdout: {"path": ..., "duration_s": ...} —
 `duration_s` is null when MoviePy cannot report a finite positive duration.
-Exit 0 when the duration is finite and > 0, 1 otherwise, 2 on usage error.
+Exit 0 when the duration is finite and > 0, 1 otherwise, 2 on usage error
+(``-h``/``--help`` prints usage to stdout and exits 0).
 """
 
 from __future__ import annotations
 
+import gc
 import json
 import math
 import sys
 
+USAGE = (
+    "usage: mpt_decode_check.py <mp3>  (run with MPT's interpreter: "
+    "$NTS_HOME/src/mpt/.venv/bin/python)"
+)
+
 
 def main(argv: list[str]) -> int:
-    if len(argv) != 2 or argv[1] in ("-h", "--help"):
-        print(
-            "usage: mpt_decode_check.py <mp3>  (run with MPT's interpreter: "
-            "$NTS_HOME/src/mpt/.venv/bin/python)",
-            file=sys.stderr,
-        )
+    if len(argv) >= 2 and argv[1] in ("-h", "--help"):
+        print(USAGE)  # L-3: --help to stdout, exit 0 (01 D9)
+        return 0
+    if len(argv) != 2:
+        print(USAGE, file=sys.stderr)
         return 2
 
     path = argv[1]
@@ -41,15 +47,34 @@ def main(argv: list[str]) -> int:
     clip = None
     duration = None
     decode_error = None
-    try:
-        clip = AudioFileClip(path)
-        duration = clip.duration
-    except Exception as exc:  # empty/truncated MP3, unreadable file, ...
-        decode_error = f"{type(exc).__name__}"
-    finally:
-        if clip is not None:
-            clip.close()
+    # QA-PR7-6: a reader that failed to initialise prints "Exception ignored in:
+    # <function FFMPEG_AudioReader.__del__>" (MoviePy readers.py:294-304) at
+    # collection time; CPython hands the hook the *function* as `object`, so
+    # match its qualname/module and forward everything else to the old hook.
+    previous_hook = sys.unraisablehook
 
+    def quiet_moviepy_reader_del(unraisable) -> None:
+        obj = unraisable.object
+        if (getattr(obj, "__qualname__", "") == "FFMPEG_AudioReader.__del__"
+                and (getattr(obj, "__module__", "") or "").startswith("moviepy")):
+            return
+        previous_hook(unraisable)
+
+    sys.unraisablehook = quiet_moviepy_reader_del
+    try:
+        try:
+            clip = AudioFileClip(path)
+            duration = clip.duration
+        except Exception as exc:  # empty/truncated MP3, unreadable file, ...
+            decode_error = f"{type(exc).__name__}"
+        finally:
+            if clip is not None:
+                clip.close()
+        gc.collect()  # finalise the failed reader while the hook is installed
+    finally:
+        sys.unraisablehook = previous_hook
+
+    # QA-PR7-5: a truncated MP3 with >= 1 valid frame passes here by design (D14: rc 1 only for a non-finite or <= 0 duration); truncation is caught by the bench's duration check (bench-proxy.sh), not by this tool.
     duration_s: float | None
     try:
         value = float(duration)  # type: ignore[arg-type]
