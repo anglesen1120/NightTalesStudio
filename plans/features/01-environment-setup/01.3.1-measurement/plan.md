@@ -64,7 +64,7 @@ No database. Tracked files under `trial/` (D1), untracked under `$NTS_HOME` (D1)
 | `trial/runs/<run_id>/run.json` | ✅ | `run_manifest.py` (start), `finish_run.py` (finish fields) | Pins, heads, `env`, redacted config digest, run parameters, tap settings, sources used |
 | `trial/runs/<run_id>/openai_usage.jsonl` | ✅ | `usage_tap.py` | One line per upstream call, fields exactly D6 |
 | `trial/runs/<run_id>/stages.json` | ✅ | `finish_run.py` | Stage windows (UTC), counts parsed from the MPT log, marker set version |
-| `trial/runs/<run_id>/rss.csv` | ✅ | `rss_sampler.sh` (row `all`), `finish_run.py` (per-stage rows) | Peaks per stage and root |
+| `trial/runs/<run_id>/rss.csv` | ✅ | `rss_sampler.sh` (provisional `all` row on TERM); `finish_run.py` rewrites the whole file: task-window `all` + `stage:*` rows (01 CR-22) | Peaks per stage and root |
 | `trial/runs/<run_id>/ffprobe.json` | ✅ | `finish_run.py` | `ffprobe` JSON of the final video, `format.filename` reduced to basename |
 | `trial/runs/<run_id>/notes.md` | ✅ | operator | D11 conditions, anomalies, dashboard comparison |
 | `trial/runs/no-run/openai_usage.jsonl` | ❌ (git-ignored, agreed with 01.1.2-T1) | `usage_tap.py` | Calls made while no run is active |
@@ -117,7 +117,7 @@ Invariants:
 | U1 | Start the tap (terminal of its own, D9) | `trial/tools/start-tap.sh` (env `TAP_IMAGE_QUALITY` unset) | Listens `127.0.0.1:8002`; writes `$NTS_HOME/tap.json` | exit 2 port busy / bad env |
 | U2 | Start a run | `trial/tools/start_run.sh <lang> <aspect> "<topic>" <target_minutes> [--status calibration\|trial] [--voice <name>] [--story-source mpt\|plan02] [--no-tap]` | Prints `run_id` on stdout; `run.json`; `current_run`; sampler running | exit 2 run active, service down, bad args; exit 1 head ≠ pin, or config base URLs not the tap (default) / still the tap (`--no-tap`) |
 | U3 | Render | 01.2.2-T6 / 05.5.2 submit to MPT API (`video_count = 1`) | MPT task id | — |
-| U4 | Finish a run | `uv run --no-project --python 3.12 trial/tools/finish_run.py <run_id> --task-id <mpt task id> [--mpt-log P] [--proxy-log P] [--script P] [--output P] [--issue "<text>"]… [--status failed] [--dry-run]` | `stages.json`, `ffprobe.json`, `rss.csv` stage rows, one CSV row, `current_run` cleared | exit 1 validation (no row written); exit 2 usage/env |
+| U4 | Finish a run | `uv run --no-project --python 3.12 trial/tools/finish_run.py <run_id> --task-id <mpt task id> [--mpt-log P] [--proxy-log P] [--script P] [--output P] [--issue "<text>"]… [--status failed] [--dry-run]` | `stages.json`, `ffprobe.json`, `rss.csv` rewritten (task-window `all` + `stage:*`, 01 CR-22), one CSV row, `current_run` cleared | exit 1 validation (no row written); exit 2 usage/env |
 | U5 | Abort a run (no row) | `… finish_run.py <run_id> --abort` | Sampler stopped, `current_run` cleared, `run.json.run_status = "failed"`, `notes.md` gets "aborted" | — |
 | U6 | Dashboard cross-check (next day) | `… finish_run.py <run_id> --dashboard-cost <usd> --dashboard-day <YYYY-MM-DD>` | Rewrites that one cell; prints tap-day total vs dashboard and delta % | exit 1 cell not pending / delta > 5 % (value still written, issue printed) |
 | U7 | Sampler self-test | `trial/tools/rss_sampler.sh --selftest 60` | Overhead report; raw file under `$NTS_HOME/runs/sampler-selftest-<ts>/` | — |
