@@ -1,0 +1,52 @@
+{
+ "schema": "mpt-sample.v1",
+ "scenario": "S3-progress-trace",
+ "date": "2026-09-26",
+ "mpt_commit": "3d5f4e421927d61f3eac729cf4b711ac0b69d688",
+ "task_id": "67b5ecfe-c283-47d1-a265-382224c1c207",
+ "note": "1s poll ticks (mpt_client --interval 1 --trace); en story, 8 terms, 10s clips, 37s stub audio -> 4 images. Progress went 0->20 within the first second: the 5/10 writes (script/terms stages) complete instantly because video_script+video_terms were supplied (C19) and 1s polling cannot resolve them. transitions collapse equal consecutive progress rows.",
+ "transitions": [
+  {
+   "ts": "2026-09-26T15:11:23Z",
+   "progress": 0,
+   "failed_stage": null,
+   "stage": "queued"
+  },
+  {
+   "ts": "2026-09-26T15:11:24Z",
+   "progress": 20,
+   "failed_stage": null,
+   "stage": "voice"
+  },
+  {
+   "ts": "2026-09-26T15:11:25Z",
+   "progress": 30,
+   "failed_stage": null,
+   "stage": "subtitles"
+  },
+  {
+   "ts": "2026-09-26T15:11:45Z",
+   "progress": 40,
+   "failed_stage": null,
+   "stage": "images"
+  },
+  {
+   "ts": "2026-09-26T15:12:28Z",
+   "progress": 50,
+   "failed_stage": null,
+   "stage": "assembling"
+  },
+  {
+   "ts": "2026-09-26T15:12:56Z",
+   "progress": 75,
+   "failed_stage": null,
+   "stage": "assembling"
+  },
+  {
+   "ts": "2026-09-26T15:13:31Z",
+   "progress": 100,
+   "failed_stage": null,
+   "stage": "done"
+  }
+ ]
+}

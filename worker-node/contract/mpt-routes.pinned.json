@@ -1,0 +1,51 @@
+{
+ "schema": "mpt-routes.v1",
+ "mpt_version": "1.3.7",
+ "commit": "3d5f4e421927d61f3eac729cf4b711ac0b69d688",
+ "captured": "2026-09-26",
+ "base_url": "http://127.0.0.1:8080",
+ "paths": {
+  "/api/v1/audio": [
+   "POST"
+  ],
+  "/api/v1/download/{file_path}": [
+   "GET"
+  ],
+  "/api/v1/musics": [
+   "GET",
+   "POST"
+  ],
+  "/api/v1/scripts": [
+   "POST"
+  ],
+  "/api/v1/social-metadata": [
+   "POST"
+  ],
+  "/api/v1/stream/{file_path}": [
+   "GET"
+  ],
+  "/api/v1/subtitle": [
+   "POST"
+  ],
+  "/api/v1/tasks": [
+   "GET"
+  ],
+  "/api/v1/tasks/{task_id}": [
+   "DELETE",
+   "GET"
+  ],
+  "/api/v1/terms": [
+   "POST"
+  ],
+  "/api/v1/video_materials": [
+   "GET",
+   "POST"
+  ],
+  "/api/v1/videos": [
+   "POST"
+  ],
+  "/ping": [
+   "GET"
+  ]
+ }
+}

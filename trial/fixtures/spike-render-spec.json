@@ -1,0 +1,12 @@
+{
+  "schema": "spike-render-spec.v1",
+  "note": "M0 spike spec for 05.4.1-T1 (D13). voice_id is informational for the stub (it reads only input); the D6 inline presets are used until seed/subtitle-presets.v1.json (05.2.3-T1) lands.",
+  "run_id": "s3-happy-16x9",
+  "story_file": "trial/fixtures/spike-story-en.txt",
+  "terms_file": "trial/fixtures/spike-terms.json",
+  "aspect": "16:9",
+  "language": "en",
+  "voice_id": "Ngọc Huyền",
+  "preset_file": null,
+  "music_track": null
+}

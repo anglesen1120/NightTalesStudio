@@ -4,7 +4,7 @@
     "task_id": "71b61490-2489-4304-9a12-76253e155dcf",
     "request_id": "23fad1fc-3d02-4174-a17d-104794ead944",
     "params": {
-        "video_subject": "03.4.1-T1 spike fixture",
+        "video_subject": "<text sha256=a67437881fd39948>",
         "video_script": "<prompt sha256=5e2792fc772b8bf3>",
         "video_terms": [
             "<prompt sha256=d521100fca5df975>",

@@ -1,0 +1,8 @@
+[32m2026-09-26 22:21:22[0m | [1mINFO[0m | "./app/services/task.py:314":[34m generate_terms[0m - [1m
+[32m2026-09-26 22:24:35[0m | [1mINFO[0m | "./app/services/task.py:314":[34m generate_terms[0m - [1m
+[32m2026-09-26 22:24:47[0m | [1mINFO[0m | "./app/services/task.py:314":[34m generate_terms[0m - [1m
+[32m2026-09-26 22:24:47[0m | [1mINFO[0m | "./app/services/llm.py:895":[34m generate_terms[0m - [1msubject: <text sha256=f1f4ce28267fb253> match_script_order: True[0m
+[32m2026-09-26 22:24:47[0m | [1mINFO[0m | "./app/services/llm.py:270":[34m _generate_response[0m - [1mllm provider: openai[0m
+[32m2026-09-26 22:24:47[0m | [31m[1mERROR[0m | "./app/services/llm.py:910":[34m generate_terms[0m - [31m[1mfailed to generate video terms: Error: Error code: 404 - {'error': {'code': 'route_not_found', 'message': 'not found'}}[0m
+[32m2026-09-26 22:24:47[0m | [31m[1mERROR[0m | "./app/services/task.py:267":[34m _mark_task_failed[0m - [31m[1mtask failed, task_id: a31fe20d-611c-40ab-ae60-1deae29aede7, stage: terms, error: failed to generate video search terms[0m
+[32m2026-09-26 22:26:57[0m | [1mINFO[0m | "./app/services/task.py:314":[34m generate_terms[0m - [1m

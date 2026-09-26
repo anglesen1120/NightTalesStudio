@@ -1,0 +1,41 @@
+{
+  "status": 200,
+  "message": "success",
+  "data": {
+    "task_id": "67b5ecfe-c283-47d1-a265-382224c1c207",
+    "state": 1,
+    "progress": 100,
+    "videos": [
+      "/tasks/67b5ecfe-c283-47d1-a265-382224c1c207/final-1.mp4"
+    ],
+    "combined_videos": [
+      "/tasks/67b5ecfe-c283-47d1-a265-382224c1c207/combined-1.mp4"
+    ],
+    "failed_stage": null,
+    "error": null,
+    "cross_post_state": null,
+    "cross_post_results": null,
+    "cross_post_error": null,
+    "script": "<text sha256=bccb8756662418c3>",
+    "terms": [
+      "<text sha256=2590a2147192d5ee>",
+      "<text sha256=80662f8827549424>",
+      "<text sha256=bf021f0bdabc68e7>",
+      "<text sha256=3745142148f39efd>",
+      "<text sha256=207007b0eeb9fc26>",
+      "<text sha256=0739201301592015>",
+      "<text sha256=f4bce78575bb62ba>",
+      "<text sha256=86c6780238056ab6>"
+    ],
+    "audio_file": "<task_dir>/audio.mp3",
+    "audio_duration": 38,
+    "subtitle_path": "<task_dir>/subtitle.srt",
+    "materials": [
+      "<task_dir>/openai-image-c65b7471fd00.png.mp4",
+      "<task_dir>/openai-image-ffb419667968.png.mp4",
+      "<task_dir>/openai-image-150ef6fbe545.png.mp4",
+      "<task_dir>/openai-image-97f5232e1eb8.png.mp4"
+    ],
+    "warnings": null
+  }
+}

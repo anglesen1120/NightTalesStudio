@@ -1,0 +1,18 @@
+{
+ "schema": "mpt-sample.v1",
+ "date": "2026-09-26",
+ "mpt_commit": "3d5f4e421927d61f3eac729cf4b711ac0b69d688",
+ "server": "127.0.0.1:18080 (spike profile)",
+ "scenario": "S2-wrong-api-key",
+ "note": "A wrong key returns the same 401 body as a missing key - no distinction between absent and wrong credentials.",
+ "probes": [
+  {
+   "request": "GET /api/v1/tasks?page=1&page_size=1, x-api-key: WRONG-KEY-xyz",
+   "http": 401,
+   "body": {
+    "status": 401,
+    "message": "invalid API key"
+   }
+  }
+ ]
+}

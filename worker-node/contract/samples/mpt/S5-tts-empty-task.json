@@ -1,0 +1,16 @@
+{
+  "status": 200,
+  "message": "success",
+  "data": {
+    "task_id": "76f962d4-7636-4e4a-9ec7-70eb1d18c1e9",
+    "state": -1,
+    "progress": 20,
+    "videos": null,
+    "combined_videos": null,
+    "failed_stage": "audio",
+    "error": "failed to synthesize audio; verify the selected voice and TTS connectivity",
+    "cross_post_state": null,
+    "cross_post_results": null,
+    "cross_post_error": null
+  }
+}

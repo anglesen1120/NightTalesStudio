@@ -1,0 +1,10 @@
+{
+ "schema": "mpt-sample.v1",
+ "scenario": "S16-real-chain",
+ "date": "2026-09-26",
+ "mpt_commit": "3d5f4e421927d61f3eac729cf4b711ac0b69d688",
+ "status": "deferred",
+ "reason": "04.1.2-T1 (proxy 127.0.0.1:8001 + VieNeu) is not gated for this wave; the spike profile (D2) is the contract's evidence surface and real upstream timing is a separate plan item.",
+ "runner": "none - no measurement was taken",
+ "sample": null
+}

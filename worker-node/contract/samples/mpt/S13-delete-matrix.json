@@ -1,0 +1,11 @@
+{"schema":"mpt-sample.v1","scenario":"S13-delete-matrix","date":"2026-09-26",
+ "mpt_commit":"3d5f4e421927d61f3eac729cf4b711ac0b69d688",
+ "server":"127.0.0.1:18080 (spike profile)",
+ "probes":[
+  {"case":"unknown id","request":"DELETE /api/v1/tasks/00000000-0000-0000-0000-000000000000, x-task-id: s13","http":404,"body":{"status":404,"message":"s13: task not found"}},
+  {"case":"running (state 4)","request":"DELETE /api/v1/tasks/67b5ecfe-c283-47d1-a265-382224c1c207 while progress<100, x-task-id: s13","http":409,"body":{"status":409,"message":"s13: task is still running"}},
+  {"case":"complete (state 1)","request":"DELETE /api/v1/tasks/d8666553-3c5e-4987-9698-bca6eb944bb0 (S4c, completed), x-task-id: s13","http":200,"body":{"status":200,"message":"success","data":null}},
+  {"case":"GET after delete","request":"GET /api/v1/tasks/d8666553-3c5e-4987-9698-bca6eb944bb0","http":404,"body":{"status":404,"message":"s13: task not found"}},
+  {"case":"task dir after delete","request":"ls storage/tasks/d8666553-*/","result":"No such file or directory - dir removed with the record"}],
+ "verdict":"C11 OK: DELETE on running -> 409 (not honoured, not cancelled); complete -> 200 + dir removed; unknown -> 404. There is no cancel route (F08) - the only way to stop a render is delete-before-start or process kill.",
+ "adapter_note":"To discard a finished render use DELETE (frees storage); you cannot cancel a running one via the API."}

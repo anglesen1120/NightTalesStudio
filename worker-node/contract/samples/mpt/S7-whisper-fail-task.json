@@ -1,0 +1,50 @@
+{
+  "schema": "mpt-sample.v1",
+  "scenario": "S7-whisper-load-fail",
+  "date": "2026-09-26",
+  "mpt_commit": "3d5f4e421927d61f3eac729cf4b711ac0b69d688",
+  "task_id": "8b327312-9d90-436b-ab20-080378dc5963",
+  "setup": "whisper model.bin corrupted at process start (CTranslate2 'Unsupported model binary version v1381125955'); HF_HUB_OFFLINE=1 so no re-download. subtitle_enabled=true.",
+  "verdict": "subtitle.create() failed to load the model -> create() returned None (subtitle.py L47-55) -> generate_subtitle wrote a subtitle.srt whose 15 cues are ALL '00:00:00,000 --> 00:00:00,000' carrying the script text, and the TASK SUCCEEDED (state 1, progress 100). This is F02's fail-open: a whisper failure is invisible to failed_stage. Detect it via subtitle.srt zero-cues (D9 zero_duration), never via state.",
+  "task": {
+    "status": 200,
+    "message": "success",
+    "data": {
+      "task_id": "8b327312-9d90-436b-ab20-080378dc5963",
+      "state": 1,
+      "progress": 100,
+      "videos": [
+        "/tasks/8b327312-9d90-436b-ab20-080378dc5963/final-1.mp4"
+      ],
+      "combined_videos": [
+        "/tasks/8b327312-9d90-436b-ab20-080378dc5963/combined-1.mp4"
+      ],
+      "failed_stage": null,
+      "error": null,
+      "cross_post_state": null,
+      "cross_post_results": null,
+      "cross_post_error": null,
+      "script": "<text sha256=bccb8756662418c3>",
+      "terms": [
+        "<text sha256=2590a2147192d5ee>",
+        "<text sha256=80662f8827549424>",
+        "<text sha256=bf021f0bdabc68e7>",
+        "<text sha256=3745142148f39efd>",
+        "<text sha256=207007b0eeb9fc26>",
+        "<text sha256=0739201301592015>",
+        "<text sha256=f4bce78575bb62ba>",
+        "<text sha256=86c6780238056ab6>"
+      ],
+      "audio_file": "<task_dir>/audio.mp3",
+      "audio_duration": 38,
+      "subtitle_path": "<task_dir>/subtitle.srt",
+      "materials": [
+        "<task_dir>/openai-image-743e451519c0.png.mp4",
+        "<task_dir>/openai-image-436cb26eee18.png.mp4",
+        "<task_dir>/openai-image-84f1467aeae0.png.mp4",
+        "<task_dir>/openai-image-68e0a3ade1c7.png.mp4"
+      ],
+      "warnings": null
+    }
+  }
+}
