@@ -1,0 +1,14 @@
+{
+  "short": {
+    "vi": { "min_tokens": 120, "max_tokens": 160, "min_segments": 4, "max_segments": 5, "writer_max_output": 2500 },
+    "en": { "min_tokens": 110, "max_tokens": 145, "min_segments": 4, "max_segments": 5, "writer_max_output": 2500 }
+  },
+  "standard": {
+    "vi": { "min_tokens": 800, "max_tokens": 1280, "min_segments": 20, "max_segments": 32, "writer_max_output": 6000 },
+    "en": { "min_tokens": 725, "max_tokens": 1160, "min_segments": 20, "max_segments": 32, "writer_max_output": 6000 }
+  },
+  "long": {
+    "vi": { "min_tokens": 1600, "max_tokens": 2400, "min_segments": 40, "max_segments": 60, "writer_max_output": 10000 },
+    "en": { "min_tokens": 1450, "max_tokens": 2175, "min_segments": 40, "max_segments": 60, "writer_max_output": 10000 }
+  }
+}

@@ -61,6 +61,8 @@ worker-node/music/*
 # Trial runs: keep metadata (run.json, *.jsonl, *.csv, stages.json, ffprobe.json, notes.md), never media
 trial/runs/no-run/
 trial/runs/*/media/
+# M0 story harness raw cells (02.1.3-T0, plan §3.6 / QA-02D-6): provider output, regenerable, untracked
+trial/stories/
 # Python / tooling
 .ruff_cache/
 .pytest_cache/

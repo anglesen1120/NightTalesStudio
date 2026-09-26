@@ -1,0 +1,65 @@
+{
+  "release": "2026.10.1",
+  "files": {
+    "schemas/story.v1.json": {
+      "version": "v1",
+      "sha256": "a32d53ccbad6c777e12a7efb84c65cef5bf577836b498a2d91c93e9dd0582d96"
+    },
+    "shared/ear-rules.en.v1.md": {
+      "version": "v1",
+      "sha256": "44d5de72da46dc346be9e546a58cd0ef2838ca409849de423e42dda2090b6beb"
+    },
+    "shared/ear-rules.vi.v1.md": {
+      "version": "v1",
+      "sha256": "9a8599145366939861bdf9ad132d74f07aef501ea261d873106fc38a2d2a18f1"
+    },
+    "shared/keyword-rules.v1.md": {
+      "version": "v1",
+      "sha256": "63a2e78d4bcf9760f599be70cd25b6d18dfc4d459cb1693b33e42bea88e2b4f4"
+    },
+    "shared/overused.en.v1.txt": {
+      "version": "v1",
+      "sha256": "55db62547fb26e449b0f47c114cd944547d8b7b262685d4fe86a212f2d39b8b3"
+    },
+    "shared/overused.vi.v1.txt": {
+      "version": "v1",
+      "sha256": "4ebaf6d34a24a70de8f945179922c6a2581b06f3ff5f1270b4adc79b8ac1723f"
+    },
+    "shared/preset-spec.v1.md": {
+      "version": "v1",
+      "sha256": "7f9e4ab809af6c90ae0790548a8a574b5fc3a86a1170653d98b69cddd50d3768"
+    },
+    "shared/structure-vocab.v1.json": {
+      "version": "v1",
+      "sha256": "aa8579d97f0a513e23a07f97ed91fd2d03856dc81f93bf9231b5f95fe8d95a77"
+    },
+    "story/ghost.en.v1.md": {
+      "version": "v1",
+      "sha256": "107f05c854231a14177a52f7a91591eb3ca16e63bd6dc353a0157265cd4cbff6"
+    },
+    "story/ghost.vi.v1.md": {
+      "version": "v1",
+      "sha256": "6987c6e32154dcd3b7d0589547e0b09146baca64487d1a3b8354ac985bce0724"
+    },
+    "story/spiritual.en.v1.md": {
+      "version": "v1",
+      "sha256": "7daf1fcdcf5dd9c3c89eb22f341babd4f260e6571ad1cf88e8a958c65abf698e"
+    },
+    "story/spiritual.vi.v1.md": {
+      "version": "v1",
+      "sha256": "3ea7b6a7e0a0f0b5c51694ecc84648c4df44eea42d1fe0017042c799e0ea54a7"
+    },
+    "story/true_crime.en.v1.md": {
+      "version": "v1",
+      "sha256": "352905ef4fdf728b99606a92cc892ac57a8c44faf5761b7e1fab2fbd0455c446"
+    },
+    "story/true_crime.vi.v1.md": {
+      "version": "v1",
+      "sha256": "6b649c69f38c0c3644a1fc8345f1a921df1fe6cf0eb243b6f647ab795c1f7b8c"
+    },
+    "system/writer.v1.md": {
+      "version": "v1",
+      "sha256": "d4cda88a6ef0a039008ce5d8f0a4f2d62c0bbb0344c2c2d723c31b134d74c27d"
+    }
+  }
+}

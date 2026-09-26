@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "story.v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["title", "hook", "paragraphs", "ending", "description", "tags", "content_warnings", "structure"],
+  "properties": {
+    "title": { "type": "string" },
+    "hook": { "$ref": "#/$defs/segment" },
+    "paragraphs": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/paragraph" } },
+    "ending": { "$ref": "#/$defs/segment" },
+    "description": { "type": "string" },
+    "tags": { "type": "array", "items": { "type": "string" } },
+    "content_warnings": {
+      "type": "array",
+      "items": { "enum": ["violence", "death", "crime", "supernatural", "self_harm_mention", "disturbing"] }
+    },
+    "structure": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sub_genre", "setting", "opening", "twist_type", "narrator_mode"],
+      "properties": {
+        "sub_genre": { "type": "string" },
+        "setting": { "type": "string" },
+        "opening": { "type": "string" },
+        "twist_type": { "type": "string" },
+        "narrator_mode": { "enum": ["first_person", "third_person"] }
+      }
+    }
+  },
+  "$defs": {
+    "segment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["text", "keywords", "fact_refs"],
+      "properties": {
+        "text": { "type": "string" },
+        "keywords": { "type": "array", "items": { "type": "string" } },
+        "fact_refs": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "paragraph": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["beat", "text", "keywords", "fact_refs"],
+      "properties": {
+        "beat": { "enum": ["setup", "build_up", "clue", "twist", "reveal", "aftermath"] },
+        "text": { "type": "string" },
+        "keywords": { "type": "array", "items": { "type": "string" } },
+        "fact_refs": { "type": "array", "items": { "type": "string" } }
+      }
+    }
+  }
+}

@@ -1,0 +1,59 @@
+{
+  "schema_version": "structure-vocab.v1",
+  "topics": {
+    "ghost": {
+      "sub_genre": {
+        "vi": ["truyện ma tâm linh", "ma trong gia đình", "ma học đường", "ma nơi làm việc"],
+        "en": ["quiet haunting", "family haunting", "school haunting", "workplace haunting"]
+      },
+      "setting": {
+        "vi": ["ngôi nhà cũ", "căn hộ thuê", "trường học cũ", "bệnh viện bỏ hoang"],
+        "en": ["old house", "rented apartment", "old school", "abandoned hospital"]
+      },
+      "opening": {
+        "vi": ["một lời kể truyền miệng", "tìm lại đồ vật cũ", "chuyển đến nơi ở mới", "một cuộc điện thoại lúc nửa đêm"],
+        "en": ["a whispered account", "finding an old object", "moving into a new place", "a call at midnight"]
+      },
+      "twist_type": {
+        "vi": ["người kể là nguyên nhân", "người đã chết vẫn còn sống", "lời nguyền có thật", "trùng hợp bị bỏ lỡ"],
+        "en": ["the narrator caused it", "the dead is still alive", "the curse is real", "a coincidence ignored"]
+      }
+    },
+    "spiritual": {
+      "sub_genre": {
+        "vi": ["nhân quả", "luật âm dương", "hồn lìa xác", "trả nghiệp"],
+        "en": ["karma", "the law of the unseen", "soul apart from body", "debt repaid"]
+      },
+      "setting": {
+        "vi": ["miếu nhỏ ven đường", "căn nhà thờ họ", "làng ven sông", "chùa trên núi"],
+        "en": ["roadside shrine", "family chapel", "riverside village", "mountain pagoda"]
+      },
+      "opening": {
+        "vi": ["một lời hứa chưa trả", "giấc mơ lặp lại", "lời dặn của người đã khuất", "một vật thờ bị xê dịch"],
+        "en": ["a promise unpaid", "a repeating dream", "a dying person's instruction", "a moved offering"]
+      },
+      "twist_type": {
+        "vi": ["người sống đang trả nợ cho người chết", "điều ước có giá của nó", "người giúp thật ra là người đã khuất", "tha thứ mới là cách trả"],
+        "en": ["the living pays the dead's debt", "the wish has a price", "the helper was the dead", "forgiveness is the repayment"]
+      }
+    },
+    "true_crime": {
+      "sub_genre": {
+        "vi": ["án chưa phá", "án oan", "mất tích bí ẩn", "lừa đảo quy mô"],
+        "en": ["unsolved case", "wrongful conviction", "unexplained disappearance", "large-scale fraud"]
+      },
+      "setting": {
+        "vi": ["thành phố nhỏ", "vùng nông thôn", "khu công nghiệp cũ", "tuyến đường ven biển"],
+        "en": ["small city", "rural area", "old industrial zone", "coastal road"]
+      },
+      "opening": {
+        "vi": ["hồ sơ được mở lại", "lời khai đầu tiên", "một cuộc gọi báo án", "ngày vật chứng được tìm thấy"],
+        "en": ["the file reopened", "the first statement", "a call to report", "the day the evidence was found"]
+      },
+      "twist_type": {
+        "vi": ["nhân chứng chính nói dối", "sai sót trong điều tra ban đầu", "hai vụ án liên quan", "lời khai muộn"],
+        "en": ["the key witness lied", "an error in the first investigation", "two cases connected", "a late statement"]
+      }
+    }
+  }
+}
