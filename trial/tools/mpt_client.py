@@ -567,7 +567,7 @@ def cmd_submit(args, run_dir=None):
         eprint(f"mpt_client.py: body is {len(encoded)} bytes, over the {MAX_BODY_BYTES} cap")
         sys.exit(2)
     os.makedirs(run_dir, exist_ok=True)
-    # The body holds the script: it is written ONLY under $NTS_HOME (D15 S6, T11).
+    # The body holds the script: default run dir is $NTS_HOME/runs (gitignored); an explicit --run-dir inside the repo exits 2 in run_dir_for (D15 S6, T11).
     with open(os.path.join(run_dir, "submit-body.json"), "w", encoding="utf-8") as fh:
         fh.write(json.dumps(body, ensure_ascii=False, indent=2) + "\n")
     key = _key()
