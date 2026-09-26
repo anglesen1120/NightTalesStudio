@@ -54,7 +54,7 @@
 ### Epic 02.1 — Prompt presets (M0)
 
 **02.1.1 Write six presets** — *As the owner I want topic- and language-specific prompts so that stories fit the channel's genre.* Must · L
-- Given the three topics and two languages, When presets are written, Then each defines: narrator persona, structure (hook ≤ 20 s, build-up, twist/reveal, ending line, call to action), tone rules (atmospheric, no gore, no sexual content, no minors in danger details), and length range.
+- Given the three topics and two languages, When presets are written, Then each defines: narrator persona, structure (hook ≤ 20 s, build-up, twist/reveal, ending line, call to action), tone rules (atmospheric, no gore, no sexual content, no detail of minors in danger: nobody under eighteen is shown in a scene of harm or threat, only a brief aftermath the narrator did not see (02 T73)), and length range.
 - Given a Vietnamese preset, When output is produced, Then it is natural spoken Vietnamese (not translated English), with correct diacritics.
 
 **02.1.2 Keywords for images** — *As the pipeline I want 1 keyword phrase per scene so that MPT generates one matching image per keyword ✅.* Must · S
@@ -149,7 +149,7 @@
 
 **02.6.1 Self-review pass** — *As a creator I want the draft checked before I see it so that I spend my time on taste, not on errors.* Must · M
 - Given a generated draft, When the writer finishes, Then `StoryQualityChecker` (local, free: length, hook, repetition, keyword counts, fact-ref validity) runs first, then **one** model call with our own review prompt returns `issues[] { severity: blocking|advisory, kind: objective|taste, paragraph_index, evidence, impact, repair_direction }` (§5.8) and a rubric score per §5.4 dimension; both results are merged into `story_versions.audit_report`. [DECISION] The review call uses the cheapest model that passes the M1 quality check.
-- Given the review checks, Then they cover: preset structure (hook, build-up, reveal, ending), setup before every twist (clues visible earlier), continuity with the series bible, fact refs valid (true crime), tone rules (no gore/sexual content/minors in danger details), written-for-the-ear rules (02.1.5), length range.
+- Given the review checks, Then they cover: preset structure (hook, build-up, reveal, ending), setup before every twist (clues visible earlier), continuity with the series bible, fact refs valid (true crime), tone rules (no gore/sexual content, no detail of minors in danger per 02 T73), written-for-the-ear rules (02.1.5), length range.
 
 **02.6.2 One automatic revision** — *As the platform I want to fix clear errors automatically, but only once, so that cost and drift stay bounded.* Must · S
 - Given ≥ 1 `blocking` + `objective` issue, Then exactly one revision call fixes those issues only, a new `story_versions` row (`source = revised`) becomes current, and the review runs once more for the hints; remaining issues are never auto-revised again.
