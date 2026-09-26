@@ -50,7 +50,7 @@ Only what this story's design depends on; every id is defined in `../README.md` 
 | O5 ✅ | `reasoning.effort` values; **`store` defaults to `true`** → must send `false`. |
 | O9 ✅ | ≥ 1,024-token static prefix first, dynamic data last (the D5 prompt order exists for this). |
 | D3 | `story.v1` shape, the validator rule list, the `body`/`keywords` derivations the hand-off files mirror. |
-| D4 | Tier × language bands, per-tier `max_output_tokens` (short writer 1,500), vi = syllables, ±15 % band. |
+| D4 | Tier × language bands, per-tier `max_output_tokens` (short writer 2,500 — 02 T66), vi = syllables, ±15 % band. |
 | D5 | Catalog paths, closed `{{placeholder}}` list, prompt order, `manifest.json` shape. |
 | D6 | The user message is **one** JSON object with a fixed key set; untrusted data never enters a template. |
 | D7 | Call shape, SDK retries off + one bounded retry, the outcome mapping the harness reproduces. |
@@ -78,11 +78,11 @@ raterId   = r-vi-1 | r-vi-2 | r-en-1 | r-en-2
 storyId   = S01 … S36                                        (blind kit id, shuffled per language)
 ```
 
-`--run-id` overrides the derived id; a rerun of the same cell appends `-r2`, `-r3` (never overwrites a previous run directory). Deterministic ids exist so the matrix is enumerable, resumable and diffable.
+`--run-id` overrides the derived id; a rerun of the same cell appends `-r2`, `-r3` (never overwrites a previous run directory). Deterministic ids exist so the matrix is enumerable, resumable and diffable. `<lang>` is the **brief's own `language` field**, not the `--lang` flag: two briefs files that repeat the ids (`briefs.vi.json` + `briefs.en.json`) therefore enumerate distinct `vi-…` and `en-…` cells, each assembled from its own language's preset and shared blocks, and `--lang` acts only as a filter — with it given, a brief of the other language is skipped with a note (exit 2 when no cell remains). In `--brief-ids` mode an id resolves per file and language, never last-file-wins.
 
 ### 3.2 Files produced by one harness call
 
-`trial/stories/<run_id>/` — six files, exactly:
+`trial/stories/<run_id>/` — **six files when the call succeeded (`outcome=ok`), three when it failed**:
 
 | File | Content |
 |---|---|
@@ -92,6 +92,8 @@ storyId   = S01 … S36                                        (blind kit id, sh
 | `video_script.txt` | `hook.text` + `\n\n` + paragraph texts joined by `\n\n` + `\n\n` + `ending.text` (D3 `body` derivation) → MPT `video_script` (M3). |
 | `video_terms.json` | JSON array of strings: `hook.keywords ++ paragraphs[].keywords ++ ending.keywords`, in order (D3 `keywords` derivation) → MPT `video_terms` (M3). |
 | `metrics.json` | See 3.3. |
+
+A **failed** cell (`provider_unavailable` / `provider_error` / `moderated` / `invalid_output` with no parsed story) writes **three** files — `metrics.json`, `request.json`, `response.json` — so the attempt is still evidence (QA-02D-11). `story.json`, `video_script.txt` and `video_terms.json` exist only when a `story.v1` object was parsed.
 
 ### 3.3 `metrics.json`
 
@@ -148,7 +150,7 @@ Written by 02.1.3: `prompts/fixtures/briefs.{vi,en}.json` + `prompts/fixtures/fa
     "brief": "Two sentences of premise and one line of desired atmosphere.",
     "tier": "standard", "language": "vi", "synthetic": true } ]
 ```
-Three briefs per topic: `b1–b3` = ghost, `b4–b6` = spiritual, `b7–b9` = true_crime; the same nine ids in both languages. The `tier` field is the fixture's intent; the run tier is the CLI flag (T24: `standard`). ⚠️ The true-crime briefs and their fixture fact sheet are **fiction framed as true crime, no real persons, no real incidents** — D11/D13 privacy and 02.8.2's real-person problem; they must be obviously synthetic so the A/B never tests a real person.
+Three briefs per topic: `b1–b3` = ghost, `b4–b6` = spiritual, `b7–b9` = true_crime; the same nine ids in both languages — the `language` field (not `--lang`) is what names a cell's language and its `vi-…`/`en-…` run-id prefix, so the same id in the two files is two cells. The `tier` field is the fixture's intent; the run tier is the CLI flag (T24: `standard`). ⚠️ The true-crime briefs and their fixture fact sheet are **fiction framed as true crime, no real persons, no real incidents** — D11/D13 privacy and 02.8.2's real-person problem; they must be obviously synthetic so the A/B never tests a real person.
 
 ### 3.6 Git tracking boundary [DECISION]
 
@@ -203,7 +205,7 @@ USD budget for the A/B — from O3 rates and the D4 `max_output_tokens` [INFEREN
 
 | Cells | Input ≈ | Output ≤ | luna | sol |
 |---|---|---|---|---|
-| 1 story, `short` | 4,000 tok | 1,500 tok | 4,000×0.10/1e6 + 1,000×0.50/1e6 ≈ **$0.0009** | 4,000×2/1e6 + 1,000×10/1e6 ≈ **$0.018** |
+| 1 story, `short` | 4,000 tok | 2,500 tok (02 T66) | 4,000×0.10/1e6 + 1,000×0.50/1e6 ≈ **$0.0009** | 4,000×2/1e6 + 1,000×10/1e6 ≈ **$0.018** |
 | 1 story, `standard` | 4,000 tok | 6,000 tok | 4,000×0.10/1e6 + 2,000×0.50/1e6 ≈ **$0.0014** | 4,000×2/1e6 + 2,000×10/1e6 ≈ **$0.028** |
 | 1 story, `long` | 4,000 tok | 10,000 tok | ≈ **$0.0019** | ≈ **$0.05** |
 | 18 sol `standard` | — | — | — | ≈ **$0.5** |
@@ -229,14 +231,14 @@ Total ≈ **$0.6–1.5** [INFERENCE]; worst case with 6,000-token outputs and no
 The story's verification is empirical: the artifacts and the printed verdict are the evidence, and the checks below are run by hand or by the harness's own `--check` paths (no test project is added — this is a spike, and D20's `TestKit` is for the M1 product code).
 
 T0 checks (throwaway validator + harness):
-- `story_harness.py --help` exits 0 and documents `--preset --brief --lang --model --tier --out --dry-run --matrix --max-usd --only-missing --sleep-ms`.
+- `story_harness.py --help` exits 0 and documents `--preset --brief --brief-id --brief-ids --briefs-file --lang --model --tier --out --run-id --dry-run --matrix --force --max-usd --only-missing --sleep-ms --timeout --key-service --tap-base-url --validate-only`.
 - `--dry-run` writes `request.json` and makes **no** network call; `grep -c Authorization trial/stories/<run_id>/request.json` = 0 and the key is absent from the whole directory.
 - one live `short` run on luna → six files; `metrics.json.outcome == "ok"`, `json_valid == true`, `provider_request_id` non-empty, `cost_usd > 0`.
 - validator: `validate_wellformed_story_returns_no_issues`, `validate_title_over_100_returns_issue`, `validate_keyword_with_person_name_returns_issue`, `validate_too_few_segments_returns_issue`, `validate_markdown_bracket_returns_issue`, `validate_unknown_fact_ref_returns_issue`, `body_join_matches_d3_derivation`, `keywords_order_is_hook_paragraphs_ending`, `tag_total_over_400_returns_issue`.
 - missing preset / missing schema / bad `--model` → exit 2 with a named message (not a traceback).
 
 T1 checks:
-- `ls trial/stories | wc -l` = 48 (36 rated `standard` + 12 unrated sweep cells) and every directory has exactly 6 files; `grep -L '"json_valid": true' */metrics.json` lists the invalid ones (expected 0; anything listed is recorded in the REPORT, not hidden).
+- `ls trial/stories | wc -l` = 48 (36 rated `standard` + 12 unrated sweep cells); every `outcome=ok` directory has exactly 6 files and every failed cell has exactly 3 (`metrics.json`, `request.json`, `response.json`) — the plan §3.2 contract for a failure, not a defect (QA-02D-11); `grep -L '"json_valid": true' */metrics.json` lists the invalid ones (expected 0; anything listed is recorded in the REPORT, not hidden).
 - blind leak: `grep -riE 'luna|sol|ghost|spiritual|true_crime|run_id' trial/ab/r1/stories/` returns **nothing**.
 - `key.csv` row count = 36 (rated cells only — the sweep never enters the kit), one per story id; story ids unique.
 - `scores.csv`: for each (story, language) the native rater count is 2; `factual_care` rows exist only for `true_crime`.
@@ -266,14 +268,20 @@ Rater effort sits inside `T1`'s day but needs 4 people for ≈ 1 h each at `stan
 
 ### Open items for the TL
 
-Decided in README §10 and applied here: sol allow-listed for the T1 window only (T23/CR-17) · rated tier `standard` (T24) · `trial/stories/**` untracked / `trial/ab/**` tracked, `n=1` blocks the freeze, synthetic true-crime briefs with `factual_care` excluded from D15, `--max-usd 5` hard stop with no paging (T25) · `words_per_minute_measured = null` accepted, D4 rates stay defaults until 01.3.1-T4 (T26) · manifest keys relative to `prompts/`, `fixtures/**`+`tools/**`+`REFERENCES.md` excluded (T27) · **briefs fixtures + the true-crime fixture fact sheet authored by T0** so preset acceptance runs first, `rubric.md` stays in T1 (T27 as amended by T34) · **the 12-cell unrated per-tier sweep is accepted** (T37).
+Decided in README §10 and applied here: sol allow-listed for the T1 window only (T23/CR-17) · rated tier `standard` (T24) · `trial/stories/**` untracked / `trial/ab/**` tracked, `n=1` blocks the freeze, synthetic true-crime briefs with `factual_care` excluded from D15, `--max-usd 5` hard stop with no paging (T25) · `words_per_minute_measured = null` accepted, D4 rates stay defaults until 01.3.1-T4 (T26) · manifest keys relative to `prompts/`, with `fixtures/**`+`tools/**`+`manifest.json`+`REFERENCES.md`+`**/.gitkeep`+dotfiles excluded (T27, 02 T75) · **briefs fixtures + the true-crime fixture fact sheet authored by T0** so preset acceptance runs first, `rubric.md` stays in T1 (T27 as amended by T34) · **the 12-cell unrated per-tier sweep is accepted** (T37).
 
 Still open:
 
 1. **[OPEN] Rater workload and the blocking rule.** At `standard` each rater reads 18 stories of ~1,000 tokens (≈ 1 h per rater, ≈ 4 h across 4). T25's rule that an `n=1` decisive cell blocks the freeze is implemented as `verdict_ready=false` → `DECISION NOT READY` with no freeze, which makes rater availability the story's real schedule risk — confirm no relaxation.
 2. **[OPEN] `$NTS_HOME/current_run` may not fit an A/B campaign id** (01 D10's shape is `YYYYMMDD-HHMM-<lang>-<aspect>-<nn>`). The plan accepts the tap writing to `no-run` and relies on `metrics.json` for attribution; confirm that is acceptable trial evidence, or define the campaign id shape with 01.
-3. **[OPEN] `prompts/tools/**` is excluded from the manifest by T27** but does not exist in the D5 catalog. Nothing to do now — flag it if a `prompts/tools/` directory is ever added, so the exclusion stays deliberate rather than accidental.
+3. **[OPEN] `prompts/tools/**` and the other non-runtime paths are excluded from the manifest by T27/T75** but no `prompts/tools/` exists and there is **no** helper there (02 T50) — the manifest is regenerated with `sha256sum` or `trial/tools/freeze_manifest.py`. Keep the exclusion so an accidentally created directory stays untracked.
 4. **[OPEN] The fixture fact sheet makes `factual_care` scorable in M0, while T25 keeps it out of the D15 comparison.** That is coherent (M0 has no sourced sheet, so the fixture cannot test source fidelity), but if the TL wants `factual_care` to weigh on the model choice, the D4/T25 exclusion must be revisited before T2 freezes.
+5. **[OPEN] Relay behaviour is an environment risk for T1 (owner: the relay, not T0/T1 code).** From the phase-D QA run (`.nts/qa-02d/report.json` `environment_findings`, QA-02D-7, PERF-02D-2):
+   - **Latency is bimodal** — fast cells 17–58 s, slow cells 102–181 s, with 3×502 at 154–181 s; 8 of 24 paid calls exceeded the 90 s writer timeout. The relay **billed every abandoned and 502 call anyway** (~$0.010 of the $0.0377 run; 12 of 28 `/responses` lines were billed after the client abort, ≈ 40 % of spend). T1 must not start the batch while the relay is in this state and must set `--timeout` from a measured tail (README T91), and the report must name the timeout/attribution differences rather than assert cell-sum == tap-sum (CR-25).
+   - **The relay rewrites request fields.** Every `response.json` echoes a relay-side `safety_identifier` and `prompt_cache_key` and `max_output_tokens: null`, although `request.json` sent `sha256("nts-m0-harness")`, `write_story:<preset>` and 2,500/6,000/10,000. So the D4/T66 caps are request-side only: `incomplete_details.reason = max_output_tokens` can never fire live, and cap-cut is unit-tested only (`classify_maps_cap_cut_refusal_and_429_to_d7_outcomes`). T1's REPORT states this.
+   - **The relay injects an `instructions` block.** Each response carries an `instructions` field of ~43,728 chars: our ~22,640-char head plus **~21 k chars of agent operating instructions the harness never sent** (PerfRevD). 43,728 chars ≈ the billed `input_tokens` (10,518–11,979), i.e. roughly half of every billed prompt is injected text charged at our rate — billed input ≈ 2.5× our prompt. Consequence: the D4 token bands and the 12.1.1 price bound are computed on *our* prompt, while the bill carries the relay's; the harness's unpriced-cell bound uses the full request-body **bytes** (P6 rule, PERF-02D-2) so the guard is not understated by the injection, and T2's hand-off numbers must record the observed billed input (not the estimate).
+   - **`trial/prices.json` is incomplete** — no `gpt-6-sol` row and no `gpt-6-luna` `cache_write` rate (QA-02D-18). `--matrix` exits 2 at the rates pre-flight before any call, and a sol cell cannot be priced. Owner 01.3.1-T1; requested as CR-27, with the official price source still [OPEN].
+6. **[OPEN] Tap attribution needs the 01.3.1-T2 change (CR-25).** The tap attributes a `/responses` call to whichever `current_run` holds the lock when the response *completes*, so an abandoned call lands on a later run and any concurrent probe to `:8002` is logged into the held run (QA-02D-8, QA-02D-17). Until the tap resolves the run at request time (or honours `X-NTS-Run-Id`), UC2's "token sums match the tap JSONL" cannot be asserted for a batch containing a timeout; T1 prints the per-run difference. The lock itself is made noclobber-atomic in the harness and requested for `start_run.sh` (SEC-02D-4, CR-26); the `prices.json` sol + luna `cache_write` rows are requested as CR-27 (QA-02D-18).
 
 ## 11. Rollout
 

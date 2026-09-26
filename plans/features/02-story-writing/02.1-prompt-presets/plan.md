@@ -34,7 +34,7 @@
 | `fixtures/rubric.md` | 02.1.3-T1 (**T35**) |
 | `fixtures/injection/*` | 02.2.3-T2 (**T27**) |
 | `fixtures/seeded-defects/*` | 02.6.1-T2 (**T27**) |
-| `manifest.json` entries for `fixtures/**`, `tools/**`, `REFERENCES.md` | excluded from the release manifest by **T27** — nothing to do |
+| `manifest.json` entries for `fixtures/**`, `tools/**`, `manifest.json`, `REFERENCES.md`, `**/.gitkeep`, dotfiles | excluded from the release manifest by **T27/T75** — nothing to do |
 | Any C# file, migration, route, build or test project | — |
 
 **Definition of done for the feature.** All 6 `topic × language` presets and the shared rule files (`structure-vocab.v1.json`, `preset-spec.v1.md`, `keyword-rules.v1.md`, `ear-rules.{vi|en}.v1.md`, `overused.{vi|en}.v1.txt`) plus `system/writer.v1.md` exist with valid front-matter, the manifest lists every loadable file with a sha256 (keys relative to `prompts/`, T27), and the M0 harness (02.1.3-T0) returns **schema-valid** `story.v1` output for each preset's **own 3 topic briefs** (6 presets × 3 briefs = 18 runs, T34; the 36-story A/B in 02.1.3-T1 is the follow-on measurement). Nothing in this feature calls a provider.
@@ -47,14 +47,14 @@
 |---|---|---|
 | F07 | Length is unspecified per `length_tier × language`; for vi a "word" is a syllable | T0 fixes the D4 table verbatim in the spec; every preset states the tier band it targets by reference, never by prose numbers |
 | F08 | `hook`/`ending` have no keywords, no beats, no `schema_version`; strict-mode schemas cannot express string length limits | T0 writes the schema **without** `maxLength`/`minLength` and states that the validator (02.2.1-T1) enforces lengths; `beat` and `structure` exist in the schema |
-| F09 | Uncontrolled keyword totals blow the `ceil(D × 6)` cap (P5) | D4 segment counts derive from K = 6; `keyword-rules.v1.md` states the cap and that the 03.2.2 linter enforces it |
+| F09 | Uncontrolled keyword totals blow the `ceil(D × 6)` cap (P5) | D4 segment counts derive from K = 6; `keyword-rules.v1.md` states the cap and `KeywordRules` (built by 02.2.1-T1, reused by 02.3.4 and 03.2.2) enforces it (**T85**) |
 | F22 | `prompt_version` covers 3–5 files; disk loading drifts between nodes | T0 defines the composite `prompt_version` format and the per-file `version`; T1…T3 stamp each file's front-matter `version` |
 | F30 | The prompt catalog was missing from the estimate (now in the 4.25 d) | §10 re-estimate below |
 | F37 | Keyword language was open; 03 FR-03-3 fixes **English** | Closed: keyword rules and examples are English-only; presets say so |
 | V1 | vi writes each syllable as its own token | All vi counts are syllables; the token rule is D4's NFC + Unicode-whitespace split |
 | P5 | `ceil(D × 6)` keyword cap, K = 6 images/min | Segment counts in D4 are the keyword budget |
 | O7 | `omni-moderation-latest` is free; category list | Presets must avoid generating the blocking categories, but moderation is not this feature's job — the tone rules are the *authoring* side of the same line |
-| O9 | Prompt caching needs a static ≥ 1,024-token prefix, instructions first, data last | T0 fixes the file order `system → preset → shared rules → data object`; the writer system prompt is authored long enough (⚠️ measured in 02.1.3-T0) |
+| O9 | Prompt caching needs a static ≥ 1,024-token prefix, instructions first, data last | T0 fixes the file order `system → preset → shared rules → data object`; the ≥ 1,024 threshold applies to the whole cacheable head (strict schema + system prompt + preset + shared blocks), not to `writer.v1.md` alone (02 T67; measured in 02.1.3-T0) |
 | D16 | 7-dimension rubric with anchors in `prompts/fixtures/rubric.md` | T0's preset spec lists the rubric dimensions the presets must be able to satisfy (hook, pacing, atmosphere without gore, natural language, originality, factual care, length fit); the rubric file itself is 02.1.3-T1 |
 | FR-02-11 | Prompts are original work; external projects inspire ideas only, listed in `prompts/REFERENCES.md` | 02.1.4-T1 |
 
@@ -95,7 +95,7 @@ target_tier: all        # all | short | standard | long
 }
 ```
 
-- **T27:** keys are **relative to `prompts/`** (e.g. `system/writer.v1.md`), matching the embedded `LinkBase="Prompts"`. `fixtures/**`, `tools/**` and `REFERENCES.md` are **excluded** from the release manifest — the fixture files this feature's presets depend on are therefore never listed here.
+- **T27:** keys are **relative to `prompts/`** (e.g. `system/writer.v1.md`), matching the embedded `LinkBase="Prompts"`. `fixtures/**`, `tools/**`, `manifest.json`, `REFERENCES.md`, `**/.gitkeep` and dotfiles are **excluded** from the release manifest (T27/T75) — the fixture files this feature's presets depend on are therefore never listed here.
 
 ### 3.3 `shared/structure-vocab.v1.json` (owned by 02.1.1-T0; consumed by the validator, D3)
 
@@ -182,7 +182,7 @@ None. The only human-visible surface is the repository:
 | Hangfire / Worker / Api | Untouched |
 | `PromptCatalog` (02.2.3-T1) | Consumer; D5's startup validation is the enforcement of §3.1/§3.2/§5.2 |
 | `StoryDraftValidator` (02.2.1-T1) | Consumer of §3.3 (structure vocab) and of the validator-rules list in the preset spec |
-| `KeywordRules` (03.2.2 via CR-5) | Consumer of `keyword-rules.v1.md`; the rule text must match 03 FR-03-3 exactly (English, 3–12 words, no person names, no gore list) |
+| `KeywordRules` (built by 02.2.1-T1, reused by 03.2.2 via CR-5) | Consumer of `keyword-rules.v1.md`; the rule text must match R1–R13 (**T76–T81**) and 03 FR-03-3 (English, 3–12 words, no person names, no gore or weapon/self-harm/nudity/minor imagery, no real place identifier, no instruction) |
 | 02.6.1 review prompt | Consumer of the ear-rule questions and the overused lists (02.1.5-T1 hands them over as text, does not write the review prompt) |
 
 ---
@@ -191,10 +191,10 @@ None. The only human-visible surface is the repository:
 
 | Concern | Rule |
 |---|---|
-| Untrusted data (D6, F21) | Prompt files contain **no** untrusted text and no user data. Every preset must state that all string values in the data object are material, never instructions. Injection fixtures are 02.2.3-T2, but the preset wording is authored here |
+| Untrusted data (D6, F21) | Prompt files contain **no** untrusted text and no user data. Every preset must state the two-tier rule: control keys are followed, every material string is written about and never an instruction (02 T69). Injection fixtures are 02.2.3-T2, but the preset wording is authored here |
 | Prompt injection via brief/bible/facts/sources | The preset must not instruct the model to follow any instruction found in data; the data object is JSON-encoded |
 | Likeness / real persons (FR-02-3, 03 FR-03-3) | Keyword rules forbid person names and likeness; true-crime presets forbid naming living private individuals in scene prompts |
-| Tone line (02.1.1 story text) | No gore, no sexual content, no minors-in-danger detail. Authored as a tone rule in every preset; enforced by moderation (D12) and the validator |
+| Tone line (02.1.1 story text) | No gore, no sexual content, no minors in danger on screen (02 T73). Authored as a tone rule in every preset; enforced by moderation (D12) and the validator |
 | Copyleft / copyright (I1, FR-02-11) | REFERENCES.md + PR checkbox; InkOS (AGPL-3.0) ideas only, never text or translation |
 | Secrets | None. No key, no token, no `.env`; the harness reads its own key (01) |
 | PII in fixtures | Fixture briefs are invented; no real names, no real addresses, no real incidents |
@@ -250,7 +250,7 @@ Matches README §9 (`02.1 presets 3.25 → 4.25`, "+preset spec + schema + lengt
 
 ### Open items for the TL
 
-- **[RESOLVED by T34–T36 — recorded, no action left in this feature]** `structure-vocab.v1.json` is owned by 02.1.1-T0 (02.8.4 consumes it, does not edit it in P) · the runtime authority for `max_output_tokens` is `price_versions.limits` only (the preset spec's table is documentation) · `rubric.md` is authored once by 02.1.3-T1 · overused phrases feed the review prompt only, no local linter in P · true-crime `content_warnings` always include `crime` · if the writer static prefix measures < 1,024 tokens in 02.1.3-T0, move shared rules into `system/writer.v1.md` (D5 order stays system → preset → shared → data) · briefs are 9 per language = 3 per topic, each preset's acceptance uses its topic's 3 briefs · the briefs **and** the true-crime fixture fact sheet are owned by 02.1.3-T0, so the preset acceptance gate and its fixtures land together (the former P2 → AB cycle is closed).
+- **[RESOLVED by T34–T36 — recorded, no action left in this feature]** `structure-vocab.v1.json` is owned by 02.1.1-T0 (02.8.4 consumes it, does not edit it in P) · the runtime authority for `max_output_tokens` is `price_versions.limits` only (the preset spec's table is documentation) · `rubric.md` is authored once by 02.1.3-T1 · overused phrases feed the review prompt only, no local linter in P · true-crime `content_warnings` always include `crime` · **superseded by 02 T67:** the cacheable head (schema + system + preset + shared blocks) must reach ≥ 1,024 tokens — `writer.v1.md` alone (~765) is fine, and shared rules are **not** moved into the system prompt (D5 order stays system → preset → shared → data) · briefs are 9 per language = 3 per topic, each preset's acceptance uses its topic's 3 briefs · the briefs **and** the true-crime fixture fact sheet are owned by 02.1.3-T0, so the preset acceptance gate and its fixtures land together (the former P2 → AB cycle is closed).
 - **[OPEN] vi/en speaking rate (D4) — T26 ruling.** vi 160 / en 145 tokens/min are ⚠️ defaults; 02.1.1-T0 writes the table with those numbers and marks them as config-overridable (`Story:Length:Rate:{lang}`). Per **T26** the D4 rates stay the defaults until 01.3.1-T4 lands (`words_per_minute_measured = null` is accepted for the M0 A/B); no rate measurement is in scope here.
 - **[OPEN] Keyword cap inputs (02.1.2-T1).** 03.2.1's `ceil(D × 6)` and K = 6 (P5) should be re-confirmed against plan 03 at implementation time; the gore word list (rule R6) belongs to the Domain implementation (CR-5) and is linked, never duplicated here.
 - **Size note.** `plan.md` is 21.2 KB (target 12–20) and the four content-heavy task files exceed 4–8 KB (02.1.1-T0 15.0, 02.1.1-T3 11.3, 02.1.2-T1 10.6, 02.1.5-T1 12.4) because the assignment requires the full strict `story.v1` schema text, 30 keyword good/bad pairs and 60 overused-phrase lines inline; no required content was trimmed to hit the byte target.
