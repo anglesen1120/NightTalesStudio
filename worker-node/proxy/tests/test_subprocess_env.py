@@ -1,4 +1,4 @@
-"""D13/F-ENV: no ffmpeg child may inherit a proxy credential.
+"""D13.1 (04 README): no ffmpeg child may inherit a proxy credential.
 
 The proxy process holds ``PROXY_API_KEY`` and ``VIENEU_API_KEY`` in its own
 environment; both spawn sites (the D4 encoder in ``transcode.Mp3Encoder`` and

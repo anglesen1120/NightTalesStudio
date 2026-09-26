@@ -15,11 +15,13 @@ from contextlib import suppress
 _STDERR_LIMIT = 8192
 _READ_CHUNK = 16384
 
-# F-ENV/D13: the proxy process holds PROXY_API_KEY and VIENEU_API_KEY in its
-# environment; ffmpeg must never inherit them (or any other credential). The
-# child env is built from this allow-list only, so a secret cannot leak by
-# accident — not even under a name that no key/token/secret/password regex
-# would have matched.
+# D13.1 (04 README §3): the proxy process holds PROXY_API_KEY and VIENEU_API_KEY
+# in its environment; ffmpeg must never inherit them (or any other credential).
+# The child env is built from this allow-list only — allow-list, never a
+# deny-list — so a secret cannot leak by accident, not even under a name that no
+# key/token/secret/password regex would have matched. `health.py` imports
+# `child_env` from here; `tools/audition.py` mirrors this list and must stay
+# equal to it (equality test, code review L-1).
 _CHILD_ENV_KEYS = ("PATH", "HOME", "LANG", "LC_ALL", "TMPDIR")
 
 

@@ -29,18 +29,23 @@ import sys
 import time
 
 
+USAGE = (
+    "usage: (cd $NTS_HOME/src/mpt && .venv/bin/python "
+    "<repo>/trial/tools/bench_proxy_mpt.py <fixture.txt> <voice> <out.mp3>)"
+)
+
+
 def fail_usage(msg: str) -> int:
     print(f"bench_proxy_mpt: {msg}", file=sys.stderr)
-    print(
-        "usage: (cd $NTS_HOME/src/mpt && .venv/bin/python "
-        "<repo>/trial/tools/bench_proxy_mpt.py <fixture.txt> <voice> <out.mp3>)",
-        file=sys.stderr,
-    )
+    print(USAGE, file=sys.stderr)
     return 2
 
 
 def main(argv: list[str]) -> int:
-    if len(argv) != 4 or argv[1] in ("-h", "--help"):
+    if len(argv) >= 2 and argv[1] in ("-h", "--help"):
+        print(USAGE)  # L-3: --help to stdout, exit 0 (01 D9)
+        return 0
+    if len(argv) != 4:
         return fail_usage("expected exactly three arguments")
 
     fixture_path, voice, out_path = argv[1], argv[2], argv[3]
