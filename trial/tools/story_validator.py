@@ -217,8 +217,8 @@ def validate(story: dict, tier: str, lang: str, limits: dict) -> list[dict]:
     segment_count = len(paragraphs) + 2
     if segments:
         # T99 (owner 2026-09-26): segment count is advisory in the M0 trial
-        # validator, pending the post-A/B D4 band calibration; LENGTH.v1.json
-        # values are unchanged.
+        # validator; the band values themselves are the T103 per-language
+        # bands in LENGTH.v1.json.
         if not (int(limits["min_segments"]) <= segment_count <= int(limits["max_segments"])):
             add("segment_count_out_of_range", ADVISORY, "meta",
                 f"{segment_count} segments, D4 band {limits['min_segments']}-{limits['max_segments']} (advisory, 02 T99)")
@@ -236,8 +236,8 @@ def validate(story: dict, tier: str, lang: str, limits: dict) -> list[dict]:
     minimum = int(limits["min_tokens"])
     maximum = int(limits["max_tokens"])
     # T99 (owner 2026-09-26): length is advisory in the M0 trial validator —
-    # the D4 bands are unchanged but unenforced pending the post-A/B
-    # calibration decision; both over- and under-length are reported, not blocked.
+    # over- and under-length are reported, not blocked; the bands are the
+    # T103 per-language values in LENGTH.v1.json.
     if body_tokens < minimum * 0.85 or body_tokens > maximum * 1.15:
         add("length_out_of_range", ADVISORY, "meta",
             f"{body_tokens} tokens, D4 {minimum}-{maximum}, >15% outside (advisory, 02 T99)")

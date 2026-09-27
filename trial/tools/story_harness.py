@@ -72,6 +72,8 @@ DEFAULT_PRICES = REPO_ROOT / "trial" / "prices.json"
 DEFAULT_KEY_SERVICE = "nts.openai.story"
 DEFAULT_TAP_BASE_URL = "http://127.0.0.1:8002/v1"
 
+# `gpt-6-sol` stays on the story allow-list only for the 02.1.3-T1 A/B window
+# (02 CR-27, owner 2026-09-28; relay-side allow-list per 01 D7).
 MODELS = {"gpt-6-luna": "luna", "gpt-6-sol": "sol"}
 TIERS = ("short", "standard", "long")
 LANGS = ("vi", "en")
@@ -568,8 +570,7 @@ def require_call_rates(model: str, rates: dict, prices_path: Path) -> dict:
     zero in the cost."""
     rate = rates.get(model)
     if not rate:
-        fail(f"{prices_path} has no rates for {model}; add the O3 row before calling "
-             f"(gap: prices.json currently has no gpt-6-sol entry)")
+        fail(f"{prices_path} has no rates for {model}; add the O3 row before calling")
     missing = [key for key in RATE_KEYS if key not in rate]
     if missing:
         fail(f"{prices_path} rates for {model} are missing {', '.join(missing)}")

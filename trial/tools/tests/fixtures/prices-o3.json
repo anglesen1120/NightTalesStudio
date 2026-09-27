@@ -3,7 +3,7 @@
   "checked_at": "2026-09-26",
   "currency": "USD",
   "unit": "per_1m_tokens",
-  "note": "Test-only O3 rates (01 README O3). The real file is trial/prices.json, which today has no gpt-6-sol row and no cache_write rate for luna; the harness never embeds or defaults a rate, so the tests carry their own copy.",
+  "note": "Test-only O3 rates (01 README O3), matching the rows added to trial/prices.json on 2026-09-28 (02 CR-27); the harness never embeds or defaults a rate, so the tests carry their own copy.",
   "models": {
     "gpt-6-luna": {
       "kind": "chat",

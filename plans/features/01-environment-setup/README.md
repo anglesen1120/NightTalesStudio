@@ -56,7 +56,7 @@ Upstream code was read on 2026-09-23 at the default branch; every fact MUST be r
 | O5 | GPT Image models: "you **may** need API Organization Verification" ⚠️ (plan for it) | image-generation guide |
 | O6 | Images `quality` default **`auto`** when omitted (flare also accepts `xhigh`, `max`); `moderation` `auto`/`low`; `usage` = `input_tokens{text,image}`, `output_tokens`, `total_tokens` (may be absent — handle) ✅ | images API reference |
 | O7 | Usage/Costs APIs need an **Admin key**; costs only in 1-day buckets ✅ | admin usage API reference |
-| O8 | `gpt-image-2.5-flare`: text input $5/1M, image input $8/1M, image output $30/1M; Tier 1 = **5 images/min** ⚠️ priced on `gpt-image-2.5-flare` (superseded by `gpt-image-2`, DEC-11); relay price/rate [OPEN]. `gpt-6-luna`: $0.10 in / $0.50 out per 1M ✅ | pricing page, model page |
+| O8 | `gpt-image-2.5-flare`: text input $5/1M, image input $8/1M, image output $30/1M; Tier 1 = **5 images/min** ⚠️ priced on `gpt-image-2.5-flare` (superseded by `gpt-image-2`, DEC-11); relay price ✅ **184 VND/image** flat (owner 2026-09-28, 02 CR-27; ≈ $0.0072 at SBV 25,641 VND/USD, `trial/prices.json`; CRV-0928-5), relay rate re-check [OPEN]. `gpt-6-luna`: $0.10 in / $0.50 out per 1M ✅ | pricing page, model page |
 
 ## 2. Findings
 

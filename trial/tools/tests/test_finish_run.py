@@ -331,6 +331,143 @@ class TapTests(unittest.TestCase):
         # (2 x 6600 x 5 + 0 x 8 + 254 x 30) / 1e6
         self.assertEqual(cols2["image_cost_usd"], "0.073620")
 
+    def test_per_image_vnd_pricing_relay_model(self):
+        # Owner 2026-09-28: gpt-image-2 on the DEC-9 relay is billed flat
+        # 184 VND/image (no dashboard), converted at fx_vnd_per_usd.
+        # The fixture lines are via=responses with no O6 input split: a flat
+        # per-image rate needs neither, so cost must be numeric, not
+        # n/a:no-price and not n/a:usage-split-absent.
+        prices = {"models": {"gpt-image-2": {"kind": "image",
+                                             "unit": "per_image",
+                                             "currency": "VND",
+                                             "per_image": 184}},
+                  "fx_vnd_per_usd": {"value": 25641}}
+        with tempfile.TemporaryDirectory() as tmp:
+            pp = Path(tmp) / "prices.json"
+            pp.write_text(json.dumps(prices), encoding="utf-8")
+            cols, _ = fr.aggregate_tap(
+                FIXTURES / "openai_usage-relay-split-absent.jsonl",
+                pp, "mpt", False)
+        self.assertEqual(cols["image_count"], "2")
+        self.assertEqual(cols["image_cost_usd"], f"{2 * 184 / 25641:.6f}")
+        self.assertEqual(cols["image_cost_per_image_usd"],
+                         f"{184 / 25641:.6f}")
+
+    def test_split_less_per_image_line_does_not_block_token_line(self):
+        # QA-0928-3: a split-less per_image line mixed with a token-priced
+        # line that carries the full O6 split is fully priceable.
+        prices = {"models": {"gpt-image-2": {"kind": "image",
+                                             "unit": "per_image",
+                                             "currency": "VND",
+                                             "per_image": 184},
+                             "gpt-image-2.5-flare": {
+                                 "kind": "image", "text_input": 5.0,
+                                 "image_input": 8.0, "image_output": 30.0}},
+                  "fx_vnd_per_usd": {"value": 25641}}
+        lines = (FIXTURES / "openai_usage-relay-split-absent.jsonl"
+                 ).read_text(encoding="utf-8").splitlines()
+        rows = [json.loads(lines[0]), json.loads(lines[1])]
+        rows[1]["model"] = "gpt-image-2.5-flare"
+        rows[1].pop("via")
+        rows[1]["usage"]["input_tokens_details"] = {
+            "text_tokens": 20, "image_tokens": 300}
+        with tempfile.TemporaryDirectory() as tmp:
+            pp = Path(tmp) / "prices.json"
+            pp.write_text(json.dumps(prices), encoding="utf-8")
+            p = Path(tmp) / "u.jsonl"
+            p.write_text("\n".join(json.dumps(d) for d in rows) + "\n",
+                         encoding="utf-8")
+            cols, _ = fr.aggregate_tap(p, pp, "mpt", False)
+        expected = 184 / 25641 + (20 * 5 + 300 * 8 + 117 * 30) / 1e6
+        self.assertEqual(cols["image_cost_usd"], f"{expected:.6f}")
+        self.assertEqual(cols["image_input_text_tokens_total"],
+                         "n/a:usage-split-absent")
+
+        rows[1]["usage"]["input_tokens_details"] = {"cached_tokens": 0}
+        with tempfile.TemporaryDirectory() as tmp:
+            pp = Path(tmp) / "prices.json"
+            pp.write_text(json.dumps(prices), encoding="utf-8")
+            p = Path(tmp) / "u.jsonl"
+            p.write_text("\n".join(json.dumps(d) for d in rows) + "\n",
+                         encoding="utf-8")
+            cols, _ = fr.aggregate_tap(p, pp, "mpt", False)
+        self.assertEqual(cols["image_cost_usd"], "n/a:usage-split-absent")
+
+    def test_per_image_line_without_usage_is_still_priced(self):
+        # CRV-0928-3: a per_image rate needs request.n only; usage=null must
+        # not n/a col 17, and tap_day_cost must count the line.
+        prices = {"models": {"gpt-image-2": {"kind": "image",
+                                             "unit": "per_image",
+                                             "currency": "VND",
+                                             "per_image": 184}},
+                  "fx_vnd_per_usd": {"value": 25641}}
+        lines = (FIXTURES / "openai_usage-relay-split-absent.jsonl"
+                 ).read_text(encoding="utf-8").splitlines()
+        rows = [json.loads(lines[0]), json.loads(lines[1])]
+        rows[1]["usage"] = None
+        with tempfile.TemporaryDirectory() as tmp:
+            pp = Path(tmp) / "prices.json"
+            pp.write_text(json.dumps(prices), encoding="utf-8")
+            run = Path(tmp) / "runs" / "r1"
+            run.mkdir(parents=True)
+            p = run / "openai_usage.jsonl"
+            p.write_text("\n".join(json.dumps(d) for d in rows) + "\n",
+                         encoding="utf-8")
+            cols, _ = fr.aggregate_tap(p, pp, "mpt", False)
+            day = fr.tap_day_cost(Path(tmp) / "runs", pp, "2026-09-26")
+        self.assertEqual(cols["image_output_tokens_total"],
+                         "n/a:usage-absent")
+        self.assertEqual(cols["image_cost_usd"], f"{2 * 184 / 25641:.6f}")
+        self.assertAlmostEqual(day, 2 * 184 / 25641, places=9)
+
+    def test_per_image_non_finite_fx_or_amount_is_no_price(self):
+        # SEC-0928-2: Infinity/NaN never reach the cost columns.
+        for fx, amount in ((float("inf"), 184), (25641, float("nan")),
+                           (25641, -1)):
+            prices = {"models": {"gpt-image-2": {"kind": "image",
+                                                 "unit": "per_image",
+                                                 "currency": "VND",
+                                                 "per_image": amount}},
+                      "fx_vnd_per_usd": {"value": fx}}
+            with tempfile.TemporaryDirectory() as tmp:
+                pp = Path(tmp) / "prices.json"
+                pp.write_text(json.dumps(prices), encoding="utf-8")
+                cols, _ = fr.aggregate_tap(
+                    FIXTURES / "openai_usage-relay-split-absent.jsonl",
+                    pp, "mpt", False)
+            self.assertEqual(cols["image_cost_usd"], "n/a:no-price",
+                             (fx, amount))
+
+    def test_per_image_vnd_missing_fx_is_no_price(self):
+        # A VND price without fx_vnd_per_usd is unconvertible -> no-price,
+        # never a fabricated 0 or a bare VND number in a USD column.
+        prices = {"models": {"gpt-image-2": {"kind": "image",
+                                             "unit": "per_image",
+                                             "currency": "VND",
+                                             "per_image": 184}}}
+        with tempfile.TemporaryDirectory() as tmp:
+            pp = Path(tmp) / "prices.json"
+            pp.write_text(json.dumps(prices), encoding="utf-8")
+            cols, _ = fr.aggregate_tap(
+                FIXTURES / "openai_usage-relay-split-absent.jsonl",
+                pp, "mpt", False)
+        self.assertEqual(cols["image_cost_usd"], "n/a:no-price")
+        self.assertEqual(cols["image_cost_per_image_usd"],
+                         "n/a:component-na")
+
+    def test_per_image_unknown_model_still_no_price(self):
+        # Unknown image model: the per-image path changes nothing -> no-price.
+        lines = (FIXTURES / "openai_usage-relay-split-absent.jsonl"
+                 ).read_text(encoding="utf-8").splitlines()
+        with tempfile.TemporaryDirectory() as tmp:
+            p = Path(tmp) / "u.jsonl"
+            p.write_text("\n".join(
+                json.dumps({**json.loads(l), "model": "gpt-image-9-unknown"})
+                for l in lines) + "\n", encoding="utf-8")
+            cols, _ = fr.aggregate_tap(p, FIXTURES / "prices-test.json",
+                                       "mpt", False)
+        self.assertEqual(cols["image_cost_usd"], "n/a:no-price")
+
     def test_t_p10_branch_matrix(self):
         # chat-only + mpt: story numeric, image side n/a:no-images
         cols, issues = self.agg("openai_usage-chat-only.jsonl", "mpt")

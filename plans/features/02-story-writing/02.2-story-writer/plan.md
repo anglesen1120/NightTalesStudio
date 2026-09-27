@@ -68,11 +68,11 @@ The validator never throws and never truncates: it returns issues; the job decid
 
 | Tier | vi tokens | en tokens | Segments | writer / review / revision `max_output_tokens` |
 |---|---|---|---|---|
-| `short` | 120–160 | 110–145 | 4–5 | 2,500 / 1,200 / 1,500 |
-| `standard` | 800–1,280 | 725–1,160 | 20–32 | 6,000 / 2,500 / 6,000 |
-| `long` | 1,600–2,400 | 1,450–2,175 | 40–60 | 10,000 / 3,500 / 10,000 |
+| `short` | 195–260 | 150–200 | 4–5 | 2,500 / 1,200 / 1,500 |
+| `standard` | 1,300–2,080 | 1,000–1,600 | 20–32 | 6,000 / 2,500 / 6,000 |
+| `long` | 2,600–3,900 | 2,000–3,000 | 40–60 | 10,000 / 3,500 / 10,000 |
 
-Token rule: NFC-normalise, split on Unicode whitespace, each non-empty token = 1 (vi token = syllable, V1). `Story:Length:Rate:vi` = 160, `:en` = 145 ⚠️ calibrate from 01 `words_per_minute_measured` and 02.1.3. K = 6 → segments ≈ `ceil(D × K ÷ 1.5)` for `standard`/`long`; the `short` row is set by its beat floor (`setup → twist → reveal`, one paragraph each, `reveal` optionally folded into `ending`; 02 T65). `short` writer cap is 2,500 (02 T66).
+Token rule: NFC-normalise, split on Unicode whitespace, each non-empty token = 1 (vi token = syllable, V1). `Story:Length:Rate:vi` = 260 syllables/min, `:en` = 200 words/min — per-language measured rates (02 T103; en ⚠️[INFERENCE], read with vi voice `Hải Đăng`, corroborated by 01.3.1-T4 `wpm 192.5`). K = 6 → segments ≈ `ceil(D × K ÷ 1.5)` for `standard`/`long`; the `short` row is set by its beat floor (`setup → twist → reveal`, one paragraph each, `reveal` optionally folded into `ending`; 02 T65). `short` writer cap is 2,500 (02 T66).
 
 ### 3.4 Data
 
@@ -146,7 +146,7 @@ None. No route, no DTO the UI reads. Per D1 there is **no credits UI in P**; `ge
 Unit (no network). Plan-level contract: **one test per rule id of §3.2 and per outcome of D7**; the exhaustive named lists live in each task file's `## Tests`.
 
 - `StoryDraftValidator` (10) — e.g. `Validate_TitleOver100Chars_TitleTooLong`, `Validate_Tokens15PercentOver_LengthOutOfRange`, `Validate_FactRefNotInApprovedSheet_FactRefUnknown`, `Validate_ValidDraft_NoBlockingIssues`.
-- `DerivedStoryFields` / `KeywordRules` / `LengthTargetResolver` / `TextCostCalculator` — the 3 cost worked examples + the 272K surcharge case; `KeywordRules_ThirteenWordKeyword_Invalid`; `LengthTargetResolver_StandardVi_Returns800To1280And20To32Segments`.
+- `DerivedStoryFields` / `KeywordRules` / `LengthTargetResolver` / `TextCostCalculator` — the 3 cost worked examples + the 272K surcharge case; `KeywordRules_ThirteenWordKeyword_Invalid`; `LengthTargetResolver_StandardVi_Returns1300To2080And20To32Segments`.
 - `PromptCatalog` / `PromptAssembler` — missing preset / sha256 mismatch / unknown placeholder fail at start-up; the data object is a single JSON value; system prompt first, data object last; one test per injection fixture.
 - `OpenAiTextClient` / `UsageMeter` — one test per D7 outcome; `…_429ThenOk_RetriesOnceAndSucceeds`; `UsageMeter_FailedJob_StillWritesRow`.
 

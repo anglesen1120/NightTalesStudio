@@ -6,10 +6,12 @@
 # that the running VieNeu proxy delivers complete, decodable MP3 for the short and
 # 5-minute vi/en fixtures, measures every request against the direct-VieNeu
 # baseline of 01.2.1-T4, and publishes the CR-2 numbers (ttfb_ms, max_gap_ms) plus
-# the NFR-04-3 proxy overhead in trial/baselines/proxy-mac-<YYYYMMDD>.json (the run
-# start date; --out/--force override the name). The baseline also carries the
-# RTF-normalised overhead, the in-request (D7 wall_ms - vieneu_ms) overhead and the
-# direct baseline's voice, so the raw-wall overhead can be read against them.
+# the NFR-04-3 evidence in trial/baselines/proxy-mac-<YYYYMMDD>.json (the run
+# start date; --out/--force override the name). NFR-04-3 gates on the in-request
+# overhead in_request_overhead_pct = median (wall_ms - vieneu_ms)/vieneu_ms*100
+# from the same D7 lines (04 CR-17/T20); the raw-wall overhead_pct, the
+# RTF-normalised overhead and the direct baseline's voice stay in the output as
+# informational, non-gating fields.
 #
 # --inject-failure additionally proves the failure path (D4/F02, M2, M8): VieNeu is
 # killed mid-request, MPT makes three attempts, and the task fails at stage "audio".
@@ -51,7 +53,8 @@ on 127.0.0.1:8001 (start-proxy.sh); with --inject-failure also the MPT API on
   --inject-failure       prove the failure path and run the live T15 checks; SIGKILLs
                          the VieNeu listener mid-request (SIGTERM would let uvicorn
                          finish the stream) and restarts it at the end
-  --direct-baseline <f>  direct-VieNeu baseline JSON used for overhead_pct
+  --direct-baseline <f>  direct-VieNeu baseline JSON used for the informational
+                         overhead_pct/rtf_normalised_overhead_pct fields
                          (default trial/baselines/vieneu-mac-20260925.json, 01.2.1-T4)
   --out <file>           write the baseline to <file> instead of the
                          trial/baselines/proxy-mac-<YYYYMMDD>.json default; refuses
@@ -868,7 +871,7 @@ read -r BENCH_MPT_VERSION BENCH_REQUESTS BENCH_MOVIEPY <<<"$MPT_VER_TSV"
 BENCH_MP3_BITRATE="${MP3_BITRATE:-192k}"
 BENCH_PROXY_MAX_CONCURRENT="$(sed -n 's/^export PROXY_MAX_CONCURRENT=\([0-9][0-9]*\).*$/\1/p' "$REPO/worker-node/bin/start-proxy.sh" | head -n 1)"
 [ -n "$BENCH_PROXY_MAX_CONCURRENT" ] || BENCH_PROXY_MAX_CONCURRENT=4
-BENCH_NOTES="MPT-side runs via trial/tools/bench_proxy_mpt.py (MPT venv, moviepy decode) + worker-node/proxy/tools/mpt_decode_check.py; direct wall from $(basename "$DIRECT_BASELINE") (01.2.1-T4 median wall_s x 1000). mp3_bitrate from the bench env or the D13 default 192k; proxy_max_concurrent read from start-proxy.sh. overhead_pct keeps its rule (CR-2/NFR-04-3); proxy_rtf, direct_rtf and rtf_normalised_overhead_pct are added for CR-17, in_request_overhead_pct is the median of (wall_ms - vieneu_ms)/vieneu_ms*100 from the same D7 lines."
+BENCH_NOTES="MPT-side runs via trial/tools/bench_proxy_mpt.py (MPT venv, moviepy decode) + worker-node/proxy/tools/mpt_decode_check.py; direct wall from $(basename "$DIRECT_BASELINE") (01.2.1-T4 median wall_s x 1000). mp3_bitrate from the bench env or the D13 default 192k; proxy_max_concurrent read from start-proxy.sh. checks.overhead_le_5pct (NFR-04-3) gates on in_request_overhead_pct = median (wall_ms - vieneu_ms)/vieneu_ms*100 from the same D7 lines (04 CR-17/T20); overhead_pct and rtf_normalised_overhead_pct are informational, never gating."
 
 export BENCH_OUT="$OUT" BENCH_OUTFILE="$OUTFILE" BENCH_RUNS_TSV="$OUT/runs.tsv" \
   BENCH_DIRECT_BASELINE="$DIRECT_BASELINE" BENCH_PROXY_HEALTH="$OUT/proxy-health.json" \
@@ -980,7 +983,8 @@ with open(os.environ["BENCH_RUNS_TSV"], encoding="utf-8") as fh:
             "bench_helper_exit": int(call_rc),
         })
 
-# Per-fixture medians, the NFR-04-3 overhead and the added CR-17 metrics.
+# Per-fixture medians and the CR-17 metrics; in_request_overhead_pct is the
+# NFR-04-3 gate (T20), overhead_pct/rtf_normalised_overhead_pct informational.
 summary = {}
 in_request_missing = []
 for fx in sorted({r["fixture"] for r in runs}):
@@ -997,8 +1001,8 @@ for fx in sorted({r["fixture"] for r in runs}):
     for r in group:
         r["overhead_pct"] = overhead
 
-    # CR-17: the RTF-normalised overhead (audio length cancels) and the in-request
-    # (wall_ms - vieneu_ms) overhead that the D7 line already carries.
+    # CR-17/T20: in_request_overhead_pct (drift-free, same D7 lines) is the gate;
+    # the RTF-normalised overhead (audio length cancels) is informational.
     proxy_rtfs = [r["wall_ms"] / (r["audio_seconds"] * 1000.0) for r in group
                   if isinstance(r["wall_ms"], (int, float))
                   and isinstance(r["audio_seconds"], (int, float)) and r["audio_seconds"] > 0]
@@ -1041,13 +1045,17 @@ checks = {
 }
 five_min = [fx for fx in summary if fx.endswith("-5min")]
 skipped_checks = []
-if five_min:
+# CR-17/T20: the NFR-04-3 check evaluates the in-request overhead; null means the
+# metric could not be evidenced for that fixture (skipped, not failed).
+unproved_5min = [fx for fx in five_min if summary[fx]["in_request_overhead_pct"] is None]
+if five_min and not unproved_5min:
     checks["overhead_le_5pct"] = all(
-        summary[fx]["overhead_pct"] is not None and summary[fx]["overhead_pct"] <= 5 for fx in five_min
+        summary[fx]["in_request_overhead_pct"] <= 5 for fx in five_min
     )
 else:
-    # QA-PR7-1: with no -5min fixture the NFR-04-3 rule never ran at all, and
-    # all([]) is True — so report the check skipped instead of vacuously passing.
+    # QA-PR7-1: with no -5min fixture (or a -5min fixture whose in_request metric
+    # is null) the NFR-04-3 rule never ran at all, and all([]) is True — so
+    # report the check skipped instead of vacuously passing.
     checks["overhead_le_5pct"] = None
     skipped_checks.append("overhead_le_5pct")
 if fi is not None:
@@ -1095,7 +1103,7 @@ doc = {
         "file": os.path.relpath(os.environ["BENCH_DIRECT_BASELINE"], os.getcwd()),
         "tag": direct.get("tag"),
         "watermark_extra_installed": (direct.get("watermark") or {}).get("extra_installed"),
-        "overhead_rule": "(median(wall_ms) - direct_vieneu_wall_ms) / direct_vieneu_wall_ms * 100",
+        "overhead_rule": "(median(wall_ms) - direct_vieneu_wall_ms) / direct_vieneu_wall_ms * 100 (informational; the gate is in_request_overhead_pct, 04 CR-17/T20)",
     },
     "direct_baseline_voice": direct_baseline_voice(),
     "paths_relative_to": "$NTS_HOME",
@@ -1145,7 +1153,7 @@ log "baseline written: $OUTFILE"
 log "raw evidence: $OUT"
 case "$VERDICT" in
   pass) echo "PASS 04.1.2-T3"; exit 0 ;;
-  incomplete:*) echo "INCOMPLETE 04.1.2-T3: skipped ${VERDICT#incomplete:} (no -5min fixture ran)"; exit 1 ;;
+  incomplete:*) echo "INCOMPLETE 04.1.2-T3: skipped ${VERDICT#incomplete:} (NFR-04-3 not evidenced: no -5min fixture, or in_request_overhead_pct null)"; exit 1 ;;
   fail:*) echo "FAIL 04.1.2-T3: ${VERDICT#fail:}"; exit 1 ;;
   *) die 1 "unexpected assembler verdict: $VERDICT" ;;
 esac

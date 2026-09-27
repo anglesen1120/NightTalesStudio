@@ -36,7 +36,7 @@ Columns 1–31 = 01 §5.3 (names unchanged). Columns 32–58 appended.
 | 14 | `image_size` | string | px | tap | distinct `response.size` (fallback `request.size`) of 200 image lines, joined `+` (e.g. `1536x1024`) | `n/a:no-images` |
 | 15 | `image_count` | int | images | tap | count of image lines with `http_status = 200` (billed images [INFERENCE Q5]); cross-check vs mpt-log `image material rendered:` lines → mismatch adds issue `image-count-mismatch:<tap>/<log>` | never (0 is a value) |
 | 16 | `image_output_tokens_total` | int | tokens | tap | Σ `usage.output_tokens` over 200 image lines | `n/a:usage-absent` if any 200 image line lacks `usage`; `n/a:no-images` |
-| 17 | `image_cost_usd` | decimal(6) | USD | tap + prices.json | `(Σ text_in × 5 + Σ image_in × 8 + Σ out × 30) / 1e6` with `text_in` = col 43, `image_in` = col 44, `out` = col 16 (O8 rates from prices.json); cached-input rates unused (image `usage` reports no cached field, O6) | as col 16; `n/a:no-price`; `n/a:usage-split-absent` when the model has a price but the input split is missing (would silently drop the input component) |
+| 17 | `image_cost_usd` | decimal(6) | USD | tap + prices.json | `(Σ text_in × 5 + Σ image_in × 8 + Σ out × 30) / 1e6` with `text_in` = col 43, `image_in` = col 44, `out` = col 16 (O8 rates from prices.json); cached-input rates unused (image `usage` reports no cached field, O6); per-image models (`unit: per_image`): `Σ n × per_image`, VND rows ÷ `fx_vnd_per_usd` (02 CR-27) | token-priced lines: `n/a:usage-absent` as col 16, `n/a:usage-split-absent` when the model has a price but the input split is missing (would silently drop the input component); per-image lines need neither usage nor the split, only `request.n` (QA-0928-3, CRV-0928-3); `n/a:no-price` when any line has no price, or a non-finite / missing fx or per-image amount (SEC-0928-2) |
 | 18 | `moderation_blocked_count` | int | calls | tap | image lines with `error_code = "moderation_blocked"` (O6) | never |
 | 19 | `tts_seconds_audio` | decimal(1) | s | proxy-log → ffprobe | Σ `audio_seconds` of proxy lines with `status = 200` inside the audio window (CR-1); fallback: `ffprobe` duration of the MPT task audio file (Q2); source in `run.json.sources` | `n/a:no-proxy-log` if neither available |
 | 20 | `tts_wall_seconds` | decimal(1) | s | proxy-log → mpt-log | Σ (`vieneu_ms` + `ffmpeg_ms`) / 1000 of those proxy lines; fallback: audio window length | never (window always exists unless failed: `n/a:run-failed-at-<stage>`) |
@@ -107,8 +107,9 @@ column's n/a rules.
   (01 DEC-11) With `OPENAI_IMAGE_API=responses` the image model is `gpt-image-2` and D6 image
   lines carry `via = "responses"`: their `usage` holds only the host model's tokens
   (`OPENAI_IMAGE_HOST_MODEL`, luna rates), and the relay reports no image tokens. So
-  `image_cost_usd = n/a:no-price` until a relay price for `gpt-image-2` is known ([OPEN], owner),
-  and the host tokens are reported apart, never priced at image rates. D6 lines also carry
+  a model priced `per_image` in `prices.json` (today `gpt-image-2`: 184 VND/image, relay account, owner
+  2026-09-28, 02 CR-27) gives `image_cost_usd = Σ n × per_image`, converted with `fx_vnd_per_usd` when the
+  row's currency is VND (`n/a:no-price` without that rate or without a row), and the host tokens are reported apart, never priced at image rates. D6 lines also carry
   `request.reasoning_effort` (the effort sent, or null).
 - `image_cost_per_image_usd` (col 46) = `image_cost_usd / image_count`.
 - `usd_per_output_minute` (col 55) = `(story_cost_usd + image_cost_usd) / (output_duration_sec / 60)`;
