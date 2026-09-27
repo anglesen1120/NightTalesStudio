@@ -70,6 +70,7 @@ DOWNLOAD_REQUIRED = ("final-1.mp4", "audio.mp3", "script.json")
 DEFAULT_INTERVAL = 5
 DEFAULT_TIMEOUT = 3600          # = Render:MaxMinutes (D15 P7)
 DOWNLOAD_TIMEOUT = 300          # F7: plan 05.4.1 plan.md:137 — one download's read budget
+RENDER_CHECK_TIMEOUT = 900      # 05 T78: the adapter's CheckTimeoutSeconds (11.3.5-T3)
 SUBJECT_MAX = 200
 MAX_BODY_BYTES = 2 << 20        # D15 S2 cap, mirrored from the adapter
 MAX_DOWNLOAD_BYTES = 512 << 20  # hard ceiling on one downloaded artefact
@@ -793,6 +794,24 @@ def video_output_block(manifest_video, check):
     return {"bytes": manifest_video["bytes"], "sha256": manifest_video["sha256"]}
 
 
+def run_checker(checker, run_dir, aspect, timeout=RENDER_CHECK_TIMEOUT):
+    """render_check.py's report parsed from its stdout (05 T78); a timeout or
+    non-JSON stdout reads as `render_check_failed`, never a hung `run`."""
+    try:
+        proc = subprocess.run(
+            [sys.executable, checker, "run", "--task-dir", run_dir, "--aspect", aspect,
+             "--subtitles", "on", "--normalize"],
+            capture_output=True, text=True, timeout=timeout,
+        )
+    except subprocess.TimeoutExpired:
+        return {"errors": ["render_check_failed"],
+                "stderr": f"render_check.py timed out after {timeout} s"}
+    try:
+        return json.loads(proc.stdout)
+    except ValueError:
+        return {"errors": ["render_check_failed"], "stderr": proc.stderr[-500:]}
+
+
 def cmd_run(args):
     repo = repo_root()
     spec = json.loads(open(args.spec, encoding="utf-8").read())
@@ -821,21 +840,12 @@ def cmd_run(args):
     check = None
     checker = os.path.join(repo, "worker-node", "checks", "render_check.py")
     if os.path.exists(checker):
-        aspect = ASPECT_PRESET[spec["aspect"]]
-        proc = subprocess.run(
-            [sys.executable, checker, "run", "--task-dir", run_dir, "--aspect", aspect,
-             "--subtitles", "on", "--normalize"],
-            capture_output=True, text=True,
-        )
-        try:
-            check = json.loads(proc.stdout)
-        except ValueError:
-            check = {"errors": ["render_check_failed"], "stderr": proc.stderr[-500:]}
+        check = run_checker(checker, run_dir, ASPECT_PRESET[spec["aspect"]])
     # CRV-0541-1/2: reuse the status the poll actually printed (a timeout keeps
     # state "running" + "poll_timeout": true — never a fabricated failed/-1) and
     # fill the D4 `output` from the download manifest plus the SRT cue count.
-    # `narration_seconds` is null until render_check.py (D9, 05.5.1-T1) lands —
-    # it is the measured audio.mp3 duration and the manifest cannot supply it.
+    # `narration_seconds` is render_check.py's measured audio.mp3 duration (D9);
+    # it stays null when the checker failed, because the manifest cannot supply it.
     output = None
     if manifest:
         files = {f["file"]: f for f in manifest.get("files", [])}
@@ -1311,6 +1321,20 @@ def self_test():
         expect("f3.manifest-fallback-checker-without-output",
                video_output_block(manifest_row, {"errors": ["render_check_failed"]})
                == {"bytes": 999, "sha256": "c" * 64})
+        hang = os.path.join(td, "hang_checker.py")
+        with open(hang, "w", encoding="utf-8") as fh:
+            fh.write("import time\ntime.sleep(30)\n")
+        t0 = time.monotonic()
+        hung = run_checker(hang, td, "landscape", timeout=1)
+        expect("t78.checker-timeout-is-failed",
+               hung.get("errors") == ["render_check_failed"] and time.monotonic() - t0 < 10,
+               str(hung))
+        noisy = os.path.join(td, "noisy_checker.py")
+        with open(noisy, "w", encoding="utf-8") as fh:
+            fh.write("import sys\nprint('not json')\nsys.stderr.write('boom')\n")
+        expect("t78.checker-non-json-is-failed",
+               run_checker(noisy, td, "landscape", timeout=30)
+               == {"errors": ["render_check_failed"], "stderr": "boom"})
 
         # F1/T57: poll and download requests carry x-task-id (unredirected like
         # the key) so MPT's log and error text can name the caller.
