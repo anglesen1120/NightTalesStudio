@@ -79,6 +79,32 @@ def test_audition_tags_from_description_maps_region_and_style(tmp_path):
     assert "truyền cảm" not in r.stdout
 
 
+def test_audition_style_tag_ignores_snapshot_prefix(tmp_path):
+    # Snapshot styles read "Phong cách <style>" / "Giọng đọc <style>" (04 T18).
+    snap = snap_file(tmp_path, [
+        {"id": "V1", "description": "Nữ · Bắc · Phong cách tin tức"},
+        {"id": "V2", "description": "Nam · Nam · Phong cách đọc truyện"},
+        {"id": "V3", "description": "Nam · Trung · Giọng đọc tự nhiên"},
+        {"id": "V4", "description": "Nữ · Bắc · Phong cách truyền cảm"},
+    ])
+    key = {f"s-v{i}": {"voice_id": f"V{i}", "language": "en"} for i in range(1, 5)}
+    (tmp_path / "key.json").write_text(json.dumps(key))
+    sheet = tmp_path / "sheet.en.csv"
+    with sheet.open("w", newline="", encoding="utf-8") as f:
+        w = csv.writer(f)
+        w.writerow(SHEET_FIELDS)
+        for i, fit in zip(range(1, 5), (5, 4, 3, 2)):
+            w.writerow([f"s-v{i}", "OW", 5, 5, fit, "", "", ""])
+    out = tmp_path / "results.csv"
+    assert run("unblind", "--key", str(tmp_path / "key.json"), "--sheets", str(sheet),
+               "--snapshot", str(snap), "--out", str(out)).returncode == 0
+    r = run("summarize", "--results", str(out), "--snapshot", str(snap))
+    assert r.returncode == 0
+    tags = {l.split("|")[1].strip(): l.split("|")[8].strip()
+            for l in r.stdout.splitlines() if l.startswith("| V")}
+    assert tags == {"V1": "news", "V2": "storyteller", "V3": "natural", "V4": ""}
+
+
 def test_audition_blind_ids_unique_and_unrelated_to_voice(tmp_path):
     key = {f"s-{i:06x}": {"voice_id": f"V{i}", "language": "vi"}
            for i in range(10)}

@@ -291,11 +291,16 @@ def _voice_meta(snapshot: dict) -> dict:
                   }.get(parts[1], "") if len(parts) > 1 else ""
         style_raw = parts[2] if len(parts) > 2 else ""
         s = style_raw.lower()
+        # The snapshot writes styles as "Phong cách <style>" / "Giọng đọc
+        # <style>"; the prefix is dropped before the D9 lookup (04 T18).
+        for prefix in ("phong cách ", "giọng đọc "):
+            if s.startswith(prefix):
+                s = s[len(prefix):]
+                break
         # `style` (results.csv column) keeps the raw description word;
         # `style_tag` (D9 vocabulary) is empty for unmapped styles.
         style_tag = {"kể chuyện": "storyteller", "đọc truyện": "storyteller",
-                     "tự nhiên": "natural", "giọng đọc tự nhiên": "natural",
-                     "tin tức": "news"}.get(s, "")
+                     "tự nhiên": "natural", "tin tức": "news"}.get(s, "")
         meta[v["id"]] = {"gender": gender, "region": region,
                          "style": style_raw, "style_tag": style_tag,
                          "featured": bool(v.get("featured"))}
