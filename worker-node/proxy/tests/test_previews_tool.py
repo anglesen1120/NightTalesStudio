@@ -756,3 +756,23 @@ def test_previews_upload_half_write_pair_exits_2(tmp_path, sine_mp3, monkeypatch
     assert rc == 2
     assert store.puts == []
     assert json.loads(cat.read_text(encoding="utf-8"))["revision"] == 0
+
+
+@pytest.mark.parametrize(
+    ("input_i", "ok"),
+    [(-18.5, True), (-18.51, False), (-14.5, True), (-14.49, False), (-17.6, True)],
+)
+def test_previews_loudness_window_t19(tmp_path, input_i, ok) -> None:
+    f = tmp_path / "p.mp3"
+    f.write_bytes(b"x" * 1000)
+
+    def runner(argv):
+        if argv[0] == "ffprobe":
+            return subprocess.CompletedProcess(argv, 0, "7.0\n", "")
+        return subprocess.CompletedProcess(argv, 0, "", f'{{"input_i": "{input_i}"}}')
+
+    if ok:
+        assert mk._check_preview(runner, "ffmpeg", "ffprobe", f) == (7.0, input_i)
+    else:
+        with pytest.raises(ValueError, match="outside"):
+            mk._check_preview(runner, "ffmpeg", "ffprobe", f)
