@@ -1,0 +1,67 @@
+# NightTales Studio — MPT config template (profile `node`, GPU worker). Rendered by
+# worker-node/bin/render-mpt-config.py --profile node --env-file FILE --out FILE (0600, atomic).
+# Every row is a guard (05 README D2): a mismatch exits 1 and writes nothing (05.1.1-T2).
+# The six placeholder values come from the node environment file (11 CR-4 = /etc/nts/mpt.env), never from
+# the repo. This file is NOT the Mac profile's template (01.2.2-T2, signed): the node binds
+# loopback only (F12), queues nothing (F07), holds no LLM key (C19) and uses the image relay (03 D5).
+# Placement checked against worker-node/mpt/config.example.pinned.toml. The MPT WebUI is not used
+# in M0 (D14) and never edit the rendered file: comments are lost if MPT rewrites it.
+
+# ---- top level (pin L9-12; must stay above [app]) ----
+log_level = "INFO"            # 01 D5 (DEBUG may log prompts/script text) — guard
+listen_host = "127.0.0.1"     # D2/F12: only the adapter faces the network — guard
+listen_port = 8080            # D2/F12; 11 D6 Adapter__MptBaseUrl — guard
+
+[app]                          # pin L14
+api_key = "${NTS_MPT_API_KEY}" # C2: >= 32 chars; empty = auth off — guard
+
+# material source (D2: no stock sources on the node)
+video_source = "openai_image"  # 03 D4 — guard
+pexels_api_keys = []           # D2 — guard
+pixabay_api_keys = []          # D2 — guard
+
+# images via the adapter's image relay on the node (03 D5/F09)
+openai_image_base_url = "http://127.0.0.1:8091/v1"  # 03 D5 — guard
+openai_image_api_keys = []      # 03 F09: the relay holds the key — guard
+openai_image_model = "gpt-image-2"  # DECISIONS §3 (01 DEC-11) — guard
+openai_image_size = ""          # 03 D4: "" = auto per aspect — guard
+openai_image_prompt_template = ""  # 03 D4/C6: the relay/plan 03 owns the style — guard
+
+# other material/storage keys (03 D4, C6)
+material_directory = ""         # C6: task-local storage — guard
+endpoint = ""                   # C6: download links use the API address — guard
+twelvelabs_rerank_terms = false # 03 I12 — guard
+
+# LLM: the node never calls one (C19) — an accidental call fails without spending
+llm_provider = "openai"         # C19 — guard
+openai_api_key = ""             # C19 — guard
+openai_base_url = ""            # C19 — guard
+
+# subtitles (DECISIONS §5.4)
+subtitle_provider = "whisper"   # pin L429 default "edge" — guard
+
+# queue (F06/F07)
+enable_redis = false            # F06 — guard
+max_concurrent_tasks = ${NTS_MPT_MAX_CONCURRENT}  # 11 sizing, 1-8 (11.3.2 mpt.env); unquoted = a TOML integer — guard
+max_queued_tasks = 0            # F07: MPT's invisible in-memory queue is off — guard
+
+# codec (C14; 01 CR-9: never h264_videotoolbox on the node)
+video_codec = "${NTS_MPT_VIDEO_CODEC}"  # guard
+
+# publishing: never (DECISIONS §5.5; app/services/upload_post.py unused)
+upload_post_enabled = false     # pin L480 — guard
+upload_post_api_key = ""        # pin L481 — guard
+upload_post_auto_upload = false # pin L486 — guard
+
+[whisper]                       # pin L500; D15 P5: the node runs on CUDA only
+model_size = "large-v3-turbo"   # pin L503; weights pre-placed by 01.2.3-T1 — guard
+device = "${NTS_WHISPER_DEVICE}"       # D15 P5: cuda only (cpu/mps stay in mac/spike) — guard
+compute_type = "${NTS_WHISPER_COMPUTE}"  # D15 P5: float16 | int8_float16 — guard
+# initial_prompt must stay absent (F16/C15): a node renders both vi and en, so no per-language
+# hint can live here — 05.1.1-T2 guards its absence (a present key exits 1).
+
+[kokoro]                        # pin L576; 04 D10: the VieNeu proxy over loopback
+base_url = "http://127.0.0.1:8001/v1"  # 04 D10 (never the 18004 spike stub) — guard
+api_key = "${NTS_PROXY_API_KEY}"       # 04 D10: = PROXY_API_KEY — guard
+model_id = "vieneu-v3-turbo"           # 04 D10: the proxy ignores MPT's model — guard
+voices = []                            # 04 D10: the API never reads it — guard

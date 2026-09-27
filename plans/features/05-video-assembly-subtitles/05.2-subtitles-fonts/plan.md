@@ -54,7 +54,7 @@ No table is created. `subtitle_presets` is a tracked seed + embedded resource (0
 
 ### 3.2 Evaluation data
 
-`trial/subtitle-eval/results.csv` — one row per video (6 rows); the columns and the `video_id` set (`L1-vi-landscape-5m`, `L2-en-landscape-5m`, `E1-vi-portrait`, `E2-en-portrait`, `E3-vi-landscape-names`, `E4-en-landscape-longclause`) are defined in 05.2.1-T1 §Outputs; E2/E4 fall back to vi substitutes with `source = substitute` when 04 O2 does not launch en. Automatic columns are copied verbatim from `render-check.v1.subtitles` (D9), human columns come from `subtitle_sample.py` + the reviewer, and the whisper fields come from MPT's log line (C15, 01.3.1 col 51). No cue text and no media in the CSV or the report.
+`trial/subtitle-eval/results.csv` — one row per video (6 rows); the columns and the `video_id` set (`L1-vi-landscape-5m`, `L2-en-landscape-5m`, `E1-vi-portrait`, `E2-en-portrait`, `E3-vi-landscape-names`, `E4-en-landscape-longclause`) are defined in 05.2.1-T1 §Outputs; E2/E4 stay en on the stub TTS whatever 04 O2 decides (O2 governs the real en voice, not stub audio); only L2 falls back to a vi substitute with `source = substitute` (T14, T84). Automatic columns are copied verbatim from `render-check.v1.subtitles` (D9), human columns come from `subtitle_sample.py` + the reviewer, and the whisper fields come from MPT's log line (C15, 01.3.1 col 51). No cue text and no media in the CSV or the report.
 
 ## 4. Use cases
 
