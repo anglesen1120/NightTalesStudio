@@ -24,7 +24,7 @@ Out of scope: render submit/poll/ingest (09.6.1-T1, 09.6.3-T1/T2), the episode r
 - **W5** `AWSSDK.S3` **4.0.103.4** (v4 line), Apache-2.0; `GetPreSignedUrlRequest.ResponseHeaderOverrides.ContentDisposition` exists ✅; the client **method names are ⚠️ unverified** → pin them in 09.7.2-T1 step 1 with a compile spike.
 - **W12 / N14** Hangfire recurring jobs are cron-based and polled every 15 s → `0 3 * * *` (UTC) is a safe daily cadence; a 10 s job would not be.
 - **W15 / WF03** 02.5.2-T2 already calls `IBlobStore` "(09)" and no 09 task owned it; **BD10** gives the port, the S3 implementation and the video URL to 09.7.2-T1 (M), and 09.6.3-T2 also needs it. **BD1** lists the consumers: 02.5.2-T2, 09.6.3-T2, 09.7.3-T1, 13.3.1-T1.
-- **BD10** `IBlobStore` (Application/Abstractions/Storage) with `PutAsync`, `OpenReadAsync`, `DeleteAsync`, `ExistsAsync`, `CreateReadUrl(bucket, key, ttl, downloadFileName) → Uri`; `S3BlobStore` on AWSSDK.S3 4.x; endpoint/credentials from `Storage:*` (shared secrets); buckets from 11 D15; **path-style for the dev emulator**; `GET /episodes/{id}/video-url` → `{ url, expiresAt }`, TTL **15 min**, audit row.
+- **BD10** `IBlobStore` (Application/Abstractions/Storage) with `PutAsync`, `OpenReadAsync`, `DeleteAsync`, `ExistsAsync`, `CreateReadUrl(bucket, key, ttl, downloadFileName) → Uri`; `S3BlobStore` on AWSSDK.S3 4.x; endpoint/credentials from `Storage:*` (shared secrets); buckets from 11 D15; **path-style in every env** (BD10 said "dev emulator" — amended: the gateway has no per-bucket DNS, 11 CR-15/T75); `GET /episodes/{id}/video-url` → `{ url, expiresAt }`, TTL **15 min**, audit row.
 - **WF16** the video URL must not leak into logs or `Referer`; `Content-Disposition: attachment; filename*=UTF-8''<slug>.mp4` with the slug derived from the episode title, ASCII-folded, ≤ 80 chars; access writes `audit_logs` `episode.video_url_issued`.
 - **00 §7 (L327)** `video_review → story_review` (reject video, fix story) **|** `video_review → rendering` (re-render); **09 §4 09.7.1 (L206–208)** "Given `video_review`, When `POST /episodes/{id}/video/approve`, Then → `ready`; reject with reason → `story_review` or re-render per 00 §7; reason stored".
 - **BD5 (`../README.md`:675)** `RenderEpisodeCommand(Guid EpisodeId, string? IfMatch, string IdempotencyKey)` requires the episode in `story_approved` + an ETag, runs the linter/planner/estimator/budget guard, reserves `CreditOperation.Render`, creates the `RenderJob` + `Episode.RequestRender`, raises `render_requested.v1`; route `POST /episodes/{id}/render` → 202 + `Location: /render-jobs/{id}`.
@@ -91,9 +91,10 @@ The audit sweep needs its own index on the `audit_logs` keyset: `audit_logs (cre
 
 | Key | Default | Note |
 |---|---|---|
-| `Storage:ServiceUrl` | dev `http://storage:8333` | SeaweedFS s3 endpoint |
+| `Storage:ServiceUrl` | dev `http://storage:8333`; staging/prod `https://storage-<env>.internal` | SeaweedFS S3 gateway; trusted via the internal root CA in the host/container trust store, no pinning (11 CR-15, T77/T78/T81) |
+| `Storage:PublicServiceUrl` | prod `https://media.<domain>`, staging `https://media.staging.<domain>`, dev `http://localhost:8333` | presign-only `IAmazonS3` so SigV4 signs the public host (`GET`/`HEAD` only via the LB); null = `ServiceUrl` (10 CR-21; 11 CR-15, T75/T83) |
 | `Storage:Region` | `us-east-1` | ignored by the dev emulator |
-| `Storage:ForcePathStyle` | `true` in Development, `false` otherwise | BD10 |
+| `Storage:ForcePathStyle` | `true` in all envs | BD10; every env — the gateway has no per-bucket DNS (11 CR-15, T75) |
 | `Storage:AccessKey` / `Storage:SecretKey` | — | secrets `nts/<env>/STORAGE_ACCESS_KEY|STORAGE_SECRET_KEY`; never logged |
 | `Storage:Buckets:Media|Public|Music` | `nt-media-<env>` … | 11 D15 |
 | `Storage:PresignTtlMinutes` | `15` | BD10/WF16; validated ≤ 15 |
@@ -287,4 +288,4 @@ Open items:
 - **Flags**: none (B8.1 `P · M1`). Both routes ship enabled; the sweep only has work after the first `ready`.
 - **Env/secret prerequisites**: `Storage:*` values and `nt-media-<env>` (11.4.1-T1, 11 D15); in dev the compose `storage` service plus `tools/dev/storage-init.sh` (11 D14).
 - **Observability**: the §7 metrics; `retention_sweep_batches_capped_total` or three days of `retention_sweep_asset_failures_total` mean a credential, bucket or backlog problem and should alert (11.6.2-T1 owns alerts).
-- **Rollback**: the routes can be disabled by removing the endpoint group (no data migration); the sweep stops by deleting the recurring registration (`RemoveRecurringIfExists`, D12) or `RetentionSweep:Enabled=false` — objects already deleted are not recoverable, so before enabling it in prod, 11.4.1-T1's `nt-media-<env>` → `nt-backup-<env>` copy (11.6.1, 30 days) must be in place; `deleted_at` is set after the object delete, so a mid-batch crash is safe and the next run is a no-op for the rows already marked.
+- **Rollback**: the routes can be disabled by removing the endpoint group (no data migration); the sweep stops by deleting the recurring registration (`RemoveRecurringIfExists`, D12) or `RetentionSweep:Enabled=false` — objects already deleted are not recoverable, so before enabling it in prod, 11.4.1-T3's `nt-media-<env>` → `nt-backup-<env>` copy (T80; asserted by 11.6.1-T1) must be in place — a deleted object leaves the backup within 30 days (GOVERNANCE lock 29 d + `NoncurrentVersionExpiration` 29 d, T87); `deleted_at` is set after the object delete, so a mid-batch crash is safe and the next run is a no-op for the rows already marked.

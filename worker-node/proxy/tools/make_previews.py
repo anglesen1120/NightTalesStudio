@@ -60,8 +60,8 @@ DEFAULT_MANIFEST = PROXY_ROOT / "previews.manifest.json"
 CONTENT_TYPE = "audio/mpeg"
 CACHE_CONTROL = "public, max-age=31536000, immutable"
 LOUDNORM_FILTER = "loudnorm=I=-16:TP=-1.5:LRA=11"
-LOUD_TARGET_I = -16.0
-LOUD_TOLERANCE = 1.5
+LOUD_MIN_I = -18.5  # README T19 option A: -16 +1.5/-2.5 (TP=-1.5 pulls short clips low)
+LOUD_MAX_I = -14.5
 MAX_SECONDS = 12.0
 MAX_BYTES = 200_000  # 200 KB = 200,000 (decision, task Design §5)
 HTTP_TIMEOUT_S = 120
@@ -285,9 +285,9 @@ def _check_preview(runner, ffmpeg: str, ffprobe: str, path: Path):
     meas = runner(_measure_argv(ffmpeg, path))
     loud = _parse_loudness(meas.stderr or "")
     if loud is None or not (
-        LOUD_TARGET_I - LOUD_TOLERANCE <= loud <= LOUD_TARGET_I + LOUD_TOLERANCE
+        LOUD_MIN_I <= loud <= LOUD_MAX_I
     ):
-        raise ValueError(f"loudness {loud} outside {LOUD_TARGET_I}±{LOUD_TOLERANCE}")
+        raise ValueError(f"loudness {loud} outside [{LOUD_MIN_I}, {LOUD_MAX_I}]")
     return dur, loud
 
 
