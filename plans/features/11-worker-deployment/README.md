@@ -334,7 +334,7 @@ Applied 2026-09-24 under the owner's standing approval. Each edited text is tagg
 | CR-12 | — | (not used: `.github/dependabot.yml` stays 09.1.5-T1's, T23) |
 | CR-13 | `features/04-voice-proxy/04.2-voice-catalog/04.2.3-T1-…`, `04.2-voice-catalog/plan.md`, `features/03-image-generation/03.1-style-system/03.1.2-T1-…`, `03.1-style-system/plan.md` | Depends `11.4.1` → `11.4.1-T1`; storage CLI + credential rule from `worker-node/storage/README.md` (11.4.1-T1); preview uploads with the operator key `NTS_PREVIEW_WRITE_*` (D20 H9) |
 | CR-14 | `features/09-backend-api/09.2.2-core-schema-migrations/09.2.2-T2-initial-migration-and-ci-check.md` | In CI/cloud the migration bundle reads the connection from the environment (masked), `--connection` only locally (D20 H11) |
-| CR-15 | `plans/00-overview.md` §5.1, `DECISIONS.md` §5/§10, `plans/11-worker-deployment.md` (W6, FR-11-3, 11.4.1, §5.2, §5.6, §6, §11), `features/11-worker-deployment/11.2-cloud-environments/{plan.md, 11.2.1-T1-…, 11.2.2-T1-…, 11.2.2-T4-…, 11.2.3-T1-…}`, `features/09-backend-api/09.7-video-review-storage/{plan.md (BD10), 09.7.2-T1-…}` (T75), `features/03-image-generation/03.1-style-system/03.1.2-T1-…`, `11.4-11.5-storage-cicd/{plan.md, 11.4.1-T1-…}`, new `11.4.1-T2-seaweedfs-storage-hosts.md`, new `11.4.1-T3-storage-backup-restore.md` (T80), `11.6-operations/{plan.md, 11.6.1-T1-…}`, `11.6.2-T1-…`, `plans/features/README.md`, `WORKFLOW.md` | Self-hosted SeaweedFS in every env (D21, O7, T74-T94); +1.0 d P (11.4.1-T2 0.5 + 11.4.1-T3 0.5, T80) |
+| CR-15 | `plans/00-overview.md` §5.1, `DECISIONS.md` §5/§10, `plans/11-worker-deployment.md` (W6, FR-11-3, 11.4.1, §5.2, §5.6, §6, §11), `features/11-worker-deployment/11.2-cloud-environments/{plan.md, 11.2.1-T1-…, 11.2.2-T1-…, 11.2.2-T4-…, 11.2.3-T1-…}`, `features/09-backend-api/09.7-video-review-storage/{plan.md (BD10), 09.7.2-T1-…}` (T75), `features/03-image-generation/03.1-style-system/03.1.2-T1-…`, `11.4-11.5-storage-cicd/{plan.md, 11.4.1-T1-…}`, new `11.4.1-T2-seaweedfs-storage-hosts.md`, new `11.4.1-T3-storage-backup-restore.md` (T80), `11.6-operations/{plan.md, 11.6.1-T1-…}`, `11.6.2-T1-…`, `plans/features/README.md`, `WORKFLOW.md` | Self-hosted SeaweedFS in every env (D21, O7, T74-T95); +1.0 d P (11.4.1-T2 0.5 + 11.4.1-T3 0.5, T80) |
 
 ## 5. Sequencing
 
@@ -480,7 +480,7 @@ All answered 2026-09-24 by the owner's standing approval ("approve all DoR, foll
 | O4 | GitHub plan | Private repo on GitHub Pro for environments + required reviewers (E14); price not asserted |
 | O5 | Node deploy path | Operator-run `nts-node deploy` over VPN/bastion from a CI-built, hashed bundle; CI has no SSH into the render network |
 | O6 | Telemetry backend | OpenTelemetry Collector + a provider-native or hosted backend chosen in 11.2.1; no self-hosted AGPL |
-| O7 | Object storage in staging/prod | Self-hosted SeaweedFS in every env, no managed S3 (owner 2026-09-27; D21, T74-T94, +1.0 d P) |
+| O7 | Object storage in staging/prod | Self-hosted SeaweedFS in every env, no managed S3 (owner 2026-09-27; D21, T74-T95, +1.0 d P) |
 
 **TL rulings (override older feature text).**
 
