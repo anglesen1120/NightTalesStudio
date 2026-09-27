@@ -1,0 +1,11 @@
+1
+00:00:00,000 --> 00:00:00,000
+Every cue carries zero duration here
+
+2
+00:00:00,000 --> 00:00:00,000
+so the policy can see them
+
+3
+00:00:00,000 --> 00:00:00,000
+and the tool still reports the text

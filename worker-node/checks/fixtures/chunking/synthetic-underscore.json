@@ -1,0 +1,31 @@
+{
+  "input": "synthetic:synthetic-underscore",
+  "input_sha256": "46b04492cb1ea96f46518302a868a622069c5ef6b7c4d04196f4f13deca292fe",
+  "input_text": "under_score_script line\nand a_second one",
+  "normalized": "underscorescript line\nand asecond one",
+  "punctuations": [
+    "?",
+    ",",
+    ".",
+    "、",
+    ";",
+    ":",
+    "!",
+    "…",
+    "？",
+    "，",
+    "。",
+    "、",
+    "；",
+    "：",
+    "！",
+    "...",
+    "،",
+    "؛",
+    "؟"
+  ],
+  "chunks": [
+    "underscorescript line",
+    "and asecond one"
+  ]
+}
