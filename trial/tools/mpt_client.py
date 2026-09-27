@@ -47,6 +47,7 @@ import ipaddress
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -450,6 +451,31 @@ def check_safe_id(label, value):
         sys.exit(2)
 
 
+def _is_within(path, ancestor):
+    """SEC-0523F-1: identity containment: True if `path` or an existing parent is
+    `ancestor`. String prefixes are not enough — APFS is case-insensitive and
+    os.path.realpath keeps the given case, so a case-swapped repo path walks past
+    every startswith check. Walk up to "/" comparing (st_dev, st_ino); a path that
+    does not exist yet starts from its nearest existing ancestor (usage_tap.py
+    _under_dir precedent)."""
+    try:
+        a = os.stat(ancestor)
+    except OSError:
+        return False
+    cur = os.path.realpath(path)
+    while True:
+        try:
+            st = os.stat(cur)
+            if (st.st_dev, st.st_ino) == (a.st_dev, a.st_ino):
+                return True
+        except OSError:
+            pass
+        parent = os.path.dirname(cur)
+        if parent == cur:
+            return False
+        cur = parent
+
+
 def run_dir_for(repo, run_id, run_dir=None):
     """QA-0541-1: the resolved run dir must stay under the runs root. With an
     explicit --run-dir the root IS the dir; otherwise it is $NTS_HOME/runs.
@@ -459,13 +485,16 @@ def run_dir_for(repo, run_id, run_dir=None):
     all: `submit` writes submit-body.json (= the narration) there, so
     `submit --run-dir .` would drop the script into the tracked tree. Refused
     before any write, exit 2.
+
+    SEC-0523F-1: the repo / <repo>/.nts questions are decided by identity
+    (_is_within), never by string prefixes.
     """
     check_safe_id("run_id", run_id)
+    repo_real = os.path.realpath(repo)
     if run_dir:
         root = os.path.realpath(run_dir)
         target = root
-        repo_real = os.path.realpath(repo)
-        if target == repo_real or target.startswith(repo_real + os.sep):
+        if _is_within(target, repo_real):
             eprint(
                 f"mpt_client.py: --run-dir {target} is inside the repo ({repo_real}); "
                 "the submit body holds the script and is never written into the tracked "
@@ -475,7 +504,15 @@ def run_dir_for(repo, run_id, run_dir=None):
     else:
         root = os.path.realpath(os.path.join(nts_home(repo), "runs"))
         target = os.path.realpath(os.path.join(root, run_id))
-    if not (target == root or target.startswith(root + os.sep)):
+        # SEC-0523-4: an NTS_HOME inside the repo is allowed only under the gitignored <repo>/.nts.
+        # SEC-0523F-1: identity finds <repo>/.nts even when the volume is case-insensitive.
+        nts_real = os.path.join(repo_real, ".nts")
+        under_nts = _is_within(root, nts_real) or root.startswith(nts_real + os.sep)
+        if _is_within(root, repo_real) and not under_nts:
+            eprint(f"mpt_client.py: runs root {root} is inside the repo but not under {nts_real}; "
+                   "set NTS_HOME outside the tracked tree or leave it unset.")
+            sys.exit(2)
+    if not (target == root or target.startswith(root + os.sep) or _is_within(target, root)):
         eprint(f"mpt_client.py: run dir {target} escapes runs root {root} (run_id {run_id!r})")
         sys.exit(2)
     return target
@@ -555,13 +592,18 @@ def die_http(message, raw):
 # ------------------------------------------------------------------------- commands
 
 
-def cmd_submit(args, run_dir=None):
+def cmd_submit(args, run_dir=None, spec=None):
     repo = repo_root()
     check_base_url(args.base_url)
-    spec = json.loads(open(args.spec, encoding="utf-8").read())
+    if spec is None:
+        spec = json.loads(open(args.spec, encoding="utf-8").read())
     run_id = spec["run_id"]
-    # run_dir_for() validates run_id (safe-id) and containment before any write.
-    run_dir = run_dir_for(repo, run_id, run_dir or args.run_dir or None)
+    # run_dir_for() validates run_id (safe-id) and containment before any write;
+    # cmd_run passes the spec and the dir it already validated from that spec
+    # (re-checking the dir as an explicit --run-dir would refuse the default
+    # $NTS_HOME/runs under <repo>/.nts).
+    if run_dir is None:
+        run_dir = run_dir_for(repo, run_id, args.run_dir or None)
     body = build_body(spec, repo)
     encoded = encode_body(body)
     if len(encoded) > MAX_BODY_BYTES:
@@ -816,7 +858,7 @@ def cmd_run(args):
     repo = repo_root()
     spec = json.loads(open(args.spec, encoding="utf-8").read())
     run_dir = run_dir_for(repo, spec["run_id"], args.run_dir or None)
-    rc = cmd_submit(args, run_dir=run_dir)
+    rc = cmd_submit(args, run_dir=run_dir, spec=spec)
     if rc:
         return rc
     # Re-read the task id the submit printed by reading the response we just saved.
@@ -1285,6 +1327,58 @@ def self_test():
         expect("crv2.files-on-disk",
                os.path.exists(os.path.join(run_dir, "final-1.mp4"))
                and os.path.exists(os.path.join(run_dir, "manifest.json")))
+
+        # CRV-0523-2 / SEC-0523-4: `run` with no --run-dir writes under an
+        # NTS_HOME inside <repo>/.nts; an NTS_HOME elsewhere in the tree exits 2.
+        os.makedirs(os.path.join(repo_root(), ".nts"), exist_ok=True)
+        repo_nts = tempfile.mkdtemp(prefix="selftest-", dir=os.path.join(repo_root(), ".nts"))
+        try:
+            rc, out, err = run_cli("--base-url", base, "run", "--spec", spec_file,
+                                   "--interval", "0.2", "--timeout", "10",
+                                   env_extra={"NTS_HOME": repo_nts})
+            expect("crv0523.run-default-run-dir-exit-0", rc == 0, f"rc={rc} err={err[-160:]}")
+            expect("crv0523.run-default-artefacts",
+                   os.path.exists(os.path.join(repo_nts, "runs", spec_ok["run_id"], "final-1.mp4")))
+        finally:
+            shutil.rmtree(repo_nts, ignore_errors=True)
+        tracked_home = os.path.join(repo_root(), "plans", "selftest-nts-home")
+        rc, _, err = run_cli("--base-url", base, "submit", "--spec", spec_file,
+                             env_extra={"NTS_HOME": tracked_home})
+        expect("sec0523.tracked-nts-home-exit-2", rc == 2, f"rc={rc} err={err[-160:]}")
+        expect("sec0523.tracked-nothing-written", not os.path.exists(tracked_home))
+
+        # SEC-0523F-1: os.path.realpath keeps the given case on a case-insensitive
+        # volume (APFS), so a case-swapped repo path used to slip past the
+        # string-prefix checks and aim submit-body.json at the tracked tree;
+        # identity decides now. A case-sensitive volume sees the swap as a missing
+        # path -> the cases are reported as PASS with a skip note.
+        swapped_repo = os.path.join(os.path.dirname(repo), os.path.basename(repo).swapcase())
+        swapped = swapped_repo != repo
+        if swapped:
+            try:
+                swapped = os.path.samefile(swapped_repo, repo)
+            except OSError:
+                swapped = False
+        if not swapped:
+            for name in ("sec0523f.case-swapped-nts-home-exit-2",
+                         "sec0523f.case-swapped-nts-home-nothing-written",
+                         "sec0523f.case-swapped-run-dir-exit-2",
+                         "sec0523f.case-swapped-run-dir-nothing-written"):
+                print(f"PASS selftest:{name} (skipped: volume is case-sensitive)")
+        else:
+            rc, _, err = run_cli("--base-url", base, "submit", "--spec", spec_file,
+                                 env_extra={"NTS_HOME": os.path.join(swapped_repo, "trial")})
+            expect("sec0523f.case-swapped-nts-home-exit-2",
+                   rc == 2 and "inside the repo but not under" in err,
+                   f"rc={rc} err={err[-160:]}")
+            expect("sec0523f.case-swapped-nts-home-nothing-written",
+                   not os.path.exists(os.path.join(repo, "trial", "runs", spec_ok["run_id"])))
+            rc, _, err = run_cli("--base-url", base, "submit", "--spec", spec_file,
+                                 "--run-dir", os.path.join(swapped_repo, "trial"))
+            expect("sec0523f.case-swapped-run-dir-exit-2",
+                   rc == 2 and "inside the repo" in err, f"rc={rc} err={err[-160:]}")
+            expect("sec0523f.case-swapped-run-dir-nothing-written",
+                   not os.path.exists(os.path.join(repo, "trial", "submit-body.json")))
 
         # CRV-0541-6 (F6): MPT succeeded but a required artefact 404s -> the final
         # status is the failure AND carries no output (a failed render must never
