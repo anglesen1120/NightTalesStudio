@@ -1,9 +1,8 @@
 # Voice audition — blind listening test (04.2.1-T1, D11)
 
-Machine-side audition set for the VieNeu voice curation protocol (README D11).
-**Selection is not done here** — this directory collects the rater sheets and,
-after `unblind`, the tracked scores that 04.2.1 uses to pick 3–4 voices per
-language.
+Audition set, scores and selection for the VieNeu voice curation protocol
+(README D11): generation log, rater procedure, the unblinded scores in
+`results.csv`, and the selected 3–4 voices per language (§Selection).
 
 ## Generation log (machine part, done 2026-09-26)
 
@@ -74,9 +73,105 @@ en — at least one fluent English listener (native preferred).
 
 ## Results
 
-_Pending: no rater sheets collected yet. `results.csv` is a header-only
-placeholder until `unblind` runs._
+Collected 2026-09-27. Sheets: `sheet.vi.NMT.csv`, `sheet.en.NMT.csv` (untracked,
+`$NTS_HOME/runs/voice-audition/`), unblinded into `results.csv` (48 rows = 1 rater
+× 24 candidates × 2 languages, rejected 0).
+
+**Raters: one (owner, `NMT`) for both languages. D11 is not met**: vi needs the
+owner plus one other native speaker, en needs a fluent English listener. The
+owner accepted this for catalog revision 1 on 2026-09-27 (04 README T18); a
+second vi rater and an en rater are added later and the selection re-run
+(revision 2). While filling the sheets the owner wrote a per-sample label in the
+`rater` column; it was moved to `notes` as `label: <text>` before unblinding.
+
+Score scale (MOS-style, per column): 5 excellent, no flaw · 4 good, minor
+flaws · 3 acceptable, flaws audible · 2 poor, disturbing · 1 unusable.
+`night_fit` 5 = calm, slow, atmospheric; 2 = too cheerful, fast, news/ad tone.
+
+Caveat: 47/48 naturalness and 45/48 intelligibility scores are 5, so the
+thresholds filter only 3 vi voices and the ranking rests on `night_fit` and the
+tie-breaks.
+
+`audition.py summarize` output:
+
+### en (24 voices)
+
+| voice | raters | nat | int | fit | mis | pass | tags |
+|---|---|---|---|---|---|---|---|
+| Mai Anh | 1 | 5.00 | 5.00 | 5.00 | 0 | ✅ | news, bright |
+| Thiền Tâm Đức | 1 | 5.00 | 5.00 | 5.00 | 0 | ✅ | storyteller, deep |
+| Thiện Minh | 1 | 5.00 | 5.00 | 5.00 | 0 | ✅ | storyteller, deep |
+| Adam | 1 | 5.00 | 5.00 | 5.00 | 0 | ✅ | natural, deep |
+| Phạm Tuyên | 1 | 5.00 | 5.00 | 5.00 | 0 | ✅ | natural, calm |
+| Thái Sơn | 1 | 5.00 | 5.00 | 5.00 | 0 | ✅ | storyteller, warm |
+| Thục Đoan | 1 | 5.00 | 5.00 | 5.00 | 0 | ✅ | storyteller, warm |
+| Xuân Vĩnh | 1 | 5.00 | 5.00 | 5.00 | 0 | ✅ | natural, warm |
+| Đức Trí | 1 | 5.00 | 5.00 | 5.00 | 0 | ✅ | storyteller, deep |
+| Hải Đăng | 1 | 5.00 | 5.00 | 4.00 | 0 | ✅ | natural, bright |
+| Ngọc Huyền | 1 | 5.00 | 5.00 | 4.00 | 0 | ✅ | natural, warm |
+| Trúc Ly | 1 | 5.00 | 5.00 | 4.00 | 0 | ✅ | natural, bright |
+| Minh Đức | 1 | 5.00 | 5.00 | 4.00 | 0 | ✅ | news, calm |
+| Ngọc Linh | 1 | 5.00 | 5.00 | 4.00 | 0 | ✅ | storyteller, calm |
+| Quốc Tuấn | 1 | 5.00 | 5.00 | 4.00 | 0 | ✅ | natural, bright |
+| Ngọc Trân | 1 | 5.00 | 5.00 | 3.00 | 0 | ✅ | natural, calm |
+| Quang Sơn | 1 | 5.00 | 5.00 | 3.00 | 0 | ✅ | natural, calm |
+| Thùy Dung | 1 | 5.00 | 5.00 | 3.00 | 0 | ✅ | news, bright |
+| Minh Triết | 1 | 5.00 | 5.00 | 3.00 | 0 | ✅ | news, bright |
+| Mỹ Duyên | 1 | 5.00 | 5.00 | 3.00 | 0 | ✅ | storyteller, bright |
+| Quỳnh Anh | 1 | 5.00 | 5.00 | 3.00 | 0 | ✅ | storyteller, bright |
+| Thanh Bình | 1 | 5.00 | 5.00 | 3.00 | 0 | ✅ | storyteller, bright |
+| Đoan Trang | 1 | 5.00 | 5.00 | 3.00 | 0 | ✅ | natural, bright |
+| Kim Thanh | 1 | 5.00 | 5.00 | 2.00 | 0 | ✅ | storyteller, calm |
+
+### vi (24 voices)
+
+| voice | raters | nat | int | fit | mis | pass | tags |
+|---|---|---|---|---|---|---|---|
+| Mai Anh | 1 | 5.00 | 5.00 | 5.00 | 0 | ✅ | news, northern, deep |
+| Thiền Tâm Đức | 1 | 5.00 | 5.00 | 5.00 | 0 | ✅ | storyteller, northern, deep |
+| Thiện Minh | 1 | 5.00 | 5.00 | 5.00 | 0 | ✅ | storyteller, northern, deep |
+| Minh Đức | 1 | 5.00 | 5.00 | 5.00 | 0 | ✅ | news, northern, warm |
+| Mỹ Duyên | 1 | 5.00 | 5.00 | 5.00 | 0 | ✅ | storyteller, southern, deep |
+| Phạm Tuyên | 1 | 5.00 | 5.00 | 5.00 | 0 | ✅ | natural, northern, deep |
+| Thái Sơn | 1 | 5.00 | 5.00 | 5.00 | 0 | ✅ | storyteller, southern, deep |
+| Thục Đoan | 1 | 5.00 | 5.00 | 5.00 | 0 | ✅ | storyteller, southern, calm |
+| Đức Trí | 1 | 5.00 | 5.00 | 5.00 | 0 | ✅ | storyteller, southern, warm |
+| Ngọc Huyền | 1 | 5.00 | 5.00 | 4.00 | 0 | ✅ | natural, northern, bright |
+| Thùy Dung | 1 | 5.00 | 5.00 | 4.00 | 0 | ✅ | news, southern, bright |
+| Minh Triết | 1 | 5.00 | 5.00 | 4.00 | 0 | ✅ | news, southern, warm |
+| Ngọc Linh | 1 | 5.00 | 5.00 | 4.00 | 0 | ✅ | storyteller, northern, calm |
+| Quốc Tuấn | 1 | 5.00 | 5.00 | 4.00 | 0 | ✅ | natural, northern, calm |
+| Quỳnh Anh | 1 | 5.00 | 5.00 | 4.00 | 0 | ✅ | storyteller, northern, bright |
+| Đoan Trang | 1 | 5.00 | 5.00 | 4.00 | 0 | ✅ | natural, northern, bright |
+| Trúc Ly | 1 | 5.00 | 5.00 | 3.00 | 0 | ✅ | natural, northern, bright |
+| Kim Thanh | 1 | 5.00 | 5.00 | 3.00 | 0 | ✅ | storyteller, southern, bright |
+| Xuân Vĩnh | 1 | 5.00 | 5.00 | 2.00 | 0 | ✅ | natural, northern, whisper |
+| Quang Sơn | 1 | 2.00 | 2.00 | 2.00 | 0 | ❌ | natural, central, warm |
+| Hải Đăng | 1 | 5.00 | 5.00 | 1.00 | 0 | ✅ | natural, northern, bright |
+| Thanh Bình | 1 | 5.00 | 5.00 | 1.00 | 0 | ✅ | storyteller, northern, bright |
+| Ngọc Trân | 1 | 5.00 | 2.00 | 1.00 | 0 | ❌ | natural, central, bright |
+| Adam | 1 | 5.00 | 2.00 | 1.00 | 0 | ❌ | natural, southern, bright |
 
 ## Selection
 
-_Pending human rating — not yet performed._
+Rules: task §Selection rules. Pass: vi 21/24, en 24/24. Rule 5 (one language
+per voice) uses `summarize`'s assignment: en has ≥ 3 passing voices, so each
+bilingual pass stays in the language where it ranks higher; equal ranks keep vi
+(T18). Rule 3's vi region tie-break, which `summarize` does not apply, puts
+`Đức Trí` (southern) in place of `Minh Đức` (northern) among the 5/5/5 vi voices.
+
+| language | voice | gender | nat | int | fit | tags |
+|---|---|---|---|---|---|---|
+| vi | Mai Anh | female | 5.00 | 5.00 | 5.00 | news, northern, deep |
+| vi | Đức Trí | male | 5.00 | 5.00 | 5.00 | storyteller, southern, warm |
+| vi | Thiền Tâm Đức | male | 5.00 | 5.00 | 5.00 | storyteller, northern, deep |
+| vi | Thiện Minh | male | 5.00 | 5.00 | 5.00 | storyteller, northern, deep |
+| en | Adam | male | 5.00 | 5.00 | 5.00 | natural, deep |
+| en | Thục Đoan | female | 5.00 | 5.00 | 5.00 | storyteller, warm |
+| en | Phạm Tuyên | male | 5.00 | 5.00 | 5.00 | natural, calm |
+| en | Thái Sơn | male | 5.00 | 5.00 | 5.00 | storyteller, warm |
+
+- Gender balance: ≥ 1 female and ≥ 1 male per language.
+- No voice in two languages. Tags ⊆ D9, ≤ 4 each; en carries no region tag.
+- No O2 escalation: every en candidate passed.
+- Handed to 04.2.2-T1 (catalog revision 1).

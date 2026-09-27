@@ -1,1 +1,49 @@
 language,sample_id,voice_id,gender,region,style,rater,naturalness,intelligibility,night_fit,mispronunciations,rater_tags,notes
+vi,s-9f7f76,Thiện Minh,male,northern,Phong cách kể chuyện,NMT,5,5,5,,deep,label: Tuấn
+vi,s-e5ee27,Hải Đăng,male,northern,Phong cách tự nhiên,NMT,5,5,1,,bright,label: Tuấn
+vi,s-3e1ee2,Ngọc Huyền,female,northern,Giọng đọc tự nhiên,NMT,5,5,4,,bright,label: Huyền
+vi,s-3abc3e,Thục Đoan,female,southern,Phong cách kể chuyện,NMT,5,5,5,,calm,label: Huyền
+vi,s-c0c277,Ngọc Trân,female,central,Phong cách tự nhiên,NMT,5,2,1,,bright,label: Huyền
+vi,s-4958f2,Quốc Tuấn,male,northern,Phong cách tự nhiên,NMT,5,5,4,,calm,label: Tuấn
+vi,s-69fd9b,Minh Triết,male,southern,Phong cách tin tức,NMT,5,5,4,,warm,label: Tuấn
+vi,s-adc3cd,Kim Thanh,female,southern,Phong cách đọc truyện,NMT,5,5,3,,bright,label: Huyền
+vi,s-d01ee3,Đoan Trang,female,northern,Phong cách tự nhiên,NMT,5,5,4,,bright,label: Huyền
+vi,s-be314a,Đức Trí,male,southern,Phong cách đọc truyện,NMT,5,5,5,,warm,label: Tuấn; best chose 1
+vi,s-750d40,Mỹ Duyên,female,southern,Phong cách đọc truyện,NMT,5,5,5,,deep,label: Huyền
+vi,s-e25e73,Minh Đức,male,northern,Phong cách tin tức,NMT,5,5,5,,warm,label: Tuấn
+vi,s-55557a,Quang Sơn,male,central,Phong cách tự nhiên,NMT,2,2,2,,warm,label: Tuấn
+vi,s-433f94,Thùy Dung,female,southern,Phong cách tin tức,NMT,5,5,4,,bright,label: Huyền
+vi,s-5f2588,Xuân Vĩnh,male,northern,Phong cách tự nhiên,NMT,5,5,2,,whisper,label: Tuấn
+vi,s-c905ba,Adam,male,southern,Giọng đọc tự nhiên,NMT,5,2,1,,bright,label: Tuấn
+vi,s-d3cc83,Thanh Bình,male,northern,Phong cách kể chuyện,NMT,5,5,1,,bright,label: Tuấn
+vi,s-045496,Thiền Tâm Đức,male,northern,Phong cách kể chuyện,NMT,5,5,5,,deep,label: Tuấn
+vi,s-e7920c,Quỳnh Anh,female,northern,Phong cách đọc truyện,NMT,5,5,4,,bright,label: Huyền
+vi,s-55f1cd,Trúc Ly,female,northern,Phong cách tự nhiên,NMT,5,5,3,,bright,label: Huyền
+vi,s-186d54,Mai Anh,female,northern,Phong cách tin tức,NMT,5,5,5,,deep,label: Huyền
+vi,s-6e0a91,Ngọc Linh,female,northern,Phong cách kể chuyện,NMT,5,5,4,,calm,label: Huyền
+vi,s-d998af,Thái Sơn,male,southern,Phong cách kể chuyện,NMT,5,5,5,,deep,label: Tuấn
+vi,s-ac55d0,Phạm Tuyên,male,northern,Phong cách tự nhiên,NMT,5,5,5,,deep,label: Tuấn; best chose 2
+en,s-49210d,Trúc Ly,female,northern,Phong cách tự nhiên,NMT,5,5,4,,bright,label: Maria
+en,s-fb252d,Quang Sơn,male,central,Phong cách tự nhiên,NMT,5,5,3,,calm,label: David
+en,s-05ac43,Mai Anh,female,northern,Phong cách tin tức,NMT,5,5,5,,bright,label: Maria
+en,s-cf861a,Kim Thanh,female,southern,Phong cách đọc truyện,NMT,5,5,2,,calm,label: Maria
+en,s-24e9cd,Adam,male,southern,Giọng đọc tự nhiên,NMT,5,5,5,,deep,label: David; best chosse
+en,s-51ee9f,Đức Trí,male,southern,Phong cách đọc truyện,NMT,5,5,5,,deep,label: David; best chosse
+en,s-54fccc,Thanh Bình,male,northern,Phong cách kể chuyện,NMT,5,5,3,,bright,label: David
+en,s-f340fb,Thục Đoan,female,southern,Phong cách kể chuyện,NMT,5,5,5,,warm,label: Maria
+en,s-e949db,Xuân Vĩnh,male,northern,Phong cách tự nhiên,NMT,5,5,5,,warm,label: David
+en,s-7b63fa,Đoan Trang,female,northern,Phong cách tự nhiên,NMT,5,5,3,,bright,label: Maria
+en,s-2c870c,Thiền Tâm Đức,male,northern,Phong cách kể chuyện,NMT,5,5,5,,deep,label: David; best chosse
+en,s-05f527,Minh Đức,male,northern,Phong cách tin tức,NMT,5,5,4,,calm,label: David
+en,s-ebbb82,Quỳnh Anh,female,northern,Phong cách đọc truyện,NMT,5,5,3,,bright,label: Maria
+en,s-e04014,Minh Triết,male,southern,Phong cách tin tức,NMT,5,5,3,,bright,label: David
+en,s-b32955,Ngọc Huyền,female,northern,Giọng đọc tự nhiên,NMT,5,5,4,,warm,label: Maria
+en,s-433ce2,Mỹ Duyên,female,southern,Phong cách đọc truyện,NMT,5,5,3,,bright,label: Maria
+en,s-734666,Thái Sơn,male,southern,Phong cách kể chuyện,NMT,5,5,5,,warm,label: David
+en,s-f0be7e,Phạm Tuyên,male,northern,Phong cách tự nhiên,NMT,5,5,5,,calm,label: David
+en,s-c78418,Quốc Tuấn,male,northern,Phong cách tự nhiên,NMT,5,5,4,,bright,label: David
+en,s-e75155,Ngọc Linh,female,northern,Phong cách kể chuyện,NMT,5,5,4,,calm,label: Maria
+en,s-b422a8,Thùy Dung,female,southern,Phong cách tin tức,NMT,5,5,3,,bright,label: Maria
+en,s-1169ba,Hải Đăng,male,northern,Phong cách tự nhiên,NMT,5,5,4,,bright,label: David
+en,s-935458,Ngọc Trân,female,central,Phong cách tự nhiên,NMT,5,5,3,,calm,label: Maria
+en,s-0117c5,Thiện Minh,male,northern,Phong cách kể chuyện,NMT,5,5,5,,deep,label: David; best chosse
