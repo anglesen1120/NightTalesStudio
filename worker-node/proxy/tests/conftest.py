@@ -1,7 +1,7 @@
 """Shared fixtures and helpers (D14 test kit).
 
 No secrets are read: dummy keys ≥ 32 chars only. Catalog fixtures are written
-to tmp_path; the rev-0 seed file is loaded once per session from the repo.
+to tmp_path; the seed catalog file is loaded once per session from the repo.
 """
 
 from __future__ import annotations
