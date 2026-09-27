@@ -28,6 +28,71 @@ Other `pins.env` values that must be identical on the node:
 | `OPENAI_EFFORT_IMAGE_HOST` | `low` | effort injected on image calls |
 | `OPENAI_EFFORT_CHAT` | `medium` | effort injected on chat/responses calls |
 
+### MPT upgrade runbook (05.1.1-T1)
+
+`worker-node/bin/mpt-upgrade-diff.py` (stdlib only, `uv run --no-project --python 3.12`) compares a
+**candidate** MPT checkout with the three pinned baselines and exits 1 on any D2/D3/D4 drift; `--help`
+prints the same six steps and the same safety notes, and `--json` emits
+`mpt-upgrade-diff.report.v1` for CI/ops.
+
+| baseline | file | holds |
+|---|---|---|
+| config | `worker-node/mpt/config.example.pinned.toml` (+ `.sha256`, 01.2.2-T1) | the pinned `config.example.toml` copy |
+| params | `worker-node/contract/mpt-videoparams.pinned.json` (05.4.1-T1 S1) | `VideoParams.model_json_schema()` under `model_schema` |
+| routes | `worker-node/contract/mpt-routes.pinned.json` (05.4.1-T1 S1) | the 13 OpenAPI paths under `paths` (+ `mpt_version`, `commit`) |
+
+A green diff is only step 3 of six — do not start a bump without the whole list:
+
+1. Bump `MPT_COMMIT` in `worker-node/pins.env` in its **own** commit (01 D2).
+2. `git -C "$NTS_HOME/src/mpt" fetch && git -C "$NTS_HOME/src/mpt" worktree add "$NTS_HOME/src/mpt-candidate" "$MPT_COMMIT"`, then `cd "$NTS_HOME/src/mpt-candidate" && uv sync`.
+3. `uv run --no-project --python 3.12 worker-node/bin/mpt-upgrade-diff.py --candidate "$NTS_HOME/src/mpt-candidate"` — **exit 0 required** before anything else.
+4. Re-run the 05.4.1-T1 scenario subset **S0, S3, S5, S12** (pin check, route/OpenAPI inventory, validation, restart mid-task) against the candidate; record in `worker-node/contract/mpt-api.md`.
+5. Refresh the three pinned snapshots **in the same commit as the bump** and re-run the diff — exit 0 against the refreshed baselines.
+6. A confirmed BLOCKING change is escalated to the TL, not patched here: D2/D3/D4, `MptSubmitFields`, the D14 fixtures (05.4.1-T2), the adapter (11.3.5-T1) and mock-mpt (11.1.2-T1) move together. If the change is unacceptable, keep the old `MPT_COMMIT` and revert the bump commit.
+
+**Safety — steps 2–3 execute the candidate's code**: only run commits fetched from the pinned
+upstream, on a machine where that is acceptable. The child gets `/dev/null` stdin, a throwaway
+`HOME`, its own process group (killed on timeout) and a minimal environment, but it still runs
+with the operator's privileges and can read the filesystem and the network — this is environment
+confinement, not a sandbox. The check cleans up after itself: a `config.toml`, `resource/` or
+`storage/` the child created is removed again, one that already existed is left alone, and
+`__pycache__` is kept. Child stderr is never echoed; on a failure it is written to
+`$NTS_HOME/logs/mpt-upgrade-diff-<utc>.stderr.log` (0600) and the report names only the exception
+class plus that path. A whole run is capped at 90 s (child `min(remaining, 60)`, git
+`min(remaining, 10)`), and the child's stdout at 16 MiB.
+
+Exit **2** (not 1) means the environment, never drift: a baseline that is missing, unreadable,
+non-UTF-8 or the wrong shape (`paths` not an object of path → list of methods, `model_schema`
+not an object); a candidate `config.example.toml` that is non-UTF-8 or unparsable TOML (diff (a)
+is skipped); a candidate schema that has no `properties`, an unresolved `$ref`, a `$ref` cycle or
+more than 10 000 schema nodes; child output with zero or two or more sentinel lines; a child
+timeout, an oversized capture, or a candidate `HEAD` that differs from `MPT_COMMIT` in
+`pins.env`. A candidate with **no** git metadata stays a warning (`"mpt_commit": null`), and a
+dirty worktree (tracked modifications or untracked files, e.g. a stale `.venv` outside `.gitignore`) is a warning plus `"dirty": true` — the pin checkout
+`.nts/src/mpt` is dirty by design (strip-bundled-music deletes tracked files), so a dirty pin
+still exits 0.
+
+BLOCKING: a `used` config key added/removed/default-changed/type-changed; a D3 `VideoParams` field
+renamed/retyped/enum-changed/absent, or one whose `required` membership, numeric/length/pattern/
+items-count bounds or nested `items` object shape changed; any field newly `required` (D3 or not);
+a D4 route method set changed or the route removed; a `verify_token` dropped from any D4
+**method**+path pair (`POST /api/v1/videos`, `GET`/`DELETE /api/v1/tasks/{task_id}`,
+`GET /api/v1/download/{file_path}` — the pair, not the path, so a change on one method cannot hide
+behind another); an unresolved `$ref`. Advisory only: a non-`used` config key changed, a `used`
+key absent from **both** files (the guard is inert), the commented-out `video_codec` /
+`whisper.initial_prompt` (T5), a non-D3 `VideoParams` field or a constraint change on one, a
+non-D4 route, and the progress-constant set (T6, warning — never blocking). The text report has a
+`## pins` block for the git warnings, and every candidate-derived string in it is control-escaped.
+Values are key names, types and route paths — a secret key or a value carrying URL userinfo
+appears as `<changed>` / `<set>` / `<empty>`, never its value.
+
+Verified 2026-09-27 at the pin `3d5f4e421927d61f3eac729cf4b711ac0b69d688`
+(`--candidate "$NTS_HOME/src/mpt"`): exit 0, `"ok": true`, `"blocking": []`, `mpt_commit` = the pin,
+config baseline sha256 `c073fdfc86a894b5fa4121f7c5c7124ca90c3fe92c61ba58b8465c54caa4809b`, wall time
+1.38 s (one fused child instead of two), `"dirty": true` (the pin is dirty by design) and
+`git status --porcelain` byte-identical before and after; `--self-test` (58 synthetic cases,
+including a stub-candidate run() seam) green. This tool does not replace 05.4.1-T1 S0.
+
 ## 2. Model weights
 
 sha256 = file content hash, spot-checked on the Mac 2026-09-26 (`shasum -a 256`, all rows OK).
@@ -262,3 +327,5 @@ Planned rows (metric | value | unit | source link):
 | date | author | change | question ref |
 |---|---|---|---|
 | 2026-09-26 | PythonSpikes (subagent) | initial version; §1–10 + §12 filled from repo facts; §11 stubbed pending 05.5.2 | 01.3.3-T1 |
+| 2026-09-27 | ImplUpgradeDiff (subagent) | §1 gains the MPT upgrade runbook (six steps + the three pinned baselines + BLOCKING/advisory rules + the pin-run evidence); tool `worker-node/bin/mpt-upgrade-diff.py` | 05.1.1-T1 |
+| 2026-09-27 | FixUpgradeDiff (subagent) | §1 runbook: candidate-code warning + cleanup/stderr-log/deadline notes, exit-2 matrix, verify_token per method+path, constraint/`required` BLOCKING rules, `## pins` block, 57 self-test cases, pin-run wall time | 05.1.1-T1 |
