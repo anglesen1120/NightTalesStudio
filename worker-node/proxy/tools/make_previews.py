@@ -16,7 +16,8 @@ Imports `nts_vieneu_proxy.catalog` — run in the proxy venv:
 Exit 0 ok · 1 a voice/upload failed · 2 usage/config.
 
 `PROXY_API_KEY` is read from the environment only — never argv, never logged,
-never inherited by child processes. Env overrides (test seams, not contract):
+never inherited by child processes (ffmpeg/ffprobe get a PATH/HOME/LANG/LC_ALL/TMPDIR
+allow-list; the storage CLI gets only its mapped AWS_* pair, SEC-0423-1). Env overrides (test seams, not contract):
 `PROXY_BASE_URL` (default http://127.0.0.1:8001), `NTS_PREVIEW_OUT`,
 `NTS_PREVIEW_TEXTS_DIR`, `NTS_PREVIEW_MANIFEST`, `FFMPEG_PATH`, `FFPROBE_PATH`,
 `NTS_STORAGE_CLI` (S3-compatible CLI name; ⚠️ `aws s3api` until 11.4.1 pins it),
@@ -297,7 +298,7 @@ class CliStorage:
         self._cli = shlex.split(cli or os.environ.get("NTS_STORAGE_CLI", "aws"))
 
     def _env(self) -> dict:
-        env = dict(os.environ)
+        env = {k: v for k, v in os.environ.items() if k not in _SECRET_ENV}  # SEC-0423-1
         key = os.environ.get("NTS_PREVIEW_WRITE_KEY")
         secret = os.environ.get("NTS_PREVIEW_WRITE_SECRET")
         if key and secret:
@@ -402,7 +403,13 @@ def generate(
         _log(f"error: proxy not reachable at {base_url} (/health)")
         return 2
 
-    rows_by_id = {r["id"]: r for r in manifest}
+    active_ids = {v.id for v in catalog.voices if v.active}
+    rows_by_id = {}
+    for r in manifest:
+        if r["id"] in active_ids:
+            rows_by_id[r["id"]] = r
+        else:  # QA-0423-1: one row per active voice; a retired voice keeps no row
+            _log(f"drop {r['id']}: not an active catalog voice, manifest row removed")
     failed: list[str] = []
     for voice in catalog.voices:
         if not voice.active:
@@ -508,6 +515,9 @@ def upload(
             _log(f"fail {row['id']}: not in catalog")
             failed.append(row["id"])
             continue
+        if not entry["active"]:
+            _log(f"skip {row['id']}: inactive in the catalog, not uploaded")  # QA-0423-1
+            continue
         if entry["previewStorageKey"] == row["key"]:
             continue  # already recorded
         local = out_dir / Path(row["key"]).name
@@ -562,9 +572,18 @@ def upload(
     return 1 if failed else 0
 
 
+_SECRET_ENV = ("PROXY_API_KEY", "NTS_PREVIEW_WRITE_KEY", "NTS_PREVIEW_WRITE_SECRET")
+_CHILD_ENV_KEYS = ("PATH", "HOME", "LANG", "LC_ALL", "TMPDIR")
+
+
+def _child_env() -> dict:
+    # SEC-0423-1: ffmpeg/ffprobe get an explicit allow-list, never the parent env.
+    return {k: os.environ[k] for k in _CHILD_ENV_KEYS if k in os.environ}
+
+
 def _default_runner(argv: list[str]) -> subprocess.CompletedProcess:
     cp = subprocess.run(
-        argv, capture_output=True, text=True, timeout=300, check=False
+        argv, capture_output=True, text=True, timeout=300, check=False, env=_child_env()
     )
     if cp.returncode != 0:
         raise RuntimeError(f"{argv[0]} exited {cp.returncode}: {cp.stderr[-200:]}")

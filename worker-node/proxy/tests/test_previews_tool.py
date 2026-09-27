@@ -343,6 +343,36 @@ def test_previews_inactive_voice_skipped(fake_proxy, tmp_path) -> None:
     assert [r["id"] for r in rows] == ["Ngọc Huyền"]
 
 
+def test_previews_retired_voice_row_dropped_on_generate(fake_proxy, tmp_path) -> None:
+    # QA-0423-1: a voice deactivated after its preview was made loses its manifest row.
+    voices = [_voice("Hải Đăng", "vi"), _voice("Mai Anh", "vi"), _voice("Ngọc Huyền", "en")]
+    assert _gen(fake_proxy, tmp_path, _catalog(tmp_path, voices)) == 0
+    assert {r["id"] for r in _manifest(tmp_path)} == {"Hải Đăng", "Mai Anh", "Ngọc Huyền"}
+    voices[0]["active"] = False
+    assert _gen(fake_proxy, tmp_path, _catalog(tmp_path, voices, revision=1)) == 0
+    assert {r["id"] for r in _manifest(tmp_path)} == {"Mai Anh", "Ngọc Huyền"}
+
+
+def test_previews_upload_skips_inactive_voice(tmp_path, sine_mp3) -> None:
+    # QA-0423-1: a stale row for an inactive voice is never uploaded or pinned.
+    cat = _catalog(tmp_path, [_voice("Hải Đăng", "vi", active=False), _voice("Ngọc Huyền", "en")])
+    _, row = _manifest_row(tmp_path, "Hải Đăng", 1, sine_mp3.read_bytes())
+    store = MemStore()
+    rc = mk.upload(
+        catalog_path=cat,
+        envs=["dev"],
+        out_dir=tmp_path / "out",
+        manifest_path=_write_manifest(tmp_path, [row]),
+        storage=store,
+    )
+    assert rc == 0
+    assert store.puts == []
+    doc = json.loads(cat.read_text(encoding="utf-8"))
+    assert doc["voices"][0]["previewStorageKey"] is None
+    assert doc["revision"] == 0
+
+
+
 def test_previews_missing_key_exits_2(monkeypatch, tmp_path) -> None:
     monkeypatch.delenv("PROXY_API_KEY", raising=False)
     rc = mk.main(
@@ -671,3 +701,32 @@ def test_previews_upload_refuses_symlinked_catalog(tmp_path, sine_mp3) -> None:
     assert store.puts == []  # refused before the PUTs
     assert link.is_symlink()
     assert json.loads(real.read_text(encoding="utf-8"))["revision"] == 0
+
+
+# --- SEC-0423-1: secrets never reach child processes -----------------------
+
+
+def test_previews_ffmpeg_child_gets_no_secret_env(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("PROXY_API_KEY", "k" * 40)
+    monkeypatch.setenv("NTS_PREVIEW_WRITE_SECRET", "s" * 40)
+    dump = tmp_path / "env.txt"
+    stub = _fake_cli(tmp_path, f'env > "{dump}"\n')
+    mk._default_runner([stub])
+    names = {line.split("=", 1)[0] for line in dump.read_text().splitlines()}
+    assert "PROXY_API_KEY" not in names
+    assert "NTS_PREVIEW_WRITE_SECRET" not in names
+    assert "PATH" in names
+
+
+def test_previews_storage_child_gets_write_key_but_not_proxy_key(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("PROXY_API_KEY", "k" * 40)
+    monkeypatch.setenv("NTS_PREVIEW_WRITE_KEY", "w" * 20)
+    monkeypatch.setenv("NTS_PREVIEW_WRITE_SECRET", "s" * 40)
+    dump = tmp_path / "env.txt"
+    cli = _fake_cli(tmp_path, f'env > "{dump}"\necho \'{{"ContentLength": 1}}\'\n')
+    mk.CliStorage(cli=cli).head_object("nt-public-dev", "voice-previews/x.v1.mp3")
+    env = dict(line.split("=", 1) for line in dump.read_text().splitlines() if "=" in line)
+    assert "PROXY_API_KEY" not in env
+    assert "NTS_PREVIEW_WRITE_KEY" not in env and "NTS_PREVIEW_WRITE_SECRET" not in env
+    assert env["AWS_ACCESS_KEY_ID"] == "w" * 20
+    assert env["AWS_SECRET_ACCESS_KEY"] == "s" * 40
