@@ -722,11 +722,37 @@ def test_previews_storage_child_gets_write_key_but_not_proxy_key(tmp_path, monke
     monkeypatch.setenv("PROXY_API_KEY", "k" * 40)
     monkeypatch.setenv("NTS_PREVIEW_WRITE_KEY", "w" * 20)
     monkeypatch.setenv("NTS_PREVIEW_WRITE_SECRET", "s" * 40)
+    monkeypatch.setenv("VIENEU_API_KEY", "v" * 40)
+    monkeypatch.setenv("GITHUB_PAT", "g" * 40)  # no secret-looking suffix: allow-list still drops it
+    monkeypatch.setenv("AWS_PROFILE", "nts-preview")
+    monkeypatch.setenv("AWS_SESSION_TOKEN", "t" * 40)
     dump = tmp_path / "env.txt"
     cli = _fake_cli(tmp_path, f'env > "{dump}"\necho \'{{"ContentLength": 1}}\'\n')
     mk.CliStorage(cli=cli).head_object("nt-public-dev", "voice-previews/x.v1.mp3")
     env = dict(line.split("=", 1) for line in dump.read_text().splitlines() if "=" in line)
     assert "PROXY_API_KEY" not in env
     assert "NTS_PREVIEW_WRITE_KEY" not in env and "NTS_PREVIEW_WRITE_SECRET" not in env
+    assert "VIENEU_API_KEY" not in env and "GITHUB_PAT" not in env
+    assert env["AWS_PROFILE"] == "nts-preview"
+    assert "AWS_SESSION_TOKEN" not in env  # would not match the mapped pair
     assert env["AWS_ACCESS_KEY_ID"] == "w" * 20
     assert env["AWS_SECRET_ACCESS_KEY"] == "s" * 40
+
+
+def test_previews_upload_half_write_pair_exits_2(tmp_path, sine_mp3, monkeypatch) -> None:
+    # SEC-0423C-1: one of the pair set -> refuse before any bucket traffic.
+    monkeypatch.setenv("NTS_PREVIEW_WRITE_KEY", "w" * 20)
+    monkeypatch.delenv("NTS_PREVIEW_WRITE_SECRET", raising=False)
+    cat = _catalog(tmp_path, [_voice("Hải Đăng", "vi"), _voice("Ngọc Huyền", "en")])
+    _, row = _manifest_row(tmp_path, "Hải Đăng", 1, sine_mp3.read_bytes())
+    store = MemStore()
+    rc = mk.upload(
+        catalog_path=cat,
+        envs=["dev"],
+        out_dir=tmp_path / "out",
+        manifest_path=_write_manifest(tmp_path, [row]),
+        storage=store,
+    )
+    assert rc == 2
+    assert store.puts == []
+    assert json.loads(cat.read_text(encoding="utf-8"))["revision"] == 0

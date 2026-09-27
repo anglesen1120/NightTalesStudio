@@ -17,7 +17,8 @@ Exit 0 ok · 1 a voice/upload failed · 2 usage/config.
 
 `PROXY_API_KEY` is read from the environment only — never argv, never logged,
 never inherited by child processes (ffmpeg/ffprobe get a PATH/HOME/LANG/LC_ALL/TMPDIR
-allow-list; the storage CLI gets only its mapped AWS_* pair, SEC-0423-1). Env overrides (test seams, not contract):
+allow-list; the storage CLI gets that list plus its own AWS_* config/credential names, with
+the mapped NTS_PREVIEW_WRITE_* pair taking precedence, SEC-0423-1). Env overrides (test seams, not contract):
 `PROXY_BASE_URL` (default http://127.0.0.1:8001), `NTS_PREVIEW_OUT`,
 `NTS_PREVIEW_TEXTS_DIR`, `NTS_PREVIEW_MANIFEST`, `FFMPEG_PATH`, `FFPROBE_PATH`,
 `NTS_STORAGE_CLI` (S3-compatible CLI name; ⚠️ `aws s3api` until 11.4.1 pins it),
@@ -298,12 +299,13 @@ class CliStorage:
         self._cli = shlex.split(cli or os.environ.get("NTS_STORAGE_CLI", "aws"))
 
     def _env(self) -> dict:
-        env = {k: v for k, v in os.environ.items() if k not in _SECRET_ENV}  # SEC-0423-1
+        env = {k: os.environ[k] for k in _STORAGE_ENV_KEYS if k in os.environ}  # SEC-0423-1
         key = os.environ.get("NTS_PREVIEW_WRITE_KEY")
         secret = os.environ.get("NTS_PREVIEW_WRITE_SECRET")
         if key and secret:
             env["AWS_ACCESS_KEY_ID"] = key
             env["AWS_SECRET_ACCESS_KEY"] = secret
+            env.pop("AWS_SESSION_TOKEN", None)  # an inherited token belongs to another key pair
         return env
 
     def head_object(self, bucket: str, key: str):
@@ -506,6 +508,10 @@ def upload(
     if catalog_path.is_symlink():
         _log(f"error: refusing to write through symlink: {catalog_path}")
         return 2  # before any bucket traffic, not after the PUTs
+    if bool(os.environ.get("NTS_PREVIEW_WRITE_KEY")) != bool(os.environ.get("NTS_PREVIEW_WRITE_SECRET")):
+        # SEC-0423C-1: a half-set pair would fall back to ambient AWS credentials.
+        _log("error: NTS_PREVIEW_WRITE_KEY and NTS_PREVIEW_WRITE_SECRET must both be set or both unset")
+        return 2
     by_id = {v["id"]: v for v in doc["voices"]}
     failed: list[str] = []
     changed = False
@@ -572,8 +578,16 @@ def upload(
     return 1 if failed else 0
 
 
-_SECRET_ENV = ("PROXY_API_KEY", "NTS_PREVIEW_WRITE_KEY", "NTS_PREVIEW_WRITE_SECRET")
 _CHILD_ENV_KEYS = ("PATH", "HOME", "LANG", "LC_ALL", "TMPDIR")
+# Storage CLI child (D13.1 allow-list): base keys + the CLI's own config and credentials.
+_STORAGE_ENV_KEYS = _CHILD_ENV_KEYS + (
+    "AWS_PROFILE", "AWS_CONFIG_FILE", "AWS_SHARED_CREDENTIALS_FILE", "AWS_REGION",
+    "AWS_DEFAULT_REGION", "AWS_ENDPOINT_URL", "AWS_CA_BUNDLE",
+    "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN",
+    "AWS_ENDPOINT_URL_S3", "AWS_USE_FIPS_ENDPOINT", "AWS_MAX_ATTEMPTS", "AWS_RETRY_MODE",
+    "REQUESTS_CA_BUNDLE", "HTTPS_PROXY", "HTTP_PROXY", "NO_PROXY",
+    "https_proxy", "http_proxy", "no_proxy",  # CRV-0423C-1
+)
 
 
 def _child_env() -> dict:
