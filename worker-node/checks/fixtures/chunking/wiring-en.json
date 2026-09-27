@@ -1,0 +1,40 @@
+{
+  "input": "trial/fixtures/wiring-en.txt",
+  "input_sha256": "ac41e394bb2b0e2d0dd6af293169a733cc718b37ca938553ce4fcb16acb2199d",
+  "input_text": "The old town is quiet after midnight, and a single lantern glows above the stone bridge. Narrow streets curve past wooden doors, and the cobblestones still hold the warmth of the day. A gray cat sits on a windowsill and watches the empty square with calm yellow eyes. Somewhere near the river, a bell in the clock tower rings once and the sound fades over the rooftops. The walker passes a closed bakery, where the smell of fresh bread drifts through a small open window. At the end of the lane, the moon rises over the hills and paints the chimneys silver.\n",
+  "normalized": "The old town is quiet after midnight, and a single lantern glows above the stone bridge. Narrow streets curve past wooden doors, and the cobblestones still hold the warmth of the day. A gray cat sits on a windowsill and watches the empty square with calm yellow eyes. Somewhere near the river, a bell in the clock tower rings once and the sound fades over the rooftops. The walker passes a closed bakery, where the smell of fresh bread drifts through a small open window. At the end of the lane, the moon rises over the hills and paints the chimneys silver.",
+  "punctuations": [
+    "?",
+    ",",
+    ".",
+    "、",
+    ";",
+    ":",
+    "!",
+    "…",
+    "？",
+    "，",
+    "。",
+    "、",
+    "；",
+    "：",
+    "！",
+    "...",
+    "،",
+    "؛",
+    "؟"
+  ],
+  "chunks": [
+    "The old town is quiet after midnight",
+    "and a single lantern glows above the stone bridge",
+    "Narrow streets curve past wooden doors",
+    "and the cobblestones still hold the warmth of the day",
+    "A gray cat sits on a windowsill and watches the empty square with calm yellow eyes",
+    "Somewhere near the river",
+    "a bell in the clock tower rings once and the sound fades over the rooftops",
+    "The walker passes a closed bakery",
+    "where the smell of fresh bread drifts through a small open window",
+    "At the end of the lane",
+    "the moon rises over the hills and paints the chimneys silver"
+  ]
+}

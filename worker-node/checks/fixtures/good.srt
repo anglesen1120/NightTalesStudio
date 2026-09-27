@@ -1,0 +1,15 @@
+1
+00:00:00,000 --> 00:00:02,000
+The lighthouse keeper counted seven lamps
+
+2
+00:00:02,200 --> 00:00:04,500
+Each one belonged to a family that had left
+
+3
+00:00:04,700 --> 00:00:07,000
+yet the fires still answered the sea
+
+4
+00:00:07,200 --> 00:00:09,400
+and the village slept through the storm

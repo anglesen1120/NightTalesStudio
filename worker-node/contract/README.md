@@ -55,6 +55,7 @@ ruling id on each changed line.
 | 2026-09-27 | Freeze corrections: `done` also with `state = cancelled`; `images` `null` while `state = running`; `check.subtitles` lists all 13 D9 keys; lost `detail` split `mpt_task_missing`/`mpt_restarted` | T70 | none (doc-only corrections; the fixtures already carried these shapes) |
 | 2026-09-27 | Loud fixture arithmetic: `after.true_peak_dbtp` -0.4 → **-1.6** (≤ the `loudnorm` TP target, below the pre-normalization -0.9), `normalization_type` `linear` → `dynamic` + the D9 warning `loudnorm_dynamic`; integrated -11.2 kept — now consistent with `render-quality.v1.fail-loudness.json` | — (fixture fix, CRV-0542-2) | `render-check.v1.loud` |
 | 2026-09-27 | `--scan` hardened: content values must be `<…sha256=…>` markers (leaf-key aware), trimmed key allow-list + value rule, secret-shaped values flag, quoted/traceback/`~`/`$HOME` paths flag, whole-string marker rule, dotfiles scanned, symlinks/non-regular/> 8 MiB fail; usage errors exit 2; `--coverage` fails on a missing mapped fixture; filename→scenario coherence; DIR mode pins `video_subject`/`video_terms` shapes | T71 | none (checker-only) |
+| 2026-09-27 | Refreshed values to the pinned D9 formulas (05.5.1-T1): zero-cues `cps_p95` 1200.0 / `sync_suspect` 4; silent `silence.longest_s = total_s = 302.1`. Key sets unchanged; the one exception to the T61 freeze | T77, T78 | `render-check.v1.{zero-cues,silent}` |
 
 ## Fixture table (D14 — 24 files)
 
@@ -80,7 +81,7 @@ fake but self-consistent.
 | `render-node-health.v1.proxy-down.json` | `status=error`, `reasons:[tts_proxy_not_ok]`, `accepting=false` | D4 + 04 D8, T62 (derived) |
 | `render-node-health.v1.disk-low.json` | `reasons:[disk_low]`, `accepting=false` | D4 (used ≥ 85 %), derived |
 | `render-check.v1.ok.json` | the full measured-report shape | D9 example verbatim |
-| `render-check.v1.loud.json` | out-of-band loudness record | D9 steps |
+| `render-check.v1.loud.json` | out-of-band loudness record (illustrates the schema; its integrated -11.2 is outside the D10 band on purpose, not a passing sample) | D9 steps |
 | `render-check.v1.silent.json` | `errors:["audio_silent"]` + loudness `null` (never `-Infinity`) | D9 X4 + T65 |
 | `render-check.v1.no-subtitles.json` | `subtitles.present=false`, `cues=0` | D9 |
 | `render-check.v1.zero-cues.json` | whisper-fail-open detection input (`zero_duration`, `coverage_share=0`) | D9 + S7/S8, T55 |

@@ -1,0 +1,32 @@
+{
+  "input": "synthetic:synthetic-cjk-punctuation",
+  "input_sha256": "573dfa62829afcb9dd79283207138ccaf5609dbe2eacff0267237e0a141cdbc5",
+  "input_text": "第一句。第二句？第三句！",
+  "normalized": "第一句。第二句？第三句！",
+  "punctuations": [
+    "?",
+    ",",
+    ".",
+    "、",
+    ";",
+    ":",
+    "!",
+    "…",
+    "？",
+    "，",
+    "。",
+    "、",
+    "；",
+    "：",
+    "！",
+    "...",
+    "،",
+    "؛",
+    "؟"
+  ],
+  "chunks": [
+    "第一句",
+    "第二句",
+    "第三句"
+  ]
+}

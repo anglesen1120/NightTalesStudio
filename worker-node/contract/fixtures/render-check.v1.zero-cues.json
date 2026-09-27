@@ -60,8 +60,8 @@
     "coverage_share": 0.0,
     "max_cue_chars": 60,
     "long_cues": 0,
-    "cps_p95": 0.0,
-    "sync_suspect": 0,
+    "cps_p95": 1200.0,
+    "sync_suspect": 4,
     "text_matches_script": true,
     "text_mismatch_cues": 0
   },

@@ -1,0 +1,30 @@
+{
+  "input": "synthetic:synthetic-pause-tags",
+  "input_sha256": "705c64cb9a23972e75b0760175d62e543715f89ec3ff9ab2b7e1e886fc23a261",
+  "input_text": "First sentence [pause: 2s] second one [pause: nope] third [PAUSA] end.",
+  "normalized": "First sentence second one third end.",
+  "punctuations": [
+    "?",
+    ",",
+    ".",
+    "、",
+    ";",
+    ":",
+    "!",
+    "…",
+    "？",
+    "，",
+    "。",
+    "、",
+    "；",
+    "：",
+    "！",
+    "...",
+    "،",
+    "؛",
+    "؟"
+  ],
+  "chunks": [
+    "First sentence second one third end"
+  ]
+}
