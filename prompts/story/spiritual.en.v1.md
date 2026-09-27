@@ -29,11 +29,18 @@ A story is `hook` → `paragraphs` → `ending`. In the body, each paragraph car
 
 `setup` → `build_up` → `clue` → `twist` → `reveal` → `aftermath`
 
+Every `build_up` paragraph stands before the first `clue`; after `clue` only
+`clue` then `twist` remain; after `reveal` no earlier beat returns. A paragraph
+added for length goes where it belongs in this order — never after `reveal` or
+`aftermath`.
+
 - `build_up` needs at least two paragraphs; `clue` needs at least one.
 - **Fairness rule:** every clue that makes the twist fair must sit in a paragraph **before** `twist`. A twist with no earlier clue is a defect, not a surprise.
 - **The clue of this topic:** the `clue` must be a **promise, debt, gift or wish the protagonist already accepted**. They agreed earlier and have usually forgotten. That acceptance is what gives the twist a price and keeps the story in this topic rather than another one.
-- `reveal` says **who pays**, in one or two sentences; it does not say who is guilty.
-- `aftermath` shows the cost in an ordinary detail — an empty chair, an object returned, a debt settled in full, a bowl nobody uses again — and never re-explains the twist.
+- `reveal` says **who pays**, in one or two sentences; it does not say who is
+  guilty. It is shown as an event or an image — never opened with "I
+  understand", "I realised" or another explanatory formula.
+- `aftermath` shows the cost in an ordinary detail — an empty chair, an object returned, a debt settled in full, a bowl nobody uses again — and never re-explains the twist. One or two paragraphs, no more.
 
 **Exemption for the `short` tier:** the body is only `setup` → `twist` → `reveal`, one paragraph per beat, in that order; `reveal` may be folded into `ending`; one keyword per segment. At that tier `build_up`, `clue` and `aftermath` are not required — but if there is a `twist`, the promise, debt or wish still has to be mentioned in `setup`, even in half a sentence.
 
@@ -97,6 +104,9 @@ The fairness rule in §2 is the condition of the twist: if the twist rests on a 
 
 `ending` closes the story. The last line sets **the cost** down in front of the listener: the debt settled or still owed, the choice made, the person who has to live with it.
 
+The `ending` continues from the state the `aftermath` left: it never returns to
+a scene already closed and never reverses or contradicts the `reveal`.
+
 The call to action is **one short sentence, the final text of `ending`**, and it is a question about the choice:
 
 - Reference wording: "What would you have done?"
@@ -120,6 +130,9 @@ Follow the keyword block supplied with the call exactly: one or two keywords per
 
 Fill `sub_genre`, `setting`, `opening` and `twist_type` from the `spiritual` lists in the vocabulary below, and set `narrator_mode` to match the narration actually written: `first_person` or `third_person`.
 
+Every `structure` value must describe the story actually written — its setting,
+opening and twist — not the value planned or preferred.
+
 - `sub_genre`: karma, the law of the unseen, soul apart from body, debt repaid.
 - `setting`: roadside shrine, family chapel, riverside village, mountain pagoda.
 - `opening`: a promise unpaid, a repeating dream, a dying person's instruction, a moved offering.
@@ -134,6 +147,9 @@ When nothing fits, write a plain short string; the validator adds the `other:` p
 Obey the tier band given in the user message: `{{tier_minutes}}`, `{{token_range}}`, `{{segment_range}}`. Do not carry lengths over from another story, do not widen the band, and do not count words inside this preset.
 
 Each segment — the `hook`, every paragraph and the `ending` — averages about `length.units_per_segment` units; plan the paragraph count first, then write.
+
+Write toward `length.target_tokens` — the middle of the band — not toward the
+lower bound.
 
 Reach at least the lower bound of `{{token_range}}` tokens and `{{segment_range}}` segments before you end; never return fewer than either; do not finish while the story is under the band, and never pad with filler — when the story is short, add a real scene beat, a `build_up` or a `clue` paragraph, instead of repeating what was already told.
 

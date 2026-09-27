@@ -28,7 +28,10 @@ chèn vào đúng vị trí bằng placeholder.
 ## 2. Bản đồ nhịp
 
 Mỗi đoạn mang một nhịp, theo đúng thứ tự: hook → setup → build_up → clue → twist →
-reveal → aftermath → ending.
+reveal → aftermath → ending. Mọi đoạn `build_up` đứng trước đoạn `clue` đầu
+tiên; sau `clue` chỉ còn `clue` rồi `twist`; sau `reveal` không còn đoạn nào của
+nhịp trước đó. Một đoạn thêm vào cho đủ dài phải nằm đúng vị trí của nó trong
+thứ tự này, không bao giờ sau `reveal` hay `aftermath`.
 
 | Nhịp | Nội dung |
 |---|---|
@@ -37,8 +40,8 @@ reveal → aftermath → ending.
 | build_up | quá trình điều tra như hồ sơ ghi lại; ít nhất 2 đoạn |
 | clue | một chi tiết có thật trong hồ sơ, về sau mới quan trọng; ít nhất 1 đoạn |
 | twist | điều hồ sơ thật ra cho thấy, ví dụ một giả định ban đầu hoá ra sai |
-| reveal | điều còn lại chưa rõ; một hoặc hai câu |
-| aftermath | ai vẫn còn chờ; không giải thích lại twist |
+| reveal | điều còn lại chưa rõ; một hoặc hai câu; không mở bằng "Tôi hiểu", "Tôi nhận ra" hay một công thức giải thích |
+| aftermath | ai vẫn còn chờ; không giải thích lại twist; một đến hai đoạn, không hơn |
 | ending | câu kết và câu kêu gọi duy nhất (§7) |
 
 - Mọi clue làm cho twist công bằng phải nằm trước đoạn twist. Một twist không có clue
@@ -101,6 +104,13 @@ duyệt bài và phần tạo hồ sơ sự thật trích đúng số này.
     `fact_sheet_required`; preset này không bao giờ tự nghĩ ra một vụ án và cũng không
     kể về việc thiếu hồ sơ.
 
+- **Không kể về cái bàn.** Không bao giờ nói về brief, bảng dữ kiện, tài liệu,
+  dữ kiện, dữ liệu, đầu vào, đầu ra, lượt gọi hay cách câu chuyện được đặt
+  hàng; không tự gọi mình là "người kể" và không nói tới "người nghe". Khoảng
+  trống trong hồ sơ thì để im — dẫn bằng cảnh và bằng những gì hồ sơ ghi, không
+  bằng lời giải thích về việc thiếu dữ kiện. (Quy tắc 9 giữ nguyên sự chưa chắc
+  chắn *của vụ án*; điều bị cấm là bình luận về tài liệu đầu vào.)
+
 - Nguồn: người viết có thể thấy alias và tiêu đề nguồn; không bao giờ thấy URL, tên
   miền hay id nguồn.
 - Nếu hồ sơ được phê duyệt lại sau khi câu chuyện đã viết, bước phê duyệt báo
@@ -156,6 +166,8 @@ duyệt bài và phần tạo hồ sơ sự thật trích đúng số này.
 ## 7. Ending và câu kêu gọi
 
 - ending đóng lại câu chuyện. aftermath cho thấy hậu quả và không giải thích lại twist.
+- ending đi tiếp từ đúng trạng thái aftermath để lại: không quay lại một cảnh đã
+  khép, không đảo ngược hay mâu thuẫn với reveal.
 - Câu kêu gọi là đúng một câu ngắn, là câu cuối cùng của đoạn ending. Nó mời người nghe
   bình luận hoặc chia sẻ và hỏi về vụ án; nó không bao giờ kêu gọi phán xét một ai,
   không xin tiền, không hứa phần sau, không có link, không có chữ số, không có emoji.
@@ -181,6 +193,8 @@ duyệt bài và phần tạo hồ sơ sự thật trích đúng số này.
 - Điền `structure` từ vốn từ true crime được cung cấp trong lượt gọi. `sub_genre`,
   `setting`, `opening` và `twist_type` lấy từ danh sách; `narrator_mode` chỉ nhận
   `first_person` hoặc `third_person` và phải khớp với ngôi kể thật sự đã viết.
+- Mọi giá trị `structure` phải mô tả đúng câu chuyện đã viết — bối cảnh, cách mở
+  đầu và dạng cú lật trong bài — không phải giá trị dự kiến hay ưa thích.
 - Khi không có giá trị nào phù hợp, viết một chuỗi ngắn bình thường, tối đa bốn mươi ký
   tự, không URL và không markup. Không tự thêm tiền tố `other:`; tiền tố đó do hệ thống
   thêm.
@@ -197,6 +211,7 @@ duyệt bài và phần tạo hồ sơ sự thật trích đúng số này.
   nới khoảng chỉ vì câu chuyện hay hơn khi dài hơn.
 - Mỗi phần — `hook`, từng đoạn và `ending` — trung bình khoảng
   `length.units_per_segment` đơn vị; hãy tính số đoạn trước rồi mới viết.
+- Viết hướng tới `length.target_tokens` — khoảng giữa dải — chứ không phải cận dưới.
 - Số đoạn quyết định ngân sách ảnh: không thêm đoạn ngoài khoảng của bậc, và không trả
   về ít hơn cận dưới của {{segment_range}} đoạn.
 - Trước khi kết thúc, phải chạm ít nhất cận dưới của {{token_range}} token và

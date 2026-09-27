@@ -5,9 +5,28 @@ Joins `scores.csv` with `key.csv` — the only unblinding step, run after all
 scoring is filed — and prints the D15 test with the numbers. `n` is never
 folded: a mean built on fewer than 2 raters is marked `†`, and if a `†` mean
 feeds a deciding comparison the report prints `DECISION NOT READY`.
+`--rater-mode ai` (02 T106) swaps the rater population: coverage, `n`, `†`
+and `DECISION NOT READY` then count the two AI passes (`rater_id` `ai-*`,
+`rater_native` false) instead of native humans, the native count is still
+printed per story, and REPORT.md carries the line `AI-rated (02 T106), not
+native-human evidence` above the D15 section. In both modes a row whose
+`rater_native` disagrees with its `rater_id` (`false` without an `ai-` id, or
+`ai-` with `true`) is neither a native human nor an AI pass: it is rejected as
+a named input error (exit 2), and the rater population is chosen with the same
+predicate the report's coverage section uses, so the printed counts and the
+means can never disagree (SEC-0928b-1). In `native` mode the `ai-*` rows are
+ignored for coverage and means, so the verdict stays human-only.
 
 Exit codes (01 D9): 0 ok · 1 a check failed · 2 usage / environment error.
 Stdlib only: `uv run --no-project --python 3.12 trial/tools/aggregate_scores.py`.
+
+`key.csv`'s `run_id` is validated as a harness cell id before it is ever joined
+onto `--runs-dir` (SEC-0928c-3: a traversal or arbitrary name is a named exit-2
+input error), and a symlinked cell dir, a dir resolving outside `--runs-dir`, or
+a `metrics.json` that is not a JSON object is not a cell record. REPORT.md's
+02 T108 section re-validates each rated cell's `story.json` with the current D3
+validator (CRV-0928c-4) — the recorded `metrics.json.validator_issues` are only
+the run-time snapshot and are the fallback, marked `(recorded)`.
 """
 
 from __future__ import annotations
@@ -18,11 +37,15 @@ import csv
 import io
 import json
 import math
+import re
 import statistics
 import sys
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import story_validator as sv  # noqa: E402
 
 MODEL_LUNA = "gpt-6-luna"
 MODEL_SOL = "gpt-6-sol"
@@ -33,6 +56,11 @@ RATED_TIER = "standard"
 VI_NL_FLOOR = 3.5                      # D15 (b)
 SOL_MARGIN = 0.9                       # D15 (a): luna < sol * 0.9 -> sol
 DEFAULT_LENGTH_TABLE = Path(__file__).with_name("LENGTH.v1.json")
+
+# SEC-0928c-3: a key.csv run_id becomes a path component under --runs-dir, so it
+# must be a harness cell id and nothing else — no traversal, no absolute path.
+RUN_ID_RE = re.compile(r"^(vi|en)-[a-z_]+-b\d+-(luna|sol)"
+                       r"-(short|standard|long)(-r\d+)?$")
 
 KEY_COLUMNS = ["story_id", "run_id", "model", "preset", "language",
                "brief_id", "tier"]
@@ -49,6 +77,22 @@ def _require_columns(path: Path, have: list[str] | None, want: list[str]) -> Non
     missing = [column for column in want if column not in (have or [])]
     if missing:
         raise InputError(f"{path}: missing column(s) {', '.join(missing)}")
+
+
+def _rater_source(row: dict) -> str | None:
+    """Population of one score row: `ai` for an AI pass, `native` for a human.
+
+    SEC-0928b-1: `rater_native` and the `ai-` id must agree — an AI pass is
+    `rater_native=false` with an `ai-*` id, a native human is `rater_native=true`
+    with any other id; anything else is neither population and returns None.
+    `read_scores` rejects the None rows, REPORT.md coverage and `aggregate()`
+    both pick the population with this one predicate, so the printed counts and
+    the means can never disagree.
+    """
+    is_ai = (row.get("rater_id") or "").startswith("ai-")
+    if (row.get("rater_native") == "true") == is_ai:
+        return None
+    return "ai" if is_ai else "native"
 
 def read_key(path: Path) -> tuple[int | None, list[dict]]:
     """key.csv: optional `# seed=<n>` line, then the §3.4 columns."""
@@ -74,7 +118,14 @@ def read_key(path: Path) -> tuple[int | None, list[dict]]:
         if len(cells) != len(header):
             raise InputError(f"{path}:{lineno}: {len(cells)} field(s), "
                              f"expected {len(header)}")
-        rows.append(dict(zip(header, cells)))
+        row = dict(zip(header, cells))
+        # SEC-0928c-3: the run_id is joined onto --runs-dir, so a traversal or
+        # an arbitrary name is rejected here (exit 2), never resolved later.
+        if not RUN_ID_RE.fullmatch(row["run_id"]):
+            raise InputError(f"{path}:{lineno}: bad run_id {row['run_id']!r} — "
+                             "expected <lang>-<preset>-b<n>-<luna|sol>-"
+                             "<short|standard|long>[-rN]")
+        rows.append(row)
     return seed, rows
 
 
@@ -85,6 +136,13 @@ def read_scores(path: Path) -> list[dict]:
     a score outside the rubric range 1-5, an unknown dimension or a row whose
     shape does not match the header is never accepted silently: InputError
     with file:line, exit 2 (QA D3/D4; 01 D9 says never a traceback).
+
+    02 T106 defines the rater ids: an AI pass files `rater_id` = `ai-<lang>-<n>`
+    with `rater_native` = false, a native human files `rater_native` = true with
+    any other id. A row where the two disagree — `rater_native` = false with no
+    `ai-` prefix, or `ai-` with `rater_native` = true — is neither a native
+    human nor an AI pass, so it is rejected in either rater mode (named
+    InputError, exit 2) instead of being counted by one of them (SEC-0928b-1).
     """
     rows = []
     problems = []
@@ -114,6 +172,13 @@ def read_scores(path: Path) -> list[dict]:
                 problems.append(f"{where}: unknown dimension "
                                 f"{row['dimension']!r}")
                 continue
+            if _rater_source(row) is None:
+                problems.append(
+                    f"{where}: rater_native={row.get('rater_native')!r} "
+                    f"disagrees with the rater_id — an AI pass is "
+                    f"rater_native=false with an ai-* rater_id, a native human "
+                    f"is rater_native=true (SEC-0928b-1)")
+                continue
             row["_line"] = reader.line_num
             rows.append(row)
     if problems:
@@ -122,10 +187,24 @@ def read_scores(path: Path) -> list[dict]:
     return rows
 
 def read_metrics(runs_dir: Path, run_id: str) -> dict:
+    """One cell's metrics.json as a dict, or `{}` when it is not a cell record.
+
+    SEC-0928c-3: the cell dir is never read through a symlink or from outside
+    `--runs-dir`, a metrics.json that is not a JSON object (a list, a scalar)
+    is not a metrics record, and a pathological JSON (deep nesting →
+    RecursionError) is an unusable input like a plain parse error — all of them
+    return `{}` instead of raising inside the aggregate.
+    """
+    cell_dir = runs_dir / run_id
     try:
-        return json.loads((runs_dir / run_id / "metrics.json").read_text(encoding="utf-8"))
-    except (ValueError, OSError):
+        if cell_dir.is_symlink() or not cell_dir.is_dir():
+            return {}
+        if not cell_dir.resolve().is_relative_to(runs_dir.resolve()):
+            return {}
+        data = json.loads((cell_dir / "metrics.json").read_text(encoding="utf-8"))
+    except (ValueError, OSError, RecursionError):
         return {}
+    return data if isinstance(data, dict) else {}
 
 
 def percentile(values: list[float], p: float) -> float:
@@ -139,13 +218,25 @@ def mean(values: list[float]) -> float | None:
     return statistics.fmean(values) if values else None
 
 
-def aggregate(key_rows: list[dict], scores: list[dict], runs_dir: Path) -> dict:
+def aggregate(key_rows: list[dict], scores: list[dict], runs_dir: Path,
+              rater_mode: str = "native") -> dict:
     """Build the grouped aggregate: one row per (model, preset, language,
-    dimension). `n` = distinct raters that scored that row.
+    dimension). `n` = the fewest distinct raters on any story of that row
+    (QA-0928c-3: a story that lost one rater makes the row `n=1`, never hidden
+    by the other stories' raters; a story with no rows at all counts 0).
 
     A score row whose `story_id` is absent from `key.csv` is a named
     InputError (exit 2), never a silent drop: a rater typo or a stale key file
     would otherwise shrink the sample unnoticed.
+
+    `rater_mode` (02 T106) selects the rater population that counts for `n`,
+    `mean_rating` and therefore the `†` / `DECISION NOT READY` logic:
+    `native` counts human rows (`rater_native` = true, id not `ai-*`), `ai`
+    counts the two AI passes (`ai-*`, `rater_native` = false) — the same
+    `_rater_source` predicate REPORT.md's coverage section uses (SEC-0928b-1),
+    so the two can never disagree. Rows of the other population stay in
+    `scores` for the coverage section but never enter a mean — an `ai-*` row
+    can never inflate the native-human `n`, and vice versa.
     """
     groups = {}
     for key in key_rows:
@@ -160,6 +251,8 @@ def aggregate(key_rows: list[dict], scores: list[dict], runs_dir: Path) -> dict:
             unknown.setdefault(row["story_id"], []).append(row.get("_line"))
             continue
         gkey = (key["model"], key["preset"], key["language"], row["dimension"])
+        if _rater_source(row) != rater_mode:
+            continue                        # other population: coverage only (02 T106)
         dim_scores.setdefault(gkey, []).append(row)
     if unknown:
         detail = "; ".join(
@@ -190,10 +283,15 @@ def aggregate(key_rows: list[dict], scores: list[dict], runs_dir: Path) -> dict:
         for dim in dims:
             scored = dim_scores.get((model, preset, language, dim), [])
             values = [float(r["score"]) for r in scored]
+            per_story = {}
+            for r in scored:
+                per_story.setdefault(r["story_id"], set()).add(r["rater_id"])
+            stories = [k["story_id"] for k in key_rows
+                       if (k["model"], k["preset"], k["language"]) == (model, preset, language)]
             rows.append({
                 "model": model, "preset": preset, "language": language,
                 "dimension": dim,
-                "n": len({r["rater_id"] for r in scored}),
+                "n": min((len(per_story.get(s, ())) for s in stories), default=0),
                 "mean_rating": mean(values),
                 **stats})
     return {"rows": rows, "groups": groups}
@@ -288,16 +386,35 @@ def load_release(prompts_dir: Path) -> str:
 
 
 def build_handoff(rows, decision, runs_dir: Path, length_table: dict,
-                  release: str, evidence: str) -> dict:
-    """The T2 §3 machine-readable twin of REPORT.md."""
+                  release: str, evidence: str,
+                  rater_mode: str = "native") -> dict:
+    """The T2 §3 machine-readable twin of REPORT.md.
+
+    SEC-0928b-2: `rater_source` records which rater population the verdict
+    rests on (`native` humans or the two `ai` passes, 02 T106), so a consumer
+    of handoff.json alone can tell AI-rated evidence from native-human
+    evidence — the same thing REPORT.md's banner line says.
+
+    CRV-0928c-1: calibration (`d4_calibration`) and the price bounds pool only
+    `outcome == "ok"` + `json_valid is True` cells, while `d15.wi` counts every
+    parsed rated-tier cell whose `json_valid` is false — a failed cell is
+    exactly the case the first list must drop and the second must keep.
+    """
     metrics = []
+    all_metrics = []
     for cell_dir in sorted(runs_dir.iterdir()):
-        metrics_path = cell_dir / "metrics.json"
-        if cell_dir.is_dir() and metrics_path.is_file():
-            try:
-                metrics.append(json.loads(metrics_path.read_text(encoding="utf-8")))
-            except (ValueError, OSError):
-                continue
+        # SEC-0928c-3: a symlinked cell dir, a dir resolving outside --runs-dir
+        # or a metrics.json that is not a JSON object is never a cell record.
+        if not cell_dir.is_dir() or cell_dir.is_symlink():
+            continue
+        m = read_metrics(runs_dir, cell_dir.name)
+        if not m:
+            continue
+        all_metrics.append(m)
+        # Only successful cells calibrate D4/price bounds; a failed cell
+        # (body 0, retry latency) is disclosed in REPORT.md's invalid list.
+        if m.get("outcome") == "ok" and m.get("json_valid") is True:
+            metrics.append(m)
 
     tiers = {}
     for tier in ("short", "standard", "long"):
@@ -339,8 +456,11 @@ def build_handoff(rows, decision, runs_dir: Path, length_table: dict,
         "luna_natural_language_vi": _num(langs.get("vi", {}).get("luna_natural_language")),
         "luna_mean_en": _num(langs.get("en", {}).get("luna_mean")),
         "sol_mean_en": _num(langs.get("en", {}).get("sol_mean")),
-        # wi = rated cells that are not json_valid (invalid/moderated count).
-        "wi": sum(1 for m in metrics
+        # CRV-0928c-1: wi = every parsed rated-tier cell whose json_valid is
+        # false (invalid/moderated) — a failed cell is exactly the case the
+        # calibration list above drops, so it must be counted from the
+        # unfiltered list, never from `metrics` (which would always give 0).
+        "wi": sum(1 for m in all_metrics
                   if m.get("tier") == RATED_TIER and m.get("json_valid") is False),
         "verdict_ready": decision["verdict_ready"],
     }
@@ -366,13 +486,62 @@ def build_handoff(rows, decision, runs_dir: Path, length_table: dict,
             "cost_per_story_usd": cost,
             "latency_ms": latency,
             "rated_tier": RATED_TIER},
+        # SEC-0928b-2: which population the d15 numbers rest on (02 T106).
+        "rater_source": "ai" if rater_mode == "ai" else "native",
         "release": release,
         "evidence": evidence,
     }
 
 
-def write_report(path: Path, key_rows, scores, rows, decision, seed, release) -> None:
-    key_by_story = {k["story_id"]: k for k in key_rows}
+def _blocking_rules(key: dict, runs_dir: Path | None, length_table: dict | None,
+                    prompts_dir: Path | None) -> tuple[list[str], bool]:
+    """CRV-0928c-4: blocking D3 rules of one key row's story, re-validated now.
+
+    `metrics.json`'s `validator_issues` is only the run-time snapshot of the
+    validator: a rule added since the run never shows up there, so T108 would
+    keep calling a now-blocking cell clean. The cell's `story.json` is therefore
+    re-validated with the current validator, mirroring `story_harness.run_cell`
+    exactly — `sv.validate(story, tier, lang, limits)` with `limits` = the
+    `--length-table` row `[tier][lang]` and, for a true_crime cell, the brief's
+    own fact ids from the fixtures fact sheet. A missing or unparsable
+    story.json (or fact sheet) falls back to the recorded issues.
+
+    Returns `(rules, revalidated)`; `revalidated` is False on the fallback.
+    """
+    metrics = key.get("_metrics") or {}
+    recorded = sorted({i.get("rule", "?")
+                       for i in metrics.get("validator_issues") or []
+                       if isinstance(i, dict) and i.get("severity") == "blocking"})
+    if runs_dir is None or length_table is None or prompts_dir is None:
+        return recorded, False
+    tier = metrics.get("tier") or key.get("tier") or RATED_TIER
+    lang = metrics.get("language") or key.get("language") or ""
+    try:
+        limits = dict((length_table.get(tier) or {}).get(lang) or {})
+        if not limits:
+            raise ValueError(f"no {tier}/{lang} row in {length_table}")
+        preset = metrics.get("preset") or key.get("preset")
+        brief_id = str(metrics.get("brief_id") or key.get("brief_id") or "")
+        if preset == "true_crime" and brief_id and brief_id != "inline":
+            fixture = prompts_dir / "fixtures" / "fact-sheet.true_crime.v1.json"
+            sheet = json.loads(fixture.read_text(encoding="utf-8"))
+            limits["fact_ids"] = [
+                str(fact.get("id")) for fact in (sheet.get("facts") or [])
+                if isinstance(fact, dict)
+                and str(fact.get("brief_id")) == brief_id]
+        story = json.loads((runs_dir / key["run_id"] / "story.json")
+                           .read_text(encoding="utf-8"))
+        issues = sv.blocking_issues(sv.validate(story, tier, lang, limits))
+    except (ValueError, OSError, KeyError, TypeError, AttributeError,
+            RecursionError):
+        return recorded, False
+    return sorted({i.get("rule", "?") for i in issues}), True
+
+
+def write_report(path: Path, key_rows, scores, rows, decision, seed, release,
+                 rater_mode: str = "native", unkeyed_failed: tuple = (),
+                 runs_dir: Path | None = None, length_table: dict | None = None,
+                 prompts_dir: Path | None = None) -> None:
     lines = []
     a = lines.append
     a(f"# 02.1.3 A/B report (r1)")
@@ -402,21 +571,57 @@ def write_report(path: Path, key_rows, scores, rows, decision, seed, release) ->
             if not cells:
                 continue
             parts = {}
-            for r in cells:
-                flag = "†" if r["n"] < 2 else ""
-                parts[r["model"]] = f"{fmt(r['mean_rating'])} (n={r['n']}){flag}"
+            for model in (MODEL_LUNA, MODEL_SOL):
+                # Pooled across presets, the same way evaluate_d15 pools them.
+                mine = [r for r in cells if r["model"] == model]
+                vals = [r["mean_rating"] for r in mine if r["mean_rating"] is not None]
+                if not mine:
+                    continue
+                n = min(r["n"] for r in mine)
+                flag = "†" if n < 2 else ""
+                parts[model] = f"{fmt(mean(vals))} (n={n}){flag}"
             a(f"| {lang} | {dim} | {parts.get(MODEL_LUNA,'')} | {parts.get(MODEL_SOL,'')} |")
     a("")
     a("## Rater coverage and invalid cells")
     a("")
     for key in sorted(key_rows, key=lambda k: k["story_id"]):
-        native = {r["rater_id"] for r in scores
-                  if r["story_id"] == key["story_id"] and r.get("rater_native") == "true"}
-        flag = " †" if len(native) < 2 else ""
-        a(f"- {key['story_id']} ({key['run_id']}): {len(native)} native rater(s){flag}")
+        story_rows = [r for r in scores if r["story_id"] == key["story_id"]]
+        # SEC-0928b-1: the same `_rater_source` predicate `aggregate()` uses.
+        native = {r["rater_id"] for r in story_rows
+                  if _rater_source(r) == "native"}
+        ai = {r["rater_id"] for r in story_rows
+              if _rater_source(r) == "ai"}
+        if rater_mode == "ai":
+            # 02 T106: coverage counts the AI passes; the native count stays
+            # printed so a later human spot-check is visible in the same file.
+            flag = " †" if len(ai) < 2 else ""
+            a(f"- {key['story_id']} ({key['run_id']}): {len(ai)} AI rater(s), "
+              f"{len(native)} native rater(s){flag}")
+        else:
+            flag = " †" if len(native) < 2 else ""
+            a(f"- {key['story_id']} ({key['run_id']}): {len(native)} native rater(s){flag}")
     invalid = [k["run_id"] for k in key_rows if k.get("_metrics", {}).get("json_valid") is False]
+    # QA-0928c-6 + CRV-0928c-5: failed rated-tier cells not in key.csv are named
+    # too, each with its own label ('superseded by a rerun' only when a keyed
+    # rerun exists, otherwise 'failed, no rerun').
+    invalid += list(unkeyed_failed)
     a(f"\nInvalid / moderated cells ({len(invalid)}): {', '.join(invalid) or 'none'}")
+    # 02 T108: rated cells whose D3 validator found a blocking issue (the
+    # outcome stays `ok`); never a hand-off candidate. CRV-0928c-4: the recorded
+    # `validator_issues` are a run-time snapshot, so the cell is re-validated
+    # from its story.json with the current rules; the record is the fallback.
+    blocked = []
+    for k in sorted(key_rows, key=lambda k: k["story_id"]):
+        rules, revalidated = _blocking_rules(k, runs_dir, length_table, prompts_dir)
+        if rules:
+            entry = f"{k['story_id']} ({k['run_id']}: {', '.join(rules)})"
+            blocked.append(entry if revalidated else entry + " (recorded)")
+    a(f"\nRated cells with blocking validator issues ({len(blocked)}, 02 T108): "
+      f"{'; '.join(blocked) or 'none'}")
     a("")
+    if rater_mode == "ai":
+        a("AI-rated (02 T106), not native-human evidence")
+        a("")
     a("## D15 decision")
     a("")
     for lang in sorted(decision["languages"]):
@@ -459,6 +664,31 @@ def selftest() -> int:
                 "usage": {"output_tokens": toks + 100},
                 "tokens": {"body_tokens": toks, "segments": 20, "keywords_total": 30},
             }))
+        # A failed, unkeyed rated-tier cell: REPORT.md discloses it as failed
+        # (no keyed rerun exists in this fixture), it is never pooled into
+        # handoff calibration (body 0, huge latency and cost would skew it) and
+        # it is the single cell handoff.d15.wi counts (CRV-0928c-1).
+        bad = runs_dir / "vi-ghost-b2-luna-standard"
+        bad.mkdir()
+        (bad / "metrics.json").write_text(json.dumps({
+            "run_id": bad.name, "model": MODEL_LUNA, "tier": "standard", "language": "vi",
+            "outcome": "invalid_output", "json_valid": False, "latency_ms": 999999,
+            "cost_usd": 9.0, "usage": {"output_tokens": 5000},
+            "tokens": {"body_tokens": 0, "segments": 0}}))
+
+        # CRV-0928c-4: T108 re-validates each rated cell's story.json with the
+        # current validator; a cell with no story.json falls back to its
+        # recorded validator_issues, marked '(recorded)'. S01 gets a recorded
+        # blocking issue (its story.json is absent), S02 a story.json the
+        # current validator itself blocks on title length.
+        s01_metrics_path = runs_dir / cells[0][0] / "metrics.json"
+        s01_metrics = json.loads(s01_metrics_path.read_text(encoding="utf-8"))
+        s01_metrics["validator_issues"] = [
+            {"rule": "meta_narration", "severity": "blocking", "segment": "p:0",
+             "evidence": "pipeline term"}]
+        s01_metrics_path.write_text(json.dumps(s01_metrics), encoding="utf-8")
+        (runs_dir / cells[1][0] / "story.json").write_text(
+            json.dumps({"title": "x" * 101}), encoding="utf-8")
 
         # key.csv + scores.csv: two raters on two stories, ONE rater on the third
         # (the † case). factual_care only for the true_crime story.
@@ -506,16 +736,42 @@ def selftest() -> int:
         report = (out / "REPORT.md").read_text()
         assert "†" in report, "n=1 must be flagged in REPORT.md"
         assert "DECISION NOT READY" in report, "† mean deciding must block the verdict"
+        # CRV-0928c-4: T108 uses the current validator on story.json — S02's
+        # one-line story blocks on title length — and the recorded issues only
+        # as the '(recorded)' fallback when story.json is absent (S01).
+        assert ("S01 (vi-ghost-b1-luna-standard: meta_narration) (recorded); "
+                "S02 (vi-ghost-b1-sol-standard: title_too_long)") in report, report
+        # The per-dimension table pools a model's presets exactly like
+        # evaluate_d15: luna vi hook = mean(ghost 4.0, true_crime 3.0), min n = 1.
+        assert "| vi | hook | 3.50 (n=1)† | 5.00 (n=2) |" in report, "per-dim table must pool presets"
+        # QA-0928c-3: two stories in one cell, one loses a rater -> n=1, not 2.
+        two = [{"story_id": "A", "model": MODEL_LUNA, "preset": "ghost", "language": "vi", "run_id": "a"},
+               {"story_id": "B", "model": MODEL_LUNA, "preset": "ghost", "language": "vi", "run_id": "b"}]
+        partial = [{"story_id": s, "rater_id": r, "rater_native": "true", "dimension": "hook", "score": "4"}
+                   for s, r in (("A", "r-vi-1"), ("A", "r-vi-2"), ("B", "r-vi-1"))]
+        hook = [r for r in aggregate(two, partial, runs_dir)["rows"] if r["dimension"] == "hook"][0]
+        assert hook["n"] == 1, hook
 
         # factual_care exclusion: pooled luna vi mean over the six dims is
         # mean(4, 3) = 3.5; folding in factual_care (score 1) would give ~3.14.
         handoff = json.loads((Path(tmp) / "trial" / "ab" / "handoff.json").read_text())
         assert set(handoff) == {"model_choice", "d15", "d4_calibration",
-                                "price_bounds_12_1_1", "release", "evidence"}
+                                "price_bounds_12_1_1", "rater_source", "release",
+                                "evidence"}
+        # SEC-0928b-2: the machine-readable twin records which population the
+        # verdict rests on; this run is the default native mode.
+        assert handoff["rater_source"] == "native", handoff["rater_source"]
         assert handoff["d4_calibration"]["words_per_minute_measured"] is None
         assert "source" in handoff["d4_calibration"]
         cps = handoff["price_bounds_12_1_1"]["cost_per_story_usd"]
-        assert cps["standard"][MODEL_LUNA] == 0.0015, cps  # mean(0.001, 0.002)
+        assert cps["standard"][MODEL_LUNA] == 0.0015, cps  # mean(0.001, 0.002); failed cell excluded
+        assert handoff["d4_calibration"]["segments_observed"]["min"] == 20, handoff["d4_calibration"]
+        assert "vi-ghost-b2-luna-standard (failed, no rerun)" in report, \
+            "an unkeyed failed cell with no keyed rerun must be disclosed as failed"
+        # CRV-0928c-1: wi counts the failed unkeyed rated-tier cell too (its
+        # json_valid is false), even though the calibration list keeps only the
+        # ok+json_valid cells — the fixture holds exactly one.
+        assert handoff["d15"]["wi"] == 1, handoff["d15"]
         assert float(handoff["d15"]["luna_mean_vi"]) == 3.5, handoff["d15"]
         assert handoff["d15"]["verdict_ready"] is False      # the † mean decides (a)
 
@@ -602,6 +858,246 @@ def selftest() -> int:
         assert "Traceback" not in message, message
         assert "'S99'" in message and "key.csv" in message, message
         assert not (case / "out" / "aggregate.csv").is_file(), "S99"
+
+        # CRV-0928c-5: an unkeyed failed rated-tier cell is 'superseded by a
+        # rerun' only when key.csv names its `<cell>-rN` rerun; without one it
+        # is just a failed cell. Both labels are asserted in a scenario of
+        # their own, so the numbers above stay untouched.
+        sup_runs = Path(tmp) / "sup-stories"
+        for name, ok in (("vi-ghost-b2-luna-standard", False),
+                         ("vi-ghost-b3-luna-standard", False),
+                         ("vi-ghost-b2-luna-standard-r2", True)):
+            cell_dir = sup_runs / name
+            cell_dir.mkdir(parents=True)
+            (cell_dir / "metrics.json").write_text(json.dumps({
+                "run_id": name, "model": MODEL_LUNA, "tier": "standard",
+                "language": "vi", "preset": "ghost", "brief_id": "b2",
+                "outcome": "ok" if ok else "invalid_output", "json_valid": ok,
+                "latency_ms": 10000, "cost_usd": 0.001,
+                "tokens": {"body_tokens": 800, "segments": 20}}))
+        sup_ab = Path(tmp) / "sup-ab"
+        sup_ab.mkdir()
+        with (sup_ab / "key.csv").open("w", newline="") as h:
+            h.write("# seed=7\n")
+            w = csv.writer(h)
+            w.writerow(["story_id", "run_id", "model", "preset", "language",
+                        "brief_id", "tier"])
+            for story_id, run_id in (("S01", cells[0][0]), ("S02", cells[1][0]),
+                                     ("S03", cells[2][0]),
+                                     ("S04", "vi-ghost-b2-luna-standard-r2")):
+                w.writerow([story_id, run_id, MODEL_LUNA, "ghost", "vi",
+                            "b1", "standard"])
+        (sup_ab / "scores.csv").write_text(base_scores, encoding="utf-8")
+        code = main(["--ab-dir", str(sup_ab), "--runs-dir", str(sup_runs),
+                     "--out", str(Path(tmp) / "sup-out")])
+        assert code == 0, f"superseded label scenario: want exit 0, got {code}"
+        sup_report = (Path(tmp) / "sup-out" / "REPORT.md").read_text()
+        assert "vi-ghost-b2-luna-standard (superseded by a rerun)" in sup_report, \
+            sup_report
+        assert "vi-ghost-b3-luna-standard (failed, no rerun)" in sup_report, \
+            sup_report
+
+        # SEC-0928c-3: the key.csv run_id is a path component under --runs-dir,
+        # so a traversal (or any non-cell id) is a named exit-2 input error.
+        case = Path(tmp) / "bad-runid"
+        (case / "ab").mkdir(parents=True)
+        (case / "ab" / "key.csv").write_text(
+            base_key.replace("vi-true_crime-b7-luna-standard", "../../escape"),
+            encoding="utf-8")
+        (case / "ab" / "scores.csv").write_text(base_scores, encoding="utf-8")
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            code = main(["--ab-dir", str(case / "ab"),
+                         "--runs-dir", str(runs_dir), "--out", str(case / "out")])
+        message = err.getvalue()
+        assert code == 2, f"traversal run_id: want exit 2, got {code} — {message}"
+        assert "Traceback" not in message, message
+        assert "../../escape" in message, message
+        assert not (case / "out" / "aggregate.csv").is_file(), "bad-runid"
+
+        # SEC-0928c-3: a metrics.json that is not a JSON object (a list) and a
+        # cell dir reached through a symlink are not metrics records — no
+        # AttributeError, no traceback, and neither counts toward wi.
+        list_runs = Path(tmp) / "list-stories"
+        listed = list_runs / "vi-ghost-b1-luna-standard"
+        listed.mkdir(parents=True)
+        (listed / "metrics.json").write_text("[1, 2, 3]", encoding="utf-8")
+        outside = Path(tmp) / "outside" / "vi-ghost-b3-luna-standard"
+        outside.mkdir(parents=True)
+        (outside / "metrics.json").write_text(json.dumps({
+            "run_id": outside.name, "tier": "standard", "language": "vi",
+            "outcome": "invalid_output", "json_valid": False}))
+        (list_runs / "vi-ghost-b3-luna-standard").symlink_to(
+            outside, target_is_directory=True)
+        case = Path(tmp) / "bad-metrics"
+        (case / "ab").mkdir(parents=True)
+        (case / "ab" / "key.csv").write_text(base_key, encoding="utf-8")
+        (case / "ab" / "scores.csv").write_text(base_scores, encoding="utf-8")
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            code = main(["--ab-dir", str(case / "ab"),
+                         "--runs-dir", str(list_runs), "--out", str(case / "out"),
+                         "--handoff"])
+        assert code == 0, f"list metrics: want exit 0, got {code} — {err.getvalue()}"
+        assert "Traceback" not in err.getvalue(), err.getvalue()
+        assert json.loads((case / "handoff.json").read_text())["d15"]["wi"] == 0, \
+            "a list-valued or symlinked metrics.json is not a cell record"
+        # 02 T106 cases: --rater-mode ai counts the ai-* passes; a non-ai
+        # rater_id with rater_native=false is a named exit-2 input error; in
+        # native mode ai-* rows never inflate the human n (NOT READY).
+        def ai_scores(pairs):
+            """`pairs`: story_id -> list of (rater_id, hook_score, other_score)."""
+            buf = io.StringIO()
+            w = csv.writer(buf)
+            w.writerow(["story_id", "rater_id", "rater_language", "rater_native",
+                        "dimension", "score", "notes", "scored_at"])
+            for story_id, raters in pairs.items():
+                for rater, hook_score, other in raters:
+                    for dim in DIMENSIONS:
+                        w.writerow([story_id, rater, "vi", "false", dim,
+                                    hook_score if dim == "hook" else other,
+                                    "AI: pass 1", "2026-09-28"])
+                    if story_id == "S03":
+                        w.writerow([story_id, rater, "vi", "false",
+                                    FACTUAL_CARE, other, "AI: pass 1",
+                                    "2026-09-28"])
+            return buf.getvalue()
+
+        case = Path(tmp) / "ai-2raters"
+        (case / "ab").mkdir(parents=True)
+        (case / "ab" / "key.csv").write_text(base_key, encoding="utf-8")
+        (case / "ab" / "scores.csv").write_text(ai_scores({
+            story: [("ai-vi-1", 4, 4), ("ai-vi-2", 4, 4)]
+            for story in ("S01", "S02", "S03")}), encoding="utf-8")
+        code = main(["--ab-dir", str(case / "ab"), "--runs-dir", str(runs_dir),
+                     "--out", str(case / "out"), "--rater-mode", "ai",
+                     "--handoff"])
+        assert code == 0, f"ai mode: want exit 0, got {code}"
+        report = (case / "out" / "REPORT.md").read_text()
+        banner = "AI-rated (02 T106), not native-human evidence"
+        assert banner in report, "ai mode must carry the T106 banner"
+        assert report.index(banner) < report.index("## D15 decision"), \
+            "banner must sit above the D15 section"
+        assert "**verdict vi:" in report, report
+        assert "DECISION NOT READY" not in report
+        assert "2 AI rater(s), 0 native rater(s)" in report
+        # SEC-0928b-2: handoff.json alone must mark the evidence as AI-rated.
+        ai_handoff = json.loads((case / "handoff.json").read_text())
+        assert ai_handoff["rater_source"] == "ai", ai_handoff["rater_source"]
+        ai_hook = [r for r in csv.DictReader((case / "out" / "aggregate.csv").open())
+                   if r["model"] == MODEL_LUNA and r["preset"] == "ghost"
+                   and r["dimension"] == "hook"]
+        assert ai_hook[0]["n"] == "2", ai_hook  # the two ai-* raters, not humans
+
+        # ai mode, a single AI pass: n=1 marks `†`; with S03 at 3 vs S02 at 5,
+        # luna pools to 3.5 < sol*0.9 → rule (a) fires on the † mean.
+        case = Path(tmp) / "ai-1rater"
+        (case / "ab").mkdir(parents=True)
+        (case / "ab" / "key.csv").write_text(base_key, encoding="utf-8")
+        (case / "ab" / "scores.csv").write_text(ai_scores({
+            "S01": [("ai-vi-1", 4, 4)],
+            "S02": [("ai-vi-1", 5, 5)],
+            "S03": [("ai-vi-1", 3, 3)]}), encoding="utf-8")
+        code = main(["--ab-dir", str(case / "ab"), "--runs-dir", str(runs_dir),
+                     "--out", str(case / "out"), "--rater-mode", "ai"])
+        assert code == 0, f"ai mode 1-rater: want exit 0, got {code}"
+        report = (case / "out" / "REPORT.md").read_text()
+        assert "†" in report, "n=1 AI pass must be flagged"
+        assert "DECISION NOT READY" in report
+        assert "1 AI rater(s), 0 native rater(s) †" in report, report
+
+        # native mode on ai-only scores: the ai-* rows are ignored for
+        # coverage/n, so 0 human raters → † → the verdict stays not ready.
+        case = Path(tmp) / "ai-native-mode"
+        (case / "ab").mkdir(parents=True)
+        (case / "ab" / "key.csv").write_text(base_key, encoding="utf-8")
+        (case / "ab" / "scores.csv").write_text(ai_scores({
+            story: [("ai-vi-1", 4, 4), ("ai-vi-2", 4, 4)]
+            for story in ("S01", "S02", "S03")}), encoding="utf-8")
+        code = main(["--ab-dir", str(case / "ab"), "--runs-dir", str(runs_dir),
+                     "--out", str(case / "out")])
+        assert code == 0, f"native mode on ai rows: want exit 0, got {code}"
+        report = (case / "out" / "REPORT.md").read_text()
+        assert banner not in report, "native mode never prints the T106 banner"
+        assert "0 native rater(s) †" in report, report
+        assert "DECISION NOT READY" in report, \
+            "ai-* rows must not satisfy the native n=2 (02 T106)"
+        nat_hook = [r for r in csv.DictReader((case / "out" / "aggregate.csv").open())
+                    if r["model"] == MODEL_LUNA and r["preset"] == "ghost"
+                    and r["dimension"] == "hook"]
+        assert nat_hook[0]["n"] == "0", nat_hook
+
+        # ai mode rejects a rater_native=false row whose id is not ai-*
+        # (neither a native human nor an AI pass — 02 T106 / T100 shape).
+        case = Path(tmp) / "ai-bad-rater"
+        (case / "ab").mkdir(parents=True)
+        (case / "ab" / "key.csv").write_text(base_key, encoding="utf-8")
+        (case / "ab" / "scores.csv").write_text(
+            ai_scores({"S01": [("ai-vi-1", 4, 4), ("ai-vi-2", 4, 4)],
+                       "S02": [("ai-vi-1", 5, 5), ("ai-vi-2", 5, 5)],
+                       "S03": [("ai-vi-1", 3, 3), ("ai-vi-2", 3, 3)]})
+            + "S01,r-vi-3,vi,false,hook,4,,2026-09-28\n", encoding="utf-8")
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            code = main(["--ab-dir", str(case / "ab"),
+                         "--runs-dir", str(runs_dir),
+                         "--out", str(case / "out"), "--rater-mode", "ai"])
+        message = err.getvalue()
+        assert code == 2, f"bad ai rater: want exit 2, got {code}"
+        assert "Traceback" not in message, message
+        assert "r-vi-3" in message and "rater_native" in message, message
+        assert not (case / "out" / "aggregate.csv").is_file(), "ai-bad-rater"
+
+        # SEC-0928b-1: the disagreement rule holds in BOTH modes. Before the
+        # fix, a `rater_native=false` row with a non-`ai-` id (a mislabelled AI
+        # pass such as 'claude-vi-1') was rejected only under --rater-mode ai,
+        # so the default native run counted it toward the human n/means while
+        # REPORT.md coverage (rater_native == 'true') showed 0 native raters.
+        for label, mode in (("native-bad-rater", None),
+                            ("ai-bad-rater-native", None),
+                            ("ai-bad-rater-ai", "ai")):
+            row = ("S01,ai-vi-9,vi,true,hook,4,,2026-09-28\n"
+                   if label == "ai-bad-rater-native" else
+                   "S01,r-vi-3,vi,false,hook,4,,2026-09-28\n")
+            case = Path(tmp) / label
+            (case / "ab").mkdir(parents=True)
+            (case / "ab" / "key.csv").write_text(base_key, encoding="utf-8")
+            (case / "ab" / "scores.csv").write_text(
+                base_scores + row, encoding="utf-8")
+            err = io.StringIO()
+            argv = ["--ab-dir", str(case / "ab"), "--runs-dir", str(runs_dir),
+                    "--out", str(case / "out")]
+            if mode:
+                argv += ["--rater-mode", mode]
+            with contextlib.redirect_stderr(err):
+                code = main(argv)
+            message = err.getvalue()
+            assert code == 2, f"{label}: want exit 2, got {code} — {message}"
+            assert "Traceback" not in message, message
+            offender = "ai-vi-9" if label == "ai-bad-rater-native" else "r-vi-3"
+            assert offender in message and "rater_native" in message, message
+            assert not (case / "out" / "aggregate.csv").is_file(), label
+
+        # SEC-0928b-1: coverage and means use one predicate. An `ai-*` row with
+        # rater_native=true (a half-labelled AI pass) is the mirror case: it is
+        # rejected in ai mode too, instead of joining the AI means while
+        # coverage counted it as a native human.
+        case = Path(tmp) / "ai-native-flag-ai-mode"
+        (case / "ab").mkdir(parents=True)
+        (case / "ab" / "key.csv").write_text(base_key, encoding="utf-8")
+        (case / "ab" / "scores.csv").write_text(
+            ai_scores({"S01": [("ai-vi-1", 4, 4), ("ai-vi-2", 4, 4)]})
+            + "S02,ai-vi-9,vi,true,hook,4,,2026-09-28\n", encoding="utf-8")
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            code = main(["--ab-dir", str(case / "ab"),
+                         "--runs-dir", str(runs_dir),
+                         "--out", str(case / "out"), "--rater-mode", "ai"])
+        message = err.getvalue()
+        assert code == 2, f"ai-native-flag ai mode: want exit 2, got {code}"
+        assert "Traceback" not in message, message
+        assert "ai-vi-9" in message and "rater_native" in message, message
+        assert not (case / "out" / "aggregate.csv").is_file()
     print("selftest ok")
     return 0
 
@@ -621,6 +1117,15 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--handoff", action="store_true",
                         help="also write trial/ab/handoff.json (T2 §3)")
     parser.add_argument("--selftest", action="store_true", help="run the offline self-test")
+    parser.add_argument("--rater-mode", choices=("native", "ai"), default="native",
+                        help="which raters count for coverage/n/† (02 T106): "
+                             "'native' = human raters (default, unchanged); "
+                             "'ai' = the two AI passes with rater_id ai-<lang>-<n> "
+                             "and rater_native=false — REPORT.md then carries the "
+                             "'AI-rated' banner above the D15 section. A row whose "
+                             "rater_native disagrees with its rater_id exits 2 in "
+                             "either mode (SEC-0928b-1); handoff.json records the "
+                             "mode as rater_source (SEC-0928b-2)")
     args = parser.parse_args(argv)
 
     if args.selftest:
@@ -647,7 +1152,20 @@ def main(argv: list[str] | None = None) -> int:
         for key in key_rows:
             key["_metrics"] = read_metrics(runs_dir, key["run_id"])
         scores = read_scores(ab_dir / "scores.csv")
-        agg = aggregate(key_rows, scores, runs_dir)
+        rated = {k["run_id"] for k in key_rows}
+        # CRV-0928c-5: an unkeyed failed rated-tier cell is only a rerun's
+        # predecessor when key.csv names its `<cell>-rN` rerun; without one it
+        # is simply a failed cell and must not claim to have been replaced.
+        unkeyed_failed = [
+            f"{cell.name} (" + ("superseded by a rerun" if any(
+                rid.startswith(cell.name + "-r") for rid in rated)
+                else "failed, no rerun") + ")"
+            for cell in sorted(runs_dir.iterdir())
+            if cell.is_dir() and not cell.is_symlink()
+            and cell.name not in rated
+            and (m := read_metrics(runs_dir, cell.name)).get("tier") == RATED_TIER
+            and m.get("outcome") not in (None, "ok")]
+        agg = aggregate(key_rows, scores, runs_dir, args.rater_mode)
     except InputError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
@@ -657,10 +1175,13 @@ def main(argv: list[str] | None = None) -> int:
     out_dir.mkdir(parents=True, exist_ok=True)
     write_aggregate_csv(agg["rows"], out_dir / "aggregate.csv")
     write_report(out_dir / "REPORT.md", key_rows, scores, agg["rows"],
-                 decision, seed, release)
+                 decision, seed, release, args.rater_mode, unkeyed_failed,
+                 runs_dir=runs_dir, length_table=length_table,
+                 prompts_dir=Path(args.prompts_dir))
     if args.handoff:
         handoff = build_handoff(agg["rows"], decision, runs_dir, length_table,
-                                release, (out_dir / "REPORT.md").as_posix())
+                                release, (out_dir / "REPORT.md").as_posix(),
+                                args.rater_mode)
         handoff_path = ab_dir.parent / "handoff.json"
         handoff_path.write_text(json.dumps(handoff, indent=2, ensure_ascii=False) + "\n",
                                 encoding="utf-8")

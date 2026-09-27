@@ -16,7 +16,7 @@ In scope:
 - `trial/tools/story_validator.py` — throwaway validator mirroring the D3 validator rules.
 - `prompts/fixtures/briefs.{vi,en}.json` (9 brief ideas per language, 3 per topic) + `prompts/fixtures/fact-sheet.true_crime.v1.json` — authored by **T0** (T34) so preset acceptance can run before the A/B.
 - `prompts/fixtures/rubric.md` — D16 rubric with written 1/3/5 anchors for all seven dimensions (T1).
-- The 36-story matrix run, a blind kit, 2 native raters per language, `scores.csv` + `aggregate.csv` + `REPORT.md`.
+- The 36-story matrix run, a blind kit, 2 raters per language (r1: 2 AI rater passes, 02 T106), `scores.csv` + `aggregate.csv` + `REPORT.md`.
 - The D15 verdict written into `DECISIONS.md` §3 (CR-10), the frozen `prompts/manifest.json` release `2026.10.1`, and the token/latency/cost numbers handed to D4 and 12.1.1.
 - The MPT hand-off artifacts (`video_script.txt`, `video_terms.json`, M3), so the presets can be exercised through MPT in 03 without MPT's own script generation.
 
@@ -42,7 +42,7 @@ Only what this story's design depends on; every id is defined in `../README.md` 
 | # | Why it matters here |
 |---|---|
 | F01 | MPT cannot validate our presets (plain text, ≤ 10 paragraphs, own Initialization block) → a **direct** harness. |
-| F10 | 12 stories = 1 sample/cell → **36 stories**, 2 blind raters per language. |
+| F10 | 12 stories = 1 sample/cell → **36 stories**, 2 blind raters per language (r1: AI passes, 02 T106). |
 | M3 ✅ | `video_script` / `video_terms` sent directly skip MPT's LLM — this is the hand-off contract. |
 | O2 ✅ | Responses + `text.format = json_schema`, `strict: true`. |
 | O3 ✅ | luna/sol rates and the > 272K-input surcharge; drives §7's budget arithmetic. |
@@ -239,9 +239,9 @@ T0 checks (throwaway validator + harness):
 
 T1 checks:
 - `ls trial/stories | wc -l` = 48 (36 rated `standard` + 12 unrated sweep cells); every `outcome=ok` directory has exactly 6 files and every failed cell has exactly 3 (`metrics.json`, `request.json`, `response.json`) — the plan §3.2 contract for a failure, not a defect (QA-02D-11); `grep -L '"json_valid": true' */metrics.json` lists the invalid ones (expected 0; anything listed is recorded in the REPORT, not hidden).
-- blind leak: `grep -riE 'luna|sol|ghost|spiritual|true_crime|run_id' trial/ab/r1/stories/` returns **nothing**.
+- blind leak: `grep -rwiE 'luna|sol|ghost|spiritual|true_crime|run_id' trial/ab/r1/stories/` (whole words, 02 T108) returns **nothing**.
 - `key.csv` row count = 36 (rated cells only — the sweep never enters the kit), one per story id; story ids unique.
-- `scores.csv`: for each (story, language) the native rater count is 2; `factual_care` rows exist only for `true_crime`.
+- `scores.csv`: for each (story, language) the rater count is 2 (native, or `ai-` passes under 02 T106); `factual_care` rows exist only for `true_crime`.
 - `aggregate.csv` reproduces a hand-computed mean for at least one cell (the test asserts the arithmetic, not just a row count).
 - D15 applied mechanically: the printed verdict is derived from `aggregate.csv` means (luna vs sol per language; the vi `natural_language` floor 3.5), not asserted from a memory of the run.
 - `sum(cost_usd) ≤ 5.0` (expected ≈ 0.6–1.5); p50/p95 latency and mean cost printed **per tier** as well as per model (the sweep supplies `short` and `long` for D4/12.1.1).
@@ -287,6 +287,6 @@ Still open:
 
 No deployment, no flag, no migration. M0 execution order: 02.1.4-T1 (`prompts/` skeleton) → 02.1.1-T0 (schema + length table) → **T0** (smoke-testable as soon as one preset exists) → presets 02.1.1-T1/T2/T3 + 02.1.2-T1 + 02.1.5-T1 → **T1** full matrix → **T2** decision + freeze → M0 exit for plan 02.
 
-**Gate 02-M0** (README §7) is met only when: 6 `topic × language` presets pass the harness validator, 36 stories are scored with 2 raters per language, `DECISIONS.md` §3 carries the D15 numbers, and `prompts/manifest.json` is frozen at `2026.10.1`.
+**Gate 02-M0** (README §7) is met only when: 6 `topic × language` presets pass the harness validator, 36 stories are scored with 2 raters per language (AI passes allowed, 02 T106), `DECISIONS.md` §3 carries the D15 numbers, and `prompts/manifest.json` is frozen at `2026.10.1`.
 
 Rollback: the story is additive. Delete `trial/stories/**` (untracked) or checkout `trial/ab/**`; revert `prompts/manifest.json` and the single `DECISIONS.md` §3 row if the A/B is rerun. Preset files belong to 02.1.x and are never edited here, so a rerun cannot damage the prompts. If both models fail the rubric on a preset, the fallback is **not** a silent model change: the verdict is "presets need work", the `REPORT.md` evidence goes to 02.1.1/02.1.2, and T1 reruns as `r2`.

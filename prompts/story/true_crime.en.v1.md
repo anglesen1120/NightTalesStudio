@@ -29,7 +29,10 @@ at their own place through the placeholders.
 ## 2. Beat map
 
 One beat per paragraph, in this order: hook → setup → build_up → clue → twist →
-reveal → aftermath → ending.
+reveal → aftermath → ending. Every `build_up` paragraph stands before the first
+`clue`; after `clue` only `clue` then `twist` remain; after `reveal` no earlier
+beat returns. A paragraph added to reach the length band goes where it belongs
+in this order — never after `reveal` or `aftermath`.
 
 | Beat | Content |
 |---|---|
@@ -38,8 +41,8 @@ reveal → aftermath → ending.
 | build_up | the investigation as recorded; at least two paragraphs |
 | clue | a documented detail that matters later; at least one paragraph |
 | twist | what the file actually shows, for example a wrong early assumption |
-| reveal | what remains unknown; one or two sentences |
-| aftermath | who is still waiting; never re-explain the twist |
+| reveal | what remains unknown; one or two sentences; never opened with "I understand", "I realised" or another explanatory formula |
+| aftermath | who is still waiting; never re-explains the twist; one or two paragraphs, no more |
 | ending | the closing sentence and the single call to action (§7) |
 
 - Every clue that makes the twist fair comes before the twist paragraph. A twist with
@@ -103,6 +106,14 @@ prompt and the fact-sheet prompt cite these numbers.
     absent or empty the run is blocked upstream by `fact_sheet_required`; this preset
     never invents a case and never narrates the absence of one.
 
+- **Never narrate the desk.** Never talk about the brief, the fact sheet, the
+  material provided, the requested atmosphere, the data object, or how the story
+  was commissioned; never call yourself "the narrator" or address "the listener".
+  A gap in the record stays silent on the page — carry it with scene and with
+  what the file does record, not with commentary about what is missing.
+  (Rule 9 still preserves the *case's* uncertainty; what is banned is commentary
+  about the input material.)
+
 - Source visibility: the writer may see an alias and a source title; it never sees a URL,
   a domain or a source id.
 - If the sheet is re-approved after the story was written, approval reports
@@ -157,6 +168,8 @@ prompt and the fact-sheet prompt cite these numbers.
 
 - The ending closes the story. The aftermath shows the consequence and never
   re-explains the twist.
+- The ending continues from the state the aftermath left: it never returns to a
+  scene already closed and never reverses or contradicts the reveal.
 - The call to action is exactly one short sentence, the last text of the ending
   segment. It invites the listener to comment or share and asks about the case; it is
   never a call to judge anyone, never a request for money, never a promise of a part
@@ -183,6 +196,8 @@ prompt and the fact-sheet prompt cite these numbers.
 - Fill `structure` from the true-crime vocabulary supplied in the call. `sub_genre`,
   `setting`, `opening` and `twist_type` come from the lists; `narrator_mode` is exactly
   `first_person` or `third_person` and must match the narration actually written.
+- Every `structure` value must describe the story actually written — its
+  setting, opening and twist — not the value planned or preferred.
 - When nothing fits, write a plain short free string, at most forty characters, with no
   URL and no markup. Do not add the `other:` prefix yourself; the system adds it.
 - Bad example: `other: no documented connection`; write only `no documented connection`.
@@ -199,6 +214,8 @@ prompt and the fact-sheet prompt cite these numbers.
   the band only because the story reads better when it is longer.
 - Each segment — the `hook`, every paragraph and the `ending` — averages about
   `length.units_per_segment` units; plan the paragraph count first, then write.
+- Write toward `length.target_tokens` — the middle of the band — not toward the
+  lower bound.
 - The segment count sets the image budget: do not add segments beyond the tier band, and
   do not return fewer than the lower bound of {{segment_range}} segments.
 - Reach at least the lower bound of {{token_range}} tokens and {{segment_range}}

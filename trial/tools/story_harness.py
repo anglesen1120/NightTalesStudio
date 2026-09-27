@@ -205,6 +205,30 @@ def assert_under_out(out_dir: Path, run_dir: Path) -> None:
         fail(f"run dir {run_dir} escapes --out {out_dir}")
 
 
+def repo_relative(path) -> str:
+    """SEC-0928c-1: artefacts record repo paths relative, never the host layout."""
+    resolved = Path(path).resolve()
+    try:
+        return resolved.relative_to(REPO_ROOT).as_posix()
+    except ValueError:
+        return resolved.name
+
+
+# SEC-0928c-2: relay/upstream account identifiers and opaque reasoning blobs are
+# not D6 evidence; they are replaced before response.json is written.
+RESPONSE_REDACT_KEYS = frozenset({"safety_identifier", "prompt_cache_key", "user",
+                                  "encrypted_content"})
+
+
+def redact_response(document):
+    if isinstance(document, dict):
+        return {k: ("<redacted>" if k in RESPONSE_REDACT_KEYS and v is not None
+                    else redact_response(v)) for k, v in document.items()}
+    if isinstance(document, list):
+        return [redact_response(v) for v in document]
+    return document
+
+
 def write_json_atomic(path: Path, document) -> None:
     """D-ATOMIC / QA-02D-10: a reader never sees a torn metrics.json, so a
     half-written file cannot look like a finished cell."""
@@ -773,13 +797,22 @@ def assemble_head(bundle: dict, values: dict) -> str:
 
 def units_per_segment(limits: dict) -> int:
     """README T97/D6: the per-segment budget the writer is told to plan against,
-    `round(min_tokens / min_segments)` for that tier+language. The model cannot
-    divide the token band itself, so the number travels in the data object."""
+    `round(target_tokens / min_segments)` for that tier+language — derived from
+    the mid-band target since 2026-09-28 (TL binding: a floor-derived budget
+    told the model the floor was the aim). The model cannot divide the token
+    band itself, so the number travels in the data object."""
     min_segments = limits["min_segments"]
     if not isinstance(min_segments, int) or isinstance(min_segments, bool) or min_segments <= 0:
         fail(f"length table row has a non-positive min_segments ({min_segments!r}); "
              f"cannot derive units_per_segment (README T97)")
-    return round(limits["min_tokens"] / min_segments)
+    return round(target_tokens(limits) / min_segments)
+
+def target_tokens(limits: dict) -> int:
+    """The mid-band aim point the writer is told to write toward (2026-09-28
+    pre-review: every story hugged or missed the floor — a floor-only prompt is
+    read as the target). `round((min_tokens + max_tokens) / 2)`; the band stays
+    the contract, this is only the aim."""
+    return round((int(limits["min_tokens"]) + int(limits["max_tokens"])) / 2)
 
 
 def build_user_data(brief_text: str, tier: str, limits: dict, facts: list) -> str:
@@ -790,13 +823,15 @@ def build_user_data(brief_text: str, tier: str, limits: dict, facts: list) -> st
         "length": {"tier": tier,
                    "tokens": [limits["min_tokens"], limits["max_tokens"]],
                    "segments": [limits["min_segments"], limits["max_segments"]],
-                   "units_per_segment": units_per_segment(limits)},
+                   "units_per_segment": units_per_segment(limits),
+                   "target_tokens": target_tokens(limits)},
         "bible": None,
         "facts": facts,
         "avoid_plots": [],
         "structure_plan": None,
     }
     return json.dumps(data, ensure_ascii=False, separators=(",", ":"))
+
 
 
 def build_request_body(model: str, system_text: str, user_json: str, schema: dict,
@@ -978,7 +1013,7 @@ def run_cell(cell: dict, args, table: dict, rates: dict, api_key: str | None,
         "dry_run": bool(args.dry_run),
         "timeout_s": args.timeout,
         "length": limits,
-        "length_table": str(args.length),
+        "length_table": repo_relative(args.length),
         "head_tokens_estimate": sv.token_count(system_text, lang),
         "request_body_bytes": request_bytes,
         "body": body,
@@ -1046,7 +1081,8 @@ def run_cell(cell: dict, args, table: dict, rates: dict, api_key: str | None,
     else:
         response_doc = payload
     (run_dir / "response.json").write_text(
-        json.dumps(response_doc, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        json.dumps(redact_response(response_doc), ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8")
 
     story: dict | None = None
     json_valid = False

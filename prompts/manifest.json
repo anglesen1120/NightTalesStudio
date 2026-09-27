@@ -19,15 +19,15 @@
     },
     "shared/overused.en.v1.txt": {
       "version": "v1",
-      "sha256": "55db62547fb26e449b0f47c114cd944547d8b7b262685d4fe86a212f2d39b8b3"
+      "sha256": "a82d5bfa4970afa7a82b04f126dd3d77ba0851a4cab6c778b96b5d2b1990b267"
     },
     "shared/overused.vi.v1.txt": {
       "version": "v1",
-      "sha256": "4ebaf6d34a24a70de8f945179922c6a2581b06f3ff5f1270b4adc79b8ac1723f"
+      "sha256": "0e93e287ed88494a4a3ef81c6cb40e32a99c5116a6e4da24d46a24227c64c9b6"
     },
     "shared/preset-spec.v1.md": {
       "version": "v1",
-      "sha256": "6d59bdb4feb2276bd6dd21cab16c47566e8d9242743c4f42e031266ba03e9836"
+      "sha256": "45d4d659c9e4ccca9431412d195dc8690a1b6d6acc39f4f0181b347db5124e1e"
     },
     "shared/structure-vocab.v1.json": {
       "version": "v1",
@@ -35,31 +35,31 @@
     },
     "story/ghost.en.v1.md": {
       "version": "v1",
-      "sha256": "107f05c854231a14177a52f7a91591eb3ca16e63bd6dc353a0157265cd4cbff6"
+      "sha256": "4377b7dee5104bf51aab0ec2aeebfd838b2f3b208471c0c45b6ddcd86a6e3aea"
     },
     "story/ghost.vi.v1.md": {
       "version": "v1",
-      "sha256": "6987c6e32154dcd3b7d0589547e0b09146baca64487d1a3b8354ac985bce0724"
+      "sha256": "9c49f2791eacbe58d03e3a596adef9ad0ccf3ae17de60f4b18e8ca1f6f1c2b9c"
     },
     "story/spiritual.en.v1.md": {
       "version": "v1",
-      "sha256": "7daf1fcdcf5dd9c3c89eb22f341babd4f260e6571ad1cf88e8a958c65abf698e"
+      "sha256": "b8370052e5b90dd2c24d90a61b579c14090c30cdfdfae0bb094fde42297951a5"
     },
     "story/spiritual.vi.v1.md": {
       "version": "v1",
-      "sha256": "3ea7b6a7e0a0f0b5c51694ecc84648c4df44eea42d1fe0017042c799e0ea54a7"
+      "sha256": "048f895d8e1fb825885fb01443f61fb9bb8fa52b7c82f8dc91e33c50bd44210d"
     },
     "story/true_crime.en.v1.md": {
       "version": "v1",
-      "sha256": "352905ef4fdf728b99606a92cc892ac57a8c44faf5761b7e1fab2fbd0455c446"
+      "sha256": "6404166ec9474a68f5d2e91eb58c81156818048827d86b0f7567d44f9cb89c2f"
     },
     "story/true_crime.vi.v1.md": {
       "version": "v1",
-      "sha256": "6b649c69f38c0c3644a1fc8345f1a921df1fe6cf0eb243b6f647ab795c1f7b8c"
+      "sha256": "2ae9b3cd48196abed6b8b657814606df9e047d1647aecf692fe8d96eac3d8786"
     },
     "system/writer.v1.md": {
       "version": "v1",
-      "sha256": "d4cda88a6ef0a039008ce5d8f0a4f2d62c0bbb0344c2c2d723c31b134d74c27d"
+      "sha256": "aa5edb5d8aacd6e9f4e2418eef2e4216d464b452aea4d1f2eafecc581aca5c7c"
     }
   }
 }

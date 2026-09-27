@@ -302,8 +302,11 @@ class OverusedLists(unittest.TestCase):
         for path in (OVERUSED_VI, OVERUSED_EN):
             with self.subTest(file=path.name):
                 lines = read(path).splitlines()
-                self.assertEqual(len(lines), 30, f"{path.name}: expected 30 lines, got {len(lines)}")
-                self.assertEqual(len(set(lines)), 30, f"{path.name}: duplicate phrases")
+                self.assertGreaterEqual(
+                    len(lines), 30,
+                    f"{path.name}: expected at least 30 lines, got {len(lines)}")
+                self.assertEqual(len(set(lines)), len(lines),
+                                 f"{path.name}: duplicate phrases")
                 for line in lines:
                     self.assertTrue(line.strip(), f"{path.name}: empty line")
                     self.assertEqual(line, line.strip(), f"{path.name}: line has surrounding spaces: {line!r}")
