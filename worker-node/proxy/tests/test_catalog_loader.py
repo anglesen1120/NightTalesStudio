@@ -1,4 +1,4 @@
-"""catalog.py — D9 rules, check order (T14), slugify, rev-0 seed."""
+"""catalog.py — D9 rules, check order (T14), slugify, revision-1 seed."""
 
 from __future__ import annotations
 
@@ -26,15 +26,24 @@ def _err_code(exc_info) -> str:
     return exc_info.value.code
 
 
-def test_catalog_rev0_seed_file_loads():
+REV1_ACTIVE = {
+    ("Mai Anh", "vi"), ("Đức Trí", "vi"), ("Thiền Tâm Đức", "vi"), ("Thiện Minh", "vi"),
+    ("Adam", "en"), ("Thục Đoan", "en"), ("Phạm Tuyên", "en"), ("Thái Sơn", "en"),
+}
+
+
+def test_catalog_seed_file_is_revision_1_selection():
+    # Revision 1 = the 04.2.1-T1 selection; unselected revision-0 entries stay inactive (04.2.2-T1).
     cat = load_catalog(SEED_FILE)
-    assert cat.revision == 0
+    assert cat.revision == 1
     assert cat.vieneu_commit == "c1390abbdb2eedcdf58eafb546966c06ce27af71"
-    assert cat.ids == {VOICE_VI, VOICE_EN}
+    assert {(v.id, v.language) for v in cat.voices if v.active} == REV1_ACTIVE
+    assert {v.id for v in cat.voices if not v.active} == {VOICE_VI, VOICE_EN}
+    assert len(cat.voices) == 10
     vi = next(v for v in cat.voices if v.id == VOICE_VI)
     en = next(v for v in cat.voices if v.id == VOICE_EN)
-    assert (vi.language, vi.gender, vi.slug, vi.active) == ("vi", "male", "hai-dang", True)
-    assert (en.language, en.gender, en.slug) == ("en", "female", "ngoc-huyen")
+    assert (vi.language, vi.gender, vi.slug, vi.active) == ("vi", "male", "hai-dang", False)
+    assert (en.language, en.gender, en.slug, en.active) == ("en", "female", "ngoc-huyen", False)
     raw = SEED_FILE.read_bytes().decode("utf-8")
     assert unicodedata.is_normalized("NFC", raw)
 

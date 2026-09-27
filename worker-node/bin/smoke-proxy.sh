@@ -95,7 +95,7 @@ check_voices_405() {
   if [ "$code" = 405 ]; then pass voices_post_405; else fail voices_post_405 "code=$code"; fi
 }
 
-# voices_nonempty — D9: GET /v1/audio/voices returns the active allow-list (revision 0: 2 entries).
+# voices_nonempty — D9: GET /v1/audio/voices returns the active allow-list (revision 1: 8 active entries).
 check_voices_nonempty() {
   acurl --max-time 10 "$BASE/v1/audio/voices" -o "$TMP/voices.json" || true
   if [ -s "$TMP/voices.json" ] && pyjson 'len(d.get("voices") or [])>0' <"$TMP/voices.json"; then

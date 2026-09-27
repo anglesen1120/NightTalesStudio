@@ -71,13 +71,6 @@ def test_catalog_seed_file_loads() -> None:
     assert cat.voices
 
 
-@pytest.mark.skipif(
-    json.loads(SEED_FILE.read_text(encoding="utf-8"))["revision"] < 1,
-    reason=(
-        "revision 1 is owner/rater-blocked (04.2.2-T1): seed stays at "
-        "revision 0 until the 04.2.1-T1 selection lands"
-    ),
-)
 def test_catalog_seed_file_is_valid_revision_ge_1() -> None:
     cat = load_catalog(SEED_FILE)
     assert cat.revision >= 1
