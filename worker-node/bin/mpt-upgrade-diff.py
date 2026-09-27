@@ -1005,14 +1005,20 @@ def run_child(candidate: Path, code: str, what: str, *, timeout: float) -> dict:
 
 
 def git_out(args_list, candidate: Path, env: dict, timeout: float) -> str | None:
-    """`git -C <candidate> <args>`; None on any failure, timeout or non-zero exit."""
+    """`git -C <candidate> <args>`; None when git is absent or exits non-zero.
+
+    An exhausted budget or a timeout raises EnvError: the pin binding (T73) must not
+    degrade to the no-git-metadata warning just because git was slow.
+    """
     if timeout <= 0:
-        return None
+        raise EnvError(f"git {args_list[0]} skipped: the run deadline expired")
     try:
         proc = subprocess.run(["git", "-C", str(candidate), *args_list], env=env,
                               text=True, capture_output=True, timeout=timeout,
                               stdin=subprocess.DEVNULL)
-    except (OSError, subprocess.TimeoutExpired):
+    except subprocess.TimeoutExpired:
+        raise EnvError(f"git {args_list[0]} timed out after {timeout:.0f} s") from None
+    except OSError:
         return None
     return proc.stdout if proc.returncode == 0 else None
 
@@ -1218,7 +1224,11 @@ def run(args, *, child_timeout_s: float | None = None,
         cand_task = None
 
     git_timeout = min(remaining(), GIT_TIMEOUT_S)
-    commit, dirty, commit_warnings = candidate_commit(candidate, timeout=git_timeout)
+    try:
+        commit, dirty, commit_warnings = candidate_commit(candidate, timeout=git_timeout)
+    except EnvError as exc:
+        print(f"mpt-upgrade-diff.py: {sanitise(str(exc))}", file=sys.stderr)
+        return EXIT_ENV
     pins_commit = read_pin("MPT_COMMIT", DEFAULT_PINS)
     if commit and pins_commit and commit != pins_commit:
         env_problems.append(entry("env", "mpt_commit", pins_commit, commit,
@@ -1706,6 +1716,13 @@ def self_test() -> int:
     except EnvError:
         deep_code = EXIT_ENV
     cases.append(("sentinel-deep-json", deep_code, EXIT_ENV, deep_code == EXIT_ENV, ""))
+    try:
+        candidate_commit(Path(tempfile.gettempdir()), timeout=0)
+        git_deadline_code = EXIT_OK
+    except EnvError:
+        git_deadline_code = EXIT_ENV
+    cases.append(("git-deadline-expired-fails-closed", git_deadline_code, EXIT_ENV,
+                  git_deadline_code == EXIT_ENV, ""))
 
     # text report: C0/C1 controls in candidate strings are escaped (SEC-0511-5)
     evil = text_line("advisory", entry("config", "app.\u001b[2Kevil\nOK", "<absent>", "1", "added"))

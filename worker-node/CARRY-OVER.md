@@ -66,7 +66,7 @@ non-UTF-8 or the wrong shape (`paths` not an object of path → list of methods,
 not an object); a candidate `config.example.toml` that is non-UTF-8 or unparsable TOML (diff (a)
 is skipped); a candidate schema that has no `properties`, an unresolved `$ref`, a `$ref` cycle or
 more than 10 000 schema nodes; child output with zero or two or more sentinel lines; a child
-timeout, an oversized capture, or a candidate `HEAD` that differs from `MPT_COMMIT` in
+timeout, a git timeout or an expired run deadline before the git calls, an oversized capture, or a candidate `HEAD` that differs from `MPT_COMMIT` in
 `pins.env`. A candidate with **no** git metadata stays a warning (`"mpt_commit": null`), and a
 dirty worktree (tracked modifications or untracked files, e.g. a stale `.venv` outside `.gitignore`) is a warning plus `"dirty": true` — the pin checkout
 `.nts/src/mpt` is dirty by design (strip-bundled-music deletes tracked files), so a dirty pin
@@ -90,7 +90,7 @@ Verified 2026-09-27 at the pin `3d5f4e421927d61f3eac729cf4b711ac0b69d688`
 (`--candidate "$NTS_HOME/src/mpt"`): exit 0, `"ok": true`, `"blocking": []`, `mpt_commit` = the pin,
 config baseline sha256 `c073fdfc86a894b5fa4121f7c5c7124ca90c3fe92c61ba58b8465c54caa4809b`, wall time
 1.38 s (one fused child instead of two), `"dirty": true` (the pin is dirty by design) and
-`git status --porcelain` byte-identical before and after; `--self-test` (58 synthetic cases,
+`git status --porcelain` byte-identical before and after; `--self-test` (60 synthetic cases,
 including a stub-candidate run() seam) green. This tool does not replace 05.4.1-T1 S0.
 
 ## 2. Model weights
@@ -328,4 +328,4 @@ Planned rows (metric | value | unit | source link):
 |---|---|---|---|
 | 2026-09-26 | PythonSpikes (subagent) | initial version; §1–10 + §12 filled from repo facts; §11 stubbed pending 05.5.2 | 01.3.3-T1 |
 | 2026-09-27 | ImplUpgradeDiff (subagent) | §1 gains the MPT upgrade runbook (six steps + the three pinned baselines + BLOCKING/advisory rules + the pin-run evidence); tool `worker-node/bin/mpt-upgrade-diff.py` | 05.1.1-T1 |
-| 2026-09-27 | FixUpgradeDiff (subagent) | §1 runbook: candidate-code warning + cleanup/stderr-log/deadline notes, exit-2 matrix, verify_token per method+path, constraint/`required` BLOCKING rules, `## pins` block, 57 self-test cases, pin-run wall time | 05.1.1-T1 |
+| 2026-09-27 | FixUpgradeDiff (subagent) | §1 runbook: candidate-code warning + cleanup/stderr-log/deadline notes, exit-2 matrix, verify_token per method+path, constraint/`required` BLOCKING rules, `## pins` block, 60 self-test cases (untracked files count as dirty; a git timeout exits 2), pin-run wall time | 05.1.1-T1 |
