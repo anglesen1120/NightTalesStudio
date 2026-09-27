@@ -42,7 +42,7 @@ flowchart LR
 | **M3 Launch** | Public sign-up once audit + quota extension are approved | Load test, runbooks |
 | **R2** | TikTok publishing (needs a TikTok audit; an own-accounts tool is not an accepted use ✅) | TikTok audit approved |
 
-Estimates (buffered person-days, one developer): **P 235.5 (≈ 11.8 months)**, **S 105.0 (≈ 5.3 months)**, total 340.5 (10 CR-31, 10 CR-22, 13 CR-9, 09 W3 CR-6, 10 CR-39/40) — `plans/00-overview.md` §4.1, §13. External waits (audits, lawyer, payment onboarding) are not included.
+Estimates (buffered person-days, one developer): **P 236.7 (≈ 11.8 months)**, **S 105.0 (≈ 5.3 months)**, total 341.7 (10 CR-31, 10 CR-22, 13 CR-9, 09 W3 CR-6, 10 CR-39/40, 11 CR-15) — `plans/00-overview.md` §4.1, §13. External waits (audits, lawyer, payment onboarding) are not included.
 
 ## 3. System map
 

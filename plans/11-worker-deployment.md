@@ -1,7 +1,7 @@
 # 11 — Environments, Worker Deployment and CI/CD (M1)
 
 > Contracts: `00-overview.md` §5 (architecture, local dev), §11 (NFRs). Worker contract: `05` §5.3. Proxy: `04`. Backend: `09`. Facts: `../DECISIONS.md` §10.4 (capacity), §10.8 (security).
-> Detailed plan: `features/11-worker-deployment/` (README D1–D19, 32 tasks); ready with conditions 2026-09-24 (11 CR-1).
+> Detailed plan: `features/11-worker-deployment/` (README D1–D21, 35 tasks); ready with conditions 2026-09-24 (11 CR-1); object storage is self-hosted SeaweedFS in every environment (README D21, owner O7 2026-09-27) (11 CR-15).
 > Level: **high-level plan — not the final plan.** It fixes scope, contracts, key decisions, risks and rough estimates only. Every feature in it will still get (1) a review of the relevant sections and (2) its own **detailed feature plan** in `plans/features/`, reviewed again before implementation (process and template: `00-overview.md` §10.1). Details and estimates here may change in that step.
 > Delivery phase (personal-first, `00-overview.md` §4.1): P except 11.2.3 separate prod accounts and 11.5.3-T2 signing/SBOM (S). Where this plan says M1 for an S item, read M2.
 
@@ -22,14 +22,14 @@
 | W3 | Frontend/backend dev must not wait for GPU | `mock-mpt` (.NET minimal API) implements the `mpt-adapter` contract (05.4.1, 11.3.5) with configurable delays/failures |
 | W4 | Hosting provider [OPEN] | Evaluation checklist §5.6; no vendor prices asserted |
 | W5 | MPT memory task state may be lost on restart (05 spike) | Decision taken: no Redis — the adapter keeps its own durable task store and reports `render_lost` for a task it no longer knows (05 F06, D4) (05 CR-4) |
-| W6 | Storage choice affects licensing (e.g. some self-hosted S3 servers are AGPL ⚠️) | Prefer managed S3-compatible storage in prod; local dev uses SeaweedFS (Apache-2.0); MinIO, Garage, self-hosted Grafana and Renovate are AGPL and rejected ✅ (11 CR-1) |
+| W6 | Storage choice affects licensing (e.g. some self-hosted S3 servers are AGPL ⚠️) | Self-hosted SeaweedFS (Apache-2.0, E11 ✅) in **every** environment (D21, owner O7 2026-09-27) — `storage-<env>` + `storage-backup-<env>` in their own `storage` subnet, S3 gateway TLS on the private address as `https://storage-<env>.internal` (443 → container 8333, T77/T78) and published as `https://media.<domain>` / `media.staging.<domain>` (`GET`/`HEAD` only, T75/T83); this supersedes the managed S3-compatible storage in prod that this row carried until 2026-09-27 ⚠️. MinIO, Garage, self-hosted Grafana and Renovate stay AGPL-rejected ✅; local dev keeps its SeaweedFS compose emulator (11 CR-1) (11 CR-15). |
 | W7 | TL review 2026-09-24 (`features/11-worker-deployment/` F01–F28) | Adapter re-sized and split (5.0 d), .NET with shared Contract/Server projects, cuDNN 9 libraries for whisper on the node, prod environment in P, node keys from the secret manager in P, operator-run node deploy from a hashed bundle (11 CR-1) |
 
 ## 3. Requirements
 
 - **FR-11-1** `docker compose up` starts postgres, api, worker, web (dev server or built), mock-mpt, S3-compatible storage, mail catcher.
 - **FR-11-2** `mock-mpt` implements `render-node.v1` exactly (05 README D4/D5/D14): submit, query status (state + percent; the D5 `stage` sub-steps `queued|voice|subtitles|images|assembling|checking|done`), download canned MP4 by task id, `/subtitles`, `/cancel`, health + active task count, cleanup, failure injection (`tts_failed`, `image_moderated`, `assembly_failed`, `node_error`, `quality:<check>`, `timeout`, `lost_task`), per-request delay; it serves the 05 D14 fixtures (05 CR-4); terminal statuses carry an `images.v1` report chosen by `MOCK_IMAGE_REPORT` (`ok`, `moderated:<slots>`, `skipped:<share>`, `moderated_all`, `funds`, `none`) or the per-term trigger `__block_image__`, and submits violating the 03 D4 image fields return 400 `adapter_contract_violation` (03.4.3-T2, 03 CR-5) (05 CR-4). `MOCK_FAIL_MODE=tts_failed` reproduces what the real adapter reports when MPT ends with `failed_stage = audio` (04 D6, 04 CR-12); the mock maps `lost_task` → `render_lost` and `timeout` → the task never reaches a terminal state (the Worker raises `render_timeout`), and keeps `image_moderated` as an alias of `MOCK_IMAGE_REPORT=moderated_all`; it is plain HTTP only inside the local compose network (05 D15 S1) (05 CR-4).
-- **FR-11-3** Staging and production each have: API instance(s), Worker instance, managed PostgreSQL, object storage, ≥ 1 GPU render node, private network.
+- **FR-11-3** Staging and production each have: API instance(s), Worker instance, managed PostgreSQL, self-hosted object storage — `storage-<env>` (SeaweedFS S3 gateway) plus `storage-backup-<env>` holding `nt-backup-<env>` in a second availability zone/location (11 CR-15, D21) — ≥ 1 GPU render node, private network.
 - **FR-11-4** GPU node runs VieNeu (GPU backend, `VIENEU_MAX_STREAMS` ✅), proxy, MPT, faster-whisper on GPU and `mpt-adapter` (11.3.5); the proxy binds loopback `127.0.0.1:8001` only, as on the Mac (04 D1), under the systemd unit `vieneu-proxy.service` (04 D13); MPT and VieNeu bind `127.0.0.1` on the node (05 README F12, D15 S1); only `mpt-adapter` listens on the private interface, over HTTPS on `:8090` with a node-local certificate whose SHA-256 fingerprint the Worker pins per node (`worker_nodes.tls_cert_sha256`) and refuses any other certificate (05 D15 S1); the adapter port is reachable from the Worker range only; health endpoints (05 CR-4). Sizing rule (04 D5): `VIENEU_MAX_STREAMS ≥ max_concurrent_tasks` and `PROXY_MAX_CONCURRENT ≥ max_concurrent_tasks` (04 CR-12).
 - **FR-11-5** Worker registry: each node has id, adapter base URL, capacity (`max_concurrent_tasks`), state (`active`/`draining`/`down`); the Worker pulls each adapter's health every 30 s; `active_tasks` is derived from `render_jobs` in `submitted`/`running` per node; dispatcher picks the node with most free slots.
 - **FR-11-6** CI/CD builds, tests, versions and deploys API/Worker/Web images and the worker-node bundle; DB migrations run as a separate step before app rollout.
@@ -55,7 +55,7 @@
 - Given the checklist §5.6, When 2–3 providers are scored with **official** price pages captured with dates, Then a decision is recorded in DECISIONS.md.
 
 **11.2.2 Staging environment** — *As the team I want a production-like staging so that releases are rehearsed.* Must · M (+ S fetcher, XS SignalR)
-- Given infrastructure scripts (IaC tool ⚠️ license check — e.g. OpenTofu/MPL-2.0 [INFERENCE]), Then staging is created from code: network (app, render and `fetcher` subnets, §5.1), managed PostgreSQL, storage bucket(s), API + Worker + fetcher hosts, TLS certificates, DNS.
+- Given infrastructure scripts (IaC tool ⚠️ license check — e.g. OpenTofu/MPL-2.0 [INFERENCE]), Then staging is created from code: network (app, render and `fetcher` subnets, §5.1), managed PostgreSQL, the storage hosts `storage-<env>` + `storage-backup-<env>` with their encrypted block volumes and `storage-sg`/`storage-backup-sg` (11.2.2-T1 creates the VMs, volumes, security group and DNS; 11.4.1-T2 runs SeaweedFS on them and 11.4.1-T1 owns buckets/policies/credentials, 11 CR-15), API + Worker + fetcher hosts, TLS certificates, DNS.
 - Given more than one Api instance, Then the load balancer either routes SignalR over WebSockets only (client `skipNegotiation`, transport WebSockets) or uses sticky sessions for `/hubs/*` [DECISION]; Worker notifications reach every Api instance via PostgreSQL LISTEN/NOTIFY (09).
 - Given the `fetcher` container (02.5.2, 02 §5.7), Then it runs the `NightTales.Fetcher` pull loop (no Hangfire) in its own subnet with internet-only egress: its only route into the app network is the Api internal listener `:8081` (lease → heartbeat → result, bearer `FETCHER_API_TOKEN` from the secret manager); no route to PostgreSQL, storage or the render network, no cloud metadata endpoint, no DB/storage/OpenAI credentials, no listening port; an egress test proves app (except `:8081`), PostgreSQL, storage, render and metadata addresses are unreachable from it (02 CR-1, 02 README D10, T43). If 02.7.1 picks option B, the finder sidecar runs in the same subnet under the same rules.
 
@@ -90,10 +90,16 @@
 - Given node logs and task dirs, Then MPT logs (which contain full prompts) stay on the node, are never shipped to central logging and rotate after 7 days; the adapter cleanup deletes the task dir and the relay's per-task JSONL after ingest, or 24 h after a failure; the relay and adapter log ids, hashes, codes and counts only (03 D12, 03 CR-6).
 - Given the adapter, Then it is pinned and shipped with the node bundle, has contract tests replaying the 05 D14 fixtures (incl. `worker-node/contract/samples/images/`), and mock-mpt (11.1.2) implements the same contract (05 CR-4).
 
-### Epic 11.4 — Storage
+### Epic 11.4 — Storage: self-hosted SeaweedFS (11 CR-15)
 
-**11.4.1 Buckets and policies** — *As the platform I want private storage so that videos are only reachable via signed URLs.* Must · S
-- Given buckets `nt-media-<env>` (private, versioning off, server-side encryption on) and `nt-public-<env>` (voice/style previews, public-read or CDN), Then lifecycle rules delete temp uploads after 1 day; app retention handled by 09.7.3.
+**11.4.1 Storage hosts, buckets and policies** — *As the platform I want private storage so that videos are only reachable via signed URLs.* Must · M (11 CR-15, T80; 11.4.1-T1 S + 11.4.1-T2 S + 11.4.1-T3 S)
+- Given object storage, Then it is self-hosted SeaweedFS (Apache-2.0, E11 ✅ — README D21, owner O7 2026-09-27) in dev, staging and prod, with no managed object-storage product and no AWS account (11 CR-15).
+- Given `storage-<env>`, Then one VM in its own `storage` subnet (T77) runs `weed server -s3` (master + volume + filer + S3 gateway, image pinned by digest, `-master.volumeSizeLimitMB=1024`) as containers under one systemd unit, with data on an attached provider-encrypted XFS volume (`/var/lib/nts/seaweedfs`, `prevent_destroy`; 200 GB prod / 50 GB staging, resized from the disk alert) behind security group `storage-sg`; `storage-backup-<env>` is a second VM in another AZ/location with its own volume holding only `nt-backup-<env>` (11 CR-15, D21).
+- Given network and TLS, Then only the S3 gateway is reachable off the host: TLS-only (`-s3.port=8333 -s3.cert.file -s3.key.file`, `-s3.port.https` unset — the measured collision is fatal at start, T78) published on the private address as TCP 443, so clients use `https://storage-<env>.internal`; `storage-sg` allows 443 from `api-sg`, `worker-sg`, the render subnet (music reads), the LB and the VPN/bastion range (plus SSH 22 from the VPN/bastion range, T86) — `fetcher-sg` is never a source (T77) — plus filer 8888/18888 from `storage-backup-sg` only (`filer.backup -filerProxy`, T78) and metrics 9327 from `worker-sg` (T78); `storage-backup-sg` = 22/443 from the VPN/bastion range and 9327 from `worker-sg` only (T86); `worker-sg` opens OTLP/HTTP 4318 to `storage-backup-sg` for the lag gauge (T85); master 9333, volume 8080 and the gRPC ports stay host-local; `s3.json`, `security.toml` and `replication.toml` are rendered from the secret manager by `sync-identities.sh` (`0600`, atomic, values never in argv/ps, T82; no admin identity for applications), and the LB routes `media.<domain>` / `media.staging.<domain>` (T83) to the gateway with `GET`/`HEAD` only — presigned reads signed against `https://media.<domain>`, path-style addressing, writes never cross the LB (11 CR-15, T75).
+- Given buckets `nt-media-<env>` (private, versioning off, server-side encryption on) and `nt-public-<env>` (voice/style previews, public-read), Then lifecycle rules delete temp uploads after 1 day; app retention handled by 09.7.3. Buckets, policies, CORS, the SSE-S3 default and lifecycle rules are created through the S3 API by 11.4.1-T1 (idempotent script, not IaC); expiry runs as a SeaweedFS S3 lifecycle job under `weed admin` + one `weed worker` per host (11 CR-15, D21).
+- Given backups, Then `weed filer.backup -filerPath=/buckets/nt-media-<env> -filerProxy -doDeleteFiles=true` on `storage-backup-<env>` (`[sink.s3] is_incremental = false`, T85; `-initialSnapshot` once after a backup-volume loss/rebuild, T89; 11.4.1-T3, T80) continuously replicates `nt-media-<env>` into `nt-backup-<env>` — `BACKUP_ACCESS_KEY` = `Write` on `nt-backup-<env>` only, never `BypassGovernanceRetention`/`Admin` — the object lock is the delete guard (T88); bucket versioning + object lock GOVERNANCE 29 d + `NoncurrentVersionExpiration` 29 d (T87): a primary delete propagates as a marker and the noncurrent version's data leaves the backup within 30 days of the delete (13/09.7.3) — plus daily provider snapshots of the primary volume for 7 days (the backup volume is not snapshotted, T87); 11.6.1-T1 asserts the copy and runs the restore drill (11 CR-15, D21, T74).
+- Given observability and ownership, Then `-metricsPort` 9327 is scraped by the OTel Collector (`worker-sg` only, T78) and 11.6.2-T1 alerts on gateway 5xx > 1 % (5 min), `nts_backup_lag_seconds` > 900 (canary heartbeat → backup copy; `filer.backup` has no metrics port, T85), no writable volumes and volume disk ≥ 80 %/85 % (D17); 11.2.2-T1 creates the VMs/volumes/`storage-sg`/`storage-backup-sg`/DNS, 11.4.1-T2 installs SeaweedFS (compose, TLS, `sync-identities.sh`, admin/worker, metrics), 11.4.1-T3 starts `filer.backup` and proves lifecycle + restore (T80) (11 CR-15, D21).
+- Given `nt-public-<env>`, Then it holds `style-previews/<name>.v1.webp`, public-read and immutable cache (03.1.2-T1 uploads); preview uploads use the operator key `NTS_PREVIEW_WRITE_*` limited to `voice-previews/` and `style-previews/` put, while the app key has no write there (D20 H9) (11 CR-15).
 
 ### Epic 11.5 — CI/CD and secrets
 
@@ -135,7 +141,10 @@ flowchart LR
     API[Api x2]
     WK[Worker x1]
     PG[(Managed PostgreSQL)]
-    S3[(Object storage)]
+  end
+  subgraph Storage subnet
+    S3[(storage-env: SeaweedFS S3 gateway)]
+    SB[(storage-backup-env)]
   end
   subgraph Render private network
     N1[GPU node 1: mpt-adapter + MPT + proxy + VieNeu + whisper]
@@ -151,6 +160,7 @@ flowchart LR
   WK --> PG
   WK --> S3
   API --> S3
+  S3 -->|"filer.backup"| SB
   WK -->|"private link, pull health 30 s"| N1
   WK -->|private link| N2
   FT -->|"narrow internal API"| API
@@ -160,11 +170,11 @@ flowchart LR
 
 Web serving (10 CR-1): the `web` container runs beside each Api instance and the LB routes by path, so the SPA and the API share one origin (`features/10-web-ui/README.md` D3); no CDN in P.
 
-Network rules [DECISION]: render nodes accept only the Worker range on the `mpt-adapter` port and never open connections into the app network (11.3.2); the `fetcher` container leases `fetch_tasks` (`fetch_source`, and `find_sources` only if 02.7.1 picks option B) from the Api internal listener `:8081` and posts results back there (no Hangfire queue); it has internet-only egress, no route to PostgreSQL, storage, the render network or the metadata endpoint, and no DB/storage credentials (02 CR-1, 02 README D10, 11.2.2); SignalR runs WebSockets-only or with sticky sessions (11.2.2).
+Network rules [DECISION]: render nodes accept only the Worker range on the `mpt-adapter` port and never open connections into the app network (11.3.2); the `fetcher` container leases `fetch_tasks` (`fetch_source`, and `find_sources` only if 02.7.1 picks option B) from the Api internal listener `:8081` and posts results back there (no Hangfire queue); it has internet-only egress, no route to PostgreSQL, storage, the render network or the metadata endpoint, and no DB/storage credentials (02 CR-1, 02 README D10, 11.2.2); SignalR runs WebSockets-only or with sticky sessions (11.2.2). Object storage is self-hosted SeaweedFS in every environment (11 CR-15, D21): `storage-<env>` runs `weed server -s3` on an attached encrypted XFS volume in its own `storage` subnet (T77) behind `storage-sg`, `storage-backup-<env>` holds `nt-backup-<env>` in a second AZ/location, only the S3 gateway (TLS, private TCP 443 → container 8333, T77/T78) is reachable off the host, and the LB routes `media.<domain>` to that gateway for `GET`/`HEAD` only (T75).
 
 ### 5.2 Compose services (local)
 
-`postgres`, `storage` (S3-compatible emulator ⚠️ license), `mail` (SMTP catcher), `api`, `worker`, `mock-mpt`, `web`. Ports only on `localhost`.
+`postgres`, `storage` (SeaweedFS S3 emulator — the same `chrislusf/seaweedfs` image as staging/prod ✅, Apache-2.0, E11, digest pinned at implementation per T12) (11 CR-15), `mail` (SMTP catcher), `api`, `worker`, `mock-mpt`, `web`. Ports only on `localhost`; staging/prod run the same engine on the `storage-<env>` hosts, not in this compose file (11 CR-15).
 
 ### 5.3 mock-mpt behaviour (implements `render-node.v1` exactly, 05 README D4/D5/D14; 11.3.5) (05 CR-4)
 
@@ -189,7 +199,7 @@ PR → CI green → merge → images `:sha` → staging deploy + smoke tests (he
 
 ### 5.6 Hosting evaluation checklist
 
-GPU types available and their VRAM (VieNeu + whisper on one card); hourly and monthly price (official page, dated); billing granularity (per second/hour); ability to stop/start GPU nodes; region and latency to Vietnam and to OpenAI/YouTube; managed PostgreSQL with PITR; S3-compatible storage + egress price; private networking between services; data-processing terms/GDPR/VN data rules ⚠️; support quality; account/payment options for a Vietnam-based business.
+GPU types available and their VRAM (VieNeu + whisper on one card); hourly and monthly price (official page, dated); billing granularity (per second/hour); ability to stop/start GPU nodes; region and latency to Vietnam and to OpenAI/YouTube; managed PostgreSQL with PITR; block volumes attachable to a VM with encryption at rest, snapshots and a published GB-month price, offered in two availability zones (or two locations) for `storage-backup-<env>` — no object-storage product is scored (11 CR-15, T74); a published internet egress price for `media.<domain>` downloads (11 CR-15, T74); private networking between services; data-processing terms/GDPR/VN data rules ⚠️; support quality; account/payment options for a Vietnam-based business.
 
 ## 6. Task breakdown
 
@@ -219,22 +229,26 @@ Detailed in `features/11-worker-deployment/` (README §8.1 is the canonical depe
 | 11.3.5-T2 | Adapter MPT backend: store, poller, lost rule, cancel, delete | BE | M | 11.3.5-T1 |
 | 11.3.5-T3 | Adapter post-processing (`render_check.py --normalize`) + outputs | BE | M | 11.3.5-T2, 05.5.1-T1 |
 | 11.3.5-T4 | Adapter health, HTTPS host, key checks | BE | M | 11.3.5-T2, 04.1.4-T1, 05.2.2-T1, 05.3.1-T1 |
-| 11.4.1-T1 | Buckets, encryption, lifecycle, credentials | Ops | S | 11.2.2-T1 |
+| 11.4.1-T1 | Buckets, policies, CORS, encryption, lifecycle rules, credentials (S3 API on the 11.4.1-T2 hosts) (11 CR-15) | Ops | S | 11.4.1-T2 |
+| 11.4.1-T2 | SeaweedFS storage hosts: compose/systemd, TLS, `s3.json`/`security.toml`/`replication.toml` via `sync-identities.sh`, admin/worker lifecycle runner, `-metricsPort` (11 CR-15, D21, T78/T80/T82) | Ops | S | 11.2.2-T1, 11.2.2-T4, 11.5.2-T1 |
+| 11.4.1-T3 | `filer.backup` (`-filerPath=/buckets/nt-media-<env> -filerProxy -doDeleteFiles=true`) + delete-propagation check + lifecycle and media-restore proof (11 CR-15, T79/T80) | Ops | S | 11.4.1-T1, 11.4.1-T2 |
 | 11.5.1-T1 | App CI/CD: e2e, images, migrations, staging, prod | Ops | M | 09.1.5-T1, 11.1.1-T1, 11.1.1-T2, 11.1.2-T2, 11.2.2-T1, 11.2.2-T4 |
 | 11.5.1-T2 | Node CI + bundle build | Ops | S | 09.1.5-T1, 11.3.5-T1 |
 | 11.5.2-T1 | Runtime secret manager + rotation doc + scanning | Ops | S | 11.2.1-T1, 11.2.2-T1 |
 | 11.5.3-T1 | OIDC deploy roles, prod reviewers, secret-free PR workflows, SHA-pinned actions | Ops | S | 11.5.1-T1 |
 | 11.5.3-T2 | (S) cosign signing + SBOM | Ops | S | 11.5.1-T1, 11.5.1-T2, 11.3.1-T3 |
 | 11.5.3-T3 | Dependabot + lock-hash enforcement | Ops | XS | 11.5.1-T1, 11.5.1-T2, 11.3.1-T1; 01.3.3-T1 soft |
-| 11.6.1-T1 | Backups (30-day retention) + restore drill incl. re-applying deletions | Ops | S | 11.2.2-T4 |
-| 11.6.2-T1 | Telemetry backend, dashboards, alerts | Ops | M | 11.2.1-T1, 11.3.3-T2, 09.9.3 |
+| 11.6.1-T1 | Backups (30-day retention) + restore drill incl. re-applying deletions | Ops | S | 11.2.2-T4, 11.4.1-T1, 11.4.1-T3 (11 CR-15); 13.3.1-T1 soft |
+| 11.6.2-T1 | Telemetry backend, dashboards, alerts | Ops | M | 11.2.1-T1, 11.3.3-T2, 09.9.3, 11.4.1-T2, 11.4.1-T3 (11 CR-15) |
 | 11.6.3-T1 | 20-render capacity test + cost/video | Ops/BA | M | 11.3.1-T3, 11.3.2-T2, 09.6.3-T1 |
+| 11.6.4-T1 | (S) `nts-admin` job image for the 09.10.7-T1 break-glass verb | Ops | S | 11.5.2-T1 (09 W3 CR-6) |
 
 ## 7. Test plan
 
 - Compose smoke: fresh clone → `docker compose up` → e2e main journey passes.
 - mock-mpt and `mpt-adapter` contract tests replay 05 samples.
 - Staging smoke after each deploy; prod post-deploy smoke.
+- Storage hosts (11.4.1-T2/T3, 11 CR-15, T80): gateway TLS handshake + `HEAD` on a known key; ports 9333, 8080, 8888, 18888 refused from an app host; `volume.list` shows writable slots at `volumeSizeLimitMB = 1024`; `nts_backup_lag_seconds` ≤ 900 (T85) and a primary delete propagating as a delete marker with the noncurrent version's data still in `nt-backup-<env>` (T79); one object restored from the backup with a matching sha256.
 - Security: external port scan of render nodes; egress tests from a render node (app subnet + metadata unreachable) and from the `fetcher` container (app except Api `:8081`, PostgreSQL, storage, render and metadata unreachable, 02 CR-1); adapter download rejects unknown task ids; TLS config check; secret scan; deploy fails on an unsigned image.
 - DR: restore drill monthly; node rebuild from script timed.
 
@@ -245,7 +259,8 @@ Detailed in `features/11-worker-deployment/` (README §8.1 is the canonical depe
 | GPU availability/price changes | Provider-agnostic provisioning script; evaluate a second provider |
 | Single GPU node = single point of failure | Jobs queue while down (`render_worker_unavailable`); second node when utilisation > 60 % |
 | Drift between Mac trial and GPU node | Carry-over list (01.3.3); same pinned commits |
-| Storage egress cost for downloads/uploads | Measure in 11.6.3; signed URLs with short TTL; consider CDN |
+| Storage egress cost for downloads/uploads | Self-hosted SeaweedFS removes per-request storage fees; the provider's internet egress price for `media.<domain>` downloads is scored in §5.6 (T74) and measured in 11.6.3; signed URLs with short TTL (11 CR-15) |
+| Storage host or volume lost (self-hosting has no provider durability) | Two VMs per env: `storage-backup-<env>` holds `nt-backup-<env>` via `weed filer.backup` (deletes propagate as markers; noncurrent versions expire at 29 d, T87) plus daily primary-volume snapshots for 7 days (backup volume not snapshotted, T87) (D21, 11.4.1-T3); monthly restore drill (11.6.1-T1) (11 CR-15) |
 | Compromised render node or fetcher pivots into the app network | Nodes and fetcher cannot open connections into the app network; Worker pulls health; fetcher only pulls/posts through the Api internal listener `:8081`, holds no DB/storage credentials (02 CR-1) |
 | Node image key leaks | Separate OpenAI project limited to image models with its own hard budget; rotation in the key-leak runbook (11.3.2) |
 
@@ -257,8 +272,9 @@ Detailed in `features/11-worker-deployment/` (README §8.1 is the canonical depe
 
 ## 10. Open questions and contract change requests
 
-- [OPEN] Hosting provider and region.
-- ⚠️ Licenses: IaC tool, S3 emulator, telemetry stack.
+- [OPEN] Hosting provider and region (11 CR-15: must offer encrypted attachable block volumes with snapshots and a published GB-month price in two AZs/locations for `storage-backup-<env>`, plus a published internet egress price for `media.<domain>`; T74).
+- ⚠️ Licenses: IaC tool, telemetry stack. The object-storage engine is settled — SeaweedFS, Apache-2.0, E11 ✅ — so no object-storage product is scored (11 CR-15, T74).
+- ✅ **CR-15 (owner O7, 2026-09-27) — self-hosted SeaweedFS in every environment: applied.** Owner decision O7 and rulings T74–T84 in `features/11-worker-deployment/README.md` §10, decision D21: **T74** no object-storage product is scored, provider criteria become block volumes (encryption, snapshots, GB-month price) in two AZs/locations plus a published `media.<domain>` egress price, and H9's provider replication is replaced by `weed filer.backup`; **T75** presigned GET URLs are signed against `Storage:PublicServiceUrl = https://media.<domain>` (`media.staging.<domain>` on staging), the LB passes `Host` unchanged and allows `GET`/`HEAD` only, path-style addressing in all envs (`Storage:ForcePathStyle=true`); **T76** OpenTofu state moves to the `pg` backend in database `nts_tofu` on the env's managed PostgreSQL (T15's lease object dropped, `infra/bootstrap` holds the PG instance + `nts_tofu`, local state encrypted and kept offline by the owner); **T77/T78** the storage hosts live in their own `storage` subnet, the TLS-only gateway (`-s3.port=8333 -s3.cert.file -s3.key.file`, `-s3.port.https` unset) is published on the private address as TCP 443, `fetcher-sg` is never a `storage-sg` source, filer 8888/18888 opens to `storage-backup-sg` only and metrics 9327 to `worker-sg`; **T79/T80** `filer.backup -filerPath=/buckets/nt-media-<env> -filerProxy -doDeleteFiles=true` into a versioned + object-locked `nt-backup-<env>` (`NoncurrentVersionExpiration` 29 d, T87), split as 11.4.1-T2 S (hosts/TLS/metrics) + 11.4.1-T3 S (`filer.backup` + restore proof); **T81** TLS trust via an internal root CA in host/container trust stores, no client pinning; **T83** `infra/bootstrap` owns the PG instance, media hosts `media.staging.<domain>`/`media.<domain>`; **T84** §11 row arithmetic (11.5 → 3.25, 11.6 → 3.0, totals unchanged); **T85–T90** `is_incremental = false` + the `nts_backup_lag_seconds` canary gauge (`filer.backup` has no metrics port; OTLP/HTTP 4318 via `worker-sg`), `storage-sg` + VPN/bastion 22/443 and `storage-backup-sg` = 22/443 VPN + 9327 `worker-sg`, 29-d lock + noncurrent expiry (30-day promise holds), `Write`-only `BACKUP_ACCESS_KEY` (lock is the guard), one-shot `-initialSnapshot` after backup-volume loss, acceptance placement T90. Changed in this file: header, §2 W6, FR-11-3, story 11.2.2, epic 11.4, §5.1/§5.2/§5.6, §6 (11.4.1-T2 resized to S + new 11.4.1-T3; 11.6.1-T1/11.6.2-T1 depend on it), §7/§8, §11 (11.4: 0.5 → 1.5 d; total 23.0 → 24.5, buffered 27.6 → 29.4). Superseded wording kept only as history: W6's 'managed S3-compatible storage in prod' (11 CR-1).
 - ✅ **CR-4 (from 01) — image metering on the node: closed 2026-09-24.** The image relay inside `mpt-adapter` (03.4.3-T1, estimated in plan 03) records per-call `usage` per render task and returns it in `images.v1`; it is also where `quality` is injected (03 D5/D8/D9, 03 CR-5). No separate node component.
 - **From plan 01 (applied 2026-09-24):** CR-9 (Mac → GPU differences, 11.3.1); inputs from `worker-node/CARRY-OVER.md` (01.3.3-T2 walkthrough with the 11 owner).
 - **Contract changes (applied to 00):** add `worker_nodes` to 00 §6.
@@ -281,19 +297,19 @@ Detailed in `features/11-worker-deployment/` (README §8.1 is the canonical depe
   - [x] (11 CR-1: carried into `features/11-worker-deployment/` D5/D6/D8/D13/D15) 11.3.3 registry and dispatch:
     - Stop dispatching to a node whose health has `image_relay.ok = false`.
     - With N active nodes, set each node's `ImageRelay:ImagesPerMinute = floor(account limit ÷ N)` (03 DR-5). A shared limiter is phase S.
-  - [x] (11 CR-1: carried into `features/11-worker-deployment/` D5/D6/D8/D13/D15) 11.4.1 storage: the bucket `nt-public-<env>` holds `style-previews/<name>.v1.webp`, public-read and immutable cache (03.1.2-T1 uploads).
+  - [x] (11 CR-1: carried into `features/11-worker-deployment/` D5/D6/D8/D13/D15) 11.4.1 storage: the bucket `nt-public-<env>` holds `style-previews/<name>.v1.webp`, public-read and immutable cache (03.1.2-T1 uploads); it is served by the self-hosted SeaweedFS gateway on `storage-<env>` and published through `https://media.<domain>` (`GET`/`HEAD` only) (11 CR-15, D21, T75).
   - [x] (11 CR-1: carried into `features/11-worker-deployment/` D5/D6/D8/D13/D15) 11.6 operations: scrape the relay metrics `image_calls_total{status,error_code}`, `image_relay_wait_seconds` and `image_relay_rejections_total{code}`, and alert on `invalid_api_key` and on quota codes.
 
 ## 11. Estimate summary
 
-Re-estimated in `features/11-worker-deployment/` §9; accepted 2026-09-24 (owner standing approval) (11 CR-1).
+Re-estimated in `features/11-worker-deployment/` §9; accepted 2026-09-24 (owner standing approval) (11 CR-1); storage re-estimated 2026-09-27 after the self-hosted SeaweedFS ruling (11 CR-15).
 
 | Epic | Days |
 |---|---|
 | 11.1 Local dev | 2.0 |
 | 11.2 Cloud environments | 3.75 (P 2.75, S 1.0) |
 | 11.3 GPU render node + `mpt-adapter` | 11.0 |
-| 11.4 Storage | 0.5 |
-| 11.5 CI/CD + secrets | 3.75 (P 3.25, S 0.5) |
-| 11.6 Ops foundation | 2.5 |
-| **Total** | **23.0** (P 21.5, S 1.5) → with 20 % buffer **27.6** person-days (was 17.75 / 21.3) |
+| 11.4 Storage | 1.5 (P 1.5) (11 CR-15/T80: 11.4.1-T1 0.5 + 11.4.1-T2 0.5 + 11.4.1-T3 0.5; was 0.5) |
+| 11.5 CI/CD + secrets | 3.25 (P 2.75, S 0.5) (T84) |
+| 11.6 Ops foundation | 3.0 (P 2.5, S 0.5: 11.6.4-T1, 09 W3 CR-6) (11 CR-15, T84) |
+| **Total** | **24.5** (P 22.5, S 2.0) → with 20 % buffer **29.4** person-days (was 17.75 / 21.3; 11 CR-15: +1.0 d P for 11.4.1-T2/T3, matching `00-overview.md` §4.1/§13) |
