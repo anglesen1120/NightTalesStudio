@@ -4,7 +4,7 @@
     "task_id": "f5e2e165-b061-4220-95a3-89c333c381b6",
     "request_id": "c73456d1-090a-4d4e-a62e-b86c736ad9aa",
     "params": {
-        "video_subject": "03.4.1-T1 spike fixture",
+        "video_subject": "<text sha256=a67437881fd39948>",
         "video_script": "<prompt sha256=3a64af195e99b9ff>",
         "video_terms": [
             "<prompt sha256=5ff19b5303e38c84>",
@@ -54,7 +54,7 @@
         "custom_system_prompt": ""
     }
 }[0m
-[32m2026-09-26 19:55:47[0m | [1mINFO[0m | "./app/utils/utils.py:234":[34m check_ffmpeg_ready[0m - [1mffmpeg check passed, using: /opt/homebrew/bin/ffmpeg[0m
+[32m2026-09-26 19:55:47[0m | [1mINFO[0m | "./app/utils/utils.py:234":[34m check_ffmpeg_ready[0m - [1mffmpeg check passed, using: <host-path>/ffmpeg[0m
 [32m2026-09-26 19:55:47[0m | [1mINFO[0m | "./app/services/task.py:293":[34m generate_script[0m - [1m
 
 ## generating video script[0m

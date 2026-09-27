@@ -25,7 +25,13 @@ import json
 import re
 import sys
 
-PROMPT_KEYS = ("terms", "video_terms", "search_terms", "prompt", "script", "video_script")
+# Content-bearing keys (D15 S5, extended by 05.4.1-T1): every value under them is
+# hashed to `<text sha256=…>`. `search_term` (singular) covers `script.json`'s
+# `material_sources[].search_term` (03 images.md I14 correction), `video_subject`
+# the story title; `script` covers the task-API's `data.script` and script.json's
+# top-level narration.
+PROMPT_KEYS = ("terms", "video_terms", "search_terms", "search_term", "prompt",
+               "script", "video_script", "video_subject")
 # Any quoted value that carries the platform negative clause is a styled prompt.
 CLAUSE_HINT = "no real person likeness."
 
@@ -45,9 +51,20 @@ KEY_LINE_RE = re.compile(
 # hash (useless for attribution, and different on every pass), so `marker()`
 # refuses to hash its own output — that is what makes both modes idempotent
 # (03.4.1-T1: repeated passes over the committed samples used to corrupt them).
-MARKER_RE = re.compile(r"^<prompt sha256=[0-9a-f]{16}>$")
+# `<prompt sha256=…>` is kept as an accepted input form because the committed
+# 03 image samples already carry it; new redaction emits `<text sha256=…>` (D15 S5).
+MARKER_RE = re.compile(r"^<(?:prompt|text) sha256=[0-9a-f]{16}>$")
 # A bare quoted string inside such a dump that ends with the negative clause.
 CLAUSE_ITEM_RE = re.compile(r'"(?P<value>(?:[^"\\]|\\.)*' + re.escape(CLAUSE_HINT) + r')"')
+# A content key with a scalar string value that is NOT at line start — compact
+# JSON (`{"search_term": "…"}` inside `material_sources`, or a one-line dump).
+# Only `"key": "value"` scalars match (arrays/objects on the value side are left
+# to the line-depth pass), and a marker value hashes to itself, so this pass is
+# a no-op after the line-start handling.
+MIDLINE_KEY_RE = re.compile(
+    r'"(?P<key>' + "|".join(PROMPT_KEYS) + r')":\s*"(?P<value>(?:[^"\\]|\\.)*)"',
+)
+
 # MPT's subtitle.py logs every ASR correction as
 # `… - Script: <narration>, Subtitle: <corrected narration>` (WARNING, lines 274/286).
 # Both operands are story text, so both are hashed in place — the line keeps its
@@ -57,17 +74,30 @@ NARRATION_RE = re.compile(
     re.MULTILINE,
 )
 
+# Host-local executable paths (D15 S5; T66): MPT logs the resolved ffmpeg path
+# (`check_ffmpeg_ready - ffmpeg check passed, using: /opt/homebrew/bin/ffmpeg`),
+# a host fact that must not be published. Rewritten to `<host-path>/<basename>`
+# for readability. MPT URIs ("/api", "/tasks", "/v1") never match.
+HOST_PATH_RE = re.compile(
+    r"(?:/opt/homebrew|/opt/local|/usr/local|/usr/bin|/bin)/"
+    r"[\w.\-]+(?:/[\w.\-]+)*"
+)
+
 
 def eprint(*a):
     print(*a, file=sys.stderr)
 
 
 def marker(text):
-    """The published form of a prompt value: first 16 hex of its sha256."""
+    """The published form of a content value: first 16 hex of its sha256.
+
+    Emits `<text sha256=…>` (D15 S5). The older `<prompt sha256=…>` form is still
+    recognised as a marker so a second pass is a no-op.
+    """
     if MARKER_RE.fullmatch(text):
         return text
     digest = hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
-    return f"<prompt sha256={digest}>"
+    return f"<text sha256={digest}>"
 
 
 def _mark_quoted(quoted):
@@ -174,9 +204,18 @@ def redact_text(text):
         out.append(line)
     text = "".join(out)
 
+    # Compact/inline JSON: content keys not at line start (script.json puts
+    # `material_sources` objects on one line in some paths).
+    text = MIDLINE_KEY_RE.sub(lambda m: f'"{m.group("key")}": {_mark_quoted(chr(34) + m.group("value") + chr(34))}', text)
+
     text = NARRATION_RE.sub(
         lambda m: f'{m.group("head")}{marker(m.group("script"))}'
         f', Subtitle: {marker(m.group("subtitle"))}',
+        text,
+    )
+
+    text = HOST_PATH_RE.sub(
+        lambda m: f"<host-path>/{m.group(0).rstrip('/').rsplit('/', 1)[-1]}",
         text,
     )
 
@@ -225,11 +264,11 @@ def self_test():
     # (c) several terms on the line each get their own marker
     line = "term='one' term='two'"
     out = redact_text(line)
-    expect("two-terms", out.count("<prompt sha256=") == 2, out)
+    expect("two-terms", out.count("<text sha256=") == 2, out)
     expect("two-terms-distinct", marker("one") in out and marker("two") in out)
 
     # (d) hash correctness: 16-hex prefix of the real sha256
-    expect("hash-prefix", marker("x") == f"<prompt sha256={hashlib.sha256(b'x').hexdigest()[:16]}>")
+    expect("hash-prefix", marker("x") == f"<text sha256={hashlib.sha256(b'x').hexdigest()[:16]}>")
 
     # (d2) idempotency: a marker is never hashed again, in either mode. A second
     # pass used to publish sha256 of the marker (03.4.1-T1 sample corruption).
@@ -270,17 +309,17 @@ def self_test():
     )
     out = redact_text(arr)
     expect("dump-array-key-kept", '"video_terms": [' in out, out)
-    expect("dump-array-items", out.count("<prompt sha256=") == 2, out)
+    expect("dump-array-items", out.count("<text sha256=") == 2, out)
     expect("dump-array-gone", "styled prompt" not in out)
     expect("dump-array-closes", '"video_count": 1' in out)
 
     # (e4) a single-line array dump
     out = redact_text('"search_terms": ["a", "b"],')
-    expect("dump-inline", out.count("<prompt sha256=") == 2 and "search_terms" in out, out)
+    expect("dump-inline", out.count("<text sha256=") == 2 and "search_terms" in out, out)
 
     # (e5) a stray styled prompt that is not inside a dump
     out = redact_text('note: prompt "cinematic image of a boat, no real person likeness." used')
-    expect("clause-net", "<prompt sha256=" in out and "cinematic image" not in out, out)
+    expect("clause-net", "<text sha256=" in out and "cinematic image" not in out, out)
 
     # (e6) subtitle.py correction line: `- Script: <narration>, Subtitle: <corrected>`
     # — both operands are story text and are hashed, the line keeps its shape.
@@ -292,7 +331,7 @@ def self_test():
     out = redact_text(line)
     expect("subtitle-script-gone", "answered the sea" not in out, out)
     expect("subtitle-structure", "Merged/Corrected - Script: " in out and ", Subtitle: " in out, out)
-    expect("subtitle-two-markers", out.count("<prompt sha256=") == 2, out)
+    expect("subtitle-two-markers", out.count("<text sha256=") == 2, out)
     expect("subtitle-idempotent", redact_text(out) == out, out)
 
     # (f) JSON mode: terms lists become markers
@@ -316,6 +355,50 @@ def self_test():
     doc = {"terms": 5}
     red = redact_json(doc)
     expect("json-non-string", red["terms"] == 5)
+    # (i) 05.4.1-T1 cases: the task-API `script`/`terms` and `video_subject`, the
+    # task-body dump's `video_script`, and `script.json`'s `material_sources`.
+    doc = {
+        "data": {
+            "script": "He opened the logbook.",
+            "terms": ["styled prompt", "another prompt"],
+            "params": {"video_subject": "The seven lamps", "video_script": "He opened the logbook.",
+                       "video_terms": ["styled prompt"]},
+        },
+        "material_sources": [{"search_term": "styled prompt", "image": "openai-image-abc.png"}],
+    }
+    red = redact_json(json.loads(json.dumps(doc)))
+    expect("json-script", red["data"]["script"] == marker("He opened the logbook."))
+    expect("json-subject", red["data"]["params"]["video_subject"] == marker("The seven lamps"))
+    expect("json-video-script", red["data"]["params"]["video_script"] == marker("He opened the logbook."))
+    expect("json-search-term", red["material_sources"][0]["search_term"] == marker("styled prompt"))
+    expect("json-other-material-keys", red["material_sources"][0]["image"] == "openai-image-abc.png")
+    expect("json-no-story", "logbook" not in json.dumps(red) and "The seven lamps" not in json.dumps(red))
+
+    # (j) a `script.json` body dumps the same keys through the text path too.
+    script_json = (
+        '{\n'
+        '  "script": "He opened the logbook.",\n'
+        '  "search_terms": [\n'
+        '    "styled prompt"\n'
+        '  ],\n'
+        '  "material_sources": [{"search_term": "styled prompt"}]\n'
+        "}\n"
+    )
+    out = redact_text(script_json)
+    expect("scriptjson-script", marker("He opened the logbook.") in out and "logbook" not in out, out)
+    expect("scriptjson-searchterm", marker("styled prompt") in out and '"styled prompt"' not in out, out)
+    expect("scriptjson-idempotent", redact_text(out) == out, out)
+
+    # (k) the older committed marker stays recognised (idempotency across both forms).
+    old = '    "script": "<prompt sha256=0123456789abcdef>"\n'
+    expect("old-marker-kept", redact_text(old) == old, redact_text(old))
+
+
+    # (l) host paths are rewritten (T66) and the rewrite is stable.
+    out = redact_text('ffmpeg check passed, using: /opt/homebrew/bin/ffmpeg')
+    expect("hostpath-redacted", "/opt/homebrew" not in out and "<host-path>/ffmpeg" in out, out)
+    expect("hostpath-idempotent", redact_text(out) == out, out)
+    expect("hostpath-mpt-uri-kept", redact_text("GET /api/v1/tasks/x") == "GET /api/v1/tasks/x")
 
     return 0 if not failures else 1
 

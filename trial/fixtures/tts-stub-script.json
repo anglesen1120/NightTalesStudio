@@ -1,0 +1,8 @@
+{
+  "case": "tts-stub-default",
+  "default": "ok",
+  "by_call": {},
+  "by_input_contains": {},
+  "slow_seconds": 130,
+  "_doc": "default script for trial/tools/tts_stub.py (05.4.1-T1, D12). Keys: 'default' mode; 'by_call' {call-number: mode}; 'by_input_contains' {needle: mode} matched on the TTS 'input'; 'slow_seconds'. Modes: ok | e500 | abort | empty | sine | slow. Serves trial/fixtures/spike-story-*.mp3 / sine-60s.mp3 bytes; 'empty' -> 0-byte body; 'abort' writes 4096 bytes then drops the connection."
+}

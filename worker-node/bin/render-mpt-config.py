@@ -40,6 +40,7 @@ VALUE_RE = re.compile(r"^[A-Za-z0-9._-]{16,512}$")
 SECRET_NAME_RE = re.compile(r"(^|_)(api_key|api_keys|key|keys|token|secret|password)$")
 TAP_URL = "http://127.0.0.1:8002/v1"
 SPIKE_IMAGE_BASE_URL = "http://127.0.0.1:18003/v1"
+SPIKE_TTS_BASE_URL = "http://127.0.0.1:18004/v1"
 SPIKE_LISTEN_PORT = 18080
 
 
@@ -150,19 +151,30 @@ def gather_mapping():
 
 
 def apply_spike(rendered):
-    """Rewrite the five spike-only lines for --profile spike (03.4.1-T1).
+    """Rewrite the spike-only lines for --profile spike (03.4.1-T1, extended by
+    05.4.1-T1 with the `[kokoro]` TTS-stub block).
 
     The image upstream becomes the local stub, the image key list becomes
     empty (no Authorization header, I15), the prompt template is cleared so
     the raw term is sent (I3) and prompt_sha256 maps 1:1 to the fixture, the
     LLM upstream openai_base_url also becomes the stub so a stray LLM call
     hits a 404 and never a paid upstream, and MPT listens on
-    SPIKE_LISTEN_PORT so it can run beside the live 8080 instance. Exits 1
-    when the template drifts so the profile cannot go silently half-applied.
+    SPIKE_LISTEN_PORT so it can run beside the live 8080 instance. In the
+    [kokoro] section the TTS upstream becomes tts_stub.py on SPIKE_TTS_BASE_URL
+    with `api_key = ""` (MPT then sends no Authorization header, D2/D12) —
+    the proxy is bypassed for the spike so TTS modes (e500/abort/empty/sine/slow)
+    are scriptable. Exits 1 when the template drifts so the profile cannot go
+    silently half-applied.
     """
     out = []
     n_base = n_keys = n_tpl = n_port = n_llm = 0
+    n_tts_base = n_tts_key = 0
+    in_kokoro = False
     for line in rendered.splitlines():
+        stripped = line.lstrip()
+        section = re.match(r"^\[([a-zA-Z0-9_.]+)\]", stripped)
+        if section:
+            in_kokoro = section.group(1) == "kokoro"
         if line.startswith("openai_image_base_url ="):
             line = f'openai_image_base_url = "{SPIKE_IMAGE_BASE_URL}"  # spike: local stub (03.4.1-T1)'
             n_base += 1
@@ -178,6 +190,12 @@ def apply_spike(rendered):
         elif line.startswith("listen_port ="):
             line = f"listen_port = {SPIKE_LISTEN_PORT}  # spike: beside the live 8080 MPT (03.4.1-T1)"
             n_port += 1
+        elif in_kokoro and line.startswith("base_url ="):
+            line = f'base_url = "{SPIKE_TTS_BASE_URL}"  # spike: tts_stub.py (05.4.1-T1, D2/D12)'
+            n_tts_base += 1
+        elif in_kokoro and line.startswith("api_key ="):
+            line = 'api_key = ""  # spike: stub sends no key (05.4.1-T1); MPT omits the Authorization header'
+            n_tts_key += 1
         out.append(line)
     if (n_base, n_keys, n_tpl, n_port, n_llm) != (1, 1, 1, 1, 1):
         eprint(
@@ -185,6 +203,12 @@ def apply_spike(rendered):
             f" openai_image_api_keys, openai_image_prompt_template, openai_base_url and"
             f" listen_port line (got image={n_base} keys={n_keys} template={n_tpl}"
             f" port={n_port} openai={n_llm})"
+        )
+        sys.exit(1)
+    if (n_tts_base, n_tts_key) != (1, 1):
+        eprint(
+            "FAIL spike profile: [kokoro] must hold exactly one base_url and one api_key"
+            f" line (got base_url={n_tts_base} api_key={n_tts_key})"
         )
         sys.exit(1)
     return "\n".join(out) + ("\n" if rendered.endswith("\n") else "")
@@ -246,8 +270,8 @@ def guards(cfg, allow_direct=False, profile="normal"):
         ("upload_post_enabled", app.get("upload_post_enabled") is False, "false"),
         ("upload_post_auto_upload", app.get("upload_post_auto_upload") is False, "false"),
         ("upload_post_api_key", app.get("upload_post_api_key") == "", '""'),
-        ("kokoro.base_url", kokoro.get("base_url") == "http://127.0.0.1:8001/v1", "http://127.0.0.1:8001/v1"),
-        ("kokoro.api_key", isinstance(kokoro.get("api_key"), str) and len(kokoro["api_key"]) > 0, "set"),
+        ("kokoro.base_url", kokoro.get("base_url") == (SPIKE_TTS_BASE_URL if spike else "http://127.0.0.1:8001/v1"), SPIKE_TTS_BASE_URL if spike else "http://127.0.0.1:8001/v1"),
+        ("kokoro.api_key", isinstance(kokoro.get("api_key"), str) and (kokoro["api_key"] == "" if spike else len(kokoro["api_key"]) > 0), '"" (stub)' if spike else "set"),
         ("kokoro.voices", kokoro.get("voices") == [], "[]"),
     ]
     failed = []

@@ -1,0 +1,20 @@
+{
+ "schema": "mpt-sample.v1",
+ "scenario": "S11-queue",
+ "date": "2026-09-26",
+ "mpt_commit": "3d5f4e421927d61f3eac729cf4b711ac0b69d688",
+ "config": "spike profile: max_concurrent_tasks=1, max_queued_tasks unset (pin default 100)",
+ "note": "816973fc was submitted while 67b5ecfe held the single concurrency slot; it shows state 4 progress 0, indistinguishable from a running task (C10). The 429 case (max_queued_tasks=0) needs a spike re-render and is run separately.",
+ "snapshot": [
+  {
+   "task_id": "67b5ecfe-c283-47d1-a265-382224c1c207",
+   "state": 1,
+   "progress": 100
+  },
+  {
+   "task_id": "816973fc-1cd3-40b1-a1e1-0acd00781c30",
+   "state": 4,
+   "progress": 40
+  }
+ ]
+}

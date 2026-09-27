@@ -3,7 +3,7 @@
     "task_id": "8ca60848-12e9-4377-add1-504ca448bbdd",
     "request_id": "fdc53edb-5a46-4b4c-8be9-c64177f2b953",
     "params": {
-        "video_subject": "03.4.1-T1 spike fixture",
+        "video_subject": "<text sha256=a67437881fd39948>",
         "video_script": "<prompt sha256=5e2792fc772b8bf3>",
         "video_terms": [
             "<prompt sha256=d521100fca5df975>",
@@ -66,7 +66,7 @@
 [32m2026-09-26 19:52:22[0m | [1mINFO[0m | "./app/services/video.py:1231":[34m generate_video[0m - [1m  ④ output: ./storage/tasks/83a48fd1-9b55-4be4-a656-f59c1d79294f/final-1.mp4[0m
 [32m2026-09-26 19:52:26[0m | [32m[1mSUCCESS[0m | "./app/services/task.py:1639":[34m _run_pipeline[0m - [32m[1mtask 83a48fd1-9b55-4be4-a656-f59c1d79294f finished, generated 1 videos.[0m
 [32m2026-09-26 19:52:26[0m | [1mINFO[0m | "./app/services/task.py:1387":[34m _run_pipeline[0m - [1mstart task: 8ca60848-12e9-4377-add1-504ca448bbdd, stop_at: video[0m
-[32m2026-09-26 19:52:26[0m | [1mINFO[0m | "./app/utils/utils.py:234":[34m check_ffmpeg_ready[0m - [1mffmpeg check passed, using: /opt/homebrew/bin/ffmpeg[0m
+[32m2026-09-26 19:52:26[0m | [1mINFO[0m | "./app/utils/utils.py:234":[34m check_ffmpeg_ready[0m - [1mffmpeg check passed, using: <host-path>/ffmpeg[0m
 [32m2026-09-26 19:52:26[0m | [1mINFO[0m | "./app/services/task.py:293":[34m generate_script[0m - [1m
 
 ## generating video script[0m

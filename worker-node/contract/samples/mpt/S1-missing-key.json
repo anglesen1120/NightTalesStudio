@@ -1,0 +1,18 @@
+{
+ "schema": "mpt-sample.v1",
+ "date": "2026-09-26",
+ "mpt_commit": "3d5f4e421927d61f3eac729cf4b711ac0b69d688",
+ "server": "127.0.0.1:18080 (spike profile)",
+ "scenario": "S1-missing-api-key",
+ "note": "verify_token is a router-level dependency (base.py); a missing x-api-key returns 401 with the plain FastAPI body. Same for every /api/v1/* route.",
+ "probes": [
+  {
+   "request": "GET /api/v1/tasks?page=1&page_size=1, no x-api-key",
+   "http": 401,
+   "body": {
+    "status": 401,
+    "message": "invalid API key"
+   }
+  }
+ ]
+}

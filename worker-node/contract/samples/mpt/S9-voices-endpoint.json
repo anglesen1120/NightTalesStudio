@@ -1,0 +1,22 @@
+{
+ "schema": "mpt-sample.v1",
+ "date": "2026-09-26",
+ "mpt_commit": "3d5f4e421927d61f3eac729cf4b711ac0b69d688",
+ "server": "127.0.0.1:18080 (spike profile)",
+ "scenario": "S9-voices-endpoint",
+ "note": "There is NO voice-listing route at the pin: controllers are v1/video.py and v1/llm.py only. voices=[] in config means the WebUI has no catalogue to show; the API accepts any voice_name and only fails at synthesis time (see S5). The 404s on every auth state show routing precedes auth.",
+ "probes": [
+  {
+   "request": "GET /api/v1/audio/voices, no key",
+   "http": 404
+  },
+  {
+   "request": "GET /api/v1/audio/voices, x-api-key: WRONG-KEY-xyz",
+   "http": 404
+  },
+  {
+   "request": "GET /api/v1/audio/voices, x-api-key: <real>",
+   "http": 404
+  }
+ ]
+}

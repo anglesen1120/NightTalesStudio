@@ -1,0 +1,459 @@
+{
+ "schema": "mpt-videoparams.v1",
+ "commit": "3d5f4e421927d61f3eac729cf4b711ac0b69d688",
+ "captured": "2026-09-26",
+ "source": "app.models.schema.VideoParams.model_json_schema() via $MPT_ROOT/.venv/bin/python",
+ "model_schema": {
+  "$defs": {
+   "MaterialInfo": {
+    "properties": {
+     "provider": {
+      "default": "pexels",
+      "title": "Provider",
+      "type": "string"
+     },
+     "url": {
+      "default": "",
+      "title": "Url",
+      "type": "string"
+     },
+     "duration": {
+      "default": 0,
+      "title": "Duration",
+      "type": "integer"
+     },
+     "source_info": {
+      "anyOf": [
+       {
+        "additionalProperties": true,
+        "type": "object"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": null,
+      "title": "Source Info"
+     }
+    },
+    "title": "MaterialInfo",
+    "type": "object"
+   },
+   "VideoAspect": {
+    "enum": [
+     "16:9",
+     "9:16",
+     "1:1"
+    ],
+    "title": "VideoAspect",
+    "type": "string"
+   },
+   "VideoConcatMode": {
+    "enum": [
+     "random",
+     "sequential"
+    ],
+    "title": "VideoConcatMode",
+    "type": "string"
+   },
+   "VideoFitMode": {
+    "description": "How source clips with a different aspect ratio fill the output canvas.",
+    "enum": [
+     "cover",
+     "contain"
+    ],
+    "title": "VideoFitMode",
+    "type": "string"
+   },
+   "VideoTransitionMode": {
+    "enum": [
+     "None",
+     "Shuffle",
+     "FadeIn",
+     "FadeOut",
+     "SlideIn",
+     "SlideOut",
+     "ZoomIn",
+     "ZoomOut"
+    ],
+    "title": "VideoTransitionMode",
+    "type": "string"
+   }
+  },
+  "description": "{\n  \"video_subject\": \"\",\n  \"video_aspect\": \"\u6a2a\u5c4f 16:9\uff08\u897f\u74dc\u89c6\u9891\uff09\",\n  \"voice_name\": \"\u5973\u751f-\u6653\u6653\",\n  \"bgm_name\": \"random\",\n  \"font_name\": \"STHeitiMedium \u9ed1\u4f53-\u4e2d\",\n  \"text_color\": \"#FFFFFF\",\n  \"font_size\": 60,\n  \"stroke_color\": \"#000000\",\n  \"stroke_width\": 1.5\n}",
+  "properties": {
+   "video_subject": {
+    "title": "Video Subject",
+    "type": "string"
+   },
+   "video_script": {
+    "default": "",
+    "title": "Video Script",
+    "type": "string"
+   },
+   "video_terms": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "items": {},
+      "type": "array"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Video Terms"
+   },
+   "video_aspect": {
+    "anyOf": [
+     {
+      "$ref": "#/$defs/VideoAspect"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": "9:16"
+   },
+   "video_fit_mode": {
+    "$ref": "#/$defs/VideoFitMode",
+    "default": "cover"
+   },
+   "video_concat_mode": {
+    "anyOf": [
+     {
+      "$ref": "#/$defs/VideoConcatMode"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": "random"
+   },
+   "video_transition_mode": {
+    "anyOf": [
+     {
+      "$ref": "#/$defs/VideoTransitionMode"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null
+   },
+   "video_clip_duration": {
+    "default": 5,
+    "minimum": 1,
+    "title": "Video Clip Duration",
+    "type": "integer"
+   },
+   "video_clip_speed": {
+    "anyOf": [
+     {
+      "type": "number"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": 1.0,
+    "title": "Video Clip Speed"
+   },
+   "match_materials_to_script": {
+    "default": false,
+    "title": "Match Materials To Script",
+    "type": "boolean"
+   },
+   "video_count": {
+    "default": 1,
+    "minimum": 1,
+    "title": "Video Count",
+    "type": "integer"
+   },
+   "video_source": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": "pexels",
+    "title": "Video Source"
+   },
+   "video_materials": {
+    "anyOf": [
+     {
+      "items": {
+       "$ref": "#/$defs/MaterialInfo"
+      },
+      "type": "array"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Video Materials"
+   },
+   "custom_audio_file": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": null,
+    "title": "Custom Audio File"
+   },
+   "video_language": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": "",
+    "title": "Video Language"
+   },
+   "voice_name": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": "",
+    "title": "Voice Name"
+   },
+   "voice_volume": {
+    "anyOf": [
+     {
+      "type": "number"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": 1.0,
+    "title": "Voice Volume"
+   },
+   "voice_rate": {
+    "anyOf": [
+     {
+      "type": "number"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": 1.0,
+    "title": "Voice Rate"
+   },
+   "bgm_type": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": "random",
+    "title": "Bgm Type"
+   },
+   "bgm_file": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": "",
+    "title": "Bgm File"
+   },
+   "bgm_volume": {
+    "anyOf": [
+     {
+      "type": "number"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": 0.2,
+    "title": "Bgm Volume"
+   },
+   "video_music_prompt": {
+    "default": "",
+    "maxLength": 2000,
+    "title": "Video Music Prompt",
+    "type": "string"
+   },
+   "sonilo_bgm_prompt": {
+    "default": "",
+    "maxLength": 2000,
+    "title": "Sonilo Bgm Prompt",
+    "type": "string"
+   },
+   "subtitle_enabled": {
+    "anyOf": [
+     {
+      "type": "boolean"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": true,
+    "title": "Subtitle Enabled"
+   },
+   "subtitle_position": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": "bottom",
+    "title": "Subtitle Position"
+   },
+   "subtitle_display_mode": {
+    "default": "sentence",
+    "enum": [
+     "sentence",
+     "word_by_word"
+    ],
+    "title": "Subtitle Display Mode",
+    "type": "string"
+   },
+   "subtitle_animation": {
+    "default": "none",
+    "enum": [
+     "none",
+     "pop_spring"
+    ],
+    "title": "Subtitle Animation",
+    "type": "string"
+   },
+   "custom_position": {
+    "default": 70.0,
+    "title": "Custom Position",
+    "type": "number"
+   },
+   "font_name": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": "STHeitiMedium.ttc",
+    "title": "Font Name"
+   },
+   "text_fore_color": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": "#FFFFFF",
+    "title": "Text Fore Color"
+   },
+   "text_background_color": {
+    "anyOf": [
+     {
+      "type": "boolean"
+     },
+     {
+      "type": "string"
+     }
+    ],
+    "default": false,
+    "title": "Text Background Color"
+   },
+   "rounded_subtitle_background": {
+    "default": false,
+    "title": "Rounded Subtitle Background",
+    "type": "boolean"
+   },
+   "font_size": {
+    "default": 60,
+    "title": "Font Size",
+    "type": "integer"
+   },
+   "stroke_color": {
+    "anyOf": [
+     {
+      "type": "string"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": "#000000",
+    "title": "Stroke Color"
+   },
+   "stroke_width": {
+    "default": 1.5,
+    "title": "Stroke Width",
+    "type": "number"
+   },
+   "n_threads": {
+    "anyOf": [
+     {
+      "type": "integer"
+     },
+     {
+      "type": "null"
+     }
+    ],
+    "default": 2,
+    "title": "N Threads"
+   },
+   "paragraph_number": {
+    "default": 1,
+    "maximum": 10,
+    "minimum": 1,
+    "title": "Paragraph Number",
+    "type": "integer"
+   },
+   "video_script_prompt": {
+    "default": "",
+    "maxLength": 2000,
+    "title": "Video Script Prompt",
+    "type": "string"
+   },
+   "custom_system_prompt": {
+    "default": "",
+    "maxLength": 8000,
+    "title": "Custom System Prompt",
+    "type": "string"
+   }
+  },
+  "required": [
+   "video_subject"
+  ],
+  "title": "VideoParams",
+  "type": "object"
+ }
+}

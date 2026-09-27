@@ -1,0 +1,41 @@
+{
+ "schema": "mpt-sample.v1",
+ "scenario": "S14-output-variants",
+ "date": "2026-09-26",
+ "mpt_commit": "3d5f4e421927d61f3eac729cf4b711ac0b69d688",
+ "variants": [
+  {
+   "id": "portrait-9:16",
+   "task_id": "693f2fe9-7869-46dc-b71c-2d9d888c174a",
+   "video": {
+    "codec": "h264",
+    "profile": "High",
+    "pix_fmt": "yuv420p",
+    "resolution": "1080x1920",
+    "fps": "30/1"
+   },
+   "audio": {
+    "codec": "aac",
+    "sample_rate": "44100",
+    "channels": 2
+   },
+   "verdict": "9:16 -> 1080x1920 h264 High yuv420p 30fps, aac 44100 stereo (C14 OK)"
+  },
+  {
+   "id": "landscape-16:9",
+   "task_id": "67b5ecfe-c283-47d1-a265-382224c1c207",
+   "verdict": "16:9 -> 1920x1080 h264 High yuv420p 30fps, aac 44100 stereo (C14 OK)"
+  },
+  {
+   "id": "subtitle_enabled=false",
+   "task_id": "65635a9d-647b-4f39-b457-0c71699f7993",
+   "verdict": "subtitle_enabled=false -> no subtitle.srt burned; video still produced (task dir has no srt)"
+  }
+ ],
+ "note": "bgm_type 'random' needs >=2 files in storage/bgm (untested on this minimal box); 'custom' needs a bgm_file upload (POST /api/v1/musics). Both are WebUI-catalogue features; the adapter never uses them (D-rules).",
+ "open": [
+  "bgm_type random/custom",
+  "moov position",
+  "video_codec override"
+ ]
+}
