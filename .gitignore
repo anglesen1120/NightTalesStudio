@@ -27,6 +27,8 @@ __pycache__/
 *.webp
 *.gif
 *.heic
+# 05.2.3-T1: rectangle-only Shorts overlay mock (no third-party content)
+!trial/fixtures/shorts-overlay-1080x1920.png
 # Other audio / video
 *.m4a
 *.aac
