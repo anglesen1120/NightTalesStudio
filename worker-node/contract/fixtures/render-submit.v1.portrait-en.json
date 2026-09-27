@@ -1,0 +1,58 @@
+{
+  "schema": "render-submit.v1",
+  "render_job_id": "0192f3c1-7a3b-7d1e-8f20-4a5b6c7d8e9f",
+  "mpt": {
+    "video_subject": "Fixture story title (portrait-en)",
+    "video_script": "NTS_FIXTURE_SCRIPT",
+    "video_terms": [
+      "<styled scene prompt en 1>",
+      "<styled scene prompt en 2>",
+      "<styled scene prompt en 3>",
+      "<styled scene prompt en 4>"
+    ],
+    "video_aspect": "9:16",
+    "video_fit_mode": "cover",
+    "video_concat_mode": "sequential",
+    "video_transition_mode": null,
+    "video_clip_duration": 10,
+    "video_clip_speed": 1.0,
+    "match_materials_to_script": true,
+    "video_count": 1,
+    "video_source": "openai_image",
+    "video_materials": null,
+    "custom_audio_file": null,
+    "video_language": "en",
+    "voice_name": "kokoro:Ngọc Huyền",
+    "voice_volume": 1.0,
+    "voice_rate": 1.0,
+    "bgm_type": "custom",
+    "bgm_file": "dark-ambient-01.mp3",
+    "bgm_volume": 0.146,
+    "video_music_prompt": "",
+    "sonilo_bgm_prompt": "",
+    "subtitle_enabled": true,
+    "subtitle_display_mode": "sentence",
+    "subtitle_animation": "none",
+    "subtitle_position": "custom",
+    "custom_position": 62.0,
+    "font_size": 64,
+    "stroke_color": "#000000",
+    "stroke_width": 3.0,
+    "text_fore_color": "#FFFFFF",
+    "text_background_color": false,
+    "rounded_subtitle_background": false,
+    "font_name": "BeVietnamPro-Bold.ttf",
+    "paragraph_number": 1,
+    "video_script_prompt": "",
+    "custom_system_prompt": ""
+  },
+  "image_plan": {
+    "max_images": 4,
+    "prompt_sha256": [
+      "c1fecbfb7107ef7a5d99fdc0d60d4529bd1a45bc96af5df9a6bc4a58fc4653a0",
+      "0515b93e9c022751d060c547ec255a3ae9c647a1f777830aa7f7e084a692a3ac",
+      "b2b108540b2af5d82ee8a7e7854ddfc4dc7ceaa4e83e17c33887ab111e00fe72",
+      "be4c0dd0ae32438f35e84ba25da58981440217ddacfeecc4714699c0a460edab"
+    ]
+  }
+}

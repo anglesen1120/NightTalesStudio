@@ -1,0 +1,78 @@
+{
+  "schema": "render-node-health.v1",
+  "status": "error",
+  "reasons": [
+    "disk_low"
+  ],
+  "capacity": {
+    "max_concurrent_tasks": 2,
+    "active_tasks": 1,
+    "accepting": false
+  },
+  "mpt": {
+    "ok": true,
+    "commit": "3d5f4e421927d61f3eac729cf4b711ac0b69d688",
+    "config_profile": "node",
+    "started_at": "2026-09-26T14:50:00Z",
+    "whisper_device": "cuda",
+    "video_codec": "h264_nvenc",
+    "threads_per_task": 4
+  },
+  "tts_proxy": {
+    "schema": "proxy-health.v1",
+    "status": "ok",
+    "reasons": [],
+    "vieneu": {
+      "ok": true,
+      "backend": "onnx",
+      "max_streams": 1,
+      "active": 0,
+      "waiting": 0
+    },
+    "ffmpeg": {
+      "ok": true,
+      "version": "9.0.2",
+      "libmp3lame": true
+    },
+    "catalog": {
+      "ok": true,
+      "revision": 1,
+      "voices": 7,
+      "missing_upstream": []
+    },
+    "proxy": {
+      "version": "0.1.0",
+      "started_at": "2026-09-26T14:49:00Z",
+      "in_flight": 0
+    }
+  },
+  "image_relay": {
+    "ok": true,
+    "tokens_available": 5,
+    "active_plans": 1
+  },
+  "assets": {
+    "ok": true,
+    "font": "BeVietnamPro-Bold.ttf",
+    "music_revision": 1,
+    "music_missing": [],
+    "checked_at": "2026-09-26T14:50:10Z"
+  },
+  "disk": {
+    "ok": false,
+    "task_dir_free_bytes": 120000000000,
+    "used_pct": 91
+  },
+  "adapter": {
+    "version": "0.1.0",
+    "started_at": "2026-09-26T14:49:30Z"
+  },
+  "gpu": {
+    "ok": true,
+    "util_pct": 12,
+    "mem_used_mb": 2048,
+    "mem_total_mb": 24564,
+    "temp_c": 48,
+    "sampled_at": "2026-09-26T15:14:00Z"
+  }
+}
