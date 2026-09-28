@@ -153,7 +153,7 @@ Profiles of the same renderer: `mac` (default, 01.2.2-T2), `spike` (03.4.1-T1; 0
 | `video_script` | approved body, NFC, 1–**20,000** code points (VieNeu input limit, 04 V1) | `StoryRenderInput` |
 | `video_terms` | JSON array, 1–200 strings, each 1–1,000 chars | 03 D4 |
 | `video_aspect` | `"16:9"` \| `"9:16"` | `series.aspect` (C14) |
-| `video_fit_mode` | `"cover"` | fixed |
+| `video_fit_mode` | `"cover"` | fixed (O9: 9:16 option A keeps `cover`; the crop is mitigated by a portrait-only prompt hint in the image layer, 03 CR-16) |
 | `video_concat_mode` | `"sequential"` | 03 D4 |
 | `video_transition_mode` | `null` | fixed |
 | `video_clip_duration` | `10` | 03 D3 |
@@ -538,6 +538,7 @@ Lean options if the owner rejects the increase:
 | O6 | Cancel: MPT cannot stop a running task (C11). Cancel refunds, stops image spend (plan release), discards the output; GPU work runs to its end | Accept |
 | O7 | No per-series music choice in P: the track is picked automatically from the topic moods (D8); a series-level mood or pinned track would be a new `series` field plus a 10.4 UI change | Accept automatic selection for P; revisit after 10 episodes |
 | O8 | (01 CR-14) Ownership proof: a signed per-render hash manifest over the render's `assets` rows (01 DEC-8, owner 2026-09-25) | [OPEN] design at 05 detailing: key type/rotation, manifest storage, dispute export; 06 appends the platform video id |
+| O9 | (03 CR-16, owner 2026-09-28) Shorts framing for 9:16: the image relay returns landscape for every image regardless of the requested size (03.3.2-T1), so a 1080×1920 frame keeps only ≈ 37 % of the image width under `video_fit_mode = cover`. (a) **option A**: keep `cover` and add a portrait-only prompt hint asking for the subject in the middle third; (b) option B: keep `cover`, no hint; (c) option C: `contain` (1080×720 band with black bars); (d) option D: blurred background (needs an MPT patch) | **(a) option A, approved 2026-09-28.** D3's `video_fit_mode = "cover"` is unchanged (no MPT patch, no new submit field); the fix is a prompt suffix, applied by the image layer only: `Main subject centred in the middle third of the frame, empty margins on the left and right.` between the style text and `NegativeClause.V1` (`PORTRAIT_HINT` / `--portrait-hint` in `trial/tools/image_contact_sheet.py`, recorded in the results row `note`). The subtitle preset (O4: portrait `custom` 62 %) is unchanged; hint re-run 2026-09-28: k05/k10 portrait 4.88/4.62 → 4.25/4.50 (AI raters score the full landscape frame, not the 9:16 crop, so the centring benefit is not measured; [OPEN] check the cropped frames in the 05.5.2 portrait render) (`trial/images/REPORT.md` §Re-run) |
 
 **TL rulings on feature-plan open items and review findings (2026-09-24).** They override older text in the feature plans; the D-sections above already include them. Feature-plan lines carry `[RULED — README §10 Tn]`.
 

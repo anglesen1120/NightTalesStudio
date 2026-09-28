@@ -1,0 +1,25 @@
+cell_id,letter,rating_1_5,text_visible,face_realistic,gore,off_prompt,note,rater_id
+k05-landscape,A,4,0,0,0,0,"AI: Roadside shrine, faint incense smoke, lantern, and dawn horizon fit well; the shrine is somewhat small in the frame.",ai-2
+k05-landscape,B,5,0,0,0,0,AI: Clear incense smoke rises beside a warmly lit roadside shrine; violet dawn washes and distant figures suit the style.,ai-2
+k05-landscape,C,5,0,0,0,0,"AI: Prominent incense smoke, warm lantern, blue-violet landscape, and simple distant figures make a strong match.",ai-2
+k05-landscape,D,5,0,0,0,0,"AI: Small shrine, visible incense smoke, lantern glow, and quiet dawn road closely match the scene and watercolor style.",ai-2
+k05-portrait,A,5,0,0,0,0,"AI: Small roadside shrine, visible incense smoke, warm lantern, and violet dawn sky; strong watercolor composition.",ai-2
+k05-portrait,B,5,0,0,0,0,AI: Clear shrine and incense smoke with a warm lantern and dawn light; soft watercolor washes fit well.,ai-2
+k05-portrait,C,4,0,0,0,0,"AI: Shrine, smoke, and lantern are clear, but the crescent moon makes the scene read more as night than dawn.",ai-2
+k05-portrait,D,4,0,0,0,0,"AI: Atmospheric roadside shrine and lantern, though the incense smoke is faint and the large tree partly obscures the shrine.",ai-2
+k09-portrait,A,4,0,0,0,0,"AI: Folder and glasses are prominent; textured paper suits the case-file mood, though object shading is somewhat dimensional.",ai-2
+k09-portrait,B,3,0,0,0,0,"AI: All key objects are present, but the soft vignette and diffuse rendering weaken the flat editorial style.",ai-2
+k09-portrait,C,5,0,0,0,0,"AI: Clear folder and glasses, crisp ink outlines, flat fills, muted tones, and a well-balanced desk composition.",ai-2
+k09-portrait,D,4,0,0,0,0,"AI: Strong case-file page framing and relevant objects, but wide blank margins leave the desk scene relatively small.",ai-2
+k10-landscape,A,5,0,0,0,0,"AI: Empty interview room with metal table, two chairs, fluorescent light, and strong charcoal shadows.",ai-2
+k10-landscape,B,4,0,0,0,0,AI: Strong noir sketch and clear interview-room setting; extra furnishings make the composition slightly busy.,ai-2
+k10-landscape,C,5,0,0,0,0,"AI: Clear table, two chairs, and overhead fluorescent light; rough hatching and deep shadows suit the style.",ai-2
+k10-landscape,D,5,0,0,0,0,AI: Well-composed empty room with the requested furniture and lighting; rear chair is partly obscured.,ai-2
+k10-portrait,A,5,0,0,0,0,"AI: Empty room, metal table, two chairs, and overhead fluorescent light; rough charcoal hatching and deep shadows fit well.",ai-2
+k10-portrait,B,4,0,0,0,0,"AI: All requested objects are clear, but the evenly lit room has less noir contrast than the template calls for.",ai-2
+k10-portrait,C,5,0,0,0,0,"AI: Strong overhead light, deep shadows, and rough hatching frame the empty table and two chairs effectively.",ai-2
+k10-portrait,D,5,0,0,0,0,"AI: Interview-room door and observation window add context; the table, two chairs, fluorescent light, and charcoal style are clear.",ai-2
+k09-landscape,A,4,0,0,0,0,"AI: Folder, glasses, and unlit lamp are clear; subdued case-file setting, though the glasses look slightly distorted.",ai-2
+k09-landscape,B,4,0,0,0,0,"AI: Clear folder and glasses under an unlit lamp; layered papers suit the scene, with slightly heavy shading for flat illustration.",ai-2
+k09-landscape,C,5,0,0,0,0,"AI: Clean, balanced desk composition with folder, glasses, unlit lamp, muted tones, and visible paper texture.",ai-2
+k09-landscape,D,4,0,0,0,0,AI: Strong overhead view of folder and glasses with an unlit lamp; glasses frame is slightly awkward.,ai-2
