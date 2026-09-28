@@ -50,7 +50,7 @@
 | F18 | Acceptance before connect: `ILegalAcceptance.EnsureCurrentAsync` (409 `legal_acceptance_required`); pages built from `manifest.json` versions and rendered by 10.3.1-T1 | `../../13-compliance/README.md` D1, D3, K1 ✅ |
 | F19 | 13.4.2-T1 starts with a behaviour walkthrough checklist mapping each III.x clause and each policy sentence to a test or screenshot; answers drafted in `docs/compliance/youtube-audit-<date>.md`; **no secrets or personal data in the repo copy** | `../../13-compliance/README.md` D5 ✅ |
 | F20 | Gate **06-publish** requires the `quotaExceeded` / `invalid_grant` / `invalid_client` paths to pass against `FakeGoogleServer`; gate **06-audit-ready** requires this pack complete **and** the 13 P slice done, then 13.4.2-T1 files | `../README.md` §7 ✅ |
-| F21 | `FakeGoogleServer` (TestKit, Kestrel, no mocking library) covers token/revoke/channels/resumable/videos errors; integration tests run on real PostgreSQL 17 (`PostgresFixture`) and drive time with `FakeClock` | `../README.md` D19 ✅; `../../09-backend-api/README.md:141,297-298` ✅ |
+| F21 | `FakeGoogleServer` (TestKit, Kestrel, no mocking library) covers token/revoke/channels/resumable/videos errors; integration tests run on real PostgreSQL 17 via `PostgresFixture` and drive time with `FakeClock` | `../README.md` D19 ✅; `../../09-backend-api/README.md:141,297-298` ✅ |
 
 **Open / inference.**
 - [OPEN] **02's PT-day rule ("02 T7")**: `../README.md` D10 pins the ICU zone, but no shared helper exists anywhere in `plans/` (grep 2026-09-25: only D10 mentions `America/Los_Angeles`). This task owns `PacificQuotaDay`; if the 02 writer adds an equivalent helper, one of the two must be dropped. TL ruling requested → §11.

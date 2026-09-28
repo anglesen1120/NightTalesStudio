@@ -380,7 +380,7 @@ Privacy summary (D19): stored per source — normalised URL, registrable domain,
 - `StorySourceTests`: create/retry/state transitions, `CreateNote_WithUrl_Fails`, `MarkFetched_WithoutSha256_Fails`
 - `AddSourceHandlerTests`: `Add_BlockedDomain_ReturnsSourceDomainNotAllowed` · `Add_EleventhSource_ReturnsSourceLimitReached` · `Add_ThirtyFirstUrlSourceIn24h_Returns429` · `Add_DuplicateNormalisedUrl_Returns409` · `Add_NoteSource_DoesNotCreateFetchTask` · `Add_WhileStoryApproved_ReturnsEpisodeInvalidState` · `Add_CreatesSourceAndTaskInOneTransaction`
 
-**Integration (`tests/NightTales.Api.IntegrationTests/Features/Research/`, real PostgreSQL 17 (`PostgresFixture`) + in-process Kestrel)**
+**Integration (`tests/NightTales.Api.IntegrationTests/Features/Research/`, real PostgreSQL 17 via `PostgresFixture` + in-process Kestrel)**
 - `AddSource_ThenFetch_EndToEnd`: add → lease → post a result → `GET sources` shows `fetched` with `contentSha256`/`textChars` and the object exists under `research/{userId}/{episodeId}/{sourceId}/{sha256}.txt`
 - `Lease_RespectsPlatformCapOfFour` · `Lease_SecondTaskSameRegistrableDomain_NotLeased` · `Lease_EmptyQueue_ReturnsEmptyArray`
 - `Heartbeat_ExtendsLease_AndOnlyOwnWorker` · `Heartbeat_AfterExpiry_Returns409FetchLeaseLost`
