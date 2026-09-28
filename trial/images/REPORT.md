@@ -69,7 +69,7 @@ Applied literally, `low` qualifies on both aspects (landscape 4.50, portrait 4.3
 | k10-landscape | 4.62 | 4.75 |
 | k10-portrait (+ hint) | 4.62 | 4.50 |
 
-- **Case-file:** template mean 3.31 → **3.88**. Raters now report unlit lamps and flat ink outlines in most images; 3 of 8 still show a lit lamp with warm glow (k09 is "... reading glasses on a desk, **lamp light**" — the keyword itself asks for the lamp). Portrait stays below 4.0. [OPEN] owner: accept 3.88, or drop "lamp light" from the k09 keyword / tighten the template again.
+- **Case-file:** template mean 3.31 → **3.88**. Raters now report unlit lamps and flat ink outlines in most images; 3 of 8 still show a lit lamp with warm glow (k09 is "... reading glasses on a desk, **lamp light**" — the keyword itself asks for the lamp). Portrait stays below 4.0. **Owner decision 2026-09-28:** accept 3.88 and keep the k09 keyword ("lamp light" stays as the worst-case probe: production keywords come from the Writer, so the lit-lamp case is real input, not a fixture bug).
 - **Portrait hint:** no gain in AI scores (k05 −0.63, k10 −0.12; within the ±1 rater spread seen in the first run). The raters score the full landscape frame, not the 9:16 cover crop, so this does not measure the hint's purpose. [OPEN] judge the hint on the cropped frames in the 05.5.2 portrait render.
 - Spend: relay 24 × 184 VND ≈ 4,416 VND ≈ **$0.17**; tool accounting $0.92; rater passes at D14 rates luna **$0.0027**, sol **$0.0809**.
 
@@ -78,5 +78,5 @@ Applied literally, `low` qualifies on both aspects (landscape 4.50, portrait 4.3
 - [DONE 2026-09-28] Manual spot check, 5 images vs the flags (03.3.2-T1 Tests) — owner, 2026-09-28: `k02-landscape-B`, `k05-portrait-C`, `k06-landscape-A`, `k09-landscape-A`, `k10-portrait-D` **OK, no issue** found against the AI flags (03 README §10 O7).
 - [DONE 2026-09-28] Aspect: 9:16 = option A (cover unchanged + portrait hint) — plan 05 O9 / 03 CR-16.
 - [DONE 2026-09-28] case-file-illustration text: revised and owner-approved (`@74c968c5` → `@42ca2380`, `seed/style-templates.md` §6).
-- [DONE 2026-09-28] Re-run of the `case-file-illustration` cells on the new text plus the portrait-hint probe, 2 AI raters (§Re-run). Remaining gap: case-file portrait 3.62 is still below 4.0 (3 of 8 k09 images still show lamp glow; the k09 keyword asks for "lamp light").
+- [DONE 2026-09-28] Re-run of the `case-file-illustration` cells on the new text plus the portrait-hint probe, 2 AI raters (§Re-run). Case-file result accepted by the owner 2026-09-28 (3.88; k09 keeps "lamp light" as the worst-case probe). Portrait 3.62 stays below 4.0 — accepted as the known weak spot, recorded here.
 - [OPEN] 01.3.1-T2 tap defect: `usage_tap.py`'s `numeric_leaves` keeps upstream `msg_*`/`rs_*` ids as keys under `usage.attribution.items` (found 2026-09-28; the six `trial/runs/20260928-1*-9[0-3]/openai_usage.jsonl` files were sanitised to `item_1..n` before commit; the 16 tracked `/responses` files under `trial/runs/20260927-*` still carry the raw ids). Recorded in STATUS.md §Findings during implementation.
