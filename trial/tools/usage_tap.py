@@ -231,21 +231,38 @@ def now_iso_ms():
     )
 
 
-def numeric_leaves(value):
-    """Recursive dict of int/float leaves only; strings/lists/bools dropped."""
+def numeric_leaves(value, _path=()):
+    """Recursive dict of int/float leaves only; strings/lists/bools dropped.
+
+    Keys directly under usage.attribution.items are upstream response ids
+    (msg_*/rs_*); they are replaced by item_1..n in insertion order so no
+    foreign id lands in the JSONL (03.3.2-T1 finding, 01.3.1-T2 fix).
+    """
     if not isinstance(value, dict):
         return None
+    opaque = _path == ("attribution", "items")
     out = {}
     for key, val in value.items():
         if isinstance(val, bool):
             continue
+        name = f"item_{len(out) + 1}" if opaque else key
         if isinstance(val, (int, float)):
-            out[key] = val
+            out[name] = val
         elif isinstance(val, dict):
-            sub = numeric_leaves(val)
+            sub = numeric_leaves(val, _path + ("item" if opaque else key,))
             if sub:
-                out[key] = sub
+                out[name] = sub
     return out or None
+
+
+def _write_all(fd, data, _write=os.write):
+    """os.write may write fewer bytes than asked; loop until the line is out."""
+    view = memoryview(data)
+    while view:
+        n = _write(fd, view)
+        if n <= 0:
+            raise OSError("short write")
+        view = view[n:]
 
 
 def current_run_id():
@@ -266,7 +283,7 @@ def write_jsonl(rec):
         with JSONL_LOCK:
             fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o644)
             try:
-                os.write(fd, line.encode("utf-8"))
+                _write_all(fd, line.encode("utf-8"))
                 os.fsync(fd)
             finally:
                 os.close(fd)
