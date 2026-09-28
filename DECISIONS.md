@@ -266,6 +266,64 @@ flowchart LR
 - The Mac cannot serve public traffic → rent a GPU server for workers. Cost and videos per hour per server ⚠️ **not measured**; measure in phase 1 and on the first server.
 - **GPU node stack (11 CR-8, verified 2026-09-24):** MPT's own GPU image is CUDA 12.1 + cuDNN 8, but its lock pins ctranslate2 4.7.1, which needs cuDNN 9 (faster-whisper README ✅) → the node installs cuBLAS 12 + cuDNN 9 as locked wheels for MPT's whisper; VieNeu's `cuda` extra is torch 2.8.0 cu128 → NVIDIA driver ≥ 570.26 ✅. MPT keeps one whisper model per process; VieNeu uses ≈ 1.1 GB VRAM at 16 streams ✅; a node needs ≥ 16 GB VRAM (24 GB preferred) [INFERENCE until measured in 11.6.3]. Details: `plans/features/11-worker-deployment/README.md` D9.
 
+#### 10.4.1 Hosting decision (11 11.2.1-T1) — PROPOSED, owner sign-off pending, 2026-09-29
+
+**Status: proposed.** Evidence: `infra/scoring/captures/{aws,azure,gcp}-2026-09-29.json` (every value carries `source_url`, `captured_on` 2026-09-29, a `unit` and a quoted line), `infra/scoring/README.md`, `infra/scoring/latency.md`. Every number below is the output of `python3 infra/scoring/score.py infra/scoring/captures/*.json` (10 hard gates, weights sum 1.0, declared noise tolerance 0.0100) — this record quotes the script, it does not override it.
+
+**Decision: Azure, region `southeastasia` (Singapore), one GPU node `Standard_NC8as_T4_v3` = 1 x NVIDIA Tesla T4 16 GiB − 8 vCPU / 56 GiB RAM.** Runner-up and the only other non-excluded finalist: **GCP `asia-southeast1` + `g2-standard-8`** (1 x NVIDIA L4 24 GiB) — **ineligible today** because it leaves the PostgreSQL 17 PITR hard gate unknown (no fetchable page states the base-backup + continuous-WAL mechanism). **AWS is scored for the record but never eligible:** `DECISIONS.md` §3 and 11 README D21 (owner O7, 2026-09-27) lock the storage engine and state that no AWS account is used; the harness encodes that as the `owner_locked_eligible` hard gate, not as prose.
+
+| rank | provider | total | eligible | gate |
+|---|---|---|---|---|
+| 1 | azure | 0.8400 | **yes** | − |
+| 2 | aws | 0.7540 | no | `owner_locked_eligible` (locked owner decision) + `block_volume_two_zones` unknown ⚠️ |
+| 3 | gcp | 0.4646 | no | `pg17_pitr` unknown ⚠️ |
+
+`winner (top eligible): azure (total 0.8400)`. Each provider is in its own noise band (0.8400 / 0.7540 / 0.4646), so the declared tie-break (latency → GPU price → egress) was **not** triggered; it exists in `criteria.json` and is applied by the script whenever two totals fall inside the band. **Known artefact, stated so it is not read as evidence:** min/max normalisation turns the 0.1 % GPU-price spread ($1.052 vs $1.053116/hour) into the whole 0.20 weight, which is why GCP's total sits far below two providers whose prices are within 1 %; the criterion ranks *relative* price and the gap is not a quality difference.
+
+| item | answer (Azure `southeastasia`, 2026-09-29) |
+|---|---|
+| GPU / VRAM | `Standard_NC8as_T4_v3`, 1 x NVIDIA Tesla T4 **16 GiB** (the 24 GB preference is not offered on a single-GPU size in that series) |
+| GPU price | **USD 1.052 per node-hour**, pay-as-you-go Linux (Azure Retail Prices API) |
+| Billing granularity / stop-start | **per-second** ("Pay for compute capacity by the second"); a `Stopped` VM is still billed, so the node must be **deallocated** to stop the compute charge |
+| Monthly at the duty cycle | 1.052 x 6 h/day x 30.4375 d = **USD 192.12/month**, derived by `score.py` from `gpu_price_per_hour` (`cost/video = GPU price/h x node hours / videos per hour`; the denominator is 11.6.3-T1's) |
+| Latency to VN / OpenAI / YouTube | ⚠️ **not measured** — `latency.md` carries the exact commands as the mandatory pre-apply check for 11.2.2-T1 step 1; the decision is provisional on that check alone, and both latency criteria score neutral meanwhile |
+| Managed PostgreSQL 17 + PITR | ✅ Azure Database for PostgreSQL Flexible Server, PG **17.11** (Microsoft), with **snapshot base backup + continuous WAL archiving** quoted (retention 7 d default, 35 d max). General Purpose Ddsv5 2 vCore **USD 0.244/h = 178.12/month**, storage **0.138/GiB-month** |
+| Block volume | ✅ Standard SSD managed disk **USD 0.075/GiB-month** (E10 LRS: 128 GiB = $9.60/month; ZRS 0.1125), server-side encryption at rest |
+| Snapshot price | ✅ **USD 0.132/GiB-month** — the snapshot tier follows the volume tier; the $0.05 tier is Standard HDD and does not apply to an SSD volume |
+| Two zones for `storage-backup-<env>` | ✅ `Southeast Asia` has **3** availability zones (regions list quoted); the backup VM gets its own zonal disk in another zone. [T74 ⚠️ the live orderability proof is 11.2.2-T1's] |
+| `media.<domain>` internet egress | ✅ published **USD 0.110/GB** for the first 10 TB/month (first 100 GB/month free; then 0.075 / 0.07 / 0.06) |
+| Private CA for `storage-<env>.internal` | ⚠️ Azure publishes **no managed private-CA service** (Key Vault certificates come from DigiCert/GlobalSign or a self-signed policy) → the **T81 offline-root fallback** applies: an owner-generated root issues `storage-<env>.internal` and `storage-backup-<env>.internal`, installed in every host/node trust store; **no client pins a certificate** |
+| FQDN egress (F14) | **yes, but optional** — outbound FQDN filtering is an **Azure Firewall** (Standard/Premium) feature, not an Application Gateway one; if it is ever enabled it needs a `nts-<env>-fw` firewall plus a route table steering the subnet's egress through it. D11's per-unit nftables IP/port allow-list stays the design, so no IaC depends on it |
+| VPN / bastion | ✅ VPN Gateway (`VpnGw1` **USD 0.19/hour**) + Azure Bastion |
+| Secret manager | ✅ Azure **Key Vault** `nts-<env>-kv` (secrets; standard operations $0.03 per 10,000). **Naming constraint:** a Key Vault secret name accepts only `[0-9A-Za-z-]`, so the D15 logical path `nts/<env>/<scope>/<NAME>` cannot be the physical name. Physical name = `nts-<env>-<scope>-<name>` (lowercased, `/` and `_` → `-`, scope ∈ `api`/`worker`/`fetcher`/`shared`/`storage`, and `nts-<env>-node-<nodename>-<name>` for node keys), with the D15 logical path kept **in the secret's tags** (`nts:logical-path`). Recorded as **11 CR-17** against D15 (see `plans/features/11-worker-deployment/README.md` §4) |
+| Container registry | ✅ Azure Container Registry, **USD 0.10/GiB-month** storage (Basic tier $0.1666/day) |
+| Telemetry backend (O6, consumed by 11.6.2-T1) | **Azure Monitor** (logs + metrics, Log Analytics workspaces). **No self-hosted AGPL anywhere** (E12/F16) |
+| Private networking / data terms | ✅ Virtual Network with subnets and NSGs; GDPR commitments + the Microsoft DPA are published. ⚠️ Vietnam Decree 53/2022 data-localisation is **not settled** for a private studio — owner/TL item (revisit trigger) |
+| Payment from Vietnam | ✅ Microsoft's supported-payment-methods table lists Vietnam (credit and debit cards) |
+| Node policy | no Kubernetes, one host per role, containers on a plain OS image; `staging` GPU count 0 (F08) |
+
+**Provider-native resource names for 11.2.2-T1 to paste into `infra/modules/platform`** (`<env>` = `staging`|`prod`; Azure):
+
+| role | name |
+|---|---|
+| Network / subnet | VNet `nts-<env>-vnet`; subnets `nts-<env>-{app,render,fetcher,storage}`; route table `nts-<env>-rt` |
+| Security groups | NSGs `nts-<env>-{api,worker,fetcher,render,storage,storage-backup,lb}-nsg` |
+| Managed PostgreSQL 17 | Flexible Server `nts-<env>-pg` (PG 17, PITR on), private DNS zone `nts-<env>.private.postgres.database.azure.com`; created by `infra/bootstrap` (T83), referenced by the module |
+| Storage VMs | `nts-<env>-storage` (zone 1) and `nts-<env>-storage-backup` (zone 2) |
+| Block volumes | managed disks `nts-<env>-storage-data` and `nts-<env>-storage-backup-data` (Standard SSD LRS, `prevent_destroy`) |
+| Snapshot policy | Azure Backup policy `nts-<env>-daily-7d` on the **primary volume only** (T87) |
+| Internal CA (T81) | offline root `nts-<env>-internal-root.pem` (owner-held) + an issuing script; Azure has no managed-CA product to subscribe to. Names covered: `storage-<env>.internal`, `storage-backup-<env>.internal` |
+| Registry | ACR `nts<env>acr`, repositories `nts/<env>-{api,worker,fetcher,web,mock-mpt,nts-migrate}` |
+| Secret manager | Key Vault `nts-<env>-kv`; **physical** secret names `nts-<env>-<scope>-<name>` (scope ∈ `api`/`worker`/`fetcher`/`shared`/`storage`; node keys `nts-<env>-node-<node>-<name>`), each tagged `nts:logical-path = nts/<env>/<scope>/<NAME>` (11 CR-17 — Key Vault names allow only `[0-9A-Za-z-]`) |
+| Load balancer / cert | Application Gateway `nts-<env>-agw` with listeners for `app.<domain>`, `staging.<domain>`, `media.<domain>`, `media.staging.<domain>`; Key Vault certificate `nts-<env>-cert` (FQDN rules, if ever needed, come from Azure Firewall — see below — not from this gateway) |
+| DNS | public zone `<domain>`; records `app.<domain>`, `staging.<domain>`, `media.<domain>`, `media.staging.<domain>`; private zone records `storage-<env>.internal`, `storage-backup-<env>.internal` |
+| VPN / bastion | VPN Gateway `nts-<env>-vpn`, Azure Bastion `nts-<env>-bastion` |
+| Render node | `infra/modules/render-node` → VM `nts-<env>-render-<i>` (name feeds D13 `RenderNodes:Nodes[i].Name`) |
+
+AWS is excluded, so its resource names are deliberately **not** listed. If the latency check overturns the order, the only other non-excluded finalist is GCP (`asia-southeast1`: VPC `nts-<env>-vpc`, subnets `nts-<env>-{app,render,fetcher,storage}`, Cloud SQL `nts-<env>-pg`, VMs `nts-<env>-storage`/`-storage-backup`, Persistent Disks `nts-<env>-storage-data`/`-storage-backup-data`, snapshot schedule `nts-<env>-daily-7d`, Artifact Registry `nts-<env>-ar`, Secret Manager paths `nts/<env>/…`, global load balancer `nts-<env>-lb`, Cloud DNS zone `<domain>`) — but its PostgreSQL PITR gate must be evidenced first.
+
+**Revisit triggers.** (1) A GPU, disk, snapshot or egress price change on the captured pages — a new capture plus a re-run is the whole cost. (2) The 11.2.2-T1 latency check exceeding `latency_threshold_ms` = 350 ms, or showing the other finalist clearly better. (3) T74's two-zone/location volume or snapshot support failing at provisioning (11.2.2-T1). (4) A hard gate failing only after real provisioning (e.g. driver or VRAM behaviour worse than advertised, 11.3.1-T1): the affected tasks do not start and the next eligible provider is applied. (5) FQDN egress turning out to be needed *and* unavailable → 11.3.2-T1 keeps the IP/port allow-list (already the design). (6) No account or payment method for the finalist → recorded as a §5.6 failure with the reason, and the next provider is applied. (7) The Vietnam data-rule question (Decree 53/2022) resolving against Singapore. (8) GCP publishing the Cloud SQL base-backup + WAL-archive mechanism, which would make the rollback provider eligible.
+
 ### 10.5 Money
 
 - The platform pays OpenAI for every user job. Image cost per video is **above** the ~$0.43–0.44 relay figure (section 4; CRV-0928-5 — ~$0.79 was the official-API flare reference) → set credit prices only after measuring real `usage`.
