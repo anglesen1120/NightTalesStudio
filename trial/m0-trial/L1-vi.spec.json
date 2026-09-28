@@ -1,0 +1,12 @@
+{
+  "schema": "m0-trial-run-spec.v1",
+  "note": "05.5.2-T1 run L1 (vi ghost, landscape, 5 min target). Template only: mpt_client.py does not expand environment variables, so <NTS_HOME> and <RUN_ID> are substituted at run time (trial/m0-trial/README.md, 'Materialise the spec'). story_file/terms_file are untracked copies of a 02.1.3-T0 harness cell; story text never enters a tracked file (T11). preset_file is null: mpt_client.py falls back to the inline D6 landscape preset, which equals seed/subtitle-presets.v1.json landscape@1 on all 8 D3 fields.",
+  "run_id": "<RUN_ID>",
+  "story_file": "<NTS_HOME>/runs/m0-trial-inputs/L1-vi.story.txt",
+  "terms_file": "<NTS_HOME>/runs/m0-trial-inputs/L1-vi.terms.json",
+  "aspect": "16:9",
+  "language": "vi",
+  "voice_id": "Mai Anh",
+  "preset_file": null,
+  "music_track": "apprehensive-at-best"
+}
