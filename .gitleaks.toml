@@ -1,0 +1,20 @@
+# gitleaks config (pre-commit / pre-push hooks, 01.1.2-T4). Extends the default rule set.
+# 01 CR-25: an upstream OpenAI response id (msg_/rs_/resp_ + hex) must never be committed;
+# the usage tap renames them to item_1..n, and this rule catches any path that did not.
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "openai-upstream-response-id"
+description = "Upstream OpenAI response id (msg_/rs_/resp_) in a committed artefact (01 CR-25)"
+regex = '''\b(?:msg|rs|resp)_[0-9a-f]{32,}\b'''
+keywords = ["msg_", "rs_", "resp_"]
+
+[[rules.allowlists]]
+description = "Deliberate fixture ids in the tap regression test"
+paths = ['''^trial/tools/tests/test_usage_tap\.py$''']
+
+[[rules.allowlists]]
+description = "Pre-fix history already on develop (2026-09-27 run files); the working-tree copies are sanitised by 01 CR-25. Scoped to this one commit, so any new id is still caught."
+commits = ["fbd413ac4b9f172215d8deec43192351890792a8"]
