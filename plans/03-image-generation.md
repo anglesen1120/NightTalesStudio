@@ -94,7 +94,7 @@ MPT's template is a **global** config key ✅, but `video_terms` is per request 
 
 ### 5.3 Cost guard
 
-Superseded by feature D8 (03 CR-10): worst case = `MaxTerms × (tokens_per_image_p95[aspect:quality] × $30/1M + 200 × $5/1M)` ⚠️ rates priced on `gpt-image-2.5-flare`, superseded — relay price for `gpt-image-2` [OPEN] (01 DEC-11); from `price_versions.rates.image`; actual cost per billed image = text/image-input/output tokens × their rates from the relay report. Credits (plan 12, S) reserve the worst case.
+Superseded by feature D8 (03 CR-10): worst case = `MaxTerms × (tokens_per_image_p95[aspect:quality] × $30/1M + 200 × $5/1M)` ⚠️ rates priced on `gpt-image-2.5-flare`, superseded; from `price_versions.rates.image`. ✅ Resolved 2026-09-28 (02 CR-27): the DEC-9 relay bills `gpt-image-2` flat **184 VND/image** ≈ $0.0072 (fx 25,641 VND/USD, SBV 2026-09-25) — bound per video at the tier caps: Short 6 → ≈ $0.04, Standard 48 → ≈ $0.34, Long 90 → ≈ $0.65; actual cost per billed image = `image_count × 184 ÷ fx` under the per_image price (token rates stay as the measurement reference until 03.3.1-T2). Credits (plan 12, S) reserve the worst case.
 
 ### 5.4 Error codes
 

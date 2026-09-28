@@ -35,10 +35,11 @@ An automated pipeline for **faceless** YouTube (and TikTok) videos, published as
 |---|---|---|---|---|
 | Pipeline framework | **MoneyPrinterTurbo** (MPT) | Local | MIT ✅ | **Configure only**, no fork |
 | Story writing | OpenAI **gpt-6-luna** (upgrade to gpt-6-sol if quality is insufficient); written by the backend via the Responses API with strict `story.v1` output, not by MPT (02 CR-10). Default writer/review model per language decided by 02.1.3 per `plans/features/02-story-writing/README.md` D15 — pending | OpenAI | — | M0 harness calls OpenAI directly; MPT receives `video_script`/`video_terms` ✅ |
-| Images | OpenAI **gpt-image-2**, `medium` quality (advisory on the relay — it ignores requested size/quality/model, codex#28723; quality value per §4 CR-3) | OpenAI (relay, 01 DEC-9) | — | MPT has an `openai_image` material source ✅. **Owner amendment 2026-09-25 (01 DEC-11):** supersedes `gpt-image-2.5-flare`; images go through the relay's Responses API `image_generation` tool (host `gpt-6-luna`), not `/images/generations` (broken relay-side); per-image cost [OPEN] |
+| Images | OpenAI **gpt-image-2**, `medium` quality (advisory on the relay — it ignores requested size/quality/model, codex#28723; quality value per §4 CR-3) | OpenAI (relay, 01 DEC-9) | — | MPT has an `openai_image` material source ✅. **Owner amendment 2026-09-25 (01 DEC-11):** supersedes `gpt-image-2.5-flare`; images go through the relay's Responses API `image_generation` tool (host `gpt-6-luna`), not `/images/generations` (broken relay-side); per-image cost ✅ **184 VND/image** flat (owner 2026-09-28, 02 CR-27, §4) (CRV-0928-5) |
 | Voice | **VieNeu-TTS v3 Turbo** (vi + en, 48 kHz; preset voice count: **25** in SDK 3.8.3 (default "Hải Đăng") ✅, 23 on the older HF card (SDK 3.7.1); the pinned server's `GET /v1/voices` is authoritative (`plans/features/01-environment-setup/` README §1 V5) | Local | Apache-2.0 ✅, FAQ allows monetized use ✅ | Needs a small proxy (section 5.3). **Do not use v4** (proprietary). Fact note: all 25 presets are Vietnamese regional speakers with no language field (`features/04-voice-proxy/README.md` V8); English narration quality is ⚠️ unverified; rule (04 O2, accepted 2026-09-24): if no en voice passes the 04.2.1 audition, launch en with the best-rated voice when its mean naturalness ≥ 3.0, otherwise postpone the en channel; this decision stays locked (04 CR-15) |
 | Subtitles | faster-whisper `large-v3-turbo` | Local | — | Configured inside MPT ✅ |
 | Background music | CC0 / YouTube Audio Library tracks | — | Per track | **Delete MPT's bundled music** (section 5.5) |
+| Source text extraction (story research, 02.5.2) | **SmartReader 0.11.1** (+ AngleSharp 1.8.2), in-process in the fetcher; robots.txt by an in-house RFC 9309 subset parser | Fetcher host | Apache-2.0 ✅ / MIT ✅ (nuget.org, 2026-09-28) | Spike 02.5.2-T0 (`plans/features/02-story-writing/02.5.1-sources-fetcher/spike-report.md` §1.5): diacritics 20/20, recall 19/20, boilerplate ≤ 0.25 %; `Fetcher:MinTextChars` = 1,275 (02 T104). trafilatura 2.2.0 passed too but needs a Python sidecar (F19) |
 | Posting | Custom code: YouTube Data API + TikTok Content Posting API | Local | — | Do not use MPT's Upload-Post integration |
 
 **Removed from the plan:** Ollama/Qwen3 (replaced by OpenAI), mflux/Z-Image/FLUX (replaced by GPT Image).
@@ -51,9 +52,9 @@ Prices from the [OpenAI pricing page](https://developers.openai.com/api/docs/pri
 |---|---|---|
 | gpt-6-luna | $0.10 / 1M input tokens, $0.50 / 1M output tokens | < $0.01 per 2,500-word story (inference) |
 | gpt-6-sol (fallback) | $2 / 1M input, $10 / 1M output | ~$0.05 per story (inference) |
-| GPT Image (gpt-image-2) | $30 / 1M image output tokens ⚠️ priced on `gpt-image-2.5-flare` — superseded (01 DEC-11); relay price for `gpt-image-2` [OPEN] | 1024×1024: low ~$0.006 · **medium ~$0.013** · high ~$0.053 per image |
-| One long video (~60 images, medium) | | ~$0.79 |
-| **~13 long videos / month** (3/week) | | **~$10–11 / month** |
+| GPT Image (gpt-image-2) | **184 VND/image** flat on the relay account (owner, 2026-09-28, 02 CR-27; ≈ $0.0072 at the SBV 25,641 VND/USD of 2026-09-25; `trial/prices.json` `unit: per_image`). Official-API reference only: `gpt-image-2.5-flare` $30 / 1M image output tokens (superseded model, 01 DEC-11) | Official-API flare reference — 1024×1024: low ~$0.006 · **medium ~$0.013** · high ~$0.053 per image. Relay: ~60 images ≈ 11,040 VND ≈ $0.43 per long video (CRV-0928-5) |
+| One long video (~60 images) | | **Relay (the trial's price, 02 CR-27):** 60 × 184 VND = 11,040 VND ÷ 25,641 VND/USD ≈ **$0.43** + < $0.01 story = **~$0.44** · official-API `gpt-image-2.5-flare` reference at medium: 60 × ~$0.013 + story ≈ ~$0.79 (CRV-0928-5) |
+| **~13 long videos / month** (3/week) | | **Relay:** 13 × ~$0.44 ≈ **~$6 / month** · official-API flare reference: ~$10–11 (CRV-0928-5) |
 
 ⚠️ These are **floor** prices. With `openai_image_size = ""`, MPT picks **1536x1024** (landscape) or **1024x1536** (portrait) per video aspect (`config.example.toml:199-204`), which costs more tokens than 1024×1024 — **not measured yet**. Measure via the response `usage` field in phase 1.
 
@@ -160,6 +161,8 @@ In sentence mode `subtitle.correct()` replaces every cue's text with the matchin
 | FLUX.1-dev / FLUX.2 | Non-commercial / requires paid BFL tiers |
 | TikTokAutoUploader, RedditVideoMakerBot, … | Browser automation / not a fit |
 | Upload-Post (inside MPT) | Unnecessary third-party service |
+| trafilatura 2.2.0 (sidecar extractor) | Passed the 02.5.2-T0 quality thresholds, but a Python sidecar adds a second runtime, health check and CVE stream to the minimal-surface fetcher (F19); SmartReader chosen on deployment cost |
+| TurnerSoftware.RobotsExclusionTools 0.9.1 | Last release 2022-08-09, predates RFC 9309 (no longest-match/`Allow` guarantee), unmaintained (02 E4) |
 | MediatR 14.x | License is RPL-1.5 or paid commercial; RPL covers hosted use → rejected. Use Mediator.SourceGenerator (MIT) |
 | InkOS (Narcooo/inkos) — code and prompt text | AGPL-3.0 ✅. Ideas only; our prompts are written from scratch (§10.10) |
 | Aggregating/transcribing other channels' videos into stories | Breaks YouTube Terms ✅ (§10.10) and copies other narrators' expression |
@@ -265,7 +268,7 @@ flowchart LR
 
 ### 10.5 Money
 
-- The platform pays OpenAI for every user job. Image cost per video is **above** the ~$0.79 floor (section 4) → set credit prices only after measuring real `usage`.
+- The platform pays OpenAI for every user job. Image cost per video is **above** the ~$0.43–0.44 relay figure (section 4; CRV-0928-5 — ~$0.79 was the official-API flare reference) → set credit prices only after measuring real `usage`.
 - Enforce per-user quotas and a hard OpenAI spending limit so one user cannot drain the account.
 - **Users buy credits; sales fund the API** (`plans/12-billing-credits.md` Epics 12.3, 12.6–12.8): packages in VND, credit lots with expiry, promo codes, receipts, refund requests, and an admin funding view (OpenAI balance, burn, runway, set-aside per sale).
 - OpenAI API billing facts ✅ ([prepaid billing help article](https://help.openai.com/en/articles/8264644-setting-up-and-managing-prepaid-api-billing)): credits are bought in advance (minimum $5); usage stops with error `credit_balance_exhausted` when the balance is empty, and a short negative balance can occur, so the balance is not an instant cutoff; purchased credits **expire after 1 year** and are **non-refundable** except in listed cases; auto-reload has a threshold, a restore-to amount and an optional monthly limit; the trust tier caps the maximum balance.

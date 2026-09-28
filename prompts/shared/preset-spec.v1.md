@@ -160,7 +160,9 @@ them "to help".
 - Token rule: NFC-normalise, split on Unicode whitespace, each non-empty token
   counts 1. A vi token is a **syllable** (V1); an en token is a word. The DB
   column stays `word_count`; the UI says "syllables" for vi.
-- Rates: vi **160 tokens/min**, en **145 tokens/min** (`Story:Length:Rate:{lang}`).
+- Rates (per-language, 02 T103): vi **260 syllables/min** (measured), en
+  **200 words/min** ⚠️[INFERENCE] (measured via the vi voice `Hải Đăng`;
+  corroborated by 01.3.1-T4 `wpm 192.5`) — `Story:Length:Rate:{lang}`.
   K = 6 keywords/min; segments ≈ `ceil(D × K ÷ 1.5)`. The formula is only an
   approximation for `standard` and `long`: it does not produce the `short` row
   (it yields 3–4 there). The `short` 4–5 segment band is set by the `short` beat
@@ -168,29 +170,29 @@ them "to help".
 
 | Tier | Minutes | vi tokens | en tokens | Segments (hook + paragraphs + ending) | `max_output_tokens` writer / review / revision |
 |---|---|---|---|---|---|
-| `short` | 0.75–1.0 | 120–160 | 110–145 | 4–5 | 2,500 / 1,200 / 1,500 |
-| `standard` | 5–8 | 800–1,280 | 725–1,160 | 20–32 | 6,000 / 2,500 / 6,000 |
-| `long` | 10–15 | 1,600–2,400 | 1,450–2,175 | 40–60 | 10,000 / 3,500 / 10,000 |
+| `short` | 0.75–1.0 | 195–260 | 150–200 | 4–5 | 2,500 / 1,200 / 1,500 |
+| `standard` | 5–8 | 1,300–2,080 | 1,000–1,600 | 20–32 | 6,000 / 2,500 / 6,000 |
+| `long` | 10–15 | 2,600–3,900 | 2,000–3,000 | 40–60 | 10,000 / 3,500 / 10,000 |
 
 ⚠️ This table is **documentation**. The runtime authority for `max_output_tokens`
 is `price_versions.limits` (D14, 02.2.4-T1) and for the band `LengthTargetResolver`
 (D21). `max_output_tokens` includes reasoning tokens (O4).
-⚠️ The vi/en rates are D4 defaults, not measured (F07). Per **T26** they stay the
-defaults until 01.3.1-T4 lands; `words_per_minute_measured = null` is accepted for M0.
+⚠️ The vi/en rates are the T103 measured values; en is [INFERENCE] (vi voice
+`Hải Đăng` reading en) until an en catalog voice is measured.
 A wrong rate is fixed here **and** in `price_versions.limits`, never in a preset.
 
 **`units_per_segment` (02 T97).** The runtime `length` control object (D6) carries
 the resolved band plus a per-segment budget:
 
 ```json
-"length": { "tier": "standard", "tokens": [800, 1280], "segments": [20, 32],
-            "units_per_segment": 40 }
+"length": { "tier": "standard", "tokens": [1300, 2080], "segments": [20, 32],
+            "units_per_segment": 65 }
 ```
 
 `units_per_segment = round(min_tokens ÷ min_segments)` for the tier and language,
 computed from the table above (`LengthTargetResolver`, D21). Examples: `standard`
-en 725 ÷ 20 → **36**; `standard` vi 800 ÷ 20 → **40**; `long` en 1450 ÷ 40 → **36**;
-`short` vi 120 ÷ 4 → **30**, `short` en 110 ÷ 4 → **28**. It is a **control key**
+vi 1,300 ÷ 20 → **65**; `standard` en 1,000 ÷ 20 → **50**; `long` en 2,000 ÷ 40 →
+**50**; `short` vi 195 ÷ 4 → **49**, `short` en 150 ÷ 4 → **38**. It is a **control key**
 (system-set, followed), and the two-tier data rule (§9) is unchanged. The model
 instruction that uses it lives in `system/writer.v1.md` §6 and each preset's
 Length section, in the preset's language; the number itself travels inside the

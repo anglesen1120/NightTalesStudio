@@ -21,6 +21,7 @@ import fcntl
 import hashlib
 import io
 import json
+import math
 import os
 import re
 import shutil
@@ -186,7 +187,10 @@ def _is_na(value):
 
 
 def _num(value):
-    return value if isinstance(value, (int, float)) else 0
+    # SEC-0928-2: bool and non-finite values never enter cost math.
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return 0
+    return value if math.isfinite(value) else 0
 
 
 # ---------------------------------------------------------------------------
@@ -380,16 +384,44 @@ def _load_prices(path):
         die(f"cannot read prices file {path}: {e}", 2)
     except json.JSONDecodeError as e:
         die(f"prices file unparseable {path}: {e}", 2)
-    return data.get("models", {})
+    return data
 
 
 def _price_for(prices, model):
-    """model_match: exact key, or key followed by -YYYY-MM-DD snapshot suffix."""
-    if model in prices:
-        return prices[model]
+    """model_match: exact key, or key followed by -YYYY-MM-DD snapshot suffix.
+    `prices` is the whole prices.json document."""
+    models = prices.get("models") or {}
+    if model in models:
+        return models[model]
     base = _SNAPSHOT_SUFFIX_RE.sub("", model or "")
-    if base and base in prices:
-        return prices[base]
+    if base and base in models:
+        return models[base]
+    return None
+
+
+def _image_n(line):
+    """Images billed per request (n defaults to 1 on the API; the tap rejects
+    anything else)."""
+    n = (line.get("request") or {}).get("n", 1)
+    return n if isinstance(n, int) and not isinstance(n, bool) and n > 0 else 1
+
+
+def _per_image_cost(line, rate, prices):
+    """USD for a per_image-priced image line; None when the currency is
+    unconvertible (unknown unit, or a VND rate without fx_vnd_per_usd)."""
+    amount = rate.get("per_image")
+    if not isinstance(amount, (int, float)) or isinstance(amount, bool) \
+            or not math.isfinite(amount) or amount < 0:
+        return None  # SEC-0928-2
+    currency = rate.get("currency", "USD")
+    if currency == "USD":
+        return _image_n(line) * amount
+    if currency == "VND":
+        fx = (prices.get("fx_vnd_per_usd") or {}).get("value")
+        if not isinstance(fx, (int, float)) or isinstance(fx, bool) \
+                or not math.isfinite(fx) or fx <= 0:
+            return None
+        return _image_n(line) * amount / fx
     return None
 
 
@@ -410,6 +442,11 @@ def _line_cost(line, prices):
                 + _num(u.get("completion_tokens"))
                 * _num(rate.get("output"))) / 1e6
     if ep == "/images/generations":
+        if rate.get("unit") == "per_image":
+            # Flat per-image charge (owner-checked relay price, 2026-09-28);
+            # applies to via=responses lines too — DEC-11's "host-model tokens
+            # are unpriceable" does not apply to a flat per-image rate.
+            return _per_image_cost(line, rate, prices)
         if line.get("via") == "responses":
             return None  # host-model tokens only; no image price (DEC-11)
         det = u.get("input_tokens_details") or {}
@@ -580,9 +617,10 @@ def aggregate_tap(jsonl_path, prices_path, story_source, tap_disabled):
         cols["image_quality_requested"] = "+".join(req_q) \
             if req_q else "omitted"
 
-        if any(l.get("usage") is None for l in img200):
+        usage_absent = any(l.get("usage") is None for l in img200)
+        if usage_absent:
             na = _na("usage-absent")
-            for name in ("image_output_tokens_total", "image_cost_usd",
+            for name in ("image_output_tokens_total",
                          "image_input_text_tokens_total",
                          "image_input_image_tokens_total"):
                 cols[name] = na
@@ -614,17 +652,31 @@ def aggregate_tap(jsonl_path, prices_path, story_source, tap_disabled):
                                 .get("image_tokens")) for l in img200)
                 cols["image_input_text_tokens_total"] = str(int(t_in))
                 cols["image_input_image_tokens_total"] = str(int(i_in))
-            cost = 0.0
-            for l in img200:
-                line_cost = _line_cost(l, prices)
-                cost = None if (cost is None or line_cost is None) \
-                    else cost + line_cost
-            if cost is None:
-                cols["image_cost_usd"] = _na("no-price")
-            elif split_absent:
-                cols["image_cost_usd"] = _na("usage-split-absent")
-            else:
-                cols["image_cost_usd"] = f"{cost:.6f}"
+        # Col 17 per line (QA-0928-3, CRV-0928-3): a per_image line is priced
+        # from request.n alone; only a token-priced line needs usage and the
+        # full O6 input split.
+        cost = 0.0
+        cost_na = None
+        for l in img200:
+            rate = _price_for(prices, l.get("model"))
+            if rate is not None and rate.get("unit") != "per_image":
+                u = l.get("usage")
+                if u is None:
+                    cost_na = cost_na or "usage-absent"
+                    continue
+                d = u.get("input_tokens_details") or {}
+                if not ("text_tokens" in d and "image_tokens" in d):
+                    cost_na = cost_na or "usage-split-absent"
+                    continue
+            line_cost = _line_cost(l, prices)
+            cost = None if (cost is None or line_cost is None) \
+                else cost + line_cost
+        if cost is None:
+            cols["image_cost_usd"] = _na("no-price")
+        elif cost_na:
+            cols["image_cost_usd"] = _na(cost_na)
+        else:
+            cols["image_cost_usd"] = f"{cost:.6f}"
 
     # Derived per-image columns (45, 46).
     count = int(cols.get("image_count", "0") or 0)
@@ -654,9 +706,14 @@ def tap_day_cost(trial_runs_dir, prices_path, day):
             if line.get("endpoint") not in ("/chat/completions",
                                           "/images/generations"):
                 continue
-            if line.get("http_status") != 200 or line.get("usage") is None \
-                    or line.get("model") is None:
+            if line.get("http_status") != 200 or line.get("model") is None:
                 continue
+            if line.get("usage") is None:
+                # CRV-0928-3: a per_image line is priced without usage.
+                rate = _price_for(prices, line.get("model"))
+                if line.get("endpoint") != "/images/generations" \
+                        or rate is None or rate.get("unit") != "per_image":
+                    continue
             try:
                 ts = _parse_iso_z(str(line.get("ts")))
             except (ValueError, AttributeError):
@@ -1403,6 +1460,8 @@ def do_dashboard(args, nts_home, trial_dir, prices_path):
         dashboard = float(args.dashboard_cost)
     except ValueError:
         die("--dashboard-cost must be a number", 2)
+    if not math.isfinite(dashboard):
+        die("--dashboard-cost must be a finite number", 2)  # SEC-0928-2
     tap_total = tap_day_cost(Path(trial_dir) / "runs", prices_path, day)
     # LOCK_EX across read + tmp + os.replace so a concurrent finish
     # append is never lost. The appender rechecks the inode under its

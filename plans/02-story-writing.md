@@ -22,7 +22,7 @@
 | # | Finding | Action |
 |---|---|---|
 | G1 | Moving story writing out of MPT means we also own **keyword generation** (MPT `video_terms`) | The output schema includes `keywords` per paragraph (§5.2) |
-| G2 | Length targets were never measured | Use `words_per_minute_measured` from plan 01; until then, length is a range, not a promise |
+| G2 | Length targets were never measured | Rates measured per language from the VieNeu baselines (02 T103: vi 260 syl/min, en 200 wpm); `words_per_minute_measured` from plan 01 (01.3.1-T4) re-measures them; length stays a range, not a promise |
 | G3 | True crime involves real people → defamation, privacy, victims' dignity | Fact-source rules + mandatory user attestation (02.3) |
 | G4 | "Mass-produced" policy risk if every episode sounds the same | Presets vary structure; the rubric checks originality; variety guard + gates for the owner's fiction autopilot (02.8.4); human approval for SaaS users and true-crime (DECISIONS §6, §10.12) |
 | G5 | Model may refuse or be moderated on horror/violence | Record `moderation_events`; tone rules avoid gore; the UI explains what to change |

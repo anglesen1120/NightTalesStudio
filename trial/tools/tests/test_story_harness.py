@@ -123,18 +123,19 @@ def vi_phrase(phrase, times):
 
 
 def story(**overrides):
-    """A well-formed `short` vi story: 4 segments, 142 tokens, 1 keyword each."""
+    """A well-formed `short` vi story: 4 segments, 215 tokens, 1 keyword each.
+    215 sits inside the T103 short vi band 195–260."""
     value = {
         "title": "Ngọn đèn trên tháp",
-        "hook": {"text": vi_phrase("Đêm ấy tôi nghe tiếng chân", 5),
+        "hook": {"text": vi_phrase("Đêm ấy tôi nghe tiếng chân", 9),
                  "keywords": ["empty staircase at midnight"], "fact_refs": []},
         "paragraphs": [
-            {"beat": "setup", "text": vi_phrase("Tôi mở cửa nhưng không có ai", 6),
+            {"beat": "setup", "text": vi_phrase("Tôi mở cửa nhưng không có ai", 9),
              "keywords": ["locked door in hallway"], "fact_refs": []},
-            {"beat": "twist", "text": vi_phrase("Chiếc chìa khoá vẫn còn trên bàn", 6),
+            {"beat": "twist", "text": vi_phrase("Chiếc chìa khoá vẫn còn trên bàn", 9),
              "keywords": ["kitchen light left on"], "fact_refs": []},
         ],
-        "ending": {"text": vi_phrase("Tôi không dám kể lại chuyện này", 4),
+        "ending": {"text": vi_phrase("Tôi không dám kể lại chuyện này", 5),
                    "keywords": ["quiet room at dawn"], "fact_refs": []},
         "description": "Một đêm mất ngủ trong ngôi nhà cũ.",
         "tags": ["ghost story", "old house"],
@@ -386,12 +387,12 @@ class UserDataLengthTest(unittest.TestCase):
     `units_per_segment = round(min_tokens / min_segments)` for tier+language."""
 
     EXPECTED = {
-        ("short", "vi"): 30,      # 120 / 4
-        ("short", "en"): 28,      # 110 / 4 = 27.5
-        ("standard", "vi"): 40,   # 800 / 20
-        ("standard", "en"): 36,   # 725 / 20 = 36.25
-        ("long", "vi"): 40,       # 1600 / 40
-        ("long", "en"): 36,       # 1450 / 40 = 36.25
+        ("short", "vi"): 49,      # 195 / 4 = 48.75
+        ("short", "en"): 38,      # 150 / 4 = 37.5
+        ("standard", "vi"): 65,   # 1300 / 20
+        ("standard", "en"): 50,   # 1000 / 20
+        ("long", "vi"): 65,       # 2600 / 40
+        ("long", "en"): 50,       # 2000 / 40
     }
 
     def length_object(self, tier: str, lang: str) -> dict:
@@ -418,8 +419,8 @@ class UserDataLengthTest(unittest.TestCase):
         length = self.length_object("standard", "en")
         self.assertEqual(list(length), ["tier", "tokens", "segments", "units_per_segment"])
         raw = sh.build_user_data("b", "standard", LENGTH["standard"]["en"], [])
-        self.assertIn('"length":{"tier":"standard","tokens":[725,1160],'
-                      '"segments":[20,32],"units_per_segment":36}', raw)
+        self.assertIn('"length":{"tier":"standard","tokens":[1000,1600],'
+                      '"segments":[20,32],"units_per_segment":50}', raw)
 
     def test_non_positive_min_segments_exits_2_with_one_message(self):
         for bad in (0, -1):
@@ -545,8 +546,8 @@ class HarnessCliTest(CliCase):
                                         "length", "structure_plan", "task"])
         self.assertEqual(sorted(user["length"]), ["segments", "tier", "tokens",
                                                   "units_per_segment"])
-        self.assertEqual(user["length"], {"tier": "short", "tokens": [120, 160],
-                                          "segments": [4, 5], "units_per_segment": 30})
+        self.assertEqual(user["length"], {"tier": "short", "tokens": [195, 260],
+                                          "segments": [4, 5], "units_per_segment": 49})
         self.assertEqual(user["task"], "write_story")
         self.assertEqual(user["facts"], [])
         raw = (run_dir / "request.json").read_text(encoding="utf-8")
@@ -606,8 +607,8 @@ class HarnessCliTest(CliCase):
         self.assertFalse(self.out.exists(), "no cell dir is written before the tap check")
 
     def test_sol_cell_exits_2_when_prices_has_no_sol_row(self):
-        # D-PRICES-TESTS: the temp prices file has only luna, so this never
-        # depends on whether 01 has added the real sol row yet.
+        # D-PRICES-TESTS: the temp prices file has only luna, so this stays
+        # independent of the real sol row in trial/prices.json.
         argv = ["--preset", "ghost", "--lang", "vi", "--brief", "x", "--model", "gpt-6-sol",
                 "--prompts-dir", str(self.prompts), "--out", str(self.out),
                 "--length", str(LENGTH_PATH), "--prices", str(self.prices)]

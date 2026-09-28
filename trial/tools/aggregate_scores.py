@@ -355,7 +355,7 @@ def build_handoff(rows, decision, runs_dir: Path, length_table: dict,
         "d15": d15,
         "d4_calibration": {
             "words_per_minute_measured": None,
-            "source": "01.3.1-T4 not landed (T26: accepted, D4 rates stay the defaults)",
+            "source": "01.3.1-T4 not landed (T26: accepted; D4 rates = T103 VieNeu-baseline rates)",
             "tiers": tiers,
             "segments_observed": {
                 "min": min(segments) if segments else None,

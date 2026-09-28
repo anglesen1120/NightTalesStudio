@@ -32,7 +32,7 @@
 | K1 | MPT generates images in term order and stops when `successes × clip ≥ audio`; skipped terms are replaced by the next term; clips loop when short (I7, I8) | README §1 ✅ |
 | K2 | `video_clip_duration` default 5 (I13) → 12 images/min unless we set it | README §1 ✅ |
 | K3 | Story keywords: 1–2 per segment, English, 3–12 words; derived `keywords` = hook ++ paragraphs ++ ending in order; segment addresses `hook`, `p:<i>`, `ending` | 02 README D3, D22 ✅ |
-| K4 | D4 rates: vi 160, en 145 tokens/min (config `Story:Length:Rate:{lang}`); tiers short ≤ 1 min, standard 5–8, long 10–15 | 02 README D4 ✅ |
+| K4 | D4 per-language rates (02 T103): vi 260 syllables/min, en 200 words/min (en ⚠️ `[INFERENCE]`: measured with the vi voice, T103) (config `Story:Length:Rate:{lang}`); tiers short ≤ 1 min, standard 5–8, long 10–15 | 02 README D4 ✅ |
 | K5 | `KeywordRules.Check(string) → KeywordViolation` (word count, ASCII charset, name heuristic, gore list) in `Domain/Stories/Keywords/`; the validator reports `keyword_invalid` | 02.2.1-T1 ✅ |
 | K6 | `IStoryRenderInputProvider.GetAsync(storyVersionId) → StoryRenderInput(VideoSubject, VideoScript, Keywords)`; 09.6.1 calls it with `approved_story_version_id` | 02 README D21, T28 ✅ |
 | K7 | Fact sheets: `facts jsonb (id, statement, source_ids, confidence)`, one approved sheet per episode; `story_sources.title` for fetched url sources | 00 §6; 02 README CR-4, T54 ✅ |
