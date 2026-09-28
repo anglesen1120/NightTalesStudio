@@ -55,7 +55,7 @@ T6 checks also passed: `task … finished, generated 1 videos.`, no `task failed
 tap 6 lines (1 chat, 5 images), all `run_id` = this run and `http_status 200`,
 `usage` present on all; `subtitle.srt` 912 bytes; `detected language: 'en',
 probability: 1.00`; `loading model: ./models/whisper-large-v3-turbo` (offline);
-`no background music files found` 0. Manual playback not done by the agent.
+`no background music files found` 0. Manual playback: owner watched `final-1.mp4` 2026-09-28 -> OK.
 
 ## Measurements vs the first (non-quiesced) row
 
