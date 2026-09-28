@@ -70,8 +70,24 @@ Applied literally, `low` qualifies on both aspects (landscape 4.50, portrait 4.3
 | k10-portrait (+ hint) | 4.62 | 4.50 |
 
 - **Case-file:** template mean 3.31 → **3.88**. Raters now report unlit lamps and flat ink outlines in most images; 3 of 8 still show a lit lamp with warm glow (k09 is "... reading glasses on a desk, **lamp light**" — the keyword itself asks for the lamp). Portrait stays below 4.0. **Owner decision 2026-09-28:** accept 3.88 and keep the k09 keyword ("lamp light" stays as the worst-case probe: production keywords come from the Writer, so the lit-lamp case is real input, not a fixture bug).
-- **Portrait hint:** no gain in AI scores (k05 −0.63, k10 −0.12; within the ±1 rater spread seen in the first run). The raters score the full landscape frame, not the 9:16 cover crop, so this does not measure the hint's purpose. [OPEN] judge the hint on the cropped frames in the 05.5.2 portrait render.
+- **Portrait hint:** no gain in AI scores (k05 −0.63, k10 −0.12; within the ±1 rater spread seen in the first run). The raters score the full landscape frame, not the 9:16 cover crop, so this does not measure the hint's purpose; the crop probe below does.
 - Spend: relay 24 × 184 VND ≈ 4,416 VND ≈ **$0.17**; tool accounting $0.92; rater passes at D14 rates luna **$0.0027**, sol **$0.0809**.
+
+### Crop probe (2026-09-28, 9:16 cover crop, portrait hint)
+
+- Question: does the portrait hint keep the subject inside MPT's 9:16 `cover` crop (05 O9 option A)? Offline, no new images: `trial/tools/make_crop_groups.py` builds one blind group per cell from the `auto` image of the first sheet (no hint) and of the re-run (hint), crop = scale to fill 1080×1920 then centre-crop (as MPT `cover`). A = no-hint crop, B = hint crop, C = no-hint full frame, D = hint full frame. Rated by the same 2 AI raters (`image_rater.py`); CSVs `trial/images/contact-sheet-crop-20260928-ratings{,.ai-1,.ai-2}.csv`; tap run `trial/runs/20260928-1930-en-landscape-96` (4 calls, ids sanitised).
+
+| Cell | A no-hint crop | B hint crop | C no-hint full | D hint full |
+|---|---|---|---|---|
+| k05-portrait (watercolor-night) | 4.0 | 4.5 | 4.5 | 4.0 |
+| k10-portrait (noir-sketch) | 4.0 | **3.5** | **5.0** | 4.0 |
+| Mean | 4.00 | 4.00 | 4.75 | 4.00 |
+
+- **Hint vs no hint inside the crop: 0.00** (B − A). The raters disagree in sign (ai-1 +0.5, ai-2 −0.5), so the probe cannot separate the hint from rater noise.
+- **Confound:** the relay ignores `size`, so the two sides came back with different frames (k05 1370×1148 vs 1774×887; k10 1374×1145 vs 1536×1024). The crop keeps 47 % of the no-hint width but only 28 % / 37.5 % of the hint width, so "hint" is mixed with "harder crop".
+- **What both raters agree on:** the crop itself costs the no-hint k10 frame 1 point (C 5.0 → A 4.0, notes: clipped chair), and the k10 hint crop is the worst variant (3.5; both raters: both chairs clipped). 0 `off_prompt` flags in all 8 images, so the subject never fully leaves the frame.
+- **Result:** no evidence that the hint helps; on the geometry-heavy cell the evidence points the other way. Option A stays as decided (cover + hint, owner 2026-09-28) — the hint costs nothing and does not break the style — but its benefit is **unproven**. [OPEN] 05.5.2: judge the cropped frames of the first real portrait render; a controlled retest needs the same frame aspect on both sides and more than 2 cells.
+- Spend: 4 rater calls (luna 2, sol 2); no image calls.
 
 ### Open
 
