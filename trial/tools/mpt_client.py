@@ -38,6 +38,12 @@ Run spec (`trial/fixtures/spike-render-spec.json`):
     music_track|null }
 `video_subject` = the story file's first non-empty line (<= 200 chars); `video_script`
 = the rest of the file, NFC (the whole file when it is a single line).
+
+SEC-03: `story_file` / `terms_file` / `preset_file` are resolved with
+`os.path.realpath` and must lie inside an approved root — the repo, or `$NTS_HOME`
+(default `<repo>/.nts`); anything else is a usage error (exit 2). SEC-04: the
+catalog `track["file"]` must be a plain `.mp3` basename before it becomes
+`bgm_file`.
 """
 
 import argparse
@@ -85,6 +91,10 @@ SAFE_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 UUID_RE = re.compile(
     r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
 )
+# SEC-04: the catalog `file` becomes the D3 `bgm_file`, so it must be a plain
+# basename of the `seed/music-tracks.v1.json` shape — no separator, no `..`, no
+# scheme. A path there would make the render node read an arbitrary file.
+BGM_FILE_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*\.mp3$")
 
 # The exact VideoParams key set the adapter sends (D3). `n_threads` is deliberately
 # absent: it is an adapter/node setting (F22, D15 P6), never a job parameter.
@@ -197,6 +207,57 @@ def nts_home(repo):
 
 def repo_root():
     return os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+
+def approved_roots(repo):
+    """SEC-03 approved input roots (repo, $NTS_HOME) as (path, st_dev, st_ino);
+    resolved once per submit. A root that does not exist, or is the filesystem
+    root (`NTS_HOME=/` would approve every host file), is skipped."""
+    roots = []
+    for root in (os.path.realpath(repo), os.path.realpath(nts_home(repo))):
+        if os.path.dirname(root) == root:
+            continue
+        try:
+            st = os.stat(root)
+        except OSError:
+            continue
+        roots.append((root, st.st_dev, st.st_ino))
+    return roots
+
+
+def resolve_input_path(path, repo, label, roots=None):
+    """SEC-03: a spec-supplied path (story, terms, preset) is resolved with
+    `os.path.realpath` and must lie inside an approved root — the repo, or
+    `$NTS_HOME` (default `<repo>/.nts`, 01 CR-11, as worker-node/bin/lib.sh).
+
+    The run spec is data: an absolute or `..`-laden entry must never reach an
+    arbitrary host file (its text would be read, and `submit-body.json` would
+    carry it). Outside both roots is a usage error, not a fixture miss.
+    Containment is by (st_dev, st_ino) identity, as `_is_within`: APFS is
+    case-insensitive and realpath keeps the given case.
+    """
+    if not isinstance(path, str) or not path:
+        raise ValueError(f"{label} must be a non-empty path string, got {path!r}")
+    if roots is None:
+        roots = approved_roots(repo)
+    resolved = os.path.realpath(path if os.path.isabs(path) else os.path.join(repo, path))
+    ids = {(dev, ino) for _root, dev, ino in roots}
+    cur = resolved
+    while True:
+        try:
+            st = os.stat(cur)
+            if (st.st_dev, st.st_ino) in ids:
+                return resolved
+        except OSError:
+            pass
+        parent = os.path.dirname(cur)
+        if parent == cur:
+            break
+        cur = parent
+    raise ValueError(
+        f"{label} {path!r} resolves to {resolved!r}, outside the approved roots "
+        f"(the repo and $NTS_HOME: {', '.join(repr(r[0]) for r in roots)})"
+    )
 
 
 # --------------------------------------------------------------------------- mapping
@@ -315,9 +376,26 @@ def load_music_track(track_id, repo):
     raise ValueError(f"music_track {track_id!r} not in {catalog}")
 
 
+def bgm_file_name(track):
+    """SEC-04: validate the catalog track's `file` before it becomes `bgm_file`."""
+    name = track.get("file")
+    if (not isinstance(name, str) or ".." in name or "/" in name or "\\" in name
+            or not BGM_FILE_RE.fullmatch(name)):
+        raise ValueError(
+            f"music_track {track.get('id')!r} has an unsafe file {name!r}; a plain "
+            f"basename matching {BGM_FILE_RE.pattern} is required (no path "
+            "separators, no '..', no scheme)"
+        )
+    return name
+
+
 def build_body(spec, repo, preset_file=None, music_track_id=None):
-    """Build the D3 `VideoParams` body from a run spec. Pure; no I/O beyond the fixtures."""
-    story_path = spec["story_file"] if os.path.isabs(spec["story_file"]) else os.path.join(repo, spec["story_file"])
+    """Build the D3 `VideoParams` body from a run spec. Pure; no I/O beyond the
+    fixtures. SEC-03: story_file/terms_file/preset_file must resolve inside the
+    repo or $NTS_HOME (`resolve_input_path`); SEC-04: the catalog `file` must be
+    a plain basename (`bgm_file_name`)."""
+    roots = approved_roots(repo)
+    story_path = resolve_input_path(spec["story_file"], repo, "story_file", roots)
     story = unicodedata.normalize("NFC", open(story_path, encoding="utf-8").read())
     # CRV-0541-3: subject and script come from the same first-non-empty index, so
     # leading blank lines never leak the subject line into the narration script.
@@ -328,14 +406,14 @@ def build_body(spec, repo, preset_file=None, music_track_id=None):
     subject = raw_lines[first].strip()[:SUBJECT_MAX]
     body_lines = raw_lines[first + 1:]
     script = unicodedata.normalize("NFC", "\n".join(body_lines).strip()) or subject
-    terms_path = spec["terms_file"] if os.path.isabs(spec["terms_file"]) else os.path.join(repo, spec["terms_file"])
+    terms_path = resolve_input_path(spec["terms_file"], repo, "terms_file", roots)
     terms = read_terms(terms_path)
     aspect = spec["aspect"]
     if aspect not in ASPECT_PRESET:
         raise ValueError(f"aspect must be 16:9 or 9:16, got {aspect!r}")
     preset_path = preset_file or spec.get("preset_file")
-    if preset_path and not os.path.isabs(preset_path):
-        preset_path = os.path.join(repo, preset_path)
+    if preset_path:
+        preset_path = resolve_input_path(preset_path, repo, "preset_file", roots)
     preset, _source = load_preset_file(preset_path, aspect)
     track = load_music_track(music_track_id if music_track_id is not None else spec.get("music_track"), repo)
 
@@ -377,7 +455,7 @@ def build_body(spec, repo, preset_file=None, music_track_id=None):
             body[field] = value
     if track:
         body["bgm_type"] = "custom"
-        body["bgm_file"] = str(track["file"])
+        body["bgm_file"] = bgm_file_name(track)
         body["bgm_volume"] = float(track["bgmVolume"])
     missing = [k for k in D3_KEYS if k not in body]
     extra = [k for k in body if k not in D3_KEYS]
@@ -968,18 +1046,78 @@ def self_test():
     expect("d3-font", body["font_name"] == D6_FONT_NAME)
 
     # CRV-0541-3: a story file with leading blank lines must not leak the
-    # subject into the script.
+    # subject into the script. SEC-03: the fixture must sit under an approved
+    # root, so this temp dir is the $NTS_HOME of the call.
     import tempfile as _tf0
     with _tf0.TemporaryDirectory() as _bl:
-        story_bl = os.path.join(_bl, "story.txt")
-        with open(story_bl, "w", encoding="utf-8") as fh:
-            fh.write("\n\nTitle line\nBody line one.\nBody line two.\n")
-        bl_body = build_body(dict(spec, story_file=story_bl), repo)
-        expect("crv3.leading-blank-subject", bl_body["video_subject"] == "Title line",
-               bl_body["video_subject"])
-        expect("crv3.leading-blank-script",
-               bl_body["video_script"] == "Body line one.\nBody line two.",
-               bl_body["video_script"][:60])
+        _prev_home = os.environ.get("NTS_HOME")
+        os.environ["NTS_HOME"] = _bl
+        try:
+            story_bl = os.path.join(_bl, "story.txt")
+            with open(story_bl, "w", encoding="utf-8") as fh:
+                fh.write("\n\nTitle line\nBody line one.\nBody line two.\n")
+            bl_body = build_body(dict(spec, story_file=story_bl), repo)
+            expect("crv3.leading-blank-subject", bl_body["video_subject"] == "Title line",
+                   bl_body["video_subject"])
+            expect("crv3.leading-blank-script",
+                   bl_body["video_script"] == "Body line one.\nBody line two.",
+                   bl_body["video_script"][:60])
+            # SEC-03: an absolute path under $NTS_HOME is an approved root …
+            expect("sec03.nts-home-accepted",
+                   bl_body["video_subject"] == "Title line", bl_body["video_subject"])
+            # … while an absolute path outside the repo and $NTS_HOME is not,
+            # and neither is a `..` traversal out of the repo.
+            for label, story in (("absolute", "/etc/hosts"),
+                                 ("traversal", "../../../../etc/hosts")):
+                try:
+                    build_body(dict(spec, story_file=story), repo)
+                    expect(f"sec03.story-{label}-rejected", False, "no ValueError")
+                except ValueError as exc:
+                    expect(f"sec03.story-{label}-rejected", "outside the approved roots" in str(exc),
+                           str(exc))
+            for key in ("terms_file", "preset_file"):
+                try:
+                    build_body(dict(spec, **{key: "/etc/hosts"}), repo)
+                    expect(f"sec03.{key}-outside-rejected", False, "no ValueError")
+                except ValueError as exc:
+                    expect(f"sec03.{key}-outside-rejected", "outside the approved roots" in str(exc),
+                           str(exc))
+            # SEC-03: containment is by inode, so a case-swapped spelling of an
+            # approved root (APFS is case-insensitive) is still inside it.
+            swapped = story_bl.swapcase()
+            if os.path.exists(swapped):
+                cv_body = build_body(dict(spec, story_file=swapped), repo)
+                expect("sec03.case-variant-accepted", cv_body["video_subject"] == "Title line",
+                       cv_body["video_subject"])
+            # SEC-03: NTS_HOME=/ must not approve every host file.
+            os.environ["NTS_HOME"] = "/"
+            try:
+                build_body(dict(spec, story_file=story_bl), repo)
+                expect("sec03.nts-home-root-rejected", False, "no ValueError")
+            except ValueError as exc:
+                expect("sec03.nts-home-root-rejected", "outside the approved roots" in str(exc),
+                       str(exc))
+        finally:
+            if _prev_home is None:
+                os.environ.pop("NTS_HOME", None)
+            else:
+                os.environ["NTS_HOME"] = _prev_home
+
+    # SEC-04: the catalog `file` is a plain basename; anything else is refused
+    # before it can become bgm_file.
+    catalog_path = os.path.join(repo, "seed", "music-tracks.v1.json")
+    catalog = json.loads(open(catalog_path, encoding="utf-8").read())
+    expect("sec04.catalog-files-match",
+           all(BGM_FILE_RE.fullmatch(t.get("file", "")) for t in catalog["tracks"]))
+    expect("sec04.bgm-accept",
+           bgm_file_name({"id": "x", "file": "apprehensive-at-best.mp3"}) == "apprehensive-at-best.mp3")
+    for bad in ("../evil.mp3", "/tmp/evil.mp3", "http://evil/evil.mp3", ".evil.mp3", "evil.wav",
+                "evil.mp3/../x", "", "safe.mp3\n"):
+        try:
+            bgm_file_name({"id": "x", "file": bad})
+            expect(f"sec04.bgm-reject-{bad!r}", False, "no ValueError")
+        except ValueError:
+            expect(f"sec04.bgm-reject-{bad!r}", True)
     portrait = dict(spec, aspect="9:16")
     pbody = build_body(portrait, repo)
     expect("d3-portrait-preset", pbody["font_size"] == 64 and pbody["subtitle_position"] == "custom"
@@ -1508,6 +1646,8 @@ def self_test():
         srv.cfg["dl_abort"] = None
 
         # PRF-0541-2: the cap is checked on the UTF-8 bytes actually sent.
+        # SEC-03: these synthetic story files live under `td`, so `td` is the
+        # $NTS_HOME (an approved root) of both calls.
         expect("prf2.no-ascii-escaping",
                b"\\u" not in encode_body({"video_script": "Kiểm tra giọng đọc ẩ"}))
         story_under = os.path.join(td, "story-under.txt")
@@ -1518,7 +1658,8 @@ def self_test():
             json.dump(dict(spec_ok, story_file=story_under), fh)
         hits_before = len(srv.hits)
         rc, _, err = run_cli("--base-url", base, "submit", "--spec", under_spec_file,
-                             "--run-dir", os.path.join(td, "prf2-under"))
+                             "--run-dir", os.path.join(td, "prf2-under"),
+                             env_extra={"NTS_HOME": td})
         expect("prf2.utf8-body-under-cap", rc == 0, f"rc={rc} err={err[-120:]}")
         expect("prf2.wire-bytes-at-cap",
                srv.submit_body_bytes is not None and srv.submit_body_bytes <= MAX_BODY_BYTES,
@@ -1530,7 +1671,8 @@ def self_test():
         with open(over_spec_file, "w", encoding="utf-8") as fh:
             json.dump(dict(spec_ok, story_file=story_over), fh)
         rc, _, err = run_cli("--base-url", base, "submit", "--spec", over_spec_file,
-                             "--run-dir", os.path.join(td, "prf2-over"))
+                             "--run-dir", os.path.join(td, "prf2-over"),
+                             env_extra={"NTS_HOME": td})
         expect("prf2.over-cap-exit-2", rc == 2, f"rc={rc}")
         expect("prf2.over-cap-not-posted", len(srv.hits) == hits_before + 1, str(len(srv.hits)))
 
