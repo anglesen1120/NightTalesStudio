@@ -78,11 +78,33 @@ probability: 1.00`; `loading model: ./models/whisper-large-v3-turbo` (offline);
 - Images: 5 calls, 41–45 s apart in the log (226 s window) vs 178 s on 09-26 —
   relay latency, not local compute [INFERENCE].
 - Whisper: `complete, elapsed: 29.82 s` for 30.0 s audio → RTF 0.99, vs 0.357 on
-  09-26 and 0.362 in the 01.2.3-T2 baseline. [INFERENCE] cold start after the
-  reboot: `NTS_HOME` is on the external volume (`nts_home_on_internal_disk = false`)
-  with a cold file cache, and post-boot background load was still high. Treat
-  `whisper_wall_seconds` 38.0 as a cold-cache upper value; a warm second render
-  is needed before quoting a whisper wall baseline.
+  09-26 and 0.362 in the 01.2.3-T2 baseline. The first guess (cold cache after the
+  reboot) is **refuted** by the warm re-measure on 2026-09-28 03:42Z (pressure 1,
+  swap 0.00 MB, services idle; 01.2.3-T2 `bench.py`, MPT's parameters, 3 runs each;
+  raw files in `$NTS_HOME/runs/whisper-warm-20260928/`):
+
+  | Input | transcribe s | RTF | wall s | peak MB |
+  |---|---|---|---|---|
+  | `vieneu-en-1000.wav` (baseline sample, 52.63 s) | 18.06 / 18.33 / 18.50 | 0.343–0.352 | 19.4–20.4 | 2242–2244 |
+  | this run's `audio.mp3` (30.02 s) | 36.92 / 35.06 / 37.52 | 1.168–1.250 | 38.1–40.1 | 2160–2270 |
+
+  - The machine reproduces the 01.2.3-T2 baseline (0.362), so the Mac and the
+    model are fine; the slowness belongs to **this audio**.
+  - Same process, warm model: row-1 audio (`Ngọc Huyền`, 31.82 s) RTF 0.50–0.52,
+    this run's audio (`Adam`) RTF 1.11–1.21. VAD on/off and word timestamps
+    on/off change it by ≤ 8 %, so neither is the cause. Every segment decodes at
+    temperature 0 (no fallback). Both files are mp3 48 kHz mono 192 kbps.
+  - Difference observed: whisper splits the `Adam` audio into 9 segments,
+    including three 2-word fragments (8.74–8.98, 18.48–19.12, 24.28–25.00 s),
+    vs 6 clean sentence segments for `Ngọc Huyền`. [INFERENCE] the voice's
+    shorter pauses make whisper re-seek and decode more windows; not traced
+    inside faster-whisper.
+  - Consequence: `whisper_wall_seconds` 38.0 is **representative** for this
+    voice/audio, not a cold-cache outlier, and the row stays valid as a
+    baseline. Whisper cost depends on the voice: 05.5.2 must measure it per
+    voice, not scale it from the 01.2.3-T2 RTF.
+  - Side observation: row-1 audio takes 15.5–16.5 s standalone vs
+    `complete, elapsed: 11.35 s` inside the 09-26 MPT run; the cause is unknown.
 
 ## Cost
 
@@ -109,5 +131,6 @@ owner-blocked. No regex change → `MARKER_SET` stays 1.
 - Sampler coverage 94.6 % is 0.4 pp under the step-10 threshold: 01.3.2-T1 owner to
   decide whether 2 s tick drift is acceptable or the interval needs drift
   correction.
-- Whisper wall: re-measure warm before 05.5.2 uses it.
+- Whisper wall: re-measured warm (above); RTF depends on the voice. 05.5.2 must
+  measure whisper per voice (05 owner).
 - `dashboard_cost_usd_check`: owner reads the relay's cost for 2026-09-28 UTC.
