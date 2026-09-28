@@ -28,10 +28,12 @@
   free % min 66 → no `swap-used` / `pressure-warn` issue.
 - Caveat: the machine had been up only ~10 min; `uptime` load averages were
   5.18 / 17.59 / 10.32 at 10:21 local (post-boot indexing), although `top` showed
-  no process above 0.3 % CPU just before the submit. See the whisper note below.
+  no process above 0.3 % CPU just before the submit. The warm whisper re-measure
+  (below) rules this out as the cause of the slow whisper stage.
 
 → This row's RAM/wall columns **may** serve as the 05.5.2 / 03.3.1 baseline under
-the step-2 gate, with the whisper-wall caveat.
+the step-2 gate. Limits: `image_wall_seconds` is relay latency, not Mac compute;
+`whisper_wall_seconds` is valid for voice `kokoro:Adam` only (whisper cost is voice-dependent).
 
 ## Acceptance checks (01.3.1-T4)
 
@@ -47,9 +49,9 @@ the step-2 gate, with the whisper-wall caveat.
 | `words_per_minute_measured` by hand | PASS (102 / 30.0 × 60 = 204.0) |
 | Unit tests | PASS (137 run, OK, 2 skipped; no code changed) |
 | Secret grep (T4 key-prefix / bearer patterns, T6 `x-api-key` hex pattern) on run dir + MPT log | PASS (0) |
-| Sampler coverage (step 10: `rss_raw` rows in window / `total_seconds` ≥ 95 %) | **FAIL (borderline): 336 / 355 = 94.6 %** — 21 of 371 sample intervals were 2 s (sampler tick drift, not a stall); every non-zero stage window has samples. First run: 95.3 % / 94.9 % by counting rule |
+| Sampler coverage (step 10: `rss_raw` rows in window / `total_seconds` ≥ 95 %) | **WAIVED (01 DEC-12), measured 336 / 355 = 94.6 %** — 21 of 371 sample intervals were 2 s (sampler tick drift, not a stall); every non-zero stage window has samples. First run: 95.3 % / 94.9 % by counting rule |
 | `ram_peak_whisper_mb` within ± 25 % of 01.2.3-T2 | PASS (2277.1 vs en-1000 2134.4 = +6.7 %) |
-| Next-day dashboard cross-check | OPEN (owner-blocked, DEC-9: relay has no dashboard) |
+| Next-day dashboard cross-check | WAIVED (01 DEC-12): relay has no dashboard (DEC-9); owner accepts the tap cost $0.035945 |
 
 T6 checks also passed: `task … finished, generated 1 videos.`, no `task failed`;
 tap 6 lines (1 chat, 5 images), all `run_id` = this run and `http_status 200`,
@@ -90,9 +92,11 @@ probability: 1.00`; `loading model: ./models/whisper-large-v3-turbo` (offline);
 
   - The machine reproduces the 01.2.3-T2 baseline (0.362), so the Mac and the
     model are fine; the slowness belongs to **this audio**.
-  - Same process, warm model: row-1 audio (`Ngọc Huyền`, 31.82 s) RTF 0.50–0.52,
-    this run's audio (`Adam`) RTF 1.11–1.21. VAD on/off and word timestamps
-    on/off change it by ≤ 8 %, so neither is the cause. Every segment decodes at
+  - Same process, warm model (`diag.py` / `diag2.py`, two sessions; output saved as
+    `diag-out.txt` / `diag2-out.txt` for the second session): row-1 audio
+    (`Ngọc Huyền`, 31.82 s) RTF 0.49–0.52, this run's audio (`Adam`) RTF 1.10–1.21.
+    VAD on/off and word timestamps on/off change it by ≤ 10 %, so neither is the
+    cause. Every segment decodes at
     temperature 0 (no fallback). Both files are mp3 48 kHz mono 192 kbps.
   - Difference observed: whisper splits the `Adam` audio into 9 segments,
     including three 2-word fragments (8.74–8.98, 18.48–19.12, 24.28–25.00 s),
