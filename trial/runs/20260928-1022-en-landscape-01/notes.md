@@ -128,9 +128,8 @@ owner-blocked. No regex change → `MARKER_SET` stays 1.
 
 ## Open items
 
-- Sampler coverage 94.6 % is 0.4 pp under the step-10 threshold: 01.3.2-T1 owner to
-  decide whether 2 s tick drift is acceptable or the interval needs drift
-  correction.
+- ~~Sampler coverage 94.6 %~~ → accepted by the owner 2026-09-28 (01 DEC-12).
 - Whisper wall: re-measured warm (above); RTF depends on the voice. 05.5.2 must
   measure whisper per voice (05 owner).
-- `dashboard_cost_usd_check`: owner reads the relay's cost for 2026-09-28 UTC.
+- ~~`dashboard_cost_usd_check`~~ → owner accepts the tap cost $0.035945 ≈ 922 VND
+  (01 DEC-12); the cell stays `n/a:pending-dashboard` (no relay dashboard, DEC-9).
