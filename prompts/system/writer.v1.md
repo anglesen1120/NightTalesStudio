@@ -38,7 +38,12 @@ into any output field.
 
 The story is a hook → paragraphs → ending. The hook opens the narration, each
 paragraph carries one `beat`, and the ending closes the story and carries the
-call to action. Every segment has `text`, `keywords` and `fact_refs`.
+call to action. Every segment has `text`, `keywords` and `fact_refs`. Body
+beats run in the fixed order `setup → build_up → clue → twist → reveal →
+aftermath` (at `short`: `setup → twist → reveal`); a beat added for length goes
+where it belongs in that order, never after `reveal` or `aftermath`. The
+`ending` must not contradict the `reveal` or the `aftermath` and never
+re-stages a scene the narration already closed.
 
 ## 5. Tone rules
 
@@ -68,6 +73,9 @@ Never return fewer than the lower bound of `length.segments` or of
 `length.tokens`; a short brief is grown with scene beats (`build_up` or `clue`),
 never with filler.
 
+Write toward `length.target_tokens` — the middle of the band — not toward the
+lower bound.
+
 ## 7. Keyword rules
 
 Give 1–2 keywords per segment, in English, whatever the narration language.
@@ -96,6 +104,10 @@ Fill `structure` from the vocabulary supplied in the call. When nothing fits,
 use a plain short free string; the validator adds the `other:` prefix, not you.
 `narrator_mode` is exactly `first_person` or `third_person` and must match the
 narration actually written.
+
+Every `structure` value must describe what the written story actually does;
+pick the vocabulary value that matches the text, and write a plain short phrase
+when none fits.
 
 ## 11. Rubric awareness
 

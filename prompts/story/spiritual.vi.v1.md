@@ -29,11 +29,15 @@ Một chuyện gồm `hook` → các `paragraphs` → `ending`. Trong phần th�
 
 `setup` → `build_up` → `clue` → `twist` → `reveal` → `aftermath`
 
+Mọi đoạn `build_up` đứng trước đoạn `clue` đầu tiên; sau `clue` chỉ còn `clue` rồi `twist`; sau `reveal` không còn đoạn nào của nhịp trước đó. Một đoạn thêm vào cho đủ dài phải nằm đúng vị trí của nó trong thứ tự này, không bao giờ sau `reveal` hay `aftermath`.
+
 - `build_up` cần ít nhất hai đoạn; `clue` cần ít nhất một đoạn.
 - **Luật công bằng:** mọi manh mối làm cho cú lật trở nên hợp lý phải nằm ở đoạn **trước** `twist`. Một cú lật không có manh mối phía trước là lỗi, không phải bất ngờ.
 - **Manh mối của chủ đề này:** `clue` phải là một **lời hứa, một món nợ, một món quà hoặc một điều ước mà nhân vật đã nhận hoặc đã gật đầu**. Nhân vật đã đồng ý từ trước, thường là đã quên. Đó là thứ khiến cú lật có giá và khiến câu chuyện thuộc về chủ đề này chứ không phải chủ đề khác.
 - `reveal` nói **ai phải trả**, trong một hoặc hai câu; không nói ai có tội.
-- `aftermath` cho thấy cái giá bằng một chi tiết đời thường — cái ghế trống, món đồ được trả lại, món nợ trả đủ, cái bát không ai dùng nữa — và không kể lại cú lật.
+  Cho thấy qua một sự việc hay một hình ảnh — không mở bằng "Tôi hiểu", "Tôi
+  nhận ra" hay một công thức giải thích.
+- `aftermath` cho thấy cái giá bằng một chi tiết đời thường — cái ghế trống, món đồ được trả lại, món nợ trả đủ, cái bát không ai dùng nữa — và không kể lại cú lật. Một đến hai đoạn, không hơn.
 
 **Miễn trừ cho tầng `short`:** phần thân chỉ có `setup` → `twist` → `reveal`, mỗi đoạn một beat, theo đúng thứ tự đó; `reveal` có thể gộp vào `ending`; mỗi segment một từ khoá. Ở tầng này `build_up`, `clue` và `aftermath` không bắt buộc — nhưng nếu có `twist` thì lời hứa, món nợ hoặc điều ước vẫn phải được nhắc trong `setup`, ngay cả chỉ bằng nửa câu.
 
@@ -97,6 +101,8 @@ Luật công bằng ở §2 là điều kiện của cú lật: nếu cú lật 
 
 `ending` là đoạn cuối cùng và là đoạn khép lại câu chuyện. Câu cuối cùng đặt **cái giá** xuống trước người nghe: cái nợ đã trả hoặc còn lại, lựa chọn đã thành, người đã chọn phải sống với nó.
 
+`ending` đi tiếp từ đúng trạng thái `aftermath` để lại: không quay lại một cảnh đã khép, không đảo ngược hay mâu thuẫn với `reveal`.
+
 Lời kêu gọi hành động là **một câu ngắn, là phần văn bản cuối cùng của `ending`**, và là một câu hỏi về lựa chọn:
 
 - Mẫu vi: "Bạn sẽ chọn thế nào?"
@@ -119,6 +125,7 @@ Lời kêu gọi hành động là **một câu ngắn, là phần văn bản cu
 ## 8. Structure tags
 
 Điền bốn trường `sub_genre`, `setting`, `opening`, `twist_type` từ danh sách `spiritual` trong khối từ vựng ở cuối mục này, và `narrator_mode` đúng với ngôi kể thực tế: `first_person` hoặc `third_person`.
+Mọi giá trị `structure` phải mô tả đúng câu chuyện đã viết — bối cảnh, cách mở đầu và dạng cú lật trong bài — không phải giá trị dự kiến hay một lựa chọn ưa thích.
 
 - `sub_genre`: nhân quả, luật âm dương, hồn lìa xác, trả nghiệp.
 - `setting`: miếu nhỏ ven đường, căn nhà thờ họ, làng ven sông, chùa trên núi.
@@ -134,6 +141,8 @@ Khi không có giá trị nào khớp, viết một chuỗi ngắn bình thườ
 Bám đúng băng độ dài của tầng trong tin nhắn người dùng: `{{tier_minutes}}`, `{{token_range}}`, `{{segment_range}}`. Với tiếng Việt, một "từ" là một âm tiết. Không mang độ dài từ câu chuyện khác sang, không tự nới băng, và không đếm từ trong chính preset này.
 
 Mỗi phần — `hook`, từng đoạn và `ending` — trung bình khoảng `length.units_per_segment` đơn vị; hãy tính số đoạn trước rồi mới viết.
+
+Viết hướng tới `length.target_tokens` — khoảng giữa dải — chứ không phải cận dưới.
 
 Trước khi kết thúc, phải chạm ít nhất cận dưới của `{{token_range}}` và `{{segment_range}}`; không được ít hơn cận dưới của mỗi dải; đừng kết sớm khi còn thiếu, và không kéo dài bằng chữ đệm — thiếu thì thêm một nhịp cảnh đúng nghĩa, một đoạn `build_up` hoặc một đoạn `clue`, chứ không lặp lại điều đã kể.
 

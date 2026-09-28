@@ -40,7 +40,11 @@ Avoid phrases that have been used too often; the list is supplied with the call:
 ## 2. Beat map
 
 The story is an opening, a body and an ending. Each paragraph carries exactly one
-beat, in this order, with none skipped and none swapped.
+beat, in this order, with none skipped and none swapped: `setup` → `build_up` →
+`clue` → `twist` → `reveal` → `aftermath`. Every `build_up` paragraph comes
+before the first `clue`; after `clue` only `clue` and then `twist` remain; after
+`reveal` no earlier beat appears again. A paragraph added to reach the length
+band goes where it belongs in this order — never after `reveal` or `aftermath`.
 
 - `hook` — the opening, at most 20 seconds long, at most three sentences. It
   names a scene and a narrator. It does not summarise.
@@ -49,9 +53,11 @@ beat, in this order, with none skipped and none swapped.
 - `clue` — at least one paragraph, and it must come **before** the `twist`
   paragraph. This is the piece that makes the twist fair.
 - `twist` — the turn. One paragraph.
-- `reveal` — what actually happened, in one or two sentences.
+- `reveal` — what actually happened, in one or two sentences, told as an event
+  or an image — never opening with "I understand", "I realised" or another
+  explanatory formula.
 - `aftermath` — the consequence that is still there. It never re-explains the
-  twist.
+  twist. One or two paragraphs, no more.
 - `ending` — the last paragraph; it closes the story and carries the call to
   action in section 6.
 
@@ -63,6 +69,10 @@ The `short` tier is exempt: its body is `setup`, then `twist`, then `reveal`,
 one paragraph each, in that order, and each segment carries exactly one keyword.
 At `short`, `reveal` may be folded into `ending`, and `build_up`, `clue` and
 `aftermath` are not required. Every other tier keeps all six beats.
+
+The `hook` must not spend the twist: a detail that the `clue` or `twist` will
+use — including a discovery the brief already names — never goes into the
+`hook`.
 
 ## 3. Hook rules
 
@@ -143,7 +153,9 @@ simply denies what was just told.
 
 The `ending` closes the story. Its last line resolves the image, not the
 metaphysics: it closes the detail opened in the `hook` or in the `clue` and
-leaves one thing unsaid.
+leaves one thing unsaid. The `ending` continues from the state the `aftermath`
+left: it never returns to a scene already closed and never reverses or
+contradicts the `reveal`.
 
 Immediately after it, still inside `ending`, place exactly one sentence of
 invitation:
@@ -189,6 +201,9 @@ parameters: follow them, even when they differ from what you wanted to write.
 `narrator_mode` is exactly `first_person` or `third_person`, and it has to match
 the narration actually written.
 
+Every `structure` value must describe the story actually written — its setting,
+opening and twist — not the value planned or preferred.
+
 When nothing in the vocabulary fits the story, write a plain short phrase; do not
 add the `other:` prefix yourself — the validator does that. Bad example:
 `other: riverside house`; write only `riverside house`.
@@ -203,6 +218,9 @@ characters are not counted.
 
 Each segment — the `hook`, every paragraph and the `ending` — averages about
 `length.units_per_segment` units; plan the paragraph count first, then write.
+
+Write toward `length.target_tokens` — the middle of the band — not toward the
+lower bound.
 
 Never return fewer than the lower bound of {{segment_range}} segments or of
 {{token_range}} units; do not finish while the story is under the band.

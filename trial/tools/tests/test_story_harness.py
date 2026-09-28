@@ -24,6 +24,7 @@ import socket
 import sys
 import tempfile
 import threading
+import unicodedata
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -370,6 +371,311 @@ class ValidateTest(unittest.TestCase):
         with_sheet = sv.validate(changed, "short", "vi", limits_for(fact_ids=["f7"]))
         self.assertNotIn("unknown_fact_ref", rules(with_sheet))
 
+    def test_validate_non_latin_script_is_blocking(self):
+        """vi-true_crime-b9 leaked a Hebrew sentence into the narration and into
+        video_script.txt; any non-Latin letter in a text is now blocking."""
+        for sample in ("Hồ sơ không nối nó với אדם nào.",        # Hebrew
+                       "Người đàn ông nói привет trước khi đi.",  # Cyrillic
+                       "Tờ giấy ghi 会議 hai lần."):              # CJK
+            with self.subTest(sample=sample):
+                changed = story()
+                changed["paragraphs"][0]["text"] = sample
+                issues = sv.validate(changed, "short", "vi", limits_for())
+                found = [i for i in issues if i["rule"] == "non_latin_script"]
+                self.assertTrue(found)
+                self.assertEqual(found[0]["severity"], "blocking")
+                self.assertEqual(found[0]["segment"], "p:0")
+
+    def test_validate_pure_vietnamese_diacritics_pass_script_rule(self):
+        changed = story()
+        changed["paragraphs"][0]["text"] = (
+            "Đêm ấy tôi nghe tiếng chạm nhẹ vào cửa sổ, rồi tiếng phấn kêu "
+            "trên mặt bảng đen đã lau.")
+        changed["paragraphs"][1]["text"] = (
+            "Người trước tôi chuyển đi trong đêm, để lại chiếc ghế quay hướng "
+            "ra cửa và nửa nén hương.")
+        issues = sv.validate(changed, "short", "vi", limits_for())
+        self.assertNotIn("non_latin_script", rules(issues))
+
+        en_doc = story()
+        en_doc["paragraphs"][0]["text"] = "A plain English sentence about the road."
+        issues = sv.validate(en_doc, "short", "en", limits_for())
+        self.assertNotIn("non_latin_script", rules(issues))
+
+    def test_validate_latin_modifier_letters_pass_script_rule(self):
+        """QA D8: U+02BC MODIFIER LETTER APOSTROPHE and U+02BB MODIFIER LETTER
+        TURNED COMMA are Latin script but their Unicode name lacks "LATIN", so
+        the name check alone flagged them."""
+        for sample in ("Tên là \u02bcon ấy.",              # MODIFIER LETTER APOSTROPHE
+                       "Chữ \u02bbokina\u02bb ở đây."):     # MODIFIER LETTER TURNED COMMA
+            with self.subTest(sample=sample):
+                changed = story()
+                changed["paragraphs"][0]["text"] = sample
+                issues = sv.validate(changed, "short", "vi", limits_for())
+                self.assertNotIn("non_latin_script", rules(issues))
+                self.assertEqual(sv._non_latin_letters(sample), [])
+
+    def test_validate_meta_narration_pipeline_terms_are_blocking(self):
+        cases = [
+            ("vi", "Brief nhắc đến khác biệt giữa hai lời khai."),
+            ("vi", "Không có dữ kiện nào ở đây cho biết điều đó."),
+            ("vi", "Ở một câu chuyện như thế này, người kể phải giữ giới hạn."),
+            ("vi", "Tài liệu được cung cấp không nhắc tên anh ta."),
+            ("vi", "Người kể chuyện này chỉ biết sự việc qua hồ sơ."),
+            ("vi", "Không có dữ liệu nào về cuộc gọi thứ hai."),
+            # SEC-0928b-3: "thông tin … cung cấp" / "thông tin|dữ liệu … tôi|mình có|được"
+            ("vi", "Thông tin được cung cấp không nhắc tên anh ta."),
+            ("vi", "Tôi chỉ kể lại phần thông tin mà mình có."),
+            ("vi", "Dữ liệu mà tôi được ghi lại không đầy đủ."),
+            ("en", "The case is described as wrongful conviction in the brief."),
+            ("en", "The fact sheet offers no account of the conviction."),
+            # SEC-0928b-3: hyphenated/joined fact-sheet, possessive brief,
+            # first-person "the facts I was given".
+            ("en", "The fact-sheet lists three witnesses."),
+            ("en", "The factsheet lists three witnesses."),
+            ("en", "My brief says the man left at dusk."),
+            ("en", "Our brief mentions a second caller."),
+            ("en", "The facts I was given do not name the street."),
+            ("en", "The information we were provided ends at the river."),
+            ("en", "The records I have been given stop in March."),
+            ("en", "The material provided here does not tell us more."),
+            ("en", "The sources provided here are silent on the appeal."),
+            ("en", "There is no data on the appeal in the file."),
+            # CRV-0928b-1/CRV-0928b-2: the narrowed terms must still fire in
+            # their framed forms — the fact table, facts handed over, the data
+            # frame on "đầu vào/đầu ra", the story-frame, the participle branch
+            # for "requested", the clause-final "available", self-narration.
+            ("vi", "Bảng dữ kiện chỉ có ba dòng."),
+            ("vi", "Dữ kiện được cung cấp không nhắc tên anh ta."),
+            ("vi", "Dữ liệu đầu vào không có ngày tháng."),
+            ("vi", "Kết quả đầu ra giống hệt lần trước."),
+            ("vi", "Ở một câu chuyện như vậy, người kể phải giữ giới hạn."),
+            ("en", "The facts requested were never sent."),
+            ("en", "Work only from the material available."),
+            ("en", "Your narrator was given only half the file."),
+        ]
+        for lang, sample in cases:
+            with self.subTest(lang=lang, sample=sample):
+                changed = story()
+                changed["paragraphs"][0]["text"] = sample
+                issues = sv.validate(changed, "short", lang, limits_for())
+                found = [i for i in issues if i["rule"] == "meta_narration"]
+                self.assertTrue(found, f"no meta_narration for {sample!r}")
+                self.assertEqual(found[0]["severity"], "blocking")
+
+    def test_validate_meta_narration_innocent_text_passes(self):
+        """QA D3: ordinary in-story prose — a document in the file, an approved
+        form, an oil pipeline, a storyteller character — is not pipeline talk."""
+        cases = [
+            ("vi", "Theo hồ sơ, ông rời chợ một mình; trang lời khai không ghi giờ."),
+            ("vi", "Anh ấy đọc một tài liệu ngắn rồi đặt xuống bàn."),
+            ("vi", "Tài liệu trong hồ sơ không nhắc tên anh ta."),
+            ("vi", "Người kể chuyện dừng lại và rót thêm trà."),
+            ("vi", "Đơn xin đã được duyệt từ tuần trước."),
+            ("vi", "Người nghe gọi đến chương trình và kể lại chuyện đó."),
+            ("en", "According to the file, he left the market alone that Tuesday."),
+            ("en", "The evidence provided by the neighbour was the whole case."),
+            ("en", "Water ran through the pipeline toward the coast."),
+            ("en", "The evidence provided to the court was thin."),
+            ("en", "There was a brief silence, then a knock."),
+            ("en", "She read a brief letter and put it down again."),
+            ("en", "The listener called the station and described the car."),
+            # SEC-0928b-3 prose negatives: the new phrases must not fire on
+            # ordinary in-story talk.
+            ("en", "She read the fact of the matter in his face."),
+            ("vi", "Anh ấy có thông tin về vụ án từ nhiều năm trước."),
+            # CRV-0928b-1: ghost-story body language ("thò đầu ra ngoài cửa
+            # sổ", "gục đầu vào vai mẹ"), a story a character heard, and the
+            # police sorting the facts of a case.
+            ("vi", "Cô thò đầu ra ngoài cửa sổ."),
+            ("vi", "Anh gục đầu vào vai mẹ mà khóc."),
+            ("vi", "Tôi chưa từng nghe một câu chuyện như vậy."),
+            ("vi", "Cảnh sát xếp lại các dữ kiện của vụ án."),
+            # CRV-0928b-2: a hand-over of files, a radio-play narrator
+            # character, and an adjective before the verb.
+            ("en", "He handed over the requested files without a word."),
+            ("en", "The narrator of the old radio play had a cold voice."),
+            ("en", "The evidence available was a single shoe."),
+            # CRV-0928c-2/CRV-0928c-3: the article+adjective "brief", the
+            # everyday "thông tin" sentences (police/case talk, a neighbour's
+            # account, a narrator's source) and a listener's "câu chuyện như
+            # thế này" are prose, not the pipeline's own frame.
+            ("en", "The brief silence that followed told him she was gone."),
+            ("en", "After the brief struggle the hallway went quiet."),
+            ("en", "She kept the brief note folded in her coat."),
+            ("en", "It retains the brief background of a man he never met."),
+            ("vi", "Cảnh sát không có thông tin gì về người đàn ông ấy."),
+            ("vi", "Gia đình thiếu thông tin về nơi anh làm việc."),
+            ("vi", "Thông tin được cung cấp bởi người hàng xóm dẫn họ tới bờ sông."),
+            ("vi", "Thông tin tôi có được từ bà cụ bán nước kể lại."),
+            ("vi", "Tôi chưa bao giờ nghe câu chuyện như thế này."),
+        ]
+        for lang, sample in cases:
+            with self.subTest(lang=lang, sample=sample):
+                changed = story()
+                changed["paragraphs"][0]["text"] = sample
+                issues = sv.validate(changed, "short", lang, limits_for())
+                self.assertNotIn("meta_narration", rules(issues), sample)
+
+    def test_validate_nfc_normalises_before_meta_and_stock_matching(self):
+        """SEC-0928b-3: decomposed (NFD) Vietnamese must match the same phrase
+        lists as its composed form — the check used to run on the raw text, so
+        NFD "dữ kiện"/"thông tin được cung cấp" and NFD "Tôi hiểu…" slipped past
+        while `non_latin_script` normalised."""
+        meta_nfd = unicodedata.normalize("NFD", "Thông tin được cung cấp không đầy đủ.")
+        self.assertNotEqual(meta_nfd, "Thông tin được cung cấp không đầy đủ.")
+        changed = story()
+        changed["paragraphs"][0]["text"] = meta_nfd
+        self.assertIn("meta_narration",
+                      rules(sv.validate(changed, "short", "vi", limits_for())))
+
+        reveal_nfd = unicodedata.normalize("NFD", "Tôi hiểu ra vì sao cánh cửa mở sẵn.")
+        reveal = story()
+        reveal["paragraphs"][0]["beat"] = "reveal"
+        reveal["paragraphs"][0]["text"] = reveal_nfd
+        self.assertIn("stock_reveal_opener",
+                      rules(sv.validate(reveal, "short", "vi", limits_for())))
+
+        # NFD innocent prose stays innocent: the normalisation must not turn
+        # ordinary text into a match.
+        innocent = story()
+        innocent["paragraphs"][0]["text"] = unicodedata.normalize(
+            "NFD", "Anh ấy đọc một tài liệu ngắn rồi đặt xuống bàn.")
+        self.assertNotIn("meta_narration",
+                         rules(sv.validate(innocent, "short", "vi", limits_for())))
+
+    def test_validate_stock_reveal_opener_is_blocking_on_reveal_and_ending(self):
+        reveal = story()
+        reveal["paragraphs"][0]["beat"] = "reveal"
+        reveal["paragraphs"][0]["text"] = (
+            "Tôi hiểu người phải trả món nợ ấy không phải cha nữa.")
+        issues = sv.validate(reveal, "short", "vi", limits_for())
+        found = [i for i in issues if i["rule"] == "stock_reveal_opener"]
+        self.assertTrue(found)
+        self.assertEqual(found[0]["severity"], "blocking")
+
+        folded = story()   # reveal folds into ending at short (T65)
+        folded["ending"]["text"] = "I understood the price was mine."
+        issues = sv.validate(folded, "short", "en", limits_for())
+        self.assertIn("stock_reveal_opener", rules(issues))
+        self.assertEqual([i for i in issues
+                          if i["rule"] == "stock_reveal_opener"][0]["segment"],
+                         "ending")
+
+        # Same formula on another beat is the overused list's job, not this rule.
+        other = story()
+        other["paragraphs"][0]["text"] = "Tôi hiểu ra vì sao cánh cửa mở sẵn."
+        self.assertNotIn("stock_reveal_opener",
+                         rules(sv.validate(other, "short", "vi", limits_for())))
+
+    def test_validate_stock_reveal_opener_needs_a_sentence_start(self):
+        """QA D4: only the sentence-opening formula is the stock tic. A
+        realisation verb mid-sentence, a quoted line and a line with a speech
+        tag are ordinary prose; vi's third-person copy is still banned."""
+        negatives = [
+            ("vi", "Khi bước vào, tôi hiểu vì sao tên ấy trở lại."),
+            ("vi", "Cô đứng đó và nhận ra cánh cửa đã mở từ lâu."),
+            ("en", "Then I understood the price of my promise."),
+            ("en", "She was quiet. I understand, he said, and closed the file."),
+            ("en", 'She said, "I understand the risk," and closed the file.'),
+        ]
+        for lang, sample in negatives:
+            with self.subTest(lang=lang, sample=sample):
+                changed = story()
+                changed["paragraphs"][0]["beat"] = "reveal"
+                changed["paragraphs"][0]["text"] = sample
+                issues = sv.validate(changed, "short", lang, limits_for())
+                self.assertNotIn("stock_reveal_opener", rules(issues), sample)
+
+        # The third-person copy on a reveal/twist beat is still the formula.
+        for sample in ("Cô đứng đó và hiểu ra mọi chuyện đã quá muộn.",
+                       "Ông ấy hiểu ra tất cả sau khi nghe tin."):
+            with self.subTest(third_person=sample):
+                changed = story()
+                changed["paragraphs"][0]["beat"] = "twist"
+                changed["paragraphs"][0]["text"] = sample
+                self.assertIn("stock_reveal_opener",
+                              rules(sv.validate(changed, "short", "vi", limits_for())))
+
+        # Same third-person copy off the reveal beats stays out of this rule.
+        off_beat = story()
+        off_beat["paragraphs"][0]["text"] = "Cô ấy hiểu ra mọi chuyện ngay lúc đó."
+        self.assertNotIn("stock_reveal_opener",
+                         rules(sv.validate(off_beat, "short", "vi", limits_for())))
+
+        # "now I know" is the same formula.
+        now_i_know = story()
+        now_i_know["paragraphs"][0]["beat"] = "reveal"
+        now_i_know["paragraphs"][0]["text"] = "Now I know what the bottle asked of me."
+        self.assertIn("stock_reveal_opener",
+                      rules(sv.validate(now_i_know, "short", "en", limits_for())))
+
+    def test_validate_stock_reveal_opener_en_matches_adverb_forms(self):
+        """CRV-0928b-3: vi allows an adverb between the pronoun and the verb
+        ("tôi chợt hiểu…"), so the en formula needs the same optional slot —
+        otherwise the same stock tic blocks in vi and passes in en."""
+        for adverb in ("suddenly", "finally", "now", "then", "only"):
+            sample = f"I {adverb} understood what the letter meant."
+            with self.subTest(adverb=adverb):
+                changed = story()
+                changed["paragraphs"][0]["beat"] = "reveal"
+                changed["paragraphs"][0]["text"] = sample
+                self.assertIn(
+                    "stock_reveal_opener",
+                    rules(sv.validate(changed, "short", "en", limits_for())), sample)
+
+        # The adverb slot must not weaken the sentence-start gate: the same
+        # words mid-sentence stay ordinary prose.
+        mid_sentence = story()
+        mid_sentence["paragraphs"][0]["beat"] = "reveal"
+        mid_sentence["paragraphs"][0]["text"] = (
+            "It was then I suddenly understood what the letter meant.")
+        self.assertNotIn(
+            "stock_reveal_opener",
+            rules(sv.validate(mid_sentence, "short", "en", limits_for())))
+
+    def test_starts_sentence_matches_its_regex_definition(self):
+        """PRF-0928b-1: the linear left-walk keeps the rule the regex stated —
+        start of text, a line break, or a terminator (optionally behind a
+        closing quote/bracket) followed by only whitespace."""
+        cases = [
+            ("I understand.", "I", True),
+            ("Tôi hiểu. Tôi hiểu.", "Tôi hiểu", True),
+            ('He said, "Stop." I understand.', "I understand", True),
+            ("He said, 'Stop.'\tI understand.", "I understand", True),
+            ("Câu này chưa hết I understand", "I understand", False),
+            ('He said, "Stop."\nI understand.', "I understand", True),
+            ("   I understand.", "I understand", True),
+            ("Hết rồi.\n\n  I understand.", "I understand", True),
+            ('Hết rồi." I understand.', "I understand", True),
+            (r'He said he would "I understand" later.', "I understand", False),
+            ("Hết rồi. I understand", "I understand", True),
+        ]
+        for text, token, expected in cases:
+            with self.subTest(text=text, token=token):
+                self.assertEqual(
+                    sv._starts_sentence(text, text.index(token)), expected, text)
+
+    def test_validate_beat_order_regression_is_advisory(self):
+        changed = story()
+        changed["paragraphs"] = [
+            {"beat": "setup", "text": vi_phrase("Tôi mở cửa nhưng không có ai", 6),
+             "keywords": ["locked door in hallway"], "fact_refs": []},
+            {"beat": "clue", "text": vi_phrase("Trang sách ghi một cái tên khác", 6),
+             "keywords": ["wet ink on paper"], "fact_refs": []},
+            {"beat": "build_up", "text": vi_phrase("Tiếng gõ lại vang lên lần nữa", 6),
+             "keywords": ["knocking in empty room"], "fact_refs": []},
+        ]
+        issues = sv.validate(changed, "standard", "vi", limits_for("standard"))
+        found = [i for i in issues if i["rule"] == "beat_order"]
+        self.assertTrue(found)
+        self.assertEqual(found[0]["severity"], "advisory")
+        self.assertEqual(found[0]["segment"], "p:2")
+
+        self.assertNotIn(
+            "beat_order",
+            rules(sv.validate(story(), "standard", "vi", limits_for("standard"))))
+
 
 class SubstitutionTest(unittest.TestCase):
     def test_substitute_unknown_placeholder_raises_environment_error(self):
@@ -383,16 +689,17 @@ class SubstitutionTest(unittest.TestCase):
 
 
 class UserDataLengthTest(unittest.TestCase):
-    """README T97: the D6 `length` object carries the per-segment budget
-    `units_per_segment = round(min_tokens / min_segments)` for tier+language."""
+    """README T97 + TL 2026-09-28: the D6 `length` object carries the
+    per-segment budget `units_per_segment = round(target_tokens /
+    min_segments)` — mid-band, not floor, so the model aims mid-band."""
 
     EXPECTED = {
-        ("short", "vi"): 49,      # 195 / 4 = 48.75
-        ("short", "en"): 38,      # 150 / 4 = 37.5
-        ("standard", "vi"): 65,   # 1300 / 20
-        ("standard", "en"): 50,   # 1000 / 20
-        ("long", "vi"): 65,       # 2600 / 40
-        ("long", "en"): 50,       # 2000 / 40
+        ("short", "vi"): 57,      # 228 / 4
+        ("short", "en"): 44,      # 175 / 4 = 43.75
+        ("standard", "vi"): 84,   # 1690 / 20 = 84.5 (banker's rounding)
+        ("standard", "en"): 65,   # 1300 / 20
+        ("long", "vi"): 81,       # 3250 / 40 = 81.25
+        ("long", "en"): 62,       # 2500 / 40 = 62.5 (banker's rounding)
     }
 
     def length_object(self, tier: str, lang: str) -> dict:
@@ -417,10 +724,36 @@ class UserDataLengthTest(unittest.TestCase):
 
     def test_length_object_key_order_is_stable(self):
         length = self.length_object("standard", "en")
-        self.assertEqual(list(length), ["tier", "tokens", "segments", "units_per_segment"])
+        self.assertEqual(list(length), ["tier", "tokens", "segments",
+                                        "units_per_segment", "target_tokens"])
+        self.assertEqual(length["target_tokens"], 1300)  # mid of 1000-1600
         raw = sh.build_user_data("b", "standard", LENGTH["standard"]["en"], [])
         self.assertIn('"length":{"tier":"standard","tokens":[1000,1600],'
-                      '"segments":[20,32],"units_per_segment":50}', raw)
+                      '"segments":[20,32],"units_per_segment":65,'
+                      '"target_tokens":1300}', raw)
+
+    def test_target_tokens_exact_value_per_tier_and_language(self):
+        """README T107: `target_tokens` = `round((min_tokens + max_tokens) / 2)`,
+        round half to even (T97) — asserted as literals rather than recomputed
+        from the same table the code reads (CRV-0928c-6). vi/en `standard` are
+        the README's own examples."""
+        expected = {
+            ("short", "vi"): 228,      # (195 + 260) / 2 = 227.5 -> 228 (even)
+            ("short", "en"): 175,      # (150 + 200) / 2
+            ("standard", "vi"): 1690,  # README T107
+            ("standard", "en"): 1300,  # README T107
+            ("long", "vi"): 3250,      # (2600 + 3900) / 2
+            ("long", "en"): 2500,      # (2000 + 3000) / 2
+        }
+        self.assertEqual(sorted(expected),
+                         sorted((tier, lang) for tier in LENGTH for lang in LENGTH[tier]))
+        for (tier, lang), value in expected.items():
+            with self.subTest(tier=tier, lang=lang):
+                limits = LENGTH[tier][lang]
+                self.assertEqual(sh.target_tokens(limits), value)
+                self.assertEqual(self.length_object(tier, lang)["target_tokens"], value)
+                self.assertGreaterEqual(value, limits["min_tokens"])
+                self.assertLessEqual(value, limits["max_tokens"])
 
     def test_non_positive_min_segments_exits_2_with_one_message(self):
         for bad in (0, -1):
@@ -544,10 +877,13 @@ class HarnessCliTest(CliCase):
         user = json.loads(request["body"]["input"][1]["content"][0]["text"])
         self.assertEqual(sorted(user), ["avoid_plots", "bible", "brief", "facts",
                                         "length", "structure_plan", "task"])
-        self.assertEqual(sorted(user["length"]), ["segments", "tier", "tokens",
+        self.assertEqual(sorted(user["length"]), ["segments", "target_tokens",
+                                                  "tier", "tokens",
                                                   "units_per_segment"])
         self.assertEqual(user["length"], {"tier": "short", "tokens": [195, 260],
-                                          "segments": [4, 5], "units_per_segment": 49})
+                                          "segments": [4, 5],
+                                          "units_per_segment": 57,
+                                          "target_tokens": 228})
         self.assertEqual(user["task"], "write_story")
         self.assertEqual(user["facts"], [])
         raw = (run_dir / "request.json").read_text(encoding="utf-8")
@@ -755,6 +1091,42 @@ class HarnessCliTest(CliCase):
         # the lock is released in `finally`, so start_run.sh can start again
         self.assertFalse((self.nts_home / "current_run").exists())
 
+    def test_response_json_redacts_relay_identity_and_length_table_is_relative(self):
+        """SEC-0928c-2/SEC-0928c-1: response.json is evidence, not the verbatim
+        upstream payload — the relay's identity fields and the opaque reasoning
+        blobs are replaced — and request.json records the length table
+        repo-relative, never the host layout."""
+        model_story = story()
+        payload = output_payload(model_story)
+        payload["safety_identifier"] = "user-relay-xyz"
+        payload["prompt_cache_key"] = "relay-key"
+        payload["output"][0]["encrypted_content"] = "blob"
+        fake = {"status": 200, "payload": payload, "raw": json.dumps(payload),
+                "retry_after": None, "request_id": "req_test"}
+        captured = io.StringIO()
+        with mock.patch.object(sh, "assert_tap", lambda url: None), \
+                mock.patch.object(sh, "load_secret", lambda service: "never-printed"), \
+                mock.patch.object(sh, "post_responses", lambda *a, **k: dict(fake)), \
+                mock.patch("sys.stdout", captured):
+            code = sh.main(self.argv(dry_run=False))
+        self.assertEqual(code, 0)
+        run_dir = self.out / "vi-ghost-inline-luna-short"
+        response_text = (run_dir / "response.json").read_text(encoding="utf-8")
+        for secret in ("user-relay-xyz", "relay-key", "blob"):
+            self.assertNotIn(secret, response_text)
+        self.assertIn("<redacted>", response_text)
+        request = json.loads((run_dir / "request.json").read_text(encoding="utf-8"))
+        length_table = request["length_table"]
+        self.assertFalse(length_table.startswith("/"))
+        self.assertNotIn("NightTalesStudio", length_table)
+        if (REPO_ROOT / "trial" / "tools" / "LENGTH.v1.json").exists():
+            self.assertEqual(length_table, "trial/tools/LENGTH.v1.json")
+        else:
+            self.assertEqual(length_table, "LENGTH.v1.json")
+        # redaction must not touch the story the cell produced
+        self.assertEqual(json.loads((run_dir / "story.json").read_text(encoding="utf-8")),
+                         model_story)
+
 
     def test_transport_timeout_is_not_retried_and_every_attempt_is_recorded(self):
         calls = []
@@ -955,10 +1327,12 @@ class HarnessCliTest(CliCase):
                               / "request.json").read_text(encoding="utf-8"))
         user = json.loads(request["body"]["input"][1]["content"][0]["text"])
         # D-FACTS: the reopened-file brief gets only its own facts, projected onto
-        # the D6 shape (no `brief_id` bookkeeping reaches the model).
-        self.assertEqual([fact["id"] for fact in user["facts"]], ["f1", "f2"])
+        # the D6 shape (no `brief_id` bookkeeping reaches the model). The sheet
+        # now carries 6-10 facts per true_crime brief (2026-09-28 pre-review).
+        b7_ids = ["f1", "f2", "f7", "f8", "f9", "f10", "f11", "f12"]
+        self.assertEqual([fact["id"] for fact in user["facts"]], b7_ids)
         self.assertEqual(sorted(user["facts"][0]), ["id", "sources", "statement"])
-        self.assertEqual(request["length"]["fact_ids"], ["f1", "f2"])
+        self.assertEqual(request["length"]["fact_ids"], b7_ids)
 
         argv = self.argv_briefs("--preset", "true_crime", "--briefs-file", briefs,
                                 "--brief-ids", "b9", "--tier", "standard",
@@ -967,7 +1341,9 @@ class HarnessCliTest(CliCase):
         request = json.loads((self.out / "b9" / "vi-true_crime-b9-luna-standard"
                               / "request.json").read_text(encoding="utf-8"))
         user = json.loads(request["body"]["input"][1]["content"][0]["text"])
-        self.assertEqual([fact["id"] for fact in user["facts"]], ["f4", "f5", "f6"])
+        self.assertEqual([fact["id"] for fact in user["facts"]],
+                         ["f4", "f5", "f6", "f20", "f21", "f22",
+                          "f23", "f24", "f25", "f26"])
 
     def test_two_briefs_files_matrix_yields_one_cell_per_brief_language(self):
         """FR-1: 9 ids x {vi,en} x 2 models = 36 distinct cells, each assembled
@@ -1155,10 +1531,17 @@ class ShapeTest(unittest.TestCase):
 
 class RedirectTest(unittest.TestCase):
     def test_redirect_is_not_followed_and_the_key_never_leaves_the_first_hop(self):
+        # Not one of the CRV-0928b findings: this stub closed the connection
+        # with the client's POST body still unread, so the kernel answered with
+        # RST and `post_responses`' `exc.read()` died with ConnectionResetError
+        # (measured 5/60 rounds; 0/60 once the body is drained —
+        # .nts/qa-0928b/QaPromptValidator/repro_redirect_rst.py). Reading the
+        # body first makes the close graceful and the test deterministic.
         seen = {"second_hits": 0, "second_auth": None, "first_auth": None}
 
         class Second(http.server.BaseHTTPRequestHandler):
             def do_POST(self):  # noqa: N802 - http.server API
+                self.rfile.read(int(self.headers.get("Content-Length") or 0))
                 seen["second_hits"] += 1
                 seen["second_auth"] = self.headers.get("Authorization")
                 self.send_response(200)
@@ -1173,6 +1556,7 @@ class RedirectTest(unittest.TestCase):
 
         class First(http.server.BaseHTTPRequestHandler):
             def do_POST(self):  # noqa: N802 - http.server API
+                self.rfile.read(int(self.headers.get("Content-Length") or 0))
                 seen["first_auth"] = self.headers.get("Authorization")
                 self.send_response(302)
                 self.send_header("Location",

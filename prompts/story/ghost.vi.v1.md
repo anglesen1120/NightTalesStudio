@@ -37,7 +37,11 @@ gọi:
 ## 2. Beat map
 
 Câu chuyện có phần mở đầu, các đoạn thân và phần kết. Mỗi đoạn mang đúng một
-nhịp, đúng thứ tự, không đảo, không bỏ.
+nhịp, đúng thứ tự, không đảo, không bỏ: `setup` → `build_up` → `clue` →
+`twist` → `reveal` → `aftermath`. Mọi đoạn `build_up` đứng trước đoạn `clue`
+đầu tiên; sau `clue` chỉ còn `clue` rồi `twist`; sau `reveal` không còn đoạn
+nào của nhịp trước đó. Một đoạn thêm vào cho đủ dài phải nằm đúng vị trí của nó
+trong thứ tự này, không bao giờ sau `reveal` hay `aftermath`.
 
 - `hook` — mở đầu, tối đa 20 giây, nhiều nhất ba câu. Nêu một cảnh và một người
   kể, không tóm tắt.
@@ -47,8 +51,11 @@ nhịp, đúng thứ tự, không đảo, không bỏ.
 - `clue` — ít nhất một đoạn, và phải nằm **trước** đoạn `twist`. Đây là mảnh
   ghép khiến cú lật công bằng.
 - `twist` — cú lật. Một đoạn.
-- `reveal` — nói rõ chuyện gì đã xảy ra, một đến hai câu.
-- `aftermath` — cho thấy hệ quả còn lại. Không nhắc lại cú lật.
+- `reveal` — nói rõ chuyện gì đã xảy ra, một đến hai câu, bằng một sự việc hoặc
+  một hình ảnh — không mở bằng "Tôi hiểu", "Tôi nhận ra" hay một công thức
+  giải thích.
+- `aftermath` — cho thấy hệ quả còn lại. Không nhắc lại cú lật. Một đến hai
+  đoạn, không hơn.
 - `ending` — đoạn cuối, khép lại câu chuyện và mang lời mời ở mục 6.
 
 `hook` chỉ chiếm một phần nhỏ đầu tiên của tier {{tier_minutes}} phút; phần lớn
@@ -59,6 +66,9 @@ Riêng tier `short` được miễn: thân bài chỉ cần `setup`, rồi `twis
 — đúng một từ khoá. `reveal` có thể gộp vào `ending`, khi đó câu chuyện có bốn
 phần. Ở tier `short` không bắt buộc có `build_up`, `clue` và
 `aftermath`. Mọi tier còn lại giữ đủ sáu nhịp.
+
+`hook` không được tiêu hết cú lật: chi tiết mà `clue` hoặc `twist` sẽ dùng —
+kể cả một chi tiết khám phá mà brief đã nêu — không đặt trong `hook`.
 
 ## 3. Hook rules
 
@@ -137,7 +147,8 @@ không lật bằng cách phủ nhận những gì vừa kể.
 
 `ending` khép lại câu chuyện. Câu cuối giải quyết hình ảnh, không giải quyết
 chuyện siêu nhiên: đóng lại chi tiết đã mở ở `hook` hoặc ở `clue`, để lại một
-điều chưa được nói ra.
+điều chưa được nói ra. `ending` đi tiếp từ đúng trạng thái `aftermath` để lại:
+không quay lại một cảnh đã khép, không đảo ngược hay mâu thuẫn với `reveal`.
 
 Ngay sau đó, vẫn trong `ending`, đặt đúng một câu mời gọi:
 
@@ -180,6 +191,10 @@ tham số của hệ thống: phải theo, kể cả khi chúng khác điều b�
 `narrator_mode` chỉ nhận `first_person` hoặc `third_person`, và phải đúng với ngôi
 kể thật trong bài.
 
+Mọi giá trị `structure` phải mô tả đúng câu chuyện đã viết — bối cảnh, cách mở
+đầu và dạng cú lật trong bài — không phải giá trị dự kiến hay một lựa chọn ưa
+thích.
+
 Nếu không giá trị nào trong kho từ vựng hợp với câu chuyện, viết một cụm ngắn bình
 thường; đừng tự thêm tiền tố `other:` — phần đó do bộ kiểm tra làm. Ví dụ sai:
 `other: ngôi nhà bên sông`; chỉ viết `ngôi nhà bên sông`.
@@ -194,6 +209,9 @@ không đếm theo ký tự.
 
 Mỗi phần — `hook`, từng đoạn và `ending` — trung bình khoảng
 `length.units_per_segment` đơn vị; hãy tính số đoạn trước rồi mới viết.
+
+Viết hướng tới `length.target_tokens` — khoảng giữa dải — chứ không phải cận
+dưới.
 
 Trước khi kết thúc, câu chuyện không được ít hơn cận dưới của {{segment_range}}
 đoạn và {{token_range}} đơn vị; đừng kết sớm khi dải còn thiếu.

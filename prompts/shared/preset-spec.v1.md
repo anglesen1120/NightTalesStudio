@@ -34,14 +34,17 @@ target_tier: all        # all | short | standard | long
   `rel=2026.10.1;sys=writer.v1;preset=ghost.vi.v1;review=v1;revise=v1;schema=story.v1`.
   Editing a file's text always bumps its `version`; a shared file that presets
   substitute in place (`ear-rules`, `overused`, `keyword-rules`) bumps the same way.
+  Exception (02 T107): before the 02.1.3-T2 freeze, `.v1` files may be edited in place;
+  the revision is identified by its sha256 in `prompts/manifest.json`, and the first
+  post-freeze edit bumps the version.
 - `role` lets the loader apply per-role rules without guessing from the path.
 - File naming for presets is `story/{topic}.{language}.v1.md`; the `version` in
   the name and in the front-matter must agree.
 - Non-preset files leave `topic`/`language` out unless the file is language-specific
   (`ear-rules.vi.v1.md`, `ear-rules.en.v1.md` carry `language`; the
   `overused.{vi|en}.v1.txt` lists carry it in the filename only and have **no**
-  front-matter, because they are injected verbatim as prompt text and are exactly
-  30 lines - 02.1.5-T1).
+  front-matter, because they are injected verbatim as prompt text — at least 30
+  lines, one phrase per line, 02.1.5-T1).
 
 ## 2. Section order of the system prompt (11 sections, `system/writer.v1.md`)
 
@@ -87,8 +90,9 @@ user message and is never appended to the system prompt.
   rules themselves are never translated into a second copy inside the system prompt.
 - In M0 these beat sub-rules are model/authoring guidance: only the hook
   sentence count is enforced by `StoryDraftValidator` (02.2.1-T1). The
-  paragraph-count, clue-ordering, reveal and aftermath rules carry no validator
-  rule id yet.
+  M0 trial validator also reports `beat_order` (advisory) and `stock_reveal_opener`
+  (blocking) (02 T107); the paragraph-count and aftermath-length rules carry no
+  validator rule id yet.
 
 ## 4. Tone rules (all presets, both languages)
 
@@ -186,17 +190,22 @@ the resolved band plus a per-segment budget:
 
 ```json
 "length": { "tier": "standard", "tokens": [1300, 2080], "segments": [20, 32],
-            "units_per_segment": 65 }
+            "units_per_segment": 84, "target_tokens": 1690 }
 ```
 
-`units_per_segment = round(min_tokens ÷ min_segments)` for the tier and language,
-computed from the table above (`LengthTargetResolver`, D21). Examples: `standard`
-vi 1,300 ÷ 20 → **65**; `standard` en 1,000 ÷ 20 → **50**; `long` en 2,000 ÷ 40 →
-**50**; `short` vi 195 ÷ 4 → **49**, `short` en 150 ÷ 4 → **38**. It is a **control key**
+`units_per_segment = round(target_tokens ÷ min_segments)` (02 T107) for the tier and
+language, computed from the table above (`LengthTargetResolver`, D21; round half to
+even). Examples: `standard` vi 1,690 ÷ 20 → **84**; `standard` en 1,300 ÷ 20 → **65**;
+`long` vi 3,250 ÷ 40 → **81**, en 2,500 ÷ 40 → **62**; `short` vi 228 ÷ 4 → **57**,
+`short` en 175 ÷ 4 → **44**. It is a **control key**
 (system-set, followed), and the two-tier data rule (§9) is unchanged. The model
 instruction that uses it lives in `system/writer.v1.md` §6 and each preset's
 Length section, in the preset's language; the number itself travels inside the
 data object, so **no new placeholder** joins the closed list.
+
+**`target_tokens` (02 T107).** `round((min_tokens + max_tokens) ÷ 2)`, the mid-band aim
+the writer writes toward (`standard` vi 1,690, en 1,300). The band stays the contract;
+`units_per_segment` is derived from it, so the per-segment budget aims mid-band too.
 
 ## 9. Substitution and cache order
 
