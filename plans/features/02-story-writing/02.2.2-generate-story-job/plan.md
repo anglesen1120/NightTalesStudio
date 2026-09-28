@@ -674,7 +674,7 @@ Application unit (`tests/NightTales.Application.UnitTests/Features/Stories/`), w
 | `Job_RunningOwnedByAnotherWorker_Returns` | crash/idempotency |
 | `StoryWriteRequestFactory_SetsPriceVersionFromQueuedAt` | D21 — the string `PriceVersion` (12 CR-17) |
 
-Integration (`tests/NightTales.Api.IntegrationTests/`, `WebApplicationFactory` + Testcontainers PostgreSQL):
+Integration (`tests/NightTales.Api.IntegrationTests/`, `WebApplicationFactory` + real PostgreSQL 17 via `PostgresFixture`):
 
 | Name | Asserts |
 |---|---|

@@ -349,7 +349,7 @@ Normalise text (lowercase, strip punctuation, keep Vietnamese diacritics), build
 ## 7. Test plan
 
 - **Unit:** schema validation (valid, missing fields, wrong types); state transitions (generate from `story_approved` rejected); quality checker rules; cost calculation from tokens; fact validator drops facts without valid sources; similarity scorer on fixed texts (identical, paraphrased, unrelated); revision runs at most once.
-- **Integration (Testcontainers PostgreSQL + fake `IStoryWriter`/`IFactExtractor` + local HTTP test server):** idempotent generate; ETag conflict; approve blocked without an approved fact sheet for true crime; refund on moderation; fetcher refuses private IPs, IPv4-mapped IPv6 private IPs, `0.0.0.0`, DNS rebinding (resolver returns a public then a private IP → blocked at connect), redirect-to-private, oversize, wrong type, blocked domains, robots.txt disallow; 31st fetch in 24 h → `source_fetch_limit_reached`.
+- **Integration (real PostgreSQL 17, `PostgresFixture` + fake `IStoryWriter`/`IFactExtractor` + local HTTP test server):** idempotent generate; ETag conflict; approve blocked without an approved fact sheet for true crime; refund on moderation; fetcher refuses private IPs, IPv4-mapped IPv6 private IPs, `0.0.0.0`, DNS rebinding (resolver returns a public then a private IP → blocked at connect), redirect-to-private, oversize, wrong type, blocked domains, robots.txt disallow; 31st fetch in 24 h → `source_fetch_limit_reached`.
 - **Contract test (manual, M1):** one real OpenAI call per preset; JSON validates.
 - **Quality:** rubric scoring of 12 M0 stories; native vi and en speaker review.
 

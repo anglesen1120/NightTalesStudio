@@ -112,7 +112,7 @@ No UI in this folder. Consumers: 10.5 (progress bar via `RenderProgress`, "Make 
 
 ## 9. Test plan
 
-Harness per D13: `PostgresFixture` (one `postgres:17-alpine` Testcontainer, template per test class), `ApiFactory`, `TestAuthHandler` (`X-Test-User` / `X-Test-Role`), `WorkerHost` + `InlineJobScheduler`, `FakeClock`, builders; **hand-written fakes only — no mocking library** (D1). Adapter-level tests run against mock-mpt with `MOCK_FAIL_MODE` and the D14 fixtures (05 D4/D14, 11.1.2-T1).
+Harness per D13: `PostgresFixture` (one real PostgreSQL 17 on `NTS_TEST_PG`; 09 W3 CR-35, template per test class), `ApiFactory`, `TestAuthHandler` (`X-Test-User` / `X-Test-Role`), `WorkerHost` + `InlineJobScheduler`, `FakeClock`, builders; **hand-written fakes only — no mocking library** (D1). Adapter-level tests run against mock-mpt with `MOCK_FAIL_MODE` and the D14 fixtures (05 D4/D14, 11.1.2-T1).
 
 - Domain: `RenderJobTests` (`Create_StartsQueued` · `UpdateProgress_NeverDecreases` · `MarkSubmitted_FromQueued_Only` · `Cancel_FromIngesting_Rejected` · `Timestamps_SetOnce`).
 - Application: `RenderEpisodeCommandHandlerTests` (`Order_MatchesBd5` via a recording fake sequence · `Script_Over20000CodePoints_ReturnsValidationFailedOnScript` · `LinterBlocking_ReturnsKeywordsFlagged` · `EpisodeNotApproved_ReturnsEpisodeInvalidState` · `IfMatchStale_ReturnsEpisodeConflict`), `RenderRetryPolicyTests` (`Transient_Codes_RetriedUntilAttempt2` · `ImageModerated_NeverRetried`), `RecentMusicQueryTests`, `RenderSubmitMapper`/fixture tests in 05.1.2-T1's suites.

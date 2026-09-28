@@ -45,7 +45,7 @@ High-level sections refined: `../../06-youtube-posting.md` L61-70 (06.2.1, 06.2.
 | D13 | Outbox `publication_updated.v1 { publicationId, episodeId, userId, status, errorCode? }` → `IRealtimeNotifier` `PublicationUpdated` with `{ publicationId, episodeId }`, no `RealtimeData` (WT54) | `../README.md:130` ✅ |
 | D17 | Feature flag on every route, owner-only (tenant 404 for others), no Google password, cancelled-with-token single-use+hashed, audit actions `publishing.publication_created`/`publishing.consented`/`publishing.cancelled`, logs never carry titles/descriptions/tokens/channel names | `../README.md:138` ✅ |
 | D18 | Indexes `publications (status, next_attempt_at) WHERE status IN ('awaiting_consent','scheduled','uploading','processing')`, `publications (channel_connection_id)`, the D6 partial unique; episode detail +1 indexed query only | `../README.md:140` ✅ |
-| D19 | TestKit: `FakeGoogleServer`, tests on real PostgreSQL (Testcontainers), `FakeClock`; no mocking library | `../README.md:142` ✅ |
+| D19 | TestKit: `FakeGoogleServer`, tests on real PostgreSQL 17 via `PostgresFixture`, `FakeClock`; no mocking library | `../README.md:142` ✅ |
 | D20 | Migration `_06_Publications` (incl. `veto_ends_at`) owned by 06.2.1-T1; expand-only | `../README.md:144` ✅ |
 | ETags | `ETags.Episode(uint) → "ep-{xmin}"`, `ETags.Series(uint) → "se-{xmin}"`, `ETags.Matches(ifMatch, current)` (strong, exact, `*` rejected); `RequireIfMatch()` → 428 `if_match_required`; `DbUpdateConcurrencyException` → 409 `concurrency_conflict` | `09-backend-api/09.1.4-error-mapping/plan.md:44`; `09.1.4-T1-problem-details-etag-helpers.md:53-60,200` ✅ |
 | Email | `EmailMessage(Guid UserId, string Template, Language Locale, IReadOnlyDictionary<string,string> Params)`; `IEmailSender.QueueAsync` queue-only; `IEmailDeliveryStatus.GetAsync`; `IEmailTokenMinter.MintAsync(userId, template, parameters, ct)` mints inside `SendEmailJob` (WT17); `EmailMessage : IUserOwned` so foreign reads are 404; templates `Templates/Email/<name>.<locale>.{txt,html}` | `09.2.6-worker-hangfire/09.2.6-T3-email-pipeline.md:21-34,42-58,107,168` ✅ |
@@ -287,7 +287,7 @@ Timeouts and bounds: both commands are single-transaction, 2–4 indexed stateme
 
 ## 9. Test plan
 
-Projects (09 README D2): `tests/NightTales.Domain.UnitTests`, `tests/NightTales.Application.UnitTests`, `tests/NightTales.Api.IntegrationTests` (all DB/HTTP tests, in-process Worker), `tests/NightTales.TestKit` (fakes/fixtures). xunit.v3 + Shouldly; no mocking library; real PostgreSQL via Testcontainers; `FakeClock` for every time assertion; `FakeGoogleServer` is not needed by this folder (no Google call happens here) — it is listed only as the D19 asset used by the sibling upload folder.
+Projects (09 README D2): `tests/NightTales.Domain.UnitTests`, `tests/NightTales.Application.UnitTests`, `tests/NightTales.Api.IntegrationTests` (all DB/HTTP tests, in-process Worker), `tests/NightTales.TestKit` (fakes/fixtures). xunit.v3 + Shouldly; no mocking library; real PostgreSQL 17 via `PostgresFixture`; `FakeClock` for every time assertion; `FakeGoogleServer` is not needed by this folder (no Google call happens here) — it is listed only as the D19 asset used by the sibling upload folder.
 
 Unit:
 

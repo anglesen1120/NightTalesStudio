@@ -179,7 +179,7 @@ Integrations, all external or read-only:
 
 ## 9. Test plan
 
-No code exists, so **no xunit/Shouldly test, no Testcontainers, no `FakeGoogleServer`, no `FakeClock`** is written by this task (those prove the behaviour the pack documents — 06 README §3 D19). Verification = reproducible runs written into the document, all re-verified **at filing time** (the pack's own VP1–VP8 were verified at pack time and may be stale).
+No code exists, so **no xunit/Shouldly test, no `PostgresFixture`, no `FakeGoogleServer`, no `FakeClock`** is written by this task (those prove the behaviour the pack documents — 06 README §3 D19). Verification = reproducible runs written into the document, all re-verified **at filing time** (the pack's own VP1–VP8 were verified at pack time and may be stale).
 
 | Name | Kind | Asserts | Command / evidence |
 |---|---|---|---|

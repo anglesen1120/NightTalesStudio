@@ -253,7 +253,7 @@ No new i18n key is introduced here — there is no user-visible surface and no n
 
 ## 9. Test plan
 
-Projects (09 README Part A D2): `tests/NightTales.Domain.UnitTests`, `tests/NightTales.Application.UnitTests`, `tests/NightTales.Api.IntegrationTests` (all DB/job/CLI tests, Testcontainers PostgreSQL 17), `tests/NightTales.Architecture.Tests`, `tests/NightTales.TestKit` (`FakeClock`, `InMemoryBlobStore` (09.7.2-T1:112), `TestUserFactory`). xunit.v3 + Shouldly; **no mocking library**; real PostgreSQL for every claim/SQL/CLI assertion.
+Projects (09 README Part A D2): `tests/NightTales.Domain.UnitTests`, `tests/NightTales.Application.UnitTests`, `tests/NightTales.Api.IntegrationTests` (all DB/job/CLI tests, real PostgreSQL 17 via `PostgresFixture`), `tests/NightTales.Architecture.Tests`, `tests/NightTales.TestKit` (`FakeClock`, `InMemoryBlobStore` (09.7.2-T1:112), `TestUserFactory`). xunit.v3 + Shouldly; **no mocking library**; real PostgreSQL for every claim/SQL/CLI assertion.
 
 | Layer | Test | Proves |
 |---|---|---|

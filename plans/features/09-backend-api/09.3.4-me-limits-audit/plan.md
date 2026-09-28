@@ -197,7 +197,7 @@ Reference `../../10-web-ui.md`: the `/account` screen (profile + language, L206,
 
 ## 9. Test plan
 
-Harness: `ApiFactory`, `TestAuthHandler` (`X-Test-User`/`X-Test-Role`), Testcontainers PostgreSQL, `FakeClock`, hand-written fakes — no mocking library (D13). Rate-limit tests inject low limits through config overrides so nothing sleeps. The per-test method tables are in each task file; the suites are:
+Harness: `ApiFactory`, `TestAuthHandler` (`X-Test-User`/`X-Test-Role`), real PostgreSQL 17 (`PostgresFixture`, `NTS_TEST_PG`; 09 W3 CR-35), `FakeClock`, hand-written fakes — no mocking library (D13). Rate-limit tests inject low limits through config overrides so nothing sleeps. The per-test method tables are in each task file; the suites are:
 
 - `NightTales.Api.IntegrationTests` — `MeEndpointsTests` (own profile only, 401 unauthenticated, no security fields, locale persists, 400s for long/empty/`email`, one audit row), `RateLimitTests` + `ForwardedHeadersTests` + `RateLimitingOptionsTests` (11th request 429 with `rate_limited` + `Retry-After`, rejection never reaches the handler, per-user not per-IP partition, sliding-window smoothing, hub cap, `anon:<iphash>` fallback, disabled = pass-through, spoofed header ignored, `XForwardedHost` never trusted, bad CIDR fails startup), `AuditWriteTests` (row commits with the change, handler error rolls both back, operator tuple, row outlives user delete).
 - `NightTales.Application.UnitTests` — `AuditBehaviorTests` (one row on success, none on error, one row for a keyed replay, actor-type derivation, `data` only from `IAuditData`), `AuditRetentionRulesTests` (first match wins, 730/365 windows).

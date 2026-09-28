@@ -31,7 +31,7 @@ UnitOfWork, idempotency, errors, persistence, tenant filter, outbox, jobs, test 
 - ✅ D8: snake_case naming, Identity tables renamed `users`, `roles`, `user_roles`, `user_claims`, `user_logins`, `user_tokens`, `role_claims`; `timestamptz`; enum-as-text + `HasEnumCheck`; ids UUIDv7 from `Guid.CreateVersion7()`; aggregates map `Version` → `xmin`.
 - ✅ D9 + W2 CR-5: 09.2.2 `InitialCore` does **not** create `refresh_tokens`, `auth_challenges`, `user_action_tokens`, `user_consents`; each is created by its owner's migration (this folder).
 - ✅ D10: tenant filter `"tenant"`; other users' rows answer **404 `not_found`**.
-- ✅ D13 harness: `ApiFactory`, `TestAuthHandler` (`X-Test-User`/`X-Test-Role`), `WorkerHost` + `InlineJobScheduler`, `FakeClock`, Testcontainers `postgres:17-alpine` (migrated template DB); **no mocking library** — hand-written fakes.
+- ✅ D13 harness: `ApiFactory`, `TestAuthHandler` (`X-Test-User`/`X-Test-Role`), `WorkerHost` + `InlineJobScheduler`, `FakeClock`, real PostgreSQL 17 via `PostgresFixture` on `NTS_TEST_PG` (09 W3 CR-35; migrated template DB); **no mocking library** — hand-written fakes.
 - ✅ D14: base `/api/v1`, camelCase JSON, enums snake_case, cursor pagination; D7 error catalogue (`Api/Http/ErrorCatalogue.cs`), `ToHttpResult`/`ToNoContentResult` helpers.
 - ✅ 09 §5.4 codes used here: `validation_failed` 400, `breached_password` 400, `email_not_verified` 403, `invalid_credentials` 401, `mfa_required` 401, `invalid_mfa_code`/`mfa_token_invalid` 401, `session_revoked` 401, `refresh_token_reused` 401, `reauth_required` 401, `not_found` 404, `forbidden` 403, `registration_closed` 403, `rate_limited` 429.
 - ⚠️ [INFERENCE] names not present in Part A/BD text and therefore listed in §10 "Open items": `users` no; but `ICurrentUser.SessionId`, `IBreachedPasswordChecker`, `IUserActionTokenService`, `UserActionKind`, `TotpSlot`, `IRecoveryCodeService`, `ISecurityAlerter`, metric names, e-mail template names, `user_tokens` names `totp_secret_pending`; the interim `IMfaChallengeService`/`PendingMfaChallengeService` names no longer exist (WT39). [RULED — README §B10 WT31, WT39]
@@ -165,8 +165,8 @@ re-auth modal for sensitive actions. `/admin/*` shows 404 until the acting owner
 
 ## 9. Test plan
 
-Harness (D13): `ApiFactory`, `TestAuthHandler`, `WorkerHost` + `InlineJobScheduler`, `FakeClock`, Testcontainers
-PostgreSQL; hand-written fakes only (no mocking library). Integration classes (namespace `NightTales.Api.Tests.Features.Auth`):
+Harness (D13): `ApiFactory`, `TestAuthHandler`, `WorkerHost` + `InlineJobScheduler`, `FakeClock`, real PostgreSQL 17
+via `PostgresFixture` on `NTS_TEST_PG` (09 W3 CR-35); hand-written fakes only (no mocking library). Integration classes (namespace `NightTales.Api.Tests.Features.Auth`):
 
 - `IdentitySetupTests`: `Login_DummyHashTiming_IsWithinBudget`, `PasswordPolicy_TwelveChars_NoCompositionRules`,
   `Register_ClosedMode_ReturnsRegistrationClosed`.

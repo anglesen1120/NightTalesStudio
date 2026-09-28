@@ -89,9 +89,9 @@ No recurring job is owned by this folder (`AuthFailureSweepJob` = `09.3.3-T2`, `
 
 - `NightTales.Domain.UnitTests`: none new (no new aggregate in this folder).
 - `NightTales.Application.UnitTests`: `AdminListRenderJobsQueryHandlerTests`, `AdminRetryRenderJobCommandHandlerTests`, `SetFeatureFlagAdminCommandHandlerTests`, `AdminListUsersQueryHandlerTests`, `AdminSuspendUserCommandHandlerTests`, `RegistrationSettingsValidatorTests` — hand-written fakes from `NightTales.TestKit` (`FakeClock`, `InMemoryAuditWriter`, `FakeCreditBalanceReader`), no mocking library.
-- `NightTales.Api.IntegrationTests` (Testcontainers Postgres): one 404-for-non-admin test per new route; `AdminUsers_Keyset_NoNPlusOne` (asserts query count); `FeatureFlag_StaleIfMatch_Returns409`; `AdminSuspend_RevokesSessions_RotatesStamp_CancelsQueuedJobs`.
+- `NightTales.Api.IntegrationTests` (real PostgreSQL 17 via `PostgresFixture`, `NTS_TEST_PG` — 09 W3 CR-35): one 404-for-non-admin test per new route; `AdminUsers_Keyset_NoNPlusOne` (asserts query count); `FeatureFlag_StaleIfMatch_Returns409`; `AdminSuspend_RevokesSessions_RotatesStamp_CancelsQueuedJobs`.
 - `NightTales.Architecture.Tests`: extends the existing "every `ICommand` has exactly one of `[Audited]/[NotAudited]/[AllowAnonymousRequest]`" test to cover this folder's new commands; a new test asserting every `/admin/*` route appears in `09.2.3-T2`'s cross-tenant table.
-- `nts-admin` CLI: a `NightTales.Worker.Cli.Tests`-style project (or `NightTales.Application.UnitTests` for the command handlers, since the CLI has no route) exercising the three verbs against a Testcontainers Postgres with a seeded owner/dispute fixture; asserts exit codes 0/2/3 and the `audit_logs`/security-alert side effects.
+- `nts-admin` CLI: a `NightTales.Worker.Cli.Tests`-style project (or `NightTales.Application.UnitTests` for the command handlers, since the CLI has no route) exercising the three verbs against a real PostgreSQL 17 (`PostgresFixture`, `NTS_TEST_PG`; 09 W3 CR-35) with a seeded owner/dispute fixture; asserts exit codes 0/2/3 and the `audit_logs`/security-alert side effects.
 - i18n: `error.*`/`activity.*` startup-fails-if-missing test (09.2.6-T3:94) covers the reused codes; no new code is introduced by this folder (`captcha_*`/`setting_test_failed` belong to other folders).
 
 ## 10. Tasks and re-estimate

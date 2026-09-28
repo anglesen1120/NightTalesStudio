@@ -136,7 +136,7 @@ OWASP ASVS L2 for the new surfaces; each row is asserted by a test in the owning
 
 ## 9. Test plan
 
-Harness: Part A D13 — `NightTales.Api.IntegrationTests` on Testcontainers, `NightTales.TestKit` hand-written fakes (no mocking library), `NightTales.Domain.UnitTests`, `NightTales.Application.UnitTests`, `Architecture.Tests` (audit-attribute rule). Every 401/403/404 case asserts DB state after the response, not just the status code (WT29).
+Harness: Part A D13 — `NightTales.Api.IntegrationTests` on a real PostgreSQL 17 (`PostgresFixture`, `NTS_TEST_PG`; 09 W3 CR-35), `NightTales.TestKit` hand-written fakes (no mocking library), `NightTales.Domain.UnitTests`, `NightTales.Application.UnitTests`, `Architecture.Tests` (audit-attribute rule). Every 401/403/404 case asserts DB state after the response, not just the status code (WT29).
 
 | Task | Tests (by project) |
 |---|---|

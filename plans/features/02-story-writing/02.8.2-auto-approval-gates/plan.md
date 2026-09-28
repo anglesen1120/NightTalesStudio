@@ -301,7 +301,7 @@ Domain/unit (`tests/NightTales.Domain.UnitTests/Stories/Gates/`, `tests/NightTal
 | `GateStreak_TwoConsecutiveGateFailures_ReturnsTwo` | the SQL above, also with a `published` run in between → 0 |
 | `AutopilotApproval_DryRun_NeverCallsApproveCommand` | fake command bus records zero sends; `mode = dry_run` stored |
 
-Integration (`tests/NightTales.Api.IntegrationTests/Features/Autopilot/`, Testcontainers PostgreSQL + `FakeTextClient`/`FakeContentModerator` from D20):
+Integration (`tests/NightTales.Api.IntegrationTests/Features/Autopilot/`, real PostgreSQL 17 via `PostgresFixture` + `FakeTextClient`/`FakeContentModerator` from D20):
 
 | Test | Expects |
 |---|---|

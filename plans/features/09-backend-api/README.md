@@ -46,7 +46,7 @@ Read on 2026-09-24 from nuget.org (`api.nuget.org/v3-flatcontainer/<id>/index.js
 | N8 | `xmin` concurrency: map a `uint` property with `IsRowVersion()` or `[Timestamp]`, and Npgsql maps it to the `xmin` system column ✅ | github.com/npgsql/doc `conceptual/EFCore.PG/modeling/concurrency.md` |
 | N9 | EF Core 10 has **named query filters** (several filters per entity, each one can be disabled by name) and complex types mapped with `ComplexProperty(…, b => b.ToJson())` ✅. Npgsql support for complex-type `ToJson()` is ⚠️ not verified | github.com/dotnet/EntityFramework.Docs `ef-core-10.0/whatsnew.md` |
 | N10 | `TngTech.ArchUnitNET` + `TngTech.ArchUnitNET.xUnitV3` **0.13.4**, Apache-2.0, repo active (push 2026-09-24) ✅. `NetArchTest.Rules` **1.3.2**, MIT, last release 2021-05-23 ✅ | nuspec; GitHub API |
-| N11 | Test stack: `xunit.v3` **4.0.1** Apache-2.0, `Testcontainers.PostgreSql` **4.15.0** MIT, `Microsoft.AspNetCore.Mvc.Testing` **10.0.12** MIT, `Shouldly` **4.3.0** BSD-3-Clause ✅ | nuspec |
+| N11 | Test stack: `xunit.v3` **4.0.1** Apache-2.0, `Microsoft.AspNetCore.Mvc.Testing` **10.0.12** MIT, `Shouldly` **4.3.0** BSD-3-Clause ✅. No container library: integration tests use the real PostgreSQL 17 named by `NTS_TEST_PG` (owner 2026-09-28, 00 §5.1; 09 W3 CR-35) | nuspec; 00 §5.1 ✅ |
 | N12 | Other packages: `Riok.Mapperly` 4.3.1 Apache-2.0, `Serilog.AspNetCore` 10.0.0 Apache-2.0, `Microsoft.AspNetCore.OpenApi` 10.0.12 MIT, `Npgsql` 10.0.3 ✅ | nuspec |
 | N13 | .NET 10: runtime 10.0.12, SDK 10.0.401 ✅ (00 §5.1, 2026-09-08). `Guid.CreateVersion7()` (BCL since .NET 9) and `JsonNamingPolicy.SnakeCaseLower` (since .NET 8) ⚠️ from docs knowledge, not re-read | 00 §5.1 |
 | N14 | Hangfire recurring jobs are cron-based, and the default `SchedulePollingInterval` is 15 s ⚠️ (not re-read). So a 5-second recurring job is not reliable | [INFERENCE] |
@@ -96,7 +96,6 @@ Feature plans and task files MUST use these names exactly. Make any change here 
   - Hangfire.PostgreSql 1.21.1
   - ArchUnitNET 0.13.4
   - xunit.v3 4.0.1
-  - Testcontainers.PostgreSql 4.15.0
   - Mvc.Testing 10.0.12
   - Shouldly 4.3.0
   - Serilog.AspNetCore 10.0.0
@@ -120,7 +119,7 @@ Feature plans and task files MUST use these names exactly. Make any change here 
 - `src/`: `NightTales.Domain`, `NightTales.Application`, `NightTales.Infrastructure`, `NightTales.Api`, `NightTales.Worker`, `NightTales.Fetcher.Core`, `NightTales.Fetcher` (the Fetcher projects are created by 02.5.2-T3; 09.1.1 only reserves the names in the solution filter), `NightTales.RenderNode.Contract` (created empty by 09.1.1-T1), `NightTales.RenderNode.Server`, `NightTales.MptAdapter` (created by 11.3.5-T1/T2); `tools/mock-mpt` (11.1.2-T1) (11 CR-3).
 - `tests/`: `NightTales.Domain.UnitTests`, `NightTales.Application.UnitTests`, `NightTales.Infrastructure.UnitTests`, `NightTales.Architecture.Tests`, `NightTales.Api.IntegrationTests` (all DB and HTTP tests, including Worker jobs run in-process), `NightTales.TestKit` (fakes, fixtures, builders; referenced by every test project).
 - Feature-owned suites may add `NightTales.AcceptanceTests` / `NightTales.Performance.Tests`; these are excluded from the default `dotnet test` run by the solution filter `NightTales.ci.slnf`.
-- Files: `global.json` (SDK `10.0.401`, `rollForward: latestPatch`), `Directory.Build.props`, `Directory.Packages.props`, `.editorconfig`, `NightTales.sln`, `docker-compose.yml` (repo root).
+- Files: `global.json` (SDK `10.0.401`, `rollForward: latestPatch`), `Directory.Build.props`, `Directory.Packages.props`, `.editorconfig`, `NightTales.sln`, `docker-compose.yml` (repo root; the optional e2e/image-smoke path — daily dev uses the native Homebrew `postgresql@17` database from 09.1.1-T2, 09 W3 CR-35).
 
 **D3 Domain primitives (`src/NightTales.Domain/Common/`) [DECISION].**
 ```csharp
@@ -212,7 +211,7 @@ public abstract class AggregateRoot : Entity
 - `IAppDbContext` exposes `DbSet<T>` per aggregate/entity. 09 adds only its own sets; each feature adds its own.
 - `IReadDb` exposes `IQueryable<T> Query<T>() where T : class` (no tracking, tenant filter applied); `ReadDbContext.SaveChanges*` throws `InvalidOperationException`.
 - Infrastructure-only helpers such as `LockEpisodeForUpdateAsync` (02) are implemented on `AppDbContext` and declared on `IAppDbContext`.
-- PostgreSQL: image `postgres:17-alpine` for dev, CI and tests. Production uses the same major ⚠️ (hosting choice 11.2.1; owner decision O3).
+- PostgreSQL 17 everywhere: native Homebrew `postgresql@17` for dev (`127.0.0.1:5432`, 09.1.1-T2), a `postgres:17` service container for CI/tests, the `postgres:17-alpine` image for the optional compose path, production on the same major ⚠️ (hosting choice 11.2.1; owner decisions O3 and 2026-09-28, 00 §5.1; 09 W3 CR-35).
 
 **D9 Table ownership in P [DECISION, CR-5].**
 - The 09.2.2 initial migration `InitialCore` creates, from 00 §6:
@@ -290,7 +289,7 @@ public abstract class AggregateRoot : Entity
 
 **D13 Test harness [DECISION].**
 - `NightTales.TestKit` holds:
-  - `PostgresFixture`: one `postgres:17-alpine` Testcontainer per test run. It migrates a template database once, and each test class gets `CREATE DATABASE … TEMPLATE nts_template`.
+  - `PostgresFixture`: connects to the real PostgreSQL 17 named by `NTS_TEST_PG` — no container is started and no Docker is needed. Missing/blank `NTS_TEST_PG`, or a server that is not major 17, fails the fixture fast with a named error (never a silent skip). It rebuilds a template database once per run and each test class gets `CREATE DATABASE … TEMPLATE nts_template` (09 W3 CR-35).
   - `ApiFactory : WebApplicationFactory<Program>`.
   - `TestAuthHandler`: scheme `Test`; headers `X-Test-User` / `X-Test-Role`; registered **only** by `ApiFactory`.
   - `WorkerHost`: runs Worker services in-process, with `IJobScheduler` replaced by `InlineJobScheduler`, which runs the job synchronously and records the calls.
@@ -370,7 +369,7 @@ Tagged `(09 CR-n)` where applied.
 
 ```mermaid
 flowchart LR
-  S1["09.1.1-T1 solution"] --> S2["09.1.1-T2 compose pg"]
+  S1["09.1.1-T1 solution"] --> S2["09.1.1-T2 dev db (pg)"]
   S1 --> A["09.1.2-T1 arch tests"]
   S1 --> M1["09.1.3-T1 mediator + logging/validation"]
   M1 --> E["09.1.4-T1 error mapping"]
@@ -473,14 +472,14 @@ Sizes: XS 0.25 · S 0.5 · M 1 · L 2 (00 §9).
 | Task | High-level | Detailed | Why |
 |---|---|---|---|
 | 09.1.1-T1 | S 0.5 | S 0.5 | — |
-| 09.1.1-T2 | XS 0.25 | XS 0.25 | PostgreSQL only (F10) |
+| 09.1.1-T2 | XS 0.25 | XS 0.25 | Native dev DB (`tools/dev/db-init.sh`) + optional compose `postgres` service (F10; 09 W3 CR-35) |
 | 09.1.2-T1 | S 0.5 | M 1.0 | Package allow-lists, Fetcher isolation, Hangfire confinement, `[OutboxEvent]`, ids-only jobs, handler rules (D1, D11, D12) |
 | 09.1.3-T1 | S 0.5 | S 0.5 | — |
 | 09.1.3-T2 | S 0.5 | M 1.0 | Explicit transaction, in-transaction idempotency protocol, concurrency mapping, cleanup job (F04, D5, D6) |
 | 09.1.4-T1 | S 0.5 | S 0.5 | — |
 | 09.1.5-T1 | S 0.5 | S 0.5 | — |
 | 09.2.1-T1 | M 1.0 | M 1.0 | — |
-| 09.2.1-T2 | — | S 0.5 | New: Testcontainers template DB, `ApiFactory`, `TestAuthHandler`, `WorkerHost` (D13) |
+| 09.2.1-T2 | — | S 0.5 | New: `PostgresFixture` template DB (`NTS_TEST_PG`; 09 W3 CR-35), `ApiFactory`, `TestAuthHandler`, `WorkerHost` (D13) |
 | 09.2.2-T1 | L 2.0 | L 2.0 | Core set only (F08), but full CHECKs and indexes |
 | 09.2.2-T2 | M 1.0 | M 1.0 | — |
 | 09.2.3-T1 | M 1.0 | M 1.0 | — |
@@ -511,7 +510,7 @@ TL decisions are recorded in D1–D17. Three items need the **owner**:
 |---|---|---|---|
 | O1 | Hangfire (LGPL-3.0 or commercial, N5) and Hangfire.PostgreSql (LGPLv3, N6), used unmodified from NuGet in a hosted SaaS | Accept LGPL-3.0: no fork, no modified copies, package references only. The `IJobScheduler` port keeps the swap cost ≈ 2 d (09 §8) | **decided by the owner 2026-09-24: as recommended** |
 | O2 | CI platform (11.5.1 "GitHub Actions ⚠️ or chosen CI"); the repo has no remote yet | GitHub Actions, workflow file `.github/workflows/backend.yml` | **decided by the owner 2026-09-24: as recommended** |
-| O3 | PostgreSQL major for dev, CI and production | 17 (`postgres:17-alpine`); production on the same major, confirmed with the hosting choice (11.2.1) | **decided by the owner 2026-09-24: as recommended** |
+| O3 | PostgreSQL major for dev, CI and production | 17 (Homebrew `postgresql@17` in dev, `postgres:17` in CI/tests, `postgres:17-alpine` for the optional compose path); production on the same major, confirmed with the hosting choice (11.2.1) — 09 W3 CR-35 | **decided by the owner 2026-09-24: as recommended** |
 
 ## 11. Definition-of-Ready review (2026-09-24)
 
@@ -1200,6 +1199,7 @@ All are `Templates/Email/<name>.<locale>.{txt,html}`; **all four variants must e
 | W3 CR-32 | this README §C3.1 `POST /auth/register` row; `features/10-web-ui/10.3-public-signup/10.3.2-T1-register-verify.md` | `201 (identical body for a new and an existing e-mail)` | `202` (identical body for a new and an existing e-mail), matching the signed `09.3.1-T3`'s `202` (09.3.1-T3:112) | NTS-W3-REGISTER-STATUS |
 | W3 CR-33 | this README D5; `09.9-admin-surface/09.9.1-T1-admin-group-policy-render-usage-reports.md`; `09.9-admin-surface/plan.md`; `10-web-ui/10.9-admin-core/plan.md` (A3 restates the same definition) | `AdminPolicy` = `RequireRole(Role.Admin)` | `AdminPolicy` = `RequireRole(Role.Admin, Role.Owner)` — the single `role` claim is ordinal (`User<Admin<Owner`) and `RequireRole` is not hierarchical, so an owner's token otherwise fails the admin subset's own policy | NTS-W3-ADMINPOLICY-OWNER |
 | W3 CR-34 | this README §C3.6 widget contract; `09.3-account-security-s/plan.md` (widget-contract restatement); `10-web-ui/README.md` (SC14, FC1, FC6, SD4, ST-2); `10-web-ui/10.3-public-signup/plan.md` (F8, F14, UC-4, integrations, CSP note); `10-web-ui/10.3-public-signup/10.3.1-T0-ui-design.md`; `10-web-ui/10.3-public-signup/10.3.2-T1-register-verify.md`; `10-web-ui/10.3-public-signup/10.3.3-T2-captcha-widget.md`; `10-web-ui/10.9-admin-ops/10.9.3-T2-pending-change-cancel-page.md` | widget contract says "on `captcha_unavailable` show a retry and let the user submit without a token (fail-open)" with no route exception; 10.3.3-T2 adds a static `<script>` tag to `index.html` | `/auth/register` on `captcha_unavailable` stays **fail-closed** (503, `RetryCountdown`, no token-less submit); every other route (login/forgot/reauth) fails open; the Turnstile script loads **on demand only on CAPTCHA-bearing routes** via a Trusted-Types-compatible loader, never as a static `index.html` tag, so `/cancel-request` never loads it (a Playwright assertion checks no request to `challenges.cloudflare.com` there) | NTS-W3-TURNSTILE-ON-CANCEL-PAGE, NTS-W3-CAPTCHA-UNAVAILABLE-CONTRACT |
+| W3 CR-35 | `README.md` §1 N11, §3 D1/D2/D8/D13, §9, §10; `plans/09-backend-api.md` §4 09.1.5, §6 (09.1.1-T2, 09.2.1-T2), §7; `09.1.1-solution-skeleton/{plan.md, 09.1.1-T1-solution-projects-props.md, 09.1.1-T2-dev-compose-postgres.md}`; `09.1.5-ci-pipeline/{plan.md, 09.1.5-T1-backend-ci-workflow.md}`; `09.2.1-db-contexts/{plan.md, 09.2.1-T1-app-and-read-db-contexts.md, 09.2.1-T2-integration-test-harness.md}`; `09.2.2-core-schema-migrations/09.2.2-T2-initial-migration-and-ci-check.md`; `09.3-auth/{plan.md, 09.3.1-T1-identity-setup-and-consents.md}`; `09.3-account-security-s/plan.md`; `09.3.4-me-limits-audit/{plan.md, 09.3.6-T1-audit-log.md}`; `09.6-render-orchestration/plan.md`; `09.7-video-review-storage/{plan.md, 09.7.2-T1-blob-store-presign.md}`; `09.9-admin-surface/{plan.md, 09.9.2-T1-feature-flag-write-path.md, 09.10.5-T1-admin-user-management.md, 09.10.6-T1-registration-settings.md, 09.10.7-T1-nts-admin-break-glass-cli.md}`; `09.9-platform/{plan.md, 09.9.4-T1-security-hardening.md, 09.9.5-T1-openapi-contract-gate.md}`; `09.10-settings/{plan.md, 09.10.1-T1-settings-store.md, 09.10.1-T2-purpose-chain-and-purge.md, 09.10.2-T1-settings-admin-api.md, 09.10.2-T2-critical-changes.md, 09.10.2-T3-connect-time-validation.md, 09.10.3-T1-hot-reload.md}`; `09.10.4-owner-governance/{plan.md, 09.10.4-T2-hierarchy-and-owner-action-requests.md, 09.10.4-T3-security-alerter.md, 09.10.4-T4-owner-disputes.md, 09.10.8-T1-cancel-links.md}` | N11/D1 list `Testcontainers.PostgreSql` **4.15.0**; D13 "one `postgres:17-alpine` Testcontainer per test run"; "dev value from `docker-compose.yml`"; 09.2.1-T2 failure row "Docker not available locally … Docker is required for integration tests"; the `integration` CI job with no database; `09.1.1-T2` titled "Development `docker-compose.yml` (PostgreSQL only)"; the `integration` job description "Docker, needs `build-test`"; every harness line "Testcontainers Postgres"/"Testcontainers PostgreSQL"/"a fresh Testcontainer DB" | dropped from N11 and D1 — no container library at all; D13 `PostgresFixture` connects to the real PostgreSQL 17 named by `NTS_TEST_PG` (no container start; missing/blank env or a non-17 server → fail fast with a named error, never a silent skip), rebuilds `nts_template` once per run, keeps `CREATE DATABASE … TEMPLATE nts_template` and `DROP DATABASE … WITH (FORCE)`; the `integration` job runs a health-gated `services: postgres: image: postgres:17` and sets `NTS_TEST_PG` (no Docker-in-runner step); the dev database is native (`brew install postgresql@17`, loopback `127.0.0.1:5432`, idempotent `tools/dev/db-init.sh` creating the `.env` role/database with `CREATEDB`) and the compose `postgres` service becomes the optional e2e/image-smoke path in the same file name (H1 retitled); every other harness line reads "real PostgreSQL 17 (`PostgresFixture`, `NTS_TEST_PG`)" | owner 2026-09-28, 00 §5.1. **Applied** to the 09 files by the wave writer (unlike CR-1…CR-34); the cross-plan citations of the compose `postgres` service are applied by 11 CR-16 (11.1.1-T1, 11.5.1-T1) and 10 CR-43 (10.10.2); `09.2.5-seed-data/09.2.5-T1-catalog-and-flag-seed.md` (seed command native); the untagged Testcontainers -> `PostgresFixture` wording in the test sections of plans 02, 04, 06, 07, 08, 12 and 13 (`git grep PostgresFixture`) and 04.2.2-T2 step 6 belong to this CR |
 
 **Applied by nobody yet.** CR-1…CR-34 are proposals; every task file written from §C8.1 must cite the CR it depends on and must not assume the target file already changed (a writer may start against the current text, but the acceptance check must match the *new* text once the TL applies it).
 

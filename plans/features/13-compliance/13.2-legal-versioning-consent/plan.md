@@ -144,7 +144,7 @@ Observability (pinned names): audit `legal.document_published`; log events `lega
 
 ## 9. Test plan
 
-Hand-written fakes from `NightTales.TestKit` only (no mocking library). Integration tests on real PostgreSQL via Testcontainers; time via `FakeClock` plus explicit SQL `effective_at`.
+Hand-written fakes from `NightTales.TestKit` only (no mocking library). Integration tests on real PostgreSQL 17 via `PostgresFixture`; time via `FakeClock` plus explicit SQL `effective_at`.
 
 **`tests/NightTales.Domain.UnitTests`** — `LegalVersionComparerTests.Compare_SegmentLengths_VersionOrderIsNumeric` (`1.10.0 > 1.9.0`, `1.0.10 > 1.0.9`, malformed rejected); `LegalDocumentVersionTests.EffectiveAtInFuture_IsNotCurrent_BeforeInstant_AndIsCurrent_After`.
 

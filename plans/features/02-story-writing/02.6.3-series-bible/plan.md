@@ -313,7 +313,7 @@ Unit (`tests/NightTales.Domain.UnitTests/Series/Bible/`):
 | `ReplaceContent_BumpsVersion_AndKeepsProposal` | version +1, proposal intact |
 | `BibleProposal_Serialisation_RoundTrips` | `bible.v1` + `bible-proposal.v1` JSON round-trip, snake_case |
 
-Integration (`tests/NightTales.Api.IntegrationTests/SeriesBible/`, WebApplicationFactory + Testcontainers PostgreSQL):
+Integration (`tests/NightTales.Api.IntegrationTests/SeriesBible/`, WebApplicationFactory + real PostgreSQL 17 via `PostgresFixture`):
 
 | Test | Assert |
 |---|---|

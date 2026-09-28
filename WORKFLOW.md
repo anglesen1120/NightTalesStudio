@@ -203,7 +203,7 @@ flowchart LR
 - **Definition of Ready:** user value, Given/When/Then acceptance, dependencies known, estimate ≤ XL, reviewed feature plan, and for web/UI work an approved UI design linked.
 - **Design first (owner rule, 2026-09-25):** every web/UI task or feature has an approved UI design before implementation starts — wireframes + hi-fi mockups (states loading/empty/error/success, breakpoints 360/768/1280, vi + en text, dark/light, focus order and a11y notes, built from the 10 D11 design-system tokens/components), linked from the feature `plan.md` §6 UI and approved by the owner. Each UI feature folder carries a design task `<story>-T0 — UI design` (Area `UX`) that every implementation task in the folder depends on.
 - **Per-task QA and review before push (owner rule, 2026-09-25):** every task, one at a time, ends with (1) a separate QA agent that re-reads the plan, feature `plan.md` and task file and runs the acceptance checks plus negative/edge cases, then (2) a code review, (3) a performance review and (4) a security review by separate reviewer agents; QA runs first, never in parallel with the reviews (the three reviews may run in parallel; their fixes are re-tested). Findings are fixed and re-tested and both passes are recorded in `STATUS.md` **before** the commit is pushed. A task is not `done` until all four are closed.
-- **Definition of Done:** code reviewed, **a separate QA agent (not the author) re-read the plan, feature and task files and ran every acceptance check plus negative and edge cases against the implementation, reporting pass/fail with command output** (owner rule 2026-09-25, `AGENTS.md` Testing & QA), CI green, unit tests for domain rules and use cases, integration test per endpoint (Testcontainers PostgreSQL), strings in vi + en, logs and metrics for new jobs, OpenAPI/runbook updated.
+- **Definition of Done:** code reviewed, **a separate QA agent (not the author) re-read the plan, feature and task files and ran every acceptance check plus negative and edge cases against the implementation, reporting pass/fail with command output** (owner rule 2026-09-25, `AGENTS.md` Testing & QA), CI green, unit tests for domain rules and use cases, integration test per endpoint (real PostgreSQL 17, `PostgresFixture`), strings in vi + en, logs and metrics for new jobs, OpenAPI/runbook updated.
 
 ### 8.2 Branch → production
 
@@ -220,7 +220,7 @@ Source: `plans/11-worker-deployment.md` 11.5.
 - CI is GitHub Actions (owner decision 2026-09-24, `plans/features/09-backend-api/README.md` O2).
 - Deploys authenticate with OIDC. Third-party actions are pinned by SHA.
 - Runtime secrets come from the secret manager, never from CI.
-- Local development runs Docker Compose with **mock-mpt**, so no GPU is needed.
+- Local development is native on macOS, no Docker (owner 2026-09-28, `plans/00-overview.md` §5.1): Homebrew PostgreSQL 17, SeaweedFS, Mailpit, `dotnet run` with **mock-mpt**, so no GPU is needed; Docker only builds and smoke-tests the deploy images.
 - GPU nodes are updated from a CI-built, hashed bundle by the operator (`nts-node deploy`); CI has no access to the render network (11 CR-9).
 
 ### 8.3 Conventions

@@ -58,12 +58,12 @@ dotnet restore NightTales.ci.slnf --locked-mode
 dotnet build   NightTales.ci.slnf -c Release --no-restore
 dotnet format  NightTales.ci.slnf --verify-no-changes --no-restore
 dotnet test    NightTales.ci.slnf -c Release --no-build --filter "Category!=Integration"
-dotnet test    tests/NightTales.Api.IntegrationTests -c Release      # needs Docker (Testcontainers)
+dotnet test    tests/NightTales.Api.IntegrationTests -c Release      # needs PostgreSQL 17 via NTS_TEST_PG (local Homebrew server)
 ```
 
-Local stack: `docker compose` with postgres, storage, mail catcher, api, worker, web and `tools/mock-mpt` in place of the GPU node (`plans/11-worker-deployment.md:28,155-157`; `WORKFLOW.md` §8.2).
+Local stack (owner 2026-09-28, `plans/00-overview.md` §5.1, `DECISIONS.md` §10.13): **native, no Docker** — Homebrew `postgresql@17`, `seaweedfs`, `mailpit`, `dotnet run` for api, worker and `tools/mock-mpt` (in place of the GPU node), `ng serve` for web, started by `tools/dev/up.sh` (11 CR-16). Docker is only for deploy images; `docker-compose.yml` is optional (CI e2e / image smoke).
 
-CI is two jobs plus a migration check: `build-test` (restore `--locked-mode`, Release build, `dotnet format --verify-no-changes`, tests with `--filter "Category!=Integration"`, `openapi.json` artifact) and `integration` (Testcontainers PostgreSQL, needs `build-test`); 09.2.2-T2 adds a `migrations` job. No coverage tool or coverage threshold is planned anywhere — Definition of Done is behavioural (one integration test per endpoint, unit tests for domain rules).
+CI is two jobs plus a migration check: `build-test` (restore `--locked-mode`, Release build, `dotnet format --verify-no-changes`, tests with `--filter "Category!=Integration"`, `openapi.json` artifact) and `integration` (GitHub Actions `postgres:17` service, `NTS_TEST_PG`, needs `build-test`); 09.2.2-T2 adds a `migrations` job. No coverage tool or coverage threshold is planned anywhere — Definition of Done is behavioural (one integration test per endpoint, unit tests for domain rules).
 
 ## Code Conventions & Common Patterns
 
@@ -89,9 +89,9 @@ CI is two jobs plus a migration check: `build-test` (restore `--locked-mode`, Re
 ## Runtime/Tooling Preferences
 
 - Planned, not in the repo yet: .NET SDK 10.0.401 pinned in `global.json` (`rollForward: latestPatch`); .NET 11 is not used. NuGet uses central package management (`Directory.Packages.props`) plus lock files (`RestorePackagesWithLockFile` in `Directory.Build.props`, committed `packages.lock.json`; CI restores with `--locked-mode`).
-- Planned: Web: Angular 22 with the Angular CLI and npm (`npm run api:gen` regenerates `shared/api/` from the CI `openapi.json`); bundle budgets will live in `angular.json` (10 §10.1.1). Today's tooling is the worker-node set (`worker-node/README.md`).
+- Planned: Web: Angular 22 on Node 26.10.0 (`engines` `^26.10.0`, 10 CR-43) with the Angular CLI and npm (`npm run api:gen` regenerates `shared/api/` from the CI `openapi.json`); bundle budgets will live in `angular.json` (10 §10.1.1). Today's tooling is the worker-node set (`worker-node/README.md`).
 - Worker (personal phase): MPT, VieNeu and faster-whisper are Python 3.11/3.12 pinned in `worker-node/pins.env` (`MPT_PYTHON`, `VIENEU_PYTHON`) — versions live only there.
-- PostgreSQL 17 in dev, CI and production. Planned: CI is GitHub Actions (`.github/workflows/backend.yml`), with third-party actions pinned by SHA.
+- PostgreSQL 17 in dev (native Homebrew `postgresql@17`, 127.0.0.1), CI (Actions service) and production. Planned: CI is GitHub Actions (`.github/workflows/backend.yml`), with third-party actions pinned by SHA.
 - Licences must allow commercial SaaS use. No AGPL, RPL or non-commercial licences; MediatR and AutoMapper are rejected. Hangfire LGPL-3.0 is accepted only as unmodified NuGet packages.
 - Local worker: runtime state lives in `NTS_HOME="${NTS_HOME:-<repo>/.nts}"` (gitignored; default set in `worker-node/bin/lib.sh`, CR-11). Secrets live only in the macOS Keychain and are never printed. Services bind to `127.0.0.1` only (ports 8000/8001/8002/8080).
 - OpenAI is the only paid provider.
@@ -99,8 +99,8 @@ CI is two jobs plus a migration check: `build-test` (restore `--locked-mode`, Re
 ## Testing & QA
 
 Planned (09 README N10/N11, D2):
-- xunit.v3, Shouldly, ArchUnitNET, Testcontainers.PostgreSql, Mvc.Testing. No mocking library: use hand-written fakes in `NightTales.TestKit`.
-- `NightTales.TestKit` (`09.2.1-T2`): `PostgresFixture` (one `postgres:17-alpine` container per run, `CREATE DATABASE … TEMPLATE` per test class), `ApiFactory` (WebApplicationFactory + `TestAuthHandler`, guarded by a test that production `Program` never registers the `Test` scheme), `WorkerHost` with `InlineJobScheduler`, `FakeClock`, and builders (`UserBuilder`, `SeriesBuilder`, `EpisodeBuilder`) that write through `AppDbContext` under `ISystemContext`.
+- xunit.v3, Shouldly, ArchUnitNET, Mvc.Testing (Testcontainers dropped, owner 2026-09-28). No mocking library: use hand-written fakes in `NightTales.TestKit`.
+- `NightTales.TestKit` (`09.2.1-T2`): `PostgresFixture` (connects to the PostgreSQL 17 server in `NTS_TEST_PG`, fails fast if unset; `CREATE DATABASE … TEMPLATE` per test class), `ApiFactory` (WebApplicationFactory + `TestAuthHandler`, guarded by a test that production `Program` never registers the `Test` scheme), `WorkerHost` with `InlineJobScheduler`, `FakeClock`, and builders (`UserBuilder`, `SeriesBuilder`, `EpisodeBuilder`) that write through `AppDbContext` under `ISystemContext`.
 - Test projects: `NightTales.{Domain,Application,Infrastructure}.UnitTests`, `NightTales.Architecture.Tests`, `NightTales.Api.IntegrationTests` (real PostgreSQL; Worker jobs run in-process).
 - Acceptance and performance suites stay outside `NightTales.ci.slnf`.
 - Flaky tests are quarantined with `[Trait("Category","Quarantine")]`. Never retry until green.

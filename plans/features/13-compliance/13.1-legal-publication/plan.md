@@ -164,7 +164,7 @@ No secret, bucket or configuration key is added by this folder; the only config 
 |---|---|---|
 | `LegalContentCoverageTests` | `NightTales.Architecture.Tests/Legal/LegalContentCoverageTests.cs` (repo-path fixture, no fakes needed) | checks 1–2; the durable regression that a clause or a locale was dropped |
 | `ReportReasonMappingTests` | `NightTales.Architecture.Tests/Legal/ReportReasonMappingTests.cs` | check 3; the D11 list cannot drift from the policy |
-| `CookieInventoryTests` | `NightTales.Api.IntegrationTests/Cookies/CookieInventoryTests.cs` (Testcontainers, real pipeline) | check 4; the API side of D13 |
+| `CookieInventoryTests` | `NightTales.Api.IntegrationTests/Cookies/CookieInventoryTests.cs` (`PostgresFixture`, real pipeline) | check 4; the API side of D13 |
 | `cookie-helpers.spec.ts` + `cookie-notice-copy.spec.ts` | `web/` Vitest + TestBed (10's convention) | check 5; the SPA side of D13 and the vi/en copy coverage |
 | `test_check_legal_content.py` | `tests/ci/test_check_legal_content.py` (pytest, mirroring `tests/ci/test_check_legal_versions.py`) | the CI script's behaviour incl. `--selftest`: red on a missing locale, red on a manifest mismatch, green on the consistent tree |
 | `test_check_cookie_inventory.py` | `tests/ci/test_check_cookie_inventory.py` | the inventory parser + the `--check` generator mode (stale constant → red) |

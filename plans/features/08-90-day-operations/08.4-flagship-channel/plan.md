@@ -169,7 +169,7 @@ Cadence and timers.
 
 ## 9. Test plan
 
-No code exists, so no xunit/Shouldly test, no Testcontainers, no `FakeGoogleServer` is written by this folder (the behaviour these documents describe is proven by 02/06/11 tests — 02.8.3 §9, 06 README §3). Verification = **dry runs, rehearsals and document checks**, each with a recorded output:
+No code exists, so no xunit/Shouldly test, no `PostgresFixture`, no `FakeGoogleServer` is written by this folder (the behaviour these documents describe is proven by 02/06/11 tests — 02.8.3 §9, 06 README §3). Verification = **dry runs, rehearsals and document checks**, each with a recorded output:
 
 | # | Check | Method | Pass condition |
 |---|---|---|---|

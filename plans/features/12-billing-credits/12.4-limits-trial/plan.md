@@ -281,7 +281,7 @@ Integrations: `IOptions<CreditOptions>` / `IOptions<FundingOptions>` (D10, `Vali
 
 **NightTales.Application.UnitTests** (hand-written fakes from `NightTales.TestKit`: `FakeCreditLedger`, `FakeEmailSender`, `RecordingJobScheduler`, `FakeClock`, `FakeFeatureFlags`, `FakeSettingsReader`; **no mocking library**): `GrantTrialCreditsCommandHandlerTests` — verified ⇒ one `GrantAsync(source = Trial, expiresAt = clock + 30 d, reference = grant:trial:{userId})`; unverified ⇒ zero ledger calls and no e-mail; second invocation ⇒ the idempotency key already exists ⇒ no second call; flag open ⇒ `trial_grant_requested.v1` published, no `GrantAsync`; amount from the settings key, fallback to `CreditOptions.TrialCredits`, and the owner's 0 ⇒ nothing; blocked domain ⇒ no `GrantAsync`, audit + metric. `GetMarginReportQueryValidatorTests` — `to < from`, 91-day range, unknown `operation`, default window.
 
-**NightTales.Api.IntegrationTests** (Testcontainers PostgreSQL 17, real migrations, seeded tenants):
+**NightTales.Api.IntegrationTests** (real PostgreSQL 17, `PostgresFixture`, real migrations, seeded tenants):
 1. reserve at/over the cap → 429 `spend_cap_reached` with `retryAfterSeconds` = seconds to the next UTC midnight (± 2 s), `Retry-After` set, **no** ledger row and unchanged lots;
 2. 20 parallel reserves (UC-8) → successes ≤ floor(cap / amount) and the reserved sum ≤ cap;
 3. cap counts a held (paused-flag-open) reservation once (F08);

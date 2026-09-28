@@ -168,7 +168,7 @@ Authorization: user routes require an authenticated `user`; this folder adds exa
 
 ## 9. Test plan
 
-Hand-written fakes from `NightTales.TestKit` only; **no mocking library**. Projects: `NightTales.Domain.UnitTests`, `NightTales.Application.UnitTests`, `NightTales.Api.IntegrationTests` (Testcontainers PostgreSQL 17 + `WebApplicationFactory`), `NightTales.Architecture.Tests`. Job tests are split into a recording `IJobScheduler` fake (scheduling) plus a direct `RunAsync` (behaviour) — Hangfire delayed jobs ignore `FakeClock` (06 YR27).
+Hand-written fakes from `NightTales.TestKit` only; **no mocking library**. Projects: `NightTales.Domain.UnitTests`, `NightTales.Application.UnitTests`, `NightTales.Api.IntegrationTests` (real PostgreSQL 17, `PostgresFixture` + `WebApplicationFactory`), `NightTales.Architecture.Tests`. Job tests are split into a recording `IJobScheduler` fake (scheduling) plus a direct `RunAsync` (behaviour) — Hangfire delayed jobs ignore `FakeClock` (06 YR27).
 
 | Test | Project | Asserts |
 |---|---|---|
@@ -177,7 +177,7 @@ Hand-written fakes from `NightTales.TestKit` only; **no mocking library**. Proje
 | `PaymentWebhookVerifier_VerifiesRawBody` | Application.UnitTests (TestKit vectors) | tampering with one whitespace byte fails; the valid vector passes; comparison is constant-time (fixed-time oracle test) |
 | `CheckoutCommand_Replays_SameKey` | Application.UnitTests | same key+hash → same `paymentId`, one `payments` row; different hash → 409 `payment_invalid_state` |
 | `CheckoutCommand_ProviderFailure_MarksFailed` | Application.UnitTests | provider error → `failed` + 502 `payment_provider_error`, no live checkout URL leaks |
-| `ProcessPaymentWebhookCommand_GrantsOnce` | Api.IntegrationTests (Testcontainers) | two **parallel** HTTP posts of the same event ⇒ one `paid`, one `purchase` lot, one `bonus` lot, `billing_credits_minted_total` +1 |
+| `ProcessPaymentWebhookCommand_GrantsOnce` | Api.IntegrationTests (`PostgresFixture`) | two **parallel** HTTP posts of the same event ⇒ one `paid`, one `purchase` lot, one `bonus` lot, `billing_credits_minted_total` +1 |
 | `Webhook_Mismatch_NeedsReview` | Api.IntegrationTests | wrong amount/currency ⇒ `needs_review`, zero lots, alert metric ≥ 1 |
 | `Webhook_BadSignature_401_NoSideEffect` | Api.IntegrationTests | 401, `signature_valid = false` row, no `payments` change, no 5xx |
 | `Webhook_DoesNotLeakAcrossTenants` | Api.IntegrationTests | a webhook for user A's payment never touches B's ledger; `GET /billing/payments/{A}` by B is 404 |

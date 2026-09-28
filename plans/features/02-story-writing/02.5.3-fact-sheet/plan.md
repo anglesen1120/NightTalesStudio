@@ -162,7 +162,7 @@ Unit (Domain/Application, `FakeTextClient`, `FakeClock`, `FakeBudgetGuard` — D
 - `GenerateFactSheet_{NoFetchedSources_409SourcesInsufficient,ActiveRunExists_409GenerationInProgress,BudgetExceeded_429SpendCapReached}`, `UpdateFactSheet_{NewFactGetsNextId_ExistingIdsPreserved,DeletedFactId_IsNeverReusedInLaterVersion}`, `ApproveFactSheet_{RequiresTwoDistinctCitedFetchedSources,RejectsStaleEtag_412,RejectsWhenEpisodeStoryApproved_409,SupersedesPreviousApprovedRow_OnlyOneApprovedPerEpisode}`
 - `IFactSheetGuard_{ReturnsNone_WhenNoApprovedSheet,ReturnsApprovedSheet_WithAliasMap}`, `FactSourcesBuilder_{BuildsFromStorySources_NeverFromModelOutput,UnknownFactRef_ReportedNotBuilt}`
 
-Integration (Testcontainers, `OPENAI_LIVE_TESTS` off): `PostFactSheetGenerate_Returns202_AndCreatesDraftVersion`; `PutFactSheet_MissingIfMatch_Returns428`; `PutFactSheet_StaleEtag_Returns412FactSheetConflict`; `PostFactSheetApprove_ThenGenerateStory_UsesApprovedFacts`; `GenerateStoryJob_StaleFactSheetId_FailsRunNotCounted`.
+Integration (`PostgresFixture`, `OPENAI_LIVE_TESTS` off): `PostFactSheetGenerate_Returns202_AndCreatesDraftVersion`; `PutFactSheet_MissingIfMatch_Returns428`; `PutFactSheet_StaleEtag_Returns412FactSheetConflict`; `PostFactSheetApprove_ThenGenerateStory_UsesApprovedFacts`; `GenerateStoryJob_StaleFactSheetId_FailsRunNotCounted`.
 
 E2E (02 §7): sources → fact sheet → approve → story with backend `fact_sources`; the injection fixture leaks no instruction.
 

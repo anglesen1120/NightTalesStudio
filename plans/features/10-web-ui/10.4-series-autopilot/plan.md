@@ -27,7 +27,7 @@ Legend: ✅ = read with citation; ⚠️ = unverified; [DECISION]/[OPEN]/[INFERE
 
 | # | Fact | Source |
 |---|---|---|
-| F1 | Angular 22.2.x, standalone, `strict` + `strictTemplates` + `noUncheckedIndexedAccess`, SCSS, zoneless, `@angular/build:application`, `outputMode: 'static'`, Node 24 LTS, path aliases `@core/*` `@shared/*` `@features/*`. | ✅ `../README.md:102` |
+| F1 | Angular 22.2.x, standalone, `strict` + `strictTemplates` + `noUncheckedIndexedAccess`, SCSS, zoneless, `@angular/build:application`, `outputMode: 'static'`, Node 26.10.0 (10 CR-43), path aliases `@core/*` `@shared/*` `@features/*`. | ✅ `../README.md:102` |
 | F2 | Feature tree `features/<name>/{domain,data-access,application,ui,feature}` + `<name>.routes.ts` + `index.ts`; wave-1 features `public, auth, dashboard, series, episodes`; lint bans `domain` → Angular/rxjs, `ui` → store/repository/HttpClient, non-`data-access` → `@shared/api`, cross-feature import other than through `index.ts`, `any`, non-`OnPush`, `subscribe()` in components, `[innerHTML]`, `localStorage`. | ✅ `../README.md:109` |
 | F3 | Only `features/*/data-access/**` and `core/**/data-access` import `@shared/api`; repositories return `Promise<T>`; `withIfMatch(etag)`/`readEtag(response)` in `core/http/`; `IdempotencyKeys` (10.2.3-T1); `shared/util/cursor-page.ts` + `core/state/cursor-list.ts` for every list (both owned by **10.2.6-T1**, WR4). | ✅ `../README.md:133` |
 | F4 | `AppErrorMapper` → `AppError { code, status, fieldErrors, retryAfterSec?, traceId?, problem }`; every code used by wave-1 screens has `errors.<code>` in vi + en; `detail` never shown raw; 412 → `ConflictDialog`; 429 → `RetryCountdown`; 428 is a client bug. | ✅ `../README.md:159` |
