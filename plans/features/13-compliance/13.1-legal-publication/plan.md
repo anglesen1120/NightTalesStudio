@@ -23,7 +23,7 @@
 
 | Id | Fact (README verbatim where quoted) | Source |
 |---|---|---|
-| K1 | Legal texts are build-time repo files `web/src/content/legal/<doc>.<version>.<lang>.md` + `manifest.json` `{ "<doc>": { "version", "effectiveDate" } }`, converted at build (no raw HTML), rendered by 10.3.1-T1; the page version must equal the version recorded in `user_consents` | 10 README D12; 10.3.1-T1:57, 70 ✅ |
+| K1 | Legal texts are build-time repo files `web/src/content/legal/<prefix>.<version>.<lang>.md` + `manifest.json` `{ "<doc>": { "version", "effectiveDate" } }`, with the manifest key mapped to the file prefix `tos -> terms`, `privacy -> privacy` (the files stay `terms.*`, the key stays `tos`), converted at build (no raw HTML), rendered by 10.3.1-T1; the page version must equal the version recorded in `user_consents` | 10 README D12; 10.3.1-T1:57, 70 ✅ (map added by 13 CR-34) |
 | K1b | The public pages are prerendered and make **no** API call (`/report` is the cited case) | `10-web-ui.md:310`; 10 README D12:170 ✅ |
 | K8 | `legal_documents(kind tos/privacy/content_policy, version, locale, effective_at, content_url)` is **S only**; `reports(reporter_email, target_type, target_id, reason, status, resolved_at)`; `user_consents.document` = `tos`/`privacy` | `00-overview.md` §6:323, :324, :274 ✅ |
 | CR-7 | `legal_documents` gains `published_by uuid`, `checksum text` (sha256 of the served file); `user_consents.document` → `tos`/`privacy`/`age_18`; `reports` gains `created_at`, `ip_hash`, `handled_by`, `resolution_note` + index `(status, created_at)` | `../README.md` §B4 ✅ |
