@@ -122,6 +122,6 @@ Exit codes: 0 ok / 1 check failed (the rule name is printed) / 2 usage error.
 
 ## 9. Owner review
 
-Owner review of the texts (task step 6, 15 min, before 03.3.2-T1 spends money): **[OPEN]** —
-no sign-off recorded yet (opened 2026-09-26). Until then the M0 runs use the strings in §7; the
-rollback is the temporary neutral template of 01.
+Owner review of the texts (task step 6, 15 min, before 03.3.2-T1 spends money): **approved
+2026-09-28** by the owner — all 7 v1 texts unchanged (opened 2026-09-26). The M0 runs use the
+strings in §7; the rollback is the temporary neutral template of 01.
