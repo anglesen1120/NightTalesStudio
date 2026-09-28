@@ -1,0 +1,81 @@
+cell_id,letter,rating_1_5,text_visible,face_realistic,gore,off_prompt,note,rater_id
+k01-landscape,A,4,0,0,0,0,"AI: Single bulb, deep corridor, and distant silhouettes match well; dark foreground loses some ink-wash detail.",ai-2
+k01-landscape,B,5,0,0,0,0,"AI: Strong wide corridor composition with one bulb, distant silhouettes, moonlight, and convincing aged-paper ink texture.",ai-2
+k01-landscape,C,5,0,0,0,0,AI: Eerie corridor and single bulb fit the scene; moonlit opening and small silhouettes support the requested style.,ai-2
+k01-landscape,D,4,0,0,0,0,AI: Single bulb and distant figures are clear; broad pale wall makes the composition slightly less shadowy.,ai-2
+k01-portrait,A,5,0,0,0,0,"AI: Single bulb lights a shadowy corridor; distant silhouettes, moonlight, and ink-wash textures fit the template closely.",ai-2
+k01-portrait,B,4,0,0,0,0,"AI: Strong ink-wash atmosphere and lone bulb, though the open-sided corridor feels less enclosed.",ai-2
+k01-portrait,C,5,0,0,0,0,"AI: Dim corridor, lone bulb, distant silhouettes, and muted indigo shadows closely match the scene and style.",ai-2
+k01-portrait,D,4,0,0,0,0,AI: Clear corridor and lone bulb with eerie shadows; warmer brown tones fit the indigo-grey palette less closely.,ai-2
+k02-landscape,A,5,0,0,0,0,"AI: Empty rocking chair beside a large window; dusk light, dense outdoor fog, and restrained teal-grey tones fit the scene.",ai-2
+k02-landscape,B,4,0,0,0,0,"AI: Chair and window are clear, with strong fog and low-key lighting; dusk is less distinct behind the haze.",ai-2
+k02-landscape,C,4,0,0,0,0,AI: Rocking chair sits by a dusk-lit window in a foggy room; the hallway silhouette slightly draws focus away.,ai-2
+k02-landscape,D,5,0,0,0,0,"AI: Empty chair anchors a wide, fog-filled window scene; muted dusk light and distant blurred silhouettes reinforce the quiet tension.",ai-2
+k02-portrait,A,5,0,0,0,0,"AI: Empty rocking chair beside a dusk-lit window; fog, teal-grey tones, and distant blurred silhouette fit the cinematic mood.",ai-2
+k02-portrait,B,5,0,0,0,0,"AI: Clear empty rocking chair by a dusk window, with layered fog, subdued color, and a distant blurred figure.",ai-2
+k02-portrait,C,4,0,0,0,0,"AI: Wide, atmospheric composition with a rocking chair and dusk window; the chair sits farther from the window than requested.",ai-2
+k02-portrait,D,4,0,0,0,0,"AI: Rocking chair, window, and dense fog are clear; the exterior reads more like overcast daylight than dusk.",ai-2
+k03-landscape,A,5,0,0,0,0,"AI: Fogged mirror and handprint are clear; faded sepia, grain, light leak, and still bathroom setting fit well.",ai-2
+k03-landscape,B,4,0,0,0,0,"AI: Vintage bathroom and fogged mirror fit, though the handprint is small and less prominent.",ai-2
+k03-landscape,C,5,0,0,0,0,"AI: Prominent handprint, distant blurred figure, and worn sepia finish strongly match the scene and style.",ai-2
+k03-landscape,D,5,0,0,0,0,"AI: Central handprint, distant blurred figure, heavy grain, and light leak create an effective vintage bathroom scene.",ai-2
+k03-portrait,A,4,0,0,0,0,"AI: Fogged bathroom mirror and visible handprint; vintage sepia treatment works, though the print is faint and slightly indistinct.",ai-2
+k03-portrait,B,5,0,0,0,0,"AI: Clear handprint on a misted bathroom mirror, with convincing faded sepia tones, grain, light leak, and still composition.",ai-2
+k03-portrait,C,4,0,0,0,0,"AI: Strong bathroom setting and aged snapshot look; the handprint reads clearly, though its fingers appear uneven.",ai-2
+k03-portrait,D,5,0,0,0,0,AI: Prominent handprint on a fogged mirror; the distant blurred figure adds unease while fitting the vintage sepia style.,ai-2
+k04-landscape,A,5,0,0,0,0,"AI: Single warm window anchors a dark apartment block; rain, moonlight, ink texture, and distant silhouettes fit the scene.",ai-2
+k04-landscape,B,5,0,0,0,0,"AI: Rainy apartment block with one prominent lit window; muted ink tones and small distant figures create a quiet, eerie mood.",ai-2
+k04-landscape,C,4,0,0,0,0,"AI: Lit window and rain are clear, but the dense old-town skyline draws attention from the apartment block.",ai-2
+k04-landscape,D,5,0,0,0,0,AI: One glowing apartment window stands out over a rainy street; streetlamps add light but do not obscure the main subject.,ai-2
+k04-portrait,A,4,0,0,0,0,AI: Single glowing window and distant silhouette fit the eerie ink style; rain is subtle.,ai-2
+k04-portrait,B,5,0,0,0,0,"AI: Clear rain, one lit window, deep shadows and a strong wide ink-wash composition.",ai-2
+k04-portrait,C,5,0,0,0,0,AI: Rain and the lone lit window read clearly; distant figures and textured paper support the style.,ai-2
+k04-portrait,D,4,0,0,0,0,AI: Moody rainy apartment block with one lit window; several streetlights slightly weaken the single-light focus.,ai-2
+k05-landscape,A,4,0,0,0,0,AI: Roadside shrine and lantern fit well; incense smoke is faint against the misty dawn landscape.,ai-2
+k05-landscape,B,4,0,0,0,0,"AI: Shrine, smoke, distant figures, and warm lantern are clear; composition is slightly more detailed than the loose style requested.",ai-2
+k05-landscape,C,5,0,0,0,0,"AI: Clear curling incense smoke beside a small shrine; violet-blue washes, lantern glow, and distant figures suit the scene.",ai-2
+k05-landscape,D,5,0,0,0,0,"AI: Incense sticks and smoke are prominent; the quiet dawn, soft watercolor edges, and warm lantern closely match the brief.",ai-2
+k05-portrait,A,5,0,0,0,0,"AI: Roadside shrine, incense smoke, lantern, and dawn horizon are clear; deep violet washes and distant silhouettes fit the style.",ai-2
+k05-portrait,B,5,0,0,0,0,AI: Clear shrine and curling incense smoke beside a road; warm lantern and violet dawn landscape create a calm watercolor scene.,ai-2
+k05-portrait,C,4,0,0,0,0,"AI: Shrine, smoke, and lantern read clearly, but the nearer walking figures draw some attention from the small shrine.",ai-2
+k05-portrait,D,5,0,0,0,0,"AI: Strong roadside shrine composition with visible incense smoke, a warm lantern, and soft blue-violet dawn washes.",ai-2
+k06-landscape,A,5,0,0,0,0,"AI: Fruit, incense, candles, and a lit lamp clearly establish the altar; hands-only framing and warm haze fit the mood.",ai-2
+k06-landscape,B,4,0,0,0,0,AI: Clear fruit offering and lamp with reverent hands; background silhouettes make the otherwise intimate framing slightly busy.,ai-2
+k06-landscape,C,5,0,0,0,0,"AI: Quiet, close altar scene with fruit, glowing lamp, incense, and hands; deep reds and soft shadows suit the template.",ai-2
+k06-landscape,D,4,0,0,0,0,"AI: Strong candlelit altar and fruit offering, with incense haze and hands; foreground fruit and background silhouette slightly crowd the composition.",ai-2
+k06-portrait,A,5,0,0,0,0,"AI: Fruit, incense, ancestor portraits, and a glowing lamp form a quiet altar; praying hands and warm shadows fit the style.",ai-2
+k06-portrait,B,4,0,0,0,0,"AI: Clear family altar with fruit, incense, and flame; the large blurred foreground slightly distracts from the otherwise reverent composition.",ai-2
+k06-portrait,C,5,0,0,0,0,"AI: Hands place fruit before ancestor portraits, incense, candles, and a lit lamp; warm haze and close framing suit the scene.",ai-2
+k06-portrait,D,5,0,0,0,0,"AI: Fruit offerings, ancestor portraits, incense, and a lit lamp read clearly; praying hands, amber light, and shadows create a reverent mood.",ai-2
+k07-landscape,A,5,0,0,0,0,"AI: Clear drifting lantern, riverbank, distant silhouettes, and rich blue-violet watercolor washes; warm glow anchors the scene.",ai-2
+k07-landscape,B,4,0,0,0,0,"AI: Calm nocturnal riverbank and loose watercolor texture fit well, though the lantern is quite small and its glow subdued.",ai-2
+k07-landscape,C,5,0,0,0,0,"AI: Prominent drifting lantern and reflection, simple distant figures, and soft blue-violet washes make a strong scene.",ai-2
+k07-landscape,D,4,0,0,0,0,AI: Atmospheric watercolor riverbank with a drifting lantern and warm reflection; the lantern is somewhat small in the composition.,ai-2
+k07-portrait,A,5,0,0,0,0,AI: Paper lantern drifts beside a rocky riverbank; violet-blue watercolor washes and warm reflection create a calm night scene.,ai-2
+k07-portrait,B,5,0,0,0,0,"AI: Clear floating lantern and riverbank, with soft watercolor texture, distant silhouettes, and a strong warm reflection.",ai-2
+k07-portrait,C,5,0,0,0,0,AI: Lantern floats near the bank beneath a moonlit violet sky; distant figures remain small and indistinct.,ai-2
+k07-portrait,D,5,0,0,0,0,AI: Quiet riverbank and drifting lantern fit the scene; loose dark washes and restrained glow support the mysterious mood.,ai-2
+k08-landscape,A,5,0,0,0,0,"AI: Wet rural road, lone streetlight, deep shadows, and rough charcoal hatching match the scene and style.",ai-2
+k08-landscape,B,5,0,0,0,0,"AI: Clear rain-slick road and single lamp; strong monochrome hatching and empty, restrained composition.",ai-2
+k08-landscape,C,4,0,0,0,0,"AI: Strong wet-road reflections and charcoal texture, but the visible moon weakens the single-light-source effect.",ai-2
+k08-landscape,D,5,0,0,0,0,"AI: Lone lamp lights a wet, winding rural road; dark hatching and empty landscape suit the noir mood.",ai-2
+k08-portrait,A,5,0,0,0,0,AI: Single streetlight illuminates a wet rural road; rough charcoal texture and deep shadows fit the template.,ai-2
+k08-portrait,B,5,0,0,0,0,"AI: Empty winding road, wet reflections, and one streetlight; strong monochrome hatching and restrained composition.",ai-2
+k08-portrait,C,4,0,0,0,0,"AI: Wet rural road and single prominent streetlight match well, though the bright foreground reflection draws attention from the road.",ai-2
+k08-portrait,D,5,0,0,0,0,AI: Clear empty rural road with puddles beneath one streetlight; charcoal hatching and stark shadows suit the scene.,ai-2
+k09-landscape,A,3,0,0,0,0,"AI: Clear folder, glasses, and lit lamp; warm, dimensional rendering departs from flat, desaturated editorial style.",ai-2
+k09-landscape,B,3,0,0,0,0,"AI: All key objects are visible, but the busy background and realistic lighting weaken the simple, flat case-file look.",ai-2
+k09-landscape,C,3,0,0,0,0,AI: Strong case-file details and clear glasses under the lamp; crowded foreground and deep shading depart from the template.,ai-2
+k09-landscape,D,3,0,0,0,0,"AI: Clean desk composition with folder, glasses, and lamp; warm, dimensional treatment is less flat and desaturated than requested.",ai-2
+k09-portrait,A,4,0,0,0,0,"AI: Folder, glasses, and lamp are clear; detailed shading and warm light depart slightly from the flat, even-daylight style.",ai-2
+k09-portrait,B,4,0,0,0,0,AI: Strong case-file composition with folder and glasses under a lamp; somewhat darker and more painterly than the template.,ai-2
+k09-portrait,C,4,0,0,0,0,"AI: Clear folder, glasses, and lamp; muted paper texture fits, though the shadows are heavier than the requested even daylight.",ai-2
+k09-portrait,D,4,0,0,0,0,"AI: Clean, readable desk arrangement with folder, glasses, and lamp; warm directional lighting and detailed rendering slightly weaken the style match.",ai-2
+k10-landscape,A,5,0,0,0,0,"AI: Empty interview room with metal table, two chairs, overhead fluorescent light, and deep charcoal shadows.",ai-2
+k10-landscape,B,5,0,0,0,0,AI: Metal table and two chairs under a stark fluorescent light; small tabletop objects do not distract.,ai-2
+k10-landscape,C,5,0,0,0,0,"AI: Spare, balanced composition clearly shows two chairs facing a metal table beneath one fluorescent light.",ai-2
+k10-landscape,D,5,0,0,0,0,"AI: Empty room, metal table, two chairs, and harsh overhead light match the charcoal noir style.",ai-2
+k10-portrait,A,5,0,0,0,0,"AI: Metal table, two chairs, and overhead fluorescent light are clear; rough charcoal hatching and hard shadows fit the template.",ai-2
+k10-portrait,B,5,0,0,0,0,AI: Strong interview-room composition with two chairs and fluorescent light; cup and folder add detail without disrupting the empty-room mood.,ai-2
+k10-portrait,C,4,0,0,0,0,"AI: Matches the room and charcoal style, though the far chair is partly obscured and the lighting feels slightly softer.",ai-2
+k10-portrait,D,5,0,0,0,0,AI: Clear metal table and two chairs beneath a fluorescent fixture; stark shadows and rough monochrome texture suit the scene.,ai-2

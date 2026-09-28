@@ -1,0 +1,38 @@
+{
+  "k05-landscape": {
+    "C": "low",
+    "D": "medium",
+    "A": "high",
+    "B": "auto"
+  },
+  "k05-portrait": {
+    "B": "low",
+    "C": "medium",
+    "D": "high",
+    "A": "auto"
+  },
+  "k09-landscape": {
+    "D": "low",
+    "A": "medium",
+    "C": "high",
+    "B": "auto"
+  },
+  "k09-portrait": {
+    "B": "low",
+    "A": "medium",
+    "D": "high",
+    "C": "auto"
+  },
+  "k10-landscape": {
+    "C": "low",
+    "B": "medium",
+    "A": "high",
+    "D": "auto"
+  },
+  "k10-portrait": {
+    "A": "low",
+    "D": "medium",
+    "C": "high",
+    "B": "auto"
+  }
+}

@@ -49,7 +49,7 @@
       "topicHint": "true_crime",
       "active": true,
       "previewStorageKey": null,
-      "template": "Muted editorial illustration of {term}, like a page from an old case file. Flat desaturated colours, paper texture, simple clean shapes, even daylight, places and objects only, no faces, no identifiable people, calm and serious mood."
+      "template": "Flat 2D editorial illustration of {term}, printed like a page in an old police case file. Muted grey-beige palette, cool neutral light, no warm glow, no lamps lit, visible paper grain, thin ink outlines and flat colour fills, no 3D rendering, no photographic detail, places and objects only, no faces, no identifiable people, calm and serious mood."
     }
   ]
 }

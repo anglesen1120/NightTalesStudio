@@ -41,7 +41,7 @@ No production table. Tracked artefacts (all under `trial/images/`):
 
 | File | Written by | Content |
 |---|---|---|
-| `contact-sheet-results.csv` | 03.3.2-T1 tool | one row per call: `cell_id, keyword_id, template, aspect, quality_requested, quality_echoed, size, http_status, error_code, text_tokens, image_tokens, output_tokens, cost_usd, latency_ms` |
+| `contact-sheet-results.csv` | 03.3.2-T1 tool | one row per call: `cell_id, keyword_id, template, aspect, quality_requested, quality_echoed, size, http_status, error_code, text_tokens, image_tokens, output_tokens, cost_usd, latency_ms, size_actual, note` (16 columns; `size_actual` = the measured pixel size of the saved image, `note` = `;`-joined markers such as `portrait_hint`, `usage_absent`, `format_<fmt>`) |
 | `contact-sheet-ratings.csv` | owner | `cell_id, letter, rating_1_5, text_visible, face_realistic, gore, off_prompt, note` |
 | `contact-sheet-key.json` | tool | letter ↔ quality per keyword (opened only after rating) |
 | `tokens-per-image.csv` | 03.3.1-T1 report script | `aspect, quality_echoed, source (render|contact), n, mean, p50, p95, max, cost_mean_usd` |
