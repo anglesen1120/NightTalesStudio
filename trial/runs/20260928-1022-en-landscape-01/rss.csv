@@ -1,0 +1,9 @@
+scope,start_utc,end_utc,samples,vieneu_peak_mb,proxy_peak_mb,mpt_peak_mb,webui_peak_mb,total_peak_mb,swap_start_mb,swap_peak_mb,pressure_max,free_pct_min,mpt_nproc_max,sample_ms_p95
+all,2026-09-28T03:22:18Z,2026-09-28T03:28:13Z,336,1585.1,66.5,2427.1,0.0,3840.2,0.0,0.0,normal,66,6,64
+stage:script,2026-09-28T03:22:18Z,2026-09-28T03:22:18Z,0,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA,NA
+stage:terms,2026-09-28T03:22:18Z,2026-09-28T03:22:36Z,16,1479.9,51.9,135.8,0.0,1667.6,0.0,0.0,normal,81,1,77
+stage:audio,2026-09-28T03:22:36Z,2026-09-28T03:22:41Z,5,1585.1,66.5,136.6,0.0,1788.2,0.0,0.0,normal,82,1,57
+stage:subtitle,2026-09-28T03:22:41Z,2026-09-28T03:23:19Z,36,1585.1,66.5,2277.1,0.0,3754.5,0.0,0.0,normal,75,2,69
+stage:materials,2026-09-28T03:23:19Z,2026-09-28T03:27:05Z,213,1435.2,42.7,2275.9,0.0,3753.3,0.0,0.0,normal,71,3,67
+stage:combine,2026-09-28T03:27:05Z,2026-09-28T03:27:44Z,38,1435.2,42.7,2365.9,0.0,3840.2,0.0,0.0,normal,66,4,49
+stage:final,2026-09-28T03:27:44Z,2026-09-28T03:28:13Z,28,1109.5,42.0,2427.1,0.0,3578.7,0.0,0.0,normal,69,6,50
