@@ -73,7 +73,7 @@
 - Given a code not in the catalogue, When returned, Then an architecture/unit test fails (the catalogue is a closed `static class ErrorCodes` + mapping table).
 
 **09.1.5 CI pipeline** — *As the team I want CI on every PR so that main is always releasable.* Must · S
-- Given a PR, When CI runs, Then restore, build, unit, architecture, integration (Testcontainers PostgreSQL) tests and `dotnet format --verify-no-changes` pass; an OpenAPI document artifact is produced.
+- Given a PR, When CI runs, Then restore, build, unit, architecture, integration (real PostgreSQL 17 via `PostgresFixture`, `NTS_TEST_PG` — 09 W3 CR-35) tests and `dotnet format --verify-no-changes` pass; an OpenAPI document artifact is produced.
 
 ### Epic 09.2 — Persistence
 
@@ -503,14 +503,14 @@ Every base URL: always block loopback, link-local/metadata, `0.0.0.0/8` and IPv4
 | Task ID | Task | Area | Size | Depends on |
 |---|---|---|---|---|
 | 09.1.1-T1 | Create solution, projects, references, Directory.Build/Packages.props | BE | S | — |
-| 09.1.1-T2 | Docker Compose with PostgreSQL only; 11.1.1-T1 extends it (09 CR-6) | BE | XS | 09.1.1-T1 |
+| 09.1.1-T2 | Native dev database (Homebrew `postgresql@17` + idempotent `tools/dev/db-init.sh`); optional compose `postgres` service; 11.1.1-T1 extends the compose file (09 CR-6, 09 W3 CR-35) | BE | XS | 09.1.1-T1 |
 | 09.1.2-T1 | Architecture tests (layers, package allow-lists, naming, sealed handlers, Hangfire confinement, `[OutboxEvent]`, ids-only jobs) (09 CR-8) | BE | M | 09.1.1 |
 | 09.1.3-T1 | Mediator setup + Logging/Validation behaviours | BE | S | 09.1.1 |
 | 09.1.3-T2 | Authorization + UnitOfWork (explicit transaction) + Idempotency (in-transaction) behaviours, `concurrency_conflict`, key cleanup (09 CR-2, CR-8) | BE | M | 09.2.1, 09.2.2-T2 |
 | 09.1.4-T1 | ErrorOr → ProblemDetails mapper + tests | BE | S | 09.1.3 |
 | 09.1.5-T1 | CI workflow (build, tests, format, OpenAPI artifact) | Ops | S | 09.1.2 |
 | 09.2.1-T1 | AppDbContext + ReadDbContext + naming + xmin | BE | M | 09.1.1 |
-| 09.2.1-T2 | Integration-test harness: Testcontainers template DB, `ApiFactory`, `TestAuthHandler`, `WorkerHost`, `FakeClock` (09 CR-8) | BE | S | 09.2.1-T1 |
+| 09.2.1-T2 | Integration-test harness: `PostgresFixture` template DB (`NTS_TEST_PG`; 09 W3 CR-35), `ApiFactory`, `TestAuthHandler`, `WorkerHost`, `FakeClock` (09 CR-8) | BE | S | 09.2.1-T1 |
 | 09.2.2-T1 | Entity configurations for the P core set (09 CR-5; other tables by their owners) | BE | L | 09.2.1 |
 | 09.2.2-T2 | Initial migration + migration CI check (empty DB + previous schema) | BE | M | 09.2.2-T1 |
 | 09.2.3-T1 | Denormalized `user_id` on child tables + tenant query filters + `SystemContext(userId)` for outbox jobs | BE | M | 09.2.2 |
@@ -577,7 +577,7 @@ Every base URL: always block loopback, link-local/metadata, `0.0.0.0/8` and IPv4
 - **Domain unit tests:** every allowed and forbidden transition of `Episode`, `RenderJob`, `Publication`; value object validation.
 - **Application unit tests:** each handler with in-memory fakes of ports (not EF InMemory); pipeline behaviour order; idempotency replay returns stored response.
 - **Architecture tests:** 09.1.2; every entity with an `episode_id`/`series_id` FK implements `IUserOwned`; `IgnoreQueryFilters` only in `Features/Admin` and allow-listed system jobs; Hangfire types only in Infrastructure/composition roots; job methods take ids only (09.2.3, 09.2.6).
-- **Integration tests (WebApplicationFactory + Testcontainers PostgreSQL):** auth flows incl. refresh reuse; cross-tenant 404 for every `{id}` route in a table **generated from `openapi.json`** (a new route missing from the table fails the build); an outbox job for user A under `SystemContext(A)` cannot read B's rows and a payload without `userId` fails the job; user A never sees B's activity or `internal` rows; a rolled-back command leaves no activity row; ETag conflict; outbox at-least-once with a crash simulation; render flow against mock-mpt incl. failure injection; `image_moderated`/`story_moderated` are never auto-retried; `render_jobs.params` and Hangfire args contain no script or terms; notification from the Worker reaches a hub client connected to the other of two Api instances (LISTEN/NOTIFY).
+- **Integration tests (`WebApplicationFactory` + real PostgreSQL 17 on `NTS_TEST_PG` via `PostgresFixture`; 09 W3 CR-35):** auth flows incl. refresh reuse; cross-tenant 404 for every `{id}` route in a table **generated from `openapi.json`** (a new route missing from the table fails the build); an outbox job for user A under `SystemContext(A)` cannot read B's rows and a payload without `userId` fails the job; user A never sees B's activity or `internal` rows; a rolled-back command leaves no activity row; ETag conflict; outbox at-least-once with a crash simulation; render flow against mock-mpt incl. failure injection; `image_moderated`/`story_moderated` are never auto-retried; `render_jobs.params` and Hangfire args contain no script or terms; notification from the Worker reaches a hub client connected to the other of two Api instances (LISTEN/NOTIFY).
 - **Load test (k6 ⚠️ license check):** episode list/detail at 50 RPS, p95 < 300 ms.
 - **Auth security:** 3 failures from one IP → `captcha_required` while the same account still signs in from another device; breached password → 400; register with an existing e-mail is indistinguishable from a new one; reset and verify tokens are single-use and expire (60 min / 24 h); a successful reset revokes every refresh family.
 - **Revocation window:** after suspend, role change, MFA reset or password reset, the old access token is rejected on **every** authenticated route (incl. `/me/*`, `/auth/reauth`, `/hubs/ticket`, `/channels/*`) within ≤ 30 s (immediately on the instance that processed `UserSecurityChanged`) with 401 `session_revoked`, and the user's SignalR connections are aborted; a password change or recovery-code use makes other refresh families fail; a role change keeps them; admin access tokens expire after 5 min.

@@ -42,7 +42,7 @@ Wave 2 (**P**) platform slice of epic 09.9: the feature-flag **read** service, t
 | BD13 | `IFeatureFlags.IsEnabledAsync(string key, ct)`, cache 30 s, `FeatureFlagsChanged` evicts; `RequireFeature("youtube_publish")` → 404 `feature_disabled`; `nts-worker flags set <key> on|off` + audit (`support`, `internal`) |
 | BD16 | No secret/token/e-mail/IP in logs; health endpoints read caches only; no N+1; bounded work |
 | D11 | `outbox_lag_seconds` and `outbox_dead_letters_total` belong to the outbox dispatcher; `trace_parent` is copied onto every outbox row |
-| D13 | Harness: `ApiFactory`, `TestAuthHandler`, `WorkerHost`, `InlineJobScheduler`, `FakeClock`, `PostgresFixture` (Testcontainers `postgres:17-alpine`); no mocking library — hand-written fakes |
+| D13 | Harness: `ApiFactory`, `TestAuthHandler`, `WorkerHost`, `InlineJobScheduler`, `FakeClock`, `PostgresFixture` (real PostgreSQL 17 on `NTS_TEST_PG`; 09 W3 CR-35); no mocking library — hand-written fakes |
 | D14 | The OpenAPI document is generated at build to `src/NightTales.Api/openapi.json`; `09.9.5` owns the contract diff |
 | N12 | `Serilog.AspNetCore` **10.0.0** is already in the `NightTales.Api` package list — `09.9.3-T1` adds sinks/formatters and the OTel packages, it does not re-add Serilog |
 | 00 §6:306 | `feature_flags(key, enabled, rules jsonb)` — created by the `09.2.2` `InitialCore` migration, seeded by `09.2.5-T1` |

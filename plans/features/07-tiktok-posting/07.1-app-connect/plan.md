@@ -125,7 +125,7 @@ The connection id (UUIDv7) is generated **before** `ITokenProtector.Protect(id.T
 
 ## 9. Test plan
 
-Projects: **NightTales.Domain.UnitTests**, **NightTales.Application.UnitTests**, **NightTales.Api.IntegrationTests** (Testcontainers PostgreSQL), **NightTales.Architecture.Tests**; hand-written fakes from **NightTales.TestKit** only (`FakeTikTokServer` per D17: token with rotating refresh + invalid code + an unknown body, revoke ok/500, creator_info option sets, per-endpoint counters; plus `FakeClock`, `TestAuthHandler`, `ApiFactory`, `InlineJobScheduler`, `RecordingEmailSender`, `RecordingIncidentStore`).
+Projects: **NightTales.Domain.UnitTests**, **NightTales.Application.UnitTests**, **NightTales.Api.IntegrationTests** (real PostgreSQL 17, `PostgresFixture`), **NightTales.Architecture.Tests**; hand-written fakes from **NightTales.TestKit** only (`FakeTikTokServer` per D17: token with rotating refresh + invalid code + an unknown body, revoke ok/500, creator_info option sets, per-endpoint counters; plus `FakeClock`, `TestAuthHandler`, `ApiFactory`, `InlineJobScheduler`, `RecordingEmailSender`, `RecordingIncidentStore`).
 
 | # | Test (project) | Assertion |
 |---|---|---|

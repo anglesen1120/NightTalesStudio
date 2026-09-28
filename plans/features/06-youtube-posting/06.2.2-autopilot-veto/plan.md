@@ -53,7 +53,7 @@
 | F-17 | Veto window copy/keys owned by 10.4.3-T2 (`autopilot.veto.title\|empty\|timeLeft\|edit\|cancel\|approveNow…`); e-mail templates by 10.7.2 | ✅ 10.4.3-T2:70; `../README.md` §8.1 06.5.1-T1 row (depends on 10.7.2-T1) |
 | F-21 | **[peer-pinned, twice-corrected]** `platform_payload.preAudit`/`requestedPrivacy` are written once, at **create** time; `publications.privacy` is already the enforced `"private"` from create for a pre-audit row, and — **retracted 2026-09-25, this is a *permanent* freeze, not a provisional one**: `privacy` never gets corrected back even after `AuditStatus` flips to `approved` (only the *next* autopilot run, created after the flip, goes public; D12, `02.8.3-T3:156`). A `preAudit`-locked row sits in the PATCH-editable states (`awaiting_consent`/`scheduled`) for its entire pre-upload life. **Ownership settled by YR20 (2026-09-25, closes O-14):** 06.2.1-T1 is the sole writer of both keys, at create time; 06.2.4-T1's earlier "seeded the first time this planner runs" claim is superseded. This task still writes neither key | ✅ peer messages 2026-09-25; 06 README D12; `02.8.3-T3:156` |
 | F-22 | Job bodies live in Application (`src/NightTales.Application/Features/<Area>/Jobs/<Job>.cs`), registration in the Worker (`src/NightTales.Worker/RecurringJobs/<Job>Registration.cs`) through `IJobScheduler.AddOrUpdateRecurring`, and queue/retry policy comes from the Application attribute `[JobPolicy(Queue = JobQueue.…, Retries = n)]` translated by Infrastructure's `JobPolicyFilterProvider` — no Hangfire attribute on a job class | ✅ 02.8.3-T1:93, :98, :153, :156; `features/09-backend-api/README.md:284` |
-| F-18 | Test projects are pinned: `NightTales.Domain.UnitTests`, `NightTales.Application.UnitTests`, `NightTales.Api.IntegrationTests` (Testcontainers PostgreSQL), `NightTales.Architecture.Tests`, fakes in `NightTales.TestKit`, no mocking library | ✅ `features/09-backend-api/README.md:121` (D2) |
+| F-18 | Test projects are pinned: `NightTales.Domain.UnitTests`, `NightTales.Application.UnitTests`, `NightTales.Api.IntegrationTests` (real PostgreSQL 17, `PostgresFixture`), `NightTales.Architecture.Tests`, fakes in `NightTales.TestKit`, no mocking library | ✅ `features/09-backend-api/README.md:121` (D2) |
 | F-19 | Error codes available today: `publication_consent_required` (409), `if_match_required` (428), `concurrency_conflict` (409), `feature_disabled` (404), `channel_reauth_required`; `validation_failed` with an `errors` map keyed by field | ✅ `plans/09-backend-api.md:419`, `:390`, `:401`; `features/09-backend-api/README.md:191,200`; 02.8.3-T2:79 (`errors["textHash"]`) |
 
 ## 3. Domain and data
@@ -347,7 +347,7 @@ Approval link: `AuthLinks.PublicationApprove(Uri origin, Guid publicationId, Gui
 
 ## 9. Test plan
 
-Projects (F-18): `tests/NightTales.Domain.UnitTests`, `tests/NightTales.Application.UnitTests`, `tests/NightTales.Api.IntegrationTests`, `tests/NightTales.Architecture.Tests`; fakes/fixtures in `tests/NightTales.TestKit`. xunit.v3 + Shouldly, integration on real PostgreSQL via Testcontainers, `FakeClock` for every time-dependent rule, `FakeGoogleServer` where Google is involved (not in this folder: the job makes no Google call). **No mocking library.**
+Projects (F-18): `tests/NightTales.Domain.UnitTests`, `tests/NightTales.Application.UnitTests`, `tests/NightTales.Api.IntegrationTests`, `tests/NightTales.Architecture.Tests`; fakes/fixtures in `tests/NightTales.TestKit`. xunit.v3 + Shouldly, integration on real PostgreSQL 17 via `PostgresFixture`, `FakeClock` for every time-dependent rule, `FakeGoogleServer` where Google is involved (not in this folder: the job makes no Google call). **No mocking library.**
 
 | Layer | Area | Cases (ids referenced by the task files) |
 |---|---|---|
@@ -359,7 +359,7 @@ Projects (F-18): `tests/NightTales.Domain.UnitTests`, `tests/NightTales.Applicat
 | Architecture.Tests | layering | Domain free of EF/HTTP; no Infrastructure type referenced from Application; the job only through `ISender` |
 | Manual (staging, 06-publish gate) | — | an autopilot publication reaches `scheduled` after the window; a PATCH inside the window persists and consents; the approve link from a real mail client lands on the row and consents |
 
-Determinism: the PT-day/DST rules of 06.3.1-T1 are out of scope here; every test pins `now` with `FakeClock`. Integration tests isolate one schema per test class through Testcontainers, and no test depends on wall-clock minutes (the job is invoked directly, never via its cron).
+Determinism: the PT-day/DST rules of 06.3.1-T1 are out of scope here; every test pins `now` with `FakeClock`. Integration tests isolate one schema per test class through `PostgresFixture`, and no test depends on wall-clock minutes (the job is invoked directly, never via its cron).
 
 ## 10. Tasks and re-estimate
 

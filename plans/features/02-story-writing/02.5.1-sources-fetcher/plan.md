@@ -232,7 +232,7 @@ All of `FetcherOptions` is validated with `ValidateOnStart()`: a bad blocked-dom
 
 ### 5.2 Internal routes (Api `:8081`, bearer `FETCHER_API_TOKEN`, **not** in the public OpenAPI, no user JWT)
 
-Separate Kestrel endpoint (`ListenAnyIP(8081)`), a dedicated `FetcherTokenAuthenticationHandler`, constant-time comparison (`CryptographicOperations.FixedTimeEquals`), its own rate limiter (60 req/min per fetcher instance id), and a separate endpoint group that is never registered on the public listener. Missing/incorrect token → 401 with no body detail (never echo the token, never log it — D19).
+Separate Kestrel endpoint (port 8081 on `Fetcher:Internal:ListenAddress`, default `127.0.0.1`, `0.0.0.0` only in containers, 11 CR-16), a dedicated `FetcherTokenAuthenticationHandler`, constant-time comparison (`CryptographicOperations.FixedTimeEquals`), its own rate limiter (60 req/min per fetcher instance id), and a separate endpoint group that is never registered on the public listener. Missing/incorrect token → 401 with no body detail (never echo the token, never log it — D19).
 
 ```jsonc
 // POST /internal/fetcher/v1/tasks/lease      { "workerId": "fetcher-1", "max": 4 }
@@ -380,7 +380,7 @@ Privacy summary (D19): stored per source — normalised URL, registrable domain,
 - `StorySourceTests`: create/retry/state transitions, `CreateNote_WithUrl_Fails`, `MarkFetched_WithoutSha256_Fails`
 - `AddSourceHandlerTests`: `Add_BlockedDomain_ReturnsSourceDomainNotAllowed` · `Add_EleventhSource_ReturnsSourceLimitReached` · `Add_ThirtyFirstUrlSourceIn24h_Returns429` · `Add_DuplicateNormalisedUrl_Returns409` · `Add_NoteSource_DoesNotCreateFetchTask` · `Add_WhileStoryApproved_ReturnsEpisodeInvalidState` · `Add_CreatesSourceAndTaskInOneTransaction`
 
-**Integration (`tests/NightTales.Api.IntegrationTests/Features/Research/`, Testcontainers PostgreSQL + in-process Kestrel)**
+**Integration (`tests/NightTales.Api.IntegrationTests/Features/Research/`, real PostgreSQL 17 (`PostgresFixture`) + in-process Kestrel)**
 - `AddSource_ThenFetch_EndToEnd`: add → lease → post a result → `GET sources` shows `fetched` with `contentSha256`/`textChars` and the object exists under `research/{userId}/{episodeId}/{sourceId}/{sha256}.txt`
 - `Lease_RespectsPlatformCapOfFour` · `Lease_SecondTaskSameRegistrableDomain_NotLeased` · `Lease_EmptyQueue_ReturnsEmptyArray`
 - `Heartbeat_ExtendsLease_AndOnlyOwnWorker` · `Heartbeat_AfterExpiry_Returns409FetchLeaseLost`

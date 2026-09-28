@@ -148,7 +148,7 @@ i18n (D18 ✅): `billing.packages.*`, `billing.promo.*`, `billing.history.*`, `b
 
 ## 9. Test plan
 
-Projects: `NightTales.Domain.UnitTests` (pure guards), `NightTales.Application.UnitTests` (handlers with `NightTales.TestKit` fakes — **no mocking library** ✅), `NightTales.Api.IntegrationTests` (Testcontainers PostgreSQL 17 + `FakeClock`), `NightTales.Architecture.Tests`. The names below are the exact ones in the four task files (`## Tests`); a rename must be applied in both places.
+Projects: `NightTales.Domain.UnitTests` (pure guards), `NightTales.Application.UnitTests` (handlers with `NightTales.TestKit` fakes — **no mocking library** ✅), `NightTales.Api.IntegrationTests` (real PostgreSQL 17, `PostgresFixture` + `FakeClock`), `NightTales.Architecture.Tests`. The names below are the exact ones in the four task files (`## Tests`); a rename must be applied in both places.
 
 - **12.7.1-T1 — `NightTales.Domain.UnitTests`.** `CreditPackage_RejectsBonusAboveCredits`, `CreditPackage_RejectsZeroCredits`, `CreditPackage_RejectsInvalidCodeShape`.
 - **12.7.1-T1 — `NightTales.Application.UnitTests`.** `UpsertPackage_BelowFloor_ReturnsPackageBelowCost`, `UpsertPackage_ExactlyAtFloor_Succeeds`, `UpsertPackage_BonusCreditsCountTowardFloor`, `UpsertPackage_PatchWithStaleRowVersion_Returns412`, `UpsertPackage_WritesAuditLogWithChangedColumnsOnly`, `GetPackages_ReturnsOnlyActive_SortedBySortOrder`, `GetPackages_FlagOff_StillSucceeds`.

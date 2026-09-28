@@ -472,7 +472,7 @@ flowchart LR
 
 ```mermaid
 flowchart LR
-  PR["Pull request (no secrets)"] --> CI["Build + tests: .NET (Testcontainers), Angular lint/test/build, e2e with mock-mpt"]
+  PR["Pull request (no secrets)"] --> CI["Build + tests: .NET (PostgreSQL 17 service), Angular lint/test/build, e2e with mock-mpt"]
   CI --> MG["Merge to main"]
   MG --> IM["Images tagged with git SHA + digest (signing and SBOM in S)"]
   IM --> MI["EF migration bundle: expand, then contract"]

@@ -154,7 +154,7 @@ No user interface. Operator surface = the OpenTofu CLI plus the scripts this fol
 | 11.4.1-T3 (backup + restore) | starts `weed filer.backup -filerPath=/buckets/nt-media-<env> -filerProxy -doDeleteFiles=true` on `storage-backup-<env>` writing to `nt-backup-<env>` (`[sink.s3] is_incremental = false` — `true` drops deletes and date-prefixes keys, T85; one `-initialSnapshot` start after a volume loss/rebuild, T89) with `BACKUP_ACCESS_KEY` = `Write` on `nt-backup-<env>` only, never `BypassGovernanceRetention`/`Admin` (SeaweedFS cannot separate `DeleteObjectVersion`, so the object lock is the delete guard, T88), and proves the lifecycle job + media restore (D21, T80; 11 CR-15) |
 | 11.6.1-T1 (backups) | configures the PITR windows and asserts the `weed filer.backup` copy into `nt-backup-<env>` before running the restore drill (D21, T80; 11 CR-15) |
 | 11.6.2-T1 (telemetry) | uses the collector endpoint and the 11.2.1 backend choice; no self-hosted AGPL (F16, O6) |
-| 02.5.2-T3/T4 (fetcher) | 02.5.2-T3 adds the container to the local compose file (CR-10); 11.2.2-T2 owns the cloud subnet |
+| 02.5.2-T3/T4 (fetcher) | 02.5.2-T3 adds the container to the optional local compose file only (daily dev is native, 11 CR-16); 11.2.2-T2 owns the cloud subnet |
 | 11.3.2-T1/T2 (node firewall) | needs the render subnet + Worker CIDR; T1 outputs `subnet_ids` |
 | 11.3.1-T3 (`nts-node deploy`) | the T1 bastion/VPN endpoint is the transport (O5) |
 

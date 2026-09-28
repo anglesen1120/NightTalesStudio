@@ -184,7 +184,7 @@ this folder's only obligation is that 13.2.1-T1's routes read the same config se
 
 ## 9. Test plan
 
-Conventions: **xunit.v3 + Shouldly**, no mocking library — hand-written fakes/TestKit; integration tests run against real PostgreSQL via **Testcontainers**; time through **`FakeClock`** (`accepted_at` assertions); DB/HTTP tests and Worker jobs run in-process (`NightTales.Api.IntegrationTests`, 09 README D2); architecture rules (`ErrorCatalogueTests.EveryCodeHasAStatus`, `NightTales.Architecture.Tests`) stay green.
+Conventions: **xunit.v3 + Shouldly**, no mocking library — hand-written fakes/TestKit; integration tests run against real PostgreSQL 17 via **`PostgresFixture`**; time through **`FakeClock`** (`accepted_at` assertions); DB/HTTP tests and Worker jobs run in-process (`NightTales.Api.IntegrationTests`, 09 README D2); architecture rules (`ErrorCatalogueTests.EveryCodeHasAStatus`, `NightTales.Architecture.Tests`) stay green.
 
 **`tests/NightTales.Application.UnitTests`** (fake `IConsentWriter`, `IAppDbContext` in-memory substitutes from TestKit, `FakeClock`):
 - `LegalAcceptanceServiceTests.EnsureCurrent_NoConsents_Returns409WithBothDocuments` — code `legal_acceptance_required`, metadata `documents` alphabetical `["privacy","tos"]`.
@@ -194,7 +194,7 @@ Conventions: **xunit.v3 + Shouldly**, no mocking library — hand-written fakes/
 - `AcceptLegalDocumentsValidatorTests.VersionNotSemver_ReturnsValidationFailed`, `…MissingDocument_ReturnsValidationFailed`.
 - `LegalDocumentsOptionsTests.MissingConfigKey_FailsValidation`, `…VersionOver32Chars_FailsValidation`.
 
-**`tests/NightTales.Api.IntegrationTests`** (Testcontainers PostgreSQL, `ApiFactory`, `FakeClock`):
+**`tests/NightTales.Api.IntegrationTests`** (real PostgreSQL 17, `PostgresFixture`, `ApiFactory`, `FakeClock`):
 - `LegalEndpointsTests.GetMeLegal_NeverAccepted_ReturnsBothDocumentsWithNullAccepted` — 200, `documents[0].document == "tos"`, version equals config.
 - `LegalEndpointsTests.GetMeLegal_Unauthenticated_Returns401`.
 - `LegalEndpointsTests.Accept_WritesTwoRowsAndOneAuditRow_AndReturnsFreshProjection` — raw SQL count `user_consents` = 2 with the config versions and `ip` set; `audit_logs` has exactly one `account.legal_accepted` row with `visibility = user` and no IP in `data`. The attribute form itself (`account.legal_accepted`, `Category.AccountSecurity`, `Visibility.User`, dotted and unique) is asserted by 09.3.6-T1's `AuditAttributeTests`; a variant with an unparsable `RequestInfo.Ip` still commits both rows with `ip = NULL`.

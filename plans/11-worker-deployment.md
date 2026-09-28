@@ -9,7 +9,7 @@
 
 **Goal:** developers work locally without a GPU, staging and production run the same artefacts, and render workers are private, observable and scalable.
 
-**In scope:** local Docker Compose; `mock-mpt`; staging/prod topology; GPU worker node build; private networking; multi-worker dispatch; object storage; CI/CD; secrets; backups; monitoring; capacity and cost measurement; hosting evaluation.
+**In scope:** local development natively on the developer's machine (`tools/dev/up.sh`: Homebrew `postgresql@17`/`seaweedfs`/`mailpit` + `dotnet run`, with the Compose variant optional — 11 CR-16); `mock-mpt`; staging/prod topology; GPU worker node build; private networking; multi-worker dispatch; object storage; CI/CD; secrets; backups; monitoring; capacity and cost measurement; hosting evaluation.
 
 **Out of scope:** Kubernetes (not needed for MVP [DECISION]); multi-region.
 
@@ -22,12 +22,12 @@
 | W3 | Frontend/backend dev must not wait for GPU | `mock-mpt` (.NET minimal API) implements the `mpt-adapter` contract (05.4.1, 11.3.5) with configurable delays/failures |
 | W4 | Hosting provider [OPEN] | Evaluation checklist §5.6; no vendor prices asserted |
 | W5 | MPT memory task state may be lost on restart (05 spike) | Decision taken: no Redis — the adapter keeps its own durable task store and reports `render_lost` for a task it no longer knows (05 F06, D4) (05 CR-4) |
-| W6 | Storage choice affects licensing (e.g. some self-hosted S3 servers are AGPL ⚠️) | Self-hosted SeaweedFS (Apache-2.0, E11 ✅) in **every** environment (D21, owner O7 2026-09-27) — `storage-<env>` + `storage-backup-<env>` in their own `storage` subnet, S3 gateway TLS on the private address as `https://storage-<env>.internal` (443 → container 8333, T77/T78) and published as `https://media.<domain>` / `media.staging.<domain>` (`GET`/`HEAD` only, T75/T83); this supersedes the managed S3-compatible storage in prod that this row carried until 2026-09-27 ⚠️. MinIO, Garage, self-hosted Grafana and Renovate stay AGPL-rejected ✅; local dev keeps its SeaweedFS compose emulator (11 CR-1) (11 CR-15). |
+| W6 | Storage choice affects licensing (e.g. some self-hosted S3 servers are AGPL ⚠️) | Self-hosted SeaweedFS (Apache-2.0, E11 ✅) in **every** environment (D21, owner O7 2026-09-27) — `storage-<env>` + `storage-backup-<env>` in their own `storage` subnet, S3 gateway TLS on the private address as `https://storage-<env>.internal` (443 → container 8333, T77/T78) and published as `https://media.<domain>` / `media.staging.<domain>` (`GET`/`HEAD` only, T75/T83); this supersedes the managed S3-compatible storage in prod that this row carried until 2026-09-27 ⚠️. MinIO, Garage, self-hosted Grafana and Renovate stay AGPL-rejected ✅; local dev keeps a native SeaweedFS service (Homebrew `seaweedfs`, 11 CR-16) with the compose emulator optional (11 CR-1) (11 CR-15). |
 | W7 | TL review 2026-09-24 (`features/11-worker-deployment/` F01–F28) | Adapter re-sized and split (5.0 d), .NET with shared Contract/Server projects, cuDNN 9 libraries for whisper on the node, prod environment in P, node keys from the secret manager in P, operator-run node deploy from a hashed bundle (11 CR-1) |
 
 ## 3. Requirements
 
-- **FR-11-1** `docker compose up` starts postgres, api, worker, web (dev server or built), mock-mpt, S3-compatible storage, mail catcher.
+- **FR-11-1** `tools/dev/up.sh` starts the whole platform natively on the developer's machine — Homebrew `postgresql@17`, `seaweedfs` and `mailpit` on `127.0.0.1`, then `api`, `worker`, `mock-mpt` via `dotnet run` and `web` via `ng serve` (flag) — with every health endpoint green; the optional `docker-compose.yml` variant provides the same services as containers for e2e and image smoke and is never required for local development (11 CR-16).
 - **FR-11-2** `mock-mpt` implements `render-node.v1` exactly (05 README D4/D5/D14): submit, query status (state + percent; the D5 `stage` sub-steps `queued|voice|subtitles|images|assembling|checking|done`), download canned MP4 by task id, `/subtitles`, `/cancel`, health + active task count, cleanup, failure injection (`tts_failed`, `image_moderated`, `assembly_failed`, `node_error`, `quality:<check>`, `timeout`, `lost_task`), per-request delay; it serves the 05 D14 fixtures (05 CR-4); terminal statuses carry an `images.v1` report chosen by `MOCK_IMAGE_REPORT` (`ok`, `moderated:<slots>`, `skipped:<share>`, `moderated_all`, `funds`, `none`) or the per-term trigger `__block_image__`, and submits violating the 03 D4 image fields return 400 `adapter_contract_violation` (03.4.3-T2, 03 CR-5) (05 CR-4). `MOCK_FAIL_MODE=tts_failed` reproduces what the real adapter reports when MPT ends with `failed_stage = audio` (04 D6, 04 CR-12); the mock maps `lost_task` → `render_lost` and `timeout` → the task never reaches a terminal state (the Worker raises `render_timeout`), and keeps `image_moderated` as an alias of `MOCK_IMAGE_REPORT=moderated_all`; it is plain HTTP only inside the local compose network (05 D15 S1) (05 CR-4).
 - **FR-11-3** Staging and production each have: API instance(s), Worker instance, managed PostgreSQL, self-hosted object storage — `storage-<env>` (SeaweedFS S3 gateway) plus `storage-backup-<env>` holding `nt-backup-<env>` in a second availability zone/location (11 CR-15, D21) — ≥ 1 GPU render node, private network.
 - **FR-11-4** GPU node runs VieNeu (GPU backend, `VIENEU_MAX_STREAMS` ✅), proxy, MPT, faster-whisper on GPU and `mpt-adapter` (11.3.5); the proxy binds loopback `127.0.0.1:8001` only, as on the Mac (04 D1), under the systemd unit `vieneu-proxy.service` (04 D13); MPT and VieNeu bind `127.0.0.1` on the node (05 README F12, D15 S1); only `mpt-adapter` listens on the private interface, over HTTPS on `:8090` with a node-local certificate whose SHA-256 fingerprint the Worker pins per node (`worker_nodes.tls_cert_sha256`) and refuses any other certificate (05 D15 S1); the adapter port is reachable from the Worker range only; health endpoints (05 CR-4). Sizing rule (04 D5): `VIENEU_MAX_STREAMS ≥ max_concurrent_tasks` and `PROXY_MAX_CONCURRENT ≥ max_concurrent_tasks` (04 CR-12).
@@ -42,8 +42,8 @@
 
 ### Epic 11.1 — Local development
 
-**11.1.1 Docker Compose** — *As a developer I want the whole stack locally so that I can build features offline from the GPU.* Must · M
-- Given `docker compose up`, Then all FR-11-1 services start with health checks; seed data loaded (09.2.5); `.env.example` documents every variable; no real secrets needed.
+**11.1.1 Local dev stack** — *As a developer I want the whole stack locally so that I can build features offline from the GPU.* Must · M
+- Given `tools/dev/up.sh` (native, no Docker), Then all FR-11-1 services start with health checks; seed data loaded (09.2.5); `.env.example` documents every variable; no real secrets needed; the optional Compose variant reaches the same state in CI (`e2e.yml`) (11 CR-16).
 
 **11.1.2 mock-mpt** — *As a developer I want a fake render node so that render flows can be tested end-to-end.* Must · M
 - Given `tools/mock-mpt`, Then it implements the exact `render-node.v1` routes/shapes (11.3.5; 05 README D4/D5/D14), including the `/subtitles` and `/cancel` routes and the 05 D14 fixtures, returns a canned 10-second MP4 per aspect, progresses 0→100 % over a configurable time, reports health + active task count, and fails when the request contains a trigger keyword (e.g. `__fail_image__`) or when configured by env (hard gate: 11.1.2-T1 starts only after 05.4.1-T2) (05 CR-4).
@@ -104,7 +104,7 @@
 ### Epic 11.5 — CI/CD and secrets
 
 **11.5.1 Pipelines** — *As the team I want automated builds and deploys so that releases are boring.* Must · M
-- Given GitHub Actions (owner decision 2026-09-24, 09 README O2; (09 CR-13)), Then on PR: backend build/test (incl. Testcontainers), web lint/test/build, e2e with compose; on main: build images tagged with git SHA, push to registry, deploy to staging automatically, deploy to prod on manual approval (prod environment with required reviewers).
+- Given GitHub Actions (owner decision 2026-09-24, 09 README O2; (09 CR-13)), Then on PR: backend build/test (incl. integration tests against real PostgreSQL 17 via `PostgresFixture`/`NTS_TEST_PG` — no Testcontainers, 11 CR-16), web lint/test/build, e2e with compose (CI only: Docker is available on the runner; local dev runs natively); on main: build images tagged with git SHA, push to registry, deploy to staging automatically, deploy to prod on manual approval (prod environment with required reviewers).
 - Migrations: an explicit job runs EF migration bundle before rollout; expand/contract rule (09 NFR-09-6).
 
 **11.5.2 Secrets** — *As the platform I want secrets outside code so that leaks are unlikely.* Must · S
@@ -172,9 +172,11 @@ Web serving (10 CR-1): the `web` container runs beside each Api instance and the
 
 Network rules [DECISION]: render nodes accept only the Worker range on the `mpt-adapter` port and never open connections into the app network (11.3.2); the `fetcher` container leases `fetch_tasks` (`fetch_source`, and `find_sources` only if 02.7.1 picks option B) from the Api internal listener `:8081` and posts results back there (no Hangfire queue); it has internet-only egress, no route to PostgreSQL, storage, the render network or the metadata endpoint, and no DB/storage credentials (02 CR-1, 02 README D10, 11.2.2); SignalR runs WebSockets-only or with sticky sessions (11.2.2). Object storage is self-hosted SeaweedFS in every environment (11 CR-15, D21): `storage-<env>` runs `weed server -s3` on an attached encrypted XFS volume in its own `storage` subnet (T77) behind `storage-sg`, `storage-backup-<env>` holds `nt-backup-<env>` in a second AZ/location, only the S3 gateway (TLS, private TCP 443 → container 8333, T77/T78) is reachable off the host, and the LB routes `media.<domain>` to that gateway for `GET`/`HEAD` only (T75).
 
-### 5.2 Compose services (local)
+### 5.2 Local dev services (native; Compose optional) (11 CR-16)
 
-`postgres`, `storage` (SeaweedFS S3 emulator — the same `chrislusf/seaweedfs` image as staging/prod ✅, Apache-2.0, E11, digest pinned at implementation per T12) (11 CR-15), `mail` (SMTP catcher), `api`, `worker`, `mock-mpt`, `web`. Ports only on `localhost`; staging/prod run the same engine on the `storage-<env>` hosts, not in this compose file (11 CR-15).
+**Primary path — native, no Docker.** `tools/dev/up.sh` (Bash 3.2, `set -euo pipefail`, idempotent) starts/checks the Homebrew `postgresql@17` service (`127.0.0.1:5432`; role/database created idempotently by 09.1.1-T2's `tools/dev/db-init.sh`), `seaweedfs` and `mailpit` binaries as its own loopback processes, never the stock `brew services` (T12) - `seaweedfs` (S3 gateway `127.0.0.1:8333`, volume server 8084 off MPT 8080, Apache-2.0, E11) and `mailpit` (SMTP `127.0.0.1:1025`, UI 8025, MIT), then runs `api`, `worker` and `mock-mpt` with `dotnet run` on `127.0.0.1` (Api 5000 public + 8081 internal, Worker health 8082, mock 8090) and, with `--web`, `ng serve` for the web app; `tools/dev/down.sh` stops what it started. Health checks are the same endpoints as the compose variant (`/health/live`, `/health/ready`, mock `/v1/health`).
+
+**Optional Compose variant (e2e / image smoke; never required for daily dev).** `docker-compose.yml`: `postgres` (09), `storage` (SeaweedFS S3 emulator — the same `chrislusf/seaweedfs` image as staging/prod ✅, Apache-2.0, E11, digest pinned at implementation per T12) (11 CR-15), `mail` (SMTP catcher), `api`, `worker`, `mock-mpt`, `web`, `fetcher` (profile `fetcher`). Ports only on `127.0.0.1`; 11.5.1-T1's `e2e.yml` is the only required user. Staging/prod run the same engine on the `storage-<env>` hosts, not in this file (11 CR-15).
 
 ### 5.3 mock-mpt behaviour (implements `render-node.v1` exactly, 05 README D4/D5/D14; 11.3.5) (05 CR-4)
 
@@ -187,7 +189,7 @@ Network rules [DECISION]: render nodes accept only the Worker range on the `mpt-
 | `MOCK_VIDEO_SECONDS` | Duration used for the image report's needed count (default 10) |
 | `MOCK_API_KEY` | Required `x-api-key` value |
 
-Routes: the mock serves the whole `render-node.v1` surface — submit, status, download, `/subtitles`, `/cancel`, health, cleanup — and the 05 D14 fixtures; plain HTTP only inside the local compose network (05 D15 S1) (05 CR-4).
+Routes: the mock serves the whole `render-node.v1` surface — submit, status, download, `/subtitles`, `/cancel`, health, cleanup — and the 05 D14 fixtures; plain HTTP only in local development — `http://127.0.0.1:8090` natively and `http://mock-mpt:8090` in the compose variant (05 D15 S1) (05 CR-4, 11 CR-16).
 
 ### 5.4 New table (contract change)
 
@@ -207,9 +209,9 @@ Detailed in `features/11-worker-deployment/` (README §8.1 is the canonical depe
 
 | Task ID | Task | Area | Size | Depends on |
 |---|---|---|---|---|
-| 11.1.1-T1 | Compose app services (api, worker, web profile), `.env.example`, health checks, localhost ports (extends 09.1.1-T2) | Ops | S | 09.1.1-T2 |
-| 11.1.1-T2 | Mailpit + SeaweedFS emulator + bucket init | Ops | S | 11.1.1-T1 |
-| 11.1.2-T1 | mock-mpt on the shared `NightTales.RenderNode.Server` core + canned media + D14 fixtures (hard gate: after 05.4.1-T2) | BE | S | 05.4.1-T2, 11.3.5-T1, 11.1.1-T1; 03.4.1-T1 soft |
+| 11.1.1-T1 | Native dev stack `tools/dev/{up.sh,down.sh}` (Homebrew services + `dotnet run`) and the optional Compose app services (api, worker, web profile), `.env.example`, health checks, loopback ports (extends 09.1.1-T2) (11 CR-16) | Ops | S | 09.1.1-T2 |
+| 11.1.1-T2 | Native `seaweedfs`/`mailpit` services (+ optional Compose equivalents) and `tools/dev/storage-init.sh` buckets (11 CR-16) | Ops | S | 11.1.1-T1 |
+| 11.1.2-T1 | mock-mpt on the shared `NightTales.RenderNode.Server` core + canned media + D14 fixtures (native `dotnet run` on `127.0.0.1:8090`, optional compose service) (hard gate: after 05.4.1-T2) | BE | S | 05.4.1-T2, 11.3.5-T1, 11.1.1-T1; 03.4.1-T1 soft |
 | 11.1.2-T2 | Failure injection + tests | BE | S | 11.1.2-T1 |
 | 11.2.1-T1 | Score 2–3 providers with dated official prices | BA | S | — |
 | 11.2.2-T1 | OpenTofu module + staging | Ops | M | 11.2.1-T1 |
@@ -245,7 +247,7 @@ Detailed in `features/11-worker-deployment/` (README §8.1 is the canonical depe
 
 ## 7. Test plan
 
-- Compose smoke: fresh clone → `docker compose up` → e2e main journey passes.
+- Dev smoke: fresh clone → `tools/dev/up.sh` → every health endpoint green and the e2e main journey passes (the Compose variant runs the same journey in `e2e.yml`, CI only) (11 CR-16).
 - mock-mpt and `mpt-adapter` contract tests replay 05 samples.
 - Staging smoke after each deploy; prod post-deploy smoke.
 - Storage hosts (11.4.1-T2/T3, 11 CR-15, T80): gateway TLS handshake + `HEAD` on a known key; ports 9333, 8080, 8888, 18888 refused from an app host; `volume.list` shows writable slots at `volumeSizeLimitMB = 1024`; `nts_backup_lag_seconds` ≤ 900 (T85) and a primary delete propagating as a delete marker with the noncurrent version's data still in `nt-backup-<env>` (T79); one object restored from the backup with a matching sha256.
@@ -266,7 +268,7 @@ Detailed in `features/11-worker-deployment/` (README §8.1 is the canonical depe
 
 ## 9. Exit criteria (M1)
 
-- Local compose + mock-mpt used by 09/10 tests.
+- Local dev stack (`tools/dev/up.sh`, native) + mock-mpt used by 09/10 tests; the Compose variant is exercised only by `e2e.yml` (11 CR-16).
 - Staging with one real GPU node renders the trial videos through the API.
 - CI/CD deploys staging automatically; backups + restore drill done once; capacity/cost numbers recorded.
 
@@ -275,6 +277,7 @@ Detailed in `features/11-worker-deployment/` (README §8.1 is the canonical depe
 - [OPEN] Hosting provider and region (11 CR-15: must offer encrypted attachable block volumes with snapshots and a published GB-month price in two AZs/locations for `storage-backup-<env>`, plus a published internet egress price for `media.<domain>`; T74).
 - ⚠️ Licenses: IaC tool, telemetry stack. The object-storage engine is settled — SeaweedFS, Apache-2.0, E11 ✅ — so no object-storage product is scored (11 CR-15, T74).
 - ✅ **CR-15 (owner O7, 2026-09-27) — self-hosted SeaweedFS in every environment: applied.** Owner decision O7 and rulings T74–T95 in `features/11-worker-deployment/README.md` §10, decision D21: **T74** no object-storage product is scored, provider criteria become block volumes (encryption, snapshots, GB-month price) in two AZs/locations plus a published `media.<domain>` egress price, and H9's provider replication is replaced by `weed filer.backup`; **T75** presigned GET URLs are signed against `Storage:PublicServiceUrl = https://media.<domain>` (`media.staging.<domain>` on staging), the LB passes `Host` unchanged and allows `GET`/`HEAD` only, path-style addressing in all envs (`Storage:ForcePathStyle=true`); **T76** OpenTofu state moves to the `pg` backend in database `nts_tofu` on the env's managed PostgreSQL (T15's lease object dropped, `infra/bootstrap` holds the PG instance + `nts_tofu`, local state encrypted and kept offline by the owner); **T77/T78** the storage hosts live in their own `storage` subnet, the TLS-only gateway (`-s3.port=8333 -s3.cert.file -s3.key.file`, `-s3.port.https` unset) is published on the private address as TCP 443, `fetcher-sg` is never a `storage-sg` source, filer 8888/18888 opens to `storage-backup-sg` only and metrics 9327 to `worker-sg`; **T79/T80** `filer.backup -filerPath=/buckets/nt-media-<env> -filerProxy -doDeleteFiles=true` into a versioned + object-locked `nt-backup-<env>` (`NoncurrentVersionExpiration` 29 d, T87), split as 11.4.1-T2 S (hosts/TLS/metrics) + 11.4.1-T3 S (`filer.backup` + restore proof); **T81** TLS trust via an internal root CA in host/container trust stores, no client pinning; **T83** `infra/bootstrap` owns the PG instance, media hosts `media.staging.<domain>`/`media.<domain>`; **T84** §11 row arithmetic (11.5 → 3.25, 11.6 → 3.0, totals unchanged); **T85–T90** `is_incremental = false` + the `nts_backup_lag_seconds` canary gauge (`filer.backup` has no metrics port; OTLP/HTTP 4318 via `worker-sg`), `storage-sg` + VPN/bastion 22/443 and `storage-backup-sg` = 22/443 VPN + 9327 `worker-sg`, 29-d lock + noncurrent expiry (30-day promise holds), `Write`-only `BACKUP_ACCESS_KEY` (lock is the guard), one-shot `-initialSnapshot` after backup-volume loss, acceptance placement T90; **T91–T94** storage identities at `nts/<env>/storage/*` (`NTS_OPS_READ`, the windowed `NTS_OPS_ADMIN`), the restore proof downloads one object and compares sha256 (writes nothing to a bucket), the storage hosts' role reads `storage/*` + exact-name secrets. Changed in this file: header, §2 W6, FR-11-3, story 11.2.2, epic 11.4, §5.1/§5.2/§5.6, §6 (11.4.1-T2 resized to S + new 11.4.1-T3; 11.6.1-T1/11.6.2-T1 depend on it), §7/§8, §11 (11.4: 0.5 → 1.5 d; total 23.0 → 24.5, buffered 27.6 → 29.4). Superseded wording kept only as history: W6's 'managed S3-compatible storage in prod' (11 CR-1).
+- ✅ **CR-16 (owner 2026-09-28, 00 §5.1) — local development runs natively on macOS, no Docker: applied.** `features/11-worker-deployment/README.md` D1/D2/D14, §7 and T10–T12/T32/T33 plus §4 CR-16 record the contract: **primary dev path** = `tools/dev/up.sh` (Bash 3.2, `set -euo pipefail`, idempotent; Homebrew `postgresql@17` + `seaweedfs` (Apache-2.0) + `mailpit` (MIT) on `127.0.0.1`, `tools/dev/db-init.sh` for the role/database, then `api`/`worker`/`mock-mpt` via `dotnet run` and `web` via `ng serve` behind a flag) with `tools/dev/down.sh`; **`docker-compose.yml` is optional** (e2e / image smoke; required only by 11.5.1-T1's `e2e.yml` on the CI runner — Docker stays for deploy images, staging and production, unchanged); **mock-mpt** runs natively on `127.0.0.1:8090` and keeps the `expose`-only rule in the compose variant; **`Testcontainers` is dropped** in favour of real PostgreSQL 17 through `PostgresFixture` + `NTS_TEST_PG` (dev = local Homebrew server, CI = GitHub Actions `postgres:17` service, missing env fails fast). Changed in this file: §1 (in scope), §2 W6, FR-11-1, story 11.1.1, §5.2 (retitled "Local dev services (native; Compose optional)"), §5.3, §6 rows 11.1.1-T1/T2 and 11.1.2-T1, §7 test plan, §9 exit criteria; detailed files: `features/11-worker-deployment/11.1-local-dev/**`, `11.4-11.5-storage-cicd/11.5.1-T1-…`, `11.3.3-registry-dispatch/**` (Testcontainers wording), `11.2-cloud-environments/11.2.2-T2-…`, `11.4-11.5-storage-cicd/11.4.1-T1-…`. **No estimate change** (11.1 stays 2.0 d; totals 24.5 / 29.4 unchanged).
 - ✅ **CR-4 (from 01) — image metering on the node: closed 2026-09-24.** The image relay inside `mpt-adapter` (03.4.3-T1, estimated in plan 03) records per-call `usage` per render task and returns it in `images.v1`; it is also where `quality` is injected (03 D5/D8/D9, 03 CR-5). No separate node component.
 - **From plan 01 (applied 2026-09-24):** CR-9 (Mac → GPU differences, 11.3.1); inputs from `worker-node/CARRY-OVER.md` (01.3.3-T2 walkthrough with the 11 owner).
 - **Contract changes (applied to 00):** add `worker_nodes` to 00 §6.

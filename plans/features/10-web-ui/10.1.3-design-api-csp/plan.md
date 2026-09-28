@@ -24,7 +24,7 @@
 
 | Id | Fact | Evidence |
 |---|---|---|
-| FE1 | `@angular/core`, `@angular/material`, `@angular/cdk` = **22.2.0**, MIT; core engines `node ^22.22.3 \|\| ^24.15.0 \|\| >=26.0.0`; `zone.js` is an optional peer | `../README.md:33` ✅ |
+| FE1 | `@angular/core`, `@angular/material`, `@angular/cdk` = **22.2.0**, MIT; core engines accept the **26.x** line (Angular 22 supports the 22.22.3+, 24.x and 26.x lines; the exact `node` range is recorded in 10 CR-43); `zone.js` is an optional peer | `../README.md:33` ✅ |
 | FE5 | New CLI projects use **Vitest** + jsdom via the builder `@angular/build:unit-test` | `../README.md:37` ✅ |
 | FE6 | Angular's Trusted Types policies: `angular`, `angular#bundler`, `angular#unsafe-bypass`, `angular#unsafe-jit`, `angular#unsafe-upgrade` | `../README.md:38` ✅ |
 | FE7 | CSP nonce options `autoCsp`, `ngCspNonce`, `CSP_NONCE`; origin-generated nonces are discouraged with caching | `../README.md:39` ✅ |

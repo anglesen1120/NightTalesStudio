@@ -188,7 +188,7 @@ Reused from 06 D15 (never re-invented): `oauth_states` (+`browser_nonce_hash`, Y
 No product code is written here, so verification is **checklist runs plus scripted probes**; automated tests exist only where the evidence is a code path owned by 07.2/07.3 (this folder adds no test file unless the owning task has none).
 
 Automated (produced when building the error/limit artefact, owned by the code tasks, cited here):
-- `NightTales.Api.IntegrationTests` (Testcontainers, real PostgreSQL) with `FakeTikTokServer` from `NightTales.TestKit` (Kestrel, hand-written, **no mocking library**): `creator_info` public/private option sets, `comment_disabled`, 200-with-error families; init ok + each 403/429 code + 1-hour URL expiry; status every terminal transition and each `fail_reason` family; token with **rotating** refresh; revoke; per-endpoint request counters for the limiter (D17, F22).
+- `NightTales.Api.IntegrationTests` (`PostgresFixture`, real PostgreSQL 17) with `FakeTikTokServer` from `NightTales.TestKit` (Kestrel, hand-written, **no mocking library**): `creator_info` public/private option sets, `comment_disabled`, 200-with-error families; init ok + each 403/429 code + 1-hour URL expiry; status every terminal transition and each `fail_reason` family; token with **rotating** refresh; revoke; per-endpoint request counters for the limiter (D17, F22).
 - `NightTales.Application.UnitTests` for the D9/D10 maps and the D5 validation matrix (hand-written fakes from `NightTales.TestKit`).
 - `NightTales.Architecture.Tests` unchanged; the checklist cites the guards it relies on (one of `[Audited]`/`[NotAudited]`/`[AllowAnonymousRequest]` per command; only `UnitOfWorkBehavior` calls `SaveChangesAsync`).
 

@@ -155,7 +155,7 @@ flowchart LR
 | Storage | S3-compatible object storage, private bucket, pre-signed GET URLs (≤ 15 min); self-hosted SeaweedFS (Apache-2.0) in every env, no managed object storage (11 CR-15, owner O7 2026-09-27) |
 | AI | Official OpenAI .NET SDK for story writing (backend); MPT calls OpenAI Images itself |
 | Render | MPT + VieNeu + VieNeu proxy (Python, next to MPT) + faster-whisper, on a GPU node, private network — Python only because these open-source tools are Python; no business logic there, called over HTTP by the C# Worker |
-| Local dev | Docker Compose: postgres, api, worker, **mock-mpt**, S3-compatible storage emulator (license check ⚠️) |
+| Local dev | **Native on macOS, no Docker [DECISION, owner 2026-09-28]:** Homebrew `postgresql@17` (bind `127.0.0.1`), `seaweedfs` (Apache-2.0), `mailpit` (MIT), .NET SDK 10.0.401 (`dotnet run` / `dotnet watch` for api, worker, **mock-mpt**), Node 26 (`ng serve`); VieNeu/MPT/whisper stay native (plan 01). Docker is used only to build and smoke-test deploy images (CI, staging, production); `docker-compose.yml` is optional (e2e / image smoke), never required for daily dev |
 
 ### 5.2 .NET solution layout — Clean Architecture [DECISION]
 
@@ -198,7 +198,7 @@ src/
   NightTales.MptAdapter/             `mpt-adapter` host on each GPU node: MPT backend, post-processing, health, image relay (11 CR-2)
 tests/
   NightTales.Domain.UnitTests/  NightTales.Application.UnitTests/  NightTales.Architecture.Tests/
-  NightTales.Api.IntegrationTests/ (WebApplicationFactory + Testcontainers PostgreSQL, MIT ✅)
+  NightTales.Api.IntegrationTests/ (WebApplicationFactory + real PostgreSQL 17 via `PostgresFixture` on the `NTS_TEST_PG` connection string: local Homebrew server in dev, GitHub Actions `postgres:17` service in CI; no Testcontainers, owner 2026-09-28)
 tools/mock-mpt/                      fake render node for local dev and CI (`NightTales.MockMpt` on `NightTales.RenderNode.Server`, 11 CR-2)
 web/                                 Angular workspace
 worker-node/                         MPT config, VieNeu proxy, node host/systemd/network scripts, `nts-node` deploy tool (11 CR-2)
@@ -393,7 +393,7 @@ any non-terminal → failed            (unrecoverable only, e.g. account suspend
 
 **Definition of Done (story):**
 - **Per-task QA and review before push (owner rule, 2026-09-25):** every task, one at a time, ends with (1) a separate QA agent that re-reads the plan, feature `plan.md` and task file and runs the acceptance checks plus negative/edge cases, then (2) a code review, (3) a performance review and (4) a security review by separate reviewer agents; QA runs first, never in parallel with the reviews (the three reviews may run in parallel; their fixes are re-tested). Findings are fixed and re-tested and both passes are recorded in `STATUS.md` **before** the commit is pushed. A task is not `done` until all four are closed.
-- Code reviewed; builds in CI; unit tests for domain rules and use cases; integration test for each new endpoint (Testcontainers PostgreSQL).
+- Code reviewed; builds in CI; unit tests for domain rules and use cases; integration test for each new endpoint (real PostgreSQL 17 via `PostgresFixture`, §5.2).
 - Angular: component tests for logic-heavy components; strings in both vi and en; accessible (keyboard, labels, contrast).
 - ProblemDetails errors mapped to user-friendly messages in the UI.
 - Logs/metrics added for new background jobs; no secrets in logs.

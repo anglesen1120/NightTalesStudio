@@ -302,7 +302,7 @@ Google HTTP access goes through `GoogleYouTubeClient` only, with base URLs from 
 
 ## 9. Test plan
 
-Projects (09 README D2): `tests/NightTales.Domain.UnitTests`, `tests/NightTales.Application.UnitTests`, `tests/NightTales.Infrastructure.UnitTests`, `tests/NightTales.Api.IntegrationTests`, `tests/NightTales.TestKit`. xunit.v3 + Shouldly, `FakeClock`, integration on real PostgreSQL via Testcontainers; **no mocking library**.
+Projects (09 README D2): `tests/NightTales.Domain.UnitTests`, `tests/NightTales.Application.UnitTests`, `tests/NightTales.Infrastructure.UnitTests`, `tests/NightTales.Api.IntegrationTests`, `tests/NightTales.TestKit`. xunit.v3 + Shouldly, `FakeClock`, integration on real PostgreSQL 17 via `PostgresFixture`; **no mocking library**.
 
 `NightTales.TestKit` additions (owner 06.1.2-T1): `Google/FakeGoogleServer.cs` (Kestrel, D19 — this folder contributes the `/oauth2/v2/auth` shape check, `POST /token` (code + refresh, `invalid_grant`, `invalid_client`, `access_denied`, one-shot codes), `POST /revoke`, `GET /youtube/v3/channels?mine=true`, and the raw-body recorder the upload half extends), `Google/FakeGoogleOptions.cs`, plus `Email/FakeSmtpEmailSender` reuse (09.2.6-T3).
 
