@@ -17,7 +17,7 @@ Labels and hints: `seed/i18n-style-labels.v1.json` (web keys, CR-7 → 10.4.2).
   ("silhouettes", "distant shapes", "places and objects only") — never a safety negative (§4).
 - One `{term}`, one line, no `"` (§3).
 
-### Per-template slot map (v1 texts are fixed)
+### Per-template slot map (v1 texts are fixed; the one revision is recorded in §6)
 
 | `name` | topicHint | medium | framing | palette | texture | light | composition | people rule | mood |
 |---|---|---|---|---|---|---|---|---|---|
@@ -27,13 +27,14 @@ Labels and hints: `seed/i18n-style-labels.v1.json` (web keys, CR-7 → 10.4.2).
 | `watercolor-night` | `spiritual` | Watercolor painting of `{term}` | "at night" (inside sentence 1) | Deep blue and violet washes | soft wet edges, loose brushwork | a small warm lantern glow | loose brushwork | figures only as simple distant shapes | calm and mysterious |
 | `temple-candlelight` | `spiritual` | Painterly illustration of `{term}` | "lit by candlelight" (inside sentence 1) | Warm amber and deep red tones | drifting incense haze | soft glow and long shadows | close and quiet framing | hands or silhouettes only and faces never shown | reverent |
 | `noir-sketch` | `true_crime` | Noir charcoal sketch of `{term}` | — | Monochrome | rough hatching on grey paper | one hard light source, deep black shadows | empty places and objects only | empty places and objects only, no faces, no identifiable people | sober documentary |
-| `case-file-illustration` | `true_crime` | Muted editorial illustration of `{term}` | like a page from an old case file | Flat desaturated colours | paper texture | even daylight | simple clean shapes | places and objects only, no faces, no identifiable people | calm and serious |
+| `case-file-illustration` | `true_crime` | Flat 2D editorial illustration of `{term}` | printed like a page in an old police case file | Muted grey-beige palette | visible paper grain | cool neutral light, no warm glow, no lamps lit | thin ink outlines and flat colour fills, no 3D rendering, no photographic detail | places and objects only, no faces, no identifiable people | calm and serious |
 
 Deviations accepted in the v1 texts (fixed by 03.1.1-T1; normalise only when a text is next
 revised, §6): `dark-folklore-ink` writes texture before palette; `vintage-photo-grain` has no
 standalone light phrase; `watercolor-night` and `temple-candlelight` put the time/light marker
-inside the `{term}` sentence; `case-file-illustration` writes composition ("simple clean
-shapes") before light ("even daylight"). Those five rows are the only deviations — every other
+inside the `{term}` sentence; `case-file-illustration` writes light ("cool neutral light") before
+texture ("visible paper grain") (from the 2026-09-28 revision, §6; the pre-revision text wrote
+composition before light). Those five rows are the only deviations — every other
 slot matches the order above, and all 7 templates carry a people rule and end on the mood.
 
 ## 2. People rule
@@ -100,6 +101,15 @@ in `render_jobs.params.style_prompt_version`). So: change the seed file, re-run 
 record the change (release note / plan row with the old and new text) and expect new image spend
 for that style. Never edit `style_templates.template` by hand in a database.
 
+### Change record
+
+| Date | Template | Old → new | `StylePromptVersion` | Evidence |
+|---|---|---|---|---|
+| 2026-09-28 | `case-file-illustration` | `Muted editorial illustration of {term}, like a page from an old case file. Flat desaturated colours, paper texture, simple clean shapes, even daylight, places and objects only, no faces, no identifiable people, calm and serious mood.` → `Flat 2D editorial illustration of {term}, printed like a page in an old police case file. Muted grey-beige palette, cool neutral light, no warm glow, no lamps lit, visible paper grain, thin ink outlines and flat colour fills, no 3D rendering, no photographic detail, places and objects only, no faces, no identifiable people, calm and serious mood.` | `style=case-file-illustration@74c968c5` → `style=case-file-illustration@42ca2380` (233 → 348 chars) | Checker `7 templates ok` after the edit; the contact sheet scored the old text 3.31 vs 4.38–4.72 for the other six (`trial/images/REPORT.md`); both AI raters reported realistic 3D detail and warm lamp light. Owner-approved 2026-09-28. The 8 `k09` (`case-file-illustration`) cells in `trial/images/contact-sheet-results.csv` were rendered from the old text; the 2026-09-28 re-run on the new text scores 3.88 vs 3.31 (`trial/images/REPORT.md` §Re-run) |
+
+The `stylePromptVersion` values above are derived (`sha256` of the template, §6), they are not
+stored anywhere in the repo.
+
 ## 7. M0 handover — global template strings (D13)
 
 For the M0 runs, `openai_image_prompt_template` = the template text (with `{term}` still in
@@ -122,6 +132,11 @@ Exit codes: 0 ok / 1 check failed (the rule name is printed) / 2 usage error.
 
 ## 9. Owner review
 
-Owner review of the texts (task step 6, 15 min, before 03.3.2-T1 spends money): **[OPEN]** —
-no sign-off recorded yet (opened 2026-09-26). Until then the M0 runs use the strings in §7; the
-rollback is the temporary neutral template of 01.
+Owner review of the texts (task step 6, 15 min, before 03.3.2-T1 spends money): **approved
+2026-09-28** by the owner — all 7 v1 texts unchanged (opened 2026-09-26). The M0 runs use the
+strings in §7; the rollback is the temporary neutral template of 01.
+
+**Revision 2026-09-28:** the contact sheet scored `case-file-illustration` 3.31 against 4.38–4.72
+for the other six, and both AI raters said the model renders realistic 3D detail with warm lamp
+light. The owner approved the rewritten text the same day; the old → new text and both derived
+`StylePromptVersion` values are in the §6 change record. The other six texts are unchanged.

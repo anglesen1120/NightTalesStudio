@@ -1,0 +1,122 @@
+{
+  "k01-landscape": {
+    "D": "low",
+    "B": "medium",
+    "C": "high",
+    "A": "auto"
+  },
+  "k01-portrait": {
+    "D": "low",
+    "A": "medium",
+    "C": "high",
+    "B": "auto"
+  },
+  "k02-landscape": {
+    "C": "low",
+    "A": "medium",
+    "B": "high",
+    "D": "auto"
+  },
+  "k02-portrait": {
+    "D": "low",
+    "C": "medium",
+    "A": "high",
+    "B": "auto"
+  },
+  "k03-landscape": {
+    "A": "low",
+    "D": "medium",
+    "C": "high",
+    "B": "auto"
+  },
+  "k03-portrait": {
+    "C": "low",
+    "D": "medium",
+    "B": "high",
+    "A": "auto"
+  },
+  "k04-landscape": {
+    "A": "low",
+    "D": "medium",
+    "C": "high",
+    "B": "auto"
+  },
+  "k04-portrait": {
+    "B": "low",
+    "C": "medium",
+    "A": "high",
+    "D": "auto"
+  },
+  "k05-landscape": {
+    "C": "low",
+    "D": "medium",
+    "A": "high",
+    "B": "auto"
+  },
+  "k05-portrait": {
+    "B": "low",
+    "C": "medium",
+    "D": "high",
+    "A": "auto"
+  },
+  "k06-landscape": {
+    "B": "low",
+    "C": "medium",
+    "A": "high",
+    "D": "auto"
+  },
+  "k06-portrait": {
+    "B": "low",
+    "D": "medium",
+    "A": "high",
+    "C": "auto"
+  },
+  "k07-landscape": {
+    "D": "low",
+    "C": "medium",
+    "B": "high",
+    "A": "auto"
+  },
+  "k07-portrait": {
+    "A": "low",
+    "C": "medium",
+    "B": "high",
+    "D": "auto"
+  },
+  "k08-landscape": {
+    "B": "low",
+    "A": "medium",
+    "C": "high",
+    "D": "auto"
+  },
+  "k08-portrait": {
+    "A": "low",
+    "D": "medium",
+    "C": "high",
+    "B": "auto"
+  },
+  "k09-landscape": {
+    "D": "low",
+    "A": "medium",
+    "C": "high",
+    "B": "auto"
+  },
+  "k09-portrait": {
+    "B": "low",
+    "A": "medium",
+    "D": "high",
+    "C": "auto"
+  },
+  "k10-landscape": {
+    "C": "low",
+    "B": "medium",
+    "A": "high",
+    "D": "auto"
+  },
+  "k10-portrait": {
+    "A": "low",
+    "D": "medium",
+    "C": "high",
+    "B": "auto"
+  }
+}

@@ -1,0 +1,25 @@
+cell_id,letter,rating_1_5,text_visible,face_realistic,gore,off_prompt,note,rater_id
+k05-landscape,A,3,0,0,0,0,"AI: Shrine, lantern, and misty path fit, but incense is absent and sunset colors weaken the night style.",ai-1
+k05-landscape,B,4,0,0,0,0,"AI: Roadside shrine with visible incense smoke and warm lights; watercolor night palette, though dawn glow is prominent.",ai-1
+k05-landscape,C,4,0,0,0,0,"AI: Strong shrine, incense smoke, and blue-violet watercolor mood; dawn horizon and detailed figures slightly depart from template.",ai-1
+k05-landscape,D,4,0,0,0,0,"AI: Clear shrine and smoke in a calm watercolor scene, but bright dawn sky conflicts with night styling.",ai-1
+k05-portrait,A,4,0,0,0,0,"AI: Clear shrine and curling incense smoke; watercolor washes and lantern glow fit, though the twilight sky is brighter and more detailed than the template.",ai-1
+k05-portrait,B,3,0,0,0,0,"AI: Shrine and incense smoke are clear, but the bright sunrise and orange-pink palette conflict with the night setting and deep blue-violet style.",ai-1
+k05-portrait,C,5,0,0,0,0,"AI: Strong shrine, smoke, blue-violet night washes, and warm lantern; distant figure stays simple, with a calm, mysterious composition.",ai-1
+k05-portrait,D,4,0,0,0,0,"AI: Shrine, smoke, and lantern glow read clearly in a soft watercolor scene, but the dawn-like sky and large overhanging tree weaken the match.",ai-1
+k09-landscape,A,3,0,0,0,0,"AI: Folder and glasses are clear; detailed, grainy case-file illustration, but lamp appears lit with warm highlights.",ai-1
+k09-landscape,B,4,0,0,0,0,"AI: Strong match with folder, glasses, and desk lamp; flat muted editorial look, though illumination reads slightly warm.",ai-1
+k09-landscape,C,5,0,0,0,0,"AI: Clear folder and reading glasses in restrained, grainy illustration; lamp is unlit and palette fits the template well.",ai-1
+k09-landscape,D,4,0,0,0,0,"AI: Folder and glasses are prominent with flat ink outlines; lamp is unlit, but overhead angle and sparse scene feel less editorial.",ai-1
+k09-portrait,A,3,0,0,0,0,"AI: Folder and glasses are clear, but the lit lamp casts warm light; rendering is more textured and dimensional than flat editorial art.",ai-1
+k09-portrait,B,3,0,0,0,0,"AI: Folder, glasses, and lamp are present, but warm lighting and painterly shading depart from the cool, flat style.",ai-1
+k09-portrait,C,4,0,0,0,0,"AI: Clear, polished flat illustration with folder and glasses; however, the lamp is unlit and the scene lacks lamp light.",ai-1
+k09-portrait,D,3,0,0,0,0,"AI: Folder, glasses, and lamp are visible, but warm lamp glow conflicts with the template; framed inset composition is distracting.",ai-1
+k10-landscape,A,5,0,0,0,0,"AI: Strong charcoal hatching and stark fluorescent light; empty room, metal table, and two chairs match well.",ai-1
+k10-landscape,B,4,0,0,0,0,"AI: Matches the room and lighting, but extra objects and a less restrained composition weaken the empty documentary mood.",ai-1
+k10-landscape,C,5,0,0,0,0,"AI: Excellent monochrome hatching, hard overhead light, and sparse interview-room setup with no people.",ai-1
+k10-landscape,D,5,0,0,0,0,AI: Strong noir treatment and correct furnishings; the large observation window adds detail but remains plausible.,ai-1
+k10-portrait,A,4,0,0,0,0,"AI: Strong charcoal hatching and hard fluorescent light; table and chairs read clearly, though extra door detail distracts slightly.",ai-1
+k10-portrait,B,5,0,0,0,0,"AI: Clear empty interview room with metal table, two chairs, and fluorescent fixture; restrained monochrome charcoal style.",ai-1
+k10-portrait,C,4,0,0,0,0,"AI: Good stark composition and lighting, but the table material is ambiguous and the scene is unusually dark.",ai-1
+k10-portrait,D,4,0,0,0,0,"AI: Room elements match, but the window, door, bin, and tabletop object add clutter beyond the requested spare scene.",ai-1
