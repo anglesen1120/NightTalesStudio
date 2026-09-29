@@ -41,7 +41,10 @@ public sealed class ValidationBehavior<TMessage, TResponse>(IEnumerable<IValidat
                 failures.Add(Error.Validation(
                     code: ErrorCodes.ValidationFailed,
                     description: failure.ErrorMessage,
-                    metadata: new Dictionary<string, object> { ["field"] = ToCamelCase(failure.PropertyName) }));
+                    metadata: new Dictionary<string, object>
+                    {
+                        [ErrorMetadata.Field] = ToCamelCase(failure.PropertyName),
+                    }));
             }
         }
 
