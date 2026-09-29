@@ -7,7 +7,7 @@ namespace NightTales.Domain.Catalog;
 /// primary key is the canonical VieNeu preset name, a <c>string</c> (09 W3 CR-41), and the table is not
 /// user-owned. The 09.2.5-T1 seeder upserts rows through <see cref="Create"/>.
 /// </summary>
-public sealed class Voice
+public sealed class Voice : ICreatedAt
 {
     private Voice()
     {
@@ -27,6 +27,9 @@ public sealed class Voice
     public string? PreviewStorageKey { get; private set; }
 
     public bool Active { get; private set; }
+
+    /// <summary>Stamped by <c>AuditableSaveChangesInterceptor</c> on insert (plan §3 preamble).</summary>
+    public DateTimeOffset CreatedAt { get; private set; }
 
     /// <summary>Creates a catalog row; the 09.2.5-T1 seeder upserts by <paramref name="id"/>.</summary>
     public static Voice Create(

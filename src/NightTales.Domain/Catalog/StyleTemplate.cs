@@ -7,7 +7,7 @@ namespace NightTales.Domain.Catalog;
 /// A curated style template of the 03 catalog (00 overview §6 <c>style_templates</c>). Platform data,
 /// not user-owned; the template text must contain the <c>{term}</c> placeholder (a CHECK constraint).
 /// </summary>
-public sealed class StyleTemplate : Entity
+public sealed class StyleTemplate : Entity, ICreatedAt
 {
     private StyleTemplate()
     {
@@ -24,6 +24,9 @@ public sealed class StyleTemplate : Entity
     public Topic? TopicHint { get; private set; }
 
     public bool Active { get; private set; }
+
+    /// <summary>Stamped by <c>AuditableSaveChangesInterceptor</c> on insert (plan §3 preamble).</summary>
+    public DateTimeOffset CreatedAt { get; private set; }
 
     /// <summary>Creates a catalog row; the 09.2.5-T1 seeder upserts by <paramref name="name"/>.</summary>
     public static StyleTemplate Create(

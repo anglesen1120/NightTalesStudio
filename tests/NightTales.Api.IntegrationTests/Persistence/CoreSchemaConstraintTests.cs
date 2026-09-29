@@ -108,16 +108,16 @@ public sealed class CoreSchemaConstraintTests(TestDatabase database) : Integrati
         },
         {
             "voices.language",
-            "INSERT INTO voices (id, display_name, language, gender, tags, active) VALUES ('v', 'v', 'bogus', 'female', '{}', true)"
+            "INSERT INTO voices (id, display_name, language, gender, tags, active, created_at) VALUES ('v', 'v', 'bogus', 'female', '{}', true, now())"
         },
         {
             "voices.gender",
-            "INSERT INTO voices (id, display_name, language, gender, tags, active) VALUES ('v', 'v', 'vi', 'bogus', '{}', true)"
+            "INSERT INTO voices (id, display_name, language, gender, tags, active, created_at) VALUES ('v', 'v', 'vi', 'bogus', '{}', true, now())"
         },
         {
             "style_templates.topic_hint",
-            "INSERT INTO style_templates (id, name, template, topic_hint, active) "
-            + "VALUES (gen_random_uuid(), 'n', 'a {term} b', 'bogus', true)"
+            "INSERT INTO style_templates (id, name, template, topic_hint, active, created_at) "
+            + "VALUES (gen_random_uuid(), 'n', 'a {term} b', 'bogus', true, now())"
         },
     };
 
@@ -137,7 +137,7 @@ public sealed class CoreSchemaConstraintTests(TestDatabase database) : Integrati
     {
         var sqlState = SqlProbe.SqlState(
             Database,
-            "INSERT INTO style_templates (id, name, template, active) VALUES (gen_random_uuid(), 'n', 'no placeholder', true)");
+            "INSERT INTO style_templates (id, name, template, active, created_at) VALUES (gen_random_uuid(), 'n', 'no placeholder', true, now())");
 
         sqlState.ShouldBe("23514");
     }
