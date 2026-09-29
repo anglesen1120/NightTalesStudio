@@ -41,6 +41,12 @@ Connection string for the Api and the Worker, never in `appsettings*.json`. `db-
 tools/dev/db-init.sh --user-secrets
 ```
 
-The environment variable `ConnectionStrings__Postgres` works as well. Integration tests read `NTS_TEST_PG`, which points at this same server.
+The environment variable `ConnectionStrings__Postgres` works as well. Integration tests read `NTS_TEST_PG`, which points at this same server; export it (or set it in the shell that runs `dotnet test`) with the same `.env` values and a database the role can connect to, because each test class creates and drops its own database next to it:
+
+```bash
+export NTS_TEST_PG="Host=127.0.0.1;Port=5432;Database=${POSTGRES_DB:-nighttales};Username=${POSTGRES_USER:-nighttales};Password=<POSTGRES_PASSWORD from .env>"
+```
+
+A missing or blank `NTS_TEST_PG` fails the test fixture with a named error; it never skips silently.
 
 **Optional compose path (e2e / image smoke only).** `docker-compose.yml` defines a `postgres` service (`postgres:17-alpine`, `127.0.0.1:5432`, healthcheck: a password login with `psql -h 127.0.0.1 ... SELECT 1`). Daily development never starts it. It binds the same port as the native server, so stop one before starting the other, or move the host port in a git-ignored `docker-compose.override.yml`. Its data volume is disposable: `docker compose down -v`. The image applies `POSTGRES_*` only when the volume is first created; after changing them, recreate the volume or the healthcheck stays unhealthy.
