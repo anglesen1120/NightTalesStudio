@@ -88,7 +88,9 @@ public sealed class PostgresFixtureGuardTests
         }
 
         PostgresFixture.QuoteIdentifier("nts_t_abc123").ShouldBe("\"nts_t_abc123\"");
-        PostgresFixture.QuoteIdentifier(new string('a', 63)).ShouldBe($"\"{new string('a', 63)}\"");
+        var longest = $"nts_{new string('a', 59)}";
+        longest.Length.ShouldBe(63);
+        PostgresFixture.QuoteIdentifier(longest).ShouldBe($"\"{longest}\"");
     }
 
     [Fact]
@@ -100,5 +102,117 @@ public sealed class PostgresFixtureGuardTests
         masked.ShouldNotContain("sup3r-s3cret");
         masked.ShouldContain("127.0.0.1");
         masked.ShouldContain("nighttales");
+    }
+
+    [Fact]
+    public void PostgresFixture_UnmanagedDatabaseName_IsRefusedBeforeAnyDdl()
+    {
+        // SEC 09.2.1-T2: the harness drops and creates databases, so only names carrying the
+        // reserved prefix may be rendered into DDL — a typo must fail before the server sees it.
+        foreach (var unmanaged in new[] { "nighttales", "postgres", "template1", "ntsfoo" })
+        {
+            var exception = Should.Throw<InvalidOperationException>(
+                () => PostgresFixture.RequireManagedDatabaseName(unmanaged));
+
+            exception.Message.ShouldContain(PostgresFixture.ManagedDatabasePrefix);
+            exception.Message.ShouldContain(PostgresFixture.ConnectionStringVariable);
+            exception.Message.ShouldNotContain("DROP DATABASE x");
+
+            // The DDL choke point enforces the same rule.
+            Should.Throw<InvalidOperationException>(() => PostgresFixture.QuoteIdentifier(unmanaged));
+        }
+
+        // The fixture refuses an unmanaged template name at construction, not at first use.
+        var templateException = Should.Throw<InvalidOperationException>(() => new PostgresFixture("nighttales"));
+        templateException.Message.ShouldContain(PostgresFixture.ManagedDatabasePrefix);
+
+        PostgresFixture.RequireManagedDatabaseName("nts_ok").ShouldBe("nts_ok");
+        PostgresFixture.QuoteIdentifier("nts_t_abc123").ShouldBe("\"nts_t_abc123\"");
+    }
+
+    [Fact]
+    public void PostgresFixture_RemoteDdlTarget_IsRefusedUnlessOverrideIsSet()
+    {
+        // SEC 09.2.1-T2: the fixture runs destructive DDL, so only this machine is accepted unless
+        // the owner opts in explicitly (and never for a shared or production cluster).
+        foreach (var loopback in new[]
+        {
+            "Host=127.0.0.1;Port=5432;Database=nighttales;Username=nts",
+            "Host=localhost;Port=5432;Database=nighttales;Username=nts",
+            "Host=127.0.0.5;Port=5432;Database=nighttales;Username=nts",
+            "Host=::1;Port=5432;Database=nighttales;Username=nts",
+            "Host=[::1];Port=5432;Database=nighttales;Username=nts",
+            "Host=/tmp;Port=5432;Database=nighttales;Username=nts",
+            "Host=127.0.0.1,localhost;Port=5432;Database=nighttales;Username=nts",
+            "Port=5432;Database=nighttales;Username=nts",
+        })
+        {
+            Should.NotThrow(() => PostgresFixture.EnsureDdlTargetIsLoopback(loopback, allowRemote: false));
+        }
+
+        foreach (var remote in new[]
+        {
+            "Host=db.example.com;Port=5432;Database=nighttales;Username=nts",
+            "Host=10.0.0.5;Port=5432;Database=nighttales;Username=nts",
+            "Host=127.0.0.1,db.internal;Port=5432;Database=nighttales;Username=nts",
+        })
+        {
+            var exception = Should.Throw<InvalidOperationException>(
+                () => PostgresFixture.EnsureDdlTargetIsLoopback(remote, allowRemote: false));
+
+            exception.Message.ShouldContain(PostgresFixture.ConnectionStringVariable);
+            exception.Message.ShouldContain(PostgresFixture.AllowRemoteDdlVariable);
+            exception.Message.ShouldContain("drops and creates databases");
+
+            // The documented boundary: the override is the only way in, and it must be deliberate.
+            Should.NotThrow(() => PostgresFixture.EnsureDdlTargetIsLoopback(remote, allowRemote: true));
+        }
+    }
+
+    [Fact]
+    public void PostgresFixture_RemoteDdlTarget_RefusalIsWiredIntoTheEnvGuard()
+    {
+        // SEC 09.2.1-T2: RequireServerConnectionString is the only entry point of the fixture, so it
+        // must apply the loopback rule with the environment override. The override is unset for every
+        // normal run (dev and CI both use a loopback host), but the assertion stays valid either way.
+        const string Remote = "Host=db.example.com;Port=5432;Database=nighttales;Username=nts;Password=nts";
+
+        if (PostgresFixture.IsRemoteDdlAllowed())
+        {
+            PostgresFixture.RequireServerConnectionString(Remote).ShouldBe(Remote);
+        }
+        else
+        {
+            Should.Throw<InvalidOperationException>(() => PostgresFixture.RequireServerConnectionString(Remote))
+                .Message.ShouldContain(PostgresFixture.AllowRemoteDdlVariable);
+        }
+
+        // The dev and CI value is a loopback host, so it is always accepted.
+        const string Loopback = "Host=127.0.0.1;Port=5432;Database=nighttales;Username=nighttales;Password=nts";
+        PostgresFixture.RequireServerConnectionString(Loopback).ShouldBe(Loopback);
+    }
+
+    [Fact]
+    public void PostgresFixture_DdlPrivilegeFailure_NamesStatementAndDbInitScript()
+    {
+        // SEC 09.2.1-T2: a role without CREATEDB / without ownership used to surface the raw
+        // Npgsql.PostgresException (SQLSTATE 42501). The DDL path now maps that one SQLSTATE to a
+        // named error; every other SQLSTATE keeps its original exception.
+        var create = PostgresFixture.DescribeDdlFailure("42501", PostgresFixture.DdlStatement.CreateDatabase);
+        create.ShouldNotBeNull();
+        create.ShouldContain(PostgresFixture.ConnectionStringVariable);
+        create.ShouldContain("CREATE DATABASE");
+        create.ShouldContain("tools/dev/db-init.sh");
+        create.ShouldContain("42501");
+
+        var drop = PostgresFixture.DescribeDdlFailure("42501", PostgresFixture.DdlStatement.DropDatabase);
+        drop.ShouldNotBeNull();
+        drop.ShouldContain("DROP DATABASE");
+        drop.ShouldContain("tools/dev/db-init.sh");
+
+        // Anything that is not the privilege failure is not this mapping's business.
+        PostgresFixture.DescribeDdlFailure("42P04", PostgresFixture.DdlStatement.CreateDatabase).ShouldBeNull();
+        PostgresFixture.DescribeDdlFailure("3D000", PostgresFixture.DdlStatement.DropDatabase).ShouldBeNull();
+        PostgresFixture.DescribeDdlFailure(null, PostgresFixture.DdlStatement.DropDatabase).ShouldBeNull();
     }
 }

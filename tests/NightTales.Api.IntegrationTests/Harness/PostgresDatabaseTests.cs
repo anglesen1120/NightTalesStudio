@@ -54,7 +54,13 @@ public sealed class PostgresDatabaseTests : IntegrationTest
             duration.ShouldBeLessThan(TimeSpan.FromSeconds(1));
 
             other.Name.ShouldNotBe(Database.Name);
-            other.ConnectionString.ShouldNotBe(Database.ConnectionString);
+
+            // SEC 09.2.1-T2: the raw connection strings embed the password, so they are never
+            // compared or printed directly — a failed assertion would leak it into the test output.
+            PostgresFixture.MaskPassword(other.ConnectionString)
+                .ShouldNotBe(PostgresFixture.MaskPassword(Database.ConnectionString));
+            new NpgsqlConnectionStringBuilder(other.ConnectionString).Database.ShouldBe(other.Name);
+            new NpgsqlConnectionStringBuilder(Database.ConnectionString).Database.ShouldBe(Database.Name);
 
             await using (var here = Database.CreateReadDbContext())
             {
