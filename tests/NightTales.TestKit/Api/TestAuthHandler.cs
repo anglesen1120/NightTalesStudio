@@ -14,6 +14,13 @@ namespace NightTales.TestKit.Api;
 /// <c>src/</c> references this type, and <c>ProductionHost_DoesNotRegisterTestScheme</c> proves the
 /// host built from <c>Program</c> never authenticates through it.
 /// </summary>
+/// <remarks>
+/// The header grammar is closed and single-valued (SEC 09.2.1-T2): the user id must be a
+/// <see cref="Guid"/>, the role must be one of the <see cref="PlatformRole"/> names
+/// (case-insensitive, see <see cref="TryParseRole"/>), and each header must be present at most once —
+/// so a numeric role, a comma-joined value or a duplicated header fails authentication instead of
+/// quietly authenticating as something else.
+/// </remarks>
 public sealed class TestAuthHandler : AuthenticationHandler<AuthenticationSchemeOptions>
 {
     /// <summary>The scheme name; <see cref="ApiFactory"/> also makes it the default scheme.</summary>
@@ -42,24 +49,58 @@ public sealed class TestAuthHandler : AuthenticationHandler<AuthenticationScheme
     /// <summary>The claim value of <paramref name="role"/>, snake_case like the real JWT (README D16).</summary>
     public static string RoleClaimValue(PlatformRole role) => role.ToString().ToLowerInvariant();
 
+    /// <summary>
+    /// Parses a role header value against the closed set of <see cref="PlatformRole"/> names,
+    /// case-insensitively. <see cref="Enum.TryParse{TEnum}(string, bool, out TEnum)"/> is deliberately
+    /// not used: it also accepts numeric values (<c>2</c> is <see cref="PlatformRole.Owner"/>) and
+    /// comma-joined flag combinations, neither of which a test header may smuggle in
+    /// (SEC 09.2.1-T2).
+    /// </summary>
+    public static bool TryParseRole(string? raw, out PlatformRole role)
+    {
+        foreach (var name in Enum.GetNames<PlatformRole>())
+        {
+            if (string.Equals(name, raw, StringComparison.OrdinalIgnoreCase))
+            {
+                role = Enum.Parse<PlatformRole>(name);
+                return true;
+            }
+        }
+
+        role = default;
+        return false;
+    }
+
     /// <inheritdoc />
     protected override Task<AuthenticateResult> HandleAuthenticateAsync()
     {
-        var rawUser = Request.Headers[UserHeader].ToString();
-        if (string.IsNullOrWhiteSpace(rawUser))
+        var userValues = Request.Headers[UserHeader];
+        if (userValues.Count == 0 || string.IsNullOrWhiteSpace(userValues.ToString()))
         {
             // No header: anonymous, exactly like a request without a bearer token.
             return Task.FromResult(AuthenticateResult.NoResult());
         }
 
-        if (!Guid.TryParse(rawUser, out var userId))
+        if (userValues.Count > 1)
+        {
+            // Two X-Test-User headers are ambiguous: never let the first one silently win.
+            return Task.FromResult(AuthenticateResult.Fail($"Header '{UserHeader}' must be sent at most once."));
+        }
+
+        if (!Guid.TryParse(userValues.ToString(), out var userId))
         {
             return Task.FromResult(AuthenticateResult.Fail($"Header '{UserHeader}' must hold a Guid."));
         }
 
-        var rawRole = Request.Headers[RoleHeader].ToString();
+        var roleValues = Request.Headers[RoleHeader];
+        if (roleValues.Count > 1)
+        {
+            return Task.FromResult(AuthenticateResult.Fail($"Header '{RoleHeader}' must be sent at most once."));
+        }
+
+        var rawRole = roleValues.ToString();
         var role = PlatformRole.User;
-        if (!string.IsNullOrWhiteSpace(rawRole) && !Enum.TryParse(rawRole, ignoreCase: true, out role))
+        if (!string.IsNullOrWhiteSpace(rawRole) && !TryParseRole(rawRole, out role))
         {
             return Task.FromResult(AuthenticateResult.Fail($"Header '{RoleHeader}' must name a {nameof(PlatformRole)}."));
         }

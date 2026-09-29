@@ -15,7 +15,10 @@ namespace NightTales.TestKit.Database;
 /// <remarks>
 /// The name is generated per instance, so parallel test classes never share a database and one run
 /// cannot read another class's rows. <see cref="ConnectionString"/> is <c>NTS_TEST_PG</c> with
-/// <c>Database</c> swapped, so credentials always come from the one environment variable.
+/// <c>Database</c> swapped, so credentials always come from the one environment variable; it is built
+/// once per instance (the getter is called on every context creation). The name carries the reserved
+/// <see cref="PostgresFixture.ManagedDatabasePrefix"/>, which the fixture requires before any
+/// destructive DDL.
 /// </remarks>
 public sealed class TestDatabase : IAsyncLifetime, IAsyncDisposable
 {
@@ -24,14 +27,24 @@ public sealed class TestDatabase : IAsyncLifetime, IAsyncDisposable
     private readonly PostgresFixture _fixture = PostgresFixture.Shared;
     private bool _created;
 
+    /// <summary>
+    /// Names this database and resolves its connection string once; the server work is
+    /// <see cref="InitializeAsync"/>.
+    /// </summary>
+    public TestDatabase()
+    {
+        Name = PostgresFixture.RequireManagedDatabaseName($"nts_t_{Guid.CreateVersion7():N}");
+        ConnectionString = _fixture.ConnectionStringFor(Name);
+    }
+
     /// <summary>The fixture that owns the template this database is copied from.</summary>
     public PostgresFixture Fixture => _fixture;
 
     /// <summary>This database's name on the test server, unique per instance.</summary>
-    public string Name { get; } = $"nts_t_{Guid.CreateVersion7():N}";
+    public string Name { get; }
 
-    /// <summary>The pooled connection string of this database.</summary>
-    public string ConnectionString => _fixture.ConnectionStringFor(Name);
+    /// <summary>The pooled connection string of this database, computed once (PERF 09.2.1-T2).</summary>
+    public string ConnectionString { get; }
 
     /// <summary>
     /// How long the <c>CREATE DATABASE … TEMPLATE</c> copy of <see cref="InitializeAsync"/> took, once
@@ -49,26 +62,19 @@ public sealed class TestDatabase : IAsyncLifetime, IAsyncDisposable
         await _fixture.EnsureReadyAsync();
 
         var startedAt = Stopwatch.GetTimestamp();
-        var statement =
-            $"CREATE DATABASE {PostgresFixture.QuoteIdentifier(Name)} TEMPLATE {PostgresFixture.QuoteIdentifier(_fixture.TemplateDatabase)}";
-
-        try
-        {
-            await _fixture.ExecuteOnServerAsync(statement);
-        }
-        catch (PostgresException exception) when (exception.SqlState == PostgresErrorCodes.InsufficientPrivilege)
-        {
-            throw new InvalidOperationException(
-                $"{PostgresFixture.ConnectionStringVariable}: the test role may not create databases " +
-                $"(SQLSTATE {exception.SqlState}). Grant CREATEDB with tools/dev/db-init.sh (09.1.1-T2).",
-                exception);
-        }
+        await _fixture.CreateDatabaseAsync(Name, _fixture.TemplateDatabase);
 
         _created = true;
         CreationDuration = Stopwatch.GetElapsedTime(startedAt);
     }
 
     /// <summary>Drops the database with <c>FORCE</c>, which terminates a test's leaked connections.</summary>
+    /// <remarks>
+    /// This database's Npgsql pool is cleared first: <c>DROP DATABASE … WITH (FORCE)</c> has to
+    /// terminate every backend, and terminating an *idle pooled* connection costs hundreds of
+    /// milliseconds, while a connection that is already closed costs nothing (PERF 09.2.1-T2). The
+    /// clear is scoped to exactly this connection string, so a parallel class's pool is untouched.
+    /// </remarks>
     public async ValueTask DisposeAsync()
     {
         if (!_created)
@@ -77,8 +83,13 @@ public sealed class TestDatabase : IAsyncLifetime, IAsyncDisposable
         }
 
         _created = false;
-        await _fixture.ExecuteOnServerAsync(
-            $"DROP DATABASE IF EXISTS {PostgresFixture.QuoteIdentifier(Name)} WITH (FORCE)");
+
+        using (var pooled = new NpgsqlConnection(ConnectionString))
+        {
+            NpgsqlConnection.ClearPool(pooled);
+        }
+
+        await _fixture.DropDatabaseAsync(Name);
     }
 
     /// <summary>A write context over this database; <paramref name="currentUser"/> defaults to no actor.</summary>
