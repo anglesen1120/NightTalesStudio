@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using NightTales.Api.IntegrationTests.Harness;
+using NightTales.TestKit.Database;
 using NightTales.TestKit.Health;
 using Shouldly;
 using Xunit;
@@ -75,4 +76,30 @@ public sealed class WorkerHealthTests
 
         database.GetProperty("description").GetString().ShouldBe("database unreachable");
     }
+
+    [Fact]
+    public async Task WorkerHealthProbe_NonLoopbackServer_IsRefused()
+    {
+        // The probe runs the production graph, which installs Hangfire's schema, so its target passes
+        // the fixture's destructive-DDL boundary before anything connects (SEC 09.2.6-T1/SEC-01).
+        var exception = await Should.ThrowAsync<InvalidOperationException>(
+            () => WorkerHealthProbe.StartAsync(RemoteHostDatabase, cancellationToken: TestContextToken.Value));
+
+        exception.Message.ShouldContain("not a loopback host");
+    }
+
+    [Fact]
+    public async Task WorkerHealthProbe_UnmanagedDatabaseName_IsRefused()
+    {
+        var exception = await Should.ThrowAsync<InvalidOperationException>(
+            () => WorkerHealthProbe.StartAsync(UnmanagedDatabase, cancellationToken: TestContextToken.Value));
+
+        exception.Message.ShouldContain(PostgresFixture.ManagedDatabasePrefix);
+    }
+
+    private const string RemoteHostDatabase =
+        "Host=nts-remote.invalid;Port=5432;Database=nts_remote;Username=nts;Password=nts-not-a-real-password";
+
+    private const string UnmanagedDatabase =
+        "Host=127.0.0.1;Port=5432;Database=nighttales;Username=nts;Password=nts-not-a-real-password";
 }

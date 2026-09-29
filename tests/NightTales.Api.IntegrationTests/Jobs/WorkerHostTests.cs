@@ -1,6 +1,7 @@
 using Hangfire;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Hosting;
 using NightTales.Api.IntegrationTests.Harness;
 using NightTales.Infrastructure.Jobs;
 using NightTales.TestKit;
@@ -12,8 +13,8 @@ using Xunit;
 namespace NightTales.Api.IntegrationTests.Jobs;
 
 /// <summary>
-/// The two <see cref="WorkerHost"/> modes (09 README D13, 09 W3 CR-42) and the Worker's start-time
-/// job-resolution check.
+/// The two <see cref="WorkerHost"/> modes (09 README D13, 09 W3 CR-42), the Worker's start-time
+/// job-resolution check, and the harness's disposal contract for a host whose start failed.
 /// </summary>
 [Collection("Hangfire server")]
 public sealed class WorkerHostTests(TestDatabase database) : IntegrationTest(database)
@@ -71,6 +72,44 @@ public sealed class WorkerHostTests(TestDatabase database) : IntegrationTest(dat
     }
 
     [Fact]
+    public async Task WorkerHost_ObserverWait_ReturnsOnlyAfterTheStateIsCommitted()
+    {
+        // The observer's filter runs inside Hangfire's state transaction, before it commits, so a wait
+        // that returned on the in-process signal alone would race the commit: the storage read below (or
+        // the ChangeState the retry test issues next) could still see the previous state (CR 09.2.6-T1).
+        await using var host = ProbeHost.New(Database, new ProbeJobEffects()).WithHangfireServer();
+        await host.StartAsync(TestContextToken.Value);
+
+        var jobId = host.Scheduler.Enqueue<RetryingProbeJob>((job, ct) => job.RunAsync(Guid.Empty, ct));
+
+        await host.Observer.WaitForStatesAsync(jobId, "Scheduled", 1, Timeout);
+
+        using var connection = host.Services.GetRequiredService<JobStorage>().GetConnection();
+        connection.GetStateData(jobId)!.Name.ShouldBe("Scheduled");
+    }
+
+    [Fact]
+    public async Task WorkerHost_FailedStart_DisposesWithoutStopping()
+    {
+        // The disposal contract of a host whose start failed: it is disposed, never stopped. Stopping it
+        // would call StopAsync on services that never started, and the host's own error would be masked
+        // (QA 09.2.6-T1). The activation check fails the start before the recorder is reached.
+        var recorder = new RecordingHostedService();
+
+        await using (var host = ProbeHost.New(Database, new ProbeJobEffects())
+            .ConfigureServices(services =>
+            {
+                services.RemoveAll<ProbeJobDependency>();
+                services.AddSingleton<IHostedService>(recorder);
+            }))
+        {
+            await Should.ThrowAsync<InvalidOperationException>(() => host.StartAsync(TestContextToken.Value));
+        }
+
+        recorder.StopCalls.ShouldBe(0);
+    }
+
+    [Fact]
     public async Task TwoHosts_InOneProcess_DoNotCrossDeliverJobs()
     {
         // D13: two Worker hosts share one process. Each owns its JobStorage and JobActivator; a
@@ -94,5 +133,25 @@ public sealed class WorkerHostTests(TestDatabase database) : IntegrationTest(dat
 
         effectsA.Runs.ShouldBe(1);
         effectsB.Runs.ShouldBe(0);
+    }
+
+    /// <summary>A hosted service that only counts how often the host stopped it.</summary>
+    private sealed class RecordingHostedService : IHostedService
+    {
+        private int _stopCalls;
+
+        /// <summary>How often <see cref="StopAsync"/> ran.</summary>
+        public int StopCalls => Volatile.Read(ref _stopCalls);
+
+        /// <inheritdoc />
+        public Task StartAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+        /// <inheritdoc />
+        public Task StopAsync(CancellationToken cancellationToken)
+        {
+            Interlocked.Increment(ref _stopCalls);
+
+            return Task.CompletedTask;
+        }
     }
 }

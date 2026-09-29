@@ -11,22 +11,22 @@ using Xunit;
 namespace NightTales.Api.IntegrationTests.Jobs;
 
 /// <summary>
-/// The Worker's start-time configuration validation (09.2.6-T1): a wrong <c>Jobs</c> value must
-/// fail the boot with a named options error instead of silently starting a server that polls the
-/// wrong schema or the wrong queues.
+/// The Worker's start-time validation (09.2.6-T1): a wrong <c>Jobs</c> value, or a connection string the
+/// harness refuses, must fail the boot with a named error instead of silently starting a server that
+/// polls the wrong schema or writes to a database this machine does not own.
 /// </summary>
 /// <remarks>
-/// These hosts are not disposed: <c>WorkerHost.DisposeAsync</c> today crashes in
-/// <c>Host.StopAsync</c> when <c>StartAsync</c> threw while resolving the hosted services
-/// (QA-926T1-D1) — disposing would mask the options error the test asserts. A host that never
-/// started holds no database connection, so nothing real leaks.
+/// Every host below fails inside <c>StartAsync</c> and is still disposed by <c>await using</c>: a host
+/// that never started holds no connection, and disposing it must not mask the boot error the test
+/// asserts. The disposal contract itself is pinned by
+/// <see cref="WorkerHostTests.WorkerHost_FailedStart_DisposesWithoutStopping"/>.
 /// </remarks>
 public sealed class WorkerHostOptionsTests(TestDatabase database) : IntegrationTest(database)
 {
     [Fact]
     public async Task WorkerHost_ZeroWorkerCount_FailsTheBoot()
     {
-        var host = new WorkerHost(Database, new FakeClock())
+        await using var host = new WorkerHost(Database, new FakeClock())
             .WithSetting($"{JobsOptions.SectionName}:{nameof(JobsOptions.Workers)}:default", "0");
 
         var exception = await Should.ThrowAsync<OptionsValidationException>(
@@ -41,7 +41,7 @@ public sealed class WorkerHostOptionsTests(TestDatabase database) : IntegrationT
     {
         // `Jobs:Workers:fetch` names no JobQueue member: the server must refuse to start rather than
         // count workers for a queue it never listens on.
-        var host = new WorkerHost(Database, new FakeClock())
+        await using var host = new WorkerHost(Database, new FakeClock())
             .WithSetting($"{JobsOptions.SectionName}:{nameof(JobsOptions.Workers)}:fetch", "1");
 
         var exception = await Should.ThrowAsync<OptionsValidationException>(
@@ -53,7 +53,7 @@ public sealed class WorkerHostOptionsTests(TestDatabase database) : IntegrationT
     [Fact]
     public async Task WorkerHost_BlankSchemaName_FailsTheBoot()
     {
-        var host = new WorkerHost(Database, new FakeClock())
+        await using var host = new WorkerHost(Database, new FakeClock())
             .WithSetting($"{JobsOptions.SectionName}:{nameof(JobsOptions.SchemaName)}", " ");
 
         var exception = await Should.ThrowAsync<OptionsValidationException>(
@@ -77,4 +77,55 @@ public sealed class WorkerHostOptionsTests(TestDatabase database) : IntegrationT
 
         exception.Message.ShouldContain("ConnectionStrings:Postgres");
     }
+
+    [Theory]
+    [InlineData("hangfire; drop schema public")]
+    [InlineData("\"Hangfire\"")]
+    [InlineData("public.hangfire")]
+    public async Task WorkerHost_SchemaNameOutsideTheIdentifierRule_FailsTheBoot(string schemaName)
+    {
+        // Hangfire's own schema SQL interpolates the name (SEC 09.2.6-T1/SEC-02), so only a lower-case,
+        // unquoted identifier may reach it.
+        await using var host = new WorkerHost(Database, new FakeClock())
+            .WithSetting($"{JobsOptions.SectionName}:{nameof(JobsOptions.SchemaName)}", schemaName);
+
+        var exception = await Should.ThrowAsync<OptionsValidationException>(
+            () => host.StartAsync(TestContextToken.Value));
+
+        exception.Message.ShouldContain("lower-case, unquoted PostgreSQL identifier");
+    }
+
+    [Fact]
+    public async Task WorkerHost_NonLoopbackServer_FailsTheBoot()
+    {
+        // The Worker graph installs Hangfire's schema (PrepareSchemaIfNecessary), so the harness hands
+        // it the same loopback boundary as the fixture's own DDL (SEC 09.2.6-T1/SEC-01).
+        await using var host = new WorkerHost(Database, new FakeClock())
+            .WithSetting("ConnectionStrings:Postgres", RemoteHostConnectionString);
+
+        var exception = await Should.ThrowAsync<InvalidOperationException>(
+            () => host.StartAsync(TestContextToken.Value));
+
+        exception.Message.ShouldContain("not a loopback host");
+    }
+
+    [Fact]
+    public async Task WorkerHost_UnmanagedDatabaseName_FailsTheBoot()
+    {
+        // A loopback server is not enough: the database must carry the harness's reserved prefix, or a
+        // typo could let the Worker install its schema in a database the harness does not own.
+        await using var host = new WorkerHost(Database, new FakeClock())
+            .WithSetting("ConnectionStrings:Postgres", UnmanagedDatabaseConnectionString);
+
+        var exception = await Should.ThrowAsync<InvalidOperationException>(
+            () => host.StartAsync(TestContextToken.Value));
+
+        exception.Message.ShouldContain(PostgresFixture.ManagedDatabasePrefix);
+    }
+
+    private const string RemoteHostConnectionString =
+        "Host=nts-remote.invalid;Port=5432;Database=nts_remote;Username=nts;Password=nts-not-a-real-password";
+
+    private const string UnmanagedDatabaseConnectionString =
+        "Host=127.0.0.1;Port=5432;Database=nighttales;Username=nts;Password=nts-not-a-real-password";
 }
