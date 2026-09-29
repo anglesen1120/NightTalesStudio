@@ -2,6 +2,7 @@
 config.toml
 *.env
 .env*
+!.env.example
 # Runtime state: $NTS_HOME = <repo>/.nts (01 CR-11, DEC-5): clones, venvs, weights, logs, media, rendered config
 .nts/
 
@@ -19,7 +20,7 @@ __pycache__/
 .DS_Store
 
 # --- 01.1.2-T1 (README F16, D1) ---
-# Env files: real ones are ignored above (*.env, .env*); templates are named env.example (not .env.example)
+# Env files: real ones are ignored above (*.env, .env*); templates are env.example, except the root .env.example (09 W3 CR-36)
 # Images
 *.png
 *.jpg
@@ -74,3 +75,10 @@ trial/research/corpus/html/
 .ruff_cache/
 .pytest_cache/
 *.pyc
+
+# --- 09.1.1-T1: .NET build output (.env is covered by .env* above) ---
+bin/
+obj/
+*.user
+TestResults/
+docker-compose.override.yml

@@ -107,7 +107,7 @@ None (backend only). No Angular artifact is added, changed or referenced by this
 | Test discovery | `dotnet test NightTales.ci.slnf` exits 0 and discovers no failing tests; the filter excludes acceptance/performance |
 | Host | `HealthLive_ReturnsOk` — `GET /health/live` → 200 (added by 09.2.1-T2 once `ApiFactory` exists) |
 | Dev DB | `tools/dev/db-init.sh` run twice → exit 0 and a no-op the second time; `psql "host=127.0.0.1 …"` answers PostgreSQL 17; `lsof` shows a loopback-only listener (09 W3 CR-35) |
-| Compose (optional) | `docker compose config` validates; `docker compose up -d postgres` becomes healthy per `pg_isready` within the healthcheck window |
+| Compose (optional) | `docker compose config` validates; `docker compose up -d postgres` becomes healthy per its password-login healthcheck (09 W3 CR-36) within the healthcheck window |
 | Config | the dev connection string resolves from user-secrets/env and never appears in the repo; `git grep` finds no password literal |
 
 ## 10. Tasks and re-estimate
