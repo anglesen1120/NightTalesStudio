@@ -76,12 +76,13 @@ Checked against the landed siblings on 2026-09-24: 09.6.3-T2 writes "`assets` ro
 **EF configuration** (`Persistence/Configurations/AssetConfiguration.cs`, owned with the entity), index added by 09.7.3-T1:
 
 ```csharp
+// The rest of AssetConfiguration (including the column types) is 09.2.2-T1's; this story only adds the index: 09 W3 CR-40.
 builder.HasIndex(a => a.RetentionUntil)
        .HasFilter("deleted_at IS NULL AND retention_until IS NOT NULL")
        .HasDatabaseName("ix_assets_retention_due");           // partial, keeps the sweep index-only
-builder.Property(a => a.StorageKey).HasMaxLength(512);
-builder.Property(a => a.Sha256).HasMaxLength(64);
 ```
+
+`StorageKey` (`HasMaxLength(512)`) and `Sha256` (`HasMaxLength(64)`) stay in 09.2.2-T1's `AssetConfiguration`, so 09.7.3-T1's migration stays **index-only** (09 W3 CR-40). Because `assets` implements `IAuditable` (09 W3 CR-38), a set-based `ExecuteUpdateAsync` on the sweep path must `SetProperty(a => a.UpdatedAt, now)` — the interceptor only sees tracked changes.
 
 The audit sweep needs its own index on the `audit_logs` keyset: `audit_logs (created_at, id)` ([RULED — README §B10 WT47]), created by 09.7.3-T1's migration (`ix_audit_logs_created_id`) — it is what makes `WHERE (created_at, id) > (…) ORDER BY created_at, id` an index-only keyset scan; `audit_logs` DDL itself stays 09.3.6-T1's.
 
