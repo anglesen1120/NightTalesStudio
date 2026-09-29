@@ -3,7 +3,7 @@
 > Refines: `../../../09-backend-api.md` §4 (epic 09.1, story **09.1.4**, L71–73), §5.1 (endpoint example), §5.4 (catalogue); `../../../00-overview.md` §8.
 > Contract: `../README.md` — **D7**, **D14**, **D15**, **D17**; 02 CR-20 (`Retry-After`), 02 README D8/D9.
 > Template: `../../../00-overview.md` §10.1. Legend: ✅ · ⚠️ · [DECISION] · [OPEN] · [INFERENCE].
-> Status: detailed plan, 2026-09-24. Nothing implemented yet.
+> Status: **implemented 2026-09-29** (`09.1.4-T1`, branch `feature/09.1.4-error-mapping`, PR #40) — independent QA, code/performance/security reviews, the fix round and the fix-delta re-review are closed; 78 test cases green (44 without a database). The catalogue is 162 codes (`Status` 119 / `AcceptedBodyCodes` 3 / `NonHttpCodes` 40) and includes `unauthorized` (09 CR-38).
 
 ## 1. Scope
 
