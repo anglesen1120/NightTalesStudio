@@ -28,7 +28,7 @@
 | E1 | ProblemDetails (RFC 9457) with a stable `code` is the 00 §8 error format | 00 §8 ✅ |
 | E2 | Status comes from the code, not from `ErrorType` (02 already writes `Error.NotFound("fact_sheet_required", 409)`-style mixes, fixed by 09 CR-9) | README D7, F17 ✅ |
 | E3 | 202 bodies (`setting_change_pending`, `owner_action_pending`, `grant_requires_approval`, `objection_recorded`) are success values, not errors | 09 §4 09.1.4 L72 ✅ |
-| E4 | ASP.NET Core `IProblemDetailsService` / `AddProblemDetails()` writes `application/problem+json` | ASP.NET Core docs ⚠️ (not re-read) |
+| E4 | ASP.NET Core `IProblemDetailsService` / `AddProblemDetails()` writes `application/problem+json` ✅ verified 2026-09-29 against `dotnet/aspnetcore` `release/10.0` (see the 09.1.4-T1 Notes for the exact hooks) | ASP.NET Core docs + source ✅ |
 
 ## 3. Domain and data
 
