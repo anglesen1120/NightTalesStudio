@@ -1,4 +1,5 @@
 using NightTales.Api;
+using NightTales.Api.DependencyInjection;
 using NightTales.Api.Http;
 using NightTales.Infrastructure.Persistence;
 
@@ -10,6 +11,9 @@ builder.Services.AddOpenApi();
 builder.Services.AddNightTalesMediator();
 builder.Services.AddPersistence(builder.Configuration);
 builder.Services.AddProblemDetails(ProblemDetailsWriter.ConfigureProblemDetails);
+
+// 09 README D12/H4: the Api only writes the outbox, so an accidental direct enqueue fails fast.
+builder.Services.AddApiJobScheduler();
 
 var app = builder.Build();
 
