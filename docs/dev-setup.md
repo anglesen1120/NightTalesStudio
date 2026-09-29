@@ -18,7 +18,7 @@ dotnet format  NightTales.ci.slnf --verify-no-changes --no-restore
 ```
 
 ```bash
-# Unit job (no database). The count grows with every feature (96 on the 2026-09-29 wave-2
+# Unit job (no database). The count grows with every feature (98 on the 2026-09-29 wave-2
 # tree, 35 when this block was written). `--minimum-expected-tests 1` is the guard that makes a
 # zero-match filter red instead of silently green (see the note below). `--no-build` reuses the
 # Release build from the block above, so that block (with its ConnectionStrings__Postgres export)
