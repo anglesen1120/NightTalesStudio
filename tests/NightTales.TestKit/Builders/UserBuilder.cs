@@ -1,3 +1,4 @@
+using NightTales.Domain.Common;
 using NightTales.Infrastructure.Persistence;
 using NightTales.TestKit.Auth;
 using NightTales.TestKit.Database;
@@ -11,8 +12,9 @@ namespace NightTales.TestKit.Builders;
 /// bypassed with raw SQL.
 /// </summary>
 /// <remarks>
-/// The extra <c>users</c> columns (role, status, …) are 09.2.2-T1's; this builder fills the columns
-/// Identity itself needs (id, user name, e-mail, the normalized duplicates and the stamps).
+/// The extra <c>users</c> columns (display_name, ui_locale, role, status — 09.2.2-T1) are filled with
+/// their defaults; <c>created_at</c>/<c>updated_at</c> come from
+/// <c>AuditableSaveChangesInterceptor</c>, exactly as in production.
 /// </remarks>
 public sealed class UserBuilder(TestDatabase database, TestCurrentUser currentUser)
 {
@@ -42,6 +44,12 @@ public sealed class UserBuilder(TestDatabase database, TestCurrentUser currentUs
             EmailConfirmed = true,
             SecurityStamp = Guid.NewGuid().ToString("N"),
             ConcurrencyStamp = Guid.NewGuid().ToString("N"),
+            // The extra users columns of plan §3 are NOT NULL; created_at/updated_at are stamped by
+            // AuditableSaveChangesInterceptor (09 W3 CR-38).
+            DisplayName = address[..Math.Min(address.Length, AppUser.DisplayNameMaxLength)],
+            UiLocale = UiLocale.Vi,
+            Role = PlatformRole.User,
+            Status = UserStatus.Active,
         };
 
         await using var context = database.CreateAppDbContext(currentUser);

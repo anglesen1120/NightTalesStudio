@@ -19,6 +19,7 @@ public static class ModelConfigurationBuilderExtensions
         configurationBuilder.Conventions.Add(_ => new EntityIdConvention());
         configurationBuilder.Conventions.Add(_ => new AggregateRootConvention());
         configurationBuilder.Conventions.Add(_ => new EnumCheckConvention());
+        configurationBuilder.Conventions.Add(_ => new AuditTimestampConvention());
 
         return configurationBuilder;
     }

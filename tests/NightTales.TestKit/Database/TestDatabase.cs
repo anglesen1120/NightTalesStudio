@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using Npgsql;
 using NightTales.Application.Abstractions;
+using NightTales.Domain.Common;
 using NightTales.Infrastructure.Persistence;
 using Xunit;
 
@@ -92,9 +93,12 @@ public sealed class TestDatabase : IAsyncLifetime, IAsyncDisposable
         await _fixture.DropDatabaseAsync(Name);
     }
 
-    /// <summary>A write context over this database; <paramref name="currentUser"/> defaults to no actor.</summary>
-    public AppDbContext CreateAppDbContext(ICurrentUser? currentUser = null) =>
-        TestDbContextFactory.CreateAppContext(ConnectionString, currentUser);
+    /// <summary>
+    /// A write context over this database; <paramref name="currentUser"/> defaults to no actor and
+    /// <paramref name="clock"/> to the real system clock.
+    /// </summary>
+    public AppDbContext CreateAppDbContext(ICurrentUser? currentUser = null, IClock? clock = null) =>
+        TestDbContextFactory.CreateAppContext(ConnectionString, currentUser, clock);
 
     /// <summary>A read context over this database.</summary>
     public ReadDbContext CreateReadDbContext(ICurrentUser? currentUser = null) =>
