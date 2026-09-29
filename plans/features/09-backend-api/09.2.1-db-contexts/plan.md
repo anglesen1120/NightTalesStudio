@@ -5,7 +5,7 @@
 > Also: `../../../00-overview.md` §5.2 (CQRS rules), §6 (domain contract), §9 (estimates).
 > Template: `../../../00-overview.md` §10.1.
 > Legend: ✅ read from source/docs · ⚠️ unverified · [DECISION] · [OPEN] · [INFERENCE].
-> Status: detailed plan, 2026-09-24. Nothing implemented yet.
+> Status: **implemented 2026-09-29** — `09.2.1-T1` merged in wave 1 (PR #38), `09.2.1-T2` in the wave-2 batch (branch `feature/09.2.1-testkit`, PR #39): independent QA, code/performance/security reviews, the fix round, the fix-delta re-review and the final wave review are closed; 50 test cases green (31 without a database). `WorkerHost`/`InlineJobScheduler` and the Series/Episode builders are deferred to their owning tasks (09.2.6-T1 / 09.2.2-T1) per §1.
 
 ## 1. Scope
 
@@ -13,7 +13,7 @@
 
 **In scope.** `IAppDbContext` / `IReadDb`; `AppDbContext : IdentityDbContext<AppUser, AppRole, Guid>, IAppDbContext` (tracked); `ReadDbContext : DbContext, IReadDb` (`QueryTrackingBehavior.NoTracking`, every `SaveChanges*` throws); the shared model pipeline both contexts run (`ApplyConfigurationsFromAssembly`, snake_case, Identity table renames, `HasEnumCheck<TEnum>`, `xmin` on every `AggregateRoot`, UTC `timestamptz`); DI (`AddPersistence(IConfiguration)`, scoped, no pooling); the `ConnectionStrings:Postgres` key; no retrying execution strategy (D5); the Npgsql complex-type `ToJson()` spike (N9 ⚠️) with its fallback rule; and the `NightTales.TestKit` harness (D13).
 
-**Out of scope.** Entity configurations of individual tables and the `InitialCore` migration → 09.2.2-T1 / 09.2.2-T2 (D9). The outbox interceptor, `outbox_messages` and the dispatcher → 09.2.4-T1 (D11). The `"tenant"` query filter, the `ICurrentUser` implementations, `ISystemContext`, `ISystemWorkQuery` → 09.2.3-T1 (D10); only the `ICurrentUser` interface and a temporary anonymous implementation are added here, because the context constructor needs them. Error codes, catalogue and HTTP helpers → 09.1.4-T1 (D7). Mediator, the transaction and idempotency → 09.1.3-T1/-T2 (D4–D6). Hangfire storage/schema → 09.2.6-T1 (D12).
+**Out of scope.** Entity configurations of individual tables and the `InitialCore` migration → 09.2.2-T1 / 09.2.2-T2 (D9). The outbox interceptor, `outbox_messages` and the dispatcher → 09.2.4-T1 (D11). The `"tenant"` query filter, the `ICurrentUser` implementations, `ISystemContext`, `ISystemWorkQuery` → 09.2.3-T1 (D10); only the `ICurrentUser` interface and a temporary anonymous implementation are added here, because the context constructor needs them. Error codes, catalogue and HTTP helpers → 09.1.4-T1 (D7). Mediator, the transaction and idempotency → 09.1.3-T1/-T2 (D4–D6). Hangfire storage/schema → 09.2.6-T1 (D12). **T2's harness output only**: its `WorkerHost` / `InlineJobScheduler` → 09.2.6-T1, which owns the D12 `IBackgroundJob`/`IJobScheduler` ports and the Worker composition root (there is no job type to schedule before it), and its `SeriesBuilder` / `EpisodeBuilder` → 09.2.2-T1, which defines the `Series`/`Episode` entities (T2 ships `PostgresFixture`, `TestDatabase`, `IntegrationTest`, `ApiFactory`, `TestAuthHandler`, `FakeClock` and `UserBuilder` only).
 
 ## 2. Confirmed facts
 
@@ -128,8 +128,8 @@ None (backend only): the persistence layer has no user-visible surface; every DT
 |---|---|
 | Integration — model/DB | `ReadDbContext_SaveChanges_ThrowsInvalidOperationException`, `ReadDbContext_QueryTrackingBehavior_IsNoTracking`, `AppDbContext_AggregateUpdate_BumpsXminVersion`, `AppDbContext_WriteNonUtcDateTimeOffset_IsRejected`, `Model_SeriesColumns_AreSnakeCase_AssertedThroughInformationSchema`, `Model_EnumColumn_RejectsUnknownValue` (SQLSTATE 23514), `Model_IdentityTables_UseRenamedSnakeCaseTables`, `JsonComplexTypeSpike_ToJson_RoundTripsOnPostgres17` |
 | Unit — configuration | `AddPersistence_MissingConnectionString_FailsValidation`, `AddPersistence_DoesNotConfigureRetryOnFailure`, `AddPersistence_UsesSnakeCaseNamingConvention`, `AddPersistence_RegistersContextsScoped_NotPooled` |
-| Integration — harness | `PostgresFixture_MigratesTemplateOnce_AndCreatesPerClassDatabase`, `PostgresFixture_DropsClassDatabase_AtEndOfClass`, `ApiFactory_WithTestUserHeader_IsAuthenticated`, `ApiFactory_WithoutHeader_IsAnonymous`, `ProductionHost_DoesNotRegisterTestScheme`, `PostgresFixture_MissingEnv_FailsWithNamedError`, `PostgresFixture_ServerVersionNot17_Fails`, `WorkerHost_InlineJobScheduler_RunsJobSynchronously_AndRecordsCall`, `FakeClock_Advance_MovesUtcNow`, `TestKit_ContainsNoTaskDelayOrSleep` |
-| Manual | `grep -rn "TestAuthHandler" src/` → no hits; `grep -rn "Task.Delay\|Thread.Sleep" tests/NightTales.TestKit/` → no hits. |
+| Integration — harness | `PostgresFixture_MigratesTemplateOnce_AndCreatesPerClassDatabase`, `PostgresFixture_DropsClassDatabase_AtEndOfClass`, `ApiFactory_WithTestUserHeader_IsAuthenticated`, `ApiFactory_WithoutHeader_IsAnonymous`, `ProductionHost_DoesNotRegisterTestScheme`, `PostgresFixture_MissingEnv_FailsWithNamedError`, `PostgresFixture_ServerVersionNot17_Fails`, `FakeClock_AdvanceAndSet_ChangeUtcNow`, plus the guard/negative tests added during implementation and QA (`PostgresFixture_*` DDL-privilege, managed-name, remote-target, boundary, isolation and teardown; `TestAuthHandler_*` header negatives). **Deferred to 09.2.6-T1: `WorkerHost_InlineJobScheduler_RunsJobSynchronously_AndRecordsCall`** — the D12 ports it needs are created by that task. |
+| Manual | `TestKit_ContainsNoTaskDelayOrSleep` — a **grep acceptance check, not a test** (the name is the check's label, there is no test method): `grep -rnE "Task\.Delay\|Thread\.Sleep" tests/` → no hits; `grep -rn "TestAuthHandler" src/` → no hits. |
 
 ## 10. Tasks and re-estimate
 
