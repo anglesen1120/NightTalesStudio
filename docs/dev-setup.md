@@ -19,13 +19,28 @@ dotnet format  NightTales.ci.slnf --verify-no-changes --no-restore
 
 ```bash
 # Unit job (no database): 35 tests today. `--minimum-expected-tests 1` is the guard that makes a
-# zero-match filter red instead of silently green (see the note below).
+# zero-match filter red instead of silently green (see the note below). `--no-build` reuses the
+# Release build from the block above, so that block (with its ConnectionStrings__Postgres export)
+# must have run in this shell.
 env -u NTS_TEST_PG dotnet test NightTales.ci.slnf -c Release --no-build \
   --filter "Category!=Integration" --minimum-expected-tests 1
+```
 
-# Integration job (needs the server from the Database section below): 23 tests today.
+```bash
+# Integration job (needs the server from the Database section below): 23 tests today. Self-contained:
+# both variables are exported here. `ConnectionStrings__Postgres` is required by the build-time OpenAPI
+# generator, which boots the Api and validates the connection string — not by the tests, which read
+# NTS_TEST_PG. Without it a build fails inside the generator: MSB3073 from the `dotnet-getdocument`
+# tool that Microsoft.Extensions.ApiDescription.Server.targets invokes, with
+# `OptionsValidationException: Configuration value 'ConnectionStrings:Postgres' is required and must
+# not be blank` (verified 2026-09-29 — the stack is the whole ASP.NET hosting chain, none of it names
+# the missing variable).
+export ConnectionStrings__Postgres='Host=127.0.0.1;Database=nighttales;Username=nighttales;Password=ci-openapi-document-generation-placeholder'
 export NTS_TEST_PG="Host=127.0.0.1;Port=5432;Database=${POSTGRES_DB:-nighttales};Username=${POSTGRES_USER:-nighttales};Password=<POSTGRES_PASSWORD from .env>"
-dotnet test NightTales.ci.slnf -c Release --filter "Category=Integration" --minimum-expected-tests 1
+dotnet restore NightTales.ci.slnf --locked-mode
+dotnet build   NightTales.ci.slnf -c Release --no-restore
+dotnet test    NightTales.ci.slnf -c Release --no-build \
+  --filter "Category=Integration" --minimum-expected-tests 1
 ```
 
 - Tests run on Microsoft.Testing.Platform (`global.json` `test.runner`; xunit.v3 4.x no longer supports VSTest on the .NET 10 SDK). Test projects pass `--ignore-exit-code 8` (`tests/Directory.Build.props`), so a run with **zero** tests prints `total: 0` and still exits 0 — a filter typo would pass vacuously. Both commands above therefore pass `--minimum-expected-tests 1`, which fails such a run with `Minimum expected tests policy violation, tests ran 0, minimum expected 1` and exit code 9 (8 would be ignored). Do not add `--logger trx` / `--report-trx`: under this xunit.v3/MTP setup they turn the run into `Zero tests ran` with exit code 5 (verified 2026-09-29); CI uploads the console log instead.

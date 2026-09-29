@@ -13,6 +13,12 @@ updates:
 
   # NuGet versions live in Directory.Packages.props (central package management); the committed
   # packages.lock.json files are what `dotnet restore --locked-mode` in CI verifies.
+  #
+  # All bumps are grouped into one PR on purpose. Dependabot regenerates only the lock files of the
+  # projects it touched directly and misses projects that are affected only through a
+  # <ProjectReference> (dependabot/dependabot-core#13950, checked 2026-09-29), so a bot PR can leave
+  # `packages.lock.json` stale and make `dotnet restore --locked-mode` fail with NU1004. One grouped
+  # PR keeps that repair to a single PR per week instead of one per package.
   - package-ecosystem: nuget
     directory: /
     schedule:
@@ -20,3 +26,6 @@ updates:
     open-pull-requests-limit: 5
     commit-message:
       prefix: "deps"
+    groups:
+      nuget:
+        patterns: ["*"]
