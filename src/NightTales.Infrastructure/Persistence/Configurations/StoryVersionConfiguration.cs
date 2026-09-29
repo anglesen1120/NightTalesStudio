@@ -21,7 +21,10 @@ internal sealed class StoryVersionConfiguration : IEntityTypeConfiguration<Story
         builder.Property(version => version.Source).HasEnumCheck();
         builder.Property(version => version.Title).IsRequired();
         builder.Property(version => version.Body).IsRequired();
-        builder.Property(version => version.Keywords).HasColumnType("text[]");
+        // The list is read-only on the entity, so EF reads and writes the private _keywords field.
+        builder.Property(version => version.Keywords)
+            .HasColumnType("text[]")
+            .UsePropertyAccessMode(PropertyAccessMode.Field);
         builder.Property(version => version.WordCount).IsRequired();
         // content: the story.v1 document 02.2.1-T1 owns the shape of; audit_report: audit.v1 (02 D22).
         builder.Property(version => version.Content).HasColumnType("jsonb").IsRequired();

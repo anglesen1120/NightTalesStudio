@@ -7,7 +7,7 @@ namespace NightTales.Domain.Episodes;
 /// — the columns of plan §3; the behaviour (<c>Create</c>, <c>Cancel</c> and the partial files of 02)
 /// is 09.5.1-T1's, 02's and 06's.
 /// </summary>
-public sealed class Episode : AggregateRoot, IUserOwned, IAuditable
+public sealed partial class Episode : AggregateRoot, IUserOwned, IAuditable
 {
     private Episode()
     {

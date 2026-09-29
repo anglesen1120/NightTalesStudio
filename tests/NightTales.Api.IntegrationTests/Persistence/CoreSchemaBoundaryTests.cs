@@ -222,11 +222,17 @@ public sealed class CoreSchemaBoundaryTests(TestDatabase database) : Integration
         SqlProbe.ScalarText(Database, "SELECT autopilot_enabled::text FROM series WHERE title = 'qa-defaults-series'")
             .ShouldBe("false");
 
-        // usage_records: image_count 0 and gpu_seconds 0.
+        // usage_records: input_tokens, cached_input_tokens, output_tokens, image_count and gpu_seconds
+        // all default to 0 (plan §3), so the insert may omit them entirely.
         SqlProbe.Execute(
             Database,
-            $"INSERT INTO usage_records (id, user_id, provider, operation, input_tokens, cached_input_tokens, output_tokens, "
-            + $"estimated, cost_usd, created_at) VALUES (gen_random_uuid(), '{parents.User}', 'openai', 'story', 0, 0, 0, false, 0, now())");
+            $"INSERT INTO usage_records (id, user_id, provider, operation, estimated, cost_usd, created_at) "
+            + $"VALUES (gen_random_uuid(), '{parents.User}', 'openai', 'story', false, 0, now())");
+        SqlProbe.ScalarText(
+                Database,
+                $"SELECT input_tokens::text || ',' || cached_input_tokens::text || ',' || output_tokens::text "
+                + $"FROM usage_records WHERE user_id = '{parents.User}'")
+            .ShouldBe("0,0,0");
         SqlProbe.ScalarText(
                 Database,
                 $"SELECT image_count::text || ',' || gpu_seconds::text FROM usage_records WHERE user_id = '{parents.User}'")

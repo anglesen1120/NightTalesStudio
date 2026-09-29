@@ -9,6 +9,8 @@ namespace NightTales.Domain.Stories;
 /// </summary>
 public sealed class StoryVersion : Entity, IUserOwned, ICreatedAt
 {
+    private readonly List<string> _keywords = [];
+
     private StoryVersion()
     {
     }
@@ -25,7 +27,12 @@ public sealed class StoryVersion : Entity, IUserOwned, ICreatedAt
 
     public string Body { get; private set; } = string.Empty;
 
-    public List<string> Keywords { get; private set; } = [];
+    /// <summary>
+    /// The keywords extracted for this version (plan §3 <c>keywords text[]</c>). The row is append-only,
+    /// so the list is read-only: only the factory writes <c>_keywords</c>, which EF maps through field
+    /// access. The view is built per access because EF replaces the field when it materializes a row.
+    /// </summary>
+    public IReadOnlyList<string> Keywords => _keywords.AsReadOnly();
 
     public int WordCount { get; private set; }
 

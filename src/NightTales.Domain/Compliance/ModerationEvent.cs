@@ -12,6 +12,8 @@ public sealed class ModerationEvent : Entity, IUserOwned, ICreatedAt
     /// <summary>The longest excerpt a moderation event may store (00 overview §6).</summary>
     public const int ExcerptMaxLength = 300;
 
+    private readonly List<string> _categories = [];
+
     private ModerationEvent()
     {
     }
@@ -24,7 +26,13 @@ public sealed class ModerationEvent : Entity, IUserOwned, ICreatedAt
 
     public string Stage { get; private set; } = string.Empty;
 
-    public List<string> Categories { get; private set; } = [];
+    /// <summary>
+    /// The moderation categories the provider reported (plan §3 <c>categories text[]</c>). The row is
+    /// append-only, so the list is read-only: only <see cref="Record"/> writes <c>_categories</c>, which
+    /// EF maps through field access. The view is built per access because EF replaces the field when it
+    /// materializes a row.
+    /// </summary>
+    public IReadOnlyList<string> Categories => _categories.AsReadOnly();
 
     public string? Excerpt { get; private set; }
 
@@ -51,16 +59,20 @@ public sealed class ModerationEvent : Entity, IUserOwned, ICreatedAt
                 ? excerpt
                 : excerpt[..ExcerptMaxLength];
 
-        return new ModerationEvent
+        var moderationEvent = new ModerationEvent
         {
             Id = Guid.CreateVersion7(),
             UserId = userId,
             EpisodeId = episodeId,
             Source = source,
             Stage = stage,
-            Categories = [.. categories],
             Excerpt = text,
             CreatedAt = now,
         };
+
+        // Copy (never alias) the caller's sequence: the caller keeps ownership of its own list.
+        moderationEvent._categories.AddRange(categories);
+
+        return moderationEvent;
     }
 }

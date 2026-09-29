@@ -19,7 +19,10 @@ internal sealed class ModerationEventConfiguration : IEntityTypeConfiguration<Mo
 
         builder.Property(moderationEvent => moderationEvent.Source).HasEnumCheck();
         builder.Property(moderationEvent => moderationEvent.Stage).IsRequired();
-        builder.Property(moderationEvent => moderationEvent.Categories).HasColumnType("text[]");
+        // The list is read-only on the entity, so EF reads and writes the private _categories field.
+        builder.Property(moderationEvent => moderationEvent.Categories)
+            .HasColumnType("text[]")
+            .UsePropertyAccessMode(PropertyAccessMode.Field);
         builder.Property(moderationEvent => moderationEvent.Excerpt).HasMaxLength(ModerationEvent.ExcerptMaxLength);
 
         builder.HasOne<Episode>().WithMany().HasForeignKey(moderationEvent => moderationEvent.EpisodeId).OnDelete(DeleteBehavior.Cascade);
