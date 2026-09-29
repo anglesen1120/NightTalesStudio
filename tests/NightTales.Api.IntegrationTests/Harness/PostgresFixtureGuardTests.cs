@@ -173,6 +173,65 @@ public sealed class PostgresFixtureGuardTests
     }
 
     [Fact]
+    public void PostgresFixture_LoopbackHostWithPort_IsAccepted()
+    {
+        // L-residual (09.2.1-T2 delta re-review): Npgsql allows a per-host port, and a port never
+        // changes where the connection goes, so `127.0.0.1:5432` must not be refused as remote.
+        foreach (var loopback in new[]
+        {
+            "Host=127.0.0.1:5432;Database=nighttales;Username=nts",
+            "Host=localhost:5432;Database=nighttales;Username=nts",
+            "Host=[::1]:5432;Database=nighttales;Username=nts",
+            "Host=::1;Database=nighttales;Username=nts",
+            "Host=127.0.0.1;Port=5433;Database=nighttales;Username=nts",
+            "Host=127.0.0.1:5432,localhost:5433;Database=nighttales;Username=nts",
+        })
+        {
+            Should.NotThrow(() => PostgresFixture.EnsureDdlTargetIsLoopback(loopback, allowRemote: false));
+        }
+
+        // A port does not make a remote host local, and a `:` suffix that is not a plain port number
+        // is not a host literal this guard can verify, so both are refused (documented choice).
+        foreach (var refused in new[]
+        {
+            "Host=10.0.0.5:5432;Database=nighttales;Username=nts",
+            "Host=127.0.0.1:notaport;Database=nighttales;Username=nts",
+            "Host=127.0.0.1:;Database=nighttales;Username=nts",
+        })
+        {
+            Should.Throw<InvalidOperationException>(
+                () => PostgresFixture.EnsureDdlTargetIsLoopback(refused, allowRemote: false));
+            Should.NotThrow(() => PostgresFixture.EnsureDdlTargetIsLoopback(refused, allowRemote: true));
+        }
+    }
+
+    [Fact]
+    public async Task PostgresFixture_NonManagedDatabase_RawSqlHelpers_AreRefused()
+    {
+        // L-residual (09.2.1-T2 delta re-review): the server-level statement runner is private now and
+        // every per-database helper validates the managed prefix, so no public member can run SQL
+        // against a database the harness does not own. The refusal happens before any connection, so
+        // the unit job needs no NTS_TEST_PG.
+        var fixture = new PostgresFixture();
+
+        Should.Throw<InvalidOperationException>(() => fixture.ConnectionStringFor("nighttales"));
+        Should.Throw<InvalidOperationException>(() => fixture.ConnectionStringFor("postgres"));
+
+        await Should.ThrowAsync<InvalidOperationException>(() => fixture.ExecuteAsync("nighttales", "SELECT 1"));
+        await Should.ThrowAsync<InvalidOperationException>(() => fixture.QueryStringsAsync("public", "SELECT 1"));
+        await Should.ThrowAsync<InvalidOperationException>(() => fixture.TableNamesAsync("template1"));
+        await Should.ThrowAsync<InvalidOperationException>(() => fixture.AppliedMigrationsAsync("nighttales"));
+        await Should.ThrowAsync<InvalidOperationException>(() => fixture.PendingMigrationsAsync("nighttales"));
+
+        // DatabaseExistsAsync / DatabaseOidAsync stay name-agnostic on purpose: they are read-only,
+        // parameterized catalog probes on the maintenance connection, not a SQL entry point. Every
+        // refusal above happens before the connection string is read, so the unit job needs no
+        // NTS_TEST_PG; the accepted managed path is covered by every integration test (TestDatabase's
+        // constructor resolves its own nts_t_… name through ConnectionStringFor) and by
+        // PostgresFixture_UnmanagedDatabaseName_IsRefusedBeforeAnyDdl.
+    }
+
+    [Fact]
     public void PostgresFixture_RemoteDdlTarget_RefusalIsWiredIntoTheEnvGuard()
     {
         // SEC 09.2.1-T2: RequireServerConnectionString is the only entry point of the fixture, so it

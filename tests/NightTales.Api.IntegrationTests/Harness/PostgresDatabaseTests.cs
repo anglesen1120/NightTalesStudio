@@ -121,11 +121,10 @@ public sealed class PostgresDatabaseTests : IntegrationTest
         try
         {
             // Simulate the template an earlier run left behind: a database whose schema is not the
-            // compiled one (an "older migration set").
-            await stale.ExecuteOnServerAsync(
-                $"DROP DATABASE IF EXISTS {PostgresFixture.QuoteIdentifier(StaleName)} WITH (FORCE)",
-                ct);
-            await stale.ExecuteOnServerAsync($"CREATE DATABASE {PostgresFixture.QuoteIdentifier(StaleName)}", ct);
+            // compiled one (an "older migration set"). Only the guarded DDL helpers are public now
+            // (SEC 09.2.1-T2), which is all this test needs.
+            await stale.DropDatabaseAsync(StaleName, ct);
+            await stale.CreateDatabaseAsync(StaleName, templateDatabaseName: null, ct);
             await stale.ExecuteAsync(StaleName, "CREATE TABLE stale_marker (id integer)", ct);
 
             (await stale.TableNamesAsync(StaleName, ct)).ShouldContain("stale_marker");
@@ -142,9 +141,7 @@ public sealed class PostgresDatabaseTests : IntegrationTest
         finally
         {
             // Cleanup must run even when the test was cancelled, so it does not take the test token.
-            await stale.ExecuteOnServerAsync(
-                $"DROP DATABASE IF EXISTS {PostgresFixture.QuoteIdentifier(StaleName)} WITH (FORCE)",
-                CancellationToken.None);
+            await stale.DropDatabaseAsync(StaleName, CancellationToken.None);
         }
     }
 

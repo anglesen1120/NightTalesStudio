@@ -313,18 +313,28 @@ public sealed class PostgresFixture : IAsyncLifetime, IAsyncDisposable
     }
 
     /// <summary>
-    /// The pooled connection string of one database on the test server: <c>NTS_TEST_PG</c> with
-    /// <c>Database</c> swapped, so the credentials always come from the same environment variable.
+    /// The pooled connection string of one managed database on the test server: <c>NTS_TEST_PG</c>
+    /// with <c>Database</c> swapped, so the credentials always come from the same environment
+    /// variable. Only <see cref="ManagedDatabasePrefix"/> names are accepted (SEC 09.2.1-T2), so a
+    /// connection string can never point the harness at a database it does not own.
     /// </summary>
     public string ConnectionStringFor(string databaseName)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(databaseName);
+        RequireManagedDatabaseName(databaseName);
 
         return new NpgsqlConnectionStringBuilder(ServerConnectionString) { Database = databaseName }.ConnectionString;
     }
 
-    /// <summary>Runs one statement against the server database of <c>NTS_TEST_PG</c>.</summary>
-    public async Task ExecuteOnServerAsync(string sql, CancellationToken ct = default)
+    /// <summary>
+    /// The raw server-level seam: one statement against the <c>NTS_TEST_PG</c> maintenance database.
+    /// It is deliberately **private** (SEC 09.2.1-T2 hardening): arbitrary SQL there could drop any
+    /// database on the server past the reserved-prefix rule, so the only public DDL paths are
+    /// <see cref="CreateDatabaseAsync"/> and <see cref="DropDatabaseAsync"/>, which enforce the name
+    /// and map the privilege failure. Every per-database helper validates the managed prefix too
+    /// (<see cref="HelperConnectionString"/>), so no public member can run SQL anywhere else.
+    /// </summary>
+    private async Task ExecuteOnServerAsync(string sql, CancellationToken ct = default)
     {
         await using var connection = await OpenAsync(ServerConnectionString, ct);
         await using var command = new NpgsqlCommand(sql, connection);
@@ -467,7 +477,9 @@ public sealed class PostgresFixture : IAsyncLifetime, IAsyncDisposable
     }
 
     /// <summary>The loopback test of one host entry: an IP in <c>127.0.0.0/8</c>/<c>::1</c>, the name
-    /// <c>localhost</c>, or a Unix-domain-socket path (which is local by definition).</summary>
+    /// <c>localhost</c>, or a Unix-domain-socket path (which is local by definition). Npgsql's
+    /// per-host port syntax is accepted too — <c>127.0.0.1:5432</c>, <c>[::1]:5432</c>,
+    /// <c>localhost:5432</c> — because a port never changes where the connection goes.</summary>
     private static bool IsLoopbackHost(string host)
     {
         if (host.StartsWith('/'))
@@ -475,15 +487,52 @@ public sealed class PostgresFixture : IAsyncLifetime, IAsyncDisposable
             return true;
         }
 
-        if (host.Equals("localhost", StringComparison.OrdinalIgnoreCase))
+        var (candidate, port) = SplitHostAndPort(host);
+
+        // A `:` suffix that is not a plain port number is not a host literal this check can verify
+        // (`127.0.0.1:notaport`), so it is refused like any other unverifiable host.
+        if (port is not null && (port.Length == 0 || !port.All(char.IsAsciiDigit)))
+        {
+            return false;
+        }
+
+        if (candidate.Equals("localhost", StringComparison.OrdinalIgnoreCase))
         {
             return true;
         }
 
         // Npgsql accepts an IPv6 literal in brackets; IPAddress.Parse wants it bare.
-        var candidate = host.StartsWith('[') && host.EndsWith(']') ? host[1..^1] : host;
+        var address = candidate.StartsWith('[') && candidate.EndsWith(']') ? candidate[1..^1] : candidate;
 
-        return IPAddress.TryParse(candidate, out var address) && IPAddress.IsLoopback(address);
+        return IPAddress.TryParse(address, out var parsed) && IPAddress.IsLoopback(parsed);
+    }
+
+    /// <summary>
+    /// Splits the optional Npgsql per-host port suffix from one host entry: <c>[::1]:5432</c> becomes
+    /// (<c>[::1]</c>, <c>5432</c>) and <c>127.0.0.1:5432</c> becomes (<c>127.0.0.1</c>, <c>5432</c>).
+    /// A bare IPv6 literal (two or more colons, never bracketed) stays whole, because splitting
+    /// <c>::1</c> at a colon would be ambiguous.
+    /// </summary>
+    private static (string Host, string? Port) SplitHostAndPort(string host)
+    {
+        if (host.StartsWith('['))
+        {
+            var closing = host.IndexOf(']');
+            if (closing < 0)
+            {
+                return (host, null);
+            }
+
+            var rest = host[(closing + 1)..];
+            return rest.Length > 0 && rest.StartsWith(':')
+                ? (host[..(closing + 1)], rest[1..])
+                : (host, null);
+        }
+
+        var colon = host.IndexOf(':');
+        return colon < 0 || colon != host.LastIndexOf(':')
+            ? (host, null)
+            : (host[..colon], host[(colon + 1)..]);
     }
 
     /// <summary>Splits the <c>Host</c> entry of a connection string into its (trimmed) host entries.</summary>
@@ -509,10 +558,17 @@ public sealed class PostgresFixture : IAsyncLifetime, IAsyncDisposable
         }
     }
 
-    /// <summary>Connection string for a fixture-side helper connection (never pooled).</summary>
+    /// <summary>
+    /// Connection string for a fixture-side helper connection (never pooled). It is the choke point
+    /// of every per-database helper (<see cref="ExecuteAsync"/>, <see cref="QueryStringsAsync"/>,
+    /// <see cref="TableNamesAsync"/>, the migration readers), so validating the managed prefix here
+    /// means no public member can run SQL against a database the harness does not own
+    /// (SEC 09.2.1-T2 hardening).
+    /// </summary>
     private string HelperConnectionString(string databaseName)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(databaseName);
+        RequireManagedDatabaseName(databaseName);
 
         return new NpgsqlConnectionStringBuilder(ServerConnectionString)
         {
