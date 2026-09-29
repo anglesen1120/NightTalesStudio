@@ -1,7 +1,7 @@
 using NightTales.Api;
 using NightTales.Infrastructure.Persistence;
 
-var builder = WebApplication.CreateBuilder(args);
+var builder = WebApplication.CreateBuilder( args );
 
 // 09.1.5-T1 (09 README D14): registers the OpenAPI document provider the build-time generator needs.
 builder.Services.AddOpenApi();
