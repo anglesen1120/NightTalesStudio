@@ -31,6 +31,21 @@ internal static class ProbeEndpoints
     /// <summary>A route whose handler throws; the canary below must never reach the client.</summary>
     internal const string ThrowPath = "/__probe/http/throw";
 
+    /// <summary>QA: 202 with Location and the value's ETag.</summary>
+    internal const string AcceptedPath = "/__probe/http/accepted";
+
+    /// <summary>QA: 202 without a Location.</summary>
+    internal const string AcceptedNoLocationPath = "/__probe/http/accepted-no-location";
+
+    /// <summary>QA: 204; the value's ETag still lands on the empty response.</summary>
+    internal const string NoContentPath = "/__probe/http/no-content";
+
+    /// <summary>QA: 200 with the value's ETag.</summary>
+    internal const string HttpResultPath = "/__probe/http/result";
+
+    /// <summary>QA: 200 for a value whose IHasETag is empty; no ETag header.</summary>
+    internal const string HttpResultEmptyETagPath = "/__probe/http/result-empty-etag";
+
     /// <summary>The text of the unhandled exception; a 500 body must not contain it.</summary>
     internal const string ThrowMessage = "probe-secret-leak-canary-41c9";
 
@@ -65,6 +80,20 @@ internal static class ProbeEndpoints
         routes.MapPost(IdempotencyPath, () => Results.Ok(new IdempotencyProbe("accepted")))
             .RequireIdempotencyKey();
 
+        // QA (09.1.4-T1): exercises ToAcceptedResult with and without a Location.
+        routes.MapPost(AcceptedPath, (HttpContext http, CancellationToken _) =>
+            Value(new ProbeTagged(9, 4)).ToAcceptedResult(http, tagged => $"{AcceptedPath}/{tagged.Id}"));
+        routes.MapPost(AcceptedNoLocationPath, (HttpContext http, CancellationToken _) =>
+            Value(new ProbeCreated(2)).ToAcceptedResult(http));
+
+        // QA (09.1.4-T1): exercises ToNoContentResult and ToHttpResult ETag handling.
+        routes.MapPost(NoContentPath, (HttpContext http, CancellationToken _) =>
+            Value(new ProbeTagged(1, 6)).ToNoContentResult(http));
+        routes.MapGet(HttpResultPath, (HttpContext http, CancellationToken _) =>
+            Value(new ProbeTagged(3, 8)).ToHttpResult(http));
+        routes.MapGet(HttpResultEmptyETagPath, (HttpContext http, CancellationToken _) =>
+            Value(new ProbeEmptyETag(4)).ToHttpResult(http));
+
         routes.MapGet(ThrowPath, () => Throw());
     }
 
@@ -87,4 +116,11 @@ internal static class ProbeEndpoints
 
     /// <summary>The body of the route behind the idempotency filter.</summary>
     internal sealed record IdempotencyProbe(string Outcome);
+
+    /// <summary>A value that claims an ETag member but returns an empty one; no header may be set.</summary>
+    internal sealed record ProbeEmptyETag(int Id) : IHasETag
+    {
+        /// <inheritdoc />
+        public string ETag => string.Empty;
+    }
 }
