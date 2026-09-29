@@ -18,7 +18,8 @@ dotnet format  NightTales.ci.slnf --verify-no-changes --no-restore
 ```
 
 ```bash
-# Unit job (no database): 35 tests today. `--minimum-expected-tests 1` is the guard that makes a
+# Unit job (no database). The count grows with every feature (96 on the 2026-09-29 wave-2
+# tree, 35 when this block was written). `--minimum-expected-tests 1` is the guard that makes a
 # zero-match filter red instead of silently green (see the note below). `--no-build` reuses the
 # Release build from the block above, so that block (with its ConnectionStrings__Postgres export)
 # must have run in this shell.
@@ -27,7 +28,8 @@ env -u NTS_TEST_PG dotnet test NightTales.ci.slnf -c Release --no-build \
 ```
 
 ```bash
-# Integration job (needs the server from the Database section below): 23 tests today. Self-contained:
+# Integration job (needs the server from the Database section below). The count grows with every
+# feature (56 on the 2026-09-29 wave-2 tree, 23 when this block was written). Self-contained:
 # both variables are exported here. `ConnectionStrings__Postgres` is required by the build-time OpenAPI
 # generator, which boots the Api and validates the connection string — not by the tests, which read
 # NTS_TEST_PG. Without it a build fails inside the generator: MSB3073 from the `dotnet-getdocument`
