@@ -1,0 +1,81 @@
+namespace NightTales.Architecture.Tests;
+
+/// <summary>
+/// The single place to edit when a legitimate new exception is approved (09.1.2-T1, README D1/D10).
+/// Reviewed by the Tech Lead through <c>.github/CODEOWNERS</c>.
+/// </summary>
+internal static class AllowLists
+{
+    /// <summary>Namespaces whose types may call <c>IgnoreQueryFilters</c> (README D10).</summary>
+    internal const string IgnoreQueryFiltersNamespacePrefix = "NightTales.Application.Features.Admin";
+
+    /// <summary>Extra types outside <see cref="IgnoreQueryFiltersNamespacePrefix"/> that may bypass the tenant filter.</summary>
+    internal static readonly IReadOnlySet<string> IgnoreQueryFiltersTypeNames =
+        new HashSet<string>(StringComparer.Ordinal)
+        {
+            "RetentionSweepJob",
+            "DataDeletionJob",
+            "CreditReconciliationJob",
+            "SystemWorkQuery",
+        };
+
+    /// <summary>Job method parameters that may be <c>string</c> (README D12).</summary>
+    internal static readonly IReadOnlySet<string> JobStringParameterNames =
+        new HashSet<string>(StringComparer.Ordinal)
+        {
+            "idempotencyKey",
+            "recurringId",
+        };
+
+    internal static readonly IReadOnlySet<string> DomainAllowedReferences =
+        new HashSet<string>(StringComparer.Ordinal)
+        {
+            "ErrorOr",
+        };
+
+    /// <summary>README D1 plus the 11 CR-3 addition of <c>NightTales.RenderNode.Contract</c>.</summary>
+    /// <remarks>
+    /// The <c>Mediator.Abstractions</c> package id ships an assembly named <c>Mediator</c>, so both
+    /// names are listed: the rule matches assembly names, not package ids.
+    /// </remarks>
+    internal static readonly IReadOnlySet<string> ApplicationAllowedReferences =
+        new HashSet<string>(StringComparer.Ordinal)
+        {
+            "ErrorOr",
+            "FluentValidation",
+            "FluentValidation.DependencyInjectionExtensions",
+            "Mediator",
+            "Mediator.Abstractions",
+            "Microsoft.EntityFrameworkCore",
+            "NightTales.Domain",
+            "NightTales.RenderNode.Contract",
+        };
+
+    internal static readonly IReadOnlySet<string> FetcherCoreAllowedReferences =
+        new HashSet<string>(StringComparer.Ordinal)
+        {
+            "NightTales.Domain",
+        };
+
+    internal static readonly IReadOnlySet<string> FetcherAllowedReferences =
+        new HashSet<string>(StringComparer.Ordinal)
+        {
+            "NightTales.Fetcher.Core",
+        };
+
+    /// <summary>02 CR-19 lets the Fetcher use any <c>Microsoft.Extensions.*</c> package.</summary>
+    internal static readonly IReadOnlyList<string> FetcherAllowedPrefixes =
+        ["Microsoft.Extensions."];
+
+    internal static readonly IReadOnlyList<string> NoExtraPrefixes = [];
+
+    /// <summary>
+    /// Framework references every project may carry without appearing in a project's allow-list
+    /// (README D1: <c>System.*</c>, <c>Microsoft.Extensions.*.Abstractions</c>, <c>netstandard</c>).
+    /// </summary>
+    internal static bool IsBaselineReference(string name) =>
+        name is "netstandard" or "mscorlib" or "System" or "Microsoft.CSharp" or "WindowsBase"
+        || name.StartsWith("System.", StringComparison.Ordinal)
+        || (name.StartsWith("Microsoft.Extensions.", StringComparison.Ordinal)
+            && name.EndsWith(".Abstractions", StringComparison.Ordinal));
+}

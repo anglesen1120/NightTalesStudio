@@ -1,0 +1,4 @@
+# Reviewers for files whose edits need a Tech Lead decision.
+# 09.1.2-T1 step 6 [DECISION]: a legitimate new architecture-test exception is an edit to this
+# allow-list, so it must be visible in review.
+tests/NightTales.Architecture.Tests/AllowLists.cs @anglesen1120
