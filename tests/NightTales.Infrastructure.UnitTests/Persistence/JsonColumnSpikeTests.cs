@@ -11,6 +11,9 @@ namespace NightTales.Infrastructure.UnitTests.Persistence;
 /// round-trip, a query that filters on a JSON property and an <c>ExecuteUpdate</c> that sets one.
 /// The outcome decides the JSON mapping every later feature uses.
 /// </summary>
+// 09.1.5-T1: creates its own database on the NTS_TEST_PG server, so the unit job (no NTS_TEST_PG)
+// excludes it with Category=Integration and the CI integration job runs it.
+[Trait("Category", "Integration")]
 public sealed class JsonColumnSpikeTests(PostgresTestFixture fixture) : IClassFixture<PostgresTestFixture>
 {
     [Fact]

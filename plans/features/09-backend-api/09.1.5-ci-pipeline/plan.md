@@ -3,7 +3,7 @@
 > Refines: `../../../09-backend-api.md` §4 (epic 09.1, story **09.1.5**, L75–76); `../../../11-worker-deployment.md` 11.5.1 (the full pipeline, deploys).
 > Contract: `../README.md` — **D1**, **D2**, **D13**, **D14**, **O2**.
 > Template: `../../../00-overview.md` §10.1. Legend: ✅ · ⚠️ · [DECISION] · [OPEN] · [INFERENCE].
-> Status: detailed plan, 2026-09-24. Nothing implemented yet.
+> Status: implemented 2026-09-29 in `.github/workflows/backend.yml` + `.github/dependabot.yml` (09.1.5-T1); the scratch-PR negative proof on a live CI run is still owed (see T1).
 
 ## 1. Scope
 
@@ -31,7 +31,7 @@
 |---|---|---|
 | C1 | 11.5.1 names GitHub Actions (owner decision O2, 2026-09-24); the repo has no remote yet | 11 L94 ✅, repo state ✅ |
 | C2 | (09 W3 CR-35) The `integration` job needs no Docker daemon: GitHub Actions starts the `postgres:17` service container for the job and `NTS_TEST_PG` points at it (`PostgresFixture`, 09.2.1-T2) — the fixture creates its own databases on that server | 00 §5.1 (owner 2026-09-28), 09.1.1-T2, 09.2.1-T2 ✅ |
-| C3 | Build-time OpenAPI generation uses `Microsoft.Extensions.ApiDescription.Server` with `OpenApiGenerateDocuments` ⚠️ (to confirm for .NET 10) | ASP.NET Core docs ⚠️ |
+| C3 | Build-time OpenAPI generation works on .NET 10: `Microsoft.Extensions.ApiDescription.Server` **10.0.12** with `<OpenApiGenerateDocuments>true</OpenApiGenerateDocuments>` produces `src/NightTales.Api/openapi.json` (**3.1.1**) during `dotnet build` — ✅ verified 2026-09-29 (SDK 10.0.401). The generator **boots the Api**, so every build needs a parseable `ConnectionStrings:Postgres` (a constant placeholder in CI; never a real credential) | 09.1.5-T1 §Design ✅ |
 
 ## 3. Domain and data
 
@@ -42,7 +42,7 @@ None.
 | # | Use case | Result |
 |---|---|---|
 | UC1 | A PR is opened or updated | the workflow runs; a red job blocks the merge (branch protection) |
-| UC2 | A push to `main` | the same jobs run; artifacts are kept 14 days |
+| UC2 | A push to `main` | the same jobs run; artifacts are kept 14 days (`retention-days: 14` on every `actions/upload-artifact` step, 09.1.5-T1) |
 | UC3 | Two pushes to one PR in quick succession | the older run is cancelled (concurrency group) |
 
 ## 5. API and events
