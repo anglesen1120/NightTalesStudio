@@ -117,7 +117,11 @@ public sealed class AssemblyReferenceRules
         var assetsPath = FindAssetsJson(assembly);
         if (assetsPath is null)
         {
-            return offenders;
+            // Never pass vacuously: without the dependency graph an unused forbidden reference
+            // would be invisible (NTS-CRV-09W1-2).
+            throw new InvalidOperationException(
+                $"obj/project.assets.json not found for {assembly.GetName().Name}; "
+                + "restore the project before running the architecture rules.");
         }
 
         using var document = JsonDocument.Parse(File.ReadAllBytes(assetsPath));
