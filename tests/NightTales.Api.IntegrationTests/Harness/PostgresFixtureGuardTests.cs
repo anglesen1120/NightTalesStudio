@@ -138,6 +138,9 @@ public sealed class PostgresFixtureGuardTests
         foreach (var loopback in new[]
         {
             "Host=127.0.0.1;Port=5432;Database=nighttales;Username=nts",
+            // The value the CI integration job uses (09.1.5-T1): the postgres:17 service container
+            // reached on loopback, with no override set (SEC 09.2.1-T2).
+            "Host=127.0.0.1;Port=5432;Database=postgres;Username=postgres;Password=postgres",
             "Host=localhost;Port=5432;Database=nighttales;Username=nts",
             "Host=127.0.0.5;Port=5432;Database=nighttales;Username=nts",
             "Host=::1;Port=5432;Database=nighttales;Username=nts",

@@ -47,7 +47,7 @@ The environment variable `ConnectionStrings__Postgres` works as well. Integratio
 export NTS_TEST_PG="Host=127.0.0.1;Port=5432;Database=${POSTGRES_DB:-nighttales};Username=${POSTGRES_USER:-nighttales};Password=<POSTGRES_PASSWORD from .env>"
 ```
 
-The `Database=` value is only where the fixture runs its own DDL — `CREATE DATABASE`, `DROP DATABASE` and the catalog queries. No test ever writes into it: every test class gets its own fresh `nts_t_<uuid>` database copied from the template, so the value carries no state and **any database the role can connect to works**. The dev value above is `nighttales` (the `.env` database made connectable by `tools/dev/db-init.sh`), and the CI job sets the same shape at `127.0.0.1`.
+The `Database=` value is only where the fixture runs its own DDL — `CREATE DATABASE`, `DROP DATABASE` and the catalog queries. No test ever writes into it: every test class gets its own fresh `nts_t_<uuid>` database copied from the template, so the value carries no state and **any database the role can connect to works**. The dev value above is `nighttales` (the `.env` database made connectable by `tools/dev/db-init.sh`); the CI integration job points `NTS_TEST_PG` at its `postgres:17` service container, which it reaches at `127.0.0.1` — a loopback host, so CI needs no override.
 
 A missing or blank `NTS_TEST_PG` fails the test fixture with a named error; it never skips silently. The fixture checks the server once per run (`tests/NightTales.TestKit/Database/PostgresFixture.cs`):
 
