@@ -1,0 +1,20 @@
+# Optional path for e2e and image smoke runs only (09.1.1-T2, 09 W3 CR-35).
+# Daily development uses the native Homebrew postgresql@17 server (docs/dev-setup.md).
+name: nighttales
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-nighttales}
+      POSTGRES_USER: ${POSTGRES_USER:-nighttales}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    ports: ["127.0.0.1:5432:5432"]
+    volumes: ["pgdata:/var/lib/postgresql/data"]
+    healthcheck:
+      # Password login over TCP (the socket is trust); pg_isready alone ignores user, database and password.
+      test: ["CMD-SHELL", "PGPASSWORD=\"$${POSTGRES_PASSWORD}\" psql -X -At -h 127.0.0.1 -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\" -c 'SELECT 1'"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+volumes:
+  pgdata: {}

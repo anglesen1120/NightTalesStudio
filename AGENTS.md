@@ -4,7 +4,7 @@
 
 Night Tales Studio turns story ideas into narrated videos (story → images → voice → subtitles → MP4 → YouTube). The owner's channel is built first (**personal phase P**, one owner account, autopilot). The public SaaS (**phase S**) is built only after a go decision (`plans/00-overview.md` §1.3, §4.1).
 
-**Current state:** implementation started 2026-09-25 on the owner's Mac; which plans are in progress is recorded only in `STATUS.md`. Tracked code: `worker-node/` (bash scripts, pins, runbook `worker-node/README.md`), `trial/` (fixtures, bench tools, baselines) and `.githooks/` (gitleaks). There is no .NET or Angular code yet; `src/`, `tests/`, `web/` and `tools/` are the target layout. **Progress lives in `STATUS.md`** (done / doing / blocked / next); read it first and update it with every change. Runtime state is in `<repo>/.nts/` (gitignored, `NTS_HOME`). API keys live only in the macOS Keychain and must never be committed or pushed (plan 01 DEC-6).
+**Current state:** implementation started 2026-09-25 on the owner's Mac; which plans are in progress is recorded only in `STATUS.md`. Tracked code: `worker-node/` (bash scripts, pins, runbook `worker-node/README.md`), `trial/` (fixtures, bench tools, baselines) and `.githooks/` (gitleaks). The .NET solution skeleton exists (09.1.1: `NightTales.sln`, `src/`, `tests/`, `tools/dev/db-init.sh`, `docs/dev-setup.md`); there is no Angular code yet (`web/` is the target layout). **Progress lives in `STATUS.md`** (done / doing / blocked / next); read it first and update it with every change. Runtime state is in `<repo>/.nts/` (gitignored, `NTS_HOME`). API keys live only in the macOS Keychain and must never be committed or pushed (plan 01 DEC-6).
 
 ## Architecture & Data Flow
 
