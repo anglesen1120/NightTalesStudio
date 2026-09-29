@@ -12,12 +12,20 @@ namespace NightTales.Worker.Health;
 /// </summary>
 /// <param name="storage">The Hangfire storage registered by the Worker composition root.</param>
 /// <param name="logger">Receives the failure detail, which never reaches the response body.</param>
+/// <remarks>
+/// One indexed lookup of the recurring-job id set proves the round trip. The statistics aggregate
+/// (<c>GetMonitoringApi().GetStatistics()</c>) groups the whole job table on every probe, which a health
+/// listener may not pay for.
+/// </remarks>
 public sealed partial class HangfireStorageHealthCheck(
     JobStorage storage,
     ILogger<HangfireStorageHealthCheck> logger) : IHealthCheck
 {
     /// <summary>The constant, credential-free description of a degraded probe.</summary>
     public const string Unreachable = "hangfire storage unreachable";
+
+    /// <summary>The set Hangfire stores the recurring-job ids in.</summary>
+    private const string RecurringJobsSet = "recurring-jobs";
 
     /// <inheritdoc />
     public Task<HealthCheckResult> CheckHealthAsync(
@@ -26,10 +34,11 @@ public sealed partial class HangfireStorageHealthCheck(
     {
         try
         {
-            var statistics = storage.GetMonitoringApi().GetStatistics();
+            using var connection = storage.GetConnection();
+            var recurring = connection.GetAllItemsFromSet(RecurringJobsSet).Count;
 
             return Task.FromResult(HealthCheckResult.Healthy(
-                $"hangfire storage reachable; {statistics.Recurring} recurring job(s)"));
+                $"hangfire storage reachable; {recurring} recurring job(s)"));
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {

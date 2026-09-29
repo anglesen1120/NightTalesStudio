@@ -43,7 +43,9 @@ namespace NightTales.TestKit.Database;
 /// every name it creates or drops must carry the reserved prefix <see cref="ManagedDatabasePrefix"/>
 /// (see <see cref="RequireManagedDatabaseName"/>), and the server of <c>NTS_TEST_PG</c> must be a
 /// loopback host unless <see cref="AllowRemoteDdlVariable"/><c>=1</c> is set explicitly (see
-/// <see cref="EnsureDdlTargetIsLoopback"/>).
+/// <see cref="EnsureDdlTargetIsLoopback"/>). The harness-owned Worker hosts install Hangfire's schema
+/// themselves, so they pass their connection string through the same two boundaries first
+/// (<see cref="RequireManagedWorkerConnectionString"/>).
 /// </para>
 /// </remarks>
 public sealed class PostgresFixture : IAsyncLifetime, IAsyncDisposable
@@ -195,6 +197,48 @@ public sealed class PostgresFixture : IAsyncLifetime, IAsyncDisposable
                 $"{AllowRemoteDdlVariable}=1 is set explicitly. Never set that override for a shared or production " +
                 "cluster: point it at a disposable test server only (see docs/dev-setup.md).");
         }
+    }
+
+    /// <summary>
+    /// The destructive-DDL guard for the connection string a harness-owned host boots against
+    /// (<see cref="NightTales.TestKit.Threading.WorkerHost"/>,
+    /// <see cref="NightTales.TestKit.Health.WorkerHealthProbe"/>): those hosts run the Worker graph with
+    /// <c>PrepareSchemaIfNecessary</c>, so their target must be this machine and carry the reserved
+    /// <see cref="ManagedDatabasePrefix"/> prefix, exactly like the databases the fixture itself creates
+    /// and drops. A blank value passes through, so the caller's own fail-fast error still wins.
+    /// </summary>
+    /// <param name="connectionString">The connection string handed to a harness-owned host; may be blank.</param>
+    public static void RequireManagedWorkerConnectionString(string? connectionString)
+    {
+        if (string.IsNullOrWhiteSpace(connectionString))
+        {
+            return;
+        }
+
+        try
+        {
+            _ = new NpgsqlConnectionStringBuilder(connectionString);
+        }
+        catch (ArgumentException)
+        {
+            // A parser message can echo a malformed keyword/value fragment (NTS-SEC-SECRETS-001),
+            // so only a constant message reaches the test output.
+            throw new InvalidOperationException(
+                "The connection string handed to a harness-owned host is not a valid connection string "
+                + "(see docs/dev-setup.md).");
+        }
+
+        EnsureDdlTargetIsLoopback(connectionString, IsRemoteDdlAllowed());
+
+        var database = new NpgsqlConnectionStringBuilder(connectionString).Database;
+        if (string.IsNullOrWhiteSpace(database))
+        {
+            throw new InvalidOperationException(
+                "The connection string handed to a harness-owned host names no database; such a host installs Hangfire's "
+                + $"schema, so it only accepts a database whose name starts with the reserved prefix '{ManagedDatabasePrefix}'.");
+        }
+
+        RequireManagedDatabaseName(database);
     }
 
     /// <summary>

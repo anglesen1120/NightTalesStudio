@@ -1,4 +1,5 @@
 using System.Reflection;
+using System.Text.RegularExpressions;
 using Hangfire;
 using Hangfire.AspNetCore;
 using Hangfire.Common;
@@ -24,7 +25,7 @@ namespace NightTales.Infrastructure.Jobs;
 /// Worker adds one (<c>AddWorkerHangfireServer</c>) and <c>WorkerHost</c> adds it only in real-server
 /// mode, so the test harness runs the production graph minus the server (D13).
 /// </remarks>
-public static class JobsServiceCollectionExtensions
+public static partial class JobsServiceCollectionExtensions
 {
     /// <summary>Registers the Hangfire client half of the Worker and every job found in the scanned assemblies.</summary>
     /// <param name="services">The service collection of the host.</param>
@@ -55,6 +56,10 @@ public static class JobsServiceCollectionExtensions
             .Validate(
                 options => !string.IsNullOrWhiteSpace(options.SchemaName),
                 $"'{JobsOptions.SectionName}:{nameof(JobsOptions.SchemaName)}' must not be blank.")
+            .Validate(
+                options => SchemaNamePattern().IsMatch(options.SchemaName ?? string.Empty),
+                $"'{JobsOptions.SectionName}:{nameof(JobsOptions.SchemaName)}' must be a lower-case, unquoted PostgreSQL "
+                + "identifier: a letter or underscore, then letters, digits or underscores, at most 63 characters.")
             .Validate(
                 options => options.Workers.Values.All(count => count > 0),
                 $"every '{JobsOptions.SectionName}:{nameof(JobsOptions.Workers)}:<queue>' count must be greater than zero.")
@@ -103,6 +108,13 @@ public static class JobsServiceCollectionExtensions
 
         return services;
     }
+
+    /// <summary>
+    /// The only <c>Jobs:SchemaName</c> shape Hangfire's schema SQL may interpolate (09 README D12,
+    /// 00 §5.4): a lower-case, unquoted PostgreSQL identifier, so no configuration value can carry SQL.
+    /// </summary>
+    [GeneratedRegex(@"\A[a-z_][a-z0-9_]{0,62}\z", RegexOptions.CultureInvariant)]
+    private static partial Regex SchemaNamePattern();
 
     /// <summary>
     /// The PostgreSQL storage of this host, built from the <c>Jobs</c> section (09 README D12): schema

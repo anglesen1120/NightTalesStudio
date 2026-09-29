@@ -19,8 +19,23 @@ namespace NightTales.TestKit.Threading;
 /// </remarks>
 public sealed class JobStateObserver : IApplyStateFilter
 {
+    private static readonly TimeSpan CommitPollInterval = TimeSpan.FromMilliseconds(10);
+
     private readonly ConcurrentDictionary<string, ConcurrentQueue<string>> _states = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, TaskCompletionSource> _signals = new(StringComparer.Ordinal);
+    private JobStorage? _storage;
+
+    /// <summary>
+    /// Binds the storage of the host this observer watches, so a wait returns only once the state is
+    /// committed — <see cref="OnStateApplied"/> runs inside Hangfire's state transaction, before it
+    /// commits, and a test that reads storage or changes the state right after would race it.
+    /// </summary>
+    /// <param name="storage">The storage of the host; a caller that never reads it may leave it unbound.</param>
+    public void Attach(JobStorage storage)
+    {
+        ArgumentNullException.ThrowIfNull(storage);
+        _storage = storage;
+    }
 
     /// <summary>Every state applied to <paramref name="jobId"/>, oldest first.</summary>
     public IReadOnlyList<string> StatesOf(string jobId) =>
@@ -65,6 +80,43 @@ public sealed class JobStateObserver : IApplyStateFilter
                 key,
                 new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously),
                 signal);
+        }
+
+        await WaitForCommittedStateAsync(jobId, stateName, timeout);
+    }
+
+    /// <summary>
+    /// Waits until the host's storage reports <paramref name="stateName"/> as the current state of
+    /// <paramref name="jobId"/>, i.e. until the transaction that applied it committed. It is a no-op
+    /// while no storage is bound.
+    /// </summary>
+    private async Task WaitForCommittedStateAsync(string jobId, string stateName, TimeSpan timeout)
+    {
+        var storage = _storage;
+        if (storage is null)
+        {
+            return;
+        }
+
+        var deadline = DateTime.UtcNow.Add(timeout);
+        while (true)
+        {
+            using (var connection = storage.GetConnection())
+            {
+                if (string.Equals(connection.GetStateData(jobId)?.Name, stateName, StringComparison.Ordinal))
+                {
+                    return;
+                }
+            }
+
+            if (DateTime.UtcNow >= deadline)
+            {
+                throw new TimeoutException(
+                    $"Job '{jobId}' applied state '{stateName}' in-process, but the storage of its host still does not "
+                    + $"report it after {timeout}.");
+            }
+
+            await Task.Delay(CommitPollInterval);
         }
     }
 

@@ -15,6 +15,7 @@ using Microsoft.Extensions.Logging;
 using NightTales.Domain.Common;
 using NightTales.Infrastructure.Jobs;
 using NightTales.Infrastructure.Persistence;
+using NightTales.TestKit.Database;
 using NightTales.TestKit.Time;
 using NightTalesWorkerHost::NightTales.Worker.DependencyInjection;
 using NightTalesWorkerHost::NightTales.Worker.Health;
@@ -30,7 +31,9 @@ namespace NightTales.TestKit.Health;
 /// </summary>
 /// <remarks>
 /// The host is the production graph with an unreachable connection string: the recurring-job
-/// synchronisation is resilient by design, so the listener still starts and reports.
+/// synchronisation is resilient by design, so the listener still starts and reports. The string is
+/// checked by the fixture's destructive-DDL boundary first (<see cref="PostgresFixture"/>
+/// <c>.RequireManagedWorkerConnectionString</c>), because the graph installs Hangfire's schema.
 /// </remarks>
 public sealed class WorkerHealthProbe : IAsyncDisposable
 {
@@ -59,6 +62,7 @@ public sealed class WorkerHealthProbe : IAsyncDisposable
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(connectionString);
+        PostgresFixture.RequireManagedWorkerConnectionString(connectionString);
 
         var builder = WebApplication.CreateBuilder();
 

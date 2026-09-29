@@ -15,10 +15,11 @@ namespace NightTales.Infrastructure.Jobs;
 /// </summary>
 /// <remarks>
 /// Cron expressions are UTC (<see cref="Hangfire.RecurringJobOptions.TimeZone"/> is
-/// <see cref="TimeZoneInfo.Utc"/>). A storage failure is logged and skipped instead of failing the
-/// boot: the Worker must stay up and answer <c>/health/ready</c> with 503 while the database is down
-/// (09.9-D2), and the next start retries the synchronisation. A duplicate <see cref="Id"/> is a code
-/// error and does fail the boot.
+/// <see cref="TimeZoneInfo.Utc"/>). A failure is logged and skipped — per registration, and again for
+/// the removal pass — instead of failing the boot: a broken registration must not suppress the upserts
+/// of the others or the stale sweep, and the Worker must stay up and answer <c>/health/ready</c> with
+/// 503 while the database is down (09.9-D2). The next start retries the synchronisation. A duplicate
+/// <see cref="Id"/> is a code error and does fail the boot.
 /// </remarks>
 /// <param name="services">The provider the registrations are resolved from.</param>
 /// <param name="scheduler">The scheduler every registration upserts through.</param>
@@ -46,13 +47,20 @@ public sealed partial class RecurringJobRegistrar(
             }
         }
 
-        try
+        foreach (var registration in registrations)
         {
-            foreach (var registration in registrations)
+            try
             {
                 registration.Register(scheduler);
             }
+            catch (Exception exception) when (exception is not OperationCanceledException)
+            {
+                LogRegistrationFailed(exception, registration.Id);
+            }
+        }
 
+        try
+        {
             using var connection = storage.GetConnection();
             foreach (var stored in connection.GetRecurringJobs())
             {
@@ -88,4 +96,10 @@ public sealed partial class RecurringJobRegistrar(
         Level = LogLevel.Error,
         Message = "jobs.recurring.sync-failed")]
     private partial void LogSynchronisationFailed(Exception exception);
+
+    [LoggerMessage(
+        EventId = 2002,
+        Level = LogLevel.Error,
+        Message = "jobs.recurring.register-failed recurringJobId={RecurringJobId}")]
+    private partial void LogRegistrationFailed(Exception exception, string recurringJobId);
 }

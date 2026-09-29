@@ -45,6 +45,7 @@ public sealed class WorkerHost(TestDatabase database, FakeClock clock) : IAsyncD
     private readonly List<Action<IServiceCollection>> _configurations = [];
     private readonly List<Assembly> _jobAssemblies = [typeof(WorkerHost).Assembly];
     private bool _withHangfireServer;
+    private bool _started;
     private IHost? _host;
     private InlineJobScheduler? _inlineScheduler;
 
@@ -124,11 +125,12 @@ public sealed class WorkerHost(TestDatabase database, FakeClock clock) : IAsyncD
     }
 
     /// <summary>Builds and starts the host: hosted services, and the Hangfire server in real-server mode.</summary>
-    public Task StartAsync(CancellationToken cancellationToken = default)
+    public async Task StartAsync(CancellationToken cancellationToken = default)
     {
         _host ??= Build();
 
-        return _host.StartAsync(cancellationToken);
+        await _host.StartAsync(cancellationToken);
+        _started = true;
     }
 
     /// <summary>A scope over the started host, for resolving jobs and services the way Hangfire does.</summary>
@@ -147,14 +149,27 @@ public sealed class WorkerHost(TestDatabase database, FakeClock clock) : IAsyncD
             return;
         }
 
-        await _host.StopAsync();
+        // Only a started host is stopped: Host.StopAsync throws when the start never completed, which
+        // would hide the boot error a negative test asserts.
+        if (_started)
+        {
+            await _host.StopAsync();
+        }
+
         _host.Dispose();
         _host = null;
+        _started = false;
         _inlineScheduler = null;
     }
 
     private IHost Build()
     {
+        // The Worker graph installs the Hangfire schema on start (PrepareSchemaIfNecessary), so the
+        // harness only points it at a guarded, harness-managed database (SEC 09.2.6-T1). A blank value
+        // keeps the composition root's own fail-fast error.
+        PostgresFixture.RequireManagedWorkerConnectionString(
+            _settings[$"ConnectionStrings:{PersistenceOptions.ConnectionStringName}"]);
+
         var builder = Host.CreateApplicationBuilder();
 
         // The harness owns the configuration: the Worker's appsettings.json must not leak into a test.
@@ -195,6 +210,7 @@ public sealed class WorkerHost(TestDatabase database, FakeClock clock) : IAsyncD
 
         var host = builder.Build();
         _inlineScheduler = _withHangfireServer ? null : host.Services.GetRequiredService<InlineJobScheduler>();
+        Observer.Attach(host.Services.GetRequiredService<JobStorage>());
 
         return host;
     }

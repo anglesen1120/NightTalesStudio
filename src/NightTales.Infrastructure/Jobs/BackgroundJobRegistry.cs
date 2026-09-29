@@ -52,7 +52,10 @@ public sealed class BackgroundJobRegistry
 
         foreach (var registrationType in registrationTypes)
         {
-            services.TryAddSingleton(typeof(IRecurringJobRegistration), registrationType);
+            // TryAddEnumerable, not TryAddSingleton — the latter is satisfied by the first scanned
+            // type and drops the rest; TryAddEnumerable adds one descriptor per implementation type.
+            services.TryAddEnumerable(
+                ServiceDescriptor.Singleton(typeof(IRecurringJobRegistration), registrationType));
         }
 
         return new BackgroundJobRegistry(jobTypes);
