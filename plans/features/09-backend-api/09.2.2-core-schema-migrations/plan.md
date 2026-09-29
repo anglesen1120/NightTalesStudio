@@ -38,7 +38,7 @@
 
 ## 3. Domain and data
 
-Conventions for every table (D8): `id uuid` PK (UUIDv7, app-generated) unless noted; `created_at timestamptz NOT NULL`; `updated_at timestamptz NOT NULL` where mutable; enum columns are text with `CHECK`; aggregates carry `xmin`. `IUserOwned` = has `user_id NOT NULL` FK `users` ON DELETE RESTRICT.
+Conventions for every table (D8): `id uuid` PK (UUIDv7, app-generated) unless noted; `created_at timestamptz NOT NULL`; `updated_at timestamptz NOT NULL` where mutable; enum columns are text with `CHECK`; aggregates carry `xmin`. `IUserOwned` = has `user_id NOT NULL` FK `users` ON DELETE RESTRICT. The two timestamps are not hand-written per configuration: every entity that carries them implements `IAuditable` (Domain/Common, defined by 09.2.2-T1), one EF convention maps them, and `AuditableSaveChangesInterceptor` stamps them from `IClock` — `Added` → `CreatedAt` only while still `default`, plus `UpdatedAt`; `Modified` → `UpdatedAt` (09 W3 CR-38).
 
 **`users`** (Infrastructure `AppUser : IdentityUser<Guid>`; Identity columns in snake_case, plus):
 
@@ -50,9 +50,10 @@ Conventions for every table (D8): `id uuid` PK (UUIDv7, app-generated) unless no
 | `status` | text | no | CHECK `active`/`suspended`/`deleted` |
 | `last_totp_step` | bigint | yes | |
 | `owner_dispute_freeze_until`, `last_login_at` | timestamptz | yes | |
+| `email_verified_at` | timestamptz | yes | stamped by 09.3.1-T3's verify flow next to Identity's `email_confirmed` (09 W3 CR-39) |
 | `created_at`, `updated_at` | timestamptz | no | |
 
-Unique index `ux_users_normalized_email` on `normalized_email` (G4, F12). The Identity `security_stamp` and `two_factor_enabled` columns cover 00 §6.
+Unique index `ux_users_normalized_email` on `normalized_email` (G4, F12; it **replaces** the non-unique Identity `email_index`, 09 W3 CR-41). The Identity `security_stamp` and `two_factor_enabled` columns cover 00 §6.
 
 **`series`** (aggregate, `IUserOwned`): `title varchar(120)`; `topic` CHECK `ghost`/`spiritual`/`true_crime`; `language` CHECK `vi`/`en`; `aspect` CHECK `landscape`/`portrait`; `voice_id text` FK `voices` RESTRICT; `style_template_id uuid` FK `style_templates` RESTRICT; `story_preset text` null; `default_channel_id uuid` null (FK added by 06); `archived_at` null; `autopilot_enabled bool` default false; `autopilot_settings jsonb` null; `current_autopilot_authorization_id uuid` null FK `series_autopilot_authorizations` SET NULL; `autopilot_paused_at` null; `autopilot_pause_reason text` null. Indexes `(user_id, created_at DESC, id DESC)`, `(user_id) WHERE archived_at IS NULL`.
 
@@ -66,9 +67,9 @@ Unique index `ux_users_normalized_email` on `normalized_email` (G4, F12). The Id
 
 **`moderation_events`** (entity, `IUserOwned`): `episode_id` FK CASCADE, null (G3); `source` CHECK `openai_image`/`openai_text`/`internal`; `stage text`; `categories text[]`; `excerpt varchar(300)` null. Index `(user_id, created_at DESC)`.
 
-**`usage_records`** (entity, `IUserOwned`, append-only): `episode_id` FK SET NULL, null; `series_id uuid` null FK `series` RESTRICT; `generation_run_id uuid` null (FK added by 02.2.2-T1, G2); `render_job_id uuid` null (FK by 09.6.1); `reservation_id uuid` null; `provider text`; `operation` CHECK `story`/`story_review`/`story_revision`/`fact_sheet`/`image`/`tts`/`render`/`bible_proposal`/`idea`/`source_find`/`moderation`; `model text` null; `input_tokens`, `cached_input_tokens`, `output_tokens`, `image_count int` default 0; `gpu_seconds numeric(10,2)` default 0; `estimated bool`; `cost_usd numeric(12,6)`; `price_version int` null; `provider_request_id text` null. Indexes `(created_at)`, `(reservation_id)`, `(generation_run_id)`, `(user_id, created_at DESC)`.
+**`usage_records`** (entity, `IUserOwned`, append-only): `episode_id` FK SET NULL, null; `series_id uuid` null FK `series` RESTRICT; `generation_run_id uuid` null (FK added by 02.2.2-T1, G2); `render_job_id uuid` null (FK by 09.6.1); `reservation_id uuid` null; `provider text`; `operation` CHECK `story`/`story_review`/`story_revision`/`fact_sheet`/`image`/`tts`/`render`/`bible_proposal`/`idea`/`source_find`/`moderation`; `model text` null; `input_tokens`, `cached_input_tokens`, `output_tokens`, `image_count int` default 0; `gpu_seconds numeric(10,2)` default 0; `estimated bool`; `cost_usd numeric(12,6)`; `price_version int` null; `provider_request_id text` null. Indexes `(created_at, operation)` (00 §6:296; 12.5.2-T1, 12 CR-13, shared with 08.1.1-T1 — its leading column serves the whole-platform cost window, which is why the separate global `(created_at)` index of 08 CR-11 is **not** added, 09 W3 CR-39), `(reservation_id)`, `(generation_run_id)`, `(user_id, created_at DESC)`.
 
-**`assets`** (entity, `IUserOwned`): `episode_id` FK CASCADE; `kind` CHECK `video`/`thumbnail`/`audio`/`subtitle`/`image`; `storage_key text` unique; `content_type text`; `size_bytes bigint`; `duration_sec numeric(9,2)` null; `sha256 char(64)`; `retention_until` null; `deleted_at` null. Indexes `(episode_id)`, `(retention_until) WHERE deleted_at IS NULL`.
+**`assets`** (entity, `IUserOwned`): `episode_id` FK CASCADE; `kind` CHECK `video`/`thumbnail`/`audio`/`subtitle`/`image`; `storage_key varchar(512)` unique; `content_type text`; `size_bytes bigint`; `duration_sec numeric(9,2)` null; `sha256 char(64)`; `retention_until` null; `deleted_at` null. Index `(episode_id)` only — the retention index is **not** created here: `ix_assets_retention_due` (`(retention_until) WHERE deleted_at IS NULL AND retention_until IS NOT NULL`) is owned by 09.7.3-T1's index-only migration (09 W3 CR-40). The column types (`StorageKey` `varchar(512)`, `Sha256` `char(64)`) live in 09.2.2-T1's `AssetConfiguration`.
 
 **`voices`** (platform, not user-owned): `id text` PK; `display_name text`; `language` CHECK; `gender` CHECK `female`/`male`/`neutral`; `tags text[]`; `preview_storage_key text` null; `active bool`.
 
