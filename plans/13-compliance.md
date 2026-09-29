@@ -108,7 +108,7 @@ Given database and storage backups, Then deleted data is not removed from existi
 - Data collected: account data, content created, channel connection data (YouTube/TikTok ids, names, tokens), usage/billing data, logs.
 - Data from YouTube API Services: what is accessed, stored, shared, and how it is used ✅; statement that we use YouTube API Services and link to YouTube Terms and Google Privacy Policy ⚠️ (confirm exact required links in the policy text).
 - How users revoke access: in-app disconnect and https://security.google.com/settings/security/permissions ✅.
-- Retention and deletion: 7-day and 30-day windows by trigger; 30-day refresh/delete of stored Authorized Data ✅; backups are kept [DECISION] 30 days, so deleted data (including encrypted channel tokens) disappears from backups within 30 days of deletion and is never restored into the live service.
+- Retention and deletion: 7-day and 30-day windows by trigger; 30-day refresh/delete of stored Authorized Data ✅; backups are kept [DECISION] 30 days, so deleted data (including encrypted channel tokens) ages out of the backups within that window, and a restore re-applies every deletion completed after the backup date before the service reopens.
 - Upload consent: every upload has its own consent record — given by the user, or for autopilot series derived from the owner's versioned series authorization after a veto window in which the owner is notified and can edit or cancel (06.2.2).
 - We never ask for YouTube passwords ✅.
 - Sub-processors: OpenAI (story/image generation), hosting, storage, payment provider, e-mail provider.
