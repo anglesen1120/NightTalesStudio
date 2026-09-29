@@ -1,4 +1,6 @@
 using System.Globalization;
+using System.Net;
+using System.Text;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using Xunit;
@@ -29,11 +31,48 @@ namespace NightTales.TestKit.Database;
 /// Nothing is ever skipped: a missing/blank <c>NTS_TEST_PG</c>, an unparsable value or a server that
 /// is not major 17 fails with an <see cref="InvalidOperationException"/> that names the variable.
 /// </para>
+/// <para>
+/// The <c>Database</c> entry of <c>NTS_TEST_PG</c> is only where the fixture runs its own DDL
+/// (<c>CREATE DATABASE</c>, <c>DROP DATABASE</c> and the catalog queries); no test ever writes there,
+/// because every test class gets its own fresh <c>nts_…</c> database. Any database the role can
+/// connect to works, so the value carries no state: <c>tools/dev/db-init.sh</c> makes the <c>.env</c>
+/// database (<c>nighttales</c> on this Mac) connectable, and the docs use that value.
+/// </para>
+/// <para>
+/// Because the fixture drops and recreates databases, two boundaries are enforced before any DDL:
+/// every name it creates or drops must carry the reserved prefix <see cref="ManagedDatabasePrefix"/>
+/// (see <see cref="RequireManagedDatabaseName"/>), and the server of <c>NTS_TEST_PG</c> must be a
+/// loopback host unless <see cref="AllowRemoteDdlVariable"/><c>=1</c> is set explicitly (see
+/// <see cref="EnsureDdlTargetIsLoopback"/>).
+/// </para>
 /// </remarks>
 public sealed class PostgresFixture : IAsyncLifetime, IAsyncDisposable
 {
     /// <summary>The environment variable holding the test server connection string.</summary>
     public const string ConnectionStringVariable = "NTS_TEST_PG";
+
+    /// <summary>
+    /// The variable that must hold <c>1</c> to let the fixture run its destructive DDL against a
+    /// non-loopback server (<see cref="EnsureDdlTargetIsLoopback"/>). It must never be set for a
+    /// shared or production cluster.
+    /// </summary>
+    public const string AllowRemoteDdlVariable = "NTS_TEST_PG_ALLOW_REMOTE_DDL";
+
+    /// <summary>
+    /// Every database the fixture creates or drops must carry this reserved prefix, so a stray value
+    /// or a typo can never hand the harness a shared database (<see cref="RequireManagedDatabaseName"/>).
+    /// </summary>
+    public const string ManagedDatabasePrefix = "nts_";
+
+    /// <summary>The destructive DDL statements the harness runs against the test server.</summary>
+    public enum DdlStatement
+    {
+        /// <summary><c>CREATE DATABASE</c>, used by the template rebuild and by every class database.</summary>
+        CreateDatabase,
+
+        /// <summary><c>DROP DATABASE … WITH (FORCE)</c>, used before a rebuild and for a class database.</summary>
+        DropDatabase,
+    }
 
     /// <summary>The template database every per-class database is copied from, rebuilt once per run.</summary>
     public const string TemplateDatabaseName = "nts_template";
@@ -60,6 +99,7 @@ public sealed class PostgresFixture : IAsyncLifetime, IAsyncDisposable
     public PostgresFixture(string templateDatabaseName)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(templateDatabaseName);
+        RequireManagedDatabaseName(templateDatabaseName);
         TemplateDatabase = templateDatabaseName;
         _serverConnectionString = new Lazy<string>(
             static () => RequireServerConnectionString(Environment.GetEnvironmentVariable(ConnectionStringVariable)),
@@ -89,9 +129,9 @@ public sealed class PostgresFixture : IAsyncLifetime, IAsyncDisposable
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 
     /// <summary>
-    /// Validates the raw <c>NTS_TEST_PG</c> value (blank check + connection-string syntax) without
-    /// connecting, so the guard is unit-testable. A blank value is the named failure of 09 README
-    /// D13; it is never a skip.
+    /// Validates the raw <c>NTS_TEST_PG</c> value (blank check + connection-string syntax + the
+    /// loopback DDL boundary) without connecting, so the guard is unit-testable. A blank value is the
+    /// named failure of 09 README D13; it is never a skip.
     /// </summary>
     public static string RequireServerConnectionString(string? value)
     {
@@ -114,8 +154,124 @@ public sealed class PostgresFixture : IAsyncLifetime, IAsyncDisposable
                 $"{ConnectionStringVariable} is not a valid connection string (see docs/dev-setup.md).");
         }
 
+        EnsureDdlTargetIsLoopback(value, IsRemoteDdlAllowed());
+
         return value;
     }
+
+    /// <summary>True when <see cref="AllowRemoteDdlVariable"/> explicitly allows a remote DDL target.</summary>
+    public static bool IsRemoteDdlAllowed() =>
+        Environment.GetEnvironmentVariable(AllowRemoteDdlVariable) == "1";
+
+    /// <summary>
+    /// The loopback boundary of the destructive DDL: the fixture drops and recreates databases on the
+    /// server of <c>NTS_TEST_PG</c>, so a target that is not this machine is refused unless
+    /// <see cref="AllowRemoteDdlVariable"/> is <c>1</c>. The check is a pure function so the refusals
+    /// need no server. A host that is unspecified is accepted: Npgsql resolves it locally (localhost
+    /// or a Unix socket) by definition, so it can never be a remote cluster.
+    /// </summary>
+    /// <param name="connectionString">The raw <c>NTS_TEST_PG</c> value; must already parse.</param>
+    /// <param name="allowRemote">Whether the owner explicitly allowed a remote DDL target.</param>
+    public static void EnsureDdlTargetIsLoopback(string connectionString, bool allowRemote)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(connectionString);
+
+        // Host may hold a comma-separated list (Npgsql multi-host); every entry must be loopback.
+        foreach (var host in Hosts(new NpgsqlConnectionStringBuilder(connectionString).Host))
+        {
+            if (IsLoopbackHost(host))
+            {
+                continue;
+            }
+
+            if (allowRemote)
+            {
+                return;
+            }
+
+            throw new InvalidOperationException(
+                $"{ConnectionStringVariable} points at '{host}', which is not a loopback host. The test fixture drops " +
+                "and creates databases on that server, so it refuses a remote target unless " +
+                $"{AllowRemoteDdlVariable}=1 is set explicitly. Never set that override for a shared or production " +
+                "cluster: point it at a disposable test server only (see docs/dev-setup.md).");
+        }
+    }
+
+    /// <summary>
+    /// The destructive-DDL name boundary: only names carrying the reserved prefix
+    /// <see cref="ManagedDatabasePrefix"/> may be created or dropped, so a stray name can never reach
+    /// a shared database.
+    /// </summary>
+    /// <returns><paramref name="name"/>, so the call can wrap an assignment.</returns>
+    public static string RequireManagedDatabaseName(string name)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(name);
+
+        if (!name.StartsWith(ManagedDatabasePrefix, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException(
+                $"Refusing destructive DDL on database '{name}': the test harness only creates and drops databases whose " +
+                $"name starts with the reserved prefix '{ManagedDatabasePrefix}'. Rename the database, or point " +
+                $"{ConnectionStringVariable} at a dedicated test server (see docs/dev-setup.md).");
+        }
+
+        return name;
+    }
+
+    /// <summary>
+    /// Maps a failed DDL statement to the named error of the failure table, or <c>null</c> when the
+    /// SQLSTATE is not the privilege failure (those keep their original <see cref="PostgresException"/>).
+    /// A pure function, so the mapping is unit-tested without a database.
+    /// </summary>
+    /// <param name="sqlState">The PostgreSQL SQLSTATE of the failure.</param>
+    /// <param name="statement">The DDL statement that failed.</param>
+    public static string? DescribeDdlFailure(string? sqlState, DdlStatement statement)
+    {
+        if (sqlState != PostgresErrorCodes.InsufficientPrivilege)
+        {
+            return null;
+        }
+
+        var kind = statement switch
+        {
+            DdlStatement.CreateDatabase => "CREATE DATABASE",
+            DdlStatement.DropDatabase => "DROP DATABASE",
+            _ => throw new ArgumentOutOfRangeException(nameof(statement), statement, "Unknown DDL statement kind."),
+        };
+
+        return $"{ConnectionStringVariable}: the test role may not run {kind} on the test server " +
+            $"(SQLSTATE {sqlState}). The harness drops and rebuilds its template and gives every test class its own " +
+            "database, so the role must own those databases and hold CREATEDB — run tools/dev/db-init.sh (09.1.1-T2) " +
+            "and retry (see docs/dev-setup.md).";
+    }
+
+    /// <summary>
+    /// Creates a database on the test server, with <c>TEMPLATE</c> when a template is given, mapping
+    /// a privilege failure to the named error of <see cref="DescribeDdlFailure"/>.
+    /// </summary>
+    public async Task CreateDatabaseAsync(
+        string databaseName,
+        string? templateDatabaseName = null,
+        CancellationToken ct = default)
+    {
+        var sql = new StringBuilder($"CREATE DATABASE {QuoteIdentifier(databaseName)}");
+        if (templateDatabaseName is not null)
+        {
+            sql.Append(CultureInfo.InvariantCulture, $" TEMPLATE {QuoteIdentifier(templateDatabaseName)}");
+        }
+
+        await ExecuteDdlAsync(DdlStatement.CreateDatabase, sql.ToString(), ct);
+    }
+
+    /// <summary>
+    /// Drops a database with <c>FORCE</c>, mapping a privilege failure to the named error of
+    /// <see cref="DescribeDdlFailure"/>.
+    /// </summary>
+    public Task DropDatabaseAsync(string databaseName, CancellationToken ct = default) =>
+        ExecuteDdlAsync(
+            DdlStatement.DropDatabase,
+            $"DROP DATABASE IF EXISTS {QuoteIdentifier(databaseName)} WITH (FORCE)",
+            ct);
 
     /// <summary>
     /// The major-17 guard, factored out of the connection so the negative cases need no server.
@@ -193,8 +349,8 @@ public sealed class PostgresFixture : IAsyncLifetime, IAsyncDisposable
     /// </summary>
     public async Task RebuildTemplateAsync(string databaseName, CancellationToken ct = default)
     {
-        await ExecuteOnServerAsync($"DROP DATABASE IF EXISTS {QuoteIdentifier(databaseName)} WITH (FORCE)", ct);
-        await ExecuteOnServerAsync($"CREATE DATABASE {QuoteIdentifier(databaseName)}", ct);
+        await DropDatabaseAsync(databaseName, ct);
+        await CreateDatabaseAsync(databaseName, templateDatabaseName: null, ct);
 
         // A connection of its own, never pooled: an idle pooled backend on the template would make
         // every later `CREATE DATABASE … TEMPLATE` fail with "source database is being accessed".
@@ -291,7 +447,9 @@ public sealed class PostgresFixture : IAsyncLifetime, IAsyncDisposable
 
     /// <summary>
     /// Quotes a database name for DDL. DDL cannot take parameters, so the name is restricted to
-    /// unquoted-safe characters instead: every name in the harness is generated or a constant.
+    /// unquoted-safe characters instead: every name in the harness is generated or a constant. Every
+    /// rendered name must also carry the reserved <see cref="ManagedDatabasePrefix"/>, so no DDL can
+    /// ever reach a database the harness does not own.
     /// </summary>
     public static string QuoteIdentifier(string name)
     {
@@ -303,7 +461,52 @@ public sealed class PostgresFixture : IAsyncLifetime, IAsyncDisposable
             throw new ArgumentException($"'{name}' is not a valid test database identifier.", nameof(name));
         }
 
+        RequireManagedDatabaseName(name);
+
         return $"\"{name}\"";
+    }
+
+    /// <summary>The loopback test of one host entry: an IP in <c>127.0.0.0/8</c>/<c>::1</c>, the name
+    /// <c>localhost</c>, or a Unix-domain-socket path (which is local by definition).</summary>
+    private static bool IsLoopbackHost(string host)
+    {
+        if (host.StartsWith('/'))
+        {
+            return true;
+        }
+
+        if (host.Equals("localhost", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        // Npgsql accepts an IPv6 literal in brackets; IPAddress.Parse wants it bare.
+        var candidate = host.StartsWith('[') && host.EndsWith(']') ? host[1..^1] : host;
+
+        return IPAddress.TryParse(candidate, out var address) && IPAddress.IsLoopback(address);
+    }
+
+    /// <summary>Splits the <c>Host</c> entry of a connection string into its (trimmed) host entries.</summary>
+    private static string[] Hosts(string? host) =>
+        string.IsNullOrWhiteSpace(host)
+            ? []
+            : host.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+
+    /// <summary>
+    /// Runs one destructive DDL statement, mapping a privilege failure to the named error of
+    /// <see cref="DescribeDdlFailure"/>; every other failure keeps its original
+    /// <see cref="PostgresException"/>.
+    /// </summary>
+    private async Task ExecuteDdlAsync(DdlStatement statement, string sql, CancellationToken ct)
+    {
+        try
+        {
+            await ExecuteOnServerAsync(sql, ct);
+        }
+        catch (PostgresException exception) when (DescribeDdlFailure(exception.SqlState, statement) is { } message)
+        {
+            throw new InvalidOperationException(message, exception);
+        }
     }
 
     /// <summary>Connection string for a fixture-side helper connection (never pooled).</summary>

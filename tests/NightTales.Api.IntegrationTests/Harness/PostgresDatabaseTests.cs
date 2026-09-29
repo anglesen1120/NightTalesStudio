@@ -5,6 +5,7 @@ using NightTales.TestKit;
 using NightTales.TestKit.Auth;
 using NightTales.TestKit.Builders;
 using NightTales.TestKit.Database;
+using Npgsql;
 using Shouldly;
 using Xunit;
 
@@ -53,7 +54,13 @@ public sealed class PostgresDatabaseTests : IntegrationTest
             duration.ShouldBeLessThan(TimeSpan.FromSeconds(1));
 
             other.Name.ShouldNotBe(Database.Name);
-            other.ConnectionString.ShouldNotBe(Database.ConnectionString);
+
+            // SEC 09.2.1-T2: the raw connection strings embed the password, so they are never
+            // compared or printed directly — a failed assertion would leak it into the test output.
+            PostgresFixture.MaskPassword(other.ConnectionString)
+                .ShouldNotBe(PostgresFixture.MaskPassword(Database.ConnectionString));
+            new NpgsqlConnectionStringBuilder(other.ConnectionString).Database.ShouldBe(other.Name);
+            new NpgsqlConnectionStringBuilder(Database.ConnectionString).Database.ShouldBe(Database.Name);
 
             await using (var here = Database.CreateReadDbContext())
             {
@@ -159,5 +166,82 @@ public sealed class PostgresDatabaseTests : IntegrationTest
 
         // Disposing twice is a no-op, so a failure between create and drop never throws on cleanup.
         await database.DisposeAsync();
+    }
+
+
+
+    [Fact]
+    public async Task PostgresFixture_ForceDrop_TerminatesLeakedConnections()
+    {
+        // QA 09.2.1-T2: a test that leaks an open connection must not block the class-database drop
+        // (DROP DATABASE … WITH (FORCE) terminates the backend).
+        var ct = TestContextToken.Value;
+        var fixture = Fixture;
+        var database = new TestDatabase();
+        NpgsqlConnection? leaked = null;
+
+        try
+        {
+            await database.InitializeAsync();
+
+            leaked = new NpgsqlConnection(database.ConnectionString);
+            await leaked.OpenAsync(ct);
+            await using var keepAlive = new NpgsqlCommand("SELECT 1", leaked);
+            (await keepAlive.ExecuteScalarAsync(ct)).ShouldBe(1);
+
+            // The connection is still open while the fixture drops the database.
+            await database.DisposeAsync();
+
+            (await fixture.DatabaseExistsAsync(database.Name, ct))
+                .ShouldBeFalse("WITH (FORCE) must drop the database despite a leaked connection");
+
+            // The leaked backend was terminated: the next use of the connection fails.
+            await Should.ThrowAsync<Exception>(async () =>
+            {
+                await using var command = new NpgsqlCommand("SELECT 1", leaked);
+                await command.ExecuteScalarAsync(ct);
+            });
+        }
+        finally
+        {
+            if (leaked is not null)
+            {
+                await leaked.DisposeAsync();
+            }
+
+            await database.DisposeAsync();
+        }
+    }
+
+    [Fact]
+    public async Task PostgresFixture_ParallelCreates_ProduceIsolatedDatabases()
+    {
+        // QA 09.2.1-T2: xunit.v3 keeps class parallelism on; two databases created concurrently
+        // from the shared template must both succeed and stay distinct.
+        var first = new TestDatabase();
+        var second = new TestDatabase();
+
+        try
+        {
+            await Task.WhenAll(
+                first.InitializeAsync().AsTask(),
+                second.InitializeAsync().AsTask());
+
+            first.Name.ShouldNotBe(second.Name);
+            (await Fixture.DatabaseExistsAsync(first.Name, TestContextToken.Value)).ShouldBeTrue();
+            (await Fixture.DatabaseExistsAsync(second.Name, TestContextToken.Value)).ShouldBeTrue();
+
+            // A row in one is invisible in the other: the isolation a parallel pair relies on.
+            var user = await first.CreateUserBuilder().CreateAsync(ct: TestContextToken.Value);
+            (await second.QueryStringsAsync(
+                    $"SELECT id::text FROM users WHERE id = '{user.Id}'",
+                    TestContextToken.Value))
+                .ShouldBeEmpty();
+        }
+        finally
+        {
+            await first.DisposeAsync();
+            await second.DisposeAsync();
+        }
     }
 }
