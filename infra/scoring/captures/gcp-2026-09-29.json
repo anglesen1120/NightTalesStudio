@@ -1,0 +1,241 @@
+{
+  "provider": "gcp",
+  "region": "asia-southeast1 (Singapore)",
+  "captured_on": "2026-09-29",
+  "captured_by": "operator",
+  "node_shape": "g2-standard-8 - 8 vCPU, 32 GiB RAM, 1 x NVIDIA L4 24 GiB",
+  "values": {
+    "gpu_vram_gb": {
+      "value": 24,
+      "unit": "GB",
+      "source_url": "https://cloud.google.com/compute/docs/gpus",
+      "captured_on": "2026-09-29",
+      "captured_by": "operator",
+      "quote": "G2 (L4) 24 GB GDDR6 @ 300 GBps - ML Inference, Training, Remote Visualization Workstations, Video Transcoding, HPC",
+      "note": "G2 is the accelerator-optimized family in asia-southeast1; g2-standard-8 carries one L4."
+    },
+    "pg17_pitr": {
+      "value": null,
+      "unit": "bool",
+      "source_url": "https://cloud.google.com/sql/docs/postgres/backup-recovery/pitr",
+      "captured_on": "2026-09-29",
+      "captured_by": "operator",
+      "quote": "PostgreSQL 17 is listed in the version policy (db-versions: \"PostgreSQL 17\") and PITR is documented as \"Select Clone from an earlier point in time. Enter a PITR time.\" - but no fetchable page states the base-backup + continuous-WAL-archive mechanism that E10 requires",
+      "note": "[OPEN] \u26a0\ufe0f UNKNOWN: E10 wants base backup + continuous WAL archive. GCP's PITR pages (pitr, backups, configure-pitr) do not state the WAL/log-archiving mechanism and no write-ahead-log sentence could be read from them, so this hard gate is answered UNKNOWN, not true. GCP is therefore ineligible until the mechanism is confirmed in writing."
+    },
+    "block_volume_gates": {
+      "value": true,
+      "unit": "bool",
+      "source_url": "https://cloud.google.com/compute/disks-image-pricing",
+      "captured_on": "2026-09-29",
+      "captured_by": "operator",
+      "quote": "asia-southeast1 / \"Balanced provisioned space\" = $0.11 / 1 gibibyte month; \"Standard snapshot storage\" = $0.061 / 1 gibibyte month",
+      "note": "Persistent Disk data is encrypted at rest by default (Google-managed keys) and the disk supports snapshots with a published GB-month price; the region exposes zones asia-southeast1-a/b/c."
+    },
+    "block_volume_two_zones": {
+      "value": true,
+      "unit": "bool",
+      "source_url": "https://cloud.google.com/compute/docs/regions-zones",
+      "captured_on": "2026-09-29",
+      "captured_by": "operator",
+      "quote": "asia-southeast1-a Jurong West, Singapore, APAC ... G2 | asia-southeast1-b Jurong West, Singapore, APAC ... G2 | asia-southeast1-c Jurong West, Singapore, APAC ... G2",
+      "note": "Three zones in the finalist region each offer the G2 machine family; the backup storage VM gets its own zonal PD in another zone. https://cloud.google.com/compute/docs/disks/regional-persistent-disk: \"Regional Persistent Disk and Hyperdisk Balanced High Availability synchronously replicate data between two zones in the same region\". [T74 \u26a0\ufe0f the live orderability proof is 11.2.2-T1's]"
+    },
+    "media_egress_price": {
+      "value": true,
+      "unit": "bool",
+      "source_url": "https://cloud.google.com/vpc/network-pricing",
+      "captured_on": "2026-09-29",
+      "captured_by": "operator",
+      "quote": "Network (data transfer out) TO Asia Excl Korea, Indonesia (per GiB in USD): 0 gibibyte to 1 gibibyte $0.12 / 0.11; 1,024 gibibyte to 10,240 gibibyte $0.085",
+      "note": "Published internet egress price for downloads from media.<domain> (T74)."
+    },
+    "private_networking": {
+      "value": true,
+      "unit": "bool",
+      "source_url": "https://cloud.google.com/vpc/docs/overview",
+      "captured_on": "2026-09-29",
+      "captured_by": "operator",
+      "quote": "A VPC network is a global resource that consists of a list of regional virtual subnetworks (subnets) in data centers, all connected by a global wide area network. VPC networks are logically isolated from each other in Google Cloud."
+    },
+    "secret_manager": {
+      "value": true,
+      "unit": "bool",
+      "source_url": "https://cloud.google.com/secret-manager/pricing",
+      "captured_on": "2026-09-29",
+      "captured_by": "operator",
+      "quote": "6 month and above $0.06 / 1 month, per 1 month / account; 10,000 count and above $0.03 / 10,000 count, per 1 month / account"
+    },
+    "container_registry": {
+      "value": true,
+      "unit": "bool",
+      "source_url": "https://cloud.google.com/artifact-registry/pricing",
+      "captured_on": "2026-09-29",
+      "captured_by": "operator",
+      "quote": "0.5 gibibyte month and above $0.10 / 1 gibibyte month, per 1 month / account"
+    },
+    "telemetry_non_agpl": {
+      "value": true,
+      "unit": "bool",
+      "source_url": "https://cloud.google.com/monitoring",
+      "captured_on": "2026-09-29",
+      "captured_by": "operator",
+      "quote": "Gain visibility into the performance, availability, and health of your applications and infrastructure.",
+      "note": "Provider-native managed backend (Cloud Monitoring / Cloud Logging, OTLP ingest); no self-hosted AGPL component (E12, F16, O6)."
+    },
+
+    "gpu_price_per_hour": {
+      "value": 1.053116256,
+      "unit": "USD/GPU-hour",
+      "source_url": "https://cloud.google.com/products/compute/pricing/accelerator-optimized",
+      "captured_on": "2026-09-29",
+      "captured_by": "operator",
+      "quote": "g2-standard-8 | NVIDIA L4 | GPUs: 1 | vCPUs: 8 | Memory: 32GiB | $1.053116256 / 1 hour (Singapore (asia-southeast1), on-demand column)",
+      "note": "On-demand, asia-southeast1. [INFERENCE] the smaller g2-standard-4 (4 vCPU, 16 GiB) is $0.872018928/hour but its 16 GiB system RAM is below the node shape this record fixes for MPT + VieNeu + whisper on one host; that RAM-sufficiency judgement is an engineering choice, not a vendor statement."
+    },
+    "gpu_billing_granularity": {
+      "value": "per_second",
+      "unit": "enum",
+      "source_url": "https://cloud.google.com/products/compute/pricing",
+      "captured_on": "2026-09-29",
+      "captured_by": "operator",
+      "quote": "All vCPUs, GPUs, and GB of memory are charged a minimum of 1 minute. For example, if you run your virtual machine for 30 seconds, you will be billed for 1 minute of usage. After 1 minute, instances are charged in 1 second increments."
+    },
+    "gpu_stop_start": {
+      "value": true,
+      "unit": "bool",
+      "source_url": "https://cloud.google.com/products/compute/pricing",
+      "captured_on": "2026-09-29",
+      "captured_by": "operator",
+      "quote": "Instance uptime is measured as the number of seconds between when you start an instance and when you stop an instance, the latter being when the instance state is STOPPING. ... you will not be charged for usage after the instance reaches the STOPPING state."
+    },
+    "monthly_at_duty_cycle": {
+      "value": 192.325356252,
+      "unit": "USD/month",
+      "source_url": "https://cloud.google.com/products/compute/pricing/accelerator-optimized",
+      "captured_on": "2026-09-29",
+      "captured_by": "operator",
+      "quote": "1.053116256 USD/hour x 6 h/day x 30.4375 days = 192.325356252 USD/month (the exact product, derived by score.py from gpu_price_per_hour)",
+      "note": "Derived by score.py from gpu_price_per_hour at criteria.json params duty_cycle_hours_per_day = 6 and days_per_month = 30.4375; the harness rejects a hand-typed value that does not match the product."
+    },
+    "latency_to_vn_ms": {
+      "value": null,
+      "unit": "ms",
+      "source_url": "infra/scoring/latency.md",
+      "captured_on": "2026-09-29",
+      "captured_by": "operator",
+      "quote": "not measured - no instance is rented in this task; the exact command is the pre-apply check for 11.2.2-T1 step 1 (latency.md)"
+    },
+    "latency_to_apis_ms": {
+      "value": null,
+      "unit": "ms",
+      "source_url": "infra/scoring/latency.md",
+      "captured_on": "2026-09-29",
+      "captured_by": "operator",
+      "quote": "not measured - curl -w '%{time_connect} %{time_total}' to api.openai.com and www.googleapis.com from a rented instance is the pre-apply check for 11.2.2-T1 step 1 (latency.md)"
+    },
+    "block_volume_gb_month": {
+      "value": 0.11,
+      "unit": "USD/GiB-month",
+      "source_url": "https://cloud.google.com/compute/disks-image-pricing",
+      "captured_on": "2026-09-29",
+      "captured_by": "operator",
+      "quote": "Singapore (asia-southeast1) / \"Balanced provisioned space\": $0.11 / 1 gibibyte month (0.000150685 / 1 gibibyte hour)",
+      "note": "pd-balanced; Hyperdisk Balanced provisioned space is $0.098/GiB-month on the same page."
+    },
+    "volume_snapshot_gb_month": {
+      "value": 0.061,
+      "unit": "USD/GiB-month",
+      "source_url": "https://cloud.google.com/compute/disks-image-pricing",
+      "captured_on": "2026-09-29",
+      "captured_by": "operator",
+      "quote": "Singapore (asia-southeast1) / \"Standard snapshot storage\": $0.061 / 1 gibibyte month (archive snapshot storage $0.0234)",
+      "note": "Snapshots are compressed and incremental."
+    },
+    "internet_egress_gb": {
+      "value": 0.12,
+      "unit": "USD/GB",
+      "source_url": "https://cloud.google.com/vpc/network-pricing",
+      "captured_on": "2026-09-29",
+      "captured_by": "operator",
+      "quote": "Network (data transfer out) TO Asia Excl Korea, Indonesia: 0 gibibyte to 1 gibibyte $0.12 / 1 gibibyte (then $0.11 to 1,024 GiB and $0.085 to 10,240 GiB)"
+    },
+    "managed_postgres_month": {
+      "value": 141.62,
+      "unit": "USD/month",
+      "source_url": "https://cloud.google.com/sql/pricing",
+      "captured_on": "2026-09-29",
+      "captured_by": "operator",
+      "quote": "Singapore (asia-southeast1) Cloud SQL for PostgreSQL: vCPUs $0.0578 / 1 hour; Memory $0.0098 / 1 gibibyte hour; SSD storage capacity $0.238 / 1 gibibyte month; Backups (used) $0.112 / 1 gibibyte month",
+      "note": "2 vCPU x 0.0578 + 8 GiB x 0.0098 = 0.194 USD/hour, x 730 = 141.62 USD/month; automated backups (PITR) are included, backup storage is charged separately."
+    },
+    "container_registry_price": {
+      "value": 0.10,
+      "unit": "USD/GiB-month",
+      "source_url": "https://cloud.google.com/artifact-registry/pricing",
+      "captured_on": "2026-09-29",
+      "captured_by": "operator",
+      "quote": "0.5 gibibyte month and above $0.10 / 1 gibibyte month, per 1 month / account"
+    },
+    "vpn_bastion": {
+      "value": true,
+      "unit": "bool",
+      "source_url": "https://cloud.google.com/vpn/docs/pricing",
+      "captured_on": "2026-09-29",
+      "captured_by": "operator",
+      "quote": "you must configure two tunnels, or, if working with an AWS peer gateway, four tunnels ... $0.05 / 1 hour (36.50 / 1 month) per tunnel; IAP TCP forwarding is the bastion-free alternative"
+    },
+    "fqdn_egress": {
+      "value": null,
+      "unit": "bool",
+      "source_url": "https://cloud.google.com/firewall/docs/firewall-policies",
+      "captured_on": "2026-09-29",
+      "captured_by": "operator",
+      "quote": "Firewall policy rule components ... Address groups, FQDN objects (nav entry only - the FQDN-object page itself is not fetchable and no sentence states whether allow AND deny rules are supported)",
+      "note": "[OPEN] \u26a0\ufe0f UNKNOWN: only a navigation entry evidences FQDN objects, which is not enough to claim F14 support (an independent report says the support is HTTPS-only and allow-only). D11's per-unit nftables IP/port allow-list is therefore the design; null rather than true."
+    },
+    "telemetry_option": {
+      "value": true,
+      "unit": "bool",
+      "source_url": "https://cloud.google.com/monitoring",
+      "captured_on": "2026-09-29",
+      "captured_by": "operator",
+      "quote": "Gain visibility into the performance, availability, and health of your applications and infrastructure."
+    },
+    "private_ca_option": {
+      "value": true,
+      "unit": "bool",
+      "source_url": "https://cloud.google.com/certificate-authority-service/pricing",
+      "captured_on": "2026-09-29",
+      "captured_by": "operator",
+      "quote": "Pricing table - Charges DevOps SKU: Monthly CA fee $20 per CA per month",
+      "note": "CA Service can issue the storage-<env>.internal / storage-backup-<env>.internal certificates from a managed root (T81); at $20/CA/month it is cheaper than AWS Private CA, but the T81 rule allows the owner-generated offline root instead and no client pins a certificate."
+    },
+    "data_terms_region": {
+      "value": "partial",
+      "unit": "enum",
+      "source_url": "https://cloud.google.com/security/compliance/gdpr",
+      "captured_on": "2026-09-29",
+      "captured_by": "operator",
+      "quote": "The General Data Protection Regulation (GDPR) is a privacy legislation that replaced the 95/46/EC Directive on Data Protection of 24 October 1995 on May 25, 2018.",
+      "note": "Google Cloud publishes the GDPR commitments and the Cloud Data Processing Addendum; the Vietnam rule (Decree 53/2022 data-localisation for listed sectors) is not settled for a private studio - owner/TL question, recorded as a revisit trigger."
+    },
+    "vn_payment_options": {
+      "value": true,
+      "unit": "bool",
+      "source_url": "https://docs.cloud.google.com/billing/docs/resources/currency",
+      "captured_on": "2026-09-29",
+      "captured_by": "operator",
+      "quote": "Vietnam | VND | credit card"
+    },
+    "owner_locked_eligible": {
+      "value": true,
+      "unit": "bool",
+      "source_url": "plans/features/11-worker-deployment/README.md#D21",
+      "captured_on": "2026-09-29",
+      "captured_by": "operator",
+      "quote": "No managed object storage and no AWS account is used. [the locked decision names AWS only, so it does not exclude GCP]",
+      "note": "The owner-locked decision (O7, 2026-09-27) excludes AWS; self-hosted SeaweedFS is unaffected by the provider choice."
+    }
+  }
+}

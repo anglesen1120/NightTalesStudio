@@ -1,0 +1,244 @@
+{
+  "provider": "azure",
+  "region": "southeastasia (Singapore)",
+  "captured_on": "2026-09-29",
+  "captured_by": "operator",
+  "node_shape": "Standard_NC8as_T4_v3 - 8 vCPU, 56 GiB RAM, 1 x NVIDIA Tesla T4 16 GiB",
+  "values": {
+    "gpu_vram_gb": {
+      "value": 16,
+      "unit": "GB",
+      "source_url": "https://learn.microsoft.com/en-us/azure/virtual-machines/sizes/gpu-accelerated/ncast4v3-series",
+      "captured_on": "2026-09-29",
+      "captured_by": "operator",
+      "quote": "Accelerator (GPUs, FPGAs, etc.) info for each size: Standard_NC8as_T4_v3 | Accelerators (Qty.) 1 | Accelerator-Memory (GB) 16 (series: \"The VMs feature up to 4 NVIDIA T4 GPUs with 16 GB of memory each\")",
+      "note": "One T4 at 16 GB for the 8 vCPU / 56 GiB size - meets the 16 GB gate and the one-GPU-per-node rule. 24 GB is not offered on a single-GPU Azure size in this series (the series maximum is 4 GPUs / 64 GB on NC64as_T4_v3)."
+    },
+    "pg17_pitr": {
+      "value": true,
+      "unit": "bool",
+      "source_url": "https://learn.microsoft.com/en-us/azure/postgresql/flexible-server/concepts-supported-versions",
+      "captured_on": "2026-09-29",
+      "captured_by": "operator",
+      "quote": "PostgreSQL version 17 The current minor release is 17.11. | https://learn.microsoft.com/en-us/azure/postgresql/flexible-server/concepts-backup-restore: \"Azure Database for PostgreSQL takes snapshot backups of data files and stores them securely in zone-redundant storage or locally redundant storage, depending on the region. The server also backs up transaction logs when the write-ahead log (WAL) file is ready to be archived. Use these backups to restore a server to any point in time within your configured backup retention period.\"",
+      "note": "Base backup + continuous WAL archive (E10), stated by Microsoft, with a configurable retention period (default 7 days, up to 35)."
+    },
+    "block_volume_gates": {
+      "value": true,
+      "unit": "bool",
+      "source_url": "https://learn.microsoft.com/en-us/azure/virtual-machines/disk-encryption",
+      "captured_on": "2026-09-29",
+      "captured_by": "operator",
+      "quote": "Most Azure managed disks are encrypted with Azure Storage encryption, which uses server-side encryption (SSE) to protect your data and to help you meet your organizational security and compliance commitments. | Standard SSD Managed Disks E10 LRS = 9.6 USD/month for 128 GiB = 0.075 USD/GiB-month; Standard SSD Managed Disks Snapshots LRS = 0.132 USD/GiB-month (Azure Retail Prices API, southeastasia)",
+      "note": "Encrypted managed disks + snapshots with a published GB-month price: the volume tier is Standard SSD LRS (E10: 128 GiB for 9.6 USD/month) and its snapshot tier is 0.132 USD/GiB-month. The two-zone/location half of T74 is quoted in block_volume_two_zones."
+    },
+    "block_volume_two_zones": {
+      "value": true,
+      "unit": "bool",
+      "source_url": "https://learn.microsoft.com/en-us/azure/reliability/regions-list",
+      "captured_on": "2026-09-29",
+      "captured_by": "operator",
+      "quote": "Southeast Asia | 3 | East Asia | Singapore | Asia Pacific | southeastasia (region display name, availability-zone count, paired region, physical location, geography, region name) | https://learn.microsoft.com/en-us/azure/virtual-machines/disks-redundancy: \"Zone-redundant storage (ZRS) synchronously replicates your Azure managed disk across three Azure availability zones in the region you select.\"",
+      "note": "The finalist region has three availability zones; the primary and backup storage VMs each get their own zonal (LRS) disk in a different zone. [T74 \u26a0\ufe0f the live orderability proof is 11.2.2-T1's]"
+    },
+    "media_egress_price": {
+      "value": true,
+      "unit": "bool",
+      "source_url": "https://prices.azure.com/api/retail/prices?$filter=serviceName%20eq%20'Bandwidth'%20and%20armRegionName%20eq%20'southeastasia'%20and%20contains(productName,'Internet')",
+      "captured_on": "2026-09-29",
+      "captured_by": "operator",
+      "quote": "Bandwidth - Routing Preference: Internet | Standard | Standard Data Transfer Out | 0.11 | 1 GB (tierMinimumUnits 100; the first 100 GB/month are 0.0)",
+      "note": "Published internet egress price for downloads from media.<domain> (T74)."
+    },
+    "private_networking": {
+      "value": true,
+      "unit": "bool",
+      "source_url": "https://learn.microsoft.com/en-us/azure/virtual-network/virtual-networks-overview",
+      "captured_on": "2026-09-29",
+      "captured_by": "operator",
+      "quote": "Azure Virtual Network provides the fundamental building block for your private network in Azure. This service enables Azure resources like virtual machines (VMs) to securely communicate with each other, the internet, and on-premises networks."
+    },
+    "secret_manager": {
+      "value": true,
+      "unit": "bool",
+      "source_url": "https://learn.microsoft.com/en-us/azure/key-vault/general/overview",
+      "captured_on": "2026-09-29",
+      "captured_by": "operator",
+      "quote": "Azure Key Vault is one of several key management solutions in Azure ... Secrets Management - Azure Key Vault can be used to Securely store and tightly control access to tokens, passwords, certificates, API keys, and other secrets",
+      "note": "Secrets are not billed per secret; standard operations are $0.03 per 10,000 (https://azure.microsoft.com/en-us/pricing/details/key-vault/)."
+    },
+    "container_registry": {
+      "value": true,
+      "unit": "bool",
+      "source_url": "https://prices.azure.com/api/retail/prices?$filter=serviceName%20eq%20'Container%20Registry'%20and%20armRegionName%20eq%20'southeastasia'",
+      "captured_on": "2026-09-29",
+      "captured_by": "operator",
+      "quote": "Container Registry | Standard | Data Stored | 0.1 | 1 GB/Month; Container Registry | Basic | Basic Registry Unit | 0.1666 | 1/Day"
+    },
+    "telemetry_non_agpl": {
+      "value": true,
+      "unit": "bool",
+      "source_url": "https://learn.microsoft.com/en-us/azure/azure-monitor/overview",
+      "captured_on": "2026-09-29",
+      "captured_by": "operator",
+      "quote": "Azure Monitor collects logs and metrics from all the resources across the different Azure services that you use, including audit logs from Microsoft Entra ID.",
+      "note": "Provider-native managed backend (Azure Monitor with Log Analytics workspaces); no self-hosted AGPL component (E12, F16, O6). [INFERENCE] the Collector in the app subnet exports to it; the OTLP-ingestion sentence could not be verified from a fetchable page, so it is not claimed here."
+    },
+
+    "gpu_price_per_hour": {
+      "value": 1.052,
+      "unit": "USD/GPU-hour",
+      "source_url": "https://prices.azure.com/api/retail/prices?$filter=serviceName%20eq%20'Virtual%20Machines'%20and%20armRegionName%20eq%20'southeastasia'%20and%20armSkuName%20eq%20'Standard_NC8as_T4_v3'",
+      "captured_on": "2026-09-29",
+      "captured_by": "operator",
+      "quote": "Standard_NC8as_T4_v3 | NC8as T4 v3 | NC8as T4 v3 | 1.052 | 1 Hour | Consumption | Virtual Machines NCasT4 v3 Series",
+      "note": "Pay-as-you-go Linux, southeastasia. Spot is $0.298347/h and low priority $0.21/h but neither is a basis for a production node."
+    },
+    "gpu_billing_granularity": {
+      "value": "per_second",
+      "unit": "enum",
+      "source_url": "https://azure.microsoft.com/en-us/pricing/details/virtual-machines/linux/",
+      "captured_on": "2026-09-29",
+      "captured_by": "operator",
+      "quote": "Pay as you go - Pay for compute capacity by the second, with no long-term commitments or upfront payments."
+    },
+    "gpu_stop_start": {
+      "value": true,
+      "unit": "bool",
+      "source_url": "https://learn.microsoft.com/en-us/azure/virtual-machines/states-billing",
+      "captured_on": "2026-09-29",
+      "captured_by": "operator",
+      "quote": "Stopped ... Also called PoweredOff state or Stopped (Allocated) ... Billed | Deallocating ... Not billed* | Deallocated The virtual machine has released the lease on the underlying hardware.",
+      "note": "Stopping without deallocating still bills; the node must be deallocated to stop the compute charge."
+    },
+    "monthly_at_duty_cycle": {
+      "value": 192.1215,
+      "unit": "USD/month",
+      "source_url": "https://prices.azure.com/api/retail/prices?$filter=serviceName%20eq%20'Virtual%20Machines'%20and%20armRegionName%20eq%20'southeastasia'%20and%20armSkuName%20eq%20'Standard_NC8as_T4_v3'",
+      "captured_on": "2026-09-29",
+      "captured_by": "operator",
+      "quote": "1.052 USD/h x 6 h/day x 30.4375 days = 192.1215 USD/month",
+      "note": "Derived by score.py from gpu_price_per_hour at criteria.json params duty_cycle_hours_per_day = 6."
+    },
+    "latency_to_vn_ms": {
+      "value": null,
+      "unit": "ms",
+      "source_url": "infra/scoring/latency.md",
+      "captured_on": "2026-09-29",
+      "captured_by": "operator",
+      "quote": "not measured - no instance is rented in this task; the exact command is the pre-apply check for 11.2.2-T1 step 1 (latency.md)"
+    },
+    "latency_to_apis_ms": {
+      "value": null,
+      "unit": "ms",
+      "source_url": "infra/scoring/latency.md",
+      "captured_on": "2026-09-29",
+      "captured_by": "operator",
+      "quote": "not measured - curl -w '%{time_connect} %{time_total}' to api.openai.com and www.googleapis.com from a rented instance is the pre-apply check for 11.2.2-T1 step 1 (latency.md)"
+    },
+    "block_volume_gb_month": {
+      "value": 0.075,
+      "unit": "USD/GiB-month",
+      "source_url": "https://prices.azure.com/api/retail/prices?$filter=serviceName%20eq%20'Storage'%20and%20armRegionName%20eq%20'southeastasia'%20and%20contains(productName,'Managed%20Disks')",
+      "captured_on": "2026-09-29",
+      "captured_by": "operator",
+      "quote": "Standard SSD Managed Disks | E10 LRS | E10 LRS Disk | 9.6 | 1/Month (128 GiB -> 9.60 / 128 = 0.075 USD/GiB-month; the same query returns E10 ZRS at 14.4 USD/month)",
+      "note": "Locally redundant (LRS) is the tier that matches a single-AZ VM; ZRS is the cross-zone option at 0.1125 USD/GiB-month. Premium SSD P10 LRS is 19.71 USD/month for the same 128 GiB."
+    },
+    "volume_snapshot_gb_month": {
+      "value": 0.132,
+      "unit": "USD/GiB-month",
+      "source_url": "https://prices.azure.com/api/retail/prices?$filter=serviceName%20eq%20'Storage'%20and%20armRegionName%20eq%20'southeastasia'%20and%20contains(meterName,'Snapshots')",
+      "captured_on": "2026-09-29",
+      "captured_by": "operator",
+      "quote": "Standard SSD Managed Disks | Snapshots LRS | Snapshots LRS Snapshots | 0.132 | 1 GB/Month (Premium SSD snapshots are also 0.132; Standard HDD snapshots are 0.05)",
+      "note": "The snapshot tier follows the volume tier: a Standard SSD source volume snapshots at 0.132 USD/GiB-month, not the 0.05 HDD tier. The primary volume keeps daily snapshots with 7-day retention (T87/D17)."
+    },
+    "internet_egress_gb": {
+      "value": 0.11,
+      "unit": "USD/GB",
+      "source_url": "https://prices.azure.com/api/retail/prices?$filter=serviceName%20eq%20'Bandwidth'%20and%20armRegionName%20eq%20'southeastasia'%20and%20contains(productName,'Internet')",
+      "captured_on": "2026-09-29",
+      "captured_by": "operator",
+      "quote": "Standard Data Transfer Out: 0.11 USD/GB from tierMinimumUnits 100 (first 100 GB/month at 0.0); later tiers 0.075 / 0.07 / 0.06"
+    },
+    "managed_postgres_month": {
+      "value": 178.12,
+      "unit": "USD/month",
+      "source_url": "https://prices.azure.com/api/retail/prices?$filter=serviceName%20eq%20'Azure%20Database%20for%20PostgreSQL'%20and%20armRegionName%20eq%20'southeastasia'",
+      "captured_on": "2026-09-29",
+      "captured_by": "operator",
+      "quote": "Azure Database for PostgreSQL Flexible Server General Purpose Ddsv5 Series Compute | 2 vCore | 0.244 | 1 Hour (x 730 h = 178.12 USD/month); storage is 0.138 USD/GB-month (Flex Server Storage)",
+      "note": "Flexible Server, 2 vCore General Purpose; PITR with a configurable retention period is included (see pg17_pitr)."
+    },
+    "container_registry_price": {
+      "value": 0.10,
+      "unit": "USD/GiB-month",
+      "source_url": "https://prices.azure.com/api/retail/prices?$filter=serviceName%20eq%20'Container%20Registry'%20and%20armRegionName%20eq%20'southeastasia'",
+      "captured_on": "2026-09-29",
+      "captured_by": "operator",
+      "quote": "Container Registry | Standard | Data Stored | 0.1 | 1 GB/Month",
+      "note": "The Basic tier is a flat 0.1666 USD/day per registry."
+    },
+    "vpn_bastion": {
+      "value": true,
+      "unit": "bool",
+      "source_url": "https://prices.azure.com/api/retail/prices?$filter=serviceName%20eq%20'VPN%20Gateway'%20and%20armRegionName%20eq%20'southeastasia'",
+      "captured_on": "2026-09-29",
+      "captured_by": "operator",
+      "quote": "VPN Gateway | VpnGw1 | VpnGw1 | 0.19 | 1 Hour (Azure Bastion is an alternative operator path)"
+    },
+    "fqdn_egress": {
+      "value": true,
+      "unit": "bool",
+      "source_url": "https://learn.microsoft.com/en-us/azure/firewall/features",
+      "captured_on": "2026-09-29",
+      "captured_by": "operator",
+      "quote": "Filtering and inspection ... Application level FQDN filtering (SNI based) for HTTPS/SQL [Basic, Standard, Premium] ... Network level FQDN filtering - all ports and protocols [Standard, Premium]",
+      "note": "FQDN rules require Azure Firewall (Standard/Premium), an extra component and cost; D11's per-unit IP/port allow-list remains the design."
+    },
+    "telemetry_option": {
+      "value": true,
+      "unit": "bool",
+      "source_url": "https://learn.microsoft.com/en-us/azure/azure-monitor/overview",
+      "captured_on": "2026-09-29",
+      "captured_by": "operator",
+      "quote": "Azure Monitor collects logs and metrics from all the resources across the different Azure services that you use, including audit logs from Microsoft Entra ID."
+    },
+    "private_ca_option": {
+      "value": false,
+      "unit": "bool",
+      "source_url": "https://learn.microsoft.com/en-us/azure/key-vault/certificates/about-certificates",
+      "captured_on": "2026-09-29",
+      "captured_by": "operator",
+      "quote": "Certificates validation type: organization validated (OV-SSL) and extended validation (EV-SSL) for DigiCert and GlobalSign issuers.",
+      "note": "Azure publishes no managed private-CA service (Key Vault certificates are issued through integrated public CAs or as self-signed issuer policies, not an internal PKI). Per T81 the applied answer is the owner-generated offline root, installed in the host/node trust stores - never client-side certificate pinning."
+    },
+    "data_terms_region": {
+      "value": "partial",
+      "unit": "enum",
+      "source_url": "https://learn.microsoft.com/en-us/compliance/regulatory/gdpr",
+      "captured_on": "2026-09-29",
+      "captured_by": "operator",
+      "quote": "General Data Protection Regulation - Microsoft GDPR",
+      "note": "Microsoft publishes the GDPR commitments and the Data Protection Addendum; the Vietnam rule (Decree 53/2022 data-localisation for listed sectors) is not settled for a private studio - owner/TL question, recorded as a revisit trigger."
+    },
+    "vn_payment_options": {
+      "value": true,
+      "unit": "bool",
+      "source_url": "https://learn.microsoft.com/en-us/azure/cost-management-billing/manage/supported-payment-methods",
+      "captured_on": "2026-09-29",
+      "captured_by": "operator",
+      "quote": "Supported payment methods for Azure subscriptions - country/region table: Vietnam [credit card and debit card columns marked as supported]"
+    },
+    "owner_locked_eligible": {
+      "value": true,
+      "unit": "bool",
+      "source_url": "plans/features/11-worker-deployment/README.md#D21",
+      "captured_on": "2026-09-29",
+      "captured_by": "operator",
+      "quote": "No managed object storage and no AWS account is used. [the locked decision names AWS only, so it does not exclude Azure]",
+      "note": "The owner-locked decision (O7, 2026-09-27) excludes AWS; self-hosted SeaweedFS is unaffected by the provider choice."
+    }
+  }
+}
