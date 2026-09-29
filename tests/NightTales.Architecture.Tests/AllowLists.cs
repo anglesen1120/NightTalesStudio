@@ -20,7 +20,7 @@ internal static class AllowLists
             "NightTales.Application.Features.Assets.Jobs.RetentionSweepJob",
             "NightTales.Application.Features.Compliance.Deletion.Jobs.DataDeletionJob",
             "NightTales.Worker.Jobs.CreditReconciliationJob",
-            "NightTales.Application.Abstractions.SystemWorkQuery",
+            "NightTales.Infrastructure.Persistence.Queries.SystemWorkQuery",
         };
 
     /// <summary>Job method parameters that may be <c>string</c> (README D12).</summary>
