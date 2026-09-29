@@ -144,6 +144,44 @@ public sealed class HangfireJobSchedulerTests(TestDatabase database) : Integrati
     }
 
     [Fact]
+    public async Task Job_WithoutPolicy_RunsOnTheDefaultQueue()
+    {
+        // The default queue is part of the D12 contract for a job with no [JobPolicy]: a regression
+        // in JobPolicy.QueueOf that produced a queue the server never listens on would leave every
+        // unannotated job permanently enqueued.
+        var effects = new ProbeJobEffects();
+        await using var host = ProbeHost.New(Database, effects).WithHangfireServer();
+        await host.StartAsync(TestContextToken.Value);
+
+        var jobId = host.Scheduler.Enqueue<RecordingProbeJob>((job, ct) => job.RunAsync(Guid.Empty, ct));
+
+        await host.Observer.WaitForStateAsync(jobId, "Succeeded", Timeout);
+
+        var api = host.Services.GetRequiredService<JobStorage>().GetMonitoringApi();
+        api.JobDetails(jobId)!.Job.Queue.ShouldBe(JobQueues.Name(JobQueue.Default));
+    }
+
+    [Fact]
+    public async Task Schedule_WithDelay_WaitsForTheDelay()
+    {
+        // Schedule<TJob> must hold the job until the delay elapses: the observer sees Scheduled
+        // (not Enqueued), the storage's EnqueueAt is in the future, and the job has not run.
+        var effects = new ProbeJobEffects();
+        await using var host = ProbeHost.New(Database, effects).WithHangfireServer();
+        await host.StartAsync(TestContextToken.Value);
+
+        var jobId = host.Scheduler.Schedule<RecordingProbeJob>(
+            (job, ct) => job.RunAsync(Guid.Empty, ct), TimeSpan.FromMinutes(30));
+
+        await host.Observer.WaitForStateAsync(jobId, "Scheduled", Timeout);
+
+        effects.Runs.ShouldBe(0);
+        var api = host.Services.GetRequiredService<JobStorage>().GetMonitoringApi();
+        var scheduled = api.ScheduledJobs(0, 100).Single(pair => pair.Key == jobId);
+        scheduled.Value.EnqueueAt.ShouldBeGreaterThan(DateTime.UtcNow);
+    }
+
+    [Fact]
     public async Task Schedule_RunsAfterTheDelay()
     {
         var effects = new ProbeJobEffects();

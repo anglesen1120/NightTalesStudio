@@ -102,6 +102,22 @@ public sealed class RecurringJobRegistrarTests(TestDatabase database) : Integrat
         exception.Message.ShouldContain("probe:duplicate");
     }
 
+    [Fact]
+    public async Task RecurringRegistrar_RegistersCronAsUtc()
+    {
+        // D12: recurring crons are UTC. A regression to local time would fire jobs on the server's
+        // wall-clock zone instead of the agreed schedule.
+        await using var host = ProbeHost.New(Database, new ProbeJobEffects())
+            .WithHangfireServer()
+            .WithRecurringJobRegistration(new StubRegistration("probe:utc", Cron));
+        await host.StartAsync(TestContextToken.Value);
+
+        using var connection = host.Services.GetRequiredService<JobStorage>().GetConnection();
+        var job = connection.GetRecurringJobs().Single(stored => stored.Id == "probe:utc");
+
+        job.TimeZoneId.ShouldBe(TimeZoneInfo.Utc.Id);
+    }
+
     private static async Task<IReadOnlyList<string>> RecurringIdsAsync(WorkerHost host)
     {
         using var connection = host.Services.GetRequiredService<JobStorage>().GetConnection();

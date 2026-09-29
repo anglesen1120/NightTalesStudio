@@ -69,4 +69,30 @@ public sealed class WorkerHostTests(TestDatabase database) : IntegrationTest(dat
         exception.Message.ShouldContain(nameof(DependencyProbeJob));
         exception.Message.ShouldContain("is not resolvable");
     }
+
+    [Fact]
+    public async Task TwoHosts_InOneProcess_DoNotCrossDeliverJobs()
+    {
+        // D13: two Worker hosts share one process. Each owns its JobStorage and JobActivator; a
+        // regression to Hangfire's process-statics would make host B execute a job host A enqueued
+        // (B's scope, B's effects) or deliver it from the wrong schema. Two schemas isolate the two
+        // hosts' job sets, so any cross-delivery shows up in the effect counters.
+        var effectsA = new ProbeJobEffects();
+        var effectsB = new ProbeJobEffects();
+        await using var hostA = ProbeHost.New(Database, effectsA)
+            .WithSetting($"{JobsOptions.SectionName}:{nameof(JobsOptions.SchemaName)}", "hangfire_a")
+            .WithHangfireServer();
+        await using var hostB = ProbeHost.New(Database, effectsB)
+            .WithSetting($"{JobsOptions.SectionName}:{nameof(JobsOptions.SchemaName)}", "hangfire_b")
+            .WithHangfireServer();
+        await hostA.StartAsync(TestContextToken.Value);
+        await hostB.StartAsync(TestContextToken.Value);
+
+        var jobId = hostA.Scheduler.Enqueue<RecordingProbeJob>((job, ct) => job.RunAsync(Guid.Empty, ct));
+
+        await hostA.Observer.WaitForStateAsync(jobId, "Succeeded", Timeout);
+
+        effectsA.Runs.ShouldBe(1);
+        effectsB.Runs.ShouldBe(0);
+    }
 }
