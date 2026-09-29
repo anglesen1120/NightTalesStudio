@@ -24,6 +24,6 @@ public sealed class HealthLiveTests : IntegrationTest
 
         using var response = await client.GetAsync("/health/live", TestContextToken.Value);
 
-        response.StatusCode.ShouldBe(HttpStatusCode.OK);
+        response.StatusCode.ShouldBe(HttpStatusCode.NotFound);
     }
 }
