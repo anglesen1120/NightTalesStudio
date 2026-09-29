@@ -16,10 +16,10 @@ namespace NightTales.Api.IntegrationTests.Jobs;
 /// polls the wrong schema or writes to a database this machine does not own.
 /// </summary>
 /// <remarks>
-/// Every host below fails inside <c>StartAsync</c> and is still disposed by <c>await using</c>: a host
-/// that never started holds no connection, and disposing it must not mask the boot error the test
-/// asserts. The disposal contract itself is pinned by
-/// <see cref="WorkerHostTests.WorkerHost_FailedStart_DisposesWithoutStopping"/>.
+/// Every host below fails inside <c>StartAsync</c> and is still disposed by <c>await using</c>: a failed
+/// start is stopped best effort by the harness, and disposing it must not mask the boot error the test
+/// asserts. That contract is pinned by
+/// <see cref="WorkerHostTests.WorkerHost_FailedStart_StopsTheStartedServices_AndKeepsTheBootError"/>.
 /// </remarks>
 public sealed class WorkerHostOptionsTests(TestDatabase database) : IntegrationTest(database)
 {

@@ -7,6 +7,7 @@ using NightTales.Infrastructure.Jobs;
 using NightTales.TestKit;
 using NightTales.TestKit.Database;
 using NightTales.TestKit.Threading;
+using NightTales.TestKit.Time;
 using Shouldly;
 using Xunit;
 
@@ -14,7 +15,8 @@ namespace NightTales.Api.IntegrationTests.Jobs;
 
 /// <summary>
 /// The two <see cref="WorkerHost"/> modes (09 README D13, 09 W3 CR-42), the Worker's start-time
-/// job-resolution check, and the harness's disposal contract for a host whose start failed.
+/// job-resolution check, the observer's wait contract, and what the harness does with a host whose
+/// start failed.
 /// </summary>
 [Collection("Hangfire server")]
 public sealed class WorkerHostTests(TestDatabase database) : IntegrationTest(database)
@@ -89,24 +91,47 @@ public sealed class WorkerHostTests(TestDatabase database) : IntegrationTest(dat
     }
 
     [Fact]
-    public async Task WorkerHost_FailedStart_DisposesWithoutStopping()
+    public async Task WorkerHost_ObserverWait_MatchesAStateTheJobHasMovedPast()
     {
-        // The disposal contract of a host whose start failed: it is disposed, never stopped. Stopping it
-        // would call StopAsync on services that never started, and the host's own error would be masked
-        // (QA 09.2.6-T1). The activation check fails the start before the recorder is reached.
+        // A wait is about a state that was applied and persisted, not about the current state: a fast job
+        // has already left Processing when the test asks for it, and that wait must return instead of
+        // timing out (DR 09.2.6-T1).
+        await using var host = ProbeHost.New(Database, new ProbeJobEffects()).WithHangfireServer();
+        await host.StartAsync(TestContextToken.Value);
+
+        var jobId = host.Scheduler.Enqueue<RecordingProbeJob>((job, ct) => job.RunAsync(Guid.Empty, ct));
+
+        await host.Observer.WaitForStateAsync(jobId, "Succeeded", Timeout);
+        await host.Observer.WaitForStateAsync(jobId, "Processing", Timeout);
+
+        using var connection = host.Services.GetRequiredService<JobStorage>().GetConnection();
+        connection.GetStateData(jobId)!.Name.ShouldBe("Succeeded");
+    }
+
+    [Fact]
+    public async Task WorkerHost_FailedStart_StopsTheStartedServices_AndKeepsTheBootError()
+    {
+        // A host whose start failed after some of its hosted services started is stopped best effort — the
+        // Worker's Hangfire log release and a Hangfire server are process-wide — and the caller still sees
+        // the boot error itself, never a secondary stop failure (DR 09.2.6-T1). The throwing stop is
+        // registered first, so in reverse it stops last and its failure is the one that must not win.
         var recorder = new RecordingHostedService();
 
-        await using (var host = ProbeHost.New(Database, new ProbeJobEffects())
+        await using (var host = new WorkerHost(Database, new FakeClock())
             .ConfigureServices(services =>
             {
-                services.RemoveAll<ProbeJobDependency>();
+                services.AddSingleton<IHostedService>(new ThrowingStopHostedService());
                 services.AddSingleton<IHostedService>(recorder);
+                services.AddSingleton<IHostedService>(new FailingStartHostedService());
             }))
         {
-            await Should.ThrowAsync<InvalidOperationException>(() => host.StartAsync(TestContextToken.Value));
+            var exception = await Should.ThrowAsync<InvalidOperationException>(
+                () => host.StartAsync(TestContextToken.Value));
+
+            exception.Message.ShouldBe(FailingStartHostedService.BootFailure);
         }
 
-        recorder.StopCalls.ShouldBe(0);
+        recorder.StopCalls.ShouldBe(1);
     }
 
     [Fact]
@@ -153,5 +178,33 @@ public sealed class WorkerHostTests(TestDatabase database) : IntegrationTest(dat
 
             return Task.CompletedTask;
         }
+    }
+
+    /// <summary>A hosted service that starts cleanly and fails on stop.</summary>
+    private sealed class ThrowingStopHostedService : IHostedService
+    {
+        /// <summary>Thrown by <see cref="StopAsync"/>; the boot error must win over it.</summary>
+        public const string StopFailure = "probe stop failure (09.2.6-T1)";
+
+        /// <inheritdoc />
+        public Task StartAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+        /// <inheritdoc />
+        public Task StopAsync(CancellationToken cancellationToken) =>
+            throw new InvalidOperationException(StopFailure);
+    }
+
+    /// <summary>A hosted service whose start fails, the way a Worker boot error does.</summary>
+    private sealed class FailingStartHostedService : IHostedService
+    {
+        /// <summary>The message the caller must see.</summary>
+        public const string BootFailure = "probe boot failure (09.2.6-T1)";
+
+        /// <inheritdoc />
+        public Task StartAsync(CancellationToken cancellationToken) =>
+            throw new InvalidOperationException(BootFailure);
+
+        /// <inheritdoc />
+        public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
     }
 }
