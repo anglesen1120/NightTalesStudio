@@ -46,11 +46,26 @@ internal static class ProbeEndpoints
     /// <summary>QA: 200 for a value whose IHasETag is empty; no ETag header.</summary>
     internal const string HttpResultEmptyETagPath = "/__probe/http/result-empty-etag";
 
+    /// <summary>200 read through the async etag delegate; the delegate's value wins over the value's own.</summary>
+    internal const string HttpResultDelegatePath = "/__probe/http/result-delegate";
+
+    /// <summary>200 read through an async etag delegate that finds nothing; no ETag header.</summary>
+    internal const string HttpResultDelegateNullPath = "/__probe/http/result-delegate-null";
+
+    /// <summary>204 read through the async etag delegate.</summary>
+    internal const string NoContentDelegatePath = "/__probe/http/no-content-delegate";
+
+    /// <summary>204 read through an async etag delegate that finds nothing; no ETag header.</summary>
+    internal const string NoContentDelegateNullPath = "/__probe/http/no-content-delegate-null";
+
     /// <summary>The text of the unhandled exception; a 500 body must not contain it.</summary>
     internal const string ThrowMessage = "probe-secret-leak-canary-41c9";
 
     /// <summary>The ETag <see cref="CreatedPath"/> answers, as if <c>xmin</c> had been read at commit.</summary>
     internal const string CreatedETag = "\"ep-11\"";
+
+    /// <summary>The ETag the async delegate of the <c>-delegate</c> routes reads after commit.</summary>
+    internal const string FreshETag = "\"ep-77\"";
 
     internal static void Map(IEndpointRouteBuilder routes)
     {
@@ -93,6 +108,17 @@ internal static class ProbeEndpoints
             Value(new ProbeTagged(3, 8)).ToHttpResult(http));
         routes.MapGet(HttpResultEmptyETagPath, (HttpContext http, CancellationToken _) =>
             Value(new ProbeEmptyETag(4)).ToHttpResult(http));
+
+        // The D15 post-commit read on ToHttpResult / ToNoContentResult: the value carries the "ep-8"
+        // / "ep-6" tag of the pre-commit snapshot, and the delegate is the only source.
+        routes.MapGet(HttpResultDelegatePath, (HttpContext http, CancellationToken _) =>
+            Value(new ProbeTagged(3, 8)).ToHttpResult(http, (_, _) => Task.FromResult<string?>(FreshETag)));
+        routes.MapGet(HttpResultDelegateNullPath, (HttpContext http, CancellationToken _) =>
+            Value(new ProbeTagged(3, 8)).ToHttpResult(http, (_, _) => Task.FromResult<string?>(null)));
+        routes.MapPost(NoContentDelegatePath, (HttpContext http, CancellationToken _) =>
+            Value(new ProbeTagged(1, 6)).ToNoContentResult(http, (_, _) => Task.FromResult<string?>(FreshETag)));
+        routes.MapPost(NoContentDelegateNullPath, (HttpContext http, CancellationToken _) =>
+            Value(new ProbeTagged(1, 6)).ToNoContentResult(http, (_, _) => Task.FromResult<string?>(null)));
 
         routes.MapGet(ThrowPath, () => Throw());
     }

@@ -95,6 +95,9 @@ public static class ErrorCodes
 
     // ---- 401 ----
 
+    /// <summary>Not authenticated: the pipeline's <c>AuthorizationBehavior</c> denies by default (09.1.3-T2). §5.4 lists 401 for the specific reasons only, so this row is 09 CR-38.</summary>
+    public const string Unauthorized = "unauthorized";
+
     /// <summary>Login failed (no global account lock, 09.3.3).</summary>
     public const string InvalidCredentials = "invalid_credentials";
 

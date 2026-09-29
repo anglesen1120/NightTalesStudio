@@ -19,9 +19,10 @@ using Xunit;
 namespace NightTales.Api.IntegrationTests.Http;
 
 /// <summary>
-/// The endpoint half of 09.1.4-T1 through the real host: <c>ToCreatedResult</c>, the two filters and the
-/// 500 shape of an unhandled exception. The probe routes are mapped through
-/// <c>ApiFactory.MapEndpoints</c>, so routing, the filters and the response writers all run for real.
+/// The endpoint half of 09.1.4-T1 through the real host: <c>ToCreatedResult</c>, the post-commit
+/// <c>ToHttpResult</c> / <c>ToNoContentResult</c> ETag delegates, the two filters and the 500 shape of
+/// an unhandled exception. The probe routes are mapped through <c>ApiFactory.MapEndpoints</c>, so
+/// routing, the filters and the response writers all run for real.
 /// </summary>
 public sealed class HttpResultHelperTests : IntegrationTest
 {
@@ -61,6 +62,65 @@ public sealed class HttpResultHelperTests : IntegrationTest
         response.Headers.Location!.ToString().ShouldBe($"{ProbeEndpoints.TaggedPath}/5");
         response.Headers.ETag.ShouldNotBeNull("the value implements IHasETag and the delegate added nothing");
         response.Headers.ETag!.Tag.ShouldBe("\"ep-3\"");
+    }
+
+    [Fact]
+    public async Task ToHttpResult_WithETagDelegate_UsesTheDelegateValue()
+    {
+        // D15: the endpoint reads the ETag after commit through the delegate, and that value is what
+        // the client sees — not the "ep-8" of the value it was handed.
+        using var factory = new ApiFactory(Database, new FakeClock()).MapEndpoints(ProbeEndpoints.Map);
+        using var client = factory.ClientFor(Guid.CreateVersion7());
+
+        using var response = await client.GetAsync(ProbeEndpoints.HttpResultDelegatePath, TestContextToken.Value);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.OK);
+        response.Headers.ETag.ShouldNotBeNull();
+        response.Headers.ETag!.Tag.ShouldBe(ProbeEndpoints.FreshETag);
+        response.Headers.ETag.Tag.ShouldNotBe("\"ep-8\"", "the pre-commit value's own IHasETag is not the source");
+    }
+
+    [Fact]
+    public async Task ToHttpResult_WithETagDelegateThatFindsNothing_IgnoresTheValueTag()
+    {
+        // The delegate is authoritative: the value was built before the commit, so its tag is stale
+        // and must never reach an If-Match client.
+        using var factory = new ApiFactory(Database, new FakeClock()).MapEndpoints(ProbeEndpoints.Map);
+        using var client = factory.ClientFor(Guid.CreateVersion7());
+
+        using var response = await client.GetAsync(ProbeEndpoints.HttpResultDelegateNullPath, TestContextToken.Value);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.OK);
+        response.Headers.ETag.ShouldBeNull(
+            "a delegate that finds nothing must not fall back to the value's pre-commit ETag");
+    }
+
+    [Fact]
+    public async Task ToNoContentResult_WithETagDelegate_UsesTheDelegateValue()
+    {
+        using var factory = new ApiFactory(Database, new FakeClock()).MapEndpoints(ProbeEndpoints.Map);
+        using var client = factory.ClientFor(Guid.CreateVersion7());
+
+        using var response = await client.PostAsync(ProbeEndpoints.NoContentDelegatePath, content: null, TestContextToken.Value);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.NoContent);
+        response.Headers.ETag.ShouldNotBeNull();
+        response.Headers.ETag!.Tag.ShouldBe(ProbeEndpoints.FreshETag);
+        response.Headers.ETag.Tag.ShouldNotBe("\"ep-6\"");
+    }
+
+    [Fact]
+    public async Task ToNoContentResult_WithETagDelegateThatFindsNothing_IgnoresTheValueTag()
+    {
+        using var factory = new ApiFactory(Database, new FakeClock()).MapEndpoints(ProbeEndpoints.Map);
+        using var client = factory.ClientFor(Guid.CreateVersion7());
+
+        using var response = await client.PostAsync(
+            ProbeEndpoints.NoContentDelegateNullPath, content: null, TestContextToken.Value);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.NoContent);
+        response.Headers.ETag.ShouldBeNull(
+            "a delegate that finds nothing must not fall back to the value's pre-commit ETag");
     }
 
     [Fact]

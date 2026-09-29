@@ -191,10 +191,10 @@ public abstract class AggregateRoot : Entity
 - ProblemDetails fields: `type` = `https://nighttales.app/errors/<code>` ⚠️ (host is a placeholder), `title`, `status`, `code`, `traceId`, `errors?`, and the extra metadata keys of the error (for example `retryAfterSeconds`).
 - Every 429 whose error metadata has `retryAfterSeconds` also sets the `Retry-After` header (02 CR-20).
 - Endpoint helpers (`Api/Http/ResultExtensions.cs`):
-  - `ToHttpResult()` → 200
+  - `ToHttpResult()` → 200; `ToHttpResult(etag)` → 200 with the ETag read **after** commit (D15), the delegate the only source
   - `ToCreatedResult(location, etag)` → 201 + `Location` + `ETag`
   - `ToAcceptedResult(location?)` → 202; the name `ToHttpResult202` in 09 §5.1 is renamed to this
-  - `ToNoContentResult()` → 204
+  - `ToNoContentResult()` → 204; `ToNoContentResult(etag)` → 204 with the post-commit ETag of a mutation (D15)
 - Endpoint filters (`Api/Http/Filters/`):
   - `RequireIdempotencyKey()` → 400 `idempotency_key_required`
   - `RequireIfMatch()` → 428 `if_match_required`
@@ -365,6 +365,7 @@ Tagged `(09 CR-n)` where applied.
 | CR-12 | 02.2.2-T2 (Depends-on row, handler order), 02.2.2 `plan.md` handler order | Superseded order `Authorization → Validation → Idempotency → UnitOfWork` replaced by the D5/D6 order `Logging → Authorization → Validation → UnitOfWork → Idempotency → Audit` (F04). CR-9 had aligned 02 for F17 only |
 | CR-13 | 00 §5.1 Database row, 11.5.1, WORKFLOW.md §8.2/§9, 09.1.5 `plan.md` and T1 | Clear the ⚠️ markers resolved by O1–O3: PostgreSQL 17, GitHub Actions |
 | CR-14 | 00 §5 diagram, 02.2.2 `plan.md` + T3, 02.6.3 `plan.md`, WORKFLOW.md §6, DIAGRAMS.md §4/§15, 09.1.1/09.2.1 `plan.md`, 09.1.5-T1 | Propagate CR-3 (`OutboxDispatcherJob` → `OutboxDispatcher` `BackgroundService`); the 00 §5 diagram no longer draws Api → Hangfire (the Api only writes the outbox, D12); stale `[OPEN] O3` → decided; 09.1.5-T1 cites 09.1.1-T1 for lock files. `docs/diagrams/04-*.svg` must be re-exported |
+| CR-38 | 09 §5.4 (`plans/09-backend-api.md`) | §5.4 cannot supply a plain-401 row: every 401 it lists names a reason (`invalid_credentials`, `mfa_required`, `mfa_token_invalid`, `invalid_mfa_code`, `session_revoked`, `hub_ticket_invalid`, `refresh_token_reused`, `reauth_required`, `mfa_enrolment_required`, `webhook_signature_invalid`), while 09 §4 Epic 09.1 (`09-backend-api.md`:72) requires `Unauthorized` → 401 and `09.1.3-T2`'s `AuthorizationBehavior` returns `Error.Unauthorized(code: ErrorCodes.Unauthorized)` for a default-denied call (`09.1.3-T2`:72, its step 4 lists the code as this wave's). **Add** the row `` | `unauthorized` | 401 | Not authenticated: the pipeline's `AuthorizationBehavior` denies by default (09.1.3-T2) | `` (with the separators escaped when pasted into a table). The code side is already catalogued — `09.1.4-T1` added `ErrorCodes.Unauthorized` and `Status["unauthorized"] = 401` (`ErrorCodes` 161 → 162 constants, `Status` 118 → 119 rows), because the mapper reads the catalogue, not `ErrorType`: an uncatalogued `unauthorized` would answer 500 `internal_error` |
 
 ## 5. Sequencing
 

@@ -36,6 +36,12 @@ namespace NightTales.Api.Http;
 /// exception); it is catalogued with 500 here so a handler may also return it on purpose.
 /// </para>
 /// <para>
+/// <c>unauthorized</c> is 401 and is likewise not a §5.4 row: §5.4 lists 401 only for the specific
+/// reasons (<c>invalid_credentials</c>, <c>mfa_required</c>, <c>session_revoked</c>, …), while
+/// <c>09.1.3-T2</c>'s <c>AuthorizationBehavior</c> returns a plain <c>Error.Unauthorized</c> for a
+/// default-denied call. Catalogued here as 09 CR-38.
+/// </para>
+/// <para>
 /// This type is public because the invariant test lives in <c>NightTales.Api.IntegrationTests</c>;
 /// there is no <c>InternalsVisibleTo</c> in this solution.
 /// </para>
@@ -48,7 +54,10 @@ public static class ErrorCatalogue
     /// </summary>
     public const string ProblemTypeBase = "https://nighttales.app/errors/";
 
-    /// <summary>Code → HTTP status, from the §5.4 HTTP column plus the D17 additions.</summary>
+    /// <summary>
+    /// Code → HTTP status, from the §5.4 HTTP column plus the D17 additions, <c>internal_error</c>
+    /// and <c>unauthorized</c> (09 CR-38).
+    /// </summary>
     public static readonly FrozenDictionary<string, int> Status =
         new Dictionary<string, int>(StringComparer.Ordinal)
         {
@@ -81,6 +90,7 @@ public static class ErrorCatalogue
             [ErrorCodes.OauthStateInvalid] = StatusCodes.Status400BadRequest,
 
             // 401
+            [ErrorCodes.Unauthorized] = StatusCodes.Status401Unauthorized,
             [ErrorCodes.InvalidCredentials] = StatusCodes.Status401Unauthorized,
             [ErrorCodes.MfaRequired] = StatusCodes.Status401Unauthorized,
             [ErrorCodes.InvalidMfaCode] = StatusCodes.Status401Unauthorized,

@@ -1,3 +1,4 @@
+using System.Collections.Frozen;
 using System.Reflection;
 using System.Text.RegularExpressions;
 using NightTales.Api.Http;
@@ -66,6 +67,39 @@ public sealed class ErrorCatalogueTests
                 .ShouldBe(field.Name, $"the constant name must be the PascalCase of \"{value}\", so a lookup is never by memory");
         }
     }
+
+    [Fact]
+    public void ErrorCodes_EveryPublicStaticFieldIsAConstCode()
+    {
+        // The two tests above read only `const` fields, so a `static readonly string` would be a code
+        // that no catalogue entry has to match — invisible to both. Only names on the (currently
+        // empty) allow-list may be a public static non-constant.
+        var offenders = typeof(ErrorCodes)
+            .GetFields(BindingFlags.Public | BindingFlags.Static | BindingFlags.FlattenHierarchy)
+            .Where(field => !NonConstantFieldAllowList.Contains(field.Name))
+            .Where(field => !field.IsLiteral || field.FieldType != typeof(string))
+            .Select(field => $"{field.Name} ({field.FieldType.Name}, {(field.IsLiteral ? "const" : "not const")})")
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+
+        offenders.ShouldBeEmpty(
+            "every public static field of ErrorCodes must be a `const string` code (or be named on the "
+            + $"allow-list), otherwise the closed-set invariant silently ignores it ({offenders.Length}): "
+            + string.Join(", ", offenders));
+    }
+
+    [Fact]
+    public void ErrorCodes_HasNoNestedTypes()
+    {
+        // A nested type could hold a second set of codes that no rule above ever sees.
+        typeof(ErrorCodes)
+            .GetNestedTypes(BindingFlags.Public | BindingFlags.NonPublic)
+            .Select(type => type.FullName)
+            .ShouldBeEmpty();
+    }
+
+    /// <summary>Public static non-<c>const</c> fields of <see cref="ErrorCodes"/> that the closed-set rules may ignore.</summary>
+    private static readonly FrozenSet<string> NonConstantFieldAllowList = FrozenSet<string>.Empty;
 
     private static HashSet<string> ConstantValues() => [.. ConstantFields().Select(field => (string)field.GetRawConstantValue()!)];
 
