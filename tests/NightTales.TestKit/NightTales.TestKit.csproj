@@ -7,7 +7,12 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\NightTales.Api\NightTales.Api.csproj" />
-    <ProjectReference Include="..\..\src\NightTales.Worker\NightTales.Worker.csproj" />
+    <!--
+      Both hosts compile a top-level `Program` in the global namespace, so referencing both makes
+      `Program` ambiguous (CS0433) for `WebApplicationFactory<Program>`. The Worker assembly is
+      therefore aliased: `WorkerHost` (09.2.6-T1) reaches it through `extern alias NightTalesWorkerHost`.
+    -->
+    <ProjectReference Include="..\..\src\NightTales.Worker\NightTales.Worker.csproj" Aliases="NightTalesWorkerHost" />
   </ItemGroup>
 
   <ItemGroup>

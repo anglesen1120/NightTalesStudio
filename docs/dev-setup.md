@@ -47,6 +47,13 @@ The environment variable `ConnectionStrings__Postgres` works as well. Integratio
 export NTS_TEST_PG="Host=127.0.0.1;Port=5432;Database=${POSTGRES_DB:-nighttales};Username=${POSTGRES_USER:-nighttales};Password=<POSTGRES_PASSWORD from .env>"
 ```
 
-A missing or blank `NTS_TEST_PG` fails the test fixture with a named error; it never skips silently.
+A missing or blank `NTS_TEST_PG` fails the test fixture with a named error; it never skips silently. The fixture checks the server once per run (`tests/NightTales.TestKit/Database/PostgresFixture.cs`):
+
+| Fact | Behaviour |
+|---|---|
+| Server major | must be PostgreSQL **17** (`server_version_num / 10000`); anything else fails with `NTS_TEST_PG must point at PostgreSQL 17 (found …)` before a database is created |
+| Role privileges | the role needs `CREATEDB`: `PostgresFixture` drops and rebuilds the template database `nts_template` once per run and each test class gets `CREATE DATABASE … TEMPLATE nts_template`, dropped with `FORCE` when the class is over |
+| Missing, blank or unparsable value | `InvalidOperationException` naming `NTS_TEST_PG`, with the connection string masked (`Password=***`); never a skip |
+| Unit job | needs no `NTS_TEST_PG`: `dotnet test … --filter-not-trait "Category=Integration"` leaves out every class that derives from `NightTales.TestKit.IntegrationTest` |
 
 **Optional compose path (e2e / image smoke only).** `docker-compose.yml` defines a `postgres` service (`postgres:17-alpine`, `127.0.0.1:5432`, healthcheck: a password login with `psql -h 127.0.0.1 ... SELECT 1`). Daily development never starts it. It binds the same port as the native server, so stop one before starting the other, or move the host port in a git-ignored `docker-compose.override.yml`. Its data volume is disposable: `docker compose down -v`. The image applies `POSTGRES_*` only when the volume is first created; after changing them, recreate the volume or the healthcheck stays unhealthy.
