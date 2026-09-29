@@ -3,5 +3,7 @@
 
   <PropertyGroup>
     <TestingPlatformCommandLineArguments>--ignore-exit-code 8</TestingPlatformCommandLineArguments>
+    <!-- Test names use the Subject_Behaviour_Expected convention of every task file's Test table. -->
+    <NoWarn>$(NoWarn);CA1707</NoWarn>
   </PropertyGroup>
 </Project>
