@@ -67,4 +67,61 @@ public sealed class ApiFactoryAuthTests : IntegrationTest
 
         utcNow.ShouldBe(clock.UtcNow);
     }
+
+    [Fact]
+    public async Task TestAuthHandler_NonGuidUserHeader_StaysUnauthenticated()
+    {
+        // QA 09.2.1-T2: a malformed X-Test-User is an authentication failure, never an authenticated
+        // request and never a 500 — on a probe without RequireAuthorization that reads as anonymous.
+        using var factory = new ApiFactory(Database, new FakeClock()).MapEndpoints(ProbeEndpoints.Map);
+        using var client = factory.AnonymousClient();
+        client.DefaultRequestHeaders.Add(TestAuthHandler.UserHeader, "not-a-guid");
+
+        var who = await client.GetFromJsonAsync<ProbeEndpoints.WhoAmI>(
+            ProbeEndpoints.WhoAmIPath,
+            TestContextToken.Value);
+
+        who.ShouldNotBeNull();
+        who.IsAuthenticated.ShouldBeFalse();
+        who.Sub.ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task TestAuthHandler_UnknownRoleHeader_StaysUnauthenticated()
+    {
+        // QA 09.2.1-T2: a role value outside PlatformRole fails authentication instead of silently
+        // defaulting to User.
+        using var factory = new ApiFactory(Database, new FakeClock()).MapEndpoints(ProbeEndpoints.Map);
+        using var client = factory.AnonymousClient();
+        client.DefaultRequestHeaders.Add(TestAuthHandler.UserHeader, Guid.CreateVersion7().ToString());
+        client.DefaultRequestHeaders.Add(TestAuthHandler.RoleHeader, "supreme_overlord");
+
+        var who = await client.GetFromJsonAsync<ProbeEndpoints.WhoAmI>(
+            ProbeEndpoints.WhoAmIPath,
+            TestContextToken.Value);
+
+        who.ShouldNotBeNull();
+        who.IsAuthenticated.ShouldBeFalse();
+        who.Sub.ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task TestAuthHandler_MissingRoleHeader_DefaultsToUser()
+    {
+        // QA 09.2.1-T2: X-Test-User alone authenticates as PlatformRole.User (the documented default).
+        var userId = Guid.CreateVersion7();
+
+        using var factory = new ApiFactory(Database, new FakeClock()).MapEndpoints(ProbeEndpoints.Map);
+        using var client = factory.AnonymousClient();
+        client.DefaultRequestHeaders.Add(TestAuthHandler.UserHeader, userId.ToString());
+
+        var who = await client.GetFromJsonAsync<ProbeEndpoints.WhoAmI>(
+            ProbeEndpoints.WhoAmIPath,
+            TestContextToken.Value);
+
+        who.ShouldNotBeNull();
+        who.IsAuthenticated.ShouldBeTrue();
+        who.Sub.ShouldBe(userId.ToString());
+        who.Role.ShouldBe("user");
+    }
 }

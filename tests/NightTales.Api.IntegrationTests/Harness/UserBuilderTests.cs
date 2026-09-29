@@ -46,4 +46,24 @@ public sealed class UserBuilderTests : IntegrationTest
         (await Database.QueryStringsAsync("SELECT email FROM users", TestContextToken.Value))
             .ShouldContain("owner@nighttales.test");
     }
+
+
+    [Fact]
+    public async Task UserBuilder_DuplicateUserName_IsRejectedByTheUniqueIndex()
+    {
+        // QA 09.2.1-T2: the builder writes through the real model, so Identity's unique
+        // normalized_user_name constraint fires on a duplicate instead of inserting twice.
+        var builder = Database.CreateUserBuilder();
+        var first = await builder.CreateAsync(email: "dup@nighttales.test", ct: TestContextToken.Value);
+
+        await Should.ThrowAsync<DbUpdateException>(() =>
+            builder.CreateAsync(email: "dup@nighttales.test", ct: TestContextToken.Value));
+
+        (await Database.QueryStringsAsync(
+                "SELECT email FROM users WHERE email = 'dup@nighttales.test'",
+                TestContextToken.Value))
+            .ShouldBe(["dup@nighttales.test"], "the second insert was rolled back");
+
+        first.Id.ShouldNotBe(Guid.Empty);
+    }
 }

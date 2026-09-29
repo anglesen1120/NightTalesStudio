@@ -52,6 +52,46 @@ public sealed class PostgresFixtureGuardTests
     }
 
     [Fact]
+    public void PostgresFixture_ServerVersionBoundaries_AreHandled()
+    {
+        // QA 09.2.1-T2: boundary values around the major-17 cut — 16.99 and 18-dev must fail, and a
+        // non-numeric server_version_num must fail with the named error instead of parsing to 0.
+        foreach (var (versionNum, version) in new[]
+        {
+            ("169999", "16.99"),
+            ("180001", "18.0beta1"),
+            ("not-a-number", "weird"),
+        })
+        {
+            var exception = Should.Throw<InvalidOperationException>(
+                () => PostgresFixture.EnsureServerMajor17(versionNum, version));
+
+            exception.Message.ShouldContain(PostgresFixture.ConnectionStringVariable);
+            exception.Message.ShouldContain("PostgreSQL 17");
+        }
+
+        Should.NotThrow(() => PostgresFixture.EnsureServerMajor17("170000", "17.0"));
+    }
+
+    [Fact]
+    public void PostgresFixture_QuoteIdentifier_RejectsUnsafeNames()
+    {
+        // QA 09.2.1-T2: database names are interpolated into DDL that cannot take parameters, so
+        // anything outside [a-z0-9_] (max 63 chars) must be rejected before it reaches the server.
+        foreach (var bad in new[]
+        {
+            "Upper", "with-dash", "with space", "inj\";DROP DATABASE x;--",
+            "semi;colon", string.Empty, "   ", new string('a', 64),
+        })
+        {
+            Should.Throw<ArgumentException>(() => PostgresFixture.QuoteIdentifier(bad));
+        }
+
+        PostgresFixture.QuoteIdentifier("nts_t_abc123").ShouldBe("\"nts_t_abc123\"");
+        PostgresFixture.QuoteIdentifier(new string('a', 63)).ShouldBe($"\"{new string('a', 63)}\"");
+    }
+
+    [Fact]
     public void PostgresFixture_MaskedConnectionString_HidesThePassword()
     {
         var masked = PostgresFixture.MaskPassword(
