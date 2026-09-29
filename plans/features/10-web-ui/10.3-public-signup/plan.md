@@ -40,7 +40,7 @@ Gates this folder feeds: **M2 exit** (`../README.md:773`) — "Registration → 
 | F15 | `captcha_required` after 3 failures per account+IP/device, progressive delay each further; with `rate_limited` drives the countdown | SC13:594, 10-web-ui.md:358 ✅ |
 | F16 | Codes rendered: `captcha_required` 400, `captcha_invalid` 400, `captcha_unavailable` 503, `breached_password` 400, `registration_closed` 403, `forbidden` 403, `validation_failed` 400, `rate_limited` 429, `age_attestation_required` | SC13:594, FC10:626 ✅ |
 | F17 | Register indistinguishable for an existing e-mail; modes `open`/`invite`/`closed`; `inviteCode` required when `invite`; 403 `registration_closed` when `closed` | FC6:622, SC30:609 ✅ |
-| F18 | Legal versions are build-time content (`web/src/content/legal/<doc>.<version>.<lang>.md` via `tools/web/legal-to-json.mjs`); version shown = version the API records | SC15/SC16:596-597 ✅ |
+| F18 | Legal versions are build-time content (`web/src/content/legal/<prefix>.<version>.<lang>.md` (manifest key -> file prefix: `tos -> terms`, `privacy -> privacy`; 13 CR-34) via `tools/web/legal-to-json.mjs`); version shown = version the API records | SC15/SC16:596-597 ✅ |
 | F19 | WCAG 2.2 AA (CR-23): axe tags `wcag2a,wcag2aa,wcag21a,wcag21aa,wcag22aa`; manual matrix owned by 10.10.1-T1/T2 | SD12:677, CR-23:694 ✅ |
 | F20 | Transloco scopes `public`,`auth` exist; `errors` gains every FC10 code; style `scope.area.item`; vi default, both languages; marketing copy in `content/<area>/<lang>.json` | SD13:679 ✅ |
 | F21 | Reuse: `shared/ui/*` (D11), `RetryCountdown`, `AppErrorMapper`+`bindFieldErrors`, `gen-csp.mjs`, CSP fixture (10.1.6-T1), i18n key check (10.2.5-T1), compose + Playwright (10.1.5-T1), `legal-to-json.mjs` | SD14:681 ✅ |
@@ -104,7 +104,7 @@ export type VerifyEmailOutcome = 'verified' | 'expired' | 'invalid' | 'resent';
 ### 3.3 Content and config
 
 - `web/src/content/pricing/<lang>.json` — marketing tiers only (F5). Schema mirrors `PricingContent`; validated by a build-time shape check.
-- `web/src/content/legal/<doc>.<version>.<lang>.md` — owned by 13.1.1-T1 / 13.1.2-T1; converted by `tools/web/legal-to-json.mjs` (10.3.1-T1). This folder **reads only the version strings** for the consent checkboxes (F18).
+- `web/src/content/legal/<prefix>.<version>.<lang>.md` (manifest key -> file prefix: `tos -> terms`, `privacy -> privacy`; 13 CR-34) — owned by 13.1.1-T1 / 13.1.2-T1; converted by `tools/web/legal-to-json.mjs` (10.3.1-T1). This folder **reads only the version strings** for the consent checkboxes (F18).
 - `assets/runtime-config.json` — `{ "captchaSiteKey": "…" }`, `Cache-Control: no-store`, written at container start from `NTS_CAPTCHA_SITE_KEY`, read once by `core/config/runtime-config.ts` (F10).
 
 ### 3.4 Tables, columns, indexes
