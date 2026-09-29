@@ -129,7 +129,28 @@ public sealed class WorkerHost(TestDatabase database, FakeClock clock) : IAsyncD
     {
         _host ??= Build();
 
-        await _host.StartAsync(cancellationToken);
+        try
+        {
+            await _host.StartAsync(cancellationToken);
+        }
+        catch
+        {
+            // A failed start can leave hosted services of a partially started host running — the
+            // process-global Hangfire log provider, a Hangfire server — so they are stopped best effort
+            // before the boot error leaves this method. A secondary failure from that stop must not
+            // replace the error the caller is about to assert, so it is dropped.
+            try
+            {
+                await _host.StopAsync(CancellationToken.None);
+            }
+            catch (Exception)
+            {
+                // The start failure is the error of interest.
+            }
+
+            throw;
+        }
+
         _started = true;
     }
 
@@ -149,8 +170,8 @@ public sealed class WorkerHost(TestDatabase database, FakeClock clock) : IAsyncD
             return;
         }
 
-        // Only a started host is stopped: Host.StopAsync throws when the start never completed, which
-        // would hide the boot error a negative test asserts.
+        // Only a fully started host is stopped here: a failed start was already stopped best effort by
+        // StartAsync, which rethrew the boot error.
         if (_started)
         {
             await _host.StopAsync();

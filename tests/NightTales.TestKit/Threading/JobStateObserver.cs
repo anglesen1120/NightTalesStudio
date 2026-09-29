@@ -3,6 +3,7 @@ using Hangfire;
 using Hangfire.Common;
 using Hangfire.States;
 using Hangfire.Storage;
+using Hangfire.Storage.Monitoring;
 
 namespace NightTales.TestKit.Threading;
 
@@ -54,11 +55,17 @@ public sealed class JobStateObserver : IApplyStateFilter
 
     /// <summary>
     /// Waits until <paramref name="jobId"/> has been in <paramref name="stateName"/> at least
-    /// <paramref name="count"/> times (a retry is a second <c>Scheduled</c> application).
+    /// <paramref name="count"/> times (a retry is a second <c>Scheduled</c> application) and the host
+    /// storage has persisted them. The whole wait — the state signal and the persistence check — is
+    /// bounded by <paramref name="timeout"/>.
     /// </summary>
     public async Task WaitForStatesAsync(string jobId, string stateName, int count, TimeSpan timeout)
     {
         var key = $"{jobId}|{stateName}";
+
+        // One deadline for the whole wait: the signal and the commit confirmation share the caller's
+        // timeout instead of each spending it in full (DR 09.2.6-T1).
+        var deadline = DateTime.UtcNow.Add(timeout);
 
         while (CountOf(jobId, stateName) < count)
         {
@@ -73,7 +80,7 @@ public sealed class JobStateObserver : IApplyStateFilter
                 signal.TrySetResult();
             }
 
-            await signal.Task.WaitAsync(timeout);
+            await signal.Task.WaitAsync(Remaining(deadline));
 
             // The signal is single-shot: replace the completed one so the next iteration blocks again.
             _signals.TryUpdate(
@@ -82,15 +89,33 @@ public sealed class JobStateObserver : IApplyStateFilter
                 signal);
         }
 
-        await WaitForCommittedStateAsync(jobId, stateName, timeout);
+        await WaitForCommittedStatesAsync(jobId, stateName, count, deadline, timeout);
+    }
+
+    /// <summary>The time left before <paramref name="deadline"/>, never negative.</summary>
+    private static TimeSpan Remaining(DateTime deadline)
+    {
+        var remaining = deadline - DateTime.UtcNow;
+
+        return remaining > TimeSpan.Zero ? remaining : TimeSpan.Zero;
     }
 
     /// <summary>
-    /// Waits until the host's storage reports <paramref name="stateName"/> as the current state of
-    /// <paramref name="jobId"/>, i.e. until the transaction that applied it committed. It is a no-op
-    /// while no storage is bound.
+    /// Waits until the host's storage has <b>persisted</b> at least <paramref name="count"/> applications
+    /// of <paramref name="stateName"/> to <paramref name="jobId"/>, i.e. until the transactions that
+    /// applied them committed. It is a no-op while no storage is bound.
     /// </summary>
-    private async Task WaitForCommittedStateAsync(string jobId, string stateName, TimeSpan timeout)
+    /// <remarks>
+    /// The confirmation reads the persisted state history rather than the current state: the job may
+    /// legitimately have moved on since — a zero-delay <c>Scheduled</c> or a short <c>Processing</c> is
+    /// superseded within milliseconds — and a wait for a state that did commit must still return.
+    /// </remarks>
+    private async Task WaitForCommittedStatesAsync(
+        string jobId,
+        string stateName,
+        int count,
+        DateTime deadline,
+        TimeSpan timeout)
     {
         var storage = _storage;
         if (storage is null)
@@ -98,27 +123,29 @@ public sealed class JobStateObserver : IApplyStateFilter
             return;
         }
 
-        var deadline = DateTime.UtcNow.Add(timeout);
+        var monitoring = storage.GetMonitoringApi();
         while (true)
         {
-            using (var connection = storage.GetConnection())
+            if (PersistedCount(monitoring, jobId, stateName) >= count)
             {
-                if (string.Equals(connection.GetStateData(jobId)?.Name, stateName, StringComparison.Ordinal))
-                {
-                    return;
-                }
+                return;
             }
 
             if (DateTime.UtcNow >= deadline)
             {
                 throw new TimeoutException(
-                    $"Job '{jobId}' applied state '{stateName}' in-process, but the storage of its host still does not "
-                    + $"report it after {timeout}.");
+                    $"Job '{jobId}' applied state '{stateName}' in-process, but the storage of its host does not hold "
+                    + $"{count} persisted application(s) of it after {timeout}.");
             }
 
             await Task.Delay(CommitPollInterval);
         }
     }
+
+    /// <summary>How often the persisted history of <paramref name="jobId"/> holds <paramref name="stateName"/>.</summary>
+    private static int PersistedCount(IMonitoringApi monitoring, string jobId, string stateName) =>
+        monitoring.JobDetails(jobId)?.History?.Count(
+            entry => string.Equals(entry.StateName, stateName, StringComparison.Ordinal)) ?? 0;
 
     /// <inheritdoc />
     public void OnStateApplied(ApplyStateContext context, IWriteOnlyTransaction transaction)
