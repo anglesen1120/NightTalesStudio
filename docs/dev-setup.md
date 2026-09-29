@@ -5,15 +5,30 @@ Daily development is native on macOS, without Docker (`plans/00-overview.md` §5
 ## .NET solution
 
 - SDK 10.0.401 (`global.json`, `rollForward: latestPatch`).
-- Build and test:
+- The two commands below are exactly what `.github/workflows/backend.yml` runs (`build-test`, then
+  `integration`). The build needs a parseable connection string because the build-time OpenAPI
+  generator boots the Api; it never connects, so any syntactically valid value works, and the same
+  constant placeholder is set in the workflow.
 
 ```bash
+export ConnectionStrings__Postgres='Host=127.0.0.1;Database=nighttales;Username=nighttales;Password=ci-openapi-document-generation-placeholder'
 dotnet restore NightTales.ci.slnf --locked-mode
-dotnet build   NightTales.ci.slnf -c Release --no-restore
-dotnet test    NightTales.ci.slnf -c Release --no-build
+dotnet build   NightTales.ci.slnf -c Release --no-restore   # writes src/NightTales.Api/openapi.json (git-ignored)
+dotnet format  NightTales.ci.slnf --verify-no-changes --no-restore
 ```
 
-- Tests run on Microsoft.Testing.Platform (`global.json` `test.runner`; xunit.v3 4.x no longer supports VSTest on the .NET 10 SDK). Test projects pass `--ignore-exit-code 8` (`tests/Directory.Build.props`), so a project with zero tests does not fail the run.
+```bash
+# Unit job (no database): 35 tests today. `--minimum-expected-tests 1` is the guard that makes a
+# zero-match filter red instead of silently green (see the note below).
+env -u NTS_TEST_PG dotnet test NightTales.ci.slnf -c Release --no-build \
+  --filter "Category!=Integration" --minimum-expected-tests 1
+
+# Integration job (needs the server from the Database section below): 23 tests today.
+export NTS_TEST_PG="Host=127.0.0.1;Port=5432;Database=${POSTGRES_DB:-nighttales};Username=${POSTGRES_USER:-nighttales};Password=<POSTGRES_PASSWORD from .env>"
+dotnet test NightTales.ci.slnf -c Release --filter "Category=Integration" --minimum-expected-tests 1
+```
+
+- Tests run on Microsoft.Testing.Platform (`global.json` `test.runner`; xunit.v3 4.x no longer supports VSTest on the .NET 10 SDK). Test projects pass `--ignore-exit-code 8` (`tests/Directory.Build.props`), so a run with **zero** tests prints `total: 0` and still exits 0 — a filter typo would pass vacuously. Both commands above therefore pass `--minimum-expected-tests 1`, which fails such a run with `Minimum expected tests policy violation, tests ran 0, minimum expected 1` and exit code 9 (8 would be ignored). Do not add `--logger trx` / `--report-trx`: under this xunit.v3/MTP setup they turn the run into `Zero tests ran` with exit code 5 (verified 2026-09-29); CI uploads the console log instead.
 - The Api listens on `http://127.0.0.1:5000` (`src/NightTales.Api/Properties/launchSettings.json`). Use `127.0.0.1`, not `localhost`: macOS AirPlay Receiver (ControlCenter) listens on `*:5000`, and `localhost` can resolve to it.
 
 ```bash
@@ -54,6 +69,6 @@ A missing or blank `NTS_TEST_PG` fails the test fixture with a named error; it n
 | Server major | must be PostgreSQL **17** (`server_version_num / 10000`); anything else fails with `NTS_TEST_PG must point at PostgreSQL 17 (found …)` before a database is created |
 | Role privileges | the role needs `CREATEDB`: `PostgresFixture` drops and rebuilds the template database `nts_template` once per run and each test class gets `CREATE DATABASE … TEMPLATE nts_template`, dropped with `FORCE` when the class is over |
 | Missing, blank or unparsable value | `InvalidOperationException` naming `NTS_TEST_PG`, with the connection string masked (`Password=***`); never a skip |
-| Unit job | needs no `NTS_TEST_PG`: `dotnet test … --filter-not-trait "Category=Integration"` leaves out every class that derives from `NightTales.TestKit.IntegrationTest` |
+| Unit job | needs no `NTS_TEST_PG`: `dotnet test … --filter "Category!=Integration" --minimum-expected-tests 1` leaves out every class tagged `Category=Integration` — every class deriving from `NightTales.TestKit.IntegrationTest` plus the DB-dependent `NightTales.Infrastructure.UnitTests/Persistence` classes |
 
 **Optional compose path (e2e / image smoke only).** `docker-compose.yml` defines a `postgres` service (`postgres:17-alpine`, `127.0.0.1:5432`, healthcheck: a password login with `psql -h 127.0.0.1 ... SELECT 1`). Daily development never starts it. It binds the same port as the native server, so stop one before starting the other, or move the host port in a git-ignored `docker-compose.override.yml`. Its data volume is disposable: `docker compose down -v`. The image applies `POSTGRES_*` only when the volume is first created; after changing them, recreate the volume or the healthcheck stays unhealthy.

@@ -82,3 +82,6 @@ obj/
 *.user
 TestResults/
 docker-compose.override.yml
+# --- 09.1.5-T1: the OpenAPI document is generated at build (09 README D14) ---
+# `dotnet build src/NightTales.Api` writes it; the CI job uploads it as the `openapi` artifact.
+src/NightTales.Api/openapi.json
