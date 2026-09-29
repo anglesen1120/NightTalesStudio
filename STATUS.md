@@ -143,6 +143,8 @@ Branch `feature/02-m0-prompts` merged into `develop` via PR #12 (`f84c415`, 2026
 | 09.1.3-T1 Mediator pipeline | done (gates in progress: QA done, reviews running) | `MediatorPipeline.Behaviors` canonical order + Logging/Validation real + 4 pass-throughs; `ErrorOrFactory` compiled-expression cache; `validation_failed` errors camelCase fields; `IIdempotentCommand`/`IRequireRole`/`AllowAnonymous` markers; hosts register Mediator + FluentValidation; 9 tests |
 | 09.2.1-T1 App + read DbContexts | done (gates in progress: QA done, reviews running) | `IAppDbContext`/`IReadDb`/`ICurrentUser` (+`AnonymousCurrentUser`), `AppDbContext`/`ReadDbContext`, Identity `AppUser`/`AppRole`, snake_case + enum→snake text CHECK `ck_<table>_<col>` + `Version`→`xmin` + UTC enforcement conventions, `AddPersistence` (connection string required+parseable at start, `Persistence:CommandTimeoutSeconds` 30); jsonb spike PASSED → D8 resolved (complex type `ToJson()`); 20 tests (10 real-DB) |
 
+**Deferred security gates (security review 2026-09-29, must close before any feature endpoint/command/query lands):** `AuthorizationBehavior` is a pass-through scaffold owned by 09.1.3-T2 (no unauthenticated/deny coverage yet); the tenant `HasQueryFilter` is owned by 09.2.3-T1 (`IUserOwned` entities have no filter at this HEAD — `AnonymousCurrentUser` would see all rows once such an entity exists). No feature endpoint may merge on top of these stubs.
+
 ## Plan 11 — Worker deployment (M0 lane: the hosting decision)
 
 | Task | Status | Evidence / note |
