@@ -9,6 +9,19 @@
     <ProjectReference Include="..\NightTales.TestKit\NightTales.TestKit.csproj" />
   </ItemGroup>
 
+  <!--
+    The Fetcher projects arrive with 02.5.2-T3 (09.1.1 only reserves their names in the solution
+    filter). Referencing them conditionally keeps Fetcher_ReferencesOnlyDomainAndCore from passing
+    vacuously once they exist, without breaking the build before that.
+  -->
+  <ItemGroup Condition="Exists('..\..\src\NightTales.Fetcher.Core\NightTales.Fetcher.Core.csproj')">
+    <ProjectReference Include="..\..\src\NightTales.Fetcher.Core\NightTales.Fetcher.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup Condition="Exists('..\..\src\NightTales.Fetcher\NightTales.Fetcher.csproj')">
+    <ProjectReference Include="..\..\src\NightTales.Fetcher\NightTales.Fetcher.csproj" />
+  </ItemGroup>
+
   <ItemGroup>
     <PackageReference Include="TngTech.ArchUnitNET" />
     <PackageReference Include="TngTech.ArchUnitNET.xUnitV3" />

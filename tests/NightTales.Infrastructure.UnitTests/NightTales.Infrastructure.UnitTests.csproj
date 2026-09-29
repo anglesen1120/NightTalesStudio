@@ -6,6 +6,8 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\src\NightTales.Application\NightTales.Application.csproj" />
+    <ProjectReference Include="..\..\src\NightTales.Infrastructure\NightTales.Infrastructure.csproj" />
     <ProjectReference Include="..\NightTales.TestKit\NightTales.TestKit.csproj" />
   </ItemGroup>
 

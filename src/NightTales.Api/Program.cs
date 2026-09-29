@@ -1,4 +1,10 @@
+using NightTales.Api;
+using NightTales.Infrastructure.Persistence;
+
 var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.AddNightTalesMediator();
+builder.Services.AddPersistence(builder.Configuration);
 
 var app = builder.Build();
 
