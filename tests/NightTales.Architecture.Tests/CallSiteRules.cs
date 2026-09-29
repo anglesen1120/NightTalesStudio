@@ -209,16 +209,16 @@ public sealed class CallSiteRules
         switch (handle.Kind)
         {
             case HandleKind.MemberReference:
-            {
-                var reference = reader.GetMemberReference((MemberReferenceHandle)handle);
-                return (reader.GetString(reference.Name), DescribeDeclaringType(reader, reference.Parent));
-            }
+                {
+                    var reference = reader.GetMemberReference((MemberReferenceHandle)handle);
+                    return (reader.GetString(reference.Name), DescribeDeclaringType(reader, reference.Parent));
+                }
 
             case HandleKind.MethodDefinition:
-            {
-                var definition = reader.GetMethodDefinition((MethodDefinitionHandle)handle);
-                return (reader.GetString(definition.Name), DescribeDeclaringType(reader, definition.GetDeclaringType()));
-            }
+                {
+                    var definition = reader.GetMethodDefinition((MethodDefinitionHandle)handle);
+                    return (reader.GetString(definition.Name), DescribeDeclaringType(reader, definition.GetDeclaringType()));
+                }
 
             default:
                 return null;
@@ -230,16 +230,16 @@ public sealed class CallSiteRules
         switch (parent.Kind)
         {
             case HandleKind.TypeReference:
-            {
-                var reference = reader.GetTypeReference((TypeReferenceHandle)parent);
-                return Join(reader.GetString(reference.Namespace), reader.GetString(reference.Name));
-            }
+                {
+                    var reference = reader.GetTypeReference((TypeReferenceHandle)parent);
+                    return Join(reader.GetString(reference.Namespace), reader.GetString(reference.Name));
+                }
 
             case HandleKind.TypeDefinition:
-            {
-                var definition = reader.GetTypeDefinition((TypeDefinitionHandle)parent);
-                return Join(reader.GetString(definition.Namespace), reader.GetString(definition.Name));
-            }
+                {
+                    var definition = reader.GetTypeDefinition((TypeDefinitionHandle)parent);
+                    return Join(reader.GetString(definition.Namespace), reader.GetString(definition.Name));
+                }
 
             default:
                 return "<generic specification>";

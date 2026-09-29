@@ -31,6 +31,18 @@ public static class PersistenceServiceCollectionExtensions
                 [$"Configuration value 'ConnectionStrings:{PersistenceOptions.ConnectionStringName}' is required and must not be blank."]);
         }
 
+        try
+        {
+            _ = new Npgsql.NpgsqlConnectionStringBuilder(connectionString);
+        }
+        catch (ArgumentException exception)
+        {
+            throw new OptionsValidationException(
+                nameof(PersistenceOptions),
+                typeof(PersistenceOptions),
+                [$"Configuration value 'ConnectionStrings:{PersistenceOptions.ConnectionStringName}' is not a valid connection string: {exception.Message}"]);
+        }
+
         services.AddOptions<PersistenceOptions>()
             .BindConfiguration(PersistenceOptions.SectionName)
             .Validate(
