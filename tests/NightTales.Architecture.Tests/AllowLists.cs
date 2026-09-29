@@ -9,14 +9,18 @@ internal static class AllowLists
     /// <summary>Namespaces whose types may call <c>IgnoreQueryFilters</c> (README D10).</summary>
     internal const string IgnoreQueryFiltersNamespacePrefix = "NightTales.Application.Features.Admin";
 
-    /// <summary>Extra types outside <see cref="IgnoreQueryFiltersNamespacePrefix"/> that may bypass the tenant filter.</summary>
+    /// <summary>
+    /// Extra types outside <see cref="IgnoreQueryFiltersNamespacePrefix"/> that may bypass the
+    /// tenant filter. Matched as fully-qualified names (<c>namespace.Type</c>) so a same-named type
+    /// in another namespace does not inherit the bypass.
+    /// </summary>
     internal static readonly IReadOnlySet<string> IgnoreQueryFiltersTypeNames =
         new HashSet<string>(StringComparer.Ordinal)
         {
-            "RetentionSweepJob",
-            "DataDeletionJob",
-            "CreditReconciliationJob",
-            "SystemWorkQuery",
+            "NightTales.Application.Features.Assets.Jobs.RetentionSweepJob",
+            "NightTales.Application.Features.Compliance.Deletion.Jobs.DataDeletionJob",
+            "NightTales.Worker.Jobs.CreditReconciliationJob",
+            "NightTales.Application.Abstractions.SystemWorkQuery",
         };
 
     /// <summary>Job method parameters that may be <c>string</c> (README D12).</summary>

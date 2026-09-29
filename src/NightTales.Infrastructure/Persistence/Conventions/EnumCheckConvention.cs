@@ -44,7 +44,7 @@ public sealed class EnumCheckConvention : IModelFinalizingConvention
                 var allowed = string.Join(", ", EnumSnakeCase.ConvertAll(enumType).Select(value => $"'{value}'"));
                 entityType.AddCheckConstraint(
                     $"ck_{table}_{column}",
-                    $"{column} IN ({allowed})",
+                    $"\"{column}\" IN ({allowed})",
                     fromDataAnnotation: false);
             }
         }

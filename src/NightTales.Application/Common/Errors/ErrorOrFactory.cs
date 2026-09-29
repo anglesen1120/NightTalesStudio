@@ -15,8 +15,13 @@ public static class ErrorOrFactory<TResponse>
 {
     private static readonly Func<List<Error>, TResponse> Converter = Compile();
 
-    /// <summary>Builds a <typeparamref name="TResponse"/> carrying exactly <paramref name="errors"/>.</summary>
-    public static TResponse From(List<Error> errors) => Converter(errors);
+    /// <summary>Builds a <typeparamref name="TResponse"/> carrying exactly <paramref name="errors"/>. Must be non-empty: an empty list would otherwise convert to a successful default response.</summary>
+    public static TResponse From(List<Error> errors)
+    {
+        ArgumentNullException.ThrowIfNull(errors);
+        ArgumentOutOfRangeException.ThrowIfZero(errors.Count);
+        return Converter(errors);
+    }
 
     private static Func<List<Error>, TResponse> Compile()
     {

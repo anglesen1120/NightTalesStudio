@@ -31,6 +31,8 @@ public sealed class CallSiteRules
 {
     private const ushort Call = 0x28;
     private const ushort CallVirt = 0x6F;
+    private const ushort LdFtn = 0xFE06;
+    private const ushort LdVirtFtn = 0xFE07;
     private const string IgnoreQueryFilters = "IgnoreQueryFilters";
     private const string AddDbContextPool = "AddDbContextPool";
 
@@ -67,8 +69,13 @@ public sealed class CallSiteRules
     }
 
     private static bool IsIgnoreQueryFiltersAllowed(CallSite site) =>
-        site.OutermostNamespace.StartsWith(AllowLists.IgnoreQueryFiltersNamespacePrefix, StringComparison.Ordinal)
-        || AllowLists.IgnoreQueryFiltersTypeNames.Contains(site.OutermostType);
+        site.OutermostNamespace == AllowLists.IgnoreQueryFiltersNamespacePrefix
+        || site.OutermostNamespace.StartsWith(
+            AllowLists.IgnoreQueryFiltersNamespacePrefix + ".", StringComparison.Ordinal)
+        || AllowLists.IgnoreQueryFiltersTypeNames.Contains(
+            site.OutermostNamespace.Length == 0
+                ? site.OutermostType
+                : site.OutermostNamespace + "." + site.OutermostType);
 
     private static List<CallSite> FindCalls(string memberName)
     {
@@ -162,7 +169,8 @@ public sealed class CallSiteRules
                 return;
             }
 
-            if ((value == Call || value == CallVirt) && position + sizeof(int) <= il.Length)
+            var resolvesMember = value == Call || value == CallVirt || value == LdFtn || value == LdVirtFtn;
+            if (resolvesMember && position + sizeof(int) <= il.Length)
             {
                 var token = BitConverter.ToInt32(il, position);
                 var target = ResolveCalledMember(reader, token);

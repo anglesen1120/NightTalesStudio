@@ -35,12 +35,14 @@ public static class PersistenceServiceCollectionExtensions
         {
             _ = new Npgsql.NpgsqlConnectionStringBuilder(connectionString);
         }
-        catch (ArgumentException exception)
+        catch (ArgumentException)
         {
+            // Constant message: a parser message can echo a malformed keyword/value fragment
+            // (NTS-SEC-SECRETS-001), so it never reaches the exception.
             throw new OptionsValidationException(
                 nameof(PersistenceOptions),
                 typeof(PersistenceOptions),
-                [$"Configuration value 'ConnectionStrings:{PersistenceOptions.ConnectionStringName}' is not a valid connection string: {exception.Message}"]);
+                [$"Configuration value 'ConnectionStrings:{PersistenceOptions.ConnectionStringName}' is not a valid connection string."]);
         }
 
         services.AddOptions<PersistenceOptions>()

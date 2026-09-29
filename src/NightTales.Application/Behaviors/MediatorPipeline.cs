@@ -1,9 +1,12 @@
 namespace NightTales.Application.Behaviors;
 
 /// <summary>
-/// The single ordered behaviour list every host registers through
-/// <c>AddMediator(o =&gt; o.PipelineBehaviors = MediatorPipeline.Behaviors)</c> (09 README D4/D5).
-/// Order: Logging → Authorization → Validation → UnitOfWork → Idempotency → Audit → handler.
+/// The canonical ordered behaviour list (09 README D4/D5):
+/// Logging → Authorization → Validation → UnitOfWork → Idempotency → Audit → handler.
+/// Hosts must NOT pass this field to <c>AddMediator(o =&gt; o.PipelineBehaviors = …)</c>: Mediator 3's
+/// source generator silently registers zero behaviours for a non-literal value. Copy the inline
+/// literal in <c>MediatorPipelineRegistration</c> of each host instead; the pipeline test pins that
+/// literal to this list.
 /// </summary>
 public static class MediatorPipeline
 {

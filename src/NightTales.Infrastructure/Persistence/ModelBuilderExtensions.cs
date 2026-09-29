@@ -37,6 +37,8 @@ public static class ModelBuilderExtensions
         {
             b.HasKey(u => u.Id);
             b.HasIndex(u => u.NormalizedUserName).HasDatabaseName("user_name_index").IsUnique();
+            // Not unique yet: F12/D9's unique index lands as ux_users_normalized_email in 09.2.2-T1
+            // (do not rename this index there; replace it).
             b.HasIndex(u => u.NormalizedEmail).HasDatabaseName("email_index");
             b.ToTable("users");
             b.Property(u => u.ConcurrencyStamp).IsConcurrencyToken();
