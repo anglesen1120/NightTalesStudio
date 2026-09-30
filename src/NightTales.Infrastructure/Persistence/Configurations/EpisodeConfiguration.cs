@@ -25,14 +25,26 @@ internal sealed class EpisodeConfiguration : IEntityTypeConfiguration<Episode>
         builder.Property(episode => episode.LengthTier).HasEnumCheck();
         builder.Property(episode => episode.Status).HasEnumCheck();
 
-        builder.HasOne<Series>().WithMany().HasForeignKey(episode => episode.SeriesId).OnDelete(DeleteBehavior.Restrict);
+        // NTS-922-SEC-001 (09 W3 CR-46): the alternate key (id, user_id) every same-owner FK of this
+        // table targets, so a child row can never point at another user's parent (see SeriesConfiguration).
+        builder.HasAlternateKey(episode => new { episode.Id, episode.UserId });
+
+        builder.HasOne<Series>().WithMany()
+            .HasForeignKey(episode => new { episode.SeriesId, episode.UserId })
+            .HasPrincipalKey(series => new { series.Id, series.UserId })
+            .OnDelete(DeleteBehavior.Restrict);
         builder.HasOne<StoryVersion>().WithMany()
-            .HasForeignKey(episode => episode.CurrentStoryVersionId)
+            .HasForeignKey(episode => new { episode.CurrentStoryVersionId, episode.UserId })
+            .HasPrincipalKey(version => new { version.Id, version.UserId })
             .OnDelete(DeleteBehavior.NoAction);
         builder.HasOne<StoryVersion>().WithMany()
-            .HasForeignKey(episode => episode.ApprovedStoryVersionId)
+            .HasForeignKey(episode => new { episode.ApprovedStoryVersionId, episode.UserId })
+            .HasPrincipalKey(version => new { version.Id, version.UserId })
             .OnDelete(DeleteBehavior.NoAction);
-        builder.HasOne<Asset>().WithMany().HasForeignKey(episode => episode.FinalVideoAssetId).OnDelete(DeleteBehavior.SetNull);
+        builder.HasOne<Asset>().WithMany()
+            .HasForeignKey(episode => new { episode.FinalVideoAssetId, episode.UserId })
+            .HasPrincipalKey(asset => new { asset.Id, asset.UserId })
+            .OnDelete(DeleteBehavior.SetNull);
         builder.HasOne<AppUser>().WithMany().HasForeignKey(episode => episode.UserId).OnDelete(DeleteBehavior.Restrict);
 
         builder.HasIndex(episode => new { episode.UserId, episode.CreatedAt, episode.Id }).IsDescending(false, true, true);

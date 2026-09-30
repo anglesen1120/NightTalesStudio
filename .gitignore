@@ -85,3 +85,6 @@ docker-compose.override.yml
 # --- 09.1.5-T1: the OpenAPI document is generated at build (09 README D14) ---
 # `dotnet build src/NightTales.Api` writes it; the CI job uploads it as the `openapi` artifact.
 src/NightTales.Api/openapi.json
+# --- 09.2.2-T2: the migration bundle is a build artifact, never committed ---
+# `dotnet ef migrations bundle -o artifacts/nts-migrate` (~70 MB); 11.5.1 builds it in the pipeline.
+artifacts/

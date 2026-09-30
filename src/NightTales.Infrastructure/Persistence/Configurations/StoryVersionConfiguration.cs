@@ -31,7 +31,12 @@ internal sealed class StoryVersionConfiguration : IEntityTypeConfiguration<Story
         builder.Property(version => version.AuditReport).HasColumnType("jsonb");
         builder.Property(version => version.SimilarityScore).HasPrecision(5, 4);
 
-        builder.HasOne<Episode>().WithMany().HasForeignKey(version => version.EpisodeId).OnDelete(DeleteBehavior.Cascade);
+        // NTS-922-SEC-001 (09 W3 CR-46): the same-owner FK to the episode (see SeriesConfiguration).
+        builder.HasAlternateKey(version => new { version.Id, version.UserId });
+        builder.HasOne<Episode>().WithMany()
+            .HasForeignKey(version => new { version.EpisodeId, version.UserId })
+            .HasPrincipalKey(episode => new { episode.Id, episode.UserId })
+            .OnDelete(DeleteBehavior.Cascade);
         builder.HasOne<AppUser>().WithMany().HasForeignKey(version => version.UserId).OnDelete(DeleteBehavior.Restrict);
 
         builder.HasIndex(version => version.EpisodeId);

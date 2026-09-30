@@ -337,10 +337,9 @@ public sealed class CoreSchemaColumnContractTests(TestDatabase database) : Integ
             Database,
             "SELECT tablename FROM pg_tables WHERE schemaname = 'public' ORDER BY tablename");
 
-        // The class database is built from the model (`EnsureCreated`, no migration yet — 09.2.2-T2 owns
-        // `InitialCore`), so `__EFMigrationsHistory` is absent here by design; the acceptance check that
-        // the *generated* script carries exactly 20 tables + `__EFMigrationsHistory` is verified against
-        // `dotnet ef migrations script` (09.2.2-T1 Notes), not from this fixture.
+        // The class database is a copy of the run's template, which `PostgresFixture` builds by applying
+        // the compiled migrations (09.2.2-T2 `InitialCore`), so `__EFMigrationsHistory` is present here
+        // and every later migration adds only tables to this list.
         var missing = ExpectedTables.Where(table => !tables.Contains(table)).ToList();
 
         missing.ShouldBeEmpty($"plan §3 tables missing from the initial schema: {string.Join(", ", missing)}");

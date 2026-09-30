@@ -25,7 +25,11 @@ internal sealed class ModerationEventConfiguration : IEntityTypeConfiguration<Mo
             .UsePropertyAccessMode(PropertyAccessMode.Field);
         builder.Property(moderationEvent => moderationEvent.Excerpt).HasMaxLength(ModerationEvent.ExcerptMaxLength);
 
-        builder.HasOne<Episode>().WithMany().HasForeignKey(moderationEvent => moderationEvent.EpisodeId).OnDelete(DeleteBehavior.Cascade);
+        // NTS-922-SEC-001 (09 W3 CR-46): the same-owner FK to the episode (see SeriesConfiguration).
+        builder.HasOne<Episode>().WithMany()
+            .HasForeignKey(moderationEvent => new { moderationEvent.EpisodeId, moderationEvent.UserId })
+            .HasPrincipalKey(episode => new { episode.Id, episode.UserId })
+            .OnDelete(DeleteBehavior.Cascade);
         builder.HasOne<AppUser>().WithMany().HasForeignKey(moderationEvent => moderationEvent.UserId).OnDelete(DeleteBehavior.Restrict);
 
         builder.HasIndex(moderationEvent => new { moderationEvent.UserId, moderationEvent.CreatedAt }).IsDescending(false, true);
