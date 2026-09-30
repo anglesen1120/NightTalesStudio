@@ -4,7 +4,7 @@
 > Contract: `../README.md` — **F22**, **D3**, **D8**, **D9**, **D10**, **D13**, **CR-11**
 > Template: `../../../00-overview.md` §10.1
 > Legend: ✅ read from source/docs · ⚠️ unverified · [DECISION] · [OPEN] · [INFERENCE]
-> Status: detailed plan, 2026-09-24. Nothing implemented yet.
+> Status: 09.2.5-T1 **implemented 2026-09-30** (PR #55); 09.2.5-T2 waits for 09.3.1-T1.
 
 ## 1. Scope
 
@@ -43,11 +43,11 @@
 | File | Type / signature | Notes |
 |---|---|---|
 | `ISeeder.cs` | `interface ISeeder { string Name { get; } int Order { get; } ValueTask<SeedReport> SeedAsync(CancellationToken ct); }` | one implementation per catalog; `Order` fixes the run sequence |
-| `SeedReport.cs` | `record SeedReport(string Seeder, int Inserted, int Updated, int Skipped)` | counts only; never carries a value read from the database |
-| `SeedRunner.cs` | `sealed class SeedRunner(IEnumerable<ISeeder> seeders, ILogger<SeedRunner> logger) { ValueTask<SeedReport[]> RunAsync(CancellationToken ct); }` | runs seeders in `Order`, logs one line per seeder, continues after a failed seeder only when `Seed:ContinueOnError` is true |
-| `VoiceSeeder.cs` | `sealed class VoiceSeeder(IAppDbContext db, IClock clock) : ISeeder` | upserts by natural key `id` (the text PK); end state after 04.2.2-T2: reads `seed/voices.v1.json` in every environment, validates with `VoiceCatalogRules`, refuses `revision` 0 outside Development, upserts `preview_storage_key` too (04 CR-9) |
-| `StyleTemplateSeeder.cs` | `sealed class StyleTemplateSeeder(IAppDbContext db, IClock clock) : ISeeder` | upserts by natural key `name` |
-| `FeatureFlagSeeder.cs` | `sealed class FeatureFlagSeeder(IAppDbContext db, IClock clock) : ISeeder` | upserts by natural key `key`; **never** flips an existing `enabled` |
+| `SeedReport.cs` | `record SeedReport(string Seeder, int Inserted, int Updated, int Skipped, bool Failed = false)` | counts only; never carries a value read from the database; `Failed` marks a seeder that threw under `ContinueOnError` (09.2.5-T1 impl: `nts-seed` exits 1 when any report failed) |
+| `SeedRunner.cs` | `sealed class SeedRunner(IEnumerable<ISeeder> seeders, IAppDbContext db, IOptions<SeedOptions> options, ILogger<SeedRunner> logger) { ValueTask<SeedReport[]> RunAsync(CancellationToken ct); }` | runs seeders in `Order`, logs one line per seeder, continues after a failed seeder only when `Seed:ContinueOnError` is true and resets the shared tracker first (impl, 2026-09-30) |
+| `VoiceSeeder.cs` | `sealed class VoiceSeeder(IAppDbContext db, IOptions<SeedOptions> options, IHostEnvironment env, ILogger<VoiceSeeder>) : ISeeder` (impl signature; `IClock` is unused — audit stamps come from `AuditableSaveChangesInterceptor`, 09 W3 CR-38) | upserts by natural key `id` (the text PK); end state after 04.2.2-T2: reads `seed/voices.v1.json` in every environment, validates with `VoiceCatalogRules`, refuses `revision` 0 outside Development, upserts `preview_storage_key` too (04 CR-9) |
+| `StyleTemplateSeeder.cs` | `sealed class StyleTemplateSeeder(IAppDbContext db, IOptions<SeedOptions> options, IHostEnvironment env, ILogger<StyleTemplateSeeder>) : ISeeder` (impl signature) | upserts by natural key `name`; `StyleTemplateRules`/`NegativeClause` validation lands in 03.1.1-T2 (it depends on this task) — T1 validates `{term}`, enum parse, duplicate names only |
+| `FeatureFlagSeeder.cs` | `sealed class FeatureFlagSeeder(IAppDbContext db, IOptions<SeedOptions> options, IHostEnvironment env, ILogger<FeatureFlagSeeder>) : ISeeder` (impl signature) | upserts by natural key `key`; **never** flips an existing `enabled` |
 | `OwnerSeeder.cs` (T2) | `sealed class OwnerSeeder(UserManager<AppUser> users, IOptions<SeedOptions> options, IClock clock) : ISeeder` | no-op when any owner exists |
 
 ### 3.2 Semantics (frozen)
@@ -71,7 +71,7 @@
 }
 ```
 
-`SeedOptions` (Infrastructure) is bound from `Seed` and validated `ValidateOnStart`: `CatalogFile` must exist when the auto-seed is enabled. `Seed:Owner:Password` is never bound into a log-visible object; only T2 reads it, from configuration, at seed time.
+`SeedOptions` (Infrastructure) is bound from `Seed` and validated `ValidateOnStart` (non-blank values). File existence is checked at run time (implemented, 09.2.5-T1): a missing catalog in Development warns and skips catalogs while flags still seed; outside Development `nts-seed` fails with `seed_<catalog>_missing:<path>` — superseding the earlier "must exist at start" wording, which conflicted with §Failure handling. `Seed:Owner:Password` is never bound into a log-visible object; only T2 reads it, from configuration, at seed time.
 
 ### 3.4 Seed content (dev minimal set) ⚠️
 
