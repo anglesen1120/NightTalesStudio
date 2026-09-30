@@ -252,7 +252,7 @@ public abstract class AggregateRoot : Entity
 **D10 Tenant isolation [DECISION].**
 - Every user-owned entity implements `IUserOwned`. The EF named filter `"tenant"` is `e => e.UserId == _currentUserId`, a `Guid?` context field read from `ICurrentUser` at context construction, **parameterized** per query. An unauthenticated context therefore sees no rows.
 - `ICurrentUser` (`Application/Abstractions/ICurrentUser.cs`): `Guid? Id`, `bool IsAuthenticated`, `PlatformRole Role`, `ActorType Actor` (`user`/`admin`/`system`).
-  - Api implementation: claims (`sub`, `role`).
+  - Api implementation: claims (`sub`, `role`); the `role` claim is believed only behind a valid, non-empty `sub`, so a request without a user is `user`/`user` however it is labeled.
   - Worker implementation: `ScopedCurrentUser`, set by `ISystemContext`.
 - `ISystemContext.For(Guid userId) : IDisposable` (`Application/Abstractions/ISystemContext.cs`, scoped) sets the scope's `ICurrentUser` to `{ Id = userId, Actor = system }`, **before** any `AppDbContext` is resolved in that scope.
   - Nesting or a second call throws.

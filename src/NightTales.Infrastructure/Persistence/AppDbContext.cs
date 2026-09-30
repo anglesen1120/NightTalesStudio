@@ -21,10 +21,22 @@ namespace NightTales.Infrastructure.Persistence;
 /// The tracked write model (09 README D8). It is the only context that owns migrations and the only
 /// one who saves changes; the tenant filter of 09.2.3-T1 reads <see cref="CurrentUserId"/>.
 /// </summary>
-public sealed class AppDbContext(DbContextOptions<AppDbContext> options, ICurrentUser currentUser)
-    : IdentityDbContext<AppUser, AppRole, Guid>(options), IAppDbContext
+public sealed class AppDbContext : IdentityDbContext<AppUser, AppRole, Guid>, IAppDbContext, ITenantFilterContext
 {
-    internal Guid? CurrentUserId { get; } = currentUser.Id;
+    public AppDbContext(DbContextOptions<AppDbContext> options, ICurrentUser currentUser)
+        : base(options)
+    {
+        // 09 README D10: the scope's user is captured here and the scope's actor provider is told that
+        // a context now exists, so a late ISystemContext.For fails instead of reading nothing.
+        (currentUser as ITenantScopeObserver)?.MarkObserved();
+        CurrentUserId = currentUser.Id;
+    }
+
+    /// <summary>
+    /// The owner every tenant-filtered query of this scope is restricted to (09 README D10);
+    /// <c>null</c> for an anonymous scope, which therefore sees no user-owned row.
+    /// </summary>
+    public Guid? CurrentUserId { get; }
 
     public DbSet<Series> Series => Set<Series>();
 
@@ -63,6 +75,6 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options, ICurren
     protected override void OnModelCreating(ModelBuilder builder)
     {
         base.OnModelCreating(builder);
-        builder.ApplyNightTalesConventions();
+        builder.ApplyNightTalesConventions(this);
     }
 }

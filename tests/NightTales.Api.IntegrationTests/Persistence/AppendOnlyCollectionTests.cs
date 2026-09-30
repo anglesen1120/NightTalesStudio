@@ -49,7 +49,8 @@ public sealed class AppendOnlyCollectionTests(TestDatabase database) : Integrati
                 $"SELECT array_to_string(categories, ',') FROM moderation_events WHERE id = '{moderationEvent.Id}'")
             .ShouldBe("hate,self-harm");
 
-        await using var verify = Database.CreateAppDbContext();
+        // 09.2.3-T1: a user-owned row is only readable under its own user's tenant filter.
+        await using var verify = Database.CreateAppDbContext(new TestCurrentUser { Id = user.Id });
         var loaded = await verify.ModerationEvents.SingleAsync(row => row.Id == moderationEvent.Id, ct);
 
         loaded.Categories.ShouldBe(["hate", "self-harm"]);
@@ -96,7 +97,7 @@ public sealed class AppendOnlyCollectionTests(TestDatabase database) : Integrati
                 $"SELECT array_to_string(keywords, ',') FROM story_versions WHERE id = '{id}'")
             .ShouldBe("alpha,beta");
 
-        await using var verify = Database.CreateAppDbContext();
+        await using var verify = Database.CreateAppDbContext(new TestCurrentUser { Id = user.Id });
         var loaded = await verify.StoryVersions.SingleAsync(row => row.Id == id, ct);
 
         loaded.Keywords.ShouldBe(["alpha", "beta"]);

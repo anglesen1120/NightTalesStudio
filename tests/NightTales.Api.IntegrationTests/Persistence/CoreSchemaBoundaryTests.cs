@@ -294,7 +294,7 @@ public sealed class CoreSchemaBoundaryTests(TestDatabase database) : Integration
 
         ReadStamp("series", "created_at", $"id = '{seriesId}'").ShouldBe("2026-03-01T05:00:00");
 
-        await using var read = Database.CreateAppDbContext();
+        await using var read = Database.CreateAppDbContext(new TestCurrentUser { Id = parents.User });
         var loaded = await read.Series.SingleAsync(candidate => candidate.Id == seriesId, TestContext.Current.CancellationToken);
 
         loaded.CreatedAt.ShouldBe(new DateTimeOffset(2026, 3, 1, 5, 0, 0, TimeSpan.Zero));
@@ -317,7 +317,7 @@ public sealed class CoreSchemaBoundaryTests(TestDatabase database) : Integration
         ReadStamp("series", "created_at", $"id = '{series.Id}'").ShouldBe("2026-03-01T12:00:00");
         ReadStamp("series", "updated_at", $"id = '{series.Id}'").ShouldBe("2026-01-01T00:00:00");
 
-        await using var verify = Database.CreateAppDbContext(clock: clock);
+        await using var verify = Database.CreateAppDbContext(new TestCurrentUser { Id = user.Id }, clock);
         var loaded = await verify.Series.SingleAsync(candidate => candidate.Id == series.Id, ct);
 
         loaded.CreatedAt.ShouldBe(supplied);

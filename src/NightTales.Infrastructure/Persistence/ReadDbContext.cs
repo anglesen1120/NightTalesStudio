@@ -10,16 +10,23 @@ namespace NightTales.Infrastructure.Persistence;
 /// <see cref="AppDbContext"/> — including the Identity types, so queries can join <c>users</c> — but
 /// owns no migrations and every <c>SaveChanges</c> overload throws.
 /// </summary>
-public sealed class ReadDbContext : DbContext, IReadDb
+public sealed class ReadDbContext : DbContext, IReadDb, ITenantFilterContext
 {
     public ReadDbContext(DbContextOptions<ReadDbContext> options, ICurrentUser currentUser)
         : base(options)
     {
+        // 09 README D10: the read model carries the same tenant filter as the write model, so the
+        // scope's actor provider is told a context exists here too.
+        (currentUser as ITenantScopeObserver)?.MarkObserved();
         CurrentUserId = currentUser.Id;
         ChangeTracker.QueryTrackingBehavior = QueryTrackingBehavior.NoTracking;
     }
 
-    internal Guid? CurrentUserId { get; }
+    /// <summary>
+    /// The owner every tenant-filtered query of this scope is restricted to (09 README D10);
+    /// <c>null</c> for an anonymous scope, which therefore sees no user-owned row.
+    /// </summary>
+    public Guid? CurrentUserId { get; }
 
     public IQueryable<TEntity> Query<TEntity>()
         where TEntity : class
@@ -44,7 +51,7 @@ public sealed class ReadDbContext : DbContext, IReadDb
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
-        modelBuilder.ApplyNightTalesConventions();
+        modelBuilder.ApplyNightTalesConventions(this);
     }
 
     private static InvalidOperationException ReadOnlyViolation() => new("read-only context");
