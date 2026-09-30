@@ -2,10 +2,13 @@ using System.Reflection;
 using Hangfire;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
+using NightTales.Application.Abstractions;
 using NightTales.Application.Abstractions.Jobs;
 using NightTales.Infrastructure.Jobs;
 using NightTales.Infrastructure.Persistence;
+using NightTales.Infrastructure.Security;
 using NightTales.Worker.Health;
 
 namespace NightTales.Worker.DependencyInjection;
@@ -43,6 +46,16 @@ public static class WorkerServiceCollectionExtensions
             .ValidateOnStart();
 
         services.AddPersistence(configuration);
+
+        // 09.2.3-T1 (09 README D10): the Worker's actor is the scoped system context. Every user-owned
+        // row stays invisible until a handler calls ISystemContext.For(userId), and both interfaces
+        // resolve to the same instance so the filter and the ordering guard share one state.
+        services.RemoveAll<ICurrentUser>();
+        services.RemoveAll<ISystemContext>();
+        services.AddScoped<ScopedCurrentUser>();
+        services.AddScoped<ICurrentUser>(provider => provider.GetRequiredService<ScopedCurrentUser>());
+        services.AddScoped<ISystemContext>(provider => provider.GetRequiredService<ScopedCurrentUser>());
+
         services.AddNightTalesMediator();
         services.AddJobs(configuration, [typeof(WorkerServiceCollectionExtensions).Assembly, .. assemblies]);
 

@@ -6,6 +6,7 @@ using Microsoft.Extensions.Options;
 using NightTales.Application.Abstractions;
 using NightTales.Application.Abstractions.Persistence;
 using NightTales.Domain.Common;
+using NightTales.Infrastructure.Persistence.Queries;
 using NightTales.Infrastructure.Time;
 
 namespace NightTales.Infrastructure.Persistence;
@@ -55,8 +56,10 @@ public static class PersistenceServiceCollectionExtensions
                 $"'{PersistenceOptions.SectionName}:{nameof(PersistenceOptions.CommandTimeoutSeconds)}' must be greater than zero.")
             .ValidateOnStart();
 
-        // Temporary: 09.2.3-T1 replaces this with HttpCurrentUser (Api) and ScopedCurrentUser (Worker).
-        services.AddScoped<ICurrentUser, AnonymousCurrentUser>();
+        // The default actor is anonymous, so a host that registers none sees no user-owned row — deny
+        // by default (09 README D10). The Api replaces it with HttpCurrentUser and the Worker with
+        // ScopedCurrentUser; TryAdd keeps this a fallback in either registration order.
+        services.TryAddScoped<ICurrentUser, AnonymousCurrentUser>();
 
         // The audit interceptor stamps every ICreatedAt/IAuditable row from this clock (09 W3 CR-38).
         // TryAdd, so a host may replace the clock (the tests do, with FakeClock).
@@ -82,6 +85,10 @@ public static class PersistenceServiceCollectionExtensions
 
         services.AddScoped<IAppDbContext>(provider => provider.GetRequiredService<AppDbContext>());
         services.AddScoped<IReadDb>(provider => provider.GetRequiredService<ReadDbContext>());
+
+        // 09.2.3-T1: the only cross-user read outside Features/Admin (09 README D10); both hosts get
+        // it from here, because the sweeps that need it run in the Worker.
+        services.AddScoped<ISystemWorkQuery, SystemWorkQuery>();
 
         return services;
     }

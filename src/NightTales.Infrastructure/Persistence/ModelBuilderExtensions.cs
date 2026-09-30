@@ -12,12 +12,24 @@ namespace NightTales.Infrastructure.Persistence;
 /// </summary>
 public static class ModelBuilderExtensions
 {
-    public static ModelBuilder ApplyNightTalesConventions(this ModelBuilder builder)
+    /// <summary>
+    /// Runs the whole model pipeline for <paramref name="context"/>: the entity configurations, the
+    /// Identity mapping and the tenant filter of 09.2.3-T1.
+    /// </summary>
+    /// <param name="builder">The model being built.</param>
+    /// <param name="context">
+    /// The context being built. The tenant filter reads its <c>CurrentUserId</c> member, so EF
+    /// parameterizes the filter per query instead of baking one scope's user into the model it caches
+    /// per context type (09 README D10, plan §2 T2f).
+    /// </param>
+    public static ModelBuilder ApplyNightTalesConventions(this ModelBuilder builder, DbContext context)
     {
         ArgumentNullException.ThrowIfNull(builder);
+        ArgumentNullException.ThrowIfNull(context);
 
         builder.ApplyConfigurationsFromAssembly(typeof(ModelBuilderExtensions).Assembly);
         builder.ApplyIdentityModel();
+        TenantFilterConvention.Apply(builder, context);
 
         return builder;
     }

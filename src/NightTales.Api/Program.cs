@@ -10,6 +10,11 @@ builder.Services.AddOpenApi();
 
 builder.Services.AddNightTalesMediator();
 builder.Services.AddPersistence(builder.Configuration);
+
+// 09.2.3-T1 (09 README D10): the caller's claims are the tenant of every filtered query, and the
+// scoped system context lets tests run outbox-style work in-process.
+builder.Services.AddApiCurrentUser();
+
 builder.Services.AddProblemDetails(ProblemDetailsWriter.ConfigureProblemDetails);
 
 // 09 README D12/H4: the Api only writes the outbox, so an accidental direct enqueue fails fast.

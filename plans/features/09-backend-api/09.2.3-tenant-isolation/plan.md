@@ -37,10 +37,12 @@ No new tables. Types:
 | `ActorType` | `Domain/Common/ActorType.cs` | `User`, `Admin`, `System` |
 | `ISystemContext` | `Application/Abstractions/ISystemContext.cs` | `IDisposable For(Guid userId)` |
 | `ISystemWorkQuery` | `Application/Abstractions/ISystemWorkQuery.cs` | `IAsyncEnumerable<(Guid Id, Guid UserId)> PendingAsync<T>(Expression<Func<T,bool>> where, int batch, CancellationToken ct) where T : Entity, IUserOwned` |
-| `HttpCurrentUser` | `Api/Security/HttpCurrentUser.cs` | reads `sub`, `role` claims |
-| `ScopedCurrentUser` | `Infrastructure/Security/ScopedCurrentUser.cs` | settable once; implements `ICurrentUser` and `ISystemContext` |
+| `ITenantScopeObserver` | `Application/Abstractions/ITenantScopeObserver.cs` | `void MarkObserved()`; the two `DbContext`s report "a `DbContext` already exists in this scope" through it, so `ISystemContext.For` after a context was resolved throws without persistence depending on a concrete type |
+| `HttpCurrentUser` | `Api/Security/HttpCurrentUser.cs` | reads `sub`, `role` claims; `role` only behind a valid, non-empty `sub` (no user → `user`/`user`) |
+| `ScopedCurrentUser` | `Infrastructure/Security/ScopedCurrentUser.cs` | settable once; implements `ICurrentUser`, `ISystemContext` and `ITenantScopeObserver` |
 | `SystemWorkQuery` | `Infrastructure/Persistence/Queries/SystemWorkQuery.cs` | the only type in `src` allowed to call `IgnoreQueryFilters` outside Admin (allow-list) |
 | `TenantFilterConvention` | `Infrastructure/Persistence/Conventions/TenantFilterConvention.cs` | adds `"tenant"` to every `IUserOwned` entity type in both contexts |
+| `ITenantFilterContext` (internal) | `Infrastructure/Persistence/Conventions/TenantFilterConvention.cs` | `Guid? CurrentUserId`; implemented by `AppDbContext`/`ReadDbContext` so one convention filters both, and its body references the *context instance* member (plan §2 T2f parameterization) |
 
 ## 4. Use cases
 
