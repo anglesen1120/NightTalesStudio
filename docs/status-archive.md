@@ -57,6 +57,10 @@ Replaced 2026-09-30 (4):
 - **Next wave, in order:** `09.2.2-T2 ∥ 09.2.3-T1` → `09.1.3-T2 ∥ 09.2.5-T1` → `09.2.4-T1` (09 README §5). 09.2.2-T2 waits on the NTS-922-SEC-001 decision (below).
 - **Owner/TL decisions open:** NTS-922-SEC-001 (cross-tenant child→parent FKs: composite same-owner FKs vs app-only control, before `InitialCore`; 09.2.2-T2 Notes, 09 W3 CR-45) · 09.2.6 O2 (production Worker needs DDL rights on the `hangfire` schema or a separate migration role, before 11.1.1-T1) · 11.2.1-T1 hosting sign-off (`DECISIONS.md` §10.4.1, proposed) · 13 OI-1 (operator legal name + contact in the legal drafts).
 
+Replaced 2026-09-30 (5):
+
+- **Current (2026-09-30 (4)).** `develop` @ `e1f1b01`: 09 waves 1–3 merged (#38–#41, #44–#46), tiered review gates (#47), STATUS split (#48). Owner decisions 2026-09-30 recorded (branch `docs/owner-decisions-0930`): NTS-922-SEC-001 → **(a) composite same-owner FKs** in `InitialCore`; 09.2.6 O2 → **separate deploy/migration role**; **phase 1 is local only** — hosting sign-off (§10.4.1), all deployment tasks (11 CR-18) and 13 OI-1 move to phase 2 (`DECISIONS.md` §10.13).
+
 ## Per-plan evidence tables (as of 2026-09-30)
 
 ### Plan 01 — Environment setup (29 tasks)

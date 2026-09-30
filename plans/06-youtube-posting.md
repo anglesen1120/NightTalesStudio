@@ -22,7 +22,7 @@
 | Y4 | `status.containsSyntheticMedia` exists ✅ | Always `true` |
 | Y5 | Must not automate uploads without the user's prior specific and express consent ✅ (the rule; the autopilot mitigation below is ⚠️ [INFERENCE]) | Consent record per video (Publication cannot leave `awaiting_consent` without `consent_at`): given by the user, or written for autopilot by the scheduler from the owner's versioned series authorization after a veto window (06.2.2-T3) |
 | Y6 | In-app revoke → revoke token right away + delete data within **7 days**; Google-page revoke → **30 days**; stored Authorized Data max 30 days then refresh/delete ✅ ([developer policies](https://developers.google.com/youtube/terms/developer-policies)) | Jobs in §5.4 |
-| Y7 | Quota extension only via API Compliance Audit ✅ | File in M1 as soon as upload works and the privacy/terms pages are live (00 §4, 13.4.2) |
+| Y7 | Quota extension only via API Compliance Audit ✅ | File in M1 as soon as upload works and the privacy/terms pages are live (00 §4, 13.4.2) (M1 phase 2, 11 CR-18: the policy URLs must be public) |
 | Y8 | Google OAuth app verification requirements for `youtube.upload` ⚠️ — separate from the audit: verification removes the unverified-app screen and the 100-new-user cap; it does **not** lift the private lock (only the audit does, Y2) | Personal phase: app In production, unverified (00 §4.1); verification only for the SaaS (13.4.1, M2) |
 | Y9 | API clients must link YouTube's Terms, have their own terms stating users agree to them, and require agreement to a privacy policy (III.A.1, III.A.2) ✅ ([developer policies](https://developers.google.com/youtube/terms/developer-policies)) | 13.1.1-T1, 13.1.2-T1 drafts and 10.3.1-T1 pages are P and live before the audit is filed |
 | Y10 | Write operations: "users must have final control over the data that will be published" (III.C.3) ✅ ([developer policies](https://developers.google.com/youtube/terms/developer-policies)) | Autopilot shows each upcoming publication (title, description, tags, time) during the veto window with edit/cancel; whether the audit accepts series-level authorization is unverified ⚠️ — fallback: one-tap per-video approval from the notification |
@@ -206,7 +206,7 @@ sequenceDiagram
 
 | Risk | Mitigation |
 |---|---|
-| Audit takes months or is rejected | Owner/BA files in M1 as soon as upload works (13.4.2); until approval autopilot runs in pre-audit mode (private); if rejected: appeal (https://support.google.com/youtube/contact/yt_api_appeals), fix, re-file. Residual risk: the channel stays private and Gate 2 cannot be evaluated |
+| Audit takes months or is rejected | Owner/BA files in M1 as soon as upload works and the policy pages are public (13.4.2) (M1 phase 2, 11 CR-18: the policy URLs must be public); until approval autopilot runs in pre-audit mode (private); if rejected: appeal (https://support.google.com/youtube/contact/yt_api_appeals), fix, re-file. Residual risk: the channel stays private and Gate 2 cannot be evaluated |
 | 100/day ceiling blocks growth | Fairness caps, clear ETA, pricing aware of the ceiling; extension sized from beta data at the M2 re-filing |
 | Upload failures on large files | Resumable protocol, persisted session URI, retries |
 | Policy change | Watch developer policy updates (08); isolate behind `IYouTubeClient` |
