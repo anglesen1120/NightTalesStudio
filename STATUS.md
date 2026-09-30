@@ -8,8 +8,8 @@ Legend: `done` (acceptance checks run and passed) · `doing` · `blocked (<who>)
 
 Keep this block ≤ 15 lines: current state and next step only. Move the previous block to the archive when you replace it.
 
-- **Current (2026-09-30 (9)).** `develop` @ `31cef57`: 09 wave 5 merged — 09.1.3-T2 (#54, UnitOfWork/Idempotency/Authorization behaviours + `IdempotencyKeyCleanupJob`), 09.2.5-T1 (#55, catalog/flag seeders, Development auto-seed, `--seed` CLI; merged develop in `9f65e08` to resolve the additive DI conflict), STATUS #56. Post-merge `develop`: Release build 0 warnings, format 0, 160 unit + 297 integration + 49 infra green on PG17; CI green on both PRs.
-- **Next wave, in order:** `09.2.4-T1` outbox (all deps on `develop`) → then 09.4.1-T1 series (09 README §5). With 09.2.4-T1, move `UnitOfWork_Success_CommitsEffectsAndOutboxTogether` onto the real `OutboxSaveChangesInterceptor`.
+- **Current (2026-09-30 (10)).** Branch `feature/09.2.4-T1-outbox` (code `3560f9c`, base `ac63111`): 09.2.4-T1 outbox — `[OutboxEvent]`/`[PlatformEvent]`, `IOutboxHandler<T>` + `AddOutboxHandler`, `OutboxSaveChangesInterceptor` (after the auditable one), `OutboxEventRegistry`, `OutboxDispatcher` (SKIP LOCKED claim, lease, backoff, dead letter, per-message `ISystemContext.For`), meter `NightTales.Outbox`, `OutboxCleanupJob`; `UnitOfWork_Success_CommitsEffectsAndOutboxTogether` now uses the real interceptor. T3 gates: QA 5/5 acceptance + 12/12 test rows; code review F1 (lag used `claimed[0]`) fixed; perf F2 closed (the partial due index already exists, EXPLAIN measured); security 0 findings. Release build 0 warnings, format 0, 399/399 tests on PG17 (the old 506 figure double-counted, per QA). PR open, awaiting owner merge.
+- **Next wave, in order:** after the PR merges → 09.4.1-T1 series (09 README §5).
 - **Owner decisions open:** none blocking phase 1.
 - **Security debt live on `develop`:** see §Deferred security gates — production Api has no authentication registered yet (`AuthorizationBehavior` closed in #54).
 - **Gates:** per task by risk tier (`plans/00-overview.md` §10 Definition of Done; full rule in `~/.omp/agent/RULES.md`).
