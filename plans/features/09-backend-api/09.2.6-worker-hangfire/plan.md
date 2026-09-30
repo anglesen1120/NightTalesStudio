@@ -35,7 +35,7 @@
 
 ## 3. Domain and data
 
-No domain tables. Hangfire creates and upgrades its own schema `hangfire` (`PrepareSchemaIfNecessary = true` in Development and tests; in production the schema install runs as part of the Worker start with the same flag [DECISION] ⚠️ 2 Workers: the 1.21.1 installer runs in one Serializable transaction and tolerates a concurrent install rather than locking — read from source, not load-tested; T1 Notes).
+No domain tables. Hangfire creates and upgrades its own schema `hangfire` (`PrepareSchemaIfNecessary = true` in Development and tests; in production a separate deploy/migration role installs the schema before rollout and the Worker runs with `PrepareSchemaIfNecessary = false` and no DDL rights (O2, owner 2026-09-30) [DECISION]; the earlier plan had the Worker install it at start ⚠️ 2 Workers: the 1.21.1 installer runs in one Serializable transaction and tolerates a concurrent install rather than locking — read from source, not load-tested; T1 Notes).
 
 Types:
 
@@ -100,7 +100,7 @@ Total **1.5 d** (high-level M 1.0; +0.5 because the dashboard is split out, READ
 
 - O1 (owner): Hangfire licence acceptance. If rejected, `IJobScheduler` is re-implemented on another C# library (≈ 2 d, 09 §8); this plan's port and tests stay.
 - H2 resolved (2026-09-30): the spike PASSED on Hangfire.PostgreSql 1.21.1 + Npgsql 10 (T1 Notes); no pin change, no separate `NpgsqlDataSource`.
-- O2 (owner, before the first production deploy — 11.1.1-T1): the Worker installs the `hangfire` schema at start (§3 [DECISION]), so its long-lived runtime database role needs DDL rights on that schema. Alternative: a separate deploy/migration role installs the schema and production runs with `PrepareSchemaIfNecessary = false`. Local dev is unaffected (security review 09.2.6-T1, SEC-03).
+- O2 (owner, before the first production deploy — 11.1.1-T1): the earlier design had the Worker install the `hangfire` schema at start, which needs DDL rights for its long-lived runtime role. Alternative: a separate deploy/migration role installs the schema and production runs with `PrepareSchemaIfNecessary = false`. Local dev is unaffected (security review 09.2.6-T1, SEC-03). **Decided (owner 2026-09-30): the separate deploy/migration role.** Production runs with `PrepareSchemaIfNecessary = false` and the Worker role has no DDL rights; 11.1.1-T1 wires the schema install into the deploy step.
 
 ## 11. Rollout
 

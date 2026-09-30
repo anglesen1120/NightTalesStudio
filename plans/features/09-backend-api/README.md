@@ -1369,6 +1369,8 @@ Proposed 2026-09-25 and **accepted under the owner's standing approval (2026-09-
 | W3-O4 | Admin/governance boundary | platform admin (`/admin` group, users, render, usage, moderation, quota, reports, deletion-requests, kpis) = 09.9.1-T1/09.10.5-T1; **billing admin + the trial grant** = 12 (12.4.2-T1 on e-mail verification, `grant:trial:{userId}`, 12.8.3-T1 for the funding-pause path); W3 CR-5 splits the 00 §8 Admin row |
 | W3-O5 | Public cancel-link page | `<origin>/cancel-request#kind=&id=&token=` (fragment, no third-party asset, `no-referrer`), one token per recipient expiring at `apply_after`, token path disabled for 7 days per integration/target after a token cancel |
 | W3-O6 | Registration modes and trial credits | `closed \| invite \| open` (supersedes BD2's two-value set); `registration.trial.credits` (0…10000) is the owner-editable source of truth and 12 reads it |
+| W3-O7 | NTS-922-SEC-001 cross-tenant FKs (owner 2026-09-30) | **(a) composite same-owner FKs** in `InitialCore` (09.2.2-T2), application invariant kept (09.2.3-T1) |
+| W3-O8 | 09.2.6 O2 Hangfire schema rights (owner 2026-09-30) | **separate deploy/migration role**; production Worker runs `PrepareSchemaIfNecessary = false`, no DDL rights |
 
 **TL rulings (binding on the writers of this wave):**
 

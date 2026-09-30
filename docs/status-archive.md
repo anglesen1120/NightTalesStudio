@@ -51,6 +51,12 @@ History moved out of `STATUS.md` on 2026-09-30 to keep the live file small. Text
   - D13 mode `accepted-risk`: no volume encryption. Keys must never be committed or pushed: `.gitignore` plus the gitleaks hooks.
 - **Before any work in a fresh clone:** `git config core.hooksPath .githooks`, then `worker-node/bin/bootstrap.sh all`, then `worker-node/bin/smoke.sh`.
 
+Replaced 2026-09-30 (4):
+
+- **Current (2026-09-30 (3)).** `develop` @ `30dd82e`: 09 waves 1–3 merged (#38–#41, #44, #45 09.2.2-T1 → `fda4ddd`, #46 09.2.6-T1 → `dee4bc8`), tiered review gates merged (#47). This session: STATUS split into this file + `docs/status-archive.md` (docs only, T0).
+- **Next wave, in order:** `09.2.2-T2 ∥ 09.2.3-T1` → `09.1.3-T2 ∥ 09.2.5-T1` → `09.2.4-T1` (09 README §5). 09.2.2-T2 waits on the NTS-922-SEC-001 decision (below).
+- **Owner/TL decisions open:** NTS-922-SEC-001 (cross-tenant child→parent FKs: composite same-owner FKs vs app-only control, before `InitialCore`; 09.2.2-T2 Notes, 09 W3 CR-45) · 09.2.6 O2 (production Worker needs DDL rights on the `hangfire` schema or a separate migration role, before 11.1.1-T1) · 11.2.1-T1 hosting sign-off (`DECISIONS.md` §10.4.1, proposed) · 13 OI-1 (operator legal name + contact in the legal drafts).
+
 ## Per-plan evidence tables (as of 2026-09-30)
 
 ### Plan 01 — Environment setup (29 tasks)
