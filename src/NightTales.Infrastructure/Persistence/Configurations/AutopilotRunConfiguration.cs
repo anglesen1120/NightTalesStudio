@@ -23,8 +23,15 @@ internal sealed class AutopilotRunConfiguration : IEntityTypeConfiguration<Autop
         // gate_results: the gates.v1 document 02.8.2 owns the shape of.
         builder.Property(run => run.GateResults).HasColumnType("jsonb");
 
-        builder.HasOne<Series>().WithMany().HasForeignKey(run => run.SeriesId).OnDelete(DeleteBehavior.Restrict);
-        builder.HasOne<Episode>().WithMany().HasForeignKey(run => run.EpisodeId).OnDelete(DeleteBehavior.SetNull);
+        // NTS-922-SEC-001 (09 W3 CR-46): both same-owner FKs include user_id (see SeriesConfiguration).
+        builder.HasOne<Series>().WithMany()
+            .HasForeignKey(run => new { run.SeriesId, run.UserId })
+            .HasPrincipalKey(series => new { series.Id, series.UserId })
+            .OnDelete(DeleteBehavior.Restrict);
+        builder.HasOne<Episode>().WithMany()
+            .HasForeignKey(run => new { run.EpisodeId, run.UserId })
+            .HasPrincipalKey(episode => new { episode.Id, episode.UserId })
+            .OnDelete(DeleteBehavior.SetNull);
         builder.HasOne<AppUser>().WithMany().HasForeignKey(run => run.UserId).OnDelete(DeleteBehavior.Restrict);
 
         builder.HasIndex(run => new { run.SeriesId, run.StartedAt }).IsDescending(false, true);

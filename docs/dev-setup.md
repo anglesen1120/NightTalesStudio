@@ -49,6 +49,21 @@ dotnet test    NightTales.ci.slnf -c Release --no-build \
 - The Api listens on `http://127.0.0.1:5000` (`src/NightTales.Api/Properties/launchSettings.json`). Use `127.0.0.1`, not `localhost`: macOS AirPlay Receiver (ControlCenter) listens on `*:5000`, and `localhost` can resolve to it.
 
 ```bash
+# Migration job (09.2.2-T2, the third CI job). It runs the schema harness,
+# tests/NightTales.Api.IntegrationTests/Migrations/: `InitialCore` on an empty database, over the
+# previous schema with data, the model against its snapshot, and the destructive-operation scan.
+# Needs the same server and the same NTS_TEST_PG as the integration job above; the exit-code and
+# minimum-tests rules are the same too.
+dotnet test NightTales.ci.slnf -c Release --no-build \
+  --filter "Category=Migration" --minimum-expected-tests 1
+```
+
+The database-backed migration tests also carry `Category=Integration`, so the integration command above
+runs them as well; `Category=Migration` is the focused signal for a schema change. The
+destructive-operation scan needs no database, so the unit job runs it too.
+
+
+```bash
 dotnet run --project src/NightTales.Api
 curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:5000/health/live   # 200
 ```
@@ -95,3 +110,49 @@ A missing or blank `NTS_TEST_PG` fails the test fixture with a named error; it n
 Each class database's Npgsql pool is cleared before the `DROP DATABASE … WITH (FORCE)`, so the drop does not wait for PostgreSQL to terminate idle pooled backends; that is why a class teardown costs about 10 ms instead of a few hundred.
 
 **Optional compose path (e2e / image smoke only).** `docker-compose.yml` defines a `postgres` service (`postgres:17-alpine`, `127.0.0.1:5432`, healthcheck: a password login with `psql -h 127.0.0.1 ... SELECT 1`). Daily development never starts it. It binds the same port as the native server, so stop one before starting the other, or move the host port in a git-ignored `docker-compose.override.yml`. Its data volume is disposable: `docker compose down -v`. The image applies `POSTGRES_*` only when the volume is first created; after changing them, recreate the volume or the healthcheck stays unhealthy.
+
+## Migrations
+
+`InitialCore` (09.2.2-T2) is the schema every later migration builds on; it is never edited again. A schema
+change is an expand-only migration (`NFR-09-6`: expand → migrate → contract) named
+`<yyyyMMddHHmm>_<Owner>_<What>`, for example `202610051200_02_SourcesAndFetchTasks` (`InitialCore` itself
+keeps EF's timestamp prefix).
+
+```bash
+# The tools read the connection string from the environment, never from argv (11 CR-14): a connection
+# string in argv is visible to every process on the machine. The design-time factory
+# (src/NightTales.Infrastructure/Persistence/AppDbContextDesignFactory.cs) builds the model itself, so the
+# Api host is not started and `--startup-project` is not needed (it would need EF's Design package there).
+# With the variable unset the factory does not fail: it falls back to the non-secret placeholder
+# `Host=invalid.localhost;Database=nts_design_time`, which is never contacted (the factory only builds the
+# model). The bundled `nts-migrate` runner takes its own `--connection "<db>"`, applied after the context is
+# built, so it runs without this export.
+export ConnectionStrings__Postgres="Host=127.0.0.1;Port=5432;Database=${POSTGRES_DB:-nighttales};Username=${POSTGRES_USER:-nighttales};Password=<POSTGRES_PASSWORD from .env>"
+
+dotnet ef migrations add 202610051200_02_SourcesAndFetchTasks \
+  --project src/NightTales.Infrastructure --context AppDbContext --output-dir Persistence/Migrations
+dotnet ef migrations has-pending-model-changes --project src/NightTales.Infrastructure --context AppDbContext
+dotnet ef migrations script --idempotent --project src/NightTales.Infrastructure --context AppDbContext   # read it before the PR
+dotnet ef database update --project src/NightTales.Infrastructure --context AppDbContext                 # the local dev database
+```
+
+- **Never edit a generated file by hand** except inside `Up`/`Down` of the migration class. The snapshot and the
+  Designer are rendered by the generator; `.editorconfig` exempts `Persistence/Migrations/[0-9]*.cs` and
+  `AppDbContextModelSnapshot.cs` from the house style rules (their block-scoped namespace, BOM and constant
+  array literals are the generator's), so a fresh `migrations add` compiles and formats as it comes out.
+- **Two branches that add a migration in parallel** both touch `AppDbContextModelSnapshot.cs` and the Designer of
+  the last migration, so the merge conflicts. Do not resolve that conflict by hand: the branch that merges
+  **second** removes its own migration (`dotnet ef migrations remove`), merges the other one, and regenerates
+  on top. The published migration id of the first branch never changes.
+- **A migration that adds a table extends** `tests/NightTales.Api.IntegrationTests/Migrations/SeedPrevious.cs`
+  with a row of that table, so the *next* migration is exercised over data, not only over an empty schema.
+- **A destructive step** (drop a table/column, narrow a column) needs `[ContractMigration("why the previous
+  release is over")]` on the migration class; without it `Migrations_ContainNoDestructiveOperations` fails the
+  build, in the unit job and in the `migrations` job. The review checklist is in
+  `.github/pull_request_template.md` § Migration.
+- The bundle is a build artifact: `dotnet ef migrations bundle --self-contained -r linux-x64 -o
+  artifacts/nts-migrate --project src/NightTales.Infrastructure` (`artifacts/` is git-ignored; 11.5.1 builds it
+  in the pipeline and runs it as a one-shot job before rollout). Locally it takes the connection string with
+  `--connection "<local dev db>"` — applied after the design-time context is built, so the run does not need
+  `ConnectionStrings__Postgres` set; in CI and in the cloud the value comes from that variable
+  (masked with `::add-mask::`), never from argv.

@@ -24,7 +24,12 @@ internal sealed class SeriesAutopilotAuthorizationConfiguration : IEntityTypeCon
         builder.Property(authorization => authorization.Cadence).IsRequired();
         builder.Property(authorization => authorization.PrivacyStatus).HasEnumCheck();
 
-        builder.HasOne<Series>().WithMany().HasForeignKey(authorization => authorization.SeriesId).OnDelete(DeleteBehavior.Restrict);
+        // NTS-922-SEC-001 (09 W3 CR-46): the same-owner FK to the series (see SeriesConfiguration).
+        builder.HasAlternateKey(authorization => new { authorization.Id, authorization.UserId });
+        builder.HasOne<Series>().WithMany()
+            .HasForeignKey(authorization => new { authorization.SeriesId, authorization.UserId })
+            .HasPrincipalKey(series => new { series.Id, series.UserId })
+            .OnDelete(DeleteBehavior.Restrict);
         builder.HasOne<AppUser>().WithMany().HasForeignKey(authorization => authorization.UserId).OnDelete(DeleteBehavior.Restrict);
 
         builder.HasIndex(authorization => new { authorization.SeriesId, authorization.Version }).IsUnique();

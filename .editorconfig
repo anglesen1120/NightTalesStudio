@@ -18,3 +18,20 @@ dotnet_diagnostic.CA1852.severity = error
 
 [*.{csproj,props,targets,json,yml,yaml}]
 indent_size = 2
+
+# EF Core migration scaffolding (09.2.2-T2). `dotnet ef migrations add` renders these files from its own
+# template — block-scoped namespace, UTF-8 BOM, constant array literals — and rewrites them on every
+# later migration, so they are exempt from the style and analyzer rules instead of being normalised by
+# hand each time. `ContractMigrationAttribute.cs` in the same folder is hand-written and keeps them.
+[src/NightTales.Infrastructure/Persistence/Migrations/[0-9]*.cs]
+charset = utf-8-bom
+generated_code = true
+dotnet_diagnostic.IDE0161.severity = none
+dotnet_diagnostic.CA1861.severity = none
+
+[src/NightTales.Infrastructure/Persistence/Migrations/AppDbContextModelSnapshot.cs]
+charset = utf-8-bom
+generated_code = true
+dotnet_diagnostic.IDE0161.severity = none
+dotnet_diagnostic.CA1861.severity = none
+

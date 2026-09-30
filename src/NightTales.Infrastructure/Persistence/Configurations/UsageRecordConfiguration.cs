@@ -28,8 +28,15 @@ internal sealed class UsageRecordConfiguration : IEntityTypeConfiguration<UsageR
         builder.Property(record => record.Estimated).IsRequired();
         builder.Property(record => record.CostUsd).HasPrecision(12, 6);
 
-        builder.HasOne<Episode>().WithMany().HasForeignKey(record => record.EpisodeId).OnDelete(DeleteBehavior.SetNull);
-        builder.HasOne<Series>().WithMany().HasForeignKey(record => record.SeriesId).OnDelete(DeleteBehavior.Restrict);
+        // NTS-922-SEC-001 (09 W3 CR-46): both same-owner FKs include user_id (see SeriesConfiguration).
+        builder.HasOne<Episode>().WithMany()
+            .HasForeignKey(record => new { record.EpisodeId, record.UserId })
+            .HasPrincipalKey(episode => new { episode.Id, episode.UserId })
+            .OnDelete(DeleteBehavior.SetNull);
+        builder.HasOne<Series>().WithMany()
+            .HasForeignKey(record => new { record.SeriesId, record.UserId })
+            .HasPrincipalKey(series => new { series.Id, series.UserId })
+            .OnDelete(DeleteBehavior.Restrict);
         builder.HasOne<AppUser>().WithMany().HasForeignKey(record => record.UserId).OnDelete(DeleteBehavior.Restrict);
 
         // 00 overview §6:296: the global cost window (12.5.2-T1) and the 08 KPI query.

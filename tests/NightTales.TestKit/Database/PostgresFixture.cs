@@ -410,17 +410,12 @@ public sealed class PostgresFixture : IAsyncLifetime, IAsyncDisposable
         // every later `CREATE DATABASE … TEMPLATE` fail with "source database is being accessed".
         await using var context = TestDbContextFactory.CreateAppContext(HelperConnectionString(databaseName));
 
-        if (context.Database.GetMigrations().Any())
-        {
-            await context.Database.MigrateAsync(ct);
-        }
-        else
-        {
-            // 09.2.2-T2 owns `InitialCore`; until it lands this context compiles zero migrations, so
-            // `Migrate` is a no-op and the template would carry no schema at all. Build the model
-            // directly for that window — the branch is dead from the first migration on.
-            await context.Database.EnsureCreatedAsync(ct);
-        }
+        // The template is built from the migrations, never from the model: `InitialCore` (09.2.2-T2)
+        // landed, so every test database carries exactly the schema a deploy would reach, `--idempotent`
+        // scripts and the migration-only DDL included. A run that compiles zero migrations therefore
+        // fails loudly here (no schema at all) instead of silently testing a model that no environment
+        // has.
+        await context.Database.MigrateAsync(ct);
     }
 
     /// <summary>True when the server catalog holds <paramref name="databaseName"/>.</summary>

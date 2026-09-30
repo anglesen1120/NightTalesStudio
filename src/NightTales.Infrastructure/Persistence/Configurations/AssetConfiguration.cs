@@ -24,7 +24,12 @@ internal sealed class AssetConfiguration : IEntityTypeConfiguration<Asset>
         builder.Property(asset => asset.DurationSec).HasPrecision(9, 2);
         builder.Property(asset => asset.Sha256).HasMaxLength(64).IsFixedLength().IsRequired();
 
-        builder.HasOne<Episode>().WithMany().HasForeignKey(asset => asset.EpisodeId).OnDelete(DeleteBehavior.Cascade);
+        // NTS-922-SEC-001 (09 W3 CR-46): the same-owner FK to the episode (see SeriesConfiguration).
+        builder.HasAlternateKey(asset => new { asset.Id, asset.UserId });
+        builder.HasOne<Episode>().WithMany()
+            .HasForeignKey(asset => new { asset.EpisodeId, asset.UserId })
+            .HasPrincipalKey(episode => new { episode.Id, episode.UserId })
+            .OnDelete(DeleteBehavior.Cascade);
         builder.HasOne<AppUser>().WithMany().HasForeignKey(asset => asset.UserId).OnDelete(DeleteBehavior.Restrict);
 
         builder.HasIndex(asset => asset.StorageKey).IsUnique();

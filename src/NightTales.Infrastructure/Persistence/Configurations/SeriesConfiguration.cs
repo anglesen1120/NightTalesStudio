@@ -25,10 +25,16 @@ internal sealed class SeriesConfiguration : IEntityTypeConfiguration<Series>
         // autopilot_settings: the jsonb document 02.8.3-T1 owns the shape of (see the entity property).
         builder.Property(series => series.AutopilotSettings).HasColumnType("jsonb");
 
+        // NTS-922-SEC-001 (09 W3 CR-46): every child table reaches a series through the alternate key
+        // (id, user_id), never through `id` alone, so PostgreSQL rejects a row of user B that points at
+        // a series of user A. The alternate key is the FK target; the primary key stays `id`.
+        builder.HasAlternateKey(series => new { series.Id, series.UserId });
+
         builder.HasOne<Voice>().WithMany().HasForeignKey(series => series.VoiceId).OnDelete(DeleteBehavior.Restrict);
         builder.HasOne<StyleTemplate>().WithMany().HasForeignKey(series => series.StyleTemplateId).OnDelete(DeleteBehavior.Restrict);
         builder.HasOne<SeriesAutopilotAuthorization>().WithMany()
-            .HasForeignKey(series => series.CurrentAutopilotAuthorizationId)
+            .HasForeignKey(series => new { series.CurrentAutopilotAuthorizationId, series.UserId })
+            .HasPrincipalKey(authorization => new { authorization.Id, authorization.UserId })
             .OnDelete(DeleteBehavior.SetNull);
         builder.HasOne<AppUser>().WithMany().HasForeignKey(series => series.UserId).OnDelete(DeleteBehavior.Restrict);
 
