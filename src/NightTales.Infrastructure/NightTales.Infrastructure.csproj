@@ -4,6 +4,19 @@
     <ProjectReference Include="..\NightTales.Application\NightTales.Application.csproj" />
   </ItemGroup>
 
+  <!--
+    09.2.5-T1: the committed `seed/` catalogs must be found at runtime. Only the catalogs the
+    Infrastructure seeders read are copied, into the output (preserving the `seed/...` layout the
+    `Seed:*File` configuration names), so a host that resolves a relative catalog path against
+    AppContext.BaseDirectory finds them in Development, in a published image and under `dotnet run`.
+    `Content` items of this project flow transitively to every referencing host and test project.
+  -->
+  <ItemGroup>
+    <Content Include="..\..\seed\catalog.dev.json;..\..\seed\style-templates.v1.json;..\..\seed\voices.v1.json"
+             Link="seed\%(RecursiveDir)%(Filename)%(Extension)"
+             CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
   <ItemGroup>
     <PackageReference Include="EFCore.NamingConventions" />
     <PackageReference Include="Hangfire.Core" />
