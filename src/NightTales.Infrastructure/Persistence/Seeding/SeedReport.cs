@@ -8,4 +8,8 @@ namespace NightTales.Infrastructure.Persistence.Seeding;
 /// <param name="Inserted">Rows the run added (absent natural key).</param>
 /// <param name="Updated">Rows the run changed (present natural key, a catalog-owned field differed).</param>
 /// <param name="Skipped">Rows that already matched, so nothing was written.</param>
-public sealed record SeedReport(string Seeder, int Inserted, int Updated, int Skipped);
+/// <param name="Failed">
+/// Whether the seeder threw and <see cref="SeedOptions.ContinueOnError"/> swallowed it, so the run
+/// carried on. The counts are then all zero; <c>nts-seed</c> reads this to exit non-zero.
+/// </param>
+public sealed record SeedReport(string Seeder, int Inserted, int Updated, int Skipped, bool Failed = false);

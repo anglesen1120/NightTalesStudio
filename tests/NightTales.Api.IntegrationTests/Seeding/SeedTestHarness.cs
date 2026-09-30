@@ -40,7 +40,7 @@ internal static class SeedTestHarness
             new FeatureFlagSeeder(db, bound, environment, NullLogger<FeatureFlagSeeder>.Instance),
         ];
 
-        return new SeedRunner(seeders, bound, NullLogger<SeedRunner>.Instance);
+        return new SeedRunner(seeders, db, bound, NullLogger<SeedRunner>.Instance);
     }
 
     private static string FindRepoRoot()

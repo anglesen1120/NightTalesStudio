@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using NightTales.Application.Abstractions.Persistence;
 
 namespace NightTales.Infrastructure.Persistence.Seeding;
 
@@ -8,12 +9,17 @@ namespace NightTales.Infrastructure.Persistence.Seeding;
 /// Runs every <see cref="ISeeder"/> in <see cref="ISeeder.Order"/> (09.2.5 plan §3.1), logging one line
 /// per seeder. It stops at the first failure unless <see cref="SeedOptions.ContinueOnError"/> is set, so
 /// the explicit <c>nts-seed</c> command surfaces a non-zero exit while a Development boot just logs.
+/// A failed seeder under <see cref="SeedOptions.ContinueOnError"/> is reported with
+/// <see cref="SeedReport.Failed"/> and its pending entities are detached, so the next seeder starts from
+/// a clean tracker instead of re-attempting the failed rows.
 /// </summary>
 /// <param name="seeders">The registered seeders.</param>
+/// <param name="db">The scoped tracked context the seeders share; reset after a failure.</param>
 /// <param name="options">The section that owns <see cref="SeedOptions.ContinueOnError"/>.</param>
 /// <param name="logger">The run log.</param>
 public sealed partial class SeedRunner(
     IEnumerable<ISeeder> seeders,
+    IAppDbContext db,
     IOptions<SeedOptions> options,
     ILogger<SeedRunner> logger)
 {
@@ -51,7 +57,11 @@ public sealed partial class SeedRunner(
                     throw;
                 }
 
-                reports.Add(new SeedReport(seeder.Name, 0, 0, 0));
+                // The shared tracked context still holds the failed seeder's Added entities, so the next
+                // seeder's SaveChanges would re-attempt them and fail the same way. Detach them first,
+                // then report the failure instead of a silent no-op.
+                SeedDbContext.ResetTracking(db);
+                reports.Add(new SeedReport(seeder.Name, 0, 0, 0, Failed: true));
             }
         }
 

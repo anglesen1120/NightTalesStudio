@@ -10,7 +10,8 @@ namespace NightTales.Infrastructure.Persistence.Seeding;
 /// <remarks>
 /// A failure is written to <c>stderr</c> and returned as <c>1</c>; it is never swallowed, so an
 /// operator sees a failed seed in a script's exit code. The message is the key-named
-/// <see cref="SeedValidationException.Code"/> of a bad catalog.
+/// <see cref="SeedValidationException.Code"/> of a bad catalog. When <c>Seed:ContinueOnError</c> lets
+/// the run carry past a failed seeder, the run still exits <c>1</c> and names the seeders that failed.
 /// </remarks>
 public static class SeedCommand
 {
@@ -25,7 +26,15 @@ public static class SeedCommand
             using var scope = services.CreateScope();
             var runner = scope.ServiceProvider.GetRequiredService<SeedRunner>();
 
-            runner.RunAsync(CancellationToken.None).AsTask().GetAwaiter().GetResult();
+            var reports = runner.RunAsync(CancellationToken.None).AsTask().GetAwaiter().GetResult();
+
+            var failed = reports.Where(report => report.Failed).Select(report => report.Seeder).ToArray();
+            if (failed.Length > 0)
+            {
+                Console.Error.WriteLine($"nts-seed failed: {string.Join(", ", failed)}");
+
+                return 1;
+            }
 
             return 0;
         }

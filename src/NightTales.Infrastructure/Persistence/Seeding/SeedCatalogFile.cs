@@ -214,19 +214,28 @@ public static class SeedCatalogFile
 
     /// <summary>
     /// Parses an enum stored as snake_case (<c>true_crime</c> → <see cref="Topic.TrueCrime"/>), case
-    /// insensitively. A numeric string is refused, because <see cref="Enum.TryParse{TEnum}(string, bool, out TEnum)"/>
-    /// would accept any number for a plain enum.
+    /// insensitively. A numeric string is refused before the parse, because
+    /// <see cref="Enum.TryParse{TEnum}(string, bool, out TEnum)"/> would take <c>'+1'</c>, <c>'-1'</c>
+    /// or <c>' 1'</c> as the enum's numeric value; every catalog value is instead an alphabetic name,
+    /// so the underscores are dropped and every remaining character must be an ASCII letter. The parsed
+    /// value must then still be a defined member.
     /// </summary>
     private static bool TryParseEnum<TEnum>(string? value, out TEnum result)
         where TEnum : struct, Enum
     {
         result = default;
-        if (string.IsNullOrWhiteSpace(value) || char.IsAsciiDigit(value[0]))
+        if (string.IsNullOrWhiteSpace(value))
         {
             return false;
         }
 
-        return Enum.TryParse(value.Replace("_", string.Empty, StringComparison.Ordinal), ignoreCase: true, out result);
+        var name = value.Replace("_", string.Empty, StringComparison.Ordinal);
+        if (name.Length == 0 || !name.All(char.IsAsciiLetter))
+        {
+            return false;
+        }
+
+        return Enum.TryParse(name, ignoreCase: true, out result) && Enum.IsDefined(result);
     }
 }
 
