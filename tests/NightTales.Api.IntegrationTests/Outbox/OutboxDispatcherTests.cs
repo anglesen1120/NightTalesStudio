@@ -492,6 +492,43 @@ public sealed class OutboxDispatcherTests(TestDatabase database) : IntegrationTe
         (await ReadAsync(messageId, ct)).ProcessedAt.ShouldNotBeNull();
     }
 
+    [Fact]
+    public async Task Outbox_StartupClaim_DoesNotDeliverBeforeTheTestAsks()
+    {
+        var ct = TestContextToken.Value;
+        var clock = new FakeClock();
+        var state = new OutboxProbeState();
+        var user = await new UserBuilder(Database, new TestCurrentUser()).CreateAsync(ct: ct);
+
+        // The host is built here instead of through OutboxHostAsync, because the row must exist *before*
+        // the start: that is the moment the Worker's loop used to claim once, and the harness stops it.
+        await using var host = new WorkerHost(Database, clock);
+        host.ConfigureServices(services =>
+        {
+            services.AddSingleton(state);
+            services.AddSingleton(Database);
+            services.AddOutboxHandler<OutboxProbeEvent, OutboxCountingProbeHandler>();
+        });
+
+        await Database.ExecuteAsync("DELETE FROM outbox_messages", ct);
+        var messageId = Guid.CreateVersion7();
+        await InsertProbeAsync(messageId, user.Id, clock.UtcNow, ct: ct);
+
+        await host.StartAsync(ct);
+
+        host.Services.GetServices<IHostedService>()
+            .ShouldNotContain(service => service is OutboxDispatcher, "the harness drops the Worker's outbox loop before building the host");
+
+        var untouched = await ReadAsync(messageId, ct);
+        untouched.ProcessedAt.ShouldBeNull("nothing delivers an outbox row in the harness until a test asks");
+        untouched.Attempts.ShouldBe(0);
+        state.Calls.ShouldBeEmpty();
+
+        (await host.RunOutboxOnceAsync(ct)).ShouldBe(1, "RunOutboxOnceAsync is the only delivery path");
+        state.Deliveries(messageId).ShouldBe(1);
+        (await ReadAsync(messageId, ct)).ProcessedAt.ShouldNotBeNull();
+    }
+
     /// <summary>
     /// A started host with the probe state, the class database and <paramref name="configure"/> applied
     /// (probe handlers, fakes), before it starts — the only moment <see cref="WorkerHost"/> allows it.
@@ -533,17 +570,6 @@ public sealed class OutboxDispatcherTests(TestDatabase database) : IntegrationTe
         });
 
         await host.StartAsync(cancellationToken);
-
-        // D13: the test drives delivery itself, so the hosted loop must not. Parking its poll is not
-        // enough — the loop claims once *before* its first poll delay, and that claim races the rows these
-        // tests write and deliver: a lost race makes the row delivered before the test's own batch runs,
-        // which is the flake "should be 1 but was 0". Stopping the started service cancels the loop for
-        // good (the claim either finished against the empty table or is aborted), and the singleton's
-        // ProcessBatchAsync stays the one delivery path.
-        foreach (var loop in host.Services.GetServices<IHostedService>().OfType<OutboxDispatcher>())
-        {
-            await loop.StopAsync(cancellationToken);
-        }
 
         return host;
     }

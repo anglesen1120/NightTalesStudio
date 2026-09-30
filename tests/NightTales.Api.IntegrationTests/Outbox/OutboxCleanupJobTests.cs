@@ -32,13 +32,11 @@ public sealed class OutboxCleanupJobTests(TestDatabase database) : IntegrationTe
         var now = clock.UtcNow;
         var occurredAt = now - TimeSpan.FromDays(30);
 
-        // The host starts first: its dispatcher loop claims once at start, so rows written after it started
-        // are never delivered by the loop (which then sleeps for the parked poll) and stay as inserted.
-        await using var host = new WorkerHost(Database, clock);
-        await host.StartAsync(ct);
-
         // One row per fate, relative to the retention of the job: only "delivered and older than the
-        // retention" is garbage; everything the dispatcher still owes is kept.
+        // retention" is garbage; everything the dispatcher still owes is kept. The order of these inserts
+        // against the host's start cannot matter: the harness stops the Worker's dispatch loop, so
+        // WorkerHost.RunOutboxOnceAsync is the only path that could ever take a row — and the pending one is
+        // not due yet anyway.
         var deliveredLongAgo = Guid.CreateVersion7();
         var deliveredYesterday = Guid.CreateVersion7();
         var pending = Guid.CreateVersion7();
@@ -46,8 +44,11 @@ public sealed class OutboxCleanupJobTests(TestDatabase database) : IntegrationTe
 
         await InsertAsync(deliveredLongAgo, occurredAt, now - OutboxCleanupJob.Retention - TimeSpan.FromMinutes(1), failedAt: null, ct);
         await InsertAsync(deliveredYesterday, occurredAt, now - TimeSpan.FromDays(1), failedAt: null, ct);
-        await InsertAsync(pending, occurredAt, processedAt: null, failedAt: null, ct);
+        await InsertAsync(pending, occurredAt, processedAt: null, failedAt: null, ct, nextAttemptAt: now + TimeSpan.FromHours(1));
         await InsertAsync(deadLettered, occurredAt, processedAt: null, failedAt: occurredAt, ct);
+
+        await using var host = new WorkerHost(Database, clock);
+        await host.StartAsync(ct);
 
         using (var scope = host.CreateScope())
         {
@@ -76,16 +77,23 @@ public sealed class OutboxCleanupJobTests(TestDatabase database) : IntegrationTe
     }
 
     /// <summary>Writes one row of this class's type with the delivery state the sweep is judged on.</summary>
+    /// <param name="id">The row id.</param>
+    /// <param name="occurredAt">When the event happened.</param>
+    /// <param name="processedAt">When the dispatcher delivered it, or <c>null</c> while it is unprocessed.</param>
+    /// <param name="failedAt">When it became a dead letter, or <c>null</c>.</param>
+    /// <param name="ct">Cancels the statement.</param>
+    /// <param name="nextAttemptAt">When it is next due; the occurrence itself unless a test says otherwise.</param>
     private Task InsertAsync(
         Guid id,
         DateTimeOffset occurredAt,
         DateTimeOffset? processedAt,
         DateTimeOffset? failedAt,
-        CancellationToken ct) =>
+        CancellationToken ct,
+        DateTimeOffset? nextAttemptAt = null) =>
         Database.ExecuteAsync(
             $"""
              INSERT INTO outbox_messages (id, type, payload, user_id, occurred_at, next_attempt_at, attempts, processed_at, failed_at)
-             VALUES ('{id}', '{ProbeType}', jsonb_build_object(), NULL, '{occurredAt:O}', '{occurredAt:O}', 0,
+             VALUES ('{id}', '{ProbeType}', jsonb_build_object(), NULL, '{occurredAt:O}', '{nextAttemptAt ?? occurredAt:O}', 0,
                      {(processedAt is null ? "NULL" : $"'{processedAt:O}'")},
                      {(failedAt is null ? "NULL" : $"'{failedAt:O}'")})
              """,

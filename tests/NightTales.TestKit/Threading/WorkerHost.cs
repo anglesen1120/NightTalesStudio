@@ -52,9 +52,6 @@ public sealed class WorkerHost(TestDatabase database, FakeClock clock) : IAsyncD
 
     private const string OneSecond = "1";
 
-    /// <summary>The parked poll of the outbox loop: longer than any test run.</summary>
-    private const string OneHour = "3600";
-
     /// <summary>The class database this host runs against.</summary>
     public TestDatabase Database { get; } = database;
 
@@ -217,6 +214,12 @@ public sealed class WorkerHost(TestDatabase database, FakeClock clock) : IAsyncD
         builder.Services.AddSingleton<IClock>(clock);
         builder.Services.AddWorkerServices(builder.Configuration, [.. _jobAssemblies]);
 
+        // 09.2.4-T1, D13: RunOutboxOnceAsync is the harness's only outbox delivery path, so the Worker's
+        // loop is dropped from the collection before the host is built — it could otherwise claim and deliver
+        // a row the moment it is started. The dispatcher singleton stays, which is what RunOutboxOnceAsync
+        // drives.
+        WorkerComposition.WithoutOutboxDispatcherLoop(builder.Services);
+
         // The host's filter chain, with the observer first: it must be the last IJobFilterProvider
         // registration (AddJobs registers the platform chain), so Hangfire's client and server both
         // see the observer plus the platform filters.
@@ -271,10 +274,6 @@ public sealed class WorkerHost(TestDatabase database, FakeClock clock) : IAsyncD
             [$"ConnectionStrings:{PersistenceOptions.ConnectionStringName}"] = database.ConnectionString,
             [$"{JobsOptions.SectionName}:{nameof(JobsOptions.QueuePollSeconds)}"] = OneSecond,
             [$"{JobsOptions.SectionName}:{nameof(JobsOptions.SchedulePollSeconds)}"] = OneSecond,
-
-            // The Worker's OutboxDispatcher loop starts with the host; a test drives delivery itself
-            // through RunOutboxOnceAsync, so the loop is parked for the length of any test (09 README D13).
-            [$"{OutboxDispatcherOptions.SectionName}:{nameof(OutboxDispatcherOptions.PollIntervalSeconds)}"] = OneHour,
         };
 
         foreach (var queue in Enum.GetValues<JobQueue>())

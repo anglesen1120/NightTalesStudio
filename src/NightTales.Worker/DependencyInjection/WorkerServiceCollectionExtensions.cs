@@ -3,6 +3,7 @@ using Hangfire;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using NightTales.Application.Abstractions;
 using NightTales.Application.Abstractions.Jobs;
@@ -23,6 +24,17 @@ namespace NightTales.Worker.DependencyInjection;
 /// </summary>
 public static class WorkerServiceCollectionExtensions
 {
+    /// <summary>
+    /// The factory of the hosted descriptor that runs the outbox loop (09.2.4-T1): it resolves the
+    /// dispatcher singleton, so the loop and <c>WorkerHost.RunOutboxOnceAsync</c> drive one instance.
+    /// </summary>
+    /// <remarks>
+    /// A named field rather than a lambda so <see cref="WithoutOutboxDispatcherLoop"/> can find exactly this
+    /// descriptor by reference — the compiler-generated lambda of a method body is not addressable.
+    /// </remarks>
+    public static readonly Func<IServiceProvider, IHostedService> OutboxDispatcherLoopFactory =
+        provider => provider.GetRequiredService<OutboxDispatcher>();
+
     /// <summary>Registers everything the Worker needs except the Hangfire server.</summary>
     /// <param name="services">The service collection of the host.</param>
     /// <param name="configuration">The host configuration.</param>
@@ -79,14 +91,41 @@ public static class WorkerServiceCollectionExtensions
 
         services.AddSingleton<OutboxMetrics>();
 
-        // Registered as a singleton and hosted through that instance, so the harness can drive the very
-        // dispatcher the Worker's loop owns (WorkerHost.RunOutboxOnceAsync, 09 README D13).
+        // Registered as a singleton and hosted through that instance, so a host and the harness resolve the
+        // very dispatcher the Worker's loop owns (WorkerHost.RunOutboxOnceAsync, 09 README D13).
         services.AddSingleton<OutboxDispatcher>();
-        services.AddHostedService<OutboxDispatcher>(provider => provider.GetRequiredService<OutboxDispatcher>());
+        services.AddSingleton<IHostedService>(OutboxDispatcherLoopFactory);
 
         services.AddHealthChecks()
             .AddCheck<DatabaseHealthCheck>("database")
             .AddCheck<HangfireStorageHealthCheck>("hangfire");
+
+        return services;
+    }
+
+    /// <summary>
+    /// Drops the hosted outbox loop from <paramref name="services"/> and leaves the dispatcher singleton in
+    /// place (09 README D13): the test harness drives delivery through <c>WorkerHost.RunOutboxOnceAsync</c>,
+    /// so the loop must never start.
+    /// </summary>
+    /// <remarks>
+    /// The descriptor has to go before the host is built. Stopping the loop after the start is not enough:
+    /// <c>BackgroundService.StartAsync</c> schedules the loop, so it can claim and deliver a row before any
+    /// stop reaches it. Removing it here leaves no window at all.
+    /// </remarks>
+    /// <param name="services">The service collection of the host.</param>
+    public static IServiceCollection WithoutOutboxDispatcherLoop(this IServiceCollection services)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+
+        var loop = services.FirstOrDefault(descriptor =>
+            descriptor.ServiceType == typeof(IHostedService)
+            && ReferenceEquals(descriptor.ImplementationFactory, OutboxDispatcherLoopFactory));
+
+        if (loop is not null)
+        {
+            services.Remove(loop);
+        }
 
         return services;
     }
