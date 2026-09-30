@@ -7,8 +7,10 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
+using NightTales.Application.Abstractions.Identity;
 using NightTales.Application.Abstractions.Jobs;
 using NightTales.Domain.Common;
+using NightTales.Infrastructure.Identity;
 using NightTales.Infrastructure.Jobs;
 using NightTales.Infrastructure.Persistence;
 using NightTales.Infrastructure.Persistence.Outbox;
@@ -274,6 +276,15 @@ public sealed class WorkerHost(TestDatabase database, FakeClock clock) : IAsyncD
             [$"ConnectionStrings:{PersistenceOptions.ConnectionStringName}"] = database.ConnectionString,
             [$"{JobsOptions.SectionName}:{nameof(JobsOptions.QueuePollSeconds)}"] = OneSecond,
             [$"{JobsOptions.SectionName}:{nameof(JobsOptions.SchedulePollSeconds)}"] = OneSecond,
+
+            // 09.3.1-T1: the Worker graph binds and validates these on start-up, and this harness owns
+            // the configuration (the Worker's appsettings.json must not leak into a test).
+            [$"{RegistrationOptions.SectionName}:{nameof(RegistrationOptions.Mode)}"] =
+                nameof(RegistrationMode.Closed),
+            [$"{BreachedPasswordOptions.SectionName}:{nameof(BreachedPasswordOptions.Mode)}"] =
+                nameof(BreachedPasswordMode.List),
+            [$"{LegalDocumentVersions.SectionName}:{nameof(LegalDocumentVersions.Tos)}"] = "v1",
+            [$"{LegalDocumentVersions.SectionName}:{nameof(LegalDocumentVersions.Privacy)}"] = "v1",
         };
 
         foreach (var queue in Enum.GetValues<JobQueue>())

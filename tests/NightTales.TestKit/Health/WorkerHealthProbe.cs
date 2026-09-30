@@ -12,7 +12,9 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
+using NightTales.Application.Abstractions.Identity;
 using NightTales.Domain.Common;
+using NightTales.Infrastructure.Identity;
 using NightTales.Infrastructure.Jobs;
 using NightTales.Infrastructure.Persistence;
 using NightTales.TestKit.Database;
@@ -71,6 +73,15 @@ public sealed class WorkerHealthProbe : IAsyncDisposable
             new Dictionary<string, string?>(StringComparer.Ordinal)
             {
                 [$"ConnectionStrings:{PersistenceOptions.ConnectionStringName}"] = connectionString,
+
+                // 09.3.1-T1: the Worker graph binds and validates these on start-up and this probe owns
+                // its own configuration, so the values the Worker's appsettings.json carries are set here.
+                [$"{RegistrationOptions.SectionName}:{nameof(RegistrationOptions.Mode)}"] =
+                    nameof(RegistrationMode.Closed),
+                [$"{BreachedPasswordOptions.SectionName}:{nameof(BreachedPasswordOptions.Mode)}"] =
+                    nameof(BreachedPasswordMode.List),
+                [$"{LegalDocumentVersions.SectionName}:{nameof(LegalDocumentVersions.Tos)}"] = "v1",
+                [$"{LegalDocumentVersions.SectionName}:{nameof(LegalDocumentVersions.Privacy)}"] = "v1",
             });
 
         builder.Logging.ClearProviders();

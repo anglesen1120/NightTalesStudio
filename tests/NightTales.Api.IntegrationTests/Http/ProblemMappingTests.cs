@@ -43,6 +43,50 @@ public sealed class ProblemMappingTests
     }
 
     [Fact]
+    public async Task Map_LoneCataloguedValidationCode_KeepsItsOwnCode()
+    {
+        using var exchange = new ProblemExchange();
+
+        // 09.3.1-T1: IdentityPasswordPolicy answers Error.Validation(breached_password); 09 §5.4 wants the
+        // 400 to say breached_password, not the collapsed validation_failed (T3 C2).
+        List<Error> errors =
+        [
+            Error.Validation(ErrorCodes.BreachedPassword, "This password appears in a breached-password list."),
+        ];
+
+        var response = await exchange.ExecuteAsync(ProblemDetailsWriter.ToProblem(errors, exchange.Context));
+
+        exchange.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        response.ShouldNotBeNull();
+        response.Status.ShouldBe(400);
+        response.Code.ShouldBe(ErrorCodes.BreachedPassword);
+        response.Type.ShouldBe("https://nighttales.app/errors/breached_password");
+        response.Errors.ShouldBeNull("a lone coded error is not a field group");
+    }
+
+    [Fact]
+    public async Task Map_ValidationList_MixedCodes_StillCollapse()
+    {
+        using var exchange = new ProblemExchange();
+        List<Error> errors =
+        [
+            Error.Validation(ErrorCodes.BreachedPassword, "This password appears in a breached-password list."),
+            Error.Validation(ErrorCodes.ValidationFailed, "Title is required.", Field("title")),
+        ];
+
+        var response = await exchange.ExecuteAsync(ProblemDetailsWriter.ToProblem(errors, exchange.Context));
+
+        exchange.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        response.ShouldNotBeNull();
+        response.Code.ShouldBe(
+            ErrorCodes.ValidationFailed,
+            "a list of several validation failures has no single client-visible code");
+        response.Errors.ShouldNotBeNull();
+        response.Errors.ShouldContainKey(string.Empty);
+        response.Errors.ShouldContainKey("title");
+    }
+
+    [Fact]
     public async Task Map_CodeDrivesStatus_NotErrorType()
     {
         using var exchange = new ProblemExchange();

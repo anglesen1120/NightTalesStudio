@@ -92,6 +92,16 @@ internal static class SeedPrevious
                     '01920000-0000-7000-8000-000000000004', '01920000-0000-7000-8000-000000000002', 'openai',
                     'story', 100, 0, 200, 0, 0, false, 0.05, now())
             """),
+        (
+            // 09.3.1-T1: the table the `_09_UserConsents` migration creates. Schema N-1 does not have it
+            // yet, so this insert is skipped today and the migration after this one is exercised against a
+            // consent row.
+            "user_consents",
+            """
+            INSERT INTO user_consents (id, user_id, document, version, accepted_at, ip)
+            VALUES ('01920000-0000-7000-8000-000000000008', '01920000-0000-7000-8000-000000000001', 'tos', 'v1',
+                    now(), '203.0.113.7')
+            """),
     ];
 
     /// <summary>The tables the dataset covers, in insert order — the contract a feature migration extends.</summary>

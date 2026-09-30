@@ -2,6 +2,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using NightTales.Api.Security;
 using NightTales.Application.Abstractions;
+using NightTales.Application.Abstractions.Identity;
 using NightTales.Application.Abstractions.Jobs;
 using NightTales.Infrastructure.Jobs;
 using NightTales.Infrastructure.Security;
@@ -45,6 +46,10 @@ public static class ApiServiceCollectionExtensions
         services.AddScoped<HttpCurrentUser>();
         services.AddScoped<ICurrentUser>(provider => provider.GetRequiredService<HttpCurrentUser>());
         services.AddScoped<ISystemContext>(provider => provider.GetRequiredService<HttpCurrentUser>());
+
+        // 09.3.1-T1: the caller's IP/User-Agent for the security writes of the auth handlers. Outside a
+        // request (the Worker never resolves it) both members read null.
+        services.AddScoped<IRequestInfoAccessor, HttpRequestInfoAccessor>();
 
         return services;
     }

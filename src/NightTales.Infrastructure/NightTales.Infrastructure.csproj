@@ -26,4 +26,15 @@
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" PrivateAssets="all" />
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />
   </ItemGroup>
+
+  <!--
+    09.3.1-T1: the bundled breached-password top-list of `Security:BreachedPasswords:Mode = list`.
+    It is embedded (not copied) so it cannot be lost at deployment time, and `TopListPasswordChecker`
+    addresses it by this exact logical name. Replace the file with the provider's real top-list once its
+    terms are confirmed (09.3.1-T2, S); the lookup needs no change.
+  -->
+  <ItemGroup>
+    <EmbeddedResource Include="Identity/Resources/breached-passwords.txt"
+                      LogicalName="NightTales.Infrastructure.Identity.Resources.breached-passwords.txt" />
+  </ItemGroup>
 </Project>

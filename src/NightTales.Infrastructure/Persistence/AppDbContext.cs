@@ -12,6 +12,7 @@ using NightTales.Domain.Series.Autopilot;
 using NightTales.Domain.Stories;
 using NightTales.Domain.Usage;
 using NightTales.Infrastructure.Persistence.Conventions;
+using NightTales.Infrastructure.Persistence.Entities;
 using NightTales.Infrastructure.Persistence.Idempotency;
 using NightTales.Infrastructure.Persistence.Outbox;
 
@@ -65,6 +66,9 @@ public sealed class AppDbContext : IdentityDbContext<AppUser, AppRole, Guid>, IA
 
     /// <summary>Infrastructure-only: the idempotency rows the behaviour of 09.1.3-T2 writes.</summary>
     public DbSet<IdempotencyKey> IdempotencyKeys => Set<IdempotencyKey>();
+
+    /// <summary>The accepted legal-document versions of 09.3.1-T1 (13 FR-13-2).</summary>
+    public DbSet<UserConsent> UserConsents => Set<UserConsent>();
 
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
     {

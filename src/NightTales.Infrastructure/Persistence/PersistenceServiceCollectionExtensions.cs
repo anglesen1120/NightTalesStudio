@@ -9,6 +9,7 @@ using NightTales.Application.Abstractions.Idempotency;
 using NightTales.Application.Abstractions.Outbox;
 using NightTales.Application.Abstractions.Persistence;
 using NightTales.Domain.Common;
+using NightTales.Infrastructure.DependencyInjection;
 using NightTales.Infrastructure.Persistence.Idempotency;
 using NightTales.Infrastructure.Persistence.Outbox;
 using NightTales.Infrastructure.Persistence.Queries;
@@ -133,6 +134,11 @@ public static class PersistenceServiceCollectionExtensions
         // 09.2.3-T1: the only cross-user read outside Features/Admin (09 README D10); both hosts get
         // it from here, because the sweeps that need it run in the Worker.
         services.AddScoped<ISystemWorkQuery, SystemWorkQuery>();
+
+        // 09.3.1-T1: Identity (BD2) + the registration, password-policy and consent services. Every
+        // host that reads the write model also authenticates or verifies a caller, so the registration
+        // belongs to the same composition root.
+        services.AddIdentityServices(configuration);
 
         return services;
     }

@@ -118,13 +118,19 @@ public static partial class ProblemDetailsWriter
         // validation error: a non-validation error that the 400 hides must not contribute metadata.
         var metadataSource = driving;
 
+        // A lone validation error whose own code is catalogued as a 400 keeps that code: 09.3.1-T1's
+        // breached_password (09 §5.4) is the client-visible reason, not a shape failure. Several errors,
+        // or one whose code is the generic one, still collapse into validation_failed — a mixed list has
+        // no single client-visible meaning.
+        var ownValidationCode = isValidation && errors.Count == 1 && IsCataloguedBadRequest(driving);
+
         if (isValidation)
         {
             status = StatusCodes.Status400BadRequest;
-            code = ErrorCodes.ValidationFailed;
-            title = ValidationFailedTitle;
-            fieldErrors = GroupByField(errors);
-            metadataSource = FirstValidationError(errors);
+            code = ownValidationCode ? driving.Code : ErrorCodes.ValidationFailed;
+            title = ownValidationCode ? TitleFor(driving, status) : ValidationFailedTitle;
+            fieldErrors = ownValidationCode ? null : GroupByField(errors);
+            metadataSource = ownValidationCode ? driving : FirstValidationError(errors);
             LogSuppressedNonValidationErrors(http, errors);
         }
         else if (ErrorCatalogue.Status.TryGetValue(driving.Code, out var mapped))
@@ -154,7 +160,7 @@ public static partial class ProblemDetailsWriter
             Code = code,
             TraceId = TraceId(http),
             Errors = fieldErrors,
-            Metadata = AllowedMetadata(metadataSource, includeField: !isValidation, http),
+            Metadata = AllowedMetadata(metadataSource, includeField: !isValidation || ownValidationCode, http),
         };
 
         return Results.Json(body, SerializerOptions, contentType: JsonContentType, statusCode: status);
@@ -178,12 +184,39 @@ public static partial class ProblemDetailsWriter
         ArgumentNullException.ThrowIfNull(context);
 
         var problem = context.ProblemDetails;
+
+        // A body the framework could not bind — malformed JSON, a value outside a closed enum — reaches
+        // the exception handler as BadHttpRequestException(400) with no status on the problem yet, so the
+        // 5xx rewrite below would turn a client error into 500 internal_error (09.3.1-T1: register).
+        // The framework's status is honoured on the response as well as in the body.
+        if (context.Exception is BadHttpRequestException badRequest
+            && badRequest.StatusCode is >= StatusCodes.Status400BadRequest and < StatusCodes.Status500InternalServerError)
+        {
+            context.HttpContext.Response.StatusCode = badRequest.StatusCode;
+            problem.Status = badRequest.StatusCode;
+            problem.Title = ValidationFailedTitle;
+            problem.Type = ErrorCatalogue.ProblemType(ErrorCodes.ValidationFailed);
+            problem.Detail = null;
+            problem.Extensions.Remove(ExceptionExtensionKey);
+            problem.Extensions[CodeMemberName] = ErrorCodes.ValidationFailed;
+            return;
+        }
+
         var status = problem.Status ?? context.HttpContext.Response.StatusCode;
         if (status < StatusCodes.Status500InternalServerError
             || problem.Extensions.ContainsKey(CodeMemberName))
         {
-            // A framework 4xx body (binding, routing) or an already-coded problem stays untouched.
+            // A framework 4xx body (routing, a rejected request) or an already-coded problem stays
+            // untouched.
             return;
+        }
+
+        // The client is told nothing about the failure; the server still records what it was, by type
+        // only (09 README D17 forbids logging the exception text).
+        var logger = Logger(context.HttpContext);
+        if (logger is not null && context.Exception is not null)
+        {
+            LogRewrittenException(logger, context.Exception.GetType().Name, TraceId(context.HttpContext));
         }
 
         problem.Status = StatusCodes.Status500InternalServerError;
@@ -235,6 +268,16 @@ public static partial class ProblemDetailsWriter
 
         return errors[0];
     }
+
+    /// <summary>
+    /// Whether an error's own code answers 400 in the catalogue (and is not the generic
+    /// <c>validation_failed</c>): such a code is a client-visible reason of its own, so a lone error
+    /// carrying it is not collapsed (09.3.1-T1's <c>breached_password</c>).
+    /// </summary>
+    private static bool IsCataloguedBadRequest(Error error) =>
+        !string.Equals(error.Code, ErrorCodes.ValidationFailed, StringComparison.Ordinal)
+        && ErrorCatalogue.Status.TryGetValue(error.Code, out var status)
+        && status == StatusCodes.Status400BadRequest;
 
     private static string FieldOf(Error error) =>
         error.Metadata is not null
@@ -430,6 +473,12 @@ public static partial class ProblemDetailsWriter
         Level = LogLevel.Debug,
         Message = "problem_details.metadata_value_dropped key={Key} shape={Shape} traceId={TraceId}: only a bounded scalar (a short string, a finite number or a bool) is copied into the problem body.")]
     private static partial void LogMetadataValueDropped(ILogger logger, string key, string shape, string traceId);
+
+    [LoggerMessage(
+        EventId = 1104,
+        Level = LogLevel.Error,
+        Message = "problem_details.rewritten exception={Exception} traceId={TraceId}: the exception was answered as 500 internal_error; only its type is recorded, never its text.")]
+    private static partial void LogRewrittenException(ILogger logger, string exception, string traceId);
 
     /// <summary>The ProblemDetails body of this host (09 §5.5); metadata is flattened into it.</summary>
     internal sealed record ProblemBody
