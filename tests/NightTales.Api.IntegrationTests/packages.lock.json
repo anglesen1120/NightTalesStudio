@@ -45,17 +45,6 @@
         "resolved": "4.4.0",
         "contentHash": "gwJEfIGS7FhykvtZoscwXj/XwW+mJY6UbAZk+qtLKFUGWC95kfKXnj8VkxsZQnWBxJemM/q664rGLN5nf+OHZw=="
       },
-      "Hangfire.NetCore": {
-        "type": "Transitive",
-        "resolved": "1.8.25",
-        "contentHash": "ZfI7gwr7n70r635VS9aKsWSzOodY6U0bSIG0jDrqd5ODRLKvc+e5aXXGCnWHWzjvagvlwtUcRGG/lD0/3C7chA==",
-        "dependencies": {
-          "Hangfire.Core": "[1.8.25]",
-          "Microsoft.Extensions.DependencyInjection.Abstractions": "3.0.0",
-          "Microsoft.Extensions.Hosting.Abstractions": "3.0.0",
-          "Microsoft.Extensions.Logging.Abstractions": "3.0.0"
-        }
-      },
       "Microsoft.ApplicationInsights": {
         "type": "Transitive",
         "resolved": "2.23.0",
@@ -661,6 +650,7 @@
         "dependencies": {
           "EFCore.NamingConventions": "[10.0.1, )",
           "Hangfire.Core": "[1.8.25, )",
+          "Hangfire.NetCore": "[1.8.25, )",
           "Hangfire.PostgreSql": "[1.21.1, )",
           "Microsoft.AspNetCore.Identity.EntityFrameworkCore": "[10.0.12, )",
           "NightTales.Application": "[1.0.0, )",
@@ -684,6 +674,7 @@
         "type": "Project",
         "dependencies": {
           "Hangfire.AspNetCore": "[1.8.25, )",
+          "Hangfire.NetCore": "[1.8.25, )",
           "NightTales.Application": "[1.0.0, )",
           "NightTales.Infrastructure": "[1.0.0, )",
           "Serilog.AspNetCore": "[10.0.0, )"
@@ -738,6 +729,18 @@
         "contentHash": "BxzXlHwXNrGPHJ7YfAVfeiXC+BHd6uPoyyfV+9bCJVPPGs4z0EQCW1X44Og/IUFM81ENCqAFP1r2rOkQhm4ydA==",
         "dependencies": {
           "Newtonsoft.Json": "11.0.1"
+        }
+      },
+      "Hangfire.NetCore": {
+        "type": "CentralTransitive",
+        "requested": "[1.8.25, )",
+        "resolved": "1.8.25",
+        "contentHash": "ZfI7gwr7n70r635VS9aKsWSzOodY6U0bSIG0jDrqd5ODRLKvc+e5aXXGCnWHWzjvagvlwtUcRGG/lD0/3C7chA==",
+        "dependencies": {
+          "Hangfire.Core": "[1.8.25]",
+          "Microsoft.Extensions.DependencyInjection.Abstractions": "3.0.0",
+          "Microsoft.Extensions.Hosting.Abstractions": "3.0.0",
+          "Microsoft.Extensions.Logging.Abstractions": "3.0.0"
         }
       },
       "Hangfire.PostgreSql": {

@@ -1,0 +1,191 @@
+using Hangfire;
+using Hangfire.Storage;
+using Microsoft.Extensions.DependencyInjection;
+using NightTales.Api.IntegrationTests.Harness;
+using NightTales.Application.Abstractions.Jobs;
+using NightTales.TestKit;
+using NightTales.TestKit.Database;
+using NightTales.TestKit.Threading;
+using Shouldly;
+using Xunit;
+
+namespace NightTales.Api.IntegrationTests.Jobs;
+
+/// <summary>
+/// The recurring-job reconciliation of the Worker start (09.2.6-T1, 09 W3 CR-42): every registration is
+/// upserted, every stored id no registration produces is deleted — with no <c>manual:</c> exemption.
+/// </summary>
+/// <remarks>
+/// The registrar runs inside <see cref="WorkerHost.StartAsync"/>, so an assertion after the start is
+/// deterministic: no wait, no sleep. These tests start real servers, so they share the
+/// <c>Hangfire server</c> collection with the other server-owning classes.
+/// </remarks>
+[Collection("Hangfire server")]
+public sealed class RecurringJobRegistrarTests(TestDatabase database) : IntegrationTest(database)
+{
+    private const string Cron = "0 3 * * *";
+
+    [Fact]
+    public async Task RecurringRegistrar_IsIdempotent()
+    {
+        var registration = new StubRegistration("probe:recurring", Cron);
+
+        await using (var first = ProbeHost.New(Database, new ProbeJobEffects()).WithHangfireServer().WithRecurringJobRegistration(registration))
+        {
+            await first.StartAsync(TestContextToken.Value);
+
+            (await RecurringIdsAsync(first)).ShouldBe(["probe:recurring"]);
+        }
+
+        await using (var second = ProbeHost.New(Database, new ProbeJobEffects()).WithHangfireServer().WithRecurringJobRegistration(registration))
+        {
+            await second.StartAsync(TestContextToken.Value);
+
+            (await RecurringIdsAsync(second)).ShouldBe(["probe:recurring"]);
+        }
+    }
+
+    [Fact]
+    public async Task RecurringRegistrar_RemovesStaleIds()
+    {
+        await using (var first = ProbeHost.New(Database, new ProbeJobEffects())
+            .WithHangfireServer()
+            .WithRecurringJobRegistration(new StubRegistration("probe:keep", Cron))
+            .WithRecurringJobRegistration(new StubRegistration("probe:drop", Cron)))
+        {
+            await first.StartAsync(TestContextToken.Value);
+
+            (await RecurringIdsAsync(first)).ShouldBe(["probe:drop", "probe:keep"], ignoreOrder: true);
+        }
+
+        await using (var second = ProbeHost.New(Database, new ProbeJobEffects())
+            .WithHangfireServer()
+            .WithRecurringJobRegistration(new StubRegistration("probe:keep", Cron)))
+        {
+            await second.StartAsync(TestContextToken.Value);
+
+            (await RecurringIdsAsync(second)).ShouldBe(["probe:keep"]);
+        }
+    }
+
+    [Fact]
+    public async Task RecurringRegistrar_RemovesUnregisteredId_OnNextStart()
+    {
+        // `manual:` was the carve-out 09 W3 CR-42 dropped: an id no registration produces is deleted.
+        await using (var first = ProbeHost.New(Database, new ProbeJobEffects())
+            .WithHangfireServer()
+            .WithRecurringJobRegistration(new StubRegistration("manual:legacy", Cron)))
+        {
+            await first.StartAsync(TestContextToken.Value);
+
+            (await RecurringIdsAsync(first)).ShouldBe(["manual:legacy"]);
+        }
+
+        await using (var second = ProbeHost.New(Database, new ProbeJobEffects()).WithHangfireServer())
+        {
+            await second.StartAsync(TestContextToken.Value);
+
+            (await RecurringIdsAsync(second)).ShouldBeEmpty();
+        }
+    }
+
+    [Fact]
+    public async Task RecurringRegistrar_ThrowsOnDuplicateId()
+    {
+        await using var host = ProbeHost.New(Database, new ProbeJobEffects())
+            .WithHangfireServer()
+            .WithRecurringJobRegistration(new StubRegistration("probe:duplicate", Cron))
+            .WithRecurringJobRegistration(new StubRegistration("probe:duplicate", Cron));
+
+        var exception = await Should.ThrowAsync<InvalidOperationException>(() => host.StartAsync(TestContextToken.Value));
+
+        exception.Message.ShouldContain("probe:duplicate");
+    }
+
+    [Fact]
+    public async Task RecurringRegistrar_RegistersCronAsUtc()
+    {
+        // D12: recurring crons are UTC. A regression to local time would fire jobs on the server's
+        // wall-clock zone instead of the agreed schedule.
+        await using var host = ProbeHost.New(Database, new ProbeJobEffects())
+            .WithHangfireServer()
+            .WithRecurringJobRegistration(new StubRegistration("probe:utc", Cron));
+        await host.StartAsync(TestContextToken.Value);
+
+        using var connection = host.Services.GetRequiredService<JobStorage>().GetConnection();
+        var job = connection.GetRecurringJobs().Single(stored => stored.Id == "probe:utc");
+
+        job.TimeZoneId.ShouldBe(TimeZoneInfo.Utc.Id);
+    }
+
+    [Fact]
+    public async Task RecurringRegistrar_RegistersEveryScannedRegistration()
+    {
+        // The probe assembly declares two top-level IRecurringJobRegistration types, and each host below
+        // scans it: every scanned implementation has to reach the registrar, or the sweep deletes the
+        // stored id of the ones the container dropped (CR 09.2.6-T1).
+        await using var host = ProbeHost.New(Database, new ProbeJobEffects()).WithHangfireServer();
+
+        await host.StartAsync(TestContextToken.Value);
+
+        (await StoredRecurringIdsAsync(host)).ShouldBe(
+            ["probe:scanned-first", "probe:scanned-second"], ignoreOrder: true);
+    }
+
+    [Fact]
+    public async Task RecurringRegistrar_ContinuesAfterAFailingRegistration()
+    {
+        // One registration whose upsert throws must neither suppress the other registrations nor the
+        // stale sweep (QA 09.2.6-T1): host 1 leaves `probe:stale` behind, host 2 fails on
+        // `probe:broken` and still upserts `probe:valid` and deletes `probe:stale`.
+        await using (var first = ProbeHost.New(Database, new ProbeJobEffects())
+            .WithHangfireServer()
+            .WithRecurringJobRegistration(new StubRegistration("probe:stale", Cron)))
+        {
+            await first.StartAsync(TestContextToken.Value);
+        }
+
+        await using var second = ProbeHost.New(Database, new ProbeJobEffects())
+            .WithHangfireServer()
+            .WithRecurringJobRegistration(new ThrowingRegistration("probe:broken"))
+            .WithRecurringJobRegistration(new StubRegistration("probe:valid", Cron));
+
+        await second.StartAsync(TestContextToken.Value);
+
+        (await StoredRecurringIdsAsync(second)).ShouldBe(
+            ["probe:scanned-first", "probe:scanned-second", "probe:valid"],
+            ignoreOrder: true);
+    }
+
+    /// <summary>Reads the host's stored recurring ids, the way the registrar's own sweep does.</summary>
+    private static async Task<IReadOnlyList<string>> StoredRecurringIdsAsync(WorkerHost host)
+    {
+        using var connection = host.Services.GetRequiredService<JobStorage>().GetConnection();
+
+        return [.. connection.GetRecurringJobs().Select(job => job.Id).OrderBy(id => id, StringComparer.Ordinal)];
+    }
+
+    /// <summary>
+    /// The stored ids the older tests below assert on: every host of this class also scans the probe
+    /// assembly's own registrations (<see cref="ScannedProbeRegistrations"/>), which are not part of
+    /// what those tests register, so they are filtered out here.
+    /// </summary>
+    private static async Task<IReadOnlyList<string>> RecurringIdsAsync(WorkerHost host) =>
+        [.. (await StoredRecurringIdsAsync(host)).Where(id => !ScannedProbeRegistrations.Ids.Contains(id))];
+
+    private sealed class StubRegistration(string id, string cron) : IRecurringJobRegistration
+    {
+        public string Id => id;
+
+        public void Register(IJobScheduler scheduler) =>
+            scheduler.AddOrUpdateRecurring<RecordingProbeJob>(id, cron, (job, ct) => job.RunAsync(Guid.Empty, ct));
+    }
+
+    private sealed class ThrowingRegistration(string id) : IRecurringJobRegistration
+    {
+        public string Id => id;
+
+        public void Register(IJobScheduler scheduler) =>
+            throw new InvalidOperationException("probe registration failure (09.2.6-T1)");
+    }
+}
