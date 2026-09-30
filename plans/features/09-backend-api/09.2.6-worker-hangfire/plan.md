@@ -3,7 +3,7 @@
 > Refines: `../../../09-backend-api.md` §4 (epic 09.2, story **09.2.6**, L104–109), §2 T8, §5.3, §8 (Hangfire licence risk).
 > Contract: `../README.md` — **N5**, **N6**, **N14**, **F09**, **D1**, **D10**, **D12**, **D13**, **O1**; CR-11.
 > Template: `../../../00-overview.md` §10.1. Legend: ✅ · ⚠️ · [DECISION] · [OPEN] · [INFERENCE].
-> Status: detailed plan, 2026-09-24. Nothing implemented yet.
+> Status: 09.2.6-T1 **implemented 2026-09-30** (PR #46); T2 waits for 09.10.4-T1 + 09.3.6-T1; T3 waits for 09.2.4-T1.
 
 ## 1. Scope
 
