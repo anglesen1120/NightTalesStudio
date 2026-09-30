@@ -27,7 +27,7 @@ Per-task evidence for `done` rows: `docs/status-archive.md` §Per-plan evidence 
 | 03 Images (M0 slice) | 3 (03.1.1-T1, 03.4.1-T1, 03.3.2-T1) | 03.1.2-T1, 03.2.x, 03.4.2/03.4.3 (M1) |
 | 04 Voice proxy (12 tasks) | 10 | 04.2.2-T2, 04.2.3-T1 |
 | 05 Video/subtitles | 9 | 05.2.1-T1, 05.5.2 |
-| 09 Backend | 14 tasks merged (wave 5: 09.1.3-T2 #54, 09.2.5-T1 #55) | 09.2.4-T1 outbox next |
+| 09 Backend | 14 tasks merged (wave 5: 09.1.3-T2 #54, 09.2.5-T1 #55); 09.2.4-T1 outbox implemented (PR open) | 09.4.1-T1 series next |
 | 11 Worker deployment | 11.2.1-T1 (proposal only; sign-off deferred to phase 2, owner 2026-09-30) | phase 1: 11.1.x, 11.3.3, 11.3.5; the rest is phase 2 (11 CR-18) |
 | 13 Compliance | 13.1.1-T1, 13.1.2-T1 (PR #35) | 13.2.1-T1 → 13.2.2-T1, 10.3.1-T1 pages; 13.1.1-T2 / 13.1.2-T2 lawyer rows (O1) |
 
