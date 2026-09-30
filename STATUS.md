@@ -44,8 +44,9 @@ Plans 06, 07, 08, 10, 12: not started. Order: `plans/features/README.md`.
 | 04.2.2-T2 Catalog rules + seeder (C#) | todo | Needs 09.2.2-T1 (merged) and 09.2.5-T1 |
 | 04.2.3-T1 Preview generation + upload | partial | M0 generation, owner listening and T19 option A done (PR #26); local SeaweedFS upload rehearsal passed; M1 upload waits for 11.4.1-T2 → 11.4.1-T1. SEC-0423T19-1 (info) open. A 2nd vi rater + an en rater → catalog revision 2 (04 T18) |
 | 05.2.1-T1 Subtitle fidelity + sync evaluation | partial (machine leg) | L1/L2 rows + owner labels blocked on 05.5.2-T1 (05 T84); `RenderQuality:*` values await calibration |
-| 05.5.2 | todo | Needs 04.2.2-T1 raters and 03.3.2-T1 (done). Portrait renders use 9:16 option A (05 O9, 03 CR-16) with the hinted prompt; judge the cropped frames of the first portrait render (`trial/images/REPORT.md` §Crop probe) |
+| 05.5.2 | todo — prep on branch `feature/05.5.2-m0-trial` (3 commits, not on `develop`) | Branch: `apply_quality_policy.py` (D10 mirror) + `mpt_client` spec-path containment, gates passed; L1 vi / L2 en renders blocked on the D11 memory gate (swap). Needs 04.2.2-T1 raters and 03.3.2-T1 (done). Portrait renders use 9:16 option A (05 O9, 03 CR-16) with the hinted prompt; judge the cropped frames of the first portrait render (`trial/images/REPORT.md` §Crop probe) |
 | 13.2.1-T1 Legal versions + acceptance | todo | Versions config + `GET /me/legal` + `POST /me/legal/accept` + gate + owner dialog; then 13.2.2-T1 `tools/ci/check-legal-versions.py` and 10.3.1-T1 pages / `legal-to-json.mjs` |
+| 13.1.1-T2 / 13.1.2-T2 Legal review rows | todo (O1) | The ⚠️ rows (children/transfers/retention; credit expiry and refunds; OpenAI output terms; governing law; liability) close with a lawyer; OI-1 (operator legal name + contact) before any user other than the operator |
 
 ## Deferred security gates
 
@@ -62,6 +63,8 @@ Closed findings and their full context: `docs/status-archive.md` §Findings duri
 - **02 D4 `standard` length band** — the measured M0 lengths sat below the old D4 band (en median 732, vi median 749 units); 02 T103 replaced the rates per language. [INFERENCE] the band question may be closed by T103; confirm before the 02 M1 length work (history: archive §Resume-here history, Next action 7).
 - **02 D4 `long` vi headroom (T103)** — `[OPEN]`: estimated output ≈ 10.1K tokens sits at the 10,000 writer/revision cap; decide whether to raise those caps or accept occasional truncation before the long-tier work (02 README:192).
 - **Ownership proof (01 DEC-8 / CR-14, 05 O8)** — `[OPEN]`: signing key type/rotation, manifest storage and dispute export for the signed per-render manifest, decided at 05 detailing; plan 06 appends the platform video id.
+- **05-M0 music gate** — `check-music.sh` gate row stays `[OPEN]`: the catalog is legally empty (`tracks: []`), so the gate passes vacuously until the owner curates 20–30 tracks.
+- **Relay behaviour (02.1.3 open items, DEC-9)** — latency bimodal (17–58 s vs 102–216 s) with 502s at 154–181 s; abandoned calls are billed; the relay rewrites `safety_identifier`/`prompt_cache_key`, drops `max_output_tokens` and injects ~21 k chars of its own instructions (billed input ≈ 2.5× our prompt). Relevant to 05.5.2 and M1 budgets (full note: archive §Per-plan evidence tables, Plan 01 leftovers).
 
 ## Session log
 
