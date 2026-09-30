@@ -4,9 +4,12 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using NightTales.Application.Abstractions;
+using NightTales.Application.Abstractions.Idempotency;
 using NightTales.Application.Abstractions.Persistence;
 using NightTales.Domain.Common;
+using NightTales.Infrastructure.Persistence.Idempotency;
 using NightTales.Infrastructure.Persistence.Queries;
+using NightTales.Infrastructure.Persistence.UnitOfWork;
 using NightTales.Infrastructure.Time;
 
 namespace NightTales.Infrastructure.Persistence;
@@ -85,6 +88,13 @@ public static class PersistenceServiceCollectionExtensions
 
         services.AddScoped<IAppDbContext>(provider => provider.GetRequiredService<AppDbContext>());
         services.AddScoped<IReadDb>(provider => provider.GetRequiredService<ReadDbContext>());
+
+        // 09.1.3-T2: the command transaction of D5 and the in-transaction idempotency protocol of D6.
+        // Scoped, exactly like the context they wrap: the transaction joins this scope's connection and
+        // the store reads the open transaction from it, so a claim commits with its command's effects.
+        services.AddScoped<IUnitOfWork, EfUnitOfWork>();
+        services.AddScoped<IIdempotencyStore, IdempotencyStore>();
+        services.AddScoped<IIdempotencyCleanupStore, IdempotencyCleanupStore>();
 
         // 09.2.3-T1: the only cross-user read outside Features/Admin (09 README D10); both hosts get
         // it from here, because the sweeps that need it run in the Worker.

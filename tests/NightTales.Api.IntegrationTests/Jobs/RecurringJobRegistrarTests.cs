@@ -6,6 +6,7 @@ using NightTales.Application.Abstractions.Jobs;
 using NightTales.TestKit;
 using NightTales.TestKit.Database;
 using NightTales.TestKit.Threading;
+using NightTales.Worker.Jobs;
 using Shouldly;
 using Xunit;
 
@@ -121,15 +122,17 @@ public sealed class RecurringJobRegistrarTests(TestDatabase database) : Integrat
     [Fact]
     public async Task RecurringRegistrar_RegistersEveryScannedRegistration()
     {
-        // The probe assembly declares two top-level IRecurringJobRegistration types, and each host below
-        // scans it: every scanned implementation has to reach the registrar, or the sweep deletes the
-        // stored id of the ones the container dropped (CR 09.2.6-T1).
+        // The probe assembly declares two top-level IRecurringJobRegistration types and the Application
+        // assembly declares the platform's own one (IdempotencyKeyCleanupJobRegistration, 09.1.3-T2),
+        // and each host below scans both: every scanned implementation has to reach the registrar, or the
+        // sweep deletes the stored id of the ones the container dropped (CR 09.2.6-T1).
         await using var host = ProbeHost.New(Database, new ProbeJobEffects()).WithHangfireServer();
 
         await host.StartAsync(TestContextToken.Value);
 
         (await StoredRecurringIdsAsync(host)).ShouldBe(
-            ["probe:scanned-first", "probe:scanned-second"], ignoreOrder: true);
+            ["probe:scanned-first", "probe:scanned-second", IdempotencyKeyCleanupJobRegistration.RecurringId],
+            ignoreOrder: true);
     }
 
     [Fact]
@@ -153,7 +156,7 @@ public sealed class RecurringJobRegistrarTests(TestDatabase database) : Integrat
         await second.StartAsync(TestContextToken.Value);
 
         (await StoredRecurringIdsAsync(second)).ShouldBe(
-            ["probe:scanned-first", "probe:scanned-second", "probe:valid"],
+            ["probe:scanned-first", "probe:scanned-second", "probe:valid", IdempotencyKeyCleanupJobRegistration.RecurringId],
             ignoreOrder: true);
     }
 
@@ -167,11 +170,15 @@ public sealed class RecurringJobRegistrarTests(TestDatabase database) : Integrat
 
     /// <summary>
     /// The stored ids the older tests below assert on: every host of this class also scans the probe
-    /// assembly's own registrations (<see cref="ScannedProbeRegistrations"/>), which are not part of
-    /// what those tests register, so they are filtered out here.
+    /// assembly's own registrations (<see cref="ScannedProbeRegistrations"/>) and the Application
+    /// assembly's platform registration (<see cref="IdempotencyKeyCleanupJobRegistration"/>), neither of
+    /// which is part of what those tests register, so they are filtered out here.
     /// </summary>
     private static async Task<IReadOnlyList<string>> RecurringIdsAsync(WorkerHost host) =>
-        [.. (await StoredRecurringIdsAsync(host)).Where(id => !ScannedProbeRegistrations.Ids.Contains(id))];
+        [.. (await StoredRecurringIdsAsync(host)).Where(id => !HostOwnedIds.Contains(id))];
+
+    private static readonly string[] HostOwnedIds =
+        [.. ScannedProbeRegistrations.Ids, IdempotencyKeyCleanupJobRegistration.RecurringId];
 
     private sealed class StubRegistration(string id, string cron) : IRecurringJobRegistration
     {
