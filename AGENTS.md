@@ -106,12 +106,5 @@ Planned (09 README N10/N11, D2):
 - Flaky tests are quarantined with `[Trait("Category","Quarantine")]`. Never retry until green.
 - Definition of Done (`WORKFLOW.md` §8.1): CI green, unit tests for domain rules and use cases, one integration test per endpoint, strings in vi + en, logs and metrics for new jobs, OpenAPI updated.
 - A feature starts only after its detailed plan passes Definition of Ready and the owner signs it off.
-- **QA agent after every implementation (owner rule, 2026-09-25):** when code is implemented, a **separate QA/test agent** that did not write it must:
-  - re-read the plan, the feature `plan.md` and the task files, including Acceptance checks and README amendments;
-  - run every runnable acceptance check on the real system;
-  - add negative, boundary and exploratory tests;
-  - verify `STATUS.md` against what it observes;
-  - report a pass/fail matrix and a defects list.
-
-  Defects are fixed and re-verified before the commit or PR. Every implementation todo list includes this step explicitly, after the implementation items and before review, commit and PR. The reviewer pass (code reading) is additional; it does not replace the QA pass. For **every task**, QA runs first, then a code review, a performance review and a security review (owner rules 2026-09-25/26); all four finish, with fixes re-tested, before any `git push`.
+- **QA and review gates:** a separate QA agent runs first, then reviews tiered by risk (T0–T3). The rule has one home: `~/.omp/agent/RULES.md` ("Mandatory QA test pass" and "Per-task gates, tiered by risk"); the project contract is `plans/00-overview.md` §10 Definition of Done. Do not copy the rule here.
 - **Design first (owner rule, 2026-09-25):** every web/UI task or feature has an approved UI design before implementation starts — wireframes + hi-fi mockups (states loading/empty/error/success, breakpoints 360/768/1280, vi + en text, dark/light, focus order and a11y notes, built from the 10 D11 design-system tokens/components), linked from the feature `plan.md` §6 UI and approved by the owner. Each UI feature folder carries a design task `<story>-T0 — UI design` (Area `UX`) that every implementation task in the folder depends on. (`plans/00-overview.md` §10, `WORKFLOW.md` §8.1)
