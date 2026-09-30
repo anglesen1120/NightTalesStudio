@@ -1,9 +1,12 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using NightTales.Application.Abstractions;
 using NightTales.Application.Abstractions.Persistence;
+using NightTales.Domain.Common;
+using NightTales.Infrastructure.Time;
 
 namespace NightTales.Infrastructure.Persistence;
 
@@ -55,13 +58,20 @@ public static class PersistenceServiceCollectionExtensions
         // Temporary: 09.2.3-T1 replaces this with HttpCurrentUser (Api) and ScopedCurrentUser (Worker).
         services.AddScoped<ICurrentUser, AnonymousCurrentUser>();
 
+        // The audit interceptor stamps every ICreatedAt/IAuditable row from this clock (09 W3 CR-38).
+        // TryAdd, so a host may replace the clock (the tests do, with FakeClock).
+        services.TryAddSingleton<IClock, SystemClock>();
+
         services.AddDbContext<AppDbContext>((provider, options) => options
             .UseNpgsql(
                 connectionString,
                 npgsql => npgsql
                     .CommandTimeout(OptionsOf(provider).CommandTimeoutSeconds)
                     .MigrationsAssembly(MigrationsAssemblyName))
-            .UseSnakeCaseNamingConvention());
+            .UseSnakeCaseNamingConvention()
+            // Order matters (09 README D8, 09 W3 CR-38): the auditable interceptor runs first and
+            // OutboxSaveChangesInterceptor (09.2.4-T1) is added after it, inside the same SaveChanges.
+            .AddInterceptors(new AuditableSaveChangesInterceptor(provider.GetRequiredService<IClock>())));
 
         services.AddDbContext<ReadDbContext>((provider, options) => options
             .UseNpgsql(

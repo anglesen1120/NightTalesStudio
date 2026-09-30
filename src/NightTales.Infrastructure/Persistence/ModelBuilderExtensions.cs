@@ -1,5 +1,7 @@
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using NightTales.Domain.Common;
+using NightTales.Infrastructure.Persistence.Conventions;
 
 namespace NightTales.Infrastructure.Persistence;
 
@@ -37,15 +39,26 @@ public static class ModelBuilderExtensions
         {
             b.HasKey(u => u.Id);
             b.HasIndex(u => u.NormalizedUserName).HasDatabaseName("user_name_index").IsUnique();
-            // Not unique yet: F12/D9's unique index lands as ux_users_normalized_email in 09.2.2-T1
-            // (do not rename this index there; replace it).
-            b.HasIndex(u => u.NormalizedEmail).HasDatabaseName("email_index");
+            // 09 W3 CR-41: the unique ux_users_normalized_email *replaces* Identity's non-unique
+            // email_index (F12/D9) — never a second index beside it.
+            b.HasIndex(u => u.NormalizedEmail).HasDatabaseName("ux_users_normalized_email").IsUnique();
             b.ToTable("users");
             b.Property(u => u.ConcurrencyStamp).IsConcurrencyToken();
             b.Property(u => u.UserName).HasMaxLength(256);
             b.Property(u => u.NormalizedUserName).HasMaxLength(256);
             b.Property(u => u.Email).HasMaxLength(256);
             b.Property(u => u.NormalizedEmail).HasMaxLength(256);
+
+            // The extra users columns of 09.2.2 plan §3 (owned by 09.2.2-T1).
+            b.Property(u => u.DisplayName).HasMaxLength(AppUser.DisplayNameMaxLength).IsRequired();
+            b.Property(u => u.UiLocale).HasEnumCheck().HasDefaultValue(UiLocale.Vi);
+            b.Property(u => u.Role).HasEnumCheck().HasDefaultValue(PlatformRole.User);
+            b.Property(u => u.Status).HasEnumCheck();
+            b.Property(u => u.EmailVerifiedAt);
+            b.Property(u => u.OwnerDisputeFreezeUntil);
+            b.Property(u => u.LastLoginAt);
+            b.Property(u => u.LastTotpStep);
+            // created_at / updated_at: AppUser : IAuditable, mapped by AuditTimestampConvention.
 
             b.HasMany<IdentityUserClaim<Guid>>().WithOne().HasForeignKey(uc => uc.UserId).IsRequired();
             b.HasMany<IdentityUserLogin<Guid>>().WithOne().HasForeignKey(ul => ul.UserId).IsRequired();

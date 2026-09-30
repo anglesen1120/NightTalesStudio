@@ -46,6 +46,12 @@ public sealed class EnumCheckConvention : IModelFinalizingConvention
                     $"ck_{table}_{column}",
                     $"\"{column}\" IN ({allowed})",
                     fromDataAnnotation: false);
+
+                // The instruction is consumed, so it never reaches the model snapshot: EF writes a
+                // `Type`-valued annotation as an unqualified `typeof(...)`, which does not compile in a
+                // generated migration (09.2.2-T1 found this while generating `InitialCore`). The CHECK
+                // constraint itself round-trips through the snapshot, so nothing is lost.
+                property.RemoveAnnotation(EnumCheckAnnotationNames.EnumCheck);
             }
         }
     }
