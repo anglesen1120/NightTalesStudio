@@ -25,7 +25,7 @@ public sealed class SeedTests(TestDatabase database) : IntegrationTest(database)
     [Fact]
     public async Task Seed_FreshDatabase_InsertsCatalogAndFlagsOff()
     {
-        await ResetAsync();
+        await ResetAsync(TestContext.Current.CancellationToken);
 
         var reports = await RunAsync();
 
@@ -33,30 +33,30 @@ public sealed class SeedTests(TestDatabase database) : IntegrationTest(database)
         reports.Single(report => report.Seeder == "style_templates").ShouldBe(new SeedReport("style_templates", 7, 0, 0));
         reports.Single(report => report.Seeder == "feature_flags").ShouldBe(new SeedReport("feature_flags", 3, 0, 0));
 
-        (await CountAsync(Voices)).ShouldBe(4);
-        (await CountAsync(StyleTemplates)).ShouldBe(7);
-        (await CountAsync(FeatureFlags)).ShouldBe(3);
-        (await CountAsync(FeatureFlags, "enabled")).ShouldBe(0);
+        (await CountAsync(Voices, null, TestContext.Current.CancellationToken)).ShouldBe(4);
+        (await CountAsync(StyleTemplates, null, TestContext.Current.CancellationToken)).ShouldBe(7);
+        (await CountAsync(FeatureFlags, null, TestContext.Current.CancellationToken)).ShouldBe(3);
+        (await CountAsync(FeatureFlags, "enabled", TestContext.Current.CancellationToken)).ShouldBe(0);
     }
 
     [Fact]
     public async Task Seed_RunTwice_ProducesIdenticalRows()
     {
-        await ResetAsync();
+        await ResetAsync(TestContext.Current.CancellationToken);
 
         await RunAsync();
-        var before = await SnapshotsAsync();
+        var before = await SnapshotsAsync(TestContext.Current.CancellationToken);
 
         var second = await RunAsync();
 
         second.ShouldAllBe(report => report.Inserted == 0);
-        string.Join('|', await SnapshotsAsync()).ShouldBe(string.Join('|', before));
+        string.Join('|', await SnapshotsAsync(TestContext.Current.CancellationToken)).ShouldBe(string.Join('|', before));
     }
 
     [Fact]
     public async Task Seed_ExistingFlagEnabled_IsNotOverwritten()
     {
-        await ResetAsync();
+        await ResetAsync(TestContext.Current.CancellationToken);
 
         await RunAsync();
         await Database.ExecuteAsync("UPDATE feature_flags SET enabled = true WHERE key = 'youtube_publish'", TestContext.Current.CancellationToken);
@@ -70,7 +70,7 @@ public sealed class SeedTests(TestDatabase database) : IntegrationTest(database)
     [Fact]
     public async Task Seed_RowNotInFile_IsNotDeleted()
     {
-        await ResetAsync();
+        await ResetAsync(TestContext.Current.CancellationToken);
 
         await RunAsync();
         await Database.ExecuteAsync(
@@ -80,7 +80,7 @@ public sealed class SeedTests(TestDatabase database) : IntegrationTest(database)
 
         await RunAsync();
 
-        (await CountAsync(Voices)).ShouldBe(5);
+        (await CountAsync(Voices, null, TestContext.Current.CancellationToken)).ShouldBe(5);
         (await Database.QueryStringsAsync("SELECT id FROM voices WHERE id = 'operator-voice'", TestContext.Current.CancellationToken)).Single()
             .ShouldBe("operator-voice");
     }
@@ -93,25 +93,25 @@ public sealed class SeedTests(TestDatabase database) : IntegrationTest(database)
         return await runner.RunAsync(TestContext.Current.CancellationToken);
     }
 
-    private async Task ResetAsync() => await Database.ExecuteAsync(
-        $"DELETE FROM {Voices}; DELETE FROM {StyleTemplates}; DELETE FROM {FeatureFlags}");
+    private async Task ResetAsync(CancellationToken ct) => await Database.ExecuteAsync(
+        $"DELETE FROM {Voices}; DELETE FROM {StyleTemplates}; DELETE FROM {FeatureFlags}", ct);
 
-    private async Task<int> CountAsync(string table, string? where = null)
+    private async Task<int> CountAsync(string table, string? where, CancellationToken ct)
     {
         var sql = $"SELECT count(*)::text FROM {table}" + (where is null ? string.Empty : $" WHERE {where}");
-        var rows = await Database.QueryStringsAsync(sql);
+        var rows = await Database.QueryStringsAsync(sql, ct);
 
         return int.Parse(rows.Single(), CultureInfo.InvariantCulture);
     }
 
     /// <summary>One content hash per catalog table, so two runs can be compared without reading every row.</summary>
-    private async Task<IReadOnlyList<string>> SnapshotsAsync()
+    private async Task<IReadOnlyList<string>> SnapshotsAsync(CancellationToken ct)
     {
         var snapshots = new List<string>();
         foreach (var table in CatalogTables)
         {
             var rows = await Database.QueryStringsAsync(
-                $"SELECT md5(coalesce(string_agg(to_jsonb(t)::text, '|' ORDER BY to_jsonb(t)::text), '')) FROM {table} t");
+                $"SELECT md5(coalesce(string_agg(to_jsonb(t)::text, '|' ORDER BY to_jsonb(t)::text), '')) FROM {table} t", ct);
             snapshots.Add(rows.Single());
         }
 
