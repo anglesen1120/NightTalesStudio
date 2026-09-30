@@ -49,4 +49,19 @@ public sealed class StyleTemplate : Entity, ICreatedAt
             Active = active,
         };
     }
+
+    /// <summary>
+    /// Rewrites the catalog-owned columns of an existing row (09.2.5 plan §3.2); the 09.2.5-T1 seeder
+    /// upserts by <see cref="Name"/>. The <c>{term}</c> placeholder is validated by the CHECK constraint
+    /// of the table and by the seeder before any write.
+    /// </summary>
+    public void UpdateFromCatalog(string template, Topic? topicHint, string? previewStorageKey, bool active)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(template);
+
+        Template = template;
+        TopicHint = topicHint;
+        PreviewStorageKey = previewStorageKey;
+        Active = active;
+    }
 }

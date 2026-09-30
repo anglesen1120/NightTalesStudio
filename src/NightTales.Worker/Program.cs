@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Net;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
+using NightTales.Infrastructure.Persistence.Seeding;
 using NightTales.Worker;
 using NightTales.Worker.DependencyInjection;
 using NightTales.Worker.Health;
@@ -28,6 +29,15 @@ var healthPort = builder.Configuration.GetValue(
 builder.WebHost.ConfigureKestrel(options => options.Listen(IPAddress.Loopback, healthPort));
 
 var app = builder.Build();
+
+// 09.2.5-T1: the same `nts-seed` command as the Api (plan §7), so the Worker image needs no extra
+// project to seed. It exits before the Kestrel listener or the Hangfire server start.
+if (args.Contains("--seed", StringComparer.Ordinal))
+{
+    Environment.ExitCode = SeedCommand.Run(app.Services);
+
+    return;
+}
 
 app.MapWorkerHealth();
 

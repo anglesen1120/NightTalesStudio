@@ -2,6 +2,7 @@ using NightTales.Api;
 using NightTales.Api.DependencyInjection;
 using NightTales.Api.Http;
 using NightTales.Infrastructure.Persistence;
+using NightTales.Infrastructure.Persistence.Seeding;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -21,6 +22,16 @@ builder.Services.AddProblemDetails(ProblemDetailsWriter.ConfigureProblemDetails)
 builder.Services.AddApiJobScheduler();
 
 var app = builder.Build();
+
+// 09.2.5-T1: the explicit `nts-seed` command (plan §7). It runs the seeders of the same graph in one
+// scope and exits without starting the web server; `Seed:ContinueOnError` stays false, so a failure is
+// a non-zero exit. The Development auto-seed is the hosted service AddPersistence registered.
+if (args.Contains("--seed", StringComparer.Ordinal))
+{
+    Environment.ExitCode = SeedCommand.Run(app.Services);
+
+    return;
+}
 
 app.UseExceptionHandler();
 

@@ -7,6 +7,7 @@ using NightTales.Application.Abstractions;
 using NightTales.Application.Abstractions.Persistence;
 using NightTales.Domain.Common;
 using NightTales.Infrastructure.Persistence.Queries;
+using NightTales.Infrastructure.Persistence.Seeding;
 using NightTales.Infrastructure.Time;
 
 namespace NightTales.Infrastructure.Persistence;
@@ -86,9 +87,40 @@ public static class PersistenceServiceCollectionExtensions
         services.AddScoped<IAppDbContext>(provider => provider.GetRequiredService<AppDbContext>());
         services.AddScoped<IReadDb>(provider => provider.GetRequiredService<ReadDbContext>());
 
+        // 09.2.5-T1: the catalog seeders and the Development auto-seed are part of the persistence
+        // layer, so every host that calls AddPersistence (Api, Worker, the test harness) gets them.
+        services.AddSeeding();
+
         // 09.2.3-T1: the only cross-user read outside Features/Admin (09 README D10); both hosts get
         // it from here, because the sweeps that need it run in the Worker.
         services.AddScoped<ISystemWorkQuery, SystemWorkQuery>();
+
+        return services;
+    }
+
+    /// <summary>
+    /// Registers the catalog seeders, the runner and the Development auto-seed hosted service
+    /// (09.2.5 plan §3.1/§7). The <see cref="SeedOptions"/> section is bound and validated on start.
+    /// </summary>
+    public static IServiceCollection AddSeeding(this IServiceCollection services)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+
+        services.AddOptions<SeedOptions>()
+            .BindConfiguration(SeedOptions.SectionName)
+            .Validate(
+                seed => !string.IsNullOrWhiteSpace(seed.CatalogFile),
+                $"'{SeedOptions.SectionName}:{nameof(SeedOptions.CatalogFile)}' must not be blank.")
+            .Validate(
+                seed => !string.IsNullOrWhiteSpace(seed.StyleTemplatesFile),
+                $"'{SeedOptions.SectionName}:{nameof(SeedOptions.StyleTemplatesFile)}' must not be blank.")
+            .ValidateOnStart();
+
+        services.AddScoped<ISeeder, VoiceSeeder>();
+        services.AddScoped<ISeeder, StyleTemplateSeeder>();
+        services.AddScoped<ISeeder, FeatureFlagSeeder>();
+        services.AddScoped<SeedRunner>();
+        services.AddHostedService<SeedHostedService>();
 
         return services;
     }

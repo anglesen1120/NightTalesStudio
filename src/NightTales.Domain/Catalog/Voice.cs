@@ -55,4 +55,25 @@ public sealed class Voice : ICreatedAt
             Active = active,
         };
     }
+
+    /// <summary>
+    /// Rewrites the catalog-owned columns of an existing row (09.2.5 plan §3.2); the 09.2.5-T1 seeder
+    /// upserts by <see cref="Id"/>. <see cref="PreviewStorageKey"/> is deliberately not part of the dev
+    /// catalog of this task (04.2.2-T2 adds it with the full voice file).
+    /// </summary>
+    public void UpdateFromCatalog(
+        string displayName,
+        Language language,
+        VoiceGender gender,
+        IReadOnlyCollection<string>? tags,
+        bool active)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(displayName);
+
+        DisplayName = displayName;
+        Language = language;
+        Gender = gender;
+        Tags = tags is null ? [] : [.. tags];
+        Active = active;
+    }
 }
