@@ -70,6 +70,13 @@ public sealed class AppDbContext : IdentityDbContext<AppUser, AppRole, Guid>, IA
     /// <summary>The accepted legal-document versions of 09.3.1-T1 (13 FR-13-2).</summary>
     public DbSet<UserConsent> UserConsents => Set<UserConsent>();
 
+    /// <summary>
+    /// Infrastructure-only: the refresh-token families of 09.3.2-T1. Inserted through the model by the
+    /// login flow's first row; every later mutation is a set-based statement in
+    /// <c>EfRefreshTokenService</c>, like the outbox and idempotency tables next to it.
+    /// </summary>
+    public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
+
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
     {
         base.ConfigureConventions(configurationBuilder);

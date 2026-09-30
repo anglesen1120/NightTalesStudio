@@ -48,10 +48,10 @@ public sealed class TenantForeignKeyTests(TestDatabase database) : IntegrationTe
     ];
 
     /// <summary>
-    /// The four nullable same-owner foreign keys with PostgreSQL's column list, in constraint-name
-    /// order. EF cannot emit the list, so <c>InitialCore</c> replaces these constraints with raw SQL
-    /// after creating them; a plain <c>ON DELETE SET NULL</c> would null <c>user_id</c> too and fail on
-    /// the first delete of a parent.
+    /// Every nullable <c>ON DELETE SET NULL</c> foreign key in the schema, in constraint-name order: the
+    /// four same-owner ones, whose column list <c>InitialCore</c> writes with raw SQL because EF cannot emit
+    /// it (a plain <c>SET NULL</c> would null <c>user_id</c> too and fail on the first delete of a parent),
+    /// plus 09.3.2-T1's self-reference, which needs no column list and no same-owner rule.
     /// </summary>
     private static readonly string[] NullableSameOwnerDefinitions =
     [
@@ -59,6 +59,8 @@ public sealed class TenantForeignKeyTests(TestDatabase database) : IntegrationTe
         + "REFERENCES episodes(id, user_id) ON DELETE SET NULL (episode_id)",
         "fk_episodes_assets_final_video_asset_id_user_id|FOREIGN KEY (final_video_asset_id, user_id) "
         + "REFERENCES assets(id, user_id) ON DELETE SET NULL (final_video_asset_id)",
+        "fk_refresh_tokens_refresh_tokens_replaced_by_id|FOREIGN KEY (replaced_by_id) "
+        + "REFERENCES refresh_tokens(id) ON DELETE SET NULL",
         "fk_series_series_autopilot_authorizations_current_autopilot_au|FOREIGN KEY "
         + "(current_autopilot_authorization_id, user_id) REFERENCES series_autopilot_authorizations(id, user_id) "
         + "ON DELETE SET NULL (current_autopilot_authorization_id)",

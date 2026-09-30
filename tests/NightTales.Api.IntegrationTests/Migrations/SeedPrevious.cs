@@ -102,6 +102,18 @@ internal static class SeedPrevious
             VALUES ('01920000-0000-7000-8000-000000000008', '01920000-0000-7000-8000-000000000001', 'tos', 'v1',
                     now(), '203.0.113.7')
             """),
+        (
+            // 09.3.2-T1: the table the `_09_RefreshTokens` migration creates. Same rule as above: schema
+            // N-1 does not have it, so this insert is skipped today and the migration after this one is
+            // exercised against a live session (a root row, still unrevoked, with the idle clock started).
+            "refresh_tokens",
+            """
+            INSERT INTO refresh_tokens (id, user_id, family_id, token_hash, created_at, last_used_at, expires_at,
+                                        reauth_attempts)
+            VALUES ('01920000-0000-7000-8000-000000000009', '01920000-0000-7000-8000-000000000001',
+                    '01920000-0000-7000-8000-00000000000a', 'seed-refresh-token-hash', now(), now(),
+                    now() + interval '14 days', 0)
+            """),
     ];
 
     /// <summary>The tables the dataset covers, in insert order — the contract a feature migration extends.</summary>

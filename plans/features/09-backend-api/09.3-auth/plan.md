@@ -1,7 +1,7 @@
 # 09.3.1, 09.3.2, 09.3.3, 09.10.4 — Auth: identity, sessions, MFA, password reset (P; 09.3.1-T3 S)
 
 > Parent: ../README.md (Part B)
-> Status: task **09.3.1-T1 implemented 2026-10-01** (branch `feature/09.3.1-T1-identity`); SEC-01 (placeholder breached list) open for the owner. Other tasks in this folder: not implemented.
+> Status: task **09.3.1-T1 implemented 2026-10-01** (PR #59); task **09.3.2-T1 implemented 2026-10-01** (branch `feature/09.3.2-T1-login`; `ITokenIssuer`/`IRefreshTokenService` declared in `Infrastructure/Security` behind the Application port `IAuthSessionService`, same precedent as `ICredentialVerifier`). SEC-01 (placeholder breached list) open for the owner. Other tasks in this folder: not implemented.
 
 ## 1. Scope
 
@@ -204,7 +204,7 @@ Folder total: **4.5 d raw** (P 4.0, of which 09.10.4-T1 1.0; S 1.0 per B9). Wave
 ### Open items
 
 - [RESOLVED 2026-09-24] **B8.1 edge gap:** `09.3.1-T3` consumes `user_action_tokens` kind `email_verify`, whose table + service are owned by `09.3.3-T1` (BD1, BD3, W2 CR-5). The soft edge `09.3.1-T3 → 09.3.3-T1 soft (user_action_tokens)` was added to B8.1 (README.md:777) and to `09.3.3-T1`'s Blocks cell (README.md:781), which also carries the `09.3.1-T3 soft` back-edge. Shell command: `grep -n "soft" ../09-backend-api/README.md`.
-- [OPEN] **Family id at request time:** BD3's `IReauthGuard` reads the caller's `sid` family live, but D10's `ICurrentUser` exposes only `Id`, `IsAuthenticated`, `Role`, `Actor`. This plan proposes adding `Guid? SessionId` (from the `sid` claim) to `ICurrentUser` [INFERENCE]; needs a TL ruling because it edits a Part A decision.
+- [RESOLVED 2026-10-01, 09.3.2-T1] **Family id at request time:** `ICurrentUser` gained `Guid? SessionId` (from the `sid` claim; `HttpCurrentUser`, `ScopedCurrentUser`, `TestCurrentUser`) so BD3's `IReauthGuard` can read the caller's family live.
 - [OPEN] **No catalogue code** for a missing/expired/unknown refresh cookie or an `email_confirmed = false` owner/admin login: this plan maps both to existing codes (`session_revoked`; `mfa_enrolment_required` is a new code absent from 09 §5.4) [INFERENCE] — the TL should rule whether to extend the catalogue.
 - [RESOLVED 2026-09-24] **MFA challenge ownership:** 09.3.2-T1 ships password login for users **without** MFA and 09.3.2-T3 edits that same login handler to create the challenge for MFA users (as 03.4.2-T1 edits `PollRenderJob`); the interim `PendingMfaChallengeService` is removed. [RULED — README §B10 WT22, WT39]
 - [RESOLVED 2026-09-24] **Template names** — all five templates this wave needs are now in `EmailTemplateCatalog` (`09.2.6-T3-email-pipeline.md:78-88`): `password_reset`, `email_verify`, `refresh_token_reuse`, plus `password_changed` and `email_verify_duplicate` registered at this plan's request and verified in that file. Params are token-free, unknown template → `email_template_unknown`, unknown key → `email_template_keys`, and all four file variants (vi/en × txt/html) must exist or that host fails at startup. The S-phase MFA notices (`security_mfa_enrolled`, `security_mfa_disabled`, `security_reauth_failed`, "recovery code used") are intentionally **not** registered by anyone.

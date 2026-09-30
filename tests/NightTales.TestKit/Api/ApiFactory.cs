@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using NightTales.Api.Http;
 using NightTales.Domain.Common;
 using NightTales.Infrastructure.Persistence;
 using NightTales.TestKit.Database;
@@ -14,13 +15,20 @@ namespace NightTales.TestKit.Api;
 /// <summary>
 /// Runs the real Api in-process for integration tests (09 README D13): the host of <c>Program</c>
 /// with the class database's connection string, the <see cref="FakeClock"/> in place of the system
-/// clock, and the <see cref="TestAuthHandler"/> scheme (<c>Test</c>) — nothing else differs from the
-/// production composition root.
+/// clock, 09.3.2-T1's required auth configuration (an ephemeral ES256 key and the public origin — see
+/// <see cref="ApplyRequiredAuthSettings"/>), and the <see cref="TestAuthHandler"/> scheme
+/// (<c>Test</c>) as the default — nothing else differs from the production composition root.
 /// </summary>
 /// <param name="database">The database of the test class; its connection string is handed to the host.</param>
 /// <param name="clock">The clock every component resolves instead of the system clock.</param>
 public sealed class ApiFactory(TestDatabase database, FakeClock clock) : WebApplicationFactory<Program>
 {
+    /// <summary>
+    /// The origin every test request must present as <c>Origin</c> (<c>App:PublicOrigin</c>): the value this
+    /// factory configures the host with, so a test can assert both the accepted and the refused case.
+    /// </summary>
+    public const string PublicOrigin = "https://api.nighttales.test";
+
     private readonly List<Action<IEndpointRouteBuilder>> _endpointMappings = [];
 
     /// <summary>
@@ -70,12 +78,26 @@ public sealed class ApiFactory(TestDatabase database, FakeClock clock) : WebAppl
 
         return new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
+            ApplyRequiredAuthSettings(builder);
+
             builder.UseSetting(
                 $"ConnectionStrings:{PersistenceOptions.ConnectionStringName}",
                 connectionString);
 
             configure?.Invoke(builder);
         });
+    }
+
+    /// <summary>
+    /// The configuration 09.3.2-T1's start-up validation requires and a real deployment takes from its
+    /// secret store and its environment: an ES256 key (ephemeral here, generated per run — never a committed
+    /// secret) and the SPA's origin. This is configuration, not a test double, which is why even the
+    /// production-composition-root host gets it.
+    /// </summary>
+    private static void ApplyRequiredAuthSettings(IWebHostBuilder builder)
+    {
+        builder.UseSetting(TestSigningKey.ConfigurationKey, TestSigningKey.Pem);
+        builder.UseSetting($"{AppOptions.SectionName}:{nameof(AppOptions.PublicOrigin)}", PublicOrigin);
     }
 
     /// <inheritdoc />
@@ -90,6 +112,8 @@ public sealed class ApiFactory(TestDatabase database, FakeClock clock) : WebAppl
             $"ConnectionStrings:{PersistenceOptions.ConnectionStringName}",
             database.ConnectionString);
 
+        ApplyRequiredAuthSettings(builder);
+
         builder.ConfigureServices(services =>
         {
             services.RemoveAll<IClock>();
@@ -99,6 +123,16 @@ public sealed class ApiFactory(TestDatabase database, FakeClock clock) : WebAppl
                 .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>(
                     TestAuthHandler.SchemeName,
                     configureOptions: null);
+
+            // The test scheme is the default, whatever scheme the host's own composition root registered
+            // (09.3.2-T1 adds the real bearer scheme): a client with the test headers authenticates, one
+            // without them is anonymous. Set explicitly rather than left to registration order.
+            services.Configure<AuthenticationOptions>(options =>
+            {
+                options.DefaultScheme = TestAuthHandler.SchemeName;
+                options.DefaultAuthenticateScheme = TestAuthHandler.SchemeName;
+                options.DefaultChallengeScheme = TestAuthHandler.SchemeName;
+            });
 
             if (_endpointMappings.Count > 0)
             {

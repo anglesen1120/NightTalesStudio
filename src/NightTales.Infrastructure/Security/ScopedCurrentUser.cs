@@ -45,6 +45,12 @@ public sealed class ScopedCurrentUser : ICurrentUser, ISystemContext, ITenantSco
     /// <inheritdoc />
     public ActorType Actor => _system ? ActorType.System : ActorType.User;
 
+    /// <summary>
+    /// Work started in-process runs on a user's behalf, not inside one of that user's sessions: there is no
+    /// token and therefore no <c>sid</c> (09.3.2-T1 declares the member).
+    /// </summary>
+    public Guid? SessionId => null;
+
     /// <inheritdoc />
     public IDisposable For(Guid userId)
     {

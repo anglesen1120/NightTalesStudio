@@ -1188,6 +1188,99 @@ namespace NightTales.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("NightTales.Infrastructure.Persistence.Entities.RefreshToken", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("created_at");
+
+                    b.Property<DateTimeOffset>("ExpiresAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("expires_at");
+
+                    b.Property<Guid>("FamilyId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("family_id");
+
+                    b.Property<IPAddress>("Ip")
+                        .HasColumnType("inet")
+                        .HasColumnName("ip");
+
+                    b.Property<DateTimeOffset?>("LastUsedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("last_used_at");
+
+                    b.Property<short>("ReauthAttempts")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("smallint")
+                        .HasDefaultValue((short)0)
+                        .HasColumnName("reauth_attempts");
+
+                    b.Property<DateTimeOffset?>("ReauthLastAttemptAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("reauth_last_attempt_at");
+
+                    b.Property<DateTimeOffset?>("ReauthenticatedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("reauthenticated_at");
+
+                    b.Property<Guid?>("ReplacedById")
+                        .HasColumnType("uuid")
+                        .HasColumnName("replaced_by_id");
+
+                    b.Property<DateTimeOffset?>("RevokedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("revoked_at");
+
+                    b.Property<string>("RevokedReason")
+                        .HasColumnType("text")
+                        .HasColumnName("revoked_reason");
+
+                    b.Property<string>("TokenHash")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("token_hash");
+
+                    b.Property<string>("UserAgent")
+                        .HasColumnType("text")
+                        .HasColumnName("user_agent");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_refresh_tokens");
+
+                    b.HasIndex("ExpiresAt")
+                        .HasDatabaseName("ix_refresh_tokens_expires_at_live")
+                        .HasFilter("revoked_at IS NULL");
+
+                    b.HasIndex("FamilyId")
+                        .HasDatabaseName("ix_refresh_tokens_family_id");
+
+                    b.HasIndex("ReplacedById")
+                        .HasDatabaseName("ix_refresh_tokens_replaced_by_id");
+
+                    b.HasIndex("TokenHash")
+                        .IsUnique()
+                        .HasDatabaseName("ux_refresh_tokens_token_hash");
+
+                    b.HasIndex("UserId")
+                        .HasDatabaseName("ix_refresh_tokens_user_id");
+
+                    b.ToTable("refresh_tokens", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_refresh_tokens_reauth_attempts", "reauth_attempts >= 0 AND reauth_attempts <= 5");
+
+                            t.HasCheckConstraint("ck_refresh_tokens_revoked_reason", "\"revoked_reason\" IN ('account_not_active', 'admin_revoke', 'logout', 'mfa_change', 'password_reset', 'reuse_detected', 'rotated', 'session_expired', 'session_idle')");
+                        });
+                });
+
             modelBuilder.Entity("NightTales.Infrastructure.Persistence.Entities.UserConsent", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1598,6 +1691,22 @@ namespace NightTales.Infrastructure.Persistence.Migrations
                         .HasPrincipalKey("Id", "UserId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .HasConstraintName("fk_usage_records_series_series_id_user_id");
+                });
+
+            modelBuilder.Entity("NightTales.Infrastructure.Persistence.Entities.RefreshToken", b =>
+                {
+                    b.HasOne("NightTales.Infrastructure.Persistence.Entities.RefreshToken", null)
+                        .WithMany()
+                        .HasForeignKey("ReplacedById")
+                        .OnDelete(DeleteBehavior.SetNull)
+                        .HasConstraintName("fk_refresh_tokens_refresh_tokens_replaced_by_id");
+
+                    b.HasOne("NightTales.Infrastructure.Persistence.AppUser", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_refresh_tokens_asp_net_users_user_id");
                 });
 
             modelBuilder.Entity("NightTales.Infrastructure.Persistence.Entities.UserConsent", b =>
