@@ -24,7 +24,11 @@ namespace NightTales.Api.IntegrationTests.Migrations;
 [Trait("Category", "Migration")]
 public sealed class InitialCoreMigrationTests(TestDatabase database) : IntegrationTest(database)
 {
-    /// <summary>The 20 tables of the core set (plan §3) plus EF's own history table.</summary>
+    /// <summary>
+    /// The core set of plan §3 plus EF's own history table and the feature tables the later migrations
+    /// of this wave add (09.3.1-T1 <c>user_consents</c>), ordinal-sorted like
+    /// <c>PostgresFixture.TableNamesAsync</c> returns them.
+    /// </summary>
     private static readonly string[] ExpectedTables =
     [
         "__EFMigrationsHistory",
@@ -43,6 +47,7 @@ public sealed class InitialCoreMigrationTests(TestDatabase database) : Integrati
         "style_templates",
         "usage_records",
         "user_claims",
+        "user_consents",
         "user_logins",
         "user_roles",
         "user_tokens",

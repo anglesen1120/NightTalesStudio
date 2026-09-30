@@ -32,6 +32,16 @@ public sealed class EfUnitOfWork(AppDbContext database) : IUnitOfWork
 
     private const string TransientDescription = "The database is temporarily unavailable; retry.";
 
+    /// <summary>
+    /// The stable description of a refused foreign key; it names the client's input, never the SQL or
+    /// the constraint (09 README D17).
+    /// </summary>
+    private const string ForeignKeyDescription =
+        "A record this request refers to no longer exists; reload and try again.";
+
+    /// <summary>PostgreSQL's SQLSTATE for a foreign key violation.</summary>
+    private const string ForeignKeyViolation = "23503";
+
     private IDbContextTransaction? _transaction;
 
     /// <inheritdoc />
@@ -66,6 +76,15 @@ public sealed class EfUnitOfWork(AppDbContext database) : IUnitOfWork
 
             return Error.Conflict(code: ErrorCodes.ConcurrencyConflict, description: ConcurrencyDescription);
         }
+        catch (DbUpdateException exception) when (IsForeignKeyViolation(exception))
+        {
+            // 09.3.1-T1 failure handling: a row the command referenced no longer exists (the user of a
+            // `user_consents` row was deleted between steps) is the client's input being unusable, not a
+            // server fault — 400 validation_failed instead of a raw 500 from the provider exception.
+            await TryRollbackAsync(cancellationToken).ConfigureAwait(false);
+
+            return Error.Validation(code: ErrorCodes.ValidationFailed, description: ForeignKeyDescription);
+        }
         catch (Exception exception) when (IsTransient(exception))
         {
             await TryRollbackAsync(cancellationToken).ConfigureAwait(false);
@@ -94,6 +113,13 @@ public sealed class EfUnitOfWork(AppDbContext database) : IUnitOfWork
     private static bool IsTransient(Exception exception) =>
         exception is NpgsqlException { IsTransient: true }
         || exception.InnerException is NpgsqlException { IsTransient: true };
+
+    /// <summary>
+    /// Whether the save was refused by a foreign key (SQLSTATE 23503, <c>foreign_key_violation</c>).
+    /// </summary>
+    private static bool IsForeignKeyViolation(Exception exception) =>
+        exception is DbUpdateException { InnerException: PostgresException { SqlState: ForeignKeyViolation } }
+        || exception.InnerException is PostgresException { SqlState: ForeignKeyViolation };
 
     /// <summary>
     /// Rolls back without letting a secondary failure replace the mapped error the caller is about to
