@@ -8,9 +8,9 @@ Legend: `done` (acceptance checks run and passed) · `doing` · `blocked (<who>)
 
 Keep this block ≤ 15 lines: current state and next step only. Move the previous block to the archive when you replace it.
 
-- **Current (2026-09-30 (3)).** `develop` @ `30dd82e`: 09 waves 1–3 merged (#38–#41, #44, #45 09.2.2-T1 → `fda4ddd`, #46 09.2.6-T1 → `dee4bc8`), tiered review gates merged (#47). This session: STATUS split into this file + `docs/status-archive.md` (docs only, T0).
-- **Next wave, in order:** `09.2.2-T2 ∥ 09.2.3-T1` → `09.1.3-T2 ∥ 09.2.5-T1` → `09.2.4-T1` (09 README §5). 09.2.2-T2 waits on the NTS-922-SEC-001 decision (below).
-- **Owner/TL decisions open:** NTS-922-SEC-001 (cross-tenant child→parent FKs: composite same-owner FKs vs app-only control, before `InitialCore`; 09.2.2-T2 Notes, 09 W3 CR-45) · 09.2.6 O2 (production Worker needs DDL rights on the `hangfire` schema or a separate migration role, before 11.1.1-T1) · 11.2.1-T1 hosting sign-off (`DECISIONS.md` §10.4.1, proposed) · 13 OI-1 (operator legal name + contact in the legal drafts).
+- **Current (2026-09-30 (4)).** `develop` @ `e1f1b01`: 09 waves 1–3 merged (#38–#41, #44–#46), tiered review gates (#47), STATUS split (#48). Owner decisions 2026-09-30 recorded (branch `docs/owner-decisions-0930`): NTS-922-SEC-001 → **(a) composite same-owner FKs** in `InitialCore`; 09.2.6 O2 → **separate deploy/migration role**; **phase 1 is local only** — hosting sign-off (§10.4.1), all deployment tasks (11 CR-18) and 13 OI-1 move to phase 2 (`DECISIONS.md` §10.13).
+- **Next wave, in order:** `09.2.2-T2 ∥ 09.2.3-T1` (now unblocked) → `09.1.3-T2 ∥ 09.2.5-T1` → `09.2.4-T1` (09 README §5).
+- **Owner decisions open:** none blocking phase 1.
 - **Security debt live on `develop`:** see §Deferred security gates — the tenant filter does not exist yet.
 - **Gates:** per task by risk tier (`plans/00-overview.md` §10 Definition of Done; full rule in `~/.omp/agent/RULES.md`).
 - **Environment (DEC-5, DEC-6):** implementation machine = this Mac (M4, 16 GB, macOS 27.0); `NTS_HOME=<repo>/.nts` (gitignored; `lib.sh` default); D13 mode `accepted-risk`, keys never committed or pushed (`.gitignore` + gitleaks hooks).
@@ -28,7 +28,7 @@ Per-task evidence for `done` rows: `docs/status-archive.md` §Per-plan evidence 
 | 04 Voice proxy (12 tasks) | 10 | 04.2.2-T2, 04.2.3-T1 |
 | 05 Video/subtitles | 9 | 05.2.1-T1, 05.5.2 |
 | 09 Backend | 10 tasks + wave-3 plan fixes; all merged into `develop` | next wave in §Resume here |
-| 11 Worker deployment | 11.2.1-T1 (proposed, owner sign-off pending) | rest of plan 11 |
+| 11 Worker deployment | 11.2.1-T1 (proposal only; sign-off deferred to phase 2, owner 2026-09-30) | cloud tasks: phase 2 |
 | 13 Compliance | 13.1.1-T1, 13.1.2-T1 (PR #35) | 13.2.1-T1 → 13.2.2-T1, 10.3.1-T1 pages; 13.1.1-T2 / 13.1.2-T2 lawyer rows (O1) |
 
 Plans 06, 07, 08, 10, 12: not started. Order: `plans/features/README.md`.
@@ -46,7 +46,7 @@ Plans 06, 07, 08, 10, 12: not started. Order: `plans/features/README.md`.
 | 05.2.1-T1 Subtitle fidelity + sync evaluation | partial (machine leg) | L1/L2 rows + owner labels blocked on 05.5.2-T1 (05 T84); `RenderQuality:*` values await calibration |
 | 05.5.2 | todo — prep on branch `feature/05.5.2-m0-trial` (3 commits, not on `develop`) | Branch: `apply_quality_policy.py` (D10 mirror) + `mpt_client` spec-path containment, gates passed; L1 vi / L2 en renders blocked on the D11 memory gate (swap). Needs 04.2.2-T1 raters and 03.3.2-T1 (done). Portrait renders use 9:16 option A (05 O9, 03 CR-16) with the hinted prompt; judge the cropped frames of the first portrait render (`trial/images/REPORT.md` §Crop probe) |
 | 13.2.1-T1 Legal versions + acceptance | todo | Versions config + `GET /me/legal` + `POST /me/legal/accept` + gate + owner dialog; then 13.2.2-T1 `tools/ci/check-legal-versions.py` and 10.3.1-T1 pages / `legal-to-json.mjs` |
-| 13.1.1-T2 / 13.1.2-T2 Legal review rows | todo (O1) | The ⚠️ rows (children/transfers/retention; credit expiry and refunds; OpenAI output terms; governing law; liability) close with a lawyer; OI-1 (operator legal name + contact) before any user other than the operator |
+| 13.1.1-T2 / 13.1.2-T2 Legal review rows | todo (O1) | The ⚠️ rows (children/transfers/retention; credit expiry and refunds; OpenAI output terms; governing law; liability) close with a lawyer; OI-1 (operator legal name + contact) deferred to phase 2 (owner 2026-09-30), before any user other than the operator |
 
 ## Deferred security gates
 
@@ -79,3 +79,4 @@ Recent rows only; the full log is `docs/status-archive.md` §Session log.
 | 2026-09-30 | 09 wave-3 batch (`feature/09.2.2-core-entities` `ec99274`, `feature/09.2.6-worker-hangfire` `15f10b6`) | Two tasks in parallel worktrees off `develop` @ `f433126`, each with QA → code + perf + security → fixes → delta re-review, then a final union review (approve, 0 findings). 09.2.2-T1: core entity shells + 13 configurations + audit timestamps, plan §3 live-catalog tests; CR-44 (jsonb columns stay string), CR-45 (`AutopilotRunOutcome`, paths, NTS-922-SEC-001 `[OPEN]`). 09.2.6-T1: Worker host, Hangfire server/storage, `IJobScheduler`, `[JobPolicy]`, recurring registration, health on 8082; O2 `[OPEN]`. Integrated tree `c45bed2`: unit 108/108, integration 163/163, format 0, `openapi.json` 3.1.1 |
 | 2026-09-30 | Tiered review gates (`docs/tiered-review-gates`, PR #47 → `30dd82e`) | Owner rule: per-task gates tiered by risk T0–T3 (T3 over size; T0 docs-only = one doc review, no QA agent). One home for the rule: `~/.omp/agent/RULES.md`; `plans/00-overview.md` §10, `WORKFLOW.md` §8.1, `AGENTS.md` point to it; 01 CR-26. Gate: T0 doc review, 2 findings fixed (`e44dc90`), closed on re-check |
 | 2026-09-30 | STATUS split (`docs/status-archive`) | History moved verbatim to `docs/status-archive.md`; this file keeps Resume here, progress by plan, open tasks, security gates, open findings and recent log rows. Docs only (T0) |
+| 2026-09-30 | Owner decisions (`docs/owner-decisions-0930`) | NTS-922-SEC-001 → (a) composite same-owner FKs (09.2.2-T2/09.2.3-T1 Notes, 09 README W3-O7); 09.2.6 O2 → separate deploy/migration role (09.2.6 plan.md, W3-O8); phase 1 local only, hosting sign-off and 13 OI-1 deferred to phase 2 (`DECISIONS.md` §10.4.1, §10.13). Docs only (T0) |
