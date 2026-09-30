@@ -1,23 +1,85 @@
 using ErrorOr;
 using Mediator;
+using NightTales.Application.Abstractions.Persistence;
+using NightTales.Application.Common.Errors;
 
 namespace NightTales.Application.Behaviors;
 
 /// <summary>
-/// Opens an explicit <c>ReadCommitted</c> transaction before the handler, saves and commits on
-/// success, rolls back on error, and maps <c>DbUpdateConcurrencyException</c> to
-/// <c>concurrency_conflict</c>.
+/// Opens the explicit <c>ReadCommitted</c> transaction before the handler, saves and commits on
+/// success, and rolls back when the handler returns an error — so a command's effects, its outbox rows
+/// and its idempotency claim commit or roll back together (09 README D4/D5).
 /// </summary>
 /// <remarks>
-/// Pass-through placeholder: 09.1.3-T2 fills the body (D5) before any feature command lands.
+/// Only commands run it: the constraint is <c>IBaseCommand</c>, so a query never opens a transaction.
+/// A commit that the database refuses (a lost update, a transient failure) is mapped to
+/// <c>concurrency_conflict</c> / <c>service_unavailable</c> by <see cref="IUnitOfWork"/>, and an
+/// exception thrown by the handler rolls back and rethrows unchanged. Every rollback here ignores its
+/// own failure: the scope's context disposal rolls back an abandoned transaction too, and the handler's
+/// failure — its exception, or the error result it returned — is the one that must surface.
 /// </remarks>
-public sealed class UnitOfWorkBehavior<TMessage, TResponse> : IPipelineBehavior<TMessage, TResponse>
-    where TMessage : IMessage
+public sealed class UnitOfWorkBehavior<TMessage, TResponse>(IUnitOfWork unitOfWork)
+    : IPipelineBehavior<TMessage, TResponse>
+    where TMessage : IBaseCommand
     where TResponse : IErrorOr
 {
-    public ValueTask<TResponse> Handle(
+    /// <inheritdoc />
+    public async ValueTask<TResponse> Handle(
         TMessage message,
         MessageHandlerDelegate<TMessage, TResponse> next,
         CancellationToken cancellationToken)
-        => next(message, cancellationToken);
+    {
+        await unitOfWork.BeginAsync(cancellationToken).ConfigureAwait(false);
+
+        TResponse response;
+        try
+        {
+            response = await next(message, cancellationToken).ConfigureAwait(false);
+        }
+        catch
+        {
+            await RollbackIgnoringFailureAsync(cancellationToken).ConfigureAwait(false);
+            throw;
+        }
+
+        if (response.IsError)
+        {
+            // UC3: an error result leaves nothing behind — no row, no outbox row, no idempotency row.
+            // A failing rollback must not replace that result, exactly as on the exception paths below.
+            await RollbackIgnoringFailureAsync(cancellationToken).ConfigureAwait(false);
+            return response;
+        }
+
+        ErrorOr<Success> committed;
+        try
+        {
+            committed = await unitOfWork.CommitAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch
+        {
+            await RollbackIgnoringFailureAsync(cancellationToken).ConfigureAwait(false);
+            throw;
+        }
+
+        return committed.IsError
+            ? ErrorOrFactory<TResponse>.From([.. committed.Errors])
+            : response;
+    }
+
+    /// <summary>
+    /// Rolls back without letting a secondary failure replace the failure the caller must see: the
+    /// handler's own exception, the error result it returned, or the error the commit mapping produced.
+    /// </summary>
+    private async Task RollbackIgnoringFailureAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            await unitOfWork.RollbackAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            // Deliberate: the scope's context disposal rolls back an abandoned transaction too, and the
+            // original failure is the one that must surface.
+        }
+    }
 }

@@ -1,8 +1,14 @@
 using FluentValidation;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using NightTales.Application.Abstractions;
+using NightTales.Application.Abstractions.Idempotency;
+using NightTales.Application.Abstractions.Persistence;
 using NightTales.Application.Behaviors;
 using NightTales.Application.UnitTests.Pipeline.Probes;
+using NightTales.Domain.Common;
+using NightTales.TestKit.Auth;
+using NightTales.TestKit.Time;
 
 namespace NightTales.Application.UnitTests.Pipeline;
 
@@ -10,28 +16,51 @@ namespace NightTales.Application.UnitTests.Pipeline;
 /// Builds the real pipeline over the probe messages: the Mediator source generator's own
 /// registrations (Scoped, as in both hosts) plus <see cref="MediatorPipeline.Behaviors"/>.
 /// </summary>
+/// <remarks>
+/// The behaviours are the production ones, so the host supplies what they need without a database: a
+/// settable <see cref="TestCurrentUser"/>, the <see cref="FakeClock"/>, a
+/// <see cref="PassThroughUnitOfWork"/> and a <see cref="KeylessIdempotencyStore"/>. The probe messages
+/// declare no idempotency key, so the store is never reached in a passing test.
+/// </remarks>
 public sealed class MediatorTestHost : IDisposable
 {
+    /// <summary>The id of the default authenticated caller; set <see cref="TestCurrentUser.Id"/> to null for anonymous.</summary>
+    public static readonly Guid ActorId = new("01900000-0000-7000-8000-00000000000a");
+
     private readonly ServiceProvider _provider;
 
-    private MediatorTestHost(ServiceProvider provider, PipelineTrace trace, CapturingLoggerProvider logs)
+    private MediatorTestHost(
+        ServiceProvider provider,
+        PipelineTrace trace,
+        CapturingLoggerProvider logs,
+        TestCurrentUser currentUser)
     {
         _provider = provider;
         Trace = trace;
         Logs = logs;
+        CurrentUser = currentUser;
     }
 
     public PipelineTrace Trace { get; }
 
     public CapturingLoggerProvider Logs { get; }
 
+    /// <summary>The actor every behaviour of this host resolves, settable per test.</summary>
+    public TestCurrentUser CurrentUser { get; }
+
     public static MediatorTestHost Create()
     {
         var trace = new PipelineTrace();
         var logs = new CapturingLoggerProvider(trace);
+        var currentUser = new TestCurrentUser { Id = ActorId, Role = PlatformRole.User, Actor = ActorType.User };
         var services = new ServiceCollection();
 
         services.AddSingleton(trace);
+        services.AddSingleton(currentUser);
+        services.AddSingleton<ICurrentUser>(currentUser);
+        services.AddSingleton<IClock>(new FakeClock());
+        services.AddSingleton<IUnitOfWork, PassThroughUnitOfWork>();
+        services.AddSingleton<IIdempotencyStore, KeylessIdempotencyStore>();
         services.AddLogging(builder =>
         {
             builder.SetMinimumLevel(LogLevel.Information);
@@ -60,7 +89,8 @@ public sealed class MediatorTestHost : IDisposable
         return new MediatorTestHost(
             services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true }),
             trace,
-            logs);
+            logs,
+            currentUser);
     }
 
     public IServiceScope CreateScope() => _provider.CreateScope();

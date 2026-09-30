@@ -3,7 +3,7 @@
 > Refines: `../../../09-backend-api.md` §4 (epic 09.1, story **09.1.3**, L66–69), §5.1, §7; `../../../00-overview.md` §5.2 CQRS rules.
 > Contract: `../README.md` — **N1**, **N2**, **F03**, **F04**, **F05**, **F13**, **D4**, **D5**, **D6**, **D7**, **D13**.
 > Template: `../../../00-overview.md` §10.1. Legend: ✅ · ⚠️ · [DECISION] · [OPEN] · [INFERENCE].
-> Status: detailed plan, 2026-09-24. Nothing implemented yet.
+> Status: 09.1.3-T1 + 09.1.3-T2 **implemented 2026-09-30** (T2 in PR #54).
 
 ## 1. Scope
 
