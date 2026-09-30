@@ -1,3 +1,4 @@
+using System.Reflection;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -5,9 +6,11 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using NightTales.Application.Abstractions;
 using NightTales.Application.Abstractions.Idempotency;
+using NightTales.Application.Abstractions.Outbox;
 using NightTales.Application.Abstractions.Persistence;
 using NightTales.Domain.Common;
 using NightTales.Infrastructure.Persistence.Idempotency;
+using NightTales.Infrastructure.Persistence.Outbox;
 using NightTales.Infrastructure.Persistence.Queries;
 using NightTales.Infrastructure.Persistence.Seeding;
 using NightTales.Infrastructure.Persistence.UnitOfWork;
@@ -24,10 +27,24 @@ public static class PersistenceServiceCollectionExtensions
 {
     private static readonly string MigrationsAssemblyName = typeof(AppDbContext).Assembly.GetName().Name!;
 
-    public static IServiceCollection AddPersistence(this IServiceCollection services, IConfiguration configuration)
+    /// <summary>
+    /// Registers the persistence layer of a host: both contexts, the ports, the transaction and
+    /// idempotency stores, the catalog seeders, the system work query and the outbox write side.
+    /// </summary>
+    /// <param name="services">The service collection of the host.</param>
+    /// <param name="configuration">The host configuration; it carries <c>ConnectionStrings:Postgres</c>.</param>
+    /// <param name="outboxEventAssemblies">
+    /// Extra assemblies whose <c>[OutboxEvent]</c> types must be dispatchable on top of the Domain's
+    /// (09 README D11). Production passes none; the test harness passes the assembly of its probe events.
+    /// </param>
+    public static IServiceCollection AddPersistence(
+        this IServiceCollection services,
+        IConfiguration configuration,
+        params Assembly[] outboxEventAssemblies)
     {
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(configuration);
+        ArgumentNullException.ThrowIfNull(outboxEventAssemblies);
 
         // Fails at start-up, never lazily on the first request (09 README D8, plan §4 UC4).
         var connectionString = configuration.GetConnectionString(PersistenceOptions.ConnectionStringName);
@@ -69,6 +86,13 @@ public static class PersistenceServiceCollectionExtensions
         // TryAdd, so a host may replace the clock (the tests do, with FakeClock).
         services.TryAddSingleton<IClock, SystemClock>();
 
+        // 09.2.4-T1: the name ↔ type map of the domain events, built here — at composition time — so two
+        // events sharing a name fail the start-up instead of a dispatch (09 README D11). The Domain
+        // assembly holds the platform's events; a host may add assemblies of its own (the test harness
+        // passes its probe events).
+        var outboxEvents = new OutboxEventRegistry(outboxEventAssemblies);
+        services.AddSingleton(outboxEvents);
+
         services.AddDbContext<AppDbContext>((provider, options) => options
             .UseNpgsql(
                 connectionString,
@@ -78,7 +102,9 @@ public static class PersistenceServiceCollectionExtensions
             .UseSnakeCaseNamingConvention()
             // Order matters (09 README D8, 09 W3 CR-38): the auditable interceptor runs first and
             // OutboxSaveChangesInterceptor (09.2.4-T1) is added after it, inside the same SaveChanges.
-            .AddInterceptors(new AuditableSaveChangesInterceptor(provider.GetRequiredService<IClock>())));
+            .AddInterceptors(
+                new AuditableSaveChangesInterceptor(provider.GetRequiredService<IClock>()),
+                new OutboxSaveChangesInterceptor(outboxEvents)));
 
         services.AddDbContext<ReadDbContext>((provider, options) => options
             .UseNpgsql(
@@ -96,6 +122,9 @@ public static class PersistenceServiceCollectionExtensions
         services.AddScoped<IUnitOfWork, EfUnitOfWork>();
         services.AddScoped<IIdempotencyStore, IdempotencyStore>();
         services.AddScoped<IIdempotencyCleanupStore, IdempotencyCleanupStore>();
+
+        // 09.2.4-T1: the processed-row sweep of the outbox, driven by the Worker's daily recurring job.
+        services.AddScoped<IOutboxCleanupStore, OutboxCleanupStore>();
 
         // 09.2.5-T1: the catalog seeders and the Development auto-seed are part of the persistence
         // layer, so every host that calls AddPersistence (Api, Worker, the test harness) gets them.

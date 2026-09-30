@@ -11,6 +11,7 @@ using NightTales.Application.Abstractions.Jobs;
 using NightTales.Domain.Common;
 using NightTales.Infrastructure.Jobs;
 using NightTales.Infrastructure.Persistence;
+using NightTales.Infrastructure.Persistence.Outbox;
 using NightTales.TestKit.Database;
 using NightTales.TestKit.Time;
 using NightTalesWorkerHost::NightTales.Worker.DependencyInjection;
@@ -50,6 +51,9 @@ public sealed class WorkerHost(TestDatabase database, FakeClock clock) : IAsyncD
     private InlineJobScheduler? _inlineScheduler;
 
     private const string OneSecond = "1";
+
+    /// <summary>The parked poll of the outbox loop: longer than any test run.</summary>
+    private const string OneHour = "3600";
 
     /// <summary>The class database this host runs against.</summary>
     public TestDatabase Database { get; } = database;
@@ -162,6 +166,18 @@ public sealed class WorkerHost(TestDatabase database, FakeClock clock) : IAsyncD
         return Services.CreateScope();
     }
 
+    /// <summary>
+    /// Claims and delivers one outbox batch with the host's own dispatcher — the same
+    /// <c>ProcessBatchAsync</c> its loop calls, so a test drives delivery without sleeping (09 README D13).
+    /// </summary>
+    /// <returns>How many messages the batch claimed; <c>0</c> when nothing was due.</returns>
+    public async Task<int> RunOutboxOnceAsync(CancellationToken cancellationToken = default)
+    {
+        var dispatcher = Services.GetRequiredService<OutboxDispatcher>();
+
+        return await dispatcher.ProcessBatchAsync(cancellationToken);
+    }
+
     /// <inheritdoc />
     public async ValueTask DisposeAsync()
     {
@@ -255,6 +271,10 @@ public sealed class WorkerHost(TestDatabase database, FakeClock clock) : IAsyncD
             [$"ConnectionStrings:{PersistenceOptions.ConnectionStringName}"] = database.ConnectionString,
             [$"{JobsOptions.SectionName}:{nameof(JobsOptions.QueuePollSeconds)}"] = OneSecond,
             [$"{JobsOptions.SectionName}:{nameof(JobsOptions.SchedulePollSeconds)}"] = OneSecond,
+
+            // The Worker's OutboxDispatcher loop starts with the host; a test drives delivery itself
+            // through RunOutboxOnceAsync, so the loop is parked for the length of any test (09 README D13).
+            [$"{OutboxDispatcherOptions.SectionName}:{nameof(OutboxDispatcherOptions.PollIntervalSeconds)}"] = OneHour,
         };
 
         foreach (var queue in Enum.GetValues<JobQueue>())

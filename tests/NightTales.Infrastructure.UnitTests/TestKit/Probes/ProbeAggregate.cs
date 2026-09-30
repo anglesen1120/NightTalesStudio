@@ -40,4 +40,16 @@ internal sealed class ProbeAggregate : AggregateRoot, IUserOwned
         };
 
     public void Rename(string name) => Name = name;
+
+    /// <summary>
+    /// Renames the probe <em>and</em> raises <see cref="ProbeDomainEvent"/> (09.2.4-T1): what the outbox
+    /// interceptor turns into an <c>outbox_messages</c> row in the same <c>SaveChanges</c>.
+    /// </summary>
+    /// <param name="name">The new name.</param>
+    /// <param name="occurredAt">When the event happened — a fixed instant, never the wall clock.</param>
+    public void RenameWithEvent(string name, DateTimeOffset occurredAt)
+    {
+        Name = name;
+        Raise(new ProbeDomainEvent(Id, name, occurredAt));
+    }
 }

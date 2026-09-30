@@ -8,6 +8,7 @@ using NightTales.Application.Abstractions;
 using NightTales.Application.Abstractions.Jobs;
 using NightTales.Infrastructure.Jobs;
 using NightTales.Infrastructure.Persistence;
+using NightTales.Infrastructure.Persistence.Outbox;
 using NightTales.Infrastructure.Security;
 using NightTales.Worker.Health;
 
@@ -45,7 +46,7 @@ public static class WorkerServiceCollectionExtensions
                 $"'{WorkerOptions.SectionName}:{nameof(WorkerOptions.HealthPort)}' must be a TCP port between 1 and 65535.")
             .ValidateOnStart();
 
-        services.AddPersistence(configuration);
+        services.AddPersistence(configuration, assemblies);
 
         // 09.2.3-T1 (09 README D10): the Worker's actor is the scoped system context. Every user-owned
         // row stays invisible until a handler calls ISystemContext.For(userId), and both interfaces
@@ -60,6 +61,28 @@ public static class WorkerServiceCollectionExtensions
         services.AddJobs(configuration, [typeof(WorkerServiceCollectionExtensions).Assembly, .. assemblies]);
 
         // 09.2.4-T1 appends the hosted OutboxDispatcher inside this composition root (09 W3 CR-42).
+        services.AddOptions<OutboxDispatcherOptions>()
+            .BindConfiguration(OutboxDispatcherOptions.SectionName)
+            .Validate(
+                options => options.PollIntervalSeconds > 0,
+                $"'{OutboxDispatcherOptions.SectionName}:{nameof(OutboxDispatcherOptions.PollIntervalSeconds)}' must be greater than zero.")
+            .Validate(
+                options => options.BatchSize > 0,
+                $"'{OutboxDispatcherOptions.SectionName}:{nameof(OutboxDispatcherOptions.BatchSize)}' must be greater than zero.")
+            .Validate(
+                options => options.LeaseMinutes > 0,
+                $"'{OutboxDispatcherOptions.SectionName}:{nameof(OutboxDispatcherOptions.LeaseMinutes)}' must be greater than zero.")
+            .Validate(
+                options => options.MaxAttempts > 0,
+                $"'{OutboxDispatcherOptions.SectionName}:{nameof(OutboxDispatcherOptions.MaxAttempts)}' must be greater than zero.")
+            .ValidateOnStart();
+
+        services.AddSingleton<OutboxMetrics>();
+
+        // Registered as a singleton and hosted through that instance, so the harness can drive the very
+        // dispatcher the Worker's loop owns (WorkerHost.RunOutboxOnceAsync, 09 README D13).
+        services.AddSingleton<OutboxDispatcher>();
+        services.AddHostedService<OutboxDispatcher>(provider => provider.GetRequiredService<OutboxDispatcher>());
 
         services.AddHealthChecks()
             .AddCheck<DatabaseHealthCheck>("database")
