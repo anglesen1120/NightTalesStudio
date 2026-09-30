@@ -23,7 +23,7 @@ public sealed class AutopilotRun : AggregateRoot, IUserOwned, IAuditable
 
     public Guid? EpisodeId { get; private set; }
 
-    public AutopilotOutcome? Outcome { get; private set; }
+    public AutopilotRunOutcome? Outcome { get; private set; }
 
     /// <summary>The <c>gate_results</c> JSON document (<c>gates.v1</c>, 02.8.2 owns its shape).</summary>
     public string? GateResults { get; private set; }
