@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using NightTales.Application.Abstractions;
 using NightTales.Application.Abstractions.Persistence;
 using NightTales.Application.Behaviors;
@@ -72,8 +73,10 @@ internal sealed class PipelineProbeRunner
     {
         await using var database = _database.CreateAppDbContext(_currentUser, _clock);
 
+        // The probe context comes from the test factory, which configures no command timeout, so the store
+        // takes the default options — the same 30 s the provider applies to its own commands.
         var idempotency = new IdempotencyBehavior<PipelineProbeCommand, ErrorOr<Guid>>(
-            new IdempotencyStore(database),
+            new IdempotencyStore(database, Options.Create(new PersistenceOptions())),
             _currentUser,
             _clock,
             _loggerFactory.CreateLogger<IdempotencyBehavior<PipelineProbeCommand, ErrorOr<Guid>>>());

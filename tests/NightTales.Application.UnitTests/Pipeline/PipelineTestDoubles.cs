@@ -42,6 +42,31 @@ public sealed class PassThroughUnitOfWork : IUnitOfWork
 }
 
 /// <summary>
+/// The <see cref="IUnitOfWork"/> of the rollback-masking probe: its rollback fails, so a behaviour that
+/// lets that secondary failure escape replaces the handler's error result with it.
+/// </summary>
+public sealed class FailingRollbackUnitOfWork : IUnitOfWork
+{
+    /// <summary>How many times a probe rolled back; the behaviour always rolls an error result back.</summary>
+    public int Rollbacks { get; private set; }
+
+    /// <inheritdoc />
+    public Task BeginAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+    /// <inheritdoc />
+    public Task<ErrorOr<Success>> CommitAsync(CancellationToken cancellationToken) =>
+        Task.FromResult<ErrorOr<Success>>(Result.Success);
+
+    /// <inheritdoc />
+    public Task RollbackAsync(CancellationToken cancellationToken)
+    {
+        Rollbacks++;
+
+        throw new InvalidOperationException("probe rollback failure (09.1.3-T2)");
+    }
+}
+
+/// <summary>
 /// The <see cref="IIdempotencyStore"/> of the unit pipeline. Every probe message there carries no
 /// idempotency key, so a call means the behaviour ran when it should have passed through — the fake
 /// fails the test instead of silently succeeding.

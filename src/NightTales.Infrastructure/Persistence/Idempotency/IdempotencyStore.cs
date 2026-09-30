@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
+using Microsoft.Extensions.Options;
 using Npgsql;
 using NpgsqlTypes;
 using NightTales.Application.Abstractions.Idempotency;
@@ -25,8 +26,16 @@ namespace NightTales.Infrastructure.Persistence.Idempotency;
 /// <c>SELECT … FOR UPDATE</c> reads the stored response under a lock, so two twins can never both
 /// execute.
 /// </para>
+/// <para>
+/// The expiry sweep races this protocol in both directions, and neither side may lose a row the other
+/// owns: <c>ReuseAsync</c> reports whether its row survived the sweep's <c>DELETE</c> (a vanished row
+/// makes <c>ClaimAsync</c> claim the key afresh), and the sweep repeats its expiry test on the row
+/// itself so a renewal that commits while the sweep waits on that row's lock is not deleted
+/// (<see cref="IdempotencyCleanupStore"/>).
+/// </para>
 /// </remarks>
-public sealed class IdempotencyStore(AppDbContext database) : IIdempotencyStore
+public sealed class IdempotencyStore(AppDbContext database, IOptions<PersistenceOptions> options)
+    : IIdempotencyStore
 {
     private const string InsertSql =
         """
@@ -70,8 +79,9 @@ public sealed class IdempotencyStore(AppDbContext database) : IIdempotencyStore
         DateTimeOffset now,
         CancellationToken cancellationToken)
     {
-        // No loop bound is needed beyond the retry below: the conflicting row can only be released by an
-        // expiry sweep, and a second miss means the protocol is broken rather than raced.
+        // One retry is all the race needs: the conflicting row can be released by the expiry sweep
+        // between the insert and the lock, or between the lock and the reuse — a second miss means the
+        // protocol is broken rather than raced.
         for (var attempt = 0; ; attempt++)
         {
             if (await TryInsertAsync(userId, key, requestHash, now, cancellationToken).ConfigureAwait(false) is { } claimId)
@@ -79,16 +89,21 @@ public sealed class IdempotencyStore(AppDbContext database) : IIdempotencyStore
                 return new IdempotencyClaim.Fresh(claimId);
             }
 
-            if (await SelectForUpdateAsync(userId, key, cancellationToken).ConfigureAwait(false) is { } stored)
+            var stored = await SelectForUpdateAsync(userId, key, cancellationToken).ConfigureAwait(false);
+            var decision = stored is { } row
+                ? await DecideAsync(row, requestHash, now, cancellationToken).ConfigureAwait(false)
+                : null;
+
+            if (decision is { } claim)
             {
-                return await DecideAsync(stored, requestHash, now, cancellationToken).ConfigureAwait(false);
+                return claim;
             }
 
             if (attempt > 0)
             {
                 throw new InvalidOperationException(
-                    "The claimed idempotency key row disappeared before it could be locked; the key "
-                    + "protocol cannot continue (09 README D6).");
+                    "The claimed idempotency key row disappeared before it could be locked or reused; the "
+                    + "key protocol cannot continue (09 README D6).");
             }
         }
     }
@@ -113,7 +128,12 @@ public sealed class IdempotencyStore(AppDbContext database) : IIdempotencyStore
     /// different body is a mismatch, and a row without a stored response cannot follow a committed twin,
     /// so it is this request's own claim.
     /// </summary>
-    private async Task<IdempotencyClaim> DecideAsync(
+    /// <returns>
+    /// The decision, or <c>null</c> when the locked row was gone under the reuse — the expiry sweep
+    /// deleted it between the <c>SELECT … FOR UPDATE</c> and the update — so the caller must claim the
+    /// key again instead of carrying an id no row has.
+    /// </returns>
+    private async Task<IdempotencyClaim?> DecideAsync(
         StoredKey stored,
         string requestHash,
         DateTimeOffset now,
@@ -121,9 +141,9 @@ public sealed class IdempotencyStore(AppDbContext database) : IIdempotencyStore
     {
         if (stored.ExpiresAt < now)
         {
-            await ReuseAsync(stored.Id, requestHash, now, cancellationToken).ConfigureAwait(false);
-
-            return new IdempotencyClaim.Fresh(stored.Id);
+            return await ReuseAsync(stored.Id, requestHash, now, cancellationToken).ConfigureAwait(false)
+                ? new IdempotencyClaim.Fresh(stored.Id)
+                : null;
         }
 
         if (!string.Equals(stored.RequestHash, requestHash, StringComparison.Ordinal))
@@ -193,7 +213,12 @@ public sealed class IdempotencyStore(AppDbContext database) : IIdempotencyStore
     /// Resets an expired key onto the current request inside its transaction: the row keeps its id and
     /// loses the response the previous, expired request stored, so the handler runs again.
     /// </summary>
-    private async Task ReuseAsync(
+    /// <returns>
+    /// <c>true</c> when the row was updated; <c>false</c> when it is gone — the expiry sweep deleted it
+    /// after the <c>SELECT … FOR UPDATE</c> took the row's lock — so the caller claims the key afresh
+    /// instead of proceeding with a claim id that no longer exists.
+    /// </returns>
+    private async Task<bool> ReuseAsync(
         Guid claimId,
         string requestHash,
         DateTimeOffset now,
@@ -204,12 +229,15 @@ public sealed class IdempotencyStore(AppDbContext database) : IIdempotencyStore
         command.Parameters.AddWithValue("request_hash", requestHash);
         command.Parameters.AddWithValue("created_at", now);
 
-        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        var updated = await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+
+        return updated == 1;
     }
 
     /// <summary>
     /// A command over the scope's connection and its <em>open</em> transaction — the transaction is what
-    /// makes the claim and the command's effects one unit.
+    /// makes the claim and the command's effects one unit — carrying the configured
+    /// <c>Persistence:CommandTimeoutSeconds</c>.
     /// </summary>
     private NpgsqlCommand CreateCommand(string sql)
     {
@@ -222,6 +250,10 @@ public sealed class IdempotencyStore(AppDbContext database) : IIdempotencyStore
         var command = connection.CreateCommand();
         command.CommandText = sql;
         command.Transaction = (NpgsqlTransaction)transaction.GetDbTransaction();
+
+        // NpgsqlConnection.CreateCommand() does not inherit the EF provider's configured timeout, so the
+        // raw statement would silently keep Npgsql's own default (09 README D8).
+        command.CommandTimeout = options.Value.CommandTimeoutSeconds;
 
         return command;
     }

@@ -9,9 +9,19 @@ namespace NightTales.Infrastructure.Persistence.Idempotency;
 /// re-run continues where the previous one stopped.
 /// </summary>
 /// <remarks>
+/// <para>
 /// It runs outside any command transaction on purpose: a sweep that joined one would keep the command's
 /// locks until the sweep finished, and a crash would have nothing to roll back that matters — the next
 /// run deletes the rest.
+/// </para>
+/// <para>
+/// A batch repeats the expiry test on the row it is about to delete, not only inside its subquery. The
+/// subquery's result is fixed when the statement starts, so a row it named can still be renewed by a
+/// twin's claim (<c>ReuseAsync</c> of <see cref="IdempotencyStore"/>) while this statement waits on that
+/// row's lock; when the twin commits, <c>ReadCommitted</c> re-evaluates only the qualifiers that read
+/// the target row (EvalPlanQual) and does not re-run the subquery. Without the outer test the sweep
+/// would delete the renewed row and the claim that owns it would vanish under its owner.
+/// </para>
 /// </remarks>
 public sealed class IdempotencyCleanupStore(AppDbContext database) : IIdempotencyCleanupStore
 {
@@ -36,10 +46,13 @@ public sealed class IdempotencyCleanupStore(AppDbContext database) : IIdempotenc
         return deleted;
     }
 
+    // {0} is deliberately used twice: the outer test is the one EvalPlanQual re-evaluates against a
+    // concurrently renewed row, the inner one only picks the batch (see the remarks).
     private const string DeleteBatchSql =
         """
         DELETE FROM idempotency_keys
-        WHERE id IN (
+        WHERE expires_at < {0}
+          AND id IN (
             SELECT id FROM idempotency_keys
             WHERE expires_at < {0}
             ORDER BY expires_at

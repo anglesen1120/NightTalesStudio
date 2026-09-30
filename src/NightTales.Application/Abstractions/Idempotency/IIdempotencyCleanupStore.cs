@@ -15,6 +15,11 @@ public interface IIdempotencyCleanupStore
     /// Deletes every row that expired before <paramref name="cutoff"/>, in batches, and reports how many
     /// it removed.
     /// </summary>
+    /// <remarks>
+    /// A row that a twin's claim renews while the statement waits on that row's lock is left alone: the
+    /// batch tests the expiry predicate on the row itself, so the renewal wins the race and the claim
+    /// stays.
+    /// </remarks>
     /// <param name="cutoff">The instant a row must have expired before; the caller adds its grace period.</param>
     /// <param name="cancellationToken">Cancels the statement.</param>
     Task<int> DeleteExpiredAsync(DateTimeOffset cutoff, CancellationToken cancellationToken);

@@ -14,7 +14,9 @@ namespace NightTales.Application.Behaviors;
 /// Only commands run it: the constraint is <c>IBaseCommand</c>, so a query never opens a transaction.
 /// A commit that the database refuses (a lost update, a transient failure) is mapped to
 /// <c>concurrency_conflict</c> / <c>service_unavailable</c> by <see cref="IUnitOfWork"/>, and an
-/// exception thrown by the handler rolls back and rethrows unchanged.
+/// exception thrown by the handler rolls back and rethrows unchanged. Every rollback here ignores its
+/// own failure: the scope's context disposal rolls back an abandoned transaction too, and the handler's
+/// failure — its exception, or the error result it returned — is the one that must surface.
 /// </remarks>
 public sealed class UnitOfWorkBehavior<TMessage, TResponse>(IUnitOfWork unitOfWork)
     : IPipelineBehavior<TMessage, TResponse>
@@ -43,7 +45,8 @@ public sealed class UnitOfWorkBehavior<TMessage, TResponse>(IUnitOfWork unitOfWo
         if (response.IsError)
         {
             // UC3: an error result leaves nothing behind — no row, no outbox row, no idempotency row.
-            await unitOfWork.RollbackAsync(cancellationToken).ConfigureAwait(false);
+            // A failing rollback must not replace that result, exactly as on the exception paths below.
+            await RollbackIgnoringFailureAsync(cancellationToken).ConfigureAwait(false);
             return response;
         }
 
@@ -65,7 +68,7 @@ public sealed class UnitOfWorkBehavior<TMessage, TResponse>(IUnitOfWork unitOfWo
 
     /// <summary>
     /// Rolls back without letting a secondary failure replace the failure the caller must see: the
-    /// handler's own exception, or the error the commit mapping produced.
+    /// handler's own exception, the error result it returned, or the error the commit mapping produced.
     /// </summary>
     private async Task RollbackIgnoringFailureAsync(CancellationToken cancellationToken)
     {
