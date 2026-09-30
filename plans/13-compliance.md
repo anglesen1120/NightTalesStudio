@@ -169,7 +169,7 @@ Prohibited: realistic images of identifiable real people; accusations not suppor
 | Risk | Mitigation |
 |---|---|
 | Policy says one thing, code does another | Behaviour walkthrough before filing; tests for deletion windows; backup retention checked against the stated 30 days (13.3.2-T2) |
-| Verification/audit delays | YouTube audit filed in M1 as soon as upload works (13.4.2), pre-audit mode meanwhile, appeal/re-file on rejection; OAuth verification mid-M2 (SaaS only) |
+| Verification/audit delays | YouTube audit filed in M1 as soon as upload works and the policy pages are public (13.4.2) (M1 phase 2, 11 CR-18: the policy URLs must be public), pre-audit mode meanwhile, appeal/re-file on rejection; OAuth verification mid-M2 (SaaS only) |
 | Local-law gaps | Lawyer memo in M1; backlog items before M3 |
 | Defamation claim from true-crime content | Sources + attestation + takedown within 72 h + suspension tools |
 

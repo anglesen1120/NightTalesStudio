@@ -8,7 +8,7 @@ Legend: `done` (acceptance checks run and passed) · `doing` · `blocked (<who>)
 
 Keep this block ≤ 15 lines: current state and next step only. Move the previous block to the archive when you replace it.
 
-- **Current (2026-09-30 (4)).** `develop` @ `e1f1b01`: 09 waves 1–3 merged (#38–#41, #44–#46), tiered review gates (#47), STATUS split (#48). Owner decisions 2026-09-30 recorded (branch `docs/owner-decisions-0930`): NTS-922-SEC-001 → **(a) composite same-owner FKs** in `InitialCore`; 09.2.6 O2 → **separate deploy/migration role**; **phase 1 is local only** — hosting sign-off (§10.4.1), all deployment tasks (11 CR-18) and 13 OI-1 move to phase 2 (`DECISIONS.md` §10.13).
+- **Current (2026-09-30 (5)).** `develop` @ `db8af06`: owner decisions merged (#49): NTS-922-SEC-001 → composite same-owner FKs; 09.2.6 O2 → separate migration role; **phase 1 local only, phase 2 deploys** (11 CR-18). Follow-up branch `docs/phase-split-residuals`: 00 §6 composite-FK clause (09 W3 CR-46), M1 row split into phase 1/phase 2, 11.5.3-T3 + 13.4.2-T1 → phase 2, bucket consumers repointed at local 11.1.1-T2 storage.
 - **Next wave, in order:** `09.2.2-T2 ∥ 09.2.3-T1` (now unblocked) → `09.1.3-T2 ∥ 09.2.5-T1` → `09.2.4-T1` (09 README §5).
 - **Owner decisions open:** none blocking phase 1.
 - **Security debt live on `develop`:** see §Deferred security gates — the tenant filter does not exist yet.
@@ -28,7 +28,7 @@ Per-task evidence for `done` rows: `docs/status-archive.md` §Per-plan evidence 
 | 04 Voice proxy (12 tasks) | 10 | 04.2.2-T2, 04.2.3-T1 |
 | 05 Video/subtitles | 9 | 05.2.1-T1, 05.5.2 |
 | 09 Backend | 10 tasks + wave-3 plan fixes; all merged into `develop` | next wave in §Resume here |
-| 11 Worker deployment | 11.2.1-T1 (proposal only; sign-off deferred to phase 2, owner 2026-09-30) | cloud tasks: phase 2 |
+| 11 Worker deployment | 11.2.1-T1 (proposal only; sign-off deferred to phase 2, owner 2026-09-30) | phase 1: 11.1.x, 11.3.3, 11.3.5; the rest is phase 2 (11 CR-18) |
 | 13 Compliance | 13.1.1-T1, 13.1.2-T1 (PR #35) | 13.2.1-T1 → 13.2.2-T1, 10.3.1-T1 pages; 13.1.1-T2 / 13.1.2-T2 lawyer rows (O1) |
 
 Plans 06, 07, 08, 10, 12: not started. Order: `plans/features/README.md`.
@@ -80,3 +80,4 @@ Recent rows only; the full log is `docs/status-archive.md` §Session log.
 | 2026-09-30 | Tiered review gates (`docs/tiered-review-gates`, PR #47 → `30dd82e`) | Owner rule: per-task gates tiered by risk T0–T3 (T3 over size; T0 docs-only = one doc review, no QA agent). One home for the rule: `~/.omp/agent/RULES.md`; `plans/00-overview.md` §10, `WORKFLOW.md` §8.1, `AGENTS.md` point to it; 01 CR-26. Gate: T0 doc review, 2 findings fixed (`e44dc90`), closed on re-check |
 | 2026-09-30 | STATUS split (`docs/status-archive`) | History moved verbatim to `docs/status-archive.md`; this file keeps Resume here, progress by plan, open tasks, security gates, open findings and recent log rows. Docs only (T0) |
 | 2026-09-30 | Owner decisions (`docs/owner-decisions-0930`) | NTS-922-SEC-001 → (a) composite same-owner FKs (09.2.2-T2/09.2.3-T1 Notes, 09 README W3-O7); 09.2.6 O2 → separate deploy/migration role (09.2.6 plan.md, W3-O8); phase 1 local only, hosting sign-off and 13 OI-1 deferred to phase 2 (`DECISIONS.md` §10.4.1, §10.13). Docs only (T0) |
+| 2026-09-30 | Phase-split residuals (`docs/phase-split-residuals`) | TL follow-up to #49: 00 §6 states composite `(parent_id, user_id)` FKs (09 W3 CR-46); 00 §4 M1 row split phase 1 (Mac, private publishing) / phase 2 (cloud, public legal pages, audit filed); 11.5.3-T3 and 13.4.2-T1 → phase 2; 03.1.2-T1, 04.2.3-T1, 05.3.2-T2 use local 11.1.1-T2 buckets in phase 1; 10.10.2-T1 → 11.5.1-T1 soft. Docs only (T0); T0 review fixes: 04.2.3-T1/03.1.2-T1 upload steps + acceptance dev-only in phase 1 (04.2.3-T1 [OPEN]: tool must upload already-recorded keys to new envs before phase 2), 10.10.2-T1 phase-1 run on the optional Compose stack, YouTube audit filing timed to phase 2 in 00 §4.1/§13, DECISIONS §10.12, 06, 13 |
