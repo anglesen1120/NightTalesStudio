@@ -4,6 +4,8 @@ History moved out of `STATUS.md` on 2026-09-30 to keep the live file small. Text
 
 ## Resume-here history (Current/Previous blocks, Next actions)
 
+- **Previous (2026-09-30 (9)).** `develop` @ `31cef57`: 09 wave 5 merged — 09.1.3-T2 (#54, UnitOfWork/Idempotency/Authorization behaviours + `IdempotencyKeyCleanupJob`), 09.2.5-T1 (#55, catalog/flag seeders, Development auto-seed, `--seed` CLI; merged develop in `9f65e08` to resolve the additive DI conflict), STATUS #56. Post-merge `develop`: Release build 0 warnings, format 0, 160 unit + 297 integration + 49 infra green on PG17; CI green on both PRs.
+  - **Next wave, in order:** `09.2.4-T1` outbox (all deps on `develop`) → then 09.4.1-T1 series (09 README §5). With 09.2.4-T1, move `UnitOfWork_Success_CommitsEffectsAndOutboxTogether` onto the real `OutboxSaveChangesInterceptor`.
 - **Previous (2026-09-30 (8)) — 09 wave 5 implemented.** `develop` @ `48fd084`: 09.1.3-T2 (PR #54, UnitOfWork/Idempotency/Authorization behaviours + `IdempotencyKeyCleanupJob`) and 09.2.5-T1 (PR #55, catalog/flag seeders, Development auto-seed, `--seed` CLI). Both T3-gated, QA + code/perf/security reviews closed by delta re-checks; awaiting owner merge.
   - **Next wave, in order:** `09.2.4-T1` outbox (needs 09.1.3-T2 + 09.2.3-T1 + 09.2.6-T1, all landed once #54 merges) → then 09.4.1-T1 series (09 README §5).
   - **Security debt live on `develop`:** see §Deferred security gates — `AuthorizationBehavior` lands real in PR #54 (deny-by-default + role → 404), closing the stub once merged; production Api has no authentication registered yet.

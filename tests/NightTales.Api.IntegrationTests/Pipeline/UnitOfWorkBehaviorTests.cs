@@ -5,7 +5,6 @@ using NightTales.Api.IntegrationTests.Persistence;
 using NightTales.Application.Common.Errors;
 using NightTales.Domain.Series;
 using NightTales.Infrastructure.Persistence;
-using NightTales.Infrastructure.Persistence.Outbox;
 using NightTales.TestKit;
 using NightTales.TestKit.Auth;
 using NightTales.TestKit.Builders;
@@ -19,16 +18,22 @@ namespace NightTales.Api.IntegrationTests.Pipeline;
 
 /// <summary>
 /// <c>UnitOfWorkBehavior</c> against a real PostgreSQL 17 (09 README D5, 09.1.3-T2): one transaction
-/// per command, opened before the handler, committing the effects and the outbox rows together and
-/// leaving nothing behind on an error result or a thrown exception. It also proves the lock semantics
-/// 02 relies on (<c>pg_advisory_xact_lock</c> held until the commit) and the lost-update mapping.
+/// per command, opened before the handler, committing the handler's effects and the idempotency claim
+/// together and leaving nothing behind on an error result or a thrown exception. It also proves the lock
+/// semantics 02 relies on (<c>pg_advisory_xact_lock</c> held until the commit) and the lost-update
+/// mapping.
 /// </summary>
+/// <remarks>
+/// The outbox half of the original "effects and outbox rows together" assertion moved to
+/// <c>OutboxSaveChangesInterceptorTests</c> (09.2.4-T1), which writes a real domain event through the real
+/// interceptor; until then this class had to add an outbox row by hand.
+/// </remarks>
 public sealed class UnitOfWorkBehaviorTests(TestDatabase database) : IntegrationTest(database)
 {
     private const string HandlerFailureMessage = "probe handler failure (09.1.3-T2)";
 
     [Fact]
-    public async Task UnitOfWork_Success_CommitsEffectsAndOutboxTogether()
+    public async Task UnitOfWork_Success_CommitsEffectsAndIdempotencyClaim()
     {
         var ct = TestContextToken.Value;
         var clock = new FakeClock();
@@ -36,7 +41,6 @@ public sealed class UnitOfWorkBehaviorTests(TestDatabase database) : Integration
         await PipelineProbeRunner.CreateEffectTableAsync(Database, ct);
 
         var effectId = Guid.CreateVersion7();
-        var outboxId = Guid.CreateVersion7();
         var runner = new PipelineProbeRunner(
             Database,
             new TestCurrentUser { Id = user.Id },
@@ -44,7 +48,6 @@ public sealed class UnitOfWorkBehaviorTests(TestDatabase database) : Integration
             async (context, command, token) =>
             {
                 await InsertEffectAsync(context, effectId, token);
-                AddOutboxRow(context, outboxId, clock);
 
                 return effectId;
             });
@@ -54,7 +57,6 @@ public sealed class UnitOfWorkBehaviorTests(TestDatabase database) : Integration
         result.IsError.ShouldBeFalse();
         result.Value.ShouldBe(effectId);
         CountEffects(effectId).ShouldBe(1, "the effect row the handler wrote is committed");
-        CountOutbox(outboxId).ShouldBe(1, "the outbox row went through the same SaveChanges and commit");
         CountKeys(user.Id, "commit").ShouldBe(1, "the idempotency claim committed with the effects it guards");
     }
 
@@ -67,7 +69,6 @@ public sealed class UnitOfWorkBehaviorTests(TestDatabase database) : Integration
         await PipelineProbeRunner.CreateEffectTableAsync(Database, ct);
 
         var effectId = Guid.CreateVersion7();
-        var outboxId = Guid.CreateVersion7();
         const string key = "rollback";
         var runner = new PipelineProbeRunner(
             Database,
@@ -76,7 +77,6 @@ public sealed class UnitOfWorkBehaviorTests(TestDatabase database) : Integration
             async (context, command, token) =>
             {
                 await InsertEffectAsync(context, effectId, token);
-                AddOutboxRow(context, outboxId, clock);
 
                 return Error.Failure("probe_failure", "The probe command failed on purpose (09.1.3-T2).");
             });
@@ -86,7 +86,6 @@ public sealed class UnitOfWorkBehaviorTests(TestDatabase database) : Integration
         result.IsError.ShouldBeTrue();
         result.FirstError.Code.ShouldBe("probe_failure");
         CountEffects(effectId).ShouldBe(0, "an error result rolls the transaction back");
-        CountOutbox(outboxId).ShouldBe(0);
         CountKeys(user.Id, key).ShouldBe(0, "the claim is removed with the effects it guards");
     }
 
@@ -217,21 +216,6 @@ public sealed class UnitOfWorkBehaviorTests(TestDatabase database) : Integration
             [effectId],
             cancellationToken);
 
-    /// <summary>
-    /// Adds one outbox row to the scope. 09.2.4-T1's interceptor adds such rows inside
-    /// <c>SaveChanges</c>; until it lands the probe adds its own, which is the same row the commit must
-    /// make visible with the effect.
-    /// </summary>
-    private static void AddOutboxRow(AppDbContext context, Guid outboxId, FakeClock clock) =>
-        context.OutboxMessages.Add(new OutboxMessage
-        {
-            Id = outboxId,
-            Type = "probe.committed.v1",
-            Payload = "{}",
-            OccurredAt = clock.UtcNow,
-            NextAttemptAt = clock.UtcNow,
-        });
-
     private static async ValueTask<ErrorOr<Guid>> RenameAsync(
         AppDbContext context,
         Guid seriesId,
@@ -246,9 +230,6 @@ public sealed class UnitOfWorkBehaviorTests(TestDatabase database) : Integration
 
     private long CountEffects(Guid effectId) =>
         SqlProbe.Count(Database, $"SELECT count(*) FROM probe_pipeline_effects WHERE id = '{effectId}'");
-
-    private long CountOutbox(Guid outboxId) =>
-        SqlProbe.Count(Database, $"SELECT count(*) FROM outbox_messages WHERE id = '{outboxId}'");
 
     private long CountKeys(Guid userId, string key) =>
         SqlProbe.Count(Database, $"SELECT count(*) FROM idempotency_keys WHERE user_id = '{userId}' AND key = '{key}'");

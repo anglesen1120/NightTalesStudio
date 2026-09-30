@@ -11,6 +11,7 @@ using NightTales.Application.Abstractions.Jobs;
 using NightTales.Domain.Common;
 using NightTales.Infrastructure.Jobs;
 using NightTales.Infrastructure.Persistence;
+using NightTales.Infrastructure.Persistence.Outbox;
 using NightTales.TestKit.Database;
 using NightTales.TestKit.Time;
 using NightTalesWorkerHost::NightTales.Worker.DependencyInjection;
@@ -162,6 +163,18 @@ public sealed class WorkerHost(TestDatabase database, FakeClock clock) : IAsyncD
         return Services.CreateScope();
     }
 
+    /// <summary>
+    /// Claims and delivers one outbox batch with the host's own dispatcher — the same
+    /// <c>ProcessBatchAsync</c> its loop calls, so a test drives delivery without sleeping (09 README D13).
+    /// </summary>
+    /// <returns>How many messages the batch claimed; <c>0</c> when nothing was due.</returns>
+    public async Task<int> RunOutboxOnceAsync(CancellationToken cancellationToken = default)
+    {
+        var dispatcher = Services.GetRequiredService<OutboxDispatcher>();
+
+        return await dispatcher.ProcessBatchAsync(cancellationToken);
+    }
+
     /// <inheritdoc />
     public async ValueTask DisposeAsync()
     {
@@ -200,6 +213,12 @@ public sealed class WorkerHost(TestDatabase database, FakeClock clock) : IAsyncD
         builder.Services.RemoveAll<IClock>();
         builder.Services.AddSingleton<IClock>(clock);
         builder.Services.AddWorkerServices(builder.Configuration, [.. _jobAssemblies]);
+
+        // 09.2.4-T1, D13: RunOutboxOnceAsync is the harness's only outbox delivery path, so the Worker's
+        // loop is dropped from the collection before the host is built — it could otherwise claim and deliver
+        // a row the moment it is started. The dispatcher singleton stays, which is what RunOutboxOnceAsync
+        // drives.
+        WorkerComposition.WithoutOutboxDispatcherLoop(builder.Services);
 
         // The host's filter chain, with the observer first: it must be the last IJobFilterProvider
         // registration (AddJobs registers the platform chain), so Hangfire's client and server both
