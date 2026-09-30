@@ -1,6 +1,7 @@
 # 09.3.1, 09.3.2, 09.3.3, 09.10.4 — Auth: identity, sessions, MFA, password reset (P; 09.3.1-T3 S)
 
 > Parent: ../README.md (Part B)
+> Status: task **09.3.1-T1 implemented 2026-10-01** (branch `feature/09.3.1-T1-identity`); SEC-01 (placeholder breached list) open for the owner. Other tasks in this folder: not implemented.
 
 ## 1. Scope
 
