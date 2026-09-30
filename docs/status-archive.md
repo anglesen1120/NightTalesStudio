@@ -61,6 +61,10 @@ Replaced 2026-09-30 (5):
 
 - **Current (2026-09-30 (4)).** `develop` @ `e1f1b01`: 09 waves 1–3 merged (#38–#41, #44–#46), tiered review gates (#47), STATUS split (#48). Owner decisions 2026-09-30 recorded (branch `docs/owner-decisions-0930`): NTS-922-SEC-001 → **(a) composite same-owner FKs** in `InitialCore`; 09.2.6 O2 → **separate deploy/migration role**; **phase 1 is local only** — hosting sign-off (§10.4.1), all deployment tasks (11 CR-18) and 13 OI-1 move to phase 2 (`DECISIONS.md` §10.13).
 
+Replaced 2026-09-30 (6):
+
+- **Current (2026-09-30 (5)).** `develop` @ `db8af06`: owner decisions merged (#49): NTS-922-SEC-001 → composite same-owner FKs; 09.2.6 O2 → separate migration role; **phase 1 local only, phase 2 deploys** (11 CR-18). Follow-up branch `docs/phase-split-residuals`: 00 §6 composite-FK clause (09 W3 CR-46), M1 row split into phase 1/phase 2, 11.5.3-T3 + 13.4.2-T1 → phase 2, bucket consumers repointed at local 11.1.1-T2 storage.
+
 ## Per-plan evidence tables (as of 2026-09-30)
 
 ### Plan 01 — Environment setup (29 tasks)
