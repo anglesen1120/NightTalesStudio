@@ -3,7 +3,7 @@
 > Refines: `../../../09-backend-api.md` §4 (epic 09.2, story **09.2.2**, L84–86); `../../../00-overview.md` §6 (rows of the P core set).
 > Contract: `../README.md` — **F07**, **F08**, **F11**, **F12**, **D3**, **D6**, **D8**, **D9**, **D11**, **D16**; CR-4, CR-5.
 > Template: `../../../00-overview.md` §10.1. Legend: ✅ · ⚠️ · [DECISION] · [OPEN] · [INFERENCE].
-> Status: detailed plan, 2026-09-24. Nothing implemented yet.
+> Status: 09.2.2-T1 **implemented 2026-09-30** (PR #45); 09.2.2-T2 **implemented 2026-09-30** (PR #51: `InitialCore` with composite same-owner FKs per 09 CR-46, `migrations` CI job) — independent QA, code/performance/security reviews passed.
 
 ## 1. Scope
 

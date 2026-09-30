@@ -65,6 +65,10 @@ Replaced 2026-09-30 (6):
 
 - **Current (2026-09-30 (5)).** `develop` @ `db8af06`: owner decisions merged (#49): NTS-922-SEC-001 → composite same-owner FKs; 09.2.6 O2 → separate migration role; **phase 1 local only, phase 2 deploys** (11 CR-18). Follow-up branch `docs/phase-split-residuals`: 00 §6 composite-FK clause (09 W3 CR-46), M1 row split into phase 1/phase 2, 11.5.3-T3 + 13.4.2-T1 → phase 2, bucket consumers repointed at local 11.1.1-T2 storage.
 
+Replaced 2026-09-30 (7):
+
+- **Current (2026-09-30 (6)).** `develop` @ `ec75a22` (#50 merged). 09.2.2-T2 (InitialCore, composite FKs, migration CI job) → **PR #51**; 09.2.3-T1 (tenant filter, ICurrentUser, ISystemContext, SystemWorkQuery) → **PR #52** (this STATUS rides on #52). Both T3-gated (QA → code/perf/security → fixes); trial merge of both on `ec75a22`: 321/321 incl. integration on PG17. Merge in either order.
+
 ## Per-plan evidence tables (as of 2026-09-30)
 
 ### Plan 01 — Environment setup (29 tasks)

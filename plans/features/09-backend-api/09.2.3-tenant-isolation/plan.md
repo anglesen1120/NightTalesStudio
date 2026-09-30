@@ -3,7 +3,7 @@
 > Refines: `../../../09-backend-api.md` §4 (epic 09.2, story **09.2.3**, L88–95), §2 T6, §7; `../../../00-overview.md` §5.2 tenant isolation.
 > Contract: `../README.md` — **N9**, **D3**, **D8**, **D10**, **D13**.
 > Template: `../../../00-overview.md` §10.1. Legend: ✅ · ⚠️ · [DECISION] · [OPEN] · [INFERENCE].
-> Status: detailed plan, 2026-09-24. Nothing implemented yet. Security-relevant: review by the TL plus a second reader (00 §10.1).
+> Status: 09.2.3-T1 **implemented 2026-09-30** (PR #52) — independent QA, code/performance/security reviews passed. 09.2.3-T2 (cross-tenant route table, phase S) not started. Security-relevant: review by the TL plus a second reader (00 §10.1).
 
 ## 1. Scope
 
