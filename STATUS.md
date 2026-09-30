@@ -8,8 +8,8 @@ Legend: `done` (acceptance checks run and passed) · `doing` · `blocked (<who>)
 
 Keep this block ≤ 15 lines: current state and next step only. Move the previous block to the archive when you replace it.
 
-- **Current (2026-10-01 (1)).** `develop` @ `3a7c51c` has 09.2.4-T1 outbox (#58). Branch `feature/09.3.1-T1-identity` (code `7830f67`): 09.3.1-T1 — `AddIdentityCore<AppUser>` (BD2: 12 chars, no composition), `POST /api/v1/auth/register` → 403 `registration_closed` in every mode, `IConsentWriter` + `user_consents` (migration `_09_UserConsents`), breached-password checkers (`list` default, `range` fail-closed incl. malformed 200 bodies), dummy-hash `IdentityCredentialVerifier`; shared: `ProblemDetailsWriter` (binding errors → 400, lone catalogued code kept), `EfUnitOfWork` (23503 → `validation_failed`). T3 gates: QA (test-suite-runner) 7/7 + 15/15, D1–D4 fixed; code C1–C4, perf P1, security S2 fixed, delta review closed; SEC-01 open (owner). Release build 0 warnings, format 0, 468/468 tests on PG17.
-- **Next wave, in order (owner 2026-10-01, 09 W3 CR-47):** after the 09.3.1-T1 PR merges → `09.3.2-T1` login/refresh/logout + JwtBearer (closes the production-authentication gate; second human reader required, 09 README §B11) → `09.4.1-T1` series.
+- **Current (2026-10-01 (2)).** `develop` @ `38a09f8` has 09.3.1-T1 (#59). Branch `feature/09.3.2-T1-login` (code `38ead0c`): 09.3.2-T1 - `POST /auth/login|refresh|logout`, ES256 access tokens (fresh signing key per token + public-only validation key; P-256 curve OID checked), rotating `__Secure-nts_rt` families (per-family `pg_advisory_xact_lock`, reuse revokes the family, NOTIFY security), `RequireSameOriginFilter`, JwtBearer in production `Program.cs`, `ICurrentUser.SessionId`, meter `NightTales.Auth`, migration `_09_RefreshTokens`; range checker now sends `Add-Padding: true` and ignores count-0 rows (W3-O3). T3 gates: QA 14/14; code CR-1..3, security SEC-09.3.2-01 (family race), perf P1, metrics gap fixed; delta review closed. Release build 0 warnings, format 0, 525/525 tests on PG17. Build now needs `Auth__Jwt__SigningKey` (throwaway P-256 key; CI + `docs/dev-setup.md`).
+- **Next wave, in order (owner 2026-10-01, 09 W3 CR-47):** 09.3.2-T1 PR needs the **second human reader** (09 README §B11) before merge -> then `09.4.1-T1` series.
 - **Open finding SEC-01 (owner):** the bundled `breached-passwords.txt` is a synthetic placeholder (`sha1("nts-blocked-placeholder-<i>")`), not a real top-N list; `list` mode therefore blocks no real breached password. Decide the seed source (W3-O3: HIBP; Pwned Passwords range API has no licence requirement) before registration opens (09.3.1-T3, S).
 - **Owner decisions open:** none blocking phase 1.
 - **Security debt live on `develop`:** see §Deferred security gates — production Api has no authentication registered yet (`AuthorizationBehavior` closed in #54).
@@ -28,7 +28,7 @@ Per-task evidence for `done` rows: `docs/status-archive.md` §Per-plan evidence 
 | 03 Images (M0 slice) | 3 (03.1.1-T1, 03.4.1-T1, 03.3.2-T1) | 03.1.2-T1, 03.2.x, 03.4.2/03.4.3 (M1) |
 | 04 Voice proxy (12 tasks) | 10 | 04.2.2-T2, 04.2.3-T1 |
 | 05 Video/subtitles | 9 | 05.2.1-T1, 05.5.2 |
-| 09 Backend | 15 tasks merged (09.2.4-T1 outbox #58); 09.3.1-T1 identity implemented (PR open, SEC-01 open) | 09.3.2-T1 auth next, then 09.4.1-T1 (09 W3 CR-47) |
+| 09 Backend | 16 tasks merged (09.3.1-T1 #59); 09.3.2-T1 login implemented (PR open) | 09.4.1-T1 series next |
 | 11 Worker deployment | 11.2.1-T1 (proposal only; sign-off deferred to phase 2, owner 2026-09-30) | phase 1: 11.1.x, 11.3.3, 11.3.5; the rest is phase 2 (11 CR-18) |
 | 13 Compliance | 13.1.1-T1, 13.1.2-T1 (PR #35) | 13.2.1-T1 → 13.2.2-T1, 10.3.1-T1 pages; 13.1.1-T2 / 13.1.2-T2 lawyer rows (O1) |
 
