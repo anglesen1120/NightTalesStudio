@@ -241,6 +241,93 @@ namespace NightTales.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("NightTales.Domain.Audit.AuditLog", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("Action")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("action");
+
+                    b.Property<string>("ActorType")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("actor_type");
+
+                    b.Property<Guid?>("ActorUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("actor_user_id");
+
+                    b.Property<string>("Category")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("category");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("DataJson")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("data")
+                        .HasDefaultValueSql("'{}'::jsonb");
+
+                    b.Property<Guid?>("EntityId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("entity_id");
+
+                    b.Property<string>("EntityType")
+                        .HasColumnType("text")
+                        .HasColumnName("entity_type");
+
+                    b.Property<IPAddress>("Ip")
+                        .HasColumnType("inet")
+                        .HasColumnName("ip");
+
+                    b.Property<Guid?>("SubjectUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("subject_user_id");
+
+                    b.Property<string>("UserAgent")
+                        .HasColumnType("text")
+                        .HasColumnName("user_agent");
+
+                    b.Property<string>("Visibility")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("visibility");
+
+                    b.HasKey("Id")
+                        .HasName("pk_audit_logs");
+
+                    b.HasIndex("CreatedAt", "Id")
+                        .HasDatabaseName("ix_audit_logs_created_id");
+
+                    b.HasIndex("EntityType", "EntityId")
+                        .HasDatabaseName("ix_audit_logs_entity")
+                        .HasFilter("entity_id IS NOT NULL");
+
+                    b.HasIndex("SubjectUserId", "CreatedAt")
+                        .IsDescending(false, true)
+                        .HasDatabaseName("ix_audit_logs_subject_created");
+
+                    b.ToTable("audit_logs", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_audit_logs_actor_type", "\"actor_type\" IN ('admin', 'system', 'user')");
+
+                            t.HasCheckConstraint("ck_audit_logs_category", "\"category\" IN ('account_security', 'billing', 'episodes', 'publishing', 'support')");
+
+                            t.HasCheckConstraint("ck_audit_logs_user_visible_has_subject", "\"visibility\" <> 'user' OR subject_user_id IS NOT NULL");
+
+                            t.HasCheckConstraint("ck_audit_logs_visibility", "\"visibility\" IN ('internal', 'user')");
+                        });
+                });
+
             modelBuilder.Entity("NightTales.Domain.Catalog.StyleTemplate", b =>
                 {
                     b.Property<Guid>("Id")
