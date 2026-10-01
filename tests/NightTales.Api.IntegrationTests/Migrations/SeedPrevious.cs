@@ -114,6 +114,15 @@ internal static class SeedPrevious
                     '01920000-0000-7000-8000-00000000000a', 'seed-refresh-token-hash', now(), now(),
                     now() + interval '14 days', 0)
             """),
+        (
+            // 09.9.4-T1: the table the `_09_DataProtectionKeys` migration creates. Same rule as above:
+            // schema N-1 does not have it, so this insert is skipped today and the migration after this
+            // one is exercised over a key-ring row.
+            "data_protection_keys",
+            """
+            INSERT INTO data_protection_keys (friendly_name, xml)
+            VALUES ('seed-dp-key', '<key id="seed" />')
+            """),
     ];
 
     /// <summary>The tables the dataset covers, in insert order — the contract a feature migration extends.</summary>

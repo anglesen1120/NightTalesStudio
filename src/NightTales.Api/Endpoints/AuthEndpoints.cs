@@ -63,6 +63,10 @@ public static class AuthEndpoints
 
         var auth = routes.MapGroup(GroupPrefix);
 
+        // 09.9.4-T1 (BD12): the credentialed policy is for these routes only — the refresh cookie needs
+        // `Access-Control-Allow-Credentials` (BD3) and no other surface does.
+        auth.RequireCors(SecurityHeadersExtensions.AuthCorsPolicy);
+
         auth.MapPost(
                 "/register",
                 async (RegisterCommand command, ISender sender, HttpContext http, CancellationToken ct) =>

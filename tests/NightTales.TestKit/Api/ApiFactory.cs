@@ -8,6 +8,7 @@ using NightTales.Api.Http;
 using NightTales.Domain.Common;
 using NightTales.Infrastructure.Persistence;
 using NightTales.TestKit.Database;
+using NightTales.TestKit.Security;
 using NightTales.TestKit.Time;
 
 namespace NightTales.TestKit.Api;
@@ -15,9 +16,10 @@ namespace NightTales.TestKit.Api;
 /// <summary>
 /// Runs the real Api in-process for integration tests (09 README D13): the host of <c>Program</c>
 /// with the class database's connection string, the <see cref="FakeClock"/> in place of the system
-/// clock, 09.3.2-T1's required auth configuration (an ephemeral ES256 key and the public origin — see
-/// <see cref="ApplyRequiredAuthSettings"/>), and the <see cref="TestAuthHandler"/> scheme
-/// (<c>Test</c>) as the default — nothing else differs from the production composition root.
+/// clock, the configuration a deployment always provides (an ephemeral ES256 key, the public origin and
+/// the run's throwaway <c>DP_KEK</c> — see <see cref="ApplyRequiredStartupSettings"/>), and the
+/// <see cref="TestAuthHandler"/> scheme (<c>Test</c>) as the default — nothing else differs from the
+/// production composition root.
 /// </summary>
 /// <param name="database">The database of the test class; its connection string is handed to the host.</param>
 /// <param name="clock">The clock every component resolves instead of the system clock.</param>
@@ -60,10 +62,13 @@ public sealed class ApiFactory(TestDatabase database, FakeClock clock) : WebAppl
     public HttpClient AnonymousClient() => CreateClient();
 
     /// <summary>
-    /// The host of <c>Program</c> with only the connection string set — no <see cref="TestAuthHandler"/>
-    /// scheme, no <see cref="FakeClock"/> — for tests that prove the production composition root stays
-    /// free of test doubles (09 README D13, plan §8). <paramref name="configure"/> adds whatever the
-    /// test itself needs on top.
+    /// The host of <c>Program</c> with only the settings a real deployment always has — the connection
+    /// string, the required start-up configuration and the run's Data Protection KEK — and no
+    /// <see cref="TestAuthHandler"/> scheme or <see cref="FakeClock"/>, for tests that prove the
+    /// production composition root stays free of test doubles (09 README D13, plan §8).
+    /// <paramref name="configure"/> adds whatever the test itself needs on top, and can override any of
+    /// the settings above. <paramref name="withKeyRing"/> false leaves
+    /// <c>DataProtection:KekPfxPath</c> unset, which is how 09.9.4-T1's start-up validation is tested.
     /// </summary>
     /// <remarks>
     /// This helper exists because both hosts of the solution declare a top-level <c>Program</c>, so a
@@ -72,13 +77,14 @@ public sealed class ApiFactory(TestDatabase database, FakeClock clock) : WebAppl
     /// </remarks>
     public static WebApplicationFactory<Program> ProductionHost(
         string connectionString,
-        Action<IWebHostBuilder>? configure = null)
+        Action<IWebHostBuilder>? configure = null,
+        bool withKeyRing = true)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(connectionString);
 
         return new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
-            ApplyRequiredAuthSettings(builder);
+            ApplyRequiredStartupSettings(builder, withKeyRing);
 
             builder.UseSetting(
                 $"ConnectionStrings:{PersistenceOptions.ConnectionStringName}",
@@ -89,15 +95,25 @@ public sealed class ApiFactory(TestDatabase database, FakeClock clock) : WebAppl
     }
 
     /// <summary>
-    /// The configuration 09.3.2-T1's start-up validation requires and a real deployment takes from its
-    /// secret store and its environment: an ES256 key (ephemeral here, generated per run — never a committed
-    /// secret) and the SPA's origin. This is configuration, not a test double, which is why even the
-    /// production-composition-root host gets it.
+    /// The configuration every deployment provides and a host validates on start-up: an ES256 key
+    /// (ephemeral here, generated per run — never a committed secret), the SPA's origin, and the
+    /// <c>DP_KEK</c> PFX the Data Protection ring is encrypted with (09.3.2-T1, 09.9.4-T1). This is
+    /// configuration, not a test double, which is why even the production-composition-root host gets it.
     /// </summary>
-    private static void ApplyRequiredAuthSettings(IWebHostBuilder builder)
+    private static void ApplyRequiredStartupSettings(IWebHostBuilder builder, bool withKeyRing = true)
     {
         builder.UseSetting(TestSigningKey.ConfigurationKey, TestSigningKey.Pem);
         builder.UseSetting($"{AppOptions.SectionName}:{nameof(AppOptions.PublicOrigin)}", PublicOrigin);
+
+        if (!withKeyRing)
+        {
+            return;
+        }
+
+        // A throwaway self-signed RSA PFX for this run (TestKek), the same shape as the secret store's
+        // `nts/<env>/shared/DP_KEK`; the Api refuses to start without one (09.9.4-T1).
+        builder.UseSetting(TestKek.PathConfigurationKey, TestKek.SharedPath);
+        builder.UseSetting(TestKek.PasswordConfigurationKey, TestKek.SharedPassword);
     }
 
     /// <inheritdoc />
@@ -112,7 +128,7 @@ public sealed class ApiFactory(TestDatabase database, FakeClock clock) : WebAppl
             $"ConnectionStrings:{PersistenceOptions.ConnectionStringName}",
             database.ConnectionString);
 
-        ApplyRequiredAuthSettings(builder);
+        ApplyRequiredStartupSettings(builder);
 
         builder.ConfigureServices(services =>
         {

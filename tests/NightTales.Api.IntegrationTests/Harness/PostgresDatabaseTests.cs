@@ -112,36 +112,38 @@ public sealed class PostgresDatabaseTests : IntegrationTest
     {
         var ct = TestContextToken.Value;
 
-        // A second fixture points at an isolated template name: rebuilding the shared nts_template
-        // during the run would race the parallel classes copying from it. The rebuild is the same
+        // A second fixture points at a template name of its own: rebuilding the shared template during
+        // the run would race the parallel classes copying from it, and a fixed second name would race a
+        // second test process on the same server — a situation the harness supports (one test project per
+        // process, a worktree per task), so the name carries this process's id. The rebuild is the same
         // code path the run start uses (RebuildTemplateAsync), only the name differs.
-        const string StaleName = "nts_stale_probe";
-        var stale = new PostgresFixture(StaleName);
+        var staleName = $"nts_stale_probe_{Environment.ProcessId}";
+        var stale = new PostgresFixture(staleName);
 
         try
         {
             // Simulate the template an earlier run left behind: a database whose schema is not the
             // compiled one (an "older migration set"). Only the guarded DDL helpers are public now
             // (SEC 09.2.1-T2), which is all this test needs.
-            await stale.DropDatabaseAsync(StaleName, ct);
-            await stale.CreateDatabaseAsync(StaleName, templateDatabaseName: null, ct);
-            await stale.ExecuteAsync(StaleName, "CREATE TABLE stale_marker (id integer)", ct);
+            await stale.DropDatabaseAsync(staleName, ct);
+            await stale.CreateDatabaseAsync(staleName, templateDatabaseName: null, ct);
+            await stale.ExecuteAsync(staleName, "CREATE TABLE stale_marker (id integer)", ct);
 
-            (await stale.TableNamesAsync(StaleName, ct)).ShouldContain("stale_marker");
-            var staleOid = await stale.DatabaseOidAsync(StaleName, ct);
+            (await stale.TableNamesAsync(staleName, ct)).ShouldContain("stale_marker");
+            var staleOid = await stale.DatabaseOidAsync(staleName, ct);
 
             await stale.InitializeAsync();
 
-            (await stale.TableNamesAsync(StaleName, ct)).ShouldNotContain("stale_marker");
-            (await stale.TableNamesAsync(StaleName, ct)).ShouldContain("users");
-            (await stale.PendingMigrationsAsync(StaleName, ct)).ShouldBeEmpty();
-            (await stale.DatabaseOidAsync(StaleName, ct))
+            (await stale.TableNamesAsync(staleName, ct)).ShouldNotContain("stale_marker");
+            (await stale.TableNamesAsync(staleName, ct)).ShouldContain("users");
+            (await stale.PendingMigrationsAsync(staleName, ct)).ShouldBeEmpty();
+            (await stale.DatabaseOidAsync(staleName, ct))
                 .ShouldNotBe(staleOid, "a rebuild drops and recreates the database, so PostgreSQL assigns a new oid");
         }
         finally
         {
             // Cleanup must run even when the test was cancelled, so it does not take the test token.
-            await stale.DropDatabaseAsync(StaleName, CancellationToken.None);
+            await stale.DropDatabaseAsync(staleName, CancellationToken.None);
         }
     }
 
