@@ -68,7 +68,7 @@ public enum EpisodeNextAction
 /// <item><description><c>story_approved</c>: render plus the reopen edge of 00 §7 L341 — the version panel and the approve/reopen dialogs of 10.5.4/10.5.6 offer "reopen to edit" from this state.</description></item>
 /// <item><description><c>video_review</c>: approve, reject (with or without a re-render) and the download of the cut under review (10.6.2-T1 gates its download link on <see cref="EpisodeNextAction.Download"/>).</description></item>
 /// <item><description><c>ready → scheduled → published</c>: the publication flow (<see cref="EpisodeNextAction.Publish"/>, 10.7.2's create affordance) with the download still available.</description></item>
-/// <item><description><c>failed</c>: retry the render (<see cref="EpisodeNextAction.RetryRender"/>).</description></item>
+/// <item><description><c>failed</c>: retry the render (<see cref="EpisodeNextAction.RetryRender"/>) plus the delete edge of 00 §7 (<see cref="EpisodeNextAction.Cancel"/>).</description></item>
 /// <item><description><c>published</c> and <c>cancelled</c> are terminal: no action.</description></item>
 /// </list>
 /// <para>
