@@ -92,13 +92,13 @@ public sealed class EpisodeEndpointsTests(TestDatabase database) : IntegrationTe
         episode.Status.ShouldBe("draft");
         episode.LengthTier.ShouldBe("standard");
         episode.Etag.ShouldBe(response.Headers.ETag!.ToString());
-        episode.CreatedAt.ShouldBe(Start, "the command's clock is the Api's FakeClock");
 
         // The 02-M1-dev gate of 09.5.1 plan §11: a developer creates a series, creates an episode and
         // sees it in the list of that series.
         var list = await ReadPageAsync(client, $"?seriesId={seriesId}");
         list.Items.Select(item => item.Id).ShouldBe(new[] { created });
         list.Items[0].Etag.ShouldBe(episode.Etag, "the list row carries the tag its delete needs");
+        list.Items[0].CreatedAt.ShouldBe(Start, "the command's clock is the Api's FakeClock");
     }
 
     [Fact]
@@ -912,7 +912,11 @@ public sealed class EpisodeEndpointsTests(TestDatabase database) : IntegrationTe
         return problem;
     }
 
-    /// <summary>The <c>GET /episodes/{id}</c> body the routes return (09.5.1 plan §5).</summary>
+    /// <summary>
+    /// The <c>GET /episodes/{id}</c> body (09.5.1 plan §5; 09.5.3-T1 renamed the DTO and moved the block
+    /// members in, keeping <c>brief</c> and dropping the list-level stamps, so this test asserts the
+    /// episode's own fields plus the ETag only).
+    /// </summary>
     private sealed record EpisodeBody(
         Guid Id,
         Guid SeriesId,
@@ -920,12 +924,18 @@ public sealed class EpisodeEndpointsTests(TestDatabase database) : IntegrationTe
         string Brief,
         string Status,
         string LengthTier,
-        DateTimeOffset CreatedAt,
-        DateTimeOffset UpdatedAt,
         string Etag);
 
     /// <summary>One row of the list, whose <c>etag</c> the client uses for its next delete.</summary>
-    private sealed record EpisodeItem(Guid Id, Guid SeriesId, string? Title, string Status, string LengthTier, string Etag);
+    private sealed record EpisodeItem(
+        Guid Id,
+        Guid SeriesId,
+        string? Title,
+        string Status,
+        string LengthTier,
+        DateTimeOffset CreatedAt,
+        DateTimeOffset UpdatedAt,
+        string Etag);
 
     /// <summary>The <c>{ items, nextCursor }</c> body of the list (09 README D14).</summary>
     private sealed record EpisodePage(List<EpisodeItem> Items, string? NextCursor);

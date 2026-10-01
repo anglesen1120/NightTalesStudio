@@ -63,6 +63,12 @@ public sealed class EpisodeBuilder(TestDatabase database, TestCurrentUser curren
     /// <summary>The content type every builder asset carries.</summary>
     public const string DefaultContentType = "video/mp4";
 
+    /// <summary>The size every builder asset carries unless the caller sets one.</summary>
+    public const long DefaultSizeBytes = 1_024L;
+
+    /// <summary>The lowercase SHA-256 hex every builder asset carries unless the caller sets one.</summary>
+    public static readonly string DefaultSha256 = new('a', 64);
+
     /// <summary>
     /// Inserts one <c>assets</c> row of <paramref name="episodeId"/>. 09.7.x owns the asset behaviour
     /// (<c>ScheduleRetention</c>, <c>MarkDeleted</c>), so the row is materialized the way
@@ -79,6 +85,9 @@ public sealed class EpisodeBuilder(TestDatabase database, TestCurrentUser curren
     /// <param name="kind">The asset kind.</param>
     /// <param name="retentionUntil">A pre-set retention stamp, or <see langword="null"/> for none.</param>
     /// <param name="deletedAt">A tombstone stamp, or <see langword="null"/> for a live asset.</param>
+    /// <param name="sizeBytes">The stored size the detail block reports.</param>
+    /// <param name="durationSec">The media duration, or <see langword="null"/> (09.5.3-T1's video block).</param>
+    /// <param name="sha256">The content hash; a 64-character hex value.</param>
     /// <param name="ct">Cancels the insert.</param>
     public async Task<Asset> CreateAssetAsync(
         Guid userId,
@@ -86,6 +95,9 @@ public sealed class EpisodeBuilder(TestDatabase database, TestCurrentUser curren
         AssetKind kind = AssetKind.Video,
         DateTimeOffset? retentionUntil = null,
         DateTimeOffset? deletedAt = null,
+        long sizeBytes = DefaultSizeBytes,
+        decimal? durationSec = null,
+        string? sha256 = null,
         CancellationToken ct = default)
     {
         await using var context = database.CreateAppDbContext(currentUser, clock);
@@ -103,13 +115,41 @@ public sealed class EpisodeBuilder(TestDatabase database, TestCurrentUser curren
             nameof(Asset.StorageKey),
             $"media/{userId}/{episodeId}/{Guid.CreateVersion7():N}.mp4");
         ShellInstance.Set(context, asset, nameof(Asset.ContentType), DefaultContentType);
-        ShellInstance.Set(context, asset, nameof(Asset.SizeBytes), 1_024L);
-        ShellInstance.Set(context, asset, nameof(Asset.Sha256), new string('a', 64));
+        ShellInstance.Set(context, asset, nameof(Asset.SizeBytes), sizeBytes);
+        ShellInstance.Set(context, asset, nameof(Asset.DurationSec), durationSec);
+        ShellInstance.Set(context, asset, nameof(Asset.Sha256), sha256 ?? DefaultSha256);
         ShellInstance.Set(context, asset, nameof(Asset.RetentionUntil), retentionUntil);
         ShellInstance.Set(context, asset, nameof(Asset.DeletedAt), deletedAt);
 
         await context.SaveChangesAsync(ct);
 
         return asset;
+    }
+
+    /// <summary>
+    /// Points <c>episodes.final_video_asset_id</c> at an existing asset of the same episode — what the
+    /// ingest writes when a render succeeds (09.6.3-T2), and what the detail route reads its video block
+    /// from (09.5.3-T1). The asset must be inserted first: the column is a same-owner FK.
+    /// </summary>
+    /// <remarks>
+    /// The builder's current user must be <paramref name="userId"/>: this method <em>queries</em> the
+    /// episode, so the D10 tenant filter applies, unlike <see cref="CreateAsync"/>, which only inserts.
+    /// </remarks>
+    /// <param name="userId">The owner of the episode and of the asset.</param>
+    /// <param name="episodeId">The episode to update.</param>
+    /// <param name="assetId">The asset the episode's video is.</param>
+    /// <param name="ct">Cancels the update.</param>
+    public async Task AttachFinalVideoAsync(
+        Guid userId,
+        Guid episodeId,
+        Guid assetId,
+        CancellationToken ct = default)
+    {
+        await using var context = database.CreateAppDbContext(currentUser, clock);
+
+        var episode = await context.Episodes.SingleAsync(row => row.Id == episodeId, ct);
+        ShellInstance.Set(context, episode, nameof(Episode.FinalVideoAssetId), assetId);
+
+        await context.SaveChangesAsync(ct);
     }
 }
