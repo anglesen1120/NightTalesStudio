@@ -136,8 +136,15 @@ public sealed class EfMfaEnrolmentService(
             // branch answers an *error*, so UnitOfWorkBehavior rolls its transaction back: claiming the
             // trip report here would consume the claim while the audit row it guards never commits, and
             // the whole window would end with no row. The claim therefore belongs to a committing path
-            // (the login gate and a failed re-authentication), which is where TryClaimTripReport is called.
-            _ = guessWindow.RegisterWrongCode(userId, now);
+            // (the login gate and a failed re-authentication).
+            var charge = guessWindow.RegisterWrongCode(userId, now);
+            if (charge is GuessWindowCharge.Refused)
+            {
+                // The window is saturated with active lockouts, so this untracked key's wrong code is
+                // refused with the same 429 a real lockout gives. Nothing is claimed and no audit row is
+                // written: the key never reached the threshold.
+                return MfaErrors.RateLimited(InMemoryMfaGuessWindow.RetryAfterSeconds);
+            }
 
             return verified.Errors;
         }

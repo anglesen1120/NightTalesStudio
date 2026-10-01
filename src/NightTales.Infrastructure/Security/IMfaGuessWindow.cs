@@ -1,5 +1,25 @@
 namespace NightTales.Infrastructure.Security;
 
+/// <summary>What charging one wrong code produced (WT35).</summary>
+/// <remarks>
+/// <see cref="Refused"/> is the fail-closed answer of a saturated window: while the user cap is held
+/// entirely by active lockouts, a key that is not tracked cannot be admitted without evicting somebody's
+/// lockout, so its wrong code is refused and the caller answers 429 <c>rate_limited</c> — the same answer a
+/// real lockout gives. A <em>correct</em> code never passes through this call, so saturation cannot block a
+/// valid TOTP; and the refused key must not claim the trip report, because it never reached the threshold.
+/// </remarks>
+public enum GuessWindowCharge
+{
+    /// <summary>The wrong code was counted; the window is not yet at the threshold.</summary>
+    Counted,
+
+    /// <summary>This call crossed the threshold, so the one report of that trip may be claimed.</summary>
+    Tripped,
+
+    /// <summary>The window is saturated with active lockouts; the wrong code is refused (429).</summary>
+    Refused,
+}
+
 /// <summary>
 /// The per-user wrong-code window of [RULED — README §B10 WT35]: wrong TOTP and recovery codes are
 /// counted <em>per user</em>, across every challenge and every re-authentication.
@@ -31,6 +51,11 @@ public interface IMfaGuessWindow
     /// <summary>
     /// Whether the user has tripped the window, and for how long a client must wait.
     /// </summary>
+    /// <remarks>
+    /// A key the window does not track is answered <see langword="null"/>, even while the window is
+    /// saturated: this method is consulted before verification on some routes, and a correct code must
+    /// never be blocked by saturation. Only <see cref="RegisterWrongCode"/> refuses a wrong code.
+    /// </remarks>
     /// <param name="userId">The user to read.</param>
     /// <param name="now">The scope's clock reading.</param>
     /// <returns>
@@ -45,9 +70,11 @@ public interface IMfaGuessWindow
     /// <param name="userId">The user the wrong code belongs to.</param>
     /// <param name="now">The scope's clock reading.</param>
     /// <returns>
-    /// <see langword="true"/> when this call is the one that crossed the threshold.
+    /// <see cref="GuessWindowCharge.Tripped"/> when this call is the one that crossed the threshold,
+    /// <see cref="GuessWindowCharge.Refused"/> when a saturated window refuses the key, otherwise
+    /// <see cref="GuessWindowCharge.Counted"/>.
     /// </returns>
-    bool RegisterWrongCode(Guid userId, DateTimeOffset now);
+    GuessWindowCharge RegisterWrongCode(Guid userId, DateTimeOffset now);
 
     /// <summary>
     /// Whether the caller is the first to report this trip, so the one audit row of WT35 is written once

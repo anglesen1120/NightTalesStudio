@@ -588,6 +588,104 @@ public sealed class MfaEdgeCaseTests(TestDatabase database) : IntegrationTest(da
             .ShouldBe("1", "the whole tripped window leaves exactly one account_security row");
     }
 
+    [Fact]
+    public async Task QaVerify_WhileWindowSaturated_RefusesWrongCodeWith429_AndCorrectCodeSucceeds()
+    {
+        var clock = new FakeClock();
+        using var factory = new ApiFactory(Database, clock);
+        Saturate(factory, clock);
+
+        var user = await AuthTestFlow.CreateUserAsync(factory.Services);
+        var familyId = await MfaTestFlow.SeedFamilyAsync(
+            Database, user, clock.UtcNow, reauthenticatedAt: clock.UtcNow);
+        using var client = factory.ClientFor(user.Id, user.Role, sessionId: familyId);
+
+        var setup = await client.PostAsync(MfaTestFlow.SetupPath, content: null, Ct);
+        setup.StatusCode.ShouldBe(HttpStatusCode.OK);
+        var pending = await MfaTestFlow.SetupSecretAsync(setup, Ct);
+
+        var wrong = await client.PostAsJsonAsync(
+            MfaTestFlow.VerifyPath,
+            new { code = MfaTestFlow.WrongCode(pending, clock.UtcNow) },
+            Ct);
+
+        wrong.StatusCode.ShouldBe(
+            HttpStatusCode.TooManyRequests,
+            "a saturated window answers a wrong code for an untracked key as locked");
+        (await AuthTestFlow.ProblemCodeAsync(wrong)).ShouldBe(ErrorCodes.RateLimited);
+        MfaTestFlow.RetryAfter(wrong).ShouldBe("900");
+
+        (await MfaTestFlow.ScalarAsync(
+                Database,
+                $"SELECT count(*)::text FROM audit_logs WHERE action = '{MfaTestFlow.GuessingLockedAction}' "
+                + $"AND subject_user_id = '{user.Id}'"))
+            .ShouldBe("0", "a refused key never reached the threshold, so no lockout row is written");
+
+        var correct = await client.PostAsJsonAsync(
+            MfaTestFlow.VerifyPath,
+            new { code = MfaTestFlow.Code(pending, clock.UtcNow) },
+            Ct);
+
+        correct.StatusCode.ShouldBe(
+            HttpStatusCode.OK,
+            "saturation must never block a valid code, which never goes through the wrong-code charge");
+    }
+
+    [Fact]
+    public async Task QaReauth_WhileWindowSaturated_RefusesWrongCodeWith429_AndWritesNoRow()
+    {
+        var clock = new FakeClock();
+        using var factory = new ApiFactory(Database, clock);
+        var user = await AuthTestFlow.CreateUserAsync(factory.Services);
+        var enrolment = await MfaTestFlow.EnrollAsync(factory, Database, user, clock, Ct);
+
+        Saturate(factory, clock);
+
+        var familyId = await MfaTestFlow.SeedFamilyAsync(
+            Database, user, clock.UtcNow, reauthenticatedAt: clock.UtcNow);
+        using var client = factory.ClientFor(user.Id, user.Role, sessionId: familyId);
+
+        var wrong = await client.PostAsJsonAsync(
+            MfaTestFlow.ReauthPath,
+            new { password = MfaTestFlow.Password, code = MfaTestFlow.WrongCode(enrolment.Secret, clock.UtcNow) },
+            Ct);
+
+        wrong.StatusCode.ShouldBe(
+            HttpStatusCode.TooManyRequests,
+            "a saturated window answers a wrong code for an untracked key as locked");
+        (await AuthTestFlow.ProblemCodeAsync(wrong)).ShouldBe(ErrorCodes.RateLimited);
+        MfaTestFlow.RetryAfter(wrong).ShouldBe("900");
+
+        (await MfaTestFlow.ScalarAsync(
+                Database,
+                $"SELECT count(*)::text FROM audit_logs WHERE subject_user_id = '{user.Id}' "
+                + $"AND action IN ('{MfaTestFlow.ReauthFailedAction}', '{MfaTestFlow.GuessingLockedAction}')"))
+            .ShouldBe("0", "the refused attempt charged nothing and wrote no failure or lockout row");
+
+        (await MfaTestFlow.ScalarAsync(
+                Database,
+                $"SELECT reauth_attempts::text FROM refresh_tokens WHERE family_id = '{familyId}'"))
+            .ShouldBe("0", "the refused attempt is not charged to the family counter");
+    }
+
+    /// <summary>
+    /// Fills the wrong-code window with users whose lockouts are all still active, so the next untracked
+    /// key is refused rather than evicting one of them.
+    /// </summary>
+    private static void Saturate(ApiFactory factory, FakeClock clock)
+    {
+        var window = factory.Services.GetRequiredService<IMfaGuessWindow>();
+
+        for (var index = 0; index < InMemoryMfaGuessWindow.MaxTrackedUsers; index++)
+        {
+            var user = Guid.CreateVersion7();
+            for (var code = 0; code < InMemoryMfaGuessWindow.Threshold; code++)
+            {
+                _ = window.RegisterWrongCode(user, clock.UtcNow);
+            }
+        }
+    }
+
     /// <summary>One verification through the real verifier, inside its own transaction.</summary>
     private static async Task<ErrorOr<long>> VerifyAsync(ApiFactory factory, Guid userId, string code)
     {

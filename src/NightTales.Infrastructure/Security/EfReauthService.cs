@@ -35,6 +35,13 @@ namespace NightTales.Infrastructure.Security;
 /// A caller with no live family writes nothing: there is no session to charge or to revoke, so the answer
 /// is 401 <c>session_revoked</c> with no row — the same answer an unknown refresh cookie gets (WT21).
 /// </para>
+/// <para>
+/// Every path that touches the account or one of its families takes the per-user advisory lock first
+/// (<see cref="SecuritySql.LockUserAsync"/>): here, before the TOTP compare-and-set and before
+/// <c>MarkReauthenticatedAsync</c> takes the family lock. The MFA lifecycle takes the same lock first, so
+/// the one order is per-user lock → family lock → <c>users</c> row and a concurrent re-authentication and
+/// MFA change cannot deadlock.
+/// </para>
 /// </remarks>
 /// <param name="database">The scope's write model: the account read.</param>
 /// <param name="currentUser">The caller's <c>sub</c> and <c>sid</c> claims.</param>
@@ -71,6 +78,12 @@ public sealed class EfReauthService(
         {
             return Failed(RevokedSession());
         }
+
+        // One global lock order: the per-user advisory lock first, then any family lock, then the users
+        // row. The re-authentication's TOTP compare-and-set writes the users row and MarkReauthenticatedAsync
+        // takes the family lock, while the MFA lifecycle takes the family locks and writes the users row at
+        // commit; taking this lock first makes both orders the same and removes the deadlock cycle.
+        await SecuritySql.LockUserAsync(database, userId, ct).ConfigureAwait(false);
 
         var user = await database.Users
             .SingleOrDefaultAsync(candidate => candidate.Id == userId, ct)
@@ -161,7 +174,14 @@ public sealed class EfReauthService(
     {
         if (wrongCode)
         {
-            _ = guessWindow.RegisterWrongCode(user.Id, now);
+            var charge = guessWindow.RegisterWrongCode(user.Id, now);
+            if (charge is GuessWindowCharge.Refused)
+            {
+                // The window is saturated with active lockouts, so this untracked key's wrong code is
+                // refused with the same 429 a real lockout gives. Nothing is charged and nothing is
+                // claimed: the key never reached the threshold.
+                return Failed(MfaErrors.RateLimited(InMemoryMfaGuessWindow.RetryAfterSeconds));
+            }
         }
 
         var charged = await refreshTokens

@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging.Abstractions;
 using NightTales.Infrastructure.Security;
 using Shouldly;
 using Xunit;
@@ -16,7 +17,7 @@ public sealed class InMemoryMfaGuessWindowTests
     [Fact]
     public void Queue_IsBoundedByThreshold_AndTheUserStaysBlocked()
     {
-        var window = new InMemoryMfaGuessWindow();
+        var window = new InMemoryMfaGuessWindow(NullLogger<InMemoryMfaGuessWindow>.Instance);
         var user = Guid.CreateVersion7();
 
         for (var index = 0; index < InMemoryMfaGuessWindow.Threshold * 100; index++)
@@ -33,14 +34,16 @@ public sealed class InMemoryMfaGuessWindowTests
     [Fact]
     public void Trip_IsReportedOncePerWindow_AndAgainAfterTheWindowCloses()
     {
-        var window = new InMemoryMfaGuessWindow();
+        var window = new InMemoryMfaGuessWindow(NullLogger<InMemoryMfaGuessWindow>.Instance);
         var user = Guid.CreateVersion7();
 
         for (var index = 0; index < InMemoryMfaGuessWindow.Threshold; index++)
         {
             window.RegisterWrongCode(user, Start).ShouldBe(
-                index == InMemoryMfaGuessWindow.Threshold - 1,
-                "exactly the crossing call answers true");
+                index == InMemoryMfaGuessWindow.Threshold - 1
+                    ? GuessWindowCharge.Tripped
+                    : GuessWindowCharge.Counted,
+                "exactly the crossing call answers Tripped");
         }
 
         window.TryClaimTripReport(user).ShouldBeTrue();
@@ -52,7 +55,7 @@ public sealed class InMemoryMfaGuessWindowTests
         var trips = 0;
         for (var index = 0; index < InMemoryMfaGuessWindow.Threshold; index++)
         {
-            if (window.RegisterWrongCode(user, later))
+            if (window.RegisterWrongCode(user, later) is GuessWindowCharge.Tripped)
             {
                 trips++;
             }
@@ -65,7 +68,7 @@ public sealed class InMemoryMfaGuessWindowTests
     [Fact]
     public void UserCap_IsEnforced_ButAnActiveLockoutSurvives()
     {
-        var window = new InMemoryMfaGuessWindow();
+        var window = new InMemoryMfaGuessWindow(NullLogger<InMemoryMfaGuessWindow>.Instance);
 
         var blocked = Guid.CreateVersion7();
         for (var index = 0; index < InMemoryMfaGuessWindow.Threshold; index++)
@@ -95,5 +98,84 @@ public sealed class InMemoryMfaGuessWindowTests
         }
 
         window.BlockedFor(fresh, Start + TimeSpan.FromMinutes(5)).ShouldNotBeNull();
+    }
+
+    [Fact]
+    public void Saturation_HeldByActiveLockouts_RefusesWrongCodes_AndKeepsEveryLockout()
+    {
+        var window = new InMemoryMfaGuessWindow(NullLogger<InMemoryMfaGuessWindow>.Instance);
+        var blocked = new List<Guid>(InMemoryMfaGuessWindow.MaxTrackedUsers);
+
+        for (var index = 0; index < InMemoryMfaGuessWindow.MaxTrackedUsers; index++)
+        {
+            var user = Guid.CreateVersion7();
+            blocked.Add(user);
+            Block(window, user);
+        }
+
+        window.TrackedUsers.ShouldBe(InMemoryMfaGuessWindow.MaxTrackedUsers);
+
+        // The cap is held entirely by live lockouts: the new key's wrong code is refused (fail closed),
+        // not counted and not admitted by evicting a lockout.
+        var refused = Guid.CreateVersion7();
+        window.RegisterWrongCode(refused, Start).ShouldBe(
+            GuessWindowCharge.Refused,
+            "an untracked key gets no unlimited guesses while the window is saturated");
+        window.TrackedUsers.ShouldBe(
+            InMemoryMfaGuessWindow.MaxTrackedUsers,
+            "no lockout may be evicted to make room");
+        window.BlockedFor(refused, Start).ShouldBeNull(
+            "saturation must not block the correct-code path of an untracked key");
+        window.TryClaimTripReport(refused).ShouldBeTrue(
+            "the refused key never reached the threshold, so it claimed no trip report");
+
+        foreach (var user in blocked)
+        {
+            window.BlockedFor(user, Start + TimeSpan.FromMinutes(1)).ShouldBe(
+                InMemoryMfaGuessWindow.RetryAfter,
+                "every active lockout survives saturation");
+        }
+    }
+
+    [Fact]
+    public void Saturation_WithFewerUnblockedThanTheBatch_EvictsOnlyTheUnblocked()
+    {
+        var window = new InMemoryMfaGuessWindow(NullLogger<InMemoryMfaGuessWindow>.Instance);
+        var blocked = new List<Guid>(InMemoryMfaGuessWindow.MaxTrackedUsers);
+
+        for (var index = 0; index < InMemoryMfaGuessWindow.MaxTrackedUsers - 1; index++)
+        {
+            var user = Guid.CreateVersion7();
+            blocked.Add(user);
+            Block(window, user);
+        }
+
+        // One unblocked user is the only evictable entry, and it is far fewer than the batch.
+        var single = Guid.CreateVersion7();
+        _ = window.RegisterWrongCode(single, Start);
+        window.BlockedFor(single, Start).ShouldBeNull();
+
+        var fresh = Guid.CreateVersion7();
+        _ = window.RegisterWrongCode(fresh, Start);
+
+        window.TrackedUsers.ShouldBeLessThanOrEqualTo(InMemoryMfaGuessWindow.MaxTrackedUsers);
+        window.BlockedFor(single, Start).ShouldBeNull("the only unblocked entry made room");
+        window.BlockedFor(fresh, Start).ShouldBeNull("the new key was admitted");
+
+        foreach (var user in blocked)
+        {
+            window.BlockedFor(user, Start + TimeSpan.FromMinutes(1)).ShouldBe(
+                InMemoryMfaGuessWindow.RetryAfter,
+                "no lockout is evicted when the batch cannot be filled without one");
+        }
+    }
+
+    /// <summary>Trips one user's window at <see cref="Start"/>.</summary>
+    private static void Block(InMemoryMfaGuessWindow window, Guid user)
+    {
+        for (var code = 0; code < InMemoryMfaGuessWindow.Threshold; code++)
+        {
+            _ = window.RegisterWrongCode(user, Start);
+        }
     }
 }

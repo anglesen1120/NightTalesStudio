@@ -16,8 +16,10 @@ namespace NightTales.Infrastructure.Security;
 /// <para>
 /// Encoding is unpadded: a 20-byte secret (160 bits) is a whole number of five-bit characters, so it
 /// encodes to exactly 32 characters and the <c>otpauth</c> URI carries no <c>=</c> (the key-URI format's
-/// convention). Decoding accepts that form, tolerates padding and lower case, and rejects any character
-/// outside the alphabet.
+/// convention). Decoding accepts that form and the padded form, tolerates lower case, and rejects anything
+/// that is not a canonical encoding: a character outside the alphabet, padding that is not one trailing
+/// run, a length no whole number of bytes produces, non-zero residual bits, and a text that decodes to no
+/// byte.
 /// </para>
 /// </remarks>
 public static class Base32
@@ -69,14 +71,16 @@ public static class Base32
     }
 
     /// <summary>
-    /// Decodes RFC 4648 base32 into <paramref name="destination"/>, folding lower case and skipping the
-    /// optional <c>=</c> padding.
+    /// Decodes RFC 4648 base32 into <paramref name="destination"/>, folding lower case and accepting the
+    /// optional trailing <c>=</c> padding.
     /// </summary>
     /// <param name="text">The text to decode.</param>
     /// <param name="destination">The buffer to write into; its length bounds the decoded value.</param>
     /// <param name="written">The bytes written when the answer is <see langword="true"/>.</param>
     /// <returns>
-    /// <see langword="false"/> for a character outside the alphabet, for an empty text, or when the value
+    /// <see langword="false"/> for a character outside the alphabet, for an empty text, for padding that is
+    /// not a single trailing run, for a length that is not the canonical encoding of a whole number of
+    /// bytes, for non-zero residual (padding) bits, for a decode that yields no byte, or when the value
     /// does not fit <paramref name="destination"/>.
     /// </returns>
     public static bool TryDecode(ReadOnlySpan<char> text, Span<byte> destination, out int written)
@@ -88,17 +92,31 @@ public static class Base32
             return false;
         }
 
+        // Padding may appear only as one trailing run (RFC 4648 §6); interior `=` is rejected.
+        var paddingAt = text.IndexOf('=');
+        var data = paddingAt < 0 ? text : text[..paddingAt];
+        if (paddingAt >= 0)
+        {
+            foreach (var character in text[paddingAt..])
+            {
+                if (character != '=')
+                {
+                    return false;
+                }
+            }
+        }
+
+        if (data.IsEmpty || !IsCanonicalLength(data.Length))
+        {
+            return false;
+        }
+
         var buffer = 0;
         var bits = 0;
+        var count = 0;
 
-        foreach (var character in text)
+        foreach (var character in data)
         {
-            if (character == '=')
-            {
-                // The otpauth secret is unpadded; accept padding when a caller supplies it (RFC 4648 §6).
-                continue;
-            }
-
             if (!TryValue(character, out var value))
             {
                 return false;
@@ -109,15 +127,29 @@ public static class Base32
 
             if (bits >= 8)
             {
-                if (written >= destination.Length)
+                if (count >= destination.Length)
                 {
                     return false;
                 }
 
-                destination[written++] = (byte)((buffer >> (bits - 8)) & 0xFF);
+                destination[count++] = (byte)((buffer >> (bits - 8)) & 0xFF);
                 bits -= 8;
             }
         }
+
+        // The bits left over are the encoding's zero padding: a non-zero value means the text is not the
+        // canonical encoding of the bytes it decodes to.
+        if (bits > 0 && (buffer & ((1 << bits) - 1)) != 0)
+        {
+            return false;
+        }
+
+        if (count == 0)
+        {
+            return false;
+        }
+
+        written = count;
 
         return true;
     }
@@ -148,6 +180,13 @@ public static class Base32
 
     /// <summary>A fresh 20-byte secret as 32 RFC 4648 base32 characters (BD4).</summary>
     public static string NewSecret() => Encode(RandomNumberGenerator.GetBytes(SecretBytes));
+
+    /// <summary>
+    /// Whether <paramref name="length"/> data characters are the canonical encoding of a whole number of
+    /// bytes: 1..5 bytes encode to 2, 4, 5, 7 and 8 characters, so the length modulo 8 is always one of
+    /// 0, 2, 4, 5 or 7 (never 1, 3 or 6).
+    /// </summary>
+    private static bool IsCanonicalLength(int length) => (length % 8) is 0 or 2 or 4 or 5 or 7;
 
     /// <summary>The five bits of one character (case-insensitive); <c>false</c> outside the alphabet.</summary>
     private static bool TryValue(char character, out int value)

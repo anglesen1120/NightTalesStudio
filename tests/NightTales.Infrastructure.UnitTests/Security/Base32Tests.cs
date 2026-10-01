@@ -70,11 +70,23 @@ public sealed class Base32Tests
     [Fact]
     public void TryDecode_RejectsNonAlphabetCharacters_AndAcceptsCaseAndPadding()
     {
-        Base32.TryDecode("ABCDEFG=", out _).ShouldBeTrue("padding is optional in the otpauth secret");
+        Base32.TryDecode("MZXW6===", out var foo).ShouldBeTrue("padding is optional in the otpauth secret");
+        foo.ShouldBe(Encoding.ASCII.GetBytes("foo"), "RFC 4648's published vector");
         Base32.TryDecode("abcdefgh", out _).ShouldBeTrue("decoding folds case");
         Base32.TryDecode("0189", out _).ShouldBeFalse("0, 1, 8 and 9 are outside RFC 4648's alphabet");
         Base32.TryDecode("-", out _).ShouldBeFalse();
         Base32.TryDecode(string.Empty, out _).ShouldBeFalse();
+    }
+
+    [Fact]
+    public void TryDecode_RejectsNonCanonicalEncodings()
+    {
+        Base32.TryDecode("A", out _).ShouldBeFalse("one data character is not a whole number of bytes");
+        Base32.TryDecode("AAA", out _).ShouldBeFalse("three data characters are a length no encoding produces");
+        Base32.TryDecode("========", out _).ShouldBeFalse("an all-padding text decodes to nothing");
+        Base32.TryDecode("M=Y", out _).ShouldBeFalse("padding may appear only as one trailing run");
+        Base32.TryDecode("AB", out _).ShouldBeFalse("the residual padding bits must be zero");
+        Base32.TryDecode("AA", out _).ShouldBeTrue();
     }
 
     [Fact]

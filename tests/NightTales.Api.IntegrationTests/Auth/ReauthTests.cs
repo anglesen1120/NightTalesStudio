@@ -8,6 +8,7 @@ using NightTales.Application.Abstractions.Persistence;
 using NightTales.Application.Abstractions.Security;
 using NightTales.Application.Common.Errors;
 using NightTales.Domain.Common;
+using NightTales.Infrastructure.Persistence;
 using NightTales.Infrastructure.Security;
 using NightTales.TestKit;
 using NightTales.TestKit.Api;
@@ -368,6 +369,95 @@ public sealed class ReauthTests(TestDatabase database) : IntegrationTest(databas
         stamped.FirstError.Code.ShouldBe(ErrorCodes.SessionRevoked);
 
         (await unitOfWork.CommitAsync(Ct)).IsError.ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task Reauth_ConcurrentWithMfaChange_DoNotDeadlock()
+    {
+        var clock = new FakeClock();
+        using var factory = new ApiFactory(Database, clock);
+
+        // Several rounds so the two transactions overlap in different ways.
+        for (var round = 0; round < 5; round++)
+        {
+            var user = await AuthTestFlow.CreateUserAsync(factory.Services);
+            var enrolment = await MfaTestFlow.EnrollAsync(factory, Database, user, clock, Ct);
+
+            var reauthFamily = await MfaTestFlow.SeedFamilyAsync(
+                Database, user, clock.UtcNow, reauthenticatedAt: clock.UtcNow);
+            var changeFamily = await MfaTestFlow.SeedFamilyAsync(
+                Database, user, clock.UtcNow, reauthenticatedAt: clock.UtcNow);
+
+            using var reauthClient = factory.ClientFor(user.Id, user.Role, sessionId: reauthFamily);
+            using var changeClient = factory.ClientFor(user.Id, user.Role, sessionId: changeFamily);
+
+            // The re-authentication's TOTP compare-and-set writes the users row and then takes a family
+            // lock; the disable takes the family locks and writes the users row at commit. Without one lock
+            // order they can deadlock; with it they serialize.
+            var reauthTask = reauthClient.PostAsJsonAsync(
+                MfaTestFlow.ReauthPath,
+                new { password = MfaTestFlow.Password, code = MfaTestFlow.Code(enrolment.Secret, clock.UtcNow) },
+                Ct);
+            var changeTask = changeClient.DeleteAsync(MfaTestFlow.MfaPath, Ct);
+
+            var responses = await Task.WhenAll(reauthTask, changeTask);
+
+            responses[0].StatusCode.ShouldBeOneOf(
+                [HttpStatusCode.OK, HttpStatusCode.Unauthorized],
+                "the re-authentication completes or is refused, never a 5xx from a deadlock (40P01)");
+            responses[1].StatusCode.ShouldBe(
+                HttpStatusCode.NoContent,
+                "the MFA change completes, never a 5xx from a deadlock (40P01)");
+        }
+    }
+
+    [Fact]
+    public async Task Reauthenticate_HoldsTheUserLock_WhileItWaitsForTheFamily()
+    {
+        var clock = new FakeClock();
+        using var factory = new ApiFactory(Database, clock);
+        var user = await AuthTestFlow.CreateUserAsync(factory.Services);
+        var enrolment = await MfaTestFlow.EnrollAsync(factory, Database, user, clock, Ct);
+
+        var familyId = await MfaTestFlow.SeedFamilyAsync(
+            Database, user, clock.UtcNow, reauthenticatedAt: clock.UtcNow);
+
+        // Hold the family lock, so the re-authentication stops at MarkReauthenticatedAsync while its
+        // transaction is still open — exactly the window in which the lock order matters.
+        await using var blockerScope = factory.Services.CreateAsyncScope();
+        var blockerUnitOfWork = blockerScope.ServiceProvider.GetRequiredService<IUnitOfWork>();
+        var blockerContext = blockerScope.ServiceProvider.GetRequiredService<AppDbContext>();
+        await blockerUnitOfWork.BeginAsync(Ct);
+        await blockerContext.Database.ExecuteSqlAsync(
+            $"SELECT pg_advisory_xact_lock(hashtextextended(CAST({familyId} AS text), 0))",
+            Ct);
+
+        using var client = factory.ClientFor(user.Id, user.Role, sessionId: familyId);
+
+        var reauth = client.PostAsJsonAsync(
+            MfaTestFlow.ReauthPath,
+            new { password = MfaTestFlow.Password, code = MfaTestFlow.Code(enrolment.Secret, clock.UtcNow) },
+            Ct);
+
+        await Task.Delay(TimeSpan.FromMilliseconds(500), Ct);
+        reauth.IsCompleted.ShouldBeFalse("the re-authentication waits for the family lock");
+
+        // The re-authentication must hold the per-user lock (user lock -> family lock -> users row), so
+        // this probe on another connection must not be able to take it.
+        var held = await MfaTestFlow.ScalarAsync(
+            Database,
+            $"SELECT pg_try_advisory_xact_lock(hashtextextended('{user.Id}'::text, 1))::text");
+
+        held.ShouldBe(
+            "false",
+            "the re-authentication takes the per-user lock first; without it this path holds the users row "
+            + "and wants the family lock, the opposite order to the MFA lifecycle (deadlock)");
+
+        (await blockerUnitOfWork.CommitAsync(Ct)).IsError.ShouldBeFalse();
+
+        var response = await reauth;
+
+        response.StatusCode.ShouldBe(HttpStatusCode.OK, "the re-authentication completes once the family is free");
     }
 
     /// <summary>One re-authentication with a wrong authenticator code.</summary>
