@@ -2,8 +2,10 @@ using FluentValidation;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using NightTales.Application.Abstractions;
+using NightTales.Application.Abstractions.Audit;
 using NightTales.Application.Abstractions.Idempotency;
 using NightTales.Application.Abstractions.Persistence;
+using NightTales.Application.Audit;
 using NightTales.Application.Behaviors;
 using NightTales.Application.UnitTests.Pipeline.Probes;
 using NightTales.Domain.Common;
@@ -61,6 +63,12 @@ public sealed class MediatorTestHost : IDisposable
         services.AddSingleton<IClock>(new FakeClock());
         services.AddSingleton<IUnitOfWork, PassThroughUnitOfWork>();
         services.AddSingleton<IIdempotencyStore, KeylessIdempotencyStore>();
+
+        // 09.3.6-T1: slot 6 resolves from the container as soon as a probe message runs the real chain, so
+        // the pipeline needs the writer and the attribute cache. No probe of this assembly is [Audited], so
+        // the fake throws instead of accepting a row.
+        services.AddSingleton<IAuditWriter, UnusedAuditWriter>();
+        services.AddSingleton<AuditMetadataCache>();
         services.AddLogging(builder =>
         {
             builder.SetMinimumLevel(LogLevel.Information);

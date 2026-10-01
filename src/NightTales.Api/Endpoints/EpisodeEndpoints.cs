@@ -65,7 +65,8 @@ public static class EpisodeEndpoints
             .ProducesProblem(StatusCodes.Status400BadRequest);
 
         episodes.MapGet("/{id:guid}", GetAsync)
-            .Produces<EpisodeDto>(StatusCodes.Status200OK)
+            .Produces<EpisodeDetailDto>(StatusCodes.Status200OK)
+            .Produces(StatusCodes.Status304NotModified)
             .ProducesProblem(StatusCodes.Status404NotFound);
 
         episodes.MapDelete("/{id:guid}", DeleteAsync)
@@ -150,15 +151,58 @@ public static class EpisodeEndpoints
     }
 
     /// <summary>
-    /// <c>GET /api/v1/episodes/{id}</c>: 200 with the episode and its current <c>ETag</c>, or 404 for a
-    /// missing, foreign or cancelled one.
+    /// <c>GET /api/v1/episodes/{id}</c>: 200 with the episode page and its current <c>ETag</c>, 304 when
+    /// the client already holds that tag, or 404 for a missing, foreign or cancelled one.
     /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The conditional answer belongs to the endpoint, not to
+    /// <see cref="ResultExtensions.ToHttpResult{T}(ErrorOr{T}, HttpContext)"/>: <c>xmin</c> is knowable
+    /// only from the handler's own projection, so the handler always builds the whole DTO and the
+    /// endpoint decides what to send (09.5.3 plan §5 [DECISION]). The "read <c>xmin</c> alone, then the
+    /// blocks only on a miss" optimisation is deliberately not taken — one handler, one code path.
+    /// </para>
+    /// <para>
+    /// <c>If-None-Match</c> is compared as the exact strong tag (09 README D7/D15): a weak
+    /// (<c>W/"ep-5"</c>), comma-separated or multi-valued header is a miss and answers 200, which is
+    /// already what the header's own string form means — a multi-valued header joins its values, so it
+    /// can never equal the one strong tag.
+    /// </para>
+    /// <para>
+    /// The 200 and the 304 both carry <c>Cache-Control: no-cache</c> and <c>Vary: Authorization</c>: the
+    /// resource is per-tenant (D10) and every answer must be revalidated, so a 200 a proxy cached
+    /// heuristically can never hide a later change — the new <c>xmin</c> differs and the revalidation is
+    /// a miss.
+    /// </para>
+    /// </remarks>
     private static async Task<IResult> GetAsync(
         Guid id,
         ISender sender,
         HttpContext http,
         CancellationToken ct)
-        => (await sender.Send(new GetEpisodeQuery(id), ct).ConfigureAwait(false)).ToHttpResult(http);
+    {
+        var result = await sender.Send(new GetEpisodeByIdQuery(id), ct).ConfigureAwait(false);
+
+        if (result.IsError)
+        {
+            return result.ToHttpResult(http);
+        }
+
+        var dto = result.Value;
+
+        // D15: the same value in the header and in the DTO field, set before the conditional branch so a
+        // 304 carries it too — the helper only sets it on its way to the 200 body.
+        http.Response.Headers.ETag = dto.Etag;
+        http.Response.Headers.Vary = "Authorization";
+        http.Response.Headers.CacheControl = "no-cache";
+
+        if (string.Equals(http.Request.Headers.IfNoneMatch.ToString(), dto.Etag, StringComparison.Ordinal))
+        {
+            return Results.StatusCode(StatusCodes.Status304NotModified);
+        }
+
+        return result.ToHttpResult(http);
+    }
 
     /// <summary>
     /// <c>DELETE /api/v1/episodes/{id}</c>: 204, cancelling the episode and scheduling its assets for

@@ -1,5 +1,6 @@
 using ErrorOr;
 using Mediator;
+using NightTales.Application.Abstractions.Audit;
 using NightTales.Application.Abstractions.Messaging;
 using NightTales.Application.Abstractions.Security;
 
@@ -48,5 +49,6 @@ public sealed record RefreshResult(RefreshOutcome Outcome, IssuedAccessToken? Ac
 /// what authorise it.
 /// </remarks>
 /// <param name="PresentedToken">The presented cookie value; never logged.</param>
+[NotAudited("RefreshHandler writes the account.refresh_reuse_detected row itself when a family is reused; a normal rotation writes none (09.3.2-T1).")]
 [AllowAnonymousRequest]
 public sealed record RefreshCommand(string PresentedToken) : ICommand<ErrorOr<RefreshResult>>;

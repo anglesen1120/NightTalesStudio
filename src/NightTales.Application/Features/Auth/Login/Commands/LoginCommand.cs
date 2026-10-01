@@ -1,6 +1,7 @@
 using System.Text.Json.Serialization;
 using ErrorOr;
 using Mediator;
+using NightTales.Application.Abstractions.Audit;
 using NightTales.Application.Abstractions.Messaging;
 using NightTales.Application.Abstractions.Security;
 using NightTales.Application.Common.Errors;
@@ -69,6 +70,7 @@ public sealed record LoginResult(
 /// </remarks>
 /// <param name="Email">The submitted address; never logged.</param>
 /// <param name="Password">The submitted password; never logged.</param>
+[NotAudited("LoginHandler writes the account.login_succeeded/account.login_failed rows itself through IAuditWriter, with the caller's IP and User-Agent (09.3.2-T1).")]
 [AllowAnonymousRequest]
 public sealed record LoginCommand(
     string Email,

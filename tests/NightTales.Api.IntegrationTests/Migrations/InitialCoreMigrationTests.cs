@@ -33,6 +33,7 @@ public sealed class InitialCoreMigrationTests(TestDatabase database) : Integrati
     [
         "__EFMigrationsHistory",
         "assets",
+        "audit_logs",
         "autopilot_runs",
         "episodes",
         "feature_flags",

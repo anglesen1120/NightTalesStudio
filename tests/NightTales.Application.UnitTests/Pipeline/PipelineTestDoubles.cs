@@ -1,4 +1,5 @@
 using ErrorOr;
+using NightTales.Application.Abstractions.Audit;
 using NightTales.Application.Abstractions.Idempotency;
 using NightTales.Application.Abstractions.Persistence;
 
@@ -89,4 +90,17 @@ public sealed class KeylessIdempotencyStore : IIdempotencyStore
         string responseJson,
         CancellationToken cancellationToken) =>
         throw new InvalidOperationException("A probe message without an idempotency key stored a response.");
+}
+
+/// <summary>
+/// The <see cref="IAuditWriter"/> of the unit pipeline (09.3.6-T1). No probe message of this assembly
+/// carries <c>[Audited]</c>, so a call means slot 6 wrote a row it should not have — the fake fails the
+/// test instead of silently accepting it. The behaviour itself is tested against a recording writer in
+/// <c>AuditBehaviorTests</c>.
+/// </summary>
+public sealed class UnusedAuditWriter : IAuditWriter
+{
+    /// <inheritdoc />
+    public Task WriteAsync(AuditEntry entry, CancellationToken cancellationToken) =>
+        throw new InvalidOperationException("A probe message without [Audited] wrote an audit row.");
 }

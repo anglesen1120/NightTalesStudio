@@ -1,13 +1,16 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Microsoft.AspNetCore.Http.Connections;
 using NightTales.Api;
 using NightTales.Api.DependencyInjection;
 using NightTales.Api.Endpoints;
 using NightTales.Api.Http;
+using NightTales.Api.Realtime;
 using NightTales.Application.DependencyInjection;
 using NightTales.Infrastructure.DependencyInjection;
 using NightTales.Infrastructure.Persistence;
 using NightTales.Infrastructure.Persistence.Seeding;
+using NightTales.Infrastructure.Storage;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -25,6 +28,16 @@ builder.Services.AddScoped<PostCommitETagReader>();
 // 09.2.3-T1 (09 README D10): the caller's claims are the tenant of every filtered query, and the
 // scoped system context lets tests run outbox-style work in-process.
 builder.Services.AddApiCurrentUser();
+
+// 09.4.2-T1 (09 README D14, plan §3/§5): the two catalog routes need the public bucket base URL (the
+// Worker registers the same builder) and their own cache max-age.
+builder.Services.AddPublicAssetUrl();
+builder.Services.AddOptions<CatalogOptions>()
+    .BindConfiguration(CatalogOptions.SectionName)
+    .Validate(
+        options => options.PublicCacheSeconds > 0,
+        $"'{CatalogOptions.SectionName}:{nameof(CatalogOptions.PublicCacheSeconds)}' must be greater than zero.")
+    .ValidateOnStart();
 
 // 09.3.2-T1 (09 README BD1/BD3): the ES256 issuer, the refresh-token store and the credential flows,
 // plus their start-up validation — a host that cannot sign a correct token must not serve traffic. The
@@ -45,6 +58,11 @@ builder.Services.ConfigureHttpJsonOptions(options =>
 
 // 09 README D12/H4: the Api only writes the outbox, so an accidental direct enqueue fails fast.
 builder.Services.AddApiJobScheduler();
+
+// 09.8.1-T1 (09 README BD11): the episode hub and its `HubTicket` scheme, the per-instance connection
+// registry and the one LISTEN loop of this Api instance. The production IHubTicketValidator arrives with
+// 09.8.1-T2, so until then a connect attempt fails fast instead of opening an anonymous socket.
+builder.Services.AddNightTalesRealtime(builder.Configuration);
 
 var app = builder.Build();
 
@@ -72,6 +90,15 @@ app.MapSeriesEndpoints();
 // 09.5.1-T1 (09 README D14, 09 §4 09.5.1): the episode routes — create under a series, list, read and
 // cancel.
 app.MapEpisodeEndpoints();
+
+// 09.4.2-T1 (09 README D14, 09 §4 09.4.2): the catalog routes — the voices and the style templates the
+// picker and the style grid read.
+app.MapCatalogEndpoints();
+
+// 09.8.1-T1 (09 README BD11, 09-backend-api L214): the hub of 09.8.1 — WebSockets only, so the client
+// skips negotiation and the JWT never travels in the URL (the single-use ticket does, and it dies at
+// connect).
+app.MapHub<EpisodeHub>(EpisodeHub.Path, options => options.Transports = HttpTransportType.WebSockets);
 
 app.Run();
 
