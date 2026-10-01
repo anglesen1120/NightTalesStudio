@@ -309,11 +309,21 @@ public sealed class EfRefreshTokenService(
     {
         try
         {
+            // Same lock as the rotation: a stamp and a rotation of the family must not interleave, or the
+            // stamp could land on a successor the rotation has not created yet (or on a dead family).
+            await LockFamilyAsync(familyId, ct).ConfigureAwait(false);
+
             await using var command = CreateCommand(MarkReauthenticatedSql, requireTransaction: true);
             command.Parameters.AddWithValue("family_id", familyId);
             command.Parameters.AddWithValue("reauthenticated_at", now);
 
-            await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+            var updated = await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+            if (updated == 0)
+            {
+                // The family was revoked between the caller's read and this write: fail closed rather than
+                // stamp a re-authentication on a session that no longer exists.
+                return SessionRevoked();
+            }
 
             return Result.Success;
         }
@@ -333,6 +343,11 @@ public sealed class EfRefreshTokenService(
     {
         try
         {
+            // The family lock first, exactly as RotateAsync takes it: the counter update must see the same
+            // family the rotation decided on, so a concurrent rotation cannot leave the successor with the
+            // failure uncounted (which would bypass the five-attempt lockout).
+            await LockFamilyAsync(familyId, ct).ConfigureAwait(false);
+
             await using var command = CreateCommand(RegisterReauthFailureSql, requireTransaction: true);
             command.Parameters.AddWithValue("family_id", familyId);
             command.Parameters.AddWithValue("now", now);
@@ -346,6 +361,13 @@ public sealed class EfRefreshTokenService(
                     // largest value is the honest answer.
                     updated = Math.Max(updated, reader.GetInt32(0));
                 }
+            }
+
+            if (updated == 0)
+            {
+                // No live row under the lock means the family is already revoked: fail closed instead of
+                // counting an attempt that would silently disappear.
+                return SessionRevoked();
             }
 
             return updated;

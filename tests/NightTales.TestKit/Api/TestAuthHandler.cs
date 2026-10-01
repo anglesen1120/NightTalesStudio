@@ -32,11 +32,32 @@ public sealed class TestAuthHandler : AuthenticationHandler<AuthenticationScheme
     /// <summary>Header holding the role; absent means <see cref="PlatformRole.User"/>.</summary>
     public const string RoleHeader = "X-Test-Role";
 
+    /// <summary>
+    /// Header holding the token's scope (09 README BD4); absent means "a full access token". The only
+    /// accepted value is <c>mfa_enrol</c>, so a test can drive the enrolment-only branch of the routes.
+    /// </summary>
+    public const string ScopeHeader = "X-Test-Scope";
+
+    /// <summary>
+    /// Header holding the refresh family (<c>sid</c>) of the fake token (09 README BD3); absent means the
+    /// token belongs to no family, exactly like the enrolment-only token.
+    /// </summary>
+    public const string SessionHeader = "X-Test-Session";
+
+    /// <summary>The only value <see cref="ScopeHeader"/> accepts: BD4's enrolment-only scope.</summary>
+    public const string EnrolmentScope = "mfa_enrol";
+
     /// <summary>The claim type carrying the user id.</summary>
     public const string SubjectClaimType = "sub";
 
     /// <summary>The claim type carrying the role.</summary>
     public const string RoleClaimType = "role";
+
+    /// <summary>The claim type carrying the token's scope.</summary>
+    public const string ScopeClaimType = "scope";
+
+    /// <summary>The claim type carrying the refresh family (09 README BD3).</summary>
+    public const string SessionClaimType = "sid";
 
     public TestAuthHandler(
         IOptionsMonitor<AuthenticationSchemeOptions> options,
@@ -105,12 +126,55 @@ public sealed class TestAuthHandler : AuthenticationHandler<AuthenticationScheme
             return Task.FromResult(AuthenticateResult.Fail($"Header '{RoleHeader}' must name a {nameof(PlatformRole)}."));
         }
 
-        var identity = new ClaimsIdentity(
-            [
-                new Claim(SubjectClaimType, userId.ToString()),
-                new Claim(RoleClaimType, RoleClaimValue(role)),
-            ],
-            SchemeName);
+        var scopeValues = Request.Headers[ScopeHeader];
+        if (scopeValues.Count > 1)
+        {
+            return Task.FromResult(AuthenticateResult.Fail($"Header '{ScopeHeader}' must be sent at most once."));
+        }
+
+        var scope = scopeValues.ToString();
+        if (!string.IsNullOrWhiteSpace(scope)
+            && !string.Equals(scope, EnrolmentScope, StringComparison.Ordinal))
+        {
+            // The platform issues exactly one scope (BD4): anything else is a malformed test header.
+            return Task.FromResult(AuthenticateResult.Fail($"Header '{ScopeHeader}' must be '{EnrolmentScope}'."));
+        }
+
+        var sessionValues = Request.Headers[SessionHeader];
+        if (sessionValues.Count > 1)
+        {
+            return Task.FromResult(AuthenticateResult.Fail($"Header '{SessionHeader}' must be sent at most once."));
+        }
+
+        Guid? sessionId = null;
+        var rawSession = sessionValues.ToString();
+        if (!string.IsNullOrWhiteSpace(rawSession))
+        {
+            if (!Guid.TryParse(rawSession, out var parsed))
+            {
+                return Task.FromResult(AuthenticateResult.Fail($"Header '{SessionHeader}' must hold a Guid."));
+            }
+
+            sessionId = parsed;
+        }
+
+        var claims = new List<Claim>
+        {
+            new(SubjectClaimType, userId.ToString()),
+            new(RoleClaimType, RoleClaimValue(role)),
+        };
+
+        if (!string.IsNullOrWhiteSpace(scope))
+        {
+            claims.Add(new Claim(ScopeClaimType, scope));
+        }
+
+        if (sessionId is { } familyId)
+        {
+            claims.Add(new Claim(SessionClaimType, familyId.ToString()));
+        }
+
+        var identity = new ClaimsIdentity(claims, SchemeName);
 
         return Task.FromResult(AuthenticateResult.Success(
             new AuthenticationTicket(new ClaimsPrincipal(identity), SchemeName)));
