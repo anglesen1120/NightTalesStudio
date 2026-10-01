@@ -98,7 +98,7 @@ internal static class RequestBodyReader
                 {
                     var grown = ArrayPool<byte>.Shared.Rent((int)Math.Min((long)(total + read) * 2, maxBytes));
                     buffer.AsSpan(0, total).CopyTo(grown);
-                    ArrayPool<byte>.Shared.Return(buffer);
+                    ArrayPool<byte>.Shared.Return(buffer, clearArray: true);
                     buffer = grown;
                 }
 
@@ -112,10 +112,10 @@ internal static class RequestBodyReader
         }
         finally
         {
-            ArrayPool<byte>.Shared.Return(chunk);
+            ArrayPool<byte>.Shared.Return(chunk, clearArray: true);
             if (owned)
             {
-                ArrayPool<byte>.Shared.Return(buffer);
+                ArrayPool<byte>.Shared.Return(buffer, clearArray: true);
             }
         }
     }
@@ -130,5 +130,5 @@ internal sealed class RequestBodyBytes(byte[] buffer, int length) : IDisposable
     internal ReadOnlyMemory<byte> Memory { get; } = buffer.AsMemory(0, length);
 
     /// <inheritdoc />
-    public void Dispose() => ArrayPool<byte>.Shared.Return(buffer);
+    public void Dispose() => ArrayPool<byte>.Shared.Return(buffer, clearArray: true);
 }

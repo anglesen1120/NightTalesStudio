@@ -180,25 +180,35 @@ internal static class SubmitEndpoint
     /// row keeps the node's capacity. The store write uses <see cref="CancellationToken.None"/> on purpose: it
     /// must still run when the reason for the cleanup was a client abort.
     /// </summary>
-    private static Task<bool> FinishRejectedSubmitAsync(
+    private static async Task<bool> FinishRejectedSubmitAsync(
         ITaskStore store,
         IImagePlanSink? planSink,
         RenderTaskRecord record,
         DateTimeOffset finishedAt)
     {
         planSink?.Release(record.TaskId);
-        return TaskUpdates.UpdateAsync(
-            store,
-            record with
-            {
-                State = RenderStates.Failed,
-                Outcome = new RenderOutcomeV1(
-                    RenderOutcomeCodes.RenderNodeError,
-                    SubmitFailureDetail,
-                    OutcomeMessages.For(RenderOutcomeCodes.RenderNodeError)),
-                FinishedAt = finishedAt,
-            },
-            CancellationToken.None);
+
+        // `record` is the pre-submit snapshot, so its CancelRequested is always false. A `/cancel` accepted
+        // while backend.SubmitAsync was in flight has already set the stored flag, and Merge is last-writer-wins
+        // on it (RenderTaskRecord.Merge) — carrying the snapshot would silently reset an accepted cancel on
+        // this failed row. Re-read the live row and preserve its flag; like the write below, the read uses a
+        // token the aborted request cannot cancel.
+        var stored = await store.TryGetAsync(record.TaskId, CancellationToken.None).ConfigureAwait(false);
+        return await TaskUpdates
+            .UpdateAsync(
+                store,
+                record with
+                {
+                    State = RenderStates.Failed,
+                    CancelRequested = stored?.CancelRequested ?? record.CancelRequested,
+                    Outcome = new RenderOutcomeV1(
+                        RenderOutcomeCodes.RenderNodeError,
+                        SubmitFailureDetail,
+                        OutcomeMessages.For(RenderOutcomeCodes.RenderNodeError)),
+                    FinishedAt = finishedAt,
+                },
+                CancellationToken.None)
+            .ConfigureAwait(false);
     }
 
     private static async Task WriteGateErrorAsync(
