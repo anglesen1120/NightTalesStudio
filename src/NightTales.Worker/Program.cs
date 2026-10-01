@@ -3,6 +3,7 @@ using System.Net;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using NightTales.Infrastructure.Persistence.Seeding;
+using NightTales.Infrastructure.Realtime;
 using NightTales.Worker;
 using NightTales.Worker.DependencyInjection;
 using NightTales.Worker.Health;
@@ -21,6 +22,11 @@ builder.Host.UseSerilog((context, services, configuration) => configuration
 
 builder.Services.AddWorkerServices(builder.Configuration);
 builder.Services.AddWorkerHangfireServer();
+
+// 09.8.1-T1 (09 README D11/R6): the Worker's outbox handlers are producers, so the Worker needs the
+// notifier too. It is the producer half only — the LISTEN loop and the hub belong to the Api, which is
+// the only host with sockets.
+builder.Services.AddRealtime(builder.Configuration);
 
 var healthPort = builder.Configuration.GetValue(
     $"{WorkerOptions.SectionName}:{nameof(WorkerOptions.HealthPort)}",
