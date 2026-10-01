@@ -82,13 +82,24 @@ public static class RateLimitPartitionKeys
             : AnonymousPrefix + Hash(ipResolver.Resolve(context));
     }
 
-    /// <summary>The truncated lowercase SHA-256 hex digest of one address, as a key uses it.</summary>
+    /// <summary>
+    /// The truncated lowercase SHA-256 hex digest of one address, as a key uses it: the address is
+    /// canonicalised first, so an IPv4-mapped IPv6 address hashes exactly like the IPv4 address it
+    /// carries.
+    /// </summary>
     /// <param name="address">The resolved address.</param>
+    /// <remarks>
+    /// The normalisation is the whole point of routing every address key through here: a client that
+    /// arrives as <c>::ffff:203.0.113.40</c> on one connection and <c>203.0.113.40</c> on the next is one
+    /// caller, and two keys would hand it a second, untouched budget (09 README BD16).
+    /// </remarks>
     public static string Hash(IPAddress address)
     {
         ArgumentNullException.ThrowIfNull(address);
 
-        return Hash(address.GetAddressBytes());
+        var canonical = address.IsIPv4MappedToIPv6 ? address.MapToIPv4() : address;
+
+        return Hash(canonical.GetAddressBytes());
     }
 
     /// <summary>

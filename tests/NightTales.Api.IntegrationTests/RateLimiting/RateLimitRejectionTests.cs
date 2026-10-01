@@ -116,6 +116,40 @@ public sealed class RateLimitRejectionTests
             "the tag vocabulary is closed (BD16): a rejection with no policy metadata is 'unattributed', never a key");
     }
 
+    [Fact]
+    public async Task Rejection_OfACancelledRequest_IsStillCounted()
+    {
+        var options = new RateLimitingOptions { RetryAfterSeconds = RetryAfterSeconds };
+        using var metrics = new RateLimitMetrics();
+        var rejections = new List<string>();
+        using var listener = ListenForRejections(metrics, rejections);
+        var rejection = new RateLimitRejection(
+            options,
+            metrics,
+            new ClientIpResolver(),
+            NullLogger<RateLimitRejection>.Instance);
+        using var services = new ServiceCollection()
+            .AddLogging()
+            .BuildServiceProvider();
+        var http = RejectedRequest(services);
+        using var cancelled = new CancellationTokenSource();
+        await cancelled.CancelAsync();
+
+        using var lease = RefusedLease(out var limiter);
+        using (limiter)
+        {
+            await rejection.WriteAsync(new OnRejectedContext { HttpContext = http, Lease = lease }, cancelled.Token);
+        }
+
+        http.Response.StatusCode.ShouldBe(
+            StatusCodes.Status200OK,
+            "no body is written into a request whose caller is already gone");
+        rejections.ShouldBe(
+            new[] { RateLimitPolicies.Auth },
+            Case.Sensitive,
+            "a rejection stays a rejection after the client disconnects: the counter is what an operator scrapes");
+    }
+
     /// <summary>A 429 request whose endpoint carries <paramref name="policy"/>.</summary>
     private static DefaultHttpContext RejectedRequest(IServiceProvider services)
     {
