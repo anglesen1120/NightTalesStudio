@@ -10,7 +10,7 @@ public enum BreachedPasswordMode
 {
     /// <summary>
     /// k-anonymity range query: only the first 5 hex characters of <c>SHA1(password)</c> leave the
-    /// server. Fails closed (503 <c>service_unavailable</c>) when the provider cannot answer.
+    /// server. 09.3.1-T2 (W3-O3) makes it fail open to the bundled top-list when the provider cannot answer.
     /// </summary>
     Range,
 
