@@ -8,8 +8,8 @@ Legend: `done` (acceptance checks run and passed) · `doing` · `blocked (<who>)
 
 Keep this block ≤ 15 lines: current state and next step only. Move the previous block to the archive when you replace it.
 
-- **Current (2026-10-01 (4)).** `develop` @ `4281baf` has 03.1.1-T2 + 09.4.1-T1 (#61) and the SEC-01 decision (#62). Branch `feature/09.5.1-T1-episodes`: 09.5.1-T1 - `Episode.Create`/`Cancel` + `EpisodeCreated`/`EpisodeCancelled` outbox events, `POST /api/v1/series/{seriesId}/episodes`, `GET /api/v1/episodes` (keyset cursor, `seriesId`/`status` filters), `GET /api/v1/episodes/{id}`, `DELETE /api/v1/episodes/{id}` (cancel; optional `If-Match`, only an absent header skips the check), `MarkEpisodeAssetsForRetention` Worker handler. T3 gates: QA 0 functional defects (+7 tests); code CR-1 (empty/whitespace `If-Match` skipped the precondition) fixed; perf 0, security 0; delta review closed. Release build 0 warnings, format 0, 669/669 on PG17.
-- **Next wave, in order:** owner merges the 09.5.1-T1 PR -> 02 M1 opens (09 README §7); 09 wave 2 rest per 09 README §B11 start order: `09.9.4-T1` -> `09.10.4-T1` -> `09.3.2-T3`; `09.3.6-T1`, `09.7.2-T1`, `09.8.1-T1`, `09.4.2-T1`, `09.5.3-T1` in parallel.
+- **Current (2026-10-01 (5)).** `develop` @ `ce9500f` has 09.5.1-T1 episodes (#63; CI 3/3 green; branch gates: Release build 0 warnings, format 0, 669/669 on PG17). With 09.4.1-T1 (#61) and 09.5.1-T1 merged, 02 M1 is open (09 README §7).
+- **Next:** §Session 1 plan below (owner 2026-10-01). Nothing in it is started.
 - **SEC-01 decided (owner 2026-10-01, 09 W3-O3):** range API + real top-N seed fallback (option 3). The bundled `breached-passwords.txt` is still a synthetic placeholder; 09.3.1-T2 replaces it (seed licence checked before commit) and implements fail-open-to-seed, before registration opens (09.3.1-T3, S).
 - **Owner decisions open:** none blocking phase 1.
 - **Security debt live on `develop`:** none from §Deferred security gates (production JwtBearer landed in #60); SEC-01 above is decided but stays open until 09.3.1-T2 ships the real seed.
@@ -28,11 +28,20 @@ Per-task evidence for `done` rows: `docs/status-archive.md` §Per-plan evidence 
 | 03 Images (M0 slice) | 4 (03.1.1-T1, 03.4.1-T1, 03.3.2-T1, 03.1.1-T2 #61) | 03.1.2-T1, 03.2.x, 03.4.2/03.4.3 (M1) |
 | 04 Voice proxy (12 tasks) | 10 | 04.2.2-T2, 04.2.3-T1 |
 | 05 Video/subtitles | 9 | 05.2.1-T1, 05.5.2 |
-| 09 Backend | 18 tasks merged (09.4.1-T1 #61); 09.5.1-T1 episodes implemented (PR open) | 09.9.4-T1, 09.10.4-T1, 09.3.2-T3 next (09 README §B11) |
+| 09 Backend | 19 tasks merged (09.5.1-T1 #63) | §Session 1 plan: 09.9.4-T1 → 09.10.4-T1 → 09.3.2-T3; 09.3.6-T1, 09.7.2-T1, 09.8.1-T1, 09.4.2-T1, 09.5.3-T1 in parallel (09 README §B11) |
 | 11 Worker deployment | 11.2.1-T1 (proposal only; sign-off deferred to phase 2, owner 2026-09-30) | phase 1: 11.1.x, 11.3.3, 11.3.5; the rest is phase 2 (11 CR-18) |
 | 13 Compliance | 13.1.1-T1, 13.1.2-T1 (PR #35) | 13.2.1-T1 → 13.2.2-T1, 10.3.1-T1 pages; 13.1.1-T2 / 13.1.2-T2 lawyer rows (O1) |
 
 Plans 06, 07, 08, 10, 12: not started. Order: `plans/features/README.md`.
+
+## Session 1 plan
+
+Owner 2026-10-01: one todo list, two tasks, run side by side; status `todo` (not started). Each task keeps its tier gates per child task.
+
+| # | Task | Mode | Status |
+|---|---|---|---|
+| 1 | `09.9.4-T1` → `09.10.4-T1` → `09.3.2-T3` | sequential (each starts after the previous merges) | todo |
+| 2 | `09.3.6-T1`, `09.7.2-T1`, `09.8.1-T1`, `09.4.2-T1`, `09.5.3-T1` | parallel | todo |
 
 ## Open tasks
 
