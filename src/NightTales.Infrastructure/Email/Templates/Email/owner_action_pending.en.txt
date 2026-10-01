@@ -1,0 +1,7 @@
+Subject: An owner action is waiting for you
+
+The {{action}} action on {{targetDisplayName}} is waiting for your decision.
+
+Reason: {{reason}}. It applies at {{applyAfter}}.
+
+Approve at {{approveUrl}} or cancel at {{cancelUrl}}.

@@ -1,0 +1,9 @@
+Subject: Yêu cầu đặt lại xác thực hai lớp
+
+Xin chào {{displayName}},
+
+Để tiếp tục, bạn cần thiết lập lại xác thực hai lớp cho tài khoản NightTales này. Bấm vào liên kết dưới đây để bắt đầu.
+
+{{resetUrl}}
+
+Liên kết chỉ dùng được một lần.

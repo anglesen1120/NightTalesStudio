@@ -11,6 +11,7 @@ using NightTales.Application.Abstractions.Outbox;
 using NightTales.Application.Features.Episodes.Outbox;
 using NightTales.Domain.Episodes.Events;
 using NightTales.Infrastructure.DependencyInjection;
+using NightTales.Infrastructure.Email;
 using NightTales.Infrastructure.Jobs;
 using NightTales.Infrastructure.Persistence;
 using NightTales.Infrastructure.Persistence.Outbox;
@@ -85,6 +86,11 @@ public static class WorkerServiceCollectionExtensions
         // 09.4.2-T1 (plan §3 step 6): the Worker composes the same public catalog URL as the Api, so a
         // template it renders or mails never disagrees with the Api about what a storage key points at.
         services.AddPublicAssetUrl();
+
+        // 09.2.6-T3 (09 README BD9): the e-mail pipeline — the validated template set, the renderer, the
+        // SMTP adapter and the `email_requested.v1` consumer that enqueues SendEmailJob. The Api registers
+        // the same graph (it is the producer side); the Worker is the host that actually sends.
+        services.AddEmail(configuration);
 
         // 09.5.1-T1 (09 README D11/D16, F14): the one consumer of `episode_cancelled.v1`. It runs in the
         // delivery's own scope — already pinned to the event's user — and dispatches a command through

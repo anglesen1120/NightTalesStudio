@@ -1,0 +1,9 @@
+Subject: Tự động đăng cần bạn để ý
+
+Chuỗi {{seriesTitle}}: {{reasonLine}}
+
+Lịch đã lên: {{scheduledList}}
+
+Mở chi tiết tại {{deepLink}}.
+
+{{resumeHint}}

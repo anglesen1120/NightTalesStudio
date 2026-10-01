@@ -51,6 +51,10 @@ internal static class AllowLists
             "Mediator",
             "Mediator.Abstractions",
             "Microsoft.EntityFrameworkCore",
+            // 09.2.6-T3 (09 README W2-O4): `ISmtpEmailSender` takes the composed `MimeMessage` of one
+            // e-mail, so the port and the job that composes it carry MimeKit; the SMTP client itself
+            // (MailKit) stays an Infrastructure dependency.
+            "MimeKit",
             "NightTales.Domain",
             "NightTales.RenderNode.Contract",
         };

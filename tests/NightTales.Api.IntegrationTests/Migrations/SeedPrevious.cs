@@ -123,6 +123,18 @@ internal static class SeedPrevious
             INSERT INTO data_protection_keys (friendly_name, xml)
             VALUES ('seed-dp-key', '<key id="seed" />')
             """),
+        (
+            // 09.2.6-T3: the table the `_09_EmailMessages` migration creates. Same rule as above: schema
+            // N-1 does not have it, so this insert is skipped today and the migration after this one is
+            // exercised over a delivered message (its `params` are already null, as a sent row is).
+            "email_messages",
+            """
+            INSERT INTO email_messages (id, user_id, template, locale, to_hash, status, attempts, created_at,
+                                        sent_at)
+            VALUES ('01920000-0000-7000-8000-00000000000b', '01920000-0000-7000-8000-000000000001',
+                    'password_changed', 'vi',
+                    '9f2c1b0a7d6e5f40312a9b8c7d6e5f40312a9b8c7d6e5f40312a9b8c7d6e5f40', 'sent', 1, now(), now())
+            """),
     ];
 
     /// <summary>The tables the dataset covers, in insert order — the contract a feature migration extends.</summary>

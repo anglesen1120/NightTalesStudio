@@ -1,0 +1,9 @@
+Subject: Confirm your NightTales e-mail address
+
+Hello {{displayName}},
+
+Follow the link below to confirm this e-mail address for your NightTales account. It expires in {{expiresHours}} hours.
+
+{{link}}
+
+If you did not create an account, ignore this message.

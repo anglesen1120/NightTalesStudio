@@ -12,6 +12,9 @@
     <PackageVersion Include="Hangfire.Core" Version="1.8.25" />
     <PackageVersion Include="Hangfire.NetCore" Version="1.8.25" />
     <PackageVersion Include="Hangfire.PostgreSql" Version="1.21.1" />
+    <!-- 09.2.6-T3 (09 README W2-O4): the SMTP client of the e-mail pipeline. Both are MIT; MailKit pins
+         its MimeKit partner, so the pair moves together. -->
+    <PackageVersion Include="MailKit" Version="4.18.1" />
     <PackageVersion Include="Mediator.Abstractions" Version="3.0.2" />
     <PackageVersion Include="Mediator.SourceGenerator" Version="3.0.2" />
     <PackageVersion Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.12" />
@@ -21,6 +24,7 @@
     <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.12" />
     <PackageVersion Include="Microsoft.AspNetCore.OpenApi" Version="10.0.12" />
     <PackageVersion Include="Microsoft.Extensions.ApiDescription.Server" Version="10.0.12" />
+    <PackageVersion Include="MimeKit" Version="4.18.1" />
     <PackageVersion Include="Microsoft.EntityFrameworkCore" Version="10.0.12" />
     <PackageVersion Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.12" />
     <PackageVersion Include="Newtonsoft.Json" Version="13.0.4" />

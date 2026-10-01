@@ -18,6 +18,7 @@ using NightTales.Infrastructure.Identity;
 using NightTales.Infrastructure.Jobs;
 using NightTales.Infrastructure.Persistence;
 using NightTales.TestKit.Database;
+using NightTales.TestKit.Email;
 using NightTales.TestKit.Security;
 using NightTales.TestKit.Time;
 using NightTalesWorkerHost::NightTales.Worker.DependencyInjection;
@@ -70,26 +71,36 @@ public sealed class WorkerHealthProbe : IAsyncDisposable
         var builder = WebApplication.CreateBuilder();
 
         builder.Configuration.Sources.Clear();
-        builder.Configuration.AddInMemoryCollection(
-            new Dictionary<string, string?>(StringComparer.Ordinal)
-            {
-                [$"ConnectionStrings:{PersistenceOptions.ConnectionStringName}"] = connectionString,
 
-                // 09.3.1-T1: the Worker graph binds and validates these on start-up and this probe owns
-                // its own configuration, so the values the Worker's appsettings.json carries are set here.
-                [$"{RegistrationOptions.SectionName}:{nameof(RegistrationOptions.Mode)}"] =
-                    nameof(RegistrationMode.Closed),
-                [$"{BreachedPasswordOptions.SectionName}:{nameof(BreachedPasswordOptions.Mode)}"] =
-                    nameof(BreachedPasswordMode.List),
-                [$"{LegalDocumentVersions.SectionName}:{nameof(LegalDocumentVersions.Tos)}"] = "v1",
-                [$"{LegalDocumentVersions.SectionName}:{nameof(LegalDocumentVersions.Privacy)}"] = "v1",
+        var settings = new Dictionary<string, string?>(StringComparer.Ordinal)
+        {
+            [$"ConnectionStrings:{PersistenceOptions.ConnectionStringName}"] = connectionString,
 
-                // 09.9.4-T1: the Worker's composition root registers the Data Protection key ring too, and
-                // it refuses to start without the DP_KEK, so the probe provides the run's throwaway PFX —
-                // the same two settings the harness's WorkerHost hands its host.
-                [TestKek.PathConfigurationKey] = TestKek.SharedPath,
-                [TestKek.PasswordConfigurationKey] = TestKek.SharedPassword,
-            });
+            // 09.3.1-T1: the Worker graph binds and validates these on start-up and this probe owns
+            // its own configuration, so the values the Worker's appsettings.json carries are set here.
+            [$"{RegistrationOptions.SectionName}:{nameof(RegistrationOptions.Mode)}"] =
+                nameof(RegistrationMode.Closed),
+            [$"{BreachedPasswordOptions.SectionName}:{nameof(BreachedPasswordOptions.Mode)}"] =
+                nameof(BreachedPasswordMode.List),
+            [$"{LegalDocumentVersions.SectionName}:{nameof(LegalDocumentVersions.Tos)}"] = "v1",
+            [$"{LegalDocumentVersions.SectionName}:{nameof(LegalDocumentVersions.Privacy)}"] = "v1",
+
+            // 09.9.4-T1: the Worker's composition root registers the Data Protection key ring too, and
+            // it refuses to start without the DP_KEK, so the probe provides the run's throwaway PFX —
+            // the same two settings the harness's WorkerHost hands its host.
+            [TestKek.PathConfigurationKey] = TestKek.SharedPath,
+            [TestKek.PasswordConfigurationKey] = TestKek.SharedPassword,
+        };
+
+        // 09.2.6-T3: the Worker's composition root registers the e-mail pipeline, which validates the
+        // `Email` section on start-up, so the probe supplies what the Worker's appsettings.json carries —
+        // the same settings the harness's WorkerHost hands its host.
+        foreach (var (key, value) in EmailTestSettings.WorkerSettings)
+        {
+            settings[key] = value;
+        }
+
+        builder.Configuration.AddInMemoryCollection(settings);
 
         builder.Logging.ClearProviders();
         builder.Services.AddSingleton<IClock>(new FakeClock());

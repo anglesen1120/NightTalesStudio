@@ -75,6 +75,12 @@ public static class ErrorCodes
     /// <summary>Cancel link token missing, used, expired, not matching, token path disabled, or unknown id — one uniform error (09.10.8).</summary>
     public const string CancelTokenInvalid = "cancel_token_invalid";
 
+    /// <summary>Queueing an e-mail with a template name outside <c>EmailTemplateCatalog</c> (09.2.6-T3).</summary>
+    public const string EmailTemplateUnknown = "email_template_unknown";
+
+    /// <summary>A queued e-mail carries a render value outside the template's producer allow-list — including a token-bearing key such as <c>link</c>, which is minted at send time (09.2.6-T3, 09 README §B10 WT30).</summary>
+    public const string EmailTemplateKeys = "email_template_keys";
+
     /// <summary>18+ attestation missing at registration (13.2.1-T2).</summary>
     public const string AgeAttestationRequired = "age_attestation_required";
 
@@ -431,6 +437,12 @@ public static class ErrorCodes
 
     /// <summary>No node with a free slot: <c>SubmitRenderJob</c> reschedules itself and the job stays <c>queued</c>; Worker-internal (09 W2 CR-11).</summary>
     public const string RenderWorkerUnavailable = "render_worker_unavailable";
+
+    /// <summary>The recipient is deleted or suspended: <c>email_messages.last_error_code</c>, no send and no retry (09.2.6-T3).</summary>
+    public const string EmailUserGone = "email_user_gone";
+
+    /// <summary>The SMTP attempt failed: <c>email_messages.last_error_code</c> for the 5-retry policy of the <c>email</c> queue (09.2.6-T3).</summary>
+    public const string EmailSendFailed = "email_send_failed";
 
     /// <summary>The <c>processingPaused</c> reason on episodes and jobs; paid commands still return 202 and hold a reserve (12.8.3).</summary>
     public const string ProviderFundsExhausted = "provider_funds_exhausted";

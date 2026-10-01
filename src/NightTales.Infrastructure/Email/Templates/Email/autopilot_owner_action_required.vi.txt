@@ -1,0 +1,7 @@
+Subject: Tự động đăng cần bạn quyết định
+
+Chuỗi {{seriesTitle}} không thể tự tiếp tục ở tập {{episodeTitle}} (khung giờ {{slot}}).
+
+Các kiểm tra chưa đạt: {{failedChecks}}
+
+Mở chi tiết tại {{deepLink}}.

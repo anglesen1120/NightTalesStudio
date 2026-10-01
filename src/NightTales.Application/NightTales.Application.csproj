@@ -11,5 +11,8 @@
     <PackageReference Include="FluentValidation.DependencyInjectionExtensions" />
     <PackageReference Include="Mediator.Abstractions" />
     <PackageReference Include="Microsoft.EntityFrameworkCore" />
+    <!-- 09.2.6-T3: `ISmtpEmailSender` composes a `MimeMessage`, so the port and the job that builds it
+         carry MimeKit; the transport (MailKit) stays an Infrastructure dependency. -->
+    <PackageReference Include="MimeKit" />
   </ItemGroup>
 </Project>

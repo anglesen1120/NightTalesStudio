@@ -26,8 +26,9 @@ public sealed class InitialCoreMigrationTests(TestDatabase database) : Integrati
 {
     /// <summary>
     /// The core set of plan §3 plus EF's own history table and the feature tables the later migrations
-    /// of this wave add (09.3.1-T1 <c>user_consents</c>, 09.9.4-T1 <c>data_protection_keys</c>),
-    /// ordinal-sorted like <c>PostgresFixture.TableNamesAsync</c> returns them.
+    /// of this wave add (09.3.1-T1 <c>user_consents</c>, 09.9.4-T1 <c>data_protection_keys</c>,
+    /// 09.2.6-T3 <c>email_messages</c>), ordinal-sorted like <c>PostgresFixture.TableNamesAsync</c>
+    /// returns them.
     /// </summary>
     private static readonly string[] ExpectedTables =
     [
@@ -36,6 +37,7 @@ public sealed class InitialCoreMigrationTests(TestDatabase database) : Integrati
         "audit_logs",
         "autopilot_runs",
         "data_protection_keys",
+        "email_messages",
         "episodes",
         "feature_flags",
         "idempotency_keys",

@@ -143,6 +143,29 @@ Each class database's Npgsql pool is cleared before the `DROP DATABASE … WITH 
 
 **Optional compose path (e2e / image smoke only).** `docker-compose.yml` defines a `postgres` service (`postgres:17-alpine`, `127.0.0.1:5432`, healthcheck: a password login with `psql -h 127.0.0.1 ... SELECT 1`). Daily development never starts it. It binds the same port as the native server, so stop one before starting the other, or move the host port in a git-ignored `docker-compose.override.yml`. Its data volume is disposable: `docker compose down -v`. The image applies `POSTGRES_*` only when the volume is first created; after changing them, recreate the volume or the healthcheck stays unhealthy.
 
+## Local mail (Mailpit)
+
+Development sends every e-mail through a local SMTP sink: **Mailpit**, started by `tools/dev/up.sh`
+(11.1.1-T2) on `127.0.0.1:1025`, with its UI and its API at <http://127.0.0.1:8025> (09.2.6-T3).
+
+```bash
+nc -z 127.0.0.1 1025                            # the SMTP sink every host dials
+curl -fsS http://127.0.0.1:8025/api/v1/info     # Mailpit is up; its UI is at the same base URL
+```
+
+A message the Api queues is rendered and sent by the Worker's `SendEmailJob` and appears in that UI;
+`EmailEndToEndTests` asserts exactly that when `NTS_MAILPIT_URL=http://127.0.0.1:8025` is exported, and
+skips itself when the sink is not part of the run (`tools/dev/up.sh` sets the variable).
+
+Both hosts read the pipeline's configuration from `Email:*`, with the loopback defaults committed in
+`appsettings.json`: `Email:Smtp:Host` `127.0.0.1`, `Email:Smtp:Port` `1025`, `Email:Smtp:Security` `None`
+(plaintext is accepted only towards a loopback endpoint, in any environment) and `Email:From:Address`
+`no-reply@nighttales.local`. The flat `SMTP__HOST`/`SMTP__PORT`/`SMTP__USER`/`SMTP__PASSWORD` names that
+11.1.1-T2's `.env` and `up.sh` export are read as an alias and lose to an explicit `Email:Smtp:*` value. A
+deployment overrides `Email__Smtp__Host`, `Email__Smtp__Security` (`StartTls`), `Email__Smtp__Username`,
+`Email__Smtp__Password` and its own `Email__AddressHashPepper` — the host refuses to start when the
+transport is plaintext towards a remote server or the address pepper is blank (09 README BD9/BD16).
+
 ## Migrations
 
 `InitialCore` (09.2.2-T2) is the schema every later migration builds on; it is never edited again. A schema

@@ -1,0 +1,9 @@
+Subject: Your two-factor setup must be reset
+
+Hello {{displayName}},
+
+To continue, you have to set two-factor authentication up again for this NightTales account. Follow the link below to start.
+
+{{resetUrl}}
+
+The link works once.
