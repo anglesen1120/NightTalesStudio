@@ -34,8 +34,9 @@ public interface IPromptResourceSource
 /// The embedded logical name of <c>prompts/story/ghost.vi.v1.md</c> is
 /// <c>NightTales.Infrastructure.Prompts.story.ghost.vi.v1.md</c> — the LinkBase, the path with
 /// <c>/</c> replaced by <c>.</c>, and no extension stripping. The catalog resolves a manifest key by
-/// matching that dotted suffix, so a change to the prefix is a one-line fix here and never a re-hash;
-/// <c>PromptCatalog_EmbeddedLogicalNames_UseThePromptsLinkBasePrefix</c> pins it.
+/// matching that dotted suffix, and locates the release manifest by its exact logical name
+/// (<c>PromptManifestLoader.RootLogicalName</c>), so a <c>LinkBase</c> change updates that one constant
+/// and never a hash; <c>PromptCatalog_EmbeddedLogicalNames_UseThePromptsLinkBasePrefix</c> pins it.
 /// </remarks>
 public sealed class EmbeddedPromptResourceSource : IPromptResourceSource
 {

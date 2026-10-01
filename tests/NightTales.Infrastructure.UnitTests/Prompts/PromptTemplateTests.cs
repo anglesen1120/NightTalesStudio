@@ -49,6 +49,37 @@ public sealed class PromptTemplateTests
     }
 
     /// <summary>
+    /// Every malformed token of one substitution is reported together, as at start-up, instead of one per
+    /// call.
+    /// </summary>
+    [Fact]
+    public void PromptTemplate_MultipleUnknownPlaceholders_AllReported()
+    {
+        var failure = Should.Throw<PromptCatalogException>(
+            () => PromptTemplate.Substitute(
+                "{{bad_one}} {{bad_two}}",
+                new Dictionary<string, string>(StringComparer.Ordinal)));
+
+        failure.Violations.ShouldBe(
+            new List<string> { "unknown placeholder '{{bad_one}}'", "unknown placeholder '{{bad_two}}'" });
+    }
+
+    /// <summary>
+    /// A malformed token is named before a known token the caller supplied no value for: the template's
+    /// own contract is reported first, and the missing value never hides it.
+    /// </summary>
+    [Fact]
+    public void PromptTemplate_UnknownToken_IsReportedBeforeMissingValue()
+    {
+        var failure = Should.Throw<PromptCatalogException>(
+            () => PromptTemplate.Substitute(
+                "{{ear_rules}} {{bad_one}}",
+                new Dictionary<string, string>(StringComparer.Ordinal)));
+
+        failure.Violations.ShouldBe(new List<string> { "unknown placeholder '{{bad_one}}'" });
+    }
+
+    /// <summary>
     /// A closed placeholder the caller supplied no value for is a violation too: leaving
     /// <c>{{ear_rules}}</c> in the text would send it to the model as literal content.
     /// </summary>
@@ -63,19 +94,31 @@ public sealed class PromptTemplateTests
         failure.Message.ShouldContain("no value for placeholder '{{ear_rules}}'");
     }
 
-    /// <summary>An unterminated <c>{{</c> is reported rather than silently ignored.</summary>
+    /// <summary>
+    /// An unterminated token is rejected whichever name it carries, even one from the allow-list: the
+    /// literal <c>{{ear_rules</c> would otherwise reach the model unchanged.
+    /// </summary>
     [Fact]
     public void PromptTemplate_UnterminatedPlaceholder_Throws()
     {
         var failure = Should.Throw<PromptCatalogException>(
             () => PromptTemplate.Substitute(
-                "{{tier_minutes\n",
-                new Dictionary<string, string>(StringComparer.Ordinal)));
+                "{{ear_rules",
+                new Dictionary<string, string>(StringComparer.Ordinal)
+                {
+                    [PromptPlaceholders.EarRules] = "[ear rules]",
+                }));
 
-        // The scan takes the name to the end of the text (the documented truncated case) and the message
-        // wraps it in the usual delimiters, so the violation names the token the file actually carries.
-        failure.Violations.ShouldHaveSingleItem()
-            .ShouldBe("unknown placeholder '{{tier_minutes\n}}'");
+        failure.Violations.ShouldHaveSingleItem().ShouldBe("unterminated placeholder '{{ear_rules'");
+    }
+
+    /// <summary>An unterminated token is not also read as an unknown name: the scan stops at it.</summary>
+    [Fact]
+    public void PromptTemplate_UnterminatedToken_IsNotAnUnknownName()
+    {
+        PromptTemplate.UnknownPlaceholders("{{tier}} {{tier_minutes").ShouldBe(new List<string> { "tier" });
+        PromptTemplate.UnterminatedPlaceholders("{{tier}} {{tier_minutes")
+            .ShouldBe(new List<string> { "tier_minutes" });
     }
 
     [Fact]

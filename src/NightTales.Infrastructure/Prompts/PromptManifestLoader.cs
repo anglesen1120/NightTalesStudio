@@ -26,6 +26,21 @@ internal static class PromptManifestLoader
     /// <summary>The manifest's own name under <c>prompts/</c>; never a key of <see cref="PromptManifest.Files"/>.</summary>
     internal const string ManifestFileName = "manifest.json";
 
+    /// <summary>
+    /// The exact logical name of the release manifest. <c>NightTales.Infrastructure.csproj</c> embeds the
+    /// tree with <c>LinkBase="Prompts"</c>, so a resource's logical name is the assembly's root namespace,
+    /// then <c>Prompts</c>, then the prompts-relative path with <c>/</c> replaced by <c>.</c>; the root
+    /// manifest is therefore <c>NightTales.Infrastructure.Prompts.manifest.json</c>.
+    /// </summary>
+    /// <remarks>
+    /// The whole name is matched on purpose: a nested <c>manifest.json</c> — a fixture under
+    /// <c>fixtures/</c>, a helper copy under <c>tools/</c> — carries a longer logical name, and a suffix
+    /// match or a shortest-name pick would let one stand in for the release manifest, or make discovery
+    /// ambiguous, when the root manifest is missing (02 README T75).
+    /// </remarks>
+    internal static string RootLogicalName { get; } =
+        (typeof(PromptManifestLoader).Assembly.GetName().Name ?? string.Empty) + ".Prompts." + ManifestFileName;
+
     /// <summary>The reference document of the prompt tree, excluded from the release (ruling #4).</summary>
     internal const string ReferencesFileName = "REFERENCES.md";
 
@@ -41,20 +56,9 @@ internal static class PromptManifestLoader
         ArgumentNullException.ThrowIfNull(source);
         ArgumentNullException.ThrowIfNull(violations);
 
-        var candidates = source.LogicalNames
-            .Where(name => name.EndsWith("." + ManifestFileName, StringComparison.Ordinal))
-            .ToList();
-
-        if (candidates.Count == 0)
+        if (!source.LogicalNames.Contains(RootLogicalName))
         {
             violations.Add("prompts/manifest.json is not an embedded resource (not found)");
-
-            return PromptManifest.Empty;
-        }
-
-        if (candidates.Count > 1)
-        {
-            violations.Add($"prompts/manifest.json is ambiguous: {string.Join(", ", candidates)}");
 
             return PromptManifest.Empty;
         }
@@ -62,7 +66,7 @@ internal static class PromptManifestLoader
         JsonDocument document;
         try
         {
-            document = JsonDocument.Parse(source.Read(candidates[0]));
+            document = JsonDocument.Parse(source.Read(RootLogicalName));
         }
         catch (JsonException exception)
         {

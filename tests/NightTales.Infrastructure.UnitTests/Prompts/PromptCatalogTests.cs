@@ -143,6 +143,24 @@ public sealed class PromptCatalogTests
         catalog.Files.Keys.ShouldNotContain(key => key.Contains(".gitkeep", StringComparison.Ordinal));
     }
 
+    /// <summary>
+    /// A <c>manifest.json</c> under <c>fixtures/</c> is embedded like every other fixture, but it is not
+    /// the release manifest: discovery matches the root manifest's exact logical name, so a fixture copy
+    /// is ignored (T75, acceptance check 4).
+    /// </summary>
+    [Fact]
+    public void PromptCatalog_FixtureManifest_DoesNotAmbiguateTheReleaseManifest()
+    {
+        var tree = PromptsTree.Read();
+        tree["fixtures/injection/manifest.json"] =
+            Encoding.UTF8.GetBytes("{ \"release\": \"0000.0.0\", \"files\": {} }");
+
+        var catalog = PromptsTree.Load(tree);
+
+        catalog.Release.ShouldMatch(@"^\d{4}\.\d{1,2}\.\d{1,2}$");
+        catalog.Files.Keys.ShouldNotContain("manifest.json");
+    }
+
     [Fact]
     public void PromptCatalog_ManifestKeyAbsolutePath_Rejected()
     {
@@ -296,22 +314,6 @@ public sealed class PromptCatalogTests
         catalog.Files.ShouldContainKey(WriterSystemPrompt);
     }
 
-    /// <summary>
-    /// The loader is prefix-agnostic: the same tree loads whether the embedded names carry
-    /// <c>Prompts.</c> or a prefix that still contains the <c>../../</c> of the include path, so a
-    /// change to <c>LinkBase</c> needs no re-hash and no constant in the loader.
-    /// </summary>
-    [Theory]
-    [InlineData("NightTales.Infrastructure.Prompts.")]
-    [InlineData("NightTales.Infrastructure...prompts.")]
-    public void PromptCatalog_RealTreeWithEachPlausiblePrefix_Loads(string prefix)
-    {
-        var catalog = PromptsTree.Load(PromptsTree.Read(), prefix);
-
-        catalog.GetPreset(Topic.TrueCrime, Language.En).ShouldNotBeNullOrWhiteSpace();
-        catalog.Files.ShouldContainKey("shared/ear-rules.en.v1.md");
-    }
-
     /// <summary>Rule 1: a tree with no manifest at all fails naming the missing file, not a NullReference.</summary>
     [Fact]
     public void PromptCatalog_ManifestMissing_ThrowsAtStartup()
@@ -323,6 +325,23 @@ public sealed class PromptCatalogTests
 
         failure.Message.ShouldContain("prompts/manifest.json is not an embedded resource (not found)");
         failure.Message.ShouldContain("missing preset ghost.vi.v1");
+    }
+
+    /// <summary>
+    /// A nested <c>manifest.json</c> never stands in for the release manifest: with the root one gone the
+    /// load reports "not found" instead of parsing the fixture as the release contract (02 README T75).
+    /// </summary>
+    [Fact]
+    public void PromptCatalog_RootManifestMissing_WithFixtureManifestPresent_ReportsNotFound()
+    {
+        var tree = PromptsTree.Read();
+        tree.Remove("manifest.json");
+        tree["fixtures/injection/manifest.json"] =
+            Encoding.UTF8.GetBytes("{ \"release\": \"0000.0.0\", \"files\": {} }");
+
+        var failure = PromptsTree.Failure(tree);
+
+        failure.Message.ShouldContain("prompts/manifest.json is not an embedded resource (not found)");
     }
 
     /// <summary>Rule 1: a manifest that is not JSON, or has no release, is a named violation.</summary>
@@ -362,6 +381,24 @@ public sealed class PromptCatalogTests
         var failure = PromptsTree.Failure(tree);
 
         failure.Message.ShouldContain($"manifest entry '{GhostViPreset}' has no sha256");
+    }
+
+    /// <summary>
+    /// A missing sha256 does not stop the same load from checking the file's content: the bytes are read
+    /// before the digest is examined, so the missing digest and the bad placeholder are reported together
+    /// rather than one per run.
+    /// </summary>
+    [Fact]
+    public void PromptCatalog_EntryWithoutSha256_StillReportsContentViolations()
+    {
+        var tree = PromptsTree.Read();
+        PromptsTree.Append(tree, GhostViPreset, "\nWrite it in {{tier}} minutes.\n");
+        PromptsTree.RemoveManifestMember(tree, GhostViPreset, "sha256");
+
+        var failure = PromptsTree.Failure(tree);
+
+        failure.Message.ShouldContain($"manifest entry '{GhostViPreset}' has no sha256");
+        failure.Message.ShouldContain("unknown placeholder '{{tier}}' in " + GhostViPreset);
     }
 
     /// <summary>An entry that is a string rather than an object is reported, not deserialised into a crash.</summary>
@@ -419,17 +456,17 @@ public sealed class PromptCatalogTests
         failure.Message.ShouldContain("unknown placeholder '{{languageName}}' in system/writer.v1.md");
     }
 
-    /// <summary>A truncated placeholder at the end of a tracked file is reported rather than ignored
-    /// (the scan takes the name to end of text, so an unknown truncated name is still a violation).</summary>
+    /// <summary>A truncated placeholder at the end of a tracked file is reported rather than ignored,
+    /// even when the token names a closed placeholder: the literal must not reach the model.</summary>
     [Fact]
     public void PromptCatalog_UnterminatedPlaceholder_ThrowsAtStartup()
     {
         var tree = PromptsTree.Read();
-        PromptsTree.Append(tree, GhostViPreset, "\nWrite it in {{bogus_token");
+        PromptsTree.Append(tree, GhostViPreset, "\nWrite it in {{ear_rules");
 
         var failure = PromptsTree.Failure(tree);
 
-        failure.Message.ShouldContain("unknown placeholder '{{bogus_token}}' in " + GhostViPreset);
+        failure.Message.ShouldContain("unterminated placeholder '{{ear_rules' in " + GhostViPreset);
     }
 
     /// <summary>An empty placeholder name is not in the closed list.</summary>

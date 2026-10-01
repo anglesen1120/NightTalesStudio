@@ -250,7 +250,11 @@ internal sealed class PromptCatalogValidator
         }
     }
 
-    /// <summary>Rule 5: each tracked file's sha256 equals the manifest's.</summary>
+    /// <summary>
+    /// Rule 5: each tracked file's sha256 equals the manifest's. The bytes are read and cached before the
+    /// digest is examined, so an entry with a missing digest still reaches rule 6 in the same load
+    /// instead of hiding the file's other violations.
+    /// </summary>
     private void VerifyDigests()
     {
         foreach (var (key, info) in Manifest.Files.OrderBy(entry => entry.Key, StringComparer.Ordinal))
@@ -260,15 +264,15 @@ internal sealed class PromptCatalogValidator
                 continue;
             }
 
+            var bytes = _source.Read(name);
+            _bytes[key] = bytes;
+
             if (info.Sha256.Length == 0)
             {
                 _violations.Add($"manifest entry '{key}' has no sha256");
 
                 continue;
             }
-
-            var bytes = _source.Read(name);
-            _bytes[key] = bytes;
 
             var digest = Convert.ToHexStringLower(SHA256.HashData(bytes));
             if (!string.Equals(digest, info.Sha256, StringComparison.OrdinalIgnoreCase))
@@ -284,6 +288,11 @@ internal sealed class PromptCatalogValidator
         foreach (var (key, bytes) in _bytes.OrderBy(entry => entry.Key, StringComparer.Ordinal))
         {
             var text = Encoding.UTF8.GetString(bytes);
+            foreach (var token in PromptTemplate.UnterminatedPlaceholders(text))
+            {
+                _violations.Add($"{PromptTemplate.UnterminatedViolation(token)} in {key}");
+            }
+
             foreach (var name in PromptTemplate.UnknownPlaceholders(text))
             {
                 _violations.Add(

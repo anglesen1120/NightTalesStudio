@@ -43,8 +43,8 @@ internal sealed class FakePromptResourceSource : IPromptResourceSource
 /// The tree is read from the working copy rather than from the embedded resources, so a case can take
 /// the released tree and break exactly one thing — delete a preset, flip a byte, add a placeholder —
 /// and assert the one violation that follows. <see cref="LinkBasePrefix"/> mirrors what
-/// <c>LinkBase="Prompts"</c> produces; the catalog is prefix-agnostic, and
-/// <c>PromptCatalog_EmbeddedLogicalNames_UseThePromptsLinkBasePrefix</c> pins the real one.
+/// <c>LinkBase="Prompts"</c> produces, because the loader addresses the release manifest by its exact
+/// logical name; <c>PromptCatalog_EmbeddedLogicalNames_UseThePromptsLinkBasePrefix</c> pins the real one.
 /// </remarks>
 internal static class PromptsTree
 {
