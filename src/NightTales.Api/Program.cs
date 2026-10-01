@@ -1,9 +1,11 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Microsoft.AspNetCore.Http.Connections;
 using NightTales.Api;
 using NightTales.Api.DependencyInjection;
 using NightTales.Api.Endpoints;
 using NightTales.Api.Http;
+using NightTales.Api.Realtime;
 using NightTales.Application.DependencyInjection;
 using NightTales.Infrastructure.DependencyInjection;
 using NightTales.Infrastructure.Persistence;
@@ -57,6 +59,11 @@ builder.Services.ConfigureHttpJsonOptions(options =>
 // 09 README D12/H4: the Api only writes the outbox, so an accidental direct enqueue fails fast.
 builder.Services.AddApiJobScheduler();
 
+// 09.8.1-T1 (09 README BD11): the episode hub and its `HubTicket` scheme, the per-instance connection
+// registry and the one LISTEN loop of this Api instance. The production IHubTicketValidator arrives with
+// 09.8.1-T2, so until then a connect attempt fails fast instead of opening an anonymous socket.
+builder.Services.AddNightTalesRealtime(builder.Configuration);
+
 var app = builder.Build();
 
 // 09.2.5-T1: the explicit `nts-seed` command (plan §7). It runs the seeders of the same graph in one
@@ -87,6 +94,11 @@ app.MapEpisodeEndpoints();
 // 09.4.2-T1 (09 README D14, 09 §4 09.4.2): the catalog routes — the voices and the style templates the
 // picker and the style grid read.
 app.MapCatalogEndpoints();
+
+// 09.8.1-T1 (09 README BD11, 09-backend-api L214): the hub of 09.8.1 — WebSockets only, so the client
+// skips negotiation and the JWT never travels in the URL (the single-use ticket does, and it dies at
+// connect).
+app.MapHub<EpisodeHub>(EpisodeHub.Path, options => options.Transports = HttpTransportType.WebSockets);
 
 app.Run();
 
