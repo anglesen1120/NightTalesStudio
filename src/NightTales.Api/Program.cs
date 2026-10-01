@@ -69,6 +69,10 @@ app.MapAuthEndpoints();
 // 09.4.1-T1 (09 README D14, 09 §4 09.4.1): the series route group.
 app.MapSeriesEndpoints();
 
+// 09.5.1-T1 (09 README D14, 09 §4 09.5.1): the episode routes — create under a series, list, read and
+// cancel.
+app.MapEpisodeEndpoints();
+
 app.Run();
 
 public partial class Program;
