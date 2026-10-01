@@ -6,14 +6,28 @@ Daily development is native on macOS, without Docker (`plans/00-overview.md` §5
 
 - SDK 10.0.401 (`global.json`, `rollForward: latestPatch`).
 - The two commands below are exactly what `.github/workflows/backend.yml` runs (`build-test`, then
-  `integration`). The build needs two environment values because the build-time OpenAPI generator boots
-  the Api: a parseable connection string, which it never uses to connect, and an ES256 signing key for
-  the start-up validation of 09.3.2-T1 (secret `nts/<env>/api/JWT_SIGNING_KEY`). Generate a throwaway
-  key for the build — CI does the same with `openssl genpkey`, so no private key is ever committed.
+  `integration`). The build-time OpenAPI generator boots the Api, so every build and test command needs
+  the four values a deployment always provides: a parseable connection string, which it never uses to
+  connect; an ES256 signing key for the start-up validation of 09.3.2-T1 (secret
+  `nts/<env>/api/JWT_SIGNING_KEY`); a valid `App:PublicOrigin` for the validation of 09.9.4-T1 (BD12) —
+  the base `appsettings.json` carries the Development value `http://localhost:4200`, which is rejected
+  outside Development; and the `DP_KEK` PFX of the Data Protection key ring (09.9.4-T1, WF15, secret
+  `nts/<env>/shared/DP_KEK`). Generate throwaway values for all of them — CI does the same with
+  `openssl`, so no private key or certificate is ever committed.
 
 ```bash
 export ConnectionStrings__Postgres='Host=127.0.0.1;Database=nighttales;Username=nighttales;Password=ci-openapi-document-generation-placeholder'
 export Auth__Jwt__SigningKey="$(openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256)"
+export App__PublicOrigin='https://localhost:4200'   # any valid https origin; never a real deployment one
+# A throwaway DP_KEK: an RSA self-signed PFX (RSA because the ring is encrypted with EncryptedXml,
+# which accepts RSA only) in a temporary directory, generated once per shell.
+export KEK_PASSWORD="$(openssl rand -hex 24)"
+openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj '/CN=nts-dev-dp-kek' \
+  -keyout "${TMPDIR:-/tmp}/dp-kek.key" -out "${TMPDIR:-/tmp}/dp-kek.crt"
+openssl pkcs12 -export -out "${TMPDIR:-/tmp}/dp-kek.pfx" \
+  -inkey "${TMPDIR:-/tmp}/dp-kek.key" -in "${TMPDIR:-/tmp}/dp-kek.crt" -passout env:KEK_PASSWORD
+export DataProtection__KekPfxPath="${TMPDIR:-/tmp}/dp-kek.pfx"
+export DataProtection__KekPfxPassword="$KEK_PASSWORD"
 dotnet restore NightTales.ci.slnf --locked-mode
 dotnet build   NightTales.ci.slnf -c Release --no-restore   # writes src/NightTales.Api/openapi.json (git-ignored)
 dotnet format  NightTales.ci.slnf --verify-no-changes --no-restore
@@ -31,18 +45,29 @@ env -u NTS_TEST_PG dotnet test NightTales.ci.slnf -c Release --no-build \
 
 ```bash
 # Integration job (needs the server from the Database section below). The count grows with every
-# feature (56 on the 2026-09-29 wave-2 tree, 23 when this block was written). Self-contained:
-# all three variables are exported here. `ConnectionStrings__Postgres` and `Auth__Jwt__SigningKey` are
-# required by the build-time OpenAPI generator, which boots the Api and runs its start-up validation —
-# not by the tests, which read NTS_TEST_PG. Without the connection string a build fails inside the
-# generator: MSB3073 from the `dotnet-getdocument` tool that
-# Microsoft.Extensions.ApiDescription.Server.targets invokes, with
+# feature (56 on the 2026-09-29 wave-2 tree, 23 when this block was written). Self-contained: the
+# build-time values from the block above plus NTS_TEST_PG are exported here (the same four values the
+# first block exports, so re-run that block or export them again). `ConnectionStrings__Postgres`,
+# `Auth__Jwt__SigningKey`, `App__PublicOrigin` and the `DP_KEK` pair are required by the build-time
+# OpenAPI generator, which boots the Api and runs its start-up validation — not by the tests, which
+# read NTS_TEST_PG. Without the connection string a build fails inside the generator: MSB3073 from the
+# `dotnet-getdocument` tool that Microsoft.Extensions.ApiDescription.Server.targets invokes, with
 # `OptionsValidationException: Configuration value 'ConnectionStrings:Postgres' is required and must
 # not be blank`; without the key it fails the same way with `The ES256 signing key (secret
-# nts/<env>/api/JWT_SIGNING_KEY) must be the PEM of a P-256 EC private key` (verified 2026-10-01 — the
-# stack is the whole ASP.NET hosting chain, none of it names the missing variable).
+# nts/<env>/api/JWT_SIGNING_KEY) must be the PEM of a P-256 EC private key`, and without the KEK or the
+# origin with the fixed `'DataProtection:KekPfxPath' is required` / `'App:PublicOrigin' is required and
+# must be an absolute https origin` messages (verified 2026-10-01 — the stack is the whole ASP.NET
+# hosting chain, none of it names the missing variable).
 export ConnectionStrings__Postgres='Host=127.0.0.1;Database=nighttales;Username=nighttales;Password=ci-openapi-document-generation-placeholder'
 export Auth__Jwt__SigningKey="$(openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256)"
+export App__PublicOrigin='https://localhost:4200'
+export KEK_PASSWORD="$(openssl rand -hex 24)"
+openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj '/CN=nts-dev-dp-kek' \
+  -keyout "${TMPDIR:-/tmp}/dp-kek.key" -out "${TMPDIR:-/tmp}/dp-kek.crt"
+openssl pkcs12 -export -out "${TMPDIR:-/tmp}/dp-kek.pfx" \
+  -inkey "${TMPDIR:-/tmp}/dp-kek.key" -in "${TMPDIR:-/tmp}/dp-kek.crt" -passout env:KEK_PASSWORD
+export DataProtection__KekPfxPath="${TMPDIR:-/tmp}/dp-kek.pfx"
+export DataProtection__KekPfxPassword="$KEK_PASSWORD"
 export NTS_TEST_PG="Host=127.0.0.1;Port=5432;Database=${POSTGRES_DB:-nighttales};Username=${POSTGRES_USER:-nighttales};Password=<POSTGRES_PASSWORD from .env>"
 dotnet restore NightTales.ci.slnf --locked-mode
 dotnet build   NightTales.ci.slnf -c Release --no-restore
@@ -69,6 +94,8 @@ destructive-operation scan needs no database, so the unit job runs it too.
 
 
 ```bash
+# The same build-time environment as the block above (the Api validates `App:PublicOrigin` and the
+# DP_KEK on start-up too), plus the connection string it actually uses.
 dotnet run --project src/NightTales.Api
 curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:5000/health/live   # 200
 ```

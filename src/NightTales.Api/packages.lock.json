@@ -240,6 +240,7 @@
           "Hangfire.NetCore": "[1.8.25, )",
           "Hangfire.PostgreSql": "[1.21.1, )",
           "Microsoft.AspNetCore.Authentication.JwtBearer": "[10.0.12, )",
+          "Microsoft.AspNetCore.DataProtection.EntityFrameworkCore": "[10.0.12, )",
           "Microsoft.AspNetCore.Identity.EntityFrameworkCore": "[10.0.12, )",
           "NightTales.Application": "[1.0.0, )",
           "Npgsql.EntityFrameworkCore.PostgreSQL": "[10.0.3, )"
@@ -314,6 +315,15 @@
         "requested": "[3.0.2, )",
         "resolved": "3.0.2",
         "contentHash": "TytjnyN8gLObZBxkM7HHPFJF3LHtk6Y8mHW56ONuXRuVEK6Fmed3f0z79H9TpmoZQP2zQAIS4/0O9R2w0v02qw=="
+      },
+      "Microsoft.AspNetCore.DataProtection.EntityFrameworkCore": {
+        "type": "CentralTransitive",
+        "requested": "[10.0.12, )",
+        "resolved": "10.0.12",
+        "contentHash": "oV5g+PWxCFI3liFQcRNNEhYeS8Jz9+rcjREPDRK8kk0a1q+sf8UUlyFwGCBbxWoNVPpenljm8WEUVCH10k71Bw==",
+        "dependencies": {
+          "Microsoft.EntityFrameworkCore": "10.0.12"
+        }
       },
       "Microsoft.AspNetCore.Identity.EntityFrameworkCore": {
         "type": "CentralTransitive",

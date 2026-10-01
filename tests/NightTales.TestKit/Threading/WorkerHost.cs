@@ -15,6 +15,7 @@ using NightTales.Infrastructure.Jobs;
 using NightTales.Infrastructure.Persistence;
 using NightTales.Infrastructure.Persistence.Outbox;
 using NightTales.TestKit.Database;
+using NightTales.TestKit.Security;
 using NightTales.TestKit.Time;
 using NightTalesWorkerHost::NightTales.Worker.DependencyInjection;
 using WorkerComposition = NightTalesWorkerHost::NightTales.Worker.DependencyInjection.WorkerServiceCollectionExtensions;
@@ -285,6 +286,11 @@ public sealed class WorkerHost(TestDatabase database, FakeClock clock) : IAsyncD
                 nameof(BreachedPasswordMode.List),
             [$"{LegalDocumentVersions.SectionName}:{nameof(LegalDocumentVersions.Tos)}"] = "v1",
             [$"{LegalDocumentVersions.SectionName}:{nameof(LegalDocumentVersions.Privacy)}"] = "v1",
+
+            // 09.9.4-T1: the Worker's composition root registers the Data Protection key ring too, so the
+            // harness provides the run's throwaway KEK exactly as a deployment's secret store does.
+            [TestKek.PathConfigurationKey] = TestKek.SharedPath,
+            [TestKek.PasswordConfigurationKey] = TestKek.SharedPassword,
         };
 
         foreach (var queue in Enum.GetValues<JobQueue>())
