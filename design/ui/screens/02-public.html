@@ -1,0 +1,2139 @@
+<!doctype html>
+<html lang="vi" data-theme="dark" data-lang="vi">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>02 · Public pages and sign-up (10.3.1-T0, S)</title>
+<link rel="stylesheet" href="../assets/tokens.css">
+<link rel="stylesheet" href="../assets/kit.css">
+<style>
+  /* Page-local layout only (kit gaps are listed in the review report). */
+  .pub-top > .pub-top__in { flex: 1; display: flex; align-items: center; gap: var(--nts-space-3); max-width: 1180px; margin-inline: auto; }
+  .pub-top { justify-content: center; }
+  .pub-top .brand { padding: 0; }
+  .pub-nav { display: flex; align-items: center; gap: var(--nts-space-1); }
+  .pub-nav a { display: inline-flex; align-items: center; min-height: var(--nts-target-min); padding: 0 var(--nts-space-3); border-radius: var(--nts-radius-md); color: var(--nts-color-on-surface-muted); text-decoration: none; font-size: var(--nts-type-label-size); font-weight: 500; }
+  .pub-nav a:hover { color: var(--nts-color-on-surface); background: var(--nts-color-surface-variant); }
+  .pub-lang { display: inline-flex; border: 1px solid var(--nts-color-outline); border-radius: var(--nts-radius-pill); overflow: hidden; }
+  .pub-lang button { border: 0; background: transparent; color: var(--nts-color-on-surface-muted); padding: 0 10px; min-height: 32px; font-size: var(--nts-type-caption-size); cursor: pointer; }
+  .pub-lang button[aria-pressed='true'] { background: var(--nts-color-surface-variant); color: var(--nts-color-on-surface); font-weight: 600; }
+
+  .pub-content { padding: var(--nts-space-7) var(--nts-space-6) var(--nts-space-8); gap: var(--nts-space-8); max-width: 1180px; width: 100%; margin-inline: auto; }
+  .pub-content--auth { max-width: 660px; gap: var(--nts-space-6); padding-top: var(--nts-space-8); }
+  .pub-hero { display: grid; gap: var(--nts-space-7); grid-template-columns: minmax(0, 1fr) minmax(0, 520px); align-items: center; }
+  .pub-lede { font-size: 1.0625rem; color: var(--nts-color-on-surface-muted); max-width: 54ch; }
+  .pub-facts { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: var(--nts-space-4); font-size: var(--nts-type-caption-size); color: var(--nts-color-on-surface-muted); }
+  .pub-facts li { display: inline-flex; align-items: center; gap: 6px; }
+  .pub-facts svg { width: 16px; height: 16px; color: var(--nts-color-primary); }
+  .pub-section { display: flex; flex-direction: column; gap: var(--nts-space-5); }
+  .pub-grid { display: grid; gap: var(--nts-space-4); grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .pub-card { display: flex; flex-direction: column; gap: var(--nts-space-3); }
+  .pub-card__icon { width: 26px; height: 26px; color: var(--nts-color-primary); }
+  .pub-card h3 { font-size: var(--nts-type-title-size); line-height: var(--nts-type-title-line); }
+  .pub-meta { display: flex; flex-wrap: wrap; gap: var(--nts-space-3); font-size: var(--nts-type-caption-size); color: var(--nts-color-on-surface-muted); }
+
+  .pub-demo { display: flex; flex-direction: column; gap: var(--nts-space-4); }
+  .pub-demo__out { display: flex; gap: var(--nts-space-4); align-items: flex-start; }
+  .pub-still { position: relative; width: 118px; flex: none; aspect-ratio: 9 / 16; display: grid; place-items: center; border-radius: var(--nts-radius-md); background: linear-gradient(160deg, #1C2544 0%, #0C1122 55%, #05070F 100%); color: var(--nts-color-on-surface-muted); }
+  .pub-still svg { width: 30px; height: 30px; opacity: .55; }
+  .pub-still__badge { position: absolute; bottom: 6px; left: 6px; font-size: 10px; padding: 1px 5px; border-radius: var(--nts-radius-pill); background: rgba(8, 11, 24, .7); color: var(--nts-color-on-surface-muted); }
+
+  details.pub-faq__item { border-top: 1px solid var(--nts-color-hairline); }
+  details.pub-faq__item:first-of-type { border-top: 0; }
+  details.pub-faq__item > summary { min-height: var(--nts-target-min); display: flex; align-items: center; gap: var(--nts-space-2); cursor: pointer; font-weight: 500; }
+  details.pub-faq__item > p { padding: 0 0 var(--nts-space-4) var(--nts-space-6); color: var(--nts-color-on-surface-muted); }
+
+  .pub-footer { border-top: 1px solid var(--nts-color-hairline); padding: var(--nts-space-6) var(--nts-space-6) var(--nts-space-8); max-width: 1180px; width: 100%; margin-inline: auto; display: grid; gap: var(--nts-space-6); grid-template-columns: minmax(0, 1.3fr) repeat(3, minmax(0, 1fr)); }
+  .pub-footer ul { list-style: none; margin: var(--nts-space-3) 0 0; padding: 0; display: flex; flex-direction: column; gap: var(--nts-space-2); font-size: var(--nts-type-label-size); }
+  .pub-footer h2 { font-size: var(--nts-type-caption-size); color: var(--nts-color-on-surface-muted); font-weight: 500; }
+
+  .pub-pkg { display: flex; flex-direction: column; gap: var(--nts-space-3); }
+  .pub-pkg--featured { border-color: var(--nts-color-primary); box-shadow: var(--nts-elevation-2); }
+  .pub-price { font-size: 1.953rem; font-weight: 600; letter-spacing: -.01em; }
+  .pub-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--nts-space-2); font-size: var(--nts-type-label-size); }
+  .pub-list li { display: flex; gap: var(--nts-space-2); align-items: flex-start; }
+  .pub-list svg { width: 16px; height: 16px; margin-top: 2px; color: var(--nts-color-success); }
+
+  .pub-strength { display: flex; flex-direction: column; gap: var(--nts-space-2); }
+  .pub-strength__bars { display: flex; gap: 4px; }
+  .pub-strength__bars span { height: 4px; flex: 1; border-radius: 2px; background: var(--nts-color-surface-variant); }
+  .pub-strength__bars .is-weak { background: var(--nts-color-error); }
+  .pub-strength__bars .is-ok { background: var(--nts-color-warn); }
+  .pub-strength__bars .is-strong { background: var(--nts-color-success); }
+  .pub-fieldset { border: 0; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--nts-space-3); }
+  .pub-fieldset > legend { padding: 0; font-size: var(--nts-type-label-size); font-weight: 500; }
+  .pub-rules { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; font-size: var(--nts-type-caption-size); color: var(--nts-color-on-surface-muted); }
+  .pub-rules li { display: flex; gap: 6px; align-items: center; }
+  .pub-rules svg { width: 14px; height: 14px; }
+  .pub-rules .is-met { color: var(--nts-color-success); }
+  .pub-rules .is-met span { color: var(--nts-color-on-surface-muted); }
+
+  .pub-slot { display: flex; flex-direction: column; gap: var(--nts-space-2); padding: var(--nts-space-4); border: 1px dashed var(--nts-color-outline); border-radius: var(--nts-radius-md); background: var(--nts-color-surface-sunk); }
+  .pub-captcha { width: 300px; max-width: 100%; min-height: 65px; display: flex; align-items: center; gap: var(--nts-space-3); padding: var(--nts-space-3); border: 1px solid var(--nts-color-hairline); border-radius: var(--nts-radius-sm); background: var(--nts-color-surface); font-size: var(--nts-type-label-size); }
+  .pub-countdown { display: inline-flex; align-items: center; gap: 6px; font-variant-numeric: tabular-nums; }
+  .pub-countdown svg { width: 16px; height: 16px; }
+  .pub-cookie { align-items: center; }
+  .pub-cookie__text { flex: 1; color: var(--nts-color-on-surface); }
+
+  @container app (max-width: 1023px) {
+    .pub-hero { grid-template-columns: minmax(0, 1fr); }
+    .pub-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .pub-footer { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+  @container app (max-width: 599px) {
+    .pub-nav { display: none; }
+    .pub-lang { display: none; }
+    .pub-grid, .pub-footer { grid-template-columns: minmax(0, 1fr); }
+    .pub-content { padding: var(--nts-space-5) var(--nts-space-4) var(--nts-space-7); gap: var(--nts-space-6); }
+    .pub-top > .pub-top__in { gap: var(--nts-space-2); }
+    .pub-demo__out { flex-direction: column; }
+    .pub-still { width: 100%; max-width: 180px; }
+  }
+</style>
+</head>
+<body data-title="02 · Public pages and sign-up (10.3.1-T0, S)" data-back="../index.html">
+<main class="board">
+  <header class="board__intro">
+    <h1>02 · <span data-l="vi">Trang công khai và đăng ký</span><span data-l="en">Public pages and sign-up</span></h1>
+    <p class="muted">
+      <span data-l="vi">Các mặt chưa đăng nhập của sản phẩm (task 10.3.1-T0, S). Nguồn: <span class="code">plans/features/10-web-ui/10.3-public-signup/plan.md</span> §6 (bảng màn hình × trạng thái), §2 F1–F29, §4 UC-1…UC-7 và các task 10.3.1-T2 (landing + pricing), 10.3.2-T1 (register + verify), 10.3.3-T2 (CaptchaWidget); thêm thông báo cookie 13.1.4-T1, xác nhận 18+ 13.2.3-T1 và trang báo cáo <span class="code">/vi|en/report</span> 13.3.4-T1.</span>
+      <span data-l="en">The unauthenticated surfaces of the product (task 10.3.1-T0, S). Sources: <span class="code">plans/features/10-web-ui/10.3-public-signup/plan.md</span> §6 (screen × state table), §2 F1–F29, §4 UC-1…UC-7, plus tasks 10.3.1-T2 (landing + pricing), 10.3.2-T1 (register + verify), 10.3.3-T2 (CaptchaWidget); the cookie notice (13.1.4-T1), the 18+ attestation (13.2.3-T1) and the report page <span class="code">/vi|en/report</span> (13.3.4-T1).</span>
+    </p>
+    <nav class="board__toc" aria-label="Frames / Khung">
+      <a href="#f-landing-hero">Landing hero</a>
+      <a href="#f-landing-how-topics">How it works + topics</a>
+      <a href="#f-landing-faq-footer">FAQ + footer</a>
+      <a href="#f-pricing">Pricing</a>
+      <a href="#f-pricing-signed-in">Pricing signed in</a>
+      <a href="#f-register-idle">Register idle</a>
+      <a href="#f-register-age-gate">18+ gate</a>
+      <a href="#f-register-errors">Register errors</a>
+      <a href="#f-register-breached">breached_password</a>
+      <a href="#f-register-captcha-required">captcha_required</a>
+      <a href="#f-register-captcha-invalid">captcha_invalid</a>
+      <a href="#f-register-captcha-unavailable">captcha_unavailable</a>
+      <a href="#f-register-invite">Invite mode</a>
+      <a href="#f-register-closed">Closed mode</a>
+      <a href="#f-register-rate-limited">rate_limited</a>
+      <a href="#f-register-submitting">Submitting</a>
+      <a href="#f-register-success">Check your e-mail</a>
+      <a href="#f-captcha-widget">CaptchaWidget</a>
+      <a href="#f-verify-verifying">Verify · verifying</a>
+      <a href="#f-verify-verified">Verify · verified</a>
+      <a href="#f-verify-expired">Verify · expired</a>
+      <a href="#f-verify-invalid">Verify · invalid</a>
+      <a href="#f-verify-resent">Verify · resent</a>
+      <a href="#f-cookie-notice">Cookie notice</a>
+      <a href="#f-report-form">Report form</a>
+      <a href="#f-report-submitting">Report submitting</a>
+      <a href="#f-report-submitted">Report submitted</a>
+      <a href="#f-report-rate-limited">Report rate-limited</a>
+    </nav>
+  </header>
+
+  <!-- ============================ LANDING ============================ -->
+  <section class="frame" id="f-landing-hero" aria-labelledby="f-landing-hero-t">
+    <div class="frame__cap">
+      <h2 id="f-landing-hero-t">/vi/ · <span data-l="vi">đầu trang</span><span data-l="en">landing hero</span></h2>
+      <span class="caption"><span data-l="vi">Trạng thái duy nhất: tĩnh, dựng sẵn (prerender), không gọi API.</span><span data-l="en">Only state: static, prerendered, no API call.</span></span>
+    </div>
+    <div class="frame__view">
+      <div class="app app--bare s-public">
+        <div class="app-main">
+          <header class="app-top pub-top">
+            <div class="pub-top__in">
+              <a class="brand" href="#f-landing-hero"><svg class="brand__mark" aria-hidden="true"><use href="#i-lamp"/></svg><span class="brand__name">Night Tales Studio</span></a>
+              <nav class="pub-nav" aria-label="Điều hướng công khai / Public navigation">
+                <a href="#f-pricing"><span data-l="vi">Bảng giá</span><span data-l="en">Pricing</span></a>
+              </nav>
+              <span class="app-top__spacer"></span>
+              <div class="pub-lang" role="group" aria-label="Ngôn ngữ / Language">
+                <button type="button" aria-pressed="true">Tiếng Việt</button>
+                <button type="button" aria-pressed="false">English</button>
+              </div>
+              <button type="button" class="icon-btn" aria-label="Đổi giao diện sáng hoặc tối / Switch light or dark theme"><svg aria-hidden="true"><use href="#i-sun"/></svg></button>
+              <a class="btn btn--sm hide-sm" href="#f-register-idle"><span data-l="vi">Đăng nhập</span><span data-l="en">Sign in</span></a>
+              <a class="btn btn--sm btn--primary" href="#f-register-idle"><span data-l="vi">Tạo tài khoản</span><span data-l="en">Create account</span></a>
+            </div>
+          </header>
+
+          <div class="app-content pub-content">
+            <section class="pub-hero" aria-labelledby="landing-title">
+              <div class="stack stack--loose">
+                <h1 class="h-display" id="landing-title">
+                  <span data-l="vi">Một ý tưởng ngắn, thành video có giọng kể.</span>
+                  <span data-l="en">A short idea, turned into a narrated video.</span>
+                </h1>
+                <p class="pub-lede">
+                  <span data-l="vi">Bạn kể vài dòng về một chuyện ma, một chuyện tâm linh hay một vụ án có nguồn dẫn. Night Tales Studio viết thành truyện, vẽ ảnh, thu giọng kể, khớp phụ đề rồi dựng thành video dọc cho YouTube và TikTok.</span>
+                  <span data-l="en">You write a few lines about a ghost story, a spiritual story or a sourced true-crime case. Night Tales Studio writes it into a story, draws the images, records the narration, matches the subtitles and assembles a vertical video for YouTube and TikTok.</span>
+                </p>
+                <div class="row">
+                  <a class="btn btn--primary" href="#f-register-idle"><span data-l="vi">Tạo tài khoản</span><span data-l="en">Create account</span></a>
+                  <a class="btn" href="#f-pricing"><span data-l="vi">Xem bảng giá</span><span data-l="en">See pricing</span></a>
+                </div>
+                <ul class="pub-facts">
+                  <li><svg aria-hidden="true"><use href="#i-check"/></svg><span data-l="vi">Bạn duyệt kịch bản và xem lại video trước khi đăng</span><span data-l="en">You approve the script and review the video before publishing</span></li>
+                  <li><svg aria-hidden="true"><use href="#i-globe"/></svg><span data-l="vi">Tiếng Việt và tiếng Anh</span><span data-l="en">Vietnamese and English</span></li>
+                  <li><svg aria-hidden="true"><use href="#i-flag"/></svg><span data-l="vi">Dành cho người từ 18 tuổi</span><span data-l="en">For people aged 18 and over</span></li>
+                </ul>
+              </div>
+
+              <div class="panel pub-demo">
+                <div class="field">
+                  <label for="hero-idea"><span data-l="vi">Ý tưởng bạn kể</span><span data-l="en">The idea you write</span></label>
+                  <input id="hero-idea" type="text" readonly value="Chiếc đèn bàn cũ trong phòng trọ số 7">
+                </div>
+                <ol class="trail" aria-label="Các trạm của một tập / Episode stations">
+                  <li class="trail__stop is-done"><span class="trail__lamp"></span><span class="trail__name"><span data-l="vi">Ý tưởng</span><span data-l="en">Idea</span></span></li>
+                  <li class="trail__stop is-done"><span class="trail__lamp"></span><span class="trail__name"><span data-l="vi">Viết truyện</span><span data-l="en">Story</span></span></li>
+                  <li class="trail__stop is-done"><span class="trail__lamp"></span><span class="trail__name"><span data-l="vi">Duyệt kịch bản</span><span data-l="en">Review script</span></span></li>
+                  <li class="trail__stop is-current" aria-current="step"><span class="trail__lamp"></span><span class="trail__name"><span data-l="vi">Làm video</span><span data-l="en">Make video</span></span></li>
+                  <li class="trail__stop is-waiting"><span class="trail__lamp"></span><span class="trail__name"><span data-l="vi">Xem video</span><span data-l="en">Review video</span></span></li>
+                  <li class="trail__stop is-waiting"><span class="trail__lamp"></span><span class="trail__name"><span data-l="vi">Đăng</span><span data-l="en">Publish</span></span></li>
+                </ol>
+                <div class="manuscript">
+                  <div class="seg">
+                    <span class="seg__beat"><span data-l="vi">Mở đầu</span><span data-l="en">Hook</span></span>
+                    <div class="seg__body">
+                      <p class="seg__text"><span data-l="vi">Đèn bàn số 7 vẫn sáng mỗi đêm, dù phòng trọ đã khoá từ tháng trước.</span><span data-l="en">Lamp number 7 still burns every night, though the room has been locked since last month.</span></p>
+                      <div class="scenes">
+                        <span class="scene">phòng trọ</span>
+                        <span class="scene">đèn bàn</span>
+                        <span class="scene">cửa khoá</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div class="pub-demo__out">
+                  <div class="pub-still" role="img" aria-label="Ảnh dựng minh hoạ của video / Video still placeholder">
+                    <svg aria-hidden="true"><use href="#i-film"/></svg>
+                    <span class="pub-still__badge">9:16</span>
+                  </div>
+                  <div class="stack stack--tight">
+                    <span class="chip chip--neutral"><svg aria-hidden="true"><use href="#i-play"/></svg><span data-l="vi">Video 2 phút 14 giây</span><span data-l="en">Video 2 min 14 s</span></span>
+                    <span class="chip chip--neutral"><svg aria-hidden="true"><use href="#i-mic"/></svg><span data-l="vi">Giọng kể tiếng Việt</span><span data-l="en">Vietnamese narration</span></span>
+                    <span class="chip chip--neutral"><svg aria-hidden="true"><use href="#i-image"/></svg><span data-l="vi">12 cảnh</span><span data-l="en">12 scenes</span></span>
+                    <p class="caption"><span data-l="vi">Phụ đề khớp theo lời kể, không cần chỉnh tay.</span><span data-l="en">Subtitles follow the narration, no manual timing.</span></p>
+                  </div>
+                </div>
+              </div>
+            </section>
+          </div>
+        </div>
+      </div>
+    </div>
+    <details class="notes"><summary>a11y + behaviour notes</summary><ul>
+      <li>Route `/<lang>/`; prerendered (F3, SD2) — no fetch, so no loading/empty/error state exists on this screen (n/a by design): the page renders from `content/public/<lang>.json` at build time.</li>
+      <li>Route `/` has **no visible screen** (n/a): it is a prerendered client redirect that resolves the language (stored preference → `Intl` → `vi` default) and calls `history.replaceState` to `/<lang>/` without a full reload (UC-1, 10.3.1-T2 `lang-redirect.ts`). No frame is drawn for it.</li>
+      <li>Focus order: skip-to-content → brand → Pricing → language group (2 buttons) → theme toggle → Sign in → Create account → hero CTA primary → hero CTA secondary → demo panel (read-only input, then the trail list is not focusable) → footer. Only the first hero CTA is primary amber; nothing else competes (brief: amber = the next action only).</li>
+      <li>Language control is a real `role=group` of two `aria-pressed` buttons (persisted preference), not the review toolbar.</li>
+      <li>The lamp trail is the hero device: `ol.trail` with `aria-current="step"` on the lit station; station names are text, never colour only. `prefers-reduced-motion` stops the flicker (kit).</li>
+      <li>Money claims: the page makes **no** monetization promise (DECISIONS §1, 10-web-ui.md:107). No revenue, earnings or YPP wording anywhere in vi or en. Reviewer: grep for "kiếm tiền/thu nhập/revenue/earn" must return nothing.</li>
+      <li>Review-file convention: CTAs that navigate between screens use `#f-…` anchors so the owner can jump between frames. Real hrefs: Create account → `/register`, See pricing → `/<lang>/pricing`, Sign in → `/login`; legal links already carry their real paths.</li>
+      <li>No third-party asset: the only allowed third-party widget (Turnstile) is not on this page; fonts/self-hosted, no CDN, no analytics (S-O3).</li>
+      <li>JS-off: CTAs and footer links are plain anchors and still work (10.3.1-T2 acceptance).</li>
+    </ul></details>
+  </section>
+
+  <section class="frame" id="f-landing-how-topics" aria-labelledby="f-landing-how-topics-t">
+    <div class="frame__cap">
+      <h2 id="f-landing-how-topics-t">/vi/ · <span data-l="vi">cách hoạt động và chủ đề</span><span data-l="en">how it works and topics</span></h2>
+      <span class="caption"><span data-l="vi">Cùng trang, cuộn xuống; tĩnh, không trạng thái động.</span><span data-l="en">Same page, scrolled; static, no dynamic state.</span></span>
+    </div>
+    <div class="frame__view">
+      <div class="app app--bare s-public">
+        <div class="app-main">
+          <header class="app-top pub-top">
+            <div class="pub-top__in">
+              <a class="brand" href="#f-landing-hero"><svg class="brand__mark" aria-hidden="true"><use href="#i-lamp"/></svg><span class="brand__name">Night Tales Studio</span></a>
+              <nav class="pub-nav" aria-label="Điều hướng công khai / Public navigation"><a href="#f-pricing"><span data-l="vi">Bảng giá</span><span data-l="en">Pricing</span></a></nav>
+              <span class="app-top__spacer"></span>
+              <div class="pub-lang" role="group" aria-label="Ngôn ngữ / Language">
+                <button type="button" aria-pressed="true">Tiếng Việt</button><button type="button" aria-pressed="false">English</button>
+              </div>
+              <a class="btn btn--sm hide-sm" href="#f-register-idle"><span data-l="vi">Đăng nhập</span><span data-l="en">Sign in</span></a>
+              <a class="btn btn--sm btn--primary" href="#f-register-idle"><span data-l="vi">Tạo tài khoản</span><span data-l="en">Create account</span></a>
+            </div>
+          </header>
+
+          <div class="app-content pub-content">
+            <section class="pub-section" aria-labelledby="how-title">
+              <h2 class="h-headline" id="how-title"><span data-l="vi">Cách hoạt động</span><span data-l="en">How it works</span></h2>
+              <div class="pub-grid">
+                <div class="panel pub-card">
+                  <svg class="pub-card__icon" aria-hidden="true"><use href="#i-book"/></svg>
+                  <h3><span data-l="vi">Bạn kể ý tưởng</span><span data-l="en">You bring the idea</span></h3>
+                  <p class="muted"><span data-l="vi">Một câu về chỗ, người và chuyện xảy ra. Truyện được viết thành các đoạn có nhịp kể, kèm danh sách cảnh để bạn xem.</span><span data-l="en">One line about the place, the person and what happens. It becomes a story with beats, plus the scene list you review.</span></p>
+                </div>
+                <div class="panel pub-card">
+                  <svg class="pub-card__icon" aria-hidden="true"><use href="#i-image"/></svg>
+                  <h3><span data-l="vi">Truyện thành hình và tiếng</span><span data-l="en">It becomes images and voice</span></h3>
+                  <p class="muted"><span data-l="vi">Từng cảnh được vẽ, giọng kể đọc lên, phụ đề bám theo lời kể. Bạn xem lại và sửa ở đúng cảnh mình muốn.</span><span data-l="en">Each scene is drawn, the narration reads it aloud, the subtitles follow. You review it and fix the exact scene you want.</span></p>
+                </div>
+                <div class="panel pub-card">
+                  <svg class="pub-card__icon" aria-hidden="true"><use href="#i-youtube"/></svg>
+                  <h3><span data-l="vi">Duyệt rồi đăng</span><span data-l="en">Approve, then publish</span></h3>
+                  <p class="muted"><span data-l="vi">Video chỉ được đăng lên kênh của bạn sau khi bạn bấm duyệt. Không có bước nào tự đăng thay bạn.</span><span data-l="en">A video only goes to your channel after you approve it. Nothing publishes on your behalf without that step.</span></p>
+                </div>
+              </div>
+            </section>
+
+            <section class="pub-section" aria-labelledby="topics-title">
+              <h2 class="h-headline" id="topics-title"><span data-l="vi">Ba chủ đề</span><span data-l="en">Three topics</span></h2>
+              <div class="pub-grid">
+                <div class="panel pub-card">
+                  <span class="topic topic--ghost"><span data-l="vi">Truyện ma</span><span data-l="en">Ghost stories</span></span>
+                  <p class="muted"><span data-l="vi">Chuyện kể trong đêm: nhà trọ, ngõ nhỏ, người cũ. Không máu me, không hình ảnh gây sốc.</span><span data-l="en">Night-time tales: rented rooms, alleys, people from before. No gore, no shock imagery.</span></p>
+                </div>
+                <div class="panel pub-card">
+                  <span class="topic topic--spiritual"><span data-l="vi">Truyện tâm linh</span><span data-l="en">Spiritual stories</span></span>
+                  <p class="muted"><span data-l="vi">Nhân quả, lời hứa, chuyện nhớ ơn. Kể như một câu chuyện, không nhắm vào nhóm người nào.</span><span data-l="en">Cause and effect, promises, debts of gratitude. Told as a story, never aimed at a group of people.</span></p>
+                </div>
+                <div class="panel pub-card">
+                  <span class="topic topic--true-crime"><span data-l="vi">Án thật</span><span data-l="en">True crime</span></span>
+                  <p class="muted"><span data-l="vi">Chỉ những vụ án có nguồn dẫn rõ ràng, kể tôn trọng, không quy kết khi chưa có kết luận.</span><span data-l="en">Only cases with cited sources, told with respect, with no accusation where there is no finding.</span></p>
+                </div>
+              </div>
+              <div class="banner banner--info" role="note">
+                <svg aria-hidden="true"><use href="#i-info"/></svg>
+                <div class="banner__body">
+                  <strong><span data-l="vi">Lưu ý khi kể án thật</span><span data-l="en">A note on true-crime cases</span></strong>
+                  <p><span data-l="vi">Mỗi tập án thật phải dẫn nguồn, tránh nêu tên nạn nhân và không khẳng định điều chưa được kết luận. Nếu bạn thấy nội dung vi phạm, hãy <a href="#f-report-form">báo cáo cho chúng tôi</a>; chúng tôi xem xét trong vòng 72 giờ.</span><span data-l="en">Every true-crime episode cites its sources, avoids naming victims and never asserts what has not been established. If you see content that breaks the rules, <a href="#f-report-form">report it to us</a>; we review within 72 hours.</span></p>
+                </div>
+              </div>
+            </section>
+          </div>
+        </div>
+      </div>
+    </div>
+    <details class="notes"><summary>a11y + behaviour notes</summary><ul>
+      <li>Reflects 13.1.3-T1 (content policy): true crime needs cited sources and a respectful tone. The responsibility note is a `role="note"` banner and must stay on the page in both languages.</li>
+      <li>Topic tints (`.topic--ghost|--spiritual|--true-crime`) identify a topic only and always carry a text label (brief rule); they are never the only signal.</li>
+      <li>Headings: `h2` per section, `h3` per card — no numbered 01/02/03 markers (these cards are not a presented sequence).</li>
+      <li>The 72-hour figure is worded as a target (13.3.4-T1 T9), never as a guarantee.</li>
+      <li>No currency, credit or earnings wording in this frame.</li>
+    </ul></details>
+  </section>
+
+  <section class="frame" id="f-landing-faq-footer" aria-labelledby="f-landing-faq-footer-t">
+    <div class="frame__cap">
+      <h2 id="f-landing-faq-footer-t">/vi/ · <span data-l="vi">câu hỏi thường gặp và chân trang</span><span data-l="en">FAQ and footer</span></h2>
+      <span class="caption"><span data-l="vi">Cùng trang, cuối trang; liên kết pháp lý bắt buộc.</span><span data-l="en">Same page, bottom; mandatory legal links.</span></span>
+    </div>
+    <div class="frame__view">
+      <div class="app app--bare s-public">
+        <div class="app-main">
+          <header class="app-top pub-top">
+            <div class="pub-top__in">
+              <a class="brand" href="#f-landing-hero"><svg class="brand__mark" aria-hidden="true"><use href="#i-lamp"/></svg><span class="brand__name">Night Tales Studio</span></a>
+              <nav class="pub-nav" aria-label="Điều hướng công khai / Public navigation"><a href="#f-pricing"><span data-l="vi">Bảng giá</span><span data-l="en">Pricing</span></a></nav>
+              <span class="app-top__spacer"></span>
+              <div class="pub-lang" role="group" aria-label="Ngôn ngữ / Language">
+                <button type="button" aria-pressed="true">Tiếng Việt</button><button type="button" aria-pressed="false">English</button>
+              </div>
+              <a class="btn btn--sm btn--primary" href="#f-register-idle"><span data-l="vi">Tạo tài khoản</span><span data-l="en">Create account</span></a>
+            </div>
+          </header>
+
+          <div class="app-content pub-content">
+            <section class="pub-section" aria-labelledby="faq-title">
+              <h2 class="h-headline" id="faq-title"><span data-l="vi">Câu hỏi thường gặp</span><span data-l="en">Frequently asked questions</span></h2>
+              <div>
+                <details class="pub-faq__item" open>
+                  <summary><svg aria-hidden="true"><use href="#i-next"/></svg><span data-l="vi">Tôi có cần biết dựng video không?</span><span data-l="en">Do I need video editing skills?</span></summary>
+                  <p><span data-l="vi">Không. Bạn chọn cảnh, ảnh và giọng kể; phần dựng và phụ đề do hệ thống làm.</span><span data-l="en">No. You pick the scenes, images and narration; the assembly and subtitles are done for you.</span></p>
+                </details>
+                <details class="pub-faq__item">
+                  <summary><svg aria-hidden="true"><use href="#i-next"/></svg><span data-l="vi">Một tập mất bao lâu?</span><span data-l="en">How long does one episode take?</span></summary>
+                  <p><span data-l="vi">Khoảng 10 đến 15 phút cho một video Standard, tính từ lúc bạn duyệt kịch bản. Tập dài hoặc nhiều cảnh thì lâu hơn.</span><span data-l="en">About 10 to 15 minutes for a Standard video, counted from the moment you approve the script. Longer episodes with more scenes take more.</span></p>
+                </details>
+                <details class="pub-faq__item">
+                  <summary><svg aria-hidden="true"><use href="#i-next"/></svg><span data-l="vi">Video có tự đăng lên kênh của tôi không?</span><span data-l="en">Does it publish to my channel by itself?</span></summary>
+                  <p><span data-l="vi">Không. Bạn duyệt kịch bản, xem lại video rồi bấm đăng. Việc đăng dùng API chính thức của YouTube và TikTok.</span><span data-l="en">No. You approve the script, review the video and press publish. Publishing uses the official YouTube and TikTok APIs.</span></p>
+                </details>
+                <details class="pub-faq__item">
+                  <summary><svg aria-hidden="true"><use href="#i-next"/></svg><span data-l="vi">Tôi dùng tiếng Việt hay tiếng Anh?</span><span data-l="en">Can I work in Vietnamese or English?</span></summary>
+                  <p><span data-l="vi">Cả hai. Giao diện, truyện và giọng kể đều có tiếng Việt và tiếng Anh.</span><span data-l="en">Both. The interface, the stories and the narration are available in Vietnamese and English.</span></p>
+                </details>
+                <details class="pub-faq__item">
+                  <summary><svg aria-hidden="true"><use href="#i-next"/></svg><span data-l="vi">Credits dùng thế nào?</span><span data-l="en">How do credits work?</span></summary>
+                  <p><span data-l="vi">Mỗi bước trong một tập tiêu tốn credits. <a href="#f-pricing">Bảng giá</a> ghi số credits mỗi gói, hạn dùng và điều kiện hoàn tiền.</span><span data-l="en">Each step of an episode spends credits. The <a href="#f-pricing">pricing page</a> lists the credits per package, the expiry and the refund rules.</span></p>
+                </details>
+              </div>
+            </section>
+          </div>
+
+          <footer class="pub-footer">
+            <div>
+              <a class="brand" href="#f-landing-hero"><svg class="brand__mark" aria-hidden="true"><use href="#i-lamp"/></svg><span class="brand__name">Night Tales Studio</span></a>
+              <p class="caption"><span data-l="vi">Truyện ma, truyện tâm linh và án thật có nguồn dẫn, dựng thành video dọc cho kênh của bạn.</span><span data-l="en">Ghost stories, spiritual stories and sourced true-crime cases, assembled into vertical videos for your channel.</span></p>
+              <div class="pub-lang" role="group" aria-label="Ngôn ngữ / Language">
+                <button type="button" aria-pressed="true">Tiếng Việt</button><button type="button" aria-pressed="false">English</button>
+              </div>
+            </div>
+            <div>
+              <h2><span data-l="vi">Sản phẩm</span><span data-l="en">Product</span></h2>
+              <ul>
+                <li><a href="#f-pricing"><span data-l="vi">Bảng giá</span><span data-l="en">Pricing</span></a></li>
+                <li><a href="#f-landing-how-topics"><span data-l="vi">Cách hoạt động</span><span data-l="en">How it works</span></a></li>
+                <li><a href="#f-landing-faq-footer"><span data-l="vi">Câu hỏi thường gặp</span><span data-l="en">FAQ</span></a></li>
+              </ul>
+            </div>
+            <div>
+              <h2><span data-l="vi">Pháp lý</span><span data-l="en">Legal</span></h2>
+              <ul>
+                <li><a href="/vi/privacy"><span data-l="vi">Chính sách bảo mật</span><span data-l="en">Privacy policy</span></a></li>
+                <li><a href="/vi/terms"><span data-l="vi">Điều khoản sử dụng</span><span data-l="en">Terms of use</span></a></li>
+                <li><a href="/vi/content-policy"><span data-l="vi">Chính sách nội dung</span><span data-l="en">Content policy</span></a></li>
+              </ul>
+            </div>
+            <div>
+              <h2><span data-l="vi">Hỗ trợ</span><span data-l="en">Support</span></h2>
+              <ul>
+                <li><a href="/vi/report"><span data-l="vi">Báo cáo nội dung</span><span data-l="en">Report content</span></a></li>
+                <li><a href="/vi/help"><span data-l="vi">Trợ giúp</span><span data-l="en">Help</span></a></li>
+              </ul>
+            </div>
+            <p class="caption" style="grid-column: 1 / -1;">
+              <span data-l="vi">© 2026 Night Tales Studio. Nội dung dành cho người từ 18 tuổi. Bản điều khoản đang hiệu lực: 1.0.0.</span>
+              <span data-l="en">© 2026 Night Tales Studio. Content for people aged 18 and over. Current legal version: 1.0.0.</span>
+            </p>
+          </footer>
+        </div>
+      </div>
+    </div>
+    <details class="notes"><summary>a11y + behaviour notes</summary><ul>
+      <li>FAQ copy uses native `details`/`summary` (keyboard operable, no JS). `summary` is ≥ 40 px tall (kit target min).</li>
+      <li>[INFERENCE] "about 10 to 15 minutes for a Standard video" in the FAQ is a placeholder for review; the real figure must come from a measured render at the chosen tier before this copy ships. The same applies to "about 190 credits per Standard video" on the pricing frame (1 credit = US$0.01 of price is the only pinned constant).</li>
+      <li>Footer link targets are existing prerendered routes only (SD1/SD2): `/vi|en/privacy`, `/terms`, `/content-policy`, `/report`, `/help`. There is deliberately **no** `/cookies` route (13.1.4-T1: the notice is not a page and adds no public route).</li>
+      <li>`/help` (08.3.1-T2) and `/report` (13.3.4-T1) and `/content-policy` (13.1.3-T1) are other owners' pages; this folder only links them.</li>
+      <li>The locale prefix on every legal link is the language of the page; the footer language control writes the stored preference and `history.replaceState`s to the other prefix.</li>
+      <li>Legal version `1.0.0` is a placeholder read from the build-time manifest (`manifest.json`), never hardcoded (SC16, D1).</li>
+      <li>The 18+ line is required (13.2.3-T1); the register form's blocking attestation is the enforceable half.</li>
+      <li>No monetization wording: the footer intentionally carries no aim/earnings statement (DECISIONS §1).</li>
+    </ul></details>
+  </section>
+
+  <!-- ============================ PRICING ============================ -->
+  <section class="frame" id="f-pricing" aria-labelledby="f-pricing-t">
+    <div class="frame__cap">
+      <h2 id="f-pricing-t">/vi/pricing · <span data-l="vi">gói credits và điều kiện trước khi thanh toán</span><span data-l="en">credit packages and pre-payment rules</span></h2>
+      <span class="caption"><span data-l="vi">Tĩnh, dựng sẵn; giá từ <span class="code">content/pricing/vi.json</span>, không gọi <span class="code">GET /billing/packages</span>.</span><span data-l="en">Static, prerendered; prices from <span class="code">content/pricing/vi.json</span>, never a call to <span class="code">GET /billing/packages</span>.</span></span>
+    </div>
+    <div class="frame__view">
+      <div class="app app--bare s-public">
+        <div class="app-main">
+          <header class="app-top pub-top">
+            <div class="pub-top__in">
+              <a class="brand" href="#f-landing-hero"><svg class="brand__mark" aria-hidden="true"><use href="#i-lamp"/></svg><span class="brand__name">Night Tales Studio</span></a>
+              <nav class="pub-nav" aria-label="Điều hướng công khai / Public navigation"><a href="#f-pricing" aria-current="page"><span data-l="vi">Bảng giá</span><span data-l="en">Pricing</span></a></nav>
+              <span class="app-top__spacer"></span>
+              <div class="pub-lang" role="group" aria-label="Ngôn ngữ / Language">
+                <button type="button" aria-pressed="true">Tiếng Việt</button><button type="button" aria-pressed="false">English</button>
+              </div>
+              <a class="btn btn--sm hide-sm" href="#f-register-idle"><span data-l="vi">Đăng nhập</span><span data-l="en">Sign in</span></a>
+              <a class="btn btn--sm btn--primary" href="#f-register-idle"><span data-l="vi">Tạo tài khoản</span><span data-l="en">Create account</span></a>
+            </div>
+          </header>
+
+          <div class="app-content pub-content">
+            <header class="page-header">
+              <div>
+                <h1><span data-l="vi">Bảng giá</span><span data-l="en">Pricing</span></h1>
+                <p class="page-header__lede"><span data-l="vi">Credits dùng chung cho mọi bước: viết truyện, vẽ ảnh, giọng kể và dựng video. Gói càng lớn, giá mỗi credit càng thấp.</span><span data-l="en">Credits cover every step: writing, images, narration and assembly. The larger the package, the lower the price per credit.</span></p>
+              </div>
+            </header>
+
+            <div class="banner banner--warn" role="note">
+              <svg aria-hidden="true"><use href="#i-info"/></svg>
+              <div class="banner__body">
+                <strong><span data-l="vi">Số liệu đang là minh hoạ</span><span data-l="en">These figures are placeholders</span></strong>
+                <p><span data-l="vi">Giá và số credits dưới đây là số minh hoạ để duyệt thiết kế. Chủ dự án chốt số chính thức trước khi mở bán; trang không hiển thị giá đã chốt khi chưa có (ST-1).</span><span data-l="en">The prices and credit amounts below are placeholders for design review. The owner sets the real figures before sales open; the page shows no price of record until then (ST-1).</span></p>
+              </div>
+            </div>
+
+            <section class="pub-section" aria-labelledby="pk-title">
+              <h2 class="h-headline" id="pk-title"><span data-l="vi">Gói credits</span><span data-l="en">Credit packages</span></h2>
+              <div class="pub-grid">
+                <div class="panel pub-pkg">
+                  <h3><span data-l="vi">Gói Khởi động</span><span data-l="en">Starter package</span></h3>
+                  <p class="pub-price"><span class="num" data-l="vi">199.000 ₫</span><span class="num" data-l="en">199,000 ₫</span></p>
+                  <div class="cost-line"><span data-l="vi">Credits</span><span data-l="en">Credits</span><span class="num"><span data-l="vi">1.000</span><span data-l="en">1,000</span></span></div>
+                  <div class="cost-line"><span data-l="vi">Tặng thêm</span><span data-l="en">Bonus</span><span class="num"><span data-l="vi">0</span><span data-l="en">0</span></span></div>
+                  <dl class="dl">
+                    <dt><span data-l="vi">Giá mỗi credit</span><span data-l="en">Price per credit</span></dt>
+                    <dd class="num"><span data-l="vi">199 ₫</span><span data-l="en">199 ₫</span></dd>
+                    <dt><span data-l="vi">Ước tính</span><span data-l="en">Estimated</span></dt>
+                    <dd><span data-l="vi">khoảng 5 video Standard</span><span data-l="en">about 5 Standard videos</span></dd>
+                  </dl>
+                  <ul class="pub-list">
+                    <li><svg aria-hidden="true"><use href="#i-check"/></svg><span data-l="vi">Mọi bước trong một gói</span><span data-l="en">Every step included</span></li>
+                    <li><svg aria-hidden="true"><use href="#i-check"/></svg><span data-l="vi">Xuất MP4 dọc 1080×1920</span><span data-l="en">Vertical MP4 at 1080×1920</span></li>
+                  </ul>
+                  <a class="btn btn--block" href="#f-register-idle"><span data-l="vi">Tạo tài khoản</span><span data-l="en">Create account</span></a>
+                </div>
+
+                <div class="panel pub-pkg pub-pkg--featured">
+                  <div class="row row--between">
+                    <h3><span data-l="vi">Gói Sáng tạo</span><span data-l="en">Creator package</span></h3>
+                    <span class="chip chip--info"><svg aria-hidden="true"><use href="#i-sparkle"/></svg><span data-l="vi">Nhiều người chọn</span><span data-l="en">Most chosen</span></span>
+                  </div>
+                  <p class="pub-price"><span class="num" data-l="vi">549.000 ₫</span><span class="num" data-l="en">549,000 ₫</span></p>
+                  <div class="cost-line"><span data-l="vi">Credits</span><span data-l="en">Credits</span><span class="num"><span data-l="vi">3.000</span><span data-l="en">3,000</span></span></div>
+                  <div class="cost-line"><span data-l="vi">Tặng thêm</span><span data-l="en">Bonus</span><span class="num"><span data-l="vi">+ 300</span><span data-l="en">+ 300</span></span></div>
+                  <dl class="dl">
+                    <dt><span data-l="vi">Giá mỗi credit</span><span data-l="en">Price per credit</span></dt>
+                    <dd class="num"><span data-l="vi">166 ₫</span><span data-l="en">166 ₫</span></dd>
+                    <dt><span data-l="vi">Ước tính</span><span data-l="en">Estimated</span></dt>
+                    <dd><span data-l="vi">khoảng 17 video Standard</span><span data-l="en">about 17 Standard videos</span></dd>
+                  </dl>
+                  <ul class="pub-list">
+                    <li><svg aria-hidden="true"><use href="#i-check"/></svg><span data-l="vi">Credits tặng dùng chung hạn 12 tháng</span><span data-l="en">Bonus credits share the 12-month expiry</span></li>
+                    <li><svg aria-hidden="true"><use href="#i-check"/></svg><span data-l="vi">Giá mỗi credit thấp hơn gói Khởi động</span><span data-l="en">Lower price per credit than Starter</span></li>
+                  </ul>
+                  <a class="btn btn--block btn--primary" href="#f-register-idle"><span data-l="vi">Tạo tài khoản</span><span data-l="en">Create account</span></a>
+                </div>
+
+                <div class="panel pub-pkg">
+                  <h3><span data-l="vi">Gói Studio</span><span data-l="en">Studio package</span></h3>
+                  <p class="pub-price"><span class="num" data-l="vi">1.690.000 ₫</span><span class="num" data-l="en">1,690,000 ₫</span></p>
+                  <div class="cost-line"><span data-l="vi">Credits</span><span data-l="en">Credits</span><span class="num"><span data-l="vi">10.000</span><span data-l="en">10,000</span></span></div>
+                  <div class="cost-line"><span data-l="vi">Tặng thêm</span><span data-l="en">Bonus</span><span class="num"><span data-l="vi">+ 2.000</span><span data-l="en">+ 2,000</span></span></div>
+                  <dl class="dl">
+                    <dt><span data-l="vi">Giá mỗi credit</span><span data-l="en">Price per credit</span></dt>
+                    <dd class="num"><span data-l="vi">141 ₫</span><span data-l="en">141 ₫</span></dd>
+                    <dt><span data-l="vi">Ước tính</span><span data-l="en">Estimated</span></dt>
+                    <dd><span data-l="vi">khoảng 63 video Standard</span><span data-l="en">about 63 Standard videos</span></dd>
+                  </dl>
+                  <ul class="pub-list">
+                    <li><svg aria-hidden="true"><use href="#i-check"/></svg><span data-l="vi">Cho kênh chạy đều mỗi tuần</span><span data-l="en">For a channel publishing every week</span></li>
+                    <li><svg aria-hidden="true"><use href="#i-check"/></svg><span data-l="vi">Giá mỗi credit thấp nhất</span><span data-l="en">The lowest price per credit</span></li>
+                  </ul>
+                  <a class="btn btn--block" href="#f-register-idle"><span data-l="vi">Tạo tài khoản</span><span data-l="en">Create account</span></a>
+                </div>
+              </div>
+              <p class="caption"><span data-l="vi">Một video Standard ước tính khoảng 190 credits. Con số này phụ thuộc độ dài và số cảnh của tập.</span><span data-l="en">A Standard video is estimated at about 190 credits. The real cost depends on the episode length and scene count.</span></p>
+            </section>
+
+            <section class="pub-section" aria-labelledby="rules-title">
+              <h2 class="h-headline" id="rules-title"><span data-l="vi">Trước khi thanh toán</span><span data-l="en">Before you pay</span></h2>
+              <ul class="list-rows" style="border: 1px solid var(--nts-color-hairline); border-radius: var(--nts-radius-lg); background: var(--nts-color-surface);">
+                <li class="list-row">
+                  <svg aria-hidden="true" style="width:22px;height:22px;color:var(--nts-color-primary)"><use href="#i-clock"/></svg>
+                  <div class="list-row__main">
+                    <span class="list-row__title"><span data-l="vi">Hạn dùng của credits</span><span data-l="en">Credit expiry</span></span>
+                    <span class="list-row__meta"><span data-l="vi">Credits mua và credits tặng: 12 tháng kể từ ngày thanh toán</span><span data-l="en">Purchased and bonus credits: 12 months from the payment date</span><span data-l="vi">Credits dùng thử: 30 ngày</span><span data-l="en">Trial credits: 30 days</span><span data-l="vi">Credits khuyến mãi: theo hạn của mã</span><span data-l="en">Promo credits: per the code</span></span>
+                  </div>
+                </li>
+                <li class="list-row">
+                  <svg aria-hidden="true" style="width:22px;height:22px;color:var(--nts-color-primary)"><use href="#i-refresh"/></svg>
+                  <div class="list-row__main">
+                    <span class="list-row__title"><span data-l="vi">Hoàn tiền trong 14 ngày</span><span data-l="en">Refund within 14 days</span></span>
+                    <span class="list-row__meta"><span data-l="vi">Yêu cầu trong 14 ngày kể từ ngày thanh toán, khi credits chưa dùng</span><span data-l="en">Request within 14 days of payment, while the credits are unused</span><span data-l="vi">Credits tặng được trừ trước khi tính số hoàn</span><span data-l="en">Bonus credits are deducted before the refund is calculated</span></span>
+                  </div>
+                </li>
+                <li class="list-row">
+                  <svg aria-hidden="true" style="width:22px;height:22px;color:var(--nts-color-primary)"><use href="#i-billing"/></svg>
+                  <div class="list-row__main">
+                    <span class="list-row__title"><span data-l="vi">Thanh toán bằng VND</span><span data-l="en">Paid in VND</span></span>
+                    <span class="list-row__meta"><span data-l="vi">Giá gói có thể thay đổi; giá của một lần thanh toán đã xong không đổi</span><span data-l="en">Package prices may change; the price of a completed payment does not</span><span data-l="vi">Credits không đổi thành tiền mặt</span><span data-l="en">Credits are not exchangeable for cash</span></span>
+                  </div>
+                </li>
+                <li class="list-row">
+                  <svg aria-hidden="true" style="width:22px;height:22px;color:var(--nts-color-primary)"><use href="#i-shield"/></svg>
+                  <div class="list-row__main">
+                    <span class="list-row__title"><span data-l="vi">Điều khoản áp dụng</span><span data-l="en">Which terms apply</span></span>
+                    <span class="list-row__meta"><span data-l="vi">Bản 1.0.0 của Điều khoản sử dụng và Chính sách bảo mật</span><span data-l="en">Version 1.0.0 of the Terms of use and the Privacy policy</span></span>
+                  </div>
+                </li>
+              </ul>
+              <p class="caption"><span data-l="vi">Toàn bộ điều kiện hạn dùng và hoàn tiền cũng nằm trong <a href="/vi/terms">Điều khoản sử dụng</a>; số liệu hiển thị ở đây lấy từ cùng một nguồn nội dung với trang này.</span><span data-l="en">The expiry and refund rules also live in the <a href="/vi/terms">Terms of use</a>; the figures shown here come from the same content source as this page.</span></p>
+            </section>
+          </div>
+        </div>
+      </div>
+    </div>
+    <details class="notes"><summary>a11y + behaviour notes</summary><ul>
+      <li>Route `/<lang>/pricing`; content from `web/src/content/pricing/<lang>.json` (`PricingContent`), validated at build; no `GET /billing/packages` (F5, ST-1, D12). State matrix: only the static state exists — loading/empty/error are n/a (no fetch, prerendered).</li>
+      <li>Price per credit and "about N Standard videos" are derived in the content loader, never in the template (12.7.1-T1: `priceVnd ÷ (credits + bonusCredits)`; 1 credit = US$0.01 of price).</li>
+      <li>The three rule rows are the pre-payment disclosure the plan requires (12.6.2 / 12.7.5 / CR-6): expiry 12 months purchased+bonus, 30 days trial, promo per code, 14-day refund window, bonus deduction, VND, no cash value.</li>
+      <li>`del`/`dl` markup carries the money pairs; `.num` uses `tabular-nums`. Amounts are vi/en formatted separately (`vi-VN` vs `en-US` separators) — the same value, two renderings.</li>
+      <li>No monetization promise: the page never states or implies earnings, revenue or channel income. Package sizes are described in credits and videos only.</li>
+      <li>Focus order: header → primary CTA of the first package … through the third → rule rows are not focusable (plain list) → legal link. Amber is used only for the featured package CTA and the "next action" role.</li>
+      <li>Highlighted package uses a border + elevation, and the "Most chosen" chip carries text, never colour alone.</li>
+    </ul></details>
+  </section>
+
+  <section class="frame" id="f-pricing-signed-in" aria-labelledby="f-pricing-signed-in-t">
+    <div class="frame__cap">
+      <h2 id="f-pricing-signed-in-t">/vi/pricing · <span data-l="vi">bản đã đăng nhập</span><span data-l="en">signed-in variant</span></h2>
+      <span class="caption"><span data-l="vi">CTA đổi thành mua credits; số dư nằm ở khe <span class="code">header-end</span>.</span><span data-l="en">CTA switches to buying credits; the balance sits in the <span class="code">header-end</span> slot.</span></span>
+    </div>
+    <div class="frame__view">
+      <div class="app app--bare s-public">
+        <div class="app-main">
+          <header class="app-top pub-top">
+            <div class="pub-top__in">
+              <a class="brand" href="#f-landing-hero"><svg class="brand__mark" aria-hidden="true"><use href="#i-lamp"/></svg><span class="brand__name">Night Tales Studio</span></a>
+              <nav class="pub-nav" aria-label="Điều hướng công khai / Public navigation"><a href="#f-pricing" aria-current="page"><span data-l="vi">Bảng giá</span><span data-l="en">Pricing</span></a></nav>
+              <span class="app-top__spacer"></span>
+              <div class="pub-lang" role="group" aria-label="Ngôn ngữ / Language">
+                <button type="button" aria-pressed="true">Tiếng Việt</button><button type="button" aria-pressed="false">English</button>
+              </div>
+              <span class="chip chip--neutral"><svg aria-hidden="true"><use href="#i-billing"/></svg><span class="num"><span data-l="vi">1.240 credits</span><span data-l="en">1,240 credits</span></span></span>
+              <button type="button" class="btn btn--sm"><span data-l="vi">Tài khoản</span><span data-l="en">Account</span></button>
+            </div>
+          </header>
+
+          <div class="app-content pub-content">
+            <header class="page-header">
+              <div>
+                <h1><span data-l="vi">Bảng giá</span><span data-l="en">Pricing</span></h1>
+                <p class="page-header__lede"><span data-l="vi">Bạn đang đăng nhập. Chọn gói để mua thêm credits; số dư và hạn dùng gần nhất nằm trong trang ví.</span><span data-l="en">You are signed in. Pick a package to buy more credits; the balance and the next expiry date live in your wallet.</span></p>
+              </div>
+            </header>
+
+            <div class="banner banner--info" role="status">
+              <svg aria-hidden="true"><use href="#i-clock"/></svg>
+              <div class="banner__body">
+                <p><span data-l="vi">Số dư hiện tại 1.240 credits. Credits gần hết hạn nhất: 320 credits, hết hạn ngày 12/03/2027.</span><span data-l="en">Current balance 1,240 credits. Next expiry: 320 credits on 12 March 2027.</span></p>
+              </div>
+            </div>
+
+            <section class="pub-section" aria-labelledby="pk2-title">
+              <h2 class="h-headline" id="pk2-title"><span data-l="vi">Gói credits</span><span data-l="en">Credit packages</span></h2>
+              <div class="pub-grid">
+                <div class="panel pub-pkg">
+                  <h3><span data-l="vi">Gói Khởi động</span><span data-l="en">Starter package</span></h3>
+                  <p class="pub-price"><span class="num" data-l="vi">199.000 ₫</span><span class="num" data-l="en">199,000 ₫</span></p>
+                  <div class="cost-line"><span data-l="vi">Credits</span><span data-l="en">Credits</span><span class="num"><span data-l="vi">1.000</span><span data-l="en">1,000</span></span></div>
+                  <a class="btn btn--block" href="/billing/packages"><span data-l="vi">Mua credits</span><span data-l="en">Buy credits</span></a>
+                </div>
+                <div class="panel pub-pkg pub-pkg--featured">
+                  <h3><span data-l="vi">Gói Sáng tạo</span><span data-l="en">Creator package</span></h3>
+                  <p class="pub-price"><span class="num" data-l="vi">549.000 ₫</span><span class="num" data-l="en">549,000 ₫</span></p>
+                  <div class="cost-line"><span data-l="vi">Credits</span><span data-l="en">Credits</span><span class="num"><span data-l="vi">3.000 + 300</span><span data-l="en">3,000 + 300</span></span></div>
+                  <a class="btn btn--block btn--primary" href="/billing/packages"><span data-l="vi">Mua credits</span><span data-l="en">Buy credits</span></a>
+                </div>
+                <div class="panel pub-pkg">
+                  <h3><span data-l="vi">Gói Studio</span><span data-l="en">Studio package</span></h3>
+                  <p class="pub-price"><span class="num" data-l="vi">1.690.000 ₫</span><span class="num" data-l="en">1,690,000 ₫</span></p>
+                  <div class="cost-line"><span data-l="vi">Credits</span><span data-l="en">Credits</span><span class="num"><span data-l="vi">10.000 + 2.000</span><span data-l="en">10,000 + 2,000</span></span></div>
+                  <a class="btn btn--block" href="/billing/packages"><span data-l="vi">Mua credits</span><span data-l="en">Buy credits</span></a>
+                </div>
+              </div>
+              <p class="caption"><span data-l="vi">Giá và hạn dùng đầy đủ nằm trong trang mua credits, hiển thị lại trước khi bạn xác nhận thanh toán.</span><span data-l="en">Full prices and expiry rules are shown on the buy page, repeated before you confirm the payment.</span></p>
+            </section>
+          </div>
+        </div>
+      </div>
+    </div>
+    <details class="notes"><summary>a11y + behaviour notes</summary><ul>
+      <li>Same route and content; `SessionStore.status === 'authenticated'` swaps each CTA href to `/billing/packages` (F5, 10.3.1-T2 acceptance). The header shows the session variant: balance chip (`header-end` slot, D14) instead of Sign in.</li>
+      <li>The balance chip is a link to `/billing/wallet` in implementation; loading/error of that chip are 10.8.3-T1's states, not this file's.</li>
+      <li>Prerender safety: the signed-in variant is decided on the client after hydration; the prerendered HTML is always the anonymous variant (D12 — no auth call during prerender).</li>
+      <li>Money is never colour-only: the chip carries the number and unit as text.</li>
+      <li>No earnings wording here either.</li>
+    </ul></details>
+  </section>
+
+  <!-- ============================ REGISTER ============================ -->
+  <section class="frame" id="f-register-idle" aria-labelledby="f-register-idle-t">
+    <div class="frame__cap">
+      <h2 id="f-register-idle-t">/register · <span data-l="vi">trạng thái đầu, Captcha ẩn</span><span data-l="en">idle, Captcha hidden</span></h2>
+      <span class="caption"><span data-l="vi">Ba ô đồng ý đều chưa tích; widget chưa tải (chỉ hiện sau 400 <span class="code">captcha_required</span> khi chưa có nguồn mode, F29).</span><span data-l="en">All three consent boxes unticked; the widget is not loaded (revealed after 400 <span class="code">captcha_required</span> while F29 has no mode source).</span></span>
+    </div>
+    <div class="frame__view">
+      <div class="app app--bare s-public">
+        <div class="app-main">
+          <header class="app-top pub-top">
+            <div class="pub-top__in">
+              <a class="brand" href="#f-landing-hero"><svg class="brand__mark" aria-hidden="true"><use href="#i-lamp"/></svg><span class="brand__name">Night Tales Studio</span></a>
+              <nav class="pub-nav" aria-label="Điều hướng công khai / Public navigation"><a href="#f-pricing"><span data-l="vi">Bảng giá</span><span data-l="en">Pricing</span></a></nav>
+              <span class="app-top__spacer"></span>
+              <div class="pub-lang" role="group" aria-label="Ngôn ngữ / Language">
+                <button type="button" aria-pressed="true">Tiếng Việt</button><button type="button" aria-pressed="false">English</button>
+              </div>
+              <a class="btn btn--sm" href="/login"><span data-l="vi">Đăng nhập</span><span data-l="en">Sign in</span></a>
+            </div>
+          </header>
+
+          <div class="app-content pub-content pub-content--auth">
+            <header class="page-header">
+              <div>
+                <h1><span data-l="vi">Tạo tài khoản</span><span data-l="en">Create your account</span></h1>
+                <p class="page-header__lede"><span data-l="vi">Cần một địa chỉ e-mail và một mật khẩu. Bạn xác nhận e-mail sau khi gửi biểu mẫu.</span><span data-l="en">You need an e-mail address and a password. You confirm the e-mail after submitting.</span></p>
+              </div>
+            </header>
+
+            <form class="panel stack" aria-describedby="reg-hint">
+              <p class="caption" id="reg-hint"><span data-l="vi">Ô có dấu * là bắt buộc.</span><span data-l="en">Fields marked * are required.</span></p>
+
+              <div class="field">
+                <label for="reg-email"><span data-l="vi">Địa chỉ e-mail *</span><span data-l="en">E-mail address *</span></label>
+                <input id="reg-email" name="email" type="email" autocomplete="email" required aria-describedby="reg-email-hint">
+                <span class="field__hint" id="reg-email-hint"><span data-l="vi">Chúng tôi gửi liên kết xác nhận tới địa chỉ này.</span><span data-l="en">We send the confirmation link to this address.</span></span>
+              </div>
+
+              <div class="field">
+                <label for="reg-password"><span data-l="vi">Mật khẩu *</span><span data-l="en">Password *</span></label>
+                <input id="reg-password" name="new-password" type="password" autocomplete="new-password" required aria-describedby="reg-pw-hint reg-pw-state">
+                <div class="pub-strength" id="reg-pw-state">
+                  <div class="pub-strength__bars" aria-hidden="true"><span></span><span></span><span></span><span></span></div>
+                  <span class="caption" aria-live="polite"><span data-l="vi">Chưa nhập mật khẩu.</span><span data-l="en">No password entered yet.</span></span>
+                </div>
+                <ul class="pub-rules" id="reg-pw-hint">
+                  <li><svg aria-hidden="true"><use href="#i-check"/></svg><span data-l="vi">Ít nhất 12 ký tự</span><span data-l="en">At least 12 characters</span><span class="sr-only">(chưa đạt / not met)</span></li>
+                  <li><svg aria-hidden="true"><use href="#i-check"/></svg><span data-l="vi">Có chữ và số</span><span data-l="en">Letters and digits</span><span class="sr-only">(chưa đạt / not met)</span></li>
+                  <li><svg aria-hidden="true"><use href="#i-check"/></svg><span data-l="vi">Không trùng với địa chỉ e-mail</span><span data-l="en">Not the same as the e-mail address</span><span class="sr-only">(chưa đạt / not met)</span></li>
+                </ul>
+              </div>
+
+              <div class="field">
+                <label for="reg-confirm"><span data-l="vi">Nhập lại mật khẩu *</span><span data-l="en">Repeat the password *</span></label>
+                <input id="reg-confirm" name="confirm" type="password" autocomplete="new-password" required>
+              </div>
+
+              <div class="field">
+                <label for="reg-locale"><span data-l="vi">Ngôn ngữ giao diện</span><span data-l="en">Interface language</span></label>
+                <input id="reg-locale" type="text" readonly value="Tiếng Việt">
+                <span class="field__hint"><span data-l="vi">Gửi kèm trong <span class="code">uiLocale</span> khi tạo tài khoản.</span><span data-l="en">Sent as <span class="code">uiLocale</span> with the request.</span></span>
+              </div>
+
+              <fieldset class="pub-fieldset">
+                <legend><span data-l="vi">Xác nhận bắt buộc</span><span data-l="en">Required confirmations</span></legend>
+                <label class="check" for="reg-tos"><input id="reg-tos" type="checkbox"><span><span data-l="vi">Tôi đồng ý với <a href="/vi/terms">Điều khoản sử dụng</a> bản 1.0.0.</span><span data-l="en">I agree to the <a href="/vi/terms">Terms of use</a>, version 1.0.0.</span></span></label>
+                <label class="check" for="reg-privacy"><input id="reg-privacy" type="checkbox"><span><span data-l="vi">Tôi đồng ý với <a href="/vi/privacy">Chính sách bảo mật</a> bản 1.0.0.</span><span data-l="en">I agree to the <a href="/vi/privacy">Privacy policy</a>, version 1.0.0.</span></span></label>
+                <label class="check" for="reg-age"><input id="reg-age" type="checkbox"><span><span data-l="vi">Tôi xác nhận mình từ 18 tuổi trở lên.</span><span data-l="en">I confirm I am 18 or over.</span></span></label>
+                <p class="field__hint"><span data-l="vi">Cả ba ô đều bắt buộc và không được tích sẵn.</span><span data-l="en">All three are required and are never pre-ticked.</span></p>
+              </fieldset>
+
+              <div class="row">
+                <button class="btn btn--primary" type="submit"><span data-l="vi">Tạo tài khoản</span><span data-l="en">Create account</span></button>
+                <a class="btn btn--quiet" href="/login"><span data-l="vi">Đã có tài khoản? Đăng nhập</span><span data-l="en">Already have an account? Sign in</span></a>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+    </div>
+    <details class="notes"><summary>a11y + behaviour notes</summary><ul>
+      <li>Submit → `POST /auth/register` with the frozen SC30 body `{ email, password, consents: [{document, version}], inviteCode?, uiLocale, captchaToken? }` (SC30, F11). `uiLocale` = the current Transloco language.</li>
+      <li>Consent versions come from the build-time legal content (`legal-to-json.mjs`, SC16/D1) — `1.0.0` is a placeholder here, never hardcoded.</li>
+      <li>Focus order: e-mail → password → repeat → consents (tos, privacy, age_18) → Create account → Sign in. Errors bind to the control with `aria-describedby` and the first invalid field receives focus on submit (`bindFieldErrors`, 10.2.2-T1).</li>
+      <li>`aria-live="polite"` on the strength caption; bars are `aria-hidden` (the text carries the meaning). Rule icons carry an `sr-only` met/not-met word so state is never colour-only.</li>
+      <li>Captcha hidden state: the widget is **not** mounted and `turnstile-loader` is **not** called (F8, 09 W3 CR-34). With F29 `[OPEN]` there is no client-visible `registration.mode`, so the widget is revealed on 400 `captcha_required`.</li>
+      <li>Password rules live in one place (`shared/util/password-rules.ts`); the three bullets shown are the shape, not a second rule set.</li>
+    </ul></details>
+  </section>
+
+  <section class="frame" id="f-register-age-gate" aria-labelledby="f-register-age-gate-t">
+    <div class="frame__cap">
+      <h2 id="f-register-age-gate-t">/register · <span data-l="vi">bước xác nhận 18+ (400 age_attestation_required)</span><span data-l="en">18+ attestation step (400 age_attestation_required)</span></h2>
+      <span class="caption"><span data-l="vi">13.2.3-T1: gửi thiếu attestation thì không tạo người dùng; lỗi gắn vào ô xác nhận.</span><span data-l="en">13.2.3-T1: without the attestation no user row is created; the error binds to the confirmation control.</span></span>
+    </div>
+    <div class="frame__view">
+      <div class="app app--bare s-public">
+        <div class="app-main">
+          <header class="app-top pub-top">
+            <div class="pub-top__in">
+              <a class="brand" href="#f-landing-hero"><svg class="brand__mark" aria-hidden="true"><use href="#i-lamp"/></svg><span class="brand__name">Night Tales Studio</span></a>
+              <nav class="pub-nav" aria-label="Điều hướng công khai / Public navigation"><a href="#f-pricing"><span data-l="vi">Bảng giá</span><span data-l="en">Pricing</span></a></nav>
+              <span class="app-top__spacer"></span>
+              <div class="pub-lang" role="group" aria-label="Ngôn ngữ / Language">
+                <button type="button" aria-pressed="true">Tiếng Việt</button><button type="button" aria-pressed="false">English</button>
+              </div>
+              <a class="btn btn--sm" href="/login"><span data-l="vi">Đăng nhập</span><span data-l="en">Sign in</span></a>
+            </div>
+          </header>
+
+          <div class="app-content pub-content pub-content--auth">
+            <header class="page-header">
+              <div>
+                <h1><span data-l="vi">Tạo tài khoản</span><span data-l="en">Create your account</span></h1>
+              </div>
+            </header>
+
+            <section class="panel panel--sunk stack" aria-labelledby="age-title">
+              <div class="row">
+                <svg aria-hidden="true" style="width:26px;height:26px;color:var(--nts-color-primary)"><use href="#i-shield"/></svg>
+                <h2 class="section-title" id="age-title"><span data-l="vi">Trước tiên: bạn từ 18 tuổi trở lên</span><span data-l="en">First: you are 18 or over</span></h2>
+              </div>
+              <p class="muted"><span data-l="vi">Chủ đề án thật và truyện ma không phù hợp với người dưới 18 tuổi. Chúng tôi ghi lại xác nhận này như một phần của hồ sơ đồng ý (bản 1.0.0).</span><span data-l="en">True-crime and ghost-story content is not suitable for people under 18. We record this confirmation as part of the consent record (version 1.0.0).</span></p>
+              <div class="field is-invalid">
+                <label class="check" for="age-gate"><input id="age-gate" type="checkbox" aria-describedby="age-gate-err"><span><span data-l="vi">Tôi xác nhận mình từ 18 tuổi trở lên. *</span><span data-l="en">I confirm I am 18 or over. *</span></span></label>
+                <span class="field__error" id="age-gate-err" role="alert"><svg aria-hidden="true"><use href="#i-alert"/></svg><span data-l="vi">Bạn cần xác nhận đủ 18 tuổi để tạo tài khoản. Tích vào ô trên rồi gửi lại.</span><span data-l="en">You need to confirm you are 18 or over to create an account. Tick the box above and submit again.</span></span>
+              </div>
+              <span class="chip chip--error"><svg aria-hidden="true"><use href="#i-alert"/></svg><span class="code">age_attestation_required</span></span>
+            </section>
+
+            <form class="panel stack">
+              <div class="field">
+                <label for="age-email"><span data-l="vi">Địa chỉ e-mail *</span><span data-l="en">E-mail address *</span></label>
+                <input id="age-email" type="email" value="lan.pham@gmail.com">
+              </div>
+              <div class="field">
+                <label for="age-password"><span data-l="vi">Mật khẩu *</span><span data-l="en">Password *</span></label>
+                <input id="age-password" type="password" value="dem-ngu-ngon-2026">
+              </div>
+              <div class="row">
+                <button class="btn btn--primary" type="submit"><span data-l="vi">Tạo tài khoản</span><span data-l="en">Create account</span></button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+    </div>
+    <details class="notes"><summary>a11y + behaviour notes</summary><ul>
+      <li>Error code `age_attestation_required` (400) with `errors.age18`; the message binds to the age control, which is the step shown first in the form (13.2.3-T1, CR-10/CR-11). `role="alert"` announces it on arrival.</li>
+      <li>Nothing is created server-side on this failure (no `users` row, no `user_consents` row). The UI must not say "account created".</li>
+      <li>The attestation is one of the three `consents[]` entries (`document: "age_18"`) sent with the register body — never a separate request.</li>
+      <li>Version `1.0.0` comes from `age-gate.<version>.<lang>.md` via the manifest; never hardcoded.</li>
+      <li>Focus order: age checkbox (first), then the rest of the form; on submit failure the age control takes focus.</li>
+      <li>Target size: the checkbox row is ≥ 24 px (`min-height` on `.check`), and the whole label text is clickable.</li>
+    </ul></details>
+  </section>
+
+  <section class="frame" id="f-register-errors" aria-labelledby="f-register-errors-t">
+    <div class="frame__cap">
+      <h2 id="f-register-errors-t">/register · <span data-l="vi">lỗi từng ô (400 validation_failed)</span><span data-l="en">field errors (400 validation_failed)</span></h2>
+      <span class="caption"><span data-l="vi">Thước đo độ mạnh ở mức yếu; lỗi gắn vào đúng ô, không chỉ báo chung.</span><span data-l="en">Strength meter at weak; each error binds to its own control, not just a form-level message.</span></span>
+    </div>
+    <div class="frame__view">
+      <div class="app app--bare s-public">
+        <div class="app-main">
+          <header class="app-top pub-top">
+            <div class="pub-top__in">
+              <a class="brand" href="#f-landing-hero"><svg class="brand__mark" aria-hidden="true"><use href="#i-lamp"/></svg><span class="brand__name">Night Tales Studio</span></a>
+              <span class="app-top__spacer"></span>
+              <div class="pub-lang" role="group" aria-label="Ngôn ngữ / Language">
+                <button type="button" aria-pressed="true">Tiếng Việt</button><button type="button" aria-pressed="false">English</button>
+              </div>
+              <a class="btn btn--sm" href="/login"><span data-l="vi">Đăng nhập</span><span data-l="en">Sign in</span></a>
+            </div>
+          </header>
+
+          <div class="app-content pub-content pub-content--auth">
+            <header class="page-header">
+              <div>
+                <h1><span data-l="vi">Tạo tài khoản</span><span data-l="en">Create your account</span></h1>
+              </div>
+            </header>
+
+            <div class="banner banner--error" role="alert">
+              <svg aria-hidden="true"><use href="#i-alert"/></svg>
+              <div class="banner__body">
+                <strong><span data-l="vi">Biểu mẫu còn 4 chỗ cần sửa</span><span data-l="en">Four fields still need fixing</span></strong>
+                <p><span data-l="vi">Xem ghi chú dưới từng ô rồi gửi lại.</span><span data-l="en">Read the note under each field, then submit again.</span></p>
+              </div>
+            </div>
+
+            <form class="panel stack" novalidate>
+              <div class="field is-invalid">
+                <label for="err-email"><span data-l="vi">Địa chỉ e-mail *</span><span data-l="en">E-mail address *</span></label>
+                <input id="err-email" type="email" value="lan.pham@" aria-invalid="true" aria-describedby="err-email-msg">
+                <span class="field__error" id="err-email-msg"><svg aria-hidden="true"><use href="#i-alert"/></svg><span data-l="vi">Địa chỉ e-mail chưa đúng. Kiểm tra lại phần sau dấu @.</span><span data-l="en">This e-mail address is not valid. Check what comes after the @.</span></span>
+              </div>
+
+              <div class="field is-invalid">
+                <label for="err-password"><span data-l="vi">Mật khẩu *</span><span data-l="en">Password *</span></label>
+                <input id="err-password" type="password" value="trong-dem" aria-invalid="true" aria-describedby="err-pw-msg">
+                <div class="pub-strength">
+                  <div class="pub-strength__bars" aria-hidden="true"><span class="is-weak"></span><span></span><span></span><span></span></div>
+                  <span class="counter"><span data-l="vi">7/12 ký tự</span><span data-l="en">7/12 characters</span></span>
+                </div>
+                <span class="field__error" id="err-pw-msg"><svg aria-hidden="true"><use href="#i-alert"/></svg><span data-l="vi">Mật khẩu cần ít nhất 12 ký tự. Thêm 5 ký tự nữa là đủ.</span><span data-l="en">The password needs at least 12 characters. Five more is enough.</span></span>
+                <ul class="pub-rules">
+                  <li><svg aria-hidden="true" class="is-met"><use href="#i-close"/></svg><span data-l="vi">Ít nhất 12 ký tự — chưa đạt</span><span data-l="en">At least 12 characters — not met</span></li>
+                  <li><svg aria-hidden="true" class="is-met"><use href="#i-check"/></svg><span data-l="vi">Có chữ và số — đã đạt</span><span data-l="en">Letters and digits — met</span></li>
+                  <li><svg aria-hidden="true" class="is-met"><use href="#i-check"/></svg><span data-l="vi">Không trùng với địa chỉ e-mail — đã đạt</span><span data-l="en">Not the same as the e-mail address — met</span></li>
+                </ul>
+              </div>
+
+              <div class="field is-invalid">
+                <label for="err-confirm"><span data-l="vi">Nhập lại mật khẩu *</span><span data-l="en">Repeat the password *</span></label>
+                <input id="err-confirm" type="password" value="trong-dem2" aria-invalid="true" aria-describedby="err-confirm-msg">
+                <span class="field__error" id="err-confirm-msg"><svg aria-hidden="true"><use href="#i-alert"/></svg><span data-l="vi">Hai mật khẩu chưa giống nhau. Nhập lại cho khớp.</span><span data-l="en">The two passwords do not match. Type it again to match.</span></span>
+              </div>
+
+              <fieldset class="pub-fieldset">
+                <legend><span data-l="vi">Xác nhận bắt buộc</span><span data-l="en">Required confirmations</span></legend>
+                <div class="field is-invalid">
+                  <label class="check" for="err-tos"><input id="err-tos" type="checkbox" aria-invalid="true" aria-describedby="err-tos-msg"><span><span data-l="vi">Tôi đồng ý với <a href="/vi/terms">Điều khoản sử dụng</a> bản 1.0.0.</span><span data-l="en">I agree to the <a href="/vi/terms">Terms of use</a>, version 1.0.0.</span></span></label>
+                  <span class="field__error" id="err-tos-msg"><svg aria-hidden="true"><use href="#i-alert"/></svg><span data-l="vi">Bạn cần đồng ý Điều khoản sử dụng để tạo tài khoản.</span><span data-l="en">You need to agree to the Terms of use to create an account.</span></span>
+                </div>
+                <label class="check" for="err-privacy"><input id="err-privacy" type="checkbox" checked><span><span data-l="vi">Tôi đồng ý với <a href="/vi/privacy">Chính sách bảo mật</a> bản 1.0.0.</span><span data-l="en">I agree to the <a href="/vi/privacy">Privacy policy</a>, version 1.0.0.</span></span></label>
+                <div class="field is-invalid">
+                  <label class="check" for="err-age"><input id="err-age" type="checkbox" aria-invalid="true" aria-describedby="err-age-msg"><span><span data-l="vi">Tôi xác nhận mình từ 18 tuổi trở lên.</span><span data-l="en">I confirm I am 18 or over.</span></span></label>
+                  <span class="field__error" id="err-age-msg"><svg aria-hidden="true"><use href="#i-alert"/></svg><span data-l="vi">Bạn cần xác nhận đủ 18 tuổi để tạo tài khoản.</span><span data-l="en">You need to confirm you are 18 or over to create an account.</span></span>
+                </div>
+              </fieldset>
+
+              <div class="row">
+                <button class="btn btn--primary" type="submit"><span data-l="vi">Tạo tài khoản</span><span data-l="en">Create account</span></button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+    </div>
+    <details class="notes"><summary>a11y + behaviour notes</summary><ul>
+      <li>Client validation runs first; whatever the server returns is mapped by `AppErrorMapper` and bound with `bindFieldErrors` (10.2.2-T1). Field-level copy is the shape shown, not a second catalogue.</li>
+      <li>`novalidate` on the form keeps the browser's native bubble out of the way so the design's own error rendering is what ships; `aria-invalid="true"` + `aria-describedby` links message to control.</li>
+      <li>Form-level `role="alert"` counts the problems; it is not the only signal (each field carries its own message).</li>
+      <li>Errors say what happened and how to fix it, no apology, no blame (brief copy rule).</li>
+      <li>Strength meter: 4 segments plus text; the rule list repeats the state in words (`— chưa đạt` / `— đã đạt`), so colour is never the only signal. The real rule set and strength function are `shared/util/password-rules.ts`.</li>
+      <li>On submit failure focus moves to the first invalid control (here: e-mail).</li>
+    </ul></details>
+  </section>
+
+  <section class="frame" id="f-register-breached" aria-labelledby="f-register-breached-t">
+    <div class="frame__cap">
+      <h2 id="f-register-breached-t">/register · <span data-l="vi">400 breached_password</span><span data-l="en">400 breached_password</span></h2>
+      <span class="caption"><span data-l="vi">Lỗi gắn vào ô mật khẩu; mọi ô khác giữ nguyên giá trị đã nhập.</span><span data-l="en">The error binds to the password control; every other value is kept.</span></span>
+    </div>
+    <div class="frame__view">
+      <div class="app app--bare s-public">
+        <div class="app-main">
+          <header class="app-top pub-top">
+            <div class="pub-top__in">
+              <a class="brand" href="#f-landing-hero"><svg class="brand__mark" aria-hidden="true"><use href="#i-lamp"/></svg><span class="brand__name">Night Tales Studio</span></a>
+              <span class="app-top__spacer"></span>
+              <div class="pub-lang" role="group" aria-label="Ngôn ngữ / Language">
+                <button type="button" aria-pressed="true">Tiếng Việt</button><button type="button" aria-pressed="false">English</button>
+              </div>
+              <a class="btn btn--sm" href="/login"><span data-l="vi">Đăng nhập</span><span data-l="en">Sign in</span></a>
+            </div>
+          </header>
+
+          <div class="app-content pub-content pub-content--auth">
+            <header class="page-header">
+              <div>
+                <h1><span data-l="vi">Tạo tài khoản</span><span data-l="en">Create your account</span></h1>
+              </div>
+            </header>
+
+            <form class="panel stack" novalidate>
+              <div class="field">
+                <label for="br-email"><span data-l="vi">Địa chỉ e-mail *</span><span data-l="en">E-mail address *</span></label>
+                <input id="br-email" type="email" value="lan.pham@gmail.com">
+              </div>
+
+              <div class="field is-invalid">
+                <label for="br-password"><span data-l="vi">Mật khẩu *</span><span data-l="en">Password *</span></label>
+                <input id="br-password" type="password" value="matkhau123456" aria-invalid="true" aria-describedby="br-pw-msg br-pw-hint">
+                <div class="pub-strength">
+                  <div class="pub-strength__bars" aria-hidden="true"><span class="is-ok"></span><span class="is-ok"></span><span class="is-ok"></span><span></span></div>
+                  <span class="caption" aria-live="polite"><span data-l="vi">Độ mạnh: khá. Nhưng mật khẩu này đã lộ trong một vụ rò rỉ dữ liệu.</span><span data-l="en">Strength: fair. But this password has appeared in a data breach.</span></span>
+                </div>
+                <span class="field__error" id="br-pw-msg" role="alert"><svg aria-hidden="true"><use href="#i-alert"/></svg><span data-l="vi">Mật khẩu này đã xuất hiện trong một vụ rò rỉ dữ liệu. Chọn mật khẩu khác.</span><span data-l="en">This password appeared in a data breach. Choose another one.</span></span>
+                <span class="field__hint" id="br-pw-hint"><span data-l="vi">Một cụm từ dài, dễ nhớ và chỉ dùng ở đây là đủ.</span><span data-l="en">A long passphrase you remember and use nowhere else is enough.</span></span>
+                <span class="chip chip--error"><svg aria-hidden="true"><use href="#i-alert"/></svg><span class="code">breached_password</span></span>
+              </div>
+
+              <div class="field">
+                <label for="br-confirm"><span data-l="vi">Nhập lại mật khẩu *</span><span data-l="en">Repeat the password *</span></label>
+                <input id="br-confirm" type="password" value="matkhau123456">
+              </div>
+
+              <fieldset class="pub-fieldset">
+                <legend><span data-l="vi">Xác nhận bắt buộc</span><span data-l="en">Required confirmations</span></legend>
+                <label class="check" for="br-tos"><input id="br-tos" type="checkbox" checked><span><span data-l="vi">Tôi đồng ý với <a href="/vi/terms">Điều khoản sử dụng</a> bản 1.0.0.</span><span data-l="en">I agree to the <a href="/vi/terms">Terms of use</a>, version 1.0.0.</span></span></label>
+                <label class="check" for="br-privacy"><input id="br-privacy" type="checkbox" checked><span><span data-l="vi">Tôi đồng ý với <a href="/vi/privacy">Chính sách bảo mật</a> bản 1.0.0.</span><span data-l="en">I agree to the <a href="/vi/privacy">Privacy policy</a>, version 1.0.0.</span></span></label>
+                <label class="check" for="br-age"><input id="br-age" type="checkbox" checked><span><span data-l="vi">Tôi xác nhận mình từ 18 tuổi trở lên.</span><span data-l="en">I confirm I am 18 or over.</span></span></label>
+              </fieldset>
+
+              <div class="row">
+                <button class="btn btn--primary" type="submit"><span data-l="vi">Tạo tài khoản</span><span data-l="en">Create account</span></button>
+                <span class="caption"><span data-l="vi">Cùng thông báo này cũng xuất hiện ở trang đặt lại mật khẩu.</span><span data-l="en">The same message appears on the reset-password page.</span></span>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+    </div>
+    <details class="notes"><summary>a11y + behaviour notes</summary><ul>
+      <li>Code `breached_password` (400) from 09.3.1-T2's `IBreachedPasswordChecker`; the message binds to the password control and is reused on `/reset-password` (10.3.2 epic text).</li>
+      <li>The breach check never reveals the matched record — copy only says the password appeared in a breach.</li>
+      <li>`role="alert"` so a screen reader announces it without moving focus; focus then moves to the password field.</li>
+      <li>Strength and breach are independent: strength can be "fair" while the breach check still rejects.</li>
+      <li>Consent ticks are preserved (the client never resets unrelated input after a server error).</li>
+    </ul></details>
+  </section>
+
+  <section class="frame" id="f-register-captcha-required" aria-labelledby="f-register-captcha-required-t">
+    <div class="frame__cap">
+      <h2 id="f-register-captcha-required-t">/register · <span data-l="vi">400 captcha_required (widget hiện ra)</span><span data-l="en">400 captcha_required (widget revealed)</span></h2>
+      <span class="caption"><span data-l="vi">Sau 3 lần hỏng liên tiếp; widget chỉ được tải tại đây (09 W3 CR-34).</span><span data-l="en">After 3 consecutive failures; the widget is only ever loaded here (09 W3 CR-34).</span></span>
+    </div>
+    <div class="frame__view">
+      <div class="app app--bare s-public">
+        <div class="app-main">
+          <header class="app-top pub-top">
+            <div class="pub-top__in">
+              <a class="brand" href="#f-landing-hero"><svg class="brand__mark" aria-hidden="true"><use href="#i-lamp"/></svg><span class="brand__name">Night Tales Studio</span></a>
+              <span class="app-top__spacer"></span>
+              <div class="pub-lang" role="group" aria-label="Ngôn ngữ / Language">
+                <button type="button" aria-pressed="true">Tiếng Việt</button><button type="button" aria-pressed="false">English</button>
+              </div>
+              <a class="btn btn--sm" href="/login"><span data-l="vi">Đăng nhập</span><span data-l="en">Sign in</span></a>
+            </div>
+          </header>
+
+          <div class="app-content pub-content pub-content--auth">
+            <header class="page-header">
+              <div>
+                <h1><span data-l="vi">Tạo tài khoản</span><span data-l="en">Create your account</span></h1>
+              </div>
+            </header>
+
+            <form class="panel stack" novalidate>
+              <div class="banner banner--warn" role="status">
+                <svg aria-hidden="true"><use href="#i-shield"/></svg>
+                <div class="banner__body">
+                  <strong><span data-l="vi">Cần xác nhận bạn không phải là người máy</span><span data-l="en">One robot check is needed</span></strong>
+                  <p><span data-l="vi">Có nhiều lần thử từ thiết bị này. Giải ô xác nhận bên dưới rồi gửi lại; lần gửi này sẽ kèm mã xác nhận.</span><span data-l="en">Several attempts came from this device. Solve the check below and submit again; this attempt carries the token.</span></p>
+                </div>
+              </div>
+
+              <div class="field">
+                <label for="cq-email"><span data-l="vi">Địa chỉ e-mail *</span><span data-l="en">E-mail address *</span></label>
+                <input id="cq-email" type="email" value="lan.pham@gmail.com">
+              </div>
+              <div class="field">
+                <label for="cq-password"><span data-l="vi">Mật khẩu *</span><span data-l="en">Password *</span></label>
+                <input id="cq-password" type="password" value="dem-ngu-ngon-2026">
+              </div>
+
+              <fieldset class="pub-fieldset">
+                <legend><span data-l="vi">Xác nhận bắt buộc</span><span data-l="en">Required confirmations</span></legend>
+                <label class="check" for="cq-tos"><input id="cq-tos" type="checkbox" checked><span><span data-l="vi">Tôi đồng ý với <a href="/vi/terms">Điều khoản sử dụng</a> bản 1.0.0.</span><span data-l="en">I agree to the <a href="/vi/terms">Terms of use</a>, version 1.0.0.</span></span></label>
+                <label class="check" for="cq-privacy"><input id="cq-privacy" type="checkbox" checked><span><span data-l="vi">Tôi đồng ý với <a href="/vi/privacy">Chính sách bảo mật</a> bản 1.0.0.</span><span data-l="en">I agree to the <a href="/vi/privacy">Privacy policy</a>, version 1.0.0.</span></span></label>
+                <label class="check" for="cq-age"><input id="cq-age" type="checkbox" checked><span><span data-l="vi">Tôi xác nhận mình từ 18 tuổi trở lên.</span><span data-l="en">I confirm I am 18 or over.</span></span></label>
+              </fieldset>
+
+              <div class="field">
+                <span class="label" id="captcha-label"><span data-l="vi">Xác nhận không phải người máy</span><span data-l="en">Robot check</span></span>
+                <div class="pub-slot" role="group" aria-labelledby="captcha-label">
+                  <div class="pub-captcha">
+                    <input type="checkbox" id="cq-turnstile" aria-describedby="captcha-title-note">
+                    <label for="cq-turnstile"><span data-l="vi">Tôi không phải là người máy</span><span data-l="en">I am not a robot</span></label>
+                  </div>
+                  <span class="caption" id="captcha-title-note"><span data-l="vi">Vùng nhúng của nhà cung cấp. Trong bản thật đây là một <span class="code">iframe</span> có <span class="code">title</span> = “Xác nhận không phải người máy” và tải theo yêu cầu.</span><span data-l="en">Vendor embed region. In the real build this is an <span class="code">iframe</span> with <span class="code">title</span> = “Robot check”, loaded on demand.</span></span>
+                </div>
+                <span class="field__hint"><span data-l="vi">Mã xác nhận chỉ dùng một lần và hết hạn sau 300 giây. Giải lại khi hết hạn.</span><span data-l="en">The token is single-use and expires after 300 seconds. Solve it again once expired.</span></span>
+              </div>
+
+              <div class="row">
+                <button class="btn btn--primary" type="submit"><span data-l="vi">Tạo tài khoản</span><span data-l="en">Create account</span></button>
+                <span class="pub-countdown caption" aria-live="polite"><svg aria-hidden="true"><use href="#i-clock"/></svg><span data-l="vi">Lần gửi kế tiếp sau 12 giây</span><span data-l="en">Next attempt in 12 seconds</span></span>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+    </div>
+    <details class="notes"><summary>a11y + behaviour notes</summary><ul>
+      <li>Trigger: 400 `captcha_required` (after 3 failures per account + IP/device, SC13/F15). The widget appears above the submit button and the next attempt carries `captchaToken` in the body (SC14).</li>
+      <li>F29 `[OPEN]`: because no client-visible `registration.mode` exists, this reveal is the documented fallback instead of "widget always visible when mode = open".</li>
+      <li>The script is injected on demand by `turnstile-loader.ts` (Trusted-Types-scoped, idempotent) and never a static tag (F8). CSP allows only `https://challenges.cloudflare.com` in `script-src`/`frame-src`/`style-src` (F9, CR-28).</li>
+      <li>The countdown is `aria-live="polite"` and the value comes from `RetryCountdown` (10.2.2-T1); the progressive delay is announced, not only shown.</li>
+      <li>Keyboard path: the checkbox is reachable by Tab; if the vendor widget turns out not to be keyboard-usable, the documented fallback (FC16) is an API-allowed alternative path, never a relaxed CSP or `bypassSecurityTrust*`.</li>
+      <li>The iframe must carry a `title`; the review toolbar cannot translate an attribute, so the implementation needs one per locale (see open questions).</li>
+    </ul></details>
+  </section>
+
+  <section class="frame" id="f-register-captcha-invalid" aria-labelledby="f-register-captcha-invalid-t">
+    <div class="frame__cap">
+      <h2 id="f-register-captcha-invalid-t">/register · <span data-l="vi">400 captcha_invalid (widget đặt lại)</span><span data-l="en">400 captcha_invalid (widget reset)</span></h2>
+      <span class="caption"><span data-l="vi">Mã xác nhận bị xoá; người dùng giải lại rồi gửi lại.</span><span data-l="en">The token is cleared; the user solves again and resubmits.</span></span>
+    </div>
+    <div class="frame__view">
+      <div class="app app--bare s-public">
+        <div class="app-main">
+          <header class="app-top pub-top">
+            <div class="pub-top__in">
+              <a class="brand" href="#f-landing-hero"><svg class="brand__mark" aria-hidden="true"><use href="#i-lamp"/></svg><span class="brand__name">Night Tales Studio</span></a>
+              <span class="app-top__spacer"></span>
+              <div class="pub-lang" role="group" aria-label="Ngôn ngữ / Language">
+                <button type="button" aria-pressed="true">Tiếng Việt</button><button type="button" aria-pressed="false">English</button>
+              </div>
+              <a class="btn btn--sm" href="/login"><span data-l="vi">Đăng nhập</span><span data-l="en">Sign in</span></a>
+            </div>
+          </header>
+
+          <div class="app-content pub-content pub-content--auth">
+            <header class="page-header">
+              <div>
+                <h1><span data-l="vi">Tạo tài khoản</span><span data-l="en">Create your account</span></h1>
+              </div>
+            </header>
+
+            <form class="panel stack" novalidate>
+              <div class="banner banner--error" role="alert">
+                <svg aria-hidden="true"><use href="#i-alert"/></svg>
+                <div class="banner__body">
+                  <strong><span data-l="vi">Mã xác nhận đã hết hiệu lực</span><span data-l="en">The robot-check token is no longer valid</span></strong>
+                  <p><span data-l="vi">Giải lại ô xác nhận bên dưới rồi gửi lại. Biểu mẫu giữ nguyên các giá trị bạn đã nhập.</span><span data-l="en">Solve the check below again and resubmit. Your other values are kept.</span></p>
+                </div>
+              </div>
+
+              <div class="field">
+                <label for="ci-email"><span data-l="vi">Địa chỉ e-mail *</span><span data-l="en">E-mail address *</span></label>
+                <input id="ci-email" type="email" value="lan.pham@gmail.com">
+              </div>
+              <div class="field">
+                <label for="ci-password"><span data-l="vi">Mật khẩu *</span><span data-l="en">Password *</span></label>
+                <input id="ci-password" type="password" value="dem-ngu-ngon-2026">
+              </div>
+
+              <div class="field">
+                <span class="label" id="captcha-label-2"><span data-l="vi">Xác nhận không phải người máy</span><span data-l="en">Robot check</span></span>
+                <div class="pub-slot" role="group" aria-labelledby="captcha-label-2">
+                  <div class="pub-captcha">
+                    <svg aria-hidden="true" style="width:20px;height:20px;color:var(--nts-color-warn)"><use href="#i-refresh"/></svg>
+                    <span><span data-l="vi">Mã đã hết hạn. Giải lại.</span><span data-l="en">Token expired. Solve again.</span></span>
+                  </div>
+                  <span class="caption"><span data-l="vi">Trạng thái widget: <span class="code">expired</span>. <span class="code">reset()</span> đã chạy và trường <span class="code">captchaToken</span> đã bị xoá.</span><span data-l="en">Widget state: <span class="code">expired</span>. <span class="code">reset()</span> ran and the <span class="code">captchaToken</span> field was cleared.</span></span>
+                </div>
+              </div>
+
+              <div class="row">
+                <button class="btn btn--primary" type="submit"><span data-l="vi">Tạo tài khoản</span><span data-l="en">Create account</span></button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+    </div>
+    <details class="notes"><summary>a11y + behaviour notes</summary><ul>
+      <li>Trigger: 400 `captcha_invalid`. Behaviour: `CaptchaWidget.reset()`, token field cleared, banner announced with `role="alert"` (F14, 10.3.2-T1 acceptance).</li>
+      <li>The same state appears when a token expires (> 300 s, H1 in the widget task) — the widget emits `expired` before submit, so the user re-solves proactively.</li>
+      <li>Values the user typed are preserved; only the token is dropped.</li>
+      <li>Submit stays enabled: the next attempt is allowed once a new token exists; without a token the server answers 400 again (no client-side lock).</li>
+    </ul></details>
+  </section>
+
+  <section class="frame" id="f-register-captcha-unavailable" aria-labelledby="f-register-captcha-unavailable-t">
+    <div class="frame__cap">
+      <h2 id="f-register-captcha-unavailable-t">/register · <span data-l="vi">503 captcha_unavailable (fail-closed)</span><span data-l="en">503 captcha_unavailable (fail-closed)</span></h2>
+      <span class="caption"><span data-l="vi">Không có lần gửi nào thiếu mã xác nhận; nút gửi bị chặn tới khi có mã.</span><span data-l="en">No token-less submit is possible; the submit button stays blocked until a token exists.</span></span>
+    </div>
+    <div class="frame__view">
+      <div class="app app--bare s-public">
+        <div class="app-main">
+          <header class="app-top pub-top">
+            <div class="pub-top__in">
+              <a class="brand" href="#f-landing-hero"><svg class="brand__mark" aria-hidden="true"><use href="#i-lamp"/></svg><span class="brand__name">Night Tales Studio</span></a>
+              <span class="app-top__spacer"></span>
+              <div class="pub-lang" role="group" aria-label="Ngôn ngữ / Language">
+                <button type="button" aria-pressed="true">Tiếng Việt</button><button type="button" aria-pressed="false">English</button>
+              </div>
+              <a class="btn btn--sm" href="/login"><span data-l="vi">Đăng nhập</span><span data-l="en">Sign in</span></a>
+            </div>
+          </header>
+
+          <div class="app-content pub-content pub-content--auth">
+            <header class="page-header">
+              <div>
+                <h1><span data-l="vi">Tạo tài khoản</span><span data-l="en">Create your account</span></h1>
+              </div>
+            </header>
+
+            <form class="panel stack" novalidate aria-busy="false">
+              <div class="banner banner--error" role="alert">
+                <svg aria-hidden="true"><use href="#i-alert"/></svg>
+                <div class="banner__body">
+                  <strong><span data-l="vi">Không tải được ô xác nhận</span><span data-l="en">The robot check could not load</span></strong>
+                  <p><span data-l="vi">Biểu mẫu chưa được gửi và tài khoản chưa được tạo. Thử lại sau ít giây, hoặc tải lại trang.</span><span data-l="en">Nothing was submitted and no account was created. Try again in a few seconds, or reload the page.</span></p>
+                </div>
+              </div>
+
+              <div class="field">
+                <label for="cu-email"><span data-l="vi">Địa chỉ e-mail *</span><span data-l="en">E-mail address *</span></label>
+                <input id="cu-email" type="email" value="lan.pham@gmail.com">
+              </div>
+              <div class="field">
+                <label for="cu-password"><span data-l="vi">Mật khẩu *</span><span data-l="en">Password *</span></label>
+                <input id="cu-password" type="password" value="dem-ngu-ngon-2026">
+              </div>
+
+              <div class="field">
+                <span class="label" id="captcha-label-3"><span data-l="vi">Xác nhận không phải người máy</span><span data-l="en">Robot check</span></span>
+                <div class="pub-slot" role="group" aria-labelledby="captcha-label-3">
+                  <div class="pub-captcha" aria-describedby="captcha-unavail-msg">
+                    <svg aria-hidden="true" style="width:20px;height:20px;color:var(--nts-color-error)"><use href="#i-unknown"/></svg>
+                    <span id="captcha-unavail-msg"><span data-l="vi">Không tải được. Chưa có mã xác nhận.</span><span data-l="en">Not loaded. No token yet.</span></span>
+                  </div>
+                  <span class="caption"><span data-l="vi">Bản đăng ký là <strong>fail-closed</strong>: thiếu mã xác nhận thì không gửi. (Đăng nhập và quên mật khẩu mới cho gửi thiếu mã.)</span><span data-l="en">Registration is <strong>fail-closed</strong>: without a token there is no submit. (Sign-in and forgot-password may submit without one.)</span></span>
+                </div>
+              </div>
+
+              <div class="row">
+                <button class="btn btn--primary" type="submit" disabled aria-disabled="true"><span data-l="vi">Tạo tài khoản</span><span data-l="en">Create account</span></button>
+                <button class="btn" type="button"><span data-l="vi">Thử tải lại ô xác nhận</span><span data-l="en">Retry the robot check</span></button>
+                <span class="pub-countdown caption" aria-live="polite"><svg aria-hidden="true"><use href="#i-clock"/></svg><span data-l="vi">Thử lại sau 45 giây</span><span data-l="en">Retry in 45 seconds</span></span>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+    </div>
+    <details class="notes"><summary>a11y + behaviour notes</summary><ul>
+      <li>Trigger: 503 `captcha_unavailable` (or `captchaSiteKey` missing from `runtime-config.json`). Required behaviour: `RetryCountdown`, submission blocked, no token-less register submit (D4, 09 W3 CR-34, F14).</li>
+      <li>`disabled` + `aria-disabled="true"` on submit; the busy/disabled look uses the kit's `.btn[disabled]` opacity, and the reason is stated in the banner, so it is never colour-only.</li>
+      <li>The countdown is `aria-live="polite"`; the retry button re-invokes `turnstile-loader` (idempotent) and re-renders the widget.</li>
+      <li>Copy must not promise a retry that happens automatically: the user retries, or waits for the countdown.</li>
+      <li>Copy must not say "your account was created".</li>
+    </ul></details>
+  </section>
+
+  <section class="frame" id="f-register-invite" aria-labelledby="f-register-invite-t">
+    <div class="frame__cap">
+      <h2 id="f-register-invite-t">/register · <span data-l="vi">chế độ cần mã mời</span><span data-l="en">invite mode</span></h2>
+      <span class="caption"><span data-l="vi">Ô <span class="code">inviteCode</span> chỉ hiện ở chế độ invite; mã sai và chế độ đóng dùng chung một thông báo.</span><span data-l="en">The <span class="code">inviteCode</span> field appears only in invite mode; a wrong code and closed mode share one message.</span></span>
+    </div>
+    <div class="frame__view">
+      <div class="app app--bare s-public">
+        <div class="app-main">
+          <header class="app-top pub-top">
+            <div class="pub-top__in">
+              <a class="brand" href="#f-landing-hero"><svg class="brand__mark" aria-hidden="true"><use href="#i-lamp"/></svg><span class="brand__name">Night Tales Studio</span></a>
+              <span class="app-top__spacer"></span>
+              <div class="pub-lang" role="group" aria-label="Ngôn ngữ / Language">
+                <button type="button" aria-pressed="true">Tiếng Việt</button><button type="button" aria-pressed="false">English</button>
+              </div>
+              <a class="btn btn--sm" href="/login"><span data-l="vi">Đăng nhập</span><span data-l="en">Sign in</span></a>
+            </div>
+          </header>
+
+          <div class="app-content pub-content pub-content--auth">
+            <header class="page-header">
+              <div>
+                <h1><span data-l="vi">Tạo tài khoản</span><span data-l="en">Create your account</span></h1>
+                <p class="page-header__lede"><span data-l="vi">Giai đoạn này cần mã mời. Bạn nhận mã từ người đã giới thiệu.</span><span data-l="en">This period needs an invite code. You get one from the person who referred you.</span></p>
+              </div>
+            </header>
+
+            <form class="panel stack" novalidate>
+              <div class="field is-invalid">
+                <label for="iv-code"><span data-l="vi">Mã mời *</span><span data-l="en">Invite code *</span></label>
+                <input id="iv-code" type="text" value="NTS-2026-ABCD" aria-invalid="true" aria-describedby="iv-code-err">
+                <span class="field__error" id="iv-code-err" role="alert"><svg aria-hidden="true"><use href="#i-alert"/></svg><span data-l="vi">Mã mời chưa đúng hoặc đăng ký đang tạm đóng. Kiểm tra lại mã, hoặc xem thông báo trên trang chủ.</span><span data-l="en">The invite code is not valid, or registration is currently closed. Check the code, or read the notice on the home page.</span></span>
+                <span class="field__hint"><span data-l="vi">Gửi kèm trong trường <span class="code">inviteCode</span>. Cùng một thông báo cho mọi trường hợp để không lộ tình trạng đăng ký.</span><span data-l="en">Sent in the <span class="code">inviteCode</span> field. One message for every case, so the registration state is not revealed.</span></span>
+              </div>
+
+              <div class="field">
+                <label for="iv-email"><span data-l="vi">Địa chỉ e-mail *</span><span data-l="en">E-mail address *</span></label>
+                <input id="iv-email" type="email" value="lan.pham@gmail.com">
+              </div>
+              <div class="field">
+                <label for="iv-password"><span data-l="vi">Mật khẩu *</span><span data-l="en">Password *</span></label>
+                <input id="iv-password" type="password" value="dem-ngu-ngon-2026">
+              </div>
+
+              <fieldset class="pub-fieldset">
+                <legend><span data-l="vi">Xác nhận bắt buộc</span><span data-l="en">Required confirmations</span></legend>
+                <label class="check" for="iv-tos"><input id="iv-tos" type="checkbox" checked><span><span data-l="vi">Tôi đồng ý với <a href="/vi/terms">Điều khoản sử dụng</a> bản 1.0.0.</span><span data-l="en">I agree to the <a href="/vi/terms">Terms of use</a>, version 1.0.0.</span></span></label>
+                <label class="check" for="iv-privacy"><input id="iv-privacy" type="checkbox" checked><span><span data-l="vi">Tôi đồng ý với <a href="/vi/privacy">Chính sách bảo mật</a> bản 1.0.0.</span><span data-l="en">I agree to the <a href="/vi/privacy">Privacy policy</a>, version 1.0.0.</span></span></label>
+                <label class="check" for="iv-age"><input id="iv-age" type="checkbox" checked><span><span data-l="vi">Tôi xác nhận mình từ 18 tuổi trở lên.</span><span data-l="en">I confirm I am 18 or over.</span></span></label>
+              </fieldset>
+
+              <div class="row">
+                <button class="btn btn--primary" type="submit"><span data-l="vi">Tạo tài khoản</span><span data-l="en">Create account</span></button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+    </div>
+    <details class="notes"><summary>a11y + behaviour notes</summary><ul>
+      <li>F29 `[OPEN]`: there is no client-visible `registration.mode`, so this frame is the documented fallback shape — the field renders when the 400 names the invite code, and the copy keys off the single server code `registration_closed` (a wrong code is indistinguishable from closed mode, 09 README:1040). Never invent a second error code.</li>
+      <li>The error message is deliberately shared between "wrong code" and "closed": no account-enumeration oracle (F17, 09 W3 CR-32).</li>
+      <li>Field is `type="text"` with `autocomplete="off"` in implementation; the code is not a secret but is never logged.</li>
+      <li>Focus order: invite code → e-mail → password → consents → submit; on failure focus returns to the invite field.</li>
+    </ul></details>
+  </section>
+
+  <section class="frame" id="f-register-closed" aria-labelledby="f-register-closed-t">
+    <div class="frame__cap">
+      <h2 id="f-register-closed-t">/register · <span data-l="vi">403 đăng ký đang đóng</span><span data-l="en">registration closed (403)</span></h2>
+      <span class="caption"><span data-l="vi">Biểu mẫu bị thay bằng thông báo trung tính; không lộ lý do.</span><span data-l="en">The form is replaced by neutral copy; no reason is revealed.</span></span>
+    </div>
+    <div class="frame__view">
+      <div class="app app--bare s-public">
+        <div class="app-main">
+          <header class="app-top pub-top">
+            <div class="pub-top__in">
+              <a class="brand" href="#f-landing-hero"><svg class="brand__mark" aria-hidden="true"><use href="#i-lamp"/></svg><span class="brand__name">Night Tales Studio</span></a>
+              <nav class="pub-nav" aria-label="Điều hướng công khai / Public navigation"><a href="#f-pricing"><span data-l="vi">Bảng giá</span><span data-l="en">Pricing</span></a></nav>
+              <span class="app-top__spacer"></span>
+              <div class="pub-lang" role="group" aria-label="Ngôn ngữ / Language">
+                <button type="button" aria-pressed="true">Tiếng Việt</button><button type="button" aria-pressed="false">English</button>
+              </div>
+              <a class="btn btn--sm" href="/login"><span data-l="vi">Đăng nhập</span><span data-l="en">Sign in</span></a>
+            </div>
+          </header>
+
+          <div class="app-content pub-content pub-content--auth">
+            <section class="empty" aria-labelledby="closed-title">
+              <svg class="empty__art" aria-hidden="true"><use href="#i-lock"/></svg>
+              <h2 id="closed-title"><span data-l="vi">Đăng ký đang tạm đóng</span><span data-l="en">Registration is currently closed</span></h2>
+              <p class="muted"><span data-l="vi">Chúng tôi đang chạy thử với số lượng nhỏ nên chưa mở đăng ký. Bạn xem lại sau, hoặc đọc bảng giá để biết sản phẩm gồm những gì.</span><span data-l="en">We are running a small pilot, so sign-up is not open yet. Check back later, or read the pricing page to see what the product includes.</span></p>
+              <div class="row">
+                <a class="btn btn--primary" href="#f-pricing"><span data-l="vi">Xem bảng giá</span><span data-l="en">See pricing</span></a>
+                <a class="btn btn--quiet" href="#f-landing-hero"><span data-l="vi">Về trang chủ</span><span data-l="en">Back to home</span></a>
+              </div>
+              <p class="caption"><span data-l="vi">Nếu bạn đã có tài khoản, hãy đăng nhập.</span><span data-l="en">If you already have an account, sign in instead.</span></p>
+            </section>
+          </div>
+        </div>
+      </div>
+    </div>
+    <details class="notes"><summary>a11y + behaviour notes</summary><ul>
+      <li>Trigger: 403 `registration_closed` (server `ModeAwareRegistrationFlow`). Withdrawing the form is deliberate: no POST can be attempted from this screen.</li>
+      <li>Copy is neutral and identical to the wrong-invite-code message when the user submitted one — the client must not signal which case it hit (no enumeration, 09 README:1040).</li>
+      <li>Do **not** offer an e-mail capture box: no such endpoint exists in this folder's contract (§5) and inventing one would create a second subscription path.</li>
+      <li>`EmptyState` component (10.1.3-T1) with the lock icon; the heading is the page `h1` on this screen for a correct landmark tree.</li>
+    </ul></details>
+  </section>
+
+  <section class="frame" id="f-register-rate-limited" aria-labelledby="f-register-rate-limited-t">
+    <div class="frame__cap">
+      <h2 id="f-register-rate-limited-t">/register · <span data-l="vi">429 rate_limited (đếm ngược)</span><span data-l="en">429 rate_limited (countdown)</span></h2>
+      <span class="caption"><span data-l="vi">Giá trị đếm ngược lấy từ <span class="code">Retry-After</span>; gửi bị chặn cho tới khi hết.</span><span data-l="en">The countdown comes from <span class="code">Retry-After</span>; submitting is blocked until it ends.</span></span>
+    </div>
+    <div class="frame__view">
+      <div class="app app--bare s-public">
+        <div class="app-main">
+          <header class="app-top pub-top">
+            <div class="pub-top__in">
+              <a class="brand" href="#f-landing-hero"><svg class="brand__mark" aria-hidden="true"><use href="#i-lamp"/></svg><span class="brand__name">Night Tales Studio</span></a>
+              <span class="app-top__spacer"></span>
+              <div class="pub-lang" role="group" aria-label="Ngôn ngữ / Language">
+                <button type="button" aria-pressed="true">Tiếng Việt</button><button type="button" aria-pressed="false">English</button>
+              </div>
+              <a class="btn btn--sm" href="/login"><span data-l="vi">Đăng nhập</span><span data-l="en">Sign in</span></a>
+            </div>
+          </header>
+
+          <div class="app-content pub-content pub-content--auth">
+            <header class="page-header">
+              <div>
+                <h1><span data-l="vi">Tạo tài khoản</span><span data-l="en">Create your account</span></h1>
+              </div>
+            </header>
+
+            <form class="panel stack" novalidate>
+              <div class="banner banner--error" role="alert">
+                <svg aria-hidden="true"><use href="#i-clock"/></svg>
+                <div class="banner__body">
+                  <strong><span data-l="vi">Bạn đã gửi quá nhiều lần</span><span data-l="en">Too many attempts</span></strong>
+                  <p><span data-l="vi">Thử lại sau 60 giây. Biểu mẫu giữ nguyên các giá trị bạn đã nhập.</span><span data-l="en">Try again in 60 seconds. Your values are kept.</span></p>
+                </div>
+              </div>
+
+              <div class="field">
+                <label for="rl-email"><span data-l="vi">Địa chỉ e-mail *</span><span data-l="en">E-mail address *</span></label>
+                <input id="rl-email" type="email" value="lan.pham@gmail.com">
+              </div>
+              <div class="field">
+                <label for="rl-password"><span data-l="vi">Mật khẩu *</span><span data-l="en">Password *</span></label>
+                <input id="rl-password" type="password" value="dem-ngu-ngon-2026">
+              </div>
+
+              <div class="row">
+                <button class="btn btn--primary" type="submit" disabled aria-disabled="true"><span data-l="vi">Tạo tài khoản</span><span data-l="en">Create account</span></button>
+                <span class="pub-countdown" aria-live="polite">
+                  <svg aria-hidden="true"><use href="#i-clock"/></svg>
+                  <span data-l="vi">Thử lại sau</span><span data-l="en">Retry in</span>
+                  <strong class="num">00:47</strong>
+                </span>
+              </div>
+              <p class="caption" aria-live="polite"><span data-l="vi">Số giây còn lại giảm dần; nút gửi tự bật lại khi hết.</span><span data-l="en">The remaining seconds count down; the submit button re-enables at zero.</span></p>
+            </form>
+          </div>
+        </div>
+      </div>
+    </div>
+    <details class="notes"><summary>a11y + behaviour notes</summary><ul>
+      <li>Trigger: 429 `rate_limited` with `Retry-After`; `RetryCountdown` renders `retryAfterSeconds` from the register store (F13/F16).</li>
+      <li>Countdown is a single `aria-live="polite"` region; the seconds are not announced every tick in implementation — announce at whole-minute marks and at zero (see open questions).</li>
+      <li>Submit is `disabled` with the reason stated in the banner (never colour-only).</li>
+      <li>No "account locked" screen exists: the lockout is per account + IP/device and this is the only surface (09.3, 10.3.3 epic text).</li>
+      <li>Values are preserved for the retry.</li>
+    </ul></details>
+  </section>
+
+  <section class="frame" id="f-register-submitting" aria-labelledby="f-register-submitting-t">
+    <div class="frame__cap">
+      <h2 id="f-register-submitting-t">/register · <span data-l="vi">đang gửi</span><span data-l="en">submitting</span></h2>
+      <span class="caption"><span data-l="vi">Nút bận, toàn bộ ô khoá để chặn gửi hai lần.</span><span data-l="en">Busy button, all inputs locked to prevent a double submit.</span></span>
+    </div>
+    <div class="frame__view">
+      <div class="app app--bare s-public">
+        <div class="app-main">
+          <header class="app-top pub-top">
+            <div class="pub-top__in">
+              <a class="brand" href="#f-landing-hero"><svg class="brand__mark" aria-hidden="true"><use href="#i-lamp"/></svg><span class="brand__name">Night Tales Studio</span></a>
+              <span class="app-top__spacer"></span>
+              <div class="pub-lang" role="group" aria-label="Ngôn ngữ / Language">
+                <button type="button" aria-pressed="true">Tiếng Việt</button><button type="button" aria-pressed="false">English</button>
+              </div>
+              <a class="btn btn--sm" href="/login" aria-disabled="true"><span data-l="vi">Đăng nhập</span><span data-l="en">Sign in</span></a>
+            </div>
+          </header>
+
+          <div class="app-content pub-content pub-content--auth">
+            <header class="page-header">
+              <div>
+                <h1><span data-l="vi">Tạo tài khoản</span><span data-l="en">Create your account</span></h1>
+              </div>
+            </header>
+
+            <form class="panel stack" aria-busy="true">
+              <div class="field">
+                <label for="sb-email"><span data-l="vi">Địa chỉ e-mail *</span><span data-l="en">E-mail address *</span></label>
+                <input id="sb-email" type="email" value="lan.pham@gmail.com" readonly>
+              </div>
+              <div class="field">
+                <label for="sb-password"><span data-l="vi">Mật khẩu *</span><span data-l="en">Password *</span></label>
+                <input id="sb-password" type="password" value="dem-ngu-ngon-2026" readonly>
+              </div>
+
+              <fieldset class="pub-fieldset">
+                <legend><span data-l="vi">Xác nhận bắt buộc</span><span data-l="en">Required confirmations</span></legend>
+                <label class="check" for="sb-tos"><input id="sb-tos" type="checkbox" checked disabled><span><span data-l="vi">Tôi đồng ý với Điều khoản sử dụng bản 1.0.0.</span><span data-l="en">I agree to the Terms of use, version 1.0.0.</span></span></label>
+                <label class="check" for="sb-privacy"><input id="sb-privacy" type="checkbox" checked disabled><span><span data-l="vi">Tôi đồng ý với Chính sách bảo mật bản 1.0.0.</span><span data-l="en">I agree to the Privacy policy, version 1.0.0.</span></span></label>
+                <label class="check" for="sb-age"><input id="sb-age" type="checkbox" checked disabled><span><span data-l="vi">Tôi xác nhận mình từ 18 tuổi trở lên.</span><span data-l="en">I confirm I am 18 or over.</span></span></label>
+              </fieldset>
+
+              <div class="row">
+                <button class="btn btn--primary is-busy" type="submit" disabled aria-disabled="true"><span data-l="vi">Đang tạo tài khoản</span><span data-l="en">Creating your account</span></button>
+                <span class="caption" aria-live="polite"><span data-l="vi">Đang gửi. Không đóng tab này.</span><span data-l="en">Sending. Keep this tab open.</span></span>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+    </div>
+    <details class="notes"><summary>a11y + behaviour notes</summary><ul>
+      <li>`submitting` disables the control (no `Idempotency-Key` is required on register, 10.3.2-T1 failure table). Second submit is impossible from the UI.</li>
+      <li>`aria-busy="true"` on the form; the button uses the kit's `.is-busy` spinner and keeps its text, so the state is not spinner-only.</li>
+      <li>Inputs render in the kit's readonly/disabled dashed style, which reads as "not editable now", not as an error.</li>
+      <li>If the request fails, every value is restored (the store keeps the form model, not the DOM).</li>
+      <li>No auto-login afterwards: the next frame is the neutral confirmation (F17).</li>
+    </ul></details>
+  </section>
+
+  <section class="frame" id="f-register-success" aria-labelledby="f-register-success-t">
+    <div class="frame__cap">
+      <h2 id="f-register-success-t">/register · <span data-l="vi">202, thông báo trung tính “kiểm tra hộp thư”</span><span data-l="en">202, neutral "check your e-mail"</span></h2>
+      <span class="caption"><span data-l="vi">Cùng một màn hình cho e-mail mới và e-mail đã có; không tạo phiên đăng nhập.</span><span data-l="en">The same screen for a new and an existing e-mail; no session is created.</span></span>
+    </div>
+    <div class="frame__view">
+      <div class="app app--bare s-public">
+        <div class="app-main">
+          <header class="app-top pub-top">
+            <div class="pub-top__in">
+              <a class="brand" href="#f-landing-hero"><svg class="brand__mark" aria-hidden="true"><use href="#i-lamp"/></svg><span class="brand__name">Night Tales Studio</span></a>
+              <nav class="pub-nav" aria-label="Điều hướng công khai / Public navigation"><a href="#f-pricing"><span data-l="vi">Bảng giá</span><span data-l="en">Pricing</span></a></nav>
+              <span class="app-top__spacer"></span>
+              <div class="pub-lang" role="group" aria-label="Ngôn ngữ / Language">
+                <button type="button" aria-pressed="true">Tiếng Việt</button><button type="button" aria-pressed="false">English</button>
+              </div>
+              <a class="btn btn--sm" href="/login"><span data-l="vi">Đăng nhập</span><span data-l="en">Sign in</span></a>
+            </div>
+          </header>
+
+          <div class="app-content pub-content pub-content--auth">
+            <section class="panel stack" aria-labelledby="ok-title" role="status">
+              <svg aria-hidden="true" style="width:44px;height:44px;color:var(--nts-color-primary)"><use href="#i-mail"/></svg>
+              <h1 class="h-headline" id="ok-title"><span data-l="vi">Kiểm tra hộp thư của bạn</span><span data-l="en">Check your e-mail</span></h1>
+              <p><span data-l="vi">Nếu địa chỉ này chưa có tài khoản, chúng tôi vừa gửi một liên kết xác nhận. Mở liên kết đó để kích hoạt tài khoản; liên kết hết hạn sau 24 giờ.</span><span data-l="en">If this address does not have an account yet, we just sent a confirmation link. Open it to activate the account; the link expires in 24 hours.</span></p>
+              <p class="caption"><span data-l="vi">Thông báo này giống nhau cho mọi địa chỉ, dù tài khoản đã tồn tại hay chưa.</span><span data-l="en">This message is identical for every address, whether an account exists or not.</span></p>
+              <div class="row">
+                <button class="btn" type="button"><span data-l="vi">Gửi lại liên kết</span><span data-l="en">Send the link again</span></button>
+                <a class="btn btn--quiet" href="#f-landing-hero"><span data-l="vi">Về trang chủ</span><span data-l="en">Back to home</span></a>
+              </div>
+              <p class="caption"><span data-l="vi">Không thấy thư? Xem thư rác hoặc thư quảng cáo.</span><span data-l="en">No e-mail? Look in spam or promotions.</span></p>
+            </section>
+          </div>
+        </div>
+      </div>
+    </div>
+    <details class="notes"><summary>a11y + behaviour notes</summary><ul>
+      <li>Trigger: 202 from `POST /auth/register`; the body is byte-identical for a new and an existing e-mail (09 W3 CR-32, F17). No session, no auto-login.</li>
+      <li>`role="status"` announces the screen after the client-side route change; focus moves to the `h1` so the reader lands on the message.</li>
+      <li>The e-mail address is deliberately **not** echoed: showing it would tell the user which address "worked" and is not needed.</li>
+      <li>"Send the link again" reuses the resend path and is itself rate-limited (429 `rate_limited` → the same countdown pattern as the register frame).</li>
+      <li>Do not add "we sent it to {email}" copy — the neutral rule forbids the distinction.</li>
+    </ul></details>
+  </section>
+
+  <!-- ============================ CAPTCHA WIDGET ============================ -->
+  <section class="frame" id="f-captcha-widget" aria-labelledby="f-captcha-widget-t">
+    <div class="frame__cap">
+      <h2 id="f-captcha-widget-t">CaptchaWidget · <span data-l="vi">sáu trạng thái</span><span data-l="en">six states</span></h2>
+      <span class="caption"><span data-l="vi">Component dùng chung (<span class="code">@shared/ui</span>), viết đè lên <span class="code">CaptchaProvider</span>; đây là widget bên thứ ba duy nhất.</span><span data-l="en">Shared component (<span class="code">@shared/ui</span>) over the <span class="code">CaptchaProvider</span> port; the only third-party widget on any page.</span></span>
+    </div>
+    <div class="frame__view">
+      <div class="app app--bare s-public">
+        <div class="app-main">
+          <header class="app-top pub-top">
+            <div class="pub-top__in">
+              <a class="brand" href="#f-landing-hero"><svg class="brand__mark" aria-hidden="true"><use href="#i-lamp"/></svg><span class="brand__name">Night Tales Studio</span></a>
+              <nav class="pub-nav" aria-label="Điều hướng công khai / Public navigation"><a href="#f-pricing"><span data-l="vi">Bảng giá</span><span data-l="en">Pricing</span></a></nav>
+              <span class="app-top__spacer"></span>
+              <div class="pub-lang" role="group" aria-label="Ngôn ngữ / Language">
+                <button type="button" aria-pressed="true">Tiếng Việt</button><button type="button" aria-pressed="false">English</button>
+              </div>
+              <a class="btn btn--sm btn--primary" href="#f-register-idle"><span data-l="vi">Tạo tài khoản</span><span data-l="en">Create account</span></a>
+            </div>
+          </header>
+          <div class="app-content pub-content">
+            <header class="page-header">
+              <div>
+                <h1><span data-l="vi">Ô xác nhận không phải người máy</span><span data-l="en">Robot-check widget</span></h1>
+                <p class="page-header__lede"><span data-l="vi">Sáu trạng thái của cùng một component, hiển thị cạnh nhau để duyệt. Thứ tự trạng thái: idle → loading → ready → expired → error → unavailable.</span><span data-l="en">Six states of one component, shown side by side for review. State order: idle → loading → ready → expired → error → unavailable.</span></p>
+              </div>
+            </header>
+
+            <div class="pub-grid">
+              <div class="panel stack stack--tight">
+                <span class="chip chip--neutral"><svg aria-hidden="true"><use href="#i-clock"/></svg>idle</span>
+                <div class="pub-slot">
+                  <span class="caption"><span data-l="vi">Chưa gắn vào trang. Chưa tải script của nhà cung cấp.</span><span data-l="en">Not mounted. The vendor script has not been requested.</span></span>
+                </div>
+                <p class="caption"><span data-l="vi">Dùng ở <span class="code">/cancel-request</span> và mọi trang không có ô xác nhận.</span><span data-l="en">Used on <span class="code">/cancel-request</span> and any page without a robot check.</span></p>
+              </div>
+
+              <div class="panel stack stack--tight">
+                <span class="chip chip--info"><svg aria-hidden="true"><use href="#i-refresh"/></svg>loading</span>
+                <div class="pub-slot" aria-busy="true">
+                  <span class="skeleton" style="width:70%"></span>
+                  <span class="skeleton" style="width:45%"></span>
+                  <span class="caption"><span data-l="vi">Đang tải ô xác nhận…</span><span data-l="en">Loading the robot check…</span></span>
+                </div>
+                <p class="caption"><span data-l="vi">Script được chèn theo yêu cầu, một lần, giới hạn theo URL cố định (Trusted Types).</span><span data-l="en">The script is injected on demand, once, scoped to the fixed URL (Trusted Types).</span></p>
+              </div>
+
+              <div class="panel stack stack--tight">
+                <span class="chip chip--success"><svg aria-hidden="true"><use href="#i-check"/></svg>ready</span>
+                <div class="pub-slot">
+                  <div class="pub-captcha">
+                    <input type="checkbox" id="cw-ready">
+                    <label for="cw-ready"><span data-l="vi">Tôi không phải là người máy</span><span data-l="en">I am not a robot</span></label>
+                  </div>
+                  <span class="caption"><span data-l="vi">Mã xác nhận sẵn sàng; hết hạn sau 300 giây.</span><span data-l="en">Token ready; it expires after 300 seconds.</span></span>
+                </div>
+                <p class="caption"><span data-l="vi">Đây là <span class="code">iframe</span> của Cloudflare Turnstile (nhà cung cấp duy nhất được phép), có <span class="code">title</span> riêng theo ngôn ngữ.</span><span data-l="en">This is the Cloudflare Turnstile <span class="code">iframe</span> (the single allowed vendor), with a per-language <span class="code">title</span>.</span></p>
+              </div>
+
+              <div class="panel stack stack--tight">
+                <span class="chip chip--warn"><svg aria-hidden="true"><use href="#i-clock"/></svg>expired</span>
+                <div class="pub-slot">
+                  <div class="pub-captcha">
+                    <svg aria-hidden="true" style="width:20px;height:20px;color:var(--nts-color-warn)"><use href="#i-refresh"/></svg>
+                    <span><span data-l="vi">Mã đã hết hạn. Giải lại.</span><span data-l="en">Token expired. Solve again.</span></span>
+                  </div>
+                  <span class="caption"><span data-l="vi">Component phát <span class="code">expired</span>; trang mẹ xoá trường mã.</span><span data-l="en">The component emits <span class="code">expired</span>; the host page clears the token field.</span></span>
+                </div>
+                <p class="caption"><span data-l="vi">Mã dùng một lần: gửi xong là hết, kể cả khi máy chủ từ chối vì lý do khác.</span><span data-l="en">Tokens are single-use: consumed on submit, even when the server rejects for another reason.</span></p>
+              </div>
+
+              <div class="panel stack stack--tight">
+                <span class="chip chip--error"><svg aria-hidden="true"><use href="#i-alert"/></svg>error</span>
+                <div class="pub-slot">
+                  <div class="pub-captcha">
+                    <svg aria-hidden="true" style="width:20px;height:20px;color:var(--nts-color-error)"><use href="#i-unknown"/></svg>
+                    <span><span data-l="vi">Không xác nhận được. Giải lại.</span><span data-l="en">Could not verify. Solve again.</span></span>
+                  </div>
+                  <button class="btn btn--sm" type="button"><span data-l="vi">Giải lại</span><span data-l="en">Solve again</span></button>
+                </div>
+                <p class="caption"><span data-l="vi">Component phát <span class="code">error</span>; trang mẹ quyết định cho gửi hay không.</span><span data-l="en">The component emits <span class="code">error</span>; the host page decides whether submission is allowed.</span></p>
+              </div>
+
+              <div class="panel stack stack--tight">
+                <span class="chip chip--error"><svg aria-hidden="true"><use href="#i-alert"/></svg>unavailable</span>
+                <div class="pub-slot">
+                  <div class="pub-captcha">
+                    <svg aria-hidden="true" style="width:20px;height:20px;color:var(--nts-color-error)"><use href="#i-unknown"/></svg>
+                    <span><span data-l="vi">Không tải được ô xác nhận.</span><span data-l="en">The robot check could not load.</span></span>
+                  </div>
+                  <span class="pub-countdown caption" aria-live="polite"><svg aria-hidden="true"><use href="#i-clock"/></svg><span data-l="vi">Thử lại sau 45 giây</span><span data-l="en">Retry in 45 seconds</span></span>
+                </div>
+                <p class="caption"><span data-l="vi">Ở trang đăng ký và báo cáo: chặn gửi. Ở đăng nhập, quên mật khẩu, xác thực lại: cho gửi thiếu mã.</span><span data-l="en">On register and report: submission blocked. On sign-in, forgot-password and re-auth: token-less submit allowed.</span></p>
+              </div>
+            </div>
+
+            <div class="banner banner--info" role="note">
+              <svg aria-hidden="true"><use href="#i-key"/></svg>
+              <div class="banner__body">
+                <strong><span data-l="vi">Đường bàn phím và dự phòng</span><span data-l="en">Keyboard path and fallback</span></strong>
+                <p><span data-l="vi">Người dùng Tab tới ô xác nhận, Space để tích, rồi Tab tới nút gửi. Nếu widget của nhà cung cấp không dùng được bằng bàn phím, ghi chú FC16 quy định một đường thay thế được API cho phép — không bao giờ nới lỏng CSP hoặc <span class="code">trusted-types</span> (ST-2).</span><span data-l="en">The user Tabs to the widget, presses Space to tick, then Tabs to submit. If the vendor widget is not keyboard-usable, FC16 requires an API-allowed alternative path — the CSP and <span class="code">trusted-types</span> header are never relaxed (ST-2).</span></p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <details class="notes"><summary>a11y + behaviour notes</summary><ul>
+      <li>Inputs `siteKey` / `visible` / `resetKey`; outputs `token` / `expired` / `error` / `heightChange`. OnPush, no store, no `HttpClient` (F7, SD4).</li>
+      <li>iframe must carry a `title`; the countdown must be `aria-live` (F23). The widget is reused by login/MFA (10.3.3-T1/T3) and the report page (13.3.4-T1).</li>
+      <li>`captchaSiteKey` comes from `assets/runtime-config.json` (read once at boot, `no-store`, public value only — F10/ST-7). Missing key → `unavailable`.</li>
+      <li>Fail-closed on register and report; fail-open (token-less) only on login/forgot/re-auth (D4, 09 W3 CR-34).</li>
+      <li>Third-party licence and privacy note must be owner-approved before 10.3.3-T2 starts (ST-2/S-O3). Only `https://challenges.cloudflare.com` may appear in `script-src`/`frame-src`/`style-src`; `connect-src` unchanged.</li>
+      <li>Axe runs over every widget state in vi and en (wcag2a, wcag2aa, wcag21a, wcag21aa, wcag22aa).</li>
+      <li>No image counts toward `.skeleton` semantics: `aria-busy` on the region, text "Loading the robot check…" carries the meaning.</li>
+    </ul></details>
+  </section>
+
+  <!-- ============================ VERIFY E-MAIL ============================ -->
+  <section class="frame" id="f-verify-verifying" aria-labelledby="f-verify-verifying-t">
+    <div class="frame__cap">
+      <h2 id="f-verify-verifying-t">/verify-email#t=… · <span data-l="vi">đang xác nhận</span><span data-l="en">verifying</span></h2>
+      <span class="caption"><span data-l="vi">Mã lấy từ fragment, xoá bằng <span class="code">history.replaceState</span> trước khi gửi.</span><span data-l="en">Token read from the fragment, removed with <span class="code">history.replaceState</span> before the POST.</span></span>
+    </div>
+    <div class="frame__view">
+      <div class="app app--bare s-public">
+        <div class="app-main">
+          <header class="app-top pub-top">
+            <div class="pub-top__in">
+              <a class="brand" href="#f-landing-hero"><svg class="brand__mark" aria-hidden="true"><use href="#i-lamp"/></svg><span class="brand__name">Night Tales Studio</span></a>
+              <span class="app-top__spacer"></span>
+              <div class="pub-lang" role="group" aria-label="Ngôn ngữ / Language">
+                <button type="button" aria-pressed="true">Tiếng Việt</button><button type="button" aria-pressed="false">English</button>
+              </div>
+            </div>
+          </header>
+
+          <div class="app-content pub-content pub-content--auth">
+            <section class="panel stack" aria-labelledby="vf-title" aria-busy="true">
+              <h1 class="h-headline" id="vf-title"><span data-l="vi">Đang xác nhận địa chỉ e-mail</span><span data-l="en">Confirming your e-mail address</span></h1>
+              <div class="progress" role="progressbar" aria-label="Đang xác nhận / Verifying" aria-valuetext="Đang xác nhận"><span style="width:60%"></span></div>
+              <p class="caption" aria-live="polite"><span data-l="vi">Đang kiểm tra liên kết. Việc này thường mất vài giây.</span><span data-l="en">Checking the link. This usually takes a few seconds.</span></p>
+              <p class="caption"><span data-l="vi">Địa chỉ hiện tại: <span class="code">/verify-email</span> — mã không còn trong thanh địa chỉ.</span><span data-l="en">Current address: <span class="code">/verify-email</span> — the token is no longer in the address bar.</span></p>
+            </section>
+          </div>
+        </div>
+      </div>
+    </div>
+    <details class="notes"><summary>a11y + behaviour notes</summary><ul>
+      <li>`POST /auth/verify-email` with `{ token }`; the token is read from the URL fragment and removed with `history.replaceState` **before** the call — never logged, never echoed, never moved into a query string (D6, F13, 10.3.2-T1 acceptance).</li>
+      <li>`aria-busy` + an `aria-live="polite"` line; the progress bar is decorative (`aria-valuetext` only) because the duration is unknown.</li>
+      <li>No cancel/spinner-only state: the copy says what is happening and how long it usually takes.</li>
+      <li>On reload after success the fragment is gone → the page renders `invalid` (its own frame), which is the documented behaviour.</li>
+    </ul></details>
+  </section>
+
+  <section class="frame" id="f-verify-verified" aria-labelledby="f-verify-verified-t">
+    <div class="frame__cap">
+      <h2 id="f-verify-verified-t">/verify-email · <span data-l="vi">đã xác nhận</span><span data-l="en">verified</span></h2>
+      <span class="caption"><span data-l="vi">204 từ API; credits dùng thử 30 ngày được cấp sau bước này.</span><span data-l="en">204 from the API; the 30-day trial credits are granted after this step.</span></span>
+    </div>
+    <div class="frame__view">
+      <div class="app app--bare s-public">
+        <div class="app-main">
+          <header class="app-top pub-top">
+            <div class="pub-top__in">
+              <a class="brand" href="#f-landing-hero"><svg class="brand__mark" aria-hidden="true"><use href="#i-lamp"/></svg><span class="brand__name">Night Tales Studio</span></a>
+              <span class="app-top__spacer"></span>
+              <div class="pub-lang" role="group" aria-label="Ngôn ngữ / Language">
+                <button type="button" aria-pressed="true">Tiếng Việt</button><button type="button" aria-pressed="false">English</button>
+              </div>
+              <a class="btn btn--sm" href="/login"><span data-l="vi">Đăng nhập</span><span data-l="en">Sign in</span></a>
+            </div>
+          </header>
+
+          <div class="app-content pub-content pub-content--auth">
+            <section class="panel stack" aria-labelledby="vd-title" role="status">
+              <svg aria-hidden="true" style="width:44px;height:44px;color:var(--nts-color-success)"><use href="#i-check"/></svg>
+              <h1 class="h-headline" id="vd-title"><span data-l="vi">Đã xác nhận địa chỉ e-mail</span><span data-l="en">Your e-mail address is confirmed</span></h1>
+              <p><span data-l="vi">Tài khoản của bạn đã sẵn sàng. Credits dùng thử có hạn 30 ngày kể từ hôm nay; bạn có thể đăng nhập và tạo tập đầu tiên.</span><span data-l="en">Your account is ready. The trial credits expire 30 days from today; sign in and start your first episode.</span></p>
+              <div class="row">
+                <a class="btn btn--primary" href="/login"><span data-l="vi">Đăng nhập</span><span data-l="en">Sign in</span></a>
+                <a class="btn btn--quiet" href="#f-landing-hero"><span data-l="vi">Về trang chủ</span><span data-l="en">Back to home</span></a>
+              </div>
+            </section>
+          </div>
+        </div>
+      </div>
+    </div>
+    <details class="notes"><summary>a11y + behaviour notes</summary><ul>
+      <li>Outcome `verified` (204). Trial credits are granted by the server after verification (12 D5: `GrantAsync(source = Trial, expiresAt = now + 30 d)`) — the page states the rule, never a number the client invents.</li>
+      <li>`role="status"` announces the outcome; focus moves to the `h1`.</li>
+      <li>Amber is reserved: the single next action here is the success CTA "Sign in"; the success icon is the success colour, and the text says what happened (never colour alone).</li>
+      <li>No monetization promise: the copy talks about credits and episodes, never earnings.</li>
+    </ul></details>
+  </section>
+
+  <section class="frame" id="f-verify-expired" aria-labelledby="f-verify-expired-t">
+    <div class="frame__cap">
+      <h2 id="f-verify-expired-t">/verify-email · <span data-l="vi">liên kết hết hạn</span><span data-l="en">expired link</span></h2>
+      <span class="caption"><span data-l="vi">400 từ API; người dùng nhập lại e-mail để nhận liên kết mới.</span><span data-l="en">400 from the API; the user re-enters the e-mail to get a new link.</span></span>
+    </div>
+    <div class="frame__view">
+      <div class="app app--bare s-public">
+        <div class="app-main">
+          <header class="app-top pub-top">
+            <div class="pub-top__in">
+              <a class="brand" href="#f-landing-hero"><svg class="brand__mark" aria-hidden="true"><use href="#i-lamp"/></svg><span class="brand__name">Night Tales Studio</span></a>
+              <span class="app-top__spacer"></span>
+              <div class="pub-lang" role="group" aria-label="Ngôn ngữ / Language">
+                <button type="button" aria-pressed="true">Tiếng Việt</button><button type="button" aria-pressed="false">English</button>
+              </div>
+              <a class="btn btn--sm" href="/login"><span data-l="vi">Đăng nhập</span><span data-l="en">Sign in</span></a>
+            </div>
+          </header>
+
+          <div class="app-content pub-content pub-content--auth">
+            <section class="panel stack" aria-labelledby="ve-title">
+              <svg aria-hidden="true" style="width:40px;height:40px;color:var(--nts-color-warn)"><use href="#i-clock"/></svg>
+              <h1 class="h-headline" id="ve-title"><span data-l="vi">Liên kết đã hết hạn</span><span data-l="en">This link has expired</span></h1>
+              <p class="muted"><span data-l="vi">Liên kết xác nhận chỉ dùng được trong 24 giờ. Nhập lại địa chỉ e-mail để nhận liên kết mới.</span><span data-l="en">A confirmation link is valid for 24 hours. Enter your e-mail address again to get a new one.</span></p>
+              <form class="stack stack--tight">
+                <div class="field">
+                  <label for="ve-email"><span data-l="vi">Địa chỉ e-mail</span><span data-l="en">E-mail address</span></label>
+                  <input id="ve-email" type="email" autocomplete="email">
+                </div>
+                <div class="row">
+                  <button class="btn btn--primary" type="submit"><span data-l="vi">Gửi liên kết mới</span><span data-l="en">Send a new link</span></button>
+                  <a class="btn btn--quiet" href="#f-register-idle"><span data-l="vi">Tạo tài khoản mới</span><span data-l="en">Create a new account</span></a>
+                </div>
+              </form>
+            </section>
+          </div>
+        </div>
+      </div>
+    </div>
+    <details class="notes"><summary>a11y + behaviour notes</summary><ul>
+      <li>Outcome `expired` (400 `validation_failed` with the expired reason, 429 `rate_limited` possible on the resend).</li>
+      <li>The resend answer is neutral: the UI must not say whether the address has an account (same rule as register).</li>
+      <li>Focus order: e-mail → Send a new link → Create a new account.</li>
+      <li>"Create a new account" is kept because a user with an expired link may have never completed registration; it links to `/register`, not to a second registration flow.</li>
+    </ul></details>
+  </section>
+
+  <section class="frame" id="f-verify-invalid" aria-labelledby="f-verify-invalid-t">
+    <div class="frame__cap">
+      <h2 id="f-verify-invalid-t">/verify-email · <span data-l="vi">liên kết không hợp lệ</span><span data-l="en">invalid link</span></h2>
+      <span class="caption"><span data-l="vi">Cũng là trạng thái khi mở lại trang sau khi đã xác nhận (fragment đã dùng hết).</span><span data-l="en">Also the state when the page is reopened after a successful verification (the fragment is spent).</span></span>
+    </div>
+    <div class="frame__view">
+      <div class="app app--bare s-public">
+        <div class="app-main">
+          <header class="app-top pub-top">
+            <div class="pub-top__in">
+              <a class="brand" href="#f-landing-hero"><svg class="brand__mark" aria-hidden="true"><use href="#i-lamp"/></svg><span class="brand__name">Night Tales Studio</span></a>
+              <span class="app-top__spacer"></span>
+              <div class="pub-lang" role="group" aria-label="Ngôn ngữ / Language">
+                <button type="button" aria-pressed="true">Tiếng Việt</button><button type="button" aria-pressed="false">English</button>
+              </div>
+              <a class="btn btn--sm" href="/login"><span data-l="vi">Đăng nhập</span><span data-l="en">Sign in</span></a>
+            </div>
+          </header>
+
+          <div class="app-content pub-content pub-content--auth">
+            <section class="panel stack" aria-labelledby="vi-title">
+              <svg aria-hidden="true" style="width:40px;height:40px;color:var(--nts-color-error)"><use href="#i-alert"/></svg>
+              <h1 class="h-headline" id="vi-title"><span data-l="vi">Liên kết không hợp lệ</span><span data-l="en">This link is not valid</span></h1>
+              <p class="muted"><span data-l="vi">Liên kết này đã được dùng, hoặc bị cắt khi bạn dán từ thư. Nhập lại địa chỉ e-mail để nhận liên kết mới.</span><span data-l="en">This link was already used, or it was cut short when you pasted it from the e-mail. Enter your e-mail address again to get a new one.</span></p>
+              <form class="stack stack--tight">
+                <div class="field">
+                  <label for="vi-email"><span data-l="vi">Địa chỉ e-mail</span><span data-l="en">E-mail address</span></label>
+                  <input id="vi-email" type="email" autocomplete="email" value="lan.pham@gmail.com">
+                </div>
+                <div class="row">
+                  <button class="btn btn--primary" type="submit"><span data-l="vi">Gửi liên kết mới</span><span data-l="en">Send a new link</span></button>
+                </div>
+              </form>
+            </section>
+          </div>
+        </div>
+      </div>
+    </div>
+    <details class="notes"><summary>a11y + behaviour notes</summary><ul>
+      <li>Outcome `invalid`: no token in the fragment, a malformed token, or a token already consumed (reload after success — documented in 10.3.2-T1's failure table).</li>
+      <li>The message names the two likely causes and the fix; it never says "your account does not exist".</li>
+      <li>Resend is rate-limited; a 429 renders the same countdown pattern as the register frame.</li>
+      <li>Focus order: e-mail → Send a new link.</li>
+    </ul></details>
+  </section>
+
+  <section class="frame" id="f-verify-resent" aria-labelledby="f-verify-resent-t">
+    <div class="frame__cap">
+      <h2 id="f-verify-resent-t">/verify-email · <span data-l="vi">đã gửi lại</span><span data-l="en">resent</span></h2>
+      <span class="caption"><span data-l="vi">Xác nhận trung tính và khoá gửi lại trong 60 giây.</span><span data-l="en">Neutral confirmation and a 60-second resend cooldown.</span></span>
+    </div>
+    <div class="frame__view">
+      <div class="app app--bare s-public">
+        <div class="app-main">
+          <header class="app-top pub-top">
+            <div class="pub-top__in">
+              <a class="brand" href="#f-landing-hero"><svg class="brand__mark" aria-hidden="true"><use href="#i-lamp"/></svg><span class="brand__name">Night Tales Studio</span></a>
+              <span class="app-top__spacer"></span>
+              <div class="pub-lang" role="group" aria-label="Ngôn ngữ / Language">
+                <button type="button" aria-pressed="true">Tiếng Việt</button><button type="button" aria-pressed="false">English</button>
+              </div>
+              <a class="btn btn--sm" href="/login"><span data-l="vi">Đăng nhập</span><span data-l="en">Sign in</span></a>
+            </div>
+          </header>
+
+          <div class="app-content pub-content pub-content--auth">
+            <section class="panel stack" aria-labelledby="vr-title" role="status">
+              <svg aria-hidden="true" style="width:40px;height:40px;color:var(--nts-color-success)"><use href="#i-mail"/></svg>
+              <h1 class="h-headline" id="vr-title"><span data-l="vi">Đã gửi liên kết mới</span><span data-l="en">A new link has been sent</span></h1>
+              <p><span data-l="vi">Nếu địa chỉ này có tài khoản đang chờ xác nhận, hộp thư sẽ có một liên kết mới. Liên kết cũ không còn dùng được.</span><span data-l="en">If this address has an account waiting for confirmation, a new link is in the inbox. The previous link no longer works.</span></p>
+              <div class="row">
+                <button class="btn" type="button" disabled aria-disabled="true"><span data-l="vi">Gửi lại liên kết</span><span data-l="en">Send the link again</span></button>
+                <span class="pub-countdown caption" aria-live="polite"><svg aria-hidden="true"><use href="#i-clock"/></svg><span data-l="vi">Gửi lại sau 60 giây</span><span data-l="en">Send again in 60 seconds</span></span>
+              </div>
+              <p class="caption"><span data-l="vi">Địa chỉ đã dùng để gửi không hiển thị lại trên trang.</span><span data-l="en">The address that was used is not echoed on this page.</span></p>
+            </section>
+          </div>
+        </div>
+      </div>
+    </div>
+    <details class="notes"><summary>a11y + behaviour notes</summary><ul>
+      <li>Outcome `resent`; the copy uses "if this address has an account", the neutral form (no enumeration, F17).</li>
+      <li>The resend button stays disabled during the cooldown and the countdown is `aria-live="polite"`.</li>
+      <li>Previous links are invalidated server-side; the copy states it so a user does not chase two links.</li>
+      <li>`role="status"` + focus on the `h1` after the client-side transition.</li>
+    </ul></details>
+  </section>
+
+  <!-- ============================ COOKIE NOTICE ============================ -->
+  <section class="frame" id="f-cookie-notice" aria-labelledby="f-cookie-notice-t">
+    <div class="frame__cap">
+      <h2 id="f-cookie-notice-t">/vi/ · <span data-l="vi">thông báo cookie (chế độ notice)</span><span data-l="en">cookie notice (notice mode)</span></h2>
+      <span class="caption"><span data-l="vi">13.1.4-T1: chỉ cookie thiết yếu nên đây là thông báo, không phải tường chặn; có thể đóng bằng bàn phím.</span><span data-l="en">13.1.4-T1: only essential cookies exist, so this is a dismissible notice, not a wall; keyboard reachable.</span></span>
+    </div>
+    <div class="frame__view">
+      <div class="app app--bare s-public">
+        <div class="app-main">
+          <header class="app-top pub-top">
+            <div class="pub-top__in">
+              <a class="brand" href="#f-landing-hero"><svg class="brand__mark" aria-hidden="true"><use href="#i-lamp"/></svg><span class="brand__name">Night Tales Studio</span></a>
+              <nav class="pub-nav" aria-label="Điều hướng công khai / Public navigation"><a href="#f-pricing"><span data-l="vi">Bảng giá</span><span data-l="en">Pricing</span></a></nav>
+              <span class="app-top__spacer"></span>
+              <div class="pub-lang" role="group" aria-label="Ngôn ngữ / Language">
+                <button type="button" aria-pressed="true">Tiếng Việt</button><button type="button" aria-pressed="false">English</button>
+              </div>
+              <a class="btn btn--sm btn--primary" href="#f-register-idle"><span data-l="vi">Tạo tài khoản</span><span data-l="en">Create account</span></a>
+            </div>
+          </header>
+
+          <div class="app-content pub-content">
+            <section class="pub-hero" aria-labelledby="cookie-hero-title">
+              <div class="stack stack--loose">
+                <h1 class="h-display" id="cookie-hero-title"><span data-l="vi">Một ý tưởng ngắn, thành video có giọng kể.</span><span data-l="en">A short idea, turned into a narrated video.</span></h1>
+                <p class="pub-lede"><span data-l="vi">Chọn chủ đề, viết vài dòng, duyệt kịch bản rồi để hệ thống dựng video dọc cho kênh của bạn.</span><span data-l="en">Pick a topic, write a few lines, approve the script and let the system assemble a vertical video for your channel.</span></p>
+                <div class="row">
+                  <a class="btn btn--primary" href="#f-register-idle"><span data-l="vi">Tạo tài khoản</span><span data-l="en">Create account</span></a>
+                  <a class="btn" href="#f-pricing"><span data-l="vi">Xem bảng giá</span><span data-l="en">See pricing</span></a>
+                </div>
+              </div>
+              <div class="panel pub-demo">
+                <div class="field">
+                  <label for="cookie-idea"><span data-l="vi">Ý tưởng bạn kể</span><span data-l="en">The idea you write</span></label>
+                  <input id="cookie-idea" type="text" readonly value="Người gác cổng ca đêm ở chung cư cũ">
+                </div>
+                <div class="pub-meta">
+                  <span data-l="vi">Truyện tâm linh</span><span data-l="en">Spiritual story</span>
+                  <span data-l="vi">5 cảnh</span><span data-l="en">5 scenes</span>
+                  <span data-l="vi">Giọng kể tiếng Việt</span><span data-l="en">Vietnamese narration</span>
+                </div>
+              </div>
+            </section>
+
+            <div class="banner banner--info pub-cookie" role="status" aria-label="Thông báo cookie / Cookie notice">
+              <svg aria-hidden="true"><use href="#i-info"/></svg>
+              <div class="banner__body pub-cookie__text">
+                <strong><span data-l="vi">Cookie chúng tôi dùng</span><span data-l="en">Cookies we use</span></strong>
+                <p><span data-l="vi">Chỉ cookie cần thiết: giữ phiên đăng nhập và ghi nhớ ngôn ngữ bạn chọn. Không có cookie quảng cáo hay phân tích. <a href="/vi/privacy">Chính sách bảo mật</a></span><span data-l="en">Essential cookies only: they keep your session and remember your language. There are no advertising or analytics cookies. <a href="/vi/privacy">Privacy policy</a></span></p>
+              </div>
+              <button type="button" class="btn btn--sm"><span data-l="vi">Đã hiểu</span><span data-l="en">Got it</span></button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <details class="notes"><summary>a11y + behaviour notes</summary><ul>
+      <li>13.1.4-T1 / D13: while every inventory row is `essential`, `COOKIE_INVENTORY_MODE === 'notice'` and this bar is a dismissible notice — never a wall, never a blocking modal. The row list renders from the generated `COOKIE_INVENTORY` constant, not from hand-written copy.</li>
+      <li>Dismissible: the "Got it" button is reachable by keyboard and the bar is not focus-trapping. The notice links to `/vi/privacy` (K1/D13).</li>
+      <li>No consent banner is shown in this mode; when a first non-essential row lands, `MODE` flips to `consent` and the banner path is taken **before** that cookie is set (a Gate 2+ owner decision, not a developer change).</li>
+      <li>`role="status"` (polite): the notice does not interrupt the page. Placement: bottom of the content, above the footer, so it never covers the primary CTA.</li>
+      <li>Copy rule: no legal-advice framing, at most two short sentences, vi + en (`legal.cookieNotice.*` keys).</li>
+    </ul></details>
+  </section>
+
+  <!-- ============================ REPORT PAGE ============================ -->
+  <section class="frame" id="f-report-form" aria-labelledby="f-report-form-t">
+    <div class="frame__cap">
+      <h2 id="f-report-form-t">/vi/report · <span data-l="vi">biểu mẫu, widget sẵn sàng</span><span data-l="en">form, widget ready</span></h2>
+      <span class="caption"><span data-l="vi">13.3.4-T1 (khung do 10.3.1-T2 dựng sẵn trang); người báo không cần tài khoản; không xác nhận mục tiêu có tồn tại hay không.</span><span data-l="en">13.3.4-T1 (pages prerendered by 10.3.1-T2); the reporter needs no account; the target's existence is never confirmed.</span></span>
+    </div>
+    <div class="frame__view">
+      <div class="app app--bare s-public">
+        <div class="app-main">
+          <header class="app-top pub-top">
+            <div class="pub-top__in">
+              <a class="brand" href="#f-landing-hero"><svg class="brand__mark" aria-hidden="true"><use href="#i-lamp"/></svg><span class="brand__name">Night Tales Studio</span></a>
+              <nav class="pub-nav" aria-label="Điều hướng công khai / Public navigation"><a href="#f-pricing"><span data-l="vi">Bảng giá</span><span data-l="en">Pricing</span></a></nav>
+              <span class="app-top__spacer"></span>
+              <div class="pub-lang" role="group" aria-label="Ngôn ngữ / Language">
+                <button type="button" aria-pressed="true">Tiếng Việt</button><button type="button" aria-pressed="false">English</button>
+              </div>
+              <a class="btn btn--sm" href="/login"><span data-l="vi">Đăng nhập</span><span data-l="en">Sign in</span></a>
+            </div>
+          </header>
+
+          <div class="app-content pub-content pub-content--auth">
+            <header class="page-header">
+              <div>
+                <h1><span data-l="vi">Báo cáo nội dung</span><span data-l="en">Report content</span></h1>
+                <p class="page-header__lede"><span data-l="vi">Dùng biểu mẫu này để báo nội dung vi phạm <a href="/vi/content-policy">Chính sách nội dung</a>. Bạn không cần tài khoản.</span><span data-l="en">Use this form to report content that breaks the <a href="/vi/content-policy">Content policy</a>. You do not need an account.</span></p>
+              </div>
+            </header>
+
+            <form class="panel stack">
+              <div class="field">
+                <label for="rp-type"><span data-l="vi">Bạn báo cáo loại nội dung nào? *</span><span data-l="en">What are you reporting? *</span></label>
+                <select id="rp-type" required>
+                  <option value="episode">Một tập video</option>
+                  <option value="publication">Bài đã đăng trên YouTube hoặc TikTok</option>
+                  <option value="user">Một tài khoản</option>
+                </select>
+                <span class="field__hint"><span data-l="vi">Gửi đi: <span class="code">episode</span>, <span class="code">publication</span>, <span class="code">user</span>. Tên tiếng Anh: An episode, A published post, An account.</span><span data-l="en">Sent: <span class="code">episode</span>, <span class="code">publication</span>, <span class="code">user</span>. Option text stays Vietnamese in this static file (a browser does not hide `data-l` spans inside an option); implementation uses one Transloco key per language: An episode, A published post, An account.</span></span>
+              </div>
+
+              <div class="field">
+                <label for="rp-target"><span data-l="vi">Mã hoặc liên kết của nội dung *</span><span data-l="en">The id or link of the content *</span></label>
+                <input id="rp-target" type="text" value="b3f1c8a2-5d4e-4a91-9f0c-2a7e6d1138bb" autocomplete="off">
+                <span class="field__hint"><span data-l="vi">Dán mã tập, mã tài khoản hoặc liên kết bài đăng. Chúng tôi không kiểm tra mã này có tồn tại hay không.</span><span data-l="en">Paste an episode id, an account id or a post link. We do not check whether it exists.</span></span>
+              </div>
+
+              <div class="field">
+                <label for="rp-reason"><span data-l="vi">Lý do *</span><span data-l="en">Reason *</span></label>
+                <select id="rp-reason" required>
+                  <option value="copyright">Vi phạm bản quyền</option>
+                  <option value="privacy">Xâm phạm quyền riêng tư</option>
+                  <option value="defamation">Vu khống hoặc quy kết không có căn cứ</option>
+                  <option value="abuse">Lạm dụng, quấy rối hoặc nội dung độc hại</option>
+                  <option value="other">Lý do khác</option>
+                </select>
+                <span class="field__hint"><span data-l="vi">Danh sách này lấy từ Chính sách nội dung bản 1.0.0, không phải danh sách tự đặt. Tên tiếng Anh: Copyright infringement, Privacy violation, Defamation or unsupported accusation, Abuse or harmful content, Something else.</span><span data-l="en">This list comes from Content policy version 1.0.0, not a hand-written list. English labels: Copyright infringement, Privacy violation, Defamation or unsupported accusation, Abuse or harmful content, Something else.</span></span>
+              </div>
+
+              <div class="field">
+                <label for="rp-details"><span data-l="vi">Mô tả thêm</span><span data-l="en">Details</span></label>
+                <textarea id="rp-details" maxlength="2000" aria-describedby="rp-details-count"></textarea>
+                <span class="field__hint" id="rp-details-count"><span class="counter"><span data-l="vi">0/2000 ký tự</span><span data-l="en">0/2000 characters</span></span></span>
+              </div>
+
+              <div class="field">
+                <label for="rp-email"><span data-l="vi">Địa chỉ e-mail để nhận trả lời</span><span data-l="en">E-mail address for a reply</span></label>
+                <input id="rp-email" type="email" autocomplete="email">
+                <span class="field__hint"><span data-l="vi">Chỉ điền nếu bạn muốn nhận trả lời.</span><span data-l="en">Only fill this in if you want a reply.</span></span>
+              </div>
+
+              <div class="field">
+                <span class="label" id="rp-captcha-label"><span data-l="vi">Xác nhận không phải người máy *</span><span data-l="en">Robot check *</span></span>
+                <div class="pub-slot" role="group" aria-labelledby="rp-captcha-label">
+                  <div class="pub-captcha">
+                    <input type="checkbox" id="rp-turnstile">
+                    <label for="rp-turnstile"><span data-l="vi">Tôi không phải là người máy</span><span data-l="en">I am not a robot</span></label>
+                  </div>
+                  <span class="caption"><span data-l="vi">Bắt buộc trước khi gửi; thiếu mã thì không có báo cáo nào được tạo.</span><span data-l="en">Required before sending; without a token no report is created.</span></span>
+                </div>
+              </div>
+
+              <div class="row">
+                <button class="btn btn--primary" type="submit"><span data-l="vi">Gửi báo cáo</span><span data-l="en">Send the report</span></button>
+                <span class="caption"><span data-l="vi">Bạn sẽ nhận một mã báo cáo. Chúng tôi không cho biết nội dung đó có tồn tại hay không.</span><span data-l="en">You receive a report id. We do not tell you whether that content exists.</span></span>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+    </div>
+    <details class="notes"><summary>a11y + behaviour notes</summary><ul>
+      <li>Route `/vi/report` and `/en/report` (10 CR-24), prerendered with no build-time API call (K11); `POST /reports` is anonymous with the `anon` rate policy (09.3.5-T1).</li>
+      <li>Reason values are exactly `copyright | privacy | defamation | abuse | other` (D11, 13.1.3-T1) and the labels are generated from the Content policy sections — never a second taxonomy.</li>
+      <li>No existence oracle: the target field is opaque, has no autocomplete and is never validated against the API. The success screen never names the target.</li>
+      <li>Captcha is required and fail-closed: a 503 from the verifier shows a retry and no row is created.</li>
+      <li>Char counter uses `.counter` with `aria-describedby` so the count is announced without a live region per keystroke.</li>
+      <li>The reporter e-mail is optional and never logged; the copy says "only if you want a reply".</li>
+      <li>Focus order: target type → id/link → reason → details → e-mail → robot check → Send the report.</li>
+      <li>Static-file limitation: a browser does not hide `data-l` spans inside an `&lt;option&gt;`, so the option text stays in Vietnamese and the other language's labels are repeated in the field hint. Implementation renders one Transloco key per language (`public.report.*`), so nothing is duplicated.</li>
+    </ul></details>
+  </section>
+
+  <section class="frame" id="f-report-submitting" aria-labelledby="f-report-submitting-t">
+    <div class="frame__cap">
+      <h2 id="f-report-submitting-t">/vi/report · <span data-l="vi">đang gửi</span><span data-l="en">submitting</span></h2>
+      <span class="caption"><span data-l="vi">Widget đã có mã; biểu mẫu khoá trong lúc gửi.</span><span data-l="en">Token present; the form is locked while sending.</span></span>
+    </div>
+    <div class="frame__view">
+      <div class="app app--bare s-public">
+        <div class="app-main">
+          <header class="app-top pub-top">
+            <div class="pub-top__in">
+              <a class="brand" href="#f-landing-hero"><svg class="brand__mark" aria-hidden="true"><use href="#i-lamp"/></svg><span class="brand__name">Night Tales Studio</span></a>
+              <span class="app-top__spacer"></span>
+              <div class="pub-lang" role="group" aria-label="Ngôn ngữ / Language">
+                <button type="button" aria-pressed="true">Tiếng Việt</button><button type="button" aria-pressed="false">English</button>
+              </div>
+              <a class="btn btn--sm" href="/login" aria-disabled="true"><span data-l="vi">Đăng nhập</span><span data-l="en">Sign in</span></a>
+            </div>
+          </header>
+
+          <div class="app-content pub-content pub-content--auth">
+            <header class="page-header">
+              <div>
+                <h1><span data-l="vi">Báo cáo nội dung</span><span data-l="en">Report content</span></h1>
+              </div>
+            </header>
+
+            <form class="panel stack" aria-busy="true">
+              <div class="field">
+                <label for="rs-type"><span data-l="vi">Bạn báo cáo loại nội dung nào? *</span><span data-l="en">What are you reporting? *</span></label>
+                <input id="rs-type" type="text" readonly value="Một tập video">
+              </div>
+              <div class="field">
+                <label for="rs-target"><span data-l="vi">Mã hoặc liên kết của nội dung *</span><span data-l="en">The id or link of the content *</span></label>
+                <input id="rs-target" type="text" readonly value="b3f1c8a2-5d4e-4a91-9f0c-2a7e6d1138bb">
+              </div>
+              <div class="field">
+                <label for="rs-reason"><span data-l="vi">Lý do *</span><span data-l="en">Reason *</span></label>
+                <input id="rs-reason" type="text" readonly value="Vu khống hoặc quy kết không có căn cứ">
+              </div>
+              <div class="row">
+                <button class="btn btn--primary is-busy" type="submit" disabled aria-disabled="true"><span data-l="vi">Đang gửi báo cáo</span><span data-l="en">Sending the report</span></button>
+                <span class="caption" aria-live="polite"><span data-l="vi">Đang gửi. Không đóng tab này.</span><span data-l="en">Sending. Keep this tab open.</span></span>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+    </div>
+    <details class="notes"><summary>a11y + behaviour notes</summary><ul>
+      <li>`aria-busy="true"` + `.is-busy` button, inputs readonly (kit dashed style).</li>
+      <li>The captcha token is already solved and held in memory; it is consumed by this request (single-use).</li>
+      <li>No "sent" wording before the 202 arrives — the copy says only that it is sending.</li>
+    </ul></details>
+  </section>
+
+  <section class="frame" id="f-report-submitted" aria-labelledby="f-report-submitted-t">
+    <div class="frame__cap">
+      <h2 id="f-report-submitted-t">/vi/report · <span data-l="vi">đã nhận (202 + reportId)</span><span data-l="en">submitted (202 + reportId)</span></h2>
+      <span class="caption"><span data-l="vi">Xác nhận trung tính: không nêu tên hay trạng thái của nội dung bị báo cáo.</span><span data-l="en">Neutral confirmation: the reported content is neither named nor characterised.</span></span>
+    </div>
+    <div class="frame__view">
+      <div class="app app--bare s-public">
+        <div class="app-main">
+          <header class="app-top pub-top">
+            <div class="pub-top__in">
+              <a class="brand" href="#f-landing-hero"><svg class="brand__mark" aria-hidden="true"><use href="#i-lamp"/></svg><span class="brand__name">Night Tales Studio</span></a>
+              <span class="app-top__spacer"></span>
+              <div class="pub-lang" role="group" aria-label="Ngôn ngữ / Language">
+                <button type="button" aria-pressed="true">Tiếng Việt</button><button type="button" aria-pressed="false">English</button>
+              </div>
+              <a class="btn btn--sm" href="/login"><span data-l="vi">Đăng nhập</span><span data-l="en">Sign in</span></a>
+            </div>
+          </header>
+
+          <div class="app-content pub-content pub-content--auth">
+            <section class="panel stack" aria-labelledby="rd-title" role="status">
+              <svg aria-hidden="true" style="width:44px;height:44px;color:var(--nts-color-success)"><use href="#i-check"/></svg>
+              <h1 class="h-headline" id="rd-title"><span data-l="vi">Đã nhận báo cáo của bạn</span><span data-l="en">We received your report</span></h1>
+              <p><span data-l="vi">Cảm ơn bạn đã báo. Chúng tôi xem xét trong vòng 72 giờ.</span><span data-l="en">Thanks for reporting. We review reports within 72 hours.</span></p>
+              <dl class="dl">
+                <dt><span data-l="vi">Mã báo cáo</span><span data-l="en">Report id</span></dt>
+                <dd><span class="code">7d9a41e2-2c58-4f0b-a1e6-0f5b7c3d9a12</span></dd>
+                <dt><span data-l="vi">Lý do đã ghi</span><span data-l="en">Reason recorded</span></dt>
+                <dd><span data-l="vi">Vu khống hoặc quy kết không có căn cứ</span><span data-l="en">Defamation or unsupported accusation</span></dd>
+              </dl>
+              <p class="caption"><span data-l="vi">Nếu bạn để lại e-mail, chúng tôi trả lời qua địa chỉ đó. Không có thông tin nào về nội dung bị báo cáo được hiển thị ở đây.</span><span data-l="en">If you left an e-mail address, we reply there. Nothing about the reported content is shown here.</span></p>
+              <div class="row">
+                <a class="btn" href="/vi/content-policy"><span data-l="vi">Đọc Chính sách nội dung</span><span data-l="en">Read the Content policy</span></a>
+                <a class="btn btn--quiet" href="#f-landing-hero"><span data-l="vi">Về trang chủ</span><span data-l="en">Back to home</span></a>
+              </div>
+            </section>
+          </div>
+        </div>
+      </div>
+    </div>
+    <details class="notes"><summary>a11y + behaviour notes</summary><ul>
+      <li>202 `{ reportId }` for every well-formed request, including an unknown target (D11, 13.3.4-T1) — the page cannot and must not imply the target exists.</li>
+      <li>72 hours is worded as a target, never a promise (T9).</li>
+      <li>`role="status"`; focus moves to the `h1`.</li>
+      <li>Duplicate reports are separate rows by design; the UI does not offer "report again" from this screen.</li>
+    </ul></details>
+  </section>
+
+  <section class="frame" id="f-report-rate-limited" aria-labelledby="f-report-rate-limited-t">
+    <div class="frame__cap">
+      <h2 id="f-report-rate-limited-t">/vi/report · <span data-l="vi">429 rate_limited (chính sách <span class="code">anon</span>)</span><span data-l="en">429 rate_limited (<span class="code">anon</span> policy)</span></h2>
+      <span class="caption"><span data-l="vi">Quá 60 lượt từ một IP trong một phút; đếm ngược theo <span class="code">Retry-After</span>.</span><span data-l="en">More than 60 requests from one IP in a minute; countdown from <span class="code">Retry-After</span>.</span></span>
+    </div>
+    <div class="frame__view">
+      <div class="app app--bare s-public">
+        <div class="app-main">
+          <header class="app-top pub-top">
+            <div class="pub-top__in">
+              <a class="brand" href="#f-landing-hero"><svg class="brand__mark" aria-hidden="true"><use href="#i-lamp"/></svg><span class="brand__name">Night Tales Studio</span></a>
+              <span class="app-top__spacer"></span>
+              <div class="pub-lang" role="group" aria-label="Ngôn ngữ / Language">
+                <button type="button" aria-pressed="true">Tiếng Việt</button><button type="button" aria-pressed="false">English</button>
+              </div>
+              <a class="btn btn--sm" href="/login"><span data-l="vi">Đăng nhập</span><span data-l="en">Sign in</span></a>
+            </div>
+          </header>
+
+          <div class="app-content pub-content pub-content--auth">
+            <header class="page-header">
+              <div>
+                <h1><span data-l="vi">Báo cáo nội dung</span><span data-l="en">Report content</span></h1>
+              </div>
+            </header>
+
+            <form class="panel stack">
+              <div class="banner banner--error" role="alert">
+                <svg aria-hidden="true"><use href="#i-clock"/></svg>
+                <div class="banner__body">
+                  <strong><span data-l="vi">Bạn đã gửi quá nhiều báo cáo</span><span data-l="en">Too many reports from this device</span></strong>
+                  <p><span data-l="vi">Thử lại sau 45 giây. Nội dung bạn đã nhập vẫn còn trong biểu mẫu.</span><span data-l="en">Try again in 45 seconds. What you wrote is still in the form.</span></p>
+                </div>
+              </div>
+              <div class="field">
+                <label for="rr-target"><span data-l="vi">Mã hoặc liên kết của nội dung *</span><span data-l="en">The id or link of the content *</span></label>
+                <input id="rr-target" type="text" value="b3f1c8a2-5d4e-4a91-9f0c-2a7e6d1138bb">
+              </div>
+              <div class="field">
+                <label for="rr-reason"><span data-l="vi">Lý do *</span><span data-l="en">Reason *</span></label>
+                <select id="rr-reason">
+                  <option value="defamation" selected>Vu khống hoặc quy kết không có căn cứ</option>
+                </select>
+                <span class="field__hint"><span data-l="vi">Năm lý do: copyright, privacy, defamation, abuse, other. Tên tiếng Anh: Defamation or unsupported accusation.</span><span data-l="en">Five reasons: copyright, privacy, defamation, abuse, other. English label: Defamation or unsupported accusation.</span></span>
+              </div>
+              <div class="row">
+                <button class="btn btn--primary" type="submit" disabled aria-disabled="true"><span data-l="vi">Gửi báo cáo</span><span data-l="en">Send the report</span></button>
+                <span class="pub-countdown" aria-live="polite"><svg aria-hidden="true"><use href="#i-clock"/></svg><span data-l="vi">Thử lại sau</span><span data-l="en">Retry in</span><strong class="num">00:45</strong></span>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+    </div>
+    <details class="notes"><summary>a11y + behaviour notes</summary><ul>
+      <li>429 `rate_limited` + `Retry-After`, emitted by the shared `anon` policy (09.3.5-T1, CR-10) — the client never implements its own limiter.</li>
+      <li>The captcha token was consumed by the rejected attempt, so the widget must be solved again after the countdown (single-use tokens).</li>
+      <li>Countdown is `aria-live="polite"`; submit stays disabled with the reason stated in the banner.</li>
+      <li>No report row was created; the copy does not claim otherwise.</li>
+    </ul></details>
+  </section>
+</main>
+<script src="../assets/review.js"></script>
+</body></html>

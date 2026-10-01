@@ -1,0 +1,123 @@
+/* Night Tales Studio — design tokens (mirror of web/src/app/shared/ui/theme/_tokens.scss, 10.1.3-T1).
+   Both themes define the same key set. Contrast verified: text >= 4.5:1, outline/focus >= 3:1 on bg/surface. */
+
+@font-face { font-family: 'Be Vietnam Pro'; font-style: normal; font-display: swap; font-weight: 400;
+  src: url(fonts/be-vietnam-pro-vietnamese-400-normal.woff2) format('woff2');
+  unicode-range: U+0102-0103,U+0110-0111,U+0128-0129,U+0168-0169,U+01A0-01A1,U+01AF-01B0,U+0300-0301,U+0303-0304,U+0308-0309,U+0323,U+0329,U+1EA0-1EF9,U+20AB; }
+@font-face { font-family: 'Be Vietnam Pro'; font-style: normal; font-display: swap; font-weight: 400;
+  src: url(fonts/be-vietnam-pro-latin-ext-400-normal.woff2) format('woff2');
+  unicode-range: U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF; }
+@font-face { font-family: 'Be Vietnam Pro'; font-style: normal; font-display: swap; font-weight: 400;
+  src: url(fonts/be-vietnam-pro-latin-400-normal.woff2) format('woff2');
+  unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD; }
+@font-face { font-family: 'Be Vietnam Pro'; font-style: normal; font-display: swap; font-weight: 500;
+  src: url(fonts/be-vietnam-pro-vietnamese-500-normal.woff2) format('woff2');
+  unicode-range: U+0102-0103,U+0110-0111,U+0128-0129,U+0168-0169,U+01A0-01A1,U+01AF-01B0,U+0300-0301,U+0303-0304,U+0308-0309,U+0323,U+0329,U+1EA0-1EF9,U+20AB; }
+@font-face { font-family: 'Be Vietnam Pro'; font-style: normal; font-display: swap; font-weight: 500;
+  src: url(fonts/be-vietnam-pro-latin-ext-500-normal.woff2) format('woff2');
+  unicode-range: U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF; }
+@font-face { font-family: 'Be Vietnam Pro'; font-style: normal; font-display: swap; font-weight: 500;
+  src: url(fonts/be-vietnam-pro-latin-500-normal.woff2) format('woff2');
+  unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD; }
+@font-face { font-family: 'Be Vietnam Pro'; font-style: normal; font-display: swap; font-weight: 600;
+  src: url(fonts/be-vietnam-pro-vietnamese-600-normal.woff2) format('woff2');
+  unicode-range: U+0102-0103,U+0110-0111,U+0128-0129,U+0168-0169,U+01A0-01A1,U+01AF-01B0,U+0300-0301,U+0303-0304,U+0308-0309,U+0323,U+0329,U+1EA0-1EF9,U+20AB; }
+@font-face { font-family: 'Be Vietnam Pro'; font-style: normal; font-display: swap; font-weight: 600;
+  src: url(fonts/be-vietnam-pro-latin-ext-600-normal.woff2) format('woff2');
+  unicode-range: U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF; }
+@font-face { font-family: 'Be Vietnam Pro'; font-style: normal; font-display: swap; font-weight: 600;
+  src: url(fonts/be-vietnam-pro-latin-600-normal.woff2) format('woff2');
+  unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD; }
+
+:root, [data-theme='dark'] {
+  color-scheme: dark;
+  /* Night desk: indigo night, parchment text, lamp amber. */
+  --nts-color-bg: #131A30;
+  --nts-color-surface: #1A2240;
+  --nts-color-surface-variant: #232C50;
+  --nts-color-surface-sunk: #0F1528;
+  --nts-color-on-surface: #ECE7DA;
+  --nts-color-on-surface-muted: #A9AEC6;
+  --nts-color-primary: #F2B45C;
+  --nts-color-primary-soft: rgba(242, 180, 92, .14);
+  --nts-color-on-primary: #2A1A00;
+  --nts-color-outline: #7682B2;
+  --nts-color-hairline: #2E3862;
+  --nts-color-error: #FF8A80;
+  --nts-color-error-soft: rgba(255, 138, 128, .13);
+  --nts-color-warn: #E6D46A;
+  --nts-color-warn-soft: rgba(230, 212, 106, .12);
+  --nts-color-success: #74CFA6;
+  --nts-color-success-soft: rgba(116, 207, 166, .13);
+  --nts-color-info: #B0A8FF;
+  --nts-color-info-soft: rgba(176, 168, 255, .13);
+  --nts-color-focus: #F2B45C;
+  --nts-color-scrim: rgba(8, 11, 24, .72);
+  /* Topic tints: encode the series topic, never decoration. */
+  --nts-topic-ghost: #9FD3E6;
+  --nts-topic-spiritual: #C9B6FF;
+  --nts-topic-true-crime: #FF9E7A;
+  --nts-lamp-glow: 0 0 0 4px rgba(242, 180, 92, .18), 0 0 18px rgba(242, 180, 92, .45);
+  --nts-elevation-1: 0 1px 0 rgba(255, 255, 255, .03) inset;
+  --nts-elevation-2: 0 8px 24px rgba(4, 6, 16, .45);
+  --nts-elevation-3: 0 24px 64px rgba(4, 6, 16, .6);
+}
+
+[data-theme='light'] {
+  color-scheme: light;
+  /* Paper and ink: same structure, daylight. */
+  --nts-color-bg: #ECEEF4;
+  --nts-color-surface: #FFFFFF;
+  --nts-color-surface-variant: #E1E4EE;
+  --nts-color-surface-sunk: #E4E7F0;
+  --nts-color-on-surface: #161C33;
+  --nts-color-on-surface-muted: #4C5370;
+  --nts-color-primary: #8A5300;
+  --nts-color-primary-soft: rgba(138, 83, 0, .10);
+  --nts-color-on-primary: #FFFFFF;
+  --nts-color-outline: #6E7798;
+  --nts-color-hairline: #D3D7E4;
+  --nts-color-error: #B3261E;
+  --nts-color-error-soft: rgba(179, 38, 30, .08);
+  --nts-color-warn: #6B5A00;
+  --nts-color-warn-soft: rgba(107, 90, 0, .09);
+  --nts-color-success: #1D6A4B;
+  --nts-color-success-soft: rgba(29, 106, 75, .09);
+  --nts-color-info: #4A3EBF;
+  --nts-color-info-soft: rgba(74, 62, 191, .08);
+  --nts-color-focus: #8A5300;
+  --nts-color-scrim: rgba(22, 28, 51, .45);
+  --nts-topic-ghost: #13627A;
+  --nts-topic-spiritual: #5B3FB0;
+  --nts-topic-true-crime: #A33A12;
+  --nts-lamp-glow: 0 0 0 4px rgba(138, 83, 0, .16), 0 0 14px rgba(138, 83, 0, .28);
+  --nts-elevation-1: 0 1px 2px rgba(22, 28, 51, .06);
+  --nts-elevation-2: 0 8px 24px rgba(22, 28, 51, .12);
+  --nts-elevation-3: 0 24px 64px rgba(22, 28, 51, .22);
+}
+
+:root {
+  --nts-font-sans: 'Be Vietnam Pro', system-ui, sans-serif;
+  --nts-font-mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  /* Space: 4 px base. */
+  --nts-space-1: 4px;  --nts-space-2: 8px;  --nts-space-3: 12px; --nts-space-4: 16px;
+  --nts-space-5: 24px; --nts-space-6: 32px; --nts-space-7: 48px; --nts-space-8: 64px;
+  /* Radius by hierarchy: controls < panels < dialogs. */
+  --nts-radius-sm: 4px; --nts-radius-md: 8px; --nts-radius-lg: 14px; --nts-radius-pill: 999px;
+  /* Type: Major Third (1.25) on 16 px. Weights limited to 400/500/600 (D11). */
+  --nts-type-display-size: 2.441rem; --nts-type-display-line: 1.15; --nts-type-display-weight: 600;
+  --nts-type-headline-size: 1.953rem; --nts-type-headline-line: 1.2; --nts-type-headline-weight: 600;
+  --nts-type-title-size: 1.25rem; --nts-type-title-line: 1.35; --nts-type-title-weight: 600;
+  --nts-type-body-size: 1rem; --nts-type-body-line: 1.55; --nts-type-body-weight: 400;
+  --nts-type-story-size: 1.1875rem; --nts-type-story-line: 1.72; --nts-type-story-weight: 400;
+  --nts-type-label-size: .875rem; --nts-type-label-line: 1.35; --nts-type-label-weight: 500;
+  --nts-type-caption-size: .8rem; --nts-type-caption-line: 1.4; --nts-type-caption-weight: 400;
+  --nts-measure: 68ch;
+  --nts-target-min: 40px;
+  --nts-motion-fast: 120ms; --nts-motion-base: 220ms;
+  --nts-ease: cubic-bezier(.2, .7, .2, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root { --nts-motion-fast: 0ms; --nts-motion-base: 0ms; }
+}

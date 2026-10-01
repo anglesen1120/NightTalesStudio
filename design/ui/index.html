@@ -1,0 +1,218 @@
+<!doctype html>
+<html lang="vi" data-theme="dark" data-lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Night Tales Studio — UI design review</title>
+<link rel="stylesheet" href="assets/tokens.css">
+<link rel="stylesheet" href="assets/kit.css">
+<style>
+  .hub { max-width: 1180px; margin: 0 auto; padding: var(--nts-space-7) var(--nts-space-5) var(--nts-space-8); display: flex; flex-direction: column; gap: var(--nts-space-8); }
+  .hub section { display: flex; flex-direction: column; gap: var(--nts-space-5); }
+  .hub h2 { font-size: var(--nts-type-headline-size); line-height: var(--nts-type-headline-line); }
+  .hub h3 { font-size: var(--nts-type-title-size); line-height: var(--nts-type-title-line); }
+  .hero { display: grid; gap: var(--nts-space-6); grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); align-items: center; }
+  .hero h1 { font-size: 3.052rem; line-height: 1.08; letter-spacing: -.015em; }
+  .hero__trail { padding: var(--nts-space-6) var(--nts-space-5); }
+  .swatches { display: grid; gap: var(--nts-space-3); grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+  .swatch { border: 1px solid var(--nts-color-hairline); border-radius: var(--nts-radius-md); overflow: hidden; font-size: var(--nts-type-caption-size); }
+  .swatch i { display: block; height: 56px; }
+  .swatch div { padding: var(--nts-space-2) var(--nts-space-3); display: flex; flex-direction: column; gap: 2px; }
+  .typescale { display: flex; flex-direction: column; gap: var(--nts-space-4); }
+  .typescale > div { display: grid; grid-template-columns: 140px minmax(0, 1fr); gap: var(--nts-space-4); align-items: baseline; border-top: 1px solid var(--nts-color-hairline); padding-top: var(--nts-space-3); }
+  .screens { display: grid; gap: var(--nts-space-4); grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); }
+  .screen-link { display: flex; flex-direction: column; gap: var(--nts-space-2); padding: var(--nts-space-5); border-radius: var(--nts-radius-lg); border: 1px solid var(--nts-color-hairline); background: var(--nts-color-surface); text-decoration: none; color: var(--nts-color-on-surface); }
+  .screen-link:hover { border-color: var(--nts-color-primary); }
+  .screen-link strong { font-size: var(--nts-type-title-size); }
+  .screen-link .caption { color: var(--nts-color-on-surface-muted); }
+  .principles { margin: 0; padding-left: var(--nts-space-5); display: flex; flex-direction: column; gap: var(--nts-space-3); max-width: 80ch; }
+  .kit-demo { display: flex; flex-wrap: wrap; gap: var(--nts-space-3); align-items: center; }
+  @media (max-width: 860px) { .hero { grid-template-columns: 1fr; } .hero h1 { font-size: 2.2rem; } .typescale > div { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body data-title="Night Tales Studio — UI design review (index)">
+<main class="hub">
+
+  <section class="hero" aria-labelledby="hub-title">
+    <div class="stack">
+      <h1 id="hub-title">
+        <span data-l="vi">Một câu chuyện, đi qua từng trạm đèn cho tới khi thành video.</span>
+        <span data-l="en">One story, carried lamp by lamp until it becomes a video.</span>
+      </h1>
+      <p class="muted">
+        <span data-l="vi">Bản thiết kế giao diện cho toàn bộ Night Tales Studio (plan 10). Mỗi màn hình dưới đây có đủ trạng thái loading, empty, error, success, ở 360/768/1280, dark/light, vi/en. Dùng thanh công cụ phía trên để đổi chế độ xem. Khi duyệt xong, implementation chỉ cần bám theo thiết kế này và các class trong <span class="code">assets/kit.css</span>.</span>
+        <span data-l="en">UI design for all of Night Tales Studio (plan 10). Every screen below has its loading, empty, error and success states at 360/768/1280, dark/light, vi/en. Use the toolbar above to switch views. Once approved, implementation follows this design and the classes in <span class="code">assets/kit.css</span>.</span>
+      </p>
+    </div>
+    <div class="panel hero__trail" aria-label="Lamp trail example">
+      <ol class="trail">
+        <li class="trail__stop is-done"><span class="trail__lamp"></span><span class="trail__name"><span data-l="vi">Ý tưởng</span><span data-l="en">Idea</span></span></li>
+        <li class="trail__stop is-done"><span class="trail__lamp"></span><span class="trail__name"><span data-l="vi">Viết truyện</span><span data-l="en">Story</span></span></li>
+        <li class="trail__stop is-current" aria-current="step"><span class="trail__lamp"></span><span class="trail__name"><span data-l="vi">Duyệt kịch bản</span><span data-l="en">Review script</span></span></li>
+        <li class="trail__stop is-waiting"><span class="trail__lamp"></span><span class="trail__name"><span data-l="vi">Làm video</span><span data-l="en">Make video</span></span></li>
+        <li class="trail__stop is-waiting"><span class="trail__lamp"></span><span class="trail__name"><span data-l="vi">Xem video</span><span data-l="en">Review video</span></span></li>
+        <li class="trail__stop is-waiting"><span class="trail__lamp"></span><span class="trail__name"><span data-l="vi">Đăng</span><span data-l="en">Publish</span></span></li>
+      </ol>
+    </div>
+  </section>
+
+  <section aria-labelledby="screens-title">
+    <h2 id="screens-title"><span data-l="vi">Màn hình cần duyệt</span><span data-l="en">Screens to review</span></h2>
+    <p class="muted"><span data-l="vi">Mỗi file gom một hoặc nhiều task thiết kế (<span class="code">-T0</span>) trong <span class="code">plans/features/10-web-ui/</span>, ghi dưới tên file. Khi duyệt một file, ghi phê duyệt vào <span class="code">plan.md</span> §6 của từng thư mục được liệt kê.</span><span data-l="en">Each file covers one or more design tasks (<span class="code">-T0</span>) in <span class="code">plans/features/10-web-ui/</span>, listed under its name. When you approve a file, record the approval in <span class="code">plan.md</span> §6 of every listed folder.</span></p>
+    <div class="screens">
+      <a class="screen-link" href="screens/01-shell-auth.html"><strong><span data-l="vi">Khung ứng dụng, đăng nhập, pháp lý</span><span data-l="en">App shell, sign-in, legal</span></strong><span class="caption">10.2.4-T0 · 10.3.3-T0 · 10.3.1-T1</span></a>
+      <a class="screen-link" href="screens/02-public.html"><strong><span data-l="vi">Trang công khai và đăng ký</span><span data-l="en">Public pages and sign-up</span></strong><span class="caption">10.3.1-T0 (S)</span></a>
+      <a class="screen-link" href="screens/03-dashboard-series.html"><strong><span data-l="vi">Tổng quan, series, tự động</span><span data-l="en">Dashboard, series, autopilot</span></strong><span class="caption">10.4.1-T0</span></a>
+      <a class="screen-link" href="screens/04-episode-editor.html"><strong><span data-l="vi">Danh sách tập và trình sửa truyện</span><span data-l="en">Episode list and story editor</span></strong><span class="caption">10.5.1-T0</span></a>
+      <a class="screen-link" href="screens/05-versions-research.html"><strong><span data-l="vi">Phiên bản, nguồn, duyệt kịch bản, ký ức series</span><span data-l="en">Versions, sources, approval, series bible</span></strong><span class="caption">10.5.4-T0</span></a>
+      <a class="screen-link" href="screens/06-render-publish.html"><strong><span data-l="vi">Làm video, xem lại, kênh, đăng YouTube</span><span data-l="en">Make video, review, channels, YouTube</span></strong><span class="caption">10.6.1-T0 · 10.7.1-T0 · 10.7.2-T0</span></a>
+      <a class="screen-link" href="screens/07-tiktok-billing-account.html"><strong><span data-l="vi">TikTok, credits, tài khoản</span><span data-l="en">TikTok, credits, account</span></strong><span class="caption">10.7.3-T0 (R2) · 10.8.1-T0 (S)</span></a>
+      <a class="screen-link" href="screens/08-admin.html"><strong><span data-l="vi">Quản trị</span><span data-l="en">Admin</span></strong><span class="caption">10.9.1-T0 (S)</span></a>
+    </div>
+  </section>
+
+  <section aria-labelledby="ask-title">
+    <h2 id="ask-title"><span data-l="vi">Cần bạn quyết định khi duyệt</span><span data-l="en">Decisions for you at review</span></h2>
+    <p class="muted"><span data-l="vi">Những chỗ kế hoạch còn mâu thuẫn hoặc thiếu. Thiết kế đã chọn một phương án và ghi chú trong khung tương ứng. Nếu bạn không đồng ý, ghi lại; task T0 sẽ sửa trước khi implementation.</span><span data-l="en">Places where the plans disagree or are silent. The design picked one option and noted it in the frame. Mark any you disagree with; the T0 task fixes it before implementation.</span></p>
+    <ul class="principles">
+      <li><span data-l="vi"><strong>TikTok, quyền riêng tư (07, f-b-form):</strong> 10.7.3-T2 khóa SELF_ONLY khi client chưa audit, còn plans/10-web-ui.md:191 yêu cầu dropdown từ privacy_level_options, không có giá trị mặc định. Thiết kế vẽ theo dropdown.</span><span data-l="en"><strong>TikTok privacy (07, f-b-form):</strong> 10.7.3-T2 fixes SELF_ONLY for an unaudited client; plans/10-web-ui.md:191 asks for a dropdown from privacy_level_options with no default. The design draws the dropdown.</span></li>
+      <li><span data-l="vi"><strong>Huy hiệu "thiết bị tin cậy" (07, /account/security):</strong> SessionDto của 09 chưa có trường này. Cần thêm vào DTO hoặc bỏ huy hiệu.</span><span data-l="en"><strong>Trusted-device badge (07, /account/security):</strong> 09 SessionDto has no such field. Add it to the DTO or drop the badge.</span></li>
+      <li><span data-l="vi"><strong>Giá và credit:</strong> mọi số VND, thưởng, hạn dùng, "khoảng 190 credits cho một video Standard" đều là số tạm (ST-1), chưa có nguồn chính thức.</span><span data-l="en"><strong>Prices and credits:</strong> every VND figure, bonus, expiry and "about 190 credits per Standard video" is an ST-1 placeholder with no source yet.</span></li>
+      <li><span data-l="vi"><strong>Trang xuất dữ liệu (07):</strong> §6 dòng 8 và dòng 9 đặt trạng thái xuất ở hai route khác nhau. Thiết kế dùng /account/export, /account chỉ giữ trạng thái bị giới hạn tần suất.</span><span data-l="en"><strong>Data export (07):</strong> §6 rows 8 and 9 put export states on different routes. The design uses /account/export; /account keeps only the rate-limited state.</span></li>
+      <li><span data-l="vi"><strong>Nút "Viết truyện" bị khóa (05, f-editor-gate):</strong> vẽ ở file 05 vì 10.5.4 cung cấp EPISODE_GATE, nhưng màn hình thuộc trình sửa của file 04. Giữ hay chuyển?</span><span data-l="en"><strong>Disabled "Write story" (05, f-editor-gate):</strong> drawn in 05 because 10.5.4 provides EPISODE_GATE, but the screen belongs to the 04 editor. Keep or move?</span></li>
+      <li><span data-l="vi"><strong>Select có hai ngôn ngữ (02):</strong> chữ trong &lt;option&gt; không đổi theo nút ngôn ngữ của bản review, nên option giữ tiếng Việt và phần tiếng Anh nằm ở dòng gợi ý của ô. Bản Angular dùng một key Transloco cho mỗi option.</span><span data-l="en"><strong>Bilingual selects (02):</strong> &lt;option&gt; text cannot follow the review language toggle, so options stay Vietnamese and the English sits in the field hint. Angular uses one Transloco key per option.</span></li>
+      <li><span data-l="vi"><strong>Key i18n chưa có trong §6.2:</strong> errors.mfa_locked_untrusted, auth.enrol.enrolmentBanner (01); series.unsaved.*, 6 key autopilot.run.state.* (03); render.failure.code.*, publication.error.* (06). Chữ hiện tại là đề xuất.</span><span data-l="en"><strong>i18n keys missing from §6.2:</strong> errors.mfa_locked_untrusted, auth.enrol.enrolmentBanner (01); series.unsaved.*, 6 autopilot.run.state.* keys (03); render.failure.code.*, publication.error.* (06). Current copy is proposed.</span></li>
+      <li><span data-l="vi"><strong>Token đề xuất thêm:</strong> --nts-type-story, --nts-type-headline, các màu *-soft, --nts-color-hairline, --nts-target-min = 40 px (D16 chỉ yêu cầu ≥ 24 px). 10.1.3-T1 cần nhận các key này.</span><span data-l="en"><strong>Proposed token additions:</strong> --nts-type-story, --nts-type-headline, the *-soft colours, --nts-color-hairline, --nts-target-min = 40 px (D16 only requires ≥ 24 px). 10.1.3-T1 must adopt these keys.</span></li>
+    </ul>
+  </section>
+
+  <section aria-labelledby="dir-title">
+    <h2 id="dir-title"><span data-l="vi">Định hướng thiết kế</span><span data-l="en">Design direction</span></h2>
+    <div class="grid-2">
+      <div class="stack">
+        <h3><span data-l="vi">Bàn viết lúc nửa đêm</span><span data-l="en">The midnight writing desk</span></h3>
+        <p class="muted"><span data-l="vi">Sản phẩm kể truyện ma, truyện tâm linh và vụ án có thật. Người dùng là người sáng tạo không rành kỹ thuật, ngồi duyệt kịch bản và video. Giao diện là một căn phòng tối màu chàm, chữ màu giấy cũ, và ánh đèn bàn màu hổ phách chỉ chỗ cần làm tiếp. Không dùng hình ảnh kinh dị, máu hay sương mù trang trí: nội dung đã đủ nặng, giao diện cần bình tĩnh.</span><span data-l="en">The product tells ghost, spiritual and true-crime stories. Users are non-technical creators who review scripts and videos. The interface is an indigo room, old-paper text and an amber desk lamp that marks what to do next. No horror imagery, blood or decorative fog: the content is heavy enough, the interface stays calm.</span></p>
+      </div>
+      <div class="stack">
+        <h3><span data-l="vi">Điểm nhấn duy nhất: đường đèn</span><span data-l="en">The one bold element: the lamp trail</span></h3>
+        <p class="muted"><span data-l="vi">Mỗi tập đi qua các trạm cố định (00 §7). Trạm hiện tại là ngọn đèn đang cháy, trạm đã qua là than hồng, trạm chưa tới là đèn tắt. Đường đèn xuất hiện ở tổng quan, danh sách tập, trang tập và tiến trình làm video. Mọi thứ khác giữ yên lặng.</span><span data-l="en">Every episode passes fixed stations (00 §7). The current station is a lit lamp, past stations are embers, future ones are unlit. The trail appears on the dashboard, episode list, episode page and render progress. Everything else stays quiet.</span></p>
+      </div>
+    </div>
+    <ul class="principles">
+      <li><span data-l="vi">Màu hổ phách chỉ dành cho hành động tiếp theo và trạm hiện tại. Không dùng làm trang trí.</span><span data-l="en">Amber is reserved for the next action and the current station. Never decoration.</span></li>
+      <li><span data-l="vi">Màu chủ đề (ma: xanh trăng, tâm linh: tím khói, vụ án: cam than) chỉ để nhận diện series, luôn kèm chữ.</span><span data-l="en">Topic tints (ghost moon-blue, spiritual smoke-violet, true-crime ember) identify a series only, always with text.</span></li>
+      <li><span data-l="vi">Truyện được đọc như bản thảo: cỡ chữ đọc 19 px, dòng tối đa 68 ký tự, nhịp (beat) ghi ở lề trái.</span><span data-l="en">Stories read as a manuscript: 19 px reading size, 68-character measure, beats in the left margin.</span></li>
+      <li><span data-l="vi">Bo góc theo cấp bậc: điều khiển 4 px, khung 8 px, bảng/hộp thoại 14 px.</span><span data-l="en">Radius follows hierarchy: controls 4 px, frames 8 px, panels and dialogs 14 px.</span></li>
+      <li><span data-l="vi">Chữ thường kiểu câu, không nhãn viết hoa toàn bộ, không mũi tên trang trí sau nút. Lời lẽ gọi đúng việc người dùng làm: "Cảnh", "Làm video", "Duyệt", "Đăng" (U1).</span><span data-l="en">Sentence case, no all-caps labels, no decorative arrows on buttons. Words name what users do: "Scenes", "Make video", "Review", "Publish" (U1).</span></li>
+    </ul>
+  </section>
+
+  <section aria-labelledby="tok-title">
+    <h2 id="tok-title"><span data-l="vi">Token màu</span><span data-l="en">Colour tokens</span></h2>
+    <p class="muted"><span data-l="vi">Nguồn: <span class="code">assets/tokens.css</span> (chép sang <span class="code">web/src/app/shared/ui/theme/_tokens.scss</span>). Độ tương phản đã đo: chữ ≥ 4.5:1, viền và focus ≥ 3:1 ở cả hai theme.</span><span data-l="en">Source: <span class="code">assets/tokens.css</span> (copy into <span class="code">web/src/app/shared/ui/theme/_tokens.scss</span>). Measured contrast: text ≥ 4.5:1, outline and focus ≥ 3:1 in both themes.</span></p>
+    <div class="swatches">
+      <div class="swatch"><i style="background:var(--nts-color-bg)"></i><div><strong>bg</strong><span class="caption">Night indigo / Paper</span></div></div>
+      <div class="swatch"><i style="background:var(--nts-color-surface)"></i><div><strong>surface</strong><span class="caption">Desk</span></div></div>
+      <div class="swatch"><i style="background:var(--nts-color-surface-variant)"></i><div><strong>surface-variant</strong><span class="caption">Raised</span></div></div>
+      <div class="swatch"><i style="background:var(--nts-color-on-surface)"></i><div><strong>on-surface</strong><span class="caption">Parchment / Ink</span></div></div>
+      <div class="swatch"><i style="background:var(--nts-color-on-surface-muted)"></i><div><strong>on-surface-muted</strong><span class="caption">Dusk</span></div></div>
+      <div class="swatch"><i style="background:var(--nts-color-primary)"></i><div><strong>primary</strong><span class="caption">Lamp amber</span></div></div>
+      <div class="swatch"><i style="background:var(--nts-color-success)"></i><div><strong>success</strong><span class="caption">Jade</span></div></div>
+      <div class="swatch"><i style="background:var(--nts-color-warn)"></i><div><strong>warn</strong><span class="caption">Candle</span></div></div>
+      <div class="swatch"><i style="background:var(--nts-color-error)"></i><div><strong>error</strong><span class="caption">Coral</span></div></div>
+      <div class="swatch"><i style="background:var(--nts-color-info)"></i><div><strong>info</strong><span class="caption">Lilac</span></div></div>
+      <div class="swatch"><i style="background:var(--nts-topic-ghost)"></i><div><strong>topic-ghost</strong><span class="caption">Moon blue</span></div></div>
+      <div class="swatch"><i style="background:var(--nts-topic-spiritual)"></i><div><strong>topic-spiritual</strong><span class="caption">Smoke violet</span></div></div>
+      <div class="swatch"><i style="background:var(--nts-topic-true-crime)"></i><div><strong>topic-true-crime</strong><span class="caption">Ember</span></div></div>
+    </div>
+  </section>
+
+  <section aria-labelledby="type-title">
+    <h2 id="type-title"><span data-l="vi">Chữ</span><span data-l="en">Type</span></h2>
+    <p class="muted"><span data-l="vi">Một họ chữ: Be Vietnam Pro (OFL-1.1, tự host, 400/500/600, đủ dấu tiếng Việt). Thang Major Third 1.25 trên 16 px.</span><span data-l="en">One family: Be Vietnam Pro (OFL-1.1, self-hosted, 400/500/600, full Vietnamese diacritics). Major Third 1.25 scale on 16 px.</span></p>
+    <div class="typescale">
+      <div><span class="caption">display 39 / 600</span><span class="h-display">Ngôi nhà cuối hẻm Hàng Bạc</span></div>
+      <div><span class="caption">headline 31 / 600</span><span class="h-headline">Tiếng gõ cửa lúc ba giờ sáng</span></div>
+      <div><span class="caption">title 20 / 600</span><span class="h-title">Cần bạn duyệt</span></div>
+      <div><span class="caption">story 19 / 400 / 1.72</span><span style="font-size:var(--nts-type-story-size);line-height:var(--nts-type-story-line);max-width:68ch">Đêm đó trời không trăng. Bà Tư nghe tiếng guốc gỗ dừng ngay trước hiên, rồi im bặt, như có ai đang đứng chờ bà mở cửa.</span></div>
+      <div><span class="caption">body 16 / 400</span><span>Mỗi đoạn có các cảnh riêng. Sửa chữ hoặc cảnh rồi bấm Lưu phiên bản.</span></div>
+      <div><span class="caption">label 14 / 500</span><span class="label">Lưu phiên bản</span></div>
+      <div><span class="caption">caption 13 / 400</span><span class="caption">Cập nhật 5 phút trước</span></div>
+    </div>
+  </section>
+
+  <section aria-labelledby="kit-title">
+    <h2 id="kit-title"><span data-l="vi">Bộ thành phần dùng chung (D11)</span><span data-l="en">Shared components (D11)</span></h2>
+    <div class="grid-2">
+      <div class="panel stack">
+        <h3>Button</h3>
+        <div class="kit-demo">
+          <button class="btn btn--primary" type="button"><span data-l="vi">Làm video</span><span data-l="en">Make video</span></button>
+          <button class="btn" type="button"><span data-l="vi">Lưu phiên bản</span><span data-l="en">Save version</span></button>
+          <button class="btn btn--quiet" type="button"><span data-l="vi">Huỷ</span><span data-l="en">Cancel</span></button>
+          <button class="btn btn--danger" type="button"><span data-l="vi">Xoá tài khoản</span><span data-l="en">Delete account</span></button>
+          <button class="btn btn--primary is-busy" type="button" aria-busy="true"><span data-l="vi">Đang lưu</span><span data-l="en">Saving</span></button>
+          <button class="btn btn--primary" type="button" disabled><span data-l="vi">Duyệt kịch bản</span><span data-l="en">Approve script</span></button>
+        </div>
+      </div>
+      <div class="panel stack">
+        <h3>StatusChip</h3>
+        <div class="kit-demo">
+          <span class="chip chip--warn"><svg aria-hidden="true"><use href="#i-eye"/></svg><span data-l="vi">Cần duyệt</span><span data-l="en">Needs review</span></span>
+          <span class="chip chip--info"><svg aria-hidden="true"><use href="#i-clock"/></svg><span data-l="vi">Đang làm video</span><span data-l="en">Making video</span></span>
+          <span class="chip chip--success"><svg aria-hidden="true"><use href="#i-check"/></svg><span data-l="vi">Đã đăng</span><span data-l="en">Published</span></span>
+          <span class="chip chip--error"><svg aria-hidden="true"><use href="#i-alert"/></svg><span data-l="vi">Lỗi</span><span data-l="en">Failed</span></span>
+          <span class="chip chip--neutral"><svg aria-hidden="true"><use href="#i-unknown"/></svg><span data-l="vi">Không rõ</span><span data-l="en">Unknown</span></span>
+        </div>
+        <div class="kit-demo">
+          <span class="topic topic--ghost"><span data-l="vi">Truyện ma</span><span data-l="en">Ghost</span></span>
+          <span class="topic topic--spiritual"><span data-l="vi">Tâm linh</span><span data-l="en">Spiritual</span></span>
+          <span class="topic topic--true-crime"><span data-l="vi">Vụ án có thật</span><span data-l="en">True crime</span></span>
+        </div>
+      </div>
+      <div class="panel stack">
+        <h3>Field · CharCounter</h3>
+        <div class="field">
+          <div class="field__row"><label for="k-brief"><span data-l="vi">Ý tưởng</span><span data-l="en">Idea</span></label><span class="counter is-near" id="k-brief-c">940 / 1.000</span></div>
+          <textarea id="k-brief" aria-describedby="k-brief-c k-brief-h">Một người lái xe ôm đêm nhận chở một bà cụ tới nghĩa trang Văn Điển…</textarea>
+          <span class="field__hint" id="k-brief-h"><span data-l="vi">Vài câu là đủ. Truyện sẽ được viết theo phong cách của series.</span><span data-l="en">A few sentences are enough. The story follows the series style.</span></span>
+        </div>
+        <div class="field is-invalid">
+          <label for="k-pw"><span data-l="vi">Mật khẩu</span><span data-l="en">Password</span></label>
+          <input id="k-pw" type="password" value="password123" aria-invalid="true" aria-describedby="k-pw-e">
+          <span class="field__error" id="k-pw-e"><svg aria-hidden="true"><use href="#i-alert"/></svg><span data-l="vi">Mật khẩu này đã lộ trong một vụ rò rỉ dữ liệu. Hãy chọn mật khẩu khác.</span><span data-l="en">This password appeared in a data breach. Choose another.</span></span>
+        </div>
+      </div>
+      <div class="panel stack">
+        <h3>Banner · EmptyState · Snackbar</h3>
+        <div class="banner banner--warn" role="note"><svg aria-hidden="true"><use href="#i-alert"/></svg><div class="banner__body"><strong><span data-l="vi">Series vụ án có thật</span><span data-l="en">True-crime series</span></strong><span data-l="vi">Bản tóm tắt sự kiện và kịch bản sẽ chờ bạn duyệt.</span><span data-l="en">Fact sheet and story will wait for your approval.</span></div></div>
+        <div class="snackbar" role="status"><span data-l="vi">Đã xoá đoạn 3.</span><span data-l="en">Paragraph 3 deleted.</span><button class="btn btn--sm" type="button"><span data-l="vi">Hoàn tác</span><span data-l="en">Undo</span></button></div>
+      </div>
+      <div class="panel stack">
+        <h3>SegmentChips · InlineAnnotation</h3>
+        <div class="scenes" aria-label="Scenes">
+          <span class="scene">mái hiên nhà cổ<button type="button" aria-label="Remove"><svg aria-hidden="true"><use href="#i-close"/></svg></button></span>
+          <span class="scene">guốc gỗ trên bậc thềm<button type="button" aria-label="Remove"><svg aria-hidden="true"><use href="#i-close"/></svg></button></span>
+          <span class="scene scene--flagged"><svg aria-hidden="true"><use href="#i-flag"/></svg>vết máu<button type="button" aria-label="Remove"><svg aria-hidden="true"><use href="#i-close"/></svg></button></span>
+          <button class="scene scene--add" type="button"><span data-l="vi">Thêm cảnh</span><span data-l="en">Add scene</span></button>
+        </div>
+        <div class="annot annot--blocking" role="note"><svg aria-hidden="true"><use href="#i-alert"/></svg><span class="annot__text"><span data-l="vi">Cảnh "vết máu" không thể tạo ảnh. Hãy đổi thành chi tiết gợi tả hơn.</span><span data-l="en">The scene "vết máu" can't be illustrated. Change it to something suggestive.</span></span></div>
+        <div class="annot annot--advisory" role="note"><svg aria-hidden="true"><use href="#i-info"/></svg><span class="annot__text"><span data-l="vi">Câu mở đầu hơi dài. Thử cắt xuống dưới 20 từ để giữ người xem.</span><span data-l="en">The hook is long. Try under 20 words to keep viewers.</span></span></div>
+      </div>
+      <div class="panel stack">
+        <h3>ConfirmDialog · cost-line</h3>
+        <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="k-d-t" style="box-shadow:none">
+          <h4 class="dialog__title" id="k-d-t"><span data-l="vi">Duyệt kịch bản này?</span><span data-l="en">Approve this script?</span></h4>
+          <div class="dialog__body"><p><span data-l="vi">Video sẽ dùng đúng kịch bản này. Muốn sửa sau khi duyệt, bạn cần mở lại.</span><span data-l="en">The video uses exactly this script. To edit after approval, reopen it.</span></p></div>
+          <div class="cost-line"><span data-l="vi">Làm video: tối đa 120 credits</span><span data-l="en">Make video: up to 120 credits</span><span class="muted"><span data-l="vi">thường khoảng 90</span><span data-l="en">usually about 90</span></span></div>
+          <div class="dialog__actions"><button class="btn btn--quiet" type="button"><span data-l="vi">Huỷ</span><span data-l="en">Cancel</span></button><button class="btn btn--primary" type="button"><span data-l="vi">Duyệt kịch bản</span><span data-l="en">Approve script</span></button></div>
+        </div>
+        <p class="caption"><span data-l="vi">Dòng chi phí chỉ hiện ở giai đoạn S (D14). Giai đoạn P để trống slot.</span><span data-l="en">The cost line shows in phase S only (D14). Phase P leaves the slot empty.</span></p>
+      </div>
+    </div>
+  </section>
+
+</main>
+<script src="assets/review.js"></script>
+</body>
+</html>
