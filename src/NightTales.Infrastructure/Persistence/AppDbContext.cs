@@ -17,6 +17,7 @@ using NightTales.Infrastructure.Persistence.Conventions;
 using NightTales.Infrastructure.Persistence.Entities;
 using NightTales.Infrastructure.Persistence.Idempotency;
 using NightTales.Infrastructure.Persistence.Outbox;
+using NightTales.Infrastructure.Realtime;
 
 namespace NightTales.Infrastructure.Persistence;
 
@@ -78,6 +79,13 @@ public sealed class AppDbContext : IdentityDbContext<AppUser, AppRole, Guid>, IA
     /// <c>EfRefreshTokenService</c>, like the outbox and idempotency tables next to it.
     /// </summary>
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
+
+    /// <summary>
+    /// Infrastructure-only: the single-use hub tickets of 09.8.1-T2. 09.8.1-T1's claim is a
+    /// set-based <c>UPDATE</c> in <c>NpgsqlHubTicketValidator</c> and the issue path inserts through
+    /// <c>NpgsqlHubTicketStore</c>, so nothing outside Infrastructure touches this set.
+    /// </summary>
+    public DbSet<HubTicket> HubTickets => Set<HubTicket>();
 
     /// <summary>
     /// The audit trail of 09.3.6-T1: appended by <c>EfAuditWriter</c> inside the caller's transaction,

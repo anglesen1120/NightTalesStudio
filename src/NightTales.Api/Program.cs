@@ -132,6 +132,10 @@ app.MapEpisodeEndpoints();
 // picker and the style grid read.
 app.MapCatalogEndpoints();
 
+// 09.8.1-T2 (09 README D14, BD11): the ticket exchange. The client POSTs its access token here, gets a
+// 60-second single-use ticket and connects with `?ticket=…`, so the JWT never travels in a URL.
+app.MapHubEndpoints();
+
 // 09.8.1-T1 (09 README BD11, 09-backend-api L214): the hub of 09.8.1 — WebSockets only, so the client
 // skips negotiation and the JWT never travels in the URL (the single-use ticket does, and it dies at
 // connect).

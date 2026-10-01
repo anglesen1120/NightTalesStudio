@@ -16,8 +16,8 @@ namespace NightTales.Infrastructure.Realtime;
 public static class RealtimeServiceCollectionExtensions
 {
     /// <summary>
-    /// Binds <see cref="RealtimeOptions"/>, the meter, the scoped <see cref="IRealtimeNotifier"/> and the
-    /// listener connection factory.
+    /// Binds <see cref="RealtimeOptions"/>, the meter, the scoped <see cref="IRealtimeNotifier"/>, the
+    /// listener connection factory and the <c>hub_tickets</c> store.
     /// </summary>
     /// <param name="services">The service collection of the host.</param>
     /// <param name="configuration">The host configuration; <c>Realtime</c> and the connection string are read from it.</param>
@@ -52,10 +52,22 @@ public static class RealtimeServiceCollectionExtensions
                 options => options.ListenerBackoffSeconds is { Count: > 0 } && options.ListenerBackoffSeconds.All(seconds => seconds > 0),
                 $"'{RealtimeOptions.SectionName}:{nameof(RealtimeOptions.ListenerBackoffSeconds)}' must hold at least one positive "
                 + "number of seconds.")
+            .Validate(
+                options => options.TicketTtlSeconds > 0,
+                $"'{RealtimeOptions.SectionName}:{nameof(RealtimeOptions.TicketTtlSeconds)}' must be greater than zero "
+                + "(a zero-second ticket could never be claimed).")
+            .Validate(
+                options => options.TicketCleanupRetentionHours > 0,
+                $"'{RealtimeOptions.SectionName}:{nameof(RealtimeOptions.TicketCleanupRetentionHours)}' must be greater than zero "
+                + "(a zero-hour retention would sweep a row the moment its claim failed).")
+            .Validate(
+                options => options.TicketCleanupBatchSize > 0,
+                $"'{RealtimeOptions.SectionName}:{nameof(RealtimeOptions.TicketCleanupBatchSize)}' must be greater than zero.")
             .ValidateOnStart();
 
-        // 09.8.1-T2 registers the production IHubTicketValidator; nothing here registers one, so the
-        // hub's scheme fails fast until that task lands (never a permissive fallback).
+        // 09.8.1-T2 registers the production IHubTicketValidator in the Api's own composition root
+        // (AddNightTalesRealtime): only the host that serves sockets authenticates with a ticket, so the
+        // Worker deliberately has none and the scheme fails fast on a host without one (09.8.1-T1 design).
         services.AddSingleton<RealtimeMetrics>();
         services.AddScoped<IRealtimeNotifier, PgNotifyRealtimeNotifier>();
         services.AddSingleton<INpgsqlListenerConnectionFactory, PgNotificationListenerFactory>();
