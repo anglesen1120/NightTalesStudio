@@ -53,7 +53,7 @@ public sealed class EpisodeNextActionsTests
             [EpisodeNextAction.Publish, EpisodeNextAction.Download, EpisodeNextAction.Cancel],
         [EpisodeStatus.Scheduled] = [EpisodeNextAction.Publish, EpisodeNextAction.Cancel],
         [EpisodeStatus.Published] = [],
-        [EpisodeStatus.Failed] = [EpisodeNextAction.RetryRender],
+        [EpisodeStatus.Failed] = [EpisodeNextAction.RetryRender, EpisodeNextAction.Cancel],
         [EpisodeStatus.Cancelled] = [],
     };
 
@@ -170,11 +170,11 @@ public sealed class EpisodeNextActionsTests
     }
 
     [Fact]
-    public void For_Failed_Allows_RetryRender()
+    public void For_Failed_Allows_RetryRender_And_Cancel()
     {
         EpisodeNextActions.For(EpisodeStatus.Failed).ShouldBe(
-            new[] { EpisodeNextAction.RetryRender },
-            "00 §7: failed is reached by an unrecoverable render; the retry is the way back");
+            new[] { EpisodeNextAction.RetryRender, EpisodeNextAction.Cancel },
+            "00 §7: failed is not terminal; Episode.Cancel accepts it, so the page must offer delete");
     }
 
     [Fact]

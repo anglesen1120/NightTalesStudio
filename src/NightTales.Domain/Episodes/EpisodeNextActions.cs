@@ -116,7 +116,7 @@ public static class EpisodeNextActions
         [EpisodeNextAction.Publish, EpisodeNextAction.Cancel];
 
     private static readonly EpisodeNextAction[] FailedActions =
-        [EpisodeNextAction.RetryRender];
+        [EpisodeNextAction.RetryRender, EpisodeNextAction.Cancel];
 
     /// <summary>The actions <paramref name="status"/> allows, in <see cref="EpisodeNextAction"/> declaration order.</summary>
     /// <remarks>

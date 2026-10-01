@@ -261,7 +261,7 @@ public sealed class GetEpisodeDetailTests(TestDatabase database) : IntegrationTe
     [InlineData(EpisodeStatus.Ready, "ready", new[] { "publish", "download", "cancel" })]
     [InlineData(EpisodeStatus.Scheduled, "scheduled", new[] { "publish", "cancel" })]
     [InlineData(EpisodeStatus.Published, "published", new string[0])]
-    [InlineData(EpisodeStatus.Failed, "failed", new[] { "retry_render" })]
+    [InlineData(EpisodeStatus.Failed, "failed", new[] { "retry_render", "cancel" })]
     public async Task NextActions_Match_Domain_For_Status(
         EpisodeStatus status,
         string wireStatus,
