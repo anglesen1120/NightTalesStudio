@@ -7,6 +7,9 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using NightTales.Application.Abstractions;
 using NightTales.Application.Abstractions.Jobs;
+using NightTales.Application.Abstractions.Outbox;
+using NightTales.Application.Features.Episodes.Outbox;
+using NightTales.Domain.Episodes.Events;
 using NightTales.Infrastructure.Jobs;
 using NightTales.Infrastructure.Persistence;
 using NightTales.Infrastructure.Persistence.Outbox;
@@ -71,6 +74,13 @@ public static class WorkerServiceCollectionExtensions
 
         services.AddNightTalesMediator();
         services.AddJobs(configuration, [typeof(WorkerServiceCollectionExtensions).Assembly, .. assemblies]);
+
+        // 09.5.1-T1 (09 README D11/D16, F14): the one consumer of `episode_cancelled.v1`. It runs in the
+        // delivery's own scope — already pinned to the event's user — and dispatches a command through
+        // ISender, so the D4 pipeline and its transaction own the asset update. It lives in the
+        // composition root and not in AddPersistence because a Worker-only consumer has no business in
+        // the Api host's outbox path (the Api only writes outbox rows, 09 README D12).
+        services.AddOutboxHandler<EpisodeCancelled, EpisodeCancelledAssetRetentionHandler>();
 
         // 09.2.4-T1 appends the hosted OutboxDispatcher inside this composition root (09 W3 CR-42).
         services.AddOptions<OutboxDispatcherOptions>()
