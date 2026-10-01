@@ -23,6 +23,13 @@ public sealed class SeedOptions
     public string StyleTemplatesFile { get; set; } = "seed/style-templates.v1.json";
 
     /// <summary>
+    /// The plan 04 voice catalog, read in every environment (04 CR-9). It is the <em>same</em> file the
+    /// proxy loads (<c>VOICE_CATALOG_FILE</c>, 04 D13), so the curated catalog and the backend rows
+    /// cannot drift apart.
+    /// </summary>
+    public string VoiceCatalogFile { get; set; } = "seed/voices.v1.json";
+
+    /// <summary>
     /// Whether <see cref="SeedRunner"/> continues after a failed seeder instead of stopping. The
     /// explicit <c>nts-seed</c> command keeps it <c>false</c>, so a failure is a non-zero exit.
     /// </summary>

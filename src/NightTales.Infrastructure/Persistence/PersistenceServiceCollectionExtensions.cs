@@ -173,6 +173,9 @@ public static class PersistenceServiceCollectionExtensions
             .Validate(
                 seed => !string.IsNullOrWhiteSpace(seed.StyleTemplatesFile),
                 $"'{SeedOptions.SectionName}:{nameof(SeedOptions.StyleTemplatesFile)}' must not be blank.")
+            .Validate(
+                seed => !string.IsNullOrWhiteSpace(seed.VoiceCatalogFile),
+                $"'{SeedOptions.SectionName}:{nameof(SeedOptions.VoiceCatalogFile)}' must not be blank.")
             .ValidateOnStart();
 
         services.AddScoped<ISeeder, VoiceSeeder>();

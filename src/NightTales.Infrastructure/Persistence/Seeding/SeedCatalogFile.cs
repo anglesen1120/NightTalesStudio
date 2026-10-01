@@ -1,6 +1,5 @@
 using System.Text.Json;
 using NightTales.Domain.Catalog;
-using NightTales.Domain.Common;
 using NightTales.Domain.Series;
 
 namespace NightTales.Infrastructure.Persistence.Seeding;
@@ -11,8 +10,11 @@ namespace NightTales.Infrastructure.Persistence.Seeding;
 /// readable code instead of a half-written table.
 /// </summary>
 /// <remarks>
-/// The full rules of plan 04 (<c>VoiceCatalogRules</c>) arrive with 04.2.2-T2; the plan 03 row rules
-/// (<see cref="StyleTemplateRules"/> plus the <c>negativeClauseVersion</c> check) arrive with
+/// Only the dev <c>catalog.dev.json</c> (feature flags) and the plan 03 style-template catalog still
+/// pass through here; the plan 04 voice catalog moved to its own reader and rules with 04.2.2-T2
+/// (<see cref="VoiceCatalogFileReader"/> + <see cref="VoiceCatalogRules"/>, 04 README D9), so every
+/// voice key in the file is validated exactly once, against the rules the proxy shares. The plan 03 row
+/// rules (<see cref="StyleTemplateRules"/> plus the <c>negativeClauseVersion</c> check) arrive with
 /// 03.1.1-T2 and are applied by <see cref="StyleTemplateSeeder"/> and <c>ReadNegativeClauseVersion</c>.
 /// This parser validates only the structural JSON it can own: the enum values, duplicate keys and
 /// non-blank required fields. Every style-template <em>value</em> rule is
@@ -21,48 +23,6 @@ namespace NightTales.Infrastructure.Persistence.Seeding;
 /// </remarks>
 public static class SeedCatalogFile
 {
-    /// <summary>Reads the <c>voices</c> array; validates ids, enums, tags and duplicate ids.</summary>
-    /// <param name="json">The catalog document text.</param>
-    public static IReadOnlyList<VoiceSeedRow> ReadVoices(string json)
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(json);
-
-        using var document = JsonDocument.Parse(json);
-        if (!document.RootElement.TryGetProperty("voices", out var voices) || voices.ValueKind != JsonValueKind.Array)
-        {
-            throw new SeedValidationException("seed_catalog_invalid:voices:missing");
-        }
-
-        var rows = new List<VoiceSeedRow>(voices.GetArrayLength());
-        var seen = new HashSet<string>(StringComparer.Ordinal);
-
-        foreach (var element in voices.EnumerateArray())
-        {
-            var id = ReadRequiredString(element, "id") ?? throw new SeedValidationException("seed_voice_invalid:-:missing_id");
-            if (!seen.Add(id))
-            {
-                throw new SeedValidationException($"seed_voice_invalid:{id}:duplicate_id");
-            }
-
-            var displayName = ReadRequiredString(element, "displayName")
-                ?? throw new SeedValidationException($"seed_voice_invalid:{id}:missing_display_name");
-
-            if (!TryParseEnum<Language>(ReadOptionalString(element, "language"), out var language))
-            {
-                throw new SeedValidationException($"seed_voice_invalid:{id}:invalid_language");
-            }
-
-            if (!TryParseEnum<VoiceGender>(ReadOptionalString(element, "gender"), out var gender))
-            {
-                throw new SeedValidationException($"seed_voice_invalid:{id}:invalid_gender");
-            }
-
-            rows.Add(new VoiceSeedRow(id, displayName, language, gender, ReadTags(element, id), ReadActive(element)));
-        }
-
-        return rows;
-    }
-
     /// <summary>Reads the <c>templates</c> array; checks the structural JSON (a name, a unique natural key, the topic enum).</summary>
     /// <param name="json">The style-template document text.</param>
     public static IReadOnlyList<StyleTemplateSeedRow> ReadStyleTemplates(string json)
@@ -207,32 +167,6 @@ public static class SeedCatalogFile
         };
     }
 
-    private static List<string> ReadTags(JsonElement element, string id)
-    {
-        if (element.ValueKind != JsonValueKind.Object || !element.TryGetProperty("tags", out var tags))
-        {
-            return [];
-        }
-
-        if (tags.ValueKind != JsonValueKind.Array)
-        {
-            throw new SeedValidationException($"seed_voice_invalid:{id}:invalid_tags");
-        }
-
-        var values = new List<string>(tags.GetArrayLength());
-        foreach (var tag in tags.EnumerateArray())
-        {
-            if (tag.ValueKind != JsonValueKind.String || string.IsNullOrWhiteSpace(tag.GetString()))
-            {
-                throw new SeedValidationException($"seed_voice_invalid:{id}:invalid_tags");
-            }
-
-            values.Add(tag.GetString()!);
-        }
-
-        return values;
-    }
-
     /// <summary>
     /// Parses an enum stored as snake_case (<c>true_crime</c> → <see cref="Topic.TrueCrime"/>), case
     /// insensitively. A numeric string is refused before the parse, because
@@ -259,21 +193,6 @@ public static class SeedCatalogFile
         return Enum.TryParse(name, ignoreCase: true, out result) && Enum.IsDefined(result);
     }
 }
-
-/// <summary>One validated <c>voices</c> row of the dev catalog.</summary>
-/// <param name="Id">The canonical voice id (the natural key).</param>
-/// <param name="DisplayName">The shown name.</param>
-/// <param name="Language">The parsed language.</param>
-/// <param name="Gender">The parsed gender.</param>
-/// <param name="Tags">The voice tags, in file order.</param>
-/// <param name="Active">Whether the voice is offered.</param>
-public sealed record VoiceSeedRow(
-    string Id,
-    string DisplayName,
-    Language Language,
-    VoiceGender Gender,
-    IReadOnlyList<string> Tags,
-    bool Active);
 
 /// <summary>One validated <c>style_templates</c> row.</summary>
 /// <param name="Name">The natural key the seeder upserts by.</param>
