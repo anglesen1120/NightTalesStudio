@@ -7,13 +7,13 @@ using Xunit;
 namespace NightTales.Infrastructure.UnitTests.Email;
 
 /// <summary>
-/// The composition-time template validation of 09.2.6-T3 (09 README BD9): the catalog and the embedded
+/// The composition-time template validation of 09.2.6-T3 (09 README BD9): the catalog and the shipped
 /// files must describe exactly the same templates, every placeholder must be a declared key, and every text
 /// file must carry the subject line — otherwise the host refuses to start.
 /// </summary>
 /// <remarks>
 /// The cases mutate the <em>shipped</em> set rather than a hand-written one, so the regression they guard is
-/// the real one: the files a build actually embeds.
+/// the real one: the files a build actually copies beside its assembly.
 /// </remarks>
 public sealed class EmailTemplateProviderTests
 {

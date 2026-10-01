@@ -18,7 +18,7 @@ public sealed record RenderedEmail(string Subject, string TextBody, string HtmlB
 /// </summary>
 /// <remarks>
 /// <para>
-/// The renderer is pure: it reads the embedded <c>{{key}}</c> template and returns the bodies, so the
+/// The renderer is pure: it reads the <c>{{key}}</c> template and returns the bodies, so the
 /// token a minter just created is used here and never persisted (09 README §B10 WT17). Values are
 /// HTML-encoded in the HTML body and verbatim in the text body, so a display name that contains markup
 /// cannot inject it.

@@ -154,8 +154,14 @@ curl -fsS http://127.0.0.1:8025/api/v1/info     # Mailpit is up; its UI is at th
 ```
 
 A message the Api queues is rendered and sent by the Worker's `SendEmailJob` and appears in that UI;
-`EmailEndToEndTests` asserts exactly that when `NTS_MAILPIT_URL=http://127.0.0.1:8025` is exported, and
-skips itself when the sink is not part of the run (`tools/dev/up.sh` sets the variable).
+`EmailEndToEndTests` asserts exactly that, and skips itself when the sink is not part of the run. The test
+reads two environment variables, which the developer exports before running it (`up.sh` starts the sink; it
+does not export them):
+
+```bash
+export NTS_MAILPIT_URL=http://127.0.0.1:8025   # the Mailpit API and UI base URL; absent → the test skips
+export NTS_SMTP_PORT=1025                     # only when the sink does not listen on the default port
+```
 
 Both hosts read the pipeline's configuration from `Email:*`, with the loopback defaults committed in
 `appsettings.json`: `Email:Smtp:Host` `127.0.0.1`, `Email:Smtp:Port` `1025`, `Email:Smtp:Security` `None`

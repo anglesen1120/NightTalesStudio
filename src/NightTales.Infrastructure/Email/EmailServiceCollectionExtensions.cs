@@ -38,7 +38,7 @@ public static class EmailServiceCollectionExtensions
     /// <param name="configuration">The host configuration (<c>Email:*</c>, <c>App:PublicOrigin</c>).</param>
     /// <returns>The same collection, for chaining.</returns>
     /// <exception cref="InvalidOperationException"><c>App:PublicOrigin</c> is absent or unusable.</exception>
-    /// <exception cref="EmailTemplateException">The embedded template set does not match the catalog.</exception>
+    /// <exception cref="EmailTemplateException">The shipped template set does not match the catalog.</exception>
     public static IServiceCollection AddEmail(this IServiceCollection services, IConfiguration configuration)
     {
         ArgumentNullException.ThrowIfNull(services);

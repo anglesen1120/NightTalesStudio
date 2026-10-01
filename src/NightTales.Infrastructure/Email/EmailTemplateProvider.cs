@@ -5,9 +5,9 @@ using NightTales.Domain.Common;
 namespace NightTales.Infrastructure.Email;
 
 /// <summary>
-/// The embedded template set of the platform (09 README BD9, 09.2.6-T3): it loads every
-/// <c>&lt;name&gt;.&lt;locale&gt;.{txt,html}</c> resource, validates the whole set against the catalog and
-/// serves one file at a time to the renderer.
+/// The template set of the platform (09 README BD9, 09.2.6-T3): it loads every
+/// <c>&lt;name&gt;.&lt;locale&gt;.{txt,html}</c> file shipped beside the assembly, validates the whole set
+/// against the catalog and serves one file at a time to the renderer.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -19,8 +19,10 @@ namespace NightTales.Infrastructure.Email;
 /// <c>{{displayName}}</c> in it.
 /// </para>
 /// <para>
-/// The files are embedded resources, not output files, so a published image cannot lose them and the
-/// assembly that carries the renderer is the assembly that carries the text.
+/// The files are output files — <c>Content</c>/<c>CopyToOutputDirectory</c>, the mechanism the
+/// <c>seed/</c> catalogs of 09.2.5-T1 use and the one CR-13 of this task's notes records — so a published
+/// image carries them beside the assembly that renders with them, and the assembly that carries the
+/// renderer is the assembly whose build copies the text.
 /// </para>
 /// </remarks>
 public sealed class EmailTemplateProvider
@@ -122,7 +124,7 @@ public sealed class EmailTemplateProvider
         return _files.TryGetValue((template, locale, format), out var resource)
             ? resource
             : throw new EmailTemplateException(
-                $"E-mail template file '{EmailTemplateResource.FileNameOf(template, locale, format)}' is not embedded in this build.");
+                $"E-mail template file '{EmailTemplateResource.FileNameOf(template, locale, format)}' is not copied beside this build's assembly.");
     }
 
     private static void ThrowOnDuplicateFiles(IReadOnlyCollection<EmailTemplateResource> resources)
@@ -134,7 +136,7 @@ public sealed class EmailTemplateProvider
             if (!seen.Add((resource.Name, resource.Locale, resource.Format)))
             {
                 throw new EmailTemplateException(
-                    $"E-mail template file '{resource.FileName}' is embedded twice; one file per template, locale and format.");
+                    $"E-mail template file '{resource.FileName}' is present twice; one file per template, locale and format.");
             }
         }
     }

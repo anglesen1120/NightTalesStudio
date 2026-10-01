@@ -18,9 +18,10 @@ namespace NightTales.Api.IntegrationTests.Email;
 /// </summary>
 /// <remarks>
 /// <para>
-/// It is gated on <c>NTS_MAILPIT_URL</c> (the API base URL, which <c>tools/dev/up.sh</c> sets) and carries
-/// the <c>Local</c> category: with no Mailpit the test skips instead of failing the integration job, and
-/// the pipeline's own behaviour is proven by <see cref="SendEmailJobTests"/> against the fake transport.
+/// It is gated on <c>NTS_MAILPIT_URL</c> (the API base URL, which the developer exports — <c>up.sh</c>
+/// starts the sink but sets no variable) and carries the <c>Local</c> category: with no Mailpit the test
+/// skips instead of failing the integration job, and the pipeline's own behaviour is proven by
+/// <see cref="SendEmailJobTests"/> against the fake transport.
 /// </para>
 /// <para>
 /// It is the end-to-end proof of the vi locale: the body that arrives is the Vietnamese one, rendered from
@@ -85,7 +86,7 @@ public sealed class EmailEndToEndTests(TestDatabase database) : IntegrationTest(
 
         Assert.SkipWhen(
             string.IsNullOrWhiteSpace(url),
-            $"Mailpit is not running: 11.1.1-T2's tools/dev/up.sh starts it and sets {MailpitUrlVariable} (for example http://127.0.0.1:8025).");
+            $"Mailpit is not part of this run: 11.1.1-T2's tools/dev/up.sh starts it, and the developer exports {MailpitUrlVariable} (for example http://127.0.0.1:8025) before running this test.");
 
         return url!;
     }

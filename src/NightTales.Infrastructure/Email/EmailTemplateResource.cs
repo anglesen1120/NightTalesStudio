@@ -14,8 +14,8 @@ public enum EmailTemplateFormat
 }
 
 /// <summary>
-/// One embedded template file (09 README BD9, 09.2.6-T3):
-/// <c>Templates/Email/&lt;name&gt;.&lt;locale&gt;.{txt,html}</c>.
+/// One template file
+/// (09 README BD9, 09.2.6-T3): <c>Templates/Email/&lt;name&gt;.&lt;locale&gt;.{txt,html}</c>.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -27,7 +27,7 @@ public enum EmailTemplateFormat
 /// </para>
 /// <para>
 /// The record is what the validator and the renderer exchange, so a test can validate a hand-built set —
-/// including the broken ones the boot must refuse — without an assembly of embedded resources.
+/// including the broken ones the boot must refuse — without the shipped template folder being present.
 /// </para>
 /// </remarks>
 /// <param name="Name">The catalog template name.</param>

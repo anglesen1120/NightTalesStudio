@@ -16,7 +16,7 @@ namespace NightTales.Application.Features.Email;
 /// producer can never smuggle a send-time value into the queue.
 /// </para>
 /// <para>
-/// The sets are code and the keys are the placeholders of the embedded <c>.txt</c>/<c>.html</c> files, so
+/// The sets are code and the keys are the placeholders of the shipped <c>.txt</c>/<c>.html</c> files, so
 /// the composition-time validation of <c>EmailTemplateProvider</c> can prove that no file uses a
 /// placeholder this catalog does not declare — the catalog cannot drift from the text.
 /// </para>
@@ -69,8 +69,9 @@ public sealed record EmailTemplateDefinition
 
 /// <summary>
 /// The closed catalog of e-mail templates (09 README BD9, 09.2.6-T3): name → its two key sets. One
-/// template is a pair of embedded files per locale,
-/// <c>Templates/Email/&lt;name&gt;.&lt;locale&gt;.{txt,html}</c>.
+/// template is a pair of files per locale,
+/// <c>Templates/Email/&lt;name&gt;.&lt;locale&gt;.{txt,html}</c> (shipped as <c>Content</c> beside the
+/// assembly, CR-13).
 /// </summary>
 /// <remarks>
 /// <para>

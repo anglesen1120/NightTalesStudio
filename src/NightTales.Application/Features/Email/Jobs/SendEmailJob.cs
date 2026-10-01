@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using ErrorOr;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -38,10 +37,13 @@ namespace NightTales.Application.Features.Email.Jobs;
 /// </para>
 /// <para>
 /// <b>Failures are recorded, then rethrown</b> so Hangfire applies the five attempts of the <c>email</c>
-/// queue policy. A recipient that no longer exists is the one case that does not retry: the row is failed
-/// with <c>email_user_gone</c> and the job returns. Nothing about the address is ever logged — the hash is
-/// (09 README BD16) — and an SMTP failure is logged by exception <em>type</em> only, because a server's
-/// refusal message echoes the recipient.
+/// queue policy. Every exception raised once the attempt has been recorded on the row is written to the row
+/// first — with the attempt's own code when it has one and <c>email_send_failed</c> when it does not, so a
+/// failure before the SMTP call (a minter that throws, an unparsable stored <c>params</c>) can never leave
+/// the row looking queued. A recipient that no longer exists is the one case that does not retry: the row is
+/// failed with <c>email_user_gone</c> and the job returns. Nothing about the address is ever logged — the
+/// hash is (09 README BD16) — and a failed attempt is logged by exception <em>type</em> only, because a
+/// server's refusal message echoes the recipient.
 /// </para>
 /// <para>
 /// It calls <c>SaveChangesAsync</c> itself: 09 README D5's "handlers never save" rule is about Mediator
@@ -100,48 +102,53 @@ public sealed partial class SendEmailJob(
 
         row.Sending(clock.UtcNow);
 
-        var recipient = await services
-            .GetRequiredService<IEmailRecipientQuery>()
-            .GetAsync(row.UserId, cancellationToken)
-            .ConfigureAwait(false);
-
-        if (recipient.IsError
-            || recipient.Value.Status != UserStatus.Active
-            || string.IsNullOrWhiteSpace(recipient.Value.Address))
-        {
-            LogRecipientGone(ErrorCodes.EmailUserGone, row.Id, row.ToHash);
-
-            await FailAsync(database, row, ErrorCodes.EmailUserGone, cancellationToken).ConfigureAwait(false);
-
-            return;
-        }
-
-        var parameters = EmailParamsJson.FromJson(row.ParamsJson!);
-        var minted = await services
-            .GetRequiredService<IEmailTokenMinters>()
-            .MintAsync(row.UserId, row.Template, parameters, cancellationToken)
-            .ConfigureAwait(false);
-
-        if (minted.IsError)
-        {
-            var mintCode = minted.FirstError.Code;
-            await FailAsync(database, row, mintCode, cancellationToken).ConfigureAwait(false);
-
-            throw new InvalidOperationException(
-                $"Minting the '{row.Template}' values of e-mail '{row.Id}' failed with '{mintCode}'.");
-        }
-
-        // The attempt counter and the single-use token row commit together, before the SMTP call: a token
-        // that exists but was never mailed is invalidated by the next attempt's mint, while a mail that
-        // carried a token the database does not know would be unusable (09 README §B10 WT17).
-        await database.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-
-        var values = Merge(parameters, minted.Value);
+        // Every failure of the attempt is recorded on the row before the exception leaves the job: Hangfire
+        // then retries against a row that says `failed` with the code and the attempt count (09.2.6-T3 L169),
+        // never one that still looks queued. An exception this job cannot classify — a token-bearing template
+        // whose minter is not registered yet, a stored `params` that will not parse, a database error — is a
+        // failed attempt too, and it wears the send-failure code because the catalogue has no closer one.
+        var failureCode = ErrorCodes.EmailSendFailed;
         var elapsed = TimeSpan.Zero;
-        ErrorOr<string> sent;
+        string providerMessageId;
 
         try
         {
+            var recipient = await services
+                .GetRequiredService<IEmailRecipientQuery>()
+                .GetAsync(row.UserId, cancellationToken)
+                .ConfigureAwait(false);
+
+            if (recipient.IsError
+                || recipient.Value.Status != UserStatus.Active
+                || string.IsNullOrWhiteSpace(recipient.Value.Address))
+            {
+                LogRecipientGone(ErrorCodes.EmailUserGone, row.Id, row.ToHash);
+
+                await FailAsync(database, row, ErrorCodes.EmailUserGone, cancellationToken).ConfigureAwait(false);
+
+                return;
+            }
+
+            var parameters = EmailParamsJson.FromJson(row.ParamsJson!);
+            var minted = await services
+                .GetRequiredService<IEmailTokenMinters>()
+                .MintAsync(row.UserId, row.Template, parameters, cancellationToken)
+                .ConfigureAwait(false);
+
+            if (minted.IsError)
+            {
+                failureCode = minted.FirstError.Code;
+
+                throw new InvalidOperationException(
+                    $"Minting the '{row.Template}' values of e-mail '{row.Id}' failed with '{failureCode}'.");
+            }
+
+            // The attempt counter and the single-use token row commit together, before the SMTP call: a token
+            // that exists but was never mailed is invalidated by the next attempt's mint, while a mail that
+            // carried a token the database does not know would be unusable (09 README §B10 WT17).
+            await database.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+
+            var values = Merge(parameters, minted.Value);
             var rendered = services
                 .GetRequiredService<IEmailRenderer>()
                 .Render(row.Template, row.Locale, values);
@@ -154,35 +161,35 @@ public sealed partial class SendEmailJob(
                 clock.UtcNow);
 
             var started = Stopwatch.GetTimestamp();
-            sent = await services
+            var sent = await services
                 .GetRequiredService<ISmtpEmailSender>()
                 .SendAsync(message, cancellationToken)
                 .ConfigureAwait(false);
             elapsed = Stopwatch.GetElapsedTime(started);
+
+            if (sent.IsError)
+            {
+                failureCode = sent.FirstError.Code;
+
+                throw new InvalidOperationException(
+                    $"Sending the '{row.Template}' e-mail '{row.Id}' failed with '{failureCode}'.");
+            }
+
+            providerMessageId = sent.Value;
+            row.Sent(providerMessageId, clock.UtcNow);
+            await database.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         }
         catch (Exception exception)
         {
-            await FailAsync(database, row, ErrorCodes.EmailSendFailed, cancellationToken).ConfigureAwait(false);
+            await FailAsync(database, row, failureCode, cancellationToken).ConfigureAwait(false);
 
-            LogSendFailed(ErrorCodes.EmailSendFailed, row.Id, row.Template, row.ToHash, exception.GetType().Name);
+            LogSendFailed(failureCode, row.Id, row.Template, row.ToHash, exception.GetType().Name);
 
             throw;
         }
 
-        if (sent.IsError)
-        {
-            var sendCode = sent.FirstError.Code;
-            await FailAsync(database, row, sendCode, cancellationToken).ConfigureAwait(false);
-
-            throw new InvalidOperationException(
-                $"Sending the '{row.Template}' e-mail '{row.Id}' failed with '{sendCode}'.");
-        }
-
-        row.Sent(sent.Value, clock.UtcNow);
-        await database.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-
         metrics.Sent(row.Template, elapsed);
-        LogSent(row.Id, row.Template, row.ToHash, sent.Value);
+        LogSent(row.Id, row.Template, row.ToHash, providerMessageId);
     }
 
     /// <summary>

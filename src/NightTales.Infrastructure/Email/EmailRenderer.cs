@@ -22,7 +22,7 @@ namespace NightTales.Infrastructure.Email;
 /// deadline without a second source of truth.
 /// </para>
 /// </remarks>
-/// <param name="provider">The validated embedded template set.</param>
+/// <param name="provider">The validated template set.</param>
 internal sealed class EmailRenderer(EmailTemplateProvider provider) : IEmailRenderer
 {
     /// <inheritdoc />
