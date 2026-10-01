@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Net;
+using System.Security.Cryptography;
 using System.Text;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
@@ -15,10 +16,16 @@ namespace NightTales.TestKit.Database;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Once per run the fixture rebuilds the template database <c>nts_template</c> (drop with
-/// <c>FORCE</c>, create, apply the compiled migrations); every <see cref="TestDatabase"/> is then a
-/// <c>CREATE DATABASE … TEMPLATE nts_template</c> copy, which costs well under a second and does not
-/// grow with the number of test classes.
+/// The template database is named after the migrations this build compiled
+/// (<c>nts_template_{digest}</c>), and it is built once per <em>server</em> rather than once per
+/// process: the fixture takes a PostgreSQL advisory lock on that name, rebuilds it when it does not
+/// already carry exactly the compiled migrations (drop with <c>FORCE</c>, create, migrate) and leaves
+/// it alone when it does. A solution-wide <c>dotnet test</c> runs one process per test project, so
+/// two processes of the same build share one template instead of racing <c>CREATE DATABASE</c> on the
+/// same name, and a build whose migration set differs keeps a template of its own instead of dropping
+/// the other's mid-run. Every <see cref="TestDatabase"/> is then a
+/// <c>CREATE DATABASE … TEMPLATE</c> copy, which costs well under a second and does not grow with the
+/// number of test classes.
 /// </para>
 /// <para>
 /// The fixture is shared per test assembly through <see cref="Shared"/>. It is deliberately *not*
@@ -76,27 +83,36 @@ public sealed class PostgresFixture : IAsyncLifetime, IAsyncDisposable
         DropDatabase,
     }
 
-    /// <summary>The template database every per-class database is copied from, rebuilt once per run.</summary>
+    /// <summary>
+    /// The base name of the template database every per-class database is copied from
+    /// (<see cref="SharedTemplateDatabaseName"/> adds the digest of the compiled migrations).
+    /// </summary>
     public const string TemplateDatabaseName = "nts_template";
 
     /// <summary>The only PostgreSQL major the harness supports (09 README D8, owner decision O3).</summary>
     public const int RequiredServerMajor = 17;
 
-    private static readonly Lazy<PostgresFixture> SharedInstance = new(static () => new PostgresFixture());
+    private static readonly Lazy<PostgresFixture> SharedInstance =
+        new(static () => new PostgresFixture(SharedTemplateDatabaseName()));
 
     private readonly Lazy<string> _serverConnectionString;
     private readonly Lazy<Task> _ready;
 
-    /// <summary>Creates the fixture over the template database <see cref="TemplateDatabaseName"/>.</summary>
+    /// <summary>
+    /// Creates the fixture over the template database of this build,
+    /// <see cref="SharedTemplateDatabaseName"/>: the base name plus the digest of the compiled
+    /// migrations.
+    /// </summary>
     public PostgresFixture()
-        : this(TemplateDatabaseName)
+        : this(SharedTemplateDatabaseName())
     {
     }
 
     /// <summary>
     /// Creates the fixture over a template database with a custom name. Only the staleness test uses
-    /// a second name: rebuilding <c>nts_template</c> while parallel test classes copy from it would
-    /// be a race.
+    /// a second name: rebuilding a template while parallel test classes copy from it would be a race,
+    /// which is also why every build derives a name of its own
+    /// (<see cref="SharedTemplateDatabaseName"/>) instead of sharing one.
     /// </summary>
     public PostgresFixture(string templateDatabaseName)
     {
@@ -655,6 +671,120 @@ public sealed class PostgresFixture : IAsyncLifetime, IAsyncDisposable
             EnsureServerMajor17(reader.GetString(0), reader.GetString(1));
         }
 
-        await RebuildTemplateAsync(TemplateDatabase, CancellationToken.None);
+        await EnsureTemplateAsync(CancellationToken.None);
     }
+
+    /// <summary>
+    /// Builds the template database once per server: the whole decision — is it there, does it carry
+    /// exactly the compiled migrations, does it have to be rebuilt — runs under one advisory lock, so
+    /// two test processes of the same build agree on a single rebuild and neither drops the template
+    /// while the other copies a class database from it.
+    /// </summary>
+    private async Task EnsureTemplateAsync(CancellationToken ct)
+    {
+        // The lock lives on a connection of its own that is never pooled: a session-level advisory lock
+        // outlives the connection that returned to the pool, so a pooled connection handed back while
+        // still holding the lock would leave every later caller blocked on a lock nobody releases.
+        var lockConnectionString = new NpgsqlConnectionStringBuilder(ServerConnectionString)
+        {
+            Pooling = false,
+        }.ConnectionString;
+
+        await using var connection = await OpenAsync(lockConnectionString, ct);
+        var lockKey = TemplateLockKey(TemplateDatabase);
+
+        await using (var acquire = new NpgsqlCommand("SELECT pg_advisory_lock(@lock_key)", connection))
+        {
+            acquire.Parameters.AddWithValue("lock_key", lockKey);
+            await acquire.ExecuteNonQueryAsync(ct);
+        }
+
+        try
+        {
+            if (await TemplateIsCurrentAsync(ct))
+            {
+                return;
+            }
+
+            await RebuildTemplateAsync(TemplateDatabase, ct);
+        }
+        finally
+        {
+            // The release takes no cancellation token: the lock must go back even when the caller was
+            // cancelled mid-rebuild, and it is one round trip on the already open connection.
+            await using var release = new NpgsqlCommand("SELECT pg_advisory_unlock(@lock_key)", connection);
+            release.Parameters.AddWithValue("lock_key", lockKey);
+            await release.ExecuteNonQueryAsync(CancellationToken.None);
+        }
+    }
+
+    /// <summary>
+    /// True when the template exists and its history is exactly the migration set this build compiled —
+    /// the same statement the harness makes about a class database
+    /// (<c>PostgresFixture_TemplateIsMigratedOnce</c>), which is why a template of this build's own
+    /// name can be reused instead of dropped and rebuilt. A database with no history table at all (the
+    /// stale template an earlier run left behind) is not current and is therefore rebuilt.
+    /// </summary>
+    private async Task<bool> TemplateIsCurrentAsync(CancellationToken ct)
+    {
+        if (!await DatabaseExistsAsync(TemplateDatabase, ct))
+        {
+            return false;
+        }
+
+        await using var context = TestDbContextFactory.CreateAppContext(HelperConnectionString(TemplateDatabase));
+        var compiled = context.Database.GetMigrations().Order(StringComparer.Ordinal).ToArray();
+        var applied = await AppliedMigrationsAsync(TemplateDatabase, ct);
+
+        return applied.SequenceEqual(compiled, StringComparer.Ordinal);
+    }
+
+    /// <summary>
+    /// The template database of this build: <see cref="TemplateDatabaseName"/> plus a digest of the
+    /// compiled migrations, so two builds that compile different migration sets never share — and never
+    /// drop — one template, while two processes of the same build deliberately do.
+    /// </summary>
+    private static string SharedTemplateDatabaseName()
+    {
+        // The migrations are the schema's only source and reading them needs no server: this context is
+        // built from the same options every test context uses, over a database that is never opened.
+        using var context = TestDbContextFactory.CreateAppContext(ProbeConnectionString);
+        var migrations = context.Database.GetMigrations().Order(StringComparer.Ordinal);
+
+        return $"{TemplateDatabaseName}_{Digest(string.Join('\n', migrations))}";
+    }
+
+    /// <summary>
+    /// A 12-character lowercase hex digest of one name part: the reserved-prefix rule of
+    /// <see cref="QuoteIdentifier"/> allows no other character, and a database name is at most 63.
+    /// </summary>
+    private static string Digest(string value) =>
+        Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(value)))[..12];
+
+    /// <summary>
+    /// The advisory-lock key of one template database: a stable 64-bit FNV-1a hash of its name, so two
+    /// processes serialize their rebuild of the same name and different names never block each other.
+    /// </summary>
+    private static long TemplateLockKey(string templateDatabaseName)
+    {
+        var hash = 14695981039346656037UL;
+        foreach (var character in templateDatabaseName)
+        {
+            hash = (hash ^ character) * 1099511628211UL;
+        }
+
+        return unchecked((long)hash);
+    }
+
+    /// <summary>
+    /// The connection string <see cref="SharedTemplateDatabaseName"/> builds its context over. The
+    /// compiled migrations are assembly metadata, so this string is never opened: the fixture
+    /// deliberately does not read <c>NTS_TEST_PG</c> until something actually needs the server, so a
+    /// test process that merely loads this assembly stays inert.
+    /// </summary>
+    private static string ProbeConnectionString => new NpgsqlConnectionStringBuilder
+    {
+        Host = "127.0.0.1",
+        Database = TemplateDatabaseName,
+    }.ConnectionString;
 }

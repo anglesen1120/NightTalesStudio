@@ -56,9 +56,12 @@ public static class EpisodeEndpoints
             .Produces<Guid>(StatusCodes.Status201Created)
             .ProducesProblem(StatusCodes.Status400BadRequest)
             .ProducesProblem(StatusCodes.Status404NotFound)
-            .ProducesProblem(StatusCodes.Status409Conflict);
+            .ProducesProblem(StatusCodes.Status409Conflict)
+            // 09.9.4-T1 (BD12): the versioned API group carries the non-credentialed CORS policy.
+            .RequireCors(SecurityHeadersExtensions.SpaCorsPolicy);
 
         var episodes = routes.MapGroup(GroupPrefix);
+        episodes.RequireCors(SecurityHeadersExtensions.SpaCorsPolicy);
 
         episodes.MapGet(string.Empty, ListAsync)
             .Produces<Page<EpisodeListItemDto>>(StatusCodes.Status200OK)

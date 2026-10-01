@@ -18,6 +18,7 @@ using NightTales.Infrastructure.Identity;
 using NightTales.Infrastructure.Jobs;
 using NightTales.Infrastructure.Persistence;
 using NightTales.TestKit.Database;
+using NightTales.TestKit.Security;
 using NightTales.TestKit.Time;
 using NightTalesWorkerHost::NightTales.Worker.DependencyInjection;
 using NightTalesWorkerHost::NightTales.Worker.Health;
@@ -82,6 +83,12 @@ public sealed class WorkerHealthProbe : IAsyncDisposable
                     nameof(BreachedPasswordMode.List),
                 [$"{LegalDocumentVersions.SectionName}:{nameof(LegalDocumentVersions.Tos)}"] = "v1",
                 [$"{LegalDocumentVersions.SectionName}:{nameof(LegalDocumentVersions.Privacy)}"] = "v1",
+
+                // 09.9.4-T1: the Worker's composition root registers the Data Protection key ring too, and
+                // it refuses to start without the DP_KEK, so the probe provides the run's throwaway PFX —
+                // the same two settings the harness's WorkerHost hands its host.
+                [TestKek.PathConfigurationKey] = TestKek.SharedPath,
+                [TestKek.PasswordConfigurationKey] = TestKek.SharedPassword,
             });
 
         builder.Logging.ClearProviders();

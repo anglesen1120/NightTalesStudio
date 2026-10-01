@@ -31,8 +31,15 @@ builder.Services.AddApiCurrentUser();
 // Api registers them (not AddPersistence): the Worker has no web signing key and must not need one.
 builder.Services.AddNightTalesAuth(builder.Configuration);
 
-// 09.3.2-T1 step 6: the bearer scheme over the same key, and `App:PublicOrigin`.
+// 09.3.2-T1 step 6: the bearer scheme over the same key.
 builder.Services.AddNightTalesJwtBearer();
+
+// 09.9.4-T1 (09 README BD12/WF15): the Data Protection key ring persisted in PostgreSQL and encrypted
+// with the DP_KEK certificate, the purpose-scoped token protector over it, and the platform's safe
+// defaults — the hardening headers, the CORS allow-list reduced to `App:PublicOrigin`, HSTS and the
+// 1 MiB request-body cap. Both fail start-up on a missing KEK or an invalid public origin.
+builder.Services.AddNightTalesDataProtection(builder.Configuration);
+builder.Services.AddNightTalesSecurityHardening(builder.Configuration);
 
 builder.Services.AddProblemDetails(ProblemDetailsWriter.ConfigureProblemDetails);
 
@@ -59,6 +66,12 @@ if (args.Contains("--seed", StringComparer.Ordinal))
 }
 
 app.UseExceptionHandler();
+
+// 09.9.4-T1 (BD12): HSTS and HTTPS redirection outside Development, the hardening headers (also on an
+// error response), the CORS policies and the request-body cap. It runs before authorization, so an
+// oversized body is refused before the caller is authenticated; the CORS middleware runs before the cap,
+// so the 413 refusal still carries its CORS headers.
+app.UseNightTalesSecurityHardening();
 
 app.MapGet("/health/live", () => Results.Ok());
 

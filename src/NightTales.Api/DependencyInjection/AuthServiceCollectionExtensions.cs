@@ -1,7 +1,6 @@
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.IdentityModel.Tokens;
-using NightTales.Api.Http;
 using NightTales.Api.Security;
 using NightTales.Infrastructure.Security;
 
@@ -19,26 +18,18 @@ namespace NightTales.Api.DependencyInjection;
 /// and <c>sid</c> claims reach the Api unchanged — which is what <c>HttpCurrentUser</c> reads.
 /// </para>
 /// <para>
-/// <c>App:PublicOrigin</c> is bound here too: it is the origin the same web host serves the SPA from, and
-/// the refresh route's CSRF filter is its only consumer in this task (09.9.4-T1 owns the CORS policy that
-/// uses it next).
+/// <c>App:PublicOrigin</c> is not bound here: 09.9.4-T1 owns it and binds it, together with the CORS
+/// policies built from it, in <see cref="NightTales.Api.Http.SecurityHeadersExtensions"/>. The refresh
+/// route's CSRF filter is its first consumer in this story.
 /// </para>
 /// </remarks>
 public static class AuthServiceCollectionExtensions
 {
-    /// <summary>Registers the bearer scheme, the validation parameters and the public origin.</summary>
+    /// <summary>Registers the bearer scheme and its validation parameters.</summary>
     /// <param name="services">The service collection of the host.</param>
     public static IServiceCollection AddNightTalesJwtBearer(this IServiceCollection services)
     {
         ArgumentNullException.ThrowIfNull(services);
-
-        services.AddOptions<AppOptions>()
-            .BindConfiguration(AppOptions.SectionName)
-            .Validate(
-                options => Uri.TryCreate(options.PublicOrigin, UriKind.Absolute, out _),
-                $"'{AppOptions.SectionName}:PublicOrigin' must be the absolute origin the SPA is served from "
-                + "(09 README BD3).")
-            .ValidateOnStart();
 
         services
             .AddOptions<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme)

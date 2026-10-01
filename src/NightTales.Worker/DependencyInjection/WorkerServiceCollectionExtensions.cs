@@ -10,6 +10,7 @@ using NightTales.Application.Abstractions.Jobs;
 using NightTales.Application.Abstractions.Outbox;
 using NightTales.Application.Features.Episodes.Outbox;
 using NightTales.Domain.Episodes.Events;
+using NightTales.Infrastructure.DependencyInjection;
 using NightTales.Infrastructure.Jobs;
 using NightTales.Infrastructure.Persistence;
 using NightTales.Infrastructure.Persistence.Outbox;
@@ -62,6 +63,11 @@ public static class WorkerServiceCollectionExtensions
             .ValidateOnStart();
 
         services.AddPersistence(configuration, assemblies);
+
+        // 09.9.4-T1 (09 README BD12/WF15): the Worker protects and reads back values with the same ring
+        // and the same DP_KEK as the Api (11 §10:284), so a token the Api protected — a channel
+        // connection, a settings secret — is readable here, and each purpose stays isolated.
+        services.AddNightTalesDataProtection(configuration);
 
         // 09.2.3-T1 (09 README D10): the Worker's actor is the scoped system context. Every user-owned
         // row stays invisible until a handler calls ISystemContext.For(userId), and both interfaces

@@ -23,6 +23,12 @@ env:
   # 09.3.2-T1: the same generator also boots the host's start-up validation, which requires the ES256
   # signing key (secret nts/<env>/api/JWT_SIGNING_KEY). CI has no secret store, so each job generates a
   # throwaway P-256 key per run (step "Design-time ES256 signing key"); no key is ever committed.
+  # 09.9.4-T1: the generator also boots the host's `App:PublicOrigin` validation (BD12). The base
+  # appsettings.json carries the Development value `http://localhost:4200`, which is not a valid origin
+  # outside Development, so every build step needs one; it is a constant, never a real deployment
+  # origin. `DataProtection__KekPfxPath`/`DataProtection__KekPfxPassword` are added per job by the
+  # "Design-time DP_KEK certificate" step (a throwaway PFX generated per run).
+  App__PublicOrigin: "https://ci-openapi-document-generation.invalid"
 
 jobs:
   build-test:
@@ -42,8 +48,35 @@ jobs:
             openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256
             echo 'NTS_SIGNING_KEY_EOF'
           } >> "$GITHUB_ENV"
+      # 09.9.4-T1: the same generator boots the Api's Data Protection start-up validation, which needs
+      # the DP_KEK PFX (secret nts/<env>/shared/DP_KEK). A throwaway RSA PFX is generated per run — RSA
+      # because the ring is encrypted with EncryptedXml, which accepts RSA only — and never committed.
+      - name: Design-time DP_KEK certificate
+        shell: bash
+        run: |
+          set -euo pipefail
+          export KEK_PASSWORD="$(openssl rand -hex 24)"
+          openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj '/CN=nts-ci-dp-kek' \
+            -keyout "$RUNNER_TEMP/dp-kek.key" -out "$RUNNER_TEMP/dp-kek.crt"
+          openssl pkcs12 -export -out "$RUNNER_TEMP/dp-kek.pfx" \
+            -inkey "$RUNNER_TEMP/dp-kek.key" -in "$RUNNER_TEMP/dp-kek.crt" -passout env:KEK_PASSWORD
+          {
+            echo "DataProtection__KekPfxPath=$RUNNER_TEMP/dp-kek.pfx"
+            echo "DataProtection__KekPfxPassword=$KEK_PASSWORD"
+          } >> "$GITHUB_ENV"
       - name: Restore (locked)
         run: dotnet restore NightTales.ci.slnf --locked-mode
+      # 09.9.4-T1 (09 README W10): the dependency-vulnerability gate. It runs right after restore, so a
+      # vulnerable package fails the fastest job in the pipeline, and the rule lives in a small
+      # stdlib-only script (tools/ci/check-vulnerable.py) instead of a shell one-liner, so it is
+      # reviewable and its allow-list is time-boxed. The report is not uploaded: it names the package,
+      # the version, the severity and the advisory link on stdout.
+      - name: Dependency vulnerability gate (high and critical)
+        shell: bash
+        run: |
+          set -euo pipefail
+          dotnet list NightTales.ci.slnf package --vulnerable --include-transitive --format json > vulnerable.json
+          python3 tools/ci/check-vulnerable.py vulnerable.json
       - name: Build (Release)
         run: dotnet build NightTales.ci.slnf -c Release --no-restore
       - name: Format check
@@ -108,6 +141,22 @@ jobs:
             openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256
             echo 'NTS_SIGNING_KEY_EOF'
           } >> "$GITHUB_ENV"
+      # 09.9.4-T1: the same generator boots the Api's Data Protection start-up validation, which needs
+      # the DP_KEK PFX (secret nts/<env>/shared/DP_KEK). A throwaway RSA PFX is generated per run — RSA
+      # because the ring is encrypted with EncryptedXml, which accepts RSA only — and never committed.
+      - name: Design-time DP_KEK certificate
+        shell: bash
+        run: |
+          set -euo pipefail
+          export KEK_PASSWORD="$(openssl rand -hex 24)"
+          openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj '/CN=nts-ci-dp-kek' \
+            -keyout "$RUNNER_TEMP/dp-kek.key" -out "$RUNNER_TEMP/dp-kek.crt"
+          openssl pkcs12 -export -out "$RUNNER_TEMP/dp-kek.pfx" \
+            -inkey "$RUNNER_TEMP/dp-kek.key" -in "$RUNNER_TEMP/dp-kek.crt" -passout env:KEK_PASSWORD
+          {
+            echo "DataProtection__KekPfxPath=$RUNNER_TEMP/dp-kek.pfx"
+            echo "DataProtection__KekPfxPassword=$KEK_PASSWORD"
+          } >> "$GITHUB_ENV"
       - name: Restore (locked)
         run: dotnet restore NightTales.ci.slnf --locked-mode
       - name: Integration tests (PostgreSQL 17 service)
@@ -159,6 +208,22 @@ jobs:
             echo 'Auth__Jwt__SigningKey<<NTS_SIGNING_KEY_EOF'
             openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256
             echo 'NTS_SIGNING_KEY_EOF'
+          } >> "$GITHUB_ENV"
+      # 09.9.4-T1: the same generator boots the Api's Data Protection start-up validation, which needs
+      # the DP_KEK PFX (secret nts/<env>/shared/DP_KEK). A throwaway RSA PFX is generated per run — RSA
+      # because the ring is encrypted with EncryptedXml, which accepts RSA only — and never committed.
+      - name: Design-time DP_KEK certificate
+        shell: bash
+        run: |
+          set -euo pipefail
+          export KEK_PASSWORD="$(openssl rand -hex 24)"
+          openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj '/CN=nts-ci-dp-kek' \
+            -keyout "$RUNNER_TEMP/dp-kek.key" -out "$RUNNER_TEMP/dp-kek.crt"
+          openssl pkcs12 -export -out "$RUNNER_TEMP/dp-kek.pfx" \
+            -inkey "$RUNNER_TEMP/dp-kek.key" -in "$RUNNER_TEMP/dp-kek.crt" -passout env:KEK_PASSWORD
+          {
+            echo "DataProtection__KekPfxPath=$RUNNER_TEMP/dp-kek.pfx"
+            echo "DataProtection__KekPfxPassword=$KEK_PASSWORD"
           } >> "$GITHUB_ENV"
       - name: Restore (locked)
         run: dotnet restore NightTales.ci.slnf --locked-mode

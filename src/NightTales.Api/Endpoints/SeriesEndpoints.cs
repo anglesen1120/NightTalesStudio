@@ -55,6 +55,10 @@ public static class SeriesEndpoints
 
         var series = routes.MapGroup(GroupPrefix);
 
+        // 09.9.4-T1 (BD12): the versioned API group carries the non-credentialed CORS policy; the
+        // credentialed one belongs to the auth routes alone.
+        series.RequireCors(SecurityHeadersExtensions.SpaCorsPolicy);
+
         series.MapPost(string.Empty, CreateAsync)
             .Produces<SeriesCreated>(StatusCodes.Status201Created)
             .ProducesProblem(StatusCodes.Status400BadRequest);
