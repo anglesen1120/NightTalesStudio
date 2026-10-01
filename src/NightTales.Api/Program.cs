@@ -15,7 +15,11 @@ using NightTales.Infrastructure.Storage;
 var builder = WebApplication.CreateBuilder(args);
 
 // 09.1.5-T1 (09 README D14): registers the OpenAPI document provider the build-time generator needs.
-builder.Services.AddOpenApi();
+// 09.9.5-T1 (09 README D7): the generated `ProblemDetails` component gains the two members its CLR
+// type cannot express (`code`, `traceId`), so the published document — and every client generated
+// from it (10.1.4) — carries the whole error contract of ProblemDetailsWriter.
+builder.Services.AddOpenApi(options =>
+    options.AddSchemaTransformer<ProblemDetailsSchemaTransformer>());
 
 builder.Services.AddNightTalesMediator();
 builder.Services.AddPersistence(builder.Configuration);
