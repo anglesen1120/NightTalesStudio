@@ -234,6 +234,48 @@ public sealed class Es256TokenIssuerTests
     }
 
     [Fact]
+    public async Task DisposingOneKey_DoesNotBreakAnotherKeyLoadedFromTheSamePem()
+    {
+        // Regression for the process-wide crypto-provider cache trap (2026-10-01): a key that leaves its
+        // provider cache to CryptoProviderFactory.Default shares one process-wide cache, and the cache key
+        // is the key's JWK thumbprint — identical for every key loaded from the same PEM. A verifier cached
+        // for one host's key therefore keeps that host's ECDsa, and once the host disposes the key
+        // (JwtSigningKey.Dispose) the next host's first bearer request hits the cached verifier and answers
+        // 401 with IDX10511 over ObjectDisposedException, instead of 204
+        // (NightTales.Api.IntegrationTests.Auth.LogoutTests.Logout_RevokesFamily_AndClearsCookie).
+        var pem = IssueKey();
+        using var first = JwtSigningKey.FromPem(pem);
+        var second = JwtSigningKey.FromPem(pem);
+        var handler = new JsonWebTokenHandler();
+        var token = new Es256TokenIssuer(first, Options.Create(JwtOptionsForTest()))
+            .IssueAccessToken(User(PlatformRole.User), Guid.CreateVersion7(), AuthMethod.Pwd, DateTimeOffset.UtcNow)
+            .Token;
+
+        // The first host validates: this is what caches a verifier for the key's thumbprint.
+        var before = await handler.ValidateTokenAsync(token, ValidationParametersFor(first));
+        before.IsValid.ShouldBeTrue(before.Exception?.Message);
+
+        // The first host shuts down.
+        first.Dispose();
+
+        // A second host loads the same PEM and validates the same token: its own key must be the one used.
+        var after = await handler.ValidateTokenAsync(token, ValidationParametersFor(second));
+        after.IsValid.ShouldBeTrue(after.Exception?.Message);
+    }
+
+    /// <summary>The bearer scheme's validation parameters, pinned to one key — the same shape the Api sets.</summary>
+    private static TokenValidationParameters ValidationParametersFor(JwtSigningKey key) => new()
+    {
+        ValidIssuer = Issuer,
+        ValidAudience = Audience,
+        IssuerSigningKey = key.ValidationKey,
+        ValidateIssuerSigningKey = true,
+        ValidateLifetime = true,
+        ValidAlgorithms = [SecurityAlgorithms.EcdsaSha256],
+        ClockSkew = TimeSpan.FromSeconds(30),
+    };
+
+    [Fact]
     public void RefreshToken_IsBase64Url_AndOnlyItsHashIsStable()
     {
         var key = JwtSigningKey.FromPem(IssueKey());

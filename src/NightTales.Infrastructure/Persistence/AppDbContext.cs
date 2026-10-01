@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using NightTales.Application.Abstractions;
 using NightTales.Application.Abstractions.Persistence;
 using NightTales.Domain.Assets;
+using NightTales.Domain.Audit;
 using NightTales.Domain.Catalog;
 using NightTales.Domain.Compliance;
 using NightTales.Domain.Episodes;
@@ -76,6 +77,13 @@ public sealed class AppDbContext : IdentityDbContext<AppUser, AppRole, Guid>, IA
     /// <c>EfRefreshTokenService</c>, like the outbox and idempotency tables next to it.
     /// </summary>
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
+
+    /// <summary>
+    /// The audit trail of 09.3.6-T1: appended by <c>EfAuditWriter</c> inside the caller's transaction,
+    /// never updated. It is not on <see cref="IAppDbContext"/> — only 09.3.6-T2's whitelisted reader and
+    /// 09.7.3-T1's retention sweep read it, through their own stores.
+    /// </summary>
+    public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
 
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
     {

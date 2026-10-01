@@ -14,6 +14,7 @@ using NightTales.Infrastructure.Jobs;
 using NightTales.Infrastructure.Persistence;
 using NightTales.Infrastructure.Persistence.Outbox;
 using NightTales.Infrastructure.Security;
+using NightTales.Infrastructure.Storage;
 using NightTales.Worker.Health;
 
 namespace NightTales.Worker.DependencyInjection;
@@ -74,6 +75,10 @@ public static class WorkerServiceCollectionExtensions
 
         services.AddNightTalesMediator();
         services.AddJobs(configuration, [typeof(WorkerServiceCollectionExtensions).Assembly, .. assemblies]);
+
+        // 09.4.2-T1 (plan §3 step 6): the Worker composes the same public catalog URL as the Api, so a
+        // template it renders or mails never disagrees with the Api about what a storage key points at.
+        services.AddPublicAssetUrl();
 
         // 09.5.1-T1 (09 README D11/D16, F14): the one consumer of `episode_cancelled.v1`. It runs in the
         // delivery's own scope — already pinned to the event's user — and dispatches a command through

@@ -1,5 +1,6 @@
 using ErrorOr;
 using Mediator;
+using NightTales.Application.Abstractions.Audit;
 
 namespace NightTales.Application.Features.Episodes.Commands.MarkEpisodeAssetsForRetention;
 
@@ -15,4 +16,5 @@ namespace NightTales.Application.Features.Episodes.Commands.MarkEpisodeAssetsFor
 /// the D4 pipeline — and the unit of work it opens — own the transaction (D11, 09.5.1 plan §7).
 /// </remarks>
 /// <param name="EpisodeId">The cancelled episode whose assets are scheduled.</param>
+[NotAudited("The Worker's follow-up of episode.deleted, whose row the deleting command already wrote; this one only schedules that episode's assets.")]
 public sealed record MarkEpisodeAssetsForRetentionCommand(Guid EpisodeId) : ICommand<ErrorOr<Success>>;

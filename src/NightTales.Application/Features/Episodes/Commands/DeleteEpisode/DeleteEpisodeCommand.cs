@@ -1,5 +1,7 @@
 using ErrorOr;
 using Mediator;
+using NightTales.Application.Abstractions.Audit;
+using NightTales.Domain.Audit;
 
 namespace NightTales.Application.Features.Episodes.Commands.DeleteEpisode;
 
@@ -22,4 +24,13 @@ namespace NightTales.Application.Features.Episodes.Commands.DeleteEpisode;
 /// The <c>If-Match</c> header exactly as received, or <see langword="null"/> when the header is absent
 /// (an empty or whitespace value is still "present" and is compared, CR-1).
 /// </param>
-public sealed record DeleteEpisodeCommand(Guid Id, string? IfMatch) : ICommand<ErrorOr<Success>>;
+[Audited("episode.deleted", Category.Episodes, Visibility.User)]
+public sealed record DeleteEpisodeCommand(Guid Id, string? IfMatch) : ICommand<ErrorOr<Success>>, IAuditData
+{
+    /// <summary>
+    /// The row's projection (09 README BD15): the cancelled episode, the caller as the subject, and no
+    /// summary — the action name says everything that changed.
+    /// </summary>
+    /// <returns>The projection of this command's audit row.</returns>
+    public AuditData ToAuditData() => new(null, "episode", Id, AuditData.NoSummary);
+}
