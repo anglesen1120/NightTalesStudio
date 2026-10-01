@@ -20,9 +20,11 @@ namespace NightTales.Infrastructure.Persistence.UnitOfWork;
 /// </para>
 /// <para>
 /// A commit the database refuses is mapped to an error instead of an exception: a lost update becomes
-/// <c>concurrency_conflict</c> (409) and a transient failure — including the
+/// <c>concurrency_conflict</c> (409); a transient failure — including the
 /// <see cref="DbUpdateException"/> that wraps one, which is how <c>SaveChangesAsync</c> reports it —
-/// becomes <c>service_unavailable</c> (503). Both roll the transaction back first.
+/// and a constraint refusal of the command's <c>audit_logs</c> row both become
+/// <c>service_unavailable</c> (503), because a change is never recorded without its audit row
+/// (09.3.6-T1 failure handling). Every mapping rolls the transaction back first.
 /// </para>
 /// </remarks>
 public sealed class EfUnitOfWork(AppDbContext database) : IUnitOfWork
@@ -41,6 +43,19 @@ public sealed class EfUnitOfWork(AppDbContext database) : IUnitOfWork
 
     /// <summary>PostgreSQL's SQLSTATE for a foreign key violation.</summary>
     private const string ForeignKeyViolation = "23503";
+
+    /// <summary>The table every command's audit row is written to (09 README BD15).</summary>
+    private const string AuditTable = "audit_logs";
+
+    /// <summary>PostgreSQL's SQLSTATE class for integrity-constraint violations (<c>23xxx</c>).</summary>
+    private const string IntegrityConstraintClass = "23";
+
+    /// <summary>
+    /// The stable description of an audit row the database refused; it names the caller's situation,
+    /// never the SQL or the constraint (09 README D17).
+    /// </summary>
+    private const string AuditRefusalDescription =
+        "The change could not be recorded with its audit row, so nothing was saved; retry.";
 
     private IDbContextTransaction? _transaction;
 
@@ -85,6 +100,16 @@ public sealed class EfUnitOfWork(AppDbContext database) : IUnitOfWork
 
             return Error.Validation(code: ErrorCodes.ValidationFailed, description: ForeignKeyDescription);
         }
+        catch (DbUpdateException exception) when (IsAuditInsertRefusal(exception))
+        {
+            // 09.3.6-T1 failure handling: AuditBehavior adds the command's audit row inside this
+            // transaction, so the provider refuses it here, at the single SaveChanges. The row is the
+            // record of the change — the change is not allowed to commit without it — so the whole
+            // command rolls back and the caller gets the 503 the failure table fixes, not a raw 500.
+            await TryRollbackAsync(cancellationToken).ConfigureAwait(false);
+
+            return Error.Failure(code: ErrorCodes.ServiceUnavailable, description: AuditRefusalDescription);
+        }
         catch (Exception exception) when (IsTransient(exception))
         {
             await TryRollbackAsync(cancellationToken).ConfigureAwait(false);
@@ -120,6 +145,22 @@ public sealed class EfUnitOfWork(AppDbContext database) : IUnitOfWork
     private static bool IsForeignKeyViolation(Exception exception) =>
         exception is DbUpdateException { InnerException: PostgresException { SqlState: ForeignKeyViolation } }
         || exception.InnerException is PostgresException { SqlState: ForeignKeyViolation };
+
+    /// <summary>
+    /// Whether the provider refused the command's <c>audit_logs</c> row. The test is the table the
+    /// provider names in its own error, not the entries EF reports for the failed save, so a
+    /// <c>CHECK</c> another table raises in the same batch keeps its existing behaviour instead of
+    /// being reported as an audit-trail failure.
+    /// </summary>
+    private static bool IsAuditInsertRefusal(Exception exception) =>
+        ProviderError(exception) is { TableName: AuditTable } error
+        && error.SqlState.StartsWith(IntegrityConstraintClass, StringComparison.Ordinal);
+
+    /// <summary>
+    /// The provider's own error: <c>SaveChangesAsync</c> wraps it in a <see cref="DbUpdateException"/>.
+    /// </summary>
+    private static PostgresException? ProviderError(Exception exception) =>
+        exception as PostgresException ?? exception.InnerException as PostgresException;
 
     /// <summary>
     /// Rolls back without letting a secondary failure replace the mapped error the caller is about to

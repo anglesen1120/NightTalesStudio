@@ -5,11 +5,14 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using NightTales.Application.Abstractions;
+using NightTales.Application.Abstractions.Audit;
 using NightTales.Application.Abstractions.Idempotency;
 using NightTales.Application.Abstractions.Outbox;
 using NightTales.Application.Abstractions.Persistence;
+using NightTales.Application.Audit;
 using NightTales.Domain.Common;
 using NightTales.Infrastructure.DependencyInjection;
+using NightTales.Infrastructure.Persistence.Audit;
 using NightTales.Infrastructure.Persistence.Idempotency;
 using NightTales.Infrastructure.Persistence.Outbox;
 using NightTales.Infrastructure.Persistence.Queries;
@@ -123,6 +126,17 @@ public static class PersistenceServiceCollectionExtensions
         services.AddScoped<IUnitOfWork, EfUnitOfWork>();
         services.AddScoped<IIdempotencyStore, IdempotencyStore>();
         services.AddScoped<IIdempotencyCleanupStore, IdempotencyCleanupStore>();
+
+        // 09.3.6-T1: the one writer of `audit_logs` (09 README BD15, D9). Scoped with the context it adds
+        // to, so the row joins the caller's transaction; `AuditBehavior` is slot 6 of the D4 pipeline and
+        // the auth handlers/jobs/CLI verbs call the same port.
+        services.AddScoped<IAuditWriter, EfAuditWriter>();
+
+        // The AuditBehavior's per-request-type attribute lookup (09.3.6-T1, plan §3). A singleton, and
+        // registered here rather than in a host: both hosts build their Mediator over this persistence
+        // layer, and resolving slot 6 without it would fail every command — the Worker never calls
+        // AddNightTalesApplication.
+        services.TryAddSingleton<AuditMetadataCache>();
 
         // 09.2.4-T1: the processed-row sweep of the outbox, driven by the Worker's daily recurring job.
         services.AddScoped<IOutboxCleanupStore, OutboxCleanupStore>();

@@ -1,5 +1,7 @@
 using ErrorOr;
 using Mediator;
+using NightTales.Application.Abstractions.Audit;
+using NightTales.Domain.Audit;
 
 namespace NightTales.Application.Features.Series.Commands.ArchiveSeries;
 
@@ -9,4 +11,13 @@ namespace NightTales.Application.Features.Series.Commands.ArchiveSeries;
 /// (the plan lists no 412 for this route).
 /// </summary>
 /// <param name="Id">The series to archive; another user's id answers 404, like a missing one.</param>
-public sealed record ArchiveSeriesCommand(Guid Id) : ICommand<ErrorOr<Success>>;
+[Audited("series.archived", Category.Episodes, Visibility.User)]
+public sealed record ArchiveSeriesCommand(Guid Id) : ICommand<ErrorOr<Success>>, IAuditData
+{
+    /// <summary>
+    /// The projection of this command's audit row (09 README BD15): the archived series, the caller as
+    /// the subject, and no summary — <c>series.archived</c> says everything that changed.
+    /// </summary>
+    /// <returns>The projection of this command's audit row.</returns>
+    public AuditData ToAuditData() => new(null, "series", Id, AuditData.NoSummary);
+}

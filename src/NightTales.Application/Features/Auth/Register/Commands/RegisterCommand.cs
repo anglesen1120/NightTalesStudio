@@ -1,6 +1,7 @@
 using System.Text.Json.Serialization;
 using ErrorOr;
 using Mediator;
+using NightTales.Application.Abstractions.Audit;
 using NightTales.Application.Abstractions.Identity;
 using NightTales.Application.Abstractions.Messaging;
 
@@ -32,6 +33,7 @@ namespace NightTales.Application.Features.Auth.Register.Commands;
 /// <param name="Consents">The accepted document versions; exactly one <c>tos</c> and one <c>privacy</c>.</param>
 /// <param name="InviteCode">The invite code, required only in mode <c>invite</c> (09.3.1-T3).</param>
 /// <param name="UiLocale">The client's UI locale (<c>vi</c>/<c>en</c>), or null for the default.</param>
+[NotAudited("The registration gate writes no row while registration is closed; the account.registered row belongs to the registration flow's own writer (09.3.1-T3).")]
 [AllowAnonymousRequest]
 public sealed record RegisterCommand(
     string Email,

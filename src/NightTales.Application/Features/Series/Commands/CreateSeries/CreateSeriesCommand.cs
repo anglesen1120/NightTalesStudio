@@ -1,5 +1,7 @@
 using ErrorOr;
 using Mediator;
+using NightTales.Application.Abstractions.Audit;
+using NightTales.Domain.Audit;
 using NightTales.Domain.Common;
 using NightTales.Domain.Series;
 
@@ -22,6 +24,7 @@ namespace NightTales.Application.Features.Series.Commands.CreateSeries;
 /// <param name="VoiceId">A <c>voices</c> row that exists and is active.</param>
 /// <param name="StyleTemplateId">A <c>style_templates</c> row that exists, is active and matches the topic.</param>
 /// <param name="StoryPreset">A known 02 preset key, or <see langword="null"/>.</param>
+[Audited("series.created", Category.Episodes, Visibility.User)]
 public sealed record CreateSeriesCommand(
     string Title,
     Topic Topic,
@@ -29,7 +32,17 @@ public sealed record CreateSeriesCommand(
     Aspect Aspect,
     string VoiceId,
     Guid StyleTemplateId,
-    string? StoryPreset) : ICommand<ErrorOr<SeriesCreated>>;
+    string? StoryPreset) : ICommand<ErrorOr<SeriesCreated>>, IAuditData
+{
+    /// <summary>
+    /// The row's projection (09 README BD15): the subject is the caller, so it stays null and the
+    /// behaviour records the authenticated user. A create names no entity id — the handler assigns the
+    /// UUIDv7 after this record was built — and carries no summary: the title is user text that BD16
+    /// keeps out of <c>data</c>, and every other member is a column of the row the action already names.
+    /// </summary>
+    /// <returns>The projection of this command's audit row.</returns>
+    public AuditData ToAuditData() => new(null, "series", null, AuditData.NoSummary);
+}
 
 /// <summary>
 /// The created series: its id. The <c>ETag</c> is added by the endpoint after the commit (09 README

@@ -1,5 +1,7 @@
 using ErrorOr;
 using Mediator;
+using NightTales.Application.Abstractions.Audit;
+using NightTales.Domain.Audit;
 using NightTales.Domain.Series;
 
 namespace NightTales.Application.Features.Series.Commands.UpdateSeries;
@@ -25,8 +27,60 @@ namespace NightTales.Application.Features.Series.Commands.UpdateSeries;
 /// <param name="IfMatch">The <c>If-Match</c> header; compared against the row's current ETag.</param>
 /// <param name="Patch">The members the client sent.</param>
 /// <param name="StoryPresetSpecified">Whether the body carried <c>storyPreset</c> at all.</param>
+[Audited("series.updated", Category.Episodes, Visibility.User)]
 public sealed record UpdateSeriesCommand(
     Guid Id,
     string IfMatch,
     SeriesPatch Patch,
-    bool StoryPresetSpecified) : ICommand<ErrorOr<Success>>;
+    bool StoryPresetSpecified) : ICommand<ErrorOr<Success>>, IAuditData
+{
+    /// <summary>
+    /// The row's projection (09 README BD15): the patched series and the wire names of the members the
+    /// client sent, comma-joined. The values are deliberately absent — a title is user text and BD16 keeps
+    /// content out of <c>data</c>, exactly as 09.3.4 plan §5 rules for the same summary shape.
+    /// </summary>
+    /// <returns>The projection of this command's audit row.</returns>
+    public AuditData ToAuditData() => new(
+        SubjectUserId: null,
+        EntityType: "series",
+        EntityId: Id,
+        Summary: new Dictionary<string, string>(StringComparer.Ordinal) { ["fields"] = ChangedFields() });
+
+    /// <summary>The wire names of the members the patch carries, in the order the patch declares them.</summary>
+    private string ChangedFields()
+    {
+        var fields = new List<string>(6);
+
+        if (Patch.Title is not null)
+        {
+            fields.Add("title");
+        }
+
+        if (Patch.Topic is not null)
+        {
+            fields.Add("topic");
+        }
+
+        if (Patch.Aspect is not null)
+        {
+            fields.Add("aspect");
+        }
+
+        if (Patch.VoiceId is not null)
+        {
+            fields.Add("voiceId");
+        }
+
+        if (Patch.StyleTemplateId is not null)
+        {
+            fields.Add("styleTemplateId");
+        }
+
+        if (StoryPresetSpecified)
+        {
+            fields.Add("storyPreset");
+        }
+
+        return string.Join(',', fields);
+    }
+}

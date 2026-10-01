@@ -1,5 +1,6 @@
 using ErrorOr;
 using Mediator;
+using NightTales.Application.Abstractions.Audit;
 
 namespace NightTales.Application.Features.Auth.Logout.Commands;
 
@@ -14,4 +15,5 @@ namespace NightTales.Application.Features.Auth.Logout.Commands;
 /// cookie-authenticated POST (BD3/BD16).
 /// </remarks>
 /// <param name="PresentedToken">The presented cookie value; never logged.</param>
+[NotAudited("LogoutHandler writes its own account.logout row through IAuditWriter, with the caller's IP and User-Agent (09.3.2-T1).")]
 public sealed record LogoutCommand(string PresentedToken) : ICommand<ErrorOr<Success>>;
