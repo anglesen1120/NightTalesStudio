@@ -15,4 +15,18 @@ public static class Errors
     /// the two apart, so this is the answer for both — never 403 (id probing).
     /// </summary>
     public static Error NotFound() => Error.NotFound(code: ErrorCodes.NotFound);
+
+    /// <summary>
+    /// The 400 of 09 README D7 for a check only the handler can make (another row it just read, a
+    /// catalog lookup, a cursor it just decoded): <c>validation_failed</c> with the camelCase
+    /// <paramref name="field"/> the client must fix, which is the shape the <c>ValidationBehavior</c>
+    /// produces for a FluentValidation failure.
+    /// </summary>
+    /// <param name="field">The camelCase wire field, for example <c>voiceId</c> or <c>limit</c>.</param>
+    /// <param name="description">The client-safe reason.</param>
+    public static Error ValidationFailed(string field, string description) =>
+        Error.Validation(
+            code: ErrorCodes.ValidationFailed,
+            description: description,
+            metadata: new Dictionary<string, object> { [ErrorMetadata.Field] = field });
 }

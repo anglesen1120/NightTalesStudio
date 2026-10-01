@@ -3,7 +3,7 @@
 > Refines: `../../../09-backend-api.md` §4 (epic 09.4, story **09.4.1**, L155–157); `../../../00-overview.md` §6 `series` row (L265), §8 Series routes (L349).
 > Contract: `../README.md` — **F15**, **D3**, **D4**–**D10**, **D14**–**D17**; 02 README D9 (`sa-` ETag), 02.6.3-T1 (bible hook).
 > Template: `../../../00-overview.md` §10.1. Legend: ✅ · ⚠️ · [DECISION] · [OPEN] · [INFERENCE].
-> Status: detailed plan, 2026-09-24. Nothing implemented yet.
+> Status: task **09.4.1-T1 implemented 2026-10-01** (branch `feature/03.1.1-T2-09.4.1-T1`). Integration tests live in `tests/NightTales.Api.IntegrationTests/SeriesEndpoints/` (a `…IntegrationTests.Series` namespace shadows `NightTales.Domain.Series`); the post-commit ETag read is `Api/Http/PostCommitETagReader` (architecture rule `Endpoints_DoNotReferenceDbContexts`); `storyPreset` absent vs `null` is carried by `UpdateSeriesCommand.StoryPresetSpecified`.
 
 ## 1. Scope
 

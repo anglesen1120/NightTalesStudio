@@ -4,6 +4,7 @@ using NightTales.Api;
 using NightTales.Api.DependencyInjection;
 using NightTales.Api.Endpoints;
 using NightTales.Api.Http;
+using NightTales.Application.DependencyInjection;
 using NightTales.Infrastructure.DependencyInjection;
 using NightTales.Infrastructure.Persistence;
 using NightTales.Infrastructure.Persistence.Seeding;
@@ -15,6 +16,11 @@ builder.Services.AddOpenApi();
 
 builder.Services.AddNightTalesMediator();
 builder.Services.AddPersistence(builder.Configuration);
+
+// 09.4.1-T1 (09 §4 09.4.1): the series routes need the Application defaults — the 02 story-preset
+// port, whose wave-1 null catalog knows no key — and the post-commit ETag read of 09 README D15.
+builder.Services.AddNightTalesApplication();
+builder.Services.AddScoped<PostCommitETagReader>();
 
 // 09.2.3-T1 (09 README D10): the caller's claims are the tenant of every filtered query, and the
 // scoped system context lets tests run outbox-style work in-process.
@@ -59,6 +65,9 @@ app.MapGet("/health/live", () => Results.Ok());
 // 09.3.1-T1 (09 README D14): the auth route group; in P it carries POST /api/v1/auth/register, which
 // answers 403 registration_closed until 09.3.1-T3 swaps the registration flow.
 app.MapAuthEndpoints();
+
+// 09.4.1-T1 (09 README D14, 09 §4 09.4.1): the series route group.
+app.MapSeriesEndpoints();
 
 app.Run();
 
