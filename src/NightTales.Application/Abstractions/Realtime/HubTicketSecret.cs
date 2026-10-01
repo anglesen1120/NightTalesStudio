@@ -84,7 +84,7 @@ public static class HubTicketSecret
         {
             if (rented is not null)
             {
-                ArrayPool<byte>.Shared.Return(rented);
+                ArrayPool<byte>.Shared.Return(rented, clearArray: true);
             }
         }
     }

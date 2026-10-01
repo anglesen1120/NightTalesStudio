@@ -65,6 +65,9 @@ public static partial class ProblemDetailsWriter
     /// </summary>
     public const string ServiceUnavailableTitle = "The database is temporarily unavailable; retry.";
 
+    /// <summary>How many exceptions of an inner chain the transient-database check inspects.</summary>
+    private const int MaxInnerExceptionDepth = 16;
+
     /// <summary>The body member carrying a problem's stable code, <c>code</c>.</summary>
     public const string CodeMemberName = "code";
 
@@ -272,7 +275,8 @@ public static partial class ProblemDetailsWriter
     /// </summary>
     private static bool IsTransientDatabaseFailure(Exception? exception)
     {
-        for (var current = exception; current is not null; current = current.InnerException)
+        var depth = 0;
+        for (var current = exception; current is not null && depth < MaxInnerExceptionDepth; current = current.InnerException, depth++)
         {
             if (current is NpgsqlException { IsTransient: true })
             {
