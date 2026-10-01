@@ -800,6 +800,13 @@
       "nighttales.rendernode.contract": {
         "type": "Project"
       },
+      "nighttales.rendernode.server": {
+        "type": "Project",
+        "dependencies": {
+          "ErrorOr": "[2.1.1, )",
+          "NightTales.RenderNode.Contract": "[1.0.0, )"
+        }
+      },
       "nighttales.testkit": {
         "type": "Project",
         "dependencies": {

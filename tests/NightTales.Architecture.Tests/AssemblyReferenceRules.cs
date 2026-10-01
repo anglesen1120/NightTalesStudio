@@ -79,6 +79,36 @@ public sealed class AssemblyReferenceRules
         }
     }
 
+    [Fact]
+    public void RenderNode_ReferencesOnlyTheContractAndAspNetCore()
+    {
+        // 11 README D4: the contract is BCL-only; D3/D5: the server core is Contract + ErrorOr + ASP.NET Core and
+        // never Domain, Application or Infrastructure, so a node binary can be loaded without the backend.
+        var contract = ArchitectureModel.Require(ArchitectureModel.RenderNodeContract);
+        AssertAllowed(
+            contract,
+            AllowLists.RenderNodeContractAllowedReferences,
+            AllowLists.NoExtraPrefixes,
+            nameof(RenderNode_ReferencesOnlyTheContractAndAspNetCore));
+        AssertDeclaredAllowed(
+            contract,
+            AllowLists.RenderNodeContractAllowedReferences,
+            AllowLists.NoExtraPrefixes,
+            nameof(RenderNode_ReferencesOnlyTheContractAndAspNetCore));
+
+        var server = ArchitectureModel.Require(ArchitectureModel.RenderNodeServer);
+        AssertAllowed(
+            server,
+            AllowLists.RenderNodeServerAllowedReferences,
+            AllowLists.RenderNodeServerAllowedPrefixes,
+            nameof(RenderNode_ReferencesOnlyTheContractAndAspNetCore));
+        AssertDeclaredAllowed(
+            server,
+            AllowLists.RenderNodeServerAllowedReferences,
+            AllowLists.RenderNodeServerAllowedPrefixes,
+            nameof(RenderNode_ReferencesOnlyTheContractAndAspNetCore));
+    }
+
     private static void AssertAllowed(
         Assembly assembly,
         IReadOnlySet<string> allowedNames,

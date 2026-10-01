@@ -3,3 +3,9 @@
 plans/00-overview.md:generic-api-key:412
 # trial/tools/aggregate_scores.py:212 false positive: generic-api-key matched the CSV column name "latency_p50_ms" (no secret) 2026-09-26 M0-wave-1
 trial/tools/aggregate_scores.py:generic-api-key:212
+# tests/NightTales.RenderNode.Tests: synthetic render-node API keys of the 11.3.5-T1 auth tests (random hex, matched against no Keychain secret) 2026-10-02 Session 2
+tests/NightTales.RenderNode.Tests/AuthFailureThrottleTests.cs:generic-api-key:21
+tests/NightTales.RenderNode.Tests/Fakes/RenderNodeTestHost.cs:generic-api-key:26
+tests/NightTales.RenderNode.Tests/ApiKeyMiddlewareTests.cs:generic-api-key:22
+tests/NightTales.RenderNode.Tests/ApiKeyMiddlewareTests.cs:generic-api-key:23
+tests/NightTales.RenderNode.Tests/QaWireTests.cs:generic-api-key:23
