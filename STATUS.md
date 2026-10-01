@@ -8,8 +8,8 @@ Legend: `done` (acceptance checks run and passed) · `doing` · `blocked (<who>)
 
 Keep this block ≤ 15 lines: current state and next step only. Move the previous block to the archive when you replace it.
 
-- **Current (2026-10-01 (6)).** Session 1 under way. Six PRs into `develop` await the owner's merge, each through its tier gates: #65 09.4.2-T1 (T1), #66 09.3.6-T1 audit log (T3), #67 fix: the JWT verifier cache shared a disposed ECDsa across hosts (cause of the LogoutTests failure; T3), #68 09.5.3-T1 (T1), #69 09.8.1-T1 SignalR (T3), #70 09.9.4-T1 hardening (T3). Code for 09.7.2-T1 is in worktree `../nts-wt/09.7.2-T1` (not gated).
-- **Next:** merge #67 first (the other branches only pass the full suite with it) → after #66, gate + QA + T3 reviews for 09.7.2-T1 (rebase onto develop) → after #70, 09.10.4-T1 → 09.3.2-T3. #70 adds required env `App__PublicOrigin`, `DataProtection__KekPfxPath/Password` (recipe in `.github/workflows/backend.yml`).
+- **Current (2026-10-01 (6)).** Session 1 under way. `develop` @ `7e67770` has #65 09.4.2-T1, #66 09.3.6-T1 audit log, #67 JWT verifier cache fix, #68 09.5.3-T1, #69 09.8.1-T1 SignalR (each through its tier gates). PR #71 carries 09.9.4-T1 hardening (T3 gates closed in #70, which #71 supersedes; merged with `develop`, AppDbContext DbSet conflict resolved, full gate 917/917 on PG17). Code for 09.7.2-T1 is in worktree `../nts-wt/09.7.2-T1` (not gated).
+- **Next:** merge #71 (close #70) → gate + QA + T3 reviews for 09.7.2-T1 (merge `develop` in) → 09.10.4-T1 → 09.3.2-T3. #71 adds required env `App__PublicOrigin`, `DataProtection__KekPfxPath/Password` (recipe in `.github/workflows/backend.yml`).
 - **SEC-01 decided (owner 2026-10-01, 09 W3-O3):** range API + real top-N seed fallback (option 3). The bundled `breached-passwords.txt` is still a synthetic placeholder; 09.3.1-T2 replaces it (seed licence checked before commit) and implements fail-open-to-seed, before registration opens (09.3.1-T3, S).
 - **Owner decisions open:** none blocking phase 1.
 - **Security debt live on `develop`:** none from §Deferred security gates (production JwtBearer landed in #60); SEC-01 above is decided but stays open until 09.3.1-T2 ships the real seed.
@@ -28,7 +28,7 @@ Per-task evidence for `done` rows: `docs/status-archive.md` §Per-plan evidence 
 | 03 Images (M0 slice) | 4 (03.1.1-T1, 03.4.1-T1, 03.3.2-T1, 03.1.1-T2 #61) | 03.1.2-T1, 03.2.x, 03.4.2/03.4.3 (M1) |
 | 04 Voice proxy (12 tasks) | 10 | 04.2.2-T2, 04.2.3-T1 |
 | 05 Video/subtitles | 9 | 05.2.1-T1, 05.5.2 |
-| 09 Backend | 19 tasks merged (09.5.1-T1 #63) | PRs open: 09.4.2-T1 #65, 09.3.6-T1 #66, 09.5.3-T1 #68, 09.8.1-T1 #69, 09.9.4-T1 #70; 09.7.2-T1 coded (waits for #66); 09.10.4-T1 → 09.3.2-T3 (wait for #70) |
+| 09 Backend | 23 tasks merged (09.8.1-T1 #69) | 09.9.4-T1 in PR #71; 09.7.2-T1 coded (gates next); 09.10.4-T1 → 09.3.2-T3 (wait for #71) |
 | 11 Worker deployment | 11.2.1-T1 (proposal only; sign-off deferred to phase 2, owner 2026-09-30) | phase 1: 11.1.x, 11.3.3, 11.3.5; the rest is phase 2 (11 CR-18) |
 | 13 Compliance | 13.1.1-T1, 13.1.2-T1 (PR #35) | 13.2.1-T1 → 13.2.2-T1, 10.3.1-T1 pages; 13.1.1-T2 / 13.1.2-T2 lawyer rows (O1) |
 
@@ -40,8 +40,8 @@ Owner 2026-10-01: one todo list, two tasks, run side by side; status `todo` (not
 
 | # | Task | Mode | Status |
 |---|---|---|---|
-| 1 | `09.9.4-T1` → `09.10.4-T1` → `09.3.2-T3` | sequential (each starts after the previous merges) | 09.9.4-T1 PR #70; rest wait for its merge |
-| 2 | `09.3.6-T1`, `09.7.2-T1`, `09.8.1-T1`, `09.4.2-T1`, `09.5.3-T1` | parallel | PRs #66, #69, #65, #68; 09.7.2-T1 coded, gates after #66 merges |
+| 1 | `09.9.4-T1` → `09.10.4-T1` → `09.3.2-T3` | sequential (each starts after the previous merges) | 09.9.4-T1 in PR #71; rest wait for its merge |
+| 2 | `09.3.6-T1`, `09.7.2-T1`, `09.8.1-T1`, `09.4.2-T1`, `09.5.3-T1` | parallel | merged #66, #69, #65, #68; 09.7.2-T1 coded, gates next |
 
 ## Open tasks
 
