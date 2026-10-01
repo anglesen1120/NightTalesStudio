@@ -8,8 +8,8 @@ Legend: `done` (acceptance checks run and passed) · `doing` · `blocked (<who>)
 
 Keep this block ≤ 15 lines: current state and next step only. Move the previous block to the archive when you replace it.
 
-- **Current (2026-10-01 (6)).** Session 1 under way. `develop` @ `7e67770` has #65 09.4.2-T1, #66 09.3.6-T1 audit log, #67 JWT verifier cache fix, #68 09.5.3-T1, #69 09.8.1-T1 SignalR (each through its tier gates). PR #71 carries 09.9.4-T1 hardening (T3 gates closed in #70, which #71 supersedes; merged with `develop`, AppDbContext DbSet conflict resolved, full gate 917/917 on PG17). Code for 09.7.2-T1 is in worktree `../nts-wt/09.7.2-T1` (not gated).
-- **Next:** merge #71 (close #70) → gate + QA + T3 reviews for 09.7.2-T1 (merge `develop` in) → 09.10.4-T1 → 09.3.2-T3. #71 adds required env `App__PublicOrigin`, `DataProtection__KekPfxPath/Password` (recipe in `.github/workflows/backend.yml`).
+- **Current (2026-10-01 (7)).** Session 1 closed. `develop` @ `a95a64f` has #65 09.4.2-T1, #66 09.3.6-T1, #67 JWT verifier cache fix, #68 09.5.3-T1, #69 09.8.1-T1, #71 09.9.4-T1 (#70 closed as superseded); no open PR. 09.7.2-T1 code is uncommitted in `../nts-wt/09.7.2-T1` (base `d205044`, not gated); its hard dependency 11.1.1-T2 (dev storage + mail) is not built and `weed`/`mailpit` are not installed, so its SeaweedFS contract tests would skip.
+- **Next:** §Session 2 plan (proposal, owner sign-off pending). Before wave 1: remove the 7 merged worktrees (`09.3.6`, `09.4.2`, `09.5.3`, `09.8.1`, `09.9.4`, `fix-jwt`, `pr71`). Build/test env needs `App__PublicOrigin`, `DataProtection__KekPfxPath/Password` (recipe in `.github/workflows/backend.yml`).
 - **SEC-01 decided (owner 2026-10-01, 09 W3-O3):** range API + real top-N seed fallback (option 3). The bundled `breached-passwords.txt` is still a synthetic placeholder; 09.3.1-T2 replaces it (seed licence checked before commit) and implements fail-open-to-seed, before registration opens (09.3.1-T3, S).
 - **Owner decisions open:** none blocking phase 1.
 - **Security debt live on `develop`:** none from §Deferred security gates (production JwtBearer landed in #60); SEC-01 above is decided but stays open until 09.3.1-T2 ships the real seed.
@@ -28,20 +28,28 @@ Per-task evidence for `done` rows: `docs/status-archive.md` §Per-plan evidence 
 | 03 Images (M0 slice) | 4 (03.1.1-T1, 03.4.1-T1, 03.3.2-T1, 03.1.1-T2 #61) | 03.1.2-T1, 03.2.x, 03.4.2/03.4.3 (M1) |
 | 04 Voice proxy (12 tasks) | 10 | 04.2.2-T2, 04.2.3-T1 |
 | 05 Video/subtitles | 9 | 05.2.1-T1, 05.5.2 |
-| 09 Backend | 23 tasks merged (09.8.1-T1 #69) | 09.9.4-T1 in PR #71; 09.7.2-T1 coded (gates next); 09.10.4-T1 → 09.3.2-T3 (wait for #71) |
+| 09 Backend | 24 tasks merged (09.9.4-T1 #71) | 09.7.2-T1 coded (needs 11.1.1-T2, then gates); 09.10.4-T1 → 09.3.2-T3; see §Session 2 plan |
 | 11 Worker deployment | 11.2.1-T1 (proposal only; sign-off deferred to phase 2, owner 2026-09-30) | phase 1: 11.1.x, 11.3.3, 11.3.5; the rest is phase 2 (11 CR-18) |
 | 13 Compliance | 13.1.1-T1, 13.1.2-T1 (PR #35) | 13.2.1-T1 → 13.2.2-T1, 10.3.1-T1 pages; 13.1.1-T2 / 13.1.2-T2 lawyer rows (O1) |
 
 Plans 06, 07, 08, 10, 12: not started. Order: `plans/features/README.md`.
 
-## Session 1 plan
+## Session 2 plan
 
-Owner 2026-10-01: one todo list, two tasks, run side by side; status `todo` (not started). Each task keeps its tier gates per child task.
+Proposal 2026-10-01 (owner sign-off pending). Every listed task has all hard `Depends on` edges merged (task-file headers vs `develop`). Agents code in parallel worktrees; gates run one at a time (shared `nts_template` database). At most 2 tasks with a migration per wave: the later one regenerates its migration on the merged snapshot, never hand-edits `AppDbContextModelSnapshot`. Each task keeps its tier gates.
 
-| # | Task | Mode | Status |
+| Lane | Order | Tier (proposed) | Shared-file risk |
 |---|---|---|---|
-| 1 | `09.9.4-T1` → `09.10.4-T1` → `09.3.2-T3` | sequential (each starts after the previous merges) | 09.9.4-T1 in PR #71; rest wait for its merge |
-| 2 | `09.3.6-T1`, `09.7.2-T1`, `09.8.1-T1`, `09.4.2-T1`, `09.5.3-T1` | parallel | merged #66, #69, #65, #68; 09.7.2-T1 coded, gates next |
+| A Auth | `09.10.4-T1` → `09.3.2-T3` → `09.2.6-T2` | T3 | migrations, auth endpoints |
+| B Local storage | `11.1.1-T1` → `11.1.1-T2` → gate `09.7.2-T1` → `13.3.1-T1` | T1 (ops), T3 (09.7.2-T1) | low (`tools/dev/`); needs Homebrew `seaweedfs` + `mailpit` (owner approval) |
+| C Render node (critical path) | `11.3.5-T1` (L) → `11.3.5-T2` ∥ `11.3.3-T1`; with lane B T1 → `11.1.2-T1` → `09.6.2-T1` | T3 | low (new `RenderNode.Server` project) |
+| D Platform | `09.3.5-T1` → `09.8.1-T2` (needs the `hub` policy, 09.8.1-T2 open item 4) | T3 | `Api/Program.cs` |
+| E E-mail | `09.2.6-T3` → `09.3.3-T1` | T3 | migration |
+| F Seeders/checkers | `04.2.2-T2` ∥ `05.5.1-T2` ∥ `05.3.2-T3` (migration `AddMusicTracks`) | T1–T3 | low; 05.3.2-T3 and 05.5.1-T2 unblock 09.6.1/09.6.3 |
+| G 02 M1 domain | `02.2.1-T1` ∥ `02.2.3-T1`, then `02.2.4-T1` / `02.2.2-T1` | T2; T3 for 02.2.4-T1 (money), 02.2.2-T1 (migration) | 02.2.1/02.2.3 have no DB change |
+| H Frontend | `10.1.1-T1` → `10.1.2-T1` / `10.1.3-T1` / `10.1.5-T1` | T1 | none (`web/`) |
+
+Fillers for any lane: `09.9.5-T1` (CI only), `09.9.2-T2` (feature flags), `09.3.4-T1` (`/me`, after 09.9.2-T2), `09.9.3-T1` (OTLP; `Program.cs` + packages). Proposed waves: wave 1 = A `09.10.4-T1`, B `11.1.1-T1/T2`, C `11.3.5-T1`, D `09.3.5-T1`, F `04.2.2-T2` + `05.5.1-T2`; wave 2 opens per lane after merge (`09.3.2-T3`, gate `09.7.2-T1`, `11.1.2-T1`, `09.8.1-T2`, `05.3.2-T3`, `09.2.6-T3`); H and G may start any time.
 
 ## Open tasks
 
@@ -98,3 +106,4 @@ Recent rows only; the full log is `docs/status-archive.md` §Session log.
 | 2026-10-01 | 09.3.1-T1 identity (`feature/09.3.1-T1-identity` `7830f67`) | #58 merged → `3a7c51c`, post-merge 400/400. T3: QA via `test-suite-runner` (first QA spawn used the generic `task` agent and was stopped), D1–D4 + C1–C4 + P1 + S2 fixed, delta review closed; SEC-01 (placeholder breach list) left for the owner. Build 0 warnings, format 0, 468/468 |
 | 2026-10-01 | 03.1.1-T2 + 09.4.1-T1 (`feature/03.1.1-T2-09.4.1-T1` `7112dc3`) | #60 merged → `623a321`, post-merge 525/525. One branch: 09.4.1-T1 needs `StyleTopicPolicy` from 03.1.1-T2 (shared contract written first, typed `Topic?` hint), two parallel implementers. T3: QA (`test-suite-runner`) 0 functional defects, +15 tests; code CR-1 (PATCH field names `patch.title`), CR-2 (seed parser preempted `StyleTemplateRules` codes), CR-3 = SEC-0941-01 (non-UTC cursor → 500), PERF-01 (keyset OR → row value) fixed; delta review closed. Build 0 warnings, format 0, 628/628 on PG17 |
 | 2026-10-01 | 09.5.1-T1 episodes (`feature/09.5.1-T1-episodes`) | #61 merged → `3c19ed6`, #62 (SEC-01 decision) → `4281baf`. One implementer; build gate red once (missing `using Microsoft.AspNetCore.Mvc`), fixed by the implementer. T3: QA (`test-suite-runner`) 0 functional defects, +7 tests; code CR-1 (empty/whitespace `If-Match` skipped the DELETE precondition → now only an absent header skips it; +2 tests), perf 0, security 0; delta review closed. Build 0 warnings, format 0, 669/669 on PG17. Local env note: a `DROP DATABASE … WITH (FORCE)` cleanup flake (42501) appears when a superuser backend is attached, because the test role lacks `pg_signal_backend` |
+| 2026-10-01 | Session 1 close + Session 2 plan (docs only, T0) | Resume-here updated (#71 merged, #70 closed, no open PR); 09.7.2-T1 recorded as blocked on 11.1.1-T2; §Session 1 plan archived; §Session 2 plan added (8 lanes, ready set from task-file `Depends on` headers vs `develop`; owner sign-off pending). Pushed directly to `develop` (owner request) |
