@@ -8,7 +8,7 @@ namespace NightTales.Infrastructure.Identity;
 /// <remarks>
 /// <para>
 /// <c>Mode</c> defaults to <see cref="BreachedPasswordMode.List"/>: the bundled list needs no network
-/// and no privacy decision, and the ⚠️ range provider's terms are still unconfirmed (09 §4).
+/// and no privacy decision; the range mode with list fallback arrives with 09.3.1-T2 (09 W3-O3).
 /// </para>
 /// <para>
 /// <c>RangeBaseUrl</c>/<c>RangeTimeoutSeconds</c> are [INFERENCE] names: 09.3.1-T1 fixes the 2 s budget
