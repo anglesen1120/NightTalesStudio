@@ -60,7 +60,7 @@ public sealed partial class RateLimitRejection(
         // them for a cancelled request would hide exactly the burst that trips the limiter and goes away.
         var http = context.HttpContext;
         var policy = http.GetEndpoint()?.Metadata.GetMetadata<EnableRateLimitingAttribute>()?.PolicyName;
-        var partitionKey = policy is null ? null : RateLimitPartitionKeys.For(http, ipResolver, policy);
+        var partitionKey = PartitionKeyFor(http, policy);
 
         metrics.RecordRejection(policy);
         LogRejected(policy ?? RateLimitMetrics.UnattributedPolicy, partitionKey ?? RateLimitMetrics.UnattributedPolicy);
@@ -81,6 +81,23 @@ public sealed partial class RateLimitRejection(
             });
 
         return new ValueTask(ProblemDetailsWriter.ToProblem([error], http).ExecuteAsync(http));
+    }
+
+    /// <summary>
+    /// The key the limiter partitioned the request on: the one the partitioner parked on the request, or
+    /// — when the callback is reached without that (a route with no registered policy) — a fresh
+    /// computation. <c>null</c> only for a request the limiter did not attribute to a policy.
+    /// </summary>
+    private string? PartitionKeyFor(HttpContext http, string? policy)
+    {
+        if (policy is null)
+        {
+            return null;
+        }
+
+        return http.Items.TryGetValue(RateLimitPartitionKeys.PartitionKeyItemKey, out var cached) && cached is string key
+            ? key
+            : RateLimitPartitionKeys.For(http, ipResolver, policy, options.Ipv6PrefixLength);
     }
 
     [LoggerMessage(

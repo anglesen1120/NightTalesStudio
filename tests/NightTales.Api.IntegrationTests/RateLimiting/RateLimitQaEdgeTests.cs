@@ -30,6 +30,15 @@ public sealed class RateLimitQaEdgeTests(TestDatabase database) : IntegrationTes
     /// <summary>An IPv6 peer, for the family-agnostic partition assertion.</summary>
     private const string PeerV6 = "2001:db8::7";
 
+    /// <summary>One address of an IPv6 /64 (SEC-0935-02: an IPv6 client controls the whole prefix).</summary>
+    private const string PeerV6PrefixA = "2001:db8:1:2::1";
+
+    /// <summary>A second address of the same /64 as <see cref="PeerV6PrefixA"/>.</summary>
+    private const string PeerV6PrefixB = "2001:db8:1:2::beef";
+
+    /// <summary>An address of a different /64, one that must stay isolated.</summary>
+    private const string PeerV6OtherPrefix = "2001:db8:1:3::1";
+
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
     [Fact]
@@ -131,14 +140,53 @@ public sealed class RateLimitQaEdgeTests(TestDatabase database) : IntegrationTes
     public void PartitionKey_MappedIpv4AndNativeIpv6_HashAsExpected()
     {
         // The unit-level view of the family assertions above: the key is the truncated SHA-256 of the
-        // address bytes, so two representations of one client must collapse to one key — and a native
-        // IPv6 address must not.
-        var mapped = RateLimitPartitionKeys.Hash(IPAddress.Parse(PeerMapped));
-        var v4 = RateLimitPartitionKeys.Hash(IPAddress.Parse(PeerV4));
-        var v6 = RateLimitPartitionKeys.Hash(IPAddress.Parse(PeerV6));
+        // address bytes, so two representations of one client must collapse to one key — and one IPv6
+        // prefix must be one bucket however many interface addresses the subscriber rotates inside it.
+        const int prefix = RateLimitingOptions.DefaultIpv6PrefixLength;
+        var mapped = RateLimitPartitionKeys.Hash(IPAddress.Parse(PeerMapped), prefix);
+        var v4 = RateLimitPartitionKeys.Hash(IPAddress.Parse(PeerV4), prefix);
+        var v6 = RateLimitPartitionKeys.Hash(IPAddress.Parse(PeerV6), prefix);
 
         mapped.ShouldBe(v4, "an IPv4-mapped IPv6 peer and the IPv4 peer are the same client");
         v6.ShouldNotBe(v4, "a different address is a different bucket");
+
+        var samePrefix = RateLimitPartitionKeys.Hash(IPAddress.Parse(PeerV6PrefixA), prefix);
+        var samePrefixSibling = RateLimitPartitionKeys.Hash(IPAddress.Parse(PeerV6PrefixB), prefix);
+        var otherPrefix = RateLimitPartitionKeys.Hash(IPAddress.Parse(PeerV6OtherPrefix), prefix);
+
+        samePrefix.ShouldBe(samePrefixSibling, "two addresses of one /64 are one partition (SEC-0935-02)");
+        samePrefix.ShouldNotBe(otherPrefix, "a different /64 is a different partition");
+    }
+
+    [Fact]
+    public async Task AnonPolicy_Ipv6AddressesInOneSlash64_ShareOneBucket()
+    {
+        // The abuse fix behind SEC-0935-02: an IPv6 subscriber controls its whole /64, so rotating the
+        // interface address inside that prefix must not buy a fresh budget. Two addresses of one /64
+        // spend one window; a different /64 stays isolated.
+        using var factory = new ApiFactory(Database, new FakeClock())
+            .WithSetting($"{RateLimitingOptions.SectionName}:{nameof(RateLimitingOptions.Anon)}:PermitLimit", "2")
+            .WithSetting($"{RateLimitingOptions.SectionName}:{nameof(RateLimitingOptions.Anon)}:WindowSeconds", "60")
+            .MapEndpoints(ProbeEndpoints.Map);
+        using var first = factory.PeerClient(PeerV6PrefixA);
+        using var sibling = factory.PeerClient(PeerV6PrefixB);
+        using var other = factory.PeerClient(PeerV6OtherPrefix);
+
+        using var acceptedFirst = await first.PostAsync(ProbeEndpoints.AnonRateLimitPath, null, Ct);
+        acceptedFirst.StatusCode.ShouldBe(HttpStatusCode.OK);
+
+        using var acceptedSibling = await sibling.PostAsync(ProbeEndpoints.AnonRateLimitPath, null, Ct);
+        acceptedSibling.StatusCode.ShouldBe(
+            HttpStatusCode.OK,
+            "the second address of the same /64 is inside the shared two-permit window");
+
+        using var over = await first.PostAsync(ProbeEndpoints.AnonRateLimitPath, null, Ct);
+        over.StatusCode.ShouldBe(
+            HttpStatusCode.TooManyRequests,
+            "the two addresses spent one /64 budget, so a third request is refused");
+
+        using var stranger = await other.PostAsync(ProbeEndpoints.AnonRateLimitPath, null, Ct);
+        stranger.StatusCode.ShouldBe(HttpStatusCode.OK, "a different /64 has its own budget");
     }
 
     [Fact]

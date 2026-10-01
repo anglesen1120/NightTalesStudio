@@ -36,6 +36,18 @@ public sealed class RateLimitingOptions
     /// <summary>The fewest segments a sliding window may be cut into (a single segment would be a fixed window).</summary>
     public const int MinimumSegmentsPerWindow = 2;
 
+    /// <summary>
+    /// The shipped IPv6 prefix an address-keyed partition keeps: /64, the block a residential ISP hands
+    /// one subscriber, so rotating the interface address inside it spends one budget (SEC-0935-02).
+    /// </summary>
+    public const int DefaultIpv6PrefixLength = 64;
+
+    /// <summary>The shortest IPv6 prefix a deployment may key an address partition on.</summary>
+    public const int MinimumIpv6PrefixLength = 32;
+
+    /// <summary>The longest IPv6 prefix: the whole 128-bit address.</summary>
+    public const int MaximumIpv6PrefixLength = 128;
+
     /// <summary>The failure a non-positive <c>PermitLimit</c> produces at start-up.</summary>
     public const string NonPositivePermitLimitFailure =
         "'RateLimiting:{auth|paid|hub|anon}:PermitLimit' must be greater than zero.";
@@ -53,8 +65,19 @@ public sealed class RateLimitingOptions
     public const string InvalidSegmentsPerWindowFailure =
         "'RateLimiting:Paid:SegmentsPerWindow' must be at least 2 and at most the policy's 'PermitLimit'.";
 
+    /// <summary>The failure an out-of-range <c>Ipv6PrefixLength</c> produces at start-up.</summary>
+    public const string InvalidIpv6PrefixLengthFailure =
+        "'RateLimiting:Ipv6PrefixLength' must be between 32 and 128.";
+
     /// <summary>Whether the limiter is applied at all (a pass-through when false); true by default.</summary>
     public bool Enabled { get; set; } = true;
+
+    /// <summary>
+    /// The IPv6 prefix length an address-keyed partition keeps (<see cref="DefaultIpv6PrefixLength"/>,
+    /// /64 by default). An IPv6 subscriber controls a whole /64, so a longer prefix would let it rotate
+    /// its interface address for a fresh budget; a shorter one would pool unrelated subscribers.
+    /// </summary>
+    public int Ipv6PrefixLength { get; set; } = DefaultIpv6PrefixLength;
 
     /// <summary>
     /// The seconds every rejection advertises through <c>Retry-After</c> and <c>retryAfterSeconds</c>.
@@ -102,6 +125,10 @@ public sealed class RateLimitingOptions
     /// <summary>Whether the sliding policy's segment count is one the sliding limiter accepts.</summary>
     internal bool HasValidSegmentsPerWindow() =>
         Paid.SegmentsPerWindow >= MinimumSegmentsPerWindow && Paid.SegmentsPerWindow <= Paid.PermitLimit;
+
+    /// <summary>Whether the IPv6 prefix length is one an address key can mask with.</summary>
+    internal bool HasValidIpv6PrefixLength() =>
+        Ipv6PrefixLength >= MinimumIpv6PrefixLength && Ipv6PrefixLength <= MaximumIpv6PrefixLength;
 
     private bool EveryPolicy(Func<RateLimitPolicyOptions, bool> predicate) =>
         predicate(Auth) && predicate(Paid) && predicate(Hub) && predicate(Anon);

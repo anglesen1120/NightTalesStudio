@@ -51,6 +51,8 @@ public sealed class RateLimitingOptionsTests(TestDatabase database) : Integratio
         options.Anon.PermitLimit.ShouldBe(60);
         options.Anon.WindowSeconds.ShouldBe(60);
 
+        options.Ipv6PrefixLength.ShouldBe(RateLimitingOptions.DefaultIpv6PrefixLength);
+
         RateLimitPolicies.All.ShouldBe(
             new[] { RateLimitPolicies.Auth, RateLimitPolicies.Paid, RateLimitPolicies.Hub, RateLimitPolicies.Anon });
     }
@@ -84,6 +86,17 @@ public sealed class RateLimitingOptionsTests(TestDatabase database) : Integratio
             $"{TrustSection}:KnownNetworks",
             Case.Sensitive,
             "a typo in the proxy list must name the list it is in, never boot with the proxy untrusted");
+    }
+
+    [Fact]
+    public void Ipv6PrefixLengthOutOfRange_FailsStartup()
+    {
+        // The upper bound of the prefix: /129 is not a mask, so it must refuse the boot rather than fall
+        // back to the whole address (SEC-0935-02 keys an address partition on its IPv6 prefix).
+        var exception = Should.Throw<OptionsValidationException>(
+            () => StartHost(($"{Section}:Ipv6PrefixLength", "129")));
+
+        exception.Message.ShouldBe(RateLimitingOptions.InvalidIpv6PrefixLengthFailure);
     }
 
     /// <summary>Starts the real host with <paramref name="settings"/> on top of the shipped configuration.</summary>
