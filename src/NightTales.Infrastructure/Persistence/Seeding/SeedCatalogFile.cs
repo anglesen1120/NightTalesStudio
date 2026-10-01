@@ -11,16 +11,16 @@ namespace NightTales.Infrastructure.Persistence.Seeding;
 /// readable code instead of a half-written table.
 /// </summary>
 /// <remarks>
-/// The full rules of plan 04 (<c>VoiceCatalogRules</c>) and plan 03 (<c>StyleTemplateRules</c> plus the
-/// <c>negativeClauseVersion</c> check) arrive with 04.2.2-T2 and 03.1.1-T2; this task validates only
-/// what it can own: the <c>{term}</c> placeholder, the enum values, duplicate keys and non-blank
-/// required fields.
+/// The full rules of plan 04 (<c>VoiceCatalogRules</c>) arrive with 04.2.2-T2; the plan 03 row rules
+/// (<see cref="StyleTemplateRules"/> plus the <c>negativeClauseVersion</c> check) arrive with
+/// 03.1.1-T2 and are applied by <see cref="StyleTemplateSeeder"/> and <c>ReadNegativeClauseVersion</c>.
+/// This parser validates only the structural JSON it can own: the enum values, duplicate keys and
+/// non-blank required fields. Every style-template <em>value</em> rule is
+/// <see cref="StyleTemplateRules"/>', applied per row by <see cref="StyleTemplateSeeder"/> before any
+/// write, so a bad value is reported with the code of the rule that owns it (09.4.1-T1 F4).
 /// </remarks>
 public static class SeedCatalogFile
 {
-    /// <summary>The placeholder every style template must keep.</summary>
-    public const string TermPlaceholder = "{term}";
-
     /// <summary>Reads the <c>voices</c> array; validates ids, enums, tags and duplicate ids.</summary>
     /// <param name="json">The catalog document text.</param>
     public static IReadOnlyList<VoiceSeedRow> ReadVoices(string json)
@@ -63,7 +63,7 @@ public static class SeedCatalogFile
         return rows;
     }
 
-    /// <summary>Reads the <c>templates</c> array; validates the placeholder, the topic enum and duplicates.</summary>
+    /// <summary>Reads the <c>templates</c> array; checks the structural JSON (a name, a unique natural key, the topic enum).</summary>
     /// <param name="json">The style-template document text.</param>
     public static IReadOnlyList<StyleTemplateSeedRow> ReadStyleTemplates(string json)
     {
@@ -88,11 +88,13 @@ public static class SeedCatalogFile
                 throw new SeedValidationException($"seed_style_template_invalid:{name}:duplicate_name");
             }
 
-            var template = ReadRequiredString(element, "template");
-            if (template is null || !template.Contains(TermPlaceholder, StringComparison.Ordinal))
-            {
-                throw new SeedValidationException($"seed_style_template_invalid:{name}:missing_term");
-            }
+            // The value rules — exactly one {term}, 60–600 characters, no line break, no quote, no
+            // negative clause — are StyleTemplateRules': the seeder runs them per row, in file order,
+            // before any write, so a bad value is reported with the code of the rule that owns it
+            // instead of a second, divergent opinion here (09.4.1-T1 F4). A row with no `template`
+            // member reaches those rules as the empty string and fails the term count, which is the
+            // same code a row whose template has no placeholder gets.
+            var template = ReadRequiredString(element, "template") ?? string.Empty;
 
             Topic? topicHint = null;
             var hint = ReadOptionalString(element, "topicHint");
@@ -115,6 +117,25 @@ public static class SeedCatalogFile
         }
 
         return rows;
+    }
+
+    /// <summary>
+    /// Reads the file's <c>negativeClauseVersion</c> (03 README D2/CR-1). The seeder compares it with
+    /// <see cref="NegativeClause.Version"/>: the seed file and the code must ship together, because the
+    /// clause text the relay checks and the text the builder appends come from the two of them.
+    /// </summary>
+    /// <param name="json">The style-template document text.</param>
+    /// <returns>The declared version, or <c>null</c> when the property is absent or not a string.</returns>
+    public static string? ReadNegativeClauseVersion(string json)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(json);
+
+        using var document = JsonDocument.Parse(json);
+        return document.RootElement.ValueKind == JsonValueKind.Object
+            && document.RootElement.TryGetProperty("negativeClauseVersion", out var version)
+            && version.ValueKind == JsonValueKind.String
+            ? version.GetString()
+            : null;
     }
 
     /// <summary>Reads the <c>featureFlags</c> key array; rejects a blank or duplicate key.</summary>
@@ -256,7 +277,7 @@ public sealed record VoiceSeedRow(
 
 /// <summary>One validated <c>style_templates</c> row.</summary>
 /// <param name="Name">The natural key the seeder upserts by.</param>
-/// <param name="Template">The template text; it contains <see cref="SeedCatalogFile.TermPlaceholder"/>.</param>
+/// <param name="Template">The template text; <see cref="StyleTemplateRules"/> requires exactly one <c>{term}</c> in it.</param>
 /// <param name="TopicHint">The parsed topic, or <c>null</c> for every topic.</param>
 /// <param name="PreviewStorageKey">The preview object key, or <c>null</c>.</param>
 /// <param name="Active">Whether the template is offered.</param>

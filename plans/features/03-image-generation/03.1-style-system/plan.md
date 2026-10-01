@@ -4,7 +4,7 @@
 > Contract: `../README.md` — **D1** (template contract, `NegativeClause`, `ScenePromptBuilder`), **D2** (catalogue v1, topic rule, labels, previews), **D13** (M0 global template), **F07**, **F11**, **F12**, **F13**, **F16**, **F21**, **CR-1**, **CR-2**, **CR-3**, **CR-7**
 > Template: `../../../00-overview.md` §10.1
 > Legend: ✅ read from source/docs · ⚠️ unverified · [DECISION] · [OPEN] · [INFERENCE]
-> Status: detailed plan, 2026-09-24. Nothing implemented yet.
+> Status: task **03.1.1-T2 implemented 2026-10-01** (branch `feature/03.1.1-T2-09.4.1-T1`). Deviations from §3.1: `StyleTopicPolicy.IsAllowed(Topic, Topic?)` takes the typed hint (`StyleTemplate.TopicHint` is `Topic?`); `StyleTemplate.Create` keeps its 09.2.2-T1 signature (task file Design) and throws `ArgumentException` carrying the rule code, while the seeder pre-validates and aborts with `seed_style_template_invalid:<name>:<code>`. Other tasks in this folder: 03.1.1-T1 done; 03.1.2-T1 not implemented.
 
 ## 1. Scope
 

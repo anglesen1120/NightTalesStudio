@@ -61,7 +61,12 @@ public sealed class SeriesBuilder(TestDatabase database, TestCurrentUser current
             return existing;
         }
 
-        var template = StyleTemplate.Create(name, "Một câu chuyện về {term}.", topicHint);
+        // The text satisfies the 03.1.1-T2 rules (one {term}, 60-600 chars, no clause), because
+        // StyleTemplate.Create rejects any other shape.
+        var template = StyleTemplate.Create(
+            name,
+            "Một câu chuyện về {term}, kể bằng nét vẽ đơn sắc trên nền giấy cũ, ánh sáng dịu và bố cục rộng.",
+            topicHint);
         context.StyleTemplates.Add(template);
         await context.SaveChangesAsync(ct);
 

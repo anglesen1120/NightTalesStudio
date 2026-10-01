@@ -14,9 +14,12 @@ namespace NightTales.Infrastructure.Persistence.Seeding;
 /// and nothing is ever deleted.
 /// </summary>
 /// <remarks>
-/// 03.1.1-T2 will wrap the row validation in <c>StyleTemplateRules</c> and check the file's
-/// <c>negativeClauseVersion</c> against <c>NegativeClause.Version</c>; this task validates only the
-/// <c>{term}</c> placeholder, the topic enum and duplicate names.
+/// 03.1.1-T2 applies the D1 rules here: the file's <c>negativeClauseVersion</c> must equal
+/// <see cref="NegativeClause.Version"/>, and every row is checked by
+/// <see cref="StyleTemplateRules.Validate"/> before any write. A failure aborts the whole seed, so a
+/// half-valid catalog is never stored: a bad row is
+/// <c>seed_style_template_invalid:&lt;name&gt;:&lt;code&gt;</c>, a version skew is
+/// <c>seed_negative_clause_mismatch</c>.
 /// </remarks>
 public sealed partial class StyleTemplateSeeder(
     IAppDbContext db,
@@ -67,7 +70,26 @@ public sealed partial class StyleTemplateSeeder(
             return null;
         }
 
-        return SeedCatalogFile.ReadStyleTemplates(File.ReadAllText(path));
+        var json = File.ReadAllText(path);
+        var fileVersion = SeedCatalogFile.ReadNegativeClauseVersion(json);
+        if (!string.Equals(fileVersion, NegativeClause.Version, StringComparison.Ordinal))
+        {
+            LogNegativeClauseMismatch(fileVersion ?? "(missing)", NegativeClause.Version);
+
+            throw new SeedValidationException("seed_negative_clause_mismatch");
+        }
+
+        var rows = SeedCatalogFile.ReadStyleTemplates(json);
+        foreach (var row in rows)
+        {
+            var validation = StyleTemplateRules.Validate(row.Name, row.Template);
+            if (validation.IsError)
+            {
+                throw new SeedValidationException($"seed_style_template_invalid:{row.Name}:{validation.FirstError.Code}");
+            }
+        }
+
+        return rows;
     }
 
     private async ValueTask<SeedReport> ApplyAsync(IReadOnlyList<StyleTemplateSeedRow> rows, CancellationToken ct)
@@ -117,4 +139,7 @@ public sealed partial class StyleTemplateSeeder(
 
     [LoggerMessage(EventId = 2311, Level = LogLevel.Information, Message = "seed.style-templates.concurrent-insert-retry")]
     private partial void LogConcurrentInsertRetry();
+
+    [LoggerMessage(EventId = 2312, Level = LogLevel.Error, Message = "seed.style-templates.negative-clause-mismatch file={FileVersion} domain={DomainVersion}")]
+    private partial void LogNegativeClauseMismatch(string fileVersion, string domainVersion);
 }
