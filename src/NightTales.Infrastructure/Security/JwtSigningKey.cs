@@ -14,17 +14,16 @@ namespace NightTales.Infrastructure.Security;
 /// extra bookkeeping.
 /// </para>
 /// <para>
-/// The material is held as <see cref="JsonWebKey"/>s rather than as one long-lived
-/// <see cref="ECDsa"/> instance, and that is load-bearing. <c>Microsoft.IdentityModel</c>'s
-/// signature providers take ownership of the <see cref="SecurityKey"/> they are built from and dispose it
-/// when the provider is released; a key that wraps a single shared <see cref="ECDsa"/> therefore works for
-/// the first signature and then throws <see cref="ObjectDisposedException"/> on the next one (observed as a
-/// 500 on the second login in one host, 2026-10-01). A <see cref="JsonWebKey"/> carries the parameters, not
-/// a live crypto object, so every provider gets its own instance of the key and no use can dispose
-/// another's.
+/// No two signature providers share a crypto object. Signing builds a throwaway key from the PEM for every
+/// signature and its factory caches no provider, so the provider <c>Microsoft.IdentityModel</c> releases —
+/// and disposes — can only reach that one call's key: a key that wraps a single shared
+/// <see cref="ECDsa"/> signs once and then throws <see cref="ObjectDisposedException"/> (observed as a 500
+/// on the second login in one host, 2026-10-01). Validation pins the public half only, with a
+/// crypto-provider factory of its own rather than the library's process-wide default, so its cache never
+/// outlives this key.
 /// </para>
 /// <para>
-/// Signing and validation therefore get two different JWKs: the private one signs, the public-only one is
+/// Signing and validation therefore use two different keys: the private one signs, the public-only one is
 /// what the bearer scheme pins. A validator can never reach the private parameters.
 /// </para>
 /// <para>
@@ -74,7 +73,19 @@ public sealed class JwtSigningKey : IDisposable
         _pem = pem;
         _validationKey = validationKey;
         KeyId = keyId;
-        ValidationKey = new ECDsaSecurityKey(validationKey) { KeyId = keyId };
+
+        // A crypto-provider factory of this key's own instead of the library's process-wide
+        // CryptoProviderFactory.Default. That default carries one provider cache for the whole process and
+        // its cache key is the key's JWK thumbprint — identical for every key loaded from the same PEM. A
+        // verifier cached for one host's key keeps that host's ECDsa, so once the host disposed the key
+        // (see Dispose) the next host's first bearer request was handed the cached verifier and answered
+        // 401 — IDX10511 over ObjectDisposedException — instead of 204 (2026-10-01). Caching stays on; it is
+        // scoped to this key's lifetime instead of the process's.
+        ValidationKey = new ECDsaSecurityKey(validationKey)
+        {
+            KeyId = keyId,
+            CryptoProviderFactory = new CryptoProviderFactory { CacheSignatureProviders = true },
+        };
     }
 
     /// <summary>The <c>kid</c> every token this key signs carries.</summary>
