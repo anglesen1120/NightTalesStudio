@@ -248,6 +248,7 @@ public sealed class EfRefreshTokenService(
                 command => command.Parameters.AddWithValue("family_id", familyId),
                 ct).ConfigureAwait(false);
 
+            await DeleteUnusedHubTicketsAsync(revoked.UserIds, ct).ConfigureAwait(false);
             await NotifySecurityAsync(revoked, ct).ConfigureAwait(false);
 
             return Result.Success;
@@ -289,6 +290,7 @@ public sealed class EfRefreshTokenService(
                 },
                 ct).ConfigureAwait(false);
 
+            await DeleteUnusedHubTicketsAsync(revoked.UserIds, ct).ConfigureAwait(false);
             await NotifySecurityAsync(revoked, ct).ConfigureAwait(false);
 
             return revoked.Count;
@@ -476,6 +478,29 @@ public sealed class EfRefreshTokenService(
 
             await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
         }
+    }
+
+    /// <summary>
+    /// Deletes the revoked users' unused hub tickets inside the revocation's own transaction (T3 review
+    /// NTS-HUB-001): a ticket issued before the revocation must not outlive it within its 60-second TTL,
+    /// and the delete commits only if the revocation does. A ticket claimed just before this commits keeps
+    /// its used row; that socket is closed by the <c>security</c> NOTIFY this same commit carries, or, when
+    /// its registration raced past the abort, by the connection-age backstop (WT37).
+    /// </summary>
+    private async Task DeleteUnusedHubTicketsAsync(IEnumerable<Guid> userIds, CancellationToken ct)
+    {
+        var distinct = userIds.Distinct().ToArray();
+        if (distinct.Length == 0)
+        {
+            return;
+        }
+
+        await using var command = CreateCommand(
+            "DELETE FROM hub_tickets WHERE user_id = ANY(@user_ids) AND used_at IS NULL",
+            requireTransaction: true);
+        command.Parameters.AddWithValue("user_ids", distinct);
+
+        await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
     }
 
     /// <summary>The family a presented token belongs to, or null when no row has that hash.</summary>

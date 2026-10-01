@@ -1,7 +1,9 @@
 using System.Globalization;
 using System.Net;
+using System.Net.Http.Json;
 using System.Net.WebSockets;
 using Microsoft.Extensions.DependencyInjection;
+using NightTales.Api.IntegrationTests.Auth;
 using NightTales.Api.IntegrationTests.Http;
 using NightTales.Api.IntegrationTests.Persistence;
 using NightTales.Api.Realtime;
@@ -130,41 +132,137 @@ public sealed class HubTicketQaEdgeTests(TestDatabase database) : IntegrationTes
     }
 
     [Fact]
-    public async Task Ticket_Of_A_Suspended_Or_Stamp_Rotated_User_Still_Claims()
+    public async Task Ticket_Of_A_Suspended_User_Is_Rejected()
     {
-        // [RULED — README §B10 WT37]: the claim reads only the owner's live role — no status and no
-        // security_stamp column exists on hub_tickets (plan open item 1). This test pins the ruled
-        // behaviour: revocation of such a user reaches a live socket only through the `security`
-        // NOTIFY of 09.8.1-T1, never through the claim.
+        // T3 review NTS-HUB-001: the claim reads the owner's live status, so a ticket issued before a
+        // suspension is refused exactly like an expired one — and, like an expired one, consumes nothing.
         var clock = new FakeClock();
         using var factory = new ApiFactory(Database, clock);
         var suspended = await HubTicketTestFlow.CreateUserAsync(Database, Ct);
-        var rotated = await HubTicketTestFlow.CreateUserAsync(Database, Ct);
 
-        IssuedTicket suspendedTicket;
+        IssuedTicket issued;
         using (var client = factory.ClientFor(suspended.Id))
         {
-            suspendedTicket = await HubTicketTestFlow.IssueAsync(client, Ct);
-        }
-
-        IssuedTicket rotatedTicket;
-        using (var client = factory.ClientFor(rotated.Id))
-        {
-            rotatedTicket = await HubTicketTestFlow.IssueAsync(client, Ct);
+            issued = await HubTicketTestFlow.IssueAsync(client, Ct);
         }
 
         SqlProbe.Execute(Database, $"UPDATE users SET status = 'suspended' WHERE id = '{suspended.Id}'");
+
+        var claim = await HubTicketTestFlow.ClaimAsync(factory, issued.Ticket, Ct);
+
+        claim.IsError.ShouldBeTrue("a suspended owner cannot claim a ticket");
+        claim.FirstError.Code.ShouldBe(ErrorCodes.HubTicketInvalid);
+        SqlProbe.Count(
+                Database,
+                $"SELECT count(*) FROM hub_tickets WHERE ticket_hash = '{HubTicketSecret.HashOf(issued.Ticket)}' "
+                + "AND used_at IS NOT NULL")
+            .ShouldBe(0, "the active-owner rule is part of the atomic claim, so a refusal consumes nothing");
+    }
+
+    [Fact]
+    public async Task Ticket_Of_A_Logged_Out_User_Is_Rejected()
+    {
+        // T3 review NTS-HUB-001: logout revokes the family and deletes that user's unused tickets in the
+        // same transaction, so a ticket minted moments earlier cannot open a socket afterwards.
+        var clock = new FakeClock();
+        using var factory = new ApiFactory(Database, clock);
+        var user = await AuthTestFlow.CreateUserAsync(factory.Services);
+
+        var (_, cookie) = await AuthTestFlow.LoginAsync(
+            factory.AnonymousClient(),
+            user.Email!,
+            AuthTestFlow.Password,
+            Ct);
+
+        IssuedTicket issued;
+        using (var client = factory.ClientFor(user.Id))
+        {
+            issued = await HubTicketTestFlow.IssueAsync(client, Ct);
+        }
+
+        SqlProbe.Count(
+                Database,
+                $"SELECT count(*) FROM hub_tickets WHERE user_id = '{user.Id}' AND used_at IS NULL")
+            .ShouldBe(1, "the issued ticket is live before the logout");
+
+        var logout = await AuthTestFlow.LogoutAsync(factory.ClientFor(user.Id), cookie!, AuthTestFlow.Origin, Ct);
+        logout.StatusCode.ShouldBe(HttpStatusCode.NoContent);
+
+        SqlProbe.Count(Database, $"SELECT count(*) FROM hub_tickets WHERE user_id = '{user.Id}'")
+            .ShouldBe(0, "the revocation deletes the user's unused tickets in its own transaction");
+
+        var claim = await HubTicketTestFlow.ClaimAsync(factory, issued.Ticket, Ct);
+
+        claim.IsError.ShouldBeTrue("a logged-out owner cannot claim a ticket");
+        claim.FirstError.Code.ShouldBe(ErrorCodes.HubTicketInvalid);
+    }
+
+    [Fact]
+    public async Task Ticket_Of_Another_User_Survives_A_Revocation()
+    {
+        // The delete is scoped by user_id: one user's logout must not touch another user's ticket.
+        var clock = new FakeClock();
+        using var factory = new ApiFactory(Database, clock);
+        var revoked = await AuthTestFlow.CreateUserAsync(factory.Services);
+        var other = await HubTicketTestFlow.CreateUserAsync(Database, Ct);
+
+        var (_, revokedCookie) = await AuthTestFlow.LoginAsync(
+            factory.AnonymousClient(),
+            revoked.Email!,
+            AuthTestFlow.Password,
+            Ct);
+
+        IssuedTicket revokedTicket;
+        using (var client = factory.ClientFor(revoked.Id))
+        {
+            revokedTicket = await HubTicketTestFlow.IssueAsync(client, Ct);
+        }
+
+        IssuedTicket otherTicket;
+        using (var client = factory.ClientFor(other.Id))
+        {
+            otherTicket = await HubTicketTestFlow.IssueAsync(client, Ct);
+        }
+
+        var logout = await AuthTestFlow.LogoutAsync(
+            factory.ClientFor(revoked.Id),
+            revokedCookie!,
+            AuthTestFlow.Origin,
+            Ct);
+        logout.StatusCode.ShouldBe(HttpStatusCode.NoContent);
+
+        var refused = await HubTicketTestFlow.ClaimAsync(factory, revokedTicket.Ticket, Ct);
+        refused.IsError.ShouldBeTrue();
+
+        var unaffected = await HubTicketTestFlow.ClaimAsync(factory, otherTicket.Ticket, Ct);
+        unaffected.IsError.ShouldBeFalse("another user's revocation is scoped to that user");
+        unaffected.Value.UserId.ShouldBe(other.Id);
+    }
+
+    [Fact]
+    public async Task Ticket_With_A_Rotated_Security_Stamp_Still_Claims()
+    {
+        // [RULED — README §B10 WT37]: hub_tickets has no security_stamp column, so the claim compares no
+        // stamp — only the owner's live status and role. A rotated stamp does not touch the claim;
+        // revocation reaches a live socket through the 09.8.1-T1 `security` NOTIFY, never this lookup.
+        var clock = new FakeClock();
+        using var factory = new ApiFactory(Database, clock);
+        var rotated = await HubTicketTestFlow.CreateUserAsync(Database, Ct);
+
+        IssuedTicket issued;
+        using (var client = factory.ClientFor(rotated.Id))
+        {
+            issued = await HubTicketTestFlow.IssueAsync(client, Ct);
+        }
+
         SqlProbe.Execute(
             Database,
             $"UPDATE users SET security_stamp = '{Guid.NewGuid():N}' WHERE id = '{rotated.Id}'");
 
-        var suspendedClaim = await HubTicketTestFlow.ClaimAsync(factory, suspendedTicket.Ticket, Ct);
-        var rotatedClaim = await HubTicketTestFlow.ClaimAsync(factory, rotatedTicket.Ticket, Ct);
+        var claim = await HubTicketTestFlow.ClaimAsync(factory, issued.Ticket, Ct);
 
-        suspendedClaim.IsError.ShouldBeFalse("WT37: status is not read at claim time");
-        suspendedClaim.Value.UserId.ShouldBe(suspended.Id);
-        rotatedClaim.IsError.ShouldBeFalse("WT37: the stamp is not compared at claim time");
-        rotatedClaim.Value.UserId.ShouldBe(rotated.Id);
+        claim.IsError.ShouldBeFalse("WT37: the stamp is not compared at claim time");
+        claim.Value.UserId.ShouldBe(rotated.Id);
     }
 
     [Fact]
@@ -482,27 +580,53 @@ public sealed class HubTicketQaEdgeTests(TestDatabase database) : IntegrationTes
     }
 
     [Fact]
-    public async Task A_Dead_Database_Is_A_Server_Error_With_No_Row()
+    public async Task A_Dead_Database_Answers503_And_Issues_No_Ticket()
     {
         var clock = new FakeClock();
-
-        // A port nothing listens on: the command fails at BeginTransactionAsync, outside the unit of
-        // work's commit mapping, so the documented 503 surfaces as the exception handler's 500 — the
-        // QA observation recorded in this run's matrix.
-        var dead = new NpgsqlConnectionStringBuilder(Database.ConnectionString) { Port = 1, Timeout = 3 }
-            .ConnectionString;
         using var factory = new ApiFactory(Database, clock)
-            .WithSetting($"ConnectionStrings:{PersistenceOptions.ConnectionStringName}", dead);
+            .WithSetting($"ConnectionStrings:{PersistenceOptions.ConnectionStringName}", DeadConnectionString());
         using var client = factory.ClientFor(Guid.CreateVersion7());
 
         using var response = await client.PostAsync(HubTicketTestFlow.TicketPath, content: null, Ct);
 
-        ((int)response.StatusCode).ShouldBeGreaterThanOrEqualTo(500, "a refused command is a server error");
-        response.StatusCode.ShouldNotBe(HttpStatusCode.OK);
+        // A refused provider is the documented 503 (09.8.1-T2 failure table), not a 500: the transient
+        // NpgsqlException thrown at BeginTransactionAsync — outside the unit of work's own commit
+        // mapping — is the exception-handler customisation's job (09.1.4-T1, 09 README D5).
+        response.StatusCode.ShouldBe(HttpStatusCode.ServiceUnavailable);
+        var problem = await response.Content.ReadFromJsonAsync<ProblemResponse>(ProblemResponse.Options, Ct);
+        problem.ShouldNotBeNull();
+        problem.Status.ShouldBe(503);
+        problem.Code.ShouldBe(ErrorCodes.ServiceUnavailable);
+        problem.Type.ShouldBe("https://nighttales.app/errors/service_unavailable");
         response.Headers.ShouldNotContain(
             header => header.Value.Any(value => value.Length == HubTicketSecret.Length),
             "no 43-char ticket ever leaves a failed exchange");
     }
+
+    [Fact]
+    public async Task A_Dead_Database_On_A_Query_Also_Answers503()
+    {
+        var clock = new FakeClock();
+        using var factory = new ApiFactory(Database, clock)
+            .WithSetting($"ConnectionStrings:{PersistenceOptions.ConnectionStringName}", DeadConnectionString());
+        using var client = factory.ClientFor(Guid.CreateVersion7());
+
+        // A query never opens a unit of work, so its provider failure reaches the exception handler
+        // without any mapping in between; the same 503 must cover it (the failure tables of 09.4.2-T1
+        // and 09.5.3-T1 say "DB down → 503 service_unavailable").
+        using var response = await client.GetAsync("/api/v1/series", Ct);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.ServiceUnavailable);
+        var problem = await response.Content.ReadFromJsonAsync<ProblemResponse>(ProblemResponse.Options, Ct);
+        problem.ShouldNotBeNull();
+        problem.Status.ShouldBe(503);
+        problem.Code.ShouldBe(ErrorCodes.ServiceUnavailable);
+        problem.Type.ShouldBe("https://nighttales.app/errors/service_unavailable");
+    }
+
+    /// <summary>A PostgreSQL host at a port nothing listens on; the connection fails before any SQL.</summary>
+    private string DeadConnectionString() =>
+        new NpgsqlConnectionStringBuilder(Database.ConnectionString) { Port = 1, Timeout = 3 }.ConnectionString;
 
     /// <summary>
     /// Writes one ticket row with the timestamps a case needs — the FakeClock's value, never

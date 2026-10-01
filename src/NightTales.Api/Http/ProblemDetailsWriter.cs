@@ -9,6 +9,7 @@ using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using NightTales.Application.Common.Errors;
+using Npgsql;
 
 namespace NightTales.Api.Http;
 
@@ -56,6 +57,13 @@ public static partial class ProblemDetailsWriter
 
     /// <summary>The title of a validation response; the fields and messages are in <c>errors</c>.</summary>
     public const string ValidationFailedTitle = "Validation failed.";
+
+    /// <summary>
+    /// The fixed title of a <c>503 service_unavailable</c> written from a transient database
+    /// exception. It is the same client-safe sentence the unit of work carries as its error
+    /// description (09.3.6-T1, <c>EfUnitOfWork</c>), so both roads to the code read alike.
+    /// </summary>
+    public const string ServiceUnavailableTitle = "The database is temporarily unavailable; retry.";
 
     /// <summary>The body member carrying a problem's stable code, <c>code</c>.</summary>
     public const string CodeMemberName = "code";
@@ -169,7 +177,10 @@ public static partial class ProblemDetailsWriter
     /// <summary>
     /// The <c>AddProblemDetails</c> customisation: every 5xx body written through
     /// <see cref="IProblemDetailsService"/> becomes the fixed <c>internal_error</c> shape with the
-    /// trace id of the request and without any exception text (plan §8).
+    /// trace id of the request and without any exception text (plan §8). A transient database failure
+    /// is the one exception that is not an application bug: it becomes the documented
+    /// <c>503 service_unavailable</c> (09 README D5, D17) instead, so a provider outage is not
+    /// reported to the client as an <c>internal_error</c>.
     /// </summary>
     /// <param name="options">The options of the registered problem details service.</param>
     public static void ConfigureProblemDetails(ProblemDetailsOptions options)
@@ -211,12 +222,38 @@ public static partial class ProblemDetailsWriter
             return;
         }
 
+        // A transient database failure is the documented 503 (09 README D5: no retrying execution
+        // strategy, "a transient DB failure surfaces as 503 service_unavailable"), whether it reached
+        // the writer from a command's BeginAsync/commit — outside EfUnitOfWork's own commit mapping —
+        // or from a query that never opened a unit of work at all.
+        var exception = context.Exception;
+        if (IsTransientDatabaseFailure(exception))
+        {
+            var transientLogger = Logger(context.HttpContext);
+            if (transientLogger is not null && exception is not null)
+            {
+                LogRewrittenTransientDatabaseFailure(
+                    transientLogger,
+                    exception.GetType().Name,
+                    TraceId(context.HttpContext));
+            }
+
+            context.HttpContext.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
+            problem.Status = StatusCodes.Status503ServiceUnavailable;
+            problem.Title = ServiceUnavailableTitle;
+            problem.Type = ErrorCatalogue.ProblemType(ErrorCodes.ServiceUnavailable);
+            problem.Detail = null;
+            problem.Extensions.Remove(ExceptionExtensionKey);
+            problem.Extensions[CodeMemberName] = ErrorCodes.ServiceUnavailable;
+            return;
+        }
+
         // The client is told nothing about the failure; the server still records what it was, by type
         // only (09 README D17 forbids logging the exception text).
         var logger = Logger(context.HttpContext);
-        if (logger is not null && context.Exception is not null)
+        if (logger is not null && exception is not null)
         {
-            LogRewrittenException(logger, context.Exception.GetType().Name, TraceId(context.HttpContext));
+            LogRewrittenException(logger, exception.GetType().Name, TraceId(context.HttpContext));
         }
 
         problem.Status = StatusCodes.Status500InternalServerError;
@@ -225,6 +262,25 @@ public static partial class ProblemDetailsWriter
         problem.Detail = null;
         problem.Extensions.Remove(ExceptionExtensionKey);
         problem.Extensions[CodeMemberName] = ErrorCodes.InternalError;
+    }
+
+    /// <summary>
+    /// Whether the exception — or one it wraps — is a transient database failure the provider marks as
+    /// retryable (<see cref="NpgsqlException.IsTransient"/>). The predicate mirrors
+    /// <c>EfUnitOfWork.IsTransient</c> but walks the whole inner chain, because the exception handler
+    /// sees the failure before any unit-of-work mapping has run (09 README D5).
+    /// </summary>
+    private static bool IsTransientDatabaseFailure(Exception? exception)
+    {
+        for (var current = exception; current is not null; current = current.InnerException)
+        {
+            if (current is NpgsqlException { IsTransient: true })
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /// <summary>
@@ -479,6 +535,12 @@ public static partial class ProblemDetailsWriter
         Level = LogLevel.Error,
         Message = "problem_details.rewritten exception={Exception} traceId={TraceId}: the exception was answered as 500 internal_error; only its type is recorded, never its text.")]
     private static partial void LogRewrittenException(ILogger logger, string exception, string traceId);
+
+    [LoggerMessage(
+        EventId = 1105,
+        Level = LogLevel.Warning,
+        Message = "problem_details.transient_database_failure exception={Exception} traceId={TraceId}: the exception was answered as 503 service_unavailable; only its type is recorded, never its text.")]
+    private static partial void LogRewrittenTransientDatabaseFailure(ILogger logger, string exception, string traceId);
 
     /// <summary>The ProblemDetails body of this host (09 §5.5); metadata is flattened into it.</summary>
     internal sealed record ProblemBody

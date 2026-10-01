@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.Buffers.Text;
 using System.Security.Cryptography;
 using System.Text;
@@ -34,8 +35,23 @@ public static class HubTicketSecret
     /// <summary>The length of the stored <c>SHA-256</c> form: 64 lowercase hex characters.</summary>
     public const int HashLength = 64;
 
+    /// <summary>
+    /// The UTF-8 size the hash buffer keeps on the stack: <see cref="Length"/> base64url characters
+    /// plus room for a padded or otherwise malformed presentation, without putting an untrusted length
+    /// on the stack.
+    /// </summary>
+    private const int MaxStackUtf8Bytes = 256;
+
     /// <summary>Creates one ticket: <see cref="Bytes"/> random bytes in unpadded base64url.</summary>
-    public static string NewTicket() => Base64Url.EncodeToString(RandomNumberGenerator.GetBytes(Bytes));
+    public static string NewTicket()
+    {
+        // The entropy never needs to leave the stack: the ticket value is base64url-encoded straight
+        // from it (BD16), so nothing but the returned string is allocated.
+        Span<byte> entropy = stackalloc byte[Bytes];
+        RandomNumberGenerator.Fill(entropy);
+
+        return Base64Url.EncodeToString(entropy);
+    }
 
     /// <summary>
     /// The stored form of <paramref name="ticket"/>: lowercase SHA-256 hex over its UTF-8 bytes
@@ -46,6 +62,30 @@ public static class HubTicketSecret
     {
         ArgumentException.ThrowIfNullOrEmpty(ticket);
 
-        return Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(ticket)));
+        // A ticket this type issues is 43 ASCII characters, but a client may present anything, so the
+        // UTF-8 buffer is a fixed stack slab up to the largest value a real ticket can be, and a
+        // pooled buffer beyond it — never a stackalloc sized by the untrusted length.
+        var byteCount = Encoding.UTF8.GetByteCount(ticket);
+        byte[]? rented = null;
+        try
+        {
+            Span<byte> utf8 = byteCount <= MaxStackUtf8Bytes
+                ? stackalloc byte[MaxStackUtf8Bytes]
+                : rented = ArrayPool<byte>.Shared.Rent(byteCount);
+
+            var written = Encoding.UTF8.GetBytes(ticket, utf8);
+
+            Span<byte> digest = stackalloc byte[SHA256.HashSizeInBytes];
+            SHA256.HashData(utf8[..written], digest);
+
+            return Convert.ToHexStringLower(digest);
+        }
+        finally
+        {
+            if (rented is not null)
+            {
+                ArrayPool<byte>.Shared.Return(rented);
+            }
+        }
     }
 }
