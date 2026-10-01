@@ -8,8 +8,8 @@ Legend: `done` (acceptance checks run and passed) · `doing` · `blocked (<who>)
 
 Keep this block ≤ 15 lines: current state and next step only. Move the previous block to the archive when you replace it.
 
-- **Current (2026-10-01 (7)).** Session 1 closed. `develop` @ `a95a64f` has #65 09.4.2-T1, #66 09.3.6-T1, #67 JWT verifier cache fix, #68 09.5.3-T1, #69 09.8.1-T1, #71 09.9.4-T1 (#70 closed as superseded); no open PR. 09.7.2-T1 code is uncommitted in `../nts-wt/09.7.2-T1` (base `d205044`, not gated); its hard dependency 11.1.1-T2 (dev storage + mail) is not built and `weed`/`mailpit` are not installed, so its SeaweedFS contract tests would skip.
-- **Next:** §Session 2 plan (proposal, owner sign-off pending). The 7 merged worktrees are removed; `../nts-wt` keeps `09.7.2-T1` (uncommitted code) and `ui-design`. Build/test env needs `App__PublicOrigin`, `DataProtection__KekPfxPath/Password` (recipe in `.github/workflows/backend.yml`).
+- **Current (2026-10-01 (7)).** Session 1 closed. `develop` has #65 09.4.2-T1, #66 09.3.6-T1, #67 JWT verifier cache fix, #68 09.5.3-T1, #69 09.8.1-T1, #71 09.9.4-T1 (#70 closed as superseded). 09.7.2-T1 code is uncommitted in `../nts-wt/09.7.2-T1` (base `d205044`, not gated); it waits for 11.1.1-T2. Homebrew `seaweedfs` 4.48 and `mailpit` 1.31.3 are installed (owner approved 2026-10-01); not started, no `brew services`.
+- **Next:** run §Session 2 plan (owner approved 2026-10-01): lane-based, every lane starts now and moves on when its own previous task merges. A separate session owns web UI design in `../nts-wt/ui-design` (`design/`); Session 2 agents never touch it. Build/test env needs `App__PublicOrigin`, `DataProtection__KekPfxPath/Password` (`/Volumes/Project/nts-wt/gate.sh` sets them).
 - **SEC-01 decided (owner 2026-10-01, 09 W3-O3):** range API + real top-N seed fallback (option 3). The bundled `breached-passwords.txt` is still a synthetic placeholder; 09.3.1-T2 replaces it (seed licence checked before commit) and implements fail-open-to-seed, before registration opens (09.3.1-T3, S).
 - **Owner decisions open:** none blocking phase 1.
 - **Security debt live on `develop`:** none from §Deferred security gates (production JwtBearer landed in #60); SEC-01 above is decided but stays open until 09.3.1-T2 ships the real seed.
@@ -36,20 +36,29 @@ Plans 06, 07, 08, 10, 12: not started. Order: `plans/features/README.md`.
 
 ## Session 2 plan
 
-Proposal 2026-10-01 (owner sign-off pending). Every listed task has all hard `Depends on` edges merged (task-file headers vs `develop`). Agents code in parallel worktrees; gates run one at a time (shared `nts_template` database). At most 2 tasks with a migration per wave: the later one regenerates its migration on the merged snapshot, never hand-edits `AppDbContextModelSnapshot`. Each task keeps its tier gates.
+**Approved by the owner 2026-10-01.** Lanes, not fixed waves: every lane starts now; inside a lane the next task starts as soon as the previous one is merged into `develop`. Every task listed under "Start now" has all hard `Depends on` edges merged (task-file headers checked against `develop`). Web UI is out of scope here (separate session, see Resume here). Tiers are proposed; the orchestrator may raise them.
 
-| Lane | Order | Tier (proposed) | Shared-file risk |
-|---|---|---|---|
-| A Auth | `09.10.4-T1` → `09.3.2-T3` → `09.2.6-T2` | T3 | migrations, auth endpoints |
-| B Local storage | `11.1.1-T1` → `11.1.1-T2` → gate `09.7.2-T1` → `13.3.1-T1` | T1 (ops), T3 (09.7.2-T1) | low (`tools/dev/`); needs Homebrew `seaweedfs` + `mailpit` (owner approval) |
-| C Render node (critical path) | `11.3.5-T1` (L) → `11.3.5-T2` ∥ `11.3.3-T1`; with lane B T1 → `11.1.2-T1` → `09.6.2-T1` | T3 | low (new `RenderNode.Server` project) |
-| D Platform | `09.3.5-T1` → `09.8.1-T2` (needs the `hub` policy, 09.8.1-T2 open item 4) | T3 | `Api/Program.cs` |
-| E E-mail | `09.2.6-T3` → `09.3.3-T1` | T3 | migration |
-| F Seeders/checkers | `04.2.2-T2` ∥ `05.5.1-T2` ∥ `05.3.2-T3` (migration `AddMusicTracks`) | T1–T3 | low; 05.3.2-T3 and 05.5.1-T2 unblock 09.6.1/09.6.3 |
-| G 02 M1 domain | `02.2.1-T1` ∥ `02.2.3-T1`, then `02.2.4-T1` / `02.2.2-T1` | T2; T3 for 02.2.4-T1 (money), 02.2.2-T1 (migration) | 02.2.1/02.2.3 have no DB change |
-| H Frontend | `10.1.1-T1` → `10.1.2-T1` / `10.1.3-T1` / `10.1.5-T1` | T1 | none (`web/`) |
+| Lane | Start now | Then, in order (each after the previous merges) | Tier | Notes |
+|---|---|---|---|---|
+| A Auth | `09.10.4-T1` TOTP + reauth | `09.3.2-T3` MFA login (needs 09.10.4-T1) → `09.2.6-T2` (needs 09.10.4-T1) | T3 | migration |
+| B Local storage + mail | `11.1.1-T1` → `11.1.1-T2` | gate `09.7.2-T1` (merge `develop` into `feature/09.7.2-T1-s1` first; contract tests must run against `NTS_STORAGE_URL`, never skip) → `13.3.1-T1` | T1 (11.1.1), T3 (09.7.2, 13.3.1) | `tools/dev/` only |
+| C Render node (critical path) | `11.3.5-T1` (L) | `11.3.5-T2` ∥ `11.3.3-T1` (both need 11.3.5-T1) → `11.1.2-T1` mock-mpt (needs 11.3.5-T1 + 11.1.1-T1) | T3 | new `RenderNode.Server` project |
+| D Platform | `09.3.5-T1` rate limiting + `09.8.1-T2` hub ticket (one agent; write the `hub` policy name/registration from 09.3.5-T1 first, 09.8.1-T2 open item 4) | — | T3 | `Api/Program.cs` |
+| E E-mail | `09.2.6-T3` | `09.3.3-T1` password reset (needs 09.2.6-T3) | T3 | migration; real SMTP via Mailpit (lane B wiring) |
+| F Seeders/checkers | `04.2.2-T2` ∥ `05.5.1-T2` ∥ `05.3.2-T3` | — | T1; T3 for 05.3.2-T3 | 05.3.2-T3 has migration `AddMusicTracks` |
+| G 02 M1 domain | `02.2.1-T1` ∥ `02.2.3-T1` | — | T2 | no DB change |
+| Fill a free slot | `09.9.5-T1` (CI only) now; then `02.2.2-T1`, `02.2.4-T1`, `09.9.2-T2`, `09.9.3-T1` (OTLP) | `09.3.4-T1` `/me` after 09.9.2-T2 | T1 / T3 (02.2.2, 02.2.4 money, 09.9.2) | 02.2.2, 02.2.4, 09.9.2 have migrations; 09.9.3-T1 touches `Program.cs` + packages |
 
-Fillers for any lane: `09.9.5-T1` (CI only), `09.9.2-T2` (feature flags), `09.3.4-T1` (`/me`, after 09.9.2-T2), `09.9.3-T1` (OTLP; `Program.cs` + packages). Proposed waves: wave 1 = A `09.10.4-T1`, B `11.1.1-T1/T2`, C `11.3.5-T1`, D `09.3.5-T1`, F `04.2.2-T2` + `05.5.1-T2`; wave 2 opens per lane after merge (`09.3.2-T3`, gate `09.7.2-T1`, `11.1.2-T1`, `09.8.1-T2`, `05.3.2-T3`, `09.2.6-T3`); H and G may start any time.
+**Not in Session 2:** `09.6.2-T1` needs `05.1.2-T1`, which needs `02.3.2-T1` and `03.2.1-T1` (not built) → session 3 or later.
+
+**Rules for every agent in this plan:**
+1. One worktree + branch per task: `../nts-wt/<task-id>`, branch `feature/<task-id>-s2`, off current `develop`. No stacked branches on unmerged work.
+2. At most 8 subagents at a time. Code in parallel; **gates run one at a time** (`/Volumes/Project/nts-wt/gate.sh <worktree>`), because all worktrees share the local Postgres template `nts_template` (parallel runs fail with 23505).
+3. Migrations: at most 2 tasks with a migration waiting for gate/merge at once. Merge them in order; the later task **regenerates** its migration on the merged `develop` snapshot (`dotnet ef migrations add`), never hand-edits `AppDbContextModelSnapshot`. Check migration timestamp order after each merge.
+4. Conflicts in `Program.cs` (`Map*` lines) and `AppDbContext.cs` (`DbSet` lines) are additive: keep both sides; each `DbSet` keeps its own `///` summary.
+5. Each task closes its tier gates (QA agent first, then reviews per `~/.omp/agent/RULES.md`) before its PR. After any merge, check `git merge-base --is-ancestor <branch-tip> origin/develop`.
+6. Local services: start `weed` and `mailpit` only through `tools/dev/up.sh` with the loopback flags in 11.1.1-T2 (never `brew services`, which binds all interfaces and puts the SeaweedFS volume server on MPT's 8080). Until 11.1.1-T2 lands, nothing else may depend on them.
+7. Update this table's progress in the task's own PR (STATUS row + Session log); move finished lane rows to the archive at session end.
 
 ## Open tasks
 
@@ -107,3 +116,4 @@ Recent rows only; the full log is `docs/status-archive.md` §Session log.
 | 2026-10-01 | 03.1.1-T2 + 09.4.1-T1 (`feature/03.1.1-T2-09.4.1-T1` `7112dc3`) | #60 merged → `623a321`, post-merge 525/525. One branch: 09.4.1-T1 needs `StyleTopicPolicy` from 03.1.1-T2 (shared contract written first, typed `Topic?` hint), two parallel implementers. T3: QA (`test-suite-runner`) 0 functional defects, +15 tests; code CR-1 (PATCH field names `patch.title`), CR-2 (seed parser preempted `StyleTemplateRules` codes), CR-3 = SEC-0941-01 (non-UTC cursor → 500), PERF-01 (keyset OR → row value) fixed; delta review closed. Build 0 warnings, format 0, 628/628 on PG17 |
 | 2026-10-01 | 09.5.1-T1 episodes (`feature/09.5.1-T1-episodes`) | #61 merged → `3c19ed6`, #62 (SEC-01 decision) → `4281baf`. One implementer; build gate red once (missing `using Microsoft.AspNetCore.Mvc`), fixed by the implementer. T3: QA (`test-suite-runner`) 0 functional defects, +7 tests; code CR-1 (empty/whitespace `If-Match` skipped the DELETE precondition → now only an absent header skips it; +2 tests), perf 0, security 0; delta review closed. Build 0 warnings, format 0, 669/669 on PG17. Local env note: a `DROP DATABASE … WITH (FORCE)` cleanup flake (42501) appears when a superuser backend is attached, because the test role lacks `pg_signal_backend` |
 | 2026-10-01 | Session 1 close + Session 2 plan (docs only, T0) | Resume-here updated (#71 merged, #70 closed, no open PR); 09.7.2-T1 recorded as blocked on 11.1.1-T2; §Session 1 plan archived; §Session 2 plan added (8 lanes, ready set from task-file `Depends on` headers vs `develop`; owner sign-off pending). Pushed directly to `develop` (owner request) |
+| 2026-10-01 | Session 2 plan approved (docs only, T0) | Owner approved the lane-based plan (lanes A–G + free-slot fillers, web UI excluded: separate session) and the Homebrew install; `seaweedfs` 4.48 (Apache-2.0) and `mailpit` 1.31.3 (MIT) installed, not started. §Session 2 plan now carries the start-now set, in-lane order and agent rules; 09.6.2-T1 moved to session 3+ (needs 05.1.2-T1). Merged worktrees removed |
