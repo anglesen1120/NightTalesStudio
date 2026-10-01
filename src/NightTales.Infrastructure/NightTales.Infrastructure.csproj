@@ -40,4 +40,17 @@
     <EmbeddedResource Include="Identity/Resources/breached-passwords.txt"
                       LogicalName="NightTales.Infrastructure.Identity.Resources.breached-passwords.txt" />
   </ItemGroup>
+
+  <!--
+    02.2.3-T1 (02 README D5, F22): the whole `prompts/` tree is embedded, so a deployment cannot ship
+    without its prompts and `PromptCatalog` never reads a file. `LinkBase="Prompts"` makes every logical
+    name `NightTales.Infrastructure.Prompts.<path with '/' replaced by '.'>`; the catalog resolves a
+    manifest key by matching that dotted suffix, so the prefix is not a hash input.
+    The tree is outside this project directory, and the SDK's default `None`/`Compile`/`EmbeddedResource`
+    globs are project-relative, so nothing is added twice — there is no `None Remove` to write here.
+    `prompts/manifest.json` hashes the raw bytes, which is why `.gitattributes` pins the tree to LF.
+  -->
+  <ItemGroup>
+    <EmbeddedResource Include="../../prompts/**" LinkBase="Prompts" />
+  </ItemGroup>
 </Project>

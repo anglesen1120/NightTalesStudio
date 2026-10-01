@@ -20,6 +20,11 @@ builder.Services.AddOpenApi();
 builder.Services.AddNightTalesMediator();
 builder.Services.AddPersistence(builder.Configuration);
 
+// 02.2.3-T1 (02 README D5/F22): the Api writes stories too, so it loads and validates the same prompt
+// catalog at start-up; an invalid catalog aborts the boot instead of serving a draft built from a
+// prompt that was never released.
+builder.Services.AddPromptCatalog();
+
 // 09.4.1-T1 (09 §4 09.4.1): the series routes need the Application defaults — the 02 story-preset
 // port, whose wave-1 null catalog knows no key — and the post-commit ETag read of 09 README D15.
 builder.Services.AddNightTalesApplication();

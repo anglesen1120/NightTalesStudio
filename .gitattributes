@@ -1,0 +1,5 @@
+# 02.2.3-T1 (02 README D5): `prompts/manifest.json` records the sha256 of every prompt file's raw
+# bytes, and `PromptCatalog` hashes the embedded resource as it is checked out. A CRLF checkout — the
+# Windows default for `text` files — would therefore break every hash at once and refuse start-up. Pin
+# the prompt tree to LF so the committed bytes are the bytes that are hashed, on every OS.
+prompts/** text eol=lf

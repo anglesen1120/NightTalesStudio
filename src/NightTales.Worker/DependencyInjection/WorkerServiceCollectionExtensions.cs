@@ -56,6 +56,12 @@ public static class WorkerServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(configuration);
         ArgumentNullException.ThrowIfNull(assemblies);
 
+        // 02.2.3-T1 (02 README D5/F22): the Worker writes stories, so it loads and validates the prompt
+        // catalog at start-up like the Api. Registered before the rest of the graph so its gate is the
+        // first hosted service to start: a catalog that does not match its manifest must fail the boot
+        // before anything else does work.
+        services.AddPromptCatalog();
+
         services.AddOptions<WorkerOptions>()
             .BindConfiguration(WorkerOptions.SectionName)
             .Validate(
