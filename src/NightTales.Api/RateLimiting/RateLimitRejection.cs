@@ -23,7 +23,8 @@ namespace NightTales.Api.RateLimiting;
 /// Nothing here can throw into the middleware: a throw would surface as a 500 for a request the limiter
 /// correctly refused, which is a worse answer than the 429. The body is written through the host's own
 /// problem-details shape, so the response of a rejection is indistinguishable in form from every other
-/// error of the Api and carries the request's trace id (D7).
+/// error of the Api and carries the request's trace id (D7). A rejection is still counted and logged —
+/// the two synchronous steps — when the caller has already disconnected; only the body write is skipped.
 /// </para>
 /// <para>
 /// The logged partition key is the key the limiter used, computed by the same function that produced it,
@@ -54,19 +55,22 @@ public sealed partial class RateLimitRejection(
     {
         ArgumentNullException.ThrowIfNull(context);
 
-        if (cancellationToken.IsCancellationRequested)
-        {
-            // The caller is gone: writing a body into a cancelled request would only throw inside the
-            // middleware. The rejection is still counted and logged below, so an operator sees it.
-            return ValueTask.CompletedTask;
-        }
-
+        // The counter and the log line come first, before the cancellation check: they are synchronous and
+        // cheap, and a rejection stays a rejection even when the client has already disconnected. Skipping
+        // them for a cancelled request would hide exactly the burst that trips the limiter and goes away.
         var http = context.HttpContext;
         var policy = http.GetEndpoint()?.Metadata.GetMetadata<EnableRateLimitingAttribute>()?.PolicyName;
-        var partitionKey = policy is null ? null : RateLimitPartitionKeys.For(http, ipResolver, policy);
+        var partitionKey = PartitionKeyFor(http, policy);
 
         metrics.RecordRejection(policy);
         LogRejected(policy ?? RateLimitMetrics.UnattributedPolicy, partitionKey ?? RateLimitMetrics.UnattributedPolicy);
+
+        if (cancellationToken.IsCancellationRequested)
+        {
+            // The caller is gone: its rejection is already counted and logged above, but writing a body
+            // into a cancelled request would only throw inside the middleware.
+            return ValueTask.CompletedTask;
+        }
 
         var error = Error.Failure(
             code: ErrorCodes.RateLimited,
@@ -77,6 +81,23 @@ public sealed partial class RateLimitRejection(
             });
 
         return new ValueTask(ProblemDetailsWriter.ToProblem([error], http).ExecuteAsync(http));
+    }
+
+    /// <summary>
+    /// The key the limiter partitioned the request on: the one the partitioner parked on the request, or
+    /// — when the callback is reached without that (a route with no registered policy) — a fresh
+    /// computation. <c>null</c> only for a request the limiter did not attribute to a policy.
+    /// </summary>
+    private string? PartitionKeyFor(HttpContext http, string? policy)
+    {
+        if (policy is null)
+        {
+            return null;
+        }
+
+        return http.Items.TryGetValue(RateLimitPartitionKeys.PartitionKeyItemKey, out var cached) && cached is string key
+            ? key
+            : RateLimitPartitionKeys.For(http, ipResolver, policy, options.Ipv6PrefixLength);
     }
 
     [LoggerMessage(

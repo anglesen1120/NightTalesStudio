@@ -73,6 +73,9 @@ public static class RateLimiting
             .Validate(
                 options => options.HasValidSegmentsPerWindow(),
                 RateLimitingOptions.InvalidSegmentsPerWindowFailure)
+            .Validate(
+                options => options.HasValidIpv6PrefixLength(),
+                RateLimitingOptions.InvalidIpv6PrefixLengthFailure)
             .ValidateOnStart();
 
         services.TryAddSingleton<RateLimitMetrics>();
@@ -126,9 +129,15 @@ public static class RateLimiting
     /// <summary>
     /// Binds the forwarded-header trust of <c>Http:ForwardedHeaders</c> and validates the two lists at
     /// start-up. An empty list is the deliberate fail-closed configuration in Staging and Production (no
-    /// declared proxy ⇒ every forwarded header is ignored and the peer's own address is used); in
-    /// Development the loopback peer is trusted so a local proxy can be simulated.
+    /// declared proxy ⇒ the headers are ignored and the peer's own address is used); in Development the
+    /// loopback peer is trusted so a local proxy can be simulated.
     /// </summary>
+    /// <remarks>
+    /// The fail-closed case cannot be left to the empty lists alone: ASP.NET Core's
+    /// <c>ForwardedHeadersMiddleware</c> treats both lists empty as "check no sender", i.e. trust every
+    /// peer's headers, which is the opposite of the intent. The final configuration step therefore turns
+    /// the headers off outright when nothing ended up trusted (09 README BD14/D17, SEC-0935-01).
+    /// </remarks>
     /// <param name="services">The service collection of the host.</param>
     /// <param name="configuration">The host configuration.</param>
     private static void AddForwardedHeaderTrust(IServiceCollection services, IConfiguration configuration)
@@ -173,6 +182,16 @@ public static class RateLimiting
                 foreach (var proxy in proxies)
                 {
                     options.KnownProxies.Add(proxy);
+                }
+            })
+            .Configure(static options =>
+            {
+                // Runs last, after every list is populated: with no trusted proxy or network there is no
+                // sender whose declaration may be believed, so the headers are turned off rather than
+                // left to the framework's both-empty fast path, which trusts every sender.
+                if (options.KnownProxies.Count == 0 && options.KnownIPNetworks.Count == 0)
+                {
+                    options.ForwardedHeaders = ForwardedHeaders.None;
                 }
             })
             .Validate(_ => networksParsed, ForwardedHeaderTrust.InvalidNetworkEntryFailure)
@@ -313,23 +332,51 @@ internal sealed class RateLimiterOptionsSetup(
 
         foreach (var policy in RateLimitPolicies.All)
         {
-            options.AddPolicy(policy, context => PartitionFor(policy, context));
+            options.AddPolicy(policy, PartitionerFor(policy));
         }
     }
 
-    private RateLimitPartition<string> PartitionFor(string policy, HttpContext context)
+    /// <summary>
+    /// One partitioner per policy, built once at setup: the request path only evaluates the key and hands
+    /// the cached limiter-options factory to the framework (PERF-P2). The factory still creates a fresh,
+    /// mutable options instance for every new partition, which is what keeps two partitions independent.
+    /// </summary>
+    /// <param name="policy">A name of <see cref="RateLimitPolicies.All"/>.</param>
+    private Func<HttpContext, RateLimitPartition<string>> PartitionerFor(string policy)
     {
-        var partitionKey = RateLimitPartitionKeys.For(context, ipResolver, policy);
-
         if (!_rateLimiting.Enabled)
         {
-            return RateLimitPartition.GetNoLimiter(partitionKey);
+            return context => RateLimitPartition.GetNoLimiter(PartitionKey(policy, context));
         }
 
         var policyOptions = _rateLimiting.For(policy);
 
-        return RateLimitPolicies.IsSliding(policy)
-            ? RateLimitPartition.GetSlidingWindowLimiter(partitionKey, _ => policyOptions.ToSlidingWindowOptions())
-            : RateLimitPartition.GetFixedWindowLimiter(partitionKey, _ => policyOptions.ToFixedWindowOptions());
+        if (RateLimitPolicies.IsSliding(policy))
+        {
+            Func<string, SlidingWindowRateLimiterOptions> slidingFactory = _ => policyOptions.ToSlidingWindowOptions();
+
+            return context => RateLimitPartition.GetSlidingWindowLimiter(PartitionKey(policy, context), slidingFactory);
+        }
+
+        Func<string, FixedWindowRateLimiterOptions> fixedFactory = _ => policyOptions.ToFixedWindowOptions();
+
+        return context => RateLimitPartition.GetFixedWindowLimiter(PartitionKey(policy, context), fixedFactory);
+    }
+
+    /// <summary>
+    /// The key the limiter partitions on, parked on the request so the rejection callback logs the very
+    /// key that limited it instead of hashing the address a second time (PERF-P1).
+    /// </summary>
+    private string PartitionKey(string policy, HttpContext context)
+    {
+        var partitionKey = RateLimitPartitionKeys.For(
+            context,
+            ipResolver,
+            policy,
+            _rateLimiting.Ipv6PrefixLength);
+
+        context.Items[RateLimitPartitionKeys.PartitionKeyItemKey] = partitionKey;
+
+        return partitionKey;
     }
 }

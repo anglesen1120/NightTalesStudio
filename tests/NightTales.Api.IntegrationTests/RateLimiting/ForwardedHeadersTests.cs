@@ -1,5 +1,8 @@
 using System.Net;
 using System.Net.Http.Json;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using NightTales.Api.IntegrationTests.Auth;
 using NightTales.Api.IntegrationTests.Harness;
 using NightTales.TestKit;
@@ -120,6 +123,49 @@ public sealed class ForwardedHeadersTests(TestDatabase database) : IntegrationTe
         rejected.StatusCode.ShouldBe(
             HttpStatusCode.TooManyRequests,
             "the eleven attempts share the peer's own partition: no claimed address became a bucket");
+    }
+
+    [Fact]
+    public async Task EmptyTrustLists_OutsideDevelopment_IgnoreForwardedHeaders()
+    {
+        // The shipped Production/Staging configuration declares no proxy, and ASP.NET Core treats two
+        // empty trust lists as "check no sender" — i.e. trust every peer's headers — so the headers are
+        // turned off outright (SEC-0935-01). A forged X-Forwarded-For must not mint a bucket, and a
+        // forged X-Forwarded-Proto must not rewrite the connection's scheme.
+        await using var factory = ApiFactory.ProductionHost(
+            Database.ConnectionString,
+            builder =>
+            {
+                builder.UseEnvironment(Environments.Production);
+                builder.ConfigureServices(services => services.AddSingleton<IStartupFilter>(
+                    new MapEndpointsStartupFilter(ProbeEndpoints.Map)));
+            });
+
+        using var client = new HttpClient(factory.Server.CreateHandler(
+            context => context.Connection.RemoteIpAddress = IPAddress.Parse(UnknownPeer)))
+        {
+            BaseAddress = new Uri(ApiFactory.PublicOrigin),
+        };
+
+        var email = $"production-{Guid.CreateVersion7():N}@nighttales.test";
+        for (var attempt = 1; attempt <= 10; attempt++)
+        {
+            using var admitted = await LoginClaimingAsync(client, email, $"9.9.9.{attempt}");
+
+            admitted.StatusCode.ShouldBe(
+                HttpStatusCode.Unauthorized,
+                $"attempt {attempt} is inside the peer's ten-per-minute window, whatever address it claims");
+        }
+
+        using var rejected = await LoginClaimingAsync(client, email, "9.9.9.99");
+        rejected.StatusCode.ShouldBe(
+            HttpStatusCode.TooManyRequests,
+            "no claimed address became a bucket: the eleven attempts share the peer's own partition");
+
+        var probe = await ProbeAsync(client, (ForwardedProto, "http"));
+        probe.Scheme.ShouldBe(
+            "https",
+            "the declared scheme is ignored when no proxy is trusted, so the connection's own scheme stands");
     }
 
     /// <summary>The configuration section the trust boundary reads.</summary>
