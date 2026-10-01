@@ -30,6 +30,9 @@ public sealed class HttpCurrentUser(IHttpContextAccessor accessor, ScopedCurrent
     /// <summary>The claim type carrying the platform role (09 README D16).</summary>
     public const string RoleClaimType = "role";
 
+    /// <summary>The claim type carrying the refresh family (09 README BD3).</summary>
+    public const string SessionClaimType = "sid";
+
     /// <summary>
     /// The caller's id, or the user the scope was pinned to by <see cref="For"/>; <c>null</c> for an
     /// anonymous request, which therefore sees no user-owned row.
@@ -51,23 +54,37 @@ public sealed class HttpCurrentUser(IHttpContextAccessor accessor, ScopedCurrent
     /// <inheritdoc />
     public ActorType Actor => system.Id is not null ? ActorType.System : ActorOf(Role);
 
+    /// <summary>
+    /// The refresh family of the caller's access token (<c>sid</c>), or <c>null</c> when there is none:
+    /// an anonymous request, a system override, or the enrolment-only token 09.3.2-T1 issues (BD4).
+    /// </summary>
+    /// <remarks>
+    /// Read like <see cref="Id"/>: an unparseable or empty value is no session rather than an exception, so
+    /// a token that was tampered with cannot make a request fail in an unexpected place — the signature
+    /// check is what rejects it.
+    /// </remarks>
+    public Guid? SessionId => system.Id is not null ? null : ClaimGuid(SessionClaimType);
+
     /// <inheritdoc />
     public IDisposable For(Guid userId) => system.For(userId);
 
     /// <inheritdoc />
     public void MarkObserved() => system.MarkObserved();
 
-    private string? SubjectClaim() => accessor.HttpContext?.User.FindFirst(SubjectClaimType)?.Value;
-
     private string? ClaimRole() => accessor.HttpContext?.User.FindFirst(RoleClaimType)?.Value;
 
     /// <summary>
-    /// The <c>sub</c> claim as a user id, or <c>null</c> when it is absent, unparseable or the empty
-    /// guid: <see cref="Guid.Empty"/> is not a user, and treating it as one would make every filtered
-    /// query look for <c>user_id = 00000000-…</c> instead of owning nothing.
+    /// A guid claim, or <c>null</c> when it is absent, unparseable or the empty guid: <see cref="Guid.Empty"/>
+    /// is not an id, and treating it as one would make every filtered query look for
+    /// <c>user_id = 00000000-…</c> instead of owning nothing.
     /// </summary>
-    private Guid? SubjectId() =>
-        Guid.TryParse(SubjectClaim(), out var id) && id != Guid.Empty ? id : null;
+    private Guid? ClaimGuid(string claimType) =>
+        Guid.TryParse(accessor.HttpContext?.User.FindFirst(claimType)?.Value, out var id) && id != Guid.Empty
+            ? id
+            : null;
+
+    /// <summary>The <c>sub</c> claim as a user id, or <c>null</c> when there is none.</summary>
+    private Guid? SubjectId() => ClaimGuid(SubjectClaimType);
 
     private static PlatformRole RoleOf(string? value) => value switch
     {

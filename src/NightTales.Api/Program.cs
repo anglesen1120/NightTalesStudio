@@ -4,6 +4,7 @@ using NightTales.Api;
 using NightTales.Api.DependencyInjection;
 using NightTales.Api.Endpoints;
 using NightTales.Api.Http;
+using NightTales.Infrastructure.DependencyInjection;
 using NightTales.Infrastructure.Persistence;
 using NightTales.Infrastructure.Persistence.Seeding;
 
@@ -18,6 +19,14 @@ builder.Services.AddPersistence(builder.Configuration);
 // 09.2.3-T1 (09 README D10): the caller's claims are the tenant of every filtered query, and the
 // scoped system context lets tests run outbox-style work in-process.
 builder.Services.AddApiCurrentUser();
+
+// 09.3.2-T1 (09 README BD1/BD3): the ES256 issuer, the refresh-token store and the credential flows,
+// plus their start-up validation — a host that cannot sign a correct token must not serve traffic. The
+// Api registers them (not AddPersistence): the Worker has no web signing key and must not need one.
+builder.Services.AddNightTalesAuth(builder.Configuration);
+
+// 09.3.2-T1 step 6: the bearer scheme over the same key, and `App:PublicOrigin`.
+builder.Services.AddNightTalesJwtBearer();
 
 builder.Services.AddProblemDetails(ProblemDetailsWriter.ConfigureProblemDetails);
 

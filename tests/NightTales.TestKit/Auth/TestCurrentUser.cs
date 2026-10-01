@@ -16,6 +16,9 @@ public sealed class TestCurrentUser : ICurrentUser
 
     public ActorType Actor { get; set; } = ActorType.User;
 
+    /// <summary>The <c>sid</c> of the fake caller's token, when a test needs a session-scoped actor.</summary>
+    public Guid? SessionId { get; set; }
+
     /// <summary>An authenticated scope is exactly a scope with an <see cref="Id"/>.</summary>
     public bool IsAuthenticated => Id is not null;
 }

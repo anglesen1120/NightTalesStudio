@@ -44,6 +44,53 @@ public sealed class BreachedPasswordCheckerTests
     }
 
     [Fact]
+    public async Task RangeMode_SendsAddPaddingHeader()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var suffix = Sha1Hex(Password)[5..];
+
+        var handler = new RecordingRangeHandler(_ => $"{suffix}:42\r\n");
+        using var checker = Checker(handler);
+
+        var result = await checker.IsBreachedAsync(Password, ct);
+
+        result.IsError.ShouldBeFalse();
+        handler.RequestAddPadding.ShouldBe(
+            ["true"],
+            "W3-O3 requires the padded range protocol so unknown suffixes come back as count-0 rows");
+    }
+
+    [Fact]
+    public async Task RangeMode_ZeroCountRow_IsNotBreached()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var suffix = Sha1Hex(Password)[5..];
+        var other = new string('0', 35);
+
+        // Add-Padding answers every unknown suffix with count 0; the row is a valid entry but not a breach.
+        using var checker = Checker(new RecordingRangeHandler(_ => $"{other}:7\r\n{suffix}:0\r\n"));
+
+        var result = await checker.IsBreachedAsync(Password, ct);
+
+        result.IsError.ShouldBeFalse();
+        result.Value.ShouldBeFalse("a padded count-0 row means the provider does not know this suffix");
+    }
+
+    [Fact]
+    public async Task RangeMode_PositiveCountRow_IsBreached()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var suffix = Sha1Hex(Password)[5..];
+
+        using var checker = Checker(new RecordingRangeHandler(_ => $"{suffix}:5\r\n"));
+
+        var result = await checker.IsBreachedAsync(Password, ct);
+
+        result.IsError.ShouldBeFalse();
+        result.Value.ShouldBeTrue("a positive count for this suffix is a real breach");
+    }
+
+    [Fact]
     public async Task RangeMode_ValidNoMatchBody_IsNotBreached()
     {
         var ct = TestContext.Current.CancellationToken;
@@ -232,11 +279,16 @@ public sealed class BreachedPasswordCheckerTests
     {
         internal string? RequestPath { get; private set; }
 
+        internal IReadOnlyList<string>? RequestAddPadding { get; private set; }
+
         protected override Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request,
             CancellationToken cancellationToken)
         {
             RequestPath = request.RequestUri?.AbsolutePath;
+            RequestAddPadding = request.Headers.TryGetValues("Add-Padding", out var values)
+                ? [.. values]
+                : null;
 
             return Task.FromResult(new HttpResponseMessage(status)
             {

@@ -39,6 +39,7 @@ public sealed class InitialCoreMigrationTests(TestDatabase database) : Integrati
         "idempotency_keys",
         "moderation_events",
         "outbox_messages",
+        "refresh_tokens",
         "role_claims",
         "roles",
         "series",

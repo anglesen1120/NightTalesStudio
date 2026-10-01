@@ -45,8 +45,11 @@ public sealed class KAnonymityRangeChecker(HttpClient http) : IBreachedPasswordC
 
         try
         {
+            using var request = new HttpRequestMessage(HttpMethod.Get, new Uri($"range/{prefix}", UriKind.Relative));
+            request.Headers.Add("Add-Padding", "true");
+
             using var response = await http
-                .GetAsync(new Uri($"range/{prefix}", UriKind.Relative), ct)
+                .SendAsync(request, ct)
                 .ConfigureAwait(false);
 
             if (!response.IsSuccessStatusCode)
@@ -75,7 +78,9 @@ public sealed class KAnonymityRangeChecker(HttpClient http) : IBreachedPasswordC
     /// <summary>
     /// Reads the provider's documented <c>SUFFIX:COUNT</c> body: every non-empty line must be a
     /// <see cref="SuffixLength"/>-character hex suffix, a colon and a decimal count, and the body must
-    /// hold at least one entry.
+    /// hold at least one entry. A listed suffix counts as breached only when its count is positive:
+    /// the <c>Add-Padding</c> protocol answers with count-0 rows for every suffix it does not know
+    /// (W3-O3), and those are still valid entries.
     /// </summary>
     /// <remarks>
     /// An empty 200, an HTML error page or a truncated body is an <em>unusable</em> answer, so it fails
@@ -104,7 +109,12 @@ public sealed class KAnonymityRangeChecker(HttpClient http) : IBreachedPasswordC
             }
 
             entries++;
-            matched |= span[..separator].Equals(suffix, StringComparison.OrdinalIgnoreCase);
+
+            if (span[..separator].Equals(suffix, StringComparison.OrdinalIgnoreCase)
+                && span[(separator + 1)..].IndexOfAnyExcept('0') >= 0)
+            {
+                matched = true;
+            }
         }
 
         return entries == 0 ? UnavailableError() : matched;

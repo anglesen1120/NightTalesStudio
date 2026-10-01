@@ -20,6 +20,9 @@ env:
   # It is a constant, never a real credential, and the tests never use it: they connect through
   # NTS_TEST_PG (the postgres:17 service container in the integration job).
   ConnectionStrings__Postgres: "Host=127.0.0.1;Database=nighttales;Username=nighttales;Password=ci-openapi-document-generation-placeholder"
+  # 09.3.2-T1: the same generator also boots the host's start-up validation, which requires the ES256
+  # signing key (secret nts/<env>/api/JWT_SIGNING_KEY). CI has no secret store, so each job generates a
+  # throwaway P-256 key per run (step "Design-time ES256 signing key"); no key is ever committed.
 
 jobs:
   build-test:
@@ -29,6 +32,16 @@ jobs:
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           global-json-file: global.json
+      # 09.3.2-T1: a throwaway ES256 key for the OpenAPI generator, which boots the Api and therefore
+      # runs AddNightTalesAuth's ValidateOnStart. Generated per run, so no private key is ever committed.
+      - name: Design-time ES256 signing key
+        shell: bash
+        run: |
+          {
+            echo 'Auth__Jwt__SigningKey<<NTS_SIGNING_KEY_EOF'
+            openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256
+            echo 'NTS_SIGNING_KEY_EOF'
+          } >> "$GITHUB_ENV"
       - name: Restore (locked)
         run: dotnet restore NightTales.ci.slnf --locked-mode
       - name: Build (Release)
@@ -87,6 +100,14 @@ jobs:
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           global-json-file: global.json
+      - name: Design-time ES256 signing key
+        shell: bash
+        run: |
+          {
+            echo 'Auth__Jwt__SigningKey<<NTS_SIGNING_KEY_EOF'
+            openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256
+            echo 'NTS_SIGNING_KEY_EOF'
+          } >> "$GITHUB_ENV"
       - name: Restore (locked)
         run: dotnet restore NightTales.ci.slnf --locked-mode
       - name: Integration tests (PostgreSQL 17 service)
@@ -131,6 +152,14 @@ jobs:
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           global-json-file: global.json
+      - name: Design-time ES256 signing key
+        shell: bash
+        run: |
+          {
+            echo 'Auth__Jwt__SigningKey<<NTS_SIGNING_KEY_EOF'
+            openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256
+            echo 'NTS_SIGNING_KEY_EOF'
+          } >> "$GITHUB_ENV"
       - name: Restore (locked)
         run: dotnet restore NightTales.ci.slnf --locked-mode
       - name: Migration tests (PostgreSQL 17 service)

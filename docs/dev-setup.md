@@ -6,12 +6,14 @@ Daily development is native on macOS, without Docker (`plans/00-overview.md` §5
 
 - SDK 10.0.401 (`global.json`, `rollForward: latestPatch`).
 - The two commands below are exactly what `.github/workflows/backend.yml` runs (`build-test`, then
-  `integration`). The build needs a parseable connection string because the build-time OpenAPI
-  generator boots the Api; it never connects, so any syntactically valid value works, and the same
-  constant placeholder is set in the workflow.
+  `integration`). The build needs two environment values because the build-time OpenAPI generator boots
+  the Api: a parseable connection string, which it never uses to connect, and an ES256 signing key for
+  the start-up validation of 09.3.2-T1 (secret `nts/<env>/api/JWT_SIGNING_KEY`). Generate a throwaway
+  key for the build — CI does the same with `openssl genpkey`, so no private key is ever committed.
 
 ```bash
 export ConnectionStrings__Postgres='Host=127.0.0.1;Database=nighttales;Username=nighttales;Password=ci-openapi-document-generation-placeholder'
+export Auth__Jwt__SigningKey="$(openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256)"
 dotnet restore NightTales.ci.slnf --locked-mode
 dotnet build   NightTales.ci.slnf -c Release --no-restore   # writes src/NightTales.Api/openapi.json (git-ignored)
 dotnet format  NightTales.ci.slnf --verify-no-changes --no-restore
@@ -30,14 +32,17 @@ env -u NTS_TEST_PG dotnet test NightTales.ci.slnf -c Release --no-build \
 ```bash
 # Integration job (needs the server from the Database section below). The count grows with every
 # feature (56 on the 2026-09-29 wave-2 tree, 23 when this block was written). Self-contained:
-# both variables are exported here. `ConnectionStrings__Postgres` is required by the build-time OpenAPI
-# generator, which boots the Api and validates the connection string — not by the tests, which read
-# NTS_TEST_PG. Without it a build fails inside the generator: MSB3073 from the `dotnet-getdocument`
-# tool that Microsoft.Extensions.ApiDescription.Server.targets invokes, with
+# all three variables are exported here. `ConnectionStrings__Postgres` and `Auth__Jwt__SigningKey` are
+# required by the build-time OpenAPI generator, which boots the Api and runs its start-up validation —
+# not by the tests, which read NTS_TEST_PG. Without the connection string a build fails inside the
+# generator: MSB3073 from the `dotnet-getdocument` tool that
+# Microsoft.Extensions.ApiDescription.Server.targets invokes, with
 # `OptionsValidationException: Configuration value 'ConnectionStrings:Postgres' is required and must
-# not be blank` (verified 2026-09-29 — the stack is the whole ASP.NET hosting chain, none of it names
-# the missing variable).
+# not be blank`; without the key it fails the same way with `The ES256 signing key (secret
+# nts/<env>/api/JWT_SIGNING_KEY) must be the PEM of a P-256 EC private key` (verified 2026-10-01 — the
+# stack is the whole ASP.NET hosting chain, none of it names the missing variable).
 export ConnectionStrings__Postgres='Host=127.0.0.1;Database=nighttales;Username=nighttales;Password=ci-openapi-document-generation-placeholder'
+export Auth__Jwt__SigningKey="$(openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256)"
 export NTS_TEST_PG="Host=127.0.0.1;Port=5432;Database=${POSTGRES_DB:-nighttales};Username=${POSTGRES_USER:-nighttales};Password=<POSTGRES_PASSWORD from .env>"
 dotnet restore NightTales.ci.slnf --locked-mode
 dotnet build   NightTales.ci.slnf -c Release --no-restore

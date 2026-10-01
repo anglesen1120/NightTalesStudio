@@ -17,4 +17,7 @@ public sealed class AnonymousCurrentUser : ICurrentUser
     public PlatformRole Role => PlatformRole.User;
 
     public ActorType Actor => ActorType.User;
+
+    /// <summary>There is no token in this scope, so there is no session either.</summary>
+    public Guid? SessionId => null;
 }
