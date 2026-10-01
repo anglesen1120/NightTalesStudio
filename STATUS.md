@@ -8,11 +8,11 @@ Legend: `done` (acceptance checks run and passed) · `doing` · `blocked (<who>)
 
 Keep this block ≤ 15 lines: current state and next step only. Move the previous block to the archive when you replace it.
 
-- **Current (2026-10-01 (2)).** `develop` @ `38a09f8` has 09.3.1-T1 (#59). Branch `feature/09.3.2-T1-login` (code `38ead0c`): 09.3.2-T1 - `POST /auth/login|refresh|logout`, ES256 access tokens (fresh signing key per token + public-only validation key; P-256 curve OID checked), rotating `__Secure-nts_rt` families (per-family `pg_advisory_xact_lock`, reuse revokes the family, NOTIFY security), `RequireSameOriginFilter`, JwtBearer in production `Program.cs`, `ICurrentUser.SessionId`, meter `NightTales.Auth`, migration `_09_RefreshTokens`; range checker now sends `Add-Padding: true` and ignores count-0 rows (W3-O3). T3 gates: QA 14/14; code CR-1..3, security SEC-09.3.2-01 (family race), perf P1, metrics gap fixed; delta review closed. Release build 0 warnings, format 0, 525/525 tests on PG17. Build now needs `Auth__Jwt__SigningKey` (throwaway P-256 key; CI + `docs/dev-setup.md`).
-- **Next wave, in order (owner 2026-10-01, 09 W3 CR-47):** 09.3.2-T1 PR needs the **second human reader** (09 README §B11) before merge -> then `09.4.1-T1` series.
+- **Current (2026-10-01 (3)).** `develop` @ `623a321` has 09.3.2-T1 login (#60; post-merge build 0 warnings, format 0, 525/525 on PG17). Branch `feature/03.1.1-T2-09.4.1-T1` (code `7112dc3`): 03.1.1-T2 - `NegativeClause` v1, `ScenePromptBuilder`, `StylePromptVersion`, `StyleTemplateRules`, `StyleTopicPolicy(Topic, Topic?)`, seeder aborts with `seed_style_template_invalid:<name>:<code>` / `seed_negative_clause_mismatch`; 09.4.1-T1 - `/api/v1/series` POST/GET list/GET/PATCH (If-Match)/DELETE (archive), `SeriesCreated`/`SeriesArchived` outbox events, keyset cursor (row-value `(created_at, id) <`), UTC-normalized cursor. T3 gates: QA 0 functional defects (+15 tests); code CR-1..3, security SEC-0941-01 (= CR-3), perf PERF-01 fixed; delta review closed. Release build 0 warnings, format 0, 628/628 on PG17.
+- **Next wave, in order:** owner merges the 03.1.1-T2 + 09.4.1-T1 PR -> `09.5.1-T1` episodes (deps 09.4.1-T1, 09.2.4-T1, 09.1.3-T2, 09.1.4-T1 then all on `develop`); 09.4.1-T1 + 09.5.1-T1 merged opens 02 M1 (09 README §7).
 - **SEC-01 decided (owner 2026-10-01, 09 W3-O3):** range API + real top-N seed fallback (option 3). The bundled `breached-passwords.txt` is still a synthetic placeholder; 09.3.1-T2 replaces it (seed licence checked before commit) and implements fail-open-to-seed, before registration opens (09.3.1-T3, S).
 - **Owner decisions open:** none blocking phase 1.
-- **Security debt live on `develop`:** see §Deferred security gates — production Api has no authentication registered yet (`AuthorizationBehavior` closed in #54).
+- **Security debt live on `develop`:** none from §Deferred security gates (production JwtBearer landed in #60); SEC-01 above is decided but stays open until 09.3.1-T2 ships the real seed.
 - **Gates:** per task by risk tier (`plans/00-overview.md` §10 Definition of Done; full rule in `~/.omp/agent/RULES.md`).
 - **Environment (DEC-5, DEC-6):** implementation machine = this Mac (M4, 16 GB, macOS 27.0); `NTS_HOME=<repo>/.nts` (gitignored; `lib.sh` default); D13 mode `accepted-risk`, keys never committed or pushed (`.gitignore` + gitleaks hooks).
 - **Fresh clone:** `git config core.hooksPath .githooks`, then `worker-node/bin/bootstrap.sh all`, then `worker-node/bin/smoke.sh`. Native dev stack: `docs/dev-setup.md`.
@@ -25,10 +25,10 @@ Per-task evidence for `done` rows: `docs/status-archive.md` §Per-plan evidence 
 |---|---|---|
 | 01 Environment (29 tasks) | 25 + 01.2.4-T1 n/a (DEC-9: no OpenAI org, calls go through the relay) | 01.1.1-T3, 01.3.3-T1, 01.3.3-T2 |
 | 02 Story writing (M0 slice) | 11 tasks — M0 slice complete (presets, harness, A/B, D15 freeze, 02.5.2-T0 spike) | M1 tasks not started |
-| 03 Images (M0 slice) | 3 (03.1.1-T1, 03.4.1-T1, 03.3.2-T1) | 03.1.2-T1, 03.2.x, 03.4.2/03.4.3 (M1) |
+| 03 Images (M0 slice) | 3 (03.1.1-T1, 03.4.1-T1, 03.3.2-T1); 03.1.1-T2 implemented (PR open) | 03.1.2-T1, 03.2.x, 03.4.2/03.4.3 (M1) |
 | 04 Voice proxy (12 tasks) | 10 | 04.2.2-T2, 04.2.3-T1 |
 | 05 Video/subtitles | 9 | 05.2.1-T1, 05.5.2 |
-| 09 Backend | 16 tasks merged (09.3.1-T1 #59); 09.3.2-T1 login implemented (PR open) | 09.4.1-T1 series next |
+| 09 Backend | 17 tasks merged (09.3.2-T1 #60); 09.4.1-T1 series implemented (PR open) | 09.5.1-T1 episodes next |
 | 11 Worker deployment | 11.2.1-T1 (proposal only; sign-off deferred to phase 2, owner 2026-09-30) | phase 1: 11.1.x, 11.3.3, 11.3.5; the rest is phase 2 (11 CR-18) |
 | 13 Compliance | 13.1.1-T1, 13.1.2-T1 (PR #35) | 13.2.1-T1 → 13.2.2-T1, 10.3.1-T1 pages; 13.1.1-T2 / 13.1.2-T2 lawyer rows (O1) |
 
@@ -51,7 +51,7 @@ Plans 06, 07, 08, 10, 12: not started. Order: `plans/features/README.md`.
 
 ## Deferred security gates
 
-**Deferred security gates (security review 2026-09-29, must close before any feature endpoint/command/query lands):** Closed 2026-09-30: `AuthorizationBehavior` (09.1.3-T2, #54) is deny-by-default (anonymous → `unauthorized`, insufficient role → `not_found`, system actor passes only `User`); the tenant `HasQueryFilter` (09.2.3-T1, #52) covers all 8 `IUserOwned` entities on both contexts; anonymous sees no rows. Still open (RevSec0923 deferred note): production Api registers no authentication yet, so `HttpCurrentUser` is proven only through `TestAuthHandler` and unit tests until the auth task lands. No feature endpoint may merge before it.
+**Deferred security gates (security review 2026-09-29, must close before any feature endpoint/command/query lands):** Closed 2026-09-30: `AuthorizationBehavior` (09.1.3-T2, #54) is deny-by-default (anonymous → `unauthorized`, insufficient role → `not_found`, system actor passes only `User`); the tenant `HasQueryFilter` (09.2.3-T1, #52) covers all 8 `IUserOwned` entities on both contexts; anonymous sees no rows. Closed 2026-10-01: production `Program.cs` registers ES256 JwtBearer (09.3.2-T1, #60), so feature endpoints may merge; the series routes (09.4.1-T1) are its first consumer.
 
 ## Open findings
 
@@ -87,3 +87,4 @@ Recent rows only; the full log is `docs/status-archive.md` §Session log.
 | 2026-09-30 | 09 wave 5 merged (#54 → `fd67115`, #55 → `ff68a0c`, #56 → `31cef57`) | #55 conflicted after #54 (additive hunk in `PersistenceServiceCollectionExtensions.cs`); merged develop into the branch (`9f65e08`, no force-push), kept both usings + both registration blocks; branch 160 + 297 + 49 green, CI 3/3 green. Post-merge `develop` re-run: build 0 warnings, format 0, 160 unit + 297 integration + 49 infra on PG17. 09.2.6 plan.md status line fixed (T1 done in #46) |
 
 | 2026-10-01 | 09.3.1-T1 identity (`feature/09.3.1-T1-identity` `7830f67`) | #58 merged → `3a7c51c`, post-merge 400/400. T3: QA via `test-suite-runner` (first QA spawn used the generic `task` agent and was stopped), D1–D4 + C1–C4 + P1 + S2 fixed, delta review closed; SEC-01 (placeholder breach list) left for the owner. Build 0 warnings, format 0, 468/468 |
+| 2026-10-01 | 03.1.1-T2 + 09.4.1-T1 (`feature/03.1.1-T2-09.4.1-T1` `7112dc3`) | #60 merged → `623a321`, post-merge 525/525. One branch: 09.4.1-T1 needs `StyleTopicPolicy` from 03.1.1-T2 (shared contract written first, typed `Topic?` hint), two parallel implementers. T3: QA (`test-suite-runner`) 0 functional defects, +15 tests; code CR-1 (PATCH field names `patch.title`), CR-2 (seed parser preempted `StyleTemplateRules` codes), CR-3 = SEC-0941-01 (non-UTC cursor → 500), PERF-01 (keyset OR → row value) fixed; delta review closed. Build 0 warnings, format 0, 628/628 on PG17 |
