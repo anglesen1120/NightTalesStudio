@@ -153,6 +153,18 @@ public static class StoryDraftValidator
         var total = 0;
         foreach (var tag in tags)
         {
+            // A deserialised draft can carry a null element even though the record declares the list
+            // non-nullable; the validator reports it and never dereferences it (02.2.1 contract).
+            if (tag is null)
+            {
+                issues.Add(ValidationIssue.Blocking(
+                    TagsInvalid,
+                    SegmentAddress.Meta,
+                    "(null)",
+                    "Return text tags; a null tag is not a tag."));
+                continue;
+            }
+
             total += tag.Length;
 
             if (tag.Length > rules.TagMaxChars)
@@ -160,7 +172,7 @@ public static class StoryDraftValidator
                 issues.Add(ValidationIssue.Blocking(
                     TagsInvalid,
                     SegmentAddress.Meta,
-                    FormattableString.Invariant($"tag '{tag}' is {tag.Length} characters, limit {rules.TagMaxChars}"),
+                    FormattableString.Invariant($"tag '{ValidationIssue.Snip(tag)}' is {tag.Length} characters, limit {rules.TagMaxChars}"),
                     "Shorten the tag."));
             }
 
@@ -169,7 +181,7 @@ public static class StoryDraftValidator
                 issues.Add(ValidationIssue.Blocking(
                     TagsInvalid,
                     SegmentAddress.Meta,
-                    FormattableString.Invariant($"tag '{tag}' carries '{hit}'"),
+                    FormattableString.Invariant($"tag '{ValidationIssue.Snip(tag)}' carries '{hit}'"),
                     "Remove URLs, angle brackets, commas and hashtags from the tags."));
             }
         }
@@ -225,7 +237,7 @@ public static class StoryDraftValidator
             issues.Add(ValidationIssue.Blocking(
                 TextHasMarkup,
                 address,
-                FormattableString.Invariant($"'{markup}' in the text"),
+                FormattableString.Invariant($"'{ValidationIssue.Snip(markup)}' in the text"),
                 "Remove markdown, brackets, list markers and URLs from the segment text."));
         }
 
@@ -247,7 +259,7 @@ public static class StoryDraftValidator
                 issues.Add(ValidationIssue.Blocking(
                     KeywordInvalid,
                     address,
-                    FormattableString.Invariant($"'{keyword}' ({violation.RuleId})"),
+                    FormattableString.Invariant($"'{ValidationIssue.Snip(keyword)}' ({violation.RuleId})"),
                     "Rewrite the keyword as an English noun phrase of 3 to 12 words."));
             }
         }
@@ -259,7 +271,7 @@ public static class StoryDraftValidator
                 issues.Add(ValidationIssue.Blocking(
                     FactRefUnknown,
                     address,
-                    factRef,
+                    ValidationIssue.Snip(factRef),
                     "Cite only fact ids from the approved fact sheet."));
             }
         }
@@ -284,7 +296,7 @@ public static class StoryDraftValidator
                 issues.Add(ValidationIssue.Blocking(
                     WarningInvalid,
                     SegmentAddress.Meta,
-                    warning,
+                    ValidationIssue.Snip(warning),
                     "Use only the D3 content warnings."));
             }
         }
@@ -296,8 +308,15 @@ public static class StoryDraftValidator
     /// </summary>
     private static void ValidateStructure(StoryStructureV1? structure, StoryRules rules, List<ValidationIssue> issues)
     {
+        // A deserialised draft can carry a null structure block; it is malformed, not "no rules apply",
+        // so the validator reports a blocking issue instead of accepting the draft (02.2.1 contract).
         if (structure is null)
         {
+            issues.Add(ValidationIssue.Blocking(
+                NarratorModeInvalid,
+                SegmentAddress.Meta,
+                "(missing)",
+                "Provide the D3 structure block with a narrator mode of first_person or third_person."));
             return;
         }
 
@@ -336,7 +355,7 @@ public static class StoryDraftValidator
     /// </summary>
     private static void ValidateLength(StoryContentV1 content, StoryRules rules, List<ValidationIssue> issues)
     {
-        var tokens = DerivedStoryFields.From(content).WordCount;
+        var tokens = CountBodyTokens(content);
         var min = rules.Length.MinTokens;
         var max = rules.Length.MaxTokens;
 
@@ -361,18 +380,37 @@ public static class StoryDraftValidator
     }
 
     /// <summary>
-    /// The first T70 metadata violation in a title or description, or null: markup, a URL (scheme or bare
-    /// domain), an <c>@</c> handle or e-mail, or a phone number (seven digits in one letter-free token).
+    /// The D4 token count of the derived body (hook ++ paragraphs ++ ending), counted per segment with
+    /// the same NFC/whitespace rule as <see cref="StoryText.Tokenize"/> but without building the body,
+    /// the keyword list or the token strings. The blank-line joins are whitespace, so the per-segment
+    /// counts sum to the body's token count.
     /// </summary>
-    private static string? FindMetadataViolation(string? value)
+    private static int CountBodyTokens(StoryContentV1 content)
     {
-        var text = StoryText.Normalize(value);
+        var count = StoryText.CountTokens(content.Hook?.Text);
+        foreach (var paragraph in OrEmpty(content.Paragraphs))
+        {
+            count += StoryText.CountTokens(paragraph?.Text);
+        }
+
+        return count + StoryText.CountTokens(content.Ending?.Text);
+    }
+
+    /// <summary>
+    /// The first T70 metadata violation in an NFC-normalised title or description, or null: markup, a URL
+    /// (scheme or bare domain), an <c>@</c> handle or e-mail, or a phone number (seven digits in one
+    /// letter-free token). The caller normalises once, and this scan runs over that text.
+    /// </summary>
+    /// <param name="text">An already-NFC-normalised title or description.</param>
+    /// <returns>The offending fragment, or null.</returns>
+    private static string? FindMetadataViolation(string text)
+    {
         if (text.Length == 0)
         {
             return null;
         }
 
-        if (StoryText.FindMarkup(text) is { } markup)
+        if (StoryText.FindMarkupNormalized(text) is { } markup)
         {
             return markup;
         }
@@ -382,7 +420,7 @@ public static class StoryDraftValidator
             return "@";
         }
 
-        foreach (var token in StoryText.Tokenize(text))
+        foreach (var token in StoryText.TokenizeNormalized(text))
         {
             if (CountDigits(token) >= 7 && !HasLetter(token))
             {
@@ -427,31 +465,75 @@ public static class StoryDraftValidator
             : null;
     }
 
-    /// <summary>The bare-domain form of one token (<c>example.com</c>), or null (a 2–24 letter TLD).</summary>
+    /// <summary>
+    /// The bare-domain form of one token (<c>example.com</c>), or null. The suffix is 2–24 characters and
+    /// is an ASCII label, an IDN Unicode label or a punycode <c>xn--</c> label; the IDNA dot equivalents
+    /// U+FF0E, U+3002 and U+FF61 separate labels as the ASCII dot does (02 T70). The returned fragment is
+    /// the original token without trailing sentence punctuation — never a mutated (re-dotted) form.
+    /// </summary>
     private static string? BareDomain(string token)
     {
-        var trimmed = token.TrimEnd(TokenTrailingPunctuation);
-        var lastDot = trimmed.LastIndexOf('.');
-        if (lastDot <= 0 || lastDot == trimmed.Length - 1)
+        var candidate = CanonicalizeDomainDots(token).TrimEnd(TokenTrailingPunctuation);
+        var lastDot = candidate.LastIndexOf('.');
+        if (lastDot <= 0 || lastDot == candidate.Length - 1)
         {
             return null;
         }
 
-        var suffix = trimmed[(lastDot + 1)..];
-        if (suffix.Length is < 2 or > 24)
+        var suffix = candidate[(lastDot + 1)..];
+        if (suffix.Length is < 2 or > 24 || IsSentenceWord(suffix) || !IsDomainSuffix(suffix))
         {
             return null;
+        }
+
+        return token.TrimEnd(TokenTrailingPunctuation);
+    }
+
+    /// <summary>
+    /// Whether a suffix is a sentence word, not a TLD: an uppercase letter followed by at least one
+    /// lowercase ("end.Then" is prose, while "example.com" and "EXAMPLE.COM" are domains).
+    /// </summary>
+    private static bool IsSentenceWord(string suffix)
+    {
+        if (!char.IsUpper(suffix[0]))
+        {
+            return false;
+        }
+
+        for (var index = 1; index < suffix.Length; index++)
+        {
+            if (char.IsLower(suffix[index]))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>Replaces the IDNA dot equivalents with an ASCII dot; returns the input when there is none.</summary>
+    private static string CanonicalizeDomainDots(string text) =>
+        !text.Contains('\uFF0E') && !text.Contains('\u3002') && !text.Contains('\uFF61')
+            ? text
+            : text.Replace('\uFF0E', '.').Replace('\u3002', '.').Replace('\uFF61', '.');
+
+    /// <summary>Whether a suffix is a domain label: a punycode <c>xn--</c> label, or 2–24 letters.</summary>
+    private static bool IsDomainSuffix(string suffix)
+    {
+        if (suffix.StartsWith("xn--", StringComparison.OrdinalIgnoreCase))
+        {
+            return suffix.Length > 4;
         }
 
         foreach (var character in suffix)
         {
-            if (!char.IsAsciiLetter(character))
+            if (!char.IsLetter(character))
             {
-                return null;
+                return false;
             }
         }
 
-        return trimmed;
+        return true;
     }
 
     /// <summary>Counts the ASCII digits of one token.</summary>

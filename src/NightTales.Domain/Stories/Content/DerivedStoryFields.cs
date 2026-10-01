@@ -39,7 +39,7 @@ public sealed record DerivedStoryFields(string Body, IReadOnlyList<string> Keywo
 
         Append(content.Ending, keywords);
 
-        return new DerivedStoryFields(body, keywords, StoryText.Tokenize(body).Count);
+        return new DerivedStoryFields(body, keywords, StoryText.CountTokens(body));
     }
 
     /// <summary>Appends one segment's keywords in D3 order; a missing segment or list contributes nothing.</summary>

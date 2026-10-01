@@ -408,6 +408,86 @@ public sealed class StoryDraftValidatorTests
     }
 
     [Fact]
+    public void Validate_NullTagElement_TagsInvalid()
+    {
+        // SEC-02.2.1 (QA): a deserialised draft can carry a null tag element; the validator reports it
+        // and never dereferences it (the pre-fix code read tag.Length and threw an NRE).
+        var result = StoryDraftValidator.Validate(Draft(tags: [null!]), Rules());
+
+        result.IsValid.ShouldBeFalse();
+        result.BlockingRuleIds.ShouldBe(["tags_invalid"]);
+        result.Issues.ShouldContain(issue => issue.RuleId == "tags_invalid" && issue.Segment == "meta");
+    }
+
+    [Fact]
+    public void Validate_NullStructure_BlockingNarratorMode()
+    {
+        // SEC-02.2.1-STRUCTURE-FAIL-OPEN: a missing structure block is malformed, never a valid draft.
+        var draft = Draft() with { Structure = null! };
+
+        var result = StoryDraftValidator.Validate(draft, Rules());
+
+        result.IsValid.ShouldBeFalse();
+        result.BlockingRuleIds.ShouldBe(["narrator_mode_invalid"]);
+    }
+
+    [Fact]
+    public void Validate_OversizedEvidence_IsBoundedTo200()
+    {
+        // CR-04 / D22: evidence quotes at most 200 chars, snipped before the interpolated string is built.
+        var keywordResult = StoryDraftValidator.Validate(WithParagraphKeywords(0, [new string('k', 500)]), Rules());
+        keywordResult.Issues.ShouldContain(issue => issue.RuleId == "keyword_invalid");
+        keywordResult.Issues.ShouldAllBe(issue => issue.Evidence.Length <= ValidationIssue.MaxEvidenceChars);
+
+        var tagResult = StoryDraftValidator.Validate(Draft(tags: [new string('t', 500)]), Rules());
+        tagResult.Issues.ShouldContain(issue => issue.RuleId == "tags_invalid");
+        tagResult.Issues.ShouldAllBe(issue => issue.Evidence.Length <= ValidationIssue.MaxEvidenceChars);
+    }
+
+    /// <summary>SEC-02.2.1-UNICODE-DOMAIN: IDN labels and the IDNA dot equivalents are domains too.</summary>
+    [Theory]
+    [InlineData("example.com")]         // an ASCII domain (control)
+    [InlineData("EXAMPLE.COM")]         // an all-uppercase ASCII domain is still a domain
+    [InlineData("example.中国")]        // a Unicode (IDN) TLD
+    [InlineData("example.xn--p1ai")]    // a punycode TLD
+    [InlineData("example．com")]         // U+FF0E fullwidth full stop
+    [InlineData("example。com")]         // U+3002 ideographic full stop
+    [InlineData("example｡com")]         // U+FF61 halfwidth ideographic full stop
+    public void Validate_UnicodeOrEquivalentDomain_MetadataHasMarkup(string title)
+    {
+        var result = StoryDraftValidator.Validate(Draft(title: title), Rules());
+
+        result.BlockingRuleIds.ShouldContain("metadata_has_markup");
+    }
+
+    /// <summary>NEW-02.2.1-DOMAIN-PROSE: a dot before a capitalised word is sentence punctuation.</summary>
+    [Theory]
+    [InlineData("end.Then")]
+    [InlineData("end。Then")]
+    [InlineData("end. Then")]
+    public void Validate_SentenceProseDomain_NoMetadataMarkup(string title)
+    {
+        var result = StoryDraftValidator.Validate(Draft(title: title), Rules());
+
+        result.BlockingRuleIds.ShouldNotContain("metadata_has_markup");
+        result.IsValid.ShouldBeTrue();
+    }
+
+    /// <summary>NEW-02.2.1-EVIDENCE-SURROGATE: the 200-char cut never splits a surrogate pair.</summary>
+    [Fact]
+    public void ValidationIssue_Snip_DoesNotSplitSurrogatePair()
+    {
+        // 199 ASCII then an emoji straddles the cut; the snip must back off one code unit.
+        var evidence = new string('a', 199) + "😀" + new string('b', 10);
+
+        var issue = ValidationIssue.Blocking("rule", SegmentAddress.Meta, evidence, "fix");
+
+        issue.Evidence.Length.ShouldBeLessThanOrEqualTo(ValidationIssue.MaxEvidenceChars);
+        char.IsHighSurrogate(issue.Evidence[^1]).ShouldBeFalse();
+        char.IsLowSurrogate(issue.Evidence[0]).ShouldBeFalse();
+    }
+
+    [Fact]
     public void Validate_UnknownStructureTerm_MapsToOtherPrefixAndAdvisory()
     {
         var structure = DefaultStructure() with { SubGenre = "quiet haunting" };

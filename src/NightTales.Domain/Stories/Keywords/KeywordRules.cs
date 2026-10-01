@@ -11,7 +11,10 @@ namespace NightTales.Domain.Stories.Keywords;
 /// The rules run most-specific first, so a street word reports R12 rather than the generic "not English":
 /// R1/R3 word count, R5 person-name heuristic, R6 <see cref="GoreTerms"/>, R7 <see cref="BrandTerms"/>,
 /// R12 <see cref="StreetWords"/> plus the caller's <see cref="StoryRules.KnownPlaceNames"/>, R13
-/// <see cref="MetaTokens"/>, then R2's <c>[A-Za-z' -]</c> alphabet.
+/// <see cref="MetaTokens"/>, then R2's <c>[A-Za-z' -]</c> alphabet. R12 rejects a digit-plus-street-word
+/// address ("12 baker street") or a known place name, not a street word alone ("rain on a village lane").
+/// The R6/R7/R12/R13 lists match a token's hyphen-split parts and possessive stem as well as the whole
+/// token, so "blood-soaked" and "child's" do not evade them.
 /// </remarks>
 public static class KeywordRules
 {
@@ -51,6 +54,16 @@ public static class KeywordRules
         "mr", "mrs", "ms", "dr", "sir", "lady", "captain", "detective", "officer", "professor", "saint",
     };
 
+    /// <summary>
+    /// R6's permitted minor formation (02 T78, keyword-rules.v1.md): a minor appears only through an
+    /// object they left, and the contract's approved example is "child's drawing". A possessive of a
+    /// <see cref="GoreTerms.MinorSubjects"/> term is a violation unless the possessed noun is here.
+    /// </summary>
+    private static readonly HashSet<string> R6PermittedChildObjects = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "drawing",
+    };
+
     /// <summary>Whether <paramref name="keyword"/> passes every machine check.</summary>
     /// <param name="keyword">The keyword as the writer returned it.</param>
     /// <param name="rules">The run's rules; <see cref="StoryRules.KnownPersonNames"/> and
@@ -72,7 +85,7 @@ public static class KeywordRules
             return KeywordViolation.Invalid(TooFewWords, "(empty)");
         }
 
-        var words = StoryText.Tokenize(text);
+        var words = StoryText.TokenizeNormalized(text);
         if (words.Count < MinWords)
         {
             return KeywordViolation.Invalid(TooFewWords, text);
@@ -83,29 +96,37 @@ public static class KeywordRules
             return KeywordViolation.Invalid(TooManyWords, text);
         }
 
-        if (ContainsPhrase(words, Honorifics)
-            || ContainsPhrase(words, rules.KnownPersonNames)
+        // One lexical representation for the input and for every list entry (SEC-02.2.1-KEYWORD-BOUNDARY):
+        // per word, leading/trailing apostrophes are trimmed, runs of hyphens split the word into parts,
+        // and a possessive ("'s" or a trailing "'") is stripped from each part. No substring matching.
+        var lexical = LexicalTokens(words);
+
+        if (ContainsPhrase(lexical, Honorifics)
+            || ContainsPhrase(lexical, rules.KnownPersonNames)
             || words.Skip(1).Any(word => char.IsUpper(word[0])))
         {
             return KeywordViolation.Invalid(PersonName, text);
         }
 
-        if (ContainsPhrase(words, GoreTerms.All))
+        if (ContainsPhrase(lexical, GoreTerms.All))
         {
             return KeywordViolation.Invalid(Gore, text);
         }
 
-        if (ContainsPhrase(words, BrandTerms.All))
+        if (ContainsPhrase(lexical, BrandTerms.All))
         {
             return KeywordViolation.Invalid(BrandObject, text);
         }
 
-        if (ContainsPhrase(words, StreetWords.All) || ContainsPhrase(words, rules.KnownPlaceNames))
+        // R12 (02 T80): an address/street identifier is a digit plus a street word; a street word alone
+        // ("rain on a village lane") is a scene and stays valid. Known place names always fail.
+        if ((ContainsPhrase(lexical, StreetWords.All) && HasAsciiDigit(words))
+            || ContainsPhrase(lexical, rules.KnownPlaceNames))
         {
             return KeywordViolation.Invalid(RealPlace, text);
         }
 
-        if (ContainsPhrase(words, MetaTokens.All))
+        if (ContainsPhrase(lexical, MetaTokens.All))
         {
             return KeywordViolation.Invalid(MetaInstruction, text);
         }
@@ -119,26 +140,139 @@ public static class KeywordRules
     private static bool IsKeywordCharacter(char character) =>
         char.IsAsciiLetter(character) || character is '\'' or '-' or ' ';
 
+    /// <summary>R12 (02 T80) rejects an address: a street word together with a digit ("12 baker street").</summary>
+    private static bool HasAsciiDigit(IReadOnlyList<string> words)
+    {
+        foreach (var word in words)
+        {
+            foreach (var character in word)
+            {
+                if (char.IsAsciiDigit(character))
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
     /// <summary>
-    /// Whether the keyword's tokens hold any phrase of <paramref name="phrases"/>, compared whole-token and
-    /// case-insensitively; a multi-word entry matches a consecutive run of tokens.
+    /// The canonical lexical form of a word or a list entry, shared by both sides of every comparison: a
+    /// leading/trailing apostrophe is trimmed, runs of one or more hyphens split the word into parts, and
+    /// a possessive ("<c>'s</c>" or a bare trailing "<c>'</c>") is stripped from each part
+    /// (SEC-02.2.1-KEYWORD-BOUNDARY). No substring matching is used.
     /// </summary>
-    private static bool ContainsPhrase(IReadOnlyList<string> words, IEnumerable<string> phrases)
+    /// <param name="value">A whitespace-separated word or list entry.</param>
+    /// <returns>The canonical parts.</returns>
+    private static List<string> CanonicalParts(string value)
+    {
+        var parts = new List<string>();
+        foreach (var word in value.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+        {
+            foreach (var raw in WordParts(word))
+            {
+                var stem = StripPossessive(raw);
+                if (stem.Length > 0)
+                {
+                    parts.Add(stem);
+                }
+            }
+        }
+
+        return parts;
+    }
+
+    /// <summary>One whitespace word split on runs of hyphens, with its leading/trailing apostrophes trimmed.</summary>
+    /// <param name="word">The whitespace token.</param>
+    /// <returns>The parts still carrying any possessive.</returns>
+    private static string[] WordParts(string word)
+    {
+        var trimmed = word.Trim('\'');
+        return trimmed.Length == 0 ? [] : trimmed.Split('-', StringSplitOptions.RemoveEmptyEntries);
+    }
+
+    /// <summary>Strips a possessive ("<c>'s</c>" or a trailing "<c>'</c>") from one part; unchanged otherwise.</summary>
+    /// <param name="part">One hyphen-split part.</param>
+    /// <returns>The part without the possessive.</returns>
+    private static string StripPossessive(string part)
+    {
+        if (part.Length >= 2 && part[^2] == '\'' && part[^1] is 's' or 'S')
+        {
+            return part[..^2];
+        }
+
+        return part.Length >= 1 && part[^1] == '\'' ? part[..^1] : part;
+    }
+
+    /// <summary>The first canonical part of one word, or the empty string (the R6 permitted-object check).</summary>
+    /// <param name="word">The whitespace token.</param>
+    /// <returns>The first canonical part.</returns>
+    private static string FirstCanonicalPart(string word)
+    {
+        var parts = CanonicalParts(word);
+        return parts.Count > 0 ? parts[0] : string.Empty;
+    }
+
+    /// <summary>
+    /// The canonical parts of the keyword's whitespace tokens, keeping R6's permission: a possessive of a
+    /// minor over an object they left ("child's drawing", keyword-rules.v1.md) is not emitted, while a
+    /// bare minor or a possessive over anything else is.
+    /// </summary>
+    /// <param name="words">The keyword's whitespace tokens.</param>
+    /// <returns>The canonical parts the lists match against.</returns>
+    private static List<string> LexicalTokens(IReadOnlyList<string> words)
+    {
+        var tokens = new List<string>(words.Count);
+        for (var index = 0; index < words.Count; index++)
+        {
+            var permitted = index + 1 < words.Count
+                && R6PermittedChildObjects.Contains(FirstCanonicalPart(words[index + 1]));
+
+            foreach (var raw in WordParts(words[index]))
+            {
+                var stem = StripPossessive(raw);
+                if (stem.Length == 0)
+                {
+                    continue;
+                }
+
+                if (permitted && stem != raw && GoreTerms.MinorSubjects.Contains(stem))
+                {
+                    continue;
+                }
+
+                tokens.Add(stem);
+            }
+        }
+
+        return tokens;
+    }
+
+    /// <summary>
+    /// Whether the canonical parts hold any phrase of <paramref name="phrases"/>; each list entry is
+    /// canonicalised with the same rule as the keyword, so a multi-part entry (e.g. <c>self-harm</c>)
+    /// matches a consecutive part run — <c>self-harm</c>, <c>self--harm</c> and <c>self harm</c> all do.
+    /// </summary>
+    /// <param name="parts">The keyword's canonical parts.</param>
+    /// <param name="phrases">The list entries.</param>
+    /// <returns>True when a consecutive part run equals a phrase.</returns>
+    private static bool ContainsPhrase(List<string> parts, IEnumerable<string> phrases)
     {
         foreach (var phrase in phrases)
         {
-            var parts = phrase.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-            if (parts.Length == 0)
+            var phraseParts = CanonicalParts(phrase);
+            if (phraseParts.Count == 0)
             {
                 continue;
             }
 
-            for (var start = 0; start + parts.Length <= words.Count; start++)
+            for (var start = 0; start + phraseParts.Count <= parts.Count; start++)
             {
                 var matched = true;
-                for (var offset = 0; offset < parts.Length; offset++)
+                for (var offset = 0; offset < phraseParts.Count; offset++)
                 {
-                    if (!words[start + offset].Equals(parts[offset], StringComparison.OrdinalIgnoreCase))
+                    if (!parts[start + offset].Equals(phraseParts[offset], StringComparison.OrdinalIgnoreCase))
                     {
                         matched = false;
                         break;

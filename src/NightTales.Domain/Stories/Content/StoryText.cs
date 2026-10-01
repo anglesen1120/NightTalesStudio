@@ -78,9 +78,21 @@ public static class StoryText
     /// </summary>
     /// <param name="text">The text to count; null and empty have no tokens.</param>
     /// <returns>The non-empty whitespace-separated runs.</returns>
-    public static IReadOnlyList<string> Tokenize(string? text)
+    public static IReadOnlyList<string> Tokenize(string? text) => TokenizeNormalized(Normalize(text));
+
+    /// <summary>The D4 token count of <paramref name="text"/>, computed without materialising the tokens.</summary>
+    /// <param name="text">The text to count; null and empty have no tokens.</param>
+    /// <returns>The number of non-empty whitespace-separated runs.</returns>
+    public static int CountTokens(string? text) => CountTokensNormalized(Normalize(text));
+
+    /// <summary>
+    /// The D4 token rule for already-NFC-normalised text: split on Unicode whitespace and count the
+    /// non-empty runs. A hot path that already normalised a text calls this instead of normalising again.
+    /// </summary>
+    /// <param name="normalised">The text in Unicode normal form C.</param>
+    /// <returns>The non-empty whitespace-separated runs.</returns>
+    internal static IReadOnlyList<string> TokenizeNormalized(string normalised)
     {
-        var normalised = Normalize(text);
         if (normalised.Length == 0)
         {
             return [];
@@ -110,6 +122,29 @@ public static class StoryText
         }
 
         return tokens;
+    }
+
+    /// <summary>The D4 token count of already-NFC-normalised text, without materialising the tokens.</summary>
+    /// <param name="normalised">The text in Unicode normal form C.</param>
+    /// <returns>The number of non-empty whitespace-separated runs.</returns>
+    internal static int CountTokensNormalized(string normalised)
+    {
+        var count = 0;
+        var inToken = false;
+        foreach (var character in normalised)
+        {
+            if (char.IsWhiteSpace(character))
+            {
+                inToken = false;
+            }
+            else if (!inToken)
+            {
+                inToken = true;
+                count++;
+            }
+        }
+
+        return count;
     }
 
     /// <summary>
@@ -158,14 +193,19 @@ public static class StoryText
     /// <summary>
     /// The first markup occurrence in <paramref name="text"/>, or null. The set is 02 T72's: the
     /// characters <c>* _ # ` &gt; &lt; [ ] ( )</c>, a line starting with <c>- </c> or <c>N. </c>, and a
-    /// URL (<c>http://</c>, <c>https://</c>, <c>www.</c>). The returned fragment is exactly what the
-    /// draft contains, so it can be quoted as the issue's evidence.
+    /// URL (<c>http://</c>, <c>https://</c>, <c>www.</c>). A line break is LF, CRLF or a lone CR. The
+    /// returned fragment is a prefix of what the draft contains (bounded to the D22 evidence cap), so it
+    /// can be quoted as the issue's evidence.
     /// </summary>
     /// <param name="text">The text to inspect.</param>
     /// <returns>The offending fragment, or null.</returns>
-    public static string? FindMarkup(string? text)
+    public static string? FindMarkup(string? text) => FindMarkupNormalized(Normalize(text));
+
+    /// <summary>The <see cref="FindMarkup"/> scan over already-NFC-normalised text.</summary>
+    /// <param name="normalised">The text in Unicode normal form C.</param>
+    /// <returns>The offending fragment, or null.</returns>
+    internal static string? FindMarkupNormalized(string normalised)
     {
-        var normalised = Normalize(text);
         if (normalised.Length == 0)
         {
             return null;
@@ -190,10 +230,10 @@ public static class StoryText
         var lineStart = 0;
         while (lineStart < normalised.Length)
         {
-            var lineEnd = normalised.IndexOf('\n', lineStart);
-            if (lineEnd < 0)
+            var lineEnd = lineStart;
+            while (lineEnd < normalised.Length && normalised[lineEnd] is not ('\n' or '\r'))
             {
-                lineEnd = normalised.Length;
+                lineEnd++;
             }
 
             if (ListMarker(normalised[lineStart..lineEnd]) is { } marker)
@@ -201,7 +241,17 @@ public static class StoryText
                 return marker;
             }
 
-            lineStart = lineEnd + 1;
+            if (lineEnd >= normalised.Length)
+            {
+                break;
+            }
+
+            // A CRLF pair is one line break; a lone CR or LF is its own.
+            lineStart = normalised[lineEnd] == '\r'
+                && lineEnd + 1 < normalised.Length
+                && normalised[lineEnd + 1] == '\n'
+                    ? lineEnd + 2
+                    : lineEnd + 1;
         }
 
         return null;
@@ -226,7 +276,7 @@ public static class StoryText
         }
 
         return digits > 0 && digits + 1 < trimmed.Length && trimmed[digits] == '.' && trimmed[digits + 1] == ' '
-            ? trimmed[..(digits + 2)].ToString()
+            ? ValidationIssue.Snip(trimmed[..(digits + 2)].ToString())
             : null;
     }
 }

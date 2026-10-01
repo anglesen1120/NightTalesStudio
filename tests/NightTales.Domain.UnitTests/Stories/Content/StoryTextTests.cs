@@ -78,4 +78,26 @@ public sealed class StoryTextTests
         StoryText.FindMarkup("xem www.example.com ngay").ShouldBe("www.");
         StoryText.FindMarkup("đọc thêm:https://x.test/y").ShouldBe("https://");
     }
+
+    /// <summary>SEC-02.2.1-CR-LIST-MARKUP: a lone CR and a CRLF are line boundaries like LF.</summary>
+    [Fact]
+    public void StoryText_ListMarkers_RecogniseCrAndCrLfBoundaries()
+    {
+        StoryText.FindMarkup("Anh ghi lại.\r- chiếc ghế thứ hai").ShouldBe("- ");
+        StoryText.FindMarkup("Anh ghi lại.\r2. chiếc ghế thứ hai").ShouldBe("2. ");
+        StoryText.FindMarkup("A\r\n- b\r2. c\n- d").ShouldBe("- ");
+        StoryText.FindMarkup("A\r\n- b\r\n2. c").ShouldBe("- ");
+    }
+
+    /// <summary>The PERF count-only scan must agree with the token list, including NFC and collapsed whitespace.</summary>
+    [Fact]
+    public void StoryText_CountTokens_MatchesTokenize()
+    {
+        const string Text = "  Mở  đầu.\n\n nha\u0300 cũ  ";
+
+        StoryText.CountTokens(Text).ShouldBe(StoryText.Tokenize(Text).Count);
+        StoryText.CountTokens(Text).ShouldBe(4);
+        StoryText.CountTokens(null).ShouldBe(0);
+        StoryText.CountTokens("   ").ShouldBe(0);
+    }
 }

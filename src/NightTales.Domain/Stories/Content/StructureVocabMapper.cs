@@ -44,7 +44,7 @@ public static class StructureVocabMapper
         issues.Add(ValidationIssue.Advisory(
             StoryDraftValidator.StructureVocabUnknown,
             SegmentAddress.Meta,
-            text.Length == 0 ? "(empty)" : text,
+            text.Length == 0 ? "(empty)" : ValidationIssue.Snip(text),
             "Use one of the topic's vocabulary terms; an unmapped value is stored as other:<text>."));
 
         return new StructureMapResult(OtherPrefix + text, issues);
@@ -86,7 +86,7 @@ public static class StructureVocabMapper
             issues.Add(ValidationIssue.Blocking(
                 StoryDraftValidator.StructureTextInvalid,
                 SegmentAddress.Meta,
-                text,
+                ValidationIssue.Snip(text),
                 FormattableString.Invariant($"Use at most {rules.StructureFreeStringMaxChars} characters.")));
         }
 
@@ -95,7 +95,7 @@ public static class StructureVocabMapper
             issues.Add(ValidationIssue.Blocking(
                 StoryDraftValidator.StructureTextInvalid,
                 SegmentAddress.Meta,
-                FormattableString.Invariant($"'{markup}' is not allowed in a structure value."),
+                FormattableString.Invariant($"'{ValidationIssue.Snip(markup)}' is not allowed in a structure value."),
                 "Remove URLs and markup from the structure value."));
         }
     }

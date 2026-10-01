@@ -39,23 +39,50 @@ public sealed record ValidationIssue(
     string Evidence,
     string RepairDirection)
 {
+    /// <summary>The D22 cap on the quoted <see cref="Evidence"/> (02 README D22: "quotes ≤ 200 chars").</summary>
+    public const int MaxEvidenceChars = 200;
+
     /// <summary>A blocking, objective issue; a null evidence becomes the empty string.</summary>
     /// <param name="ruleId">The stable rule id.</param>
     /// <param name="segment">The D22 address.</param>
-    /// <param name="evidence">The draft fragment and the measured value.</param>
+    /// <param name="evidence">The draft fragment and the measured value; clamped to <see cref="MaxEvidenceChars"/>.</param>
     /// <param name="repairDirection">What the writer should change.</param>
     /// <returns>The issue.</returns>
     public static ValidationIssue Blocking(string ruleId, string segment, string? evidence, string repairDirection) =>
-        new(ruleId, IssueSeverity.Blocking, IssueKind.Objective, segment, evidence ?? string.Empty, repairDirection);
+        new(ruleId, IssueSeverity.Blocking, IssueKind.Objective, segment, Snip(evidence), repairDirection);
 
     /// <summary>An advisory, objective issue: reported, and the run continues.</summary>
     /// <param name="ruleId">The stable rule id.</param>
     /// <param name="segment">The D22 address.</param>
-    /// <param name="evidence">The draft fragment and the measured value.</param>
+    /// <param name="evidence">The draft fragment and the measured value; clamped to <see cref="MaxEvidenceChars"/>.</param>
     /// <param name="repairDirection">What the writer should change.</param>
     /// <returns>The issue.</returns>
     public static ValidationIssue Advisory(string ruleId, string segment, string? evidence, string repairDirection) =>
-        new(ruleId, IssueSeverity.Advisory, IssueKind.Objective, segment, evidence ?? string.Empty, repairDirection);
+        new(ruleId, IssueSeverity.Advisory, IssueKind.Objective, segment, Snip(evidence), repairDirection);
+
+    /// <summary>
+    /// Bounds a draft fragment to <see cref="MaxEvidenceChars"/> (D22), so a hostile or oversized value
+    /// is never echoed whole. Callers that interpolate a large fragment snip it first, before building
+    /// the interpolated string; the factories clamp as the last step. A cut that would fall between the
+    /// two code units of a surrogate pair backs off one, so the result never ends in a lone high surrogate.
+    /// </summary>
+    /// <param name="value">The fragment; null becomes the empty string.</param>
+    /// <returns>The fragment, at most <see cref="MaxEvidenceChars"/> characters, with no split surrogate pair.</returns>
+    public static string Snip(string? value)
+    {
+        if (value is null || value.Length <= MaxEvidenceChars)
+        {
+            return value ?? string.Empty;
+        }
+
+        var length = MaxEvidenceChars;
+        if (char.IsHighSurrogate(value[length - 1]) && char.IsLowSurrogate(value[length]))
+        {
+            length--;
+        }
+
+        return value[..length];
+    }
 }
 
 /// <summary>

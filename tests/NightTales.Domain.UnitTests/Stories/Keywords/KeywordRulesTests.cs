@@ -78,6 +78,77 @@ public sealed class KeywordRulesTests
     }
 
     [Fact]
+    public void KeywordRules_HyphenCompoundGoreTerm_Invalid()
+    {
+        // SEC-02.2.1-KEYWORD-BOUNDARY: the hyphen-split parts must match the gore list.
+        AssertInvalid("blood-soaked abandoned hallway", KeywordRules.Gore);
+    }
+
+    [Fact]
+    public void KeywordRules_PossessiveGoreTerm_Invalid()
+    {
+        // SEC-02.2.1-KEYWORD-BOUNDARY: the possessive stem must match the gore list.
+        AssertInvalid("child's abandoned bedroom", KeywordRules.Gore);
+    }
+
+    [Fact]
+    public void KeywordRules_HyphenCompoundMetaToken_Invalid()
+    {
+        // SEC-02.2.1-KEYWORD-BOUNDARY: the hyphen-split parts must match the meta list.
+        AssertInvalid("ignore-the-style in the frame", KeywordRules.MetaInstruction);
+
+        // The task's example also carries a gore term via its parts ("weapon"), which fires first.
+        AssertInvalid("ignore-the-style draw-a-weapon now", KeywordRules.Gore);
+    }
+
+    [Fact]
+    public void KeywordRules_PossessiveMinorThroughLeftObject_Valid()
+    {
+        // R6 / keyword-rules.v1.md: a minor appears only through an object they left ("child's drawing").
+        KeywordRules.Check("child's drawing taped to a fridge in a quiet kitchen", Rules())
+            .IsValid.ShouldBeTrue();
+    }
+
+    [Fact]
+    public void KeywordRules_CanonicalisedGoreBypass_Invalid()
+    {
+        // SEC-02.2.1-KEYWORD-BOUNDARY: the keyword and every list entry share one canonical form, so an
+        // apostrophe edge, a possessive without its apostrophe, a doubled hyphen and a stripped possessive
+        // all still reach the gore list.
+        AssertInvalid("'blood' abandoned hallway", KeywordRules.Gore);
+        AssertInvalid("blood's-soaked abandoned hallway", KeywordRules.Gore);
+        AssertInvalid("childs abandoned bedroom", KeywordRules.Gore);
+        AssertInvalid("self--harm abandoned room", KeywordRules.Gore);
+        AssertInvalid("child's drawing of 'blood'", KeywordRules.Gore);
+
+        // A multi-part list entry matches across whitespace too (self harm == self-harm).
+        AssertInvalid("self harm abandoned room", KeywordRules.Gore);
+    }
+
+    [Fact]
+    public void KeywordRules_StreetWordWithoutDigit_Valid()
+    {
+        // 02 T80: only a digit-plus-street-word address fails; a street word alone is a scene.
+        KeywordRules.Check("rain on a village lane with water jars by a wall", Rules()).IsValid.ShouldBeTrue();
+        KeywordRules.Check("rural road at night under a single streetlight on wet asphalt", Rules()).IsValid.ShouldBeTrue();
+        KeywordRules.Check("old payphone on a wall by a street at dusk", Rules()).IsValid.ShouldBeTrue();
+        KeywordRules.Check("coastal road with police tape in morning fog", Rules()).IsValid.ShouldBeTrue();
+    }
+
+    [Fact]
+    public void KeywordRules_GoodExamplesFromContract_Valid()
+    {
+        // 02 T76/T80/T85: the approved examples are the contract, so every good cell must pass.
+        var good = GoodExamplesFromContract();
+
+        good.Count.ShouldBeGreaterThanOrEqualTo(30);
+        foreach (var keyword in good)
+        {
+            KeywordRules.Check(keyword, Rules()).IsValid.ShouldBeTrue($"'{keyword}' is a contract good example");
+        }
+    }
+
+    [Fact]
     public void KeywordRules_KnownPersonNameToken_Invalid()
     {
         var rules = Rules(persons: ["linh"]);
@@ -163,5 +234,41 @@ public sealed class KeywordRulesTests
     private static HashSet<string> ToSet(IEnumerable<string>? values)
     {
         return values is null ? new HashSet<string>() : new HashSet<string>(values);
+    }
+
+    /// <summary>The good column of the three numbered topic tables in <c>prompts/shared/keyword-rules.v1.md</c>.</summary>
+    private static List<string> GoodExamplesFromContract()
+    {
+        var path = Path.Combine(RepoRoot(), "prompts", "shared", "keyword-rules.v1.md");
+        var good = new List<string>();
+        foreach (var line in File.ReadAllLines(path))
+        {
+            var cells = line.Split('|');
+            if (cells.Length < 4 || !int.TryParse(cells[1].Trim(), out _))
+            {
+                continue;
+            }
+
+            var cell = cells[2].Trim();
+            if (cell.Length > 0)
+            {
+                good.Add(cell);
+            }
+        }
+
+        return good;
+    }
+
+    /// <summary>The repository root, found by walking up from the test output to <c>NightTales.sln</c>.</summary>
+    private static string RepoRoot()
+    {
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "NightTales.sln")))
+        {
+            directory = directory.Parent;
+        }
+
+        return directory?.FullName
+            ?? throw new InvalidOperationException("Could not locate the repository root (NightTales.sln) above the test output.");
     }
 }
