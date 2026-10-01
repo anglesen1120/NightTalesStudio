@@ -88,3 +88,9 @@ src/NightTales.Api/openapi.json
 # --- 09.2.2-T2: the migration bundle is a build artifact, never committed ---
 # `dotnet ef migrations bundle -o artifacts/nts-migrate` (~70 MB); 11.5.1 builds it in the pipeline.
 artifacts/
+# --- 09.4.2-T1: the catalog URL builder needs a `Storage` class-library folder ---
+# `storage/` (media scratch, above) is matched case-insensitively on macOS (`core.ignorecase`), so it
+# also hid `src/**/Storage/` and `tests/**/Storage/`. Re-include those trees: no generated media ever
+# lives under `src/` or `tests/`, while 09.7.2-T1's blob store needs the same folder next.
+!src/**/Storage/
+!tests/**/Storage/
