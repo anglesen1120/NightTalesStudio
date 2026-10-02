@@ -254,6 +254,174 @@ public sealed class GenerationRunTests
             .FirstError.Code.ShouldBe("generation_run_owner_required");
     }
 
+    // ---- QA 02.2.2-T1: illegal transitions from terminal states, idempotent repeats keep the first outcome ----
+
+    [Theory]
+    [InlineData(GenerationRunStatus.Succeeded)]
+    [InlineData(GenerationRunStatus.Failed)]
+    [InlineData(GenerationRunStatus.Cancelled)]
+    public void GenerationRun_TerminalRun_RefusesEveryFurtherTransition(GenerationRunStatus terminal)
+    {
+        var run = RunInTerminalState(terminal);
+        var finishedAt = run.FinishedAt;
+
+        Should.Throw<InvalidOperationException>(() => run.Start(FixedNow.AddHours(1)));
+        Should.Throw<InvalidOperationException>(() => run.MarkPaused(GenerationPauseReason.SpendCapReached, FixedNow));
+        if (terminal != GenerationRunStatus.Succeeded)
+        {
+            Should.Throw<InvalidOperationException>(() => run.Succeed(0.1m, FixedNow.AddHours(1)));
+        }
+
+        if (terminal != GenerationRunStatus.Failed)
+        {
+            Should.Throw<InvalidOperationException>(() => run.Fail("story_generation_failed", null, false, FixedNow));
+        }
+
+        if (terminal != GenerationRunStatus.Cancelled)
+        {
+            Should.Throw<InvalidOperationException>(() => run.Cancel(FixedNow.AddHours(1)));
+        }
+
+        run.AdvanceStage(GenerationStage.Writing, FixedNow).FirstError.Type.ShouldBe(ErrorOr.ErrorType.Conflict);
+        run.Status.ShouldBe(terminal);
+        run.FinishedAt.ShouldBe(finishedAt, "a refused transition leaves the run alone");
+    }
+
+    [Fact]
+    public void GenerationRun_Succeed_FromQueued_Throws_AndLeavesTheRunQueued()
+    {
+        var run = NewStoryRun();
+
+        Should.Throw<InvalidOperationException>(() => run.Succeed(0.1m, FixedNow));
+
+        run.Status.ShouldBe(GenerationRunStatus.Queued);
+        run.CostUsd.ShouldBeNull();
+    }
+
+    [Fact]
+    public void GenerationRun_Start_FromQueued_ThenAgain_KeepsTheFirstStartedAt()
+    {
+        var run = NewStoryRun();
+        run.Start(FixedNow);
+
+        run.Start(FixedNow.AddMinutes(5));
+
+        run.StartedAt.ShouldBe(FixedNow);
+    }
+
+    [Fact]
+    public void GenerationRun_Succeed_Twice_KeepsTheFirstCostAndFinishedAt()
+    {
+        var run = RunningStoryRun();
+        run.Succeed(0.1m, FixedNow.AddSeconds(10));
+
+        run.Succeed(9m, FixedNow.AddSeconds(99));
+
+        run.CostUsd.ShouldBe(0.1m);
+        run.FinishedAt.ShouldBe(FixedNow.AddSeconds(10));
+    }
+
+    [Fact]
+    public void GenerationRun_Fail_Twice_KeepsTheFirstCodeAndCountingFlag()
+    {
+        var run = RunningStoryRun();
+        run.Fail("story_moderated", "refusal", countsTowardLimit: true, FixedNow.AddSeconds(3));
+
+        run.Fail("story_generation_failed", "other", countsTowardLimit: false, FixedNow.AddSeconds(9));
+
+        run.ErrorCode.ShouldBe("story_moderated");
+        run.ErrorDetail.ShouldBe("refusal");
+        run.CountsTowardLimit.ShouldBeTrue();
+        run.FinishedAt.ShouldBe(FixedNow.AddSeconds(3));
+    }
+
+    [Fact]
+    public void GenerationRun_Fail_FromQueued_IsAllowed_TheSweeperPathForAStuckRun()
+    {
+        var run = NewStoryRun();
+
+        run.Fail("story_generation_failed", "stuck_queued", countsTowardLimit: false, FixedNow.AddHours(13));
+
+        run.Status.ShouldBe(GenerationRunStatus.Failed);
+        run.StartedAt.ShouldBeNull();
+    }
+
+    [Fact]
+    public void GenerationRun_Cancel_FromRunning_AndTwice_KeepsTheFirstFinishedAt()
+    {
+        var run = RunningStoryRun();
+        run.Cancel(FixedNow.AddSeconds(4));
+
+        run.Cancel(FixedNow.AddSeconds(40));
+
+        run.Status.ShouldBe(GenerationRunStatus.Cancelled);
+        run.FinishedAt.ShouldBe(FixedNow.AddSeconds(4));
+        run.StartedAt.ShouldBe(FixedNow);
+    }
+
+    [Fact]
+    public void GenerationRun_PausedThenCancelled_StaysNonCounting_AndClearsThePause()
+    {
+        var run = NewStoryRun();
+        run.MarkPaused(GenerationPauseReason.ProviderFundsExhausted, FixedNow);
+
+        run.Cancel(FixedNow.AddHours(12));
+
+        run.CountsTowardLimit.ShouldBeFalse("plan §3.6: paused then cancelled does not count");
+        run.PauseReason.ShouldBeNull();
+    }
+
+    [Fact]
+    public void GenerationRun_AdvanceStage_RefusesBackwardsFromSavingAndReviewingToCheckingWithoutRevision()
+    {
+        var run = RunningStoryRun();
+        run.AdvanceStage(GenerationStage.Reviewing, FixedNow).IsError.ShouldBeFalse();
+
+        run.AdvanceStage(GenerationStage.Checking, FixedNow).FirstError.Code
+            .ShouldBe("generation_run_stage_backwards");
+
+        run.AdvanceStage(GenerationStage.Saving, FixedNow).IsError.ShouldBeFalse();
+        run.AdvanceStage(GenerationStage.Writing, FixedNow).IsError.ShouldBeTrue();
+        run.Stage.ShouldBe(GenerationStage.Saving);
+    }
+
+    [Fact]
+    public void GenerationRun_Queue_EmptySeries_IsRefused()
+    {
+        GenerationRun.Queue(
+                Guid.CreateVersion7(),
+                Guid.Empty,
+                null,
+                GenerationKind.Ideas,
+                GenerationTrigger.System,
+                null,
+                null,
+                null,
+                null,
+                0m,
+                FixedNow)
+            .FirstError.Code.ShouldBe("generation_run_owner_required");
+    }
+
+    private static GenerationRun RunInTerminalState(GenerationRunStatus terminal)
+    {
+        var run = RunningStoryRun();
+        switch (terminal)
+        {
+            case GenerationRunStatus.Succeeded:
+                run.Succeed(0.1m, FixedNow.AddSeconds(10));
+                break;
+            case GenerationRunStatus.Failed:
+                run.Fail("story_generation_failed", null, false, FixedNow.AddSeconds(10));
+                break;
+            default:
+                run.Cancel(FixedNow.AddSeconds(10));
+                break;
+        }
+
+        return run;
+    }
+
     private static GenerationRun NewStoryRun() =>
         Queue(GenerationKind.Story, Guid.CreateVersion7()).Value;
 

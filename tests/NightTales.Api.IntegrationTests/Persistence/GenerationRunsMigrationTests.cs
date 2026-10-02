@@ -189,6 +189,57 @@ public sealed class GenerationRunsMigrationTests(TestDatabase database) : Integr
         InsertRun(parents, "ideas", "cancelled", episode: false);
     }
 
+    // ---- QA 02.2.2-T1: index scoping, paused runs, series RESTRICT ----
+
+    [Fact]
+    public async Task ActiveRunIndex_IsPerEpisode_AnotherEpisodeOfTheSameSeriesMayRunTheSameKind()
+    {
+        var parents = await ParentsAsync();
+        var actor = new TestCurrentUser();
+        var other = await new EpisodeBuilder(Database, actor).CreateAsync(parents.UserId, parents.SeriesId, ct: Ct);
+        InsertRun(parents, "story", "queued");
+
+        InsertRun(parents with { EpisodeId = other.Id }, "story", "queued");
+        SqlProbe.SqlState(Database, InsertRunSql(parents with { EpisodeId = other.Id }, "story", "running"))
+            .ShouldBe("23505", "the second episode is itself limited to one active run per kind");
+    }
+
+    [Fact]
+    public async Task ActiveRunIndex_APausedQueuedRunStillHoldsTheIndex()
+    {
+        var parents = await ParentsAsync();
+        InsertRun(parents, "story", "queued", pauseReason: "'spend_cap_reached'");
+
+        SqlProbe.SqlState(Database, InsertRunSql(parents, "story", "queued"))
+            .ShouldBe("23505", "TL T19: a paused run is still queued, so a new request is 409 in progress");
+    }
+
+    [Fact]
+    public async Task ActiveSeriesIndex_IsPerSeries_AnotherSeriesOfTheUserMayRunTheSameKind()
+    {
+        var parents = await ParentsAsync();
+        var actor = new TestCurrentUser();
+        var otherSeries = await new SeriesBuilder(Database, actor).CreateAsync(parents.UserId, ct: Ct);
+        InsertRun(parents, "ideas", "queued", episode: false);
+
+        InsertRun(parents with { SeriesId = otherSeries.Id }, "ideas", "queued", episode: false);
+    }
+
+    [Fact]
+    public async Task SeriesDelete_IsRestrictedWhileASeriesLevelRunReferencesIt()
+    {
+        var parents = await ParentsAsync();
+        var actor = new TestCurrentUser();
+        var emptySeries = await new SeriesBuilder(Database, actor).CreateAsync(parents.UserId, ct: Ct);
+        var runId = InsertRun(parents with { SeriesId = emptySeries.Id }, "ideas", "queued", episode: false);
+
+        SqlProbe.SqlState(Database, $"DELETE FROM series WHERE id = '{emptySeries.Id}'")
+            .ShouldBe("23503", "fk_generation_runs_series is RESTRICT: 13.3.1 must delete series-level runs first");
+
+        SqlProbe.Execute(Database, $"DELETE FROM generation_runs WHERE id = '{runId}'");
+        SqlProbe.Execute(Database, $"DELETE FROM series WHERE id = '{emptySeries.Id}'");
+    }
+
     [Theory]
     [InlineData("ideas", true)]
     [InlineData("bible_proposal", true)]

@@ -406,6 +406,169 @@ public sealed class EpisodeStoryGenerationTests
         EpisodeAggregate.NotGeneratingCode.ShouldNotBe(ErrorCodes.EpisodeInvalidState);
     }
 
+    // ---- QA 02.2.2-T1: illegal transitions, idempotency boundaries, empty run id on every method ----
+
+    [Fact]
+    public void EveryMethodExceptRequest_RefusesAnEmptyRunId_AndLeavesTheEpisodeAlone()
+    {
+        var episode = GeneratingEpisode(out _);
+
+        var stage = episode.MarkGenerationStage(Guid.Empty, GenerationStage.Writing, GenerationTrigger.User, FixedNow);
+        var complete = episode.CompleteStoryGeneration(
+            Guid.Empty, GenerationTrigger.User, [Guid.CreateVersion7()], Guid.CreateVersion7(), FixedNow);
+        var fail = episode.FailStoryGeneration(
+            Guid.Empty, GenerationTrigger.User, EpisodeStatus.Draft, GenerationErrorCode.StoryGenerationFailed, FixedNow);
+        var cancel = episode.CancelStoryGeneration(Guid.Empty, GenerationTrigger.User, EpisodeStatus.Draft, FixedNow);
+
+        foreach (var result in new[] { stage, complete, fail, cancel })
+        {
+            result.IsError.ShouldBeTrue();
+            result.FirstError.Type.ShouldBe(ErrorOr.ErrorType.Validation);
+        }
+
+        episode.Status.ShouldBe(EpisodeStatus.StoryGenerating);
+        episode.DomainEvents.ShouldBeEmpty();
+    }
+
+    [Theory]
+    [InlineData(EpisodeStatus.Draft)]
+    [InlineData(EpisodeStatus.StoryReview)]
+    [InlineData(EpisodeStatus.StoryApproved)]
+    [InlineData(EpisodeStatus.Rendering)]
+    [InlineData(EpisodeStatus.Published)]
+    [InlineData(EpisodeStatus.Failed)]
+    [InlineData(EpisodeStatus.Cancelled)]
+    public void T9_NoStoryMethodTouchesAnEpisodeThatIsNotGenerating(EpisodeStatus status)
+    {
+        var episode = EpisodeIn(status);
+        var run = Guid.CreateVersion7();
+        var versions = new[] { Guid.CreateVersion7() };
+
+        var results = new[]
+        {
+            episode.MarkGenerationStage(run, GenerationStage.Writing, GenerationTrigger.User, FixedNow),
+            episode.CompleteStoryGeneration(run, GenerationTrigger.User, versions, versions[0], FixedNow),
+            episode.FailStoryGeneration(
+                run, GenerationTrigger.User, EpisodeStatus.Draft, GenerationErrorCode.StoryGenerationFailed, FixedNow),
+            episode.CancelStoryGeneration(run, GenerationTrigger.User, EpisodeStatus.Draft, FixedNow),
+        };
+
+        foreach (var result in results)
+        {
+            result.IsError.ShouldBeTrue();
+            result.FirstError.Code.ShouldBe(EpisodeAggregate.NotGeneratingCode);
+        }
+
+        episode.Status.ShouldBe(status);
+        episode.CurrentStoryVersionId.ShouldBeNull();
+        episode.DomainEvents.ShouldBeEmpty("T9 raises no event");
+    }
+
+    [Fact]
+    public void RequestStoryGeneration_WhileGeneratingForAnotherRun_IsRefused_T3()
+    {
+        var episode = GeneratingEpisode(out _);
+
+        var second = episode.RequestStoryGeneration(Guid.CreateVersion7(), GenerationTrigger.User, FixedNow.AddSeconds(1));
+
+        second.FirstError.Code.ShouldBe(EpisodeAggregate.InvalidStateCode);
+        episode.DomainEvents.ShouldBeEmpty("a refused second request raises no event");
+    }
+
+    [Fact]
+    public void CompleteStoryGeneration_ThenFailOrCancel_IsRefused_NoResurrection()
+    {
+        var episode = GeneratingEpisode(out var runId);
+        var version = Guid.CreateVersion7();
+        episode.CompleteStoryGeneration(runId, GenerationTrigger.User, [version], version, FixedNow).IsError.ShouldBeFalse();
+        episode.ClearDomainEvents();
+
+        var fail = episode.FailStoryGeneration(
+            runId, GenerationTrigger.User, EpisodeStatus.Draft, GenerationErrorCode.StoryGenerationFailed, FixedNow);
+        var cancel = episode.CancelStoryGeneration(runId, GenerationTrigger.User, EpisodeStatus.Draft, FixedNow);
+
+        fail.FirstError.Code.ShouldBe(EpisodeAggregate.NotGeneratingCode);
+        cancel.FirstError.Code.ShouldBe(EpisodeAggregate.NotGeneratingCode);
+        episode.Status.ShouldBe(EpisodeStatus.StoryReview);
+        episode.CurrentStoryVersionId.ShouldBe(version);
+        episode.DomainEvents.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public void CompleteStoryGeneration_RepeatWithAnotherCurrentVersion_IsNotTreatedAsIdempotent()
+    {
+        var episode = GeneratingEpisode(out var runId);
+        var first = Guid.CreateVersion7();
+        episode.CompleteStoryGeneration(runId, GenerationTrigger.User, [first], first, FixedNow).IsError.ShouldBeFalse();
+        episode.ClearDomainEvents();
+
+        var other = Guid.CreateVersion7();
+        var result = episode.CompleteStoryGeneration(runId, GenerationTrigger.User, [other], other, FixedNow);
+
+        result.FirstError.Code.ShouldBe(EpisodeAggregate.NotGeneratingCode);
+        episode.CurrentStoryVersionId.ShouldBe(first);
+        episode.DomainEvents.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public void FailThenCancelOfTheSameRun_IsNotTreatedAsIdempotent_AndCancelRepeatIs()
+    {
+        var (episode, run) = QueuedPair(EpisodeStatus.Draft);
+        episode.FailStoryGeneration(
+            run.Id, run.Trigger, EpisodeStatus.Draft, GenerationErrorCode.StoryGenerationFailed, FixedNow).IsError.ShouldBeFalse();
+        episode.ClearDomainEvents();
+
+        episode.CancelStoryGeneration(run.Id, run.Trigger, EpisodeStatus.Draft, FixedNow)
+            .FirstError.Code.ShouldBe(EpisodeAggregate.NotGeneratingCode);
+
+        var (second, secondRun) = QueuedPair(EpisodeStatus.StoryReview);
+        second.CancelStoryGeneration(secondRun.Id, secondRun.Trigger, EpisodeStatus.StoryReview, FixedNow).IsError.ShouldBeFalse();
+        second.ClearDomainEvents();
+
+        second.CancelStoryGeneration(secondRun.Id, secondRun.Trigger, EpisodeStatus.StoryReview, FixedNow.AddSeconds(1))
+            .IsError.ShouldBeFalse("the at-least-once outbox can deliver a cancel twice");
+        second.DomainEvents.ShouldBeEmpty("a repeated cancel raises no second event");
+        second.Status.ShouldBe(EpisodeStatus.StoryReview);
+    }
+
+    [Fact]
+    public void FailStoryGeneration_FromReview_KeepsTheCurrentVersion()
+    {
+        var (episode, run) = QueuedPair(EpisodeStatus.StoryReview);
+        var current = Guid.CreateVersion7();
+        Set(episode, nameof(EpisodeAggregate.CurrentStoryVersionId), current);
+
+        episode.FailStoryGeneration(
+            run.Id, run.Trigger, EpisodeStatus.StoryReview, GenerationErrorCode.StoryModerated, FixedNow).IsError.ShouldBeFalse();
+
+        episode.Status.ShouldBe(EpisodeStatus.StoryReview);
+        episode.CurrentStoryVersionId.ShouldBe(current, "F04: a failed regeneration keeps the old version current");
+    }
+
+    [Fact]
+    public void MarkGenerationStage_OnlyAnImmediateRepeatIsDeduplicated()
+    {
+        var episode = GeneratingEpisode(out var runId);
+
+        episode.MarkGenerationStage(runId, GenerationStage.Writing, GenerationTrigger.User, FixedNow).IsError.ShouldBeFalse();
+        episode.MarkGenerationStage(runId, GenerationStage.Checking, GenerationTrigger.User, FixedNow).IsError.ShouldBeFalse();
+        episode.MarkGenerationStage(runId, GenerationStage.Writing, GenerationTrigger.User, FixedNow).IsError.ShouldBeFalse();
+
+        episode.DomainEvents.OfType<StoryGenerationStageChanged>().Count().ShouldBe(3);
+        episode.Status.ShouldBe(EpisodeStatus.StoryGenerating);
+    }
+
+    [Fact]
+    public void RequestStoryGeneration_FreshInstanceOfAGeneratingEpisode_IsNotRecognisedAsRepeat()
+    {
+        // Documents the per-instance idempotency limit: a reloaded aggregate carries no memory of the run, so a
+        // cross-transaction repeat of Request is 409 rather than Success (the command is not redelivered by the outbox).
+        var reloaded = EpisodeIn(EpisodeStatus.StoryGenerating);
+
+        reloaded.RequestStoryGeneration(Guid.CreateVersion7(), GenerationTrigger.User, FixedNow).FirstError.Code
+            .ShouldBe(EpisodeAggregate.InvalidStateCode);
+    }
+
     private static EpisodeAggregate GeneratingEpisode(out Guid runId)
     {
         var episode = EpisodeIn(EpisodeStatus.Draft);
