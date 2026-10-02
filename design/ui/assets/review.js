@@ -1,7 +1,8 @@
 /* Review chrome for the mockups (not product code).
    - Injects the icon sprite: use <svg aria-hidden="true"><use href="#i-NAME"/></svg>.
    - Adds the review bar: theme (dark/light), language (vi/en), frame width (360/768/1280/all).
-   - Choices persist in the URL hash (?theme=&lang=&w=) so a link reproduces the view. */
+   - Choices persist in the query string (?theme=&lang=&w=) so a link reproduces the view while the
+     fragment stays free for frame anchors (#f-*). Legacy #theme=&lang=&w= bookmarks are read once. */
 (function () {
   const ICONS = {
     moon: '<path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5Z"/>',
@@ -75,12 +76,23 @@
     ).join('') + '</svg>';
   document.body.insertAdjacentHTML('afterbegin', sprite);
 
-  const params = new URLSearchParams(location.hash.slice(1));
+  const STATE_KEYS = ['theme', 'lang', 'w'];
+  const query = new URLSearchParams(location.search);
+  const legacy = new URLSearchParams(location.hash.slice(1)); // old bookmarks kept state in the hash
   const state = {
-    theme: params.get('theme') || 'dark',
-    lang: params.get('lang') || 'vi',
-    w: params.get('w') || '1280'
+    theme: query.get('theme') || legacy.get('theme') || 'dark',
+    lang: query.get('lang') || legacy.get('lang') || 'vi',
+    w: query.get('w') || legacy.get('w') || '1280'
   };
+  // Frame anchors (#f-*) must survive; only legacy state pairs are dropped from the fragment.
+  function keepHash() {
+    const kept = [];
+    new URLSearchParams(location.hash.slice(1)).forEach((value, key) => {
+      if (value !== '' && STATE_KEYS.indexOf(key) !== -1) return;
+      kept.push(value === '' ? key : key + '=' + value);
+    });
+    return kept.length ? '#' + kept.join('&') : '';
+  }
   const root = document.documentElement;
 
   const backHref = document.body.dataset.back;
@@ -110,6 +122,41 @@
   });
 
   const originals = new Map();
+  const IDREF_ATTRS = ['for', 'list', 'form', 'headers', 'aria-labelledby', 'aria-describedby',
+    'aria-controls', 'aria-owns', 'aria-activedescendant', 'aria-details', 'aria-flowto'];
+  const MULTI_IDREF = ['headers', 'aria-labelledby', 'aria-describedby', 'aria-controls',
+    'aria-owns', 'aria-details', 'aria-flowto'];
+
+  // "All 3" clones the same markup three times, so each clone gets its own id namespace and every
+  // reference to a local id is retargeted. Ids owned outside the view — the shared sprite symbols
+  // (#i-*) and the frame anchors (#f-*) — are not in the clone, so they stay untouched.
+  function namespaceClones(view) {
+    view.querySelectorAll('.rv-clone[data-w]').forEach((clone) => {
+      const suffix = '-w' + clone.dataset.w;
+      const ids = new Set();
+      clone.querySelectorAll('[id]').forEach((el) => ids.add(el.id));
+      if (!ids.size) return;
+      const local = (token) => (token && ids.has(token) ? token + suffix : token);
+      clone.querySelectorAll('[id]').forEach((el) => { el.id += suffix; });
+      clone.querySelectorAll('*').forEach((el) => {
+        IDREF_ATTRS.forEach((name) => {
+          const value = el.getAttribute(name);
+          if (value === null) return;
+          const next = MULTI_IDREF.indexOf(name) !== -1
+            ? value.split(/\s+/).map(local).join(' ')
+            : local(value.trim());
+          if (next !== value) el.setAttribute(name, next);
+        });
+        ['href', 'xlink:href'].forEach((name) => {
+          const value = el.getAttribute(name);
+          if (!value || value.charAt(0) !== '#') return;
+          const frag = value.slice(1);
+          if (ids.has(frag)) el.setAttribute(name, '#' + frag + suffix);
+        });
+      });
+    });
+  }
+
   function apply() {
     root.setAttribute('data-theme', state.theme);
     root.setAttribute('data-lang', state.lang);
@@ -123,7 +170,8 @@
       if (state.w === 'all') {
         if (!view.dataset.cloned) {
           const html = originals.get(view);
-          view.innerHTML = ['360', '768', '1280'].map((w) => `<div class="rv-clone" style="width:${w}px">${html}</div>`).join('');
+          view.innerHTML = ['360', '768', '1280'].map((w) => `<div class="rv-clone" data-w="${w}" style="width:${w}px">${html}</div>`).join('');
+          namespaceClones(view);
           view.dataset.cloned = '1';
         }
         view.style.removeProperty('--rv-width');
@@ -132,8 +180,10 @@
         view.style.setProperty('--rv-width', state.w + 'px');
       }
     });
-    const p = new URLSearchParams(state);
-    history.replaceState(null, '', '#' + p.toString());
+    const url = new URL(location.href);
+    STATE_KEYS.forEach((k) => url.searchParams.set(k, state[k]));
+    url.hash = keepHash();
+    history.replaceState(null, '', url.pathname + url.search + url.hash);
   }
   function placeTip(e) {
     const b = e.target.closest && e.target.closest('.icon-btn');
