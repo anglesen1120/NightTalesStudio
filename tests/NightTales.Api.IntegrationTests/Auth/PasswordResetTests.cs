@@ -4,12 +4,15 @@ using System.Net.Http.Json;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
+using ErrorOr;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using NightTales.Api.Http;
 using NightTales.Api.IntegrationTests.Email;
 using NightTales.Api.IntegrationTests.Harness;
 using NightTales.Api.IntegrationTests.Persistence;
+using NightTales.Application.Abstractions.Persistence;
 using NightTales.Application.Abstractions.Security;
 using NightTales.Application.Common.Errors;
 using NightTales.Domain.Common;
@@ -409,6 +412,202 @@ public sealed class PasswordResetTests(TestDatabase database) : IntegrationTest(
     }
 
     [Fact]
+    public async Task Reset_HoldsTheUserLock_BeforeChangingTheUser()
+    {
+        var ct = TestContextToken.Value;
+        var clock = new FakeClock();
+        using var factory = new ApiFactory(Database, clock);
+        var user = await AuthTestUserAsync(factory);
+
+        var hashBefore = PasswordHash(user.Id);
+        var stampBefore = SecurityStamp(user.Id);
+
+        var issued = await AuthTestFlow.IssueActionTokenAsync(factory.Services, user.Id, UserActionKind.PasswordReset, ct);
+        issued.IsError.ShouldBeFalse();
+
+        // Hold the account's lifecycle lock — the one the MFA lifecycle takes first, seed 1 — so the reset
+        // stops before it loads or changes the user.
+        using var blockerScope = factory.Services.CreateScope();
+        var blockerUnitOfWork = blockerScope.ServiceProvider.GetRequiredService<IUnitOfWork>();
+        var blockerContext = blockerScope.ServiceProvider.GetRequiredService<AppDbContext>();
+        await blockerUnitOfWork.BeginAsync(ct);
+        await blockerContext.Database.ExecuteSqlAsync(
+            $"SELECT pg_advisory_xact_lock(hashtextextended(CAST({user.Id} AS text), 1))",
+            ct);
+
+        var reset = factory
+            .AnonymousClient()
+            .PostAsJsonAsync(ResetPath, new { token = issued.Value, newPassword = NewPassword }, ct);
+
+        await Task.Delay(TimeSpan.FromMilliseconds(500), ct);
+        reset.IsCompleted.ShouldBeFalse("the reset waits for the account's lifecycle lock");
+
+        // While it waits nothing of the account has changed: the lock is taken before the user is loaded.
+        PasswordHash(user.Id).ShouldBe(hashBefore, "the password is untouched while the lock is held");
+        SecurityStamp(user.Id).ShouldBe(stampBefore);
+
+        (await blockerUnitOfWork.CommitAsync(ct)).IsError.ShouldBeFalse();
+
+        var response = await reset;
+        response.StatusCode.ShouldBe(HttpStatusCode.NoContent, "the reset completes once the lock is free");
+        PasswordHash(user.Id).ShouldNotBe(hashBefore);
+        SecurityStamp(user.Id).ShouldNotBe(stampBefore);
+    }
+
+    [Fact]
+    public async Task Reset_ConcurrentWithMfaChange_DoNotDeadlock()
+    {
+        var ct = TestContextToken.Value;
+        var clock = new FakeClock();
+        using var factory = new ApiFactory(Database, clock);
+
+        // Several rounds so the two transactions overlap in different ways.
+        for (var round = 0; round < 5; round++)
+        {
+            var user = await AuthTestUserAsync(factory);
+            _ = await MfaTestFlow.EnrollAsync(factory, Database, user, clock, ct);
+
+            var callerFamily = await MfaTestFlow.SeedFamilyAsync(
+                Database, user, clock.UtcNow, reauthenticatedAt: clock.UtcNow);
+
+            var hashBefore = PasswordHash(user.Id);
+
+            var issued = await AuthTestFlow.IssueActionTokenAsync(
+                factory.Services, user.Id, UserActionKind.PasswordReset, ct);
+            issued.IsError.ShouldBeFalse();
+
+            using var client = factory.ClientFor(user.Id, user.Role, sessionId: callerFamily);
+
+            // The reset takes the account's lifecycle lock and then the family locks; the MFA change takes
+            // the same lock first. Without one order they can deadlock (40P01); with it they serialize.
+            var reset = factory
+                .AnonymousClient()
+                .PostAsJsonAsync(ResetPath, new { token = issued.Value, newPassword = NewPassword }, ct);
+            var disable = client.DeleteAsync(MfaTestFlow.MfaPath, ct);
+
+            var responses = await Task.WhenAll(reset, disable);
+
+            responses[0].StatusCode.ShouldBe(
+                HttpStatusCode.NoContent,
+                "the reset completes, never a 5xx from a deadlock (40P01)");
+            responses[1].StatusCode.ShouldBe(
+                HttpStatusCode.NoContent,
+                "the MFA change completes, never a 5xx from a deadlock (40P01)");
+
+            // Both state invariants hold whichever transaction committed first.
+            PasswordHash(user.Id).ShouldNotBe(hashBefore, "the reset applied");
+            SqlProbe
+                .Count(Database, $"SELECT count(*) FROM refresh_tokens WHERE user_id = '{user.Id}' AND revoked_at IS NULL")
+                .ShouldBe(0, "every family of the account is revoked");
+            SqlProbe
+                .ScalarText(Database, $"SELECT two_factor_enabled::text FROM users WHERE id = '{user.Id}'")
+                .ShouldBe("false", "the MFA disable applied");
+            SqlProbe
+                .Count(Database, $"SELECT count(*) FROM user_tokens WHERE user_id = '{user.Id}'")
+                .ShouldBe(0, "the enrolment secret is gone");
+            SqlProbe
+                .Count(Database, $"SELECT count(*) FROM user_action_tokens WHERE user_id = '{user.Id}' AND used_at IS NOT NULL")
+                .ShouldBe(1, "the reset token was spent");
+        }
+    }
+
+    [Fact]
+    public async Task Reset_WhenTokenStoreUnavailable_Returns503_AndChangesNothing()
+    {
+        var ct = TestContextToken.Value;
+        using var host = ApiFactory.ProductionHost(
+            Database.ConnectionString,
+            builder => builder.ConfigureServices(services =>
+            {
+                services.RemoveAll<IUserActionTokenService>();
+                services.AddScoped<EfUserActionTokenService>();
+                services.AddScoped<IUserActionTokenService>(provider =>
+                    new ConsumeUnavailableTokenService(provider.GetRequiredService<EfUserActionTokenService>()));
+            }));
+
+        var user = await AuthTestFlow.CreateUserAsync(host.Services);
+        var hashBefore = PasswordHash(user.Id);
+        var stampBefore = SecurityStamp(user.Id);
+
+        var issued = await AuthTestFlow.IssueActionTokenAsync(host.Services, user.Id, UserActionKind.PasswordReset, ct);
+        issued.IsError.ShouldBeFalse();
+
+        var response = await host
+            .CreateClient()
+            .PostAsJsonAsync(ResetPath, new { token = issued.Value, newPassword = NewPassword }, ct);
+
+        // PW-CONSUME-003: a transient store failure stays the 503 ConsumeAsync mapped, never the 400 that
+        // tells the user the link is bad.
+        response.StatusCode.ShouldBe(HttpStatusCode.ServiceUnavailable);
+        (await AuthTestFlow.ProblemCodeAsync(response)).ShouldBe(ErrorCodes.ServiceUnavailable);
+
+        // Nothing was consumed, changed or recorded.
+        SqlProbe
+            .Count(Database, $"SELECT count(*) FROM user_action_tokens WHERE user_id = '{user.Id}' AND used_at IS NULL")
+            .ShouldBe(1, "the token is still spendable");
+        PasswordHash(user.Id).ShouldBe(hashBefore);
+        SecurityStamp(user.Id).ShouldBe(stampBefore);
+        SqlProbe
+            .Count(Database, $"SELECT count(*) FROM audit_logs WHERE subject_user_id = '{user.Id}' AND action = 'account.password_reset'")
+            .ShouldBe(0);
+        SqlProbe
+            .Count(Database, $"SELECT count(*) FROM email_messages WHERE user_id = '{user.Id}' AND template = 'password_changed'")
+            .ShouldBe(0);
+    }
+
+    [Fact]
+    public async Task Reset_WhenFamilyRevocationFails_Returns503_AndRollsBackTheReset()
+    {
+        var ct = TestContextToken.Value;
+        using var host = ApiFactory.ProductionHost(
+            Database.ConnectionString,
+            builder => builder.ConfigureServices(services =>
+            {
+                services.RemoveAll<IUserActionTokenService>();
+                services.AddScoped<EfUserActionTokenService>();
+                services.AddScoped<IUserActionTokenService>(provider =>
+                    new PassThroughTokenService(provider.GetRequiredService<EfUserActionTokenService>()));
+
+                services.RemoveAll<IRefreshTokenService>();
+                services.AddScoped<IRefreshTokenService>(provider =>
+                    new RevokeUnavailableRefreshTokenService(provider.GetRequiredService<EfRefreshTokenService>()));
+            }));
+
+        var user = await AuthTestFlow.CreateUserAsync(host.Services);
+        await AuthTestFlow.SeedFamilyAsync(Database, user, "reset-revoke-family", DateTimeOffset.UtcNow, TimeSpan.FromDays(14));
+
+        var hashBefore = PasswordHash(user.Id);
+        var stampBefore = SecurityStamp(user.Id);
+
+        var issued = await AuthTestFlow.IssueActionTokenAsync(host.Services, user.Id, UserActionKind.PasswordReset, ct);
+        issued.IsError.ShouldBeFalse();
+
+        var response = await host
+            .CreateClient()
+            .PostAsJsonAsync(ResetPath, new { token = issued.Value, newPassword = NewPassword }, ct);
+
+        // PW-REVOKE-004: a refused family revocation fails the whole reset, so the UnitOfWork rolls the
+        // spent token, the password and the stamp back with it.
+        response.StatusCode.ShouldBe(HttpStatusCode.ServiceUnavailable);
+        (await AuthTestFlow.ProblemCodeAsync(response)).ShouldBe(ErrorCodes.ServiceUnavailable);
+
+        SqlProbe
+            .Count(Database, $"SELECT count(*) FROM user_action_tokens WHERE user_id = '{user.Id}' AND used_at IS NULL")
+            .ShouldBe(1, "the token consumption rolled back");
+        PasswordHash(user.Id).ShouldBe(hashBefore, "the password change rolled back");
+        SecurityStamp(user.Id).ShouldBe(stampBefore, "the stamp rotation rolled back");
+        SqlProbe
+            .Count(Database, $"SELECT count(*) FROM refresh_tokens WHERE user_id = '{user.Id}' AND revoked_at IS NULL")
+            .ShouldBe(1, "the session the reset was meant to end is still live");
+        SqlProbe
+            .Count(Database, $"SELECT count(*) FROM audit_logs WHERE subject_user_id = '{user.Id}' AND action = 'account.password_reset'")
+            .ShouldBe(0, "nothing is audited when the revocation failed");
+        SqlProbe
+            .Count(Database, $"SELECT count(*) FROM email_messages WHERE user_id = '{user.Id}' AND template = 'password_changed'")
+            .ShouldBe(0, "no success notice is queued when the revocation failed");
+    }
+
+    [Fact]
     public async Task Reset_ForAdmin_RaisesSecurityAlert()
     {
         var ct = TestContextToken.Value;
@@ -486,6 +685,96 @@ public sealed class PasswordResetTests(TestDatabase database) : IntegrationTest(
 
     private string SecurityStamp(Guid userId) =>
         SqlProbe.ScalarText(Database, $"SELECT security_stamp FROM users WHERE id = '{userId}'");
+
+    /// <summary>
+    /// Wraps the real action-token store, except that a consume answers the transient 503 the review
+    /// finding is about (PW-CONSUME-003); the issue still mints the token the request will present.
+    /// </summary>
+    private sealed class ConsumeUnavailableTokenService(IUserActionTokenService inner) : IUserActionTokenService
+    {
+        public Task<ErrorOr<string>> IssueAsync(
+            Guid userId,
+            UserActionKind kind,
+            RequestInfo info,
+            CancellationToken cancellationToken) =>
+            inner.IssueAsync(userId, kind, info, cancellationToken);
+
+        public Task<ErrorOr<string>> IssueAsync(
+            Guid userId,
+            UserActionKind kind,
+            Guid subjectId,
+            DateTimeOffset expiresAt,
+            RequestInfo info,
+            CancellationToken cancellationToken) =>
+            inner.IssueAsync(userId, kind, subjectId, expiresAt, info, cancellationToken);
+
+        public Task<ErrorOr<Guid>> ConsumeAsync(string token, UserActionKind kind, CancellationToken cancellationToken) =>
+            Task.FromResult<ErrorOr<Guid>>(
+                Error.Failure(
+                    code: ErrorCodes.ServiceUnavailable,
+                    description: "The database is temporarily unavailable; retry."));
+    }
+
+    /// <summary>The real action-token store, unchanged: the revoke test needs no consume fault.</summary>
+    private sealed class PassThroughTokenService(IUserActionTokenService inner) : IUserActionTokenService
+    {
+        public Task<ErrorOr<string>> IssueAsync(
+            Guid userId,
+            UserActionKind kind,
+            RequestInfo info,
+            CancellationToken cancellationToken) =>
+            inner.IssueAsync(userId, kind, info, cancellationToken);
+
+        public Task<ErrorOr<string>> IssueAsync(
+            Guid userId,
+            UserActionKind kind,
+            Guid subjectId,
+            DateTimeOffset expiresAt,
+            RequestInfo info,
+            CancellationToken cancellationToken) =>
+            inner.IssueAsync(userId, kind, subjectId, expiresAt, info, cancellationToken);
+
+        public Task<ErrorOr<Guid>> ConsumeAsync(string token, UserActionKind kind, CancellationToken cancellationToken) =>
+            inner.ConsumeAsync(token, kind, cancellationToken);
+    }
+
+    /// <summary>
+    /// Wraps the real refresh-token store, except that the family revocation answers the transient 503 the
+    /// review finding is about (PW-REVOKE-004).
+    /// </summary>
+    private sealed class RevokeUnavailableRefreshTokenService(IRefreshTokenService inner) : IRefreshTokenService
+    {
+        public Task<ErrorOr<IssuedRefreshSession>> StartSessionAsync(
+            AppUser user,
+            RequestInfo info,
+            CancellationToken ct) =>
+            inner.StartSessionAsync(user, info, ct);
+
+        public Task<ErrorOr<RotatedSession>> RotateAsync(string presentedToken, RequestInfo info, CancellationToken ct) =>
+            inner.RotateAsync(presentedToken, info, ct);
+
+        public Task<ErrorOr<Success>> RevokeFamilyAsync(Guid familyId, string reason, CancellationToken ct) =>
+            inner.RevokeFamilyAsync(familyId, reason, ct);
+
+        public Task<ErrorOr<int>> RevokeAllFamiliesAsync(
+            Guid userId,
+            string reason,
+            Guid? exceptFamilyId,
+            CancellationToken ct) =>
+            Task.FromResult<ErrorOr<int>>(
+                Error.Failure(
+                    code: ErrorCodes.ServiceUnavailable,
+                    description: "The database is temporarily unavailable; retry."));
+
+        public Task<ErrorOr<Success>> MarkReauthenticatedAsync(Guid familyId, DateTimeOffset now, CancellationToken ct) =>
+            inner.MarkReauthenticatedAsync(familyId, now, ct);
+
+        public Task<ErrorOr<int>> RegisterReauthFailureAsync(Guid familyId, DateTimeOffset now, CancellationToken ct) =>
+            inner.RegisterReauthFailureAsync(familyId, now, ct);
+
+        public Task<ErrorOr<ReauthState>> GetReauthStateAsync(Guid familyId, CancellationToken ct) =>
+            inner.GetReauthStateAsync(familyId, ct);
+    }
 
     /// <summary>Captures every alert the flow raises; the seam the admin-reset test asserts through.</summary>
     private sealed class CapturingSecurityAlerter : ISecurityAlerter

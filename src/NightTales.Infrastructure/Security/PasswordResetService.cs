@@ -39,9 +39,11 @@ namespace NightTales.Infrastructure.Security;
 /// <para>
 /// <b>One transaction (D5).</b> Every write — the token consume, the password change, the stamp rotation,
 /// the family revocation, the audit rows and the queued notice — joins the handler's unit of work, so a
-/// refusal leaves nothing behind. The e-mail token itself is <em>not</em> issued here: the request queues
-/// ids and token-free values, and <c>PasswordResetTokenMinter</c> mints the row inside <c>SendEmailJob</c>
-/// (WT17/WT30).
+/// refusal leaves nothing behind. The account's lifecycle lock (<see cref="SecuritySql.LockUserAsync"/>)
+/// is taken before the user is loaded, so a reset and an MFA change serialize on the account and both
+/// take the family locks only after it. The e-mail token itself is <em>not</em> issued here: the request
+/// queues ids and token-free values, and <c>PasswordResetTokenMinter</c> mints the row inside
+/// <c>SendEmailJob</c> (WT17/WT30).
 /// </para>
 /// </remarks>
 /// <param name="database">The scope's write model.</param>
@@ -169,8 +171,9 @@ public sealed partial class PasswordResetService(
 
         var now = clock.UtcNow;
 
-        // 1. Spend the token first: the single statement serializes two concurrent resets, and its
-        //    failure is the one 400 that covers used, expired, unknown and wrong-kind tokens (09 §4).
+        // 1. Spend the token first: the single statement serializes two concurrent resets, and only a
+        //    genuinely bad token (used, expired, unknown, wrong kind) is the 400 of 09 §4. A transient
+        //    store failure is the 503 ConsumeAsync itself mapped and must not be disguised as a bad link.
         var consumed = await actionTokens
             .ConsumeAsync(token, UserActionKind.PasswordReset, cancellationToken)
             .ConfigureAwait(false);
@@ -179,10 +182,16 @@ public sealed partial class PasswordResetService(
         {
             metrics.PasswordReset("failed");
 
-            return InvalidToken();
+            return consumed.Errors;
         }
 
-        // 2. The account must still be active; a suspended one answers the same 400, never "suspended".
+        // 2. The account's lifecycle lock, before the user is loaded or changed. The MFA lifecycle takes
+        //    the same lock first (EfMfaEnrolmentService.DisableAsync), so a reset and an MFA change
+        //    serialize on the account and both take family locks only after it — one lock order, no
+        //    inversion (09.3.2-T2/D9, 09.10.4-T1).
+        await SecuritySql.LockUserAsync(database, consumed.Value, cancellationToken).ConfigureAwait(false);
+
+        // 3. The account must still be active; a suspended one answers the same 400, never "suspended".
         var user = await database.Users
             .FirstOrDefaultAsync(candidate => candidate.Id == consumed.Value, cancellationToken)
             .ConfigureAwait(false);
@@ -194,7 +203,7 @@ public sealed partial class PasswordResetService(
             return InvalidToken();
         }
 
-        // 3. Identity's own change: remove then add, so the account ends with exactly the new hash. Any
+        // 4. Identity's own change: remove then add, so the account ends with exactly the new hash. Any
         //    refusal is the same 400 with a safe description — never the password.
         var removed = await users.RemovePasswordAsync(user).ConfigureAwait(false);
         if (!removed.Succeeded)
@@ -212,7 +221,7 @@ public sealed partial class PasswordResetService(
             return PasswordRefused(added);
         }
 
-        // 4. Rotate the stamp (09.3.2-T2/D9, W3 CR-20) and revoke every family of the account: the reset
+        // 5. Rotate the stamp (09.3.2-T2/D9, W3 CR-20) and revoke every family of the account: the reset
         //    is exactly the "everything the old password unlocked dies" case (WF12, 09 §4).
         var rotated = await securityEvents
             .RotateStampAsync(user.Id, ResetReason, cancellationToken)
@@ -225,11 +234,21 @@ public sealed partial class PasswordResetService(
             return rotated.Errors;
         }
 
-        await refreshTokens
+        // 6. A refused revocation must fail the whole command: the password, the stamp and the spent
+        //    token are already written in this transaction, and a reset that left a live session behind
+        //    is exactly the failure mode WF12 forbids. Returning the error rolls all of it back.
+        var revoked = await refreshTokens
             .RevokeAllFamiliesAsync(user.Id, ResetReason, exceptFamilyId: null, cancellationToken)
             .ConfigureAwait(false);
 
-        // 5. The user-visible account_security row, then the operator alert for a privileged account.
+        if (revoked.IsError)
+        {
+            metrics.PasswordReset("failed");
+
+            return revoked.Errors;
+        }
+
+        // 7. The user-visible account_security row, then the operator alert for a privileged account.
         await audit
             .WriteAsync(
                 SecurityAudit.Entry(
@@ -254,7 +273,7 @@ public sealed partial class PasswordResetService(
                 .ConfigureAwait(false);
         }
 
-        // 6. The "your password changed" notice. A queue failure must not roll the reset back — the
+        // 8. The "your password changed" notice. A queue failure must not roll the reset back — the
         //    password is already changed — so it is logged and counted, never returned.
         var notice = await emailSender
             .QueueAsync(

@@ -1,8 +1,11 @@
 using System.Security.Cryptography;
 using System.Text;
+using Microsoft.Extensions.DependencyInjection;
 using NightTales.Api.IntegrationTests.Persistence;
+using NightTales.Application.Abstractions.Persistence;
 using NightTales.Application.Abstractions.Security;
 using NightTales.Application.Common.Errors;
+using NightTales.Domain.Common;
 using NightTales.TestKit;
 using NightTales.TestKit.Api;
 using NightTales.TestKit.Database;
@@ -185,6 +188,53 @@ public sealed class UserActionTokenTests(TestDatabase database) : IntegrationTes
         SqlProbe
             .Count(Database, $"SELECT count(*) FROM user_action_tokens WHERE user_id = '{user.Id}' AND used_at IS NULL")
             .ShouldBe(1, "a rejected consume never marks the row used");
+    }
+
+    [Fact]
+    public async Task Issue_SameScope_Serializes_AndLeavesOneLiveToken()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var factory = new ApiFactory(Database, new FakeClock());
+        var user = await Database.CreateUserBuilder().CreateAsync(ct: ct);
+
+        // One issue on a connection that keeps its transaction open, so the scope's advisory lock stays
+        // held exactly as it does between the update and the insert of a real issue.
+        using var holderScope = factory.Services.CreateScope();
+        var holderUnitOfWork = holderScope.ServiceProvider.GetRequiredService<IUnitOfWork>();
+        await holderUnitOfWork.BeginAsync(ct);
+
+        var first = await holderScope
+            .ServiceProvider
+            .GetRequiredService<IUserActionTokenService>()
+            .IssueAsync(user.Id, UserActionKind.PasswordReset, new RequestInfo(null, null), ct);
+
+        first.IsError.ShouldBeFalse();
+
+        // A second connection's issue of the same scope must wait for that lock: without it two callers
+        // would both see no live row, both update zero rows and both insert, leaving two live links where
+        // BD3/WF11 promise at most one.
+        var blocked = Task.Run(
+            () => AuthTestFlow.IssueActionTokenAsync(factory.Services, user.Id, UserActionKind.PasswordReset, ct),
+            ct);
+
+        await Task.Delay(TimeSpan.FromMilliseconds(500), ct);
+        blocked.IsCompleted.ShouldBeFalse("the same-scope issue waits for the lock the first issue holds");
+
+        (await holderUnitOfWork.CommitAsync(ct)).IsError.ShouldBeFalse();
+
+        var second = await blocked;
+        second.IsError.ShouldBeFalse();
+
+        LiveCount(user.Id, "password_reset").ShouldBe(1, "at most one live token per (user, kind)");
+        LiveByHash(user.Id, "password_reset", Hash(first.Value)).ShouldBe(0, "the first token was invalidated");
+        LiveByHash(user.Id, "password_reset", Hash(second.Value)).ShouldBe(1);
+
+        // Exactly one of the two links is still spendable.
+        var consumed = await Task.WhenAll(
+            AuthTestFlow.ConsumeActionTokenAsync(factory.Services, first.Value, UserActionKind.PasswordReset, ct),
+            AuthTestFlow.ConsumeActionTokenAsync(factory.Services, second.Value, UserActionKind.PasswordReset, ct));
+
+        consumed.Count(result => !result.IsError).ShouldBe(1);
     }
 
     /// <summary>The stored form of a token: SHA-256 as lowercase hex (BD3).</summary>

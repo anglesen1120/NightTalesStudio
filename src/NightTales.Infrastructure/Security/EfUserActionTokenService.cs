@@ -1,3 +1,4 @@
+using System.Data;
 using System.Security.Cryptography;
 using System.Text;
 using ErrorOr;
@@ -20,11 +21,14 @@ namespace NightTales.Infrastructure.Security;
 /// <remarks>
 /// <para>
 /// <b>Raw SQL on purpose.</b> An issue has to invalidate the user's previous live tokens of the same flow
-/// <em>and</em> insert the new one; a single <c>WITH … UPDATE … INSERT</c> statement makes that atomic
-/// whether or not the caller already opened a transaction — which matters because the two callers are
-/// different: the reset consume runs inside a command's unit of work (09 README D5), while the send-time
-/// mint runs in <c>SendEmailJob</c>, which owns no explicit transaction. The consume is the single
-/// <c>UPDATE … RETURNING</c> of the design, so two callers presenting one token can never both win.
+/// <em>and</em> insert the new one, and two issues of one scope must never both leave a live row: under
+/// <c>ReadCommitted</c> a single <c>WITH … UPDATE … INSERT</c> is not enough, because two callers that each
+/// see no live row both update zero rows and both insert. The issue therefore takes the scope's
+/// transaction-scoped advisory lock before the update and holds it through the insert. The two callers
+/// differ: the reset consume runs inside a command's unit of work (09 README D5), while the send-time mint
+/// runs in <c>SendEmailJob</c>, which owns no explicit transaction — so the issue opens one there. The
+/// consume is the single <c>UPDATE … RETURNING</c> of the design, so two callers presenting one token can
+/// never both win.
 /// </para>
 /// <para>
 /// <b>No tracked entity.</b> Nothing here goes through <see cref="AppDbContext"/>'s change tracker: the
@@ -141,10 +145,25 @@ public sealed class EfUserActionTokenService(
         {
             await SecuritySql.EnsureOpenAsync(database, cancellationToken).ConfigureAwait(false);
 
+            // The lock of a scope must outlive its update-and-insert, so it needs a transaction. The reset
+            // handler runs inside the command's unit of work (09 README D5); the Worker's send-time mint
+            // owns none and gets one here, committed together with the insert.
+            await using var transaction = database.Database.CurrentTransaction is null
+                ? await database.Database
+                    .BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken)
+                    .ConfigureAwait(false)
+                : null;
+
             var now = clock.UtcNow;
             var plaintext = NewToken();
 
-            await using var command = SecuritySql.Command(database, IssueSql, requireTransaction: false);
+            // Before the update reads its snapshot: without this lock two concurrent issues of the same
+            // scope would each see no live row, each update zero rows and each insert one (BD3/WF11).
+            await SecuritySql
+                .LockActionTokenScopeAsync(database, userId, kind.ToWire(), subjectId, cancellationToken)
+                .ConfigureAwait(false);
+
+            await using var command = SecuritySql.Command(database, IssueSql, requireTransaction: true);
             command.Parameters.AddWithValue("id", Guid.CreateVersion7());
             command.Parameters.AddWithValue("user_id", userId);
             command.Parameters.AddWithValue("kind", kind.ToWire());
@@ -162,6 +181,11 @@ public sealed class EfUserActionTokenService(
             {
                 throw new InvalidOperationException(
                     "The action-token insert did not write exactly one row; the caller would otherwise hold a link nobody can spend.");
+            }
+
+            if (transaction is not null)
+            {
+                await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
             }
 
             return plaintext;
