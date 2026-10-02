@@ -851,7 +851,13 @@ public sealed class SeriesEndpointsTests(TestDatabase database) : IntegrationTes
     {
         await using var context = Database.CreateAppDbContext(new TestCurrentUser());
         var voice = await context.Voices.SingleAsync(candidate => candidate.Id == voiceId, Ct);
-        voice.UpdateFromCatalog(voice.DisplayName, voice.Language, voice.Gender, voice.Tags, active: false);
+        voice.UpdateFromCatalog(
+            voice.DisplayName,
+            voice.Language,
+            voice.Gender,
+            voice.Tags,
+            active: false,
+            previewStorageKey: voice.PreviewStorageKey);
         await context.SaveChangesAsync(Ct);
     }
 

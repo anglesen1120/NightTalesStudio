@@ -53,6 +53,17 @@ public sealed class SessionLimitsTests(TestDatabase database) : IntegrationTest(
         ShouldRefuseToStart(($"{SessionOptionsSection}:Session:OwnerAbsoluteHours", "24.5"));
     }
 
+    /// <summary>
+    /// The same rule read as 09.10.4-T1's acceptance check reads it: an owner/admin absolute value of 48
+    /// hours cannot be configured. The key is <c>Session:OwnerAbsoluteHours</c> because BD3 gives the two
+    /// roles one session policy — there is no separate admin key to widen.
+    /// </summary>
+    [Fact]
+    public void AdminAbsoluteAboveTwentyFourHours_StartupFails()
+    {
+        ShouldRefuseToStart(($"{SessionOptionsSection}:Session:OwnerAbsoluteHours", "48"));
+    }
+
     [Fact]
     public void CookieNameWithoutSecurePrefix_StartupFails()
     {

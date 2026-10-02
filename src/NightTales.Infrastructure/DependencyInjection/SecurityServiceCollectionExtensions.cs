@@ -58,6 +58,20 @@ public static class SecurityServiceCollectionExtensions
         // Scoped: the flow reads AppUser through the scope's context and writes last_login_at through it.
         services.AddScoped<IAuthSessionService, RefreshSessionService>();
 
+        // 09.10.4-T1 (BD4, WT31/WT35/WT43): the MFA ports. The secret store, the recovery codes, the
+        // verifier, the guard and the two flows are scoped because they share the scope's AppDbContext and
+        // its transaction; the wrong-code window is a singleton because it is one fact per user for the
+        // whole process.
+        services.AddScoped<ITotpSecretStore, DataProtectionTotpSecretStore>();
+        services.AddScoped<IRecoveryCodeService, CrockfordBase32RecoveryCodes>();
+        services.AddScoped<ITotpVerifier, Rfc6238TotpVerifier>();
+        services.AddScoped<IReauthGuard, EfReauthGuard>();
+        services.AddScoped<ISecurityEventWriter, EfSecurityEventWriter>();
+        services.AddScoped<ISecurityAlerter, AuditAndLogSecurityAlerter>();
+        services.AddScoped<IMfaEnrolmentService, EfMfaEnrolmentService>();
+        services.AddScoped<IReauthService, EfReauthService>();
+        services.AddSingleton<IMfaGuessWindow, InMemoryMfaGuessWindow>();
+
         return services;
     }
 
@@ -114,6 +128,27 @@ public static class SecurityServiceCollectionExtensions
                 options => options.Refresh.CookieName.StartsWith(SessionOptions.SecurePrefix, StringComparison.Ordinal)
                     && options.Refresh.CookieName.Length > SessionOptions.SecurePrefix.Length,
                 $"'{SessionOptions.SectionName}:Refresh:CookieName' must keep the '{SessionOptions.SecurePrefix}' prefix (BD3).")
+            .ValidateOnStart();
+
+        services.AddOptions<MfaOptions>()
+            .BindConfiguration(MfaOptions.SectionName)
+            .Validate(
+                options => !string.IsNullOrWhiteSpace(options.Mfa.Issuer) && options.Mfa.Issuer.Length <= 64,
+                $"'{MfaOptions.SectionName}:Mfa:Issuer' is required and at most 64 characters (BD4).")
+            .Validate(
+                options => options.Mfa.StepSeconds > 0,
+                $"'{MfaOptions.SectionName}:Mfa:StepSeconds' must be greater than zero (RFC 6238).")
+            .Validate(
+                // BD4 fixes the window at five minutes: a deployment may tighten it, never widen it.
+                options => options.Reauth.WindowMinutes > 0
+                    && options.Reauth.WindowMinutes <= MfaOptions.ReauthWindowCeiling.TotalMinutes,
+                $"'{MfaOptions.SectionName}:Reauth:WindowMinutes' must be in (0, "
+                + $"{MfaOptions.ReauthWindowCeiling.TotalMinutes}] (BD4).")
+            .Validate(
+                // The column's CHECK ends at 5, so a wider ceiling could not be stored: the attempt that
+                // would revoke the family must be reachable.
+                options => options.Reauth.MaxAttempts == MfaOptions.ReauthAttemptCeiling,
+                $"'{MfaOptions.SectionName}:Reauth:MaxAttempts' must be {MfaOptions.ReauthAttemptCeiling} (BD4).")
             .ValidateOnStart();
     }
 }

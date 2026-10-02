@@ -49,11 +49,35 @@ public sealed class ApiFactory(TestDatabase database, FakeClock clock) : WebAppl
     /// An authenticated client: every request carries <c>X-Test-User</c> and <c>X-Test-Role</c>, and
     /// the <see cref="TestAuthHandler"/> turns them into an authenticated principal.
     /// </summary>
-    public HttpClient ClientFor(Guid userId, PlatformRole role = PlatformRole.User)
+    /// <param name="userId">The <c>sub</c> claim.</param>
+    /// <param name="role">The <c>role</c> claim; <see cref="PlatformRole.User"/> unless a test says otherwise.</param>
+    /// <param name="scope">
+    /// The token's <c>scope</c> claim: null for a full access token, or
+    /// <see cref="TestAuthHandler.EnrolmentScope"/> for BD4's enrolment-only token.
+    /// </param>
+    /// <param name="sessionId">
+    /// The <c>sid</c> claim (09 README BD3): the refresh family the token belongs to. Null means the
+    /// token has no family, exactly like the enrolment-only token.
+    /// </param>
+    public HttpClient ClientFor(
+        Guid userId,
+        PlatformRole role = PlatformRole.User,
+        string? scope = null,
+        Guid? sessionId = null)
     {
         var client = CreateClient();
         client.DefaultRequestHeaders.Add(TestAuthHandler.UserHeader, userId.ToString());
         client.DefaultRequestHeaders.Add(TestAuthHandler.RoleHeader, TestAuthHandler.RoleClaimValue(role));
+
+        if (scope is not null)
+        {
+            client.DefaultRequestHeaders.Add(TestAuthHandler.ScopeHeader, scope);
+        }
+
+        if (sessionId is { } familyId)
+        {
+            client.DefaultRequestHeaders.Add(TestAuthHandler.SessionHeader, familyId.ToString());
+        }
 
         return client;
     }

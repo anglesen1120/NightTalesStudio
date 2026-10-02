@@ -11,6 +11,7 @@ using NightTales.Application.Abstractions.Security;
 using NightTales.Application.Common.Errors;
 using NightTales.Application.Features.Auth.Login.Commands;
 using NightTales.Application.Features.Auth.Logout.Commands;
+using NightTales.Application.Features.Auth.Mfa.Reauth.Commands;
 using NightTales.Application.Features.Auth.Refresh.Commands;
 using NightTales.Application.Features.Auth.Register.Commands;
 using NightTales.Domain.Common;
@@ -89,6 +90,12 @@ public static class AuthEndpoints
             .RequireRateLimiting(AuthRateLimitPolicy)
             .AddEndpointFilter<RequireSameOriginFilter>();
 
+        // 09.10.4-T1 (BD4): re-authentication is a credential route, so it carries the auth rate limit.
+        auth.MapPost("/reauth", ReauthAsync)
+            .RequireRateLimiting(AuthRateLimitPolicy)
+            .Produces<ReauthResponse>(StatusCodes.Status200OK)
+            .ProducesProblem(StatusCodes.Status401Unauthorized);
+
         return routes;
     }
 
@@ -116,6 +123,9 @@ public static class AuthEndpoints
         {
             LoginOutcome.Tokens => WriteLoginSuccess(http, sessionOptions.Value, value, clock.UtcNow),
             LoginOutcome.MfaRequired => Problem(http, ErrorCodes.MfaRequired, "A one-time code is required."),
+            LoginOutcome.RateLimited => ProblemDetailsWriter.ToProblem(
+                [MfaErrors.RateLimited(InMemoryMfaGuessWindow.RetryAfterSeconds)],
+                http),
             _ => Problem(
                 http,
                 ErrorCodes.MfaEnrolmentRequired,
@@ -213,6 +223,46 @@ public static class AuthEndpoints
             : Results.NoContent();
     }
 
+    /// <summary>
+    /// <c>POST /api/v1/auth/reauth</c>: 200 with the instant the family was stamped, or the 401 the
+    /// failure's own error maps to ([RULED — README §B10 WT29]).
+    /// </summary>
+    /// <remarks>
+    /// A failure arrives as a <em>value</em>, not as an error: the counter, the possible family
+    /// revocation and the audit row must commit before the caller is told 401, and an error result would
+    /// roll them back. The error the flow carries is mapped here, unchanged.
+    /// </remarks>
+    private static async Task<IResult> ReauthAsync(
+        ReauthCommand command,
+        ISender sender,
+        HttpContext http,
+        CancellationToken ct)
+    {
+        var result = await sender.Send(command, ct).ConfigureAwait(false);
+
+        if (result.IsError)
+        {
+            return ProblemDetailsWriter.ToProblem(result.Errors, http);
+        }
+
+        NoStore(http);
+
+        var value = result.Value;
+
+        if (value.Outcome is ReauthOutcome.Succeeded)
+        {
+            return Results.Json(
+                new ReauthResponse(value.ReauthenticatedAt!.Value),
+                statusCode: StatusCodes.Status200OK);
+        }
+
+        // A failure always carries its error; the fallback is fail-closed if that ever stops holding.
+        var failure = value.Failure
+            ?? Error.Unauthorized(ErrorCodes.SessionRevoked, "The session is no longer valid; sign in again.");
+
+        return ProblemDetailsWriter.ToProblem([failure], http);
+    }
+
     private static IResult WriteLoginSuccess(
         HttpContext http,
         SessionOptions sessionOptions,
@@ -261,6 +311,13 @@ public sealed record LoginResponse(
     DateTimeOffset ExpiresAt,
     string Role,
     IReadOnlyList<string> Amr);
+
+/// <summary>
+/// The frozen <c>POST /auth/reauth</c> body (09.3-auth plan §5, 10-web-ui 10.3.3): when the caller's
+/// session was re-authenticated, so the SPA can re-arm the sensitive actions it gates.
+/// </summary>
+/// <param name="ReauthenticatedAt">The instant the family's re-authentication was stamped.</param>
+public sealed record ReauthResponse(DateTimeOffset ReauthenticatedAt);
 
 /// <summary>
 /// The frozen <c>POST /auth/refresh</c> body (09.3-auth plan §5, 10.2.1-T1's <c>TokenPair</c>).

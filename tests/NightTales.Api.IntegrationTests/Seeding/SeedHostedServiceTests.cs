@@ -1,3 +1,4 @@
+using System.Globalization;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Hosting;
 using NightTales.TestKit;
@@ -44,7 +45,8 @@ public sealed class SeedHostedServiceTests(TestDatabase database) : IntegrationT
             // Services returns.
             _ = factory.Services;
 
-            (await ScalarAsync("SELECT count(*)::text FROM voices")).ShouldBe("4");
+            (await ScalarAsync("SELECT count(*)::text FROM voices")).ShouldBe(
+                SeedTestHarness.SeedVoices.Count.ToString(CultureInfo.InvariantCulture));
             (await ScalarAsync("SELECT count(*)::text FROM style_templates")).ShouldBe("7");
             (await ScalarAsync("SELECT count(*)::text FROM feature_flags")).ShouldBe("3");
             (await ScalarAsync("SELECT count(*)::text FROM feature_flags WHERE enabled")).ShouldBe("0");

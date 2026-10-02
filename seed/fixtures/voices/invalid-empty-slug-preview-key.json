@@ -1,0 +1,17 @@
+{
+  "schema": "voices.v1",
+  "revision": 1,
+  "vieneuCommit": "c1390abbdb2eedcdf58eafb546966c06ce27af71",
+  "voices": [
+    {
+      "id": "中",
+      "slug": "",
+      "displayName": "中",
+      "language": "vi",
+      "gender": "female",
+      "tags": [],
+      "active": true,
+      "previewStorageKey": "voice-previews/.v1.mp3"
+    }
+  ]
+}

@@ -20,6 +20,12 @@ public enum LoginOutcome
 
     /// <summary>401 <c>mfa_enrolment_required</c>: an owner/admin who has not enrolled yet (BD4).</summary>
     EnrolmentRequired,
+
+    /// <summary>
+    /// 429 <c>rate_limited</c>: the per-user wrong-code window tripped, so no password is even checked
+    /// ([RULED — README §B10 WT35]). The endpoint answers <c>Retry-After: 900</c>.
+    /// </summary>
+    RateLimited,
 }
 
 /// <summary>

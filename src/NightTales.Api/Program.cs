@@ -15,7 +15,11 @@ using NightTales.Infrastructure.Storage;
 var builder = WebApplication.CreateBuilder(args);
 
 // 09.1.5-T1 (09 README D14): registers the OpenAPI document provider the build-time generator needs.
-builder.Services.AddOpenApi();
+// 09.9.5-T1 (09 README D7): the generated `ProblemDetails` component gains the two members its CLR
+// type cannot express (`code`, `traceId`), so the published document — and every client generated
+// from it (10.1.4) — carries the whole error contract of ProblemDetailsWriter.
+builder.Services.AddOpenApi(options =>
+    options.AddSchemaTransformer<ProblemDetailsSchemaTransformer>());
 
 builder.Services.AddNightTalesMediator();
 builder.Services.AddPersistence(builder.Configuration);
@@ -46,6 +50,11 @@ builder.Services.AddNightTalesAuth(builder.Configuration);
 
 // 09.3.2-T1 step 6: the bearer scheme over the same key.
 builder.Services.AddNightTalesJwtBearer();
+
+// 09.10.4-T1 (09 README §B10 WT34): the fallback policy that rejects BD4's enrolment-only token
+// everywhere, the MfaEnrolment policy of the two enrolment routes, and the result handler that answers
+// 404 not_found for a refused request (D10).
+builder.Services.AddNightTalesMfaAuthorization();
 
 // 09.9.4-T1 (09 README BD12/WF15): the Data Protection key ring persisted in PostgreSQL and encrypted
 // with the DP_KEK certificate, the purpose-scoped token protector over it, and the platform's safe
@@ -96,6 +105,10 @@ app.MapGet("/health/live", () => Results.Ok());
 // 09.3.1-T1 (09 README D14): the auth route group; in P it carries POST /api/v1/auth/register, which
 // answers 403 registration_closed until 09.3.1-T3 swaps the registration flow.
 app.MapAuthEndpoints();
+
+// 09.10.4-T1 (09 README D14, BD4): the /me route group's MFA routes — setup, verify, recovery codes and
+// disable. The enrolment-only token reaches the first two and nothing else (WT34).
+app.MapMeEndpoints();
 
 // 09.4.1-T1 (09 README D14, 09 §4 09.4.1): the series route group.
 app.MapSeriesEndpoints();
