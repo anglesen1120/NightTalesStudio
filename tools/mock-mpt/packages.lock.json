@@ -1,0 +1,23 @@
+{
+  "version": 2,
+  "dependencies": {
+    "net10.0": {
+      "nighttales.rendernode.contract": {
+        "type": "Project"
+      },
+      "nighttales.rendernode.server": {
+        "type": "Project",
+        "dependencies": {
+          "ErrorOr": "[2.1.1, )",
+          "NightTales.RenderNode.Contract": "[1.0.0, )"
+        }
+      },
+      "ErrorOr": {
+        "type": "CentralTransitive",
+        "requested": "[2.1.1, )",
+        "resolved": "2.1.1",
+        "contentHash": "Y/AhvEZ5DjSi993Db1VrnYpK8YpM4o+tonF4f+AtXDzrIHYvbjWJD7fpip+ugSwW8kMw+XXEnMlJM7E0BKJBWA=="
+      }
+    }
+  }
+}

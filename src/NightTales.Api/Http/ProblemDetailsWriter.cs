@@ -71,6 +71,9 @@ public static partial class ProblemDetailsWriter
     /// <summary>The body member carrying a problem's stable code, <c>code</c>.</summary>
     public const string CodeMemberName = "code";
 
+    /// <summary>The body member carrying the login step's single-use challenge token, <c>mfaToken</c>.</summary>
+    public const string MfaTokenMemberName = "mfaToken";
+
     /// <summary>
     /// The longest string the writer copies into a problem body from an allow-listed metadata key. The
     /// only keys that reach the body are field names, limits and retry-after seconds, so anything
@@ -95,6 +98,52 @@ public static partial class ProblemDetailsWriter
     /// details writer of <c>AddProblemDetails()</c> uses.
     /// </summary>
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
+
+    /// <summary>
+    /// Writes the 401 <c>mfa_required</c> step body of 09.3.2-T3: the uniform problem shape plus the one
+    /// <c>mfaToken</c> member the wire contract adds, and nothing else.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The frozen contract is <c>401 mfa_required { mfaToken }</c> (09 §5.4, 09.3-auth plan §5, 10.3.3's
+    /// C2), so the step's answer is not purely a problem: it carries the single-use token the SPA posts
+    /// back with the code. This is the <em>only</em> body where a member travels beside the coded problem,
+    /// and it is built here rather than by widening <see cref="AllowedMetadataKeys"/>: the allow-list
+    /// exists so no internal value can leak through an error, and a bearer token must never become part of
+    /// it.
+    /// </para>
+    /// <para>
+    /// The caller writes the matching pre-auth cookie (<c>__Secure-nts_mfa</c>) — the two halves are the
+    /// point of the step (BD4).
+    /// </para>
+    /// </remarks>
+    /// <param name="http">The request, for the trace id.</param>
+    /// <param name="mfaToken">The single-use challenge token; never logged.</param>
+    /// <param name="description">The client-safe title of the step.</param>
+    public static IResult MfaRequired(HttpContext http, string mfaToken, string description)
+    {
+        ArgumentNullException.ThrowIfNull(http);
+        ArgumentException.ThrowIfNullOrWhiteSpace(mfaToken);
+
+        var status = ErrorCatalogue.Status[ErrorCodes.MfaRequired];
+
+        var body = new ProblemBody
+        {
+            Type = ErrorCatalogue.ProblemType(ErrorCodes.MfaRequired),
+            Title = string.IsNullOrWhiteSpace(description)
+                ? ReasonPhrases.GetReasonPhrase(status)
+                : description,
+            Status = status,
+            Code = ErrorCodes.MfaRequired,
+            TraceId = TraceId(http),
+            Metadata = new Dictionary<string, object?>(StringComparer.Ordinal)
+            {
+                [MfaTokenMemberName] = mfaToken,
+            },
+        };
+
+        return Results.Json(body, SerializerOptions, contentType: JsonContentType, statusCode: status);
+    }
 
     /// <summary>
     /// Writes <paramref name="errors"/> as the ProblemDetails response their codes map to, or as 500

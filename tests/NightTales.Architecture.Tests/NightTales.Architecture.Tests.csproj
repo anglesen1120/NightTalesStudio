@@ -12,6 +12,8 @@
       for RenderNode_ReferencesOnlyTheContractAndAspNetCore (11 README D3/D5).
     -->
     <ProjectReference Include="..\..\src\NightTales.RenderNode.Server\NightTales.RenderNode.Server.csproj" />
+    <!-- The mock is the third node assembly the reference rules cover (11 README D3). -->
+    <ProjectReference Include="..\..\tools\mock-mpt\NightTales.MockMpt.csproj" />
   </ItemGroup>
 
   <!--

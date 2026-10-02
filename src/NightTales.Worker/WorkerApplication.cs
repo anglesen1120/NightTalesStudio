@@ -5,6 +5,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using NightTales.Infrastructure.Realtime;
+using NightTales.Worker.Cli;
 using NightTales.Worker.DependencyInjection;
 using NightTales.Worker.Health;
 using Serilog;
@@ -29,12 +30,26 @@ public static class WorkerApplication
     {
         ArgumentNullException.ThrowIfNull(args);
 
-        var builder = WebApplication.CreateBuilder(args);
+        var builder = WebApplication.CreateBuilder(HostArguments(args));
 
-        builder.Host.UseSerilog((context, services, configuration) => configuration
-            .ReadFrom.Configuration(context.Configuration)
-            .ReadFrom.Services(services)
-            .WriteTo.Console(formatProvider: CultureInfo.InvariantCulture));
+        builder.Host.UseSerilog((context, services, configuration) =>
+        {
+            // 09.9.2-T2 (09 README BD16, 09.9.2 plan §6): a `flags` invocation owns the process console —
+            // a listing on stdout and one typed failure on stderr. Its logging is therefore decided here,
+            // from the original args and before the host exists, because the normal Worker's console sink
+            // would print what the CLI contract forbids: Serilog's template appends {Exception}, and the
+            // EF Core/Npgsql categories log a failed command together with the server and the database. A
+            // verb host gets no sink at all; the normal Worker host keeps the configured one.
+            if (FlagsCommand.IsFlagsVerb(args))
+            {
+                return;
+            }
+
+            configuration
+                .ReadFrom.Configuration(context.Configuration)
+                .ReadFrom.Services(services)
+                .WriteTo.Console(formatProvider: CultureInfo.InvariantCulture);
+        });
 
         // 11.1.1-T1: keep scope validation — the check that catches a captive scoped dependency — but
         // turn off build-time graph validation. The Mediator source generator registers every
@@ -73,5 +88,26 @@ public static class WorkerApplication
         builder.WebHost.ConfigureKestrel(options => options.Listen(healthEndpoint, healthPort));
 
         return builder.Build();
+    }
+
+    /// <summary>Preserves host settings, removing only a leading flags command's positional arguments.</summary>
+    /// <param name="args">The process arguments.</param>
+    public static string[] HostArguments(string[] args)
+    {
+        ArgumentNullException.ThrowIfNull(args);
+
+        if (!FlagsCommand.IsFlagsVerb(args))
+        {
+            return args;
+        }
+
+        var prefixLength = args.Length > 1 ? args[1] switch
+        {
+            "list" => 2,
+            "set" => Math.Min(4, args.Length),
+            _ => 1,
+        } : 1;
+
+        return args[prefixLength..];
     }
 }

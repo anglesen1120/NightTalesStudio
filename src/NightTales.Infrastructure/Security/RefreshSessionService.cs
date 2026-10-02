@@ -24,8 +24,9 @@ namespace NightTales.Infrastructure.Security;
 /// <b>Login</b> keeps the order the task's Design fixes: the validator already ran in the pipeline, then
 /// the credential verifier (unknown address and wrong password take the same timing-equalising path,
 /// 09.3.1-T1), then account status, then the confirmed address, then the owner/admin MFA answers. The
-/// two MFA outcomes issue either nothing (<c>mfa_required</c>, until 09.3.2-T3's challenge exists) or the
-/// enrolment-only token of BD4, and neither sets a refresh cookie.
+/// enrolled account's answer carries the challenge document 09.3.2-T3 opens
+/// (<see cref="IMfaChallengeService.BeginAsync"/>, [RULED — README §B10 WT22, WT39]); the unenrolled owner
+/// or admin gets the enrolment-only token of BD4. Neither sets a refresh cookie.
 /// </para>
 /// <para>
 /// <b>Refresh</b> rotates first and re-checks the account second, exactly as the Design says. The order is
@@ -41,10 +42,11 @@ namespace NightTales.Infrastructure.Security;
 /// that the session existed.
 /// </para>
 /// <para>
-/// Audit rows (<c>login.succeeded</c>/<c>login.failed</c>, <c>refresh.reuse_detected</c>) and the
-/// reuse-detection e-mail are <c>IAuditWriter</c>'s and <c>IEmailSender</c>'s, owned by 09.3.6-T1 and
-/// 09.2.6-T3. Neither port exists in this wave, so this flow raises neither; the rows they will write
-/// belong to those tasks' tables, and the flow's seams (one call site each) are where they attach.
+/// Audit rows (<c>account.login_succeeded</c>/<c>account.login_failed</c>,
+/// <c>refresh.reuse_detected</c>) and the reuse-detection e-mail are <c>IAuditWriter</c>'s and
+/// <c>IEmailSender</c>'s, owned by 09.3.6-T1 and 09.2.6-T3. This flow raises only the wrong-code window's
+/// row; the completed-login row is 09.3.2-T3's (the MFA step, where the session is actually issued), and
+/// the rotation's rows are 09.3.6-T1's — the seams (one call site each) are where they attach.
 /// </para>
 /// </remarks>
 /// <param name="database">The scope's write model: the account read and the <c>last_login_at</c> write.</param>
@@ -54,6 +56,12 @@ namespace NightTales.Infrastructure.Security;
 /// <param name="tokens">The ES256 issuer.</param>
 /// <param name="clock">The scope's clock.</param>
 /// <param name="metrics">The two counters this flow is the only writer of.</param>
+/// <param name="guessWindow">The per-user wrong-code window that gates the whole sign-in (WT35).</param>
+/// <param name="audit">The writer of this flow's <c>account_security</c> rows.</param>
+/// <param name="challenges">
+/// The MFA challenge store of 09.3.2-T3: the login step opens one challenge for every account that always
+/// signs in with an authenticator, and the answer carries its document ([RULED — README §B10 WT22, WT39]).
+/// </param>
 public sealed class RefreshSessionService(
     AppDbContext database,
     ICredentialVerifier credentials,
@@ -63,7 +71,8 @@ public sealed class RefreshSessionService(
     IClock clock,
     AuthMetrics metrics,
     IMfaGuessWindow guessWindow,
-    IAuditWriter audit) : IAuthSessionService
+    IAuditWriter audit,
+    IMfaChallengeService challenges) : IAuthSessionService
 {
     /// <inheritdoc />
     public async Task<ErrorOr<LoginResult>> LoginAsync(
@@ -111,7 +120,7 @@ public sealed class RefreshSessionService(
 
             metrics.Login(ErrorCodes.RateLimited);
 
-            return new LoginResult(LoginOutcome.RateLimited, null, null, user.Role, AuthMethod.Pwd);
+            return new LoginResult(LoginOutcome.RateLimited, null, null, user.Role, AuthMethod.Pwd, null);
         }
 
         if (!user.EmailConfirmed)
@@ -126,20 +135,40 @@ public sealed class RefreshSessionService(
         {
             // BD4: an owner or admin always signs in with TOTP, and so does any account whose authenticator
             // is enrolled — 09.10.4-T1 is what can turn that flag on, so the branch must cover it or an
-            // enrolled user could sign in with the password alone. The enrolled account waits for
-            // 09.3.2-T3, which answers with the challenge document; the unenrolled owner or admin gets the
-            // enrolment-only token (scope = mfa_enrol) that the Api will put in the pre-auth cookie in that
-            // same task ([RULED — README §B10 WT22, WT39]). Neither answer carries a refresh cookie.
-            metrics.Login(user.TwoFactorEnabled ? ErrorCodes.MfaRequired : ErrorCodes.MfaEnrolmentRequired);
+            // enrolled user could sign in with the password alone. 09.3.2-T3 opens the challenge for the
+            // enrolled account and the endpoint puts its document in the 401 body and its pre-auth cookie
+            // on the response; the unenrolled owner or admin still gets the enrolment-only token
+            // (scope = mfa_enrol) with nothing on the wire. Neither answer carries a refresh cookie.
+            if (!user.TwoFactorEnabled)
+            {
+                metrics.Login(ErrorCodes.MfaEnrolmentRequired);
 
-            return user.TwoFactorEnabled
-                ? new LoginResult(LoginOutcome.MfaRequired, null, null, user.Role, AuthMethod.Pwd)
-                : new LoginResult(
+                return new LoginResult(
                     LoginOutcome.EnrolmentRequired,
                     tokens.IssueEnrolmentToken(user, now),
                     null,
                     user.Role,
-                    AuthMethod.Pwd);
+                    AuthMethod.Pwd,
+                    null);
+            }
+
+            var challenge = await challenges.BeginAsync(user.Id, info, ct).ConfigureAwait(false);
+            if (challenge.IsError)
+            {
+                // Only a database that cannot answer leaves Begin errorless-but-failed; its error is the
+                // 503 the caller retries, and nothing was written.
+                return challenge.Errors;
+            }
+
+            metrics.Login(ErrorCodes.MfaRequired);
+
+            return new LoginResult(
+                LoginOutcome.MfaRequired,
+                null,
+                null,
+                user.Role,
+                AuthMethod.Pwd,
+                challenge.Value);
         }
 
         var session = await refreshTokens.StartSessionAsync(user, info, ct).ConfigureAwait(false);
@@ -158,7 +187,8 @@ public sealed class RefreshSessionService(
             tokens.IssueAccessToken(user, session.Value.FamilyId, AuthMethod.Pwd, now),
             session.Value,
             user.Role,
-            AuthMethod.Pwd);
+            AuthMethod.Pwd,
+            null);
     }
 
     /// <inheritdoc />

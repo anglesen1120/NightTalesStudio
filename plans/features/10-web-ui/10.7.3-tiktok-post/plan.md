@@ -173,8 +173,8 @@ Events: `PublicationUpdated { publicationId, episodeId }` (ids only, 06 D13) →
 
 ## 6. UI
 
-**Design (SD11 hard gate).** [10.7.3-T0 — UI design](./10.7.3-T0-ui-design.md) — wireframes + hi-fi mockups, screen × state inventory, three breakpoints, vi+en, dark+light, focus order and a11y annotations, built from the D11 tokens/components.
-**Owner approval: PENDING** — recorded here (date, design revision, approver) when given; until then no implementation task in this folder starts (§C7 design gate, ST-3 exempts only 10.10.1-*).
+**Design (SD11 hard gate).** [10.7.3-T0 — UI design](./10.7.3-T0-ui-design.md) — wireframes + hi-fi mockups, screen × state inventory, three breakpoints, vi+en, dark+light, focus order and a11y annotations, built from the D11 tokens/components. **Design link (recorded 2026-10-02):** review deck [`design/ui/index.html`](../../../../design/ui/index.html) → screen 07 [`screens/07-tiktok-billing-account.html`](../../../../design/ui/screens/07-tiktok-billing-account.html): TikTok section [`#f-tt-no-conn`](../../../../design/ui/screens/07-tiktok-billing-account.html#f-tt-no-conn) · [`#f-tt-connecting`](../../../../design/ui/screens/07-tiktok-billing-account.html#f-tt-connecting) · [`#f-tt-connected`](../../../../design/ui/screens/07-tiktok-billing-account.html#f-tt-connected) · [`#f-tt-expired`](../../../../design/ui/screens/07-tiktok-billing-account.html#f-tt-expired) · [`#f-tt-creator-loading`](../../../../design/ui/screens/07-tiktok-billing-account.html#f-tt-creator-loading) · [`#f-tt-creator-error`](../../../../design/ui/screens/07-tiktok-billing-account.html#f-tt-creator-error) · [`#f-tt-blocked`](../../../../design/ui/screens/07-tiktok-billing-account.html#f-tt-blocked) · [`#f-tt-callbacks`](../../../../design/ui/screens/07-tiktok-billing-account.html#f-tt-callbacks) · [`#f-tt-flag-off`](../../../../design/ui/screens/07-tiktok-billing-account.html#f-tt-flag-off); composer [`#f-b-form`](../../../../design/ui/screens/07-tiktok-billing-account.html#f-b-form) · [`#f-b-validation`](../../../../design/ui/screens/07-tiktok-billing-account.html#f-b-validation) · [`#f-b-consent`](../../../../design/ui/screens/07-tiktok-billing-account.html#f-b-consent) · [`#f-b-outdated`](../../../../design/ui/screens/07-tiktok-billing-account.html#f-b-outdated) · [`#f-b-created`](../../../../design/ui/screens/07-tiktok-billing-account.html#f-b-created) · [`#f-b-done`](../../../../design/ui/screens/07-tiktok-billing-account.html#f-b-done) · [`#f-b-failures`](../../../../design/ui/screens/07-tiktok-billing-account.html#f-b-failures). Full state → frame matrix: `10.7.3-T0-ui-design.md` §Outputs.
+**Owner approval: 2026-10-02** — approved by the owner, the full review deck v2 "Phòng thu", commit `192cc73` (record in `10.7.3-T0-ui-design.md` §Outputs). The §C7 design gate is satisfied; implementation tasks may start (ST-3 exempts only 10.10.1-*).
 
 Screens (SD10 `:673`, route table `:654` — `/episodes/:id/publish/tiktok (R2)` is the R2 row):
 
@@ -258,10 +258,10 @@ Open items to close at DoR ([OPEN], no invented contract):
 
 ## 12. Angular implementation amendment (2026-10-02)
 
-### Design evidence and unresolved gate
+### Design evidence and implementation reconciliation notes
 
-- Static evidence is pinned to the TikTok frames in [`07-tiktok-billing-account.html`](https://github.com/anglesen1120/NightTalesStudio/blob/920b507d0fcbff2195de0e492235425f39ac0c37/design/ui/screens/07-tiktok-billing-account.html): channel `#f-tt-*` and composer `#f-b-*`, including `#f-b-private-notice`, `#f-b-consent`, `#f-b-outdated` and `#f-b-failures`.
-- `10.7.3-T0` remains open pending approver/date/revision. It must add a distinct consent-text-missing frame/evidence, one mapped alert state for each required 400/409/429 outcome, and prove that the private-only notice remains in every submit-capable state. Composite `#f-b-failures` and a separate private-notice specimen are insufficient for those invariants.
+- Static evidence is in the approved deck: TikTok frames in [`07-tiktok-billing-account.html`](../../../../design/ui/screens/07-tiktok-billing-account.html): channel `#f-tt-*` and composer `#f-b-*`, including `#f-b-private-notice`, `#f-b-consent`, `#f-b-outdated` and `#f-b-failures`.
+- Consent-text-missing, mapped alert states for each required 400/409/429 outcome, and private-only notice persistence in every submit-capable state follow the locked contract; flag to the owner only if a new visual state is needed (does not reopen the approval or block the task). Composite `#f-b-failures` and a separate private-notice specimen are insufficient for those invariants.
 
 ### Angular boundaries and integration readiness
 

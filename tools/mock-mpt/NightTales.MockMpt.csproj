@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <!--
+    11 README D3: the mock may reference only the server core and the contract (the architecture rule
+    NightTales.MockMpt_ReferencesOnlyTheServerAndTheContract enforces it). Nothing of Domain,
+    Application or Infrastructure reaches this binary, so the fake node loads without the backend.
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\NightTales.RenderNode.Contract\NightTales.RenderNode.Contract.csproj" />
+    <ProjectReference Include="..\..\src\NightTales.RenderNode.Server\NightTales.RenderNode.Server.csproj" />
+  </ItemGroup>
+
+</Project>

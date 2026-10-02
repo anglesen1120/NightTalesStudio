@@ -33,10 +33,11 @@ namespace NightTales.Api.RateLimiting;
 /// countdown from <c>Retry-After</c>).
 /// </para>
 /// <para>
-/// The ASP.NET Core host inserts <c>UseAuthentication</c> ahead of the whole user pipeline, so the
-/// limiter runs after it and a user-keyed partition sees the authenticated <c>sub</c> — that ordering is
-/// the host's, not a call this file makes (09.3.5-T1 design, "the limiter must run after
-/// authentication").
+/// <c>Program</c> places <c>UseAuthentication</c>/<c>UseAuthorization</c> and this middleware explicitly,
+/// in that order, in the user pipeline (the host would otherwise insert the two ahead of the whole user
+/// pipeline, which also puts authorization in front of CORS — see the note there), so the limiter runs
+/// after authentication and a user-keyed partition sees the authenticated <c>sub</c> (09.3.5-T1 design,
+/// "the limiter must run after authentication").
 /// </para>
 /// <para>
 /// The partition store is the framework's own (<c>PartitionedRateLimiter</c>): it reclaims an idle

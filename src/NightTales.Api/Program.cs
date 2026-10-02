@@ -1,16 +1,19 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Hangfire;
 using Microsoft.AspNetCore.Http.Connections;
 using NightTales.Api;
 using NightTales.Api.DependencyInjection;
 using NightTales.Api.Endpoints;
 using NightTales.Api.Http;
+using NightTales.Api.Internal.Jobs;
 using NightTales.Api.RateLimiting;
 using NightTales.Api.Realtime;
 using NightTales.Application.DependencyInjection;
 using NightTales.Infrastructure.DependencyInjection;
 using NightTales.Infrastructure.Email;
 using NightTales.Infrastructure.Persistence;
+using NightTales.Infrastructure.Persistence.Flags;
 using NightTales.Infrastructure.Persistence.Seeding;
 using NightTales.Infrastructure.Storage;
 
@@ -26,6 +29,11 @@ builder.Services.AddOpenApi(options =>
 builder.Services.AddNightTalesMediator();
 builder.Services.AddPersistence(builder.Configuration);
 
+// 09.9.2-T2 (09 README BD13, 09.9.2 plan §5.1): the feature-flag read service — the cached
+// `IFeatureFlags` port the `RequireFeature` route guard resolves, the writer's `NOTIFY` notifier, and this
+// instance's `LISTEN feature_flags_changed` invalidator. The read rate is one row per key per 30 s.
+builder.Services.AddFeatureFlags(builder.Configuration);
+
 // 02.2.3-T1 (02 README D5/F22): the Api writes stories too, so it loads and validates the same prompt
 // catalog at start-up; an invalid catalog aborts the boot instead of serving a draft built from a
 // prompt that was never released.
@@ -35,6 +43,10 @@ builder.Services.AddPromptCatalog();
 // port, whose wave-1 null catalog knows no key — and the post-commit ETag read of 09 README D15.
 builder.Services.AddNightTalesApplication();
 builder.Services.AddScoped<PostCommitETagReader>();
+
+// 09.7.2-T1: the presenter of GET /episodes/{id}/video-url. Scoped like the read model, the unit of
+// work and the audit writer it composes.
+builder.Services.AddScoped<EpisodeVideoUrlIssuer>();
 
 // 09.2.3-T1 (09 README D10): the caller's claims are the tenant of every filtered query, and the
 // scoped system context lets tests run outbox-style work in-process.
@@ -59,6 +71,10 @@ builder.Services.AddNightTalesAuth(builder.Configuration);
 // IEmailSender and a caller that must know the outcome reads IEmailDeliveryStatus — while the Worker owns
 // SendEmailJob; both hosts register the same graph so a template or an option cannot drift between them.
 builder.Services.AddEmail(builder.Configuration);
+
+// 09.7.2-T1 (09 README BD10/BD12): the blob store, its client factory, the health cache and the
+// prober. The Api presigns the video URL; the Worker sweeps the same buckets.
+builder.Services.AddStorage(builder.Configuration);
 
 // 09.3.2-T1 step 6: the bearer scheme over the same key.
 builder.Services.AddNightTalesJwtBearer();
@@ -93,6 +109,13 @@ builder.Services.ConfigureHttpJsonOptions(options =>
 // 09 README D12/H4: the Api only writes the outbox, so an accidental direct enqueue fails fast.
 builder.Services.AddApiJobScheduler();
 
+// 09.2.6-T2 (09 README D1/D10, 09.2.6 plan §5): the Hangfire dashboard of `/internal/jobs`. The Api
+// reads the Worker's job storage as a client only — no Hangfire server, no recurring reconciliation —
+// and the surface is reachable with the `__Host-nts-jobs` cookie alone, minted by
+// `POST /internal/jobs/login` for an owner or an admin whose re-authentication is inside 09.10.4-T1's
+// window. An owner may act on jobs; an admin only reads; every other caller gets a 404.
+builder.Services.AddJobsDashboard(builder.Configuration);
+
 // 09.8.1-T1 (09 README BD11): the episode hub and its `HubTicket` scheme, the per-instance connection
 // registry and the one LISTEN loop of this Api instance. The production IHubTicketValidator arrives with
 // 09.8.1-T2, so until then a connect attempt fails fast instead of opening an anonymous socket.
@@ -124,12 +147,45 @@ app.UseForwardedHeaderTrust();
 // so the 413 refusal still carries its CORS headers.
 app.UseNightTalesSecurityHardening();
 
-// 09.3.5-T1 (09 README BD14/BD16): the limiter. It runs after the host's own authentication middleware
-// (the ASP.NET Core host inserts it ahead of the whole user pipeline) and after the CORS middleware, so a
-// user-keyed policy sees the caller's `sub` and a 429 still carries the headers a browser needs to read
-// it (10-web-ui L107–108). A rejected request never reaches an endpoint, so it opens no transaction and
-// writes no row.
+// 09.2.6-T2 (fix): authentication and authorization are called here explicitly, right after the block
+// that installs the CORS middleware. The host otherwise inserts both *ahead of the whole user pipeline*
+// (`WebApplicationBuilder.ConfigureApplication` wires `UseRouting`, `UseAuthentication` and
+// `UseAuthorization` before the source pipeline), which leaves `UseAuthorization` in front of `UseCors`:
+// the CORS preflight (`OPTIONS`) of a route that carries `RequireAuthorization` is then challenged with
+// the platform's 401 before the CORS middleware can answer it, so the browser never sees the `204` with
+// `Access-Control-Allow-Origin`/`Access-Control-Allow-Credentials` a cross-origin caller needs. Only two
+// routes carried both today — `POST /internal/jobs/login` (`spa-auth`) and `POST /api/v1/hubs/ticket`
+// (`spa`, 09.8.1-T2) — which is why the auth group, whose routes are `AllowAnonymous`, never showed it.
+// Calling the two methods here is also what makes the host skip its own insertion: each sets the
+// `__AuthenticationMiddlewareSet`/`__AuthorizationMiddlewareSet` property the host checks. The order is
+// then the documented one: routing, CORS, authentication, authorization.
+app.UseAuthentication();
+app.UseAuthorization();
+
+// 09.3.5-T1 (09 README BD14/BD16): the limiter. It runs after the authentication and authorization
+// middleware above and after the CORS middleware, so a user-keyed policy sees the caller's `sub` and a
+// 429 still carries the headers a browser needs to read it (10-web-ui L107–108). A rejected request never
+// reaches an endpoint, so it opens no transaction and writes no row.
 app.UseRateLimiting();
+
+// 09.2.6-T2 (09.2.6 plan §5, README D1/D10): the audit middleware first, then the dashboard's own
+// branch, so the rows can name the operator the filter authenticated and the POSTs are checked against a
+// foreign `Origin` before Hangfire's dispatcher sees them.
+//
+// The branch is entered only for a request routing did not already claim. `UseHangfireDashboard` mounts
+// Hangfire over the whole `/internal/jobs` subtree with a `Map`, which owns every path under it and never
+// falls through, so a request the dashboard declines ends at the branch's own end — where the host
+// answers 500 ("the request reached the end of the pipeline without executing the endpoint") whenever
+// routing had selected a route of that subtree instead. The login route below is such a route: an
+// endpoint, not a dashboard page. Skipping the branch for a selected endpoint lets it run where every
+// other route does; a dashboard page matches no route, so it still reaches Hangfire.
+app.UseJobsDashboardAudit();
+app.MapWhen(
+    context => context.GetEndpoint() is null
+        && context.Request.Path.StartsWithSegments(
+            JobsDashboardAuthentication.DashboardPath,
+            StringComparison.OrdinalIgnoreCase),
+    jobs => jobs.UseHangfireDashboard(JobsDashboardAuthentication.DashboardPath));
 
 // 09.3.5-T1 (09 README BD16): no rate policy, by design — the limiter gives an endpoint without
 // `RequireRateLimiting` a pass-through partition, so a probe fleet that shares one address can never
@@ -140,6 +196,11 @@ app.MapGet("/health/live", () => Results.Ok());
 // 09.3.1-T1 (09 README D14): the auth route group; in P it carries POST /api/v1/auth/register, which
 // answers 403 registration_closed until 09.3.1-T3 swaps the registration flow.
 app.MapAuthEndpoints();
+
+// 09.2.6-T2 (09.2.6 plan §5): the dashboard's login, the only route of that surface that is an
+// endpoint — the dashboard pages themselves come from the Hangfire branch wired above, which steps aside
+// for the requests routing has already claimed for this route.
+app.MapJobsDashboardEndpoints();
 
 // 09.10.4-T1 (09 README D14, BD4): the /me route group's MFA routes — setup, verify, recovery codes and
 // disable. The enrolment-only token reaches the first two and nothing else (WT34).
@@ -164,6 +225,10 @@ app.MapHubEndpoints();
 // skips negotiation and the JWT never travels in the URL (the single-use ticket does, and it dies at
 // connect).
 app.MapHub<EpisodeHub>(EpisodeHub.Path, options => options.Transports = HttpTransportType.WebSockets);
+// 09.7.2-T1 (09 README BD10, 09.7.2 plan §5): the presigned read URL of an episode's final video. A GET
+// has no Mediator pipeline, so the issuer (Api/Http, outside Endpoints because of the D8 architecture
+// rule) opens its own transaction around the audit row.
+app.MapEpisodeVideoEndpoints();
 
 app.Run();
 
