@@ -9,6 +9,7 @@ using NightTales.Application.Features.Email;
 using NightTales.Application.Features.Email.Outbox;
 using NightTales.Application.Features.Email.TokenMinters;
 using NightTales.Domain.Communication;
+using NightTales.Infrastructure.Security;
 
 namespace NightTales.Infrastructure.Email;
 
@@ -72,15 +73,19 @@ public static class EmailServiceCollectionExtensions
         // One keyed minter per token-bearing template (09 README §B10 WT17). Keyed and not enumerable: the
         // minter of a token-bearing template is resolved only when that template is actually sent, so a
         // template whose minter lands later (09.3.1-T3's email_verify) cannot break the rest of the pipeline.
-        // Registered through a factory, not by implementation type, for the same reason: the reset minter's
-        // dependency is 09.3.3-T1's `IUserActionTokenService`, which does not exist in this build, and a
-        // host that never sends a `password_reset` message — the Api — must not fail to start over it.
-        // `ValidateOnBuild` walks implementation types only; a factory's dependencies are resolved on first use.
+        // Registered through a factory, not by implementation type, for the same reason: a host that never
+        // sends a `password_reset` message must not need the store behind it at start-up. `ValidateOnBuild`
+        // walks implementation types only; a factory's dependencies are resolved on first use.
         services.AddKeyedScoped<IEmailTokenMinter>(
             PasswordResetTokenMinter.TemplateName,
             static (provider, _) => new PasswordResetTokenMinter(
                 provider.GetRequiredService<IUserActionTokenService>(),
                 provider.GetRequiredService<IEmailLinkOrigin>()));
+
+        // 09.3.3-T1: the send-time mint above resolves this store, so it is registered with the pipeline —
+        // every host that can render a `password_reset` message must be able to create its token row, and
+        // the Worker (which sends the message) has no web signing key and never calls AddNightTalesAuth.
+        services.AddUserActionTokens(configuration);
 
         // The Worker's own outbox loop is what invokes it; a host that only writes outbox rows — the Api —
         // never builds the handler, because it is only constructed for a message of its event type.

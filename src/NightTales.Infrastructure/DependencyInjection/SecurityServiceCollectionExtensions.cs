@@ -72,6 +72,11 @@ public static class SecurityServiceCollectionExtensions
         services.AddScoped<IReauthService, EfReauthService>();
         services.AddSingleton<IMfaGuessWindow, InMemoryMfaGuessWindow>();
 
+        // 09.3.3-T1 (BD3/WF11/WF12): the password-reset flows. Registered here and not with the e-mail
+        // pipeline because they change the password through `UserManager` and revoke refresh families —
+        // Api-only concerns; the Worker never resets a password.
+        services.AddScoped<IPasswordResetService, PasswordResetService>();
+
         return services;
     }
 

@@ -90,6 +90,13 @@ public sealed class AppDbContext : IdentityDbContext<AppUser, AppRole, Guid>, IA
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
 
     /// <summary>
+    /// Infrastructure-only: the single-use action tokens of 09.3.3-T1 (BD3/WF11). Every statement that
+    /// touches them is set-based raw SQL in <c>EfUserActionTokenService</c> — the invalidating insert and
+    /// the replay-proof consume — like the refresh-token families next to it.
+    /// </summary>
+    public DbSet<UserActionToken> UserActionTokens => Set<UserActionToken>();
+
+    /// <summary>
     /// Infrastructure-only: the single-use hub tickets of 09.8.1-T2. 09.8.1-T1's claim is a
     /// set-based <c>UPDATE</c> in <c>NpgsqlHubTicketValidator</c> and the issue path inserts through
     /// <c>NpgsqlHubTicketStore</c>, so nothing outside Infrastructure touches this set.
