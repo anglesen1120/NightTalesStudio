@@ -9,6 +9,7 @@ using NightTales.Api.RateLimiting;
 using NightTales.Api.Realtime;
 using NightTales.Application.DependencyInjection;
 using NightTales.Infrastructure.DependencyInjection;
+using NightTales.Infrastructure.Email;
 using NightTales.Infrastructure.Persistence;
 using NightTales.Infrastructure.Persistence.Seeding;
 using NightTales.Infrastructure.Storage;
@@ -53,6 +54,11 @@ builder.Services.AddOptions<CatalogOptions>()
 // plus their start-up validation — a host that cannot sign a correct token must not serve traffic. The
 // Api registers them (not AddPersistence): the Worker has no web signing key and must not need one.
 builder.Services.AddNightTalesAuth(builder.Configuration);
+
+// 09.2.6-T3 (09 README BD9): the e-mail pipeline. The Api is the producer side — a handler queues through
+// IEmailSender and a caller that must know the outcome reads IEmailDeliveryStatus — while the Worker owns
+// SendEmailJob; both hosts register the same graph so a template or an option cannot drift between them.
+builder.Services.AddEmail(builder.Configuration);
 
 // 09.3.2-T1 step 6: the bearer scheme over the same key.
 builder.Services.AddNightTalesJwtBearer();

@@ -1,0 +1,9 @@
+Subject: Cảnh báo bảo mật: phiên đăng nhập bị dùng lại
+
+Xin chào {{displayName}},
+
+Chúng tôi phát hiện một phiên đăng nhập đã được dùng lại vào lúc {{occurredAt}}, trên thiết bị {{device}}. Vì an toàn, mọi phiên đăng nhập của tài khoản đã bị thu hồi và bạn cần đăng nhập lại.
+
+Xem và thu hồi các phiên tại {{sessionsLink}}.
+
+Nếu không phải bạn, hãy đổi mật khẩu ngay.

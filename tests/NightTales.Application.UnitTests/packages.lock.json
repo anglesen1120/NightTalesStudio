@@ -42,6 +42,11 @@
           "xunit.v3.mtp-v2": "[4.0.1]"
         }
       },
+      "BouncyCastle.Cryptography": {
+        "type": "Transitive",
+        "resolved": "2.7.0",
+        "contentHash": "U+12df8UEWHgBi04YVf/Lgi2dy3SItlIYvHjjEVa/BngCQIzDCDRBk50DDByCfDvSbe5pRNFr3b7UrVK2kMcLw=="
+      },
       "Dapper": {
         "type": "Transitive",
         "resolved": "2.0.123",
@@ -751,6 +756,7 @@
           "FluentValidation.DependencyInjectionExtensions": "[12.1.1, )",
           "Mediator.Abstractions": "[3.0.2, )",
           "Microsoft.EntityFrameworkCore": "[10.0.12, )",
+          "MimeKit": "[4.18.1, )",
           "NightTales.Domain": "[1.0.0, )",
           "NightTales.RenderNode.Contract": "[1.0.0, )"
         }
@@ -768,6 +774,7 @@
           "Hangfire.Core": "[1.8.25, )",
           "Hangfire.NetCore": "[1.8.25, )",
           "Hangfire.PostgreSql": "[1.21.1, )",
+          "MailKit": "[4.18.1, )",
           "Microsoft.AspNetCore.Authentication.JwtBearer": "[10.0.12, )",
           "Microsoft.AspNetCore.DataProtection.EntityFrameworkCore": "[10.0.12, )",
           "Microsoft.AspNetCore.Identity.EntityFrameworkCore": "[10.0.12, )",
@@ -782,6 +789,7 @@
         "type": "Project",
         "dependencies": {
           "Microsoft.AspNetCore.Mvc.Testing": "[10.0.12, )",
+          "MimeKit": "[4.18.1, )",
           "NightTales.Api": "[1.0.0, )",
           "NightTales.Worker": "[1.0.0, )",
           "Shouldly": "[4.3.0, )",
@@ -867,6 +875,15 @@
           "Npgsql": "6.0.11"
         }
       },
+      "MailKit": {
+        "type": "CentralTransitive",
+        "requested": "[4.18.1, )",
+        "resolved": "4.18.1",
+        "contentHash": "EssBsnKHvIcH1QpqqsVUEWAlAHI3dkGXJpKAzSNJ8PGjClNynSo9bRkT68jVZkxhREm0Z51Dwu3127f4WfIiRg==",
+        "dependencies": {
+          "MimeKit": "4.18.1"
+        }
+      },
       "Microsoft.AspNetCore.Authentication.JwtBearer": {
         "type": "CentralTransitive",
         "requested": "[10.0.12, )",
@@ -926,6 +943,16 @@
           "Microsoft.EntityFrameworkCore.Analyzers": "10.0.12",
           "Microsoft.Extensions.Caching.Memory": "10.0.12",
           "Microsoft.Extensions.Logging": "10.0.12"
+        }
+      },
+      "MimeKit": {
+        "type": "CentralTransitive",
+        "requested": "[4.18.1, )",
+        "resolved": "4.18.1",
+        "contentHash": "D8AfFVMFVJldWmhQWCziC9nWUN/zayFFBAKpyjVyCeh0tqBiI9jtUVuMrKgWw1EGnCp09msDZldbRvp2jfUehQ==",
+        "dependencies": {
+          "BouncyCastle.Cryptography": "2.7.0",
+          "System.Security.Cryptography.Pkcs": "10.0.0"
         }
       },
       "Newtonsoft.Json": {

@@ -1,0 +1,9 @@
+Subject: Xác nhận địa chỉ e-mail NightTales
+
+Xin chào {{displayName}},
+
+Bấm vào liên kết dưới đây để xác nhận địa chỉ e-mail này cho tài khoản NightTales. Liên kết hết hạn sau {{expiresHours}} giờ.
+
+{{link}}
+
+Nếu bạn không tạo tài khoản, hãy bỏ qua e-mail này.

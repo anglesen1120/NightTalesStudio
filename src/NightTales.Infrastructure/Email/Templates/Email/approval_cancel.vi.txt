@@ -1,0 +1,7 @@
+Subject: Yêu cầu {{requestKind}} đã được huỷ
+
+Xin chào {{displayName}},
+
+Yêu cầu {{requestKind}} mang mã {{requestId}} đã được huỷ. Lý do: {{reason}}. Hạn xử lý trước đó: {{deadline}}.
+
+Nếu cần, bạn có thể mở lại từ {{cancelLink}}.

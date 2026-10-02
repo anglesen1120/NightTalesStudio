@@ -2,6 +2,8 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using NightTales.Domain.Assets;
 using NightTales.Domain.Catalog;
+using NightTales.Domain.Common;
+using NightTales.Domain.Communication;
 using NightTales.Domain.Compliance;
 using NightTales.Domain.Episodes;
 using NightTales.Domain.Platform;
@@ -42,6 +44,9 @@ public interface IAppDbContext
     DbSet<StyleTemplate> StyleTemplates { get; }
 
     DbSet<FeatureFlag> FeatureFlags { get; }
+
+    /// <summary>The queued e-mails of 09.2.6-T3: added by <c>IEmailSender</c>, mutated by <c>SendEmailJob</c>.</summary>
+    DbSet<EmailMessage> EmailMessages { get; }
 
     Task<int> SaveChangesAsync(CancellationToken cancellationToken);
 }

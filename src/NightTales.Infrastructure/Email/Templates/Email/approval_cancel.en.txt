@@ -1,0 +1,7 @@
+Subject: The {{requestKind}} request was cancelled
+
+Hello {{displayName}},
+
+The {{requestKind}} request with reference {{requestId}} was cancelled. Reason: {{reason}}. Its deadline was {{deadline}}.
+
+If you need it, reopen it from {{cancelLink}}.

@@ -1,0 +1,9 @@
+Subject: Autopilot needs your attention
+
+Series {{seriesTitle}}: {{reasonLine}}
+
+Scheduled: {{scheduledList}}
+
+Open the details at {{deepLink}}.
+
+{{resumeHint}}

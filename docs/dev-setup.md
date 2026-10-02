@@ -267,6 +267,35 @@ docker compose down                                    # or: down -v to discard 
 - `web` is behind the `web` profile and its image is 10.1.1-T2's, so `docker compose config --quiet`
   validates the definition long before the image exists.
 
+## Local mail (Mailpit)
+
+Development sends every e-mail through a local SMTP sink: **Mailpit**, started by `tools/dev/up.sh`
+(11.1.1-T2) on `127.0.0.1:1025`, with its UI and its API at <http://127.0.0.1:8025> (09.2.6-T3).
+
+```bash
+nc -z 127.0.0.1 1025                            # the SMTP sink every host dials
+curl -fsS http://127.0.0.1:8025/api/v1/info     # Mailpit is up; its UI is at the same base URL
+```
+
+A message the Api queues is rendered and sent by the Worker's `SendEmailJob` and appears in that UI;
+`EmailEndToEndTests` asserts exactly that, and skips itself when the sink is not part of the run. The test
+reads two environment variables, which the developer exports before running it (`up.sh` starts the sink; it
+does not export them):
+
+```bash
+export NTS_MAILPIT_URL=http://127.0.0.1:8025   # the Mailpit API and UI base URL; absent → the test skips
+export NTS_SMTP_PORT=1025                     # only when the sink does not listen on the default port
+```
+
+Both hosts read the pipeline's configuration from `Email:*`, with the loopback defaults committed in
+`appsettings.json`: `Email:Smtp:Host` `127.0.0.1`, `Email:Smtp:Port` `1025`, `Email:Smtp:Security` `None`
+(plaintext is accepted only towards a loopback endpoint, in any environment) and `Email:From:Address`
+`no-reply@nighttales.local`. The flat `SMTP__HOST`/`SMTP__PORT`/`SMTP__USER`/`SMTP__PASSWORD` names that
+11.1.1-T2's `.env` and `up.sh` export are read as an alias and lose to an explicit `Email:Smtp:*` value. A
+deployment overrides `Email__Smtp__Host`, `Email__Smtp__Security` (`StartTls`), `Email__Smtp__Username`,
+`Email__Smtp__Password` and its own `Email__AddressHashPepper` — the host refuses to start when the
+transport is plaintext towards a remote server or the address pepper is blank (09 README BD9/BD16).
+
 ## Migrations
 
 `InitialCore` (09.2.2-T2) is the schema every later migration builds on; it is never edited again. A schema

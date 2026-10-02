@@ -29,6 +29,11 @@ env:
   # origin. `DataProtection__KekPfxPath`/`DataProtection__KekPfxPassword` are added per job by the
   # "Design-time DP_KEK certificate" step (a throwaway PFX generated per run).
   App__PublicOrigin: "https://ci-openapi-document-generation.invalid"
+  # 09.2.6-T3: the same generator boots the Api's e-mail start-up validation, which refuses the committed
+  # development address pepper outside Development — `email_messages.to_hash` must be salted with a value the
+  # world does not know (09 README BD16). This is a constant, never a real secret, exactly like the
+  # connection string and the public origin above; a deployment supplies its own Email__AddressHashPepper.
+  Email__AddressHashPepper: "ci-openapi-document-generation-placeholder"
 
 jobs:
   build-test:

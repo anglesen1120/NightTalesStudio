@@ -6,6 +6,8 @@ using NightTales.Application.Abstractions.Persistence;
 using NightTales.Domain.Assets;
 using NightTales.Domain.Audit;
 using NightTales.Domain.Catalog;
+using NightTales.Domain.Common;
+using NightTales.Domain.Communication;
 using NightTales.Domain.Compliance;
 using NightTales.Domain.Episodes;
 using NightTales.Domain.Platform;
@@ -63,6 +65,13 @@ public sealed class AppDbContext : IdentityDbContext<AppUser, AppRole, Guid>, IA
     public DbSet<StyleTemplate> StyleTemplates => Set<StyleTemplate>();
 
     public DbSet<FeatureFlag> FeatureFlags => Set<FeatureFlag>();
+
+    /// <summary>
+    /// The queued e-mails of 09.2.6-T3: written by the feature that asks for a message, read and mutated by
+    /// <c>SendEmailJob</c> and read by <c>EmailDeliveryStatusQuery</c>. It is <c>IUserOwned</c>, so the D10
+    /// tenant filter applies to every read.
+    /// </summary>
+    public DbSet<EmailMessage> EmailMessages => Set<EmailMessage>();
 
     /// <summary>Infrastructure-only: the outbox rows the interceptor of 09.2.4-T1 writes.</summary>
     public DbSet<OutboxMessage> OutboxMessages => Set<OutboxMessage>();

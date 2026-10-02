@@ -1,0 +1,7 @@
+Subject: Someone tried to register with your e-mail address
+
+Hello {{displayName}},
+
+At {{occurredAt}} somebody tried to create a NightTales account with this e-mail address. It already belongs to you, so no new account was created.
+
+If that was you, sign in to the account you already have. If not, nothing to do.
