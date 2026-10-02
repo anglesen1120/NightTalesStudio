@@ -15,6 +15,7 @@ using NightTales.Domain.Rendering;
 using NightTales.Domain.Series;
 using NightTales.Domain.Series.Autopilot;
 using NightTales.Domain.Stories;
+using NightTales.Domain.Stories.Generation;
 using NightTales.Domain.Usage;
 using NightTales.Infrastructure.Persistence.Conventions;
 using NightTales.Infrastructure.Persistence.Entities;
@@ -50,6 +51,12 @@ public sealed class AppDbContext : IdentityDbContext<AppUser, AppRole, Guid>, IA
     public DbSet<Episode> Episodes => Set<Episode>();
 
     public DbSet<StoryVersion> StoryVersions => Set<StoryVersion>();
+
+    /// <summary>
+    /// The paid generations of every kind (02 D2, 02.2.2-T1): inserted by the generate commands and advanced by
+    /// <c>StoryGenerationProgress</c> and the sweeper. It is <c>IUserOwned</c>, so the D10 tenant filter applies.
+    /// </summary>
+    public DbSet<GenerationRun> GenerationRuns => Set<GenerationRun>();
 
     public DbSet<SeriesAutopilotAuthorization> SeriesAutopilotAuthorizations => Set<SeriesAutopilotAuthorization>();
 
@@ -134,6 +141,10 @@ public sealed class AppDbContext : IdentityDbContext<AppUser, AppRole, Guid>, IA
     /// protected with that key unrecoverable (09.9.4 plan §11).
     /// </remarks>
     public DbSet<DataProtectionKey> DataProtectionKeys => Set<DataProtectionKey>();
+
+    /// <inheritdoc />
+    public Task LockEpisodeForUpdateAsync(Guid episodeId, CancellationToken cancellationToken) =>
+        Database.ExecuteSqlInterpolatedAsync($"SELECT id FROM episodes WHERE id = {episodeId} FOR UPDATE", cancellationToken);
 
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
     {

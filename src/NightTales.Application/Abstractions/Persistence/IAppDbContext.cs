@@ -11,6 +11,7 @@ using NightTales.Domain.Rendering;
 using NightTales.Domain.Series;
 using NightTales.Domain.Series.Autopilot;
 using NightTales.Domain.Stories;
+using NightTales.Domain.Stories.Generation;
 using NightTales.Domain.Usage;
 
 namespace NightTales.Application.Abstractions.Persistence;
@@ -29,6 +30,12 @@ public interface IAppDbContext
     DbSet<Episode> Episodes { get; }
 
     DbSet<StoryVersion> StoryVersions { get; }
+
+    /// <summary>
+    /// The paid generations of every kind (02 D2, 02.2.2-T1): inserted by the generate commands and advanced by
+    /// <c>StoryGenerationProgress</c> and the sweeper. <c>IUserOwned</c>, so the D10 tenant filter applies.
+    /// </summary>
+    DbSet<GenerationRun> GenerationRuns { get; }
 
     DbSet<SeriesAutopilotAuthorization> SeriesAutopilotAuthorizations { get; }
 
@@ -55,6 +62,16 @@ public interface IAppDbContext
     /// <c>nts-worker nodes</c> verbs. System data, so no tenant filter applies (09 README D10).
     /// </summary>
     DbSet<WorkerNode> WorkerNodes { get; }
+
+    /// <summary>
+    /// Takes the row lock of an episode (<c>SELECT … FOR UPDATE</c>, 02.2.2 plan §4 U6) as the first statement of
+    /// a command's transaction, so the status read, the daily count and the run insert of two concurrent
+    /// generate calls serialise on the episode. The lock is held until the surrounding transaction ends. An
+    /// unknown id locks nothing; the tenant-filtered load that follows is what answers 404.
+    /// </summary>
+    /// <param name="episodeId">The episode to lock.</param>
+    /// <param name="cancellationToken">Cancels the statement.</param>
+    Task LockEpisodeForUpdateAsync(Guid episodeId, CancellationToken cancellationToken);
 
     Task<int> SaveChangesAsync(CancellationToken cancellationToken);
 }

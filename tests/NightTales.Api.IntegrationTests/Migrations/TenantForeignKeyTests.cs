@@ -39,10 +39,15 @@ public sealed class TenantForeignKeyTests(TestDatabase database) : IntegrationTe
         "episodes.current_story_version_id,user_id->story_versions(id,user_id)",
         "episodes.final_video_asset_id,user_id->assets(id,user_id)",
         "episodes.series_id,user_id->series(id,user_id)",
+        "generation_runs.episode_id,user_id->episodes(id,user_id)",
+        "generation_runs.result_story_version_id,user_id->story_versions(id,user_id)",
+        "generation_runs.series_id,user_id->series(id,user_id)",
         "moderation_events.episode_id,user_id->episodes(id,user_id)",
         "series.current_autopilot_authorization_id,user_id->series_autopilot_authorizations(id,user_id)",
         "series_autopilot_authorizations.series_id,user_id->series(id,user_id)",
         "story_versions.episode_id,user_id->episodes(id,user_id)",
+        "story_versions.generation_run_id,user_id->generation_runs(id,user_id)",
+        "story_versions.parent_version_id,user_id->story_versions(id,user_id)",
         "usage_records.episode_id,user_id->episodes(id,user_id)",
         "usage_records.series_id,user_id->series(id,user_id)",
     ];
@@ -59,11 +64,17 @@ public sealed class TenantForeignKeyTests(TestDatabase database) : IntegrationTe
         + "REFERENCES episodes(id, user_id) ON DELETE SET NULL (episode_id)",
         "fk_episodes_assets_final_video_asset_id_user_id|FOREIGN KEY (final_video_asset_id, user_id) "
         + "REFERENCES assets(id, user_id) ON DELETE SET NULL (final_video_asset_id)",
+        "fk_generation_runs_story_versions_result_story_version_id_user|FOREIGN KEY (result_story_version_id, "
+        + "user_id) REFERENCES story_versions(id, user_id) ON DELETE SET NULL (result_story_version_id)",
         "fk_refresh_tokens_refresh_tokens_replaced_by_id|FOREIGN KEY (replaced_by_id) "
         + "REFERENCES refresh_tokens(id) ON DELETE SET NULL",
         "fk_series_series_autopilot_authorizations_current_autopilot_au|FOREIGN KEY "
         + "(current_autopilot_authorization_id, user_id) REFERENCES series_autopilot_authorizations(id, user_id) "
         + "ON DELETE SET NULL (current_autopilot_authorization_id)",
+        "fk_story_versions_generation_runs_generation_run_id_user_id|FOREIGN KEY (generation_run_id, user_id) "
+        + "REFERENCES generation_runs(id, user_id) ON DELETE SET NULL (generation_run_id)",
+        "fk_story_versions_story_versions_parent_version_id_user_id|FOREIGN KEY (parent_version_id, user_id) "
+        + "REFERENCES story_versions(id, user_id) ON DELETE SET NULL (parent_version_id)",
         "fk_usage_records_episodes_episode_id_user_id|FOREIGN KEY (episode_id, user_id) "
         + "REFERENCES episodes(id, user_id) ON DELETE SET NULL (episode_id)",
     ];
@@ -102,7 +113,7 @@ public sealed class TenantForeignKeyTests(TestDatabase database) : IntegrationTe
         {
             "story_versions.episode_id",
             "INSERT INTO story_versions (id, user_id, episode_id, version, source, title, body, keywords, "
-            + "word_count, content, created_at) VALUES (gen_random_uuid(), '{b}', '{ep_a}', 1, 'generated', 't', "
+            + "word_count, content, created_at) VALUES (gen_random_uuid(), '{b}', '{ep_a}', 2, 'generated', 't', "
             + "'b', '{}', 1, '{}'::jsonb, now())"
         },
         {
@@ -149,6 +160,36 @@ public sealed class TenantForeignKeyTests(TestDatabase database) : IntegrationTe
             "INSERT INTO series (id, user_id, title, topic, language, aspect, voice_id, style_template_id, "
             + "current_autopilot_authorization_id, created_at, updated_at) VALUES (gen_random_uuid(), '{b}', "
             + "'cross tenant', 'ghost', 'vi', 'landscape', '{voice}', '{template}', '{auth_a}', now(), now())"
+        },
+        {
+            "generation_runs.series_id",
+            "INSERT INTO generation_runs (id, user_id, series_id, kind, \"trigger\", status, stage, worst_case_usd, "
+            + "queued_at, created_at, updated_at) VALUES (gen_random_uuid(), '{b}', '{s_a}', 'ideas', 'user', "
+            + "'queued', 'queued', 0, now(), now(), now())"
+        },
+        {
+            "generation_runs.episode_id",
+            "INSERT INTO generation_runs (id, user_id, series_id, episode_id, kind, \"trigger\", status, stage, "
+            + "worst_case_usd, queued_at, created_at, updated_at) VALUES (gen_random_uuid(), '{b}', '{s_b}', "
+            + "'{ep_a}', 'story', 'user', 'cancelled', 'queued', 0, now(), now(), now())"
+        },
+        {
+            "generation_runs.result_story_version_id",
+            "INSERT INTO generation_runs (id, user_id, series_id, kind, \"trigger\", status, stage, worst_case_usd, "
+            + "result_story_version_id, queued_at, created_at, updated_at) VALUES (gen_random_uuid(), '{b}', "
+            + "'{s_b}', 'ideas', 'user', 'queued', 'queued', 0, '{version_a}', now(), now(), now())"
+        },
+        {
+            "story_versions.generation_run_id",
+            "INSERT INTO story_versions (id, user_id, episode_id, version, source, title, body, keywords, "
+            + "word_count, content, generation_run_id, created_at) VALUES (gen_random_uuid(), '{b}', '{ep_b}', 1, "
+            + "'generated', 't', 'b', '{}', 1, '{}'::jsonb, '{run_a}', now())"
+        },
+        {
+            "story_versions.parent_version_id",
+            "INSERT INTO story_versions (id, user_id, episode_id, version, source, title, body, keywords, "
+            + "word_count, content, parent_version_id, created_at) VALUES (gen_random_uuid(), '{b}', '{ep_b}', 1, "
+            + "'revised', 't', 'b', '{}', 1, '{}'::jsonb, '{version_a}', now())"
         },
     };
 
@@ -296,6 +337,7 @@ public sealed class TenantForeignKeyTests(TestDatabase database) : IntegrationTe
 
         var episodeBuilder = new EpisodeBuilder(Database, currentUser);
         var episodeA = await episodeBuilder.CreateAsync(owner.Id, seriesA.Id, ct: ct);
+        var episodeB = await episodeBuilder.CreateAsync(intruder.Id, seriesB.Id, ct: ct);
 
         // No builder exists for these three (their owning tasks come later), so they are raw rows with
         // the columns plan §3 marks NOT NULL.
@@ -313,6 +355,13 @@ public sealed class TenantForeignKeyTests(TestDatabase database) : IntegrationTe
             + $"word_count, content, created_at) VALUES ('{versionA}', '{owner.Id}', '{episodeA.Id}', 1, "
             + $"'generated', 'Seed story', 'Seed body', '{{}}', 2, '{{}}'::jsonb, now())");
 
+        var runA = Guid.CreateVersion7();
+        SqlProbe.Execute(
+            Database,
+            $"INSERT INTO generation_runs (id, user_id, series_id, episode_id, kind, \"trigger\", status, stage, "
+            + $"worst_case_usd, queued_at, created_at, updated_at) VALUES ('{runA}', '{owner.Id}', '{seriesA.Id}', "
+            + $"'{episodeA.Id}', 'story', 'user', 'queued', 'queued', 0, now(), now(), now())");
+
         var authorizationA = Guid.CreateVersion7();
         SqlProbe.Execute(
             Database,
@@ -329,8 +378,10 @@ public sealed class TenantForeignKeyTests(TestDatabase database) : IntegrationTe
             seriesA.Id,
             seriesB.Id,
             episodeA.Id,
+            episodeB.Id,
             assetA,
             versionA,
+            runA,
             authorizationA,
             template.Id);
     }
@@ -341,6 +392,8 @@ public sealed class TenantForeignKeyTests(TestDatabase database) : IntegrationTe
         .Replace("{s_a}", fixtures.SeriesA.ToString(), StringComparison.Ordinal)
         .Replace("{s_b}", fixtures.SeriesB.ToString(), StringComparison.Ordinal)
         .Replace("{ep_a}", fixtures.EpisodeA.ToString(), StringComparison.Ordinal)
+        .Replace("{ep_b}", fixtures.EpisodeB.ToString(), StringComparison.Ordinal)
+        .Replace("{run_a}", fixtures.GenerationRunA.ToString(), StringComparison.Ordinal)
         .Replace("{asset_a}", fixtures.AssetA.ToString(), StringComparison.Ordinal)
         .Replace("{version_a}", fixtures.StoryVersionA.ToString(), StringComparison.Ordinal)
         .Replace("{auth_a}", fixtures.AuthorizationA.ToString(), StringComparison.Ordinal)
@@ -355,8 +408,10 @@ public sealed class TenantForeignKeyTests(TestDatabase database) : IntegrationTe
         Guid SeriesA,
         Guid SeriesB,
         Guid EpisodeA,
+        Guid EpisodeB,
         Guid AssetA,
         Guid StoryVersionA,
+        Guid GenerationRunA,
         Guid AuthorizationA,
         Guid StyleTemplate);
 }

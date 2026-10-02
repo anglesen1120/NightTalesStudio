@@ -10,6 +10,12 @@ internal static class AllowLists
     internal const string IgnoreQueryFiltersNamespacePrefix = "NightTales.Application.Features.Admin";
 
     /// <summary>
+    /// The only namespace allowed to update, remove or set the state of a <c>StoryVersion</c> (02.2.2-T1: the
+    /// table is append-only; the admin surface of 09.9.1 is the single deliberate exception).
+    /// </summary>
+    internal const string StoryVersionMutationNamespacePrefix = "NightTales.Application.Features.Admin";
+
+    /// <summary>
     /// The only <c>src</c> types that may construct a <c>System.Net.Http.HttpClient</c> directly
     /// (11 README F13/D13): the pinned-TLS render-node connection factory, plus the pre-existing
     /// breached-password range checker inside the Identity registration. Every other transport goes
