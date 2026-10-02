@@ -51,6 +51,13 @@ public sealed class EmailDeliveryStatusTests(TestDatabase database) : Integratio
         var unknown = await harness.ReadStatusAsync(owner.Id, Guid.CreateVersion7(), ct);
         unknown.IsError.ShouldBeTrue();
         unknown.FirstError.Code.ShouldBe(ErrorCodes.NotFound);
+
+        // A class shares one database across its facts (09 README D13) and DeliverAsync claims every due
+        // outbox row in it, so the message queued above must be delivered before this fact ends: it is the
+        // sibling fact that asserts delivery counts, and xunit v3 runs the facts in the order its
+        // DefaultTestCaseOrderer derives from the test cases (unpredictable, stable per test assembly), so
+        // which fact runs first is not ours to choose.
+        await harness.DeliverAsync(ct);
     }
 
     [Fact]
