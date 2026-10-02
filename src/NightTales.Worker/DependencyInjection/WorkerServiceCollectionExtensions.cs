@@ -88,6 +88,11 @@ public static class WorkerServiceCollectionExtensions
         services.AddNightTalesMediator();
         services.AddJobs(configuration, [typeof(WorkerServiceCollectionExtensions).Assembly, .. assemblies]);
 
+        // 05.5.1-T2 (05 README D10): the render-quality thresholds the ingest job applies to a measured
+        // `render-check.v1` are configuration, because 05.2.1-T1/05.5.2-T1 calibrate them; they are
+        // validated on start so an impossible policy fails the boot, not the first render.
+        services.AddRenderQuality(configuration);
+
         // 09.4.2-T1 (plan §3 step 6): the Worker composes the same public catalog URL as the Api, so a
         // template it renders or mails never disagrees with the Api about what a storage key points at.
         services.AddPublicAssetUrl();
