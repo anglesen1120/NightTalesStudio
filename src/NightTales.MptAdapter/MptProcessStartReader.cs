@@ -40,6 +40,14 @@ public sealed class MptProcessStartReader : IMptProcessStartReader
 
     private readonly string _serviceName;
     private readonly ILogger<MptProcessStartReader> _log;
+
+    /// <summary>
+    /// Guards the cache below. The poller asks concurrently (PERF-1), so the first probe can be started by
+    /// several tasks at once; each one walks <c>systemctl</c> once and the last writes agree, and no reader
+    /// can observe a half-written <see cref="DateTimeOffset"/>.
+    /// </summary>
+    private readonly Lock _gate = new();
+
     private DateTimeOffset? _cached;
     private bool _refreshed;
     private bool _unavailableLogged;
@@ -58,28 +66,39 @@ public sealed class MptProcessStartReader : IMptProcessStartReader
     {
         // The first call reads the process start (D6: "read at start"); later ones serve the cache until an
         // MPT connection error asks for a refresh.
-        return _refreshed ? _cached : await RefreshAsync(cancellationToken).ConfigureAwait(false);
+        lock (_gate)
+        {
+            if (_refreshed)
+            {
+                return _cached;
+            }
+        }
+
+        return await RefreshAsync(cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc />
     public async ValueTask<DateTimeOffset?> RefreshAsync(CancellationToken cancellationToken)
     {
-        _refreshed = true;
         var value = await ProbeAsync(cancellationToken).ConfigureAwait(false);
 
-        if (value is null)
+        bool logUnavailable = false;
+        lock (_gate)
         {
-            _cached = null;
-            if (!_unavailableLogged)
+            _refreshed = true;
+            _cached = value;
+            if (value is null && !_unavailableLogged)
             {
                 _unavailableLogged = true;
-                _log.ProcessStartUnavailable(TimestampProperty, _serviceName);
+                logUnavailable = true;
             }
-
-            return null;
         }
 
-        _cached = value;
+        if (logUnavailable)
+        {
+            _log.ProcessStartUnavailable(TimestampProperty, _serviceName);
+        }
+
         return value;
     }
 

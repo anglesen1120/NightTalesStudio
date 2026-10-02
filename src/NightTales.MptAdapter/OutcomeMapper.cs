@@ -36,7 +36,11 @@ public static class OutcomeMapper
     /// </summary>
     public static RenderOutcomeV1 MapFailure(string? failedStage)
     {
-        var stage = string.IsNullOrWhiteSpace(failedStage) ? null : failedStage.Trim();
+        // SEC-11.3.5-T2-02: the stage is MPT-supplied free text on the unknown-stage path, so it is
+        // neutralised and bounded before it becomes a stored detail or a log argument (T69's closed enum).
+        var stage = string.IsNullOrWhiteSpace(failedStage)
+            ? null
+            : AdapterText.Sanitize(failedStage.Trim(), MaxDetailLength);
 
         var (code, detail) = stage switch
         {
@@ -45,7 +49,7 @@ public static class OutcomeMapper
             "materials" => (RenderOutcomeCodes.ImageGenerationFailed, stage),
             "video" => (RenderOutcomeCodes.RenderAssemblyFailed, stage),
             "preflight" or "script" or "terms" or "pipeline" => (RenderOutcomeCodes.RenderNodeError, stage),
-            _ => (RenderOutcomeCodes.RenderNodeError, Truncate(stage)),
+            _ => (RenderOutcomeCodes.RenderNodeError, stage),
         };
 
         return new RenderOutcomeV1(code, detail, OutcomeMessages.For(code));
@@ -58,7 +62,4 @@ public static class OutcomeMapper
     /// <summary>05 D4's last resort for a state the mapping does not know.</summary>
     public static RenderOutcomeV1 UnknownStateError() =>
         new(RenderOutcomeCodes.RenderNodeError, UnknownState, OutcomeMessages.For(RenderOutcomeCodes.RenderNodeError));
-
-    private static string Truncate(string value) =>
-        value.Length <= MaxDetailLength ? value : value[..MaxDetailLength];
 }

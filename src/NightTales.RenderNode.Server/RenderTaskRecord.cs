@@ -117,4 +117,38 @@ public sealed record RenderTaskRecord(
             MptLastSnapshot = observed.MptLastSnapshot ?? MptLastSnapshot,
         };
     }
+
+    /// <summary>
+    /// 05 D4's cancel rule applied to a merged poller observation: a row that already carries
+    /// <c>cancel_requested</c> never settles as a terminal failure and is never handed to the post-processor
+    /// (<c>cancel_requested</c> implies the task is not going to be published). The persisted cancel wins and
+    /// the row becomes <c>cancelled</c> — <c>done</c>/100 with no outcome (T64) — which is what tells the
+    /// poller to run the cancel's cleanup instead of the failure's or the hand-off's.
+    /// </summary>
+    /// <remarks>
+    /// The caller applies this where the row is actually written, inside the store's critical section, so a
+    /// cancel that landed while MPT was answering cannot be missed (CODE-2); applying it to a snapshot taken
+    /// before the await is exactly the race this exists to close.
+    /// </remarks>
+    public RenderTaskRecord ResolvePendingCancel()
+    {
+        if (!CancelRequested || !DecidesState())
+        {
+            return this;
+        }
+
+        return this with
+        {
+            State = RenderStates.Cancelled,
+            Stage = RenderStages.Done,
+            Percent = 100,
+            Outcome = null,
+            FinishedAt = FinishedAt ?? DateTimeOffset.UtcNow,
+        };
+    }
+
+    /// <summary>True for the two observations the poller writes that decide a task's state.</summary>
+    private bool DecidesState() =>
+        string.Equals(State, RenderStates.Failed, StringComparison.Ordinal)
+        || (string.Equals(Stage, RenderStages.Checking, StringComparison.Ordinal) && Percent >= 100);
 }

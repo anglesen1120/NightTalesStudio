@@ -19,13 +19,15 @@ public sealed record SqliteStoreOptions(string DatabasePath);
 /// <remarks>
 /// <see cref="UpdateAsync"/> reproduces <see cref="InMemoryTaskStore"/>'s contract exactly (it stores
 /// <see cref="RenderTaskRecord.Merge"/>'s result inside the critical section), so the 05 D4 status invariants
-/// hold for both stores and the core's endpoints behave the same against each.
+/// hold for both stores and the core's endpoints behave the same against each. The extra
+/// <see cref="ICancelResolvingStore"/> seam is the poller's own: it is the only caller that needs the merge
+/// and the cancel resolution to happen in one critical section (CODE-2).
 /// <para>
 /// The DDL's <c>started_at</c> column stays NULL: the record has no separate task-start field — the status's
 /// <c>started_at</c> is projected from <c>BackendStartedAt</c> (11.3.5-T1) and the lost rule pins that column.
 /// </para>
 /// </remarks>
-public sealed class SqliteTaskStore : ITaskStore, IPollAttemptStore, IAsyncDisposable
+public sealed class SqliteTaskStore : ITaskStore, IPollAttemptStore, ICancelResolvingStore, IAsyncDisposable
 {
     /// <summary>The single row of <c>schema_meta</c> this migration writes.</summary>
     public const string SchemaVersion = "1";
@@ -51,6 +53,16 @@ public sealed class SqliteTaskStore : ITaskStore, IPollAttemptStore, IAsyncDispo
 
     private static readonly string NonTerminalPredicate =
         $"state NOT IN ('{RenderStates.Succeeded}', '{RenderStates.Failed}', '{RenderStates.Cancelled}')";
+
+    /// <summary>The one row update both <see cref="UpdateAsync"/> and
+    /// <see cref="ICancelResolvingStore.UpdateResolvingCancelAsync"/> run, so the two paths cannot drift.</summary>
+    private const string UpdateStatement =
+        "UPDATE tasks SET render_job_id = $render_job_id, body_sha256 = $body_sha256, "
+        + "backend_task_id = $backend_task_id, state = $state, stage = $stage, percent = $percent, "
+        + "cancel_requested = $cancel_requested, submitted_at = $submitted_at, "
+        + "backend_started_at = $backend_started_at, finished_at = $finished_at, cleaned_at = $cleaned_at, "
+        + "outcome_json = $outcome_json, output_json = $output_json, check_json = $check_json, "
+        + "images_json = $images_json, mpt_json = $mpt_json WHERE task_id = $task_id;";
 
     private readonly SqliteStoreOptions _options;
     private readonly ILogger<SqliteTaskStore> _log;
@@ -200,16 +212,46 @@ public sealed class SqliteTaskStore : ITaskStore, IPollAttemptStore, IAsyncDispo
             }
 
             using var command = connection.CreateCommand();
-            command.CommandText =
-                "UPDATE tasks SET render_job_id = $render_job_id, body_sha256 = $body_sha256, "
-                + "backend_task_id = $backend_task_id, state = $state, stage = $stage, percent = $percent, "
-                + "cancel_requested = $cancel_requested, submitted_at = $submitted_at, "
-                + "backend_started_at = $backend_started_at, finished_at = $finished_at, cleaned_at = $cleaned_at, "
-                + "outcome_json = $outcome_json, output_json = $output_json, check_json = $check_json, "
-                + "images_json = $images_json, mpt_json = $mpt_json WHERE task_id = $task_id;";
+            command.CommandText = UpdateStatement;
             BindRecord(command, stored.Merge(record));
 
             return await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false) == 1;
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    /// <summary>
+    /// The poller's cancel race (CODE-2 from the T3 review): the merge runs inside this store's
+    /// critical section and is then resolved by <see cref="RenderTaskRecord.ResolvePendingCancel"/>, so a
+    /// <c>cancel_requested</c> persisted while the poller was awaiting MPT wins over the terminal failure the
+    /// poller derived from the stale row. The resolved row is returned, which is how the poller learns that
+    /// the cancel, not the failure, is the state to record — and that the cancel's cleanup must run.
+    /// </summary>
+    async ValueTask<RenderTaskRecord?> ICancelResolvingStore.UpdateResolvingCancelAsync(
+        RenderTaskRecord record,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(record);
+
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var connection = await OpenAsync(cancellationToken).ConfigureAwait(false);
+            var stored = await ReadAsync(connection, record.TaskId, cancellationToken).ConfigureAwait(false);
+            if (stored is null)
+            {
+                return null;
+            }
+
+            var resolved = stored.Merge(record).ResolvePendingCancel();
+            using var command = connection.CreateCommand();
+            command.CommandText = UpdateStatement;
+            BindRecord(command, resolved);
+            await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            return resolved;
         }
         finally
         {

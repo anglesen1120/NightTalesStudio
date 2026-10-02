@@ -111,4 +111,10 @@ internal static partial class AdapterLog
         Level = LogLevel.Warning,
         Message = "MPT delete for {TaskId} failed ({Code}); the Worker is answered adapter_node_unhealthy")]
     internal static partial void DeleteBackendFailed(this ILogger logger, Guid taskId, string code);
+
+    [LoggerMessage(
+        EventId = 3026,
+        Level = LogLevel.Warning,
+        Message = "MPT {Method} {Path} answered a body over the {Limit}-byte cap; it was dropped unread")]
+    internal static partial void MptResponseTooLarge(this ILogger logger, string method, string? path, int limit);
 }

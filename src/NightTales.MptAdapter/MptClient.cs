@@ -111,6 +111,17 @@ public sealed class MptClient : IRenderBackend
     /// <summary>MPT's authenticated list route, the D7 probe that proves the key (page size 1).</summary>
     public const string TasksProbePath = "api/v1/tasks?page=1&page_size=1";
 
+    /// <summary>
+    /// SEC-11.3.5-T2-01: the largest MPT answer body the adapter reads. The contract's largest answer is
+    /// MPT's task dict (<c>script</c>, <c>terms</c>, <c>materials</c> — the S3 samples are a few kilobytes),
+    /// so 8 MiB is two orders of magnitude of margin while still bounding what a broken or hostile node can
+    /// make the adapter buffer. Over the cap answers <c>mpt_server_error</c> and the body is never logged.
+    /// </summary>
+    public const int MaxResponseBodyBytes = 8 * 1024 * 1024;
+
+    /// <summary>The chunk size of the counted body read.</summary>
+    private const int ReadChunkBytes = 16 * 1024;
+
     private readonly HttpClient _http;
     private readonly ILogger<MptClient> _log;
     private readonly Uri _baseAddress;
@@ -290,7 +301,12 @@ public sealed class MptClient : IRenderBackend
                 }
 
                 return new MptTaskStatus(
-                    new MptStateV1(data.State, data.Progress, data.FailedStage, data.Warnings ?? []),
+                    // T69: MPT's free-form warnings are projected onto the closed code set, never stored raw.
+                    new MptStateV1(
+                        data.State,
+                        data.Progress,
+                        data.FailedStage,
+                        MptWarnings.Project(data.Warnings)),
                     data.Error);
             case HttpStatusCode.NotFound:
                 return Error.NotFound(MptErrorCodes.TaskNotFound, "MPT no longer knows this task.");
@@ -356,11 +372,22 @@ public sealed class MptClient : IRenderBackend
 
         try
         {
+            // SEC-11.3.5-T2-01: headers first, then a byte-counted read. The declared length is an early
+            // rejection, but the count is what decides — the chunked shape (no Content-Length) must obey the
+            // same cap, and a body the adapter will not use is never buffered.
             using var response = await _http
-                .SendAsync(request, HttpCompletionOption.ResponseContentRead, timeout.Token)
+                .SendAsync(request, HttpCompletionOption.ResponseHeadersRead, timeout.Token)
                 .ConfigureAwait(false);
-            var body = await response.Content.ReadAsStringAsync(timeout.Token).ConfigureAwait(false);
-            return new MptHttpAnswer(response.StatusCode, body);
+
+            if (response.Content.Headers.ContentLength is { } declared && declared > MaxResponseBodyBytes)
+            {
+                return AnswerTooLarge(request);
+            }
+
+            var body = await ReadBoundedAsync(response.Content, timeout.Token).ConfigureAwait(false);
+            return body is null
+                ? AnswerTooLarge(request)
+                : new MptHttpAnswer(response.StatusCode, body);
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
@@ -376,6 +403,44 @@ public sealed class MptClient : IRenderBackend
                 exception.HttpRequestError);
             return Error.Failure(MptErrorCodes.Unreachable, "MPT is unreachable.");
         }
+    }
+
+    /// <summary>
+    /// Reads the body under the request's timeout while counting the bytes (SEC-11.3.5-T2-01). Null means the
+    /// answer went over <see cref="MaxResponseBodyBytes"/>: the rest of the body is dropped unread.
+    /// </summary>
+    private static async Task<string?> ReadBoundedAsync(HttpContent content, CancellationToken cancellationToken)
+    {
+        await using var stream = await content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+        var buffer = new byte[ReadChunkBytes];
+        using var captured = new MemoryStream();
+        while (true)
+        {
+            var read = await stream.ReadAsync(buffer, cancellationToken).ConfigureAwait(false);
+            if (read == 0)
+            {
+                break;
+            }
+
+            if (captured.Length + read > MaxResponseBodyBytes)
+            {
+                return null;
+            }
+
+            captured.Write(buffer, 0, read);
+        }
+
+        return Encoding.UTF8.GetString(captured.GetBuffer(), 0, (int)captured.Length);
+    }
+
+    /// <summary>
+    /// The fixed answer for a body over the cap: the shape is logged (method, path, cap) and never a byte of
+    /// the body (S7), and the caller sees a backend error, not a parse failure.
+    /// </summary>
+    private ErrorOr<MptHttpAnswer> AnswerTooLarge(HttpRequestMessage request)
+    {
+        _log.MptResponseTooLarge(request.Method.Method, request.RequestUri?.AbsolutePath, MaxResponseBodyBytes);
+        return Error.Failure(MptErrorCodes.ServerError, "MPT's answer is larger than the adapter reads.");
     }
 
     private HttpRequestMessage CreateRequest(HttpMethod method, string path, Guid? taskId)
@@ -398,7 +463,9 @@ public sealed class MptClient : IRenderBackend
         }
         catch (JsonException exception)
         {
-            _log.MptUnreadableBody(exception.Message);
+            // SEC-11.3.5-T2-02: the parser reason quotes the offending body, so it is neutralised like every
+            // other MPT-supplied string before it reaches the journal.
+            _log.MptUnreadableBody(AdapterText.Sanitize(exception.Message));
             return null;
         }
     }

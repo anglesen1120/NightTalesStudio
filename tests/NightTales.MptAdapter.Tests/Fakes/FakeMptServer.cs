@@ -49,6 +49,23 @@ internal sealed class FakeMptServer : IAsyncDisposable
     /// <summary>Delays every task/submit answer, for the read-timeout and back-off tests.</summary>
     internal TimeSpan ResponseDelay { get; set; }
 
+    /// <summary>
+    /// A per-task status delay on top of <see cref="ResponseDelay"/>, so one task's status call can be held
+    /// in flight while another's is answered (the poll-concurrency and cancel-race tests).
+    /// </summary>
+    internal ConcurrentDictionary<string, TimeSpan> TaskDelays { get; } = new(StringComparer.Ordinal);
+
+    /// <summary>Holds one task's status answer for <paramref name="delay"/>.</summary>
+    internal void DelayTask(string mptTaskId, TimeSpan delay) => TaskDelays[mptTaskId] = delay;
+
+    /// <summary>
+    /// When set, the task route answers a body of exactly this declared length (SEC-01's declared shape).
+    /// </summary>
+    internal long? OversizeDeclaredBytes { get; set; }
+
+    /// <summary>When true, the task route answers a chunked body over the adapter's cap (SEC-01).</summary>
+    internal bool OversizeChunked { get; set; }
+
     /// <summary>The task id the fake mints for <c>POST /api/v1/videos</c>.</summary>
     internal string SubmitTaskId { get; set; } = "51ace7c8-bc37-44fd-ad2f-839293c7df7c";
 
@@ -118,7 +135,13 @@ internal sealed class FakeMptServer : IAsyncDisposable
                 return;
             }
 
-            await server.DelayAsync().ConfigureAwait(false);
+            await server.DelayAsync(id).ConfigureAwait(false);
+
+            if (server.OversizeDeclaredBytes is not null || server.OversizeChunked)
+            {
+                await server.WriteOversizeAsync(context).ConfigureAwait(false);
+                return;
+            }
 
             if (server.RedirectTo is { } location)
             {
@@ -297,6 +320,54 @@ internal sealed class FakeMptServer : IAsyncDisposable
 
     private Task DelayAsync() =>
         ResponseDelay > TimeSpan.Zero ? Task.Delay(ResponseDelay) : Task.CompletedTask;
+
+    private Task DelayAsync(string mptTaskId)
+    {
+        var delay = TaskDelays.TryGetValue(mptTaskId, out var perTask) ? perTask : ResponseDelay;
+        return delay > TimeSpan.Zero ? Task.Delay(delay) : Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Writes a body over <c>MptClient.MaxResponseBodyBytes</c>: with a declared length when
+    /// <see cref="OversizeDeclaredBytes"/> is set, otherwise chunked (no <c>Content-Length</c>) so only a
+    /// counted read can stop it. A client that rejects the answer stops reading, so the write may be cut off.
+    /// </summary>
+    private async Task WriteOversizeAsync(HttpContext context)
+    {
+        context.Response.ContentType = "application/json";
+
+        try
+        {
+            const int Chunk = 64 * 1024;
+            var buffer = new byte[Chunk];
+            Array.Fill(buffer, (byte)'x');
+
+            if (OversizeDeclaredBytes is { } declared)
+            {
+                context.Response.ContentLength = declared;
+                long remaining = declared;
+                while (remaining > 0)
+                {
+                    var write = (int)Math.Min(buffer.Length, remaining);
+                    await context.Response.Body.WriteAsync(buffer.AsMemory(0, write)).ConfigureAwait(false);
+                    remaining -= write;
+                }
+
+                return;
+            }
+
+            long written = 0;
+            while (written <= MptClient.MaxResponseBodyBytes)
+            {
+                await context.Response.Body.WriteAsync(buffer).ConfigureAwait(false);
+                written += buffer.Length;
+            }
+        }
+        catch (Exception exception) when (exception is IOException or OperationCanceledException)
+        {
+            // The adapter stopped reading at its cap and closed the connection: the test already has its answer.
+        }
+    }
 
     private static Task WriteUnauthorizedAsync(HttpContext context) =>
         WriteAsync(context, StatusCodes.Status401Unauthorized, """{"status":401,"message":"invalid API key"}""");

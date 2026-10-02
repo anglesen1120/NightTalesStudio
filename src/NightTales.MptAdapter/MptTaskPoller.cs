@@ -54,6 +54,25 @@ internal interface IPollAttemptStore
 }
 
 /// <summary>
+/// The poller's terminal-write seam (CODE-2 from the T3 review). The poller reads a row, awaits MPT for up to
+/// <c>Adapter:MptReadTimeoutSeconds</c>, and then writes what MPT said — but a <c>POST …/cancel</c> can land in
+/// that window. Only the store can decide the race, because only the store holds the row and the lock, so this
+/// seam merges the observation and resolves the cancel inside one critical section. It is deliberately not on
+/// <see cref="ITaskStore"/>: it exists for this one race, and the core's other stores have no such caller.
+/// </summary>
+internal interface ICancelResolvingStore
+{
+    /// <summary>
+    /// Merges <paramref name="observed"/> into the stored row and applies
+    /// <see cref="RenderTaskRecord.ResolvePendingCancel"/> to the result, then stores it. Returns the row as
+    /// stored — <c>cancelled</c> when a persisted cancel won — or null when the row is gone.
+    /// </summary>
+    ValueTask<RenderTaskRecord?> UpdateResolvingCancelAsync(
+        RenderTaskRecord observed,
+        CancellationToken cancellationToken);
+}
+
+/// <summary>
 /// D6's <c>MptTaskPoller</c>: the only reader of MPT (F19). Every cycle it walks the non-terminal tasks, maps
 /// MPT's state and progress to the adapter's (05 D4), applies the two lost rules and the 05 D5 failure map,
 /// finalises a cancelled task on MPT's terminal state, and hands a completed task to T3's seam.
@@ -72,6 +91,14 @@ public sealed class MptTaskPoller : BackgroundService
     /// <summary>Failure handling: the log backs off from 2 s to a 30 s cap.</summary>
     public const int MaxBackoffSeconds = 30;
 
+    /// <summary>
+    /// PERF-1: how many tasks one cycle asks MPT about at once. One MPT status call can hold its connection
+    /// until <c>Adapter:MptReadTimeoutSeconds</c> (30 s), so awaiting the tasks one by one would delay every
+    /// other task's update, hand-off and cleanup behind a single stalled request. The bound is fixed and
+    /// small: the calls are loopback traffic and the store serialises its own writes.
+    /// </summary>
+    public const int MaxConcurrentPolls = 4;
+
     private static readonly TimeSpan PurgeInterval = TimeSpan.FromHours(1);
 
     private readonly ITaskStore _store;
@@ -82,11 +109,19 @@ public sealed class MptTaskPoller : BackgroundService
     private readonly AdapterOptions _options;
     private readonly ILogger<MptTaskPoller> _log;
 
+    /// <summary>
+    /// Guards the poller's own per-task state (the log back-off, the alerted set, the one-shot flags). Polls
+    /// now run concurrently (PERF-1), so every touch of these collections happens under this gate; no await
+    /// is ever held across it.
+    /// </summary>
+    private readonly Lock _stateGate = new();
+
     private readonly Dictionary<Guid, DateTimeOffset> _lastFailureLog = [];
     private readonly Dictionary<Guid, int> _backoffSeconds = [];
     private readonly HashSet<Guid> _alerted = [];
     private DateTimeOffset? _lastPurge;
     private bool _unauthorizedLogged;
+    private bool _recoveredPersistedCompletions;
 
     public MptTaskPoller(
         ITaskStore store,
@@ -153,24 +188,82 @@ public sealed class MptTaskPoller : BackgroundService
     internal async Task PollOnceAsync(CancellationToken cancellationToken)
     {
         var taskIds = await _store.ListNonTerminalAsync(cancellationToken).ConfigureAwait(false);
-        foreach (var taskId in taskIds)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            try
+
+        // CODE-1: a row persisted at checking/100 is skipped by PollTaskAsync forever and only the in-memory
+        // feed would hand it on, so a restart mid-post-processing would strand it. Recover once per process,
+        // before this cycle polls, from the ids read above — a row that completes during the cycle below is
+        // published by OnMptCompleteAsync and must not be published a second time here.
+        await RecoverPersistedCompletionsAsync(taskIds, cancellationToken).ConfigureAwait(false);
+
+        // PERF-1: bounded concurrency, so one stalled MPT status call cannot hold up every other task.
+        await Parallel.ForEachAsync(
+            taskIds,
+            new ParallelOptions
             {
-                await PollTaskAsync(taskId, cancellationToken).ConfigureAwait(false);
-            }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                MaxDegreeOfParallelism = MaxConcurrentPolls,
+                CancellationToken = cancellationToken,
+            },
+            async (taskId, token) =>
             {
-                throw;
-            }
-            catch (Exception exception)
-            {
-                _log.PollTaskFailed(exception, taskId);
-            }
-        }
+                try
+                {
+                    await PollTaskAsync(taskId, token).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (token.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception exception)
+                {
+                    // Per-task isolation: one failing task never stops the cycle (D6 Failure handling).
+                    _log.PollTaskFailed(exception, taskId);
+                }
+            }).ConfigureAwait(false);
 
         await PurgeIfDueAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// CODE-1: re-publishes the rows that were persisted at <c>checking</c>/100 but whose hand-off died with
+    /// the previous adapter process (it exited after the write, or while the post-processor was running). The
+    /// completion feed is in-process, so without this recovery the guard in <see cref="PollTaskAsync"/> would
+    /// skip such a row on every future cycle and it would never reach a terminal state (T3's post-processor
+    /// owns that transition). Runs once per process lifetime, and never re-publishes a row the running
+    /// post-processor already has.
+    /// </summary>
+    private async Task RecoverPersistedCompletionsAsync(
+        IReadOnlyList<Guid> taskIds,
+        CancellationToken cancellationToken)
+    {
+        lock (_stateGate)
+        {
+            if (_recoveredPersistedCompletions)
+            {
+                return;
+            }
+
+            _recoveredPersistedCompletions = true;
+        }
+
+        foreach (var taskId in taskIds)
+        {
+            var record = await _store.TryGetAsync(taskId, cancellationToken).ConfigureAwait(false);
+            if (record is null || record.IsTerminal || record.CancelRequested)
+            {
+                continue;
+            }
+
+            // The same shape PollTaskAsync skips: MPT is done and the post-processor owns the row. A
+            // cancel_requested row is not recovered — the poller finalises it against MPT instead.
+            if (!string.Equals(record.Stage, RenderStages.Checking, StringComparison.Ordinal)
+                || record.Percent < 100)
+            {
+                continue;
+            }
+
+            _completedTasks.Publish(record);
+            _log.CompletedHandedOver(record.TaskId);
+        }
     }
 
     /// <summary>05 D4's progress boundaries; a stale call can never move the stored stage backwards.</summary>
@@ -305,11 +398,22 @@ public sealed class MptTaskPoller : BackgroundService
             MptLastSnapshot = snapshot,
         };
 
-        if (await WriteAsync(observed, cancellationToken).ConfigureAwait(false))
+        // CODE-2: the deciding write goes through the store's resolving seam, so a cancel that landed while
+        // MPT was answering turns this hand-off into the cancel instead of publishing a cancelled task.
+        var stored = await WriteTerminalAsync(observed, cancellationToken).ConfigureAwait(false);
+        if (stored is null)
         {
-            _completedTasks.Publish(observed);
-            _log.CompletedHandedOver(record.TaskId);
+            return;
         }
+
+        if (string.Equals(stored.State, RenderStates.Cancelled, StringComparison.Ordinal))
+        {
+            await CleanCancelledAsync(record.TaskId, record.BackendTaskId, cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
+        _completedTasks.Publish(stored);
+        _log.CompletedHandedOver(record.TaskId);
     }
 
     private async Task FinishFailureAsync(
@@ -329,12 +433,20 @@ public sealed class MptTaskPoller : BackgroundService
             MptLastSnapshot = snapshot,
         };
 
-        await WriteAsync(observed, cancellationToken).ConfigureAwait(false);
+        var stored = await WriteTerminalAsync(observed, cancellationToken).ConfigureAwait(false);
+
+        if (stored is { State: RenderStates.Cancelled })
+        {
+            // CODE-2: the cancel was persisted while the status call was in flight, so it wins over the
+            // failure MPT reported and the cancel's cleanup runs now (05 D4/D15 P4).
+            await CleanCancelledAsync(record.TaskId, record.BackendTaskId, cancellationToken).ConfigureAwait(false);
+            return;
+        }
 
         // S4: MPT's own words go to the journal and nowhere else — the status carries the D15 S4 sentence.
         if (!string.IsNullOrEmpty(status.Error))
         {
-            _log.MptReportedFailure(record.TaskId, status.Error);
+            _log.MptReportedFailure(record.TaskId, AdapterText.Sanitize(status.Error));
         }
 
         _log.TaskFailed(record.TaskId, outcome.Code, outcome.Detail);
@@ -367,7 +479,14 @@ public sealed class MptTaskPoller : BackgroundService
             MptLastSnapshot = snapshot,
         };
 
-        await WriteAsync(observed, cancellationToken).ConfigureAwait(false);
+        var stored = await WriteTerminalAsync(observed, cancellationToken).ConfigureAwait(false);
+        if (stored is { State: RenderStates.Cancelled })
+        {
+            // A cancel landed while the process start was being read: the cancel wins and cleans up.
+            await CleanCancelledAsync(record.TaskId, record.BackendTaskId, cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
         _log.TaskLost(record.TaskId, reason);
     }
 
@@ -387,10 +506,45 @@ public sealed class MptTaskPoller : BackgroundService
         };
 
         await WriteAsync(observed, cancellationToken).ConfigureAwait(false);
+        await CleanCancelledAsync(record.TaskId, record.BackendTaskId, cancellationToken).ConfigureAwait(false);
+    }
 
-        // 05 D15 P4: a cancelled task's dir and relay files go at once, not after the 24 h rule.
-        await _cleaner.CleanAsync(record.TaskId, record.BackendTaskId, cancellationToken).ConfigureAwait(false);
-        _log.TaskCancelledCleaned(record.TaskId);
+    /// <summary>05 D15 P4: a cancelled task's dir and relay files go at once, not after the 24 h rule.</summary>
+    private async Task CleanCancelledAsync(Guid taskId, string? backendTaskId, CancellationToken cancellationToken)
+    {
+        await _cleaner.CleanAsync(taskId, backendTaskId, cancellationToken).ConfigureAwait(false);
+        _log.TaskCancelledCleaned(taskId);
+    }
+
+    /// <summary>
+    /// Writes an observation that decides a task's state (a failure, a lost task or the checking hand-off)
+    /// through <see cref="ICancelResolvingStore"/>, so the decision is made against the row the store holds
+    /// and not against the snapshot read before the MPT call (CODE-2). Returns the row as stored — which is
+    /// <c>cancelled</c> when a cancel landed in that window — or null when the row is gone.
+    /// </summary>
+    /// <remarks>
+    /// A store without the seam (the core's in-memory store, used by mock-mpt) keeps the merge's one-way
+    /// cancel flag and is re-read afterwards, so the caller still sees a cancel that landed; that path is not
+    /// atomic, but the adapter is the only host of the poller and it always runs on <c>SqliteTaskStore</c>.
+    /// </remarks>
+    private async Task<RenderTaskRecord?> WriteTerminalAsync(
+        RenderTaskRecord observed,
+        CancellationToken cancellationToken)
+    {
+        if (_store is ICancelResolvingStore resolving)
+        {
+            return await resolving
+                .UpdateResolvingCancelAsync(observed, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        if (!await WriteAsync(observed, cancellationToken).ConfigureAwait(false))
+        {
+            return null;
+        }
+
+        var stored = await _store.TryGetAsync(observed.TaskId, cancellationToken).ConfigureAwait(false);
+        return stored?.ResolvePendingCancel();
     }
 
     private async Task HandleStatusErrorAsync(
@@ -405,10 +559,13 @@ public sealed class MptTaskPoller : BackgroundService
                 return;
 
             case MptErrorCodes.Unauthorized:
-                if (!_unauthorizedLogged)
+                lock (_stateGate)
                 {
-                    _unauthorizedLogged = true;
-                    _log.MptUnauthorizedOnce();
+                    if (!_unauthorizedLogged)
+                    {
+                        _unauthorizedLogged = true;
+                        _log.MptUnauthorizedOnce();
+                    }
                 }
 
                 return;
@@ -442,10 +599,19 @@ public sealed class MptTaskPoller : BackgroundService
             _log.PollNoAnswer(record.TaskId, error.Code, attempts);
         }
 
-        if (attempts > OpsAlertAttempts && _alerted.Add(record.TaskId))
+        if (attempts > OpsAlertAttempts && AlertOnce(record.TaskId))
         {
             var seconds = Math.Max(1, _options.PollSeconds);
             _log.PollOpsAlert(record.TaskId, attempts, OpsAlertAttempts * seconds / 60, seconds);
+        }
+    }
+
+    /// <summary>True the first time this task crosses the alert line; the set is shared by concurrent polls.</summary>
+    private bool AlertOnce(Guid taskId)
+    {
+        lock (_stateGate)
+        {
+            return _alerted.Add(taskId);
         }
     }
 
@@ -497,9 +663,12 @@ public sealed class MptTaskPoller : BackgroundService
     {
         if (!failed)
         {
-            _lastFailureLog.Remove(taskId);
-            _backoffSeconds.Remove(taskId);
-            _alerted.Remove(taskId);
+            lock (_stateGate)
+            {
+                _lastFailureLog.Remove(taskId);
+                _backoffSeconds.Remove(taskId);
+                _alerted.Remove(taskId);
+            }
         }
 
         if (_store is not IPollAttemptStore attempts)
@@ -514,17 +683,20 @@ public sealed class MptTaskPoller : BackgroundService
     private bool ShouldLogFailure(Guid taskId, int attempts)
     {
         var now = DateTimeOffset.UtcNow;
-        if (_lastFailureLog.TryGetValue(taskId, out var last)
-            && _backoffSeconds.TryGetValue(taskId, out var seconds)
-            && now - last < TimeSpan.FromSeconds(seconds))
+        lock (_stateGate)
         {
-            return false;
-        }
+            if (_lastFailureLog.TryGetValue(taskId, out var last)
+                && _backoffSeconds.TryGetValue(taskId, out var seconds)
+                && now - last < TimeSpan.FromSeconds(seconds))
+            {
+                return false;
+            }
 
-        var next = Math.Min(MaxBackoffSeconds, 1 << Math.Min(Math.Max(attempts, 1), 5));
-        _lastFailureLog[taskId] = now;
-        _backoffSeconds[taskId] = next;
-        return true;
+            var next = Math.Min(MaxBackoffSeconds, 1 << Math.Min(Math.Max(attempts, 1), 5));
+            _lastFailureLog[taskId] = now;
+            _backoffSeconds[taskId] = next;
+            return true;
+        }
     }
 
     private static int Rank(string stage)
