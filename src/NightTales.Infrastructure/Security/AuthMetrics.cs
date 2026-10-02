@@ -90,6 +90,7 @@ public sealed class AuthMetrics : IDisposable
     /// <summary>Counts one password-reset outcome (09.3.3-T1).</summary>
     /// <param name="result">The closed outcome value.</param>
     public void PasswordReset(string result) => Record(_passwordResets, result);
+
     /// <summary>Counts one finished MFA-completion attempt (09.3.2-T3).</summary>
     /// <param name="result">The wire code of the answer.</param>
     public void Mfa(string result) => Record(_mfaCompletions, result);

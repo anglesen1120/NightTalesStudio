@@ -108,6 +108,8 @@ public sealed class AppDbContext : IdentityDbContext<AppUser, AppRole, Guid>, IA
     /// the replay-proof consume — like the refresh-token families next to it.
     /// </summary>
     public DbSet<UserActionToken> UserActionTokens => Set<UserActionToken>();
+
+    /// <summary>
     /// Infrastructure-only: the MFA login challenges of 09.3.2-T3. 09.3.2-T1's login flow inserts one
     /// through <c>EfMfaChallengeService.BeginAsync</c> when the account always signs in with an
     /// authenticator; every later statement (the supersede, the locked read, the attempt counter) lives in
