@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using ErrorOr;
 using Mediator;
 using Microsoft.AspNetCore.Builder;
@@ -13,6 +14,8 @@ using NightTales.Application.Features.Auth.Login.Commands;
 using NightTales.Application.Features.Auth.Login.Mfa.Commands;
 using NightTales.Application.Features.Auth.Logout.Commands;
 using NightTales.Application.Features.Auth.Mfa.Reauth.Commands;
+using NightTales.Application.Features.Auth.Password.ForgotPassword.Commands;
+using NightTales.Application.Features.Auth.Password.ResetPassword.Commands;
 using NightTales.Application.Features.Auth.Refresh.Commands;
 using NightTales.Application.Features.Auth.Register.Commands;
 using NightTales.Domain.Common;
@@ -113,7 +116,59 @@ public static class AuthEndpoints
             .ProducesProblem(StatusCodes.Status401Unauthorized)
             .ProducesProblem(StatusCodes.Status429TooManyRequests);
 
+        // 09.3.3-T1 (BD3/BD16): the two password routes. Both are anonymous — the caller holds nothing
+        // but the mailed link — and both carry the auth rate limit. Neither requires an Idempotency-Key
+        // (D6 exempts the auth routes), and neither is a cookie-authenticated POST, so no Origin filter.
+        auth.MapPost("/forgot-password", ForgotPasswordAsync)
+            .AllowAnonymous()
+            .RequireRateLimiting(AuthRateLimitPolicy)
+            .Produces(StatusCodes.Status202Accepted);
+
+        auth.MapPost("/reset-password", ResetPasswordAsync)
+            .AllowAnonymous()
+            .RequireRateLimiting(AuthRateLimitPolicy)
+            .Produces(StatusCodes.Status204NoContent)
+            .ProducesProblem(StatusCodes.Status400BadRequest);
+
         return routes;
+    }
+
+    /// <summary>
+    /// <c>POST /api/v1/auth/forgot-password</c>: always 202 with the identical empty body, padded to the
+    /// WT40 timing floor so neither the status, the body nor the clock reveals whether the address exists.
+    /// </summary>
+    /// <remarks>
+    /// The handler always answers success (BD16); the padding is added here, after the command's
+    /// transaction committed, so no database connection is held open for it.
+    /// </remarks>
+    private static async Task<IResult> ForgotPasswordAsync(
+        ForgotPasswordCommand command,
+        ISender sender,
+        HttpContext http,
+        CancellationToken ct)
+    {
+        var startedTimestamp = Stopwatch.GetTimestamp();
+
+        var result = await sender.Send(command, ct).ConfigureAwait(false);
+
+        await AuthTiming.PadAsync(startedTimestamp, ct).ConfigureAwait(false);
+
+        return result.ToAcceptedResult(http);
+    }
+
+    /// <summary>
+    /// <c>POST /api/v1/auth/reset-password</c>: 204 when the token was spent and the password changed, or
+    /// the 400 <c>validation_failed</c> every refusal maps to.
+    /// </summary>
+    private static async Task<IResult> ResetPasswordAsync(
+        ResetPasswordCommand command,
+        ISender sender,
+        HttpContext http,
+        CancellationToken ct)
+    {
+        var result = await sender.Send(command, ct).ConfigureAwait(false);
+
+        return result.ToNoContentResult(http);
     }
 
     /// <summary>

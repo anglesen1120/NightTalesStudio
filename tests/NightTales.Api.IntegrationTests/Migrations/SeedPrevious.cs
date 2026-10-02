@@ -170,6 +170,19 @@ internal static class SeedPrevious
                     '0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF', now(), now())
             """),
         (
+            // 09.3.3-T1: the table the `_09_UserActionTokens` migration creates. Same rule as above: skipped
+            // while that migration is the last one, then every later migration is exercised over an
+            // unspent reset token (only its SHA-256 hash is stored, as the store writes it).
+            "user_action_tokens",
+            """
+            INSERT INTO user_action_tokens (id, user_id, kind, subject_id, token_hash, created_at, expires_at,
+                                            used_at)
+            VALUES ('01920000-0000-7000-8000-00000000000e', '01920000-0000-7000-8000-000000000001',
+                    'password_reset', NULL,
+                    '5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8', now(),
+                    now() + interval '60 minutes', NULL)
+            """),
+        (
             // 02.2.2-T1: the table the `_02_GenerationRuns` migration creates. Same rule as above: skipped while
             // that migration is the last one, then every later migration is exercised over a finished story run
             // of the seed episode (queued, started and finished, so the time check and the failed/error rule
@@ -179,7 +192,7 @@ internal static class SeedPrevious
             INSERT INTO generation_runs (id, user_id, series_id, episode_id, kind, "trigger", status, stage,
                                          previous_episode_status, counts_toward_limit, worst_case_usd, cost_usd,
                                          attempt, queued_at, started_at, finished_at, created_at, updated_at)
-            VALUES ('01920000-0000-7000-8000-00000000000e', '01920000-0000-7000-8000-000000000001',
+            VALUES ('01920000-0000-7000-8000-00000000000f', '01920000-0000-7000-8000-000000000001',
                     '01920000-0000-7000-8000-000000000002', '01920000-0000-7000-8000-000000000004', 'story',
                     'user', 'succeeded', 'done', 'draft', true, 0.250000, 0.120000, 0, now(), now(), now(),
                     now(), now())

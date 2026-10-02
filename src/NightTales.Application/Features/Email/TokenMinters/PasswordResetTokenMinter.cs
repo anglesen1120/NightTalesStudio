@@ -1,6 +1,7 @@
 using ErrorOr;
 using NightTales.Application.Abstractions.Email;
 using NightTales.Application.Abstractions.Security;
+using NightTales.Application.Features.Auth.Password;
 
 namespace NightTales.Application.Features.Email.TokenMinters;
 
@@ -38,7 +39,7 @@ public sealed class PasswordResetTokenMinter(
     public const string LinkKey = "link";
 
     /// <summary>The SPA route that consumes the token from the URL fragment (BD3).</summary>
-    public const string ResetPasswordPath = "/reset-password";
+    public const string ResetPasswordPath = AuthLinks.ResetPasswordPath;
 
     /// <summary>
     /// The caller metadata of a Worker job: none. The token row of BD3 stores no IP and no user agent, and
@@ -78,13 +79,9 @@ public sealed class PasswordResetTokenMinter(
 
     /// <summary>
     /// The link of one reset token: origin, route, then the token after the <c>#</c> (BD3 — the SPA reads
-    /// it, the server never sees it).
+    /// it, the server never sees it). The shape lives in 09.3.3-T1's <see cref="AuthLinks"/>, so the
+    /// minter and the task that owns the route cannot drift apart.
     /// </summary>
     /// <param name="token">The plaintext token the token service just issued.</param>
-    private string BuildLink(string token) =>
-        string.Concat(
-            linkOrigin.Origin.GetLeftPart(UriPartial.Authority),
-            ResetPasswordPath,
-            "#t=",
-            token);
+    private string BuildLink(string token) => AuthLinks.PasswordReset(linkOrigin.Origin, token);
 }

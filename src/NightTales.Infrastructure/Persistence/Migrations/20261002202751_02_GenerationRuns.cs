@@ -11,6 +11,31 @@ namespace NightTales.Infrastructure.Persistence.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
+            migrationBuilder.AddColumn<Guid>(
+                name: "fact_sheet_id",
+                table: "story_versions",
+                type: "uuid",
+                nullable: true);
+
+            migrationBuilder.AddColumn<Guid>(
+                name: "generation_run_id",
+                table: "story_versions",
+                type: "uuid",
+                nullable: true);
+
+            migrationBuilder.AddColumn<Guid>(
+                name: "parent_version_id",
+                table: "story_versions",
+                type: "uuid",
+                nullable: true);
+
+            migrationBuilder.AddColumn<string>(
+                name: "schema_version",
+                table: "story_versions",
+                type: "text",
+                nullable: false,
+                defaultValue: "story.v1");
+
             migrationBuilder.CreateTable(
                 name: "generation_runs",
                 columns: table => new
@@ -85,6 +110,27 @@ namespace NightTales.Infrastructure.Persistence.Migrations
                 });
 
             migrationBuilder.CreateIndex(
+                name: "ix_story_versions_generation_run_id",
+                table: "story_versions",
+                column: "generation_run_id");
+
+            migrationBuilder.CreateIndex(
+                name: "ix_story_versions_generation_run_id_user_id",
+                table: "story_versions",
+                columns: new[] { "generation_run_id", "user_id" });
+
+            migrationBuilder.CreateIndex(
+                name: "ix_story_versions_parent_version_id_user_id",
+                table: "story_versions",
+                columns: new[] { "parent_version_id", "user_id" });
+
+            migrationBuilder.CreateIndex(
+                name: "ux_story_versions_episode_version",
+                table: "story_versions",
+                columns: new[] { "episode_id", "version" },
+                unique: true);
+
+            migrationBuilder.CreateIndex(
                 name: "ix_generation_runs_episode_id_user_id",
                 table: "generation_runs",
                 columns: new[] { "episode_id", "user_id" });
@@ -130,52 +176,6 @@ namespace NightTales.Infrastructure.Persistence.Migrations
                 columns: new[] { "series_id", "kind" },
                 unique: true,
                 filter: "\"episode_id\" IS NULL AND \"status\" IN ('queued', 'running')");
-
-            migrationBuilder.AddColumn<Guid>(
-                name: "fact_sheet_id",
-                table: "story_versions",
-                type: "uuid",
-                nullable: true);
-
-            migrationBuilder.AddColumn<Guid>(
-                name: "generation_run_id",
-                table: "story_versions",
-                type: "uuid",
-                nullable: true);
-
-            migrationBuilder.AddColumn<Guid>(
-                name: "parent_version_id",
-                table: "story_versions",
-                type: "uuid",
-                nullable: true);
-
-            migrationBuilder.AddColumn<string>(
-                name: "schema_version",
-                table: "story_versions",
-                type: "text",
-                nullable: false,
-                defaultValue: "story.v1");
-
-            migrationBuilder.CreateIndex(
-                name: "ix_story_versions_generation_run_id",
-                table: "story_versions",
-                column: "generation_run_id");
-
-            migrationBuilder.CreateIndex(
-                name: "ix_story_versions_generation_run_id_user_id",
-                table: "story_versions",
-                columns: new[] { "generation_run_id", "user_id" });
-
-            migrationBuilder.CreateIndex(
-                name: "ix_story_versions_parent_version_id_user_id",
-                table: "story_versions",
-                columns: new[] { "parent_version_id", "user_id" });
-
-            migrationBuilder.CreateIndex(
-                name: "ux_story_versions_episode_version",
-                table: "story_versions",
-                columns: new[] { "episode_id", "version" },
-                unique: true);
 
             migrationBuilder.AddForeignKey(
                 name: "fk_story_versions_generation_runs_generation_run_id_user_id",

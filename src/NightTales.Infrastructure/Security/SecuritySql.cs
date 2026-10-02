@@ -101,6 +101,44 @@ internal static class SecuritySql
         await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Takes a transaction-scoped advisory lock on one action-token scope — <c>(user, kind, subject)</c> —
+    /// so two issues of the same scope cannot both leave a live row.
+    /// </summary>
+    /// <remarks>
+    /// The issue is an <c>UPDATE … INSERT</c>: under <c>ReadCommitted</c> two callers that each see no live
+    /// row for the scope both update zero rows and both insert, leaving two live links where the design
+    /// promises at most one (09 README BD3/WF11). The lock is taken <em>before</em> the update and held
+    /// through the insert, and the same lock key covers the plain flow (<c>subject_id</c> NULL) and a
+    /// subject-scoped one. A different advisory-lock seed (<c>2</c>) keeps it from colliding with a user
+    /// lock (<c>1</c>) or a refresh family lock (<c>0</c>).
+    /// </remarks>
+    /// <param name="database">The scope's write model; its transaction holds the lock.</param>
+    /// <param name="userId">The user the token authorizes.</param>
+    /// <param name="kind">The flow's snake_case wire value.</param>
+    /// <param name="subjectId">The row a subject-scoped token is about, or null for a plain flow.</param>
+    /// <param name="ct">The caller's cancellation token.</param>
+    internal static async Task LockActionTokenScopeAsync(
+        AppDbContext database,
+        Guid userId,
+        string kind,
+        Guid? subjectId,
+        CancellationToken ct)
+    {
+        await using var command = Command(
+            database,
+            "SELECT pg_advisory_xact_lock(hashtextextended(@scope::text, 2))",
+            requireTransaction: true);
+
+        // The key is unambiguous: the fixed-width user id, then the kind (never contains ':'), then the
+        // fixed-width subject or '-' for a plain flow.
+        command.Parameters.AddWithValue(
+            "scope",
+            $"{userId:N}:{kind}:{subjectId?.ToString("N") ?? "-"}");
+
+        await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+    }
+
     /// <summary>The 503 of a transient failure, mapped exactly as the unit of work maps a refused commit.</summary>
     /// <typeparam name="T">The response type of the caller.</typeparam>
     internal static ErrorOr<T> Unavailable<T>() =>

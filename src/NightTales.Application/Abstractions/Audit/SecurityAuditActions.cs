@@ -69,4 +69,17 @@ public static class SecurityAuditActions
 
     /// <summary>A re-authentication failed (BD4). [INFERENCE key]</summary>
     public const string ReauthFailed = "account.reauth_failed";
+
+    /// <summary>
+    /// A reset link was requested for a live account (09.3.3-T1; BD15/C3.4's frozen
+    /// <c>account.password_reset_requested</c>). Written only when the account exists and is active, so an
+    /// unknown address leaves no row that would differentiate it from a known one.
+    /// </summary>
+    public const string PasswordResetRequested = "account.password_reset_requested";
+
+    /// <summary>
+    /// A password was changed through a mailed reset link (09.3.3-T1; BD15/C3.4's frozen
+    /// <c>account.password_reset</c>).
+    /// </summary>
+    public const string PasswordReset = "account.password_reset";
 }

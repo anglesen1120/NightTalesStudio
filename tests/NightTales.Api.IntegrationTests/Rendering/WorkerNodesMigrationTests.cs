@@ -138,7 +138,7 @@ public sealed class WorkerNodesMigrationTests(TestDatabase database) : Integrati
         SqlProbe.Execute(Database, Insert("'alpha'", capacity: 2, state: "'active'"));
 
         var migrations = context.Database.GetMigrations().Order(StringComparer.Ordinal).ToList();
-        var own = migrations.FindIndex(id => id.Contains("11_WorkerNodes", StringComparison.Ordinal));
+        var own = migrations.FindIndex(name => name.EndsWith("_11_WorkerNodes", StringComparison.Ordinal));
         own.ShouldBeGreaterThan(0, "the migration must exist and have a previous one to revert to");
 
         try

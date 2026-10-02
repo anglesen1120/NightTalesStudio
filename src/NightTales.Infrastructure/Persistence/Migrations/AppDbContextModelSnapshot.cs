@@ -1827,6 +1827,58 @@ namespace NightTales.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("NightTales.Infrastructure.Persistence.Entities.UserActionToken", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("created_at");
+
+                    b.Property<DateTimeOffset>("ExpiresAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("expires_at");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("kind");
+
+                    b.Property<Guid?>("SubjectId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("subject_id");
+
+                    b.Property<string>("TokenHash")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("token_hash");
+
+                    b.Property<DateTimeOffset?>("UsedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("used_at");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_user_action_tokens");
+
+                    b.HasIndex("TokenHash")
+                        .IsUnique()
+                        .HasDatabaseName("ux_user_action_tokens_token_hash");
+
+                    b.HasIndex("UserId", "Kind")
+                        .HasDatabaseName("ix_user_action_tokens_user_id_kind");
+
+                    b.ToTable("user_action_tokens", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_user_action_tokens_kind", "\"kind\" IN ('email_verify', 'password_reset', 'publication_cancel')");
+                        });
+                });
+
             modelBuilder.Entity("NightTales.Infrastructure.Persistence.Entities.UserConsent", b =>
                 {
                     b.Property<Guid>("Id")
@@ -2344,6 +2396,16 @@ namespace NightTales.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
                         .HasConstraintName("fk_refresh_tokens_asp_net_users_user_id");
+                });
+
+            modelBuilder.Entity("NightTales.Infrastructure.Persistence.Entities.UserActionToken", b =>
+                {
+                    b.HasOne("NightTales.Infrastructure.Persistence.AppUser", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_user_action_tokens_asp_net_users_user_id");
                 });
 
             modelBuilder.Entity("NightTales.Infrastructure.Persistence.Entities.UserConsent", b =>
