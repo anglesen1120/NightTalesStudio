@@ -67,6 +67,10 @@ public static class SecurityServiceCollectionExtensions
         services.AddScoped<ITotpVerifier, Rfc6238TotpVerifier>();
         services.AddScoped<IReauthGuard, EfReauthGuard>();
         services.AddScoped<ISecurityEventWriter, EfSecurityEventWriter>();
+
+        // 09.2.6-T2: the dashboard's per-request live-account check. Scoped with the AppDbContext it reads
+        // (the Hangfire filter resolves it from the request scope, so a singleton filter holds no context).
+        services.AddScoped<IJobsDashboardSessionValidator, EfJobsDashboardSessionValidator>();
         services.AddScoped<ISecurityAlerter, AuditAndLogSecurityAlerter>();
         services.AddScoped<IMfaEnrolmentService, EfMfaEnrolmentService>();
         services.AddScoped<IReauthService, EfReauthService>();

@@ -735,6 +735,7 @@
       "nighttales.api": {
         "type": "Project",
         "dependencies": {
+          "Hangfire.AspNetCore": "[1.8.25, )",
           "Microsoft.AspNetCore.Authentication.JwtBearer": "[10.0.12, )",
           "Microsoft.AspNetCore.OpenApi": "[10.0.12, )",
           "NightTales.Application": "[1.0.0, )",
