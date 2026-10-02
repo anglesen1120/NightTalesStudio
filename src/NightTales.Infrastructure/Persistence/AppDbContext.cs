@@ -66,6 +66,9 @@ public sealed class AppDbContext : IdentityDbContext<AppUser, AppRole, Guid>, IA
 
     public DbSet<UsageRecord> UsageRecords => Set<UsageRecord>();
 
+    /// <summary>The immutable rates and limits of 02.2.4-T1 (table <c>price_versions</c>); not tenant-owned.</summary>
+    public DbSet<PriceVersion> PriceVersions => Set<PriceVersion>();
+
     public DbSet<Asset> Assets => Set<Asset>();
 
     public DbSet<Voice> Voices => Set<Voice>();

@@ -1378,6 +1378,49 @@ namespace NightTales.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("NightTales.Domain.Usage.PriceVersion", b =>
+                {
+                    b.Property<int>("Version")
+                        .HasColumnType("integer")
+                        .HasColumnName("version");
+
+                    b.Property<DateTimeOffset>("ActiveFrom")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("active_from");
+
+                    b.Property<string>("ConfigHash")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("config_hash");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("Limits")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("limits");
+
+                    b.Property<string>("Rates")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("rates");
+
+                    b.HasKey("Version")
+                        .HasName("pk_price_versions");
+
+                    b.HasIndex("ActiveFrom")
+                        .IsDescending()
+                        .HasDatabaseName("ix_price_versions_active_from");
+
+                    b.HasIndex("ConfigHash")
+                        .IsUnique()
+                        .HasDatabaseName("ix_price_versions_config_hash");
+
+                    b.ToTable("price_versions", (string)null);
+                });
+
             modelBuilder.Entity("NightTales.Domain.Usage.UsageRecord", b =>
                 {
                     b.Property<Guid>("Id")

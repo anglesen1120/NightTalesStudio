@@ -45,6 +45,9 @@ public interface IAppDbContext
 
     DbSet<UsageRecord> UsageRecords { get; }
 
+    /// <summary>The immutable rates and limits of 02.2.4-T1; inserted only by <c>PriceVersionSeeder</c>.</summary>
+    DbSet<PriceVersion> PriceVersions { get; }
+
     DbSet<Asset> Assets { get; }
 
     DbSet<Voice> Voices { get; }
