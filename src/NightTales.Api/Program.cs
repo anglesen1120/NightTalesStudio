@@ -36,6 +36,10 @@ builder.Services.AddPromptCatalog();
 builder.Services.AddNightTalesApplication();
 builder.Services.AddScoped<PostCommitETagReader>();
 
+// 09.7.2-T1: the presenter of GET /episodes/{id}/video-url. Scoped like the read model, the unit of
+// work and the audit writer it composes.
+builder.Services.AddScoped<EpisodeVideoUrlIssuer>();
+
 // 09.2.3-T1 (09 README D10): the caller's claims are the tenant of every filtered query, and the
 // scoped system context lets tests run outbox-style work in-process.
 builder.Services.AddApiCurrentUser();
@@ -59,6 +63,10 @@ builder.Services.AddNightTalesAuth(builder.Configuration);
 // IEmailSender and a caller that must know the outcome reads IEmailDeliveryStatus — while the Worker owns
 // SendEmailJob; both hosts register the same graph so a template or an option cannot drift between them.
 builder.Services.AddEmail(builder.Configuration);
+
+// 09.7.2-T1 (09 README BD10/BD12): the blob store, its client factory, the health cache and the
+// prober. The Api presigns the video URL; the Worker sweeps the same buckets.
+builder.Services.AddStorage(builder.Configuration);
 
 // 09.3.2-T1 step 6: the bearer scheme over the same key.
 builder.Services.AddNightTalesJwtBearer();
@@ -164,6 +172,10 @@ app.MapHubEndpoints();
 // skips negotiation and the JWT never travels in the URL (the single-use ticket does, and it dies at
 // connect).
 app.MapHub<EpisodeHub>(EpisodeHub.Path, options => options.Transports = HttpTransportType.WebSockets);
+// 09.7.2-T1 (09 README BD10, 09.7.2 plan §5): the presigned read URL of an episode's final video. A GET
+// has no Mediator pipeline, so the issuer (Api/Http, outside Endpoints because of the D8 architecture
+// rule) opens its own transaction around the audit row.
+app.MapEpisodeVideoEndpoints();
 
 app.Run();
 
