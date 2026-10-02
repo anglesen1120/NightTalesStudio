@@ -57,18 +57,45 @@ public sealed class MeEndpointsQaTests(TestDatabase database) : IntegrationTest(
         SqlProbe.QueryStrings(Database, AuditSql(userId)).ShouldBeEmpty("a refused PATCH writes no audit row (UC3)");
     }
 
-    [Fact]
-    public async Task PatchMe_UpperCaseLocale_IsAccepted_PinnedBehaviour()
+    [Theory]
+    [InlineData("""{"uiLocale":"VI"}""")]
+    [InlineData("""{"uiLocale":"Vi"}""")]
+    [InlineData("""{"uiLocale":"EN"}""")]
+    public async Task PatchMe_NonCanonicalCaseLocale_Is400(string json)
     {
-        // QA-3: the enum converter is case-insensitive, so "VI" binds to Language.Vi although the wire
-        // value is lowercase (D14). Pins today's behaviour.
+        // QA-3: D14 fixes the wire value to lowercase; only the exact "vi"/"en" is accepted.
         var userId = await CreateUserAsync();
+        var before = SqlProbe.ScalarText(Database, $"SELECT ui_locale FROM users WHERE id = '{userId}'");
         using var factory = NewFactory();
         using var client = factory.ClientFor(userId);
 
-        using var response = await PatchAsync(client, """{"uiLocale":"VI"}""");
+        using var response = await PatchAsync(client, json);
 
-        response.StatusCode.ShouldBe(HttpStatusCode.OK, await response.Content.ReadAsStringAsync(Ct));
+        response.StatusCode.ShouldBe(HttpStatusCode.BadRequest, await response.Content.ReadAsStringAsync(Ct));
+        var problem = await response.Content.ReadFromJsonAsync<ProblemResponse>(ProblemResponse.Options, Ct);
+        problem!.Code.ShouldBe("validation_failed");
+        SqlProbe.ScalarText(Database, $"SELECT ui_locale FROM users WHERE id = '{userId}'").ShouldBe(before);
+        SqlProbe.QueryStrings(Database, AuditSql(userId)).ShouldBeEmpty();
+    }
+
+    [Theory]
+    [InlineData("""{"displayName":"\u200B"}""")]
+    [InlineData("""{"displayName":"Ana\u200B"}""")]
+    [InlineData("""{"displayName":"\u202EAna"}""")]
+    [InlineData("""{"displayName":"An\u2028a"}""")]
+    public async Task PatchMe_InvisibleFormattingInDisplayName_Is400(string json)
+    {
+        // SEC-1: zero-width, bidi override and line-separator characters are refused.
+        var userId = await CreateUserAsync();
+        var before = SqlProbe.ScalarText(Database, $"SELECT display_name FROM users WHERE id = '{userId}'");
+        using var factory = NewFactory();
+        using var client = factory.ClientFor(userId);
+
+        using var response = await PatchAsync(client, json);
+
+        await AssertValidationFailedAsync(response, "displayName");
+        SqlProbe.ScalarText(Database, $"SELECT display_name FROM users WHERE id = '{userId}'").ShouldBe(before);
+        SqlProbe.QueryStrings(Database, AuditSql(userId)).ShouldBeEmpty();
     }
 
     [Theory]
@@ -96,6 +123,9 @@ public sealed class MeEndpointsQaTests(TestDatabase database) : IntegrationTest(
     [InlineData("""{"displayName":"Ana","bogus":1}""")]
     [InlineData("""{"mfaEnabled":true}""")]
     [InlineData("""{"role":"owner"}""")]
+    [InlineData("""{"displayName":"Ana","unknownMembers":1}""")]
+    [InlineData("""{"displayName":"Ana","UnknownMembers":{}}""")]
+    [InlineData("""{"displayName":"Ana","extra":1}""")]
     public async Task PatchMe_NullOrUnknownMembers_Is400_NoAuditRow(string json)
     {
         var userId = await CreateUserAsync();
@@ -155,11 +185,13 @@ public sealed class MeEndpointsQaTests(TestDatabase database) : IntegrationTest(
     }
 
     [Fact]
-    public async Task PatchMe_SuspendedUser_StillSucceeds_PinnedBehaviour()
+    public async Task PatchMe_SuspendedUserWithLiveToken_FollowsPhaseP_RefreshOnlyEnforcement()
     {
-        // QA-2: the plan failure table says a suspended user is refused earlier by the authorisation
-        // behaviour. Suspension is enforced only at refresh (RefreshSessionService), so a live token
-        // still reaches /me. This pins today's behaviour: 200 and the write lands.
+        // QA-2 [CONTRACT]: 09.3.2-T1-login-refresh-logout.md:162-164 — "In P this is the only enforcement point
+        // for suspension — the per-request stamp/status check is S (09.3.2-T2, WF12)". The task failure table's
+        // "refused earlier by the authorisation behaviour" names a per-request check that does not exist in P
+        // (AuthorizationBehavior is role-only, D10). A live token therefore still reaches /me until its refresh
+        // fails with session_revoked. This pins that contract; it flips when 09.3.2-T2 lands.
         var userId = await CreateUserAsync("held@nighttales.test");
         await Database.ExecuteAsync($"UPDATE users SET status = 'suspended' WHERE id = '{userId}'", Ct);
         using var factory = NewFactory();
@@ -204,10 +236,9 @@ public sealed class MeEndpointsQaTests(TestDatabase database) : IntegrationTest(
     }
 
     [Fact]
-    public async Task PatchMe_BothFields_WritesAuditRow_PinnedShape()
+    public async Task PatchMe_BothFields_WritesAuditRow_DocumentedShape()
     {
-        // QA-1: plan §5 / AC L73 document {"fields":["displayName","uiLocale"],"uiLocale":{"from","to"}}.
-        // The handler writes flat strings instead. This test pins what is actually written today.
+        // QA-1: plan §5 / AC L73 — {"fields":["displayName","uiLocale"],"uiLocale":{"from","to"}}, no name text.
         var userId = await CreateUserAsync();
         await Database.ExecuteAsync($"UPDATE users SET ui_locale = 'en' WHERE id = '{userId}'", Ct);
         using var factory = NewFactory();
@@ -231,28 +262,29 @@ public sealed class MeEndpointsQaTests(TestDatabase database) : IntegrationTest(
         columns[3].ShouldBe("user");
 
         using var data = JsonDocument.Parse(columns[4]);
-        data.RootElement.GetProperty("fields").ValueKind.ShouldBe(JsonValueKind.String);
-        data.RootElement.GetProperty("fields").GetString().ShouldBe("displayName,uiLocale");
-        data.RootElement.GetProperty("uiLocale").GetString().ShouldBe("en->vi");
-        data.RootElement.GetProperty("displayName").GetString().ShouldBe("changed");
+        data.RootElement.GetProperty("fields").EnumerateArray().Select(field => field.GetString())
+            .ShouldBe(["displayName", "uiLocale"]);
+        data.RootElement.GetProperty("uiLocale").GetProperty("from").GetString().ShouldBe("en");
+        data.RootElement.GetProperty("uiLocale").GetProperty("to").GetString().ShouldBe("vi");
+        data.RootElement.TryGetProperty("displayName", out _).ShouldBeFalse();
         columns[4].Contains("Ana", StringComparison.Ordinal).ShouldBeFalse("BD16: the name text is never audited");
     }
 
     [Fact]
-    public async Task PatchMe_NoOpChange_WritesOneAuditRowWithEmptyFields()
+    public async Task PatchMe_NoOpChange_Is200_AndWritesNoAuditRow()
     {
-        // A successful PATCH that changes nothing still writes exactly one row (the command returned
-        // success); fields names no field. Documents the observable contract for 09.3.6-T2's reader.
+        // SEC-2: a PATCH that changes nothing returns the current profile and records nothing.
         var userId = await CreateUserAsync();
         var current = SqlProbe.ScalarText(Database, $"SELECT display_name FROM users WHERE id = '{userId}'");
+        var locale = SqlProbe.ScalarText(Database, $"SELECT ui_locale FROM users WHERE id = '{userId}'");
         using var factory = NewFactory();
         using var client = factory.ClientFor(userId);
 
-        using var response = await PatchAsync(client, $$"""{"displayName":"{{current}}"}""");
+        using var response = await PatchAsync(client, $$"""{"displayName":"{{current}}","uiLocale":"{{locale}}"}""");
 
         response.StatusCode.ShouldBe(HttpStatusCode.OK, await response.Content.ReadAsStringAsync(Ct));
-        var rows = SqlProbe.QueryStrings(Database, AuditSql(userId)).ShouldHaveSingleItem();
-        rows.ShouldBe("|-", "fields is the empty string and no uiLocale/displayName key is written");
+        (await response.Content.ReadFromJsonAsync<JsonElement>(Ct)).GetProperty("displayName").GetString().ShouldBe(current);
+        SqlProbe.QueryStrings(Database, AuditSql(userId)).ShouldBeEmpty("a no-op PATCH writes zero audit rows");
     }
 
     private ApiFactory NewFactory() => new(Database, new FakeClock());

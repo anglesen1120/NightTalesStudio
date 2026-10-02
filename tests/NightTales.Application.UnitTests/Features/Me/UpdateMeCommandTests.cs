@@ -31,13 +31,41 @@ public sealed class UpdateMeCommandTests
         var result = await handler.Handle(command, Ct);
 
         result.IsError.ShouldBeFalse();
-        var summary = command.ToAuditData().Summary;
-        summary["fields"].ShouldBe("displayName,uiLocale");
-        summary["displayName"].ShouldBe("changed");
-        summary["uiLocale"].ShouldBe("en->vi");
-        summary.Values.ShouldNotContain(value => value.Contains("Secret", StringComparison.Ordinal));
+        var summary = command.ToAuditData()!.Summary;
+        ((IEnumerable<string>)summary["fields"]).ShouldBe(["displayName", "uiLocale"]);
+        var locale = (Dictionary<string, string>)summary["uiLocale"];
+        locale["from"].ShouldBe("en");
+        locale["to"].ShouldBe("vi");
+        summary.ContainsKey("displayName").ShouldBeFalse("the name is only listed in fields, never as a value");
+        System.Text.Json.JsonSerializer.Serialize(summary).ShouldNotContain("Secret");
         writer.LastUserId.ShouldBe(userId, "the handler acts on ICurrentUser.Id only");
     }
+
+    [Fact]
+    public async Task Handler_NothingChanged_ProjectsNoAuditData()
+    {
+        var userId = Guid.CreateVersion7();
+        var writer = new FakeWriter(new UserProfileUpdate(Profile(userId, "Same"), Language.Vi, DisplayNameChanged: false));
+        var handler = new UpdateMeHandler(new TestCurrentUser { Id = userId }, writer, new NoFlags());
+        var command = new UpdateMeCommand("Same", Language.Vi);
+
+        var result = await handler.Handle(command, Ct);
+
+        result.IsError.ShouldBeFalse();
+        command.ToAuditData().ShouldBeNull("a no-op PATCH writes no audit row");
+    }
+
+    [Theory]
+    [InlineData("\u200B")]
+    [InlineData("Ana\u200B")]
+    [InlineData("\u202EAna")]
+    [InlineData("An\u2066a")]
+    [InlineData("An\u2028a")]
+    [InlineData("An\u2029a")]
+    [InlineData("A\u200Dna")]
+    public void Validator_InvisibleFormattingCharacters_Fail(string name) =>
+        Validator.Validate(new UpdateMeCommand(name, null)).Errors
+            .ShouldContain(error => error.PropertyName == "displayName");
 
     [Fact]
     public async Task Handler_DeletedUser_IsUnauthenticated()

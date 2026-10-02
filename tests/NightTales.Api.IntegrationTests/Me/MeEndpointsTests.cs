@@ -117,7 +117,7 @@ public sealed class MeEndpointsTests(TestDatabase database) : IntegrationTest(da
         SqlProbe.ScalarText(Database, $"SELECT ui_locale FROM users WHERE id = '{userId}'").ShouldBe("vi");
 
         SqlProbe.QueryStrings(Database, AuditSql(userId)).ShouldHaveSingleItem()
-            .ShouldBe("uiLocale|en->vi");
+            .ShouldBe("""["uiLocale"]|en->vi""");
     }
 
     [Fact]
@@ -134,7 +134,7 @@ public sealed class MeEndpointsTests(TestDatabase database) : IntegrationTest(da
         SqlProbe.ScalarText(Database, $"SELECT display_name FROM users WHERE id = '{userId}'").ShouldBe("Ana");
 
         var summary = SqlProbe.QueryStrings(Database, AuditSql(userId)).ShouldHaveSingleItem();
-        summary.ShouldBe("displayName|changed");
+        summary.ShouldBe("""["displayName"]|-""");
         summary.ShouldNotContain("Ana");
     }
 
@@ -244,7 +244,8 @@ public sealed class MeEndpointsTests(TestDatabase database) : IntegrationTest(da
             Ct);
 
     private static string AuditSql(Guid userId) => $"""
-        SELECT coalesce(data->>'fields', '-') || '|' || coalesce(data->>'displayName', data->>'uiLocale', '-')
+        SELECT coalesce(data->>'fields', '-') || '|'
+            || coalesce((data->'uiLocale'->>'from') || '->' || (data->'uiLocale'->>'to'), '-')
         FROM audit_logs WHERE action = 'account.profile_updated' AND subject_user_id = '{userId}'
         """;
 

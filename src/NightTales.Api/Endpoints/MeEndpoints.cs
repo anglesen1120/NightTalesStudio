@@ -256,13 +256,57 @@ public sealed record RecoveryCodesResponse(IReadOnlyList<string> RecoveryCodes);
 /// </summary>
 /// <param name="DisplayName">The new display name, or <see langword="null"/>/absent to keep it.</param>
 /// <param name="UiLocale">The new UI locale (<c>vi</c> or <c>en</c>), or <see langword="null"/>/absent to keep it.</param>
-public sealed record UpdateMeRequest(string? DisplayName, Language? UiLocale) : IRejectsUnknownMembers
+public sealed record UpdateMeRequest(
+    string? DisplayName,
+    [property: JsonConverter(typeof(StrictLanguageConverter))] Language? UiLocale) : IRejectsUnknownMembers
 {
     /// <summary>The members the wire model does not declare, as the JSON binder collected them.</summary>
     [JsonExtensionData]
     public Dictionary<string, JsonElement>? Extra { get; set; }
 
-    /// <inheritdoc />
-    [JsonIgnore]
-    public IReadOnlyCollection<string> UnknownMembers => Extra?.Keys ?? (IReadOnlyCollection<string>)[];
+    /// <summary>
+    /// Explicit on purpose: a public property of this name would be matched by a JSON member of the same name
+    /// (any case) and silently dropped when marked <c>[JsonIgnore]</c>, so <c>"unknownMembers":1</c> would slip
+    /// past the strict binding. As an explicit implementation the serializer cannot see it, and every member that
+    /// is not <c>displayName</c>/<c>uiLocale</c> lands in <see cref="Extra"/>.
+    /// </summary>
+    IReadOnlyCollection<string> IRejectsUnknownMembers.UnknownMembers =>
+        Extra?.Keys ?? (IReadOnlyCollection<string>)[];
+}
+
+/// <summary>
+/// Reads <c>uiLocale</c> as exactly the lowercase wire value (<c>vi</c>/<c>en</c>, 09 README D14/D16); any other
+/// spelling (<c>VI</c>, <c>Vi</c>), number or name is a malformed body, i.e. 400 <c>validation_failed</c>. The global
+/// enum converter is case-insensitive, so this narrows only this one member.
+/// </summary>
+internal sealed class StrictLanguageConverter : JsonConverter<Language?>
+{
+    public override Language? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        if (reader.TokenType is JsonTokenType.Null)
+        {
+            return null;
+        }
+
+        return reader.TokenType is JsonTokenType.String
+            ? reader.GetString() switch
+            {
+                "vi" => Language.Vi,
+                "en" => Language.En,
+                _ => throw new JsonException("ui_locale_unknown"),
+            }
+            : throw new JsonException("ui_locale_unknown");
+    }
+
+    public override void Write(Utf8JsonWriter writer, Language? value, JsonSerializerOptions options)
+    {
+        if (value is { } language)
+        {
+            writer.WriteStringValue(language == Language.Vi ? "vi" : "en");
+        }
+        else
+        {
+            writer.WriteNullValue();
+        }
+    }
 }

@@ -36,21 +36,29 @@ public sealed class UpdateMeHandler(ICurrentUser currentUser, IUserProfileWriter
             return MfaErrors.Unauthenticated();
         }
 
+        // The documented audit shape (09.3.4 plan §5): {"fields":[...],"uiLocale":{"from","to"}}. A name change
+        // records only the field name, never the text (BD16). Nothing changed → empty Summary → no audit row.
         var fields = new List<string>(2);
 
         if (update.DisplayNameChanged)
         {
             fields.Add("displayName");
-            command.Summary["displayName"] = "changed"; // never the name text (BD16)
         }
 
         if (command.UiLocale is { } locale && locale != update.PreviousUiLocale)
         {
             fields.Add("uiLocale");
-            command.Summary["uiLocale"] = $"{Wire(update.PreviousUiLocale)}->{Wire(locale)}";
+            command.Summary["uiLocale"] = new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["from"] = Wire(update.PreviousUiLocale),
+                ["to"] = Wire(locale),
+            };
         }
 
-        command.Summary["fields"] = string.Join(',', fields);
+        if (fields.Count > 0)
+        {
+            command.Summary["fields"] = fields;
+        }
 
         var features = await MeFeatureAllowList.EnabledAsync(flags, cancellationToken).ConfigureAwait(false);
 

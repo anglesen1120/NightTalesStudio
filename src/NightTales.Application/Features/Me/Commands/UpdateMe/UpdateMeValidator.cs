@@ -22,6 +22,7 @@ public sealed class UpdateMeValidator : AbstractValidator<UpdateMeCommand>
                 .Length(1, DisplayNameMaxLength).WithMessage("display_name_length")
                 .Must(value => value == value.Trim()).WithMessage("display_name_untrimmed")
                 .Must(value => !value.Any(char.IsControl)).WithMessage("display_name_control_characters")
+                .Must(value => !ContainsInvisibleFormatting(value)).WithMessage("display_name_invisible_characters")
                 .OverridePropertyName("displayName");
         });
 
@@ -31,5 +32,27 @@ public sealed class UpdateMeValidator : AbstractValidator<UpdateMeCommand>
                 .IsInEnum().WithMessage("ui_locale_unknown")
                 .OverridePropertyName("uiLocale");
         });
+    }
+
+    /// <summary>
+    /// Whether the name carries a Unicode format (Cf: zero-width, bidi override/isolate), line-separator (Zl) or
+    /// paragraph-separator (Zp) character. Such characters render as nothing or reorder the text around them, so a
+    /// name made of them (or hiding them) would impersonate another account. Any name that is empty once its format
+    /// characters are removed contains one, so it is refused here too. Runes, not chars, so supplementary-plane
+    /// format characters (tag characters) are caught.
+    /// </summary>
+    private static bool ContainsInvisibleFormatting(string value)
+    {
+        foreach (var rune in value.EnumerateRunes())
+        {
+            if (System.Text.Rune.GetUnicodeCategory(rune) is System.Globalization.UnicodeCategory.Format
+                or System.Globalization.UnicodeCategory.LineSeparator
+                or System.Globalization.UnicodeCategory.ParagraphSeparator)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 }
