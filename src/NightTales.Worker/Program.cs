@@ -1,40 +1,11 @@
-using System.Globalization;
-using System.Net;
-using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.Hosting;
 using NightTales.Infrastructure.Persistence.Seeding;
-using NightTales.Infrastructure.Realtime;
 using NightTales.Worker;
-using NightTales.Worker.DependencyInjection;
 using NightTales.Worker.Health;
-using Serilog;
 
-// The Worker host (09.2.6-T1 step 3, 09 W3 CR-42): Serilog, the one composition root
-// (AddWorkerServices: persistence, Mediator, jobs, the recurring scan and the health checks), the
-// Hangfire server, and a minimal Kestrel listener for /health/* bound to loopback. 09.9.3-T1
-// replaces the health and logging surface.
-var builder = WebApplication.CreateBuilder(args);
-
-builder.Host.UseSerilog((context, services, configuration) => configuration
-    .ReadFrom.Configuration(context.Configuration)
-    .ReadFrom.Services(services)
-    .WriteTo.Console(formatProvider: CultureInfo.InvariantCulture));
-
-builder.Services.AddWorkerServices(builder.Configuration);
-builder.Services.AddWorkerHangfireServer();
-
-// 09.8.1-T1 (09 README D11/R6): the Worker's outbox handlers are producers, so the Worker needs the
-// notifier too. It is the producer half only — the LISTEN loop and the hub belong to the Api, which is
-// the only host with sockets.
-builder.Services.AddRealtime(builder.Configuration);
-
-var healthPort = builder.Configuration.GetValue(
-    $"{WorkerOptions.SectionName}:{nameof(WorkerOptions.HealthPort)}",
-    WorkerOptions.DefaultHealthPort);
-
-builder.WebHost.ConfigureKestrel(options => options.Listen(IPAddress.Loopback, healthPort));
-
-var app = builder.Build();
+// The Worker host (09.2.6-T1 step 3, 09 W3 CR-42): its composition lives in
+// NightTales.Worker.WorkerApplication.Build, which both this entry point and the composition test use
+// (11.1.1-T1). Here only the `nts-seed` command and the health surface stay.
+var app = WorkerApplication.Build(args);
 
 // 09.2.5-T1: the same `nts-seed` command as the Api (plan §7), so the Worker image needs no extra
 // project to seed. It exits before the Kestrel listener or the Hangfire server start.

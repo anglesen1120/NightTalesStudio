@@ -1,6 +1,29 @@
-# Optional path for e2e and image smoke runs only (09.1.1-T2, 09 W3 CR-35).
-# Daily development uses the native Homebrew postgresql@17 server (docs/dev-setup.md).
+# Optional path for e2e and image smoke runs only (09.1.1-T2, 09 W3 CR-35; 11.1.1-T1).
+# Daily development is native on macOS: tools/dev/up.sh starts the same services without Docker
+# (docs/dev-setup.md, D14, 11 CR-16). Never start both paths at once: 5432/8333/1025 collide.
 name: nighttales
+
+# Environment shared by the two app services. Every value comes from .env (or its default); no
+# credential is ever written in this file (11.1.1-T1 rule 3).
+x-app-env: &app-env
+  ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Development}
+  ConnectionStrings__Postgres: Host=postgres;Port=5432;Database=${POSTGRES_DB:-nighttales};Username=${POSTGRES_USER:-nighttales};Password=${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+
+# The dev-only key material tools/dev/up.sh generates into .nts/dev/config (git-ignored): the ES256
+# signing key travels as an env file (a PEM cannot go through ${...} interpolation), the Data
+# Protection KEK is read from the read-only bind mount. Read-only config, never container state, and
+# nothing is committed (09.3.2-T1, 09.9.4-T1).
+x-dev-app: &dev-app
+  env_file:
+    - path: .nts/dev/config/compose.env
+      required: false
+  volumes:
+    - "${NTS_DEV_CONFIG_DIR:-./.nts/dev/config}:/run/nts-dev:ro"
+
+x-dev-env: &dev-env
+  DataProtection__KekPfxPath: /run/nts-dev/dp-kek.pfx
+  DataProtection__KekPfxPassword: ${DEV_KEK_PASSWORD:?set DEV_KEK_PASSWORD in .env (tools/dev/up.sh generates the PFX with it)}
+
 services:
   postgres:
     image: postgres:17-alpine
@@ -16,5 +39,57 @@ services:
       interval: 5s
       timeout: 3s
       retries: 20
+
+  api:
+    <<: *dev-app
+    build: { context: ., dockerfile: src/NightTales.Api/Dockerfile }
+    image: nighttales-api:dev
+    environment:
+      <<: [*app-env, *dev-env]
+      ASPNETCORE_HTTP_PORTS: "8080;8081"   # public 8080 + internal 8081 (02 D10) [RULED — README §10 T10]
+      # mail/storage settings are appended by 11.1.1-T2
+    ports: ["127.0.0.1:5000:8080"]        # only the public listener is published; 8081 stays on the compose network (T10)
+    depends_on:
+      postgres: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8080/health/live || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 20s
+
+  worker:
+    <<: *dev-app
+    build: { context: ., dockerfile: src/NightTales.Worker/Dockerfile }
+    image: nighttales-worker:dev
+    environment:
+      <<: [*app-env, *dev-env]
+      Worker__HealthPort: "8082"
+    ports: ["127.0.0.1:8082:8082"]        # 09.2.6 Worker health port (the listener binds loopback inside the container)
+    depends_on:
+      postgres: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8082/health/ready || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  web:
+    profiles: ["web"]                      # image defined by 10.1.1-T2 (10 CR-2)
+    build: { context: ./web, dockerfile: Dockerfile }
+    image: nighttales-web:dev
+    ports: ["127.0.0.1:4200:8080"]         # nginx-unprivileged listens on 8080 (10 D3)
+    environment:
+      NTS_CSP_MEDIA_ORIGINS: "http://localhost:8333"   # presigned media host = Storage:PublicServiceUrl (10 CR-21)
+      NTS_API_UPSTREAM: http://api:8080    # dev-only proxy of /api, /hubs, /health to the api service (10.1.1-T2) (api container port 8080, never the internal 8081)
+    depends_on:
+      api: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/healthz || exit 1"]   # 10 CR-2
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
 volumes:
   pgdata: {}
