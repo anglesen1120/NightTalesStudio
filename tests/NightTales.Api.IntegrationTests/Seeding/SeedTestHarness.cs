@@ -2,6 +2,7 @@ using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using NightTales.Domain.Catalog;
 using NightTales.Infrastructure.Persistence;
 using NightTales.Infrastructure.Persistence.Seeding;
 
@@ -22,7 +23,15 @@ internal static class SeedTestHarness
     {
         CatalogFile = Path.Combine(RepoRoot, "seed", "catalog.dev.json"),
         StyleTemplatesFile = Path.Combine(RepoRoot, "seed", "style-templates.v1.json"),
+        VoiceCatalogFile = Path.Combine(RepoRoot, "seed", "voices.v1.json"),
     };
+
+    /// <summary>
+    /// The entries of the committed <c>seed/voices.v1.json</c>, parsed with the production reader, so a
+    /// test asserts "the rows the seeder wrote are the file's entries" instead of a hard-coded revision
+    /// size (04 CR-9).
+    /// </summary>
+    internal static IReadOnlyList<VoiceCatalogEntry> SeedVoices { get; } = ParseSeedVoices();
 
     /// <summary>A host environment for the seeders; Development unless a test says otherwise.</summary>
     internal static IHostEnvironment Environment(string name = "Development")
@@ -41,6 +50,18 @@ internal static class SeedTestHarness
         ];
 
         return new SeedRunner(seeders, db, bound, NullLogger<SeedRunner>.Instance);
+    }
+
+    private static IReadOnlyList<VoiceCatalogEntry> ParseSeedVoices()
+    {
+        var path = Path.Combine(RepoRoot, "seed", "voices.v1.json");
+        var loaded = VoiceCatalogFileReader.Load(File.ReadAllBytes(path));
+        if (loaded.IsError)
+        {
+            throw new InvalidOperationException($"seed/voices.v1.json must load: {loaded.FirstError.Code}");
+        }
+
+        return loaded.Value.Voices;
     }
 
     private static string FindRepoRoot()
