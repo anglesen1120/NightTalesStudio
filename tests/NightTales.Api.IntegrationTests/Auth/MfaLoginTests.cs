@@ -371,6 +371,194 @@ public sealed class MfaLoginTests(TestDatabase database) : IntegrationTest(datab
         (await AuthTestFlow.ProblemCodeAsync(response)).ShouldBe(ErrorCodes.ValidationFailed);
         (await ChallengeStateAsync(user.Id)).ShouldBe($"0:{Live}", "a malformed body costs no attempt");
     }
+    [Fact]
+    public async Task LoginMfa_WrongPreAuthCookie_ReturnsMfaTokenInvalid()
+    {
+        var clock = new FakeClock();
+        using var factory = new ApiFactory(Database, clock);
+        var verifier = new FakeTotpVerifier(_ => true);
+        factory.WithServices(services => Replace(services, verifier));
+        var user = await AuthTestFlow.CreateUserAsync(
+            factory.Services, role: PlatformRole.Admin, twoFactorEnabled: true);
+
+        var challenge = await StartLoginAsync(factory.AnonymousClient(), user, userAgent: null, Ct);
+
+        // The body's mfaToken is right and only the cookie is forged: the fixed-time compare of the two
+        // hashes is what must refuse it — the missing-cookie test never reaches that statement (BD4).
+        var response = await CompleteAsync(
+            factory.AnonymousClient(), challenge, code: DistinctiveCode, recoveryCode: null,
+            cookie: MfaCookieName + "=" + new string('x', 43), userAgent: null, Ct);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
+        (await AuthTestFlow.ProblemCodeAsync(response)).ShouldBe(ErrorCodes.MfaTokenInvalid);
+        verifier.Codes.ShouldBeEmpty("the code is not even verified when the binding fails");
+        (await ChallengeStateAsync(user.Id)).ShouldBe($"0:{Live}", "a forged cookie charges no attempt");
+    }
+
+    [Fact]
+    public async Task LoginMfa_UnknownToken_AnswersTheSameAsAConsumedOne()
+    {
+        var clock = new FakeClock();
+        using var factory = new ApiFactory(Database, clock);
+        factory.WithServices(services => Replace(services, new FakeTotpVerifier(_ => true)));
+        var user = await AuthTestFlow.CreateUserAsync(
+            factory.Services, role: PlatformRole.Admin, twoFactorEnabled: true);
+
+        var challenge = await StartLoginAsync(factory.AnonymousClient(), user, userAgent: null, Ct);
+
+        (await CompleteAsync(
+                factory.AnonymousClient(), challenge, code: DistinctiveCode, recoveryCode: null, userAgent: null, Ct))
+            .StatusCode.ShouldBe(HttpStatusCode.OK);
+
+        // A token that names no row at all must be indistinguishable from a consumed one (BD4): the same
+        // status, the same code and the same sentence — an attacker learns nothing about which half died.
+        var replay = await CompleteAsync(
+            factory.AnonymousClient(), challenge, code: DistinctiveCode, recoveryCode: null, userAgent: null, Ct);
+        var unknown = await CompleteAsync(
+            factory.AnonymousClient(),
+            challenge with { MfaToken = "z" + challenge.MfaToken[1..] },
+            code: DistinctiveCode, recoveryCode: null, userAgent: null, Ct);
+
+        replay.StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
+        unknown.StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
+
+        var replayBody = await JsonAsync(replay, Ct);
+        var unknownBody = await JsonAsync(unknown, Ct);
+        unknownBody.GetProperty("code").GetString().ShouldBe(
+            replayBody.GetProperty("code").GetString());
+        unknownBody.GetProperty("code").GetString().ShouldBe(ErrorCodes.MfaTokenInvalid);
+        unknownBody.GetProperty("title").GetString().ShouldBe(
+            replayBody.GetProperty("title").GetString(),
+            "an invented token and a spent token get the same wording");
+    }
+
+    [Fact]
+    public async Task LoginMfa_NeitherCode_Returns400ValidationFailed()
+    {
+        var clock = new FakeClock();
+        using var factory = new ApiFactory(Database, clock);
+        var verifier = new FakeTotpVerifier(_ => true);
+        factory.WithServices(services => Replace(services, verifier));
+        var user = await AuthTestFlow.CreateUserAsync(
+            factory.Services, role: PlatformRole.Admin, twoFactorEnabled: true);
+
+        var challenge = await StartLoginAsync(factory.AnonymousClient(), user, userAgent: null, Ct);
+
+        // The mutual-exclusion rule runs both ways: an empty body is a malformed request, not a wrong code.
+        var response = await CompleteAsync(
+            factory.AnonymousClient(), challenge, code: null, recoveryCode: null, userAgent: null, Ct);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.BadRequest);
+        (await AuthTestFlow.ProblemCodeAsync(response)).ShouldBe(ErrorCodes.ValidationFailed);
+        verifier.Codes.ShouldBeEmpty();
+        (await ChallengeStateAsync(user.Id)).ShouldBe($"0:{Live}", "a malformed body costs no attempt");
+    }
+
+    [Fact]
+    public async Task LoginMfa_AtExactExpiry_ReturnsMfaTokenInvalid()
+    {
+        var clock = new FakeClock();
+        using var factory = new ApiFactory(Database, clock);
+        var verifier = new FakeTotpVerifier(_ => true);
+        factory.WithServices(services => Replace(services, verifier));
+        var user = await AuthTestFlow.CreateUserAsync(
+            factory.Services, role: PlatformRole.Admin, twoFactorEnabled: true);
+
+        var challenge = await StartLoginAsync(factory.AnonymousClient(), user, userAgent: null, Ct);
+
+        // BD4: the challenge dies at expires_at (the compare is <=), not one request later.
+        clock.Advance(TimeSpan.FromMinutes(5));
+
+        var response = await CompleteAsync(
+            factory.AnonymousClient(), challenge, code: DistinctiveCode, recoveryCode: null, userAgent: null, Ct);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
+        (await AuthTestFlow.ProblemCodeAsync(response)).ShouldBe(ErrorCodes.MfaTokenInvalid);
+        verifier.Codes.ShouldBeEmpty();
+        (await ChallengeStateAsync(user.Id)).ShouldBe($"0:{Live}", "an expired challenge charges nothing");
+    }
+
+    [Fact]
+    public async Task LoginMfa_JustInsideExpiry_StillVerifiesTheCode()
+    {
+        var clock = new FakeClock();
+        using var factory = new ApiFactory(Database, clock);
+        var verifier = new FakeTotpVerifier(_ => false);
+        factory.WithServices(services => Replace(services, verifier));
+        var user = await AuthTestFlow.CreateUserAsync(
+            factory.Services, role: PlatformRole.Admin, twoFactorEnabled: true);
+
+        var challenge = await StartLoginAsync(factory.AnonymousClient(), user, userAgent: null, Ct);
+
+        // The other side of the boundary: one second inside the lifetime the challenge is still live, so
+        // a wrong code is charged as invalid_mfa_code — the expiry check must not bite early.
+        clock.Advance(TimeSpan.FromMinutes(4) + TimeSpan.FromSeconds(59));
+
+        var response = await CompleteAsync(
+            factory.AnonymousClient(), challenge, code: DistinctiveCode, recoveryCode: null, userAgent: null, Ct);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
+        (await AuthTestFlow.ProblemCodeAsync(response)).ShouldBe(ErrorCodes.InvalidMfaCode);
+        verifier.Codes.ShouldHaveSingleItem("the live challenge still reaches the verifier");
+        (await ChallengeStateAsync(user.Id)).ShouldBe($"1:{Live}");
+    }
+
+    [Fact]
+    public async Task LoginMfa_SupersededToken_IsInvalid_AndTheLiveOneStillCompletes()
+    {
+        var clock = new FakeClock();
+        using var factory = new ApiFactory(Database, clock);
+        var verifier = new FakeTotpVerifier(_ => true);
+        factory.WithServices(services => Replace(services, verifier));
+        var user = await AuthTestFlow.CreateUserAsync(
+            factory.Services, role: PlatformRole.Admin, twoFactorEnabled: true);
+
+        // A second password step supersedes the first challenge (BD4): its token and cookie are dead even
+        // though nothing was ever presented with them.
+        var first = await StartLoginAsync(factory.AnonymousClient(), user, userAgent: null, Ct);
+        var second = await StartLoginAsync(factory.AnonymousClient(), user, userAgent: null, Ct);
+        first.MfaToken.ShouldNotBe(second.MfaToken);
+
+        var dead = await CompleteAsync(
+            factory.AnonymousClient(), first, code: DistinctiveCode, recoveryCode: null, userAgent: null, Ct);
+        dead.StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
+        (await AuthTestFlow.ProblemCodeAsync(dead)).ShouldBe(ErrorCodes.MfaTokenInvalid);
+
+        // The supersede must kill only the older row: the newest challenge still completes.
+        var live = await CompleteAsync(
+            factory.AnonymousClient(), second, code: DistinctiveCode, recoveryCode: null, userAgent: null, Ct);
+        live.StatusCode.ShouldBe(HttpStatusCode.OK);
+        Amr(await JsonAsync(live, Ct)).ShouldBe(["otp"]);
+    }
+
+    [Fact]
+    public async Task LoginMfa_WhenTheUserIsGone_ReturnsMfaTokenInvalid()
+    {
+        var clock = new FakeClock();
+        using var factory = new ApiFactory(Database, clock);
+        var verifier = new FakeTotpVerifier(_ => true);
+        factory.WithServices(services => Replace(services, verifier));
+        var user = await AuthTestFlow.CreateUserAsync(
+            factory.Services, role: PlatformRole.Admin, twoFactorEnabled: true);
+
+        var challenge = await StartLoginAsync(factory.AnonymousClient(), user, userAgent: null, Ct);
+
+        // Failure handling: the account deleted between the two steps takes its challenge rows with it
+        // (FK ON DELETE CASCADE), and the completion answers the same 401 as any dead token.
+        await Database.ExecuteAsync($"DELETE FROM users WHERE id = '{user.Id}'", Ct);
+        (await MfaTestFlow.ScalarAsync(
+                Database,
+                $"SELECT count(*)::text FROM auth_challenges WHERE user_id = '{user.Id}'"))
+            .ShouldBe("0", "the cascade removed the challenge with the account");
+
+        var response = await CompleteAsync(
+            factory.AnonymousClient(), challenge, code: DistinctiveCode, recoveryCode: null, userAgent: null, Ct);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
+        (await AuthTestFlow.ProblemCodeAsync(response)).ShouldBe(ErrorCodes.MfaTokenInvalid);
+        verifier.Codes.ShouldBeEmpty();
+    }
+
 
     [Fact]
     public async Task LoginMfa_FirstFailureByAdmin_RaisesSecurityAlert()
