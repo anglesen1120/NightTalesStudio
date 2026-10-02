@@ -66,8 +66,8 @@ Plans 06, 07, 08, 12: not started. Plan 10: approved HTML design handoff and ref
 |---|---|---|
 | 09.3.3-T1 Password reset | merged (#98, develop ee71253; migration 20261002190707) | Last-migration Down ownership moved to `UserActionTokensMigrationTests`, then to `GenerationRunsMigrationTests` (PR #99); `SeedPrevious` has a `user_action_tokens` row. Merge-delta review: 0 code findings, SEC-1 low doc-comment fixed, SEC-2 info (seed hash = sha256("password"), test-only) accepted |
 | 05.3.2-T3 Music metadata | blocked (migration queue) | Not started; at most 2 migration tasks waiting |
-| 02.2.2-T1 M1 domain migration | doing (PR #99; merged develop ee71253, migration regenerated) | QA + T3 reviews + fix + delta closed, full gate green before the merge; re-gate after it. `generation_runs` migration `02_GenerationRuns` regenerated on develop's snapshot after `20261002190707`; last-migration Down ownership is `GenerationRunsMigrationTests` only |
-| 02.2.4-T1 M1 cost persistence | blocked (migration queue) | Not started |
+| 02.2.2-T1 M1 domain migration | doing (PR #99; merged develop ee71253, migration regenerated) | QA + T3 reviews + fix + delta closed; merge review closed; full gate green on merge `9648eb5`. Migration `20261002202751_02_GenerationRuns` (after `20261002190707`); last-migration Down ownership is `GenerationRunsMigrationTests` only |
+| 02.2.4-T1 M1 cost persistence | todo (migration slot free) | Not started; regenerates its migration after #99 merges |
 | 13.3.1-T1 Deletion engine | todo (storage merged) | Lane B next |
 | 09.3.4-T1 /me | todo (flags merged) | Free-slot next |
 | 09.9.3-T1 OTLP | todo (storage + registry merged) | Free-slot next |
