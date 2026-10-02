@@ -79,6 +79,9 @@ public sealed class FeatureFlagsTests
     [InlineData("youtube-publish")]
     [InlineData("youtube publish")]
     [InlineData("a")]
+    [InlineData("youtube_publish\n")]
+    [InlineData("kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk\n")]
+    [InlineData("kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk")]
     public async Task Invalid_key_returns_false_without_a_lookup(string invalid)
     {
         var ct = TestContext.Current.CancellationToken;
@@ -88,6 +91,7 @@ public sealed class FeatureFlagsTests
 
         (await flags.IsEnabledAsync(invalid, ct)).ShouldBeFalse();
         reader.Calls.ShouldBe(0);
+        cache.TryGetValue(FeatureFlagsCache.Key(invalid), out _).ShouldBeFalse();
     }
 
     /// <summary>A 64-character key is the longest accepted one.</summary>

@@ -1,6 +1,3 @@
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.DependencyInjection.Extensions;
-using NightTales.Application.Abstractions.Audit;
 using NightTales.Application.Features.Platform.Flags.Commands;
 using NightTales.Infrastructure.Persistence;
 using NightTales.TestKit;
@@ -9,6 +6,7 @@ using NightTales.TestKit.Threading;
 using NightTales.TestKit.Time;
 using NightTales.Worker;
 using NightTales.Worker.Cli;
+using Npgsql;
 using Shouldly;
 using Xunit;
 
@@ -67,29 +65,37 @@ public sealed class FeatureFlagCliTests(TestDatabase database) : IntegrationTest
         outbox[0].ShouldContain("true");
     }
 
-    /// <summary>A fault-injected audit writer rolls the change back with the row it failed to record.</summary>
+    /// <summary>A refused audit insert at commit rolls back the transition and reports a typed failure.</summary>
     [Fact]
     public async Task Set_with_a_failing_audit_writer_changes_neither_row()
     {
         await ResetAsync();
         await SetFlagAsync(Key, enabled: false);
+        await Database.ExecuteAsync(
+            $"ALTER TABLE audit_logs ADD CONSTRAINT nts_flags_refuse_audit CHECK (action <> '{SetFeatureFlagCommandHandler.AuditAction}') NOT VALID",
+            Ct);
 
-        await using var host = new WorkerHost(Database, new FakeClock())
-            .ConfigureServices(services =>
-            {
-                services.RemoveAll<IAuditWriter>();
-                services.AddScoped<IAuditWriter, FailingAuditWriter>();
-            });
+        try
+        {
+            await using var host = await StartHostAsync();
+            var (exit, output, error) = Run(host, ["flags", "set", Key, "on"]);
 
-        await host.StartAsync(Ct);
-        var (exit, _, _) = Run(host, ["flags", "set", Key, "on"]);
-
-        exit.ShouldBe(2, "an injected failure is a failed command, not a validation one");
-        (await Database.QueryStringsAsync(
-            $"SELECT enabled::text FROM feature_flags WHERE key = '{Key}'",
-            Ct)).ShouldBe(["false"], "the update commits only with its audit row (D5)");
-        (await AuditRowsAsync()).ShouldBeEmpty();
-        (await OutboxRowsAsync()).ShouldBeEmpty("the queued event rolls back with the change it announces");
+            exit.ShouldBe(2);
+            output.ShouldBeEmpty();
+            error.ShouldNotBeNullOrWhiteSpace();
+            error.ShouldContain("service_unavailable", Case.Sensitive, "the commit maps the provider failure to a typed error");
+            error.ShouldNotContain("nts_flags_refuse_audit");
+            error.ShouldNotContain("   at ");
+            (await Database.QueryStringsAsync(
+                $"SELECT enabled::text FROM feature_flags WHERE key = '{Key}'",
+                Ct)).ShouldBe(["false"], "the update commits only with its audit row (D5)");
+            (await AuditRowsAsync()).ShouldBeEmpty();
+            (await OutboxRowsAsync()).ShouldBeEmpty();
+        }
+        finally
+        {
+            await Database.ExecuteAsync("ALTER TABLE audit_logs DROP CONSTRAINT nts_flags_refuse_audit", Ct);
+        }
     }
 
     [Fact]
@@ -143,33 +149,51 @@ public sealed class FeatureFlagCliTests(TestDatabase database) : IntegrationTest
             Ct)).Count.ShouldBe(1, "the no-op set publishes nothing");
     }
 
-    /// <summary>
-    /// Two operators racing the same flag to the same value (the failure table's "concurrent set"):
-    /// both succeed, the row holds one committed state, and the audit shows the real transitions only —
-    /// one if one writer saw the other's commit, two if both read first.
-    /// </summary>
+    /// <summary>Both writers reach their UPDATE before the row lock is released; only one transition exists.</summary>
     [Fact]
-    public async Task Concurrent_sets_commit_one_state_and_bounded_audit()
+    public async Task Concurrent_sets_commit_one_state_and_one_audit()
     {
         await ResetAsync();
         await SetFlagAsync(Key, enabled: false);
-
         await using var host = await StartHostAsync();
+        await using var connection = new NpgsqlConnection(Database.ConnectionString);
+        await connection.OpenAsync(Ct);
+        await using var transaction = await connection.BeginTransactionAsync(Ct);
+        await using (var command = new NpgsqlCommand("SELECT key FROM feature_flags FOR UPDATE", connection, transaction))
+        {
+            await command.ExecuteScalarAsync(Ct);
+        }
 
         var first = Task.Run(() => Run(host, ["flags", "set", Key, "on"]), Ct);
         var second = Task.Run(() => Run(host, ["flags", "set", Key, "on"]), Ct);
-        await Task.WhenAll(first, second);
+        try
+        {
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(Ct);
+            timeout.CancelAfter(TimeSpan.FromSeconds(15));
+            while ((await Database.QueryStringsAsync(
+                       "SELECT pid::text FROM pg_stat_activity WHERE datname = current_database() "
+                       + "AND wait_event_type = 'Lock' AND query LIKE 'UPDATE%feature_flags%'",
+                       timeout.Token)).Count != 2)
+            {
+                await Task.Delay(10, timeout.Token);
+            }
+        }
+        finally
+        {
+            await transaction.RollbackAsync(Ct);
+            await Task.WhenAll(first, second);
+        }
 
         first.Result.Exit.ShouldBe(0);
         second.Result.Exit.ShouldBe(0);
-
+        new[] { first.Result.Output, second.Result.Output }
+            .Count(output => output.Contains("(changed)", StringComparison.Ordinal)).ShouldBe(1);
+        new[] { first.Result.Output, second.Result.Output }
+            .Count(output => output.Contains("(unchanged)", StringComparison.Ordinal)).ShouldBe(1);
         (await Database.QueryStringsAsync(
-            $"SELECT enabled::text FROM feature_flags WHERE key = '{Key}'",
-            Ct)).ShouldBe(["true"], "last committed write wins on a single-row update");
-
-        var audits = await AuditRowsAsync();
-        audits.Count.ShouldBeInRange(1, 2, "only real transitions are audited");
-        audits.ShouldAllBe(row => row.Contains(Key), "every audit names the flag that changed");
+            $"SELECT enabled::text FROM feature_flags WHERE key = '{Key}'", Ct)).ShouldBe(["true"]);
+        (await AuditRowsAsync()).Count.ShouldBe(1);
+        (await OutboxRowsAsync()).Count.ShouldBe(1);
     }
 
     [Fact]
@@ -188,6 +212,20 @@ public sealed class FeatureFlagCliTests(TestDatabase database) : IntegrationTest
         badState.ShouldBe(1);
         noVerb.ShouldBe(1);
         (await AuditRowsAsync()).ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task Newline_key_is_validation_failed_before_any_database_lookup()
+    {
+        await using var host = new WorkerHost(Database, new FakeClock())
+            .WithSetting(
+                $"ConnectionStrings:{PersistenceOptions.ConnectionStringName}",
+                "Host=127.0.0.1;Port=1;Database=nts_flags_down;Username=nts;Password=nts;Timeout=1");
+        await host.StartAsync(Ct);
+        var (exit, output, error) = Run(host, ["flags", "set", Key + "\n", "on"]);
+        exit.ShouldBe(1, "validation precedes the unreachable database");
+        output.ShouldBeEmpty();
+        error.ShouldContain("validation_failed");
     }
 
     [Fact]
@@ -324,11 +362,4 @@ public sealed class FeatureFlagCliTests(TestDatabase database) : IntegrationTest
             + "ON CONFLICT (key) DO UPDATE SET enabled = EXCLUDED.enabled, updated_at = now()",
             Ct);
 
-    /// <summary>The injected writer: it fails where the row would have been recorded.</summary>
-    private sealed class FailingAuditWriter : IAuditWriter
-    {
-        /// <inheritdoc />
-        public Task WriteAsync(AuditEntry entry, CancellationToken cancellationToken) =>
-            throw new InvalidOperationException("injected audit failure");
-    }
 }

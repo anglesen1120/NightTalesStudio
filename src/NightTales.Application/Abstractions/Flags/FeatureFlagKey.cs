@@ -28,8 +28,8 @@ public static partial class FeatureFlagKey
     /// <summary>The longest accepted key.</summary>
     public const int MaxLength = 64;
 
-    /// <summary>The accepted shape, as the design fixes it: <c>^[a-z][a-z0-9_]{1,63}$</c>.</summary>
-    public const string Pattern = "^[a-z][a-z0-9_]{1,63}$";
+    /// <summary>The complete-input shape: <c>\A[a-z][a-z0-9_]{1,63}\z</c>, including the length bound.</summary>
+    public const string Pattern = @"\A[a-z][a-z0-9_]{1,63}\z";
 
     /// <summary>Whether <paramref name="key"/> may name a feature flag.</summary>
     /// <param name="key">The candidate key; <see langword="null"/> is invalid.</param>

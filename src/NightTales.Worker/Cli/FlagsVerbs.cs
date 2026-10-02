@@ -1,6 +1,8 @@
 using Mediator;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
+using NightTales.Application.Abstractions.Flags;
+using NightTales.Application.Common.Errors;
 using NightTales.Application.Features.Platform.Flags.Commands;
 using NightTales.Application.Features.Platform.Flags.Queries;
 
@@ -152,6 +154,13 @@ public static class FlagsCommand
         TextWriter stderr,
         CancellationToken ct)
     {
+        // UnitOfWork begins a database transaction before dispatching the handler; reject malformed
+        // command-line keys here so validation requires no connection at all.
+        if (!FeatureFlagKey.IsValid(key))
+        {
+            return Fail(stderr, $"nts-worker flags set failed: {ErrorCodes.ValidationFailed}");
+        }
+
         if (!TryParseState(state, out var enabled))
         {
             return Fail(stderr, $"'{state}' is not on|off." + Environment.NewLine + Usage);
@@ -174,7 +183,7 @@ public static class FlagsCommand
                 // database that cannot answer is exit 2 (09.9.2-T2 §Operator CLI).
                 var code = Codes(result.Errors);
 
-                return IsValidation(result.Errors) ? Fail(stderr, $"nts-worker flags set failed: {code}") : 2;
+                return Fail(stderr, $"nts-worker flags set failed: {code}", IsValidation(result.Errors) ? 1 : 2);
             }
 
             stdout.WriteLine(

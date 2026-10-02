@@ -75,30 +75,13 @@ public sealed class SetFeatureFlagCommandHandler(
                 + "a lowercase letter followed by lowercase letters, digits or underscores.");
         }
 
-        var current = await database.FeatureFlags
-            .AsNoTracking()
-            .Where(flag => flag.Key == command.Key)
-            .Select(flag => (bool?)flag.Enabled)
-            .SingleOrDefaultAsync(cancellationToken)
-            .ConfigureAwait(false);
-
-        if (current is null)
-        {
-            // A valid key with no row: the seed catalog never made this flag, so there is nothing to flip
-            // (09.9.2-T2 failure table). The CLI turns this into exit 1 without an audit row.
-            return Errors.NotFound();
-        }
-
-        if (current.Value == command.Enabled)
-        {
-            return new FeatureFlagSetDto(command.Key, command.Enabled, Changed: false);
-        }
-
         var now = clock.UtcNow;
 
-        // Set-based update: it bypasses both interceptors, so updated_at is written here (09 README D8).
+        // Test the transition in the UPDATE itself: ReadCommitted rechecks this predicate after a
+        // concurrent writer releases the row lock. Only the winner records a real state change.
+        // ExecuteUpdate bypasses the interceptors, so updated_at is written here (09 README D8).
         var affected = await database.FeatureFlags
-            .Where(flag => flag.Key == command.Key)
+            .Where(flag => flag.Key == command.Key && flag.Enabled != command.Enabled)
             .ExecuteUpdateAsync(
                 setters => setters
                     .SetProperty(flag => flag.Enabled, command.Enabled)
@@ -108,9 +91,16 @@ public sealed class SetFeatureFlagCommandHandler(
 
         if (affected == 0)
         {
-            // The row disappeared between the read and the update (a concurrent delete the mechanism does
-            // not have in P). Nothing changed, so nothing is recorded.
-            return Errors.NotFound();
+            var exists = await database.FeatureFlags
+                .AsNoTracking()
+                .AnyAsync(flag => flag.Key == command.Key, cancellationToken)
+                .ConfigureAwait(false);
+
+            // Zero affected rows means either a no-op (including a same-target racing writer) or
+            // a key the catalog never created. Neither case records an audit/event/notification.
+            return exists
+                ? new FeatureFlagSetDto(command.Key, command.Enabled, Changed: false)
+                : Errors.NotFound();
         }
 
         await audit.WriteAsync(

@@ -90,18 +90,24 @@ public static class WorkerApplication
         return builder.Build();
     }
 
-    /// <summary>
-    /// The subset of <paramref name="args"/> the host's command-line configuration provider accepts: a
-    /// switch (<c>--seed</c>, <c>--urls</c>) or a <c>key=value</c> pair.
-    /// </summary>
-    /// <remarks>
-    /// The verb host of 09.9.2-T2 (<c>nts-worker flags list</c>) and 11.3.3-T1 (<c>nts-worker nodes …</c>)
-    /// passes bare words the provider would reject at build time, so they are dropped here rather than
-    /// reaching <see cref="WebApplication.CreateBuilder(string[])"/>. The verb itself is read from the
-    /// original <c>args</c> by <c>Program</c>; nothing an operator can put in a host setting is lost,
-    /// because a positional token was never a valid setting.
-    /// </remarks>
+    /// <summary>Preserves host settings, removing only a leading flags command's positional arguments.</summary>
     /// <param name="args">The process arguments.</param>
-    public static string[] HostArguments(string[] args) =>
-        [.. args.Where(arg => arg.StartsWith('-') || arg.Contains('=', StringComparison.Ordinal))];
+    public static string[] HostArguments(string[] args)
+    {
+        ArgumentNullException.ThrowIfNull(args);
+
+        if (!FlagsCommand.IsFlagsVerb(args))
+        {
+            return args;
+        }
+
+        var prefixLength = args.Length > 1 ? args[1] switch
+        {
+            "list" => 2,
+            "set" => Math.Min(4, args.Length),
+            _ => 1,
+        } : 1;
+
+        return args[prefixLength..];
+    }
 }
