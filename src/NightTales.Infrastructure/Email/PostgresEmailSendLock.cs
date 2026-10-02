@@ -29,6 +29,11 @@ namespace NightTales.Infrastructure.Email;
 /// share that prefix and two unrelated sends would serialise — and, under a non-blocking lock, one of them
 /// would be dropped.
 /// </para>
+/// <para>
+/// One in-flight send holds one pooled connection (the job's own) for as long as it holds the lock, and the
+/// job releases it before writing a compensating failure through another scope — so the Worker's
+/// <c>Jobs:Workers:&lt;queue&gt;</c> count must stay below the Npgsql pool size.
+/// </para>
 /// </remarks>
 internal sealed class PostgresEmailSendLock : IEmailSendLock
 {
@@ -137,6 +142,11 @@ internal sealed class PostgresEmailSendLock : IEmailSendLock
     }
 
     /// <summary>Owns the connection the lock lives on; disposing releases the lock and the connection.</summary>
+    /// <remarks>
+    /// Disposal is idempotent: the job releases the handle early on the one path that writes a compensating
+    /// failure through another connection, and the scope-exit disposal of the same handle must then be a
+    /// no-op instead of a second unlock on a closed connection.
+    /// </remarks>
     /// <param name="database">The job's write model, whose connection was opened for the lock.</param>
     /// <param name="connection">The connection whose session holds the lock.</param>
     /// <param name="first">The first key of the pair.</param>
@@ -147,9 +157,18 @@ internal sealed class PostgresEmailSendLock : IEmailSendLock
         int first,
         int second) : IAsyncDisposable
     {
+        private bool _released;
+
         /// <inheritdoc />
         public async ValueTask DisposeAsync()
         {
+            if (_released)
+            {
+                return;
+            }
+
+            _released = true;
+
             try
             {
                 await UnlockAsync(connection, first, second).ConfigureAwait(false);

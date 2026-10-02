@@ -54,10 +54,17 @@ namespace NightTales.Application.Features.Email.Jobs;
 /// template and the message id rather than the transport's own text, which echoes the recipient.
 /// </para>
 /// <para>
+/// <b>Each in-flight send holds one pooled connection</b> for as long as it holds the lock (the job's own
+/// <see cref="IAppDbContext"/> connection), so the Worker's <c>Jobs:Workers:&lt;queue&gt;</c> count must stay
+/// below the Npgsql pool size; the job releases the lock before it writes a compensating failure through
+/// another scope, so it never holds two.
+/// </para>
+/// <para>
 /// <b>The one write a failed attempt must not make through this scope is the <c>sent</c> one.</b> If the
 /// SMTP server accepted the message and the commit of its record then failed, the tracked entity already
-/// holds the in-memory <c>sent</c> state (its <c>params</c> cleared), so the failure is recorded through a
-/// scope of its own; see <see cref="RecordFailureOnFreshScopeAsync"/>.
+/// holds the in-memory <c>sent</c> state (its <c>params</c> cleared), so the lock is released and the
+/// failure is recorded through a guarded write in a scope of its own; see
+/// <see cref="RecordFailureOnFreshScopeAsync"/>.
 /// </para>
 /// <para>
 /// It calls <c>SaveChangesAsync</c> itself: 09 README D5's "handlers never save" rule is about Mediator
@@ -227,11 +234,14 @@ public sealed partial class SendEmailJob(
                 // The server accepted the message and only the commit of its record failed. The attempt is
                 // still recorded as failed — the row must never look queued after an attempt was made
                 // (09.2.6-T3 L113) — but not through this scope: `Sent` already cleared the tracked entity's
-                // params in memory, and reloading the row in this context would return that same dirty
-                // instance. A scope of its own writes the failure onto the committed row, whose params and
-                // `sent_at` are untouched, so Hangfire's retry re-reads and re-sends it (at-least-once)
-                // instead of crashing on a nulled row (09.2.6-T3 CR3).
+                // params in memory. The send lock is released first, so the job holds one pooled connection
+                // at a time, and the fresh scope's guarded write then records the failure without ever
+                // moving a row another attempt already committed as `sent`. The values stay, so Hangfire's
+                // retry re-reads and re-sends (at-least-once) instead of crashing on a nulled row
+                // (09.2.6-T3 CR3, DELTA-EMAIL-003/004).
                 metrics.Failed(row.Template, failureCode);
+
+                await sendLock.DisposeAsync().ConfigureAwait(false);
 
                 await RecordFailureOnFreshScopeAsync(owner.Value, emailMessageId, failureCode, cancellationToken)
                     .ConfigureAwait(false);
@@ -300,16 +310,24 @@ public sealed partial class SendEmailJob(
     /// <c>sent</c> record failed.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// <see cref="DomainEmailMessage.Sent"/> already cleared the tracked entity's <c>params</c> in memory,
     /// so writing that instance as <c>failed</c> would store a row that is neither sent nor retryable (its
-    /// values are gone and its <c>sent_at</c> is set — the CR3 defect). The fresh scope reloads the row as
-    /// the last commit left it and moves it to <c>failed</c> with the code, which keeps the failure-state
-    /// contract (09.2.6-T3 L113: record, then rethrow) and leaves the values a retry needs (at-least-once).
+    /// values are gone and its <c>sent_at</c> is set — the CR3 defect). The fresh scope writes the failure
+    /// onto the committed row instead, which keeps the failure-state contract (09.2.6-T3 L113: record, then
+    /// rethrow) and leaves the values a retry needs (at-least-once).
+    /// </para>
+    /// <para>
+    /// <b>The write is guarded</b> (<c>status &lt;&gt; sent</c>): this attempt is not the only writer. A
+    /// second worker that took the lock after this one released it may have committed <c>sent</c> in the
+    /// meantime, and a <c>sent</c> row must never be moved back to <c>failed</c> — the guard makes the last
+    /// outcome win, so the compensating write is a no-op on a delivered row.
+    /// </para>
     /// </remarks>
     /// <param name="userId">The owner the fresh scope is pinned to, so the tenant filter admits the row.</param>
-    /// <param name="emailMessageId">The row to fail.</param>
+    /// <param name="emailMessageId">The row to fail, if it is not already sent.</param>
     /// <param name="code">The failure code to record.</param>
-    /// <param name="cancellationToken">Cancels the reload and the commit.</param>
+    /// <param name="cancellationToken">Cancels the write.</param>
     private async Task RecordFailureOnFreshScopeAsync(
         Guid userId,
         Guid emailMessageId,
@@ -322,19 +340,19 @@ public sealed partial class SendEmailJob(
         using var pinned = scope.ServiceProvider.GetRequiredService<ISystemContext>().For(userId);
 
         var database = scope.ServiceProvider.GetRequiredService<IAppDbContext>();
-        var row = await database
+
+        // A direct UPDATE, not a reload: `ExecuteUpdateAsync` never materialises the row, so the tracked
+        // entity of the job's own scope is irrelevant to it, and the `status <> sent` guard is evaluated by
+        // the database at write time.
+        _ = await database
             .EmailMessages
-            .FirstOrDefaultAsync(message => message.Id == emailMessageId, cancellationToken)
+            .Where(message => message.Id == emailMessageId && message.Status != EmailStatus.Sent)
+            .ExecuteUpdateAsync(
+                setters => setters
+                    .SetProperty(message => message.Status, EmailStatus.Failed)
+                    .SetProperty(message => message.LastErrorCode, code),
+                cancellationToken)
             .ConfigureAwait(false);
-
-        if (row is null)
-        {
-            return;
-        }
-
-        row.Failed(code, clock.UtcNow);
-
-        await database.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>The composed message: the deterministic id, the accepted sender, the current address.</summary>

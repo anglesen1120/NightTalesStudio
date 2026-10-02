@@ -368,6 +368,63 @@ public sealed class EmailEdgeCaseTests(TestDatabase database) : IntegrationTest(
     }
 
     [Fact]
+    public async Task SendEmailJob_PostSendFailure_RowAlreadySentIsNotFailed()
+    {
+        var ct = TestContextToken.Value;
+        var owner = await Database.CreateUserBuilder().CreateAsync(ct: ct);
+        await using var harness = await EmailHarness.StartAsync(Database, new FakeClock(), ct);
+
+        var id = await harness.QueueAsync(
+            owner.Id,
+            "password_changed",
+            Language.Vi,
+            EmailHarness.Values(("displayName", "A"), ("occurredAt", "2026-01-01 00:00")),
+            ct);
+
+        // The job is driven directly, so the outbox row the queue wrote is dropped: it must not leak into
+        // another test of the shared class database.
+        await Database.ExecuteAsync($"DELETE FROM outbox_messages WHERE user_id = '{owner.Id}'", ct);
+
+        // Only this attempt's own `sent` write — the deterministic Message-Id — breaks; a concurrent
+        // attempt's write, which carries a provider id of its own, goes through.
+        await Database.ExecuteAsync(
+            "CREATE FUNCTION nts_block_job_sent() RETURNS trigger AS $$ BEGIN IF NEW.status = 'sent' AND NEW.provider_message_id = '<' || NEW.id::text || '@nighttales.app>' THEN RAISE EXCEPTION 'nts test: job sent write blocked'; END IF; RETURN NEW; END; $$ LANGUAGE plpgsql",
+            ct);
+        await Database.ExecuteAsync(
+            "CREATE TRIGGER nts_block_job_sent BEFORE UPDATE ON email_messages FOR EACH ROW EXECUTE FUNCTION nts_block_job_sent()",
+            ct);
+
+        try
+        {
+            harness.Smtp.HoldCalls = true;
+
+            var attempt = Task.Run(() => harness.RunJobOnceAsync(id, ct), ct);
+            await harness.Smtp.FirstCall.WaitAsync(TimeSpan.FromSeconds(30), ct);
+
+            // A second worker delivers and records the message while this attempt is inside SMTP.
+            await Database.ExecuteAsync(
+                $"UPDATE email_messages SET status = 'sent', sent_at = now(), provider_message_id = '<concurrent-winner@test>', params = NULL WHERE id = '{id}'",
+                ct);
+
+            harness.Smtp.Release();
+
+            // This attempt's `sent` commit fails; it still records the failure and rethrows, but the guarded
+            // write must not move the row the other attempt committed back to `failed` (DELTA-EMAIL-003).
+            await Should.ThrowAsync<EmailSendFailedException>(() => attempt);
+
+            SqlProbe.ScalarText(Database, $"SELECT status FROM email_messages WHERE id = '{id}'").ShouldBe("sent");
+            SqlProbe.ScalarText(Database, $"SELECT provider_message_id FROM email_messages WHERE id = '{id}'")
+                .ShouldBe("<concurrent-winner@test>");
+            SqlProbe.Count(Database, $"SELECT count(*) FROM email_messages WHERE id = '{id}' AND sent_at IS NOT NULL").ShouldBe(1);
+        }
+        finally
+        {
+            await Database.ExecuteAsync("DROP TRIGGER nts_block_job_sent ON email_messages", ct);
+            await Database.ExecuteAsync("DROP FUNCTION nts_block_job_sent()", ct);
+        }
+    }
+
+    [Fact]
     public async Task QueueAsync_OversizedValue_IsStoredAndSent()
     {
         var ct = TestContextToken.Value;
