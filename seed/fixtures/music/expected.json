@@ -55,6 +55,10 @@
     "ok": false,
     "code": "source_url_invalid"
   },
+  "invalid-source-url-malformed": {
+    "ok": false,
+    "code": "source_url_invalid"
+  },
   "invalid-empty-tracks": {
     "ok": false,
     "code": "music_catalog_invalid"

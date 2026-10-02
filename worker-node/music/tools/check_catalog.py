@@ -146,8 +146,12 @@ def _loads_strict(text: str):
 def _is_https_url(value) -> bool:
     if not _is_text(value):
         return False
-    parts = urlsplit(value)
-    return parts.scheme == "https" and bool(parts.hostname)
+    try:
+        parts = urlsplit(value)
+        host = parts.hostname
+    except ValueError:
+        return False
+    return parts.scheme == "https" and bool(host)
 
 
 def check_json(doc: dict) -> tuple[list[dict], dict]:
