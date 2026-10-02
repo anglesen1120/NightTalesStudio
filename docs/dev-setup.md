@@ -173,6 +173,21 @@ The database-backed migration tests also carry `Category=Integration`, so the in
 runs them as well; `Category=Migration` is the focused signal for a schema change. The
 destructive-operation scan needs no database, so the unit job runs it too.
 
+For the live Storage suite, start the native SeaweedFS gateway with `tools/dev/up.sh` and prepare the
+dev buckets with `tools/dev/storage-init.sh` when available. Reuse the Release build above:
+
+```bash
+NTS_STORAGE_URL=http://127.0.0.1:8333 \
+  dotnet test tests/NightTales.Api.IntegrationTests -c Release --no-build \
+  --filter "Category=Storage" --minimum-expected-tests 1
+```
+
+The test defaults are the native emulator credentials `dev` / `dev-secret-local`. If the gateway
+uses custom credentials, set `NTS_STORAGE_ACCESS_KEY` and `NTS_STORAGE_SECRET_KEY` explicitly to
+those values; these overrides take precedence over the defaults. Set `NTS_STORAGE_URL` to the actual
+gateway URL if its port differs. Without that URL the object-store tests skip rather than exercising
+SeaweedFS; check the test totals and skip counts.
+
 
 ```bash
 # The same build-time environment as the block above (the Api validates `App:PublicOrigin` and the

@@ -134,9 +134,15 @@ public static class WorkerServiceCollectionExtensions
         services.AddSingleton<OutboxDispatcher>();
         services.AddSingleton<IHostedService>(OutboxDispatcherLoopFactory);
 
+        // 09.7.2-T1 (09 README BD10/BD12): the blob store, its health cache and the prober. The sweep
+        // (09.7.3-T1), the render ingest (09.6.3-T2) and 02's fetcher path all call it here; the
+        // readiness check below reads only the cache the prober fills (BD16).
+        services.AddStorage(configuration);
+
         services.AddHealthChecks()
             .AddCheck<DatabaseHealthCheck>("database")
-            .AddCheck<HangfireStorageHealthCheck>("hangfire");
+            .AddCheck<HangfireStorageHealthCheck>("hangfire")
+            .AddCheck<StorageHealthCheck>(StorageHealthCheck.Name);
 
         return services;
     }

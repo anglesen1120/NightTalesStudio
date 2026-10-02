@@ -21,7 +21,7 @@ Out of scope: render submit/poll/ingest (09.6.1-T1, 09.6.3-T1/T2), the episode r
 
 ## 2. Confirmed facts
 
-- **W5** `AWSSDK.S3` **4.0.103.4** (v4 line), Apache-2.0; `GetPreSignedUrlRequest.ResponseHeaderOverrides.ContentDisposition` exists ✅; the client **method names are ⚠️ unverified** → pin them in 09.7.2-T1 step 1 with a compile spike.
+- **W5** `AWSSDK.S3` **4.0.103.4** (v4 line), Apache-2.0; `GetPreSignedUrlRequest.ResponseHeaderOverrides.ContentDisposition` exists ✅; the client method names are **✅ verified** — pinned by 09.7.2-T1's step-1 spike (2026-10-01) and recorded in that task file's Notes, including the two v4 traps it found: `RegionEndpoint` and `ServiceURL` are mutually exclusive, and there is no `PaginatedListObjectsV2Async` on the client (paging is manual).
 - **W12 / N14** Hangfire recurring jobs are cron-based and polled every 15 s → `0 3 * * *` (UTC) is a safe daily cadence; a 10 s job would not be.
 - **W15 / WF03** 02.5.2-T2 already calls `IBlobStore` "(09)" and no 09 task owned it; **BD10** gives the port, the S3 implementation and the video URL to 09.7.2-T1 (M), and 09.6.3-T2 also needs it. **BD1** lists the consumers: 02.5.2-T2, 09.6.3-T2, 09.7.3-T1, 13.3.1-T1.
 - **BD10** `IBlobStore` (Application/Abstractions/Storage) with `PutAsync`, `OpenReadAsync`, `DeleteAsync`, `ExistsAsync`, `CreateReadUrl(bucket, key, ttl, downloadFileName) → Uri`; `S3BlobStore` on AWSSDK.S3 4.x; endpoint/credentials from `Storage:*` (shared secrets); buckets from 11 D15; **path-style in every env** (BD10 said "dev emulator" — amended: the gateway has no per-bucket DNS, 11 CR-15/T75); `GET /episodes/{id}/video-url` → `{ url, expiresAt }`, TTL **15 min**, audit row.

@@ -6,9 +6,8 @@ using NightTales.Infrastructure.Security;
 namespace NightTales.Api.DependencyInjection;
 
 /// <summary>
-/// The authorization surface of 09.10.4-T1 ([RULED — README §B10 WT34]): the fallback policy that rejects
-/// the enrolment-only token everywhere, and the <c>MfaEnrolment</c> policy that lets it reach the two
-/// enrolment routes.
+/// The authorization surface of 09.10.4-T1 ([RULED — README §B10 WT34]): default and fallback policies
+/// reject the enrolment-only token; <c>MfaEnrolment</c> lets it reach the two enrolment routes.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -17,10 +16,9 @@ namespace NightTales.Api.DependencyInjection;
 /// </para>
 /// <list type="number">
 /// <item><description>
-/// the <em>fallback</em> authorization policy, which every endpoint without its own authorization
-/// metadata is evaluated against: it requires the caller <em>not</em> to hold that scope, so an
-/// enrolment token is refused everywhere by default — including routes that never asked for
-/// authorization at all (health, anonymous routes are skipped only where they explicitly say so).
+/// the default and fallback authorization policies reject that scope. The default policy also requires
+/// authentication for endpoints with <c>RequireAuthorization()</c>; fallback keeps the Application
+/// pipeline's anonymous-response contract for endpoints without authorization metadata.
 /// </description></item>
 /// <item><description>
 /// the <c>MfaEnrolment</c> policy on <c>/me/mfa/setup</c> and <c>/me/mfa/verify</c>, which requires
@@ -58,6 +56,11 @@ public static class MfaAuthorizationServiceCollectionExtensions
         {
             // WT34: the enrolment-only token reaches these two routes and no other.
             options.AddPolicy(MfaEnrolmentPolicy, policy => policy.RequireAuthenticatedUser());
+
+            options.DefaultPolicy = new AuthorizationPolicyBuilder()
+                .RequireAuthenticatedUser()
+                .RequireAssertion(context => !IsEnrolmentToken(context.User))
+                .Build();
 
             options.FallbackPolicy = new AuthorizationPolicyBuilder()
                 .RequireAssertion(context => !IsEnrolmentToken(context.User))
