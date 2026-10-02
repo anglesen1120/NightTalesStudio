@@ -49,6 +49,10 @@ die() { local code="$1"; shift; log "ERROR: $*"; exit "$code"; }
 repo_root="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$repo_root"
 
+# Shared helpers (service patterns, process identity, the Homebrew cluster check) live in lib.sh.
+# shellcheck source=tools/dev/lib.sh
+. "$repo_root/tools/dev/lib.sh"
+
 env_file="$repo_root/.env"
 example_file="$repo_root/.env.example"
 nts_dev="${NTS_HOME:-$repo_root/.nts}/dev"
@@ -96,32 +100,14 @@ row() {
   printf '%s' "$fallback"
 }
 
-# service_pattern NAME: the substring that identifies a process this script started. down.sh keeps
-# the same table, so a pid file that names a recycled pid is never treated as ours.
-service_pattern() {
-  case "$1" in
-    api) printf 'NightTales.Api' ;;
-    worker) printf 'NightTales.Worker' ;;
-    mock) printf 'tools/mock-mpt' ;;
-    web) printf 'node' ;;
-    seaweedfs) printf 'weed' ;;
-    mailpit) printf 'mailpit' ;;
-    *) printf '%s' "$1" ;;
-  esac
-}
-
 # owned_running NAME: prints the pid and returns 0 only when the pid file names a live process whose
-# command line matches that service. Anything else (missing, dead, recycled pid) is not ours.
+# command line matches that service AND whose stored instance identity still matches (lib.sh's
+# nts_pid_owned). Anything else - missing, dead, or a pid recycled by an unrelated process - is not
+# ours, so up.sh never reports a foreign process as its own (nor down.sh kills one).
 owned_running() {
-  local name="$1" pid_file="$pid_dir/$1.pid" pid cmd pattern
-  pattern="$(service_pattern "$1")"
-  [ -f "$pid_file" ] || return 1
-  pid="$(cat "$pid_file" 2>/dev/null || true)"
-  case "$pid" in ''|*[!0-9]*) return 1 ;; esac
-  kill -0 "$pid" 2>/dev/null || return 1
-  cmd="$(ps -ww -p "$pid" -o command= 2>/dev/null || true)"
-  case "$cmd" in *"$pattern"*) printf '%s' "$pid"; return 0 ;; esac
-  return 1
+  local pid
+  pid="$(nts_pid_owned "$1" "$pid_dir/$1.pid" "$pid_dir/$1.identity")" || return 1
+  printf '%s' "$pid"
 }
 
 # needs_start NAME: 0 when the caller must start the service, 1 when it is already running.
@@ -131,11 +117,29 @@ needs_start() {
     log "$name already running (pid $pid), left alone"
     return 1
   fi
-  rm -f "$pid_dir/$name.pid"
+  rm -f "$pid_dir/$name.pid" "$pid_dir/$name.identity"
   return 0
 }
 
-record_pid() { printf '%s\n' "$2" > "$pid_dir/$1.pid"; }
+# record_identity NAME PID: claim the just-started process by pid and instance identity, so a later
+# run (or down.sh) can prove it is ours before touching it. A process that never reaches its final
+# command line is not recorded.
+record_identity() {
+  nts_record_identity "$pid_dir/$1.pid" "$pid_dir/$1.identity" "$1" "$2" \
+    || warn "could not record the identity of the $1 process (pid $2); it is left unclaimed"
+}
+
+# require_port NAME VALUE: every port row read from .env must be a plain integer in 1-65535. A
+# delimiter or a URL smuggled into a port (e.g. DEV_API_PORT='5100;http://0.0.0.0:5101') would
+# otherwise become a second ASP.NET Core listener and open the host to the LAN.
+require_port() {
+  local name="$1" value="$2"
+  case "$value" in
+    ''|*[!0-9]*|??????*) die 2 "$name must be an integer port 1-65535 (found: '$value')" ;;
+  esac
+  [ "$value" -ge 1 ] || die 2 "$name must be an integer port 1-65535 (found: $value)"
+  [ "$value" -le 65535 ] || die 2 "$name must be an integer port 1-65535 (found: $value)"
+}
 
 port_in_use() { [ -n "$(lsof -nP -iTCP:"$1" -sTCP:LISTEN 2>/dev/null || true)" ]; }
 
@@ -193,6 +197,17 @@ storage_access="$(row STORAGE_ACCESS_KEY dev)"
 storage_secret="$(row STORAGE_SECRET_KEY dev-secret-local)"
 
 case "$health_timeout" in ''|*[!0-9]*) die 2 "DEV_HEALTH_TIMEOUT must be a number of seconds" ;; esac
+
+# Every port row is validated before anything is built or started (exit 2): a malformed value must
+# never reach ASPNETCORE_URLS or an emulator's command line as a second listener.
+require_port DEV_API_PORT "$dev_api_port"
+require_port DEV_WORKER_HEALTH_PORT "$dev_worker_health_port"
+require_port MOCK_PORT "$dev_mock_port"
+require_port DEV_WEB_PORT "$dev_web_port"
+require_port DEV_STORAGE_PORT "$dev_storage_port"
+require_port DEV_STORAGE_VOLUME_PORT "$dev_storage_volume_port"
+require_port DEV_MAIL_SMTP_PORT "$dev_mail_smtp_port"
+require_port DEV_MAIL_UI_PORT "$dev_mail_ui_port"
 
 # A value that must survive a dotenv round trip (native env and the compose env_file) may not carry
 # whitespace, a double quote or a dollar sign.
@@ -306,6 +321,14 @@ if [ "$kek_ok" -eq 0 ]; then
   openssl pkcs12 -export -out "$kek_pfx" -inkey "$tmp_dir/kek.key" -in "$tmp_dir/kek.crt" \
     -passout "file:$kek_pass_file" >/dev/null 2>&1
   rm -rf "$tmp_dir"
+else
+  # The PFX, its password file and DEV_KEK_PASSWORD (which the native hosts and the compose services
+  # all use) are one secret. If .env was changed after the PFX was generated, the hosts would open it
+  # with a password the PFX does not carry and fail inside DataProtectionKek.TryLoad, so refuse here
+  # instead of starting a stack that cannot protect anything. The secret is never printed.
+  if [ "$(cat "$kek_pass_file")" != "$dev_kek_pass" ]; then
+    die 2 "DEV_KEK_PASSWORD in .env does not match the password stored with $kek_pfx; restore that row or delete $kek_pfx and $kek_pass_file to generate a new throwaway KEK (docs/dev-setup.md)"
+  fi
 fi
 chmod 600 "$jwt_pem" "$kek_pfx" "$kek_pass_file"
 
@@ -346,7 +369,7 @@ start_seaweedfs() {
       -volume.port="$dev_storage_volume_port" -master.volumeSizeLimitMB=64 \
       -s3 -s3.port="$dev_storage_port"
   ) >>"$log_dir/seaweedfs.log" 2>&1 &
-  record_pid seaweedfs "$!"
+  record_identity seaweedfs "$!"
 }
 
 start_mailpit() {
@@ -359,7 +382,7 @@ start_mailpit() {
       --database "$nts_dev/mailpit/mailpit.db" \
       --smtp-auth-accept-any --smtp-auth-allow-insecure
   ) >>"$log_dir/mailpit.log" 2>&1 &
-  record_pid mailpit "$!"
+  record_identity mailpit "$!"
 }
 
 seaweedfs_ok() { http_ok "http://127.0.0.1:$storage_master_port/cluster/status"; }
@@ -407,6 +430,10 @@ api_environment() {
 worker_environment() {
   export ASPNETCORE_ENVIRONMENT="$app_environment"
   export Worker__HealthPort="$dev_worker_health_port"
+  # The Worker's health listener binds Worker:HealthAddress (default 127.0.0.1). Pinned here so the
+  # native address never moves off loopback; the optional compose service overrides it to 0.0.0.0
+  # because a published port reaches the container's interface, not its loopback.
+  export Worker__HealthAddress="127.0.0.1"
   export ConnectionStrings__Postgres="$connection_string"
   export DataProtection__KekPfxPath="$kek_pfx"
   export DataProtection__KekPfxPassword="$dev_kek_pass"
@@ -434,7 +461,7 @@ start_api() {
     api_environment
     exec dotnet run --project src/NightTales.Api --no-launch-profile --no-build
   ) >>"$log_dir/api.log" 2>&1 &
-  record_pid api "$!"
+  record_identity api "$!"
 }
 
 start_worker() {
@@ -444,7 +471,7 @@ start_worker() {
     worker_environment
     exec dotnet run --project src/NightTales.Worker --no-launch-profile --no-build
   ) >>"$log_dir/worker.log" 2>&1 &
-  record_pid worker "$!"
+  record_identity worker "$!"
 }
 
 start_mock() {
@@ -458,7 +485,7 @@ start_mock() {
     mock_environment
     exec dotnet run --project tools/mock-mpt --no-launch-profile --no-build
   ) >>"$log_dir/mock.log" 2>&1 &
-  record_pid mock "$!"
+  record_identity mock "$!"
 }
 
 start_web() {
@@ -469,7 +496,7 @@ start_web() {
     cd "$repo_root/web"
     exec npx ng serve --host 127.0.0.1 --port "$dev_web_port"
   ) >>"$log_dir/web.log" 2>&1 &
-  record_pid web "$!"
+  record_identity web "$!"
 }
 
 # ---------------------------------------------------------------- start the hosts

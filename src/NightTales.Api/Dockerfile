@@ -11,14 +11,16 @@ FROM mcr.microsoft.com/dotnet/sdk:10.0@sha256:35d40304542c8689331f8cab17c65926cd
 WORKDIR /src
 
 # Central package management + committed lock files: restore before the sources so a source-only
-# change reuses the layer. `.editorconfig` carries the analyzer severities the build treats as
-# errors (CA1861 in the migration file, for one), so it belongs to the build inputs.
+# change reuses the layer. Each project's committed packages.lock.json travels with its .csproj, so
+# `--locked-mode` checks the repository-pinned closure instead of accepting whatever it resolves.
+# `.editorconfig` carries the analyzer severities the build treats as errors (CA1861 in the migration
+# file, for one), so it belongs to the build inputs.
 COPY global.json Directory.Build.props Directory.Packages.props .editorconfig ./
-COPY src/NightTales.Domain/NightTales.Domain.csproj src/NightTales.Domain/
-COPY src/NightTales.RenderNode.Contract/NightTales.RenderNode.Contract.csproj src/NightTales.RenderNode.Contract/
-COPY src/NightTales.Application/NightTales.Application.csproj src/NightTales.Application/
-COPY src/NightTales.Infrastructure/NightTales.Infrastructure.csproj src/NightTales.Infrastructure/
-COPY src/NightTales.Api/NightTales.Api.csproj src/NightTales.Api/
+COPY src/NightTales.Domain/NightTales.Domain.csproj src/NightTales.Domain/packages.lock.json src/NightTales.Domain/
+COPY src/NightTales.RenderNode.Contract/NightTales.RenderNode.Contract.csproj src/NightTales.RenderNode.Contract/packages.lock.json src/NightTales.RenderNode.Contract/
+COPY src/NightTales.Application/NightTales.Application.csproj src/NightTales.Application/packages.lock.json src/NightTales.Application/
+COPY src/NightTales.Infrastructure/NightTales.Infrastructure.csproj src/NightTales.Infrastructure/packages.lock.json src/NightTales.Infrastructure/
+COPY src/NightTales.Api/NightTales.Api.csproj src/NightTales.Api/packages.lock.json src/NightTales.Api/
 RUN dotnet restore src/NightTales.Api/NightTales.Api.csproj --locked-mode
 
 # seed/ is a Content item of NightTales.Infrastructure (the Development auto-seed reads it from the

@@ -1,0 +1,26 @@
+# Docker build context for the Api and Worker images (11.1.1-T1): context `.` (docker-compose.yml,
+# deploy.yml). Host build output, local runtime state and secrets must never enter the context —
+# `COPY src/` would otherwise overwrite the assets the in-container `dotnet restore` just produced,
+# and publish --no-restore would then use the host's NuGet paths.
+**/bin
+**/obj
+**/node_modules
+
+# Local runtime state and secrets (git-ignored, tools/dev/up.sh writes them).
+.nts
+.env
+.env.*
+
+# Repository metadata and local-only inputs the images never copy.
+.git
+.gitignore
+.gitattributes
+.githooks
+.github
+TestResults
+trial
+docs
+plans
+prompts
+infra
+worker-node

@@ -13,7 +13,14 @@ x-app-env: &app-env
 # signing key travels as an env file (a PEM cannot go through ${...} interpolation), the Data
 # Protection KEK is read from the read-only bind mount. Read-only config, never container state, and
 # nothing is committed (09.3.2-T1, 09.9.4-T1).
+#
+# The bind-mounted PFX stays owner-only (up.sh runs with umask 077, mode 0600), so the containers run
+# as the UID that owns the checkout instead of the image's own APP_UID (1654): a bind mount keeps the
+# host ownership, and a non-owner UID cannot read a 0600 file. Set NTS_COMPOSE_UID/NTS_COMPOSE_GID to
+# the checkout owner's `id -u`/`id -g` in .env — on a workstation and on a CI runner alike
+# (docs/dev-setup.md). 1654 is only correct where the key is not needed.
 x-dev-app: &dev-app
+  user: "${NTS_COMPOSE_UID:-1654}:${NTS_COMPOSE_GID:-1654}"
   env_file:
     - path: .nts/dev/config/compose.env
       required: false
@@ -65,7 +72,11 @@ services:
     environment:
       <<: [*app-env, *dev-env]
       Worker__HealthPort: "8082"
-    ports: ["127.0.0.1:8082:8082"]        # 09.2.6 Worker health port (the listener binds loopback inside the container)
+      # The listener must bind the container's interface, not its loopback, or the published port
+      # below could never reach it (the Dockerfile's app default is 127.0.0.1). The host side stays
+      # 127.0.0.1, so nothing is exposed beyond this machine.
+      Worker__HealthAddress: "0.0.0.0"
+    ports: ["127.0.0.1:8082:8082"]        # 09.2.6 Worker health port; the listener binds 0.0.0.0 inside the container
     depends_on:
       postgres: { condition: service_healthy }
     healthcheck:

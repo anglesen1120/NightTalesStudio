@@ -49,14 +49,19 @@ a missing `.env`, a missing variable — named, with nothing started).
 | Web (`--web`) | `http://127.0.0.1:4200` |
 | PostgreSQL | `127.0.0.1:5432`, role and database from `.env` |
 
-Runtime state lives in the git-ignored `.nts/dev/` (`NTS_HOME`, 01 DEC-5): `<service>.pid`,
+Runtime state lives in the git-ignored `.nts/dev/` (`NTS_HOME`, 01 DEC-5): `<service>.pid` plus
+`<service>.identity` (the pid and the exact instance `up.sh` started — start time and command line),
 `<service>.log`, `config/` (the throwaway Auth/DataProtection material `up.sh` generates once —
 the Api and the Worker validate an ES256 signing key, `App:PublicOrigin` and the `DP_KEK` at
-start-up, 09.3.2-T1/09.9.4-T1), `seaweedfs/` and `mailpit/`. The ports are `.env` rows
+start-up, 09.3.2-T1/09.9.4-T1), `seaweedfs/` and `mailpit/`. `down.sh` only signals a process whose
+identity still matches, so a pid recycled by another process is never killed, and `up.sh` refuses to
+start (exit 2) when `DEV_KEK_PASSWORD` in `.env` no longer matches the password file the KEK PFX was
+generated with (the secret is never printed). The ports are `.env` rows
 (`DEV_API_PORT`, `MOCK_PORT`, `DEV_WORKER_HEALTH_PORT`, `DEV_WEB_PORT`, `DEV_STORAGE_PORT`,
-`DEV_STORAGE_VOLUME_PORT`, `DEV_MAIL_SMTP_PORT`, `DEV_MAIL_UI_PORT`); `up.sh` exits 1 naming a port
-that is already taken. The Api's internal 8081 listener (02 D10, code-configured by 02.5.2-T2) has no
-row and is only checked for conflicts.
+`DEV_STORAGE_VOLUME_PORT`, `DEV_MAIL_SMTP_PORT`, `DEV_MAIL_UI_PORT`); each is validated as an integer
+in 1–65535 during preflight (a malformed row exits 2 before anything is built or started), and `up.sh`
+exits 1 naming a port that is already taken. The Api's internal 8081 listener (02 D10,
+code-configured by 02.5.2-T2) has no row and is only checked for conflicts.
 
 The default `DEV_API_PORT=5000` collides with the Mac's **AirPlay Receiver** (System Settings → General →
 AirDrop & Handoff): when it is on, ControlCenter listens on `*:5000`, so `up.sh` exits 1 naming
@@ -70,7 +75,10 @@ slow one: with `up.sh`'s command line, `weed server` needs 10–25 s for its own
 (measured on seaweedfs 4.48, 2026-10-02; `SIGINT`, a repeated `SIGINT` and `-master.peers=none` all give
 the same or worse, so it is not a signal problem), and a `down.sh` run can therefore end with
 `seaweedfs … SIGKILL`. That is safe: the `.nts/dev/seaweedfs` store is disposable and `--volumes` deletes
-it outright.
+it outright. `--volumes` verifies first that the server on `127.0.0.1:5432` is the Homebrew
+`postgresql@17` cluster whose data directory this machine owns (the same check `db-init.sh` runs) and
+refuses any other cluster before it deletes a file or sends a `DROP`; the shared Homebrew data
+directory (and the `NTS_TEST_PG` databases in it) is never touched.
 
 `up.sh` does not apply migrations: run the command in the Migrations section below once against a
 fresh database.
@@ -240,6 +248,17 @@ docker compose down                                    # or: down -v to discard 
   (git-ignored). The two services read the key from `.nts/dev/config/compose.env` and the PFX through
   a read-only bind mount (`NTS_DEV_CONFIG_DIR` moves the host side when `NTS_HOME` points at another
   checkout) — read-only config, never container state, and nothing is committed.
+- The DP_KEK PFX stays **owner-only** (`up.sh` runs with `umask 077`, mode `0600`) and a bind mount
+  keeps the host ownership, so the containers run as the UID that owns the checkout instead of the
+  image's `APP_UID` (1654). Put the numbers from `id -u` / `id -g` into `.env` as
+  `NTS_COMPOSE_UID` / `NTS_COMPOSE_GID` — on a workstation and on a CI runner alike (the rows are
+  commented out in `.env.example`). Leaving them unset keeps the image user, which is only correct
+  for a service that does not need the key. The key's mode is never relaxed to make this work.
+- The Worker's health listener binds `Worker:HealthAddress` — `127.0.0.1` by default (the native
+  default, and `up.sh` pins it), and the compose service sets `0.0.0.0` so the published host port
+  `127.0.0.1:8082` can reach it across the container's network namespace. The host side is never
+  wider than `127.0.0.1`.
+
 - Do not run both paths at once: `5432`, `8333` and `1025` collide. The override file can move the
   host side of a published port.
 - `web` is behind the `web` profile and its image is 10.1.1-T2's, so `docker compose config` validates

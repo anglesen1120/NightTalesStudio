@@ -43,24 +43,15 @@ die() { local code="$1"; shift; log "ERROR: $*"; exit "$code"; }
 repo_root="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$repo_root"
 
+# Shared helpers: the service patterns, the instance-identity check (lib.sh's nts_pid_owned) and the
+# Homebrew cluster check. The same file up.sh and db-init.sh source, so the three cannot drift.
+# shellcheck source=tools/dev/lib.sh
+. "$repo_root/tools/dev/lib.sh"
+
 env_file="$repo_root/.env"
 example_file="$repo_root/.env.example"
 nts_dev="${NTS_HOME:-$repo_root/.nts}/dev"
 pid_dir="$nts_dev/pid"
-
-# The same table tools/dev/up.sh writes its pid files with: a pid file only counts as ours when the
-# live process still matches its service, so a recycled pid is never killed.
-service_pattern() {
-  case "$1" in
-    api) printf 'NightTales.Api' ;;
-    worker) printf 'NightTales.Worker' ;;
-    mock) printf 'tools/mock-mpt' ;;
-    web) printf 'node' ;;
-    seaweedfs) printf 'weed' ;;
-    mailpit) printf 'mailpit' ;;
-    *) printf '%s' "$1" ;;
-  esac
-}
 
 # Reads KEY=VALUE from a dotenv file without sourcing it (no code execution), the same rules
 # tools/dev/db-init.sh uses.
@@ -96,24 +87,36 @@ stop_tree() {
   kill "$pid" 2>/dev/null || true
 }
 
-# stop_service NAME: 0 when a process of ours was stopped, 1 when there was nothing to stop.
+# stop_service NAME: 0 when a process of ours was stopped, 1 when there was nothing to stop. A pid
+# file only counts as ours when the live process still matches both the service pattern and the
+# instance identity up.sh stored (lib.sh's nts_pid_owned); the identity is checked once more right
+# before the signal, so a pid recycled in between is still never killed.
 stop_service() {
-  local name="$1" pid_file="$pid_dir/$1.pid" pid cmd pattern
-  pattern="$(service_pattern "$name")"
-  [ -f "$pid_file" ] || return 1
-  pid="$(cat "$pid_file" 2>/dev/null || true)"
-  case "$pid" in ''|*[!0-9]*) rm -f "$pid_file"; return 1 ;; esac
-  cmd="$(ps -ww -p "$pid" -o command= 2>/dev/null || true)"
-  case "$cmd" in
-    *"$pattern"*) ;;
-    *)
-      if kill -0 "$pid" 2>/dev/null; then
-        log "$name: pid $pid is not a $name process (${cmd:-no command line}), left alone"
-      fi
-      rm -f "$pid_file"
-      return 1
-      ;;
-  esac
+  local name="$1" pid_file="$pid_dir/$1.pid" identity_file="$pid_dir/$1.identity" pid cmd
+  if ! pid="$(nts_pid_owned "$name" "$pid_file" "$identity_file")"; then
+    # Nothing to stop. When the pid file names a live process that is not the one up.sh started
+    # (a recycled pid, or another checkout), say so before dropping the stale record.
+    if [ -f "$pid_file" ]; then
+      pid="$(cat "$pid_file" 2>/dev/null || true)"
+      case "$pid" in
+        ''|*[!0-9]*) ;;
+        *)
+          if kill -0 "$pid" 2>/dev/null; then
+            cmd="$(ps -ww -p "$pid" -o command= 2>/dev/null || true)"
+            log "$name: pid $pid is not the $name process this checkout started (${cmd:-no command line}), left alone"
+          fi
+          ;;
+      esac
+      rm -f "$pid_file" "$identity_file"
+    fi
+    return 1
+  fi
+  # Re-check immediately before signalling: the identity must still match.
+  if [ "$(nts_process_identity "$pid")" != "$(cat "$identity_file")" ]; then
+    log "$name: pid $pid changed before the signal, left alone"
+    rm -f "$pid_file" "$identity_file"
+    return 1
+  fi
   log "stopping $name (pid $pid)"
   stop_tree "$pid"
   local waited=0
@@ -125,7 +128,7 @@ stop_service() {
     log "$name (pid $pid) did not exit in 15 s: SIGKILL"
     stop_tree_kill "$pid"
   fi
-  rm -f "$pid_file"
+  rm -f "$pid_file" "$identity_file"
   return 0
 }
 
@@ -163,15 +166,22 @@ if [ "$drop_volumes" -eq 1 ]; then
   db_pass="$(env_value "$env_file" POSTGRES_PASSWORD)" || true
   [ -n "$db_pass" ] || die 2 "POSTGRES_PASSWORD is not set in .env (cp .env.example .env, then set your own)"
 
-  log "deleting $nts_dev/seaweedfs and $nts_dev/mailpit"
-  rm -rf "$nts_dev/seaweedfs" "$nts_dev/mailpit"
-
   pg_prefix="$(brew --prefix postgresql@17 2>/dev/null)" \
     || die 1 "postgresql@17 not installed: brew install postgresql@17"
   pg_bin="$pg_prefix/bin"
   [ -x "$pg_bin/psql" ] || die 1 "postgresql@17 not installed: brew install postgresql@17"
+  brew_root="$(brew --prefix)" || die 1 "brew --prefix failed"
+  expected_datadir="$brew_root/var/postgresql@17"
   "$pg_bin/pg_isready" -q -h 127.0.0.1 -p 5432 \
     || die 1 "PostgreSQL is not accepting connections on 127.0.0.1:5432; run: brew services start postgresql@17 (or tools/dev/up.sh)"
+
+  # Nothing is deleted and no DROP is sent until the listener is the Homebrew postgresql@17 cluster
+  # whose data directory this machine owns (the same check db-init.sh runs). A different cluster that
+  # happens to hold port 5432 is refused before any data is touched.
+  nts_pg_assert_homebrew_cluster "$pg_bin" "$expected_datadir"
+
+  log "deleting $nts_dev/seaweedfs and $nts_dev/mailpit"
+  rm -rf "$nts_dev/seaweedfs" "$nts_dev/mailpit"
 
   # The password reaches psql through its environment, never argv (01 D9). Only the .env database
   # is dropped; the Homebrew data directory holds the NTS_TEST_PG databases too.

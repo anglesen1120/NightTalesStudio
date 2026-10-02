@@ -1,5 +1,4 @@
 using System.Globalization;
-using System.Net;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Configuration;
@@ -64,8 +63,14 @@ public static class WorkerApplication
         var healthPort = builder.Configuration.GetValue(
             $"{WorkerOptions.SectionName}:{nameof(WorkerOptions.HealthPort)}",
             WorkerOptions.DefaultHealthPort);
+        var healthAddress = builder.Configuration.GetValue(
+            $"{WorkerOptions.SectionName}:{nameof(WorkerOptions.HealthAddress)}",
+            WorkerOptions.DefaultHealthAddress);
 
-        builder.WebHost.ConfigureKestrel(options => options.Listen(IPAddress.Loopback, healthPort));
+        // The bind address defaults to loopback (the native dev stack); the optional Compose service
+        // sets it to 0.0.0.0 so the published 127.0.0.1 host port reaches the listener (11.1.1-T1).
+        var healthEndpoint = WorkerOptions.ResolveHealthAddress(healthAddress);
+        builder.WebHost.ConfigureKestrel(options => options.Listen(healthEndpoint, healthPort));
 
         return builder.Build();
     }
