@@ -138,12 +138,12 @@ public sealed class WorkerNodesMigrationTests(TestDatabase database) : Integrati
         SqlProbe.Execute(Database, Insert("'alpha'", capacity: 2, state: "'active'"));
 
         var migrations = context.Database.GetMigrations().Order(StringComparer.Ordinal).ToList();
-        migrations[^1].ShouldContain("11_WorkerNodes", customMessage: "this test owns the last migration");
-        migrations.Count.ShouldBeGreaterThan(1, "there must be a previous migration to revert to");
+        var own = migrations.FindIndex(name => name.EndsWith("_11_WorkerNodes", StringComparison.Ordinal));
+        own.ShouldBeGreaterThan(0, "the migration must exist and have a previous one to revert to");
 
         try
         {
-            await context.Database.GetService<IMigrator>().MigrateAsync(migrations[^2], Ct);
+            await context.Database.GetService<IMigrator>().MigrateAsync(migrations[own - 1], Ct);
 
             (await Database.QueryStringsAsync("SELECT to_regclass('public.worker_nodes')::text", Ct))
                 .ShouldBe([string.Empty], ignoreOrder: false, customMessage: "the Down drops the table");

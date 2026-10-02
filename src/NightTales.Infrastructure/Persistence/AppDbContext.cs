@@ -103,6 +103,13 @@ public sealed class AppDbContext : IdentityDbContext<AppUser, AppRole, Guid>, IA
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
 
     /// <summary>
+    /// Infrastructure-only: the single-use action tokens of 09.3.3-T1 (BD3/WF11). Every statement that
+    /// touches them is set-based raw SQL in <c>EfUserActionTokenService</c> — the invalidating insert and
+    /// the replay-proof consume — like the refresh-token families next to it.
+    /// </summary>
+    public DbSet<UserActionToken> UserActionTokens => Set<UserActionToken>();
+
+    /// <summary>
     /// Infrastructure-only: the MFA login challenges of 09.3.2-T3. 09.3.2-T1's login flow inserts one
     /// through <c>EfMfaChallengeService.BeginAsync</c> when the account always signs in with an
     /// authenticator; every later statement (the supersede, the locked read, the attempt counter) lives in

@@ -3,10 +3,13 @@ using System.Net.Http.Json;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using ErrorOr;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using NightTales.Api.IntegrationTests.Http;
+using NightTales.Application.Abstractions.Persistence;
+using NightTales.Application.Abstractions.Security;
 using NightTales.Domain.Common;
 using NightTales.Infrastructure.Persistence;
 using NightTales.Infrastructure.Persistence.Entities;
@@ -269,5 +272,98 @@ internal static class AuthTestFlow
         var values = await database.QueryStringsAsync(sql);
 
         return values.Count > 0 ? values[0] : null;
+    }
+
+    /// <summary>
+    /// Issues one single-use action token of <paramref name="kind"/> through the real store, inside a
+    /// unit of work, exactly as the send-time minter or a handler does (09.3.3-T1).
+    /// </summary>
+    /// <param name="services">The started host's service provider.</param>
+    /// <param name="userId">The user the token authorizes.</param>
+    /// <param name="kind">The flow the token belongs to.</param>
+    /// <param name="ct">Cancels the issue.</param>
+    internal static async Task<ErrorOr<string>> IssueActionTokenAsync(
+        IServiceProvider services,
+        Guid userId,
+        UserActionKind kind,
+        CancellationToken ct)
+    {
+        using var scope = services.CreateScope();
+        var unitOfWork = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
+
+        await unitOfWork.BeginAsync(ct);
+
+        var issued = await scope
+            .ServiceProvider
+            .GetRequiredService<IUserActionTokenService>()
+            .IssueAsync(userId, kind, new RequestInfo(null, null), ct);
+
+        if (issued.IsError)
+        {
+            await unitOfWork.RollbackAsync(ct);
+            return issued;
+        }
+
+        (await unitOfWork.CommitAsync(ct)).IsError.ShouldBeFalse("the issue commits with its caller's unit of work");
+
+        return issued;
+    }
+
+    /// <summary>The subject-scoped issue of 06 CR-6/YR8, driven the same way.</summary>
+    /// <param name="services">The started host's service provider.</param>
+    /// <param name="userId">The user the token authorizes.</param>
+    /// <param name="kind">The subject-scoped flow.</param>
+    /// <param name="subjectId">The row the token is about.</param>
+    /// <param name="expiresAt">The explicit expiry the flow fixes.</param>
+    /// <param name="ct">Cancels the issue.</param>
+    internal static async Task<ErrorOr<string>> IssueSubjectActionTokenAsync(
+        IServiceProvider services,
+        Guid userId,
+        UserActionKind kind,
+        Guid subjectId,
+        DateTimeOffset expiresAt,
+        CancellationToken ct)
+    {
+        using var scope = services.CreateScope();
+        var unitOfWork = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
+
+        await unitOfWork.BeginAsync(ct);
+
+        var issued = await scope
+            .ServiceProvider
+            .GetRequiredService<IUserActionTokenService>()
+            .IssueAsync(userId, kind, subjectId, expiresAt, new RequestInfo(null, null), ct);
+
+        if (issued.IsError)
+        {
+            await unitOfWork.RollbackAsync(ct);
+            return issued;
+        }
+
+        (await unitOfWork.CommitAsync(ct)).IsError.ShouldBeFalse();
+
+        return issued;
+    }
+
+    /// <summary>
+    /// One consume in its own scope; the store's statement is self-atomic, so no transaction is opened
+    /// (09.3.3-T1: the replay-proof <c>UPDATE … RETURNING</c> is the whole protocol).
+    /// </summary>
+    /// <param name="services">The started host's service provider.</param>
+    /// <param name="token">The presented plaintext token.</param>
+    /// <param name="kind">The flow the caller is performing.</param>
+    /// <param name="ct">Cancels the statement.</param>
+    internal static async Task<ErrorOr<Guid>> ConsumeActionTokenAsync(
+        IServiceProvider services,
+        string token,
+        UserActionKind kind,
+        CancellationToken ct)
+    {
+        using var scope = services.CreateScope();
+
+        return await scope
+            .ServiceProvider
+            .GetRequiredService<IUserActionTokenService>()
+            .ConsumeAsync(token, kind, ct);
     }
 }

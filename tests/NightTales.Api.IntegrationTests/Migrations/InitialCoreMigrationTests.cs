@@ -53,6 +53,7 @@ public sealed class InitialCoreMigrationTests(TestDatabase database) : Integrati
         "story_versions",
         "style_templates",
         "usage_records",
+        "user_action_tokens",
         "user_claims",
         "user_consents",
         "user_logins",

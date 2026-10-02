@@ -8,11 +8,11 @@ Legend: `done` (acceptance checks run and passed) · `doing` · `blocked (<who>)
 
 Keep this block ≤ 15 lines: current state and next step only. Move the previous block to the archive when you replace it.
 
-- **Current (2026-10-03).** `develop` @ `6de35c6`. Owner merged every Session 2 next-lane PR: #84 11.1.1-T2, #85 test-fixture fix, #86 09.3.2-T3, #87 11.3.3-T1, #88 11.1.2-T1, #89 11.3.5-T2, #90 09.2.6-T2, #92 09.9.2-T2, #94 09.7.2-T1, plus docs #91, #93, #95, #96. No open PR.
+- **Current (2026-10-03).** `develop` @ `fb7a59e`. Owner merged every Session 2 next-lane PR: #84 11.1.1-T2, #85 test-fixture fix, #86 09.3.2-T3, #87 11.3.3-T1, #88 11.1.2-T1, #89 11.3.5-T2, #90 09.2.6-T2, #92 09.9.2-T2, #94 09.7.2-T1, plus docs #91, #93, #95, #96, #97. Lane A (migration queue) started: 09.3.3-T1 PR open, 02.2.2-T1 in progress.
 - **Merge notes:** migrations on `develop` run `…083148_09_EmailMessages` → `20261002101251_09_AuthChallenges` (#86) → `20261002162527_11_WorkerNodes` (#87). #89 merged develop (6 additive conflicts, `2b0a3c3`) plus post-merge fix `911740e`: `MptHttpClient` allow-listed for 11.3.3-T1's HttpClient rule, and `AdapterOptions.ParseLoopbackMptBaseUrl` (loopback IP-literal http only); QA + T3 reviews, full local gate, CI 4/4.
-- **Not on `develop`:** 09.3.3-T1 password reset, local `7e0ece8` on `feature/09.3.3-T1-s2` (gated); merge develop, regenerate its migration after `20261002162527`, re-gate, then PR.
+- **In review:** 09.3.3-T1 password reset, branch `feature/09.3.3-T1-s2` merged with develop `fb7a59e` (`b50b988`), migration regenerated as `20261002190707_09_UserActionTokens`; merge-delta code + security review closed (1 low doc-comment nit fixed), full gate green; PR open.
 - **11.3.5-T4 must:** wire `ParseLoopbackMptBaseUrl` into `ValidateOnStart`; build the MPT client with `MptHttpClient.Create` (redirects off). Known low gap QA89-LB-01: a non-root `MptBaseUrl` path is accepted and every MPT call then 404s.
-- **Next:** not planned yet (owner 2026-10-03). Unblocked: password reset delivery, `13.3.1-T1` (storage merged), `09.3.4-T1` /me (flags merged), `09.9.3-T1` OTLP (storage + registry merged); migration fillers `05.3.2-T3`, `02.2.2-T1`, `02.2.4-T1` wait for slots (rule 3). Web UI stays in its separate session.
+- **Next (owner 2026-10-03: lane A first):** migration queue in order 09.3.3-T1 → 02.2.2-T1 → 02.2.4-T1 → 05.3.2-T3 → 13.3.1-T1, at most 2 waiting (rule 3); each later one regenerates its migration after the previous merges. Free-slot (no migration): `09.3.4-T1` /me, `09.9.3-T1` OTLP, 11.3.5-T3/T4. Web UI stays in its separate session.
 - **SEC-01:** owner chose range API + real top-N seed fallback (09 W3-O3); current bundled seed is synthetic. `09.3.1-T2` replaces it before registration opens.
 - **Security audit (2026-10-02):** no Critical/High; 8 Medium + Low/Info findings and the fix waves W1–W4 in [`cyber-issue.md`](cyber-issue.md) (CY-01…CY-30).
 - **Gates/environment:** risk-tier gates per 00 §10; native Mac stack, runtime under `NTS_HOME`, keys stay out of git. `gate.sh` provides `Email__AddressHashPepper`.
@@ -29,7 +29,7 @@ Per-task evidence for `done` rows: `docs/status-archive.md` §Per-plan evidence 
 | 03 Images (M0 slice) | 4 (03.1.1-T1, 03.4.1-T1, 03.3.2-T1, 03.1.1-T2 #61) | 03.1.2-T1, 03.2.x, 03.4.2/03.4.3 (M1) |
 | 04 Voice proxy (12 tasks) | 11 (04.2.2-T2 #73) | 04.2.3-T1 |
 | 05 Video/subtitles | 10 (05.5.1-T2 #78) | 05.3.2-T3, 05.2.1-T1, 05.5.2 |
-| 09 Backend | 33 tasks merged (Session 2: #72 09.9.5-T1, #74 09.10.4-T1, #77 09.3.5-T1 + 09.8.1-T2, #82 09.2.6-T3, #86 09.3.2-T3, #90 09.2.6-T2, #92 09.9.2-T2, #94 09.7.2-T1) | 09.3.3-T1 password reset gated locally, not pushed (migration regen); 09.3.4-T1 /me, 09.9.3-T1 OTLP unblocked |
+| 09 Backend | 33 tasks merged (Session 2: #72 09.9.5-T1, #74 09.10.4-T1, #77 09.3.5-T1 + 09.8.1-T2, #82 09.2.6-T3, #86 09.3.2-T3, #90 09.2.6-T2, #92 09.9.2-T2, #94 09.7.2-T1) | 09.3.3-T1 password reset merged with develop locally (`b50b988`, migration `20261002190707`), PR pending; 09.3.4-T1 /me, 09.9.3-T1 OTLP unblocked |
 | 11 Worker deployment | 11.1.1-T1 #81, 11.3.5-T1 #79, 11.1.1-T2 #84, 11.3.3-T1 #87, 11.1.2-T1 #88, 11.3.5-T2 #89; 11.2.1-T1 (proposal only; sign-off deferred to phase 2, owner 2026-09-30) | The rest is phase 2 (11 CR-18) |
 | 10 Web UI | HTML design deck approved by the owner 2026-10-02 (`design/ui/index.html`, v2 “Phòng thu”, compact controls `192cc73`); linked from 12 T0 tasks and 13 feature plans. Angular implementation/integration plan refinement merged (#95 -> `185f6fd`): [implementation roadmap](plans/features/10-web-ui/implementation-roadmap.md), [integration readiness](plans/features/10-web-ui/integration-readiness.md), `Backend / upstream tasks to run first` column in the README task tables | Angular implementation not started; start with 10.1.x foundation per the roadmap; backend prerequisites in integration readiness remain OPEN |
 | 13 Compliance | 13.1.1-T1, 13.1.2-T1 (PR #35) | 13.2.1-T1 → 13.2.2-T1, 10.3.1-T1 pages; 13.1.1-T2 / 13.1.2-T2 lawyer rows (O1) |
@@ -43,11 +43,11 @@ Plans 06, 07, 08, 12: not started. Plan 10: approved HTML design handoff and ref
 | Lane | Current | Next, after prerequisite merges | Tier | Notes |
 |---|---|---|---|---|
 | B Storage follow-on | 13.3.1-T1 not started; storage (#84, #94) merged | Owner plans the next wave | T3 | Migration |
-| E E-mail | 09.3.3-T1 local @7e0ece8, QA + T3 + full gate closed | Merge develop, regenerate migration after `20261002162527`, re-gate, then PR | T3 | Not pushed; rule 3 |
+| E E-mail | 09.3.3-T1 merged with develop (`b50b988`), migration `20261002190707`; QA + T3 + merge-delta review closed, full gate green | PR open; owner merges | T3 | Migration slot 1 of 2 |
 | F Seeders/checkers | 05.3.2-T3 not started (04.2.2-T2 / 05.5.1-T2 merged) | Free migration slot, then AddMusicTracks task | T3 | Migration |
-| Fill a free slot | #92 feature flags merged | /me (flags merged); OTLP (storage + registry merged); 02.2.2-T1 / 02.2.4-T1 await migration slots | T3 | Money tasks have migrations |
+| Fill a free slot | #92 feature flags merged | /me (flags merged); OTLP (storage + registry merged); 02.2.4-T1 awaits a migration slot (02.2.2-T1 now in lane A) | T3 | Money tasks have migrations |
 
-**Progress (2026-10-03):** start-now set (#72–#83) and next-lane PRs (#84–#94) merged; `develop` @ `6de35c6`. Remaining Session 2 work: password reset delivery, 13.3.1-T1, /me, OTLP and the migration fillers. Finished lane rows and the Open-task rows of merged PRs are archived.
+**Progress (2026-10-03):** start-now set (#72–#83) and next-lane PRs (#84–#94, docs #97) merged; `develop` @ `fb7a59e`. Lane A (owner 2026-10-03): 09.3.3-T1 PR open, 02.2.2-T1 draft PR next; then 02.2.4-T1, 05.3.2-T3, 13.3.1-T1. Free-slot: /me, OTLP. Finished lane rows and the Open-task rows of merged PRs are archived.
 
 **Not in Session 2:** `09.6.2-T1` needs `05.1.2-T1`, which needs `02.3.2-T1` and `03.2.1-T1` (not built) → session 3 or later.
 
@@ -64,9 +64,9 @@ Plans 06, 07, 08, 12: not started. Plan 10: approved HTML design handoff and ref
 
 | Task | Status | Note |
 |---|---|---|
-| 09.3.3-T1 Password reset | todo (migration slot free) | Local `7e0ece8` gated; merge develop/regenerate migration before delivery |
+| 09.3.3-T1 Password reset | doing (PR open; merged develop b50b988, migration 20261002190707) | Last-migration Down ownership moved to `UserActionTokensMigrationTests`; `SeedPrevious` has a `user_action_tokens` row. Merge-delta review: 0 code findings, SEC-1 low doc-comment fixed, SEC-2 info (seed hash = sha256("password"), test-only) accepted |
 | 05.3.2-T3 Music metadata | blocked (migration queue) | Not started; at most 2 migration tasks waiting |
-| 02.2.2-T1 M1 domain migration | blocked (migration queue) | Not started |
+| 02.2.2-T1 M1 domain migration | doing (lane A, draft PR after this one) | Regenerates its migration after `20261002190707` once this PR merges |
 | 02.2.4-T1 M1 cost persistence | blocked (migration queue) | Not started |
 | 13.3.1-T1 Deletion engine | todo (storage merged) | Lane B next |
 | 09.3.4-T1 /me | todo (flags merged) | Free-slot next |
@@ -112,3 +112,4 @@ Recent rows only; the full log is `docs/status-archive.md` §Session log.
 | 2026-10-02 | Web backend scheduling annotation (docs only, T0) | Added `Backend / upstream tasks to run first` to all 73 rows across the three canonical web README tables only, not task-file headers/templates. Direct non-10.x entries are projected verbatim from existing `Depends on`, including soft and CR tags; restored missing `(13 CR-27)` on 10.3.1-T2 during concern review. Inherited FE prerequisites, non-backend upstream owners and P/S/R2 gates remain explicit. Verified 73 seven-column rows and original six columns/order unchanged; task headers and estimates unchanged. Concern review PASS with one P3 wording nit (bare `None` undefined), closed by defining `None` vs `None directly` in the footnote; §6/C6 now say task headers equal the first six table cells. This is a scheduling aid, not merged/runtime-ready status. No code |
 | 2026-10-03 | Web planning merged (#95 -> `develop` `185f6fd`) | Owner merged #95 (`40e6187` + merge `68be291`). Merge with develop adopted develop's owner design approval and local `design/ui/` links; mockup/contract mismatches kept as implementation reconciliation notes. 73 task headers equal develop, README tables 73×7, 1013 links resolve. Docs only |
 | 2026-10-03 | Session 2 next lanes merged (#84–#94 → `develop` `6de35c6`) | Owner merged #84–#90, #92, #94 (plus docs #91, #93, #96). #89 conflicted after #86/#87 (6 additive hunks: `.gitleaksignore`, `NightTales.sln`, Architecture.Tests `AllowLists`/`ArchitectureModel`/csproj, regenerated `packages.lock.json`; `2b0a3c3`, merge review 0 findings). The merged tree then failed 11.3.3-T1's `HttpClient_IsOnlyConstructedByTheApprovedProducers` on `MptHttpClient`: allow-listed, and the allow-list review found `Adapter:MptBaseUrl` unvalidated, so a loopback IP-literal guard was added (`911740e`). QA 4/4, code/perf/security reviews (2 low nits fixed, 2 refuted with `dotnet fsi`), full local gate `TEST rc=0`, CI 4/4. STATUS refreshed; finished rows archived |
+| 2026-10-03 | 09.3.3-T1 merge + migration regeneration | Merged `origin/develop` `fb7a59e` into `feature/09.3.3-T1-s2` (`b50b988`): 5 conflicts (`appsettings.json`, Security DI, `AppDbContext`, `AuthMetrics`, `SecurityAudit`) resolved additively; `PasswordResetService` moved to develop's dictionary `SecurityAudit.EntryWithData`. Migration regenerated as `20261002190707_09_UserActionTokens` (Up/Down byte-identical to the old one; Designer only adds develop's entities). Full gate failed `WorkerNodesMigrationTests.DownMigration_DropsTable` ("owns the last migration"): that test now reverts to its own predecessor by name, new `UserActionTokensMigrationTests` owns the last-migration Down check, `SeedPrevious` gained a `user_action_tokens` row. Not pushed. |

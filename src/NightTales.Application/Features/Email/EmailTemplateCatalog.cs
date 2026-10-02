@@ -93,6 +93,9 @@ public static class EmailTemplateCatalog
     /// <summary>The template of 09.3.3-T1's password reset; its link is minted at send time.</summary>
     public const string PasswordReset = "password_reset";
 
+    /// <summary>The reset-success notice of 09.3.3-T1 (09 §4 09.3.3 line 2): token-free.</summary>
+    public const string PasswordChanged = "password_changed";
+
     /// <summary>The template of 09.3.1-T3's e-mail verification (S phase); its link is minted at send time.</summary>
     public const string EmailVerify = "email_verify";
 

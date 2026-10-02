@@ -66,6 +66,13 @@ public static class SecurityEventKinds
     /// mistaken for "MFA is off" (09.10.4-T1 failure handling).
     /// </summary>
     public const string TotpSecretUnreadable = "security.totp_secret_unreadable";
+
+    /// <summary>
+    /// A privileged account (admin or owner) reset its own password through the mailed link
+    /// (09.3.3-T1 Design step 7). [INFERENCE kind] — 09.10.4-T3's signed catalog is where the S-phase
+    /// alert rules key it; the value follows the frozen <c>security.*</c> shape.
+    /// </summary>
+    public const string PasswordReset = "security.password_reset";
 }
 
 /// <summary>
