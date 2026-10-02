@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Net;
+using System.Text;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -29,10 +30,11 @@ namespace NightTales.Worker.Rendering;
 /// <see cref="NodeHealthPollerLock"/> (Q5), so a second Worker during a rolling deploy only logs.
 /// </para>
 /// <para>
-/// A <b>valid answer</b> is HTTP 200 <em>or</em> 503 with a body that parses as
-/// <c>render-node-health.v1</c> — the node answered; a connect error, a pin mismatch, a timeout, a 401 or an
-/// unparseable body is no answer. A 401 is still read: when its body parses, its reasons (for example
-/// <c>mpt_unauthorized</c>) are counted instead of the local <c>node_unreachable</c>. Two consecutive valid
+/// A <b>valid answer</b> is HTTP 200 <em>or</em> 503 with a body no larger than <see cref="MaxBodyBytes"/>
+/// that parses and validates as <c>render-node-health.v1</c> — the node answered; a connect error, a pin
+/// mismatch, a pull deadline, a 401, an oversized body or an unparseable/invalid one is no answer. A 401 is
+/// still read: when its body parses, its reasons (for example <c>mpt_unauthorized</c>) are counted instead
+/// of the local <c>node_unreachable</c>. Two consecutive valid
 /// answers revive a <c>down</c> node (<see cref="GoodPullsForActive"/>);
 /// <c>RenderNodes:DownAfterSeconds</c> without one sends an <c>active</c> node <c>down</c>. <c>draining</c>
 /// is operator-only and health never ends it (D12).
@@ -65,6 +67,18 @@ public sealed partial class NodeHealthPoller(
 
     /// <summary>The parse-error label of a 200/503 with an empty body, logged instead of the body (S4).</summary>
     private const string MissingBodyError = "empty-body";
+
+    /// <summary>The parse-error label of a body that refused to be read inside the cap, logged instead of it (S4).</summary>
+    private const string BodyTooLargeError = "body-too-large";
+
+    /// <summary>The parse-error label of a well-JSON body whose known fields are invalid (null/blank) (S4).</summary>
+    private const string InvalidFieldsError = "invalid-fields";
+
+    /// <summary>
+    /// The health body cap (64 KiB): the contract shape is a few hundred bytes, so a larger answer —
+    /// or a chunked body that never ends — is a compromised node denying the Worker memory (S4).
+    /// </summary>
+    private const int MaxBodyBytes = 64 * 1024;
 
     private readonly ConcurrentDictionary<string, int> _goodPulls = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<Guid, int> _driftRuns = new();
@@ -112,10 +126,25 @@ public sealed partial class NodeHealthPoller(
     /// (<c>OutboxDispatcher.ProcessBatchAsync</c> is public for the same reason).
     /// </summary>
     /// <param name="cancellationToken">The tick's cancellation token.</param>
-    /// <returns><c>true</c> when this instance held the lock and polled; <c>false</c> when another instance does.</returns>
+    /// <returns>
+    /// <c>true</c> when this instance held the lock and polled; <c>false</c> when another instance does, or
+    /// when the lock session was lost and just re-taken — a tick decided across a lost lock is skipped.
+    /// </returns>
     public async Task<bool> TickAsync(CancellationToken cancellationToken)
     {
-        if (!await pollLock.TryAcquireAsync(cancellationToken))
+        var attempt = await pollLock.TryAcquireAsync(cancellationToken);
+
+        // A lock whose session died between ticks is re-taken but this tick is skipped: another Worker may
+        // have held the lock and polled during the gap, so decisions based on the pre-loss view stay off
+        // the registry (plan §"Failure handling": a lost lock never flips a node state).
+        if (attempt == NodeHealthPollerLock.LockAttempt.Recovered)
+        {
+            LogLockRecovered();
+
+            return false;
+        }
+
+        if (attempt == NodeHealthPollerLock.LockAttempt.HeldElsewhere)
         {
             if (!_lockNotHeldLogged)
             {
@@ -167,13 +196,19 @@ public sealed partial class NodeHealthPoller(
             {
                 RecordDrift(node, answered, inFlight, settings);
             }
+            else
+            {
+                // A no-answer pull is not a clean drift pull either: the streak is "consecutive mismatches",
+                // so silence resets it like a matching report does (plan §7, DriftAlertPulls).
+                _driftRuns[node.Id] = 0;
+            }
 
             if (node.State == WorkerNodeState.Draining)
             {
                 // Health never ends a drain (D12): a valid answer still heartbeats, the state stays.
                 if (snapshot is not null)
                 {
-                    decisions.Add(new TickDecision(node.Id, Heartbeat: true, Target: null));
+                    decisions.Add(new TickDecision(node.Id, node.State, Heartbeat: true, Target: null));
                 }
                 else
                 {
@@ -189,7 +224,7 @@ public sealed partial class NodeHealthPoller(
             {
                 var streak = _goodPulls.AddOrUpdate(node.Name, 1, (_, current) => current + 1);
                 var revive = node.State == WorkerNodeState.Down && streak >= GoodPullsForActive;
-                decisions.Add(new TickDecision(node.Id, Heartbeat: true, Target: revive ? WorkerNodeState.Active : null));
+                decisions.Add(new TickDecision(node.Id, node.State, Heartbeat: true, Target: revive ? WorkerNodeState.Active : null));
 
                 continue;
             }
@@ -202,7 +237,7 @@ public sealed partial class NodeHealthPoller(
             if (node.State == WorkerNodeState.Active
                 && now - reference >= TimeSpan.FromSeconds(settings.DownAfterSeconds))
             {
-                decisions.Add(new TickDecision(node.Id, Heartbeat: false, Target: WorkerNodeState.Down));
+                decisions.Add(new TickDecision(node.Id, node.State, Heartbeat: false, Target: WorkerNodeState.Down));
             }
         }
 
@@ -244,13 +279,19 @@ public sealed partial class NodeHealthPoller(
                 row.RecordHeartbeat(now);
             }
 
-            if (decision.Target == WorkerNodeState.Active)
+            // The transition is only applied while the row still holds the state the decision assumed: an
+            // operator's `nodes set-state` landing between the registry read and this write must win over
+            // health, because health never ends a drain (D12).
+            if (decision.Target is { } target && row.State == decision.Assumed)
             {
-                row.MarkActive(now);
-            }
-            else if (decision.Target == WorkerNodeState.Down)
-            {
-                row.MarkDown(now);
+                if (target == WorkerNodeState.Active)
+                {
+                    row.MarkActive(now);
+                }
+                else
+                {
+                    row.MarkDown(now);
+                }
             }
         }
 
@@ -292,6 +333,13 @@ public sealed partial class NodeHealthPoller(
     /// </summary>
     private async Task<PullOutcome> PullAsync(WorkerNode node, CancellationToken cancellationToken)
     {
+        // A pull owns its own deadline: the client's timeout ends at the headers (ResponseHeadersRead), so
+        // the send and the body read share one linked token that dies at PullTimeout regardless of the
+        // caller's lifetime.
+        using var pullDeadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        pullDeadline.CancelAfter(RenderNodesOptions.PullTimeout);
+        var pull = pullDeadline.Token;
+
         try
         {
             var client = ClientFor(node);
@@ -299,7 +347,7 @@ public sealed partial class NodeHealthPoller(
             using var response = await client.GetAsync(
                 RenderNodeRoutes.Health,
                 HttpCompletionOption.ResponseHeadersRead,
-                cancellationToken);
+                pull);
 
             var status = response.StatusCode;
 
@@ -318,10 +366,11 @@ public sealed partial class NodeHealthPoller(
                 return PullOutcome.NoAnswer();
             }
 
-            // The body is read as a string: ReadFromJsonAsync would report its own failure shape and the
-            // tolerant reader must be the only one (11 README D4).
-            var body = await response.Content.ReadAsStringAsync(cancellationToken);
-            if (!TryReadHealth(node, body, out var health))
+            // The body is read as a bounded string (MaxBodyBytes): ReadFromJsonAsync would report its own
+            // failure shape, the tolerant reader must be the only one (11 README D4), and a compromised
+            // node must not buffer an unbounded body in the Worker's memory.
+            var body = await ReadBodyAsync(node, response, pull);
+            if (body is null || !TryReadHealth(node, body, out var health))
             {
                 return PullOutcome.NoAnswer();
             }
@@ -336,8 +385,9 @@ public sealed partial class NodeHealthPoller(
         }
         catch (Exception exception)
         {
-            // Connect error, pin mismatch, timeout, a rotated key: the node's name and the failure's class
-            // only. An exception message can echo the request's URL, which is never logged (11 README S4).
+            // Connect error, pin mismatch, pull deadline (the linked token expired), a rotated key: the
+            // node's name and the failure's class only. An exception message can echo the request's URL,
+            // which is never logged (11 README S4).
             LogPullFailed(node.Name, exception.GetType().Name);
 
             return PullOutcome.NoAnswer();
@@ -345,8 +395,66 @@ public sealed partial class NodeHealthPoller(
     }
 
     /// <summary>
-    /// Deserialises a health body with the tolerant reader (D4). A parse failure or an empty body logs the
-    /// node's name and the parse-error class — never the body (S4) — and reports <c>false</c>.
+    /// Reads at most <see cref="MaxBodyBytes"/> of the body. A declared length over the cap is refused
+    /// before the body is touched; an uncounted (chunked) stream is read only until the cap overflows.
+    /// Returns <c>null</c> — logged as <see cref="BodyTooLargeError"/>, never the body — when the answer is
+    /// bigger than the cap.
+    /// </summary>
+    private async Task<string?> ReadBodyAsync(
+        WorkerNode node,
+        HttpResponseMessage response,
+        CancellationToken cancellationToken)
+    {
+        if (response.Content.Headers.ContentLength > MaxBodyBytes)
+        {
+            LogUnparseableBody(node.Name, BodyTooLargeError);
+
+            return null;
+        }
+
+        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+
+        // One byte of headroom decides "exactly the cap" apart from "one byte over": the buffer is sized to
+        // the cap plus one, and reaching it already means the answer is rejected — the rest is never read.
+        var buffer = new byte[MaxBodyBytes + 1];
+        var total = 0;
+        int read;
+        while ((read = await stream.ReadAsync(buffer.AsMemory(total, buffer.Length - total), cancellationToken)) > 0)
+        {
+            total += read;
+            if (total > MaxBodyBytes)
+            {
+                LogUnparseableBody(node.Name, BodyTooLargeError);
+
+                return null;
+            }
+        }
+
+        return Encoding.UTF8.GetString(buffer, 0, total);
+    }
+
+    /// <summary>
+    /// The semantic half of the tolerant reader (D4): <c>render-node-health.v1</c> may not carry a null or
+    /// blank schema/status/reason, and every required reference block must be present. Unknown members stay
+    /// ignorable; the check only refuses invalid known fields, which would otherwise let one node's body
+    /// break the whole tick's heartbeat and down decisions.
+    /// </summary>
+    private static bool IsWellFormed(RenderNodeHealthV1 health) =>
+        !string.IsNullOrWhiteSpace(health.Schema)
+        && !string.IsNullOrWhiteSpace(health.Status)
+        && health.Reasons is { } reasons && reasons.All(reason => !string.IsNullOrWhiteSpace(reason))
+        && health.Capacity is not null
+        && health.Mpt is not null
+        && health.ImageRelay is not null
+        && health.Assets is not null
+        && health.Disk is not null
+        && health.Gpu is not null
+        && health.Adapter is not null;
+
+    /// <summary>
+    /// Deserialises a health body with the tolerant reader (D4). A parse failure, an empty body, or an
+    /// invalid known field (a null/blank required value) logs the node's name and the error class — never
+    /// the body (S4) — and reports <c>false</c>.
     /// </summary>
     private bool TryReadHealth(WorkerNode node, string body, out RenderNodeHealthV1 health)
     {
@@ -357,6 +465,15 @@ public sealed partial class NodeHealthPoller(
             if (parsed is null)
             {
                 LogUnparseableBody(node.Name, MissingBodyError);
+
+                return false;
+            }
+            if (!IsWellFormed(parsed))
+            {
+                // Every required block carries [JsonRequired], so an absent member never reaches here; a
+                // *present but null* block or a null/blank schema, status or reason does, and such a body
+                // must not drive a snapshot or a reason counter (the counters throw on blank values).
+                LogUnparseableBody(node.Name, InvalidFieldsError);
 
                 return false;
             }
@@ -500,6 +617,12 @@ public sealed partial class NodeHealthPoller(
         Message = "render-node.drift node={Node} derived={Derived} reported={Reported}")]
     private partial void LogDrift(string node, int derived, int reported);
 
+    [LoggerMessage(
+        EventId = 2406,
+        Level = LogLevel.Warning,
+        Message = "render-node.poller.lock-recovered")]
+    private partial void LogLockRecovered();
+
     /// <summary>A node's pooled client and the base URL it was built for.</summary>
     private sealed record NodeClient(Uri BaseUrl, HttpClient Client);
 
@@ -520,6 +643,10 @@ public sealed partial class NodeHealthPoller(
         public static PullOutcome Answer(NodeHealthSnapshot snapshot) => new(snapshot, []);
     }
 
-    /// <summary>What one tick decided for one node; <c>Target</c> is <c>null</c> when only the heartbeat moves.</summary>
-    private sealed record TickDecision(Guid Id, bool Heartbeat, WorkerNodeState? Target);
+    /// <summary>
+    /// What one tick decided for one node; <c>Target</c> is <c>null</c> when only the heartbeat moves.
+    /// <c>Assumed</c> is the registry's state when the decision was made: the write applies
+    /// <c>Target</c> only while the row still holds it, so an operator drain can never be overwritten.
+    /// </summary>
+    private sealed record TickDecision(Guid Id, WorkerNodeState Assumed, bool Heartbeat, WorkerNodeState? Target);
 }

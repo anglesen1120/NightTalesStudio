@@ -1,5 +1,7 @@
 using System.Diagnostics.Metrics;
+using System.Globalization;
 using System.Net;
+using System.Text.Json.Nodes;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -396,10 +398,268 @@ public sealed class NodeHealthPollerTests(TestDatabase database) : IntegrationTe
         sink.Messages.ShouldContain(message => message.Contains("alpha", StringComparison.Ordinal));
     }
 
+    [Fact]
+    public async Task StalledBody_IsNoAnswer_AtThePullDeadline()
+    {
+        RenderNodeDatabase.Reset(Database);
+        var clock = new FakeClock(Start);
+        await SeedNodeAsync("alpha", WorkerNodeState.Active, heartbeat: Start);
+        await SeedNodeAsync("beta", WorkerNodeState.Active, heartbeat: Start);
+        using var harness = CreateHarness(clock);
+        // The client's own timeout is far past the pull deadline, so only the pull's linked deadline can
+        // end the body stall — the gap ResponseHeadersRead leaves (review F1/SEC-11.3.3-02).
+        harness.Factory.Timeout = TimeSpan.FromSeconds(30);
+        harness.Factory.Script("alpha", new ScriptedHttpStep(HttpStatusCode.OK, StallBody: true));
+        harness.Factory.Script("beta", new ScriptedHttpStep(HttpStatusCode.OK, RenderNodeHealthBodies.Ok()));
+
+        clock.Advance(TimeSpan.FromSeconds(200));
+
+        var tick = harness.Poller.PollOnceAsync(Ct);
+        var completed = await Task.WhenAny(tick, Task.Delay(TimeSpan.FromSeconds(30), Ct));
+        completed.ShouldBeSameAs(tick, "a body that never finishes must be cut by the pull deadline, not hang the tick");
+        await tick;
+
+        var alpha = await RowAsync("alpha");
+        alpha.State.ShouldBe(WorkerNodeState.Down, "a stalled body is no valid answer");
+        alpha.LastHeartbeatAt.ShouldBe(Start);
+
+        var beta = await RowAsync("beta");
+        beta.State.ShouldBe(WorkerNodeState.Active);
+        beta.LastHeartbeatAt.ShouldBe(clock.UtcNow, "one stalled node must not hold the tick back");
+    }
+
+    [Fact]
+    public async Task OversizedBody_IsNoAnswer_DeclaredOrChunked()
+    {
+        RenderNodeDatabase.Reset(Database);
+        var clock = new FakeClock(Start);
+        await SeedNodeAsync("alpha", WorkerNodeState.Active, heartbeat: Start);
+        await SeedNodeAsync("beta", WorkerNodeState.Active, heartbeat: Start);
+        await SeedNodeAsync("gamma", WorkerNodeState.Active, heartbeat: Start);
+        using var harness = CreateHarness(clock);
+
+        // Bodies that parse but run past the 64 KiB cap: alpha declares it up front, beta hides it behind
+        // a chunked answer, gamma stays inside the cap as the control (SEC-11.3.3-01).
+        harness.Factory.Script(
+            "alpha",
+            new ScriptedHttpStep(HttpStatusCode.OK, PadBodyToSize(RenderNodeHealthBodies.Ok(), 70 * 1024)));
+        harness.Factory.Script(
+            "beta",
+            new ScriptedHttpStep(
+                HttpStatusCode.OK,
+                PadBodyToSize(RenderNodeHealthBodies.Ok(), 70 * 1024),
+                OmitContentLength: true));
+        harness.Factory.Script("gamma", new ScriptedHttpStep(HttpStatusCode.OK, RenderNodeHealthBodies.Ok()));
+
+        clock.Advance(TimeSpan.FromSeconds(200));
+        await harness.Poller.PollOnceAsync(Ct);
+
+        (await RowAsync("alpha")).State.ShouldBe(WorkerNodeState.Down, "a declared over-cap body is refused");
+        (await RowAsync("beta")).State.ShouldBe(WorkerNodeState.Down, "an uncounted over-cap body is refused while reading");
+
+        var gamma = await RowAsync("gamma");
+        gamma.State.ShouldBe(WorkerNodeState.Active);
+        gamma.LastHeartbeatAt.ShouldBe(clock.UtcNow, "a body inside the cap still answers");
+    }
+
+    [Fact]
+    public async Task InvalidBodyFields_IsNoAnswer_ForThatNodeOnly()
+    {
+        RenderNodeDatabase.Reset(Database);
+        var clock = new FakeClock(Start);
+        await SeedNodeAsync("alpha", WorkerNodeState.Active, heartbeat: Start);
+        await SeedNodeAsync("beta", WorkerNodeState.Active, heartbeat: Start);
+        await SeedNodeAsync("gamma", WorkerNodeState.Active, heartbeat: Start);
+        using var harness = CreateHarness(clock);
+
+        // Both bodies are parseable JSON shaped like render-node-health.v1 but with invalid known
+        // fields: alpha's reason is blank (the reason counters throw on it — SEC-11.3.3-03), beta's
+        // capacity block is null. Neither may kill the tick or poison gamma's update.
+        harness.Factory.Script(
+            "alpha",
+            new ScriptedHttpStep(HttpStatusCode.ServiceUnavailable, RenderNodeHealthBodies.Degraded("")));
+        harness.Factory.Script("beta", new ScriptedHttpStep(HttpStatusCode.OK, BodyWithNullBlock("capacity")));
+        harness.Factory.Script("gamma", new ScriptedHttpStep(HttpStatusCode.OK, RenderNodeHealthBodies.Ok()));
+
+        clock.Advance(TimeSpan.FromSeconds(200));
+        await harness.Poller.PollOnceAsync(Ct);
+
+        (await RowAsync("alpha")).State.ShouldBe(WorkerNodeState.Down, "a blank reason is no valid answer");
+        (await RowAsync("beta")).State.ShouldBe(WorkerNodeState.Down, "a null required block is no valid answer");
+
+        var gamma = await RowAsync("gamma");
+        gamma.State.ShouldBe(WorkerNodeState.Active);
+        gamma.LastHeartbeatAt.ShouldBe(clock.UtcNow, "one node's invalid body must not stop another's heartbeat");
+    }
+
+    [Fact]
+    public async Task LostLock_SkipsTheTick_AndReacquiresOnTheNext()
+    {
+        RenderNodeDatabase.Reset(Database);
+        var clock = new FakeClock(Start);
+        await SeedNodeAsync("alpha", WorkerNodeState.Active);
+        var lockApplication = $"nts-qa-lock-{Guid.CreateVersion7():N}";
+        using var harness = CreateHarness(clock, lockConnectionString: $"{Database.ConnectionString};Application Name={lockApplication}");
+        harness.Factory.Script("alpha", new ScriptedHttpStep(HttpStatusCode.OK, RenderNodeHealthBodies.Ok()));
+
+        (await harness.Poller.TickAsync(Ct)).ShouldBeTrue("the first instance takes the advisory lock (Q5)");
+        harness.Factory.Requests("alpha").Count.ShouldBe(1);
+
+        // The server kills the lock session: the advisory lock is gone, but the client only learns it when
+        // the connection is used (review F2). Until then the row must not be touched.
+        await TerminateLockSessionAsync(lockApplication);
+
+        (await harness.Poller.TickAsync(Ct)).ShouldBeFalse(
+            "the tick that discovers the lost lock re-takes it but applies nothing from the gap");
+        harness.Factory.Requests("alpha").Count.ShouldBe(1, "a lost lock must not drive a tick");
+
+        (await harness.Poller.TickAsync(Ct)).ShouldBeTrue("the next tick polls on the re-taken lock");
+        harness.Factory.Requests("alpha").Count.ShouldBe(2);
+        (await RowAsync("alpha")).LastHeartbeatAt.ShouldBe(clock.UtcNow);
+    }
+
+    [Fact]
+    public async Task FailedAcquisition_ReturnsTheCandidateToThePool()
+    {
+        // A one-slot pool makes an undisposed candidate observable: if a failure between the open and the
+        // lock assignment leaks the connection, the next acquisition can never open one (review F4).
+        await using var guard = new NodeHealthPollerLock(
+            $"{Database.ConnectionString};Maximum Pool Size=1;Timeout=3")
+        {
+            OnCandidateOpened = async (candidate, _) =>
+            {
+                // A real post-open failure: kill the candidate's backend so the lock command runs on a
+                // dead session and throws.
+                await using var probe = candidate.CreateCommand();
+                probe.CommandText = "SELECT pg_backend_pid()";
+                var pid = (int)(await probe.ExecuteScalarAsync(Ct))!;
+                await TerminateBackendAsync(pid);
+            },
+        };
+
+        var failure = await Record.ExceptionAsync(() => guard.TryAcquireAsync(Ct));
+        failure.ShouldNotBeNull("the lock command cannot run on a terminated session");
+        guard.IsHeld.ShouldBeFalse("a failed acquisition holds nothing");
+
+        guard.OnCandidateOpened = null;
+        (await guard.TryAcquireAsync(Ct)).ShouldBe(
+            NodeHealthPollerLock.LockAttempt.Held,
+            "the first candidate's slot is back in the pool, so the re-acquisition can open one");
+    }
+
+    [Fact]
+    public async Task OperatorDrainMidTick_WinsOverTheHealthDecision()
+    {
+        RenderNodeDatabase.Reset(Database);
+        var clock = new FakeClock(Start);
+        await SeedNodeAsync("alpha", WorkerNodeState.Active, heartbeat: Start);
+        using var harness = CreateHarness(clock);
+        // The registry read sees `active` and the pull fails, so the tick decides `down`; but the
+        // operator's drain lands mid-pull, so the tracked row is `draining` when the decision is
+        // applied (review F3 — health must not stomp it).
+        harness.Factory.Script(
+            "alpha",
+            new ScriptedHttpStep(
+                Failure: new HttpRequestException("unreachable"),
+                OnRequest: async _ => await MarkDrainingAsync("alpha")));
+
+        clock.Advance(TimeSpan.FromSeconds(200));
+        await harness.Poller.PollOnceAsync(Ct);
+
+        (await RowAsync("alpha")).State.ShouldBe(
+            WorkerNodeState.Draining,
+            "the operator's write between the registry read and the apply wins over health (D12)");
+    }
+
+    [Fact]
+    public async Task DriftAlert_RequiresThreeConsecutiveMismatches()
+    {
+        RenderNodeDatabase.Reset(Database);
+        var clock = new FakeClock(Start);
+        await SeedNodeAsync("alpha", WorkerNodeState.Active);
+        using var harness = CreateHarness(clock);
+
+        var drifts = new List<string>();
+        using var listener = MetricsListener(
+            harness.Metrics, new List<(string, string)>(), new Dictionary<string, int>(), drifts);
+
+        harness.Factory.Script("alpha", new ScriptedHttpStep(HttpStatusCode.OK, RenderNodeHealthBodies.Ok(activeTasks: 2)));
+        await harness.Poller.PollOnceAsync(Ct);
+        await harness.Poller.PollOnceAsync(Ct);
+
+        // A silent pull is not a mismatch: it breaks the streak instead of carrying it over (review F6).
+        harness.Factory.Script("alpha", new ScriptedHttpStep(Failure: new HttpRequestException("unreachable")));
+        await harness.Poller.PollOnceAsync(Ct);
+
+        harness.Factory.Script("alpha", new ScriptedHttpStep(HttpStatusCode.OK, RenderNodeHealthBodies.Ok(activeTasks: 2)));
+        await harness.Poller.PollOnceAsync(Ct);
+        await harness.Poller.PollOnceAsync(Ct);
+        drifts.ShouldBeEmpty("two mismatches around a silent pull are not three consecutive mismatches");
+
+        await harness.Poller.PollOnceAsync(Ct);
+        drifts.ShouldBe(["alpha"], "the run restarted after the silent pull, so this is its third member");
+    }
+
+    /// <summary>A valid body padded past the cap with an unknown member the tolerant reader skips (D4).</summary>
+    private static string PadBodyToSize(string body, int minimumBytes)
+    {
+        var pad = ",\"padding\":\"" + new string('x', minimumBytes) + "\"}";
+        return body[..^1] + pad;
+    }
+
+    /// <summary>The body's required block set to JSON <c>null</c> instead of its object.</summary>
+    private static string BodyWithNullBlock(string member)
+    {
+        var document = JsonNode.Parse(RenderNodeHealthBodies.Ok())!.AsObject();
+        document[member] = null;
+
+        return document.ToJsonString();
+    }
+
+    /// <summary>Kills the lock session's backend by application name, then waits for it to be gone.</summary>
+    private async Task TerminateLockSessionAsync(string applicationName)
+    {
+        var pids = await Database.QueryStringsAsync(
+            "SELECT pid::text FROM pg_stat_activity "
+            + $"WHERE application_name = '{applicationName}' AND pid <> pg_backend_pid()",
+            Ct);
+        pids.ShouldHaveSingleItem("the lock connection is the only session with that application name");
+
+        await TerminateBackendAsync(int.Parse(pids[0], CultureInfo.InvariantCulture));
+    }
+
+    /// <summary>
+    /// Terminates one backend and waits until <c>pg_stat_activity</c> stops listing it: the advisory lock
+    /// it owned is only free once the session is really dead.
+    /// </summary>
+    private async Task TerminateBackendAsync(int pid)
+    {
+        var terminated = await Database.QueryStringsAsync(
+            $"SELECT pg_terminate_backend({pid})::text",
+            Ct);
+        terminated.ShouldContain("true", "the test must actually have killed the session");
+
+        for (var attempt = 0; attempt < 250; attempt++)
+        {
+            var remaining = await Database.QueryStringsAsync(
+                $"SELECT count(*)::text FROM pg_stat_activity WHERE pid = {pid}",
+                Ct);
+            if (remaining is ["0"])
+            {
+                return;
+            }
+
+            await Task.Delay(20, Ct);
+        }
+
+        throw new InvalidOperationException($"backend {pid} did not die within 5 s of its termination");
+    }
+
     private Harness CreateHarness(
         FakeClock clock,
         RenderNodesOptions? options = null,
-        ILogger<NodeHealthPoller>? logger = null)
+        ILogger<NodeHealthPoller>? logger = null,
+        string? lockConnectionString = null)
     {
         var host = RenderNodeTestHost.Build(
             Database,
@@ -411,7 +671,7 @@ public sealed class NodeHealthPollerTests(TestDatabase database) : IntegrationTe
             });
 
         var factory = new FakeRenderNodeConnectionFactory();
-        var lockGuard = new NodeHealthPollerLock(Database.ConnectionString);
+        var lockGuard = new NodeHealthPollerLock(lockConnectionString ?? Database.ConnectionString);
         var poller = new NodeHealthPoller(
             host.Services.GetRequiredService<IServiceScopeFactory>(),
             Options.Create(options ?? new RenderNodesOptions()),

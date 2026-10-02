@@ -233,24 +233,37 @@ public static class NodesCommand
     /// <summary>
     /// Runs the seeder before a verb, so a fresh row is listed and an operator's change lands on the row the
     /// configuration describes (plan §7). A missing adapter key is exit 2 (the start-up convention), any
-    /// other refusal exit 1.
+    /// other refusal or a seeder failure inside this boundary is exit 1 — the plan §5 table maps every
+    /// configuration/database failure, so a throwing seed must not escape the verb's exit code.
     /// </summary>
     private static async Task<int> SeedAsync(IServiceScope scope, CancellationToken cancellationToken)
     {
         var seeder = scope.ServiceProvider.GetRequiredService<WorkerNodeSeeder>();
-        var seeded = await seeder.RegisterAsync(cancellationToken);
 
-        if (!seeded.IsError)
+        try
         {
-            return Success;
-        }
+            var seeded = await seeder.RegisterAsync(cancellationToken);
 
-        foreach (var error in seeded.Errors)
+            if (!seeded.IsError)
+            {
+                return Success;
+            }
+
+            foreach (var error in seeded.Errors)
+            {
+                Console.Error.WriteLine($"nts-worker: {error.Description}");
+            }
+
+            return WorkerNodeRegistration.CodeFor(seeded.Errors);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
         {
-            Console.Error.WriteLine($"nts-worker: {error.Description}");
-        }
+            // The same wording WorkerNodeRegistration.Run uses for a start-up failure: the variable or
+            // configuration path may be named, never a key value (S4).
+            Console.Error.WriteLine($"nts-worker: render node registration failed: {exception.Message}");
 
-        return WorkerNodeRegistration.CodeFor(seeded.Errors);
+            return Failure;
+        }
     }
 
     private static int BadUsage()

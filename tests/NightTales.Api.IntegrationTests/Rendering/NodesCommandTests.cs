@@ -188,6 +188,36 @@ public sealed class NodesCommandTests(TestDatabase database) : IntegrationTest(d
         run.Error.ShouldNotContain("beta-key-value", Case.Sensitive);
     }
 
+    [Fact]
+    public async Task List_SeederThrows_Exits1_InsideTheVerbBoundary()
+    {
+        RenderNodeDatabase.Reset(Database);
+        var clock = new FakeClock(Start);
+        // The seeder resolves the bound RenderNodes options inside RegisterAsync; a configuration that
+        // fails validation throws there, before any row is written (review F5 — a throwing seed must not
+        // escape the verb's exit-code boundary).
+        var settings = new Dictionary<string, string?>(StringComparer.Ordinal)
+        {
+            [$"ConnectionStrings:{NightTales.Infrastructure.Persistence.PersistenceOptions.ConnectionStringName}"] =
+                Database.ConnectionString,
+            ["RenderNodes:HealthPollSeconds"] = "0",
+            ["RenderNodes:Nodes:0:Name"] = "alpha",
+            ["RenderNodes:Nodes:0:BaseUrl"] = "https://alpha.example/",
+            ["RenderNodes:Nodes:0:Capacity"] = "2",
+            ["RenderNodes:Nodes:0:TlsCertSha256"] = Pin,
+            [RenderNodeApiKey.VariableName("alpha")] = "alpha-key-value",
+        };
+        using var host = RenderNodeTestHost.Build(Database, clock, settings);
+
+        var run = await RunAsync(host.Services, "nodes", "list");
+
+        run.Code.ShouldBe(
+            NodesCommand.Failure,
+            "a seeding failure is plan §5's 'configuration/database failure' — exit 1, not an unhandled exception");
+        run.Error.ShouldContain("nts-worker:", Case.Sensitive);
+        run.Error.ShouldNotContain("alpha-key-value", Case.Sensitive);
+    }
+
     private RenderNodeTestHost BuildHost(FakeClock clock, params string[] nodeNames) =>
         BuildHost(clock, missingKey: null, nodeNames);
 
