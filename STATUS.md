@@ -14,6 +14,7 @@ Keep this block ≤ 15 lines: current state and next step only. Move the previou
 - **11.3.5-T4 must:** wire `ParseLoopbackMptBaseUrl` into `ValidateOnStart`; build the MPT client with `MptHttpClient.Create` (redirects off). Known low gap QA89-LB-01: a non-root `MptBaseUrl` path is accepted and every MPT call then 404s.
 - **Next:** not planned yet (owner 2026-10-03). Unblocked: password reset delivery, `13.3.1-T1` (storage merged), `09.3.4-T1` /me (flags merged), `09.9.3-T1` OTLP (storage + registry merged); migration fillers `05.3.2-T3`, `02.2.2-T1`, `02.2.4-T1` wait for slots (rule 3). Web UI stays in its separate session.
 - **SEC-01:** owner chose range API + real top-N seed fallback (09 W3-O3); current bundled seed is synthetic. `09.3.1-T2` replaces it before registration opens.
+- **Security audit (2026-10-02):** no Critical/High; 8 Medium + Low/Info findings and the fix waves W1–W4 in [`cyber-issue.md`](cyber-issue.md) (CY-01…CY-30).
 - **Gates/environment:** risk-tier gates per 00 §10; native Mac stack, runtime under `NTS_HOME`, keys stay out of git. `gate.sh` provides `Email__AddressHashPepper`.
 - **Setup:** `docs/dev-setup.md`; `git config core.hooksPath .githooks`; worker bootstrap + smoke per `worker-node/README.md`.
 
