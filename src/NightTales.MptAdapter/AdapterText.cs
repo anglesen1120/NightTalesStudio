@@ -34,21 +34,36 @@ public static class AdapterText
             return string.Empty;
         }
 
-        var take = Math.Min(value.Length, Math.Max(0, maxLength));
-        var builder = new StringBuilder(take);
-        for (var index = 0; index < take; index++)
+        var max = Math.Max(0, maxLength);
+        var builder = new StringBuilder(Math.Min(value.Length, max));
+
+        // By scalar, not by UTF-16 unit: a supplementary-plane format character (U+E0001, U+1D173) is two
+        // surrogate chars that no per-char category test can see (SEC-2). The bound is still in UTF-16 units
+        // and never splits a pair.
+        foreach (var rune in value.EnumerateRunes())
         {
-            var current = value[index];
-            builder.Append(NeedsReplacing(current) ? ControlReplacement : current);
+            if (builder.Length + rune.Utf16SequenceLength > max)
+            {
+                break;
+            }
+
+            if (NeedsReplacing(rune))
+            {
+                builder.Append(ControlReplacement);
+            }
+            else
+            {
+                builder.Append(rune.ToString());
+            }
         }
 
         return builder.ToString();
     }
 
     /// <summary>Control characters plus the Unicode line/paragraph separators and format characters (SEC-2).</summary>
-    private static bool NeedsReplacing(char value) =>
-        char.IsControl(value)
-        || char.GetUnicodeCategory(value) is System.Globalization.UnicodeCategory.LineSeparator
+    private static bool NeedsReplacing(Rune value) =>
+        Rune.IsControl(value)
+        || Rune.GetUnicodeCategory(value) is System.Globalization.UnicodeCategory.LineSeparator
             or System.Globalization.UnicodeCategory.ParagraphSeparator
             or System.Globalization.UnicodeCategory.Format;
 }

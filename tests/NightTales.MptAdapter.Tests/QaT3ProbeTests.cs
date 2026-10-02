@@ -90,6 +90,50 @@ public sealed class QaT3ProbeTests : IDisposable
     }
 
     [Fact]
+    public async Task Timeout_KillsChildAndGreatGrandchild_AndSignalsNothingOutsideTheGroup()
+    {
+        var childFile = Path.Combine(_root, "child.pid");
+        var deepFile = Path.Combine(_root, "deep.pid");
+        var script = $"sh -c 'sleep 300 & echo $! > \"{deepFile}\"; wait' &\necho $! > '{childFile}'\nwait\n";
+        var options = ShellOptions(script, timeoutSeconds: 1, graceSeconds: 2);
+        MakeTaskDir(options, "t1");
+
+        // A bystander in the test host's own process group: the group kill must never reach it (DELTA-2).
+        using var bystander = Process.Start(new ProcessStartInfo("/bin/sleep") { ArgumentList = { "300" }, UseShellExecute = false })!;
+        try
+        {
+            var result = await Runner(options).RunAsync(new CheckRequest(Guid.NewGuid(), "t1", "landscape", true), CancellationToken.None);
+
+            result.TimedOut.ShouldBeTrue();
+            var child = int.Parse(File.ReadAllText(childFile).Trim(), System.Globalization.CultureInfo.InvariantCulture);
+            var deep = int.Parse(File.ReadAllText(deepFile).Trim(), System.Globalization.CultureInfo.InvariantCulture);
+            await Task.Delay(300, TestContext.Current.CancellationToken);
+            try
+            {
+                IsAlive(child).ShouldBeFalse("the intermediate child must die with the group");
+                IsAlive(deep).ShouldBeFalse("the great-grandchild must die with the group");
+            }
+            finally
+            {
+                foreach (var pid in new[] { child, deep }.Where(IsAlive))
+                {
+                    using var k = Process.Start(new ProcessStartInfo("/bin/kill") { ArgumentList = { "-9", pid.ToString(System.Globalization.CultureInfo.InvariantCulture) }, UseShellExecute = false })!;
+                    k.WaitForExit();
+                }
+            }
+
+            bystander.HasExited.ShouldBeFalse("a process outside the check's group must not be signalled");
+        }
+        finally
+        {
+            if (!bystander.HasExited)
+            {
+                bystander.Kill();
+            }
+        }
+    }
+
+    [Fact]
     public async Task Timeout_KillsTree_WhenParentIgnoresSigterm()
     {
         var pidFile = Path.Combine(_root, "gc2.pid");
@@ -300,6 +344,84 @@ public sealed class QaT3ProbeTests : IDisposable
 
         attempts.ShouldBeGreaterThan(100);
         leaked.ShouldBe(0, $"{leaked} of {attempts} opens followed a symlink swapped in after the IsLink check (S8/P3 containment)");
+    }
+
+    [Fact]
+    public async Task OpenRead_ParentDirectorySwappedForASymlink_NeverYieldsTheOutsideFile()
+    {
+        var options = ShellOptions("true\n");
+        var victim = MakeTaskDir(options, "victim");
+        var parked = Path.Combine(options.MptTasksDir, "victim.parked");
+        var outsideDir = Path.Combine(_root, "outside-dir");
+        Directory.CreateDirectory(outsideDir);
+        File.WriteAllText(Path.Combine(outsideDir, "final-1.norm.mp4"), "OUTSIDE-SECRET-OUTSIDE-SECRET");
+        File.WriteAllText(Path.Combine(victim, "final-1.norm.mp4"), "honest-content-honest-con");
+
+        using var stop = new CancellationTokenSource();
+        var swaps = 0;
+        var swapper = Task.Run(() =>
+        {
+            while (!stop.IsCancellationRequested)
+            {
+                try
+                {
+                    Directory.Move(victim, parked);
+                    Directory.CreateSymbolicLink(victim, outsideDir);
+                    swaps++;
+                    Directory.Delete(victim);
+                    Directory.Move(parked, victim);
+                }
+                catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+                {
+                    // racing with the reader; put the honest dir back if it is still parked
+                    if (Directory.Exists(parked) && !Directory.Exists(victim))
+                    {
+                        Directory.Move(parked, victim);
+                    }
+                }
+            }
+        }, TestContext.Current.CancellationToken);
+
+        var leaked = 0;
+        var attempts = 0;
+        var deadline = Stopwatch.StartNew();
+        try
+        {
+            while (deadline.Elapsed < TimeSpan.FromSeconds(4))
+            {
+                attempts++;
+                SafePathResult result;
+                FileStream? stream;
+                try
+                {
+                    result = SafePath.OpenRead(options.MptTasksDir, "victim", "final-1.norm.mp4", 1 << 20, out stream);
+                }
+                catch (IOException)
+                {
+                    continue;
+                }
+
+                if (result == SafePathResult.Ok && stream is not null)
+                {
+                    using (stream)
+                    using (var reader = new StreamReader(stream))
+                    {
+                        if (reader.ReadToEnd().Contains("OUTSIDE-SECRET", StringComparison.Ordinal))
+                        {
+                            leaked++;
+                        }
+                    }
+                }
+            }
+        }
+        finally
+        {
+            await stop.CancelAsync();
+            await swapper;
+        }
+
+        swaps.ShouldBeGreaterThan(10, "the swapper must really have raced the reader");
+        leaked.ShouldBe(0, $"{leaked} of {attempts} opens followed a swapped parent-directory link (S8)");
     }
 
     // ---- caps ----------------------------------------------------------------------------------------------

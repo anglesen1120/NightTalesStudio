@@ -1,3 +1,7 @@
+using System.Runtime.InteropServices;
+using System.Text;
+using Microsoft.Win32.SafeHandles;
+
 namespace NightTales.MptAdapter;
 
 /// <summary>Why <see cref="SafePath"/> refused a file.</summary>
@@ -43,24 +47,20 @@ internal static class SafePath
             return SafePathResult.Escapes;
         }
 
-        var directory = new DirectoryInfo(combined);
-        if (!directory.Exists)
+        var result = OperatingSystem.IsWindows() ? CheckDirectoryPortable(combined) : CheckDirectoryNative(rootFull, dirName!, combined);
+        if (result == SafePathResult.Ok)
         {
-            return SafePathResult.NotFound;
+            path = combined;
         }
 
-        if (IsLink(directory))
-        {
-            return SafePathResult.Escapes;
-        }
-
-        path = combined;
-        return SafePathResult.Ok;
+        return result;
     }
 
     /// <summary>
-    /// Opens <c>root/dirName/fileName</c> for a sequential read after the containment checks. The size cap is
-    /// checked on the opened handle too, so a file that grew between the check and the open is still refused.
+    /// Opens <c>root/dirName/fileName</c> for a sequential read. On Unix the walk is descriptor-relative
+    /// (<c>openat</c> from the root's descriptor, <c>O_NOFOLLOW</c> on every component below the root), so a link
+    /// swapped in for the task dir or the file after any earlier look can never lead outside the root: the
+    /// kernel refuses it at the moment of the open (S8, QA-2). The size cap is checked on the opened handle.
     /// </summary>
     internal static SafePathResult OpenRead(
         string root,
@@ -81,27 +81,22 @@ internal static class SafePath
             return directoryResult;
         }
 
-        var file = new FileInfo(Path.Combine(directory, fileName));
-        if (!file.Exists)
-        {
-            return SafePathResult.NotFound;
-        }
-
-        if (IsLink(file))
-        {
-            return SafePathResult.Escapes;
-        }
-
-        if (file.Length > maxBytes)
-        {
-            return SafePathResult.TooLarge;
-        }
-
         FileStream opened;
         try
         {
             if (OperatingSystem.IsWindows())
             {
+                var file = new FileInfo(Path.Combine(directory, fileName));
+                if (!file.Exists)
+                {
+                    return SafePathResult.NotFound;
+                }
+
+                if (IsLink(file) || IsLink(new DirectoryInfo(directory)))
+                {
+                    return SafePathResult.Escapes;
+                }
+
                 opened = new FileStream(
                     file.FullName,
                     FileMode.Open,
@@ -112,7 +107,7 @@ internal static class SafePath
             }
             else
             {
-                var handle = OpenNoFollow(file.FullName, out var failure);
+                var handle = OpenFileNative(Path.GetFullPath(root), dirName!, fileName, directory, out var failure);
                 if (handle is null)
                 {
                     return failure;
@@ -126,14 +121,6 @@ internal static class SafePath
             return SafePathResult.NotFound;
         }
 
-        // The directory could have been swapped for a link after ResolveDirectory; the file itself can no
-        // longer be a link (O_NOFOLLOW), so one more look at the parent closes the last gap (S8).
-        if (IsLink(new DirectoryInfo(directory)))
-        {
-            opened.Dispose();
-            return SafePathResult.Escapes;
-        }
-
         if (opened.Length > maxBytes)
         {
             opened.Dispose();
@@ -144,51 +131,111 @@ internal static class SafePath
         return SafePathResult.Ok;
     }
 
-    // O_NOFOLLOW/O_CLOEXEC are not portable constants; the node is Linux, the developer Mac is Darwin.
-    private static int NoFollowFlags()
+    private static SafePathResult CheckDirectoryPortable(string combined)
     {
-        if (OperatingSystem.IsMacOS())
+        var directory = new DirectoryInfo(combined);
+        if (!directory.Exists)
         {
-            return 0x0100 | 0x1000000; // O_NOFOLLOW | O_CLOEXEC (Darwin), O_RDONLY = 0
+            return SafePathResult.NotFound;
         }
 
-        var noFollow = System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture
-            is System.Runtime.InteropServices.Architecture.Arm64 or System.Runtime.InteropServices.Architecture.Arm
-            ? 0x8000
-            : 0x20000;
-        return noFollow | 0x80000; // | O_CLOEXEC (Linux)
+        return IsLink(directory) ? SafePathResult.Escapes : SafePathResult.Ok;
     }
 
-    /// <summary>Opens without following a link in the last component; a link yields <c>Escapes</c>.</summary>
-    private static Microsoft.Win32.SafeHandles.SafeFileHandle? OpenNoFollow(string fullName, out SafePathResult failure)
+    /// <summary>The root may sit behind links (an operator's choice); the task dir below it may not.</summary>
+    private static SafePathResult CheckDirectoryNative(string rootFull, string dirName, string combined)
     {
-        failure = SafePathResult.Ok;
-        var descriptor = NativeOpen([.. System.Text.Encoding.UTF8.GetBytes(fullName), 0], NoFollowFlags());
-        if (descriptor >= 0)
+        using var rootHandle = OpenNative(null, rootFull, DirectoryFlag | CloseOnExecFlag(), rootFull, out var failure);
+        if (rootHandle is null)
         {
-            return new Microsoft.Win32.SafeHandles.SafeFileHandle(descriptor, ownsHandle: true);
+            return failure;
         }
 
-        var errno = System.Runtime.InteropServices.Marshal.GetLastPInvokeError();
-        // ELOOP: Linux 40, Darwin 62 (symlink met by O_NOFOLLOW). ENOENT 2 and ENOTDIR 20 are the same on both.
+        using var dirHandle = OpenNative(rootHandle, dirName, DirectoryFlag | NoFollowFlag() | CloseOnExecFlag(), combined, out failure);
+        return dirHandle is null ? failure : SafePathResult.Ok;
+    }
+
+    private static SafeFileHandle? OpenFileNative(string rootFull, string dirName, string fileName, string directory, out SafePathResult failure)
+    {
+        using var rootHandle = OpenNative(null, rootFull, DirectoryFlag | CloseOnExecFlag(), rootFull, out failure);
+        if (rootHandle is null)
+        {
+            return null;
+        }
+
+        using var dirHandle = OpenNative(rootHandle, dirName, DirectoryFlag | NoFollowFlag() | CloseOnExecFlag(), directory, out failure);
+        if (dirHandle is null)
+        {
+            return null;
+        }
+
+        return OpenNative(dirHandle, fileName, NoFollowFlag() | CloseOnExecFlag(), Path.Combine(directory, fileName), out failure);
+    }
+
+    // The flag values are not portable: the node is Linux (x64 or arm64), the developer Mac is Darwin.
+    private static int NoFollowFlag() =>
+        OperatingSystem.IsMacOS() ? 0x0100 : IsLinuxArm() ? 0x8000 : 0x20000;
+
+    private static int CloseOnExecFlag() => OperatingSystem.IsMacOS() ? 0x1000000 : 0x80000;
+
+    private static int DirectoryFlag =>
+        OperatingSystem.IsMacOS() ? 0x100000 : IsLinuxArm() ? 0x4000 : 0x10000;
+
+    private static bool IsLinuxArm() =>
+        RuntimeInformation.ProcessArchitecture is Architecture.Arm64 or Architecture.Arm;
+
+    /// <summary>
+    /// <c>open</c>/<c>openat</c> (<c>O_RDONLY</c>). A link met under <c>O_NOFOLLOW</c> is <c>Escapes</c>; a missing
+    /// or over-long name is <c>NotFound</c>; anything else (permissions, descriptor exhaustion) throws.
+    /// </summary>
+    private static SafeFileHandle? OpenNative(SafeFileHandle? parent, string name, int flags, string fullName, out SafePathResult failure)
+    {
+        failure = SafePathResult.Ok;
+        var bytes = new byte[Encoding.UTF8.GetByteCount(name) + 1];
+        Encoding.UTF8.GetBytes(name, bytes);
+        var descriptor = parent is null
+            ? NativeOpen(bytes, flags)
+            : NativeOpenAt((int)parent.DangerousGetHandle(), bytes, flags);
+        if (descriptor >= 0)
+        {
+            return new SafeFileHandle(descriptor, ownsHandle: true);
+        }
+
+        var errno = Marshal.GetLastPInvokeError();
+        // ELOOP: Linux 40, Darwin 62. ENOENT 2 and ENOTDIR 20 are the same on both; ENAMETOOLONG Linux 36, Darwin 63.
         if (errno is 40 or 62)
         {
             failure = SafePathResult.Escapes;
             return null;
         }
 
-        if (errno is 2 or 20)
+        if (errno == 20)
+        {
+            // O_NOFOLLOW|O_DIRECTORY on a link answers ENOTDIR on some kernels: a link is Escapes, a file is NotFound.
+            failure = IsLink(new FileInfo(fullName)) ? SafePathResult.Escapes : SafePathResult.NotFound;
+            return null;
+        }
+
+        if (errno is 2 or 36 or 63)
         {
             failure = SafePathResult.NotFound;
             return null;
+        }
+
+        if (errno == 13)
+        {
+            throw new UnauthorizedAccessException($"open was denied (errno {errno}).");
         }
 
         throw new IOException($"open failed with errno {errno}.");
     }
 
 #pragma warning disable SYSLIB1054 // a blittable-free DllImport avoids AllowUnsafeBlocks for the generator
-    [System.Runtime.InteropServices.DllImport("libc", EntryPoint = "open", SetLastError = true)]
+    [DllImport("libc", EntryPoint = "open", SetLastError = true)]
     private static extern int NativeOpen(byte[] path, int flags);
+
+    [DllImport("libc", EntryPoint = "openat", SetLastError = true)]
+    private static extern int NativeOpenAt(int directoryDescriptor, byte[] path, int flags);
 #pragma warning restore SYSLIB1054
 
     /// <summary>Writes <paramref name="bytes"/> to a temp file beside <paramref name="path"/> and renames it into place.</summary>

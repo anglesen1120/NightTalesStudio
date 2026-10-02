@@ -22,6 +22,10 @@ public sealed class MptTextSafetyTests
     [InlineData("esc\u001b[31mred", "esc?[31mred")]
     [InlineData("nul\u0000end", "nul?end")]
     [InlineData("plain text", "plain text")]
+    [InlineData("a\u2028b\u2029c\u200Ed", "a?b?c?d")]
+    [InlineData("tag\U000E0001x", "tag?x")]
+    [InlineData("mus\U0001D173ic", "mus?ic")]
+    [InlineData("emoji \U0001F600 stays", "emoji \U0001F600 stays")]
     [InlineData("", "")]
     public void Sanitize_ReplacesEveryControlCharacter(string input, string expected) =>
         AdapterText.Sanitize(input).ShouldBe(expected);
