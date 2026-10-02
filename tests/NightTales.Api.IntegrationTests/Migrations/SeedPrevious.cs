@@ -169,6 +169,19 @@ internal static class SeedPrevious
                     'active', now(), 'RTX 4090',
                     '0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF', now(), now())
             """),
+        (
+            // 09.3.3-T1: the table the `_09_UserActionTokens` migration creates. Same rule as above: skipped
+            // while that migration is the last one, then every later migration is exercised over an
+            // unspent reset token (only its SHA-256 hash is stored, as the store writes it).
+            "user_action_tokens",
+            """
+            INSERT INTO user_action_tokens (id, user_id, kind, subject_id, token_hash, created_at, expires_at,
+                                            used_at)
+            VALUES ('01920000-0000-7000-8000-00000000000e', '01920000-0000-7000-8000-000000000001',
+                    'password_reset', NULL,
+                    '5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8', now(),
+                    now() + interval '60 minutes', NULL)
+            """),
     ];
 
     /// <summary>The tables the dataset covers, in insert order — the contract a feature migration extends.</summary>
