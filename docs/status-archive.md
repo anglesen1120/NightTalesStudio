@@ -4,6 +4,38 @@ History moved out of STATUS.md to keep the live file small. The initial archive 
 
 ## Resume-here history (Current/Previous blocks, Next actions)
 
+### Superseded Session 2 next-lane block (2026-10-02 (3), before #84–#94 merged)
+
+- **Current (2026-10-02 (3), advisor follow-up).** Remote `develop` `125167369a3f4411f067729795c77a45d4b49d72` includes approved UI handoff #91. Session 2 PRs #84–#90 and #92 remain open; storage is draft PR #94; #93 is the live STATUS delivery.
+- **Gate scope:** on implementation base `00e7d5d`, QA/T3/deltas/full local gates closed for password `7e0ece8`, storage `08943b6`, flags `488bd10` (#92 CI `37019151851` 4/4). Storage re-gated after merging develop: head `13dca85`, `Category!=Integration` gate 935 total / 919 pass / 16 skip / 0 fail, delta review clean, #94 CI 4/4. PR #91 changed design/plans/STATUS only, no backend/runtime/test/workflow paths; no claim of a new combined-tree gate.
+- **CI repairs closed:** #84 canonical Storage env exports `50e131d` + alias wording `97c9662`, CI `37021057158` 4/4; then docs-only SMTP key note recorded as 11 CR-19. #88 ffmpeg `29d45bf` CI `37004851202` 4/4. These runs validate each branch head, not a new combined backend tree.
+- **Delivery blockers:** #85 first; #86/#87 migrations share the same base, later merge regenerates after develop. Password reset stays local until a migration slot opens. Storage is draft PR #94 (`13dca85`, develop merged in): mark it ready after #84 merges.
+- **Next:** owner merges; then deliver storage and password reset on refreshed develop. B `13.3.1-T1` after storage, `/me` after flags, OTLP after storage + registry; migration fillers `05.3.2-T3`, `02.2.2-T1`, `02.2.4-T1` wait. Web UI stays in its separate session.
+
+Finished Session 2 lane rows (moved from STATUS §Session 2 plan):
+
+| Lane | Current | Next, after prerequisite merges | Tier | Notes |
+|---|---|---|---|---|
+| A Auth | #86 MFA login, #90 jobs dashboard: open, gated | Owner merges | T3 | #86 has a migration |
+| B Local storage + mail | #84 open, gated; 09.7.2-T1 draft PR #94 `13dca85`, QA/T3/delta gates closed; merged-tree gate (`Category!=Integration`) 935/919 pass/16 skip/0 fail | Mark #94 ready after #84 merges; then 13.3.1-T1 after storage merges | T3 | Native tooling only |
+| C Render node | #87 registry, #88 mock-mpt, #89 MPT backend: open, gated | Owner merges | T3 | #87 has a migration |
+
+**Progress (2026-10-02 (3)):** start-now set merged (#72–#83); next-lane PRs #84–#90 and flags #92 are open, gated and CI green. Password reset and storage closed independent QA, T3 reviews, finding deltas and full local gates; password reset waits for the migration queue, storage is draft PR #94 waiting for #84. Completed D/G rows and the kickoff table are archived; later tasks retain prerequisite merge order.
+
+Closed Open-task rows (moved from STATUS §Open tasks):
+
+| Task | Status | Note |
+|---|---|---|
+| 11.1.1-T2 Storage + mail | ready for owner merge | PR #84; code/QA/T3/CI closed, canonical exports fixed, SMTP key note recorded as 11 CR-19 |
+| Test-fixture concurrency fix | ready for owner merge | PR #85; merge first to remove cross-lane gate flakes |
+| 09.3.2-T3 MFA login | ready for owner merge | PR #86; migration, regenerate if merged after #87 |
+| 11.3.3-T1 Node registry | ready for owner merge | PR #87; migration, regenerate if merged after #86 |
+| 11.1.2-T1 mock-mpt | ready for owner merge | PR #88; ffmpeg CI fix verified |
+| 11.3.5-T2 MPT backend | ready for owner merge | PR #89; all tier gates closed |
+| 09.2.6-T2 Jobs dashboard | ready for owner merge | PR #90; all tier gates closed |
+| 09.7.2-T1 Blob port/presign | blocked (owner #84 merge) | Draft PR #94 `13dca85`; live QA/T3/delta gates closed; CI-guard fix: the public-endpoint presign test now skips without `NTS_STORAGE_URL` |
+| 09.9.2-T2 Feature flags | ready for owner merge | PR #92, head `488bd10`; QA/T3/delta/full local gate + CI 4/4 closed; no migration |
+
 ### Superseded Session 2 delivery block (before PR #91 base reconciliation)
 
 - **Current (2026-10-02 (3), delivery).** `develop` @ `00e7d5d`; Session 2 PRs #84–#90 and #92 flags are open, not merged.

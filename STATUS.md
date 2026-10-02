@@ -8,11 +8,11 @@ Legend: `done` (acceptance checks run and passed) · `doing` · `blocked (<who>)
 
 Keep this block ≤ 15 lines: current state and next step only. Move the previous block to the archive when you replace it.
 
-- **Current (2026-10-02 (3), advisor follow-up).** Remote `develop` `125167369a3f4411f067729795c77a45d4b49d72` includes approved UI handoff #91. Session 2 PRs #84–#90 and #92 remain open; storage is draft PR #94; #93 is the live STATUS delivery.
-- **Gate scope:** on implementation base `00e7d5d`, QA/T3/deltas/full local gates closed for password `7e0ece8`, storage `08943b6`, flags `488bd10` (#92 CI `37019151851` 4/4). Storage re-gated after merging develop: head `13dca85`, `Category!=Integration` gate 935 total / 919 pass / 16 skip / 0 fail, delta review clean, #94 CI 4/4. PR #91 changed design/plans/STATUS only, no backend/runtime/test/workflow paths; no claim of a new combined-tree gate.
-- **CI repairs closed:** #84 canonical Storage env exports `50e131d` + alias wording `97c9662`, CI `37021057158` 4/4; then docs-only SMTP key note recorded as 11 CR-19. #88 ffmpeg `29d45bf` CI `37004851202` 4/4. These runs validate each branch head, not a new combined backend tree.
-- **Delivery blockers:** #85 first; #86/#87 migrations share the same base, later merge regenerates after develop. Password reset stays local until a migration slot opens. Storage is draft PR #94 (`13dca85`, develop merged in): mark it ready after #84 merges.
-- **Next:** owner merges; then deliver storage and password reset on refreshed develop. B `13.3.1-T1` after storage, `/me` after flags, OTLP after storage + registry; migration fillers `05.3.2-T3`, `02.2.2-T1`, `02.2.4-T1` wait. Web UI stays in its separate session.
+- **Current (2026-10-03).** `develop` @ `6de35c6`. Owner merged every Session 2 next-lane PR: #84 11.1.1-T2, #85 test-fixture fix, #86 09.3.2-T3, #87 11.3.3-T1, #88 11.1.2-T1, #89 11.3.5-T2, #90 09.2.6-T2, #92 09.9.2-T2, #94 09.7.2-T1, plus docs #91, #93, #95, #96. No open PR.
+- **Merge notes:** migrations on `develop` run `…083148_09_EmailMessages` → `20261002101251_09_AuthChallenges` (#86) → `20261002162527_11_WorkerNodes` (#87). #89 merged develop (6 additive conflicts, `2b0a3c3`) plus post-merge fix `911740e`: `MptHttpClient` allow-listed for 11.3.3-T1's HttpClient rule, and `AdapterOptions.ParseLoopbackMptBaseUrl` (loopback IP-literal http only); QA + T3 reviews, full local gate, CI 4/4.
+- **Not on `develop`:** 09.3.3-T1 password reset, local `7e0ece8` on `feature/09.3.3-T1-s2` (gated); merge develop, regenerate its migration after `20261002162527`, re-gate, then PR.
+- **11.3.5-T4 must:** wire `ParseLoopbackMptBaseUrl` into `ValidateOnStart`; build the MPT client with `MptHttpClient.Create` (redirects off). Known low gap QA89-LB-01: a non-root `MptBaseUrl` path is accepted and every MPT call then 404s.
+- **Next:** not planned yet (owner 2026-10-03). Unblocked: password reset delivery, `13.3.1-T1` (storage merged), `09.3.4-T1` /me (flags merged), `09.9.3-T1` OTLP (storage + registry merged); migration fillers `05.3.2-T3`, `02.2.2-T1`, `02.2.4-T1` wait for slots (rule 3). Web UI stays in its separate session.
 - **SEC-01:** owner chose range API + real top-N seed fallback (09 W3-O3); current bundled seed is synthetic. `09.3.1-T2` replaces it before registration opens.
 - **Gates/environment:** risk-tier gates per 00 §10; native Mac stack, runtime under `NTS_HOME`, keys stay out of git. `gate.sh` provides `Email__AddressHashPepper`.
 - **Setup:** `docs/dev-setup.md`; `git config core.hooksPath .githooks`; worker bootstrap + smoke per `worker-node/README.md`.
@@ -28,8 +28,8 @@ Per-task evidence for `done` rows: `docs/status-archive.md` §Per-plan evidence 
 | 03 Images (M0 slice) | 4 (03.1.1-T1, 03.4.1-T1, 03.3.2-T1, 03.1.1-T2 #61) | 03.1.2-T1, 03.2.x, 03.4.2/03.4.3 (M1) |
 | 04 Voice proxy (12 tasks) | 11 (04.2.2-T2 #73) | 04.2.3-T1 |
 | 05 Video/subtitles | 10 (05.5.1-T2 #78) | 05.3.2-T3, 05.2.1-T1, 05.5.2 |
-| 09 Backend | 29 tasks merged (Session 2: #72 09.9.5-T1, #74 09.10.4-T1, #77 09.3.5-T1 + 09.8.1-T2, #82 09.2.6-T3) | Open, gated + CI green: #86 MFA login, #90 jobs dashboard, #92 flags. Password reset/storage gated locally pending migration queue / #84 |
-| 11 Worker deployment | 11.1.1-T1 #81, 11.3.5-T1 #79; 11.2.1-T1 (proposal only; sign-off deferred to phase 2, owner 2026-09-30) | Open, gated: #84 storage/mail, #87 node registry, #88 mock-mpt, #89 MPT adapter; the rest is phase 2 (11 CR-18) |
+| 09 Backend | 33 tasks merged (Session 2: #72 09.9.5-T1, #74 09.10.4-T1, #77 09.3.5-T1 + 09.8.1-T2, #82 09.2.6-T3, #86 09.3.2-T3, #90 09.2.6-T2, #92 09.9.2-T2, #94 09.7.2-T1) | 09.3.3-T1 password reset gated locally, not pushed (migration regen); 09.3.4-T1 /me, 09.9.3-T1 OTLP unblocked |
+| 11 Worker deployment | 11.1.1-T1 #81, 11.3.5-T1 #79, 11.1.1-T2 #84, 11.3.3-T1 #87, 11.1.2-T1 #88, 11.3.5-T2 #89; 11.2.1-T1 (proposal only; sign-off deferred to phase 2, owner 2026-09-30) | The rest is phase 2 (11 CR-18) |
 | 10 Web UI | HTML design deck approved by the owner 2026-10-02 (`design/ui/index.html`, v2 “Phòng thu”, compact controls `192cc73`); linked from 12 T0 tasks and 13 feature plans. Angular implementation/integration plan refinement merged (#95 -> `185f6fd`): [implementation roadmap](plans/features/10-web-ui/implementation-roadmap.md), [integration readiness](plans/features/10-web-ui/integration-readiness.md), `Backend / upstream tasks to run first` column in the README task tables | Angular implementation not started; start with 10.1.x foundation per the roadmap; backend prerequisites in integration readiness remain OPEN |
 | 13 Compliance | 13.1.1-T1, 13.1.2-T1 (PR #35) | 13.2.1-T1 → 13.2.2-T1, 10.3.1-T1 pages; 13.1.1-T2 / 13.1.2-T2 lawyer rows (O1) |
 
@@ -41,14 +41,12 @@ Plans 06, 07, 08, 12: not started. Plan 10: approved HTML design handoff and ref
 
 | Lane | Current | Next, after prerequisite merges | Tier | Notes |
 |---|---|---|---|---|
-| A Auth | #86 MFA login, #90 jobs dashboard: open, gated | Owner merges | T3 | #86 has a migration |
-| B Local storage + mail | #84 open, gated; 09.7.2-T1 draft PR #94 `13dca85`, QA/T3/delta gates closed; merged-tree gate (`Category!=Integration`) 935/919 pass/16 skip/0 fail | Mark #94 ready after #84 merges; then 13.3.1-T1 after storage merges | T3 | Native tooling only |
-| C Render node | #87 registry, #88 mock-mpt, #89 MPT backend: open, gated | Owner merges | T3 | #87 has a migration |
-| E E-mail | 09.3.3-T1 local @7e0ece8, QA + T3 + full gate closed | Free migration slot, merge develop and regenerate migration, then PR | T3 | Not pushed; rule 3 |
+| B Storage follow-on | 13.3.1-T1 not started; storage (#84, #94) merged | Owner plans the next wave | T3 | Migration |
+| E E-mail | 09.3.3-T1 local @7e0ece8, QA + T3 + full gate closed | Merge develop, regenerate migration after `20261002162527`, re-gate, then PR | T3 | Not pushed; rule 3 |
 | F Seeders/checkers | 05.3.2-T3 not started (04.2.2-T2 / 05.5.1-T2 merged) | Free migration slot, then AddMusicTracks task | T3 | Migration |
-| Fill a free slot | #92 feature flags: QA/T3/full gate + CI 4/4 closed | /me after flags; OTLP after storage + registry; 02.2.2-T1 / 02.2.4-T1 await migration slots | T3 | Flags uses existing table; money tasks have migrations |
+| Fill a free slot | #92 feature flags merged | /me (flags merged); OTLP (storage + registry merged); 02.2.2-T1 / 02.2.4-T1 await migration slots | T3 | Money tasks have migrations |
 
-**Progress (2026-10-02 (3)):** start-now set merged (#72–#83); next-lane PRs #84–#90 and flags #92 are open, gated and CI green. Password reset and storage closed independent QA, T3 reviews, finding deltas and full local gates; password reset waits for the migration queue, storage is draft PR #94 waiting for #84. Completed D/G rows and the kickoff table are archived; later tasks retain prerequisite merge order.
+**Progress (2026-10-03):** start-now set (#72–#83) and next-lane PRs (#84–#94) merged; `develop` @ `6de35c6`. Remaining Session 2 work: password reset delivery, 13.3.1-T1, /me, OTLP and the migration fillers. Finished lane rows and the Open-task rows of merged PRs are archived.
 
 **Not in Session 2:** `09.6.2-T1` needs `05.1.2-T1`, which needs `02.3.2-T1` and `03.2.1-T1` (not built) → session 3 or later.
 
@@ -65,22 +63,13 @@ Plans 06, 07, 08, 12: not started. Plan 10: approved HTML design handoff and ref
 
 | Task | Status | Note |
 |---|---|---|
-| 11.1.1-T2 Storage + mail | ready for owner merge | PR #84; code/QA/T3/CI closed, canonical exports fixed, SMTP key note recorded as 11 CR-19 |
-| Test-fixture concurrency fix | ready for owner merge | PR #85; merge first to remove cross-lane gate flakes |
-| 09.3.2-T3 MFA login | ready for owner merge | PR #86; migration, regenerate if merged after #87 |
-| 11.3.3-T1 Node registry | ready for owner merge | PR #87; migration, regenerate if merged after #86 |
-| 11.1.2-T1 mock-mpt | ready for owner merge | PR #88; ffmpeg CI fix verified |
-| 11.3.5-T2 MPT backend | ready for owner merge | PR #89; all tier gates closed |
-| 09.2.6-T2 Jobs dashboard | ready for owner merge | PR #90; all tier gates closed |
-| 09.7.2-T1 Blob port/presign | blocked (owner #84 merge) | Draft PR #94 `13dca85`; live QA/T3/delta gates closed; CI-guard fix: the public-endpoint presign test now skips without `NTS_STORAGE_URL` |
-| 09.3.3-T1 Password reset | blocked (owner merge queue) | Local `7e0ece8` gated; merge develop/regenerate migration before delivery |
-| 09.9.2-T2 Feature flags | ready for owner merge | PR #92, head `488bd10`; QA/T3/delta/full local gate + CI 4/4 closed; no migration |
+| 09.3.3-T1 Password reset | todo (migration slot free) | Local `7e0ece8` gated; merge develop/regenerate migration before delivery |
 | 05.3.2-T3 Music metadata | blocked (migration queue) | Not started; at most 2 migration tasks waiting |
 | 02.2.2-T1 M1 domain migration | blocked (migration queue) | Not started |
 | 02.2.4-T1 M1 cost persistence | blocked (migration queue) | Not started |
-| 13.3.1-T1 Deletion engine | todo (depends on storage merge) | Lane B next |
-| 09.3.4-T1 /me | todo (depends on flags merge) | Free-slot next |
-| 09.9.3-T1 OTLP | todo (depends on storage + registry merges) | Free-slot next |
+| 13.3.1-T1 Deletion engine | todo (storage merged) | Lane B next |
+| 09.3.4-T1 /me | todo (flags merged) | Free-slot next |
+| 09.9.3-T1 OTLP | todo (storage + registry merged) | Free-slot next |
 | 01.1.1-T3 Runbook + clean-account rehearsal | todo | Runbook sections accumulate in `worker-node/README.md`. The rehearsal runs last, after 05.5.2 |
 | 01.3.3-T1 Carry-over | partial (§11 `[OPEN]`) | `worker-node/CARRY-OVER.md` §1–12 written; §11 waits for the 05.5.2 trial rows |
 | 01.3.3-T2 Carry-over walkthrough | todo | Owner walkthrough, after 05.5.2. Interim whisper notes: `.nts/runs/whisper-baseline/carryover-notes.md` |
@@ -121,3 +110,4 @@ Recent rows only; the full log is `docs/status-archive.md` §Session log.
 | 2026-10-02 | Angular implementation/integration planning (docs only, T0) | Refined existing web task bodies and design/backend hand-offs; added [implementation roadmap](plans/features/10-web-ui/implementation-roadmap.md) and [integration readiness](plans/features/10-web-ui/integration-readiness.md). Preserved 73 tasks/18 feature plans and header metadata; estimates remain P41.0 + S20.0 =61.0 raw /73.2 buffered days. Links/frame references and scoped diff-check pass. Independent reviews/delta closed eight findings; the two residual guard/lifetime contradictions were corrected and verified afterward. Named backend prerequisites remain OPEN; on merging `develop` the design gate follows develop's owner approval record (deck v2, `192cc73`) and stale approval-OPEN/pinned-artifact wording was reconciled; source audit is not runtime readiness. No Angular/backend implementation, commit or push; backend Resume/live state unchanged |
 | 2026-10-02 | Web backend scheduling annotation (docs only, T0) | Added `Backend / upstream tasks to run first` to all 73 rows across the three canonical web README tables only, not task-file headers/templates. Direct non-10.x entries are projected verbatim from existing `Depends on`, including soft and CR tags; restored missing `(13 CR-27)` on 10.3.1-T2 during concern review. Inherited FE prerequisites, non-backend upstream owners and P/S/R2 gates remain explicit. Verified 73 seven-column rows and original six columns/order unchanged; task headers and estimates unchanged. Concern review PASS with one P3 wording nit (bare `None` undefined), closed by defining `None` vs `None directly` in the footnote; §6/C6 now say task headers equal the first six table cells. This is a scheduling aid, not merged/runtime-ready status. No code |
 | 2026-10-03 | Web planning merged (#95 -> `develop` `185f6fd`) | Owner merged #95 (`40e6187` + merge `68be291`). Merge with develop adopted develop's owner design approval and local `design/ui/` links; mockup/contract mismatches kept as implementation reconciliation notes. 73 task headers equal develop, README tables 73×7, 1013 links resolve. Docs only |
+| 2026-10-03 | Session 2 next lanes merged (#84–#94 → `develop` `6de35c6`) | Owner merged #84–#90, #92, #94 (plus docs #91, #93, #96). #89 conflicted after #86/#87 (6 additive hunks: `.gitleaksignore`, `NightTales.sln`, Architecture.Tests `AllowLists`/`ArchitectureModel`/csproj, regenerated `packages.lock.json`; `2b0a3c3`, merge review 0 findings). The merged tree then failed 11.3.3-T1's `HttpClient_IsOnlyConstructedByTheApprovedProducers` on `MptHttpClient`: allow-listed, and the allow-list review found `Adapter:MptBaseUrl` unvalidated, so a loopback IP-literal guard was added (`911740e`). QA 4/4, code/perf/security reviews (2 low nits fixed, 2 refuted with `dotnet fsi`), full local gate `TEST rc=0`, CI 4/4. STATUS refreshed; finished rows archived |
