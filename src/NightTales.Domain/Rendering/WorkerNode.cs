@@ -258,8 +258,8 @@ public sealed class WorkerNode : Entity, IAuditable
 
     /// <summary>
     /// The shape rules <see cref="Create"/> and <see cref="ApplyConfig"/> share: an absolute
-    /// <c>http</c>/<c>https</c> URL, a capacity in range, a pin that is <c>null</c> exactly for an
-    /// <c>http://</c> URL and otherwise 64 hexadecimal characters, and a bounded GPU model.
+    /// <c>http</c>/<c>https</c> URL without credentials, a capacity in range, a pin that is <c>null</c>
+    /// exactly for an <c>http://</c> URL and otherwise 64 hexadecimal characters, and a bounded GPU model.
     /// </summary>
     private static Error? Diagnose(Uri? baseUrl, int capacity, string? tlsCertSha256, string? gpuModel)
     {
@@ -267,6 +267,16 @@ public sealed class WorkerNode : Entity, IAuditable
             || (baseUrl.Scheme != Uri.UriSchemeHttp && baseUrl.Scheme != Uri.UriSchemeHttps))
         {
             return Error.Validation(BaseUrlInvalidCode, "The render node base URL must be an absolute http or https URL.");
+        }
+
+        // Credentials in the authority (`user:pass@host`) are refused: the adapter key is the
+        // `x-api-key` header, and a URL that carries a secret would be echoed by `nodes list` (plan §5:
+        // no key, hint or ciphertext on stdout).
+        if (baseUrl.UserInfo.Length > 0)
+        {
+            return Error.Validation(
+                BaseUrlInvalidCode,
+                "The render node base URL must not carry credentials (user:password@).");
         }
 
         if (capacity is < CapacityMin or > CapacityMax)

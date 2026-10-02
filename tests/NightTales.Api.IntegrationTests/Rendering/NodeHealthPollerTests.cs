@@ -1,8 +1,10 @@
 using System.Diagnostics.Metrics;
 using System.Net;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NightTales.Api.IntegrationTests.Seeding;
 using NightTales.Application.Abstractions.Rendering;
@@ -252,6 +254,125 @@ public sealed class NodeHealthPollerTests(TestDatabase database) : IntegrationTe
     }
 
     [Fact]
+    public async Task Up_RequiresConsecutiveAnswers_AcrossADrain()
+    {
+        RenderNodeDatabase.Reset(Database);
+        var clock = new FakeClock(Start);
+        await SeedNodeAsync("alpha", WorkerNodeState.Down, heartbeat: Start);
+        using var harness = CreateHarness(clock);
+        harness.Factory.Script("alpha", new ScriptedHttpStep(HttpStatusCode.OK, RenderNodeHealthBodies.Ok()));
+
+        // The first of the two consecutive answers the revival needs (F12).
+        clock.Advance(TimeSpan.FromSeconds(200));
+        await harness.Poller.PollOnceAsync(Ct);
+        (await RowAsync("alpha")).State.ShouldBe(WorkerNodeState.Down);
+
+        // The operator drains the node; while it drains it answers nothing, so the pull above is no
+        // longer "consecutive" with whatever comes after the drain.
+        await MarkDrainingAsync("alpha");
+        harness.Factory.Script("alpha", new ScriptedHttpStep(Failure: new HttpRequestException("unreachable")));
+        await harness.Poller.PollOnceAsync(Ct);
+        (await RowAsync("alpha")).State.ShouldBe(WorkerNodeState.Draining);
+
+        // The node leaves the configuration, so the seeder strand-marks the row down (UC10).
+        harness.Factory.Script("alpha", new ScriptedHttpStep(HttpStatusCode.OK, RenderNodeHealthBodies.Ok()));
+        await StrandAllNodesAsync(clock);
+        (await RowAsync("alpha")).State.ShouldBe(WorkerNodeState.Down);
+
+        await harness.Poller.PollOnceAsync(Ct);
+        (await RowAsync("alpha")).State.ShouldBe(
+            WorkerNodeState.Down,
+            "two consecutive answers revive a down node: the pre-drain pull is not one of them (F12)");
+
+        await harness.Poller.PollOnceAsync(Ct);
+        (await RowAsync("alpha")).State.ShouldBe(WorkerNodeState.Active);
+    }
+
+    [Fact]
+    public async Task Http401WithParseableBody_RecordsReasonButIsNotAnAnswer()
+    {
+        RenderNodeDatabase.Reset(Database);
+        var clock = new FakeClock(Start);
+        await SeedNodeAsync("alpha", WorkerNodeState.Active, heartbeat: Start);
+        await SeedNodeAsync("beta", WorkerNodeState.Active, heartbeat: Start);
+        using var harness = CreateHarness(clock);
+        harness.Factory.Script(
+            "alpha",
+            new ScriptedHttpStep(
+                HttpStatusCode.Unauthorized,
+                RenderNodeHealthBodies.Degraded(NodeHealthReasons.MptUnauthorized)));
+        harness.Factory.Script(
+            "beta",
+            new ScriptedHttpStep(HttpStatusCode.Unauthorized, RenderNodeHealthBodies.Unparseable));
+
+        var reasons = new List<(string Node, string Reason)>();
+        var up = new Dictionary<string, int>(StringComparer.Ordinal);
+        using var listener = MetricsListener(harness.Metrics, reasons, up);
+
+        clock.Advance(TimeSpan.FromSeconds(200));
+        await harness.Poller.PollOnceAsync(Ct);
+        listener.RecordObservableInstruments();
+
+        // A 401 is not an answer: no heartbeat, no cache entry and no revival credit — the row goes down
+        // like any silence (task §"Failure handling").
+        var alpha = await RowAsync("alpha");
+        alpha.LastHeartbeatAt.ShouldBe(Start, "a 401 is no answer, so nothing heartbeats");
+        alpha.State.ShouldBe(WorkerNodeState.Down, "120 s without a valid answer sends an active node down");
+        harness.Cache.TryGet("alpha", out _).ShouldBeFalse("a rejected body is never cached as an answer");
+        up["alpha"].ShouldBe(0, "a 401 does not make the node 'up'");
+
+        // Its body parsed, so the node's own reason is counted instead of the local node_unreachable.
+        reasons.ShouldContain(("alpha", NodeHealthReasons.MptUnauthorized));
+        reasons.ShouldNotContain(
+            reason => reason.Node == "alpha" && reason.Reason == LocalNodeHealthReasons.NodeUnreachable,
+            "a parseable 401 body supplies the reason");
+
+        // An unparseable 401 body has no reason to read, so it keeps the local label.
+        reasons.ShouldContain(("beta", LocalNodeHealthReasons.NodeUnreachable));
+    }
+
+    [Fact]
+    public async Task Draining_WithNoAnswer_StaysDraining()
+    {
+        RenderNodeDatabase.Reset(Database);
+        var clock = new FakeClock(Start);
+        await SeedNodeAsync("alpha", WorkerNodeState.Draining, heartbeat: Start);
+        using var harness = CreateHarness(clock);
+        harness.Factory.Script("alpha", new ScriptedHttpStep(Failure: new HttpRequestException("unreachable")));
+
+        clock.Advance(TimeSpan.FromSeconds(200));
+        await harness.Poller.PollOnceAsync(Ct);
+
+        var row = await RowAsync("alpha");
+        row.State.ShouldBe(WorkerNodeState.Draining, "health never ends a drain, not even on silence (D12)");
+        row.LastHeartbeatAt.ShouldBe(Start, "a node that does not answer does not heartbeat");
+    }
+
+    [Fact]
+    public async Task SecondInstance_LogsLockNotHeldOnce()
+    {
+        RenderNodeDatabase.Reset(Database);
+        var clock = new FakeClock(Start);
+        await SeedNodeAsync("alpha", WorkerNodeState.Active);
+        var sink = new CapturingLoggerProvider();
+
+        using var loggerFactory = LoggerFactory.Create(builder => builder.AddProvider(sink));
+        using var holder = CreateHarness(clock);
+        using var second = CreateHarness(clock, logger: loggerFactory.CreateLogger<NodeHealthPoller>());
+        holder.Factory.Script("alpha", new ScriptedHttpStep(HttpStatusCode.OK, RenderNodeHealthBodies.Ok()));
+        second.Factory.Script("alpha", new ScriptedHttpStep(HttpStatusCode.OK, RenderNodeHealthBodies.Ok()));
+
+        (await holder.Poller.TickAsync(Ct)).ShouldBeTrue();
+
+        (await second.Poller.TickAsync(Ct)).ShouldBeFalse();
+        (await second.Poller.TickAsync(Ct)).ShouldBeFalse();
+        (await second.Poller.TickAsync(Ct)).ShouldBeFalse();
+
+        sink.Messages.Count(message => message.Contains("lock-not-held", StringComparison.Ordinal))
+            .ShouldBe(1, "a second Worker on the same database logs once, not on every tick (plan §7 step 1)");
+    }
+
+    [Fact]
     public async Task PullFailure_LogsNameAndClassOnly()
     {
         RenderNodeDatabase.Reset(Database);
@@ -338,6 +459,29 @@ public sealed class NodeHealthPollerTests(TestDatabase database) : IntegrationTe
         await using var db = Database.CreateAppDbContext();
 
         return await db.WorkerNodes.SingleAsync(node => node.Name == name, Ct);
+    }
+
+    /// <summary>The operator's drain, applied directly to the row as <c>nodes set-state</c> would.</summary>
+    private async Task MarkDrainingAsync(string name)
+    {
+        await using var db = Database.CreateAppDbContext();
+        var node = await db.WorkerNodes.SingleAsync(row => row.Name == name, Ct);
+        node.SetOperatorState(WorkerNodeState.Draining);
+        await db.SaveChangesAsync(Ct);
+    }
+
+    /// <summary>What the seeder does to a row whose node left <c>RenderNodes:Nodes</c> (UC10).</summary>
+    private async Task StrandAllNodesAsync(FakeClock clock)
+    {
+        await using var db = Database.CreateAppDbContext();
+        var seeder = new WorkerNodeSeeder(
+            db,
+            Options.Create(new RenderNodesOptions()),
+            new ConfigurationBuilder().AddInMemoryCollection().Build(),
+            clock,
+            NullLogger<WorkerNodeSeeder>.Instance);
+
+        (await seeder.RegisterAsync(Ct)).IsError.ShouldBeFalse();
     }
 
     private static MeterListener MetricsListener(

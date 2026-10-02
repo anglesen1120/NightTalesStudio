@@ -14,7 +14,7 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace NightTales.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    [Migration("20261002092546_11_WorkerNodes")]
+    [Migration("20261002100803_11_WorkerNodes")]
     partial class _11_WorkerNodes
     {
         /// <inheritdoc />
@@ -789,7 +789,7 @@ namespace NightTales.Infrastructure.Persistence.Migrations
 
                             t.HasCheckConstraint("ck_worker_nodes_state", "\"state\" IN ('active', 'down', 'draining')");
 
-                            t.HasCheckConstraint("ck_worker_nodes_tls_sha256", "(\"tls_cert_sha256\" IS NULL AND \"base_url\" LIKE 'http://%') OR \"tls_cert_sha256\" ~ '^[0-9A-F]{64}$'");
+                            t.HasCheckConstraint("ck_worker_nodes_tls_sha256", "CASE WHEN \"tls_cert_sha256\" IS NULL THEN \"base_url\" LIKE 'http://%' ELSE \"tls_cert_sha256\" ~ '^[0-9A-F]{64}$' END");
                         });
                 });
 

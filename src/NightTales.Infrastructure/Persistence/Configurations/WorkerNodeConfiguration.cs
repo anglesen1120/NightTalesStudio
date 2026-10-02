@@ -64,11 +64,14 @@ internal sealed class WorkerNodeConfiguration : IEntityTypeConfiguration<WorkerN
                 $"\"capacity\" BETWEEN {WorkerNode.CapacityMin} AND {WorkerNode.CapacityMax}");
 
             // The pin is absent exactly when the URL is a plain-http one, and present as 64 upper-case hex
-            // otherwise — the same rule WorkerNode.Create enforces, kept as the database's last line.
+            // otherwise — the same rule WorkerNode.Create enforces, kept as the database's last line. It is
+            // written as a CASE so the two arms are never OR-ed into NULL: `tls IS NULL AND base_url LIKE
+            // 'http://%'` is FALSE for a NULL pin on an https row, but `FALSE OR NULL` would have let it
+            // through (SQL CHECK passes on NULL).
             table.HasCheckConstraint(
                 "ck_worker_nodes_tls_sha256",
-                "(\"tls_cert_sha256\" IS NULL AND \"base_url\" LIKE 'http://%') "
-                + "OR \"tls_cert_sha256\" ~ '^[0-9A-F]{64}$'");
+                "CASE WHEN \"tls_cert_sha256\" IS NULL THEN \"base_url\" LIKE 'http://%' "
+                + "ELSE \"tls_cert_sha256\" ~ '^[0-9A-F]{64}$' END");
         });
     }
 }

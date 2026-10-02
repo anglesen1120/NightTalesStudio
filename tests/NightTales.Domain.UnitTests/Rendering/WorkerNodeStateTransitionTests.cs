@@ -56,6 +56,27 @@ public sealed class WorkerNodeStateTransitionTests
     }
 
     [Fact]
+    public void Create_RejectsACredentialedBaseUrl()
+    {
+        // `nodes list` prints the URL verbatim, so a `user:pass@` authority would put a secret on stdout
+        // (plan §5); the domain refuses it up front, like the other URL shape errors.
+        var result = WorkerNode.Create(
+            "node-a",
+            new Uri("https://user:pass@node.example:8443"),
+            2,
+            PinUpper,
+            null);
+
+        result.IsError.ShouldBeTrue();
+        result.FirstError.Code.ShouldBe(WorkerNode.BaseUrlInvalidCode);
+
+        var node = ActiveNode();
+        node.ApplyConfig(new Uri("https://user:pass@other.example:9443"), 2, PinLower, null)
+            .FirstError.Code.ShouldBe(WorkerNode.BaseUrlInvalidCode);
+        node.BaseUrl.ShouldBe(HttpsBaseUrl, "a refused URL changes nothing");
+    }
+
+    [Fact]
     public void Create_RejectsANullRelativeOrNonHttpBaseUrl()
     {
         WorkerNode.Create("node-a", null, 2, PinUpper, null).FirstError.Code

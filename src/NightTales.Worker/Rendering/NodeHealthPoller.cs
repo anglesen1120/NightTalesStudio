@@ -31,9 +31,11 @@ namespace NightTales.Worker.Rendering;
 /// <para>
 /// A <b>valid answer</b> is HTTP 200 <em>or</em> 503 with a body that parses as
 /// <c>render-node-health.v1</c> — the node answered; a connect error, a pin mismatch, a timeout, a 401 or an
-/// unparseable body is no answer. Two consecutive valid answers revive a <c>down</c> node
-/// (<see cref="GoodPullsForActive"/>); <c>RenderNodes:DownAfterSeconds</c> without one sends an
-/// <c>active</c> node <c>down</c>. <c>draining</c> is operator-only and health never ends it (D12).
+/// unparseable body is no answer. A 401 is still read: when its body parses, its reasons (for example
+/// <c>mpt_unauthorized</c>) are counted instead of the local <c>node_unreachable</c>. Two consecutive valid
+/// answers revive a <c>down</c> node (<see cref="GoodPullsForActive"/>);
+/// <c>RenderNodes:DownAfterSeconds</c> without one sends an <c>active</c> node <c>down</c>. <c>draining</c>
+/// is operator-only and health never ends it (D12).
 /// </para>
 /// <para>
 /// Nothing about a node body reaches a log: an unparseable body logs the node's name and the exception's
@@ -149,7 +151,7 @@ public sealed partial class NodeHealthPoller(
             return;
         }
 
-        var answers = await PullAllAsync(nodes, cancellationToken);
+        var pulls = await PullAllAsync(nodes, cancellationToken);
         var inFlight = await scope.ServiceProvider.GetRequiredService<INodeLoadReader>()
             .InFlightByNodeAsync(cancellationToken);
 
@@ -157,8 +159,9 @@ public sealed partial class NodeHealthPoller(
 
         foreach (var node in nodes)
         {
-            var snapshot = answers[node.Name];
-            RecordHealth(node, snapshot);
+            var outcome = pulls[node.Name];
+            var snapshot = outcome.Snapshot;
+            RecordHealth(node, outcome);
 
             if (snapshot is { } answered)
             {
@@ -171,6 +174,12 @@ public sealed partial class NodeHealthPoller(
                 if (snapshot is not null)
                 {
                     decisions.Add(new TickDecision(node.Id, Heartbeat: true, Target: null));
+                }
+                else
+                {
+                    // A drain interrupts the revival streak: only answers that are consecutive *after* the
+                    // node is back in service count, so a silent drain tick clears it (F12's "exactly two").
+                    _goodPulls[node.Name] = 0;
                 }
 
                 continue;
@@ -252,11 +261,11 @@ public sealed partial class NodeHealthPoller(
     /// Polls every node with bounded concurrency (D13: at most <see cref="RenderNodesOptions.MaxConcurrentPulls"/>
     /// at once, 5 seconds each), so one dead node cannot push the tick past its interval.
     /// </summary>
-    private async Task<Dictionary<string, NodeHealthSnapshot?>> PullAllAsync(
+    private async Task<Dictionary<string, PullOutcome>> PullAllAsync(
         IReadOnlyList<WorkerNode> nodes,
         CancellationToken cancellationToken)
     {
-        var results = new ConcurrentDictionary<string, NodeHealthSnapshot?>(StringComparer.Ordinal);
+        var results = new ConcurrentDictionary<string, PullOutcome>(StringComparer.Ordinal);
         using var gate = new SemaphoreSlim(RenderNodesOptions.MaxConcurrentPulls);
 
         var pulls = nodes.Select(async node =>
@@ -274,14 +283,14 @@ public sealed partial class NodeHealthPoller(
 
         await Task.WhenAll(pulls);
 
-        return new Dictionary<string, NodeHealthSnapshot?>(results, StringComparer.Ordinal);
+        return new Dictionary<string, PullOutcome>(results, StringComparer.Ordinal);
     }
 
     /// <summary>
-    /// One node's pull. Never throws for a node-side failure — the caller treats a <c>null</c> as "no valid
-    /// answer" and the loop stays alive (plan §"Failure handling").
+    /// One node's pull. Never throws for a node-side failure — the caller treats <see cref="PullOutcome"/>.Snapshot
+    /// as <c>null</c> for "no valid answer" and the loop stays alive (plan §"Failure handling").
     /// </summary>
-    private async Task<NodeHealthSnapshot?> PullAsync(WorkerNode node, CancellationToken cancellationToken)
+    private async Task<PullOutcome> PullAsync(WorkerNode node, CancellationToken cancellationToken)
     {
         try
         {
@@ -292,40 +301,34 @@ public sealed partial class NodeHealthPoller(
                 HttpCompletionOption.ResponseHeadersRead,
                 cancellationToken);
 
-            // 200 is "ok"; 503 is "the node answered but is not ok" — both are answers (D13). Anything
-            // else (401 from a rotated key, a proxy error page) is no answer.
-            var httpOk = response.StatusCode == HttpStatusCode.OK;
-            if (!httpOk && response.StatusCode != HttpStatusCode.ServiceUnavailable)
-            {
-                LogPullRejected(node.Name, (int)response.StatusCode);
+            var status = response.StatusCode;
 
-                return null;
+            // 200 is "ok" and 503 is "the node answered but is not ok" — both are answers (D13). A 401 (a
+            // wrong or rotated key) is *not* an answer: it must not heartbeat or revive a node, but its body
+            // is still read for the `mpt_unauthorized` reason (task §"Failure handling"). Anything else (a
+            // proxy error page) is no answer and its body is never read.
+            var httpOk = status == HttpStatusCode.OK;
+            var isAnswer = httpOk || status == HttpStatusCode.ServiceUnavailable;
+            var isUnauthorized = status == HttpStatusCode.Unauthorized;
+
+            if (!isAnswer && !isUnauthorized)
+            {
+                LogPullRejected(node.Name, (int)status);
+
+                return PullOutcome.NoAnswer();
             }
 
             // The body is read as a string: ReadFromJsonAsync would report its own failure shape and the
             // tolerant reader must be the only one (11 README D4).
             var body = await response.Content.ReadAsStringAsync(cancellationToken);
-            RenderNodeHealthV1? health;
-            try
+            if (!TryReadHealth(node, body, out var health))
             {
-                health = JsonSerializer.Deserialize<RenderNodeHealthV1>(body, RenderNodeJson.Tolerant);
-            }
-            catch (JsonException exception)
-            {
-                // The node's name and the parse-error class only — never the body (11 README S4).
-                LogUnparseableBody(node.Name, exception.GetType().Name);
-
-                return null;
+                return PullOutcome.NoAnswer();
             }
 
-            if (health is null)
-            {
-                LogUnparseableBody(node.Name, MissingBodyError);
-
-                return null;
-            }
-
-            return NodeHealthSnapshot.From(node.Name, health, clock.UtcNow, httpOk);
+            return isUnauthorized
+                ? PullOutcome.Rejected(health.Reasons)
+                : PullOutcome.Answer(NodeHealthSnapshot.From(node.Name, health, clock.UtcNow, httpOk));
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -337,7 +340,36 @@ public sealed partial class NodeHealthPoller(
             // only. An exception message can echo the request's URL, which is never logged (11 README S4).
             LogPullFailed(node.Name, exception.GetType().Name);
 
-            return null;
+            return PullOutcome.NoAnswer();
+        }
+    }
+
+    /// <summary>
+    /// Deserialises a health body with the tolerant reader (D4). A parse failure or an empty body logs the
+    /// node's name and the parse-error class — never the body (S4) — and reports <c>false</c>.
+    /// </summary>
+    private bool TryReadHealth(WorkerNode node, string body, out RenderNodeHealthV1 health)
+    {
+        health = null!;
+        try
+        {
+            var parsed = JsonSerializer.Deserialize<RenderNodeHealthV1>(body, RenderNodeJson.Tolerant);
+            if (parsed is null)
+            {
+                LogUnparseableBody(node.Name, MissingBodyError);
+
+                return false;
+            }
+
+            health = parsed;
+
+            return true;
+        }
+        catch (JsonException exception)
+        {
+            LogUnparseableBody(node.Name, exception.GetType().Name);
+
+            return false;
         }
     }
 
@@ -366,13 +398,26 @@ public sealed partial class NodeHealthPoller(
     }
 
     /// <summary>Updates the cache and emits the tick's <c>render_node_up</c> and reason counters (D13).</summary>
-    private void RecordHealth(WorkerNode node, NodeHealthSnapshot? snapshot)
+    private void RecordHealth(WorkerNode node, PullOutcome outcome)
     {
+        var snapshot = outcome.Snapshot;
         metrics.RecordUp(node.Name, snapshot is not null);
 
         if (snapshot is null)
         {
-            metrics.RecordHealthReason(node.Name, LocalNodeHealthReasons.NodeUnreachable);
+            // A rejected but parseable body (a 401) carries the node's own reasons; every other no-answer
+            // is the local `node_unreachable` (task §"Failure handling").
+            if (outcome.RejectedReasons.Count == 0)
+            {
+                metrics.RecordHealthReason(node.Name, LocalNodeHealthReasons.NodeUnreachable);
+            }
+            else
+            {
+                foreach (var reason in outcome.RejectedReasons)
+                {
+                    metrics.RecordHealthReason(node.Name, reason);
+                }
+            }
 
             return;
         }
@@ -457,6 +502,23 @@ public sealed partial class NodeHealthPoller(
 
     /// <summary>A node's pooled client and the base URL it was built for.</summary>
     private sealed record NodeClient(Uri BaseUrl, HttpClient Client);
+
+    /// <summary>
+    /// What one pull produced: the valid answer to cache and heartbeat, or — for a rejected body that still
+    /// parsed (a 401) — only its reasons, which are counted while the pull stays "no answer" (task §"Failure
+    /// handling").
+    /// </summary>
+    private sealed record PullOutcome(NodeHealthSnapshot? Snapshot, IReadOnlyList<string> RejectedReasons)
+    {
+        /// <summary>A connect error, a timeout, a pin mismatch or an unparseable body: no answer, no reason.</summary>
+        public static PullOutcome NoAnswer() => new(null, []);
+
+        /// <summary>A 401 whose body parsed: no answer, but its reasons are counted.</summary>
+        public static PullOutcome Rejected(IReadOnlyList<string> reasons) => new(null, reasons);
+
+        /// <summary>An answer (200, or 503 with a parseable body) worth caching and heartbeating.</summary>
+        public static PullOutcome Answer(NodeHealthSnapshot snapshot) => new(snapshot, []);
+    }
 
     /// <summary>What one tick decided for one node; <c>Target</c> is <c>null</c> when only the heartbeat moves.</summary>
     private sealed record TickDecision(Guid Id, bool Heartbeat, WorkerNodeState? Target);

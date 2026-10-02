@@ -107,6 +107,30 @@ public sealed class WorkerNodesMigrationTests(TestDatabase database) : Integrati
     }
 
     [Fact]
+    public async Task CheckRejectsBadTlsPin()
+    {
+        RenderNodeDatabase.Reset(Database);
+        var name = $"'{Guid.CreateVersion7():N}'";
+
+        // A lower-case fingerprint: the stored form is 64 upper-case hex (D11), normalisation is the
+        // domain's job and the CHECK is the database's last line against a bypass.
+        SqlProbe.SqlState(
+                Database,
+                "INSERT INTO worker_nodes (id, name, base_url, capacity, state, tls_cert_sha256, created_at, updated_at) "
+                + "VALUES (gen_random_uuid(), " + name + ", 'https://node.example/', 2, 'active', "
+                + "repeat('ab', 32), now(), now())")
+            .ShouldBe("23514", "the pin is stored normalised: lower-case hex violates ck_worker_nodes_tls_sha256");
+
+        // An https row without a pin: the null-pin exception is for the plain-http Development node only.
+        SqlProbe.SqlState(
+                Database,
+                "INSERT INTO worker_nodes (id, name, base_url, capacity, state, tls_cert_sha256, created_at, updated_at) "
+                + "VALUES (gen_random_uuid(), " + name + ", 'https://node.example/', 2, 'active', "
+                + "NULL, now(), now())")
+            .ShouldBe("23514", "an https node without a pinned fingerprint violates ck_worker_nodes_tls_sha256");
+    }
+
+    [Fact]
     public async Task DownMigration_DropsTable()
     {
         RenderNodeDatabase.Reset(Database);

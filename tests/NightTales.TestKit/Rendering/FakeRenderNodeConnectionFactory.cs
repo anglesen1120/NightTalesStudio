@@ -43,7 +43,17 @@ public sealed class FakeRenderNodeConnectionFactory : IRenderNodeConnectionFacto
             throw new ArgumentException("At least one scripted step is required.", nameof(steps));
         }
 
-        _handlers[nodeName] = new ScriptedHttpMessageHandler(steps);
+        if (_handlers.TryGetValue(nodeName, out var existing))
+        {
+            // A client already handed out holds this handler, so re-scripting updates it in place: swapping
+            // the dictionary entry would leave a pooled client (the poller keeps one per node) on the old
+            // answers, and the test would silently exercise the wrong phase.
+            existing.Rescript(steps);
+        }
+        else
+        {
+            _handlers[nodeName] = new ScriptedHttpMessageHandler(steps);
+        }
 
         return this;
     }

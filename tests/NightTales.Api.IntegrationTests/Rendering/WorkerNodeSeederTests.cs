@@ -180,6 +180,54 @@ public sealed class WorkerNodeSeederTests(TestDatabase database) : IntegrationTe
         WorkerNodeRegistration.Run(host.Services, Ct).ShouldBe(2, "a missing key is the start-up exit 2");
     }
 
+    [Theory]
+    [InlineData("alpha", "not-a-url", 2, WorkerNode.BaseUrlInvalidCode)]
+    [InlineData("alpha", "https://user:pass@alpha.example/", 2, WorkerNode.BaseUrlInvalidCode)]
+    [InlineData("alpha", "https://alpha.example/", 0, WorkerNode.CapacityInvalidCode)]
+    [InlineData("alpha", "https://alpha.example/", 9, WorkerNode.CapacityInvalidCode)]
+    [InlineData("alpha", "https://alpha.example/", 2, WorkerNode.TlsCertInvalidCode, "aaaa")]
+    public async Task BadConfigEntry_FailsWholeRun_WritingNothing(
+        string name,
+        string baseUrl,
+        int capacity,
+        string expectedCode,
+        string? pin = null)
+    {
+        RenderNodeDatabase.Reset(Database);
+        await using var db = Database.CreateAppDbContext();
+        var seeder = Seeder(
+            db,
+            Options(Node(name, baseUrl, capacity, pin: pin ?? Pin)),
+            Keys(("alpha", "alpha-key-value")));
+
+        var result = await seeder.RegisterAsync(Ct);
+
+        result.IsError.ShouldBeTrue();
+        result.FirstError.Code.ShouldBe(expectedCode);
+        (await db.WorkerNodes.CountAsync(Ct)).ShouldBe(
+            0,
+            "every entry is validated up front, so a bad one fails the run before any row is written");
+    }
+
+    [Fact]
+    public async Task DuplicateName_InConfig_FailsBeforeWriting()
+    {
+        RenderNodeDatabase.Reset(Database);
+        await using var db = Database.CreateAppDbContext();
+        var seeder = Seeder(
+            db,
+            Options(
+                Node("alpha", "https://alpha.example/", 2),
+                Node("alpha", "https://alpha-two.example/", 4)),
+            Keys(("alpha", "alpha-key-value")));
+
+        var result = await seeder.RegisterAsync(Ct);
+
+        result.IsError.ShouldBeTrue();
+        result.FirstError.Code.ShouldBe(WorkerNodeSeeder.DuplicateNameCode);
+        (await db.WorkerNodes.CountAsync(Ct)).ShouldBe(0);
+    }
+
     private Dictionary<string, string?> Settings(params (string Name, string? Key)[] nodes)
     {
         var settings = new Dictionary<string, string?>(StringComparer.Ordinal)
@@ -222,13 +270,15 @@ public sealed class WorkerNodeSeederTests(TestDatabase database) : IntegrationTe
         string name,
         string baseUrl,
         int capacity,
-        string? gpu = null) => new()
+        string? gpu = null,
+        string? pin = null) => new()
         {
             Name = name,
             BaseUrl = baseUrl,
             Capacity = capacity,
-            TlsCertSha256 = Pin,
+
             GpuModel = gpu,
+            TlsCertSha256 = pin ?? Pin,
         };
 
     private static IConfiguration Keys(params (string Name, string Key)[] keys) =>

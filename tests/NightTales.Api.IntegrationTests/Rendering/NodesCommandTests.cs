@@ -72,7 +72,7 @@ public sealed class NodesCommandTests(TestDatabase database) : IntegrationTest(d
 
         var run = await RunAsync(host.Services, "nodes", "set-state", "alpha", "draining");
 
-        run.Code.ShouldBe(NodesCommand.Success);
+        run.Code.ShouldBe(NodesCommand.Success, customMessage: run.Error);
         run.Output.Trim().ShouldBe("node alpha: active -> draining");
 
         var node = await RowAsync("alpha");
@@ -160,7 +160,42 @@ public sealed class NodesCommandTests(TestDatabase database) : IntegrationTest(d
         (await RunAsync(host.Services, "nodes", "explode")).Code.ShouldBe(NodesCommand.Usage);
     }
 
-    private RenderNodeTestHost BuildHost(FakeClock clock, params string[] nodeNames)
+    [Fact]
+    public async Task List_EmptyRegistry_PrintsNothing_Exit0()
+    {
+        RenderNodeDatabase.Reset(Database);
+        var clock = new FakeClock(Start);
+        using var host = BuildHost(clock);
+
+        var run = await RunAsync(host.Services, "nodes", "list");
+
+        run.Code.ShouldBe(NodesCommand.Success);
+        run.Output.Trim().ShouldBeEmpty("the plan's table allows ≥ 0 rows");
+    }
+
+    [Fact]
+    public async Task List_MissingKey_Exits2_NamingVariableNotValue()
+    {
+        RenderNodeDatabase.Reset(Database);
+        var clock = new FakeClock(Start);
+        using var host = BuildHostMissingKey(clock, "beta", "alpha", "beta");
+
+        var run = await RunAsync(host.Services, "nodes", "list");
+
+        run.Code.ShouldBe(NodesCommand.Usage, "a missing adapter key fails the verb before it lists");
+        run.Error.ShouldContain("RENDER_NODE_BETA_API_KEY", Case.Sensitive);
+        run.Error.ShouldNotContain("alpha-key-value", Case.Sensitive);
+        run.Error.ShouldNotContain("beta-key-value", Case.Sensitive);
+    }
+
+    private RenderNodeTestHost BuildHost(FakeClock clock, params string[] nodeNames) =>
+        BuildHost(clock, missingKey: null, nodeNames);
+
+    /// <summary>Like <see cref="BuildHost(FakeClock, string[])"/>, but <paramref name="missingKey"/>'s node key is left unset.</summary>
+    private RenderNodeTestHost BuildHostMissingKey(FakeClock clock, string missingKey, params string[] nodeNames) =>
+        BuildHost(clock, missingKey, nodeNames);
+
+    private RenderNodeTestHost BuildHost(FakeClock clock, string? missingKey, string[] nodeNames)
     {
         var settings = new Dictionary<string, string?>(StringComparer.Ordinal)
         {
@@ -175,7 +210,10 @@ public sealed class NodesCommandTests(TestDatabase database) : IntegrationTest(d
             settings[$"RenderNodes:Nodes:{index}:BaseUrl"] = $"https://{name}.example/";
             settings[$"RenderNodes:Nodes:{index}:Capacity"] = "2";
             settings[$"RenderNodes:Nodes:{index}:TlsCertSha256"] = Pin;
-            settings[RenderNodeApiKey.VariableName(name)] = $"{name}-key-value";
+            if (!string.Equals(name, missingKey, StringComparison.Ordinal))
+            {
+                settings[RenderNodeApiKey.VariableName(name)] = $"{name}-key-value";
+            }
         }
 
         return RenderNodeTestHost.Build(Database, clock, settings, Environments.Development);

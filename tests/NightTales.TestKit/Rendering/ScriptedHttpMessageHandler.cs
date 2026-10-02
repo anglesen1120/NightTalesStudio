@@ -36,6 +36,7 @@ public sealed class ScriptedHttpMessageHandler(IReadOnlyList<ScriptedHttpStep> s
 {
     private readonly List<RecordedNodeRequest> _requests = [];
     private readonly Lock _gate = new();
+    private IReadOnlyList<ScriptedHttpStep> _steps = steps;
     private int _calls;
 
     /// <summary>Every call this node received, in order.</summary>
@@ -47,6 +48,26 @@ public sealed class ScriptedHttpMessageHandler(IReadOnlyList<ScriptedHttpStep> s
             {
                 return [.. _requests];
             }
+        }
+    }
+
+    /// <summary>
+    /// Replaces the script from the next call on. A client that was already handed out keeps this same
+    /// handler, so a mid-test re-script is honoured (the poller pools its clients per node).
+    /// </summary>
+    /// <param name="steps">The new answers, in call order; at least one is required.</param>
+    internal void Rescript(IReadOnlyList<ScriptedHttpStep> steps)
+    {
+        ArgumentNullException.ThrowIfNull(steps);
+        if (steps.Count == 0)
+        {
+            throw new ArgumentException("At least one scripted step is required.", nameof(steps));
+        }
+
+        lock (_gate)
+        {
+            _steps = steps;
+            _calls = 0;
         }
     }
 
@@ -65,7 +86,7 @@ public sealed class ScriptedHttpMessageHandler(IReadOnlyList<ScriptedHttpStep> s
                 request.RequestUri?.PathAndQuery ?? string.Empty,
                 request.Headers.TryGetValues("x-api-key", out var values) ? string.Join(",", values) : null));
 
-            step = steps[Math.Min(_calls, steps.Count - 1)];
+            step = _steps[Math.Min(_calls, _steps.Count - 1)];
             _calls++;
         }
 

@@ -33,7 +33,7 @@ namespace NightTales.Infrastructure.Persistence.Migrations
                     table.PrimaryKey("pk_worker_nodes", x => x.id);
                     table.CheckConstraint("ck_worker_nodes_capacity", "\"capacity\" BETWEEN 1 AND 8");
                     table.CheckConstraint("ck_worker_nodes_state", "\"state\" IN ('active', 'down', 'draining')");
-                    table.CheckConstraint("ck_worker_nodes_tls_sha256", "(\"tls_cert_sha256\" IS NULL AND \"base_url\" LIKE 'http://%') OR \"tls_cert_sha256\" ~ '^[0-9A-F]{64}$'");
+                    table.CheckConstraint("ck_worker_nodes_tls_sha256", "CASE WHEN \"tls_cert_sha256\" IS NULL THEN \"base_url\" LIKE 'http://%' ELSE \"tls_cert_sha256\" ~ '^[0-9A-F]{64}$' END");
                 });
 
             migrationBuilder.CreateIndex(
