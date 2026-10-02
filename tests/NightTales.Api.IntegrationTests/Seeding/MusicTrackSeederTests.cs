@@ -1,0 +1,188 @@
+using System.Globalization;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
+using NightTales.Infrastructure.Persistence;
+using NightTales.Infrastructure.Persistence.Seeding;
+using NightTales.TestKit;
+using NightTales.TestKit.Database;
+using NightTales.TestKit.Time;
+using Shouldly;
+using Xunit;
+
+namespace NightTales.Api.IntegrationTests.Seeding;
+
+/// <summary>
+/// The 05.3.2-T3 music-track seeder against a real migrated database (05 README D8): it upserts the catalog
+/// by <c>track_id</c>, a second run changes nothing, a track the file no longer lists is left alone (never
+/// destructive), an absent catalog leaves the table untouched without failing, and a catalog that breaks a
+/// D8 rule writes nothing. The shared fixtures of <c>seed/fixtures/music</c> are the input.
+/// </summary>
+[Trait("Category", "Integration")]
+public sealed class MusicTrackSeederTests(TestDatabase database) : IntegrationTest(database)
+{
+    private static string FixtureFile(string name) =>
+        Path.Combine(SeedTestHarness.RepoRoot, "seed", "fixtures", "music", name);
+
+    [Fact]
+    public async Task Seed_InsertsTheCatalog_ThenASecondRunIsANoOp()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await ResetAsync(ct);
+        await using var db = Database.CreateAppDbContext(clock: new FakeClock());
+        var seeder = CreateSeeder(db, FixtureFile("valid-catalog.json"));
+
+        var first = await seeder.SeedAsync(ct);
+        var second = await seeder.SeedAsync(ct);
+
+        first.ShouldBe(new SeedReport("music_tracks", 3, 0, 0));
+        second.ShouldBe(new SeedReport("music_tracks", 0, 0, 3));
+        (await CountAsync(ct)).ShouldBe(3);
+
+        await using var read = Database.CreateAppDbContext(clock: new FakeClock());
+        var row = await read.MusicTracks.AsNoTracking().SingleAsync(track => track.TrackId == "fixture-noir-suspense", ct);
+        row.Moods.ShouldBe(["noir", "suspense"]);
+        row.Active.ShouldBeTrue();
+        row.StorageKey.ShouldBe("music/fixture-noir-suspense.mp3");
+        row.CatalogRevision.ShouldBe(1);
+        row.Attribution.ShouldNotBeNull();
+    }
+
+    [Fact]
+    public async Task Seed_UpdatesAChangedTrackInPlace_AndNeverDeletesAnUnlistedOne()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await ResetAsync(ct);
+        await using var db = Database.CreateAppDbContext(clock: new FakeClock());
+        await CreateSeeder(db, FixtureFile("valid-catalog.json")).SeedAsync(ct);
+        var path = WriteCatalog(
+            File.ReadAllText(FixtureFile("valid-catalog.json"))
+                .Replace("\"title\": \"Fixture fixture-temple-calm\"", "\"title\": \"Renamed\"", StringComparison.Ordinal)
+                .Replace("\"revision\": 1", "\"revision\": 2", StringComparison.Ordinal));
+        try
+        {
+            await using var second = Database.CreateAppDbContext(clock: new FakeClock());
+            var report = await CreateSeeder(second, path).SeedAsync(ct);
+
+            report.Inserted.ShouldBe(0);
+            report.Updated.ShouldBe(3, "the catalog revision moved, so every row is rewritten");
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+
+        // A file that lists fewer tracks leaves the others untouched.
+        var trimmed = WriteCatalog(TrimToFirstTrack(File.ReadAllText(FixtureFile("valid-catalog.json"))));
+        try
+        {
+            await using var third = Database.CreateAppDbContext(clock: new FakeClock());
+            await CreateSeeder(third, trimmed).SeedAsync(ct);
+        }
+        finally
+        {
+            File.Delete(trimmed);
+        }
+
+        (await CountAsync(ct)).ShouldBe(3, "the seeder never deletes");
+        (await Database.QueryStringsAsync(
+            "SELECT title FROM music_tracks WHERE track_id = 'fixture-temple-calm'", ct)).ShouldBe(["Renamed"]);
+    }
+
+    [Fact]
+    public async Task Seed_AbsentCatalog_LeavesTheTableUntouched()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await ResetAsync(ct);
+        await using var db = Database.CreateAppDbContext(clock: new FakeClock());
+        await CreateSeeder(db, FixtureFile("valid-catalog.json")).SeedAsync(ct);
+
+        var missing = Path.Combine(Path.GetTempPath(), $"music-{Guid.NewGuid():N}.json");
+        await using var other = Database.CreateAppDbContext(clock: new FakeClock());
+        var report = await CreateSeeder(other, missing, environment: "Production").SeedAsync(ct);
+
+        report.ShouldBe(new SeedReport("music_tracks", 0, 0, 0));
+        (await CountAsync(ct)).ShouldBe(3);
+    }
+
+    [Theory]
+    [InlineData("invalid-license.json", "license_unknown")]
+    [InlineData("invalid-attribution.json", "attribution_required")]
+    // The fixture trips both track_id_duplicate and file_duplicate; the seeder throws the first
+    // violation, which is the id duplicate (the unit fixture test asserts the full code list).
+    [InlineData("invalid-duplicate-file.json", "track_id_duplicate")]
+    [InlineData("invalid-revision.json", "revision_not_positive")]
+    public async Task Seed_InvalidCatalog_WritesNothing(string fixture, string code)
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await ResetAsync(ct);
+        await using var db = Database.CreateAppDbContext(clock: new FakeClock());
+
+        var exception = await Should.ThrowAsync<SeedValidationException>(
+            () => CreateSeeder(db, FixtureFile(fixture), environment: "Production").SeedAsync(ct).AsTask());
+
+        exception.Code.ShouldContain(code);
+        (await CountAsync(ct)).ShouldBe(0);
+    }
+
+    [Fact]
+    public async Task Seed_Revision0_IsAllowedInDevelopmentOnly()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await ResetAsync(ct);
+        await using var db = Database.CreateAppDbContext(clock: new FakeClock());
+
+        var report = await CreateSeeder(db, FixtureFile("invalid-revision.json"), environment: "Development").SeedAsync(ct);
+
+        report.Inserted.ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task Seed_CommittedCatalog_LoadsAll30Tracks()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await ResetAsync(ct);
+        await using var db = Database.CreateAppDbContext(clock: new FakeClock());
+
+        var report = await CreateSeeder(db, Path.Combine(SeedTestHarness.RepoRoot, "seed", "music-tracks.v1.json"))
+            .SeedAsync(ct);
+
+        report.Inserted.ShouldBe(30);
+        (await Database.QueryStringsAsync("SELECT count(*)::text FROM music_tracks WHERE active", ct)).ShouldBe(["30"]);
+    }
+
+    private static MusicTrackSeeder CreateSeeder(AppDbContext db, string catalogFile, string environment = "Development") =>
+        new(
+            db,
+            Options.Create(new SeedOptions { MusicTracksFile = catalogFile }),
+            SeedTestHarness.Environment(environment),
+            NullLogger<MusicTrackSeeder>.Instance);
+
+    private static string WriteCatalog(string json)
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"music-{Guid.NewGuid():N}.json");
+        File.WriteAllText(path, json);
+
+        return path;
+    }
+
+    private static string TrimToFirstTrack(string json)
+    {
+        var document = System.Text.Json.Nodes.JsonNode.Parse(json)!.AsObject();
+        var tracks = document["tracks"]!.AsArray();
+        while (tracks.Count > 1)
+        {
+            tracks.RemoveAt(tracks.Count - 1);
+        }
+
+        return document.ToJsonString();
+    }
+
+    private async Task ResetAsync(CancellationToken ct) =>
+        await Database.ExecuteAsync("DELETE FROM music_tracks", ct);
+
+    private async Task<int> CountAsync(CancellationToken ct) =>
+        int.Parse(
+            (await Database.QueryStringsAsync("SELECT count(*)::text FROM music_tracks", ct)).Single(),
+            CultureInfo.InvariantCulture);
+}

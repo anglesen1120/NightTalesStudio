@@ -30,6 +30,12 @@ public sealed class SeedOptions
     public string VoiceCatalogFile { get; set; } = "seed/voices.v1.json";
 
     /// <summary>
+    /// The plan 05 music catalog, read in every environment (05 README D8, 05.3.2-T3). It is the file
+    /// <c>worker-node/music/tools/check_catalog.py</c> proves, so the rules cannot drift apart.
+    /// </summary>
+    public string MusicTracksFile { get; set; } = "seed/music-tracks.v1.json";
+
+    /// <summary>
     /// Whether <see cref="SeedRunner"/> continues after a failed seeder instead of stopping. The
     /// explicit <c>nts-seed</c> command keeps it <c>false</c>, so a failure is a non-zero exit.
     /// </summary>

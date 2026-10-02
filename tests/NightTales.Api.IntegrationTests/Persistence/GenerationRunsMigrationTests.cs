@@ -608,9 +608,9 @@ public sealed class GenerationRunsMigrationTests(TestDatabase database) : Integr
     }
 
     /// <summary>
-    /// Owns the last-migration <c>Down</c> check: reverting to the previous migration drops the table and the four
-    /// columns, and applying the latest again leaves an empty table. Placed here, not in the
-    /// <c>WorkerNodes</c> test, because this is the last migration.
+    /// The <c>Down</c> check: reverting to the migration before this one drops the table and the four columns, and
+    /// applying the latest again leaves an empty table. It finds its migration by name, so it does not depend on
+    /// being the last one (the newest migration's own test owns that check, 05.3.2-T3).
     /// </summary>
     [Fact]
     public async Task DownMigration_DropsTheTableAndTheFourColumns_AndUpRecreatesThem()
@@ -622,12 +622,12 @@ public sealed class GenerationRunsMigrationTests(TestDatabase database) : Integr
 
         await using var context = Database.CreateAppDbContext();
         var migrations = context.Database.GetMigrations().Order(StringComparer.Ordinal).ToList();
-        migrations[^1].ShouldContain("02_GenerationRuns", customMessage: "this test owns the last migration");
-        migrations.Count.ShouldBeGreaterThan(1);
+        var own = migrations.FindIndex(name => name.EndsWith("_02_GenerationRuns", StringComparison.Ordinal));
+        own.ShouldBeGreaterThan(0, "the migration must exist and have a previous one to revert to");
 
         try
         {
-            await context.Database.GetService<IMigrator>().MigrateAsync(migrations[^2], Ct);
+            await context.Database.GetService<IMigrator>().MigrateAsync(migrations[own - 1], Ct);
 
             SqlProbe.ScalarText(Database, "SELECT coalesce(to_regclass('public.generation_runs')::text, 'gone')")
                 .ShouldBe("gone");

@@ -12,7 +12,7 @@
     `Content` items of this project flow transitively to every referencing host and test project.
   -->
   <ItemGroup>
-    <Content Include="..\..\seed\catalog.dev.json;..\..\seed\style-templates.v1.json;..\..\seed\voices.v1.json"
+    <Content Include="..\..\seed\catalog.dev.json;..\..\seed\music-tracks.v1.json;..\..\seed\style-templates.v1.json;..\..\seed\voices.v1.json"
              Link="seed\%(RecursiveDir)%(Filename)%(Extension)"
              CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
