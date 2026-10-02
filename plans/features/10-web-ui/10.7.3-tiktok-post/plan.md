@@ -255,3 +255,18 @@ Open items to close at DoR ([OPEN], no invented contract):
 2. **Order**: `10.7.3-T0` (design, in parallel with 10.7.3-T1's read-only prep) → **owner approval recorded in §6** → `10.7.3-T1` → `10.7.3-T2` → `07.4.1-T1` (audit evidence/screencast) → `10.10.1-T2` (axe + per-route budget). Nothing here blocks the M2 exit (§C5 step 6).
 3. **Rollout state**: the flag ships **off**; enabled first for the owner's own account only (07 D4/CR-6), then for the `approved` audit state via 07.4.1-T2. A rollback is `nts-worker flags set tiktok_publish false`: nav entry, the composer route and the `/channels` TikTok section disappear; existing TikTok publications stay visible through 10.7.4-T1's panel (they are ordinary publications) and in-flight server jobs keep running (07 D16).
 4. **Post-deploy checks**: connect → callback → connected card on the real sandbox (or 07's stubs, §C7 R2 exit); composer against a private test account with `privacy = SELF_ONLY`; the R2 exit checklist of §C7 signed; 10.10.1-T2's axe + budget rows for `/channels` and `/episodes/:id/publish/tiktok` in the release report.
+
+## 12. Angular implementation amendment (2026-10-02)
+
+### Design evidence and unresolved gate
+
+- Static evidence is pinned to the TikTok frames in [`07-tiktok-billing-account.html`](https://github.com/anglesen1120/NightTalesStudio/blob/920b507d0fcbff2195de0e492235425f39ac0c37/design/ui/screens/07-tiktok-billing-account.html): channel `#f-tt-*` and composer `#f-b-*`, including `#f-b-private-notice`, `#f-b-consent`, `#f-b-outdated` and `#f-b-failures`.
+- `10.7.3-T0` remains open pending approver/date/revision. It must add a distinct consent-text-missing frame/evidence, one mapped alert state for each required 400/409/429 outcome, and prove that the private-only notice remains in every submit-capable state. Composite `#f-b-failures` and a separate private-notice specimen are insufficient for those invariants.
+
+### Angular boundaries and integration readiness
+
+- The TikTok section composes into `/channels`; the composer is its own lazy R2 container. `TikTokStore` and `TikTokComposerStore` are page/route scoped; their writable signals are private and public state readonly/immutable. Repository/data-access owns generated DTO mapping, ETag/full-response handling and command headers. Request/session/episode/variant generations discard late creator-info, consent-text, create or consent results; cleanup removes callbacks/listeners and keeps the R2 chunk absent from active P/S closures.
+- The typed composer form uses an explicit mapper for UTF-16 caption semantics, nullable `description`/`tags`/`publishAt`, fixed `SELF_ONLY` and the six TikTok fields. Async creator/consent updates, control disablement and server field errors use the zoneless form bridge. Consent outdated always refetches and waits for a new explicit click; unknown/absent capabilities fail closed.
+- TikTok is R2-only and remains separate from YouTube P/S repositories, commands and rollout flags. No frame authorizes browser upload, progress, public privacy, scheduling, export or any new capability. Real integration waits for the named `07.*` owners and audit state; mockup coverage never activates the flag.
+
+No task ID, size, phase, dependency or estimate changes in this amendment.

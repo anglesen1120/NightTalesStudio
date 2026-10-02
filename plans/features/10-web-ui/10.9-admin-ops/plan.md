@@ -46,6 +46,7 @@
 | A23 | Realtime/polling: existing hub only; **no new hub event** in this part. Polling only through `core/state/visible-poll.ts`; the two allowed polls are `/billing/return` and `/me/exports/{id}` — **neither is in this folder**, so every admin-ops screen refetches on navigation / `resync` / user action. | SD16 ✅ |
 | A24 | Secrets are write-only end to end: the SPA never receives a secret value (only `secret_hint` = last 4), never sends a secret back on an unrelated save, and a rollback requires **re-entering** every secret of that integration (old secrets are never restored). The 09 log-scan test asserts no secret value in logs/traces/audit/exports. | A7, A16, 09 README §C6:1193 ✅ |
 | A25 | Step-up: `ReauthDialog` + `StepUp` helper retry-once pattern is `10.3.3-T3` (P); 10.9.3-T1 depends on it. | SD7, §C8.1 row ✅ |
+| A26 | Candidate design evidence is commit-pinned [`08-admin.html`](https://github.com/anglesen1120/NightTalesStudio/blob/920b507d0fcbff2195de0e492235425f39ac0c37/design/ui/screens/08-admin.html) plus pinned `tokens.css`/`kit.css` at artifact `920b507…`; develop `00e7d5d…` has no design tree. The 117-frame artifact has no evidenced approver/date/scope, so `10.9.1-T0` remains OPEN. At the same source snapshot, these admin/settings/billing surfaces remain planned under the exact 09/12/06 owners in task headers; frames and DTO declarations are not readiness. | Design audit + `../integration-readiness.md` 2026-10-02 ✅ |
 
 ## 3. Domain and data
 
@@ -53,13 +54,15 @@
 
 | Route | Feature | Data | States to implement |
 |---|---|---|---|
-| `/admin/billing/{packages,promos,payments,refunds,funding}` | `admin` | `/admin/credit-packages`, `/admin/promo-codes`, `/admin/payments?status=needs_review`, `/admin/refund-requests`, `/admin/funding` | tables, resolve dialogs, funding snapshots |
+| `/admin/billing/{packages,promos,payments,refunds}` and `/admin/funding` | `admin` | `/admin/credit-packages`, `/admin/promo-codes`, `/admin/payments?status=needs_review`, `/admin/refund-requests`, `/admin/funding` | tables, resolve dialogs, funding snapshots |
 | `/admin/settings`, `/admin/settings/nodes` | `admin` (owner-only chunk) | `/admin/settings*`, `/admin/worker-nodes*`, `/admin/settings/changes?status=pending`, `/admin/youtube/clients` (06.1.2-T3) | cards, test, versions, rollback, pending change, locked-by-environment |
 | `/cancel-request` | `public` | `POST /security/cancel-links/{kind}/{id}` | confirm, done, unknown/expired/used |
 
 **Client types (frozen names only).** `CreditPackageInput`, `PromoCodeInput`, `AdminPaymentDto`, `RefundRequestDto`, `FundingOverviewDto`, `BalanceSnapshotInput`, `TopUpInput`, `MarginRowDto`, `YouTubeClientSettingsDto`, `YouTubeClientDto` — exactly as A10–A12/A18 write them; no `*ViewModel` aliases, no added fields. Where a field is not in the frozen list (e.g. the funding DTO tail, A12 ⚠️) the task reads `12-billing-credits/12.8-funding/plan.md` before coding and must not invent one.
 
 **Ports and stores (D15 convention).** One repository port per area, backed by `HttpClient` + the wave-1 auth interceptor, returning `Promise<T>`; stores are signal stores with `load()`, `resync()` and explicit state unions; server paging only through `cursor-page.ts`/`cursor-list.ts` (FC12: **no client-side aggregation, no N+1** — admin aggregates are server-side). Money and settings screens hold **no** derived numbers: every figure comes from the payload.
+
+**Angular ownership and lifetime.** Billing, settings and public-cancel routed containers own composition, typed query/form-to-command mapping and route/session request generations. Presentational leaves receive immutable view contracts and emit intent; no generated DTO, repository, store or permission policy enters them. New reuse stays admin-local and requires two named semantic consumers, one owner and a public input/output contract; no universal table, dynamic settings form, repository base or CRUD DSL. Route destroy/session change invalidates late results; dialogs clear notes/secrets/tokens on close.
 
 **Concurrency.** `PUT /admin/settings/{integration}` and `PATCH /admin/credit-packages/{id}` / `/admin/promo-codes/{id}` need `If-Match`; the token is read with `readEtag` and sent with `withIfMatch` (D5). 12's ETag tokens are `"pm-<xmin>"` (payments), `"pc-<xmin>"` (promo codes), `"cp-<xmin>"` (credit packages), `"fr-<xmin>"` (refund requests) (12 D17:208). ⚠️ the settings ETag token format is owned by 09.10.2-T1 and is **not** pinned here — the task reads it there; inventing `"st-<xmin>"` would be a second name.
 
@@ -109,11 +112,18 @@
 
 ## 6. UI
 
-**Screens and states (SD1 rows, §C7 design gate).** `/admin/billing/packages`, `/admin/billing/promos`, `/admin/billing/payments`, `/admin/billing/refunds`, `/admin/billing/funding`, `/admin/settings` (+ integration cards, history drawer, pending-change banner), `/admin/settings/nodes`, `/cancel-request`. Every screen designs **loading / empty / error / success / permission-denied (404 for a non-owner) / pending (202, `setting_change_pending`, `grant_requires_approval`)** at **360 / 768 / 1280**, vi + en, dark + light, with focus order, keyboard path and a11y notes (24 px targets, `aria-sort` on tables, focus trapped then restored in dialogs, `aria-live` for table empty/loading/error), built from the D11 tokens/components (SD11).
+**Candidate design evidence and state gates (SD11).** Use commit-pinned [`08-admin.html`](https://github.com/anglesen1120/NightTalesStudio/blob/920b507d0fcbff2195de0e492235425f39ac0c37/design/ui/screens/08-admin.html) at `920b507d0fcbff2195de0e492235425f39ac0c37`; it is not a develop-relative asset. Billing/funding frames: `f-ops-loading|empty|error`, `f-pkg-*`, `f-promos-*`, `f-pay-*`, `f-refunds-*`, `f-funding-*`. Settings/nodes: `f-set-*`, `f-nodes-*`. Public cancel: `f-cancel-confirm|submitting|done|applied|invalid|rate`. Static frames are candidate coverage, not Angular acceptance or approval.
 
-**Design link and owner approval (SD11 hard gate).** Design task: `10.9.1-T0 — UI design (admin)` in `../10.9-admin-core/` (README §C8:764; §C0:557 names `10.9.1-T0` as this folder's design owner). Link: `../10.9-admin-core/10.9.1-T0-ui-design.md` ⚠️ *folder not yet on disk when this plan was written (2026-09-25); the writer of `10.9.1-T0` fixes the file name and the link here is updated to the real path*. **Owner approval record: PENDING** — to be recorded in `../10.9-admin-core/plan.md` §6 (per SD11/§C7) and mirrored here as "approved <date> by owner"; until then no implementation task in this folder may start.
+| Record | Value |
+|---|---|
+| Owner approval | ⚠️ **[OPEN]** — no approver/date/signed scope is evidenced in `../10.9-admin-core/plan.md` §6 |
+| Route-specific gaps | Common loading/empty/error is captioned only for packages; payments/refunds/funding and settings/nodes need approved route copy/state mapping |
+| Settings gaps | Missing YouTube clients/`oauth_client_in_use`, test-success, node activate, route loading/empty/error/404 and admin-does-not-load-owner-chunk depiction |
+| Funding caption | Caption and scope use `/admin/funding`; the locked route is `/admin/funding` (`plans/10-web-ui.md:228`) — a sibling of the `billing/*` children, not `/admin/billing/funding`; no alias |
+| Unsupported frames/controls | `f-refunds-manual` has no signed endpoint/owner; `f-cancel-applied` is outside the frozen 204/uniform-400 contract; mockup-only export/filter/schedule controls do not add scope |
+| Responsive/a11y | Candidate disclosure at ≤1023 and card dialogs conflict with the written 768 sticky-scroll/360 full-height-sheet contract; static annotations do not prove focus/live/token hygiene |
 
-**D11 components reused:** `ErrorState`, `EmptyState`, `LoadingState`, `StatusChip` (payment/refund/node state, never colour-only — 12 D18), `ConfirmDialog` (rollback, deactivate, cancel-link confirm), `ReauthDialog` (via the 10.3.3-T3 `StepUp` helper), `RetryCountdown` (rate-limited 429 copy), `CharCounter` (resolve `note`, node/secret-free text), the `header-end` slot, `bindFieldErrors` for field-level 400s. New shared pieces stay in `features/admin/ui/` and are exported through the feature's barrel, not `@shared/ui`, unless a second feature needs them.
+**D11/admin-local reuse.** Reuse the signed global primitives. `DecisionDialogShell` is an admin-local contract owned by `10.9.4-T2`, and `AdminPaymentRow` is an admin-local contract owned by `10.9.1-T1`, each for named cross-admin consumers; billing supplies its own command mapping/copy. Settings-specific secret/history/node widgets remain under `features/admin/settings`; funding metrics remain under `features/admin/billing`. Do not promote business tables or settings cards into `shared/ui`.
 
 **i18n:** new Transloco scope `admin` (+ `admin.billing.*` per 12 D18) with every key in vi **and** en; the FC10 code list gains `errors.*` keys here for `setting_change_pending`, `setting_conflict`, `setting_secret_required`, `setting_invalid`, `setting_test_failed`, `oauth_client_in_use`, `oauth_client_unknown`, `payment_already_resolved`, `refund_request_not_pending`, `grant_requires_approval`, `package_below_cost`, `payment_provider_error`, `cancel_token_invalid`, `reauth_required`, `rate_limited`. Server text (settings hints, provider event types, probe reasons) is rendered as data, never as a key.
 
@@ -142,6 +152,7 @@ Integrations rendered as cards: exactly the §5.6 catalogue of A8. The `captcha`
 - **PII.** `AdminPaymentDto.user` exposes `{ id, email }` only; provider events expose `{ id, type, receivedAt, signatureValid }` — no raw webhook body, no bank account name beyond the DTO; 12 F11 forbids raw bodies in logs and this UI adds none (FC15: `traceId` on `unknown_error`, never tokens/QR payloads/receipt bodies).
 - **Audit.** Every mutation here is audited server-side (`[Audited]`, 09.3.6-T1) — the UI shows the resulting state after a refetch and adds no client logging as a substitute (FC15).
 - **CSP unchanged.** No third-party origin, no new script, no `bypassSecurityTrust*`; the cancel page and the admin screens are `'self'`-only (D4 as amended by CR-28 for the CAPTCHA, which is not on these pages).
+- **Sensitive browser evidence.** Admin/billing/owner and public-cancel Playwright projects keep traces/videos off, including retain-on-failure, unless a separately reviewed redacted artifact is named. Never attach raw bodies, provider events, secrets, IP/UA, tokens or unmasked PII; public-cancel diagnostics must not retain the initial fragment.
 
 ## 9. Test plan
 

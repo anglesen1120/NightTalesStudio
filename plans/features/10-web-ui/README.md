@@ -56,9 +56,9 @@ Each feature folder holds `plan.md` (template `00-overview.md` §10.1, sections 
 | C3 | `POST /auth/reauth { password, code }` sets `reauthenticated_at`; guarded routes answer 401 `reauth_required`; 5 wrong attempts revoke the family (401 `session_revoked`); ≥ 10 wrong TOTP codes in 15 min → 429 `rate_limited` `Retry-After: 900` on login | 09 BD4, WT35; 09.10.4-T1 ✅ |
 | C4 | Reset link `/reset-password#t=<token>` (fragment), 60 min, single use; `POST /auth/forgot-password` always 202 (padded ≥ 300 ms) | 09 BD3, WT40 ✅ |
 | C5 | Registration closed in P: `POST /auth/register` → 403 `registration_closed`; register + verify-email are S (09.3.1-T3) | 09 W2-O1, BD2 ✅ |
-| C6 | Hub `/hubs/episodes`, WebSockets only + `skipNegotiation`; `POST /hubs/ticket` → `{ ticket, expiresAt }` (60 s, single use, policy `hub` 10/min/user); 401 `hub_ticket_invalid`; the hub **aborts** a connection after `Hubs:MaxConnectionMinutes` = role token lifetime (owner 5, user 15) and on every family revocation; handshake `Origin` must equal `App:PublicOrigin` | 09 BD11, WT37; 09.8.1 `plan.md` §8 ✅ |
+| C6 | WebSocket `/hubs/episodes`, WebSockets only + `skipNegotiation`; ticket HTTP `POST /api/v1/hubs/ticket` → `{ ticket, expiresAt }` (60 s, single use, policy `hub` 10/min/user); 401 `hub_ticket_invalid`; the hub **aborts** a connection after `Hubs:MaxConnectionMinutes` = role token lifetime (owner 5, user 15) and on every family revocation; handshake `Origin` must equal `App:PublicOrigin`. `subscribeEpisode` is a client filter, not a server RPC; transport readiness does not certify future event producers. | 09 BD11, WT37; `HubEndpoints.cs`, `EpisodeHub.cs`; [snapshot/readiness](integration-readiness.md) |
 | C7 | Events `EpisodeUpdated`, `RenderProgress { episodeId, renderJobId, stage, percent }`, `PublicationUpdated`, `CreditBalanceChanged` (S); no `AutopilotRunUpdated` and no `SeriesBibleUpdated` in P; clients refetch `GET /episodes/{id}` on events | 00 §8; 02 README §10 T2; 02.6.3 `plan.md` §5; 09.8.1 `plan.md:176` ✅ |
-| C8 | `EpisodeDetailDto { id, seriesId, title, brief, lengthTier, status, nextActions[], etag, renderJob, finalVideo, publications }` + `generation { kind, status, stage, errorCode, startedAt, processingPaused }` + `currentStory { versionId, version, source, etag, content, qualityHints, auditReport, similarityScore, factSheetId, attestation }` | 09.4.2-5.3 `plan.md` §5, §7; 02 CR-7, T29 ✅ |
+| C8 | Target `EpisodeDetailDto { id, seriesId, title, brief, lengthTier, status, nextActions[], etag, renderJob, finalVideo, publications }` + planned `generation { kind, status, stage, errorCode, startedAt, processingPaused }` + `currentStory { versionId, version, source, etag, content, qualityHints, auditReport, similarityScore, factSheetId, attestation }`. Audited develop has only the basic DTO, no `generation`/`currentStory`, and null render/publication projections; planned extensions wait for their owners. | 09.4.2-5.3 `plan.md` §5, §7; 02 CR-7, T29; [source/readiness](integration-readiness.md) |
 | C9 | `story.v1` segments `title`, `hook`, `paragraphs[] { beat, text, keywords, fact_refs }`, `ending`, `description`, `tags`; addressing `title \| hook \| p:<0-based> \| ending \| meta`; 1–2 keywords per segment; title ≤ 100, description ≤ 1,000, tags ≤ 15 × 30 chars (≤ 400 total); segments: short 4–5, standard 20–32, long 40–60 | 02 README D3, D4, D22 ✅ |
 | C10 | Story ETag `"sv-<id>"`, fact sheet `"fs-<id>"`, bible `"sb-<version>"`, autopilot `"sa-<xmin>"`, episode `"ep-<xmin>"`; `If-Match` required on story PUT/approve/reopen, fact-sheet PUT/approve, bible PUT, autopilot PUT; 428 `if_match_required`; stale → 412 `story_version_conflict` / `fact_sheet_conflict` / `bible_conflict` / `series_conflict` | 02 D9; 02.3 `plan.md` §4.3; 09 AGENTS ✅ |
 | C11 | `PUT /episodes/{id}/story` body `{ content: story.v1 }`; an unchanged body returns the same ETag and no new version; approve body `{ attestation?: { accepted, textVersion } }`; quality hints never disable approve | 02.3 `plan.md` §4–§6 ✅ |
@@ -109,7 +109,7 @@ Each feature folder holds `plan.md` (template `00-overview.md` §10.1, sections 
 **D2 Layout and boundaries [DECISION] (00 §5.3, §5.4).** Exactly the 00 §5.3 tree (`core/`, `shared/{ui,util,api}`, `features/<name>/{domain,data-access,application,ui,feature}`, `<name>.routes.ts`, `index.ts`). Wave-1 features: `public`, `auth`, `dashboard`, `series`, `episodes`. Lint (10.1.2-T1) fails when:
 - `domain` imports `@angular/*`, `rxjs` or anything outside `domain` + `@shared/util`;
 - `ui` injects a store, repository or `HttpClient` (inputs/outputs only);
-- a file outside `data-access` imports `@shared/api`;
+- a file outside `features/*/data-access/**` or `core/**/data-access/**` imports `@shared/api` (D5); enforce the full layer dependency table in 10.1.2-T1, not just these examples;
 - a feature imports another feature other than through its `index.ts`;
 - `any`, non-`OnPush` components, `subscribe()` in components (use `toSignal`/`takeUntilDestroyed`), `bypassSecurityTrust*`, `[innerHTML]`, `document.write`, `eval`/`new Function`, `localStorage`/`sessionStorage` outside `core/prefs` (D6).
 Shared cross-feature code lives in `shared/` (pure) or `core/` (singletons); never copy a helper into a second feature.
@@ -128,22 +128,22 @@ Shared cross-feature code lives in `shared/` (pure) or `core/` (singletons); nev
 - `angular#unsafe-bypass` is **not** allowed (no `bypassSecurityTrust*`, D2). The only custom policy is `nts-sanitizer` in `core/security/` (reviewed; currently unused — present so a future need has one place).
 - Other headers on every web response: `Referrer-Policy: no-referrer`, `X-Content-Type-Options: nosniff`, `Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=()`, `Cross-Origin-Opener-Policy: same-origin`; HSTS comes from the LB/API rule (09.9.4-T1) and is also set by nginx in Staging/Production.
 - Downloads: filenames are built by `shared/util/safe-filename.ts` (strip quotes, `/`, `\`, control characters, trim to 100 chars) — used by wave 2 and S.
-- CI: every Playwright spec fails on a `securitypolicyviolation` event or a console CSP/Trusted Types error (10.1.6-T1 fixture).
+- CI: every normal Playwright page, popup and context fails on a `securitypolicyviolation` event or console CSP/Trusted Types error (10.1.6-T1 fixture). Only intentional negative probes run in isolated contexts with narrowly asserted expected violations; they never disable the ordinary journey gate.
 
 **D5 API client and data access [DECISION] (F10).**
 - `ng-openapi-gen` (FE12) generates `web/src/app/shared/api/` from the CI artifact `openapi.json` (09.1.5-T1; `ProblemDetails` schema from 09.9.5-T1): `npm run api:gen` (CI) and `npm run api:gen:local -- <path>`. Generated code is committed, formatted, excluded from lint, and a CI step fails when regeneration from the pinned artifact produces a diff.
 - Only `features/*/data-access/**` and `core/**/data-access` import `@shared/api`. Each feature's `data-access` implements its `domain` port (abstract class) and maps DTO ↔ model with explicit functions (00 §5.4).
 - Repositories return `Promise<T>` (`firstValueFrom`); stores never see `HttpResponse`. Concurrency helpers in `core/http/`: `withIfMatch(etag)`, `readEtag(response)`; idempotency helper D9-adjacent `IdempotencyKeys` (10.2.3-T1).
-- Paging helper `shared/util/cursor-page.ts` (`{ items, nextCursor }`, limit ≤ 100) + `core/state/cursor-list.ts` (signal-based "load more" with in-flight guard) reused by every list.
+- Paging helper `shared/util/cursor-page.ts` (`{ items, nextCursor }`, limit ≤ 100) + `core/state/cursor-list.ts` (signal-based load more/in-flight guard) serve cursor-paged endpoints only; catalog `{ items }` responses have no invented cursor.
 
 **D6 Session and authentication [DECISION] (F03, F21, F22).**
 - Access token in memory only (`SessionStore` signal); never in `localStorage`/`sessionStorage`/cookies readable by JS (NFR-10-5). `core/prefs` may persist only the UI language before login; from S it also persists a pending `paymentId` written before the checkout top-level navigation and cleared once `/billing/return` resolves to a terminal status (10 CR-36) — still no token, no PII.
-- Boot: `provideAppInitializer` calls `POST /api/v1/auth/refresh` (cookie) once; guarded routes wait for it. 401 → anonymous.
-- Interceptor: attaches `Authorization: Bearer` to `/api/v1/**` except `/auth/login*`, `/auth/refresh`, `/auth/forgot-password`, `/auth/reset-password`; on 401 (`session_revoked`, expired token) runs **one** shared refresh (single-flight promise; concurrent 401s wait) and retries the original request **once**; refresh failure → `SessionEnded` → `/login?returnUrl=`. `withCredentials` is not needed (same origin); cookies are never read by JS.
+- Boot: `provideAppInitializer` calls the memoized `restore()` Promise (`POST /api/v1/auth/refresh`, cookie) once; guards await that Promise. Expected anonymous refresh denial settles anonymous; terminal family codes and transient network/5xx follow 10.2.1-T1's classified failure policy, not blanket success/anonymous fallback.
+- Interceptor attaches `Authorization: Bearer` to eligible `/api/v1/**` requests. WR9 is canonical: refresh + retry once only for a non-auth 401 with no code, `unauthenticated` or expired-token challenge; business/MFA/reauth/ticket/terminal-family codes pass to their owner, `/auth/*` never replays. Refresh is single-flight and cross-tab locked (WR10), background work activity-gated (WR11); terminal session end clears all scoped state. Cookies remain unreadable to JS; same-origin requests do not need cross-origin credentials configuration.
 - Refresh is on demand: before a request when `expiresAt − now < 30 s`, or on 401. **No timer-driven refresh** (D7).
 - `returnUrl` accepted only when it matches `^/(?![/\\])[^\s]*$` and is not an auth page; otherwise `/dashboard`.
-- Logout: `POST /auth/logout` → `SessionEnded` (also on refresh failure and on `refresh_token_reused`): all feature stores reset through `SESSION_SCOPED` providers (root-level stores register a `reset()`), realtime stops, the router goes to `/login`, in-memory story drafts are discarded after the dirty guard asked.
-- Guards: `authGuard` (session), `mfaEnrolmentGuard` (enrolment-only token → only `/account/security/mfa-setup`), `roleGuard` (admin/owner routes are S). Reset/verify pages read tokens from `location.hash` then `history.replaceState(null, '', location.pathname)` before calling the API.
+- Logout: `POST /auth/logout` → `SessionEnded` (also terminal refresh/family failure): all feature stores reset through `SESSION_SCOPED` providers (root stores register `reset()`), realtime stops, and generation/ownership gates reject stale success/error/finally callbacks. User-initiated logout follows the dirty guard; terminal revocation cannot be deferred by an unsaved-draft prompt.
+- Guards await `restore()` Promise; `authChildGuard` rechecks protected child navigation. Enrolment-only `/account/security/mfa-setup` sits outside the full-session shell (`mfaEnrolmentGuard`); only full sessions may start profile/realtime work. Async navigation captures the injector before awaiting; no out-of-context `inject()`. Admin/owner role routes remain S. Reset/verify read `location.hash`, then remove it with `history.replaceState` before API work.
 
 **D7 Activity gate [DECISION] (F06).** `core/session/activity.ts` tracks user input (`pointerdown`, `keydown`, `wheel`, `touchstart`, throttled 1/10 s) and `document.visibilityState`. `isActive()` = input within `idleWindow` (owner/admin 25 min, user 13 days — just below the server limits C1). Rules:
 - A refresh that is **not** caused by a user action (hub reconnect, polling) happens only when `isActive()`; otherwise realtime pauses and a `realtime.paused` bar offers "Continue" (a user action → refresh → reconnect → refetch).
@@ -152,7 +152,7 @@ Shared cross-feature code lives in `shared/` (pure) or `core/` (singletons); nev
 
 **D8 Realtime [DECISION] (F07; C6, C7).**
 - `RealtimeService` (root) owns one `HubConnection`: `withUrl('/hubs/episodes?ticket=<t>', { transport: HttpTransportType.WebSockets, skipNegotiation: true })`, no `accessTokenFactory`, no built-in automatic reconnect (the ticket is single-use).
-- Connect = `ensureFreshAccessToken()` → `POST /hubs/ticket` → `start()`. Every `onclose` (backstop, security abort, network) follows the **same** path after backoff 1, 2, 4, 8, 16, 30 s + 0–20 % jitter, gated by D7; 401 `hub_ticket_invalid` → one new ticket then backoff; a refresh failure ends the session (no reconnect).
+- Connect = `ensureFreshAccessToken()` → `POST /api/v1/hubs/ticket` → `start()`. Every `onclose` (backstop, security abort, network) follows the **same** path after backoff 1, 2, 4, 8, 16, 30 s + 0–20 % jitter, gated by D7; 401 `hub_ticket_invalid` → one new ticket then backoff; a terminal refresh failure ends the session (no reconnect), while transient failure follows the bounded recovery policy in 10.2.1-T1.
 - Events are exposed as typed signals/observables per name; feature stores subscribe through `realtime.subscribeEpisode(episodeId, handler)` (typed `on(name, ids?)` for other events; WR7). On every (re)connect and on `visibilitychange → visible`, the service emits `resync`; only stores with a live subscription refetch, coalesced per store within 250 ms. `RenderProgress` updates the progress signal directly (no refetch); `EpisodeUpdated` triggers a detail refetch (09.8.1 `plan.md:176`). Unknown event names and unknown `stage` values are ignored.
 - The token never appears in the hub URL; the ticket is not logged (dev console included).
 
@@ -177,13 +177,13 @@ Shared cross-feature code lives in `shared/` (pure) or `core/` (singletons); nev
 - No client cache for catalogs (browser HTTP cache honours 09.4.2-T1 ETags); store data lives as long as the page store.
 - No polling except D17; no timers without `DestroyRef` cleanup.
 
-**D14 P vs S in the UI [DECISION] (F12).** Wave 1 builds the P screens only. No credit amounts, quotes, balance or buy buttons in P (02 D1; `CreditBalanceChanged` is S). `ConfirmDialog` exposes an optional projected `cost-line` slot, and the shell header an optional `header-end` slot; S tasks 10.8.1-T1/10.8.3-T1 fill them (10 CR-4 records this in the high-level plan). Feature flags: `GET /me` gains `features: string[]` = the enabled keys of an allow-list (`source_finder`, `youtube_publish`) read through `IFeatureFlags` (10 CR-10, O1); `core/session` exposes `hasFeature(key)`; a flag switched off mid-session still answers 404 `feature_disabled`, which the block handles by hiding itself and refetching `/me`.
+**D14 P vs S in the UI [DECISION] (F12).** Wave 1 builds P screens only: no credit amounts, quotes, balance or buy controls (02 D1; `CreditBalanceChanged` is S). `ConfirmDialog` has an optional typed `TemplateRef`/data cost-line contract for service-created dialogs (static use may project); the shell header has a page-owned template registration port, cleared on teardown. S tasks 10.8.1-T1/10.8.3-T1 supply credit content (10 CR-4). Planned `GET /me` adds allowlisted `features: string[]` (`source_finder`, `youtube_publish`) via `IFeatureFlags` (10 CR-10, O1); `core/session` exposes `hasFeature(key)`. Mid-session disabled flags answer 404 `feature_disabled`; hide the block/refetch `/me` without reviving ended session state. This profile projection waits for its backend owner; no fabricated feature defaults.
 
 **D15 Testing and CI [DECISION] (F08).**
 - Unit/component: Vitest through `@angular/build:unit-test` + jsdom (FE5), TestBed zoneless; hand-written fake repositories implementing the domain ports (`features/*/testing/fake-*.repository.ts`) — no mocking library (same rule as the backend, 09 N10/N11).
 - Store tests cover success, `AppError` mapping, ETag conflict, rollback of optimistic state, realtime merge; component tests cover logic-heavy UI (editor, dialogs, pickers); domain/util tests are pure.
-- E2E: Playwright (FE13) in `web/e2e/`, against the compose stack (11.1.1-T1: api, worker, postgres, storage, mailpit, mock-mpt) with the `web` profile; `@axe-core/playwright` check on every page visited (WCAG 2.1 AA tags), plus the D4 CSP fixture. Owner auth helper: log in through the UI, enrol TOTP on first run (reads the manual key from the page), compute codes with a local RFC 6238 helper (Node `crypto`), wait for the next 30 s step when the current one was used; one login per spec file (`test.describe.serial` + `beforeAll`), `workers: 1` for the owner project; **never** reuse `storageState` across files (rotating refresh cookie).
-- `web.yml` (10.1.5-T1, `paths: web/**`): `npm ci` → lint → i18n check → `api:gen` drift check → unit tests → build → gzip budget → `gen-csp`; third-party actions pinned by SHA (11.5.3-T1 reviews). **No compose e2e in `web.yml`**: the Playwright suite (`web/e2e`, `npm run e2e`, config + fixtures owned by 10.1.5-T1) runs in 11.5.1-T1's `e2e.yml` job `e2e`, which already triggers on `web/**` (one stack start per PR, no duplicate CI) (10 CR-1); trace/video on failure are uploaded as artifacts there.
+- E2E: Playwright (FE13) in `web/e2e/`, real API/PostgreSQL/Worker/storage/mailpit/mock-MPT at approved seams, compose only for CI/image acceptance. `@axe-core/playwright` on visited pages (P WCAG 2.1 AA, S signed WCAG 2.2 upgrade) plus context-wide D4 fixture. Owner helper logs in via UI/enrols TOTP on first run; RFC6238 uses real server-aligned time and waits for unused 30 s step. One login per spec file, owner `workers: 1`, no cross-file rotating-cookie `storageState`; each journey is one independently runnable test with `test.step`, not a dependent serial-test chain.
+- `web.yml` (10.1.5-T1, `paths: web/**`): `npm ci` → lint → i18n → pinned `api:gen` drift → unit → build → gzip budget → `gen-csp`; third-party actions SHA-pinned. No duplicate compose e2e: 11.5.1-T1 owns `e2e.yml`, triggered on `web/**` (10 CR-1). Auth/billing/admin-bearing specs explicitly set trace/video off, including failures (WR14); only sanitized diagnostics are uploaded. Nonsensitive specs may retain failure artifacts under that policy.
 
 **D16 Accessibility baseline (every task) [DECISION].** WCAG 2.1 AA on wave-1 screens: every control labelled, visible focus (≥ 3:1), keyboard reachable without traps except modal dialogs (focus trapped, restored on close), `aria-live="polite"` for progress/status changes and "saved" feedback, errors linked with `aria-describedby`, contrast ≥ 4.5:1 in both themes, no information by colour alone (flagged chips carry an icon + text), target size ≥ 24 px, 360 px layout without horizontal scroll, `prefers-reduced-motion` honoured. Each task lists its screen-specific a11y checks; axe runs in its e2e spec. (The S pass 10.10.1 audits everything again.)
 
@@ -199,6 +199,24 @@ Shared cross-feature code lives in `shared/` (pure) or `core/` (singletons); nev
 - Rendering story text: text interpolation only; keywords are plain chips; no Markdown.
 
 **D19 Design-first rule [DECISION] (owner rule 2026-09-25).** Every UI feature folder in wave 1 opens with one design task (`<first-story>-T0`, Area `UX`, Depends on `10.1.3-T1` + the folder's key backend contract task (soft)) that produces wireframes + hi-fi mockups for every screen and state in that folder's `plan.md` §6 at 360/768/1280, dark default + light, vi + en, focus order + keyboard path + `aria-live` annotations, built from the D11 tokens/components; deliverable = a design link recorded in `plan.md` §6 plus the owner's approval record, and it is a **hard gate** — every implementation task in the folder lists its `-T0` as a hard `Depends on`. Sizes: S (0.5) for a 1–3-screen folder, M (1.0) for ≥ 4 screens. Non-UI folders (10.1.1 workspace/CI, 10.1.3 design system + generated client + CSP — the design-system foundation every `-T0` depends on — 10.2.1 session/errors, and 10.2.3 idempotency) are exempt: they ship no user-facing screen. §6 of each folder's `plan.md` records the design link/approval under a `Design (owner rule 2026-09-25)` paragraph. Applied 2026-09-25 (10 CR-31); mirrors Part C's SD11 (owner rule already applied there).
+
+### 3.1 Angular implementation-readiness amendment (2026-10-02)
+
+The [implementation roadmap](implementation-roadmap.md) refines the existing 73 tasks in 18 folders: concrete shared ownership/APIs, feature decomposition, task order and behavioral exit evidence. The [backend readiness ledger](integration-readiness.md) separates present wire contracts at audited `develop` SHA `00e7d5d5415579c7df55a66dc2177cbc2e31eb78` from planned owners, populated projections and runtime acceptance. Recheck merged OpenAPI/provenance before integrating each feature; concurrent worktree code is not merged availability.
+
+**D2/D11 ownership clarification.** Layer paths, not `*.component.ts`, define presentation restrictions. Routed feature containers and named shell composition roots may inject stores; shared/feature `ui/` may not inject stores/repositories/HTTP or import generated DTOs. Existing D11/WR4 shared inventory stays shared. A new promoted widget needs two named semantic consumers, one owner, typed readonly inputs/intent outputs and explicit downstream edges; admin-only reuse stays admin-local. No generic form/table DSL, SharedModule or competing state/client stack.
+
+**D5/D13 lifecycle clarification.** Retain generated HttpClient → DTO mapping → Promise domain ports and typed Reactive Forms. Private writable/public readonly signals; replace arrays/maps/objects and derive with `computed`. Effects bridge imperative boundaries with cleanup. Guard awaits the idempotent restore Promise, not a boolean settled signal; capture injected dependencies in a legal DI context. Request/route/session generations reject stale `/me` or entity responses after logout/navigation. Programmatic form changes/server errors notify zoneless templates through a lifecycle-bound event bridge; `bindFieldErrors` preserves local validators under one canonical server namespace and clears stale server errors.
+
+**D11 composition clarification.** Static projection and service-created dialogs differ: dynamic dialogs use typed data/optional `TemplateRef`; routed pages register a scoped header template that is cleared on teardown, not implicit projection through `RouterOutlet`. Required signal inputs are read after binding, not eager field construction. Every kit control retains keyboard/focus/translated accessible-name/state behavior; P contains no credit/billing content.
+
+**D5/D13 performance evidence.** Minimal auth/session operations required by bootstrap may be eager; unrelated generated feature operations, phase-inactive routes and heavy/deferred widgets must remain outside that closure. Use the pinned builder's emitted import graph/static closure, deduplicating shared/vendor chunks; hidden maps are internal artifacts, not public `sourcesContent`. Keep reviewed byte ceilings fixed and P/S/R2 inventory explicit; neither hashed filename guesses nor automatic measured-plus-15% ceiling increases prove a budget. Runtime cold-cache LCP/shell-interactivity protocol belongs to the journey plan; gzip counts cannot close it. Media dimensions/alt/sizes/priority are per surface; no speculative CDN or signed-URL resizing.
+
+**D15/WR14 acceptance evidence.** Inputs change via binding/`setInput`; await `whenStable` rather than routinely force change detection. HTTP testing providers follow HttpClient then HttpClientTesting order; router harness covers pending restore and protected child navigation. Real browser checks cover layout/focus/media/CSP, every new page/context and positive lazy/defer loads; deliberate CSP negatives use an isolated probe mode. Sensitive auth/billing/admin trace/video capture stays off; violation/report evidence omits samples and scrubs query/fragment/userinfo/secrets. P shell/dashboard/series/editor/render have their own a11y checks before S; DPR is not browser zoom, and page clocks do not fake server TOTP.
+
+**Contract preservation.** Angular 22, Node/npm, approved font/tokens, five-layer architecture, typed forms, same-origin clients, hash/header CSP and accepted inline styles remain locked. Preserve WR12/D4 sanitizer policy; currently unused policy is a review-before-use boundary, not authorization for future raw HTML sinks or deletion of approved contracts. `base-uri 'none'` requires no emitted `<base>`, explicit root `APP_BASE_HREF` and deep-link/asset proof, not ignored violations. Source URLs and official GitHub provenance are in the roadmap; moving docs/schema must be checked against installed pins. Mockup captions/actions do not override signed routes/backend scope; approval identity/date and missing design states remain explicit T0 gates.
+
+No task IDs, estimates or phase authorization change: P 41.0 raw days, S 20.0, total 61.0 / 73.2 buffered; P waves 31.5 + 9.5. No Angular/backend implementation or runtime API certification is claimed by this planning amendment.
 
 ## 4. Change requests
 
@@ -255,7 +273,7 @@ flowchart LR
 
 ## 6. Task file template
 
-Same as `../02-story-writing/README.md` §6: H1 `# <task-id> — <title>`, then the one-row table `| Story | Size | Area | Depends on | Blocks | Phase / flag |` (cells equal §8.1), then `## Goal`, `## Inputs`, `## Design`, `## Steps`, `## Outputs`, `## Acceptance checks`, `## Tests`, `## Failure handling and edge cases`, `## Notes`. Frontend specifics: **Design** names files under `web/src/app/…`, the store signals and methods, the component inputs/outputs, the routes and the i18n keys; **Acceptance checks** include the e2e scenario, the axe check and both languages; **Notes** list shared components produced or reused (D11).
+Same as `../02-story-writing/README.md` §6: H1 `# <task-id> — <title>`, then the one-row table `| Story | Size | Area | Depends on | Blocks | Phase / flag |` (cells equal the first six cells of §8.1; the §8.1 `Backend / upstream tasks to run first` column is not part of the task header), then `## Goal`, `## Inputs`, `## Design`, `## Steps`, `## Outputs`, `## Acceptance checks`, `## Tests`, `## Failure handling and edge cases`, `## Notes`. Frontend specifics: **Design** names files under `web/src/app/…`, the store signals and methods, the component inputs/outputs, the routes and the i18n keys; **Acceptance checks** include the e2e scenario, the axe check and both languages; **Notes** list shared components produced or reused (D11).
 
 ## 7. Gates
 
@@ -282,45 +300,47 @@ Mapping from `10-web-ui.md` §6: every wave-1 row keeps its id; `10.1.1-T2`, `10
 
 All tasks are P · M1. "(soft)" = the task can start with a contract-true fake; the acceptance run needs the real input.
 
-| Task | Size | Area | Phase | Depends on | Blocks |
-|---|---|---|---|---|---|
-| 10.1.1-T1 | S (0.5) | FE | P | — | 10.1.1-T2, 10.1.2-T1, 10.1.5-T1, 10.1.3-T1, 10.1.4-T1, 10.2.5-T1 |
-| 10.1.1-T2 | S (0.5) | FE + Ops | P | 10.1.1-T1 | 10.1.6-T1, 11.1.1-T1 (soft), 11.2.2-T1 (soft) |
-| 10.1.2-T1 | S (0.5) | FE | P | 10.1.1-T1 | 10.1.4-T1, 10.1.6-T1 |
-| 10.1.5-T1 | S (0.5) | FE + CI | P | 10.1.1-T1, 11.1.1-T1 (soft) | 10.1.6-T1, 11.5.1-T1 (soft), 10.10.2-T1 (10 CR-15), 10.10.1-T1 (10 CR-37) |
-| 10.1.3-T1 | M (1.0) | FE | P | 10.1.1-T1 | 10.2.6-T1, 10.3.1-T1, 10.3.3-T1, 10.4.2-T2, 10.3.1-T0, 10.7.3-T0, 10.9.1-T0 (10 CR-37), 10.4.1-T0, 10.5.1-T0, 10.6.1-T0, 10.7.1-T0, 10.5.4-T0, 10.2.4-T0, 10.8.1-T0, 10.3.3-T0, 10.7.2-T0 |
-| 10.1.4-T1 | S (0.5) | FE | P | 10.1.1-T1, 10.1.2-T1, 09.1.5-T1, 09.9.5-T1 (soft) | 10.2.2-T1, 10.2.1-T1 |
-| 10.1.6-T1 | M (1.0) | FE + Security | P | 10.1.1-T2, 10.1.2-T1, 10.1.5-T1 | 10.3.1-T1, 10.3.3-T3, 10.3.1-T2, 10.3.3-T2 (10 CR-37) |
-| 10.2.2-T1 | S (0.5) | FE | P | 10.1.4-T1, 10.2.5-T1, 09.1.4-T1 | 10.2.1-T1, 10.3.3-T1, 10.4.2-T2, 13.2.1-T2 |
-| 10.2.1-T1 | M (1.0) | FE + Security | P | 10.1.4-T1, 10.2.2-T1, 09.3.2-T1 | 10.2.3-T1, 10.2.4-T1, 10.2.6-T1, 10.3.3-T1, 10.3.2-T1 (10 CR-37) |
-| 10.2.3-T1 | XS (0.25) | FE | P | 10.2.1-T1 | 10.5.2-T1, 10.6.1-T2 (10 CR-15), 10.8.1-T1 |
-| 10.2.4-T0 | S (0.5) | UX | P | 10.1.3-T1, 09.8.1-T2 (soft) | 10.2.5-T1, 10.2.4-T1, 10.2.6-T1 |
-| 10.2.5-T1 | S (0.5) | FE | P | 10.2.4-T0, 10.1.1-T1 | 10.2.2-T1, 10.2.6-T1, 10.3.1-T1 |
-| 10.2.4-T1 | M (1.0) | FE | P | 10.2.4-T0, 10.2.1-T1, 09.8.1-T2 | 10.2.6-T1, 10.4.3-T2, 10.5.2-T1, 10.6.1-T1 (10 CR-15) |
-| 10.2.6-T1 | S (0.5) | FE | P | 10.2.4-T0, 10.1.3-T1, 10.2.1-T1, 10.2.4-T1, 10.2.5-T1, 09.3.4-T1 | 10.4.2-T1, 10.4.1-T1, 10.4.3-T1, 10.5.1-T1, 13.2.1-T1 (13 CR-5), 10.7.1-T1 (10 CR-15), 13.1.4-T1 (10 CR-27 fix), 10.9.1-T1 (10 CR-37) |
-| 10.3.3-T0 | M (1.0) | UX | P | 10.1.3-T1, 09.3.3-T1 (soft) | 10.3.1-T1, 10.3.3-T1, 10.3.3-T3 |
-| 10.3.1-T1 | S (0.5) | FE | P | 10.3.3-T0, 10.1.3-T1, 10.1.6-T1, 10.2.5-T1, 13.1.1-T1, 13.1.2-T1 | 06.5.1-T1 (06 CR-8), 10.3.1-T2 (10 CR-37), 13.1.4-T1 |
-| 10.3.3-T1 | M (1.0) | FE + Security | P | 10.3.3-T0, 10.1.3-T1, 10.2.1-T1, 10.2.2-T1, 09.3.3-T1 | 10.3.3-T3, 10.3.3-T2 (10 CR-37) |
-| 10.3.3-T3 | M (1.0) | FE + Security | P | 10.3.3-T0, 10.3.3-T1, 10.1.6-T1, 09.3.2-T3, 09.10.4-T1 | 10.4.3-T1, 10.7.1-T1 (10 CR-15), 10.9.4-T1, 10.9.3-T1, 10.9.5-T1 (10 CR-40) |
-| 10.4.1-T0 | M (1.0) | UX | P | 10.1.3-T1, 09.4.2-T1 (soft) | 10.4.2-T2, 10.4.2-T1, 10.4.1-T1, 10.4.3-T1, 10.4.3-T2 |
-| 10.4.2-T2 | S (0.5) | FE | P | 10.4.1-T0, 10.1.3-T1, 10.2.2-T1, 09.4.2-T1, 04.2.3-T1 (soft) | 10.4.2-T1 |
-| 10.4.2-T1 | M (1.0) | FE | P | 10.4.1-T0, 10.2.6-T1, 10.4.2-T2, 09.4.1-T1, 09.4.2-T1, 03.1.1-T1, 03.1.2-T1 (soft) | 10.4.3-T1, 10.5.7-T1 |
-| 10.4.1-T1 | S (0.5) | FE | P | 10.4.1-T0, 10.2.6-T1, 10.5.1-T1 | — |
-| 10.4.3-T1 | M (1.0) | FE + Security | P | 10.4.1-T0, 10.2.6-T1, 10.3.3-T3, 10.4.2-T1, 02.8.3-T2 | 10.4.3-T2 |
-| 10.4.3-T2 | M (1.0) | FE | P | 10.4.1-T0, 10.4.3-T1, 10.2.4-T1, 10.5.3-T1, 02.8.2-T3, 02.8.3-T4 (soft), 06.2.1-T1 (soft), 06.2.2-T3 (soft) | 06.5.1-T1 (06 CR-8), 10.10.2-T1 (10 CR-15) |
-| 10.5.1-T0 | M (1.0) | UX | P | 10.1.3-T1, 09.5.3-T1 (soft) | 10.5.1-T1, 10.5.2-T1, 10.5.3-T1, 10.5.9-T1, 10.5.10-T1, 10.5.3-T2 |
-| 10.5.1-T1 | S (0.5) | FE | P | 10.5.1-T0, 10.2.6-T1, 09.5.1-T1 | 10.4.1-T1, 10.5.2-T1 |
-| 10.5.2-T1 | S (0.5) | FE | P | 10.5.1-T0, 10.5.1-T1, 10.2.3-T1, 10.2.4-T1, 02.2.2-T2, 02.3.4-T2, 09.5.3-T1 | 10.5.3-T1, 10.6.1-T1 (10 CR-15) |
-| 10.5.3-T1 | L (2.0) | FE | P | 10.5.1-T0, 10.5.2-T1, 02.3.1-T1, 02.3.4-T2 | 10.4.3-T2, 10.5.9-T1, 10.5.10-T1, 10.5.4-T1, 10.5.6-T1, 10.5.5-T1, 10.8.5-T1 (10 CR-34) |
-| 10.5.9-T1 | L (2.0) | FE | P | 10.5.1-T0, 10.5.3-T1 | — |
-| 10.5.10-T1 | L (2.0) | FE | P | 10.5.1-T0, 10.5.3-T1, 02.3.4-T1 | 10.5.3-T2, 10.6.1-T2 (10 CR-15) |
-| 10.5.3-T2 | XS (0.25) | FE | P | 10.5.1-T0, 10.5.10-T1, 02.6.1-T1, 02.6.2-T1 (soft), 02.5.6-T1 | — |
-| 10.5.4-T0 | M (1.0) | UX | P | 10.1.3-T1, 09.5.3-T1 (soft) | 10.5.4-T1, 10.5.6-T1, 10.5.5-T1, 10.5.7-T1, 10.5.8-T1 |
-| 10.5.4-T1 | M (1.0) | FE | P | 10.5.4-T0, 10.5.3-T1, 02.3.4-T2 | 10.5.7-T1 |
-| 10.5.6-T1 | S (0.5) | FE | P | 10.5.4-T0, 10.5.3-T1, 02.3.2-T1, 02.3.3-T1 | 10.10.2-T1 (10 CR-15) |
-| 10.5.5-T1 | L (2.0) | FE | P | 10.5.4-T0, 10.5.3-T1, 02.5.1-T1, 02.5.3-T2, 02.5.4-T1 | 10.5.8-T1 |
-| 10.5.7-T1 | M (1.0) | FE | P | 10.5.4-T0, 10.4.2-T1, 10.5.4-T1, 02.6.3-T1, 02.6.3-T2 | — |
-| 10.5.8-T1 | S (0.5) | FE | P | 10.5.4-T0, 10.5.5-T1, 02.7.2-T2 | — |
+The **Backend / upstream tasks to run first** column is a verbatim projection of direct non-10.x entries in `Depends on`, including all `(soft)` and `(NN CR-n)` tags; it adds no IDs, transitive closure or dependency edges. It applies only to the three canonical README tables (§8.1, §B8.1, §C8.1), not task-file headers or the §6/C6 template. Non-backend cross-plan prerequisites are included as **upstream**, not reclassified as backend: plan 11 includes infrastructure/QA, and plan 13 includes content, frontend and API owners; check the owning task before assignment. `None` = the task has no prerequisites at all (`Depends on` is `—`). `None directly` = no direct non-10.x prerequisite, but it does **not** mean independent: follow the FE prerequisites in `Depends on` for inherited backend requirements. `(soft)` keeps the meaning defined above. P/S/R2 authorization and design gates remain unchanged. This column is not merged/runtime-ready status: before integration, verify merged SHA/OpenAPI and live behavior using [integration readiness](integration-readiness.md).
+
+| Task | Size | Area | Phase | Depends on | Blocks | Backend / upstream tasks to run first |
+|---|---|---|---|---|---|---|
+| 10.1.1-T1 | S (0.5) | FE | P | — | 10.1.1-T2, 10.1.2-T1, 10.1.5-T1, 10.1.3-T1, 10.1.4-T1, 10.2.5-T1 | None |
+| 10.1.1-T2 | S (0.5) | FE + Ops | P | 10.1.1-T1 | 10.1.6-T1, 11.1.1-T1 (soft), 11.2.2-T1 (soft) | None directly; inherited via FE prerequisites |
+| 10.1.2-T1 | S (0.5) | FE | P | 10.1.1-T1 | 10.1.4-T1, 10.1.6-T1 | None directly; inherited via FE prerequisites |
+| 10.1.5-T1 | S (0.5) | FE + CI | P | 10.1.1-T1, 11.1.1-T1 (soft) | 10.1.6-T1, 11.5.1-T1 (soft), 10.10.2-T1 (10 CR-15), 10.10.1-T1 (10 CR-37) | 11.1.1-T1 (soft) |
+| 10.1.3-T1 | M (1.0) | FE | P | 10.1.1-T1 | 10.2.6-T1, 10.3.1-T1, 10.3.3-T1, 10.4.2-T2, 10.3.1-T0, 10.7.3-T0, 10.9.1-T0 (10 CR-37), 10.4.1-T0, 10.5.1-T0, 10.6.1-T0, 10.7.1-T0, 10.5.4-T0, 10.2.4-T0, 10.8.1-T0, 10.3.3-T0, 10.7.2-T0 | None directly; inherited via FE prerequisites |
+| 10.1.4-T1 | S (0.5) | FE | P | 10.1.1-T1, 10.1.2-T1, 09.1.5-T1, 09.9.5-T1 (soft) | 10.2.2-T1, 10.2.1-T1 | 09.1.5-T1, 09.9.5-T1 (soft) |
+| 10.1.6-T1 | M (1.0) | FE + Security | P | 10.1.1-T2, 10.1.2-T1, 10.1.5-T1 | 10.3.1-T1, 10.3.3-T3, 10.3.1-T2, 10.3.3-T2 (10 CR-37) | None directly; inherited via FE prerequisites |
+| 10.2.2-T1 | S (0.5) | FE | P | 10.1.4-T1, 10.2.5-T1, 09.1.4-T1 | 10.2.1-T1, 10.3.3-T1, 10.4.2-T2, 13.2.1-T2 | 09.1.4-T1 |
+| 10.2.1-T1 | M (1.0) | FE + Security | P | 10.1.4-T1, 10.2.2-T1, 09.3.2-T1 | 10.2.3-T1, 10.2.4-T1, 10.2.6-T1, 10.3.3-T1, 10.3.2-T1 (10 CR-37) | 09.3.2-T1 |
+| 10.2.3-T1 | XS (0.25) | FE | P | 10.2.1-T1 | 10.5.2-T1, 10.6.1-T2 (10 CR-15), 10.8.1-T1 | None directly; inherited via FE prerequisites |
+| 10.2.4-T0 | S (0.5) | UX | P | 10.1.3-T1, 09.8.1-T2 (soft) | 10.2.5-T1, 10.2.4-T1, 10.2.6-T1 | 09.8.1-T2 (soft) |
+| 10.2.5-T1 | S (0.5) | FE | P | 10.2.4-T0, 10.1.1-T1 | 10.2.2-T1, 10.2.6-T1, 10.3.1-T1 | None directly; inherited via FE prerequisites |
+| 10.2.4-T1 | M (1.0) | FE | P | 10.2.4-T0, 10.2.1-T1, 09.8.1-T2 | 10.2.6-T1, 10.4.3-T2, 10.5.2-T1, 10.6.1-T1 (10 CR-15) | 09.8.1-T2 |
+| 10.2.6-T1 | S (0.5) | FE | P | 10.2.4-T0, 10.1.3-T1, 10.2.1-T1, 10.2.4-T1, 10.2.5-T1, 09.3.4-T1 | 10.4.2-T1, 10.4.1-T1, 10.4.3-T1, 10.5.1-T1, 13.2.1-T1 (13 CR-5), 10.7.1-T1 (10 CR-15), 13.1.4-T1 (10 CR-27 fix), 10.9.1-T1 (10 CR-37) | 09.3.4-T1 |
+| 10.3.3-T0 | M (1.0) | UX | P | 10.1.3-T1, 09.3.3-T1 (soft) | 10.3.1-T1, 10.3.3-T1, 10.3.3-T3 | 09.3.3-T1 (soft) |
+| 10.3.1-T1 | S (0.5) | FE | P | 10.3.3-T0, 10.1.3-T1, 10.1.6-T1, 10.2.5-T1, 13.1.1-T1, 13.1.2-T1 | 06.5.1-T1 (06 CR-8), 10.3.1-T2 (10 CR-37), 13.1.4-T1 | 13.1.1-T1, 13.1.2-T1 |
+| 10.3.3-T1 | M (1.0) | FE + Security | P | 10.3.3-T0, 10.1.3-T1, 10.2.1-T1, 10.2.2-T1, 09.3.3-T1 | 10.3.3-T3, 10.3.3-T2 (10 CR-37) | 09.3.3-T1 |
+| 10.3.3-T3 | M (1.0) | FE + Security | P | 10.3.3-T0, 10.3.3-T1, 10.1.6-T1, 09.3.2-T3, 09.10.4-T1 | 10.4.3-T1, 10.7.1-T1 (10 CR-15), 10.9.4-T1, 10.9.3-T1, 10.9.5-T1 (10 CR-40) | 09.3.2-T3, 09.10.4-T1 |
+| 10.4.1-T0 | M (1.0) | UX | P | 10.1.3-T1, 09.4.2-T1 (soft) | 10.4.2-T2, 10.4.2-T1, 10.4.1-T1, 10.4.3-T1, 10.4.3-T2 | 09.4.2-T1 (soft) |
+| 10.4.2-T2 | S (0.5) | FE | P | 10.4.1-T0, 10.1.3-T1, 10.2.2-T1, 09.4.2-T1, 04.2.3-T1 (soft) | 10.4.2-T1 | 09.4.2-T1, 04.2.3-T1 (soft) |
+| 10.4.2-T1 | M (1.0) | FE | P | 10.4.1-T0, 10.2.6-T1, 10.4.2-T2, 09.4.1-T1, 09.4.2-T1, 03.1.1-T1, 03.1.2-T1 (soft) | 10.4.3-T1, 10.5.7-T1 | 09.4.1-T1, 09.4.2-T1, 03.1.1-T1, 03.1.2-T1 (soft) |
+| 10.4.1-T1 | S (0.5) | FE | P | 10.4.1-T0, 10.2.6-T1, 10.5.1-T1 | — | None directly; inherited via FE prerequisites |
+| 10.4.3-T1 | M (1.0) | FE + Security | P | 10.4.1-T0, 10.2.6-T1, 10.3.3-T3, 10.4.2-T1, 02.8.3-T2 | 10.4.3-T2 | 02.8.3-T2 |
+| 10.4.3-T2 | M (1.0) | FE | P | 10.4.1-T0, 10.4.3-T1, 10.2.4-T1, 10.5.3-T1, 02.8.2-T3, 02.8.3-T4 (soft), 06.2.1-T1 (soft), 06.2.2-T3 (soft) | 06.5.1-T1 (06 CR-8), 10.10.2-T1 (10 CR-15) | 02.8.2-T3, 02.8.3-T4 (soft), 06.2.1-T1 (soft), 06.2.2-T3 (soft) |
+| 10.5.1-T0 | M (1.0) | UX | P | 10.1.3-T1, 09.5.3-T1 (soft) | 10.5.1-T1, 10.5.2-T1, 10.5.3-T1, 10.5.9-T1, 10.5.10-T1, 10.5.3-T2 | 09.5.3-T1 (soft) |
+| 10.5.1-T1 | S (0.5) | FE | P | 10.5.1-T0, 10.2.6-T1, 09.5.1-T1 | 10.4.1-T1, 10.5.2-T1 | 09.5.1-T1 |
+| 10.5.2-T1 | S (0.5) | FE | P | 10.5.1-T0, 10.5.1-T1, 10.2.3-T1, 10.2.4-T1, 02.2.2-T2, 02.3.4-T2, 09.5.3-T1 | 10.5.3-T1, 10.6.1-T1 (10 CR-15) | 02.2.2-T2, 02.3.4-T2, 09.5.3-T1 |
+| 10.5.3-T1 | L (2.0) | FE | P | 10.5.1-T0, 10.5.2-T1, 02.3.1-T1, 02.3.4-T2 | 10.4.3-T2, 10.5.9-T1, 10.5.10-T1, 10.5.4-T1, 10.5.6-T1, 10.5.5-T1, 10.8.5-T1 (10 CR-34) | 02.3.1-T1, 02.3.4-T2 |
+| 10.5.9-T1 | L (2.0) | FE | P | 10.5.1-T0, 10.5.3-T1 | — | None directly; inherited via FE prerequisites |
+| 10.5.10-T1 | L (2.0) | FE | P | 10.5.1-T0, 10.5.3-T1, 02.3.4-T1 | 10.5.3-T2, 10.6.1-T2 (10 CR-15) | 02.3.4-T1 |
+| 10.5.3-T2 | XS (0.25) | FE | P | 10.5.1-T0, 10.5.10-T1, 02.6.1-T1, 02.6.2-T1 (soft), 02.5.6-T1 | — | 02.6.1-T1, 02.6.2-T1 (soft), 02.5.6-T1 |
+| 10.5.4-T0 | M (1.0) | UX | P | 10.1.3-T1, 09.5.3-T1 (soft) | 10.5.4-T1, 10.5.6-T1, 10.5.5-T1, 10.5.7-T1, 10.5.8-T1 | 09.5.3-T1 (soft) |
+| 10.5.4-T1 | M (1.0) | FE | P | 10.5.4-T0, 10.5.3-T1, 02.3.4-T2 | 10.5.7-T1 | 02.3.4-T2 |
+| 10.5.6-T1 | S (0.5) | FE | P | 10.5.4-T0, 10.5.3-T1, 02.3.2-T1, 02.3.3-T1 | 10.10.2-T1 (10 CR-15) | 02.3.2-T1, 02.3.3-T1 |
+| 10.5.5-T1 | L (2.0) | FE | P | 10.5.4-T0, 10.5.3-T1, 02.5.1-T1, 02.5.3-T2, 02.5.4-T1 | 10.5.8-T1 | 02.5.1-T1, 02.5.3-T2, 02.5.4-T1 |
+| 10.5.7-T1 | M (1.0) | FE | P | 10.5.4-T0, 10.4.2-T1, 10.5.4-T1, 02.6.3-T1, 02.6.3-T2 | — | 02.6.3-T1, 02.6.3-T2 |
+| 10.5.8-T1 | S (0.5) | FE | P | 10.5.4-T0, 10.5.5-T1, 02.7.2-T2 | — | 02.7.2-T2 |
 
 ## 9. Re-estimate
 
@@ -424,7 +444,7 @@ plans/features/10-web-ui/
 | WC4 | `POST /episodes/{id}/video/approve { note? }` + `If-Match`; `POST …/video/reject { reason, target: story|re_render }` → `story_review` or 202 with a re-render sent by the Worker | 09.7.1-T1; 09 WT3, WT6 ✅ |
 | WC5 | `GET /episodes/{id}/video-url` → `{ url, expiresAt }` (TTL 15 min, audited, `Content-Disposition` safe filename) | 09.7.2-T1:72-108 ✅ |
 | WC6 | `render_jobs.quality_report` = `render-quality.v1` with `hints` (`subtitle_sync_suspect`, `subtitle_cues_long`, `music_none`) and `images` (03 D7: skipped/moderated scenes, `scenes_trimmed`/`scenes_sparse`); failure codes `render_quality_failed`, `image_moderated`, `image_generation_failed`, `render_*` | 05 README D10; 03 D7, CR-7 ✅ |
-| WC7 | `RenderJobSummaryDto(RenderJobId, Status, Stage, Percent, Attempt, ImagesNeeded, SubmittedAt, FinishedAt)` (+ `images` from 03.4.2-T1) — **no** error code and **no** quality hints today | 09.4.2-5.3 `plan.md:168-171` ✅ |
+| WC7 | Audited `RenderJobSummaryDto` already declares `ErrorCode`/`Hints` alongside render status/progress fields; do not invent a missing-schema blocker. The current episode handler returns a null `renderJob` projection, so populated quality/error state still waits for render/image owners. | `src/NightTales.Application/Features/Episodes/Queries/GetEpisode/RenderJobSummaryDto.cs:33–45`; [snapshot/readiness](integration-readiness.md) |
 | WC8 | Publishing: `POST /channels/youtube/connect` (re-auth, legal gate) → `{ authorizationUrl }`; callback redirects to `/channels?connected=youtube` or `/channels?error=<oauth_state_invalid|oauth_denied|oauth_exchange_failed|channel_already_connected>`; `DELETE /channels/{id}`; `POST /episodes/{id}/publications` → `PublicationDto` (+ `preAudit`, `requestedPrivacy`, 06 CR-11); `POST /publications/{id}/consent { consentTextVersion }` + `If-Match` `"pu-<xmin>"`; `PATCH`, `DELETE`; `GET /publishing/youtube/eta` → `{ available, nextSlotAt }`; `POST /publications/cancel-by-link { publicationId, token }`; approve-now link `/publications/approve#p=&e=`; `PublicationUpdated` ids `{ publicationId, episodeId }` | 06 README D3, D6, D7, D10, D13, YR3, YR8, YR9; 06.2.2-T4 ✅ |
 | WC9 | Consent text `pc.v1` vi/en is embedded in the API (`Templates/Consent/pc.v1.<locale>.md`); the form must send the version it displayed | 06 README D7 ✅ |
 | WC10 | E2E runs in 11.5.1-T1's `e2e.yml` against compose + mock-mpt (`MOCK_IMAGE_REPORT` scenarios, 03.4.3-T2); Google is faked by `FakeGoogleServer` only in .NET tests | WR3; 11.5.1-T1; 06 D19 ✅ |
@@ -494,19 +514,19 @@ plans/features/10-web-ui/
 
 ### B8.1 Canonical task dependencies (wave 2)
 
-| Task | Size | Area | Phase | Depends on | Blocks |
-|---|---|---|---|---|---|
-| 10.6.1-T0 | S (0.5) | UX | P · M1 | 10.1.3-T1, 09.5.3-T1 (soft) | 10.6.1-T1, 10.6.1-T2, 10.6.2-T1 |
-| 10.6.1-T1 | M (1.0) | FE | P · M1 | 10.6.1-T0, 10.5.2-T1, 10.2.4-T1, 09.5.3-T1, 09.6.3-T1 | 10.6.1-T2, 10.6.2-T1 |
-| 10.6.1-T2 | S (0.5) | FE | P · M1 | 10.6.1-T0, 10.6.1-T1, 10.5.10-T1, 10.2.3-T1, 09.6.1-T1, 09.6.4-T1 | — |
-| 10.6.2-T1 | M (1.0) | FE | P · M1 | 10.6.1-T0, 10.6.1-T1, 09.7.1-T1, 09.7.2-T1, 03.4.2-T1 (soft), 05.5.1-T2 (soft) | 10.7.2-T1, 10.10.2-T1 |
-| 10.7.1-T0 | S (0.5) | UX | P · M1 | 10.1.3-T1, 06.1.2-T1 (soft) | 10.7.1-T1 |
-| 10.7.1-T1 | M (1.0) | FE + Security | P · M1 · flag `youtube_publish` | 10.7.1-T0, 10.2.6-T1, 10.3.3-T3, 13.2.1-T1, 06.1.2-T1, 06.1.2-T2, 06.4.1-T1 | 10.7.2-T1, 06.5.1-T1, 10.7.3-T1 (10 CR-37) |
-| 10.7.2-T0 | M (1.0) | UX | P · M1 | 10.1.3-T1, 06.2.1-T1 (soft) | 10.7.2-T1, 10.7.4-T1, 10.7.4-T2 |
-| 10.7.2-T1 | M (1.0) | FE | P · M1 · flag `youtube_publish` | 10.7.2-T0, 10.7.1-T1, 10.6.2-T1, 06.2.1-T1, 06.2.2-T1, 06.3.1-T1 | 10.7.4-T1, 06.5.1-T1, 13.5.1-T1 (10 CR-38) |
-| 10.7.4-T1 | S (0.5) | FE | P · M1 · flag `youtube_publish` | 10.7.2-T0, 10.7.2-T1, 06.2.5-T1, 06.2.6-T1 | 10.7.4-T2, 06.5.1-T1, 10.7.3-T2 (10 CR-37) |
-| 10.7.4-T2 | S (0.5) | FE + Security | P · M1 · flag `youtube_publish` | 10.7.2-T0, 10.7.4-T1, 06.2.2-T2, 06.2.2-T4 | 10.10.2-T1 |
-| 10.10.2-T1 | L (2.0) | FE + QA | P · M1 | 10.6.2-T1, 10.7.4-T2, 10.5.6-T1, 10.4.3-T2, 10.1.5-T1, 11.5.1-T1 | 10.10.2-T2 |
+| Task | Size | Area | Phase | Depends on | Blocks | Backend / upstream tasks to run first |
+|---|---|---|---|---|---|---|
+| 10.6.1-T0 | S (0.5) | UX | P · M1 | 10.1.3-T1, 09.5.3-T1 (soft) | 10.6.1-T1, 10.6.1-T2, 10.6.2-T1 | 09.5.3-T1 (soft) |
+| 10.6.1-T1 | M (1.0) | FE | P · M1 | 10.6.1-T0, 10.5.2-T1, 10.2.4-T1, 09.5.3-T1, 09.6.3-T1 | 10.6.1-T2, 10.6.2-T1 | 09.5.3-T1, 09.6.3-T1 |
+| 10.6.1-T2 | S (0.5) | FE | P · M1 | 10.6.1-T0, 10.6.1-T1, 10.5.10-T1, 10.2.3-T1, 09.6.1-T1, 09.6.4-T1 | — | 09.6.1-T1, 09.6.4-T1 |
+| 10.6.2-T1 | M (1.0) | FE | P · M1 | 10.6.1-T0, 10.6.1-T1, 09.7.1-T1, 09.7.2-T1, 03.4.2-T1 (soft), 05.5.1-T2 (soft) | 10.7.2-T1, 10.10.2-T1 | 09.7.1-T1, 09.7.2-T1, 03.4.2-T1 (soft), 05.5.1-T2 (soft) |
+| 10.7.1-T0 | S (0.5) | UX | P · M1 | 10.1.3-T1, 06.1.2-T1 (soft) | 10.7.1-T1 | 06.1.2-T1 (soft) |
+| 10.7.1-T1 | M (1.0) | FE + Security | P · M1 · flag `youtube_publish` | 10.7.1-T0, 10.2.6-T1, 10.3.3-T3, 13.2.1-T1, 06.1.2-T1, 06.1.2-T2, 06.4.1-T1 | 10.7.2-T1, 06.5.1-T1, 10.7.3-T1 (10 CR-37) | 13.2.1-T1, 06.1.2-T1, 06.1.2-T2, 06.4.1-T1 |
+| 10.7.2-T0 | M (1.0) | UX | P · M1 | 10.1.3-T1, 06.2.1-T1 (soft) | 10.7.2-T1, 10.7.4-T1, 10.7.4-T2 | 06.2.1-T1 (soft) |
+| 10.7.2-T1 | M (1.0) | FE | P · M1 · flag `youtube_publish` | 10.7.2-T0, 10.7.1-T1, 10.6.2-T1, 06.2.1-T1, 06.2.2-T1, 06.3.1-T1 | 10.7.4-T1, 06.5.1-T1, 13.5.1-T1 (10 CR-38) | 06.2.1-T1, 06.2.2-T1, 06.3.1-T1 |
+| 10.7.4-T1 | S (0.5) | FE | P · M1 · flag `youtube_publish` | 10.7.2-T0, 10.7.2-T1, 06.2.5-T1, 06.2.6-T1 | 10.7.4-T2, 06.5.1-T1, 10.7.3-T2 (10 CR-37) | 06.2.5-T1, 06.2.6-T1 |
+| 10.7.4-T2 | S (0.5) | FE + Security | P · M1 · flag `youtube_publish` | 10.7.2-T0, 10.7.4-T1, 06.2.2-T2, 06.2.2-T4 | 10.10.2-T1 | 06.2.2-T2, 06.2.2-T4 |
+| 10.10.2-T1 | L (2.0) | FE + QA | P · M1 | 10.6.2-T1, 10.7.4-T2, 10.5.6-T1, 10.4.3-T2, 10.1.5-T1, 11.5.1-T1 | 10.10.2-T2 | 11.5.1-T1 |
 
 ## B9. Re-estimate (wave 2)
 
@@ -666,7 +686,7 @@ _Scope line, decisions and routes were read on disk 2026-09-25; vendor facts car
 | `/account`, `/account/activity`, `/account/security` | `account` | `/me*`, `/me/activity`, `/me/sessions*` | form, export pending/done, deletion pending, timeline empty/filtered, sessions |
 | `/cancel-request` | `public` | `POST /security/cancel-links/{kind}/{id}` | confirm, done, unknown/expired/used |
 | `/admin` → `/admin/users`, `/admin/users/:id`, `/admin/render-jobs`, `/admin/usage`, `/admin/moderation`, `/admin/quota`, `/admin/reports`, `/admin/deletion-requests`, `/admin/flags` | `admin` | `/admin/*` | tables (filter/paging/empty/error), detail tabs, dialogs |
-| `/admin/billing/{packages,promos,payments,refunds,funding}` | `admin` | `/admin/credit-packages`, `/admin/promo-codes`, `/admin/payments?status=needs_review`, `/admin/refund-requests`, `/admin/funding` | tables, resolve dialogs, funding snapshots |
+| `/admin/billing/{packages,promos,payments,refunds}` and `/admin/funding` | `admin` | `/admin/credit-packages`, `/admin/promo-codes`, `/admin/payments?status=needs_review`, `/admin/refund-requests`, `/admin/funding` | tables, resolve dialogs, funding snapshots |
 | `/admin/settings`, `/admin/settings/nodes` | `admin` (owner-only chunk) | `/admin/settings*`, `/admin/worker-nodes*` | cards, test, versions, rollback, pending change, locked-by-environment |
 | `/admin/approvals` | `admin` (owner-only chunk) | `/admin/settings/changes`, `/admin/owner-actions`, `/admin/credit-grant-requests` | pending lists, approve/cancel, disputed, objection_recorded |
 | `/episodes/:id/publish/tiktok` (R2) | `publishing` | creator-info, publications | creator blocked, form, consent, submitted, status |
@@ -740,7 +760,7 @@ Proposed 2026-09-25 by the wave-3 TL; the TL applies them (no other file was edi
 
 ## C6. Task file template
 
-Same as the wave-1/wave-2 task files (e.g. `10.6-render-review/10.6.2-T1-video-review.md`) and `../02-story-writing/README.md` §6: H1 `# <id> — <title>`, blank line, `| Story | Size | Area | Depends on | Blocks | Phase / flag |` with `Story` = the **story id** (e.g. `10.3.1`, not the task id `10.3.1-T2`) matching the 06/09/10 wave-1–2 convention, and the row's other cells equal to §C8.1, then `## Goal`, `## Inputs`, `## Design`, `## Steps`, `## Outputs`, `## Acceptance checks`, `## Tests`, `## Failure handling and edge cases`, `## Notes`.
+Same as the wave-1/wave-2 task files (e.g. `10.6-render-review/10.6.2-T1-video-review.md`) and `../02-story-writing/README.md` §6: H1 `# <id> — <title>`, blank line, `| Story | Size | Area | Depends on | Blocks | Phase / flag |` with `Story` = the **story id** (e.g. `10.3.1`, not the task id `10.3.1-T2`) matching the 06/09/10 wave-1–2 convention, and the row's other cells equal to the first six cells of §C8.1 (its `Backend / upstream tasks to run first` column is not part of the task header), then `## Goal`, `## Inputs`, `## Design`, `## Steps`, `## Outputs`, `## Acceptance checks`, `## Tests`, `## Failure handling and edge cases`, `## Notes`.
 
 Wave-3 additions: `Depends on` always names the folder's design task `<story>-T0` (hard, SD11) **except `10.10.1-T1`/`10.10.1-T2`**, which are exempt from the `-T0` rule (ST-3: they audit implemented screens and ship no new UI, so their `Story` cell is still `10.10.1` but they carry no design dependency); `## Inputs` links the approved design; `## Design` covers routes/DTO fields/codes quoted from §C1/§C3, every screen state from SD1, breakpoints 360/768/1280, dark/light, i18n keys vi+en; `## Tests` lists component/store unit tests with `fake-*` repositories (D15), an axe spec with the WCAG 2.2 tags (SD12), a CSP-violation assertion on any page that mounts the CAPTCHA widget (FC1), the per-route budget assertion for new lazy chunks (FC8), and for money paths an idempotency (double-submit) test. `-T0` design tasks use the same shape; their `## Outputs` are the design file link, screen/state inventory and the owner approval record.
 
@@ -770,33 +790,33 @@ Wave-3 additions: `Depends on` always names the folder's design task `<story>-T0
 
 ### C8.1 Canonical task dependencies
 
-| Task | Size | Area | Phase | Depends on | Blocks |
-|---|---|---|---|---|---|
-| 10.3.1-T0 | M (1.0) | UX | S · M2 | 10.1.3-T1, 13.1.1-T1, 13.1.2-T1 | 10.3.1-T2, 10.3.2-T1, 10.3.3-T2, 13.1.4-T1, 13.2.3-T1, 13.3.4-T1 |
-| 10.3.1-T2 | S (0.5) | FE + SEO | S · M2 | 10.3.1-T0, 10.3.1-T1, 10.1.6-T1, 13.1.3-T1 (13 CR-27) | 10.3.2-T1 (soft), 10.10.1-T1, 08.3.1-T2 |
-| 10.3.2-T1 | S (0.5) | FE | S · M2 | 10.3.1-T0, 10.3.1-T2 (soft), 10.2.1-T1, 09.3.1-T2, 13.2.3-T1, 13.2.1-T2 | 10.3.3-T2, 10.10.1-T1, 10.10.2-T2 |
-| 10.3.3-T2 | XS (0.25) | FE + Security | S · M2 | 10.3.1-T0, 10.3.2-T1, 10.3.3-T1, 09.3.3-T2, 10.1.6-T1 | 10.10.1-T1, 13.3.4-T1 (soft) |
-| 10.7.3-T0 | S (0.5) | UX | S · R2 | 10.1.3-T1, 07.2.1-T1 (soft) | 10.7.3-T1, 10.7.3-T2 |
-| 10.7.3-T1 | M (1.0) | FE | S · R2 · flag `tiktok_publish` | 10.7.3-T0, 07.1.2-T1, 07.1.2-T2 (soft), 10.7.1-T1, 06.5.2-T1, 07.2.1-T1 | 10.7.3-T2, 07.4.1-T1 |
-| 10.7.3-T2 | M (1.0) | FE | S · R2 · flag `tiktok_publish` | 10.7.3-T0, 10.7.3-T1, 07.2.1-T1, 07.2.2-T1 (soft), 07.3.1-T1 (soft), 07.3.2-T1 (soft), 10.7.4-T1 | 07.4.1-T1 |
-| 10.8.1-T0 | M (1.0) | UX | S · M2 | 10.1.3-T1, 12.2.2-T1, 12.3.2-T1 | 10.8.1-T1, 10.8.2-T1, 10.8.3-T1, 10.8.4-T1, 10.8.5-T1 |
-| 10.8.1-T1 | M (1.0) | FE | S · M2 | 10.8.1-T0, 12.3.2-T1, 12.7.4-T1, 12.1.3-T1, 10.2.3-T1 | 10.8.3-T1, 10.8.4-T1, 10.10.1-T1, 10.10.2-T2 |
-| 10.8.3-T1 | M (1.0) | FE | S · M2 | 10.8.1-T0, 10.8.1-T1, 12.2.2-T1, 12.7.3-T1, 12.6.1-T1, 12.6.3-T1 | 10.10.1-T1 |
-| 10.8.4-T1 | S (0.5) | FE + Payments | S · M2 | 10.8.1-T0, 10.8.1-T1, 12.7.4-T1, 12.8.3-T1 (soft) | 10.10.1-T1 |
-| 10.8.2-T1 | M (1.0) | FE | S · M2 | 10.8.1-T0, 13.3.3-T1, 13.3.2-T1, 13.2.1-T1 | 10.10.1-T1 |
-| 10.8.5-T1 | M (1.0) | FE | S · M2 | 10.8.1-T0, 09.3.6-T2, 09.3.7-T1, 10.5.3-T1 (10 CR-34) | 10.10.1-T1 |
-| 10.9.1-T0 | M (1.0) | UX | S · M2 | 10.1.3-T1, 09.9.1-T1 | 10.9.1-T1, 10.9.1-T2, 10.9.2-T1, 10.9.3-T1, 10.9.4-T1, 10.9.4-T2, 08.1.1-T2, 10.9.5-T1 |
-| 10.9.1-T1 | M (1.0) | FE + Security | S · M2 | 10.9.1-T0, 10.2.6-T1, 09.9.1-T1, 09.9.2-T1, 13.3.4-T1, 13.3.2-T1 | 10.9.1-T2, 10.9.2-T1, 10.9.4-T1, 10.10.1-T2, 08.1.1-T2, 10.10.2-T2 |
-| 10.9.1-T2 | M (1.0) | FE + Security | S · M2 | 10.9.1-T0, 10.9.1-T1, 09.9.1-T1, 06.3.3-T1, 13.3.4-T1, 13.3.2-T1 | 10.10.1-T2 |
-| 10.9.4-T1 | M (1.0) | FE + Security | S · M2 | 10.9.1-T0, 10.9.1-T1, 09.10.5-T1, 10.3.3-T3 | 10.9.4-T2, 10.10.1-T2 |
-| 10.9.4-T2 | M (1.0) | FE + Security | S · M2 | 10.9.1-T0, 10.9.4-T1, 09.10.4-T1, 09.10.4-T2, 12.5.1-T2, 12.3.5-T2 | 10.10.1-T2, 10.10.2-T2 |
-| 10.9.5-T1 | XS (0.25) | FE + Security | S · M2 | 10.9.1-T0, 10.3.3-T3, 09.10.4-T1 | 10.10.1-T2 |
-| 10.9.2-T1 | M (1.0) | FE | S · M2 | 10.9.1-T0, 10.9.1-T1, 12.7.1-T1, 12.7.2-T1, 12.7.2-T2, 12.3.5-T1, 12.7.5-T1, 12.8.1-T1, 12.8.2-T1, 12.8.3-T1, 12.5.2-T1 | 10.10.1-T2 |
-| 10.9.3-T1 | M (1.0) | FE + Security | S · M2 | 10.9.1-T0, 09.10.2-T1, 10.3.3-T3, 06.1.2-T3 | 10.9.3-T2, 10.10.1-T2 |
-| 10.9.3-T2 | S (0.5) | FE + Security | S · M2 | 10.9.3-T1, 09.10.8-T1 | 10.10.1-T2 |
-| 10.10.1-T1 | S (0.5) | FE + QA | S · M2 | 10.3.1-T2, 10.3.2-T1, 10.3.3-T2, 10.8.1-T1, 10.8.2-T1, 10.8.3-T1, 10.8.4-T1, 10.8.5-T1, 10.1.5-T1 | 10.10.1-T2, 08.1.1-T2 (soft), 10.10.2-T2 (10 CR-40) |
-| 10.10.1-T2 | S (0.5) | FE + QA | S · M2 | 10.10.1-T1, 10.9.1-T1, 10.9.1-T2, 10.9.2-T1, 10.9.3-T1, 10.9.3-T2, 10.9.4-T1, 10.9.4-T2, 10.9.5-T1 | — |
-| 10.10.2-T2 | M (1.0) | QA | S · M2 | 10.10.2-T1, 10.3.2-T1, 10.8.1-T1, 10.9.1-T1, 10.9.4-T2, 10.10.1-T1 (soft) | — |
+| Task | Size | Area | Phase | Depends on | Blocks | Backend / upstream tasks to run first |
+|---|---|---|---|---|---|---|
+| 10.3.1-T0 | M (1.0) | UX | S · M2 | 10.1.3-T1, 13.1.1-T1, 13.1.2-T1 | 10.3.1-T2, 10.3.2-T1, 10.3.3-T2, 13.1.4-T1, 13.2.3-T1, 13.3.4-T1 | 13.1.1-T1, 13.1.2-T1 |
+| 10.3.1-T2 | S (0.5) | FE + SEO | S · M2 | 10.3.1-T0, 10.3.1-T1, 10.1.6-T1, 13.1.3-T1 (13 CR-27) | 10.3.2-T1 (soft), 10.10.1-T1, 08.3.1-T2 | 13.1.3-T1 (13 CR-27) |
+| 10.3.2-T1 | S (0.5) | FE | S · M2 | 10.3.1-T0, 10.3.1-T2 (soft), 10.2.1-T1, 09.3.1-T2, 13.2.3-T1, 13.2.1-T2 | 10.3.3-T2, 10.10.1-T1, 10.10.2-T2 | 09.3.1-T2, 13.2.3-T1, 13.2.1-T2 |
+| 10.3.3-T2 | XS (0.25) | FE + Security | S · M2 | 10.3.1-T0, 10.3.2-T1, 10.3.3-T1, 09.3.3-T2, 10.1.6-T1 | 10.10.1-T1, 13.3.4-T1 (soft) | 09.3.3-T2 |
+| 10.7.3-T0 | S (0.5) | UX | S · R2 | 10.1.3-T1, 07.2.1-T1 (soft) | 10.7.3-T1, 10.7.3-T2 | 07.2.1-T1 (soft) |
+| 10.7.3-T1 | M (1.0) | FE | S · R2 · flag `tiktok_publish` | 10.7.3-T0, 07.1.2-T1, 07.1.2-T2 (soft), 10.7.1-T1, 06.5.2-T1, 07.2.1-T1 | 10.7.3-T2, 07.4.1-T1 | 07.1.2-T1, 07.1.2-T2 (soft), 06.5.2-T1, 07.2.1-T1 |
+| 10.7.3-T2 | M (1.0) | FE | S · R2 · flag `tiktok_publish` | 10.7.3-T0, 10.7.3-T1, 07.2.1-T1, 07.2.2-T1 (soft), 07.3.1-T1 (soft), 07.3.2-T1 (soft), 10.7.4-T1 | 07.4.1-T1 | 07.2.1-T1, 07.2.2-T1 (soft), 07.3.1-T1 (soft), 07.3.2-T1 (soft) |
+| 10.8.1-T0 | M (1.0) | UX | S · M2 | 10.1.3-T1, 12.2.2-T1, 12.3.2-T1 | 10.8.1-T1, 10.8.2-T1, 10.8.3-T1, 10.8.4-T1, 10.8.5-T1 | 12.2.2-T1, 12.3.2-T1 |
+| 10.8.1-T1 | M (1.0) | FE | S · M2 | 10.8.1-T0, 12.3.2-T1, 12.7.4-T1, 12.1.3-T1, 10.2.3-T1 | 10.8.3-T1, 10.8.4-T1, 10.10.1-T1, 10.10.2-T2 | 12.3.2-T1, 12.7.4-T1, 12.1.3-T1 |
+| 10.8.3-T1 | M (1.0) | FE | S · M2 | 10.8.1-T0, 10.8.1-T1, 12.2.2-T1, 12.7.3-T1, 12.6.1-T1, 12.6.3-T1 | 10.10.1-T1 | 12.2.2-T1, 12.7.3-T1, 12.6.1-T1, 12.6.3-T1 |
+| 10.8.4-T1 | S (0.5) | FE + Payments | S · M2 | 10.8.1-T0, 10.8.1-T1, 12.7.4-T1, 12.8.3-T1 (soft) | 10.10.1-T1 | 12.7.4-T1, 12.8.3-T1 (soft) |
+| 10.8.2-T1 | M (1.0) | FE | S · M2 | 10.8.1-T0, 13.3.3-T1, 13.3.2-T1, 13.2.1-T1 | 10.10.1-T1 | 13.3.3-T1, 13.3.2-T1, 13.2.1-T1 |
+| 10.8.5-T1 | M (1.0) | FE | S · M2 | 10.8.1-T0, 09.3.6-T2, 09.3.7-T1, 10.5.3-T1 (10 CR-34) | 10.10.1-T1 | 09.3.6-T2, 09.3.7-T1 |
+| 10.9.1-T0 | M (1.0) | UX | S · M2 | 10.1.3-T1, 09.9.1-T1 | 10.9.1-T1, 10.9.1-T2, 10.9.2-T1, 10.9.3-T1, 10.9.4-T1, 10.9.4-T2, 08.1.1-T2, 10.9.5-T1 | 09.9.1-T1 |
+| 10.9.1-T1 | M (1.0) | FE + Security | S · M2 | 10.9.1-T0, 10.2.6-T1, 09.9.1-T1, 09.9.2-T1, 13.3.4-T1, 13.3.2-T1 | 10.9.1-T2, 10.9.2-T1, 10.9.4-T1, 10.10.1-T2, 08.1.1-T2, 10.10.2-T2 | 09.9.1-T1, 09.9.2-T1, 13.3.4-T1, 13.3.2-T1 |
+| 10.9.1-T2 | M (1.0) | FE + Security | S · M2 | 10.9.1-T0, 10.9.1-T1, 09.9.1-T1, 06.3.3-T1, 13.3.4-T1, 13.3.2-T1 | 10.10.1-T2 | 09.9.1-T1, 06.3.3-T1, 13.3.4-T1, 13.3.2-T1 |
+| 10.9.4-T1 | M (1.0) | FE + Security | S · M2 | 10.9.1-T0, 10.9.1-T1, 09.10.5-T1, 10.3.3-T3 | 10.9.4-T2, 10.10.1-T2 | 09.10.5-T1 |
+| 10.9.4-T2 | M (1.0) | FE + Security | S · M2 | 10.9.1-T0, 10.9.4-T1, 09.10.4-T1, 09.10.4-T2, 12.5.1-T2, 12.3.5-T2 | 10.10.1-T2, 10.10.2-T2 | 09.10.4-T1, 09.10.4-T2, 12.5.1-T2, 12.3.5-T2 |
+| 10.9.5-T1 | XS (0.25) | FE + Security | S · M2 | 10.9.1-T0, 10.3.3-T3, 09.10.4-T1 | 10.10.1-T2 | 09.10.4-T1 |
+| 10.9.2-T1 | M (1.0) | FE | S · M2 | 10.9.1-T0, 10.9.1-T1, 12.7.1-T1, 12.7.2-T1, 12.7.2-T2, 12.3.5-T1, 12.7.5-T1, 12.8.1-T1, 12.8.2-T1, 12.8.3-T1, 12.5.2-T1 | 10.10.1-T2 | 12.7.1-T1, 12.7.2-T1, 12.7.2-T2, 12.3.5-T1, 12.7.5-T1, 12.8.1-T1, 12.8.2-T1, 12.8.3-T1, 12.5.2-T1 |
+| 10.9.3-T1 | M (1.0) | FE + Security | S · M2 | 10.9.1-T0, 09.10.2-T1, 10.3.3-T3, 06.1.2-T3 | 10.9.3-T2, 10.10.1-T2 | 09.10.2-T1, 06.1.2-T3 |
+| 10.9.3-T2 | S (0.5) | FE + Security | S · M2 | 10.9.3-T1, 09.10.8-T1 | 10.10.1-T2 | 09.10.8-T1 |
+| 10.10.1-T1 | S (0.5) | FE + QA | S · M2 | 10.3.1-T2, 10.3.2-T1, 10.3.3-T2, 10.8.1-T1, 10.8.2-T1, 10.8.3-T1, 10.8.4-T1, 10.8.5-T1, 10.1.5-T1 | 10.10.1-T2, 08.1.1-T2 (soft), 10.10.2-T2 (10 CR-40) | None directly; inherited via FE prerequisites |
+| 10.10.1-T2 | S (0.5) | FE + QA | S · M2 | 10.10.1-T1, 10.9.1-T1, 10.9.1-T2, 10.9.2-T1, 10.9.3-T1, 10.9.3-T2, 10.9.4-T1, 10.9.4-T2, 10.9.5-T1 | — | None directly; inherited via FE prerequisites |
+| 10.10.2-T2 | M (1.0) | QA | S · M2 | 10.10.2-T1, 10.3.2-T1, 10.8.1-T1, 10.9.1-T1, 10.9.4-T2, 10.10.1-T1 (soft) | — | None directly; inherited via FE prerequisites |
 
 Cross-plan ids in `Depends on` (09.3.1-T2, 09.3.3-T2, 09.3.6-T2, 09.3.7-T1, 09.9.1-T1, 09.9.2-T1, 09.10.2-T1, 09.10.4-T1/T2, 09.10.5-T1, 09.10.8-T1, 06.1.2-T3, 06.3.3-T1, 06.5.2, 07.*, 12.*, 13.*, 10.1.*/10.2.*/10.3.1-T1/10.3.3-*) are frozen in §C1 (SC26–SC31) or come from the high-level plan and from 13/08's own §B8.1 tables (13.1.4-T1/13.2.3-T1/13.3.4-T1 → 10.3.1-T0; 13.2.1-T2 → 10.3.2-T1; 13.3.4-T1/13.3.2-T1 → 10.9.1-T1/T2; 08.1.1-T2 → 10.9.1-T0/T1, 10.10.1-T1 soft), reconciled 2026-09-25 (ST-11); `06.5.2`/`09.3.7-T1` ids are confirmed by the owning slices (Lead06S, Lead09S).
 

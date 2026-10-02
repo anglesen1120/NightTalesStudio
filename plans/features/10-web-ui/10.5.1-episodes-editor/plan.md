@@ -11,9 +11,9 @@
 
 - `10.5.1` — `/episodes`: cursor-paginated list, status + series filters, status chips, continue buttons.
 - `10.5.2` — `/series/:id/episodes/new`: brief form (≤ 1,000 chars), length tier, create + generate, the live generating state driven by `EpisodeUpdated`, then hand-off to the editor.
-- `10.5.3` — `/episodes/:id`: the story editor (segments, scene chips, read-only `beat`, explicit **Save version** with `If-Match`), the single owner of the `StoryDraft` model (D18).
-- `10.5.9` — structure: drag + keyboard reorder, delete with undo snackbar, scene chips travel with their paragraph, dirty guard (`canDeactivate` + `beforeunload`).
-- `10.5.10` — inline annotations (quality hints from `qualityHints[]`, blocking vs advisory), the `409 keywords_flagged` mapping onto chips, and the `412 story_version_conflict` conflict flow.
+- `10.5.3` — `/episodes/:id`: story editor and read-only production `SceneStrip`; editable 1–2 keyword labels remain the semantic `SegmentChips` seam but their visual control is blocked on the existing T0 amendment. The task owns `StoryDraft` and explicit **Save version** with `If-Match`.
+- `10.5.9` — structure: drag + keyboard reorder, delete with undo snackbar, keyword values/beat travel with their paragraph, dirty guard (`canDeactivate` + `beforeunload`); mobile segment navigation waits for the same T0 amendment.
+- `10.5.10` — inline annotations, quality hints, keyword-flag mapping onto the T0-approved keyword control, and the `412 story_version_conflict` flow.
 - `10.5.3-T2` — self-review (`audit_report.model_review`) issues in the same inline component, the "Automatically corrected once" badge for a `source = revised` version, similarity `warn`/`block` highlights by segment address.
 
 **Out of scope.** Version history and diff (10.5.4-T1), sources/fact sheet (10.5.5-T1), approve/reopen and attestation (10.5.6-T1), bible panel (10.5.7-T1), source finder (10.5.8-T1), render progress and video review (10.6.x), publishing (10.7.x), credits/billing/checkout (10.8.x — S), admin (10.9.x). No server-side code, no migration, no new API route: this folder consumes the frozen contracts of 09 and 02.
@@ -24,7 +24,7 @@
 
 | id | Fact | Source |
 |---|---|---|
-| F1 | Routes `POST /api/v1/series/{seriesId}/episodes` (201 + `Location` + `ETag`), `GET /api/v1/episodes?seriesId=&status=&cursor=&limit=` (200 page), `GET /api/v1/episodes/{id}` (200 + `ETag`), `DELETE /api/v1/episodes/{id}`; `ListEpisodesQuery(SeriesId?, Status?, Cursor?, Limit = 20)`; `limit` 0 or 101 → 400 field `limit`, invalid cursor → 400 field `cursor`; `Cancelled` episodes are 404/hidden | ✅ `features/09-backend-api/09.5.1-episodes/09.5.1-T1-episode-commands-queries-pagination.md` §Design (routes table, List rules) |
+| F1 | Routes `POST /api/v1/series/{seriesId}/episodes` (201 JSON UUID scalar + `Location` + `ETag`), `GET /api/v1/episodes?seriesId=&status=&cursor=&limit=` (200 page), `GET /api/v1/episodes/{id}` (200 + `ETag`), `DELETE /api/v1/episodes/{id}`; `ListEpisodesQuery(SeriesId?, Status?, Cursor?, Limit = 20)`; `limit` 0 or 101 → 400 field `limit`, invalid cursor → 400 field `cursor`; `Cancelled` episodes are 404/hidden | ✅ current source audit in `../integration-readiness.md` §1 plus `features/09-backend-api/09.5.1-episodes/09.5.1-T1-episode-commands-queries-pagination.md` §Design |
 | F2 | `CreateEpisodeCommand(Guid SeriesId, string? Title, string Brief, LengthTier LengthTier)`; validator: brief 1–1,000 chars after trim, title ≤ 120, control characters other than `\n`/`\t` rejected; **no** `Idempotency-Key` on create (no credits, no platform call) | ✅ same file §Design + Notes |
 | F3 | `GET /episodes/{id}` returns `EpisodeDetailDto` = `id, seriesId, title, brief, lengthTier, status, nextActions[], etag ("ep-<xmin>"), renderJob?, finalVideo?, publications?` + `generation { kind, status, stage, errorCode, startedAt, processingPaused }` + `currentStory { versionId, version, source, etag, content, qualityHints[], auditReport, similarityScore, factSheetId, attestation }`, where `qualityHints` is the flattened objective-first `auditReport.local.issues ++ auditReport.model_review.issues` and `auditReport` is the verbatim `audit.v1` document; `If-None-Match` → 304 | ✅ `…/09.4.2-5.3-queries/09.5.3-T1-episode-detail.md:29-33,48-50,86-88`; `…/09.4.2-5.3-queries/plan.md:161-166,194` |
 | F4 | `EpisodeNextAction` = `GenerateStory, EditStory, ApproveStory, ReopenStory, Render, RetryRender, Cancel, ApproveVideo, RejectVideo, Publish, Download`, serialised as snake_case strings; the DTO is a hint, never authorization (member list is [INFERENCE] per that file) | ✅ `09.5.3-T1-episode-detail.md:49-50,140`; ⚠️ `:57,71,179` |
@@ -167,7 +167,7 @@ Adapters: `data-access/episodes-http.repository.ts`, `data-access/story-http.rep
 | U4 | Generate the story | `POST /episodes/{id}/story/generate` with a fresh `Idempotency-Key` (F7) | `story_generating` with the live stage line; retry keeps the **same** key for the same attempt (D9-adjacent) | 409 `episode_invalid_state` / `story_generation_in_progress` / `fact_sheet_required`; 422 `idempotency_key_reused`; 429 `story_generation_limit` / `spend_cap_reached` → `RetryCountdown`; `story_moderated` / `story_invalid_output` / `story_generation_failed` surface as the run's `errorCode` with `errors.<code>` |
 | U5 | Edit segments and keywords | none (local) | one signal per segment; token counters; `isDirty` | — |
 | U6 | Save a version | `PUT /episodes/{id}/story` + `If-Match` (F6) | saving → saved (aria-live "đã lưu") → baseline/etag/`qualityHints` replaced by the response | 400 `story_invalid_content` → `bindFieldErrors` onto segment controls (unmapped keys → form-level alert); 409 `episode_invalid_state` → refetch + `errors.episode_invalid_state` with `nextActions`; 412 `story_version_conflict` → `ConflictDialog`; 428 → dev console + generic message; 429 → countdown; unchanged body → same ETag, no new version (informational toast) |
-| U7 | Reorder a paragraph | none (local) | buttons (keyboard) + CDK drop (pointer); scene chips and `beat` travel with the paragraph; live announcement | — |
+| U7 | Reorder a paragraph | none (local) | buttons (keyboard) + CDK drop (pointer); keyword values and `beat` travel with the paragraph; live announcement | visual keyword control/mobile selector waits for the T0 amendment |
 | U8 | Delete a paragraph | none (local) | undo snackbar 10 s; the paragraph is out of the draft; durable only on save (D18) | — |
 | U9 | Leave with unsaved work | — | `canDeactivate` confirm dialog (stay/leave) + `beforeunload`; logout discards drafts only after the guard asked (D6) | — |
 | U10 | See and act on hints/annotations | none beyond U2/U6 (the payload carries them) | inline annotation per segment, advisory vs blocking by icon + text; group by kind (objective first) | — |
@@ -182,7 +182,7 @@ Routes consumed (relative URLs, one origin — D3):
 | Method | Route | Request | Response | Notes |
 |---|---|---|---|---|
 | GET | `/api/v1/episodes` | `status`, `seriesId`, `cursor`, `limit` | `{ items: EpisodeListItem[], nextCursor }` | F1/F5 · `limit` ≤ 100 (D5) |
-| POST | `/api/v1/series/{seriesId}/episodes` | `{ title?, brief, lengthTier }` | 201 + `Location` + `ETag` | F2 · no idempotency key |
+| POST | `/api/v1/series/{seriesId}/episodes` | `{ title?, brief, lengthTier }` | 201 JSON UUID scalar + `Location` + `ETag` | F2 · adapter maps scalar+headers to `{id,etag}` · no idempotency key |
 | GET | `/api/v1/episodes/{id}` | `If-None-Match` optional | `EpisodeDetailDto` + `ETag` (`"ep-<xmin>"`) | F3 · 304 honoured |
 | POST | `/api/v1/episodes/{id}/story/generate` | `Idempotency-Key` header | 202 `{ generationRunId, status, stage }` | F7 |
 | GET | `/api/v1/episodes/{id}` (story slice) | — | `currentStory` + `generation` | F3/F6 · one call per page load, no extra round trip |
@@ -207,9 +207,9 @@ Routes (`features/episodes/episodes.routes.ts`, all lazy, D13):
 
 | Route | Page | Guards / providers |
 |---|---|---|
-| `/episodes` | `feature/episodes-list.page.ts` | `authGuard`; provides `EpisodeListStore`; `EpisodesRepository` from the route `providers` |
-| `/series/:id/episodes/new` | `feature/new-episode.page.ts` | `authGuard`; provides `NewEpisodeStore` |
-| `/episodes/:id` (query `?segment=p:3`) | `feature/story-review.page.ts` | `authGuard` + `canDeactivate` dirty guard; provides `EpisodeDetailStore`, `StoryEditorStore`; `?segment=` is parsed and applied by `segment-address.parse` (D18) |
+| `/episodes` | `feature/episodes-list.page.ts` | `authGuard`; page-component `providers`: `EpisodeListStore`, `EpisodesRepository` |
+| `/series/:id/episodes/new` | `feature/new-episode.page.ts` | `authGuard`; page-component `providers`: `NewEpisodeStore` |
+| `/episodes/:id` (query `?segment=p:3`) | `feature/story-review.page.ts` | `authGuard` + `canDeactivate` dirty guard; page-component `providers`: `EpisodeDetailStore`, `StoryEditorStore`; `?segment=` is parsed and applied by `segment-address.parse` (D18). Page stores live on the component, not `Route.providers` (whose cached `EnvironmentInjector` outlives the component); a param-only `:id`/`?segment` change on the reused component bumps the route generation and restarts affected subscriptions |
 
 Screens and copy keys (scope `episodes`, files `web/src/assets/i18n/episodes/{vi,en}.json`, key style `scope.area.item` — D10). Keys handed over by other plans are used **verbatim**: `quality.*` (F9), `story.generation.*` (F8), `errors.<code>`, `voices.tag.<tag>`, `series.style.*`.
 
@@ -226,7 +226,27 @@ The per-task files enumerate the **complete** key sets they own (the table above
 
 Accessibility (D16, screen-specific): every textarea has a `<label for>` and an `aria-describedby` chain to its counter + annotations; the annotation region is `role="note"` with `aria-live="polite"` when the set changes after a save; "saved" feedback is an `aria-live="polite"` region; the generation stage line and the failure message are `aria-live="polite"` / `role="alert"` respectively, and focus is never stolen (F8); reorder buttons are real `<button>`s with accessible names ("Lên: đoạn 3"), ≥ 24 px, and the CDK handle has a keyboard alternative (10.5.9-T1); flagged chips carry an icon **and** text (`episodes.editor.keywordFlagged`), never colour alone; dialogs trap focus and restore it on close; the layout is usable at 360 px without horizontal scroll; `prefers-reduced-motion` disables the snackbar/annotation transitions.
 
-**Design (owner rule 2026-09-25).** `10.5.1-T0` is the folder's design gate (D19): wireframes + hi-fi mockups for `/episodes`, `/series/:id/episodes/new`, the `/episodes/:id` story editor (segments, scene chips, flagged chips, annotations, conflict dialog, dirty guard), at 360/768/1280, dark + light, vi + en, with focus order/keyboard path/`aria-live` annotations. Design link + owner approval record: ⚠️ [OPEN] (`10.5.1-T0-ui-design.md` §Outputs). Every task below lists `10.5.1-T0` as a hard `Depends on`.
+**Design (owner rule 2026-09-25).** `10.5.1-T0` is the folder's design gate (D19). The commit-pinned artifact, exact frame ids and required amendment decisions are recorded in §6.1 and `10.5.1-T0-ui-design.md` §Outputs. Static coverage exists, but generation-state separation, keyword-control/flagged visuals, mobile segment navigation, >100-series filter behavior and the required approver identity/date remain ⚠️ [OPEN]. No implementation may infer those visuals from the obsolete chip composition. Every task keeps `10.5.1-T0` as its hard `Depends on`.
+
+### 6.1 Commit-pinned design evidence and implementation seams (2026-10-02)
+
+The visual source is the commit-pinned [`04-episode-editor.html`](https://github.com/anglesen1120/NightTalesStudio/blob/920b507d0fcbff2195de0e492235425f39ac0c37/design/ui/screens/04-episode-editor.html). It is static evidence only. Any balance shown by the shared artifact chrome is S-only reference and is absent from P.
+
+| Existing task | Observed frame ids | Coverage boundary / approved T0 amendment |
+|---|---|---|
+| `10.5.1-T1` | `f-list-loading`, `f-list-rows`, `f-list-empty`, `f-list-filters`, `f-list-filter-unavailable`, `f-list-filter-empty`, `f-list-paging`, `f-list-error` | List/filter/paging visuals are observed. Query sync, cursor single-flight and route/session teardown are runtime acceptance. The current frame set does not define how a series picker reaches series beyond the first 100; T0 must approve paging/search or explicitly accept a bounded first page. |
+| `10.5.2-T1` | `f-new-form`, `f-new-form-limit`, `f-new-true-crime`, `f-new-submitting`, `f-new-generating`, `f-new-failed` | Base create/generate visuals are observed. `f-new-failed` combines terminal failure, rate-limit and service-pause semantics; T0 must provide distinct approved states before implementation treats them differently. |
+| `10.5.3-T1` | `f-editor-loading`, `f-editor-body`, `f-editor-saving`, `f-editor-saved`, `f-editor-deeplink`, `f-editor-readonly`, `f-conflict` | Base editor/save/conflict visuals are observed. The approved body uses a read-only `scene-strip` and says old scene chips are gone, while the task needs editable 1–2 keyword labels. T0 must approve the actual keyword-edit control; do not restore the superseded card/chip composition by inference. At 360 the artifact hides non-active beats but provides no selector/previous-next/outline, so T0 must also approve an `activeSegment` navigation path. |
+| `10.5.9-T1` | `f-editor-structure`, `f-editor-undo`, `f-dirty-guard` | Structure/undo/guard visuals are observed. Drag, keyboard reorder, focus return, timer and mobile navigation are runtime acceptance; mobile access to every hidden segment depends on the T0 amendment above. |
+| `10.5.10-T1` | `f-editor-annotations`, `f-editor-annotations-none`, `f-conflict` | Annotation/conflict visuals are observed. A flagged editable keyword control is not separately approved and depends on the same keyword-editor amendment; 412 behavior remains runtime acceptance. |
+| `10.5.3-T2` | `f-editor-self-review`, `f-editor-annotations`, `f-editor-annotations-none` | Self-review/annotation base states are observed; payload mapping, no-double-render and address remap are runtime acceptance. |
+| `10.5.1-T0` | All ids above | Approval identity/date is missing. The amendment must add exact ids for generation terminal/rate-limit/paused states, keyword editing/flagged state, mobile segment navigation and the >100-series filter decision without changing backend or phase scope. |
+
+Routed containers own `EpisodeListStore`, `NewEpisodeStore`, `EpisodeDetailStore` and the single `StoryEditorStore`; presentation consumes immutable task-specific view models and emits typed intents. The static `SceneStrip` is a read-only production preview. `SegmentAddress` remains the shared domain seam; `SegmentChips` may only become the approved keyword editor after the T0 amendment resolves its visual contract. Existing shared owners remain [implementation-roadmap.md §2](../implementation-roadmap.md); no new shared component is proposed.
+
+Every typed form async boundary bridges control/status/server-error changes to a template-read signal and cleans up through `DestroyRef`. Route id and session generation gate list/detail/create/generate/save/refetch results. Component/session destruction removes hub subscriptions, dirty/undo timers, beforeunload handlers and any focus/header registration — including leaving to a public route without logout and param-only route reuse; a late result may not replace a newer route, session or draft.
+
+Readiness follows [integration-readiness.md](../integration-readiness.md): episode list/create/basic detail exist. Create returns a JSON UUID **scalar** plus `Location`/`ETag`, never `{id}`. Story generation/edit/currentStory/quality/self-review/autopilot extensions remain planned under the existing 02/09 owners and must not be invented from the mockup. Generate owns the intent-scoped idempotency key; create has no key; story save is ETag/`If-Match`-only.
 
 ## 7. Jobs and integrations
 
