@@ -15,7 +15,9 @@ internal static class AllowLists
     /// breached-password range checker inside the Identity registration. Every other transport goes
     /// through an <c>IHttpClientFactory</c> or through the factory, so a node client cannot be created
     /// without the pin/redirect/timeout rules (11.3.3-T1 step 9). The <c>tools/mock-mpt</c> entry is the
-    /// dev-only mock's <c>--healthcheck</c> loopback self-probe (11.1.2-T1), not a render-node client.
+    /// dev-only mock's <c>--healthcheck</c> loopback self-probe (11.1.2-T1), not a render-node client. The
+    /// <c>MptHttpClient</c> entry is the adapter's own loopback client to MPT on the node (11.3.5-T2, 11 README
+    /// D6: no redirects, 2 s connect timeout), not a backend-to-node client.
     /// </summary>
     internal static readonly IReadOnlySet<string> HttpClientProducerTypeNames =
         new HashSet<string>(StringComparer.Ordinal)
@@ -23,6 +25,7 @@ internal static class AllowLists
             "NightTales.Infrastructure.Rendering.RenderNodeConnectionFactory",
             "NightTales.Infrastructure.DependencyInjection.IdentityServiceCollectionExtensions",
             "NightTales.MockMpt.Health.MockHealthCheck",
+            "NightTales.MptAdapter.MptHttpClient",
         };
 
 
@@ -110,6 +113,27 @@ internal static class AllowLists
     [
         "Microsoft.AspNetCore.",
         "Microsoft.Extensions.",
+    ];
+
+    /// <summary>
+    /// 11 README D3: the adapter host adds the durable store (Microsoft.Data.Sqlite, MIT/E11) and Serilog to
+    /// the core's set — still never Domain, Application or Infrastructure (11 CR-3).
+    /// </summary>
+    internal static readonly IReadOnlySet<string> MptAdapterAllowedReferences =
+        new HashSet<string>(StringComparer.Ordinal)
+        {
+            "ErrorOr",
+            "Microsoft.Data.Sqlite",
+            "NightTales.RenderNode.Contract",
+            "NightTales.RenderNode.Server",
+        };
+
+    internal static readonly IReadOnlyList<string> MptAdapterAllowedPrefixes =
+    [
+        "Microsoft.AspNetCore.",
+        "Microsoft.Extensions.",
+        "Serilog",
+        "SQLitePCLRaw.",
     ];
 
     /// <summary>

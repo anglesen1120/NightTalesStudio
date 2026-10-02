@@ -55,10 +55,11 @@ public sealed class StatusTests
         late.State.ShouldBe(RenderStates.Succeeded);
         late.Percent.ShouldBe(100);
 
-        // Only cancel_requested is last-writer-wins.
+        // cancel_requested is one-way: once a cancel lands, a stale observation can never clear it.
         var cancelled = Records.Running(taskId, renderJobId) with { CancelRequested = true };
         Records.Running(taskId, renderJobId).Merge(cancelled).CancelRequested.ShouldBeTrue();
-        cancelled.Merge(Records.Running(taskId, renderJobId)).CancelRequested.ShouldBeFalse();
+        cancelled.Merge(Records.Running(taskId, renderJobId)).CancelRequested.ShouldBeTrue(
+            "a stale poller snapshot must not revert a cancel that already landed (05 D4)");
     }
 
     [Fact]

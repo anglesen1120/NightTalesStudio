@@ -17,6 +17,7 @@ internal static class ArchitectureModel
     internal const string Infrastructure = "NightTales.Infrastructure";
     internal const string RenderNodeContract = "NightTales.RenderNode.Contract";
     internal const string RenderNodeServer = "NightTales.RenderNode.Server";
+    internal const string MptAdapter = "NightTales.MptAdapter";
     internal const string MockMpt = "NightTales.MockMpt";
     internal const string Api = "NightTales.Api";
     internal const string Worker = "NightTales.Worker";
@@ -30,6 +31,7 @@ internal static class ArchitectureModel
         Infrastructure,
         RenderNodeContract,
         RenderNodeServer,
+        MptAdapter,
         MockMpt,
         Api,
         Worker,

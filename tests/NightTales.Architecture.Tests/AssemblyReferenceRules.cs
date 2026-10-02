@@ -107,6 +107,18 @@ public sealed class AssemblyReferenceRules
             AllowLists.RenderNodeServerAllowedReferences,
             AllowLists.RenderNodeServerAllowedPrefixes,
             nameof(RenderNode_ReferencesOnlyTheContractAndAspNetCore));
+
+        var adapter = ArchitectureModel.Require(ArchitectureModel.MptAdapter);
+        AssertAllowed(
+            adapter,
+            AllowLists.MptAdapterAllowedReferences,
+            AllowLists.MptAdapterAllowedPrefixes,
+            nameof(RenderNode_ReferencesOnlyTheContractAndAspNetCore));
+        AssertDeclaredAllowed(
+            adapter,
+            AllowLists.MptAdapterAllowedReferences,
+            AllowLists.MptAdapterAllowedPrefixes,
+            nameof(RenderNode_ReferencesOnlyTheContractAndAspNetCore));
     }
 
     [Fact]
