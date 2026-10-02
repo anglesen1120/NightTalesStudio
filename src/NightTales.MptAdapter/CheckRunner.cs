@@ -79,14 +79,24 @@ internal sealed class CheckRunner : ICheckRunner
     {
         ArgumentNullException.ThrowIfNull(request);
 
-        var directory = SafePath.ResolveDirectory(_options.MptTasksDir, request.DirName, out var taskDir);
-        var reportPath = Path.Combine(taskDir, ReportFileName);
-        if (directory != SafePathResult.Ok)
+        var directory = SafePath.PinDirectory(_options.MptTasksDir, request.DirName, out var pinned);
+        var reportPath = ReportFileName;
+        if (directory != SafePathResult.Ok || pinned is null)
         {
             return new CheckRunResult(false, 2, string.Empty, "the task dir is missing or not contained", TimeSpan.Zero, reportPath);
         }
 
+        using var pin = pinned;
+        var taskDir = pin.Path;
+        reportPath = Path.Combine(taskDir, ReportFileName);
         var clock = Stopwatch.StartNew();
+
+        // Re-validated immediately before the spawn: the path handed to the tool must still be the pinned dir.
+        if (!pin.StillSame())
+        {
+            return new CheckRunResult(false, 2, string.Empty, "the task dir changed before the check", clock.Elapsed, reportPath);
+        }
+
         ISpawned child;
         try
         {
@@ -134,6 +144,13 @@ internal sealed class CheckRunner : ICheckRunner
 
             var seconds = Math.Round(clock.Elapsed.TotalSeconds, 1);
             _log.CheckFinished(request.TaskId, exit, seconds, reportPath);
+
+            if (!timedOut && !pin.StillSame())
+            {
+                // The task dir was replaced while the tool ran (it opens the dir by path, so this is detected, not
+                // prevented): whatever it measured is not the dir the row names.
+                return new CheckRunResult(false, 2, outText, "the task dir changed during the check", clock.Elapsed, reportPath);
+            }
 
             return new CheckRunResult(timedOut, timedOut ? -1 : exit, outText, errText, clock.Elapsed, reportPath);
         }
@@ -238,9 +255,10 @@ internal sealed class CheckRunner : ICheckRunner
         private const int SIGKILL = 9;
         private const int ESRCH = 3;
         private const int EINTR = 4;
-        private const int F_SETFD = 2;
-        private const int FD_CLOEXEC = 1;
         private const short POSIX_SPAWN_SETPGROUP = 0x02;
+        private const short POSIX_SPAWN_CLOEXEC_DEFAULT = 0x4000; // Darwin only
+
+        private static readonly object SpawnLock = new();
 
         private readonly int _pid;
         private readonly FileStream _stdout;
@@ -263,17 +281,33 @@ internal sealed class CheckRunner : ICheckRunner
 
         internal static SpawnedChild Start(string executable, IReadOnlyList<string> arguments, string workingDirectory)
         {
+            // RD-2: pipe creation, the flagging and the spawn are one critical section, so two concurrent checks
+            // can never inherit each other's descriptors through the unflagged window.
+            lock (SpawnLock)
+            {
+                return StartLocked(executable, arguments, workingDirectory);
+            }
+        }
+
+        private static SpawnedChild StartLocked(string executable, IReadOnlyList<string> arguments, string workingDirectory)
+        {
             var allocated = new List<IntPtr>();
             var fileActions = Marshal.AllocHGlobal(1024);
             var attributes = Marshal.AllocHGlobal(1024);
+            var actionsInitialized = false;
+            var attributesInitialized = false;
             var stdinFd = -1;
             int stdoutRead = -1, stdoutWrite = -1, stderrRead = -1, stderrWrite = -1;
             try
             {
+                // RD-1: each object is destroyed only when its own init succeeded.
                 CheckSpawnResult(posix_spawn_file_actions_init(fileActions));
+                actionsInitialized = true;
                 CheckSpawnResult(posix_spawnattr_init(attributes));
+                attributesInitialized = true;
                 CheckSpawnResult(posix_spawnattr_setpgroup(attributes, 0));
-                CheckSpawnResult(posix_spawnattr_setflags(attributes, POSIX_SPAWN_SETPGROUP));
+                var flags = (short)(POSIX_SPAWN_SETPGROUP | (OperatingSystem.IsMacOS() ? POSIX_SPAWN_CLOEXEC_DEFAULT : 0));
+                CheckSpawnResult(posix_spawnattr_setflags(attributes, flags));
 
                 stdinFd = NativeOpenDevNull();
                 PipeCloexec(ref stdoutRead, ref stdoutWrite);
@@ -310,8 +344,16 @@ internal sealed class CheckRunner : ICheckRunner
             }
             finally
             {
-                _ = posix_spawn_file_actions_destroy(fileActions);
-                _ = posix_spawnattr_destroy(attributes);
+                if (actionsInitialized)
+                {
+                    _ = posix_spawn_file_actions_destroy(fileActions);
+                }
+
+                if (attributesInitialized)
+                {
+                    _ = posix_spawnattr_destroy(attributes);
+                }
+
                 Marshal.FreeHGlobal(fileActions);
                 Marshal.FreeHGlobal(attributes);
                 foreach (var pointer in allocated)
@@ -366,13 +408,10 @@ internal sealed class CheckRunner : ICheckRunner
 
         private void SignalGroup(int signal)
         {
-            // pgid == _pid by POSIX_SPAWN_SETPGROUP. The group call NEVER touches our own group: a dead
-            // group answers ESRCH and nothing is signalled.
-            if (kill(-_pid, signal) != 0 && Marshal.GetLastPInvokeError() != ESRCH)
-            {
-                // Only reachable before the pgid settles or on EPERM; signal the root alone, never our group.
-                _ = kill(_pid, signal);
-            }
+            // pgid == _pid by POSIX_SPAWN_SETPGROUP. Only the group is ever signalled: a group that is gone
+            // answers ESRCH, which means the check already exited - there is no per-PID fallback that could hit a
+            // recycled pid (DELTA-2).
+            _ = kill(-_pid, signal);
         }
 
         private bool GroupAlive() => kill(-_pid, 0) == 0 || Marshal.GetLastPInvokeError() != ESRCH;
@@ -413,7 +452,7 @@ internal sealed class CheckRunner : ICheckRunner
 
         private static int NativeOpenDevNull()
         {
-            var fd = open(Terminated("/dev/null"), 0);
+            var fd = open(Terminated("/dev/null"), OperatingSystem.IsMacOS() ? 0x1000000 : 0x80000);
             if (fd < 0)
             {
                 throw new IOException($"open(/dev/null) failed with errno {Marshal.GetLastPInvokeError()}.");
@@ -425,15 +464,19 @@ internal sealed class CheckRunner : ICheckRunner
         private static void PipeCloexec(ref int read, ref int write)
         {
             var fds = new int[2];
-            if (pipe(fds) != 0)
+
+            // RD-2: Linux makes both ends close-on-exec atomically with pipe2. Darwin has no pipe2 (and fcntl is
+            // variadic, which a plain P/Invoke cannot call correctly on arm64), so the pair is created under
+            // SpawnLock and the child is spawned with POSIX_SPAWN_CLOEXEC_DEFAULT: it closes every descriptor
+            // except the three dup2'd by file actions, whichever thread created it.
+            var made = OperatingSystem.IsMacOS() ? pipe(fds) : pipe2(fds, 0x80000);
+            if (made != 0)
             {
                 throw new IOException($"pipe failed with errno {Marshal.GetLastPInvokeError()}.");
             }
 
             read = fds[0];
             write = fds[1];
-            _ = fcntl(read, F_SETFD, FD_CLOEXEC);
-            _ = fcntl(write, F_SETFD, FD_CLOEXEC);
         }
 
         private static byte[] Terminated(string value)
@@ -498,8 +541,8 @@ internal sealed class CheckRunner : ICheckRunner
         [DllImport("libc", SetLastError = true)]
         private static extern int pipe([In, Out] int[] fds);
 
-        [DllImport("libc")]
-        private static extern int fcntl(int fd, int command, int argument);
+        [DllImport("libc", SetLastError = true)]
+        private static extern int pipe2([In, Out] int[] fds, int flags);
 
         [DllImport("libc", SetLastError = true)]
         private static extern int kill(int pid, int signal);

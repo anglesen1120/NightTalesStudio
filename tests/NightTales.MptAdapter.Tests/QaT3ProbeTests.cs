@@ -424,6 +424,72 @@ public sealed class QaT3ProbeTests : IDisposable
         leaked.ShouldBe(0, $"{leaked} of {attempts} opens followed a swapped parent-directory link (S8)");
     }
 
+    [Fact]
+    public void OpenRead_ADirectoryOrFifoNamedLikeTheFile_IsRefused()
+    {
+        var options = ShellOptions("true\n");
+        var dir = MakeTaskDir(options, "victim");
+        Directory.CreateDirectory(Path.Combine(dir, "as-dir"));
+
+        SafePath.OpenRead(options.MptTasksDir, "victim", "as-dir", 1 << 20, out var stream).ShouldBe(SafePathResult.NotFound);
+        stream.ShouldBeNull();
+
+        using var mkfifo = Process.Start(new ProcessStartInfo("/usr/bin/mkfifo") { ArgumentList = { Path.Combine(dir, "as-fifo") }, UseShellExecute = false })!;
+        mkfifo.WaitForExit();
+        mkfifo.ExitCode.ShouldBe(0);
+        SafePath.OpenRead(options.MptTasksDir, "victim", "as-fifo", 1 << 20, out stream).ShouldBe(SafePathResult.NotFound);
+        stream.ShouldBeNull();
+
+        File.WriteAllBytes(Path.Combine(dir, "empty.bin"), []);
+        SafePath.OpenRead(options.MptTasksDir, "victim", "empty.bin", 1 << 20, out stream).ShouldBe(SafePathResult.Ok);
+        stream!.Dispose();
+    }
+
+    [Fact]
+    public async Task ConcurrentChecks_DoNotInheritEachOthersDescriptors()
+    {
+        // Each child waits until the other has certainly been spawned, then lists its own open descriptors.
+        var baselineFile = Path.Combine(_root, "fds-baseline.txt");
+        var options = ShellOptions($"ls /dev/fd | tr '\\n' ' ' > '{baselineFile}'\n");
+        MakeTaskDir(options, "t0");
+        await Runner(options).RunAsync(new CheckRequest(Guid.NewGuid(), "t0", "landscape", true), TestContext.Current.CancellationToken);
+        var baseline = File.ReadAllText(baselineFile);
+
+        var script = $"sleep 1\nls /dev/fd | tr '\\n' ' ' > \"$(dirname \"$0\")/fds-$(basename \"$(pwd)\")-$$.txt\"\n";
+        var shared = ShellOptions(script, timeoutSeconds: 20);
+        MakeTaskDir(shared, "t1");
+        MakeTaskDir(shared, "t2");
+
+        var runs = new List<Task<CheckRunResult>>();
+        foreach (var name in (string[])["t1", "t2"])
+        {
+            runs.Add(Runner(shared).RunAsync(new CheckRequest(Guid.NewGuid(), name, "landscape", true), TestContext.Current.CancellationToken));
+        }
+
+        await Task.WhenAll(runs);
+
+        var listings = Directory.GetFiles(_root, "fds-nts-*.txt");
+        listings.Length.ShouldBe(2);
+        foreach (var listing in listings)
+        {
+            File.ReadAllText(listing).ShouldBe(baseline, "a child must hold only the descriptors a lone child holds");
+        }
+    }
+
+    [Fact]
+    public async Task TaskDirReplacedDuringTheCheck_IsCheckFailed()
+    {
+        var options = ShellOptions("true\n");
+        var dir = MakeTaskDir(options, "t1");
+        File.WriteAllText(Path.Combine(_root, "fake-check.sh"), $"mv '{dir}' '{dir}.old' && mkdir '{dir}'\n");
+
+        var result = await Runner(options).RunAsync(new CheckRequest(Guid.NewGuid(), "t1", "landscape", true), TestContext.Current.CancellationToken);
+
+        result.TimedOut.ShouldBeFalse();
+        result.ExitCode.ShouldBe(2);
+        result.Stderr.ShouldContain("changed during the check");
+    }
+
     // ---- caps ----------------------------------------------------------------------------------------------
 
     [Fact]

@@ -155,6 +155,95 @@ internal static class SafePath
         return dirHandle is null ? failure : SafePathResult.Ok;
     }
 
+    /// <summary>
+    /// Pins the task dir: resolves it through the descriptor walk, keeps that directory open (so its inode
+    /// cannot be recycled) and records its (device, inode). <see cref="DirectoryPin.StillSame"/> re-walks the
+    /// path and compares, so a dir replaced while a path-based tool ran is noticed. The tool itself still opens
+    /// the dir by path - that residual cannot be closed without passing descriptors to it.
+    /// </summary>
+    internal static SafePathResult PinDirectory(string root, string? dirName, out DirectoryPin? pin)
+    {
+        pin = null;
+        var result = ResolveDirectory(root, dirName, out var path);
+        if (result != SafePathResult.Ok)
+        {
+            return result;
+        }
+
+        if (OperatingSystem.IsWindows())
+        {
+            pin = new DirectoryPin(path, root, dirName!, null, default);
+            return SafePathResult.Ok;
+        }
+
+        var held = WalkToDirectory(Path.GetFullPath(root), dirName!, path, out var failure);
+        if (held is null)
+        {
+            return failure;
+        }
+
+        pin = new DirectoryPin(path, root, dirName!, held, IdentityOf(held));
+        return SafePathResult.Ok;
+    }
+
+    private static SafeFileHandle? WalkToDirectory(string rootFull, string dirName, string combined, out SafePathResult failure)
+    {
+        using var rootHandle = OpenNative(null, rootFull, DirectoryFlag | CloseOnExecFlag(), rootFull, out failure);
+        return rootHandle is null
+            ? null
+            : OpenNative(rootHandle, dirName, DirectoryFlag | NoFollowFlag() | CloseOnExecFlag(), combined, out failure);
+    }
+
+    /// <summary>
+    /// (device, inode) from <c>fstat</c>. Only equality is used, so only the two fields' offsets matter: inode is a
+    /// 64-bit value at offset 8 on Linux (x64, arm64) and Darwin; device is 64-bit at 0 on Linux and 32-bit at 0 on Darwin.
+    /// </summary>
+    private static (long Device, ulong Inode) IdentityOf(SafeFileHandle handle)
+    {
+        var buffer = new byte[512];
+        if (NativeFstat((int)handle.DangerousGetHandle(), buffer) != 0)
+        {
+            throw new IOException($"fstat failed with errno {Marshal.GetLastPInvokeError()}.");
+        }
+
+        var device = OperatingSystem.IsMacOS() ? BitConverter.ToInt32(buffer, 0) : BitConverter.ToInt64(buffer, 0);
+        return (device, BitConverter.ToUInt64(buffer, 8));
+    }
+
+    /// <summary>A task dir held open since <see cref="PinDirectory"/>.</summary>
+    internal sealed class DirectoryPin : IDisposable
+    {
+        private readonly string _root;
+        private readonly string _dirName;
+        private readonly SafeFileHandle? _held;
+        private readonly (long Device, ulong Inode) _identity;
+
+        internal DirectoryPin(string path, string root, string dirName, SafeFileHandle? held, (long Device, ulong Inode) identity)
+        {
+            Path = path;
+            _root = root;
+            _dirName = dirName;
+            _held = held;
+            _identity = identity;
+        }
+
+        internal string Path { get; }
+
+        /// <summary>True while the name still leads, without a link, to the very directory that was pinned.</summary>
+        internal bool StillSame()
+        {
+            if (_held is null)
+            {
+                return CheckDirectoryPortable(Path) == SafePathResult.Ok;
+            }
+
+            using var current = WalkToDirectory(System.IO.Path.GetFullPath(_root), _dirName, Path, out _);
+            return current is not null && IdentityOf(current) == _identity;
+        }
+
+        public void Dispose() => _held?.Dispose();
+    }
+
     private static SafeFileHandle? OpenFileNative(string rootFull, string dirName, string fileName, string directory, out SafePathResult failure)
     {
         using var rootHandle = OpenNative(null, rootFull, DirectoryFlag | CloseOnExecFlag(), rootFull, out failure);
@@ -169,7 +258,29 @@ internal static class SafePath
             return null;
         }
 
-        return OpenNative(dirHandle, fileName, NoFollowFlag() | CloseOnExecFlag(), Path.Combine(directory, fileName), out failure);
+        var file = OpenNative(
+            dirHandle,
+            fileName,
+            NoFollowFlag() | CloseOnExecFlag() | NonBlockFlag(),
+            Path.Combine(directory, fileName),
+            out failure);
+        if (file is null)
+        {
+            return null;
+        }
+
+        // RD-3: only a regular file is served. O_RDONLY opens a directory happily and a FIFO would otherwise
+        // block the open (hence O_NONBLOCK); a one-byte pread at offset 0 is refused by both (EISDIR, ESPIPE)
+        // and is a plain read for a regular file, empty ones included (0 bytes).
+        var probe = new byte[1];
+        if (NativePread((int)file.DangerousGetHandle(), probe, 1, 0) < 0)
+        {
+            file.Dispose();
+            failure = SafePathResult.NotFound;
+            return null;
+        }
+
+        return file;
     }
 
     // The flag values are not portable: the node is Linux (x64 or arm64), the developer Mac is Darwin.
@@ -177,6 +288,8 @@ internal static class SafePath
         OperatingSystem.IsMacOS() ? 0x0100 : IsLinuxArm() ? 0x8000 : 0x20000;
 
     private static int CloseOnExecFlag() => OperatingSystem.IsMacOS() ? 0x1000000 : 0x80000;
+
+    private static int NonBlockFlag() => OperatingSystem.IsMacOS() ? 0x0004 : 0x800;
 
     private static int DirectoryFlag =>
         OperatingSystem.IsMacOS() ? 0x100000 : IsLinuxArm() ? 0x4000 : 0x10000;
@@ -236,6 +349,12 @@ internal static class SafePath
 
     [DllImport("libc", EntryPoint = "openat", SetLastError = true)]
     private static extern int NativeOpenAt(int directoryDescriptor, byte[] path, int flags);
+
+    [DllImport("libc", EntryPoint = "pread", SetLastError = true)]
+    private static extern nint NativePread(int descriptor, byte[] buffer, nint count, long offset);
+
+    [DllImport("libc", EntryPoint = "fstat", SetLastError = true)]
+    private static extern int NativeFstat(int descriptor, byte[] statBuffer);
 #pragma warning restore SYSLIB1054
 
     /// <summary>Writes <paramref name="bytes"/> to a temp file beside <paramref name="path"/> and renames it into place.</summary>
