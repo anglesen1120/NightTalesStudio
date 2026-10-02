@@ -675,10 +675,10 @@ public sealed class S3BlobStoreTests
         Environment.GetEnvironmentVariable(StorageUrlVariable) ?? "http://localhost:8333";
 
     private static string AccessKey() =>
-        Environment.GetEnvironmentVariable("NTS_STORAGE_ACCESS_KEY") ?? "nts-dev-access";
+        Environment.GetEnvironmentVariable("NTS_STORAGE_ACCESS_KEY") ?? "dev";
 
     private static string SecretKey() =>
-        Environment.GetEnvironmentVariable("NTS_STORAGE_SECRET_KEY") ?? "nts-dev-secret";
+        Environment.GetEnvironmentVariable("NTS_STORAGE_SECRET_KEY") ?? "dev-secret-local";
 
     private static string KeyFor(string name) => $"media/test/{name}/{Guid.CreateVersion7():N}.mp4";
 
