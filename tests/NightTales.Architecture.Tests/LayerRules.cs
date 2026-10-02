@@ -13,6 +13,27 @@ public sealed class LayerRules
     private const string PersistenceNamespacePattern = @"NightTales\.Infrastructure\.Persistence.*";
     private const string HangfireNamespacePattern = @"Hangfire.*";
     private const string MediatorGeneratedNamespacePattern = @"Mediator.*";
+    private const string AwsS3NamespacePattern = @"Amazon\.S3.*";
+
+    [Fact]
+    public void S3Client_IsInfrastructureOnly()
+    {
+        var application = ArchitectureModel.Require(ArchitectureModel.Application);
+        var api = ArchitectureModel.Require(ArchitectureModel.Api);
+        var worker = ArchitectureModel.Require(ArchitectureModel.Worker);
+
+        // 09.7.2-T1: the AWSSDK.S3 types stay behind IBlobStore. The Api presigns and the Worker sweeps
+        // through the Application port, so neither host (nor the Application layer) may name a client,
+        // a request or an exception of the SDK — a leak there would tie the platform to one provider.
+        var rule = Types()
+            .That().ResideInAssembly(application, [api, worker])
+            .And().DoNotHaveNameMatching(".*ServiceCollectionExtensions")
+            .And().DoNotResideInNamespaceMatching(MediatorGeneratedNamespacePattern)
+            .Should().NotDependOnAnyTypesThat().ResideInNamespaceMatching(AwsS3NamespacePattern)
+            .WithoutRequiringPositiveResults();
+
+        ArchRuleAssert.CheckRule(ArchitectureModel.Architecture, rule);
+    }
 
     [Fact]
     public void ApiAndWorker_UseInfrastructureOnlyFromCompositionRoots()

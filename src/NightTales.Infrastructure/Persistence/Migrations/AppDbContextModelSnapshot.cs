@@ -715,6 +715,81 @@ namespace NightTales.Infrastructure.Persistence.Migrations
                     b.ToTable("feature_flags", (string)null);
                 });
 
+            modelBuilder.Entity("NightTales.Domain.Rendering.WorkerNode", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<byte[]>("ApiKeyCiphertext")
+                        .HasColumnType("bytea")
+                        .HasColumnName("api_key_ciphertext");
+
+                    b.Property<string>("ApiKeyHint")
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("api_key_hint");
+
+                    b.Property<string>("BaseUrl")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)")
+                        .HasColumnName("base_url");
+
+                    b.Property<int>("Capacity")
+                        .HasColumnType("integer")
+                        .HasColumnName("capacity");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("GpuModel")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("gpu_model");
+
+                    b.Property<DateTimeOffset?>("LastHeartbeatAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("last_heartbeat_at");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("name");
+
+                    b.Property<string>("State")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("state");
+
+                    b.Property<string>("TlsCertSha256")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("tls_cert_sha256");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("Id")
+                        .HasName("pk_worker_nodes");
+
+                    b.HasIndex("Name")
+                        .IsUnique()
+                        .HasDatabaseName("ux_worker_nodes_name");
+
+                    b.ToTable("worker_nodes", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_worker_nodes_capacity", "\"capacity\" BETWEEN 1 AND 8");
+
+                            t.HasCheckConstraint("ck_worker_nodes_state", "\"state\" IN ('active', 'down', 'draining')");
+
+                            t.HasCheckConstraint("ck_worker_nodes_tls_sha256", "CASE WHEN \"tls_cert_sha256\" IS NULL THEN \"base_url\" LIKE 'http://%' ELSE \"tls_cert_sha256\" ~ '^[0-9A-F]{64}$' END");
+                        });
+                });
+
             modelBuilder.Entity("NightTales.Domain.Series.Autopilot.AutopilotRun", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1382,6 +1457,68 @@ namespace NightTales.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("NightTales.Infrastructure.Persistence.Entities.AuthChallenge", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<short>("Attempts")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("smallint")
+                        .HasDefaultValue((short)0)
+                        .HasColumnName("attempts");
+
+                    b.Property<DateTimeOffset>("ExpiresAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("expires_at");
+
+                    b.Property<IPAddress>("Ip")
+                        .HasColumnType("inet")
+                        .HasColumnName("ip");
+
+                    b.Property<string>("PreAuthCookieHash")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("preauth_cookie_hash");
+
+                    b.Property<string>("TokenHash")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("token_hash");
+
+                    b.Property<DateTimeOffset?>("UsedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("used_at");
+
+                    b.Property<string>("UserAgent")
+                        .HasColumnType("text")
+                        .HasColumnName("user_agent");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_auth_challenges");
+
+                    b.HasIndex("TokenHash")
+                        .IsUnique()
+                        .HasDatabaseName("ux_auth_challenges_token_hash");
+
+                    b.HasIndex("UserId")
+                        .HasDatabaseName("ix_auth_challenges_user_id_unused")
+                        .HasFilter("used_at IS NULL");
+
+                    b.HasIndex("UserId", "ExpiresAt")
+                        .HasDatabaseName("ix_auth_challenges_user_id_expires_at");
+
+                    b.ToTable("auth_challenges", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_auth_challenges_attempts", "attempts >= 0 AND attempts <= 5");
+                        });
+                });
+
             modelBuilder.Entity("NightTales.Infrastructure.Persistence.Entities.RefreshToken", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1920,6 +2057,16 @@ namespace NightTales.Infrastructure.Persistence.Migrations
                         .HasPrincipalKey("Id", "UserId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .HasConstraintName("fk_usage_records_series_series_id_user_id");
+                });
+
+            modelBuilder.Entity("NightTales.Infrastructure.Persistence.Entities.AuthChallenge", b =>
+                {
+                    b.HasOne("NightTales.Infrastructure.Persistence.AppUser", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_auth_challenges_asp_net_users_user_id");
                 });
 
             modelBuilder.Entity("NightTales.Infrastructure.Persistence.Entities.RefreshToken", b =>

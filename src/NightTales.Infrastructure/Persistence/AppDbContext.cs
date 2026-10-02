@@ -11,6 +11,7 @@ using NightTales.Domain.Communication;
 using NightTales.Domain.Compliance;
 using NightTales.Domain.Episodes;
 using NightTales.Domain.Platform;
+using NightTales.Domain.Rendering;
 using NightTales.Domain.Series;
 using NightTales.Domain.Series.Autopilot;
 using NightTales.Domain.Stories;
@@ -73,6 +74,18 @@ public sealed class AppDbContext : IdentityDbContext<AppUser, AppRole, Guid>, IA
     /// </summary>
     public DbSet<EmailMessage> EmailMessages => Set<EmailMessage>();
 
+    /// <summary>
+    /// The render-node registry of 11.3.3-T1 (table <c>worker_nodes</c>, 00 overview §6 L311): upserted by
+    /// <c>WorkerNodeSeeder</c> from <c>RenderNodes:Nodes</c>, heartbeat- and state-mutated by
+    /// <c>NodeHealthPoller</c>, and read by the <c>nts-worker nodes</c> verbs and (through <c>IReadDb</c>) by
+    /// 11.3.3-T2's selector.
+    /// </summary>
+    /// <remarks>
+    /// It carries no <c>IUserOwned</c>, so 09 README D10's tenant filter never applies and no
+    /// <c>IgnoreQueryFilters</c> allow-list entry is needed — the registry is operator data, not user data.
+    /// </remarks>
+    public DbSet<WorkerNode> WorkerNodes => Set<WorkerNode>();
+
     /// <summary>Infrastructure-only: the outbox rows the interceptor of 09.2.4-T1 writes.</summary>
     public DbSet<OutboxMessage> OutboxMessages => Set<OutboxMessage>();
 
@@ -88,6 +101,14 @@ public sealed class AppDbContext : IdentityDbContext<AppUser, AppRole, Guid>, IA
     /// <c>EfRefreshTokenService</c>, like the outbox and idempotency tables next to it.
     /// </summary>
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
+
+    /// <summary>
+    /// Infrastructure-only: the MFA login challenges of 09.3.2-T3. 09.3.2-T1's login flow inserts one
+    /// through <c>EfMfaChallengeService.BeginAsync</c> when the account always signs in with an
+    /// authenticator; every later statement (the supersede, the locked read, the attempt counter) lives in
+    /// that same store, like the refresh families next to it.
+    /// </summary>
+    public DbSet<AuthChallenge> AuthChallenges => Set<AuthChallenge>();
 
     /// <summary>
     /// Infrastructure-only: the single-use hub tickets of 09.8.1-T2. 09.8.1-T1's claim is a

@@ -124,20 +124,21 @@ public sealed class RefreshTokenTests(TestDatabase database) : IntegrationTest(d
             AuthTestFlow.Password,
             ct);
 
-        // BD4: an owner or admin always enrols before signing in, and this task answers without a challenge
-        // document — the enrolment-only token stays off the wire until 09.3.2-T3 adds the pre-auth cookie.
+        // BD4: an owner or admin without an authenticator gets the enrolment-only answer — no challenge
+        // document, no pre-auth cookie and no enrolment token on the wire (WT22, WT39): 09.3.2-T3 opens a
+        // challenge only for an account whose second factor is enrolled.
         response.StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
         (await AuthTestFlow.ProblemCodeAsync(response)).ShouldBe(ErrorCodes.MfaEnrolmentRequired);
 
         var body = await response.Content.ReadAsStringAsync(ct);
         body.ShouldNotContain("accessToken", Case.Sensitive, "an enrolment answer carries no session token");
-        body.ShouldNotContain("token", Case.Sensitive, "no challenge or enrolment token is returned yet (WT22, WT39)");
+        body.ShouldNotContain("token", Case.Sensitive, "no challenge token is returned (WT22, WT39)");
         cookie.ShouldBeNull();
         (await AuthTestFlow.RowsAsync(Database, user.Id)).ShouldBeEmpty("the MFA answers set no refresh cookie");
     }
 
     [Fact]
-    public async Task Login_AdminWithMfa_ReturnsMfaRequired_WithoutTokens()
+    public async Task Login_AdminWithMfa_ReturnsMfaRequiredWithPreAuthCookie()
     {
         var ct = TestContext.Current.CancellationToken;
         using var factory = new ApiFactory(Database, new FakeClock());
@@ -151,8 +152,34 @@ public sealed class RefreshTokenTests(TestDatabase database) : IntegrationTest(d
 
         response.StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
         (await AuthTestFlow.ProblemCodeAsync(response)).ShouldBe(ErrorCodes.MfaRequired);
-        cookie.ShouldBeNull();
-        (await AuthTestFlow.RowsAsync(Database, user.Id)).ShouldBeEmpty();
+
+        // 09.3.2-T3: the password step answers the challenge document — the single-use token in the body
+        // and the pre-auth cookie — but no session: the refresh cookie and its family arrive at the
+        // second step alone.
+        var body = JsonSerializer.Deserialize<JsonElement>(await response.Content.ReadAsStringAsync(ct));
+        var mfaToken = body.GetProperty("mfaToken").GetString();
+        mfaToken.ShouldNotBeNullOrWhiteSpace("the 401 mfa_required body carries the challenge token");
+        mfaToken!.Length.ShouldBe(43, "32 random bytes base64url (BD4)");
+        body.TryGetProperty("accessToken", out _).ShouldBeFalse("the password step issues no session token");
+        cookie.ShouldBeNull("the MFA step sets no refresh cookie");
+
+        var mfaCookie = response.Headers.TryGetValues("Set-Cookie", out var values)
+            ? values.SingleOrDefault(value => value.StartsWith("__Secure-nts_mfa=", StringComparison.Ordinal))
+            : null;
+        mfaCookie.ShouldNotBeNull("the MFA step writes the __Secure-nts_mfa pre-auth cookie");
+        var flags = mfaCookie!.ToLowerInvariant();
+        flags.ShouldContain("httponly");
+        flags.ShouldContain("secure");
+        flags.ShouldContain("samesite=strict");
+        flags.ShouldContain("path=/api/v1/auth");
+        flags.ShouldContain("max-age=300");
+
+        (await AuthTestFlow.RowsAsync(Database, user.Id)).ShouldBeEmpty("no family exists until the second step");
+
+        var stored = await AuthTestFlow.ScalarAsync(
+            Database,
+            $"SELECT token_hash FROM auth_challenges WHERE user_id = '{user.Id}'");
+        stored.ShouldBe(AuthTestFlow.Hash(mfaToken), "only the token's SHA-256 hex reaches the row (BD16)");
     }
 
     [Fact]

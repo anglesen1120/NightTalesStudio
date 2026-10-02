@@ -17,6 +17,8 @@
       node's reference rules cover it too.
     -->
     <ProjectReference Include="..\..\src\NightTales.MptAdapter\NightTales.MptAdapter.csproj" />
+    <!-- The mock is the third node assembly the reference rules cover (11 README D3). -->
+    <ProjectReference Include="..\..\tools\mock-mpt\NightTales.MockMpt.csproj" />
   </ItemGroup>
 
   <!--

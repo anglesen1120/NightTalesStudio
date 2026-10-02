@@ -7,6 +7,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using NightTales.Api.Http;
+using NightTales.Application.Abstractions.Storage;
 using NightTales.Domain.Common;
 using NightTales.Infrastructure.Persistence;
 using NightTales.TestKit.Database;
@@ -35,8 +36,10 @@ public sealed class ApiFactory(TestDatabase database, FakeClock clock) : WebAppl
     public const string PublicOrigin = "https://api.nighttales.test";
 
     private readonly List<Action<IEndpointRouteBuilder>> _endpointMappings = [];
+    private readonly List<Action<IServiceCollection>> _serviceOverrides = [];
     private readonly List<KeyValuePair<string, string?>> _settings = [];
     private readonly List<ILoggerProvider> _logProviders = [];
+    private readonly List<Action<IServiceCollection>> _serviceConfigurations = [];
 
     /// <summary>
     /// Registers routes that only exist in the test host (the probe endpoints of
@@ -111,6 +114,24 @@ public sealed class ApiFactory(TestDatabase database, FakeClock clock) : WebAppl
         return client;
     }
 
+    /// Replaces or adds services in the host's collection — the sibling of <see cref="MapEndpoints"/>
+    /// for tests that must swap a port (a recording blob store, a fixed audit writer, an aging health
+    /// cache) instead of adding a route.
+    /// </summary>
+    /// <remarks>
+    /// The actions run inside the host's own <c>ConfigureServices</c>, after the test scheme and the
+    /// fake clock are in place, so a replacement wins over the production registration.
+    /// </remarks>
+    /// <param name="configure">The service registrations the test needs.</param>
+    /// <returns>This factory, so a call site reads <c>new ApiFactory(...).ConfigureServices(...)</c>.</returns>
+    public ApiFactory ConfigureServices(Action<IServiceCollection> configure)
+    {
+        ArgumentNullException.ThrowIfNull(configure);
+        _serviceConfigurations.Add(configure);
+
+        return this;
+    }
+
     /// <summary>
     /// An authenticated client: every request carries <c>X-Test-User</c> and <c>X-Test-Role</c>, and
     /// the <see cref="TestAuthHandler"/> turns them into an authenticated principal.
@@ -146,6 +167,25 @@ public sealed class ApiFactory(TestDatabase database, FakeClock clock) : WebAppl
         }
 
         return client;
+    }
+
+    /// <summary>
+    /// Replaces or adds services on top of the production composition root (09 README D13: hand-written
+    /// fakes, no mocking library), exactly like <c>WorkerHost.ConfigureServices</c> does for the Worker.
+    /// </summary>
+    /// <remarks>
+    /// The action runs after the host's own registrations, so the documented pattern is
+    /// <c>services.RemoveAll&lt;T&gt;(); services.AddScoped&lt;T, Fake&gt;();</c> — the same one
+    /// <c>EmailHarness</c> uses for <c>ISmtpEmailSender</c>. A test that needs a port to answer
+    /// deterministically (a TOTP verifier, a security alerter) adds it here before the host starts.
+    /// </remarks>
+    /// <param name="configure">The service-collection action to apply.</param>
+    public ApiFactory WithServices(Action<IServiceCollection> configure)
+    {
+        ArgumentNullException.ThrowIfNull(configure);
+        _serviceOverrides.Add(configure);
+
+        return this;
     }
 
     /// <summary>A client without the test headers: the host sees it as anonymous.</summary>
@@ -195,6 +235,12 @@ public sealed class ApiFactory(TestDatabase database, FakeClock clock) : WebAppl
         builder.UseSetting(TestSigningKey.ConfigurationKey, TestSigningKey.Pem);
         builder.UseSetting($"{AppOptions.SectionName}:{nameof(AppOptions.PublicOrigin)}", PublicOrigin);
 
+        // 09.7.2-T1 (09 README BD10/BD12): the blob store's endpoint. The checked-in `appsettings.json`
+        // names the dev SeaweedFS (`http://127.0.0.1:8333`), which a test host must not try to reach: a
+        // closed loopback port fails in microseconds and keeps the prober's log quiet, while the buckets,
+        // TTLs and marker key still come from the checked-in section (so a test can assert them).
+        builder.UseSetting($"{StorageSettings.SectionName}:{nameof(StorageSettings.ServiceUrl)}", UnreachableStorageUrl);
+
         // 09.2.6-T3: the pepper the address hash of `email_messages` is salted with. The committed value is
         // the development placeholder, which the e-mail validator refuses outside Development, so the test
         // host supplies the run's own — the same shape a deployment's secret store provides (09 README
@@ -211,6 +257,9 @@ public sealed class ApiFactory(TestDatabase database, FakeClock clock) : WebAppl
         builder.UseSetting(TestKek.PathConfigurationKey, TestKek.SharedPath);
         builder.UseSetting(TestKek.PasswordConfigurationKey, TestKek.SharedPassword);
     }
+
+    /// <summary>The storage endpoint a test host is pointed at: a closed loopback port.</summary>
+    public const string UnreachableStorageUrl = "http://127.0.0.1:9";
 
     /// <inheritdoc />
     protected override void ConfigureWebHost(IWebHostBuilder builder)
@@ -247,6 +296,11 @@ public sealed class ApiFactory(TestDatabase database, FakeClock clock) : WebAppl
             services.RemoveAll<IClock>();
             services.AddSingleton<IClock>(clock);
 
+            foreach (var override1 in _serviceOverrides)
+            {
+                override1(services);
+            }
+
             services.AddAuthentication(TestAuthHandler.SchemeName)
                 .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>(
                     TestAuthHandler.SchemeName,
@@ -266,6 +320,11 @@ public sealed class ApiFactory(TestDatabase database, FakeClock clock) : WebAppl
             {
                 services.AddSingleton<IStartupFilter>(
                     new MapEndpointsStartupFilter([.. _endpointMappings]));
+            }
+
+            foreach (var configure in _serviceConfigurations)
+            {
+                configure(services);
             }
         });
     }

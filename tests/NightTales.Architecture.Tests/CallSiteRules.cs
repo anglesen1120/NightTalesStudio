@@ -22,10 +22,10 @@ internal sealed record CallSite(
     string DeclaringType);
 
 /// <summary>
-/// Call-site rules that need the IL body: <c>IgnoreQueryFilters</c> (D10) and <c>AddDbContextPool</c>
-/// (09.2.1). A lambda compiles to a compiler-generated nested type, so the scan attributes a hit to
-/// the outermost declaring type (09.1.2-T1). Generic calls carry a <c>MethodSpec</c> token, which is
-/// unwrapped before the member is read.
+/// Call-site rules that need the IL body: <c>IgnoreQueryFilters</c> (D10), <c>AddDbContextPool</c>
+/// (09.2.1) and <c>new HttpClient</c> (11 README F13). A lambda compiles to a compiler-generated nested
+/// type, so the scan attributes a hit to the outermost declaring type (09.1.2-T1). Generic calls carry a
+/// <c>MethodSpec</c> token, which is unwrapped before the member is read.
 /// </summary>
 public sealed class CallSiteRules
 {
@@ -37,6 +37,8 @@ public sealed class CallSiteRules
     private const ushort LdToken = 0xD0;
     private const string IgnoreQueryFilters = "IgnoreQueryFilters";
     private const string AddDbContextPool = "AddDbContextPool";
+    private const string Constructor = ".ctor";
+    private const string HttpClientType = "System.Net.Http.HttpClient";
 
     /// <summary>The opcodes that name a member: the set the member-name rules scan for.</summary>
     private static readonly ushort[] MemberResolvingOpcodes = [Call, CallVirt, LdFtn, LdVirtFtn];
@@ -80,6 +82,34 @@ public sealed class CallSiteRules
             $"{nameof(AddDbContextPool_NeverUsed)}: AddDbContextPool is banned (09.2.1); found {string.Join("; ", violations)}");
     }
 
+    /// <summary>
+    /// A <c>new HttpClient(...)</c> may be constructed only by the approved producers (11 README F13/D13):
+    /// the pinned-TLS render-node connection factory and the pre-existing breached-password range checker.
+    /// A node client built anywhere else would skip the pin, redirect, proxy and timeout rules the factory
+    /// owns, so this stays an allow-list rather than a style rule.
+    /// </summary>
+    [Fact]
+    public void HttpClient_IsOnlyConstructedByTheApprovedProducers()
+    {
+        var sites = FindNewObjects(HttpClientType);
+
+        // Non-vacuity: the factory must actually construct the client, or a scanner regression would let
+        // the rule pass while guarding nothing (11 README F13 names the factory as the producer).
+        sites.ShouldContain(
+            site => FullName(site) == "NightTales.Infrastructure.Rendering.RenderNodeConnectionFactory",
+            "the pinned-TLS render-node connection factory is the HttpClient producer of 11 README F13");
+
+        var violations = sites
+            .Where(site => !AllowLists.HttpClientProducerTypeNames.Contains(FullName(site)))
+            .Select(site => $"{FullName(site)}.{site.Method} constructs a new {HttpClientType}")
+            .ToList();
+
+        violations.ShouldBeEmpty(
+            $"{nameof(HttpClient_IsOnlyConstructedByTheApprovedProducers)}: only "
+            + $"{string.Join(", ", AllowLists.HttpClientProducerTypeNames)} may construct a new {HttpClientType} "
+            + $"(11 README F13); found {string.Join("; ", violations)}");
+    }
+
     private static bool IsIgnoreQueryFiltersAllowed(CallSite site) =>
         site.OutermostNamespace == AllowLists.IgnoreQueryFiltersNamespacePrefix
         || site.OutermostNamespace.StartsWith(
@@ -88,6 +118,30 @@ public sealed class CallSiteRules
             site.OutermostNamespace.Length == 0
                 ? site.OutermostType
                 : site.OutermostNamespace + "." + site.OutermostType);
+
+    /// <summary>The site's declaring type as <c>namespace.Type</c>, the form the allow-lists match.</summary>
+    private static string FullName(CallSite site) => Join(site.OutermostNamespace, site.OutermostType);
+
+    /// <summary>
+    /// Every <c>newobj</c> site that constructs an instance of <paramref name="typeFullName"/>, across the
+    /// source assemblies. Only <c>newobj</c> is scanned: a <c>call</c> to a constructor (for example from a
+    /// derived type's initialiser) is not a construction and is deliberately out of scope.
+    /// </summary>
+    private static List<CallSite> FindNewObjects(string typeFullName)
+    {
+        var sites = new List<CallSite>();
+        foreach (var assembly in ArchitectureModel.SourceAssemblies)
+        {
+            Collect(
+                assembly,
+                called => string.Equals(called, Constructor, StringComparison.Ordinal),
+                [NewObj],
+                null,
+                sites);
+        }
+
+        return [.. sites.Where(site => string.Equals(site.DeclaringType, typeFullName, StringComparison.Ordinal))];
+    }
 
     private static List<CallSite> FindCalls(string memberName)
     {

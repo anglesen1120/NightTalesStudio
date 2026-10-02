@@ -36,6 +36,28 @@ x-dev-env: &dev-env
   DataProtection__KekPfxPath: /run/nts-dev/dp-kek.pfx
   DataProtection__KekPfxPassword: ${DEV_KEK_PASSWORD:?set DEV_KEK_PASSWORD in .env (tools/dev/up.sh generates the PFX with it)}
 
+# Storage and mail for the two app hosts (11.1.1-T2). Inside the compose network they use the
+# service names (T41); the native path uses the loopback values tools/dev/up.sh exports. The keys are
+# the canonical settings names — Storage:ServiceUrl/AccessKey/SecretKey/Region and
+# Storage:Buckets:{Media,Public,Music} of StorageSettings, and Email:Smtp:*/Email:From:Address —
+# never the flat `Smtp` alias: both hosts' appsettings.json commits Email:Smtp:Host/Port, which wins
+# over the alias, so an alias spelling would leave the container dialling its own loopback instead of
+# the `mail` service (09.2.6-T3; the flat .env names stay STORAGE_*/SMTP_* and are interpolated here).
+# The credentials come from .env like every other value, with the safe dev defaults from .env.example.
+x-storage-mail-env: &storage-mail-env
+  Storage__ServiceUrl: http://storage:8333
+  Storage__AccessKey: ${STORAGE_ACCESS_KEY:-dev}
+  Storage__SecretKey: ${STORAGE_SECRET_KEY:-dev-secret-local}
+  Storage__Region: ${STORAGE_REGION:-us-east-1}
+  Storage__Buckets__Media: ${STORAGE_BUCKET_MEDIA:-nt-media-dev}
+  Storage__Buckets__Public: ${STORAGE_BUCKET_PUBLIC:-nt-public-dev}
+  Storage__Buckets__Music: ${STORAGE_BUCKET_MUSIC:-nt-music-dev}
+  Email__Smtp__Host: mail
+  Email__Smtp__Port: "1025"
+  Email__Smtp__Username: ${SMTP_USER:-dev}
+  Email__Smtp__Password: ${SMTP_PASSWORD:-dev-secret-local}
+  Email__From__Address: ${SMTP_FROM:-dev@nighttales.local}
+
 services:
   postgres:
     image: postgres:17-alpine
@@ -61,9 +83,8 @@ services:
       - path: .nts/dev/config/compose.env
         required: false
     environment:
-      <<: [*app-env, *dev-env]
+      <<: [*app-env, *dev-env, *storage-mail-env]
       ASPNETCORE_HTTP_PORTS: "8080;8081"   # public 8080 + internal 8081 (02 D10) [RULED — README §10 T10]
-      # mail/storage settings are appended by 11.1.1-T2
     ports: ["127.0.0.1:5000:8080"]        # only the public listener is published; 8081 stays on the compose network (T10)
     depends_on:
       postgres: { condition: service_healthy }
@@ -79,7 +100,7 @@ services:
     build: { context: ., dockerfile: src/NightTales.Worker/Dockerfile }
     image: nighttales-worker:dev
     environment:
-      <<: [*app-env, *dev-env]
+      <<: [*app-env, *dev-env, *storage-mail-env]
       Worker__HealthPort: "8082"
       # The listener must bind the container's interface, not its loopback, or the published port
       # below could never reach it (the Dockerfile's app default is 127.0.0.1). The host side stays
@@ -94,6 +115,37 @@ services:
       timeout: 5s
       retries: 12
       start_period: 30s
+
+  mock-mpt:
+    # The fake render node (11.1.2-T1, 11 README D14/F25): the optional Compose variant used by e2e.yml and
+    # image smoke. The daily path is native (`tools/dev/up.sh` runs `dotnet run --project tools/mock-mpt` on
+    # 127.0.0.1:8090, 11 CR-16). `expose` and never `ports`: the mock is reachable only from the compose
+    # network, so nothing in the stack is reachable from a café LAN (D14, 05 D15 S2).
+    build: { context: ., dockerfile: tools/mock-mpt/Dockerfile }
+    image: nighttales-mock-mpt:dev
+    environment:
+      # Same value as .env.example/tools/dev/up.sh: the core rejects < 32 bytes (05 D15 S3), so the old
+      # 12-byte `dev-mock-key` fallback left a fresh checkout (no .env) permanently unhealthy. This is also
+      # the variable the --healthcheck probe below reads, so a custom key is probed with the real value
+      # (11.1.2-T1 review fixes CODE-1/CODE-2).
+      RenderNodeServer__ApiKey: ${MOCK_API_KEY:-dev-mock-api-key-local-0123456789}
+      RenderNodeServer__MaxConcurrentTasks: ${MOCK_MAX_CONCURRENT:-2}
+      MOCK_RENDER_SECONDS: ${MOCK_RENDER_SECONDS:-20}
+      MOCK_VIDEO_SECONDS: ${MOCK_VIDEO_SECONDS:-10}
+      # Consumed by 11.1.2-T2; accepted (and inert) here so one .env drives both.
+      MOCK_FAIL_RATE: ${MOCK_FAIL_RATE:-0}
+      MOCK_FAIL_MODE: ${MOCK_FAIL_MODE:-}
+      MOCK_IMAGE_REPORT: ${MOCK_IMAGE_REPORT:-ok}
+    volumes: ["./worker-node/contract/fixtures:/fixtures:ro"]   # README §10 T33: fixture edits need no rebuild
+    expose: ["8090"]
+    healthcheck:
+      # The mock's own --healthcheck mode (11.1.2-T1 review fixes CODE-1/CODE-2): one authenticated
+      # GET /v1/health with the same key resolution the server uses, so the runtime image needs no curl and a
+      # custom MOCK_API_KEY is probed with the real value. The key travels as a header, never on argv (01 D9).
+      test: ["CMD", "dotnet", "NightTales.MockMpt.dll", "--healthcheck"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
 
   web:
     profiles: ["web"]                      # image defined by 10.1.1-T2 (10 CR-2)
@@ -111,5 +163,45 @@ services:
       timeout: 5s
       retries: 12
 
+  storage:
+    # SeaweedFS S3 gateway (11.1.1-T2, D14; Apache-2.0, E11). Digest-pinned: a version bump is a
+    # hand edit (T12). Only the S3 port is published, on loopback; master (9333), filer (8888) and
+    # the volume server (8084) stay inside the compose network, so nothing reaches MPT's 8080.
+    # `-master.volumeSizeLimitMB=64` is the same value the native path uses: the 30 GB default
+    # leaves no free volume slot for a new bucket (04.2.3-T1 rehearsal).
+    image: chrislusf/seaweedfs@sha256:4e61d15fd35994cb1e43e1e553dff106794841fd9a99ade2fc8c8bfce4d7872d  # 4.48
+    command: ["server", "-dir=/data", "-s3", "-s3.port=8333", "-master.volumeSizeLimitMB=64"]
+    environment:
+      # `-s3` reads these; they are the same .env rows the client and tools/dev/storage-init.sh use.
+      AWS_ACCESS_KEY_ID: ${STORAGE_ACCESS_KEY:-dev}
+      AWS_SECRET_ACCESS_KEY: ${STORAGE_SECRET_KEY:-dev-secret-local}
+    ports:
+      - "127.0.0.1:8333:8333"             # S3 API (the third dev port that collides with the native path)
+    volumes: ["seaweedfs:/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:9333/cluster/status || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 15s
+
+  mail:
+    # Mailpit: the local SMTP sink and its UI/API (11.1.1-T2, D14; MIT, E11). Digest-pinned.
+    # `MP_SMTP_AUTH_ACCEPT_ANY`/`_ALLOW_INSECURE` match the native
+    # `--smtp-auth-accept-any --smtp-auth-allow-insecure`, so .env's SMTP_USER/SMTP_PASSWORD work.
+    image: axllent/mailpit@sha256:ed9b00c609e77e99c79b93f1178255ebc271868920f2c69a8d166bd5634ed10d  # v1.31.3
+    environment:
+      MP_SMTP_AUTH_ACCEPT_ANY: "1"        # dev only: any credentials accepted
+      MP_SMTP_AUTH_ALLOW_INSECURE: "1"
+    ports:
+      - "127.0.0.1:1025:1025"             # SMTP
+      - "127.0.0.1:8025:8025"             # UI + API
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8025/api/v1/info >/dev/null || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
 volumes:
   pgdata: {}
+  seaweedfs: {}

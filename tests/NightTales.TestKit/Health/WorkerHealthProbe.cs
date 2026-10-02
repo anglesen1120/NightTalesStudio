@@ -13,6 +13,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using NightTales.Application.Abstractions.Identity;
+using NightTales.Application.Abstractions.Storage;
 using NightTales.Domain.Common;
 using NightTales.Infrastructure.Identity;
 using NightTales.Infrastructure.Jobs;
@@ -20,6 +21,7 @@ using NightTales.Infrastructure.Persistence;
 using NightTales.TestKit.Database;
 using NightTales.TestKit.Email;
 using NightTales.TestKit.Security;
+using NightTales.TestKit.Storage;
 using NightTales.TestKit.Time;
 using NightTalesWorkerHost::NightTales.Worker.DependencyInjection;
 using NightTalesWorkerHost::NightTales.Worker.Health;
@@ -90,6 +92,11 @@ public sealed class WorkerHealthProbe : IAsyncDisposable
             // the same two settings the harness's WorkerHost hands its host.
             [TestKek.PathConfigurationKey] = TestKek.SharedPath,
             [TestKek.PasswordConfigurationKey] = TestKek.SharedPassword,
+
+            // 09.7.2-T1 (09 README BD10/BD12): the blob store's endpoint. A closed loopback port, so the
+            // storage prober of this probe fails fast without waiting on a dev container's hostname (see
+            // StorageTestEndpoint).
+            [$"{StorageSettings.SectionName}:{nameof(StorageSettings.ServiceUrl)}"] = StorageTestEndpoint.Unreachable,
         };
 
         // 09.2.6-T3: the Worker's composition root registers the e-mail pipeline, which validates the
@@ -131,6 +138,9 @@ public sealed class WorkerHealthProbe : IAsyncDisposable
 
     /// <summary>A client over the probe's loopback listener.</summary>
     public HttpClient CreateClient() => new() { BaseAddress = _baseAddress };
+
+    /// <summary>The started host's services, for a test that must read (or freeze) a cache the probe reports.</summary>
+    public IServiceProvider Services => _app.Services;
 
     /// <summary>The production storage without its startup backoff, so a probe fails over in milliseconds.</summary>
     private static PostgreSqlStorage CreateStorage(string connectionString)

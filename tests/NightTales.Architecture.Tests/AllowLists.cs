@@ -10,6 +10,23 @@ internal static class AllowLists
     internal const string IgnoreQueryFiltersNamespacePrefix = "NightTales.Application.Features.Admin";
 
     /// <summary>
+    /// The only <c>src</c> types that may construct a <c>System.Net.Http.HttpClient</c> directly
+    /// (11 README F13/D13): the pinned-TLS render-node connection factory, plus the pre-existing
+    /// breached-password range checker inside the Identity registration. Every other transport goes
+    /// through an <c>IHttpClientFactory</c> or through the factory, so a node client cannot be created
+    /// without the pin/redirect/timeout rules (11.3.3-T1 step 9). The <c>tools/mock-mpt</c> entry is the
+    /// dev-only mock's <c>--healthcheck</c> loopback self-probe (11.1.2-T1), not a render-node client.
+    /// </summary>
+    internal static readonly IReadOnlySet<string> HttpClientProducerTypeNames =
+        new HashSet<string>(StringComparer.Ordinal)
+        {
+            "NightTales.Infrastructure.Rendering.RenderNodeConnectionFactory",
+            "NightTales.Infrastructure.DependencyInjection.IdentityServiceCollectionExtensions",
+            "NightTales.MockMpt.Health.MockHealthCheck",
+        };
+
+
+    /// <summary>
     /// Extra types outside <see cref="IgnoreQueryFiltersNamespacePrefix"/> that may bypass the
     /// tenant filter. Matched as fully-qualified names (<c>namespace.Type</c>) so a same-named type
     /// in another namespace does not inherit the bypass.
@@ -115,6 +132,25 @@ internal static class AllowLists
         "Serilog",
         "SQLitePCLRaw.",
     ];
+
+    /// <summary>
+    /// 11 README D3: <c>NightTales.MockMpt</c> (tools/mock-mpt) may reference only the server core and the
+    /// contract — never Domain, Application or Infrastructure, so the fake node loads without the backend.
+    /// The bare <c>Microsoft.AspNetCore</c> meta-assembly and <c>Microsoft.Win32.Primitives</c> are what the
+    /// Web SDK host pulls in (the core is a library and does not); both are framework assemblies, not
+    /// backend code.
+    /// </summary>
+    internal static readonly IReadOnlySet<string> MockMptAllowedReferences =
+        new HashSet<string>(StringComparer.Ordinal)
+        {
+            "ErrorOr",
+            "Microsoft.AspNetCore",
+            "Microsoft.Win32.Primitives",
+            "NightTales.RenderNode.Contract",
+            "NightTales.RenderNode.Server",
+        };
+
+    internal static readonly IReadOnlyList<string> MockMptAllowedPrefixes = RenderNodeServerAllowedPrefixes;
 
     /// <summary>02 CR-19 lets the Fetcher use any <c>Microsoft.Extensions.*</c> package.</summary>
     internal static readonly IReadOnlyList<string> FetcherAllowedPrefixes =

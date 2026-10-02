@@ -1,4 +1,5 @@
 using System.Net;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using NightTales.Application.Abstractions;
@@ -77,10 +78,13 @@ public sealed class WorkerCompositionTests
     [Fact]
     public void WorkerHost_BuildsWithTheComposeHealthAddress()
     {
-        // The Compose service's value must be accepted by the real host composition.
-        using var app = WorkerApplication.Build(BuildArgs("--Worker:HealthAddress", "0.0.0.0"));
+        using var app = WorkerApplication.Build(BuildArgs(
+            "--environment", Environments.Production,
+            "--Worker:HealthAddress", "0.0.0.0", "--Worker:HealthPort", "6001"));
 
-        app.ShouldNotBeNull();
+        app.Environment.EnvironmentName.ShouldBe(Environments.Production);
+        app.Configuration.GetValue<string>("Worker:HealthAddress").ShouldBe("0.0.0.0");
+        app.Configuration.GetValue<int>("Worker:HealthPort").ShouldBe(6001);
     }
 
     private static string[] BuildArgs(params string[] extra)

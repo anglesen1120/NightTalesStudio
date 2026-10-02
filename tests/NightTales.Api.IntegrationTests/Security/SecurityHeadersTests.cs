@@ -16,7 +16,10 @@ namespace NightTales.Api.IntegrationTests.Security;
 /// <summary>
 /// The hardening response headers of 09 README BD12 through the real host (09.9.4-T1): the three
 /// headers are on every response — including an error one — HSTS is on outside Development only, and
-/// the docs-page CSP follows the content type (HTML yes, JSON no).
+/// the CSP follows the content type: a JSON answer never carries one, and an HTML answer carries the
+/// policy of the surface that produced it. The probe routes stand in for the docs page
+/// (<see cref="DocsCsp"/>); the jobs dashboard's own policy is asserted by <c>JobsDashboardTests</c>
+/// (09.2.6-T2), which is the Api's second HTML surface.
 /// </summary>
 /// <remarks>
 /// The header-writing middleware and the exception handler interact: <c>UseExceptionHandler</c> clears
@@ -126,7 +129,8 @@ public sealed class SecurityHeadersTests(TestDatabase database) : IntegrationTes
 
         response.Content.Headers.ContentType.ShouldNotBeNull();
         response.Content.Headers.ContentType!.MediaType.ShouldBe("text/html");
-        Header(response, Csp).ShouldBe(DocsCsp, "the docs surface is the one HTML answer of the Api (BD12)");
+        Header(response, Csp).ShouldBe(
+            DocsCsp, "an HTML answer outside /internal/jobs carries the docs policy (BD12)");
     }
 
     [Fact]
@@ -141,7 +145,7 @@ public sealed class SecurityHeadersTests(TestDatabase database) : IntegrationTes
 
         response.Content.Headers.ContentType.ShouldNotBeNull();
         response.Content.Headers.ContentType!.MediaType.ShouldBe("application/json");
-        Header(response, Csp).ShouldBeEmpty("the CSP belongs to the HTML docs page alone");
+        Header(response, Csp).ShouldBeEmpty("the CSP belongs to the HTML answers alone");
         ShouldCarryHardeningHeaders(response);
     }
 

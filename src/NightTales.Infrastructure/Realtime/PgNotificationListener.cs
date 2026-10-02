@@ -62,7 +62,14 @@ public sealed class PgNotificationListener(string connectionString) : INpgsqlLis
     /// <inheritdoc />
     public async Task ConnectAsync(CancellationToken cancellationToken)
     {
-        var connection = new NpgsqlConnection(connectionString);
+        // A pooled backend can still carry unread NOTIFY frames from its previous LISTEN session.
+        // Reset runs when the next command is sent, after our callback is attached. Own the backend
+        // instead: this instance already keeps one long-lived connection and disposal closes it.
+        var listenerConnectionString = new NpgsqlConnectionStringBuilder(connectionString)
+        {
+            Pooling = false,
+        }.ConnectionString;
+        var connection = new NpgsqlConnection(listenerConnectionString);
         connection.Notification += OnNotification;
 
         try
