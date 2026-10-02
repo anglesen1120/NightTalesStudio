@@ -36,6 +36,23 @@ x-dev-env: &dev-env
   DataProtection__KekPfxPath: /run/nts-dev/dp-kek.pfx
   DataProtection__KekPfxPassword: ${DEV_KEK_PASSWORD:?set DEV_KEK_PASSWORD in .env (tools/dev/up.sh generates the PFX with it)}
 
+# Storage and mail for the two app hosts (11.1.1-T2). Inside the compose network they use the
+# service names (T41); the native path uses the loopback values tools/dev/up.sh exports. The
+# credentials come from .env like every other value, with the safe dev defaults from .env.example.
+x-storage-mail-env: &storage-mail-env
+  STORAGE__ENDPOINT: http://storage:8333
+  STORAGE__ACCESS_KEY: ${STORAGE_ACCESS_KEY:-dev}
+  STORAGE__SECRET_KEY: ${STORAGE_SECRET_KEY:-dev-secret-local}
+  STORAGE__REGION: ${STORAGE_REGION:-us-east-1}
+  STORAGE__BUCKET_MEDIA: ${STORAGE_BUCKET_MEDIA:-nt-media-dev}
+  STORAGE__BUCKET_PUBLIC: ${STORAGE_BUCKET_PUBLIC:-nt-public-dev}
+  STORAGE__BUCKET_MUSIC: ${STORAGE_BUCKET_MUSIC:-nt-music-dev}
+  SMTP__HOST: mail
+  SMTP__PORT: "1025"
+  SMTP__USER: ${SMTP_USER:-dev}
+  SMTP__PASSWORD: ${SMTP_PASSWORD:-dev-secret-local}
+  SMTP__FROM: ${SMTP_FROM:-dev@nighttales.local}
+
 services:
   postgres:
     image: postgres:17-alpine
@@ -61,9 +78,8 @@ services:
       - path: .nts/dev/config/compose.env
         required: false
     environment:
-      <<: [*app-env, *dev-env]
+      <<: [*app-env, *dev-env, *storage-mail-env]
       ASPNETCORE_HTTP_PORTS: "8080;8081"   # public 8080 + internal 8081 (02 D10) [RULED — README §10 T10]
-      # mail/storage settings are appended by 11.1.1-T2
     ports: ["127.0.0.1:5000:8080"]        # only the public listener is published; 8081 stays on the compose network (T10)
     depends_on:
       postgres: { condition: service_healthy }
@@ -79,7 +95,7 @@ services:
     build: { context: ., dockerfile: src/NightTales.Worker/Dockerfile }
     image: nighttales-worker:dev
     environment:
-      <<: [*app-env, *dev-env]
+      <<: [*app-env, *dev-env, *storage-mail-env]
       Worker__HealthPort: "8082"
       # The listener must bind the container's interface, not its loopback, or the published port
       # below could never reach it (the Dockerfile's app default is 127.0.0.1). The host side stays
@@ -111,5 +127,45 @@ services:
       timeout: 5s
       retries: 12
 
+  storage:
+    # SeaweedFS S3 gateway (11.1.1-T2, D14; Apache-2.0, E11). Digest-pinned: a version bump is a
+    # hand edit (T12). Only the S3 port is published, on loopback; master (9333), filer (8888) and
+    # the volume server (8084) stay inside the compose network, so nothing reaches MPT's 8080.
+    # `-master.volumeSizeLimitMB=64` is the same value the native path uses: the 30 GB default
+    # leaves no free volume slot for a new bucket (04.2.3-T1 rehearsal).
+    image: chrislusf/seaweedfs@sha256:4e61d15fd35994cb1e43e1e553dff106794841fd9a99ade2fc8c8bfce4d7872d  # 4.48
+    command: ["server", "-dir=/data", "-s3", "-s3.port=8333", "-master.volumeSizeLimitMB=64"]
+    environment:
+      # `-s3` reads these; they are the same .env rows the client and tools/dev/storage-init.sh use.
+      AWS_ACCESS_KEY_ID: ${STORAGE_ACCESS_KEY:-dev}
+      AWS_SECRET_ACCESS_KEY: ${STORAGE_SECRET_KEY:-dev-secret-local}
+    ports:
+      - "127.0.0.1:8333:8333"             # S3 API (the third dev port that collides with the native path)
+    volumes: ["seaweedfs:/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:9333/cluster/status || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 15s
+
+  mail:
+    # Mailpit: the local SMTP sink and its UI/API (11.1.1-T2, D14; MIT, E11). Digest-pinned.
+    # `MP_SMTP_AUTH_ACCEPT_ANY`/`_ALLOW_INSECURE` match the native
+    # `--smtp-auth-accept-any --smtp-auth-allow-insecure`, so .env's SMTP_USER/SMTP_PASSWORD work.
+    image: axllent/mailpit@sha256:ed9b00c609e77e99c79b93f1178255ebc271868920f2c69a8d166bd5634ed10d  # v1.31.3
+    environment:
+      MP_SMTP_AUTH_ACCEPT_ANY: "1"        # dev only: any credentials accepted
+      MP_SMTP_AUTH_ALLOW_INSECURE: "1"
+    ports:
+      - "127.0.0.1:1025:1025"             # SMTP
+      - "127.0.0.1:8025:8025"             # UI + API
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8025/api/v1/info >/dev/null || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
 volumes:
   pgdata: {}
+  seaweedfs: {}

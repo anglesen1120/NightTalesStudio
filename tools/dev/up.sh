@@ -195,6 +195,18 @@ mock_fixture="$(row MOCK_FIXTURE '')"
 mock_render_seconds="$(row MOCK_RENDER_SECONDS 20)"
 storage_access="$(row STORAGE_ACCESS_KEY dev)"
 storage_secret="$(row STORAGE_SECRET_KEY dev-secret-local)"
+# The flat STORAGE_*/SMTP_* rows 11.1.1-T2 documents in .env.example. The hosts read them under the
+# double-underscore configuration names (Storage:*, the Smtp alias EmailOptions binds, 09.2.6-T3).
+storage_endpoint="$(row STORAGE_ENDPOINT http://127.0.0.1:8333)"
+storage_region="$(row STORAGE_REGION us-east-1)"
+storage_bucket_media="$(row STORAGE_BUCKET_MEDIA nt-media-dev)"
+storage_bucket_public="$(row STORAGE_BUCKET_PUBLIC nt-public-dev)"
+storage_bucket_music="$(row STORAGE_BUCKET_MUSIC nt-music-dev)"
+smtp_host="$(row SMTP_HOST 127.0.0.1)"
+smtp_port="$(row SMTP_PORT 1025)"
+smtp_user="$(row SMTP_USER dev)"
+smtp_password="$(row SMTP_PASSWORD dev-secret-local)"
+smtp_from="$(row SMTP_FROM dev@nighttales.local)"
 
 case "$health_timeout" in ''|*[!0-9]*) die 2 "DEV_HEALTH_TIMEOUT must be a number of seconds" ;; esac
 
@@ -208,6 +220,7 @@ require_port DEV_STORAGE_PORT "$dev_storage_port"
 require_port DEV_STORAGE_VOLUME_PORT "$dev_storage_volume_port"
 require_port DEV_MAIL_SMTP_PORT "$dev_mail_smtp_port"
 require_port DEV_MAIL_UI_PORT "$dev_mail_ui_port"
+require_port SMTP_PORT "$smtp_port"
 
 # A value that must survive a dotenv round trip (native env and the compose env_file) may not carry
 # whitespace, a double quote or a dollar sign.
@@ -412,6 +425,25 @@ fi
 # Each *_environment function runs inside the background subshell of its start function, so the
 # values stay out of every argv (01 D9) and reach the child through the environment.
 
+# storage_mail_environment: the flat STORAGE__*/SMTP__* keys both hosts read (11.1.1-T2, T41). The
+# emulators listen on loopback, so these are the loopback values; the compose variant overrides the
+# host part to the service names (`storage:8333`, `mail:1025`) in docker-compose.yml. Credentials
+# travel in the environment, never in argv (01 D9) — this runs inside the host's subshell.
+storage_mail_environment() {
+  export STORAGE__ENDPOINT="$storage_endpoint"
+  export STORAGE__ACCESS_KEY="$storage_access"
+  export STORAGE__SECRET_KEY="$storage_secret"
+  export STORAGE__REGION="$storage_region"
+  export STORAGE__BUCKET_MEDIA="$storage_bucket_media"
+  export STORAGE__BUCKET_PUBLIC="$storage_bucket_public"
+  export STORAGE__BUCKET_MUSIC="$storage_bucket_music"
+  export SMTP__HOST="$smtp_host"
+  export SMTP__PORT="$smtp_port"
+  export SMTP__USER="$smtp_user"
+  export SMTP__PASSWORD="$smtp_password"
+  export SMTP__FROM="$smtp_from"
+}
+
 api_environment() {
   local signing_key
   signing_key="$(cat "$jwt_pem")"
@@ -422,6 +454,7 @@ api_environment() {
   export Auth__Jwt__SigningKey="$signing_key"
   export DataProtection__KekPfxPath="$kek_pfx"
   export DataProtection__KekPfxPassword="$dev_kek_pass"
+  storage_mail_environment
   # The 8081 internal listener is code-configured by 02.5.2-T2; the row is set here so the address
   # never moves off loopback (T10).
   export Fetcher__Internal__ListenAddress="127.0.0.1"
@@ -437,6 +470,7 @@ worker_environment() {
   export ConnectionStrings__Postgres="$connection_string"
   export DataProtection__KekPfxPath="$kek_pfx"
   export DataProtection__KekPfxPassword="$dev_kek_pass"
+  storage_mail_environment
   if [ "$mock_present" -eq 1 ]; then
     # D13: the node tuple the Worker's registry binds; the key is RENDER_NODE_<NAME>_API_KEY (F26).
     export RENDER_NODE_MOCK_API_KEY="${mock_api_key}"
