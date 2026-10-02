@@ -2,6 +2,8 @@ using System.Diagnostics;
 using System.Net;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using NightTales.MptAdapter.Tests.Fakes;
 using NightTales.RenderNode.Contract;
 using NightTales.RenderNode.Server;
@@ -155,4 +157,62 @@ public sealed class MptClientTests
         (await harness.RowAsync(record.TaskId)).ShouldBe(record, "the poller must not change the row on a 401");
         harness.Logs.Contains("mpt_unauthorized").ShouldBeTrue();
     }
+
+    [Theory]
+    [InlineData("http://127.0.0.1:8080")]
+    [InlineData("http://127.5.6.7:8080")]
+    [InlineData("http://[::1]:8080")]
+    public void MptBaseUrl_LoopbackIpLiteralOverHttp_Accepted(string url)
+    {
+        var options = new AdapterOptions { MptBaseUrl = url };
+
+        Should.NotThrow(() => NewClient(options));
+        AdapterOptions.ParseLoopbackMptBaseUrl(url).ShouldBe(new Uri(url));
+    }
+
+    [Theory]
+    [InlineData("https://remote.example")]
+    [InlineData("http://remote.example:8080")]
+    [InlineData("http://localhost:8080")]
+    [InlineData("http://10.0.0.5:8080")]
+    [InlineData("http://[2001:db8::1]:8080")]
+    [InlineData("https://127.0.0.1:8080")]
+    public void MptBaseUrl_NotLoopbackIpLiteralOverHttp_Rejected(string url)
+    {
+        var options = new AdapterOptions { MptBaseUrl = url };
+
+        var failure = Should.Throw<ArgumentException>(() => NewClient(options));
+
+        failure.Message.ShouldContain("Adapter:MptBaseUrl");
+        failure.Message.ShouldNotContain("remote.example", Case.Insensitive, "the message must not echo the value");
+    }
+
+    [Theory]
+    [InlineData("not a url")]
+    [InlineData("http://")]
+    public void MptBaseUrl_Malformed_KeepsUriFormatException(string url)
+    {
+        var options = new AdapterOptions { MptBaseUrl = url };
+
+        Should.Throw<UriFormatException>(() => NewClient(options));
+    }
+
+    [Fact]
+    public void MptBaseUrl_Null_NamesTheKey()
+    {
+        var options = new AdapterOptions { MptBaseUrl = null! };
+
+        var failure = Should.Throw<ArgumentNullException>(() => NewClient(options));
+
+        failure.ParamName.ShouldBe("Adapter:MptBaseUrl");
+    }
+
+    private static MptClient NewClient(AdapterOptions options) =>
+        new(
+            MptHttpClient.Create(options),
+            Options.Create(options),
+            Options.Create(new RenderNodeServerOptions { MaxConcurrentTasks = 1 }),
+            new FakeProcessStartReader(),
+            new TaskDirCleaner(Options.Create(options), NullLogger<TaskDirCleaner>.Instance),
+            NullLogger<MptClient>.Instance);
 }

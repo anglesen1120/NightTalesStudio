@@ -152,7 +152,7 @@ public sealed class MptClient : IRenderBackend
         _cleaner = cleaner;
 
         var bound = options.Value;
-        _baseAddress = new Uri(bound.MptBaseUrl, UriKind.Absolute);
+        _baseAddress = AdapterOptions.ParseLoopbackMptBaseUrl(bound.MptBaseUrl);
         _readTimeout = TimeSpan.FromSeconds(Math.Max(1, bound.MptReadTimeoutSeconds));
         _threads = bound.ResolveMptThreads(serverOptions.Value.MaxConcurrentTasks);
 

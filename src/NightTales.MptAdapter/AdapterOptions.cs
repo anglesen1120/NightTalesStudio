@@ -1,3 +1,5 @@
+using System.Net;
+
 namespace NightTales.MptAdapter;
 
 /// <summary>
@@ -16,6 +18,33 @@ public sealed class AdapterOptions
 
     /// <summary><c>Adapter:MptBaseUrl</c>; loopback only, because MPT never leaves the node (D8/D11).</summary>
     public string MptBaseUrl { get; set; } = "http://127.0.0.1:8080";
+
+    /// <summary>
+    /// The loopback-only rule for <see cref="MptBaseUrl"/>, enforced where the MPT key is sent.
+    /// Accepts only an absolute <c>http</c> URL whose host is a loopback IP literal (<c>127.0.0.0/8</c>,
+    /// <c>[::1]</c>, or IPv4-mapped loopback). Hostnames, <c>localhost</c> included, are refused because DNS
+    /// could resolve them off the node (11 README H4), and <c>https</c> is refused because MPT is plain http on
+    /// loopback (D6). A malformed value keeps <see cref="Uri"/>'s own <see cref="UriFormatException"/>.
+    /// The configured base path is kept, so it must be the MPT root (<c>/</c>).
+    /// </summary>
+    /// <exception cref="ArgumentException">The URL is not a loopback IP-literal http URL; the message names the
+    /// key but not the value.</exception>
+    public static Uri ParseLoopbackMptBaseUrl(string value)
+    {
+        ArgumentNullException.ThrowIfNull(value, "Adapter:MptBaseUrl");
+
+        var uri = new Uri(value, UriKind.Absolute);
+        var host = uri.Host.Trim('[', ']');
+        if (uri.Scheme != Uri.UriSchemeHttp
+            || !IPAddress.TryParse(host, out var address)
+            || !IPAddress.IsLoopback(address))
+        {
+            throw new ArgumentException(
+                "Adapter:MptBaseUrl must be an absolute http URL whose host is a loopback IP address (127.0.0.0/8 or [::1]); MPT never leaves the node.");
+        }
+
+        return uri;
+    }
 
     /// <summary><c>Adapter:MptRoot</c>; <c>storage/tasks</c> under it is 05 D8's task-dir root.</summary>
     public string MptRoot { get; set; } = "/opt/nts/current/mpt";

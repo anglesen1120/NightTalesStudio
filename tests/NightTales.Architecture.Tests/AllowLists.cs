@@ -15,7 +15,9 @@ internal static class AllowLists
     /// breached-password range checker inside the Identity registration. Every other transport goes
     /// through an <c>IHttpClientFactory</c> or through the factory, so a node client cannot be created
     /// without the pin/redirect/timeout rules (11.3.3-T1 step 9). The <c>tools/mock-mpt</c> entry is the
-    /// dev-only mock's <c>--healthcheck</c> loopback self-probe (11.1.2-T1), not a render-node client.
+    /// dev-only mock's <c>--healthcheck</c> loopback self-probe (11.1.2-T1), not a render-node client. The
+    /// <c>MptHttpClient</c> entry is the adapter's own loopback client to MPT on the node (11.3.5-T2, 11 README
+    /// D6: no redirects, 2 s connect timeout), not a backend-to-node client.
     /// </summary>
     internal static readonly IReadOnlySet<string> HttpClientProducerTypeNames =
         new HashSet<string>(StringComparer.Ordinal)
@@ -23,6 +25,7 @@ internal static class AllowLists
             "NightTales.Infrastructure.Rendering.RenderNodeConnectionFactory",
             "NightTales.Infrastructure.DependencyInjection.IdentityServiceCollectionExtensions",
             "NightTales.MockMpt.Health.MockHealthCheck",
+            "NightTales.MptAdapter.MptHttpClient",
         };
 
 
