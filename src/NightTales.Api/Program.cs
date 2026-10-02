@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Http.Connections;
 using NightTales.Api;
 using NightTales.Api.DependencyInjection;
 using NightTales.Api.Endpoints;
+using NightTales.Api.Health;
 using NightTales.Api.Http;
 using NightTales.Api.Internal.Jobs;
 using NightTales.Api.RateLimiting;
@@ -16,8 +17,15 @@ using NightTales.Infrastructure.Persistence;
 using NightTales.Infrastructure.Persistence.Flags;
 using NightTales.Infrastructure.Persistence.Seeding;
 using NightTales.Infrastructure.Storage;
+using NightTales.Infrastructure.Telemetry;
+using Serilog;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// 09.9.3-T1 (09 README BD12): Serilog (compact JSON on stdout, OTLP sink when `Otlp:Enabled`), OpenTelemetry
+// traces/metrics and the custom metrics; the health checks behind /health/ready.
+builder.AddNtsTelemetry("nts-api");
+builder.Services.AddApiHealth();
 
 // 09.1.5-T1 (09 README D14): registers the OpenAPI document provider the build-time generator needs.
 // 09.9.5-T1 (09 README D7): the generated `ProblemDetails` component gains the two members its CLR
@@ -135,6 +143,29 @@ if (args.Contains("--seed", StringComparer.Ordinal))
 
 app.UseExceptionHandler();
 
+// 09.9.3-T1: one structured line per request — the route template (never the raw path), status, duration,
+// episode id and the trace/span ids, so a log line joins its trace. The caller hash is added by the enricher.
+app.UseSerilogRequestLogging(options =>
+{
+    options.Logger = app.Services.GetRequiredService<Serilog.ILogger>();
+    options.EnrichDiagnosticContext = (diagnostics, http) =>
+    {
+        diagnostics.Set("route", (http.GetEndpoint() as RouteEndpoint)?.RoutePattern.RawText);
+        diagnostics.Set("statusCode", http.Response.StatusCode);
+        if (http.Request.RouteValues.TryGetValue("episodeId", out var episodeId) && episodeId is not null)
+        {
+            diagnostics.Set("episodeId", episodeId.ToString());
+        }
+
+        var activity = System.Diagnostics.Activity.Current;
+        if (activity is not null)
+        {
+            diagnostics.Set("traceId", activity.TraceId.ToString());
+            diagnostics.Set("spanId", activity.SpanId.ToString());
+        }
+    };
+});
+
 // 09.3.5-T1 (09 README BD14): the trust boundary first — the forwarded-headers middleware rewrites the
 // connection's address and scheme from `X-Forwarded-For`/`X-Forwarded-Proto`, and only for a peer inside
 // a configured network, so the address every later decision uses is one the load balancer vouched for.
@@ -191,7 +222,7 @@ app.MapWhen(
 // `RequireRateLimiting` a pass-through partition, so a probe fleet that shares one address can never
 // exhaust a shared bucket, and the generated OpenAPI document (09.1.5-T1 writes it at build, no route is
 // mapped for it) is not limited either. Both are cheap, cache-only reads.
-app.MapGet("/health/live", () => Results.Ok());
+app.MapHealthEndpoints();
 
 // 09.3.1-T1 (09 README D14): the auth route group; in P it carries POST /api/v1/auth/register, which
 // answers 403 registration_closed until 09.3.1-T3 swaps the registration flow.

@@ -12,9 +12,7 @@
     `Content` items of this project flow transitively to every referencing host and test project.
   -->
   <ItemGroup>
-    <Content Include="..\..\seed\catalog.dev.json;..\..\seed\style-templates.v1.json;..\..\seed\voices.v1.json"
-             Link="seed\%(RecursiveDir)%(Filename)%(Extension)"
-             CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\..\seed\catalog.dev.json;..\..\seed\style-templates.v1.json;..\..\seed\voices.v1.json" Link="seed\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>
@@ -31,6 +29,14 @@
     <PackageReference Include="Microsoft.AspNetCore.Identity.EntityFrameworkCore" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" PrivateAssets="all" />
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />
+    <PackageReference Include="Npgsql.OpenTelemetry" />
+    <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" />
+    <PackageReference Include="OpenTelemetry.Extensions.Hosting" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.AspNetCore" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.Http" />
+    <PackageReference Include="Serilog.AspNetCore" />
+    <PackageReference Include="Serilog.Formatting.Compact" />
+    <PackageReference Include="Serilog.Sinks.OpenTelemetry" />
   </ItemGroup>
 
   <!--
@@ -40,8 +46,7 @@
     terms are confirmed (09.3.1-T2, S); the lookup needs no change.
   -->
   <ItemGroup>
-    <EmbeddedResource Include="Identity/Resources/breached-passwords.txt"
-                      LogicalName="NightTales.Infrastructure.Identity.Resources.breached-passwords.txt" />
+    <EmbeddedResource Include="Identity/Resources/breached-passwords.txt" LogicalName="NightTales.Infrastructure.Identity.Resources.breached-passwords.txt" />
   </ItemGroup>
 
   <!--

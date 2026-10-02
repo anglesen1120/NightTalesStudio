@@ -56,6 +56,11 @@ public sealed partial class OutboxDispatcher(
     /// <summary>The activity name of one delivery; its parent is the stored <c>trace_parent</c> (NFR-09-4).</summary>
     public const string ActivityName = "outbox.handle";
 
+    /// <summary>The activity source the tracer provider listens to so delivery spans are exported.</summary>
+    public const string ActivitySourceName = "NightTales.Outbox";
+
+    private static readonly ActivitySource Source = new(ActivitySourceName);
+
     /// <summary>
     /// The exponential backoff of a failed message, in seconds: <c>2^attempts</c> capped at 5 minutes (D11).
     /// </summary>
@@ -304,9 +309,25 @@ public sealed partial class OutboxDispatcher(
         return null;
     }
 
-    /// <summary>The delivery activity, parented on the command's trace so the two spans join (NFR-09-4).</summary>
+    /// <summary>
+    /// The delivery activity, parented on the command's trace so the two spans join (NFR-09-4). With a
+    /// listener on <see cref="ActivitySourceName"/> (the OpenTelemetry tracer, 09.9.3-T1) it is exported;
+    /// without one it stays the in-process activity it always was.
+    /// </summary>
     private static Activity? StartActivity(string? traceParent)
     {
+        // A listener that declined this source (its ShouldListenTo returned false) still counts for
+        // HasListeners, so the exported path must tolerate a null: the in-process activity below keeps
+        // the trace parent wiring every pre-OTel caller relied on.
+        var parent = default(ActivityContext);
+        var hasParent = traceParent is { Length: > 0 } && ActivityContext.TryParse(traceParent, null, out parent);
+
+        if (Source.HasListeners()
+            && Source.StartActivity(ActivityName, ActivityKind.Consumer, hasParent ? parent : default) is { } exported)
+        {
+            return exported;
+        }
+
         var activity = new Activity(ActivityName);
         if (traceParent is { Length: > 0 })
         {
