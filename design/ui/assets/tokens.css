@@ -1,0 +1,169 @@
+/* Night Tales Studio — “Phòng thu” design tokens.
+   Dark is the default. Both themes expose the same --nts-* keys.
+   Be Vietnam Pro is local-only and limited to the approved 400/500/600 weights. */
+
+@font-face { font-family: 'Be Vietnam Pro'; font-style: normal; font-display: swap; font-weight: 400;
+  src: url(fonts/be-vietnam-pro-vietnamese-400-normal.woff2) format('woff2');
+  unicode-range: U+0102-0103,U+0110-0111,U+0128-0129,U+0168-0169,U+01A0-01A1,U+01AF-01B0,U+0300-0301,U+0303-0304,U+0308-0309,U+0323,U+0329,U+1EA0-1EF9,U+20AB; }
+@font-face { font-family: 'Be Vietnam Pro'; font-style: normal; font-display: swap; font-weight: 400;
+  src: url(fonts/be-vietnam-pro-latin-ext-400-normal.woff2) format('woff2');
+  unicode-range: U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF; }
+@font-face { font-family: 'Be Vietnam Pro'; font-style: normal; font-display: swap; font-weight: 400;
+  src: url(fonts/be-vietnam-pro-latin-400-normal.woff2) format('woff2');
+  unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD; }
+@font-face { font-family: 'Be Vietnam Pro'; font-style: normal; font-display: swap; font-weight: 500;
+  src: url(fonts/be-vietnam-pro-vietnamese-500-normal.woff2) format('woff2');
+  unicode-range: U+0102-0103,U+0110-0111,U+0128-0129,U+0168-0169,U+01A0-01A1,U+01AF-01B0,U+0300-0301,U+0303-0304,U+0308-0309,U+0323,U+0329,U+1EA0-1EF9,U+20AB; }
+@font-face { font-family: 'Be Vietnam Pro'; font-style: normal; font-display: swap; font-weight: 500;
+  src: url(fonts/be-vietnam-pro-latin-ext-500-normal.woff2) format('woff2');
+  unicode-range: U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF; }
+@font-face { font-family: 'Be Vietnam Pro'; font-style: normal; font-display: swap; font-weight: 500;
+  src: url(fonts/be-vietnam-pro-latin-500-normal.woff2) format('woff2');
+  unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD; }
+@font-face { font-family: 'Be Vietnam Pro'; font-style: normal; font-display: swap; font-weight: 600;
+  src: url(fonts/be-vietnam-pro-vietnamese-600-normal.woff2) format('woff2');
+  unicode-range: U+0102-0103,U+0110-0111,U+0128-0129,U+0168-0169,U+01A0-01A1,U+01AF-01B0,U+0300-0301,U+0303-0304,U+0308-0309,U+0323,U+0329,U+1EA0-1EF9,U+20AB; }
+@font-face { font-family: 'Be Vietnam Pro'; font-style: normal; font-display: swap; font-weight: 600;
+  src: url(fonts/be-vietnam-pro-latin-ext-600-normal.woff2) format('woff2');
+  unicode-range: U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF; }
+@font-face { font-family: 'Be Vietnam Pro'; font-style: normal; font-display: swap; font-weight: 600;
+  src: url(fonts/be-vietnam-pro-latin-600-normal.woff2) format('woff2');
+  unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD; }
+
+:root,
+[data-theme='dark'] {
+  color-scheme: dark;
+  --nts-color-room: #202523;
+  --nts-color-sheet: #2A312E;
+  --nts-color-ink: #F4F5EF;
+  --nts-color-muted: #BFC9C4;
+  --nts-color-signal: #6ECAC0;
+  --nts-color-on-signal: #202523;
+  --nts-color-playhead: #FF786C;
+  --nts-color-on-playhead: #202523;
+  --nts-color-line: #52605A;
+  --nts-color-soft: #343C38;
+  --nts-color-scrim: rgba(11, 15, 13, .76);
+  --nts-color-signal-soft: color-mix(in srgb, var(--nts-color-signal) 16%, var(--nts-color-sheet));
+  --nts-color-playhead-soft: color-mix(in srgb, var(--nts-color-playhead) 15%, var(--nts-color-sheet));
+  --nts-topic-ghost: #9EC9C4;
+  --nts-topic-spiritual: #C1B6C5;
+  --nts-topic-true-crime: #D5B3A8;
+}
+
+[data-theme='light'] {
+  color-scheme: light;
+  --nts-color-room: #EEF2F0;
+  --nts-color-sheet: #FFFFFF;
+  --nts-color-ink: #16211D;
+  --nts-color-muted: #4B5A54;
+  --nts-color-signal: #006C65;
+  --nts-color-on-signal: #FFFFFF;
+  --nts-color-playhead: #B43B35;
+  --nts-color-on-playhead: #FFFFFF;
+  --nts-color-line: #B8C2BD;
+  --nts-color-soft: #E1E8E4;
+  --nts-color-scrim: rgba(22, 33, 29, .54);
+  --nts-color-signal-soft: color-mix(in srgb, var(--nts-color-signal) 10%, var(--nts-color-sheet));
+  --nts-color-playhead-soft: color-mix(in srgb, var(--nts-color-playhead) 9%, var(--nts-color-sheet));
+  --nts-topic-ghost: #17655F;
+  --nts-topic-spiritual: #65556B;
+  --nts-topic-true-crime: #7D493A;
+}
+
+:root {
+  /* Compatibility role names used by the Angular token task. */
+  --nts-color-bg: var(--nts-color-room);
+  --nts-color-surface: var(--nts-color-sheet);
+  --nts-color-surface-variant: var(--nts-color-soft);
+  --nts-color-surface-sunk: var(--nts-color-room);
+  --nts-color-on-surface: var(--nts-color-ink);
+  --nts-color-on-surface-muted: var(--nts-color-muted);
+  --nts-color-primary: var(--nts-color-signal);
+  --nts-color-primary-soft: var(--nts-color-signal-soft);
+  --nts-color-on-primary: var(--nts-color-on-signal);
+  --nts-color-outline: var(--nts-color-line);
+  --nts-color-hairline: var(--nts-color-line);
+  --nts-color-error: var(--nts-color-playhead);
+  --nts-color-error-soft: var(--nts-color-playhead-soft);
+  --nts-color-warn: var(--nts-color-playhead);
+  --nts-color-warn-soft: var(--nts-color-playhead-soft);
+  --nts-color-success: var(--nts-color-signal);
+  --nts-color-success-soft: var(--nts-color-signal-soft);
+  --nts-color-info: var(--nts-color-signal);
+  --nts-color-info-soft: var(--nts-color-signal-soft);
+  --nts-color-focus: var(--nts-color-signal);
+
+  --nts-font-sans: 'Be Vietnam Pro', system-ui, sans-serif;
+  --nts-font-mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+
+  --nts-space-1: 4px;
+  --nts-space-2: 8px;
+  --nts-space-3: 12px;
+  --nts-space-4: 16px;
+  --nts-space-5: 24px;
+  --nts-space-6: 32px;
+  --nts-space-7: 48px;
+  --nts-space-8: 64px;
+  --nts-space-9: 96px;
+
+  --nts-radius-control: 6px;
+  --nts-radius-sheet: 3px;
+  --nts-radius-dialog: 10px;
+  --nts-radius-pill: 999px;
+  --nts-radius-sm: var(--nts-radius-control);
+  --nts-radius-md: var(--nts-radius-control);
+  --nts-radius-lg: var(--nts-radius-dialog);
+
+  --nts-type-hero-size: 3.625rem;
+  --nts-type-hero-line: 1.017;
+  --nts-type-hero-weight: 600;
+  --nts-type-page-size: 1.875rem;
+  --nts-type-page-line: 1.1;
+  --nts-type-page-weight: 600;
+  --nts-type-section-size: 1.375rem;
+  --nts-type-section-line: 1.273;
+  --nts-type-section-weight: 600;
+  --nts-type-story-size: 1.1875rem;
+  --nts-type-story-line: 1.737;
+  --nts-type-story-weight: 400;
+  --nts-type-body-size: .9375rem;
+  --nts-type-body-line: 1.533;
+  --nts-type-body-weight: 400;
+  --nts-type-label-size: .9375rem;
+  --nts-type-label-line: 1.533;
+  --nts-type-label-weight: 500;
+  --nts-type-meta-size: .75rem;
+  --nts-type-meta-line: 1.5;
+  --nts-type-meta-weight: 400;
+  --nts-type-display-size: var(--nts-type-hero-size);
+  --nts-type-display-line: var(--nts-type-hero-line);
+  --nts-type-headline-size: var(--nts-type-page-size);
+  --nts-type-headline-line: var(--nts-type-page-line);
+  --nts-type-title-size: var(--nts-type-section-size);
+  --nts-type-title-line: var(--nts-type-section-line);
+  --nts-type-caption-size: var(--nts-type-meta-size);
+  --nts-type-caption-line: var(--nts-type-meta-line);
+
+  --nts-measure: 68ch;
+  --nts-target-min: 44px;
+  --nts-control-h: 36px;
+  --nts-control-h-sm: 28px;
+  --nts-icon-btn: 32px;
+  --nts-icon-btn-sm: 28px;
+  --nts-type-control-size: .875rem;
+  --nts-motion-fast: 160ms;
+  --nts-motion-base: 240ms;
+  --nts-ease: cubic-bezier(.2, .7, .2, 1);
+  --nts-dialog-shadow: 0 24px 64px rgba(10, 15, 13, .4);
+  --nts-menu-shadow: 0 12px 32px rgba(10, 15, 13, .28);
+}
+
+@media (pointer: coarse) {
+  :root { --nts-control-h: 44px; --nts-control-h-sm: 36px; --nts-icon-btn: 44px; --nts-icon-btn-sm: 36px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root { --nts-motion-fast: 0ms; --nts-motion-base: 0ms; }
+  *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: 0ms !important; }
+}

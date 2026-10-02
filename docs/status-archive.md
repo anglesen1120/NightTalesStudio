@@ -4,6 +4,20 @@ History moved out of STATUS.md to keep the live file small. The initial archive 
 
 ## Resume-here history (Current/Previous blocks, Next actions)
 
+### Superseded Session 2 delivery block (before PR #91 base reconciliation)
+
+- **Current (2026-10-02 (3), delivery).** `develop` @ `00e7d5d`; Session 2 PRs #84–#90 and #92 flags are open, not merged.
+- **Gates:** independent QA/T3/deltas/full local gates closed: password reset7e0ece8, storage08943b6, flags488bd10 (#92 CI run37019151851 4/4 green). Worktrees ../nts-wt/<task-id>. Live storage used explicit credentials; temporary #85 test merge explicitly aborted.
+- **CI repairs closed:** #84 canonical Storage env exports (`50e131d`) and #88 runner ffmpeg (`29d45bf`) passed delta reviews and CI (`37005073439`, `37004851202`).
+- **Delivery blockers:** #85 first; #86/#87 migrations share the same base, later merge regenerates after develop. Password reset stays local until a migration slot opens; storage stays local until #84 merges (lane B).
+- **Next:** owner merges; then deliver storage and password reset on refreshed develop. B `13.3.1-T1` after storage, `/me` after flags, OTLP after storage + registry; migration fillers `05.3.2-T3`, `02.2.2-T1`, `02.2.4-T1` wait. Web UI stays in its separate session.
+- **SEC-01:** owner chose range API + real top-N seed fallback (09 W3-O3); current bundled seed is synthetic. `09.3.1-T2` replaces it before registration opens.
+- **Gates/environment:** risk-tier gates per 00 §10; native Mac stack, runtime under `NTS_HOME`, keys stay out of git. `gate.sh` provides `Email__AddressHashPepper`.
+- **Setup:** `docs/dev-setup.md`; `git config core.hooksPath .githooks`; worker bootstrap + smoke per `worker-node/README.md`.
+
+### Earlier published blocks
+
+
 - **Current (2026-10-02 (2)).** Session 2 start-now set merged. `develop` @ `7f91446` has #72 09.9.5-T1, #73 04.2.2-T2, #74 09.10.4-T1, #75 02.2.1-T1, #76 02.2.3-T1, #77 09.3.5-T1 + 09.8.1-T2, #78 05.5.1-T2, #79 11.3.5-T1, #80 RefreshTokenTests flake fix, #81 11.1.1-T1, #82 09.2.6-T3 (migration regenerated on top of #77 as `20261002083148_09_EmailMessages`), #83 STATUS. No open PR. 09.7.2-T1 code still uncommitted in `../nts-wt/09.7.2-T1`.
 - **Next (lane order, §Session 2 plan):** A `09.3.2-T3` → `09.2.6-T2`; B `11.1.1-T2` → gate `09.7.2-T1` → `13.3.1-T1`; C `11.3.5-T2` ∥ `11.3.3-T1` → `11.1.2-T1`; E `09.3.3-T1`; migration fillers `05.3.2-T3`, `02.2.2-T1`, `02.2.4-T1`, `09.9.2-T2` → `09.3.4-T1` (rule 3: at most 2 migration tasks waiting); `09.9.3-T1` after `09.7.2-T1` + `11.3.3-T1`. Web UI stays with its own session (`../nts-wt/ui-design`). Build/test env also needs `Email__AddressHashPepper` (`gate.sh` exports it).
 - **SEC-01 decided (owner 2026-10-01, 09 W3-O3):** range API + real top-N seed fallback (option 3). The bundled `breached-passwords.txt` is still a synthetic placeholder; 09.3.1-T2 replaces it (seed licence checked before commit) and implements fail-open-to-seed, before registration opens (09.3.1-T3, S).

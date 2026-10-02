@@ -8,10 +8,10 @@ Legend: `done` (acceptance checks run and passed) · `doing` · `blocked (<who>)
 
 Keep this block ≤ 15 lines: current state and next step only. Move the previous block to the archive when you replace it.
 
-- **Current (2026-10-02 (3), delivery).** `develop` @ `00e7d5d`; Session 2 PRs #84–#90 and #92 flags are open, not merged.
-- **Gates:** independent QA/T3/deltas/full local gates closed: password reset7e0ece8, storage08943b6, flags488bd10 (#92 CI run37019151851 4/4 green). Worktrees ../nts-wt/<task-id>. Live storage used explicit credentials; temporary #85 test merge explicitly aborted.
-- **CI repairs closed:** #84 canonical Storage env exports (`50e131d`) and #88 runner ffmpeg (`29d45bf`) passed delta reviews and CI (`37005073439`, `37004851202`).
-- **Delivery blockers:** #85 first; #86/#87 migrations share the same base, later merge regenerates after develop. Password reset stays local until a migration slot opens; storage stays local until #84 merges (lane B).
+- **Current (2026-10-02 (3), advisor follow-up).** Remote develop125167369a3f4411f067729795c77a45d4b49d72 includes approved UI handoff #91. Session 2 PRs #84–#90 and #92 remain open; #93 is the live STATUS delivery.
+- **Gate scope:** on implementation base00e7d5d, QA/T3/deltas/full local gates closed for password7e0ece8, storage08943b6, flags488bd10 (#92 CI37019151851 4/4). PR #91 changed design/plans/STATUS only, no backend/runtime/test/workflow paths; no claim of a new combined-tree gate.
+- **CI repairs closed:** #84 canonical Storage env exports `50e131d` + alias wording `97c9662`, CI `37021057158` 4/4; then docs-only CR-47 SMTP key note `8680f21`. #88 ffmpeg `29d45bf` CI `37004851202` 4/4. These runs validate each branch head, not a new combined backend tree.
+- **Delivery blockers:** #85 first; #86/#87 migrations share the same base, later merge regenerates after develop. Password reset stays local until a migration slot opens. Storage is draft PR #94 (`13dca85`, develop merged in): mark it ready after #84 merges.
 - **Next:** owner merges; then deliver storage and password reset on refreshed develop. B `13.3.1-T1` after storage, `/me` after flags, OTLP after storage + registry; migration fillers `05.3.2-T3`, `02.2.2-T1`, `02.2.4-T1` wait. Web UI stays in its separate session.
 - **SEC-01:** owner chose range API + real top-N seed fallback (09 W3-O3); current bundled seed is synthetic. `09.3.1-T2` replaces it before registration opens.
 - **Gates/environment:** risk-tier gates per 00 §10; native Mac stack, runtime under `NTS_HOME`, keys stay out of git. `gate.sh` provides `Email__AddressHashPepper`.
@@ -30,9 +30,10 @@ Per-task evidence for `done` rows: `docs/status-archive.md` §Per-plan evidence 
 | 05 Video/subtitles | 10 (05.5.1-T2 #78) | 05.3.2-T3, 05.2.1-T1, 05.5.2 |
 | 09 Backend | 29 tasks merged (Session 2: #72 09.9.5-T1, #74 09.10.4-T1, #77 09.3.5-T1 + 09.8.1-T2, #82 09.2.6-T3) | Open, gated + CI green: #86 MFA login, #90 jobs dashboard, #92 flags. Password reset/storage gated locally pending migration queue / #84 |
 | 11 Worker deployment | 11.1.1-T1 #81, 11.3.5-T1 #79; 11.2.1-T1 (proposal only; sign-off deferred to phase 2, owner 2026-09-30) | Open, gated: #84 storage/mail, #87 node registry, #88 mock-mpt, #89 MPT adapter; the rest is phase 2 (11 CR-18) |
+| 10 Web UI | HTML design deck approved by the owner 2026-10-02 (`design/ui/index.html`, v2 “Phòng thu”, compact controls `192cc73`); linked from 12 T0 tasks and 13 feature plans | Angular implementation not started; per-story design caveats and 10.1.3-T1 prerequisites remain in the T0 Outputs |
 | 13 Compliance | 13.1.1-T1, 13.1.2-T1 (PR #35) | 13.2.1-T1 → 13.2.2-T1, 10.3.1-T1 pages; 13.1.1-T2 / 13.1.2-T2 lawyer rows (O1) |
 
-Plans 06, 07, 08, 10, 12: not started. Order: `plans/features/README.md`.
+Plans 06, 07, 08, 12: not started. Plan 10: approved HTML design handoff; implementation not started. Order: `plans/features/README.md`.
 
 ## Session 2 plan
 
@@ -41,7 +42,7 @@ Plans 06, 07, 08, 10, 12: not started. Order: `plans/features/README.md`.
 | Lane | Current | Next, after prerequisite merges | Tier | Notes |
 |---|---|---|---|---|
 | A Auth | #86 MFA login, #90 jobs dashboard: open, gated | Owner merges | T3 | #86 has a migration |
-| B Local storage + mail | #84 open, gated; 09.7.2-T1 local08943b6, QA/T3/delta/full gate closed | Storage delivery waits for #84; then 13.3.1-T1 after storage merges | T3 | Native tooling only; not pushed |
+| B Local storage + mail | #84 open, gated; 09.7.2-T1 draft PR #94 `13dca85`, QA/T3/delta gates closed; merged-tree gate (`Category!=Integration`) 935/919 pass/16 skip/0 fail | Mark #94 ready after #84 merges; then 13.3.1-T1 after storage merges | T3 | Native tooling only |
 | C Render node | #87 registry, #88 mock-mpt, #89 MPT backend: open, gated | Owner merges | T3 | #87 has a migration |
 | E E-mail | 09.3.3-T1 local @7e0ece8, QA + T3 + full gate closed | Free migration slot, merge develop and regenerate migration, then PR | T3 | Not pushed; rule 3 |
 | F Seeders/checkers | 05.3.2-T3 not started (04.2.2-T2 / 05.5.1-T2 merged) | Free migration slot, then AddMusicTracks task | T3 | Migration |
@@ -64,14 +65,14 @@ Plans 06, 07, 08, 10, 12: not started. Order: `plans/features/README.md`.
 
 | Task | Status | Note |
 |---|---|---|
-| 11.1.1-T2 Storage + mail | ready for owner merge | PR #84; code/QA/T3/CI closed, canonical exports fixed |
+| 11.1.1-T2 Storage + mail | ready for owner merge | PR #84; code/QA/T3/CI closed, canonical exports fixed, CR-47 recorded (`8680f21`) |
 | Test-fixture concurrency fix | ready for owner merge | PR #85; merge first to remove cross-lane gate flakes |
 | 09.3.2-T3 MFA login | ready for owner merge | PR #86; migration, regenerate if merged after #87 |
 | 11.3.3-T1 Node registry | ready for owner merge | PR #87; migration, regenerate if merged after #86 |
 | 11.1.2-T1 mock-mpt | ready for owner merge | PR #88; ffmpeg CI fix verified |
 | 11.3.5-T2 MPT backend | ready for owner merge | PR #89; all tier gates closed |
 | 09.2.6-T2 Jobs dashboard | ready for owner merge | PR #90; all tier gates closed |
-| 09.7.2-T1 Blob port/presign | blocked (owner #84 merge) | Local08943b6; live QA/T3/delta/full gate closed; not pushed |
+| 09.7.2-T1 Blob port/presign | blocked (owner #84 merge) | Draft PR #94 `13dca85`; live QA/T3/delta gates closed; CI-guard fix: the public-endpoint presign test now skips without `NTS_STORAGE_URL` |
 | 09.3.3-T1 Password reset | blocked (owner merge queue) | Local7e0ece8 gated; merge develop/regenerate migration before delivery |
 | 09.9.2-T2 Feature flags | ready for owner merge | PR #92, head488bd10; QA/T3/delta/full local gate + CI4/4 closed; no migration |
 | 05.3.2-T3 Music metadata | blocked (migration queue) | Not started; at most2 migration tasks waiting |
