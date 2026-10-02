@@ -227,18 +227,18 @@ Each class database's Npgsql pool is cleared before the `DROP DATABASE … WITH 
 ## Optional Compose stack
 
 For end-to-end runs and image smoke only — never required for daily development (11.1.1-T1, 11 CR-16).
-`docker-compose.yml` is one file with one `name: nighttales`: `postgres` (09.1.1-T2), plus `api`,
-`worker` and `web` (11.1.1-T1). Every published port is `127.0.0.1:<host>:<container>`, every service
-has a healthcheck, and every value comes from `.env` (the file has `${VAR:?…}` guards, so no credential
-is committed).
+`docker-compose.yml` is one file with one `name: nighttales`: `postgres` (09.1.1-T2), `api`, `worker`
+and `web` (11.1.1-T1), plus `storage` (SeaweedFS) and `mail` (Mailpit) (11.1.1-T2). Every published
+port is `127.0.0.1:<host>:<container>`, every service has a healthcheck, and every value comes from
+`.env` (the file has `${VAR:?…}` guards, so no credential is committed).
 
 ```bash
 docker compose config --quiet                          # validates the merged file (fails without POSTGRES_PASSWORD).
                                                        # Never print the resolved file: it interpolates secrets.
-docker compose up -d --wait                            # postgres, api and worker all healthy
+docker compose up -d --wait                            # postgres, api, worker, storage and mail all healthy
 docker compose --profile web up -d --wait              # adds web; 10.1.1-T2 owns that image
 docker compose ps --format '{{.Service}} {{.Ports}}'   # every published port starts with 127.0.0.1:
-docker compose down                                    # or: down -v to discard the pgdata volume
+docker compose down                                    # or: down -v to discard the pgdata and seaweedfs volumes
 ```
 
 - The Api and the Worker build from `src/NightTales.Api/Dockerfile` and
@@ -266,11 +266,93 @@ docker compose down                                    # or: down -v to discard 
   host side of a published port.
 - `web` is behind the `web` profile and its image is 10.1.1-T2's, so `docker compose config --quiet`
   validates the definition long before the image exists.
+- `storage` and `mail` are digest-pinned (`chrislusf/seaweedfs` 4.48, `axllent/mailpit` v1.31.3; D14;
+  a bump is a hand edit, T12) and publish only `127.0.0.1:8333`, `127.0.0.1:1025` and
+  `127.0.0.1:8025`. SeaweedFS's master (9333), filer (8888) and volume server (8084) stay on the
+  compose network — 8084 keeps MPT's 8080 free — and its store lives in the `seaweedfs` volume, so
+  `down -v` discards it. Both services carry the healthchecks `up.sh` waits on natively
+  (`/cluster/status`, `/api/v1/info`). The Api and the Worker reach them by service name
+  (`http://storage:8333`, `mail:1025`; T41); `tools/dev/storage-init.sh` still uses the published
+  loopback endpoint, so one command serves both paths.
+- After `up`, run `tools/dev/storage-init.sh` once to create the three dev buckets (D14/D15); after
+  `docker compose down -v` it creates them again (dev data is disposable). SeaweedFS in the compose
+  service also runs with `-master.volumeSizeLimitMB=64`, for the same reason as the native command
+  line above: the 30 GB default leaves no free volume slot for a new bucket.
+
+## Local object storage (SeaweedFS)
+
+Development speaks S3 to a local **SeaweedFS** gateway, started by `tools/dev/up.sh` as its own
+process (11.1.1-T2, D14; Apache-2.0, E11) — never `brew services`, whose stock definition takes no
+flags, binds every interface and would put the volume server on 8080 (MPT, 01 D4). The dev buckets
+are created by `tools/dev/storage-init.sh`.
+
+| Piece | Value |
+|---|---|
+| S3 API | `http://127.0.0.1:8333` (`STORAGE_ENDPOINT`) |
+| master status API | `http://127.0.0.1:9333/cluster/status` (the readiness probe `up.sh` waits on) |
+| volume server | `127.0.0.1:8084` (moved off MPT's 8080) |
+| filer | `127.0.0.1:8888` (unused in dev) |
+| data directory | `.nts/dev/seaweedfs` (git-ignored; `down.sh --volumes` deletes it) |
+| formula | `seaweedfs` 4.48 (Homebrew; `brew install seaweedfs`) |
+
+The exact command line `up.sh` runs (the credentials come from the environment, never argv):
+
+```bash
+AWS_ACCESS_KEY_ID="$STORAGE_ACCESS_KEY" AWS_SECRET_ACCESS_KEY="$STORAGE_SECRET_KEY" \
+  weed server -ip=127.0.0.1 -ip.bind=127.0.0.1 -dir=.nts/dev/seaweedfs \
+    -volume.port=8084 -master.volumeSizeLimitMB=64 -s3 -s3.port=8333
+```
+
+`-master.volumeSizeLimitMB=64` is not optional: SeaweedFS's 30 GB default leaves no free volume slot
+for a new bucket, so the second `create-bucket` fails with `No writable volumes` (04.2.3-T1
+rehearsal). `-s3` reads `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`, which `up.sh` exports from the
+`STORAGE_ACCESS_KEY`/`STORAGE_SECRET_KEY` rows in `.env`, so the server and every client agree.
+
+**Buckets (D15, `<env> = dev`).** `nt-media-dev`, `nt-public-dev` and `nt-music-dev`, plus the
+`music/` and `music-evidence/` prefix markers inside the music bucket. `tools/dev/storage-init.sh`
+creates them idempotently and never deletes; it exits 0 ok / 1 a check failed / 2 usage or
+environment, waits up to `STORAGE_WAIT_SECONDS` (default 60) for the gateway, and uses the host `aws`
+CLI first, `uvx --from awscli aws` next, then the pinned `amazon/aws-cli` container (11 CR-16, T11).
+The container branch is the one client that cannot reach a loopback endpoint: the default
+`STORAGE_ENDPOINT=http://127.0.0.1:8333` would be the helper container's own namespace, so for that
+branch alone a loopback endpoint is rewritten to `host.docker.internal` (macOS Docker/colima resolve
+it to the host). The host clients and the readiness probe keep the endpoint as written.
+
+```bash
+tools/dev/storage-init.sh                                         # run by up.sh (skip with --skip-storage-init)
+aws --endpoint-url http://127.0.0.1:8333 s3api list-buckets       # the three names, again after a re-run
+aws --endpoint-url http://127.0.0.1:8333 s3 ls s3://nt-music-dev/ # PRE music/  PRE music-evidence/
+tools/dev/down.sh --volumes                                       # discard .nts/dev/seaweedfs (dev data is disposable)
+```
+
+**Wiring.** `up.sh` exports the `.env` rows to the Api and the Worker under the canonical
+double-underscore configuration names of each settings type: the flat storage rows are shell input
+only, mapped to the `StorageSettings` property names — `STORAGE_ENDPOINT` → `Storage__ServiceUrl`,
+`STORAGE_ACCESS_KEY` → `Storage__AccessKey`, `STORAGE_SECRET_KEY` → `Storage__SecretKey`,
+`STORAGE_REGION` → `Storage__Region` and `STORAGE_BUCKET_MEDIA`/`__PUBLIC`/`__MUSIC` →
+`Storage__Buckets__Media`/`__Public`/`__Music` (the spelling matters: `Storage__BUCKET_MEDIA` binds as
+`Storage:BucketMedia`, which matches no property; only `ServiceUrl` has a `Storage:Endpoint` alias),
+all loopback; the mail rows keep their flat `SMTP_*` names in `.env` but are exported as the canonical
+`Email__Smtp__Host`/`__Port`/`__Username`/`__Password` and `Email__From__Address`. The optional compose
+services override the storage host part to the service names (`http://storage:8333`; T41) and the mail
+host to `mail:1025`. Nothing but the emulator's own store lives here; the real client (`AmazonS3Client`)
+arrives with 09.7.2-T1.
 
 ## Local mail (Mailpit)
 
 Development sends every e-mail through a local SMTP sink: **Mailpit**, started by `tools/dev/up.sh`
 (11.1.1-T2) on `127.0.0.1:1025`, with its UI and its API at <http://127.0.0.1:8025> (09.2.6-T3).
+MIT-licensed (E11); Homebrew `mailpit` 1.31.3.
+
+```bash
+mailpit -q --disable-version-check --smtp 127.0.0.1:1025 --listen 127.0.0.1:8025 \
+  --database .nts/dev/mailpit/mailpit.db --smtp-auth-accept-any --smtp-auth-allow-insecure
+```
+
+`--smtp-auth-accept-any`/`--smtp-auth-allow-insecure` are the native twins of the compose service's
+`MP_SMTP_AUTH_ACCEPT_ANY`/`MP_SMTP_AUTH_ALLOW_INSECURE`, so the `SMTP_USER`/`SMTP_PASSWORD` rows in
+`.env` are accepted. The store is `.nts/dev/mailpit` (git-ignored; `down.sh --volumes` deletes it).
+A version bump is a hand edit of the formula and of the digest in `docker-compose.yml` (T12).
 
 ```bash
 nc -z 127.0.0.1 1025                            # the SMTP sink every host dials
@@ -290,9 +372,12 @@ export NTS_SMTP_PORT=1025                     # only when the sink does not list
 Both hosts read the pipeline's configuration from `Email:*`, with the loopback defaults committed in
 `appsettings.json`: `Email:Smtp:Host` `127.0.0.1`, `Email:Smtp:Port` `1025`, `Email:Smtp:Security` `None`
 (plaintext is accepted only towards a loopback endpoint, in any environment) and `Email:From:Address`
-`no-reply@nighttales.local`. The flat `SMTP__HOST`/`SMTP__PORT`/`SMTP__USER`/`SMTP__PASSWORD` names that
-11.1.1-T2's `.env` and `up.sh` export are read as an alias and lose to an explicit `Email:Smtp:*` value. A
-deployment overrides `Email__Smtp__Host`, `Email__Smtp__Security` (`StartTls`), `Email__Smtp__Username`,
+`no-reply@nighttales.local`. `up.sh` therefore exports the `.env` `SMTP_*` rows as the canonical
+`Email__Smtp__Host`/`__Port`/`__Username`/`__Password` and `Email__From__Address`; the flat
+`SMTP__HOST`/`SMTP__PORT`/`SMTP__USER`/`SMTP__PASSWORD` spelling remains readable as an alias of
+`Email:Smtp:*`, but an explicit `Email:Smtp:*`/`Email:From:*` value (such as the committed
+`appsettings.json`) wins over it, so the alias cannot override those defaults. A deployment overrides the
+canonical names `Email__Smtp__Host`, `Email__Smtp__Security` (`StartTls`), `Email__Smtp__Username`,
 `Email__Smtp__Password` and its own `Email__AddressHashPepper` — the host refuses to start when the
 transport is plaintext towards a remote server or the address pepper is blank (09 README BD9/BD16).
 
