@@ -328,3 +328,18 @@ Sum 6.0 d (1.0 `10.5.4-T0` design, D19, + 5.0), inside the 12.25 d + 1.0 design 
 - **Monitoring:** no new metric; the existing client error path (`AppErrorMapper` + trace id) covers these calls. e2e artefacts (trace/video) on failure per D15.
 - **Rollback:** pure frontend — reverting the release removes the panels; no data migration, no server state. A half-shipped state is safe because every screen is read-through + ETag-protected writes.
 - **Definition of Done for the folder:** all five tasks' acceptance checkboxes green; both languages; axe clean on all five specs; the 10-W1-studio gate scenario passes; `../README.md` §11 DoR signed after the review pass.
+
+## 12. Angular implementation amendment (2026-10-02)
+
+### Design evidence and implementation reconciliation notes
+
+- Static evidence is in the approved deck [`05-versions-research.html`](../../../../design/ui/screens/05-versions-research.html), including versions `#f-versions-*`, approve/reopen `#f-approve-*`/`#f-reopen-*`, research `#f-research-*`, find-sources `#f-find-*`, bible `#f-bible-*`, and the artifact's `#f-coverage` inventory. Shared token evidence is [`tokens.css`](../../../../design/ui/assets/tokens.css).
+- Static frames do not prove keyboard selection, focus restore, live-region timing or deferred loading. `DiffView` placeholder/loading/error/truncated states, keyboard comparison at 360 px and disabled/submitting form states follow the locked contract; flag to the owner only if a new visual state is needed (does not reopen the approval or block the task). Audio preview is not a capability of these routes; the deck must not turn any audio-looking affordance into scope.
+
+### Angular boundaries and integration readiness
+
+- Routed containers remain `features/episodes/feature/research-page` and `features/series/feature/bible-page`; panels and rows stay in their feature `ui/`; route-provided stores own orchestration; repositories own generated DTO/header/status mapping. `DiffView` remains the WR4 owner from `10.5.4-T1`, imported directly only at deferred consumers rather than re-exported through an eager feature barrel.
+- Every store uses private writable/public readonly signals and replaces arrays/objects. A route/session/entity generation is captured for list/detail pairs, source refreshes, bible title lookup and proposal actions; late results for an old episode/series/selection are discarded and in-flight timers/listeners are destroyed. Typed forms use explicit form→command mappers, async form-state notification and namespaced server errors that preserve local validators and clear on edit/resubmit.
+- Integration is blocked on the story/currentStory/version/research/bible owners listed in `integration-readiness.md`. The currently present basic episode detail is not story generation/editor readiness and must not be extended client-side. Nullable fact-sheet bodies remain a successful empty state; ETag/`If-Match`, nullable/absent values, enum fallbacks and root `errors` arrays are mapped explicitly in data access.
+
+No task ID, size, phase, dependency or estimate changes in this amendment.
