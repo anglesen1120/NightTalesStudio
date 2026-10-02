@@ -434,6 +434,8 @@ public sealed class S3BlobStoreTests
     [Fact]
     public async Task CreateReadUrl_SignsForThePublicEndpoint_WhenConfigured()
     {
+        RequireGateway();
+
         // 10 CR-21: the signature covers the host, so with a distinct browser endpoint the store must
         // sign for that endpoint, not the internal one — a URL signed for ServiceUrl would 403.
         var endpoint = new Uri(Endpoint());
@@ -645,8 +647,12 @@ public sealed class S3BlobStoreTests
             .ShouldNotContain("aws-chunked", Case.Insensitive, "a plain PUT must not persist aws-chunked (QA-ST-4)");
     }
 
-    /// <summary>The store under test, or a skip naming the container it needs.</summary>
-    private static Task<S3BlobStore> StoreAsync()
+    /// <summary>
+    /// Skips the calling test, by name, when the dev gateway it needs is not configured. Every test that
+    /// talks to <c>Endpoint()</c> must call this; the ones that point at <c>StorageTestEndpoint.Unreachable</c>
+    /// or only inspect the client configuration must not.
+    /// </summary>
+    private static void RequireGateway()
     {
         if (string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(StorageUrlVariable)))
         {
@@ -654,6 +660,12 @@ public sealed class S3BlobStoreTests
                 $"Set {StorageUrlVariable} to the dev SeaweedFS gateway (11 D14 / 11.1.1-T2) to run the "
                 + "storage tests, for example NTS_STORAGE_URL=http://localhost:8333.");
         }
+    }
+
+    /// <summary>The store under test, or a skip naming the container it needs.</summary>
+    private static Task<S3BlobStore> StoreAsync()
+    {
+        RequireGateway();
 
         var settings = new StorageSettings
         {
