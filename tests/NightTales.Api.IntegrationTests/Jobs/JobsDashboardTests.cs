@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net;
 using System.Security.Claims;
 using System.Text.RegularExpressions;
@@ -7,9 +8,14 @@ using Hangfire.States;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using NightTales.Api.Http;
 using NightTales.Api.IntegrationTests.Auth;
+using NightTales.Api.IntegrationTests.Harness;
 using NightTales.Api.IntegrationTests.Persistence;
 using NightTales.Api.Internal.Jobs;
 using NightTales.Application.Common.Errors;
@@ -20,6 +26,7 @@ using NightTales.TestKit.Database;
 using NightTales.TestKit.Time;
 using Shouldly;
 using Xunit;
+using HangfireLogProvider = Hangfire.Logging.LogProvider;
 
 namespace NightTales.Api.IntegrationTests.Jobs;
 
@@ -46,6 +53,17 @@ public sealed class JobsDashboardTests(TestDatabase database) : IntegrationTest(
 
     /// <summary>The origin a browser at this host sends on the dashboard's own POSTs.</summary>
     private const string OwnOrigin = "http://localhost";
+
+    /// <summary>The two headers a credentialed cross-origin answer of this surface carries (BD3).</summary>
+    private const string AllowOrigin = "Access-Control-Allow-Origin";
+
+    private const string AllowCredentials = "Access-Control-Allow-Credentials";
+
+    /// <summary>An origin that is not <c>App:PublicOrigin</c>, so the allow-list must refuse it.</summary>
+    private const string ForeignOrigin = "https://evil.test";
+
+    /// <summary>The CSP every other HTML answer keeps (09.9.4-T1, BD12) — the dashboard has its own.</summary>
+    private const string DocsCsp = "default-src 'none'; frame-ancestors 'none'; img-src 'self' data:";
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
@@ -322,6 +340,58 @@ public sealed class JobsDashboardTests(TestDatabase database) : IntegrationTest(
     }
 
     [Fact]
+    public async Task Dashboard_LoginPreflight_IsAnsweredByCors()
+    {
+        using var factory = new ApiFactory(Database, new FakeClock());
+        using var api = factory.AnonymousClient();
+
+        // The browser's preflight of the credentialed mint route: the CORS middleware answers it itself,
+        // before authorization, so it needs no access token — a browser sends none on a preflight.
+        using var allowed = await PreflightAsync(api, LoginPath, ApiFactory.PublicOrigin);
+
+        allowed.StatusCode.ShouldBe(
+            HttpStatusCode.NoContent,
+            "a route that requires authorization must still have its preflight answered by CORS, not challenged with 401");
+        Header(allowed, AllowOrigin).ShouldBe(ApiFactory.PublicOrigin);
+        Header(allowed, AllowCredentials).ShouldBe(
+            "true",
+            "a browser only stores the `__Host-nts-jobs` cookie of a credentialed cross-origin answer (BD3)");
+
+        // A foreign origin is refused in the browser's own terms: the policy is identified, so the
+        // preflight is answered, but it allows neither the origin nor the credentials.
+        using var foreign = await PreflightAsync(api, LoginPath, ForeignOrigin);
+
+        foreign.StatusCode.ShouldBe(HttpStatusCode.NoContent, "the preflight never becomes a request of this API");
+        Header(foreign, AllowOrigin).ShouldBeEmpty("the allow-list is exactly App:PublicOrigin");
+        Header(foreign, AllowCredentials).ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task Dashboard_Login_CrossOriginPost_CarriesCredentialedHeaders()
+    {
+        var clock = new FakeClock();
+        using var factory = new ApiFactory(Database, clock);
+        var owner = await AuthTestFlow.CreateUserAsync(factory.Services, PlatformRole.Owner, twoFactorEnabled: true);
+        var familyId = await MfaTestFlow.SeedFamilyAsync(
+            Database, owner, clock.UtcNow, reauthenticatedAt: clock.UtcNow);
+
+        using var api = factory.ClientFor(owner.Id, PlatformRole.Owner, sessionId: familyId);
+
+        using var response = await SendAsync(
+            api, HttpMethod.Post, LoginPath, cookie: null, origin: ApiFactory.PublicOrigin);
+
+        response.StatusCode.ShouldBe(
+            HttpStatusCode.NoContent, "a fresh re-authentication mints the dashboard cookie");
+        CookiePair(response, JobsCookieName).ShouldNotBeNull();
+        Header(response, AllowOrigin).ShouldBe(
+            ApiFactory.PublicOrigin,
+            "the SPA at App:PublicOrigin calls this route from another origin, so the mint carries the headers");
+        Header(response, AllowCredentials).ShouldBe(
+            "true",
+            "a browser hands the SPA the `Set-Cookie` of a credentialed cross-origin answer only");
+    }
+
+    [Fact]
     public async Task Dashboard_Login_Admin_MintsCookie()
     {
         var clock = new FakeClock();
@@ -478,7 +548,235 @@ public sealed class JobsDashboardTests(TestDatabase database) : IntegrationTest(
     }
 
 
+    [Fact]
+    public async Task Dashboard_Page_CarriesTheDashboardCsp_AndOtherHtmlKeepsTheDocsOne()
+    {
+        var clock = new FakeClock();
+        using var factory = new ApiFactory(Database, clock).MapEndpoints(ProbeEndpoints.Map);
+        var admin = await AuthTestFlow.CreateUserAsync(factory.Services, PlatformRole.Admin);
+        var cookie = MintCookie(factory, admin.Id, PlatformRole.Admin);
+
+        using var api = factory.AnonymousClient();
+
+        var page = await SendAsync(api, HttpMethod.Get, DashboardPath, cookie, origin: null);
+
+        page.StatusCode.ShouldBe(HttpStatusCode.OK);
+
+        // `default-src 'none'` would block every one of Hangfire's own assets (F1): the policy has to
+        // name the branch's stylesheet, its script bundle, its Glyphicons font, the `/stats` poll and
+        // the `style="…"` attributes its pages carry, and nothing else.
+        var dashboardCsp = Header(page, "Content-Security-Policy");
+        dashboardCsp.ShouldContain("default-src 'none'", Case.Sensitive);
+        dashboardCsp.ShouldContain("script-src 'self'", Case.Sensitive, "the dashboard's /js bundle must load");
+        dashboardCsp.ShouldContain("style-src 'self' 'unsafe-inline'", Case.Sensitive, "the pages carry style attributes");
+        dashboardCsp.ShouldContain("img-src 'self' data:", Case.Sensitive, "the layout's favicon is a data: URL");
+        dashboardCsp.ShouldContain("font-src 'self'", Case.Sensitive, "bootstrap's Glyphicons font is served by the branch");
+        dashboardCsp.ShouldContain("connect-src 'self'", Case.Sensitive, "hangfire.js polls /stats");
+        dashboardCsp.ShouldContain("frame-ancestors 'none'", Case.Sensitive);
+        dashboardCsp.ShouldNotContain("unsafe-eval", Case.Sensitive);
+        dashboardCsp.ShouldNotBe(
+            DocsCsp,
+            "the dashboard is its own surface: the docs policy would break it");
+
+        // Every other HTML answer keeps the docs policy — the dashboard's policy is not the Api's.
+        using var other = await api.GetAsync(ProbeEndpoints.HtmlPath, Ct);
+
+        Header(other, "Content-Security-Policy").ShouldBe(
+            DocsCsp,
+            "only the /internal/jobs branch gets the dashboard's policy");
+    }
+
+    [Fact]
+    public async Task Dashboard_ConcurrentFirstViews_WriteOneRow()
+    {
+        var clock = new FakeClock();
+        using var factory = new ApiFactory(Database, clock);
+        var admin = await AuthTestFlow.CreateUserAsync(factory.Services, PlatformRole.Admin);
+        var cookie = MintCookie(factory, admin.Id, PlatformRole.Admin);
+
+        using var api = factory.AnonymousClient();
+
+        // Eight tabs of one dashboard session opening at the same moment: every one misses the cache
+        // before any of them commits, so the dedup has to be single-flight (F3).
+        var responses = await Task.WhenAll(
+            Enumerable.Range(0, 8).Select(_ => SendAsync(api, HttpMethod.Get, DashboardPath, cookie, origin: null)));
+
+        try
+        {
+            responses.ShouldAllBe(response => response.StatusCode == HttpStatusCode.OK);
+        }
+        finally
+        {
+            foreach (var response in responses)
+            {
+                response.Dispose();
+            }
+        }
+
+        ActorRows(JobsDashboardAuditMiddleware.ViewedAction, admin.Id).ShouldBe(
+            1,
+            "one row per dashboard session, however many of its pages are opened at once");
+    }
+
+    [Fact]
+    public async Task Dashboard_BatchCommand_RecordsTheWholeCountAndTheTruncation()
+    {
+        var clock = new FakeClock();
+        using var factory = new ApiFactory(Database, clock);
+        var admin = await AuthTestFlow.CreateUserAsync(factory.Services, PlatformRole.Admin);
+        var cookie = MintCookie(factory, admin.Id, PlatformRole.Admin);
+
+        using var api = factory.AnonymousClient();
+
+        var page = await SendAsync(api, HttpMethod.Get, DashboardPath, cookie, origin: null);
+        var antiforgery = await AntiforgeryAsync(page);
+
+        var fields = Enumerable.Range(1, 25)
+            .Select(index => new KeyValuePair<string, string>(
+                "jobs[]",
+                index.ToString(CultureInfo.InvariantCulture)))
+            .ToArray();
+
+        var response = await SendAsync(
+            api,
+            HttpMethod.Post,
+            "/internal/jobs/jobs/failed/requeue",
+            $"{cookie}; {antiforgery.Cookie}",
+            OwnOrigin,
+            antiforgery,
+            fields);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.NotFound, "an admin's batch is refused like any other command");
+
+        // The payload keeps its 20-id cap, but a reader can see that the command named more
+        // (SEC-0926T2-02): the total and the flag travel with it.
+        ActorRows(
+                JobsDashboardAuditMiddleware.ActionAction,
+                admin.Id,
+                " AND data->>'total' = '25'"
+                + " AND data->>'truncated' = 'true'"
+                + " AND jsonb_array_length(data->'ids') = 20")
+            .ShouldBe(1, "the batch's audit says how many ids the command really named");
+    }
+
+    [Fact]
+    public async Task Dashboard_CancelledCommandRequest_StillLeavesItsAuditRow()
+    {
+        var clock = new FakeClock();
+        using var factory = new ApiFactory(Database, clock);
+        var owner = await AuthTestFlow.CreateUserAsync(factory.Services, PlatformRole.Owner);
+
+        // The command's own token is the point: Hangfire has already committed the retry inside its
+        // storage when the row is written, so a request the caller abandoned must still be audited
+        // (SEC-0926T2-01). The middleware is driven directly because the disconnect would otherwise be
+        // a race against the dispatch; the services and the row it writes are the host's own.
+        using var scope = factory.Services.CreateScope();
+        using var cancelled = new CancellationTokenSource();
+        await cancelled.CancelAsync();
+
+        var context = CommandContext(
+            scope.ServiceProvider,
+            owner.Id,
+            "/internal/jobs/jobs/actions/requeue/1",
+            cancelled.Token);
+
+        await Middleware(scope.ServiceProvider).InvokeAsync(context);
+
+        ActorRows(
+                JobsDashboardAuditMiddleware.ActionAction,
+                owner.Id,
+                " AND data->>'command' = '/jobs/actions/requeue'"
+                + " AND data->>'status' = '204'")
+            .ShouldBe(1, "the audit outlives the request token");
+    }
+
+    [Fact]
+    public async Task Dashboard_CommandThatThrew_IsAuditedAsFailed()
+    {
+        var clock = new FakeClock();
+        using var factory = new ApiFactory(Database, clock);
+        var owner = await AuthTestFlow.CreateUserAsync(factory.Services, PlatformRole.Owner);
+
+        using var scope = factory.Services.CreateScope();
+        var context = CommandContext(
+            scope.ServiceProvider,
+            owner.Id,
+            "/internal/jobs/jobs/actions/requeue/1",
+            CancellationToken.None);
+
+        var middleware = new JobsDashboardAuditMiddleware(
+            _ => throw new InvalidOperationException("the dashboard failed after dispatching"),
+            scope.ServiceProvider.GetRequiredService<IOptions<AppOptions>>(),
+            scope.ServiceProvider.GetRequiredService<IMemoryCache>(),
+            scope.ServiceProvider.GetRequiredService<ILogger<JobsDashboardAuditMiddleware>>());
+
+        // The audit runs from the middleware's finally, so it sees a command the dashboard answered
+        // with an exception (SEC-0926T2-01); the throw itself is not swallowed.
+        await Should.ThrowAsync<InvalidOperationException>(() => middleware.InvokeAsync(context));
+
+        ActorRows(
+                JobsDashboardAuditMiddleware.ActionAction,
+                owner.Id,
+                " AND data->>'status' = '500'")
+            .ShouldBe(1, "a command that met an unhandled failure is still recorded");
+    }
+
+    [Fact]
+    public async Task Dashboard_DisposedHost_DoesNotTakeAnotherHostsHangfireLogger()
+    {
+        var clock = new FakeClock();
+        var sink = new CapturingLoggerProvider();
+
+        using var first = new ApiFactory(Database, clock);
+        using var second = new ApiFactory(Database, clock).WithLoggerProvider(sink);
+
+        // Resolving the global configuration is what installs each host's ILoggerFactory into
+        // Hangfire's process-static provider (AddHangfire's own factory).
+        first.Services.GetRequiredService<IGlobalConfiguration>();
+        second.Services.GetRequiredService<IGlobalConfiguration>();
+
+        await first.DisposeAsync();
+
+        // Hangfire resolves its logger from the process-static provider, and its own
+        // AutomaticRetryAttribute does it in the instance constructor: a disposed factory left
+        // installed here would make the next host's first scheduled job fail (F-LOG). A bounded retry
+        // keeps the assertion honest while parallel test classes install their own providers.
+        var observed = false;
+
+        for (var attempt = 0; attempt < 20 && !observed; attempt++)
+        {
+            HangfireLogProvider.GetLogger("nts.jobs.logger.probe")
+                .Log(Hangfire.Logging.LogLevel.Warn, () => "probe", null);
+            observed = sink.Lines.Any(line => line.StartsWith("nts.jobs.logger.probe", StringComparison.Ordinal));
+
+            if (!observed)
+            {
+                await Task.Delay(50, Ct);
+            }
+        }
+
+        observed.ShouldBeTrue(
+            "the live host keeps its Hangfire logger after a sibling host is disposed");
+    }
+
     // --- helpers ------------------------------------------------------------------------------------
+
+    /// <summary>
+    /// The browser's CORS preflight of one dashboard route from one origin: the <c>OPTIONS</c> a browser
+    /// sends before the credentialed <c>POST /internal/jobs/login</c>, carrying no token of any kind.
+    /// </summary>
+    private static async Task<HttpResponseMessage> PreflightAsync(
+        HttpClient client,
+        string path,
+        string origin)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Options, path);
+        request.Headers.Add("Origin", origin);
+        request.Headers.Add("Access-Control-Request-Method", "POST");
+        request.Headers.Add("Access-Control-Request-Headers", "Authorization");
+
+        return await client.SendAsync(request, Ct);
+    }
 
     /// <summary>One request carrying the dashboard cookie, an <c>Origin</c> and (for a command POST) the antiforgery token.</summary>
     private static async Task<HttpResponseMessage> SendAsync(
@@ -487,13 +785,14 @@ public sealed class JobsDashboardTests(TestDatabase database) : IntegrationTest(
         string path,
         string? cookie,
         string? origin,
-        AntiforgeryToken? antiforgery = null)
+        AntiforgeryToken? antiforgery = null,
+        IReadOnlyList<KeyValuePair<string, string>>? fields = null)
     {
         using var request = new HttpRequestMessage(method, path)
         {
             // Every dashboard POST is form-encoded (Hangfire's dispatcher and the antiforgery check both
             // read the form), so a command POST without one would be refused for the wrong reason.
-            Content = method == HttpMethod.Post ? new FormUrlEncodedContent([]) : null,
+            Content = method == HttpMethod.Post ? new FormUrlEncodedContent(fields ?? []) : null,
         };
 
         if (cookie is not null)
@@ -645,6 +944,109 @@ public sealed class JobsDashboardTests(TestDatabase database) : IntegrationTest(
 
     /// <summary>The antiforgery material of one dashboard page.</summary>
     private sealed record AntiforgeryToken(string HeaderName, string Token, string Cookie);
+
+    /// <summary>The value of one response header, or empty when the response carries none.</summary>
+    private static string Header(HttpResponseMessage response, string name) =>
+        response.Headers.TryGetValues(name, out var values) ? string.Join(", ", values) : string.Empty;
+
+    /// <summary>
+    /// A dashboard command POST as the middleware sees it after the dashboard ran: a form-encoded body,
+    /// the session the authorization filter leaves, and a response status the branch produced.
+    /// </summary>
+    /// <remarks>
+    /// The request's own cancellation token is what the test drives (SEC-0926T2-01); the pipeline is
+    /// replaced by the caller's delegate, because the middleware's contract is what is under test — the
+    /// services and the audit row are the host's own.
+    /// </remarks>
+    private static DefaultHttpContext CommandContext(
+        IServiceProvider services,
+        Guid actorUserId,
+        string path,
+        CancellationToken requestAborted)
+    {
+        var context = new DefaultHttpContext
+        {
+            RequestServices = services,
+        };
+
+        context.Request.Method = HttpMethods.Post;
+        context.Request.Path = path;
+        context.Request.ContentType = "application/x-www-form-urlencoded";
+        context.Request.Body = new MemoryStream();
+        context.RequestAborted = requestAborted;
+        context.Response.Body = new MemoryStream();
+        context.Response.StatusCode = StatusCodes.Status204NoContent;
+
+        // The filter's item: without it the middleware audits nothing, whatever the request did.
+        context.Items[JobsDashboardAuthentication.SessionItemKey] = new JobsDashboardSession(
+            actorUserId,
+            PlatformRole.Owner,
+            Guid.CreateVersion7().ToString("N"),
+            null);
+
+        return context;
+    }
+
+    /// <summary>The audit middleware over a pipeline that did nothing (the command already dispatched).</summary>
+    private static JobsDashboardAuditMiddleware Middleware(IServiceProvider services) =>
+        new(
+            _ => Task.CompletedTask,
+            services.GetRequiredService<IOptions<AppOptions>>(),
+            services.GetRequiredService<IMemoryCache>(),
+            services.GetRequiredService<ILogger<JobsDashboardAuditMiddleware>>());
+
+    /// <summary>Keeps every line a host rendered, with its category (the F-LOG probe reads them).</summary>
+    private sealed class CapturingLoggerProvider : ILoggerProvider
+    {
+        private readonly List<string> _lines = [];
+        private readonly Lock _gate = new();
+
+        internal IReadOnlyList<string> Lines
+        {
+            get
+            {
+                lock (_gate)
+                {
+                    return [.. _lines];
+                }
+            }
+        }
+
+        public ILogger CreateLogger(string categoryName) => new CapturingLogger(this, categoryName);
+
+        public void Dispose()
+        {
+        }
+
+        private void Capture(string rendered)
+        {
+            lock (_gate)
+            {
+                _lines.Add(rendered);
+            }
+        }
+
+        private sealed class CapturingLogger(CapturingLoggerProvider owner, string categoryName) : ILogger
+        {
+            public IDisposable? BeginScope<TState>(TState state)
+                where TState : notnull
+                => null;
+
+            public bool IsEnabled(LogLevel logLevel) => true;
+
+            public void Log<TState>(
+                LogLevel logLevel,
+                EventId eventId,
+                TState state,
+                Exception? exception,
+                Func<TState, Exception?, string> formatter)
+            {
+                ArgumentNullException.ThrowIfNull(formatter);
+
+                owner.Capture($"{categoryName}: {formatter(state, exception)}");
+            }
+        }
+    }
 }
 
 /// <summary>

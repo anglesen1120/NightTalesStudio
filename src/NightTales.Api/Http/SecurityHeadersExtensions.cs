@@ -7,12 +7,14 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
+using NightTales.Api.Internal.Jobs;
 
 namespace NightTales.Api.Http;
 
 /// <summary>
-/// The Api's safe defaults of 09 README BD12 (09.9.4-T1): the hardening response headers, the
-/// docs-page CSP, the CORS allow-list restricted to <c>App:PublicOrigin</c>, and the request-body cap.
+/// The Api's safe defaults of 09 README BD12 (09.9.4-T1): the hardening response headers, the two
+/// HTML-surface CSPs (the docs page and the jobs dashboard), the CORS allow-list restricted to
+/// <c>App:PublicOrigin</c>, and the request-body cap.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -29,8 +31,8 @@ namespace NightTales.Api.Http;
 /// reaches the response-start callback still carries them, and once from <c>OnStarting</c>, because the
 /// exception handler replaces the response it catches (<c>Response.Clear()</c> drops headers written
 /// earlier) and that must not remove the hardening headers from an error response. The CSP is only ever
-/// added by the second write: before the handler runs the response has no content type yet, and the CSP
-/// belongs to the HTML docs surface alone.
+/// added by the second write: before the handler runs the response has no content type yet, and only an
+/// HTML answer carries one (09.2.6-T2 added the dashboard's own policy).
 /// </para>
 /// </remarks>
 public static class SecurityHeadersExtensions
@@ -48,6 +50,25 @@ public static class SecurityHeadersExtensions
 
     /// <summary>The docs page's CSP (BD12): the Api documents itself and embeds nothing else.</summary>
     private const string DocsContentSecurityPolicy = "default-src 'none'; frame-ancestors 'none'; img-src 'self' data:";
+
+    /// <summary>
+    /// The jobs dashboard's CSP (09.2.6-T2): what Hangfire 1.8.25's own pages need, and nothing else.
+    /// </summary>
+    /// <remarks>
+    /// The dashboard is the Api's second HTML surface, and the docs policy would break it: every page
+    /// references its bundled stylesheet (<c>/internal/jobs/css…</c>) and script
+    /// (<c>/internal/jobs/js…</c>) [read from the rendered page and from <c>Hangfire.Dashboard.Pages
+    /// .LayoutPage</c> in the installed 1.8.25 package]. <c>connect-src 'self'</c> is what lets
+    /// hangfire.js poll <c>/stats</c>, <c>font-src 'self'</c> serves the bundled Glyphicons font
+    /// (<c>/internal/jobs/fonts/…</c>, referenced from <c>bootstrap.min.css</c>), <c>img-src 'self'
+    /// data:</c> keeps the <c>data:</c> favicon its layout emits, and <c>style-src 'unsafe-inline'</c>
+    /// is required by the pages' own <c>style="…"</c> attributes (the state cards of the recurring and
+    /// job-details pages). No page carries an inline <c>&lt;script&gt;</c> and no bundled script uses
+    /// <c>eval</c>/<c>new Function</c>, so scripts stay <c>'self'</c>.
+    /// </remarks>
+    private const string JobsDashboardContentSecurityPolicy =
+        "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; "
+        + "font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'";
 
     /// <summary>The request body cap of every endpoint (BD12), unless the endpoint asks for its own.</summary>
     private const long OneMebibyte = 1024 * 1024;
@@ -156,10 +177,10 @@ public static class SecurityHeadersExtensions
 
     private static async Task HardeningHeaders(HttpContext context, RequestDelegate next)
     {
-        ApplyHardeningHeaders(context.Response);
+        ApplyHardeningHeaders(context);
         context.Response.OnStarting(() =>
         {
-            ApplyHardeningHeaders(context.Response);
+            ApplyHardeningHeaders(context);
 
             return Task.CompletedTask;
         });
@@ -167,19 +188,40 @@ public static class SecurityHeadersExtensions
         await next(context).ConfigureAwait(false);
     }
 
-    private static void ApplyHardeningHeaders(HttpResponse response)
+    private static void ApplyHardeningHeaders(HttpContext context)
     {
+        var response = context.Response;
+
         response.Headers[ContentTypeOptionsHeader] = "nosniff";
         response.Headers[ReferrerPolicyHeader] = "no-referrer";
         response.Headers[FrameOptionsHeader] = "DENY";
 
-        // The Api's only HTML surface is the documentation page (OpenAPI/Swagger), so an HTML answer is
-        // the docs page: it gets the CSP, an ordinary JSON answer never does (BD12).
+        // The Api's HTML surfaces are the documentation page (OpenAPI/Swagger) and the jobs dashboard
+        // (`/internal/jobs`, 09.2.6-T2), so an HTML answer is one of the two: each gets the policy its
+        // own assets need, and an ordinary JSON answer never does (BD12). The path — not the handler —
+        // decides, because this also runs from OnStarting, after a replaced response.
         if (response.ContentType?.StartsWith("text/html", StringComparison.OrdinalIgnoreCase) == true)
         {
-            response.Headers[ContentSecurityPolicyHeader] = DocsContentSecurityPolicy;
+            response.Headers[ContentSecurityPolicyHeader] = IsJobsDashboard(context.Request)
+                ? JobsDashboardContentSecurityPolicy
+                : DocsContentSecurityPolicy;
         }
     }
+
+    /// <summary>Whether the request is a page of the jobs dashboard branch (09.2.6-T2).</summary>
+    /// <remarks>
+    /// The prefix is checked on both <see cref="HttpRequest.Path"/> and <see cref="HttpRequest.PathBase"/>:
+    /// the dashboard branch mounts Hangfire with <c>IApplicationBuilder.Map</c>, which moves the matched
+    /// prefix into <c>PathBase</c> and leaves <c>Path</c> relative to it while the branch runs — and the
+    /// branch is where the response starts, so that is the shape this sees when the dashboard answers.
+    /// </remarks>
+    private static bool IsJobsDashboard(HttpRequest request) =>
+        request.Path.StartsWithSegments(
+            JobsDashboardAuthentication.DashboardPath,
+            StringComparison.OrdinalIgnoreCase)
+        || request.PathBase.StartsWithSegments(
+            JobsDashboardAuthentication.DashboardPath,
+            StringComparison.OrdinalIgnoreCase);
 
     private static RequestDelegate LimitRequestBody(RequestDelegate next, long defaultLimit) => async context =>
     {

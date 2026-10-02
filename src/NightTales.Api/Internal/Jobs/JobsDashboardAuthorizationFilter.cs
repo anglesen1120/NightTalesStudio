@@ -68,9 +68,11 @@ public static class JobsDashboardAuthentication
     /// <summary>
     /// Where the filter leaves the validated session for this request, so Hangfire's
     /// <c>IsReadOnlyFunc</c> (synchronous) and the audit middleware can read it without authenticating
-    /// the cookie a second time.
+    /// the cookie a second time. Public because it is the contract between the filter and the audit
+    /// middleware — the integration suite drives the middleware with a session under this key — and the
+    /// solution has no <c>InternalsVisibleTo</c>.
     /// </summary>
-    internal const string SessionItemKey = "NightTales.Api.Internal.Jobs.Session";
+    public const string SessionItemKey = "NightTales.Api.Internal.Jobs.Session";
 
     /// <summary>
     /// Authenticates the dashboard cookie of <paramref name="http"/> and reads the session out of it.

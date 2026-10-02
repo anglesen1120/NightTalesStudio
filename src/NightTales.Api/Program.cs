@@ -133,11 +133,25 @@ app.UseForwardedHeaderTrust();
 // so the 413 refusal still carries its CORS headers.
 app.UseNightTalesSecurityHardening();
 
-// 09.3.5-T1 (09 README BD14/BD16): the limiter. It runs after the host's own authentication middleware
-// (the ASP.NET Core host inserts it ahead of the whole user pipeline) and after the CORS middleware, so a
-// user-keyed policy sees the caller's `sub` and a 429 still carries the headers a browser needs to read
-// it (10-web-ui L107–108). A rejected request never reaches an endpoint, so it opens no transaction and
-// writes no row.
+// 09.2.6-T2 (fix): authentication and authorization are called here explicitly, right after the block
+// that installs the CORS middleware. The host otherwise inserts both *ahead of the whole user pipeline*
+// (`WebApplicationBuilder.ConfigureApplication` wires `UseRouting`, `UseAuthentication` and
+// `UseAuthorization` before the source pipeline), which leaves `UseAuthorization` in front of `UseCors`:
+// the CORS preflight (`OPTIONS`) of a route that carries `RequireAuthorization` is then challenged with
+// the platform's 401 before the CORS middleware can answer it, so the browser never sees the `204` with
+// `Access-Control-Allow-Origin`/`Access-Control-Allow-Credentials` a cross-origin caller needs. Only two
+// routes carried both today — `POST /internal/jobs/login` (`spa-auth`) and `POST /api/v1/hubs/ticket`
+// (`spa`, 09.8.1-T2) — which is why the auth group, whose routes are `AllowAnonymous`, never showed it.
+// Calling the two methods here is also what makes the host skip its own insertion: each sets the
+// `__AuthenticationMiddlewareSet`/`__AuthorizationMiddlewareSet` property the host checks. The order is
+// then the documented one: routing, CORS, authentication, authorization.
+app.UseAuthentication();
+app.UseAuthorization();
+
+// 09.3.5-T1 (09 README BD14/BD16): the limiter. It runs after the authentication and authorization
+// middleware above and after the CORS middleware, so a user-keyed policy sees the caller's `sub` and a
+// 429 still carries the headers a browser needs to read it (10-web-ui L107–108). A rejected request never
+// reaches an endpoint, so it opens no transaction and writes no row.
 app.UseRateLimiting();
 
 // 09.2.6-T2 (09.2.6 plan §5, README D1/D10): the audit middleware first, then the dashboard's own

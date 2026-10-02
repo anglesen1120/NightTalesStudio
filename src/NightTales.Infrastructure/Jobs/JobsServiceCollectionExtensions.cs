@@ -61,8 +61,6 @@ public static partial class JobsServiceCollectionExtensions
         var registry = BackgroundJobRegistry.AddTo(services, assemblies);
         services.AddSingleton(registry);
 
-        // HangfireLogProviderRelease (AddHangfireStorage) is registered first of all, so its StopAsync
-        // runs last: this host's shutdown still logs through its own factory.
         services.AddHostedService<BackgroundJobActivationCheck>();
         services.AddHostedService<RecurringJobRegistrar>();
 
@@ -139,17 +137,20 @@ public static partial class JobsServiceCollectionExtensions
         services.TryAddSingleton<JobActivator>(provider =>
             new AspNetCoreJobActivator(provider.GetRequiredService<IServiceScopeFactory>()));
 
-        services.AddHangfire((provider, global) => global.UseStorage(provider.GetRequiredService<JobStorage>()));
+        services.AddHangfire((provider, global) =>
+        {
+            // Hangfire's own factory has just installed this host's ILoggerFactory into the process-static
+            // LogProvider (Hangfire.AspNetCore's AddHangfire does it before it runs this callback).
+            // Taking a registration here makes that install owned by a container singleton, so it is
+            // handed back when the container is disposed — even for a host whose hosted services never
+            // stop — and never left installed with a disposed factory while another host is live:
+            // HangfireLogProviderRegistration.
+            provider.GetRequiredService<HangfireLogProviderRegistration>().Install();
 
-        // Whatever installs this host's factory into Hangfire's process-static LogProvider has to
-        // release it again (HangfireLogProviderRelease): `AddHangfire` takes this host's
-        // ILoggerFactory, and a Hangfire type resolves its logger in a *static* constructor, so a
-        // disposed host left as the provider's last writer poisons every later host of the process.
-        // Both entry points come through here — the Worker's AddJobs and the Api's dashboard — and the
-        // registration is what makes each of them release; it is the first hosted service this host
-        // registers, and hosted services stop in reverse order, so its own shutdown still logs through
-        // its factory.
-        services.AddHostedService<HangfireLogProviderRelease>();
+            global.UseStorage(provider.GetRequiredService<JobStorage>());
+        });
+
+        services.AddSingleton<HangfireLogProviderRegistration>();
 
         return services;
     }

@@ -150,7 +150,16 @@ public static class JobsDashboardEndpoints
 
         // Not part of the public OpenAPI document (09.2.6 plan §5): the dashboard is an operator surface,
         // and no generated client consumes its login.
-        routes.MapPost(JobsDashboardAuthentication.LoginPath, LoginAsync)
+        // The credentialed policy is the one the auth routes carry, applied the same way (a group that
+        // requires it): the SPA at `App:PublicOrigin` calls this route from another origin and the
+        // response installs the `__Host-nts-jobs` cookie, which a browser only stores for a credentialed
+        // cross-origin answer (BD3). The policy's allow-list is `App:PublicOrigin` alone, the same origin
+        // the audit middleware's POST gate accepts.
+        var jobs = routes.MapGroup(JobsDashboardAuthentication.DashboardPath);
+
+        jobs.RequireCors(SecurityHeadersExtensions.AuthCorsPolicy);
+
+        jobs.MapPost("/login", LoginAsync)
             .RequireAuthorization()
             .ExcludeFromDescription();
 
