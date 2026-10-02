@@ -313,6 +313,10 @@ rehearsal). `-s3` reads `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`, which `up.s
 creates them idempotently and never deletes; it exits 0 ok / 1 a check failed / 2 usage or
 environment, waits up to `STORAGE_WAIT_SECONDS` (default 60) for the gateway, and uses the host `aws`
 CLI first, `uvx --from awscli aws` next, then the pinned `amazon/aws-cli` container (11 CR-16, T11).
+The container branch is the one client that cannot reach a loopback endpoint: the default
+`STORAGE_ENDPOINT=http://127.0.0.1:8333` would be the helper container's own namespace, so for that
+branch alone a loopback endpoint is rewritten to `host.docker.internal` (macOS Docker/colima resolve
+it to the host). The host clients and the readiness probe keep the endpoint as written.
 
 ```bash
 tools/dev/storage-init.sh                                         # run by up.sh (skip with --skip-storage-init)
@@ -322,10 +326,12 @@ tools/dev/down.sh --volumes                                       # discard .nts
 ```
 
 **Wiring.** `up.sh` exports the `.env` rows to the Api and the Worker under the double-underscore
-configuration names (`STORAGE_ENDPOINT` → `STORAGE__ENDPOINT`, `STORAGE_BUCKET_MEDIA` →
-`STORAGE__BUCKET_MEDIA`, and so on), all loopback. The optional compose services override the host
-part to the service names (`http://storage:8333`; T41). Nothing but the emulator's own store lives
-here; the real client (`AmazonS3Client`) arrives with 09.7.2-T1.
+configuration names: the storage rows as `STORAGE_ENDPOINT` → `STORAGE__ENDPOINT`,
+`STORAGE_BUCKET_MEDIA` → `STORAGE__BUCKET_MEDIA` and so on, all loopback; the mail rows keep their flat
+`SMTP_*` names in `.env` but are exported as the canonical `Email__Smtp__Host`/`__Port`/`__Username`/
+`__Password` and `Email__From__Address`. The optional compose services override the storage host part
+to the service names (`http://storage:8333`; T41) and the mail host to `mail:1025`. Nothing but the
+emulator's own store lives here; the real client (`AmazonS3Client`) arrives with 09.7.2-T1.
 
 ## Local mail (Mailpit)
 
@@ -361,9 +367,12 @@ export NTS_SMTP_PORT=1025                     # only when the sink does not list
 Both hosts read the pipeline's configuration from `Email:*`, with the loopback defaults committed in
 `appsettings.json`: `Email:Smtp:Host` `127.0.0.1`, `Email:Smtp:Port` `1025`, `Email:Smtp:Security` `None`
 (plaintext is accepted only towards a loopback endpoint, in any environment) and `Email:From:Address`
-`no-reply@nighttales.local`. The flat `SMTP__HOST`/`SMTP__PORT`/`SMTP__USER`/`SMTP__PASSWORD` names that
-11.1.1-T2's `.env` and `up.sh` export are read as an alias and lose to an explicit `Email:Smtp:*` value. A
-deployment overrides `Email__Smtp__Host`, `Email__Smtp__Security` (`StartTls`), `Email__Smtp__Username`,
+`no-reply@nighttales.local`. `up.sh` therefore exports the `.env` `SMTP_*` rows as the canonical
+`Email__Smtp__Host`/`__Port`/`__Username`/`__Password` and `Email__From__Address`; the flat
+`SMTP__HOST`/`SMTP__PORT`/`SMTP__USER`/`SMTP__PASSWORD` spelling remains readable as an alias of
+`Email:Smtp:*`, but an explicit `Email:Smtp:*`/`Email:From:*` value (such as the committed
+`appsettings.json`) wins over it, so the alias cannot override those defaults. A deployment overrides the
+canonical names `Email__Smtp__Host`, `Email__Smtp__Security` (`StartTls`), `Email__Smtp__Username`,
 `Email__Smtp__Password` and its own `Email__AddressHashPepper` — the host refuses to start when the
 transport is plaintext towards a remote server or the address pepper is blank (09 README BD9/BD16).
 

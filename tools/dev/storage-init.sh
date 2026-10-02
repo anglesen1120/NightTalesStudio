@@ -153,6 +153,7 @@ export AWS_EC2_METADATA_DISABLED=true
 export AWS_PAGER=""
 
 docker_env_file=""
+docker_endpoint="$endpoint"
 if [ "$client" = docker ]; then
   # The container reads the credentials from an env file (never argv). It is a throwaway 0600
   # file, not the repository .env: that file carries POSTGRES_PASSWORD and the STORAGE_* names,
@@ -161,8 +162,17 @@ if [ "$client" = docker ]; then
   trap 'rm -f "$docker_env_file"' EXIT
   printf 'AWS_ACCESS_KEY_ID=%s\nAWS_SECRET_ACCESS_KEY=%s\nAWS_DEFAULT_REGION=%s\n' \
     "$access_key" "$secret_key" "$region" >"$docker_env_file"
+  # A loopback endpoint (`http://127.0.0.1:8333`, the native default, or localhost) is the helper
+  # container's own namespace, not the host running SeaweedFS nor the compose publish, so the
+  # container can never reach it. macOS Docker and colima resolve host.docker.internal to the host,
+  # so only the container client dials that spelling; the host clients (aws, uvx) and the readiness
+  # probe above keep the original endpoint. A non-loopback endpoint is passed through unchanged.
+  case "$docker_endpoint" in
+    http://127.0.0.1:*) docker_endpoint="http://host.docker.internal:${docker_endpoint#http://127.0.0.1:}" ;;
+    http://localhost:*) docker_endpoint="http://host.docker.internal:${docker_endpoint#http://localhost:}" ;;
+  esac
 fi
-log "S3 client: $client, endpoint $endpoint, region $region"
+log "S3 client: $client, endpoint $docker_endpoint, region $region"
 
 # s3 ARGS...: run the resolved client against the configured endpoint. The endpoint and the
 # operation are the only things in argv; no credential is.
@@ -171,7 +181,7 @@ s3() {
     aws) aws --endpoint-url "$endpoint" --region "$region" "$@" ;;
     uvx) uvx --from awscli aws --endpoint-url "$endpoint" --region "$region" "$@" ;;
     docker) docker run --rm --env-file "$docker_env_file" "$aws_cli_image" \
-      --endpoint-url "$endpoint" --region "$region" "$@" ;;
+      --endpoint-url "$docker_endpoint" --region "$region" "$@" ;;
   esac
 }
 
