@@ -1,10 +1,12 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Hangfire;
 using Microsoft.AspNetCore.Http.Connections;
 using NightTales.Api;
 using NightTales.Api.DependencyInjection;
 using NightTales.Api.Endpoints;
 using NightTales.Api.Http;
+using NightTales.Api.Internal.Jobs;
 using NightTales.Api.RateLimiting;
 using NightTales.Api.Realtime;
 using NightTales.Application.DependencyInjection;
@@ -93,6 +95,13 @@ builder.Services.ConfigureHttpJsonOptions(options =>
 // 09 README D12/H4: the Api only writes the outbox, so an accidental direct enqueue fails fast.
 builder.Services.AddApiJobScheduler();
 
+// 09.2.6-T2 (09 README D1/D10, 09.2.6 plan §5): the Hangfire dashboard of `/internal/jobs`. The Api
+// reads the Worker's job storage as a client only — no Hangfire server, no recurring reconciliation —
+// and the surface is reachable with the `__Host-nts-jobs` cookie alone, minted by
+// `POST /internal/jobs/login` for an owner or an admin whose re-authentication is inside 09.10.4-T1's
+// window. An owner may act on jobs; an admin only reads; every other caller gets a 404.
+builder.Services.AddJobsDashboard(builder.Configuration);
+
 // 09.8.1-T1 (09 README BD11): the episode hub and its `HubTicket` scheme, the per-instance connection
 // registry and the one LISTEN loop of this Api instance. The production IHubTicketValidator arrives with
 // 09.8.1-T2, so until then a connect attempt fails fast instead of opening an anonymous socket.
@@ -131,6 +140,25 @@ app.UseNightTalesSecurityHardening();
 // writes no row.
 app.UseRateLimiting();
 
+// 09.2.6-T2 (09.2.6 plan §5, README D1/D10): the audit middleware first, then the dashboard's own
+// branch, so the rows can name the operator the filter authenticated and the POSTs are checked against a
+// foreign `Origin` before Hangfire's dispatcher sees them.
+//
+// The branch is entered only for a request routing did not already claim. `UseHangfireDashboard` mounts
+// Hangfire over the whole `/internal/jobs` subtree with a `Map`, which owns every path under it and never
+// falls through, so a request the dashboard declines ends at the branch's own end — where the host
+// answers 500 ("the request reached the end of the pipeline without executing the endpoint") whenever
+// routing had selected a route of that subtree instead. The login route below is such a route: an
+// endpoint, not a dashboard page. Skipping the branch for a selected endpoint lets it run where every
+// other route does; a dashboard page matches no route, so it still reaches Hangfire.
+app.UseJobsDashboardAudit();
+app.MapWhen(
+    context => context.GetEndpoint() is null
+        && context.Request.Path.StartsWithSegments(
+            JobsDashboardAuthentication.DashboardPath,
+            StringComparison.OrdinalIgnoreCase),
+    jobs => jobs.UseHangfireDashboard(JobsDashboardAuthentication.DashboardPath));
+
 // 09.3.5-T1 (09 README BD16): no rate policy, by design — the limiter gives an endpoint without
 // `RequireRateLimiting` a pass-through partition, so a probe fleet that shares one address can never
 // exhaust a shared bucket, and the generated OpenAPI document (09.1.5-T1 writes it at build, no route is
@@ -140,6 +168,11 @@ app.MapGet("/health/live", () => Results.Ok());
 // 09.3.1-T1 (09 README D14): the auth route group; in P it carries POST /api/v1/auth/register, which
 // answers 403 registration_closed until 09.3.1-T3 swaps the registration flow.
 app.MapAuthEndpoints();
+
+// 09.2.6-T2 (09.2.6 plan §5): the dashboard's login, the only route of that surface that is an
+// endpoint — the dashboard pages themselves come from the Hangfire branch wired above, which steps aside
+// for the requests routing has already claimed for this route.
+app.MapJobsDashboardEndpoints();
 
 // 09.10.4-T1 (09 README D14, BD4): the /me route group's MFA routes — setup, verify, recovery codes and
 // disable. The enrolment-only token reaches the first two and nothing else (WT34).
