@@ -50,7 +50,7 @@ public static class MockHealthCheck
 
         try
         {
-            using var client = new HttpClient { Timeout = ProbeTimeout };
+            using var client = new HttpClient(new HttpClientHandler { AllowAutoRedirect = false }) { Timeout = ProbeTimeout };
             using var request = new HttpRequestMessage(HttpMethod.Get, target);
             request.Headers.TryAddWithoutValidation(RenderNodeHeaders.ApiKey, key);
             using var response = await client.SendAsync(request, cancellationToken).ConfigureAwait(false);
