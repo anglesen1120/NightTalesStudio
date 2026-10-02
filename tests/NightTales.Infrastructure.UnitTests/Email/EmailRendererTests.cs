@@ -86,4 +86,48 @@ public sealed class EmailRendererTests
         rendered.TextBody.ShouldContain("https://app.nighttales.test/reset-password#t=abc");
         rendered.HtmlBody.ShouldContain("https://app.nighttales.test/reset-password#t=abc");
     }
+
+    [Fact]
+    public void Render_SubjectValueWithLineBreak_Throws()
+    {
+        // `approval_cancel` renders {{requestKind}} into its subject line; a line break inside that value
+        // would end the subject early and push the rest into the body, so the renderer refuses it
+        // (09.2.6-T3).
+        var exception = Should.Throw<EmailTemplateException>(() => Renderer.Render(
+            "approval_cancel",
+            Language.En,
+            new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["displayName"] = "Owner",
+                ["requestKind"] = "privacy\r\nBcc: attacker@evil.test",
+                ["reason"] = "reason",
+                ["deadline"] = "2026-01-02 00:00",
+                ["requestId"] = "req-1",
+                ["cancelLink"] = "https://app.nighttales.test/cancel#t=abc",
+            }));
+
+        exception.Message.ShouldContain("requestKind");
+        exception.Message.ShouldContain("approval_cancel.en.txt");
+    }
+
+    [Fact]
+    public void Render_BodyValueWithLineBreak_IsVerbatim()
+    {
+        // The guard is scoped to the subject line: a line break in a body value stays legal.
+        var rendered = Renderer.Render(
+            "approval_cancel",
+            Language.En,
+            new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["displayName"] = "Owner",
+                ["requestKind"] = "privacy",
+                ["reason"] = "first line\r\nsecond line",
+                ["deadline"] = "2026-01-02 00:00",
+                ["requestId"] = "req-1",
+                ["cancelLink"] = "https://app.nighttales.test/cancel#t=abc",
+            });
+
+        rendered.Subject.ShouldContain("privacy");
+        rendered.TextBody.ShouldContain("second line");
+    }
 }

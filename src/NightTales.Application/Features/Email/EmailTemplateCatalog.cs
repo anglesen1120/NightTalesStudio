@@ -80,9 +80,12 @@ public sealed record EmailTemplateDefinition
 /// <c>EmailTemplateProvider</c> refuses a catalog entry without files and a file without a catalog entry.
 /// </para>
 /// <para>
-/// <c>link</c> is declared as a <i>minter</i> key of the two token-bearing templates and deliberately not
-/// as a producer key: the reset and verify links are minted inside <c>SendEmailJob</c> from a single-use
-/// row created there (09 README §B10 WT17, WT30).
+/// Every link that carries a single-use token — the reset/verify <c>link</c> and the owner-action
+/// <c>approveUrl</c>/<c>cancelUrl</c>/<c>resetUrl</c>/<c>cancelLink</c> — is declared as a <i>minter</i> key
+/// and deliberately not as a producer key: it is minted inside <c>SendEmailJob</c> from a single-use row
+/// created there, so it never travels through <c>params</c> or an outbox payload (09 README §B10 WT17,
+/// WT30). A template whose minter is not registered yet (the S-phase <c>email_verify</c>, the wave-3 owner
+/// templates) fails the one row that reaches it and never breaks the rest of the pipeline.
 /// </para>
 /// </remarks>
 public static class EmailTemplateCatalog
@@ -121,17 +124,20 @@ public static class EmailTemplateCatalog
             // 09.10.4-T3, pre-change configuration snapshot (09 W3 CR-8).
             ["security_alert"] = new(["event", "severity", "at", "actorEmail", "dataSummary"]),
 
-            // 09.10.4-T2 (09 W3 CR-8).
-            ["owner_action_pending"] = new(["action", "targetDisplayName", "reason", "applyAfter", "approveUrl", "cancelUrl"]),
+            // 09.10.4-T2 (09 W3 CR-8). `approveUrl`/`cancelUrl` are single-use owner-action links: they are
+            // minted at send time by 09.10.4's own keyed minter and never queued (09 README §B10 WT17/WT30).
+            ["owner_action_pending"] = new(["action", "targetDisplayName", "reason", "applyAfter"], ["approveUrl", "cancelUrl"]),
 
-            // 09.10.2-T2 (09 W3 CR-8).
-            ["setting_change_pending"] = new(["integration", "changedKeys", "applyAfter", "approveUrl", "cancelUrl"]),
+            // 09.10.2-T2 (09 W3 CR-8). The same pair of send-time links as `owner_action_pending`.
+            ["setting_change_pending"] = new(["integration", "changedKeys", "applyAfter"], ["approveUrl", "cancelUrl"]),
 
-            // 09.10.5-T1, reuses 09.3.3-T1's password-reset minter (09 W3 CR-8).
-            ["mfa_reset_forced"] = new(["displayName", "resetUrl"]),
+            // 09.10.5-T1 mints `resetUrl` at send time, reusing 09.3.3-T1's password-reset minter (09 W3 CR-8).
+            ["mfa_reset_forced"] = new(["displayName"], ["resetUrl"]),
 
             // 09.10.8-T1; `requestId` is the cancel page's own reference for its log line (09 W3 CR-8).
-            ["approval_cancel"] = new(["displayName", "requestKind", "reason", "deadline", "cancelLink", "requestId"]),
+            // `cancelLink` carries the subject-scoped single-use token of 06.2.2-T2 and is minted at send
+            // time, so it is a minter key and never travels through `params` (09 README §B10 WT30).
+            ["approval_cancel"] = new(["displayName", "requestKind", "reason", "deadline", "requestId"], ["cancelLink"]),
 
             // 02.8.3-T4.
             ["autopilot_alert"] = new(["seriesTitle", "reasonLine", "scheduledList", "deepLink", "resumeHint"]),

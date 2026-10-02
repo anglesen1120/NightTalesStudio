@@ -36,14 +36,22 @@ namespace NightTales.Application.Features.Email.Jobs;
 /// other services from its own scope. That is why the dependencies below are resolved by hand.
 /// </para>
 /// <para>
+/// <b>The send lock spans the status read to the result commit</b> (09.2.6-T3, 09 §5.3). Hangfire locks a
+/// job by its own id, so a redelivered outbox event enqueues a second job for the same message with a
+/// different id; <see cref="IEmailSendLock"/> is keyed by the message id, so the second job finds the lock
+/// taken and returns, leaving the send to the worker that holds it.
+/// </para>
+/// <para>
 /// <b>Failures are recorded, then rethrown</b> so Hangfire applies the five attempts of the <c>email</c>
 /// queue policy. Every exception raised once the attempt has been recorded on the row is written to the row
 /// first — with the attempt's own code when it has one and <c>email_send_failed</c> when it does not, so a
 /// failure before the SMTP call (a minter that throws, an unparsable stored <c>params</c>) can never leave
-/// the row looking queued. A recipient that no longer exists is the one case that does not retry: the row is
-/// failed with <c>email_user_gone</c> and the job returns. Nothing about the address is ever logged — the
-/// hash is (09 README BD16) — and a failed attempt is logged by exception <em>type</em> only, because a
-/// server's refusal message echoes the recipient.
+/// the row looking queued. A recipient that no longer exists is one case that does not retry: the row is
+/// failed with <c>email_user_gone</c> and the job returns. A permanent refusal (<c>email_send_rejected</c>,
+/// a 5xx answer) is the other: the row is failed and the job returns. Nothing about the address is ever
+/// logged — the hash is (09 README BD16) — a failed attempt is logged by exception <em>type</em> only, and
+/// the exception Hangfire persists is an <see cref="EmailSendFailedException"/> carrying the code, the
+/// template and the message id rather than the transport's own text, which echoes the recipient.
 /// </para>
 /// <para>
 /// It calls <c>SaveChangesAsync</c> itself: 09 README D5's "handlers never save" rule is about Mediator
@@ -80,6 +88,21 @@ public sealed partial class SendEmailJob(
         using var pinned = services.GetRequiredService<ISystemContext>().For(owner.Value);
 
         var database = services.GetRequiredService<IAppDbContext>();
+
+        // 09.2.6-T3: the send lock is keyed by the message id and held until the result is committed, so a
+        // second job for the same message — a redelivered outbox event — cannot reach SMTP beside this one.
+        await using var sendLock = await services
+            .GetRequiredService<IEmailSendLock>()
+            .TryAcquireAsync(database, emailMessageId, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (sendLock is null)
+        {
+            LogSendInFlight(emailMessageId);
+
+            return;
+        }
+
         var row = await database
             .EmailMessages
             .FirstOrDefaultAsync(message => message.Id == emailMessageId, cancellationToken)
@@ -109,6 +132,7 @@ public sealed partial class SendEmailJob(
         // failed attempt too, and it wears the send-failure code because the catalogue has no closer one.
         var failureCode = ErrorCodes.EmailSendFailed;
         var elapsed = TimeSpan.Zero;
+        var sendAccepted = false;
         string providerMessageId;
 
         try
@@ -171,21 +195,46 @@ public sealed partial class SendEmailJob(
             {
                 failureCode = sent.FirstError.Code;
 
+                if (failureCode == ErrorCodes.EmailSendRejected)
+                {
+                    // A permanent refusal (a 5xx answer): a retry cannot change it, so the row is failed and
+                    // the job returns instead of feeding Hangfire's five attempts (09.2.6-T3 L176).
+                    await FailAsync(database, row, failureCode, cancellationToken).ConfigureAwait(false);
+                    LogSendRejected(failureCode, row.Id, row.Template, row.ToHash);
+
+                    return;
+                }
+
                 throw new InvalidOperationException(
                     $"Sending the '{row.Template}' e-mail '{row.Id}' failed with '{failureCode}'.");
             }
 
             providerMessageId = sent.Value;
             row.Sent(providerMessageId, clock.UtcNow);
+
+            // From here the server holds the message: a failure to record `sent` must not turn the row into a
+            // `failed` one — `Sent` already cleared its params in memory — so the catch below records the
+            // failed attempt without touching the entity (09.2.6-T3 CR3).
+            sendAccepted = true;
             await database.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         }
         catch (Exception exception)
         {
-            await FailAsync(database, row, failureCode, cancellationToken).ConfigureAwait(false);
+            if (sendAccepted)
+            {
+                // The server accepted the message and only the commit of its record failed. The row is left
+                // as the last committed write left it — params intact, no `sent_at` — so Hangfire's retry
+                // re-reads and re-sends instead of crashing on a `failed` row whose params `Sent` cleared.
+                metrics.Failed(row.Template, failureCode);
+            }
+            else
+            {
+                await FailAsync(database, row, failureCode, cancellationToken).ConfigureAwait(false);
+            }
 
             LogSendFailed(failureCode, row.Id, row.Template, row.ToHash, exception.GetType().Name);
 
-            throw;
+            throw new EmailSendFailedException(failureCode, row.Template, row.Id);
         }
 
         metrics.Sent(row.Template, elapsed);
@@ -324,6 +373,18 @@ public sealed partial class SendEmailJob(
         Level = LogLevel.Error,
         Message = "{Code} message={EmailMessageId} template={Template} toHash={ToHash} exception={ExceptionType}")]
     private partial void LogSendFailed(string code, Guid emailMessageId, string template, string toHash, string exceptionType);
+
+    [LoggerMessage(
+        EventId = 1306,
+        Level = LogLevel.Warning,
+        Message = "{Code} message={EmailMessageId} template={Template} toHash={ToHash}: the server refused the recipient permanently, so the message is failed without a retry")]
+    private partial void LogSendRejected(string code, Guid emailMessageId, string template, string toHash);
+
+    [LoggerMessage(
+        EventId = 1307,
+        Level = LogLevel.Debug,
+        Message = "email.send.in-flight message={EmailMessageId}: another worker holds the send lock, so this attempt returns")]
+    private partial void LogSendInFlight(Guid emailMessageId);
 
     [LoggerMessage(
         EventId = 1305,

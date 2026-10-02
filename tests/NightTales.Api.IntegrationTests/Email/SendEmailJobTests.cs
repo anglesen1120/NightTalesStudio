@@ -128,6 +128,52 @@ public sealed class SendEmailJobTests(TestDatabase database) : IntegrationTest(d
     }
 
     [Fact]
+    public async Task SendEmailJob_TwoJobsForOneMessage_SendOnce()
+    {
+        var ct = TestContextToken.Value;
+        var owner = await Database.CreateUserBuilder().CreateAsync(ct: ct);
+        await using var harness = await EmailHarness.StartAsync(Database, new FakeClock(), ct);
+
+        var id = await harness.QueueAsync(
+            owner.Id,
+            "password_changed",
+            Language.Vi,
+            EmailHarness.Values(("displayName", "A"), ("occurredAt", "2026-01-01 00:00")),
+            ct);
+
+        // Hold the first send inside SMTP so the second job provably starts while it is in flight.
+        harness.Smtp.HoldCalls = true;
+
+        var first = Task.Run(() => harness.RunJobOnceAsync(id, ct), ct);
+        await harness.Smtp.FirstCall.WaitAsync(TimeSpan.FromSeconds(30), ct);
+
+        try
+        {
+            // A redelivered outbox event enqueues a second job for the same message: the send lock must make
+            // it return without a second SMTP call (09.2.6-T3 CR2).
+            var second = Task.Run(() => harness.RunJobOnceAsync(id, ct), ct);
+            await second.WaitAsync(TimeSpan.FromSeconds(30), ct);
+
+            harness.Smtp.CallCount.ShouldBe(1, "the second job must not reach SMTP while the first holds the send lock");
+        }
+        finally
+        {
+            harness.Smtp.Release();
+        }
+
+        await first.WaitAsync(TimeSpan.FromSeconds(30), ct);
+
+        harness.Smtp.CallCount.ShouldBe(1);
+        SqlProbe.ScalarText(Database, $"SELECT status FROM email_messages WHERE id = '{id}'").ShouldBe("sent");
+        SqlProbe.Count(Database, $"SELECT count(*) FROM email_messages WHERE id = '{id}' AND attempts = 1").ShouldBe(1);
+
+        // Drain the outbox row this test queued (the row is `sent` now, so the job returns at the guard), so
+        // it cannot leak into another test of the shared class database.
+        (await harness.DeliverAsync(ct)).ShouldBe(1);
+        harness.Smtp.CallCount.ShouldBe(1);
+    }
+
+    [Fact]
     public async Task SendEmailJob_SmtpFailure_ThrowsAndRecordsCode()
     {
         var ct = TestContextToken.Value;

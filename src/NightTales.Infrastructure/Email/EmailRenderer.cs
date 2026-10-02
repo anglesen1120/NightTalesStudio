@@ -1,4 +1,5 @@
 using System.Net;
+using System.Text.RegularExpressions;
 using NightTales.Application.Abstractions.Email;
 using NightTales.Domain.Common;
 
@@ -31,10 +32,11 @@ internal sealed class EmailRenderer(EmailTemplateProvider provider) : IEmailRend
         ArgumentException.ThrowIfNullOrWhiteSpace(templateName);
         ArgumentNullException.ThrowIfNull(values);
 
-        var text = Substitute(
-            provider.Get(templateName, locale, EmailTemplateFormat.Text),
-            values,
-            encodeForHtml: false);
+        var textTemplate = provider.Get(templateName, locale, EmailTemplateFormat.Text);
+
+        ThrowOnSubjectLineBreak(textTemplate, values);
+
+        var text = Substitute(textTemplate, values, encodeForHtml: false);
 
         var html = Substitute(
             provider.Get(templateName, locale, EmailTemplateFormat.Html),
@@ -42,6 +44,38 @@ internal sealed class EmailRenderer(EmailTemplateProvider provider) : IEmailRend
             encodeForHtml: true);
 
         return new RenderedEmail(SubjectOf(text), BodyOf(text), html);
+    }
+
+    /// <summary>
+    /// Refuses a value that would end the subject line early. The subject is the text file's first line and
+    /// a value substituted there is rendered verbatim, so a line break inside it would truncate the subject
+    /// and push the rest of the value into the body — a value-shaped attack on the composed message. Only
+    /// the keys that actually appear on that line are checked, so a line break in a body value stays legal.
+    /// </summary>
+    /// <param name="template">The text file being rendered.</param>
+    /// <param name="values">Every value the send collected.</param>
+    /// <exception cref="EmailTemplateException">A value on the subject line carries CR or LF.</exception>
+    private static void ThrowOnSubjectLineBreak(
+        EmailTemplateResource template,
+        IReadOnlyDictionary<string, string> values)
+    {
+        var subject = EmailTemplateProvider.SubjectOf(template.Content);
+
+        if (string.IsNullOrEmpty(subject))
+        {
+            return;
+        }
+
+        foreach (Match match in EmailTemplateProvider.PlaceholderPattern.Matches(subject))
+        {
+            var key = match.Groups["key"].Value;
+
+            if (values.TryGetValue(key, out var value) && value.IndexOfAny(['\r', '\n']) >= 0)
+            {
+                throw new EmailTemplateException(
+                    $"E-mail template file '{template.FileName}' renders '{{{{{key}}}}}' into its subject line, and the value carries a line break, which would end the subject early (09.2.6-T3).");
+            }
+        }
     }
 
     /// <summary>

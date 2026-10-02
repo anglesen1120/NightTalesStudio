@@ -20,11 +20,12 @@ namespace NightTales.Infrastructure.Email;
 /// Development.
 /// </para>
 /// <para>
-/// A refusal the server can describe (an SMTP status code) comes back as an <c>email_send_failed</c> result
-/// whose description carries the status code only — never the server's text, which echoes the recipient and
-/// must not reach a log (09 README BD16). Everything else (an unreachable host, a TLS failure, a timeout)
-/// propagates as the exception MailKit raised, so the job records the attempt and rethrows it for the
-/// five-attempt policy of the <c>email</c> queue.
+/// A refusal the server can describe (an SMTP status code) comes back as a failure result whose description
+/// carries the status code only — never the server's text, which echoes the recipient and must not reach a
+/// log (09 README BD16). A 5xx answers <c>email_send_rejected</c> (permanent: the job fails the row without
+/// a retry) and a 4xx <c>email_send_failed</c> (transient: the row stays retryable). Everything else (an
+/// unreachable host, a TLS failure, a timeout) propagates as the exception MailKit raised, so the job
+/// records the attempt and rethrows it for the five-attempt policy of the <c>email</c> queue.
 /// </para>
 /// <para>
 /// 09.10.2-T3 (09 W3 CR-29) inserts its connect-time egress guard into this dial path: the resolved
@@ -70,15 +71,20 @@ internal sealed class MailKitSmtpEmailSender(IOptions<EmailOptions> options) : I
         }
         catch (SmtpCommandException exception)
         {
+            // A 5xx refusal is permanent — a second attempt cannot change the answer — while a 4xx (a
+            // greylist, a mailbox that is momentarily full) stays retryable (09.2.6-T3 L176).
             return Error.Failure(
-                code: ErrorCodes.EmailSendFailed,
+                code: IsPermanent(exception.StatusCode) ? ErrorCodes.EmailSendRejected : ErrorCodes.EmailSendFailed,
                 description: $"The SMTP server refused the message (status code {exception.StatusCode}).");
         }
         finally
         {
             if (client.IsConnected)
             {
-                await client.DisconnectAsync(quit: true, cancellationToken).ConfigureAwait(false);
+                // The QUIT runs on an uncancellable token: if the job's token fires between a successful
+                // send and this point, a cancelled DisconnectAsync would throw out of the finally and the
+                // job would record a failed attempt for a message the server already accepted (09.2.6-T3).
+                await client.DisconnectAsync(quit: true, CancellationToken.None).ConfigureAwait(false);
             }
         }
 
@@ -88,6 +94,10 @@ internal sealed class MailKitSmtpEmailSender(IOptions<EmailOptions> options) : I
             ?? throw new InvalidOperationException(
                 "The message carries no Message-Id, so its delivery could not be recorded (09.2.6-T3).");
     }
+
+    /// <summary>Whether a refusal is permanent: every 5xx answer is final, every 4xx is retryable.</summary>
+    /// <param name="statusCode">The SMTP status code of the refusal.</param>
+    private static bool IsPermanent(SmtpStatusCode statusCode) => (int)statusCode >= 500;
 
     /// <summary>The MailKit socket option of one configured security mode.</summary>
     /// <param name="security">The validated configuration value.</param>

@@ -441,8 +441,14 @@ public static class ErrorCodes
     /// <summary>The recipient is deleted or suspended: <c>email_messages.last_error_code</c>, no send and no retry (09.2.6-T3).</summary>
     public const string EmailUserGone = "email_user_gone";
 
-    /// <summary>The SMTP attempt failed: <c>email_messages.last_error_code</c> for the 5-retry policy of the <c>email</c> queue (09.2.6-T3).</summary>
+    /// <summary>The SMTP attempt failed transiently: <c>email_messages.last_error_code</c> for the 5-retry policy of the <c>email</c> queue (09.2.6-T3).</summary>
     public const string EmailSendFailed = "email_send_failed";
+
+    /// <summary>
+    /// The SMTP server refused the recipient permanently (a 5xx status): <c>email_messages.last_error_code</c>
+    /// and the row is failed without a retry, because a second attempt cannot change the answer (09.2.6-T3 L176).
+    /// </summary>
+    public const string EmailSendRejected = "email_send_rejected";
 
     /// <summary>The <c>processingPaused</c> reason on episodes and jobs; paid commands still return 202 and hold a reserve (12.8.3).</summary>
     public const string ProviderFundsExhausted = "provider_funds_exhausted";

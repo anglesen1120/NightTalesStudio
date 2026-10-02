@@ -24,6 +24,8 @@ namespace NightTales.TestKit.Email;
 public sealed class FakeSmtpEmailSender : ISmtpEmailSender
 {
     private readonly List<MimeMessage> _sent = [];
+    private readonly TaskCompletionSource _release = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private readonly TaskCompletionSource _firstCall = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     /// <summary>How many times the job called the transport, whether or not the call succeeded.</summary>
     public int CallCount { get; private set; }
@@ -33,6 +35,18 @@ public sealed class FakeSmtpEmailSender : ISmtpEmailSender
 
     /// <summary>The last message the transport accepted, or <see langword="null"/> when it accepted none.</summary>
     public MimeMessage? LastMessage => _sent.Count == 0 ? null : _sent[^1];
+
+    /// <summary>
+    /// When set, every call blocks after it counted itself until <see cref="Release"/> is called, so a test
+    /// can hold one send open and start a second job against the same message (09.2.6-T3 CR2).
+    /// </summary>
+    public bool HoldCalls { get; set; }
+
+    /// <summary>Completes when the first call reached the transport.</summary>
+    public Task FirstCall => _firstCall.Task;
+
+    /// <summary>Lets every held call finish.</summary>
+    public void Release() => _release.TrySetResult();
 
     /// <summary>
     /// When set, the call throws it instead of accepting the message — the shape of an unreachable server or
@@ -45,11 +59,17 @@ public sealed class FakeSmtpEmailSender : ISmtpEmailSender
     public Func<MimeMessage, ErrorOr<string>>? Response { get; set; }
 
     /// <inheritdoc />
-    public Task<ErrorOr<string>> SendAsync(MimeMessage message, CancellationToken cancellationToken)
+    public async Task<ErrorOr<string>> SendAsync(MimeMessage message, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(message);
 
         CallCount++;
+        _firstCall.TrySetResult();
+
+        if (HoldCalls)
+        {
+            await _release.Task.ConfigureAwait(false);
+        }
 
         if (Failure is not null)
         {
@@ -58,7 +78,7 @@ public sealed class FakeSmtpEmailSender : ISmtpEmailSender
 
         if (Response is not null)
         {
-            return Task.FromResult(Response(message));
+            return Response(message);
         }
 
         _sent.Add(message);
@@ -66,9 +86,8 @@ public sealed class FakeSmtpEmailSender : ISmtpEmailSender
         // The raw header, like the real adapter: the bracketed deterministic id of BD9, not the bare form
         // MailKit's `MimeMessage.MessageId` normalises to. A message without one could not be correlated
         // with its delivery record, so this fails instead of returning an id.
-        return Task.FromResult<ErrorOr<string>>(
-            message.Headers[HeaderId.MessageId]
+        return message.Headers[HeaderId.MessageId]
             ?? throw new InvalidOperationException(
-                "The message carries no Message-Id, so its delivery could not be recorded (09.2.6-T3)."));
+                "The message carries no Message-Id, so its delivery could not be recorded (09.2.6-T3).");
     }
 }

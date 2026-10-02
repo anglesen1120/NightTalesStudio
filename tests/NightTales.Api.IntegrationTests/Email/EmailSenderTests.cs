@@ -5,6 +5,7 @@ using NightTales.Application.Abstractions;
 using NightTales.Application.Abstractions.Email;
 using NightTales.Application.Abstractions.Persistence;
 using NightTales.Application.Common.Errors;
+using NightTales.Application.Features.Email;
 using NightTales.Domain.Common;
 using NightTales.TestKit;
 using NightTales.TestKit.Database;
@@ -139,6 +140,45 @@ public sealed class EmailSenderTests(TestDatabase database) : IntegrationTest(da
 
         unknownTemplate.IsError.ShouldBeTrue();
         unknownTemplate.FirstError.Code.ShouldBe(ErrorCodes.EmailTemplateUnknown);
+        SqlProbe.Count(Database, $"SELECT count(*) FROM email_messages WHERE user_id = '{owner.Id}'").ShouldBe(0);
+    }
+
+    [Fact]
+    public async Task QueueAsync_MinterBearingUrlKey_IsNotAllowListed()
+    {
+        var ct = TestContextToken.Value;
+        var owner = await Database.CreateUserBuilder().CreateAsync(ct: ct);
+        await using var harness = await EmailHarness.StartAsync(Database, new FakeClock(), ct);
+
+        // Every link that carries a single-use token is minted at send time and may never be queued, so it
+        // is a minter key and not a producer key (09 README §B10 WT17/WT30, 09.2.6-T3 Design).
+        (string Template, string Key)[] mintedLinks =
+        [
+            ("owner_action_pending", "approveUrl"),
+            ("setting_change_pending", "cancelUrl"),
+            ("mfa_reset_forced", "resetUrl"),
+            ("approval_cancel", "cancelLink"),
+        ];
+
+        foreach (var (template, key) in mintedLinks)
+        {
+            var definition = EmailTemplateCatalog.Find(template)
+                ?? throw new InvalidOperationException($"'{template}' is not in the catalog.");
+            definition.MinterKeys.ShouldContain(key);
+            definition.ProducerKeys.ShouldNotContain(key);
+
+            var queued = await harness.TryQueueAsync(
+                owner.Id,
+                template,
+                Language.Vi,
+                EmailHarness.Values((key, "https://app.nighttales.test/x#t=smuggled")),
+                ct);
+
+            queued.IsError.ShouldBeTrue(
+                $"a producer must not be able to queue the minted key '{key}' of '{template}'");
+            queued.FirstError.Code.ShouldBe(ErrorCodes.EmailTemplateKeys);
+        }
+
         SqlProbe.Count(Database, $"SELECT count(*) FROM email_messages WHERE user_id = '{owner.Id}'").ShouldBe(0);
     }
 

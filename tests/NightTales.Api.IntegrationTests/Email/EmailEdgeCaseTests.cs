@@ -283,6 +283,85 @@ public sealed class EmailEdgeCaseTests(TestDatabase database) : IntegrationTest(
     }
 
     [Fact]
+    public async Task SendEmailJob_PermanentRefusal_IsFailedWithoutRetry()
+    {
+        var ct = TestContextToken.Value;
+        var owner = await Database.CreateUserBuilder().CreateAsync(ct: ct);
+        await using var harness = await EmailHarness.StartAsync(Database, new FakeClock(), ct);
+
+        // A 5xx refusal is permanent: the job fails the row and returns instead of feeding Hangfire's five
+        // attempts (09.2.6-T3 L176).
+        harness.Smtp.Response = _ => Error.Failure(ErrorCodes.EmailSendRejected, "550 5.1.1 mailbox unavailable");
+
+        var id = await harness.QueueAsync(
+            owner.Id,
+            "password_changed",
+            Language.Vi,
+            EmailHarness.Values(("displayName", "A"), ("occurredAt", "2026-01-01 00:00")),
+            ct);
+
+        (await harness.DeliverAsync(ct)).ShouldBe(1);
+        harness.Failures.ShouldBeEmpty("a permanent refusal is recorded, not retried");
+        harness.Smtp.CallCount.ShouldBe(1);
+
+        SqlProbe.ScalarText(Database, $"SELECT status FROM email_messages WHERE id = '{id}'").ShouldBe("failed");
+        SqlProbe.ScalarText(Database, $"SELECT last_error_code FROM email_messages WHERE id = '{id}'")
+            .ShouldBe(ErrorCodes.EmailSendRejected);
+
+        // A failed row keeps its values, and nothing the server echoed reaches a log line (BD16).
+        SqlProbe.Count(Database, $"SELECT count(*) FROM email_messages WHERE id = '{id}' AND params IS NOT NULL").ShouldBe(1);
+        harness.Logs.Messages.ShouldAllBe(line => !line.Contains(owner.Email!, StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task SendEmailJob_PostSendCommitFailure_LeavesRecoverableRow()
+    {
+        var ct = TestContextToken.Value;
+        var owner = await Database.CreateUserBuilder().CreateAsync(ct: ct);
+        await using var harness = await EmailHarness.StartAsync(Database, new FakeClock(), ct);
+
+        var id = await harness.QueueAsync(
+            owner.Id,
+            "password_changed",
+            Language.Vi,
+            EmailHarness.Values(("displayName", "A"), ("occurredAt", "2026-01-01 00:00")),
+            ct);
+
+        // The SMTP server accepts the message and only the commit that would record `sent` breaks.
+        await Database.ExecuteAsync(
+            "CREATE FUNCTION nts_block_sent() RETURNS trigger AS $$ BEGIN IF NEW.status = 'sent' THEN RAISE EXCEPTION 'nts test: sent write blocked'; END IF; RETURN NEW; END; $$ LANGUAGE plpgsql",
+            ct);
+        await Database.ExecuteAsync(
+            "CREATE TRIGGER nts_block_sent BEFORE UPDATE ON email_messages FOR EACH ROW EXECUTE FUNCTION nts_block_sent()",
+            ct);
+
+        try
+        {
+            (await harness.DeliverAsync(ct)).ShouldBe(0);
+            harness.Failures.Count.ShouldBe(1);
+            harness.Smtp.CallCount.ShouldBe(1);
+
+            // The row is not a corrupt `failed` one: `Sent` cleared its params only in memory, so what the
+            // last committed write left is a queued row with its values and no `sent_at` (09.2.6-T3 CR3).
+            SqlProbe.ScalarText(Database, $"SELECT status FROM email_messages WHERE id = '{id}'").ShouldBe("queued");
+            SqlProbe.Count(Database, $"SELECT count(*) FROM email_messages WHERE id = '{id}' AND params IS NOT NULL").ShouldBe(1);
+            SqlProbe.Count(Database, $"SELECT count(*) FROM email_messages WHERE id = '{id}' AND sent_at IS NULL").ShouldBe(1);
+        }
+        finally
+        {
+            await Database.ExecuteAsync("DROP TRIGGER nts_block_sent ON email_messages", ct);
+            await Database.ExecuteAsync("DROP FUNCTION nts_block_sent()", ct);
+        }
+
+        // With the fault gone the same row recovers — the retry re-reads its params and sends instead of
+        // failing forever on `EmailParamsJson.FromJson(null)`.
+        (await harness.RunJobAgainAsync(id, ct)).ShouldBe(1);
+
+        SqlProbe.ScalarText(Database, $"SELECT status FROM email_messages WHERE id = '{id}'").ShouldBe("sent");
+        SqlProbe.Count(Database, $"SELECT count(*) FROM email_messages WHERE id = '{id}' AND params IS NULL").ShouldBe(1);
+    }
+
+    [Fact]
     public async Task QueueAsync_OversizedValue_IsStoredAndSent()
     {
         var ct = TestContextToken.Value;
@@ -378,6 +457,38 @@ public sealed class EmailEdgeCaseTests(TestDatabase database) : IntegrationTest(
         // Host is the explicit `Email:Smtp` value; port and credentials come from the alias.
         options.Smtp.Host.ShouldBe("smtp.nighttales.test");
         options.Smtp.Port.ShouldBe(2525);
+        options.Smtp.Username.ShouldBe("alias-user");
+        options.Smtp.Password.ShouldBe("alias-pass");
+    }
+
+    [Fact]
+    public void EmailOptions_SmtpAliasUser_BindsUsername()
+    {
+        // 11.1.1-T2's `.env` exports `SMTP__USER`/`SMTP__PASSWORD`; the environment provider turns the flat
+        // names into the keys `Smtp:User`/`Smtp:Password`. `User` has no matching property on SmtpOptions
+        // (it is `Username`), so the alias must be mapped explicitly or the documented pair leaves Username
+        // null and the host refuses to start.
+        var builder = Host.CreateApplicationBuilder();
+        builder.Environment.EnvironmentName = Environments.Production;
+        builder.Configuration.Sources.Clear();
+        builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>(StringComparer.Ordinal)
+        {
+            ["Email:From:Address"] = "no-reply@nighttales.test",
+            ["Email:Smtp:Host"] = "smtp.nighttales.test",
+            ["Email:Smtp:Security"] = nameof(SmtpSecurity.StartTls),
+            ["Email:AddressHashPepper"] = "a-test-address-pepper",
+            ["App:PublicOrigin"] = "https://app.nighttales.test",
+            ["Smtp:User"] = "alias-user",
+            ["Smtp:Password"] = "alias-pass",
+        });
+
+        builder.Services.AddEmail(builder.Configuration);
+
+        using var app = builder.Build();
+        app.Start();
+
+        var options = app.Services.GetRequiredService<IOptions<EmailOptions>>().Value;
+
         options.Smtp.Username.ShouldBe("alias-user");
         options.Smtp.Password.ShouldBe("alias-pass");
     }

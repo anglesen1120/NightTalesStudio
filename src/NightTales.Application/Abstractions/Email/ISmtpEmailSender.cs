@@ -18,7 +18,9 @@ namespace NightTales.Application.Abstractions.Email;
 /// <para>
 /// A failure is reported twice on purpose: an SMTP-level refusal that can be described as a code comes
 /// back as an <see cref="ErrorOr{T}"/> result, while a transport exception propagates so the job can
-/// record it and rethrow it for Hangfire's retry policy (09 README BD9: five retries).
+/// record it and rethrow it for Hangfire's retry policy (09 README BD9: five retries). A permanent
+/// refusal (a 5xx answer) is <c>email_send_rejected</c> and a transient one (a 4xx answer) is
+/// <c>email_send_failed</c>; the job fails the row without a retry for the first (09.2.6-T3 L176).
 /// </para>
 /// </remarks>
 public interface ISmtpEmailSender

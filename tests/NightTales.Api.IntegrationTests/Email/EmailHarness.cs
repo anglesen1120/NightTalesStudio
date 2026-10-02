@@ -197,6 +197,20 @@ internal sealed class EmailHarness : IAsyncDisposable
         return await _host.Jobs.RunPendingAsync(cancellationToken);
     }
 
+    /// <summary>
+    /// Runs one <c>SendEmailJob</c> for a message in a fresh DI scope, the way Hangfire activates a job —
+    /// the seam a concurrency test drives two attempts of the same message through (09.2.6-T3 CR2).
+    /// </summary>
+    /// <param name="emailMessageId">The message to send.</param>
+    /// <param name="cancellationToken">Cancels the run.</param>
+    internal async Task RunJobOnceAsync(Guid emailMessageId, CancellationToken cancellationToken)
+    {
+        using var scope = CreateScope();
+        var job = scope.ServiceProvider.GetRequiredService<SendEmailJob>();
+
+        await job.RunAsync(emailMessageId, cancellationToken).ConfigureAwait(false);
+    }
+
     /// <summary>Reads the delivery state as <paramref name="userId"/>; the tenant filter applies.</summary>
     /// <param name="userId">The caller's identity.</param>
     /// <param name="emailMessageId">The message to read.</param>

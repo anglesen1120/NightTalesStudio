@@ -238,6 +238,7 @@ public static class ErrorCatalogue
             ErrorCodes.RenderWorkerUnavailable,
             ErrorCodes.EmailUserGone,
             ErrorCodes.EmailSendFailed,
+            ErrorCodes.EmailSendRejected,
             ErrorCodes.ProviderFundsExhausted,
             ErrorCodes.TiktokActiveUserCap,
             ErrorCodes.TiktokCreatorBanned,

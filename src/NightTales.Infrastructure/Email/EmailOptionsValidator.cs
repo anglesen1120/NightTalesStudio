@@ -59,6 +59,18 @@ public static class EmailOptionsValidator
         "'Email:AddressHashPepper' is required: without it the address hash of `email_messages` could be "
         + "brute-forced (09 README BD16).";
 
+    /// <summary>
+    /// The failure of the committed development pepper against a remote server outside Development. Like the
+    /// plaintext rule it turns on the endpoint, not the environment name: the committed loopback
+    /// configuration must boot in every environment (the build-time OpenAPI generator starts the Api in
+    /// Production), while a deployment that points at a real mail server and forgot its own pepper fails
+    /// here instead of hashing with a value the world knows.
+    /// </summary>
+    public const string DevelopmentPepperFailure =
+        "'Email:AddressHashPepper' still carries the committed development value outside Development: set "
+        + "the deployment's own pepper (Email__AddressHashPepper) so `email_messages.to_hash` cannot be "
+        + "brute-forced (09 README BD16).";
+
     /// <summary>Adds every rule to <paramref name="builder"/> and turns validation on at start-up.</summary>
     /// <param name="builder">The options builder of <c>AddEmail</c>.</param>
     /// <returns>The same builder, for chaining.</returns>
@@ -94,6 +106,14 @@ public static class EmailOptionsValidator
             .Validate(
                 options => !string.IsNullOrWhiteSpace(options.AddressHashPepper),
                 MissingPepperFailure)
+            .Validate<IHostEnvironment>(
+                (options, environment) => environment.IsDevelopment()
+                    || IsLoopbackHost(options.Smtp.Host)
+                    || !string.Equals(
+                        options.AddressHashPepper,
+                        EmailOptions.DevelopmentAddressHashPepper,
+                        StringComparison.Ordinal),
+                DevelopmentPepperFailure)
             .ValidateOnStart();
     }
 

@@ -66,6 +66,7 @@ public static class EmailServiceCollectionExtensions
         services.AddScoped<IEmailAddressHasher, Sha256EmailAddressHasher>();
         services.AddScoped<IEmailRecipientQuery, EmailRecipientQuery>();
         services.AddScoped<IEmailTokenMinters, EmailTokenMinters>();
+        services.AddScoped<IEmailSendLock, PostgresEmailSendLock>();
         services.AddScoped<ISmtpEmailSender, MailKitSmtpEmailSender>();
 
         // One keyed minter per token-bearing template (09 README §B10 WT17). Keyed and not enumerable: the
