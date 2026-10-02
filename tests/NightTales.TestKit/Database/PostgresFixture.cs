@@ -24,8 +24,11 @@ namespace NightTales.TestKit.Database;
 /// two processes of the same build share one template instead of racing <c>CREATE DATABASE</c> on the
 /// same name, and a build whose migration set differs keeps a template of its own instead of dropping
 /// the other's mid-run. Every <see cref="TestDatabase"/> is then a
-/// <c>CREATE DATABASE … TEMPLATE</c> copy, which costs well under a second and does not grow with the
-/// number of test classes.
+/// <c>CREATE DATABASE … TEMPLATE</c> copy, which costs well under a second once the module's start wave
+/// is past and does not grow with the number of test classes. The copy is I/O-bound, so its latency
+/// grows with the copies in flight: measured on this Mac (2026-10-02, 88 class databases in one run),
+/// the ten concurrent copies of the first wave took 1063-1114 ms each while every later wave took
+/// 55-231 ms.
 /// </para>
 /// <para>
 /// The fixture is shared per test assembly through <see cref="Shared"/>. It is deliberately *not*

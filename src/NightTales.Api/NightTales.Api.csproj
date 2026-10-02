@@ -14,6 +14,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="Hangfire.AspNetCore" />
     <PackageReference Include="Mediator.SourceGenerator" PrivateAssets="all" />
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" />
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
@@ -22,9 +23,7 @@
       (it boots the app in-process), so it contributes only its targets/analyzers to the output: the
       package is build-time only and must not flow to the referencing test projects.
     -->
-    <PackageReference Include="Microsoft.Extensions.ApiDescription.Server"
-                      IncludeAssets="runtime;build;native;contentfiles;analyzers;buildtransitive"
-                      PrivateAssets="all" />
+    <PackageReference Include="Microsoft.Extensions.ApiDescription.Server" IncludeAssets="runtime;build;native;contentfiles;analyzers;buildtransitive" PrivateAssets="all" />
     <PackageReference Include="Serilog.AspNetCore" />
   </ItemGroup>
 
@@ -34,8 +33,6 @@
     is `openapi.json` next to the project file (09 README D14), so copy it there after every generation.
   -->
   <Target Name="CopyOpenApiDocument" AfterTargets="GenerateOpenApiDocuments">
-    <Copy SourceFiles="$(OpenApiDocumentsDirectory)/$(MSBuildProjectName).json"
-          DestinationFiles="$(MSBuildProjectDirectory)/openapi.json"
-          SkipUnchangedFiles="true" />
+    <Copy SourceFiles="$(OpenApiDocumentsDirectory)/$(MSBuildProjectName).json" DestinationFiles="$(MSBuildProjectDirectory)/openapi.json" SkipUnchangedFiles="true" />
   </Target>
 </Project>

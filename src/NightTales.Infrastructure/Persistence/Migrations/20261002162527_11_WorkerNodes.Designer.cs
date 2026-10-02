@@ -14,7 +14,7 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace NightTales.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    [Migration("20261002100803_11_WorkerNodes")]
+    [Migration("20261002162527_11_WorkerNodes")]
     partial class _11_WorkerNodes
     {
         /// <inheritdoc />
@@ -1460,6 +1460,68 @@ namespace NightTales.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("NightTales.Infrastructure.Persistence.Entities.AuthChallenge", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<short>("Attempts")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("smallint")
+                        .HasDefaultValue((short)0)
+                        .HasColumnName("attempts");
+
+                    b.Property<DateTimeOffset>("ExpiresAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("expires_at");
+
+                    b.Property<IPAddress>("Ip")
+                        .HasColumnType("inet")
+                        .HasColumnName("ip");
+
+                    b.Property<string>("PreAuthCookieHash")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("preauth_cookie_hash");
+
+                    b.Property<string>("TokenHash")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("token_hash");
+
+                    b.Property<DateTimeOffset?>("UsedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("used_at");
+
+                    b.Property<string>("UserAgent")
+                        .HasColumnType("text")
+                        .HasColumnName("user_agent");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_auth_challenges");
+
+                    b.HasIndex("TokenHash")
+                        .IsUnique()
+                        .HasDatabaseName("ux_auth_challenges_token_hash");
+
+                    b.HasIndex("UserId")
+                        .HasDatabaseName("ix_auth_challenges_user_id_unused")
+                        .HasFilter("used_at IS NULL");
+
+                    b.HasIndex("UserId", "ExpiresAt")
+                        .HasDatabaseName("ix_auth_challenges_user_id_expires_at");
+
+                    b.ToTable("auth_challenges", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_auth_challenges_attempts", "attempts >= 0 AND attempts <= 5");
+                        });
+                });
+
             modelBuilder.Entity("NightTales.Infrastructure.Persistence.Entities.RefreshToken", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1998,6 +2060,16 @@ namespace NightTales.Infrastructure.Persistence.Migrations
                         .HasPrincipalKey("Id", "UserId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .HasConstraintName("fk_usage_records_series_series_id_user_id");
+                });
+
+            modelBuilder.Entity("NightTales.Infrastructure.Persistence.Entities.AuthChallenge", b =>
+                {
+                    b.HasOne("NightTales.Infrastructure.Persistence.AppUser", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_auth_challenges_asp_net_users_user_id");
                 });
 
             modelBuilder.Entity("NightTales.Infrastructure.Persistence.Entities.RefreshToken", b =>

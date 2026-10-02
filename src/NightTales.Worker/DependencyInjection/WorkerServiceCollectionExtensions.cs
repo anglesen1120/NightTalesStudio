@@ -10,10 +10,12 @@ using NightTales.Application.Abstractions.Jobs;
 using NightTales.Application.Abstractions.Outbox;
 using NightTales.Application.Features.Episodes.Outbox;
 using NightTales.Domain.Episodes.Events;
+using NightTales.Domain.Platform.Events;
 using NightTales.Infrastructure.DependencyInjection;
 using NightTales.Infrastructure.Email;
 using NightTales.Infrastructure.Jobs;
 using NightTales.Infrastructure.Persistence;
+using NightTales.Infrastructure.Persistence.Flags;
 using NightTales.Infrastructure.Persistence.Outbox;
 using NightTales.Infrastructure.Security;
 using NightTales.Infrastructure.Storage;
@@ -85,6 +87,11 @@ public static class WorkerServiceCollectionExtensions
 
         services.AddPersistence(configuration, assemblies);
 
+        // 09.9.2-T2 (09 README BD13): the same feature-flag read service the Api composes — the cached port
+        // a job or outbox handler checks, the writer's NOTIFY notifier, and this instance's
+        // `LISTEN feature_flags_changed` invalidator, so a flip reached on one host is believed on all.
+        services.AddFeatureFlags(configuration);
+
         // 09.9.4-T1 (09 README BD12/WF15): the Worker protects and reads back values with the same ring
         // and the same DP_KEK as the Api (11 §10:284), so a token the Api protected — a channel
         // connection, a settings secret — is readable here, and each purpose stays isolated.
@@ -134,6 +141,11 @@ public static class WorkerServiceCollectionExtensions
         services.AddSingleton<NodeHealthPoller>();
         services.AddSingleton<IHostedService>(NodeHealthPollerFactory);
 
+        // 09.9.2-T2 (09 README BD13): the `feature_flags_changed.v1` consumer — it drops the key from this
+        // Worker instance's flag cache. It is idempotent and writes nothing: the writer owns the row, the
+        // audit row and the NOTIFY; this handler is the outbox half of the two eviction paths.
+        services.AddOutboxHandler<FeatureFlagsChanged, FeatureFlagsChangedHandler>();
+
         // 09.2.4-T1 appends the hosted OutboxDispatcher inside this composition root (09 W3 CR-42).
         services.AddOptions<OutboxDispatcherOptions>()
             .BindConfiguration(OutboxDispatcherOptions.SectionName)
@@ -158,9 +170,15 @@ public static class WorkerServiceCollectionExtensions
         services.AddSingleton<OutboxDispatcher>();
         services.AddSingleton<IHostedService>(OutboxDispatcherLoopFactory);
 
+        // 09.7.2-T1 (09 README BD10/BD12): the blob store, its health cache and the prober. The sweep
+        // (09.7.3-T1), the render ingest (09.6.3-T2) and 02's fetcher path all call it here; the
+        // readiness check below reads only the cache the prober fills (BD16).
+        services.AddStorage(configuration);
+
         services.AddHealthChecks()
             .AddCheck<DatabaseHealthCheck>("database")
-            .AddCheck<HangfireStorageHealthCheck>("hangfire");
+            .AddCheck<HangfireStorageHealthCheck>("hangfire")
+            .AddCheck<StorageHealthCheck>(StorageHealthCheck.Name);
 
         return services;
     }

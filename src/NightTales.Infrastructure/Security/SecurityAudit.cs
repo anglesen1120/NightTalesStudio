@@ -40,6 +40,42 @@ internal static class SecurityAudit
         Visibility visibility,
         string? detail,
         DateTimeOffset now) =>
+        Row(action, userId, info, visibility, Payload(detail), now);
+
+    /// <summary>
+    /// One security row whose <c>data</c> carries the named values the Design freezes
+    /// (<c>{ attempts }</c> on an MFA failure, <c>{ method }</c> on a completed login, the two address
+    /// hashes of an IP change).
+    /// </summary>
+    /// <remarks>
+    /// The keys are serialized camelCase, like every other hand-written payload. A value is a bounded
+    /// scalar or a short label from this codebase's own vocabulary — the same rule the plain
+    /// <see cref="Entry(string, Guid, RequestInfo, Visibility, string?, DateTimeOffset)"/> overload
+    /// enforces by construction (BD16: no token, no address, no secret).
+    /// </remarks>
+    /// <param name="action">A <c>SecurityAuditActions</c> value.</param>
+    /// <param name="userId">The account the row is about.</param>
+    /// <param name="info">The caller metadata the row records.</param>
+    /// <param name="visibility">Who may read the row.</param>
+    /// <param name="payload">The <c>data</c> members; empty writes <c>{}</c>.</param>
+    /// <param name="now">The scope's clock reading.</param>
+    internal static AuditEntry EntryWithData(
+        string action,
+        Guid userId,
+        RequestInfo info,
+        Visibility visibility,
+        IReadOnlyDictionary<string, object?> payload,
+        DateTimeOffset now) =>
+        Row(action, userId, info, visibility, Payload(payload), now);
+
+    /// <summary>The row both overloads build; only the <c>data</c> text differs.</summary>
+    private static AuditEntry Row(
+        string action,
+        Guid userId,
+        RequestInfo info,
+        Visibility visibility,
+        string dataJson,
+        DateTimeOffset now) =>
         new(
             ActorUserId: userId,
             ActorType: ActorType.User,
@@ -49,7 +85,7 @@ internal static class SecurityAudit
             Visibility: visibility,
             EntityType: null,
             EntityId: null,
-            DataJson: Payload(detail),
+            DataJson: dataJson,
             Ip: ParseIp(info.Ip),
             UserAgent: Truncate(info.UserAgent),
             ActorLabel: null,
@@ -73,6 +109,12 @@ internal static class SecurityAudit
         detail is null
             ? "{}"
             : System.Text.Json.JsonSerializer.Serialize(new SecurityAuditData(detail), PayloadOptions);
+
+    /// <summary>The <c>data</c> payload of the named values the Design fixes; camelCase like the rest.</summary>
+    private static string Payload(IReadOnlyDictionary<string, object?> payload) =>
+        payload.Count == 0
+            ? "{}"
+            : System.Text.Json.JsonSerializer.Serialize(payload, PayloadOptions);
 
     /// <summary>The row's payload; safe text only (09 README BD16).</summary>
     /// <param name="Detail">The short, non-identifying description of the event.</param>

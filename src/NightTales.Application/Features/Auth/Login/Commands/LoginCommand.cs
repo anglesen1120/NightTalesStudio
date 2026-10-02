@@ -15,7 +15,10 @@ public enum LoginOutcome
     /// <summary>200: an access token plus the refresh family the Api sets as a cookie.</summary>
     Tokens,
 
-    /// <summary>401 <c>mfa_required</c>: the role always signs in with TOTP and 09.3.2-T3 will challenge it.</summary>
+    /// <summary>
+    /// 401 <c>mfa_required</c>: the account always signs in with an authenticator. 09.3.2-T3's challenge
+    /// document is the body's <c>mfaToken</c> and the response's <c>__Secure-nts_mfa</c> cookie.
+    /// </summary>
     MfaRequired,
 
     /// <summary>401 <c>mfa_enrolment_required</c>: an owner/admin who has not enrolled yet (BD4).</summary>
@@ -35,9 +38,10 @@ public enum LoginOutcome
 /// <para>
 /// <see cref="Access"/> is the session's token for <see cref="LoginOutcome.Tokens"/>, and the
 /// enrolment-only token for <see cref="LoginOutcome.EnrolmentRequired"/> — <c>scope = mfa_enrol</c>,
-/// 15 minutes, accepted only by <c>/me/mfa/setup|verify</c> (BD4). This task never puts it on the wire:
-/// the route answers 401 <c>mfa_enrolment_required</c> and 09.3.2-T3 adds the pre-auth cookie that
-/// carries it ([RULED — README §B10 WT22, WT39]).
+/// 15 minutes, accepted only by <c>/me/mfa/setup|verify</c> (BD4). The route answers 401
+/// <c>mfa_enrolment_required</c> and puts no token on the wire, so where the SPA receives it is still
+/// open (10.3.3's plan §10) — 09.3.2-T3's <c>__Secure-nts_mfa</c> cookie carries the MFA challenge's own
+/// pre-auth secret, not this token ([RULED — README §B10 WT22, WT39]).
 /// </para>
 /// <para>
 /// <see cref="Refresh"/> is non-null only for <see cref="LoginOutcome.Tokens"/>: the two MFA outcomes
@@ -53,12 +57,18 @@ public enum LoginOutcome
 /// carries it rather than making the endpoint decode the token it just signed.
 /// </param>
 /// <param name="Amr">The authentication method the token records, for the same reason (<c>amr</c>).</param>
+/// <param name="Challenge">
+/// The MFA challenge document of <see cref="LoginOutcome.MfaRequired"/>: the single-use <c>mfaToken</c> the
+/// 401 body carries and the separate pre-auth cookie value the Api writes. It is null for every other
+/// outcome — 09.3.2-T3 is the task that fills it ([RULED — README §B10 WT22, WT39]).
+/// </param>
 public sealed record LoginResult(
     LoginOutcome Outcome,
     IssuedAccessToken? Access,
     IssuedRefreshSession? Refresh,
     PlatformRole Role,
-    AuthMethod Amr);
+    AuthMethod Amr,
+    MfaChallenge? Challenge);
 
 /// <summary>
 /// The frozen <c>POST /api/v1/auth/login</c> body (09.3-auth plan §5): the two credential fields.

@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+
+  <!--
+    11 README D3/D18: the mock's own test project. It references the mock (and through it the server core and
+    the contract), and hosts a real in-process Kestrel — the same way the core's own tests do — so routing,
+    the body cap, the headers and the fake backend's ticker are all exercised on the real surface.
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\..\tools\mock-mpt\NightTales.MockMpt.csproj" />
+    <ProjectReference Include="..\..\src\NightTales.RenderNode.Contract\NightTales.RenderNode.Contract.csproj" />
+    <ProjectReference Include="..\..\src\NightTales.RenderNode.Server\NightTales.RenderNode.Server.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Shouldly" />
+    <PackageReference Include="xunit.v3" />
+  </ItemGroup>
+</Project>

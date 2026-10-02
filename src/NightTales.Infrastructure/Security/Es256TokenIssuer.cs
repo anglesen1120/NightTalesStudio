@@ -88,8 +88,10 @@ public sealed class Es256TokenIssuer(JwtSigningKey signingKey, IOptions<JwtOptio
     }
 
     /// <inheritdoc />
-    public string CreateRefreshToken()
-        => Base64Url(RandomNumberGenerator.GetBytes(RefreshTokenBytes));
+    public string CreateRefreshToken() => CreateSecret();
+
+    /// <inheritdoc />
+    public string CreateSecret() => Base64Url(RandomNumberGenerator.GetBytes(RefreshTokenBytes));
 
     /// <inheritdoc />
     public string HashToken(string token)

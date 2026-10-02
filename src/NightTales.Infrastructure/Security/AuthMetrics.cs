@@ -29,18 +29,26 @@ public sealed class AuthMetrics : IDisposable
     /// <summary>The refresh counter; its <c>result</c> tag is the answer the caller got.</summary>
     public const string RefreshCounterName = "auth_refresh_total";
 
+    /// <summary>The MFA-completion counter of 09.3.2-T3; its <c>result</c> tag is the answer the caller got.</summary>
+    public const string MfaCounterName = "auth_mfa_total";
+
     /// <summary>The tag carrying the outcome code.</summary>
     public const string ResultTagName = "result";
 
     private readonly Meter _meter = new(MeterName);
     private readonly Counter<long> _logins;
     private readonly Counter<long> _refreshes;
+    private readonly Counter<long> _mfaCompletions;
 
     /// <summary>Creates the meter and its two counters.</summary>
     public AuthMetrics()
     {
         _logins = _meter.CreateCounter<long>(LoginCounterName, "1", "Login attempts by outcome code.");
         _refreshes = _meter.CreateCounter<long>(RefreshCounterName, "1", "Refresh attempts by outcome code.");
+        _mfaCompletions = _meter.CreateCounter<long>(
+            MfaCounterName,
+            "1",
+            "MFA-completion attempts by outcome code.");
     }
 
     /// <summary>Counts one finished login attempt.</summary>
@@ -50,6 +58,10 @@ public sealed class AuthMetrics : IDisposable
     /// <summary>Counts one finished refresh attempt.</summary>
     /// <param name="result">The wire code of the answer.</param>
     public void Refresh(string result) => Record(_refreshes, result);
+
+    /// <summary>Counts one finished MFA-completion attempt (09.3.2-T3).</summary>
+    /// <param name="result">The wire code of the answer.</param>
+    public void Mfa(string result) => Record(_mfaCompletions, result);
 
     /// <inheritdoc />
     public void Dispose() => _meter.Dispose();

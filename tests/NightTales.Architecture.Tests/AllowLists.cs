@@ -110,6 +110,25 @@ internal static class AllowLists
         "Microsoft.Extensions.",
     ];
 
+    /// <summary>
+    /// 11 README D3: <c>NightTales.MockMpt</c> (tools/mock-mpt) may reference only the server core and the
+    /// contract — never Domain, Application or Infrastructure, so the fake node loads without the backend.
+    /// The bare <c>Microsoft.AspNetCore</c> meta-assembly and <c>Microsoft.Win32.Primitives</c> are what the
+    /// Web SDK host pulls in (the core is a library and does not); both are framework assemblies, not
+    /// backend code.
+    /// </summary>
+    internal static readonly IReadOnlySet<string> MockMptAllowedReferences =
+        new HashSet<string>(StringComparer.Ordinal)
+        {
+            "ErrorOr",
+            "Microsoft.AspNetCore",
+            "Microsoft.Win32.Primitives",
+            "NightTales.RenderNode.Contract",
+            "NightTales.RenderNode.Server",
+        };
+
+    internal static readonly IReadOnlyList<string> MockMptAllowedPrefixes = RenderNodeServerAllowedPrefixes;
+
     /// <summary>02 CR-19 lets the Fetcher use any <c>Microsoft.Extensions.*</c> package.</summary>
     internal static readonly IReadOnlyList<string> FetcherAllowedPrefixes =
         ["Microsoft.Extensions."];

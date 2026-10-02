@@ -10,6 +10,11 @@ config.toml
 output/
 storage/
 models/
+# 09.7.2-T1 (09 README BD10): C# namespaces named Storage/ are source, not generated media. The
+# `storage/` pattern above targets the runtime output dir (11 D14 keeps dev runtime state in .nts/);
+# develop already tracks storage-named source dirs, so keep the code ones addable.
+!src/**/Storage/
+!tests/**/Storage/
 *.mp3
 *.wav
 *.mp4

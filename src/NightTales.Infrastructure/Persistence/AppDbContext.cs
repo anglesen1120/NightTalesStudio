@@ -103,6 +103,14 @@ public sealed class AppDbContext : IdentityDbContext<AppUser, AppRole, Guid>, IA
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
 
     /// <summary>
+    /// Infrastructure-only: the MFA login challenges of 09.3.2-T3. 09.3.2-T1's login flow inserts one
+    /// through <c>EfMfaChallengeService.BeginAsync</c> when the account always signs in with an
+    /// authenticator; every later statement (the supersede, the locked read, the attempt counter) lives in
+    /// that same store, like the refresh families next to it.
+    /// </summary>
+    public DbSet<AuthChallenge> AuthChallenges => Set<AuthChallenge>();
+
+    /// <summary>
     /// Infrastructure-only: the single-use hub tickets of 09.8.1-T2. 09.8.1-T1's claim is a
     /// set-based <c>UPDATE</c> in <c>NpgsqlHubTicketValidator</c> and the issue path inserts through
     /// <c>NpgsqlHubTicketStore</c>, so nothing outside Infrastructure touches this set.
