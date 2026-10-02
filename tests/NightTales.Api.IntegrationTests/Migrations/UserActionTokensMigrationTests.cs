@@ -19,10 +19,9 @@ namespace NightTales.Api.IntegrationTests.Migrations;
 /// <remarks>
 /// The shape is read from both sides, like the other per-table migration tests: the EF model (what the next
 /// <c>dotnet ef migrations add</c> would diff against) and the live schema of the class database (what the
-/// migration applied). This class owns the last-migration <c>Down</c> check while
-/// <c>_09_UserActionTokens</c> is the newest migration; when a newer migration lands, its own test takes
-/// that check over and this one reverts to its own predecessor by name (see
-/// <c>WorkerNodesMigrationTests.DownMigration_DropsTable</c>).
+/// migration applied). It does not own the last-migration <c>Down</c> check: that belongs to the newest
+/// migration's test (<c>GenerationRunsMigrationTests</c> today), so this class finds its own migration by name
+/// and reverts to its own predecessor (see <c>WorkerNodesMigrationTests.DownMigration_DropsTable</c>).
 /// </remarks>
 [Trait("Category", "Integration")]
 [Trait("Category", "Migration")]
@@ -130,12 +129,14 @@ public sealed class UserActionTokensMigrationTests(TestDatabase database) : Inte
         await using var context = Database.CreateAppDbContext();
 
         var migrations = context.Database.GetMigrations().Order(StringComparer.Ordinal).ToList();
-        migrations[^1].ShouldContain(MigrationName, customMessage: "this test owns the last migration");
-        migrations.Count.ShouldBeGreaterThan(1, "there must be a previous migration to revert to");
+        var own = migrations.FindIndex(name => name.EndsWith("_" + MigrationName, StringComparison.Ordinal));
+        own.ShouldBeGreaterThan(0, "the migration must exist and have a previous one to revert to");
 
         try
         {
-            await context.Database.GetService<IMigrator>().MigrateAsync(migrations[^2], Ct);
+            // Reverting to the migration before this one also reverts every later migration, so this test does
+            // not depend on being the last one (the last migration's own test owns that check).
+            await context.Database.GetService<IMigrator>().MigrateAsync(migrations[own - 1], Ct);
 
             (await Database.QueryStringsAsync("SELECT to_regclass('public.user_action_tokens')::text", Ct))
                 .ShouldBe([string.Empty], ignoreOrder: false, customMessage: "the Down drops the table");

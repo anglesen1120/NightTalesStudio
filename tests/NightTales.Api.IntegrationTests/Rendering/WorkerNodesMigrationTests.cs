@@ -143,6 +143,8 @@ public sealed class WorkerNodesMigrationTests(TestDatabase database) : Integrati
 
         try
         {
+            // Reverting to the migration before this one also reverts every later migration, so this test does
+            // not depend on being the last one (the last migration's own test owns that check).
             await context.Database.GetService<IMigrator>().MigrateAsync(migrations[own - 1], Ct);
 
             (await Database.QueryStringsAsync("SELECT to_regclass('public.worker_nodes')::text", Ct))

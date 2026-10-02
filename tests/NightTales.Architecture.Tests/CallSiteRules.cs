@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using System.Reflection;
 using System.Reflection.Emit;
 using System.Reflection.Metadata;
@@ -110,14 +111,107 @@ public sealed class CallSiteRules
             + $"(11 README F13); found {string.Join("; ", violations)}");
     }
 
+    /// <summary>
+    /// <c>story_versions</c> is append-only (02.2.2 plan §3.2, FR-02-3): no call site outside
+    /// <c>Features/Admin</c> (09.9.1) may <c>Update</c>, <c>Attach</c>, <c>Remove</c> or set-update/delete a
+    /// <c>StoryVersion</c>, nothing outside it may assign <c>EntityEntry.State</c> at all (the way a row
+    /// would be forced to <c>Modified</c>/<c>Deleted</c>), and the untyped paths that name no entity —
+    /// <c>DbContext.Update/Attach/Remove</c>, <c>PropertyEntry.CurrentValue</c>, <c>PropertyValues.SetValues</c> —
+    /// are banned outside it too, except for the explicit
+    /// <see cref="AllowLists.StoryVersionUntypedMutationTypeNames"/>. The persistence model backs this at
+    /// runtime with <c>AfterSaveBehavior.Throw</c> on every property.
+    /// </summary>
+    /// <remarks>
+    /// The scan sees the generic instantiation (<c>DbSet&lt;StoryVersion&gt;.Update</c>,
+    /// <c>ExecuteDelete&lt;StoryVersion&gt;</c>); a call through the non-generic <c>Update(object)</c> overload
+    /// names no entity, which is why the <c>State</c> setter and the untyped calls are banned outright instead.
+    /// </remarks>
+    [Fact]
+    public void StoryVersion_NoUpdatePathOutsideAdmin()
+    {
+        const string storyVersion = "NightTales.Domain.Stories.StoryVersion";
+        string[] mutating =
+        [
+            "Update", "UpdateRange", "Remove", "RemoveRange", "Attach", "AttachRange",
+            "ExecuteUpdate", "ExecuteUpdateAsync", "ExecuteDelete", "ExecuteDeleteAsync",
+        ];
+
+        var sites = new List<CallSite>();
+        foreach (var assembly in ArchitectureModel.SourceAssemblies)
+        {
+            Collect(
+                assembly,
+                called => called is "set_State" or "Add" or "set_CurrentValue" or "SetValues"
+                    || Array.IndexOf(mutating, called) >= 0,
+                MemberResolvingOpcodes,
+                null,
+                sites);
+        }
+
+        // Non-vacuity: the scanner must resolve generic EF types at all, or a decoder regression would let the
+        // rule pass while guarding nothing. The handlers add entities to `DbSet<T>` sets.
+        sites.ShouldContain(
+            site => site.CalledMember == "Add"
+                && site.DeclaringType.StartsWith("Microsoft.EntityFrameworkCore.DbSet`1<NightTales.Domain.", StringComparison.Ordinal),
+            "the IL scan must name the entity of a DbSet<T> call");
+
+        // Non-vacuity of the untyped checks: the audit interceptor really assigns PropertyEntry.CurrentValue.
+        sites.ShouldContain(site => IsPropertyEntryValueSetter(site), "the IL scan must see PropertyEntry.CurrentValue assignments");
+
+        var violations = sites
+            .Where(site => site.CalledMember != "Add")
+            .Where(site => IsEntityEntryStateSetter(site)
+                || site.DeclaringType.Contains(storyVersion, StringComparison.Ordinal))
+            .Where(site => !IsInNamespace(site.OutermostNamespace, AllowLists.StoryVersionMutationNamespacePrefix))
+            .Select(site => $"{FullName(site)}.{site.Method} calls {site.DeclaringType}.{site.CalledMember}")
+            .ToList();
+
+        violations.AddRange(sites
+            .Where(site => IsUntypedMutation(site, mutating))
+            .Where(site => !IsInNamespace(site.OutermostNamespace, AllowLists.StoryVersionMutationNamespacePrefix)
+                && !AllowLists.StoryVersionUntypedMutationTypeNames.Contains(FullName(site)))
+            .Select(site => $"{FullName(site)}.{site.Method} calls {site.DeclaringType}.{site.CalledMember} (untyped)"));
+
+        violations.ShouldBeEmpty(
+            $"{nameof(StoryVersion_NoUpdatePathOutsideAdmin)}: story_versions is append-only; only "
+            + $"{AllowLists.StoryVersionMutationNamespacePrefix} (and {string.Join(", ", AllowLists.StoryVersionUntypedMutationTypeNames)} "
+            + "for the untyped paths) may mutate it (02.2.2 plan §3.2); found "
+            + string.Join("; ", violations));
+    }
+
+    /// <summary>
+    /// Whether the site is an untyped EF write that names no entity: the non-generic <c>DbContext.Update/Attach/Remove</c>
+    /// family, <c>PropertyEntry.CurrentValue</c> or <c>PropertyValues.SetValues</c>.
+    /// </summary>
+    private static bool IsUntypedMutation(CallSite site, string[] mutating) =>
+        (site.DeclaringType == "Microsoft.EntityFrameworkCore.DbContext"
+            && Array.IndexOf(mutating, site.CalledMember) >= 0
+            && !site.CalledMember.StartsWith("Execute", StringComparison.Ordinal))
+        || IsPropertyEntryValueSetter(site)
+        || (site.CalledMember == "SetValues"
+            && site.DeclaringType.StartsWith("Microsoft.EntityFrameworkCore.ChangeTracking.PropertyValues", StringComparison.Ordinal));
+
+    /// <summary>EF declares <c>CurrentValue</c> on <c>MemberEntry</c> and overrides it on <c>PropertyEntry</c>; either binding writes a value.</summary>
+    private static bool IsPropertyEntryValueSetter(CallSite site) =>
+        site.CalledMember == "set_CurrentValue"
+        && (site.DeclaringType.StartsWith("Microsoft.EntityFrameworkCore.ChangeTracking.PropertyEntry", StringComparison.Ordinal)
+            || site.DeclaringType.StartsWith("Microsoft.EntityFrameworkCore.ChangeTracking.MemberEntry", StringComparison.Ordinal));
+
+    /// <summary>
+    /// Whether the site assigns EF's <c>EntityEntry.State</c> (declared on <c>EntityEntry</c> or one of its generic
+    /// forms) — not an unrelated type's own <c>State</c> property.
+    /// </summary>
+    private static bool IsEntityEntryStateSetter(CallSite site) =>
+        site.CalledMember == "set_State"
+        && site.DeclaringType.StartsWith("Microsoft.EntityFrameworkCore.ChangeTracking.EntityEntry", StringComparison.Ordinal);
+
     private static bool IsIgnoreQueryFiltersAllowed(CallSite site) =>
-        site.OutermostNamespace == AllowLists.IgnoreQueryFiltersNamespacePrefix
-        || site.OutermostNamespace.StartsWith(
-            AllowLists.IgnoreQueryFiltersNamespacePrefix + ".", StringComparison.Ordinal)
-        || AllowLists.IgnoreQueryFiltersTypeNames.Contains(
-            site.OutermostNamespace.Length == 0
-                ? site.OutermostType
-                : site.OutermostNamespace + "." + site.OutermostType);
+        IsInNamespace(site.OutermostNamespace, AllowLists.IgnoreQueryFiltersNamespacePrefix)
+        || AllowLists.IgnoreQueryFiltersTypeNames.Contains(FullName(site));
+
+    /// <summary>Exact-or-dot-boundary namespace match: <c>Features.Admin</c> and <c>Features.Admin.X</c>, never <c>Features.AdminTools</c>.</summary>
+    private static bool IsInNamespace(string ns, string prefix) =>
+        ns == prefix || ns.StartsWith(prefix + ".", StringComparison.Ordinal);
 
     /// <summary>The site's declaring type as <c>namespace.Type</c>, the form the allow-lists match.</summary>
     private static string FullName(CallSite site) => Join(site.OutermostNamespace, site.OutermostType);
@@ -320,9 +414,14 @@ public sealed class CallSiteRules
             return null;
         }
 
+        // The type arguments of an instantiated generic method (`ExecuteDelete<StoryVersion>`) are appended to
+        // the declaring type as `[arg,…]`, so a rule can tell which entity a generic EF call targets.
+        var instantiation = string.Empty;
         if (handle.Kind == HandleKind.MethodSpecification)
         {
-            handle = reader.GetMethodSpecification((MethodSpecificationHandle)handle).Method;
+            var specification = reader.GetMethodSpecification((MethodSpecificationHandle)handle);
+            instantiation = "[" + string.Join(",", specification.DecodeSignature(new SignatureNames(), null)) + "]";
+            handle = specification.Method;
         }
 
         switch (handle.Kind)
@@ -330,13 +429,14 @@ public sealed class CallSiteRules
             case HandleKind.MemberReference:
                 {
                     var reference = reader.GetMemberReference((MemberReferenceHandle)handle);
-                    return (reader.GetString(reference.Name), DescribeDeclaringType(reader, reference.Parent));
+                    return (reader.GetString(reference.Name), DescribeDeclaringType(reader, reference.Parent) + instantiation);
                 }
-
             case HandleKind.MethodDefinition:
                 {
                     var definition = reader.GetMethodDefinition((MethodDefinitionHandle)handle);
-                    return (reader.GetString(definition.Name), DescribeDeclaringType(reader, definition.GetDeclaringType()));
+                    return (
+                        reader.GetString(definition.Name),
+                        DescribeDeclaringType(reader, definition.GetDeclaringType()) + instantiation);
                 }
 
             case HandleKind.TypeReference:
@@ -374,6 +474,10 @@ public sealed class CallSiteRules
                     return Join(reader.GetString(definition.Namespace), reader.GetString(definition.Name));
                 }
 
+            case HandleKind.TypeSpecification:
+                return reader.GetTypeSpecification((TypeSpecificationHandle)parent)
+                    .DecodeSignature(new SignatureNames(), null);
+
             default:
                 return "<generic specification>";
         }
@@ -405,5 +509,54 @@ public sealed class CallSiteRules
         }
 
         return table;
+    }
+
+    /// <summary>
+    /// Renders a signature blob as readable names (<c>Microsoft.EntityFrameworkCore.DbSet`1&lt;NightTales.Domain.Stories.StoryVersion&gt;</c>)
+    /// so a rule can see which entity a generic EF call targets.
+    /// </summary>
+    private sealed class SignatureNames : ISignatureTypeProvider<string, object?>
+    {
+        public string GetPrimitiveType(PrimitiveTypeCode typeCode) => typeCode.ToString();
+
+        public string GetTypeFromDefinition(MetadataReader metadataReader, TypeDefinitionHandle handle, byte rawTypeKind)
+        {
+            var definition = metadataReader.GetTypeDefinition(handle);
+            return Join(metadataReader.GetString(definition.Namespace), metadataReader.GetString(definition.Name));
+        }
+
+        public string GetTypeFromReference(MetadataReader metadataReader, TypeReferenceHandle handle, byte rawTypeKind)
+        {
+            var reference = metadataReader.GetTypeReference(handle);
+            return Join(metadataReader.GetString(reference.Namespace), metadataReader.GetString(reference.Name));
+        }
+
+        public string GetTypeFromSpecification(
+            MetadataReader metadataReader,
+            object? genericContext,
+            TypeSpecificationHandle handle,
+            byte rawTypeKind) =>
+            metadataReader.GetTypeSpecification(handle).DecodeSignature(new SignatureNames(), genericContext);
+
+        public string GetGenericInstantiation(string genericType, ImmutableArray<string> typeArguments) =>
+            genericType + "<" + string.Join(",", typeArguments) + ">";
+
+        public string GetSZArrayType(string elementType) => elementType + "[]";
+
+        public string GetArrayType(string elementType, ArrayShape shape) => elementType + "[]";
+
+        public string GetByReferenceType(string elementType) => elementType + "&";
+
+        public string GetPointerType(string elementType) => elementType + "*";
+
+        public string GetPinnedType(string elementType) => elementType;
+
+        public string GetModifiedType(string modifier, string unmodifiedType, bool isRequired) => unmodifiedType;
+
+        public string GetFunctionPointerType(MethodSignature<string> signature) => "<function pointer>";
+
+        public string GetGenericMethodParameter(object? genericContext, int index) => "!!" + index;
+
+        public string GetGenericTypeParameter(object? genericContext, int index) => "!" + index;
     }
 }
