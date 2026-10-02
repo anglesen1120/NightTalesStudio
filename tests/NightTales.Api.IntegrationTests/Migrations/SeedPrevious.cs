@@ -145,6 +145,18 @@ internal static class SeedPrevious
                     'password_changed', 'vi',
                     '9f2c1b0a7d6e5f40312a9b8c7d6e5f40312a9b8c7d6e5f40312a9b8c7d6e5f40', 'sent', 1, now(), now())
             """),
+        (
+            // 11.3.3-T1: the table the `_11_WorkerNodes` migration creates. Same rule as above: skipped
+            // while that migration is the last one, then every later migration is exercised over a
+            // registered node (an `https` row with a pin, the shape the seeder writes outside Development).
+            "worker_nodes",
+            """
+            INSERT INTO worker_nodes (id, name, base_url, capacity, state, last_heartbeat_at, gpu_model,
+                                      tls_cert_sha256, created_at, updated_at)
+            VALUES ('01920000-0000-7000-8000-00000000000c', 'seed-node', 'https://node.example:8443', 2,
+                    'active', now(), 'RTX 4090',
+                    '0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF', now(), now())
+            """),
     ];
 
     /// <summary>The tables the dataset covers, in insert order — the contract a feature migration extends.</summary>

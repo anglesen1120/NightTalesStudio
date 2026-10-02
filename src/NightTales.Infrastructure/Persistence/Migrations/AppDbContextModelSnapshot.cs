@@ -715,6 +715,81 @@ namespace NightTales.Infrastructure.Persistence.Migrations
                     b.ToTable("feature_flags", (string)null);
                 });
 
+            modelBuilder.Entity("NightTales.Domain.Rendering.WorkerNode", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<byte[]>("ApiKeyCiphertext")
+                        .HasColumnType("bytea")
+                        .HasColumnName("api_key_ciphertext");
+
+                    b.Property<string>("ApiKeyHint")
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("api_key_hint");
+
+                    b.Property<string>("BaseUrl")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)")
+                        .HasColumnName("base_url");
+
+                    b.Property<int>("Capacity")
+                        .HasColumnType("integer")
+                        .HasColumnName("capacity");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("GpuModel")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("gpu_model");
+
+                    b.Property<DateTimeOffset?>("LastHeartbeatAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("last_heartbeat_at");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("name");
+
+                    b.Property<string>("State")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("state");
+
+                    b.Property<string>("TlsCertSha256")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("tls_cert_sha256");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("Id")
+                        .HasName("pk_worker_nodes");
+
+                    b.HasIndex("Name")
+                        .IsUnique()
+                        .HasDatabaseName("ux_worker_nodes_name");
+
+                    b.ToTable("worker_nodes", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_worker_nodes_capacity", "\"capacity\" BETWEEN 1 AND 8");
+
+                            t.HasCheckConstraint("ck_worker_nodes_state", "\"state\" IN ('active', 'down', 'draining')");
+
+                            t.HasCheckConstraint("ck_worker_nodes_tls_sha256", "(\"tls_cert_sha256\" IS NULL AND \"base_url\" LIKE 'http://%') OR \"tls_cert_sha256\" ~ '^[0-9A-F]{64}$'");
+                        });
+                });
+
             modelBuilder.Entity("NightTales.Domain.Series.Autopilot.AutopilotRun", b =>
                 {
                     b.Property<Guid>("Id")

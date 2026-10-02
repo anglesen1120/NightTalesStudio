@@ -11,6 +11,7 @@ using NightTales.Domain.Communication;
 using NightTales.Domain.Compliance;
 using NightTales.Domain.Episodes;
 using NightTales.Domain.Platform;
+using NightTales.Domain.Rendering;
 using NightTales.Domain.Series;
 using NightTales.Domain.Series.Autopilot;
 using NightTales.Domain.Stories;
@@ -72,6 +73,18 @@ public sealed class AppDbContext : IdentityDbContext<AppUser, AppRole, Guid>, IA
     /// tenant filter applies to every read.
     /// </summary>
     public DbSet<EmailMessage> EmailMessages => Set<EmailMessage>();
+
+    /// <summary>
+    /// The render-node registry of 11.3.3-T1 (table <c>worker_nodes</c>, 00 overview §6 L311): upserted by
+    /// <c>WorkerNodeSeeder</c> from <c>RenderNodes:Nodes</c>, heartbeat- and state-mutated by
+    /// <c>NodeHealthPoller</c>, and read by the <c>nts-worker nodes</c> verbs and (through <c>IReadDb</c>) by
+    /// 11.3.3-T2's selector.
+    /// </summary>
+    /// <remarks>
+    /// It carries no <c>IUserOwned</c>, so 09 README D10's tenant filter never applies and no
+    /// <c>IgnoreQueryFilters</c> allow-list entry is needed — the registry is operator data, not user data.
+    /// </remarks>
+    public DbSet<WorkerNode> WorkerNodes => Set<WorkerNode>();
 
     /// <summary>Infrastructure-only: the outbox rows the interceptor of 09.2.4-T1 writes.</summary>
     public DbSet<OutboxMessage> OutboxMessages => Set<OutboxMessage>();

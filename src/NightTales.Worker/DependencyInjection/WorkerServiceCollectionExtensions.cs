@@ -18,6 +18,7 @@ using NightTales.Infrastructure.Persistence.Outbox;
 using NightTales.Infrastructure.Security;
 using NightTales.Infrastructure.Storage;
 using NightTales.Worker.Health;
+using NightTales.Worker.Rendering;
 
 namespace NightTales.Worker.DependencyInjection;
 
@@ -40,6 +41,18 @@ public static class WorkerServiceCollectionExtensions
     /// </remarks>
     public static readonly Func<IServiceProvider, IHostedService> OutboxDispatcherLoopFactory =
         provider => provider.GetRequiredService<OutboxDispatcher>();
+
+    /// <summary>
+    /// The factory of the hosted descriptor that runs the health poller (11.3.3-T1, 11 README D13): it
+    /// resolves the poller singleton, so a test drives the very instance the loop owns through
+    /// <c>NodeHealthPoller.PollOnceAsync</c>.
+    /// </summary>
+    /// <remarks>
+    /// A named field for the same reason as <see cref="OutboxDispatcherLoopFactory"/>:
+    /// <see cref="WithoutNodeHealthPoller"/> finds exactly this descriptor by reference.
+    /// </remarks>
+    public static readonly Func<IServiceProvider, IHostedService> NodeHealthPollerFactory =
+        provider => provider.GetRequiredService<NodeHealthPoller>();
 
     /// <summary>Registers everything the Worker needs except the Hangfire server.</summary>
     /// <param name="services">The service collection of the host.</param>
@@ -110,6 +123,17 @@ public static class WorkerServiceCollectionExtensions
         // the Api host's outbox path (the Api only writes outbox rows, 09 README D12).
         services.AddOutboxHandler<EpisodeCancelled, EpisodeCancelledAssetRetentionHandler>();
 
+        // 11.3.3-T1 (11 README D13/F09–F13): the render-node registry, the pinned-TLS connection factory,
+        // the health cache, the drift/up instruments and the config seeder. The optional `RenderNodes`
+        // section is validated on start, so an impossible cadence or hysteresis fails the boot.
+        services.AddRenderNodes(configuration);
+
+        // The poller is a BackgroundService, not a Hangfire recurring job: a sub-minute cron is not
+        // reliable (F10/P9, 09 README D11). It is registered as a singleton and hosted through that
+        // instance, so a host and the harness resolve the very poller the loop owns.
+        services.AddSingleton<NodeHealthPoller>();
+        services.AddSingleton<IHostedService>(NodeHealthPollerFactory);
+
         // 09.2.4-T1 appends the hosted OutboxDispatcher inside this composition root (09 W3 CR-42).
         services.AddOptions<OutboxDispatcherOptions>()
             .BindConfiguration(OutboxDispatcherOptions.SectionName)
@@ -163,6 +187,33 @@ public static class WorkerServiceCollectionExtensions
         if (loop is not null)
         {
             services.Remove(loop);
+        }
+
+        return services;
+    }
+
+    /// <summary>
+    /// Drops the hosted health poller from <paramref name="services"/> and leaves the poller singleton in
+    /// place (11.3.3-T1): the test harness drives one tick through <c>NodeHealthPoller.PollOnceAsync</c>, so
+    /// the 30-second loop must never start and no test depends on a timer.
+    /// </summary>
+    /// <remarks>
+    /// The same reason as <see cref="WithoutOutboxDispatcherLoop"/>: the descriptor has to go before the host
+    /// is built, because <c>BackgroundService.StartAsync</c> schedules the loop and its first tick would run
+    /// against a clock no test controls.
+    /// </remarks>
+    /// <param name="services">The service collection of the host.</param>
+    public static IServiceCollection WithoutNodeHealthPoller(this IServiceCollection services)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+
+        var poller = services.FirstOrDefault(descriptor =>
+            descriptor.ServiceType == typeof(IHostedService)
+            && ReferenceEquals(descriptor.ImplementationFactory, NodeHealthPollerFactory));
+
+        if (poller is not null)
+        {
+            services.Remove(poller);
         }
 
         return services;

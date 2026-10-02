@@ -7,6 +7,7 @@ using NightTales.Domain.Communication;
 using NightTales.Domain.Compliance;
 using NightTales.Domain.Episodes;
 using NightTales.Domain.Platform;
+using NightTales.Domain.Rendering;
 using NightTales.Domain.Series;
 using NightTales.Domain.Series.Autopilot;
 using NightTales.Domain.Stories;
@@ -47,6 +48,13 @@ public interface IAppDbContext
 
     /// <summary>The queued e-mails of 09.2.6-T3: added by <c>IEmailSender</c>, mutated by <c>SendEmailJob</c>.</summary>
     DbSet<EmailMessage> EmailMessages { get; }
+
+    /// <summary>
+    /// The render-node registry of 11.3.3-T1 (table <c>worker_nodes</c>): upserted by
+    /// <c>WorkerNodeSeeder</c>, heartbeat/state-mutated by <c>NodeHealthPoller</c> and read by the
+    /// <c>nts-worker nodes</c> verbs. System data, so no tenant filter applies (09 README D10).
+    /// </summary>
+    DbSet<WorkerNode> WorkerNodes { get; }
 
     Task<int> SaveChangesAsync(CancellationToken cancellationToken);
 }
