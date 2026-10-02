@@ -179,6 +179,68 @@ public sealed class MusicSelectorTests
         choice.ShouldBe(new MusicChoice(ordered[index].TrackId, ordered[index].FileName, ordered[index].BgmVolume));
     }
 
+    [Theory]
+    [InlineData(Topic.Ghost, "ghost-a,ghost-b,ghost-c,ghost-d,ghost-e")]
+    [InlineData(Topic.Spiritual, "temple-x,calm-y,med-z")]
+    [InlineData(Topic.TrueCrime, "noir-n,ghost-b,ghost-c,ghost-d")]
+    public void Pick_only_returns_tracks_whose_moods_belong_to_the_topic(Topic topic, string allowedCsv)
+    {
+        var allowed = allowedCsv.Split(',');
+        List<MusicTrack> catalog =
+        [
+            .. GhostCatalog(),
+            Track("calm-y", ["calm"], MusicPlatformScope.Any, 0.11m),
+            Track("med-z", ["meditation"], MusicPlatformScope.Any, 0.12m),
+            Track("noir-n", ["noir"], MusicPlatformScope.Any, 0.13m),
+        ];
+
+        for (var i = 0; i < 64; i++)
+        {
+            var episode = new Guid(i, 0, 0, [0, 0, 0, 0, 0, 0, 0, 1]);
+            var choice = MusicSelector.Pick(new MusicSelectionInput(topic, [], episode), catalog);
+
+            choice.ShouldNotBeNull();
+            allowed.ShouldContain(choice.TrackId, $"{topic} episode {episode}");
+        }
+    }
+
+    [Fact]
+    public void Pick_ignores_inactive_tracks()
+    {
+        List<MusicTrack> catalog =
+        [
+            Track("ghost-off", ["suspense"], MusicPlatformScope.Any, 0.1m, active: false),
+            Track("ghost-on", ["suspense"], MusicPlatformScope.Any, 0.2m),
+        ];
+
+        MusicSelector.Pick(new MusicSelectionInput(Topic.Ghost, [], Episode), catalog)!.TrackId.ShouldBe("ghost-on");
+        MusicSelector.Pick(new MusicSelectionInput(Topic.Ghost, [], Episode), [catalog[0]]).ShouldBeNull();
+    }
+
+    [Fact]
+    public void Pick_with_avoidRecent_zero_ignores_the_recent_list()
+    {
+        var catalog = GhostCatalog();
+        var baseline = MusicSelector.Pick(new MusicSelectionInput(Topic.Ghost, [], Episode), catalog)!;
+
+        var picked = MusicSelector.Pick(new MusicSelectionInput(Topic.Ghost, [baseline.TrackId], Episode), catalog, avoidRecent: 0)!;
+
+        picked.ShouldBe(baseline);
+    }
+
+    [Fact]
+    public void Pick_does_not_mutate_its_inputs()
+    {
+        var catalog = GhostCatalog();
+        var ids = catalog.Select(track => track.TrackId).ToList();
+        IReadOnlyList<string> recent = ["ghost-a"];
+
+        MusicSelector.Pick(new MusicSelectionInput(Topic.Ghost, recent, Episode), catalog);
+
+        catalog.Select(track => track.TrackId).ShouldBe(ids);
+        recent.ShouldBe(["ghost-a"]);
+    }
+
     private static List<MusicTrack> GhostCatalog() =>
     [
         Track("ghost-a", ["dark_ambient"], MusicPlatformScope.Any, 0.101m),

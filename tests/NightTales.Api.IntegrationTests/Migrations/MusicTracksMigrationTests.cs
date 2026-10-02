@@ -101,6 +101,42 @@ public sealed class MusicTracksMigrationTests(TestDatabase database) : Integrati
         state.ShouldBe("23514", $"{constraint}: {set}");
     }
 
+    // QA: the SQLSTATE-only theory above cannot tell WHICH CHECK fired (it also passes when a different one
+    // does), so each violation is repeated here asserting the constraint name Postgres reports.
+    [Theory]
+    [InlineData("license = 'MIT'", "ck_music_tracks_license")]
+    [InlineData("platform_scope = 'tiktok'", "ck_music_tracks_platform_scope")]
+    [InlineData("license = 'CC-BY-4.0', attribution = NULL", "ck_music_tracks_attribution")]
+    [InlineData("license = 'CC0-1.0', attribution = 'credit'", "ck_music_tracks_attribution")]
+    [InlineData("license = 'YouTube-Audio-Library', platform_scope = 'any'", "ck_music_tracks_platform_scope")]
+    [InlineData("moods = '{battle}'", "ck_music_tracks_moods")]
+    [InlineData("moods = '{}'", "ck_music_tracks_moods")]
+    [InlineData("moods = '{calm,noir,suspense,temple}'", "ck_music_tracks_moods")]
+    [InlineData("bgm_volume = 0.5", "ck_music_tracks_bgm_volume")]
+    [InlineData("bgm_volume = 0.201", "ck_music_tracks_bgm_volume")]
+    [InlineData("duration_sec = 59.9", "ck_music_tracks_duration_sec")]
+    [InlineData("sha256 = 'XYZ'", "ck_music_tracks_sha256")]
+    [InlineData("track_id = 'Bad_Id', file_name = 'Bad_Id.mp3'", "ck_music_tracks_track_id")]
+    [InlineData("track_id = 'Bad_Id'", "ck_music_tracks_file_name")]
+    [InlineData("file_name = replace(file_name, '.mp3', '.wav')", "ck_music_tracks_file_name")]
+    public void CheckConstraints_ReportTheExactConstraintThatWasBroken(string set, string constraint)
+    {
+        var trackId = $"mig-{Guid.NewGuid():N}"[..20];
+        SqlProbe.Execute(Database, $"""
+            INSERT INTO music_tracks (id, track_id, file_name, title, artist, source_url, license, attribution,
+                platform_scope, moods, duration_sec, loudness_lufs, bgm_volume, sha256, storage_key,
+                catalog_revision, active, created_at, updated_at)
+            VALUES ('{Guid.NewGuid()}', '{trackId}', '{trackId}.mp3', 't', 'a', 'https://example.invalid/x', 'CC0-1.0', NULL,
+                'any', ARRAY['calm'], 120.0, -20.00, 0.200, '{new string('a', 64)}', 'music/{trackId}.mp3', 1, true, now(), now())
+            """);
+
+        var exception = Should.Throw<Npgsql.PostgresException>(
+            () => SqlProbe.Execute(Database, $"UPDATE music_tracks SET {set} WHERE track_id = '{trackId}'"));
+
+        exception.SqlState.ShouldBe("23514");
+        exception.ConstraintName.ShouldBe(constraint, set);
+    }
+
     [Fact]
     public void UniqueIndex_RefusesADuplicateTrackId()
     {

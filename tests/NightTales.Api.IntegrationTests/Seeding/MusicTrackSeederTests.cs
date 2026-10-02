@@ -151,6 +151,74 @@ public sealed class MusicTrackSeederTests(TestDatabase database) : IntegrationTe
         (await Database.QueryStringsAsync("SELECT count(*)::text FROM music_tracks WHERE active", ct)).ShouldBe(["30"]);
     }
 
+    [Fact]
+    public async Task Seed_CommittedCatalogTwice_IsIdempotentAndLeavesRowsByteIdentical()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await ResetAsync(ct);
+        var path = Path.Combine(SeedTestHarness.RepoRoot, "seed", "music-tracks.v1.json");
+        const string Snapshot = """
+            SELECT md5(string_agg(concat_ws('|', id, track_id, file_name, title, artist, source_url, license,
+                coalesce(attribution, '~'), platform_scope, array_to_string(moods, ','), duration_sec, loudness_lufs,
+                bgm_volume, sha256, storage_key, catalog_revision, active, created_at, updated_at), E'\n' ORDER BY track_id))
+            FROM music_tracks
+            """;
+
+        await using var first = Database.CreateAppDbContext(clock: new FakeClock());
+        var one = await CreateSeeder(first, path).SeedAsync(ct);
+        var before = (await Database.QueryStringsAsync(Snapshot, ct)).Single();
+
+        await using var second = Database.CreateAppDbContext(clock: new FakeClock());
+        var two = await CreateSeeder(second, path).SeedAsync(ct);
+        var after = (await Database.QueryStringsAsync(Snapshot, ct)).Single();
+
+        one.Inserted.ShouldBe(30);
+        two.ShouldBe(new SeedReport("music_tracks", 0, 0, 30));
+        after.ShouldBe(before, "a second run must not touch a single column, including updated_at");
+        (await CountAsync(ct)).ShouldBe(30);
+    }
+
+    [Fact]
+    public async Task Seed_TrackNoLongerListed_IsDeactivatedNotDeleted()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await ResetAsync(ct);
+        await using var db = Database.CreateAppDbContext(clock: new FakeClock());
+        await CreateSeeder(db, FixtureFile("valid-catalog.json")).SeedAsync(ct);
+        var trimmed = WriteCatalog(TrimToFirstTrack(File.ReadAllText(FixtureFile("valid-catalog.json"))));
+        try
+        {
+            await using var second = Database.CreateAppDbContext(clock: new FakeClock());
+            var report = await CreateSeeder(second, trimmed).SeedAsync(ct);
+
+            report.Inserted.ShouldBe(0);
+        }
+        finally
+        {
+            File.Delete(trimmed);
+        }
+
+        (await CountAsync(ct)).ShouldBe(3);
+        (await Database.QueryStringsAsync("SELECT count(*)::text FROM music_tracks WHERE active", ct)).ShouldBe(["1"]);
+        (await Database.QueryStringsAsync("SELECT count(*)::text FROM music_tracks WHERE NOT active", ct)).ShouldBe(["2"]);
+    }
+
+    [Fact]
+    public async Task Seed_InvalidCatalog_AfterAGoodSeed_LeavesTheExistingRowsUntouched()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await ResetAsync(ct);
+        await using var db = Database.CreateAppDbContext(clock: new FakeClock());
+        await CreateSeeder(db, FixtureFile("valid-catalog.json")).SeedAsync(ct);
+
+        await using var bad = Database.CreateAppDbContext(clock: new FakeClock());
+        await Should.ThrowAsync<SeedValidationException>(
+            () => CreateSeeder(bad, FixtureFile("invalid-sha256.json"), environment: "Production").SeedAsync(ct).AsTask());
+
+        (await CountAsync(ct)).ShouldBe(3);
+        (await Database.QueryStringsAsync("SELECT count(*)::text FROM music_tracks WHERE active", ct)).ShouldBe(["3"]);
+    }
+
     private static MusicTrackSeeder CreateSeeder(AppDbContext db, string catalogFile, string environment = "Development") =>
         new(
             db,
