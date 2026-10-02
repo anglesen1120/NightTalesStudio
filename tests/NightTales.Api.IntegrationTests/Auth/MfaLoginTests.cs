@@ -2,11 +2,13 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using ErrorOr;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using NightTales.Api.RateLimiting;
 using NightTales.Application.Abstractions.Audit;
+using NightTales.Application.Abstractions.Persistence;
 using NightTales.Application.Abstractions.Security;
 using NightTales.Application.Common.Errors;
 using NightTales.Domain.Common;
@@ -689,6 +691,135 @@ public sealed class MfaLoginTests(TestDatabase database) : IntegrationTest(datab
         leaked.ShouldBe("0", "no challenge token or recovery code reaches an audit payload (BD16)");
     }
 
+    [Fact]
+    public async Task LoginMfa_WhenTheVerifierIsUnavailable_Returns503AndChargesNothing()
+    {
+        var clock = new FakeClock();
+        var verifier = new UnavailableTotpVerifier();
+        using var factory = new ApiFactory(Database, clock)
+            .WithServices(services => Replace(services, verifier));
+        var user = await AuthTestFlow.CreateUserAsync(
+            factory.Services, role: PlatformRole.Admin, twoFactorEnabled: true);
+
+        var challenge = await StartLoginAsync(factory.AnonymousClient(), user, userAgent: null, Ct);
+
+        var response = await CompleteAsync(
+            factory.AnonymousClient(), challenge, code: DistinctiveCode, recoveryCode: null, userAgent: null, Ct);
+
+        // F1: a verifier whose database cannot answer is not a wrong code. Its error is the documented
+        // 503, never the 401 a rejection of the code itself gets.
+        response.StatusCode.ShouldBe(HttpStatusCode.ServiceUnavailable);
+        (await AuthTestFlow.ProblemCodeAsync(response)).ShouldBe(ErrorCodes.ServiceUnavailable);
+        verifier.Calls.ShouldBe(1, "the request reached verification before the infrastructure failed");
+
+        // Nothing may be charged for an infrastructure failure: neither the challenge's attempt counter
+        // nor the per-user window nor an audit row. A charged window would lock an innocent account out.
+        (await LiveAttemptsAsync(user.Id)).ShouldBe("0", "an infrastructure failure charges no attempt");
+        (await MfaTestFlow.ScalarAsync(
+                Database,
+                $"SELECT count(*)::text FROM audit_logs WHERE action = '{SecurityAuditActions.MfaFailed}' "
+                + $"AND subject_user_id = '{user.Id}'"))
+            .ShouldBe("0", "nothing was charged, so no failure row is written");
+    }
+
+    [Fact]
+    public async Task LoginMfa_WhenTheClockMovesWhileWaitingForTheUserLock_RefusesTheExpiredChallenge()
+    {
+        var clock = new FakeClock();
+        using var factory = new ApiFactory(Database, clock)
+            .WithServices(services => Replace(services, new FakeTotpVerifier(_ => true)));
+        var user = await AuthTestFlow.CreateUserAsync(
+            factory.Services, role: PlatformRole.Admin, twoFactorEnabled: true);
+
+        var challenge = await StartLoginAsync(factory.AnonymousClient(), user, userAgent: null, Ct);
+
+        // Hold the per-user advisory lock, so the completion stops before it reads the instant of its
+        // decision — exactly the window F2 is about.
+        await using var blockerScope = factory.Services.CreateAsyncScope();
+        var blocker = blockerScope.ServiceProvider.GetRequiredService<IUnitOfWork>();
+        var blockerContext = blockerScope.ServiceProvider.GetRequiredService<AppDbContext>();
+        await blocker.BeginAsync(Ct);
+        await blockerContext.Database.ExecuteSqlAsync(
+            $"SELECT pg_advisory_xact_lock(hashtextextended(CAST({user.Id} AS text), 1))",
+            Ct);
+
+        var completion = CompleteAsync(
+            factory.AnonymousClient(), challenge, code: DistinctiveCode, recoveryCode: null, userAgent: null, Ct);
+
+        await Task.Delay(TimeSpan.FromMilliseconds(500), Ct);
+        completion.IsCompleted.ShouldBeFalse("the completion waits for the account's lock");
+
+        // The challenge expires while the request waits. The decision must use the post-lock instant, so
+        // the code that was in time when the request arrived is refused now (F2).
+        clock.Advance(TimeSpan.FromMinutes(6));
+
+        (await blocker.CommitAsync(Ct)).IsError.ShouldBeFalse();
+
+        var response = await completion;
+        response.StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
+        (await AuthTestFlow.ProblemCodeAsync(response)).ShouldBe(
+            ErrorCodes.MfaTokenInvalid,
+            "the challenge expired while the request waited for the account's lock (F2)");
+        (await LiveAttemptsAsync(user.Id)).ShouldBe("0", "an expired challenge charges nothing");
+    }
+
+    [Fact]
+    public async Task Reauth_WhenTheGuessWindowIsTripped_Returns429WithoutVerifyingTheCode()
+    {
+        var clock = new FakeClock();
+        var verifier = new FakeTotpVerifier(_ => false);
+        using var factory = new ApiFactory(Database, clock)
+            .WithSetting(
+                $"{RateLimitingOptions.SectionName}:{nameof(RateLimitingOptions.Enabled)}",
+                "false")
+            .WithServices(services => Replace(services, verifier));
+        var user = await AuthTestFlow.CreateUserAsync(
+            factory.Services, role: PlatformRole.Admin, twoFactorEnabled: true);
+
+        // Ten wrong codes across two login challenges trip the shared per-user window (WT35).
+        var first = await StartLoginAsync(factory.AnonymousClient(), user, userAgent: null, Ct);
+        await ChargeAsync(factory, first, 5);
+        var second = await StartLoginAsync(factory.AnonymousClient(), user, userAgent: null, Ct);
+        await ChargeAsync(factory, second, 5);
+
+        // A live family and the correct password: without the gate this re-authentication would verify the
+        // code and succeed. SEC-001: the window must refuse it before the verifier is reached.
+        var familyId = await MfaTestFlow.SeedFamilyAsync(Database, user, clock.UtcNow);
+        using var session = factory.ClientFor(user.Id, PlatformRole.Admin, sessionId: familyId);
+
+        var callsBefore = verifier.Codes.Count;
+
+        var reauth = await session.PostAsJsonAsync(
+            MfaTestFlow.ReauthPath,
+            new { password = AuthTestFlow.Password, code = DistinctiveCode },
+            Ct);
+
+        reauth.StatusCode.ShouldBe(
+            HttpStatusCode.TooManyRequests,
+            "a tripped window blocks re-authentication too, not only the login routes (SEC-001)");
+        (await AuthTestFlow.ProblemCodeAsync(reauth)).ShouldBe(ErrorCodes.RateLimited);
+        MfaTestFlow.RetryAfter(reauth).ShouldBe("900", "WT35 fixes Retry-After at 900 seconds");
+        verifier.Codes.Count.ShouldBe(callsBefore, "a blocked re-authentication never reaches the verifier");
+
+        // Nothing was stamped and nothing was charged to the family's own counter.
+        (await MfaTestFlow.ScalarAsync(
+                Database,
+                $"SELECT (reauthenticated_at IS NULL)::text FROM refresh_tokens WHERE family_id = '{familyId}'"))
+            .ShouldBe("true", "a blocked re-authentication stamps nothing");
+        (await MfaTestFlow.ScalarAsync(
+                Database,
+                $"SELECT reauth_attempts::text FROM refresh_tokens WHERE family_id = '{familyId}'"))
+            .ShouldBe("0", "a blocked re-authentication charges no family attempt");
+
+        // The login charge already claimed the window's single row, so the re-authentication adds none.
+        (await MfaTestFlow.ScalarAsync(
+                Database,
+                $"SELECT count(*)::text FROM audit_logs "
+                + $"WHERE action = '{SecurityAuditActions.MfaCodeGuessingLocked}' "
+                + $"AND subject_user_id = '{user.Id}'"))
+            .ShouldBe("1", "the tripped window keeps its single account_security row");
+    }
+
     /// <summary>The <c>amr</c> array of a completed login body.</summary>
     private static string[] Amr(JsonElement body) =>
         [.. body.GetProperty("amr").EnumerateArray().Select(element => element.GetString()!)];
@@ -850,6 +981,25 @@ public sealed class MfaLoginTests(TestDatabase database) : IntegrationTest(datab
                 ? Task.FromResult<ErrorOr<long>>(1L)
                 : Task.FromResult<ErrorOr<long>>(
                     Error.Unauthorized(ErrorCodes.InvalidMfaCode, "The code is not accepted."));
+        }
+    }
+
+    /// <summary>
+    /// A verifier whose store is down: it answers the transient <c>service_unavailable</c> both real
+    /// implementations map a dead database to, so a test can prove such a failure is not charged as a
+    /// wrong code (09.3.2-T3 F1).
+    /// </summary>
+    private sealed class UnavailableTotpVerifier : ITotpVerifier
+    {
+        /// <summary>How many times the verifier was asked; a blocked path must not raise it.</summary>
+        public int Calls { get; private set; }
+
+        public Task<ErrorOr<long>> VerifyAsync(Guid userId, string code, TotpSlot slot, CancellationToken ct)
+        {
+            Calls++;
+
+            return Task.FromResult<ErrorOr<long>>(
+                Error.Failure(ErrorCodes.ServiceUnavailable, "The database is temporarily unavailable; retry."));
         }
     }
 

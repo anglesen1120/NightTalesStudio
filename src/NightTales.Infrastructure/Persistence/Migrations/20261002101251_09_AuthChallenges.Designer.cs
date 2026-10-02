@@ -14,7 +14,7 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace NightTales.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    [Migration("20261002092639_09_AuthChallenges")]
+    [Migration("20261002101251_09_AuthChallenges")]
     partial class _09_AuthChallenges
     {
         /// <inheritdoc />
@@ -1433,6 +1433,10 @@ namespace NightTales.Infrastructure.Persistence.Migrations
                     b.HasIndex("TokenHash")
                         .IsUnique()
                         .HasDatabaseName("ux_auth_challenges_token_hash");
+
+                    b.HasIndex("UserId")
+                        .HasDatabaseName("ix_auth_challenges_user_id_unused")
+                        .HasFilter("used_at IS NULL");
 
                     b.HasIndex("UserId", "ExpiresAt")
                         .HasDatabaseName("ix_auth_challenges_user_id_expires_at");

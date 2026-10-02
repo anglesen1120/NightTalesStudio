@@ -17,13 +17,14 @@ namespace NightTales.Api.IntegrationTests.Migrations;
 /// <summary>
 /// The <c>_09_AuthChallenges</c> migration (09.3.2-T3 Tests table): the table reaches a fresh database
 /// with the agreed columns, the unique <c>token_hash</c> index, the <c>(user_id, expires_at)</c> index,
-/// the <c>attempts</c> CHECK that refuses a sixth attempt, and a <c>ON DELETE CASCADE</c> foreign key
+/// the partial <c>(user_id) WHERE used_at IS NULL</c> index the supersede statement needs (PERF-1), the
+/// <c>attempts</c> CHECK that refuses a sixth attempt, and a <c>ON DELETE CASCADE</c> foreign key
 /// to <c>users</c> (BD4, D9).
 /// </summary>
 /// <remarks>
 /// The shape is read from both sides, like the other per-table migration tests: the live schema the
 /// migration applied to the class database, and the migration's own operation tree — which is what
-/// proves "one table and its two indexes, nothing else" (NFR-09-6, expand-only).
+/// proves "one table and its three indexes, nothing else" (NFR-09-6, expand-only).
 /// </remarks>
 [Trait("Category", "Integration")]
 [Trait("Category", "Migration")]
@@ -76,6 +77,17 @@ public sealed class AuthChallengesMigrationTests(TestDatabase database) : Integr
                 "SELECT indexdef FROM pg_indexes WHERE schemaname = 'public' "
                 + "AND tablename = 'auth_challenges' AND indexname = 'ix_auth_challenges_user_id_expires_at'")
             .ShouldHaveSingleItem().ShouldContain("(user_id, expires_at)");
+
+        // PERF-1: the supersede statement looks only at the user's unused rows, so that index carries the
+        // predicate; the composite index above is kept for the account's cascade delete.
+        var unused = SqlProbe.QueryStrings(
+                Database,
+                "SELECT indexdef FROM pg_indexes WHERE schemaname = 'public' "
+                + "AND tablename = 'auth_challenges' AND indexname = 'ix_auth_challenges_user_id_unused'")
+            .ShouldHaveSingleItem();
+        unused.ShouldContain("(user_id)");
+        unused.ShouldContain("used_at IS NULL");
+        unused.ShouldNotContain("UNIQUE");
 
         // BD4: the fifth wrong code is the last one; the column itself refuses a sixth.
         var check = SqlProbe.QueryStrings(
@@ -188,7 +200,7 @@ public sealed class AuthChallengesMigrationTests(TestDatabase database) : Integr
         var migration = CompiledMigration(context, "09_AuthChallenges");
         var operations = migration.UpOperations;
 
-        operations.Count.ShouldBe(3, "the migration is exactly one table and its two indexes");
+        operations.Count.ShouldBe(4, "the migration is exactly one table and its three indexes");
 
         var table = operations.OfType<CreateTableOperation>().ShouldHaveSingleItem();
         table.Name.ShouldBe("auth_challenges");
@@ -216,7 +228,7 @@ public sealed class AuthChallengesMigrationTests(TestDatabase database) : Integr
         foreignKey.OnDelete.ShouldBe(ReferentialAction.Cascade);
 
         var indexes = operations.OfType<CreateIndexOperation>().ToList();
-        indexes.Count.ShouldBe(2);
+        indexes.Count.ShouldBe(3);
 
         var unique = indexes.Single(index => index.Name == "ux_auth_challenges_token_hash");
         unique.Table.ShouldBe("auth_challenges");
@@ -227,6 +239,13 @@ public sealed class AuthChallengesMigrationTests(TestDatabase database) : Integr
         byUser.Table.ShouldBe("auth_challenges");
         byUser.Columns.ShouldBe(["user_id", "expires_at"]);
         byUser.IsUnique.ShouldBeFalse();
+
+        // PERF-1: the supersede statement's index is partial — it holds only the account's unused rows.
+        var unused = indexes.Single(index => index.Name == "ix_auth_challenges_user_id_unused");
+        unused.Table.ShouldBe("auth_challenges");
+        unused.Columns.ShouldBe(["user_id"]);
+        unused.IsUnique.ShouldBeFalse();
+        unused.Filter.ShouldBe("used_at IS NULL");
 
         // The same scan the migration job runs: nothing here drops or narrows anything.
         MigrationGuard.FindViolations([migration]).ShouldBeEmpty();

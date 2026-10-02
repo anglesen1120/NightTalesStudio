@@ -39,7 +39,7 @@ namespace NightTales.Infrastructure.Security;
 /// committed state behind — the attempt counter, the challenge's death, the audit rows — so
 /// <see cref="CompleteAsync"/> answers <see cref="MfaChallengeOutcome"/> and the endpoint maps it to
 /// 401/429 ([RULED — README §B10 WT29]). Only a decision that writes nothing (an account that is no
-/// longer active, a database that cannot answer) is an error.
+/// longer active, a database that cannot answer, a verifier that answers its own 503 — F1) is an error.
 /// </para>
 /// <para>
 /// Only SHA-256 hex hashes of the two secrets are ever stored; the plaintext pair exists in the login
@@ -108,7 +108,6 @@ public sealed class EfMfaChallengeService(
     {
         try
         {
-            var now = clock.UtcNow;
             var tokenHash = issuer.HashToken(request.MfaToken);
 
             // The row's account is resolved without a lock first, because the per-user advisory lock has to
@@ -130,6 +129,12 @@ public sealed class EfMfaChallengeService(
             {
                 return Invalid();
             }
+
+            // 09.3.2-T3 F2: the decision's instant is read here, after the per-user advisory lock and the
+            // row lock, so a completion that waited for another transaction of the same account judges the
+            // challenge by the moment it actually verifies — not by the moment the request arrived. Every
+            // later use of `now` (the window, the charge, the consume, the audit) is that same instant.
+            var now = clock.UtcNow;
 
             if (row.Value.UsedAt is not null
                 || row.Value.Attempts >= options.Value.Mfa.MaxAttempts
@@ -179,6 +184,16 @@ public sealed class EfMfaChallengeService(
 
             if (await VerifyAsync(request, user.Id, ct).ConfigureAwait(false) is { } failure)
             {
+                // 09.3.2-T3 F1: only a code the verifier or the recovery service rejected is a guess and is
+                // charged. An infrastructure failure (their 503) is not a wrong code: charging the
+                // in-memory window for it would lock an innocent account behind a database bug, and on a
+                // transaction PostgreSQL already aborted (a deadlock, 25P02) the charge's own UPDATE would
+                // replace the documented 503 with a 500. Returning the error rolls the attempt back.
+                if (failure.Code != ErrorCodes.InvalidMfaCode)
+                {
+                    return failure;
+                }
+
                 return await ChargeAsync(user, row.Value, failure, info, now, ct).ConfigureAwait(false);
             }
 
@@ -291,8 +306,9 @@ public sealed class EfMfaChallengeService(
     }
 
     /// <summary>
-    /// Verifies the one submitted code, and answers the error the failure path charges when the code is
-    /// not accepted.
+    /// Verifies the one submitted code, and answers the error the caller inspects: a code the store
+    /// rejected (<c>invalid_mfa_code</c>, which the failure path charges) or an infrastructure failure
+    /// (<c>service_unavailable</c>, which the caller returns uncharged — 09.3.2-T3 F1).
     /// </summary>
     /// <remarks>
     /// The TOTP branch passes <see cref="TotpSlot.Active"/> ([RULED — README §B10 WT31]): only the

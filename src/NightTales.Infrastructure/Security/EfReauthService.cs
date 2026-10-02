@@ -28,8 +28,11 @@ namespace NightTales.Infrastructure.Security;
 /// WT29]).
 /// </para>
 /// <para>
-/// A wrong authenticator code is also charged to the per-user window of WT35, and the first path that can
-/// commit writes that ruling's single <c>account_security</c> row.
+/// A tripped per-user window of WT35 refuses the re-authentication before the authenticator code is even
+/// verified, with the same 429 <c>rate_limited</c> and <c>Retry-After</c> the login paths answer — a live
+/// session must not provide extra guesses once the account is locked. A code that <em>is</em> verified and
+/// rejected is charged to the window, and the first path that can commit writes that ruling's single
+/// <c>account_security</c> row.
 /// </para>
 /// <para>
 /// A caller with no live family writes nothing: there is no session to charge or to revoke, so the answer
@@ -117,6 +120,33 @@ public sealed class EfReauthService(
                     now,
                     ct)
                 .ConfigureAwait(false);
+        }
+
+        // WT35 ([RULED — README §B10]): ten wrong codes inside fifteen minutes block the whole account,
+        // and the re-authentication must not hand a live family a fresh budget after /auth/login and
+        // /auth/login/mfa already refuse — otherwise the same attacker keeps guessing codes here. The gate
+        // is checked after the password (like /auth/login's, which runs before the second factor) and
+        // before the verifier, so a blocked attempt verifies nothing and stamps nothing. The one
+        // account_security row of the ruling is claimed exactly as the login paths claim it, and this path
+        // returns a value, so its transaction commits ([RULED — README §B10 WT29]).
+        if (guessWindow.BlockedFor(user.Id, now) is not null)
+        {
+            if (guessWindow.TryClaimTripReport(user.Id))
+            {
+                await audit
+                    .WriteAsync(
+                        SecurityAudit.Entry(
+                            SecurityAuditActions.MfaCodeGuessingLocked,
+                            user.Id,
+                            info,
+                            Visibility.Internal,
+                            "wrong-code window tripped",
+                            now),
+                        ct)
+                    .ConfigureAwait(false);
+            }
+
+            return Failed(MfaErrors.RateLimited(InMemoryMfaGuessWindow.RetryAfterSeconds));
         }
 
         if (user.TwoFactorEnabled)

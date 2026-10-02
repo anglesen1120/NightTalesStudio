@@ -44,6 +44,12 @@ namespace NightTales.Infrastructure.Persistence.Migrations
                 columns: new[] { "user_id", "expires_at" });
 
             migrationBuilder.CreateIndex(
+                name: "ix_auth_challenges_user_id_unused",
+                table: "auth_challenges",
+                column: "user_id",
+                filter: "used_at IS NULL");
+
+            migrationBuilder.CreateIndex(
                 name: "ux_auth_challenges_token_hash",
                 table: "auth_challenges",
                 column: "token_hash",

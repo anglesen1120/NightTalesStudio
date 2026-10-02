@@ -106,10 +106,12 @@ public static class AuthEndpoints
             .AddEndpointFilter<RequireSameOriginFilter>();
 
         // 09.10.4-T1 (BD4): re-authentication is a credential route, so it carries the auth rate limit.
+        // 09.3.2-T3: the shared WT35 window can also answer here, so the 429 is documented like /login's.
         auth.MapPost("/reauth", ReauthAsync)
             .RequireRateLimiting(AuthRateLimitPolicy)
             .Produces<ReauthResponse>(StatusCodes.Status200OK)
-            .ProducesProblem(StatusCodes.Status401Unauthorized);
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status429TooManyRequests);
 
         return routes;
     }

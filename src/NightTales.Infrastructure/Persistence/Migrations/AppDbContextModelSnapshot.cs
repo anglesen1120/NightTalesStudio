@@ -1431,6 +1431,10 @@ namespace NightTales.Infrastructure.Persistence.Migrations
                         .IsUnique()
                         .HasDatabaseName("ux_auth_challenges_token_hash");
 
+                    b.HasIndex("UserId")
+                        .HasDatabaseName("ix_auth_challenges_user_id_unused")
+                        .HasFilter("used_at IS NULL");
+
                     b.HasIndex("UserId", "ExpiresAt")
                         .HasDatabaseName("ix_auth_challenges_user_id_expires_at");
 
