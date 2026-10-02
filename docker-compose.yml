@@ -116,6 +116,37 @@ services:
       retries: 12
       start_period: 30s
 
+  mock-mpt:
+    # The fake render node (11.1.2-T1, 11 README D14/F25): the optional Compose variant used by e2e.yml and
+    # image smoke. The daily path is native (`tools/dev/up.sh` runs `dotnet run --project tools/mock-mpt` on
+    # 127.0.0.1:8090, 11 CR-16). `expose` and never `ports`: the mock is reachable only from the compose
+    # network, so nothing in the stack is reachable from a café LAN (D14, 05 D15 S2).
+    build: { context: ., dockerfile: tools/mock-mpt/Dockerfile }
+    image: nighttales-mock-mpt:dev
+    environment:
+      # Same value as .env.example/tools/dev/up.sh: the core rejects < 32 bytes (05 D15 S3), so the old
+      # 12-byte `dev-mock-key` fallback left a fresh checkout (no .env) permanently unhealthy. This is also
+      # the variable the --healthcheck probe below reads, so a custom key is probed with the real value
+      # (11.1.2-T1 review fixes CODE-1/CODE-2).
+      RenderNodeServer__ApiKey: ${MOCK_API_KEY:-dev-mock-api-key-local-0123456789}
+      RenderNodeServer__MaxConcurrentTasks: ${MOCK_MAX_CONCURRENT:-2}
+      MOCK_RENDER_SECONDS: ${MOCK_RENDER_SECONDS:-20}
+      MOCK_VIDEO_SECONDS: ${MOCK_VIDEO_SECONDS:-10}
+      # Consumed by 11.1.2-T2; accepted (and inert) here so one .env drives both.
+      MOCK_FAIL_RATE: ${MOCK_FAIL_RATE:-0}
+      MOCK_FAIL_MODE: ${MOCK_FAIL_MODE:-}
+      MOCK_IMAGE_REPORT: ${MOCK_IMAGE_REPORT:-ok}
+    volumes: ["./worker-node/contract/fixtures:/fixtures:ro"]   # README §10 T33: fixture edits need no rebuild
+    expose: ["8090"]
+    healthcheck:
+      # The mock's own --healthcheck mode (11.1.2-T1 review fixes CODE-1/CODE-2): one authenticated
+      # GET /v1/health with the same key resolution the server uses, so the runtime image needs no curl and a
+      # custom MOCK_API_KEY is probed with the real value. The key travels as a header, never on argv (01 D9).
+      test: ["CMD", "dotnet", "NightTales.MockMpt.dll", "--healthcheck"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
   web:
     profiles: ["web"]                      # image defined by 10.1.1-T2 (10 CR-2)
     build: { context: ./web, dockerfile: Dockerfile }

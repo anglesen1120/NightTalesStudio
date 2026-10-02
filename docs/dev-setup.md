@@ -8,11 +8,15 @@ One command starts the whole platform on this machine, every listener on `127.0.
 11 CR-16). Docker is never involved.
 
 ```bash
-brew install postgresql@17 seaweedfs mailpit awscli   # awscli is used by tools/dev/storage-init.sh
+brew install postgresql@17 seaweedfs mailpit awscli ffmpeg   # awscli by tools/dev/storage-init.sh; ffmpeg by tools/mock-mpt
 (umask 077; cp .env.example .env)                     # then set your own POSTGRES_PASSWORD
 tools/dev/up.sh                                       # add --web for ng serve, --skip-storage-init to skip step 4
 tools/dev/down.sh                                     # --services also stops postgresql@17, --volumes discards dev data
 ```
+
+`ffmpeg` is the 11.1.2-T1 addition: `tools/mock-mpt` writes its two canned 10 s MP4s with `ffmpeg -f lavfi`
+on the first native start (its image's media stage runs the same recipe), and `tests/NightTales.MockMpt.Tests`
+runs it once too — hence the unit job below needs `ffmpeg` on the PATH as well.
 
 `up.sh` is idempotent: a service that is already running is left alone, so running it twice changes
 nothing. It verifies `.env` and the ports *before* it starts anything, then
@@ -119,7 +123,8 @@ dotnet format  NightTales.ci.slnf --verify-no-changes --no-restore
 # tree, 35 when this block was written). `--minimum-expected-tests 1` is the guard that makes a
 # zero-match filter red instead of silently green (see the note below). `--no-build` reuses the
 # Release build from the block above, so that block (with its ConnectionStrings__Postgres export)
-# must have run in this shell.
+# must have run in this shell. The 11.1.2-T1 MockMpt tests shell out to `ffmpeg` once for their
+# canned media, and they carry no Category trait, so this is the job that runs them.
 env -u NTS_TEST_PG dotnet test NightTales.ci.slnf -c Release --no-build \
   --filter "Category!=Integration" --minimum-expected-tests 1
 ```
