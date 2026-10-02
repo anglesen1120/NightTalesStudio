@@ -1,5 +1,6 @@
-/* Night Tales Studio — design tokens (mirror of web/src/app/shared/ui/theme/_tokens.scss, 10.1.3-T1).
-   Both themes define the same key set. Contrast verified: text >= 4.5:1, outline/focus >= 3:1 on bg/surface. */
+/* Night Tales Studio — “Phòng thu” design tokens.
+   Dark is the default. Both themes expose the same --nts-* keys.
+   Be Vietnam Pro is local-only and limited to the approved 400/500/600 weights. */
 
 @font-face { font-family: 'Be Vietnam Pro'; font-style: normal; font-display: swap; font-weight: 400;
   src: url(fonts/be-vietnam-pro-vietnamese-400-normal.woff2) format('woff2');
@@ -29,95 +30,131 @@
   src: url(fonts/be-vietnam-pro-latin-600-normal.woff2) format('woff2');
   unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD; }
 
-:root, [data-theme='dark'] {
+:root,
+[data-theme='dark'] {
   color-scheme: dark;
-  /* Night desk: indigo night, parchment text, lamp amber. */
-  --nts-color-bg: #131A30;
-  --nts-color-surface: #1A2240;
-  --nts-color-surface-variant: #232C50;
-  --nts-color-surface-sunk: #0F1528;
-  --nts-color-on-surface: #ECE7DA;
-  --nts-color-on-surface-muted: #A9AEC6;
-  --nts-color-primary: #F2B45C;
-  --nts-color-primary-soft: rgba(242, 180, 92, .14);
-  --nts-color-on-primary: #2A1A00;
-  --nts-color-outline: #7682B2;
-  --nts-color-hairline: #2E3862;
-  --nts-color-error: #FF8A80;
-  --nts-color-error-soft: rgba(255, 138, 128, .13);
-  --nts-color-warn: #E6D46A;
-  --nts-color-warn-soft: rgba(230, 212, 106, .12);
-  --nts-color-success: #74CFA6;
-  --nts-color-success-soft: rgba(116, 207, 166, .13);
-  --nts-color-info: #B0A8FF;
-  --nts-color-info-soft: rgba(176, 168, 255, .13);
-  --nts-color-focus: #F2B45C;
-  --nts-color-scrim: rgba(8, 11, 24, .72);
-  /* Topic tints: encode the series topic, never decoration. */
-  --nts-topic-ghost: #9FD3E6;
-  --nts-topic-spiritual: #C9B6FF;
-  --nts-topic-true-crime: #FF9E7A;
-  --nts-lamp-glow: 0 0 0 4px rgba(242, 180, 92, .18), 0 0 18px rgba(242, 180, 92, .45);
-  --nts-elevation-1: 0 1px 0 rgba(255, 255, 255, .03) inset;
-  --nts-elevation-2: 0 8px 24px rgba(4, 6, 16, .45);
-  --nts-elevation-3: 0 24px 64px rgba(4, 6, 16, .6);
+  --nts-color-room: #202523;
+  --nts-color-sheet: #2A312E;
+  --nts-color-ink: #F4F5EF;
+  --nts-color-muted: #BFC9C4;
+  --nts-color-signal: #6ECAC0;
+  --nts-color-on-signal: #202523;
+  --nts-color-playhead: #FF786C;
+  --nts-color-on-playhead: #202523;
+  --nts-color-line: #52605A;
+  --nts-color-soft: #343C38;
+  --nts-color-scrim: rgba(11, 15, 13, .76);
+  --nts-color-signal-soft: color-mix(in srgb, var(--nts-color-signal) 16%, var(--nts-color-sheet));
+  --nts-color-playhead-soft: color-mix(in srgb, var(--nts-color-playhead) 15%, var(--nts-color-sheet));
+  --nts-topic-ghost: #9EC9C4;
+  --nts-topic-spiritual: #C1B6C5;
+  --nts-topic-true-crime: #D5B3A8;
 }
 
 [data-theme='light'] {
   color-scheme: light;
-  /* Paper and ink: same structure, daylight. */
-  --nts-color-bg: #ECEEF4;
-  --nts-color-surface: #FFFFFF;
-  --nts-color-surface-variant: #E1E4EE;
-  --nts-color-surface-sunk: #E4E7F0;
-  --nts-color-on-surface: #161C33;
-  --nts-color-on-surface-muted: #4C5370;
-  --nts-color-primary: #8A5300;
-  --nts-color-primary-soft: rgba(138, 83, 0, .10);
-  --nts-color-on-primary: #FFFFFF;
-  --nts-color-outline: #6E7798;
-  --nts-color-hairline: #D3D7E4;
-  --nts-color-error: #B3261E;
-  --nts-color-error-soft: rgba(179, 38, 30, .08);
-  --nts-color-warn: #6B5A00;
-  --nts-color-warn-soft: rgba(107, 90, 0, .09);
-  --nts-color-success: #1D6A4B;
-  --nts-color-success-soft: rgba(29, 106, 75, .09);
-  --nts-color-info: #4A3EBF;
-  --nts-color-info-soft: rgba(74, 62, 191, .08);
-  --nts-color-focus: #8A5300;
-  --nts-color-scrim: rgba(22, 28, 51, .45);
-  --nts-topic-ghost: #13627A;
-  --nts-topic-spiritual: #5B3FB0;
-  --nts-topic-true-crime: #A33A12;
-  --nts-lamp-glow: 0 0 0 4px rgba(138, 83, 0, .16), 0 0 14px rgba(138, 83, 0, .28);
-  --nts-elevation-1: 0 1px 2px rgba(22, 28, 51, .06);
-  --nts-elevation-2: 0 8px 24px rgba(22, 28, 51, .12);
-  --nts-elevation-3: 0 24px 64px rgba(22, 28, 51, .22);
+  --nts-color-room: #EEF2F0;
+  --nts-color-sheet: #FFFFFF;
+  --nts-color-ink: #16211D;
+  --nts-color-muted: #4B5A54;
+  --nts-color-signal: #006C65;
+  --nts-color-on-signal: #FFFFFF;
+  --nts-color-playhead: #B43B35;
+  --nts-color-on-playhead: #FFFFFF;
+  --nts-color-line: #B8C2BD;
+  --nts-color-soft: #E1E8E4;
+  --nts-color-scrim: rgba(22, 33, 29, .54);
+  --nts-color-signal-soft: color-mix(in srgb, var(--nts-color-signal) 10%, var(--nts-color-sheet));
+  --nts-color-playhead-soft: color-mix(in srgb, var(--nts-color-playhead) 9%, var(--nts-color-sheet));
+  --nts-topic-ghost: #17655F;
+  --nts-topic-spiritual: #65556B;
+  --nts-topic-true-crime: #7D493A;
 }
 
 :root {
+  /* Compatibility role names used by the Angular token task. */
+  --nts-color-bg: var(--nts-color-room);
+  --nts-color-surface: var(--nts-color-sheet);
+  --nts-color-surface-variant: var(--nts-color-soft);
+  --nts-color-surface-sunk: var(--nts-color-room);
+  --nts-color-on-surface: var(--nts-color-ink);
+  --nts-color-on-surface-muted: var(--nts-color-muted);
+  --nts-color-primary: var(--nts-color-signal);
+  --nts-color-primary-soft: var(--nts-color-signal-soft);
+  --nts-color-on-primary: var(--nts-color-on-signal);
+  --nts-color-outline: var(--nts-color-line);
+  --nts-color-hairline: var(--nts-color-line);
+  --nts-color-error: var(--nts-color-playhead);
+  --nts-color-error-soft: var(--nts-color-playhead-soft);
+  --nts-color-warn: var(--nts-color-playhead);
+  --nts-color-warn-soft: var(--nts-color-playhead-soft);
+  --nts-color-success: var(--nts-color-signal);
+  --nts-color-success-soft: var(--nts-color-signal-soft);
+  --nts-color-info: var(--nts-color-signal);
+  --nts-color-info-soft: var(--nts-color-signal-soft);
+  --nts-color-focus: var(--nts-color-signal);
+
   --nts-font-sans: 'Be Vietnam Pro', system-ui, sans-serif;
   --nts-font-mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
-  /* Space: 4 px base. */
-  --nts-space-1: 4px;  --nts-space-2: 8px;  --nts-space-3: 12px; --nts-space-4: 16px;
-  --nts-space-5: 24px; --nts-space-6: 32px; --nts-space-7: 48px; --nts-space-8: 64px;
-  /* Radius by hierarchy: controls < panels < dialogs. */
-  --nts-radius-sm: 4px; --nts-radius-md: 8px; --nts-radius-lg: 14px; --nts-radius-pill: 999px;
-  /* Type: Major Third (1.25) on 16 px. Weights limited to 400/500/600 (D11). */
-  --nts-type-display-size: 2.441rem; --nts-type-display-line: 1.15; --nts-type-display-weight: 600;
-  --nts-type-headline-size: 1.953rem; --nts-type-headline-line: 1.2; --nts-type-headline-weight: 600;
-  --nts-type-title-size: 1.25rem; --nts-type-title-line: 1.35; --nts-type-title-weight: 600;
-  --nts-type-body-size: 1rem; --nts-type-body-line: 1.55; --nts-type-body-weight: 400;
-  --nts-type-story-size: 1.1875rem; --nts-type-story-line: 1.72; --nts-type-story-weight: 400;
-  --nts-type-label-size: .875rem; --nts-type-label-line: 1.35; --nts-type-label-weight: 500;
-  --nts-type-caption-size: .8rem; --nts-type-caption-line: 1.4; --nts-type-caption-weight: 400;
+
+  --nts-space-1: 4px;
+  --nts-space-2: 8px;
+  --nts-space-3: 12px;
+  --nts-space-4: 16px;
+  --nts-space-5: 24px;
+  --nts-space-6: 32px;
+  --nts-space-7: 48px;
+  --nts-space-8: 64px;
+  --nts-space-9: 96px;
+
+  --nts-radius-control: 6px;
+  --nts-radius-sheet: 3px;
+  --nts-radius-dialog: 10px;
+  --nts-radius-pill: 999px;
+  --nts-radius-sm: var(--nts-radius-control);
+  --nts-radius-md: var(--nts-radius-control);
+  --nts-radius-lg: var(--nts-radius-dialog);
+
+  --nts-type-hero-size: 3.625rem;
+  --nts-type-hero-line: 1.017;
+  --nts-type-hero-weight: 600;
+  --nts-type-page-size: 1.875rem;
+  --nts-type-page-line: 1.1;
+  --nts-type-page-weight: 600;
+  --nts-type-section-size: 1.375rem;
+  --nts-type-section-line: 1.273;
+  --nts-type-section-weight: 600;
+  --nts-type-story-size: 1.1875rem;
+  --nts-type-story-line: 1.737;
+  --nts-type-story-weight: 400;
+  --nts-type-body-size: .9375rem;
+  --nts-type-body-line: 1.533;
+  --nts-type-body-weight: 400;
+  --nts-type-label-size: .9375rem;
+  --nts-type-label-line: 1.533;
+  --nts-type-label-weight: 500;
+  --nts-type-meta-size: .75rem;
+  --nts-type-meta-line: 1.5;
+  --nts-type-meta-weight: 400;
+  --nts-type-display-size: var(--nts-type-hero-size);
+  --nts-type-display-line: var(--nts-type-hero-line);
+  --nts-type-headline-size: var(--nts-type-page-size);
+  --nts-type-headline-line: var(--nts-type-page-line);
+  --nts-type-title-size: var(--nts-type-section-size);
+  --nts-type-title-line: var(--nts-type-section-line);
+  --nts-type-caption-size: var(--nts-type-meta-size);
+  --nts-type-caption-line: var(--nts-type-meta-line);
+
   --nts-measure: 68ch;
-  --nts-target-min: 40px;
-  --nts-motion-fast: 120ms; --nts-motion-base: 220ms;
+  --nts-target-min: 44px;
+  --nts-motion-fast: 160ms;
+  --nts-motion-base: 240ms;
   --nts-ease: cubic-bezier(.2, .7, .2, 1);
+  --nts-dialog-shadow: 0 24px 64px rgba(10, 15, 13, .4);
+  --nts-menu-shadow: 0 12px 32px rgba(10, 15, 13, .28);
 }
 
 @media (prefers-reduced-motion: reduce) {
   :root { --nts-motion-fast: 0ms; --nts-motion-base: 0ms; }
+  *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: 0ms !important; }
 }
