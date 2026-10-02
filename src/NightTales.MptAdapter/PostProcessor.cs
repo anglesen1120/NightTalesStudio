@@ -26,7 +26,7 @@ public sealed class PostProcessor : BackgroundService
     private readonly AdapterOptions _options;
     private readonly ILogger<PostProcessor> _log;
     private readonly ConcurrentDictionary<Guid, byte> _inFlight = new();
-    private readonly ConcurrentBag<Task> _retention = [];
+    private readonly ConcurrentDictionary<Task, byte> _retention = new();
 
     internal PostProcessor(
         ICompletedTaskFeed feed,
@@ -125,7 +125,17 @@ public sealed class PostProcessor : BackgroundService
                 return;
             }
 
-            var verdict = await CheckAsync(row, cancellationToken).ConfigureAwait(false);
+            Verdict verdict;
+            try
+            {
+                verdict = await CheckAsync(row, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            {
+                // A durable-copy or output IO fault must not wedge the task at checking (CR-2/SEC-1).
+                _log.PostProcessFailed(exception, row.TaskId);
+                verdict = Verdict.Failed(OutputPublisher.CheckFailed, null);
+            }
 
             // Cancel during checking: the process has exited now, so the dir can go (T3 acceptance).
             var latest = await _store.TryGetAsync(row.TaskId, cancellationToken).ConfigureAwait(false);
@@ -235,11 +245,29 @@ public sealed class PostProcessor : BackgroundService
                 break;
             default:
                 _log.TaskFailed(row.TaskId, stored.Outcome?.Code, stored.Outcome?.Detail);
-                _retention.Add(Task.Run(
+                TrackRetention(Task.Run(
                     () => _disk.OnFailedAsync(row.TaskId, row.BackendTaskId, cancellationToken),
                     CancellationToken.None));
                 break;
         }
+    }
+
+    /// <summary>Keeps a pending retention task only until it finishes, then drops it and observes its failure (PERF-1).</summary>
+    private void TrackRetention(Task retention)
+    {
+        _retention.TryAdd(retention, 0);
+        _ = retention.ContinueWith(
+            finished =>
+            {
+                _retention.TryRemove(finished, out _);
+                if (finished.IsFaulted)
+                {
+                    _log.RetentionFailed(finished.Exception!.GetBaseException());
+                }
+            },
+            CancellationToken.None,
+            TaskContinuationOptions.ExecuteSynchronously,
+            TaskScheduler.Default);
     }
 
     private async Task FinishCancelledAsync(RenderTaskRecord row, CancellationToken cancellationToken)

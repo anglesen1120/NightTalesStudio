@@ -31,9 +31,6 @@ internal static partial class AdapterLog
         Message = "cancel noted for {TaskId}; MPT has no cancel route, the poller finalises it on the terminal state")]
     internal static partial void CancelNoted(this ILogger logger, Guid taskId);
 
-    [LoggerMessage(EventId = 3004, Level = LogLevel.Debug, Message = "output of {TaskId} ({Kind}) is not published yet")]
-    internal static partial void OutputNotPublished(this ILogger logger, Guid taskId, OutputKind kind);
-
     [LoggerMessage(EventId = 3005, Level = LogLevel.Warning, Message = "MPT did not answer {Method} {Path} within {Seconds}s")]
     internal static partial void MptTimeout(this ILogger logger, string method, string? path, double seconds);
 
@@ -144,4 +141,10 @@ internal static partial class AdapterLog
 
     [LoggerMessage(EventId = 3033, Level = LogLevel.Warning, Message = "output {Kind} of {TaskId} is not servable: {Reason}")]
     internal static partial void OutputUnavailable(this ILogger logger, Guid taskId, OutputKind kind, string reason);
+
+    [LoggerMessage(EventId = 3034, Level = LogLevel.Warning, Message = "failed-task retention cleanup faulted")]
+    internal static partial void RetentionFailed(this ILogger logger, Exception exception);
+
+    [LoggerMessage(EventId = 3035, Level = LogLevel.Warning, Message = "report of {TaskId} is not a valid render-check.v1 (sha256 {Sha256})")]
+    internal static partial void ReportUnparseable(this ILogger logger, Guid taskId, string sha256);
 }

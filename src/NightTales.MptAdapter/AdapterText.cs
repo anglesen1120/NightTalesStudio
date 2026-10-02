@@ -39,9 +39,16 @@ public static class AdapterText
         for (var index = 0; index < take; index++)
         {
             var current = value[index];
-            builder.Append(char.IsControl(current) ? ControlReplacement : current);
+            builder.Append(NeedsReplacing(current) ? ControlReplacement : current);
         }
 
         return builder.ToString();
     }
+
+    /// <summary>Control characters plus the Unicode line/paragraph separators and format characters (SEC-2).</summary>
+    private static bool NeedsReplacing(char value) =>
+        char.IsControl(value)
+        || char.GetUnicodeCategory(value) is System.Globalization.UnicodeCategory.LineSeparator
+            or System.Globalization.UnicodeCategory.ParagraphSeparator
+            or System.Globalization.UnicodeCategory.Format;
 }

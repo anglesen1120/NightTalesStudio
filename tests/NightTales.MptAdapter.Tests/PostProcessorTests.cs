@@ -26,6 +26,9 @@ internal sealed class PostRig : IAsyncDisposable
 
     internal PostProcessor Processor { get; private set; } = null!;
 
+    /// <summary>The failed-task retention wait stays pending until a test (or dispose) releases it (CR-4).</summary>
+    internal TaskCompletionSource RetentionGate { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
     internal static async Task<PostRig> StartAsync(Action<AdapterOptions>? configure = null, bool withHost = false)
     {
         var harness = await AdapterHarness.StartAsync(configure, withHost).ConfigureAwait(false);
@@ -36,9 +39,9 @@ internal sealed class PostRig : IAsyncDisposable
             harness.Feed,
             harness.Store,
             rig.Runner,
-            new CheckReportReader(options),
+            new CheckReportReader(options, harness.LogFactory.CreateLogger<CheckReportReader>()),
             new OutputPublisher(options),
-            new DiskRuleEnforcer(harness.Cleaner, harness.LogFactory.CreateLogger<DiskRuleEnforcer>(), static (_, _) => Task.CompletedTask),
+            new DiskRuleEnforcer(harness.Cleaner, harness.LogFactory.CreateLogger<DiskRuleEnforcer>(), (_, _) => rig.RetentionGate.Task),
             options,
             harness.LogFactory.CreateLogger<PostProcessor>());
         return rig;
@@ -112,6 +115,7 @@ internal sealed class PostRig : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
+        RetentionGate.TrySetResult();
         await H.DisposeAsync().ConfigureAwait(false);
     }
 }
@@ -405,5 +409,73 @@ public sealed class PostProcessorTests
         rig.Runner.Requests.ShouldBeEmpty();
         (await rig.H.RowAsync(taskId)).State.ShouldBe(RenderStates.Cancelled);
         Directory.Exists(rig.MptDir(mptId)).ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task CancelDuringCheck_PollerNeverFinalizesOrCleans_UntilTheCheckExits()
+    {
+        await using var rig = await PostRig.StartAsync();
+        var (taskId, mptId) = await rig.SeedCheckingAsync();
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        rig.Runner.OnRun = async _ =>
+        {
+            started.TrySetResult();
+            await release.Task;
+        };
+
+        var processing = rig.Processor.ProcessAsync(await rig.H.RowAsync(taskId), CancellationToken.None);
+        await started.Task.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken);
+        var running = await rig.H.RowAsync(taskId);
+        (await rig.H.Store.UpdateAsync(running with { CancelRequested = true }, CancellationToken.None)).ShouldBeTrue();
+
+        rig.H.Mpt.Script(mptId, 1, 100);
+        await rig.H.PollOnceAsync();
+
+        Directory.Exists(rig.MptDir(mptId)).ShouldBeTrue("CR-1: the poller must not clean a dir while the check runs");
+        (await rig.H.RowAsync(taskId)).State.ShouldNotBe(RenderStates.Cancelled);
+
+        release.SetResult();
+        await processing;
+
+        (await rig.H.RowAsync(taskId)).State.ShouldBe(RenderStates.Cancelled);
+        Directory.Exists(rig.MptDir(mptId)).ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task DurableCopyIoFault_FailsTheTask_NeverLeavesItAtChecking()
+    {
+        await using var rig = await PostRig.StartAsync();
+        var (taskId, _) = await rig.SeedCheckingAsync();
+        // A directory where the durable copy must be written: the atomic rename fails with an IO error.
+        Directory.CreateDirectory(Path.Combine(rig.H.Config.AdapterTasksDir, taskId.ToString("D"), CheckRunner.ReportFileName));
+
+        await rig.Processor.ProcessAsync(await rig.H.RowAsync(taskId), CancellationToken.None);
+
+        var row = await rig.H.RowAsync(taskId);
+        row.State.ShouldBe(RenderStates.Failed);
+        row.Outcome!.Detail.ShouldBe("check_failed");
+    }
+
+    [Fact]
+    public async Task MalformedReport_RawBytesKeptByteIdentical_OnlyShaLogged()
+    {
+        await using var rig = await PostRig.StartAsync();
+        var (taskId, mptId) = await rig.SeedCheckingAsync();
+        var raw = "{ this is not json \"secret-marker\""u8.ToArray();
+        rig.Runner.Report = null;
+        rig.Runner.OnRun = _ =>
+        {
+            File.WriteAllBytes(Path.Combine(rig.MptDir(mptId), CheckRunner.ReportFileName), raw);
+            return Task.CompletedTask;
+        };
+
+        await rig.Processor.ProcessAsync(await rig.H.RowAsync(taskId), CancellationToken.None);
+
+        var copy = Path.Combine(rig.H.Config.AdapterTasksDir, taskId.ToString("D"), CheckRunner.ReportFileName);
+        File.ReadAllBytes(copy).ShouldBe(raw);
+        (await rig.H.RowAsync(taskId)).Outcome!.Detail.ShouldBe("check_failed");
+        rig.H.Logs.Contains("secret-marker").ShouldBeFalse("S7: the raw report text is never logged");
+        rig.H.Logs.Contains(Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(raw))).ShouldBeTrue();
     }
 }

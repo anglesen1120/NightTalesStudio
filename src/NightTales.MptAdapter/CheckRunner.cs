@@ -149,24 +149,15 @@ internal sealed class CheckRunner : ICheckRunner
         return new CheckRunResult(timedOut, exit, outText, errText, clock.Elapsed, reportPath);
     }
 
-    /// <summary>SIGTERM, then SIGKILL of the whole tree after the grace period (T3 design).</summary>
+    /// <summary>
+    /// SIGTERM, then SIGKILL of the whole tree after the grace period (T3 design). The descendants are
+    /// snapshotted before the first signal: a parent that dies on SIGTERM re-parents its children, so the
+    /// process tree can no longer be walked afterwards (QA-1).
+    /// </summary>
     private async Task TerminateAsync(Process process)
     {
-        try
-        {
-            using var term = Process.Start(new ProcessStartInfo("/bin/kill")
-            {
-                UseShellExecute = false,
-                RedirectStandardError = true,
-                RedirectStandardOutput = true,
-                ArgumentList = { "-TERM", process.Id.ToString(CultureInfo.InvariantCulture) },
-            });
-            term?.WaitForExit(2000);
-        }
-        catch (Exception exception) when (exception is Win32Exception or IOException or InvalidOperationException)
-        {
-            // No kill binary: the SIGKILL below is the fallback.
-        }
+        var descendants = await SnapshotDescendantsAsync(process.Id).ConfigureAwait(false);
+        await SignalAsync("-TERM", [process.Id, .. descendants]).ConfigureAwait(false);
 
         using var grace = new CancellationTokenSource(TimeSpan.FromSeconds(Math.Max(0, _options.CheckKillGraceSeconds)));
         try
@@ -187,6 +178,8 @@ internal sealed class CheckRunner : ICheckRunner
             // Already gone.
         }
 
+        await SignalAsync("-KILL", descendants).ConfigureAwait(false);
+
         try
         {
             await process.WaitForExitAsync(CancellationToken.None).WaitAsync(DrainWait).ConfigureAwait(false);
@@ -194,6 +187,73 @@ internal sealed class CheckRunner : ICheckRunner
         catch (TimeoutException)
         {
             // A process that survives SIGKILL is the OS's problem; the run is reported as timed out regardless.
+        }
+    }
+
+    /// <summary>Every transitive child of <paramref name="rootPid"/>, found with <c>pgrep -P</c> (bounded).</summary>
+    private static async Task<List<int>> SnapshotDescendantsAsync(int rootPid)
+    {
+        var found = new List<int>();
+        var frontier = new Queue<int>();
+        frontier.Enqueue(rootPid);
+        while (frontier.Count > 0 && found.Count < 256)
+        {
+            var parent = frontier.Dequeue();
+            var output = await RunToolAsync("/usr/bin/pgrep", "-P", parent.ToString(CultureInfo.InvariantCulture)).ConfigureAwait(false);
+            foreach (var line in output.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            {
+                if (int.TryParse(line, NumberStyles.None, CultureInfo.InvariantCulture, out var child) && !found.Contains(child))
+                {
+                    found.Add(child);
+                    frontier.Enqueue(child);
+                }
+            }
+        }
+
+        return found;
+    }
+
+    private static async Task SignalAsync(string signal, List<int> pids)
+    {
+        if (pids.Count == 0)
+        {
+            return;
+        }
+
+        var arguments = new List<string> { signal };
+        arguments.AddRange(pids.Select(pid => pid.ToString(CultureInfo.InvariantCulture)));
+        await RunToolAsync("/bin/kill", [.. arguments]).ConfigureAwait(false);
+    }
+
+    /// <summary>Runs a short system tool with an argument list; a missing tool answers empty (the SIGKILL fallback stays).</summary>
+    private static async Task<string> RunToolAsync(string tool, params string[] arguments)
+    {
+        try
+        {
+            var info = new ProcessStartInfo(tool)
+            {
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+            };
+            foreach (var argument in arguments)
+            {
+                info.ArgumentList.Add(argument);
+            }
+
+            using var child = Process.Start(info);
+            if (child is null)
+            {
+                return string.Empty;
+            }
+
+            var text = await child.StandardOutput.ReadToEndAsync().WaitAsync(TimeSpan.FromSeconds(2)).ConfigureAwait(false);
+            await child.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(2)).ConfigureAwait(false);
+            return text;
+        }
+        catch (Exception exception) when (exception is Win32Exception or IOException or InvalidOperationException or TimeoutException)
+        {
+            return string.Empty;
         }
     }
 

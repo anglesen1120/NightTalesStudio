@@ -8,7 +8,7 @@ namespace NightTales.MptAdapter;
 /// is kept <see cref="FailedRetention"/> for diagnosis and then cleaned. Every removal is idempotent, so a
 /// repeated DELETE or a cleanup after the 11.3.4-T1 backstop already ran is a no-op.
 /// </summary>
-internal sealed class DiskRuleEnforcer
+public sealed class DiskRuleEnforcer
 {
     /// <summary>05 D15 P4: how long a failed task's files are kept.</summary>
     internal static readonly TimeSpan FailedRetention = TimeSpan.FromHours(24);

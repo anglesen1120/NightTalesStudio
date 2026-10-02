@@ -312,7 +312,7 @@ public sealed class QaT3ProbeTests : IDisposable
         var options = ShellOptions("true\n");
         options.MaxReportBytes = cap;
         var dir = MakeTaskDir(options, "t1");
-        var reader = new CheckReportReader(Options.Create(options));
+        var reader = new CheckReportReader(Options.Create(options), Microsoft.Extensions.Logging.Abstractions.NullLogger<CheckReportReader>.Instance);
         var taskId = Guid.NewGuid();
 
         File.WriteAllText(Path.Combine(dir, "render-check.json"), baseJson + new string(' ', cap - baseJson.Length));

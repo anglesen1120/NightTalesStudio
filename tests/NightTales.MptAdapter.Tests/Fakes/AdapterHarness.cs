@@ -96,14 +96,15 @@ internal sealed class AdapterHarness : IAsyncDisposable
 
         var cleaner = new TaskDirCleaner(Options.Create(options), factory.CreateLogger<TaskDirCleaner>());
         var serverOptions = new RenderNodeServerOptions { ApiKey = AdapterApiKey, MaxConcurrentTasks = 1 };
+        var disk = new DiskRuleEnforcer(cleaner, factory.CreateLogger<DiskRuleEnforcer>());
         var client = new MptClient(
             MptHttpClient.Create(options),
             Options.Create(options),
             Options.Create(serverOptions),
             startReader,
-            cleaner,
-            factory.CreateLogger<MptClient>(),
-            new FileOutputSource(store, Options.Create(options), factory.CreateLogger<FileOutputSource>()));
+            disk,
+            new FileOutputSource(store, Options.Create(options), factory.CreateLogger<FileOutputSource>()),
+            factory.CreateLogger<MptClient>());
 
         var feed = new ChannelCompletedTaskFeed();
         var poller = new MptTaskPoller(

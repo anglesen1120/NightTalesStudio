@@ -129,31 +129,32 @@ public sealed class MptClient : IRenderBackend
     private readonly int _threads;
     private readonly TimeSpan _readTimeout;
     private readonly IMptProcessStartReader _startReader;
-    private readonly TaskDirCleaner _cleaner;
+    private readonly DiskRuleEnforcer _disk;
 
     private readonly AdapterOptions _options;
-    private readonly FileOutputSource? _outputs;
+    private readonly FileOutputSource _outputs;
 
     public MptClient(
         HttpClient http,
         IOptions<AdapterOptions> options,
         IOptions<RenderNodeServerOptions> serverOptions,
         IMptProcessStartReader startReader,
-        TaskDirCleaner cleaner,
-        ILogger<MptClient> log,
-        FileOutputSource? outputs = null)
+        DiskRuleEnforcer disk,
+        FileOutputSource outputs,
+        ILogger<MptClient> log)
     {
         ArgumentNullException.ThrowIfNull(http);
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(serverOptions);
         ArgumentNullException.ThrowIfNull(startReader);
-        ArgumentNullException.ThrowIfNull(cleaner);
+        ArgumentNullException.ThrowIfNull(disk);
+        ArgumentNullException.ThrowIfNull(outputs);
         ArgumentNullException.ThrowIfNull(log);
 
         _http = http;
         _log = log;
         _startReader = startReader;
-        _cleaner = cleaner;
+        _disk = disk;
         _outputs = outputs;
 
         var bound = options.Value;
@@ -270,27 +271,19 @@ public sealed class MptClient : IRenderBackend
             }
         }
 
-        // The dirs are removed after MPT: the task dir, the two relay files and the adapter's own report dir.
-        await _cleaner.CleanAsync(record.TaskId, record.BackendTaskId, cancellationToken).ConfigureAwait(false);
+        // The dirs are removed after MPT, through the one disk-rule path: the task dir, the two relay files and
+        // the adapter's own report dir.
+        await _disk.OnDeletedAsync(record.TaskId, record.BackendTaskId, cancellationToken).ConfigureAwait(false);
         return Result.Deleted;
     }
 
     /// <inheritdoc />
     /// <remarks>
     /// Served by <see cref="FileOutputSource"/> (11.3.5-T3) from the stored output and the stored
-    /// <c>backend_task_id</c>; a client built without it (the T1/T2 tests) has no published artefact.
+    /// <c>backend_task_id</c>.
     /// </remarks>
-    public Task<ErrorOr<OutputFile>> OpenOutputAsync(Guid taskId, OutputKind kind, CancellationToken cancellationToken)
-    {
-        if (_outputs is not null)
-        {
-            return _outputs.OpenAsync(taskId, kind, cancellationToken);
-        }
-
-        _log.OutputNotPublished(taskId, kind);
-        return Task.FromResult<ErrorOr<OutputFile>>(
-            Error.NotFound(AdapterErrorCodes.OutputAbsent, "The adapter publishes outputs after the check (11.3.5-T3)."));
-    }
+    public Task<ErrorOr<OutputFile>> OpenOutputAsync(Guid taskId, OutputKind kind, CancellationToken cancellationToken) =>
+        _outputs.OpenAsync(taskId, kind, cancellationToken);
 
     /// <summary>
     /// MPT's task observables, or the error the poller maps (a 404 is the lost rule's first half, D6).
