@@ -124,6 +124,16 @@ internal static class SeedPrevious
             VALUES ('seed-dp-key', '<key id="seed" />')
             """),
         (
+            // 09.8.1-T2: the table the `_09_8_1_HubTickets` migration creates. Same rule as above:
+            // schema N-1 does not have it, so this insert is skipped today and the migration after this
+            // one is exercised over a live, unclaimed ticket row.
+            "hub_tickets",
+            """
+            INSERT INTO hub_tickets (ticket_hash, user_id, created_at, expires_at)
+            VALUES ('seed-hub-ticket-hash', '01920000-0000-7000-8000-000000000001', now(),
+                    now() + interval '60 seconds')
+            """),
+        (
             // 09.2.6-T3: the table the `_09_EmailMessages` migration creates. Same rule as above: schema
             // N-1 does not have it, so this insert is skipped today and the migration after this one is
             // exercised over a delivered message (its `params` are already null, as a sent row is).

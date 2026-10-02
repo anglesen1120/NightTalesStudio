@@ -71,6 +71,30 @@ internal static class AllowLists
             "NightTales.Fetcher.Core",
         };
 
+    /// <summary>
+    /// 11 README D4: the contract library is BCL-only, because the node binary and the mock load it without the
+    /// backend. An empty set means "the framework baseline and nothing else".
+    /// </summary>
+    internal static readonly IReadOnlySet<string> RenderNodeContractAllowedReferences =
+        new HashSet<string>(StringComparer.Ordinal);
+
+    /// <summary>
+    /// 11 README D3/D5: the core carries the contract, <c>ErrorOr</c> (the seam result type) and the ASP.NET Core
+    /// framework — never Domain, Application or Infrastructure (11 CR-3).
+    /// </summary>
+    internal static readonly IReadOnlySet<string> RenderNodeServerAllowedReferences =
+        new HashSet<string>(StringComparer.Ordinal)
+        {
+            "ErrorOr",
+            "NightTales.RenderNode.Contract",
+        };
+
+    internal static readonly IReadOnlyList<string> RenderNodeServerAllowedPrefixes =
+    [
+        "Microsoft.AspNetCore.",
+        "Microsoft.Extensions.",
+    ];
+
     /// <summary>02 CR-19 lets the Fetcher use any <c>Microsoft.Extensions.*</c> package.</summary>
     internal static readonly IReadOnlyList<string> FetcherAllowedPrefixes =
         ["Microsoft.Extensions."];

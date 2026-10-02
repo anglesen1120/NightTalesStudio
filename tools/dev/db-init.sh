@@ -36,6 +36,11 @@ die() { local code="$1"; shift; log "ERROR: $*"; exit "$code"; }
 
 repo_root="$(cd "$(dirname "$0")/../.." && pwd)"
 
+# Shared helpers; nts_pg_assert_homebrew_cluster is the version/data_directory check down.sh
+# --volumes also runs before it drops anything.
+# shellcheck source=tools/dev/lib.sh
+. "$repo_root/tools/dev/lib.sh"
+
 # Reads KEY=VALUE from a dotenv file without sourcing it (no code execution).
 env_value() {
   local file="$1" key="$2" line value
@@ -114,20 +119,7 @@ psql_admin() {
 pg_isready_ok || die 1 "PostgreSQL is not accepting connections on 127.0.0.1:5432; run: brew services start postgresql@17"
 
 # Nothing is changed and no password is sent until the listener is this Homebrew cluster.
-verify_identity() {
-  local identity server_version server_datadir
-  identity="$(psql_admin -At -F ' ' -c "SELECT current_setting('server_version_num'), current_setting('data_directory')")" \
-    || die 1 "cannot connect as the Homebrew superuser to database postgres"
-  server_version="${identity%% *}"
-  server_datadir="${identity#* }"
-  case "$server_version" in
-    17[0-9][0-9][0-9][0-9]) ;;
-    *) die 1 "the server on 127.0.0.1:5432 is not PostgreSQL 17 (server_version_num $server_version); stop the other cluster (brew services stop postgresql@<major>)" ;;
-  esac
-  [ "$server_datadir" = "$expected_datadir" ] \
-    || die 1 "the server on 127.0.0.1:5432 is not Homebrew postgresql@17 (data_directory $server_datadir, expected $expected_datadir)"
-}
-verify_identity
+nts_pg_assert_homebrew_cluster "$pg_bin" "$expected_datadir"
 
 listen="$(psql_admin -At -c 'SHOW listen_addresses')" || die 1 "cannot read listen_addresses"
 if [ "$listen" != "127.0.0.1" ]; then
@@ -141,7 +133,7 @@ if [ "$listen" != "127.0.0.1" ]; then
     sleep 1
   done
   # The restart opened a window in which another process could take the port.
-  verify_identity
+  nts_pg_assert_homebrew_cluster "$pg_bin" "$expected_datadir"
 fi
 
 # An existing role with any elevated attribute is never converged (it could be an admin role).

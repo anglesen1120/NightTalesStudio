@@ -14,6 +14,7 @@ using NightTales.Infrastructure.Identity;
 using NightTales.Infrastructure.Jobs;
 using NightTales.Infrastructure.Persistence;
 using NightTales.Infrastructure.Persistence.Outbox;
+using NightTales.Infrastructure.Realtime;
 using NightTales.TestKit.Database;
 using NightTales.TestKit.Email;
 using NightTales.TestKit.Security;
@@ -217,6 +218,11 @@ public sealed class WorkerHost(TestDatabase database, FakeClock clock) : IAsyncD
         builder.Services.RemoveAll<IClock>();
         builder.Services.AddSingleton<IClock>(clock);
         builder.Services.AddWorkerServices(builder.Configuration, [.. _jobAssemblies]);
+
+        // 09.8.1-T2: the production Worker calls AddRealtime too (its outbox handlers are producers and
+        // the hub-ticket sweep reads the `Realtime` section from here), so the harness composes the same
+        // graph instead of a Worker that is missing a registration the real one has.
+        builder.Services.AddRealtime(builder.Configuration);
 
         // 09.2.4-T1, D13: RunOutboxOnceAsync is the harness's only outbox delivery path, so the Worker's
         // loop is dropped from the collection before the host is built — it could otherwise claim and deliver

@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Routing;
 using NightTales.Application.Abstractions;
+using NightTales.Api.RateLimiting;
 using NightTales.Domain.Common;
 using NightTales.TestKit.Api;
 
@@ -44,6 +45,18 @@ internal static class ProbeEndpoints
     /// <summary>The body cap of <see cref="LargePostEchoPath"/>, four times the host's 1 MiB default.</summary>
     internal const long LargePostEchoLimit = 4 * 1024 * 1024;
 
+    /// <summary>The connection address and the request host the host resolved, after the forwarded-headers middleware (09.3.5-T1).</summary>
+    internal const string RemoteIpPath = "/__probe/remote-ip";
+
+    /// <summary>A route carrying the <c>paid</c> rate-limit policy and no handler work (09.3.5-T1).</summary>
+    internal const string PaidRateLimitPath = "/__probe/rate-limit/paid";
+
+    /// <summary>A route carrying the <c>hub</c> rate-limit policy and no handler work (09.3.5-T1).</summary>
+    internal const string HubRateLimitPath = "/__probe/rate-limit/hub";
+
+    /// <summary>A route carrying the <c>anon</c> rate-limit policy and no handler work (09.3.5-T1).</summary>
+    internal const string AnonRateLimitPath = "/__probe/rate-limit/anon";
+
     internal static void Map(IEndpointRouteBuilder routes)
     {
         // The principal, not ICurrentUser: the probe reports the authenticated principal the Test
@@ -81,6 +94,20 @@ internal static class ProbeEndpoints
         routes.MapPost(PostEchoPath, EchoBodyAsync);
         routes.MapPost(LargePostEchoPath, EchoBodyAsync)
             .WithMetadata(new RequestSizeLimitAttribute(LargePostEchoLimit));
+
+        // 09.3.5-T1: the address the limiter partitions on is the connection's, as the forwarded-headers
+        // middleware left it — the probe reports it together with the host, so the trust tests assert on
+        // what the host resolved rather than on the middleware they just configured.
+        routes.MapGet(RemoteIpPath, (HttpContext http) => Results.Ok(new RemoteIpProbe(
+            http.Connection.RemoteIpAddress?.ToString(),
+            http.Request.Host.Value,
+            http.Request.Scheme)));
+
+        // The three policies no endpoint of this wave carries yet (`paid`/`hub`/`anon` are mounted by
+        // their owning tasks): the routes exist so the policy's partition behaviour is testable now.
+        routes.MapPost(PaidRateLimitPath, () => Results.Ok()).RequireRateLimiting(RateLimitPolicies.Paid);
+        routes.MapPost(HubRateLimitPath, () => Results.Ok()).RequireRateLimiting(RateLimitPolicies.Hub);
+        routes.MapPost(AnonRateLimitPath, () => Results.Ok()).RequireRateLimiting(RateLimitPolicies.Anon);
     }
 
     private static IResult Throw() => throw new InvalidOperationException(ThrowMessage);
@@ -102,4 +129,7 @@ internal static class ProbeEndpoints
 
     /// <summary>The byte count of the body <c>PostEchoPath</c> accepted.</summary>
     internal sealed record PostEcho(int Bytes);
+
+    /// <summary>What the host resolved for the request's connection address and host (09.3.5-T1).</summary>
+    internal sealed record RemoteIpProbe(string? RemoteIp, string? Host, string Scheme);
 }

@@ -57,6 +57,12 @@ public static class WorkerServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(configuration);
         ArgumentNullException.ThrowIfNull(assemblies);
 
+        // 02.2.3-T1 (02 README D5/F22): the Worker writes stories, so it loads and validates the prompt
+        // catalog at start-up like the Api. Registered before the rest of the graph so its gate is the
+        // first hosted service to start: a catalog that does not match its manifest must fail the boot
+        // before anything else does work.
+        services.AddPromptCatalog();
+
         services.AddOptions<WorkerOptions>()
             .BindConfiguration(WorkerOptions.SectionName)
             .Validate(
@@ -82,6 +88,11 @@ public static class WorkerServiceCollectionExtensions
 
         services.AddNightTalesMediator();
         services.AddJobs(configuration, [typeof(WorkerServiceCollectionExtensions).Assembly, .. assemblies]);
+
+        // 05.5.1-T2 (05 README D10): the render-quality thresholds the ingest job applies to a measured
+        // `render-check.v1` are configuration, because 05.2.1-T1/05.5.2-T1 calibrate them; they are
+        // validated on start so an impossible policy fails the boot, not the first render.
+        services.AddRenderQuality(configuration);
 
         // 09.4.2-T1 (plan §3 step 6): the Worker composes the same public catalog URL as the Api, so a
         // template it renders or mails never disagrees with the Api about what a storage key points at.

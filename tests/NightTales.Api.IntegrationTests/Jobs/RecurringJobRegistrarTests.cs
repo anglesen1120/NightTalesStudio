@@ -137,6 +137,7 @@ public sealed class RecurringJobRegistrarTests(TestDatabase database) : Integrat
                 "probe:scanned-second",
                 IdempotencyKeyCleanupJobRegistration.RecurringId,
                 OutboxCleanupJobRegistration.RecurringId,
+                HubTicketCleanupJobRegistration.RecurringId,
             ],
             ignoreOrder: true);
     }
@@ -168,6 +169,7 @@ public sealed class RecurringJobRegistrarTests(TestDatabase database) : Integrat
                 "probe:valid",
                 IdempotencyKeyCleanupJobRegistration.RecurringId,
                 OutboxCleanupJobRegistration.RecurringId,
+                HubTicketCleanupJobRegistration.RecurringId,
             ],
             ignoreOrder: true);
     }
@@ -191,7 +193,12 @@ public sealed class RecurringJobRegistrarTests(TestDatabase database) : Integrat
         [.. (await StoredRecurringIdsAsync(host)).Where(id => !HostOwnedIds.Contains(id))];
 
     private static readonly string[] HostOwnedIds =
-        [.. ScannedProbeRegistrations.Ids, IdempotencyKeyCleanupJobRegistration.RecurringId, OutboxCleanupJobRegistration.RecurringId];
+    [
+        .. ScannedProbeRegistrations.Ids,
+        IdempotencyKeyCleanupJobRegistration.RecurringId,
+        OutboxCleanupJobRegistration.RecurringId,
+        HubTicketCleanupJobRegistration.RecurringId,
+    ];
 
     private sealed class StubRegistration(string id, string cron) : IRecurringJobRegistration
     {

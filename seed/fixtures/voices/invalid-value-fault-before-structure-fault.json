@@ -1,0 +1,26 @@
+{
+  "schema": "voices.v1",
+  "revision": 1,
+  "vieneuCommit": "c1390abbdb2eedcdf58eafb546966c06ce27af71",
+  "voices": [
+    {
+      "id": "Hải Đăng",
+      "slug": "wrong-slug",
+      "displayName": "Hải Đăng",
+      "language": "vi",
+      "gender": "male",
+      "tags": [],
+      "active": true,
+      "previewStorageKey": null
+    },
+    {
+      "id": "Ngọc Huyền",
+      "slug": "ngoc-huyen",
+      "displayName": "Ngọc Huyền",
+      "language": "en",
+      "gender": "female",
+      "active": true,
+      "previewStorageKey": null
+    }
+  ]
+}

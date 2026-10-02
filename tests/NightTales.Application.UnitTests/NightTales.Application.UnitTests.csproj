@@ -9,6 +9,17 @@
     <ProjectReference Include="..\NightTales.TestKit\NightTales.TestKit.csproj" />
   </ItemGroup>
 
+  <!--
+    05.5.1-T2 (05 README D14): the render contract fixtures are the artefacts the adapter serves
+    (11.3.5-T1) and mock-mpt replays (11.1.2-T1), so the DTO round-trips and the verdict assertions read
+    the very bytes every other implementation uses.
+  -->
+  <ItemGroup>
+    <None Include="..\..\worker-node\contract\fixtures\render-check.v1.*.json;..\..\worker-node\contract\fixtures\render-quality.v1.*.json"
+          Link="fixtures\%(Filename)%(Extension)"
+          CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
   <ItemGroup>
     <PackageReference Include="FluentValidation" />
     <PackageReference Include="Mediator.Abstractions" />

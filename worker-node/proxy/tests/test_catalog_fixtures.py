@@ -62,7 +62,7 @@ def test_catalog_fixture_every_file_listed_in_expected() -> None:
     on_disk = {p.name for p in _all_fixture_files()}
     assert on_disk == set(EXPECTED)
     # And the inverse: every expectation maps to a real file (no stale rows).
-    assert len(on_disk) == len(EXPECTED) == 30
+    assert len(on_disk) == len(EXPECTED) == 36
 
 
 def test_catalog_seed_file_loads() -> None:

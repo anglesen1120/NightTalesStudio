@@ -195,16 +195,37 @@ internal static class AuthTestFlow
         await context.SaveChangesAsync();
     }
 
-    /// <summary>Every <c>refresh_tokens</c> row of one user, oldest first.</summary>
+    /// <summary>
+    /// Every <c>refresh_tokens</c> row of one user, oldest first. Rows minted at the same
+    /// <see cref="FakeClock"/> instant tie on <c>created_at</c>, so ties are broken by rotation depth
+    /// (a successor sorts after the row whose <c>replaced_by_id</c> names it), then by id.
+    /// </summary>
     internal static async Task<IReadOnlyList<RefreshToken>> RowsAsync(TestDatabase database, Guid userId)
     {
         await using var context = database.CreateAppDbContext();
 
-        return await context.RefreshTokens
+        var rows = await context.RefreshTokens
             .AsNoTracking()
             .Where(row => row.UserId == userId)
-            .OrderBy(row => row.CreatedAt)
             .ToListAsync();
+
+        var predecessorOf = rows
+            .Where(row => row.ReplacedById is not null)
+            .ToDictionary(row => row.ReplacedById!.Value);
+
+        int Depth(RefreshToken row)
+        {
+            var depth = 0;
+            while (predecessorOf.TryGetValue(row.Id, out var predecessor) && depth < rows.Count)
+            {
+                row = predecessor;
+                depth++;
+            }
+
+            return depth;
+        }
+
+        return [.. rows.OrderBy(row => row.CreatedAt).ThenBy(Depth).ThenBy(row => row.Id)];
     }
 
     /// <summary>

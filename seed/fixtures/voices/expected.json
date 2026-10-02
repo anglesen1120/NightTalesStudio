@@ -118,5 +118,29 @@
   "invalid-not-json.json": {
     "code": "catalog_invalid",
     "voiceId": null
+  },
+  "invalid-value-fault-before-structure-fault.json": {
+    "code": "voice_slug_mismatch",
+    "voiceId": "Hải Đăng"
+  },
+  "invalid-header-fault-before-entry-fault.json": {
+    "code": "catalog_invalid",
+    "voiceId": null
+  },
+  "invalid-duplicate-slug-before-duplicate-id.json": {
+    "code": "catalog_invalid",
+    "voiceId": "Hải Đăng"
+  },
+  "invalid-empty-slug-preview-key.json": {
+    "code": "catalog_invalid",
+    "voiceId": "中"
+  },
+  "invalid-display-name-python-whitespace-only.json": {
+    "code": "catalog_invalid",
+    "voiceId": "Hải Đăng"
+  },
+  "valid-display-name-python-whitespace-40.json": {
+    "code": null,
+    "voiceId": null
   }
 }

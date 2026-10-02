@@ -5,6 +5,7 @@ using NightTales.Api;
 using NightTales.Api.DependencyInjection;
 using NightTales.Api.Endpoints;
 using NightTales.Api.Http;
+using NightTales.Api.RateLimiting;
 using NightTales.Api.Realtime;
 using NightTales.Application.DependencyInjection;
 using NightTales.Infrastructure.DependencyInjection;
@@ -16,10 +17,19 @@ using NightTales.Infrastructure.Storage;
 var builder = WebApplication.CreateBuilder(args);
 
 // 09.1.5-T1 (09 README D14): registers the OpenAPI document provider the build-time generator needs.
-builder.Services.AddOpenApi();
+// 09.9.5-T1 (09 README D7): the generated `ProblemDetails` component gains the two members its CLR
+// type cannot express (`code`, `traceId`), so the published document — and every client generated
+// from it (10.1.4) — carries the whole error contract of ProblemDetailsWriter.
+builder.Services.AddOpenApi(options =>
+    options.AddSchemaTransformer<ProblemDetailsSchemaTransformer>());
 
 builder.Services.AddNightTalesMediator();
 builder.Services.AddPersistence(builder.Configuration);
+
+// 02.2.3-T1 (02 README D5/F22): the Api writes stories too, so it loads and validates the same prompt
+// catalog at start-up; an invalid catalog aborts the boot instead of serving a draft built from a
+// prompt that was never released.
+builder.Services.AddPromptCatalog();
 
 // 09.4.1-T1 (09 §4 09.4.1): the series routes need the Application defaults — the 02 story-preset
 // port, whose wave-1 null catalog knows no key — and the post-commit ETag read of 09 README D15.
@@ -53,12 +63,23 @@ builder.Services.AddEmail(builder.Configuration);
 // 09.3.2-T1 step 6: the bearer scheme over the same key.
 builder.Services.AddNightTalesJwtBearer();
 
+// 09.10.4-T1 (09 README §B10 WT34): the fallback policy that rejects BD4's enrolment-only token
+// everywhere, the MfaEnrolment policy of the two enrolment routes, and the result handler that answers
+// 404 not_found for a refused request (D10).
+builder.Services.AddNightTalesMfaAuthorization();
+
 // 09.9.4-T1 (09 README BD12/WF15): the Data Protection key ring persisted in PostgreSQL and encrypted
 // with the DP_KEK certificate, the purpose-scoped token protector over it, and the platform's safe
 // defaults — the hardening headers, the CORS allow-list reduced to `App:PublicOrigin`, HSTS and the
 // 1 MiB request-body cap. Both fail start-up on a missing KEK or an invalid public origin.
 builder.Services.AddNightTalesDataProtection(builder.Configuration);
 builder.Services.AddNightTalesSecurityHardening(builder.Configuration);
+
+// 09.3.5-T1 (09 README BD14/BD16, W8): the four rate-limit policies (`auth`, `paid`, `hub`, `anon`),
+// their forwarded-header trust (the address the limiter partitions on is one a configured proxy
+// declared) and the two named outbound clients of 09 W3 CR-7. The limits are configuration with the
+// BD14 defaults, and the policy names are the ones the endpoint owners pass to `RequireRateLimiting`.
+builder.Services.AddRateLimiting(builder.Configuration);
 
 builder.Services.AddProblemDetails(ProblemDetailsWriter.ConfigureProblemDetails);
 
@@ -91,17 +112,38 @@ if (args.Contains("--seed", StringComparer.Ordinal))
 
 app.UseExceptionHandler();
 
+// 09.3.5-T1 (09 README BD14): the trust boundary first — the forwarded-headers middleware rewrites the
+// connection's address and scheme from `X-Forwarded-For`/`X-Forwarded-Proto`, and only for a peer inside
+// a configured network, so the address every later decision uses is one the load balancer vouched for.
+// It must precede the hardening middleware, whose HTTPS redirection reads the declared scheme.
+app.UseForwardedHeaderTrust();
+
 // 09.9.4-T1 (BD12): HSTS and HTTPS redirection outside Development, the hardening headers (also on an
 // error response), the CORS policies and the request-body cap. It runs before authorization, so an
 // oversized body is refused before the caller is authenticated; the CORS middleware runs before the cap,
 // so the 413 refusal still carries its CORS headers.
 app.UseNightTalesSecurityHardening();
 
+// 09.3.5-T1 (09 README BD14/BD16): the limiter. It runs after the host's own authentication middleware
+// (the ASP.NET Core host inserts it ahead of the whole user pipeline) and after the CORS middleware, so a
+// user-keyed policy sees the caller's `sub` and a 429 still carries the headers a browser needs to read
+// it (10-web-ui L107–108). A rejected request never reaches an endpoint, so it opens no transaction and
+// writes no row.
+app.UseRateLimiting();
+
+// 09.3.5-T1 (09 README BD16): no rate policy, by design — the limiter gives an endpoint without
+// `RequireRateLimiting` a pass-through partition, so a probe fleet that shares one address can never
+// exhaust a shared bucket, and the generated OpenAPI document (09.1.5-T1 writes it at build, no route is
+// mapped for it) is not limited either. Both are cheap, cache-only reads.
 app.MapGet("/health/live", () => Results.Ok());
 
 // 09.3.1-T1 (09 README D14): the auth route group; in P it carries POST /api/v1/auth/register, which
 // answers 403 registration_closed until 09.3.1-T3 swaps the registration flow.
 app.MapAuthEndpoints();
+
+// 09.10.4-T1 (09 README D14, BD4): the /me route group's MFA routes — setup, verify, recovery codes and
+// disable. The enrolment-only token reaches the first two and nothing else (WT34).
+app.MapMeEndpoints();
 
 // 09.4.1-T1 (09 README D14, 09 §4 09.4.1): the series route group.
 app.MapSeriesEndpoints();
@@ -113,6 +155,10 @@ app.MapEpisodeEndpoints();
 // 09.4.2-T1 (09 README D14, 09 §4 09.4.2): the catalog routes — the voices and the style templates the
 // picker and the style grid read.
 app.MapCatalogEndpoints();
+
+// 09.8.1-T2 (09 README D14, BD11): the ticket exchange. The client POSTs its access token here, gets a
+// 60-second single-use ticket and connects with `?ticket=…`, so the JWT never travels in a URL.
+app.MapHubEndpoints();
 
 // 09.8.1-T1 (09 README BD11, 09-backend-api L214): the hub of 09.8.1 — WebSockets only, so the client
 // skips negotiation and the JWT never travels in the URL (the single-use ticket does, and it dies at
