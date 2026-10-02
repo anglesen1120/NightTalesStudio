@@ -25,12 +25,12 @@ Per-task evidence for `done` rows: `docs/status-archive.md` §Per-plan evidence 
 | Plan | Done | Open (see §Open tasks) |
 |---|---|---|
 | 01 Environment (29 tasks) | 25 + 01.2.4-T1 n/a (DEC-9: no OpenAI org, calls go through the relay) | 01.1.1-T3, 01.3.3-T1, 01.3.3-T2 |
-| 02 Story writing (M0 slice) | 11 tasks — M0 slice complete (presets, harness, A/B, D15 freeze, 02.5.2-T0 spike) | M1 tasks not started |
+| 02 Story writing (M0 slice) | 11 tasks — M0 slice complete (presets, harness, A/B, D15 freeze, 02.5.2-T0 spike) | M1: 02.2.1-T1 in PR #75, 02.2.3-T1 in PR #76; the other M1 tasks not started |
 | 03 Images (M0 slice) | 4 (03.1.1-T1, 03.4.1-T1, 03.3.2-T1, 03.1.1-T2 #61) | 03.1.2-T1, 03.2.x, 03.4.2/03.4.3 (M1) |
-| 04 Voice proxy (12 tasks) | 10 | 04.2.2-T2, 04.2.3-T1 |
-| 05 Video/subtitles | 9 | 05.2.1-T1, 05.5.2 |
+| 04 Voice proxy (12 tasks) | 10 | 04.2.2-T2 in PR #73; 04.2.3-T1 |
+| 05 Video/subtitles | 9 | 05.5.1-T2 in PR #78; 05.2.1-T1, 05.5.2 |
 | 09 Backend | 24 tasks merged (09.9.4-T1 #71) | In PR: #72 09.9.5-T1, #74 09.10.4-T1, #77 09.3.5-T1 + 09.8.1-T2, #82 09.2.6-T3; 09.7.2-T1 coded (needs 11.1.1-T2, then gates); see §Session 2 plan |
-| 11 Worker deployment | 11.2.1-T1 (proposal only; sign-off deferred to phase 2, owner 2026-09-30) | phase 1: 11.1.x, 11.3.3, 11.3.5; the rest is phase 2 (11 CR-18) |
+| 11 Worker deployment | 11.2.1-T1 (proposal only; sign-off deferred to phase 2, owner 2026-09-30) | phase 1: 11.1.1-T1 in PR #81, 11.3.5-T1 in PR #79; other 11.1.x, 11.3.3, 11.3.5; the rest is phase 2 (11 CR-18) |
 | 13 Compliance | 13.1.1-T1, 13.1.2-T1 (PR #35) | 13.2.1-T1 → 13.2.2-T1, 10.3.1-T1 pages; 13.1.1-T2 / 13.1.2-T2 lawyer rows (O1) |
 
 Plans 06, 07, 08, 10, 12: not started. Order: `plans/features/README.md`.
@@ -71,7 +71,7 @@ Plans 06, 07, 08, 10, 12: not started. Order: `plans/features/README.md`.
 | 01.3.3-T1 Carry-over | partial (§11 `[OPEN]`) | `worker-node/CARRY-OVER.md` §1–12 written; §11 waits for the 05.5.2 trial rows |
 | 01.3.3-T2 Carry-over walkthrough | todo | Owner walkthrough, after 05.5.2. Interim whisper notes: `.nts/runs/whisper-baseline/carryover-notes.md` |
 | 03.1.2-T1, 03.2.x, 03.4.2/03.4.3 | todo (M1) | Need 09 and 11.3.5 |
-| 04.2.2-T2 Catalog rules + seeder (C#) | todo | Needs 09.2.2-T1 (merged) and 09.2.5-T1 |
+| 04.2.2-T2 Catalog rules + seeder (C#) | doing | In PR #73 (waits for the owner's merge; CI `integration` red only on the flake #80 fixes) |
 | 04.2.3-T1 Preview generation + upload | partial | M0 generation, owner listening and T19 option A done (PR #26); local SeaweedFS upload rehearsal passed; M1 upload waits for 11.4.1-T2 → 11.4.1-T1. SEC-0423T19-1 (info) open. A 2nd vi rater + an en rater → catalog revision 2 (04 T18) |
 | 05.2.1-T1 Subtitle fidelity + sync evaluation | partial (machine leg) | L1/L2 rows + owner labels blocked on 05.5.2-T1 (05 T84); `RenderQuality:*` values await calibration |
 | 05.5.2 | todo — prep on branch `feature/05.5.2-m0-trial` (3 commits, not on `develop`) | Branch: `apply_quality_policy.py` (D10 mirror) + `mpt_client` spec-path containment, gates passed; L1 vi / L2 en renders blocked on the D11 memory gate (swap). Needs 04.2.2-T1 raters and 03.3.2-T1 (done). Portrait renders use 9:16 option A (05 O9, 03 CR-16) with the hinted prompt; judge the cropped frames of the first portrait render (`trial/images/REPORT.md` §Crop probe) |
