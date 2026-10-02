@@ -10,6 +10,7 @@ using NightTales.Api.Http.Filters;
 using NightTales.Application.Abstractions.Security;
 using NightTales.Application.Common.Errors;
 using NightTales.Application.Features.Auth.Login.Commands;
+using NightTales.Application.Features.Auth.Login.Mfa.Commands;
 using NightTales.Application.Features.Auth.Logout.Commands;
 using NightTales.Application.Features.Auth.Mfa.Reauth.Commands;
 using NightTales.Application.Features.Auth.Refresh.Commands;
@@ -78,7 +79,21 @@ public static class AuthEndpoints
         auth.MapPost("/login", LoginAsync)
             .AllowAnonymous()
             .RequireRateLimiting(AuthRateLimitPolicy)
-            .Produces<LoginResponse>(StatusCodes.Status200OK);
+            .Produces<LoginResponse>(StatusCodes.Status200OK)
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status429TooManyRequests);
+
+        // 09.3.2-T3 (BD4): the second step of the login. It is anonymous like the first one and carries the
+        // same rate-limit policy, because it is the credential surface a wrong code is guessed on. It needs
+        // no `RequireSameOriginFilter`: the request authenticates with the body's single-use `mfaToken`,
+        // which a cross-site caller cannot read, so there is no cookie-only CSRF to defend against here.
+        auth.MapPost("/login/mfa", LoginMfaAsync)
+            .AllowAnonymous()
+            .RequireRateLimiting(AuthRateLimitPolicy)
+            .Produces<LoginResponse>(StatusCodes.Status200OK)
+            .ProducesProblem(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status429TooManyRequests);
 
         auth.MapPost("/refresh", RefreshAsync)
             .AllowAnonymous()
@@ -91,10 +106,12 @@ public static class AuthEndpoints
             .AddEndpointFilter<RequireSameOriginFilter>();
 
         // 09.10.4-T1 (BD4): re-authentication is a credential route, so it carries the auth rate limit.
+        // 09.3.2-T3: the shared WT35 window can also answer here, so the 429 is documented like /login's.
         auth.MapPost("/reauth", ReauthAsync)
             .RequireRateLimiting(AuthRateLimitPolicy)
             .Produces<ReauthResponse>(StatusCodes.Status200OK)
-            .ProducesProblem(StatusCodes.Status401Unauthorized);
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status429TooManyRequests);
 
         return routes;
     }
@@ -121,8 +138,15 @@ public static class AuthEndpoints
 
         return value.Outcome switch
         {
-            LoginOutcome.Tokens => WriteLoginSuccess(http, sessionOptions.Value, value, clock.UtcNow),
-            LoginOutcome.MfaRequired => Problem(http, ErrorCodes.MfaRequired, "A one-time code is required."),
+            LoginOutcome.Tokens => WriteLoginSuccess(
+                http,
+                sessionOptions.Value,
+                value.Access!,
+                value.Refresh!,
+                value.Role,
+                value.Amr,
+                clock.UtcNow),
+            LoginOutcome.MfaRequired => WriteMfaRequired(http, value.Challenge!, clock.UtcNow),
             LoginOutcome.RateLimited => ProblemDetailsWriter.ToProblem(
                 [MfaErrors.RateLimited(InMemoryMfaGuessWindow.RetryAfterSeconds)],
                 http),
@@ -131,6 +155,66 @@ public static class AuthEndpoints
                 ErrorCodes.MfaEnrolmentRequired,
                 "This account must enrol a second factor before it can sign in."),
         };
+    }
+
+    /// <summary>
+    /// <c>POST /api/v1/auth/login/mfa</c>: 200 with the access token and the refresh cookie, or the
+    /// documented 401/429 problem.
+    /// </summary>
+    /// <remarks>
+    /// The pre-auth cookie is read here, never accepted from the body: the command's fourth member is the
+    /// Api's own contribution, exactly as <c>/auth/refresh</c> reads its cookie and passes the token. A
+    /// missing cookie short-circuits to the same 401 <c>mfa_token_invalid</c> the store answers for a token
+    /// it does not know, so the caller learns nothing about which half failed (BD4).
+    /// </remarks>
+    private static async Task<IResult> LoginMfaAsync(
+        LoginMfaRequest body,
+        ISender sender,
+        HttpContext http,
+        IOptions<SessionOptions> sessionOptions,
+        IClock clock,
+        CancellationToken ct)
+    {
+        var preAuthCookie = MfaPreAuthCookie.Read(http.Request);
+        if (preAuthCookie is null)
+        {
+            return Problem(
+                http,
+                ErrorCodes.MfaTokenInvalid,
+                "The sign-in challenge is no longer valid; sign in again.");
+        }
+
+        var result = await sender.Send(
+            new LoginMfaCommand(body.MfaToken, body.Code, body.RecoveryCode, preAuthCookie),
+            ct).ConfigureAwait(false);
+
+        if (result.IsError)
+        {
+            return ProblemDetailsWriter.ToProblem(result.Errors, http);
+        }
+
+        var value = result.Value;
+
+        if (value.Outcome is not MfaOutcome.Tokens)
+        {
+            // The outcome carries its own error — 401 invalid_mfa_code, 401 mfa_token_invalid or the 429
+            // whose Retry-After the writer mirrors. The fallback is fail-closed if that ever stops holding.
+            return ProblemDetailsWriter.ToProblem(
+                [value.Failure ?? MfaErrors.MfaTokenInvalid()],
+                http);
+        }
+
+        // The challenge is spent, so its cookie must not be resent.
+        MfaPreAuthCookie.Clear(http.Response);
+
+        return WriteLoginSuccess(
+            http,
+            sessionOptions.Value,
+            value.Access!,
+            value.Refresh!,
+            value.Role,
+            value.Method,
+            clock.UtcNow);
     }
 
     /// <summary>
@@ -263,10 +347,31 @@ public static class AuthEndpoints
         return ProblemDetailsWriter.ToProblem([failure], http);
     }
 
+    /// <summary>
+    /// Writes the 401 <c>mfa_required</c> step: the pre-auth cookie plus the body that carries the
+    /// single-use challenge token.
+    /// </summary>
+    private static IResult WriteMfaRequired(HttpContext http, MfaChallenge challenge, DateTimeOffset now)
+    {
+        NoStore(http);
+
+        MfaPreAuthCookie.Write(
+            http.Response,
+            challenge.PreAuthCookie,
+            challenge.ExpiresAt,
+            now);
+
+        return ProblemDetailsWriter.MfaRequired(http, challenge.MfaToken, "A one-time code is required.");
+    }
+
+    /// <summary>The one success body of <c>/auth/login</c> and <c>/auth/login/mfa</c>: identical by contract.</summary>
     private static IResult WriteLoginSuccess(
         HttpContext http,
         SessionOptions sessionOptions,
-        LoginResult value,
+        IssuedAccessToken access,
+        IssuedRefreshSession refresh,
+        PlatformRole role,
+        AuthMethod amr,
         DateTimeOffset now)
     {
         NoStore(http);
@@ -274,16 +379,16 @@ public static class AuthEndpoints
         RefreshCookie.Write(
             http.Response,
             sessionOptions.Refresh.CookieName,
-            value.Refresh!.Token,
-            value.Refresh.ExpiresAt,
+            refresh.Token,
+            refresh.ExpiresAt,
             now);
 
         return Results.Json(
             new LoginResponse(
-                value.Access!.Token,
-                value.Access.ExpiresAt,
-                RoleWire(value.Role),
-                [value.Amr.ToAmrClaim()]),
+                access.Token,
+                access.ExpiresAt,
+                RoleWire(role),
+                [amr.ToAmrClaim()]),
             statusCode: StatusCodes.Status200OK);
     }
 
@@ -311,6 +416,20 @@ public sealed record LoginResponse(
     DateTimeOffset ExpiresAt,
     string Role,
     IReadOnlyList<string> Amr);
+
+/// <summary>
+/// The frozen <c>POST /auth/login/mfa</c> body (09.3-auth plan §5, 10.3.3-T3): the challenge token of the
+/// password step and exactly one of the two codes.
+/// </summary>
+/// <remarks>
+/// The pre-auth cookie is deliberately absent: the Api reads <c>__Secure-nts_mfa</c> and hands the value
+/// to <c>LoginMfaCommand</c>, so a client cannot submit its own and a captured body is useless without
+/// the browser's cookie (BD4).
+/// </remarks>
+/// <param name="MfaToken">The single-use token the <c>mfa_required</c> body carried; never logged.</param>
+/// <param name="Code">The six-digit authenticator code, or null when <paramref name="RecoveryCode"/> is given.</param>
+/// <param name="RecoveryCode">The recovery code, or null when <paramref name="Code"/> is given.</param>
+public sealed record LoginMfaRequest(string MfaToken, string? Code, string? RecoveryCode);
 
 /// <summary>
 /// The frozen <c>POST /auth/reauth</c> body (09.3-auth plan §5, 10-web-ui 10.3.3): when the caller's

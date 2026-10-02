@@ -45,6 +45,13 @@ public interface ITokenIssuer
     /// <summary>Creates one refresh token: 32 cryptographic random bytes, base64url (BD3).</summary>
     string CreateRefreshToken();
 
+    /// <summary>
+    /// Creates one opaque bearer secret: the same 32 cryptographic random bytes, base64url (BD3), for the
+    /// values that are not refresh tokens — 09.3.2-T3's <c>mfaToken</c> and its pre-auth cookie, both of
+    /// which are hashed with <see cref="HashToken"/> exactly like a refresh token.
+    /// </summary>
+    string CreateSecret();
+
     /// <summary>The only stored form of a refresh token: its SHA-256 as lowercase hex (BD3).</summary>
     /// <param name="token">The encoded token that travelled in the cookie.</param>
     string HashToken(string token);

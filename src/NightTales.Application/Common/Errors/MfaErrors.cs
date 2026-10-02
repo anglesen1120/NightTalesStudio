@@ -34,6 +34,18 @@ public static class MfaErrors
         Error.Unauthorized(ErrorCodes.InvalidMfaCode, description);
 
     /// <summary>
+    /// 401 <c>mfa_token_invalid</c> (09.3.2-T3): the presented <c>mfaToken</c> or pre-auth cookie names
+    /// no usable challenge — it is unknown, already consumed, expired, presented with another
+    /// <c>User-Agent</c>, or the account is gone (BD4).
+    /// </summary>
+    /// <remarks>
+    /// Every one of those cases answers the same code and the same sentence on purpose: distinguishing
+    /// them would tell a caller which half of the pair was wrong, and the challenge is a bearer secret.
+    /// </remarks>
+    public static Error MfaTokenInvalid() =>
+        Error.Unauthorized(ErrorCodes.MfaTokenInvalid, "The sign-in challenge is no longer valid; sign in again.");
+
+    /// <summary>
     /// 429 <c>rate_limited</c> with the <c>Retry-After</c> the writer mirrors from
     /// <see cref="ErrorMetadata.RetryAfterSeconds"/> ([RULED — README §B10 WT35]).
     /// </summary>

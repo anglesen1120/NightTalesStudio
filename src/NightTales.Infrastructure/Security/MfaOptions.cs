@@ -33,6 +33,17 @@ public sealed class MfaOptions
     /// <summary>The authenticator defaults (BD4: <c>NightTales</c>, 30 s).</summary>
     public static readonly int DefaultStepSeconds = Rfc6238.DefaultStepSeconds;
 
+    /// <summary>The challenge's lifetime (BD4: five minutes) — <c>Auth:Mfa:ChallengeMinutes</c>.</summary>
+    public const double ChallengeMinutesDefault = 5;
+
+    /// <summary>
+    /// The widest challenge a deployment may configure (BD4 fixes five minutes; tighter is allowed).
+    /// </summary>
+    public static readonly TimeSpan ChallengeCeiling = TimeSpan.FromMinutes(5);
+
+    /// <summary>The wrong codes that kill one challenge (BD4: five) — <c>Auth:Mfa:MaxAttempts</c>.</summary>
+    public const int ChallengeAttemptCeiling = 5;
+
     /// <summary>The <c>Auth:Mfa:*</c> members.</summary>
     public MfaSection Mfa { get; set; } = new();
 
@@ -50,6 +61,21 @@ public sealed class MfaOptions
 
         /// <summary>The TOTP step in seconds (RFC 6238, BD4: 30).</summary>
         public int StepSeconds { get; set; } = DefaultStepSeconds;
+
+        /// <summary>
+        /// How long a login challenge lives (BD4: five minutes). It also bounds the pre-auth cookie's
+        /// <c>Max-Age</c>, so the two can never disagree.
+        /// </summary>
+        public double ChallengeMinutes { get; set; } = ChallengeMinutesDefault;
+
+        /// <summary>
+        /// The wrong codes that kill one challenge (BD4: five). The column's <c>CHECK</c> ends at
+        /// <see cref="ChallengeAttemptCeiling"/>, so a wider value could not be stored.
+        /// </summary>
+        public int MaxAttempts { get; set; } = ChallengeAttemptCeiling;
+
+        /// <summary>The challenge's lifetime at the scope's clock reading.</summary>
+        public TimeSpan ChallengeLifetime => TimeSpan.FromMinutes(ChallengeMinutes);
     }
 
     /// <summary>The re-authentication settings.</summary>
