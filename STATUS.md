@@ -8,11 +8,11 @@ Legend: `done` (acceptance checks run and passed) · `doing` · `blocked (<who>)
 
 Keep this block ≤ 15 lines: current state and next step only. Move the previous block to the archive when you replace it.
 
-- **Current (2026-10-03).** `develop` @ `fb7a59e`. Owner merged every Session 2 next-lane PR: #84 11.1.1-T2, #85 test-fixture fix, #86 09.3.2-T3, #87 11.3.3-T1, #88 11.1.2-T1, #89 11.3.5-T2, #90 09.2.6-T2, #92 09.9.2-T2, #94 09.7.2-T1, plus docs #91, #93, #95, #96, #97. Lane A (migration queue) started: 09.3.3-T1 PR open, 02.2.2-T1 in progress.
-- **Merge notes:** migrations on `develop` run `…083148_09_EmailMessages` → `20261002101251_09_AuthChallenges` (#86) → `20261002162527_11_WorkerNodes` (#87). #89 merged develop (6 additive conflicts, `2b0a3c3`) plus post-merge fix `911740e`: `MptHttpClient` allow-listed for 11.3.3-T1's HttpClient rule, and `AdapterOptions.ParseLoopbackMptBaseUrl` (loopback IP-literal http only); QA + T3 reviews, full local gate, CI 4/4.
-- **In review:** 09.3.3-T1 password reset, branch `feature/09.3.3-T1-s2` merged with develop `fb7a59e` (`b50b988`), migration regenerated as `20261002190707_09_UserActionTokens`; merge-delta code + security review closed (1 low doc-comment nit fixed), full gate green; PR open.
+- **Current (2026-10-03).** `develop` @ `ee71253` (#98 09.3.3-T1 merged). Earlier: every Session 2 next-lane PR merged (#84–#90, #92, #94, docs #91, #93, #95–#97). Lane A (migration queue): 02.2.2-T1 PR #99 open, merged with develop, migration regenerated.
+- **Merge notes:** migrations on `develop` run `…083148_09_EmailMessages` → `20261002101251_09_AuthChallenges` (#86) → `20261002162527_11_WorkerNodes` (#87) → `20261002190707_09_UserActionTokens` (#98); #99 adds `20261002202751_02_GenerationRuns`. Only the newest migration's test asserts `migrations[^1]`; older ones revert to their own predecessor by name.
+- **In review:** 02.2.2-T1 (#99): QA + T3 reviews + fix + delta closed; merged develop `ee71253` (`9648eb5`), merge review 0 code findings.
 - **11.3.5-T4 must:** wire `ParseLoopbackMptBaseUrl` into `ValidateOnStart`; build the MPT client with `MptHttpClient.Create` (redirects off). Known low gap QA89-LB-01: a non-root `MptBaseUrl` path is accepted and every MPT call then 404s.
-- **Next (owner 2026-10-03: lane A first):** migration queue in order 09.3.3-T1 → 02.2.2-T1 → 02.2.4-T1 → 05.3.2-T3 → 13.3.1-T1, at most 2 waiting (rule 3); each later one regenerates its migration after the previous merges. Free-slot (no migration): `09.3.4-T1` /me, `09.9.3-T1` OTLP, 11.3.5-T3/T4. Web UI stays in its separate session.
+- **Next (owner 2026-10-03: lane A first):** migration queue 02.2.2-T1 (#99) → 02.2.4-T1 → 05.3.2-T3 → 13.3.1-T1, at most 2 waiting (rule 3; one slot is free now); each later one regenerates its migration after the previous merges. Free-slot (no migration): `09.3.4-T1` /me, `09.9.3-T1` OTLP, 11.3.5-T3/T4. Web UI stays in its separate session.
 - **SEC-01:** owner chose range API + real top-N seed fallback (09 W3-O3); current bundled seed is synthetic. `09.3.1-T2` replaces it before registration opens.
 - **Security audit (2026-10-02):** no Critical/High; 8 Medium + Low/Info findings and the fix waves W1–W4 in [`cyber-issue.md`](cyber-issue.md) (CY-01…CY-30).
 - **Gates/environment:** risk-tier gates per 00 §10; native Mac stack, runtime under `NTS_HOME`, keys stay out of git. `gate.sh` provides `Email__AddressHashPepper`.
@@ -43,11 +43,11 @@ Plans 06, 07, 08, 12: not started. Plan 10: approved HTML design handoff and ref
 | Lane | Current | Next, after prerequisite merges | Tier | Notes |
 |---|---|---|---|---|
 | B Storage follow-on | 13.3.1-T1 not started; storage (#84, #94) merged | Owner plans the next wave | T3 | Migration |
-| E E-mail | 09.3.3-T1 merged with develop (`b50b988`), migration `20261002190707`; QA + T3 + merge-delta review closed, full gate green | PR open; owner merges | T3 | Migration slot 1 of 2 |
+| E E-mail | 09.3.3-T1 merged (#98 → `ee71253`) | — | T3 | Done; row archived at session end |
 | F Seeders/checkers | 05.3.2-T3 not started (04.2.2-T2 / 05.5.1-T2 merged) | Free migration slot, then AddMusicTracks task | T3 | Migration |
 | Fill a free slot | #92 feature flags merged | /me (flags merged); OTLP (storage + registry merged); 02.2.4-T1 awaits a migration slot (02.2.2-T1 now in lane A) | T3 | Money tasks have migrations |
 
-**Progress (2026-10-03):** start-now set (#72–#83) and next-lane PRs (#84–#94, docs #97) merged; `develop` @ `fb7a59e`. Lane A (owner 2026-10-03): 09.3.3-T1 PR open, 02.2.2-T1 draft PR next; then 02.2.4-T1, 05.3.2-T3, 13.3.1-T1. Free-slot: /me, OTLP. Finished lane rows and the Open-task rows of merged PRs are archived.
+**Progress (2026-10-03):** start-now set (#72–#83), next-lane PRs (#84–#94, docs #97) and #98 09.3.3-T1 merged; `develop` @ `ee71253`. Lane A (owner 2026-10-03): 02.2.2-T1 PR #99 open; then 02.2.4-T1, 05.3.2-T3, 13.3.1-T1. Free-slot: /me, OTLP. Finished lane rows and the Open-task rows of merged PRs are archived.
 
 **Not in Session 2:** `09.6.2-T1` needs `05.1.2-T1`, which needs `02.3.2-T1` and `03.2.1-T1` (not built) → session 3 or later.
 
