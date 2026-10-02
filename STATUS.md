@@ -30,9 +30,10 @@ Per-task evidence for `done` rows: `docs/status-archive.md` §Per-plan evidence 
 | 05 Video/subtitles | 10 (05.5.1-T2 #78) | 05.3.2-T3, 05.2.1-T1, 05.5.2 |
 | 09 Backend | 29 tasks merged (Session 2: #72 09.9.5-T1, #74 09.10.4-T1, #77 09.3.5-T1 + 09.8.1-T2, #82 09.2.6-T3) | 09.7.2-T1 coded (needs 11.1.1-T2, then gates); next per §Session 2 plan |
 | 11 Worker deployment | 11.1.1-T1 #81, 11.3.5-T1 #79; 11.2.1-T1 (proposal only; sign-off deferred to phase 2, owner 2026-09-30) | phase 1: 11.1.1-T2, 11.1.2-T1, 11.3.5-T2, 11.3.3-T1; the rest is phase 2 (11 CR-18) |
+| 10 Web UI | HTML design deck approved by the owner 2026-10-02 (`design/ui/index.html`, v2 “Phòng thu”, compact controls `192cc73`); linked from 12 T0 tasks and 13 feature plans | Angular implementation not started; per-story design caveats and 10.1.3-T1 prerequisites remain in the T0 Outputs |
 | 13 Compliance | 13.1.1-T1, 13.1.2-T1 (PR #35) | 13.2.1-T1 → 13.2.2-T1, 10.3.1-T1 pages; 13.1.1-T2 / 13.1.2-T2 lawyer rows (O1) |
 
-Plans 06, 07, 08, 10, 12: not started. Order: `plans/features/README.md`.
+Plans 06, 07, 08, 12: not started. Plan 10: approved HTML design handoff; implementation not started. Order: `plans/features/README.md`.
 
 ## Session 2 plan
 
