@@ -8,7 +8,7 @@ namespace NightTales.RenderNode.Server;
 /// </summary>
 /// <remarks>
 /// <see cref="UpdateAsync"/> replaces the row with <see cref="RenderTaskRecord.Merge"/> applied
-/// (percent never decreases, a terminal row is final, only <c>cancel_requested</c> is last-writer-wins) and
+/// (percent never decreases, a terminal row is final, <c>cancel_requested</c> is one-way) and
 /// returns <c>false</c> when the row no longer exists — the "conflict" the caller retries once
 /// (11.3.5-T1 Failure handling).
 /// </remarks>

@@ -17,7 +17,7 @@ namespace NightTales.RenderNode.Server;
 /// <param name="State">One of <see cref="RenderStates"/>.</param>
 /// <param name="Stage">One of <see cref="RenderStages"/>.</param>
 /// <param name="Percent">MPT progress; never decreases (invariant of <see cref="Merge"/>).</param>
-/// <param name="CancelRequested">True after <c>POST …/cancel</c>; the only last-writer-wins field of a merge.</param>
+/// <param name="CancelRequested">True after <c>POST …/cancel</c>; one-way — a merge never clears it.</param>
 /// <param name="Outcome">Present on <c>failed</c> only.</param>
 /// <param name="Output">Present once <c>succeeded</c>.</param>
 /// <param name="Check">The verbatim <c>render-check.v1</c> block (05 D9).</param>
@@ -44,8 +44,8 @@ public sealed record RenderTaskRecord(
     DateTimeOffset? CleanedAt,
     MptStateV1? MptLastSnapshot)
 {
-    /// <summary>The 05 D4 stage that may report 100 while the task is still running (post-processing).</summary>
-    private const int NonTerminalPercentCap = 99;
+    /// <summary>05 D4/D5: the highest percent a row may report while it is neither <c>checking</c> nor terminal.</summary>
+    public const int NonTerminalPercentCap = 99;
 
     /// <summary>True when this row is allowed to publish 100: a terminal state or the adapter's own checking stage.</summary>
     private bool CanReach100() => IsTerminal || string.Equals(Stage, RenderStages.Checking, StringComparison.Ordinal);
@@ -70,7 +70,8 @@ public sealed record RenderTaskRecord(
     /// <summary>
     /// Merges a newer observation into this row under the 05 D4 status invariants: <c>percent</c> never
     /// decreases and never reaches 100 before <c>checking</c> or a terminal state, a terminal row is final,
-    /// an already-observed block is never lost, and only <c>cancel_requested</c> is last-writer-wins.
+    /// an already-observed block is never lost, and <c>cancel_requested</c> is one-way: once a cancel has
+    /// landed, a stale observation can never clear it.
     /// Both the stores and the endpoints use this one merge, so a slow poller and a cancel cannot clobber
     /// each other (Failure handling, 11.3.5-T1).
     /// </summary>
@@ -84,12 +85,12 @@ public sealed record RenderTaskRecord(
 
         if (IsTerminal)
         {
-            // A terminal row is final except for the cleaning mark a DELETE adds and the cancel flag, the
-            // only field the contract makes last-writer-wins (Failure handling, 11.3.5-T1).
+            // A terminal row is final except for the cleaning mark a DELETE adds and the cancel flag, which
+            // is one-way: a stale observation can never clear a cancel that already landed.
             return this with
             {
                 CleanedAt = observed.CleanedAt ?? CleanedAt,
-                CancelRequested = observed.CancelRequested,
+                CancelRequested = CancelRequested || observed.CancelRequested,
             };
         }
 
@@ -106,7 +107,7 @@ public sealed record RenderTaskRecord(
             Percent = Math.Max(Percent, Math.Clamp(percent, 0, cap)),
             BackendTaskId = observed.BackendTaskId ?? BackendTaskId,
             BackendStartedAt = observed.BackendStartedAt ?? BackendStartedAt,
-            CancelRequested = observed.CancelRequested,
+            CancelRequested = CancelRequested || observed.CancelRequested,
             Outcome = observed.Outcome ?? Outcome,
             Output = observed.Output ?? Output,
             Check = observed.Check ?? Check,

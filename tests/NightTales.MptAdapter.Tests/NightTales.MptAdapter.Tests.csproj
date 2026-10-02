@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\NightTales.MptAdapter\NightTales.MptAdapter.csproj" />
+  </ItemGroup>
+
+  <!--
+    The fake MPT and the adapter's own core are hosted in a real in-process Kestrel on 127.0.0.1:0 (no
+    TestServer package is on the pinned list, and a real listener is what proves the two MPT call shapes),
+    so the shared framework is referenced the way the render-node tests reference it.
+  -->
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Shouldly" />
+    <PackageReference Include="xunit.v3" />
+  </ItemGroup>
+
+</Project>

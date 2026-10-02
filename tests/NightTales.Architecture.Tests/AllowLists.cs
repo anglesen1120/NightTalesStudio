@@ -95,6 +95,27 @@ internal static class AllowLists
         "Microsoft.Extensions.",
     ];
 
+    /// <summary>
+    /// 11 README D3: the adapter host adds the durable store (Microsoft.Data.Sqlite, MIT/E11) and Serilog to
+    /// the core's set — still never Domain, Application or Infrastructure (11 CR-3).
+    /// </summary>
+    internal static readonly IReadOnlySet<string> MptAdapterAllowedReferences =
+        new HashSet<string>(StringComparer.Ordinal)
+        {
+            "ErrorOr",
+            "Microsoft.Data.Sqlite",
+            "NightTales.RenderNode.Contract",
+            "NightTales.RenderNode.Server",
+        };
+
+    internal static readonly IReadOnlyList<string> MptAdapterAllowedPrefixes =
+    [
+        "Microsoft.AspNetCore.",
+        "Microsoft.Extensions.",
+        "Serilog",
+        "SQLitePCLRaw.",
+    ];
+
     /// <summary>02 CR-19 lets the Fetcher use any <c>Microsoft.Extensions.*</c> package.</summary>
     internal static readonly IReadOnlyList<string> FetcherAllowedPrefixes =
         ["Microsoft.Extensions."];

@@ -12,6 +12,11 @@
       for RenderNode_ReferencesOnlyTheContractAndAspNetCore (11 README D3/D5).
     -->
     <ProjectReference Include="..\..\src\NightTales.RenderNode.Server\NightTales.RenderNode.Server.csproj" />
+    <!--
+      The adapter host is referenced for the same reason (11 README D3): its assembly must be loaded so the
+      node's reference rules cover it too.
+    -->
+    <ProjectReference Include="..\..\src\NightTales.MptAdapter\NightTales.MptAdapter.csproj" />
   </ItemGroup>
 
   <!--
