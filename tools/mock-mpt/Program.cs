@@ -1,11 +1,20 @@
 using Microsoft.Extensions.Options;
 using NightTales.MockMpt;
+using NightTales.MockMpt.Health;
 using NightTales.RenderNode.Server;
 
 // The mock render node (11.1.2-T1): the real `render-node.v1` surface over an in-memory backend, started
 // natively by tools/dev/up.sh on 127.0.0.1:8090 and used as the optional compose service in CI. It reads its
 // own MOCK_* environment, validates it, and exits 2 with a named message when a value or a prerequisite is
 // unusable — a listener never opens on a configuration nobody can use.
+
+// `--healthcheck` is the container probe (review fix CODE-1/CODE-2): one authenticated GET /v1/health with the
+// same key resolution the server uses, so the runtime image needs no curl and a custom key is probed
+// correctly. It never opens a listener and exits 0/1.
+if (MockHealthCheck.IsRequested(args))
+{
+    return await MockHealthCheck.RunAsync(Environment.GetEnvironmentVariable, CancellationToken.None);
+}
 
 if (!MockMptEnvironment.TryRead(
         Environment.GetEnvironmentVariable,

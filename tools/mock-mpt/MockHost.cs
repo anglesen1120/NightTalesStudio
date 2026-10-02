@@ -63,6 +63,10 @@ public static class MockHost
         builder.Services.AddSingleton<IRenderBackend>(provider => provider.GetRequiredService<FakeRenderBackend>());
         builder.Services.AddSingleton<IHostedService>(provider => provider.GetRequiredService<FakeRenderBackend>());
 
+        // The cleaned-tombstone sweep (review fix MOCK-PERF-01): the core keeps a DELETE'd row for the contract
+        // window; this host purges it through the core's own API instead of retaining it forever.
+        builder.Services.AddHostedService<RetentionSweep>();
+
         if (!string.IsNullOrEmpty(urls))
         {
             builder.WebHost.UseUrls(urls);

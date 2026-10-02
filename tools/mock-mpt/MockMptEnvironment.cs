@@ -18,8 +18,11 @@ public static class MockMptEnvironment
     /// <summary>The fixtures directory relative to the repository root (11 README T33).</summary>
     public static readonly string FixturesRelativePath = Path.Combine("worker-node", "contract", "fixtures");
 
-    /// <summary>The runtime-state home the native run writes into (<c>$NTS_HOME</c>, 01 CR-11).</summary>
-    private static readonly string MediaRelativePath = Path.Combine(".nts", "mock-mpt", "media");
+    /// <summary>The default runtime-state root under the repository (<c>&lt;repo&gt;/.nts</c>, 01 CR-11).</summary>
+    private static readonly string NtsHomeRelativePath = ".nts";
+
+    /// <summary>The mock's media/SRT directory below the runtime-state root.</summary>
+    private static readonly string MediaRelativePath = Path.Combine("mock-mpt", "media");
 
     /// <summary>
     /// Reads the configuration from <paramref name="read"/> (env access is injected so a test can drive the
@@ -38,7 +41,7 @@ public static class MockMptEnvironment
         options = null!;
         error = null;
 
-        var apiKey = FirstNonEmpty(read, "MOCK_API_KEY", "RenderNodeServer__ApiKey") ?? MockMptOptions.DefaultApiKey;
+        var apiKey = ResolveApiKey(read);
         if (Encoding.UTF8.GetByteCount(apiKey) < 32)
         {
             error = "MOCK_API_KEY must be at least 32 bytes (RenderNodeServer:ApiKey, 05 D15 S3)";
@@ -77,9 +80,13 @@ public static class MockMptEnvironment
         var mediaDirectory = read("MOCK_MEDIA_DIR");
         if (string.IsNullOrWhiteSpace(mediaDirectory))
         {
-            mediaDirectory = repositoryRoot is not null
-                ? Path.Combine(repositoryRoot, MediaRelativePath)
-                : Path.Combine(startDirectory, MediaRelativePath);
+            // The runtime-state root honors NTS_HOME first (01 CR-11, review fix MOCK-FS-03): a chosen home
+            // must own the canned media and every task SRT, not the working tree.
+            var ntsHome = read("NTS_HOME");
+            var runtimeRoot = string.IsNullOrWhiteSpace(ntsHome)
+                ? Path.Combine(repositoryRoot ?? startDirectory, NtsHomeRelativePath)
+                : ntsHome.Trim();
+            mediaDirectory = Path.Combine(runtimeRoot, MediaRelativePath);
         }
 
         var fixture = read("MOCK_FIXTURE");
@@ -94,6 +101,17 @@ public static class MockMptEnvironment
             Fixture = string.IsNullOrWhiteSpace(fixture) ? null : NormalizeFixtureId(fixture),
         };
         return true;
+    }
+
+    /// <summary>
+    /// The key the core compares <c>x-api-key</c> against: <c>MOCK_API_KEY</c>, else
+    /// <c>RenderNodeServer__ApiKey</c>, else the dev default. Shared with the <c>--healthcheck</c> mode so the
+    /// probe sends exactly the value the server binds (review fix CODE-2).
+    /// </summary>
+    public static string ResolveApiKey(Func<string, string?> read)
+    {
+        ArgumentNullException.ThrowIfNull(read);
+        return FirstNonEmpty(read, "MOCK_API_KEY", "RenderNodeServer__ApiKey") ?? MockMptOptions.DefaultApiKey;
     }
 
     /// <summary>The repository root above <paramref name="startDirectory"/>, or null when the marker is absent.</summary>

@@ -11,7 +11,15 @@ namespace NightTales.MockMpt.Media;
 /// <param name="Bytes">The file length, reported as <c>output.video.bytes</c> and <c>Content-Length</c>.</param>
 /// <param name="Sha256">Lowercase hex sha256 of the file, reported as <c>output.video.sha256</c>.</param>
 /// <param name="ContentType">Always <see cref="RenderNodeHeaders.VideoContentType"/>.</param>
-public sealed record CannedMediaFile(string Path, long Bytes, string Sha256, string ContentType);
+/// <param name="Width">The file's coded width (1920 landscape, 1080 portrait), reported in the check block.</param>
+/// <param name="Height">The file's coded height (1080 landscape, 1920 portrait), reported in the check block.</param>
+public sealed record CannedMediaFile(
+    string Path,
+    long Bytes,
+    string Sha256,
+    string ContentType,
+    int Width,
+    int Height);
 
 /// <summary>
 /// The two canned 10-second MP4 files of 05 D14 / 11 F25, one per aspect, plus the recipe that generates them
@@ -32,6 +40,21 @@ public sealed class CannedMediaSet
 
     /// <summary>The canned duration every generated file has, in seconds.</summary>
     public const int CannedSeconds = 10;
+
+    /// <summary>The landscape file's coded width/height (the pinned <c>1920x1080</c> recipe).</summary>
+    public const int LandscapeWidth = 1920;
+
+    /// <summary>The landscape file's coded height.</summary>
+    public const int LandscapeHeight = 1080;
+
+    /// <summary>The portrait file's coded width (the pinned <c>1080x1920</c> recipe).</summary>
+    public const int PortraitWidth = 1080;
+
+    /// <summary>The portrait file's coded height.</summary>
+    public const int PortraitHeight = 1920;
+
+    private const string LandscapeSize = "1920x1080";
+    private const string PortraitSize = "1080x1920";
 
     private CannedMediaSet(string directory, CannedMediaFile landscape, CannedMediaFile portrait)
     {
@@ -70,10 +93,13 @@ public sealed class CannedMediaSet
         var landscape = Path.Combine(mediaDirectory, LandscapeFileName);
         var portrait = Path.Combine(mediaDirectory, PortraitFileName);
 
-        Generate(landscape, "1920x1080");
-        Generate(portrait, "1080x1920");
+        Generate(landscape, LandscapeSize);
+        Generate(portrait, PortraitSize);
 
-        return new CannedMediaSet(mediaDirectory, Measure(landscape), Measure(portrait));
+        return new CannedMediaSet(
+            mediaDirectory,
+            Measure(landscape, LandscapeWidth, LandscapeHeight),
+            Measure(portrait, PortraitWidth, PortraitHeight));
     }
 
     private static void Generate(string path, string size)
@@ -152,10 +178,10 @@ public sealed class CannedMediaSet
         return trimmed.Length <= limit ? trimmed : trimmed[^limit..];
     }
 
-    private static CannedMediaFile Measure(string path)
+    private static CannedMediaFile Measure(string path, int width, int height)
     {
         using var stream = File.OpenRead(path);
         var sha256 = Convert.ToHexStringLower(SHA256.HashData(stream));
-        return new CannedMediaFile(path, stream.Length, sha256, RenderNodeHeaders.VideoContentType);
+        return new CannedMediaFile(path, stream.Length, sha256, RenderNodeHeaders.VideoContentType, width, height);
     }
 }

@@ -1,6 +1,8 @@
 using System.Net;
+using Microsoft.Extensions.DependencyInjection;
 using NightTales.MockMpt.Tests.TestHost;
 using NightTales.RenderNode.Contract;
+using NightTales.RenderNode.Server;
 using Shouldly;
 using Xunit;
 
@@ -72,6 +74,59 @@ public sealed class LifecycleTests
         using (var again = await host.DeleteAsync($"/v1/renders/{taskId}"))
         {
             again.StatusCode.ShouldBe(HttpStatusCode.NoContent);
+        }
+    }
+
+    [Fact]
+    public async Task Delete_ThenRetentionSweep_PurgesTheTombstone()
+    {
+        // The test shrinks the contract's 7-day window and the sweep interval: without a sweep the cleaned
+        // tombstone (and every past script) stays in memory forever (review fix MOCK-PERF-01).
+        await using var host = await MockMptTestHost.StartAsync(
+            MockMptTestHost.DefaultOptions with
+            {
+                RenderSeconds = 1,
+                CleanedRetention = TimeSpan.Zero,
+                RetentionSweepInterval = TimeSpan.FromMilliseconds(50),
+            });
+        var taskId = await host.SubmitAsync(SubmitBodies.LandscapeFresh());
+        await host.PollUntilTerminalAsync(taskId);
+        var id = Guid.Parse(taskId);
+        var store = host.Services.GetRequiredService<ITaskStore>();
+        (await store.TryGetAsync(id, TestContext.Current.CancellationToken)).ShouldNotBeNull();
+        File.Exists(host.Media.SubtitlePath(id)).ShouldBeTrue();
+
+        using (var deleted = await host.DeleteAsync($"/v1/renders/{taskId}"))
+        {
+            deleted.StatusCode.ShouldBe(HttpStatusCode.NoContent);
+        }
+
+        // DELETE drops the backend's own state immediately: the served SRT is gone.
+        File.Exists(host.Media.SubtitlePath(id)).ShouldBeFalse();
+
+        // The sweep then purges the cleaned tombstone through the core's own purge API, so the task is
+        // unknown from the store and from both downloads and the status alike.
+        var deadline = DateTimeOffset.UtcNow + TimeSpan.FromSeconds(5);
+        while (await store.TryGetAsync(id, TestContext.Current.CancellationToken) is not null)
+        {
+            if (DateTimeOffset.UtcNow >= deadline)
+            {
+                throw new InvalidOperationException("the retention sweep did not purge the cleaned tombstone");
+            }
+
+            await Task.Delay(TimeSpan.FromMilliseconds(50), TestContext.Current.CancellationToken);
+        }
+
+        using (var video = await host.GetAsync($"/v1/renders/{taskId}/video"))
+        {
+            video.StatusCode.ShouldBe(HttpStatusCode.NotFound);
+            (await MockMptTestHost.ReadErrorAsync(video)).Error.Code.ShouldBe(AdapterErrorCodes.TaskUnknown);
+        }
+
+        using (var status = await host.GetAsync($"/v1/renders/{taskId}"))
+        {
+            status.StatusCode.ShouldBe(HttpStatusCode.NotFound);
+            (await MockMptTestHost.ReadErrorAsync(status)).Error.Code.ShouldBe(AdapterErrorCodes.TaskUnknown);
         }
     }
 

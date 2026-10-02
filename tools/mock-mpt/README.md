@@ -30,7 +30,10 @@ printf 'x-api-key: %s\n' "$MOCK_API_KEY" | curl -fsS -H @- http://127.0.0.1:8090
 `tools/mock-mpt/Dockerfile` and serves the mock as `http://mock-mpt:8090` **on the compose network only**
 (`expose`, never `ports`; `docker compose ps --format '{{.Ports}}'` shows no host port for it). The fixtures are
 a read-only bind mount, so a fixture edit needs no rebuild (README §10 T33). The daily path stays native; never
-run both at once.
+run both at once. The service's healthcheck runs the mock's own `--healthcheck` mode
+(`dotnet NightTales.MockMpt.dll --healthcheck`): one authenticated `GET /v1/health` with the same key
+resolution the server uses, so the runtime image needs no `curl` and a custom `MOCK_API_KEY` is probed with the
+real value. The key travels as a request header, never on the command line (01 D9).
 
 **Staging.** The same image can be a real node to the Worker: run it with
 `ASPNETCORE_ENVIRONMENT=Staging` (never Development) and HTTPS on 8090 with its own self-signed certificate,
@@ -52,7 +55,9 @@ copy that onto a real node.**
 | `MOCK_MAX_CONCURRENT` | `2` | The node's `capacity.max_concurrent_tasks` (`RenderNodeServer__MaxConcurrentTasks` is the second spelling). |
 | `MOCK_FIXTURE` | *(blank)* | A D14 fixture id every task replays (`render-status.v1.*`) or the health body replays (`render-node-health.v1.*`). An unknown id is exit 2. |
 | `MOCK_FIXTURES_DIR` | `worker-node/contract/fixtures` in the working tree | Where the D14 fixtures are read from (`/fixtures` in the image). A missing or empty directory is exit 2. |
-| `MOCK_MEDIA_DIR` | `<repo>/.nts/mock-mpt/media` | Where the canned media lives and each task's SRT is written (`/media` in the image). |
+| `MOCK_MEDIA_DIR` | `${NTS_HOME:-<repo>/.nts}/mock-mpt/media` | Where the canned media lives and each task's SRT is written (`/media` in the image). |
+| `NTS_HOME` | `<repo>/.nts` | The runtime-state root (01 CR-11). When `MOCK_MEDIA_DIR` is unset the media/SRT directory resolves under it, so a custom `NTS_HOME` never writes into the working tree. `tools/dev/up.sh` passes it to the native mock. |
+| `MOCK_HEALTH_URL` | `http://127.0.0.1:8090/v1/health` | The URL the `--healthcheck` mode probes (the container healthcheck); the app otherwise ignores it. |
 | `ASPNETCORE_URLS` | `http://127.0.0.1:8090` | The binding; the image sets `http://+:8090`. |
 
 `MOCK_FAIL_RATE`, `MOCK_FAIL_MODE` and `MOCK_IMAGE_REPORT` are 11.1.2-T2's (failure injection); the compose
@@ -95,7 +100,9 @@ carries no ffmpeg at runtime.
 reports `narration_seconds = MOCK_VIDEO_SECONDS` and `output.video`/`Content-Length`/`X-Content-SHA256` are the
 canned file's real measured facts, so `check.output.sha256 = output.video.sha256` still holds (05 §2). The
 `check` block is the D14 `render-check.v1.ok` (or `.no-subtitles`) fixture with those served-file facts and the
-cue count substituted — the mock cannot run `render_check.py`.
+cue count substituted — the mock cannot run `render_check.py`. The fixture's `video.width`/`video.height` are
+replaced with the served file's own coded dimensions too, so a portrait task's check reports 1080×1920 and a
+landscape one 1920×1080 (the fixture itself is landscape).
 
 The SRT splits the submitted `video_script` at sentence terminators (`.`, `!`, `?`, `…`, `。`, `！`, `？`) and
 newlines, one cue per sentence, spread evenly over the **canned 10 s duration** — never over
@@ -108,6 +115,15 @@ same generated SRT for it and `GET …/subtitles` answers `200`. Exactly like `o
 MP4, the fixture's advertised `bytes`/`sha256`/`cues` stay verbatim in the status body (the served body is the
 fixture modulo the contract-generated fields), while the download's `Content-Length`/`X-Content-SHA256` are the
 served file's own measured facts.
+
+## Lifecycle and retention
+
+`DELETE /v1/renders/{task_id}` marks `cleaned_at` and keeps the row for the contract's 7-day window, exactly
+like a real node, so re-reads stay idempotent. A background **retention sweep** then calls the core's own
+`ITaskStore.PurgeCleanedAsync` after that window (10-minute interval), so the in-memory store of a long-running
+dev session stays bounded instead of accumulating cleaned tombstones forever. The mock also **drops the
+submitted `video_script`** the moment a task becomes terminal: after the SRT is written, a served read only
+needs the chosen aspect and the task's SRT path.
 
 ## What the mock does not do
 

@@ -104,7 +104,9 @@ services:
     image: nighttales-mock-mpt:dev
     environment:
       # Same value as .env.example/tools/dev/up.sh: the core rejects < 32 bytes (05 D15 S3), so the old
-      # 12-byte `dev-mock-key` fallback left a fresh checkout (no .env) permanently unhealthy.
+      # 12-byte `dev-mock-key` fallback left a fresh checkout (no .env) permanently unhealthy. This is also
+      # the variable the --healthcheck probe below reads, so a custom key is probed with the real value
+      # (11.1.2-T1 review fixes CODE-1/CODE-2).
       RenderNodeServer__ApiKey: ${MOCK_API_KEY:-dev-mock-api-key-local-0123456789}
       RenderNodeServer__MaxConcurrentTasks: ${MOCK_MAX_CONCURRENT:-2}
       MOCK_RENDER_SECONDS: ${MOCK_RENDER_SECONDS:-20}
@@ -116,7 +118,10 @@ services:
     volumes: ["./worker-node/contract/fixtures:/fixtures:ro"]   # README §10 T33: fixture edits need no rebuild
     expose: ["8090"]
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS -H \"x-api-key: $${MOCK_API_KEY:-dev-mock-api-key-local-0123456789}\" http://127.0.0.1:8090/v1/health || exit 1"]
+      # The mock's own --healthcheck mode (11.1.2-T1 review fixes CODE-1/CODE-2): one authenticated
+      # GET /v1/health with the same key resolution the server uses, so the runtime image needs no curl and a
+      # custom MOCK_API_KEY is probed with the real value. The key travels as a header, never on argv (01 D9).
+      test: ["CMD", "dotnet", "NightTales.MockMpt.dll", "--healthcheck"]
       interval: 5s
       timeout: 3s
       retries: 20

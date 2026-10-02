@@ -32,7 +32,39 @@ public sealed class EnvironmentTests
         options.MaxConcurrentTasks.ShouldBe(2);
         options.Fixture.ShouldBeNull();
         options.FixturesDirectory.ShouldEndWith(Path.Combine("worker-node", "contract", "fixtures"));
-        options.MediaDirectory.ShouldNotBeNullOrEmpty();
+        options.MediaDirectory.ShouldEndWith(Path.Combine(".nts", "mock-mpt", "media"));
+    }
+
+    [Fact]
+    public void Environment_MediaDirectory_DefaultsUnderNtsHome()
+    {
+        // A custom runtime home must own the canned media and every task SRT (review fix MOCK-FS-03).
+        MockMptEnvironment
+            .TryRead(
+                Reader(("MOCK_API_KEY", MockMptOptions.DefaultApiKey), ("NTS_HOME", "/tmp/nts-home-test")),
+                FixtureFiles.Root,
+                out var options,
+                out var error)
+            .ShouldBeTrue(error);
+
+        options.MediaDirectory.ShouldBe(Path.Combine("/tmp/nts-home-test", "mock-mpt", "media"));
+    }
+
+    [Fact]
+    public void Environment_MediaDirectoryOverride_WinsOverNtsHome()
+    {
+        MockMptEnvironment
+            .TryRead(
+                Reader(
+                    ("MOCK_API_KEY", MockMptOptions.DefaultApiKey),
+                    ("NTS_HOME", "/tmp/nts-home-test"),
+                    ("MOCK_MEDIA_DIR", "/tmp/mock-media-test")),
+                FixtureFiles.Root,
+                out var options,
+                out var error)
+            .ShouldBeTrue(error);
+
+        options.MediaDirectory.ShouldBe("/tmp/mock-media-test");
     }
 
     [Fact]

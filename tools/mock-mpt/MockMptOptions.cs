@@ -24,6 +24,16 @@ public sealed record MockMptOptions
     /// <summary>D14 default capacity: the fake node accepts two concurrent tasks.</summary>
     public const int DefaultMaxConcurrentTasks = 2;
 
+    /// <summary>
+    /// The contract's cleaned-tombstone window (11.3.5-T2: <c>PurgeCleanedAsync(now − 7 d)</c>): a DELETE marks
+    /// <c>cleaned_at</c> and keeps the row this long so idempotent re-reads still work (11.1.2-T1 review fix
+    /// MOCK-PERF-01).
+    /// </summary>
+    public static readonly TimeSpan DefaultCleanedRetention = TimeSpan.FromDays(7);
+
+    /// <summary>How often the mock's retention sweep calls the core's purge API.</summary>
+    public static readonly TimeSpan DefaultRetentionSweepInterval = TimeSpan.FromMinutes(10);
+
     /// <summary>The <c>MOCK_API_KEY</c> the core compares <c>x-api-key</c> against (≥ 32 bytes, 05 D15 S3).</summary>
     public required string ApiKey { get; init; }
 
@@ -47,4 +57,10 @@ public sealed record MockMptOptions
     /// normal behaviour.
     /// </summary>
     public string? Fixture { get; init; }
+
+    /// <summary>How long a cleaned tombstone is kept before the retention sweep purges it.</summary>
+    public TimeSpan CleanedRetention { get; init; } = DefaultCleanedRetention;
+
+    /// <summary>How often the retention sweep runs; tests shorten it to exercise the purge quickly.</summary>
+    public TimeSpan RetentionSweepInterval { get; init; } = DefaultRetentionSweepInterval;
 }

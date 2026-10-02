@@ -45,6 +45,7 @@ public static class FakePostProcessor
 
         PatchFile(node["input"] as JsonObject, video);
         PatchFile(node["output"] as JsonObject, video);
+        PatchVideo(node["video"] as JsonObject, video);
         if (subtitles is not null && node["subtitles"] is JsonObject subtitlesNode)
         {
             subtitlesNode["cues"] = subtitles.Cues;
@@ -77,5 +78,20 @@ public static class FakePostProcessor
         block["file"] = Path.GetFileName(video.Path);
         block["bytes"] = video.Bytes;
         block["sha256"] = video.Sha256;
+    }
+
+    /// <summary>
+    /// Replaces the checked file's coded dimensions with the served canned file's own (review fix CODE-3): a
+    /// portrait task must report 1080×1920, not the fixture's landscape numbers.
+    /// </summary>
+    private static void PatchVideo(JsonObject? block, CannedMediaFile video)
+    {
+        if (block is null)
+        {
+            return;
+        }
+
+        block["width"] = video.Width;
+        block["height"] = video.Height;
     }
 }

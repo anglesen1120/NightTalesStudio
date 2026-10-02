@@ -451,6 +451,9 @@ worker_environment() {
 mock_environment() {
   export ASPNETCORE_ENVIRONMENT="$app_environment"
   export ASPNETCORE_URLS="http://127.0.0.1:$dev_mock_port"
+  # 11.1.2-T1: the mock's media/ and every task SRT live under the same runtime home as the rest of the
+  # stack, so a custom NTS_HOME never writes into the working tree (review fix MOCK-FS-03).
+  export NTS_HOME="${NTS_HOME:-$repo_root/.nts}"
   export MOCK_API_KEY="${mock_api_key}"
   export MOCK_FIXTURE="$mock_fixture"
   export MOCK_RENDER_SECONDS="$mock_render_seconds"

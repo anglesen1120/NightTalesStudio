@@ -75,7 +75,8 @@ public sealed partial class FakeRenderBackend : BackgroundService, IRenderBacken
         ArgumentNullException.ThrowIfNull(record);
         ArgumentNullException.ThrowIfNull(mpt);
 
-        _tasks[record.TaskId] = new SubmittedTask(mpt.VideoAspect, mpt.VideoScript, mpt.SubtitleEnabled);
+        var submitted = new SubmittedTask(mpt.VideoAspect, mpt.VideoScript, mpt.SubtitleEnabled);
+        _tasks[record.TaskId] = submitted;
 
         if (ResolveFixture(mpt) is { } fixtureId)
         {
@@ -88,6 +89,13 @@ public sealed partial class FakeRenderBackend : BackgroundService, IRenderBacken
                 // The replayed body advertises `output.subtitles`, so the download must exist too: write the
                 // generated SRT (the fixture keeps its own advertised facts, like `output.video` vs the canned file).
                 await WriteSubtitlesAsync(record.TaskId, mpt.VideoScript, cancellationToken).ConfigureAwait(false);
+            }
+
+            // A terminal replay needs the script no longer: only the aspect and the SRT path serve reads
+            // (review fix MOCK-PERF-01). A frozen non-terminal replay keeps it for its later completion.
+            if (RenderStates.IsTerminal(replayed.State))
+            {
+                _tasks[record.TaskId] = submitted with { Script = null };
             }
 
             await _store.UpdateAsync(replayed, cancellationToken).ConfigureAwait(false);
@@ -131,6 +139,7 @@ public sealed partial class FakeRenderBackend : BackgroundService, IRenderBacken
                 MptLastSnapshot = ProgressClock.Snapshot(RenderStages.Done, 100),
             },
             cancellationToken).ConfigureAwait(false);
+        DropScript(record.TaskId);
         RemoveSubtitle(record.TaskId);
         await PublishActiveTasksAsync(cancellationToken).ConfigureAwait(false);
     }
@@ -280,12 +289,17 @@ public sealed partial class FakeRenderBackend : BackgroundService, IRenderBacken
         {
             // Cue timing follows the canned file actually served, not the reported `narration_seconds`
             // (MOCK_VIDEO_SECONDS): the SRT is spread over the canned duration (11.1.2-T1 Design).
-            subtitles = await WriteSubtitlesAsync(stored.TaskId, submitted.Script, cancellationToken).ConfigureAwait(false);
+            subtitles = await WriteSubtitlesAsync(stored.TaskId, submitted.Script!, cancellationToken).ConfigureAwait(false);
         }
         else
         {
             RemoveSubtitle(stored.TaskId);
         }
+
+        // The script has served its purpose (the SRT is written): a terminal task keeps only the aspect and
+        // the SRT path reads need, so a long dev session cannot grow the backend with past scripts
+        // (review fix MOCK-PERF-01).
+        DropScript(stored.TaskId);
 
         var images = FakePostProcessor.BuildImages(_planSink, stored.TaskId);
         _frozen[stored.TaskId] = 0;
@@ -342,6 +356,18 @@ public sealed partial class FakeRenderBackend : BackgroundService, IRenderBacken
         }
     }
 
+    /// <summary>
+    /// Releases a task's submitted script once the task is terminal (11.1.2-T1 review fix MOCK-PERF-01): reads
+    /// only need the aspect and the SRT path from then on, so the backend does not retain every past script.
+    /// </summary>
+    private void DropScript(Guid taskId)
+    {
+        if (_tasks.TryGetValue(taskId, out var submitted) && submitted.Script is not null)
+        {
+            _tasks[taskId] = submitted with { Script = null };
+        }
+    }
+
     private static FileStream Open(string path) =>
         new(path, FileMode.Open, FileAccess.Read, FileShare.Read, 64 * 1024, FileOptions.Asynchronous | FileOptions.SequentialScan);
 
@@ -357,5 +383,5 @@ public sealed partial class FakeRenderBackend : BackgroundService, IRenderBacken
         Message = "mock-mpt.tick.failed: error={ErrorType}")]
     private partial void LogTickFailed(string errorType);
 
-    private sealed record SubmittedTask(string Aspect, string Script, bool Subtitles);
+    private sealed record SubmittedTask(string Aspect, string? Script, bool Subtitles);
 }

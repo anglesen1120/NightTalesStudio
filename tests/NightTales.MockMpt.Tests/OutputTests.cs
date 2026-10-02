@@ -57,6 +57,24 @@ public sealed class OutputTests
         response.Content.Headers.ContentLength.ShouldBe(host.Media.Portrait.Bytes);
     }
 
+    [Theory]
+    [InlineData(SubmitBodies.Landscape, 1920, 1080)]
+    [InlineData(SubmitBodies.Portrait, 1080, 1920)]
+    public async Task Check_ReportsTheServedFilesDimensions(string fixture, int width, int height)
+    {
+        // Review fix CODE-3: the check block is the fixture with the served file's own facts, so a portrait
+        // task must not report the fixture's landscape numbers.
+        await using var host = await MockMptTestHost.StartAsync(
+            MockMptTestHost.DefaultOptions with { RenderSeconds = 1 });
+        var taskId = await host.SubmitAsync(SubmitBodies.Build(fixture));
+        var status = (await host.PollUntilTerminalAsync(taskId))[^1];
+
+        status.State.ShouldBe(RenderStates.Succeeded);
+        var video = status.Check!.Value.GetProperty("video");
+        video.GetProperty("width").GetInt32().ShouldBe(width);
+        video.GetProperty("height").GetInt32().ShouldBe(height);
+    }
+
     [Fact]
     public async Task Subtitles_OneCuePerSentence()
     {
