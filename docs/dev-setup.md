@@ -325,13 +325,18 @@ aws --endpoint-url http://127.0.0.1:8333 s3 ls s3://nt-music-dev/ # PRE music/  
 tools/dev/down.sh --volumes                                       # discard .nts/dev/seaweedfs (dev data is disposable)
 ```
 
-**Wiring.** `up.sh` exports the `.env` rows to the Api and the Worker under the double-underscore
-configuration names: the storage rows as `STORAGE_ENDPOINT` → `STORAGE__ENDPOINT`,
-`STORAGE_BUCKET_MEDIA` → `STORAGE__BUCKET_MEDIA` and so on, all loopback; the mail rows keep their flat
-`SMTP_*` names in `.env` but are exported as the canonical `Email__Smtp__Host`/`__Port`/`__Username`/
-`__Password` and `Email__From__Address`. The optional compose services override the storage host part
-to the service names (`http://storage:8333`; T41) and the mail host to `mail:1025`. Nothing but the
-emulator's own store lives here; the real client (`AmazonS3Client`) arrives with 09.7.2-T1.
+**Wiring.** `up.sh` exports the `.env` rows to the Api and the Worker under the canonical
+double-underscore configuration names of each settings type: the flat storage rows are shell input
+only, mapped to the `StorageSettings` property names — `STORAGE_ENDPOINT` → `Storage__ServiceUrl`,
+`STORAGE_ACCESS_KEY` → `Storage__AccessKey`, `STORAGE_SECRET_KEY` → `Storage__SecretKey`,
+`STORAGE_REGION` → `Storage__Region` and `STORAGE_BUCKET_MEDIA`/`__PUBLIC`/`__MUSIC` →
+`Storage__Buckets__Media`/`__Public`/`__Music` (the spelling matters: `Storage__BUCKET_MEDIA` binds as
+`Storage:BucketMedia`, which matches no property; only `ServiceUrl` has a `Storage:Endpoint` alias),
+all loopback; the mail rows keep their flat `SMTP_*` names in `.env` but are exported as the canonical
+`Email__Smtp__Host`/`__Port`/`__Username`/`__Password` and `Email__From__Address`. The optional compose
+services override the storage host part to the service names (`http://storage:8333`; T41) and the mail
+host to `mail:1025`. Nothing but the emulator's own store lives here; the real client (`AmazonS3Client`)
+arrives with 09.7.2-T1.
 
 ## Local mail (Mailpit)
 

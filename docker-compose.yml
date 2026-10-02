@@ -37,19 +37,21 @@ x-dev-env: &dev-env
   DataProtection__KekPfxPassword: ${DEV_KEK_PASSWORD:?set DEV_KEK_PASSWORD in .env (tools/dev/up.sh generates the PFX with it)}
 
 # Storage and mail for the two app hosts (11.1.1-T2). Inside the compose network they use the
-# service names (T41); the native path uses the loopback values tools/dev/up.sh exports. The mail keys
-# are the canonical Email:Smtp:*/Email:From:Address names, not the flat `Smtp` alias: both hosts'
-# appsettings.json commits Email:Smtp:Host/Port, which wins over the alias, so an alias spelling would
-# leave the container dialling its own loopback instead of the `mail` service (09.2.6-T3).
+# service names (T41); the native path uses the loopback values tools/dev/up.sh exports. The keys are
+# the canonical settings names — Storage:ServiceUrl/AccessKey/SecretKey/Region and
+# Storage:Buckets:{Media,Public,Music} of StorageSettings, and Email:Smtp:*/Email:From:Address —
+# never the flat `Smtp` alias: both hosts' appsettings.json commits Email:Smtp:Host/Port, which wins
+# over the alias, so an alias spelling would leave the container dialling its own loopback instead of
+# the `mail` service (09.2.6-T3; the flat .env names stay STORAGE_*/SMTP_* and are interpolated here).
 # The credentials come from .env like every other value, with the safe dev defaults from .env.example.
 x-storage-mail-env: &storage-mail-env
-  STORAGE__ENDPOINT: http://storage:8333
-  STORAGE__ACCESS_KEY: ${STORAGE_ACCESS_KEY:-dev}
-  STORAGE__SECRET_KEY: ${STORAGE_SECRET_KEY:-dev-secret-local}
-  STORAGE__REGION: ${STORAGE_REGION:-us-east-1}
-  STORAGE__BUCKET_MEDIA: ${STORAGE_BUCKET_MEDIA:-nt-media-dev}
-  STORAGE__BUCKET_PUBLIC: ${STORAGE_BUCKET_PUBLIC:-nt-public-dev}
-  STORAGE__BUCKET_MUSIC: ${STORAGE_BUCKET_MUSIC:-nt-music-dev}
+  Storage__ServiceUrl: http://storage:8333
+  Storage__AccessKey: ${STORAGE_ACCESS_KEY:-dev}
+  Storage__SecretKey: ${STORAGE_SECRET_KEY:-dev-secret-local}
+  Storage__Region: ${STORAGE_REGION:-us-east-1}
+  Storage__Buckets__Media: ${STORAGE_BUCKET_MEDIA:-nt-media-dev}
+  Storage__Buckets__Public: ${STORAGE_BUCKET_PUBLIC:-nt-public-dev}
+  Storage__Buckets__Music: ${STORAGE_BUCKET_MUSIC:-nt-music-dev}
   Email__Smtp__Host: mail
   Email__Smtp__Port: "1025"
   Email__Smtp__Username: ${SMTP_USER:-dev}

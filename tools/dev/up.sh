@@ -196,9 +196,10 @@ mock_render_seconds="$(row MOCK_RENDER_SECONDS 20)"
 storage_access="$(row STORAGE_ACCESS_KEY dev)"
 storage_secret="$(row STORAGE_SECRET_KEY dev-secret-local)"
 # The flat STORAGE_*/SMTP_* rows 11.1.1-T2 documents in .env.example. The hosts read the storage rows
-# under Storage:*; the mail rows must reach the canonical Email:Smtp:*/Email:From:Address keys, not the
-# `Smtp` alias EmailOptions binds, because both hosts' appsettings.json already sets Email:Smtp:Host/Port
-# and the alias loses to it (09.2.6-T3).
+# under the canonical Storage:* property names of StorageSettings (ServiceUrl/AccessKey/SecretKey/
+# Region/Buckets:{Media,Public,Music}); the mail rows must reach the canonical Email:Smtp:*/Email:From:
+# Address keys, not the `Smtp` alias EmailOptions binds, because both hosts' appsettings.json already
+# sets Email:Smtp:Host/Port and the alias loses to it (09.2.6-T3).
 storage_endpoint="$(row STORAGE_ENDPOINT http://127.0.0.1:8333)"
 storage_region="$(row STORAGE_REGION us-east-1)"
 storage_bucket_media="$(row STORAGE_BUCKET_MEDIA nt-media-dev)"
@@ -427,22 +428,26 @@ fi
 # Each *_environment function runs inside the background subshell of its start function, so the
 # values stay out of every argv (01 D9) and reach the child through the environment.
 
-# storage_mail_environment: the STORAGE__* keys and the canonical Email__Smtp__*/Email__From__Address
-# keys both hosts read (11.1.1-T2, T41; 09.2.6-T3). The mail rows keep their flat .env names (SMTP_*),
-# but they are exported under Email:*: EmailOptions binds the `Smtp` alias *before* Email:Smtp:* and both
-# hosts' appsettings.json already commits Email:Smtp:Host/Port, so a flat SMTP__HOST/SMTP__PORT loses to
-# those committed values (and SMTP__FROM maps to no property at all). The emulators listen on loopback,
-# so these are the loopback values; the compose variant overrides the host part to the service names
-# (`storage:8333`, `mail:1025`) in docker-compose.yml. Credentials
-# travel in the environment, never in argv (01 D9) — this runs inside the host's subshell.
+# storage_mail_environment: the canonical Storage:* property keys and the canonical Email__Smtp__*/
+# Email__From__Address keys both hosts read (11.1.1-T2, T41; 09.7.2-T1; 09.2.6-T3). The flat .env names
+# (STORAGE_*, SMTP_*) are shell input only, never .NET configuration: the storage rows must be exported
+# under the StorageSettings property names — `Storage__ACCESS_KEY`/`STORAGE__BUCKET_MEDIA` would bind as
+# `Storage:Access_Key`/`Storage:BucketMedia`, which match no property (only a `Storage:Endpoint` alias
+# for ServiceUrl exists, in AddStorage). The mail rows likewise reach Email:Smtp:*: EmailOptions binds
+# the `Smtp` alias *before* Email:Smtp:* and both hosts' appsettings.json already commits
+# Email:Smtp:Host/Port, so a flat SMTP__HOST/SMTP__PORT loses to those committed values (and SMTP__FROM
+# maps to no property at all). The emulators listen on loopback, so these are the loopback values; the
+# compose variant overrides the host part to the service names (`storage:8333`, `mail:1025`) in
+# docker-compose.yml. Credentials travel in the environment, never in argv (01 D9) — this runs inside the
+# host's subshell.
 storage_mail_environment() {
-  export STORAGE__ENDPOINT="$storage_endpoint"
-  export STORAGE__ACCESS_KEY="$storage_access"
-  export STORAGE__SECRET_KEY="$storage_secret"
-  export STORAGE__REGION="$storage_region"
-  export STORAGE__BUCKET_MEDIA="$storage_bucket_media"
-  export STORAGE__BUCKET_PUBLIC="$storage_bucket_public"
-  export STORAGE__BUCKET_MUSIC="$storage_bucket_music"
+  export Storage__ServiceUrl="$storage_endpoint"
+  export Storage__AccessKey="$storage_access"
+  export Storage__SecretKey="$storage_secret"
+  export Storage__Region="$storage_region"
+  export Storage__Buckets__Media="$storage_bucket_media"
+  export Storage__Buckets__Public="$storage_bucket_public"
+  export Storage__Buckets__Music="$storage_bucket_music"
   export Email__Smtp__Host="$smtp_host"
   export Email__Smtp__Port="$smtp_port"
   export Email__Smtp__Username="$smtp_user"
