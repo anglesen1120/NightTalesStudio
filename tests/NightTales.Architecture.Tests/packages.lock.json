@@ -804,6 +804,13 @@
           "Npgsql.EntityFrameworkCore.PostgreSQL": "[10.0.3, )"
         }
       },
+      "nighttales.mockmpt": {
+        "type": "Project",
+        "dependencies": {
+          "NightTales.RenderNode.Contract": "[1.0.0, )",
+          "NightTales.RenderNode.Server": "[1.0.0, )"
+        }
+      },
       "nighttales.rendernode.contract": {
         "type": "Project"
       },

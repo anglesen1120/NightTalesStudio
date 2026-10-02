@@ -190,9 +190,11 @@ dev_mail_smtp_port="$(row DEV_MAIL_SMTP_PORT 1025)"
 dev_mail_ui_port="$(row DEV_MAIL_UI_PORT 8025)"
 health_timeout="$(row DEV_HEALTH_TIMEOUT 90)"
 dev_kek_pass="$(row DEV_KEK_PASSWORD change-me-local-dp-kek)"
-mock_api_key="$(row MOCK_API_KEY dev-mock-api-key-local)"
+mock_api_key="$(row MOCK_API_KEY dev-mock-api-key-local-0123456789)"
 mock_fixture="$(row MOCK_FIXTURE '')"
 mock_render_seconds="$(row MOCK_RENDER_SECONDS 20)"
+mock_video_seconds="$(row MOCK_VIDEO_SECONDS 10)"
+mock_max_concurrent="$(row MOCK_MAX_CONCURRENT 2)"
 storage_access="$(row STORAGE_ACCESS_KEY dev)"
 storage_secret="$(row STORAGE_SECRET_KEY dev-secret-local)"
 
@@ -442,7 +444,7 @@ worker_environment() {
     export RENDER_NODE_MOCK_API_KEY="${mock_api_key}"
     export RenderNodes__Nodes__0__Name="mock"
     export RenderNodes__Nodes__0__BaseUrl="http://127.0.0.1:$dev_mock_port"
-    export RenderNodes__Nodes__0__Capacity="1"
+    export RenderNodes__Nodes__0__Capacity="${mock_max_concurrent}"
   fi
 }
 
@@ -452,6 +454,9 @@ mock_environment() {
   export MOCK_API_KEY="${mock_api_key}"
   export MOCK_FIXTURE="$mock_fixture"
   export MOCK_RENDER_SECONDS="$mock_render_seconds"
+  # 11.1.2-T1: the reported duration (the served file stays the canned 10 s one) and the node capacity.
+  export MOCK_VIDEO_SECONDS="$mock_video_seconds"
+  export MOCK_MAX_CONCURRENT="$mock_max_concurrent"
 }
 
 start_api() {
