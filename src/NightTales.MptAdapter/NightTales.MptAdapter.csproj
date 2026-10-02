@@ -1,5 +1,9 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\NightTales.RenderNode.Contract\NightTales.RenderNode.Contract.csproj" />
     <ProjectReference Include="..\NightTales.RenderNode.Server\NightTales.RenderNode.Server.csproj" />

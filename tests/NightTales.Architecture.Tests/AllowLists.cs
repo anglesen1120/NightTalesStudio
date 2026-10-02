@@ -137,13 +137,17 @@ internal static class AllowLists
 
     /// <summary>
     /// 11 README D3: the adapter host adds the durable store (Microsoft.Data.Sqlite, MIT/E11) and Serilog to
-    /// the core's set — still never Domain, Application or Infrastructure (11 CR-3).
+    /// the core's set — still never Domain, Application or Infrastructure (11 CR-3). The adapter is the node's
+    /// Kestrel host (11.3.5-T4), so like <see cref="MockMptAllowedReferences"/> it also pulls the bare
+    /// <c>Microsoft.AspNetCore</c> meta-assembly and <c>Microsoft.Win32.Primitives</c>: framework, not backend code.
     /// </summary>
     internal static readonly IReadOnlySet<string> MptAdapterAllowedReferences =
         new HashSet<string>(StringComparer.Ordinal)
         {
             "ErrorOr",
+            "Microsoft.AspNetCore",
             "Microsoft.Data.Sqlite",
+            "Microsoft.Win32.Primitives",
             "NightTales.RenderNode.Contract",
             "NightTales.RenderNode.Server",
         };

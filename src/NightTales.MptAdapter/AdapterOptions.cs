@@ -43,6 +43,14 @@ public sealed class AdapterOptions
                 "Adapter:MptBaseUrl must be an absolute http URL whose host is a loopback IP address (127.0.0.0/8 or [::1]); MPT never leaves the node.");
         }
 
+        // QA89-LB-01: MptClient resolves "api/v1/..." against this URI, so a path such as /foo would turn every
+        // MPT call into a 404. Only the root is a usable base; query and fragment are never meaningful either.
+        if (uri.AbsolutePath != "/" || uri.Query.Length > 0 || uri.Fragment.Length > 0)
+        {
+            throw new ArgumentException(
+                "Adapter:MptBaseUrl must be the MPT root: no path, query or fragment.");
+        }
+
         return uri;
     }
 
@@ -75,6 +83,48 @@ public sealed class AdapterOptions
 
     /// <summary>D15 P4's window: a cleaned row is purged this many days after <c>cleaned_at</c>.</summary>
     public int PurgeAfterDays { get; set; } = 7;
+
+    /// <summary><c>Adapter:ListenAddress</c>: the node's private address (D6, F26). Required, no default.</summary>
+    public string ListenAddress { get; set; } = string.Empty;
+
+    /// <summary><c>Adapter:Port</c>: the HTTPS port (D6, final 8090).</summary>
+    public int Port { get; set; } = 8090;
+
+    /// <summary>The node certificate (D11).</summary>
+    public string CertPath { get; set; } = "/etc/nts/tls/adapter.crt";
+
+    /// <summary>The node certificate's private key (D11).</summary>
+    public string KeyPath { get; set; } = "/etc/nts/tls/adapter.key";
+
+    /// <summary><c>Adapter:CheckConcurrency</c> (D6: 1).</summary>
+    public int CheckConcurrency { get; set; } = 1;
+
+    /// <summary><c>Adapter:CheckTimeoutSeconds</c> (D6: 900).</summary>
+    public int CheckTimeoutSeconds { get; set; } = 900;
+
+    /// <summary><c>Adapter:AssetsRefreshSeconds</c> (D6: 600).</summary>
+    public int AssetsRefreshSeconds { get; set; } = 600;
+
+    /// <summary><c>Adapter:GpuSampleSeconds</c> (D6: 15); the periodic MPT/proxy/disk/GPU interval.</summary>
+    public int GpuSampleSeconds { get; set; } = 15;
+
+    /// <summary><c>Adapter:FfmpegPath</c> (D6).</summary>
+    public string FfmpegPath { get; set; } = "/usr/bin/ffmpeg";
+
+    /// <summary><c>Adapter:VideoCodec</c> (D6): the <c>NTS_MPT_VIDEO_CODEC</c> value.</summary>
+    public string VideoCodec { get; set; } = Environment.GetEnvironmentVariable("NTS_MPT_VIDEO_CODEC") ?? "libx264";
+
+    /// <summary><c>Adapter:ProxyHealthUrl</c> (D6).</summary>
+    public string ProxyHealthUrl { get; set; } = "http://127.0.0.1:8001/health";
+
+    /// <summary>The <c>nvidia-smi</c> binary, resolved through PATH by default.</summary>
+    public string NvidiaSmiPath { get; set; } = "nvidia-smi";
+
+    /// <summary>The rendered MPT config (D8 state dir).</summary>
+    public string MptConfigPath { get; set; } = "/var/lib/nts/mpt/config.toml";
+
+    /// <summary>The filesystem the disk source measures: the task dirs' (D20 H16).</summary>
+    public string DiskPath => MptTasksDir;
 
     /// <summary>The store's database file (plan §3.1: <c>DataDir/tasks.db</c>).</summary>
     public string TasksDbPath => Path.Combine(DataDir, "tasks.db");
