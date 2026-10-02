@@ -11,6 +11,7 @@ using NightTales.Application.DependencyInjection;
 using NightTales.Infrastructure.DependencyInjection;
 using NightTales.Infrastructure.Email;
 using NightTales.Infrastructure.Persistence;
+using NightTales.Infrastructure.Persistence.Flags;
 using NightTales.Infrastructure.Persistence.Seeding;
 using NightTales.Infrastructure.Storage;
 
@@ -25,6 +26,11 @@ builder.Services.AddOpenApi(options =>
 
 builder.Services.AddNightTalesMediator();
 builder.Services.AddPersistence(builder.Configuration);
+
+// 09.9.2-T2 (09 README BD13, 09.9.2 plan §5.1): the feature-flag read service — the cached
+// `IFeatureFlags` port the `RequireFeature` route guard resolves, the writer's `NOTIFY` notifier, and this
+// instance's `LISTEN feature_flags_changed` invalidator. The read rate is one row per key per 30 s.
+builder.Services.AddFeatureFlags(builder.Configuration);
 
 // 02.2.3-T1 (02 README D5/F22): the Api writes stories too, so it loads and validates the same prompt
 // catalog at start-up; an invalid catalog aborts the boot instead of serving a draft built from a

@@ -5,6 +5,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using NightTales.Infrastructure.Realtime;
+using NightTales.Worker.Cli;
 using NightTales.Worker.DependencyInjection;
 using NightTales.Worker.Health;
 using Serilog;
@@ -29,12 +30,26 @@ public static class WorkerApplication
     {
         ArgumentNullException.ThrowIfNull(args);
 
-        var builder = WebApplication.CreateBuilder(args);
+        var builder = WebApplication.CreateBuilder(HostArguments(args));
 
-        builder.Host.UseSerilog((context, services, configuration) => configuration
-            .ReadFrom.Configuration(context.Configuration)
-            .ReadFrom.Services(services)
-            .WriteTo.Console(formatProvider: CultureInfo.InvariantCulture));
+        builder.Host.UseSerilog((context, services, configuration) =>
+        {
+            // 09.9.2-T2 (09 README BD16, 09.9.2 plan §6): a `flags` invocation owns the process console —
+            // a listing on stdout and one typed failure on stderr. Its logging is therefore decided here,
+            // from the original args and before the host exists, because the normal Worker's console sink
+            // would print what the CLI contract forbids: Serilog's template appends {Exception}, and the
+            // EF Core/Npgsql categories log a failed command together with the server and the database. A
+            // verb host gets no sink at all; the normal Worker host keeps the configured one.
+            if (FlagsCommand.IsFlagsVerb(args))
+            {
+                return;
+            }
+
+            configuration
+                .ReadFrom.Configuration(context.Configuration)
+                .ReadFrom.Services(services)
+                .WriteTo.Console(formatProvider: CultureInfo.InvariantCulture);
+        });
 
         // 11.1.1-T1: keep scope validation — the check that catches a captive scoped dependency — but
         // turn off build-time graph validation. The Mediator source generator registers every
@@ -74,4 +89,19 @@ public static class WorkerApplication
 
         return builder.Build();
     }
+
+    /// <summary>
+    /// The subset of <paramref name="args"/> the host's command-line configuration provider accepts: a
+    /// switch (<c>--seed</c>, <c>--urls</c>) or a <c>key=value</c> pair.
+    /// </summary>
+    /// <remarks>
+    /// The verb host of 09.9.2-T2 (<c>nts-worker flags list</c>) and 11.3.3-T1 (<c>nts-worker nodes …</c>)
+    /// passes bare words the provider would reject at build time, so they are dropped here rather than
+    /// reaching <see cref="WebApplication.CreateBuilder(string[])"/>. The verb itself is read from the
+    /// original <c>args</c> by <c>Program</c>; nothing an operator can put in a host setting is lost,
+    /// because a positional token was never a valid setting.
+    /// </remarks>
+    /// <param name="args">The process arguments.</param>
+    public static string[] HostArguments(string[] args) =>
+        [.. args.Where(arg => arg.StartsWith('-') || arg.Contains('=', StringComparison.Ordinal))];
 }
