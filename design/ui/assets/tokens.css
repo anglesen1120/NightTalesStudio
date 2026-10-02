@@ -147,11 +147,20 @@
 
   --nts-measure: 68ch;
   --nts-target-min: 44px;
+  --nts-control-h: 36px;
+  --nts-control-h-sm: 28px;
+  --nts-icon-btn: 32px;
+  --nts-icon-btn-sm: 28px;
+  --nts-type-control-size: .875rem;
   --nts-motion-fast: 160ms;
   --nts-motion-base: 240ms;
   --nts-ease: cubic-bezier(.2, .7, .2, 1);
   --nts-dialog-shadow: 0 24px 64px rgba(10, 15, 13, .4);
   --nts-menu-shadow: 0 12px 32px rgba(10, 15, 13, .28);
+}
+
+@media (pointer: coarse) {
+  :root { --nts-control-h: 44px; --nts-control-h-sm: 36px; --nts-icon-btn: 44px; --nts-icon-btn-sm: 36px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -69,12 +69,12 @@
         </nav>
         <div class="app-main">
           <header class="app-top">
-            <button class="icon-btn app-top__menu" type="button" aria-label="Mở điều hướng" aria-expanded="false"><svg aria-hidden="true"><use href="#i-menu"></use></svg></button>
+            <button class="icon-btn app-top__menu" type="button" aria-expanded="false"><svg aria-hidden="true"><use href="#i-menu"></use></svg><span class="icon-btn__tip"><span data-l="vi">Mở điều hướng</span><span data-l="en">Open navigation</span></span></button>
             <span class="app-top__context" title="Bàn dựng / Dashboard"><span data-l="vi">Bàn dựng</span><span data-l="en">Dashboard</span></span>
             <span class="app-top__spacer"></span>
             <span class="app-top__balance"><strong class="num"><span data-l="vi">1.240 credits</span><span data-l="en">1,240 credits</span></strong><span><span data-l="vi">khoảng 6 tập 8 phút</span><span data-l="en">about 6 eight-minute episodes</span></span></span>
             <button class="app-top__locale" type="button" aria-haspopup="listbox" aria-expanded="false"><svg aria-hidden="true"><use href="#i-globe"></use></svg><span data-l="vi">Tiếng Việt</span><span data-l="en">English</span><span class="sr-only"><span data-l="vi">Ngôn ngữ</span><span data-l="en">Language</span></span></button>
-            <button class="icon-btn" type="button" aria-label="Chuyển giao diện sáng tối"><svg aria-hidden="true"><use href="#i-moon"></use></svg></button>
+            <button class="icon-btn" type="button"><svg aria-hidden="true"><use href="#i-moon"></use></svg><span class="icon-btn__tip"><span data-l="vi">Đổi sáng/tối</span><span data-l="en">Switch light/dark</span></span></button>
             <button class="app-top__user" type="button" aria-haspopup="menu" aria-expanded="false"><span class="avatar" aria-hidden="true">TH</span><span class="sr-only"><span data-l="vi">Tài khoản của Nguyễn Thu Hà</span><span data-l="en">Account of Nguyễn Thu Hà</span></span></button>
           </header>
 
@@ -165,8 +165,19 @@
               <div class="split">
                 <div class="sheet stack app-content--narrow">
                   <h3 class="h-section"><span data-l="vi">Nút</span><span data-l="en">Buttons</span></h3>
-                  <div class="row"><button class="btn btn--primary" type="button"><span data-l="vi">Duyệt kịch bản</span><span data-l="en">Approve script</span></button><button class="btn btn--outline" type="button"><span data-l="vi">Lưu bản nháp</span><span data-l="en">Save draft</span></button><button class="btn btn--text" type="button"><span data-l="vi">Huỷ</span><span data-l="en">Cancel</span></button><button class="btn btn--danger" type="button"><span data-l="vi">Xoá tập</span><span data-l="en">Delete episode</span></button><button class="btn btn--outline btn--sm" type="button"><span data-l="vi">Xem nguồn</span><span data-l="en">View source</span></button><button class="btn btn--primary is-busy" type="button" aria-busy="true"><span data-l="vi">Đang lưu</span><span data-l="en">Saving</span></button><button class="icon-btn" type="button" aria-label="Chỉnh sửa"><svg aria-hidden="true"><use href="#i-edit"></use></svg></button></div>
-                  <button class="btn btn--outline btn--block" type="button" disabled><span data-l="vi">Chờ duyệt nguồn</span><span data-l="en">Waiting for source review</span></button>
+                  <div class="row"><button class="btn btn--primary" type="button"><span data-l="vi">Duyệt kịch bản</span><span data-l="en">Approve script</span></button><button class="btn btn--outline" type="button"><span data-l="vi">Lưu bản nháp</span><span data-l="en">Save draft</span></button><button class="btn btn--text" type="button"><span data-l="vi">Huỷ</span><span data-l="en">Cancel</span></button><button class="btn btn--danger" type="button"><span data-l="vi">Xoá tập</span><span data-l="en">Delete episode</span></button><button class="btn btn--outline btn--sm" type="button"><span data-l="vi">Xem nguồn</span><span data-l="en">View source</span></button><button class="btn btn--primary is-busy" type="button" aria-busy="true"><span data-l="vi">Đang lưu</span><span data-l="en">Saving</span></button></div>
+                  <div class="row"><button class="btn btn--outline" type="button" disabled><span data-l="vi">Chờ duyệt nguồn</span><span data-l="en">Waiting for source review</span></button></div>
+                  <h3 class="h-section"><span data-l="vi">Nút biểu tượng</span><span data-l="en">Icon buttons</span></h3>
+                  <p class="caption"><span data-l="vi">Chỉ dùng cho thao tác phụ có biểu tượng quen thuộc. Tên hiện khi rê chuột hoặc focus bằng bàn phím, và là tên đọc của trình đọc màn hình.</span><span data-l="en">Only for secondary actions with a familiar icon. The name shows on hover or keyboard focus and is the screen-reader name.</span></p>
+                  <div class="row">
+                    <button class="icon-btn icon-btn--line" type="button" aria-expanded="false"><svg aria-hidden="true"><use href="#i-filter"/></svg><span class="icon-btn__tip"><span data-l="vi">Lọc</span><span data-l="en">Filter</span></span></button>
+                    <button class="icon-btn icon-btn--line" type="button"><svg aria-hidden="true"><use href="#i-history"/></svg><span class="icon-btn__tip"><span data-l="vi">Lịch sử phiên bản</span><span data-l="en">Version history</span></span></button>
+                    <button class="icon-btn icon-btn--sm" type="button"><svg aria-hidden="true"><use href="#i-copy"/></svg><span class="icon-btn__tip"><span data-l="vi">Sao chép mã</span><span data-l="en">Copy code</span></span></button>
+                    <button class="icon-btn icon-btn--sm" type="button"><svg aria-hidden="true"><use href="#i-edit"/></svg><span class="icon-btn__tip"><span data-l="vi">Sửa cảnh 04</span><span data-l="en">Edit scene 04</span></span></button>
+                    <span class="icon-group"><button class="icon-btn icon-btn--sm" type="button" aria-pressed="true"><svg aria-hidden="true"><use href="#i-side-a"/></svg><span class="icon-btn__tip"><span data-l="vi">Bên trái: bản 3</span><span data-l="en">Left: take 3</span></span></button><button class="icon-btn icon-btn--sm" type="button" aria-pressed="false"><svg aria-hidden="true"><use href="#i-side-b"/></svg><span class="icon-btn__tip"><span data-l="vi">Bên phải: bản 3</span><span data-l="en">Right: take 3</span></span></button></span>
+                    <button class="icon-btn icon-btn--sm" type="button" aria-haspopup="menu" aria-expanded="false"><svg aria-hidden="true"><use href="#i-more"/></svg><span class="icon-btn__tip"><span data-l="vi">Thêm thao tác</span><span data-l="en">More actions</span></span></button>
+                    <button class="icon-btn icon-btn--sm icon-btn--danger" type="button"><svg aria-hidden="true"><use href="#i-trash"/></svg><span class="icon-btn__tip"><span data-l="vi">Xoá tập 12</span><span data-l="en">Delete episode 12</span></span></button>
+                  </div>
                 </div>
                 <div class="sheet stack" id="hub-fields">
                   <h3 class="h-section"><span data-l="vi">Trường và lựa chọn</span><span data-l="en">Fields and choices</span></h3>

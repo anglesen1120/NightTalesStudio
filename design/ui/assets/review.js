@@ -60,7 +60,14 @@
     server: '<rect x="3" y="4" width="18" height="7" rx="2"/><rect x="3" y="13" width="18" height="7" rx="2"/><path d="M7 7.5h.01M7 16.5h.01"/>',
     chart: '<path d="M4 20V4M4 20h16M8 16v-4M12 16V8M16 16v-7"/>',
     user: '<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>',
-    logout: '<path d="M15 4h4v16h-4M10 8l-4 4 4 4M6 12h11"/>'
+    logout: '<path d="M15 4h4v16h-4M10 8l-4 4 4 4M6 12h11"/>',
+    more: '<path d="M5 12h.01M12 12h.01M19 12h.01" stroke-width="3"/>',
+    volume: '<path d="M4 9h4l5-4v14l-5-4H4V9Z"/><path d="M16.5 9a4 4 0 0 1 0 6M19 6.5a7.5 7.5 0 0 1 0 11"/>',
+    'side-a': '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M12 5v14"/><path d="M5 7h7v10H5z" fill="currentColor" stroke="none"/>',
+    'side-b': '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M12 5v14"/><path d="M12 7h7v10h-7z" fill="currentColor" stroke="none"/>',
+    reorder: '<path d="m8 9 4-4 4 4M8 15l4 4 4-4"/>',
+    save: '<path d="M5 4h11l3 3v13H5z"/><path d="M8 4v5h7V4M8 20v-6h8v6"/>',
+    restore: '<path d="M4 12a8 8 0 1 0 2.3-5.7"/><path d="M4 4v4h4"/><path d="M12 8v4l3 2"/>'
   };
   const sprite = '<svg xmlns="http://www.w3.org/2000/svg" style="display:none" aria-hidden="true">' +
     Object.entries(ICONS).map(([k, v]) =>
@@ -128,5 +135,25 @@
     const p = new URLSearchParams(state);
     history.replaceState(null, '', '#' + p.toString());
   }
+  function placeTip(e) {
+    const b = e.target.closest && e.target.closest('.icon-btn');
+    const tip = b && b.querySelector(':scope > .icon-btn__tip');
+    if (!tip) return;
+    b.classList.remove('icon-btn--tip-start', 'icon-btn--tip-end');
+    let clip = b.parentElement;
+    while (clip && !clip.classList.contains('app') && getComputedStyle(clip).overflowX === 'visible') clip = clip.parentElement;
+    const box = (clip || document.documentElement).getBoundingClientRect();
+    const w = Math.min(tip.scrollWidth, 240) + 16;
+    const br = b.getBoundingClientRect();
+    const mid = br.left + br.width / 2;
+    tip.style.maxWidth = '';
+    if (mid - w / 2 >= box.left + 4 && mid + w / 2 <= box.right - 4) return;
+    const toEnd = box.right - br.left - 4, toStart = br.right - box.left - 4;
+    b.classList.add(toEnd >= toStart ? 'icon-btn--tip-start' : 'icon-btn--tip-end');
+    const room = Math.max(toEnd, toStart);
+    if (w > room) tip.style.maxWidth = room + 'px';
+  }
+  document.addEventListener('mouseover', placeTip);
+  document.addEventListener('focusin', placeTip);
   apply();
 })();
