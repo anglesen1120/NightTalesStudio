@@ -31,6 +31,18 @@ internal sealed class AssetsSampler(
 
     public TimeSpan? Interval => Cache.Interval;
 
+    /// <summary>
+    /// What the two scripts read: MPT's font and song dirs, the font register and the music catalog (05.2.2-T1,
+    /// 05.3.1-T1). A file is watched through its directory.
+    /// </summary>
+    public IReadOnlyList<string> WatchedPaths { get; } =
+    [
+        Path.Combine(options.Value.MptRoot, "resource", "fonts"),
+        Path.Combine(options.Value.MptRoot, "resource", "songs"),
+        Path.Combine(bundle.Root, "worker-node", "fonts", "FONTS.csv"),
+        Path.Combine(bundle.Root, "seed", "music-tracks.v1.json"),
+    ];
+
     public async Task SampleAsync(CancellationToken cancellationToken)
     {
         if (Interlocked.CompareExchange(ref _running, 1, 0) != 0)
@@ -50,9 +62,14 @@ internal sealed class AssetsSampler(
             var music = await RunAsync(Path.Combine(bin, "check-music.sh"), [.. args, "--json"], timeout, cancellationToken)
                 .ConfigureAwait(false);
 
-            var fontOk = font is { ExitCode: 0 };
-            var report = music is { ExitCode: 0 } ? ParseMusic(music.StandardOutput) : null;
-            var musicOk = report is { Ok: true };
+            // check-fonts.sh: exit 0 = every registered font ok; its "glyphs ok <file>" line names the checked font.
+            var fontName = font is { ExitCode: 0 } ? ParseFontName(font.StandardOutput) : null;
+            var fontOk = fontName is not null;
+
+            // check-music.sh --json: exit 0 = ok, exit 1 = a check failed (still a report, with music_missing and
+            // the revision); anything else is a usage or environment error with no trustworthy report.
+            var report = music is { ExitCode: 0 or 1 } ? ParseMusic(music.StandardOutput) : null;
+            var musicOk = music is { ExitCode: 0 } && report is { Ok: true };
             var now = clock.GetUtcNow();
 
             Cache.Set(new AssetsProbe(
@@ -60,7 +77,7 @@ internal sealed class AssetsSampler(
                 musicOk,
                 new AssetsHealthV1(
                     fontOk && musicOk,
-                    fontOk ? "ok" : "missing",
+                    fontName,
                     report?.Revision,
                     report?.Missing ?? [],
                     now)));
@@ -84,6 +101,21 @@ internal sealed class AssetsSampler(
             log.SamplerFailed(Name, exception.GetType().Name);
             return null;
         }
+    }
+
+    /// <summary>The file named by the first <c>glyphs ok &lt;file&gt;</c> line; null when the check printed none.</summary>
+    private static string? ParseFontName(string output)
+    {
+        const string Prefix = "glyphs ok ";
+        foreach (var raw in output.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            if (raw.StartsWith(Prefix, StringComparison.Ordinal) && raw[Prefix.Length..].Trim() is { Length: > 0 } name)
+            {
+                return name;
+            }
+        }
+
+        return null;
     }
 
     private sealed record MusicReport(bool Ok, int? Revision, IReadOnlyList<string> Missing);

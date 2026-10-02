@@ -33,6 +33,11 @@ internal sealed class CertFiles : IDisposable
         using var certificate = request.CreateSelfSigned(notBefore, notAfter);
         File.WriteAllText(CertPath, certificate.ExportCertificatePem());
         File.WriteAllText(KeyPath, key.ExportPkcs8PrivateKeyPem());
+        if (!OperatingSystem.IsWindows())
+        {
+            // 11.3.1-T1: the node key is 0600; the validator refuses anything wider (SEC-3).
+            File.SetUnixFileMode(KeyPath, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+        }
         Sha256 = certificate.GetCertHashString(HashAlgorithmName.SHA256);
     }
 
@@ -103,6 +108,21 @@ public sealed class StartupKeyTests : IDisposable
     [Fact]
     public void AdapterKeyEqualsNext_Exit2() =>
         Run(Env(("ADAPTER_API_KEY_NEXT", Key))).ShouldBe(StartupKeyChecks.KeyEqualsNextMessage);
+
+    private const string NextKey = "adapter-next-0123456789abcdef0123456789";
+
+    /// <summary>SEC-2: the rotation key is held to the same distinctness rules as the primary (T68).</summary>
+    [Theory]
+    [InlineData("NTS_MPT_API_KEY", StartupKeyChecks.NextEqualsMptKeyMessage)]
+    [InlineData("NTS_PROXY_API_KEY", StartupKeyChecks.NextEqualsProxyKeyMessage)]
+    [InlineData("NODE_OPENAI_IMAGE_KEY", StartupKeyChecks.NextEqualsImageKeyMessage)]
+    public void NextEqualsOtherKey_Exit2_FixedMessage(string variable, string expected)
+    {
+        var message = Run(Env(("ADAPTER_API_KEY_NEXT", NextKey), (variable, NextKey)));
+
+        message.ShouldBe(expected);
+        message!.ShouldNotContain(NextKey);
+    }
 
     [Fact]
     public void MissingAdapterKey_Exit2() =>

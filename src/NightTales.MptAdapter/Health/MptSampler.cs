@@ -1,6 +1,5 @@
 using ErrorOr;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 
 namespace NightTales.MptAdapter.Health;
 
@@ -8,20 +7,19 @@ namespace NightTales.MptAdapter.Health;
 internal sealed record MptProbe(bool Reachable, bool Authorized, DateTimeOffset? StartedAt);
 
 /// <summary>
-/// D7's MPT source: <c>GET /ping</c> plus the authenticated <c>GET /api/v1/tasks?page=1&amp;page_size=1</c>, every
-/// <c>Adapter:GpuSampleSeconds</c> (15 s). Both calls go through <see cref="MptClient"/>, so the key, the loopback
+/// D7's MPT source: <c>GET /ping</c> plus the authenticated <c>GET /api/v1/tasks?page=1&amp;page_size=1</c>, on D7's
+/// fixed 15 s cadence (<c>Adapter:GpuSampleSeconds</c> drives the GPU source only). Both calls go through <see cref="MptClient"/>, so the key, the loopback
 /// base address and the no-redirect handler are the ones the poller uses. <c>mpt.started_at</c> is
 /// <c>MptProcessStartReader</c>'s value (T2), sampled here so a health request never runs <c>systemctl</c>.
 /// </summary>
 internal sealed class MptSampler(
     MptClient client,
     IMptProcessStartReader startReader,
-    IOptions<AdapterOptions> options,
     TimeProvider clock,
     ILogger<MptSampler> log) : IHealthSampler
 {
     internal SourceCache<MptProbe> Cache { get; } =
-        new(TimeSpan.FromSeconds(options.Value.GpuSampleSeconds), clock);
+        new(SamplerCadence.Fixed, clock);
 
     public string Name => "mpt";
 

@@ -25,6 +25,17 @@ internal interface IProcessRunner
 
 internal sealed class SystemProcessRunner : IProcessRunner
 {
+    /// <summary>SEC-6: a child's stdout beyond this is a failed sample, never buffered whole.</summary>
+    internal const int MaxStdoutBytes = 1024 * 1024;
+
+    /// <summary>
+    /// SEC-1: the only variables a probe child sees. Everything else (ADAPTER_API_KEY(_NEXT),
+    /// NODE_OPENAI_IMAGE_KEY, NTS_MPT_API_KEY, ...) stays in the adapter process.
+    /// </summary>
+    private static readonly string[] InheritedVariables = ["LANG", "LC_ALL", "HOME", "TMPDIR", "LD_LIBRARY_PATH"];
+
+    internal const string ChildPath = "/usr/bin:/bin";
+
     public async Task<ProcessResult> RunAsync(
         string fileName,
         IReadOnlyList<string> arguments,
@@ -45,6 +56,16 @@ internal sealed class SystemProcessRunner : IProcessRunner
             info.ArgumentList.Add(argument);
         }
 
+        info.Environment.Clear();
+        info.Environment["PATH"] = ChildPath;
+        foreach (var name in InheritedVariables)
+        {
+            if (Environment.GetEnvironmentVariable(name) is { Length: > 0 } value)
+            {
+                info.Environment[name] = value;
+            }
+        }
+
         using var process = Process.Start(info) ?? throw new Win32Exception("The process did not start.");
         process.StandardInput.Close();
 
@@ -52,19 +73,51 @@ internal sealed class SystemProcessRunner : IProcessRunner
         limit.CancelAfter(timeout);
 
         // stderr is drained and dropped (S7: a script's text never reaches a log or a body).
-        var stdout = process.StandardOutput.ReadToEndAsync(limit.Token);
-        var stderr = process.StandardError.ReadToEndAsync(limit.Token);
+        var stdout = ReadCappedAsync(process.StandardOutput.BaseStream, limit.Token);
+        var stderr = process.StandardError.BaseStream.CopyToAsync(Stream.Null, limit.Token);
         try
         {
-            await process.WaitForExitAsync(limit.Token).ConfigureAwait(false);
+            // The cap is enforced while reading, so an over-cap child is killed by the finally below.
             await Task.WhenAll(stdout, stderr).ConfigureAwait(false);
+            await process.WaitForExitAsync(limit.Token).ConfigureAwait(false);
+            return new ProcessResult(process.ExitCode, Encoding.UTF8.GetString(await stdout.ConfigureAwait(false)));
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
-            process.Kill(entireProcessTree: true);
             throw new TimeoutException("The process outlived its budget.");
         }
+        finally
+        {
+            // Timeout, caller cancellation and an over-cap stream all leave the child running: kill its tree.
+            if (!process.HasExited)
+            {
+                try
+                {
+                    process.Kill(entireProcessTree: true);
+                }
+                catch (InvalidOperationException)
+                {
+                    // It exited between the check and the kill.
+                }
+            }
+        }
+    }
 
-        return new ProcessResult(process.ExitCode, await stdout.ConfigureAwait(false));
+    private static async Task<byte[]> ReadCappedAsync(Stream stream, CancellationToken cancellationToken)
+    {
+        using var buffer = new MemoryStream();
+        var chunk = new byte[8192];
+        int read;
+        while ((read = await stream.ReadAsync(chunk, cancellationToken).ConfigureAwait(false)) > 0)
+        {
+            if (buffer.Length + read > MaxStdoutBytes)
+            {
+                throw new IOException("The process output exceeded its cap.");
+            }
+
+            buffer.Write(chunk, 0, read);
+        }
+
+        return buffer.ToArray();
     }
 }

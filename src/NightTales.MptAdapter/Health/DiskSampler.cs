@@ -38,7 +38,7 @@ internal sealed class DiskSampler(
     internal const int LowAtUsedPct = 85;
 
     internal SourceCache<DiskHealthV1> Cache { get; } =
-        new(TimeSpan.FromSeconds(options.Value.GpuSampleSeconds), clock);
+        new(SamplerCadence.Fixed, clock);
 
     public string Name => "disk";
 

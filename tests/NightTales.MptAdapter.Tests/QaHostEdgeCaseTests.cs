@@ -1,3 +1,5 @@
+using System.Net;
+using System.Net.Sockets;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using NightTales.MptAdapter.Tests.Fakes;
@@ -227,5 +229,210 @@ public sealed class QaCertificateTests
         // File.Exists is false for a directory, so this is the "missing" path rather than a crash.
         TlsValidator.TryLoad(files.Directory, files.KeyPath, new ManualTimeProvider(NotAfter.AddDays(-1)), out _)
             .ShouldBe(TlsValidator.MissingMessage);
+    }
+
+    /// <summary>SEC-3: a key a group or other can read is refused with a fixed message, not loaded.</summary>
+    [Fact]
+    public void KeyAccessibleByGroup_Refused()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using var files = new CertFiles(NotAfter.AddDays(-100), NotAfter);
+        File.SetUnixFileMode(files.KeyPath, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.GroupRead);
+
+        TlsValidator.TryLoad(files.CertPath, files.KeyPath, new ManualTimeProvider(NotAfter.AddDays(-5)), out var loaded)
+            .ShouldBe(TlsValidator.KeyModeMessage);
+        loaded.ShouldBeNull();
+    }
+
+    [Fact]
+    public void Key0600_Loads()
+    {
+        using var files = new CertFiles(NotAfter.AddDays(-100), NotAfter);
+
+        TlsValidator.TryLoad(files.CertPath, files.KeyPath, new ManualTimeProvider(NotAfter.AddDays(-5)), out var loaded)
+            .ShouldBeNull();
+        loaded!.Certificate.Dispose();
+    }
+
+    /// <summary>SEC-3: a file the process may not open is the fixed "unreadable" message, never an unhandled exception.</summary>
+    [Fact]
+    public void UnreadableCertFile_FixedMessage_NotThrown()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using var files = new CertFiles(NotAfter.AddDays(-100), NotAfter);
+        File.SetUnixFileMode(files.CertPath, UnixFileMode.None);
+        try
+        {
+            File.OpenRead(files.CertPath).Dispose();
+            return; // Running as a user the mode does not bind (root): nothing to prove.
+        }
+        catch (UnauthorizedAccessException)
+        {
+            // Expected: the validator must turn this into a message.
+        }
+
+        TlsValidator.TryLoad(files.CertPath, files.KeyPath, new ManualTimeProvider(NotAfter.AddDays(-5)), out _)
+            .ShouldBe(TlsValidator.UnreadableMessage);
+    }
+}
+
+/// <summary>QA-3 / SEC-5: the options validator's loopback proxy URL and absolute tool paths.</summary>
+public sealed class QaOptionsValidatorTests
+{
+    [Fact]
+    public void Defaults_AreValid_AndNvidiaSmiDefaultsToUsrBin()
+    {
+        var options = new AdapterOptions { ListenAddress = "10.20.30.40" };
+
+        options.NvidiaSmiPath.ShouldBe("/usr/bin/nvidia-smi");
+        Failures(options).ShouldBeEmpty();
+    }
+
+    [Theory]
+    [InlineData("http://10.0.0.5:8001/health")]
+    [InlineData("http://example.com/health")]
+    [InlineData("https://127.0.0.1:8001/health")]
+    [InlineData("http://localhost:8001/health")]
+    [InlineData("not a url")]
+    public void ProxyHealthUrl_NotLoopbackHttp_Refused(string url) =>
+        Failures(new AdapterOptions { ListenAddress = "10.20.30.40", ProxyHealthUrl = url })
+            .ShouldContain(f => f.Contains("Adapter:ProxyHealthUrl", StringComparison.Ordinal));
+
+    [Theory]
+    [InlineData("http://127.0.0.1:8001/health")]
+    [InlineData("http://[::1]:8001/health")]
+    public void ProxyHealthUrl_Loopback_Accepted(string url) =>
+        Failures(new AdapterOptions { ListenAddress = "10.20.30.40", ProxyHealthUrl = url }).ShouldBeEmpty();
+
+    [Fact]
+    public void RelativeToolPaths_Refused()
+    {
+        var failures = Failures(new AdapterOptions
+        {
+            ListenAddress = "10.20.30.40",
+            NvidiaSmiPath = "nvidia-smi",
+            FfmpegPath = "ffmpeg",
+        });
+
+        failures.ShouldContain(f => f.Contains("Adapter:NvidiaSmiPath", StringComparison.Ordinal));
+        failures.ShouldContain(f => f.Contains("Adapter:FfmpegPath", StringComparison.Ordinal));
+    }
+
+    private static List<string> Failures(AdapterOptions options) =>
+        [.. new AdapterOptionsValidator(new FakeHostEnvironment("Production")).Validate(null, options).Failures ?? []];
+}
+
+/// <summary>QA-2 / SEC-4: the real <c>AdapterHost.RunAsync</c>, driven by arguments (no process-wide environment).</summary>
+public sealed class QaHostRunTests : IDisposable
+{
+    private const string Key = "adapter-key-0123456789abcdef0123456789";
+
+    private readonly CertFiles _cert = CertFiles.Valid();
+    private readonly string _dataDir = Path.Combine(Path.GetTempPath(), "nts-run-" + Guid.NewGuid().ToString("N"));
+
+    public void Dispose()
+    {
+        _cert.Dispose();
+        try
+        {
+            Directory.Delete(_dataDir, recursive: true);
+        }
+        catch (IOException)
+        {
+            // Best-effort temp cleanup.
+        }
+    }
+
+    [Fact]
+    public async Task InvalidOptions_ExitTwo_NotAnUnhandledException()
+    {
+        var exit = await AdapterHost.RunAsync(Args(FreePort(), "--Adapter:PollSeconds=0"), TestContext.Current.CancellationToken);
+
+        exit.ShouldBe(StartupKeyChecks.ExitCode);
+    }
+
+    [Fact]
+    public async Task ConfigDeclaredKestrelEndpoint_ExitTwo()
+    {
+        var exit = await AdapterHost.RunAsync(
+            Args(FreePort(), "--Kestrel:Endpoints:Extra:Url=http://127.0.0.1:" + FreePort()),
+            TestContext.Current.CancellationToken);
+
+        exit.ShouldBe(StartupKeyChecks.ExitCode);
+    }
+
+    /// <summary>
+    /// <c>--urls</c> is the same hosting setting as <c>ASPNETCORE_URLS</c>: it must not open a second listener.
+    /// </summary>
+    [Fact]
+    public async Task HostingUrls_AreIgnored_OnlyTheGuardedEndpointBinds()
+    {
+        var port = FreePort();
+        var extra = FreePort();
+        using var stop = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
+        var run = AdapterHost.RunAsync(Args(port, "--urls", "http://127.0.0.1:" + extra), stop.Token);
+        try
+        {
+            await WaitUntilServingAsync(port, run);
+
+            using var probe = new TcpClient();
+            await Should.ThrowAsync<SocketException>(
+                async () => await probe.ConnectAsync(IPAddress.Loopback, extra, TestContext.Current.CancellationToken));
+        }
+        finally
+        {
+            await stop.CancelAsync();
+        }
+
+        (await run).ShouldBe(0);
+    }
+
+    private string[] Args(int port, params string[] extra) =>
+    [
+        "--environment", "Development",
+        "--Adapter:ListenAddress=127.0.0.1",
+        "--Adapter:Port=" + port,
+        "--Adapter:DataDir=" + _dataDir,
+        "--Adapter:CertPath=" + _cert.CertPath,
+        "--Adapter:KeyPath=" + _cert.KeyPath,
+        "--RenderNodeServer:ApiKey=" + Key,
+        .. extra,
+    ];
+
+    private static int FreePort()
+    {
+        using var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        return ((IPEndPoint)listener.LocalEndpoint).Port;
+    }
+
+    private static async Task WaitUntilServingAsync(int port, Task<int> run)
+    {
+        using var handler = new HttpClientHandler { ServerCertificateCustomValidationCallback = (_, _, _, _) => true };
+        using var http = new HttpClient(handler);
+        var deadline = DateTime.UtcNow.AddSeconds(30);
+        while (true)
+        {
+            run.IsCompleted.ShouldBeFalse("the host exited before it served");
+            DateTime.UtcNow.ShouldBeLessThan(deadline, "the host did not start serving in time");
+            try
+            {
+                using var response = await http.GetAsync(
+                    $"https://127.0.0.1:{port}/v1/health", TestContext.Current.CancellationToken);
+                return;
+            }
+            catch (HttpRequestException)
+            {
+                await Task.Delay(100, TestContext.Current.CancellationToken);
+            }
+        }
     }
 }

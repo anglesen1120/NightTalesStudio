@@ -25,7 +25,7 @@ internal sealed class ProxySampler(
     private static readonly JsonElement EmptyObject = JsonDocument.Parse("{}").RootElement.Clone();
 
     internal SourceCache<ProxyProbe> Cache { get; } =
-        new(TimeSpan.FromSeconds(options.Value.GpuSampleSeconds), clock);
+        new(SamplerCadence.Fixed, clock);
 
     public string Name => "proxy";
 
@@ -39,9 +39,9 @@ internal sealed class ProxySampler(
             limit.CancelAfter(RequestTimeout);
 
             using var response = await http
-                .GetAsync(options.Value.ProxyHealthUrl, HttpCompletionOption.ResponseContentRead, limit.Token)
+                .GetAsync(options.Value.ProxyHealthUrl, HttpCompletionOption.ResponseHeadersRead, limit.Token)
                 .ConfigureAwait(false);
-            var text = await response.Content.ReadAsStringAsync(limit.Token).ConfigureAwait(false);
+            var text = await ReadCappedAsync(response.Content, limit.Token).ConfigureAwait(false);
 
             using var document = JsonDocument.Parse(text);
             var body = document.RootElement.Clone();
@@ -52,5 +52,32 @@ internal sealed class ProxySampler(
             log.SamplerFailed(Name, exception.GetType().Name);
             Cache.Set(new ProxyProbe(EmptyObject, false));
         }
+    }
+
+    /// <summary>SEC-6: a proxy health body is a few hundred bytes; anything over this is a failed sample.</summary>
+    internal const int MaxBodyBytes = 64 * 1024;
+
+    private static async Task<string> ReadCappedAsync(HttpContent content, CancellationToken cancellationToken)
+    {
+        if (content.Headers.ContentLength > MaxBodyBytes)
+        {
+            throw new InvalidDataException("The proxy body exceeded its cap.");
+        }
+
+        await using var stream = await content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+        using var buffer = new MemoryStream();
+        var chunk = new byte[8192];
+        int read;
+        while ((read = await stream.ReadAsync(chunk, cancellationToken).ConfigureAwait(false)) > 0)
+        {
+            if (buffer.Length + read > MaxBodyBytes)
+            {
+                throw new InvalidDataException("The proxy body exceeded its cap.");
+            }
+
+            buffer.Write(chunk, 0, read);
+        }
+
+        return System.Text.Encoding.UTF8.GetString(buffer.GetBuffer(), 0, (int)buffer.Length);
     }
 }

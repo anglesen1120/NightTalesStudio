@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
+using System.Runtime.Versioning;
 using Microsoft.Extensions.Logging;
 
 namespace NightTales.MptAdapter.Tls;
@@ -18,6 +19,13 @@ public static class TlsValidator
     public const string UnparsableMessage = "The adapter TLS certificate or key could not be parsed.";
     public const string NotYetValidMessage = "The adapter TLS certificate is not yet valid.";
     public const string ExpiredMessage = "The adapter TLS certificate has expired.";
+    public const string UnreadableMessage = "The adapter TLS certificate or key file is not readable.";
+    public const string KeyModeMessage =
+        "The adapter TLS key file must not be accessible by group or others (expected mode 0600).";
+
+    private const UnixFileMode GroupOrOther =
+        UnixFileMode.GroupRead | UnixFileMode.GroupWrite | UnixFileMode.GroupExecute
+        | UnixFileMode.OtherRead | UnixFileMode.OtherWrite | UnixFileMode.OtherExecute;
 
     /// <summary>Null failure means <paramref name="loaded"/> is usable.</summary>
     public static string? TryLoad(
@@ -32,6 +40,12 @@ public static class TlsValidator
             return MissingMessage;
         }
 
+        // README D11 / 11.3.1-T1: the key is 0600. A key a group or other can read is refused, not warned about.
+        if (!OperatingSystem.IsWindows() && HasGroupOrOtherAccess(keyPath))
+        {
+            return KeyModeMessage;
+        }
+
         X509Certificate2 certificate;
         try
         {
@@ -40,6 +54,10 @@ public static class TlsValidator
             // Round-trip through PKCS#12 so Kestrel gets a certificate whose key is usable on every platform
             // (an ephemeral PEM key is not accepted by Schannel/SecureTransport).
             certificate = X509CertificateLoader.LoadPkcs12(pem.Export(X509ContentType.Pkcs12), null);
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return UnreadableMessage;
         }
         catch (Exception exception) when (exception is CryptographicException or IOException or ArgumentException)
         {
@@ -62,6 +80,20 @@ public static class TlsValidator
 
         loaded = new LoadedCertificate(certificate, certificate.GetCertHashString(HashAlgorithmName.SHA256), notAfter);
         return null;
+    }
+
+    [UnsupportedOSPlatform("windows")]
+    private static bool HasGroupOrOtherAccess(string keyPath)
+    {
+        try
+        {
+            return (File.GetUnixFileMode(keyPath) & GroupOrOther) != 0;
+        }
+        catch (Exception exception) when (exception is UnauthorizedAccessException or IOException)
+        {
+            // Cannot even stat it: the load below reports it as unreadable or unparsable.
+            return false;
+        }
     }
 
     /// <summary>Logs the fingerprint and <c>NotAfter</c> exactly once per call; the host calls it once.</summary>

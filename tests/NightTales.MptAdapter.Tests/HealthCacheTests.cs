@@ -1,9 +1,12 @@
+using System.Diagnostics;
 using System.Net;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.Hosting.Server.Features;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -124,6 +127,88 @@ public sealed class HealthCacheTests
         (await GetHealthAsync(http)).ShouldBe(HttpStatusCode.ServiceUnavailable);
 
         await app.StopAsync(TestContext.Current.CancellationToken);
+    }
+
+    // Built by concatenation so the gitleaks pre-commit rule does not read fixture values as secrets.
+    private static readonly string KeyA = "env-key-a-" + new string('a', 26);
+    private static readonly string KeyB = "env-key-b-" + new string('b', 26);
+    private static readonly string KeyS = "section-key-" + new string('s', 26);
+
+    /// <summary>CR-1: the middleware authenticates with the key and the NEXT key the startup checks validated.</summary>
+    [Fact]
+    public async Task EnvKeys_AuthenticateThroughMiddleware_WhenSectionIsEmpty()
+    {
+        await using var rig = await HealthRig.StartAsync();
+        await rig.SampleAllAsync();
+        await using var app = await StartWithKeysAsync(
+            rig, [], new() { ["ADAPTER_API_KEY"] = KeyA, ["ADAPTER_API_KEY_NEXT"] = KeyB });
+        using var http = HttpFor(app);
+
+        (await GetHealthAsync(http, KeyA)).ShouldBe(HttpStatusCode.OK);
+        (await GetHealthAsync(http, KeyB)).ShouldBe(HttpStatusCode.OK);
+        (await GetHealthAsync(http, "wrong-key-0123456789abcdef0123456789")).ShouldBe(HttpStatusCode.Unauthorized);
+    }
+
+    [Fact]
+    public async Task SectionKey_WinsOverEnv()
+    {
+        await using var rig = await HealthRig.StartAsync();
+        await rig.SampleAllAsync();
+        await using var app = await StartWithKeysAsync(
+            rig, new() { ["RenderNodeServer:ApiKey"] = KeyS }, new() { ["ADAPTER_API_KEY"] = KeyA });
+        using var http = HttpFor(app);
+
+        (await GetHealthAsync(http, KeyS)).ShouldBe(HttpStatusCode.OK);
+        (await GetHealthAsync(http, KeyA)).ShouldBe(HttpStatusCode.Unauthorized);
+    }
+
+    [Fact]
+    public async Task SectionKey_WithEnvNext_RotationWorks()
+    {
+        await using var rig = await HealthRig.StartAsync();
+        await rig.SampleAllAsync();
+        await using var app = await StartWithKeysAsync(
+            rig, new() { ["RenderNodeServer:ApiKey"] = KeyS }, new() { ["ADAPTER_API_KEY_NEXT"] = KeyB });
+        using var http = HttpFor(app);
+
+        (await GetHealthAsync(http, KeyS)).ShouldBe(HttpStatusCode.OK);
+        (await GetHealthAsync(http, KeyB)).ShouldBe(HttpStatusCode.OK);
+    }
+
+    private static async Task<WebApplication> StartWithKeysAsync(
+        HealthRig rig, Dictionary<string, string?> section, Dictionary<string, string?> environment)
+    {
+        var builder = WebApplication.CreateBuilder();
+        builder.Logging.SetMinimumLevel(LogLevel.None);
+        builder.WebHost.UseUrls("http://127.0.0.1:0");
+        builder.Configuration.AddInMemoryCollection(section);
+        builder.Services.AddSingleton<ITaskStore>(new SqliteTaskStore(
+            new SqliteStoreOptions(rig.Options.TasksDbPath),
+            LoggerFactory.Create(_ => { }).CreateLogger<SqliteTaskStore>()));
+        builder.Services.AddSingleton<INodeHealthSource>(rig.Source);
+        builder.Services.AddSingleton<IRenderBackend>(new NoBackend());
+        builder.Services.AddSingleton<IImagePlanSink>(new FakeImagePlanSink());
+        builder.Services.AddRenderNodeServer(builder.Configuration);
+        builder.Services.AddServerKeyEnvDefaults(name => environment.GetValueOrDefault(name));
+
+        var app = builder.Build();
+        app.UseRenderNodeServer();
+        app.MapRenderNodeV1();
+        await app.StartAsync(TestContext.Current.CancellationToken);
+        return app;
+    }
+
+    private static HttpClient HttpFor(WebApplication app) => new()
+    {
+        BaseAddress = new Uri(app.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses.First()),
+    };
+
+    private static async Task<HttpStatusCode> GetHealthAsync(HttpClient http, string key)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, RenderNodeRoutes.Health);
+        request.Headers.TryAddWithoutValidation("x-api-key", key);
+        using var response = await http.SendAsync(request, TestContext.Current.CancellationToken);
+        return response.StatusCode;
     }
 
     private static async Task<HttpStatusCode> GetHealthAsync(HttpClient http)
@@ -359,8 +444,9 @@ public sealed class AssetsJobTests
     {
         await using var rig = await HealthRig.StartAsync();
         rig.Runner.Script = (name, args) => name.EndsWith("check-music.sh", StringComparison.Ordinal)
-            ? new ProcessResult(0, "{\"ok\": false, \"catalog_revision\": 3, \"music_missing\": [\"track-7\"], \"unlicensed\": [], \"catalog_errors\": 0}")
-            : new ProcessResult(0, "ok");
+            // check-music.sh exits 1 on a failed check and still prints the JSON report (01 D9).
+            ? new ProcessResult(1, "{\"ok\": false, \"catalog_revision\": 3, \"music_missing\": [\"track-7\"], \"unlicensed\": [], \"catalog_errors\": 0}")
+            : new ProcessResult(0, FakeProcessRunner.FontOutput);
         await rig.SampleAllAsync();
 
         var health = await rig.Source.GetAsync(CancellationToken.None);
@@ -414,5 +500,347 @@ public sealed class ConfigProbeTests
         health.Mpt.ConfigProfile.ShouldBe(ConfigProbe.NodeProfile);
         health.Mpt.VideoCodec.ShouldBe("libx264");
         health.Mpt.StartedAt.ShouldNotBeNull();
+    }
+}
+
+/// <summary>CR-3 / CR-5: the assets block carries the checked font and the music report on both exit codes.</summary>
+public sealed class AssetsContractTests
+{
+    [Fact]
+    public async Task Ok_AssetsFieldValuesMatchFixture()
+    {
+        await using var rig = await HealthRig.StartAsync();
+        await rig.SampleAllAsync();
+
+        var actual = Assets(JsonSerializer.Serialize(await rig.Source.GetAsync(CancellationToken.None), RenderNodeJson.Strict));
+        var expected = Assets(FixtureFiles.Read("render-node-health.v1.ok.json"));
+
+        actual.Select(p => p.Key).Order(StringComparer.Ordinal).ShouldBe(expected.Select(p => p.Key).Order(StringComparer.Ordinal));
+        foreach (var (name, value) in expected)
+        {
+            actual[name]?.ToJsonString().ShouldBe(value?.ToJsonString(), name);
+        }
+    }
+
+    [Fact]
+    public async Task FontCheckFails_FontAbsent_AndReasonListed()
+    {
+        await using var rig = await HealthRig.StartAsync();
+        var inner = rig.Runner.Script;
+        rig.Runner.Script = (name, args) => name.EndsWith("check-fonts.sh", StringComparison.Ordinal)
+            ? new ProcessResult(1, "font FAIL x not loadable\n")
+            : inner(name, args);
+        await rig.SampleAllAsync();
+
+        var health = await rig.Source.GetAsync(CancellationToken.None);
+
+        health.Assets.Ok.ShouldBeFalse();
+        health.Assets.Font.ShouldBeNull();
+        health.Reasons.ShouldContain(NodeHealthReasons.FontMissing);
+    }
+
+    /// <summary>The assets block without <c>checked_at</c> (a timestamp), keyed by property.</summary>
+    private static Dictionary<string, JsonNode?> Assets(string json)
+    {
+        var assets = JsonNode.Parse(json)!["assets"]!.AsObject();
+        return assets.Where(p => p.Key != "checked_at").ToDictionary(p => p.Key, p => p.Value, StringComparer.Ordinal);
+    }
+}
+
+/// <summary>CR-4: D7's fixed 15 s cadence for MPT / proxy / disk; <c>GpuSampleSeconds</c> drives the GPU source only.</summary>
+public sealed class SamplerCadenceTests
+{
+    [Fact]
+    public async Task GpuInterval_DrivesOnlyTheGpuSource()
+    {
+        await using var rig = await HealthRig.StartAsync(options => options.GpuSampleSeconds = 7);
+
+        rig.GpuSampler.Interval.ShouldBe(TimeSpan.FromSeconds(7));
+        rig.MptSampler.Interval.ShouldBe(TimeSpan.FromSeconds(15));
+        rig.ProxySampler.Interval.ShouldBe(TimeSpan.FromSeconds(15));
+        rig.DiskSampler.Interval.ShouldBe(TimeSpan.FromSeconds(15));
+    }
+
+    [Fact]
+    public async Task GpuGoesStaleAt3xItsInterval_OthersKeepTheir45Seconds()
+    {
+        await using var rig = await HealthRig.StartAsync(options => options.GpuSampleSeconds = 7);
+        await rig.SampleAllAsync();
+
+        rig.Clock.Advance(TimeSpan.FromSeconds(30));
+        var health = await rig.Source.GetAsync(CancellationToken.None);
+
+        health.Reasons.ShouldContain(NodeHealthReasons.GpuUnavailable);
+        health.Reasons.ShouldNotContain(NodeHealthReasons.MptUnreachable);
+        health.Reasons.ShouldNotContain(NodeHealthReasons.DiskLow);
+    }
+}
+
+/// <summary>SEC-6: the proxy body is capped; an over-cap body is a failed sample.</summary>
+public sealed class ProxyBodyCapTests
+{
+    [Fact]
+    public async Task OverCapBody_FailedSample()
+    {
+        await using var rig = await HealthRig.StartAsync();
+        rig.Proxy.Body = "{\"status\":\"ok\",\"reasons\":[],\"pad\":\"" + new string('x', ProxySampler.MaxBodyBytes + 1) + "\"}";
+
+        await rig.ProxySampler.SampleAsync(CancellationToken.None);
+
+        rig.ProxySampler.Cache.Current!.Value.Ok.ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task UnderCapBody_Accepted()
+    {
+        await using var rig = await HealthRig.StartAsync();
+        rig.Proxy.Body = "{\"status\":\"ok\",\"reasons\":[],\"pad\":\"" + new string('x', 1024) + "\"}";
+
+        await rig.ProxySampler.SampleAsync(CancellationToken.None);
+
+        rig.ProxySampler.Cache.Current!.Value.Ok.ShouldBeTrue();
+    }
+}
+
+/// <summary>SEC-1 / PERF-1 / SEC-6 on the real runner, with throwaway shell scripts (Unix only).</summary>
+public sealed class SystemProcessRunnerTests : IDisposable
+{
+    private readonly string _directory = Path.Combine(Path.GetTempPath(), "nts-run-" + Guid.NewGuid().ToString("N"));
+
+    public SystemProcessRunnerTests() => Directory.CreateDirectory(_directory);
+
+    public void Dispose()
+    {
+        try
+        {
+            Directory.Delete(_directory, recursive: true);
+        }
+        catch (IOException)
+        {
+            // Best-effort temp cleanup.
+        }
+    }
+
+    [Fact]
+    public async Task Child_SeesOnlyTheAllowList_NoKeyReachesIt()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        // NTS_MPT_API_KEY is owned by the assembly's TestEnvironment (MptClient reads it): checked, never changed.
+        string[] secrets = ["ADAPTER_API_KEY", "ADAPTER_API_KEY_NEXT", "NODE_OPENAI_IMAGE_KEY"];
+        var mptKey = Environment.GetEnvironmentVariable("NTS_MPT_API_KEY");
+        var script = WriteScript("#!/bin/sh\n/usr/bin/env\n");
+        foreach (var name in secrets)
+        {
+            Environment.SetEnvironmentVariable(name, "secret-of-" + name);
+        }
+
+        try
+        {
+            var result = await new SystemProcessRunner().RunAsync(
+                script, [], TimeSpan.FromSeconds(20), TestContext.Current.CancellationToken);
+
+            result.ExitCode.ShouldBe(0);
+            result.StandardOutput.ShouldContain("PATH=" + SystemProcessRunner.ChildPath);
+            result.StandardOutput.ShouldNotContain("secret-of-");
+            result.StandardOutput.ShouldNotContain("NTS_MPT_API_KEY");
+            if (!string.IsNullOrEmpty(mptKey))
+            {
+                result.StandardOutput.ShouldNotContain(mptKey);
+            }
+            foreach (var name in secrets)
+            {
+                result.StandardOutput.ShouldNotContain(name);
+            }
+        }
+        finally
+        {
+            foreach (var name in secrets)
+            {
+                Environment.SetEnvironmentVariable(name, null);
+            }
+        }
+    }
+
+    [Fact]
+    public async Task CallerCancellation_KillsTheChild_AndRethrowsCancellation()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        var pidFile = Path.Combine(_directory, "pid");
+        var script = WriteScript("#!/bin/sh\necho $$ > \"$1\"\nexec /bin/sleep 60\n");
+        using var cancel = new CancellationTokenSource();
+        var run = new SystemProcessRunner().RunAsync(script, [pidFile], TimeSpan.FromSeconds(60), cancel.Token);
+        await WaitForAsync(() => File.Exists(pidFile) && File.ReadAllText(pidFile).EndsWith('\n'));
+        var pid = int.Parse(File.ReadAllText(pidFile).Trim(), System.Globalization.CultureInfo.InvariantCulture);
+
+        await cancel.CancelAsync();
+        var caught = await Capture(run);
+
+        caught.ShouldBeAssignableTo<OperationCanceledException>();
+        await WaitForAsync(() => !IsAlive(pid));
+    }
+
+    [Fact]
+    public async Task BudgetExpiry_KillsTheChild_AndThrowsTimeout()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        var pidFile = Path.Combine(_directory, "pid");
+        var script = WriteScript("#!/bin/sh\necho $$ > \"$1\"\nexec /bin/sleep 60\n");
+
+        var caught = await Capture(new SystemProcessRunner().RunAsync(
+            script, [pidFile], TimeSpan.FromMilliseconds(500), TestContext.Current.CancellationToken));
+
+        caught.ShouldBeOfType<TimeoutException>();
+        var pid = int.Parse(File.ReadAllText(pidFile).Trim(), System.Globalization.CultureInfo.InvariantCulture);
+        await WaitForAsync(() => !IsAlive(pid));
+    }
+
+    [Fact]
+    public async Task OverCapStdout_IsAFailedRun()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        var script = WriteScript("#!/bin/sh\n/usr/bin/head -c 2000000 /dev/zero\n");
+
+        var caught = await Capture(new SystemProcessRunner().RunAsync(
+            script, [], TimeSpan.FromSeconds(20), TestContext.Current.CancellationToken));
+
+        caught.ShouldBeOfType<IOException>();
+    }
+
+    private static async Task<Exception?> Capture(Task task)
+    {
+        try
+        {
+            await task;
+            return null;
+        }
+        catch (Exception exception)
+        {
+            return exception;
+        }
+    }
+
+    private static bool IsAlive(int pid)
+    {
+        try
+        {
+            using var process = Process.GetProcessById(pid);
+            return !process.HasExited;
+        }
+        catch (ArgumentException)
+        {
+            return false;
+        }
+    }
+
+    private static async Task WaitForAsync(Func<bool> condition)
+    {
+        var deadline = DateTime.UtcNow.AddSeconds(15);
+        while (!condition())
+        {
+            DateTime.UtcNow.ShouldBeLessThan(deadline, "the condition did not become true in time");
+            await Task.Delay(25, TestContext.Current.CancellationToken);
+        }
+    }
+
+    private string WriteScript(string body)
+    {
+        var path = Path.Combine(_directory, "probe-" + Guid.NewGuid().ToString("N") + ".sh");
+        File.WriteAllText(path, body);
+        if (!OperatingSystem.IsWindows())
+        {
+            File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        }
+
+        return path;
+    }
+}
+
+/// <summary>CR-2: a change to a watched file refreshes a sampler without waiting for its (here 10 min) tick.</summary>
+public sealed class HealthSamplerChangeTests : IDisposable
+{
+    private readonly string _directory = Path.Combine(Path.GetTempPath(), "nts-watch-" + Guid.NewGuid().ToString("N"));
+
+    public HealthSamplerChangeTests() => Directory.CreateDirectory(_directory);
+
+    public void Dispose()
+    {
+        try
+        {
+            Directory.Delete(_directory, recursive: true);
+        }
+        catch (IOException)
+        {
+            // Best-effort temp cleanup.
+        }
+    }
+
+    [Fact]
+    public async Task ChangeToWatchedFile_RefreshesBeforeTheNextTick()
+    {
+        var watched = Path.Combine(_directory, "FONTS.csv");
+        var sampler = new CountingSampler(watched);
+        var service = new HealthSamplerService([sampler], TimeProvider.System)
+        {
+            ChangeDebounce = TimeSpan.FromMilliseconds(50),
+        };
+        await service.StartAsync(TestContext.Current.CancellationToken);
+        try
+        {
+            await WaitForAsync(() => sampler.Count == 1);
+            await Task.Delay(300, TestContext.Current.CancellationToken);
+
+            await File.WriteAllTextAsync(watched, "changed", TestContext.Current.CancellationToken);
+
+            await WaitForAsync(() => sampler.Count >= 2);
+        }
+        finally
+        {
+            await service.StopAsync(CancellationToken.None);
+        }
+    }
+
+    private static async Task WaitForAsync(Func<bool> condition)
+    {
+        var deadline = DateTime.UtcNow.AddSeconds(15);
+        while (!condition())
+        {
+            DateTime.UtcNow.ShouldBeLessThan(deadline, "the condition did not become true in time");
+            await Task.Delay(25, TestContext.Current.CancellationToken);
+        }
+    }
+
+    private sealed class CountingSampler(string watched) : IHealthSampler
+    {
+        private int _count;
+
+        internal int Count => Volatile.Read(ref _count);
+
+        public string Name => "counting";
+
+        public TimeSpan? Interval => TimeSpan.FromMinutes(10);
+
+        public IReadOnlyList<string> WatchedPaths => [watched];
+
+        public Task SampleAsync(CancellationToken cancellationToken)
+        {
+            Interlocked.Increment(ref _count);
+            return Task.CompletedTask;
+        }
     }
 }

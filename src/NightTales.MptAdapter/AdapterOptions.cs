@@ -44,15 +44,29 @@ public sealed class AdapterOptions
         }
 
         // QA89-LB-01: MptClient resolves "api/v1/..." against this URI, so a path such as /foo would turn every
-        // MPT call into a 404. Only the root is a usable base; query and fragment are never meaningful either.
-        if (uri.AbsolutePath != "/" || uri.Query.Length > 0 || uri.Fragment.Length > 0)
+        // MPT call into a 404. Only the root is a usable base; query and fragment are never meaningful either,
+        // and user-info is refused outright: a credential in a URL can reach logs and config dumps, and the
+        // node's key is only ever NTS_MPT_API_KEY.
+        if (uri.AbsolutePath != "/" || uri.Query.Length > 0 || uri.Fragment.Length > 0 || uri.UserInfo.Length > 0)
         {
             throw new ArgumentException(
-                "Adapter:MptBaseUrl must be the MPT root: no path, query or fragment.");
+                "Adapter:MptBaseUrl must be the MPT root: no credentials, path, query or fragment.");
         }
 
         return uri;
     }
+
+    /// <summary>
+    /// The same loopback-IP-literal http rule as <see cref="ParseLoopbackMptBaseUrl"/>, without the root-path
+    /// rule, for URLs the node only ever calls on itself (<c>Adapter:ProxyHealthUrl</c>, QA-3). A URL with
+    /// user-info is refused.
+    /// </summary>
+    public static bool IsLoopbackHttpUrl(string? value) =>
+        Uri.TryCreate(value, UriKind.Absolute, out var uri)
+        && uri.Scheme == Uri.UriSchemeHttp
+        && uri.UserInfo.Length == 0
+        && IPAddress.TryParse(uri.Host.Trim('[', ']'), out var address)
+        && IPAddress.IsLoopback(address);
 
     /// <summary><c>Adapter:MptRoot</c>; <c>storage/tasks</c> under it is 05 D8's task-dir root.</summary>
     public string MptRoot { get; set; } = "/opt/nts/current/mpt";
@@ -117,8 +131,8 @@ public sealed class AdapterOptions
     /// <summary><c>Adapter:ProxyHealthUrl</c> (D6).</summary>
     public string ProxyHealthUrl { get; set; } = "http://127.0.0.1:8001/health";
 
-    /// <summary>The <c>nvidia-smi</c> binary, resolved through PATH by default.</summary>
-    public string NvidiaSmiPath { get; set; } = "nvidia-smi";
+    /// <summary>The <c>nvidia-smi</c> binary: a rooted path, never resolved through PATH (SEC-5).</summary>
+    public string NvidiaSmiPath { get; set; } = "/usr/bin/nvidia-smi";
 
     /// <summary>The rendered MPT config (D8 state dir).</summary>
     public string MptConfigPath { get; set; } = "/var/lib/nts/mpt/config.toml";

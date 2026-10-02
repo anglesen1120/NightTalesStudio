@@ -23,14 +23,20 @@ public static class StartupKeyChecks
     public const string KeyEqualsProxyKeyMessage = "ADAPTER_API_KEY must differ from NTS_PROXY_API_KEY (S3).";
     public const string KeyEqualsImageKeyMessage = "ADAPTER_API_KEY must differ from NODE_OPENAI_IMAGE_KEY (S3).";
     public const string KeyEqualsNextMessage = "ADAPTER_API_KEY must differ from ADAPTER_API_KEY_NEXT (S3).";
+    public const string NextEqualsMptKeyMessage = "ADAPTER_API_KEY_NEXT must differ from NTS_MPT_API_KEY (S3).";
+    public const string NextEqualsProxyKeyMessage = "ADAPTER_API_KEY_NEXT must differ from NTS_PROXY_API_KEY (S3).";
+    public const string NextEqualsImageKeyMessage = "ADAPTER_API_KEY_NEXT must differ from NODE_OPENAI_IMAGE_KEY (S3).";
     public const string DataDirMessage = "Adapter:DataDir is not writable.";
 
-    /// <summary>Env names a key may not equal (S3), with the fixed message of each.</summary>
-    private static readonly (string Variable, string Message)[] OtherKeys =
+    /// <summary>
+    /// Env names a key may not equal (S3), with the fixed message of the node key and of the rotation (NEXT)
+    /// key for each (T68: NEXT is a valid presented key, so it is held to the same distinctness).
+    /// </summary>
+    private static readonly (string Variable, string Message, string NextMessage)[] OtherKeys =
     [
-        ("NTS_MPT_API_KEY", KeyEqualsMptKeyMessage),
-        ("NTS_PROXY_API_KEY", KeyEqualsProxyKeyMessage),
-        ("NODE_OPENAI_IMAGE_KEY", KeyEqualsImageKeyMessage),
+        ("NTS_MPT_API_KEY", KeyEqualsMptKeyMessage, NextEqualsMptKeyMessage),
+        ("NTS_PROXY_API_KEY", KeyEqualsProxyKeyMessage, NextEqualsProxyKeyMessage),
+        ("NODE_OPENAI_IMAGE_KEY", KeyEqualsImageKeyMessage, NextEqualsImageKeyMessage),
     ];
 
     /// <summary>The first fatal message, or null when the adapter may start.</summary>
@@ -90,11 +96,21 @@ public static class StartupKeyChecks
             return KeyEqualsNextMessage;
         }
 
-        foreach (var (variable, message) in OtherKeys)
+        foreach (var (variable, message, nextMessage) in OtherKeys)
         {
-            if (Value(environment(variable), null) is { } other && SameSecret(key, other))
+            if (Value(environment(variable), null) is not { } other)
+            {
+                continue;
+            }
+
+            if (SameSecret(key, other))
             {
                 return message;
+            }
+
+            if (next is not null && SameSecret(next, other))
+            {
+                return nextMessage;
             }
         }
 

@@ -47,8 +47,10 @@ public sealed class AdapterOptionsValidator(IHostEnvironment environment) : IVal
         Require(failures, !string.IsNullOrWhiteSpace(options.VideoCodec), "Adapter:VideoCodec must be set.");
         Require(
             failures,
-            Uri.TryCreate(options.ProxyHealthUrl, UriKind.Absolute, out var proxy) && proxy.Scheme == Uri.UriSchemeHttp,
-            "Adapter:ProxyHealthUrl must be an absolute http URL.");
+            AdapterOptions.IsLoopbackHttpUrl(options.ProxyHealthUrl),
+            "Adapter:ProxyHealthUrl must be an absolute http URL whose host is a loopback IP address.");
+        Require(failures, Path.IsPathRooted(options.NvidiaSmiPath), "Adapter:NvidiaSmiPath must be an absolute path.");
+        Require(failures, Path.IsPathRooted(options.FfmpegPath), "Adapter:FfmpegPath must be an absolute path.");
 
         return failures.Count == 0 ? ValidateOptionsResult.Success : ValidateOptionsResult.Fail(failures);
     }

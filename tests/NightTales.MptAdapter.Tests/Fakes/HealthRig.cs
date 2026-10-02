@@ -23,7 +23,10 @@ internal sealed class FakeProcessRunner : IProcessRunner
     private readonly List<(string FileName, IReadOnlyList<string> Arguments)> _calls = [];
 
     internal const string MusicJson =
-        "{\"ok\": true, \"catalog_revision\": 3, \"music_missing\": [], \"unlicensed\": [], \"catalog_errors\": 0}";
+        "{\"ok\": true, \"catalog_revision\": 1, \"music_missing\": [], \"unlicensed\": [], \"catalog_errors\": 0}";
+
+    /// <summary>What <c>check-fonts.sh</c> prints for the one registered subtitle font (05.2.2-T1).</summary>
+    internal const string FontOutput = "hash ok BeVietnamPro-Bold.ttf\nglyphs ok BeVietnamPro-Bold.ttf\n";
 
     internal Func<string, IReadOnlyList<string>, ProcessResult> Script { get; set; } = Default;
 
@@ -63,7 +66,7 @@ internal sealed class FakeProcessRunner : IProcessRunner
 
         return fileName.EndsWith("check-music.sh", StringComparison.Ordinal)
             ? new ProcessResult(0, MusicJson + "\n")
-            : new ProcessResult(0, "hash ok\nglyphs ok\n");
+            : new ProcessResult(0, FontOutput);
     }
 }
 
@@ -198,7 +201,7 @@ internal sealed class HealthRig : IAsyncDisposable
         var disk = new FakeDiskStats();
         var bundle = new BundleInfo(Path.Combine(root, "bundle"), "3d5f4e4");
 
-        var mptSampler = new MptSampler(client, startReader, wrapped, clock, factory.CreateLogger<MptSampler>());
+        var mptSampler = new MptSampler(client, startReader, clock, factory.CreateLogger<MptSampler>());
         var proxySampler = new ProxySampler(new HttpClient(proxy), wrapped, clock, factory.CreateLogger<ProxySampler>());
         var diskSampler = new DiskSampler(disk, wrapped, clock, factory.CreateLogger<DiskSampler>());
         var gpuSampler = new GpuSampler(runner, wrapped, clock, factory.CreateLogger<GpuSampler>());

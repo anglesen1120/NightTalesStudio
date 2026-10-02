@@ -1,6 +1,8 @@
 using System.Net;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Hosting.Server;
+using Microsoft.AspNetCore.Hosting.Server.Features;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -29,7 +31,10 @@ internal static class AdapterHost
     /// is only ever built by <see cref="MptHttpClient.Create"/> (redirects off, D6): no other construction path
     /// exists in this assembly, and the proxy probe uses the same factory.
     /// </summary>
-    internal static IServiceCollection AddMptAdapter(this IServiceCollection services, IConfiguration configuration)
+    internal static IServiceCollection AddMptAdapter(
+        this IServiceCollection services,
+        IConfiguration configuration,
+        Func<string, string?>? environment = null)
     {
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(configuration);
@@ -39,6 +44,7 @@ internal static class AdapterHost
             .ValidateOnStart();
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IValidateOptions<AdapterOptions>, AdapterOptionsValidator>());
         services.AddRenderNodeServer(configuration);
+        services.AddServerKeyEnvDefaults(environment ?? Environment.GetEnvironmentVariable);
 
         services.TryAddSingleton(TimeProvider.System);
         services.AddSingleton<IMptProcessStartReader, MptProcessStartReader>();
@@ -101,8 +107,42 @@ internal static class AdapterHost
         return services;
     }
 
+    /// <summary>
+    /// The D6 env names the server core's keys fall back to when the <c>RenderNodeServer</c> section has no
+    /// value: the same fallbacks <see cref="StartupKeyChecks"/> accepts, so the middleware authenticates with
+    /// exactly the key the startup checks validated (CR-1). An explicit section value wins.
+    /// </summary>
+    internal static IServiceCollection AddServerKeyEnvDefaults(
+        this IServiceCollection services,
+        Func<string, string?> environment)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(environment);
+
+        services.PostConfigure<RenderNodeServerOptions>(options =>
+        {
+            if (string.IsNullOrEmpty(options.ApiKey) && environment("ADAPTER_API_KEY") is { Length: > 0 } key)
+            {
+                options.ApiKey = key;
+            }
+
+            if (string.IsNullOrEmpty(options.ApiKeyNext) && environment("ADAPTER_API_KEY_NEXT") is { Length: > 0 } next)
+            {
+                options.ApiKeyNext = next;
+            }
+        });
+        return services;
+    }
+
+    /// <summary>The fixed prefix of the exit-2 line for an invalid configuration (QA-2); keys only, never values.</summary>
+    internal const string InvalidConfigurationMessage = "Invalid configuration: ";
+
+    /// <summary>Fixed text when Kestrel would bind anything beyond the one guarded address (SEC-4).</summary>
+    internal const string ExtraEndpointMessage =
+        "The adapter listens only on Adapter:ListenAddress:Port; ASPNETCORE_URLS and Kestrel endpoint settings are not supported.";
+
     /// <summary>The process entry: exit 2 on a fatal startup check, 0 after a clean stop.</summary>
-    internal static async Task<int> RunAsync(string[] args)
+    internal static async Task<int> RunAsync(string[] args, CancellationToken stopping = default)
     {
         var builder = WebApplication.CreateBuilder(args);
         builder.Services.AddMptAdapter(builder.Configuration);
@@ -122,29 +162,75 @@ internal static class AdapterHost
         var adapter = new AdapterOptions();
         builder.Configuration.GetSection(AdapterOptions.SectionName).Bind(adapter);
         var address = TlsPrivateAddressGuard.Parse(adapter.ListenAddress);
+
+        // SEC-4: the guarded endpoint is the only one. Config-declared Kestrel endpoints are refused up front,
+        // hosting URLs (ASPNETCORE_URLS, --urls) are cleared, and the bound addresses are asserted after start.
+        if (builder.Configuration.GetSection("Kestrel:Endpoints").Exists())
+        {
+            await Console.Error.WriteLineAsync(ExtraEndpointMessage).ConfigureAwait(false);
+            return StartupKeyChecks.ExitCode;
+        }
+
+        builder.WebHost.UseUrls();
+        builder.WebHost.PreferHostingUrls(false);
         builder.WebHost.ConfigureKestrel(kestrel => kestrel.Listen(
             address,
             adapter.Port,
             listen => listen.UseHttps(certificate.Certificate)));
 
-        await using var app = builder.Build();
-        var log = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("NightTales.MptAdapter.Host");
-        TlsValidator.LogFingerprint(log, certificate);
-        log.Listening(adapter.ListenAddress, adapter.Port);
-        if (!bool.TryParse(app.Configuration[RelayEnabledKey], out var relayEnabled) || relayEnabled)
+        try
         {
-            log.RelayHostMissing();
+            await using var app = builder.Build();
+            var log = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("NightTales.MptAdapter.Host");
+            TlsValidator.LogFingerprint(log, certificate);
+            log.Listening(adapter.ListenAddress, adapter.Port);
+            if (!bool.TryParse(app.Configuration[RelayEnabledKey], out var relayEnabled) || relayEnabled)
+            {
+                log.RelayHostMissing();
+            }
+            else
+            {
+                log.RelayDisabled();
+            }
+
+            await app.Services.GetRequiredService<SqliteTaskStore>().MigrateAsync(CancellationToken.None).ConfigureAwait(false);
+
+            app.UseRenderNodeServer();
+            app.MapRenderNodeV1();
+            await app.StartAsync(stopping).ConfigureAwait(false);
+
+            if (!OnlyGuardedAddress(app.Services.GetRequiredService<IServer>(), address, adapter.Port))
+            {
+                await app.StopAsync(CancellationToken.None).ConfigureAwait(false);
+                await Console.Error.WriteLineAsync(ExtraEndpointMessage).ConfigureAwait(false);
+                return StartupKeyChecks.ExitCode;
+            }
+
+            await app.WaitForShutdownAsync(stopping).ConfigureAwait(false);
+            return 0;
         }
-        else
+        catch (OptionsValidationException exception)
         {
-            log.RelayDisabled();
+            // The failures name the setting and never its value (the validators' contract), so they are safe to print.
+            await Console.Error.WriteLineAsync(
+                InvalidConfigurationMessage + string.Join(" ", exception.Failures)).ConfigureAwait(false);
+            return StartupKeyChecks.ExitCode;
+        }
+    }
+
+    /// <summary>True when the server's bound addresses are exactly the one https listener.</summary>
+    internal static bool OnlyGuardedAddress(IServer server, IPAddress address, int port)
+    {
+        var addresses = server.Features.Get<IServerAddressesFeature>()?.Addresses;
+        if (addresses is null || addresses.Count != 1)
+        {
+            return false;
         }
 
-        await app.Services.GetRequiredService<SqliteTaskStore>().MigrateAsync(CancellationToken.None).ConfigureAwait(false);
-
-        app.UseRenderNodeServer();
-        app.MapRenderNodeV1();
-        await app.RunAsync().ConfigureAwait(false);
-        return 0;
+        return Uri.TryCreate(addresses.First(), UriKind.Absolute, out var bound)
+            && bound.Scheme == Uri.UriSchemeHttps
+            && bound.Port == port
+            && IPAddress.TryParse(bound.Host.Trim('[', ']'), out var host)
+            && host.Equals(address);
     }
 }
