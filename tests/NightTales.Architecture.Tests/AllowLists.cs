@@ -14,13 +14,15 @@ internal static class AllowLists
     /// (11 README F13/D13): the pinned-TLS render-node connection factory, plus the pre-existing
     /// breached-password range checker inside the Identity registration. Every other transport goes
     /// through an <c>IHttpClientFactory</c> or through the factory, so a node client cannot be created
-    /// without the pin/redirect/timeout rules (11.3.3-T1 step 9).
+    /// without the pin/redirect/timeout rules (11.3.3-T1 step 9). The <c>tools/mock-mpt</c> entry is the
+    /// dev-only mock's <c>--healthcheck</c> loopback self-probe (11.1.2-T1), not a render-node client.
     /// </summary>
     internal static readonly IReadOnlySet<string> HttpClientProducerTypeNames =
         new HashSet<string>(StringComparer.Ordinal)
         {
             "NightTales.Infrastructure.Rendering.RenderNodeConnectionFactory",
             "NightTales.Infrastructure.DependencyInjection.IdentityServiceCollectionExtensions",
+            "NightTales.MockMpt.Health.MockHealthCheck",
         };
 
 

@@ -43,6 +43,7 @@ namespace NightTales.Api.IntegrationTests.Jobs;
 /// really renders — the same <c>meta</c> tags hangfire.js echoes back — so it proves the dashboard's own
 /// antiforgery wiring end to end and not a bypass of it.
 /// </remarks>
+[Collection("Process-global host state")]
 public sealed class JobsDashboardTests(TestDatabase database) : IntegrationTest(database)
 {
     private const string DashboardPath = "/internal/jobs/";
@@ -737,25 +738,12 @@ public sealed class JobsDashboardTests(TestDatabase database) : IntegrationTest(
 
         await first.DisposeAsync();
 
-        // Hangfire resolves its logger from the process-static provider, and its own
-        // AutomaticRetryAttribute does it in the instance constructor: a disposed factory left
-        // installed here would make the next host's first scheduled job fail (F-LOG). A bounded retry
-        // keeps the assertion honest while parallel test classes install their own providers.
-        var observed = false;
-
-        for (var attempt = 0; attempt < 20 && !observed; attempt++)
-        {
-            HangfireLogProvider.GetLogger("nts.jobs.logger.probe")
-                .Log(Hangfire.Logging.LogLevel.Warn, () => "probe", null);
-            observed = sink.Lines.Any(line => line.StartsWith("nts.jobs.logger.probe", StringComparison.Ordinal));
-
-            if (!observed)
-            {
-                await Task.Delay(50, Ct);
-            }
-        }
-
-        observed.ShouldBeTrue(
+        // Hangfire's provider is process-static. This collection excludes concurrent hosts, so the
+        // probe observes the sibling disposal itself rather than racing unrelated registrations.
+        HangfireLogProvider.GetLogger("nts.jobs.logger.probe")
+            .Log(Hangfire.Logging.LogLevel.Warn, () => "probe", null);
+        sink.Lines.ShouldContain(
+            line => line.StartsWith("nts.jobs.logger.probe", StringComparison.Ordinal),
             "the live host keeps its Hangfire logger after a sibling host is disposed");
     }
 

@@ -21,14 +21,11 @@ namespace NightTales.Api.IntegrationTests.Rendering;
 /// unknown node, 2 bad usage — including <c>set-state &lt;name&gt; down</c>, which is health's decision.
 /// </summary>
 [Trait("Category", "Integration")]
+[Collection("Process-global host state")]
 public sealed class NodesCommandTests(TestDatabase database) : IntegrationTest(database)
 {
     private static readonly DateTimeOffset Start = new(2026, 6, 1, 8, 0, 0, TimeSpan.Zero);
     private const string Pin = "0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF";
-
-    // Console is process-global: the redirection is serialised across this class's tests so a capture never
-    // races another test's output.
-    private static readonly SemaphoreSlim ConsoleGate = new(1, 1);
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
@@ -253,8 +250,6 @@ public sealed class NodesCommandTests(TestDatabase database) : IntegrationTest(d
         IServiceProvider services,
         params string[] args)
     {
-        await ConsoleGate.WaitAsync(Ct);
-
         var originalOut = Console.Out;
         var originalError = Console.Error;
         var output = new StringWriter(CultureInfo.InvariantCulture);
@@ -273,7 +268,6 @@ public sealed class NodesCommandTests(TestDatabase database) : IntegrationTest(d
         {
             Console.SetOut(originalOut);
             Console.SetError(originalError);
-            ConsoleGate.Release();
         }
     }
 
