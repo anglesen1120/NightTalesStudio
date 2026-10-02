@@ -35,6 +35,7 @@ public sealed class ApiFactory(TestDatabase database, FakeClock clock) : WebAppl
     public const string PublicOrigin = "https://api.nighttales.test";
 
     private readonly List<Action<IEndpointRouteBuilder>> _endpointMappings = [];
+    private readonly List<Action<IServiceCollection>> _serviceOverrides = [];
     private readonly List<KeyValuePair<string, string?>> _settings = [];
     private readonly List<ILoggerProvider> _logProviders = [];
 
@@ -148,6 +149,25 @@ public sealed class ApiFactory(TestDatabase database, FakeClock clock) : WebAppl
         return client;
     }
 
+    /// <summary>
+    /// Replaces or adds services on top of the production composition root (09 README D13: hand-written
+    /// fakes, no mocking library), exactly like <c>WorkerHost.ConfigureServices</c> does for the Worker.
+    /// </summary>
+    /// <remarks>
+    /// The action runs after the host's own registrations, so the documented pattern is
+    /// <c>services.RemoveAll&lt;T&gt;(); services.AddScoped&lt;T, Fake&gt;();</c> — the same one
+    /// <c>EmailHarness</c> uses for <c>ISmtpEmailSender</c>. A test that needs a port to answer
+    /// deterministically (a TOTP verifier, a security alerter) adds it here before the host starts.
+    /// </remarks>
+    /// <param name="configure">The service-collection action to apply.</param>
+    public ApiFactory WithServices(Action<IServiceCollection> configure)
+    {
+        ArgumentNullException.ThrowIfNull(configure);
+        _serviceOverrides.Add(configure);
+
+        return this;
+    }
+
     /// <summary>A client without the test headers: the host sees it as anonymous.</summary>
     public HttpClient AnonymousClient() => CreateClient();
 
@@ -246,6 +266,11 @@ public sealed class ApiFactory(TestDatabase database, FakeClock clock) : WebAppl
 
             services.RemoveAll<IClock>();
             services.AddSingleton<IClock>(clock);
+
+            foreach (var override1 in _serviceOverrides)
+            {
+                override1(services);
+            }
 
             services.AddAuthentication(TestAuthHandler.SchemeName)
                 .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>(

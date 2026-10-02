@@ -145,6 +145,18 @@ internal static class SeedPrevious
                     'password_changed', 'vi',
                     '9f2c1b0a7d6e5f40312a9b8c7d6e5f40312a9b8c7d6e5f40312a9b8c7d6e5f40', 'sent', 1, now(), now())
             """),
+        (
+            // 09.3.2-T3: the table the `_09_AuthChallenges` migration creates. Same rule as above: skipped
+            // while that migration is the last one, then every later migration is exercised over a live
+            // challenge row (both secrets stored hashed, as the store writes them).
+            "auth_challenges",
+            """
+            INSERT INTO auth_challenges (id, user_id, token_hash, preauth_cookie_hash, user_agent, ip, attempts,
+                                         expires_at, used_at)
+            VALUES ('01920000-0000-7000-8000-00000000000c', '01920000-0000-7000-8000-000000000001',
+                    'seed-mfa-token-hash', 'seed-preauth-cookie-hash', 'seed-agent', '203.0.113.9', 0,
+                    now() + interval '5 minutes', NULL)
+            """),
     ];
 
     /// <summary>The tables the dataset covers, in insert order — the contract a feature migration extends.</summary>

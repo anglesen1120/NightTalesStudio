@@ -72,6 +72,12 @@ public static class SecurityServiceCollectionExtensions
         services.AddScoped<IReauthService, EfReauthService>();
         services.AddSingleton<IMfaGuessWindow, InMemoryMfaGuessWindow>();
 
+        // 09.3.2-T3 (BD1/BD4): the challenge store of POST /auth/login, the owner of auth_challenges. It is
+        // the single implementation of IMfaChallengeService — there is no interim PendingMfaChallengeService
+        // in any commit ([RULED — README §B10 WT39]) — and it is scoped because it shares the scope's
+        // AppDbContext and its transaction with the login flow that calls it.
+        services.AddScoped<IMfaChallengeService, EfMfaChallengeService>();
+
         return services;
     }
 
@@ -138,6 +144,18 @@ public static class SecurityServiceCollectionExtensions
             .Validate(
                 options => options.Mfa.StepSeconds > 0,
                 $"'{MfaOptions.SectionName}:Mfa:StepSeconds' must be greater than zero (RFC 6238).")
+            .Validate(
+                // BD4 fixes the challenge at five minutes; a deployment may tighten it, never widen it, and
+                // the pre-auth cookie's Max-Age follows this value.
+                options => options.Mfa.ChallengeMinutes > 0
+                    && options.Mfa.ChallengeLifetime <= MfaOptions.ChallengeCeiling,
+                $"'{MfaOptions.SectionName}:Mfa:ChallengeMinutes' must be in (0, "
+                + $"{MfaOptions.ChallengeCeiling.TotalMinutes}] (BD4).")
+            .Validate(
+                // The auth_challenges CHECK ends at 5, so a wider ceiling could not be stored: the attempt
+                // that revokes the challenge must be reachable.
+                options => options.Mfa.MaxAttempts == MfaOptions.ChallengeAttemptCeiling,
+                $"'{MfaOptions.SectionName}:Mfa:MaxAttempts' must be {MfaOptions.ChallengeAttemptCeiling} (BD4).")
             .Validate(
                 // BD4 fixes the window at five minutes: a deployment may tighten it, never widen it.
                 options => options.Reauth.WindowMinutes > 0
