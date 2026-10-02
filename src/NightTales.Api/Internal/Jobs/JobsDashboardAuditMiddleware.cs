@@ -246,16 +246,16 @@ public sealed partial class JobsDashboardAuditMiddleware(
     /// </remarks>
     private async Task AuditCommandAsync(HttpContext context, JobsDashboardSession session, bool unhandled)
     {
-        var (command, ids, total, truncated) = Describe(context);
-
-        // A branch that threw never produced this status: the exception handler outside this middleware
-        // answers 500, and the row says what the operator's command really met.
-        var status = unhandled ? StatusCodes.Status500InternalServerError : context.Response.StatusCode;
-
         using var timeout = new CancellationTokenSource(CommandAuditTimeout);
 
         try
         {
+            var (command, ids, total, truncated) = Describe(context);
+
+            // A branch that threw never produced this status: the exception handler outside this
+            // middleware answers 500, and the row says what the operator's command really met.
+            var status = unhandled ? StatusCodes.Status500InternalServerError : context.Response.StatusCode;
+
             await WriteAsync(
                 context,
                 session,
