@@ -25,8 +25,9 @@ internal sealed class FakeProcessRunner : IProcessRunner
     internal const string MusicJson =
         "{\"ok\": true, \"catalog_revision\": 1, \"music_missing\": [], \"unlicensed\": [], \"catalog_errors\": 0}";
 
-    /// <summary>What <c>check-fonts.sh</c> prints for the one registered subtitle font (05.2.2-T1).</summary>
-    internal const string FontOutput = "hash ok BeVietnamPro-Bold.ttf\nglyphs ok BeVietnamPro-Bold.ttf\n";
+    /// <summary>What <c>check-fonts.sh</c> prints for the one registered subtitle font (font_glyph_check.py: the
+    /// register hash line names the file, the glyph line is a count).</summary>
+    internal const string FontOutput = "hash ok BeVietnamPro-Bold.ttf\nglyphs ok 64/64\n";
 
     internal Func<string, IReadOnlyList<string>, ProcessResult> Script { get; set; } = Default;
 

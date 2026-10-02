@@ -77,8 +77,16 @@ internal sealed class SystemProcessRunner : IProcessRunner
         var stderr = process.StandardError.BaseStream.CopyToAsync(Stream.Null, limit.Token);
         try
         {
-            // The cap is enforced while reading, so an over-cap child is killed by the finally below.
-            await Task.WhenAll(stdout, stderr).ConfigureAwait(false);
+            // The first reader to fault (over-cap stdout) surfaces at once, so the finally below kills the tree
+            // without waiting for the other pipe to close; a child can hold stderr open for its whole budget.
+            List<Task> pending = [stdout, stderr];
+            while (pending.Count > 0)
+            {
+                var done = await Task.WhenAny(pending).ConfigureAwait(false);
+                await done.ConfigureAwait(false);
+                pending.Remove(done);
+            }
+
             await process.WaitForExitAsync(limit.Token).ConfigureAwait(false);
             return new ProcessResult(process.ExitCode, Encoding.UTF8.GetString(await stdout.ConfigureAwait(false)));
         }
@@ -99,6 +107,18 @@ internal sealed class SystemProcessRunner : IProcessRunner
                 {
                     // It exited between the check and the kill.
                 }
+            }
+
+            // The tree is gone: stop the readers and observe their outcome so nothing is left unobserved.
+            await limit.CancelAsync().ConfigureAwait(false);
+            try
+            {
+                await Task.WhenAll(stdout, stderr).ConfigureAwait(false);
+            }
+            catch (Exception exception) when (exception is OperationCanceledException or IOException or ObjectDisposedException
+                or InvalidOperationException)
+            {
+                // The original outcome (result or the exception in flight) is what the caller sees.
             }
         }
     }

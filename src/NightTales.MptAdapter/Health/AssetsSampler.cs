@@ -62,7 +62,8 @@ internal sealed class AssetsSampler(
             var music = await RunAsync(Path.Combine(bin, "check-music.sh"), [.. args, "--json"], timeout, cancellationToken)
                 .ConfigureAwait(false);
 
-            // check-fonts.sh: exit 0 = every registered font ok; its "glyphs ok <file>" line names the checked font.
+            // check-fonts.sh -> font_glyph_check.py: exit 0 = every registered font ok; its "hash ok <file>"
+            // line names the checked font ("glyphs ok n/n" is a count, not the name).
             var fontName = font is { ExitCode: 0 } ? ParseFontName(font.StandardOutput) : null;
             var fontOk = fontName is not null;
 
@@ -103,15 +104,20 @@ internal sealed class AssetsSampler(
         }
     }
 
-    /// <summary>The file named by the first <c>glyphs ok &lt;file&gt;</c> line; null when the check printed none.</summary>
+    /// <summary>The file named by the <c>hash ok &lt;file&gt;</c> line (<c>hash skip</c> when the font is not in the
+    /// register); null when the check printed neither. <c>glyphs ok n/n</c> is a glyph count, never the name.</summary>
     private static string? ParseFontName(string output)
     {
-        const string Prefix = "glyphs ok ";
-        foreach (var raw in output.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        foreach (var prefix in new[] { "hash ok ", "hash skip " })
         {
-            if (raw.StartsWith(Prefix, StringComparison.Ordinal) && raw[Prefix.Length..].Trim() is { Length: > 0 } name)
+            foreach (var raw in output.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
             {
-                return name;
+                // "hash skip <file> (not in <register>)": the name is the first token after the prefix.
+                if (raw.StartsWith(prefix, StringComparison.Ordinal)
+                    && raw[prefix.Length..].Trim().Split(' ', 2)[0] is { Length: > 0 } name)
+                {
+                    return name;
+                }
             }
         }
 
@@ -135,7 +141,8 @@ internal sealed class AssetsSampler(
             using var document = JsonDocument.Parse(line);
             var root = document.RootElement;
             var ok = root.TryGetProperty("ok", out var okElement) && okElement.ValueKind == JsonValueKind.True;
-            int? revision = root.TryGetProperty("catalog_revision", out var rev) && rev.TryGetInt32(out var number)
+            int? revision = root.TryGetProperty("catalog_revision", out var rev)
+                && rev.ValueKind == JsonValueKind.Number && rev.TryGetInt32(out var number)
                 ? number
                 : null;
             var missing = root.TryGetProperty("music_missing", out var list) && list.ValueKind == JsonValueKind.Array

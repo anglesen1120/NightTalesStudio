@@ -13,8 +13,11 @@ namespace NightTales.MptAdapter.Health;
 internal sealed class HealthSamplerService(IEnumerable<IHealthSampler> samplers, TimeProvider clock)
     : BackgroundService
 {
-    /// <summary>A burst of file events (a copy writes several) is one refresh after this quiet period.</summary>
+    /// <summary>The quiet period a burst of file events must reach before one refresh runs.</summary>
     internal TimeSpan ChangeDebounce { get; init; } = TimeSpan.FromSeconds(2);
+
+    /// <summary>A stream of events that never goes quiet still refreshes after this many quiet periods.</summary>
+    private const int MaxDebounceRounds = 10;
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -28,9 +31,9 @@ internal sealed class HealthSamplerService(IEnumerable<IHealthSampler> samplers,
         // queues one more refresh instead of being dropped, and the sampler never runs twice at once.
         using var gate = new SemaphoreSlim(1, 1);
 
-        await SampleOnceAsync(sampler, gate, stoppingToken).ConfigureAwait(false);
         using var watchers = new WatcherSet(sampler.WatchedPaths);
-        var changes = watchers.Count > 0 ? WatchChangesAsync(sampler, gate, watchers, stoppingToken) : Task.CompletedTask;
+        await SampleOnceAsync(sampler, gate, stoppingToken).ConfigureAwait(false);
+        var changes = watchers.Enabled ? WatchChangesAsync(sampler, gate, watchers, stoppingToken) : Task.CompletedTask;
 
         if (sampler.Interval is not { } interval)
         {
@@ -43,6 +46,8 @@ internal sealed class HealthSamplerService(IEnumerable<IHealthSampler> samplers,
         {
             while (await timer.WaitForNextTickAsync(stoppingToken).ConfigureAwait(false))
             {
+                // A directory that did not exist (or was replaced) since the last arming is picked up here at the latest.
+                watchers.Arm();
                 await SampleOnceAsync(sampler, gate, stoppingToken).ConfigureAwait(false);
             }
         }
@@ -61,12 +66,25 @@ internal sealed class HealthSamplerService(IEnumerable<IHealthSampler> samplers,
         {
             while (await watchers.Changes.WaitToReadAsync(stoppingToken).ConfigureAwait(false))
             {
-                await Task.Delay(ChangeDebounce, clock, stoppingToken).ConfigureAwait(false);
-                while (watchers.Changes.TryRead(out _))
+                // Debounce: wait until a whole quiet period passes without a new event (bounded).
+                for (var round = 0; round < MaxDebounceRounds; round++)
                 {
-                    // Events that arrived during the quiet period belong to this refresh.
+                    await Task.Delay(ChangeDebounce, clock, stoppingToken).ConfigureAwait(false);
+                    var more = false;
+                    while (watchers.Changes.TryRead(out _))
+                    {
+                        more = true;
+                    }
+
+                    if (!more)
+                    {
+                        break;
+                    }
                 }
 
+                // Re-arm before sampling: a directory created or replaced by this change gets its watcher, and
+                // anything that lands between the arming and the sample is covered by that sample.
+                watchers.Arm();
                 await SampleOnceAsync(sampler, gate, stoppingToken).ConfigureAwait(false);
             }
         }
@@ -102,50 +120,80 @@ internal sealed class HealthSamplerService(IEnumerable<IHealthSampler> samplers,
     }
 
     /// <summary>
-    /// One <see cref="FileSystemWatcher"/> per existing directory of the watched paths (a file is watched through
-    /// its directory), all feeding one coalescing channel. A directory that does not exist yet is skipped: the
-    /// periodic tick still covers it.
+    /// <see cref="FileSystemWatcher"/>s over the watched paths, all feeding one coalescing channel. For each path the
+    /// directory that holds it is watched together with that directory's parent (so a deleted and recreated
+    /// directory is seen); when the directory does not exist yet, the nearest existing ancestor is watched instead,
+    /// and <see cref="Arm"/> moves the watchers down as the missing levels appear. Events are filtered to the ones
+    /// that concern a watched path, so a busy sibling does not cause refreshes.
     /// </summary>
     private sealed class WatcherSet : IDisposable
     {
-        private readonly List<FileSystemWatcher> _watchers = [];
+        private readonly string[] _paths;
+        private readonly object _gate = new();
         private readonly Channel<bool> _changes =
             Channel.CreateBounded<bool>(new BoundedChannelOptions(1) { FullMode = BoundedChannelFullMode.DropWrite });
+        private List<FileSystemWatcher> _watchers = [];
+        private bool _disposed;
 
         public WatcherSet(IReadOnlyList<string> paths)
         {
-            foreach (var directory in paths.Select(DirectoryOf).Where(Directory.Exists).Distinct(StringComparer.Ordinal))
-            {
-                try
-                {
-                    var watcher = new FileSystemWatcher(directory)
-                    {
-                        NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite | NotifyFilters.Size,
-                        IncludeSubdirectories = false,
-                    };
-                    watcher.Changed += OnEvent;
-                    watcher.Created += OnEvent;
-                    watcher.Deleted += OnEvent;
-                    watcher.Renamed += OnEvent;
-                    watcher.Error += (_, _) => _changes.Writer.TryWrite(true);
-                    watcher.EnableRaisingEvents = true;
-                    _watchers.Add(watcher);
-                }
-                catch (Exception exception) when (exception is IOException or UnauthorizedAccessException
-                    or ArgumentException or PlatformNotSupportedException)
-                {
-                    // The periodic tick still covers a directory that cannot be watched.
-                }
-            }
+            _paths = [.. paths.Select(Path.GetFullPath)];
+            Arm();
         }
 
-        public int Count => _watchers.Count;
+        /// <summary>True when the sampler names paths to watch at all.</summary>
+        public bool Enabled => _paths.Length > 0;
 
         public ChannelReader<bool> Changes => _changes.Reader;
 
+        /// <summary>Rebuilds every watcher from what exists now (stale ones, on a replaced directory, are dropped).</summary>
+        public void Arm()
+        {
+            if (_paths.Length == 0)
+            {
+                return;
+            }
+
+            var fresh = new List<FileSystemWatcher>();
+            foreach (var directory in DesiredDirectories())
+            {
+                if (TryWatch(directory) is { } watcher)
+                {
+                    fresh.Add(watcher);
+                }
+            }
+
+            List<FileSystemWatcher> old;
+            lock (_gate)
+            {
+                if (_disposed)
+                {
+                    old = fresh;
+                }
+                else
+                {
+                    old = _watchers;
+                    _watchers = fresh;
+                }
+            }
+
+            foreach (var watcher in old)
+            {
+                watcher.Dispose();
+            }
+        }
+
         public void Dispose()
         {
-            foreach (var watcher in _watchers)
+            List<FileSystemWatcher> old;
+            lock (_gate)
+            {
+                _disposed = true;
+                old = _watchers;
+                _watchers = [];
+            }
+
+            foreach (var watcher in old)
             {
                 watcher.Dispose();
             }
@@ -153,9 +201,90 @@ internal sealed class HealthSamplerService(IEnumerable<IHealthSampler> samplers,
             _changes.Writer.TryComplete();
         }
 
-        private static string DirectoryOf(string path) =>
-            Directory.Exists(path) ? path : Path.GetDirectoryName(path) ?? path;
+        private HashSet<string> DesiredDirectories()
+        {
+            var directories = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var path in _paths)
+            {
+                var directory = Directory.Exists(path) ? path : Path.GetDirectoryName(path);
+                while (directory is not null && !Directory.Exists(directory))
+                {
+                    directory = Path.GetDirectoryName(directory);
+                }
 
-        private void OnEvent(object? sender, FileSystemEventArgs args) => _changes.Writer.TryWrite(true);
+                if (directory is null)
+                {
+                    continue;
+                }
+
+                directories.Add(directory);
+                if (Path.GetDirectoryName(directory) is { } parent && Directory.Exists(parent)
+                    && (Directory.Exists(path) || Path.GetDirectoryName(path) == directory))
+                {
+                    directories.Add(parent);
+                }
+            }
+
+            return directories;
+        }
+
+        private FileSystemWatcher? TryWatch(string directory)
+        {
+            try
+            {
+                var watcher = new FileSystemWatcher(directory)
+                {
+                    NotifyFilter = NotifyFilters.FileName | NotifyFilters.DirectoryName | NotifyFilters.LastWrite
+                        | NotifyFilters.Size,
+                    IncludeSubdirectories = false,
+                };
+                watcher.Changed += OnEvent;
+                watcher.Created += OnEvent;
+                watcher.Deleted += OnEvent;
+                watcher.Renamed += OnRenamed;
+                watcher.Error += (_, _) => _changes.Writer.TryWrite(true);
+                watcher.EnableRaisingEvents = true;
+                return watcher;
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException
+                or ArgumentException or PlatformNotSupportedException)
+            {
+                // The periodic tick still covers a directory that cannot be watched.
+                return null;
+            }
+        }
+
+        private void OnEvent(object? sender, FileSystemEventArgs args) => Notify(args.FullPath);
+
+        private void OnRenamed(object? sender, RenamedEventArgs args)
+        {
+            Notify(args.OldFullPath);
+            Notify(args.FullPath);
+        }
+
+        private void Notify(string fullPath)
+        {
+            if (Concerns(fullPath))
+            {
+                _changes.Writer.TryWrite(true);
+            }
+        }
+
+        /// <summary>The event's path is a watched path, inside one (a directory), or one of its ancestors.</summary>
+        private bool Concerns(string fullPath)
+        {
+            var separator = Path.DirectorySeparatorChar;
+            foreach (var path in _paths)
+            {
+                if (path == fullPath
+                    || path.StartsWith(fullPath + separator, StringComparison.Ordinal)
+                    || fullPath.StartsWith(path + separator, StringComparison.Ordinal))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
     }
 }

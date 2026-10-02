@@ -457,6 +457,22 @@ public sealed class AssetsJobTests
     }
 
     [Fact]
+    public async Task MusicJson_WithNullRevision_IsFailedHealth_WithoutAnException()
+    {
+        await using var rig = await HealthRig.StartAsync();
+        // check-music.sh prints "catalog_revision": null when the catalog is unreadable (exit 1).
+        rig.Runner.Script = (name, args) => name.EndsWith("check-music.sh", StringComparison.Ordinal)
+            ? new ProcessResult(1, "{\"ok\": false, \"catalog_revision\": null, \"music_missing\": [], \"unlicensed\": [\"x.mp3\"], \"catalog_errors\": 0}")
+            : new ProcessResult(0, FakeProcessRunner.FontOutput);
+        await rig.SampleAllAsync();
+
+        var health = await rig.Source.GetAsync(CancellationToken.None);
+
+        health.Assets.Ok.ShouldBeFalse();
+        health.Assets.MusicRevision.ShouldBeNull();
+    }
+
+    [Fact]
     public async Task CheckedAt_Added_NoScriptRerun()
     {
         await using var rig = await HealthRig.StartAsync();
@@ -722,6 +738,27 @@ public sealed class SystemProcessRunnerTests : IDisposable
         caught.ShouldBeOfType<IOException>();
     }
 
+    [Fact]
+    public async Task OverCapStdout_WithStderrHeldOpen_FailsFastAndLeavesNoChild()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        var pidFile = Path.Combine(_directory, "pid");
+        var script = WriteScript("#!/bin/sh\necho $$ > \"$1\"\n/usr/bin/head -c 2000000 /dev/zero\nexec /bin/sleep 60\n");
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+
+        var caught = await Capture(new SystemProcessRunner().RunAsync(
+            script, [pidFile], TimeSpan.FromSeconds(30), TestContext.Current.CancellationToken));
+
+        caught.ShouldBeOfType<IOException>();
+        clock.Elapsed.ShouldBeLessThan(TimeSpan.FromSeconds(5));
+        var pid = int.Parse(File.ReadAllText(pidFile).Trim(), System.Globalization.CultureInfo.InvariantCulture);
+        await WaitForAsync(() => !IsAlive(pid));
+    }
+
     private static async Task<Exception?> Capture(Task task)
     {
         try
@@ -808,6 +845,68 @@ public sealed class HealthSamplerChangeTests : IDisposable
             await File.WriteAllTextAsync(watched, "changed", TestContext.Current.CancellationToken);
 
             await WaitForAsync(() => sampler.Count >= 2);
+        }
+        finally
+        {
+            await service.StopAsync(CancellationToken.None);
+        }
+    }
+
+    [Fact]
+    public async Task BurstOfWrites_WithinTheDebounce_IsOneExtraSample()
+    {
+        var watched = Path.Combine(_directory, "FONTS.csv");
+        var sampler = new CountingSampler(watched);
+        var service = new HealthSamplerService([sampler], TimeProvider.System)
+        {
+            ChangeDebounce = TimeSpan.FromMilliseconds(600),
+        };
+        await service.StartAsync(TestContext.Current.CancellationToken);
+        try
+        {
+            await WaitForAsync(() => sampler.Count == 1);
+            await Task.Delay(300, TestContext.Current.CancellationToken);
+
+            for (var i = 0; i < 5; i++)
+            {
+                await File.WriteAllTextAsync(watched, "v" + i, TestContext.Current.CancellationToken);
+                await Task.Delay(40, TestContext.Current.CancellationToken);
+            }
+
+            await WaitForAsync(() => sampler.Count >= 2);
+            await Task.Delay(1500, TestContext.Current.CancellationToken);
+
+            sampler.Count.ShouldBe(2);
+        }
+        finally
+        {
+            await service.StopAsync(CancellationToken.None);
+        }
+    }
+
+    [Fact]
+    public async Task WatchedFileUnderADirectoryCreatedAfterStart_StillRefreshes()
+    {
+        var watched = Path.Combine(_directory, "later", "deeper", "music-tracks.v1.json");
+        var sampler = new CountingSampler(watched);
+        var service = new HealthSamplerService([sampler], TimeProvider.System)
+        {
+            ChangeDebounce = TimeSpan.FromMilliseconds(50),
+        };
+        await service.StartAsync(TestContext.Current.CancellationToken);
+        try
+        {
+            await WaitForAsync(() => sampler.Count == 1);
+            await Task.Delay(300, TestContext.Current.CancellationToken);
+
+            Directory.CreateDirectory(Path.GetDirectoryName(watched)!);
+            await WaitForAsync(() => sampler.Count >= 2);
+            await Task.Delay(300, TestContext.Current.CancellationToken);
+
+            // The re-armed watcher now sees the file itself.
+            var before = sampler.Count;
+            await File.WriteAllTextAsync(watched, "x", TestContext.Current.CancellationToken);
+            await WaitForAsync(() => sampler.Count > before);
         }
         finally
         {
