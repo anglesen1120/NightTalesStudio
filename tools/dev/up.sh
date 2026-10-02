@@ -100,6 +100,16 @@ row() {
   printf '%s' "$fallback"
 }
 
+# optional_env KEY: the .env value, or nothing when the row is absent; a malformed value is a usage
+# error (exit 2). Unlike row() it never consults .env.example, so a dev-only default cannot silently
+# override a value that must stay paired with another row (RENDER_NODE_MOCK_API_KEY vs MOCK_API_KEY).
+optional_env() {
+  local key="$1" value rc=0
+  value="$(env_value "$env_file" "$key")" || rc=$?
+  [ "$rc" -ne 2 ] || die 2 "malformed value for $key in $env_file"
+  printf '%s' "$value"
+}
+
 # owned_running NAME: prints the pid and returns 0 only when the pid file names a live process whose
 # command line matches that service AND whose stored instance identity still matches (lib.sh's
 # nts_pid_owned). Anything else - missing, dead, or a pid recycled by an unrelated process - is not
@@ -191,6 +201,11 @@ dev_mail_ui_port="$(row DEV_MAIL_UI_PORT 8025)"
 health_timeout="$(row DEV_HEALTH_TIMEOUT 90)"
 dev_kek_pass="$(row DEV_KEK_PASSWORD change-me-local-dp-kek)"
 mock_api_key="$(row MOCK_API_KEY dev-mock-api-key-local-0123456789)"
+# The Worker sends RENDER_NODE_<NAME>_API_KEY; the mock accepts MOCK_API_KEY (D13/F26). .env may set
+# the node key explicitly (a rotation, or a key that differs from the mock's own); when it does not,
+# the pair stays equal by construction, so editing MOCK_API_KEY alone never desynchronises the two.
+render_node_mock_api_key="$(optional_env RENDER_NODE_MOCK_API_KEY)"
+[ -n "$render_node_mock_api_key" ] || render_node_mock_api_key="$mock_api_key"
 mock_fixture="$(row MOCK_FIXTURE '')"
 mock_render_seconds="$(row MOCK_RENDER_SECONDS 20)"
 mock_video_seconds="$(row MOCK_VIDEO_SECONDS 10)"
@@ -226,6 +241,14 @@ require_port DEV_STORAGE_VOLUME_PORT "$dev_storage_volume_port"
 require_port DEV_MAIL_SMTP_PORT "$dev_mail_smtp_port"
 require_port DEV_MAIL_UI_PORT "$dev_mail_ui_port"
 require_port SMTP_PORT "$smtp_port"
+
+# MOCK_MAX_CONCURRENT is both the node's capacity and the mock's own limit (D14, 11.1.2-T1), so it must
+# be a number in the render-node range: 1-8, the bound the DB CHECK and WorkerNode.CapacityMax enforce.
+case "$mock_max_concurrent" in
+  ''|*[!0-9]*) die 2 "MOCK_MAX_CONCURRENT must be a number of concurrent renders" ;;
+esac
+[ "$mock_max_concurrent" -ge 1 ] && [ "$mock_max_concurrent" -le 8 ] \
+  || die 2 "MOCK_MAX_CONCURRENT must be between 1 and 8 (found: $mock_max_concurrent)"
 
 # A value that must survive a dotenv round trip (native env and the compose env_file) may not carry
 # whitespace, a double quote or a dollar sign.
@@ -485,11 +508,12 @@ worker_environment() {
   export DataProtection__KekPfxPassword="$dev_kek_pass"
   storage_mail_environment
   if [ "$mock_present" -eq 1 ]; then
-    # D13: the node tuple the Worker's registry binds; the key is RENDER_NODE_<NAME>_API_KEY (F26).
-    export RENDER_NODE_MOCK_API_KEY="${mock_api_key}"
+    # D13: the node tuple the Worker's registry binds; the key is RENDER_NODE_<NAME>_API_KEY (F26). The
+    # values reach the child through the environment only, never argv, so the key stays out of `ps` (01 D9).
+    export RENDER_NODE_MOCK_API_KEY="$render_node_mock_api_key"
     export RenderNodes__Nodes__0__Name="mock"
     export RenderNodes__Nodes__0__BaseUrl="http://127.0.0.1:$dev_mock_port"
-    export RenderNodes__Nodes__0__Capacity="${mock_max_concurrent}"
+    export RenderNodes__Nodes__0__Capacity="$mock_max_concurrent"
   fi
 }
 

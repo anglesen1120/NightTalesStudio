@@ -9,12 +9,17 @@ using Xunit;
 
 namespace NightTales.Api.IntegrationTests.Flags;
 
+/// <summary>Console redirection and Hangfire's global logger must not overlap other test hosts.</summary>
+[CollectionDefinition("Process-global host state", DisableParallelization = true)]
+public sealed class ProcessGlobalHostState;
+
 /// <summary>
 /// QA-FL-2 of 09.9.2-T2 (09 README BD16, 09.9.2 plan §6): a <c>flags</c> invocation may not print a stack
 /// trace or a connection detail, whichever part of the process fails. The verb's own stderr line is
 /// already typed; these cover the two paths around it — the host logger a verb host would otherwise
 /// inherit, and a verb host the process cannot create at all.
 /// </summary>
+[Collection("Process-global host state")]
 public sealed partial class FeatureFlagCliHostTests
 {
     /// <summary>

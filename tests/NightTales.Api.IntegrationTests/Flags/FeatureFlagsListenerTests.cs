@@ -42,6 +42,26 @@ public sealed class FeatureFlagsListenerTests(TestDatabase database) : Integrati
         (await listener.WaitAsync(TimeSpan.FromSeconds(10), Ct)).ShouldBe("youtube_publish");
     }
 
+    [Fact]
+    public async Task Listener_does_not_receive_a_previous_sessions_unread_notice()
+    {
+        var connectionString = WithApplicationName("nts-qa-flags-reused-" + Guid.CreateVersion7().ToString("N"));
+        await using (var previous = new NpgsqlConnection(connectionString))
+        {
+            await previous.OpenAsync(Ct);
+            await using var command = previous.CreateCommand();
+            command.CommandText = "LISTEN " + FeatureFlagsCache.ChangedChannel;
+            await command.ExecuteNonQueryAsync(Ct);
+            await Database.ExecuteAsync(
+                $"SELECT pg_notify('{FeatureFlagsCache.ChangedChannel}', 'youtube_publish')", Ct);
+        }
+
+        await using var listener = new PgFeatureFlagsListener(connectionString);
+        await listener.ConnectAsync(Ct);
+        (await listener.WaitAsync(TimeSpan.FromMilliseconds(250), Ct)).ShouldBeNull(
+            "a new listener must not inherit the previous session's unread notification");
+    }
+
     /// <summary>A batch already in the read buffer is drained without waiting a heartbeat per payload.</summary>
     [Fact]
     public async Task Listener_drains_a_committed_burst()

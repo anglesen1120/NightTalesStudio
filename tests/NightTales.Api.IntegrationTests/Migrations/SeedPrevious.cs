@@ -157,6 +157,18 @@ internal static class SeedPrevious
                     'seed-mfa-token-hash', 'seed-preauth-cookie-hash', 'seed-agent', '203.0.113.9', 0,
                     now() + interval '5 minutes', NULL)
             """),
+        (
+            // 11.3.3-T1: the table the `_11_WorkerNodes` migration creates. Same rule as above: skipped
+            // while that migration is the last one, then every later migration is exercised over a
+            // registered node (an `https` row with a pin, the shape the seeder writes outside Development).
+            "worker_nodes",
+            """
+            INSERT INTO worker_nodes (id, name, base_url, capacity, state, last_heartbeat_at, gpu_model,
+                                      tls_cert_sha256, created_at, updated_at)
+            VALUES ('01920000-0000-7000-8000-00000000000d', 'seed-node', 'https://node.example:8443', 2,
+                    'active', now(), 'RTX 4090',
+                    '0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF', now(), now())
+            """),
     ];
 
     /// <summary>The tables the dataset covers, in insert order — the contract a feature migration extends.</summary>

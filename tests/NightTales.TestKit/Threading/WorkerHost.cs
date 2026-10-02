@@ -232,6 +232,11 @@ public sealed class WorkerHost(TestDatabase database, FakeClock clock) : IAsyncD
         // drives.
         WorkerComposition.WithoutOutboxDispatcherLoop(builder.Services);
 
+        // 11.3.3-T1 (11 README D13): the health poller's 30-second loop runs a tick immediately at start,
+        // which would defeat the FakeClock the state-machine tests drive. The poller singleton stays, so a
+        // test resolves it and calls `PollOnceAsync`/`TickAsync` itself.
+        WorkerComposition.WithoutNodeHealthPoller(builder.Services);
+
         // The host's filter chain, with the observer first: it must be the last IJobFilterProvider
         // registration (AddJobs registers the platform chain), so Hangfire's client and server both
         // see the observer plus the platform filters.
