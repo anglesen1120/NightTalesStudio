@@ -44,9 +44,9 @@ Plans 06, 07, 08, 12: not started. Plan 10: approved HTML design handoff and ref
 | B Storage follow-on | 13.3.1-T1 not started; storage (#84, #94) merged | Owner plans the next wave | T3 | Migration |
 | E E-mail | 09.3.3-T1 merged with develop (`b50b988`), migration `20261002190707`; QA + T3 + merge-delta review closed, full gate green | PR open; owner merges | T3 | Migration slot 1 of 2 |
 | F Seeders/checkers | 05.3.2-T3 not started (04.2.2-T2 / 05.5.1-T2 merged) | Free migration slot, then AddMusicTracks task | T3 | Migration |
-| Fill a free slot | #92 feature flags merged | /me (flags merged); OTLP (storage + registry merged); 02.2.2-T1 / 02.2.4-T1 await migration slots | T3 | Money tasks have migrations |
+| Fill a free slot | #92 feature flags merged | /me (flags merged); OTLP (storage + registry merged); 02.2.4-T1 awaits a migration slot (02.2.2-T1 now in lane A) | T3 | Money tasks have migrations |
 
-**Progress (2026-10-03):** start-now set (#72–#83) and next-lane PRs (#84–#94) merged; `develop` @ `6de35c6`. Remaining Session 2 work: password reset delivery, 13.3.1-T1, /me, OTLP and the migration fillers. Finished lane rows and the Open-task rows of merged PRs are archived.
+**Progress (2026-10-03):** start-now set (#72–#83) and next-lane PRs (#84–#94, docs #97) merged; `develop` @ `fb7a59e`. Lane A (owner 2026-10-03): 09.3.3-T1 PR open, 02.2.2-T1 draft PR next; then 02.2.4-T1, 05.3.2-T3, 13.3.1-T1. Free-slot: /me, OTLP. Finished lane rows and the Open-task rows of merged PRs are archived.
 
 **Not in Session 2:** `09.6.2-T1` needs `05.1.2-T1`, which needs `02.3.2-T1` and `03.2.1-T1` (not built) → session 3 or later.
 
@@ -65,7 +65,7 @@ Plans 06, 07, 08, 12: not started. Plan 10: approved HTML design handoff and ref
 |---|---|---|
 | 09.3.3-T1 Password reset | doing (PR open; merged develop b50b988, migration 20261002190707) | Last-migration Down ownership moved to `UserActionTokensMigrationTests`; `SeedPrevious` has a `user_action_tokens` row. Merge-delta review: 0 code findings, SEC-1 low doc-comment fixed, SEC-2 info (seed hash = sha256("password"), test-only) accepted |
 | 05.3.2-T3 Music metadata | blocked (migration queue) | Not started; at most 2 migration tasks waiting |
-| 02.2.2-T1 M1 domain migration | blocked (migration queue) | Not started |
+| 02.2.2-T1 M1 domain migration | doing (lane A, draft PR after this one) | Regenerates its migration after `20261002190707` once this PR merges |
 | 02.2.4-T1 M1 cost persistence | blocked (migration queue) | Not started |
 | 13.3.1-T1 Deletion engine | todo (storage merged) | Lane B next |
 | 09.3.4-T1 /me | todo (flags merged) | Free-slot next |
