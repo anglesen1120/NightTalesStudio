@@ -1,18 +1,25 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Net.Http.Headers;
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using ErrorOr;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Npgsql;
+using NightTales.Api.IntegrationTests.Auth;
 using NightTales.Api.IntegrationTests.Harness;
 using NightTales.Application.Abstractions.Persistence;
+using NightTales.Application.Abstractions.Security;
 using NightTales.Application.Abstractions.Storage;
 using NightTales.Application.Common.Errors;
 using NightTales.Domain.Episodes;
+using NightTales.Domain.Common;
 using NightTales.Infrastructure.Persistence;
 using NightTales.Infrastructure.Persistence.UnitOfWork;
+using NightTales.Infrastructure.Security;
 using NightTales.Infrastructure.Storage;
 using NightTales.TestKit;
 using NightTales.TestKit.Api;
@@ -74,6 +81,42 @@ public sealed class VideoUrlTests(TestDatabase database) : IntegrationTest(datab
         request.Bucket.ShouldBe("nt-media-dev");
         request.Key.ShouldBe(await ReadStorageKeyAsync(userId, assetId));
         request.Ttl.ShouldBe(TimeSpan.FromMinutes(15));
+    }
+
+    [Fact]
+    public async Task VideoUrl_RealBearer_EnrolmentIsHidden_WhileSessionAndAnonymousKeepTheirContracts()
+    {
+        var userId = await CreateUserAsync();
+        var (episodeId, _, store) = await SeedEpisodeWithVideoAsync(userId, title: "Private video");
+        using var factory = Host(store).ConfigureServices(services =>
+            services.Configure<AuthenticationOptions>(options =>
+            {
+                options.DefaultScheme = JwtBearerDefaults.AuthenticationScheme;
+                options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+                options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+            }));
+        using var scope = factory.Services.CreateScope();
+        var issuer = scope.ServiceProvider.GetRequiredService<ITokenIssuer>();
+        await using var db = Database.CreateAppDbContext(new TestCurrentUser { Id = userId });
+        var user = await db.Users.SingleAsync(row => row.Id == userId, Ct);
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
+            "Bearer", issuer.IssueEnrolmentToken(user, DateTimeOffset.UtcNow).Token);
+        using var enrolment = await client.GetAsync(VideoUrl(episodeId), Ct);
+        enrolment.StatusCode.ShouldBe(HttpStatusCode.NotFound);
+        (await AuthTestFlow.ProblemCodeAsync(enrolment)).ShouldBe(ErrorCodes.NotFound);
+        store.ReadUrlRequests.ShouldBeEmpty();
+
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
+            "Bearer", issuer.IssueAccessToken(user, Guid.CreateVersion7(), AuthMethod.Pwd, DateTimeOffset.UtcNow).Token);
+        using var session = await client.GetAsync(VideoUrl(episodeId), Ct);
+        session.StatusCode.ShouldBe(HttpStatusCode.OK, await session.Content.ReadAsStringAsync(Ct));
+        store.ReadUrlRequests.ShouldHaveSingleItem();
+
+        client.DefaultRequestHeaders.Authorization = null;
+        using var anonymous = await client.GetAsync(VideoUrl(episodeId), Ct);
+        anonymous.StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
+        (await AuthTestFlow.ProblemCodeAsync(anonymous)).ShouldBe(ErrorCodes.Unauthorized);
     }
 
     [Fact]

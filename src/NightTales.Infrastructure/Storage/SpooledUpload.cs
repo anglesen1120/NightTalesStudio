@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.Security.Cryptography;
 
 namespace NightTales.Infrastructure.Storage;
@@ -18,8 +19,8 @@ namespace NightTales.Infrastructure.Storage;
 /// </para>
 /// <para>
 /// The file lives under a private directory: <c>$NTS_HOME/tmp/blob-store</c> when <c>NTS_HOME</c> is
-/// set (01 CR-11 / DEC-5, mode 700) and the OS temp directory otherwise (a container has no
-/// <c>NTS_HOME</c>); the directory and the file are created owner-only on POSIX.
+/// set (01 CR-11 / DEC-5, mode 700), otherwise under <c>.nts/tmp/blob-store</c> in the current runtime
+/// directory; the directory and the file are created owner-only on POSIX.
 /// </para>
 /// </remarks>
 public sealed class SpooledUpload : IAsyncDisposable
@@ -56,16 +57,16 @@ public sealed class SpooledUpload : IAsyncDisposable
 
         var path = Path.Combine(UploadDirectory(), $"upload-{Guid.CreateVersion7():N}.tmp");
         var stream = Open(path);
+        var buffer = ArrayPool<byte>.Shared.Rent(BufferSize);
 
         try
         {
             using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
-            var buffer = new byte[BufferSize];
             long total = 0;
 
             while (true)
             {
-                var read = await source.ReadAsync(buffer, cancellationToken).ConfigureAwait(false);
+                var read = await source.ReadAsync(buffer.AsMemory(0, BufferSize), cancellationToken).ConfigureAwait(false);
 
                 if (read == 0)
                 {
@@ -84,15 +85,26 @@ public sealed class SpooledUpload : IAsyncDisposable
                 stream,
                 path,
                 total,
-                Convert.ToHexString(hash.GetHashAndReset()).ToLowerInvariant());
+                Convert.ToHexStringLower(hash.GetHashAndReset()));
         }
         catch
         {
             // Cancellation or a read/write failure: drop the partial file before the exception escapes.
-            await stream.DisposeAsync().ConfigureAwait(false);
-            TryDelete(path);
+            try
+            {
+                await stream.DisposeAsync().ConfigureAwait(false);
+            }
+            finally
+            {
+                TryDelete(path);
+            }
 
             throw;
+        }
+        finally
+        {
+            // Clear private media before returning the bounded buffer to other uploads.
+            ArrayPool<byte>.Shared.Return(buffer, clearArray: true);
         }
     }
 
@@ -129,7 +141,7 @@ public sealed class SpooledUpload : IAsyncDisposable
     {
         var home = Environment.GetEnvironmentVariable("NTS_HOME");
         var directory = string.IsNullOrWhiteSpace(home)
-            ? Path.Combine(Path.GetTempPath(), "nts-blob-store")
+            ? Path.Combine(Directory.GetCurrentDirectory(), ".nts", "tmp", "blob-store")
             : Path.Combine(home, "tmp", "blob-store");
 
         if (OperatingSystem.IsWindows())
@@ -152,7 +164,7 @@ public sealed class SpooledUpload : IAsyncDisposable
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {
-            // A leftover temp file is not a storage failure; the OS temp reaper owns it.
+            // DeleteOnClose remains the primary cleanup if an explicit delete is temporarily refused.
         }
     }
 }

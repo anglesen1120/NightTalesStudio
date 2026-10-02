@@ -63,6 +63,37 @@ public sealed class S3BlobStoreTests
     }
 
     [Fact]
+    public async Task PutAsync_SeekableOffset_StoresAndHashesOnlyTheSuffix()
+    {
+        var store = await StoreAsync();
+        var key = KeyFor("offset");
+        var content = Payload("prefix-suffix");
+        const int offset = 7;
+        var ct = TestContext.Current.CancellationToken;
+        await using var source = new MemoryStream(content);
+        source.Position = offset;
+        try
+        {
+            var info = await store.PutAsync(MarkerBucket, key, source, "video/mp4", ct);
+            info.IsError.ShouldBeFalse(info.FirstError.ToString());
+            info.Value.Bytes.ShouldBe(content.Length - offset);
+            info.Value.Sha256.ShouldBe(Convert.ToHexString(SHA256.HashData(content.AsSpan(offset))).ToLowerInvariant());
+            source.CanRead.ShouldBeTrue();
+            var read = await store.OpenReadAsync(MarkerBucket, key, ct);
+            read.IsError.ShouldBeFalse(read.FirstError.ToString());
+            read.Value.Length.ShouldBe(content.Length - offset);
+            await using var body = read.Value.Content;
+            using var received = new MemoryStream();
+            await body.CopyToAsync(received, ct);
+            received.ToArray().ShouldBe(content[offset..]);
+        }
+        finally
+        {
+            await store.DeleteAsync(MarkerBucket, key, ct);
+        }
+    }
+
+    [Fact]
     public async Task OpenReadAsync_RoundTripsContentAndType()
     {
         var store = await StoreAsync();
@@ -515,12 +546,35 @@ public sealed class S3BlobStoreTests
         await store.DeleteAsync(MarkerBucket, key, ct);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task PutAsync_NonSeekableReadFailure_AnswersServiceUnavailableAndKeepsCallerOpen(bool denied)
+    {
+        var settings = new StorageSettings
+        {
+            ServiceUrl = StorageTestEndpoint.Unreachable,
+            AccessKey = "test",
+            SecretKey = "test",
+        };
+        using var clients = new S3ClientFactory(Options.Create(settings));
+        var store = new S3BlobStore(clients, new StorageMetrics(), NullLogger<S3BlobStore>.Instance);
+        Exception failure = denied ? new UnauthorizedAccessException("private detail") : new IOException("private detail");
+        await using var source = new NonSeekableStream("partial body"u8.ToArray(), failure);
+        var result = await store.PutAsync(MarkerBucket, KeyFor("io"), source, "video/mp4", TestContext.Current.CancellationToken);
+        result.IsError.ShouldBeTrue();
+        result.FirstError.Code.ShouldBe(ErrorCodes.ServiceUnavailable);
+        result.FirstError.Description.ShouldBe(S3BlobStore.UnavailableDescription);
+        source.CanRead.ShouldBeTrue();
+        source.ReadByte().ShouldBe(-1);
+    }
+
     /// <summary>A read-only stream that cannot seek, like the render pipeline's upload body.</summary>
-    private sealed class NonSeekableStream(byte[] content) : Stream
+    private sealed class NonSeekableStream(byte[] content, Exception? readFailure = null) : Stream
     {
         private readonly MemoryStream _inner = new(content, writable: false);
 
-        public override bool CanRead => true;
+        public override bool CanRead => _inner.CanRead;
         public override bool CanSeek => false;
         public override bool CanWrite => false;
         public override long Length => throw new NotSupportedException();
@@ -535,8 +589,15 @@ public sealed class S3BlobStoreTests
 
         public override int Read(Span<byte> buffer) => _inner.Read(buffer);
 
-        public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default) =>
-            _inner.ReadAsync(buffer, cancellationToken);
+        public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            if (readFailure is not null && _inner.Position > 0)
+            {
+                throw readFailure;
+            }
+
+            return _inner.ReadAsync(buffer, cancellationToken);
+        }
 
         public override void Flush()
         {
@@ -547,6 +608,16 @@ public sealed class S3BlobStoreTests
         public override void SetLength(long value) => throw new NotSupportedException();
 
         public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                _inner.Dispose();
+            }
+
+            base.Dispose(disposing);
+        }
     }
 
     /// <summary>

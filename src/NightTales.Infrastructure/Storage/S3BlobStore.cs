@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.Globalization;
 using System.Net;
 using System.Runtime.CompilerServices;
@@ -96,11 +97,11 @@ public sealed partial class S3BlobStore : IBlobStore
                 var hashed = await HashAsync(content, hash, cancellationToken).ConfigureAwait(false);
                 content.Position = start;
 
-                await PutObjectAsync(bucket, key, content, contentType, cancellationToken).ConfigureAwait(false);
+                await PutObjectAsync(bucket, key, content, hashed, contentType, cancellationToken).ConfigureAwait(false);
 
                 _metrics.Operation(StorageMetrics.PutOperation, StorageMetrics.OkOutcome);
 
-                return new BlobInfo(hashed, Convert.ToHexString(hash.GetHashAndReset()).ToLowerInvariant());
+                return new BlobInfo(hashed, Convert.ToHexStringLower(hash.GetHashAndReset()));
             }
 
             // A non-seekable body has an unknown length, and AWSSDK.S3 4.x requires a known length to
@@ -112,7 +113,7 @@ public sealed partial class S3BlobStore : IBlobStore
             // length without holding the payload in memory; the source stream stays the caller's.
             await using var spool = await SpooledUpload.CreateAsync(content, cancellationToken).ConfigureAwait(false);
 
-            await PutObjectAsync(bucket, key, spool.Stream, contentType, cancellationToken).ConfigureAwait(false);
+            await PutObjectAsync(bucket, key, spool.Stream, spool.Bytes, contentType, cancellationToken).ConfigureAwait(false);
 
             _metrics.Operation(StorageMetrics.PutOperation, StorageMetrics.OkOutcome);
 
@@ -356,6 +357,7 @@ public sealed partial class S3BlobStore : IBlobStore
         string bucket,
         string key,
         Stream body,
+        long bytes,
         string contentType,
         CancellationToken cancellationToken) =>
         _client.PutObjectAsync(
@@ -365,6 +367,9 @@ public sealed partial class S3BlobStore : IBlobStore
                 Key = key,
                 InputStream = body,
                 ContentType = contentType,
+                Headers = { ContentLength = bytes },
+                // Preserve the suffix hashed by PutAsync instead of rewinding to the stream's beginning.
+                AutoResetStreamPosition = false,
 
                 // A plain PUT, never aws-chunked. When UseChunkEncoding is left at its default (true)
                 // AWSSDK.S3 wraps a signed payload in a chunked stream that sends
@@ -410,20 +415,26 @@ public sealed partial class S3BlobStore : IBlobStore
 
     private static async Task<long> HashAsync(Stream content, IncrementalHash hash, CancellationToken cancellationToken)
     {
-        var buffer = new byte[81_920];
-        long total = 0;
-
-        while (true)
+        var buffer = ArrayPool<byte>.Shared.Rent(81_920);
+        try
         {
-            var read = await content.ReadAsync(buffer, cancellationToken).ConfigureAwait(false);
-
-            if (read == 0)
+            long total = 0;
+            while (true)
             {
-                return total;
-            }
+                var read = await content.ReadAsync(buffer.AsMemory(0, 81_920), cancellationToken).ConfigureAwait(false);
+                if (read == 0)
+                {
+                    return total;
+                }
 
-            hash.AppendData(buffer, 0, read);
-            total += read;
+                hash.AppendData(buffer, 0, read);
+                total += read;
+            }
+        }
+        finally
+        {
+            // Private media must not remain in the shared pool after this upload.
+            ArrayPool<byte>.Shared.Return(buffer, clearArray: true);
         }
     }
 
@@ -445,14 +456,15 @@ public sealed partial class S3BlobStore : IBlobStore
     }
 
     /// <summary>
-    /// The failure surface of the SDK: a service error, an SDK client error (retries exhausted), a
-    /// transport error that escaped the retry policy, or a timeout. A cancellation the caller asked for
-    /// is never one of them.
+    /// The SDK and upload-spool failure surface: service/client/transport errors, local I/O or access
+    /// errors, and timeouts. A cancellation the caller asked for is never one of them.
     /// </summary>
     private static bool IsStorageFailure(Exception exception) =>
         exception is AmazonS3Exception
             or AmazonClientException
             or HttpRequestException
+            or IOException
+            or UnauthorizedAccessException
             or TimeoutException
             or OperationCanceledException;
 
