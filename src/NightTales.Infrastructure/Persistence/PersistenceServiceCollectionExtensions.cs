@@ -9,6 +9,7 @@ using NightTales.Application.Abstractions.Audit;
 using NightTales.Application.Abstractions.Idempotency;
 using NightTales.Application.Abstractions.Outbox;
 using NightTales.Application.Abstractions.Persistence;
+using NightTales.Application.Abstractions.Realtime;
 using NightTales.Application.Audit;
 using NightTales.Domain.Common;
 using NightTales.Infrastructure.DependencyInjection;
@@ -18,6 +19,7 @@ using NightTales.Infrastructure.Persistence.Outbox;
 using NightTales.Infrastructure.Persistence.Queries;
 using NightTales.Infrastructure.Persistence.Seeding;
 using NightTales.Infrastructure.Persistence.UnitOfWork;
+using NightTales.Infrastructure.Realtime;
 using NightTales.Infrastructure.Time;
 
 namespace NightTales.Infrastructure.Persistence;
@@ -140,6 +142,13 @@ public static class PersistenceServiceCollectionExtensions
 
         // 09.2.4-T1: the processed-row sweep of the outbox, driven by the Worker's daily recurring job.
         services.AddScoped<IOutboxCleanupStore, OutboxCleanupStore>();
+
+        // 09.8.1-T2: the `hub_tickets` table of 09 README BD11. It belongs here, with the other stores,
+        // because every host that composes persistence needs it — the Api's issue command inserts and the
+        // Worker's HubTicketCleanupJob (scanned by AddJobs) sweeps — including a harness that builds the
+        // Worker graph without the real-time producer half. Its TTL, retention and batch size are the
+        // `Realtime` section bound by AddRealtime, which both production hosts call.
+        services.AddScoped<IHubTicketStore, NpgsqlHubTicketStore>();
 
         // 09.2.5-T1: the catalog seeders and the Development auto-seed are part of the persistence
         // layer, so every host that calls AddPersistence (Api, Worker, the test harness) gets them.

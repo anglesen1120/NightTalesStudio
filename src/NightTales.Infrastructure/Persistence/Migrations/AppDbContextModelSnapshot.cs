@@ -1563,6 +1563,41 @@ namespace NightTales.Infrastructure.Persistence.Migrations
                     b.ToTable("outbox_messages", (string)null);
                 });
 
+            modelBuilder.Entity("NightTales.Infrastructure.Realtime.HubTicket", b =>
+                {
+                    b.Property<string>("TicketHash")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("ticket_hash");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("created_at");
+
+                    b.Property<DateTimeOffset>("ExpiresAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("expires_at");
+
+                    b.Property<DateTimeOffset?>("UsedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("used_at");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("TicketHash")
+                        .HasName("pk_hub_tickets");
+
+                    b.HasIndex("ExpiresAt")
+                        .HasDatabaseName("ix_hub_tickets_expires_at");
+
+                    b.HasIndex("UserId")
+                        .HasDatabaseName("ix_hub_tickets_user_id");
+
+                    b.ToTable("hub_tickets", (string)null);
+                });
+
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRoleClaim<System.Guid>", b =>
                 {
                     b.HasOne("NightTales.Infrastructure.Persistence.AppRole", null)
@@ -1844,6 +1879,16 @@ namespace NightTales.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_idempotency_keys_asp_net_users_user_id");
+                });
+
+            modelBuilder.Entity("NightTales.Infrastructure.Realtime.HubTicket", b =>
+                {
+                    b.HasOne("NightTales.Infrastructure.Persistence.AppUser", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_hub_tickets_asp_net_users_user_id");
                 });
 #pragma warning restore 612, 618
         }
