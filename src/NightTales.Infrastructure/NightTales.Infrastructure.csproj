@@ -22,6 +22,8 @@
     <PackageReference Include="Hangfire.Core" />
     <PackageReference Include="Hangfire.NetCore" />
     <PackageReference Include="Hangfire.PostgreSql" />
+    <!-- 09.2.6-T3 (09 README W2-O4): the SMTP client behind `ISmtpEmailSender`. -->
+    <PackageReference Include="MailKit" />
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" />
     <!-- 09.9.4-T1 (09 README W1/WF15): the key ring's PostgreSQL store over AppDbContext. -->
     <PackageReference Include="Microsoft.AspNetCore.DataProtection.EntityFrameworkCore" />
@@ -39,5 +41,28 @@
   <ItemGroup>
     <EmbeddedResource Include="Identity/Resources/breached-passwords.txt"
                       LogicalName="NightTales.Infrastructure.Identity.Resources.breached-passwords.txt" />
+  </ItemGroup>
+
+  <!--
+    09.2.6-T3 (09 README BD9): the `Templates/Email/<name>.<locale>.{txt,html}` pairs of every catalog
+    template, copied into the output (the same mechanism the `seed/` catalogs of 09.2.5-T1 use), so a
+    published image carries them and `EmailTemplateProvider` reads them from `AppContext.BaseDirectory`.
+    `Content` items of this project flow transitively to every referencing host and test project.
+  -->
+  <ItemGroup>
+    <Content Include="Email/Templates/Email/*.txt;Email/Templates/Email/*.html" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <!--
+    02.2.3-T1 (02 README D5, F22): the whole `prompts/` tree is embedded, so a deployment cannot ship
+    without its prompts and `PromptCatalog` never reads a file. `LinkBase="Prompts"` makes every logical
+    name `NightTales.Infrastructure.Prompts.<path with '/' replaced by '.'>`; the catalog resolves a
+    manifest key by matching that dotted suffix, so the prefix is not a hash input.
+    The tree is outside this project directory, and the SDK's default `None`/`Compile`/`EmbeddedResource`
+    globs are project-relative, so nothing is added twice — there is no `None Remove` to write here.
+    `prompts/manifest.json` hashes the raw bytes, which is why `.gitattributes` pins the tree to LF.
+  -->
+  <ItemGroup>
+    <EmbeddedResource Include="../../prompts/**" LinkBase="Prompts" />
   </ItemGroup>
 </Project>

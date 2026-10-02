@@ -9,9 +9,9 @@ using Xunit;
 namespace NightTales.Api.IntegrationTests.Seeding;
 
 /// <summary>
-/// The catalog seeders against a real migrated database (09.2.5 plan §9): a fresh database gets the 4
-/// dev voices, the 7 style templates and the 3 disabled flags; a second run changes nothing and deletes
-/// nothing; and a reseed never flips a flag.
+/// The catalog seeders against a real migrated database (09.2.5 plan §9): a fresh database gets every
+/// entry of <c>seed/voices.v1.json</c>, the 7 style templates and the 3 disabled flags; a second run
+/// changes nothing and deletes nothing; and a reseed never flips a flag.
 /// </summary>
 public sealed class SeedTests(TestDatabase database) : IntegrationTest(database)
 {
@@ -29,11 +29,11 @@ public sealed class SeedTests(TestDatabase database) : IntegrationTest(database)
 
         var reports = await RunAsync();
 
-        reports.Single(report => report.Seeder == "voices").ShouldBe(new SeedReport("voices", 4, 0, 0));
+        reports.Single(report => report.Seeder == "voices").ShouldBe(new SeedReport("voices", SeedTestHarness.SeedVoices.Count, 0, 0));
         reports.Single(report => report.Seeder == "style_templates").ShouldBe(new SeedReport("style_templates", 7, 0, 0));
         reports.Single(report => report.Seeder == "feature_flags").ShouldBe(new SeedReport("feature_flags", 3, 0, 0));
 
-        (await CountAsync(Voices, null, TestContext.Current.CancellationToken)).ShouldBe(4);
+        (await CountAsync(Voices, null, TestContext.Current.CancellationToken)).ShouldBe(SeedTestHarness.SeedVoices.Count);
         (await CountAsync(StyleTemplates, null, TestContext.Current.CancellationToken)).ShouldBe(7);
         (await CountAsync(FeatureFlags, null, TestContext.Current.CancellationToken)).ShouldBe(3);
         (await CountAsync(FeatureFlags, "enabled", TestContext.Current.CancellationToken)).ShouldBe(0);
@@ -80,7 +80,7 @@ public sealed class SeedTests(TestDatabase database) : IntegrationTest(database)
 
         await RunAsync();
 
-        (await CountAsync(Voices, null, TestContext.Current.CancellationToken)).ShouldBe(5);
+        (await CountAsync(Voices, null, TestContext.Current.CancellationToken)).ShouldBe(SeedTestHarness.SeedVoices.Count + 1);
         (await Database.QueryStringsAsync("SELECT id FROM voices WHERE id = 'operator-voice'", TestContext.Current.CancellationToken)).Single()
             .ShouldBe("operator-voice");
     }

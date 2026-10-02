@@ -454,6 +454,83 @@ namespace NightTales.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("NightTales.Domain.Communication.EmailMessage", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<int>("Attempts")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("attempts");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("LastErrorCode")
+                        .HasColumnType("text")
+                        .HasColumnName("last_error_code");
+
+                    b.Property<string>("Locale")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("locale");
+
+                    b.Property<string>("ParamsJson")
+                        .HasColumnType("jsonb")
+                        .HasColumnName("params");
+
+                    b.Property<string>("ProviderMessageId")
+                        .HasColumnType("text")
+                        .HasColumnName("provider_message_id");
+
+                    b.Property<DateTimeOffset?>("SentAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("sent_at");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("status");
+
+                    b.Property<string>("Template")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("template");
+
+                    b.Property<string>("ToHash")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("to_hash");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.Property<uint>("Version")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
+                    b.HasKey("Id")
+                        .HasName("pk_email_messages");
+
+                    b.HasIndex("UserId", "CreatedAt")
+                        .IsDescending(false, true)
+                        .HasDatabaseName("ix_email_messages_user_created");
+
+                    b.ToTable("email_messages", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_email_messages_locale", "\"locale\" IN ('en', 'vi')");
+
+                            t.HasCheckConstraint("ck_email_messages_status", "\"status\" IN ('failed', 'queued', 'sent')");
+                        });
+                });
+
             modelBuilder.Entity("NightTales.Domain.Compliance.ModerationEvent", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1563,6 +1640,41 @@ namespace NightTales.Infrastructure.Persistence.Migrations
                     b.ToTable("outbox_messages", (string)null);
                 });
 
+            modelBuilder.Entity("NightTales.Infrastructure.Realtime.HubTicket", b =>
+                {
+                    b.Property<string>("TicketHash")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("ticket_hash");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("created_at");
+
+                    b.Property<DateTimeOffset>("ExpiresAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("expires_at");
+
+                    b.Property<DateTimeOffset?>("UsedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("used_at");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("TicketHash")
+                        .HasName("pk_hub_tickets");
+
+                    b.HasIndex("ExpiresAt")
+                        .HasDatabaseName("ix_hub_tickets_expires_at");
+
+                    b.HasIndex("UserId")
+                        .HasDatabaseName("ix_hub_tickets_user_id");
+
+                    b.ToTable("hub_tickets", (string)null);
+                });
+
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRoleClaim<System.Guid>", b =>
                 {
                     b.HasOne("NightTales.Infrastructure.Persistence.AppRole", null)
@@ -1844,6 +1956,16 @@ namespace NightTales.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_idempotency_keys_asp_net_users_user_id");
+                });
+
+            modelBuilder.Entity("NightTales.Infrastructure.Realtime.HubTicket", b =>
+                {
+                    b.HasOne("NightTales.Infrastructure.Persistence.AppUser", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_hub_tickets_asp_net_users_user_id");
                 });
 #pragma warning restore 612, 618
         }

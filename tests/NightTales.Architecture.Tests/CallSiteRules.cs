@@ -31,10 +31,22 @@ public sealed class CallSiteRules
 {
     private const ushort Call = 0x28;
     private const ushort CallVirt = 0x6F;
+    private const ushort NewObj = 0x73;
     private const ushort LdFtn = 0xFE06;
     private const ushort LdVirtFtn = 0xFE07;
+    private const ushort LdToken = 0xD0;
     private const string IgnoreQueryFilters = "IgnoreQueryFilters";
     private const string AddDbContextPool = "AddDbContextPool";
+
+    /// <summary>The opcodes that name a member: the set the member-name rules scan for.</summary>
+    private static readonly ushort[] MemberResolvingOpcodes = [Call, CallVirt, LdFtn, LdVirtFtn];
+
+    /// <summary>
+    /// The same set plus the two opcodes that name a <em>type</em>: <c>newobj</c> catches
+    /// <c>new FileStream(...)</c> and <c>ldtoken</c> catches <c>typeof(FileInfo)</c>.
+    /// </summary>
+    private static readonly ushort[] AllMemberResolvingOpcodes =
+        [Call, CallVirt, LdFtn, LdVirtFtn, NewObj, LdToken];
 
     private static readonly Dictionary<ushort, OpCode> OpCodesByValue = BuildOpCodeTable();
 
@@ -88,7 +100,41 @@ public sealed class CallSiteRules
         return sites;
     }
 
-    private static void CollectFromAssembly(Assembly assembly, string memberName, List<CallSite> sites)
+    /// <summary>
+    /// Every call site inside the type with <paramref name="typeFullName"/>, across the source
+    /// assemblies — including the sites of its lambdas, which are attributed to the outermost declaring
+    /// type. <c>newobj</c> and <c>ldtoken</c> are included, so a constructor call and a type token are
+    /// reported as well as a method call.
+    /// </summary>
+    /// <param name="typeFullName">The full name of the type to scan, for example <c>NightTales.Infrastructure.Prompts.PromptCatalog</c>.</param>
+    /// <returns>The call sites, in metadata order.</returns>
+    internal static List<CallSite> FindCallsInType(string typeFullName)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(typeFullName);
+
+        var sites = new List<CallSite>();
+        foreach (var assembly in ArchitectureModel.SourceAssemblies)
+        {
+            Collect(assembly, _ => true, AllMemberResolvingOpcodes, typeFullName, sites);
+        }
+
+        return sites;
+    }
+
+    private static void CollectFromAssembly(Assembly assembly, string memberName, List<CallSite> sites) =>
+        Collect(
+            assembly,
+            called => string.Equals(called, memberName, StringComparison.Ordinal),
+            MemberResolvingOpcodes,
+            null,
+            sites);
+
+    private static void Collect(
+        Assembly assembly,
+        Func<string, bool> memberFilter,
+        ushort[] resolvingOpcodes,
+        string? typeFullName,
+        List<CallSite> sites)
     {
         using var stream = File.OpenRead(assembly.Location);
         using var peReader = new PEReader(stream);
@@ -100,6 +146,12 @@ public sealed class CallSiteRules
             var outermost = reader.GetTypeDefinition(OutermostDeclaringType(reader, typeHandle));
             var outermostType = reader.GetString(outermost.Name);
             var outermostNamespace = reader.GetString(outermost.Namespace);
+
+            if (typeFullName is not null
+                && !string.Equals(Join(outermostNamespace, outermostType), typeFullName, StringComparison.Ordinal))
+            {
+                continue;
+            }
 
             foreach (var methodHandle in type.GetMethods())
             {
@@ -117,9 +169,9 @@ public sealed class CallSiteRules
                     continue;
                 }
 
-                ScanBody(reader, il, (called, declaringType) =>
+                ScanBody(reader, il, resolvingOpcodes, (called, declaringType) =>
                 {
-                    if (string.Equals(called, memberName, StringComparison.Ordinal))
+                    if (memberFilter(called))
                     {
                         sites.Add(new CallSite(outermostType, outermostNamespace, methodName, called, declaringType));
                     }
@@ -143,7 +195,11 @@ public sealed class CallSiteRules
         }
     }
 
-    private static void ScanBody(MetadataReader reader, byte[] il, Action<string, string> onCall)
+    private static void ScanBody(
+        MetadataReader reader,
+        byte[] il,
+        ushort[] resolvingOpcodes,
+        Action<string, string> onCall)
     {
         var position = 0;
         while (position < il.Length)
@@ -169,7 +225,7 @@ public sealed class CallSiteRules
                 return;
             }
 
-            var resolvesMember = value == Call || value == CallVirt || value == LdFtn || value == LdVirtFtn;
+            var resolvesMember = Array.IndexOf(resolvingOpcodes, value) >= 0;
             if (resolvesMember && position + sizeof(int) <= il.Length)
             {
                 var token = BitConverter.ToInt32(il, position);
@@ -199,7 +255,8 @@ public sealed class CallSiteRules
 
     /// <summary>
     /// Resolves the member behind a <c>call</c> token. An instantiated generic method is a
-    /// <see cref="HandleKind.MethodSpecification"/>, which wraps the underlying method.
+    /// <see cref="HandleKind.MethodSpecification"/>, which wraps the underlying method, and an
+    /// <c>ldtoken</c> of a type resolves to the type's own full name.
     /// </summary>
     private static (string Name, string DeclaringType)? ResolveCalledMember(MetadataReader reader, int token)
     {
@@ -226,6 +283,20 @@ public sealed class CallSiteRules
                 {
                     var definition = reader.GetMethodDefinition((MethodDefinitionHandle)handle);
                     return (reader.GetString(definition.Name), DescribeDeclaringType(reader, definition.GetDeclaringType()));
+                }
+
+            case HandleKind.TypeReference:
+                {
+                    var reference = reader.GetTypeReference((TypeReferenceHandle)handle);
+                    var name = Join(reader.GetString(reference.Namespace), reader.GetString(reference.Name));
+                    return (name, name);
+                }
+
+            case HandleKind.TypeDefinition:
+                {
+                    var definition = reader.GetTypeDefinition((TypeDefinitionHandle)handle);
+                    var name = Join(reader.GetString(definition.Namespace), reader.GetString(definition.Name));
+                    return (name, name);
                 }
 
             default:

@@ -1,10 +1,12 @@
 using ErrorOr;
 using Microsoft.EntityFrameworkCore;
+using NightTales.Application.Abstractions.Audit;
 using NightTales.Application.Abstractions.Security;
 using NightTales.Application.Common.Errors;
 using NightTales.Application.Features.Auth.Login.Commands;
 using NightTales.Application.Features.Auth.Logout.Commands;
 using NightTales.Application.Features.Auth.Refresh.Commands;
+using NightTales.Domain.Audit;
 using NightTales.Domain.Common;
 using NightTales.Infrastructure.Identity;
 using NightTales.Infrastructure.Persistence;
@@ -59,7 +61,9 @@ public sealed class RefreshSessionService(
     IRefreshTokenLookup lookup,
     ITokenIssuer tokens,
     IClock clock,
-    AuthMetrics metrics) : IAuthSessionService
+    AuthMetrics metrics,
+    IMfaGuessWindow guessWindow,
+    IAuditWriter audit) : IAuthSessionService
 {
     /// <inheritdoc />
     public async Task<ErrorOr<LoginResult>> LoginAsync(
@@ -84,6 +88,32 @@ public sealed class RefreshSessionService(
             return Error.Unauthorized(ErrorCodes.SessionRevoked, "The account is not active.");
         }
 
+        // [RULED — README §B10 WT35]: ten wrong codes inside fifteen minutes block this account's sign-in
+        // before anything is issued. The one account_security row of that ruling is written by the first
+        // path that both observes the block and can commit — this one returns a value, so its transaction
+        // commits, and TryClaimTripReport keeps it to one row per window.
+        if (guessWindow.BlockedFor(user.Id, now) is not null)
+        {
+            if (guessWindow.TryClaimTripReport(user.Id))
+            {
+                await audit
+                    .WriteAsync(
+                        SecurityAudit.Entry(
+                            SecurityAuditActions.MfaCodeGuessingLocked,
+                            user.Id,
+                            info,
+                            Visibility.Internal,
+                            "wrong-code window tripped",
+                            now),
+                        ct)
+                    .ConfigureAwait(false);
+            }
+
+            metrics.Login(ErrorCodes.RateLimited);
+
+            return new LoginResult(LoginOutcome.RateLimited, null, null, user.Role, AuthMethod.Pwd);
+        }
+
         if (!user.EmailConfirmed)
         {
             metrics.Login(ErrorCodes.EmailNotVerified);
@@ -92,12 +122,14 @@ public sealed class RefreshSessionService(
                 "The e-mail address has not been verified yet.");
         }
 
-        if (user.Role is PlatformRole.Admin or PlatformRole.Owner)
+        if (user.Role is PlatformRole.Admin or PlatformRole.Owner || user.TwoFactorEnabled)
         {
-            // BD4: an owner or admin always signs in with TOTP. The enrolled user waits for 09.3.2-T3,
-            // which answers with the challenge document; the unenrolled one gets the enrolment-only token
-            // (scope = mfa_enrol) that the Api will put in the pre-auth cookie in that same task
-            // ([RULED — README §B10 WT22, WT39]). Neither answer carries a refresh cookie.
+            // BD4: an owner or admin always signs in with TOTP, and so does any account whose authenticator
+            // is enrolled — 09.10.4-T1 is what can turn that flag on, so the branch must cover it or an
+            // enrolled user could sign in with the password alone. The enrolled account waits for
+            // 09.3.2-T3, which answers with the challenge document; the unenrolled owner or admin gets the
+            // enrolment-only token (scope = mfa_enrol) that the Api will put in the pre-auth cookie in that
+            // same task ([RULED — README §B10 WT22, WT39]). Neither answer carries a refresh cookie.
             metrics.Login(user.TwoFactorEnabled ? ErrorCodes.MfaRequired : ErrorCodes.MfaEnrolmentRequired);
 
             return user.TwoFactorEnabled

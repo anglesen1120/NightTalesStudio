@@ -1,13 +1,16 @@
+using System.Net;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging;
 using NightTales.Api.Http;
 using NightTales.Domain.Common;
 using NightTales.Infrastructure.Persistence;
 using NightTales.TestKit.Database;
+using NightTales.TestKit.Email;
 using NightTales.TestKit.Security;
 using NightTales.TestKit.Time;
 
@@ -32,6 +35,8 @@ public sealed class ApiFactory(TestDatabase database, FakeClock clock) : WebAppl
     public const string PublicOrigin = "https://api.nighttales.test";
 
     private readonly List<Action<IEndpointRouteBuilder>> _endpointMappings = [];
+    private readonly List<KeyValuePair<string, string?>> _settings = [];
+    private readonly List<ILoggerProvider> _logProviders = [];
 
     /// <summary>
     /// Registers routes that only exist in the test host (the probe endpoints of
@@ -46,14 +51,99 @@ public sealed class ApiFactory(TestDatabase database, FakeClock clock) : WebAppl
     }
 
     /// <summary>
+    /// Adds one configuration value on top of the host's own <c>appsettings.json</c> (the same
+    /// <see cref="IWebHostBuilder.UseSetting(string?, string?)"/> the required start-up settings use, so
+    /// <c>Program</c> sees it while it is still in its top-level statements). 09.3.5-T1 uses it to drive
+    /// the rate-limit limits, the forwarded-header trust and the ticket keys.
+    /// </summary>
+    /// <param name="key">The configuration key, for example <c>RateLimiting:Auth:PermitLimit</c>.</param>
+    /// <param name="value">The value; null removes the key from the host's configuration.</param>
+    public ApiFactory WithSetting(string key, string? value)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(key);
+        _settings.Add(new KeyValuePair<string, string?>(key, value));
+
+        return this;
+    }
+
+    /// <summary>
+    /// Adds one logger provider to the host, so a test can scan every line the host rendered (the
+    /// redaction checks of 09.3.1-T1 and 09.4.2-T1 reach the same seam through
+    /// <see cref="WebApplicationFactory{TEntryPoint}.WithWebHostBuilder"/>).
+    /// </summary>
+    /// <param name="provider">The provider the host logs through.</param>
+    public ApiFactory WithLoggerProvider(ILoggerProvider provider)
+    {
+        ArgumentNullException.ThrowIfNull(provider);
+        _logProviders.Add(provider);
+
+        return this;
+    }
+
+    /// <summary>
+    /// A client whose requests present <paramref name="peerIp"/> as the connection's remote address.
+    /// </summary>
+    /// <remarks>
+    /// The in-process <c>TestServer</c> has no connection feature, so a test that is about the peer's
+    /// address — the forwarded-header trust and the IP-keyed rate-limit partitions (09.3.5-T1) — pins one
+    /// through <c>TestServer.CreateHandler</c>. Only such a test uses this; every other client of the
+    /// factory sends the address-less requests the harness's own host produces.
+    /// </remarks>
+    /// <param name="peerIp">The address the request appears to come from.</param>
+    /// <param name="userId">The test user the request authenticates as, or null for an anonymous one.</param>
+    /// <param name="role">The role of <paramref name="userId"/>.</param>
+    public HttpClient PeerClient(string peerIp, Guid? userId = null, PlatformRole role = PlatformRole.User)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(peerIp);
+
+        var address = IPAddress.Parse(peerIp);
+        var client = new HttpClient(Server.CreateHandler(context => context.Connection.RemoteIpAddress = address))
+        {
+            BaseAddress = Server.BaseAddress,
+        };
+
+        if (userId is { } id)
+        {
+            client.DefaultRequestHeaders.Add(TestAuthHandler.UserHeader, id.ToString());
+            client.DefaultRequestHeaders.Add(TestAuthHandler.RoleHeader, TestAuthHandler.RoleClaimValue(role));
+        }
+
+        return client;
+    }
+
+    /// <summary>
     /// An authenticated client: every request carries <c>X-Test-User</c> and <c>X-Test-Role</c>, and
     /// the <see cref="TestAuthHandler"/> turns them into an authenticated principal.
     /// </summary>
-    public HttpClient ClientFor(Guid userId, PlatformRole role = PlatformRole.User)
+    /// <param name="userId">The <c>sub</c> claim.</param>
+    /// <param name="role">The <c>role</c> claim; <see cref="PlatformRole.User"/> unless a test says otherwise.</param>
+    /// <param name="scope">
+    /// The token's <c>scope</c> claim: null for a full access token, or
+    /// <see cref="TestAuthHandler.EnrolmentScope"/> for BD4's enrolment-only token.
+    /// </param>
+    /// <param name="sessionId">
+    /// The <c>sid</c> claim (09 README BD3): the refresh family the token belongs to. Null means the
+    /// token has no family, exactly like the enrolment-only token.
+    /// </param>
+    public HttpClient ClientFor(
+        Guid userId,
+        PlatformRole role = PlatformRole.User,
+        string? scope = null,
+        Guid? sessionId = null)
     {
         var client = CreateClient();
         client.DefaultRequestHeaders.Add(TestAuthHandler.UserHeader, userId.ToString());
         client.DefaultRequestHeaders.Add(TestAuthHandler.RoleHeader, TestAuthHandler.RoleClaimValue(role));
+
+        if (scope is not null)
+        {
+            client.DefaultRequestHeaders.Add(TestAuthHandler.ScopeHeader, scope);
+        }
+
+        if (sessionId is { } familyId)
+        {
+            client.DefaultRequestHeaders.Add(TestAuthHandler.SessionHeader, familyId.ToString());
+        }
 
         return client;
     }
@@ -105,6 +195,12 @@ public sealed class ApiFactory(TestDatabase database, FakeClock clock) : WebAppl
         builder.UseSetting(TestSigningKey.ConfigurationKey, TestSigningKey.Pem);
         builder.UseSetting($"{AppOptions.SectionName}:{nameof(AppOptions.PublicOrigin)}", PublicOrigin);
 
+        // 09.2.6-T3: the pepper the address hash of `email_messages` is salted with. The committed value is
+        // the development placeholder, which the e-mail validator refuses outside Development, so the test
+        // host supplies the run's own — the same shape a deployment's secret store provides (09 README
+        // BD16), which is why even the production-composition-root host gets it.
+        builder.UseSetting(EmailTestSettings.AddressHashPepperKey, EmailTestSettings.AddressHashPepper);
+
         if (!withKeyRing)
         {
             return;
@@ -130,8 +226,24 @@ public sealed class ApiFactory(TestDatabase database, FakeClock clock) : WebAppl
 
         ApplyRequiredStartupSettings(builder);
 
+        foreach (var (key, value) in _settings)
+        {
+            builder.UseSetting(key, value);
+        }
+
         builder.ConfigureServices(services =>
         {
+            if (_logProviders.Count > 0)
+            {
+                services.AddLogging(logging =>
+                {
+                    foreach (var provider in _logProviders)
+                    {
+                        logging.AddProvider(provider);
+                    }
+                });
+            }
+
             services.RemoveAll<IClock>();
             services.AddSingleton<IClock>(clock);
 

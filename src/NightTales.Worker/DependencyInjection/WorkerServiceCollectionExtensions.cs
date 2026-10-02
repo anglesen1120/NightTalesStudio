@@ -11,6 +11,7 @@ using NightTales.Application.Abstractions.Outbox;
 using NightTales.Application.Features.Episodes.Outbox;
 using NightTales.Domain.Episodes.Events;
 using NightTales.Infrastructure.DependencyInjection;
+using NightTales.Infrastructure.Email;
 using NightTales.Infrastructure.Jobs;
 using NightTales.Infrastructure.Persistence;
 using NightTales.Infrastructure.Persistence.Outbox;
@@ -56,6 +57,12 @@ public static class WorkerServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(configuration);
         ArgumentNullException.ThrowIfNull(assemblies);
 
+        // 02.2.3-T1 (02 README D5/F22): the Worker writes stories, so it loads and validates the prompt
+        // catalog at start-up like the Api. Registered before the rest of the graph so its gate is the
+        // first hosted service to start: a catalog that does not match its manifest must fail the boot
+        // before anything else does work.
+        services.AddPromptCatalog();
+
         services.AddOptions<WorkerOptions>()
             .BindConfiguration(WorkerOptions.SectionName)
             .Validate(
@@ -82,9 +89,19 @@ public static class WorkerServiceCollectionExtensions
         services.AddNightTalesMediator();
         services.AddJobs(configuration, [typeof(WorkerServiceCollectionExtensions).Assembly, .. assemblies]);
 
+        // 05.5.1-T2 (05 README D10): the render-quality thresholds the ingest job applies to a measured
+        // `render-check.v1` are configuration, because 05.2.1-T1/05.5.2-T1 calibrate them; they are
+        // validated on start so an impossible policy fails the boot, not the first render.
+        services.AddRenderQuality(configuration);
+
         // 09.4.2-T1 (plan §3 step 6): the Worker composes the same public catalog URL as the Api, so a
         // template it renders or mails never disagrees with the Api about what a storage key points at.
         services.AddPublicAssetUrl();
+
+        // 09.2.6-T3 (09 README BD9): the e-mail pipeline — the validated template set, the renderer, the
+        // SMTP adapter and the `email_requested.v1` consumer that enqueues SendEmailJob. The Api registers
+        // the same graph (it is the producer side); the Worker is the host that actually sends.
+        services.AddEmail(configuration);
 
         // 09.5.1-T1 (09 README D11/D16, F14): the one consumer of `episode_cancelled.v1`. It runs in the
         // delivery's own scope — already pinned to the event's user — and dispatches a command through

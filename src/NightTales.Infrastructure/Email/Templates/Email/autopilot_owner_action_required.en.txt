@@ -1,0 +1,7 @@
+Subject: Autopilot is waiting for your decision
+
+Series {{seriesTitle}} cannot continue on its own at episode {{episodeTitle}} (slot {{slot}}).
+
+Checks that did not pass: {{failedChecks}}
+
+Open the details at {{deepLink}}.

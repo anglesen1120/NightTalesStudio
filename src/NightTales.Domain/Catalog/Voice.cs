@@ -57,16 +57,23 @@ public sealed class Voice : ICreatedAt
     }
 
     /// <summary>
-    /// Rewrites the catalog-owned columns of an existing row (09.2.5 plan §3.2); the 09.2.5-T1 seeder
-    /// upserts by <see cref="Id"/>. <see cref="PreviewStorageKey"/> is deliberately not part of the dev
-    /// catalog of this task (04.2.2-T2 adds it with the full voice file).
+    /// Rewrites the catalog-owned columns of an existing row (09.2.5 plan §3.2); the seeder upserts by
+    /// <see cref="Id"/>. <see cref="PreviewStorageKey"/> is part of the catalog since 04.2.2-T2 (CR-9):
+    /// it is the object key of the published preview, written only once the upload was verified (04 D12).
     /// </summary>
+    /// <param name="displayName">The shown name, already 1–40 characters.</param>
+    /// <param name="language">The parsed content language.</param>
+    /// <param name="gender">The parsed gender.</param>
+    /// <param name="tags">The tag keys, in file order.</param>
+    /// <param name="active">Whether the voice is offered.</param>
+    /// <param name="previewStorageKey">The preview object key, or <c>null</c>.</param>
     public void UpdateFromCatalog(
         string displayName,
         Language language,
         VoiceGender gender,
         IReadOnlyCollection<string>? tags,
-        bool active)
+        bool active,
+        string? previewStorageKey)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(displayName);
 
@@ -75,5 +82,6 @@ public sealed class Voice : ICreatedAt
         Gender = gender;
         Tags = tags is null ? [] : [.. tags];
         Active = active;
+        PreviewStorageKey = previewStorageKey;
     }
 }

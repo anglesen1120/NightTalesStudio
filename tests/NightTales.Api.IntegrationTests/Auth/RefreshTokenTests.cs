@@ -1,6 +1,7 @@
 using System.Net;
 using System.Text.Json;
 using Npgsql;
+using NightTales.Api.RateLimiting;
 using NightTales.Application.Common.Errors;
 using NightTales.Domain.Common;
 using NightTales.Infrastructure.Persistence.Entities;
@@ -286,8 +287,15 @@ public sealed class RefreshTokenTests(TestDatabase database) : IntegrationTest(d
         var rows = await AuthTestFlow.RowsAsync(Database, user.Id);
         rows.Count.ShouldBe(2);
         rows.ShouldAllBe(row => row.RevokedAt != null);
-        rows[1].RevokedReason.ShouldBe(
-            RevocationReason.ReuseDetected,
+
+        // Counted, never addressed by position: the clock is frozen, so the consumed row and the successor
+        // it created carry the same created_at, and a query returns the two in the database's order rather
+        // than the test's. One row was consumed by the rotation; the other is the live successor the reuse
+        // detection revoked.
+        rows.Count(row => row.RevokedReason == RevocationReason.Rotated)
+            .ShouldBe(1, "the token that came back was consumed by its rotation");
+        rows.Count(row => row.RevokedReason == RevocationReason.ReuseDetected).ShouldBe(
+            1,
             "the live successor is revoked by the reuse detection, not by a rotation");
     }
 
@@ -353,7 +361,14 @@ public sealed class RefreshTokenTests(TestDatabase database) : IntegrationTest(d
     {
         var ct = TestContext.Current.CancellationToken;
         var clock = new FakeClock();
-        using var factory = new ApiFactory(Database, clock);
+        // The family is kept alive with ~29 refreshes inside one real minute, and the `auth` policy is
+        // address-keyed: its eleventh request of the minute would be refused before the ceiling is ever
+        // reached. The absolute ceiling is this test's subject, the limiter is 09.3.5-T1's
+        // (`RateLimitTests`), so this host runs the documented incident configuration.
+        using var factory = new ApiFactory(Database, clock)
+            .WithSetting(
+                $"{RateLimitingOptions.SectionName}:{nameof(RateLimitingOptions.Enabled)}",
+                "false");
         var user = await AuthTestFlow.CreateUserAsync(factory.Services, role: PlatformRole.Admin);
         var client = factory.AnonymousClient();
         var familyStart = clock.UtcNow;
@@ -443,9 +458,16 @@ public sealed class RefreshTokenTests(TestDatabase database) : IntegrationTest(d
 
         var rows = await AuthTestFlow.RowsAsync(Database, user.Id);
         // The rotation itself succeeded before the re-check: the consumed row is `rotated`, and the successor
-        // the re-check refused is revoked with the reason the suspension earned.
+        // the re-check refused is revoked with the reason the suspension earned. The two are counted, never
+        // addressed by position: the fake clock is frozen, so both carry the same created_at and a query
+        // returns them in the database's order. The response's cookie is the cleared one (the session is
+        // over), so the successor cannot be identified by its own value here.
         rows.ShouldAllBe(row => row.RevokedAt != null);
-        rows[^1].RevokedReason.ShouldBe(RevocationReason.AccountNotActive);
+        rows.Count(row => row.RevokedReason == RevocationReason.Rotated)
+            .ShouldBe(1, "the rotation consumed the presented token");
+        rows.Count(row => row.RevokedReason == RevocationReason.AccountNotActive).ShouldBe(
+            1,
+            "the successor the re-check refused is revoked with the reason the suspension earned");
     }
 
     [Fact]

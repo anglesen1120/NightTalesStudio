@@ -8,8 +8,8 @@ Legend: `done` (acceptance checks run and passed) · `doing` · `blocked (<who>)
 
 Keep this block ≤ 15 lines: current state and next step only. Move the previous block to the archive when you replace it.
 
-- **Current (2026-10-01 (6)).** Session 1 under way. `develop` @ `7e67770` has #65 09.4.2-T1, #66 09.3.6-T1 audit log, #67 JWT verifier cache fix, #68 09.5.3-T1, #69 09.8.1-T1 SignalR (each through its tier gates). PR #71 carries 09.9.4-T1 hardening (T3 gates closed in #70, which #71 supersedes; merged with `develop`, AppDbContext DbSet conflict resolved, full gate 917/917 on PG17). Code for 09.7.2-T1 is in worktree `../nts-wt/09.7.2-T1` (not gated).
-- **Next:** merge #71 (close #70) → gate + QA + T3 reviews for 09.7.2-T1 (merge `develop` in) → 09.10.4-T1 → 09.3.2-T3. #71 adds required env `App__PublicOrigin`, `DataProtection__KekPfxPath/Password` (recipe in `.github/workflows/backend.yml`).
+- **Current (2026-10-02 (2)).** Session 2 start-now set merged. `develop` @ `7f91446` has #72 09.9.5-T1, #73 04.2.2-T2, #74 09.10.4-T1, #75 02.2.1-T1, #76 02.2.3-T1, #77 09.3.5-T1 + 09.8.1-T2, #78 05.5.1-T2, #79 11.3.5-T1, #80 RefreshTokenTests flake fix, #81 11.1.1-T1, #82 09.2.6-T3 (migration regenerated on top of #77 as `20261002083148_09_EmailMessages`), #83 STATUS. No open PR. 09.7.2-T1 code still uncommitted in `../nts-wt/09.7.2-T1`.
+- **Next (lane order, §Session 2 plan):** A `09.3.2-T3` → `09.2.6-T2`; B `11.1.1-T2` → gate `09.7.2-T1` → `13.3.1-T1`; C `11.3.5-T2` ∥ `11.3.3-T1` → `11.1.2-T1`; E `09.3.3-T1`; migration fillers `05.3.2-T3`, `02.2.2-T1`, `02.2.4-T1`, `09.9.2-T2` → `09.3.4-T1` (rule 3: at most 2 migration tasks waiting); `09.9.3-T1` after `09.7.2-T1` + `11.3.3-T1`. Web UI stays with its own session (`../nts-wt/ui-design`). Build/test env also needs `Email__AddressHashPepper` (`gate.sh` exports it).
 - **SEC-01 decided (owner 2026-10-01, 09 W3-O3):** range API + real top-N seed fallback (option 3). The bundled `breached-passwords.txt` is still a synthetic placeholder; 09.3.1-T2 replaces it (seed licence checked before commit) and implements fail-open-to-seed, before registration opens (09.3.1-T3, S).
 - **Owner decisions open:** none blocking phase 1.
 - **Security debt live on `develop`:** none from §Deferred security gates (production JwtBearer landed in #60); SEC-01 above is decided but stays open until 09.3.1-T2 ships the real seed.
@@ -24,24 +24,43 @@ Per-task evidence for `done` rows: `docs/status-archive.md` §Per-plan evidence 
 | Plan | Done | Open (see §Open tasks) |
 |---|---|---|
 | 01 Environment (29 tasks) | 25 + 01.2.4-T1 n/a (DEC-9: no OpenAI org, calls go through the relay) | 01.1.1-T3, 01.3.3-T1, 01.3.3-T2 |
-| 02 Story writing (M0 slice) | 11 tasks — M0 slice complete (presets, harness, A/B, D15 freeze, 02.5.2-T0 spike) | M1 tasks not started |
+| 02 Story writing (M0 slice) | 11 tasks — M0 slice complete (presets, harness, A/B, D15 freeze, 02.5.2-T0 spike); M1: 02.2.1-T1 #75, 02.2.3-T1 #76 | the other M1 tasks (02.2.2-T1, 02.2.4-T1 next) |
 | 03 Images (M0 slice) | 4 (03.1.1-T1, 03.4.1-T1, 03.3.2-T1, 03.1.1-T2 #61) | 03.1.2-T1, 03.2.x, 03.4.2/03.4.3 (M1) |
-| 04 Voice proxy (12 tasks) | 10 | 04.2.2-T2, 04.2.3-T1 |
-| 05 Video/subtitles | 9 | 05.2.1-T1, 05.5.2 |
-| 09 Backend | 23 tasks merged (09.8.1-T1 #69) | 09.9.4-T1 in PR #71; 09.7.2-T1 coded (gates next); 09.10.4-T1 → 09.3.2-T3 (wait for #71) |
-| 11 Worker deployment | 11.2.1-T1 (proposal only; sign-off deferred to phase 2, owner 2026-09-30) | phase 1: 11.1.x, 11.3.3, 11.3.5; the rest is phase 2 (11 CR-18) |
+| 04 Voice proxy (12 tasks) | 11 (04.2.2-T2 #73) | 04.2.3-T1 |
+| 05 Video/subtitles | 10 (05.5.1-T2 #78) | 05.3.2-T3, 05.2.1-T1, 05.5.2 |
+| 09 Backend | 29 tasks merged (Session 2: #72 09.9.5-T1, #74 09.10.4-T1, #77 09.3.5-T1 + 09.8.1-T2, #82 09.2.6-T3) | 09.7.2-T1 coded (needs 11.1.1-T2, then gates); next per §Session 2 plan |
+| 11 Worker deployment | 11.1.1-T1 #81, 11.3.5-T1 #79; 11.2.1-T1 (proposal only; sign-off deferred to phase 2, owner 2026-09-30) | phase 1: 11.1.1-T2, 11.1.2-T1, 11.3.5-T2, 11.3.3-T1; the rest is phase 2 (11 CR-18) |
 | 13 Compliance | 13.1.1-T1, 13.1.2-T1 (PR #35) | 13.2.1-T1 → 13.2.2-T1, 10.3.1-T1 pages; 13.1.1-T2 / 13.1.2-T2 lawyer rows (O1) |
 
 Plans 06, 07, 08, 10, 12: not started. Order: `plans/features/README.md`.
 
-## Session 1 plan
+## Session 2 plan
 
-Owner 2026-10-01: one todo list, two tasks, run side by side; status `todo` (not started). Each task keeps its tier gates per child task.
+**Approved by the owner 2026-10-01.** Lanes, not fixed waves: every lane starts now; inside a lane the next task starts as soon as the previous one is merged into `develop`. Every task listed under "Start now" has all hard `Depends on` edges merged (task-file headers checked against `develop`). Web UI is out of scope here (separate session, see Resume here). Tiers are proposed; the orchestrator may raise them.
 
-| # | Task | Mode | Status |
-|---|---|---|---|
-| 1 | `09.9.4-T1` → `09.10.4-T1` → `09.3.2-T3` | sequential (each starts after the previous merges) | 09.9.4-T1 in PR #71; rest wait for its merge |
-| 2 | `09.3.6-T1`, `09.7.2-T1`, `09.8.1-T1`, `09.4.2-T1`, `09.5.3-T1` | parallel | merged #66, #69, #65, #68; 09.7.2-T1 coded, gates next |
+| Lane | Start now | Then, in order (each after the previous merges) | Tier | Notes |
+|---|---|---|---|---|
+| A Auth | `09.10.4-T1` TOTP + reauth | `09.3.2-T3` MFA login (needs 09.10.4-T1) → `09.2.6-T2` (needs 09.10.4-T1) | T3 | migration |
+| B Local storage + mail | `11.1.1-T1` → `11.1.1-T2` | gate `09.7.2-T1` (merge `develop` into `feature/09.7.2-T1-s1` first; contract tests must run against `NTS_STORAGE_URL`, never skip) → `13.3.1-T1` | T1 (11.1.1), T3 (09.7.2, 13.3.1) | `tools/dev/` only |
+| C Render node (critical path) | `11.3.5-T1` (L) | `11.3.5-T2` ∥ `11.3.3-T1` (both need 11.3.5-T1) → `11.1.2-T1` mock-mpt (needs 11.3.5-T1 + 11.1.1-T1) | T3 | new `RenderNode.Server` project |
+| D Platform | `09.3.5-T1` rate limiting + `09.8.1-T2` hub ticket (one agent; write the `hub` policy name/registration from 09.3.5-T1 first, 09.8.1-T2 open item 4) | — | T3 | `Api/Program.cs` |
+| E E-mail | `09.2.6-T3` | `09.3.3-T1` password reset (needs 09.2.6-T3) | T3 | migration; real SMTP via Mailpit (lane B wiring) |
+| F Seeders/checkers | `04.2.2-T2` ∥ `05.5.1-T2` ∥ `05.3.2-T3` | — | T1; T3 for 05.3.2-T3 | 05.3.2-T3 has migration `AddMusicTracks` |
+| G 02 M1 domain | `02.2.1-T1` ∥ `02.2.3-T1` | — | T2 | no DB change |
+| Fill a free slot | `09.9.5-T1` (CI only) now; then `02.2.2-T1`, `02.2.4-T1`, `09.9.2-T2`, `09.9.3-T1` (OTLP) | `09.3.4-T1` `/me` after 09.9.2-T2 | T1 / T3 (02.2.2, 02.2.4 money, 09.9.2) | 02.2.2, 02.2.4, 09.9.2 have migrations; 09.9.3-T1 touches `Program.cs` + packages |
+
+**Progress (2026-10-02):** start-now set merged into `develop` (#72–#82; A #74, B #81 11.1.1-T1, C #79, D #77, E #82, F #73 + #78, G #75 + #76, fillers #72 + #80). Each lane's next task can start: A `09.3.2-T3`, B `11.1.1-T2`, C `11.3.5-T2` ∥ `11.3.3-T1`, E `09.3.3-T1`; later items keep their in-lane order. 05.3.2-T3 waits under rule 3 with the other migration fillers.
+
+**Not in Session 2:** `09.6.2-T1` needs `05.1.2-T1`, which needs `02.3.2-T1` and `03.2.1-T1` (not built) → session 3 or later.
+
+**Rules for every agent in this plan:**
+1. One worktree + branch per task: `../nts-wt/<task-id>`, branch `feature/<task-id>-s2`, off current `develop`. No stacked branches on unmerged work.
+2. At most 8 subagents at a time. Code in parallel; **gates run one at a time** (`/Volumes/Project/nts-wt/gate.sh <worktree>`), because all worktrees share the local Postgres template `nts_template` (parallel runs fail with 23505).
+3. Migrations: at most 2 tasks with a migration waiting for gate/merge at once. Merge them in order; the later task **regenerates** its migration on the merged `develop` snapshot (`dotnet ef migrations add`), never hand-edits `AppDbContextModelSnapshot`. Check migration timestamp order after each merge.
+4. Conflicts in `Program.cs` (`Map*` lines) and `AppDbContext.cs` (`DbSet` lines) are additive: keep both sides; each `DbSet` keeps its own `///` summary.
+5. Each task closes its tier gates (QA agent first, then reviews per `~/.omp/agent/RULES.md`) before its PR. After any merge, check `git merge-base --is-ancestor <branch-tip> origin/develop`.
+6. Local services: start `weed` and `mailpit` only through `tools/dev/up.sh` with the loopback flags in 11.1.1-T2 (never `brew services`, which binds all interfaces and puts the SeaweedFS volume server on MPT's 8080). Until 11.1.1-T2 lands, nothing else may depend on them.
+7. Update this table's progress in the task's own PR (STATUS row + Session log); move finished lane rows to the archive at session end.
 
 ## Open tasks
 
@@ -51,7 +70,6 @@ Owner 2026-10-01: one todo list, two tasks, run side by side; status `todo` (not
 | 01.3.3-T1 Carry-over | partial (§11 `[OPEN]`) | `worker-node/CARRY-OVER.md` §1–12 written; §11 waits for the 05.5.2 trial rows |
 | 01.3.3-T2 Carry-over walkthrough | todo | Owner walkthrough, after 05.5.2. Interim whisper notes: `.nts/runs/whisper-baseline/carryover-notes.md` |
 | 03.1.2-T1, 03.2.x, 03.4.2/03.4.3 | todo (M1) | Need 09 and 11.3.5 |
-| 04.2.2-T2 Catalog rules + seeder (C#) | todo | Needs 09.2.2-T1 (merged) and 09.2.5-T1 |
 | 04.2.3-T1 Preview generation + upload | partial | M0 generation, owner listening and T19 option A done (PR #26); local SeaweedFS upload rehearsal passed; M1 upload waits for 11.4.1-T2 → 11.4.1-T1. SEC-0423T19-1 (info) open. A 2nd vi rater + an en rater → catalog revision 2 (04 T18) |
 | 05.2.1-T1 Subtitle fidelity + sync evaluation | partial (machine leg) | L1/L2 rows + owner labels blocked on 05.5.2-T1 (05 T84); `RenderQuality:*` values await calibration |
 | 05.5.2 | todo — prep on branch `feature/05.5.2-m0-trial` (3 commits, not on `develop`) | Branch: `apply_quality_policy.py` (D10 mirror) + `mpt_client` spec-path containment, gates passed; L1 vi / L2 en renders blocked on the D11 memory gate (swap). Needs 04.2.2-T1 raters and 03.3.2-T1 (done). Portrait renders use 9:16 option A (05 O9, 03 CR-16) with the hinted prompt; judge the cropped frames of the first portrait render (`trial/images/REPORT.md` §Crop probe) |
@@ -98,3 +116,7 @@ Recent rows only; the full log is `docs/status-archive.md` §Session log.
 | 2026-10-01 | 09.3.1-T1 identity (`feature/09.3.1-T1-identity` `7830f67`) | #58 merged → `3a7c51c`, post-merge 400/400. T3: QA via `test-suite-runner` (first QA spawn used the generic `task` agent and was stopped), D1–D4 + C1–C4 + P1 + S2 fixed, delta review closed; SEC-01 (placeholder breach list) left for the owner. Build 0 warnings, format 0, 468/468 |
 | 2026-10-01 | 03.1.1-T2 + 09.4.1-T1 (`feature/03.1.1-T2-09.4.1-T1` `7112dc3`) | #60 merged → `623a321`, post-merge 525/525. One branch: 09.4.1-T1 needs `StyleTopicPolicy` from 03.1.1-T2 (shared contract written first, typed `Topic?` hint), two parallel implementers. T3: QA (`test-suite-runner`) 0 functional defects, +15 tests; code CR-1 (PATCH field names `patch.title`), CR-2 (seed parser preempted `StyleTemplateRules` codes), CR-3 = SEC-0941-01 (non-UTC cursor → 500), PERF-01 (keyset OR → row value) fixed; delta review closed. Build 0 warnings, format 0, 628/628 on PG17 |
 | 2026-10-01 | 09.5.1-T1 episodes (`feature/09.5.1-T1-episodes`) | #61 merged → `3c19ed6`, #62 (SEC-01 decision) → `4281baf`. One implementer; build gate red once (missing `using Microsoft.AspNetCore.Mvc`), fixed by the implementer. T3: QA (`test-suite-runner`) 0 functional defects, +7 tests; code CR-1 (empty/whitespace `If-Match` skipped the DELETE precondition → now only an absent header skips it; +2 tests), perf 0, security 0; delta review closed. Build 0 warnings, format 0, 669/669 on PG17. Local env note: a `DROP DATABASE … WITH (FORCE)` cleanup flake (42501) appears when a superuser backend is attached, because the test role lacks `pg_signal_backend` |
+| 2026-10-01 | Session 1 close + Session 2 plan (docs only, T0) | Resume-here updated (#71 merged, #70 closed, no open PR); 09.7.2-T1 recorded as blocked on 11.1.1-T2; §Session 1 plan archived; §Session 2 plan added (8 lanes, ready set from task-file `Depends on` headers vs `develop`; owner sign-off pending). Pushed directly to `develop` (owner request) |
+| 2026-10-01 | Session 2 plan approved (docs only, T0) | Owner approved the lane-based plan (lanes A–G + free-slot fillers, web UI excluded: separate session) and the Homebrew install; `seaweedfs` 4.48 (Apache-2.0) and `mailpit` 1.31.3 (MIT) installed, not started. §Session 2 plan now carries the start-now set, in-lane order and agent rules; 09.6.2-T1 moved to session 3+ (needs 05.1.2-T1). Merged worktrees removed |
+| 2026-10-02 | Session 2 lanes A–G (worktrees `../nts-wt/<task-id>`, branches `feature/<task-id>-s2`) | 11 PRs opened, none merged: #72 09.9.5-T1, #73 04.2.2-T2, #74 09.10.4-T1, #75 02.2.1-T1, #76 02.2.3-T1, #77 09.3.5-T1 + 09.8.1-T2, #78 05.5.1-T2, #79 11.3.5-T1, #80 RefreshTokenTests ordering fix, #81 11.1.1-T1, #82 09.2.6-T3. Each through its tier gates (QA agent first, then reviews, one fix agent, delta). 11.1.1-T1 raised T1 → T3 (process handling + secrets): 8 review + 3 security findings fixed, deltas closed; `docker build` not run (no Docker daemon). 09.2.6-T3: two delta rounds (send-lock key collision + silent drop, failure state after a failed `sent` commit, guarded compensating write, pepper required outside Development), last round verified by the orchestrator; full gate green. CI: `integration` on #73/#74/#76/#81 fails only on the flake #80 fixes. Held by rule 3 (max 2 migration tasks waiting): 05.3.2-T3, 02.2.2-T1, 02.2.4-T1, 09.9.2-T2 |
+| 2026-10-02 | Session 2 merged (#72–#83 → `develop` `7f91446`) | Owner merged all 12 PRs. #79 conflicted with `develop` after #74 (both sides added `.gitleaksignore` lines; kept both, `27b2364`). #82 conflicted after #75–#81 (additive hunks in `docs/dev-setup.md`, Infrastructure csproj, `InitialCoreMigrationTests`, `SeedPrevious`; kept both sides, `73c3891`) and its migration was regenerated on #77's snapshot (`20261002083148`, `Up`/`Down` unchanged); merge reviewed (0 findings), full gate + CI 4/4 green. Follow-up on `develop` (owner request, pushed directly): `SeedPrevious` comments no longer say "skipped today" (an insert runs once its migration is no longer the last). Docs + comment only |

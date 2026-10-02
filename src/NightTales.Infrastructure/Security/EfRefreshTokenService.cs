@@ -248,6 +248,7 @@ public sealed class EfRefreshTokenService(
                 command => command.Parameters.AddWithValue("family_id", familyId),
                 ct).ConfigureAwait(false);
 
+            await DeleteUnusedHubTicketsAsync(revoked.UserIds, ct).ConfigureAwait(false);
             await NotifySecurityAsync(revoked, ct).ConfigureAwait(false);
 
             return Result.Success;
@@ -289,6 +290,7 @@ public sealed class EfRefreshTokenService(
                 },
                 ct).ConfigureAwait(false);
 
+            await DeleteUnusedHubTicketsAsync(revoked.UserIds, ct).ConfigureAwait(false);
             await NotifySecurityAsync(revoked, ct).ConfigureAwait(false);
 
             return revoked.Count;
@@ -309,11 +311,21 @@ public sealed class EfRefreshTokenService(
     {
         try
         {
+            // Same lock as the rotation: a stamp and a rotation of the family must not interleave, or the
+            // stamp could land on a successor the rotation has not created yet (or on a dead family).
+            await LockFamilyAsync(familyId, ct).ConfigureAwait(false);
+
             await using var command = CreateCommand(MarkReauthenticatedSql, requireTransaction: true);
             command.Parameters.AddWithValue("family_id", familyId);
             command.Parameters.AddWithValue("reauthenticated_at", now);
 
-            await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+            var updated = await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+            if (updated == 0)
+            {
+                // The family was revoked between the caller's read and this write: fail closed rather than
+                // stamp a re-authentication on a session that no longer exists.
+                return SessionRevoked();
+            }
 
             return Result.Success;
         }
@@ -333,6 +345,11 @@ public sealed class EfRefreshTokenService(
     {
         try
         {
+            // The family lock first, exactly as RotateAsync takes it: the counter update must see the same
+            // family the rotation decided on, so a concurrent rotation cannot leave the successor with the
+            // failure uncounted (which would bypass the five-attempt lockout).
+            await LockFamilyAsync(familyId, ct).ConfigureAwait(false);
+
             await using var command = CreateCommand(RegisterReauthFailureSql, requireTransaction: true);
             command.Parameters.AddWithValue("family_id", familyId);
             command.Parameters.AddWithValue("now", now);
@@ -346,6 +363,13 @@ public sealed class EfRefreshTokenService(
                     // largest value is the honest answer.
                     updated = Math.Max(updated, reader.GetInt32(0));
                 }
+            }
+
+            if (updated == 0)
+            {
+                // No live row under the lock means the family is already revoked: fail closed instead of
+                // counting an attempt that would silently disappear.
+                return SessionRevoked();
             }
 
             return updated;
@@ -476,6 +500,29 @@ public sealed class EfRefreshTokenService(
 
             await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
         }
+    }
+
+    /// <summary>
+    /// Deletes the revoked users' unused hub tickets inside the revocation's own transaction (T3 review
+    /// NTS-HUB-001): a ticket issued before the revocation must not outlive it within its 60-second TTL,
+    /// and the delete commits only if the revocation does. A ticket claimed just before this commits keeps
+    /// its used row; that socket is closed by the <c>security</c> NOTIFY this same commit carries, or, when
+    /// its registration raced past the abort, by the connection-age backstop (WT37).
+    /// </summary>
+    private async Task DeleteUnusedHubTicketsAsync(IEnumerable<Guid> userIds, CancellationToken ct)
+    {
+        var distinct = userIds.Distinct().ToArray();
+        if (distinct.Length == 0)
+        {
+            return;
+        }
+
+        await using var command = CreateCommand(
+            "DELETE FROM hub_tickets WHERE user_id = ANY(@user_ids) AND used_at IS NULL",
+            requireTransaction: true);
+        command.Parameters.AddWithValue("user_ids", distinct);
+
+        await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
     }
 
     /// <summary>The family a presented token belongs to, or null when no row has that hash.</summary>

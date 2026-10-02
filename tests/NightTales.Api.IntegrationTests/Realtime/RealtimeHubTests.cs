@@ -5,6 +5,7 @@ using System.Text.Json;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -14,6 +15,7 @@ using NightTales.Api.Realtime;
 using NightTales.Application.Abstractions.Realtime;
 using NightTales.Application.Common.Errors;
 using NightTales.Domain.Common;
+using NightTales.Infrastructure.Realtime;
 using NightTales.TestKit;
 using NightTales.TestKit.Api;
 using NightTales.TestKit.Database;
@@ -354,9 +356,22 @@ public sealed class RealtimeHubTests(TestDatabase database) : IntegrationTest(da
     {
         var ct = TestContext.Current.CancellationToken;
 
-        // 1. The production composition root registers no validator at all (09.8.1-T2 adds the real one
-        //    with the hub_tickets table), so there is nothing to fall back to.
-        await using var host = ApiFactory.ProductionHost(Database.ConnectionString);
+        // 0. 09.8.1-T2 closed the seam: the production composition root now registers exactly the
+        //    production validator (it used to register none).
+        await using (var production = ApiFactory.ProductionHost(Database.ConnectionString))
+        {
+            // The validator is scoped (the AppDbContext it claims through is), so it is resolved from a
+            // request-like scope — the root provider refuses a scoped service by design.
+            using var scope = production.Services.CreateScope();
+
+            scope.ServiceProvider.GetService<IHubTicketValidator>().ShouldBeOfType<NpgsqlHubTicketValidator>();
+        }
+
+        // 1. With the registration removed there is nothing to fall back to: the handler throws instead
+        //    of authenticating anyone.
+        await using var host = ApiFactory.ProductionHost(
+            Database.ConnectionString,
+            builder => builder.ConfigureServices(services => services.RemoveAll<IHubTicketValidator>()));
         host.Services.GetService<IHubTicketValidator>().ShouldBeNull();
 
         using (var client = host.CreateClient())

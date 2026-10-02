@@ -4,8 +4,8 @@ namespace NightTales.Infrastructure.Realtime;
 
 /// <summary>
 /// The real-time transport configuration of a host, bound from the <c>Realtime</c> section
-/// (09.8.1-T1 plan §7; the ticket keys <c>Realtime:TicketTtlSeconds</c> and
-/// <c>Realtime:TicketCleanupRetentionHours</c> belong to 09.8.1-T2).
+/// (09.8.1 plan §7): the listener's heartbeat, backoff and delivery bounds of 09.8.1-T1, plus the
+/// ticket keys of 09.8.1-T2.
 /// </summary>
 public sealed class RealtimeOptions
 {
@@ -73,6 +73,40 @@ public sealed class RealtimeOptions
     /// single delivery consumer — and every event behind it — any longer.
     /// </summary>
     public int DeliveryTimeoutSeconds { get; set; } = DefaultDeliveryTimeoutSeconds;
+
+    /// <summary>The ticket lifetime when <see cref="TicketTtlSeconds"/> is not set (BD11: 60 seconds).</summary>
+    public const int DefaultTicketTtlSeconds = 60;
+
+    /// <summary>The ticket sweep's retention when <see cref="TicketCleanupRetentionHours"/> is not set.</summary>
+    public const int DefaultTicketCleanupRetentionHours = 24;
+
+    /// <summary>The ticket sweep's batch when <see cref="TicketCleanupBatchSize"/> is not set.</summary>
+    public const int DefaultTicketCleanupBatchSize = 1_000;
+
+    /// <summary>
+    /// How long an issued hub ticket stays claimable (<c>Realtime:TicketTtlSeconds</c>, BD11): the
+    /// instant the row is written plus this value is its <c>expires_at</c>.
+    /// </summary>
+    public int TicketTtlSeconds { get; set; } = DefaultTicketTtlSeconds;
+
+    /// <summary>
+    /// How long after its expiry a ticket row is kept before <c>HubTicketCleanupJob</c> may delete it
+    /// (<c>Realtime:TicketCleanupRetentionHours</c>); the window is what makes a failed claim
+    /// diagnosable instead of invisible.
+    /// </summary>
+    public int TicketCleanupRetentionHours { get; set; } = DefaultTicketCleanupRetentionHours;
+
+    /// <summary>
+    /// The rows one <c>HubTicketCleanupJob</c> run may delete (<c>Realtime:TicketCleanupBatchSize</c>),
+    /// so a sweep's transaction stays short.
+    /// </summary>
+    public int TicketCleanupBatchSize { get; set; } = DefaultTicketCleanupBatchSize;
+
+    /// <summary>The ticket lifetime as a duration.</summary>
+    public TimeSpan TicketTtl => TimeSpan.FromSeconds(TicketTtlSeconds);
+
+    /// <summary>The ticket sweep's retention as a duration.</summary>
+    public TimeSpan TicketCleanupRetention => TimeSpan.FromHours(TicketCleanupRetentionHours);
 
     /// <summary>The heartbeat as a duration.</summary>
     public TimeSpan Heartbeat => TimeSpan.FromSeconds(HeartbeatSeconds);

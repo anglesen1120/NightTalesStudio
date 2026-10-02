@@ -3,6 +3,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using NightTales.Api.Realtime;
+using NightTales.Application.Abstractions.Realtime;
 using NightTales.Infrastructure.Realtime;
 
 namespace NightTales.Api.DependencyInjection;
@@ -19,10 +20,10 @@ namespace NightTales.Api.DependencyInjection;
 /// because the Worker's outbox handlers are producers too (09 README D11/R6).
 /// </para>
 /// <para>
-/// No <c>IHubTicketValidator</c> is registered on purpose: 09.8.1-T2 adds the production
-/// <c>NpgsqlHubTicketValidator</c> with the <c>hub_tickets</c> table, and until then a connect attempt
-/// fails fast with <see cref="HubTicketAuthenticationHandler.MissingValidatorMessage"/> — never an
-/// anonymous socket and never a permissive fallback (09.8.1-T1 design, "seam with 09.8.1-T2").
+/// The production <c>IHubTicketValidator</c> is registered here with 09.8.1-T2: this is the only host
+/// that serves sockets, so it is the only one that claims tickets, and its absence on another host
+/// still fails fast with <see cref="HubTicketAuthenticationHandler.MissingValidatorMessage"/> — never
+/// an anonymous socket and never a permissive fallback (09.8.1-T1 design, "seam with 09.8.1-T2").
 /// </para>
 /// <para>
 /// Server-side SignalR ships in the <c>Microsoft.AspNetCore.App</c> shared framework, so this adds no
@@ -63,6 +64,11 @@ public static class RealtimeServiceCollectionExtensions
         services.AddSingleton<RealtimeConnectionRegistry>();
         services.AddSingleton<IRealtimeListenerDelay, SystemRealtimeListenerDelay>();
         services.AddSingleton<IRealtimeGroupSender, SignalRRealtimeGroupSender>();
+
+        // 09.8.1-T2 closes the fail-fast seam of 09.8.1-T1: the production IHubTicketValidator is
+        // registered here, so a connect attempt claims the ticket against `hub_tickets` instead of
+        // throwing MissingValidatorMessage. Scoped, like the AppDbContext it claims through.
+        services.AddScoped<IHubTicketValidator, NpgsqlHubTicketValidator>();
 
         // One loop per Api instance (BD11). Registered twice on purpose: the singleton is what a test
         // resolves, the hosted service is what the host starts, and both must be the same instance so the

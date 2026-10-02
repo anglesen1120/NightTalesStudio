@@ -93,9 +93,9 @@ internal static class SeedPrevious
                     'story', 100, 0, 200, 0, 0, false, 0.05, now())
             """),
         (
-            // 09.3.1-T1: the table the `_09_UserConsents` migration creates. Schema N-1 does not have it
-            // yet, so this insert is skipped today and the migration after this one is exercised against a
-            // consent row.
+            // 09.3.1-T1: the table the `_09_UserConsents` migration creates. The insert is skipped while that
+            // migration is the last one (schema N-1 lacks the table) and runs once a later migration exists,
+            // so every migration after it is exercised against a consent row.
             "user_consents",
             """
             INSERT INTO user_consents (id, user_id, document, version, accepted_at, ip)
@@ -103,9 +103,9 @@ internal static class SeedPrevious
                     now(), '203.0.113.7')
             """),
         (
-            // 09.3.2-T1: the table the `_09_RefreshTokens` migration creates. Same rule as above: schema
-            // N-1 does not have it, so this insert is skipped today and the migration after this one is
-            // exercised against a live session (a root row, still unrevoked, with the idle clock started).
+            // 09.3.2-T1: the table the `_09_RefreshTokens` migration creates. Same rule as above: skipped
+            // while that migration is the last one, then every later migration is exercised against a live
+            // session (a root row, still unrevoked, with the idle clock started).
             "refresh_tokens",
             """
             INSERT INTO refresh_tokens (id, user_id, family_id, token_hash, created_at, last_used_at, expires_at,
@@ -116,12 +116,34 @@ internal static class SeedPrevious
             """),
         (
             // 09.9.4-T1: the table the `_09_DataProtectionKeys` migration creates. Same rule as above:
-            // schema N-1 does not have it, so this insert is skipped today and the migration after this
-            // one is exercised over a key-ring row.
+            // skipped while that migration is the last one, then every later migration is exercised over a
+            // key-ring row.
             "data_protection_keys",
             """
             INSERT INTO data_protection_keys (friendly_name, xml)
             VALUES ('seed-dp-key', '<key id="seed" />')
+            """),
+        (
+            // 09.8.1-T2: the table the `_09_8_1_HubTickets` migration creates. Same rule as above: skipped
+            // while that migration is the last one, then every later migration is exercised over a live,
+            // unclaimed ticket row.
+            "hub_tickets",
+            """
+            INSERT INTO hub_tickets (ticket_hash, user_id, created_at, expires_at)
+            VALUES ('seed-hub-ticket-hash', '01920000-0000-7000-8000-000000000001', now(),
+                    now() + interval '60 seconds')
+            """),
+        (
+            // 09.2.6-T3: the table the `_09_EmailMessages` migration creates. Same rule as above: skipped
+            // while that migration is the last one, then every later migration is exercised over a delivered
+            // message (its `params` are already null, as a sent row is).
+            "email_messages",
+            """
+            INSERT INTO email_messages (id, user_id, template, locale, to_hash, status, attempts, created_at,
+                                        sent_at)
+            VALUES ('01920000-0000-7000-8000-00000000000b', '01920000-0000-7000-8000-000000000001',
+                    'password_changed', 'vi',
+                    '9f2c1b0a7d6e5f40312a9b8c7d6e5f40312a9b8c7d6e5f40312a9b8c7d6e5f40', 'sent', 1, now(), now())
             """),
     ];
 

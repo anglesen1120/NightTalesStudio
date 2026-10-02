@@ -1,0 +1,37 @@
+{
+  "schema": "voices.v1",
+  "revision": 1,
+  "vieneuCommit": "c1390abbdb2eedcdf58eafb546966c06ce27af71",
+  "voices": [
+    {
+      "id": "Hai Dang",
+      "slug": "hai-dang",
+      "displayName": "Hai Dang",
+      "language": "vi",
+      "gender": "female",
+      "tags": [],
+      "active": true,
+      "previewStorageKey": null
+    },
+    {
+      "id": "Hải Đăng",
+      "slug": "hai-dang",
+      "displayName": "Hải Đăng",
+      "language": "vi",
+      "gender": "male",
+      "tags": [],
+      "active": true,
+      "previewStorageKey": null
+    },
+    {
+      "id": "Hai Dang",
+      "slug": "hai-dang",
+      "displayName": "Hai Dang",
+      "language": "vi",
+      "gender": "female",
+      "tags": [],
+      "active": true,
+      "previewStorageKey": null
+    }
+  ]
+}

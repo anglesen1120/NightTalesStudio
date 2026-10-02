@@ -7,6 +7,11 @@
 
   <ItemGroup>
     <ProjectReference Include="..\NightTales.TestKit\NightTales.TestKit.csproj" />
+    <!--
+      The render-node core is a leaf of the node, not of the backend: it is referenced so its assembly is loaded
+      for RenderNode_ReferencesOnlyTheContractAndAspNetCore (11 README D3/D5).
+    -->
+    <ProjectReference Include="..\..\src\NightTales.RenderNode.Server\NightTales.RenderNode.Server.csproj" />
   </ItemGroup>
 
   <!--

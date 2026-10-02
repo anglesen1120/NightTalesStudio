@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\NightTales.RenderNode.Contract\NightTales.RenderNode.Contract.csproj" />
+    <ProjectReference Include="..\..\src\NightTales.RenderNode.Server\NightTales.RenderNode.Server.csproj" />
+  </ItemGroup>
+
+  <!--
+    No NightTales.TestKit reference on purpose: the core must not drag the backend (Api, Worker, Infrastructure)
+    into a node test run, and its own fakes are the four seams (11 README D5). A real in-process Kestrel is the
+    host under test, so the shared framework is referenced the same way NightTales.Worker references it.
+  -->
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Shouldly" />
+    <PackageReference Include="xunit.v3" />
+  </ItemGroup>
+</Project>

@@ -1,37 +1,3 @@
 {
-  "voices": [
-    {
-      "id": "Mai Anh",
-      "displayName": "Mai Anh",
-      "language": "vi",
-      "gender": "female",
-      "tags": ["news", "northern", "deep"],
-      "active": true
-    },
-    {
-      "id": "Đức Trí",
-      "displayName": "Đức Trí",
-      "language": "vi",
-      "gender": "male",
-      "tags": ["storyteller", "southern", "warm"],
-      "active": true
-    },
-    {
-      "id": "Adam",
-      "displayName": "Adam",
-      "language": "en",
-      "gender": "male",
-      "tags": ["natural", "deep"],
-      "active": true
-    },
-    {
-      "id": "Thục Đoan",
-      "displayName": "Thục Đoan",
-      "language": "en",
-      "gender": "female",
-      "tags": ["storyteller", "warm"],
-      "active": true
-    }
-  ],
   "featureFlags": ["youtube_publish", "tiktok_publish", "source_finder"]
 }

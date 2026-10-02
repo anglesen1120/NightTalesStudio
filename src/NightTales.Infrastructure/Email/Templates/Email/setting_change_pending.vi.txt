@@ -1,0 +1,7 @@
+Subject: Thay đổi cấu hình đang chờ áp dụng
+
+Cấu hình của tích hợp {{integration}} vừa thay đổi các khoá: {{changedKeys}}.
+
+Thay đổi sẽ được áp dụng lúc {{applyAfter}}.
+
+Duyệt tại {{approveUrl}} hoặc huỷ tại {{cancelUrl}}.

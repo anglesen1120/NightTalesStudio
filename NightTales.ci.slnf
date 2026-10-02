@@ -7,12 +7,14 @@
       "src/NightTales.Domain/NightTales.Domain.csproj",
       "src/NightTales.Infrastructure/NightTales.Infrastructure.csproj",
       "src/NightTales.RenderNode.Contract/NightTales.RenderNode.Contract.csproj",
+      "src/NightTales.RenderNode.Server/NightTales.RenderNode.Server.csproj",
       "src/NightTales.Worker/NightTales.Worker.csproj",
       "tests/NightTales.Api.IntegrationTests/NightTales.Api.IntegrationTests.csproj",
       "tests/NightTales.Application.UnitTests/NightTales.Application.UnitTests.csproj",
       "tests/NightTales.Architecture.Tests/NightTales.Architecture.Tests.csproj",
       "tests/NightTales.Domain.UnitTests/NightTales.Domain.UnitTests.csproj",
       "tests/NightTales.Infrastructure.UnitTests/NightTales.Infrastructure.UnitTests.csproj",
+      "tests/NightTales.RenderNode.Tests/NightTales.RenderNode.Tests.csproj",
       "tests/NightTales.TestKit/NightTales.TestKit.csproj"
     ]
   }

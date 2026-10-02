@@ -762,7 +762,7 @@ Part A §6.
 
 - **09-W2-auth:** owner logs in with password + TOTP, refresh rotates, reuse revokes, reauth guards a sensitive route, reset by e-mail works in the local stack (09.3.x, 09.10.4-T1, 09.2.6-T3).
 - **09-W2-render (input to 02/03/05 M1):** `POST /episodes/{id}/render` → mock-mpt → `video_review` with `quality_report` and assets, including one cancel, one lost task and one timeout path in integration tests (09.6.x, 11.1.2).
-- **09-W2-platform:** telemetry reaches the collector, redaction test green, OpenAPI diff in CI (09.9.x).
+- **09-W2-platform:** telemetry reaches the collector, redaction test green, the OpenAPI contract gate in CI (09.9.x): the `contract` job of `backend.yml` diffs the PR's document against its base commit (`develop` today — BD12's `main` is stale, `main` is frozen at the initial commit) with a version- and SHA-256-pinned `oasdiff`, and `tools/ci/check-version-rule.py` lets a break inside `/api/v1` pass only with a new `/api/v2` prefix and a major `info.version` bump (09.9.5-T1, BD12/W11).
 
 ## B8. Feature index and task mapping (wave 2)
 

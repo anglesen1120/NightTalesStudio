@@ -17,6 +17,8 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
+    <!-- 09.2.6-T3: `FakeSmtpEmailSender` captures the composed `MimeMessage`s of the e-mail pipeline. -->
+    <PackageReference Include="MimeKit" />
     <PackageReference Include="Shouldly" />
     <PackageReference Include="xunit.v3.extensibility.core" />
   </ItemGroup>

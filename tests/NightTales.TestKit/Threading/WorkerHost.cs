@@ -14,7 +14,9 @@ using NightTales.Infrastructure.Identity;
 using NightTales.Infrastructure.Jobs;
 using NightTales.Infrastructure.Persistence;
 using NightTales.Infrastructure.Persistence.Outbox;
+using NightTales.Infrastructure.Realtime;
 using NightTales.TestKit.Database;
+using NightTales.TestKit.Email;
 using NightTales.TestKit.Security;
 using NightTales.TestKit.Time;
 using NightTalesWorkerHost::NightTales.Worker.DependencyInjection;
@@ -217,6 +219,11 @@ public sealed class WorkerHost(TestDatabase database, FakeClock clock) : IAsyncD
         builder.Services.AddSingleton<IClock>(clock);
         builder.Services.AddWorkerServices(builder.Configuration, [.. _jobAssemblies]);
 
+        // 09.8.1-T2: the production Worker calls AddRealtime too (its outbox handlers are producers and
+        // the hub-ticket sweep reads the `Realtime` section from here), so the harness composes the same
+        // graph instead of a Worker that is missing a registration the real one has.
+        builder.Services.AddRealtime(builder.Configuration);
+
         // 09.2.4-T1, D13: RunOutboxOnceAsync is the harness's only outbox delivery path, so the Worker's
         // loop is dropped from the collection before the host is built — it could otherwise claim and deliver
         // a row the moment it is started. The dispatcher singleton stays, which is what RunOutboxOnceAsync
@@ -292,6 +299,14 @@ public sealed class WorkerHost(TestDatabase database, FakeClock clock) : IAsyncD
             [TestKek.PathConfigurationKey] = TestKek.SharedPath,
             [TestKek.PasswordConfigurationKey] = TestKek.SharedPassword,
         };
+
+        // 09.2.6-T3: the Worker's composition root registers the e-mail pipeline, which validates the
+        // `Email` section and `App:PublicOrigin` on start-up — see EmailTestSettings for what a host needs
+        // and for the keys a test overrides (EmailEndToEndTests points them at Mailpit).
+        foreach (var (key, value) in EmailTestSettings.WorkerSettings)
+        {
+            settings[key] = value;
+        }
 
         foreach (var queue in Enum.GetValues<JobQueue>())
         {
