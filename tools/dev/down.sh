@@ -78,21 +78,48 @@ env_value() {
   printf '%s' "$value"
 }
 
-# stop_tree PID: children first, so no orphan keeps a port after its wrapper exits.
-stop_tree() {
-  local pid="$1" child
+# nts_tree_snapshot PID: "pid|identity" for PID and every descendant, deepest first (the order they
+# are signalled in), capturing each instance identity now so the signal can re-check it. A process
+# that is already gone is skipped.
+nts_tree_snapshot() {
+  local pid="$1" child identity
   for child in $(pgrep -P "$pid" 2>/dev/null || true); do
-    stop_tree "$child"
+    nts_tree_snapshot "$child"
   done
-  kill "$pid" 2>/dev/null || true
+  identity="$(nts_process_identity "$pid" || true)"
+  [ -n "$identity" ] || return 0
+  printf '%s|%s\n' "$pid" "$identity"
+}
+
+# stop_captured SIGNAL SNAPSHOT: signal every pid in a snapshot, but only while it still carries the
+# identity captured for it. A pid that is already gone is skipped, and a pid reused between the
+# snapshot and the signal is left alone, so the escalation path can never kill a process this
+# checkout did not start.
+stop_captured() {
+  local signal="$1" snapshot="$2" entry pid stored current
+  printf '%s\n' "$snapshot" | while IFS= read -r entry; do
+    [ -n "$entry" ] || continue
+    pid="${entry%%|*}"
+    stored="${entry#*|}"
+    current="$(nts_process_identity "$pid" || true)"
+    if [ -z "$current" ]; then
+      continue
+    fi
+    if [ "$current" = "$stored" ]; then
+      kill -s "$signal" "$pid" 2>/dev/null || true
+    else
+      log "pid $pid changed identity before SIG$signal, left alone"
+    fi
+  done
 }
 
 # stop_service NAME: 0 when a process of ours was stopped, 1 when there was nothing to stop. A pid
 # file only counts as ours when the live process still matches both the service pattern and the
-# instance identity up.sh stored (lib.sh's nts_pid_owned); the identity is checked once more right
-# before the signal, so a pid recycled in between is still never killed.
+# instance identity up.sh stored (lib.sh's nts_pid_owned); the identity is checked right before the
+# signal, again during the wait, and again before the SIGKILL escalation, so a pid recycled at any
+# point - including during the 15 s wait - is never killed.
 stop_service() {
-  local name="$1" pid_file="$pid_dir/$1.pid" identity_file="$pid_dir/$1.identity" pid cmd
+  local name="$1" pid_file="$pid_dir/$1.pid" identity_file="$pid_dir/$1.identity" pid cmd expected snapshot
   if ! pid="$(nts_pid_owned "$name" "$pid_file" "$identity_file")"; then
     # Nothing to stop. When the pid file names a live process that is not the one up.sh started
     # (a recycled pid, or another checkout), say so before dropping the stale record.
@@ -111,38 +138,40 @@ stop_service() {
     fi
     return 1
   fi
+  expected="$(cat "$identity_file")"
   # Re-check immediately before signalling: the identity must still match.
-  if [ "$(nts_process_identity "$pid")" != "$(cat "$identity_file")" ]; then
+  if [ "$(nts_process_identity "$pid")" != "$expected" ]; then
     log "$name: pid $pid changed before the signal, left alone"
     rm -f "$pid_file" "$identity_file"
     return 1
   fi
   log "stopping $name (pid $pid)"
-  stop_tree "$pid"
+  snapshot="$(nts_tree_snapshot "$pid")"
+  stop_captured TERM "$snapshot"
+  # Wait up to 15 s for the process to exit, but stop the moment the pid no longer carries our
+  # identity: it then belongs to another process and must never be escalated against.
   local waited=0
   while kill -0 "$pid" 2>/dev/null && [ "$waited" -lt 15 ]; do
+    if [ "$(nts_process_identity "$pid")" != "$expected" ]; then
+      log "$name: pid $pid no longer carries our identity, not escalating"
+      break
+    fi
     sleep 1
     waited=$((waited + 1))
   done
-  if kill -0 "$pid" 2>/dev/null; then
+  # SeaweedFS is the one that needs the fallback: measured on seaweedfs 4.48 (2026-10-02) with
+  # up.sh's command line, `weed server` takes 10-25 s to exit on SIGTERM, and the same on SIGINT or a
+  # repeated SIGINT — the delay is its own graceful shutdown, not the signal — so the 15 s cap here
+  # often ends in this SIGKILL. The dev store is disposable (docs/dev-setup.md), so interrupting it is
+  # safe. The identity is checked once more first, and every captured pid is re-checked as it is
+  # signalled, so a pid recycled during the wait is never killed.
+  if kill -0 "$pid" 2>/dev/null && [ "$(nts_process_identity "$pid")" = "$expected" ]; then
     log "$name (pid $pid) did not exit in 15 s: SIGKILL"
-    stop_tree_kill "$pid"
+    snapshot="$(nts_tree_snapshot "$pid")"
+    stop_captured KILL "$snapshot"
   fi
   rm -f "$pid_file" "$identity_file"
   return 0
-}
-
-# stop_tree_kill PID: the same walk, with SIGKILL, for a process that ignored SIGTERM. SeaweedFS is
-# the one that needs it: measured on seaweedfs 4.48 (2026-10-02) with up.sh's command line, `weed
-# server` takes 10-25 s to exit on SIGTERM, and the same on SIGINT or a repeated SIGINT — the delay is
-# its own graceful shutdown, not the signal — so the 15 s cap here often ends in this SIGKILL. The dev
-# store is disposable (docs/dev-setup.md), so interrupting it is safe.
-stop_tree_kill() {
-  local pid="$1" child
-  for child in $(pgrep -P "$pid" 2>/dev/null || true); do
-    stop_tree_kill "$child"
-  done
-  kill -9 "$pid" 2>/dev/null || true
 }
 
 # ---------------------------------------------------------------- stop the processes

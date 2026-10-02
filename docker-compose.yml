@@ -9,10 +9,11 @@ x-app-env: &app-env
   ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Development}
   ConnectionStrings__Postgres: Host=postgres;Port=5432;Database=${POSTGRES_DB:-nighttales};Username=${POSTGRES_USER:-nighttales};Password=${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
 
-# The dev-only key material tools/dev/up.sh generates into .nts/dev/config (git-ignored): the ES256
-# signing key travels as an env file (a PEM cannot go through ${...} interpolation), the Data
-# Protection KEK is read from the read-only bind mount. Read-only config, never container state, and
-# nothing is committed (09.3.2-T1, 09.9.4-T1).
+# The dev-only key material tools/dev/up.sh generates into .nts/dev/config (git-ignored). The Data
+# Protection KEK PFX is the only file the containers see, read-only; the ES256 signing key is the
+# Api's alone: it travels as an env file (a PEM cannot go through ${...} interpolation) that only the
+# api service loads, because the Worker never composes the auth services and must not hold the Api's
+# signing key (09.3.2-T1). Nothing is committed (09.3.2-T1, 09.9.4-T1).
 #
 # The bind-mounted PFX stays owner-only (up.sh runs with umask 077, mode 0600), so the containers run
 # as the UID that owns the checkout instead of the image's own APP_UID (1654): a bind mount keeps the
@@ -21,11 +22,15 @@ x-app-env: &app-env
 # (docs/dev-setup.md). 1654 is only correct where the key is not needed.
 x-dev-app: &dev-app
   user: "${NTS_COMPOSE_UID:-1654}:${NTS_COMPOSE_GID:-1654}"
-  env_file:
-    - path: .nts/dev/config/compose.env
-      required: false
   volumes:
-    - "${NTS_DEV_CONFIG_DIR:-./.nts/dev/config}:/run/nts-dev:ro"
+    # Only the PFX is mounted, never the config directory (which also holds the signing key).
+    # `create_host_path: false` makes the start-up fail loudly when the key material has not been
+    # generated yet, instead of Docker creating a directory over the path.
+    - type: bind
+      source: "${NTS_DEV_CONFIG_DIR:-./.nts/dev/config}/dp-kek.pfx"
+      target: /run/nts-dev/dp-kek.pfx
+      read_only: true
+      bind: { create_host_path: false }
 
 x-dev-env: &dev-env
   DataProtection__KekPfxPath: /run/nts-dev/dp-kek.pfx
@@ -51,6 +56,10 @@ services:
     <<: *dev-app
     build: { context: ., dockerfile: src/NightTales.Api/Dockerfile }
     image: nighttales-api:dev
+    # Api-only: the ES256 signing key the Api verifies bearers with. The Worker must not hold it.
+    env_file:
+      - path: .nts/dev/config/compose.env
+        required: false
     environment:
       <<: [*app-env, *dev-env]
       ASPNETCORE_HTTP_PORTS: "8080;8081"   # public 8080 + internal 8081 (02 D10) [RULED — README §10 T10]

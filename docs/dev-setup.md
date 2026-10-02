@@ -233,7 +233,8 @@ has a healthcheck, and every value comes from `.env` (the file has `${VAR:?…}`
 is committed).
 
 ```bash
-docker compose config                                  # validates the merged file; fails without POSTGRES_PASSWORD
+docker compose config --quiet                          # validates the merged file (fails without POSTGRES_PASSWORD).
+                                                       # Never print the resolved file: it interpolates secrets.
 docker compose up -d --wait                            # postgres, api and worker all healthy
 docker compose --profile web up -d --wait              # adds web; 10.1.1-T2 owns that image
 docker compose ps --format '{{.Service}} {{.Ports}}'   # every published port starts with 127.0.0.1:
@@ -245,9 +246,11 @@ docker compose down                                    # or: down -v to discard 
   `aspnet:10.0` because the Worker hosts a Kestrel health listener, 09 W3 CR-42).
 - Both need the dev-only Auth/DataProtection material the native stack uses. Run `tools/dev/up.sh`
   once: it writes the throwaway ES256 signing key and the `DP_KEK` PFX into `.nts/dev/config`
-  (git-ignored). The two services read the key from `.nts/dev/config/compose.env` and the PFX through
-  a read-only bind mount (`NTS_DEV_CONFIG_DIR` moves the host side when `NTS_HOME` points at another
-  checkout) — read-only config, never container state, and nothing is committed.
+  (git-ignored). The **Api only** loads the signing key, from `.nts/dev/config/compose.env` (the
+  Worker never composes the auth services, 09.3.2-T1, so it must not hold it); both services get the
+  PFX through a single read-only bind mount of that one file (`NTS_DEV_CONFIG_DIR` moves the host side
+  when `NTS_HOME` points at another checkout) — read-only config, never container state, and nothing
+  is committed.
 - The DP_KEK PFX stays **owner-only** (`up.sh` runs with `umask 077`, mode `0600`) and a bind mount
   keeps the host ownership, so the containers run as the UID that owns the checkout instead of the
   image's `APP_UID` (1654). Put the numbers from `id -u` / `id -g` into `.env` as
@@ -261,8 +264,8 @@ docker compose down                                    # or: down -v to discard 
 
 - Do not run both paths at once: `5432`, `8333` and `1025` collide. The override file can move the
   host side of a published port.
-- `web` is behind the `web` profile and its image is 10.1.1-T2's, so `docker compose config` validates
-  the definition long before the image exists.
+- `web` is behind the `web` profile and its image is 10.1.1-T2's, so `docker compose config --quiet`
+  validates the definition long before the image exists.
 
 ## Migrations
 
