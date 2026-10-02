@@ -374,6 +374,55 @@ public sealed class GenerationRunsMigrationTests(TestDatabase database) : Integr
     }
 
     [Fact]
+    public async Task GenerationRun_ResultAndProvenance_RoundTripThroughTheContext()
+    {
+        var parents = await ParentsAsync();
+        var run = GenerationRun.Queue(
+                parents.UserId,
+                parents.SeriesId,
+                parents.EpisodeId,
+                GenerationKind.Story,
+                GenerationTrigger.User,
+                null,
+                EpisodeStatus.Draft,
+                null,
+                null,
+                0.5m,
+                DateTimeOffset.UtcNow)
+            .Value;
+        run.Start(DateTimeOffset.UtcNow);
+        run.RecordProvenance("p1+w1", "{\"writer\":\"model-a\",\"reviewer\":\"model-b\"}", DateTimeOffset.UtcNow);
+        run.RecordAttempt(DateTimeOffset.UtcNow);
+
+        await using (var insert = Database.CreateAppDbContext(new TestCurrentUser { Id = parents.UserId }))
+        {
+            insert.GenerationRuns.Add(run);
+            await insert.SaveChangesAsync(Ct);
+        }
+
+        var versionId = InsertVersion(parents, 1, run.Id);
+
+        await using (var complete = Database.CreateAppDbContext(new TestCurrentUser { Id = parents.UserId }))
+        {
+            var loadedRun = await complete.GenerationRuns.SingleAsync(row => row.Id == run.Id, Ct);
+            loadedRun.Succeed(0.2m, versionId, null, DateTimeOffset.UtcNow);
+            await complete.SaveChangesAsync(Ct);
+        }
+
+        await using var read = Database.CreateAppDbContext(new TestCurrentUser { Id = parents.UserId });
+        var loaded = await read.GenerationRuns.SingleAsync(row => row.Id == run.Id, Ct);
+
+        loaded.Status.ShouldBe(GenerationRunStatus.Succeeded);
+        loaded.ResultStoryVersionId.ShouldBe(versionId);
+        loaded.ResultFactSheetId.ShouldBeNull();
+        loaded.PromptVersion.ShouldBe("p1+w1");
+        loaded.Attempt.ShouldBe(1);
+        loaded.CountsTowardLimit.ShouldBeTrue();
+        SqlProbe.ScalarText(Database, $"SELECT models->>'reviewer' FROM generation_runs WHERE id = '{run.Id}'")
+            .ShouldBe("model-b");
+    }
+
+    [Fact]
     public async Task EpisodeDelete_CascadesItsRuns_ButNotTheSeriesLevelOnes()
     {
         var parents = await ParentsAsync();
@@ -537,6 +586,24 @@ public sealed class GenerationRunsMigrationTests(TestDatabase database) : Integr
 
         await transaction.CommitAsync(Ct);
 
+        SqlProbe.Execute(Database, lockStatement);
+    }
+
+    [Fact]
+    public async Task LockEpisodeForUpdateAsync_ForAnotherUsersOrAnAnonymousScope_LocksNothing()
+    {
+        var parents = await ParentsAsync();
+        var lockStatement = $"SELECT id FROM episodes WHERE id = '{parents.EpisodeId}' FOR UPDATE NOWAIT";
+
+        await using var other = Database.CreateAppDbContext(new TestCurrentUser { Id = Guid.CreateVersion7() });
+        await using var otherTransaction = await other.Database.BeginTransactionAsync(Ct);
+        await other.LockEpisodeForUpdateAsync(parents.EpisodeId, Ct);
+
+        await using var anonymous = Database.CreateAppDbContext();
+        await using var anonymousTransaction = await anonymous.Database.BeginTransactionAsync(Ct);
+        await anonymous.LockEpisodeForUpdateAsync(parents.EpisodeId, Ct);
+
+        // The owner's own lock is still free on a second connection (it would be 55P03 had B or anonymous locked it).
         SqlProbe.Execute(Database, lockStatement);
     }
 

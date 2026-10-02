@@ -390,7 +390,7 @@ public sealed class EpisodeStoryGenerationTests
     }
 
     [Fact]
-    public void RunIdRequired_EveryMethodRefusesAnEmptyRunId()
+    public void RunIdRequired_RequestRefusesAnEmptyRunId()
     {
         var episode = EpisodeIn(EpisodeStatus.Draft);
 

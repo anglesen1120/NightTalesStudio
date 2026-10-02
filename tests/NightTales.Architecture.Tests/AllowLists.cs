@@ -16,6 +16,20 @@ internal static class AllowLists
     internal const string StoryVersionMutationNamespacePrefix = "NightTales.Application.Features.Admin";
 
     /// <summary>
+    /// The only <c>src</c> types outside <see cref="StoryVersionMutationNamespacePrefix"/> that may call the
+    /// untyped EF mutation APIs (<c>DbContext.Update/Attach/Remove</c>, <c>PropertyEntry.CurrentValue</c>,
+    /// <c>PropertyValues.SetValues</c>) the <c>StoryVersion</c> rule bans. Matched as fully-qualified names.
+    /// <c>AuditableSaveChangesInterceptor</c> stamps <c>created_at</c>/<c>updated_at</c> through
+    /// <c>PropertyEntry.CurrentValue</c> for every <c>IAuditable</c> entity; <c>AfterSaveBehavior.Throw</c> still
+    /// rejects any update of a saved <c>story_versions</c> row.
+    /// </summary>
+    internal static readonly IReadOnlySet<string> StoryVersionUntypedMutationTypeNames =
+        new HashSet<string>(StringComparer.Ordinal)
+        {
+            "NightTales.Infrastructure.Persistence.AuditableSaveChangesInterceptor",
+        };
+
+    /// <summary>
     /// The only <c>src</c> types that may construct a <c>System.Net.Http.HttpClient</c> directly
     /// (11 README F13/D13): the pinned-TLS render-node connection factory, plus the pre-existing
     /// breached-password range checker inside the Identity registration. Every other transport goes

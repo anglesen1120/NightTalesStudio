@@ -114,14 +114,17 @@ public sealed class CallSiteRules
     /// <summary>
     /// <c>story_versions</c> is append-only (02.2.2 plan §3.2, FR-02-3): no call site outside
     /// <c>Features/Admin</c> (09.9.1) may <c>Update</c>, <c>Attach</c>, <c>Remove</c> or set-update/delete a
-    /// <c>StoryVersion</c>, and nothing outside it may assign <c>EntityEntry.State</c> at all (the way a row
-    /// would be forced to <c>Modified</c>/<c>Deleted</c>). The persistence model backs this at runtime with
-    /// <c>AfterSaveBehavior.Throw</c> on every property.
+    /// <c>StoryVersion</c>, nothing outside it may assign <c>EntityEntry.State</c> at all (the way a row
+    /// would be forced to <c>Modified</c>/<c>Deleted</c>), and the untyped paths that name no entity —
+    /// <c>DbContext.Update/Attach/Remove</c>, <c>PropertyEntry.CurrentValue</c>, <c>PropertyValues.SetValues</c> —
+    /// are banned outside it too, except for the explicit
+    /// <see cref="AllowLists.StoryVersionUntypedMutationTypeNames"/>. The persistence model backs this at
+    /// runtime with <c>AfterSaveBehavior.Throw</c> on every property.
     /// </summary>
     /// <remarks>
     /// The scan sees the generic instantiation (<c>DbSet&lt;StoryVersion&gt;.Update</c>,
     /// <c>ExecuteDelete&lt;StoryVersion&gt;</c>); a call through the non-generic <c>Update(object)</c> overload
-    /// names no entity, which is why the <c>State</c> setter is banned outright instead.
+    /// names no entity, which is why the <c>State</c> setter and the untyped calls are banned outright instead.
     /// </remarks>
     [Fact]
     public void StoryVersion_NoUpdatePathOutsideAdmin()
@@ -138,7 +141,8 @@ public sealed class CallSiteRules
         {
             Collect(
                 assembly,
-                called => called == "set_State" || called == "Add" || Array.IndexOf(mutating, called) >= 0,
+                called => called is "set_State" or "Add" or "set_CurrentValue" or "SetValues"
+                    || Array.IndexOf(mutating, called) >= 0,
                 MemberResolvingOpcodes,
                 null,
                 sites);
@@ -151,21 +155,47 @@ public sealed class CallSiteRules
                 && site.DeclaringType.StartsWith("Microsoft.EntityFrameworkCore.DbSet`1<NightTales.Domain.", StringComparison.Ordinal),
             "the IL scan must name the entity of a DbSet<T> call");
 
+        // Non-vacuity of the untyped checks: the audit interceptor really assigns PropertyEntry.CurrentValue.
+        sites.ShouldContain(site => IsPropertyEntryValueSetter(site), "the IL scan must see PropertyEntry.CurrentValue assignments");
+
         var violations = sites
             .Where(site => site.CalledMember != "Add")
             .Where(site => IsEntityEntryStateSetter(site)
                 || site.DeclaringType.Contains(storyVersion, StringComparison.Ordinal))
-            .Where(site => !site.OutermostNamespace.StartsWith(
-                AllowLists.StoryVersionMutationNamespacePrefix,
-                StringComparison.Ordinal))
+            .Where(site => !IsInNamespace(site.OutermostNamespace, AllowLists.StoryVersionMutationNamespacePrefix))
             .Select(site => $"{FullName(site)}.{site.Method} calls {site.DeclaringType}.{site.CalledMember}")
             .ToList();
 
+        violations.AddRange(sites
+            .Where(site => IsUntypedMutation(site, mutating))
+            .Where(site => !IsInNamespace(site.OutermostNamespace, AllowLists.StoryVersionMutationNamespacePrefix)
+                && !AllowLists.StoryVersionUntypedMutationTypeNames.Contains(FullName(site)))
+            .Select(site => $"{FullName(site)}.{site.Method} calls {site.DeclaringType}.{site.CalledMember} (untyped)"));
+
         violations.ShouldBeEmpty(
             $"{nameof(StoryVersion_NoUpdatePathOutsideAdmin)}: story_versions is append-only; only "
-            + $"{AllowLists.StoryVersionMutationNamespacePrefix} may mutate it (02.2.2 plan §3.2); found "
+            + $"{AllowLists.StoryVersionMutationNamespacePrefix} (and {string.Join(", ", AllowLists.StoryVersionUntypedMutationTypeNames)} "
+            + "for the untyped paths) may mutate it (02.2.2 plan §3.2); found "
             + string.Join("; ", violations));
     }
+
+    /// <summary>
+    /// Whether the site is an untyped EF write that names no entity: the non-generic <c>DbContext.Update/Attach/Remove</c>
+    /// family, <c>PropertyEntry.CurrentValue</c> or <c>PropertyValues.SetValues</c>.
+    /// </summary>
+    private static bool IsUntypedMutation(CallSite site, string[] mutating) =>
+        (site.DeclaringType == "Microsoft.EntityFrameworkCore.DbContext"
+            && Array.IndexOf(mutating, site.CalledMember) >= 0
+            && !site.CalledMember.StartsWith("Execute", StringComparison.Ordinal))
+        || IsPropertyEntryValueSetter(site)
+        || (site.CalledMember == "SetValues"
+            && site.DeclaringType.StartsWith("Microsoft.EntityFrameworkCore.ChangeTracking.PropertyValues", StringComparison.Ordinal));
+
+    /// <summary>EF declares <c>CurrentValue</c> on <c>MemberEntry</c> and overrides it on <c>PropertyEntry</c>; either binding writes a value.</summary>
+    private static bool IsPropertyEntryValueSetter(CallSite site) =>
+        site.CalledMember == "set_CurrentValue"
+        && (site.DeclaringType.StartsWith("Microsoft.EntityFrameworkCore.ChangeTracking.PropertyEntry", StringComparison.Ordinal)
+            || site.DeclaringType.StartsWith("Microsoft.EntityFrameworkCore.ChangeTracking.MemberEntry", StringComparison.Ordinal));
 
     /// <summary>
     /// Whether the site assigns EF's <c>EntityEntry.State</c> (declared on <c>EntityEntry</c> or one of its generic
@@ -176,13 +206,12 @@ public sealed class CallSiteRules
         && site.DeclaringType.StartsWith("Microsoft.EntityFrameworkCore.ChangeTracking.EntityEntry", StringComparison.Ordinal);
 
     private static bool IsIgnoreQueryFiltersAllowed(CallSite site) =>
-        site.OutermostNamespace == AllowLists.IgnoreQueryFiltersNamespacePrefix
-        || site.OutermostNamespace.StartsWith(
-            AllowLists.IgnoreQueryFiltersNamespacePrefix + ".", StringComparison.Ordinal)
-        || AllowLists.IgnoreQueryFiltersTypeNames.Contains(
-            site.OutermostNamespace.Length == 0
-                ? site.OutermostType
-                : site.OutermostNamespace + "." + site.OutermostType);
+        IsInNamespace(site.OutermostNamespace, AllowLists.IgnoreQueryFiltersNamespacePrefix)
+        || AllowLists.IgnoreQueryFiltersTypeNames.Contains(FullName(site));
+
+    /// <summary>Exact-or-dot-boundary namespace match: <c>Features.Admin</c> and <c>Features.Admin.X</c>, never <c>Features.AdminTools</c>.</summary>
+    private static bool IsInNamespace(string ns, string prefix) =>
+        ns == prefix || ns.StartsWith(prefix + ".", StringComparison.Ordinal);
 
     /// <summary>The site's declaring type as <c>namespace.Type</c>, the form the allow-lists match.</summary>
     private static string FullName(CallSite site) => Join(site.OutermostNamespace, site.OutermostType);

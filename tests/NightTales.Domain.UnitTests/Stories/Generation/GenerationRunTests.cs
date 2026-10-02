@@ -108,7 +108,7 @@ public sealed class GenerationRunTests
         run.CountsTowardLimit.ShouldBeTrue();
 
         var succeeded = RunningStoryRun();
-        succeeded.Succeed(0.1m, FixedNow);
+        SucceedStory(succeeded, 0.1m, FixedNow);
         Should.Throw<InvalidOperationException>(() => succeeded.Fail("story_generation_failed", null, false, FixedNow));
     }
 
@@ -140,10 +140,62 @@ public sealed class GenerationRunTests
     }
 
     [Fact]
-    public void GenerationRun_MarkPaused_WhenRunning_Throws()
+    public void GenerationRun_MarkPaused_AfterStart_ReturnsTheRunToQueuedWithThePauseReason()
     {
-        Should.Throw<InvalidOperationException>(
-            () => RunningStoryRun().MarkPaused(GenerationPauseReason.SpendCapReached, FixedNow));
+        var run = RunningStoryRun();
+        run.AdvanceStage(GenerationStage.Writing, FixedNow).IsError.ShouldBeFalse();
+        var pausedAt = FixedNow.AddSeconds(20);
+
+        run.MarkPaused(GenerationPauseReason.ProviderFundsExhausted, pausedAt);
+
+        run.Status.ShouldBe(GenerationRunStatus.Queued, "plan §7.2: a denial at any step leaves the run queued");
+        run.Stage.ShouldBe(GenerationStage.Queued);
+        run.StartedAt.ShouldBeNull("the resume's Start begins the run afresh");
+        run.PauseReason.ShouldBe(GenerationPauseReason.ProviderFundsExhausted);
+        run.CountsTowardLimit.ShouldBeFalse();
+        run.UpdatedAt.ShouldBe(pausedAt);
+        run.FinishedAt.ShouldBeNull();
+    }
+
+    [Fact]
+    public void GenerationRun_PausedAfterStart_ThenStartedAgain_RunsAfreshAndCountsAgain()
+    {
+        var run = RunningStoryRun();
+        run.MarkPaused(GenerationPauseReason.SpendCapReached, FixedNow.AddSeconds(5));
+
+        run.Start(FixedNow.AddHours(1));
+
+        run.Status.ShouldBe(GenerationRunStatus.Running);
+        run.StartedAt.ShouldBe(FixedNow.AddHours(1));
+        run.PauseReason.ShouldBeNull();
+        run.CountsTowardLimit.ShouldBeTrue("a served run is a normal run again");
+        run.AdvanceStage(GenerationStage.Writing, FixedNow.AddHours(1)).IsError.ShouldBeFalse();
+    }
+
+    [Fact]
+    public void GenerationRun_PausedThenStartedThenSucceeded_CountsTowardTheDailyLimit()
+    {
+        // QA-1 probe (plan §3.6 "saved a version = true"; README D2 "stays true for succeeded").
+        var run = NewStoryRun();
+        run.MarkPaused(GenerationPauseReason.SpendCapReached, FixedNow);
+        run.Start(FixedNow.AddHours(1));
+
+        SucceedStory(run, 0.1m, FixedNow.AddHours(1).AddSeconds(30));
+
+        run.Status.ShouldBe(GenerationRunStatus.Succeeded);
+        run.CountsTowardLimit.ShouldBeTrue();
+    }
+
+    [Fact]
+    public void GenerationRun_MarkPaused_FromRunning_ThenCancelled_StaysNonCounting()
+    {
+        var run = RunningStoryRun();
+        run.MarkPaused(GenerationPauseReason.ProviderFundsExhausted, FixedNow.AddSeconds(5));
+
+        run.Cancel(FixedNow.AddHours(12));
+
+        run.CountsTowardLimit.ShouldBeFalse();
+        run.Status.ShouldBe(GenerationRunStatus.Cancelled);
     }
 
     [Fact]
@@ -152,19 +204,103 @@ public sealed class GenerationRunTests
         var run = RunningStoryRun();
         run.AdvanceStage(GenerationStage.Saving, FixedNow).IsError.ShouldBeFalse();
 
-        run.Succeed(0.123456m, FixedNow.AddSeconds(30));
+        var storyVersionId = Guid.CreateVersion7();
+        run.Succeed(0.123456m, storyVersionId, null, FixedNow.AddSeconds(30));
 
         run.Status.ShouldBe(GenerationRunStatus.Succeeded);
         run.Stage.ShouldBe(GenerationStage.Done);
         run.CostUsd.ShouldBe(0.123456m);
         run.FinishedAt.ShouldBe(FixedNow.AddSeconds(30));
         run.CountsTowardLimit.ShouldBeTrue("a saved version counts (plan §3.6)");
+        run.ResultStoryVersionId.ShouldBe(storyVersionId);
+        run.ResultFactSheetId.ShouldBeNull();
     }
 
     [Fact]
     public void GenerationRun_Succeed_NegativeCost_Throws()
     {
-        Should.Throw<ArgumentOutOfRangeException>(() => RunningStoryRun().Succeed(-0.01m, FixedNow));
+        Should.Throw<ArgumentOutOfRangeException>(
+            () => RunningStoryRun().Succeed(-0.01m, Guid.CreateVersion7(), null, FixedNow));
+    }
+
+    [Fact]
+    public void GenerationRun_Succeed_StoryRun_RequiresAStoryVersion_AndRefusesEmptyIds()
+    {
+        var run = RunningStoryRun();
+
+        Should.Throw<ArgumentException>(() => run.Succeed(0.1m, null, null, FixedNow));
+        Should.Throw<ArgumentException>(() => run.Succeed(0.1m, Guid.Empty, null, FixedNow));
+        Should.Throw<ArgumentException>(() => run.Succeed(0.1m, Guid.CreateVersion7(), Guid.Empty, FixedNow));
+
+        run.Status.ShouldBe(GenerationRunStatus.Running, "a refused success leaves the run alone");
+        run.ResultStoryVersionId.ShouldBeNull();
+    }
+
+    [Fact]
+    public void GenerationRun_Succeed_FactSheetRun_RequiresAFactSheet_AndRecordsIt()
+    {
+        var run = Queue(GenerationKind.FactSheet, Guid.CreateVersion7()).Value;
+        run.Start(FixedNow);
+        Should.Throw<ArgumentException>(() => run.Succeed(0.1m, null, null, FixedNow));
+
+        var factSheetId = Guid.CreateVersion7();
+        run.Succeed(0.1m, null, factSheetId, FixedNow.AddSeconds(5));
+
+        run.ResultFactSheetId.ShouldBe(factSheetId);
+        run.ResultStoryVersionId.ShouldBeNull();
+    }
+
+    [Fact]
+    public void GenerationRun_Succeed_SeriesLevelRun_NeedsNoResultId()
+    {
+        var run = Queue(GenerationKind.Ideas, null).Value;
+        run.Start(FixedNow);
+
+        run.Succeed(0.1m, null, null, FixedNow.AddSeconds(5));
+
+        run.Status.ShouldBe(GenerationRunStatus.Succeeded);
+    }
+
+    [Fact]
+    public void GenerationRun_RecordProvenance_StoresThePromptVersionAndModels_WhileRunning()
+    {
+        var run = RunningStoryRun();
+        var at = FixedNow.AddSeconds(3);
+
+        run.RecordProvenance("p1+w1+s1", "{\"writer\":\"gpt-x\"}", at);
+
+        run.PromptVersion.ShouldBe("p1+w1+s1");
+        run.Models.ShouldBe("{\"writer\":\"gpt-x\"}");
+        run.UpdatedAt.ShouldBe(at);
+    }
+
+    [Fact]
+    public void GenerationRun_RecordProvenance_RefusesBlankValues_InvalidJson_AndANonRunningRun()
+    {
+        var running = RunningStoryRun();
+
+        Should.Throw<ArgumentException>(() => running.RecordProvenance(" ", "{}", FixedNow));
+        Should.Throw<ArgumentException>(() => running.RecordProvenance("p1", "", FixedNow));
+        Should.Throw<ArgumentException>(() => running.RecordProvenance("p1", "{not json", FixedNow));
+        Should.Throw<InvalidOperationException>(() => NewStoryRun().RecordProvenance("p1", "{}", FixedNow));
+
+        running.PromptVersion.ShouldBeNull();
+        running.Models.ShouldBeNull();
+    }
+
+    [Fact]
+    public void GenerationRun_RecordAttempt_CountsTheRetry_OnlyWhileRunning()
+    {
+        var run = RunningStoryRun();
+
+        run.RecordAttempt(FixedNow.AddSeconds(2));
+
+        run.Attempt.ShouldBe(1);
+        run.UpdatedAt.ShouldBe(FixedNow.AddSeconds(2));
+        Should.Throw<InvalidOperationException>(() => NewStoryRun().RecordAttempt(FixedNow));
+        run.Cancel(FixedNow.AddSeconds(3));
+        Should.Throw<InvalidOperationException>(() => run.RecordAttempt(FixedNow));
+        run.Attempt.ShouldBe(1);
     }
 
     [Fact]
@@ -269,7 +405,7 @@ public sealed class GenerationRunTests
         Should.Throw<InvalidOperationException>(() => run.MarkPaused(GenerationPauseReason.SpendCapReached, FixedNow));
         if (terminal != GenerationRunStatus.Succeeded)
         {
-            Should.Throw<InvalidOperationException>(() => run.Succeed(0.1m, FixedNow.AddHours(1)));
+            Should.Throw<InvalidOperationException>(() => SucceedStory(run, 0.1m, FixedNow.AddHours(1)));
         }
 
         if (terminal != GenerationRunStatus.Failed)
@@ -292,7 +428,7 @@ public sealed class GenerationRunTests
     {
         var run = NewStoryRun();
 
-        Should.Throw<InvalidOperationException>(() => run.Succeed(0.1m, FixedNow));
+        Should.Throw<InvalidOperationException>(() => SucceedStory(run, 0.1m, FixedNow));
 
         run.Status.ShouldBe(GenerationRunStatus.Queued);
         run.CostUsd.ShouldBeNull();
@@ -313,9 +449,9 @@ public sealed class GenerationRunTests
     public void GenerationRun_Succeed_Twice_KeepsTheFirstCostAndFinishedAt()
     {
         var run = RunningStoryRun();
-        run.Succeed(0.1m, FixedNow.AddSeconds(10));
+        SucceedStory(run, 0.1m, FixedNow.AddSeconds(10));
 
-        run.Succeed(9m, FixedNow.AddSeconds(99));
+        SucceedStory(run, 9m, FixedNow.AddSeconds(99));
 
         run.CostUsd.ShouldBe(0.1m);
         run.FinishedAt.ShouldBe(FixedNow.AddSeconds(10));
@@ -409,7 +545,7 @@ public sealed class GenerationRunTests
         switch (terminal)
         {
             case GenerationRunStatus.Succeeded:
-                run.Succeed(0.1m, FixedNow.AddSeconds(10));
+                SucceedStory(run, 0.1m, FixedNow.AddSeconds(10));
                 break;
             case GenerationRunStatus.Failed:
                 run.Fail("story_generation_failed", null, false, FixedNow.AddSeconds(10));
@@ -431,6 +567,9 @@ public sealed class GenerationRunTests
         run.Start(FixedNow);
         return run;
     }
+
+    private static void SucceedStory(GenerationRun run, decimal costUsd, DateTimeOffset now) =>
+        run.Succeed(costUsd, Guid.CreateVersion7(), null, now);
 
     private static ErrorOr.ErrorOr<GenerationRun> Queue(GenerationKind kind, Guid? episodeId, decimal worstCase = 0.25m) =>
         GenerationRun.Queue(

@@ -1,3 +1,4 @@
+using System.Text.Json;
 using ErrorOr;
 using NightTales.Domain.Common;
 using NightTales.Domain.Episodes;
@@ -186,7 +187,11 @@ public sealed class GenerationRun : Entity, IUserOwned, IAuditable
         };
     }
 
-    /// <summary>Starts a queued run (<c>queued → running</c>) and clears any pause; a run that already runs stays as it is.</summary>
+    /// <summary>
+    /// Starts a queued run (<c>queued → running</c>) and clears any pause; a run that already runs stays as it is.
+    /// Clearing a pause restores <see cref="CountsTowardLimit"/>, because a run that was held and then served is a
+    /// normal run again (plan §3.6: a saved version counts; D2: it stays true for succeeded).
+    /// </summary>
     /// <param name="now">The job's clock reading, stored as <see cref="StartedAt"/>.</param>
     /// <exception cref="InvalidOperationException">The run is already finished.</exception>
     public void Start(DateTimeOffset now)
@@ -197,6 +202,11 @@ public sealed class GenerationRun : Entity, IUserOwned, IAuditable
         }
 
         RequireStatus(GenerationRunStatus.Queued, nameof(Start));
+
+        if (PauseReason is not null)
+        {
+            CountsTowardLimit = true;
+        }
 
         Status = GenerationRunStatus.Running;
         StartedAt = now;
@@ -239,29 +249,103 @@ public sealed class GenerationRun : Entity, IUserOwned, IAuditable
     }
 
     /// <summary>
-    /// Holds a queued run (TL T19): it stays <see cref="GenerationRunStatus.Queued"/>, records why and stops
-    /// counting toward the daily limit, because the user's request was not served.
+    /// Holds a run (TL T19): it ends up <see cref="GenerationRunStatus.Queued"/>, records why and stops counting
+    /// toward the daily limit, because the user's request was not served. A <i>running</i> run is held too (plan
+    /// §7.2: <c>ProviderFundsExhausted</c> / <c>IBudgetGuard</c> denial at any step "stays <c>queued</c>"); it goes
+    /// back to <see cref="GenerationStage.Queued"/> with no <see cref="StartedAt"/>, so the resume's
+    /// <see cref="Start"/> begins it afresh.
     /// </summary>
     /// <param name="reason">Why the run is held.</param>
     /// <param name="now">The caller's clock reading.</param>
-    /// <exception cref="InvalidOperationException">The run is not queued.</exception>
+    /// <exception cref="InvalidOperationException">The run is already finished.</exception>
     public void MarkPaused(GenerationPauseReason reason, DateTimeOffset now)
     {
-        RequireStatus(GenerationRunStatus.Queued, nameof(MarkPaused));
+        RequireOpen(nameof(MarkPaused));
 
+        Status = GenerationRunStatus.Queued;
+        Stage = GenerationStage.Queued;
+        StartedAt = null;
         PauseReason = reason;
         CountsTowardLimit = false;
         UpdatedAt = now;
     }
 
-    /// <summary>Finishes a running run successfully: <c>succeeded</c>, stage <c>done</c>, the settled cost.</summary>
+    /// <summary>
+    /// Records the D5 composite prompt version and the per-step model record once the writer prompt was assembled
+    /// (D21); a later call replaces them (a revision step adds its model).
+    /// </summary>
+    /// <param name="promptVersion">The composite prompt version.</param>
+    /// <param name="modelsJson">The per-step model record, a JSON document.</param>
+    /// <param name="now">The job's clock reading.</param>
+    /// <exception cref="ArgumentException">A value is blank or <paramref name="modelsJson"/> is not valid JSON.</exception>
+    /// <exception cref="InvalidOperationException">The run is not running.</exception>
+    public void RecordProvenance(string promptVersion, string modelsJson, DateTimeOffset now)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(promptVersion);
+        ArgumentException.ThrowIfNullOrWhiteSpace(modelsJson);
+
+        try
+        {
+            using var document = JsonDocument.Parse(modelsJson);
+        }
+        catch (JsonException exception)
+        {
+            throw new ArgumentException("The model record must be a JSON document.", nameof(modelsJson), exception);
+        }
+
+        RequireStatus(GenerationRunStatus.Running, nameof(RecordProvenance));
+
+        PromptVersion = promptVersion;
+        Models = modelsJson;
+        UpdatedAt = now;
+    }
+
+    /// <summary>Counts one writer invalid-output retry (plan §7.2: <c>attempt + 1</c>); 0 is the first attempt.</summary>
+    /// <param name="now">The job's clock reading.</param>
+    /// <exception cref="InvalidOperationException">The run is not running.</exception>
+    public void RecordAttempt(DateTimeOffset now)
+    {
+        RequireStatus(GenerationRunStatus.Running, nameof(RecordAttempt));
+
+        Attempt++;
+        UpdatedAt = now;
+    }
+
+    /// <summary>
+    /// Finishes a running run successfully: <c>succeeded</c>, stage <c>done</c>, the settled cost and the saved
+    /// result. A <c>story</c> run must name its story version and a <c>fact_sheet</c> run its fact sheet; the other
+    /// kinds name none.
+    /// </summary>
     /// <param name="costUsd">The non-negative settled cost in USD.</param>
+    /// <param name="resultStoryVersionId">The story version the run saved (required for <c>story</c>).</param>
+    /// <param name="resultFactSheetId">The fact sheet the run saved (required for <c>fact_sheet</c>).</param>
     /// <param name="now">The job's clock reading, stored as <see cref="FinishedAt"/>.</param>
     /// <exception cref="InvalidOperationException">The run is not running (and did not already succeed).</exception>
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="costUsd"/> is negative.</exception>
-    public void Succeed(decimal costUsd, DateTimeOffset now)
+    /// <exception cref="ArgumentException">A result id is empty, or the kind's required result id is missing.</exception>
+    public void Succeed(decimal costUsd, Guid? resultStoryVersionId, Guid? resultFactSheetId, DateTimeOffset now)
     {
         ArgumentOutOfRangeException.ThrowIfNegative(costUsd);
+
+        if (resultStoryVersionId == Guid.Empty)
+        {
+            throw new ArgumentException("The result story version id cannot be empty.", nameof(resultStoryVersionId));
+        }
+
+        if (resultFactSheetId == Guid.Empty)
+        {
+            throw new ArgumentException("The result fact sheet id cannot be empty.", nameof(resultFactSheetId));
+        }
+
+        if (Kind == GenerationKind.Story && resultStoryVersionId is null)
+        {
+            throw new ArgumentException("A story run saves a story version.", nameof(resultStoryVersionId));
+        }
+
+        if (Kind == GenerationKind.FactSheet && resultFactSheetId is null)
+        {
+            throw new ArgumentException("A fact sheet run saves a fact sheet.", nameof(resultFactSheetId));
+        }
 
         if (Status == GenerationRunStatus.Succeeded)
         {
@@ -273,6 +357,9 @@ public sealed class GenerationRun : Entity, IUserOwned, IAuditable
         Status = GenerationRunStatus.Succeeded;
         Stage = GenerationStage.Done;
         CostUsd = costUsd;
+        ResultStoryVersionId = resultStoryVersionId;
+        ResultFactSheetId = resultFactSheetId;
+        CountsTowardLimit = true;
         FinishedAt = now;
         UpdatedAt = now;
     }

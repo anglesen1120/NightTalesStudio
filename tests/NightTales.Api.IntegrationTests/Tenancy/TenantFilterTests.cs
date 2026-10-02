@@ -1,11 +1,13 @@
 using ErrorOr;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.Extensions.DependencyInjection;
 using NightTales.Application.Abstractions;
 using NightTales.Application.Abstractions.Persistence;
 using NightTales.Application.Common.Errors;
 using NightTales.Api.IntegrationTests.Harness;
 using NightTales.Api.IntegrationTests.Persistence;
+using NightTales.Domain.Common;
 using NightTales.Domain.Series;
 using NightTales.TestKit;
 using NightTales.TestKit.Api;
@@ -97,6 +99,40 @@ public sealed class TenantFilterTests(TestDatabase database) : IntegrationTest(d
         {
             (await read.Query<Series>().SingleAsync(ct)).Id.ShouldBe(scenario.SeriesB);
         }
+    }
+
+    [Fact]
+    public void TenantFilter_EveryUserOwnedEntity_OfTheWriteModel_HasTheTenantFilter()
+    {
+        using var write = Database.CreateAppDbContext();
+
+        AssertEveryUserOwnedEntityIsFiltered(write.Model);
+    }
+
+    [Fact]
+    public void TenantFilter_EveryUserOwnedEntity_OfTheReadModel_HasTheTenantFilter()
+    {
+        using var read = Database.CreateReadDbContext();
+
+        AssertEveryUserOwnedEntityIsFiltered(read.Model);
+    }
+
+    private static void AssertEveryUserOwnedEntityIsFiltered(IModel model)
+    {
+        var owned = model.GetEntityTypes()
+            .Where(entityType => typeof(IUserOwned).IsAssignableFrom(entityType.ClrType))
+            .ToList();
+
+        owned.ShouldNotBeEmpty("the check is vacuous without user-owned entities");
+        owned.Select(entityType => entityType.ClrType.Name)
+            .ShouldContain("GenerationRun", "the new D2 table is user-owned");
+
+        var unfiltered = owned
+            .Where(entityType => entityType.GetDeclaredQueryFilters().All(filter => filter.Key != "tenant"))
+            .Select(entityType => entityType.ClrType.Name)
+            .ToList();
+
+        unfiltered.ShouldBeEmpty("every IUserOwned entity needs the \"tenant\" query filter (09 README D10)");
     }
 
     [Fact]
