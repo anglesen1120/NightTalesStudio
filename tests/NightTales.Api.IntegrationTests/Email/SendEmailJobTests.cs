@@ -147,21 +147,14 @@ public sealed class SendEmailJobTests(TestDatabase database) : IntegrationTest(d
         var first = Task.Run(() => harness.RunJobOnceAsync(id, ct), ct);
         await harness.Smtp.FirstCall.WaitAsync(TimeSpan.FromSeconds(30), ct);
 
-        try
-        {
-            // A redelivered outbox event enqueues a second job for the same message: the send lock must make
-            // it return without a second SMTP call (09.2.6-T3 CR2).
-            var second = Task.Run(() => harness.RunJobOnceAsync(id, ct), ct);
-            await second.WaitAsync(TimeSpan.FromSeconds(30), ct);
+        // A redelivered outbox event enqueues a second job for the same message: the send lock makes it wait
+        // for this attempt and then leave at the `sent` guard, so exactly one SMTP call happens
+        // (09.2.6-T3 CR2). Without the lock the second job sends beside the first.
+        var second = Task.Run(() => harness.RunJobOnceAsync(id, ct), ct);
 
-            harness.Smtp.CallCount.ShouldBe(1, "the second job must not reach SMTP while the first holds the send lock");
-        }
-        finally
-        {
-            harness.Smtp.Release();
-        }
+        harness.Smtp.Release();
 
-        await first.WaitAsync(TimeSpan.FromSeconds(30), ct);
+        await Task.WhenAll(first, second).WaitAsync(TimeSpan.FromSeconds(30), ct);
 
         harness.Smtp.CallCount.ShouldBe(1);
         SqlProbe.ScalarText(Database, $"SELECT status FROM email_messages WHERE id = '{id}'").ShouldBe("sent");
@@ -171,6 +164,78 @@ public sealed class SendEmailJobTests(TestDatabase database) : IntegrationTest(d
         // it cannot leak into another test of the shared class database.
         (await harness.DeliverAsync(ct)).ShouldBe(1);
         harness.Smtp.CallCount.ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task SendEmailJob_TwoMessagesSharingATimestampPrefix_BothSend()
+    {
+        var ct = TestContextToken.Value;
+        var owner = await Database.CreateUserBuilder().CreateAsync(ct: ct);
+        await using var harness = await EmailHarness.StartAsync(Database, new FakeClock(), ct);
+
+        var firstId = await harness.QueueAsync(
+            owner.Id,
+            "password_changed",
+            Language.Vi,
+            EmailHarness.Values(("displayName", "A"), ("occurredAt", "2026-01-01 00:00")),
+            ct);
+        var secondId = await harness.QueueAsync(
+            owner.Id,
+            "password_changed",
+            Language.Vi,
+            EmailHarness.Values(("displayName", "B"), ("occurredAt", "2026-01-01 00:00")),
+            ct);
+
+        // A UUIDv7 leads with its creation timestamp, so two messages queued in the same millisecond share
+        // their first eight bytes. Force both ids into that shape — the one a key derived from the leading
+        // bytes confuses — and drop the outbox rows the queue wrote, because the jobs are driven directly.
+        var firstPrefixed = WithLeadingBytes(firstId, suffix: 0x01);
+        var secondPrefixed = WithLeadingBytes(firstId, suffix: 0x02);
+
+        await Database.ExecuteAsync(
+            $"UPDATE email_messages SET id = '{firstPrefixed}' WHERE id = '{firstId}'",
+            ct);
+        await Database.ExecuteAsync(
+            $"UPDATE email_messages SET id = '{secondPrefixed}' WHERE id = '{secondId}'",
+            ct);
+        await Database.ExecuteAsync($"DELETE FROM outbox_messages WHERE user_id = '{owner.Id}'", ct);
+
+        harness.Smtp.HoldCalls = true;
+
+        var first = Task.Run(() => harness.RunJobOnceAsync(firstPrefixed, ct), ct);
+        await harness.Smtp.FirstCall.WaitAsync(TimeSpan.FromSeconds(30), ct);
+
+        // The second message is a different send: it must take its own lock and reach SMTP while the first
+        // is still in flight. Under a key built from the leading bytes both ids collapsed onto one lock, and
+        // the losing message was never sent.
+        var second = Task.Run(() => harness.RunJobOnceAsync(secondPrefixed, ct), ct);
+        await harness.Smtp.WaitForCallsAsync(2, ct);
+
+        harness.Smtp.Release();
+
+        await Task.WhenAll(first, second).WaitAsync(TimeSpan.FromSeconds(30), ct);
+
+        harness.Smtp.CallCount.ShouldBe(2);
+
+        foreach (var id in new[] { firstPrefixed, secondPrefixed })
+        {
+            SqlProbe.ScalarText(Database, $"SELECT status FROM email_messages WHERE id = '{id}'").ShouldBe("sent");
+        }
+    }
+
+    /// <summary>Builds an id that shares <paramref name="source"/>'s first eight bytes and fixes the rest.</summary>
+    /// <param name="source">The id whose leading bytes are kept.</param>
+    /// <param name="suffix">The byte written into positions 8..15.</param>
+    private static Guid WithLeadingBytes(Guid source, byte suffix)
+    {
+        var bytes = source.ToByteArray();
+
+        for (var index = 8; index < bytes.Length; index++)
+        {
+            bytes[index] = suffix;
+        }
+
+        return new Guid(bytes);
     }
 
     [Fact]

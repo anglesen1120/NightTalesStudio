@@ -90,14 +90,6 @@ public sealed class EmailOptionsTests
         exception.Message.ShouldBe(EmailOptionsValidator.DevelopmentPepperFailure);
     }
 
-    [Fact]
-    public void NonDevelopmentOnLoopbackWithCommittedDevelopmentPepper_Starts()
-    {
-        // The committed loopback configuration is what the build-time OpenAPI generator boots in Production,
-        // so the development pepper is refused only against a remote server.
-        Should.NotThrow(() => Start("127.0.0.1", "None", pepper: EmailOptions.DevelopmentAddressHashPepper));
-    }
-
     /// <summary>Builds the e-mail composition for one configuration and starts it.</summary>
     /// <param name="host">The SMTP host.</param>
     /// <param name="security">The configured transport security.</param>

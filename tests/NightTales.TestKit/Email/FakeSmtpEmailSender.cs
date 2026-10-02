@@ -48,6 +48,26 @@ public sealed class FakeSmtpEmailSender : ISmtpEmailSender
     /// <summary>Lets every held call finish.</summary>
     public void Release() => _release.TrySetResult();
 
+    /// <summary>Waits (bounded) until the transport has been called at least <paramref name="count"/> times.</summary>
+    /// <param name="count">The call count to wait for.</param>
+    /// <param name="cancellationToken">Cancels the wait.</param>
+    /// <exception cref="TimeoutException">The count was not reached within the bound.</exception>
+    public async Task WaitForCallsAsync(int count, CancellationToken cancellationToken)
+    {
+        var deadline = Environment.TickCount64 + 30_000;
+
+        while (CallCount < count)
+        {
+            if (Environment.TickCount64 > deadline)
+            {
+                throw new TimeoutException(
+                    $"The transport was called {CallCount} time(s) within the bound, not {count}.");
+            }
+
+            await Task.Delay(10, cancellationToken).ConfigureAwait(false);
+        }
+    }
+
     /// <summary>
     /// When set, the call throws it instead of accepting the message — the shape of an unreachable server or
     /// a TLS failure. The message must never contain the recipient address: a real adapter's exception is

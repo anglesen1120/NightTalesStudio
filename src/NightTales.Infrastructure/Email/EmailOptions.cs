@@ -10,10 +10,10 @@ namespace NightTales.Infrastructure.Email;
 /// <para>
 /// Defaults are the daily development path (11.1.1-T2's Mailpit on <c>127.0.0.1:1025</c>), and the rules
 /// that must never hold outside Development — a plaintext connection to a remote server, the committed
-/// development pepper against a remote server — are refused by <see cref="EmailOptionsValidator"/> at
-/// start-up instead of being silently inherited by a deployment. Both rules share the same exception: the
-/// committed configuration is the loopback development sink, and it must boot in every environment because
-/// the build-time OpenAPI generator starts the Api in Production.
+/// development pepper — are refused by <see cref="EmailOptionsValidator"/> at start-up instead of being
+/// silently inherited by a deployment. The transport rule is the one that admits the committed loopback
+/// sink in every environment, because the build-time OpenAPI generator starts the Api in Production and
+/// has to boot; the pepper carries no such exception, so every non-Development host supplies its own.
 /// </para>
 /// <para>
 /// The secrets themselves (<c>Email:Smtp:Password</c>, <c>Email:AddressHashPepper</c>) come from the
@@ -57,13 +57,14 @@ public sealed class EmailOptions
     /// </summary>
     /// <remarks>
     /// The committed <c>appsettings.json</c> carries the development placeholder
-    /// (<see cref="DevelopmentAddressHashPepper"/>) so that a laptop, the build-time OpenAPI generator and the
-    /// test harnesses all boot without a secret store; a deployment overrides it with its own value
-    /// (<c>Email__AddressHashPepper</c>, 11 §10). Outside Development the validator refuses that placeholder
-    /// against a non-loopback server, so a deployment that forgets the override cannot silently hash with a
-    /// value the world knows (09 README BD16). Rotating the pepper invalidates nothing — the hash is a
-    /// correlation value, not a key — but rows hashed under the old pepper no longer correlate with the same
-    /// address.
+    /// (<see cref="DevelopmentAddressHashPepper"/>) so that a laptop and the test harnesses boot without a
+    /// secret store; it is usable in Development only. Every other host is handed its own value
+    /// (<c>Email__AddressHashPepper</c>, 11 §10) exactly as it is handed the signing key and the
+    /// <c>DP_KEK</c> — including the build-time OpenAPI generator, which boots the Api in Production — and
+    /// the validator refuses the placeholder outside Development, so a deployment that forgets the override
+    /// cannot silently hash with a value the world knows (09 README BD16). Rotating the pepper invalidates
+    /// nothing — the hash is a correlation value, not a key — but rows hashed under the old pepper no longer
+    /// correlate with the same address.
     /// </remarks>
     public string AddressHashPepper { get; set; } = string.Empty;
 

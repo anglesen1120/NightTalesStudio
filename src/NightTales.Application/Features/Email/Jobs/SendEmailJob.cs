@@ -38,8 +38,8 @@ namespace NightTales.Application.Features.Email.Jobs;
 /// <para>
 /// <b>The send lock spans the status read to the result commit</b> (09.2.6-T3, 09 §5.3). Hangfire locks a
 /// job by its own id, so a redelivered outbox event enqueues a second job for the same message with a
-/// different id; <see cref="IEmailSendLock"/> is keyed by the message id, so the second job finds the lock
-/// taken and returns, leaving the send to the worker that holds it.
+/// different id; <see cref="IEmailSendLock"/> is keyed by the message id, and the second job waits on it,
+/// sees the first attempt's committed result and leaves at the <c>sent</c> guard.
 /// </para>
 /// <para>
 /// <b>Failures are recorded, then rethrown</b> so Hangfire applies the five attempts of the <c>email</c>
@@ -52,6 +52,12 @@ namespace NightTales.Application.Features.Email.Jobs;
 /// logged — the hash is (09 README BD16) — a failed attempt is logged by exception <em>type</em> only, and
 /// the exception Hangfire persists is an <see cref="EmailSendFailedException"/> carrying the code, the
 /// template and the message id rather than the transport's own text, which echoes the recipient.
+/// </para>
+/// <para>
+/// <b>The one write a failed attempt must not make through this scope is the <c>sent</c> one.</b> If the
+/// SMTP server accepted the message and the commit of its record then failed, the tracked entity already
+/// holds the in-memory <c>sent</c> state (its <c>params</c> cleared), so the failure is recorded through a
+/// scope of its own; see <see cref="RecordFailureOnFreshScopeAsync"/>.
 /// </para>
 /// <para>
 /// It calls <c>SaveChangesAsync</c> itself: 09 README D5's "handlers never save" rule is about Mediator
@@ -90,18 +96,12 @@ public sealed partial class SendEmailJob(
         var database = services.GetRequiredService<IAppDbContext>();
 
         // 09.2.6-T3: the send lock is keyed by the message id and held until the result is committed, so a
-        // second job for the same message — a redelivered outbox event — cannot reach SMTP beside this one.
+        // second job for the same message — a redelivered outbox event — waits here and then leaves at the
+        // `sent` guard instead of racing this attempt into a second SMTP call.
         await using var sendLock = await services
             .GetRequiredService<IEmailSendLock>()
-            .TryAcquireAsync(database, emailMessageId, cancellationToken)
+            .AcquireAsync(database, emailMessageId, cancellationToken)
             .ConfigureAwait(false);
-
-        if (sendLock is null)
-        {
-            LogSendInFlight(emailMessageId);
-
-            return;
-        }
 
         var row = await database
             .EmailMessages
@@ -212,27 +212,34 @@ public sealed partial class SendEmailJob(
             providerMessageId = sent.Value;
             row.Sent(providerMessageId, clock.UtcNow);
 
-            // From here the server holds the message: a failure to record `sent` must not turn the row into a
-            // `failed` one — `Sent` already cleared its params in memory — so the catch below records the
-            // failed attempt without touching the entity (09.2.6-T3 CR3).
+            // From here the server holds the message. A failure to record `sent` must not be written through
+            // this scope — `Sent` already cleared this entity's params in memory — so the catch below records
+            // the failed attempt on the committed row through a scope of its own (09.2.6-T3 CR3).
             sendAccepted = true;
             await database.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         }
         catch (Exception exception)
         {
+            LogSendFailed(failureCode, row.Id, row.Template, row.ToHash, exception.GetType().Name);
+
             if (sendAccepted)
             {
-                // The server accepted the message and only the commit of its record failed. The row is left
-                // as the last committed write left it — params intact, no `sent_at` — so Hangfire's retry
-                // re-reads and re-sends instead of crashing on a `failed` row whose params `Sent` cleared.
+                // The server accepted the message and only the commit of its record failed. The attempt is
+                // still recorded as failed — the row must never look queued after an attempt was made
+                // (09.2.6-T3 L113) — but not through this scope: `Sent` already cleared the tracked entity's
+                // params in memory, and reloading the row in this context would return that same dirty
+                // instance. A scope of its own writes the failure onto the committed row, whose params and
+                // `sent_at` are untouched, so Hangfire's retry re-reads and re-sends it (at-least-once)
+                // instead of crashing on a nulled row (09.2.6-T3 CR3).
                 metrics.Failed(row.Template, failureCode);
+
+                await RecordFailureOnFreshScopeAsync(owner.Value, emailMessageId, failureCode, cancellationToken)
+                    .ConfigureAwait(false);
             }
             else
             {
                 await FailAsync(database, row, failureCode, cancellationToken).ConfigureAwait(false);
             }
-
-            LogSendFailed(failureCode, row.Id, row.Template, row.ToHash, exception.GetType().Name);
 
             throw new EmailSendFailedException(failureCode, row.Template, row.Id);
         }
@@ -282,6 +289,49 @@ public sealed partial class SendEmailJob(
         CancellationToken cancellationToken)
     {
         metrics.Failed(row.Template, code);
+        row.Failed(code, clock.UtcNow);
+
+        await database.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Records a failed attempt on the committed row through a scope of its own, for the one case where the
+    /// job's own entity must not be saved: the SMTP server accepted the message and only the commit of its
+    /// <c>sent</c> record failed.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="DomainEmailMessage.Sent"/> already cleared the tracked entity's <c>params</c> in memory,
+    /// so writing that instance as <c>failed</c> would store a row that is neither sent nor retryable (its
+    /// values are gone and its <c>sent_at</c> is set — the CR3 defect). The fresh scope reloads the row as
+    /// the last commit left it and moves it to <c>failed</c> with the code, which keeps the failure-state
+    /// contract (09.2.6-T3 L113: record, then rethrow) and leaves the values a retry needs (at-least-once).
+    /// </remarks>
+    /// <param name="userId">The owner the fresh scope is pinned to, so the tenant filter admits the row.</param>
+    /// <param name="emailMessageId">The row to fail.</param>
+    /// <param name="code">The failure code to record.</param>
+    /// <param name="cancellationToken">Cancels the reload and the commit.</param>
+    private async Task RecordFailureOnFreshScopeAsync(
+        Guid userId,
+        Guid emailMessageId,
+        string code,
+        CancellationToken cancellationToken)
+    {
+        // The scope is created and pinned exactly as FindOwnerAsync's lookup scope is: the ordering guard of
+        // ISystemContext.For only admits a scope that has not created a DbContext yet.
+        using var scope = services.GetRequiredService<IServiceScopeFactory>().CreateScope();
+        using var pinned = scope.ServiceProvider.GetRequiredService<ISystemContext>().For(userId);
+
+        var database = scope.ServiceProvider.GetRequiredService<IAppDbContext>();
+        var row = await database
+            .EmailMessages
+            .FirstOrDefaultAsync(message => message.Id == emailMessageId, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (row is null)
+        {
+            return;
+        }
+
         row.Failed(code, clock.UtcNow);
 
         await database.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
@@ -379,12 +429,6 @@ public sealed partial class SendEmailJob(
         Level = LogLevel.Warning,
         Message = "{Code} message={EmailMessageId} template={Template} toHash={ToHash}: the server refused the recipient permanently, so the message is failed without a retry")]
     private partial void LogSendRejected(string code, Guid emailMessageId, string template, string toHash);
-
-    [LoggerMessage(
-        EventId = 1307,
-        Level = LogLevel.Debug,
-        Message = "email.send.in-flight message={EmailMessageId}: another worker holds the send lock, so this attempt returns")]
-    private partial void LogSendInFlight(Guid emailMessageId);
 
     [LoggerMessage(
         EventId = 1305,

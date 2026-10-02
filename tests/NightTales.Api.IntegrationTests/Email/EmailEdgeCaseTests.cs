@@ -314,7 +314,7 @@ public sealed class EmailEdgeCaseTests(TestDatabase database) : IntegrationTest(
     }
 
     [Fact]
-    public async Task SendEmailJob_PostSendCommitFailure_LeavesRecoverableRow()
+    public async Task SendEmailJob_PostSendCommitFailure_RecordsFailedAndRetries()
     {
         var ct = TestContextToken.Value;
         var owner = await Database.CreateUserBuilder().CreateAsync(ct: ct);
@@ -341,11 +341,15 @@ public sealed class EmailEdgeCaseTests(TestDatabase database) : IntegrationTest(
             harness.Failures.Count.ShouldBe(1);
             harness.Smtp.CallCount.ShouldBe(1);
 
-            // The row is not a corrupt `failed` one: `Sent` cleared its params only in memory, so what the
-            // last committed write left is a queued row with its values and no `sent_at` (09.2.6-T3 CR3).
-            SqlProbe.ScalarText(Database, $"SELECT status FROM email_messages WHERE id = '{id}'").ShouldBe("queued");
+            // The attempt is recorded — a row never looks queued once an attempt was made (09.2.6-T3 L113) —
+            // but on the committed row: the values are still there and neither `sent_at` nor the provider id
+            // was written, because the `sent` commit never happened (09.2.6-T3 CR3).
+            SqlProbe.ScalarText(Database, $"SELECT status FROM email_messages WHERE id = '{id}'").ShouldBe("failed");
+            SqlProbe.ScalarText(Database, $"SELECT last_error_code FROM email_messages WHERE id = '{id}'")
+                .ShouldBe(ErrorCodes.EmailSendFailed);
             SqlProbe.Count(Database, $"SELECT count(*) FROM email_messages WHERE id = '{id}' AND params IS NOT NULL").ShouldBe(1);
             SqlProbe.Count(Database, $"SELECT count(*) FROM email_messages WHERE id = '{id}' AND sent_at IS NULL").ShouldBe(1);
+            SqlProbe.Count(Database, $"SELECT count(*) FROM email_messages WHERE id = '{id}' AND provider_message_id IS NULL").ShouldBe(1);
         }
         finally
         {
@@ -353,12 +357,14 @@ public sealed class EmailEdgeCaseTests(TestDatabase database) : IntegrationTest(
             await Database.ExecuteAsync("DROP FUNCTION nts_block_sent()", ct);
         }
 
-        // With the fault gone the same row recovers — the retry re-reads its params and sends instead of
-        // failing forever on `EmailParamsJson.FromJson(null)`.
+        // With the fault gone the same row is retried and re-sent (at-least-once) instead of failing forever
+        // on `EmailParamsJson.FromJson(null)`.
         (await harness.RunJobAgainAsync(id, ct)).ShouldBe(1);
 
         SqlProbe.ScalarText(Database, $"SELECT status FROM email_messages WHERE id = '{id}'").ShouldBe("sent");
         SqlProbe.Count(Database, $"SELECT count(*) FROM email_messages WHERE id = '{id}' AND params IS NULL").ShouldBe(1);
+        SqlProbe.Count(Database, $"SELECT count(*) FROM email_messages WHERE id = '{id}' AND attempts = 2").ShouldBe(1);
+        harness.Smtp.CallCount.ShouldBe(2);
     }
 
     [Fact]

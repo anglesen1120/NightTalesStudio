@@ -17,100 +17,149 @@ namespace NightTales.Infrastructure.Email;
 /// advisory lock stays held from the status read to the result commit.
 /// </para>
 /// <para>
-/// The key is the first eight bytes of the message's UUID: 64 bits make a collision between two live
-/// messages so unlikely that it is not a correctness dependency (a collision would only serialise two
-/// unrelated sends).
+/// The lock is taken with the blocking <c>pg_advisory_lock</c>: a job that finds the message already being
+/// sent waits for that send to commit and then leaves at the idempotency guard. A non-blocking variant would
+/// return a successful job for a message nobody sent, so a wait that outlives the connection's command
+/// timeout is preferred and is retried by Hangfire.
+/// </para>
+/// <para>
+/// The key is derived from all sixteen bytes of the message's UUID: <c>pg_advisory_lock(int4, int4)</c> takes
+/// two keys, and both halves of the UUID enter each of them. Hashing only the leading bytes would be a bug,
+/// because a UUIDv7 leads with its creation timestamp: every message queued in the same millisecond would
+/// share that prefix and two unrelated sends would serialise — and, under a non-blocking lock, one of them
+/// would be dropped.
 /// </para>
 /// </remarks>
 internal sealed class PostgresEmailSendLock : IEmailSendLock
 {
     /// <inheritdoc />
-    public async Task<IAsyncDisposable?> TryAcquireAsync(
+    public async Task<IAsyncDisposable> AcquireAsync(
         IAppDbContext database,
         Guid emailMessageId,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(database);
 
-        var key = LockKey(emailMessageId);
+        var (first, second) = LockKey(emailMessageId);
         var connection = database.Database.GetDbConnection();
 
         await database.Database.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
 
-        if (!await TryLockAsync(connection, key, cancellationToken).ConfigureAwait(false))
+        var locked = false;
+        try
         {
-            await database.Database.CloseConnectionAsync().ConfigureAwait(false);
-
-            return null;
+            await LockAsync(connection, first, second, cancellationToken).ConfigureAwait(false);
+            locked = true;
+        }
+        finally
+        {
+            if (!locked)
+            {
+                // The connection was opened for a lock this call does not hold: give the reference back so
+                // the job's own DbContext is not left holding an open connection on a path that is about to
+                // fail. (The command timeout of the wait is what ends in this branch.)
+                await database.Database.CloseConnectionAsync().ConfigureAwait(false);
+            }
         }
 
-        return new Handle(database, connection, key);
+        return new Handle(database, connection, first, second);
     }
 
-    /// <summary>Takes the advisory lock, answering <see langword="false"/> when another session holds it.</summary>
+    /// <summary>Takes the advisory lock on the connection's session, waiting until it is available.</summary>
     /// <param name="connection">The open connection; the lock lives on its session.</param>
-    /// <param name="key">The 64-bit lock key.</param>
-    /// <param name="cancellationToken">Cancels the round trip.</param>
-    private static async Task<bool> TryLockAsync(
+    /// <param name="first">The first key of the pair.</param>
+    /// <param name="second">The second key of the pair.</param>
+    /// <param name="cancellationToken">Cancels the wait.</param>
+    private static async Task LockAsync(
         DbConnection connection,
-        long key,
+        int first,
+        int second,
         CancellationToken cancellationToken)
     {
         await using var command = connection.CreateCommand();
-        command.CommandText = "SELECT pg_try_advisory_lock(@key)";
-        command.Parameters.Add(Parameter(command, key));
+        command.CommandText = "SELECT pg_advisory_lock(@key1, @key2)";
+        AddKeys(command, first, second);
 
-        return await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) is true;
+        _ = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    /// <summary>Releases the advisory lock; a failure here is harmless because closing the session also releases it.</summary>
+    /// <summary>Releases the advisory lock; best effort, because a released session releases its locks too.</summary>
     /// <param name="connection">The connection the lock was taken on.</param>
-    /// <param name="key">The 64-bit lock key.</param>
-    private static async Task UnlockAsync(DbConnection connection, long key)
+    /// <param name="first">The first key of the pair.</param>
+    /// <param name="second">The second key of the pair.</param>
+    private static async Task UnlockAsync(DbConnection connection, int first, int second)
     {
         try
         {
             await using var command = connection.CreateCommand();
-            command.CommandText = "SELECT pg_advisory_unlock(@key)";
-            command.Parameters.Add(Parameter(command, key));
+            command.CommandText = "SELECT pg_advisory_unlock(@key1, @key2)";
+            AddKeys(command, first, second);
 
-            await command.ExecuteScalarAsync(CancellationToken.None).ConfigureAwait(false);
+            _ = await command.ExecuteScalarAsync(CancellationToken.None).ConfigureAwait(false);
         }
         catch (DbException)
         {
-            // The session is already gone (a cancelled or dead connection), and closing it releases every
-            // advisory lock it held, so nothing is leaked and there is nothing to report.
+            // Best effort only. If the session is already gone its locks went with it; if the physical
+            // connection goes back to the pool, Npgsql resets it with DISCARD ALL, which runs
+            // `pg_advisory_unlock_all` — so nothing stays locked either way.
         }
     }
 
-    /// <summary>The command's <c>@key</c> parameter, built through the provider so the type stays the connection's.</summary>
+    /// <summary>Adds the two keys the <c>pg_advisory_lock(int4, int4)</c> form takes.</summary>
     /// <param name="command">The command being built.</param>
-    /// <param name="key">The 64-bit lock key.</param>
-    private static DbParameter Parameter(DbCommand command, long key)
+    /// <param name="first">The first key of the pair.</param>
+    /// <param name="second">The second key of the pair.</param>
+    private static void AddKeys(DbCommand command, int first, int second)
     {
-        var parameter = command.CreateParameter();
-        parameter.ParameterName = "key";
-        parameter.Value = key;
+        var firstParameter = command.CreateParameter();
+        firstParameter.ParameterName = "key1";
+        firstParameter.Value = first;
+        command.Parameters.Add(firstParameter);
 
-        return parameter;
+        var secondParameter = command.CreateParameter();
+        secondParameter.ParameterName = "key2";
+        secondParameter.Value = second;
+        command.Parameters.Add(secondParameter);
     }
 
-    /// <summary>The 64-bit lock key of one message: the first eight bytes of its UUID.</summary>
+    /// <summary>The lock-key pair of one message: both halves of its UUID folded into each key.</summary>
     /// <param name="emailMessageId">The <c>email_messages</c> row id.</param>
-    private static long LockKey(Guid emailMessageId) =>
-        BitConverter.ToInt64(emailMessageId.ToByteArray(), 0);
+    /// <returns>
+    /// Two 32-bit keys over all sixteen bytes, so two messages that share a UUIDv7 timestamp prefix —
+    /// everything queued in the same millisecond — do not share a lock.
+    /// </returns>
+    private static (int First, int Second) LockKey(Guid emailMessageId)
+    {
+        var bytes = emailMessageId.ToByteArray();
+
+        return (BitConverter.ToInt32(bytes, 0) ^ BitConverter.ToInt32(bytes, 8),
+                BitConverter.ToInt32(bytes, 4) ^ BitConverter.ToInt32(bytes, 12));
+    }
 
     /// <summary>Owns the connection the lock lives on; disposing releases the lock and the connection.</summary>
     /// <param name="database">The job's write model, whose connection was opened for the lock.</param>
     /// <param name="connection">The connection whose session holds the lock.</param>
-    /// <param name="key">The 64-bit lock key.</param>
-    private sealed class Handle(IAppDbContext database, DbConnection connection, long key) : IAsyncDisposable
+    /// <param name="first">The first key of the pair.</param>
+    /// <param name="second">The second key of the pair.</param>
+    private sealed class Handle(
+        IAppDbContext database,
+        DbConnection connection,
+        int first,
+        int second) : IAsyncDisposable
     {
         /// <inheritdoc />
         public async ValueTask DisposeAsync()
         {
-            await UnlockAsync(connection, key).ConfigureAwait(false);
-            await database.Database.CloseConnectionAsync().ConfigureAwait(false);
+            try
+            {
+                await UnlockAsync(connection, first, second).ConfigureAwait(false);
+            }
+            finally
+            {
+                // The connection is closed on every path, so an unlock that failed cannot leave the job's
+                // DbContext holding an open connection.
+                await database.Database.CloseConnectionAsync().ConfigureAwait(false);
+            }
         }
     }
 }

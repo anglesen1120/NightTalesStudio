@@ -8,6 +8,7 @@ using NightTales.Api.Http;
 using NightTales.Domain.Common;
 using NightTales.Infrastructure.Persistence;
 using NightTales.TestKit.Database;
+using NightTales.TestKit.Email;
 using NightTales.TestKit.Security;
 using NightTales.TestKit.Time;
 
@@ -104,6 +105,12 @@ public sealed class ApiFactory(TestDatabase database, FakeClock clock) : WebAppl
     {
         builder.UseSetting(TestSigningKey.ConfigurationKey, TestSigningKey.Pem);
         builder.UseSetting($"{AppOptions.SectionName}:{nameof(AppOptions.PublicOrigin)}", PublicOrigin);
+
+        // 09.2.6-T3: the pepper the address hash of `email_messages` is salted with. The committed value is
+        // the development placeholder, which the e-mail validator refuses outside Development, so the test
+        // host supplies the run's own — the same shape a deployment's secret store provides (09 README
+        // BD16), which is why even the production-composition-root host gets it.
+        builder.UseSetting(EmailTestSettings.AddressHashPepperKey, EmailTestSettings.AddressHashPepper);
 
         if (!withKeyRing)
         {

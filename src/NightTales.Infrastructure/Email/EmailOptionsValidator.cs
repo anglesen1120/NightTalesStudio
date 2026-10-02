@@ -60,15 +60,16 @@ public static class EmailOptionsValidator
         + "brute-forced (09 README BD16).";
 
     /// <summary>
-    /// The failure of the committed development pepper against a remote server outside Development. Like the
-    /// plaintext rule it turns on the endpoint, not the environment name: the committed loopback
-    /// configuration must boot in every environment (the build-time OpenAPI generator starts the Api in
-    /// Production), while a deployment that points at a real mail server and forgot its own pepper fails
-    /// here instead of hashing with a value the world knows.
+    /// The failure of the committed development pepper outside Development. Unlike the transport rule this
+    /// one turns on the environment, not the endpoint: the pepper is the salt that keeps a small address
+    /// space from being brute-forced out of <c>email_messages.to_hash</c> (09 README BD16), so it may be the
+    /// committed placeholder only in Development. Every other environment supplies its own value, exactly
+    /// the way it supplies the signing key and the <c>DP_KEK</c> — including the build-time OpenAPI
+    /// generator, which boots the Api in Production and is handed one through the environment.
     /// </summary>
     public const string DevelopmentPepperFailure =
-        "'Email:AddressHashPepper' still carries the committed development value outside Development: set "
-        + "the deployment's own pepper (Email__AddressHashPepper) so `email_messages.to_hash` cannot be "
+        "'Email:AddressHashPepper' must not be the committed development placeholder outside Development: "
+        + "set the deployment's own pepper (Email__AddressHashPepper) so `email_messages.to_hash` cannot be "
         + "brute-forced (09 README BD16).";
 
     /// <summary>Adds every rule to <paramref name="builder"/> and turns validation on at start-up.</summary>
@@ -108,7 +109,6 @@ public static class EmailOptionsValidator
                 MissingPepperFailure)
             .Validate<IHostEnvironment>(
                 (options, environment) => environment.IsDevelopment()
-                    || IsLoopbackHost(options.Smtp.Host)
                     || !string.Equals(
                         options.AddressHashPepper,
                         EmailOptions.DevelopmentAddressHashPepper,
