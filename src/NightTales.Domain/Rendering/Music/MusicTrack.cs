@@ -25,6 +25,9 @@ public sealed class MusicTrack : Entity, IAuditable
     /// </summary>
     public const int LoudnessScale = 2;
 
+    /// <summary>The decimal places of <c>bgm_volume</c> (<c>numeric(4,3)</c>).</summary>
+    public const int BgmVolumeScale = 3;
+
     private MusicTrack()
     {
     }
@@ -179,7 +182,7 @@ public sealed class MusicTrack : Entity, IAuditable
         // re-seed compares the same values the database holds and stays a no-op.
         DurationSec = Math.Round(durationSec, DurationScale, MidpointRounding.AwayFromZero);
         LoudnessLufs = Math.Round(loudnessLufs, LoudnessScale, MidpointRounding.AwayFromZero);
-        BgmVolume = bgmVolume;
+        BgmVolume = Math.Round(bgmVolume, BgmVolumeScale, MidpointRounding.AwayFromZero);
         Sha256 = sha256;
         StorageKey = storageKey;
         CatalogRevision = catalogRevision;

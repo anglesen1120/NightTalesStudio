@@ -1,0 +1,25 @@
+{
+  "schema": "music-tracks.v1",
+  "revision": 1,
+  "tracks": [
+    {
+      "id": "fixture-duration",
+      "file": "fixture-duration.mp3",
+      "title": "   ",
+      "artist": "Fixture Artist",
+      "sourceUrl": "https://example.invalid/tracks/fixture-duration",
+      "license": "CC0-1.0",
+      "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "attribution": null,
+      "platformScope": "any",
+      "moods": [
+        "calm"
+      ],
+      "durationSec": 120.0,
+      "loudnessLufs": -20.0,
+      "bgmVolume": 0.2,
+      "sha256": "600f9a2c60041a4ea70f89ff4c30efdc002938a79f68d47cc0aae204b572484a",
+      "active": true
+    }
+  ]
+}

@@ -20,6 +20,10 @@ public static class MusicCatalogFileReader
 
     private static readonly string[] EntryStrings = ["id", "file", "title", "artist", "sourceUrl", "license", "platformScope", "sha256"];
 
+    // A repeated property would silently keep the last value (and the Python twin could keep another one):
+    // reject the file instead (05.3.2-T3 gate SEC-1).
+    private static readonly JsonDocumentOptions DuplicateRejectingOptions = new() { AllowDuplicateProperties = false };
+
     /// <summary>Parses and validates a catalog file.</summary>
     /// <param name="bytes">The raw UTF-8 JSON.</param>
     /// <param name="allowNonPositiveRevision">
@@ -32,7 +36,7 @@ public static class MusicCatalogFileReader
         JsonDocument document;
         try
         {
-            document = JsonDocument.Parse(bytes);
+            document = JsonDocument.Parse(bytes, DuplicateRejectingOptions);
         }
         catch (JsonException)
         {
@@ -54,7 +58,13 @@ public static class MusicCatalogFileReader
                 return Invalid("schema, revision or tracks missing", trackId: null);
             }
 
-            var entries = new List<MusicCatalogEntry>();
+            if (tracksElement.GetArrayLength() == 0)
+            {
+                // An empty list would deactivate every track the database holds.
+                return Invalid("tracks is empty", trackId: null);
+            }
+
+            var entries = new List<MusicTrackCandidate>();
             foreach (var element in tracksElement.EnumerateArray())
             {
                 var entry = ReadEntry(element);
@@ -73,7 +83,7 @@ public static class MusicCatalogFileReader
                 errors.AddRange(revisionCheck.Errors);
             }
 
-            var catalogCheck = MusicTrackRules.ValidateCatalog([.. entries.Select(entry => entry.Track)]);
+            var catalogCheck = MusicTrackRules.ValidateCatalog(entries);
             if (catalogCheck.IsError)
             {
                 errors.AddRange(catalogCheck.Errors);
@@ -83,7 +93,7 @@ public static class MusicCatalogFileReader
         }
     }
 
-    private static ErrorOr<MusicCatalogEntry> ReadEntry(JsonElement element)
+    private static ErrorOr<MusicTrackCandidate> ReadEntry(JsonElement element)
     {
         if (element.ValueKind != JsonValueKind.Object)
         {
@@ -127,9 +137,12 @@ public static class MusicCatalogFileReader
         _ = MusicTrackRules.TryParseLicense(element.GetProperty("license").GetString(), out var license);
         _ = MusicTrackRules.TryParseScope(element.GetProperty("platformScope").GetString(), out var scope);
 
-        var candidate = new MusicTrackCandidate(
+        return new MusicTrackCandidate(
             element.GetProperty("id").GetString()!,
             element.GetProperty("file").GetString()!,
+            element.GetProperty("title").GetString()!,
+            element.GetProperty("artist").GetString()!,
+            element.GetProperty("sourceUrl").GetString()!,
             license,
             attribution,
             scope,
@@ -139,12 +152,6 @@ public static class MusicCatalogFileReader
             bgmVolume,
             element.GetProperty("sha256").GetString()!,
             activeElement.GetBoolean());
-
-        return new MusicCatalogEntry(
-            element.GetProperty("title").GetString()!,
-            element.GetProperty("artist").GetString()!,
-            element.GetProperty("sourceUrl").GetString()!,
-            candidate);
     }
 
     private static bool TryString(JsonElement element, string property, out string? value)

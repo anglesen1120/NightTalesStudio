@@ -87,12 +87,84 @@ public sealed class MusicCatalogRulesTests
         loud.ShouldBeLessThan(quiet);
     }
 
-    [Fact]
-    public void ComputeBgmVolume_RefusesLoudnessOutsideTheScale()
+    [Theory]
+    [InlineData("-80", "0.400")]
+    [InlineData("-71", "0.400")]
+    [InlineData("1", "0.030")]
+    public void ComputeBgmVolume_ClampsInsteadOfRefusing(string lufs, string expected)
     {
-        MusicTrackRules.ComputeBgmVolume(1m).IsError.ShouldBeTrue();
-        MusicTrackRules.ComputeBgmVolume(-71m).IsError.ShouldBeTrue();
+        // Parity with check_catalog.py _boundary_cases: the clamp is D8's only range.
+        var volume = MusicTrackRules.ComputeBgmVolume(decimal.Parse(lufs, CultureInfo.InvariantCulture));
+
+        volume.IsError.ShouldBeFalse();
+        volume.Value.ShouldBe(decimal.Parse(expected, CultureInfo.InvariantCulture));
     }
+
+    [Theory]
+    [InlineData("-20.044", "0.201", MusicTrackRules.LoudnessScaleCode)]
+    [InlineData("-20.0", "0.201", MusicTrackRules.BgmVolumeFormulaMismatchCode)]
+    public void Validate_ChecksTheGainAgainstThePersistedLoudness(string lufs, string gain, string code)
+    {
+        var result = MusicTrackRules.Validate(Candidate(
+            loudness: decimal.Parse(lufs, CultureInfo.InvariantCulture),
+            gain: decimal.Parse(gain, CultureInfo.InvariantCulture)));
+
+        result.IsError.ShouldBeTrue();
+        result.Errors.Select(error => error.Code).ShouldContain(code);
+    }
+
+    [Theory]
+    [InlineData(3600, true)]
+    [InlineData(3600.1, false)]
+    public void Validate_CapsTheDuration(double seconds, bool valid)
+    {
+        var result = MusicTrackRules.Validate(Candidate(duration: (decimal)seconds));
+
+        result.IsError.ShouldBe(!valid);
+        if (!valid)
+        {
+            result.Errors.Select(error => error.Code).ShouldContain(MusicTrackRules.DurationAboveMaximumCode);
+        }
+    }
+
+    [Theory]
+    [InlineData("", "Artist", "https://example.invalid/t", MusicTrackRules.TitleBlankCode)]
+    [InlineData("Title", "  ", "https://example.invalid/t", MusicTrackRules.ArtistBlankCode)]
+    [InlineData("Title", "Artist", "http://example.invalid/t", MusicTrackRules.SourceUrlInvalidCode)]
+    [InlineData("Title", "Artist", "/relative", MusicTrackRules.SourceUrlInvalidCode)]
+    public void Validate_RejectsBlankTextAndNonHttpsSources(string title, string artist, string url, string code)
+    {
+        var result = MusicTrackRules.Validate(Candidate(title: title, artist: artist, url: url));
+
+        result.IsError.ShouldBeTrue();
+        result.Errors.Select(error => error.Code).ShouldContain(code);
+    }
+
+    [Fact]
+    public void Validate_AcceptsAWellFormedTrack() => MusicTrackRules.Validate(Candidate()).IsError.ShouldBeFalse();
+
+    private static MusicTrackCandidate Candidate(
+        string title = "Title",
+        string artist = "Artist",
+        string url = "https://example.invalid/t",
+        decimal duration = 120m,
+        decimal loudness = -20m,
+        decimal gain = 0.200m) =>
+        new(
+            "track-a",
+            "track-a.mp3",
+            title,
+            artist,
+            url,
+            MusicLicense.Cc0,
+            null,
+            MusicPlatformScope.Any,
+            ["calm"],
+            duration,
+            loudness,
+            gain,
+            new string('a', 64),
+            true);
 
     [Fact]
     public void TopicMoods_AreTheD8Map()

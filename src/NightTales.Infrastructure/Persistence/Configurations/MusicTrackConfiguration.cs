@@ -85,17 +85,18 @@ internal sealed class MusicTrackConfiguration : IEntityTypeConfiguration<MusicTr
                 "\"license\" IN ('CC0-1.0', 'CC-BY-4.0', 'YouTube-Audio-Library')");
             table.HasCheckConstraint(
                 "ck_music_tracks_attribution",
-                "(\"license\" = 'CC-BY-4.0') = (\"attribution\" IS NOT NULL AND btrim(\"attribution\") <> '')");
+                "(\"license\" = 'CC-BY-4.0') = (\"attribution\" IS NOT NULL AND btrim(\"attribution\", E' \\t\\r\\n') <> '')");
             table.HasCheckConstraint(
                 "ck_music_tracks_platform_scope",
-                "\"platform_scope\" IN ('any', 'youtube') AND (\"license\" <> 'YouTube-Audio-Library' OR \"platform_scope\" = 'youtube')");
+                "\"platform_scope\" IN ('any', 'youtube') AND "
+                + "((\"license\" = 'YouTube-Audio-Library') = (\"platform_scope\" = 'youtube'))");
             table.HasCheckConstraint(
                 "ck_music_tracks_moods",
                 "\"moods\" <@ ARRAY['dark_ambient','suspense','temple','meditation','noir','calm']::text[] "
                 + $"AND cardinality(\"moods\") BETWEEN {MusicTrackRules.MoodsMin} AND {MusicTrackRules.MoodsMax}");
             table.HasCheckConstraint(
                 "ck_music_tracks_duration_sec",
-                $"\"duration_sec\" >= {MusicTrackRules.MinDurationSec}");
+                $"\"duration_sec\" >= {MusicTrackRules.MinDurationSec} AND \"duration_sec\" <= {MusicTrackRules.MaxDurationSec}");
             table.HasCheckConstraint(
                 "ck_music_tracks_bgm_volume",
                 "\"bgm_volume\" BETWEEN 0.03 AND 0.40 AND \"bgm_volume\" = round("

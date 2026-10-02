@@ -10,8 +10,8 @@ namespace NightTales.Infrastructure.Persistence.Seeding;
 
 /// <summary>
 /// Upserts the <c>music_tracks</c> catalog (05 README D8, 05.3.2-T3; 09.2.5 plan §3.1 pattern) by natural key
-/// <see cref="MusicTrack.TrackId"/> from the tracked <c>seed/music-tracks.v1.json</c> in <em>every</em>
-/// environment. A present row is updated in every catalog column, a new one is inserted with a UUIDv7, a row the
+/// <see cref="MusicTrack.TrackId"/> from the tracked <c>seed/music-tracks.v1.json</c> (Development auto-seed,
+/// <c>nts-seed</c> elsewhere; 05 §10 T85). A present row is updated in every catalog column, a new one is inserted with a UUIDv7, a row the
 /// file no longer lists is marked <c>active = false</c>, and nothing is ever deleted, so an old
 /// <c>params.music.track_id</c> still resolves to its <c>platform_scope</c>.
 /// </summary>
@@ -28,6 +28,7 @@ public sealed partial class MusicTrackSeeder(
     ILogger<MusicTrackSeeder> logger) : ISeeder
 {
     private const string NoTrackId = "-";
+    private const long MaxCatalogBytes = 1024 * 1024;
 
     /// <inheritdoc />
     public string Name => "music_tracks";
@@ -55,7 +56,23 @@ public sealed partial class MusicTrackSeeder(
             LogConcurrentInsertRetry();
             SeedDbContext.ResetTracking(db);
 
+            return await ApplyOnceAsync(file, ct);
+        }
+        catch (DbUpdateException)
+        {
+            throw SeedFailure("db_rejected", trackId: null);
+        }
+    }
+
+    private async ValueTask<SeedReport> ApplyOnceAsync(MusicCatalogFile file, CancellationToken ct)
+    {
+        try
+        {
             return await ApplyAsync(file, ct);
+        }
+        catch (DbUpdateException)
+        {
+            throw SeedFailure("db_rejected", trackId: null);
         }
     }
 
@@ -73,6 +90,14 @@ public sealed partial class MusicTrackSeeder(
         byte[] bytes;
         try
         {
+            // A catalog is a few dozen tracks; refuse anything large before it is read into memory.
+            if (new FileInfo(path).Length > MaxCatalogBytes)
+            {
+                LogCatalogUnreadable(path, "TooLarge");
+
+                return null;
+            }
+
             bytes = File.ReadAllBytes(path);
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
@@ -106,16 +131,15 @@ public sealed partial class MusicTrackSeeder(
         var updated = 0;
         var skipped = 0;
 
-        foreach (var entry in file.Tracks)
+        foreach (var track in file.Tracks)
         {
-            var track = entry.Track;
             listed.Add(track.TrackId);
             var storageKey = $"music/{track.FileName}";
 
             if (!existing.TryGetValue(track.TrackId, out var row))
             {
                 db.MusicTracks.Add(MusicTrack.Create(
-                    track.TrackId, track.FileName, entry.Title, entry.Artist, entry.SourceUrl, track.License,
+                    track.TrackId, track.FileName, track.Title, track.Artist, track.SourceUrl, track.License,
                     track.Attribution, track.PlatformScope, track.Moods, track.DurationSec, track.LoudnessLufs,
                     track.BgmVolume, track.Sha256, storageKey, file.Revision, track.Active));
                 inserted++;
@@ -123,7 +147,7 @@ public sealed partial class MusicTrackSeeder(
             }
 
             var current = MusicTrack.Create(
-                track.TrackId, track.FileName, entry.Title, entry.Artist, entry.SourceUrl, track.License,
+                track.TrackId, track.FileName, track.Title, track.Artist, track.SourceUrl, track.License,
                 track.Attribution, track.PlatformScope, track.Moods, track.DurationSec, track.LoudnessLufs,
                 track.BgmVolume, track.Sha256, storageKey, file.Revision, track.Active);
             if (SameCatalogValues(row, current))
@@ -133,7 +157,7 @@ public sealed partial class MusicTrackSeeder(
             }
 
             row.UpdateFromCatalog(
-                track.FileName, entry.Title, entry.Artist, entry.SourceUrl, track.License, track.Attribution,
+                track.FileName, track.Title, track.Artist, track.SourceUrl, track.License, track.Attribution,
                 track.PlatformScope, track.Moods, track.DurationSec, track.LoudnessLufs, track.BgmVolume,
                 track.Sha256, storageKey, file.Revision, track.Active);
             updated++;

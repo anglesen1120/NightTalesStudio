@@ -30,7 +30,8 @@ public sealed class SeedOptions
     public string VoiceCatalogFile { get; set; } = "seed/voices.v1.json";
 
     /// <summary>
-    /// The plan 05 music catalog, read in every environment (05 README D8, 05.3.2-T3). It is the file
+    /// The plan 05 music catalog (05 README D8, §10 T85, 05.3.2-T3): auto-seeded in Development, seeded by
+    /// <c>nts-seed</c> elsewhere. It is the file
     /// <c>worker-node/music/tools/check_catalog.py</c> proves, so the rules cannot drift apart.
     /// </summary>
     public string MusicTracksFile { get; set; } = "seed/music-tracks.v1.json";

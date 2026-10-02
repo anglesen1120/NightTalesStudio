@@ -17,6 +17,13 @@ public static class MusicTrackRules
     /// <summary>The shortest accepted duration, in seconds.</summary>
     public const decimal MinDurationSec = 60m;
 
+    /// <summary>
+    /// The longest accepted duration, in seconds. D8 gives only a minimum; one hour is the review-chosen
+    /// ceiling (05.3.2-T3 gate SEC-3, §10 T85) — far above any background bed and far below the
+    /// <c>numeric(7,1)</c> column limit, so a typo cannot store an absurd length.
+    /// </summary>
+    public const decimal MaxDurationSec = 3600m;
+
     /// <summary>The fewest moods a track carries.</summary>
     public const int MoodsMin = 1;
 
@@ -49,13 +56,15 @@ public static class MusicTrackRules
     public const string MoodsUnknownCode = "moods_unknown";
     public const string MoodsCountCode = "moods_count";
     public const string DurationBelowMinimumCode = "duration_below_minimum";
+    public const string DurationAboveMaximumCode = "duration_above_maximum";
+    public const string TitleBlankCode = "title_blank";
+    public const string ArtistBlankCode = "artist_blank";
+    public const string SourceUrlInvalidCode = "source_url_invalid";
     public const string Sha256FormatCode = "sha256_format";
     public const string BgmVolumeRangeCode = "bgm_volume_range";
     public const string BgmVolumeFormulaMismatchCode = "bgm_volume_formula_mismatch";
-    public const string LoudnessOutOfRangeCode = "loudness_out_of_range";
+    public const string LoudnessScaleCode = "loudness_scale";
 
-    private const decimal LoudnessFloorLufs = -70m;
-    private const decimal LoudnessCeilingLufs = 0m;
     private const int Sha256HexLength = 64;
 
     private static readonly string[] AllowedExtensions = [".mp3", ".m4a"];
@@ -150,6 +159,20 @@ public static class MusicTrackRules
             errors.Add(Failure(TrackIdNotFileStemCode, $"id={id} file={file}", id));
         }
 
+        if (string.IsNullOrWhiteSpace(candidate.Title))
+        {
+            errors.Add(Failure(TitleBlankCode, "title is blank", id));
+        }
+
+        if (string.IsNullOrWhiteSpace(candidate.Artist))
+        {
+            errors.Add(Failure(ArtistBlankCode, "artist is blank", id));
+        }
+
+        if (!IsHttpsUrl(candidate.SourceUrl))
+        {
+            errors.Add(Failure(SourceUrlInvalidCode, $"sourceUrl={candidate.SourceUrl}", id));
+        }
         var licenseKnown = Enum.IsDefined(candidate.License);
         if (!licenseKnown)
         {
@@ -184,6 +207,10 @@ public static class MusicTrackRules
         if (candidate.DurationSec < MinDurationSec)
         {
             errors.Add(Failure(DurationBelowMinimumCode, $"durationSec={candidate.DurationSec}", id));
+        }
+        else if (candidate.DurationSec > MaxDurationSec)
+        {
+            errors.Add(Failure(DurationAboveMaximumCode, $"durationSec={candidate.DurationSec}", id));
         }
 
         if (!IsSha256(candidate.Sha256))
@@ -233,21 +260,19 @@ public static class MusicTrackRules
 
     /// <summary>
     /// D8's gain: <c>round(clamp(10^((musicBedLufs − loudnessLufs) / 20), 0.03, 0.40), 3)</c>. A louder track
-    /// gets a smaller gain, so the bed sits at the same level under the voice.
+    /// gets a smaller gain, so the bed sits at the same level under the voice. The clamp is the only range:
+    /// any loudness maps to a gain in [0.03, 0.40] (<c>−80</c> → 0.40, as <c>check_catalog.py</c> pins).
     /// </summary>
-    /// <param name="loudnessLufs">The track's measured integrated loudness, −70 to 0.</param>
+    /// <param name="loudnessLufs">The track's measured integrated loudness.</param>
     /// <param name="musicBedLufs">The target bed loudness, <see cref="DefaultMusicBedLufs"/> by default.</param>
     public static ErrorOr<decimal> ComputeBgmVolume(decimal loudnessLufs, decimal musicBedLufs = DefaultMusicBedLufs)
     {
-        if (loudnessLufs is < LoudnessFloorLufs or > LoudnessCeilingLufs)
-        {
-            return Failure(LoudnessOutOfRangeCode, $"loudnessLufs={loudnessLufs}", trackId: null);
-        }
-
-        var raw = Math.Pow(10d, (double)(musicBedLufs - loudnessLufs) / 20d);
+        // Double arithmetic: a decimal subtraction of two extreme inputs would overflow, and the clamp
+        // below makes the precision beyond the third place irrelevant.
+        var raw = Math.Pow(10d, ((double)musicBedLufs - (double)loudnessLufs) / 20d);
         var clamped = Math.Clamp(raw, (double)BgmVolumeMin, (double)BgmVolumeMax);
 
-        return Math.Round((decimal)clamped, 3, MidpointRounding.AwayFromZero);
+        return Math.Round((decimal)clamped, MusicTrack.BgmVolumeScale, MidpointRounding.AwayFromZero);
     }
 
     private static void ValidateMoods(IReadOnlyList<string>? moods, string? id, List<Error> errors)
@@ -268,6 +293,15 @@ public static class MusicTrackRules
 
     private static void ValidateGain(MusicTrackCandidate candidate, string? id, List<Error> errors)
     {
+        var persistedLoudness = Math.Round(candidate.LoudnessLufs, MusicTrack.LoudnessScale, MidpointRounding.AwayFromZero);
+        if (persistedLoudness != candidate.LoudnessLufs)
+        {
+            errors.Add(Failure(
+                LoudnessScaleCode,
+                $"loudnessLufs={candidate.LoudnessLufs} has more than {MusicTrack.LoudnessScale} decimals",
+                id));
+        }
+
         if (candidate.BgmVolume < BgmVolumeMin || candidate.BgmVolume > BgmVolumeMax)
         {
             errors.Add(Failure(BgmVolumeRangeCode, $"bgmVolume={candidate.BgmVolume}", id));
@@ -275,19 +309,23 @@ public static class MusicTrackRules
             return;
         }
 
-        var expected = ComputeBgmVolume(candidate.LoudnessLufs);
-        if (expected.IsError)
-        {
-            errors.Add(Failure(LoudnessOutOfRangeCode, $"loudnessLufs={candidate.LoudnessLufs}", id));
-        }
-        else if (Math.Round(candidate.BgmVolume, 3, MidpointRounding.AwayFromZero) != expected.Value)
+        // The database CHECK recomputes the gain from the stored (rounded) loudness, so the file's gain must
+        // agree with that value, not with the unrounded one.
+        var expected = ComputeBgmVolume(persistedLoudness).Value;
+        if (Math.Round(candidate.BgmVolume, MusicTrack.BgmVolumeScale, MidpointRounding.AwayFromZero) != expected)
         {
             errors.Add(Failure(
                 BgmVolumeFormulaMismatchCode,
-                $"bgmVolume={candidate.BgmVolume} expected={expected.Value}",
+                $"bgmVolume={candidate.BgmVolume} expected={expected}",
                 id));
         }
     }
+
+    /// <summary>An absolute <c>https</c> URL with a host.</summary>
+    private static bool IsHttpsUrl(string? value) =>
+        Uri.TryCreate(value, UriKind.Absolute, out var uri)
+        && uri.Scheme == Uri.UriSchemeHttps
+        && !string.IsNullOrEmpty(uri.Host);
 
     private static MusicPlatformScope RequiredScope(MusicLicense license) =>
         license == MusicLicense.YouTubeAudioLibrary ? MusicPlatformScope.YouTube : MusicPlatformScope.Any;

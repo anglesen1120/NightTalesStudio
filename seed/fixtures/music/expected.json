@@ -38,5 +38,33 @@
   "invalid-revision": {
     "ok": false,
     "code": "revision_not_positive"
+  },
+  "invalid-duration-max": {
+    "ok": false,
+    "code": "duration_above_maximum"
+  },
+  "invalid-loudness-scale": {
+    "ok": false,
+    "code": "loudness_scale"
+  },
+  "invalid-title-blank": {
+    "ok": false,
+    "code": "title_blank"
+  },
+  "invalid-source-url": {
+    "ok": false,
+    "code": "source_url_invalid"
+  },
+  "invalid-empty-tracks": {
+    "ok": false,
+    "code": "music_catalog_invalid"
+  },
+  "invalid-duplicate-key": {
+    "ok": false,
+    "code": "music_catalog_invalid"
+  },
+  "invalid-artist-blank": {
+    "ok": false,
+    "code": "artist_blank"
   }
 }

@@ -39,6 +39,7 @@ import re
 import sys
 import tempfile
 from pathlib import Path
+from urllib.parse import urlsplit
 
 REPO = Path(__file__).resolve().parents[3]
 SCHEMA = "music-tracks.v1"
@@ -54,6 +55,8 @@ ID_RE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
 SHA_RE = re.compile(r"^[0-9a-f]{64}$")
 ID_MAX = 40
 MIN_DURATION_SEC = 60.0
+MAX_DURATION_SEC = 3600.0
+LOUDNESS_SCALE = 2
 MUSIC_BED_LUFS = -34.0
 GAIN_MIN, GAIN_MAX = 0.03, 0.40
 
@@ -69,6 +72,8 @@ JSON_CODES = (
     "attribution_not_allowed", "scope_unknown", "scope_license_mismatch", "moods_unknown",
     "moods_count", "duration_below_minimum", "loudness_missing", "sha256_format",
     "bgm_volume_range", "bgm_volume_formula_mismatch", "active_missing",
+    "duration_above_maximum", "loudness_scale", "title_blank", "artist_blank",
+    "source_url_invalid", "music_catalog_invalid",
 )
 CSV_CODES = ("csv_row_missing", "csv_field_mismatch", "csv_moods_mismatch", "csv_evidence_missing")
 ALL_CODES = JSON_CODES + CSV_CODES
@@ -121,6 +126,30 @@ def _is_iso8601(value) -> bool:
         return False
 
 
+class DuplicateKeyError(ValueError):
+    """A JSON object repeats a property: the last value would silently win."""
+
+
+def _reject_duplicate_keys(pairs: list) -> dict:
+    seen: set = set()
+    for key, _value in pairs:
+        if key in seen:
+            raise DuplicateKeyError(f"duplicate JSON property {key!r}")
+        seen.add(key)
+    return dict(pairs)
+
+
+def _loads_strict(text: str):
+    return json.loads(text, object_pairs_hook=_reject_duplicate_keys)
+
+
+def _is_https_url(value) -> bool:
+    if not _is_text(value):
+        return False
+    parts = urlsplit(value)
+    return parts.scheme == "https" and bool(parts.hostname)
+
+
 def check_json(doc: dict) -> tuple[list[dict], dict]:
     """Apply the D8 JSON rules. Returns (errors, stats)."""
     errors: list[dict] = []
@@ -131,6 +160,9 @@ def check_json(doc: dict) -> tuple[list[dict], dict]:
     tracks = doc.get("tracks")
     if not isinstance(tracks, list):
         raise CatalogError("catalog has no tracks array")
+    if not tracks:
+        # An empty list would deactivate every track the database holds.
+        errors.append(_err("music_catalog_invalid", "tracks is empty"))
 
     seen_ids: set[str] = set()
     seen_files: set[str] = set()
@@ -165,6 +197,13 @@ def check_json(doc: dict) -> tuple[list[dict], dict]:
                     _err("track_id_not_file_stem", f"id={track_id!r} file={name!r}", label)
                 )
 
+        for key, code in (("title", "title_blank"), ("artist", "artist_blank")):
+            value = track.get(key)
+            if not _is_text(value) or not value.strip():
+                errors.append(_err(code, f"{key}={value!r}", label))
+        if not _is_https_url(track.get("sourceUrl")):
+            errors.append(_err("source_url_invalid", f"sourceUrl={track.get('sourceUrl')!r}", label))
+
         license_value = track.get("license")
         if license_value not in LICENSE_ENUM:
             errors.append(_err("license_unknown", f"license={license_value!r}", label))
@@ -198,10 +237,14 @@ def check_json(doc: dict) -> tuple[list[dict], dict]:
         duration = track.get("durationSec")
         if not _is_number(duration) or duration < MIN_DURATION_SEC:
             errors.append(_err("duration_below_minimum", f"durationSec={duration!r}", label))
+        elif duration > MAX_DURATION_SEC:
+            errors.append(_err("duration_above_maximum", f"durationSec={duration!r}", label))
 
         loudness = track.get("loudnessLufs")
         if not _is_number(loudness):
             errors.append(_err("loudness_missing", f"loudnessLufs={loudness!r}", label))
+        elif round(loudness, LOUDNESS_SCALE) != loudness:
+            errors.append(_err("loudness_scale", f"loudnessLufs={loudness!r}", label))
 
         digest = track.get("sha256")
         if not _is_text(digest) or not SHA_RE.match(digest):
@@ -210,7 +253,7 @@ def check_json(doc: dict) -> tuple[list[dict], dict]:
         gain = track.get("bgmVolume")
         if not _is_number(gain) or gain < GAIN_MIN or gain > GAIN_MAX:
             errors.append(_err("bgm_volume_range", f"bgmVolume={gain!r}", label))
-        elif _is_number(loudness) and round(gain, 3) != bgm_volume(loudness):
+        elif _is_number(loudness) and round(gain, 3) != bgm_volume(round(loudness, LOUDNESS_SCALE)):
             errors.append(
                 _err(
                     "bgm_volume_formula_mismatch",
@@ -316,7 +359,18 @@ def validate_paths(catalog_path: Path, licenses_path: Path) -> dict:
     if not catalog_path.is_file():
         raise CatalogError(f"catalog not found: {catalog_path}")
     try:
-        doc = json.loads(catalog_path.read_text(encoding="utf-8"))
+        doc = _loads_strict(catalog_path.read_text(encoding="utf-8"))
+    except DuplicateKeyError as exc:
+        return {
+            "ok": False,
+            "revision": None,
+            "tracks": 0,
+            "active": 0,
+            "moods": {mood: 0 for mood in MOODS},
+            "errors": [_err("music_catalog_invalid", str(exc))],
+            "catalog": str(catalog_path),
+            "licenses": str(licenses_path),
+        }
     except (OSError, ValueError) as exc:
         raise CatalogError(f"cannot read catalog {catalog_path}: {exc}") from exc
     if not isinstance(doc, dict):

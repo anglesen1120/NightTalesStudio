@@ -112,6 +112,13 @@ public sealed class MusicTrackSeederTests(TestDatabase database) : IntegrationTe
     // violation, which is the id duplicate (the unit fixture test asserts the full code list).
     [InlineData("invalid-duplicate-file.json", "track_id_duplicate")]
     [InlineData("invalid-revision.json", "revision_not_positive")]
+    [InlineData("invalid-duplicate-key.json", "music_catalog_invalid")]
+    [InlineData("invalid-empty-tracks.json", "music_catalog_invalid")]
+    [InlineData("invalid-loudness-scale.json", "loudness_scale")]
+    [InlineData("invalid-duration-max.json", "duration_above_maximum")]
+    [InlineData("invalid-title-blank.json", "title_blank")]
+    [InlineData("invalid-artist-blank.json", "artist_blank")]
+    [InlineData("invalid-source-url.json", "source_url_invalid")]
     public async Task Seed_InvalidCatalog_WritesNothing(string fixture, string code)
     {
         var ct = TestContext.Current.CancellationToken;
@@ -122,6 +129,44 @@ public sealed class MusicTrackSeederTests(TestDatabase database) : IntegrationTe
             () => CreateSeeder(db, FixtureFile(fixture), environment: "Production").SeedAsync(ct).AsTask());
 
         exception.Code.ShouldContain(code);
+        (await CountAsync(ct)).ShouldBe(0);
+    }
+
+    [Fact]
+    public async Task Seed_GainWithExtraPrecision_IsStoredAtTheColumnScale_AndAFreshContextReseedIsANoOp()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await ResetAsync(ct);
+        var document = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(FixtureFile("valid-catalog.json")))!.AsObject();
+        var track = document["tracks"]!.AsArray()[0]!.AsObject();
+        track["loudnessLufs"] = -20.0m;
+        track["bgmVolume"] = 0.2004m;
+        var path = WriteCatalog(document.ToJsonString());
+
+        await using (var first = Database.CreateAppDbContext(clock: new FakeClock()))
+        {
+            (await CreateSeeder(first, path).SeedAsync(ct)).Inserted.ShouldBe(3);
+        }
+
+        await using var second = Database.CreateAppDbContext(clock: new FakeClock());
+        var report = await CreateSeeder(second, path).SeedAsync(ct);
+
+        report.ShouldBe(new SeedReport("music_tracks", 0, 0, 3));
+        (await Database.QueryStringsAsync(
+            "SELECT bgm_volume::text FROM music_tracks WHERE bgm_volume = 0.200", ct)).Count.ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task Seed_CatalogOverOneMiB_IsLeftAlone()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await ResetAsync(ct);
+        await using var db = Database.CreateAppDbContext(clock: new FakeClock());
+        var path = WriteCatalog(File.ReadAllText(FixtureFile("valid-catalog.json")) + new string(' ', 1024 * 1024));
+
+        var report = await CreateSeeder(db, path).SeedAsync(ct);
+
+        report.ShouldBe(new SeedReport("music_tracks", 0, 0, 0));
         (await CountAsync(ct)).ShouldBe(0);
     }
 

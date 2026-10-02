@@ -39,13 +39,13 @@ namespace NightTales.Infrastructure.Persistence.Migrations
                 constraints: table =>
                 {
                     table.PrimaryKey("pk_music_tracks", x => x.id);
-                    table.CheckConstraint("ck_music_tracks_attribution", "(\"license\" = 'CC-BY-4.0') = (\"attribution\" IS NOT NULL AND btrim(\"attribution\") <> '')");
+                    table.CheckConstraint("ck_music_tracks_attribution", "(\"license\" = 'CC-BY-4.0') = (\"attribution\" IS NOT NULL AND btrim(\"attribution\", E' \\t\\r\\n') <> '')");
                     table.CheckConstraint("ck_music_tracks_bgm_volume", "\"bgm_volume\" BETWEEN 0.03 AND 0.40 AND \"bgm_volume\" = round(least(0.40, greatest(0.03, power(10::numeric, (-34 - \"loudness_lufs\") / 20))), 3)");
-                    table.CheckConstraint("ck_music_tracks_duration_sec", "\"duration_sec\" >= 60");
+                    table.CheckConstraint("ck_music_tracks_duration_sec", "\"duration_sec\" >= 60 AND \"duration_sec\" <= 3600");
                     table.CheckConstraint("ck_music_tracks_file_name", "\"file_name\" ~ '\\.(mp3|m4a)$' AND regexp_replace(\"file_name\", '\\.(mp3|m4a)$', '') = \"track_id\"");
                     table.CheckConstraint("ck_music_tracks_license", "\"license\" IN ('CC0-1.0', 'CC-BY-4.0', 'YouTube-Audio-Library')");
                     table.CheckConstraint("ck_music_tracks_moods", "\"moods\" <@ ARRAY['dark_ambient','suspense','temple','meditation','noir','calm']::text[] AND cardinality(\"moods\") BETWEEN 1 AND 3");
-                    table.CheckConstraint("ck_music_tracks_platform_scope", "\"platform_scope\" IN ('any', 'youtube') AND (\"license\" <> 'YouTube-Audio-Library' OR \"platform_scope\" = 'youtube')");
+                    table.CheckConstraint("ck_music_tracks_platform_scope", "\"platform_scope\" IN ('any', 'youtube') AND ((\"license\" = 'YouTube-Audio-Library') = (\"platform_scope\" = 'youtube'))");
                     table.CheckConstraint("ck_music_tracks_sha256", "\"sha256\" ~ '^[0-9a-f]{64}$'");
                     table.CheckConstraint("ck_music_tracks_track_id", "\"track_id\" ~ '^[a-z0-9]+(-[a-z0-9]+)*$' AND char_length(\"track_id\") <= 40");
                 });

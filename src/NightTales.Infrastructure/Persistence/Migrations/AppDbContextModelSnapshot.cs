@@ -818,11 +818,11 @@ namespace NightTales.Infrastructure.Persistence.Migrations
 
                     b.ToTable("music_tracks", null, t =>
                         {
-                            t.HasCheckConstraint("ck_music_tracks_attribution", "(\"license\" = 'CC-BY-4.0') = (\"attribution\" IS NOT NULL AND btrim(\"attribution\") <> '')");
+                            t.HasCheckConstraint("ck_music_tracks_attribution", "(\"license\" = 'CC-BY-4.0') = (\"attribution\" IS NOT NULL AND btrim(\"attribution\", E' \\t\\r\\n') <> '')");
 
                             t.HasCheckConstraint("ck_music_tracks_bgm_volume", "\"bgm_volume\" BETWEEN 0.03 AND 0.40 AND \"bgm_volume\" = round(least(0.40, greatest(0.03, power(10::numeric, (-34 - \"loudness_lufs\") / 20))), 3)");
 
-                            t.HasCheckConstraint("ck_music_tracks_duration_sec", "\"duration_sec\" >= 60");
+                            t.HasCheckConstraint("ck_music_tracks_duration_sec", "\"duration_sec\" >= 60 AND \"duration_sec\" <= 3600");
 
                             t.HasCheckConstraint("ck_music_tracks_file_name", "\"file_name\" ~ '\\.(mp3|m4a)$' AND regexp_replace(\"file_name\", '\\.(mp3|m4a)$', '') = \"track_id\"");
 
@@ -830,7 +830,7 @@ namespace NightTales.Infrastructure.Persistence.Migrations
 
                             t.HasCheckConstraint("ck_music_tracks_moods", "\"moods\" <@ ARRAY['dark_ambient','suspense','temple','meditation','noir','calm']::text[] AND cardinality(\"moods\") BETWEEN 1 AND 3");
 
-                            t.HasCheckConstraint("ck_music_tracks_platform_scope", "\"platform_scope\" IN ('any', 'youtube') AND (\"license\" <> 'YouTube-Audio-Library' OR \"platform_scope\" = 'youtube')");
+                            t.HasCheckConstraint("ck_music_tracks_platform_scope", "\"platform_scope\" IN ('any', 'youtube') AND ((\"license\" = 'YouTube-Audio-Library') = (\"platform_scope\" = 'youtube'))");
 
                             t.HasCheckConstraint("ck_music_tracks_sha256", "\"sha256\" ~ '^[0-9a-f]{64}$'");
 
