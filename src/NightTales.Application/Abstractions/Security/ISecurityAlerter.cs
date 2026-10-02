@@ -38,6 +38,30 @@ public static class SecurityEventKinds
     public const string ReauthFailed = "security.reauth_failed";
 
     /// <summary>
+    /// The first wrong authenticator or recovery code of an owner's or admin's MFA login step
+    /// (09.3.2-T3 Design). [INFERENCE name]
+    /// </summary>
+    /// <remarks>
+    /// The S-phase alert rules were frozen without a kind for a failed second step (README §B10 line
+    /// 1108 lists <c>security.mfa_changed</c> and <c>security.recovery_code_used</c>), and
+    /// <c>security.reauth_failed</c> is the re-authentication's own event — so this task adds the name
+    /// the same way 09.10.4-T1 added <see cref="ReauthFailed"/>, and the S-phase catalogue adopts it.
+    /// </remarks>
+    public const string MfaLoginFailed = "security.mfa_login_failed";
+
+    /// <summary>
+    /// A recovery code completed an owner's or admin's sign-in (BD4, README §B10 line 1108: frozen as
+    /// <c>security.recovery_code_used</c>).
+    /// </summary>
+    public const string RecoveryCodeUsed = "security.recovery_code_used";
+
+    /// <summary>
+    /// An owner's or admin's sign-in completed from a different address than the password step
+    /// (09 §4 story 09.3.2, README §B10 line 1108: frozen as <c>security.owner_login_new_ip</c>).
+    /// </summary>
+    public const string OwnerLoginNewIp = "security.owner_login_new_ip";
+
+    /// <summary>
     /// A stored authenticator secret could not be read back (WF15): a P1 condition that must never be
     /// mistaken for "MFA is off" (09.10.4-T1 failure handling).
     /// </summary>

@@ -1,6 +1,5 @@
 using System.Security.Cryptography;
 using System.Text;
-using System.Text.Json;
 using ErrorOr;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
@@ -87,9 +86,6 @@ public sealed partial class PasswordResetService(
     /// <summary>The reason stored on the revocation and the stamp rotation.</summary>
     private const string ResetReason = "password_reset";
 
-    /// <summary>The web serializer defaults, so a hand-written <c>data</c> payload's keys are camelCase.</summary>
-    private static readonly JsonSerializerOptions PayloadOptions = new(JsonSerializerDefaults.Web);
-
     /// <inheritdoc />
     public async Task<ErrorOr<Success>> RequestResetAsync(
         string email,
@@ -150,7 +146,7 @@ public sealed partial class PasswordResetService(
                     user.Id,
                     info,
                     Visibility.User,
-                    JsonSerializer.Serialize(new ResetRequestData(hasher.Hash(email)), PayloadOptions),
+                    new Dictionary<string, object?>(StringComparer.Ordinal) { ["emailHash"] = hasher.Hash(email) },
                     now),
                 cancellationToken)
             .ConfigureAwait(false);
@@ -333,8 +329,4 @@ public sealed partial class PasswordResetService(
         Level = LogLevel.Error,
         Message = "password-reset enqueue failed: template={Template} userHash={UserHash}")]
     private partial void LogEnqueueFailed(string template, string userHash);
-
-    /// <summary>The <c>data</c> payload of the request's row: the peppered address hash, nothing else.</summary>
-    /// <param name="EmailHash">The hex SHA-256 of the address with the platform pepper.</param>
-    private sealed record ResetRequestData(string EmailHash);
 }

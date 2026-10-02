@@ -24,10 +24,14 @@ namespace NightTales.Infrastructure.Jobs;
 /// shares the platform database and its connection string. It never starts a Hangfire server: the
 /// Worker adds one (<c>AddWorkerHangfireServer</c>) and <c>WorkerHost</c> adds it only in real-server
 /// mode, so the test harness runs the production graph minus the server (D13).
+/// <para>
+/// <see cref="AddHangfireStorage"/> is the half the Worker and the Api's read-only dashboard
+/// (09.2.6-T2) share; <see cref="AddJobs"/> adds the scheduling half that only a server host needs.
+/// </para>
 /// </remarks>
 public static partial class JobsServiceCollectionExtensions
 {
-    /// <summary>Registers the Hangfire client half of the Worker and every job found in the scanned assemblies.</summary>
+    /// <summary>Registers the Hangfire storage and client half of the Worker and every job found in the scanned assemblies.</summary>
     /// <param name="services">The service collection of the host.</param>
     /// <param name="configuration">The host configuration; it carries <c>ConnectionStrings:Postgres</c>.</param>
     /// <param name="assemblies">
@@ -42,6 +46,54 @@ public static partial class JobsServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(configuration);
         ArgumentNullException.ThrowIfNull(assemblies);
+
+        services.AddHangfireStorage(configuration);
+
+        // The platform retry policy: drop Hangfire's global 10-attempt default (once per process) and
+        // make the host's own filter chain the one Hangfire resolves — the client and the server both
+        // take IJobFilterProvider from DI, and this registration is deliberately last (AddHangfire uses
+        // TryAddSingleton) so a host can prepend its own providers.
+        JobFilterPipeline.RemoveGlobalAutomaticRetryDefault();
+        services.AddSingleton<IJobFilterProvider>(_ => JobFilterPipeline.Compose());
+
+        services.TryAddSingleton<IJobScheduler, HangfireJobScheduler>();
+
+        var registry = BackgroundJobRegistry.AddTo(services, assemblies);
+        services.AddSingleton(registry);
+
+        services.AddHostedService<BackgroundJobActivationCheck>();
+        services.AddHostedService<RecurringJobRegistrar>();
+
+        return services;
+    }
+
+    /// <summary>
+    /// Registers this host's Hangfire storage, client configuration and job activator (09 README D12) —
+    /// the half a job-scheduling host and a read-only dashboard host share, so both read the same
+    /// <c>hangfire</c> schema of the same database.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// It never starts a Hangfire server and never registers a hosted service: the Worker adds the one
+    /// server (<c>AddWorkerHangfireServer</c>) and its own recurring-job reconciliation through
+    /// <see cref="AddJobs"/>, while the Api registers this alone for the dashboard of 09.2.6-T2 — the
+    /// Api must not reconcile recurring ids or scan job classes, because it runs no server.
+    /// </para>
+    /// <para>
+    /// Each host owns its <see cref="JobStorage"/> and <see cref="JobActivator"/> instances rather than
+    /// the process-static <c>JobStorage.Current</c>/<c>JobActivator.Current</c>: two hosts in one process
+    /// (the Worker and the Api, or two parallel test classes) would otherwise fight over them and send
+    /// one host's work to the other host's database (09.2.6-T1).
+    /// </para>
+    /// </remarks>
+    /// <param name="services">The service collection of the host.</param>
+    /// <param name="configuration">The host configuration; it carries <c>ConnectionStrings:Postgres</c>.</param>
+    public static IServiceCollection AddHangfireStorage(
+        this IServiceCollection services,
+        IConfiguration configuration)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(configuration);
 
         var connectionString = RequireConnectionString(configuration);
 
@@ -85,26 +137,20 @@ public static partial class JobsServiceCollectionExtensions
         services.TryAddSingleton<JobActivator>(provider =>
             new AspNetCoreJobActivator(provider.GetRequiredService<IServiceScopeFactory>()));
 
-        services.AddHangfire((provider, global) => global.UseStorage(provider.GetRequiredService<JobStorage>()));
+        services.AddHangfire((provider, global) =>
+        {
+            // Hangfire's own factory has just installed this host's ILoggerFactory into the process-static
+            // LogProvider (Hangfire.AspNetCore's AddHangfire does it before it runs this callback).
+            // Taking a registration here makes that install owned by a container singleton, so it is
+            // handed back when the container is disposed — even for a host whose hosted services never
+            // stop — and never left installed with a disposed factory while another host is live:
+            // HangfireLogProviderRegistration.
+            provider.GetRequiredService<HangfireLogProviderRegistration>().Install();
 
-        // The platform retry policy: drop Hangfire's global 10-attempt default (once per process) and
-        // make the host's own filter chain the one Hangfire resolves — the client and the server both
-        // take IJobFilterProvider from DI, and this registration is deliberately last (AddHangfire uses
-        // TryAddSingleton) so a host can prepend its own providers.
-        JobFilterPipeline.RemoveGlobalAutomaticRetryDefault();
-        services.AddSingleton<IJobFilterProvider>(_ => JobFilterPipeline.Compose());
+            global.UseStorage(provider.GetRequiredService<JobStorage>());
+        });
 
-        services.TryAddSingleton<IJobScheduler, HangfireJobScheduler>();
-
-        var registry = BackgroundJobRegistry.AddTo(services, assemblies);
-        services.AddSingleton(registry);
-
-        // Registered first so its StopAsync runs last (hosted services stop in reverse order): the
-        // process-global Hangfire log provider must outlive this host's own shutdown, and must not
-        // outlive the container that owns the ILoggerFactory behind it.
-        services.AddHostedService<HangfireLogProviderRelease>();
-        services.AddHostedService<BackgroundJobActivationCheck>();
-        services.AddHostedService<RecurringJobRegistrar>();
+        services.AddSingleton<HangfireLogProviderRegistration>();
 
         return services;
     }

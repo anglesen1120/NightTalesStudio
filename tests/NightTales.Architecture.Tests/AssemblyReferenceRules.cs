@@ -107,6 +107,36 @@ public sealed class AssemblyReferenceRules
             AllowLists.RenderNodeServerAllowedReferences,
             AllowLists.RenderNodeServerAllowedPrefixes,
             nameof(RenderNode_ReferencesOnlyTheContractAndAspNetCore));
+
+        var adapter = ArchitectureModel.Require(ArchitectureModel.MptAdapter);
+        AssertAllowed(
+            adapter,
+            AllowLists.MptAdapterAllowedReferences,
+            AllowLists.MptAdapterAllowedPrefixes,
+            nameof(RenderNode_ReferencesOnlyTheContractAndAspNetCore));
+        AssertDeclaredAllowed(
+            adapter,
+            AllowLists.MptAdapterAllowedReferences,
+            AllowLists.MptAdapterAllowedPrefixes,
+            nameof(RenderNode_ReferencesOnlyTheContractAndAspNetCore));
+    }
+
+    [Fact]
+    public void MockMpt_ReferencesOnlyTheServerAndTheContract()
+    {
+        // 11 README D3: the mock reuses the core and the contract and nothing else, so the fake node can never
+        // drag the backend (Api, Worker, Infrastructure) into its image or a node bundle (D12).
+        var mock = ArchitectureModel.Require(ArchitectureModel.MockMpt);
+        AssertAllowed(
+            mock,
+            AllowLists.MockMptAllowedReferences,
+            AllowLists.MockMptAllowedPrefixes,
+            nameof(MockMpt_ReferencesOnlyTheServerAndTheContract));
+        AssertDeclaredAllowed(
+            mock,
+            AllowLists.MockMptAllowedReferences,
+            AllowLists.MockMptAllowedPrefixes,
+            nameof(MockMpt_ReferencesOnlyTheServerAndTheContract));
     }
 
     private static void AssertAllowed(
@@ -238,6 +268,18 @@ public sealed class AssemblyReferenceRules
                 if (File.Exists(candidate))
                 {
                     return candidate;
+                }
+            }
+
+            // A tool project (11 README D3: tools/mock-mpt) lives outside src/tests; its directory name does not
+            // match the assembly name, so the path is spelled out.
+            if (string.Equals(name, "NightTales.MockMpt", StringComparison.Ordinal))
+            {
+                var tool = Path.Combine(
+                    directory.FullName, "tools", "mock-mpt", "obj", "project.assets.json");
+                if (File.Exists(tool))
+                {
+                    return tool;
                 }
             }
 

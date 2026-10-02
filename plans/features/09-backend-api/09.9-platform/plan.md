@@ -283,3 +283,76 @@ Folder total **3.5 d raw**, matching B9 ("09.9 (P part) … 3.5"). Dependency ce
 **Monitoring.** 11.6.2-T1 alerts on `outbox_lag_seconds` > 30 s, `render_duration_seconds` failure share, `openai_cost_usd_total` vs the budget line and `youtube_quota_used` > 80 %; the API board uses the AspNetCore HTTP metrics. Add a log-based alert for `code = feature_disabled` volume spikes only if the operator asks (not part of the alert file).
 
 **Rollback.** Telemetry can be turned off with `Otlp:Enabled=false` without a redeploy of code; the redaction pipeline must never be disabled in production (it is the control that keeps tokens out of the collector). The flag guard is removed by deleting the `.RequireFeature(...)` call on a route (additive, no migration). Rolling back `09.9.4-T1` means restoring the previous app image — the `data_protection_keys` table stays (dropping it would destroy the ability to unprotect existing `refresh_tokens`/`user_action_tokens` values). Rolling back `09.9.5-T1` is making the `contract` job non-required in branch protection; the workflow file itself stays.
+
+## 12. Flag lifecycle as implemented (09.9.2-T2)
+
+Written after the task landed, so the mechanism has one description instead of one per file. It changes no
+decision above: §5.1, §5.4 and the `[RULED — README §B10 WT13]` rows stay as written.
+
+**Read path.** `IFeatureFlags.IsEnabledAsync(key, ct)` → `CachedFeatureFlags(IFeatureFlagReader, IMemoryCache, IClock, IOptions<FeatureFlagsOptions>)`
+→ `FeatureFlagReader` (one indexed primary-key lookup on `feature_flags`, `AsNoTracking`, one column). The
+table is platform data and **not** `IUserOwned`, so the 09 README D10 tenant filter never applies and no
+caller needs `IgnoreQueryFilters`. `rules` is never selected (P answers from `enabled` only).
+
+- The 30 s window is measured **against `IClock`**: the entry stores `LoadedAt` and is re-read once
+  `now − LoadedAt ≥ FeatureFlags:CacheSeconds`. The cache entry's own absolute expiry is only a memory
+  bound, so a test moves a `FakeClock` instead of sleeping and the window has one definition.
+- **Fail-closed, never throwing.** An invalid key answers `false` with no lookup; a key no row has is
+  cached as `false` for the window; a **failed read answers `false` and is not cached**, so a database that
+  recovers is believed on the next call rather than serving a fabricated value for the rest of the window.
+  A missing row and a failed read each log one warning per key per minute (the key only, the failure's
+  *type* only — never a message that could carry the connection string).
+
+**Eviction — two paths, both bounded by the window.**
+
+| Path | Producer | Consumer | Scope |
+|---|---|---|---|
+| `NOTIFY feature_flags_changed` (payload = the key) **in the writer's transaction**, delivered at commit | the CLI verb (and 09.9.2-T1's `PATCH` in S) through `IFeatureFlagChangeNotifier` | `FeatureFlagsCacheInvalidator` — one `LISTEN` session per instance, in the **Api and the Worker** | every instance |
+| outbox `feature_flags_changed.v1` (`FeatureFlagsChanged`, `[PlatformEvent]`) | the write path, through `IFeatureFlagChangeNotifier` | `FeatureFlagsChangedHandler` (`IOutboxHandler`, evict-only, idempotent), registered in the Worker's composition root | the Worker |
+
+The 30 s window is the **hard bound** when a notification is lost; a dropped `LISTEN` session or a failed
+delivery is therefore never fatal. The invalidator's loop never escapes with an exception (a database down
+at start is a reconnect attempt, not a stopped host) and restarts its schedule from the first entry only
+after a wait has returned — the same policy as BD11's realtime listener. In P the CLI writer feeds **both**
+paths from one `IFeatureFlagChangeNotifier` call: the `NOTIFY`, the audit row and the
+`feature_flags_changed.v1` outbox row all ride the writer's transaction, so a rolled-back `flags set`
+announces nothing and queues nothing. The row is queued by that notifier rather than by a raised domain
+event, because the write goes through `ExecuteUpdateAsync` and `FeatureFlag` is not an `AggregateRoot`, so
+`OutboxSaveChangesInterceptor` never sees an event; it is built to that interceptor's own `ToRow` contract
+(stable `type` through `OutboxEventRegistry`, `OutboxJson` payload, `user_id` null for the
+`[PlatformEvent]`, `occurred_at` and `next_attempt_at` from the scope's clock, the current activity as
+`trace_parent`).
+
+**Operator CLI** (`nts-worker flags list` / `flags set <key> on|off`, in the 11.3.3-T1 verb host): the
+Worker has no web listener, `Program` branches before any route is mapped, and the argv the host's
+configuration provider sees is filtered to switches and `key=value` pairs. Exit codes: `0` success
+(including a set that changed nothing), `1` validation (bad key shape, unknown key, malformed command
+line), `2` database/transport failure — never a stack trace or a connection string. A real transition
+writes exactly one `audit_logs` row (`actor_type = system`, `category = support`, `visibility = internal`,
+`data.actor = "system:operator"`, action `feature_flag_changed` **[INFERENCE]**) in the **same**
+transaction as the update, so a failed audit rolls the change back; a set to the current value writes
+nothing.
+
+**Configuration.**
+
+| Key | Default | Meaning |
+|---|---|---|
+| `FeatureFlags:CacheSeconds` | `30` | the read window (BD13) |
+| `FeatureFlags:HeartbeatSeconds` | `30` **[INFERENCE]** | the invalidator's wait before a heartbeat |
+| `FeatureFlags:ListenerBackoffSeconds` | `1,2,4,8,16,30` **[INFERENCE]** | the invalidator's reconnect ramp; the last entry repeats |
+
+**Guard.** `FeatureFilters.RequireFeature(key)` (and the `RouteHandlerBuilder.RequireFeature(key)`
+extension) answers the **same ProblemDetails a handler error produces** — 404 `feature_disabled` with the
+request's `traceId`, built by `ProblemDetailsWriter.ToProblem`, no exception, never 403. It resolves
+`IFeatureFlags` from the request's services, so it reads the host's cache; the handler is not invoked when
+the flag is off, and an **anonymous** caller gets the same 404 (the host's fallback policy asserts nothing
+about a principal), which is the point of BD13's no-existence-leak rule. Guarded routes are the
+consumers' (02.7, 02.8.3, 06) — this folder adds none.
+
+**Test placement.** `NightTales.Infrastructure.UnitTests/Flags/` (window, fail-closed, key shape, the
+outbox handler's eviction, the notifier's exact SQL, the invalidator's schedule) and
+`NightTales.Api.IntegrationTests/Flags/` (the seeded value and the one-statement-per-window count against
+real PostgreSQL, the guard over the real pipeline, the real `LISTEN` session, and the CLI over
+`WorkerHost`). There is no `NightTales.Infrastructure.Tests` project in this solution; the task file's
+`Infrastructure.Tests` path maps to `Infrastructure.UnitTests`. No migration and no column change: the
+64-character key bound is the Application's `FeatureFlagKey`, and `feature_flags.key` stays `text`.

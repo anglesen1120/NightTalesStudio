@@ -11,3 +11,7 @@ tests/NightTales.RenderNode.Tests/ApiKeyMiddlewareTests.cs:generic-api-key:23
 tests/NightTales.RenderNode.Tests/QaWireTests.cs:generic-api-key:23
 # tests/NightTales.Infrastructure.UnitTests/Security/Base32Tests.cs:21 false positive: generic-api-key matched the published RFC 6238 Appendix B test secret (RFC 4648 base32 of ASCII "12345678901234567890", public) 2026-10-02 09.10.4-T1
 tests/NightTales.Infrastructure.UnitTests/Security/Base32Tests.cs:generic-api-key:21
+# tests/NightTales.MptAdapter.Tests/Fakes/AdapterHarness.cs:25 false positive: generic-api-key matched the in-process test harness's fixed 32-byte fake adapter key (never a real credential) 2026-10-02 11.3.5-T2
+tests/NightTales.MptAdapter.Tests/Fakes/AdapterHarness.cs:generic-api-key:25
+# tests/NightTales.MockMpt.Tests/TestHost/MockMptTestHost.cs:27 false positive: generic-api-key matched the in-process test host's fixed 32-byte fake adapter key (never a real credential) 2026-10-02 11.1.2-T1
+tests/NightTales.MockMpt.Tests/TestHost/MockMptTestHost.cs:generic-api-key:27

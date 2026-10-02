@@ -52,6 +52,28 @@ public sealed class PgNotificationListenerTests(TestDatabase database) : Integra
         security.Value.Payload.ShouldBe(userId.ToString("D"));
     }
 
+    [Theory]
+    [InlineData("realtime")]
+    [InlineData("security")]
+    public async Task Listener_DoesNotReceiveAPreviousSessionsUnreadNotice(string channel)
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var connectionString = WithApplicationName("nts-qa-listener-reused-" + Guid.CreateVersion7().ToString("N"));
+        await using (var previous = new NpgsqlConnection(connectionString))
+        {
+            await previous.OpenAsync(ct);
+            await using var command = previous.CreateCommand();
+            command.CommandText = "LISTEN " + channel;
+            await command.ExecuteNonQueryAsync(ct);
+            await Database.ExecuteAsync($"SELECT pg_notify('{channel}', 'previous-session')", ct);
+        }
+
+        await using var listener = new PgNotificationListener(connectionString);
+        await listener.ConnectAsync(ct);
+        (await listener.WaitAsync(TimeSpan.FromMilliseconds(250), ct)).ShouldBeNull(
+            "a new listener must not inherit the previous session's unread notification");
+    }
+
     [Fact]
     public async Task Listener_Drains_A_Committed_Burst_Without_Waiting_A_Heartbeat_Per_Message()
     {

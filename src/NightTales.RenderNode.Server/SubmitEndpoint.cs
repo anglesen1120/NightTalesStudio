@@ -189,9 +189,9 @@ internal static class SubmitEndpoint
         planSink?.Release(record.TaskId);
 
         // `record` is the pre-submit snapshot, so its CancelRequested is always false. A `/cancel` accepted
-        // while backend.SubmitAsync was in flight has already set the stored flag, and Merge is last-writer-wins
-        // on it (RenderTaskRecord.Merge) — carrying the snapshot would silently reset an accepted cancel on
-        // this failed row. Re-read the live row and preserve its flag; like the write below, the read uses a
+        // while backend.SubmitAsync was in flight has already set the stored flag, and Merge never clears a
+        // landed cancel (RenderTaskRecord.Merge) — carrying the snapshot would silently reset it on this
+        // failed row. Re-read the live row and preserve its flag; like the write below, the read uses a
         // token the aborted request cannot cancel.
         var stored = await store.TryGetAsync(record.TaskId, CancellationToken.None).ConfigureAwait(false);
         return await TaskUpdates

@@ -9,6 +9,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using NightTales.Application.Abstractions.Identity;
 using NightTales.Application.Abstractions.Jobs;
+using NightTales.Application.Abstractions.Storage;
 using NightTales.Domain.Common;
 using NightTales.Infrastructure.Identity;
 using NightTales.Infrastructure.Jobs;
@@ -18,6 +19,7 @@ using NightTales.Infrastructure.Realtime;
 using NightTales.TestKit.Database;
 using NightTales.TestKit.Email;
 using NightTales.TestKit.Security;
+using NightTales.TestKit.Storage;
 using NightTales.TestKit.Time;
 using NightTalesWorkerHost::NightTales.Worker.DependencyInjection;
 using WorkerComposition = NightTalesWorkerHost::NightTales.Worker.DependencyInjection.WorkerServiceCollectionExtensions;
@@ -230,6 +232,11 @@ public sealed class WorkerHost(TestDatabase database, FakeClock clock) : IAsyncD
         // drives.
         WorkerComposition.WithoutOutboxDispatcherLoop(builder.Services);
 
+        // 11.3.3-T1 (11 README D13): the health poller's 30-second loop runs a tick immediately at start,
+        // which would defeat the FakeClock the state-machine tests drive. The poller singleton stays, so a
+        // test resolves it and calls `PollOnceAsync`/`TickAsync` itself.
+        WorkerComposition.WithoutNodeHealthPoller(builder.Services);
+
         // The host's filter chain, with the observer first: it must be the last IJobFilterProvider
         // registration (AddJobs registers the platform chain), so Hangfire's client and server both
         // see the observer plus the platform filters.
@@ -298,6 +305,11 @@ public sealed class WorkerHost(TestDatabase database, FakeClock clock) : IAsyncD
             // harness provides the run's throwaway KEK exactly as a deployment's secret store does.
             [TestKek.PathConfigurationKey] = TestKek.SharedPath,
             [TestKek.PasswordConfigurationKey] = TestKek.SharedPassword,
+            // 09.7.2-T1: the storage settings the Worker graph binds and validates on start-up. The
+            // endpoint is a closed loopback port, so the storage prober fails in microseconds instead of
+            // waiting on a DNS lookup for the dev container's hostname; a test that needs another
+            // endpoint overrides this one.
+            [$"{StorageSettings.SectionName}:{nameof(StorageSettings.ServiceUrl)}"] = StorageTestEndpoint.Unreachable,
         };
 
         // 09.2.6-T3: the Worker's composition root registers the e-mail pipeline, which validates the

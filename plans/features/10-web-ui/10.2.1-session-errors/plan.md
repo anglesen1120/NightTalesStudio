@@ -49,8 +49,8 @@ Out of scope (owned elsewhere, only consumed):
 - ✅ `returnUrl` is accepted only when it matches `^/(?![/\\])[^\s]*$` and is not an auth page; else `/dashboard`
   (README.md:147).
 - ✅ Logout = `POST /auth/logout` → `SessionEnded` (also on refresh failure and on `refresh_token_reused`); all
-  feature stores reset through `SESSION_SCOPED` providers (`reset()`), realtime stops, router → `/login`, dirty
-  story drafts discarded only after the dirty guard asked (README.md:147).
+  feature stores reset through `SESSION_SCOPED` providers (`reset()`), realtime stops, router → `/login`. A
+  user-initiated logout follows the dirty guard; a terminal `SessionEnded` discards drafts without prompting (README.md:145).
 - ✅ Activity gate: `core/session/activity.ts` observes `pointerdown`, `keydown`, `wheel`, `touchstart` (throttled
   1/10 s) and `document.visibilityState`; `isActive()` = input within `idleWindow`, owner/admin 25 min and user
   13 days (just below the server limits); a refresh **not** caused by a user action happens only when `isActive()`,
@@ -128,7 +128,7 @@ is the single exemption from the D2 storage ban and is owned by 10.2.5-T1.
 
 Models (`web/src/app/core/…`, plain interfaces/types — no Angular imports in `domain`-like files):
 - `core/errors/app-error.ts` — `interface AppError { code: string; status: number; kind: AppErrorKind;
-  fieldErrors: Record<string, string[]>; retryAfterSec?: number; traceId?: string; problem?: ProblemDetails }`
+  fieldErrors: Readonly<Record<string, readonly string[]>>; retryAfterSec?: number; traceId?: string; problem?: ProblemDetails }`
   (D9); `type AppErrorKind = 'validation' | 'auth' | 'conflict' | 'precondition' | 'rate_limit' | 'not_found' |
   'feature_disabled' | 'client_bug' | 'network' | 'server' | 'unknown'`; guards `isConflict`, `isRateLimited`,
   `isValidation`.
@@ -148,12 +148,10 @@ Ports and stores:
   the only file in this folder importing `@shared/api` (D2/D5); maps `expiresAt` ISO → epoch ms; `logout()` uses
   `firstValueFrom` and ignores the 204 body.
 - `core/session/session-store.ts` — `@Injectable({providedIn: 'root'}) SessionStore` (session-scoped by nature,
-  D6). Signals: `accessToken = signal<string|null>(null)`, `expiresAt = signal<number|null>(null)`,
-  `role = signal<PlatformRole|null>(null)`, `amr = signal<readonly string[]>([])`,
-  `status = computed<'anonymous'|'restoring'|'authenticated'|'refreshing'|'ended'>(…)`,
-  `me = signal<MeSummary | null>(null)` (the `GET /me` view the shell fills through `setMe()`),
-  `enrolmentToken = signal<string|null>(null)` (WR8), `endReason = signal<SessionEndReason|null>(null)`,
-  `restoreSettled = signal(false)`. Derived: `hasFeature(key: string): boolean` (reads `me()?.features`),
+  D6). Private writable backing exposes readonly accessToken/expiresAt/role/amr/me/enrolmentToken/endReason/
+  restoreSettled/generation views (10.2.1-T1); status is computed across anonymous/restoring/authenticated/
+  refreshing/ended. The shell owns GET me and fills it synchronously through setMe.
+  Derived: hasFeature(key: string): boolean (reads me()?.features),
   `mode = computed<'full'|'enrolment'>(() => enrolmentToken() ? 'enrolment' : 'full')` (WR8),
   `isAuthenticated = computed(() => status() === 'authenticated')`. Async: `restore(): Promise<void>`,
   `ensureFreshAccessToken(opts?: { userAction?: boolean }): Promise<string|null>`,
@@ -176,10 +174,10 @@ Ports and stores:
 - `core/session/session-scope.ts` — `interface SessionScoped { reset(): void }` and
   `const SESSION_SCOPED = new InjectionToken<SessionScoped[]>('SESSION_SCOPED')` (multi: true); every root-level
   feature store (10.4.x, 10.5.x) provides itself under it; `signOut` iterates and calls `reset()`.
-- `core/session/activity.ts` — `@Injectable({providedIn: 'root'}) ActivityTracker`: `lastInputAt = signal(0)`,
-  `tick = signal(0)` (one 10 s interval so `isActive` can be a `computed`), `idleWindowMs = computed(role-aware)`,
+- `core/session/activity.ts` — root ActivityTracker: private writable lastInputAt/tick/isVisible backing,
+  readonly same-named views; one 10 s tick interval, idleWindowMs computed(role-aware),
   `isActive = computed(() => tick() >= 0 && Date.now() - lastInputAt() < idleWindowMs())`,
-  `isVisible = signal(document.visibilityState === 'visible')`, methods
+  `isVisible` reflects document.visibilityState; methods
   `start()` / `stop()`; constants `ACTIVITY_WINDOWS = { admin: 25*60_000, user: 13*86_400_000 }` and
   `ACTIVITY_THROTTLE_MS = 100` (no timer-driven refresh, D7).
 - `core/http/idempotency-keys.ts` — `@Injectable({providedIn:'root'}) IdempotencyKeys { begin(intent: string):
@@ -192,6 +190,19 @@ Ports and stores:
   `isActive()`).
 - `core/http/http-context.ts` (helper) — `withIdempotency(intent)`, `silently()` and `userAction()` return `HttpContext` mutators;
   repositories use them so a store never touches `HttpContext` directly (D5: stores never see `HttpResponse`).
+Implementation ownership/lifetime: 10.2.1-T1 owns root SessionStore/ActivityTracker and guards; all writable
+signals remain private with public readonly views. Replace immutable arrays/objects, derive flags with computed.
+Guards inject synchronously and await memoized `restore(): Promise<void>`, never a boolean restoreSettled view.
+Shell children use authChildGuard; enrolment setup is outside that full-session shell with its own guard.
+Session generation increments on identity replacement/end; restore/refresh capture/check it after awaits,
+including failure and finally ownership, so late A completions cannot affect B. Deferred Router resolution
+captures Injector during construction and uses injector.get(Router) in signOut, never method-local inject().
+
+10.2.2-T1 owns the error binder: control namespace `server: { messageKeys: readonly string[] }`, preserves local
+validator errors, replaces server errors per submit, clears that namespace on edit/resubmit, and returns unmapped
+pointers to FormErrorAlert. Containers own DestroyRef-scoped form-state notification bridges, not the binder.
+RetryCountdown initializes remaining to zero, reads required input after binding, re-arms one cleaned timer and
+emits once per arm at zero; destruction does not emit. Tests await whenStable without forced change detection.
 
 No domain table, no cache, no persisted draft: story drafts stay in memory (D18, F25) and this folder adds no
 storage of its own.
@@ -202,8 +213,9 @@ storage of its own.
    (`SILENT_REQUEST`) → 200 `{accessToken, expiresAt}` (+ rotated cookie, not readable by JS) → `signIn(...)`,
    `restoreSettled = true`; 401 → anonymous, `endReason = null` (a visitor is not an error); network failure →
    anonymous + `restoreSettled = true` + dev-console `network_error` (D6, D9).
-2. **Guarded navigation while restoring.** `authGuard` awaits `restoreSettled`; authenticated → proceed;
-   anonymous → `Router.navigate(['/login'], {queryParams:{returnUrl: sanitizeReturnUrl(currentUrl)}})`.
+2. **Guarded navigation while restoring.** authGuard/authChildGuard await memoized restore Promise,
+   inspect current full-session mode/status, return true or sanitized login/setup UrlTree, never navigate as
+   a guard side effect or await restoreSettled boolean. Setup uses separate enrolment guard outside shell.
 3. **Pro-active refresh.** Interceptor: if a non-silent `/api/v1/**` request has `expiresAt − now < 30_000`, await
    `ensureFreshAccessToken({ userAction: req.context.get(USER_ACTION) })` then attach `Authorization: Bearer
    <authHeader()>`; a background request refreshes only while `isActive()` (WR11) and N parallel requests share one
@@ -221,7 +233,7 @@ storage of its own.
    with `errors.refresh_token_reused` as the reason banner; the user is warned that other devices were signed out.
 6. **Logout.** The user menu calls `SessionStore.logout()` (WR8) → `SessionApi.logout()` → 204 → `signOut('logout')`:
    `SESSION_SCOPED` reset (feature stores clear, realtime stops through its own subscription to `status`), router →
-   `/login` **without** `returnUrl`; drafts are discarded only after the dirty guard asked (README.md:147).
+   `/login` **without** `returnUrl`; a user-initiated logout follows the dirty guard, while a terminal `SessionEnded` discards drafts without prompting (README.md:145).
 7. **Idle expiry (no user action).** A hub reconnect or a poll tries to refresh while `isActive()` is false →
    `ensureFreshAccessToken()` **refuses** (returns `null` without a call); realtime stays paused and its bar offers
    "Continue" (10.2.4-T1). A user action after the window is sent as-is; the server's 401 `session_revoked`
@@ -279,6 +291,13 @@ action list**: on 409 `episode_invalid_state` the page refetches the episode and
 `09.5.1-episodes/09.5.1-T1-episode-commands-queries-pagination.md:126`, 09.5.3 adds the field) — the client never
 parses actions out of a ProblemDetails body. `Retry-After` (seconds) is read from the header, not the body
 (`09.1.4-T1:Mapping rules`).
+Snapshot availability is recorded in [integration readiness](../integration-readiness.md), audited develop
+`00e7d5d5415579c7df55a66dc2177cbc2e31eb78` (2026-10-02). Refresh/logout/basic login/reauth exist; the table's
+MFA login/pre-auth/enrolment response is a future 09.3.2-T3 contract, reset routes await 09.3.3-T1 (+09.2.6-T3),
+and shell GET/PATCH `/api/v1/me` awaits 09.3.4-T1. Management `/me/mfa/*` and mail infrastructure do not satisfy
+those prerequisites. Real-system acceptance for each missing integration remains blocked on its named owner.
+Wire ProblemDetails uses optional `errors` → internal fieldErrors, flattened scalar metadata (not nested),
+HTTP Retry-After → retryAfterSec, and parsed body → problem; these internal fields are not a success/error DTO.
 
 401 handling (WR9): the interceptor refreshes once and replays once **only** for a 401 with no code,
 `unauthorized` (the shape an expired access token actually carries, `09.1.4-T1:21`), `unauthenticated`, or an
@@ -341,8 +360,8 @@ Copy keys (vi + en, **same key sets** in both files; owner = this folder for the
 `core.session.reused.title/body`, `core.session.restoreFailed.body`, `core.session.signIn`,
 `core.session.signOut`, `core.session.reauthRequired.title/body`.
 
-Per-control messages need no shared component: each consuming page renders the first key `bindFieldErrors` wrote
-into the control's `errors` inside its own `mat-error` with the documented `id` for `aria-describedby`. A
+Per-control messages read `errors.server.messageKeys[0]` written by bindFieldErrors, preserving local-validator
+messages in the consumer's mat-error and its documented aria-describedby association. A
 `FormFieldError` component is **not** built (absent from D11, `README.md:168`, and from WR4, `README.md:347`; adding
 one would need TL sign-off).
 

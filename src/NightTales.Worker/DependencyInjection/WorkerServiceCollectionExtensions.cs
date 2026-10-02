@@ -10,14 +10,17 @@ using NightTales.Application.Abstractions.Jobs;
 using NightTales.Application.Abstractions.Outbox;
 using NightTales.Application.Features.Episodes.Outbox;
 using NightTales.Domain.Episodes.Events;
+using NightTales.Domain.Platform.Events;
 using NightTales.Infrastructure.DependencyInjection;
 using NightTales.Infrastructure.Email;
 using NightTales.Infrastructure.Jobs;
 using NightTales.Infrastructure.Persistence;
+using NightTales.Infrastructure.Persistence.Flags;
 using NightTales.Infrastructure.Persistence.Outbox;
 using NightTales.Infrastructure.Security;
 using NightTales.Infrastructure.Storage;
 using NightTales.Worker.Health;
+using NightTales.Worker.Rendering;
 
 namespace NightTales.Worker.DependencyInjection;
 
@@ -40,6 +43,18 @@ public static class WorkerServiceCollectionExtensions
     /// </remarks>
     public static readonly Func<IServiceProvider, IHostedService> OutboxDispatcherLoopFactory =
         provider => provider.GetRequiredService<OutboxDispatcher>();
+
+    /// <summary>
+    /// The factory of the hosted descriptor that runs the health poller (11.3.3-T1, 11 README D13): it
+    /// resolves the poller singleton, so a test drives the very instance the loop owns through
+    /// <c>NodeHealthPoller.PollOnceAsync</c>.
+    /// </summary>
+    /// <remarks>
+    /// A named field for the same reason as <see cref="OutboxDispatcherLoopFactory"/>:
+    /// <see cref="WithoutNodeHealthPoller"/> finds exactly this descriptor by reference.
+    /// </remarks>
+    public static readonly Func<IServiceProvider, IHostedService> NodeHealthPollerFactory =
+        provider => provider.GetRequiredService<NodeHealthPoller>();
 
     /// <summary>Registers everything the Worker needs except the Hangfire server.</summary>
     /// <param name="services">The service collection of the host.</param>
@@ -71,6 +86,11 @@ public static class WorkerServiceCollectionExtensions
             .ValidateOnStart();
 
         services.AddPersistence(configuration, assemblies);
+
+        // 09.9.2-T2 (09 README BD13): the same feature-flag read service the Api composes — the cached port
+        // a job or outbox handler checks, the writer's NOTIFY notifier, and this instance's
+        // `LISTEN feature_flags_changed` invalidator, so a flip reached on one host is believed on all.
+        services.AddFeatureFlags(configuration);
 
         // 09.9.4-T1 (09 README BD12/WF15): the Worker protects and reads back values with the same ring
         // and the same DP_KEK as the Api (11 §10:284), so a token the Api protected — a channel
@@ -110,6 +130,22 @@ public static class WorkerServiceCollectionExtensions
         // the Api host's outbox path (the Api only writes outbox rows, 09 README D12).
         services.AddOutboxHandler<EpisodeCancelled, EpisodeCancelledAssetRetentionHandler>();
 
+        // 11.3.3-T1 (11 README D13/F09–F13): the render-node registry, the pinned-TLS connection factory,
+        // the health cache, the drift/up instruments and the config seeder. The optional `RenderNodes`
+        // section is validated on start, so an impossible cadence or hysteresis fails the boot.
+        services.AddRenderNodes(configuration);
+
+        // The poller is a BackgroundService, not a Hangfire recurring job: a sub-minute cron is not
+        // reliable (F10/P9, 09 README D11). It is registered as a singleton and hosted through that
+        // instance, so a host and the harness resolve the very poller the loop owns.
+        services.AddSingleton<NodeHealthPoller>();
+        services.AddSingleton<IHostedService>(NodeHealthPollerFactory);
+
+        // 09.9.2-T2 (09 README BD13): the `feature_flags_changed.v1` consumer — it drops the key from this
+        // Worker instance's flag cache. It is idempotent and writes nothing: the writer owns the row, the
+        // audit row and the NOTIFY; this handler is the outbox half of the two eviction paths.
+        services.AddOutboxHandler<FeatureFlagsChanged, FeatureFlagsChangedHandler>();
+
         // 09.2.4-T1 appends the hosted OutboxDispatcher inside this composition root (09 W3 CR-42).
         services.AddOptions<OutboxDispatcherOptions>()
             .BindConfiguration(OutboxDispatcherOptions.SectionName)
@@ -134,9 +170,15 @@ public static class WorkerServiceCollectionExtensions
         services.AddSingleton<OutboxDispatcher>();
         services.AddSingleton<IHostedService>(OutboxDispatcherLoopFactory);
 
+        // 09.7.2-T1 (09 README BD10/BD12): the blob store, its health cache and the prober. The sweep
+        // (09.7.3-T1), the render ingest (09.6.3-T2) and 02's fetcher path all call it here; the
+        // readiness check below reads only the cache the prober fills (BD16).
+        services.AddStorage(configuration);
+
         services.AddHealthChecks()
             .AddCheck<DatabaseHealthCheck>("database")
-            .AddCheck<HangfireStorageHealthCheck>("hangfire");
+            .AddCheck<HangfireStorageHealthCheck>("hangfire")
+            .AddCheck<StorageHealthCheck>(StorageHealthCheck.Name);
 
         return services;
     }
@@ -163,6 +205,33 @@ public static class WorkerServiceCollectionExtensions
         if (loop is not null)
         {
             services.Remove(loop);
+        }
+
+        return services;
+    }
+
+    /// <summary>
+    /// Drops the hosted health poller from <paramref name="services"/> and leaves the poller singleton in
+    /// place (11.3.3-T1): the test harness drives one tick through <c>NodeHealthPoller.PollOnceAsync</c>, so
+    /// the 30-second loop must never start and no test depends on a timer.
+    /// </summary>
+    /// <remarks>
+    /// The same reason as <see cref="WithoutOutboxDispatcherLoop"/>: the descriptor has to go before the host
+    /// is built, because <c>BackgroundService.StartAsync</c> schedules the loop and its first tick would run
+    /// against a clock no test controls.
+    /// </remarks>
+    /// <param name="services">The service collection of the host.</param>
+    public static IServiceCollection WithoutNodeHealthPoller(this IServiceCollection services)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+
+        var poller = services.FirstOrDefault(descriptor =>
+            descriptor.ServiceType == typeof(IHostedService)
+            && ReferenceEquals(descriptor.ImplementationFactory, NodeHealthPollerFactory));
+
+        if (poller is not null)
+        {
+            services.Remove(poller);
         }
 
         return services;
