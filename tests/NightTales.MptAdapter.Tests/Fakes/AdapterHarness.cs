@@ -102,7 +102,8 @@ internal sealed class AdapterHarness : IAsyncDisposable
             Options.Create(serverOptions),
             startReader,
             cleaner,
-            factory.CreateLogger<MptClient>());
+            factory.CreateLogger<MptClient>(),
+            new FileOutputSource(store, Options.Create(options), factory.CreateLogger<FileOutputSource>()));
 
         var feed = new ChannelCompletedTaskFeed();
         var poller = new MptTaskPoller(

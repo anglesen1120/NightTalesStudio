@@ -131,13 +131,17 @@ public sealed class MptClient : IRenderBackend
     private readonly IMptProcessStartReader _startReader;
     private readonly TaskDirCleaner _cleaner;
 
+    private readonly AdapterOptions _options;
+    private readonly FileOutputSource? _outputs;
+
     public MptClient(
         HttpClient http,
         IOptions<AdapterOptions> options,
         IOptions<RenderNodeServerOptions> serverOptions,
         IMptProcessStartReader startReader,
         TaskDirCleaner cleaner,
-        ILogger<MptClient> log)
+        ILogger<MptClient> log,
+        FileOutputSource? outputs = null)
     {
         ArgumentNullException.ThrowIfNull(http);
         ArgumentNullException.ThrowIfNull(options);
@@ -150,8 +154,10 @@ public sealed class MptClient : IRenderBackend
         _log = log;
         _startReader = startReader;
         _cleaner = cleaner;
+        _outputs = outputs;
 
         var bound = options.Value;
+        _options = bound;
         _baseAddress = AdapterOptions.ParseLoopbackMptBaseUrl(bound.MptBaseUrl);
         _readTimeout = TimeSpan.FromSeconds(Math.Max(1, bound.MptReadTimeoutSeconds));
         _threads = bound.ResolveMptThreads(serverOptions.Value.MaxConcurrentTasks);
@@ -199,6 +205,18 @@ public sealed class MptClient : IRenderBackend
 
         // D6's lost rule compares a later process start against this instant, so it is read here, at submit.
         var startedAt = await _startReader.ReadAsync(cancellationToken).ConfigureAwait(false);
+
+        // T3: the check's --aspect/--subtitles come from this body (D6a); persisted so a restart re-checks alike.
+        try
+        {
+            await SubmitMarker.WriteAsync(_options, record.TaskId, mpt, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            // The post-processor fails the check (check_failed) when the marker is missing.
+            _log.PathRemoveFailed(SubmitMarker.PathFor(_options, record.TaskId), exception.GetType().Name);
+        }
+
         return new BackendAccepted(mptTaskId.ToString("D", CultureInfo.InvariantCulture), startedAt);
     }
 
@@ -259,11 +277,16 @@ public sealed class MptClient : IRenderBackend
 
     /// <inheritdoc />
     /// <remarks>
-    /// 11.3.5-T3 owns output serving (its <c>FileOutputSource</c> reads the measured check and the stored
-    /// sha256, 05 D15 P3); until then the adapter has no published artefact and answers not-found.
+    /// Served by <see cref="FileOutputSource"/> (11.3.5-T3) from the stored output and the stored
+    /// <c>backend_task_id</c>; a client built without it (the T1/T2 tests) has no published artefact.
     /// </remarks>
     public Task<ErrorOr<OutputFile>> OpenOutputAsync(Guid taskId, OutputKind kind, CancellationToken cancellationToken)
     {
+        if (_outputs is not null)
+        {
+            return _outputs.OpenAsync(taskId, kind, cancellationToken);
+        }
+
         _log.OutputNotPublished(taskId, kind);
         return Task.FromResult<ErrorOr<OutputFile>>(
             Error.NotFound(AdapterErrorCodes.OutputAbsent, "The adapter publishes outputs after the check (11.3.5-T3)."));

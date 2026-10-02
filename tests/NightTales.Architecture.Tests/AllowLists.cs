@@ -144,6 +144,7 @@ internal static class AllowLists
         {
             "ErrorOr",
             "Microsoft.Data.Sqlite",
+            "Microsoft.Win32.Primitives",
             "NightTales.RenderNode.Contract",
             "NightTales.RenderNode.Server",
         };

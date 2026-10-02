@@ -76,6 +76,36 @@ public sealed class AdapterOptions
     /// <summary>D15 P4's window: a cleaned row is purged this many days after <c>cleaned_at</c>.</summary>
     public int PurgeAfterDays { get; set; } = 7;
 
+    /// <summary><c>Adapter:CheckConcurrency</c>: how many <c>render_check.py</c> runs may overlap (D6a pins 1).</summary>
+    public int CheckConcurrency { get; set; } = 1;
+
+    /// <summary><c>Adapter:CheckTimeoutSeconds</c>: wall time of one check, measured from process start (D6a pins 900).</summary>
+    public int CheckTimeoutSeconds { get; set; } = 900;
+
+    /// <summary>How long a timed-out check gets between SIGTERM and SIGKILL (T3 design: 10 s).</summary>
+    public int CheckKillGraceSeconds { get; set; } = 10;
+
+    /// <summary>The interpreter D6a names; it is the process file name, never a shell.</summary>
+    public string CheckPythonPath { get; set; } = "/usr/bin/python3.12";
+
+    /// <summary>The check tool in the node release layout (11.3.1-T2).</summary>
+    public string CheckScriptPath { get; set; } = "/opt/nts/current/worker-node/checks/render_check.py";
+
+    /// <summary>The check's working directory (D6a).</summary>
+    public string CheckWorkingDirectory { get; set; } = "/opt/nts/current";
+
+    /// <summary>
+    /// The largest <c>final-1.norm.mp4</c> the adapter will publish (05 D15 P3 size limit). [INFERENCE] 4 GiB: the
+    /// plan names no number; the node's disk rules (11 D8) bound a render far below it.
+    /// </summary>
+    public long MaxVideoBytes { get; set; } = 4L * 1024 * 1024 * 1024;
+
+    /// <summary>The largest <c>subtitle.srt</c> the adapter will hash and serve. [INFERENCE] 4 MiB.</summary>
+    public long MaxSubtitleBytes { get; set; } = 4L * 1024 * 1024;
+
+    /// <summary>The largest <c>render-check.json</c> the adapter will read. [INFERENCE] 1 MiB.</summary>
+    public long MaxReportBytes { get; set; } = 1024 * 1024;
+
     /// <summary>The store's database file (plan §3.1: <c>DataDir/tasks.db</c>).</summary>
     public string TasksDbPath => Path.Combine(DataDir, "tasks.db");
 
