@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Diagnostics.Metrics;
 using NightTales.Application.Abstractions.Rendering;
+using NightTales.Domain.Common;
 
 namespace NightTales.Application.Rendering;
 
@@ -68,6 +69,8 @@ public sealed class NodeMetrics : IDisposable
     private readonly ConcurrentDictionary<string, double> _certExpiryDays = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, NodeLoad> _load = new(StringComparer.Ordinal);
     private readonly Counter<long> _dispatchUnavailable;
+    private readonly IClock? _clock;
+    private readonly TimeSpan _staleAfter;
     private readonly Counter<long> _healthReasons;
     private readonly Counter<long> _drift;
     private readonly Meter _meter = new(MeterName);
@@ -77,8 +80,13 @@ public sealed class NodeMetrics : IDisposable
     /// The cache the cache-backed gauges read (free slots, GPU, disk); a scrape never calls a node (Q1).
     /// <c>null</c> registers only the event-driven instruments, for hosts and tests that have no cache.
     /// </param>
-    public NodeMetrics(INodeHealthCache? healthCache = null)
+    /// <param name="clock">The clock the free-slots gauge ages snapshots with; <c>null</c> skips the freshness check.</param>
+    /// <param name="settings">Supplies <see cref="RenderNodesOptions.HealthStaleSeconds"/>; <c>null</c> means the default.</param>
+    public NodeMetrics(INodeHealthCache? healthCache = null, IClock? clock = null, RenderNodesOptions? settings = null)
     {
+        _clock = clock;
+        _staleAfter = TimeSpan.FromSeconds((settings ?? new RenderNodesOptions()).HealthStaleSeconds);
+
         _meter.CreateObservableGauge(
             UpInstrumentName,
             () => _up.Select(pair => new Measurement<int>(pair.Value, NodeTag(pair.Key))),
@@ -115,7 +123,7 @@ public sealed class NodeMetrics : IDisposable
             FreeSlotsInstrumentName,
             () => FreeSlotMeasurements(healthCache),
             unit: "{slot}",
-            description: "min(capacity, max_concurrent_tasks) - in_flight per node, never negative; 0 without a cached health answer.");
+            description: "min(capacity, max_concurrent_tasks) - in_flight per node, never negative; 0 for a node without a fresh, accepting health answer.");
 
         _meter.CreateObservableGauge(
             GpuUtilInstrumentName,
@@ -211,11 +219,20 @@ public sealed class NodeMetrics : IDisposable
 
     private IEnumerable<Measurement<int>> FreeSlotMeasurements(INodeHealthCache cache)
     {
+        // The dispatch predicate's health half (NodeSelector): fresh ∧ HTTP 200 ∧ accepting. A node failing it
+        // offers no slot, so the gauge never advertises the capacity a stale or refusing node had before it
+        // went quiet. Reads the clock and the cache only — a scrape never touches the database or a node.
+        var now = _clock?.UtcNow;
+
         foreach (var (node, load) in _load)
         {
-            var free = cache.TryGet(node, out var snapshot) && snapshot is not null
-                ? FreeSlots(load.Capacity, snapshot.MaxConcurrentTasks, load.InFlight)
-                : 0;
+            var free = cache.TryGet(node, out var snapshot)
+                && snapshot is not null
+                && snapshot.HttpOk
+                && snapshot.Accepting
+                && (now is not { } instant || instant - snapshot.PulledAt <= _staleAfter)
+                    ? FreeSlots(load.Capacity, snapshot.MaxConcurrentTasks, load.InFlight)
+                    : 0;
 
             yield return new Measurement<int>(free, NodeTag(node));
         }

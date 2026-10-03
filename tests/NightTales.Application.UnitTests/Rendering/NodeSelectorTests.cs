@@ -204,6 +204,50 @@ public sealed class NodeSelectorTests
     }
 
     [Fact]
+    public async Task PickJudgesFreshness_AtTheInstantTheReadsFinished()
+    {
+        // CR-2: a snapshot 89 s old when the pick starts is 91 s old when the (slow) load read returns,
+        // so it is stale at the decision and must be refused.
+        var rig = new Rig();
+        rig.AddNode("aging", capacity: 2, inFlight: 0, pulledAt: Now - TimeSpan.FromSeconds(89));
+        rig.Load.OnRead = () => rig.Clock.Advance(TimeSpan.FromSeconds(2));
+
+        (await rig.PickAsync()).FirstError.Code.ShouldBe(ErrorCodes.RenderWorkerUnavailable);
+    }
+
+    [Fact]
+    public async Task FreeSlotsGauge_ReportsZeroForNodesFailingTheHealthPredicate()
+    {
+        // CR-3: stale, refusing and 503 nodes advertise no slot; a healthy node keeps its real value.
+        var rig = new Rig();
+        rig.AddNode("stale", capacity: 4, inFlight: 0, pulledAt: Now - TimeSpan.FromSeconds(91));
+        rig.AddNode("closed", capacity: 4, inFlight: 0, accepting: false);
+        rig.AddNode("down503", capacity: 4, inFlight: 0, httpOk: false);
+        rig.AddNode("healthy", capacity: 4, inFlight: 1);
+        await rig.PickAsync();
+
+        var gauge = rig.ReadGauge(NodeMetrics.FreeSlotsInstrumentName);
+
+        gauge["stale"].ShouldBe(0);
+        gauge["closed"].ShouldBe(0);
+        gauge["down503"].ShouldBe(0);
+        gauge["healthy"].ShouldBe(3);
+    }
+
+    [Fact]
+    public async Task FreeSlotsGauge_DropsToZeroOnceTheSnapshotAgesOut()
+    {
+        var rig = new Rig();
+        rig.AddNode("quiet", capacity: 4, inFlight: 0);
+        await rig.PickAsync();
+        rig.ReadGauge(NodeMetrics.FreeSlotsInstrumentName)["quiet"].ShouldBe(4);
+
+        rig.Clock.Advance(TimeSpan.FromSeconds(91));
+
+        rig.ReadGauge(NodeMetrics.FreeSlotsInstrumentName)["quiet"].ShouldBe(0);
+    }
+
+    [Fact]
     public void CacheGauges_ReadTheCachedGpuAndDiskBlocks()
     {
         var rig = new Rig();
@@ -269,7 +313,7 @@ public sealed class NodeSelectorTests
         {
             Db = new CountingReadDb(_nodes);
             Load = new CountingLoadReader(_inFlight);
-            Metrics = new NodeMetrics(_cache);
+            Metrics = new NodeMetrics(_cache, _clock, new RenderNodesOptions());
             Selector = new NodeSelector(
                 Db,
                 _cache,
@@ -280,6 +324,8 @@ public sealed class NodeSelectorTests
                 new NodeDispatchLogGate(),
                 NullLogger<NodeSelector>.Instance);
         }
+
+        public FakeClock Clock => _clock;
 
         public CountingReadDb Db { get; }
 
@@ -380,9 +426,13 @@ public sealed class NodeSelectorTests
     {
         public int Reads { get; private set; }
 
+        /// <summary>Runs inside each read, so a test can let time pass while the selector awaits the database.</summary>
+        public Action? OnRead { get; set; }
+
         public Task<IReadOnlyDictionary<Guid, int>> InFlightByNodeAsync(CancellationToken cancellationToken)
         {
             Reads++;
+            OnRead?.Invoke();
             return Task.FromResult<IReadOnlyDictionary<Guid, int>>(new Dictionary<Guid, int>(counts));
         }
     }

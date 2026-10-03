@@ -4,6 +4,7 @@ using Microsoft.Extensions.Options;
 using NightTales.Application.Abstractions.Persistence;
 using NightTales.Application.Abstractions.Rendering;
 using NightTales.Application.Rendering;
+using NightTales.Domain.Common;
 using NightTales.Infrastructure.Persistence;
 using NightTales.Infrastructure.Rendering;
 
@@ -52,8 +53,13 @@ public static class RenderNodesServiceCollectionExtensions
             .ValidateOnStart();
 
         // One meter instance per host, exactly like AuthMetrics/OutboxMetrics: a test attaches a listener to
-        // this instance and never to a same-named meter of another process.
-        services.AddSingleton<NodeMetrics>();
+        // this instance and never to a same-named meter of another process. It takes the bound options value
+        // for the same reason as the selector below (Application has no Options package): the free-slots
+        // gauge ages snapshots with the dispatch predicate's window.
+        services.AddSingleton(provider => new NodeMetrics(
+            provider.GetRequiredService<INodeHealthCache>(),
+            provider.GetRequiredService<IClock>(),
+            provider.GetRequiredService<IOptions<RenderNodesOptions>>().Value));
 
         // The cache is process-local state the poller writes and the gauges read, so it is one instance for
         // the host's lifetime.

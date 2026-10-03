@@ -177,8 +177,10 @@ public sealed class NodeHealthPollerTests(TestDatabase database) : IntegrationTe
     }
 
     [Fact]
-    public async Task SecondInstance_DoesNotPoll()
+    public async Task SecondInstance_RefreshesItsOwnCacheButWritesNoRegistryState()
     {
+        // CR-1 (11 README F10): the lock gates registry writes only. A non-leader still pulls into its own
+        // process-local cache — its selector reads nothing else — but heartbeats and decides nothing.
         RenderNodeDatabase.Reset(Database);
         var clock = new FakeClock(Start);
         await SeedNodeAsync("alpha", WorkerNodeState.Active);
@@ -190,8 +192,18 @@ public sealed class NodeHealthPollerTests(TestDatabase database) : IntegrationTe
         (await holder.Poller.TickAsync(Ct)).ShouldBeTrue("the first instance takes the advisory lock (Q5)");
         holder.Factory.Requests("alpha").Count.ShouldBe(1);
 
-        (await second.Poller.TickAsync(Ct)).ShouldBeFalse("the lock is held, so the second instance does not poll");
-        second.Factory.Requests("alpha").ShouldBeEmpty("a non-holder polls nothing and must not error");
+        clock.Advance(TimeSpan.FromSeconds(30));
+        (await second.Poller.TickAsync(Ct)).ShouldBeFalse("the lock is held elsewhere, so this instance is not the leader");
+        second.Factory.Requests("alpha").Count.ShouldBe(1, "a non-leader still pulls the node for its own cache");
+        second.Cache.TryGet("alpha", out var cached).ShouldBeTrue();
+        cached!.PulledAt.ShouldBe(clock.UtcNow);
+        (await RowAsync("alpha")).LastHeartbeatAt.ShouldBe(Start, "only the lock holder heartbeats");
+
+        await using var scope = second.Services.CreateAsyncScope();
+        var picked = await scope.ServiceProvider.GetRequiredService<INodeSelector>().PickAsync(Ct);
+        picked.IsError.ShouldBeFalse("the non-leader's selector dispatches from the cache its own poller filled");
+        picked.Value.Name.ShouldBe("alpha");
+
         (await holder.Poller.TickAsync(Ct)).ShouldBeTrue("the holder keeps polling on the next tick");
     }
 
@@ -811,6 +823,8 @@ public sealed class NodeHealthPollerTests(TestDatabase database) : IntegrationTe
         public FakeRenderNodeConnectionFactory Factory { get; } = factory;
 
         public INodeHealthCache Cache { get; } = cache;
+
+        public IServiceProvider Services => host.Services;
 
         public NodeMetrics Metrics { get; } = metrics;
 

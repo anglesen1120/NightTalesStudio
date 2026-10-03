@@ -46,7 +46,6 @@ public sealed partial class NodeSelector(
     /// <inheritdoc />
     public async Task<ErrorOr<WorkerNode>> PickAsync(CancellationToken cancellationToken)
     {
-        var now = clock.UtcNow;
         var staleAfter = TimeSpan.FromSeconds(settings.HealthStaleSeconds);
 
         var nodes = await readDb.Query<WorkerNode>()
@@ -57,6 +56,9 @@ public sealed partial class NodeSelector(
             ? new Dictionary<Guid, int>()
             : await loadReader.InFlightByNodeAsync(cancellationToken);
 
+        // Freshness is judged against the instant the reads finished, not the one before them: a slow
+        // database must not let a snapshot that aged out during the reads pass as fresh.
+        var now = clock.UtcNow;
         var reasons = new DispatchReasons();
         var candidates = new List<(WorkerNode Node, int Free)>(nodes.Count);
 

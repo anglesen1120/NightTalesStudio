@@ -32,29 +32,41 @@ public sealed class RenderJobNodeLoadReader(IAppDbContext db) : INodeLoadReader
         + "FROM render_jobs WHERE status IN ('submitted', 'running') AND worker_node_id IS NOT NULL "
         + "GROUP BY worker_node_id";
 
+    private static volatile bool _tableExists;
+
     /// <inheritdoc />
     public async Task<IReadOnlyDictionary<Guid, int>> InFlightByNodeAsync(CancellationToken cancellationToken)
     {
         var connection = db.Database.GetDbConnection();
+
+        // EF counts opens and closes, so this pair is balanced whether or not the scope's context had
+        // already opened the connection: it is released here instead of being held for the whole scope.
         await db.Database.OpenConnectionAsync(cancellationToken);
 
-        if (!await TableExistsAsync(connection, cancellationToken))
+        try
         {
-            return new Dictionary<Guid, int>();
+            if (!await TableExistsAsync(connection, cancellationToken))
+            {
+                return new Dictionary<Guid, int>();
+            }
+
+            await using var command = connection.CreateCommand();
+            command.CommandText = InFlightSql;
+            command.CommandType = CommandType.Text;
+
+            var counts = new Dictionary<Guid, int>();
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                counts[reader.GetGuid(0)] = reader.GetInt32(1);
+            }
+
+            return counts;
         }
-
-        await using var command = connection.CreateCommand();
-        command.CommandText = InFlightSql;
-        command.CommandType = CommandType.Text;
-
-        var counts = new Dictionary<Guid, int>();
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        while (await reader.ReadAsync(cancellationToken))
+        finally
         {
-            counts[reader.GetGuid(0)] = reader.GetInt32(1);
+            await db.Database.CloseConnectionAsync();
         }
-
-        return counts;
     }
 
     /// <summary>
@@ -65,10 +77,24 @@ public sealed class RenderJobNodeLoadReader(IAppDbContext db) : INodeLoadReader
         System.Data.Common.DbConnection connection,
         CancellationToken cancellationToken)
     {
+        // The table never goes away once created, so a positive answer is final for the process; a negative
+        // one is re-probed (09.6.1-T1's migration may land while the host runs).
+        if (_tableExists)
+        {
+            return true;
+        }
+
         await using var probe = connection.CreateCommand();
         probe.CommandText = "SELECT to_regclass('public.render_jobs') IS NOT NULL";
         probe.CommandType = CommandType.Text;
 
-        return await probe.ExecuteScalarAsync(cancellationToken) is true;
+        if (await probe.ExecuteScalarAsync(cancellationToken) is not true)
+        {
+            return false;
+        }
+
+        _tableExists = true;
+
+        return true;
     }
 }
