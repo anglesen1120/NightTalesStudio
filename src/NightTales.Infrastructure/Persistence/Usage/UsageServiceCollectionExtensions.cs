@@ -1,7 +1,9 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
+using NightTales.Application.Abstractions.Rendering;
 using NightTales.Application.Abstractions.Usage;
+using NightTales.Application.Features.Rendering;
 using NightTales.Infrastructure.Persistence.Queries;
 using NightTales.Infrastructure.Persistence.Seeding;
 
@@ -32,6 +34,14 @@ public static class UsageServiceCollectionExtensions
         services.TryAddSingleton<IUsageMeter, UsageMeter>();
         services.TryAddSingleton<IStoryCostEstimator, StoryCostEstimator>();
 
+        // 03.2.1-T1: the Images section (scene budget, D3) and the worst-case image bound (D8).
+        services.AddOptions<ImagesOptions>()
+            .BindConfiguration(ImagesOptions.SectionName)
+            .ValidateOnStart();
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IValidateOptions<ImagesOptions>, ImagesOptionsValidation>());
+        services.TryAddSingleton(provider => provider.GetRequiredService<IOptions<ImagesOptions>>().Value);
+        services.TryAddSingleton<IImageCostEstimator, ImageCostEstimator>();
+
         return services;
     }
 }
@@ -47,5 +57,19 @@ internal sealed class PricingOptionsValidator : IValidateOptions<PricingOptions>
         return problems.Count == 0
             ? ValidateOptionsResult.Success
             : ValidateOptionsResult.Fail(problems.Select(problem => $"{PricingOptions.SectionName}: {problem}"));
+    }
+}
+
+/// <summary>Fails the start-up on an invalid <c>Images</c> section, with every problem listed.</summary>
+internal sealed class ImagesOptionsValidation : IValidateOptions<ImagesOptions>
+{
+    /// <inheritdoc />
+    public ValidateOptionsResult Validate(string? name, ImagesOptions options)
+    {
+        var problems = ImagesOptionsValidator.Validate(options);
+
+        return problems.Count == 0
+            ? ValidateOptionsResult.Success
+            : ValidateOptionsResult.Fail(problems.Select(problem => $"{ImagesOptions.SectionName}: {problem}"));
     }
 }
