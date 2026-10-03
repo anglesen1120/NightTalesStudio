@@ -121,75 +121,75 @@ public sealed class QueryStringRedactionEnricher(RedactionOptions options) : ILo
                 // through its rendered text, so no rendered form can smuggle the raw value past the mask.
                 return RewriteText(value, scalar.Value is string raw ? raw : scalar.ToString(), isUrl);
             case StructureValue structure:
-            {
-                LogEventProperty[]? rewritten = null;
-                for (var i = 0; i < structure.Properties.Count; i++)
                 {
-                    var property = structure.Properties[i];
-                    var leaf = RewriteValue(property.Value, isUrl);
-                    if (ReferenceEquals(leaf, property.Value))
+                    LogEventProperty[]? rewritten = null;
+                    for (var i = 0; i < structure.Properties.Count; i++)
                     {
-                        if (rewritten is not null)
+                        var property = structure.Properties[i];
+                        var leaf = RewriteValue(property.Value, isUrl);
+                        if (ReferenceEquals(leaf, property.Value))
                         {
-                            rewritten[i] = property;
+                            if (rewritten is not null)
+                            {
+                                rewritten[i] = property;
+                            }
+
+                            continue;
                         }
 
-                        continue;
+                        rewritten ??= CopyHead(structure.Properties, i);
+                        rewritten[i] = new LogEventProperty(property.Name, leaf);
                     }
 
-                    rewritten ??= CopyHead(structure.Properties, i);
-                    rewritten[i] = new LogEventProperty(property.Name, leaf);
+                    return rewritten is null ? structure : new StructureValue(rewritten, structure.TypeTag);
                 }
-
-                return rewritten is null ? structure : new StructureValue(rewritten, structure.TypeTag);
-            }
             case SequenceValue sequence:
-            {
-                LogEventPropertyValue[]? rewritten = null;
-                for (var i = 0; i < sequence.Elements.Count; i++)
                 {
-                    var leaf = RewriteValue(sequence.Elements[i], isUrl);
-                    if (ReferenceEquals(leaf, sequence.Elements[i]))
+                    LogEventPropertyValue[]? rewritten = null;
+                    for (var i = 0; i < sequence.Elements.Count; i++)
                     {
-                        if (rewritten is not null)
+                        var leaf = RewriteValue(sequence.Elements[i], isUrl);
+                        if (ReferenceEquals(leaf, sequence.Elements[i]))
                         {
-                            rewritten[i] = leaf;
+                            if (rewritten is not null)
+                            {
+                                rewritten[i] = leaf;
+                            }
+
+                            continue;
                         }
 
-                        continue;
+                        rewritten ??= CopyHead(sequence.Elements, i);
+                        rewritten[i] = leaf;
                     }
 
-                    rewritten ??= CopyHead(sequence.Elements, i);
-                    rewritten[i] = leaf;
+                    return rewritten is null ? sequence : new SequenceValue(rewritten);
                 }
-
-                return rewritten is null ? sequence : new SequenceValue(rewritten);
-            }
             case DictionaryValue dictionary:
-            {
-                List<KeyValuePair<ScalarValue, LogEventPropertyValue>>? rewritten = null;
-                var index = 0;
-                foreach (var (key, element) in dictionary.Elements)
                 {
-                    var leaf = RewriteValue(element, isUrl);
-                    if (rewritten is null && ReferenceEquals(leaf, element))
+                    List<KeyValuePair<ScalarValue, LogEventPropertyValue>>? rewritten = null;
+                    var index = 0;
+                    foreach (var (key, element) in dictionary.Elements)
                     {
+                        var leaf = RewriteValue(element, isUrl);
+                        if (rewritten is null && ReferenceEquals(leaf, element))
+                        {
+                            index++;
+                            continue;
+                        }
+
+                        if (rewritten is null)
+                        {
+                            rewritten = new List<KeyValuePair<ScalarValue, LogEventPropertyValue>>(dictionary.Elements.Count);
+                            rewritten.AddRange(dictionary.Elements.Take(index));
+                        }
+
+                        rewritten.Add(new KeyValuePair<ScalarValue, LogEventPropertyValue>(key, leaf));
                         index++;
-                        continue;
                     }
 
-                    if (rewritten is null)
-                    {
-                        rewritten = new List<KeyValuePair<ScalarValue, LogEventPropertyValue>>(dictionary.Elements.Count);
-                        rewritten.AddRange(dictionary.Elements.Take(index));
-                    }
-
-                    rewritten.Add(new KeyValuePair<ScalarValue, LogEventPropertyValue>(key, leaf));
-                    index++;
+                    return rewritten is null ? dictionary : new DictionaryValue(rewritten);
                 }
-
-                return rewritten is null ? dictionary : new DictionaryValue(rewritten);
-            }
             default:
                 return value;
         }
@@ -214,27 +214,27 @@ public sealed class QueryStringRedactionEnricher(RedactionOptions options) : ILo
             case DictionaryValue dictionary:
                 return MaskDictionary(dictionary);
             case SequenceValue sequence:
-            {
-                LogEventPropertyValue[]? elements = null;
-                for (var i = 0; i < sequence.Elements.Count; i++)
                 {
-                    var element = MaskHeaders(sequence.Elements[i]);
-                    if (ReferenceEquals(element, sequence.Elements[i]))
+                    LogEventPropertyValue[]? elements = null;
+                    for (var i = 0; i < sequence.Elements.Count; i++)
                     {
-                        if (elements is not null)
+                        var element = MaskHeaders(sequence.Elements[i]);
+                        if (ReferenceEquals(element, sequence.Elements[i]))
                         {
-                            elements[i] = element;
+                            if (elements is not null)
+                            {
+                                elements[i] = element;
+                            }
+
+                            continue;
                         }
 
-                        continue;
+                        elements ??= CopyHead(sequence.Elements, i);
+                        elements[i] = element;
                     }
 
-                    elements ??= CopyHead(sequence.Elements, i);
-                    elements[i] = element;
+                    return elements is null ? value : new SequenceValue(elements);
                 }
-
-                return elements is null ? value : new SequenceValue(elements);
-            }
             case ScalarValue { Value: string line }:
                 return MaskHeaderLine(line) is { } masked ? new ScalarValue(masked) : value;
             default:
