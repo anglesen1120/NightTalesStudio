@@ -82,7 +82,7 @@ public sealed class GenerationLimitGuardQaTests(TestDatabase database) : Integra
     }
 
     [Fact]
-    public async Task LimitGuard_CallerWithOtherUsersId_ForOwnEpisode_SeesNoRuns()
+    public async Task LimitGuard_AmbientUserDiffersFromCaller_FailsClosed()
     {
         var owner = await NewEpisodeAsync();
         var stranger = await NewEpisodeAsync();
@@ -94,8 +94,28 @@ public sealed class GenerationLimitGuardQaTests(TestDatabase database) : Integra
         await using var db = Database.CreateAppDbContext(new TestCurrentUser { Id = stranger.UserId });
         var guard = new GenerationLimitGuard(db, Options.Create(new GenerationLimitOptions()), new FakeClock(Now));
 
-        (await guard.CheckAsync(owner.EpisodeId, owner.UserId, Ct))
-            .IsError.ShouldBeFalse("the tenant filter hides another user's runs even when the caller passes the owner's id");
+        var result = await guard.CheckAsync(owner.EpisodeId, owner.UserId, Ct);
+
+        result.IsError.ShouldBeTrue("a hidden count (tenant filter) must never read as 'under the limit' (SEC-1)");
+        result.FirstError.Code.ShouldBe(ErrorCodes.InternalError);
+    }
+
+    [Fact]
+    public async Task LimitGuard_NullAmbientUser_FailsClosed()
+    {
+        var owner = await NewEpisodeAsync();
+        for (var index = 0; index < 5; index++)
+        {
+            await AddRunAsync(owner, Now - TimeSpan.FromHours(index + 1));
+        }
+
+        await using var db = Database.CreateAppDbContext(new TestCurrentUser { Id = null });
+        var guard = new GenerationLimitGuard(db, Options.Create(new GenerationLimitOptions()), new FakeClock(Now));
+
+        var result = await guard.CheckAsync(owner.EpisodeId, owner.UserId, Ct);
+
+        result.IsError.ShouldBeTrue("an anonymous scope sees no rows; the guard must not succeed on it (SEC-1)");
+        result.FirstError.Code.ShouldBe(ErrorCodes.InternalError);
     }
 
     [Fact]

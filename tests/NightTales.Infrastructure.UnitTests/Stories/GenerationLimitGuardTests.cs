@@ -320,6 +320,15 @@ public sealed class GenerationLimitGuardTests(TestDatabase database) : Integrati
         GenerationLimitOptions.Validate(new GenerationLimitOptions { DailyGenerationLimit = -1, LimitWindowHours = -1 }).Count.ShouldBe(2);
     }
 
+    [Fact]
+    public void Options_Validate_UpperBounds_MaxAcceptedMaxPlusOneRejected()
+    {
+        GenerationLimitOptions.Validate(new GenerationLimitOptions { DailyGenerationLimit = 1000, LimitWindowHours = 24 * 366 }).ShouldBeEmpty();
+        GenerationLimitOptions.Validate(new GenerationLimitOptions { DailyGenerationLimit = 1001 }).Count.ShouldBe(1);
+        GenerationLimitOptions.Validate(new GenerationLimitOptions { LimitWindowHours = (24 * 366) + 1 }).Count.ShouldBe(1);
+        GenerationLimitOptions.Validate(new GenerationLimitOptions { DailyGenerationLimit = 1001, LimitWindowHours = (24 * 366) + 1 }).Count.ShouldBe(2);
+    }
+
     private async Task<bool> CheckAndInsertAsync(Scope scope, TaskCompletionSource? lockTaken, TimeSpan holdFor)
     {
         await using var db = Database.CreateAppDbContext(new TestCurrentUser { Id = scope.UserId });

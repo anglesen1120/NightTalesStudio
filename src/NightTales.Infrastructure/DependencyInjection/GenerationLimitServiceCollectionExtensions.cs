@@ -36,7 +36,7 @@ public static class GenerationLimitServiceCollectionExtensions
     }
 }
 
-/// <summary>Fails the start-up on a non-positive <c>Story:DailyGenerationLimit</c> or <c>Story:LimitWindowHours</c>.</summary>
+/// <summary>Fails the start-up on an out-of-range <c>Story:DailyGenerationLimit</c> (1-1000) or <c>Story:LimitWindowHours</c> (1-8784).</summary>
 internal sealed class GenerationLimitOptionsValidator : IValidateOptions<GenerationLimitOptions>
 {
     /// <inheritdoc />

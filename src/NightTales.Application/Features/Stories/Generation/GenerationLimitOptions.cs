@@ -15,6 +15,12 @@ public sealed class GenerationLimitOptions
     /// <summary>The window length in hours (F06: "which day?" is a rolling 24 h).</summary>
     public const int DefaultLimitWindowHours = 24;
 
+    /// <summary>The largest accepted <c>DailyGenerationLimit</c>; a typo above it fails the start-up.</summary>
+    public const int MaxDailyGenerationLimit = 1000;
+
+    /// <summary>The largest accepted <c>LimitWindowHours</c>: 366 days.</summary>
+    public const int MaxLimitWindowHours = 24 * 366;
+
     /// <summary>The most counted runs one episode may have inside the window; the next one is rejected.</summary>
     public int DailyGenerationLimit { get; set; } = DefaultDailyGenerationLimit;
 
@@ -28,14 +34,14 @@ public sealed class GenerationLimitOptions
         ArgumentNullException.ThrowIfNull(options);
 
         var problems = new List<string>();
-        if (options.DailyGenerationLimit < 1)
+        if (options.DailyGenerationLimit < 1 || options.DailyGenerationLimit > MaxDailyGenerationLimit)
         {
-            problems.Add($"'{SectionName}:{nameof(DailyGenerationLimit)}' must be at least 1.");
+            problems.Add($"'{SectionName}:{nameof(DailyGenerationLimit)}' must be between 1 and {MaxDailyGenerationLimit}.");
         }
 
-        if (options.LimitWindowHours < 1)
+        if (options.LimitWindowHours < 1 || options.LimitWindowHours > MaxLimitWindowHours)
         {
-            problems.Add($"'{SectionName}:{nameof(LimitWindowHours)}' must be at least 1.");
+            problems.Add($"'{SectionName}:{nameof(LimitWindowHours)}' must be between 1 and {MaxLimitWindowHours}.");
         }
 
         return problems;

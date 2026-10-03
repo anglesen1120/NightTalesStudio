@@ -6,6 +6,7 @@ using NightTales.Application.Common.Errors;
 using NightTales.Application.Features.Stories.Generation;
 using NightTales.Domain.Common;
 using NightTales.Domain.Stories.Generation;
+using NightTales.Infrastructure.Persistence.Conventions;
 
 namespace NightTales.Infrastructure.Persistence.Queries;
 
@@ -40,6 +41,17 @@ public sealed class GenerationLimitGuard(IAppDbContext db, IOptions<GenerationLi
         var limit = options.Value.DailyGenerationLimit;
         var window = TimeSpan.FromHours(options.Value.LimitWindowHours);
         var now = clock.UtcNow;
+
+        // SEC-1 fail-closed: the D10 tenant filter silently drops every row when the ambient user is anonymous or
+        // differs from the caller's, so an unreadable count must never look like "under the limit". The precedent
+        // is LockEpisodeForUpdateAsync (AppDbContext), which likewise refuses to act outside the caller's scope.
+        if (db is not ITenantFilterContext tenant || tenant.CurrentUserId != userId)
+        {
+            return Error.Failure(
+                ErrorCodes.InternalError,
+                "The generation limit check ran outside the caller's tenant scope.");
+        }
+
         var windowStart = now - window;
 
         // GroupBy over a constant is the one-round-trip, two-aggregate shape (plan §4 U6); an empty window
