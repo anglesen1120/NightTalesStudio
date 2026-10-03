@@ -4,6 +4,12 @@ History moved out of STATUS.md to keep the live file small. The initial archive 
 
 ## Resume-here history (Current/Previous blocks, Next actions)
 
+### Superseded Session 4 plan block (2026-10-03, before the combined Session 4 PR)
+
+- **Current (2026-10-03).** Sessions 2–3 complete; `develop` @ `36edb78` (#106 boot-contexts doc). 0 open PRs. All merged branches (local + remote) and worktrees removed; kept: `feature/05.5.2-m0-trial` (3 unmerged commits, no PR) and tag `archive/11.3.5-T3-T4` (`dcc8ee5`, the verified 11.3.5-T3+T4 resolution; bundle in `~/.nts-snapshots/`).
+- **Migrations** end `…20261002234448_02_PriceVersions` → `20261003073358_05_MusicTracks`; `MusicTracksMigrationTests` owns `migrations[^1]`.
+- **Next:** run §Session 4 plan — start the 8 "Start now" tasks in parallel worktrees, then each lane's next task after its prerequisite merges. Owner cue: "tiếp tục theo STATUS.md".
+
 ### Superseded Session 3 block (2026-10-03, after combined PR #107, before the Session 4 plan)
 
 - **Current (2026-10-03).** Session 3 wave merged into `develop`: #100 09.3.4-T1 /me, #104 02.2.4-T1 directly; #101 11.3.5-T4, #103 11.3.5-T3, #105 09.9.3-T1 and #102 05.3.2-T3 through one combined PR (branch `feature/s3-wave-combined`, owner 2026-10-03), merged in that order.
