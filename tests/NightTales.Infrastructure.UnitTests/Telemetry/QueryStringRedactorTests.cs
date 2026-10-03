@@ -103,4 +103,73 @@ public sealed class QueryStringRedactorTests
         QueryStringRedactor.RedactText(plain, Keys).ShouldBeSameAs(plain);
         QueryStringRedactor.RedactText("my_token=raw1", Keys).ShouldBe("my_token=raw1");
     }
+
+    [Theory]
+    [InlineData("requestUrl=/reset?token=raw", "requestUrl=/reset?token=<redacted>")]
+    [InlineData("next=/cb?code=x", "next=/cb?code=<redacted>")]
+    [InlineData("a=%2Fp%3Fticket%3Dx", "a=<redacted>")]
+    [InlineData("a=%252Fp%253Fticket%253Dx", "a=<redacted>")]
+    [InlineData("failed for next=/cb?code=x&y=1", "failed for next=/cb?code=<redacted>&y=1")]
+    public void Free_text_finds_listed_pairs_nested_in_unlisted_values(string text, string expected)
+    {
+        var redacted = QueryStringRedactor.RedactText(text, Keys);
+
+        redacted.ShouldBe(expected);
+        QueryStringRedactor.RedactText(redacted, Keys).ShouldBe(expected);
+    }
+
+    [Theory]
+    [InlineData("token=\"abc\"", "token=\"<redacted>\"")]
+    [InlineData("ticket='abc'", "ticket='<redacted>'")]
+    [InlineData("token=\"two words\" tail", "token=\"<redacted>\" tail")]
+    [InlineData("{\"x\":1} state='a;b,c' end", "{\"x\":1} state='<redacted>' end")]
+    public void Free_text_masks_quoted_values(string text, string expected)
+    {
+        var redacted = QueryStringRedactor.RedactText(text, Keys);
+
+        redacted.ShouldBe(expected);
+        QueryStringRedactor.RedactText(redacted, Keys).ShouldBe(expected);
+    }
+
+    [Theory]
+    [InlineData("/probe/redaction/throw?token=prefix;secret", "/probe/redaction/throw?token=<redacted>")]
+    [InlineData("GET /p?a=1&code=x,y(z) failed", "GET /p?a=1&code=<redacted> failed")]
+    [InlineData("/p?ticket=a;b&x=1#frag", "/p?ticket=<redacted>&x=1#frag")]
+    public void Url_values_run_to_the_query_boundary_not_prose_delimiters(string text, string expected) =>
+        QueryStringRedactor.RedactText(text, Keys).ShouldBe(expected);
+
+    [Fact]
+    public void Prose_pairs_still_stop_at_prose_delimiters() =>
+        QueryStringRedactor.RedactText("failed (token=abc), retrying; state=x end", Keys)
+            .ShouldBe("failed (token=<redacted>), retrying; state=<redacted> end");
+
+    [Theory]
+    [InlineData("?next=/cb?code=x", "?next=/cb?code=<redacted>")]
+    [InlineData("?a=1&next=/cb?ticket=x&b=2", "?a=1&next=/cb?ticket=<redacted>&b=2")]
+    [InlineData("?a=%2Fp%3Fticket%3Dx", "?a=<redacted>")]
+    [InlineData("?z=1&a=%2Fp%3Fticket%3Dx&b=2", "?z=1&a=<redacted>&b=2")]
+    public void Query_masks_listed_pairs_nested_in_unlisted_segments(string query, string expected)
+    {
+        var redacted = QueryStringRedactor.Redact(query, Keys);
+
+        redacted.ShouldBe(expected);
+        QueryStringRedactor.Redact(redacted, Keys).ShouldBeSameAs(redacted);
+    }
+
+    [Fact]
+    public void Unlisted_nested_pairs_leave_the_same_instance()
+    {
+        var query = "?next=/p?x=1&a=%2Fp%3Fx%3D1";
+        var text = "next=/p?x=1 a=%2Fp%3Fx%3D1";
+
+        QueryStringRedactor.Redact(query, Keys).ShouldBeSameAs(query);
+        QueryStringRedactor.RedactText(text, Keys).ShouldBeSameAs(text);
+    }
+
+    [Fact]
+    public void Url_masks_nested_pairs_in_the_query()
+    {
+        QueryStringRedactor.RedactUrl("https://x.test/login?next=/cb?code=x&a=1", Keys)
+            .ShouldBe("https://x.test/login?next=/cb?code=<redacted>&a=1");
+    }
 }

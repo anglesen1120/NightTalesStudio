@@ -91,7 +91,18 @@ public static class QueryStringRedactor
             return text;
         }
 
-        var span = text.AsSpan();
+        return MaskText(text, keys) ?? text;
+    }
+
+    /// <summary>
+    /// The text with every listed pair masked, or null when nothing changed. Scanning resumes right after each
+    /// <c>=</c>, so a listed pair nested in an unlisted value (<c>next=/cb?code=x</c>) is found; an unlisted
+    /// value that is percent-encoded is decoded and rescanned, and masked whole when it hides a listed pair.
+    /// A pair that follows <c>?</c> or <c>&amp;</c> is URL text, whose value may hold <c>; , ( )</c>, so it runs
+    /// to the next <c>&amp; # quote whitespace</c>; a quoted value runs to its closing quote.
+    /// </summary>
+    private static string? MaskText(ReadOnlySpan<char> span, IReadOnlySet<string> keys)
+    {
         StringBuilder? result = null;
         var copied = 0;
         var from = 0;
@@ -110,32 +121,65 @@ public static class QueryStringRedactor
                 keyStart--;
             }
 
+            var urlMode = keyStart > 0 && span[keyStart - 1] is '?' or '&';
             var valueStart = equals + 1;
+            var quote = valueStart < span.Length && span[valueStart] is '"' or '\'' ? span[valueStart] : '\0';
+            if (quote != '\0')
+            {
+                valueStart++;
+            }
+
             var valueEnd = valueStart;
-            while (valueEnd < span.Length && !IsValueTerminator(span[valueEnd]))
+            while (valueEnd < span.Length
+                && (quote != '\0' ? span[valueEnd] != quote : !IsValueTerminator(span[valueEnd], urlMode)))
             {
                 valueEnd++;
             }
 
-            if (keyStart < equals
-                && valueEnd > valueStart
-                && !span[valueStart..valueEnd].SequenceEqual(RedactionOptions.Mask)
-                && IsListed(span[keyStart..equals], keys))
+            var value = span[valueStart..valueEnd];
+            var listed = keyStart < equals && IsListed(span[keyStart..equals], keys);
+            if (value.Length > 0
+                && !value.SequenceEqual(RedactionOptions.Mask)
+                && (listed || HidesListedPair(value, keys)))
             {
-                result ??= new StringBuilder(text.Length);
+                result ??= new StringBuilder(span.Length);
                 result.Append(span[copied..valueStart]).Append(RedactionOptions.Mask);
                 copied = valueEnd;
+                from = valueEnd;
+                continue;
             }
 
-            from = Math.Max(valueEnd, equals + 1);
+            from = equals + 1;
         }
 
-        if (result is null)
+        return result?.Append(span[copied..]).ToString();
+    }
+
+    /// <summary>True when a percent-encoded value (decoded up to three times) carries a listed pair.</summary>
+    private static bool HidesListedPair(ReadOnlySpan<char> value, IReadOnlySet<string> keys)
+    {
+        if (value.IndexOf('%') < 0)
         {
-            return text;
+            return false;
         }
 
-        return result.Append(span[copied..]).ToString();
+        var decoded = value.ToString();
+        for (var round = 0; round < 3; round++)
+        {
+            var next = Uri.UnescapeDataString(decoded);
+            if (next == decoded)
+            {
+                break;
+            }
+
+            decoded = next;
+            if (MaskText(decoded, keys) is not null)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /// <summary>The masked query, or null when nothing changed.</summary>
@@ -162,6 +206,13 @@ public static class QueryStringRedactor
                 {
                     result ??= new StringBuilder(query.Length);
                     result.Append(query[copied..valueStart]).Append(RedactionOptions.Mask);
+                    copied = end;
+                }
+                else if (segment[(equals + 1)..].IndexOfAny('?', '=', '%') >= 0
+                    && MaskText(segment, keys) is { } nested)
+                {
+                    result ??= new StringBuilder(query.Length);
+                    result.Append(query[copied..position]).Append(nested);
                     copied = end;
                 }
             }
@@ -210,6 +261,7 @@ public static class QueryStringRedactor
 
     private static bool IsKeyCharacter(char c) => char.IsAsciiLetterOrDigit(c) || c is '_' or '-' or '.' or '%' or '+';
 
-    private static bool IsValueTerminator(char c) =>
-        char.IsWhiteSpace(c) || c is '&' or '"' or '\'' or '#' or ')' or ']' or ',' or ';';
+    private static bool IsValueTerminator(char c, bool urlMode) =>
+        char.IsWhiteSpace(c) || c is '&' or '"' or '\'' or '#'
+        || (!urlMode && c is ')' or ']' or ',' or ';');
 }
