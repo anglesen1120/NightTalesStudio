@@ -96,6 +96,82 @@ public sealed class RedactionWritersTests
     }
 
     [Fact]
+    public void Enricher_masks_a_destructured_query_string_and_a_sequence_of_urls_keeping_their_shape()
+    {
+        var sink = new Capture();
+        using var logger = new LoggerConfiguration()
+            .Enrich.With(new QueryStringRedactionEnricher(Options))
+            .WriteTo.Sink(sink)
+            .CreateLogger();
+
+        logger.Information(
+            "req {@QueryString} {@Url}",
+            new { Value = $"?token={Raw}", Count = 1 },
+            new[] { "/plain?page=2", $"/a?ticket={Raw}", $"/b?access_token={Raw}" });
+
+        var line = sink.Events.ShouldHaveSingleItem();
+        var text = string.Join(' ', line.Properties.Select(p => p.Value));
+        text.ShouldNotContain(Raw);
+        var structure = line.Properties["QueryString"].ShouldBeOfType<StructureValue>();
+        structure.Properties.Select(p => p.Name).ShouldBe(["Value", "Count"]);
+        structure.Properties[0].Value.ToString().ShouldBe("\"?token=<redacted>\"");
+        var urls = line.Properties["Url"].ShouldBeOfType<SequenceValue>();
+        urls.Elements.Select(e => e.ToString()).ShouldBe(
+            ["\"/plain?page=2\"", "\"/a?ticket=<redacted>\"", "\"/b?access_token=<redacted>\""]);
+    }
+
+    [Fact]
+    public void Enricher_keeps_the_original_instances_when_nothing_is_to_be_masked()
+    {
+        var enricher = new QueryStringRedactionEnricher(Options);
+        var headers = new SequenceValue(
+        [
+            new ScalarValue("Accept: text/plain"),
+            new StructureValue([new LogEventProperty("Key", new ScalarValue("Accept")), new LogEventProperty("Value", new ScalarValue("x"))]),
+        ]);
+        var dictionary = new DictionaryValue(
+        [
+            new KeyValuePair<ScalarValue, LogEventPropertyValue>(new ScalarValue("Accept"), new ScalarValue("x")),
+        ]);
+        var query = new StructureValue([new LogEventProperty("Value", new ScalarValue("?page=2"))]);
+        var logEvent = new LogEvent(
+            DateTimeOffset.UtcNow,
+            LogEventLevel.Information,
+            null,
+            new MessageTemplateParser().Parse("x"),
+            [
+                new LogEventProperty("Headers", headers),
+                new LogEventProperty("RequestHeaders", dictionary),
+                new LogEventProperty("QueryString", query),
+            ]);
+
+        enricher.Enrich(logEvent, null!);
+
+        logEvent.Properties["Headers"].ShouldBeSameAs(headers);
+        logEvent.Properties["RequestHeaders"].ShouldBeSameAs(dictionary);
+        logEvent.Properties["QueryString"].ShouldBeSameAs(query);
+    }
+
+    [Fact]
+    public void Enricher_masks_a_listed_header_logged_as_a_property_of_its_own()
+    {
+        var sink = new Capture();
+        using var logger = new LoggerConfiguration()
+            .Enrich.With(new QueryStringRedactionEnricher(Options))
+            .WriteTo.Sink(sink)
+            .CreateLogger();
+
+        logger.Information("{Authorization} {cookie} {Accept}", "Bearer " + Raw, "sid=" + Raw, "text/plain");
+
+        var line = sink.Events.ShouldHaveSingleItem();
+        var text = line.RenderMessage(CultureInfo.InvariantCulture) + string.Join(' ', line.Properties.Select(p => p.Value));
+        text.ShouldNotContain(Raw);
+        line.Properties["Authorization"].ToString().ShouldBe("\"<redacted>\"");
+        line.Properties["cookie"].ToString().ShouldBe("\"<redacted>\"");
+        line.Properties["Accept"].ToString().ShouldBe("\"text/plain\"");
+    }
+
+    [Fact]
     public void Processor_masks_url_and_exception_attributes_and_is_idempotent()
     {
         using var source = new ActivitySource("nts.test.redaction");
