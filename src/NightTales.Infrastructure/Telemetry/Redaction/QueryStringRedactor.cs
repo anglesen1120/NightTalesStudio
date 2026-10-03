@@ -106,6 +106,15 @@ public static class QueryStringRedactor
         StringBuilder? result = null;
         var copied = 0;
         var from = 0;
+        // One value run per terminator mode is kept: valueStart only moves forward, and a run holds no
+        // terminator, so every later '=' inside it ends at the same runEnd — each char is scanned once.
+        var urlEnd = -1;
+        var urlPct = -1;
+        var proseEnd = -1;
+        var prosePct = -1;
+        // A value already decoded and rescanned cannot hide a listed pair inside itself, so decoded values
+        // bounded by checkedTo are not checked again — the total decoded text stays O(n).
+        var checkedTo = -1;
         while (from < span.Length)
         {
             var found = span[from..].IndexOf('=');
@@ -129,18 +138,81 @@ public static class QueryStringRedactor
                 valueStart++;
             }
 
-            var valueEnd = valueStart;
-            while (valueEnd < span.Length
-                && (quote != '\0' ? span[valueEnd] != quote : !IsValueTerminator(span[valueEnd], urlMode)))
+            int valueEnd;
+            bool hasPct;
+            if (quote != '\0')
             {
-                valueEnd++;
+                // A quoted value ends at its own closing quote; quoted pairs never overlap, so no cache.
+                valueEnd = valueStart;
+                while (valueEnd < span.Length && span[valueEnd] != quote)
+                {
+                    valueEnd++;
+                }
+
+                hasPct = span[valueStart..valueEnd].IndexOf('%') >= 0;
+            }
+            else if (urlMode)
+            {
+                if (valueStart <= urlEnd)
+                {
+                    valueEnd = urlEnd;
+                    hasPct = urlPct >= valueStart;
+                }
+                else
+                {
+                    valueEnd = valueStart;
+                    urlPct = -1;
+                    while (valueEnd < span.Length && !IsValueTerminator(span[valueEnd], urlMode: true))
+                    {
+                        if (span[valueEnd] == '%')
+                        {
+                            urlPct = valueEnd;
+                        }
+
+                        valueEnd++;
+                    }
+
+                    urlEnd = valueEnd;
+                    hasPct = urlPct >= valueStart;
+                }
+            }
+            else
+            {
+                if (valueStart <= proseEnd)
+                {
+                    valueEnd = proseEnd;
+                    hasPct = prosePct >= valueStart;
+                }
+                else
+                {
+                    valueEnd = valueStart;
+                    prosePct = -1;
+                    while (valueEnd < span.Length && !IsValueTerminator(span[valueEnd], urlMode: false))
+                    {
+                        if (span[valueEnd] == '%')
+                        {
+                            prosePct = valueEnd;
+                        }
+
+                        valueEnd++;
+                    }
+
+                    proseEnd = valueEnd;
+                    hasPct = prosePct >= valueStart;
+                }
             }
 
             var value = span[valueStart..valueEnd];
             var listed = keyStart < equals && IsListed(span[keyStart..equals], keys);
+            var hides = !listed && hasPct && valueEnd > checkedTo && HidesListedPair(value, keys);
+            if (!listed && hasPct && valueEnd > checkedTo)
+            {
+                checkedTo = valueEnd;
+            }
+
             if (value.Length > 0
                 && !value.SequenceEqual(RedactionOptions.Mask)
-                && (listed || HidesListedPair(value, keys)))
+                && (listed || hides))
             {
                 result ??= new StringBuilder(span.Length);
                 result.Append(span[copied..valueStart]).Append(RedactionOptions.Mask);

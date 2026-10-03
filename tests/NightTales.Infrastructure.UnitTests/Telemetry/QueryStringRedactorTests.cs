@@ -156,6 +156,35 @@ public sealed class QueryStringRedactorTests
         QueryStringRedactor.Redact(redacted, Keys).ShouldBeSameAs(redacted);
     }
 
+    [Theory]
+    [InlineData("?next=x", "=x")]
+    [InlineData("?next=x", "=%41")]
+    [InlineData("?next=x", "?y=x")]
+    public void Long_nested_values_are_scanned_in_linear_time(string head, string unit)
+    {
+        var query = head + string.Concat(Enumerable.Repeat(unit, 25_000));
+        QueryStringRedactor.Redact(query, Keys).ShouldBeSameAs(query);
+        QueryStringRedactor.RedactText(query, Keys).ShouldBeSameAs(query);
+
+        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+        QueryStringRedactor.Redact(query, Keys).ShouldBeSameAs(query);
+        QueryStringRedactor.RedactText(query, Keys).ShouldBeSameAs(query);
+        QueryStringRedactor.RedactUrl("https://x.test/p" + query, Keys).ShouldNotBeNull();
+        stopwatch.Stop();
+
+        // Quadratic rescans take seconds at this size; a linear pass takes a few milliseconds.
+        stopwatch.ElapsedMilliseconds.ShouldBeLessThan(500);
+    }
+
+    [Fact]
+    public void Long_nested_values_still_mask_a_listed_pair_at_the_end()
+    {
+        var query = "?next=x" + string.Concat(Enumerable.Repeat("=x", 25_000)) + "?token=raw1";
+
+        QueryStringRedactor.Redact(query, Keys).ShouldEndWith("?token=<redacted>");
+        QueryStringRedactor.RedactText(query, Keys).ShouldEndWith("?token=<redacted>");
+    }
+
     [Fact]
     public void Unlisted_nested_pairs_leave_the_same_instance()
     {
