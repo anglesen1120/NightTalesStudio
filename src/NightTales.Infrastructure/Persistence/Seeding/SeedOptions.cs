@@ -41,4 +41,26 @@ public sealed class SeedOptions
     /// explicit <c>nts-seed</c> command keeps it <c>false</c>, so a failure is a non-zero exit.
     /// </summary>
     public bool ContinueOnError { get; set; }
+
+    /// <summary>
+    /// The owner seed credentials (<c>Seed:Owner</c>, 09.2.5-T2). Both values come from the secret store in
+    /// production (11.5.2); an empty pair makes <see cref="OwnerSeeder"/> skip with a warning.
+    /// </summary>
+    public SeedOwnerOptions Owner { get; set; } = new();
+}
+
+/// <summary>
+/// The <c>Seed:Owner</c> pair. The password is a secret: <see cref="ToString"/> never prints either
+/// value, so an options dump or a formatted log argument cannot leak them.
+/// </summary>
+public sealed class SeedOwnerOptions
+{
+    /// <summary>The owner's e-mail (<c>Seed__Owner__Email</c>).</summary>
+    public string? Email { get; set; }
+
+    /// <summary>The owner's initial password (<c>Seed__Owner__Password</c>); used once, never stored in a log.</summary>
+    public string? Password { get; set; }
+
+    /// <inheritdoc />
+    public override string ToString() => "***";
 }

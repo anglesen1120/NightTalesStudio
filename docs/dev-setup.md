@@ -246,6 +246,9 @@ Rules for any change that runs at start-up:
   The generator reports a missing key as `MSB3073` from `dotnet-getdocument` with a long hosting stack
   (see the build-time block), so check this list before hunting.
 - A new way of starting a host adds a row to this table.
+- `Seed__Owner__Email` / `Seed__Owner__Password` (09.2.5-T2) are optional: `OwnerSeeder` creates the one
+  owner from them when none exists and otherwise skips with a warning, so they need no placeholder in the
+  rows above. Supply them from the secret store (11.5.2) only for the `nts-seed` run; never commit them.
 - The MptAdapter is a separate executable: its API keys, TLS files, listen-address rules and writable
   SQLite data directory must remain valid when changing startup configuration; Api/Worker build-time
   placeholders do not satisfy these checks.
