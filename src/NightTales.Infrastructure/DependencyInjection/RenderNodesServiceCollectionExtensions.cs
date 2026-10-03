@@ -69,7 +69,12 @@ public static class RenderNodesServiceCollectionExtensions
         // The dispatch decision (11.3.3-T2): scoped with the IReadDb and INodeLoadReader it queries; the
         // log gate is a singleton so "nothing dispatchable" warns once per interval, not once per pick.
         services.AddSingleton<NodeDispatchLogGate>();
-        services.AddScoped<INodeSelector, NodeSelector>();
+
+        // Application cannot reference the Options package (architecture allow-list), so the selector takes
+        // the bound, validated value; it is resolved from IOptions here, at the composition root.
+        services.AddScoped<INodeSelector>(provider => ActivatorUtilities.CreateInstance<NodeSelector>(
+            provider,
+            provider.GetRequiredService<IOptions<RenderNodesOptions>>().Value));
 
         // The advisory-lock guard keeps one dedicated connection for the poller's lifetime, so it is a
         // singleton that owns that connection.

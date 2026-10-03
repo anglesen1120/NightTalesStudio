@@ -2,7 +2,6 @@ using System.Diagnostics.Metrics;
 using System.Linq.Expressions;
 using Microsoft.EntityFrameworkCore.Query;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 using ErrorOr;
 using NightTales.Application.Abstractions.Rendering;
 using NightTales.Application.Common.Errors;
@@ -231,7 +230,7 @@ public sealed class NodeSelectorQaTests
                 _cache,
                 new QaLoadReader(_inFlight),
                 Clock,
-                Options.Create(new RenderNodesOptions()),
+                new RenderNodesOptions(),
                 Metrics,
                 new NodeDispatchLogGate(),
                 logger);

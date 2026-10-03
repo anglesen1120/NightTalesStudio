@@ -3,7 +3,6 @@ using System.Linq.Expressions;
 using ErrorOr;
 using Microsoft.EntityFrameworkCore.Query;
 using Microsoft.Extensions.Logging.Abstractions;
-using Microsoft.Extensions.Options;
 using NightTales.Application.Abstractions.Persistence;
 using NightTales.Application.Abstractions.Rendering;
 using NightTales.Application.Common.Errors;
@@ -276,7 +275,7 @@ public sealed class NodeSelectorTests
                 _cache,
                 Load,
                 _clock,
-                Options.Create(new RenderNodesOptions()),
+                new RenderNodesOptions(),
                 Metrics,
                 new NodeDispatchLogGate(),
                 NullLogger<NodeSelector>.Instance);

@@ -1,7 +1,6 @@
 using ErrorOr;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 using NightTales.Application.Abstractions.Persistence;
 using NightTales.Application.Abstractions.Rendering;
 using NightTales.Application.Common.Errors;
@@ -37,7 +36,7 @@ public sealed partial class NodeSelector(
     INodeHealthCache cache,
     INodeLoadReader loadReader,
     IClock clock,
-    IOptions<RenderNodesOptions> options,
+    RenderNodesOptions settings,
     NodeMetrics metrics,
     NodeDispatchLogGate logGate,
     ILogger<NodeSelector> logger) : INodeSelector
@@ -47,7 +46,6 @@ public sealed partial class NodeSelector(
     /// <inheritdoc />
     public async Task<ErrorOr<WorkerNode>> PickAsync(CancellationToken cancellationToken)
     {
-        var settings = options.Value;
         var now = clock.UtcNow;
         var staleAfter = TimeSpan.FromSeconds(settings.HealthStaleSeconds);
 
