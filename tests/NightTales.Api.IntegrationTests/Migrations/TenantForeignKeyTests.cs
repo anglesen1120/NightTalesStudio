@@ -39,12 +39,15 @@ public sealed class TenantForeignKeyTests(TestDatabase database) : IntegrationTe
         "episodes.current_story_version_id,user_id->story_versions(id,user_id)",
         "episodes.final_video_asset_id,user_id->assets(id,user_id)",
         "episodes.series_id,user_id->series(id,user_id)",
+        "fetch_tasks.episode_id,user_id->episodes(id,user_id)",
+        "fetch_tasks.source_id,user_id->story_sources(id,user_id)",
         "generation_runs.episode_id,user_id->episodes(id,user_id)",
         "generation_runs.result_story_version_id,user_id->story_versions(id,user_id)",
         "generation_runs.series_id,user_id->series(id,user_id)",
         "moderation_events.episode_id,user_id->episodes(id,user_id)",
         "series.current_autopilot_authorization_id,user_id->series_autopilot_authorizations(id,user_id)",
         "series_autopilot_authorizations.series_id,user_id->series(id,user_id)",
+        "story_sources.episode_id,user_id->episodes(id,user_id)",
         "story_versions.episode_id,user_id->episodes(id,user_id)",
         "story_versions.generation_run_id,user_id->generation_runs(id,user_id)",
         "story_versions.parent_version_id,user_id->story_versions(id,user_id)",
@@ -194,6 +197,30 @@ public sealed class TenantForeignKeyTests(TestDatabase database) : IntegrationTe
             + "word_count, content, parent_version_id, created_at) VALUES (gen_random_uuid(), '{b}', '{ep_b}', 1, "
             + "'revised', 't', 'b', '{}', 1, '{}'::jsonb, '{version_a}', now())"
         },
+        {
+            "story_sources.episode_id",
+            "INSERT INTO story_sources (id, user_id, episode_id, kind, url, normalized_url, registrable_domain, "
+            + "status, created_at) VALUES (gen_random_uuid(), '{b}', '{ep_a}', 'url', 'https://a.example/x', "
+            + "'https://a.example/x', 'a.example', 'pending', now())"
+        },
+        {
+            "fetch_tasks.episode_id",
+            "WITH s AS (INSERT INTO story_sources (id, user_id, episode_id, kind, url, normalized_url, "
+            + "registrable_domain, status, created_at) VALUES (gen_random_uuid(), '{b}', '{ep_b}', 'url', "
+            + "'https://b.example/x', 'https://b.example/x', 'b.example', 'pending', now()) RETURNING id) "
+            + "INSERT INTO fetch_tasks (id, user_id, episode_id, source_id, kind, url, registrable_domain, status, "
+            + "attempts, not_before, created_at) SELECT gen_random_uuid(), '{b}', '{ep_a}', s.id, 'fetch_source', "
+            + "'https://b.example/x', 'b.example', 'queued', 0, now(), now() FROM s"
+        },
+        {
+            "fetch_tasks.source_id",
+            "WITH s AS (INSERT INTO story_sources (id, user_id, episode_id, kind, url, normalized_url, "
+            + "registrable_domain, status, created_at) VALUES (gen_random_uuid(), '{a}', '{ep_a}', 'url', "
+            + "'https://a.example/y', 'https://a.example/y', 'a.example', 'pending', now()) RETURNING id) "
+            + "INSERT INTO fetch_tasks (id, user_id, episode_id, source_id, kind, url, registrable_domain, status, "
+            + "attempts, not_before, created_at) SELECT gen_random_uuid(), '{b}', '{ep_b}', s.id, 'fetch_source', "
+            + "'https://a.example/y', 'a.example', 'queued', 0, now(), now() FROM s"
+        },
     };
 
     [Theory]
@@ -276,7 +303,7 @@ public sealed class TenantForeignKeyTests(TestDatabase database) : IntegrationTe
                       AND c.connamespace = 'public'::regnamespace
                       AND array_length(c.conkey, 1) = 1
                       AND pl.relname IN ('series', 'episodes', 'assets', 'story_versions',
-                                         'series_autopilot_authorizations')
+                                         'series_autopilot_authorizations', 'story_sources')
                 ORDER BY 1
                 """)
             .ShouldBeEmpty();

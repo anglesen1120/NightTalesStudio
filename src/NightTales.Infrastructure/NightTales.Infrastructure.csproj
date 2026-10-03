@@ -53,6 +53,16 @@
   </ItemGroup>
 
   <!--
+    02.5.1-T1 (02.5.1 plan §3.1): the IANA/Mozilla public suffix list that decides a source URL's registrable domain.
+    Vendored verbatim, MPL-2.0 header intact (the list is data; the licence applies to the list text), embedded so a
+    deployment cannot ship without it. `PublicSuffixListProvider` addresses it by this logical name; refresh it with
+    a PR that replaces the file from https://publicsuffix.org/list/public_suffix_list.dat.
+  -->
+  <ItemGroup>
+    <EmbeddedResource Include="Research/public_suffix_list.dat" LogicalName="NightTales.Infrastructure.Research.public_suffix_list.dat" />
+  </ItemGroup>
+
+  <!--
     09.2.6-T3 (09 README BD9): the `Templates/Email/<name>.<locale>.{txt,html}` pairs of every catalog
     template, copied into the output (the same mechanism the `seed/` catalogs of 09.2.5-T1 use), so a
     published image carries them and `EmailTemplateProvider` reads them from `AppContext.BaseDirectory`.

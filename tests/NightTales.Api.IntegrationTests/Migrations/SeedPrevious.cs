@@ -232,6 +232,27 @@ internal static class SeedPrevious
             VALUES ('01920000-0000-7000-8000-000000000011', '01920000-0000-7000-8000-000000000001', 'account', NULL,
                     'account_delete', 'pending', now(), now() + interval '7 days', 0)
             """),
+        (
+            // 02.5.1-T1: the tables the `_02_SourcesAndFetchTasks` migration creates. Same rule as above: skipped
+            // while that migration is the last one, then every later migration is exercised over a pending url
+            // source of the seed episode and its queued fetch task (the live-task partial unique index sees a row).
+            "story_sources",
+            """
+            INSERT INTO story_sources (id, user_id, episode_id, kind, url, normalized_url, registrable_domain, status,
+                                       created_at)
+            VALUES ('01920000-0000-7000-8000-000000000012', '01920000-0000-7000-8000-000000000001',
+                    '01920000-0000-7000-8000-000000000004', 'url', 'https://example.com/seed',
+                    'https://example.com/seed', 'example.com', 'pending', now())
+            """),
+        (
+            "fetch_tasks",
+            """
+            INSERT INTO fetch_tasks (id, user_id, episode_id, source_id, kind, url, registrable_domain, status,
+                                     attempts, not_before, created_at)
+            VALUES ('01920000-0000-7000-8000-000000000013', '01920000-0000-7000-8000-000000000001',
+                    '01920000-0000-7000-8000-000000000004', '01920000-0000-7000-8000-000000000012', 'fetch_source',
+                    'https://example.com/seed', 'example.com', 'queued', 0, now(), now())
+            """),
     ];
 
     /// <summary>The tables the dataset covers, in insert order — the contract a feature migration extends.</summary>

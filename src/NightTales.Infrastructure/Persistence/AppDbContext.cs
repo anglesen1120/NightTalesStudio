@@ -14,6 +14,7 @@ using NightTales.Domain.Episodes;
 using NightTales.Domain.Platform;
 using NightTales.Domain.Rendering;
 using NightTales.Domain.Rendering.Music;
+using NightTales.Domain.Research;
 using NightTales.Domain.Series;
 using NightTales.Domain.Series.Autopilot;
 using NightTales.Domain.Stories;
@@ -65,6 +66,12 @@ public sealed class AppDbContext : IdentityDbContext<AppUser, AppRole, Guid>, IA
     public DbSet<AutopilotRun> AutopilotRuns => Set<AutopilotRun>();
 
     public DbSet<ModerationEvent> ModerationEvents => Set<ModerationEvent>();
+
+    /// <summary>The sources of an episode (02.5.1-T1, table <c>story_sources</c>); <c>IUserOwned</c>, so the D10 tenant filter applies.</summary>
+    public DbSet<StorySource> StorySources => Set<StorySource>();
+
+    /// <summary>The fetcher's work queue (02.5.1-T1, table <c>fetch_tasks</c>, 02 D10); <c>IUserOwned</c>, so the D10 tenant filter applies.</summary>
+    public DbSet<FetchTask> FetchTasks => Set<FetchTask>();
 
     /// <summary>The legal deletion duties of 13.3.1-T1 (table <c>data_deletion_requests</c>); <c>IUserOwned</c>, so the D10 tenant filter applies.</summary>
     public DbSet<DeletionRequest> DeletionRequests => Set<DeletionRequest>();

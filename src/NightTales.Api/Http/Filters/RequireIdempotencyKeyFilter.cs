@@ -48,7 +48,9 @@ public sealed class RequireIdempotencyKeyFilter : IEndpointFilter
         return await next(context).ConfigureAwait(false);
     }
 
-    private static bool IsValidKey(string key)
+    /// <summary>Whether <paramref name="key"/> is 1–128 printable ASCII characters; also used by routes where the key is optional.</summary>
+    /// <param name="key">The header value.</param>
+    internal static bool IsValidKey(string key)
     {
         if (key.Length is 0 or > MaxLength)
         {
