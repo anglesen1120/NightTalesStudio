@@ -178,7 +178,7 @@ public sealed class FailureInjectionQaTests
         plan.Image.Kind.ShouldBe(ImageReportKind.Ok);
     }
 
-    [Theory(Skip = "QA-1: FailKeywords.ScanFail matches `__fail_<name>__` inside a longer token (spec: whole-token); enable when fixed")]
+    [Theory]
     [InlineData("pre__fail_assembly_failed__post")]
     [InlineData("xx__fail_assembly_failed__")]
     [InlineData("__fail_assembly_failed__yy")]
@@ -346,7 +346,7 @@ public sealed class FailureInjectionQaTests
         }
     }
 
-    [Fact(Skip = "QA-2: FailureInjector.Resolve treats a lone `__block_image__` as a layer-1 keyword hit and drops MOCK_FAIL_MODE/MOCK_FAIL_RATE; enable when fixed")]
+    [Fact]
     public void BlockImage_AloneStillLetsTheEnvModeApply()
     {
         // Spec precedence: the env mode applies unless a *mode* keyword fired; `__block_image__` only shapes slots.

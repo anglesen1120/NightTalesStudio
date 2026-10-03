@@ -12,8 +12,11 @@ public sealed record KeywordHits(FailMode? Mode, bool FailImage, IReadOnlySet<in
     /// <summary>No keyword present.</summary>
     public static KeywordHits Empty { get; } = new(null, false, new HashSet<int>());
 
-    /// <summary>True when at least one failure keyword is present (the precedence layer 1).</summary>
-    public bool Any => Mode is not null || FailImage || BlockedSlots.Count > 0;
+    /// <summary>
+    /// True when a failure keyword decided (the precedence layer 1). <c>__block_image__</c> only shapes image
+    /// slots, so a lone one does not suppress <c>MOCK_FAIL_MODE</c>/<c>MOCK_FAIL_RATE</c>.
+    /// </summary>
+    public bool Any => Mode is not null || FailImage;
 }
 
 /// <summary>
@@ -53,7 +56,7 @@ public static class FailKeywords
             }
 
             ScanFail(term, fixtures, ref mode, ref failImage);
-            if (term.Contains(BlockImage, StringComparison.Ordinal))
+            if (ContainsWholeToken(term, BlockImage))
             {
                 blocked.Add(slot);
             }
@@ -74,7 +77,8 @@ public static class FailKeywords
         {
             var nameStart = start + FailPrefix.Length;
             var end = text.IndexOf(Suffix, nameStart, StringComparison.Ordinal);
-            if (end > nameStart && IsName(text.AsSpan(nameStart, end - nameStart)))
+            if (end > nameStart && IsName(text.AsSpan(nameStart, end - nameStart)) &&
+                IsWholeToken(text, start, end + Suffix.Length))
             {
                 var name = text[nameStart..end];
                 if (string.Equals(name, ImageName, StringComparison.Ordinal))
@@ -102,5 +106,31 @@ public static class FailKeywords
         }
 
         return true;
+    }
+
+    /// <summary>
+    /// Whole-token test: the match touches a string edge or a non-token character on both sides. A token
+    /// character is an ASCII letter, digit or <c>_</c>, so <c>pre__fail_x__post</c> is one token and is ignored.
+    /// </summary>
+    private static bool IsWholeToken(string text, int start, int end) =>
+        (start == 0 || !IsTokenChar(text[start - 1])) &&
+        (end >= text.Length || !IsTokenChar(text[end]));
+
+    private static bool IsTokenChar(char character) => char.IsAsciiLetterOrDigit(character) || character == '_';
+
+    private static bool ContainsWholeToken(string text, string keyword)
+    {
+        var at = text.IndexOf(keyword, StringComparison.Ordinal);
+        while (at >= 0)
+        {
+            if (IsWholeToken(text, at, at + keyword.Length))
+            {
+                return true;
+            }
+
+            at = text.IndexOf(keyword, at + 1, StringComparison.Ordinal);
+        }
+
+        return false;
     }
 }
