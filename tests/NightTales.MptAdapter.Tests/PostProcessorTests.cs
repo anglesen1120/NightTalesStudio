@@ -141,36 +141,53 @@ internal sealed class ScriptedRunner : ICheckRunner
 
     internal List<(DateTime Start, DateTime End)> Intervals { get; } = [];
 
+    /// <summary>The most runs ever inside <see cref="RunAsync"/> at once, counted exactly (no clock involved).</summary>
+    internal int MaxInFlight { get; private set; }
+
+    private int _inFlight;
+
     public async Task<CheckRunResult> RunAsync(CheckRequest request, CancellationToken cancellationToken)
     {
         var start = DateTime.UtcNow;
         lock (_gate)
         {
             Requests.Add(request);
+            _inFlight++;
+            MaxInFlight = Math.Max(MaxInFlight, _inFlight);
         }
 
-        if (OnRun is not null)
+        try
         {
-            await OnRun(request).ConfigureAwait(false);
-        }
+            if (OnRun is not null)
+            {
+                await OnRun(request).ConfigureAwait(false);
+            }
 
-        if (Duration > TimeSpan.Zero)
+            if (Duration > TimeSpan.Zero)
+            {
+                await Task.Delay(Duration, cancellationToken).ConfigureAwait(false);
+            }
+
+            var path = Path.Combine(Rig.MptDir(request.DirName), CheckRunner.ReportFileName);
+            if (Report is not null)
+            {
+                await File.WriteAllTextAsync(path, Report, cancellationToken).ConfigureAwait(false);
+            }
+
+            lock (_gate)
+            {
+                Intervals.Add((start, DateTime.UtcNow));
+            }
+
+            return new CheckRunResult(TimedOut, TimedOut ? -1 : ExitCode, string.Empty, string.Empty, Duration, path);
+        }
+        finally
         {
-            await Task.Delay(Duration, cancellationToken).ConfigureAwait(false);
+            lock (_gate)
+            {
+                _inFlight--;
+            }
         }
-
-        var path = Path.Combine(Rig.MptDir(request.DirName), CheckRunner.ReportFileName);
-        if (Report is not null)
-        {
-            await File.WriteAllTextAsync(path, Report, cancellationToken).ConfigureAwait(false);
-        }
-
-        lock (_gate)
-        {
-            Intervals.Add((start, DateTime.UtcNow));
-        }
-
-        return new CheckRunResult(TimedOut, TimedOut ? -1 : ExitCode, string.Empty, string.Empty, Duration, path);
     }
 }
 

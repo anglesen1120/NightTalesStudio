@@ -615,10 +615,8 @@ public sealed class QaT3ProbeTests : IDisposable
             await rig.Processor.StopAsync(CancellationToken.None);
         }
 
-        var intervals = rig.Runner.Intervals;
-        intervals.Count.ShouldBe(5);
-        var peak = intervals.Max(a => intervals.Count(b => b.Start < a.End && a.Start < b.End));
-        peak.ShouldBe(expectedMax);
+        rig.Runner.Intervals.Count.ShouldBe(5);
+        rig.Runner.MaxInFlight.ShouldBe(expectedMax);
     }
 
     [Fact]
