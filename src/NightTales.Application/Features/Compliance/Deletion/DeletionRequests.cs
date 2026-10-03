@@ -1,5 +1,6 @@
 using ErrorOr;
 using Microsoft.EntityFrameworkCore;
+using NightTales.Application.Abstractions;
 using NightTales.Application.Abstractions.Persistence;
 using NightTales.Application.Common.Errors;
 using NightTales.Domain.Common;
@@ -16,6 +17,7 @@ public sealed class DeletionRequests(
     IAppDbContext database,
     IDeletionRequestWriter writer,
     IEnumerable<IDeletionTargetOwnership> ownership,
+    ICurrentUser currentUser,
     IClock clock) : IDeletionRequests
 {
     private const int MaxAttempts = 3;
@@ -28,6 +30,17 @@ public sealed class DeletionRequests(
         DeletionReason reason,
         CancellationToken cancellationToken)
     {
+        // The insert bypasses the tenant filter, so the ambient actor is checked here: a caller may only open a
+        // request for its own user. Staff (Admin) and system (System) actors are exempt, because their
+        // authorization stands upstream (13.3.1 plan UC1: 09.10.5-T1's admin delete, the job's pinned scopes);
+        // an unpinned scope (Id null) keeps its behaviour, since its tenant-filtered re-read cannot see the row.
+        if (currentUser.Actor == ActorType.User
+            && currentUser.Id is { } caller
+            && caller != userId)
+        {
+            return Errors.NotFound();
+        }
+
         var created = DeletionRequest.Create(userId, scope, targetId, reason, clock.UtcNow);
         if (created.IsError)
         {

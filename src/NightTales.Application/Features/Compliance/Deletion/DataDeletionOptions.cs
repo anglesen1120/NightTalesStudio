@@ -8,7 +8,12 @@ public sealed class DataDeletionOptions
     /// <summary>The configuration section.</summary>
     public const string SectionName = "DataDeletion";
 
-    /// <summary>The scopes deferred while their owner has not landed (<c>channel</c>: 06.4.3-T1, <c>account</c>: 13.3.2-T1).</summary>
+    /// <summary>
+    /// The scopes deferred while their owner has not landed (<c>channel</c>: 06.4.3-T1, <c>account</c>: 13.3.2-T1).
+    /// Deliberate deviation from plan §7.1 (<c>["account"]</c>): no <c>channel</c> handler exists yet and the Worker
+    /// must boot, so <c>channel</c> is deferred by default. 06.4.3-T1 MUST remove <c>channel</c> from this default
+    /// when it registers the handler, so the start-up validator (K21) enforces it from then on.
+    /// </summary>
     public static readonly IReadOnlyList<string> DefaultDeferredScopes = ["account", "channel"];
 
     /// <summary>Whether the hourly job is registered; <c>false</c> removes it from the scheduler.</summary>
