@@ -37,7 +37,7 @@ Plans 06, 07, 08, 12: not started. Plan 10: approved HTML design handoff and ref
 
 ## Session 5 plan
 
-**Recorded at the owner's request 2026-10-03** (start at the next session; resume phrase "tiếp tục theo STATUS.md"). Selection: phase-P task headers checked 2026-10-03 on `feature/s4b-wave-combined`; all six tasks state "No migration". Tiers are proposed; the orchestrator raises them per `~/.omp/agent/RULES.md`. Web UI (plan 10) stays in its own session. The Session 4 plan is in the archive.
+**Recorded at the owner's request 2026-10-03** (start at the next session; resume phrase "tiếp tục theo STATUS.md"). Selection: phase-P task headers checked 2026-10-03 on `feature/s4b-wave-combined`; the five tasks 02.4.1-T1, 02.2.2-T3, 02.6.1-T1, 02.3.1-T1 and 02.5.2-T1 state "No migration" (check 02.5.3-T1 at kickoff). Tiers are proposed; the orchestrator raises them per `~/.omp/agent/RULES.md`. Web UI (plan 10) stays in its own session. The Session 4 plan is in the archive.
 
 **Step 0: close PR #119 first.** CI run `37131498756`: build-test, contract and migrations green; `integration` hung (`GenerateStoryQaTests.Generate_RequestBody_IsIgnored_TriggerAlwaysUser` waited 6 min on `POST /api/v1/episodes/{id}/story/generate`, then `TaskCanceledException`; local passes). Find the root cause with evidence (`pg_stat_activity` / `pg_locks` during the hang, or a partial CI log of a rerun cancelled at ~12 min), fix it on `feature/s4b-wave-combined`, run the full gate, push, CI 4/4, then the owner merges. State whether the bug also exists on `develop` (follow-up task) or only in the #119 diff. After the merge: remove worktrees `09.2.5-T2`, `02.3.4-T1`, `02.2.1-T2`, `02.2.2-T2`, `02.5.1-T1`, `s4b-combined` and their local + remote branches.
 
