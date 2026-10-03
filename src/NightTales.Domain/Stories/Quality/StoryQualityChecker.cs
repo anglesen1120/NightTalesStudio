@@ -381,7 +381,7 @@ public sealed class StoryQualityChecker
                     continue;
                 }
 
-                if (seen.TryAdd(key, view.Address))
+                if (seen.TryAdd(key, view.Address) || seen[key] == view.Address)
                 {
                     continue;
                 }
@@ -446,9 +446,43 @@ public sealed class StoryQualityChecker
         }
     }
 
+    private const ulong WindowBase = 1_099_511_628_211UL;
+
+    /// <summary>WindowBase^(ShingleSize-1): the weight of the oldest token of a full window.</summary>
+    private static readonly ulong WindowLeadWeight = LeadWeight();
+
+    private static ulong LeadWeight()
+    {
+        ulong weight = 1;
+        unchecked
+        {
+            for (var index = 1; index < ShingleSize; index++)
+            {
+                weight *= WindowBase;
+            }
+        }
+
+        return weight;
+    }
+
+    /// <summary>FNV-1a over the token's UTF-16 units; the 64-bit window hashes stand in for the joined shingle text.</summary>
+    private static ulong TokenHash(string token)
+    {
+        var hash = 14_695_981_039_346_656_037UL;
+        unchecked
+        {
+            foreach (var character in token)
+            {
+                hash = (hash ^ character) * 1_099_511_628_211UL;
+            }
+        }
+
+        return hash;
+    }
+
     private double? CheckShingles(List<SegmentView> segments, List<(QualityIssue, int)> issues)
     {
-        var seen = new HashSet<string>(StringComparer.Ordinal);
+        var seen = new HashSet<ulong>();
         var total = 0;
         var repeated = 0;
         SegmentView? worst = null;
@@ -457,14 +491,31 @@ public sealed class StoryQualityChecker
         {
             var tokens = NormalizedTokens(view.Segment?.Text);
             var segmentRepeated = 0;
-            for (var start = 0; start + ShingleSize <= tokens.Count; start++)
+            var hashes = new ulong[tokens.Count];
+            for (var index = 0; index < hashes.Length; index++)
             {
-                total++;
-                var shingle = string.Join(' ', tokens.GetRange(start, ShingleSize));
-                if (!seen.Add(shingle))
+                hashes[index] = TokenHash(tokens[index]);
+            }
+
+            ulong window = 0;
+            unchecked
+            {
+                for (var index = 0; index < hashes.Length; index++)
                 {
-                    repeated++;
-                    segmentRepeated++;
+                    window = index >= ShingleSize
+                        ? ((window - (hashes[index - ShingleSize] * WindowLeadWeight)) * WindowBase) + hashes[index]
+                        : (window * WindowBase) + hashes[index];
+                    if (index < ShingleSize - 1)
+                    {
+                        continue;
+                    }
+
+                    total++;
+                    if (!seen.Add(window))
+                    {
+                        repeated++;
+                        segmentRepeated++;
+                    }
                 }
             }
 
@@ -746,9 +797,10 @@ public sealed class StoryQualityChecker
     private static List<string> NormalizedTokens(string? text)
     {
         var tokens = new List<string>();
+        var builder = new StringBuilder();
         foreach (var raw in StoryText.Tokenize(text))
         {
-            var builder = new StringBuilder(raw.Length);
+            builder.Clear();
             foreach (var character in raw)
             {
                 if (char.IsLetterOrDigit(character) || character == '\'')

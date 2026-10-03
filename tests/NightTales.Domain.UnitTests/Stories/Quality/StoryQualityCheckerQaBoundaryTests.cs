@@ -173,6 +173,16 @@ public sealed class StoryQualityCheckerQaBoundaryTests
     }
 
     [Fact]
+    public void KeywordDuplicate_WithinOneSegment_IsNotQKw04_ButAcrossSegmentsIs()
+    {
+        var same = RawDraft([1, 1, 1], 1, 1, hookKeywords: ["old lantern in fog", "old lantern in fog"]);
+        Checker.Check(same, Ctx(length: false)).Issues.ShouldNotContain(i => i.RuleId == "Q-KW-04");
+
+        var across = RawDraft([1, 1, 1], 1, 1, hookKeywords: ["old lantern in fog"], extra: (0, ["old lantern in fog"]));
+        Checker.Check(across, Ctx(length: false)).Issues.Count(i => i.RuleId == "Q-KW-04").ShouldBe(1);
+    }
+
+    [Fact]
     public void KeywordInvalid_TooShortAndTooLong_AndNoPersonName()
     {
         var twoWords = RawDraft([1, 1, 1], 1, 1, hookKeywords: ["old lantern"]);
