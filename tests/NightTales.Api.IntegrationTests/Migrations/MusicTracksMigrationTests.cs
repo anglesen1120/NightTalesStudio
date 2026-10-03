@@ -13,9 +13,8 @@ namespace NightTales.Api.IntegrationTests.Migrations;
 /// <summary>
 /// The <c>_05_MusicTracks</c> migration (05.3.2-T3, 05 README D8/CR-2): the global catalog table reaches a
 /// fresh database with the agreed columns, the unique <c>track_id</c> index and the D8 CHECKs, carries no
-/// <c>user_id</c>, matches the EF model, and its <c>Down</c> drops it. Another migration followed it
-/// (<c>_13_DataDeletionRequests</c> owns the last-migration <c>Down</c> check), so this class finds its own
-/// migration by name, like <c>PriceVersionsMigrationTests</c>.
+/// <c>user_id</c>, matches the EF model, and its <c>Down</c> drops it. Its <c>Down</c> check finds the migration by
+/// name; the newest migration's test (09.7.3-T1, <c>AssetsRetentionIndexMigrationTests</c>) owns <c>migrations[^1]</c>.
 /// </summary>
 [Trait("Category", "Integration")]
 [Trait("Category", "Migration")]

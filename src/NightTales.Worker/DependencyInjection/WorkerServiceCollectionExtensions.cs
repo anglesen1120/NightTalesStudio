@@ -8,6 +8,7 @@ using Microsoft.Extensions.Options;
 using NightTales.Application.Abstractions;
 using NightTales.Application.Abstractions.Jobs;
 using NightTales.Application.Abstractions.Outbox;
+using NightTales.Application.Features.Assets.Jobs;
 using NightTales.Application.Features.Episodes.Outbox;
 using NightTales.Application.Telemetry;
 using NightTales.Domain.Episodes.Events;
@@ -185,6 +186,19 @@ public static class WorkerServiceCollectionExtensions
         // 13.3.1-T1 (13 README D4): the deletion engine — hourly job, scope handlers, the K21 start-up
         // validator and the restore pair. It needs the blob store registered above.
         services.AddDeletionEngine(configuration);
+        // 09.7.3-T1: the retention sweep's bounds and instruments. Every key has a default, so none is a
+        // required start-up key (no placeholder in the boot-context blocks); the ports are persistence's.
+        services.AddOptions<RetentionSweepOptions>()
+            .BindConfiguration(RetentionSweepOptions.SectionName)
+            .Validate(
+                options => options.BatchSize is >= 1 and <= RetentionSweepOptions.MaxBatchSize,
+                $"'{RetentionSweepOptions.SectionName}:{nameof(RetentionSweepOptions.BatchSize)}' must be between 1 and {RetentionSweepOptions.MaxBatchSize}.")
+            .Validate(
+                options => options.MaxBatches is >= 1 and <= RetentionSweepOptions.MaxBatchesLimit,
+                $"'{RetentionSweepOptions.SectionName}:{nameof(RetentionSweepOptions.MaxBatches)}' must be between 1 and {RetentionSweepOptions.MaxBatchesLimit}.")
+            .ValidateOnStart();
+        services.AddSingleton(provider => provider.GetRequiredService<IOptions<RetentionSweepOptions>>().Value);
+        services.AddSingleton<RetentionSweepMetrics>();
 
         services.AddHealthChecks()
             .AddCheck<DatabaseHealthCheck>("database")

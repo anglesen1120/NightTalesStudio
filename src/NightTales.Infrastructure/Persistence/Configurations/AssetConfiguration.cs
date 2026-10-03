@@ -34,5 +34,11 @@ internal sealed class AssetConfiguration : IEntityTypeConfiguration<Asset>
 
         builder.HasIndex(asset => asset.StorageKey).IsUnique();
         builder.HasIndex(asset => asset.EpisodeId);
+
+        // 09.7.3-T1: the due-assets scan of RetentionSweepJob. Partial, so the index holds only the live rows
+        // that carry a retention instant and the sweep never reads a deleted or unstamped row.
+        builder.HasIndex(asset => asset.RetentionUntil)
+            .HasDatabaseName("ix_assets_retention_due")
+            .HasFilter("deleted_at IS NULL AND retention_until IS NOT NULL");
     }
 }

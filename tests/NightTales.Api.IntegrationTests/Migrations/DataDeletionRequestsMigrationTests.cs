@@ -13,8 +13,9 @@ namespace NightTales.Api.IntegrationTests.Migrations;
 /// <summary>
 /// The <c>_13_DataDeletionRequests</c> migration (13.3.1-T1, 13 README D4/YR13): the table, its three CHECKs, its four
 /// indexes — above all the open-request unique index with <c>user_id</c> first and <c>NULLS NOT DISTINCT</c>, verified
-/// here on PostgreSQL 17 — and no foreign key to <c>users</c>. This class owns the last-migration <c>Down</c> check,
-/// so the previous owner (<c>MusicTracksMigrationTests</c>) finds its own migration by name.
+/// here on PostgreSQL 17 — and no foreign key to <c>users</c>. Another migration followed it
+/// (<c>_09_AssetsRetentionIndex</c> owns the last-migration <c>Down</c> check), so this class finds its own
+/// migration by name, like <c>PriceVersionsMigrationTests</c>.
 /// </summary>
 [Trait("Category", "Integration")]
 [Trait("Category", "Migration")]
@@ -145,21 +146,22 @@ public sealed class DataDeletionRequestsMigrationTests(TestDatabase database) : 
     {
         await using var context = Database.CreateAppDbContext();
         var migrations = context.Database.GetMigrations().Order(StringComparer.Ordinal).ToList();
-        migrations[^1].ShouldEndWith("_" + MigrationName, customMessage: "this test owns the last migration");
-        migrations.Count.ShouldBeGreaterThan(1);
+        var own = migrations.FindIndex(name => name.EndsWith("_" + MigrationName, StringComparison.Ordinal));
+        own.ShouldBeGreaterThan(0, "the migration must exist and have a previous one to revert to");
 
         try
         {
-            await context.Database.GetService<IMigrator>().MigrateAsync(migrations[^2], Ct);
+            // Reverting to the migration before this one also reverts every later migration.
+            await context.Database.GetService<IMigrator>().MigrateAsync(migrations[own - 1], Ct);
 
             (await Database.QueryStringsAsync("SELECT coalesce(to_regclass('public.data_deletion_requests')::text, '')", Ct))
                 .ShouldBe([string.Empty], ignoreOrder: false, customMessage: "the Down drops the table");
 
-            await context.Database.GetService<IMigrator>().MigrateAsync(migrations[^1], Ct);
+            await context.Database.MigrateAsync(Ct);
         }
         finally
         {
-            await context.Database.GetService<IMigrator>().MigrateAsync(migrations[^1], CancellationToken.None);
+            await context.Database.MigrateAsync(CancellationToken.None);
         }
 
         (await Database.QueryStringsAsync("SELECT count(*)::text FROM data_deletion_requests", Ct))

@@ -139,6 +139,7 @@ public sealed class RecurringJobRegistrarTests(TestDatabase database) : Integrat
                 OutboxCleanupJobRegistration.RecurringId,
                 HubTicketCleanupJobRegistration.RecurringId,
                 DataDeletionRegistration.RecurringId,
+                RetentionSweepRegistration.RecurringId,
             ],
             ignoreOrder: true);
     }
@@ -172,6 +173,7 @@ public sealed class RecurringJobRegistrarTests(TestDatabase database) : Integrat
                 OutboxCleanupJobRegistration.RecurringId,
                 HubTicketCleanupJobRegistration.RecurringId,
                 DataDeletionRegistration.RecurringId,
+                RetentionSweepRegistration.RecurringId,
             ],
             ignoreOrder: true);
     }
@@ -201,6 +203,7 @@ public sealed class RecurringJobRegistrarTests(TestDatabase database) : Integrat
         OutboxCleanupJobRegistration.RecurringId,
         HubTicketCleanupJobRegistration.RecurringId,
         DataDeletionRegistration.RecurringId,
+        RetentionSweepRegistration.RecurringId,
     ];
 
     private sealed class StubRegistration(string id, string cron) : IRecurringJobRegistration
