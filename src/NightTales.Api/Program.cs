@@ -268,6 +268,9 @@ try
     // cancel.
     app.MapEpisodeEndpoints();
 
+    // 02.2.2-T2 (02 README D9, 02.2.2 plan §5.1): POST /api/v1/episodes/{id}/story/generate.
+    app.MapStoryEndpoints();
+
     // 09.4.2-T1 (09 README D14, 09 §4 09.4.2): the catalog routes — the voices and the style templates the
     // picker and the style grid read.
     app.MapCatalogEndpoints();
