@@ -12,9 +12,11 @@ namespace NightTales.Infrastructure.Telemetry;
 public sealed record UserHashEnricherOptions(string Salt);
 
 /// <summary>
-/// Adds <c>userId</c> to every log event written inside an authenticated request (09.9.3-T1): the first 16
-/// characters of base64url(HMAC-SHA256(salt, sub)). It is stable across instances so a user's lines can be
-/// correlated, and is neither reversible nor the raw id or e-mail.
+/// Adds <c>userId</c> to every log event written inside an authenticated request or a user-owned background
+/// unit of work (09.9.3-T1): the first 16 characters of base64url(HMAC-SHA256(salt, sub)). It is stable
+/// across instances so a user's lines can be correlated, and is neither reversible nor the raw id or e-mail.
+/// A request's subject is its <c>sub</c> claim; a job's is the user <c>ISystemContext.For</c> pinned
+/// (<see cref="AmbientActor"/>), which renders as the same canonical GUID string, so one user hashes alike.
 /// </summary>
 /// <param name="options">The resolved salt.</param>
 /// <param name="accessor">The ambient request, when there is one.</param>
@@ -38,6 +40,11 @@ public sealed class UserHashEnricher(UserHashEnricherOptions options, IHttpConte
 
         var user = accessor.HttpContext?.User;
         var subject = user?.FindFirstValue("sub") ?? user?.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (string.IsNullOrEmpty(subject) && AmbientActor.Current is { } actor)
+        {
+            subject = actor.ToString("D", System.Globalization.CultureInfo.InvariantCulture);
+        }
+
         if (string.IsNullOrEmpty(subject))
         {
             return;

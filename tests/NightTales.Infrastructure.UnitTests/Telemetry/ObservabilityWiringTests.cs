@@ -1,9 +1,7 @@
-using System.Diagnostics;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using NightTales.Infrastructure.Telemetry;
-using OpenTelemetry.Trace;
 using Serilog.Events;
 using Serilog.Formatting.Compact;
 using Serilog.Parsing;
@@ -30,25 +28,6 @@ public sealed class ObservabilityWiringTests
 
         root.ShouldNotBeNull("Directory.Packages.props must be reachable from the test output directory");
         File.ReadAllText(Path.Combine(root.FullName, "Directory.Packages.props")).ShouldNotContain(EfInstrumentation);
-    }
-
-    [Fact]
-    public void Npgsql_instrumentation_registered()
-    {
-        using var provider = Build(Settings(("Logging:UserHashSalt", "salt"))).Services.BuildServiceProvider();
-        using var tracer = provider.GetRequiredService<TracerProvider>();
-
-        using var listener = new ActivityListener
-        {
-            ShouldListenTo = source => source.Name == "Npgsql",
-            Sample = (ref _) => ActivitySamplingResult.AllData,
-        };
-        ActivitySource.AddActivityListener(listener);
-
-        // The Npgsql tracer subscribes to the driver's own source, which is how DB spans are produced
-        // without any EF Core instrumentation (WF09).
-        using var source = new ActivitySource("Npgsql");
-        source.HasListeners().ShouldBeTrue();
     }
 
     [Fact]

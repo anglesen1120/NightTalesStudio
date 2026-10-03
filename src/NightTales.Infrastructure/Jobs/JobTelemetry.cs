@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using Hangfire.Client;
 using Hangfire.Common;
 using Hangfire.Server;
 
@@ -10,16 +11,22 @@ namespace NightTales.Infrastructure.Jobs;
 /// because D12 puts ids only in job arguments and a span is an export surface.
 /// </summary>
 /// <remarks>
-/// The filter is a server filter, so it runs wherever a Hangfire server runs (the Worker). The Api's
-/// dashboard registration shares the provider but executes no job.
+/// As a client filter it stores the enqueuing activity's W3C <c>traceparent</c>/<c>tracestate</c> as two job
+/// parameters; as a server filter it restores them as the parent of the job span, so a request, the outbox
+/// delivery it raised and the job that delivery enqueued share one trace. The filter runs wherever a
+/// Hangfire client or server runs; the Api's dashboard registration shares the provider but executes no job.
 /// </remarks>
-public sealed class JobTelemetryFilter : IServerFilter
+public sealed class JobTelemetryFilter : IServerFilter, IClientFilter
 {
     /// <summary>The activity source the tracer provider listens to (<c>AddSource</c>).</summary>
     public const string ActivitySourceName = "NightTales.Hangfire";
 
     /// <summary>The key under which the running span travels between the two filter callbacks.</summary>
     private const string ActivityItemKey = "nts.job.activity";
+
+    /// <summary>The job parameters carrying the enqueuer's W3C trace context.</summary>
+    private const string TraceParentParameter = "nts.trace_parent";
+    private const string TraceStateParameter = "nts.trace_state";
 
     private static readonly ActivitySource Source = new(ActivitySourceName);
 
@@ -29,12 +36,41 @@ public sealed class JobTelemetryFilter : IServerFilter
     public static string SpanName(string? queue, string jobName) => $"job {queue ?? "default"}:{jobName}";
 
     /// <inheritdoc />
+    public void OnCreating(CreatingContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+
+        var current = Activity.Current;
+        if (current is not { IdFormat: ActivityIdFormat.W3C, Id: { } traceParent })
+        {
+            return;
+        }
+
+        context.SetJobParameter(TraceParentParameter, traceParent);
+        if (!string.IsNullOrEmpty(current.TraceStateString))
+        {
+            context.SetJobParameter(TraceStateParameter, current.TraceStateString);
+        }
+    }
+
+    /// <inheritdoc />
+    public void OnCreated(CreatedContext context)
+    {
+    }
+
+    /// <inheritdoc />
     public void OnPerforming(PerformingContext context)
     {
         ArgumentNullException.ThrowIfNull(context);
 
         var job = context.BackgroundJob.Job;
-        var activity = Source.StartActivity(SpanName(job.Queue, job.Method.Name), ActivityKind.Consumer);
+        var name = SpanName(job.Queue, job.Method.Name);
+        var traceParent = context.GetJobParameter<string>(TraceParentParameter);
+        var activity = !string.IsNullOrEmpty(traceParent)
+            && ActivityContext.TryParse(
+                traceParent, context.GetJobParameter<string>(TraceStateParameter), isRemote: true, out var parent)
+                ? Source.StartActivity(name, ActivityKind.Consumer, parent)
+                : Source.StartActivity(name, ActivityKind.Consumer);
         if (activity is null)
         {
             return;

@@ -5,8 +5,9 @@ namespace NightTales.Api.Health;
 
 /// <summary>
 /// The Api's orchestrator probes (09 README BD12, 09.9.3-T1): <c>GET /health/live</c> touches no dependency
-/// and is always 200; <c>GET /health/ready</c> is anonymous, never cached, and answers 503 only when the
-/// database is unreachable (09.9-D2) — a degraded blob store is reported with 200.
+/// and is always 200; <c>GET /health/ready</c> is anonymous, never cached by the client, and answers 503 only
+/// when the database is unreachable (09.9-D2) — a degraded blob store or render-node cache is reported with
+/// 200. The database result is shared for a few seconds behind one in-flight probe.
 /// </summary>
 public static class HealthEndpoints
 {
@@ -23,11 +24,15 @@ public static class HealthEndpoints
     {
         ArgumentNullException.ThrowIfNull(services);
 
+        services.AddSingleton<DatabaseReadiness>();
+        services.AddSingleton<NodeRegistryReadiness>();
         services.AddHealthChecks()
             .AddCheck<AppDbContextHealthCheck>(
                 AppDbContextHealthCheck.Name, HealthStatus.Unhealthy, tags: ["ready", "db"])
             .AddCheck<BlobStoreHealthCheck>(
-                BlobStoreHealthCheck.Name, HealthStatus.Degraded, tags: ["ready", "storage"]);
+                BlobStoreHealthCheck.Name, HealthStatus.Degraded, tags: ["ready", "storage"])
+            .AddCheck<NodeRegistryHealthCheck>(
+                NodeRegistryHealthCheck.Name, HealthStatus.Degraded, tags: ["ready", "nodes"]);
 
         return services;
     }
