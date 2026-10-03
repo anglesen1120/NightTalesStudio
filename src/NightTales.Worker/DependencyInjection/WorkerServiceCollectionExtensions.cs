@@ -12,6 +12,7 @@ using NightTales.Application.Features.Episodes.Outbox;
 using NightTales.Application.Telemetry;
 using NightTales.Domain.Episodes.Events;
 using NightTales.Domain.Platform.Events;
+using NightTales.Infrastructure.Compliance.Deletion;
 using NightTales.Infrastructure.DependencyInjection;
 using NightTales.Infrastructure.Email;
 using NightTales.Infrastructure.Jobs;
@@ -180,6 +181,10 @@ public static class WorkerServiceCollectionExtensions
         // (09.7.3-T1), the render ingest (09.6.3-T2) and 02's fetcher path all call it here; the
         // readiness check below reads only the cache the prober fills (BD16).
         services.AddStorage(configuration);
+
+        // 13.3.1-T1 (13 README D4): the deletion engine — hourly job, scope handlers, the K21 start-up
+        // validator and the restore pair. It needs the blob store registered above.
+        services.AddDeletionEngine(configuration);
 
         services.AddHealthChecks()
             .AddCheck<DatabaseHealthCheck>("database")
