@@ -193,6 +193,7 @@ public static class WorkerServiceCollectionExtensions
                 options => options.MaxBatches > 0,
                 $"'{RetentionSweepOptions.SectionName}:{nameof(RetentionSweepOptions.MaxBatches)}' must be greater than zero.")
             .ValidateOnStart();
+        services.AddSingleton(provider => provider.GetRequiredService<IOptions<RetentionSweepOptions>>().Value);
         services.AddSingleton<RetentionSweepMetrics>();
 
         services.AddHealthChecks()

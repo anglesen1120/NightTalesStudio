@@ -2,7 +2,6 @@ using System.Diagnostics;
 using System.Runtime.ExceptionServices;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 using NightTales.Application.Abstractions;
 using NightTales.Application.Abstractions.Jobs;
 using NightTales.Application.Abstractions.Storage;
@@ -58,8 +57,8 @@ public sealed record RetentionSweepSummary(
 /// <param name="scopes">Creates the per-row scope.</param>
 /// <param name="audit">The audit-log candidate store.</param>
 /// <param name="blobs">The object store.</param>
-/// <param name="storage">The bucket names.</param>
-/// <param name="options">The batch bounds and the enable switch.</param>
+/// <param name="storage">The bucket names (the bound, validated section value).</param>
+/// <param name="options">The batch bounds and the enable switch (the bound, validated section value).</param>
 /// <param name="clock">The sweep's clock; read once per run.</param>
 /// <param name="metrics">The sweep instruments.</param>
 /// <param name="logger">The job's log.</param>
@@ -70,8 +69,8 @@ public sealed partial class RetentionSweepJob(
     IServiceScopeFactory scopes,
     IAuditRetentionStore audit,
     IBlobStore blobs,
-    IOptions<StorageSettings> storage,
-    IOptions<RetentionSweepOptions> options,
+    StorageSettings storage,
+    RetentionSweepOptions options,
     IClock clock,
     RetentionSweepMetrics metrics,
     ILogger<RetentionSweepJob> logger) : IBackgroundJob
@@ -87,7 +86,7 @@ public sealed partial class RetentionSweepJob(
     /// <param name="cancellationToken">Cancels the run between and inside statements.</param>
     public async Task<RetentionSweepSummary> SweepAsync(CancellationToken cancellationToken)
     {
-        var settings = options.Value;
+        var settings = options;
         if (!settings.Enabled)
         {
             LogSkipped("disabled");
@@ -154,13 +153,7 @@ public sealed partial class RetentionSweepJob(
         while (true)
         {
             iterations++;
-            if (iterations > settings.MaxBatches)
-            {
-                counts.Capped = true;
-                metrics.Capped(AssetsPhase);
-
-                return;
-            }
+            var atCap = iterations > settings.MaxBatches;
 
             // A snapshot: the exclusion set grows while the batch is processed, the query has to capture one
             // value.
@@ -172,11 +165,24 @@ public sealed partial class RetentionSweepJob(
                         && asset.RetentionUntil != null
                         && asset.RetentionUntil < now
                         && !excludedIds.Contains(asset.Id),
-                    settings.BatchSize,
+                    atCap ? 1 : settings.BatchSize,
                     cancellationToken)
                 .ConfigureAwait(false))
             {
                 pairs.Add(pair);
+            }
+
+            if (atCap)
+            {
+                // A one-row probe: exactly MaxBatches full batches with nothing left is a finished sweep,
+                // not a capped one.
+                if (pairs.Count > 0)
+                {
+                    counts.Capped = true;
+                    metrics.Capped(AssetsPhase);
+                }
+
+                return;
             }
 
             counts.Batches++;
@@ -223,7 +229,7 @@ public sealed partial class RetentionSweepJob(
             }
 
             var deleted = await blobs
-                .DeleteAsync(BlobLocator.BucketFor(asset.Kind, storage.Value), asset.StorageKey, cancellationToken)
+                .DeleteAsync(BlobLocator.BucketFor(asset.Kind, storage), asset.StorageKey, cancellationToken)
                 .ConfigureAwait(false);
             if (deleted.IsError)
             {
@@ -258,17 +264,23 @@ public sealed partial class RetentionSweepJob(
         while (true)
         {
             iterations++;
-            if (iterations > settings.MaxBatches)
+            var atCap = iterations > settings.MaxBatches;
+            var candidates = await audit
+                .LoadAfterAsync(afterCreatedAt, afterId, atCap ? 1 : settings.BatchSize, cancellationToken)
+                .ConfigureAwait(false);
+
+            if (atCap)
             {
-                counts.Capped = true;
-                metrics.Capped(AuditPhase);
+                // A one-row probe: exactly MaxBatches full batches with no row after the cursor is a finished
+                // scan, not a capped one.
+                if (candidates.Count > 0)
+                {
+                    counts.Capped = true;
+                    metrics.Capped(AuditPhase);
+                }
 
                 return;
             }
-
-            var candidates = await audit
-                .LoadAfterAsync(afterCreatedAt, afterId, settings.BatchSize, cancellationToken)
-                .ConfigureAwait(false);
 
             counts.Batches++;
             metrics.Batch(AuditPhase);

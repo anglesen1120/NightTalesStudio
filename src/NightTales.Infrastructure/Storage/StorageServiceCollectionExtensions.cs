@@ -100,6 +100,10 @@ public static class StorageServiceCollectionExtensions
                 $"'{StorageSettings.SectionName}:{nameof(StorageSettings.HealthProbeSeconds)}' must be at least one second.")
             .ValidateOnStart();
 
+        // Application takes the plain, validated settings object (the allowed-packages rule bars
+        // Microsoft.Extensions.Options there); IOptions stays in Infrastructure/Worker/Api.
+        services.AddSingleton(provider => provider.GetRequiredService<IOptions<StorageSettings>>().Value);
+
         services.AddSingleton<StorageMetrics>();
         services.AddSingleton<S3ClientFactory>();
         services.AddSingleton<IBlobStore, S3BlobStore>();

@@ -129,9 +129,24 @@ public sealed class RetentionSweepTests
 
         summary.Capped.ShouldBeTrue();
         summary.Deleted.ShouldBe(0);
-        world.Query.Calls.Count.ShouldBe(3, "the run ends after MaxBatches iterations, not never");
+        world.Query.Calls.Count.ShouldBe(4, "the run ends after MaxBatches iterations plus one probe, not never");
         counters.Total(RetentionSweepMetrics.BatchesCappedCounterName).ShouldBe(1);
         world.Logs.Messages.ShouldContain(message => message.Contains("capped=True", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task RetentionSweep_ExactlyMaxBatchesAndNoBacklog_IsNotCapped()
+    {
+        var assets = Enumerable.Range(0, 6).Select(_ => NewAsset(Now.AddDays(-1))).ToArray();
+        var world = new World(assets) { Options = { BatchSize = 2, MaxBatches = 3 } };
+        using var counters = new CounterListener();
+
+        var summary = await world.Job().SweepAsync(Ct);
+
+        summary.Deleted.ShouldBe(6);
+        summary.Capped.ShouldBeFalse("nothing is left after the last full batch");
+        world.Query.Calls.Count.ShouldBe(4, "three batches plus the one-row probe");
+        counters.Total(RetentionSweepMetrics.BatchesCappedCounterName).ShouldBe(0);
     }
 
     [Fact]
@@ -345,9 +360,26 @@ public sealed class RetentionSweepTests
         summary.Capped.ShouldBeTrue();
         summary.AuditDeleted.ShouldBe(4);
         world.Audit.Rows.Count.ShouldBe(6, "the backlog stays for tomorrow");
-        world.Audit.Loads.Count.ShouldBe(2);
+        world.Audit.Loads.Count.ShouldBe(3, "two batches plus the one-row probe");
         counters.Total(RetentionSweepMetrics.BatchesCappedCounterName).ShouldBe(1);
         counters.Total(RetentionSweepMetrics.AuditRowsDeletedCounterName).ShouldBe(4);
+    }
+
+    [Fact]
+    public async Task Qa_AuditPhase_ExactlyMaxBatchesAndNoBacklog_IsNotCapped()
+    {
+        var old = Now.AddDays(-400);
+        var world = new World { Options = { BatchSize = 2, MaxBatches = 2 } };
+        world.Audit.Rows.AddRange(Enumerable.Range(0, 4)
+            .Select(index => Candidate(Category.Episodes, ActorType.User, Visibility.User, old.AddSeconds(index))));
+        using var counters = new CounterListener();
+
+        var summary = await world.Job().SweepAsync(Ct);
+
+        summary.Capped.ShouldBeFalse("nothing is left after the last full batch");
+        summary.AuditDeleted.ShouldBe(4);
+        world.Audit.Loads.Count.ShouldBe(3, "two batches plus the one-row probe");
+        counters.Total(RetentionSweepMetrics.BatchesCappedCounterName).ShouldBe(0);
     }
 
     [Fact]
@@ -443,8 +475,8 @@ public sealed class RetentionSweepTests
             _provider.GetRequiredService<IServiceScopeFactory>(),
             Audit,
             Store(),
-            Microsoft.Extensions.Options.Options.Create(Storage),
-            Microsoft.Extensions.Options.Options.Create(Options),
+            Storage,
+            Options,
             new FakeClock(Now),
             new RetentionSweepMetrics(),
             Logs);

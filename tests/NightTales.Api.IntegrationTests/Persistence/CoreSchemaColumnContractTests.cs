@@ -492,13 +492,22 @@ public sealed class CoreSchemaColumnContractTests(TestDatabase database) : Integ
     }
 
     [Fact]
-    public void Assets_HaveNoRetentionIndex_AndUsersNoEmailIndex()
+    public void Assets_HaveTheRetentionDueIndex_AndUsersNoEmailIndex()
     {
         var indexes = SqlProbe.QueryStrings(Database, "SELECT indexname FROM pg_indexes WHERE schemaname = 'public'");
 
-        indexes.ShouldNotContain("ix_assets_retention_due", "that index is 09.7.3-T1's (09 W3 CR-40)");
+        indexes.ShouldContain("ix_assets_retention_due", "09.7.3-T1 adds the partial due-assets index (09 W3 CR-40)");
         indexes.ShouldNotContain("email_index", "the unique ux_users_normalized_email replaces it (09 W3 CR-41)");
         indexes.ShouldContain("ux_users_normalized_email");
+
+        var definition = SqlProbe.QueryStrings(
+                Database,
+                "SELECT indexdef FROM pg_indexes WHERE schemaname = 'public' AND tablename = 'assets' "
+                + "AND indexname = 'ix_assets_retention_due'")
+            .ShouldHaveSingleItem();
+        // A partial index over live, expiring rows only.
+        Normalize(definition).ShouldEndWith(
+            "USINGbtreeretention_untilWHEREdeleted_atISNULLANDretention_untilISNOTNULL");
     }
 
     /// <summary>
