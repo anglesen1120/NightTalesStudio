@@ -147,6 +147,128 @@ public sealed class ImageCostEstimatorTests
         root.GetProperty("style_prompt_version").GetString().ShouldBe("style=dark-folklore-ink@1a2b3c4d;neg=v1");
     }
 
+    // ---- QA probes (03.2.1-T1) ----
+
+    [Fact]
+    public async Task WorstCase_Placeholder_IsExactDecimal_NoFloatDrift()
+    {
+        var sut = new ImageCostEstimator(new FakeCatalog(NoImage), new ImagesOptions());
+
+        var bound = await sut.WorstCaseAsync(Aspect.Landscape, 90, 1, TestContext.Current.CancellationToken);
+
+        bound.WorstCaseUsd.ShouldBe(16.29m, "90 * 0.181 exactly");
+        decimal.GetBits(bound.WorstCaseUsd)[3].ShouldNotBe(0, "keeps decimal scale, no conversion through double");
+    }
+
+    [Fact]
+    public async Task WorstCase_PricedImage_StandardAndLongBoundsMatchPlan()
+    {
+        var image = new Dictionary<string, ImagePriceRate> { ["gpt-image-2"] = new("per_image", 0.007176m) };
+        var sut = new ImageCostEstimator(new FakeCatalog(image), new ImagesOptions());
+        var ct = TestContext.Current.CancellationToken;
+
+        (await sut.WorstCaseAsync(Aspect.Landscape, 6, 1, ct)).WorstCaseUsd.ShouldBe(0.043056m);
+        (await sut.WorstCaseAsync(Aspect.Landscape, 90, 1, ct)).WorstCaseUsd.ShouldBe(0.64584m);
+    }
+
+    [Fact]
+    public async Task WorstCase_AspectDoesNotChangeTheBound_WhileOnlyFlatPriceExists()
+    {
+        var sut = new ImageCostEstimator(new FakeCatalog(NoImage), new ImagesOptions());
+        var ct = TestContext.Current.CancellationToken;
+
+        var landscape = await sut.WorstCaseAsync(Aspect.Landscape, 10, 1, ct);
+        var portrait = await sut.WorstCaseAsync(Aspect.Portrait, 10, 1, ct);
+
+        portrait.ShouldBe(landscape);
+    }
+
+    [Fact]
+    public async Task WorstCase_CustomPlaceholderTokens_ScaleTheBound()
+    {
+        var options = new ImagesOptions { PlaceholderTokensPerImage = 1_000 };
+        var sut = new ImageCostEstimator(new FakeCatalog(NoImage), options);
+
+        var bound = await sut.WorstCaseAsync(Aspect.Landscape, 1, 1, TestContext.Current.CancellationToken);
+
+        bound.WorstCaseUsd.ShouldBe(0.031m, "1000 * 30 / 1e6 + 200 * 5 / 1e6");
+    }
+
+    [Theory]
+    [InlineData("low")]
+    [InlineData("medium")]
+    [InlineData("high")]
+    [InlineData("auto")]
+    [InlineData(null)]
+    [InlineData("")]
+    public void Options_AllowedQualities_Pass(string? quality) =>
+        ImagesOptionsValidator.Validate(new ImagesOptions { Quality = quality }).ShouldBeEmpty();
+
+    [Theory]
+    [InlineData("HIGH")]
+    [InlineData("ultra")]
+    public void Options_QualityIsCaseSensitive_AndRejectsUnknown(string quality) =>
+        ImagesOptionsValidator.Validate(new ImagesOptions { Quality = quality }).ShouldHaveSingleItem();
+
+    [Theory]
+    [InlineData(0.0, true)]
+    [InlineData(0.5, true)]
+    [InlineData(0.51, false)]
+    [InlineData(-0.01, false)]
+    [InlineData(double.NaN, false)]
+    public void Options_SpareShareBounds(double share, bool valid) =>
+        ImagesOptionsValidator.Validate(new ImagesOptions { SpareShare = share }).Count.ShouldBe(valid ? 0 : 1);
+
+    [Theory]
+    [InlineData(0.3, true)]
+    [InlineData(1.0, true)]
+    [InlineData(0.29, false)]
+    [InlineData(1.01, false)]
+    [InlineData(double.NaN, false)]
+    public void Options_SparseShareBounds(double share, bool valid) =>
+        ImagesOptionsValidator.Validate(new ImagesOptions { SparseShare = share }).Count.ShouldBe(valid ? 0 : 1);
+
+    [Fact]
+    public void Options_NonPositivePlaceholderRates_Fail()
+    {
+        ImagesOptionsValidator.Validate(new ImagesOptions { PlaceholderImageOutPer1MUsd = 0m }).ShouldHaveSingleItem();
+        ImagesOptionsValidator.Validate(new ImagesOptions { PlaceholderTextInPer1MUsd = -1m }).ShouldHaveSingleItem();
+    }
+
+    [Fact]
+    public void ImagePlanJson_QuotesAndSegments_NoKeywordLeak_ForTrickyKeywords()
+    {
+        var plan = RenderImagePlanner.Plan(new RenderImagePlanInput(
+            [
+                new NightTales.Domain.Stories.Keywords.SegmentKeywords("hook", ["\"quoted\" cellar", "unicode \u0111\u00e8n l\u1ed3ng"]),
+                new NightTales.Domain.Stories.Keywords.SegmentKeywords("ending", ["last candle"]),
+            ],
+            1_560,
+            NightTales.Domain.Common.Language.Vi,
+            NightTales.Domain.Episodes.LengthTier.Standard,
+            ImagePlanOptions.Defaults));
+
+        var json = ImagePlanJson.Serialize(plan, "style=x@1;neg=v1");
+
+        foreach (var term in plan.Terms)
+        {
+            json.ShouldNotContain(term.Keyword);
+        }
+
+        json.ShouldNotContain("cellar");
+        json.ShouldNotContain("candle");
+        using var document = JsonDocument.Parse(json);
+        document.RootElement.GetProperty("slot_segments").EnumerateArray().Select(e => e.GetString())
+            .ShouldBe(["hook", "hook", "ending"]);
+        document.RootElement.GetProperty("hints").EnumerateArray().Select(e => e.GetString())
+            .ShouldBe(["scenes_sparse"]);
+    }
+
+    [Fact]
+    public void ImagePlanJson_BlankStyleVersion_Throws() =>
+        Should.Throw<ArgumentException>(() =>
+            ImagePlanJson.Serialize(new RenderImagePlan([], 10, 1, 1, 0, []), " "));
+
     private sealed class FakeCatalog(IReadOnlyDictionary<string, ImagePriceRate> image) : IPriceCatalog
     {
         public Task<ErrorOr<PriceVersion>> GetActiveAsync(DateTimeOffset queuedAt, CancellationToken ct) =>

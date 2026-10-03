@@ -213,6 +213,97 @@ public sealed class RenderImagePlannerTests
             RenderImagePlanner.Plan(Input(Segments(3, 1), 100, Language.En, LengthTier.Short, Defaults with { ClipSeconds = clip })));
     }
 
+    // ---- QA probes (03.2.1-T1) ----
+
+    [Fact]
+    public void Plan_TierCapBelowSparseLine_RaisesTrimmedThenSparse()
+    {
+        // 400 en tokens = 120 s -> needed 12, Short cap 6; post-trim 6 < ceil(12 * 0.7) = 9.
+        var plan = RenderImagePlanner.Plan(Input(Segments(30, 1), 400, Language.En, LengthTier.Short));
+
+        plan.NeededImages.ShouldBe(12);
+        plan.MaxTerms.ShouldBe(6);
+        plan.TrimmedCount.ShouldBe(24);
+        plan.HintCodes.ShouldBe([RenderImagePlanner.ScenesTrimmed, RenderImagePlanner.ScenesSparse],
+            "trim first, then the sparse check runs on the post-trim count");
+    }
+
+    [Fact]
+    public void Plan_ThirdKeywords_AreSparesToo_DroppedFromTheLastSegmentBackwards()
+    {
+        // The spec covers 1-2 keywords per segment; 3+ is unspecified. Pinned behaviour: every non-first keyword is a
+        // spare, dropped from the last segment backwards (deepest index first inside a segment); first keywords stay.
+        // 10 segments x 3 keywords = 30; 700 en tokens = 210 s -> needed 21 -> cap ceil(24.15) = 25.
+        var segments = Enumerable.Range(0, 10)
+            .Select(i => new SegmentKeywords($"p:{i}", [$"a{i}", $"b{i}", $"c{i}"]))
+            .ToList();
+
+        var plan = RenderImagePlanner.Plan(Input(segments, 700, Language.En, LengthTier.Standard));
+
+        plan.MaxTerms.ShouldBe(25);
+        plan.TrimmedCount.ShouldBe(5);
+        plan.Terms.Select(t => t.Keyword).ShouldBe(
+            Enumerable.Range(0, 7).SelectMany(i => new[] { $"a{i}", $"b{i}", $"c{i}" })
+                .Concat(["a7", "b7", "a8", "a9"]).ToList());
+    }
+
+    [Fact]
+    public void Plan_ViScript_UsesTheViRate()
+    {
+        var segments = Segments(60, 1);
+
+        RenderImagePlanner.Plan(Input(segments, 1_560, Language.Vi, LengthTier.Standard)).NeededImages
+            .ShouldBe(36, "1560 / 260 * 60 = 360 s");
+        RenderImagePlanner.Plan(Input(segments, 1_560, Language.En, LengthTier.Standard)).NeededImages
+            .ShouldBe(47, "1560 / 200 * 60 = 468 s");
+    }
+
+    [Fact]
+    public void Plan_NegativeScriptTokens_Throws() =>
+        Should.Throw<ArgumentOutOfRangeException>(() =>
+            RenderImagePlanner.Plan(Input(Segments(3, 1), -1, Language.En, LengthTier.Short)));
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void Plan_NonPositiveRates_Throw(int rate)
+    {
+        Should.Throw<ArgumentOutOfRangeException>(() =>
+            RenderImagePlanner.Plan(Input(Segments(3, 1), 100, Language.Vi, LengthTier.Short,
+                Defaults with { RateVi = rate })));
+        Should.Throw<ArgumentOutOfRangeException>(() =>
+            RenderImagePlanner.Plan(Input(Segments(3, 1), 100, Language.En, LengthTier.Short,
+                Defaults with { RateEn = rate })));
+    }
+
+    [Theory]
+    [InlineData(-0.1, 0.7)]
+    [InlineData(0.15, -0.1)]
+    public void Plan_NegativeShares_Throw(double spare, double sparse) =>
+        Should.Throw<ArgumentOutOfRangeException>(() =>
+            RenderImagePlanner.Plan(Input(Segments(3, 1), 100, Language.En, LengthTier.Short,
+                Defaults with { SpareShare = spare, SparseShare = sparse })));
+
+    [Fact]
+    public void Plan_UnknownTier_Throws() =>
+        Should.Throw<ArgumentOutOfRangeException>(() =>
+            RenderImagePlanner.Plan(Input(Segments(3, 1), 100, Language.En, (LengthTier)99)));
+
+    [Fact]
+    public void Plan_BlankKeywords_AreSkippedNotCounted()
+    {
+        var segments = new List<SegmentKeywords>
+        {
+            new("hook", ["", "   ", "real keyword"]),
+            new("p:0", ["\t", "another"]),
+        };
+
+        var plan = RenderImagePlanner.Plan(Input(segments, 100, Language.En, LengthTier.Short));
+
+        plan.Terms.Select(t => t.Keyword).ShouldBe(["real keyword", "another"],
+            "whitespace-only keywords never reach MPT; they do not count as terms");
+    }
+
     private static List<SegmentKeywords> Segments(int count, int perSegment) =>
         Enumerable.Range(0, count)
             .Select(i => new SegmentKeywords($"p:{i}", Enumerable.Range(0, perSegment).Select(k => $"kw{i}_{k}").ToList()))
