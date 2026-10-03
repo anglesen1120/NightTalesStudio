@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Http.Connections;
 using NightTales.Api;
 using NightTales.Api.DependencyInjection;
 using NightTales.Api.Endpoints;
+using NightTales.Api.Endpoints.Research;
 using NightTales.Api.Health;
 using NightTales.Api.Http;
 using NightTales.Api.Internal.Jobs;
@@ -67,6 +68,9 @@ try
 
     // 02.3.4-T1 (02 README D21): the story quality checker and its required `Story:Quality` thresholds.
     builder.Services.AddStoryQuality();
+    // 02.5.1-T1 (02 README D8/D10/D11): the story-source caps, the domain blocklist and the public-suffix list
+    // behind `AddSourceCommand`; a bad cap or blocklist entry fails the boot.
+    builder.Services.AddSources(builder.Configuration);
 
     // 09.4.1-T1 (09 §4 09.4.1): the series routes need the Application defaults — the 02 story-preset
     // port, whose wave-1 null catalog knows no key — and the post-commit ETag read of 09 README D15.
@@ -277,6 +281,8 @@ try
 
     // 02.2.2-T2 (02 README D9, 02.2.2 plan §5.1): POST /api/v1/episodes/{id}/story/generate.
     app.MapStoryEndpoints();
+    // 02.5.1-T1 (02 README D8, 02.5.1 plan §5.1): the episode's story-source routes.
+    app.MapSourceEndpoints();
 
     // 09.4.2-T1 (09 README D14, 09 §4 09.4.2): the catalog routes — the voices and the style templates the
     // picker and the style grid read.

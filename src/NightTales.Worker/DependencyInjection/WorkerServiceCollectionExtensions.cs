@@ -11,9 +11,11 @@ using NightTales.Application.Abstractions.Outbox;
 using NightTales.Application.DependencyInjection;
 using NightTales.Application.Features.Assets.Jobs;
 using NightTales.Application.Features.Episodes.Outbox;
+using NightTales.Application.Features.Research.Sources.Outbox;
 using NightTales.Application.Telemetry;
 using NightTales.Domain.Episodes.Events;
 using NightTales.Domain.Platform.Events;
+using NightTales.Domain.Research.Events;
 using NightTales.Infrastructure.Compliance.Deletion;
 using NightTales.Infrastructure.DependencyInjection;
 using NightTales.Infrastructure.Email;
@@ -144,6 +146,10 @@ public static class WorkerServiceCollectionExtensions
         // composition root and not in AddPersistence because a Worker-only consumer has no business in
         // the Api host's outbox path (the Api only writes outbox rows, 09 README D12).
         services.AddOutboxHandler<EpisodeCancelled, EpisodeCancelledAssetRetentionHandler>();
+
+        // 02.5.1-T1 (plan §5.5): `source_removed.v1` becomes an `EpisodeUpdated` NOTIFY, ids only. The Api only writes
+        // the outbox row; the Worker delivers it.
+        services.AddOutboxHandler<SourceRemoved, SourceRemovedRealtimeHandler>();
 
         // 11.3.3-T1 (11 README D13/F09–F13): the render-node registry, the pinned-TLS connection factory,
         // the health cache, the drift/up instruments and the config seeder. The optional `RenderNodes`

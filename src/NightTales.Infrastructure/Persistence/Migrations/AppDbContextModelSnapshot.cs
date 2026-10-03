@@ -1020,6 +1020,272 @@ namespace NightTales.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("NightTales.Domain.Research.FetchTask", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<int>("Attempts")
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("attempts");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid>("EpisodeId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("episode_id");
+
+                    b.Property<string>("ErrorCode")
+                        .HasColumnType("text")
+                        .HasColumnName("error_code");
+
+                    b.Property<DateTimeOffset?>("FinishedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("finished_at");
+
+                    b.Property<Guid?>("GenerationRunId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("generation_run_id");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("kind");
+
+                    b.Property<DateTimeOffset?>("LeaseUntil")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("lease_until");
+
+                    b.Property<DateTimeOffset?>("LeasedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("leased_at");
+
+                    b.Property<string>("LeasedBy")
+                        .HasColumnType("text")
+                        .HasColumnName("leased_by");
+
+                    b.Property<DateTimeOffset>("NotBefore")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("not_before")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<string>("RegistrableDomain")
+                        .HasMaxLength(253)
+                        .HasColumnType("character varying(253)")
+                        .HasColumnName("registrable_domain");
+
+                    b.Property<Guid?>("SourceId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("source_id");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("status");
+
+                    b.Property<string>("Url")
+                        .HasColumnType("text")
+                        .HasColumnName("url");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_fetch_tasks");
+
+                    b.HasIndex("SourceId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_fetch_tasks_live_source")
+                        .HasFilter("\"source_id\" IS NOT NULL AND \"status\" IN ('queued', 'leased')");
+
+                    b.HasIndex("UserId")
+                        .HasDatabaseName("ix_fetch_tasks_user_id");
+
+                    b.HasIndex("EpisodeId", "UserId")
+                        .HasDatabaseName("ix_fetch_tasks_episode_id_user_id");
+
+                    b.HasIndex("SourceId", "UserId")
+                        .HasDatabaseName("ix_fetch_tasks_source_id_user_id");
+
+                    b.HasIndex("Status", "LeaseUntil")
+                        .HasDatabaseName("ix_fetch_tasks_leased_until")
+                        .HasFilter("\"status\" = 'leased'");
+
+                    b.HasIndex("Status", "NotBefore")
+                        .HasDatabaseName("ix_fetch_tasks_status_not_before");
+
+                    b.HasIndex("Status", "RegistrableDomain")
+                        .HasDatabaseName("ix_fetch_tasks_leased_domain")
+                        .HasFilter("\"status\" = 'leased'");
+
+                    b.ToTable("fetch_tasks", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_fetch_tasks_attempts", "\"attempts\" >= 0");
+
+                            t.HasCheckConstraint("ck_fetch_tasks_fetch_source", "\"kind\" <> 'fetch_source' OR (\"source_id\" IS NOT NULL AND \"url\" IS NOT NULL AND \"registrable_domain\" IS NOT NULL)");
+
+                            t.HasCheckConstraint("ck_fetch_tasks_kind", "\"kind\" IN ('fetch_source', 'find_sources')");
+
+                            t.HasCheckConstraint("ck_fetch_tasks_leased", "\"status\" <> 'leased' OR (\"lease_until\" IS NOT NULL AND \"leased_by\" IS NOT NULL)");
+
+                            t.HasCheckConstraint("ck_fetch_tasks_status", "\"status\" IN ('cancelled', 'done', 'failed', 'leased', 'queued')");
+                        });
+                });
+
+            modelBuilder.Entity("NightTales.Domain.Research.SourceCreation", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_source_creations");
+
+                    b.HasIndex("UserId", "CreatedAt")
+                        .HasDatabaseName("ix_source_creations_user_created");
+
+                    b.ToTable("source_creations", (string)null);
+                });
+
+            modelBuilder.Entity("NightTales.Domain.Research.StorySource", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("ContentSha256")
+                        .HasColumnType("char(64)")
+                        .HasColumnName("content_sha256");
+
+                    b.Property<string>("ContentType")
+                        .HasColumnType("text")
+                        .HasColumnName("content_type");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid>("EpisodeId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("episode_id");
+
+                    b.Property<string>("ErrorCode")
+                        .HasColumnType("text")
+                        .HasColumnName("error_code");
+
+                    b.Property<string>("ExtractedTextKey")
+                        .HasColumnType("text")
+                        .HasColumnName("extracted_text_key");
+
+                    b.Property<DateTimeOffset?>("FetchedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("fetched_at");
+
+                    b.Property<string>("FinalUrl")
+                        .HasColumnType("text")
+                        .HasColumnName("final_url");
+
+                    b.Property<int?>("HttpStatus")
+                        .HasColumnType("integer")
+                        .HasColumnName("http_status");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("kind");
+
+                    b.Property<string>("NormalizedUrl")
+                        .HasMaxLength(2048)
+                        .HasColumnType("character varying(2048)")
+                        .HasColumnName("normalized_url");
+
+                    b.Property<string>("NoteText")
+                        .HasColumnType("text")
+                        .HasColumnName("note_text");
+
+                    b.Property<string>("RegistrableDomain")
+                        .HasMaxLength(253)
+                        .HasColumnType("character varying(253)")
+                        .HasColumnName("registrable_domain");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("status");
+
+                    b.Property<int?>("TextChars")
+                        .HasColumnType("integer")
+                        .HasColumnName("text_chars");
+
+                    b.Property<string>("Title")
+                        .HasColumnType("text")
+                        .HasColumnName("title");
+
+                    b.Property<string>("Url")
+                        .HasMaxLength(2048)
+                        .HasColumnType("character varying(2048)")
+                        .HasColumnName("url");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_story_sources");
+
+                    b.HasAlternateKey("Id", "UserId")
+                        .HasName("ak_story_sources_id_user_id");
+
+                    b.HasIndex("UserId")
+                        .HasDatabaseName("ix_story_sources_user_id");
+
+                    b.HasIndex("EpisodeId", "CreatedAt")
+                        .HasDatabaseName("ix_story_sources_episode_created");
+
+                    b.HasIndex("EpisodeId", "NormalizedUrl")
+                        .IsUnique()
+                        .HasDatabaseName("ux_story_sources_episode_url")
+                        .HasFilter("\"kind\" = 'url'");
+
+                    b.HasIndex("EpisodeId", "Status")
+                        .HasDatabaseName("ix_story_sources_episode_status");
+
+                    b.HasIndex("EpisodeId", "UserId")
+                        .HasDatabaseName("ix_story_sources_episode_id_user_id");
+
+                    b.ToTable("story_sources", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_story_sources_kind", "\"kind\" IN ('url', 'user_note')");
+
+                            t.HasCheckConstraint("ck_story_sources_note", "\"kind\" <> 'user_note' OR (\"url\" IS NULL AND \"note_text\" IS NOT NULL)");
+
+                            t.HasCheckConstraint("ck_story_sources_note_len", "\"note_text\" IS NULL OR char_length(\"note_text\") <= 3000");
+
+                            t.HasCheckConstraint("ck_story_sources_sha256", "\"content_sha256\" IS NULL OR \"content_sha256\" ~ '^[0-9a-f]{64}$'");
+
+                            t.HasCheckConstraint("ck_story_sources_status", "\"status\" IN ('failed', 'fetched', 'pending', 'rejected')");
+
+                            t.HasCheckConstraint("ck_story_sources_text_chars", "\"text_chars\" IS NULL OR (\"text_chars\" >= 0 AND \"text_chars\" <= 300000)");
+
+                            t.HasCheckConstraint("ck_story_sources_url", "\"kind\" <> 'url' OR (\"url\" IS NOT NULL AND \"normalized_url\" IS NOT NULL AND \"registrable_domain\" IS NOT NULL AND \"note_text\" IS NULL)");
+
+                            t.HasCheckConstraint("ck_story_sources_url_len", "\"normalized_url\" IS NULL OR char_length(\"normalized_url\") <= 2048");
+                        });
+                });
+
             modelBuilder.Entity("NightTales.Domain.Series.Autopilot.AutopilotRun", b =>
                 {
                     b.Property<Guid>("Id")
@@ -2490,6 +2756,59 @@ namespace NightTales.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_episodes_series_series_id_user_id");
+                });
+
+            modelBuilder.Entity("NightTales.Domain.Research.FetchTask", b =>
+                {
+                    b.HasOne("NightTales.Infrastructure.Persistence.AppUser", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_fetch_tasks_asp_net_users_user_id");
+
+                    b.HasOne("NightTales.Domain.Episodes.Episode", null)
+                        .WithMany()
+                        .HasForeignKey("EpisodeId", "UserId")
+                        .HasPrincipalKey("Id", "UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_fetch_tasks_episodes_episode_id_user_id");
+
+                    b.HasOne("NightTales.Domain.Research.StorySource", null)
+                        .WithMany()
+                        .HasForeignKey("SourceId", "UserId")
+                        .HasPrincipalKey("Id", "UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .HasConstraintName("fk_fetch_tasks_story_sources_source_id_user_id");
+                });
+
+            modelBuilder.Entity("NightTales.Domain.Research.SourceCreation", b =>
+                {
+                    b.HasOne("NightTales.Infrastructure.Persistence.AppUser", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_source_creations_asp_net_users_user_id");
+                });
+
+            modelBuilder.Entity("NightTales.Domain.Research.StorySource", b =>
+                {
+                    b.HasOne("NightTales.Infrastructure.Persistence.AppUser", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_story_sources_asp_net_users_user_id");
+
+                    b.HasOne("NightTales.Domain.Episodes.Episode", null)
+                        .WithMany()
+                        .HasForeignKey("EpisodeId", "UserId")
+                        .HasPrincipalKey("Id", "UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_story_sources_episodes_episode_id_user_id");
                 });
 
             modelBuilder.Entity("NightTales.Domain.Series.Autopilot.AutopilotRun", b =>

@@ -148,7 +148,9 @@ public sealed class FetchTask : Entity<Guid>
 | `text_chars` | `int` NULL | **new** (CR-4); ≤ 300,000 |
 | `created_at`, `fetched_at` | `timestamptz` | |
 
-Indexes: `UNIQUE (episode_id, normalized_url) WHERE kind = 'url'` (→ 409 `source_duplicate`); `(user_id, created_at DESC) WHERE kind = 'url'` (the rolling-24 h cap); `(episode_id, status)`; `(episode_id, created_at)`.
+Indexes: `UNIQUE (episode_id, normalized_url) WHERE kind = 'url'` (→ 409 `source_duplicate`); `(episode_id, status)`; `(episode_id, created_at)`.
+
+`source_creations` (02 CR-31, F15): `id uuid` PK, `user_id uuid` NOT NULL (FK → users `RESTRICT`), `created_at timestamptz` NOT NULL; index `(user_id, created_at)` is the rolling-24 h cap query. Append-only, one row per url add and per retry, written in the command's transaction; no URL, note, episode or source reference (D13/D19), so deleting a source or an episode frees no quota. The 13.3.1 deletion engine deletes a user's rows by `user_id`.
 
 `fetch_tasks` (D10 + two additions, see [OPEN] 1 in §10):
 

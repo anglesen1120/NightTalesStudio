@@ -12,8 +12,8 @@ namespace NightTales.Api.IntegrationTests.Migrations;
 /// <summary>
 /// The <c>_09_AssetsRetentionIndex</c> migration (09.7.3-T1, index only): the partial due-assets index reaches a
 /// fresh database, the audit keyset index of 09.3.6-T1 is in place for the sweep's scan, the model has no pending
-/// change, and the <c>Down</c> drops the new index. This class owns the last-migration check
-/// (<c>migrations[^1]</c>); older migration tests find their own migration by name.
+/// change, and the <c>Down</c> drops the new index. Another migration followed it (<c>_02_SourcesAndFetchTasks</c> owns
+/// the last-migration check, <c>migrations[^1]</c>), so this class finds its own migration by name.
 /// </summary>
 [Trait("Category", "Integration")]
 [Trait("Category", "Migration")]
@@ -41,11 +41,11 @@ public sealed class AssetsRetentionIndexMigrationTests(TestDatabase database) : 
     }
 
     [Fact]
-    public async Task Migration_IsTheLastOne_AndModelHasNoPendingChange()
+    public async Task Migration_Exists_AndModelHasNoPendingChange()
     {
         await using var context = Database.CreateAppDbContext();
         var migrations = context.Database.GetMigrations().Order(StringComparer.Ordinal).ToList();
-        migrations[^1].ShouldEndWith("_" + MigrationName, customMessage: "this test owns the last migration");
+        migrations.ShouldContain(name => name.EndsWith("_" + MigrationName, StringComparison.Ordinal));
 
         context.Database.HasPendingModelChanges().ShouldBeFalse();
     }
@@ -55,23 +55,24 @@ public sealed class AssetsRetentionIndexMigrationTests(TestDatabase database) : 
     {
         await using var context = Database.CreateAppDbContext();
         var migrations = context.Database.GetMigrations().Order(StringComparer.Ordinal).ToList();
-        migrations[^1].ShouldEndWith("_" + MigrationName, customMessage: "this test owns the last migration");
-        migrations.Count.ShouldBeGreaterThan(1);
+        var own = migrations.FindIndex(name => name.EndsWith("_" + MigrationName, StringComparison.Ordinal));
+        own.ShouldBeGreaterThan(0, "the migration must exist and have a previous one to revert to");
 
         const string Probe = "SELECT count(*)::text FROM pg_indexes WHERE schemaname = 'public' AND indexname = 'ix_assets_retention_due'";
         try
         {
-            await context.Database.GetService<IMigrator>().MigrateAsync(migrations[^2], Ct);
+            // Reverting to the migration before this one also reverts every later migration.
+            await context.Database.GetService<IMigrator>().MigrateAsync(migrations[own - 1], Ct);
 
             (await Database.QueryStringsAsync(Probe, Ct)).ShouldBe(["0"], ignoreOrder: false);
 
-            await context.Database.GetService<IMigrator>().MigrateAsync(migrations[^1], Ct);
+            await context.Database.GetService<IMigrator>().MigrateAsync(migrations[own], Ct);
 
             (await Database.QueryStringsAsync(Probe, Ct)).ShouldBe(["1"], ignoreOrder: false);
         }
         finally
         {
-            await context.Database.GetService<IMigrator>().MigrateAsync(migrations[^1], Ct);
+            await context.Database.MigrateAsync(CancellationToken.None);
         }
     }
 }
