@@ -211,6 +211,7 @@ public static class PersistenceServiceCollectionExtensions
         services.AddScoped<ISeeder, StyleTemplateSeeder>();
         services.AddScoped<ISeeder, FeatureFlagSeeder>();
         services.AddScoped<ISeeder, MusicTrackSeeder>();
+        services.AddScoped<ISeeder, OwnerSeeder>();
         services.AddScoped<SeedRunner>();
         services.AddHostedService<SeedHostedService>();
 
