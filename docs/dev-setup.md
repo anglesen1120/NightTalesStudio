@@ -92,18 +92,21 @@ fresh database.
 - SDK 10.0.401 (`global.json`, `rollForward: latestPatch`).
 - The two commands below are exactly what `.github/workflows/backend.yml` runs (`build-test`, then
   `integration`). The build-time OpenAPI generator boots the Api, so every build and test command needs
-  the four values a deployment always provides: a parseable connection string, which it never uses to
+  the five values a deployment always provides: a parseable connection string, which it never uses to
   connect; an ES256 signing key for the start-up validation of 09.3.2-T1 (secret
   `nts/<env>/api/JWT_SIGNING_KEY`); a valid `App:PublicOrigin` for the validation of 09.9.4-T1 (BD12) —
   the base `appsettings.json` carries the Development value `http://localhost:4200`, which is rejected
-  outside Development; and the `DP_KEK` PFX of the Data Protection key ring (09.9.4-T1, WF15, secret
-  `nts/<env>/shared/DP_KEK`). Generate throwaway values for all of them — CI does the same with
-  `openssl`, so no private key or certificate is ever committed.
+  outside Development; the `DP_KEK` PFX of the Data Protection key ring (09.9.4-T1, WF15, secret
+  `nts/<env>/shared/DP_KEK`); and a non-default `Email:AddressHashPepper` (09.2.6-T3, BD16) — the base
+  `appsettings.json` carries the Development pepper, which the e-mail validator rejects outside
+  Development. Generate throwaway values for all of them — CI does the same with `openssl` and fixed
+  placeholders, so no private key or certificate is ever committed.
 
 ```bash
 export ConnectionStrings__Postgres='Host=127.0.0.1;Database=nighttales;Username=nighttales;Password=ci-openapi-document-generation-placeholder'
 export Auth__Jwt__SigningKey="$(openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256)"
 export App__PublicOrigin='https://localhost:4200'   # any valid https origin; never a real deployment one
+export Email__AddressHashPepper='ci-openapi-document-generation-placeholder'   # non-secret; same as CI
 # A throwaway DP_KEK: an RSA self-signed PFX (RSA because the ring is encrypted with EncryptedXml,
 # which accepts RSA only) in a temporary directory, generated once per shell.
 export KEK_PASSWORD="$(openssl rand -hex 24)"
@@ -132,9 +135,9 @@ env -u NTS_TEST_PG dotnet test NightTales.ci.slnf -c Release --no-build \
 ```bash
 # Integration job (needs the server from the Database section below). The count grows with every
 # feature (56 on the 2026-09-29 wave-2 tree, 23 when this block was written). Self-contained: the
-# build-time values from the block above plus NTS_TEST_PG are exported here (the same four values the
+# build-time values from the block above plus NTS_TEST_PG are exported here (the same five values the
 # first block exports, so re-run that block or export them again). `ConnectionStrings__Postgres`,
-# `Auth__Jwt__SigningKey`, `App__PublicOrigin` and the `DP_KEK` pair are required by the build-time
+# `Auth__Jwt__SigningKey`, `App__PublicOrigin`, `Email__AddressHashPepper` and the `DP_KEK` pair are required by the build-time
 # OpenAPI generator, which boots the Api and runs its start-up validation — not by the tests, which
 # read NTS_TEST_PG. Without the connection string a build fails inside the generator: MSB3073 from the
 # `dotnet-getdocument` tool that Microsoft.Extensions.ApiDescription.Server.targets invokes, with
@@ -147,6 +150,7 @@ env -u NTS_TEST_PG dotnet test NightTales.ci.slnf -c Release --no-build \
 export ConnectionStrings__Postgres='Host=127.0.0.1;Database=nighttales;Username=nighttales;Password=ci-openapi-document-generation-placeholder'
 export Auth__Jwt__SigningKey="$(openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256)"
 export App__PublicOrigin='https://localhost:4200'
+export Email__AddressHashPepper='ci-openapi-document-generation-placeholder'
 export KEK_PASSWORD="$(openssl rand -hex 24)"
 openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj '/CN=nts-dev-dp-kek' \
   -keyout "${TMPDIR:-/tmp}/dp-kek.key" -out "${TMPDIR:-/tmp}/dp-kek.crt"
@@ -200,6 +204,39 @@ SeaweedFS; check the test totals and skip counts.
 dotnet run --project src/NightTales.Api
 curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:5000/health/live   # 200
 ```
+
+## Host boot contexts
+
+The Api and the Worker are started in more ways than `dotnet run`, and every start runs the same
+start-up code: options validation (`ValidateOnStart`), start-up checks and each `IHostedService.StartAsync`.
+Code that works under `dotnet run` can still fail the build or the gate in another context.
+
+|Context|Environment|Database|Configuration comes from|
+|---|---|---|---|
+|`dotnet run` / `tools/dev/up.sh`|Development|local PostgreSQL 17, migrated|`appsettings*.json` + the env exports above|
+|`ApiFactory` (TestKit)|Development (WebApplicationFactory)|per-class test database|`ApiFactory.ApplyRequiredStartupSettings` (`tests/NightTales.TestKit/Api/ApiFactory.cs`)|
+|`ApiFactory.ProductionHost` (TestKit)|Production composition root|per-class test database|the same `ApplyRequiredStartupSettings` + the connection string|
+|`WorkerHost` (TestKit)|Worker composition root|per-class test database|`WorkerHost.HarnessSettings` + `EmailTestSettings`; the Worker's `appsettings.json` is not used|
+|**Build-time OpenAPI generator** (every `dotnet build` of the Api, `OpenApiGenerateDocuments=true` in `NightTales.Api.csproj`)|Production|**none you can rely on**: CI passes a placeholder connection string; the local gate script points at the shared server, whose database may lack the newest tables|`appsettings.json` (Development defaults, some refused outside Development) overridden by process env: the `env:` block of `.github/workflows/backend.yml`, the local gate script, the build-time blocks in [.NET solution](#net-solution)|
+|Docker image publish (`src/NightTales.Api/Dockerfile`)|n/a|n/a|the generator is off (`-p:OpenApiGenerateDocuments=false`); `tools/dev/up.sh` turns it off the same way|
+
+Rules for any change that runs at start-up:
+
+- It must succeed in every row above. Data seeding at start-up runs only in Development:
+  `SeedHostedService.StartAsync` returns early outside Development, and other environments seed
+  explicitly with `nts-seed`, the host's `--seed` switch (09.2.5 plan §2). Start-up code in the
+  **Api** must not need a migrated database, because the build-time generator boots the Api without
+  one: a hosted service that queries a table fails the build with `42P01` (02.2.4-T1). The Worker is
+  not booted by the generator; its start-up database work (e.g. node registration) runs against a
+  migrated database.
+- A new configuration key that the host refuses to start without outside Development needs a
+  non-secret placeholder in every Production-like row: the `env:` block of
+  `.github/workflows/backend.yml`, the local gate script, both build-time blocks in
+  [.NET solution](#net-solution), `ApiFactory.ApplyRequiredStartupSettings`, and `WorkerHost.HarnessSettings` /
+  `EmailTestSettings` when the Worker binds it. Precedent: `Email__AddressHashPepper` (09.2.6-T3).
+  The generator reports a missing key as `MSB3073` from `dotnet-getdocument` with a long hosting stack
+  (see the build-time block), so check this list before hunting.
+- A new way of starting a host adds a row to this table.
 
 ## Database
 
