@@ -170,6 +170,14 @@ internal sealed class EmailHarness : IAsyncDisposable
         return queued.Value;
     }
 
+    /// <summary>
+    /// Delivers one outbox batch only. The job it enqueues is left to the host's real Hangfire server
+    /// (<c>WithHangfireServer</c>), so a test can observe the delivery and the job as two separate spans.
+    /// </summary>
+    /// <param name="cancellationToken">Cancels the delivery.</param>
+    /// <returns>How many messages the batch claimed.</returns>
+    internal Task<int> RunOutboxAsync(CancellationToken cancellationToken) => _host.RunOutboxOnceAsync(cancellationToken);
+
     /// <summary>Delivers one outbox batch (which enqueues the job) and runs the pending job.</summary>
     /// <param name="cancellationToken">Cancels the delivery.</param>
     /// <returns>How many jobs ran.</returns>

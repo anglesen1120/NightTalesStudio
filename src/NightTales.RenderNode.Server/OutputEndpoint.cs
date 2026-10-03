@@ -64,6 +64,8 @@ internal static class OutputEndpoint
         context.Response.ContentType = file.ContentType;
         context.Response.ContentLength = file.Length;
         context.Response.Headers[RenderNodeHeaders.ContentSha256] = file.Sha256;
+        context.Response.Headers["X-Content-Type-Options"] = "nosniff";
+        context.Response.Headers.CacheControl = "no-store";
 
         await content.CopyToAsync(context.Response.Body, context.RequestAborted).ConfigureAwait(false);
     }

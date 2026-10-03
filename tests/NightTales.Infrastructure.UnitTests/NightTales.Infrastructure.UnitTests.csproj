@@ -22,6 +22,10 @@
     <None Include="..\..\seed\fixtures\voices\*.json"
           Link="fixtures\voices\%(Filename)%(Extension)"
           CopyToOutputDirectory="PreserveNewest" />
+    <!-- 05.3.2-T3 (05 README D8): the music-catalog fixtures, shared with check_catalog.py. -->
+    <None Include="..\..\seed\fixtures\music\*.json"
+          Link="fixtures\music\%(Filename)%(Extension)"
+          CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>

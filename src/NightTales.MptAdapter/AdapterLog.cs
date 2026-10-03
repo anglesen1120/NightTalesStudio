@@ -31,9 +31,6 @@ internal static partial class AdapterLog
         Message = "cancel noted for {TaskId}; MPT has no cancel route, the poller finalises it on the terminal state")]
     internal static partial void CancelNoted(this ILogger logger, Guid taskId);
 
-    [LoggerMessage(EventId = 3004, Level = LogLevel.Debug, Message = "output of {TaskId} ({Kind}) is not published yet")]
-    internal static partial void OutputNotPublished(this ILogger logger, Guid taskId, OutputKind kind);
-
     [LoggerMessage(EventId = 3005, Level = LogLevel.Warning, Message = "MPT did not answer {Method} {Path} within {Seconds}s")]
     internal static partial void MptTimeout(this ILogger logger, string method, string? path, double seconds);
 
@@ -117,4 +114,37 @@ internal static partial class AdapterLog
         Level = LogLevel.Warning,
         Message = "MPT {Method} {Path} answered a body over the {Limit}-byte cap; it was dropped unread")]
     internal static partial void MptResponseTooLarge(this ILogger logger, string method, string? path, int limit);
+
+    [LoggerMessage(
+        EventId = 3027,
+        Level = LogLevel.Information,
+        Message = "check for {TaskId} exited {ExitCode} after {Seconds}s; report {ReportPath}")]
+    internal static partial void CheckFinished(this ILogger logger, Guid taskId, int exitCode, double seconds, string reportPath);
+
+    [LoggerMessage(
+        EventId = 3028,
+        Level = LogLevel.Error,
+        Message = "ops alert: the check environment of {TaskId} is broken (render_check.py exit 2: input unreadable or tool environment); see the node journal")]
+    internal static partial void CheckOpsAlert(this ILogger logger, Guid taskId);
+
+    [LoggerMessage(EventId = 3029, Level = LogLevel.Information, Message = "task {TaskId} succeeded; output published from the check")]
+    internal static partial void TaskSucceeded(this ILogger logger, Guid taskId);
+
+    [LoggerMessage(EventId = 3030, Level = LogLevel.Error, Message = "post-processing {TaskId} failed unexpectedly")]
+    internal static partial void PostProcessFailed(this ILogger logger, Exception exception, Guid taskId);
+
+    [LoggerMessage(EventId = 3031, Level = LogLevel.Information, Message = "check output of {TaskId}: stdout {Stdout}; stderr {Stderr}")]
+    internal static partial void CheckStreams(this ILogger logger, Guid taskId, string stdout, string stderr);
+
+    [LoggerMessage(EventId = 3032, Level = LogLevel.Information, Message = "task {TaskId} failed rows kept; foreign cleanup runs after {Hours} h")]
+    internal static partial void FailedTaskKept(this ILogger logger, Guid taskId, int hours);
+
+    [LoggerMessage(EventId = 3033, Level = LogLevel.Warning, Message = "output {Kind} of {TaskId} is not servable: {Reason}")]
+    internal static partial void OutputUnavailable(this ILogger logger, Guid taskId, OutputKind kind, string reason);
+
+    [LoggerMessage(EventId = 3034, Level = LogLevel.Warning, Message = "failed-task retention cleanup faulted")]
+    internal static partial void RetentionFailed(this ILogger logger, Exception exception);
+
+    [LoggerMessage(EventId = 3035, Level = LogLevel.Warning, Message = "report of {TaskId} is not a valid render-check.v1 (sha256 {Sha256})")]
+    internal static partial void ReportUnparseable(this ILogger logger, Guid taskId, string sha256);
 }

@@ -56,8 +56,8 @@ public sealed class CancelDeleteTests
             AdapterHarness.FixtureRenderJobId,
             backendTaskId: MptTaskId,
             state: RenderStates.Running,
-            stage: RenderStages.Checking,
-            percent: 100,
+            stage: RenderStages.Assembling,
+            percent: 90,
             cancelRequested: true);
         await harness.SeedAsync(record);
         harness.WriteTaskFiles(record.TaskId, MptTaskId);

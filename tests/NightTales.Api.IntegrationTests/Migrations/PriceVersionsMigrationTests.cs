@@ -102,20 +102,22 @@ public sealed class PriceVersionsMigrationTests(TestDatabase database) : Integra
     }
 
     /// <summary>
-    /// Owns the last-migration <c>Down</c> check: reverting to the previous migration drops the table, and
-    /// applying the latest again re-creates it empty.
+    /// The <c>Down</c> check of this migration: reverting to the migration before it drops the table, and applying
+    /// the latest again re-creates it empty. It finds its own migration by name, so it does not depend on being the
+    /// last one (the newest migration's own test owns that check, 05.3.2-T3).
     /// </summary>
     [Fact]
     public async Task DownMigration_DropsTable()
     {
         await using var context = Database.CreateAppDbContext();
         var migrations = context.Database.GetMigrations().Order(StringComparer.Ordinal).ToList();
-        migrations[^1].ShouldEndWith("_02_PriceVersions", customMessage: "this test owns the last migration");
-        migrations.Count.ShouldBeGreaterThan(1);
+        var own = migrations.FindIndex(name => name.EndsWith("_02_PriceVersions", StringComparison.Ordinal));
+        own.ShouldBeGreaterThan(0, "the migration must exist and have a previous one to revert to");
 
         try
         {
-            await context.Database.GetService<IMigrator>().MigrateAsync(migrations[^2], Ct);
+            // Reverting to the migration before this one also reverts every later migration.
+            await context.Database.GetService<IMigrator>().MigrateAsync(migrations[own - 1], Ct);
 
             SqlProbe.ScalarText(Database, "SELECT coalesce(to_regclass('public.price_versions')::text, 'gone')")
                 .ShouldBe("gone");

@@ -38,8 +38,7 @@ public sealed class TaskDirCleaner
         cancellationToken.ThrowIfCancellationRequested();
 
         var task = taskId.ToString("D");
-
-        if (mptTaskId is { Length: > 0 })
+        if (mptTaskId is { Length: > 0 } && SafePath.IsPlainName(mptTaskId))
         {
             RemoveDirectory(Path.Combine(_options.MptTasksDir, mptTaskId));
             RemoveDirectoriesWithPrefix(_options.MptTasksDir, mptTaskId);
@@ -57,8 +56,17 @@ public sealed class TaskDirCleaner
     {
         try
         {
-            if (!Directory.Exists(path))
+            var info = new DirectoryInfo(path);
+            if (!info.Exists)
             {
+                return;
+            }
+
+            if (info.LinkTarget is not null)
+            {
+                // A planted link is removed itself, never recursed through (SEC-4).
+                info.Delete(recursive: false);
+                _log.PathRemoved(path);
                 return;
             }
 

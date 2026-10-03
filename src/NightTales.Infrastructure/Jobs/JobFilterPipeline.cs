@@ -23,7 +23,7 @@ public static class JobFilterPipeline
     /// then the <see cref="JobPolicyAttribute"/> retry provider and Hangfire's own global filters.
     /// </summary>
     public static IJobFilterProvider Compose(params IJobFilterProvider[] extra) =>
-        new JobFilterProviderCollection([.. extra, new JobPolicyFilterProvider(), JobFilterProviders.Providers]);
+        new JobFilterProviderCollection([.. extra, new JobTelemetryFilterProvider(), new JobPolicyFilterProvider(), JobFilterProviders.Providers]);
 
     /// <summary>
     /// Removes Hangfire's global <see cref="AutomaticRetryAttribute"/> (10 attempts) once per process,

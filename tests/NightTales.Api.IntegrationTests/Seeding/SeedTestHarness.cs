@@ -24,6 +24,7 @@ internal static class SeedTestHarness
         CatalogFile = Path.Combine(RepoRoot, "seed", "catalog.dev.json"),
         StyleTemplatesFile = Path.Combine(RepoRoot, "seed", "style-templates.v1.json"),
         VoiceCatalogFile = Path.Combine(RepoRoot, "seed", "voices.v1.json"),
+        MusicTracksFile = Path.Combine(RepoRoot, "seed", "music-tracks.v1.json"),
     };
 
     /// <summary>
@@ -47,6 +48,7 @@ internal static class SeedTestHarness
             new VoiceSeeder(db, bound, environment, NullLogger<VoiceSeeder>.Instance),
             new StyleTemplateSeeder(db, bound, environment, NullLogger<StyleTemplateSeeder>.Instance),
             new FeatureFlagSeeder(db, bound, environment, NullLogger<FeatureFlagSeeder>.Instance),
+            new MusicTrackSeeder(db, bound, environment, NullLogger<MusicTrackSeeder>.Instance),
         ];
 
         return new SeedRunner(seeders, db, bound, NullLogger<SeedRunner>.Instance);

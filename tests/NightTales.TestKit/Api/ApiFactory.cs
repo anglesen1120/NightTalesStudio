@@ -246,6 +246,7 @@ public sealed class ApiFactory(TestDatabase database, FakeClock clock) : WebAppl
         // host supplies the run's own — the same shape a deployment's secret store provides (09 README
         // BD16), which is why even the production-composition-root host gets it.
         builder.UseSetting(EmailTestSettings.AddressHashPepperKey, EmailTestSettings.AddressHashPepper);
+        builder.UseSetting("Logging:UserHashSalt", "harness-user-hash-salt");
 
         if (!withKeyRing)
         {
