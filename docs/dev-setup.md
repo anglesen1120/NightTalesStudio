@@ -207,18 +207,27 @@ curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:5000/health/live   # 2
 
 ## Host boot contexts
 
-The Api and the Worker are started in more ways than `dotnet run`, and every start runs the same
-start-up code: options validation (`ValidateOnStart`), start-up checks and each `IHostedService.StartAsync`.
-Code that works under `dotnet run` can still fail the build or the gate in another context.
+The Api and the Worker have several boot contexts beyond `dotnet run`. A host that is started runs its
+registered `ValidateOnStart` checks and hosted services, but TestKit harnesses and CLI modes do not
+execute every normal entry-point step or background service. Code that works under `dotnet run` can
+still fail the build or the gate in another context.
 
 |Context|Environment|Database|Configuration comes from|
 |---|---|---|---|
 |`dotnet run` / `tools/dev/up.sh`|Development|local PostgreSQL 17, migrated|`appsettings*.json` + the env exports above|
+|`nts-migrate` (EF migration bundle)|No Api/Worker host environment or startup services|target PostgreSQL database; applies migrations|`AppDbContextDesignFactory` reads `ConnectionStrings__Postgres` / `ConnectionStrings:Postgres`; the bundle can override the connection with `--connection`. Factory construction needs no Api/Worker secrets.|
+|`nts-seed` / Api or Worker `--seed`|Environment of the invoking host/process|target PostgreSQL database, already migrated|Same configuration sources and eager composition checks as the invoking Api/Worker. The host is built, then `SeedCommand.Run` executes `SeedRunner` and exits without starting listeners or hosted services; host-start `ValidateOnStart` checks are not automatically run.|
 |`ApiFactory` (TestKit)|Development (WebApplicationFactory)|per-class test database|`ApiFactory.ApplyRequiredStartupSettings` (`tests/NightTales.TestKit/Api/ApiFactory.cs`)|
-|`ApiFactory.ProductionHost` (TestKit)|Production composition root|per-class test database|the same `ApplyRequiredStartupSettings` + the connection string|
-|`WorkerHost` (TestKit)|Worker composition root|per-class test database|`WorkerHost.HarnessSettings` + `EmailTestSettings`; the Worker's `appsettings.json` is not used|
+|`ApiFactory.ProductionHost` (TestKit)|Development by default (WebApplicationFactory); the callback may select Production with `UseEnvironment`|per-class test database|`appsettings*.json` + process configuration, overridden by `ApplyRequiredStartupSettings`, the connection string and the caller's callback; production registrations, without the test authentication scheme or fake clock|
+|`WorkerHost` (TestKit)|Process-selected Generic Host environment; not explicitly forced to Development|per-class test database|`WorkerHost.HarnessSettings` + `EmailTestSettings`; default configuration sources are cleared. Telemetry is opt-in and `WithTelemetry()` supplies `Logging:UserHashSalt`; the harness removes the outbox and node-health loops, defaults to inline jobs and does not run entry-point node registration.|
+|`NightTales.MptAdapter` executable (`AdapterHost.RunAsync`)|Process-selected WebApplication environment; Development affects allowed listen addresses|local SQLite under `Adapter:DataDir`, migrated before listening|Default WebApplication configuration providers plus `Adapter` and `RenderNodeServer` option defaults. `RenderNodeServer:ApiKey` is required, with `ADAPTER_API_KEY` as fallback; the optional next key has the analogous `ADAPTER_API_KEY_NEXT` fallback. Startup checks key separation, `Adapter:ListenAddress`, valid `Adapter:CertPath` / `Adapter:KeyPath` files and writable `Adapter:DataDir`; options are validated on start.|
 |**Build-time OpenAPI generator** (every `dotnet build` of the Api, `OpenApiGenerateDocuments=true` in `NightTales.Api.csproj`)|Production|**none you can rely on**: CI passes a placeholder connection string; the local gate script points at the shared server, whose database may lack the newest tables|`appsettings.json` (Development defaults, some refused outside Development) overridden by process env: the `env:` block of `.github/workflows/backend.yml`, the local gate script, the build-time blocks in [.NET solution](#net-solution)|
 |Docker image publish (`src/NightTales.Api/Dockerfile`)|n/a|n/a|the generator is off (`-p:OpenApiGenerateDocuments=false`); `tools/dev/up.sh` turns it off the same way|
+
+TestKit also applies a process-wide host default before its factories run: `TestHostDefaults` sets
+`DOTNET_hostBuilder__reloadConfigOnChange=false` when that environment variable is absent, disabling
+appsettings reload watchers. An explicit environment value is preserved. This is a test-host default,
+not an application-required configuration key.
 
 Rules for any change that runs at start-up:
 
@@ -237,6 +246,9 @@ Rules for any change that runs at start-up:
   The generator reports a missing key as `MSB3073` from `dotnet-getdocument` with a long hosting stack
   (see the build-time block), so check this list before hunting.
 - A new way of starting a host adds a row to this table.
+- The MptAdapter is a separate executable: its API keys, TLS files, listen-address rules and writable
+  SQLite data directory must remain valid when changing startup configuration; Api/Worker build-time
+  placeholders do not satisfy these checks.
 
 ## Database
 
