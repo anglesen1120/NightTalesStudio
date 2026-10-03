@@ -237,6 +237,137 @@ public sealed class RetentionSweepTests
         world.Logs.Messages.ShouldContain(message => message.StartsWith("retention_sweep_completed", StringComparison.Ordinal));
     }
 
+    [Fact]
+    public async Task Qa_AssetDueExactlyNow_IsKept_AndOneTickEarlierIsDeleted()
+    {
+        var atNow = NewAsset(Now);
+        var before = NewAsset(Now.AddTicks(-1));
+        var world = new World(atNow, before);
+
+        var summary = await world.Job().SweepAsync(Ct);
+
+        summary.Deleted.ShouldBe(1);
+        atNow.DeletedAt.ShouldBeNull("retention_until < now is strict");
+        before.DeletedAt.ShouldBe(Now);
+    }
+
+    [Fact]
+    public async Task Qa_Disabled_SkipsLockQueryAndAudit()
+    {
+        var asset = NewAsset(Now.AddDays(-1));
+        var world = new World(asset);
+        world.Options.Enabled = false;
+
+        var summary = await world.Job().SweepAsync(Ct);
+
+        summary.Deleted.ShouldBe(0);
+        world.Query.Calls.ShouldBeEmpty();
+        world.Audit.Loads.ShouldBeEmpty();
+        world.LockReleases.ShouldBe(0, "the lock is never taken when disabled");
+        asset.DeletedAt.ShouldBeNull();
+        world.Logs.Messages.ShouldContain(message => message.Contains("reason=disabled", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task Qa_ThrownBlobException_IsContained_AndNeverLogsTheKey()
+    {
+        var poison = NewAsset(Now.AddDays(-1));
+        var fine = NewAsset(Now.AddDays(-1));
+        var world = new World(poison, fine)
+        {
+            ThrowKey = poison.StorageKey,
+            Thrower = key => new HttpRequestException("socket reset while deleting " + key),
+        };
+
+        var summary = await world.Job().SweepAsync(Ct);
+
+        summary.Deleted.ShouldBe(1);
+        summary.Failed.ShouldBe(1);
+        poison.DeletedAt.ShouldBeNull("a row whose delete threw is never marked");
+        fine.DeletedAt.ShouldBe(Now);
+        world.Logs.Messages.ShouldAllBe(message => !message.Contains(poison.StorageKey, StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task Qa_Cancellation_Propagates_LeavesRowLive_AndReleasesTheLock()
+    {
+        var asset = NewAsset(Now.AddDays(-1));
+        var world = new World(asset)
+        {
+            ThrowKey = asset.StorageKey,
+            Thrower = _ => new OperationCanceledException(),
+        };
+
+        await Should.ThrowAsync<OperationCanceledException>(() => world.Job().SweepAsync(Ct));
+
+        asset.DeletedAt.ShouldBeNull();
+        world.LockReleases.ShouldBe(1, "the handle is disposed on the exceptional path");
+    }
+
+    [Fact]
+    public async Task Qa_LockIsReleasedAfterNormalRun_AndAfterAuditFailure()
+    {
+        var normal = new World(NewAsset(Now.AddDays(-1)));
+        await normal.Job().SweepAsync(Ct);
+        normal.LockReleases.ShouldBe(1);
+
+        var failing = new World();
+        failing.Audit.Throw = true;
+        await Should.ThrowAsync<InvalidOperationException>(() => failing.Job().SweepAsync(Ct));
+        failing.LockReleases.ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task Qa_AuditRowAtExactlyTheWindow_IsKept_AndOneTickOlderIsDeleted()
+    {
+        var exactly = Candidate(Category.Episodes, ActorType.User, Visibility.User, Now.AddDays(-365));
+        var older = Candidate(Category.Episodes, ActorType.User, Visibility.User, Now.AddDays(-365).AddTicks(-1));
+        var world = new World();
+        world.Audit.Rows.AddRange([exactly, older]);
+
+        var summary = await world.Job().SweepAsync(Ct);
+
+        summary.AuditDeleted.ShouldBe(1);
+        world.Audit.Rows.ShouldHaveSingleItem().Id.ShouldBe(exactly.Id);
+    }
+
+    [Fact]
+    public async Task Qa_AuditPhase_StopsAtMaxBatches_AndLeavesTheBacklog()
+    {
+        var old = Now.AddDays(-400);
+        var world = new World { Options = { BatchSize = 2, MaxBatches = 2 } };
+        world.Audit.Rows.AddRange(Enumerable.Range(0, 10)
+            .Select(index => Candidate(Category.Episodes, ActorType.User, Visibility.User, old.AddSeconds(index))));
+        using var counters = new CounterListener();
+
+        var summary = await world.Job().SweepAsync(Ct);
+
+        summary.Capped.ShouldBeTrue();
+        summary.AuditDeleted.ShouldBe(4);
+        world.Audit.Rows.Count.ShouldBe(6, "the backlog stays for tomorrow");
+        world.Audit.Loads.Count.ShouldBe(2);
+        counters.Total(RetentionSweepMetrics.BatchesCappedCounterName).ShouldBe(1);
+        counters.Total(RetentionSweepMetrics.AuditRowsDeletedCounterName).ShouldBe(4);
+    }
+
+    [Fact]
+    public async Task Qa_RetainedRows_AreSkippedByTheCursor_NotReadTwice()
+    {
+        var old = Now.AddDays(-400);
+        var world = new World { Options = { BatchSize = 2 } };
+        // Four 400-day-old account_security rows (kept 730 d) in front of one expired default row.
+        world.Audit.Rows.AddRange(Enumerable.Range(0, 4)
+            .Select(index => Candidate(Category.AccountSecurity, ActorType.User, Visibility.User, old.AddSeconds(index))));
+        world.Audit.Rows.Add(Candidate(Category.Episodes, ActorType.User, Visibility.User, old.AddSeconds(10)));
+
+        var summary = await world.Job().SweepAsync(Ct);
+
+        summary.AuditDeleted.ShouldBe(1);
+        world.Audit.Rows.Count.ShouldBe(4);
+        world.Audit.Loads.Count.ShouldBe(3, "2 + 2 + 1 rows, each read once");
+        world.Audit.Loads.Select(load => load.AfterId).Where(id => id is not null).Distinct().Count().ShouldBe(2);
+    }
+
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
     private static AuditRetentionCandidate Candidate(Category category, ActorType actor, Visibility visibility, DateTimeOffset createdAt) =>
@@ -298,6 +429,12 @@ public sealed class RetentionSweepTests
 
         public bool LockHeld { get; set; }
 
+        public Func<string, Exception>? Thrower { get; set; }
+
+        public string? ThrowKey { get; set; }
+
+        public int LockReleases { get; set; }
+
         public string? FailKey { get; set; }
 
         public RetentionSweepJob Job() => new(
@@ -305,22 +442,32 @@ public sealed class RetentionSweepTests
             Query,
             _provider.GetRequiredService<IServiceScopeFactory>(),
             Audit,
-            FailKey is null ? Blobs : new SelectiveFailureStore(Blobs, FailKey),
+            Store(),
             Microsoft.Extensions.Options.Options.Create(Storage),
             Microsoft.Extensions.Options.Options.Create(Options),
             new FakeClock(Now),
             new RetentionSweepMetrics(),
             Logs);
+
+        private IBlobStore Store() =>
+            ThrowKey is { } throwKey && Thrower is { } thrower
+                ? new ThrowOnDeleteStore(Blobs, throwKey, thrower)
+                : FailKey is null ? Blobs : new SelectiveFailureStore(Blobs, FailKey);
     }
 
     private sealed class LockFake(World world) : IRetentionSweepLock
     {
         public Task<IAsyncDisposable?> TryAcquireAsync(CancellationToken ct) =>
-            Task.FromResult<IAsyncDisposable?>(world.LockHeld ? null : new Handle());
+            Task.FromResult<IAsyncDisposable?>(world.LockHeld ? null : new Handle(world));
 
-        private sealed class Handle : IAsyncDisposable
+        private sealed class Handle(World world) : IAsyncDisposable
         {
-            public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+            public ValueTask DisposeAsync()
+            {
+                world.LockReleases++;
+
+                return ValueTask.CompletedTask;
+            }
         }
     }
 
@@ -442,6 +589,33 @@ public sealed class RetentionSweepTests
         public Task<ErrorOr<Success>> DeleteAsync(string bucket, string key, CancellationToken cancellationToken) =>
             key == failKey
                 ? Task.FromResult<ErrorOr<Success>>(Error.Failure("service_unavailable", "boom"))
+                : inner.DeleteAsync(bucket, key, cancellationToken);
+
+        public Task<ErrorOr<BlobInfo>> PutAsync(string bucket, string key, Stream content, string contentType, CancellationToken cancellationToken) =>
+            inner.PutAsync(bucket, key, content, contentType, cancellationToken);
+
+        public Task<ErrorOr<BlobObject>> OpenReadAsync(string bucket, string key, CancellationToken cancellationToken) =>
+            inner.OpenReadAsync(bucket, key, cancellationToken);
+
+        public Task<ErrorOr<BlobObject>> OpenReadAsync(string bucket, string key, long fromByte, CancellationToken cancellationToken) =>
+            inner.OpenReadAsync(bucket, key, fromByte, cancellationToken);
+
+        public Task<ErrorOr<bool>> ExistsAsync(string bucket, string key, CancellationToken cancellationToken) =>
+            inner.ExistsAsync(bucket, key, cancellationToken);
+
+        public IAsyncEnumerable<string> ListKeysAsync(string bucket, string prefix, CancellationToken cancellationToken) =>
+            inner.ListKeysAsync(bucket, prefix, cancellationToken);
+
+        public ErrorOr<Uri> CreateReadUrl(string bucket, string key, TimeSpan ttl, string? downloadFileName) =>
+            inner.CreateReadUrl(bucket, key, ttl, downloadFileName);
+    }
+
+    /// <summary>Delegates to the in-memory store but throws (rather than returns an error) on one key's delete.</summary>
+    private sealed class ThrowOnDeleteStore(InMemoryBlobStore inner, string throwKey, Func<string, Exception> thrower) : IBlobStore
+    {
+        public Task<ErrorOr<Success>> DeleteAsync(string bucket, string key, CancellationToken cancellationToken) =>
+            key == throwKey
+                ? throw thrower(key)
                 : inner.DeleteAsync(bucket, key, cancellationToken);
 
         public Task<ErrorOr<BlobInfo>> PutAsync(string bucket, string key, Stream content, string contentType, CancellationToken cancellationToken) =>
