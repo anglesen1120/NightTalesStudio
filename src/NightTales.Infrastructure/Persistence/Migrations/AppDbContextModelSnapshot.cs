@@ -255,6 +255,10 @@ namespace NightTales.Infrastructure.Persistence.Migrations
                     b.HasIndex("EpisodeId")
                         .HasDatabaseName("ix_assets_episode_id");
 
+                    b.HasIndex("RetentionUntil")
+                        .HasDatabaseName("ix_assets_retention_due")
+                        .HasFilter("deleted_at IS NULL AND retention_until IS NOT NULL");
+
                     b.HasIndex("StorageKey")
                         .IsUnique()
                         .HasDatabaseName("ix_assets_storage_key");

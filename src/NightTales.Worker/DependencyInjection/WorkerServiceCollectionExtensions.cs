@@ -8,6 +8,7 @@ using Microsoft.Extensions.Options;
 using NightTales.Application.Abstractions;
 using NightTales.Application.Abstractions.Jobs;
 using NightTales.Application.Abstractions.Outbox;
+using NightTales.Application.Features.Assets.Jobs;
 using NightTales.Application.Features.Episodes.Outbox;
 using NightTales.Application.Telemetry;
 using NightTales.Domain.Episodes.Events;
@@ -180,6 +181,19 @@ public static class WorkerServiceCollectionExtensions
         // (09.7.3-T1), the render ingest (09.6.3-T2) and 02's fetcher path all call it here; the
         // readiness check below reads only the cache the prober fills (BD16).
         services.AddStorage(configuration);
+
+        // 09.7.3-T1: the retention sweep's bounds and instruments. Every key has a default, so none is a
+        // required start-up key (no placeholder in the boot-context blocks); the ports are persistence's.
+        services.AddOptions<RetentionSweepOptions>()
+            .BindConfiguration(RetentionSweepOptions.SectionName)
+            .Validate(
+                options => options.BatchSize > 0,
+                $"'{RetentionSweepOptions.SectionName}:{nameof(RetentionSweepOptions.BatchSize)}' must be greater than zero.")
+            .Validate(
+                options => options.MaxBatches > 0,
+                $"'{RetentionSweepOptions.SectionName}:{nameof(RetentionSweepOptions.MaxBatches)}' must be greater than zero.")
+            .ValidateOnStart();
+        services.AddSingleton<RetentionSweepMetrics>();
 
         services.AddHealthChecks()
             .AddCheck<DatabaseHealthCheck>("database")

@@ -38,4 +38,13 @@ public sealed class Asset : Entity, IUserOwned, IAuditable
     public DateTimeOffset CreatedAt { get; private set; }
 
     public DateTimeOffset UpdatedAt { get; private set; }
+
+    /// <summary>
+    /// Marks the row deleted once its object is gone (09.7.3-T1): called after the blob delete succeeded
+    /// or the key was already missing, never before. A row that is already marked keeps its first instant,
+    /// so a re-run is a no-op. <see cref="UpdatedAt"/> is stamped by the auditable interceptor in the same
+    /// <c>SaveChanges</c>.
+    /// </summary>
+    /// <param name="now">The sweep's clock reading.</param>
+    public void MarkDeleted(DateTimeOffset now) => DeletedAt ??= now;
 }
