@@ -61,6 +61,9 @@ try
     // 02.4.2-T1 (02 README D2): the FR-02-7 rolling-24 h limit that `GenerateStoryCommand` checks at step 5.
     builder.Services.AddGenerationLimit();
 
+    // 02.3.4-T1 (02 README D21): the story quality checker and its required `Story:Quality` thresholds.
+    builder.Services.AddStoryQuality();
+
     // 09.4.1-T1 (09 §4 09.4.1): the series routes need the Application defaults — the 02 story-preset
     // port, whose wave-1 null catalog knows no key — and the post-commit ETag read of 09 README D15.
     builder.Services.AddNightTalesApplication();
