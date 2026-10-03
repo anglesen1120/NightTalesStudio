@@ -1,4 +1,5 @@
 using ErrorOr;
+using Microsoft.EntityFrameworkCore;
 using NightTales.Application.Common.Errors;
 using NightTales.Application.Features.Research.Sources;
 using NightTales.Application.Features.Research.Sources.Commands.AddSource;
@@ -66,6 +67,18 @@ public sealed class AddSourceHandlerTests(TestDatabase database) : IntegrationTe
         result.Value.Kind.ShouldBe(StorySourceKind.Url);
         (await CountSourcesAsync(Database, scope, Ct)).ShouldBe(1);
         (await CountTasksAsync(Database, scope, Ct)).ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task Add_Url_AppendsOneCreationRecord_AndANoteAppendsNone()
+    {
+        var scope = await NewEpisodeAsync(Database, ct: Ct);
+
+        (await AddAsync(scope, "https://vnexpress.net/a")).IsError.ShouldBeFalse();
+        (await AddAsync(scope, null, "my own note")).IsError.ShouldBeFalse();
+
+        await using var db = Database.CreateAppDbContext(new TestCurrentUser { Id = scope.UserId });
+        (await db.SourceCreations.CountAsync(creation => creation.UserId == scope.UserId, Ct)).ShouldBe(1);
     }
 
     [Fact]

@@ -253,6 +253,14 @@ internal static class SeedPrevious
                     '01920000-0000-7000-8000-000000000004', '01920000-0000-7000-8000-000000000012', 'fetch_source',
                     'https://example.com/seed', 'example.com', 'queued', 0, now(), now())
             """),
+        (
+            // 02.5.1-T1 (CR-31): the append-only url-source creation ledger the 24 h cap counts; it has no episode or
+            // source reference, so it needs only the seed user.
+            "source_creations",
+            """
+            INSERT INTO source_creations (id, user_id, created_at)
+            VALUES ('01920000-0000-7000-8000-000000000014', '01920000-0000-7000-8000-000000000001', now())
+            """),
     ];
 
     /// <summary>The tables the dataset covers, in insert order — the contract a feature migration extends.</summary>

@@ -14,7 +14,7 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace NightTales.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    [Migration("20261003122358_02_SourcesAndFetchTasks")]
+    [Migration("20261003140736_02_SourcesAndFetchTasks")]
     partial class _02_SourcesAndFetchTasks
     {
         /// <inheritdoc />
@@ -1140,6 +1140,29 @@ namespace NightTales.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("NightTales.Domain.Research.SourceCreation", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_source_creations");
+
+                    b.HasIndex("UserId", "CreatedAt")
+                        .HasDatabaseName("ix_source_creations_user_created");
+
+                    b.ToTable("source_creations", (string)null);
+                });
+
             modelBuilder.Entity("NightTales.Domain.Research.StorySource", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1229,6 +1252,9 @@ namespace NightTales.Infrastructure.Persistence.Migrations
                     b.HasAlternateKey("Id", "UserId")
                         .HasName("ak_story_sources_id_user_id");
 
+                    b.HasIndex("UserId")
+                        .HasDatabaseName("ix_story_sources_user_id");
+
                     b.HasIndex("EpisodeId", "CreatedAt")
                         .HasDatabaseName("ix_story_sources_episode_created");
 
@@ -1242,11 +1268,6 @@ namespace NightTales.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("EpisodeId", "UserId")
                         .HasDatabaseName("ix_story_sources_episode_id_user_id");
-
-                    b.HasIndex("UserId", "CreatedAt")
-                        .IsDescending(false, true)
-                        .HasDatabaseName("ix_story_sources_user_url_created")
-                        .HasFilter("\"kind\" = 'url'");
 
                     b.ToTable("story_sources", null, t =>
                         {
@@ -2763,6 +2784,16 @@ namespace NightTales.Infrastructure.Persistence.Migrations
                         .HasPrincipalKey("Id", "UserId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .HasConstraintName("fk_fetch_tasks_story_sources_source_id_user_id");
+                });
+
+            modelBuilder.Entity("NightTales.Domain.Research.SourceCreation", b =>
+                {
+                    b.HasOne("NightTales.Infrastructure.Persistence.AppUser", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_source_creations_asp_net_users_user_id");
                 });
 
             modelBuilder.Entity("NightTales.Domain.Research.StorySource", b =>

@@ -70,7 +70,9 @@ public sealed class AuditBehavior<TMessage, TResponse>(
         if (!response.IsError
             && message is IAuditData projection
             && metadata.TryGet<TMessage>(out var attribute)
-            && projection.ToAuditData() is { } data)
+            && (projection is IAuditDataFromResponse<TResponse> fromResponse
+                ? fromResponse.ToAuditData(response)
+                : projection.ToAuditData()) is { } data)
         {
             await writer.WriteAsync(Build(attribute, data), cancellationToken).ConfigureAwait(false);
         }

@@ -70,6 +70,19 @@ public sealed class RetryRemoveSourceHandlerTests(TestDatabase database) : Integ
     }
 
     [Fact]
+    public async Task Retry_FailedSource_AppendsACreationRecord_AndRemoveFreesNoQuota()
+    {
+        var scope = await NewEpisodeAsync(Database, ct: Ct);
+        var source = await SeedUrlAsync(Database, scope.UserId, scope.EpisodeId, "https://example.com/a", Now.AddHours(-1), failed: true, ct: Ct);
+
+        (await RetryAsync(scope, source.Id)).IsError.ShouldBeFalse();
+        (await RemoveAsync(scope, source.Id)).IsError.ShouldBeFalse();
+
+        await using var db = Database.CreateAppDbContext(new TestCurrentUser { Id = scope.UserId });
+        (await db.SourceCreations.CountAsync(creation => creation.UserId == scope.UserId, Ct)).ShouldBe(2, "the seed and the retry; the delete removes none");
+    }
+
+    [Fact]
     public async Task Retry_FailedSource_Reapplies24hCap()
     {
         var scope = await NewEpisodeAsync(Database, ct: Ct);

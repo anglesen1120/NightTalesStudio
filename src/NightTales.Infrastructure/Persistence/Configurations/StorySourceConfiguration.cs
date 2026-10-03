@@ -13,8 +13,8 @@ namespace NightTales.Infrastructure.Persistence.Configurations;
 /// <remarks>
 /// The foreign key to the episode is the composite same-owner key <c>(episode_id, user_id)</c> (09 W3 CR-46, see
 /// <see cref="SeriesConfiguration"/>) and cascades, so a deleted episode takes its sources with it (D19), and the
-/// alternate key <c>(id, user_id)</c> is what <c>fetch_tasks</c> targets. The two partial indexes carry the
-/// duplicate rule (<c>409 source_duplicate</c>) and the rolling 24 h cap query. Every property is
+/// alternate key <c>(id, user_id)</c> is what <c>fetch_tasks</c> targets. The partial unique index carries the
+/// duplicate rule (<c>409 source_duplicate</c>); the rolling 24 h cap counts <c>source_creations</c>, not these rows. Every property is
 /// <c>ValueGeneratedNever</c>: the domain supplies each value.
 /// </remarks>
 internal sealed class StorySourceConfiguration : IEntityTypeConfiguration<StorySource>
@@ -51,12 +51,6 @@ internal sealed class StorySourceConfiguration : IEntityTypeConfiguration<StoryS
         builder.HasIndex(source => new { source.EpisodeId, source.NormalizedUrl })
             .HasDatabaseName("ux_story_sources_episode_url")
             .IsUnique()
-            .HasFilter("\"kind\" = 'url'");
-
-        // The rolling-24 h cap: the user's url sources, newest first.
-        builder.HasIndex(source => new { source.UserId, source.CreatedAt })
-            .HasDatabaseName("ix_story_sources_user_url_created")
-            .IsDescending(false, true)
             .HasFilter("\"kind\" = 'url'");
 
         builder.HasIndex(source => new { source.EpisodeId, source.Status }).HasDatabaseName("ix_story_sources_episode_status");

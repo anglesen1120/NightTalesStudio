@@ -36,13 +36,14 @@ public sealed class SourcesAndFetchTasksMigrationTests(TestDatabase database) : 
         context.Database.HasPendingModelChanges().ShouldBeFalse();
         context.Model.FindEntityType(typeof(StorySource))!.GetTableName().ShouldBe("story_sources");
         context.Model.FindEntityType(typeof(FetchTask))!.GetTableName().ShouldBe("fetch_tasks");
+        context.Model.FindEntityType(typeof(SourceCreation))!.GetTableName().ShouldBe("source_creations");
     }
 
     [Fact]
     public async Task Applies_WithTheFrozenIndexSet()
     {
         var indexes = await Database.QueryStringsAsync(
-            "SELECT indexname FROM pg_indexes WHERE schemaname = 'public' AND tablename IN ('story_sources', 'fetch_tasks') ORDER BY indexname",
+            "SELECT indexname FROM pg_indexes WHERE schemaname = 'public' AND tablename IN ('story_sources', 'fetch_tasks', 'source_creations') ORDER BY indexname",
             Ct);
 
         indexes.ShouldBe(
@@ -56,8 +57,10 @@ public sealed class SourcesAndFetchTasksMigrationTests(TestDatabase database) : 
                 "ix_story_sources_episode_created",
                 "ix_story_sources_episode_id_user_id",
                 "ix_story_sources_episode_status",
-                "ix_story_sources_user_url_created",
+                "ix_story_sources_user_id",
+                "ix_source_creations_user_created",
                 "pk_fetch_tasks",
+                "pk_source_creations",
                 "pk_story_sources",
                 "ak_story_sources_id_user_id",
                 "ux_fetch_tasks_live_source",
@@ -142,21 +145,21 @@ public sealed class SourcesAndFetchTasksMigrationTests(TestDatabase database) : 
     }
 
     [Fact]
-    public async Task DownMigration_DropsBothTables_AndUpRecreatesThem()
+    public async Task DownMigration_DropsAllThreeTables_AndUpRecreatesThem()
     {
         await using var context = Database.CreateAppDbContext();
         var migrations = context.Database.GetMigrations().Order(StringComparer.Ordinal).ToList();
         migrations[^1].ShouldEndWith("_" + MigrationName, customMessage: "this test owns the last migration");
         migrations.Count.ShouldBeGreaterThan(1);
 
-        const string Probe = "SELECT coalesce(to_regclass('public.story_sources')::text, '') || '|' || coalesce(to_regclass('public.fetch_tasks')::text, '')";
+        const string Probe = "SELECT coalesce(to_regclass('public.story_sources')::text, '') || '|' || coalesce(to_regclass('public.fetch_tasks')::text, '') || '|' || coalesce(to_regclass('public.source_creations')::text, '')";
         try
         {
             await context.Database.GetService<IMigrator>().MigrateAsync(migrations[^2], Ct);
-            (await Database.QueryStringsAsync(Probe, Ct)).ShouldBe(["|"]);
+            (await Database.QueryStringsAsync(Probe, Ct)).ShouldBe(["||"]);
 
             await context.Database.GetService<IMigrator>().MigrateAsync(migrations[^1], Ct);
-            (await Database.QueryStringsAsync(Probe, Ct)).ShouldBe(["story_sources|fetch_tasks"]);
+            (await Database.QueryStringsAsync(Probe, Ct)).ShouldBe(["story_sources|fetch_tasks|source_creations"]);
         }
         finally
         {

@@ -43,9 +43,11 @@ internal static class SourceGate
                 "Sources can only be changed while the episode is a draft or in story review.");
 
     /// <summary>
-    /// 429 <c>source_fetch_limit_reached</c> when the user already created
-    /// <see cref="SourcesOptions.MaxUrlSourcesPerUserPerDay"/> url sources in the rolling window. The error carries
-    /// <c>retryAfterSeconds</c>: the seconds until the oldest counted row leaves the window, at least 1.
+    /// 429 <c>source_fetch_limit_reached</c> when the user already <em>created</em>
+    /// <see cref="SourcesOptions.MaxUrlSourcesPerUserPerDay"/> url sources in the rolling window (02 F15/D8, CR-31): it
+    /// counts the append-only <c>source_creations</c> ledger, never the live <c>story_sources</c> rows, so a delete
+    /// frees no quota. The error carries <c>retryAfterSeconds</c>: the seconds until the oldest creation in the window
+    /// leaves it, at least 1.
     /// </summary>
     internal static async ValueTask<ErrorOr<Success>> CheckUrlCapAsync(
         IAppDbContext db,
@@ -56,13 +58,11 @@ internal static class SourceGate
     {
         var windowStart = now - SourcesOptions.UrlWindow;
 
-        var aggregate = await db.StorySources
+        var aggregate = await db.SourceCreations
             .AsNoTracking()
-            .Where(source => source.UserId == userId
-                && source.Kind == StorySourceKind.Url
-                && source.CreatedAt > windowStart)
+            .Where(creation => creation.UserId == userId && creation.CreatedAt > windowStart)
             .GroupBy(_ => 1)
-            .Select(group => new { Counted = group.Count(), Oldest = group.Min(source => source.CreatedAt) })
+            .Select(group => new { Counted = group.Count(), Oldest = group.Min(creation => creation.CreatedAt) })
             .SingleOrDefaultAsync(cancellationToken)
             .ConfigureAwait(false);
 
@@ -83,4 +83,11 @@ internal static class SourceGate
                 [ErrorMetadata.Limit] = options.MaxUrlSourcesPerUserPerDay,
             });
     }
+
+    /// <summary>
+    /// Appends the creation record the cap counts, in the command's transaction (an add of a url source, or a retry
+    /// that re-applies the cap). It holds no URL, note or episode (D13/D19).
+    /// </summary>
+    internal static void RecordCreation(IAppDbContext db, Guid userId, DateTimeOffset now) =>
+        db.SourceCreations.Add(SourceCreation.Record(Guid.CreateVersion7(), userId, now));
 }

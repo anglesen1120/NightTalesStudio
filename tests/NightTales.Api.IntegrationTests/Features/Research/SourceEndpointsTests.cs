@@ -201,6 +201,9 @@ public sealed class SourceEndpointsTests(TestDatabase database) : IntegrationTes
                     "insert into story_sources (id, user_id, episode_id, kind, url, normalized_url, registrable_domain, status, created_at) "
                     + $"values (gen_random_uuid(), '{userId}', '{other}', 'url', 'https://s.example/{batch}-{index}', "
                     + $"'https://s.example/{batch}-{index}', 's.example', 'fetched', '{Start.AddHours(-3):O}')");
+                SqlProbe.Execute(
+                    Database,
+                    $"insert into source_creations (id, user_id, created_at) values (gen_random_uuid(), '{userId}', '{Start.AddHours(-3):O}')");
             }
         }
 

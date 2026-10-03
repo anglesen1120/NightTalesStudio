@@ -52,6 +52,9 @@ public interface IAppDbContext
     /// <summary>The fetcher's work queue (02.5.1-T1, <c>fetch_tasks</c>); <c>IUserOwned</c>, so the D10 tenant filter applies.</summary>
     DbSet<FetchTask> FetchTasks { get; }
 
+    /// <summary>The append-only url-source creation ledger the 24 h cap counts (02.5.1-T1, <c>source_creations</c>, CR-31); <c>IUserOwned</c>, so the D10 tenant filter applies.</summary>
+    DbSet<SourceCreation> SourceCreations { get; }
+
     /// <summary>The legal deletion duties of 13.3.1-T1 (<c>data_deletion_requests</c>); <c>IUserOwned</c>, so the D10 tenant filter applies.</summary>
     DbSet<DeletionRequest> DeletionRequests { get; }
 

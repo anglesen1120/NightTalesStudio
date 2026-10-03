@@ -124,6 +124,8 @@ public sealed class AddSourceHandler(
                 sourceUrl.Value,
                 sourceUrl.RegistrableDomain,
                 now));
+
+            SourceGate.RecordCreation(db, userId, now);
         }
 
         return SourceDto.From(source);

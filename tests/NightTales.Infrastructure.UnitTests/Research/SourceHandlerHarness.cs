@@ -65,6 +65,7 @@ internal static class SourceHandlerHarness
         await using var db = database.CreateAppDbContext(new TestCurrentUser { Id = userId });
         db.StorySources.Add(source);
         db.FetchTasks.Add(task);
+        db.SourceCreations.Add(SourceCreation.Record(Guid.CreateVersion7(), userId, createdAt));
         await db.SaveChangesAsync(ct);
 
         return source;

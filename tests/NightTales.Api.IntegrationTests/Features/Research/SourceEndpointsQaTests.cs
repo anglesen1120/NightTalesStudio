@@ -69,6 +69,11 @@ public sealed class SourceEndpointsQaTests(TestDatabase database) : IntegrationT
                 Database,
                 "insert into story_sources (id, user_id, episode_id, kind, url, normalized_url, registrable_domain, status, created_at) "
                 + $"values (gen_random_uuid(), '{userId}', '{episodeId}', 'url', '{url}', '{url}', '{tag}.example', '{status}', '{createdAt:O}')");
+
+            // The cap counts creations (CR-31), so a seeded url source is also one ledger row.
+            SqlProbe.Execute(
+                Database,
+                $"insert into source_creations (id, user_id, created_at) values (gen_random_uuid(), '{userId}', '{createdAt:O}')");
         }
     }
 
@@ -243,6 +248,9 @@ public sealed class SourceEndpointsQaTests(TestDatabase database) : IntegrationT
             Database,
             "insert into story_sources (id, user_id, episode_id, kind, url, normalized_url, registrable_domain, status, error_code, created_at) "
             + $"values ('{failed}', '{userId}', '{episodeId}', 'url', 'https://f.example/a', 'https://f.example/a', 'f.example', 'failed', 'source_unreachable', '{Start.AddHours(-1):O}')");
+        SqlProbe.Execute(
+            Database,
+            $"insert into source_creations (id, user_id, created_at) values (gen_random_uuid(), '{userId}', '{Start.AddHours(-1):O}')");
         using var factory = NewFactory();
         using var client = factory.ClientFor(userId);
 
@@ -256,11 +264,10 @@ public sealed class SourceEndpointsQaTests(TestDatabase database) : IntegrationT
     }
 
     /// <summary>
-    /// QA-1 (open defect, F15 "cap counted on creations in rolling 24 h"): the cap counts rows that still exist, so
-    /// deleting sources frees quota and a user can create unbounded url sources (each one a fetch) per day by
-    /// add-delete cycles. Skipped so the gate stays green; remove the Skip when the cap counts creations.
+    /// QA-1 (F15 "cap counted on creations in rolling 24 h", CR-31): deleting sources must not free quota, otherwise a
+    /// user could create unbounded url sources (each one a fetch) per day by add-delete cycles.
     /// </summary>
-    [Fact(Skip = "QA-1: the 24 h cap counts existing rows, not creations (F15); delete frees quota")]
+    [Fact]
     public async Task DailyCap_DeletingSourcesDoesNotFreeQuota()
     {
         var (userId, seriesId, episodeId) = await SeedAsync();
@@ -825,10 +832,10 @@ public sealed class SourceEndpointsQaTests(TestDatabase database) : IntegrationT
     }
 
     /// <summary>
-    /// QA-2 (open defect, task Design step 8): the audit row of an add should carry <c>{ sourceId, kind, registrableDomain, status }</c>;
-    /// the implemented row has the episode as entity and only <c>kind</c>.
+    /// QA-2 (task Design step 8): the audit row of an add carries <c>{ sourceId, kind, registrableDomain, status }</c> and
+    /// no URL.
     /// </summary>
-    [Fact(Skip = "QA-2: episode.source_added audit data lacks sourceId, registrableDomain and status (task Design step 8)")]
+    [Fact]
     public async Task Audit_Add_CarriesSourceIdKindRegistrableDomainAndStatus()
     {
         var (userId, _, episodeId) = await SeedAsync();

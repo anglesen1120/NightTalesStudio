@@ -29,7 +29,7 @@ public sealed class InitialCoreMigrationTests(TestDatabase database) : Integrati
     /// of this wave add (09.3.1-T1 <c>user_consents</c>, 09.9.4-T1 <c>data_protection_keys</c>,
     /// 09.8.1-T2 <c>hub_tickets</c>, 09.2.6-T3 <c>email_messages</c>, 09.3.2-T3 <c>auth_challenges</c>,
     /// 11.3.3-T1 <c>worker_nodes</c>, 02.2.2-T1 <c>generation_runs</c>, 02.2.4-T1 <c>price_versions</c>, 05.3.2-T3
-    /// <c>music_tracks</c>, 02.5.1-T1 <c>story_sources</c> and <c>fetch_tasks</c>), ordinal-sorted like
+    /// <c>music_tracks</c>, 02.5.1-T1 <c>story_sources</c>, <c>fetch_tasks</c> and <c>source_creations</c>), ordinal-sorted like
     /// <c>PostgresFixture.TableNamesAsync</c> returns them.
     /// </summary>
     private static readonly string[] ExpectedTables =
@@ -57,6 +57,7 @@ public sealed class InitialCoreMigrationTests(TestDatabase database) : Integrati
         "roles",
         "series",
         "series_autopilot_authorizations",
+        "source_creations",
         "story_sources",
         "story_versions",
         "style_templates",

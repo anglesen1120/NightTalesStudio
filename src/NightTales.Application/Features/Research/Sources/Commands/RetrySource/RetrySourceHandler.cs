@@ -79,6 +79,7 @@ public sealed class RetrySourceHandler(IAppDbContext db, ICurrentUser currentUse
             source.NormalizedUrl!,
             source.RegistrableDomain!,
             now));
+        SourceGate.RecordCreation(db, userId, now);
 
         return SourceDto.From(source);
     }

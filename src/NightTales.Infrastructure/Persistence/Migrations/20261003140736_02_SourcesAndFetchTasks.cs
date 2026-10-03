@@ -12,6 +12,25 @@ namespace NightTales.Infrastructure.Persistence.Migrations
         protected override void Up(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.CreateTable(
+                name: "source_creations",
+                columns: table => new
+                {
+                    id = table.Column<Guid>(type: "uuid", nullable: false),
+                    user_id = table.Column<Guid>(type: "uuid", nullable: false),
+                    created_at = table.Column<DateTimeOffset>(type: "timestamptz", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("pk_source_creations", x => x.id);
+                    table.ForeignKey(
+                        name: "fk_source_creations_asp_net_users_user_id",
+                        column: x => x.user_id,
+                        principalTable: "users",
+                        principalColumn: "id",
+                        onDelete: ReferentialAction.Restrict);
+                });
+
+            migrationBuilder.CreateTable(
                 name: "story_sources",
                 columns: table => new
                 {
@@ -151,6 +170,11 @@ namespace NightTales.Infrastructure.Persistence.Migrations
                 filter: "\"source_id\" IS NOT NULL AND \"status\" IN ('queued', 'leased')");
 
             migrationBuilder.CreateIndex(
+                name: "ix_source_creations_user_created",
+                table: "source_creations",
+                columns: new[] { "user_id", "created_at" });
+
+            migrationBuilder.CreateIndex(
                 name: "ix_story_sources_episode_created",
                 table: "story_sources",
                 columns: new[] { "episode_id", "created_at" });
@@ -166,11 +190,9 @@ namespace NightTales.Infrastructure.Persistence.Migrations
                 columns: new[] { "episode_id", "status" });
 
             migrationBuilder.CreateIndex(
-                name: "ix_story_sources_user_url_created",
+                name: "ix_story_sources_user_id",
                 table: "story_sources",
-                columns: new[] { "user_id", "created_at" },
-                descending: new[] { false, true },
-                filter: "\"kind\" = 'url'");
+                column: "user_id");
 
             migrationBuilder.CreateIndex(
                 name: "ux_story_sources_episode_url",
@@ -185,6 +207,9 @@ namespace NightTales.Infrastructure.Persistence.Migrations
         {
             migrationBuilder.DropTable(
                 name: "fetch_tasks");
+
+            migrationBuilder.DropTable(
+                name: "source_creations");
 
             migrationBuilder.DropTable(
                 name: "story_sources");

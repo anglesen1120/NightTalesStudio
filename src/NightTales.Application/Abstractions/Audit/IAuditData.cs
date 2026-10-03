@@ -24,6 +24,24 @@ public interface IAuditData
 }
 
 /// <summary>
+/// An <see cref="IAuditData"/> command whose audit row also needs a value only the handler knows — the id and
+/// status of the row it created (02.5.1-T1 Design step 8, 02 QA-2). <c>AuditBehavior</c> calls
+/// <see cref="ToAuditData(TResponse)"/> instead of <see cref="IAuditData.ToAuditData"/> after a successful handler;
+/// the parameterless projection stays as the shape that holds without a response.
+/// </summary>
+/// <typeparam name="TResponse">The command's response type (an <c>ErrorOr&lt;T&gt;</c>), a success here.</typeparam>
+public interface IAuditDataFromResponse<in TResponse> : IAuditData
+{
+    /// <summary>
+    /// Projects the audit row from the command and its successful response. The same rules as
+    /// <see cref="IAuditData.ToAuditData"/> apply: ids and codes only, never user text (BD16).
+    /// </summary>
+    /// <param name="response">The handler's successful response.</param>
+    /// <returns>The projection, or <see langword="null"/> when the command changed nothing.</returns>
+    AuditData? ToAuditData(TResponse response);
+}
+
+/// <summary>
 /// The <c>data</c> of one audit row (09 README BD15, plan §3): the affected account, the entity the
 /// change concerns, and a compact summary of what changed.
 /// </summary>

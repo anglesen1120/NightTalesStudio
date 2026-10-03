@@ -66,10 +66,8 @@ public sealed class ListSourcesHandler(IReadDb readDb, ICurrentUser currentUser,
             .ConfigureAwait(false);
 
         var windowStart = clock.UtcNow - SourcesOptions.UrlWindow;
-        var recent = await readDb.Query<StorySource>()
-            .CountAsync(
-                source => source.UserId == userId && source.Kind == StorySourceKind.Url && source.CreatedAt > windowStart,
-                cancellationToken)
+        var recent = await readDb.Query<SourceCreation>()
+            .CountAsync(creation => creation.UserId == userId && creation.CreatedAt > windowStart, cancellationToken)
             .ConfigureAwait(false);
 
         var items = rows

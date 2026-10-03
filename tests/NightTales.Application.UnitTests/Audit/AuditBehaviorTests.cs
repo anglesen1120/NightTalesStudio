@@ -174,6 +174,43 @@ public sealed class AuditBehaviorTests
         entry.UserAgent.ShouldBeNull();
     }
 
+    [Fact]
+    public async Task ResponseAwareCommand_Success_WritesTheProjectionOfTheResponse()
+    {
+        var writer = new RecordingAuditWriter();
+        var created = Guid.CreateVersion7();
+        var behavior = new AuditBehavior<ProbeFromResponseCommand, ErrorOr<Guid>>(
+            writer,
+            new TestCurrentUser { Id = ActorId },
+            new AuditMetadataCache(),
+            new FakeClock(Now));
+
+        await behavior.Handle(
+            new ProbeFromResponseCommand(Guid.CreateVersion7()),
+            (_, _) => ValueTask.FromResult<ErrorOr<Guid>>(created),
+            CancellationToken.None);
+
+        writer.Entries.ShouldHaveSingleItem().DataJson.ShouldBe($$"""{"created":"{{created}}"}""");
+    }
+
+    [Fact]
+    public async Task ResponseAwareCommand_Error_WritesNothing()
+    {
+        var writer = new RecordingAuditWriter();
+        var behavior = new AuditBehavior<ProbeFromResponseCommand, ErrorOr<Guid>>(
+            writer,
+            new TestCurrentUser { Id = ActorId },
+            new AuditMetadataCache(),
+            new FakeClock(Now));
+
+        await behavior.Handle(
+            new ProbeFromResponseCommand(Guid.CreateVersion7()),
+            (_, _) => ValueTask.FromResult<ErrorOr<Guid>>(Error.Conflict()),
+            CancellationToken.None);
+
+        writer.Entries.ShouldBeEmpty();
+    }
+
     private static async ValueTask<ErrorOr<Success>> HandleAsync<TMessage>(
         TMessage command,
         RecordingAuditWriter writer,
