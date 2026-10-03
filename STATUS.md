@@ -11,7 +11,7 @@ Keep this block ≤ 15 lines: current state and next step only. Move the previou
 - **Current (2026-10-03).** Session 4 wave merged (#118 → `develop` `384041c`). Session 4 next wave goes to `develop` as one combined PR (branch `feature/s4b-wave-combined`, owner request), merged in order 09.2.5-T2 owner seed → 02.3.4-T1 quality checker → 02.2.1-T2 OpenAI text client + writer → 02.2.2-T2 generate-story command → 02.5.1-T1 sources + fetch tasks. Each branch closed its tier gates; combined tip: full gate green, integration review 0 findings.
 - **Migrations** end `…20261003114329_09_AssetsRetentionIndex` → `20261003140736_02_SourcesAndFetchTasks`; `SourcesAndFetchTasksMigrationTests` owns `migrations[^1]`. New required Worker key `OpenAi:ApiKey` (dev: `OPENAI_API_KEY` via `tools/dev/up.sh`).
 - **Test hosts:** `TestKit/TestHostDefaults.cs` turns off appsettings reload watchers (fixed the local 5-min `JobsDashboardTests` host-build hangs). Second suspect if it recurs: macOS keychain import of the DP KEK (`DataProtectionKek` `DefaultKeySet`).
-- **Next:** after the combined PR merges: 02.2.2-T3 generate-story job (needs 02.2.1-T2 + 02.2.2-T2), 02.4.1-T1 moderator and 02.6.1-T1 self-review (need 02.2.1-T2), 02.3.1-T1 edit command (calls the 02.3.4 checker), 02.5.2-T1 fetcher (needs 02.5.1-T1; one migration slot). Check each task header before starting; remove the next-wave worktrees and branches after merge.
+- **Next:** start **Session 5** (§Session 5 plan). Step 0 closes PR #119 (CI `integration` hang) before any new task starts.
 - **SEC-01:** owner chose range API + real top-N seed fallback (09 W3-O3); current bundled seed is synthetic. `09.3.1-T2` replaces it before registration opens.
 - **Security audit (2026-10-02):** no Critical/High; 8 Medium + Low/Info findings and the fix waves W1–W4 in [`cyber-issue.md`](cyber-issue.md) (CY-01…CY-30).
 - **Gates/environment:** risk-tier gates per 00 §10; native Mac stack, runtime under `NTS_HOME`, keys stay out of git. `gate.sh` provides `Email__AddressHashPepper`. Start-up code and new required config keys: `docs/dev-setup.md` §Host boot contexts.
@@ -35,31 +35,32 @@ Per-task evidence for `done` rows: `docs/status-archive.md` §Per-plan evidence 
 
 Plans 06, 07, 08, 12: not started. Plan 10: approved HTML design handoff and refined implementation plan (#95); implementation not started. Order: `plans/features/README.md`.
 
-## Session 4 plan
+## Session 5 plan
 
-**Recorded at the owner's request 2026-10-03** (start at the next session). Selection: phase-P task files whose hard `Depends on` are all merged (headers parsed 2026-10-03 against `develop` `36edb78`). Tiers are proposed; the orchestrator raises them per `~/.omp/agent/RULES.md`. Web UI (plan 10) stays in its own session.
+**Recorded at the owner's request 2026-10-03** (start at the next session; resume phrase "tiếp tục theo STATUS.md"). Selection: phase-P task headers checked 2026-10-03 on `feature/s4b-wave-combined`; all six tasks state "No migration". Tiers are proposed; the orchestrator raises them per `~/.omp/agent/RULES.md`. Web UI (plan 10) stays in its own session. The Session 4 plan is in the archive.
 
-| Lane | Start now | Next, after prerequisite merges | Tier | Collision / notes |
+**Step 0: close PR #119 first.** CI run `37131498756`: build-test, contract and migrations green; `integration` hung (`GenerateStoryQaTests.Generate_RequestBody_IsIgnored_TriggerAlwaysUser` waited 6 min on `POST /api/v1/episodes/{id}/story/generate`, then `TaskCanceledException`; local passes). Find the root cause with evidence (`pg_stat_activity` / `pg_locks` during the hang, or a partial CI log of a rerun cancelled at ~12 min), fix it on `feature/s4b-wave-combined`, run the full gate, push, CI 4/4, then the owner merges. State whether the bug also exists on `develop` (follow-up task) or only in the #119 diff. After the merge: remove worktrees `09.2.5-T2`, `02.3.4-T1`, `02.2.1-T2`, `02.2.2-T2`, `02.5.1-T1`, `s4b-combined` and their local + remote branches.
+
+| Lane | Start now (after #119 merges) | Next, after prerequisite merges | Tier | Collision / notes |
 |---|---|---|---|---|
-| A Compliance | 13.3.1-T1 deletion engine (M) | 13.2.1-T1 needs 10.2.6-T1 (web) → later | T3 | **Migration #1** `13_DataDeletionRequests` |
-| B Retention | 09.7.3-T1 retention sweep job (S) | — | T3 | **Migration #2** `09_AssetsRetentionIndex` (index only); merges after A and regenerates on A's snapshot |
-| C Story writer | 02.2.3-T2 prompt assembly + injection tests (S) | 02.2.1-T2 OpenAI text client + story writer (M; RunContext/budget guard, 02 T112) → 02.4.1-T1, 02.6.1-T1 | T3 | No migration; 02.2.1-T2 is the critical path for M1 |
-| D Generation limits | 02.4.2-T1 rolling-24 h limit + episode row lock (XS) | 02.2.2-T2 (needs 02.4.2-T1) | T3 | No migration; touches the generate-story path with C — same-file conflicts are additive |
-| E Logging | 09.9.3-T2 query-string redaction (S) | — | T3 | No migration; `appsettings` keys only |
-| F Mock MPT | 11.1.2-T2 mock-mpt failure injection (S) | — | T2 | No migration; `tools/mock-mpt` backend + `Failures/*` parsers + `Program.cs`, `NightTales.MockMpt.Tests`, README / `.env.example` (compose optional) |
-| G Dispatch | 11.3.3-T2 `INodeSelector` dispatch + node metrics (S) | — | T2 | No migration |
-| H Images | 03.2.1-T1 `RenderImagePlanner` + `IImageCostEstimator` (S) | 09.2.5-T2 owner seed (XS, independent) | T2 | No migration |
+| A Moderation → job | 02.4.1-T1 content moderator (S) | 02.2.2-T3 generate-story job pipeline (M; needs 02.4.1-T1 + 02.2.1-T2 + 02.2.2-T2) | T3 | No migration; 02.2.2-T3 is the M1 critical path |
+| B Self-review | 02.6.1-T1 review prompt + `ReviewAsync` + audit merge (M) | 02.6.1-T2 | T3 | No migration; shares `OpenAiStoryWriter` / prompt catalog with lane A |
+| C Edit | 02.3.1-T1 edit-story command (S; calls the 02.3.4 checker) | 02.3.2-T1 (also needs 02.2.2-T3) | T3 | Header says no migration; confirm the [OPEN] `parent_version_id`/`fact_sheet_id`/`schema_version` note against `story_versions` at kickoff |
+| D Fetcher | 02.5.2-T1 safe HTTP source fetcher (M; network egress) | 02.5.2-T2 → T3 → T4, then 02.5.3-T1 fact extractor (needs the whole 02.5.2 story) | T3 | No migration, no API change |
 
-**Later in Session 4 (one migration slot must be free):** 02.5.1-T1 sources + fetch tasks (migration) → 02.5.2-T1… fetcher → 02.5.3-T1 fact extractor (hard dep 02.5.2); 02.3.4-T1 checker (check migration claim at kickoff), then 02.3.1-T1 edit command (calls the 02.3.4 checker). **Not in P:** 09.3.2-T2 per-request suspension is phase S (`S · M2`); 09.3.4 QA-2 stays accepted until the S go decision. 09.6.2-T1 still needs 05.1.2-T1.
+**Not in P:** 09.3.2-T2 per-request suspension is phase S (`S · M2`); 09.3.4 QA-2 stays accepted until the S go decision. 09.6.2-T1 still needs 05.1.2-T1.
+
+**Working method (the same as Session 4; the owner merges):** code the lanes in parallel, one worktree per task; each task closes its own tier gates (QA agent first, then reviews, fixes, a delta check, a full gate at its final tip); then all tasks of the wave go into **one combined PR** (`feature/s5-wave-combined`), merged in dependency order, with a full gate on the combined tip, an integration review and CI 4/4 before the owner merges it.
 
 **Rules for every agent in this plan:**
-1. One worktree + branch per task: `../nts-wt/<task-id>`, branch `feature/<task-id>-s4`, off current `develop`. No stacked branches on unmerged work.
+1. One worktree + branch per task: `../nts-wt/<task-id>`, branch `feature/<task-id>-s5`, off current `develop`. No stacked branches on unmerged work.
 2. At most 8 subagents at a time. Code in parallel; **gates run one at a time** (`/Volumes/Project/nts-wt/gate.sh <worktree>`), because all worktrees share the local Postgres template `nts_template` (parallel runs fail with 23505). Capture the gate exit code before pushing.
 3. Migrations: at most 2 tasks with a migration waiting for gate/merge at once. Merge them in order; the later task **regenerates** its migration on the merged `develop` snapshot (`dotnet ef migrations add`), never hand-edits `AppDbContextModelSnapshot`, moves `migrations[^1]` ownership to its own `*MigrationTests` and adds a `SeedPrevious` row (`docs/dev-setup.md`).
 4. Conflicts in `Program.cs` (`Map*` lines) and `AppDbContext.cs` (`DbSet` lines) are additive: keep both sides; each `DbSet` keeps its own `///` summary.
 5. Every implementer follows the "Implementer brief" (precedent footprint, Acceptance self-check, one `BUILD_ONLY=1` gate) and `docs/dev-setup.md` §Host boot contexts for start-up code / required keys. Each task closes its tier gates (QA agent first, then reviews) before its PR. After any merge, check `git merge-base --is-ancestor <branch-tip> origin/develop`.
 6. Local services: start `weed` and `mailpit` only through `tools/dev/up.sh` (loopback flags), never `brew services`.
-7. Update this table in the task's own PR (STATUS row + Session log); after merge remove the worktree and the local + remote branch.
+7. Update this table in the task's own branch (STATUS row + Session log); after the combined PR merges, remove every worktree and the local + remote branches.
+8. Known open items, not blockers: phase-P residuals (platform-wide budget without a per-user share until 12.1.2; source routes without a rate-limit policy; one retried timed-out OpenAI attempt may be billed but unmetered; 13.3 erasure must delete `source_creations`), CY-01…CY-30 fix waves W1–W4 (`cyber-issue.md`), SEC-01 synthetic seed (`09.3.1-T2` before registration opens).
 
 ## Open tasks
 

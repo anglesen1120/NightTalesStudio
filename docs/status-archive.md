@@ -4,6 +4,32 @@ History moved out of STATUS.md to keep the live file small. The initial archive 
 
 ## Resume-here history (Current/Previous blocks, Next actions)
 
+### Superseded Session 4 plan section (2026-10-03, replaced by the Session 5 plan)
+
+**Recorded at the owner's request 2026-10-03** (start at the next session). Selection: phase-P task files whose hard `Depends on` are all merged (headers parsed 2026-10-03 against `develop` `36edb78`). Tiers are proposed; the orchestrator raises them per `~/.omp/agent/RULES.md`. Web UI (plan 10) stays in its own session.
+
+| Lane | Start now | Next, after prerequisite merges | Tier | Collision / notes |
+|---|---|---|---|---|
+| A Compliance | 13.3.1-T1 deletion engine (M) | 13.2.1-T1 needs 10.2.6-T1 (web) → later | T3 | **Migration #1** `13_DataDeletionRequests` |
+| B Retention | 09.7.3-T1 retention sweep job (S) | — | T3 | **Migration #2** `09_AssetsRetentionIndex` (index only); merges after A and regenerates on A's snapshot |
+| C Story writer | 02.2.3-T2 prompt assembly + injection tests (S) | 02.2.1-T2 OpenAI text client + story writer (M; RunContext/budget guard, 02 T112) → 02.4.1-T1, 02.6.1-T1 | T3 | No migration; 02.2.1-T2 is the critical path for M1 |
+| D Generation limits | 02.4.2-T1 rolling-24 h limit + episode row lock (XS) | 02.2.2-T2 (needs 02.4.2-T1) | T3 | No migration; touches the generate-story path with C — same-file conflicts are additive |
+| E Logging | 09.9.3-T2 query-string redaction (S) | — | T3 | No migration; `appsettings` keys only |
+| F Mock MPT | 11.1.2-T2 mock-mpt failure injection (S) | — | T2 | No migration; `tools/mock-mpt` backend + `Failures/*` parsers + `Program.cs`, `NightTales.MockMpt.Tests`, README / `.env.example` (compose optional) |
+| G Dispatch | 11.3.3-T2 `INodeSelector` dispatch + node metrics (S) | — | T2 | No migration |
+| H Images | 03.2.1-T1 `RenderImagePlanner` + `IImageCostEstimator` (S) | 09.2.5-T2 owner seed (XS, independent) | T2 | No migration |
+
+**Later in Session 4 (one migration slot must be free):** 02.5.1-T1 sources + fetch tasks (migration) → 02.5.2-T1… fetcher → 02.5.3-T1 fact extractor (hard dep 02.5.2); 02.3.4-T1 checker (check migration claim at kickoff), then 02.3.1-T1 edit command (calls the 02.3.4 checker). **Not in P:** 09.3.2-T2 per-request suspension is phase S (`S · M2`); 09.3.4 QA-2 stays accepted until the S go decision. 09.6.2-T1 still needs 05.1.2-T1.
+
+**Rules for every agent in this plan:**
+1. One worktree + branch per task: `../nts-wt/<task-id>`, branch `feature/<task-id>-s4`, off current `develop`. No stacked branches on unmerged work.
+2. At most 8 subagents at a time. Code in parallel; **gates run one at a time** (`/Volumes/Project/nts-wt/gate.sh <worktree>`), because all worktrees share the local Postgres template `nts_template` (parallel runs fail with 23505). Capture the gate exit code before pushing.
+3. Migrations: at most 2 tasks with a migration waiting for gate/merge at once. Merge them in order; the later task **regenerates** its migration on the merged `develop` snapshot (`dotnet ef migrations add`), never hand-edits `AppDbContextModelSnapshot`, moves `migrations[^1]` ownership to its own `*MigrationTests` and adds a `SeedPrevious` row (`docs/dev-setup.md`).
+4. Conflicts in `Program.cs` (`Map*` lines) and `AppDbContext.cs` (`DbSet` lines) are additive: keep both sides; each `DbSet` keeps its own `///` summary.
+5. Every implementer follows the "Implementer brief" (precedent footprint, Acceptance self-check, one `BUILD_ONLY=1` gate) and `docs/dev-setup.md` §Host boot contexts for start-up code / required keys. Each task closes its tier gates (QA agent first, then reviews) before its PR. After any merge, check `git merge-base --is-ancestor <branch-tip> origin/develop`.
+6. Local services: start `weed` and `mailpit` only through `tools/dev/up.sh` (loopback flags), never `brew services`.
+7. Update this table in the task's own PR (STATUS row + Session log); after merge remove the worktree and the local + remote branch.
+
 ### Superseded Session 4 combined-PR block (2026-10-03, before the Session 4 next-wave PR)
 
 - **Current (2026-10-03).** Session 4 wave (8 tasks + MptAdapter flake fix) goes to `develop` as one combined PR (branch `feature/s4-wave-combined`, owner request), merged in order #114 → #115 13.3.1-T1 → #109 02.4.2-T1 → #110 03.2.1-T1 → #111 02.2.3-T2 → #112 11.1.2-T2 → #113 11.3.3-T2 → #117 09.9.3-T2 → #116 09.7.3-T1. Each source PR closed its tier gates; combined tip: full gate green, integration review 0 findings.
