@@ -8,6 +8,7 @@ using NightTales.Domain.Compliance;
 using NightTales.Domain.Episodes;
 using NightTales.Domain.Platform;
 using NightTales.Domain.Rendering;
+using NightTales.Domain.Rendering.Music;
 using NightTales.Domain.Series;
 using NightTales.Domain.Series.Autopilot;
 using NightTales.Domain.Stories;
@@ -45,6 +46,9 @@ public interface IAppDbContext
 
     DbSet<UsageRecord> UsageRecords { get; }
 
+    /// <summary>The immutable rates and limits of 02.2.4-T1; inserted only by <c>PriceVersionSeeder</c>.</summary>
+    DbSet<PriceVersion> PriceVersions { get; }
+
     DbSet<Asset> Assets { get; }
 
     DbSet<Voice> Voices { get; }
@@ -62,6 +66,12 @@ public interface IAppDbContext
     /// <c>nts-worker nodes</c> verbs. System data, so no tenant filter applies (09 README D10).
     /// </summary>
     DbSet<WorkerNode> WorkerNodes { get; }
+
+    /// <summary>
+    /// The global music catalog of 05.3.2-T3 (table <c>music_tracks</c>): upserted by <c>MusicTrackSeeder</c>.
+    /// Platform data, so no tenant filter applies (09 README D10).
+    /// </summary>
+    DbSet<MusicTrack> MusicTracks { get; }
 
     /// <summary>
     /// Takes the row lock of the current user's episode (<c>SELECT … FOR UPDATE</c>, 02.2.2 plan §4 U6) as the

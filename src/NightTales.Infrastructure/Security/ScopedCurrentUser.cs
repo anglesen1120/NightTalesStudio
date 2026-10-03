@@ -1,5 +1,6 @@
 using NightTales.Application.Abstractions;
 using NightTales.Domain.Common;
+using NightTales.Infrastructure.Telemetry;
 
 namespace NightTales.Infrastructure.Security;
 
@@ -70,6 +71,7 @@ public sealed class ScopedCurrentUser : ICurrentUser, ISystemContext, ITenantSco
         _userId = userId;
         _system = true;
         _forCalled = true;
+        AmbientActor.Set(userId);
 
         return new SystemScope(this);
     }
@@ -97,6 +99,7 @@ public sealed class ScopedCurrentUser : ICurrentUser, ISystemContext, ITenantSco
             _disposed = true;
             owner._userId = null;
             owner._system = false;
+            AmbientActor.Clear();
         }
     }
 }

@@ -4,6 +4,19 @@ History moved out of STATUS.md to keep the live file small. The initial archive 
 
 ## Resume-here history (Current/Previous blocks, Next actions)
 
+### Superseded lane-A block (2026-10-03, before Session 3 wave #100–#105)
+
+- **Current (2026-10-03).** `develop` @ `ee71253` (#98 09.3.3-T1 merged). Earlier: every Session 2 next-lane PR merged (#84–#90, #92, #94, docs #91, #93, #95–#97). Lane A (migration queue): 02.2.2-T1 PR #99 open, merged with develop, migration regenerated.
+- **Merge notes:** migrations on `develop` run `…083148_09_EmailMessages` → `20261002101251_09_AuthChallenges` (#86) → `20261002162527_11_WorkerNodes` (#87) → `20261002190707_09_UserActionTokens` (#98); #99 adds `20261002202751_02_GenerationRuns`. Only the newest migration's test asserts `migrations[^1]`; older ones revert to their own predecessor by name.
+- **In review:** 02.2.2-T1 (#99): QA + T3 reviews + fix + delta closed; merged develop `ee71253` (`9648eb5`), merge review 0 code findings.
+- **11.3.5-T4 (PR open):** `ValidateOnStart` uses `ParseLoopbackMptBaseUrl` (QA89-LB-01 closed: non-root path, query, userinfo rejected); MPT client only via `MptHttpClient.Create`. 11.3.5-T3 merges after it and adds `services.AddAdapterPostProcessing(config)` to `AdapterHost`.
+- **Next (owner 2026-10-03: lane A first):** migration queue 02.2.2-T1 (#99) → 02.2.4-T1 → 05.3.2-T3 → 13.3.1-T1, at most 2 waiting (rule 3; one slot is free now); each later one regenerates its migration after the previous merges. Free-slot (no migration): `09.3.4-T1` /me, `09.9.3-T1` OTLP, 11.3.5-T3/T4. Web UI stays in its separate session.
+- **Next run (2026-10-03):** (1) If #99 is merged: verify `git merge-base --is-ancestor` and start 02.2.4-T1 (worktree `../nts-wt/02.2.4-T1`, branch `feature/02.2.4-T1-s2` off develop), migration after `20261002202751`; move `migrations[^1]` ownership from `GenerationRunsMigrationTests` to its own test in the same branch; add its `SeedPrevious` row. (2) If #99 is still open: owner decides between starting 02.2.4-T1 now (recommended; one extra migration regeneration after #99 merges) or waiting for #99. Gates: T3 (QA agent, then code/perf/security reviews, one fix agent, delta), full `gate.sh` serially.
+- **SEC-01:** owner chose range API + real top-N seed fallback (09 W3-O3); current bundled seed is synthetic. `09.3.1-T2` replaces it before registration opens.
+- **Security audit (2026-10-02):** no Critical/High; 8 Medium + Low/Info findings and the fix waves W1–W4 in [`cyber-issue.md`](cyber-issue.md) (CY-01…CY-30).
+- **Gates/environment:** risk-tier gates per 00 §10; native Mac stack, runtime under `NTS_HOME`, keys stay out of git. `gate.sh` provides `Email__AddressHashPepper`.
+- **Setup:** `docs/dev-setup.md`; `git config core.hooksPath .githooks`; worker bootstrap + smoke per `worker-node/README.md`.
+
 ### Superseded Session 2 next-lane block (2026-10-02 (3), before #84–#94 merged)
 
 - **Current (2026-10-02 (3), advisor follow-up).** Remote `develop` `125167369a3f4411f067729795c77a45d4b49d72` includes approved UI handoff #91. Session 2 PRs #84–#90 and #92 remain open; storage is draft PR #94; #93 is the live STATUS delivery.

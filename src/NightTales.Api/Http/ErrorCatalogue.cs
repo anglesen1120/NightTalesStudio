@@ -268,6 +268,8 @@ public static class ErrorCatalogue
             ErrorCodes.SourceBlockedByRobots,
             ErrorCodes.SourceUnsupportedType,
             ErrorCodes.SourceNoText,
+            ErrorCodes.PriceCatalogEmpty,
+            ErrorCodes.PromptNotShipped,
         }.ToFrozenSet(StringComparer.Ordinal);
 
     /// <summary>The problem-details <c>type</c> URI of <paramref name="code"/>.</summary>

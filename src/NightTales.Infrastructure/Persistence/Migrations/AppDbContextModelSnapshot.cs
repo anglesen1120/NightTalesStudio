@@ -715,6 +715,129 @@ namespace NightTales.Infrastructure.Persistence.Migrations
                     b.ToTable("feature_flags", (string)null);
                 });
 
+            modelBuilder.Entity("NightTales.Domain.Rendering.Music.MusicTrack", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<bool>("Active")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true)
+                        .HasColumnName("active");
+
+                    b.Property<string>("Artist")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("artist");
+
+                    b.Property<string>("Attribution")
+                        .HasColumnType("text")
+                        .HasColumnName("attribution");
+
+                    b.Property<decimal>("BgmVolume")
+                        .HasColumnType("numeric(4,3)")
+                        .HasColumnName("bgm_volume");
+
+                    b.Property<int>("CatalogRevision")
+                        .HasColumnType("integer")
+                        .HasColumnName("catalog_revision");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<decimal>("DurationSec")
+                        .HasColumnType("numeric(7,1)")
+                        .HasColumnName("duration_sec");
+
+                    b.Property<string>("FileName")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("file_name");
+
+                    b.Property<string>("License")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("license");
+
+                    b.Property<decimal>("LoudnessLufs")
+                        .HasColumnType("numeric(5,2)")
+                        .HasColumnName("loudness_lufs");
+
+                    b.PrimitiveCollection<List<string>>("Moods")
+                        .IsRequired()
+                        .HasColumnType("text[]")
+                        .HasColumnName("moods");
+
+                    b.Property<string>("PlatformScope")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("platform_scope");
+
+                    b.Property<string>("Sha256")
+                        .IsRequired()
+                        .HasColumnType("char(64)")
+                        .HasColumnName("sha256");
+
+                    b.Property<string>("SourceUrl")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("source_url");
+
+                    b.Property<string>("StorageKey")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("storage_key");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("title");
+
+                    b.Property<string>("TrackId")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("track_id");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("updated_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.HasKey("Id")
+                        .HasName("pk_music_tracks");
+
+                    b.HasIndex("TrackId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_music_tracks_track_id");
+
+                    b.ToTable("music_tracks", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_music_tracks_attribution", "(\"license\" = 'CC-BY-4.0') = (\"attribution\" IS NOT NULL AND btrim(\"attribution\", E' \\t\\r\\n') <> '')");
+
+                            t.HasCheckConstraint("ck_music_tracks_bgm_volume", "\"bgm_volume\" BETWEEN 0.03 AND 0.40 AND \"bgm_volume\" = round(least(0.40, greatest(0.03, power(10::numeric, (-34 - \"loudness_lufs\") / 20))), 3)");
+
+                            t.HasCheckConstraint("ck_music_tracks_duration_sec", "\"duration_sec\" >= 60 AND \"duration_sec\" <= 3600");
+
+                            t.HasCheckConstraint("ck_music_tracks_file_name", "\"file_name\" ~ '\\.(mp3|m4a)$' AND regexp_replace(\"file_name\", '\\.(mp3|m4a)$', '') = \"track_id\"");
+
+                            t.HasCheckConstraint("ck_music_tracks_license", "\"license\" IN ('CC0-1.0', 'CC-BY-4.0', 'YouTube-Audio-Library')");
+
+                            t.HasCheckConstraint("ck_music_tracks_moods", "\"moods\" <@ ARRAY['dark_ambient','suspense','temple','meditation','noir','calm']::text[] AND cardinality(\"moods\") BETWEEN 1 AND 3");
+
+                            t.HasCheckConstraint("ck_music_tracks_platform_scope", "\"platform_scope\" IN ('any', 'youtube') AND ((\"license\" = 'YouTube-Audio-Library') = (\"platform_scope\" = 'youtube'))");
+
+                            t.HasCheckConstraint("ck_music_tracks_sha256", "\"sha256\" ~ '^[0-9a-f]{64}$'");
+
+                            t.HasCheckConstraint("ck_music_tracks_track_id", "\"track_id\" ~ '^[a-z0-9]+(-[a-z0-9]+)*$' AND char_length(\"track_id\") <= 40");
+                        });
+                });
+
             modelBuilder.Entity("NightTales.Domain.Rendering.WorkerNode", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1378,6 +1501,48 @@ namespace NightTales.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("NightTales.Domain.Usage.PriceVersion", b =>
+                {
+                    b.Property<int>("Version")
+                        .HasColumnType("integer")
+                        .HasColumnName("version");
+
+                    b.Property<DateTimeOffset>("ActiveFrom")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("active_from");
+
+                    b.Property<string>("ConfigHash")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("config_hash");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("Limits")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("limits");
+
+                    b.Property<string>("Rates")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("rates");
+
+                    b.HasKey("Version")
+                        .HasName("pk_price_versions");
+
+                    b.HasIndex("ActiveFrom")
+                        .IsDescending()
+                        .HasDatabaseName("ix_price_versions_active_from");
+
+                    b.HasIndex("ConfigHash")
+                        .HasDatabaseName("ix_price_versions_config_hash");
+
+                    b.ToTable("price_versions", (string)null);
+                });
+
             modelBuilder.Entity("NightTales.Domain.Usage.UsageRecord", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1480,6 +1645,9 @@ namespace NightTales.Infrastructure.Persistence.Migrations
                     b.HasIndex("GenerationRunId")
                         .HasDatabaseName("ix_usage_records_generation_run_id");
 
+                    b.HasIndex("PriceVersion")
+                        .HasDatabaseName("ix_usage_records_price_version");
+
                     b.HasIndex("ReservationId")
                         .HasDatabaseName("ix_usage_records_reservation_id");
 
@@ -1488,6 +1656,9 @@ namespace NightTales.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("EpisodeId", "UserId")
                         .HasDatabaseName("ix_usage_records_episode_id_user_id");
+
+                    b.HasIndex("GenerationRunId", "UserId")
+                        .HasDatabaseName("ix_usage_records_generation_run_id_user_id");
 
                     b.HasIndex("SeriesId", "UserId")
                         .HasDatabaseName("ix_usage_records_series_id_user_id");
@@ -1498,7 +1669,11 @@ namespace NightTales.Infrastructure.Persistence.Migrations
 
                     b.ToTable("usage_records", null, t =>
                         {
+                            t.HasCheckConstraint("ck_usage_records_cost", "\"cost_usd\" IS NULL OR \"cost_usd\" >= 0");
+
                             t.HasCheckConstraint("ck_usage_records_operation", "\"operation\" IN ('bible_proposal', 'fact_sheet', 'idea', 'image', 'moderation', 'render', 'source_find', 'story', 'story_review', 'story_revision', 'tts')");
+
+                            t.HasCheckConstraint("ck_usage_records_tokens", "\"input_tokens\" >= 0 AND \"cached_input_tokens\" >= 0 AND \"output_tokens\" >= 0");
                         });
                 });
 
@@ -2350,6 +2525,12 @@ namespace NightTales.Infrastructure.Persistence.Migrations
 
             modelBuilder.Entity("NightTales.Domain.Usage.UsageRecord", b =>
                 {
+                    b.HasOne("NightTales.Domain.Usage.PriceVersion", null)
+                        .WithMany()
+                        .HasForeignKey("PriceVersion")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_usage_records_price_versions_price_version");
+
                     b.HasOne("NightTales.Infrastructure.Persistence.AppUser", null)
                         .WithMany()
                         .HasForeignKey("UserId")
@@ -2363,6 +2544,13 @@ namespace NightTales.Infrastructure.Persistence.Migrations
                         .HasPrincipalKey("Id", "UserId")
                         .OnDelete(DeleteBehavior.SetNull)
                         .HasConstraintName("fk_usage_records_episodes_episode_id_user_id");
+
+                    b.HasOne("NightTales.Domain.Stories.Generation.GenerationRun", null)
+                        .WithMany()
+                        .HasForeignKey("GenerationRunId", "UserId")
+                        .HasPrincipalKey("Id", "UserId")
+                        .OnDelete(DeleteBehavior.SetNull)
+                        .HasConstraintName("fk_usage_records_generation_runs_generation_run_id_user_id");
 
                     b.HasOne("NightTales.Domain.Series.Series", null)
                         .WithMany()

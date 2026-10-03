@@ -143,12 +143,18 @@ public sealed record RenderTaskRecord(
             Stage = RenderStages.Done,
             Percent = 100,
             Outcome = null,
+            Output = null,
+            Check = null,
             FinishedAt = FinishedAt ?? DateTimeOffset.UtcNow,
         };
     }
 
-    /// <summary>True for the two observations the poller writes that decide a task's state.</summary>
+    /// <summary>
+    /// True for the observations the adapter writes that decide a task's state: a failure, a success
+    /// (11.3.5-T3's post-processor; a cancelled task never becomes <c>succeeded</c>) or the checking hand-off.
+    /// </summary>
     private bool DecidesState() =>
         string.Equals(State, RenderStates.Failed, StringComparison.Ordinal)
+        || string.Equals(State, RenderStates.Succeeded, StringComparison.Ordinal)
         || (string.Equals(Stage, RenderStages.Checking, StringComparison.Ordinal) && Percent >= 100);
 }

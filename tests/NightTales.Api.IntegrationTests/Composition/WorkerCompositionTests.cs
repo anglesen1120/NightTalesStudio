@@ -96,6 +96,8 @@ public sealed class WorkerCompositionTests
             // AddWorkerServices loads the DP_KEK PFX while it registers (09.9.4-T1), so Build needs it.
             $"--{TestKek.PathConfigurationKey}={TestKek.SharedPath}",
             $"--{TestKek.PasswordConfigurationKey}={TestKek.SharedPassword}",
+            // 09.9.3-T1: telemetry refuses to start outside Development without the log user-hash salt.
+            "--Logging:UserHashSalt=harness-user-hash-salt",
         };
         args.AddRange(extra);
         return [.. args];

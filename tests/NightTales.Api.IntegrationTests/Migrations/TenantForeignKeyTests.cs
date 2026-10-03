@@ -49,6 +49,7 @@ public sealed class TenantForeignKeyTests(TestDatabase database) : IntegrationTe
         "story_versions.generation_run_id,user_id->generation_runs(id,user_id)",
         "story_versions.parent_version_id,user_id->story_versions(id,user_id)",
         "usage_records.episode_id,user_id->episodes(id,user_id)",
+        "usage_records.generation_run_id,user_id->generation_runs(id,user_id)",
         "usage_records.series_id,user_id->series(id,user_id)",
     ];
 
@@ -77,6 +78,8 @@ public sealed class TenantForeignKeyTests(TestDatabase database) : IntegrationTe
         + "REFERENCES story_versions(id, user_id) ON DELETE SET NULL (parent_version_id)",
         "fk_usage_records_episodes_episode_id_user_id|FOREIGN KEY (episode_id, user_id) "
         + "REFERENCES episodes(id, user_id) ON DELETE SET NULL (episode_id)",
+        "fk_usage_records_generation_runs_generation_run_id_user_id|FOREIGN KEY (generation_run_id, user_id) "
+        + "REFERENCES generation_runs(id, user_id) ON DELETE SET NULL (generation_run_id)",
     ];
 
     /// <summary>

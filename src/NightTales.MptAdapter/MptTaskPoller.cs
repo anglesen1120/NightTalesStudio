@@ -248,13 +248,13 @@ public sealed class MptTaskPoller : BackgroundService
         foreach (var taskId in taskIds)
         {
             var record = await _store.TryGetAsync(taskId, cancellationToken).ConfigureAwait(false);
-            if (record is null || record.IsTerminal || record.CancelRequested)
+            if (record is null || record.IsTerminal)
             {
                 continue;
             }
 
             // The same shape PollTaskAsync skips: MPT is done and the post-processor owns the row. A
-            // cancel_requested row is not recovered — the poller finalises it against MPT instead.
+            // cancel_requested row is recovered too - the post-processor resolves the cancel itself (CR-1).
             if (!string.Equals(record.Stage, RenderStages.Checking, StringComparison.Ordinal)
                 || record.Percent < 100)
             {
@@ -296,11 +296,11 @@ public sealed class MptTaskPoller : BackgroundService
             return;
         }
 
-        if (!record.CancelRequested
-            && string.Equals(record.Stage, RenderStages.Checking, StringComparison.Ordinal)
+        if (string.Equals(record.Stage, RenderStages.Checking, StringComparison.Ordinal)
             && record.Percent >= 100)
         {
-            // MPT is done and the post-processor owns the row; there is nothing new to learn from MPT.
+            // MPT is done and the post-processor owns the row - cancelled or not. Only the post-processor
+            // finalises and cleans it, so the dir survives until the check process has exited (CR-1).
             return;
         }
 

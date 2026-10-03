@@ -139,6 +139,8 @@ public static class IdentityServiceCollectionExtensions
         // Credentials and consents touch the scoped Identity store / write model.
         services.AddScoped<ICredentialVerifier, IdentityCredentialVerifier>();
         services.AddScoped<IConsentWriter, ConsentWriter>();
+        services.AddScoped<IUserProfileReader, UserProfileReader>();
+        services.AddScoped<IUserProfileWriter, UserProfileWriter>();
 
         // The P registration behaviour (09.3.1-T3 replaces exactly this registration).
         services.AddSingleton<IRegistrationFlow, ClosedRegistrationFlow>();

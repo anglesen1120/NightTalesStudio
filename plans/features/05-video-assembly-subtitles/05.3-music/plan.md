@@ -67,7 +67,7 @@ Header byte-identical to 01.2.2-T3 (M4 ✅): `file,title,artist,source_url,licen
 | `platform_scope` | `text` | ∈ {`any`, `youtube`}; `youtube` iff `YouTube-Audio-Library` |
 | `moods` | `text[]` | ⊆ the six moods, 1–3 entries |
 | `duration_sec` | `numeric(7,1)` | ≥ 60 |
-| `loudness_lufs` | `numeric(5,1)` | measured integrated |
+| `loudness_lufs` | `numeric(5,2)` | measured integrated, two decimals (§10 T85) |
 | `bgm_volume` | `numeric(4,3)` | 0.03–0.40, equals the D8 formula at 3 dp |
 | `sha256` | `char(64)` | lowercase hex |
 | `storage_key` | `text` | `music/<file>` |

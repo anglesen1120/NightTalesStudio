@@ -26,7 +26,7 @@ internal sealed record ProbeAuditedCommand(Guid EntityId, Guid? SubjectUserId)
         SubjectUserId,
         "probe",
         EntityId,
-        new Dictionary<string, string>(StringComparer.Ordinal) { ["probe"] = "audited" });
+        new Dictionary<string, object>(StringComparer.Ordinal) { ["probe"] = "audited" });
 }
 
 /// <summary>A command that projects audit data but declares no attribute, so nothing is written.</summary>
@@ -38,7 +38,7 @@ internal sealed record ProbeUnmarkedCommand(Guid EntityId) : ICommand<ErrorOr<Su
         null,
         "probe",
         EntityId,
-        new Dictionary<string, string>(StringComparer.Ordinal) { ["probe"] = "unmarked" });
+        new Dictionary<string, object>(StringComparer.Ordinal) { ["probe"] = "unmarked" });
 }
 
 /// <summary>

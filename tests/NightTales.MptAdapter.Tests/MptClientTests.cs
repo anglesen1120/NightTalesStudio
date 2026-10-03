@@ -207,12 +207,16 @@ public sealed class MptClientTests
         failure.ParamName.ShouldBe("Adapter:MptBaseUrl");
     }
 
-    private static MptClient NewClient(AdapterOptions options) =>
-        new(
+    private static MptClient NewClient(AdapterOptions options)
+    {
+        var bound = Options.Create(options);
+        return new(
             MptHttpClient.Create(options),
-            Options.Create(options),
+            bound,
             Options.Create(new RenderNodeServerOptions { MaxConcurrentTasks = 1 }),
             new FakeProcessStartReader(),
-            new TaskDirCleaner(Options.Create(options), NullLogger<TaskDirCleaner>.Instance),
+            new DiskRuleEnforcer(new TaskDirCleaner(bound, NullLogger<TaskDirCleaner>.Instance), NullLogger<DiskRuleEnforcer>.Instance),
+            new FileOutputSource(new InMemoryTaskStore(), bound, NullLogger<FileOutputSource>.Instance),
             NullLogger<MptClient>.Instance);
+    }
 }

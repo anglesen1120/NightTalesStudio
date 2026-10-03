@@ -44,7 +44,7 @@ public sealed record UpdateSeriesCommand(
         SubjectUserId: null,
         EntityType: "series",
         EntityId: Id,
-        Summary: new Dictionary<string, string>(StringComparer.Ordinal) { ["fields"] = ChangedFields() });
+        Summary: new Dictionary<string, object>(StringComparer.Ordinal) { ["fields"] = ChangedFields() });
 
     /// <summary>The wire names of the members the patch carries, in the order the patch declares them.</summary>
     private string ChangedFields()
