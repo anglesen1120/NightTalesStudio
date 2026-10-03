@@ -4,6 +4,12 @@ History moved out of STATUS.md to keep the live file small. The initial archive 
 
 ## Resume-here history (Current/Previous blocks, Next actions)
 
+### Superseded Session 4 combined-PR block (2026-10-03, before the Session 4 next-wave PR)
+
+- **Current (2026-10-03).** Session 4 wave (8 tasks + MptAdapter flake fix) goes to `develop` as one combined PR (branch `feature/s4-wave-combined`, owner request), merged in order #114 → #115 13.3.1-T1 → #109 02.4.2-T1 → #110 03.2.1-T1 → #111 02.2.3-T2 → #112 11.1.2-T2 → #113 11.3.3-T2 → #117 09.9.3-T2 → #116 09.7.3-T1. Each source PR closed its tier gates; combined tip: full gate green, integration review 0 findings.
+- **Migrations** end `…20261003073358_05_MusicTracks` → `20261003092804_13_DataDeletionRequests` → `20261003114329_09_AssetsRetentionIndex` (regenerated on 13's snapshot, Up/Down unchanged); `AssetsRetentionIndexMigrationTests` owns `migrations[^1]`.
+- **Next:** after the combined PR merges, each lane's next task: C 02.2.1-T2, D 02.2.2-T2, H 09.2.5-T2 owner seed. Then the "Later in Session 4" list.
+
 ### Superseded Session 4 plan block (2026-10-03, before the combined Session 4 PR)
 
 - **Current (2026-10-03).** Sessions 2–3 complete; `develop` @ `36edb78` (#106 boot-contexts doc). 0 open PRs. All merged branches (local + remote) and worktrees removed; kept: `feature/05.5.2-m0-trial` (3 unmerged commits, no PR) and tag `archive/11.3.5-T3-T4` (`dcc8ee5`, the verified 11.3.5-T3+T4 resolution; bundle in `~/.nts-snapshots/`).
