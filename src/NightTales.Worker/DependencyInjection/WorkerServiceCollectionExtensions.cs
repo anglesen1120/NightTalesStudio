@@ -8,6 +8,7 @@ using Microsoft.Extensions.Options;
 using NightTales.Application.Abstractions;
 using NightTales.Application.Abstractions.Jobs;
 using NightTales.Application.Abstractions.Outbox;
+using NightTales.Application.DependencyInjection;
 using NightTales.Application.Features.Assets.Jobs;
 using NightTales.Application.Features.Episodes.Outbox;
 using NightTales.Application.Telemetry;
@@ -17,6 +18,7 @@ using NightTales.Infrastructure.Compliance.Deletion;
 using NightTales.Infrastructure.DependencyInjection;
 using NightTales.Infrastructure.Email;
 using NightTales.Infrastructure.Jobs;
+using NightTales.Infrastructure.OpenAI;
 using NightTales.Infrastructure.Persistence;
 using NightTales.Infrastructure.Persistence.Flags;
 using NightTales.Infrastructure.Persistence.Outbox;
@@ -94,6 +96,11 @@ public static class WorkerServiceCollectionExtensions
 
         // 02.2.4-T1 (02 README D14): the Worker meters every provider call it makes.
         services.AddUsageMetering();
+
+        // 02.2.1-T2 (02 README D7/D21): the Worker writes stories — the OpenAI text adapter, the IStoryWriter
+        // over it, and the Application defaults (the IPromptAssembler it assembles with). Needs OpenAi:ApiKey.
+        services.AddNightTalesApplication();
+        services.AddOpenAiTextClient();
 
         // 09.9.2-T2 (09 README BD13): the same feature-flag read service the Api composes — the cached port
         // a job or outbox handler checks, the writer's NOTIFY notifier, and this instance's

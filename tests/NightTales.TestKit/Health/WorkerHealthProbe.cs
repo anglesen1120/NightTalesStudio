@@ -20,6 +20,7 @@ using NightTales.Infrastructure.Jobs;
 using NightTales.Infrastructure.Persistence;
 using NightTales.TestKit.Database;
 using NightTales.TestKit.Email;
+using NightTales.TestKit.OpenAI;
 using NightTales.TestKit.Security;
 using NightTales.TestKit.Storage;
 using NightTales.TestKit.Time;
@@ -103,6 +104,12 @@ public sealed class WorkerHealthProbe : IAsyncDisposable
         // `Email` section on start-up, so the probe supplies what the Worker's appsettings.json carries —
         // the same settings the harness's WorkerHost hands its host.
         foreach (var (key, value) in EmailTestSettings.WorkerSettings)
+        {
+            settings[key] = value;
+        }
+
+        // 02.2.1-T2: OpenAi:ApiKey is required by the Worker's OpenAI text adapter.
+        foreach (var (key, value) in OpenAiTestSettings.WorkerSettings)
         {
             settings[key] = value;
         }
