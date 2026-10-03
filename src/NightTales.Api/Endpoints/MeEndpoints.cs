@@ -1,3 +1,5 @@
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using Mediator;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
@@ -8,6 +10,10 @@ using NightTales.Application.Features.Auth.Mfa.Disable.Commands;
 using NightTales.Application.Features.Auth.Mfa.RecoveryCodes.Commands;
 using NightTales.Application.Features.Auth.Mfa.Setup.Commands;
 using NightTales.Application.Features.Auth.Mfa.Verify.Commands;
+using NightTales.Application.Features.Me;
+using NightTales.Application.Features.Me.Commands.UpdateMe;
+using NightTales.Application.Features.Me.Queries.GetMe;
+using NightTales.Domain.Common;
 
 namespace NightTales.Api.Endpoints;
 
@@ -35,7 +41,7 @@ namespace NightTales.Api.Endpoints;
 /// </remarks>
 public static class MeEndpoints
 {
-    /// <summary>The group's prefix; the <c>/me</c> routes of 09.3.4-T1 join it later.</summary>
+    /// <summary>The group's prefix: the profile routes of 09.3.4-T1 and the MFA routes of 09.10.4-T1.</summary>
     public const string GroupPrefix = "/api/v1/me";
 
     /// <summary>The enrolment route (BD4).</summary>
@@ -62,6 +68,21 @@ public static class MeEndpoints
         // 09.9.4-T1 (BD12): the versioned API group carries the non-credentialed CORS policy.
         me.RequireCors(SecurityHeadersExtensions.SpaCorsPolicy);
 
+        // 09.3.4-T1: the caller's own profile. Authentication is required on exactly these two routes
+        // (the MFA routes below carry their own policy); neither takes a user id, and neither has ETag/If-Match
+        // (09 README D15 lists episodes and series only).
+        me.MapGet(string.Empty, GetAsync)
+            .RequireAuthorization()
+            .Produces<MeDto>(StatusCodes.Status200OK)
+            .ProducesProblem(StatusCodes.Status401Unauthorized);
+
+        me.MapPatch(string.Empty, PatchAsync)
+            .RequireAuthorization()
+            .RejectUnknownMembers()
+            .Produces<MeDto>(StatusCodes.Status200OK)
+            .ProducesProblem(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status401Unauthorized);
+
         me.MapPost("/mfa/setup", SetupAsync)
             .RequireMfaEnrolmentScope()
             .RequireReauth(unlessEnrolmentToken: true)
@@ -87,6 +108,46 @@ public static class MeEndpoints
             .ProducesProblem(StatusCodes.Status403Forbidden);
 
         return routes;
+    }
+
+    /// <summary><c>GET /api/v1/me</c>: 200 with the caller's profile, or 401 when the token outlived the account.</summary>
+    private static async Task<IResult> GetAsync(ISender sender, HttpContext http, CancellationToken ct)
+    {
+        var result = await sender.Send(new GetMeQuery(), ct).ConfigureAwait(false);
+
+        return Respond(result, http);
+    }
+
+    /// <summary>
+    /// <c>PATCH /api/v1/me</c>: 200 with the updated profile; 400 <c>validation_failed</c> for an empty body, an
+    /// invalid value or an unknown member (the strict filter); 401 for a missing or deleted account.
+    /// </summary>
+    private static async Task<IResult> PatchAsync(
+        UpdateMeRequest request,
+        ISender sender,
+        HttpContext http,
+        CancellationToken ct)
+    {
+        // A surrounding blank is trimmed here (" Ana " → "Ana"); a name that is only blanks becomes "" and
+        // fails the validator's length rule, so it is still a 400 on displayName.
+        var result = await sender
+            .Send(new UpdateMeCommand(request.DisplayName?.Trim(), request.UiLocale), ct)
+            .ConfigureAwait(false);
+
+        return Respond(result, http);
+    }
+
+    private static IResult Respond(ErrorOr.ErrorOr<MeDto> result, HttpContext http)
+    {
+        if (result.IsError)
+        {
+            return ProblemDetailsWriter.ToProblem(result.Errors, http);
+        }
+
+        // The body carries the address, so no proxy may keep it (09 README BD16).
+        NoStore(http);
+
+        return Results.Json(result.Value, statusCode: StatusCodes.Status200OK);
     }
 
     /// <summary>
@@ -187,3 +248,65 @@ public sealed record MfaSetupResponse(string Secret, string OtpauthUri);
 /// </summary>
 /// <param name="RecoveryCodes">The ten single-use codes; never stored in plaintext (BD16).</param>
 public sealed record RecoveryCodesResponse(IReadOnlyList<string> RecoveryCodes);
+
+/// <summary>
+/// The frozen <c>PATCH /me</c> body (09.3.4-T1): the two writable members only. Any other member is captured
+/// by <see cref="Extra"/> and refused by the endpoint's strict binding filter, so <c>email</c>, <c>role</c> and
+/// <c>mfaEnabled</c> stay read-only by construction.
+/// </summary>
+/// <param name="DisplayName">The new display name, or <see langword="null"/>/absent to keep it.</param>
+/// <param name="UiLocale">The new UI locale (<c>vi</c> or <c>en</c>), or <see langword="null"/>/absent to keep it.</param>
+public sealed record UpdateMeRequest(
+    string? DisplayName,
+    [property: JsonConverter(typeof(StrictLanguageConverter))] Language? UiLocale) : IRejectsUnknownMembers
+{
+    /// <summary>The members the wire model does not declare, as the JSON binder collected them.</summary>
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? Extra { get; set; }
+
+    /// <summary>
+    /// Explicit on purpose: a public property of this name would be matched by a JSON member of the same name
+    /// (any case) and silently dropped when marked <c>[JsonIgnore]</c>, so <c>"unknownMembers":1</c> would slip
+    /// past the strict binding. As an explicit implementation the serializer cannot see it, and every member that
+    /// is not <c>displayName</c>/<c>uiLocale</c> lands in <see cref="Extra"/>.
+    /// </summary>
+    IReadOnlyCollection<string> IRejectsUnknownMembers.UnknownMembers =>
+        Extra?.Keys ?? (IReadOnlyCollection<string>)[];
+}
+
+/// <summary>
+/// Reads <c>uiLocale</c> as exactly the lowercase wire value (<c>vi</c>/<c>en</c>, 09 README D14/D16); any other
+/// spelling (<c>VI</c>, <c>Vi</c>), number or name is a malformed body, i.e. 400 <c>validation_failed</c>. The global
+/// enum converter is case-insensitive, so this narrows only this one member.
+/// </summary>
+internal sealed class StrictLanguageConverter : JsonConverter<Language?>
+{
+    public override Language? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        if (reader.TokenType is JsonTokenType.Null)
+        {
+            return null;
+        }
+
+        return reader.TokenType is JsonTokenType.String
+            ? reader.GetString() switch
+            {
+                "vi" => Language.Vi,
+                "en" => Language.En,
+                _ => throw new JsonException("ui_locale_unknown"),
+            }
+            : throw new JsonException("ui_locale_unknown");
+    }
+
+    public override void Write(Utf8JsonWriter writer, Language? value, JsonSerializerOptions options)
+    {
+        if (value is { } language)
+        {
+            writer.WriteStringValue(language == Language.Vi ? "vi" : "en");
+        }
+        else
+        {
+            writer.WriteNullValue();
+        }
+    }
+}
