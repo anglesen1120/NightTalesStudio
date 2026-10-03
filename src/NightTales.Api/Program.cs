@@ -15,6 +15,7 @@ using NightTales.Infrastructure.Email;
 using NightTales.Infrastructure.Persistence;
 using NightTales.Infrastructure.Persistence.Flags;
 using NightTales.Infrastructure.Persistence.Seeding;
+using NightTales.Infrastructure.Persistence.Usage;
 using NightTales.Infrastructure.Storage;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -38,6 +39,9 @@ builder.Services.AddFeatureFlags(builder.Configuration);
 // catalog at start-up; an invalid catalog aborts the boot instead of serving a draft built from a
 // prompt that was never released.
 builder.Services.AddPromptCatalog();
+
+// 02.2.4-T1 (02 README D14): price versions, the usage meter and the worst-case cost estimator.
+builder.Services.AddUsageMetering();
 
 // 09.4.1-T1 (09 §4 09.4.1): the series routes need the Application defaults — the 02 story-preset
 // port, whose wave-1 null catalog knows no key — and the post-commit ETag read of 09 README D15.

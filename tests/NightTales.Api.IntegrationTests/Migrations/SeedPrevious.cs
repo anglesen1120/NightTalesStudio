@@ -197,6 +197,15 @@ internal static class SeedPrevious
                     'user', 'succeeded', 'done', 'draft', true, 0.250000, 0.120000, 0, now(), now(), now(),
                     now(), now())
             """),
+        (
+            // 02.2.4-T1: the table the `_02_PriceVersions` migration creates. Same rule as above: skipped while
+            // that migration is the last one, then every later migration is exercised over one price version
+            // (the key is the integer version, so there is no uuid seed id to allocate).
+            "price_versions",
+            """
+            INSERT INTO price_versions (version, active_from, rates, limits, config_hash, created_at)
+            VALUES (9001, now(), '{"text":{}}'::jsonb, '{"story":{}}'::jsonb, 'seed-previous-price-version', now())
+            """),
     ];
 
     /// <summary>The tables the dataset covers, in insert order — the contract a feature migration extends.</summary>

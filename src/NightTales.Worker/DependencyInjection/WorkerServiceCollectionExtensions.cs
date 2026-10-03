@@ -17,6 +17,7 @@ using NightTales.Infrastructure.Jobs;
 using NightTales.Infrastructure.Persistence;
 using NightTales.Infrastructure.Persistence.Flags;
 using NightTales.Infrastructure.Persistence.Outbox;
+using NightTales.Infrastructure.Persistence.Usage;
 using NightTales.Infrastructure.Security;
 using NightTales.Infrastructure.Storage;
 using NightTales.Worker.Health;
@@ -86,6 +87,9 @@ public static class WorkerServiceCollectionExtensions
             .ValidateOnStart();
 
         services.AddPersistence(configuration, assemblies);
+
+        // 02.2.4-T1 (02 README D14): the Worker meters every provider call it makes.
+        services.AddUsageMetering();
 
         // 09.9.2-T2 (09 README BD13): the same feature-flag read service the Api composes — the cached port
         // a job or outbox handler checks, the writer's NOTIFY notifier, and this instance's
