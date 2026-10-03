@@ -5,6 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using NightTales.Application.Abstractions.Identity;
 using NightTales.Domain.Common;
 using NightTales.Infrastructure.Persistence;
 using NightTales.Infrastructure.Persistence.Seeding;
@@ -51,6 +52,37 @@ public sealed class OwnerSeederQaTests(TestDatabase database) : IntegrationTest(
             using var scopeB = hostB.Services.CreateScope();
             var seederA = Build(scopeA, email, StrongPassword, sink);
             var seederB = Build(scopeB, email, StrongPassword, sink);
+            var gate = new TaskCompletionSource();
+
+            var runA = Task.Run(async () => { await gate.Task; return await seederA.SeedAsync(ct); }, ct);
+            var runB = Task.Run(async () => { await gate.Task; return await seederB.SeedAsync(ct); }, ct);
+            gate.SetResult();
+            var reports = await Task.WhenAll(runA, runB);
+
+            (await ScalarAsync("SELECT count(*)::text FROM users WHERE role = 'owner'", ct)).ShouldBe("1", $"round {round}");
+            (await ScalarAsync("SELECT count(*)::text FROM users", ct)).ShouldBe("1", $"round {round}");
+            reports.Sum(report => report.Inserted).ShouldBe(1, $"round {round}");
+            reports.Sum(report => report.Skipped).ShouldBe(1, $"round {round}");
+            reports.ShouldAllBe(report => !report.Failed);
+            sink.Text.ShouldNotContain(StrongPassword, Case.Sensitive);
+        }
+    }
+
+    [Fact]
+    public async Task OwnerSeed_TwoHostsRaceWithDifferentEmails_OneOwnerLoserSkipped()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        for (var round = 0; round < 8; round++)
+        {
+            await ResetAsync(ct);
+            var sink = new Sink();
+
+            using var hostA = new ApiFactory(Database, new FakeClock());
+            using var hostB = new ApiFactory(Database, new FakeClock());
+            using var scopeA = hostA.Services.CreateScope();
+            using var scopeB = hostB.Services.CreateScope();
+            var seederA = Build(scopeA, NewEmail(), StrongPassword, sink);
+            var seederB = Build(scopeB, NewEmail(), StrongPassword, sink);
             var gate = new TaskCompletionSource();
 
             var runA = Task.Run(async () => { await gate.Task; return await seederA.SeedAsync(ct); }, ct);
@@ -125,6 +157,7 @@ public sealed class OwnerSeederQaTests(TestDatabase database) : IntegrationTest(
             scope.ServiceProvider.GetRequiredService<UserManager<AppUser>>(),
             scope.ServiceProvider.GetRequiredService<AppDbContext>(),
             Options.Create(new SeedOptions { Owner = new SeedOwnerOptions { Email = null, Password = null } }),
+            scope.ServiceProvider.GetRequiredService<IPasswordPolicy>(),
             new FakeClock(),
             new LoggerFactory().CreateLogger<OwnerSeeder>());
 
@@ -284,7 +317,7 @@ public sealed class OwnerSeederQaTests(TestDatabase database) : IntegrationTest(
         var reports = await scope.ServiceProvider.GetRequiredService<SeedRunner>().RunAsync(ct);
 
         seeders.OfType<OwnerSeeder>().Count().ShouldBe(1);
-        seeders.Max(seeder => seeder.Order).ShouldBe(new OwnerSeeder(null!, null!, null!, null!, null!).Order);
+        seeders.Max(seeder => seeder.Order).ShouldBe(new OwnerSeeder(null!, null!, null!, null!, null!, null!).Order);
         reports.Last().Seeder.ShouldBe("owner");
         reports.Last().ShouldBe(new SeedReport("owner", 1, 0, 0));
         (await ScalarAsync($"SELECT role FROM users WHERE email = '{email}'", ct)).ShouldBe("owner");
@@ -363,6 +396,7 @@ public sealed class OwnerSeederQaTests(TestDatabase database) : IntegrationTest(
             scope.ServiceProvider.GetRequiredService<UserManager<AppUser>>(),
             scope.ServiceProvider.GetRequiredService<AppDbContext>(),
             Options.Create(new SeedOptions { Owner = new SeedOwnerOptions { Email = email, Password = password } }),
+            scope.ServiceProvider.GetRequiredService<IPasswordPolicy>(),
             new FakeClock(),
             loggers.CreateLogger<OwnerSeeder>());
     }

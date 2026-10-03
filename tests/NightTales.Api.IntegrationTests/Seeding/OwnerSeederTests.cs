@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using NightTales.Application.Abstractions.Identity;
 using NightTales.Infrastructure.Persistence;
 using NightTales.Infrastructure.Persistence.Seeding;
 using NightTales.TestKit;
@@ -68,6 +69,25 @@ public sealed class OwnerSeederTests(TestDatabase database) : IntegrationTest(da
 
         exception.Code.ShouldContain("PasswordTooShort");
         exception.ToString().ShouldNotContain(weak, Case.Sensitive);
+        (await Database.QueryStringsAsync("SELECT count(*)::text FROM users", ct)).ShouldBe(["0"]);
+    }
+
+    [Fact]
+    public async Task OwnerSeed_BreachedPassword_FailsWithCodeOnly()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await ResetAsync(ct);
+        const string breached = "nts-blocked-placeholder-000042";
+        var sink = new CapturingLoggerProvider();
+        var email = NewEmail();
+
+        var exception = await Should.ThrowAsync<SeedValidationException>(
+            () => RunAsync(email, breached, sink, ct).AsTask());
+
+        exception.Code.ShouldBe("seed_owner_invalid:breached_password");
+        exception.ToString().ShouldNotContain(breached, Case.Sensitive);
+        exception.ToString().ShouldNotContain(email, Case.Sensitive);
+        sink.Text.ShouldNotContain(breached, Case.Sensitive);
         (await Database.QueryStringsAsync("SELECT count(*)::text FROM users", ct)).ShouldBe(["0"]);
     }
 
@@ -144,6 +164,7 @@ public sealed class OwnerSeederTests(TestDatabase database) : IntegrationTest(da
             scope.ServiceProvider.GetRequiredService<UserManager<AppUser>>(),
             scope.ServiceProvider.GetRequiredService<AppDbContext>(),
             Options.Create(new SeedOptions { Owner = new SeedOwnerOptions { Email = email, Password = password } }),
+            scope.ServiceProvider.GetRequiredService<IPasswordPolicy>(),
             new FakeClock(),
             loggers.CreateLogger<OwnerSeeder>());
 
