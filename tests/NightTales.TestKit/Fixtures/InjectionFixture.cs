@@ -10,7 +10,7 @@ namespace NightTales.TestKit.Fixtures;
 /// </summary>
 /// <param name="Id">The fixture id; also the file name without extension.</param>
 /// <param name="Language">The content language of the run the payload is injected into, <c>vi</c> or <c>en</c>.</param>
-/// <param name="Field">The data-object slot: <c>brief</c>, <c>bible.summary</c>, <c>facts[0].statement</c>, <c>avoid_plots[0]</c> or <c>structure_plan.required.opening</c>.</param>
+/// <param name="Field">The material slot of the data object: <c>brief</c>, <c>bible.summary</c>, <c>facts[0].statement</c> or <c>avoid_plots[0]</c>; control keys (<c>structure_plan</c>, ids) take vocabulary values only and are never a payload slot.</param>
 /// <param name="Value">The hostile text.</param>
 /// <param name="Canary">A unique token embedded in <see cref="Value"/>; it must never appear in model output.</param>
 /// <param name="Expect">The output expectations, used by the live fixture tests.</param>

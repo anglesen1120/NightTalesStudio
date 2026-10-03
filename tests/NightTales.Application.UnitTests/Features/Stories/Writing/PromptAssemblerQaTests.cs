@@ -34,10 +34,10 @@ public sealed class PromptAssemblerQaTests
 
     private static readonly string[] Languages = ["vi", "en"];
 
-    private static readonly string[] Fields = ["brief", "bible.summary", "facts[0].statement", "avoid_plots[0]", "structure_plan.required.opening"];
+    private static readonly string[] Fields = ["brief", "bible.summary", "facts[0].statement", "avoid_plots[0]"];
 
     private static readonly string[] AllSlots =
-        ["/brief", "/bible/episode_summaries/0/summary", "/facts/0/statement", "/avoid_plots/0", "/structure_plan/required/opening"];
+        ["/brief", "/bible/episode_summaries/0/summary", "/facts/0/statement", "/avoid_plots/0"];
 
     public static TheoryData<string> FixtureIds()
     {
@@ -97,6 +97,7 @@ public sealed class PromptAssemblerQaTests
         using var reference = JsonDocument.Parse(baseline.UserDataJson);
         doc.RootElement.GetProperty("task").GetString().ShouldBe("write_story");
         doc.RootElement.GetProperty("length").GetRawText().ShouldBe(reference.RootElement.GetProperty("length").GetRawText());
+        doc.RootElement.GetProperty("structure_plan").GetRawText().ShouldBe(reference.RootElement.GetProperty("structure_plan").GetRawText());
 
         var truncatedBrief = fixture.Value.Length > 1000 ? fixture.Value[..1000] : fixture.Value;
         foreach (var path in AllSlots)
@@ -426,7 +427,7 @@ public sealed class PromptAssemblerQaTests
         Request(
             episode: Episode(
                 payload,
-                structure: new StructurePlan(new StructureRequirements(null, null, payload, null), new StructureForbidden([], [], [], []))),
+                structure: new StructurePlan(new StructureRequirements(null, null, "in_medias_res", null), new StructureForbidden([], [], [], []))),
             bible: new BibleSnapshot(1, null, [], [], [], [new BibleEpisodeSummarySnapshot("Episode 1", payload)], false),
             facts: [new FactForWriter("f1", payload, ["s1"])],
             avoid: [payload],

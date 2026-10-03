@@ -5,6 +5,7 @@ using System.Text.Unicode;
 using System.Text.RegularExpressions;
 using Microsoft.Extensions.Logging;
 using NightTales.Application.Abstractions.Prompts;
+using NightTales.Application.Abstractions.Research;
 using NightTales.Domain.Common;
 using NightTales.Domain.Episodes;
 using NightTales.Domain.Stories.Prompts;
@@ -102,10 +103,10 @@ public sealed partial class PromptAssembler(IPromptCatalog catalog, ILogger<Prom
                 unitsPerSegment,
                 target),
             req.Bible,
-            req.Facts is null ? [] : [.. req.Facts.Select(fact => new DataFact(fact.Id, fact.Statement, fact.SourceAliases))],
+            req.Facts is null ? [] : [.. req.Facts.Select(ToData)],
             req.AvoidPlots,
             req.Episode.Structure is { } plan ? ToData(plan) : null,
-            req.Run.Attempt == 2 && req.ViolatedRules is { } rules ? new DataCorrectiveNote(rules) : null);
+            req.Run.Attempt == 2 && req.ViolatedRules is { } rules ? new DataCorrectiveNote([.. rules.Select(rule => Guard(rule, RuleIdPattern(), "violated rule id"))]) : null);
     }
 
     private string TruncateBrief(string brief)
@@ -122,16 +123,36 @@ public sealed partial class PromptAssembler(IPromptCatalog catalog, ILogger<Prom
         return brief[..end];
     }
 
+    private static DataFact ToData(FactForWriter fact) =>
+        new(
+            Guard(fact.Id, FactIdPattern(), "fact id"),
+            fact.Statement,
+            [.. fact.SourceAliases.Select(alias => Guard(alias, SourceAliasPattern(), "source alias"))]);
+
     private static DataStructurePlan ToData(StructurePlan plan) =>
         new(
-            new DataStructureRequired(plan.Required.SubGenre, plan.Required.Setting, plan.Required.Opening, plan.Required.TwistType),
+            new DataStructureRequired(
+                GuardStructure(plan.Required.SubGenre, "required sub_genre"),
+                GuardStructure(plan.Required.Setting, "required setting"),
+                GuardStructure(plan.Required.Opening, "required opening"),
+                GuardStructure(plan.Required.TwistType, "required twist_type")),
             new DataStructureForbidden(
-                NullIfEmpty(plan.Forbidden.SubGenre),
-                NullIfEmpty(plan.Forbidden.Setting),
-                NullIfEmpty(plan.Forbidden.Opening),
-                NullIfEmpty(plan.Forbidden.TwistType)));
+                NullIfEmpty(plan.Forbidden.SubGenre, "forbidden sub_genre"),
+                NullIfEmpty(plan.Forbidden.Setting, "forbidden setting"),
+                NullIfEmpty(plan.Forbidden.Opening, "forbidden opening"),
+                NullIfEmpty(plan.Forbidden.TwistType, "forbidden twist_type")));
 
-    private static IReadOnlyList<string>? NullIfEmpty(IReadOnlyList<string> values) => values.Count == 0 ? null : values;
+    private static string? GuardStructure(string? value, string slot) =>
+        value is null ? null : Guard(value, StructureValuePattern(), "structure_plan " + slot);
+
+    private static IReadOnlyList<string>? NullIfEmpty(IReadOnlyList<string> values, string slot) =>
+        values.Count == 0 ? null : [.. values.Select(value => Guard(value, StructureValuePattern(), "structure_plan " + slot))];
+
+    /// <summary>Control-channel values (ids, aliases, rule ids, vocabulary values) are never free text; a mismatch names the slot, never the value (02 README D6).</summary>
+    private static string Guard(string value, Regex pattern, string slot) =>
+        pattern.IsMatch(value)
+            ? value
+            : throw new ArgumentException("The " + slot + " has an invalid format.");
 
     private static string LanguageName(Language language) => language switch
     {
@@ -154,6 +175,19 @@ public sealed partial class PromptAssembler(IPromptCatalog catalog, ILogger<Prom
 
     [GeneratedRegex(@"\{\{([a-z_]+)\}\}", RegexOptions.CultureInvariant)]
     private static partial Regex PlaceholderPattern();
+
+    [GeneratedRegex(@"^f\d{1,3}\z", RegexOptions.CultureInvariant)]
+    private static partial Regex FactIdPattern();
+
+    [GeneratedRegex(@"^s\d{1,2}\z", RegexOptions.CultureInvariant)]
+    private static partial Regex SourceAliasPattern();
+
+    [GeneratedRegex(@"^[a-z][a-z0-9_]{0,39}\z", RegexOptions.CultureInvariant)]
+    private static partial Regex RuleIdPattern();
+
+    // Vocabulary values (prompts/shared/structure-vocab.v1.json) are short phrases: letters, digits, spaces, apostrophe, hyphen, underscore.
+    [GeneratedRegex(@"^[\p{L}\p{N}][\p{L}\p{N} '’_-]{0,59}\z", RegexOptions.CultureInvariant)]
+    private static partial Regex StructureValuePattern();
 
     [LoggerMessage(
         EventId = 6000,
