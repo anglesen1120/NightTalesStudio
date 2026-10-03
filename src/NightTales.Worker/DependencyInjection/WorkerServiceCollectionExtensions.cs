@@ -8,15 +8,19 @@ using Microsoft.Extensions.Options;
 using NightTales.Application.Abstractions;
 using NightTales.Application.Abstractions.Jobs;
 using NightTales.Application.Abstractions.Outbox;
+using NightTales.Application.DependencyInjection;
 using NightTales.Application.Features.Assets.Jobs;
 using NightTales.Application.Features.Episodes.Outbox;
+using NightTales.Application.Features.Research.Sources.Outbox;
 using NightTales.Application.Telemetry;
 using NightTales.Domain.Episodes.Events;
 using NightTales.Domain.Platform.Events;
+using NightTales.Domain.Research.Events;
 using NightTales.Infrastructure.Compliance.Deletion;
 using NightTales.Infrastructure.DependencyInjection;
 using NightTales.Infrastructure.Email;
 using NightTales.Infrastructure.Jobs;
+using NightTales.Infrastructure.OpenAI;
 using NightTales.Infrastructure.Persistence;
 using NightTales.Infrastructure.Persistence.Flags;
 using NightTales.Infrastructure.Persistence.Outbox;
@@ -95,6 +99,11 @@ public static class WorkerServiceCollectionExtensions
         // 02.2.4-T1 (02 README D14): the Worker meters every provider call it makes.
         services.AddUsageMetering();
 
+        // 02.2.1-T2 (02 README D7/D21): the Worker writes stories — the OpenAI text adapter, the IStoryWriter
+        // over it, and the Application defaults (the IPromptAssembler it assembles with). Needs OpenAi:ApiKey.
+        services.AddNightTalesApplication();
+        services.AddOpenAiTextClient();
+
         // 09.9.2-T2 (09 README BD13): the same feature-flag read service the Api composes — the cached port
         // a job or outbox handler checks, the writer's NOTIFY notifier, and this instance's
         // `LISTEN feature_flags_changed` invalidator, so a flip reached on one host is believed on all.
@@ -137,6 +146,10 @@ public static class WorkerServiceCollectionExtensions
         // composition root and not in AddPersistence because a Worker-only consumer has no business in
         // the Api host's outbox path (the Api only writes outbox rows, 09 README D12).
         services.AddOutboxHandler<EpisodeCancelled, EpisodeCancelledAssetRetentionHandler>();
+
+        // 02.5.1-T1 (plan §5.5): `source_removed.v1` becomes an `EpisodeUpdated` NOTIFY, ids only. The Api only writes
+        // the outbox row; the Worker delivers it.
+        services.AddOutboxHandler<SourceRemoved, SourceRemovedRealtimeHandler>();
 
         // 11.3.3-T1 (11 README D13/F09–F13): the render-node registry, the pinned-TLS connection factory,
         // the health cache, the drift/up instruments and the config seeder. The optional `RenderNodes`

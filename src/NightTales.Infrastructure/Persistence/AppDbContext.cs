@@ -14,6 +14,7 @@ using NightTales.Domain.Episodes;
 using NightTales.Domain.Platform;
 using NightTales.Domain.Rendering;
 using NightTales.Domain.Rendering.Music;
+using NightTales.Domain.Research;
 using NightTales.Domain.Series;
 using NightTales.Domain.Series.Autopilot;
 using NightTales.Domain.Stories;
@@ -65,6 +66,15 @@ public sealed class AppDbContext : IdentityDbContext<AppUser, AppRole, Guid>, IA
     public DbSet<AutopilotRun> AutopilotRuns => Set<AutopilotRun>();
 
     public DbSet<ModerationEvent> ModerationEvents => Set<ModerationEvent>();
+
+    /// <summary>The sources of an episode (02.5.1-T1, table <c>story_sources</c>); <c>IUserOwned</c>, so the D10 tenant filter applies.</summary>
+    public DbSet<StorySource> StorySources => Set<StorySource>();
+
+    /// <summary>The fetcher's work queue (02.5.1-T1, table <c>fetch_tasks</c>, 02 D10); <c>IUserOwned</c>, so the D10 tenant filter applies.</summary>
+    public DbSet<FetchTask> FetchTasks => Set<FetchTask>();
+
+    /// <summary>The append-only url-source creation ledger the 24 h cap counts (02.5.1-T1, table <c>source_creations</c>, CR-31); <c>IUserOwned</c>, so the D10 tenant filter applies.</summary>
+    public DbSet<SourceCreation> SourceCreations => Set<SourceCreation>();
 
     /// <summary>The legal deletion duties of 13.3.1-T1 (table <c>data_deletion_requests</c>); <c>IUserOwned</c>, so the D10 tenant filter applies.</summary>
     public DbSet<DeletionRequest> DeletionRequests => Set<DeletionRequest>();
@@ -171,6 +181,27 @@ public sealed class AppDbContext : IdentityDbContext<AppUser, AppRole, Guid>, IA
                 $"SELECT id FROM episodes WHERE id = {episodeId} AND user_id = {userId} FOR UPDATE",
                 cancellationToken)
             : Task.CompletedTask;
+
+    /// <inheritdoc />
+    public Task LockSeriesForShareAsync(Guid seriesId, CancellationToken cancellationToken) =>
+        CurrentUserId is { } userId
+            ? Database.ExecuteSqlInterpolatedAsync(
+                $"SELECT id FROM series WHERE id = {seriesId} AND user_id = {userId} FOR SHARE",
+                cancellationToken)
+            : Task.CompletedTask;
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// The key is the user id text with advisory seed <c>3</c>: <c>EfRefreshTokenService.LockFamilyAsync</c> uses seed 0,
+    /// <c>SecuritySql.LockUserAsync</c> 1 and <c>SecuritySql.LockActionTokenScopeAsync</c> 2, so none collides with it.
+    /// </remarks>
+    public Task LockUserSourceCapAsync(Guid userId, CancellationToken cancellationToken) =>
+        Database.CurrentTransaction is null
+            ? throw new InvalidOperationException(
+                "The url-source cap lock runs inside the command's transaction (09 README D5); outside one it would not survive its statement.")
+            : Database.ExecuteSqlInterpolatedAsync(
+                $"SELECT pg_advisory_xact_lock(hashtextextended({userId.ToString()}, 3))",
+                cancellationToken);
 
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
     {

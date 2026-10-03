@@ -185,6 +185,57 @@ public static class StoryText
         return normalised[afterLastTerminator..].Trim().Length == 0 ? count : count + 1;
     }
 
+    /// <summary>
+    /// The sentences of <paramref name="text"/> under the same rule as <see cref="CountSentences"/>: a maximal run of
+    /// <c>.</c> <c>!</c> <c>?</c> <c>…</c> ends a sentence (and stays with it), a trailing run without a terminator is
+    /// one more, and a line break also ends a sentence. Blank pieces are dropped; each piece is trimmed.
+    /// </summary>
+    /// <param name="text">The text to split.</param>
+    /// <returns>The sentences in order; empty for null, empty or whitespace-only text.</returns>
+    public static IReadOnlyList<string> SplitSentences(string? text)
+    {
+        var normalised = Normalize(text);
+        var sentences = new List<string>();
+        var start = 0;
+        var index = 0;
+        while (index < normalised.Length)
+        {
+            var character = normalised[index];
+            if (character is '\n' or '\r')
+            {
+                Flush(normalised, start, index, sentences);
+                index++;
+                start = index;
+            }
+            else if (IsTerminator(character))
+            {
+                while (index < normalised.Length && IsTerminator(normalised[index]))
+                {
+                    index++;
+                }
+
+                Flush(normalised, start, index, sentences);
+                start = index;
+            }
+            else
+            {
+                index++;
+            }
+        }
+
+        Flush(normalised, start, normalised.Length, sentences);
+        return sentences;
+    }
+
+    private static void Flush(string text, int start, int end, List<string> sentences)
+    {
+        var piece = text.AsSpan(start, end - start).Trim();
+        if (piece.Length > 0)
+        {
+            sentences.Add(piece.ToString());
+        }
+    }
+
     /// <summary>Whether <paramref name="text"/> carries any markup the D3 validator rejects.</summary>
     /// <param name="text">The text to inspect.</param>
     /// <returns>True when <see cref="FindMarkup"/> finds something.</returns>

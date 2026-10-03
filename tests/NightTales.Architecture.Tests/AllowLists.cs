@@ -61,6 +61,8 @@ internal static class AllowLists
             "NightTales.Application.Features.Compliance.Deletion.Jobs.DataDeletionJob",
             "NightTales.Worker.Jobs.CreditReconciliationJob",
             "NightTales.Infrastructure.Persistence.Queries.SystemWorkQuery",
+            "NightTales.Infrastructure.Pricing.UsageBudgetGuard",
+            "NightTales.Infrastructure.Pricing.GenerationRunOpenBoundsReader",
         };
 
     /// <summary>Job method parameters that may be <c>string</c> (README D12).</summary>

@@ -510,6 +510,10 @@ worker_environment() {
   export ConnectionStrings__Postgres="$connection_string"
   export DataProtection__KekPfxPath="$kek_pfx"
   export DataProtection__KekPfxPassword="$dev_kek_pass"
+  # 02.2.1-T2: the Worker's OpenAI text adapter refuses to start without OpenAi:ApiKey. The key comes from the
+  # caller's environment (OPENAI_API_KEY) and reaches the child through the environment only, never argv. Unset,
+  # a throwaway placeholder lets the stack boot; a story call then fails at the provider (401 -> ProviderError).
+  export OpenAi__ApiKey="${OPENAI_API_KEY:-dev-openai-api-key-unset}"
   storage_mail_environment
   if [ "$mock_present" -eq 1 ]; then
     # D13: the node tuple the Worker's registry binds; the key is RENDER_NODE_<NAME>_API_KEY (F26). The

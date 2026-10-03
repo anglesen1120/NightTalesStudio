@@ -3,6 +3,9 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using NightTales.Application.Abstractions;
+using NightTales.Application.Abstractions.Text;
+using NightTales.Application.Features.Stories.Writing;
+using NightTales.Infrastructure.OpenAI;
 using NightTales.Infrastructure.Persistence;
 using NightTales.TestKit.Security;
 using NightTales.Worker;
@@ -87,6 +90,24 @@ public sealed class WorkerCompositionTests
         app.Configuration.GetValue<int>("Worker:HealthPort").ShouldBe(6001);
     }
 
+    /// <summary>
+    /// 02.2.1-T2 (QA-1): the real Worker composition resolves the story writer chain under
+    /// <c>ValidateScopes = true</c>. <c>ITextClient</c> is a singleton but the
+    /// <c>provider_funds_exhausted</c> flag reader (<see cref="IFeatureFlags"/>) is scoped, so the
+    /// client resolves it through a per-call scope — the <c>UsageMeter</c> precedent — instead of
+    /// capturing it.
+    /// </summary>
+    [Fact]
+    public void WorkerComposition_StoryWriterResolves_UnderScopeValidation()
+    {
+        using var app = WorkerApplication.Build(BuildArgs());
+
+        // Resolving a scoped service from the root still throws (the check above proves the switch is on);
+        // the singletons built on the scoped flag reader resolve.
+        app.Services.GetRequiredService<IStoryWriter>().ShouldBeOfType<OpenAiStoryWriter>();
+        app.Services.GetRequiredService<ITextClient>().ShouldBeOfType<OpenAiTextClient>();
+    }
+
     private static string[] BuildArgs(params string[] extra)
     {
         var args = new List<string>
@@ -98,6 +119,8 @@ public sealed class WorkerCompositionTests
             $"--{TestKek.PasswordConfigurationKey}={TestKek.SharedPassword}",
             // 09.9.3-T1: telemetry refuses to start outside Development without the log user-hash salt.
             "--Logging:UserHashSalt=harness-user-hash-salt",
+            // 02.2.1-T2: AddOpenAiTextClient binds OpenAi:ApiKey (required in every environment).
+            "--OpenAi:ApiKey=harness-openai-api-key-placeholder",
         };
         args.AddRange(extra);
         return [.. args];

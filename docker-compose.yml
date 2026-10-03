@@ -102,6 +102,9 @@ services:
     environment:
       <<: [*app-env, *dev-env, *storage-mail-env]
       Worker__HealthPort: "8082"
+      # 02.2.1-T2: the Worker's OpenAI text adapter requires a key; unset, a throwaway placeholder lets the stack
+      # boot and a story call fails at the provider.
+      OpenAi__ApiKey: ${OPENAI_API_KEY:-dev-openai-api-key-unset}
       # The listener must bind the container's interface, not its loopback, or the published port
       # below could never reach it (the Dockerfile's app default is 127.0.0.1). The host side stays
       # 127.0.0.1, so nothing is exposed beyond this machine.

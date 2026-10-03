@@ -59,3 +59,35 @@ internal sealed class ProbeUnmarkedCommandHandler : ICommandHandler<ProbeUnmarke
     public ValueTask<ErrorOr<Success>> Handle(ProbeUnmarkedCommand command, CancellationToken cancellationToken)
         => ValueTask.FromResult<ErrorOr<Success>>(Result.Success);
 }
+
+/// <summary>
+/// An audited command whose row names the id the handler produced (02.5.1-T1, QA-2): the response-aware projection
+/// is what <c>AuditBehavior</c> must use, the parameterless one only holds the shape without a response.
+/// </summary>
+/// <param name="EntityId">The entity the response-less projection points at.</param>
+[Audited("probe.from_response", Category.Episodes, Visibility.User)]
+internal sealed record ProbeFromResponseCommand(Guid EntityId)
+    : ICommand<ErrorOr<Guid>>, IAuditDataFromResponse<ErrorOr<Guid>>
+{
+    /// <inheritdoc />
+    public AuditData ToAuditData() => new(
+        null,
+        "probe",
+        EntityId,
+        new Dictionary<string, object>(StringComparer.Ordinal) { ["probe"] = "without-response" });
+
+    /// <inheritdoc />
+    public AuditData? ToAuditData(ErrorOr<Guid> response) => new(
+        null,
+        "probe",
+        EntityId,
+        new Dictionary<string, object>(StringComparer.Ordinal) { ["created"] = response.Value });
+}
+
+/// <summary>The handler of <see cref="ProbeFromResponseCommand"/>, for the same reason.</summary>
+internal sealed class ProbeFromResponseCommandHandler : ICommandHandler<ProbeFromResponseCommand, ErrorOr<Guid>>
+{
+    /// <inheritdoc />
+    public ValueTask<ErrorOr<Guid>> Handle(ProbeFromResponseCommand command, CancellationToken cancellationToken)
+        => ValueTask.FromResult<ErrorOr<Guid>>(Guid.CreateVersion7());
+}

@@ -243,9 +243,16 @@ Rules for any change that runs at start-up:
   `.github/workflows/backend.yml`, the local gate script, both build-time blocks in
   [.NET solution](#net-solution), `ApiFactory.ApplyRequiredStartupSettings`, and `WorkerHost.HarnessSettings` /
   `EmailTestSettings` when the Worker binds it. Precedent: `Email__AddressHashPepper` (09.2.6-T3).
+  02.2.1-T2 adds `OpenAi:ApiKey` (Worker only; the Api does not compose the text adapter): `OpenAiTestSettings.WorkerSettings`
+  feeds `WorkerHost.HarnessSettings` and `WorkerHealthProbe`, `tools/dev/up.sh` exports `OpenAi__ApiKey` from `OPENAI_API_KEY`
+  (placeholder when unset), and a real Worker deployment sets `OpenAi__ApiKey` from the secret store. `OpenAi:BaseUrl` must be the
+  pinned relay outside Development.
   The generator reports a missing key as `MSB3073` from `dotnet-getdocument` with a long hosting stack
   (see the build-time block), so check this list before hunting.
 - A new way of starting a host adds a row to this table.
+- `Seed__Owner__Email` / `Seed__Owner__Password` (09.2.5-T2) are optional: `OwnerSeeder` creates the one
+  owner from them when none exists and otherwise skips with a warning, so they need no placeholder in the
+  rows above. Supply them from the secret store (11.5.2) only for the `nts-seed` run; never commit them.
 - The MptAdapter is a separate executable: its API keys, TLS files, listen-address rules and writable
   SQLite data directory must remain valid when changing startup configuration; Api/Worker build-time
   placeholders do not satisfy these checks.

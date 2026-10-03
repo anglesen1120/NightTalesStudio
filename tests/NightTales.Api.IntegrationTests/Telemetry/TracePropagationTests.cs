@@ -10,6 +10,7 @@ using NightTales.Infrastructure.Persistence.Outbox;
 using NightTales.Infrastructure.Telemetry;
 using NightTales.TestKit;
 using NightTales.TestKit.Database;
+using NightTales.TestKit.Telemetry;
 using NightTales.TestKit.Threading;
 using NightTales.TestKit.Time;
 using Serilog.Core;
@@ -36,38 +37,19 @@ public sealed class TracePropagationTests(TestDatabase database) : IntegrationTe
     {
         var ct = TestContextToken.Value;
         var owner = await Database.CreateUserBuilder().CreateAsync(ct: ct);
-        var stopped = new List<Activity>();
-        var jobStopped = new TaskCompletionSource<Activity>(TaskCreationOptions.RunContinuationsAsynchronously);
         using var requests = new ActivitySource(RequestSourceName);
-        using var listener = new ActivityListener
-        {
-            ShouldListenTo = source => source.Name is RequestSourceName
-                or JobTelemetryFilter.ActivitySourceName
-                or OutboxDispatcher.ActivitySourceName,
-            Sample = (ref _) => ActivitySamplingResult.AllData,
-            ActivityStopped = activity =>
-            {
-                lock (stopped)
-                {
-                    stopped.Add(activity);
-                }
-
-                if (activity.Source.Name == JobTelemetryFilter.ActivitySourceName)
-                {
-                    jobStopped.TrySetResult(activity);
-                }
-            },
-        };
-        ActivitySource.AddActivityListener(listener);
+        using var capture = new ActivityCapture();
 
         await using var harness = await EmailHarness.StartAsync(
             Database, new FakeClock(), ct, host => host.WithHangfireServer().WithTelemetry());
 
         ActivityTraceId requestTrace;
+        ActivitySpanId requestSpan;
         using (var request = requests.StartActivity("request"))
         {
             request.ShouldNotBeNull();
             requestTrace = request.TraceId;
+            requestSpan = request.SpanId;
 
             // The write that raises the domain event runs inside the "request": the outbox row stores its
             // traceparent (D11).
@@ -80,15 +62,19 @@ public sealed class TracePropagationTests(TestDatabase database) : IntegrationTe
         }
 
         // The delivery runs after the request ended, on the dispatcher's own thread of control; the job it
-        // enqueues is executed by the real Hangfire server, a third execution context.
+        // enqueues is executed by the real Hangfire server, a third execution context. Other tests' outbox
+        // deliveries and jobs reach the same process-wide listener, so both spans are selected by the unique
+        // parentage that the stored traceparent and the job parameters carry, not by operation name alone.
         (await harness.RunOutboxAsync(ct)).ShouldBeGreaterThan(0);
-        var job = await jobStopped.Task.WaitAsync(Timeout, ct);
 
-        Activity delivery;
-        lock (stopped)
-        {
-            delivery = stopped.First(activity => activity.OperationName == OutboxDispatcher.ActivityName);
-        }
+        var delivery = await capture.WhenStopped(
+            activity => activity.OperationName == OutboxDispatcher.ActivityName
+                && activity.ParentSpanId == requestSpan,
+            ct).WaitAsync(Timeout, ct);
+        var job = await capture.WhenStopped(
+            activity => activity.Source.Name == JobTelemetryFilter.ActivitySourceName
+                && activity.ParentSpanId == delivery.SpanId,
+            ct).WaitAsync(Timeout, ct);
 
         delivery.TraceId.ShouldBe(requestTrace, "the outbox delivery is a child of the request that raised the event");
         job.TraceId.ShouldBe(requestTrace, "the job span joins the request's trace, not a new one");

@@ -170,6 +170,26 @@ public sealed class OpenApiDocumentTests
         operations.ShouldBeGreaterThan(0, "the document must describe at least one operation");
     }
 
+    [Fact]
+    public void Generate_route_documents_a_required_bounded_idempotency_key_and_401_403()
+    {
+        var operation = Root
+            .GetProperty("paths")
+            .GetProperty("/api/v1/episodes/{id}/story/generate")
+            .GetProperty("post");
+
+        var key = operation.GetProperty("parameters").EnumerateArray().Single(parameter =>
+            parameter.GetProperty("in").GetString() == "header"
+            && parameter.GetProperty("name").GetString() == "Idempotency-Key");
+
+        key.GetProperty("required").GetBoolean().ShouldBeTrue("a missing key is the filter's 400, so the contract says required");
+        key.GetProperty("schema").GetProperty("maxLength").GetInt32().ShouldBe(128);
+
+        var responses = operation.GetProperty("responses");
+        responses.TryGetProperty("401", out _).ShouldBeTrue("the route is denied to anonymous callers");
+        responses.TryGetProperty("403", out _).ShouldBeTrue("a user cannot name a system trigger");
+    }
+
     private static JsonElement Root => Document.Value.RootElement;
 
     private static JsonElement Schemas =>

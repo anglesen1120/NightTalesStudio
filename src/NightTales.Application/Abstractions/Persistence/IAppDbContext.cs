@@ -10,6 +10,7 @@ using NightTales.Domain.Episodes;
 using NightTales.Domain.Platform;
 using NightTales.Domain.Rendering;
 using NightTales.Domain.Rendering.Music;
+using NightTales.Domain.Research;
 using NightTales.Domain.Series;
 using NightTales.Domain.Series.Autopilot;
 using NightTales.Domain.Stories;
@@ -44,6 +45,15 @@ public interface IAppDbContext
     DbSet<AutopilotRun> AutopilotRuns { get; }
 
     DbSet<ModerationEvent> ModerationEvents { get; }
+
+    /// <summary>The sources of an episode (02.5.1-T1, <c>story_sources</c>); <c>IUserOwned</c>, so the D10 tenant filter applies.</summary>
+    DbSet<StorySource> StorySources { get; }
+
+    /// <summary>The fetcher's work queue (02.5.1-T1, <c>fetch_tasks</c>); <c>IUserOwned</c>, so the D10 tenant filter applies.</summary>
+    DbSet<FetchTask> FetchTasks { get; }
+
+    /// <summary>The append-only url-source creation ledger the 24 h cap counts (02.5.1-T1, <c>source_creations</c>, CR-31); <c>IUserOwned</c>, so the D10 tenant filter applies.</summary>
+    DbSet<SourceCreation> SourceCreations { get; }
 
     /// <summary>The legal deletion duties of 13.3.1-T1 (<c>data_deletion_requests</c>); <c>IUserOwned</c>, so the D10 tenant filter applies.</summary>
     DbSet<DeletionRequest> DeletionRequests { get; }
@@ -88,6 +98,28 @@ public interface IAppDbContext
     /// <param name="episodeId">The episode to lock.</param>
     /// <param name="cancellationToken">Cancels the statement.</param>
     Task LockEpisodeForUpdateAsync(Guid episodeId, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Takes a shared row lock on the current user's series (<c>SELECT … FOR SHARE</c>, 02.2.2-T2 SEC-2) so the
+    /// <c>Topic</c> a command reads cannot change under it: a concurrent topic edit (an <c>UPDATE</c>, which needs
+    /// the exclusive lock) waits until the surrounding transaction ends. Like <see cref="LockEpisodeForUpdateAsync"/>
+    /// it matches only rows owned by the scope's user and locks nothing for another user, an unknown id or an
+    /// anonymous scope; the tenant-filtered load that follows is what answers 404.
+    /// </summary>
+    /// <param name="seriesId">The series to lock.</param>
+    /// <param name="cancellationToken">Cancels the statement.</param>
+    Task LockSeriesForShareAsync(Guid seriesId, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Takes the transaction-scoped advisory lock that serialises the 24 h url-source cap of one user across <em>all</em>
+    /// of the user's episodes (02.5.1-T1 CR-1/SEC-1): the episode row lock alone does not, so two parallel adds on
+    /// different episodes could both read a stale count. Taken after <see cref="LockEpisodeForUpdateAsync"/> and before the
+    /// count, always in that order; released at commit or rollback. It throws outside a transaction, where the lock would
+    /// die with its own statement and protect nothing.
+    /// </summary>
+    /// <param name="userId">The user whose creations are counted.</param>
+    /// <param name="cancellationToken">Cancels the statement.</param>
+    Task LockUserSourceCapAsync(Guid userId, CancellationToken cancellationToken);
 
     Task<int> SaveChangesAsync(CancellationToken cancellationToken);
 }

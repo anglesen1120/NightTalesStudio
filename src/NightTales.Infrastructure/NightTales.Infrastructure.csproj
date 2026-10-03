@@ -30,6 +30,9 @@
     <PackageReference Include="Microsoft.AspNetCore.DataProtection.EntityFrameworkCore" />
     <PackageReference Include="Microsoft.AspNetCore.Identity.EntityFrameworkCore" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" PrivateAssets="all" />
+    <!-- 02.2.1-T2 (02 README D7/F23): the one retry layer (per-step pipelines) of OpenAiTextClient. -->
+    <PackageReference Include="Microsoft.Extensions.Http.Resilience" />
+    <PackageReference Include="OpenAI" />
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />
     <PackageReference Include="Npgsql.OpenTelemetry" />
     <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" />
@@ -50,6 +53,16 @@
   -->
   <ItemGroup>
     <EmbeddedResource Include="Identity/Resources/breached-passwords.txt" LogicalName="NightTales.Infrastructure.Identity.Resources.breached-passwords.txt" />
+  </ItemGroup>
+
+  <!--
+    02.5.1-T1 (02.5.1 plan §3.1): the IANA/Mozilla public suffix list that decides a source URL's registrable domain.
+    Vendored verbatim, MPL-2.0 header intact (the list is data; the licence applies to the list text), embedded so a
+    deployment cannot ship without it. `PublicSuffixListProvider` addresses it by this logical name; refresh it with
+    a PR that replaces the file from https://publicsuffix.org/list/public_suffix_list.dat.
+  -->
+  <ItemGroup>
+    <EmbeddedResource Include="Research/public_suffix_list.dat" LogicalName="NightTales.Infrastructure.Research.public_suffix_list.dat" />
   </ItemGroup>
 
   <!--

@@ -19,6 +19,7 @@ using NightTales.Infrastructure.Realtime;
 using NightTales.Infrastructure.Telemetry;
 using NightTales.TestKit.Database;
 using NightTales.TestKit.Email;
+using NightTales.TestKit.OpenAI;
 using NightTales.TestKit.Security;
 using NightTales.TestKit.Storage;
 using NightTales.TestKit.Time;
@@ -340,6 +341,12 @@ public sealed class WorkerHost(TestDatabase database, FakeClock clock) : IAsyncD
         // `Email` section and `App:PublicOrigin` on start-up — see EmailTestSettings for what a host needs
         // and for the keys a test overrides (EmailEndToEndTests points them at Mailpit).
         foreach (var (key, value) in EmailTestSettings.WorkerSettings)
+        {
+            settings[key] = value;
+        }
+
+        // 02.2.1-T2: the Worker composes the OpenAI text adapter, which requires OpenAi:ApiKey in every environment.
+        foreach (var (key, value) in OpenAiTestSettings.WorkerSettings)
         {
             settings[key] = value;
         }
