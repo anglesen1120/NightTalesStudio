@@ -302,6 +302,7 @@ Canonical row equals `../README.md` §8.1 ✅. Re-estimate: high-level M (1.0) �
 | [OPEN] | 11.6.1-T1 | `restore-drill.sh` step (4) must call `deletions export --since <target-time> --out …` **before** the restore and `deletions reapply --since <target-time> --file …` after, and treat a non-zero exit as a failed check; the file currently says only "via 13's path". Hand-off, not a code change here. |
 | [OPEN] | 02.5.2-T2 | Its "[OPEN] 9" asks 13.3.1-T1 to confirm the `research/` prefix sweep — **confirmed**, conditional on CR-1; the orphan-object path (02.5.2-T2:219) is covered only by the prefix listing. |
 | [OPEN] | 08 §5.2 | Threshold/severity for the due-soon rule (11.6.2-T1:32 says thresholds are 08's) — no behaviour depends on it. |
+| [OPEN] | 06.4.3-T1 | **Remove `channel` from `DataDeletionOptions.DefaultDeferredScopes`** when registering the `channel` `IDeletionScopeHandler`. 13.3.1-T1 ships the default `["account", "channel"]` (deviation from §7.1's `["account"]`) because no `channel` handler exists yet and the Worker must boot; until the entry is removed, K21's fail-fast does not cover `channel`. |
 
 ## 11. Rollout
 

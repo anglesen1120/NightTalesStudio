@@ -39,6 +39,7 @@ public sealed class InitialCoreMigrationTests(TestDatabase database) : Integrati
         "audit_logs",
         "auth_challenges",
         "autopilot_runs",
+        "data_deletion_requests",
         "data_protection_keys",
         "email_messages",
         "episodes",

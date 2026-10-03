@@ -13,8 +13,9 @@ namespace NightTales.Api.IntegrationTests.Migrations;
 /// <summary>
 /// The <c>_05_MusicTracks</c> migration (05.3.2-T3, 05 README D8/CR-2): the global catalog table reaches a
 /// fresh database with the agreed columns, the unique <c>track_id</c> index and the D8 CHECKs, carries no
-/// <c>user_id</c>, matches the EF model, and its <c>Down</c> drops it. This class owns the last-migration
-/// <c>Down</c> check, so the previous owner (<c>GenerationRunsMigrationTests</c>) finds its own migration by name.
+/// <c>user_id</c>, matches the EF model, and its <c>Down</c> drops it. Another migration followed it
+/// (<c>_13_DataDeletionRequests</c> owns the last-migration <c>Down</c> check), so this class finds its own
+/// migration by name, like <c>PriceVersionsMigrationTests</c>.
 /// </summary>
 [Trait("Category", "Integration")]
 [Trait("Category", "Migration")]
@@ -199,24 +200,23 @@ public sealed class MusicTracksMigrationTests(TestDatabase database) : Integrati
     {
         await using var context = Database.CreateAppDbContext();
         var migrations = context.Database.GetMigrations().Order(StringComparer.Ordinal).ToList();
-        migrations[^1].ShouldContain(MigrationName, customMessage: "this test owns the last migration");
-        migrations.Count.ShouldBeGreaterThan(1);
+        var own = migrations.FindIndex(name => name.EndsWith("_" + MigrationName, StringComparison.Ordinal));
+        own.ShouldBeGreaterThan(0, "the migration must exist and have a previous one to revert to");
 
         try
         {
-            await context.Database.GetService<IMigrator>().MigrateAsync(migrations[^2], Ct);
+            // Reverting to the migration before this one also reverts every later migration.
+            await context.Database.GetService<IMigrator>().MigrateAsync(migrations[own - 1], Ct);
 
             (await Database.QueryStringsAsync("SELECT coalesce(to_regclass('public.music_tracks')::text, '')", Ct))
                 .ShouldBe([string.Empty], ignoreOrder: false, customMessage: "the Down drops the table");
-
-            await context.Database.GetService<IMigrator>().MigrateAsync(migrations[^1], Ct);
-
-            (await Database.QueryStringsAsync("SELECT count(*)::text FROM music_tracks", Ct))
-                .ShouldBe(["0"], ignoreOrder: false, customMessage: "the re-created table is empty");
         }
         finally
         {
-            await context.Database.GetService<IMigrator>().MigrateAsync(migrations[^1], Ct);
+            await context.Database.MigrateAsync(CancellationToken.None);
         }
+
+        (await Database.QueryStringsAsync("SELECT count(*)::text FROM music_tracks", Ct))
+            .ShouldBe(["0"], ignoreOrder: false, customMessage: "the re-created table is empty");
     }
 }

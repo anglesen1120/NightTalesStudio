@@ -531,6 +531,109 @@ namespace NightTales.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("NightTales.Domain.Compliance.Deletion.DeletionRequest", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<int>("Attempts")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("attempts");
+
+                    b.Property<DateTimeOffset?>("ClaimedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("claimed_at");
+
+                    b.Property<DateTimeOffset?>("CompletedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("completed_at");
+
+                    b.Property<DateTimeOffset>("DueAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("due_at");
+
+                    b.Property<DateTimeOffset?>("LastErrorAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("last_error_at");
+
+                    b.Property<string>("LastErrorCode")
+                        .HasColumnType("text")
+                        .HasColumnName("last_error_code");
+
+                    b.Property<DateTimeOffset?>("ReappliedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("reapplied_at");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("reason");
+
+                    b.Property<DateTimeOffset>("RequestedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("requested_at");
+
+                    b.Property<string>("Scope")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("scope");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("text")
+                        .HasDefaultValue("pending")
+                        .HasColumnName("status");
+
+                    b.Property<Guid?>("TargetId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("target_id");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.Property<uint>("Version")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
+                    b.HasKey("Id")
+                        .HasName("pk_data_deletion_requests");
+
+                    b.HasIndex("DueAt")
+                        .HasDatabaseName("ix_deletion_requests_due")
+                        .HasFilter("completed_at IS NULL");
+
+                    b.HasIndex("CompletedAt", "Id")
+                        .HasDatabaseName("ix_deletion_requests_reapply")
+                        .HasFilter("completed_at IS NOT NULL");
+
+                    b.HasIndex("UserId", "RequestedAt", "Id")
+                        .IsDescending(false, true, true)
+                        .HasDatabaseName("ix_deletion_requests_user");
+
+                    b.HasIndex("UserId", "Scope", "TargetId", "Reason")
+                        .IsUnique()
+                        .HasDatabaseName("ux_deletion_requests_open")
+                        .HasFilter("completed_at IS NULL");
+
+                    NpgsqlIndexBuilderExtensions.AreNullsDistinct(b.HasIndex("UserId", "Scope", "TargetId", "Reason"), false);
+
+                    b.ToTable("data_deletion_requests", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_data_deletion_requests_reason", "\"reason\" IN ('account_delete', 'google_revoke', 'in_app_revoke', 'user_request')");
+
+                            t.HasCheckConstraint("ck_data_deletion_requests_scope", "\"scope\" IN ('account', 'channel', 'episode')");
+
+                            t.HasCheckConstraint("ck_data_deletion_requests_status", "\"status\" IN ('completed', 'failed', 'in_progress', 'pending')");
+                        });
+                });
+
             modelBuilder.Entity("NightTales.Domain.Compliance.ModerationEvent", b =>
                 {
                     b.Property<Guid>("Id")

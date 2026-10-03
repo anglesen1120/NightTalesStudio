@@ -17,6 +17,7 @@ using NightTales.Infrastructure.DependencyInjection;
 using NightTales.Infrastructure.Persistence.Audit;
 using NightTales.Infrastructure.Persistence.Idempotency;
 using NightTales.Infrastructure.Persistence.Outbox;
+using NightTales.Infrastructure.Compliance.Deletion;
 using NightTales.Infrastructure.Persistence.Queries;
 using NightTales.Infrastructure.Persistence.Seeding;
 using NightTales.Infrastructure.Persistence.UnitOfWork;
@@ -134,6 +135,10 @@ public static class PersistenceServiceCollectionExtensions
         // to, so the row joins the caller's transaction; `AuditBehavior` is slot 6 of the D4 pipeline and
         // the auth handlers/jobs/CLI verbs call the same port.
         services.AddScoped<IAuditWriter, EfAuditWriter>();
+
+        // 13.3.1-T1: the one entry point that starts a legal deletion clock, in both hosts (06/02/13 callers
+        // run in the Api or the Worker). The executing half is the Worker's (AddDeletionEngine).
+        services.AddDeletionRequests();
 
         // The AuditBehavior's per-request-type attribute lookup (09.3.6-T1, plan §3). A singleton, and
         // registered here rather than in a host: both hosts build their Mediator over this persistence
