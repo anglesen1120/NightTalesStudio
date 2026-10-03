@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Options;
 using NightTales.Application.Abstractions.Usage;
 using NightTales.Infrastructure.Persistence.Queries;
 using NightTales.Infrastructure.Persistence.Seeding;
@@ -23,10 +24,8 @@ public static class UsageServiceCollectionExtensions
 
         services.AddOptions<PricingOptions>()
             .BindConfiguration(PricingOptions.SectionName)
-            .Validate(
-                options => options.SurchargeThresholdTokens > 0,
-                $"'{PricingOptions.SectionName}:{nameof(PricingOptions.SurchargeThresholdTokens)}' must be greater than zero.")
             .ValidateOnStart();
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IValidateOptions<PricingOptions>, PricingOptionsValidator>());
 
         services.AddScoped<ISeeder, PriceVersionSeeder>();
         services.TryAddSingleton<IPriceCatalog, PriceCatalog>();
@@ -34,5 +33,19 @@ public static class UsageServiceCollectionExtensions
         services.TryAddSingleton<IStoryCostEstimator, StoryCostEstimator>();
 
         return services;
+    }
+}
+
+/// <summary>Fails the start-up on an invalid <c>OpenAi:Pricing</c> section (rates, units, threshold), with every problem listed.</summary>
+internal sealed class PricingOptionsValidator : IValidateOptions<PricingOptions>
+{
+    /// <inheritdoc />
+    public ValidateOptionsResult Validate(string? name, PricingOptions options)
+    {
+        var problems = PricingOptions.Validate(options);
+
+        return problems.Count == 0
+            ? ValidateOptionsResult.Success
+            : ValidateOptionsResult.Fail(problems.Select(problem => $"{PricingOptions.SectionName}: {problem}"));
     }
 }

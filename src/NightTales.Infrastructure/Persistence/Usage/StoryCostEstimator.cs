@@ -1,7 +1,8 @@
 using System.Collections.Concurrent;
 using System.Text;
+using ErrorOr;
 using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.Options;
+using NightTales.Application.Common.Errors;
 using NightTales.Application.Abstractions.Prompts;
 using NightTales.Application.Abstractions.Usage;
 using NightTales.Domain.Common;
@@ -22,13 +23,13 @@ namespace NightTales.Infrastructure.Persistence.Usage;
 /// Deliberately an upper bound: input tokens are bounded by UTF-8 <em>bytes</em> (P6), output by the cap,
 /// and nothing is assumed cached. A review or revision call also carries the story and the review
 /// findings, which the data-object budget (<c>Story:Prompt:MaxDataObjectBytes</c>) bounds; they are counted
-/// at that budget each. The prompt bytes are cached per <c>(tier, language, prompt release)</c>, so a new
-/// prompt release recomputes them.
+/// at that budget each. Every step's bound also charges a cache write of its whole input (D14 example C). The
+/// prompt bytes are cached per <c>(tier, language, prompt release, data budget)</c>, so a new prompt release or
+/// budget recomputes them; a step whose prompt is not shipped yet returns <c>prompt_not_shipped</c>.
 /// </remarks>
 public sealed class StoryCostEstimator(
     IPriceCatalog catalog,
     IPromptCatalog prompts,
-    IOptions<PricingOptions> options,
     IConfiguration configuration,
     IClock clock) : IStoryCostEstimator
 {
@@ -38,19 +39,41 @@ public sealed class StoryCostEstimator(
     /// <summary>The default of <c>Story:Prompt:MaxDataObjectBytes</c> (02.6.3-T3, D6).</summary>
     public const int DefaultMaxDataObjectBytes = 65_536;
 
-    private readonly ConcurrentDictionary<(LengthTier Tier, Language Language, string Release), StepInputs> _inputs = new();
+    private readonly ConcurrentDictionary<(LengthTier Tier, Language Language, string Release, int DataBudget), StepInputs> _inputs = new();
 
     /// <inheritdoc />
-    public async Task<UsageBound> WorstCaseAsync(LengthTier tier, Language language, CancellationToken ct)
+    public async Task<ErrorOr<UsageBound>> WorstCaseAsync(LengthTier tier, Language language, CancellationToken ct)
     {
-        var version = await catalog.GetActiveAsync(clock.UtcNow, ct).ConfigureAwait(false);
+        var active = await catalog.GetActiveAsync(clock.UtcNow, ct).ConfigureAwait(false);
+        if (active.IsError)
+        {
+            return active.Errors;
+        }
+
+        var version = active.Value;
         var rates = version.ParseRates();
         var target = LengthTargetResolver.Resolve(tier, language, version.ParseLimits());
-        var inputs = _inputs.GetOrAdd((tier, language, prompts.Release), _ => MeasureInputs(language));
-        var threshold = options.Value.SurchargeThresholdTokens;
 
+        var dataBudget = configuration.GetValue("Story:Prompt:MaxDataObjectBytes", DefaultMaxDataObjectBytes);
+        var key = (tier, language, prompts.Release, dataBudget);
+        if (!_inputs.TryGetValue(key, out var inputs))
+        {
+            var measured = MeasureInputs(language, dataBudget);
+            if (measured.IsError)
+            {
+                return measured.Errors;
+            }
+
+            inputs = _inputs.GetOrAdd(key, measured.Value);
+        }
+
+        var threshold = rates.SurchargeThresholdTokens;
+
+        // Each step's bound also charges the largest possible cache write (every input token written to the
+        // cache, D14 example C) at the same rates, long-context branch included: the bound never sits below
+        // what the meter settles for a call that wrote its prompt to the cache.
         decimal Cost(string step, int inputBytes, int maxOutput) =>
-            TextCostCalculator.Compute(rates.RatesFor(ModelOf(step)), inputBytes, 0, 0, maxOutput, threshold)
+            TextCostCalculator.Compute(rates.RatesFor(ModelOf(step)), inputBytes, 0, inputBytes, maxOutput, threshold)
             ?? throw new InvalidOperationException("The calculator returned no cost for a bounded call.");
 
         // The two moderation calls (O7) are free: counted so the call count is explicit, adding 0.
@@ -67,21 +90,28 @@ public sealed class StoryCostEstimator(
 
     private string ModelOf(string step) => configuration[$"OpenAi:Models:{step}"] is { Length: > 0 } model ? model : DefaultModel;
 
-    private StepInputs MeasureInputs(Language language)
+    private ErrorOr<StepInputs> MeasureInputs(Language language, int dataBudget)
     {
-        var dataBudget = configuration.GetValue("Story:Prompt:MaxDataObjectBytes", DefaultMaxDataObjectBytes);
+        try
+        {
+            // The writer prompt: step prompt + the largest preset + every shared block + the data object.
+            var shared = Enum.GetValues<PromptFile>().Sum(file => Bytes(prompts.GetShared(file, language)));
+            var preset = Enum.GetValues<Topic>().Max(topic => Bytes(prompts.GetPreset(topic, language)));
+            var writer = Bytes(prompts.GetStepPrompt(PromptStep.Writer)) + preset + shared + dataBudget;
 
-        // The writer prompt: step prompt + the largest preset + every shared block + the data object.
-        var shared = Enum.GetValues<PromptFile>().Sum(file => Bytes(prompts.GetShared(file, language)));
-        var preset = Enum.GetValues<Topic>().Max(topic => Bytes(prompts.GetPreset(topic, language)));
-        var writer = Bytes(prompts.GetStepPrompt(PromptStep.Writer)) + preset + shared + dataBudget;
+            // Review and revision carry the story (bounded by the data budget) next to their own prompt;
+            // revision also carries the review findings.
+            var review = Bytes(prompts.GetStepPrompt(PromptStep.Review)) + (2 * dataBudget);
+            var revision = Bytes(prompts.GetStepPrompt(PromptStep.Revision)) + (3 * dataBudget);
 
-        // Review and revision carry the story (bounded by the data budget) next to their own prompt;
-        // revision also carries the review findings.
-        var review = Bytes(prompts.GetStepPrompt(PromptStep.Review)) + (2 * dataBudget);
-        var revision = Bytes(prompts.GetStepPrompt(PromptStep.Revision)) + (3 * dataBudget);
-
-        return new StepInputs(writer, review, revision);
+            return new StepInputs(writer, review, revision);
+        }
+        catch (PromptCatalogException exception)
+        {
+            // A step whose prompt the manifest does not ship yet cannot be bounded: fail closed with a typed
+            // error instead of throwing out of the budget guard's reserve path.
+            return Error.Failure(ErrorCodes.PromptNotShipped, exception.Message);
+        }
     }
 
     private static int Bytes(string text) => Encoding.UTF8.GetByteCount(text);

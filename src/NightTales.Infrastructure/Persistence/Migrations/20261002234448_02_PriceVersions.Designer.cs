@@ -14,7 +14,7 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace NightTales.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    [Migration("20261002215659_02_PriceVersions")]
+    [Migration("20261002234448_02_PriceVersions")]
     partial class _02_PriceVersions
     {
         /// <inheritdoc />
@@ -1418,7 +1418,6 @@ namespace NightTales.Infrastructure.Persistence.Migrations
                         .HasDatabaseName("ix_price_versions_active_from");
 
                     b.HasIndex("ConfigHash")
-                        .IsUnique()
                         .HasDatabaseName("ix_price_versions_config_hash");
 
                     b.ToTable("price_versions", (string)null);
@@ -1526,6 +1525,9 @@ namespace NightTales.Infrastructure.Persistence.Migrations
                     b.HasIndex("GenerationRunId")
                         .HasDatabaseName("ix_usage_records_generation_run_id");
 
+                    b.HasIndex("PriceVersion")
+                        .HasDatabaseName("ix_usage_records_price_version");
+
                     b.HasIndex("ReservationId")
                         .HasDatabaseName("ix_usage_records_reservation_id");
 
@@ -1534,6 +1536,9 @@ namespace NightTales.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("EpisodeId", "UserId")
                         .HasDatabaseName("ix_usage_records_episode_id_user_id");
+
+                    b.HasIndex("GenerationRunId", "UserId")
+                        .HasDatabaseName("ix_usage_records_generation_run_id_user_id");
 
                     b.HasIndex("SeriesId", "UserId")
                         .HasDatabaseName("ix_usage_records_series_id_user_id");
@@ -1544,7 +1549,11 @@ namespace NightTales.Infrastructure.Persistence.Migrations
 
                     b.ToTable("usage_records", null, t =>
                         {
+                            t.HasCheckConstraint("ck_usage_records_cost", "\"cost_usd\" IS NULL OR \"cost_usd\" >= 0");
+
                             t.HasCheckConstraint("ck_usage_records_operation", "\"operation\" IN ('bible_proposal', 'fact_sheet', 'idea', 'image', 'moderation', 'render', 'source_find', 'story', 'story_review', 'story_revision', 'tts')");
+
+                            t.HasCheckConstraint("ck_usage_records_tokens", "\"input_tokens\" >= 0 AND \"cached_input_tokens\" >= 0 AND \"output_tokens\" >= 0");
                         });
                 });
 
@@ -2396,6 +2405,12 @@ namespace NightTales.Infrastructure.Persistence.Migrations
 
             modelBuilder.Entity("NightTales.Domain.Usage.UsageRecord", b =>
                 {
+                    b.HasOne("NightTales.Domain.Usage.PriceVersion", null)
+                        .WithMany()
+                        .HasForeignKey("PriceVersion")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .HasConstraintName("fk_usage_records_price_versions_price_version");
+
                     b.HasOne("NightTales.Infrastructure.Persistence.AppUser", null)
                         .WithMany()
                         .HasForeignKey("UserId")
@@ -2409,6 +2424,13 @@ namespace NightTales.Infrastructure.Persistence.Migrations
                         .HasPrincipalKey("Id", "UserId")
                         .OnDelete(DeleteBehavior.SetNull)
                         .HasConstraintName("fk_usage_records_episodes_episode_id_user_id");
+
+                    b.HasOne("NightTales.Domain.Stories.Generation.GenerationRun", null)
+                        .WithMany()
+                        .HasForeignKey("GenerationRunId", "UserId")
+                        .HasPrincipalKey("Id", "UserId")
+                        .OnDelete(DeleteBehavior.SetNull)
+                        .HasConstraintName("fk_usage_records_generation_runs_generation_run_id_user_id");
 
                     b.HasOne("NightTales.Domain.Series.Series", null)
                         .WithMany()

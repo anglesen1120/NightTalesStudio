@@ -519,6 +519,12 @@ public static class ErrorCodes
     /// <summary>Series-level run outcome (ideas): provider error or unavailable (02 D8).</summary>
     public const string IdeasGenerationFailed = "ideas_generation_failed";
 
+    /// <summary>The price catalog has no row active at the run's queue time: the <c>OpenAi:Pricing</c> seed has not run (02 T111, 02.2.4-T1).</summary>
+    public const string PriceCatalogEmpty = "price_catalog_empty";
+
+    /// <summary>A step of the worst-case estimate has no shipped prompt yet, so the cost bound cannot be computed and the run fails closed (02.2.4-T1, CR-2).</summary>
+    public const string PromptNotShipped = "prompt_not_shipped";
+
     /// <summary>Source-run outcome: provider error or unavailable (02 D8).</summary>
     public const string FindSourcesGenerationFailed = "find_sources_generation_failed";
 

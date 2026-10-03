@@ -10,9 +10,10 @@ using NightTales.Infrastructure.Persistence.Seeding;
 namespace NightTales.Infrastructure.Persistence.Usage;
 
 /// <summary>
-/// The <c>price_versions</c> seeder of 02.2.4-T1 (02 README D14): when no row carries the config's hash it
-/// inserts one with <c>active_from = now</c> and <c>version = max + 1</c>; when one does, it does nothing.
-/// Rows are never updated.
+/// The <c>price_versions</c> seeder of 02.2.4-T1 (02 README D14): when the row active now already carries the
+/// config's hash it does nothing; otherwise it inserts one with <c>active_from = now</c> and
+/// <c>version = max + 1</c>, under a transaction-scoped advisory lock so concurrent seeders never allocate the
+/// same number. Rows are never updated, so reverting a config (A, B, A) inserts a third row with A's rates.
 /// </summary>
 /// <remarks>
 /// It is an <see cref="ISeeder"/> like the catalog seeders of 09.2.5-T1, so the same two channels run it:
@@ -51,34 +52,65 @@ public sealed class PriceVersionSeeder(
 
     private async Task<(PriceVersion Row, bool Inserted)> EnsureRowCoreAsync(CancellationToken ct)
     {
+        // A bad config fails the seed: no row is better than a row that prices a call at 0 or negative.
+        var problems = PricingOptions.Validate(options.Value);
+        if (problems.Count > 0)
+        {
+            throw new InvalidOperationException(
+                $"'{PricingOptions.SectionName}' is invalid: {string.Join("; ", problems)}");
+        }
+
         var (ratesJson, limitsJson) = BuildDocuments(options.Value);
         var hash = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(ratesJson + "\n" + limitsJson)));
 
-        var existing = await db.PriceVersions.SingleOrDefaultAsync(row => row.ConfigHash == hash, ct).ConfigureAwait(false);
-        if (existing is not null)
+        try
         {
-            return (existing, Inserted: false);
+            return await EnsureLockedAsync(ratesJson, limitsJson, hash, ct).ConfigureAwait(false);
+        }
+        catch (DbUpdateException exception) when (SeedDbContext.IsUniqueViolation(exception))
+        {
+            // The advisory lock serialises every seeder, so this is a defensive second pass: drop the failed
+            // insert from the tracker and decide again from what the other host committed.
+            SeedDbContext.ResetTracking(db);
+
+            return await EnsureLockedAsync(ratesJson, limitsJson, hash, ct).ConfigureAwait(false);
+        }
+    }
+
+    private async Task<(PriceVersion Row, bool Inserted)> EnsureLockedAsync(
+        string ratesJson,
+        string limitsJson,
+        string hash,
+        CancellationToken ct)
+    {
+        await using var transaction = await db.Database.BeginTransactionAsync(ct).ConfigureAwait(false);
+
+        // Serialises max(version) + 1 across the Api, the Worker and nts-seed: released at commit/rollback.
+        await db.Database
+            .ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock(hashtext('price_versions_seed'))", ct)
+            .ConfigureAwait(false);
+
+        var now = clock.UtcNow;
+
+        // Compared with the ACTIVE row, not with any row of that hash: A -> B -> A must activate A's rates again.
+        var active = await db.PriceVersions
+            .AsNoTracking()
+            .Where(row => row.ActiveFrom <= now)
+            .OrderByDescending(row => row.ActiveFrom)
+            .ThenByDescending(row => row.Version)
+            .FirstOrDefaultAsync(ct)
+            .ConfigureAwait(false);
+        if (active is not null && string.Equals(active.ConfigHash, hash, StringComparison.Ordinal))
+        {
+            return (active, Inserted: false);
         }
 
         var next = (await db.PriceVersions.MaxAsync(row => (int?)row.Version, ct).ConfigureAwait(false) ?? 0) + 1;
-        var now = clock.UtcNow;
         var created = PriceVersion.Create(next, now, ratesJson, limitsJson, hash, now);
 
         db.PriceVersions.Add(created);
-        try
-        {
-            await db.SaveChangesAsync(ct).ConfigureAwait(false);
-        }
-        catch (DbUpdateException)
-        {
-            // The Api and the Worker can seed together: the loser of the unique (version / config_hash)
-            // race finds the winner's row instead of failing the run.
-            // Read untracked: the failed insert is still tracked by this (scope-owned) context, and the
-            // winner may hold the same version number.
-            var winner = await db.PriceVersions.AsNoTracking().SingleAsync(row => row.ConfigHash == hash, ct).ConfigureAwait(false);
-
-            return (winner, Inserted: false);
-        }
+        await db.SaveChangesAsync(ct).ConfigureAwait(false);
+        await transaction.CommitAsync(ct).ConfigureAwait(false);
 
         return (created, Inserted: true);
     }
@@ -97,7 +129,7 @@ public sealed class PriceVersionSeeder(
             StringComparer.Ordinal);
 
         return (
-            new PriceVersionRates(text, image, config.WebSearchCallUsd).ToJson(),
+            new PriceVersionRates(text, image, config.WebSearchCallUsd, config.SurchargeThresholdTokens).ToJson(),
             PriceVersionJson.WriteLimits(PriceLimits.D4Defaults));
     }
 }

@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using NightTales.Domain.Usage;
 
@@ -23,10 +24,17 @@ internal sealed class PriceVersionConfiguration : IEntityTypeConfiguration<Price
         builder.Property(version => version.Limits).HasColumnType("jsonb").IsRequired();
         builder.Property(version => version.ConfigHash).IsRequired();
 
-        // The seeder's idempotence key: one row per distinct config.
-        builder.HasIndex(version => version.ConfigHash).IsUnique();
+        // The seeder's idempotence is decided against the ACTIVE row (A -> B -> A must insert a third row),
+        // so the hash is a plain lookup index, not a unique key.
+        builder.HasIndex(version => version.ConfigHash);
 
         // IPriceCatalog.GetActive: newest active_from <= queued_at.
         builder.HasIndex(version => version.ActiveFrom).IsDescending(true);
+
+        // Append-only (SEC-7): a changed property of a saved row throws on SaveChanges instead of rewriting a rate.
+        foreach (var property in builder.Metadata.GetProperties())
+        {
+            property.SetAfterSaveBehavior(PropertySaveBehavior.Throw);
+        }
     }
 }

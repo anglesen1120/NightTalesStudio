@@ -22,23 +22,29 @@ public sealed record ImagePriceRate(string Unit, decimal PerImageUsd);
 
 /// <summary>
 /// The typed view of one <c>price_versions.rates</c> jsonb document (02 README D14, 00 §6): every
-/// top-level key is a text model name except the reserved <c>image</c> object and the flat
-/// <c>web_search_call</c> price (02 CR-2). The long-context threshold is a configured constant
-/// (<c>OpenAi:Pricing:SurchargeThresholdTokens</c>), not part of the document.
+/// top-level key is a text model name except the reserved <c>image</c> object, the flat
+/// <c>web_search_call</c> price (02 CR-2) and the <c>surcharge_threshold_tokens</c> integer. The O3
+/// long-context threshold is a price parameter: it is stored in the row and hashed with the rates,
+/// so a run settles at the threshold of its own version (02 T111, QA-4).
 /// </summary>
 /// <param name="Text">The per-model text rates, keyed by model name.</param>
 /// <param name="Image">The per-image prices keyed by model name.</param>
 /// <param name="WebSearchCallUsd">The flat USD price of one web-search call, or <c>null</c>.</param>
+/// <param name="SurchargeThresholdTokens">Input tokens above which O3 doubles input and raises output 1.5×.</param>
 public sealed record PriceVersionRates(
     IReadOnlyDictionary<string, PriceRates> Text,
     IReadOnlyDictionary<string, ImagePriceRate> Image,
-    decimal? WebSearchCallUsd)
+    decimal? WebSearchCallUsd,
+    int SurchargeThresholdTokens = TextCostCalculator.DefaultSurchargeThresholdTokens)
 {
     /// <summary>The reserved jsonb key of the flat web-search price.</summary>
     public const string WebSearchCallKey = "web_search_call";
 
     /// <summary>The reserved jsonb key of the per-image price object.</summary>
     public const string ImageKey = "image";
+
+    /// <summary>The reserved jsonb key of the O3 long-context threshold, in input tokens.</summary>
+    public const string SurchargeThresholdKey = "surcharge_threshold_tokens";
 
     /// <summary>
     /// The rates of one model. Called at estimate time, before dispatch, so an unpriced model stops
@@ -66,6 +72,7 @@ public sealed record PriceVersionRates(
         var text = new Dictionary<string, PriceRates>(StringComparer.Ordinal);
         var image = new Dictionary<string, ImagePriceRate>(StringComparer.Ordinal);
         decimal? webSearchCall = null;
+        var threshold = TextCostCalculator.DefaultSurchargeThresholdTokens;
 
         foreach (var (key, node) in document)
         {
@@ -77,26 +84,34 @@ public sealed record PriceVersionRates(
                 case ImageKey:
                     ParseImage(node, image);
                     break;
+                case SurchargeThresholdKey:
+                    threshold = node?.GetValue<int>()
+                        ?? throw new JsonException("price_versions.rates.surcharge_threshold_tokens must be an integer.");
+                    break;
                 default:
                     text[key] = ParseModel(node, key);
                     break;
             }
         }
 
-        return new PriceVersionRates(text, image, webSearchCall);
+        return new PriceVersionRates(text, image, webSearchCall, threshold);
     }
 
     /// <summary>
     /// The canonical compact JSON of this document (reserved keys first, model names in ordinal
-    /// order), so two seeds of the same logical config produce byte-identical rows.
+    /// order), so two seeds of the same logical config produce byte-identical rows. Decimals are
+    /// scale-normalised, so a config that writes <c>0.10</c> and one that writes <c>0.1</c> hash equal.
     /// </summary>
     public string ToJson()
     {
-        var document = new JsonObject();
+        var document = new JsonObject
+        {
+            [SurchargeThresholdKey] = JsonValue.Create(SurchargeThresholdTokens),
+        };
 
         if (WebSearchCallUsd is { } call)
         {
-            document[WebSearchCallKey] = JsonValue.Create(call);
+            document[WebSearchCallKey] = JsonValue.Create(Normalize(call));
         }
 
         if (Image.Count > 0)
@@ -107,7 +122,7 @@ public sealed record PriceVersionRates(
                 images[model] = new JsonObject
                 {
                     ["unit"] = JsonValue.Create(rate.Unit),
-                    ["per_image_usd"] = JsonValue.Create(rate.PerImageUsd),
+                    ["per_image_usd"] = JsonValue.Create(Normalize(rate.PerImageUsd)),
                 };
             }
 
@@ -118,15 +133,18 @@ public sealed record PriceVersionRates(
         {
             document[model] = new JsonObject
             {
-                ["in"] = JsonValue.Create(rate.Input),
-                ["cached"] = JsonValue.Create(rate.CachedInput),
-                ["cache_write"] = JsonValue.Create(rate.CacheWrite),
-                ["out"] = JsonValue.Create(rate.Output),
+                ["in"] = JsonValue.Create(Normalize(rate.Input)),
+                ["cached"] = JsonValue.Create(Normalize(rate.CachedInput)),
+                ["cache_write"] = JsonValue.Create(Normalize(rate.CacheWrite)),
+                ["out"] = JsonValue.Create(Normalize(rate.Output)),
             };
         }
 
         return document.ToJsonString();
     }
+
+    /// <summary>Drops trailing zeros, so <c>0.10m</c> and <c>0.1m</c> serialise to the same literal.</summary>
+    private static decimal Normalize(decimal value) => value / 1.000000000000000000000000000000000m;
 
     private static PriceRates ParseModel(JsonNode? node, string model)
     {

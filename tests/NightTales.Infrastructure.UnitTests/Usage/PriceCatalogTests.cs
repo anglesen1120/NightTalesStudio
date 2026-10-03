@@ -1,3 +1,4 @@
+using NightTales.Application.Common.Errors;
 using NightTales.TestKit;
 using NightTales.TestKit.Database;
 using NightTales.TestKit.Time;
@@ -24,18 +25,20 @@ public sealed class PriceCatalogTests(TestDatabase database) : IntegrationTest(d
         await UsageTestHost.AddVersionAsync(Database, 501, era, UsageTestHost.Luna, Ct);
         await UsageTestHost.AddVersionAsync(Database, 502, era.AddDays(10), UsageTestHost.Luna with { Input = 0.20m }, Ct);
 
-        (await host.Catalog.GetActiveAsync(era.AddDays(9), Ct)).Version.ShouldBe(501, "queued before the new version");
-        (await host.Catalog.GetActiveAsync(era.AddDays(10), Ct)).Version.ShouldBe(502, "active_from is inclusive");
-        (await host.Catalog.GetActiveAsync(era.AddDays(11), Ct)).Version.ShouldBe(502);
+        (await host.Catalog.GetActiveAsync(era.AddDays(9), Ct)).Value.Version.ShouldBe(501, "queued before the new version");
+        (await host.Catalog.GetActiveAsync(era.AddDays(10), Ct)).Value.Version.ShouldBe(502, "active_from is inclusive");
+        (await host.Catalog.GetActiveAsync(era.AddDays(11), Ct)).Value.Version.ShouldBe(502);
     }
 
     [Fact]
-    public async Task PriceCatalog_GetActive_BeforeFirstVersion_Throws()
+    public async Task PriceCatalog_GetActive_BeforeFirstVersion_ReturnsTheTypedError()
     {
         await using var host = new UsageTestHost(Database, new FakeClock());
         await UsageTestHost.AddVersionAsync(Database, 511, new DateTimeOffset(2091, 1, 1, 0, 0, 0, TimeSpan.Zero), UsageTestHost.Luna, Ct);
 
-        await Should.ThrowAsync<InvalidOperationException>(
-            () => host.Catalog.GetActiveAsync(new DateTimeOffset(2000, 1, 1, 0, 0, 0, TimeSpan.Zero), Ct));
+        var result = await host.Catalog.GetActiveAsync(new DateTimeOffset(2000, 1, 1, 0, 0, 0, TimeSpan.Zero), Ct);
+
+        result.IsError.ShouldBeTrue();
+        result.FirstError.Code.ShouldBe(ErrorCodes.PriceCatalogEmpty);
     }
 }

@@ -1,6 +1,7 @@
 using System.Text;
 using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.Options;
+using ErrorOr;
+using NightTales.Application.Common.Errors;
 using NightTales.Application.Abstractions.Prompts;
 using NightTales.Application.Abstractions.Usage;
 using NightTales.Domain.Common;
@@ -9,6 +10,7 @@ using NightTales.Domain.Series;
 using NightTales.Domain.Stories.Prompts;
 using NightTales.Domain.Usage;
 using NightTales.Infrastructure.Persistence.Usage;
+using NightTales.Infrastructure.Prompts;
 using NightTales.TestKit.Time;
 using Shouldly;
 using Xunit;
@@ -30,7 +32,7 @@ public sealed class StoryCostEstimatorTests
         var prompts = new FakePrompts();
         var sut = Estimator(prompts, out _);
 
-        var bound = await sut.WorstCaseAsync(LengthTier.Short, Language.En, TestContext.Current.CancellationToken);
+        var bound = (await sut.WorstCaseAsync(LengthTier.Short, Language.En, TestContext.Current.CancellationToken)).Value;
 
         var limit = PriceLimits.D4Defaults.Story[LengthTier.Short][Language.En];
         var expected =
@@ -49,7 +51,7 @@ public sealed class StoryCostEstimatorTests
         var prompts = new FakePrompts();
         var sut = Estimator(prompts, out _);
 
-        var bound = await sut.WorstCaseAsync(LengthTier.Standard, Language.Vi, TestContext.Current.CancellationToken);
+        var bound = (await sut.WorstCaseAsync(LengthTier.Standard, Language.Vi, TestContext.Current.CancellationToken)).Value;
 
         var limit = PriceLimits.D4Defaults.Story[LengthTier.Standard][Language.Vi];
         var paid =
@@ -68,7 +70,7 @@ public sealed class StoryCostEstimatorTests
 
         foreach (var tier in Enum.GetValues<LengthTier>())
         {
-            var bound = await sut.WorstCaseAsync(tier, Language.En, ct);
+            var bound = (await sut.WorstCaseAsync(tier, Language.En, ct)).Value;
             var limit = PriceLimits.D4Defaults.Story[tier][Language.En];
 
             // A revised run at its caps with fewer input tokens than bytes (a token is never below one byte).
@@ -88,8 +90,8 @@ public sealed class StoryCostEstimatorTests
         var sut = Estimator(new FakePrompts(), out var catalog);
         var ct = TestContext.Current.CancellationToken;
 
-        var shortBound = await sut.WorstCaseAsync(LengthTier.Short, Language.En, ct);
-        var longBound = await sut.WorstCaseAsync(LengthTier.Long, Language.En, ct);
+        var shortBound = (await sut.WorstCaseAsync(LengthTier.Short, Language.En, ct)).Value;
+        var longBound = (await sut.WorstCaseAsync(LengthTier.Long, Language.En, ct)).Value;
         longBound.MaxOutputTokens.ShouldBeGreaterThan(shortBound.MaxOutputTokens);
         longBound.WorstCaseUsd.ShouldBeGreaterThan(shortBound.WorstCaseUsd);
 
@@ -98,7 +100,7 @@ public sealed class StoryCostEstimatorTests
         {
             [LengthTier.Short] = new Dictionary<Language, LengthLimit> { [Language.En] = new(1, 2, 1, 2, 100, 50, 60) },
         });
-        (await sut.WorstCaseAsync(LengthTier.Short, Language.En, ct)).MaxOutputTokens.ShouldBe(100);
+        (await sut.WorstCaseAsync(LengthTier.Short, Language.En, ct)).Value.MaxOutputTokens.ShouldBe(100);
     }
 
     [Fact]
@@ -108,7 +110,7 @@ public sealed class StoryCostEstimatorTests
         var prompts = new FakePrompts { RevisionPrompt = new string('é', 10) };
         var sut = Estimator(prompts, out _);
 
-        var bound = await sut.WorstCaseAsync(LengthTier.Short, Language.En, TestContext.Current.CancellationToken);
+        var bound = (await sut.WorstCaseAsync(LengthTier.Short, Language.En, TestContext.Current.CancellationToken)).Value;
 
         Encoding.UTF8.GetByteCount(prompts.RevisionPrompt).ShouldBe(20);
         bound.MaxInputTokens.ShouldBe(20 + (3 * StoryCostEstimator.DefaultMaxDataObjectBytes));
@@ -121,29 +123,99 @@ public sealed class StoryCostEstimatorTests
         var sut = Estimator(prompts, out _);
         var ct = TestContext.Current.CancellationToken;
 
-        var before = await sut.WorstCaseAsync(LengthTier.Short, Language.En, ct);
+        var before = (await sut.WorstCaseAsync(LengthTier.Short, Language.En, ct)).Value;
 
         // Same release: the cached measurement is served even though the text changed underneath.
         prompts.RevisionPrompt = new string('x', 5_000);
-        (await sut.WorstCaseAsync(LengthTier.Short, Language.En, ct)).MaxInputTokens.ShouldBe(before.MaxInputTokens);
+        (await sut.WorstCaseAsync(LengthTier.Short, Language.En, ct)).Value.MaxInputTokens.ShouldBe(before.MaxInputTokens);
 
         // A new release re-measures.
         prompts.Release = "2026.10.2";
-        (await sut.WorstCaseAsync(LengthTier.Short, Language.En, ct)).MaxInputTokens
+        (await sut.WorstCaseAsync(LengthTier.Short, Language.En, ct)).Value.MaxInputTokens
             .ShouldBe(5_000 + (3 * StoryCostEstimator.DefaultMaxDataObjectBytes));
     }
 
-    private static decimal Cost(int input, int output) =>
-        TextCostCalculator.Compute(Luna, input, 0, 0, output).ShouldNotBeNull();
+    [Fact]
+    public async Task StoryCostEstimator_DataBudgetChange_InvalidatesTheCachedMeasurement()
+    {
+        var prompts = new FakePrompts();
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?> { ["Story:Prompt:MaxDataObjectBytes"] = "1000" })
+            .Build();
+        var sut = new StoryCostEstimator(new FakeCatalog(), prompts, configuration, new FakeClock());
+        var ct = TestContext.Current.CancellationToken;
 
-    private static StoryCostEstimator Estimator(FakePrompts prompts, out FakeCatalog catalog)
+        var small = (await sut.WorstCaseAsync(LengthTier.Short, Language.En, ct)).Value;
+        small.MaxInputTokens.ShouldBe(Encoding.UTF8.GetByteCount(prompts.RevisionPrompt) + 3_000);
+
+        configuration["Story:Prompt:MaxDataObjectBytes"] = "2000";
+        (await sut.WorstCaseAsync(LengthTier.Short, Language.En, ct)).Value.MaxInputTokens
+            .ShouldBe(Encoding.UTF8.GetByteCount(prompts.RevisionPrompt) + 6_000);
+    }
+
+    [Fact]
+    public async Task StoryCostEstimator_BoundIncludesCacheWrites_EvenInTheLongContextBranch()
+    {
+        var prompts = new FakePrompts();
+        var sut = Estimator(prompts, out var catalog);
+        var ct = TestContext.Current.CancellationToken;
+        var limit = PriceLimits.D4Defaults.Story[LengthTier.Short][Language.En];
+
+        foreach (var threshold in new[] { TextCostCalculator.DefaultSurchargeThresholdTokens, 1_000 })
+        {
+            catalog.Threshold = threshold;
+            var bound = (await sut.WorstCaseAsync(LengthTier.Short, Language.En, ct)).Value;
+
+            // A revised run in which every step wrote its whole prompt to the cache: the meter's own arithmetic.
+            var settled =
+                Cost(prompts.WriterBytes, limit.WriterMaxOutput, threshold)
+                + Cost(prompts.ReviewBytes, limit.ReviewMaxOutput, threshold)
+                + Cost(prompts.RevisionBytes, limit.RevisionMaxOutput, threshold)
+                + Cost(prompts.ReviewBytes, limit.ReviewMaxOutput, threshold);
+            bound.WorstCaseUsd.ShouldBeGreaterThanOrEqualTo(settled, $"threshold {threshold}");
+
+            var withoutCacheWrite =
+                TextCostCalculator.Compute(Luna, prompts.WriterBytes, 0, 0, limit.WriterMaxOutput, threshold).ShouldNotBeNull();
+            (Cost(prompts.WriterBytes, limit.WriterMaxOutput, threshold) - withoutCacheWrite).ShouldBeGreaterThan(0m);
+        }
+    }
+
+    [Fact]
+    public async Task StoryCostEstimator_EmptyCatalog_ReturnsTheTypedError()
+    {
+        var sut = Estimator(new FakePrompts(), out var catalog);
+        catalog.Empty = true;
+
+        var result = await sut.WorstCaseAsync(LengthTier.Short, Language.En, TestContext.Current.CancellationToken);
+
+        result.IsError.ShouldBeTrue();
+        result.FirstError.Code.ShouldBe(ErrorCodes.PriceCatalogEmpty);
+    }
+
+    [Fact]
+    public async Task StoryCostEstimator_StepPromptNotShipped_ReturnsTheTypedError()
+    {
+        // The real embedded catalog ships no review/revision step prompt yet: the estimator must fail closed.
+        var prompts = new PromptCatalog(new EmbeddedPromptResourceSource());
+        var sut = Estimator(prompts, out _);
+
+        var result = await sut.WorstCaseAsync(LengthTier.Short, Language.En, TestContext.Current.CancellationToken);
+
+        result.IsError.ShouldBeTrue();
+        result.FirstError.Code.ShouldBe(ErrorCodes.PromptNotShipped);
+    }
+
+    // The bound charges a cache write of the whole input on top of the plain input (D14 example C).
+    private static decimal Cost(int input, int output, int threshold = TextCostCalculator.DefaultSurchargeThresholdTokens) =>
+        TextCostCalculator.Compute(Luna, input, 0, input, output, threshold).ShouldNotBeNull();
+
+    private static StoryCostEstimator Estimator(IPromptCatalog prompts, out FakeCatalog catalog)
     {
         catalog = new FakeCatalog();
 
         return new StoryCostEstimator(
             catalog,
             prompts,
-            Options.Create(new PricingOptions()),
             new ConfigurationBuilder().Build(),
             new FakeClock());
     }
@@ -152,7 +224,14 @@ public sealed class StoryCostEstimatorTests
     {
         public PriceLimits Limits { get; set; } = PriceLimits.D4Defaults;
 
-        public Task<PriceVersion> GetActiveAsync(DateTimeOffset queuedAt, CancellationToken ct) => Task.FromResult(Build());
+        public bool Empty { get; set; }
+
+        public int Threshold { get; set; } = TextCostCalculator.DefaultSurchargeThresholdTokens;
+
+        public Task<ErrorOr<PriceVersion>> GetActiveAsync(DateTimeOffset queuedAt, CancellationToken ct) =>
+            Task.FromResult(Empty
+                ? (ErrorOr<PriceVersion>)Error.Failure(ErrorCodes.PriceCatalogEmpty, "empty")
+                : Build());
 
         public Task<PriceVersion> GetAsync(int version, CancellationToken ct) => Task.FromResult(Build());
 
@@ -161,7 +240,8 @@ public sealed class StoryCostEstimatorTests
             var rates = new PriceVersionRates(
                 new Dictionary<string, PriceRates> { ["gpt-6-luna"] = Luna },
                 new Dictionary<string, ImagePriceRate>(),
-                null).ToJson();
+                null,
+                Threshold).ToJson();
 
             return PriceVersion.Create(1, FakeClock.DefaultStart, rates, PriceVersionJson.WriteLimits(Limits), "fake", FakeClock.DefaultStart);
         }

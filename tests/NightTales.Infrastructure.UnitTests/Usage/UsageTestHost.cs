@@ -46,7 +46,6 @@ internal sealed class UsageTestHost : IAsyncDisposable
         Meter = new UsageMeter(
             _provider.GetRequiredService<IServiceScopeFactory>(),
             Catalog,
-            Microsoft.Extensions.Options.Options.Create(Options),
             clock);
     }
 
@@ -62,12 +61,14 @@ internal sealed class UsageTestHost : IAsyncDisposable
         int version,
         DateTimeOffset activeFrom,
         PriceRates luna,
-        CancellationToken ct)
+        CancellationToken ct,
+        int surchargeThresholdTokens = TextCostCalculator.DefaultSurchargeThresholdTokens)
     {
         var rates = new PriceVersionRates(
             new Dictionary<string, PriceRates> { ["gpt-6-luna"] = luna },
             new Dictionary<string, ImagePriceRate>(),
-            null).ToJson();
+            null,
+            surchargeThresholdTokens).ToJson();
         var limits = PriceVersionJson.WriteLimits(PriceLimits.D4Defaults);
 
         await using var db = database.CreateAppDbContext();

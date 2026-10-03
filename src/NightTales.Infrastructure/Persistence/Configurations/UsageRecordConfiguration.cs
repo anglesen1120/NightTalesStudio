@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using NightTales.Domain.Episodes;
 using NightTales.Domain.Series;
+using NightTales.Domain.Stories.Generation;
 using NightTales.Domain.Usage;
 using NightTales.Infrastructure.Persistence.Conventions;
 
@@ -37,6 +38,28 @@ internal sealed class UsageRecordConfiguration : IEntityTypeConfiguration<UsageR
             .HasForeignKey(record => new { record.SeriesId, record.UserId })
             .HasPrincipalKey(series => new { series.Id, series.UserId })
             .OnDelete(DeleteBehavior.Restrict);
+
+        // 02.2.2-T1 (CR-46 shape): the run is a same-owner composite whose SET NULL nulls only generation_run_id
+        // (the migration rewrites the constraint with raw SQL, as EF cannot emit the column list).
+        builder.HasOne<GenerationRun>().WithMany()
+            .HasForeignKey(record => new { record.GenerationRunId, record.UserId })
+            .HasPrincipalKey(run => new { run.Id, run.UserId })
+            .OnDelete(DeleteBehavior.SetNull);
+
+        // A historical row must stay resolvable: price_versions rows are never deleted, so the FK is Restrict.
+        builder.HasOne<PriceVersion>().WithMany()
+            .HasForeignKey(record => record.PriceVersion)
+            .HasPrincipalKey(version => version.Version)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        builder.ToTable(table =>
+        {
+            table.HasCheckConstraint("ck_usage_records_cost", "\"cost_usd\" IS NULL OR \"cost_usd\" >= 0");
+            table.HasCheckConstraint(
+                "ck_usage_records_tokens",
+                "\"input_tokens\" >= 0 AND \"cached_input_tokens\" >= 0 AND \"output_tokens\" >= 0");
+        });
+
         builder.HasOne<AppUser>().WithMany().HasForeignKey(record => record.UserId).OnDelete(DeleteBehavior.Restrict);
 
         // 00 overview §6:296: the global cost window (12.5.2-T1) and the 08 KPI query.

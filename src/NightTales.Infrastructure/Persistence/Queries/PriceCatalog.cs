@@ -1,8 +1,10 @@
 using System.Collections.Concurrent;
+using ErrorOr;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using NightTales.Application.Abstractions.Persistence;
 using NightTales.Application.Abstractions.Usage;
+using NightTales.Application.Common.Errors;
 using NightTales.Domain.Usage;
 
 namespace NightTales.Infrastructure.Persistence.Queries;
@@ -18,7 +20,7 @@ public sealed class PriceCatalog(IServiceScopeFactory scopeFactory) : IPriceCata
     private readonly ConcurrentDictionary<int, PriceVersion> _byVersion = new();
 
     /// <inheritdoc />
-    public async Task<PriceVersion> GetActiveAsync(DateTimeOffset queuedAt, CancellationToken ct)
+    public async Task<ErrorOr<PriceVersion>> GetActiveAsync(DateTimeOffset queuedAt, CancellationToken ct)
     {
         await using var scope = scopeFactory.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<IAppDbContext>();
@@ -29,9 +31,14 @@ public sealed class PriceCatalog(IServiceScopeFactory scopeFactory) : IPriceCata
             .OrderByDescending(row => row.ActiveFrom)
             .ThenByDescending(row => row.Version)
             .FirstOrDefaultAsync(ct)
-            .ConfigureAwait(false)
-            ?? throw new InvalidOperationException(
+            .ConfigureAwait(false);
+
+        if (version is null)
+        {
+            return Error.Failure(
+                ErrorCodes.PriceCatalogEmpty,
                 $"No price_versions row is active at {queuedAt:O}: the OpenAi:Pricing seed has not run before this queue time.");
+        }
 
         return _byVersion.GetOrAdd(version.Version, version);
     }

@@ -32,6 +32,85 @@ public sealed class PricingOptions
             ["gpt-6-sol"] = new() { In = 2m, Cached = 0.20m, CacheWrite = 2.50m, Out = 10m },
         };
 
+    /// <summary>The largest rate the validator accepts, USD per 1M tokens: a typo guard, not a price ceiling.</summary>
+    public const decimal MaxRatePerMillionUsd = 1_000m;
+
+    /// <summary>The largest <see cref="SurchargeThresholdTokens"/> the validator accepts (above any model context).</summary>
+    public const int MaxSurchargeThresholdTokens = 2_000_000;
+
+    /// <summary>The largest per-image or per-call price the validator accepts, USD.</summary>
+    public const decimal MaxUnitPriceUsd = 100m;
+
+    /// <summary>
+    /// Checks the section: every rate is positive and below the cap, <c>cached</c> does not exceed <c>in</c>, the
+    /// names and units are non-empty and do not shadow a reserved <c>rates</c> key, and the threshold is within
+    /// bounds. Used by <c>ValidateOnStart</c> and again by the seeder, so a bad value can never reach a row.
+    /// </summary>
+    /// <param name="config">The bound section.</param>
+    /// <returns>One message per problem; empty when the section is valid.</returns>
+    public static IReadOnlyList<string> Validate(PricingOptions config)
+    {
+        ArgumentNullException.ThrowIfNull(config);
+
+        var problems = new List<string>();
+
+        if (config.SurchargeThresholdTokens is <= 0 or > MaxSurchargeThresholdTokens)
+        {
+            problems.Add($"{nameof(SurchargeThresholdTokens)} must be between 1 and {MaxSurchargeThresholdTokens}.");
+        }
+
+        if (config.WebSearchCallUsd is { } call && (call <= 0m || call > MaxUnitPriceUsd))
+        {
+            problems.Add($"{nameof(WebSearchCallUsd)} must be greater than 0 and at most {MaxUnitPriceUsd}.");
+        }
+
+        IEnumerable<KeyValuePair<string, ModelPricing>> models = config.Models.Count > 0 ? config.Models : DefaultModels;
+        foreach (var (name, rate) in models)
+        {
+            if (string.IsNullOrWhiteSpace(name) || IsReservedKey(name))
+            {
+                problems.Add($"Models key '{name}' is empty or a reserved rates key.");
+                continue;
+            }
+
+            foreach (var (field, value) in new[] { ("in", rate.In), ("cached", rate.Cached), ("cache_write", rate.CacheWrite), ("out", rate.Out) })
+            {
+                if (value <= 0m || value > MaxRatePerMillionUsd)
+                {
+                    problems.Add($"Models:{name}:{field} must be greater than 0 and at most {MaxRatePerMillionUsd}.");
+                }
+            }
+
+            if (rate.Cached > rate.In)
+            {
+                problems.Add($"Models:{name}: cached must not exceed in.");
+            }
+        }
+
+        foreach (var (name, image) in config.Image)
+        {
+            if (string.IsNullOrWhiteSpace(name) || IsReservedKey(name))
+            {
+                problems.Add($"Image key '{name}' is empty or a reserved rates key.");
+            }
+
+            if (string.IsNullOrWhiteSpace(image.Unit))
+            {
+                problems.Add($"Image:{name}:Unit must not be empty.");
+            }
+
+            if (image.PerImageUsd <= 0m || image.PerImageUsd > MaxUnitPriceUsd)
+            {
+                problems.Add($"Image:{name}:PerImageUsd must be greater than 0 and at most {MaxUnitPriceUsd}.");
+            }
+        }
+
+        return problems;
+    }
+
+    private static bool IsReservedKey(string name) =>
+        name is PriceVersionRates.ImageKey or PriceVersionRates.WebSearchCallKey or PriceVersionRates.SurchargeThresholdKey;
+
     /// <summary>The rates of one model, USD per 1M tokens.</summary>
     public sealed class ModelPricing
     {

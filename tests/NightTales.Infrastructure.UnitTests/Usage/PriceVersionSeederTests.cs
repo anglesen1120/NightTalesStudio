@@ -61,6 +61,70 @@ public sealed class PriceVersionSeederTests(TestDatabase database) : Integration
         (await TotalAsync()).ShouldBe(total);
     }
 
+    [Fact]
+    public async Task PriceVersionSeeder_RevertedConfig_ActivatesOldRatesAgain()
+    {
+        var configA = Options(0.021m);
+        var configB = Options(0.021m);
+        configB.Models["gpt-6-luna"].Out = 0.55m;
+
+        var a1 = await SeedAsync(configA);
+        var b = await SeedAsync(configB);
+        var a2 = await SeedAsync(configA);
+
+        a2.Version.ShouldBeGreaterThan(b.Version, "A -> B -> A inserts a third row: the newest row is what the catalog serves");
+        a2.ConfigHash.ShouldBe(a1.ConfigHash);
+        (await CountByHashAsync(a1.ConfigHash)).ShouldBe(2, "append-only: the first A row is untouched");
+    }
+
+    [Fact]
+    public async Task PriceVersionSeeder_ConcurrentDifferentConfigs_BothInsertWithDistinctVersions()
+    {
+        var configA = Options(0.031m);
+        var configB = Options(0.032m);
+        var total = await TotalAsync();
+
+        var rows = await Task.WhenAll(SeedAsync(configA), SeedAsync(configB), SeedAsync(configA), SeedAsync(configB));
+
+        rows.Select(row => row.Version).Distinct().Count().ShouldBeLessThanOrEqualTo(4);
+        rows.Select(row => row.ConfigHash).Distinct().Count().ShouldBe(2);
+        (await TotalAsync()).ShouldBeGreaterThanOrEqualTo(total + 2, "both distinct configs inserted");
+        (await TotalAsync()).ShouldBeLessThanOrEqualTo(total + 4, "no seed fails on a max(version)+1 collision");
+    }
+
+    [Fact]
+    public async Task PriceVersionSeeder_InvalidConfig_FailsTheSeedAndInsertsNothing()
+    {
+        var total = await TotalAsync();
+        var zeroRate = Options(0.041m);
+        zeroRate.Models["gpt-6-luna"].Out = 0m;
+        var cachedAboveInput = Options(0.042m);
+        cachedAboveInput.Models["gpt-6-luna"].Cached = 5m;
+        var badThreshold = Options(0.043m);
+        badThreshold.SurchargeThresholdTokens = 0;
+
+        foreach (var config in new[] { zeroRate, cachedAboveInput, badThreshold })
+        {
+            await Should.ThrowAsync<InvalidOperationException>(() => SeedAsync(config));
+        }
+
+        (await TotalAsync()).ShouldBe(total);
+    }
+
+    [Fact]
+    public async Task PriceVersionSeeder_ScaleOnlyDifferences_HashEqual()
+    {
+        var plain = Options(0.051m);
+        var padded = Options(0.0510m);
+        padded.Models["gpt-6-luna"].In = 0.100m;
+
+        var first = await SeedAsync(plain);
+        var second = await SeedAsync(padded);
+
+        second.ConfigHash.ShouldBe(first.ConfigHash, "0.10 and 0.100 are one rate");
+        second.Version.ShouldBe(first.Version);
+    }
+
     private static PricingOptions Options(decimal webSearchCall)
     {
         var options = new PricingOptions { WebSearchCallUsd = webSearchCall };

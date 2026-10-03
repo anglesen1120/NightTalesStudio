@@ -56,14 +56,14 @@ public sealed class QaUsageMeteringTests(TestDatabase database) : IntegrationTes
     }
 
     [Fact]
-    public async Task Qa_UsageMeter_Threshold_ComesFromPricingOptions()
+    public async Task Qa_UsageMeter_Threshold_ComesFromTheRunsPriceVersion()
     {
-        // Threshold 1,000 via options: an 12,000-token input doubles the input rate and multiplies
-        // output by 1.5 → (12000×0.20 + 3000×0.75)/1e6 = 0.004650.
-        var options = new PricingOptions { SurchargeThresholdTokens = 1_000 };
-        await using var host = new UsageTestHost(Database, new FakeClock(), options);
+        // Threshold 1,000 stored in the version's rates: an 12,000-token input doubles the input rate and
+        // multiplies output by 1.5 → (12000×0.20 + 3000×0.75)/1e6 = 0.004650.
+        await using var host = new UsageTestHost(Database, new FakeClock());
         var user = await Database.CreateUserBuilder().CreateAsync(ct: Ct);
-        await UsageTestHost.AddVersionAsync(Database, 711, new DateTimeOffset(2090, 1, 1, 0, 0, 0, TimeSpan.Zero), UsageTestHost.Luna, Ct);
+        await UsageTestHost.AddVersionAsync(
+            Database, 711, new DateTimeOffset(2090, 1, 1, 0, 0, 0, TimeSpan.Zero), UsageTestHost.Luna, Ct, surchargeThresholdTokens: 1_000);
         var request = $"req-{Guid.NewGuid():N}";
 
         await host.Meter.RecordAsync(
@@ -97,6 +97,120 @@ public sealed class QaUsageMeteringTests(TestDatabase database) : IntegrationTes
         var rows = await Database.QueryStringsAsync(
             $"SELECT cost_usd::text || '|' || estimated::text FROM usage_records WHERE provider_request_id = '{request}'", Ct);
         rows.ShouldHaveSingleItem().ShouldBe("0.500000|true");
+    }
+
+    [Fact]
+    public async Task Qa_UsageMeter_CachedAboveInput_StillWritesAnEstimatedRowAtTheCallersBound()
+    {
+        await using var host = new UsageTestHost(Database, new FakeClock());
+        var user = await Database.CreateUserBuilder().CreateAsync(ct: Ct);
+        await UsageTestHost.AddVersionAsync(Database, 731, new DateTimeOffset(2090, 1, 1, 0, 0, 0, TimeSpan.Zero), UsageTestHost.Luna, Ct);
+        var request = $"req-{Guid.NewGuid():N}";
+
+        await host.Meter.RecordAsync(
+            new UsageItem(user.Id, "openai", "story", "gpt-6-luna", 1_000, 5_000, 0, 300,
+                ReservationId: null, EpisodeId: null, Estimated: false, CostUsd: 0.25m,
+                PriceVersion: "731", ProviderRequestId: request),
+            Ct);
+
+        (await Database.QueryStringsAsync(
+            $"SELECT cost_usd::text || '|' || estimated::text FROM usage_records WHERE provider_request_id = '{request}'", Ct))
+            .ShouldHaveSingleItem().ShouldBe("0.250000|true", "a paid call with a provider miscount keeps its row at the D1 bound");
+    }
+
+    [Fact]
+    public async Task Qa_UsageMeter_UnpricedModelAfterAPaidCall_StillWritesAnEstimatedRowAtTheCallersBound()
+    {
+        await using var host = new UsageTestHost(Database, new FakeClock());
+        var user = await Database.CreateUserBuilder().CreateAsync(ct: Ct);
+        await UsageTestHost.AddVersionAsync(Database, 741, new DateTimeOffset(2090, 1, 1, 0, 0, 0, TimeSpan.Zero), UsageTestHost.Luna, Ct);
+        var request = $"req-{Guid.NewGuid():N}";
+
+        await host.Meter.RecordAsync(
+            new UsageItem(user.Id, "openai", "story", "gpt-6-unlisted", 1_000, 0, 0, 300,
+                ReservationId: null, EpisodeId: null, Estimated: false, CostUsd: 0.25m,
+                PriceVersion: "741", ProviderRequestId: request),
+            Ct);
+
+        (await Database.QueryStringsAsync(
+            $"SELECT cost_usd::text || '|' || estimated::text FROM usage_records WHERE provider_request_id = '{request}'", Ct))
+            .ShouldHaveSingleItem().ShouldBe("0.250000|true");
+    }
+
+    [Fact]
+    public async Task Qa_UsageMeter_UnpricedModel_WithoutABound_Throws()
+    {
+        await using var host = new UsageTestHost(Database, new FakeClock());
+        var user = await Database.CreateUserBuilder().CreateAsync(ct: Ct);
+        await UsageTestHost.AddVersionAsync(Database, 751, new DateTimeOffset(2090, 1, 1, 0, 0, 0, TimeSpan.Zero), UsageTestHost.Luna, Ct);
+
+        await Should.ThrowAsync<UnknownModelPricingException>(() => host.Meter.RecordAsync(
+            new UsageItem(user.Id, "openai", "story", "gpt-6-unlisted", 1_000, 0, 0, 300,
+                ReservationId: null, EpisodeId: null, Estimated: false, CostUsd: null,
+                PriceVersion: "751", ProviderRequestId: $"req-{Guid.NewGuid():N}"),
+            Ct));
+    }
+
+    [Fact]
+    public async Task Qa_UsageMeter_AlreadyCancelledToken_StillWritesTheRow()
+    {
+        await using var host = new UsageTestHost(Database, new FakeClock());
+        var user = await Database.CreateUserBuilder().CreateAsync(ct: Ct);
+        await UsageTestHost.AddVersionAsync(Database, 761, new DateTimeOffset(2090, 1, 1, 0, 0, 0, TimeSpan.Zero), UsageTestHost.Luna, Ct);
+        var request = $"req-{Guid.NewGuid():N}";
+        using var cancelled = new CancellationTokenSource();
+        await cancelled.CancelAsync();
+
+        await host.Meter.RecordAsync(
+            new UsageItem(user.Id, "openai", "story", "gpt-6-luna", 12_000, 0, 0, 3_000,
+                ReservationId: null, EpisodeId: null, Estimated: false, CostUsd: null,
+                PriceVersion: "761", ProviderRequestId: request),
+            cancelled.Token);
+
+        (await Database.QueryStringsAsync(
+            $"SELECT count(*)::text FROM usage_records WHERE provider_request_id = '{request}'", Ct))
+            .ShouldHaveSingleItem().ShouldBe("1", "the call was paid for: the cancelled job must not lose its cost");
+    }
+
+    [Theory]
+    [InlineData(-1, 0, 0, null)]
+    [InlineData(10, 0, -1, null)]
+    [InlineData(10, -1, 0, null)]
+    [InlineData(null, null, null, 0)]
+    [InlineData(null, null, null, -1)]
+    public async Task Qa_UsageMeter_InvalidItem_IsRejectedBeforeAnyWrite(int? input, int? cached, int? output, int? costCents)
+    {
+        await using var host = new UsageTestHost(Database, new FakeClock());
+        var user = await Database.CreateUserBuilder().CreateAsync(ct: Ct);
+        var request = $"req-{Guid.NewGuid():N}";
+
+        await Should.ThrowAsync<ArgumentException>(() => host.Meter.RecordAsync(
+            new UsageItem(user.Id, "openai", "story", "gpt-6-luna", input, cached, 0, output,
+                ReservationId: null, EpisodeId: null, Estimated: costCents is not null, CostUsd: costCents / 100m,
+                PriceVersion: "771", ProviderRequestId: request),
+            Ct));
+
+        (await Database.QueryStringsAsync(
+            $"SELECT count(*)::text FROM usage_records WHERE provider_request_id = '{request}'", Ct))
+            .ShouldHaveSingleItem().ShouldBe("0");
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("abc")]
+    [InlineData("-3")]
+    [InlineData("0")]
+    [InlineData("1.5")]
+    public async Task Qa_UsageMeter_NonNumericPriceVersion_IsRejectedWithAnArgumentException(string priceVersion)
+    {
+        await using var host = new UsageTestHost(Database, new FakeClock());
+        var user = await Database.CreateUserBuilder().CreateAsync(ct: Ct);
+
+        await Should.ThrowAsync<ArgumentException>(() => host.Meter.RecordAsync(
+            new UsageItem(user.Id, "openai", "story", "gpt-6-luna", 10, 0, 0, 10,
+                ReservationId: null, EpisodeId: null, Estimated: false, CostUsd: null,
+                PriceVersion: priceVersion, ProviderRequestId: $"req-{Guid.NewGuid():N}"),
+            Ct));
     }
 
     private static PricingOptions Options(decimal webSearchCall)

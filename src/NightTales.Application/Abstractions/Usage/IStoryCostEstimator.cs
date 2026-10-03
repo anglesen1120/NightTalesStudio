@@ -1,3 +1,4 @@
+using ErrorOr;
 using NightTales.Domain.Common;
 using NightTales.Domain.Episodes;
 
@@ -16,6 +17,10 @@ public interface IStoryCostEstimator
     /// <param name="tier">The episode's length tier.</param>
     /// <param name="language">The content language.</param>
     /// <param name="ct">Cancels the estimate.</param>
+    /// <returns>
+    /// The bound, or a typed error the caller fails closed on: <c>price_catalog_empty</c> (no active price
+    /// version) or <c>prompt_not_shipped</c> (a pipeline step has no shipped prompt yet).
+    /// </returns>
     /// <exception cref="Domain.Usage.UnknownModelPricingException">A pipeline model is unpriced.</exception>
-    Task<UsageBound> WorstCaseAsync(LengthTier tier, Language language, CancellationToken ct);
+    Task<ErrorOr<UsageBound>> WorstCaseAsync(LengthTier tier, Language language, CancellationToken ct);
 }

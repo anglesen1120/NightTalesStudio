@@ -70,6 +70,35 @@ public sealed class QaTextCostCalculatorBoundaryTests
     }
 
     [Fact]
+    public void Qa_PriceVersionRates_ToJson_NormalisesDecimalScale()
+    {
+        var padded = PriceVersionRates.Parse("""{"gpt-6-luna":{"in":0.10,"cached":0.010,"cache_write":0.1250,"out":0.500},"web_search_call":0.0100}""");
+        var plain = PriceVersionRates.Parse("""{"gpt-6-luna":{"in":0.1,"cached":0.01,"cache_write":0.125,"out":0.5},"web_search_call":0.01}""");
+
+        padded.ToJson().ShouldBe(plain.ToJson(), "0.10 and 0.1 are one rate, so they hash to one config");
+        plain.ToJson().ShouldContain("\"in\":0.1,");
+    }
+
+    [Fact]
+    public void Qa_PriceVersionRates_SurchargeThreshold_IsPartOfTheDocumentAndRoundTrips()
+    {
+        var rates = PriceVersionRates.Parse("""{"surcharge_threshold_tokens":1000,"gpt-6-luna":{"in":1,"cached":1,"cache_write":1,"out":1}}""");
+
+        rates.SurchargeThresholdTokens.ShouldBe(1000);
+        rates.Text.ShouldContainKey("gpt-6-luna");
+        rates.Text.ShouldNotContainKey("surcharge_threshold_tokens");
+        PriceVersionRates.Parse(rates.ToJson()).SurchargeThresholdTokens.ShouldBe(1000);
+
+        var other = rates with { SurchargeThresholdTokens = 2000 };
+        other.ToJson().ShouldNotBe(rates.ToJson(), "a different threshold is a different config hash");
+    }
+
+    [Fact]
+    public void Qa_PriceVersionRates_AbsentThreshold_DefaultsToO3() =>
+        PriceVersionRates.Parse("""{"gpt-6-luna":{"in":1,"cached":1,"cache_write":1,"out":1}}""")
+            .SurchargeThresholdTokens.ShouldBe(TextCostCalculator.DefaultSurchargeThresholdTokens);
+
+    [Fact]
     public void Qa_PriceVersionRates_MissingField_ThrowsJsonException() =>
         Should.Throw<System.Text.Json.JsonException>(() => PriceVersionRates.Parse("""{"gpt-6-luna":{"in":1,"cached":1,"out":1}}"""));
 

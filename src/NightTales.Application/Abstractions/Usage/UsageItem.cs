@@ -16,8 +16,9 @@ namespace NightTales.Application.Abstractions.Usage;
 /// <param name="ReservationId">The credit reservation the call settles against.</param>
 /// <param name="EpisodeId">The episode the call belongs to, or <c>null</c> for a series-level call.</param>
 /// <param name="Estimated"><c>true</c> when the provider reported no usage, so <paramref name="CostUsd"/> is the D1 bound.</param>
-/// <param name="CostUsd">The cost; required when <paramref name="Estimated"/> (the bound), otherwise optional: when
-/// <c>null</c> the meter prices the tokens at <paramref name="PriceVersion"/>.</param>
+/// <param name="CostUsd">The caller's D1 bound. Required (&gt; 0) when <paramref name="Estimated"/> or the response had no
+/// usage, and the fallback when a call with usage cannot be priced (provider miscount, unpriced model): the row is then
+/// written estimated at this bound. Otherwise ignored: the meter prices the tokens at <paramref name="PriceVersion"/>.</param>
 /// <param name="PriceVersion">The run's price version (text, 12 CR-17).</param>
 /// <param name="ProviderRequestId">The provider's request id (O8).</param>
 /// <param name="SeriesId">The series of the run, when known.</param>
