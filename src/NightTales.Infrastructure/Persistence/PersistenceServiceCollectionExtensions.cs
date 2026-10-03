@@ -10,6 +10,7 @@ using NightTales.Application.Abstractions.Idempotency;
 using NightTales.Application.Abstractions.Outbox;
 using NightTales.Application.Abstractions.Persistence;
 using NightTales.Application.Abstractions.Realtime;
+using NightTales.Application.Abstractions.Rendering;
 using NightTales.Application.Audit;
 using NightTales.Domain.Common;
 using NightTales.Infrastructure.DependencyInjection;
@@ -158,6 +159,10 @@ public static class PersistenceServiceCollectionExtensions
         // it from here, because the sweeps that need it run in the Worker.
         services.AddScoped<ISystemWorkQuery, SystemWorkQuery>();
 
+        // 05.3.2-T3: the avoid-recent port of the music selector. render_jobs does not exist until 09.6.1,
+        // so the empty-list implementation stands until 09.6.1-T1 replaces this registration.
+        services.AddScoped<IRecentMusicQuery, NullRecentMusicQuery>();
+
         // 09.3.1-T1: Identity (BD2) + the registration, password-policy and consent services. Every
         // host that reads the write model also authenticates or verifies a caller, so the registration
         // belongs to the same composition root.
@@ -185,11 +190,15 @@ public static class PersistenceServiceCollectionExtensions
             .Validate(
                 seed => !string.IsNullOrWhiteSpace(seed.VoiceCatalogFile),
                 $"'{SeedOptions.SectionName}:{nameof(SeedOptions.VoiceCatalogFile)}' must not be blank.")
+            .Validate(
+                seed => !string.IsNullOrWhiteSpace(seed.MusicTracksFile),
+                $"'{SeedOptions.SectionName}:{nameof(SeedOptions.MusicTracksFile)}' must not be blank.")
             .ValidateOnStart();
 
         services.AddScoped<ISeeder, VoiceSeeder>();
         services.AddScoped<ISeeder, StyleTemplateSeeder>();
         services.AddScoped<ISeeder, FeatureFlagSeeder>();
+        services.AddScoped<ISeeder, MusicTrackSeeder>();
         services.AddScoped<SeedRunner>();
         services.AddHostedService<SeedHostedService>();
 

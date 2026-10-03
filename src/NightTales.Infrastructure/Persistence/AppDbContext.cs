@@ -12,6 +12,7 @@ using NightTales.Domain.Compliance;
 using NightTales.Domain.Episodes;
 using NightTales.Domain.Platform;
 using NightTales.Domain.Rendering;
+using NightTales.Domain.Rendering.Music;
 using NightTales.Domain.Series;
 using NightTales.Domain.Series.Autopilot;
 using NightTales.Domain.Stories;
@@ -95,6 +96,13 @@ public sealed class AppDbContext : IdentityDbContext<AppUser, AppRole, Guid>, IA
     /// <c>IgnoreQueryFilters</c> allow-list entry is needed — the registry is operator data, not user data.
     /// </remarks>
     public DbSet<WorkerNode> WorkerNodes => Set<WorkerNode>();
+
+    /// <summary>
+    /// The global music catalog of 05.3.2-T3 (table <c>music_tracks</c>, 05 README D8/P5): upserted by
+    /// <c>MusicTrackSeeder</c> and read by <c>MusicSelector</c>'s caller. It carries no <c>IUserOwned</c>,
+    /// so 09 README D10's tenant filter never applies and no <c>IgnoreQueryFilters</c> entry is needed.
+    /// </summary>
+    public DbSet<MusicTrack> MusicTracks => Set<MusicTrack>();
 
     /// <summary>Infrastructure-only: the outbox rows the interceptor of 09.2.4-T1 writes.</summary>
     public DbSet<OutboxMessage> OutboxMessages => Set<OutboxMessage>();

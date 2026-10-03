@@ -11,6 +11,7 @@
 
 **In scope.**
 - The EF named filter `"tenant"` on every `IUserOwned` entity.
+  - Intentionally unfiltered (global catalogs, no `user_id`, not `IUserOwned`): `MusicTrack` / `music_tracks` (05.3.2-T3, 05 D8). A tenant filter there would empty the candidate set and silently yield `music_none`.
 - `ICurrentUser` (Api and Worker implementations).
 - `ISystemContext.For(userId)` and `ISystemWorkQuery`.
 - The allow-list entries for `IgnoreQueryFilters` (the rule itself is in 09.1.2-T1).

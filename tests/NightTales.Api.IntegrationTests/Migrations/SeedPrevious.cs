@@ -206,6 +206,21 @@ internal static class SeedPrevious
             INSERT INTO price_versions (version, active_from, rates, limits, config_hash, created_at)
             VALUES (9001, now(), '{"text":{}}'::jsonb, '{"story":{}}'::jsonb, 'seed-previous-price-version', now())
             """),
+        (
+            // 05.3.2-T3: the table the `_05_MusicTracks` migration creates. Same rule as above: skipped while
+            // that migration is the last one, then every later migration is exercised over a catalog row (a
+            // `CC-BY-4.0` track, so the attribution CHECK and the gain formula see real values: -20 LUFS -> 0.200).
+            "music_tracks",
+            """
+            INSERT INTO music_tracks (id, track_id, file_name, title, artist, source_url, license, attribution,
+                                      platform_scope, moods, duration_sec, loudness_lufs, bgm_volume, sha256,
+                                      storage_key, catalog_revision, active, created_at, updated_at)
+            VALUES ('01920000-0000-7000-8000-000000000010', 'seed-track', 'seed-track.mp3', 'Seed Track',
+                    'Seed Artist', 'https://example.invalid/seed-track', 'CC-BY-4.0', 'Seed Track by Seed Artist',
+                    'any', ARRAY['calm', 'meditation'], 120.5, -20.00, 0.200,
+                    '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+                    'music/seed-track.mp3', 1, true, now(), now())
+            """),
     ];
 
     /// <summary>The tables the dataset covers, in insert order — the contract a feature migration extends.</summary>
