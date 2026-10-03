@@ -113,7 +113,7 @@ public sealed class StoryQualityCheckerQaBoundaryTests
         ellipsisRun.Issues.Select(i => i.RuleId).ShouldNotContain("Q-HOOK-02");
     }
 
-    [Fact(Skip = "QA-2 open: Q-HOOK-02 counts sentences with StoryText.CountSentences, which ignores '\\n' (task failure-handling row: sentence splitting must handle !?… and \\n); SplitSentences does split on it.")]
+    [Fact]
     public void Hook_NewlinesSeparateSentences()
     {
         var lines = Checker.Check(Draft(230, hook: "Đêm xuống rồi\nAi đang gõ cửa\nKhông ai trả lời\nChỉ có gió"), Ctx());
@@ -425,7 +425,7 @@ public sealed class StoryQualityCheckerQaBoundaryTests
         IsWellFormed(issue.Evidence).ShouldBeTrue();
     }
 
-    [Fact(Skip = "QA-1 open: Q-KW-03 evidence is cut by Bound() at 200 UTF-16 units and can end in a lone high surrogate (invalid UTF-16; System.Text.Json refuses to write it).")]
+    [Fact]
     public void Evidence_KeywordInvalidCutAtASurrogatePair_StaysWellFormed()
     {
         var keyword = new string('a', 198) + "😀" + " tail";
@@ -439,7 +439,7 @@ public sealed class StoryQualityCheckerQaBoundaryTests
         }
     }
 
-    [Fact(Skip = "QA-3 open: Q-MD-01 evidence is the validator's fragment and echoes the URL found in the text (task Design: the report never contains URLs).")]
+    [Fact]
     public void Evidence_FormattingIssue_DoesNotEchoTheUrl()
     {
         var draft = RawDraft([1, 1, 1], 1, 1, text: "see https://example.com/secret-source for details and more words here");

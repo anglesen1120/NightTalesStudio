@@ -218,6 +218,11 @@ public sealed class StoryQualityChecker
 
     private const int MetaOrder = 2_000_000;
 
+    private static readonly System.Text.RegularExpressions.Regex UrlPattern = new(
+        @"(?:https?://|www\.)\S*",
+        System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.CultureInvariant,
+        TimeSpan.FromSeconds(1));
+
     private static string Bound(string? value)
     {
         if (string.IsNullOrEmpty(value))
@@ -225,7 +230,7 @@ public sealed class StoryQualityChecker
             return string.Empty;
         }
 
-        return value.Length <= EvidenceMax ? value : value[..EvidenceMax];
+        return ValidationIssue.Snip(value);
     }
 
     private static QualityIssue Make(
@@ -321,7 +326,7 @@ public sealed class StoryQualityChecker
                 _thresholds.MinHookTokens), 1));
         }
 
-        var sentences = StoryText.CountSentences(content.Hook?.Text);
+        var sentences = StoryText.SplitSentences(content.Hook?.Text).Count;
         if (sentences > _thresholds.MaxHookSentences)
         {
             issues.Add((Make(
@@ -625,7 +630,7 @@ public sealed class StoryQualityChecker
                     QualitySeverity.Blocking,
                     QualityKind.Objective,
                     found.Segment,
-                    found.Evidence,
+                    UrlPattern.Replace(found.Evidence, "<url>"),
                     found.RepairDirection), SegmentOrder(found.Segment)));
             }
         }
