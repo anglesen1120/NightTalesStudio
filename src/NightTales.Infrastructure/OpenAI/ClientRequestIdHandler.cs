@@ -23,6 +23,10 @@ public sealed class ClientRequestIdHandler : DelegatingHandler
             request.Headers.TryAddWithoutValidation(HeaderName, id);
         }
 
+        // The send is the moment a billed generation becomes possible; a token cancelled before it sends nothing.
+        cancellationToken.ThrowIfCancellationRequested();
+        TextCallScope.MarkDispatched();
+
         return base.SendAsync(request, cancellationToken);
     }
 }

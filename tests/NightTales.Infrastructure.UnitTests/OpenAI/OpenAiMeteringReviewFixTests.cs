@@ -241,6 +241,23 @@ public sealed class OpenAiMeteringReviewFixTests
     }
 
     [Fact]
+    public async Task Writer_PreCancelledToken_SendsNothingAndMetersNothing()
+    {
+        // D-2: the dispatch mark sits at the transport send, so a token cancelled before it leaves no billable trace.
+        using var host = new OpenAiTestHost();
+        var meter = new RecordingMeter();
+        host.Handler.Reply(HttpStatusCode.OK, OpenAiTestHost.Completed(StoryJson));
+        using var cts = new CancellationTokenSource();
+        await cts.CancelAsync();
+
+        await Should.ThrowAsync<OperationCanceledException>(async () =>
+            await Writer(host, new PromptCatalog(new EmbeddedPromptResourceSource()), meter, new LunaEstimator()).WriteAsync(Request(), cts.Token));
+
+        host.Handler.Requests.ShouldBeEmpty();
+        meter.Items.ShouldBeEmpty();
+    }
+
+    [Fact]
     public async Task OpenAiTextClient_Redirect_IsNotFollowedAndMapsToAnUnbilledProviderError()
     {
         // SEC-4: a 307 must not replay the prompt body at the Location target.

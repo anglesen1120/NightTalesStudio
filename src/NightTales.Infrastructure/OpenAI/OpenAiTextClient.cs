@@ -85,10 +85,10 @@ public sealed partial class OpenAiTextClient(
 
         try
         {
-            // From here the request may reach the provider and be billed, even if the caller cancels.
-            req.MarkDispatched(model);
+            // The request is marked dispatched by ClientRequestIdHandler right before the transport sends it: a
+            // call cancelled before any send must not look billable.
             ClientResult<ResponseResult> response;
-            using (TextCallScope.Push(req.Run, req.Step))
+            using (TextCallScope.Push(req.Run, req.Step, req, model))
             {
                 response = await pipelines.GetPipeline(PipelineKey(req.Step))
                     .ExecuteAsync(token => new ValueTask<ClientResult<ResponseResult>>(client.CreateResponseAsync(request, token)), ct)

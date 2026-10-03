@@ -116,6 +116,36 @@ public sealed class OpenAiStoryWriterTests
     }
 
     [Fact]
+    public async Task OpenAiStoryWriter_WriteAsync_CancelledDuringTheBoundLookup_StillMetersTheBilledCall()
+    {
+        // D-1: the response is in; a caller cancelling while the bound is looked up must not lose the row.
+        using var cts = new CancellationTokenSource();
+        var meter = new RecordingMeter();
+        var client = new FakeTextClient().Enqueue(TextStep.Writer, TextCallResult<StoryContentV1>.ProviderUnavailable("gpt-6-luna", "r1"));
+        var writer = new OpenAiStoryWriter(new StubAssembler(), client, new StubCatalog(), meter, new CancellingEstimator(cts, 4m));
+
+        var result = await writer.WriteAsync(Request(), cts.Token);
+
+        result.ShouldBeOfType<TextCallUnavailable<StoryContentV1>>();
+        meter.Items.Single().ShouldSatisfyAllConditions(i => i.Estimated.ShouldBeTrue(), i => i.CostUsd.ShouldBe(4m));
+        meter.Tokens.Single().CanBeCanceled.ShouldBeFalse();
+    }
+
+    private sealed class CancellingEstimator(CancellationTokenSource source, decimal bound) : IStoryCostEstimator
+    {
+        public Task<ErrorOr<UsageBound>> WorstCaseAsync(LengthTier tier, Language language, CancellationToken ct) =>
+            throw new InvalidOperationException("The writer must not use the whole-pipeline bound.");
+
+        public async Task<ErrorOr<UsageBound>> WriterWorstCaseAsync(LengthTier tier, Language language, CancellationToken ct)
+        {
+            await source.CancelAsync();
+            ct.ThrowIfCancellationRequested();
+
+            return new UsageBound(bound, 1, 1);
+        }
+    }
+
+    [Fact]
     public async Task OpenAiStoryWriter_WriteAsync_UsageWithTheBound_KeepsTheBoundAsTheMeterFallback()
     {
         // CR-3: a call with reported usage still carries the writer bound, so the meter can fall back to it when

@@ -76,9 +76,12 @@ public sealed class OpenAiStoryWriter(
             return result;
         }
 
-        // The writer-step bound is always looked up: it is the estimate when the response carried no usage and the
-        // meter's fallback when the reported usage cannot be priced. Without usage there is nothing to meter without it.
-        var worst = await estimator.WriterWorstCaseAsync(req.Episode.LengthTier, req.Series.Language, ct).ConfigureAwait(false);
+        // A result exists, so a call that may have been billed is settled whatever the caller does now: the bound
+        // lookup and the row ignore the caller's token (the meter settles on its own deadline), and the completed
+        // outcome is still returned.
+        // The writer-step bound is the estimate when the response carried no usage and the meter's fallback when
+        // the reported usage cannot be priced.
+        var worst = await estimator.WriterWorstCaseAsync(req.Episode.LengthTier, req.Series.Language, CancellationToken.None).ConfigureAwait(false);
         if (worst.IsError && result.Usage is null)
         {
             throw new InvalidOperationException(
@@ -87,7 +90,7 @@ public sealed class OpenAiStoryWriter(
 
         decimal? bound = worst.IsError ? null : worst.Value.WorstCaseUsd;
 
-        await meter.RecordAsync(result.ToUsageItem(req.Run, StoryOperation, req.Episode.EpisodeId, bound), ct).ConfigureAwait(false);
+        await meter.RecordAsync(result.ToUsageItem(req.Run, StoryOperation, req.Episode.EpisodeId, bound), CancellationToken.None).ConfigureAwait(false);
 
         return result;
     }
