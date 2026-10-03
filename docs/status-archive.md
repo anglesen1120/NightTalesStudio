@@ -4,6 +4,17 @@ History moved out of STATUS.md to keep the live file small. The initial archive 
 
 ## Resume-here history (Current/Previous blocks, Next actions)
 
+### Superseded Session 3 block (2026-10-03, after combined PR #107, before the Session 4 plan)
+
+- **Current (2026-10-03).** Session 3 wave merged into `develop`: #100 09.3.4-T1 /me, #104 02.2.4-T1 directly; #101 11.3.5-T4, #103 11.3.5-T3, #105 09.9.3-T1 and #102 05.3.2-T3 through one combined PR (branch `feature/s3-wave-combined`, owner 2026-10-03), merged in that order.
+- **Merge notes:** migrations now end `…202751_02_GenerationRuns` → `20261002234448_02_PriceVersions` (#104) → `20261003073358_05_MusicTracks` (regenerated in the combined PR, Up/Down unchanged). `MusicTracksMigrationTests` owns `migrations[^1]`; older ones revert to their own predecessor by name. 11.3.5-T3+T4 use the resolution verified on `integration/11.3.5-T3-T4` (`dcc8ee5`).
+- **Test hosts:** `TestKit/TestHostDefaults.cs` sets `DOTNET_hostBuilder__reloadConfigOnChange=false` for every test host (no appsettings file watchers); local macOS gates had `JobsDashboardTests` hit the 5-min `HostFactoryResolver` limit, CI never did. Second suspect if it recurs: per-host macOS keychain import of the DP KEK (`DataProtectionKek` `DefaultKeySet`).
+- **Next:** owner plans the next wave. Lane A: 13.3.1-T1 (migration, after `05_MusicTracks`). Open follow-ups: 09.3.2-T2 per-request suspension (09.3.4 QA-2), 02.2.1-T2 RunContext/budget-guard wiring (02 T112), worktree/branch cleanup after merge.
+- **SEC-01:** owner chose range API + real top-N seed fallback (09 W3-O3); current bundled seed is synthetic. `09.3.1-T2` replaces it before registration opens.
+- **Security audit (2026-10-02):** no Critical/High; 8 Medium + Low/Info findings and the fix waves W1–W4 in [`cyber-issue.md`](cyber-issue.md) (CY-01…CY-30).
+- **Gates/environment:** risk-tier gates per 00 §10; native Mac stack, runtime under `NTS_HOME`, keys stay out of git. `gate.sh` provides `Email__AddressHashPepper`. Start-up code and new required config keys: `docs/dev-setup.md` §Host boot contexts.
+- **Setup:** `docs/dev-setup.md`; `git config core.hooksPath .githooks`; worker bootstrap + smoke per `worker-node/README.md`.
+
 ### Superseded lane-A block (2026-10-03, before Session 3 wave #100–#105)
 
 - **Current (2026-10-03).** `develop` @ `ee71253` (#98 09.3.3-T1 merged). Earlier: every Session 2 next-lane PR merged (#84–#90, #92, #94, docs #91, #93, #95–#97). Lane A (migration queue): 02.2.2-T1 PR #99 open, merged with develop, migration regenerated.
@@ -482,6 +493,28 @@ Spec: `plans/features/01-environment-setup/01.2.4-openai-access/01.2.4-T1-org-ve
 | 2026-09-29 | 09.1.1-T1/T2 solution skeleton (`feature/09.1.1-solution-skeleton`) | Owner: local develop first. .NET skeleton (12 projects, CPM, lock files, MTP runner) + native PostgreSQL 17 dev DB (`tools/dev/db-init.sh`). Build 0/0, tests exit 0, health 200, DB checks pass. 09 W3 CR-36 records 5 implementation findings. Gates: QA (1 M + 3 L fixed: `postgres`/`pg_*` refused, CA1852 probe wording, password grep scope, inline comments) -> perf NO DEFECTS (build 1.45 s incremental, Api first 200 at 0.70 s) -> code review NTS-09-01..08 + security SEC-0911-01..03 (all fixed, CR-36 item 8; `dotnet list --vulnerable --include-transitive` clean) -> re-review: 4 L (post-restart identity, malformed `.env.example`, user-secrets semantics, exit-code normalisation) fixed + probed |
 | 2026-09-29 | 09 wave-2 batch (#39 `feature/09.2.1-testkit`, #40 `feature/09.1.4-error-mapping`, #41 `feature/09.1.5-ci-pipeline`) | Three tasks implemented in parallel worktrees on one shared contract (the TestKit harness), each with the full gate set (QA → code + perf + security → fixes → delta re-review) plus a final union review. 09.2.1-T2 harness (`PostgresFixture`/`TestDatabase`/`IntegrationTest`/`ApiFactory`/`TestAuthHandler`/`MapEndpoints`/`FakeClock`/`UserBuilder`, 48 cases), 09.1.4-T1 error mapping (`ErrorCodes` 162 + `ErrorCatalogue` + `ProblemDetailsWriter` + `ResultExtensions` + filters + `ETags`, 78 cases), 09.1.5-T1 CI (two jobs, zero-test guard, build-time `openapi.json` 3.1.1, trait split). Integrated trial: unit 98/98 without a DB, integration 56/56, format clean, `--locked-mode` restore clean. Live CI on #41 green (1m18s + 1m07s); scratch PRs #42/#43 proved both red paths and 14-day artifacts, then were closed and deleted. CR-37 + CR-38 recorded; `WorkerHost`/builders deferred with owners |
 | 2026-09-30 | 09 wave-3 batch (`feature/09.2.2-core-entities` `ec99274`, `feature/09.2.6-worker-hangfire` `15f10b6`) | Two tasks in parallel worktrees off `develop` @ `f433126`, each with QA → code + perf + security → fixes → delta re-review, then a final union review (approve, 0 findings). 09.2.2-T1: core entity shells + 13 configurations + audit timestamps, plan §3 live-catalog tests; CR-44 (jsonb columns stay string), CR-45 (`AutopilotRunOutcome`, paths, NTS-922-SEC-001 `[OPEN]`). 09.2.6-T1: Worker host, Hangfire server/storage, `IJobScheduler`, `[JobPolicy]`, recurring registration, health on 8082; O2 `[OPEN]`. Integrated tree `c45bed2`: unit 108/108, integration 163/163, format 0, `openapi.json` 3.1.1 |
+
+## Session 2 plan (archived 2026-10-03, replaced by the Session 4 plan)
+
+**Approved by the owner 2026-10-01.** Current lanes below; the original kickoff matrix and completed D/G rows are archived. Independent code/gates run in parallel worktrees; delivery and next-lane tasks retain prerequisite merge order. Web UI stays out of this session.
+
+| Lane | Current | Next, after prerequisite merges | Tier | Notes |
+|---|---|---|---|---|
+| B Storage follow-on | 13.3.1-T1 not started; storage (#84, #94) merged | Owner plans the next wave | T3 | Migration |
+| E E-mail | 09.3.3-T1 merged (#98 → `ee71253`) | — | T3 | Done; row archived at session end |
+| F Seeders/checkers | 05.3.2-T3 merged (combined Session 3 PR) | — | T3 | Done; row archived at session end |
+| Fill a free slot | /me (#100), OTLP and 11.3.5-T3/T4 (combined Session 3 PR), 02.2.4-T1 (#104) merged | Owner plans the next wave | T3 | — |
+
+**Progress (2026-10-03):** start-now set (#72–#83), next-lane PRs (#84–#94, docs #97), #98 09.3.3-T1, #99 02.2.2-T1, #100 /me, #104 02.2.4-T1 and the combined Session 3 PR (11.3.5-T4, 11.3.5-T3, 09.9.3-T1, 05.3.2-T3) merged. Lane A next: 13.3.1-T1. Finished lane rows and the Open-task rows of merged PRs are archived.
+
+**Not in Session 2:** `09.6.2-T1` needs `05.1.2-T1`, which needs `02.3.2-T1` and `03.2.1-T1` (not built) → session 3 or later.
+
+### Merged Open-task rows (archived 2026-10-03)
+
+| Task | Status | Note |
+|---|---|---|
+| 09.3.3-T1 Password reset | merged (#98, develop ee71253; migration 20261002190707) | Last-migration Down ownership moved to `UserActionTokensMigrationTests`, then to `GenerationRunsMigrationTests` (PR #99); `SeedPrevious` has a `user_action_tokens` row. Merge-delta review: 0 code findings, SEC-1 low doc-comment fixed, SEC-2 info (seed hash = sha256("password"), test-only) accepted |
+| 02.2.2-T1 M1 domain migration | merged (#99, develop `9c5cfa0`; migration `20261002202751_02_GenerationRuns`) | Last-migration Down ownership moved on to `PriceVersionsMigrationTests` (02.2.4-T1) |
 
 ## Session 2 kickoff matrix (archived 2026-10-02)
 
