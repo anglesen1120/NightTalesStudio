@@ -125,7 +125,8 @@ public sealed partial class FakeRenderBackend : BackgroundService, IRenderBacken
             // layers; the ticker applies it. A lost task is removed right away, so the first poll after the
             // 202 is already the 404 `adapter_task_unknown` of a node that lost its state (05 D4).
             var plan = _injector.Resolve(record.TaskId, record.RenderJobId, mpt);
-            _imageSelector.UseReport(record.TaskId, plan.Image);
+            var clipBound = (_options.VideoSeconds + Math.Max(1, mpt.VideoClipDuration) - 1) / Math.Max(1, mpt.VideoClipDuration);
+            _imageSelector.UseReport(record.TaskId, plan.Image, clipBound);
             if (plan.Mode.Kind == FailKind.LostTask)
             {
                 await LoseTaskAsync(record.TaskId, cancellationToken).ConfigureAwait(false);
@@ -165,6 +166,7 @@ public sealed partial class FakeRenderBackend : BackgroundService, IRenderBacken
             cancellationToken).ConfigureAwait(false);
         DropScript(record.TaskId);
         _plans.TryRemove(record.TaskId, out _);
+        _planSink.Release(record.TaskId);
         RemoveSubtitle(record.TaskId);
         await PublishActiveTasksAsync(cancellationToken).ConfigureAwait(false);
     }

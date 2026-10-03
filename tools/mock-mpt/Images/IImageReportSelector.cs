@@ -7,6 +7,10 @@ namespace NightTales.MockMpt.Images;
 /// </summary>
 public interface IImageReportSelector
 {
-    /// <summary>Selects the report mode for <paramref name="taskId"/>; the default is <see cref="ImageReportMode.Ok"/>.</summary>
-    void UseReport(Guid taskId, ImageReportMode mode);
+    /// <summary>
+    /// Selects the report mode for <paramref name="taskId"/> and hands over the submit's clip bound,
+    /// <c>ceil(MOCK_VIDEO_SECONDS ÷ video_clip_duration)</c>: the second term of 03.4.3-T2's
+    /// <c>needed_guess = min(planned, bound)</c>. The default mode is <see cref="ImageReportMode.Ok"/>.
+    /// </summary>
+    void UseReport(Guid taskId, ImageReportMode mode, int clipBound);
 }

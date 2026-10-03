@@ -26,7 +26,7 @@ public sealed class MockImageReport : IImagePlanSink, IImageReportSelector
     private const string InsufficientQuota = "insufficient_quota";
 
     private readonly ConcurrentDictionary<Guid, ImagePlanV1> _plans = new();
-    private readonly ConcurrentDictionary<Guid, ImageReportMode> _modes = new();
+    private readonly ConcurrentDictionary<Guid, (ImageReportMode Mode, int ClipBound)> _modes = new();
 
     /// <inheritdoc />
     public void Register(Guid taskId, ImagePlanV1 plan)
@@ -43,10 +43,10 @@ public sealed class MockImageReport : IImagePlanSink, IImageReportSelector
     }
 
     /// <inheritdoc />
-    public void UseReport(Guid taskId, ImageReportMode mode)
+    public void UseReport(Guid taskId, ImageReportMode mode, int clipBound)
     {
         ArgumentNullException.ThrowIfNull(mode);
-        _modes[taskId] = mode;
+        _modes[taskId] = (mode, clipBound);
     }
 
     /// <inheritdoc />
@@ -57,13 +57,14 @@ public sealed class MockImageReport : IImagePlanSink, IImageReportSelector
             return null;
         }
 
-        var mode = _modes.TryGetValue(taskId, out var selected) ? selected : ImageReportMode.Ok;
+        var (mode, clipBound) = _modes.TryGetValue(taskId, out var selected) ? selected : (ImageReportMode.Ok, int.MaxValue);
         if (mode.Kind == ImageReportKind.None)
         {
             return null;
         }
 
         var planned = plan.MaxImages;
+        var needed = Math.Min(planned, Math.Max(1, clipBound));
         var failed = new List<ImageFailureV1>();
         var called = planned;
         var succeeded = planned;
@@ -79,13 +80,16 @@ public sealed class MockImageReport : IImagePlanSink, IImageReportSelector
                 break;
 
             case ImageReportKind.Skipped:
-                var skipped = (int)Math.Round(mode.Share * planned, MidpointRounding.AwayFromZero);
-                for (var slot = planned - skipped; slot < planned; slot++)
+                // 03.4.3-T2: round(share × needed_guess) of the slots the video really uses fail, not of the cap.
+                var skipped = (int)Math.Round(mode.Share * needed, MidpointRounding.AwayFromZero);
+                for (var slot = needed - skipped; slot < needed; slot++)
                 {
                     failed.Add(new ImageFailureV1(slot, 500, UpstreamError));
                 }
 
-                succeeded = planned - skipped;
+                called = needed;
+                succeeded = needed - skipped;
+                unattempted = planned - needed;
                 break;
 
             case ImageReportKind.ModeratedAll:
@@ -116,7 +120,7 @@ public sealed class MockImageReport : IImagePlanSink, IImageReportSelector
         return new ImageReportV1(
             RenderNodeSchemas.Images,
             Planned: planned,
-            Needed: planned,
+            Needed: mode.Kind == ImageReportKind.Skipped ? needed : planned,
             Called: called,
             Succeeded: succeeded,
             Failed: failed,
