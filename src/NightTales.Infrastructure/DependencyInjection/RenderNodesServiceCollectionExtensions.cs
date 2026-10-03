@@ -66,6 +66,11 @@ public static class RenderNodesServiceCollectionExtensions
         services.AddScoped<INodeLoadReader, RenderJobNodeLoadReader>();
         services.AddScoped<WorkerNodeSeeder>();
 
+        // The dispatch decision (11.3.3-T2): scoped with the IReadDb and INodeLoadReader it queries; the
+        // log gate is a singleton so "nothing dispatchable" warns once per interval, not once per pick.
+        services.AddSingleton<NodeDispatchLogGate>();
+        services.AddScoped<INodeSelector, NodeSelector>();
+
         // The advisory-lock guard keeps one dedicated connection for the poller's lifetime, so it is a
         // singleton that owns that connection.
         var connectionString = configuration.GetConnectionString(PersistenceOptions.ConnectionStringName);
