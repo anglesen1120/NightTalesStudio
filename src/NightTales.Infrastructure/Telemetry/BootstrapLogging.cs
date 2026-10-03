@@ -17,6 +17,10 @@ public static class BootstrapLogging
     public const string FailureMessage = "Host terminated unexpectedly";
 
     /// <summary>Creates the bootstrap logger.</summary>
+    /// <remarks>
+    /// It masks with the frozen key list (<see cref="Redaction.RedactionOptions.Default"/>) only: it runs before the
+    /// configuration is bound, so the additive <c>Logging:RedactionQueryKeys</c> do not apply to start-up events.
+    /// </remarks>
     /// <param name="output">The writer to log to; <see langword="null"/> is the process's stdout.</param>
     /// <returns>A logger that writes compact JSON, one event per line, synchronously.</returns>
     public static Serilog.ILogger Create(TextWriter? output = null) =>

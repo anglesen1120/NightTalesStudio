@@ -1,4 +1,8 @@
+using System.Collections.Concurrent;
 using System.Diagnostics;
+using System.Reflection;
+using System.Text;
+using Npgsql;
 using OpenTelemetry;
 
 namespace NightTales.Infrastructure.Telemetry.Redaction;
@@ -8,13 +12,27 @@ namespace NightTales.Infrastructure.Telemetry.Redaction;
 /// README BD12/BD16): the query and URL attributes (<c>url.query</c>, <c>url.full</c>, <c>http.url</c>,
 /// <c>http.target</c>, <c>query.string</c>, <c>request.query</c>) and the free-text attributes an exception
 /// leaves (<c>exception.message</c>, <c>exception.stacktrace</c>, <c>error.message</c>,
-/// <c>otel.status_description</c>) plus the activity's status description.
+/// <c>otel.status_description</c>) plus the activity's status description, and every string attribute of every
+/// activity <em>event</em> (an <c>exception</c> event carries <c>exception.message</c> and
+/// <c>exception.stacktrace</c>). For an exception event of a <see cref="PostgresException"/> the message is cut
+/// to the shape <see cref="LogExceptionSanitizer"/> logs — SQLSTATE and the trimmed server message — and the
+/// <c>DETAIL:</c> block (the offending key/column values, present when the connection string sets
+/// <c>Include Error Detail</c>) is removed from the message and the stack trace.
 /// </summary>
 /// <remarks>
+/// <para>
+/// An <see cref="ActivityEvent"/> is a struct without a public way to change its attributes, and
+/// <see cref="Activity"/> has no way to remove or replace an event. The rewrite therefore calls the runtime's
+/// own <c>Set</c> on the event's attribute list by reflection (resolved once per runtime type). A test pins that
+/// the method still exists, so a runtime upgrade that drops it fails the build instead of leaking silently.
+/// </para>
+/// <para>
 /// It runs for every recorded activity — ASP.NET Core, HttpClient, Npgsql, the platform's own sources — and is
 /// registered whether or not the OTLP exporter is on. Redaction is idempotent, so the request-start hook
 /// (<see cref="Redact"/> from the ASP.NET Core instrumentation) and this end-of-span pass never double a mask.
 /// Attributes are looked up by a fixed name list: no tag enumeration, no allocation for a span without them.
+/// Events are enumerated without allocation; a span without events costs nothing.
+/// </para>
 /// </remarks>
 /// <param name="options">The shared redaction list.</param>
 public sealed class RedactingActivityProcessor(RedactionOptions options) : BaseProcessor<Activity>
@@ -25,6 +43,12 @@ public sealed class RedactingActivityProcessor(RedactionOptions options) : BaseP
 
     private static readonly string[] TextTags =
         ["exception.message", "exception.stacktrace", "error.message", "otel.status_description"];
+
+    private static readonly string PostgresExceptionType = typeof(PostgresException).FullName!;
+
+    private static readonly ConcurrentDictionary<Type, MethodInfo?> SetMethods = new();
+
+    private const int MaxMessageLength = 300;
 
     /// <inheritdoc />
     public override void OnEnd(Activity data) => Redact(data, options);
@@ -61,7 +85,155 @@ public sealed class RedactingActivityProcessor(RedactionOptions options) : BaseP
                 activity.SetStatus(activity.Status, redacted);
             }
         }
+
+        RedactEvents(activity, options);
     }
+
+    private static void RedactEvents(Activity activity, RedactionOptions options)
+    {
+        foreach (var activityEvent in activity.EnumerateEvents())
+        {
+            var isPostgres = false;
+            foreach (var tag in activityEvent.EnumerateTagObjects())
+            {
+                if (tag.Key == "exception.type" && tag.Value is string type && type == PostgresExceptionType)
+                {
+                    isPostgres = true;
+                }
+            }
+
+            List<KeyValuePair<string, object?>>? changes = null;
+            foreach (var tag in activityEvent.EnumerateTagObjects())
+            {
+                if (tag.Value is not string value || value.Length == 0)
+                {
+                    continue;
+                }
+
+                var scrubbed = ScrubEventText(tag.Key, value, isPostgres, options);
+                if (!ReferenceEquals(scrubbed, value))
+                {
+                    (changes ??= []).Add(new KeyValuePair<string, object?>(tag.Key, scrubbed));
+                }
+            }
+
+            if (changes is not null)
+            {
+                SetEventTags(activityEvent, changes);
+            }
+        }
+    }
+
+    private static string ScrubEventText(string key, string value, bool isPostgres, RedactionOptions options)
+    {
+        var text = key switch
+        {
+            "exception.message" when isPostgres => FirstLine(value),
+            "exception.message" or "exception.stacktrace" => StripDetail(value),
+            _ => value,
+        };
+
+        return QueryStringRedactor.RedactText(text, options.QueryKeys);
+    }
+
+    private static string FirstLine(string message)
+    {
+        var newline = message.AsSpan().IndexOfAny('\r', '\n');
+        var line = newline >= 0 ? message.AsSpan(0, newline) : message.AsSpan();
+        if (line.Length == message.Length && line.Length <= MaxMessageLength)
+        {
+            return message;
+        }
+
+        return line.Length <= MaxMessageLength ? line.ToString() : string.Concat(line[..MaxMessageLength], "…");
+    }
+
+    /// <summary>
+    /// Removes what a PostgreSQL error adds beyond SQLSTATE and message: the <c>DETAIL:</c> block of its message
+    /// and the <c>Exception data:</c> block <see cref="Exception.ToString"/> appends (Detail, schema, table and
+    /// constraint names). The stack frames after a removed block stay.
+    /// </summary>
+    private static string StripDetail(string text)
+    {
+        var hasData = text.Contains(PostgresExceptionType, StringComparison.Ordinal);
+        if (!text.Contains("DETAIL:", StringComparison.Ordinal)
+            && !(hasData && text.Contains("Exception data:", StringComparison.Ordinal)))
+        {
+            return text;
+        }
+
+        var builder = new StringBuilder(text.Length);
+        var skipping = false;
+        var changed = false;
+        var position = 0;
+        while (position < text.Length)
+        {
+            var lineEnd = text.IndexOf('\n', position);
+            var next = lineEnd < 0 ? text.Length : lineEnd + 1;
+            var line = text.AsSpan(position, next - position);
+            var trimmed = line.Trim();
+            var isFrame = line.StartsWith("   at ", StringComparison.Ordinal) || trimmed.StartsWith("---", StringComparison.Ordinal);
+            if (skipping && isFrame)
+            {
+                skipping = false;
+            }
+
+            if (!skipping
+                && (line.StartsWith("DETAIL:", StringComparison.Ordinal)
+                    || (hasData && trimmed.SequenceEqual("Exception data:"))))
+            {
+                skipping = true;
+                changed = true;
+                while (builder.Length > 0 && builder[^1] is '\r' or '\n' or ' ')
+                {
+                    builder.Length--;
+                }
+            }
+
+            if (!skipping)
+            {
+                if (changed && builder.Length > 0 && builder[^1] != '\n')
+                {
+                    builder.Append('\n');
+                }
+
+                builder.Append(line);
+            }
+
+            position = next;
+        }
+
+        return changed ? builder.ToString().TrimEnd('\r', '\n', ' ') : text;
+    }
+
+    private static void SetEventTags(ActivityEvent activityEvent, List<KeyValuePair<string, object?>> changes)
+    {
+        var tags = activityEvent.Tags;
+        if (tags is null)
+        {
+            return;
+        }
+
+        var set = SetMethods.GetOrAdd(tags.GetType(), ResolveSet);
+        if (set is null)
+        {
+            return;
+        }
+
+        foreach (var change in changes)
+        {
+            set.Invoke(tags, [change]);
+        }
+    }
+
+    /// <summary>The runtime's <c>Set(KeyValuePair&lt;string, object?&gt;)</c> on an event's attribute list, or <see langword="null"/>.</summary>
+    /// <param name="tagsType">The runtime type behind <see cref="ActivityEvent.Tags"/>.</param>
+    /// <returns>The method, or <see langword="null"/> when this runtime does not have it.</returns>
+    private static MethodInfo? ResolveSet(Type tagsType) =>
+        tagsType.GetMethod(
+            "Set",
+            BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic,
+            [typeof(KeyValuePair<string, object?>)]);
 
     private enum Mode
     {

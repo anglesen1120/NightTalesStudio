@@ -60,6 +60,7 @@ public static class TelemetryRegistration
         ArgumentException.ThrowIfNullOrWhiteSpace(serviceName);
 
         var configuration = builder.Configuration;
+        RejectConfigurationDeclaredSinks(configuration);
         var environmentName = builder.Environment.EnvironmentName;
         var exporterEndpoint = ResolveExporterEndpoint(configuration, builder.Environment);
         var sampleRatio = ResolveSampleRatio(configuration);
@@ -234,6 +235,28 @@ public static class TelemetryRegistration
         }
 
         return endpoint;
+    }
+
+    /// <summary>
+    /// Fails start-up when the configuration declares Serilog sinks. A sink declared in <c>Serilog:WriteTo</c> /
+    /// <c>Serilog:AuditTo</c> would be built by <c>ReadFrom.Configuration</c> on the outer logger, in front of
+    /// <see cref="ExceptionSanitizingSink"/>, and so would write exceptions the sanitizer never saw (09.9.3-T2).
+    /// Only <c>Serilog:MinimumLevel</c> and its overrides are read from configuration; sinks are code-declared.
+    /// </summary>
+    /// <param name="configuration">The host configuration.</param>
+    /// <exception cref="InvalidOperationException">A sink section is present.</exception>
+    private static void RejectConfigurationDeclaredSinks(IConfiguration configuration)
+    {
+        foreach (var section in new[] { "Serilog:WriteTo", "Serilog:AuditTo" })
+        {
+            if (configuration.GetSection(section).Exists())
+            {
+                throw new InvalidOperationException(
+                    $"Configuration section '{section}' declares Serilog sinks, which would bypass the exception "
+                    + "and query-string redaction. Sinks are registered in code (TelemetryRegistration); "
+                    + "only 'Serilog:MinimumLevel' is read from configuration.");
+            }
+        }
     }
 
     private static double ResolveSampleRatio(IConfiguration configuration)
