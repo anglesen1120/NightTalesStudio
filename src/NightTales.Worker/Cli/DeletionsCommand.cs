@@ -10,6 +10,9 @@ namespace NightTales.Worker.Cli;
 /// The operator pair of the restore drill (13.3.1 plan §5.3, 13 README D4/YR12, 11.6.1-T1): <c>nts-worker deletions
 /// export --since &lt;iso8601&gt; --out &lt;path&gt;</c> (read-only, against the live database before a restore) and
 /// <c>nts-worker deletions reapply --since &lt;iso8601&gt; [--file &lt;path&gt;]</c> (against the restored instance).
+/// <b>reapply is for scratch (restored) hosts only</b>: it re-opens completed rows and re-runs their deletions, so
+/// <c>DataDeletion:AllowRestoreReapply</c> must never be set on a production host. <c>export</c> creates its file
+/// owner-read/write only and refuses a path that already exists (a symlink included).
 /// </summary>
 /// <remarks>
 /// Exit codes follow 11.6.1-T1: <c>0</c> done, <c>1</c> a check failed (a handler failed or is missing, the file is
@@ -28,7 +31,7 @@ public static class DeletionsCommand
 
     /// <summary>Usage line, printed on stderr for a malformed invocation.</summary>
     public const string UsageLine =
-        "usage: nts-worker deletions export --since <iso8601> --out <path> | nts-worker deletions reapply --since <iso8601> [--file <path>]";
+        "usage: nts-worker deletions export --since <iso8601> --out <path> (new file only) | nts-worker deletions reapply --since <iso8601> [--file <path>] (scratch hosts only; DataDeletion:AllowRestoreReapply, never in production)";
 
     private static readonly JsonSerializerOptions Json = new() { DefaultIgnoreCondition = JsonIgnoreCondition.Never };
 
@@ -59,7 +62,7 @@ public static class DeletionsCommand
             return args[1] switch
             {
                 "export" when options.TryGetValue("--out", out var path) =>
-                    await ExportAsync(services, since, path, stdout, cancellationToken).ConfigureAwait(false),
+                    await ExportAsync(services, since, path, stdout, stderr, cancellationToken).ConfigureAwait(false),
                 "reapply" =>
                     await ReapplyAsync(services, since, options.GetValueOrDefault("--file"), input ?? Console.In, stdout, stderr, cancellationToken).ConfigureAwait(false),
                 _ => Fail(stderr, UsageLine, UsageOrEnvironment),
@@ -77,14 +80,39 @@ public static class DeletionsCommand
         DateTimeOffset since,
         string path,
         TextWriter stdout,
+        TextWriter stderr,
         CancellationToken cancellationToken)
     {
         using var scope = services.CreateScope();
         var rows = await scope.ServiceProvider.GetRequiredService<IDeletionRestore>()
             .ExportAsync(since, cancellationToken).ConfigureAwait(false);
 
-        await File.WriteAllLinesAsync(path, rows.Select(row => JsonSerializer.Serialize(Line.From(row), Json)), cancellationToken)
-            .ConfigureAwait(false);
+        // CreateNew is O_CREAT|O_EXCL: an existing path (and any symlink, even a dangling one) is refused, never
+        // followed or overwritten; the file is owner-read/write only on Unix.
+        var options = new FileStreamOptions { Mode = FileMode.CreateNew, Access = FileAccess.Write, Share = FileShare.None };
+        if (!OperatingSystem.IsWindows())
+        {
+            options.UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
+        }
+
+        FileStream stream;
+        try
+        {
+            stream = new FileStream(path, options);
+        }
+        catch (IOException)
+        {
+            return Fail(stderr, "nts-worker deletions export refused: --out must name a new file (the path exists or cannot be created).", UsageOrEnvironment);
+        }
+
+        await using (stream.ConfigureAwait(false))
+        await using (var writer = new StreamWriter(stream))
+        {
+            foreach (var row in rows)
+            {
+                await writer.WriteLineAsync(JsonSerializer.Serialize(Line.From(row), Json).AsMemory(), cancellationToken).ConfigureAwait(false);
+            }
+        }
 
         stdout.WriteLine($"exported {rows.Count} deletion request(s)");
 

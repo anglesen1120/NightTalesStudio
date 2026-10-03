@@ -50,8 +50,12 @@ public sealed class DeletionRestore(
         var failed = 0;
         var problems = new List<string>();
 
+        // Completed history replays first and open rows after it: an open successor of a completed request (same
+        // user, scope, target and reason, requested later) must never be restored before the history it follows, or
+        // the history would be resolved onto it (the unique open index allows one open row per tuple).
         var ordered = rows
-            .OrderBy(row => row.CompletedAt ?? DateTimeOffset.MinValue)
+            .OrderBy(row => row.CompletedAt is null ? 1 : 0)
+            .ThenBy(row => row.CompletedAt ?? DateTimeOffset.MinValue)
             .ThenBy(row => row.RequestedAt)
             .ThenBy(row => row.Id);
 
@@ -78,15 +82,15 @@ public sealed class DeletionRestore(
             }
 
             var prepared = await PrepareAsync(row, scope, reason, execute, now, cancellationToken).ConfigureAwait(false);
-            if (prepared is not null)
+            if (prepared.Problem is not null)
             {
                 failed++;
-                problems.Add($"{row.Id}: {prepared}");
+                problems.Add($"{row.Id}: {prepared.Problem}");
 
                 continue;
             }
 
-            if (!execute)
+            if (!execute || prepared.AlreadyReplayed)
             {
                 applied++;
 
@@ -117,7 +121,10 @@ public sealed class DeletionRestore(
         return scoped.ServiceProvider.GetRequiredService<IDeletionScopeHandlerRegistry>().RegisteredScopes.Contains(scope);
     }
 
-    /// <summary>The id of the row to execute: the file's id, or the id of an open twin the restored database already holds.</summary>
+    /// <summary>
+    /// The id of the row to execute: the file's id, or the id of an open twin the restored database already holds. A
+    /// twin requested after the file's row is its successor, never its twin.
+    /// </summary>
     private async Task<Guid> RowIdAsync(DeletionExportRow row, DeletionScope scope, DeletionReason reason, CancellationToken cancellationToken)
     {
         using var scoped = scopes.CreateScope();
@@ -136,7 +143,7 @@ public sealed class DeletionRestore(
 
         return await database.DeletionRequests.AsNoTracking()
             .Where(request => request.UserId == row.UserId && request.Scope == scope && request.TargetId == row.TargetId
-                && request.Reason == reason && request.CompletedAt == null)
+                && request.Reason == reason && request.CompletedAt == null && request.RequestedAt <= row.RequestedAt)
             .Select(request => request.Id)
             .FirstAsync(cancellationToken).ConfigureAwait(false);
     }
@@ -144,8 +151,10 @@ public sealed class DeletionRestore(
     /// <summary>
     /// Makes the database hold the row: inserts a missing one (id and dates preserved) and, when it is to be executed,
     /// moves it to in-progress (completed rows through <c>Reapply</c>). Returns a problem text, or <c>null</c>.
+    /// A completed row whose open successor is already held is not re-opened (the unique open index forbids two open
+    /// rows of one tuple): an earlier replay already completed it, and the result says so.
     /// </summary>
-    private async Task<string?> PrepareAsync(
+    private async Task<PrepareResult> PrepareAsync(
         DeletionExportRow row,
         DeletionScope scope,
         DeletionReason reason,
@@ -163,16 +172,30 @@ public sealed class DeletionRestore(
             var existing = await database.DeletionRequests
                 .Where(request => request.Id == row.Id
                     || (request.UserId == row.UserId && request.Scope == scope && request.TargetId == row.TargetId
-                        && request.Reason == reason && request.CompletedAt == null))
+                        && request.Reason == reason && request.CompletedAt == null && request.RequestedAt <= row.RequestedAt))
                 .OrderByDescending(request => request.Id == row.Id)
                 .FirstOrDefaultAsync(cancellationToken).ConfigureAwait(false);
+
+            var hasOpenSuccessor = await database.DeletionRequests
+                .AnyAsync(
+                    request => request.Id != row.Id && request.UserId == row.UserId && request.Scope == scope
+                        && request.TargetId == row.TargetId && request.Reason == reason && request.CompletedAt == null
+                        && request.RequestedAt > row.RequestedAt,
+                    cancellationToken).ConfigureAwait(false);
+
+            if (hasOpenSuccessor && (existing is null || existing.Status == DeletionStatus.Completed))
+            {
+                return existing is null
+                    ? new PrepareResult("an open request requested later already exists for this target", false)
+                    : new PrepareResult(null, true);
+            }
 
             if (existing is null)
             {
                 var restored = DeletionRequest.Restore(row.Id, row.UserId, scope, row.TargetId, reason, row.RequestedAt, row.DueAt, now);
                 if (restored.IsError)
                 {
-                    return restored.FirstError.Description;
+                    return new PrepareResult(restored.FirstError.Description, false);
                 }
 
                 existing = restored.Value;
@@ -190,20 +213,22 @@ public sealed class DeletionRestore(
 
                 if (moved.IsError)
                 {
-                    return moved.FirstError.Code;
+                    return new PrepareResult(moved.FirstError.Code, false);
                 }
             }
 
             await unit.BeginAsync(cancellationToken).ConfigureAwait(false);
             var commit = await unit.CommitAsync(cancellationToken).ConfigureAwait(false);
 
-            return commit.IsError ? commit.FirstError.Code : null;
+            return new PrepareResult(commit.IsError ? commit.FirstError.Code : null, false);
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
-            return exception.GetType().Name;
+            return new PrepareResult(exception.GetType().Name, false);
         }
     }
+
+    private readonly record struct PrepareResult(string? Problem, bool AlreadyReplayed);
 
     private sealed record ExportRecord(
         Guid Id,

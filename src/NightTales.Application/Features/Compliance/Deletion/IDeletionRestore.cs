@@ -20,6 +20,10 @@ public interface IDeletionRestore
     /// <summary>Completed after <paramref name="since"/> and every still-open request, ordered <c>completed_at NULLS FIRST, id</c>.</summary>
     Task<IReadOnlyList<DeletionExportRow>> ExportAsync(DateTimeOffset since, CancellationToken cancellationToken);
 
-    /// <summary>Re-executes completed rows, executes open rows already due, re-inserts the rest as pending.</summary>
+    /// <summary>
+    /// Re-executes completed rows first (history before successors), then executes open rows already due and re-inserts
+    /// the rest as pending with their own deadline. <b>Scratch (restored) hosts only</b>: it re-opens completed requests and
+    /// re-runs their deletions, so <c>DataDeletion:AllowRestoreReapply</c> must never be set in production.
+    /// </summary>
     Task<DeletionReapplyReport> ReapplyAsync(IReadOnlyList<DeletionExportRow> rows, CancellationToken cancellationToken);
 }
