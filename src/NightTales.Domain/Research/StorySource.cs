@@ -101,7 +101,7 @@ public sealed partial class StorySource : Entity, IUserOwned
     public static ErrorOr<StorySource> CreateNote(Guid id, Guid userId, Guid episodeId, string? noteText, DateTimeOffset now)
     {
         var text = noteText?.Trim();
-        if (string.IsNullOrEmpty(text) || text.Length > NoteMaxChars)
+        if (string.IsNullOrEmpty(text) || text.Length > NoteMaxChars || text.Contains('\0', StringComparison.Ordinal))
         {
             return SourceErrors.NoteInvalid(NoteMaxChars);
         }

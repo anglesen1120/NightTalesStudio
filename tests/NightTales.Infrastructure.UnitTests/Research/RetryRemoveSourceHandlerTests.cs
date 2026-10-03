@@ -26,7 +26,7 @@ public sealed class RetryRemoveSourceHandlerTests(TestDatabase database) : Integ
     {
         await using var db = Database.CreateAppDbContext(new TestCurrentUser { Id = scope.UserId });
         await using var transaction = await db.Database.BeginTransactionAsync(Ct);
-        var handler = new RetrySourceHandler(db, new TestCurrentUser { Id = scope.UserId }, new FakeClock(Now), new SourcesOptions());
+        var handler = new RetrySourceHandler(db, new TestCurrentUser { Id = scope.UserId }, new FakeClock(Now), new SourcesOptions(), SourceHandlerHarness.Blocklist);
 
         var result = await handler.Handle(new RetrySourceCommand(scope.EpisodeId, sourceId), Ct);
         if (!result.IsError)
@@ -43,7 +43,7 @@ public sealed class RetryRemoveSourceHandlerTests(TestDatabase database) : Integ
         await using var db = Database.CreateAppDbContext(new TestCurrentUser { Id = scope.UserId });
         await using var transaction = await db.Database.BeginTransactionAsync(Ct);
 
-        var result = await new RemoveSourceHandler(db).Handle(new RemoveSourceCommand(scope.EpisodeId, sourceId), Ct);
+        var result = await new RemoveSourceHandler(db, new FakeClock(Now)).Handle(new RemoveSourceCommand(scope.EpisodeId, sourceId), Ct);
         if (!result.IsError)
         {
             await db.SaveChangesAsync(Ct);

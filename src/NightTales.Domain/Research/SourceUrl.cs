@@ -1,3 +1,4 @@
+using System.Collections.Frozen;
 using System.Globalization;
 using System.Text.RegularExpressions;
 using ErrorOr;
@@ -11,7 +12,8 @@ namespace NightTales.Domain.Research;
 /// <remarks>
 /// <see cref="Parse"/> rejects with <see cref="SourceErrors.SourceUrlInvalid"/>: a scheme other than http/https, an
 /// explicit port other than 80/443, any userinfo, more than <see cref="MaxLength"/> characters, an IP-literal host in
-/// any notation, an empty host, and a host with no registrable domain. It normalises to the punycode lowercase host
+/// any notation, an empty host, a host under a reserved or special-use suffix (<c>localhost</c>, <c>.local</c>,
+/// <c>.internal</c>, <c>home.arpa</c>, <c>.test</c>, <c>.onion</c>, …), and a host with no registrable domain. It normalises to the punycode lowercase host
 /// without a trailing dot, drops the fragment and a default port, and turns an empty path into <c>/</c>. The query
 /// is kept: it often identifies the article.
 /// </remarks>
@@ -23,6 +25,11 @@ public sealed partial record SourceUrl
     private const int MaxHostLength = 253;
 
     private const int MaxLabelLength = 63;
+
+    private static readonly FrozenSet<string> ReservedLabels = new[]
+    {
+        "localhost", "local", "localdomain", "internal", "lan", "intranet", "corp", "invalid", "test", "example", "onion",
+    }.ToFrozenSet(StringComparer.Ordinal);
 
     private SourceUrl(string value, string host, string registrableDomain, bool isHttps)
     {
@@ -75,6 +82,13 @@ public sealed partial record SourceUrl
             return SourceErrors.SourceUrlInvalid;
         }
 
+        // Defence in depth for the fetcher's own SSRF controls: a name under a reserved or special-use suffix never
+        // names a public article, however a resolver on the fetcher's network might answer it.
+        if (HasReservedSuffix(host))
+        {
+            return SourceErrors.SourceUrlInvalid;
+        }
+
         // A single label (localhost, a bare TLD, a Unicode name that maps to one punycode label) has no registrable domain.
         if (!host.Contains('.', StringComparison.Ordinal) || psl.GetRegistrableDomain(host) is not { Length: > 0 } registrable)
         {
@@ -90,6 +104,20 @@ public sealed partial record SourceUrl
         return value.Length > MaxLength
             ? SourceErrors.SourceUrlInvalid
             : new SourceUrl(value, host, registrable, isHttps);
+    }
+
+    /// <summary>
+    /// Whether <paramref name="host"/> is under a reserved or special-use suffix (RFC 2606, 6761, 6762, 7686, 8375
+    /// and the common private-network names): the last label is one of <see cref="ReservedLabels"/>, or the host is
+    /// <c>home.arpa</c> or below it.
+    /// </summary>
+    private static bool HasReservedSuffix(string host)
+    {
+        var lastDot = host.LastIndexOf('.');
+        var last = lastDot < 0 ? host : host[(lastDot + 1)..];
+        return ReservedLabels.Contains(last)
+            || host.Equals("home.arpa", StringComparison.Ordinal)
+            || host.EndsWith(".home.arpa", StringComparison.Ordinal);
     }
 
     /// <summary>

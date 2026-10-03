@@ -25,6 +25,11 @@ public sealed class AddSourceValidator : AbstractValidator<AddSourceCommand>
         RuleFor(command => command.NoteText)
             .Must(note => note is null || note.Length <= options.MaxNoteChars)
             .WithMessage("note_too_long");
+
+        // Postgres text cannot store U+0000: without this the value passes here and fails at commit as a 500.
+        RuleFor(command => command.NoteText)
+            .Must(note => note is null || !note.Contains('\0', StringComparison.Ordinal))
+            .WithMessage("note_invalid_character");
     }
 
     private static bool HasText(string? value) => !string.IsNullOrWhiteSpace(value);
