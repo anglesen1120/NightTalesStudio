@@ -141,7 +141,7 @@ public sealed class DeletionLeaseAndSweepReviewTests(TestDatabase database) : In
     }
 
     [Fact]
-    public async Task Claim_StaleInProgress_CountsTowardsMaxAttempts_AndStopsAtTheCap()
+    public async Task Claim_StaleInProgress_CountsTowardsMaxAttempts_AndAnExhaustedOneBecomesFailed()
     {
         await using var harness = await DeletionHarness.StartAsync(Database, ct: Ct);
         var stale = harness.Clock.UtcNow - TimeSpan.FromMinutes(16);
@@ -151,8 +151,27 @@ public sealed class DeletionLeaseAndSweepReviewTests(TestDatabase database) : In
         await harness.RunJobAsync(Ct);
 
         harness.Probe.Executions.ShouldHaveSingleItem().RequestId.ShouldBe(lastChance);
-        (await StatusOf(exhausted)).ShouldBe("in_progress:5:-");
+        (await StatusOf(exhausted)).ShouldBe("failed:5:service_unavailable");
         (await StatusOf(lastChance)).ShouldBe("completed:5:-");
+        (await AuditCount(exhausted)).ShouldBe("0", "failing a lapsed claim writes no audit row");
+        (await Database.QueryStringsAsync($"SELECT (last_error_at IS NOT NULL)::text FROM data_deletion_requests WHERE id = '{exhausted}'", Ct))
+            .ShouldBe(["true"]);
+
+        await harness.RunJobAsync(Ct);
+
+        harness.Probe.Executions.ShouldHaveSingleItem("the exhausted row is not retried");
+    }
+
+    [Fact]
+    public async Task Claim_LiveInProgressAtMaxAttempts_IsNotFailed()
+    {
+        await using var harness = await DeletionHarness.StartAsync(Database, ct: Ct);
+        var live = await Due(harness, status: DeletionStatus.InProgress, attempts: 5, claimedAt: harness.Clock.UtcNow - TimeSpan.FromMinutes(5));
+
+        await harness.RunJobAsync(Ct);
+
+        (await StatusOf(live)).ShouldBe("in_progress:5:-");
+        harness.Probe.Executions.ShouldBeEmpty();
     }
 
     [Fact]

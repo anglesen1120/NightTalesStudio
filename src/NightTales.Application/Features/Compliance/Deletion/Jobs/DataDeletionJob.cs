@@ -5,6 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using NightTales.Application.Abstractions.Jobs;
 using NightTales.Application.Abstractions.Persistence;
+using NightTales.Application.Common.Errors;
 using NightTales.Domain.Common;
 using NightTales.Domain.Compliance.Deletion;
 
@@ -76,6 +77,44 @@ public sealed partial class DataDeletionJob(
         var claimed = 0;
         var completed = 0;
         var failed = 0;
+
+        // A crashed claim that has used every attempt is never reclaimed (Claimable), so it is failed here instead of
+        // staying in progress forever. The conditional update cannot race a live claim: a re-claim moves claimed_at.
+        var exhausted = await database.DeletionRequests
+            .IgnoreQueryFilters([TenantFilter])
+            .Where(request => request.CompletedAt == null
+                && request.Status == DeletionStatus.InProgress
+                && request.ClaimedAt < leaseCutoff
+                && request.Attempts >= maxAttempts)
+            .Select(request => new { request.Id, request.Scope })
+            .Take(options.BatchSize)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        foreach (var row in exhausted)
+        {
+            var errorAt = Truncate(clock.UtcNow);
+            var marked = await database.DeletionRequests
+                .IgnoreQueryFilters([TenantFilter])
+                .Where(request => request.Id == row.Id
+                    && request.Status == DeletionStatus.InProgress
+                    && request.ClaimedAt < leaseCutoff
+                    && request.Attempts >= maxAttempts)
+                .ExecuteUpdateAsync(
+                    set => set
+                        .SetProperty(request => request.Status, DeletionStatus.Failed)
+                        .SetProperty(request => request.LastErrorCode, ErrorCodes.ServiceUnavailable)
+                        .SetProperty(request => request.LastErrorAt, errorAt),
+                    cancellationToken)
+                .ConfigureAwait(false);
+
+            if (marked == 1)
+            {
+                metrics.Failed(row.Scope.ToWire(), ErrorCodes.ServiceUnavailable);
+                failed++;
+            }
+        }
+
         foreach (var candidate in candidates)
         {
             cancellationToken.ThrowIfCancellationRequested();
