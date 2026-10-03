@@ -94,5 +94,8 @@ public sealed class OpenAiStoryWriterRetryTests
     {
         public Task<ErrorOr<UsageBound>> WorstCaseAsync(LengthTier tier, Language language, CancellationToken ct) =>
             Task.FromResult<ErrorOr<UsageBound>>(new UsageBound(1m, 1, 1));
+
+        public Task<ErrorOr<UsageBound>> WriterWorstCaseAsync(LengthTier tier, Language language, CancellationToken ct) =>
+            Task.FromResult<ErrorOr<UsageBound>>(new UsageBound(1m, 1, 1));
     }
 }

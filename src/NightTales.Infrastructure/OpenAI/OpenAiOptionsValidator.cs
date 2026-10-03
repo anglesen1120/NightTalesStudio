@@ -30,6 +30,14 @@ public sealed class OpenAiOptionsValidator(IHostEnvironment environment) : IVali
         {
             problems.Add($"'{OpenAiOptions.SectionName}:{nameof(OpenAiOptions.BaseUrl)}' must be {OpenAiOptions.PinnedBaseUrl} outside Development.");
         }
+        else if (environment.IsDevelopment()
+            && baseUrl.Scheme == "http"
+            && !baseUrl.IsLoopback
+            && !string.Equals(baseUrl.AbsoluteUri.TrimEnd('/'), OpenAiOptions.PinnedBaseUrl, StringComparison.Ordinal))
+        {
+            // The key and the prompts would travel in clear text: plain http is for the local e2e stub only.
+            problems.Add($"'{OpenAiOptions.SectionName}:{nameof(OpenAiOptions.BaseUrl)}' must be https or a loopback host in Development.");
+        }
 
         foreach (var step in Enum.GetValues<TextStep>())
         {

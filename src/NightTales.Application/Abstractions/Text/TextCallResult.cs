@@ -12,12 +12,20 @@ namespace NightTales.Application.Abstractions.Text;
 public abstract record TextCallResult<T>
     where T : class
 {
-    private protected TextCallResult(string model, TokenUsage? usage, string? requestId)
+    private protected TextCallResult(string model, TokenUsage? usage, string? requestId, bool mayBeBilled = true)
     {
         Model = model;
         Usage = usage;
         RequestId = requestId;
+        MayBeBilled = mayBeBilled;
     }
+
+    /// <summary>
+    /// <see langword="false"/> when the call cannot have been billed: no request was sent (the
+    /// <c>provider_funds_exhausted</c> gate) or the provider rejected it before generating (400/401/403/404/422,
+    /// funds-exhausted 429). Such a call is never metered (02.2.1-T2 SEC-1); the D7 outcome is unaffected.
+    /// </summary>
+    public bool MayBeBilled { get; }
 
     /// <summary>The model of the call, from configuration.</summary>
     public string Model { get; }
@@ -48,9 +56,9 @@ public abstract record TextCallResult<T>
     public static TextCallResult<T> ProviderError(string model, int status, string? requestId) =>
         new TextCallProviderError<T>(status, model, requestId);
 
-    /// <summary>The provider timed out or failed (5xx) past the retry budget.</summary>
-    public static TextCallResult<T> ProviderUnavailable(string model, string? requestId) =>
-        new TextCallUnavailable<T>(model, requestId);
+    /// <summary>The provider timed out or failed (5xx) past the retry budget; <paramref name="usage"/> when the failed response reported it.</summary>
+    public static TextCallResult<T> ProviderUnavailable(string model, string? requestId, TokenUsage? usage = null) =>
+        new TextCallUnavailable<T>(model, requestId, usage);
 }
 
 /// <summary>The output parsed as <typeparamref name="T"/> and carried no refusal.</summary>
@@ -101,7 +109,7 @@ public sealed record TextCallFundsExhausted<T> : TextCallResult<T>
     where T : class
 {
     internal TextCallFundsExhausted(string model, string? requestId)
-        : base(model, null, requestId)
+        : base(model, null, requestId, mayBeBilled: false)
     {
     }
 }
@@ -112,7 +120,13 @@ public sealed record TextCallProviderError<T> : TextCallResult<T>
     where T : class
 {
     internal TextCallProviderError(int status, string model, string? requestId)
-        : base(model, null, requestId) => Status = status;
+        : base(model, null, requestId, mayBeBilled: !IsDefinitiveRejection(status)) => Status = status;
+
+    /// <summary>
+    /// Whether <paramref name="status"/> rejects the request before any generation (400/401/403/404/422) or is an
+    /// unfollowed redirect (3xx): such a call is never billed.
+    /// </summary>
+    private static bool IsDefinitiveRejection(int status) => status is 400 or 401 or 403 or 404 or 422 or (>= 300 and < 400);
 
     /// <summary>The HTTP status, or 0 for an unexpected exception.</summary>
     public int Status { get; }
@@ -123,8 +137,8 @@ public sealed record TextCallProviderError<T> : TextCallResult<T>
 public sealed record TextCallUnavailable<T> : TextCallResult<T>
     where T : class
 {
-    internal TextCallUnavailable(string model, string? requestId)
-        : base(model, null, requestId)
+    internal TextCallUnavailable(string model, string? requestId, TokenUsage? usage)
+        : base(model, usage, requestId)
     {
     }
 }

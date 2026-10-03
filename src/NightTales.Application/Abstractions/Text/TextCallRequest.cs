@@ -19,4 +19,16 @@ public sealed record TextCallRequest(
     ReadOnlyMemory<byte> Schema,
     int MaxOutputTokens,
     string PromptCacheKey,
-    string PromptVersion);
+    string PromptVersion)
+{
+    /// <summary>
+    /// The model of the request once it may have reached the provider; <see langword="null"/> while nothing was
+    /// sent (02.2.1-T2 SEC-2). The client sets it just before the first attempt, so a caller that sees its call
+    /// cancelled knows whether a billed generation is plausible.
+    /// </summary>
+    public string? DispatchedModel { get; private set; }
+
+    /// <summary>Records that the request may now be in flight (or already billed) on <paramref name="model"/>.</summary>
+    /// <param name="model">The model the call is sent to.</param>
+    public void MarkDispatched(string model) => DispatchedModel = model;
+}

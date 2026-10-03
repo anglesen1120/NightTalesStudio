@@ -124,7 +124,7 @@ internal sealed class OpenAiTestHost : IDisposable
 
     private readonly ServiceProvider _provider;
 
-    internal OpenAiTestHost(Action<OpenAiOptions>? configure = null)
+    internal OpenAiTestHost(Action<OpenAiOptions>? configure = null, bool scriptedTransport = true, bool development = false)
     {
         Handler = new ScriptedHandler();
         Flags = new FakeFlags();
@@ -134,7 +134,7 @@ internal sealed class OpenAiTestHost : IDisposable
         services.AddSingleton<IConfiguration>(new ConfigurationBuilder().Build());
         services.AddLogging(builder => builder.AddProvider(Logs));
         services.AddSingleton<IFeatureFlags>(Flags);
-        services.AddSingleton<IHostEnvironment>(new TestEnvironment());
+        services.AddSingleton<IHostEnvironment>(new TestEnvironment { EnvironmentName = development ? Environments.Development : Environments.Production });
         services.AddOpenAiTextClient();
         services.Configure<OpenAiOptions>(options =>
         {
@@ -142,9 +142,12 @@ internal sealed class OpenAiTestHost : IDisposable
             options.RetryBaseDelay = TimeSpan.FromMilliseconds(1);
             configure?.Invoke(options);
         });
-        services.Configure<HttpClientFactoryOptions>(
-            OpenAiServiceCollectionExtensions.HttpClientName,
-            options => options.HttpMessageHandlerBuilderActions.Add(builder => builder.PrimaryHandler = Handler));
+        if (scriptedTransport)
+        {
+            services.Configure<HttpClientFactoryOptions>(
+                OpenAiServiceCollectionExtensions.HttpClientName,
+                options => options.HttpMessageHandlerBuilderActions.Add(builder => builder.PrimaryHandler = Handler));
+        }
 
         _provider = services.BuildServiceProvider();
         Client = _provider.GetRequiredService<ITextClient>();

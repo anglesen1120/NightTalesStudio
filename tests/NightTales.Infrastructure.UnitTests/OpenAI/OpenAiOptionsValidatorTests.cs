@@ -43,6 +43,33 @@ public sealed class OpenAiOptionsValidatorTests
         new OpenAiOptionsValidator(new Env(Environments.Development)).Validate(null, options).Succeeded.ShouldBeTrue();
     }
 
+    [Theory]
+    [InlineData("http://127.0.0.1:9100/v1")]
+    [InlineData("http://localhost:9100/v1")]
+    [InlineData("http://[::1]:9100/v1")]
+    [InlineData("https://relay.internal.example/v1")]
+    public void Validate_Development_AcceptsLoopbackOrHttps(string url)
+    {
+        var options = Valid();
+        options.BaseUrl = url;
+
+        new OpenAiOptionsValidator(new Env(Environments.Development)).Validate(null, options).Succeeded.ShouldBeTrue();
+    }
+
+    [Theory]
+    [InlineData("http://relay.internal.example/v1")]
+    [InlineData("http://10.0.0.5:9100/v1")]
+    public void Validate_Development_RefusesPlainHttpToANonLoopbackHost(string url)
+    {
+        var options = Valid();
+        options.BaseUrl = url;
+
+        var result = new OpenAiOptionsValidator(new Env(Environments.Development)).Validate(null, options);
+
+        result.Failed.ShouldBeTrue();
+        result.FailureMessage.ShouldContain("loopback");
+    }
+
     [Fact]
     public void Validate_PinnedBaseUrlWithTrailingSlash_Succeeds()
     {

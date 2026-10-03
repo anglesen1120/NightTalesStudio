@@ -36,7 +36,7 @@ public sealed class OpenAiStoryWriterTests
             TextCallResult<StoryContentV1>.Ok(Draft(), "gpt-6-luna", Usage, "r1"),
             TextCallResult<StoryContentV1>.InvalidOutput("gpt-6-luna", Usage, "r2", ["max_output_tokens_exceeded"]),
             TextCallResult<StoryContentV1>.Moderated("gpt-6-luna", Usage, "r3", ["violence"]),
-            TextCallResult<StoryContentV1>.ProviderError("gpt-6-luna", 400, "r4"),
+            TextCallResult<StoryContentV1>.ProviderError("gpt-6-luna", 0, "r4"),
             TextCallResult<StoryContentV1>.ProviderUnavailable("gpt-6-luna", null),
         };
         var client = new FakeTextClient();
@@ -115,6 +115,144 @@ public sealed class OpenAiStoryWriterTests
         await Should.ThrowAsync<InvalidOperationException>(async () => await writer.WriteAsync(Request(), Ct));
     }
 
+    [Fact]
+    public async Task OpenAiStoryWriter_WriteAsync_UsageWithTheBound_KeepsTheBoundAsTheMeterFallback()
+    {
+        // CR-3: a call with reported usage still carries the writer bound, so the meter can fall back to it when
+        // the usage cannot be priced (cached > input, model absent from the pinned price version).
+        var miscounted = new TokenUsage(10, 50, 0, 5, 0);
+        var client = new FakeTextClient().EnqueueOk(TextStep.Writer, Draft(), miscounted);
+        var meter = new RecordingMeter();
+        var writer = new OpenAiStoryWriter(new StubAssembler(), client, new StubCatalog(), meter, new StubEstimator(2.5m));
+
+        await writer.WriteAsync(Request(), Ct);
+
+        meter.Items.Single().ShouldSatisfyAllConditions(
+            i => i.Estimated.ShouldBeFalse(),
+            i => i.InputTokens.ShouldBe(10),
+            i => i.CostUsd.ShouldBe(2.5m));
+    }
+
+    [Fact]
+    public async Task OpenAiStoryWriter_WriteAsync_UsageWithoutABound_IsStillMetered()
+    {
+        var client = new FakeTextClient().EnqueueOk(TextStep.Writer, Draft(), Usage);
+        var meter = new RecordingMeter();
+        var writer = new OpenAiStoryWriter(new StubAssembler(), client, new StubCatalog(), meter, new StubEstimator(null));
+
+        await writer.WriteAsync(Request(), Ct);
+
+        meter.Items.Single().ShouldSatisfyAllConditions(i => i.Estimated.ShouldBeFalse(), i => i.CostUsd.ShouldBeNull());
+    }
+
+    [Fact]
+    public async Task OpenAiStoryWriter_WriteAsync_UnavailableWithUsage_MetersTheReportedUsage()
+    {
+        // CR-2: a failed Responses body that reported usage is metered from it, not at the bound.
+        var outcome = TextCallResult<StoryContentV1>.ProviderUnavailable("gpt-6-luna", "r9", Usage);
+        var client = new FakeTextClient().Enqueue(TextStep.Writer, outcome);
+        var meter = new RecordingMeter();
+        var writer = new OpenAiStoryWriter(new StubAssembler(), client, new StubCatalog(), meter, new StubEstimator(1m));
+
+        (await writer.WriteAsync(Request(), Ct)).ShouldBeSameAs(outcome);
+
+        meter.Items.Single().ShouldSatisfyAllConditions(i => i.Estimated.ShouldBeFalse(), i => i.InputTokens.ShouldBe(1000), i => i.ProviderRequestId.ShouldBe("r9"));
+    }
+
+    [Theory]
+    [InlineData(400)]
+    [InlineData(401)]
+    [InlineData(403)]
+    [InlineData(404)]
+    [InlineData(422)]
+    [InlineData(307)]
+    public async Task OpenAiStoryWriter_WriteAsync_DefinitiveRejection_IsNotMetered(int status)
+    {
+        var outcome = TextCallResult<StoryContentV1>.ProviderError("gpt-6-luna", status, "r1");
+        var meter = new RecordingMeter();
+        var writer = new OpenAiStoryWriter(new StubAssembler(), new FakeTextClient().Enqueue(TextStep.Writer, outcome), new StubCatalog(), meter, new StubEstimator(1m));
+
+        (await writer.WriteAsync(Request(), Ct)).ShouldBeSameAs(outcome);
+
+        outcome.MayBeBilled.ShouldBeFalse();
+        meter.Items.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task OpenAiStoryWriter_WriteAsync_FundsExhausted_IsNotMetered()
+    {
+        var outcome = TextCallResult<StoryContentV1>.ProviderFundsExhausted("gpt-6-luna", null);
+        var meter = new RecordingMeter();
+        var writer = new OpenAiStoryWriter(new StubAssembler(), new FakeTextClient().Enqueue(TextStep.Writer, outcome), new StubCatalog(), meter, new StubEstimator(1m));
+
+        (await writer.WriteAsync(Request(), Ct)).ShouldBeSameAs(outcome);
+
+        meter.Items.ShouldBeEmpty();
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(409)]
+    [InlineData(500)]
+    public async Task OpenAiStoryWriter_WriteAsync_BillablePlausibleProviderError_IsMeteredAtTheBound(int status)
+    {
+        var outcome = TextCallResult<StoryContentV1>.ProviderError("gpt-6-luna", status, null);
+        var meter = new RecordingMeter();
+        var writer = new OpenAiStoryWriter(new StubAssembler(), new FakeTextClient().Enqueue(TextStep.Writer, outcome), new StubCatalog(), meter, new StubEstimator(1m));
+
+        await writer.WriteAsync(Request(), Ct);
+
+        outcome.MayBeBilled.ShouldBeTrue();
+        meter.Items.Single().ShouldSatisfyAllConditions(i => i.Estimated.ShouldBeTrue(), i => i.CostUsd.ShouldBe(1m));
+    }
+
+    [Fact]
+    public async Task OpenAiStoryWriter_WriteAsync_CancelledAfterDispatch_RecordsAnEstimatedRowAndRethrows()
+    {
+        var req = Request();
+        var meter = new RecordingMeter();
+        var writer = new OpenAiStoryWriter(new StubAssembler(), new CancellingClient(dispatch: true), new StubCatalog(), meter, new StubEstimator(3m));
+        using var cts = new CancellationTokenSource();
+        await cts.CancelAsync();
+
+        await Should.ThrowAsync<OperationCanceledException>(async () => await writer.WriteAsync(req, cts.Token));
+
+        var item = meter.Items.Single();
+        item.ShouldSatisfyAllConditions(
+            i => i.Estimated.ShouldBeTrue(),
+            i => i.CostUsd.ShouldBe(3m),
+            i => i.Model.ShouldBe("gpt-6-luna"),
+            i => i.Operation.ShouldBe("story"),
+            i => i.UserId.ShouldBe(req.Run.UserId),
+            i => i.ReservationId.ShouldBe(req.Run.Reservation.Value));
+        meter.Tokens.Single().CanBeCanceled.ShouldBeFalse("the settlement must not be cancelled with the caller");
+    }
+
+    [Fact]
+    public async Task OpenAiStoryWriter_WriteAsync_CancelledBeforeDispatch_RecordsNothing()
+    {
+        var meter = new RecordingMeter();
+        var writer = new OpenAiStoryWriter(new StubAssembler(), new CancellingClient(dispatch: false), new StubCatalog(), meter, new StubEstimator(3m));
+
+        await Should.ThrowAsync<OperationCanceledException>(async () => await writer.WriteAsync(Request(), Ct));
+
+        meter.Items.ShouldBeEmpty();
+    }
+
+    private sealed class CancellingClient(bool dispatch) : ITextClient
+    {
+        public ValueTask<TextCallResult<T>> CallAsync<T>(TextCallRequest req, CancellationToken ct)
+            where T : class
+        {
+            if (dispatch)
+            {
+                req.MarkDispatched("gpt-6-luna");
+            }
+
+            throw new OperationCanceledException(ct);
+        }
+    }
+
     private static StoryContentV1 Draft() =>
         new("T", new StorySegmentV1("h", [], []), [], new StorySegmentV1("e", [], []), "d", [], [], new StoryStructureV1("a", "b", "c", "d", "e"));
 
@@ -145,9 +283,12 @@ public sealed class OpenAiStoryWriterTests
     {
         internal List<UsageItem> Items { get; } = [];
 
+        internal List<CancellationToken> Tokens { get; } = [];
+
         public Task RecordAsync(UsageItem item, CancellationToken ct)
         {
             Items.Add(item);
+            Tokens.Add(ct);
 
             return Task.CompletedTask;
         }
@@ -156,6 +297,9 @@ public sealed class OpenAiStoryWriterTests
     private sealed class StubEstimator(decimal? bound) : IStoryCostEstimator
     {
         public Task<ErrorOr<UsageBound>> WorstCaseAsync(LengthTier tier, Language language, CancellationToken ct) =>
+            throw new InvalidOperationException("The writer must not depend on the whole-pipeline bound (CR-1).");
+
+        public Task<ErrorOr<UsageBound>> WriterWorstCaseAsync(LengthTier tier, Language language, CancellationToken ct) =>
             Task.FromResult<ErrorOr<UsageBound>>(bound is { } value ? new UsageBound(value, 1, 1) : Error.Failure("price_unavailable"));
     }
 

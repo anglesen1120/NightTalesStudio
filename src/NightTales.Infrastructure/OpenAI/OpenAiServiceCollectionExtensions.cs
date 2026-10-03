@@ -47,7 +47,8 @@ public static class OpenAiServiceCollectionExtensions
 
         services.TryAddTransient<ClientRequestIdHandler>();
         services.AddHttpClient(HttpClientName, client => client.Timeout = Timeout.InfiniteTimeSpan)
-            .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { PooledConnectionLifetime = TimeSpan.FromMinutes(2) })
+            // No redirects: a 3xx from the pinned host would replay the prompt body elsewhere; it surfaces as ProviderError.
+            .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { PooledConnectionLifetime = TimeSpan.FromMinutes(2), AllowAutoRedirect = false })
             .AddHttpMessageHandler<ClientRequestIdHandler>();
 
         foreach (var step in Enum.GetValues<TextStep>())

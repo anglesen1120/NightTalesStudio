@@ -85,6 +85,8 @@ public sealed partial class OpenAiTextClient(
 
         try
         {
+            // From here the request may reach the provider and be billed, even if the caller cancels.
+            req.MarkDispatched(model);
             ClientResult<ResponseResult> response;
             using (TextCallScope.Push(req.Run, req.Step))
             {
@@ -170,7 +172,7 @@ public sealed partial class OpenAiTextClient(
 
         if (result.Status == ResponseStatus.Failed)
         {
-            return TextCallResult<T>.ProviderUnavailable(model, requestId);
+            return TextCallResult<T>.ProviderUnavailable(model, requestId, usage);
         }
 
         try
@@ -343,7 +345,11 @@ public sealed partial class OpenAiTextClient(
     [LoggerMessage(Level = LogLevel.Error, Message = "OpenAI call {Step} failed with an unmodelled {ExceptionType}")]
     private partial void LogUnexpected(string exceptionType, TextStep step);
 
-    /// <summary>Parses the culture-invariant seconds of a <c>Retry-After</c> header; <see langword="null"/> when absent or not seconds.</summary>
+    /// <summary>
+    /// Parses the culture-invariant seconds of a <c>Retry-After</c> header, clamped to
+    /// <see cref="OpenAiServiceCollectionExtensions.MaxRetryAfter"/>; <see langword="null"/> when absent, not seconds,
+    /// negative or not finite (<c>Infinity</c>, <c>NaN</c>), which falls back to the computed backoff.
+    /// </summary>
     /// <param name="ex">The failure.</param>
     internal static TimeSpan? RetryAfter(ClientResultException ex)
     {
@@ -352,8 +358,9 @@ public sealed partial class OpenAiTextClient(
         return raw is not null
             && raw.Headers.TryGetValue("Retry-After", out var value)
             && double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var seconds)
+            && double.IsFinite(seconds)
             && seconds >= 0
-                ? TimeSpan.FromSeconds(seconds)
+                ? TimeSpan.FromSeconds(Math.Min(seconds, OpenAiServiceCollectionExtensions.MaxRetryAfter.TotalSeconds))
                 : null;
     }
 }

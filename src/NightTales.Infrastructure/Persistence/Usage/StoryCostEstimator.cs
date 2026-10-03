@@ -88,28 +88,72 @@ public sealed class StoryCostEstimator(
         return new UsageBound(worst, Math.Max(inputs.Writer, Math.Max(inputs.Review, inputs.Revision)), target.WriterMaxOutput);
     }
 
+    /// <inheritdoc />
+    public async Task<ErrorOr<UsageBound>> WriterWorstCaseAsync(LengthTier tier, Language language, CancellationToken ct)
+    {
+        var active = await catalog.GetActiveAsync(clock.UtcNow, ct).ConfigureAwait(false);
+        if (active.IsError)
+        {
+            return active.Errors;
+        }
+
+        var version = active.Value;
+        var rates = version.ParseRates();
+        var target = LengthTargetResolver.Resolve(tier, language, version.ParseLimits());
+
+        var dataBudget = configuration.GetValue("Story:Prompt:MaxDataObjectBytes", DefaultMaxDataObjectBytes);
+        var writer = MeasureWriterInput(language, dataBudget);
+        if (writer.IsError)
+        {
+            return writer.Errors;
+        }
+
+        // Same charge as the writer term of WorstCaseAsync: every input token also written to the cache.
+        var cost = TextCostCalculator.Compute(rates.RatesFor(ModelOf("Writer")), writer.Value, 0, writer.Value, target.WriterMaxOutput, rates.SurchargeThresholdTokens)
+            ?? throw new InvalidOperationException("The calculator returned no cost for a bounded call.");
+
+        return new UsageBound(cost, writer.Value, target.WriterMaxOutput);
+    }
+
     private string ModelOf(string step) => configuration[$"OpenAi:Models:{step}"] is { Length: > 0 } model ? model : DefaultModel;
 
     private ErrorOr<StepInputs> MeasureInputs(Language language, int dataBudget)
+    {
+        var writer = MeasureWriterInput(language, dataBudget);
+        if (writer.IsError)
+        {
+            return writer.Errors;
+        }
+
+        try
+        {
+            // Review and revision carry the story (bounded by the data budget) next to their own prompt;
+            // revision also carries the review findings.
+            var review = Bytes(prompts.GetStepPrompt(PromptStep.Review)) + (2 * dataBudget);
+            var revision = Bytes(prompts.GetStepPrompt(PromptStep.Revision)) + (3 * dataBudget);
+
+            return new StepInputs(writer.Value, review, revision);
+        }
+        catch (PromptCatalogException exception)
+        {
+            // A step whose prompt the manifest does not ship yet cannot be bounded: fail closed with a typed
+            // error instead of throwing out of the budget guard's reserve path.
+            return Error.Failure(ErrorCodes.PromptNotShipped, exception.Message);
+        }
+    }
+
+    private ErrorOr<int> MeasureWriterInput(Language language, int dataBudget)
     {
         try
         {
             // The writer prompt: step prompt + the largest preset + every shared block + the data object.
             var shared = Enum.GetValues<PromptFile>().Sum(file => Bytes(prompts.GetShared(file, language)));
             var preset = Enum.GetValues<Topic>().Max(topic => Bytes(prompts.GetPreset(topic, language)));
-            var writer = Bytes(prompts.GetStepPrompt(PromptStep.Writer)) + preset + shared + dataBudget;
 
-            // Review and revision carry the story (bounded by the data budget) next to their own prompt;
-            // revision also carries the review findings.
-            var review = Bytes(prompts.GetStepPrompt(PromptStep.Review)) + (2 * dataBudget);
-            var revision = Bytes(prompts.GetStepPrompt(PromptStep.Revision)) + (3 * dataBudget);
-
-            return new StepInputs(writer, review, revision);
+            return Bytes(prompts.GetStepPrompt(PromptStep.Writer)) + preset + shared + dataBudget;
         }
         catch (PromptCatalogException exception)
         {
-            // A step whose prompt the manifest does not ship yet cannot be bounded: fail closed with a typed
-            // error instead of throwing out of the budget guard's reserve path.
             return Error.Failure(ErrorCodes.PromptNotShipped, exception.Message);
         }
     }
