@@ -14,9 +14,13 @@ namespace NightTales.Application.Abstractions.Audit;
 /// </remarks>
 public interface IAuditData
 {
-    /// <summary>Projects the ids and the compact summary the audit row carries.</summary>
-    /// <returns>The projection; its summary must be safe text only (09 README BD16).</returns>
-    AuditData ToAuditData();
+    /// <summary>
+    /// Projects the ids and the compact summary the audit row carries. A <see langword="null"/> return
+    /// writes no row: a successful command that changed nothing (09.3.4-T1's no-op PATCH) has nothing to
+    /// record.
+    /// </summary>
+    /// <returns>The projection, or <see langword="null"/> when the command changed nothing.</returns>
+    AuditData? ToAuditData();
 }
 
 /// <summary>
@@ -31,19 +35,21 @@ public interface IAuditData
 /// <param name="EntityType">The changed entity's kind (<c>series</c>), or <c>null</c>.</param>
 /// <param name="EntityId">The changed entity's id, or <c>null</c>.</param>
 /// <param name="Summary">
-/// The changed fields as short, safe key/value pairs (a field name to its new code or value). Never story
-/// text, an e-mail address, a token or a secret (09 README BD16); an empty dictionary is a valid summary.
+/// The changed fields as short, safe values: a string, a string list or a nested string dictionary when the
+/// action's documented shape is structured (09.3.4: <c>{"fields":["uiLocale"],"uiLocale":{"from":"en","to":"vi"}}</c>).
+/// Never story text, an e-mail address, a token or a secret (09 README BD16); an empty dictionary is a valid
+/// summary.
 /// </param>
 public sealed record AuditData(
     Guid? SubjectUserId,
     string? EntityType,
     Guid? EntityId,
-    IReadOnlyDictionary<string, string> Summary)
+    IReadOnlyDictionary<string, object> Summary)
 {
     /// <summary>
     /// The summary of a command whose action name already says everything that changed (a delete, an
     /// archive): an empty object, shared by every such row so the projection allocates nothing.
     /// </summary>
-    public static readonly IReadOnlyDictionary<string, string> NoSummary =
-        new ReadOnlyDictionary<string, string>(new Dictionary<string, string>(StringComparer.Ordinal));
+    public static readonly IReadOnlyDictionary<string, object> NoSummary =
+        new ReadOnlyDictionary<string, object>(new Dictionary<string, object>(StringComparer.Ordinal));
 }

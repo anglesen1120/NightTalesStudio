@@ -69,18 +69,18 @@ public sealed class AuditBehavior<TMessage, TResponse>(
 
         if (!response.IsError
             && message is IAuditData projection
-            && metadata.TryGet<TMessage>(out var attribute))
+            && metadata.TryGet<TMessage>(out var attribute)
+            && projection.ToAuditData() is { } data)
         {
-            await writer.WriteAsync(Build(attribute, projection), cancellationToken).ConfigureAwait(false);
+            await writer.WriteAsync(Build(attribute, data), cancellationToken).ConfigureAwait(false);
         }
 
         return response;
     }
 
     /// <summary>Projects one <c>AuditEntry</c> from the attribute, the command's projection and the actor.</summary>
-    private AuditEntry Build(AuditedAttribute attribute, IAuditData projection)
+    private AuditEntry Build(AuditedAttribute attribute, AuditData data)
     {
-        var data = projection.ToAuditData();
         var subjectUserId = data.SubjectUserId ?? currentUser.Id;
 
         return new AuditEntry(
