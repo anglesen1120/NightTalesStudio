@@ -17,11 +17,11 @@ namespace NightTales.Application.Features.Compliance.Deletion.Jobs;
 /// </summary>
 /// <remarks>
 /// <para>
-/// The claim is one conditional <c>UPDATE</c> <em>per candidate</em> (at most <c>BatchSize</c> = 20): its affected-row
+/// The claim is one conditional <c>UPDATE</c> <em>per candidate</em>, issued right before that row runs (at most <c>BatchSize</c> = 20): its affected-row
 /// count says exactly which worker won, so two concurrent runs cannot both execute a row, and no lock is held across a
 /// handler call. A row whose scope has no handler is never claimed: it stays <c>Pending</c>, counts
 /// <c>deletion_requests_unhandled_total</c> and logs one warning per run, so a deferred scope is never "completed".
-/// Stale in-progress claims (crash) are reclaimable after <c>LeaseMinutes</c>; failed rows only while attempts remain.
+/// Stale in-progress claims (crash) are reclaimable after <c>LeaseMinutes</c> and, like failed rows, only while attempts remain; the claimed instant is the token the executor's completion must still match.
 /// </para>
 /// <para>It sends no e-mail and keeps no alert state: the due-soon alert is a monitoring rule over the gauge.</para>
 /// </remarks>
@@ -70,32 +70,38 @@ public sealed partial class DataDeletionJob(
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
 
-        var claimed = new List<(Guid Id, Guid UserId)>(candidates.Count);
+        // CR-1: each row is claimed immediately before it runs, with its own lease start, and that claim instant is
+        // the token the executor's complete/fail updates must still match. A slow earlier row therefore cannot let a
+        // later row's lease lapse, and a delayed worker can neither re-run nor fail another worker's claim.
+        var claimed = 0;
+        var completed = 0;
+        var failed = 0;
         foreach (var candidate in candidates)
         {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var claimedAt = Truncate(clock.UtcNow);
+            var cutoff = claimedAt - TimeSpan.FromMinutes(options.LeaseMinutes);
             var won = await database.DeletionRequests
                 .IgnoreQueryFilters([TenantFilter])
                 .Where(request => request.Id == candidate.Id && request.CompletedAt == null)
-                .Where(Claimable(leaseCutoff, maxAttempts))
+                .Where(Claimable(cutoff, maxAttempts))
                 .ExecuteUpdateAsync(
                     set => set
                         .SetProperty(request => request.Status, DeletionStatus.InProgress)
-                        .SetProperty(request => request.ClaimedAt, now)
+                        .SetProperty(request => request.ClaimedAt, claimedAt)
                         .SetProperty(request => request.Attempts, request => request.Attempts + 1),
                     cancellationToken)
                 .ConfigureAwait(false);
 
-            if (won == 1)
+            if (won != 1)
             {
-                claimed.Add((candidate.Id, candidate.UserId));
+                continue;
             }
-        }
 
-        var completed = 0;
-        var failed = 0;
-        foreach (var (id, userId) in claimed)
-        {
-            var outcome = await executor.ExecuteAsync(userId, id, DeletionActor.Job, cancellationToken).ConfigureAwait(false);
+            claimed++;
+            var outcome = await executor.ExecuteAsync(candidate.UserId, candidate.Id, DeletionActor.Job, cancellationToken, claimedAt)
+                .ConfigureAwait(false);
             if (outcome.Kind == DeletionOutcomeKind.Completed)
             {
                 completed++;
@@ -109,13 +115,13 @@ public sealed partial class DataDeletionJob(
         var elapsed = Stopwatch.GetElapsedTime(started);
         metrics.RunFinished(elapsed.TotalSeconds);
         var elapsedMs = (long)elapsed.TotalMilliseconds;
-        LogRun(claimed.Count, completed, failed, unhandled, elapsedMs);
+        LogRun(claimed, completed, failed, unhandled, elapsedMs);
     }
 
-    /// <summary>Pending, a crashed (stale) claim, or a failed row with attempts left.</summary>
+    /// <summary>Pending, a crashed (stale) claim with attempts left, or a failed row with attempts left.</summary>
     private static Expression<Func<DeletionRequest, bool>> Claimable(DateTimeOffset leaseCutoff, int maxAttempts) =>
         request => request.Status == DeletionStatus.Pending
-            || (request.Status == DeletionStatus.InProgress && request.ClaimedAt < leaseCutoff)
+            || (request.Status == DeletionStatus.InProgress && request.ClaimedAt < leaseCutoff && request.Attempts < maxAttempts)
             || (request.Status == DeletionStatus.Failed && request.Attempts < maxAttempts);
 
     private async Task MetricPhaseAsync(IAppDbContext database, DateTimeOffset now, CancellationToken cancellationToken)

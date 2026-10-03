@@ -26,6 +26,9 @@ public sealed partial class EpisodeDeletionScopeHandler(
     IOptions<StorageSettings> storage,
     ILogger<EpisodeDeletionScopeHandler> logger) : IDeletionScopeHandler
 {
+    /// <summary>How many swept keys are buffered before they are deleted.</summary>
+    public const int SweepChunkSize = 500;
+
     /// <summary>The key prefix of the extracted-text objects of an episode.</summary>
     public static string ResearchPrefix(Guid userId, Guid episodeId) => $"research/{userId:D}/{episodeId:D}/";
 
@@ -62,34 +65,64 @@ public sealed partial class EpisodeDeletionScopeHandler(
             objectsDeleted++;
         }
 
-        var sweptKeys = new List<string>();
+        // PERF-2: the sweep deletes in bounded chunks as the listing streams, so memory stays O(SweepChunkSize) however
+        // many objects the prefix holds. A key listed after an earlier chunk's delete is unaffected (S3 continuation
+        // tokens page by key order), and a key already removed above is skipped.
+        var assetKeySet = assetKeys.Select(asset => asset.StorageKey).ToHashSet(StringComparer.Ordinal);
+        var chunk = new List<string>(SweepChunkSize);
+
+        var enumerator = blobs
+            .ListKeysAsync(settings.Buckets.Media, ResearchPrefix(request.UserId, episodeId), cancellationToken)
+            .GetAsyncEnumerator(cancellationToken);
 
         try
         {
-            await foreach (var key in blobs
-                .ListKeysAsync(settings.Buckets.Media, ResearchPrefix(request.UserId, episodeId), cancellationToken)
-                .ConfigureAwait(false))
+            while (true)
             {
-                sweptKeys.Add(key);
+                bool hasNext;
+
+                try
+                {
+                    hasNext = await enumerator.MoveNextAsync().ConfigureAwait(false);
+                }
+                catch (Exception exception) when (exception is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+                {
+                    var failedType = exception.GetType().Name;
+                    LogListFailed(failedType, request.Id);
+
+                    return Error.Failure(code: ErrorCodes.ServiceUnavailable, description: "The object store could not be listed.");
+                }
+
+                if (hasNext && !assetKeySet.Contains(enumerator.Current))
+                {
+                    chunk.Add(enumerator.Current);
+                }
+
+                if (chunk.Count >= SweepChunkSize || (!hasNext && chunk.Count > 0))
+                {
+                    foreach (var key in chunk)
+                    {
+                        var deleted = await blobs.DeleteAsync(settings.Buckets.Media, key, cancellationToken).ConfigureAwait(false);
+                        if (deleted.IsError)
+                        {
+                            return deleted.Errors;
+                        }
+
+                        objectsDeleted++;
+                    }
+
+                    chunk.Clear();
+                }
+
+                if (!hasNext)
+                {
+                    break;
+                }
             }
         }
-        catch (Exception exception) when (exception is not OperationCanceledException)
+        finally
         {
-            var failedType = exception.GetType().Name;
-            LogListFailed(failedType, request.Id);
-
-            return Error.Failure(code: ErrorCodes.ServiceUnavailable, description: "The object store could not be listed.");
-        }
-
-        foreach (var key in sweptKeys.Where(key => assetKeys.All(asset => asset.StorageKey != key)))
-        {
-            var deleted = await blobs.DeleteAsync(settings.Buckets.Media, key, cancellationToken).ConfigureAwait(false);
-            if (deleted.IsError)
-            {
-                return deleted.Errors;
-            }
-
-            objectsDeleted++;
+            await enumerator.DisposeAsync().ConfigureAwait(false);
         }
 
         var rows = await database.Episodes

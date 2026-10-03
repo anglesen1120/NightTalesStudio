@@ -51,15 +51,22 @@ public sealed partial class DeletionRowExecutor(
     private const string AuditAction = "account.data_deleted";
     private const string OperatorLabel = "system:operator";
 
-    /// <summary>Runs the request; never throws except for cancellation, so one bad row cannot abort a batch.</summary>
+    /// <summary>
+    /// Runs the request; never throws except for caller cancellation, so one bad row cannot abort a batch. The row's
+    /// completion and failure are conditional updates that only succeed while its claim is still the one passed in
+    /// (<paramref name="claimToken"/>, the <c>claimed_at</c> the claimer wrote; the row's loaded value when null): a
+    /// worker whose lease lapsed and was reclaimed ends <see cref="DeletionOutcomeKind.NotClaimed"/> and writes nothing.
+    /// </summary>
     public async Task<DeletionOutcome> ExecuteAsync(
         Guid userId,
         Guid requestId,
         DeletionActor actor,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        DateTimeOffset? claimToken = null)
     {
         string failureCode;
         DeletionScope scopeOfRow = default;
+        var token = claimToken;
 
         try
         {
@@ -85,10 +92,12 @@ public sealed partial class DeletionRowExecutor(
 
             scopeOfRow = row.Scope;
 
-            if (row.Status != DeletionStatus.InProgress)
+            if (row.Status != DeletionStatus.InProgress || (claimToken is not null && row.ClaimedAt != claimToken))
             {
                 return new DeletionOutcome(DeletionOutcomeKind.NotClaimed);
             }
+
+            token ??= row.ClaimedAt;
 
             var handler = provider.GetRequiredService<IDeletionScopeHandlerRegistry>().Resolve(row.Scope);
             if (handler is null)
@@ -112,8 +121,19 @@ public sealed partial class DeletionRowExecutor(
                 else
                 {
                     var now = clock.UtcNow;
-                    var completed = row.Complete(now);
-                    if (completed.IsError)
+                    var updated = await database.DeletionRequests
+                        .Where(request => request.Id == requestId
+                            && request.Status == DeletionStatus.InProgress
+                            && request.ClaimedAt == token)
+                        .ExecuteUpdateAsync(
+                            set => set
+                                .SetProperty(request => request.Status, DeletionStatus.Completed)
+                                .SetProperty(request => request.CompletedAt, now)
+                                .SetProperty(request => request.LastErrorCode, (string?)null)
+                                .SetProperty(request => request.LastErrorAt, (DateTimeOffset?)null),
+                            cancellationToken)
+                        .ConfigureAwait(false);
+                    if (updated != 1)
                     {
                         await unit.RollbackAsync(cancellationToken).ConfigureAwait(false);
 
@@ -137,7 +157,7 @@ public sealed partial class DeletionRowExecutor(
                     failureCode = commit.FirstError.Code;
                 }
             }
-            catch (Exception exception) when (exception is not OperationCanceledException)
+            catch (Exception exception) when (exception is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
             {
                 await TryRollbackAsync(unit).ConfigureAwait(false);
                 var thrownType = exception.GetType().Name;
@@ -146,7 +166,7 @@ public sealed partial class DeletionRowExecutor(
                 failureCode = ErrorCodes.ServiceUnavailable;
             }
         }
-        catch (Exception exception) when (exception is not OperationCanceledException)
+        catch (Exception exception) when (exception is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
         {
             // The scope could not even be opened or the row not loaded: nothing to record on the row.
             var failedType = exception.GetType().Name;
@@ -155,7 +175,7 @@ public sealed partial class DeletionRowExecutor(
             return new DeletionOutcome(DeletionOutcomeKind.Failed, ErrorCodes.ServiceUnavailable);
         }
 
-        await RecordFailureAsync(userId, requestId, scopeOfRow, failureCode, cancellationToken).ConfigureAwait(false);
+        await RecordFailureAsync(userId, requestId, scopeOfRow, failureCode, token, cancellationToken).ConfigureAwait(false);
 
         return new DeletionOutcome(DeletionOutcomeKind.Failed, failureCode);
     }
@@ -165,6 +185,7 @@ public sealed partial class DeletionRowExecutor(
         Guid requestId,
         DeletionScope scopeOfRow,
         string code,
+        DateTimeOffset? token,
         CancellationToken cancellationToken)
     {
         metrics.Failed(scopeOfRow.ToWire(), code);
@@ -182,13 +203,29 @@ public sealed partial class DeletionRowExecutor(
                 .FirstOrDefaultAsync(request => request.Id == requestId, cancellationToken)
                 .ConfigureAwait(false);
 
-            if (row is null || row.Fail(clock.UtcNow, code, options.MaxAttempts).IsError)
+            if (row is null)
             {
                 return;
             }
 
-            await unit.BeginAsync(cancellationToken).ConfigureAwait(false);
-            await unit.CommitAsync(cancellationToken).ConfigureAwait(false);
+            var now = clock.UtcNow;
+            var updated = await database.DeletionRequests
+                .Where(request => request.Id == requestId
+                    && request.Status == DeletionStatus.InProgress
+                    && request.ClaimedAt == token)
+                .ExecuteUpdateAsync(
+                    set => set
+                        .SetProperty(request => request.Status, DeletionStatus.Failed)
+                        .SetProperty(request => request.LastErrorCode, code)
+                        .SetProperty(request => request.LastErrorAt, now),
+                    cancellationToken)
+                .ConfigureAwait(false);
+
+            if (updated != 1)
+            {
+                // The claim moved on (lease lapsed and another worker owns the row): nothing of ours to record.
+                return;
+            }
 
             if (!row.HasAttemptsLeft(options.MaxAttempts))
             {
@@ -197,7 +234,7 @@ public sealed partial class DeletionRowExecutor(
                 LogExhausted(exhaustedScope, requestId, code, attempts);
             }
         }
-        catch (Exception exception) when (exception is not OperationCanceledException)
+        catch (Exception exception) when (exception is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
         {
             // The claim's lease will expire and the next run retries; the failure metric is already counted.
             var recordType = exception.GetType().Name;
