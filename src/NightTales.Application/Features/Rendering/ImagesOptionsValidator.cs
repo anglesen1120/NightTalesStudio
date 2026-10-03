@@ -6,7 +6,7 @@ public static class ImagesOptionsValidator
     /// <summary>
     /// <c>ClipSeconds</c> 5..20, <c>SpareShare</c> 0..0.5, <c>SparseShare</c> 0.3..1, <c>MaxSkippedShare</c> 0..1,
     /// a non-empty <c>Model</c>, <c>Quality</c> unset or one of <c>low|medium|high|auto</c>, and a placeholder of at
-    /// least 1,000 tokens at positive rates.
+    /// least 6,000 tokens at rates no lower than the O8 plan placeholder (30 USD/1M image out, 5 USD/1M text in).
     /// </summary>
     /// <param name="options">The bound section.</param>
     /// <returns>One message per problem; empty when valid.</returns>
@@ -47,14 +47,19 @@ public static class ImagesOptionsValidator
             problems.Add($"{nameof(options.Quality)} must be unset or one of {string.Join(", ", ImagesOptions.AllowedQualities)}.");
         }
 
-        if (options.PlaceholderTokensPerImage < 1_000)
+        if (options.PlaceholderTokensPerImage < 6_000)
         {
-            problems.Add($"{nameof(options.PlaceholderTokensPerImage)} must be at least 1000.");
+            problems.Add($"{nameof(options.PlaceholderTokensPerImage)} must be at least 6000.");
         }
 
-        if (options.PlaceholderImageOutPer1MUsd <= 0m || options.PlaceholderTextInPer1MUsd <= 0m)
+        if (options.PlaceholderImageOutPer1MUsd < 30m)
         {
-            problems.Add($"{nameof(options.PlaceholderImageOutPer1MUsd)} and {nameof(options.PlaceholderTextInPer1MUsd)} must be greater than 0.");
+            problems.Add($"{nameof(options.PlaceholderImageOutPer1MUsd)} must be at least 30.");
+        }
+
+        if (options.PlaceholderTextInPer1MUsd < 5m)
+        {
+            problems.Add($"{nameof(options.PlaceholderTextInPer1MUsd)} must be at least 5.");
         }
 
         return problems;

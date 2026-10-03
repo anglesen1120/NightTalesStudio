@@ -1,6 +1,7 @@
 using NightTales.Application.Abstractions.Rendering;
 using NightTales.Application.Abstractions.Usage;
 using NightTales.Domain.Series;
+using NightTales.Domain.Usage;
 
 namespace NightTales.Application.Features.Rendering;
 
@@ -23,10 +24,14 @@ public sealed class ImageCostEstimator(IPriceCatalog catalog, ImagesOptions opti
 
         var version = await catalog.GetAsync(priceVersion, ct).ConfigureAwait(false);
         var perImage = version.ParseRates().Image.TryGetValue(options.Model, out var price)
-            ? price.PerImageUsd
-            : PlaceholderPerImage();
+            && price.Unit == ImagePriceRate.PerImageUnit
+            && price.PerImageUsd > 0m
+                ? price.PerImageUsd
+                : PlaceholderPerImage();
 
-        return new CostBound(maxTerms * perImage);
+        // generation_runs.worst_case_usd is numeric(12,6): round up to the stored scale so the reserve
+        // is never below the computed bound (SEC-3).
+        return new CostBound(Math.Ceiling(maxTerms * perImage * PerMillion) / PerMillion);
     }
 
     private decimal PlaceholderPerImage() =>

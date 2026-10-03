@@ -186,12 +186,12 @@ public sealed class ImageCostEstimatorTests
     [Fact]
     public async Task WorstCase_CustomPlaceholderTokens_ScaleTheBound()
     {
-        var options = new ImagesOptions { PlaceholderTokensPerImage = 1_000 };
+        var options = new ImagesOptions { PlaceholderTokensPerImage = 12_000 };
         var sut = new ImageCostEstimator(new FakeCatalog(NoImage), options);
 
         var bound = await sut.WorstCaseAsync(Aspect.Landscape, 1, 1, TestContext.Current.CancellationToken);
 
-        bound.WorstCaseUsd.ShouldBe(0.031m, "1000 * 30 / 1e6 + 200 * 5 / 1e6");
+        bound.WorstCaseUsd.ShouldBe(0.361m, "12000 * 30 / 1e6 + 200 * 5 / 1e6");
     }
 
     [Theory]
@@ -233,6 +233,60 @@ public sealed class ImageCostEstimatorTests
     {
         ImagesOptionsValidator.Validate(new ImagesOptions { PlaceholderImageOutPer1MUsd = 0m }).ShouldHaveSingleItem();
         ImagesOptionsValidator.Validate(new ImagesOptions { PlaceholderTextInPer1MUsd = -1m }).ShouldHaveSingleItem();
+    }
+
+    [Theory]
+    [InlineData(5_999, false)]
+    [InlineData(6_000, true)]
+    public void Options_PlaceholderTokenFloor_IsThePlanPlaceholder(int tokens, bool valid) =>
+        ImagesOptionsValidator.Validate(new ImagesOptions { PlaceholderTokensPerImage = tokens }).Count.ShouldBe(valid ? 0 : 1);
+
+    [Theory]
+    [InlineData(29.99, false)]
+    [InlineData(30, true)]
+    public void Options_ImageOutRateFloor_IsThePlanRate(double rate, bool valid) =>
+        ImagesOptionsValidator.Validate(new ImagesOptions { PlaceholderImageOutPer1MUsd = (decimal)rate }).Count.ShouldBe(valid ? 0 : 1);
+
+    [Theory]
+    [InlineData(4.99, false)]
+    [InlineData(5, true)]
+    public void Options_TextInRateFloor_IsThePlanRate(double rate, bool valid) =>
+        ImagesOptionsValidator.Validate(new ImagesOptions { PlaceholderTextInPer1MUsd = (decimal)rate }).Count.ShouldBe(valid ? 0 : 1);
+
+    [Fact]
+    public async Task WorstCase_WrongUnit_FallsBackToPlaceholder()
+    {
+        var image = new Dictionary<string, ImagePriceRate> { ["gpt-image-2"] = new("per_1m_tokens", 0.000001m) };
+        var sut = new ImageCostEstimator(new FakeCatalog(image), new ImagesOptions());
+
+        var bound = await sut.WorstCaseAsync(Aspect.Landscape, 1, 1, TestContext.Current.CancellationToken);
+
+        bound.WorstCaseUsd.ShouldBe(0.181m);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-0.5)]
+    public async Task WorstCase_NonPositivePerImagePrice_FallsBackToPlaceholder(double price)
+    {
+        var image = new Dictionary<string, ImagePriceRate> { ["gpt-image-2"] = new("per_image", (decimal)price) };
+        var sut = new ImageCostEstimator(new FakeCatalog(image), new ImagesOptions());
+
+        var bound = await sut.WorstCaseAsync(Aspect.Landscape, 1, 1, TestContext.Current.CancellationToken);
+
+        bound.WorstCaseUsd.ShouldBe(0.181m);
+    }
+
+    [Fact]
+    public async Task WorstCase_RoundsUpToSixDecimals_NeverBelowTheBound()
+    {
+        var image = new Dictionary<string, ImagePriceRate> { ["gpt-image-2"] = new("per_image", 0.0071761m) };
+        var sut = new ImageCostEstimator(new FakeCatalog(image), new ImagesOptions());
+
+        var bound = await sut.WorstCaseAsync(Aspect.Landscape, 3, 1, TestContext.Current.CancellationToken);
+
+        // 3 × 0.0071761 = 0.0215283 → up to 0.021529 (round-to-nearest would give 0.021528).
+        bound.WorstCaseUsd.ShouldBe(0.021529m);
     }
 
     [Fact]
