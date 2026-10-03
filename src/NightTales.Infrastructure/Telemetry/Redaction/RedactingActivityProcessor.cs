@@ -1,7 +1,6 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Reflection;
-using System.Text;
 using Npgsql;
 using OpenTelemetry;
 
@@ -16,8 +15,9 @@ namespace NightTales.Infrastructure.Telemetry.Redaction;
 /// activity <em>event</em> (an <c>exception</c> event carries <c>exception.message</c> and
 /// <c>exception.stacktrace</c>). For an exception event of a <see cref="PostgresException"/> the message is cut
 /// to the shape <see cref="LogExceptionSanitizer"/> logs — SQLSTATE and the trimmed server message — and the
-/// <c>DETAIL:</c> block (the offending key/column values, present when the connection string sets
-/// <c>Include Error Detail</c>) is removed from the message and the stack trace.
+/// message and stack trace are cut at the first <c>DETAIL:</c> / <c>Exception data:</c> line (the offending
+/// key/column values, present when the connection string sets <c>Include Error Detail</c>). Anything after the
+/// marker is dropped, never resumed: a Detail value shaped like a stack frame cannot slip back into the text.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -126,10 +126,12 @@ public sealed class RedactingActivityProcessor(RedactionOptions options) : BaseP
 
     private static string ScrubEventText(string key, string value, bool isPostgres, RedactionOptions options)
     {
+        // A wrapped PostgresException records the wrapper's type but its ToString still names Npgsql's type.
+        var postgres = isPostgres || value.Contains(PostgresExceptionType, StringComparison.Ordinal);
         var text = key switch
         {
-            "exception.message" when isPostgres => FirstLine(value),
-            "exception.message" or "exception.stacktrace" => StripDetail(value),
+            "exception.message" when postgres => FirstLine(value),
+            "exception.stacktrace" when postgres => StripPostgresText(value),
             _ => value,
         };
 
@@ -149,61 +151,31 @@ public sealed class RedactingActivityProcessor(RedactionOptions options) : BaseP
     }
 
     /// <summary>
-    /// Removes what a PostgreSQL error adds beyond SQLSTATE and message: the <c>DETAIL:</c> block of its message
-    /// and the <c>Exception data:</c> block <see cref="Exception.ToString"/> appends (Detail, schema, table and
-    /// constraint names). The stack frames after a removed block stay.
+    /// Cuts a PostgreSQL error text at the first <c>DETAIL:</c> or <c>Exception data:</c> line and keeps only
+    /// what precedes it. The <c>DETAIL:</c> block holds the offending values and the <c>Exception data:</c>
+    /// block of <see cref="Exception.ToString"/> the schema/table/constraint names; both run to the end of the
+    /// text, so nothing after the marker is ever kept — a Detail value shaped like a stack frame cannot
+    /// re-enable output. Stack frames of a <see cref="PostgresException"/> sit after its <c>DETAIL:</c> line,
+    /// so they are cut too.
     /// </summary>
-    private static string StripDetail(string text)
+    private static string StripPostgresText(string text)
     {
-        var hasData = text.Contains(PostgresExceptionType, StringComparison.Ordinal);
-        if (!text.Contains("DETAIL:", StringComparison.Ordinal)
-            && !(hasData && text.Contains("Exception data:", StringComparison.Ordinal)))
-        {
-            return text;
-        }
-
-        var builder = new StringBuilder(text.Length);
-        var skipping = false;
-        var changed = false;
         var position = 0;
         while (position < text.Length)
         {
             var lineEnd = text.IndexOf('\n', position);
             var next = lineEnd < 0 ? text.Length : lineEnd + 1;
-            var line = text.AsSpan(position, next - position);
-            var trimmed = line.Trim();
-            var isFrame = line.StartsWith("   at ", StringComparison.Ordinal) || trimmed.StartsWith("---", StringComparison.Ordinal);
-            if (skipping && isFrame)
+            var trimmed = text.AsSpan(position, next - position).Trim();
+            if (trimmed.StartsWith("DETAIL:", StringComparison.Ordinal)
+                || trimmed.SequenceEqual("Exception data:"))
             {
-                skipping = false;
-            }
-
-            if (!skipping
-                && (line.StartsWith("DETAIL:", StringComparison.Ordinal)
-                    || (hasData && trimmed.SequenceEqual("Exception data:"))))
-            {
-                skipping = true;
-                changed = true;
-                while (builder.Length > 0 && builder[^1] is '\r' or '\n' or ' ')
-                {
-                    builder.Length--;
-                }
-            }
-
-            if (!skipping)
-            {
-                if (changed && builder.Length > 0 && builder[^1] != '\n')
-                {
-                    builder.Append('\n');
-                }
-
-                builder.Append(line);
+                return text.AsSpan(0, position).TrimEnd("\r\n ").ToString();
             }
 
             position = next;
         }
 
-        return changed ? builder.ToString().TrimEnd('\r', '\n', ' ') : text;
+        return text;
     }
 
     private static void SetEventTags(ActivityEvent activityEvent, List<KeyValuePair<string, object?>> changes)
