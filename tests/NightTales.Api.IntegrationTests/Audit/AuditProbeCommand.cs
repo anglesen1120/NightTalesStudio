@@ -45,5 +45,5 @@ internal sealed record AuditProbeCommand(
         null,
         "probe",
         null,
-        new Dictionary<string, string>(StringComparer.Ordinal) { ["probe"] = Body });
+        new Dictionary<string, object>(StringComparer.Ordinal) { ["probe"] = Body });
 }
