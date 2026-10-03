@@ -194,7 +194,10 @@ internal sealed class HealthRig : IAsyncDisposable
             wrapped,
             Microsoft.Extensions.Options.Options.Create(serverOptions),
             startReader,
-            new TaskDirCleaner(wrapped, factory.CreateLogger<TaskDirCleaner>()),
+            new DiskRuleEnforcer(
+                new TaskDirCleaner(wrapped, factory.CreateLogger<TaskDirCleaner>()),
+                factory.CreateLogger<DiskRuleEnforcer>()),
+            new FileOutputSource(store, wrapped, factory.CreateLogger<FileOutputSource>()),
             factory.CreateLogger<MptClient>());
 
         var runner = new FakeProcessRunner();

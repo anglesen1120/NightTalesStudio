@@ -47,25 +47,19 @@ internal static class AdapterHost
         services.AddServerKeyEnvDefaults(environment ?? Environment.GetEnvironmentVariable);
 
         services.TryAddSingleton(TimeProvider.System);
-        services.AddSingleton<IMptProcessStartReader, MptProcessStartReader>();
-        services.AddSingleton<TaskDirCleaner>();
         services.AddSingleton(provider => new SqliteTaskStore(
             new SqliteStoreOptions(provider.GetRequiredService<IOptions<AdapterOptions>>().Value.TasksDbPath),
             provider.GetRequiredService<ILogger<SqliteTaskStore>>()));
         services.AddSingleton<ITaskStore>(provider => provider.GetRequiredService<SqliteTaskStore>());
 
-        services.AddSingleton(provider => new MptClient(
-            MptHttpClient.Create(provider.GetRequiredService<IOptions<AdapterOptions>>().Value),
-            provider.GetRequiredService<IOptions<AdapterOptions>>(),
-            provider.GetRequiredService<IOptions<RenderNodeServerOptions>>(),
-            provider.GetRequiredService<IMptProcessStartReader>(),
-            provider.GetRequiredService<TaskDirCleaner>(),
-            provider.GetRequiredService<ILogger<MptClient>>()));
-        services.AddSingleton<IRenderBackend>(provider => provider.GetRequiredService<MptClient>());
+        // 11.3.5-T3 registers the check runner, publisher, disk rules, MptClient (its HttpClient comes only from
+        // MptHttpClient.Create), IRenderBackend, the single ICompletedTaskFeed and the PostProcessor hosted
+        // service. It needs ITaskStore and RenderNodeServerOptions, both registered above.
+        services.AddAdapterPostProcessing(configuration);
 
-        // The post-processor (11.3.5-T3) owns the consumer; TryAdd so whichever registers first wins.
-        services.TryAddSingleton<ICompletedTaskFeed, ChannelCompletedTaskFeed>();
-        services.AddHostedService<MptTaskPoller>();
+        // The poller is registered by T3 as a singleton only; host it through that same instance so it
+        // publishes into the feed the PostProcessor reads.
+        services.AddHostedService(provider => provider.GetRequiredService<MptTaskPoller>());
 
         services.AddSingleton<IProcessRunner, SystemProcessRunner>();
         services.AddSingleton<IDiskStats, SystemDiskStats>();

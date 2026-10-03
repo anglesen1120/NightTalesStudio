@@ -129,29 +129,36 @@ public sealed class MptClient : IRenderBackend
     private readonly int _threads;
     private readonly TimeSpan _readTimeout;
     private readonly IMptProcessStartReader _startReader;
-    private readonly TaskDirCleaner _cleaner;
+    private readonly DiskRuleEnforcer _disk;
+
+    private readonly AdapterOptions _options;
+    private readonly FileOutputSource _outputs;
 
     public MptClient(
         HttpClient http,
         IOptions<AdapterOptions> options,
         IOptions<RenderNodeServerOptions> serverOptions,
         IMptProcessStartReader startReader,
-        TaskDirCleaner cleaner,
+        DiskRuleEnforcer disk,
+        FileOutputSource outputs,
         ILogger<MptClient> log)
     {
         ArgumentNullException.ThrowIfNull(http);
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(serverOptions);
         ArgumentNullException.ThrowIfNull(startReader);
-        ArgumentNullException.ThrowIfNull(cleaner);
+        ArgumentNullException.ThrowIfNull(disk);
+        ArgumentNullException.ThrowIfNull(outputs);
         ArgumentNullException.ThrowIfNull(log);
 
         _http = http;
         _log = log;
         _startReader = startReader;
-        _cleaner = cleaner;
+        _disk = disk;
+        _outputs = outputs;
 
         var bound = options.Value;
+        _options = bound;
         _baseAddress = AdapterOptions.ParseLoopbackMptBaseUrl(bound.MptBaseUrl);
         _readTimeout = TimeSpan.FromSeconds(Math.Max(1, bound.MptReadTimeoutSeconds));
         _threads = bound.ResolveMptThreads(serverOptions.Value.MaxConcurrentTasks);
@@ -199,6 +206,18 @@ public sealed class MptClient : IRenderBackend
 
         // D6's lost rule compares a later process start against this instant, so it is read here, at submit.
         var startedAt = await _startReader.ReadAsync(cancellationToken).ConfigureAwait(false);
+
+        // T3: the check's --aspect/--subtitles come from this body (D6a); persisted so a restart re-checks alike.
+        try
+        {
+            await SubmitMarker.WriteAsync(_options, record.TaskId, mpt, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            // The post-processor fails the check (check_failed) when the marker is missing.
+            _log.PathRemoveFailed(SubmitMarker.PathFor(_options, record.TaskId), exception.GetType().Name);
+        }
+
         return new BackendAccepted(mptTaskId.ToString("D", CultureInfo.InvariantCulture), startedAt);
     }
 
@@ -252,22 +271,19 @@ public sealed class MptClient : IRenderBackend
             }
         }
 
-        // The dirs are removed after MPT: the task dir, the two relay files and the adapter's own report dir.
-        await _cleaner.CleanAsync(record.TaskId, record.BackendTaskId, cancellationToken).ConfigureAwait(false);
+        // The dirs are removed after MPT, through the one disk-rule path: the task dir, the two relay files and
+        // the adapter's own report dir.
+        await _disk.OnDeletedAsync(record.TaskId, record.BackendTaskId, cancellationToken).ConfigureAwait(false);
         return Result.Deleted;
     }
 
     /// <inheritdoc />
     /// <remarks>
-    /// 11.3.5-T3 owns output serving (its <c>FileOutputSource</c> reads the measured check and the stored
-    /// sha256, 05 D15 P3); until then the adapter has no published artefact and answers not-found.
+    /// Served by <see cref="FileOutputSource"/> (11.3.5-T3) from the stored output and the stored
+    /// <c>backend_task_id</c>.
     /// </remarks>
-    public Task<ErrorOr<OutputFile>> OpenOutputAsync(Guid taskId, OutputKind kind, CancellationToken cancellationToken)
-    {
-        _log.OutputNotPublished(taskId, kind);
-        return Task.FromResult<ErrorOr<OutputFile>>(
-            Error.NotFound(AdapterErrorCodes.OutputAbsent, "The adapter publishes outputs after the check (11.3.5-T3)."));
-    }
+    public Task<ErrorOr<OutputFile>> OpenOutputAsync(Guid taskId, OutputKind kind, CancellationToken cancellationToken) =>
+        _outputs.OpenAsync(taskId, kind, cancellationToken);
 
     /// <summary>
     /// MPT's task observables, or the error the poller maps (a 404 is the lost rule's first half, D6).

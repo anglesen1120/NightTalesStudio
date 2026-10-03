@@ -110,11 +110,23 @@ public sealed class AdapterOptions
     /// <summary>The node certificate's private key (D11).</summary>
     public string KeyPath { get; set; } = "/etc/nts/tls/adapter.key";
 
-    /// <summary><c>Adapter:CheckConcurrency</c> (D6: 1).</summary>
+    /// <summary><c>Adapter:CheckConcurrency</c>: how many <c>render_check.py</c> runs may overlap (D6a pins 1).</summary>
     public int CheckConcurrency { get; set; } = 1;
 
-    /// <summary><c>Adapter:CheckTimeoutSeconds</c> (D6: 900).</summary>
+    /// <summary><c>Adapter:CheckTimeoutSeconds</c>: wall time of one check, measured from process start (D6a pins 900).</summary>
     public int CheckTimeoutSeconds { get; set; } = 900;
+
+    /// <summary>How long a timed-out check gets between SIGTERM and SIGKILL (T3 design: 10 s).</summary>
+    public int CheckKillGraceSeconds { get; set; } = 10;
+
+    /// <summary>The interpreter D6a names; it is the process file name, never a shell.</summary>
+    public string CheckPythonPath { get; set; } = "/usr/bin/python3.12";
+
+    /// <summary>The check tool in the node release layout (11.3.1-T2).</summary>
+    public string CheckScriptPath { get; set; } = "/opt/nts/current/worker-node/checks/render_check.py";
+
+    /// <summary>The check's working directory (D6a).</summary>
+    public string CheckWorkingDirectory { get; set; } = "/opt/nts/current";
 
     /// <summary><c>Adapter:AssetsRefreshSeconds</c> (D6: 600).</summary>
     public int AssetsRefreshSeconds { get; set; } = 600;
@@ -136,6 +148,18 @@ public sealed class AdapterOptions
 
     /// <summary>The rendered MPT config (D8 state dir).</summary>
     public string MptConfigPath { get; set; } = "/var/lib/nts/mpt/config.toml";
+
+    /// <summary>
+    /// The largest <c>final-1.norm.mp4</c> the adapter will publish (05 D15 P3 size limit). [INFERENCE] 4 GiB: the
+    /// plan names no number; the node's disk rules (11 D8) bound a render far below it.
+    /// </summary>
+    public long MaxVideoBytes { get; set; } = 4L * 1024 * 1024 * 1024;
+
+    /// <summary>The largest <c>subtitle.srt</c> the adapter will hash and serve. [INFERENCE] 4 MiB.</summary>
+    public long MaxSubtitleBytes { get; set; } = 4L * 1024 * 1024;
+
+    /// <summary>The largest <c>render-check.json</c> the adapter will read. [INFERENCE] 1 MiB.</summary>
+    public long MaxReportBytes { get; set; } = 1024 * 1024;
 
     /// <summary>The filesystem the disk source measures: the task dirs' (D20 H16).</summary>
     public string DiskPath => MptTasksDir;
