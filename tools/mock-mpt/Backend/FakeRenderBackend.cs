@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 using ErrorOr;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using NightTales.MockMpt.Failures;
 using NightTales.MockMpt.Fixtures;
 using NightTales.MockMpt.Health;
 using NightTales.MockMpt.Images;
@@ -36,10 +37,15 @@ public sealed partial class FakeRenderBackend : BackgroundService, IRenderBacken
     private readonly ILogger<FakeRenderBackend> _logger;
     private readonly ConcurrentDictionary<Guid, SubmittedTask> _tasks = new();
     private readonly ConcurrentDictionary<Guid, byte> _frozen = new();
+    private readonly ConcurrentDictionary<Guid, InjectionPlan> _plans = new();
+    private readonly IImageReportSelector _imageSelector;
+    private readonly FailureInjector _injector;
 
     public FakeRenderBackend(
         ITaskStore store,
         IImagePlanSink planSink,
+        IImageReportSelector imageSelector,
+        FailureInjector injector,
         FixtureSet fixtures,
         CannedMediaSet media,
         MockHealthState health,
@@ -49,6 +55,8 @@ public sealed partial class FakeRenderBackend : BackgroundService, IRenderBacken
     {
         ArgumentNullException.ThrowIfNull(store);
         ArgumentNullException.ThrowIfNull(planSink);
+        ArgumentNullException.ThrowIfNull(imageSelector);
+        ArgumentNullException.ThrowIfNull(injector);
         ArgumentNullException.ThrowIfNull(fixtures);
         ArgumentNullException.ThrowIfNull(media);
         ArgumentNullException.ThrowIfNull(health);
@@ -58,6 +66,8 @@ public sealed partial class FakeRenderBackend : BackgroundService, IRenderBacken
 
         _store = store;
         _planSink = planSink;
+        _imageSelector = imageSelector;
+        _injector = injector;
         _fixtures = fixtures;
         _media = media;
         _health = health;
@@ -110,6 +120,20 @@ public sealed partial class FakeRenderBackend : BackgroundService, IRenderBacken
             await _store.UpdateAsync(
                 stored with { MptLastSnapshot = ProgressClock.Snapshot(RenderStages.Queued, 0) },
                 cancellationToken).ConfigureAwait(false);
+
+            // Failure injection (11.1.2-T2): the plan is resolved once, here, from the keyword / env / rate
+            // layers; the ticker applies it. A lost task is removed right away, so the first poll after the
+            // 202 is already the 404 `adapter_task_unknown` of a node that lost its state (05 D4).
+            var plan = _injector.Resolve(record.TaskId, record.RenderJobId, mpt);
+            _imageSelector.UseReport(record.TaskId, plan.Image);
+            if (plan.Mode.Kind == FailKind.LostTask)
+            {
+                await LoseTaskAsync(record.TaskId, cancellationToken).ConfigureAwait(false);
+            }
+            else
+            {
+                _plans[record.TaskId] = plan;
+            }
         }
 
         await PublishActiveTasksAsync(cancellationToken).ConfigureAwait(false);
@@ -140,6 +164,7 @@ public sealed partial class FakeRenderBackend : BackgroundService, IRenderBacken
             },
             cancellationToken).ConfigureAwait(false);
         DropScript(record.TaskId);
+        _plans.TryRemove(record.TaskId, out _);
         RemoveSubtitle(record.TaskId);
         await PublishActiveTasksAsync(cancellationToken).ConfigureAwait(false);
     }
@@ -157,6 +182,7 @@ public sealed partial class FakeRenderBackend : BackgroundService, IRenderBacken
         }
 
         _tasks.TryRemove(record.TaskId, out _);
+        _plans.TryRemove(record.TaskId, out _);
         _frozen.TryRemove(record.TaskId, out _);
         RemoveSubtitle(record.TaskId);
         return Result.Deleted;
@@ -245,6 +271,12 @@ public sealed partial class FakeRenderBackend : BackgroundService, IRenderBacken
                 continue;
             }
 
+            if (_plans.TryGetValue(taskId, out var plan)
+                && await TryInjectAsync(stored, plan, now - stored.SubmittedAt, total, cancellationToken).ConfigureAwait(false))
+            {
+                continue;
+            }
+
             if (now - stored.SubmittedAt < total)
             {
                 var (state, stage, percent) = ProgressClock.At(now - stored.SubmittedAt, total);
@@ -311,14 +343,134 @@ public sealed partial class FakeRenderBackend : BackgroundService, IRenderBacken
                 Stage = RenderStages.Done,
                 Percent = 100,
                 Output = FakePostProcessor.BuildOutput(video, subtitles, _options.VideoSeconds),
-                Check = FakePostProcessor.BuildCheck(_fixtures, video, subtitles),
+                Check = FakePostProcessor.BuildCheck(_fixtures, video, subtitles, QualityCheckFixture(stored.TaskId)),
                 Images = images,
                 FinishedAt = _clock.GetUtcNow(),
                 MptLastSnapshot = ProgressClock.Snapshot(RenderStages.Done, 100),
             },
             cancellationToken).ConfigureAwait(false);
         _planSink.Release(stored.TaskId);
+        _plans.TryRemove(stored.TaskId, out _);
     }
+
+    /// <summary>The failing <c>render-check.v1</c> fixture of a <c>quality:&lt;check&gt;</c> plan, else null.</summary>
+    private string? QualityCheckFixture(Guid taskId) =>
+        _plans.TryGetValue(taskId, out var plan) && plan.Mode.Kind == FailKind.Quality
+            ? _fixtures.QualityCheckFixture(plan.Mode.QualityCheck!)
+            : null;
+
+    /// <summary>
+    /// Applies an injected failure once the progress clock reaches its stage (11.1.2-T2 Design). Returns true
+    /// when the task was handled (failed or frozen) and the normal progress must not run for it.
+    /// </summary>
+    private async Task<bool> TryInjectAsync(
+        RenderTaskRecord stored,
+        InjectionPlan plan,
+        TimeSpan elapsed,
+        TimeSpan total,
+        CancellationToken cancellationToken)
+    {
+        const int timeoutPercent = 95;
+        const int failedMptState = -1;
+
+        var reached = ProgressClock.At(elapsed, total).Percent;
+        if (plan.Mode.Kind == FailKind.Timeout)
+        {
+            if (reached < timeoutPercent)
+            {
+                return false;
+            }
+
+            // `timeout`: progress stops at assembling 95 % and the task never becomes terminal; the Worker
+            // raises `render_timeout` (05 D5).
+            _frozen[stored.TaskId] = 0;
+            await _store.UpdateAsync(
+                stored with
+                {
+                    State = RenderStates.Running,
+                    Stage = RenderStages.Assembling,
+                    Percent = timeoutPercent,
+                    MptLastSnapshot = ProgressClock.Snapshot(RenderStages.Assembling, timeoutPercent),
+                },
+                cancellationToken).ConfigureAwait(false);
+            return true;
+        }
+
+        if (ShapeOf(plan) is not { } shape || (reached < shape.Percent && elapsed < total))
+        {
+            return false;
+        }
+
+        var images = shape.WithImages ? FakePostProcessor.BuildImages(_planSink, stored.TaskId) : null;
+        _frozen[stored.TaskId] = 0;
+        await _store.UpdateAsync(
+            stored with
+            {
+                State = RenderStates.Failed,
+                Stage = shape.Stage,
+                Percent = shape.Percent,
+                Outcome = new RenderOutcomeV1(shape.Code, shape.Detail, OutcomeMessages.For(shape.Code)),
+                Images = images,
+                FinishedAt = _clock.GetUtcNow(),
+                MptLastSnapshot = new MptStateV1(failedMptState, shape.Percent, shape.FailedStage, []),
+            },
+            cancellationToken).ConfigureAwait(false);
+        DropScript(stored.TaskId);
+        RemoveSubtitle(stored.TaskId);
+        _planSink.Release(stored.TaskId);
+        _plans.TryRemove(stored.TaskId, out _);
+        return true;
+    }
+
+    /// <summary>
+    /// The terminal failure a plan produces, or null when it succeeds. A stage-bound mode wins over the image
+    /// report's own failure (the earlier row of the Design's precedence); only <c>moderated_all</c> and
+    /// <c>funds</c> force the failed <c>materials</c> state.
+    /// </summary>
+    private static FailureShape? ShapeOf(InjectionPlan plan)
+    {
+        switch (plan.Mode.Kind)
+        {
+            case FailKind.TtsFailed:
+                return new FailureShape(RenderStages.Voice, 20, RenderOutcomeCodes.TtsFailed, "audio", "audio", false);
+            case FailKind.AssemblyFailed:
+                return new FailureShape(
+                    RenderStages.Assembling, 75, RenderOutcomeCodes.RenderAssemblyFailed, "video", "video", true);
+            case FailKind.NodeError:
+                return new FailureShape(
+                    RenderStages.Queued, 0, RenderOutcomeCodes.RenderNodeError, "preflight", "preflight", false);
+        }
+
+        return plan.Image.Kind switch
+        {
+            ImageReportKind.ModeratedAll => new FailureShape(
+                RenderStages.Images, 40, RenderOutcomeCodes.ImageModerated, "materials", "materials", true),
+            ImageReportKind.Funds => new FailureShape(
+                RenderStages.Images, 40, RenderOutcomeCodes.ImageGenerationFailed, "materials", "materials", true),
+            _ => null,
+        };
+    }
+
+    /// <summary>
+    /// <c>lost_task</c>: the row, the plan and the script are removed, so every later <c>GET</c> is 404
+    /// <c>adapter_task_unknown</c>.
+    /// </summary>
+    private async Task LoseTaskAsync(Guid taskId, CancellationToken cancellationToken)
+    {
+        _ = await _store.DeleteAsync(taskId, cancellationToken).ConfigureAwait(false);
+        _tasks.TryRemove(taskId, out _);
+        _frozen.TryRemove(taskId, out _);
+        RemoveSubtitle(taskId);
+        _planSink.Release(taskId);
+    }
+
+    private sealed record FailureShape(
+        string Stage,
+        int Percent,
+        string Code,
+        string Detail,
+        string FailedStage,
+        bool WithImages);
 
     private StatusFixture? ResolveFixture(MptSubmitFields mpt)
     {

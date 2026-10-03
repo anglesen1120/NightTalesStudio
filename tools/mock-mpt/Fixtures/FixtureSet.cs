@@ -28,10 +28,13 @@ public sealed class FixtureSet
     private const string StatusPrefix = "render-status.v1.";
     private const string HealthPrefix = "render-node-health.v1.";
     private const string CheckPrefix = "render-check.v1.";
+    private const string QualityPrefix = "render-quality.v1.";
 
     private readonly Dictionary<string, StatusFixture> _statuses = new(StringComparer.Ordinal);
     private readonly Dictionary<string, RenderNodeHealthV1> _healths = new(StringComparer.Ordinal);
     private readonly Dictionary<string, JsonElement> _checks = new(StringComparer.Ordinal);
+    private readonly List<JsonElement> _qualities = [];
+    private readonly Dictionary<string, string> _qualityChecks = new(StringComparer.Ordinal);
 
     private FixtureSet(string directory)
     {
@@ -46,6 +49,14 @@ public sealed class FixtureSet
 
     /// <summary>Every fixture id that can be replayed as a health body, in ordinal order.</summary>
     public IReadOnlyList<string> HealthIds => [.. _healths.Keys.Order(StringComparer.Ordinal)];
+
+    /// <summary>
+    /// The <c>render-quality.v1</c> check ids a <c>quality:&lt;check&gt;</c> mode can fail (11.1.2-T2): the ids
+    /// a failing quality fixture marks <c>pass: false</c> and whose <c>render-check.v1</c> fixture is
+    /// identifiable. Read from the fixtures, never hard-coded, so an invented or an always-passing id is
+    /// rejected at start.
+    /// </summary>
+    public IReadOnlyList<string> QualityCheckIds => [.. _qualityChecks.Keys.Order(StringComparer.Ordinal)];
 
     /// <summary>Reads every <c>*.json</c> fixture under <paramref name="directory"/>.</summary>
     public static FixtureSet Load(string directory)
@@ -69,6 +80,8 @@ public sealed class FixtureSet
             set.LoadOne(file);
         }
 
+        set.IndexQualityChecks();
+
         set.Require(OkCheckId, set._checks.ContainsKey(OkCheckId));
         set.Require(NoSubtitlesCheckId, set._checks.ContainsKey(NoSubtitlesCheckId));
         set.Require(OkHealthId, set._healths.ContainsKey(OkHealthId));
@@ -89,6 +102,10 @@ public sealed class FixtureSet
             ? check
             : throw new MockStartupException($"fixture '{id}' is not present in '{Directory}'");
 
+    /// <summary>The <c>render-check.v1</c> fixture id that fails <paramref name="checkId"/>, or null.</summary>
+    public string? QualityCheckFixture(string checkId) =>
+        _qualityChecks.TryGetValue(checkId, out var fixture) ? fixture : null;
+
     /// <summary>True when <paramref name="id"/> names a fixture the mock can replay (a task or a health body).</summary>
     public bool CanReplay(string id) => _statuses.ContainsKey(id) || _healths.ContainsKey(id);
 
@@ -98,6 +115,80 @@ public sealed class FixtureSet
         {
             throw new MockStartupException($"fixture '{id}.json' is missing from '{Directory}' (05 D14)");
         }
+    }
+
+    /// <summary>
+    /// Pairs every failing <c>render-quality.v1</c> fixture with the <c>render-check.v1</c> fixture it was
+    /// evaluated from. The quality fixture repeats the measurements it was derived from (loudness, true peak,
+    /// durations, size, cue count), so the pair is the one check fixture with the same figures; a fixture with
+    /// no or several candidates contributes nothing rather than guessing.
+    /// </summary>
+    private void IndexQualityChecks()
+    {
+        foreach (var quality in _qualities)
+        {
+            if (!quality.TryGetProperty("checks", out var checks) || checks.ValueKind != JsonValueKind.Array)
+            {
+                continue;
+            }
+
+            var signature = QualitySignature(quality);
+            var candidates = _checks
+                .Where(pair => string.Equals(CheckSignature(pair.Value), signature, StringComparison.Ordinal))
+                .Select(pair => pair.Key)
+                .ToList();
+            if (candidates.Count != 1)
+            {
+                continue;
+            }
+
+            foreach (var check in checks.EnumerateArray())
+            {
+                if (check.TryGetProperty("pass", out var pass)
+                    && pass.ValueKind == JsonValueKind.False
+                    && check.TryGetProperty("id", out var id)
+                    && id.GetString() is { Length: > 0 } checkId)
+                {
+                    _qualityChecks.TryAdd(checkId, candidates[0]);
+                }
+            }
+        }
+    }
+
+    private static string QualitySignature(JsonElement quality) => string.Join(
+        '|',
+        Number(quality, "integrated_lufs"),
+        Number(quality, "true_peak_dbtp"),
+        Number(quality, "duration_sec"),
+        Number(quality, "tts_duration_sec"),
+        Number(quality, "width"),
+        Number(quality, "height"),
+        Number(quality, "subtitles", "cues"));
+
+    private static string CheckSignature(JsonElement check) => string.Join(
+        '|',
+        Number(check, "loudness", "after", "integrated_lufs"),
+        Number(check, "loudness", "after", "true_peak_dbtp"),
+        Number(check, "container", "duration_s"),
+        Number(check, "narration", "duration_s"),
+        Number(check, "video", "width"),
+        Number(check, "video", "height"),
+        Number(check, "subtitles", "cues"));
+
+    private static string Number(JsonElement root, params string[] path)
+    {
+        var current = root;
+        foreach (var name in path)
+        {
+            if (current.ValueKind != JsonValueKind.Object || !current.TryGetProperty(name, out current))
+            {
+                return "-";
+            }
+        }
+
+        return current.ValueKind == JsonValueKind.Number
+            ? current.GetDecimal().ToString("0.####", System.Globalization.CultureInfo.InvariantCulture)
+            : "-";
     }
 
     private void LoadOne(string file)
@@ -127,8 +218,17 @@ public sealed class FixtureSet
             return;
         }
 
-        // render-submit.v1.* and render-quality.v1.* are not the mock's to serve; parse them with Strict so a
-        // broken fixture still fails at start, but keep nothing.
+        if (id.StartsWith(QualityPrefix, StringComparison.Ordinal))
+        {
+            // Kept (parsed) only to derive which check ids a `quality:<check>` mode can fail (11.1.2-T2).
+            _ = Parse<JsonNode>(text, id);
+            using var document = JsonDocument.Parse(text);
+            _qualities.Add(document.RootElement.Clone());
+            return;
+        }
+
+        // render-submit.v1.* is not the mock's to serve; parse it with Strict so a broken fixture still
+        // fails at start, but keep nothing.
         _ = Parse<JsonNode>(text, id);
     }
 
