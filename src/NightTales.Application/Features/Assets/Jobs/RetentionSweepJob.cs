@@ -147,7 +147,7 @@ public sealed partial class RetentionSweepJob(
         Counts counts,
         CancellationToken cancellationToken)
     {
-        var failedIds = new HashSet<Guid>();
+        var excluded = new HashSet<Guid>();
         var iterations = 0;
 
         while (true)
@@ -157,7 +157,7 @@ public sealed partial class RetentionSweepJob(
 
             // A snapshot: the exclusion set grows while the batch is processed, the query has to capture one
             // value.
-            var excludedIds = failedIds.ToList();
+            var excludedIds = excluded.ToList();
             var pairs = new List<(Guid Id, Guid UserId)>();
             await foreach (var pair in systemWork
                 .PendingAsync<Asset>(
@@ -190,16 +190,21 @@ public sealed partial class RetentionSweepJob(
 
             foreach (var (assetId, userId) in pairs)
             {
-                if (await DeleteOneAsync(assetId, userId, now, cancellationToken).ConfigureAwait(false))
+                switch (await DeleteOneAsync(assetId, userId, now, cancellationToken).ConfigureAwait(false))
                 {
-                    counts.Deleted++;
-                    metrics.AssetDeleted();
-                }
-                else
-                {
-                    counts.Failed++;
-                    metrics.AssetFailed();
-                    failedIds.Add(assetId);
+                    case AssetOutcome.Deleted:
+                        counts.Deleted++;
+                        metrics.AssetDeleted();
+                        break;
+                    case AssetOutcome.Skipped:
+                        // Not due any more (or not visible): not a failure, but it must not come back in this run.
+                        excluded.Add(assetId);
+                        break;
+                    default:
+                        counts.Failed++;
+                        metrics.AssetFailed();
+                        excluded.Add(assetId);
+                        break;
                 }
             }
 
@@ -211,8 +216,12 @@ public sealed partial class RetentionSweepJob(
     }
 
     /// <summary>Deletes one asset's object and marks its row, inside the owner's scope.</summary>
-    /// <returns><see langword="true"/> when the row is marked; <see langword="false"/> after a logged failure.</returns>
-    private async Task<bool> DeleteOneAsync(Guid assetId, Guid userId, DateTimeOffset now, CancellationToken cancellationToken)
+    /// <remarks>
+    /// The due predicate is re-checked on the write context right before the irreversible object delete: the
+    /// id query ran on another context, so a row re-stamped (approve re-stamps <c>retention_until</c>) or
+    /// soft-deleted in between must not lose its object.
+    /// </remarks>
+    private async Task<AssetOutcome> DeleteOneAsync(Guid assetId, Guid userId, DateTimeOffset now, CancellationToken cancellationToken)
     {
         try
         {
@@ -220,12 +229,12 @@ public sealed partial class RetentionSweepJob(
             using var pinned = scope.ServiceProvider.GetRequiredService<ISystemContext>().For(userId);
 
             var store = scope.ServiceProvider.GetRequiredService<IAssetRetentionStore>();
-            var asset = await store.FindLiveAsync(assetId, cancellationToken).ConfigureAwait(false);
+            var asset = await store.FindDueAsync(assetId, now, cancellationToken).ConfigureAwait(false);
             if (asset is null)
             {
-                LogAssetFailed(assetId, "asset_not_visible");
+                LogAssetSkipped(assetId);
 
-                return false;
+                return AssetOutcome.Skipped;
             }
 
             var deleted = await blobs
@@ -235,20 +244,27 @@ public sealed partial class RetentionSweepJob(
             {
                 LogAssetFailed(assetId, deleted.FirstError.Code);
 
-                return false;
+                return AssetOutcome.Failed;
             }
 
             await store.MarkDeletedAsync(asset, now, cancellationToken).ConfigureAwait(false);
 
-            return true;
+            return AssetOutcome.Deleted;
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
             // The type, never the message: a provider's text can echo the key.
             LogAssetFailed(assetId, exception.GetType().Name);
 
-            return false;
+            return AssetOutcome.Failed;
         }
+    }
+
+    private enum AssetOutcome
+    {
+        Deleted,
+        Skipped,
+        Failed,
     }
 
     private async Task SweepAuditAsync(
@@ -317,6 +333,12 @@ public sealed partial class RetentionSweepJob(
         Level = LogLevel.Warning,
         Message = "retention_sweep_asset_failed assetId={AssetId} code={Code}")]
     private partial void LogAssetFailed(Guid assetId, string code);
+
+    [LoggerMessage(
+        EventId = 2414,
+        Level = LogLevel.Information,
+        Message = "retention_sweep_asset_skipped assetId={AssetId} reason=not_due_or_not_visible")]
+    private partial void LogAssetSkipped(Guid assetId);
 
     [LoggerMessage(
         EventId = 2412,

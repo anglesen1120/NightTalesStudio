@@ -13,8 +13,13 @@ namespace NightTales.Infrastructure.Persistence;
 public sealed class AssetRetentionStore(AppDbContext database) : IAssetRetentionStore
 {
     /// <inheritdoc />
-    public Task<Asset?> FindLiveAsync(Guid assetId, CancellationToken ct) =>
-        database.Assets.FirstOrDefaultAsync(asset => asset.Id == assetId && asset.DeletedAt == null, ct);
+    public Task<Asset?> FindDueAsync(Guid assetId, DateTimeOffset now, CancellationToken ct) =>
+        database.Assets.FirstOrDefaultAsync(
+            asset => asset.Id == assetId
+                && asset.DeletedAt == null
+                && asset.RetentionUntil != null
+                && asset.RetentionUntil < now,
+            ct);
 
     /// <inheritdoc />
     public async Task MarkDeletedAsync(Asset asset, DateTimeOffset now, CancellationToken ct)

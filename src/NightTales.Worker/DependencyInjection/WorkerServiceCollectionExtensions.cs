@@ -187,11 +187,11 @@ public static class WorkerServiceCollectionExtensions
         services.AddOptions<RetentionSweepOptions>()
             .BindConfiguration(RetentionSweepOptions.SectionName)
             .Validate(
-                options => options.BatchSize > 0,
-                $"'{RetentionSweepOptions.SectionName}:{nameof(RetentionSweepOptions.BatchSize)}' must be greater than zero.")
+                options => options.BatchSize is >= 1 and <= RetentionSweepOptions.MaxBatchSize,
+                $"'{RetentionSweepOptions.SectionName}:{nameof(RetentionSweepOptions.BatchSize)}' must be between 1 and {RetentionSweepOptions.MaxBatchSize}.")
             .Validate(
-                options => options.MaxBatches > 0,
-                $"'{RetentionSweepOptions.SectionName}:{nameof(RetentionSweepOptions.MaxBatches)}' must be greater than zero.")
+                options => options.MaxBatches is >= 1 and <= RetentionSweepOptions.MaxBatchesLimit,
+                $"'{RetentionSweepOptions.SectionName}:{nameof(RetentionSweepOptions.MaxBatches)}' must be between 1 and {RetentionSweepOptions.MaxBatchesLimit}.")
             .ValidateOnStart();
         services.AddSingleton(provider => provider.GetRequiredService<IOptions<RetentionSweepOptions>>().Value);
         services.AddSingleton<RetentionSweepMetrics>();

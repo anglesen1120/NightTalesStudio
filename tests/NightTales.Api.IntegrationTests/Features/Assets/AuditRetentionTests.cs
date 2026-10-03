@@ -28,14 +28,20 @@ public sealed class AuditRetentionTests(TestDatabase database) : IntegrationTest
     [Fact]
     public async Task AuditRetention_KeepsPaymentLinkedRows_RegardlessOfAge()
     {
-        // HasPaymentLink is always false in P (no linkage column exists), so the exact row the first draft
-        // would have deleted — a 13-month-old user-actor, user-visible billing row — is judged by the 365-day
-        // rule today; the never-delete outcome of rule 1 is pinned at the predicate (AuditRetentionPredicateTests).
+        // audit_logs has no payment linkage column in P, so AuditRetentionStore treats every billing row as
+        // payment-linked (stopgap, SEC-2): the exact row the first draft would have deleted — a >12-month-old
+        // user-actor, user-visible billing row — stays, however old. Plan 12 wires the real link.
         var young = await InsertAsync("keeps-billing-young", "billing", "user", "user", ageDays: 300);
+        var old = await InsertAsync("keeps-billing-13-months", "billing", "user", "user", ageDays: 400);
+        var veryOld = await InsertAsync("keeps-billing-5-years", "billing", "user", "user", ageDays: 1800);
+        var control = await InsertAsync("drops-episodes-13-months", "episodes", "user", "user", ageDays: 400);
 
         await SweepAsync();
 
         Exists(young).ShouldBeTrue();
+        Exists(old).ShouldBeTrue();
+        Exists(veryOld).ShouldBeTrue();
+        Exists(control).ShouldBeFalse("a non-billing row of the same age is still swept");
     }
 
     [Fact]

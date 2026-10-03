@@ -10,14 +10,20 @@ namespace NightTales.Application.Features.Platform.Retention;
 /// </summary>
 public interface IAssetRetentionStore
 {
-    /// <summary>Loads the live (not yet marked) asset of the scope's user, tracked.</summary>
+    /// <summary>
+    /// Loads the asset of the scope's user, tracked, only while it is still due: live and
+    /// <c>retention_until</c> before <paramref name="now"/>. The id query that produced the pair ran on
+    /// another context, so this re-check guards the irreversible object delete against a row that was
+    /// re-stamped or soft-deleted in between.
+    /// </summary>
     /// <param name="assetId">The id from the <c>ISystemWorkQuery</c> pair.</param>
+    /// <param name="now">The sweep's clock reading.</param>
     /// <param name="ct">Cancels the statement.</param>
-    /// <returns>The asset, or <see langword="null"/> when it is gone or not visible to the scope's user.</returns>
-    Task<Asset?> FindLiveAsync(Guid assetId, CancellationToken ct);
+    /// <returns>The asset, or <see langword="null"/> when it is gone, not due or not visible to the scope's user.</returns>
+    Task<Asset?> FindDueAsync(Guid assetId, DateTimeOffset now, CancellationToken ct);
 
     /// <summary>Marks <paramref name="asset"/> deleted and commits it, after its object is gone.</summary>
-    /// <param name="asset">The asset <see cref="FindLiveAsync"/> returned.</param>
+    /// <param name="asset">The asset <see cref="FindDueAsync"/> returned.</param>
     /// <param name="now">The sweep's clock reading.</param>
     /// <param name="ct">Cancels the commit.</param>
     Task MarkDeletedAsync(Asset asset, DateTimeOffset now, CancellationToken ct);

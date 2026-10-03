@@ -267,6 +267,32 @@ public sealed class RetentionSweepTests
     }
 
     [Fact]
+    public async Task RetentionSweep_RestampedBetweenIdQueryAndLoad_KeepsTheObjectAndTheRow()
+    {
+        var asset = NewAsset(Now.AddDays(-1));
+        var other = NewAsset(Now.AddDays(-1));
+        var world = new World(asset, other)
+        {
+            BeforeLoad = loaded =>
+            {
+                if (loaded == asset)
+                {
+                    // approve (09.7.1-T1) re-stamps retention_until into the future.
+                    Set(loaded, typeof(Asset), nameof(Asset.RetentionUntil), Now.AddDays(30));
+                }
+            },
+        };
+
+        var summary = await world.Job().SweepAsync(Ct);
+
+        summary.Deleted.ShouldBe(1);
+        summary.Failed.ShouldBe(0, "a row that is no longer due is skipped, not failed");
+        asset.DeletedAt.ShouldBeNull();
+        world.Blobs.Contains(Bucket, asset.StorageKey).ShouldBeTrue("the object of a re-stamped asset is not deleted");
+        other.DeletedAt.ShouldBe(Now);
+    }
+
+    [Fact]
     public async Task Qa_Disabled_SkipsLockQueryAndAudit()
     {
         var asset = NewAsset(Now.AddDays(-1));
@@ -441,7 +467,7 @@ public sealed class RetentionSweepTests
             var services = new ServiceCollection();
             services.AddScoped<PinFake>(_ => new PinFake(PinnedUsers));
             services.AddScoped<ISystemContext>(provider => provider.GetRequiredService<PinFake>());
-            services.AddScoped<IAssetRetentionStore>(provider => new AssetStoreFake(_assets, provider.GetRequiredService<PinFake>(), UserSeenByStore));
+            services.AddScoped<IAssetRetentionStore>(provider => new AssetStoreFake(_assets, provider.GetRequiredService<PinFake>(), UserSeenByStore, () => BeforeLoad));
             _provider = services.BuildServiceProvider();
         }
 
@@ -468,6 +494,9 @@ public sealed class RetentionSweepTests
         public int LockReleases { get; set; }
 
         public string? FailKey { get; set; }
+
+        /// <summary>Runs after the id query and before the per-row load: the window a concurrent writer uses.</summary>
+        public Action<Asset>? BeforeLoad { get; set; }
 
         public RetentionSweepJob Job() => new(
             new LockFake(this),
@@ -523,14 +552,20 @@ public sealed class RetentionSweepTests
         }
     }
 
-    private sealed class AssetStoreFake(List<Asset> assets, PinFake pin, List<Guid> seen) : IAssetRetentionStore
+    private sealed class AssetStoreFake(List<Asset> assets, PinFake pin, List<Guid> seen, Func<Action<Asset>?> beforeLoad) : IAssetRetentionStore
     {
-        public Task<Asset?> FindLiveAsync(Guid assetId, CancellationToken ct)
+        public Task<Asset?> FindDueAsync(Guid assetId, DateTimeOffset now, CancellationToken ct)
         {
             // The tenant filter: only the pinned user's rows are visible.
             seen.Add(pin.Current!.Value);
+            var asset = assets.SingleOrDefault(a => a.Id == assetId && a.UserId == pin.Current);
+            if (asset is not null)
+            {
+                beforeLoad()?.Invoke(asset);
+            }
 
-            return Task.FromResult(assets.SingleOrDefault(a => a.Id == assetId && a.DeletedAt == null && a.UserId == pin.Current));
+            return Task.FromResult(assets.SingleOrDefault(a =>
+                a.Id == assetId && a.UserId == pin.Current && a.DeletedAt == null && a.RetentionUntil is { } until && until < now));
         }
 
         public Task MarkDeletedAsync(Asset asset, DateTimeOffset now, CancellationToken ct)

@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using NightTales.Application.Audit;
 using NightTales.Application.Features.Platform.Retention;
+using NightTales.Domain.Audit;
 
 namespace NightTales.Infrastructure.Persistence;
 
@@ -46,13 +47,14 @@ public sealed class AuditRetentionStore(AppDbContext database) : IAuditRetention
             .ToListAsync(ct)
             .ConfigureAwait(false);
 
-        // HasPaymentLink: `audit_logs` has no payment linkage column until plan 12 adds one (the rule is inert
-        // in P — AuditRetentionRow). It is the one place to read it from when that column lands.
+        // HasPaymentLink: `audit_logs` has no payment linkage column until plan 12 adds one. Stopgap (09.7.3-T1
+        // SEC-2): every billing row counts as payment-linked, so the never-delete rule keeps it. Plan 12 MUST
+        // replace this with the real link and may then release unlinked billing rows to the 365-day rule.
         return
         [
             .. rows.Select(row => new AuditRetentionCandidate(
                 row.Id,
-                new AuditRetentionRow(row.Category, row.ActorType, row.Visibility, HasPaymentLink: false, row.CreatedAt),
+                new AuditRetentionRow(row.Category, row.ActorType, row.Visibility, HasPaymentLink: row.Category == Category.Billing, row.CreatedAt),
                 row.CreatedAt)),
         ];
     }

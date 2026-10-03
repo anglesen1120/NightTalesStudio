@@ -3,8 +3,10 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Npgsql;
 using NightTales.Api.IntegrationTests.Harness;
+using NightTales.Application.Abstractions;
 using NightTales.Application.Abstractions.Storage;
 using NightTales.Application.Features.Assets.Jobs;
+using NightTales.Application.Features.Platform.Retention;
 using NightTales.Domain.Assets;
 using NightTales.Domain.Episodes;
 using NightTales.TestKit;
@@ -139,6 +141,35 @@ public sealed class RetentionSweepQaTests(TestDatabase database) : IntegrationTe
 
         await using var release = new NpgsqlCommand("SELECT pg_advisory_unlock(hashtext('retention_sweep'))", probe);
         await release.ExecuteScalarAsync(Ct);
+    }
+
+    [Fact]
+    public async Task RetentionSweep_FindDue_ReChecksTheDuePredicateOnTheWriteContext()
+    {
+        var userId = await CreateUserAsync();
+        var episodeId = await SeedEpisodeAsync(userId);
+        var due = await Episodes(userId).CreateAssetAsync(userId, episodeId, retentionUntil: Start.AddDays(-1), ct: Ct);
+        var restamped = await Episodes(userId).CreateAssetAsync(userId, episodeId, retentionUntil: Start.AddDays(30), ct: Ct);
+        var atNow = await Episodes(userId).CreateAssetAsync(userId, episodeId, retentionUntil: Start, ct: Ct);
+        var noStamp = await Episodes(userId).CreateAssetAsync(userId, episodeId, retentionUntil: null, ct: Ct);
+
+        await using var host = await StartAsync(Seeded(due, restamped, atNow, noStamp));
+        using var scope = host.CreateScope();
+        using var pinned = scope.ServiceProvider.GetRequiredService<ISystemContext>().For(userId);
+        var store = scope.ServiceProvider.GetRequiredService<IAssetRetentionStore>();
+
+        try
+        {
+            (await store.FindDueAsync(due.Id, Start, Ct)).ShouldNotBeNull();
+            (await store.FindDueAsync(restamped.Id, Start, Ct)).ShouldBeNull("re-stamped into the future between the id query and the load");
+            (await store.FindDueAsync(atNow.Id, Start, Ct)).ShouldBeNull("retention_until < now is strict");
+            (await store.FindDueAsync(noStamp.Id, Start, Ct)).ShouldBeNull();
+        }
+        finally
+        {
+            // The class shares one database: leave no due row behind for the sweep tests.
+            await Database.ExecuteAsync("DELETE FROM assets WHERE id = '" + due.Id + "'", Ct);
+        }
     }
 
     private static InMemoryBlobStore Seeded(params Asset[] assets)
