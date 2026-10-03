@@ -33,13 +33,21 @@ public static class FakePostProcessor
             NarrationSeconds: videoSeconds);
     }
 
-    /// <summary>The <c>check</c> block, the fixture with this mock's served-file facts substituted.</summary>
-    public static JsonElement BuildCheck(FixtureSet fixtures, CannedMediaFile video, SubtitleFile? subtitles)
+    /// <summary>
+    /// The <c>check</c> block, the fixture with this mock's served-file facts substituted.
+    /// <paramref name="checkFixtureId"/> selects a failing <c>render-check.v1.*</c> fixture instead of the
+    /// default one (the <c>quality:&lt;check&gt;</c> mode, 11.1.2-T2).
+    /// </summary>
+    public static JsonElement BuildCheck(
+        FixtureSet fixtures,
+        CannedMediaFile video,
+        SubtitleFile? subtitles,
+        string? checkFixtureId = null)
     {
         ArgumentNullException.ThrowIfNull(fixtures);
         ArgumentNullException.ThrowIfNull(video);
 
-        var id = subtitles is null ? FixtureSet.NoSubtitlesCheckId : FixtureSet.OkCheckId;
+        var id = checkFixtureId ?? (subtitles is null ? FixtureSet.NoSubtitlesCheckId : FixtureSet.OkCheckId);
         var node = JsonNode.Parse(fixtures.Check(id).GetRawText())?.AsObject()
             ?? throw new MockStartupException($"fixture '{id}' is not a JSON object");
 

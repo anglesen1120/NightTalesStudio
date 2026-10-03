@@ -4,6 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using NightTales.MockMpt.Backend;
+using NightTales.MockMpt.Failures;
 using NightTales.MockMpt.Fixtures;
 using NightTales.MockMpt.Health;
 using NightTales.MockMpt.Images;
@@ -32,6 +33,7 @@ public static class MockHost
 
         var fixtures = FixtureSet.Load(options.FixturesDirectory);
         ValidateFixtureSelection(options, fixtures);
+        FailModeParser.ValidateQuality(options.FailMode, fixtures);
         var media = CannedMediaSet.Ensure(options.MediaDirectory);
 
         var builder = WebApplication.CreateBuilder();
@@ -54,7 +56,10 @@ public static class MockHost
         builder.Services.AddSingleton(media);
         builder.Services.AddSingleton<MockHealthState>();
         builder.Services.AddRenderNodeServer(builder.Configuration);
-        builder.Services.AddSingleton<IImagePlanSink, MockImageReport>();
+        builder.Services.AddSingleton<MockImageReport>();
+        builder.Services.AddSingleton<IImagePlanSink>(provider => provider.GetRequiredService<MockImageReport>());
+        builder.Services.AddSingleton<IImageReportSelector>(provider => provider.GetRequiredService<MockImageReport>());
+        builder.Services.AddSingleton<FailureInjector>();
         builder.Services.AddSingleton<INodeHealthSource, MockNodeHealthSource>();
 
         // One instance is the backend and the ticker: the seam the core calls and the hosted service that

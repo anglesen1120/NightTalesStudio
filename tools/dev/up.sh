@@ -210,6 +210,10 @@ mock_fixture="$(row MOCK_FIXTURE '')"
 mock_render_seconds="$(row MOCK_RENDER_SECONDS 20)"
 mock_video_seconds="$(row MOCK_VIDEO_SECONDS 10)"
 mock_max_concurrent="$(row MOCK_MAX_CONCURRENT 2)"
+# 11.1.2-T2 failure injection: blank/0/ok is the normal, always-succeeding mock (the committed values).
+mock_fail_mode="$(row MOCK_FAIL_MODE '')"
+mock_fail_rate="$(row MOCK_FAIL_RATE 0)"
+mock_image_report="$(row MOCK_IMAGE_REPORT ok)"
 storage_access="$(row STORAGE_ACCESS_KEY dev)"
 storage_secret="$(row STORAGE_SECRET_KEY dev-secret-local)"
 # The flat STORAGE_*/SMTP_* rows 11.1.1-T2 documents in .env.example. The hosts read the storage rows
@@ -529,6 +533,10 @@ mock_environment() {
   # 11.1.2-T1: the reported duration (the served file stays the canned 10 s one) and the node capacity.
   export MOCK_VIDEO_SECONDS="$mock_video_seconds"
   export MOCK_MAX_CONCURRENT="$mock_max_concurrent"
+  # 11.1.2-T2: failure injection; an invalid value is exit 2 from the mock itself (named message).
+  export MOCK_FAIL_MODE="$mock_fail_mode"
+  export MOCK_FAIL_RATE="$mock_fail_rate"
+  export MOCK_IMAGE_REPORT="$mock_image_report"
 }
 
 start_api() {

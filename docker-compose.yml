@@ -132,7 +132,7 @@ services:
       RenderNodeServer__MaxConcurrentTasks: ${MOCK_MAX_CONCURRENT:-2}
       MOCK_RENDER_SECONDS: ${MOCK_RENDER_SECONDS:-20}
       MOCK_VIDEO_SECONDS: ${MOCK_VIDEO_SECONDS:-10}
-      # Consumed by 11.1.2-T2; accepted (and inert) here so one .env drives both.
+      # Failure injection (11.1.2-T2): the committed values are the normal mock; set them in .env for a failing node.
       MOCK_FAIL_RATE: ${MOCK_FAIL_RATE:-0}
       MOCK_FAIL_MODE: ${MOCK_FAIL_MODE:-}
       MOCK_IMAGE_REPORT: ${MOCK_IMAGE_REPORT:-ok}

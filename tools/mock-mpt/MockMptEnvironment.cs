@@ -1,5 +1,7 @@
 using System.Globalization;
 using System.Text;
+using NightTales.MockMpt.Failures;
+using NightTales.MockMpt.Images;
 
 namespace NightTales.MockMpt;
 
@@ -89,6 +91,13 @@ public static class MockMptEnvironment
             mediaDirectory = Path.Combine(runtimeRoot, MediaRelativePath);
         }
 
+        if (!FailModeParser.TryParse(read("MOCK_FAIL_MODE"), out var failMode, out error)
+            || !FailRate.TryParse(read("MOCK_FAIL_RATE"), out var failRate, out error)
+            || !ImageReportMode.TryParse(read("MOCK_IMAGE_REPORT"), out var imageReport, out error))
+        {
+            return false;
+        }
+
         var fixture = read("MOCK_FIXTURE");
         options = new MockMptOptions
         {
@@ -99,6 +108,9 @@ public static class MockMptEnvironment
             FixturesDirectory = fixturesDirectory,
             MediaDirectory = mediaDirectory,
             Fixture = string.IsNullOrWhiteSpace(fixture) ? null : NormalizeFixtureId(fixture),
+            FailMode = failMode,
+            FailRate = failRate,
+            ImageReport = imageReport,
         };
         return true;
     }
