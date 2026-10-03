@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Globalization;
 using System.Net;
 using Microsoft.AspNetCore.Http;
@@ -9,6 +8,7 @@ using NightTales.Infrastructure.Telemetry;
 using NightTales.TestKit;
 using NightTales.TestKit.Api;
 using NightTales.TestKit.Database;
+using NightTales.TestKit.Telemetry;
 using NightTales.TestKit.Time;
 using Serilog.Core;
 using Serilog.Events;
@@ -93,42 +93,27 @@ public sealed class RequestLogTests(TestDatabase database) : IntegrationTest(dat
     public async Task Hub_ticket_query_reaches_no_log_event_and_no_span()
     {
         var sink = new CapturingSink();
-        var spans = new List<Activity>();
-        using var listener = new ActivityListener
-        {
-            ShouldListenTo = source => source.Name == "Microsoft.AspNetCore",
-            Sample = (ref _) => ActivitySamplingResult.AllData,
-            ActivityStopped = activity =>
-            {
-                lock (spans)
-                {
-                    spans.Add(activity);
-                }
-            },
-        };
-        ActivitySource.AddActivityListener(listener);
         using var factory = Factory(sink);
+        _ = factory.Services;
+        using var capture = new ActivityCapture();
         using var client = factory.AnonymousClient();
+        // Unique key name (query keys survive masking) picks this request's span among process-wide ones.
+        var marker = "m" + Guid.NewGuid().ToString("N");
 
-        using var response = await client.GetAsync($"{EpisodeHub.Path}?ticket={Secret}", Ct);
+        using var response = await client.GetAsync($"{EpisodeHub.Path}?ticket={Secret}&{marker}=1", Ct);
 
+        var own = await capture.WhenStopped(
+            span => span.GetTagItem("url.path") as string == EpisodeHub.Path
+                && (span.GetTagItem("url.query") as string ?? string.Empty).Contains(marker, StringComparison.Ordinal),
+            Ct);
         sink.AllText().ShouldNotContain(Secret, Case.Sensitive, "no log event carries the hub ticket");
-        lock (spans)
+        (own.GetTagItem("url.query") as string ?? string.Empty).ShouldNotContain(
+            Secret, Case.Sensitive, "09.9.3-T2: the URL query, when kept, carries no raw value (exact shape: RedactionTests)");
+        foreach (var span in capture.Activities)
         {
-            spans.ShouldNotBeEmpty();
-            var request = spans.Where(span => span.GetTagItem("url.path") is not null).ToList();
-            request.ShouldNotBeEmpty(
-                "the hub request's own span must be observed: "
-                + string.Join(" | ", spans.Select(span => span.OperationName + ":" + string.Join(',', span.TagObjects.Select(t => t.Key)))));
-            request.ShouldAllBe(
-                span => !((span.GetTagItem("url.query") as string ?? string.Empty).Contains(Secret, StringComparison.Ordinal)),
-                "09.9.3-T2: the URL query, when kept, carries no raw value (exact shape: RedactionTests): " + string.Join(" | ", request.Select(s => s.OperationName + "=" + s.GetTagItem("url.query"))));
-            foreach (var span in spans)
-            {
-                span.TagObjects.ShouldAllBe(
-                    tag => !(tag.Value + string.Empty).Contains(Secret, StringComparison.Ordinal),
-                    $"span '{span.OperationName}' must not export the URL query");
-            }
+            span.TagObjects.ShouldAllBe(
+                tag => !(tag.Value + string.Empty).Contains(Secret, StringComparison.Ordinal),
+                $"span '{span.OperationName}' must not export the URL query");
         }
 
         response.StatusCode.ShouldNotBe(HttpStatusCode.OK);

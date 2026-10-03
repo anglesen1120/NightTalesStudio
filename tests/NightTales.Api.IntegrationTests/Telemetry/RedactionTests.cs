@@ -44,11 +44,15 @@ public sealed class RedactionTests(TestDatabase database) : IntegrationTest(data
         _ = factory.Services;
         using var spans = new ActivityCapture();
         using var client = factory.AnonymousClient();
+        // Unique key name: query keys survive masking (`<redacted>`/`Redacted`), so it picks this request's span.
+        var marker = "m" + Guid.NewGuid().ToString("N");
 
-        using var response = await client.GetAsync($"{EpisodeHub.Path}?ticket={RawTicket}", Ct);
+        using var response = await client.GetAsync($"{EpisodeHub.Path}?ticket={RawTicket}&{marker}=1", Ct);
 
-        var request = await spans.WhenStopped(a => a.GetTagItem("url.path") as string == EpisodeHub.Path, Ct);
-        request.GetTagItem("url.query").ShouldBe("?ticket=<redacted>");
+        var request = await spans.WhenStopped(
+            a => a.GetTagItem("url.path") as string == EpisodeHub.Path
+                && (a.GetTagItem("url.query") as string ?? string.Empty).Contains(marker, StringComparison.Ordinal), Ct);
+        (request.GetTagItem("url.query") as string).ShouldNotBeNull().ShouldStartWith("?ticket=<redacted>");
         spans.AllText().ShouldNotContain(RawTicket, Case.Sensitive);
         sink.AllText().ShouldNotContain(RawTicket, Case.Sensitive);
     }
@@ -66,12 +70,14 @@ public sealed class RedactionTests(TestDatabase database) : IntegrationTest(data
         _ = factory.Services;
         using var spans = new ActivityCapture();
         using var client = factory.AnonymousClient();
+        var marker = "m" + Guid.NewGuid().ToString("N");
 
         using var response = await client.PostAsJsonAsync(
-            $"/api/v1/auth/reset-password?{key}={raw}&episodeId=1", new { }, Ct);
+            $"/api/v1/auth/reset-password?{key}={raw}&episodeId=1&{marker}=1", new { }, Ct);
 
         var request = await spans.WhenStopped(
-            a => a.GetTagItem("url.path") as string == "/api/v1/auth/reset-password", Ct);
+            a => a.GetTagItem("url.path") as string == "/api/v1/auth/reset-password"
+                && (a.GetTagItem("url.query") as string ?? string.Empty).Contains(marker, StringComparison.Ordinal), Ct);
         // The OTel SDK itself masks the unlisted values (`episodeId=Redacted`); the listed key is ours.
         (request.GetTagItem("url.query") as string).ShouldNotBeNull().ShouldStartWith($"?{key}=<redacted>");
         spans.AllText().ShouldNotContain(raw, Case.Sensitive);
@@ -151,7 +157,10 @@ public sealed class RedactionTests(TestDatabase database) : IntegrationTest(data
 
         using var response = await client.GetAsync($"{ProbePath}/throw?token={RawToken}", Ct);
 
-        var failures = sink.Events.Where(e => e.Exception is not null).ToList();
+        // Background probes (e.g. storage health) log their own exceptions into the same sink, so select
+        // this request's events by its own throw route, not by "has an exception".
+        var failures = sink.Events.Where(
+            e => e.Exception?.ToString().Contains(ProbePath + "/throw", StringComparison.Ordinal) == true).ToList();
         failures.ShouldNotBeEmpty();
         failures.ShouldAllBe(e => !e.Exception!.ToString().Contains(RawToken, StringComparison.Ordinal));
         failures.ShouldAllBe(e => e.Exception!.ToString().Contains("token=<redacted>", StringComparison.Ordinal));
@@ -167,9 +176,10 @@ public sealed class RedactionTests(TestDatabase database) : IntegrationTest(data
         using var spans = new ActivityCapture();
         using var client = factory.AnonymousClient();
 
-        using var response = await client.GetAsync($"{ProbePath}/{Guid.NewGuid()}?code={RawCode}", Ct);
+        var path = $"{ProbePath}/{Guid.NewGuid()}";
+        using var response = await client.GetAsync($"{path}?code={RawCode}", Ct);
 
-        var request = await spans.WhenStopped(a => (a.GetTagItem("url.path") as string)?.StartsWith(ProbePath, StringComparison.Ordinal) == true, Ct);
+        var request = await spans.WhenStopped(a => a.GetTagItem("url.path") as string == path, Ct);
         request.GetTagItem("url.query").ShouldBe("?code=<redacted>");
     }
 
