@@ -220,7 +220,7 @@ public sealed class GenerateStoryQaRollbackAndLimitTests(TestDatabase database) 
         response.StatusCode.ShouldBe(HttpStatusCode.NotFound);
     }
 
-    [Fact(Skip = "QA-1: the generate route carries no RequireRateLimiting(RateLimitPolicies.Paid) (plan 02.2.2 §8, §5.1 rate_limited 429); un-skip when fixed")]
+    [Fact]
     public async Task Generate_ThirtyFirstCallInAMinute_Returns429RateLimited()
     {
         var world = await SeedAsync();

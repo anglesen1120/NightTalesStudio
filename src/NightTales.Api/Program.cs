@@ -39,8 +39,12 @@ try
     // 09.9.5-T1 (09 README D7): the generated `ProblemDetails` component gains the two members its CLR
     // type cannot express (`code`, `traceId`), so the published document — and every client generated
     // from it (10.1.4) — carries the whole error contract of ProblemDetailsWriter.
+    // 02.2.2-T2 (QA-2): the `Idempotency-Key` header is published as required with maxLength 128.
     builder.Services.AddOpenApi(options =>
-        options.AddSchemaTransformer<ProblemDetailsSchemaTransformer>());
+    {
+        options.AddSchemaTransformer<ProblemDetailsSchemaTransformer>();
+        options.AddOperationTransformer<IdempotencyKeyOperationTransformer>();
+    });
 
     builder.Services.AddNightTalesMediator();
     builder.Services.AddPersistence(builder.Configuration);

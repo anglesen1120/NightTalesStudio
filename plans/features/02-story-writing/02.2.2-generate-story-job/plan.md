@@ -154,7 +154,7 @@ Transition table (this is the authority for the unit tests in `02.2.2-T1`):
 |---|---|---|---|---|---|
 | T1 | `draft` | `RequestStoryGeneration` | `story_generating` | an approved fact sheet exists when `topic = true_crime` (checked by the **handler** through `IFactSheetGuard`, §4 U1 step 5) | `StoryGenerationRequested` |
 | T2 | `story_review` | `RequestStoryGeneration` | `story_generating` | same; the previous version stays current until the new one is saved | `StoryGenerationRequested` |
-| T3 | `story_generating` | `RequestStoryGeneration` | — | 409 `episode_invalid_state` (the run index gives 409 `story_generation_in_progress` for a *new* request racing an active run) | — |
+| T3 | `story_generating` | `RequestStoryGeneration` | — | 409 `story_generation_in_progress` (02 CR-30: the handler reports an episode that is already generating with its own code; the run index gives the same 409 for a *new* request racing an active run) | — |
 | T4 | any other (`story_approved`, `rendering`, `video_review`, `ready`, `scheduled`, `published`, `failed`, `cancelled`) | `RequestStoryGeneration` | — | 409 `episode_invalid_state` | — |
 | T5 | `story_generating` | `MarkGenerationStage` | `story_generating` (no status change) | the episode is generating; the stage order is enforced by `GenerationRun.AdvanceStage` (forward-only, §3.4) | `StoryGenerationStageChanged` |
 | T6 | `story_generating` | `CompleteStoryGeneration` | `story_review` | `versionIds` non-empty and contains `currentStoryVersionId`; the run is in stage `saving` | `StoryGenerated` (Carries `StoryVersionId = currentStoryVersionId`, `Revised = versionIds.Count > 1`) |
@@ -252,7 +252,7 @@ No request body. `lengthTier` and `brief` are episode columns set at creation (0
 |---|---|---|
 | 1 | `db.Episodes` load by id; missing or not the caller's → 404 (09.2.3 L91, never 403) | `episode_not_found` 404 |
 | 2 | `Trigger != User` requires a system context (D1 `SystemContext`); a user setting `autopilot` is rejected | `forbidden` 403 |
-| 3 | state check — `episode.Status ∈ {draft, story_review}` | 409 `episode_invalid_state` |
+| 3 | state check — `episode.Status ∈ {draft, story_review}`; `story_generating` → 409 `story_generation_in_progress` (02 CR-30) | 409 `episode_invalid_state` for every other status |
 | 4 | **true-crime guard hook** — `IFactSheetGuard.EnsureApprovedAsync(episode.Id, series.Topic, ct)` (owner 02.5.3; TL ruling). The handler needs only the verdict; it stores `ApprovedFactSheet.FactSheetId` as `input_fact_sheet_id` (null for a non-true-crime episode with no sheet) | 409 `fact_sheet_required` |
 | 5 | **daily limit** (02.4.2-T1, §4 U6) | 429 `story_generation_limit` + `Retry-After` |
 | 6 | active-run check — explicit query for the fastest error, the partial unique index is the guarantee | 409 `story_generation_in_progress` |

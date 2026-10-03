@@ -2,6 +2,7 @@ using Mediator;
 using Microsoft.AspNetCore.Mvc;
 using NightTales.Api.Http;
 using NightTales.Api.Http.Filters;
+using NightTales.Api.RateLimiting;
 using NightTales.Application.Features.Stories.Commands.GenerateStory;
 using NightTales.Domain.Stories.Generation;
 
@@ -30,8 +31,11 @@ public static class StoryEndpoints
         EpisodeIdRouteParameter.Declare(
             routes.MapPost(GenerateRoute, GenerateAsync)
                 .RequireIdempotencyKey()
+                .RequireRateLimiting(RateLimitPolicies.Paid)
                 .Produces<GenerateStoryAccepted>(StatusCodes.Status202Accepted)
                 .ProducesProblem(StatusCodes.Status400BadRequest)
+                .ProducesProblem(StatusCodes.Status401Unauthorized)
+                .ProducesProblem(StatusCodes.Status403Forbidden)
                 .ProducesProblem(StatusCodes.Status404NotFound)
                 .ProducesProblem(StatusCodes.Status409Conflict)
                 .ProducesProblem(StatusCodes.Status422UnprocessableEntity)
@@ -43,7 +47,8 @@ public static class StoryEndpoints
 
     /// <summary>
     /// <c>POST /api/v1/episodes/{id}/story/generate</c>: 202 with <c>Location: /api/v1/episodes/{id}</c> and the queued
-    /// run, or the documented 400/404/409/422/429.
+    /// run, or the documented 400/401/403/404/409/422/429. The route carries the <c>paid</c> rate-limit policy
+    /// (02.2.2 plan §8/§5.1): the 31st request in a minute is a 429 <c>rate_limited</c>.
     /// </summary>
     private static async Task<IResult> GenerateAsync(
         Guid id,
