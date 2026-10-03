@@ -59,9 +59,9 @@ copy that onto a real node.**
 | `NTS_HOME` | `<repo>/.nts` | The runtime-state root (01 CR-11). When `MOCK_MEDIA_DIR` is unset the media/SRT directory resolves under it, so a custom `NTS_HOME` never writes into the working tree. `tools/dev/up.sh` passes it to the native mock. |
 | `MOCK_HEALTH_URL` | `http://127.0.0.1:8090/v1/health` | The URL the `--healthcheck` mode probes (the container healthcheck); the app otherwise ignores it. |
 | `ASPNETCORE_URLS` | `http://127.0.0.1:8090` | The binding; the image sets `http://+:8090`. |
-
-`MOCK_FAIL_RATE`, `MOCK_FAIL_MODE` and `MOCK_IMAGE_REPORT` are 11.1.2-T2's (failure injection); the compose
-service passes them so one `.env` drives both, and this task's mock ignores them.
+| `MOCK_FAIL_MODE` | *(blank)* | The failure every submit applies — see [Failure injection](#failure-injection). Unknown value: exit 2 naming the accepted set. |
+| `MOCK_FAIL_RATE` | `0` | `0`–`1`: the share of submits that fail, decided per `render_job_id`. Outside the range: exit 2. |
+| `MOCK_IMAGE_REPORT` | `ok` | The `images` block every submit reports: `ok`, `moderated:<slots>`, `skipped:<share>`, `moderated_all`, `funds`, `none`. |
 
 **Every invalid value is a named message and exit code 2** — a listener never opens on a configuration nobody
 can use. `MOCK_API_KEY` shorter than 32 bytes, `MOCK_RENDER_SECONDS`/`MOCK_VIDEO_SECONDS` < 1,
@@ -81,6 +81,38 @@ curl -s -H "x-api-key: $MOCK_API_KEY" -H 'content-type: application/json' \
   --data-binary @worker-node/contract/fixtures/render-submit.v1.landscape-vi.json \
   http://127.0.0.1:8090/v1/renders
 ```
+
+## Failure injection
+
+One env variable or one trigger keyword makes the mock reach exactly the terminal `state` + `outcome.code` of
+05 D5. `outcome.message` is always the fixed `OutcomeMessages` sentence.
+
+| `MOCK_FAIL_MODE` | Terminal state | `outcome.code` / `detail` | Behaviour |
+|---|---|---|---|
+| *(unset)* | `succeeded` | — | normal path |
+| `tts_failed` | `failed` | `tts_failed` / `audio` | stops in `voice` (20 %) |
+| `image_moderated` | `failed` | `image_moderated` / `materials` | alias of `MOCK_IMAGE_REPORT=moderated_all` |
+| `lost_task` | — | — | the row is removed at submit: every `GET` is 404 `adapter_task_unknown` |
+| `timeout` | never terminal | — | stays `running`/`assembling` at 95 % |
+| `assembly_failed` | `failed` | `render_assembly_failed` / `video` | stops in `assembling` (75 %) |
+| `node_error` | `failed` | `render_node_error` / `preflight` | fails at the first tick, stage `queued` |
+| `quality:<check>` | `succeeded` | — | `check` is the `render-check.v1.*` fixture that fails `<check>`; ids come from the `render-quality.v1.*` fixtures that mark the check failed (e.g. `quality:loudness`), anything else is exit 2 |
+
+`MOCK_FAIL_RATE` hashes the `render_job_id` (SHA-256, not the body hash) to a value in `[0,1)`; the submit fails
+when it is below the rate, so a rerun is identical. The mode is picked from `tts_failed → assembly_failed →
+node_error → lost_task` by the rescaled draw. It never fires for a submit that carries a keyword, and it is inert
+while `MOCK_FAIL_MODE` is set.
+
+Keywords (free text of `video_script` / `video_terms`, case-sensitive, whole token):
+`__fail_image__` (`moderated_all` for this submit), `__block_image__` (the `video_terms` entry carrying it is a
+moderated slot), `__fail_<mode>__` (this submit behaves as `MOCK_FAIL_MODE=<mode>`), `__fixture_<name>__`
+(replay, above). An unknown `__fail_*__` name is ignored.
+
+**Precedence** (first match wins, at submit): keyword → `MOCK_FAIL_MODE` → `MOCK_FAIL_RATE` draw → success. A
+replayed fixture (`__fixture_*__` or `MOCK_FIXTURE`) bypasses injection. `MOCK_IMAGE_REPORT` is orthogonal; only
+`moderated_all`/`funds` also fail the task in `materials`. `MOCK_FAIL_MODE=image_moderated` overrides an explicit
+`MOCK_IMAGE_REPORT` for that submit (logged). The resolved plan is logged once as `{task, mode, source}`
+(`keyword|env|rate|none`), never with body text.
 
 ## Canned media and subtitles
 

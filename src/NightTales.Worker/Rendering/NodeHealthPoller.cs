@@ -121,14 +121,18 @@ public sealed partial class NodeHealthPoller(
     }
 
     /// <summary>
-    /// One tick: take the advisory lock (or log once and leave the polling to the holder), then poll. Exposed
-    /// because the harness drives a tick directly instead of waiting for a 30-second timer
+    /// One tick: take the advisory lock, then poll. The lock gates only the registry writes (heartbeat, state
+    /// transitions, drift alert): an instance that does not hold it still pulls every node into its own
+    /// process-local <see cref="INodeHealthCache"/> — the selector of that Worker reads nothing else, so a
+    /// non-leader that skipped the pull would refuse every dispatch (11 README F10). Exposed because the
+    /// harness drives a tick directly instead of waiting for a 30-second timer
     /// (<c>OutboxDispatcher.ProcessBatchAsync</c> is public for the same reason).
     /// </summary>
     /// <param name="cancellationToken">The tick's cancellation token.</param>
     /// <returns>
-    /// <c>true</c> when this instance held the lock and polled; <c>false</c> when another instance does, or
-    /// when the lock session was lost and just re-taken — a tick decided across a lost lock is skipped.
+    /// <c>true</c> when this instance held the lock and polled as the leader; <c>false</c> when another
+    /// instance does (this one only refreshed its cache), or when the lock session was lost and just
+    /// re-taken — a tick decided across a lost lock is skipped.
     /// </returns>
     public async Task<bool> TickAsync(CancellationToken cancellationToken)
     {
@@ -152,25 +156,36 @@ public sealed partial class NodeHealthPoller(
                 LogLockNotHeld();
             }
 
+            await PollAsync(leader: false, cancellationToken);
+
             return false;
         }
 
         _lockNotHeldLogged = false;
-        await PollOnceAsync(cancellationToken);
+        await PollAsync(leader: true, cancellationToken);
 
         return true;
     }
 
     /// <summary>
-    /// Pulls every registered node once and applies the outcome: heartbeat, cache, hysteresis and metrics.
-    /// Exposed for the harness's deterministic tick (<see cref="TickAsync"/> calls it).
+    /// Pulls every registered node once and applies the outcome as the leader: heartbeat, cache, hysteresis
+    /// and metrics. Exposed for the harness's deterministic tick (<see cref="TickAsync"/> calls it).
     /// </summary>
     /// <param name="cancellationToken">The tick's cancellation token.</param>
-    public async Task PollOnceAsync(CancellationToken cancellationToken)
+    public Task PollOnceAsync(CancellationToken cancellationToken) => PollAsync(leader: true, cancellationToken);
+
+    /// <summary>
+    /// The pull. A non-leader refreshes its own cache and gauges (<c>render_node_up</c>, free slots) but
+    /// writes nothing to the registry and keeps no hysteresis or drift state: those belong to the lock holder.
+    /// </summary>
+    private async Task PollAsync(bool leader, CancellationToken cancellationToken)
     {
         var settings = options.Value;
         var now = clock.UtcNow;
-        _firstTickAt ??= now;
+        if (leader)
+        {
+            _firstTickAt ??= now;
+        }
 
         using var scope = scopeFactory.CreateScope();
 
@@ -191,6 +206,14 @@ public sealed partial class NodeHealthPoller(
             var outcome = pulls[node.Name];
             var snapshot = outcome.Snapshot;
             RecordHealth(node, outcome);
+            metrics.RecordLoad(node.Name, node.Capacity, inFlight.GetValueOrDefault(node.Id), node.State == WorkerNodeState.Active);
+
+            if (!leader)
+            {
+                // The cache, render_node_up and the load gauge above are this process's own view; drift
+                // runs, revival streaks and every registry decision belong to the lock holder alone.
+                continue;
+            }
 
             if (snapshot is { } answered)
             {

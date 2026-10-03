@@ -10,7 +10,8 @@ namespace NightTales.Infrastructure.Rendering;
 /// </summary>
 /// <remarks>
 /// <para>
-/// A second Worker on the same database therefore polls nothing and only logs once per start, while both
+/// A second Worker on the same database therefore writes no registry state and only logs once per start (it
+/// still pulls the nodes into its own health cache, which its selector reads), while both
 /// instances keep serving <c>nodes list</c> (plan §7 step 1, Q5). The lock is session-scoped, so it dies
 /// with the connection: every tick probes the session itself with a cheap round trip, because a backend
 /// terminated server-side can leave the client reporting <see cref="ConnectionState.Open"/> until the
@@ -187,7 +188,7 @@ public sealed class NodeHealthPollerLock(string connectionString) : IAsyncDispos
         /// <summary>This instance holds the lock; the tick may poll.</summary>
         Held,
 
-        /// <summary>Another instance holds the lock; the tick does nothing.</summary>
+        /// <summary>Another instance holds the lock; the tick refreshes this process's cache but writes nothing to the registry.</summary>
         HeldElsewhere,
 
         /// <summary>

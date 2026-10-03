@@ -12,11 +12,13 @@ using NightTales.Application.Abstractions.Persistence;
 using NightTales.Application.Abstractions.Realtime;
 using NightTales.Application.Abstractions.Rendering;
 using NightTales.Application.Audit;
+using NightTales.Application.Features.Platform.Retention;
 using NightTales.Domain.Common;
 using NightTales.Infrastructure.DependencyInjection;
 using NightTales.Infrastructure.Persistence.Audit;
 using NightTales.Infrastructure.Persistence.Idempotency;
 using NightTales.Infrastructure.Persistence.Outbox;
+using NightTales.Infrastructure.Compliance.Deletion;
 using NightTales.Infrastructure.Persistence.Queries;
 using NightTales.Infrastructure.Persistence.Seeding;
 using NightTales.Infrastructure.Persistence.UnitOfWork;
@@ -135,6 +137,10 @@ public static class PersistenceServiceCollectionExtensions
         // the auth handlers/jobs/CLI verbs call the same port.
         services.AddScoped<IAuditWriter, EfAuditWriter>();
 
+        // 13.3.1-T1: the one entry point that starts a legal deletion clock, in both hosts (06/02/13 callers
+        // run in the Api or the Worker). The executing half is the Worker's (AddDeletionEngine).
+        services.AddDeletionRequests();
+
         // The AuditBehavior's per-request-type attribute lookup (09.3.6-T1, plan §3). A singleton, and
         // registered here rather than in a host: both hosts build their Mediator over this persistence
         // layer, and resolving slot 6 without it would fail every command — the Worker never calls
@@ -143,6 +149,12 @@ public static class PersistenceServiceCollectionExtensions
 
         // 09.2.4-T1: the processed-row sweep of the outbox, driven by the Worker's daily recurring job.
         services.AddScoped<IOutboxCleanupStore, OutboxCleanupStore>();
+
+        // 09.7.3-T1: the retention sweep's three ports — the audit keyset store, the per-row asset store (resolved
+        // inside the row's own pinned scope) and the session advisory lock — driven by the Worker's daily job.
+        services.AddScoped<IAuditRetentionStore, AuditRetentionStore>();
+        services.AddScoped<IAssetRetentionStore, AssetRetentionStore>();
+        services.AddScoped<IRetentionSweepLock, PostgresRetentionSweepLock>();
 
         // 09.8.1-T2: the `hub_tickets` table of 09 README BD11. It belongs here, with the other stores,
         // because every host that composes persistence needs it — the Api's issue command inserts and the

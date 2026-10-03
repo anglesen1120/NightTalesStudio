@@ -1,6 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using NightTales.Application.Abstractions.Catalog;
+using NightTales.Application.Features.Stories.Writing;
 
 namespace NightTales.Application.DependencyInjection;
 
@@ -32,6 +33,9 @@ public static class ApplicationServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(services);
 
         services.TryAddSingleton<IStoryPresetCatalog, NullStoryPresetCatalog>();
+
+        // 02.2.3-T2: stateless and pure; needs the IPromptCatalog singleton that both hosts register through AddPromptCatalog.
+        services.TryAddSingleton<IPromptAssembler, PromptAssembler>();
 
         return services;
     }

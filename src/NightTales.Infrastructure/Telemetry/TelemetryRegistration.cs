@@ -8,6 +8,7 @@ using Microsoft.Extensions.Logging;
 using NightTales.Application.Telemetry;
 using NightTales.Infrastructure.Jobs;
 using NightTales.Infrastructure.Persistence.Outbox;
+using NightTales.Infrastructure.Telemetry.Redaction;
 using Npgsql;
 using OpenTelemetry;
 using OpenTelemetry.Context.Propagation;
@@ -59,10 +60,15 @@ public static class TelemetryRegistration
         ArgumentException.ThrowIfNullOrWhiteSpace(serviceName);
 
         var configuration = builder.Configuration;
+        RejectConfigurationDeclaredSinks(configuration);
         var environmentName = builder.Environment.EnvironmentName;
         var exporterEndpoint = ResolveExporterEndpoint(configuration, builder.Environment);
         var sampleRatio = ResolveSampleRatio(configuration);
         var userHashSalt = ResolveUserHashSalt(configuration, builder.Environment);
+
+        // 09.9.3-T2 (BD12/BD16): one redaction list for both writers. It is resolved — and an empty configured
+        // list rejected — at start-up, and registered whatever `Otlp:Enabled` says: stdout JSON is a sink too.
+        var redaction = RedactionOptions.Resolve(configuration);
         var version = Assembly.GetEntryAssembly()?
             .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion
             ?? "0.0.0";
@@ -74,6 +80,7 @@ public static class TelemetryRegistration
 
         builder.Services.AddHttpContextAccessor();
         builder.Services.AddSingleton<NightTalesMetrics>();
+        builder.Services.AddSingleton(redaction);
         builder.Services.AddSingleton(new UserHashEnricherOptions(userHashSalt));
         builder.Services.AddSingleton<UserHashEnricher>();
 
@@ -84,15 +91,17 @@ public static class TelemetryRegistration
         {
             var loggerConfiguration = new LoggerConfiguration()
                 .ReadFrom.Configuration(configuration)
-                .ReadFrom.Services(services)
                 .Enrich.FromLogContext()
-                .Enrich.With(services.GetRequiredService<UserHashEnricher>());
+                .Enrich.With(services.GetRequiredService<UserHashEnricher>())
+                .Enrich.With(new QueryStringRedactionEnricher(redaction));
 
-            // Every sink sits behind the exception sanitizer; the console behind a bounded queue that drops
-            // when full, so a stalled stdout pipe can never block a request thread. The sinks live in one
-            // inner logger (events are enriched and level-filtered before they reach it).
+            // Every sink sits behind the exception sanitizer — the DI-registered ones too, so a harness sink
+            // sees what the console sees; the console behind a bounded queue that drops when full, so a
+            // stalled stdout pipe can never block a request thread. The sinks live in one inner logger
+            // (events are enriched and level-filtered before they reach it).
             var sinks = new LoggerConfiguration()
                 .MinimumLevel.Verbose()
+                .ReadFrom.Services(services)
                 .WriteTo.Async(
                     console => console.Console(new CompactJsonFormatter()),
                     bufferSize: ConsoleQueueSize,
@@ -115,7 +124,7 @@ public static class TelemetryRegistration
                 });
             }
 
-            loggerConfiguration.WriteTo.Sink(new ExceptionSanitizingSink(sinks.CreateLogger()));
+            loggerConfiguration.WriteTo.Sink(new ExceptionSanitizingSink(sinks.CreateLogger(), redaction.QueryKeys));
 
             return loggerConfiguration.CreateLogger();
         });
@@ -137,10 +146,11 @@ public static class TelemetryRegistration
             .WithTracing(tracing => tracing
                 .SetSampler(CreateEdgeSampler(sampleRatio))
                 .AddAspNetCoreInstrumentation(options =>
-                    // The query of a request URL can carry a single-use credential (`?ticket=` on the hub):
-                    // no span ever exports it (09.8.1-T2, 09.9.3-T1 SEC-2).
-                    options.EnrichWithHttpRequest = static (activity, _) => activity.SetTag(UrlQueryTag, null))
+                    // The query of a request URL can carry a single-use credential (`?ticket=` on the hub): the
+                    // listed values are masked as the span starts, and again by the processor when it ends.
+                    options.EnrichWithHttpRequest = (activity, _) => RedactingActivityProcessor.Redact(activity, redaction))
                 .AddHttpClientInstrumentation()
+                .AddProcessor(new RedactingActivityProcessor(redaction))
                 .AddNpgsql()
                 .AddSource(JobTelemetryFilter.ActivitySourceName)
                 .AddSource(OutboxDispatcher.ActivitySourceName))
@@ -225,6 +235,28 @@ public static class TelemetryRegistration
         }
 
         return endpoint;
+    }
+
+    /// <summary>
+    /// Fails start-up when the configuration declares Serilog sinks. A sink declared in <c>Serilog:WriteTo</c> /
+    /// <c>Serilog:AuditTo</c> would be built by <c>ReadFrom.Configuration</c> on the outer logger, in front of
+    /// <see cref="ExceptionSanitizingSink"/>, and so would write exceptions the sanitizer never saw (09.9.3-T2).
+    /// Only <c>Serilog:MinimumLevel</c> and its overrides are read from configuration; sinks are code-declared.
+    /// </summary>
+    /// <param name="configuration">The host configuration.</param>
+    /// <exception cref="InvalidOperationException">A sink section is present.</exception>
+    private static void RejectConfigurationDeclaredSinks(IConfiguration configuration)
+    {
+        foreach (var section in new[] { "Serilog:WriteTo", "Serilog:AuditTo" })
+        {
+            if (configuration.GetSection(section).Exists())
+            {
+                throw new InvalidOperationException(
+                    $"Configuration section '{section}' declares Serilog sinks, which would bypass the exception "
+                    + "and query-string redaction. Sinks are registered in code (TelemetryRegistration); "
+                    + "only 'Serilog:MinimumLevel' is read from configuration.");
+            }
+        }
     }
 
     private static double ResolveSampleRatio(IConfiguration configuration)

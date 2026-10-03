@@ -18,7 +18,11 @@ public sealed record PriceRates(decimal Input, decimal CachedInput, decimal Cach
 /// <c>{"unit": "per_image", "per_image_usd": 0.007176}</c>. The unit stays stored so a later shape
 /// never silently reinterprets an old row.
 /// </summary>
-public sealed record ImagePriceRate(string Unit, decimal PerImageUsd);
+public sealed record ImagePriceRate(string Unit, decimal PerImageUsd)
+{
+    /// <summary>The <see cref="Unit"/> value the seed writes for a flat per-image price (02 CR-27).</summary>
+    public const string PerImageUnit = "per_image";
+}
 
 /// <summary>
 /// The typed view of one <c>price_versions.rates</c> jsonb document (02 README D14, 00 §6): every

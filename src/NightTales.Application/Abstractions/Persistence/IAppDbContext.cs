@@ -5,6 +5,7 @@ using NightTales.Domain.Catalog;
 using NightTales.Domain.Common;
 using NightTales.Domain.Communication;
 using NightTales.Domain.Compliance;
+using NightTales.Domain.Compliance.Deletion;
 using NightTales.Domain.Episodes;
 using NightTales.Domain.Platform;
 using NightTales.Domain.Rendering;
@@ -43,6 +44,9 @@ public interface IAppDbContext
     DbSet<AutopilotRun> AutopilotRuns { get; }
 
     DbSet<ModerationEvent> ModerationEvents { get; }
+
+    /// <summary>The legal deletion duties of 13.3.1-T1 (<c>data_deletion_requests</c>); <c>IUserOwned</c>, so the D10 tenant filter applies.</summary>
+    DbSet<DeletionRequest> DeletionRequests { get; }
 
     DbSet<UsageRecord> UsageRecords { get; }
 

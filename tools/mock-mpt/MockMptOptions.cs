@@ -1,3 +1,6 @@
+using NightTales.MockMpt.Failures;
+using NightTales.MockMpt.Images;
+
 namespace NightTales.MockMpt;
 
 /// <summary>
@@ -57,6 +60,24 @@ public sealed record MockMptOptions
     /// normal behaviour.
     /// </summary>
     public string? Fixture { get; init; }
+
+    /// <summary>
+    /// <c>MOCK_FAIL_MODE</c> (11.1.2-T2): the failure every submit applies unless a keyword overrides it;
+    /// <see cref="FailMode.None"/> is the normal path.
+    /// </summary>
+    public FailMode FailMode { get; init; } = FailMode.None;
+
+    /// <summary>
+    /// <c>MOCK_FAIL_RATE</c> in <c>[0,1]</c> (11.1.2-T2): the share of submits that fail, decided by a
+    /// deterministic draw over the <c>render_job_id</c>; inert while <see cref="FailMode"/> is set.
+    /// </summary>
+    public double FailRate { get; init; }
+
+    /// <summary>
+    /// <c>MOCK_IMAGE_REPORT</c> (11.1.2-T2 / 03.4.3-T2): the shape of the <c>images</c> block every submit
+    /// reports unless a keyword overrides it.
+    /// </summary>
+    public ImageReportMode ImageReport { get; init; } = ImageReportMode.Ok;
 
     /// <summary>How long a cleaned tombstone is kept before the retention sweep purges it.</summary>
     public TimeSpan CleanedRetention { get; init; } = DefaultCleanedRetention;

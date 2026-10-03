@@ -50,6 +50,17 @@ try
         return;
     }
 
+    // 13.3.1-T1 (13 README D4, plan §5.3): `nts-worker deletions export|reapply` — the restore drill's pair, in
+    // argument mode with no listener and no Hangfire server.
+    if (args.Length > 0 && string.Equals(args[0], DeletionsCommand.Verb, StringComparison.Ordinal))
+    {
+        Environment.ExitCode = DeletionsCommand.RunAsync(args, app.Services, CancellationToken.None)
+            .GetAwaiter()
+            .GetResult();
+
+        return;
+    }
+
     // 11.3.3-T1 (11 README D13/plan §7): the registry must match `RenderNodes:Nodes` before the Worker
     // announces itself healthy. A node without its adapter key exits 2, naming the variable and never a value.
     var registrationCode = WorkerNodeRegistration.Run(app.Services);

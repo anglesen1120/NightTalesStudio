@@ -138,6 +138,8 @@ public sealed class RecurringJobRegistrarTests(TestDatabase database) : Integrat
                 IdempotencyKeyCleanupJobRegistration.RecurringId,
                 OutboxCleanupJobRegistration.RecurringId,
                 HubTicketCleanupJobRegistration.RecurringId,
+                DataDeletionRegistration.RecurringId,
+                RetentionSweepRegistration.RecurringId,
             ],
             ignoreOrder: true);
     }
@@ -170,6 +172,8 @@ public sealed class RecurringJobRegistrarTests(TestDatabase database) : Integrat
                 IdempotencyKeyCleanupJobRegistration.RecurringId,
                 OutboxCleanupJobRegistration.RecurringId,
                 HubTicketCleanupJobRegistration.RecurringId,
+                DataDeletionRegistration.RecurringId,
+                RetentionSweepRegistration.RecurringId,
             ],
             ignoreOrder: true);
     }
@@ -186,7 +190,7 @@ public sealed class RecurringJobRegistrarTests(TestDatabase database) : Integrat
     /// The stored ids the older tests below assert on: every host of this class also scans the probe
     /// assembly's own registrations (<see cref="ScannedProbeRegistrations"/>) and the Application
     /// assembly's platform registrations (<see cref="IdempotencyKeyCleanupJobRegistration"/> and
-    /// <see cref="OutboxCleanupJobRegistration"/>), neither of which is part of what those tests register,
+    /// <see cref="OutboxCleanupJobRegistration"/>, plus 13.3.1-T1's <see cref="DataDeletionRegistration"/>), neither of which is part of what those tests register,
     /// so they are filtered out here.
     /// </summary>
     private static async Task<IReadOnlyList<string>> RecurringIdsAsync(WorkerHost host) =>
@@ -198,6 +202,8 @@ public sealed class RecurringJobRegistrarTests(TestDatabase database) : Integrat
         IdempotencyKeyCleanupJobRegistration.RecurringId,
         OutboxCleanupJobRegistration.RecurringId,
         HubTicketCleanupJobRegistration.RecurringId,
+        DataDeletionRegistration.RecurringId,
+        RetentionSweepRegistration.RecurringId,
     ];
 
     private sealed class StubRegistration(string id, string cron) : IRecurringJobRegistration

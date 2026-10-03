@@ -221,6 +221,17 @@ internal static class SeedPrevious
                     '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
                     'music/seed-track.mp3', 1, true, now(), now())
             """),
+        (
+            // 13.3.1-T1: the table the `_13_DataDeletionRequests` migration creates. Same rule as above: skipped
+            // while that migration is the last one, then every later migration is exercised over an open
+            // account-scope request (NULL target, the row the NULLS NOT DISTINCT index guards).
+            "data_deletion_requests",
+            """
+            INSERT INTO data_deletion_requests (id, user_id, scope, target_id, reason, status, requested_at, due_at,
+                                                attempts)
+            VALUES ('01920000-0000-7000-8000-000000000011', '01920000-0000-7000-8000-000000000001', 'account', NULL,
+                    'account_delete', 'pending', now(), now() + interval '7 days', 0)
+            """),
     ];
 
     /// <summary>The tables the dataset covers, in insert order — the contract a feature migration extends.</summary>
