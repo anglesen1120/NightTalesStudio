@@ -38,12 +38,13 @@ public static class EpisodeVideoEndpoints
     {
         ArgumentNullException.ThrowIfNull(routes);
 
-        routes.MapGet(Route, GetAsync)
-            .RequireAuthorization()
-            .Produces<VideoUrlDto>(StatusCodes.Status200OK)
-            .ProducesProblem(StatusCodes.Status401Unauthorized)
-            .ProducesProblem(StatusCodes.Status404NotFound)
-            .ProducesProblem(StatusCodes.Status503ServiceUnavailable);
+        EpisodeIdRouteParameter.Declare(
+            routes.MapGet(Route, GetAsync)
+                .RequireAuthorization()
+                .Produces<VideoUrlDto>(StatusCodes.Status200OK)
+                .ProducesProblem(StatusCodes.Status401Unauthorized)
+                .ProducesProblem(StatusCodes.Status404NotFound)
+                .ProducesProblem(StatusCodes.Status503ServiceUnavailable));
 
         return routes;
     }

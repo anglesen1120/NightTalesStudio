@@ -16,6 +16,7 @@ using NightTales.Infrastructure.Jobs;
 using NightTales.Infrastructure.Persistence;
 using NightTales.Infrastructure.Persistence.Outbox;
 using NightTales.Infrastructure.Realtime;
+using NightTales.Infrastructure.Telemetry;
 using NightTales.TestKit.Database;
 using NightTales.TestKit.Email;
 using NightTales.TestKit.Security;
@@ -53,11 +54,15 @@ public sealed class WorkerHost(TestDatabase database, FakeClock clock) : IAsyncD
     private readonly List<Action<IServiceCollection>> _configurations = [];
     private readonly List<Assembly> _jobAssemblies = [typeof(WorkerHost).Assembly];
     private bool _withHangfireServer;
+    private bool _withTelemetry;
     private bool _started;
     private IHost? _host;
     private InlineJobScheduler? _inlineScheduler;
 
     private const string OneSecond = "1";
+
+    /// <summary>The log user-hash salt of a host started <see cref="WithTelemetry"/>.</summary>
+    public const string TelemetrySalt = "test-host-log-salt";
 
     /// <summary>The class database this host runs against.</summary>
     public TestDatabase Database { get; } = database;
@@ -88,6 +93,20 @@ public sealed class WorkerHost(TestDatabase database, FakeClock clock) : IAsyncD
     {
         EnsureNotStarted();
         _withHangfireServer = true;
+
+        return this;
+    }
+
+    /// <summary>
+    /// Composes the production observability wiring (<c>AddNtsTelemetry</c>: Serilog with the user-hash
+    /// enricher, tracer provider) into the host, for the 09.9.3-T1 tests. Log events reach any
+    /// <c>ILogEventSink</c> registered through <see cref="ConfigureServices"/>.
+    /// </summary>
+    public WorkerHost WithTelemetry()
+    {
+        EnsureNotStarted();
+        _withTelemetry = true;
+        _settings[TelemetryRegistration.UserHashSaltKey] = TelemetrySalt;
 
         return this;
     }
@@ -216,6 +235,11 @@ public sealed class WorkerHost(TestDatabase database, FakeClock clock) : IAsyncD
         // The harness owns the configuration: the Worker's appsettings.json must not leak into a test.
         builder.Configuration.Sources.Clear();
         builder.Configuration.AddInMemoryCollection(_settings);
+
+        if (_withTelemetry)
+        {
+            builder.AddNtsTelemetry("nts-worker-test");
+        }
 
         builder.Services.RemoveAll<IClock>();
         builder.Services.AddSingleton<IClock>(clock);

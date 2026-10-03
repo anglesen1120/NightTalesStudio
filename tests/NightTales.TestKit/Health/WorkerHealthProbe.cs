@@ -126,6 +126,24 @@ public sealed class WorkerHealthProbe : IAsyncDisposable
         var app = builder.Build();
         app.MapWorkerHealth();
 
+        // 09.9.3-T1: the readiness probe also reports the render-node registry, which is Degraded while
+        // the cache holds no answering node (09.9-D2). The poller is not part of this probe, so it
+        // publishes the one healthy answer a running poller would, and a test's own status is the
+        // storage or database's.
+        app.Services.GetRequiredService<NightTales.Application.Abstractions.Rendering.INodeHealthCache>()
+            .Set(new NightTales.Application.Abstractions.Rendering.NodeHealthSnapshot(
+                "probe-node",
+                FakeClock.DefaultStart,
+                HttpOk: true,
+                Status: "ok",
+                Reasons: [],
+                MaxConcurrentTasks: 1,
+                ActiveTasks: 0,
+                Accepting: true,
+                GpuUtilPct: null,
+                GpuMemUsedMb: null,
+                DiskUsedPct: null));
+
         await app.StartAsync(cancellationToken);
 
         var address = app.Services.GetRequiredService<IServer>()

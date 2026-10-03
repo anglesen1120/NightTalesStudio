@@ -9,6 +9,7 @@ using NightTales.Application.Abstractions;
 using NightTales.Application.Abstractions.Jobs;
 using NightTales.Application.Abstractions.Outbox;
 using NightTales.Application.Features.Episodes.Outbox;
+using NightTales.Application.Telemetry;
 using NightTales.Domain.Episodes.Events;
 using NightTales.Domain.Platform.Events;
 using NightTales.Infrastructure.DependencyInjection;
@@ -18,6 +19,7 @@ using NightTales.Infrastructure.Persistence;
 using NightTales.Infrastructure.Persistence.Flags;
 using NightTales.Infrastructure.Persistence.Outbox;
 using NightTales.Infrastructure.Persistence.Usage;
+using NightTales.Infrastructure.Rendering;
 using NightTales.Infrastructure.Security;
 using NightTales.Infrastructure.Storage;
 using NightTales.Worker.Health;
@@ -182,7 +184,24 @@ public static class WorkerServiceCollectionExtensions
         services.AddHealthChecks()
             .AddCheck<DatabaseHealthCheck>("database")
             .AddCheck<HangfireStorageHealthCheck>("hangfire")
-            .AddCheck<StorageHealthCheck>(StorageHealthCheck.Name);
+            .AddCheck<StorageHealthCheck>(StorageHealthCheck.Name)
+            .AddCheck<NodeRegistryHealthCheck>(NodeRegistryHealthCheck.Name);
+
+        // 09.9.3-T1 (09 README BD12): the `render_jobs_active` gauge. The instruments are registered by
+        // AddNtsTelemetry in the real host; TryAdd keeps the harness graph, which does not call it, complete.
+        var metricsConnectionString = configuration.GetConnectionString(PersistenceOptions.ConnectionStringName);
+        if (string.IsNullOrWhiteSpace(metricsConnectionString))
+        {
+            throw new OptionsValidationException(
+                nameof(PersistenceOptions),
+                typeof(PersistenceOptions),
+                [$"Configuration value 'ConnectionStrings:{PersistenceOptions.ConnectionStringName}' is required for the render-metrics refresher."]);
+        }
+
+        services.TryAddSingleton<NightTalesMetrics>();
+        services.AddSingleton(new RenderMetricsQuery(metricsConnectionString));
+        services.AddSingleton<RenderMetricsRefresher>();
+        services.AddSingleton<IHostedService>(provider => provider.GetRequiredService<RenderMetricsRefresher>());
 
         return services;
     }

@@ -67,16 +67,18 @@ public static class EpisodeEndpoints
             .Produces<Page<EpisodeListItemDto>>(StatusCodes.Status200OK)
             .ProducesProblem(StatusCodes.Status400BadRequest);
 
-        episodes.MapGet("/{id:guid}", GetAsync)
-            .Produces<EpisodeDetailDto>(StatusCodes.Status200OK)
-            .Produces(StatusCodes.Status304NotModified)
-            .ProducesProblem(StatusCodes.Status404NotFound);
+        EpisodeIdRouteParameter.Declare(
+            episodes.MapGet("/{id:guid}", GetAsync)
+                .Produces<EpisodeDetailDto>(StatusCodes.Status200OK)
+                .Produces(StatusCodes.Status304NotModified)
+                .ProducesProblem(StatusCodes.Status404NotFound));
 
-        episodes.MapDelete("/{id:guid}", DeleteAsync)
-            .Produces(StatusCodes.Status204NoContent)
-            .ProducesProblem(StatusCodes.Status404NotFound)
-            .ProducesProblem(StatusCodes.Status409Conflict)
-            .ProducesProblem(StatusCodes.Status412PreconditionFailed);
+        EpisodeIdRouteParameter.Declare(
+            episodes.MapDelete("/{id:guid}", DeleteAsync)
+                .Produces(StatusCodes.Status204NoContent)
+                .ProducesProblem(StatusCodes.Status404NotFound)
+                .ProducesProblem(StatusCodes.Status409Conflict)
+                .ProducesProblem(StatusCodes.Status412PreconditionFailed));
 
         return routes;
     }
