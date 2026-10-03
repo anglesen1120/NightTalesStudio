@@ -3,6 +3,8 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using ErrorOr;
 using Mediator;
+using Microsoft.Extensions.Options;
+using Npgsql;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using NightTales.Api.IntegrationTests.Harness;
@@ -237,6 +239,82 @@ public sealed class GenerateStoryQaRollbackAndLimitTests(TestDatabase database) 
         statuses.ShouldContain((HttpStatusCode)429, "the paid policy allows 30 requests per minute per user");
     }
 
+    [Fact]
+    public async Task Generate_ArchivedSeries_Returns409SeriesArchived_AndCreatesNoRun()
+    {
+        // SEC-3: archiving a series must stop new paid runs for its episodes.
+        var world = await SeedAsync();
+        SqlProbe.Execute(Database, $"UPDATE series SET archived_at = now() WHERE id = '{world.SeriesId}'");
+        using var factory = Factory();
+        using var client = factory.ClientFor(world.UserId);
+
+        using var response = await PostAsync(client, world.EpisodeId, "archived-key");
+
+        response.StatusCode.ShouldBe(HttpStatusCode.Conflict, await response.Content.ReadAsStringAsync(Ct));
+        using var problem = JsonDocument.Parse(await response.Content.ReadAsStringAsync(Ct));
+        problem.RootElement.GetProperty("code").GetString().ShouldBe("series_archived");
+        SqlProbe.Count(Database, $"SELECT count(*) FROM generation_runs WHERE episode_id = '{world.EpisodeId}'").ShouldBe(0);
+    }
+
+    [Fact]
+    public async Task Generate_WhileASeriesWriterHoldsTheRow_WaitsForItBeforeReadingTheTopic()
+    {
+        // SEC-2: the generate call takes FOR SHARE on the series row before it reads Topic, so a concurrent
+        // topic edit (UPDATE, exclusive) is either fully before it or fully after it - never in between.
+        var world = await SeedAsync();
+        using var factory = Factory();
+        using var client = factory.ClientFor(world.UserId);
+
+        await using var writer = new NpgsqlConnection(Database.ConnectionString);
+        await writer.OpenAsync(Ct);
+        await using var transaction = await writer.BeginTransactionAsync(Ct);
+        await using (var update = new NpgsqlCommand(
+            $"UPDATE series SET topic = 'true_crime' WHERE id = '{world.SeriesId}'",
+            writer,
+            transaction))
+        {
+            await update.ExecuteNonQueryAsync(Ct);
+        }
+
+        var pending = PostAsync(client, world.EpisodeId, "series-lock-key");
+        var finishedEarly = await Task.WhenAny(pending, Task.Delay(TimeSpan.FromSeconds(2), Ct)) == pending;
+        finishedEarly.ShouldBeFalse("the generate call must block on the series row the writer holds");
+
+        await transaction.CommitAsync(Ct);
+
+        using var response = await pending;
+        // The topic it saw is the committed true_crime one: the fact-sheet guard is therefore consulted with it
+        // (an unapproved sheet is a 409; it must never be an accepted run on a stale topic read).
+        SqlProbe.ScalarText(Database, $"SELECT topic FROM series WHERE id = '{world.SeriesId}'").ShouldBe("true_crime");
+        if (response.StatusCode == HttpStatusCode.Accepted)
+        {
+            SqlProbe.Count(
+                    Database,
+                    $"SELECT count(*) FROM generation_runs WHERE episode_id = '{world.EpisodeId}' AND input_fact_sheet_id IS NOT NULL")
+                .ShouldBe(1, "a true_crime run is accepted only with its approved fact sheet pinned");
+        }
+        else
+        {
+            response.StatusCode.ShouldBe(HttpStatusCode.Conflict, await response.Content.ReadAsStringAsync(Ct));
+        }
+    }
+
+    [Fact]
+    public void Budget_DisabledOutsideDevelopment_RefusesToStart()
+    {
+        // SEC-4: the kill-switch is Development-only (WebApplicationFactory hosts default to Development).
+        using var host = ApiFactory.ProductionHost(
+            Database.ConnectionString,
+            builder =>
+            {
+                builder.UseSetting("environment", "Production");
+                builder.UseSetting("Budget:Enabled", "false");
+            });
+
+        Should.Throw<OptionsValidationException>(() => host.CreateClient())
+            .Message.ShouldContain("Budget:Enabled");
+    }
+
     private void AssertNothingCommitted(World world)
     {
         SqlProbe.Count(Database, $"SELECT count(*) FROM generation_runs WHERE episode_id = '{world.EpisodeId}'").ShouldBe(0);
@@ -299,7 +377,7 @@ public sealed class GenerateStoryQaRollbackAndLimitTests(TestDatabase database) 
         await using var db = Database.CreateAppDbContext(new TestCurrentUser { Id = userId });
         for (var index = 0; index < count; index++)
         {
-            var queuedAt = DateTimeOffset.UtcNow - TimeSpan.FromHours(ageHours(index)) - TimeSpan.FromMinutes(5);
+            var queuedAt = Start - TimeSpan.FromHours(ageHours(index)) - TimeSpan.FromMinutes(5);
             var run = GenerationRun.Queue(
                     userId,
                     seriesId,

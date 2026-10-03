@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using NightTales.Application.Abstractions.Money;
 using NightTales.Application.Abstractions.Rendering;
@@ -88,13 +89,20 @@ internal sealed class ImagesOptionsValidation : IValidateOptions<ImagesOptions>
     }
 }
 
-/// <summary>Fails the start-up on an invalid <c>Budget</c> section, with every problem listed.</summary>
-internal sealed class BudgetOptionsValidation : IValidateOptions<BudgetOptions>
+/// <summary>
+/// Fails the start-up on an invalid <c>Budget</c> section, with every problem listed. <c>Budget:Enabled=false</c> is a
+/// test kill-switch that makes the spend cap allow everything, so it is refused outside Development (02.2.2-T2 SEC-4).
+/// </summary>
+internal sealed class BudgetOptionsValidation(IHostEnvironment environment) : IValidateOptions<BudgetOptions>
 {
     /// <inheritdoc />
     public ValidateOptionsResult Validate(string? name, BudgetOptions options)
     {
-        var problems = BudgetOptions.Validate(options);
+        var problems = BudgetOptions.Validate(options).ToList();
+        if (!options.Enabled && !environment.IsDevelopment())
+        {
+            problems.Add($"'{BudgetOptions.SectionName}:{nameof(BudgetOptions.Enabled)}' may be false only in the Development environment; the spend cap is the platform's money guard.");
+        }
 
         return problems.Count == 0 ? ValidateOptionsResult.Success : ValidateOptionsResult.Fail(problems);
     }

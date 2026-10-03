@@ -62,6 +62,10 @@ public sealed class GenerateStoryCommandHandler(
             return Error.Forbidden(ErrorCodes.Forbidden, "Only the platform can start an automatic story generation.");
         }
 
+        // SEC-2: a shared lock on the series row before its Topic is read, so a concurrent PATCH to true_crime
+        // waits for this transaction and cannot slip past the fact-sheet guard of step 4.
+        await db.LockSeriesForShareAsync(episode.SeriesId, cancellationToken).ConfigureAwait(false);
+
         var series = await db.Series
             .SingleOrDefaultAsync(candidate => candidate.Id == episode.SeriesId, cancellationToken)
             .ConfigureAwait(false);
@@ -79,6 +83,12 @@ public sealed class GenerateStoryCommandHandler(
         if (episode.Status is not (EpisodeStatus.Draft or EpisodeStatus.StoryReview))
         {
             return Error.Conflict(ErrorCodes.EpisodeInvalidState, "A story cannot be generated in the episode's current state.");
+        }
+
+        // SEC-3: no new run for an archived series (the same refusal as adding an episode to it).
+        if (series.ArchivedAt is not null)
+        {
+            return Error.Conflict(ErrorCodes.SeriesArchived, "The series is archived; a story cannot be generated for it.");
         }
 
         // Step 4: a true-crime episode needs an approved fact sheet; its id is pinned on the run.
