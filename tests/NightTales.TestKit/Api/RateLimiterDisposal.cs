@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace NightTales.TestKit.Api;
 
@@ -22,8 +23,9 @@ namespace NightTales.TestKit.Api;
 /// hosts kept alive this way (about 15 MB each) until the 2-core runner ran out of memory.
 /// </para>
 /// <para>
-/// The filter adds the first component of the host's pipeline. That component is built last, so it is
-/// handed the finished pipeline; it walks the pipeline's delegates to the rate-limiting middleware, reads
+/// The filter adds a component upstream of the source pipeline (<c>Program</c>'s middleware, which includes
+/// <c>UseRateLimiting</c>). That component is built after everything downstream of it, so it is handed the
+/// finished downstream chain; it walks the chain's delegates to the rate-limiting middleware, reads
 /// the limiter and hands it to a singleton that disposes it with the provider. The middleware type is
 /// internal to the framework, hence the reflection; if a framework upgrade renames it, building the host
 /// fails with a message that names this type instead of the leak coming back silently.
@@ -42,8 +44,8 @@ internal sealed class RateLimiterDisposal : IStartupFilter
     {
         ArgumentNullException.ThrowIfNull(services);
 
-        services.AddSingleton<LimiterOwner>();
-        services.AddSingleton<IStartupFilter, RateLimiterDisposal>();
+        services.TryAddSingleton<LimiterOwner>();
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IStartupFilter, RateLimiterDisposal>());
     }
 
     /// <inheritdoc />
