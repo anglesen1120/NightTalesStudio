@@ -343,6 +343,9 @@ public sealed class GenerateStoryCommandHandlerTests(TestDatabase database) : In
     {
         public Task<ErrorOr<UsageBound>> WorstCaseAsync(LengthTier tier, Language language, CancellationToken ct) =>
             Task.FromResult<ErrorOr<UsageBound>>(new UsageBound(0.5m, 1000, 500));
+
+        public Task<ErrorOr<UsageBound>> WriterWorstCaseAsync(LengthTier tier, Language language, CancellationToken ct) =>
+            Task.FromResult<ErrorOr<UsageBound>>(new UsageBound(0.5m, 1000, 500));
     }
 
     private sealed class RecordingLedger : ICreditLedger
