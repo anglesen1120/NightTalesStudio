@@ -177,8 +177,10 @@ public sealed class NodeHealthPollerTests(TestDatabase database) : IntegrationTe
     }
 
     [Fact]
-    public async Task SecondInstance_DoesNotPoll()
+    public async Task SecondInstance_RefreshesItsOwnCacheButWritesNoRegistryState()
     {
+        // CR-1 (11 README F10): the lock gates registry writes only. A non-leader still pulls into its own
+        // process-local cache — its selector reads nothing else — but heartbeats and decides nothing.
         RenderNodeDatabase.Reset(Database);
         var clock = new FakeClock(Start);
         await SeedNodeAsync("alpha", WorkerNodeState.Active);
@@ -190,8 +192,18 @@ public sealed class NodeHealthPollerTests(TestDatabase database) : IntegrationTe
         (await holder.Poller.TickAsync(Ct)).ShouldBeTrue("the first instance takes the advisory lock (Q5)");
         holder.Factory.Requests("alpha").Count.ShouldBe(1);
 
-        (await second.Poller.TickAsync(Ct)).ShouldBeFalse("the lock is held, so the second instance does not poll");
-        second.Factory.Requests("alpha").ShouldBeEmpty("a non-holder polls nothing and must not error");
+        clock.Advance(TimeSpan.FromSeconds(30));
+        (await second.Poller.TickAsync(Ct)).ShouldBeFalse("the lock is held elsewhere, so this instance is not the leader");
+        second.Factory.Requests("alpha").Count.ShouldBe(1, "a non-leader still pulls the node for its own cache");
+        second.Cache.TryGet("alpha", out var cached).ShouldBeTrue();
+        cached!.PulledAt.ShouldBe(clock.UtcNow);
+        (await RowAsync("alpha")).LastHeartbeatAt.ShouldBe(Start, "only the lock holder heartbeats");
+
+        await using var scope = second.Services.CreateAsyncScope();
+        var picked = await scope.ServiceProvider.GetRequiredService<INodeSelector>().PickAsync(Ct);
+        picked.IsError.ShouldBeFalse("the non-leader's selector dispatches from the cache its own poller filled");
+        picked.Value.Name.ShouldBe("alpha");
+
         (await holder.Poller.TickAsync(Ct)).ShouldBeTrue("the holder keeps polling on the next tick");
     }
 
@@ -227,6 +239,42 @@ public sealed class NodeHealthPollerTests(TestDatabase database) : IntegrationTe
         up["alpha"].ShouldBe(1);
         up["beta"].ShouldBe(1, "a 503 with a valid body is an answer, so the node is 'up' (dispatchability is T2's predicate)");
         up["gamma"].ShouldBe(0, "a node that never answered is not up");
+    }
+
+    [Fact]
+    public async Task FreeSlotsGauge_IsZeroForDrainingAndDownNodesDespiteFreshHealth()
+    {
+        // CR-3: the selector never dispatches to a non-active row, so the gauge must not advertise its slots
+        // even while the node answers 200 + accepting (a draining node, or a down node on its first good pull).
+        RenderNodeDatabase.Reset(Database);
+        var clock = new FakeClock(Start);
+        await SeedNodeAsync("alpha", WorkerNodeState.Active);
+        await SeedNodeAsync("beta", WorkerNodeState.Draining);
+        await SeedNodeAsync("gamma", WorkerNodeState.Down);
+        using var harness = CreateHarness(clock);
+        foreach (var name in new[] { "alpha", "beta", "gamma" })
+        {
+            harness.Factory.Script(name, new ScriptedHttpStep(HttpStatusCode.OK, RenderNodeHealthBodies.Ok()));
+        }
+
+        var slots = new Dictionary<string, int>(StringComparer.Ordinal);
+        using var listener = new MeterListener();
+        listener.InstrumentPublished = (instrument, l) =>
+        {
+            if (ReferenceEquals(instrument.Meter, harness.Metrics.Meter) && instrument.Name == NodeMetrics.FreeSlotsInstrumentName)
+            {
+                l.EnableMeasurementEvents(instrument);
+            }
+        };
+        listener.SetMeasurementEventCallback<int>((_, value, tags, _) => slots[Tag(tags, NodeMetrics.NodeTagName)] = value);
+        listener.Start();
+
+        await harness.Poller.PollOnceAsync(Ct);
+        listener.RecordObservableInstruments();
+
+        slots["alpha"].ShouldBeGreaterThan(0, "an active, fresh, accepting node offers its free slots");
+        slots["beta"].ShouldBe(0, "a draining node is never dispatchable (D12)");
+        slots["gamma"].ShouldBe(0, "a down node stays out of dispatch until it is revived");
     }
 
     [Fact]
@@ -811,6 +859,8 @@ public sealed class NodeHealthPollerTests(TestDatabase database) : IntegrationTe
         public FakeRenderNodeConnectionFactory Factory { get; } = factory;
 
         public INodeHealthCache Cache { get; } = cache;
+
+        public IServiceProvider Services => host.Services;
 
         public NodeMetrics Metrics { get; } = metrics;
 

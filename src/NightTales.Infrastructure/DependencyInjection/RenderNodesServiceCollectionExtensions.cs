@@ -4,6 +4,7 @@ using Microsoft.Extensions.Options;
 using NightTales.Application.Abstractions.Persistence;
 using NightTales.Application.Abstractions.Rendering;
 using NightTales.Application.Rendering;
+using NightTales.Domain.Common;
 using NightTales.Infrastructure.Persistence;
 using NightTales.Infrastructure.Rendering;
 
@@ -52,8 +53,13 @@ public static class RenderNodesServiceCollectionExtensions
             .ValidateOnStart();
 
         // One meter instance per host, exactly like AuthMetrics/OutboxMetrics: a test attaches a listener to
-        // this instance and never to a same-named meter of another process.
-        services.AddSingleton<NodeMetrics>();
+        // this instance and never to a same-named meter of another process. It takes the bound options value
+        // for the same reason as the selector below (Application has no Options package): the free-slots
+        // gauge ages snapshots with the dispatch predicate's window.
+        services.AddSingleton(provider => new NodeMetrics(
+            provider.GetRequiredService<INodeHealthCache>(),
+            provider.GetRequiredService<IClock>(),
+            provider.GetRequiredService<IOptions<RenderNodesOptions>>().Value));
 
         // The cache is process-local state the poller writes and the gauges read, so it is one instance for
         // the host's lifetime.
@@ -65,6 +71,16 @@ public static class RenderNodesServiceCollectionExtensions
         services.AddScoped<INodeRegistry, NodeRegistry>();
         services.AddScoped<INodeLoadReader, RenderJobNodeLoadReader>();
         services.AddScoped<WorkerNodeSeeder>();
+
+        // The dispatch decision (11.3.3-T2): scoped with the IReadDb and INodeLoadReader it queries; the
+        // log gate is a singleton so "nothing dispatchable" warns once per interval, not once per pick.
+        services.AddSingleton<NodeDispatchLogGate>();
+
+        // Application cannot reference the Options package (architecture allow-list), so the selector takes
+        // the bound, validated value; it is resolved from IOptions here, at the composition root.
+        services.AddScoped<INodeSelector>(provider => ActivatorUtilities.CreateInstance<NodeSelector>(
+            provider,
+            provider.GetRequiredService<IOptions<RenderNodesOptions>>().Value));
 
         // The advisory-lock guard keeps one dedicated connection for the poller's lifetime, so it is a
         // singleton that owns that connection.

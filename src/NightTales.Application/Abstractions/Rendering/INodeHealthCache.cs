@@ -18,6 +18,7 @@ namespace NightTales.Application.Abstractions.Rendering;
 /// <param name="GpuUtilPct">The cached GPU utilisation, or <c>null</c> when the node could not sample it.</param>
 /// <param name="GpuMemUsedMb">The cached GPU memory in use, or <c>null</c>.</param>
 /// <param name="DiskUsedPct">The cached task-dir disk use, or <c>null</c>.</param>
+/// <param name="GpuTempC">The cached GPU temperature in degrees Celsius, or <c>null</c> when the node could not sample it (T28).</param>
 public sealed record NodeHealthSnapshot(
     string NodeName,
     DateTimeOffset PulledAt,
@@ -29,7 +30,8 @@ public sealed record NodeHealthSnapshot(
     bool Accepting,
     double? GpuUtilPct,
     long? GpuMemUsedMb,
-    double? DiskUsedPct)
+    double? DiskUsedPct,
+    int? GpuTempC = null)
 {
     /// <summary>
     /// Projects the parsed <c>render-node-health.v1</c> body into the cache shape (D13, D18): the wire
@@ -59,7 +61,8 @@ public sealed record NodeHealthSnapshot(
             health.Capacity.Accepting,
             health.Gpu.UtilPct,
             health.Gpu.MemUsedMb,
-            health.Disk.UsedPct);
+            health.Disk.UsedPct,
+            health.Gpu.TempC);
     }
 }
 
