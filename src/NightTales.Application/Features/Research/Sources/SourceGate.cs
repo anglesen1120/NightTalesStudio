@@ -49,6 +49,16 @@ internal static class SourceGate
     /// frees no quota. The error carries <c>retryAfterSeconds</c>: the seconds until the oldest creation in the window
     /// leaves it, at least 1.
     /// </summary>
+    /// <remarks>
+    /// The episode row lock does not serialise two <em>different</em> episodes, so under READ COMMITTED two parallel
+    /// adds (or an add and a retry) of one user could both read a stale count and together overshoot the cap
+    /// (CR-1/SEC-1). Before counting, the command takes a transaction-scoped advisory lock keyed by the user — the
+    /// <c>SecuritySql.LockUserAsync</c>/<c>EfRefreshTokenService.LockFamilyAsync</c> shape, with the dedicated seed
+    /// <c>3</c> so it cannot collide with a refresh-family (<c>0</c>), user (<c>1</c>) or action-token-scope (<c>2</c>)
+    /// lock. Every caller reaches this method after <see cref="LoadEpisodeLockedAsync"/>, so the lock order is always
+    /// episode → user and no two paths can deadlock. The lock releases at commit/rollback with the command's unit of
+    /// work; a call outside a transaction fails loudly instead of locking nothing.
+    /// </remarks>
     internal static async ValueTask<ErrorOr<Success>> CheckUrlCapAsync(
         IAppDbContext db,
         Guid userId,
@@ -56,6 +66,9 @@ internal static class SourceGate
         DateTimeOffset now,
         CancellationToken cancellationToken)
     {
+        // After the episode lock (LoadEpisodeLockedAsync), before the count: see the remarks.
+        await db.LockUserSourceCapAsync(userId, cancellationToken).ConfigureAwait(false);
+
         var windowStart = now - SourcesOptions.UrlWindow;
 
         var aggregate = await db.SourceCreations

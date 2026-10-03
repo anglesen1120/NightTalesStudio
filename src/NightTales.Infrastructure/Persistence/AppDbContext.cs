@@ -182,6 +182,19 @@ public sealed class AppDbContext : IdentityDbContext<AppUser, AppRole, Guid>, IA
                 cancellationToken)
             : Task.CompletedTask;
 
+    /// <inheritdoc />
+    /// <remarks>
+    /// The key is the user id text with advisory seed <c>3</c>: <c>EfRefreshTokenService.LockFamilyAsync</c> uses seed 0,
+    /// <c>SecuritySql.LockUserAsync</c> 1 and <c>SecuritySql.LockActionTokenScopeAsync</c> 2, so none collides with it.
+    /// </remarks>
+    public Task LockUserSourceCapAsync(Guid userId, CancellationToken cancellationToken) =>
+        Database.CurrentTransaction is null
+            ? throw new InvalidOperationException(
+                "The url-source cap lock runs inside the command's transaction (09 README D5); outside one it would not survive its statement.")
+            : Database.ExecuteSqlInterpolatedAsync(
+                $"SELECT pg_advisory_xact_lock(hashtextextended({userId.ToString()}, 3))",
+                cancellationToken);
+
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
     {
         base.ConfigureConventions(configurationBuilder);

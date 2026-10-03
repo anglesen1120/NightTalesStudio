@@ -99,5 +99,16 @@ public interface IAppDbContext
     /// <param name="cancellationToken">Cancels the statement.</param>
     Task LockEpisodeForUpdateAsync(Guid episodeId, CancellationToken cancellationToken);
 
+    /// <summary>
+    /// Takes the transaction-scoped advisory lock that serialises the 24 h url-source cap of one user across <em>all</em>
+    /// of the user's episodes (02.5.1-T1 CR-1/SEC-1): the episode row lock alone does not, so two parallel adds on
+    /// different episodes could both read a stale count. Taken after <see cref="LockEpisodeForUpdateAsync"/> and before the
+    /// count, always in that order; released at commit or rollback. It throws outside a transaction, where the lock would
+    /// die with its own statement and protect nothing.
+    /// </summary>
+    /// <param name="userId">The user whose creations are counted.</param>
+    /// <param name="cancellationToken">Cancels the statement.</param>
+    Task LockUserSourceCapAsync(Guid userId, CancellationToken cancellationToken);
+
     Task<int> SaveChangesAsync(CancellationToken cancellationToken);
 }
