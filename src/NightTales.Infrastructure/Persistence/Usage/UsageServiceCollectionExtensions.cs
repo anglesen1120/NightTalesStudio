@@ -1,11 +1,15 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
+using NightTales.Application.Abstractions.Money;
 using NightTales.Application.Abstractions.Rendering;
 using NightTales.Application.Abstractions.Usage;
 using NightTales.Application.Features.Rendering;
+using NightTales.Infrastructure.Money;
 using NightTales.Infrastructure.Persistence.Queries;
 using NightTales.Infrastructure.Persistence.Seeding;
+using NightTales.Infrastructure.Pricing;
 
 namespace NightTales.Infrastructure.Persistence.Usage;
 
@@ -42,6 +46,17 @@ public static class UsageServiceCollectionExtensions
         services.TryAddSingleton(provider => provider.GetRequiredService<IOptions<ImagesOptions>>().Value);
         services.TryAddSingleton<IImageCostEstimator, ImageCostEstimator>();
 
+        // 02.2.2-T2: the platform spend cap (Budget section, all keys default) and the phase-P metering-only ledger
+        // that 12.1.2 replaces at M2. The guard is scoped: it takes the advisory lock on the command's own AppDbContext.
+        services.AddOptions<BudgetOptions>()
+            .BindConfiguration(BudgetOptions.SectionName)
+            .ValidateOnStart();
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IValidateOptions<BudgetOptions>, BudgetOptionsValidation>());
+        services.TryAddSingleton(provider => provider.GetRequiredService<IOptions<BudgetOptions>>().Value);
+        services.TryAddScoped<IOpenBoundsReader, GenerationRunOpenBoundsReader>();
+        services.TryAddScoped<IBudgetGuard, UsageBudgetGuard>();
+        services.TryAddSingleton<ICreditLedger, MeteringOnlyCreditLedger>();
+
         return services;
     }
 }
@@ -71,5 +86,24 @@ internal sealed class ImagesOptionsValidation : IValidateOptions<ImagesOptions>
         return problems.Count == 0
             ? ValidateOptionsResult.Success
             : ValidateOptionsResult.Fail(problems.Select(problem => $"{ImagesOptions.SectionName}: {problem}"));
+    }
+}
+
+/// <summary>
+/// Fails the start-up on an invalid <c>Budget</c> section, with every problem listed. <c>Budget:Enabled=false</c> is a
+/// test kill-switch that makes the spend cap allow everything, so it is refused outside Development (02.2.2-T2 SEC-4).
+/// </summary>
+internal sealed class BudgetOptionsValidation(IHostEnvironment environment) : IValidateOptions<BudgetOptions>
+{
+    /// <inheritdoc />
+    public ValidateOptionsResult Validate(string? name, BudgetOptions options)
+    {
+        var problems = BudgetOptions.Validate(options).ToList();
+        if (!options.Enabled && !environment.IsDevelopment())
+        {
+            problems.Add($"'{BudgetOptions.SectionName}:{nameof(BudgetOptions.Enabled)}' may be false only in the Development environment; the spend cap is the platform's money guard.");
+        }
+
+        return problems.Count == 0 ? ValidateOptionsResult.Success : ValidateOptionsResult.Fail(problems);
     }
 }

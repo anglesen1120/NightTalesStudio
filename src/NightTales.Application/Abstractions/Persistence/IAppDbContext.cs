@@ -89,5 +89,16 @@ public interface IAppDbContext
     /// <param name="cancellationToken">Cancels the statement.</param>
     Task LockEpisodeForUpdateAsync(Guid episodeId, CancellationToken cancellationToken);
 
+    /// <summary>
+    /// Takes a shared row lock on the current user's series (<c>SELECT … FOR SHARE</c>, 02.2.2-T2 SEC-2) so the
+    /// <c>Topic</c> a command reads cannot change under it: a concurrent topic edit (an <c>UPDATE</c>, which needs
+    /// the exclusive lock) waits until the surrounding transaction ends. Like <see cref="LockEpisodeForUpdateAsync"/>
+    /// it matches only rows owned by the scope's user and locks nothing for another user, an unknown id or an
+    /// anonymous scope; the tenant-filtered load that follows is what answers 404.
+    /// </summary>
+    /// <param name="seriesId">The series to lock.</param>
+    /// <param name="cancellationToken">Cancels the statement.</param>
+    Task LockSeriesForShareAsync(Guid seriesId, CancellationToken cancellationToken);
+
     Task<int> SaveChangesAsync(CancellationToken cancellationToken);
 }

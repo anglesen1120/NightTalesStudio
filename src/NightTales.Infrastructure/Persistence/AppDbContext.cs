@@ -172,6 +172,14 @@ public sealed class AppDbContext : IdentityDbContext<AppUser, AppRole, Guid>, IA
                 cancellationToken)
             : Task.CompletedTask;
 
+    /// <inheritdoc />
+    public Task LockSeriesForShareAsync(Guid seriesId, CancellationToken cancellationToken) =>
+        CurrentUserId is { } userId
+            ? Database.ExecuteSqlInterpolatedAsync(
+                $"SELECT id FROM series WHERE id = {seriesId} AND user_id = {userId} FOR SHARE",
+                cancellationToken)
+            : Task.CompletedTask;
+
     protected override void ConfigureConventions(ModelConfigurationBuilder configurationBuilder)
     {
         base.ConfigureConventions(configurationBuilder);

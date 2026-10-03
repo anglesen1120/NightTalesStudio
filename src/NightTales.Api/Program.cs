@@ -39,8 +39,12 @@ try
     // 09.9.5-T1 (09 README D7): the generated `ProblemDetails` component gains the two members its CLR
     // type cannot express (`code`, `traceId`), so the published document — and every client generated
     // from it (10.1.4) — carries the whole error contract of ProblemDetailsWriter.
+    // 02.2.2-T2 (QA-2): the `Idempotency-Key` header is published as required with maxLength 128.
     builder.Services.AddOpenApi(options =>
-        options.AddSchemaTransformer<ProblemDetailsSchemaTransformer>());
+    {
+        options.AddSchemaTransformer<ProblemDetailsSchemaTransformer>();
+        options.AddOperationTransformer<IdempotencyKeyOperationTransformer>();
+    });
 
     builder.Services.AddNightTalesMediator();
     builder.Services.AddPersistence(builder.Configuration);
@@ -270,6 +274,9 @@ try
     // 09.5.1-T1 (09 README D14, 09 §4 09.5.1): the episode routes — create under a series, list, read and
     // cancel.
     app.MapEpisodeEndpoints();
+
+    // 02.2.2-T2 (02 README D9, 02.2.2 plan §5.1): POST /api/v1/episodes/{id}/story/generate.
+    app.MapStoryEndpoints();
 
     // 09.4.2-T1 (09 README D14, 09 §4 09.4.2): the catalog routes — the voices and the style templates the
     // picker and the style grid read.
