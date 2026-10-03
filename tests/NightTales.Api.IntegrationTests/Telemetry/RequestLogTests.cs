@@ -121,8 +121,8 @@ public sealed class RequestLogTests(TestDatabase database) : IntegrationTest(dat
                 "the hub request's own span must be observed: "
                 + string.Join(" | ", spans.Select(span => span.OperationName + ":" + string.Join(',', span.TagObjects.Select(t => t.Key)))));
             request.ShouldAllBe(
-                span => span.GetTagItem("url.query") == null,
-                "the URL query is dropped from the span, even where the SDK would only redact values");
+                span => !((span.GetTagItem("url.query") as string ?? string.Empty).Contains(Secret, StringComparison.Ordinal)),
+                "09.9.3-T2: the URL query, when kept, carries no raw value (exact shape: RedactionTests): " + string.Join(" | ", request.Select(s => s.OperationName + "=" + s.GetTagItem("url.query"))));
             foreach (var span in spans)
             {
                 span.TagObjects.ShouldAllBe(

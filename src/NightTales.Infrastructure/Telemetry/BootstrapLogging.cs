@@ -22,7 +22,9 @@ public static class BootstrapLogging
     public static Serilog.ILogger Create(TextWriter? output = null) =>
         new LoggerConfiguration()
             .MinimumLevel.Information()
-            .WriteTo.Sink(new ExceptionSanitizingSink(new WriterSink(output ?? Console.Out, new CompactJsonFormatter())))
+            .WriteTo.Sink(new ExceptionSanitizingSink(
+                new WriterSink(output ?? Console.Out, new CompactJsonFormatter()),
+                Redaction.RedactionOptions.Default.QueryKeys))
             .CreateLogger();
 
     /// <summary>
