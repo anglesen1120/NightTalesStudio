@@ -24,6 +24,10 @@ public sealed class AdapterHostWiringTests
             ["Adapter:ListenAddress"] = "10.20.30.40",
             ["Adapter:DataDir"] = dataDir,
             ["RenderNodeServer:ApiKey"] = "adapter-key-0123456789abcdef0123456789",
+            // Explicit values win over the ADAPTER_API_KEY(_NEXT) env fallbacks (AddServerKeyEnvDefaults only fills
+            // empty options). HealthCacheTests sets ADAPTER_API_KEY_NEXT to a short fake process-wide while it runs
+            // in parallel, so an unpinned NEXT made this host fail the 32-byte rule intermittently.
+            ["RenderNodeServer:ApiKeyNext"] = "adapter-next-key-0123456789abcdef012345",
         });
         builder.Services.AddMptAdapter(builder.Configuration);
 
