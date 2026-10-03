@@ -149,12 +149,11 @@ public sealed class OpenAiTextClientQaTests
         identifier.ShouldSatisfyAllConditions(i => i.All(c => char.IsAsciiHexDigitLower(c)).ShouldBeTrue());
     }
 
-    [Fact(Skip = "QA-1: open defect, ITextClient (singleton) captures the scoped IFeatureFlags; remove Skip when fixed")]
+    [Fact]
     public void OpenAiComposition_ITextClientResolves_WhenFlagsAreScoped()
     {
-        // QA defect repro (QA-1): the Worker registers IFeatureFlags as scoped and resolves with
-        // ValidateScopes = true, while OpenAiTextClient is a singleton that injects IFeatureFlags.
-        // The correct composition resolves; today it throws a captive-dependency error.
+        // QA-1: the Worker registers IFeatureFlags as scoped and resolves with ValidateScopes = true;
+        // the singleton client resolves it per call through a fresh scope (UsageMeter precedent).
         var services = new ServiceCollection();
         services.AddSingleton<IConfiguration>(new ConfigurationBuilder().Build());
         services.AddLogging();

@@ -7,8 +7,10 @@ using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using NightTales.Application.Abstractions;
 using NightTales.Application.Abstractions.Flags;
 using NightTales.Application.Abstractions.Text;
 using OpenAI.Responses;
@@ -29,13 +31,15 @@ namespace NightTales.Infrastructure.OpenAI;
 /// <param name="client">The Responses client, built with zero SDK retries over the <c>"openai"</c> HttpClient.</param>
 /// <param name="options">The step models, efforts and timeouts.</param>
 /// <param name="pipelines">The per-step resilience pipelines, keyed <c>openai-&lt;step&gt;</c>.</param>
-/// <param name="flags">Reads the <c>provider_funds_exhausted</c> gate (12 CR-20).</param>
+/// <param name="flags">The scope factory the <c>provider_funds_exhausted</c> gate resolves through (12 CR-20):
+/// <see cref="IFeatureFlags"/> is scoped (a real read is a database call), so the singleton client takes the
+/// factory and resolves the reader per call — the same per-call scope <c>UsageMeter</c> opens for its row.</param>
 /// <param name="log">The call log.</param>
 public sealed partial class OpenAiTextClient(
     ResponsesClient client,
     IOptionsMonitor<OpenAiOptions> options,
     ResiliencePipelineProvider<string> pipelines,
-    IFeatureFlags flags,
+    IServiceScopeFactory flags,
     ILogger<OpenAiTextClient> log) : ITextClient
 {
     /// <summary>The flag that short-circuits every call to <c>ProviderFundsExhausted</c> (12 CR-20).</summary>
@@ -65,7 +69,13 @@ public sealed partial class OpenAiTextClient(
         var model = settings.Models[req.Step];
         var watch = Stopwatch.StartNew();
 
-        if (await flags.IsEnabledAsync(FundsExhaustedFlag, ct).ConfigureAwait(false))
+        await using var flagsScope = flags.CreateAsyncScope();
+        // Pin the scope to the run's owner before any AppDbContext resolution (09 README D10), exactly as
+        // UsageMeter pins the owner of the row it writes; the pin lives until the scope does. ISystemContext
+        // exists only on host compositions; unit-test containers without it still resolve the flag reader.
+        using var actor = flagsScope.ServiceProvider.GetService<ISystemContext>()?.For(req.Run.UserId);
+        if (await flagsScope.ServiceProvider.GetRequiredService<IFeatureFlags>()
+                .IsEnabledAsync(FundsExhaustedFlag, ct).ConfigureAwait(false))
         {
             return Finish(req, model, TextCallResult<T>.ProviderFundsExhausted(model, requestId: null), watch, null);
         }
