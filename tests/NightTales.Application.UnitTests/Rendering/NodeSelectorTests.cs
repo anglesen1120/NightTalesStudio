@@ -248,6 +248,25 @@ public sealed class NodeSelectorTests
     }
 
     [Fact]
+    public async Task FreeSlotsGauge_ReportsZeroForNonActiveNodesWithFreshHealth()
+    {
+        // CR-3: the poller records every registry row, including draining and down ones whose health is fresh.
+        var rig = new Rig();
+        var draining = rig.AddNode("draining", capacity: 4, inFlight: 0);
+        var down = rig.AddNode("down", capacity: 4, inFlight: 0);
+        rig.AddNode("active", capacity: 4, inFlight: 0);
+        await rig.PickAsync();
+
+        rig.Metrics.RecordLoad(draining.Name, draining.Capacity, 0, active: false);
+        rig.Metrics.RecordLoad(down.Name, down.Capacity, 0, active: false);
+        var gauge = rig.ReadGauge(NodeMetrics.FreeSlotsInstrumentName);
+
+        gauge["draining"].ShouldBe(0);
+        gauge["down"].ShouldBe(0);
+        gauge["active"].ShouldBe(4);
+    }
+
+    [Fact]
     public void CacheGauges_ReadTheCachedGpuAndDiskBlocks()
     {
         var rig = new Rig();

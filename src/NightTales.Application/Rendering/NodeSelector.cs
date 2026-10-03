@@ -65,7 +65,7 @@ public sealed partial class NodeSelector(
         foreach (var node in nodes)
         {
             var running = inFlight.GetValueOrDefault(node.Id);
-            metrics.RecordLoad(node.Name, node.Capacity, running);
+            metrics.RecordLoad(node.Name, node.Capacity, running, active: true);
 
             if (!cache.TryGet(node.Name, out var snapshot) || snapshot is null || now - snapshot.PulledAt > staleAfter)
             {

@@ -206,7 +206,7 @@ public sealed partial class NodeHealthPoller(
             var outcome = pulls[node.Name];
             var snapshot = outcome.Snapshot;
             RecordHealth(node, outcome);
-            metrics.RecordLoad(node.Name, node.Capacity, inFlight.GetValueOrDefault(node.Id));
+            metrics.RecordLoad(node.Name, node.Capacity, inFlight.GetValueOrDefault(node.Id), node.State == WorkerNodeState.Active);
 
             if (!leader)
             {

@@ -242,6 +242,42 @@ public sealed class NodeHealthPollerTests(TestDatabase database) : IntegrationTe
     }
 
     [Fact]
+    public async Task FreeSlotsGauge_IsZeroForDrainingAndDownNodesDespiteFreshHealth()
+    {
+        // CR-3: the selector never dispatches to a non-active row, so the gauge must not advertise its slots
+        // even while the node answers 200 + accepting (a draining node, or a down node on its first good pull).
+        RenderNodeDatabase.Reset(Database);
+        var clock = new FakeClock(Start);
+        await SeedNodeAsync("alpha", WorkerNodeState.Active);
+        await SeedNodeAsync("beta", WorkerNodeState.Draining);
+        await SeedNodeAsync("gamma", WorkerNodeState.Down);
+        using var harness = CreateHarness(clock);
+        foreach (var name in new[] { "alpha", "beta", "gamma" })
+        {
+            harness.Factory.Script(name, new ScriptedHttpStep(HttpStatusCode.OK, RenderNodeHealthBodies.Ok()));
+        }
+
+        var slots = new Dictionary<string, int>(StringComparer.Ordinal);
+        using var listener = new MeterListener();
+        listener.InstrumentPublished = (instrument, l) =>
+        {
+            if (ReferenceEquals(instrument.Meter, harness.Metrics.Meter) && instrument.Name == NodeMetrics.FreeSlotsInstrumentName)
+            {
+                l.EnableMeasurementEvents(instrument);
+            }
+        };
+        listener.SetMeasurementEventCallback<int>((_, value, tags, _) => slots[Tag(tags, NodeMetrics.NodeTagName)] = value);
+        listener.Start();
+
+        await harness.Poller.PollOnceAsync(Ct);
+        listener.RecordObservableInstruments();
+
+        slots["alpha"].ShouldBeGreaterThan(0, "an active, fresh, accepting node offers its free slots");
+        slots["beta"].ShouldBe(0, "a draining node is never dispatchable (D12)");
+        slots["gamma"].ShouldBe(0, "a down node stays out of dispatch until it is revived");
+    }
+
+    [Fact]
     public async Task DriftAlert_AfterThreePulls()
     {
         RenderNodeDatabase.Reset(Database);

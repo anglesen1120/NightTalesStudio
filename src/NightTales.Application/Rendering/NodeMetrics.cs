@@ -200,11 +200,12 @@ public sealed class NodeMetrics : IDisposable
     /// <param name="node">The node's name.</param>
     /// <param name="capacity">The operator's ceiling, <c>worker_nodes.capacity</c>.</param>
     /// <param name="inFlight">The derived count of <c>submitted</c> + <c>running</c> renders.</param>
-    public void RecordLoad(string node, int capacity, int inFlight)
+    /// <param name="active">Whether the registry row is <c>active</c>; a draining or down node is never dispatchable, whatever its health says.</param>
+    public void RecordLoad(string node, int capacity, int inFlight, bool active)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(node);
 
-        _load[node] = new NodeLoad(capacity, inFlight);
+        _load[node] = new NodeLoad(capacity, inFlight, active);
     }
 
     /// <summary>Counts one pick that returned <c>render_worker_unavailable</c>.</summary>
@@ -219,14 +220,15 @@ public sealed class NodeMetrics : IDisposable
 
     private IEnumerable<Measurement<int>> FreeSlotMeasurements(INodeHealthCache cache)
     {
-        // The dispatch predicate's health half (NodeSelector): fresh ∧ HTTP 200 ∧ accepting. A node failing it
+        // The dispatch predicate (NodeSelector): state = active ∧ fresh ∧ HTTP 200 ∧ accepting. A node failing it
         // offers no slot, so the gauge never advertises the capacity a stale or refusing node had before it
         // went quiet. Reads the clock and the cache only — a scrape never touches the database or a node.
         var now = _clock?.UtcNow;
 
         foreach (var (node, load) in _load)
         {
-            var free = cache.TryGet(node, out var snapshot)
+            var free = load.Active
+                && cache.TryGet(node, out var snapshot)
                 && snapshot is not null
                 && snapshot.HttpOk
                 && snapshot.Accepting
@@ -251,7 +253,7 @@ public sealed class NodeMetrics : IDisposable
         }
     }
 
-    private readonly record struct NodeLoad(int Capacity, int InFlight);
+    private readonly record struct NodeLoad(int Capacity, int InFlight, bool Active);
 
     /// <inheritdoc />
     public void Dispose() => _meter.Dispose();
