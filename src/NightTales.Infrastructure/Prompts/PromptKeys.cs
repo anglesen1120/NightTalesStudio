@@ -1,4 +1,4 @@
-using System.Text.Json;
+using NightTales.Application.Abstractions.Prompts;
 using NightTales.Domain.Common;
 using NightTales.Domain.Series;
 using NightTales.Domain.Stories.Prompts;
@@ -28,7 +28,6 @@ internal static class PromptKeys
     internal const string StructureVocab = "shared/structure-vocab.v1.json";
 
     private const string SchemaDirectory = "schemas/";
-    private const string StoryDirectory = "story/";
 
     /// <summary>The snake_case spelling of a topic, the form its preset's file name uses.</summary>
     /// <param name="topic">The narrative topic.</param>
@@ -44,15 +43,13 @@ internal static class PromptKeys
     /// <param name="topic">The narrative topic.</param>
     /// <param name="language">The content language.</param>
     /// <returns>For example <c>ghost.vi.v1</c>.</returns>
-    internal static string PresetName(Topic topic, Language language) =>
-        $"{Spelling(topic)}.{Spelling(language)}.v1";
+    internal static string PresetName(Topic topic, Language language) => StoryPresetKeys.Name(topic, language);
 
     /// <summary>The manifest key of a preset, for example <c>story/ghost.vi.v1.md</c>.</summary>
     /// <param name="topic">The narrative topic.</param>
     /// <param name="language">The content language.</param>
     /// <returns>The preset's key relative to <c>prompts/</c>.</returns>
-    internal static string Preset(Topic topic, Language language) =>
-        $"{StoryDirectory}{PresetName(topic, language)}.md";
+    internal static string Preset(Topic topic, Language language) => StoryPresetKeys.For(topic, language);
 
     /// <summary>The manifest key of a schema file name, for example <c>story.v1.json</c>.</summary>
     /// <param name="name">The schema's file name.</param>
@@ -95,5 +92,5 @@ internal static class PromptKeys
         _ => throw new ArgumentOutOfRangeException(nameof(step), step, "Unknown prompt step."),
     };
 
-    private static string Snake(string memberName) => JsonNamingPolicy.SnakeCaseLower.ConvertName(memberName);
+    private static string Snake(string memberName) => StoryPresetKeys.Spelling(memberName);
 }
