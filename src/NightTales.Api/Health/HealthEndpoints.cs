@@ -45,8 +45,10 @@ public static class HealthEndpoints
         ArgumentNullException.ThrowIfNull(endpoints);
 
         // Anonymous callers pass (the fallback policy only rejects the enrolment-only token, WT34), but
-        // AllowAnonymous would also bypass that rejection, so neither probe carries it.
-        endpoints.MapHealthChecks(LivePath, new HealthCheckOptions { Predicate = _ => false });
+        // AllowAnonymous would also bypass that rejection, so neither probe carries it. The liveness probe
+        // is a plain route rather than a health-check endpoint: the route is part of the published API
+        // surface, and the OpenAPI generator documents only route endpoints.
+        endpoints.MapGet(LivePath, () => Results.Ok());
 
         endpoints.MapHealthChecks(ReadyPath, new HealthCheckOptions
         {
