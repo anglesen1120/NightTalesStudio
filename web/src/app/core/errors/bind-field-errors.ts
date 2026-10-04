@@ -17,18 +17,23 @@ export interface BindFieldErrorsOptions {
   readonly markTouched?: boolean;
 }
 
-/** A segment is a control name (`title`, `text`) or a FormArray index (`2`); anything else never resolves. */
-const IDENTIFIER_SEGMENT = /^[A-Za-z_$][A-Za-z0-9_$]*$/;
+/** A FormArray index is `/^\d+$/`; any other segment is a control name, but a name may not be empty, hold
+ * whitespace, or look numeric (`-1`, `1.5`, `1e3` would index-parse or be silently dropped by `get`). */
 const INDEX_SEGMENT = /^\d+$/;
-
+const NUMERIC_SEGMENT = /^[-+]?\d*\.?\d+(e[-+]?\d+)?$/i;
+const WHITESPACE_SEGMENT = /\s/;
 /**
  * Resolves a dotted pointer to a control. `FormArray` segments are indexes; `length` and the like never resolve.
- * Malformed segments (`-1`, `1.5`, `1abc`, empty) and disabled controls count as unmapped: a server error is never
- * written onto a control the user cannot edit.
+ * A segment is an index (`/^\d+$/`) or a control name: names may not be empty, hold whitespace, or look numeric
+ * (`-1`, `1.5`, `1e3` would index-parse or be silently dropped by `get`). Disabled controls count as unmapped:
+ * a server error is never written onto a control the user cannot edit.
  */
 function resolve(form: AbstractControl, pointer: string, separator: string): AbstractControl | null {
   const segments = pointer.split(separator);
-  if (segments.some((segment) => !IDENTIFIER_SEGMENT.test(segment) && !INDEX_SEGMENT.test(segment))) return null;
+  const malformed = segments.some(
+    (segment) => segment === '' || WHITESPACE_SEGMENT.test(segment) || (!INDEX_SEGMENT.test(segment) && NUMERIC_SEGMENT.test(segment)),
+  );
+  if (malformed) return null;
   const found = form.get(segments);
   return found instanceof AbstractControl && found.enabled ? found : null;
 }

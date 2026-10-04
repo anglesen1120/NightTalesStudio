@@ -139,6 +139,13 @@ describe('bindFieldErrors', () => {
     },
   );
 
+  it('BindFieldErrors_BindsControlNameWithHyphen', () => {
+    const form = new FormGroup({ 'story-title': new FormControl('', { nonNullable: true }) });
+    const unmapped = bindFieldErrors(form, errorWith({ 'story-title': ['x'] }));
+    expect(unmapped).toEqual([]);
+    expect(serverOf(form.controls['story-title'])).toEqual({ messageKeys: ['errors.validation_failed'] });
+  });
+
   it('BindFieldErrors_DisabledOrDanglingTarget_IsUnmapped_AndBindsNoControl', () => {
     const form = storyForm();
     form.controls.segments.at(1).controls.text.disable();
