@@ -8,6 +8,11 @@ mat-form-field {
   width: 100%;
 }
 
+mat-select:focus-visible {
+  outline: 3px solid var(--nts-color-focus);
+  outline-offset: 3px;
+}
+
 nts-icon-language {
   width: 18px;
   height: 18px;

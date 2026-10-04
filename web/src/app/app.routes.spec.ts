@@ -16,8 +16,9 @@ class StubShell {}
 const tick = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
 const fresh = () => ({ accessToken: fakeJwt('user'), expiresAt: Date.now() + 600_000 });
 
+/** The shell parent is the one entry guarded by authGuard (sibling public/auth routes from later tasks are not). */
 function shellParent(): Route {
-  const parent = routes.find((route) => route.path === '');
+  const parent = routes.find((route) => route.canActivate?.includes(authGuard) === true && typeof route.loadComponent === 'function');
   if (parent === undefined) throw new Error('shell parent missing');
   return parent;
 }
@@ -63,8 +64,9 @@ function onLogin(router: Router): boolean {
 }
 
 describe('AppRoutes_RouteTable', () => {
-  it('has exactly one entry: the shell parent guarded by authGuard/authChildGuard with an empty children array', () => {
-    expect(routes).toHaveLength(1);
+  it('has exactly one shell parent guarded by authGuard/authChildGuard with an empty children array', () => {
+    const parents = routes.filter((route) => route.canActivate?.includes(authGuard) === true && typeof route.loadComponent === 'function');
+    expect(parents).toHaveLength(1);
     const parent = shellParent();
     expect(parent.path).toBe('');
     expect(parent.canActivate).toEqual([authGuard]);

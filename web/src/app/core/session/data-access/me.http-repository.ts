@@ -11,12 +11,13 @@ function isFeatureKey(value: unknown): value is FeatureKey {
 }
 
 /**
- * `MeDto` → `MeSummary`. `features` is defensive to a missing member (`?? []`) and filtered through the allow-list, so
- * an unknown key is dropped; the server's `uiLocale` is authoritative, an unknown value falls back to `vi` with one
- * dev-only warning.
+ * `MeDto` → `MeSummary`. `features` degrades to `[]` when it is not an array (missing, null or a wrong type), is
+ * filtered through the allow-list (an unknown or non-string entry is dropped) and de-duplicated in first-seen order;
+ * the server's `uiLocale` is authoritative, an unknown value falls back to `vi` with one dev-only warning.
  */
 export function toMeSummary(dto: MeDto): MeSummary {
-  const features = (dto.features as readonly unknown[] | undefined) ?? [];
+  const rawFeatures: unknown = dto.features;
+  const features: readonly unknown[] = Array.isArray(rawFeatures) ? rawFeatures : [];
   const raw: unknown = dto.uiLocale;
   let uiLocale: AppLocale = 'vi';
   if (isAppLocale(raw)) {
@@ -30,7 +31,7 @@ export function toMeSummary(dto: MeDto): MeSummary {
     email: dto.email,
     role: dto.role,
     uiLocale,
-    features: features.filter(isFeatureKey),
+    features: [...new Set(features.filter(isFeatureKey))],
   };
 }
 

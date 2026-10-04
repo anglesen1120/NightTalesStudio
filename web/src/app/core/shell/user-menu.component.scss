@@ -13,6 +13,12 @@
   color: var(--nts-color-on-surface);
 }
 
+.user-menu__trigger:focus-visible,
+button[mat-menu-item]:focus-visible {
+  outline: 3px solid var(--nts-color-focus);
+  outline-offset: 3px;
+}
+
 .user-menu__avatar {
   display: grid;
   width: 30px;

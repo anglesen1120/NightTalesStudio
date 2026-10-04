@@ -20,7 +20,7 @@ export interface CursorList<T> {
   readonly nextCursor: Signal<string | null>;
   readonly loading: Signal<boolean>;
   readonly error: Signal<AppError | null>;
-  /** `false` once a page came back with `nextCursor === null`; `true` before the first load. */
+  /** `false` once a page came back with `nextCursor === null` (or `''`, treated as exhausted); `true` before the first load. */
   readonly hasMore: Signal<boolean>;
   /** Loads the next page. Ignored while a request is in flight and after the last page. Never rejects. */
   loadMore(): Promise<void>;
@@ -65,8 +65,9 @@ export function cursorList<T>(options: CursorListOptions<T>): CursorList<T> {
     try {
       const page = await options.fetchPage(cursorPage(options.initialLimit, nextCursor()));
       items.update((current) => [...current, ...page.items]);
-      nextCursor.set(page.nextCursor);
-      exhausted.set(page.nextCursor === null);
+      const next = page.nextCursor === '' ? null : page.nextCursor;
+      nextCursor.set(next);
+      exhausted.set(next === null);
     } catch (caught) {
       error.set(mapError(caught));
     } finally {

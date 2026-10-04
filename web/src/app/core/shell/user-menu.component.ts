@@ -32,6 +32,6 @@ export class UserMenuComponent {
 
   protected initials(name: string): string {
     const parts = name.trim().split(/\s+/u).filter(Boolean);
-    return parts.slice(0, 2).map((part) => part[0]?.toLocaleUpperCase() ?? '').join('') || 'NT';
+    return parts.slice(0, 2).map((part) => [...part][0]?.toLocaleUpperCase() ?? '').join('') || 'NT';
   }
 }

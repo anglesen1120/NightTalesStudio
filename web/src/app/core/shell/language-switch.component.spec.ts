@@ -23,7 +23,11 @@ describe('LanguageSwitchComponent', () => {
   it('associates the translated language label with the select and keeps endonym options literal', async () => {
     const fixture = await createLanguageSwitch();
     const selectElement = (fixture.nativeElement as HTMLElement).querySelector('mat-select');
-    expect(selectElement?.getAttribute('aria-label')).toBe('Language');
+    const labelledBy = selectElement?.getAttribute('aria-labelledby') ?? '';
+    expect(labelledBy).not.toBe('');
+    expect(
+      labelledBy.split(/\s+/u).some((id) => document.getElementById(id)?.textContent?.trim() === 'Language'),
+    ).toBe(true);
 
     const select = fixture.debugElement.query(By.directive(MatSelect)).componentInstance as MatSelect;
     select.open();

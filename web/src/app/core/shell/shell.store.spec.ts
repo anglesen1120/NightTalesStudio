@@ -232,4 +232,25 @@ describe('ShellStore', () => {
     await tick();
     expect(first.locale.activations).toContainEqual({ locale: 'en', persist: false });
   });
+
+  it('init_LoadsTheProfileOnceWhenASessionRefreshingAtMountBecomesAuthenticated', async () => {
+    const { store, session, repo } = await setup({ signedIn: false });
+    const api = TestBed.inject(SessionApi) as FakeSessionApi;
+    api.mode = 'deferred';
+    session.signIn({ accessToken: fakeJwt('user'), expiresAt: Date.now() + 1_000 }, 'user', []);
+    const flight = session.ensureFreshAccessToken({ userAction: true });
+    await tick();
+    expect(session.status()).toBe('refreshing');
+    TestBed.runInInjectionContext(() => store.init());
+    await TestBed.inject(ApplicationRef).whenStable();
+    await tick();
+    expect(repo.getCalls).toBe(0);
+    api.resolveNext({ accessToken: fakeJwt('user'), expiresAt: Date.now() + 600_000 });
+    await flight;
+    await TestBed.inject(ApplicationRef).whenStable();
+    await tick();
+    expect(session.status()).toBe('authenticated');
+    expect(repo.getCalls).toBe(1);
+    expect(session.me()).toEqual(repo.profile);
+  });
 });

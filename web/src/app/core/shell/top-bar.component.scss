@@ -27,6 +27,11 @@
   color: var(--nts-color-on-surface);
 }
 
+.top-bar__menu:focus-visible {
+  outline: 3px solid var(--nts-color-focus);
+  outline-offset: 3px;
+}
+
 .top-bar__menu:hover {
   border-color: var(--nts-color-on-surface);
   background: var(--nts-color-surface-variant);

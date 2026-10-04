@@ -94,6 +94,104 @@ async function expectNoHorizontalScroll(page: Page): Promise<void> {
   );
 }
 
+/** Selectors of the regions QA-6 checks: the top bar (banner), the main content and the realtime strip. */
+const CLIP_REGIONS = ['header.shell__header', 'main#content', 'nts-realtime-status'] as const;
+
+/**
+ * `overflow-x: clip` on the shell hides overflow from `scrollWidth`, so measure each visible element's rectangle
+ * against the viewport instead. Hidden elements (`display: none`, `visibility: hidden`, no box) are ignored; the
+ * off-canvas side nav and the inert closed drawer are outside these three regions.
+ */
+async function clipOffenders(page: Page): Promise<string[]> {
+  return page.evaluate((regions) => {
+    const viewportWidth = document.documentElement.clientWidth;
+    const offenders: string[] = [];
+    for (const selector of regions) {
+      const root = document.querySelector(selector);
+      if (root === null) continue;
+      for (const element of [root, ...Array.from(root.querySelectorAll('*'))]) {
+        const style = getComputedStyle(element);
+        if (style.display === 'none' || style.visibility === 'hidden') continue;
+        if (element.closest('[inert][aria-hidden="true"]') !== null) continue;
+        const rect = element.getBoundingClientRect();
+        if (rect.width === 0 && rect.height === 0) continue;
+        if (rect.right > viewportWidth + 0.5 || rect.left < -0.5) {
+          const classes = String(element.getAttribute('class') ?? '').trim().split(/\s+/).filter(Boolean).join('.');
+          const label = `${element.tagName.toLowerCase()}${classes ? '.' + classes : ''}`;
+          offenders.push(`${selector} > ${label}: left=${rect.left.toFixed(1)} right=${rect.right.toFixed(1)} viewport=${viewportWidth}`);
+        }
+      }
+    }
+    return offenders;
+  }, CLIP_REGIONS);
+}
+
+async function expectNoElementOverflow(page: Page): Promise<void> {
+  expect(await clipOffenders(page), 'elements outside the 360 px viewport').toEqual([]);
+}
+
+/** Interactive targets that are on screen right now, with their measured box. */
+async function interactiveTargets(page: Page): Promise<{ target: string; width: number; height: number }[]> {
+  return page.evaluate(() => {
+    const found: { target: string; width: number; height: number }[] = [];
+    const roots = ['header.shell__header', 'main#content', 'nts-realtime-status', 'nts-side-nav'];
+    for (const selector of roots) {
+      const root = document.querySelector(selector);
+      if (root === null || root.closest('[inert]') !== null) continue;
+      for (const element of Array.from(root.querySelectorAll('a[href], button, [role="combobox"], [role="button"], select, input'))) {
+        const style = getComputedStyle(element);
+        if (style.display === 'none' || style.visibility === 'hidden') continue;
+        const rect = element.getBoundingClientRect();
+        if (rect.width === 0 && rect.height === 0) continue;
+        const name = element.getAttribute('aria-label') ?? element.textContent?.trim().slice(0, 30) ?? '';
+        found.push({ target: `${selector} ${element.tagName.toLowerCase()}[${name}]`, width: rect.width, height: rect.height });
+      }
+    }
+    return found;
+  });
+}
+
+async function expectTargetsAtLeast24(page: Page): Promise<void> {
+  const targets = await interactiveTargets(page);
+  expect(targets.length, 'no interactive target found').toBeGreaterThan(0);
+  const small = targets.filter((entry) => entry.width < 24 || entry.height < 24);
+  expect(small, 'interactive targets under 24x24 px').toEqual([]);
+}
+
+interface FocusSample {
+  label: string;
+  outlineStyle: string;
+  outlineWidth: number;
+  boxShadow: string;
+}
+
+/** Tabs through the shell and records the focus indicator of every stop (keyboard focus, so `:focus-visible` applies). */
+async function tabWalk(page: Page, stops: number): Promise<FocusSample[]> {
+  const samples: FocusSample[] = [];
+  for (let index = 0; index < stops; index++) {
+    await page.keyboard.press('Tab');
+    samples.push(
+      await page.evaluate(() => {
+        const element = document.activeElement as HTMLElement;
+        const style = getComputedStyle(element);
+        const label = element.getAttribute('aria-label') ?? element.getAttribute('role') ?? element.textContent?.trim().slice(0, 30) ?? element.tagName;
+        return {
+          label: `${element.tagName.toLowerCase()}[${label}]`,
+          outlineStyle: style.outlineStyle,
+          outlineWidth: parseFloat(style.outlineWidth),
+          boxShadow: style.boxShadow,
+        };
+      }),
+    );
+  }
+  return samples;
+}
+
+/** A visible focus indicator: a drawn outline or a box-shadow ring. */
+function withoutFocusIndicator(samples: FocusSample[]): FocusSample[] {
+  return samples.filter((sample) => !((sample.outlineStyle !== 'none' && sample.outlineWidth > 0) || sample.boxShadow !== 'none'));
+}
+
 test.use({ locale: 'vi-VN' });
 
 test.describe('shell (desktop)', () => {
@@ -176,5 +274,82 @@ test.describe('shell (360 px)', () => {
     await switchLanguage(page, 'vi', 'en');
     await expect(page.getByRole('button', { name: LABELS.en.open })).toBeVisible();
     await expectNoHorizontalScroll(page);
+  });
+});
+
+test.describe('shell (A14: themes, targets, focus, reduced motion)', () => {
+  for (const theme of ['dark', 'light'] as const) {
+    for (const lang of ['vi', 'en'] as const) {
+      test(`axe (WCAG 2.1 AA, incl. color-contrast) on the shell in ${theme} theme, ${lang}`, async ({ page }) => {
+        // PreferencesStore storage key and shape (core/prefs/preferences.store.ts); no app hook needed.
+        await page.addInitScript((value) => {
+          localStorage.setItem('nts.prefs.v1', JSON.stringify({ theme: value }));
+        }, theme);
+        await openShell(page);
+        if (lang === 'en') await switchLanguage(page, 'vi', 'en');
+        await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
+        await expectA11yClean(page);
+      });
+    }
+  }
+
+  test('desktop: interactive targets are >= 24 px and keyboard focus shows an indicator', async ({ page }) => {
+    await openShell(page);
+    await expectTargetsAtLeast24(page);
+    const samples = await tabWalk(page, 3);
+    const labels = samples.map((sample) => sample.label);
+    expect(labels[0], 'first Tab stop is the skip link').toContain(LABELS.vi.skip);
+    const skipBox = await page.getByRole('link', { name: LABELS.vi.skip }).boundingBox();
+    expect(skipBox?.width ?? 0, 'focused skip link width').toBeGreaterThanOrEqual(24);
+    expect(skipBox?.height ?? 0, 'focused skip link height').toBeGreaterThanOrEqual(24);
+    expect(withoutFocusIndicator(samples), `Tab stops without a focus indicator: ${JSON.stringify(samples)}`).toEqual([]);
+    expect(labels.some((label) => label.includes('combobox')), `language select is a Tab stop: ${labels.join(', ')}`).toBe(true);
+    expect(labels.some((label) => label.includes(LABELS.vi.account)), `user menu is a Tab stop: ${labels.join(', ')}`).toBe(true);
+  });
+
+  test.describe('360 px', () => {
+    test.use({ viewport: { width: 360, height: 740 } });
+
+    for (const lang of ['vi', 'en'] as const) {
+      test(`no element is clipped outside the viewport in ${lang} (top bar, main, realtime strip)`, async ({ page }) => {
+        await openShell(page);
+        if (lang === 'en') await switchLanguage(page, 'vi', 'en');
+        await expectNoElementOverflow(page);
+        // The mocked ticket 503 drives the realtime service into connecting/backoff, which renders the strip.
+        await expect(page.locator('.realtime-status')).toBeVisible();
+        await expectNoElementOverflow(page);
+      });
+    }
+
+    test('hamburger, language select and user menu: targets >= 24 px, focus indicator on keyboard focus', async ({ page }) => {
+      await openShell(page);
+      await expectTargetsAtLeast24(page);
+      const samples = await tabWalk(page, 4);
+      const labels = samples.map((sample) => sample.label);
+      expect(labels[0], 'first Tab stop is the skip link').toContain(LABELS.vi.skip);
+      expect(labels.some((label) => label.includes(LABELS.vi.open)), `hamburger is a Tab stop: ${labels.join(', ')}`).toBe(true);
+      expect(withoutFocusIndicator(samples), `Tab stops without a focus indicator: ${JSON.stringify(samples)}`).toEqual([]);
+    });
+
+    test('reduced motion: skip link and realtime strip run no animation; without it the reconnect icon animates', async ({ page }) => {
+      await page.emulateMedia({ reducedMotion: 'reduce' });
+      await openShell(page);
+      await expect(page.locator('.realtime-status')).toBeVisible();
+      const animations = await page.evaluate(() =>
+        ['.shell__skip-link', '.realtime-status', '.realtime-status__icon--moving'].map((selector) => {
+          const element = document.querySelector(selector);
+          const style = element === null ? null : getComputedStyle(element);
+          return { selector, found: element !== null, animationName: style?.animationName, transitionDuration: style?.transitionDuration };
+        }),
+      );
+      for (const entry of animations.filter((item) => item.found)) {
+        expect(entry.animationName, `${entry.selector} animation under reduced motion`).toBe('none');
+      }
+      expect(animations.find((entry) => entry.selector === '.realtime-status__icon--moving')?.found, 'moving icon rendered').toBe(true);
+
+      await page.emulateMedia({ reducedMotion: 'no-preference' });
+      const moving = await page.evaluate(() => getComputedStyle(document.querySelector('.realtime-status__icon--moving')!).animationName);
+      expect(moving, 'control: the icon animates when motion is allowed').not.toBe('none');
+    });
   });
 });

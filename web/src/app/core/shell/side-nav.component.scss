@@ -44,6 +44,11 @@ mat-nav-list {
   border-left: 4px solid transparent;
 }
 
+.side-nav__link:focus-visible {
+  outline: 3px solid var(--nts-color-focus);
+  outline-offset: 3px;
+}
+
 .side-nav__link:hover {
   background: var(--nts-color-soft);
   color: var(--nts-color-ink);

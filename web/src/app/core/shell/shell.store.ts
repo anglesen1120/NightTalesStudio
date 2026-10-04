@@ -120,7 +120,19 @@ export class ShellStore {
       },
       { injector },
     );
+    // The first attempt is immediate; the effect retries whenever the session becomes eligible later (e.g. it was
+    // `refreshing` at mount). A failed load sets `profileError`, which keeps the effect quiet until `retryProfile()`.
     void this.loadMe();
+    effect(
+      () => {
+        const eligible = this.session.mode() === 'full' && this.session.status() === 'authenticated';
+        this.session.generation();
+        const missing = this.session.me() === null;
+        const failed = this.profileErrorState() !== null;
+        if (eligible && missing && !failed) untracked(() => void this.loadMe());
+      },
+      { injector },
+    );
   }
 
   /**
@@ -159,7 +171,10 @@ export class ShellStore {
     this.localeSavingState.set(true);
     try {
       const summary = await this.meRepository.updateUiLocale(locale);
-      if (this.isCurrent(generation, token, this.localeToken)) this.session.setMe(summary);
+      if (this.isCurrent(generation, token, this.localeToken)) {
+        this.meToken += 1; // the PATCH result is newer than any GET still in flight: that GET must be discarded
+        this.session.setMe(summary);
+      }
     } catch (cause) {
       if (!this.isCurrent(generation, token, this.localeToken)) return;
       if (this.toAppError(cause).status === 401) return;

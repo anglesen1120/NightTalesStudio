@@ -3,7 +3,6 @@
   <mat-select
     [value]="locale()"
     [disabled]="saving()"
-    [aria-label]="'shell.language.label' | transloco"
     (valueChange)="selectLocale($event)"
   >
     <mat-select-trigger>
