@@ -32,7 +32,47 @@ public sealed class FetcherOptionsValidator(IPublicSuffixList psl) : IValidateOp
             }
         }
 
+        RequirePositive(problems, nameof(FetcherOptions.TotalTimeoutSeconds), options.TotalTimeoutSeconds);
+        RequirePositive(problems, nameof(FetcherOptions.RobotsTimeoutSeconds), options.RobotsTimeoutSeconds);
+        RequirePositive(problems, nameof(FetcherOptions.RobotsCacheHours), options.RobotsCacheHours);
+        RequirePositive(problems, nameof(FetcherOptions.CrawlDelayMaxSeconds), options.CrawlDelayMaxSeconds);
+        RequirePositive(problems, nameof(FetcherOptions.MaxResponseBytes), options.MaxResponseBytes);
+        RequirePositive(problems, nameof(FetcherOptions.MaxRobotsBytes), options.MaxRobotsBytes);
+        RequirePositive(problems, nameof(FetcherOptions.MinTextChars), options.MinTextChars);
+        RequirePositive(problems, nameof(FetcherOptions.MaxTextChars), options.MaxTextChars);
+        RequirePositive(problems, nameof(FetcherOptions.ExtractTimeoutSeconds), options.ExtractTimeoutSeconds);
+        RequirePositive(problems, nameof(FetcherOptions.ExtractMaxElements), options.ExtractMaxElements);
+        RequirePositive(problems, nameof(FetcherOptions.ExtractMaxDepth), options.ExtractMaxDepth);
+        if (options.MaxRedirects is < 0 or > 10)
+        {
+            problems.Add($"'{FetcherOptions.SectionName}:{nameof(FetcherOptions.MaxRedirects)}' must be between 0 and 10.");
+        }
+
+        if (options.MinTextChars > options.MaxTextChars)
+        {
+            problems.Add($"'{FetcherOptions.SectionName}:{nameof(FetcherOptions.MinTextChars)}' must not exceed MaxTextChars.");
+        }
+
+        if (string.IsNullOrWhiteSpace(options.PublicHost) || options.PublicHost.Contains('/', StringComparison.Ordinal)
+            || options.PublicHost.Contains(':', StringComparison.Ordinal) || options.PublicHost.Any(char.IsWhiteSpace))
+        {
+            problems.Add($"'{FetcherOptions.SectionName}:{nameof(FetcherOptions.PublicHost)}' must be a bare host name (no scheme, path or port).");
+        }
+
+        if (string.IsNullOrWhiteSpace(options.AcceptLanguage))
+        {
+            problems.Add($"'{FetcherOptions.SectionName}:{nameof(FetcherOptions.AcceptLanguage)}' must not be empty.");
+        }
+
         return problems.Count == 0 ? ValidateOptionsResult.Success : ValidateOptionsResult.Fail(problems);
+    }
+
+    private static void RequirePositive(List<string> problems, string name, int value)
+    {
+        if (value < 1)
+        {
+            problems.Add($"'{FetcherOptions.SectionName}:{name}' must be at least 1.");
+        }
     }
 
     private bool IsRegistrableDomain(string? entry) =>

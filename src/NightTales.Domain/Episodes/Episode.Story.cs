@@ -1,4 +1,5 @@
 using ErrorOr;
+using NightTales.Domain.Stories.Events;
 using NightTales.Domain.Stories.Generation;
 using NightTales.Domain.Stories.Generation.Events;
 
@@ -270,6 +271,44 @@ public sealed partial class Episode
 
         return Result.Success;
     }
+
+    /// <summary>
+    /// Makes an owner's edit the episode's current story version (02.3.1-T1): allowed while the episode is
+    /// <c>draft</c> or <c>story_review</c> and nothing else — <c>story_approved</c> must be reopened first, and a
+    /// generating or rendering episode belongs to its job. The status does not change; <see cref="StoryVersionSaved"/>
+    /// is raised for the UI's <c>EpisodeUpdated</c>.
+    /// </summary>
+    /// <param name="storyVersionId">The new <c>edited</c> version, which becomes the current one.</param>
+    /// <param name="version">Its 1-based version number.</param>
+    /// <param name="now">The caller's clock reading.</param>
+    /// <returns><c>Success</c>, or <see cref="InvalidStateCode"/> (409) when the episode cannot be edited now.</returns>
+    public ErrorOr<Success> SaveEditedStoryVersion(Guid storyVersionId, int version, DateTimeOffset now)
+    {
+        if (storyVersionId == Guid.Empty)
+        {
+            return Error.Validation("story_version_id_required", "A story version id is required.");
+        }
+
+        if (!CanEditStory)
+        {
+            return EditNotAllowed();
+        }
+
+        CurrentStoryVersionId = storyVersionId;
+        UpdatedAt = now;
+
+        Raise(new StoryVersionSaved(Id, UserId, storyVersionId, version, now));
+
+        return Result.Success;
+    }
+
+    /// <summary>Whether the owner may edit the story now: <c>draft</c> or <c>story_review</c> only (02.3.1-T1).</summary>
+    public bool CanEditStory => Status is EpisodeStatus.Draft or EpisodeStatus.StoryReview;
+
+    /// <summary>The 409 for an edit outside <c>draft</c>/<c>story_review</c> (never <c>story_not_in_review</c>, 02 CR-8).</summary>
+    /// <returns>The <see cref="InvalidStateCode"/> conflict.</returns>
+    public static Error EditNotAllowed() =>
+        Error.Conflict(InvalidStateCode, "The story cannot be edited in the episode's current state.");
 
     private static Error InvalidState() =>
         Error.Conflict(InvalidStateCode, "A story cannot be generated in the episode's current state.");

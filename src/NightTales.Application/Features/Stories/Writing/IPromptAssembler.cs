@@ -1,3 +1,5 @@
+using ErrorOr;
+
 namespace NightTales.Application.Features.Stories.Writing;
 
 /// <summary>
@@ -11,4 +13,12 @@ public interface IPromptAssembler
     /// <param name="ctx">The catalog coordinates of the call.</param>
     /// <returns>The system prompt, the data object JSON, the prompt version and the cache key.</returns>
     AssembledPrompt Assemble(StoryWriteRequest req, AssemblerContext ctx);
+
+    /// <summary>
+    /// Assembles the review call (02.6.1-T1): the static review system prompt for <c>(language, tier)</c> and the one JSON
+    /// data object that carries the draft, the facts, the bible and the ear-rule questions.
+    /// </summary>
+    /// <param name="req">The review request.</param>
+    /// <returns>The two strings, the composite prompt version and the prompt-cache key; or <c>prompt_too_large</c> when the data object exceeds twice <c>Story:Prompt:MaxDataObjectBytes</c>.</returns>
+    ErrorOr<AssembledPrompt> Review(Review.StoryReviewRequest req);
 }

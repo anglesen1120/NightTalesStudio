@@ -55,9 +55,7 @@ public sealed class ModerationEvent : Entity, IUserOwned, ICreatedAt
 
         var text = string.IsNullOrEmpty(excerpt)
             ? null
-            : excerpt.Length <= ExcerptMaxLength
-                ? excerpt
-                : excerpt[..ExcerptMaxLength];
+            : ReplaceLoneSurrogates(excerpt.Length <= ExcerptMaxLength ? excerpt : CutToExcerptLimit(excerpt));
 
         var moderationEvent = new ModerationEvent
         {
@@ -74,5 +72,43 @@ public sealed class ModerationEvent : Entity, IUserOwned, ICreatedAt
         moderationEvent._categories.AddRange(categories);
 
         return moderationEvent;
+    }
+
+    /// <summary>
+    /// Cuts at the cap without leaving half a surrogate pair: a trailing high surrogate cannot be
+    /// encoded as UTF-8, so the insert would fail and the evidence row would be lost.
+    /// </summary>
+    private static string CutToExcerptLimit(string excerpt)
+    {
+        var text = excerpt[..ExcerptMaxLength];
+
+        return char.IsHighSurrogate(text[^1]) ? text[..^1] : text;
+    }
+
+    /// <summary>
+    /// Replaces every unpaired surrogate (anywhere in the text) with U+FFFD: Postgres rejects a lone
+    /// surrogate as invalid UTF-8, which would lose the evidence row. Valid pairs are kept intact.
+    /// </summary>
+    private static string ReplaceLoneSurrogates(string text)
+    {
+        char[]? fixedText = null;
+
+        for (var i = 0; i < text.Length; i++)
+        {
+            var c = text[i];
+            if (char.IsHighSurrogate(c) && i + 1 < text.Length && char.IsLowSurrogate(text[i + 1]))
+            {
+                i++;
+                continue;
+            }
+
+            if (char.IsSurrogate(c))
+            {
+                fixedText ??= text.ToCharArray();
+                fixedText[i] = '\uFFFD';
+            }
+        }
+
+        return fixedText is null ? text : new string(fixedText);
     }
 }

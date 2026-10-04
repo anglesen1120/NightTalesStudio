@@ -4,6 +4,11 @@ History moved out of STATUS.md to keep the live file small. The initial archive 
 
 ## Resume-here history (Current/Previous blocks, Next actions)
 
+### Superseded Session 5 step-0 block (2026-10-04, before the Session 5 combined PR)
+
+- **Current (2026-10-03).** Session 4 next wave merged as one combined PR (#119 → `develop` `c004846`): 09.2.5-T2 owner seed, 02.3.4-T1 quality checker, 02.2.1-T2 OpenAI text client + writer, 02.2.2-T2 generate-story command, 02.5.1-T1 sources + fetch tasks. Each branch closed its tier gates; combined tip: local full gate green, integration review 0 findings. CI `integration` on #119 hung and was cancelled (Session 5 step 0).
+- **Next:** start **Session 5** (§Session 5 plan). Step 0 (CI `integration` hang on `develop`) is fixed in PR `fix/ci-generate-story-hang`; after the owner merges it, start lanes A–D.
+
 ### Superseded Session 4 plan section (2026-10-03, replaced by the Session 5 plan)
 
 **Recorded at the owner's request 2026-10-03** (start at the next session). Selection: phase-P task files whose hard `Depends on` are all merged (headers parsed 2026-10-03 against `develop` `36edb78`). Tiers are proposed; the orchestrator raises them per `~/.omp/agent/RULES.md`. Web UI (plan 10) stays in its own session.

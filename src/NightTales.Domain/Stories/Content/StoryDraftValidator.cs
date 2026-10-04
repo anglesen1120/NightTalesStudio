@@ -67,6 +67,9 @@ public static class StoryDraftValidator
     /// <summary>An unmapped structure free string is over 40 characters or carries a URL/markup (02 T71).</summary>
     public const string StructureTextInvalid = "structure_text_invalid";
 
+    /// <summary>A story text field carries NUL or another C0 control character other than a line feed, carriage return or tab.</summary>
+    public const string ControlCharactersInvalid = "control_characters_invalid";
+
     /// <summary>The sentence punctuation a bare-domain token may carry at its end (02 T70).</summary>
     private static readonly char[] TokenTrailingPunctuation =
         ['.', ',', ';', ':', '!', '?', ')', '(', '"', '\'', '\u2026', '\u201d', '\u00bb'];
@@ -82,6 +85,7 @@ public static class StoryDraftValidator
 
         var issues = new List<ValidationIssue>();
 
+        ValidateControlCharacters(content, issues);
         ValidateMetadata(content, rules, issues);
         ValidateHook(content.Hook, rules, issues);
         ValidateSegments(content, rules, issues);
@@ -91,6 +95,67 @@ public static class StoryDraftValidator
         ValidateLength(content, rules, issues);
 
         return new ValidationResult(issues);
+    }
+
+    /// <summary>
+    /// The control-character rule over every string the editor and the writer can persist: title, description,
+    /// tags, the hook, paragraph and ending texts and beats, and the structure strings. The closed-vocabulary
+    /// fields (keywords, fact refs, warnings, narrator mode) are already refused by their own rules.
+    /// Postgres cannot store NUL, so a draft carrying one must be a typed issue and never reach the database.
+    /// </summary>
+    private static void ValidateControlCharacters(StoryContentV1 content, List<ValidationIssue> issues)
+    {
+        CheckControlCharacters(content.Title, SegmentAddress.Title, "title", issues);
+        CheckControlCharacters(content.Description, SegmentAddress.Meta, "description", issues);
+
+        var tags = OrEmpty(content.Tags);
+        for (var index = 0; index < tags.Count; index++)
+        {
+            CheckControlCharacters(tags[index], SegmentAddress.Meta, FormattableString.Invariant($"tags[{index}]"), issues);
+        }
+
+        CheckControlCharacters(content.Hook?.Text, SegmentAddress.Hook, "hook.text", issues);
+        CheckControlCharacters(content.Hook?.Beat, SegmentAddress.Hook, "hook.beat", issues);
+        var paragraphs = OrEmpty(content.Paragraphs);
+        for (var index = 0; index < paragraphs.Count; index++)
+        {
+            CheckControlCharacters(
+                paragraphs[index]?.Text,
+                SegmentAddress.Paragraph(index),
+                FormattableString.Invariant($"paragraphs[{index}].text"),
+                issues);
+            CheckControlCharacters(
+                paragraphs[index]?.Beat,
+                SegmentAddress.Paragraph(index),
+                FormattableString.Invariant($"paragraphs[{index}].beat"),
+                issues);
+        }
+
+        CheckControlCharacters(content.Ending?.Text, SegmentAddress.Ending, "ending.text", issues);
+        CheckControlCharacters(content.Ending?.Beat, SegmentAddress.Ending, "ending.beat", issues);
+
+        if (content.Structure is { } structure)
+        {
+            CheckControlCharacters(structure.SubGenre, SegmentAddress.Meta, "structure.sub_genre", issues);
+            CheckControlCharacters(structure.Setting, SegmentAddress.Meta, "structure.setting", issues);
+            CheckControlCharacters(structure.Opening, SegmentAddress.Meta, "structure.opening", issues);
+            CheckControlCharacters(structure.TwistType, SegmentAddress.Meta, "structure.twist_type", issues);
+        }
+    }
+
+    /// <summary>Adds one blocking issue naming <paramref name="field"/> when <paramref name="text"/> carries a forbidden control character.</summary>
+    private static void CheckControlCharacters(string? text, string address, string field, List<ValidationIssue> issues)
+    {
+        if (StoryText.FindControlCharacter(text) is not { } control)
+        {
+            return;
+        }
+
+        issues.Add(ValidationIssue.Blocking(
+            ControlCharactersInvalid,
+            address,
+            FormattableString.Invariant($"U+{(int)control:X4} in {field}"),
+            FormattableString.Invariant($"Remove the control character U+{(int)control:X4} from {field}.")));
     }
 
     /// <summary>The title/description rules: length plus the T70 metadata check (02 T70).</summary>
@@ -276,13 +341,26 @@ public static class StoryDraftValidator
             }
         }
 
-        if (isParagraph && !StoryEnums.Beats.Contains(segment?.Beat ?? string.Empty))
+        if (isParagraph)
         {
+            if (!StoryEnums.Beats.Contains(segment?.Beat ?? string.Empty))
+            {
+                issues.Add(ValidationIssue.Blocking(
+                    BeatInvalid,
+                    address,
+                    segment?.Beat,
+                    "Use one of the six D3 beats: setup, build_up, clue, twist, reveal, aftermath."));
+            }
+        }
+        else if (segment?.Beat is not null)
+        {
+            // D3: only paragraphs carry a beat, so a hook or an ending must not persist one — and a beat
+            // Postgres rejects (NUL) must never reach the database through a field the paragraph rule skips.
             issues.Add(ValidationIssue.Blocking(
                 BeatInvalid,
                 address,
-                segment?.Beat,
-                "Use one of the six D3 beats: setup, build_up, clue, twist, reveal, aftermath."));
+                segment.Beat,
+                "Omit the beat: only the paragraphs carry one."));
         }
     }
 

@@ -13,6 +13,20 @@ using NightTales.Domain.Stories.Structure;
 
 namespace NightTales.Application.Features.Stories.Writing;
 
+/// <summary>The data-object budget of a prompt call (<c>Story:Prompt:MaxDataObjectBytes</c>, 02.6.3-T3, D6), in UTF-8 bytes.</summary>
+/// <param name="MaxDataObjectBytes">The budget of one data object; the review call carries the story and its context, so it is bounded by twice this value.</param>
+public sealed record PromptDataBudget(int MaxDataObjectBytes)
+{
+    /// <summary>The configuration key of the budget.</summary>
+    public const string ConfigurationKey = "Story:Prompt:MaxDataObjectBytes";
+
+    /// <summary>The default of <see cref="ConfigurationKey"/>.</summary>
+    public const int DefaultMaxDataObjectBytes = 65_536;
+
+    /// <summary>The budget in force when no configuration is supplied.</summary>
+    public static PromptDataBudget Default { get; } = new(DefaultMaxDataObjectBytes);
+}
+
 /// <summary>
 /// Assembles the two strings of a writer call (02 README D5/D6, 02.2.3-T2): a static system prompt —
 /// writer system, then the preset with its placeholders substituted in place — and one JSON data object
@@ -29,7 +43,7 @@ namespace NightTales.Application.Features.Stories.Writing;
 /// the data object — so it is byte-identical across runs and the provider's prompt cache applies (O9).
 /// </para>
 /// </remarks>
-public sealed partial class PromptAssembler(IPromptCatalog catalog, ILogger<PromptAssembler> logger) : IPromptAssembler
+public sealed partial class PromptAssembler(IPromptCatalog catalog, ILogger<PromptAssembler> logger, PromptDataBudget? budget = null) : IPromptAssembler
 {
     /// <summary>The longest brief the assembler sends, in UTF-16 code units; the create command rejects longer ones first.</summary>
     public const int MaxBriefLength = 1000;
