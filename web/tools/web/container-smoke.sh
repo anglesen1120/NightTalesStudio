@@ -15,10 +15,14 @@ IMAGE="${NTS_SMOKE_IMAGE:-nighttales-web:dev}"
 STABLE_SECONDS="${NTS_SMOKE_STABLE_SECONDS:-60}"
 PREFIX="nts-web-smoke-$$"
 CONTAINERS=()
+IMAGES=()
 
 cleanup() {
     if [ "${#CONTAINERS[@]}" -gt 0 ]; then
         docker rm -f "${CONTAINERS[@]}" >/dev/null 2>&1 || true
+    fi
+    if [ "${#IMAGES[@]}" -gt 0 ]; then
+        docker rmi -f "${IMAGES[@]}" >/dev/null 2>&1 || true
     fi
 }
 trap cleanup EXIT
@@ -179,7 +183,8 @@ OUT=$(curl -sS -o /dev/null -w '%{http_code}' "http://127.0.0.1:$PORT/$(head -c 
 [ "$OUT" = "414" ] || fail "9000-char URI -> 414" "414" "$OUT"
 pass "9000-char URI -> 414"
 
-CHUNK=$(docker exec "$CURRENT" sh -c 'ls /usr/share/nginx/html' | grep -E -- '-[A-Za-z0-9]{8}\.js$' | head -n1)
+# Largest hashed chunk first (ls -S): a tiny chunk is below gzip_min_length (1024) and is never compressed.
+CHUNK=$(docker exec "$CURRENT" sh -c 'ls -S /usr/share/nginx/html' | grep -E -- '-[A-Za-z0-9]{8}\.js$' | head -n1)
 [ -n "$CHUNK" ] || fail "a hashed chunk with an 8-char hash exists" "name-XXXXXXXX.js" "none"
 hdrs "/$CHUNK"
 header_has "hashed chunk /$CHUNK: immutable" "cache-control: public, max-age=31536000, immutable"
@@ -192,11 +197,39 @@ printf '%s\n' "$GZ" | grep -q '^vary:.*accept-encoding' \
     || fail "gzipped response carries Vary: Accept-Encoding (gzip_vary)" "vary: accept-encoding" "$(printf '%s' "$GZ" | tr '\n' '|')"
 pass "gzipped hashed js carries Vary: Accept-Encoding"
 
-ASSET=$(docker exec "$CURRENT" sh -c 'cd /usr/share/nginx/html && find assets -type f | head -n1')
-[ -n "$ASSET" ] || fail "an /assets file exists" "any file" "none"
+# Other /assets/** files keep the 1 h must-revalidate rule (D3/D10). The built app ships
+# no non-i18n asset yet (images arrive with later tasks), so a derived probe image adds one
+# file at /assets/img/ — deterministic, and no bind mount (colima shares only $HOME).
+PROBE_IMG="$PREFIX-probe"
+IMAGES+=("$PROBE_IMG")
+printf 'FROM %s\nUSER root\nRUN mkdir -p /usr/share/nginx/html/assets/img && echo "<svg xmlns=\\"http://www.w3.org/2000/svg\\"/>" > /usr/share/nginx/html/assets/img/probe.svg\nUSER 101\n' "$IMAGE" \
+    | docker build -q -t "$PROBE_IMG" - >/dev/null
+SAVE_CURRENT="$CURRENT"; SAVE_PORT="$PORT"; SAVE_IMAGE="$IMAGE"
+IMAGE="$PROBE_IMG"
+start assetprobe
+IMAGE="$SAVE_IMAGE"
+ASSET=assets/img/probe.svg
+[ "$(status_of "/$ASSET")" = "200" ] || fail "/$ASSET status" "200" "$(status_of "/$ASSET")"
 hdrs "/$ASSET"
-header_has "/$ASSET: 1h must-revalidate" "cache-control: public, max-age=3600, must-revalidate"
+header_has "/$ASSET: 1h must-revalidate (unchanged by D5)" "cache-control: public, max-age=3600, must-revalidate"
 for h in "${D4_HEADERS[@]}"; do header_has "/$ASSET: $h" "$h"; done
+CURRENT="$SAVE_CURRENT"; PORT="$SAVE_PORT"
+
+# D5: i18n JSON is not content-hashed and is read by the hashed bundle, so it must be
+# revalidated on every load (no-cache), never held for an hour; D4 non-CSP headers stay.
+I18N=/assets/i18n/core/vi.json
+docker exec "$CURRENT" test -f "/usr/share/nginx/html$I18N" \
+    || fail "i18n JSON exists in image" "/usr/share/nginx/html$I18N" "missing"
+hdrs "$I18N"
+[ "$(status_of "$I18N")" = "200" ] || fail "$I18N status" "200" "$(status_of "$I18N")"
+pass "$I18N: status 200"
+header_has "$I18N: Cache-Control no-cache" "cache-control: no-cache"
+if printf '%s\n' "$HDRS" | grep -qiE '^cache-control:.*(max-age|immutable|must-revalidate)'; then
+    fail "$I18N: Cache-Control is exactly no-cache" "no max-age/immutable/must-revalidate" "$(printf '%s' "$HDRS" | tr '\n' '|')"
+fi
+pass "$I18N: Cache-Control carries no max-age/immutable"
+for h in "${D4_HEADERS[@]}"; do header_has "$I18N: $h" "$h"; done
+header_absent "$I18N: no Content-Security-Policy" "content-security-policy"
 
 # API guard (NTS_API_UPSTREAM unset): hard 404, never HTML.
 for p in /api/v1/anything /hubs/episodes /health/ready; do

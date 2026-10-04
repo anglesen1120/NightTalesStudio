@@ -50,7 +50,15 @@ server {
         add_header Cache-Control "public, max-age=31536000, immutable";
     }
 
-    # i18n JSON and images are not content-hashed (D3/D10).
+    # i18n JSON is not content-hashed, but the hashed bundle reads it: after a deploy the
+    # new bundle must not see hour-old keys from a max-age=3600 cache (D5). no-cache keeps
+    # it cacheable but revalidated on every load. The longer prefix wins over /assets/.
+    location /assets/i18n/ {
+        include /etc/nginx/conf.d/security-headers.conf;
+        add_header Cache-Control "no-cache";
+    }
+
+    # Images and other assets are not content-hashed either (D3/D10).
     location /assets/ {
         include /etc/nginx/conf.d/security-headers.conf;
         add_header Cache-Control "public, max-age=3600, must-revalidate";
