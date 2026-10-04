@@ -8,6 +8,7 @@
 // Fixtures: every glob is also registered under `tools/lint-fixtures/*/src/` so the negative fixtures mirror the
 // real tree (`<case>/src/app/features/series/domain/...`) and hit exactly the blocks the real files hit.
 // The fixtures are in the global `ignores`; `tools/web/check-lint-fixtures.mjs` lints them with `--no-ignore`.
+import { dirname, resolve, sep } from 'node:path';
 import { defineConfig } from 'eslint/config';
 import angular from 'angular-eslint';
 import tseslint from 'typescript-eslint';
@@ -75,6 +76,95 @@ const importBlocks = [
 ];
 
 // ---------------------------------------------------------------------------------------------------------------
+// Resolved-path boundaries: relative specifiers, dynamic import(), `import('x')` types
+// ---------------------------------------------------------------------------------------------------------------
+// The pattern lists above match the literal specifier, so `../../../shared/api/...` or `../../episodes/ui/...`
+// would slip past `@shared/api` / `@features/episodes/**`, and the stock rule never visits `import('x')`.
+// This wrapper re-checks every specifier in its tsconfig-alias form: a relative specifier is resolved against the
+// importing file and rewritten to `@core|@shared|@features/...` when it lands in src/app; the rewritten value goes
+// through the unchanged rule (same options, same ruleId, one report per import). A relative import that stays
+// inside the importer's own unit (`features/<f>/<layer>`, `core/<x>`, `shared/<x>`) is left as written, so
+// `./sibling` and `../domain/x` inside one layer are not treated as cross-layer imports.
+const appPath = (file) => {
+  const posix = file.split(sep).join('/');
+  const index = posix.lastIndexOf('/src/app/');
+  return index < 0 ? null : posix.slice(index + '/src/app/'.length);
+};
+const unitOf = (rel) => rel?.match(/^(core\/[^/]+|shared\/[^/]+|features\/[^/]+\/[^/]+)(?:\/|$)/)?.[1] ?? null;
+const canonicalSpecifier = (specifier, filename) => {
+  if (!specifier.startsWith('.')) {
+    return specifier;
+  }
+  const target = appPath(resolve(dirname(filename), specifier));
+  const match = target?.match(/^(core|shared|features)\/(.+)$/);
+  if (!match) {
+    return specifier;
+  }
+  const importerUnit = unitOf(appPath(filename));
+  if (importerUnit !== null && unitOf(target) === importerUnit) {
+    return specifier;
+  }
+  return `@${match[1]}/${match[2]}`;
+};
+// Static string of `'x'` or a substitution-free template literal; null for anything computed.
+const staticString = (node) => {
+  if (node?.type === 'Literal' && typeof node.value === 'string') {
+    return node.value;
+  }
+  if (node?.type === 'TemplateLiteral' && node.expressions.length === 0) {
+    return node.quasis[0].value.cooked;
+  }
+  return null;
+};
+const synthesizeImport = (node, specifier) => ({
+  type: 'ImportDeclaration',
+  importKind: 'value',
+  specifiers: [],
+  attributes: [],
+  source: { type: 'Literal', value: specifier, raw: JSON.stringify(specifier), loc: node.loc, range: node.range },
+  loc: node.loc,
+  range: node.range,
+  parent: node.parent,
+});
+const withResolvedPaths = (base) => ({
+  ...base,
+  create(context) {
+    const handlers = base.create(context);
+    const canonical = (specifier) => canonicalSpecifier(specifier, context.filename);
+    const wrapped = {};
+    for (const key of ['ImportDeclaration', 'ExportAllDeclaration', 'ExportNamedDeclaration[source]']) {
+      if (handlers[key]) {
+        wrapped[key] = (node) =>
+          handlers[key]({ ...node, source: { ...node.source, value: canonical(node.source.value) } });
+      }
+    }
+    if (handlers.TSImportEqualsDeclaration) {
+      wrapped.TSImportEqualsDeclaration = (node) => {
+        const reference = node.moduleReference;
+        if (reference.type === 'TSExternalModuleReference') {
+          const expression = { ...reference.expression, value: canonical(reference.expression.value) };
+          handlers.TSImportEqualsDeclaration({ ...node, moduleReference: { ...reference, expression } });
+        }
+      };
+    }
+    if (handlers.ImportDeclaration) {
+      const check = (node, specifier) => {
+        if (specifier !== null) {
+          handlers.ImportDeclaration(synthesizeImport(node, canonical(specifier)));
+        }
+      };
+      wrapped.ImportExpression = (node) => check(node, staticString(node.source));
+      wrapped.TSImportType = (node) =>
+        check(node, node.argument.type === 'TSLiteralType' ? staticString(node.argument.literal) : null);
+    }
+    return wrapped;
+  },
+});
+// Flat config forbids registering a second '@typescript-eslint' plugin object, so the rule is replaced in place
+// (every config block that enables '@typescript-eslint/no-restricted-imports' then gets the wrapped version).
+tseslint.plugin.rules['no-restricted-imports'] = withResolvedPaths(tseslint.plugin.rules['no-restricted-imports']);
+
+// ---------------------------------------------------------------------------------------------------------------
 // Syntax bans (no-restricted-syntax)
 // ---------------------------------------------------------------------------------------------------------------
 const SECURITY = [
@@ -83,18 +173,38 @@ const SECURITY = [
     message: 'bypassSecurityTrust* is banned (D2/D4); sanitise through the Angular sanitizer or core/security',
   },
   {
+    selector: "MemberExpression[computed=true][property.value=/^bypassSecurityTrust/]",
+    message: 'bypassSecurityTrust* is banned (D2/D4); sanitise through the Angular sanitizer or core/security',
+  },
+  {
+    selector: "MemberExpression[computed=true][property.quasis.0.value.cooked=/^bypassSecurityTrust/]",
+    message: 'bypassSecurityTrust* is banned (D2/D4); sanitise through the Angular sanitizer or core/security',
+  },
+  {
+    selector: "ObjectPattern > Property:matches([key.name=/^bypassSecurityTrust/], [key.value=/^bypassSecurityTrust/])",
+    message: 'bypassSecurityTrust* is banned (D2/D4); do not destructure it out of the sanitizer',
+  },
+  {
     selector: 'Identifier[name=/^(eval|Function)$/]',
     message: 'eval / new Function are banned (D2/D4)',
   },
   {
-    selector: "CallExpression[callee.object.name='document'][callee.property.name='write']",
+    // document.write(...), window.document.write(...), globalThis.document['write'](...), document['writeln'](...)
+    selector:
+      "MemberExpression:matches([object.name='document'], [object.property.name='document'], [object.property.value='document']):matches([computed=false][property.name=/^write(ln)?$/], [computed=true][property.value=/^write(ln)?$/])",
     message: 'document.write is banned (D2/D4)',
   },
 ];
-const STORAGE = {
-  selector: 'Identifier[name=/^(localStorage|sessionStorage)$/]',
-  message: 'browser storage only in core/prefs (D2/D6)',
-};
+const STORAGE = [
+  {
+    selector: 'Identifier[name=/^(localStorage|sessionStorage)$/]',
+    message: 'browser storage only in core/prefs (D2/D6)',
+  },
+  {
+    selector: "MemberExpression[computed=true][property.value=/^(localStorage|sessionStorage)$/]",
+    message: 'browser storage only in core/prefs (D2/D6)',
+  },
+];
 // D2/D13: every component states `changeDetection: ChangeDetectionStrategy.OnPush` explicitly, wherever it lives.
 // Angular 22 made OnPush the implicit default, and the installed @angular-eslint rule
 // (prefer-on-push-component-change-detection, enabled below) flags only an explicit Eager/Default opt-out.
@@ -127,7 +237,7 @@ const syntax = (...selectors) => ['error', ...selectors];
 const syntaxBlocks = [
   {
     files: at('**/*.ts'),
-    rules: { 'no-restricted-syntax': syntax(...SECURITY, EXPLICIT_ONPUSH, STORAGE, SUBSCRIBE_IN_COMPONENT) },
+    rules: { 'no-restricted-syntax': syntax(...SECURITY, EXPLICIT_ONPUSH, ...STORAGE, SUBSCRIBE_IN_COMPONENT) },
   },
   {
     files: at('app/core/prefs/**/*.ts'),
@@ -135,7 +245,7 @@ const syntaxBlocks = [
   },
   {
     files: at('app/shared/ui/**/*.ts', 'app/features/*/ui/**/*.ts'),
-    rules: { 'no-restricted-syntax': syntax(...SECURITY, EXPLICIT_ONPUSH, STORAGE, SUBSCRIBE_IN_UI, INJECT_IN_UI) },
+    rules: { 'no-restricted-syntax': syntax(...SECURITY, EXPLICIT_ONPUSH, ...STORAGE, SUBSCRIBE_IN_UI, INJECT_IN_UI) },
   },
 ];
 
