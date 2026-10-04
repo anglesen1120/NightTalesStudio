@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using NightTales.Application.Abstractions;
 using NightTales.Application.Abstractions.Moderation;
@@ -9,6 +10,7 @@ using NightTales.Domain.Compliance;
 using NightTales.Infrastructure.Compliance;
 using NightTales.Infrastructure.Persistence;
 using NightTales.Infrastructure.Security;
+using NightTales.Infrastructure.UnitTests.OpenAI;
 using NightTales.TestKit;
 using NightTales.TestKit.Auth;
 using NightTales.TestKit.Builders;
@@ -109,6 +111,88 @@ public sealed class ModerationEventWriterTests(TestDatabase database) : Integrat
             await host.Writer.WriteAsync(Guid.NewGuid(), null, ModerationSource.OpenaiText, ModerationStage.Brief, ["hate"], "text", Ct));
     }
 
+    // ---- QA additions (02.4.1-T1) ----
+
+    [Fact(Skip = "DEFECT QA-1 (02.4.1-T1): an emoji at the 300-char cut leaves a lone surrogate; the insert fails and the writer swallows it, so the evidence row is lost. Remove Skip when fixed.")]
+    public async Task ModerationEvent_ExcerptCutAcrossASurrogatePair_StillWritesTheRow()
+    {
+        await using var host = new WriterHost(Database);
+        var user = await Database.CreateUserBuilder().CreateAsync(ct: Ct);
+        var ownText = new string('a', 299) + "\U0001F600" + "tail";
+
+        await host.Writer.WriteAsync(user.Id, null, ModerationSource.OpenaiText, ModerationStage.Draft, ["violence"], ownText, Ct);
+
+        var row = (await Rows(user.Id)).ShouldHaveSingleItem("the evidence row must survive an emoji at the 300-char cut");
+        row.ExcerptLength.ShouldBeLessThanOrEqualTo(300);
+    }
+
+    [Fact]
+    public async Task ModerationEvent_ExcerptOfExactly300And301Chars_IsKeptAndCutAtTheCap()
+    {
+        await using var host = new WriterHost(Database);
+        var user = await Database.CreateUserBuilder().CreateAsync(ct: Ct);
+
+        await host.Writer.WriteAsync(user.Id, null, ModerationSource.OpenaiText, ModerationStage.Brief, ["hate"], new string('b', 300), Ct);
+        await host.Writer.WriteAsync(user.Id, null, ModerationSource.OpenaiText, ModerationStage.Draft, ["hate"], new string('c', 301), Ct);
+
+        var rows = await Rows(user.Id);
+        rows.Single(r => r.Stage == "brief").ExcerptLength.ShouldBe(300);
+        rows.Single(r => r.Stage == "draft").ExcerptLength.ShouldBe(300);
+    }
+
+    [Fact]
+    public async Task ModerationEvent_EmptyAndWhitespaceText_WritesARowWithoutAnExcerptOrNeverThrows()
+    {
+        await using var host = new WriterHost(Database);
+        var user = await Database.CreateUserBuilder().CreateAsync(ct: Ct);
+
+        await Should.NotThrowAsync(async () =>
+        {
+            await host.Writer.WriteAsync(user.Id, null, ModerationSource.OpenaiText, ModerationStage.Brief, ["hate"], string.Empty, Ct);
+            await host.Writer.WriteAsync(user.Id, null, ModerationSource.OpenaiText, ModerationStage.Draft, ["hate"], "   ", Ct);
+        });
+
+        (await Rows(user.Id)).Count.ShouldBe(2);
+    }
+
+    [Fact]
+    public async Task ModerationEventWriter_CancelledCallerToken_StillKeepsTheEvidence()
+    {
+        await using var host = new WriterHost(Database);
+        var user = await Database.CreateUserBuilder().CreateAsync(ct: Ct);
+        using var cts = new CancellationTokenSource();
+        await cts.CancelAsync();
+
+        await Should.NotThrowAsync(async () =>
+            await host.Writer.WriteAsync(user.Id, null, ModerationSource.OpenaiText, ModerationStage.Draft, ["violence"], "text", cts.Token));
+
+        (await Rows(user.Id)).ShouldHaveSingleItem("a cancelled job still keeps its evidence (WriteTimeout is independent of the caller token)");
+    }
+
+    [Fact]
+    public async Task ModerationEventWriter_DatabaseFailure_LogsTheExceptionTypeOnly_NeverTheText()
+    {
+        var logs = new CapturingLoggerProvider();
+        await using var host = new WriterHost(Database, logs);
+
+        await host.Writer.WriteAsync(Guid.NewGuid(), null, ModerationSource.OpenaiText, ModerationStage.Draft, ["hate"], "EXCERPT-TEXT-SECRET", Ct);
+
+        logs.Messages.ShouldNotBeEmpty("the failure is logged");
+        logs.Messages.ShouldNotContain(m => m.Contains("EXCERPT-TEXT-SECRET", StringComparison.Ordinal), "D19: the excerpt never reaches a log");
+    }
+
+    [Fact]
+    public async Task ModerationEventWriter_SuccessfulWrite_LogsNothingWithTheText()
+    {
+        var logs = new CapturingLoggerProvider();
+        await using var host = new WriterHost(Database, logs);
+        var user = await Database.CreateUserBuilder().CreateAsync(ct: Ct);
+
+        await host.Writer.WriteAsync(user.Id, null, ModerationSource.OpenaiText, ModerationStage.Draft, ["hate"], "EXCERPT-TEXT-SECRET", Ct);
+
+        logs.Messages.ShouldNotContain(m => m.Contains("EXCERPT-TEXT-SECRET", StringComparison.Ordinal));
+    }
+
     private sealed record Row(string Stage, string Source, string EpisodeId, string Categories, string Excerpt, int ExcerptLength);
 
     private async Task<List<Row>> Rows(Guid userId)
@@ -129,7 +213,7 @@ public sealed class ModerationEventWriterTests(TestDatabase database) : Integrat
     {
         private readonly ServiceProvider _provider;
 
-        internal WriterHost(TestDatabase database)
+        internal WriterHost(TestDatabase database, CapturingLoggerProvider? logs = null)
         {
             var configuration = new ConfigurationBuilder()
                 .AddInMemoryCollection(new Dictionary<string, string?>(StringComparer.Ordinal)
@@ -151,7 +235,9 @@ public sealed class ModerationEventWriterTests(TestDatabase database) : Integrat
             Writer = new ModerationEventWriter(
                 _provider.GetRequiredService<IServiceScopeFactory>(),
                 clock,
-                NullLogger<ModerationEventWriter>.Instance);
+                logs is null
+                    ? NullLogger<ModerationEventWriter>.Instance
+                    : LoggerFactory.Create(builder => builder.AddProvider(logs)).CreateLogger<ModerationEventWriter>());
         }
 
         internal ModerationEventWriter Writer { get; }
