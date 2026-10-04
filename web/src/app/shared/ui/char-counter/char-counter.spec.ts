@@ -34,4 +34,32 @@ describe('CharCounter', () => {
       expect(text.includes('vượt giới hạn')).toBe(announced);
     });
   }
+
+  it('gives each instance a distinct default id that exists exactly once in the DOM', async () => {
+    @Component({ imports: [CharCounter], template: '<nts-char-counter [value]="1" [max]="10" /><nts-char-counter [value]="2" [max]="10" />' })
+    class TwoDefaults {}
+    await TestBed.configureTestingModule({ imports: [TwoDefaults, uiTestingTranslations()] }).compileComponents();
+    const fixture = TestBed.createComponent(TwoDefaults);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const root: HTMLElement = fixture.nativeElement;
+    const hosts = Array.from(root.querySelectorAll('nts-char-counter'));
+    const ids = hosts.map((host) => host.querySelector('span')?.id ?? '');
+    expect(ids[0]).not.toBe('');
+    expect(ids[1]).not.toBe('');
+    expect(ids[0]).not.toBe(ids[1]);
+    for (const host of hosts) expect(host.hasAttribute('id')).toBe(false);
+    for (const id of ids) expect(root.querySelectorAll(`[id="${id}"]`)).toHaveLength(1);
+  });
+
+  it('renders an explicit id exactly once, on the inner span and not on the host', async () => {
+    await TestBed.configureTestingModule({ imports: [Host, uiTestingTranslations()] }).compileComponents();
+    const fixture = TestBed.createComponent(Host);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const matches = fixture.nativeElement.querySelectorAll('[id="counter"]');
+    expect(matches).toHaveLength(1);
+    expect(matches[0].tagName).toBe('SPAN');
+    expect(fixture.nativeElement.querySelector('nts-char-counter').hasAttribute('id')).toBe(false);
+  });
 });

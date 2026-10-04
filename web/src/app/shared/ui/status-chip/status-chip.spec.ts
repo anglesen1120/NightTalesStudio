@@ -42,4 +42,20 @@ describe('StatusChip', () => {
       expect(fixture.nativeElement.getAttribute('aria-label')).toBe('Trạng thái chưa xác định');
     });
   }
+
+  for (const key of ['constructor', 'toString', '__proto__', 'hasOwnProperty']) {
+    it(`treats the prototype key "${key}" as an unknown status`, async () => {
+      await TestBed.configureTestingModule({ imports: [StatusChip, uiTestingTranslations()] }).compileComponents();
+      const fixture = TestBed.createComponent(StatusChip);
+      fixture.componentRef.setInput('statusKey', key);
+      fixture.componentRef.setInput('appearance', 'success');
+      fixture.detectChanges();
+      await fixture.whenStable();
+      expect(fixture.nativeElement.classList.contains('status-chip--neutral')).toBe(true);
+      expect(fixture.nativeElement.classList.contains('status-chip--success')).toBe(false);
+      expect(fixture.nativeElement.getAttribute('aria-label')).toBe('Trạng thái chưa xác định');
+      expect(fixture.nativeElement.textContent).toContain('Trạng thái chưa xác định');
+      expect(fixture.nativeElement.querySelector('nts-icon-unknown')).not.toBeNull();
+    });
+  }
 });

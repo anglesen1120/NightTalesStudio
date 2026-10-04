@@ -36,7 +36,9 @@ export class StatusChip {
   private readonly activeLang = toSignal(this.transloco.langChanges$, { initialValue: this.transloco.getActiveLang() });
   readonly statusKey = input.required<string>();
   readonly appearance = input<StatusAppearance>('neutral');
-  protected readonly icon = computed<StatusIcon>(() => STATUS_ICON[this.statusKey()] ?? 'unknown');
+  protected readonly icon = computed<StatusIcon>(() =>
+    (Object.hasOwn(STATUS_ICON, this.statusKey()) ? STATUS_ICON[this.statusKey()] : undefined) ?? 'unknown',
+  );
   protected readonly labelKey = computed(() =>
     this.icon() === 'unknown' ? 'core.ui.statusChip.unknown' : `core.ui.statusChip.${this.statusKey()}`,
   );

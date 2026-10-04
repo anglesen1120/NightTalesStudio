@@ -26,4 +26,15 @@ describe('LoadingState', () => {
       expect(fixture.nativeElement.querySelectorAll('.loading-state__skeleton')).toHaveLength(3);
     });
   }
+
+  for (const rows of [NaN, Infinity, -Infinity]) {
+    it(`falls back to the default three skeleton rows for non-finite rows=${rows}`, async () => {
+      await TestBed.configureTestingModule({ imports: [LoadingState, uiTestingTranslations()] }).compileComponents();
+      const fixture = TestBed.createComponent(LoadingState);
+      fixture.componentRef.setInput('rows', rows);
+      fixture.detectChanges();
+      await fixture.whenStable();
+      expect(fixture.nativeElement.querySelectorAll('.loading-state__skeleton')).toHaveLength(3);
+    });
+  }
 });
