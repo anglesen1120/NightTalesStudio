@@ -37,7 +37,7 @@ public sealed class StoryCostEstimator(
     public const string DefaultModel = "gpt-6-luna";
 
     /// <summary>The default of <c>Story:Prompt:MaxDataObjectBytes</c> (02.6.3-T3, D6).</summary>
-    public const int DefaultMaxDataObjectBytes = 65_536;
+    public const int DefaultMaxDataObjectBytes = NightTales.Application.Features.Stories.Writing.PromptDataBudget.DefaultMaxDataObjectBytes;
 
     private readonly ConcurrentDictionary<(LengthTier Tier, Language Language, string Release, int DataBudget), StepInputs> _inputs = new();
 
@@ -113,6 +113,38 @@ public sealed class StoryCostEstimator(
             ?? throw new InvalidOperationException("The calculator returned no cost for a bounded call.");
 
         return new UsageBound(cost, writer.Value, target.WriterMaxOutput);
+    }
+
+    /// <inheritdoc />
+    public async Task<ErrorOr<UsageBound>> ReviewWorstCaseAsync(LengthTier tier, Language language, CancellationToken ct)
+    {
+        var active = await catalog.GetActiveAsync(clock.UtcNow, ct).ConfigureAwait(false);
+        if (active.IsError)
+        {
+            return active.Errors;
+        }
+
+        var version = active.Value;
+        var rates = version.ParseRates();
+        var target = LengthTargetResolver.Resolve(tier, language, version.ParseLimits());
+
+        var dataBudget = configuration.GetValue("Story:Prompt:MaxDataObjectBytes", DefaultMaxDataObjectBytes);
+        int review;
+        try
+        {
+            // Same measure as the review term of MeasureInputs: the review prompt plus the story and its context.
+            review = Bytes(prompts.GetStepPrompt(PromptStep.Review)) + (2 * dataBudget);
+        }
+        catch (PromptCatalogException exception)
+        {
+            return Error.Failure(ErrorCodes.PromptNotShipped, exception.Message);
+        }
+
+        // Same charge as the review term of WorstCaseAsync: every input token also written to the cache.
+        var cost = TextCostCalculator.Compute(rates.RatesFor(ModelOf("Review")), review, 0, review, target.ReviewMaxOutput, rates.SurchargeThresholdTokens)
+            ?? throw new InvalidOperationException("The calculator returned no cost for a bounded call.");
+
+        return new UsageBound(cost, review, target.ReviewMaxOutput);
     }
 
     private string ModelOf(string step) => configuration[$"OpenAi:Models:{step}"] is { Length: > 0 } model ? model : DefaultModel;

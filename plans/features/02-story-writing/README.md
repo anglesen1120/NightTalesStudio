@@ -433,7 +433,7 @@ A is chosen if its success rate on the 10 cases is ≥ B − 10 points and its c
   "model_review": { "model": "gpt-6-luna", "prompt_version": "…", "stale": false, "scores": { "hook": 4, "pacing": 3, "atmosphere": 4, "natural_language": 4, "originality": 3, "factual_care": null, "length_fit": 4 },
                     "issues": [ { "id": "r1", "severity": "blocking|advisory", "kind": "objective|taste", "segment": "p:3", "evidence": "…", "impact": "…", "repair_direction": "…" } ],
                     "real_world_claims": [ { "segment": "p:1", "evidence": "…" } ],
-                    "ear_rule_answers": [ { "question_id": "Q1", "answer": "no", "segment": "p:2", "note": "…" } ] },
+                    "ear_rule_answers": [ { "question_id": "Q1", "passed": false, "segment": "p:2", "evidence": "…" } ] },  // (02.6.1-T1, additive per task Notes)
   "revision":   { "applied": true, "fixed_issue_ids": ["r1"], "parent_version_id": "uuid", "drift": { "changed_segments": ["p:3"], "unflagged_changed": [] }, "review_after": { "scores": { }, "issues": [ ] } },
   "similarity": { "score": 0.031, "n": 10, "corpus": "sources|past_episodes", "segments": [ { "segment": "p:4", "share": 0.22 } ] }
 }
@@ -642,7 +642,7 @@ Open items raised in the feature plans' §10. Each is decided here. Feature file
 | T41 | 02.5.1 | `user_note` status | Created `fetched` with `content_sha256 = sha256(NFC(note_text))` and no `extracted_text_key`. Notes never count toward the 2-source minimum (only `kind = url`) |
 | T42 | 02.5.1 | Platform lease-cap race | Lease statement takes `pg_advisory_xact_lock(<const>)` before counting. Cheap, and correct with more than one fetcher replica |
 | T43 | 02.5.1 | Internal-only codes, health port, egress, Crawl-delay, Retry-After | `fetch_lease_lost` / `fetch_task_not_found` stay internal (not in D8). The fetcher has no listening port. The fetcher never gets storage egress. `Crawl-delay` is honoured as `max(1 s, crawlDelay)` up to 10 s; above that → `source_blocked_by_robots`. 09's ProblemDetails mapper emits `Retry-After` from the error metadata (CR-20) |
-| T44 | 02.6.1 | Additive `audit.v1` keys | Accepted: `model_review.ear_rule_answers[] { question_id, answer: yes|no, segment?, note }` and `revision.drift { changed_segments[], unflagged_changed[] }`. Additive keys only; `schema_version` stays `audit.v1` |
+| T44 | 02.6.1 | Additive `audit.v1` keys | Accepted: `model_review.ear_rule_answers[] { question_id, passed, segment, evidence }` (02.6.1-T1, additive per task Notes) and `revision.drift { changed_segments[], unflagged_changed[] }`. Additive keys only; `schema_version` stays `audit.v1` |
 | T45 | 02.6.1 | Review #2 metering | Same `operation = story_review`, second row on the same `generation_runs` row. No new operation value |
 | T46 | 02.6.1 / 02.2 | Worst-case bound and review model | `IStoryCostEstimator.WorstCaseAsync` includes review #2 (CR-6). If 02.6.1-T2 pins `gpt-6-sol` for review, the owner confirms the bound change before the config switch |
 | T47 | all | File size bands | Content completeness wins over byte targets. No reflow of finished files |
