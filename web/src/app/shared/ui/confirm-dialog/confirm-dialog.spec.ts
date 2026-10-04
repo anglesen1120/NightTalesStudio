@@ -25,14 +25,14 @@ class DynamicHost {
 }
 
 describe('ConfirmDialog', () => {
-  it('renders static cost content and disables every action while pending', async () => {
+  it('renders static cost content and marks every action aria-disabled while pending', async () => {
     await TestBed.configureTestingModule({ imports: [StaticHost, MatDialogModule, NoopAnimationsModule, uiTestingTranslations()] }).compileComponents();
     const fixture = TestBed.createComponent(StaticHost);
     fixture.componentInstance.pending = true;
     fixture.detectChanges();
     await fixture.whenStable();
     expect(fixture.nativeElement.textContent).toContain('cost line');
-    expect([...fixture.nativeElement.querySelectorAll('button')].every((button: HTMLButtonElement) => button.disabled)).toBe(true);
+    expect([...fixture.nativeElement.querySelectorAll('button')].every((button: HTMLButtonElement) => button.getAttribute('aria-disabled') === 'true' && !button.disabled)).toBe(true);
     expect(fixture.nativeElement.querySelector('[aria-modal="true"]')).not.toBeNull();
   });
 
@@ -65,7 +65,7 @@ describe('ConfirmDialog', () => {
     const overlay = document.querySelector('.cdk-overlay-pane') as HTMLElement;
     const buttons = [...overlay.querySelectorAll('button')] as HTMLButtonElement[];
     expect(buttons.length).toBe(3);
-    expect(buttons.every((button) => button.disabled)).toBe(true);
+    expect(buttons.every((button) => button.getAttribute('aria-disabled') === 'true' && !button.disabled)).toBe(true);
     expect(overlay.querySelector('.confirm-dialog__pending')?.textContent).toContain('Đang xử lý');
     (overlay.querySelector('.confirm-dialog') as HTMLElement).dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', keyCode: 27, bubbles: true }));
@@ -138,6 +138,43 @@ describe('ConfirmDialog', () => {
       await fixture.whenStable();
       expect(closed).toHaveBeenCalledExactlyOnceWith(false);
       expect(cancelled).toHaveBeenCalledTimes(1);
+    });
+
+    it('keeps focus on Confirm when pending flips true, ignores click and Enter, and works again once it flips back', async () => {
+      const { fixture, dialogs } = await setup();
+      const pending = signal(false);
+      const ref = dialogs.confirm({ ...data, pending });
+      const closed = vi.fn();
+      const confirmed = vi.fn();
+      ref.afterClosed().subscribe(closed);
+      await fixture.whenStable();
+      ref.componentInstance.confirmed.subscribe(confirmed);
+      const [, confirm] = [...document.querySelectorAll('.cdk-overlay-pane .confirm-dialog__actions button')] as HTMLButtonElement[];
+      expect(confirm).toBeDefined();
+      confirm!.focus();
+      expect(document.activeElement).toBe(confirm);
+
+      pending.set(true);
+      fixture.detectChanges();
+      await fixture.whenStable();
+      expect(document.activeElement).toBe(confirm);
+      expect(confirm!.getAttribute('aria-disabled')).toBe('true');
+      expect(confirm!.disabled).toBe(false);
+      confirm!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+      confirm!.click();
+      await fixture.whenStable();
+      expect(confirmed).not.toHaveBeenCalled();
+      expect(closed).not.toHaveBeenCalled();
+      expect(document.activeElement).toBe(confirm);
+
+      pending.set(false);
+      fixture.detectChanges();
+      await fixture.whenStable();
+      expect(confirm!.hasAttribute('aria-disabled')).toBe(false);
+      confirm!.click();
+      await fixture.whenStable();
+      expect(confirmed).toHaveBeenCalledTimes(1);
+      expect(closed).toHaveBeenCalledExactlyOnceWith(true);
     });
 
     it.each([

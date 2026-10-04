@@ -1,9 +1,11 @@
-import { CdkTrapFocus, _IdGenerator } from '@angular/cdk/a11y';
+import { CdkTrapFocus } from '@angular/cdk/a11y';
 import { NgTemplateOutlet } from '@angular/common';
 import { ChangeDetectionStrategy, Component, Injectable, TemplateRef, ViewContainerRef, Signal, computed, inject, input, isSignal, output } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { MAT_DIALOG_DATA, MatDialog, MatDialogRef } from '@angular/material/dialog';
 import { TranslocoPipe } from '@jsverse/transloco';
+
+let nextConfirmDialogId = 0;
 
 export interface ConfirmDialogTemplateContext {
   readonly destructive: boolean;
@@ -38,7 +40,6 @@ export interface ConfirmDialogOptions {
 export class ConfirmDialogComponent {
   private readonly data = inject<ConfirmDialogData | null>(MAT_DIALOG_DATA, { optional: true });
   private readonly dialogRef = inject(MatDialogRef<ConfirmDialogComponent, boolean>, { optional: true });
-  private readonly ids = inject(_IdGenerator);
 
   readonly titleKey = input.required<string>();
   readonly bodyKey = input.required<string>();
@@ -49,8 +50,8 @@ export class ConfirmDialogComponent {
   readonly cancelled = output<void>();
 
   /** Per-instance ids: two dialogs (or a static instance next to a service dialog) never share an id. */
-  protected readonly titleId = this.data?.titleId ?? this.ids.getId('nts-confirm-title-');
-  protected readonly bodyId = this.data?.bodyId ?? this.ids.getId('nts-confirm-body-');
+  protected readonly titleId = this.data?.titleId ?? `nts-confirm-title-${++nextConfirmDialogId}`;
+  protected readonly bodyId = this.data?.bodyId ?? `nts-confirm-body-${++nextConfirmDialogId}`;
   /** True when MatDialog owns the surrounding container (its role, aria-modal and aria-labelledby). */
   protected readonly insideMatDialog = this.dialogRef !== null;
 
@@ -110,11 +111,10 @@ export class ConfirmDialogComponent {
 @Injectable({ providedIn: 'root' })
 export class ConfirmDialog {
   private readonly dialog = inject(MatDialog);
-  private readonly ids = inject(_IdGenerator);
 
   confirm(data: ConfirmDialogData, options: ConfirmDialogOptions = {}): MatDialogRef<ConfirmDialogComponent, boolean> {
-    const titleId = this.ids.getId('nts-confirm-title-');
-    const bodyId = this.ids.getId('nts-confirm-body-');
+    const titleId = `nts-confirm-title-${++nextConfirmDialogId}`;
+    const bodyId = `nts-confirm-body-${++nextConfirmDialogId}`;
     return this.dialog.open<ConfirmDialogComponent, ConfirmDialogData, boolean>(ConfirmDialogComponent, {
       data: { ...data, costTemplate: options.costTemplate ?? data.costTemplate, titleId, bodyId },
       viewContainerRef: options.viewContainerRef,
