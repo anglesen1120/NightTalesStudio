@@ -789,8 +789,11 @@ public sealed class StoryDraftValidatorTests
     [InlineData("description", "meta")]
     [InlineData("tags[1]", "meta")]
     [InlineData("hook.text", "hook")]
+    [InlineData("hook.beat", "hook")]
     [InlineData("paragraphs[1].text", "p:1")]
+    [InlineData("paragraphs[1].beat", "p:1")]
     [InlineData("ending.text", "ending")]
+    [InlineData("ending.beat", "ending")]
     [InlineData("structure.sub_genre", "meta")]
     [InlineData("structure.setting", "meta")]
     [InlineData("structure.opening", "meta")]
@@ -907,6 +910,40 @@ public sealed class StoryDraftValidatorTests
             issue.RuleId == "beat_invalid" && issue.Segment == "p:2");
     }
 
+    /// <summary>CR-01 (D3): the hook and the ending have no beat, so a non-null one is invalid whatever it says.</summary>
+    [Theory]
+    [InlineData("hook", "setup")]
+    [InlineData("hook", "wiggle")]
+    [InlineData("hook", "")]
+    [InlineData("ending", "aftermath")]
+    [InlineData("ending", "wiggle")]
+    [InlineData("ending", "")]
+    public void Validate_NonNullBeatOnHookOrEnding_BeatInvalid(string segment, string beat)
+    {
+        var draft = ValidDraft();
+        draft = segment == "hook"
+            ? draft with { Hook = draft.Hook with { Beat = beat } }
+            : draft with { Ending = draft.Ending with { Beat = beat } };
+
+        var result = StoryDraftValidator.Validate(draft, Rules());
+
+        result.IsValid.ShouldBeFalse();
+        var issue = result.Issues.Single(found => found.RuleId == "beat_invalid");
+        issue.Severity.ShouldBe(IssueSeverity.Blocking);
+        issue.Segment.ShouldBe(segment);
+    }
+
+    /// <summary>A hook and an ending without a beat, as D3 defines them, raise no beat issue.</summary>
+    [Fact]
+    public void Validate_NullBeatOnHookAndEnding_NoBeatIssue()
+    {
+        var draft = ValidDraft();
+
+        draft.Hook.Beat.ShouldBeNull();
+        draft.Ending.Beat.ShouldBeNull();
+        StoryDraftValidator.Validate(draft, Rules()).Issues.ShouldNotContain(issue => issue.RuleId == "beat_invalid");
+    }
+
     /// <summary>A draft that breaks every blocking rule of the table, each once.</summary>
     private static StoryContentV1 BrokenDraft()
     {
@@ -1004,6 +1041,13 @@ public sealed class StoryDraftValidatorTests
             case "tags[1]":
                 tags[1] += control;
                 return draft with { Tags = tags };
+            case "hook.beat":
+                return draft with { Hook = draft.Hook with { Beat = (draft.Hook.Beat ?? string.Empty) + control } };
+            case "paragraphs[1].beat":
+                paragraphs[1] = paragraphs[1] with { Beat = paragraphs[1].Beat + control };
+                return draft with { Paragraphs = paragraphs };
+            case "ending.beat":
+                return draft with { Ending = draft.Ending with { Beat = (draft.Ending.Beat ?? string.Empty) + control } };
             case "hook.text":
                 return draft with { Hook = draft.Hook with { Text = draft.Hook.Text + control } };
             case "paragraphs[1].text":

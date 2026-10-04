@@ -98,9 +98,9 @@ public static class StoryDraftValidator
     }
 
     /// <summary>
-    /// The control-character rule over every free-text field the editor and the writer can persist: title,
-    /// description, tags, the hook, paragraph and ending texts and the structure strings. The closed-vocabulary
-    /// fields (keywords, fact refs, beats, warnings, narrator mode) are already refused by their own rules.
+    /// The control-character rule over every string the editor and the writer can persist: title, description,
+    /// tags, the hook, paragraph and ending texts and beats, and the structure strings. The closed-vocabulary
+    /// fields (keywords, fact refs, warnings, narrator mode) are already refused by their own rules.
     /// Postgres cannot store NUL, so a draft carrying one must be a typed issue and never reach the database.
     /// </summary>
     private static void ValidateControlCharacters(StoryContentV1 content, List<ValidationIssue> issues)
@@ -115,6 +115,7 @@ public static class StoryDraftValidator
         }
 
         CheckControlCharacters(content.Hook?.Text, SegmentAddress.Hook, "hook.text", issues);
+        CheckControlCharacters(content.Hook?.Beat, SegmentAddress.Hook, "hook.beat", issues);
         var paragraphs = OrEmpty(content.Paragraphs);
         for (var index = 0; index < paragraphs.Count; index++)
         {
@@ -123,9 +124,15 @@ public static class StoryDraftValidator
                 SegmentAddress.Paragraph(index),
                 FormattableString.Invariant($"paragraphs[{index}].text"),
                 issues);
+            CheckControlCharacters(
+                paragraphs[index]?.Beat,
+                SegmentAddress.Paragraph(index),
+                FormattableString.Invariant($"paragraphs[{index}].beat"),
+                issues);
         }
 
         CheckControlCharacters(content.Ending?.Text, SegmentAddress.Ending, "ending.text", issues);
+        CheckControlCharacters(content.Ending?.Beat, SegmentAddress.Ending, "ending.beat", issues);
 
         if (content.Structure is { } structure)
         {
@@ -334,13 +341,26 @@ public static class StoryDraftValidator
             }
         }
 
-        if (isParagraph && !StoryEnums.Beats.Contains(segment?.Beat ?? string.Empty))
+        if (isParagraph)
         {
+            if (!StoryEnums.Beats.Contains(segment?.Beat ?? string.Empty))
+            {
+                issues.Add(ValidationIssue.Blocking(
+                    BeatInvalid,
+                    address,
+                    segment?.Beat,
+                    "Use one of the six D3 beats: setup, build_up, clue, twist, reveal, aftermath."));
+            }
+        }
+        else if (segment?.Beat is not null)
+        {
+            // D3: only paragraphs carry a beat, so a hook or an ending must not persist one — and a beat
+            // Postgres rejects (NUL) must never reach the database through a field the paragraph rule skips.
             issues.Add(ValidationIssue.Blocking(
                 BeatInvalid,
                 address,
-                segment?.Beat,
-                "Use one of the six D3 beats: setup, build_up, clue, twist, reveal, aftermath."));
+                segment.Beat,
+                "Omit the beat: only the paragraphs carry one."));
         }
     }
 

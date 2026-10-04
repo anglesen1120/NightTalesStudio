@@ -289,6 +289,78 @@ public sealed class EditStoryEndpointTests(TestDatabase database) : IntegrationT
             .ShouldBe("false", "the previous version keeps its own verdict");
     }
 
+    /// <summary>
+    /// NTS-EDIT-L1: a previous version with no readable <c>audit_report</c> (SQL NULL or a JSON value that is not an object)
+    /// has no verdict to carry. The new version gets the fail-closed marker, never a missing key that would read as clean.
+    /// </summary>
+    [Theory]
+    [InlineData("NULL")]
+    [InlineData("'[]'::jsonb")]
+    [InlineData("'\"unreadable\"'::jsonb")]
+    public async Task EditStory_PreviousAuditReportMissingOrUnreadable_WritesFailClosedModerationMarker(string previousAudit)
+    {
+        var world = await SeedAsync();
+        SqlProbe.Execute(Database, $"UPDATE story_versions SET audit_report = {previousAudit} WHERE id = '{world.VersionId}'");
+        using var factory = Factory();
+        using var client = factory.ClientFor(world.UserId);
+
+        using var response = await PutAsync(client, world.EpisodeId, Edited(), StoryEtag.For(world.VersionId));
+
+        response.StatusCode.ShouldBe(HttpStatusCode.OK, await response.Content.ReadAsStringAsync(Ct));
+        var body = await ReadBodyAsync(response);
+        var newId = body.GetProperty("versionId").GetGuid();
+        JsonNode.DeepEquals(
+                JsonNode.Parse(SqlProbe.ScalarText(Database, $"SELECT audit_report->'moderation' FROM story_versions WHERE id = '{newId}'")),
+                JsonNode.Parse("""{"stale":true,"unavailable":true}"""))
+            .ShouldBeTrue("the marker is exactly { stale: true, unavailable: true }");
+        var hint = body.GetProperty("qualityHints").EnumerateArray()
+            .Single(found => found.GetProperty("ruleId").GetString() == "Q-MOD-01");
+        hint.GetProperty("severity").GetString().ShouldBe("blocking", "an unavailable verdict counts as not moderated");
+
+        // The marker survives the next edit: an unavailable verdict stays unavailable until a moderator has re-checked it.
+        using var second = await PutAsync(client, world.EpisodeId, Edited("Một tựa khác"), response.Headers.ETag!.Tag);
+        second.StatusCode.ShouldBe(HttpStatusCode.OK, await second.Content.ReadAsStringAsync(Ct));
+        var secondBody = await ReadBodyAsync(second);
+        var secondId = secondBody.GetProperty("versionId").GetGuid();
+        SqlProbe.ScalarText(Database, $"SELECT audit_report->'moderation'->>'unavailable' FROM story_versions WHERE id = '{secondId}'")
+            .ShouldBe("true");
+        secondBody.GetProperty("qualityHints").EnumerateArray()
+            .Select(found => found.GetProperty("ruleId").GetString())
+            .ShouldContain("Q-MOD-01");
+    }
+
+    [Fact]
+    public async Task EditStory_NoOpOnPreviousVersionWithoutAuditReport_StillReportsModerationAsBlocking()
+    {
+        var world = await SeedAsync();
+        SqlProbe.Execute(Database, $"UPDATE story_versions SET audit_report = NULL WHERE id = '{world.VersionId}'");
+        using var factory = Factory();
+        using var client = factory.ClientFor(world.UserId);
+
+        using var response = await PutAsync(client, world.EpisodeId, ValidDraft(), StoryEtag.For(world.VersionId));
+
+        response.StatusCode.ShouldBe(HttpStatusCode.OK, await response.Content.ReadAsStringAsync(Ct));
+        (await ReadBodyAsync(response)).GetProperty("qualityHints").EnumerateArray()
+            .Select(found => found.GetProperty("ruleId").GetString())
+            .ShouldContain("Q-MOD-01");
+        AssertNothingSaved(world);
+    }
+
+    [Fact]
+    public async Task EditStory_CleanCarriedModerationVerdict_RaisesNoModerationHint()
+    {
+        var world = await SeedAsync();
+        using var factory = Factory();
+        using var client = factory.ClientFor(world.UserId);
+
+        using var response = await PutAsync(client, world.EpisodeId, Edited(), StoryEtag.For(world.VersionId));
+
+        response.StatusCode.ShouldBe(HttpStatusCode.OK, await response.Content.ReadAsStringAsync(Ct));
+        (await ReadBodyAsync(response)).GetProperty("qualityHints").EnumerateArray()
+            .Select(found => found.GetProperty("ruleId").GetString())
+            .ShouldNotContain("Q-MOD-01", "a carried clean verdict is not the unavailable marker");
+    }
+
     [Fact]
     public async Task EditStory_StaleCarriedModerationVerdict_StillBlocksUntilRechecked()
     {

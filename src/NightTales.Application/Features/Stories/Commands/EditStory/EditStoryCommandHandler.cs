@@ -31,7 +31,9 @@ namespace NightTales.Application.Features.Stories.Commands.EditStory;
 /// <para>
 /// Two inputs of the plan do not exist yet on this base: the content moderator (02.4.1-T1) and the similarity scorer and
 /// corpus (02.5.6). Until they land the previous <c>moderation</c> verdict is carried over marked <c>stale</c> (the plan's
-/// own outage rule, so the approve gate re-checks it) and <c>similarity</c> is the unscorable
+/// own outage rule, so the approve gate re-checks it; when the previous <c>audit_report</c> is missing or unreadable there is
+/// no verdict to carry and the new version gets <c>{ stale: true, unavailable: true }</c>, which the checker reports as a
+/// blocking Q-MOD-01, never as clean) and <c>similarity</c> is the unscorable
 /// <c>{ score: null, n: 0 }</c>. The fact ids a client may cite are the ones the current version already cites, and
 /// <c>fact_sources</c> are carried over from it: the id-to-source mapping lives in the fact sheet (02.5.5) that this
 /// base does not have, and a client-sent <c>fact_sources</c> or URL is never read.
@@ -200,7 +202,8 @@ public sealed partial class EditStoryCommandHandler(
             SimilarityVerdict.Pass,
             ModerationCategoriesOf(previousAudit),
             modelReviewStale,
-            null);
+            null,
+            ModerationIsUnavailable(previousAudit));
 
     private static HashSet<string> FactRefsOf(StoryContentV1 content)
     {
@@ -271,6 +274,17 @@ public sealed partial class EditStoryCommandHandler(
     }
 
     /// <summary>
+    /// True when there is no moderation verdict to carry: the previous <c>audit_report</c> is missing or unreadable, or it
+    /// already carries the <c>unavailable</c> marker. The checker then reports the text as not moderated (fails closed).
+    /// </summary>
+    private static bool ModerationIsUnavailable(JsonObject? audit) =>
+        audit is null
+        || (audit["moderation"] is JsonObject moderation
+            && moderation["unavailable"] is JsonValue unavailable
+            && unavailable.TryGetValue<bool>(out var flag)
+            && flag);
+
+    /// <summary>
     /// The new <c>audit.v1</c> document (02 README D22): <c>local</c> recomputed, <c>model_review</c> kept with
     /// <c>stale = true</c>, the previous <c>moderation</c> verdict kept marked stale, <c>revision</c> carried over and
     /// <c>similarity</c> reset to the unscorable shape.
@@ -296,7 +310,14 @@ public sealed partial class EditStoryCommandHandler(
             },
         };
 
-        if (previous?["moderation"] is JsonObject moderation)
+        if (previous is null)
+        {
+            // NTS-EDIT-L1: no readable previous report means no verdict to carry. A missing key would read as "never
+            // flagged", so the marker says the verdict is unavailable and stale; the approve gate and the moderator
+            // (02.3.2 / 02.4.1) must treat it as not moderated and re-check.
+            root["moderation"] = new JsonObject { ["stale"] = true, ["unavailable"] = true };
+        }
+        else if (previous["moderation"] is JsonObject moderation)
         {
             var kept = (JsonObject)moderation.DeepClone();
             kept["stale"] = true;

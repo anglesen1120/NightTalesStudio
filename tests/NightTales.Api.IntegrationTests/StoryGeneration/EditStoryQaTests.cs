@@ -326,6 +326,8 @@ public sealed class EditStoryQaTests(TestDatabase database) : IntegrationTest(da
     [InlineData("keyword")]
     [InlineData("tag")]
     [InlineData("structure.setting")]
+    [InlineData("hook.beat")]
+    [InlineData("ending.beat")]
     public async Task QA04_NulCharacter_IsRefusedAs400_NeverA500(string where)
     {
         var world = await SeedAsync();
@@ -338,6 +340,33 @@ public sealed class EditStoryQaTests(TestDatabase database) : IntegrationTest(da
 
         response.StatusCode.ShouldBe(HttpStatusCode.BadRequest, await ShortBodyAsync(response));
         (await ReadProblemAsync(response)).Code.ShouldBe("story_invalid_content");
+        AssertNothingSaved(world);
+    }
+
+    /// <summary>CR-01 (D3): a hook or an ending carries no beat, so any non-null value is a 400, never a saved version.</summary>
+    [Theory]
+    [InlineData("hook", "setup")]
+    [InlineData("hook", "wiggle")]
+    [InlineData("hook", "")]
+    [InlineData("ending", "aftermath")]
+    [InlineData("ending", "wiggle")]
+    [InlineData("ending", "")]
+    public async Task QA04_NonNullBeatOnHookOrEnding_IsRefusedAs400(string segment, string beat)
+    {
+        var world = await SeedAsync();
+        using var factory = Factory();
+        using var client = factory.ClientFor(world.UserId);
+        var node = ToNode(Edited());
+        Inject(node, segment + ".beat", beat);
+
+        using var response = await PutAsync(client, world.EpisodeId, node, StoryEtag.For(world.VersionId));
+
+        response.StatusCode.ShouldBe(HttpStatusCode.BadRequest, await ShortBodyAsync(response));
+        var problem = await ReadProblemAsync(response);
+        problem.Code.ShouldBe("story_invalid_content");
+        problem.Errors.ShouldNotBeNull();
+        problem.Errors.ShouldContainKey(segment);
+        problem.Errors[segment].ShouldContain(message => message.StartsWith("beat_invalid:", StringComparison.Ordinal));
         AssertNothingSaved(world);
     }
 
@@ -788,6 +817,12 @@ public sealed class EditStoryQaTests(TestDatabase database) : IntegrationTest(da
                 break;
             case "structure.setting":
                 node["structure"]!["setting"] = "ngôi nhà" + value + "cũ";
+                break;
+            case "hook.beat":
+                node["hook"]!["beat"] = value;
+                break;
+            case "ending.beat":
+                node["ending"]!["beat"] = value;
                 break;
             default:
                 throw new ArgumentOutOfRangeException(nameof(where), where, null);
