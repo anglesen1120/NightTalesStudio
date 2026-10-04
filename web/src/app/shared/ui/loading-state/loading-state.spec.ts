@@ -12,6 +12,7 @@ describe('LoadingState', () => {
     await fixture.whenStable();
     expect(fixture.nativeElement.getAttribute('aria-busy')).toBe('true');
     expect(fixture.nativeElement.querySelector('[aria-live="polite"]')?.textContent).toContain('Đang tải');
+    expect(fixture.nativeElement.querySelector('[role="status"]')?.textContent).toContain('Đang tải');
     expect(fixture.nativeElement.querySelectorAll('.loading-state__skeleton')).toHaveLength(6);
     expect(fixture.nativeElement.querySelector('[aria-hidden="true"]')).not.toBeNull();
   });

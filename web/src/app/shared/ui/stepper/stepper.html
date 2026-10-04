@@ -1,4 +1,4 @@
-<ol>
+<ol role="list">
   @for (item of labelledSteps(); track item.number) {
     <li [class]="'stepper__step stepper__step--' + item.step.state" [attr.aria-current]="item.step.state === 'current' ? 'step' : null">
       <span class="stepper__marker" aria-hidden="true">

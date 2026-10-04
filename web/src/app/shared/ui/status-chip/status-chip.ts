@@ -35,6 +35,11 @@ export class StatusChip {
   private readonly transloco = inject(TranslocoService);
   private readonly activeLang = toSignal(this.transloco.langChanges$, { initialValue: this.transloco.getActiveLang() });
   readonly statusKey = input.required<string>();
+  /**
+   * The approved design deck has no separate warn/info colours, so `warn`
+   * renders with error styling and `info` with success styling until the
+   * design adds dedicated tokens; the icon and text carry the meaning (D16).
+   */
   readonly appearance = input<StatusAppearance>('neutral');
   protected readonly icon = computed<StatusIcon>(() =>
     (Object.hasOwn(STATUS_ICON, this.statusKey()) ? STATUS_ICON[this.statusKey()] : undefined) ?? 'unknown',
