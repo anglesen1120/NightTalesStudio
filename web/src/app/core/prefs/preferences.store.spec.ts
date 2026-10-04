@@ -150,4 +150,14 @@ describe('PreferencesStore', () => {
       'uiLanguage',
     ]);
   });
+
+  it('does not clobber the stored uiLanguage when setTheme runs before read() (C1)', () => {
+    localStorage.setItem(PREFERENCES_STORAGE_KEY, JSON.stringify({ uiLanguage: 'en', theme: 'light' }));
+    const store = TestBed.inject(PreferencesStore);
+    store.setTheme('dark');
+    expect(JSON.parse(localStorage.getItem(PREFERENCES_STORAGE_KEY) ?? '')).toEqual({
+      uiLanguage: 'en',
+      theme: 'dark',
+    });
+  });
 });
