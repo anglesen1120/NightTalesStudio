@@ -18,12 +18,17 @@ The policy is a **response header**, never a `<meta>` tag and never patched from
 - A new inline script is hashed by the build automatically. Never whitelist it with `'unsafe-inline'` or a CDN origin;
   prefer an external, self-hosted file. `optimization.styles.inlineCritical` must stay `false` (its injected `onload`
   handler would fail `csp:gen`).
-- The document has no `<base>` (`base-uri 'none'`): `angular.json` sets `deployUrl: "/"` so assets are root-relative and
-  `app.config.ts` provides `APP_BASE_HREF`.
-- Media origins: the file keeps `${NTS_CSP_MEDIA_ORIGINS}` literal in `img-src` and `media-src`; the image's envsubst
-  fills it at container start from `NTS_CSP_MEDIA_ORIGINS` (space-separated `http(s)://host[:port]` origins, empty by
-  default). The container's entrypoint rejects a malformed or unset value. To add an origin, set that variable; never
-  widen `img-src` / `media-src` to `*`.
+- The production document has no `<base>` (`base-uri 'none'`): `angular.json` sets `deployUrl: "/"` so assets are
+  root-relative and `app.config.ts` provides `APP_BASE_HREF`. `ng serve` does not honour `deployUrl`, so the
+  `development` build configuration sets `baseHref: "/"` instead (dev sends no CSP, so a `<base>` is harmless there);
+  `e2e/deep-link.spec.ts` reloads a nested route on both targets. Because the production document has no `<base>`,
+  every runtime fetch (Transloco loader included) must use a root-relative URL (`/assets/...`), never `assets/...`.
+- Media origins: the file keeps `${NTS_CSP_MEDIA_ORIGINS}` literal in `img-src 'self' data:${...}` and
+  `media-src 'self'${...}` (no space before the placeholder); the image's envsubst fills it at container start from
+  `NTS_CSP_MEDIA_ORIGINS` (space-separated `http(s)://host[:port]` origins, empty by default).
+  `docker-entrypoint.d/16-nts-media-origins.envsh` gives each validated origin a leading space, so an empty list
+  leaves exactly `img-src 'self' data:` / `media-src 'self'`. The container's entrypoint rejects a malformed value.
+  To add an origin, set that variable; never widen `img-src` / `media-src` to `*`.
 - Trusted Types: the header allow-lists exactly `angular`, `angular#bundler` and `nts-sanitizer`.
   `core/security/nts-sanitizer.ts` is the only module that may create a policy (and the only file exempt from the
   `bypassSecurityTrust*` lint ban); `shared/util/download-blob.ts` + `safe-filename.ts` are the only download path.

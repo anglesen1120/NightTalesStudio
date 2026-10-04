@@ -3,7 +3,8 @@
 // <script> in dist/web/browser, and writes ONE nginx include file — dist/nginx/csp-headers.conf —
 // outside the served tree. The runtime stage installs it as
 // /etc/nginx/templates/includes/csp-headers.conf.template and the image's envsubst fills the
-// literal ${NTS_CSP_MEDIA_ORIGINS} at container start; this script never reads the env.
+// literal ${NTS_CSP_MEDIA_ORIGINS} at container start (the value carries its own leading space, see
+// docker-entrypoint.d/16-nts-media-origins.envsh); this script never reads the env.
 //
 // Hard failures (no bypass flag, by design): an inline on*= event handler, a javascript: URL in
 // href/src/action/formaction, a <script src> that is not same-origin, a produced file with more
@@ -72,6 +73,51 @@ function isSameOrigin(src) {
   return true;
 }
 
+/** Attributes whose value the browser may navigate to or load. */
+const URL_ATTRIBUTES = new Set(['href', 'src', 'action', 'formaction', 'xlink:href']);
+
+const NAMED_ENTITIES = new Map([
+  ['colon', ':'],
+  ['tab', '\t'],
+  ['newline', '\n'],
+  ['amp', '&'],
+  ['lt', '<'],
+  ['gt', '>'],
+  ['quot', '"'],
+  ['apos', "'"],
+]);
+
+/** One pass of HTML character-reference decoding (numeric with/without `;`, plus the few named ones a URL needs). */
+function decodeEntities(value) {
+  return value.replace(/&(?:#(?:x([0-9a-f]+)|(\d+))|([a-z]+));?/gi, (whole, hex, decimal, named) => {
+    if (named !== undefined) return NAMED_ENTITIES.get(named.toLowerCase()) ?? whole;
+    const codePoint = Number.parseInt(hex ?? decimal, hex === undefined ? 10 : 16);
+    return codePoint > 0 && codePoint <= 0x10ffff ? String.fromCodePoint(codePoint) : '\ufffd';
+  });
+}
+
+/** A URL as the browser sees it: entities decoded, ASCII tab/newline removed, leading controls and spaces dropped. */
+function normalizeUrl(value) {
+  return decodeEntities(value)
+    .replace(/[\t\n\r]/g, '')
+    .replace(/^[\u0000-\u0020]+/, '');
+}
+
+/** A keyword attribute (`rel`, `http-equiv`): entities decoded, lower-cased, trimmed. */
+function normalizeToken(value) {
+  return decodeEntities(value).replace(/[\t\n\r]/g, ' ').trim().toLowerCase();
+}
+
+/** The attributes of one start tag: lower-cased name, raw value ('' when absent) and its offset in the tag. */
+function parseAttributes(tagSource) {
+  const attributes = [];
+  const body = tagSource.replace(/^<[a-zA-Z][^\s>/]*/, (match) => ' '.repeat(match.length));
+  for (const match of body.matchAll(/([^\s"'<>/=]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+)))?/g)) {
+    attributes.push({ name: match[1].toLowerCase(), value: match[2] ?? match[3] ?? match[4] ?? '', index: match.index });
+  }
+  return attributes;
+}
+
 /** Analyses one HTML document. Returns { hashes } or throws CspError on a hard failure. */
 export function analyseHtml(html, displayPath) {
   const fail = (what, index) => {
@@ -92,9 +138,39 @@ export function analyseHtml(html, displayPath) {
     }
   }
 
-  // 2. javascript: URLs in any URL-bearing attribute.
+  // 2. javascript: URLs in any URL-bearing attribute. The raw pass catches the plain spelling; the attribute pass
+  //    below catches what the HTML parser would turn into one (entities, embedded tab/newline).
   for (const match of html.matchAll(/\b(?:href|src|action|formaction)\s*=\s*("|'|)\s*javascript\s*:/gi)) {
     fail('javascript: URL is banned (fix the template; there is no bypass flag)', match.index);
+  }
+  for (const tag of html.matchAll(/<[a-zA-Z][^\s>/]*(?:"[^"]*"|'[^']*'|[^'">])*>/g)) {
+    const tagName = /^<([a-zA-Z][^\s>/]*)/.exec(tag[0])?.[1]?.toLowerCase() ?? '';
+    const attributes = parseAttributes(tag[0]);
+    const attr = (name) => attributes.find((candidate) => candidate.name === name);
+    for (const { name, value, index } of attributes) {
+      if (URL_ATTRIBUTES.has(name) && /^javascript:/i.test(normalizeUrl(value))) {
+        fail('javascript: URL is banned (fix the template; there is no bypass flag)', tag.index + index);
+      }
+    }
+    // 2b. A <link> that pulls a stylesheet or module graph from another origin (style-src / script-src would block
+    //     it at runtime, but the build must say so before the image ships).
+    if (tagName === 'link') {
+      const rel = normalizeToken(attr('rel')?.value ?? '').split(/\s+/);
+      const href = attr('href');
+      if (href !== undefined && (rel.includes('stylesheet') || rel.includes('modulepreload'))) {
+        const target = normalizeUrl(href.value);
+        if (!isSameOrigin(target)) {
+          fail(`external <link rel="${rel.join(' ')}" href="${target}"> is banned (self-host it)`, tag.index + href.index);
+        }
+      }
+    }
+    // 2c. <meta http-equiv="refresh" content="0;url=javascript:...">.
+    if (tagName === 'meta' && normalizeToken(attr('http-equiv')?.value ?? '') === 'refresh') {
+      const content = attr('content');
+      if (content !== undefined && /javascript\s*:/i.test(normalizeUrl(content.value))) {
+        fail('javascript: URL in <meta http-equiv="refresh"> is banned', tag.index + content.index);
+      }
+    }
   }
 
   // 3. Scripts: hash executable inline bodies; reject off-origin src.
@@ -126,8 +202,8 @@ export function buildPolicy(sortedHashes) {
     "default-src 'none'",
     scriptSrc,
     "style-src 'self' 'unsafe-inline'",
-    `img-src 'self' data: ${MEDIA_PLACEHOLDER}`,
-    `media-src 'self' ${MEDIA_PLACEHOLDER}`,
+    `img-src 'self' data:${MEDIA_PLACEHOLDER}`,
+    `media-src 'self'${MEDIA_PLACEHOLDER}`,
     "font-src 'self'",
     "connect-src 'self'",
     "manifest-src 'self'",
@@ -182,8 +258,13 @@ export function assertProducedFile(content) {
   }
   const imgSrc = /(?:^|;\s*)img-src\s+([^;]+)/.exec(value)?.[1] ?? '';
   const mediaSrc = /(?:^|;\s*)media-src\s+([^;]+)/.exec(value)?.[1] ?? '';
-  if ((imgSrc.split(MEDIA_PLACEHOLDER).length - 1) !== 1 || (mediaSrc.split(MEDIA_PLACEHOLDER).length - 1) !== 1) {
-    throw new CspError(`${MEDIA_PLACEHOLDER} must occur literally exactly once per img-src/media-src directive`);
+  // The separator is part of the value (docker-entrypoint.d/16-nts-media-origins.envsh), so an empty list leaves
+  // exactly `'self' data:` / `'self'`: the placeholder must sit directly after the last fixed token.
+  if (imgSrc !== `'self' data:${MEDIA_PLACEHOLDER}` || mediaSrc !== `'self'${MEDIA_PLACEHOLDER}`) {
+    throw new CspError(
+      `${MEDIA_PLACEHOLDER} must occur literally exactly once per img-src/media-src directive, directly after ` +
+        "`'self' data:` / `'self'` with no space (an empty value must leave no trailing whitespace)",
+    );
   }
   if (value.length > MAX_POLICY_CHARS) {
     throw new CspError(

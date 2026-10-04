@@ -257,8 +257,27 @@ start hsts -e "NTS_HSTS=$HSTS_VALUE"
 hdrs /
 header_has "NTS_HSTS set -> exact HSTS value on /" "strict-transport-security: $HSTS_VALUE"
 
-# --- media origins: accepted value reaches the served CSP -----------------------------
-start media -e 'NTS_CSP_MEDIA_ORIGINS=https://media.example.com'
+# --- media origins: exact rendering (the value carries its own separator, 16-nts-media-origins.envsh) ----
+# csp_directive NAME -> the directive from the served header, byte-exact (only the `; ` separator is cut).
+csp_directive() {
+    curl -sS -D - -o /dev/null "http://127.0.0.1:$PORT/" | tr -d '\r' \
+        | sed -n 's/^[Cc]ontent-[Ss]ecurity-[Pp]olicy: //p' | tr ';' '\n' | sed 's/^ //' | grep -E "^$1( |\$)" || true
+}
+expect_directive() { # NAME EXPECTED LABEL
+    local got
+    got=$(csp_directive "$1")
+    [ "$got" = "$2" ] || fail "$3" "[$2]" "[$got]"
+    pass "$3"
+}
+
+start media-empty
+expect_directive img-src "img-src 'self' data:" "empty NTS_CSP_MEDIA_ORIGINS: img-src is exactly 'self' data: (no trailing space)"
+expect_directive media-src "media-src 'self'" "empty NTS_CSP_MEDIA_ORIGINS: media-src is exactly 'self' (no trailing space)"
+
+# Two origins, deliberately padded with extra spaces: joined by single spaces, nothing leading or trailing.
+start media -e 'NTS_CSP_MEDIA_ORIGINS=  https://media.example.com   https://cdn.example.org '
+expect_directive img-src "img-src 'self' data: https://media.example.com https://cdn.example.org" "two origins: img-src lists both, single-spaced"
+expect_directive media-src "media-src 'self' https://media.example.com https://cdn.example.org" "two origins: media-src lists both, single-spaced"
 if docker exec "$CURRENT" grep -q 'img-src\|media-src' /etc/nginx/conf.d/includes/csp-headers.conf; then
     docker exec "$CURRENT" grep -q 'https://media.example.com' /etc/nginx/conf.d/includes/csp-headers.conf \
         || fail "media origin substituted into CSP" "https://media.example.com in csp-headers.conf" "absent"

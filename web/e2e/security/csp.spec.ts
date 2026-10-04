@@ -28,10 +28,14 @@ const D4_HEADERS: Record<string, string> = {
   'cross-origin-opener-policy': 'same-origin',
 };
 
+/**
+ * One directive of the policy, compared EXACTLY: only the `; ` separator's leading space is dropped, never trailing
+ * whitespace (an empty `NTS_CSP_MEDIA_ORIGINS` must leave `img-src 'self' data:` with nothing after it).
+ */
 function directive(policy: string, name: string): string | undefined {
   return policy
     .split(';')
-    .map((part) => part.trim())
+    .map((part) => part.trimStart())
     .find((part) => part === name || part.startsWith(`${name} `));
 }
 
@@ -66,9 +70,16 @@ for (const route of CSP_ROUTES) {
     // Every executable inline <script> of the served document is covered by a hash in the header.
     await page.goto(route);
     await page.waitForLoadState('networkidle');
-    const inlineScripts = await page.evaluate(
-      () => document.querySelectorAll('script:not([src]):not([type="application/json"])').length,
-    );
+    // Non-executable data blocks and empty bodies are never hashed: the same rules as tools/web/gen-csp.mjs
+    // (INERT_SCRIPT_TYPES, empty-body skip).
+    const inlineScripts = await page.evaluate(() => {
+      const inert = ['application/json', 'application/ld+json', 'importmap', 'speculationrules'];
+      return [...document.querySelectorAll('script:not([src])')].filter(
+        (script) =>
+          !inert.includes((script.getAttribute('type') ?? '').trim().toLowerCase()) &&
+          (script.textContent ?? '').trim() !== '',
+      ).length;
+    });
     const hashCount = (scriptSrc.match(/'sha256-/g) ?? []).length;
     expect(inlineScripts, 'executable inline <script> count vs sha256 hashes in the header').toBe(hashCount);
 

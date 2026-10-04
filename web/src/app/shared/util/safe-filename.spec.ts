@@ -19,7 +19,31 @@ describe('safeFilename', () => {
     ['   ', 'download'],
     ['a..b', 'ab'],
     ['  spaced   out  .mp4 ', 'spaced out .mp4'],
-    ['C:\\Windows\\system32', 'C:Windowssystem32'],
+    ['C:\\Windows\\system32', 'C_Windowssystem32'],
+    // Windows device names, with or without an extension, any case.
+    ['CON', '_CON'],
+    ['con', '_con'],
+    ['nul.txt', '_nul.txt'],
+    ['PRN.tar.gz', '_PRN.tar.gz'],
+    ['aux', '_aux'],
+    ['COM1.txt', '_COM1.txt'],
+    ['Com9', '_Com9'],
+    ['lpt1.log', '_lpt1.log'],
+    ['LPT9', '_LPT9'],
+    // Not device names: no reserved stem.
+    ['console.log', 'console.log'],
+    ['com10.txt', 'com10.txt'],
+    ['com0.txt', 'com0.txt'],
+    ['nullable', 'nullable'],
+    // Characters Windows forbids in a name.
+    ['a:b.txt', 'a_b.txt'],
+    ['a.txt:evil.exe', 'a.txt_evil.exe'],
+    ['x<y>z|w*?.txt', 'x_y_z_w__.txt'],
+    // Trailing dot / space (Windows strips them silently, which can re-expose a reserved or hidden name).
+    ['file.', 'file'],
+    ['file. ', 'file'],
+    ['file .', 'file'],
+    ['CON. ', '_CON'],
   ];
 
   it.each(hostile)('sanitises %j to %j', (raw, expected) => {

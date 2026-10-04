@@ -1,0 +1,15 @@
+# Sourced (not executed) by the image's /docker-entrypoint.sh, in `sort -V` order: after
+# 15-nts-validate-env.sh has accepted the value and before 20-envsubst-on-templates.sh renders it.
+#
+# The CSP include carries `img-src 'self' data:${NTS_CSP_MEDIA_ORIGINS}` and
+# `media-src 'self'${NTS_CSP_MEDIA_ORIGINS}` (gen-csp.mjs, 10.1.6-T1): the placeholder follows the last
+# fixed token WITHOUT a space, so the separator belongs to the value. Each validated origin is therefore
+# prefixed with one space; an empty list stays empty and the directives end exactly at `'self' data:` /
+# `'self'` — no trailing whitespace. Normalises runs of spaces too. Must not `exit` (it runs in the
+# entrypoint's shell) and must not print the value.
+nts_media_origins=""
+for nts_origin in ${NTS_CSP_MEDIA_ORIGINS:-}; do
+    nts_media_origins="$nts_media_origins $nts_origin"
+done
+export NTS_CSP_MEDIA_ORIGINS="$nts_media_origins"
+unset nts_media_origins nts_origin

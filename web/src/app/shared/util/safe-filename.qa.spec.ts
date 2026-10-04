@@ -61,6 +61,15 @@ describe('safeFilename (QA adversarial)', () => {
   });
 
   it('turns a scheme-looking name into plain data (it only ever feeds a.download, never href)', () => {
-    expect(safeFilename('javascript:alert(1)')).toBe('javascript:alert(1)');
+    expect(safeFilename('javascript:alert(1)')).toBe('javascript_alert(1)');
+  });
+
+  it('never returns a Windows device name, a trailing dot/space or a Windows-forbidden character', () => {
+    for (const raw of inputs) {
+      const out = safeFilename(raw);
+      expect(out).not.toMatch(/^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i);
+      expect(out).not.toMatch(/[. ]$/);
+      expect(out).not.toMatch(/[:<>|*?]/);
+    }
   });
 });

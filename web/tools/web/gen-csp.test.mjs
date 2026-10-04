@@ -107,6 +107,80 @@ describe('gen-csp: hard failures (no bypass flag)', () => {
   it('does not flag attribute names that merely start with "on"', () => {
     assert.deepEqual(analyseHtml('<div ongoing="x" online="y" onboarding="z"></div>', 'x.html'), []);
   });
+
+  it('fails on a javascript: URL hidden behind an entity or an embedded tab/newline (fixture + variants)', () => {
+    const { dir, out } = tree('jsurl-entity', 'javascript-url-entity.html');
+    assert.throws(() => generate(dir, out), /javascript-url-entity\.html:5: javascript: URL is banned/);
+    for (const href of [
+      'java&#x09;script:alert(1)',
+      'java&#9;script:alert(1)',
+      'java&Tab;script:alert(1)',
+      'java&NewLine;script:alert(1)',
+      '&#106;avascript:alert(1)',
+      '&#x6A;avascript:alert(1)',
+      '&#106avascript:alert(1)',
+      'javascript&colon;alert(1)',
+      'java\tscript:alert(1)',
+      'java\nscript:alert(1)',
+      'java\r\nscript:alert(1)',
+      '\u0001  javascript:alert(1)',
+      'JaVaScRiPt:alert(1)',
+    ]) {
+      assert.throws(() => analyseHtml(`<a href="${href}">x</a>`, 'x.html'), /javascript: URL is banned/, JSON.stringify(href));
+    }
+    assert.throws(() => analyseHtml('<form action=&#106;avascript:alert(1)></form>', 'x.html'), /javascript: URL is banned/);
+    assert.throws(() => analyseHtml('<button formaction="java&#x0A;script:1">x</button>', 'x.html'), /javascript: URL is banned/);
+  });
+
+  it('does not flag harmless look-alikes (a path, a query, a plain word, entity-escaped text)', () => {
+    for (const href of ['/docs/javascript:intro', 'javascripts/app.js', '?q=javascript:', 'a&amp;b', '#top', '']) {
+      assert.deepEqual(analyseHtml(`<a href="${href}">x</a>`, 'x.html'), [], JSON.stringify(href));
+    }
+  });
+
+  it('fails on an external stylesheet or modulepreload <link> (fixture + variants), not on a same-origin one', () => {
+    const { dir, out } = tree('cdn-css', 'external-stylesheet-link.html');
+    assert.throws(() => generate(dir, out), /external-stylesheet-link\.html:4: external <link rel="stylesheet" href="https:\/\/cdn\.example\.com\/theme\.css"> is banned/);
+    for (const link of [
+      '<link rel="stylesheet" href="http://cdn.example.com/a.css">',
+      '<link rel="modulepreload" href="https://cdn.example.com/a.js">',
+      '<link href="//cdn.example.com/a.css" rel="stylesheet">',
+      "<link rel='STYLESHEET' href='https://cdn.example.com/a.css'>",
+      '<link rel="preload stylesheet" href="https://cdn.example.com/a.css">',
+      '<link rel="stylesheet" href="https&colon;//cdn.example.com/a.css">',
+      '<link rel=stylesheet href=https://cdn.example.com/a.css>',
+    ]) {
+      assert.throws(() => analyseHtml(link, 'x.html'), /external <link rel=/, link);
+    }
+    for (const link of [
+      '<link rel="stylesheet" href="styles-ABC123.css">',
+      '<link rel="modulepreload" href="/chunk-XYZ.js">',
+      '<link rel="icon" href="https://cdn.example.com/favicon.ico">',
+      '<link rel="preconnect" href="https://cdn.example.com">',
+      '<link rel="canonical" href="https://example.com/">',
+    ]) {
+      assert.deepEqual(analyseHtml(link, 'x.html'), [], link);
+    }
+  });
+
+  it('fails on <meta http-equiv=refresh> carrying a javascript: URL (fixture + variants), not on a same-origin refresh', () => {
+    const { dir, out } = tree('meta-refresh', 'meta-refresh-javascript.html');
+    assert.throws(() => generate(dir, out), /meta-refresh-javascript\.html:4: javascript: URL in <meta http-equiv="refresh"> is banned/);
+    for (const meta of [
+      '<meta http-equiv="REFRESH" content="0; URL=javascript:alert(1)">',
+      '<meta http-equiv=refresh content="0;url=java&#x09;script:alert(1)">',
+      "<meta content='0;url=&#106;avascript:alert(1)' http-equiv='refresh'>",
+    ]) {
+      assert.throws(() => analyseHtml(meta, 'x.html'), /javascript: URL in <meta/, meta);
+    }
+    for (const meta of [
+      '<meta http-equiv="refresh" content="5;url=/login">',
+      '<meta http-equiv="x-ua-compatible" content="javascript:">',
+      '<meta name="description" content="about javascript: urls">',
+    ]) {
+      assert.deepEqual(analyseHtml(meta, 'x.html'), [], meta);
+    }
+  });
 });
 
 describe('gen-csp: produced file', () => {
@@ -145,8 +219,8 @@ describe('gen-csp: produced file', () => {
     for (const directive of [
       "default-src 'none'",
       "style-src 'self' 'unsafe-inline'",
-      "img-src 'self' data: ${NTS_CSP_MEDIA_ORIGINS}",
-      "media-src 'self' ${NTS_CSP_MEDIA_ORIGINS}",
+      "img-src 'self' data:${NTS_CSP_MEDIA_ORIGINS}",
+      "media-src 'self'${NTS_CSP_MEDIA_ORIGINS}",
       "font-src 'self'",
       "connect-src 'self'",
       "manifest-src 'self'",
@@ -174,7 +248,22 @@ describe('gen-csp: produced file', () => {
     assert.throws(() => assertProducedFile(good.replace("script-src 'self'", "script-src 'self' 'unsafe-eval'")), /unsafe-eval/);
     assert.throws(() => assertProducedFile(good.replace("script-src 'self'", "script-src 'self' 'unsafe-inline'")), /unsafe-inline/);
     assert.throws(() => assertProducedFile(good.replace("require-trusted-types-for 'script'; ", '')), /require-trusted-types-for/);
-    assert.throws(() => assertProducedFile(good.replace(' ${NTS_CSP_MEDIA_ORIGINS};', ';')), /exactly once per/);
+    assert.throws(() => assertProducedFile(good.replace('${NTS_CSP_MEDIA_ORIGINS};', ';')), /exactly once per/);
+    // The placeholder must sit directly after the last fixed token: a space before it would leave a trailing space
+    // when the origin list is empty.
+    assert.throws(() => assertProducedFile(good.replace("data:${", 'data: ${')), /no space/);
+    assert.throws(() => assertProducedFile(good.replace("'self'${NTS_CSP_MEDIA_ORIGINS}; font", "'self' ${NTS_CSP_MEDIA_ORIGINS}; font")), /no space/);
+  });
+
+  it('renders to exactly `img-src \'self\' data:` and `media-src \'self\'` once the placeholder is an empty string', () => {
+    const rendered = buildPolicy([]).replaceAll('${NTS_CSP_MEDIA_ORIGINS}', '');
+    const parts = rendered.split('; ');
+    assert.ok(parts.includes("img-src 'self' data:"), rendered);
+    assert.ok(parts.includes("media-src 'self'"), rendered);
+    assert.doesNotMatch(rendered, / ;| $/);
+    const withOrigins = buildPolicy([]).replaceAll('${NTS_CSP_MEDIA_ORIGINS}', ' https://a.example https://b.example');
+    assert.ok(withOrigins.split('; ').includes("img-src 'self' data: https://a.example https://b.example"));
+    assert.ok(withOrigins.split('; ').includes("media-src 'self' https://a.example https://b.example"));
   });
 
   it(`trips the ${MAX_POLICY_CHARS}-character guard with a fixture of many inline scripts`, () => {
