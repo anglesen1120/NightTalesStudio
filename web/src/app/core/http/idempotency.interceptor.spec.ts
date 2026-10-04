@@ -242,6 +242,11 @@ describe('IdempotencyInterceptor with the real appConfig providers', () => {
     expect(replay.request.headers.get('Idempotency-Key')).toBe(intent.key);
     replay.flush({});
     expect((await done).ok).toBe(true);
+    // The real appConfig also carries provideRealtime() (10.2.4-T1): signing in starts the hub connection, which asks
+    // for a ticket in the background. That request belongs to no user intent, so it never carries an Idempotency-Key.
+    for (const ticket of mock.match('/api/v1/hubs/ticket')) {
+      expect(ticket.request.headers.has('Idempotency-Key')).toBe(false);
+    }
     mock.verify();
   });
 });
