@@ -13,6 +13,7 @@ using NightTales.Application.Abstractions.Realtime;
 using NightTales.Application.Abstractions.Rendering;
 using NightTales.Application.Audit;
 using NightTales.Application.Features.Platform.Retention;
+using NightTales.Application.Features.Research.Jobs;
 using NightTales.Domain.Common;
 using NightTales.Infrastructure.DependencyInjection;
 using NightTales.Infrastructure.Persistence.Audit;
@@ -149,6 +150,10 @@ public static class PersistenceServiceCollectionExtensions
 
         // 09.2.4-T1: the processed-row sweep of the outbox, driven by the Worker's daily recurring job.
         services.AddScoped<IOutboxCleanupStore, OutboxCleanupStore>();
+
+        // 02.5.2-T2: the fetch-lease sweeper's one cross-user statement over `fetch_tasks`, driven by the Worker's
+        // minutely `fetch-lease-sweeper` job.
+        services.AddScoped<IFetchLeaseSweepStore, FetchLeaseSweepStore>();
 
         // 09.7.3-T1: the retention sweep's three ports — the audit keyset store, the per-row asset store (resolved
         // inside the row's own pinned scope) and the session advisory lock — driven by the Worker's daily job.

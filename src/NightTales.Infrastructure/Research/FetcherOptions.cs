@@ -56,4 +56,26 @@ public sealed class FetcherOptions
 
     /// <summary>The <c>Accept-Language</c> sent when the request carries no episode language.</summary>
     public string AcceptLanguage { get; set; } = "en";
+
+    /// <summary>How long a lease lasts without a heartbeat, in seconds (02 D10: 90 s).</summary>
+    public int LeaseSeconds { get; set; } = 90;
+
+    /// <summary>How far a heartbeat moves the lease end from now, in seconds (02 D10: 60 s).</summary>
+    public int HeartbeatSeconds { get; set; } = 60;
+
+    /// <summary>
+    /// The longest a lease may live in total, in seconds, counted from <c>leased_at</c> (SEC-1: 300). A heartbeat never
+    /// extends <c>lease_until</c> past it, and once it has passed the heartbeat answers <c>fetch_lease_lost</c> so the
+    /// sweeper reclaims a task whose fetcher keeps heartbeating while the fetch is stuck.
+    /// </summary>
+    public int MaxLeaseTotalSeconds { get; set; } = 300;
+
+    /// <summary>The most tasks leased platform-wide at once (02 D10, FR-02-8: 4).</summary>
+    public int MaxLeasesPlatformWide { get; set; } = 4;
+
+    /// <summary>
+    /// The most tasks leased per registrable domain at once (02 D10: 1). The lease statement's per-domain partition is
+    /// fixed at one, so the validator accepts no other value; the key documents the contract.
+    /// </summary>
+    public int MaxLeasesPerDomain { get; set; } = 1;
 }

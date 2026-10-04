@@ -292,7 +292,7 @@ Job codes are **never** an HTTP response (D8) and never a `ProblemDetails`; the 
 
 ### 5.5 Events
 
-`SourceFetched { EpisodeId, SeriesId, UserId, SourceId, Status, ErrorCode, RegistrableDomain }` and `SourceRemoved { … }` (Domain `Research/`), raised by the Api handler, written to `outbox_messages` in the same transaction, dispatched to SignalR `EpisodeUpdated` (09.5.3, no new event type — CR-7 shape only carries `generation`). No OpenAI call, no `generation_runs` row, no credit reservation: fetching is free (D1/D14).
+`SourceFetched { SourceId, EpisodeId, UserId, OccurredAt }` (as built by 02.5.2-T2: the event keeps its four existing fields because consumers re-read the episode; see that task's §Notes [DECISION]) and `SourceRemoved { … }` (Domain `Research/`), raised by the Api handler (and by `FetchLeaseSweeperJob` when it fails a source), written to `outbox_messages` in the same transaction, dispatched to SignalR `EpisodeUpdated` (09.5.3, no new event type — CR-7 shape only carries `generation`). No OpenAI call, no `generation_runs` row, no credit reservation: fetching is free (D1/D14).
 
 ## 6. UI
 

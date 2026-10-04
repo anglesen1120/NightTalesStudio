@@ -129,6 +129,7 @@ public sealed partial class StorySource : Entity, IUserOwned
     /// <param name="textKey">The object-storage key of the stored text.</param>
     /// <param name="textChars">The text length, at least 0.</param>
     /// <param name="at">When the Api accepted the result.</param>
+    /// <param name="httpStatus">The HTTP status of the final response, if the fetcher reported one.</param>
     public void MarkFetched(
         string finalUrl,
         string? title,
@@ -136,7 +137,8 @@ public sealed partial class StorySource : Entity, IUserOwned
         string sha256,
         string textKey,
         int textChars,
-        DateTimeOffset at)
+        DateTimeOffset at,
+        int? httpStatus = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(finalUrl);
         ArgumentException.ThrowIfNullOrWhiteSpace(contentType);
@@ -158,6 +160,7 @@ public sealed partial class StorySource : Entity, IUserOwned
         TextChars = textChars;
         ErrorCode = null;
         FetchedAt = at;
+        HttpStatus = httpStatus;
     }
 
     /// <summary>The fetch ended with a D8 job outcome code: <c>Pending</c> to <c>Failed</c>.</summary>

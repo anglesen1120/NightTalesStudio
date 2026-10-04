@@ -345,6 +345,7 @@ jwt_pem="$config_dir/jwt-signing-key.pem"
 kek_pfx="$config_dir/dp-kek.pfx"
 kek_pass_file="$config_dir/dp-kek.password"
 compose_env_file="$config_dir/compose.env"
+fetcher_token_file="$config_dir/fetcher-api-token"
 
 if [ ! -s "$jwt_pem" ]; then
   log "generating a throwaway ES256 signing key in $jwt_pem"
@@ -377,10 +378,22 @@ else
 fi
 chmod 600 "$jwt_pem" "$kek_pfx" "$kek_pass_file"
 
-# The optional compose api/worker read their signing key from this env file (a PEM cannot travel
-# through `${...}` interpolation); the KEK password and path are plain compose values.
+# The fetcher's internal lease API (02.5.2-T2, 02 D10) refuses to start without FETCHER_API_TOKEN (>= 32
+# characters) once Fetcher:Internal:Enabled is true, and up.sh enables it. A throwaway token is generated
+# once, kept owner-only next to the other dev key material and never printed or placed in argv.
+fetcher_token="$(cat "$fetcher_token_file" 2>/dev/null || true)"
+if [ "${#fetcher_token}" -lt 32 ]; then
+  log "generating a throwaway fetcher API token in $fetcher_token_file"
+  openssl rand -hex 32 > "$fetcher_token_file"
+fi
+unset fetcher_token
+chmod 600 "$fetcher_token_file"
+
+# The optional compose api/worker read their signing key and the fetcher token from this env file (a PEM
+# cannot travel through `${...}` interpolation); the KEK password and path are plain compose values.
 {
   printf 'Auth__Jwt__SigningKey="%s"\n' "$(cat "$jwt_pem")"
+  printf 'FETCHER_API_TOKEN=%s\n' "$(cat "$fetcher_token_file")"
 } > "$compose_env_file"
 chmod 600 "$compose_env_file"
 
@@ -495,9 +508,12 @@ api_environment() {
   export DataProtection__KekPfxPath="$kek_pfx"
   export DataProtection__KekPfxPassword="$dev_kek_pass"
   storage_mail_environment
-  # The 8081 internal listener is code-configured by 02.5.2-T2; the row is set here so the address
-  # never moves off loopback (T10).
+  # The 8081 internal listener (02.5.2-T2) is on in dev, bound to loopback only (T10), and protected by the
+  # throwaway token; it is committed disabled in appsettings.json. The token stays out of argv (01 D9).
+  export Fetcher__Internal__Enabled="true"
   export Fetcher__Internal__ListenAddress="127.0.0.1"
+  FETCHER_API_TOKEN="$(cat "$fetcher_token_file")"
+  export FETCHER_API_TOKEN
 }
 
 worker_environment() {
