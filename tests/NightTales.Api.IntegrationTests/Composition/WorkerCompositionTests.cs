@@ -3,6 +3,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using NightTales.Application.Abstractions;
+using NightTales.Application.Abstractions.Moderation;
 using NightTales.Application.Abstractions.Text;
 using NightTales.Application.Features.Stories.Writing;
 using NightTales.Infrastructure.OpenAI;
@@ -106,6 +107,10 @@ public sealed class WorkerCompositionTests
         // the singletons built on the scoped flag reader resolve.
         app.Services.GetRequiredService<IStoryWriter>().ShouldBeOfType<OpenAiStoryWriter>();
         app.Services.GetRequiredService<ITextClient>().ShouldBeOfType<OpenAiTextClient>();
+
+        // 02.4.1-T1 (D12): the moderation port and its event writer resolve from the same composition.
+        app.Services.GetRequiredService<IContentModerator>().ShouldBeOfType<OpenAiContentModerator>();
+        app.Services.GetRequiredService<IModerationEventWriter>().ShouldNotBeNull();
     }
 
     private static string[] BuildArgs(params string[] extra)
