@@ -92,6 +92,12 @@ public sealed class StoryQualityChecker
     /// <summary>The render plan is sparse (03 CR-14, <c>scenes_sparse</c>).</summary>
     public const string ScenesSparse = "Q-SCENE-02";
 
+    /// <summary>
+    /// The category recorded when the draft-stage moderation flagged the text but named no category. It fails closed: an
+    /// uncategorised flag blocks approval like a blocking category.
+    /// </summary>
+    public const string UnspecifiedModerationCategory = "unspecified";
+
     /// <summary>The D12 draft-stage categories that block approval on the human path.</summary>
     public static readonly IReadOnlySet<string> BlockingModerationCategories = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
     {
@@ -99,6 +105,7 @@ public sealed class StoryQualityChecker
         "self-harm/instructions",
         "illicit/violent",
         "hate/threatening",
+        UnspecifiedModerationCategory,
     };
 
     /// <summary>Every rule id with the i18n key its message uses; the UI's <c>quality</c> files must define each key.</summary>

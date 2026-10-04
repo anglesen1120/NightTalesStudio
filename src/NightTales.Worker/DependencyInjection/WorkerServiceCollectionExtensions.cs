@@ -12,12 +12,14 @@ using NightTales.Application.DependencyInjection;
 using NightTales.Application.Features.Assets.Jobs;
 using NightTales.Application.Features.Episodes.Outbox;
 using NightTales.Application.Features.Research.Sources.Outbox;
+using NightTales.Application.Features.Stories.Jobs;
 using NightTales.Application.Features.Stories.Outbox;
 using NightTales.Application.Telemetry;
 using NightTales.Domain.Episodes.Events;
 using NightTales.Domain.Platform.Events;
 using NightTales.Domain.Research.Events;
 using NightTales.Domain.Stories.Events;
+using NightTales.Domain.Stories.Generation.Events;
 using NightTales.Infrastructure.Compliance.Deletion;
 using NightTales.Infrastructure.DependencyInjection;
 using NightTales.Infrastructure.Email;
@@ -156,6 +158,31 @@ public static class WorkerServiceCollectionExtensions
         // 02.3.1-T1 (plan §Design step 7, 02 CR-7): `story_version_saved.v1` becomes an `EpisodeUpdated` NOTIFY, ids only,
         // so the editor and the episode page refetch after an edit.
         services.AddOutboxHandler<StoryVersionSaved, StoryVersionSavedRealtimeHandler>();
+
+        // 02.2.2-T3 (02 README D21): the story generation job, its outbox consumers, the stage progress and the sweeper.
+        // Every key has a default, so none is a required start-up key; a value out of range fails the boot.
+        services.AddStoryGeneration();
+        services.AddStoryQuality();
+        services.AddOptions<StoryJobOptions>()
+            .BindConfiguration(StoryJobOptions.SectionName)
+            .Validate(
+                options => StoryJobOptions.Validate(options).Count == 0,
+                $"'{StoryJobOptions.SectionName}' timeouts must be between {StoryJobOptions.MinTimeoutSeconds} and {StoryJobOptions.MaxTimeoutSeconds} seconds, and TimeoutSecondsLong must not be below TimeoutSeconds.")
+            .ValidateOnStart();
+        services.AddSingleton(provider => provider.GetRequiredService<IOptions<StoryJobOptions>>().Value);
+        services.AddOptions<StorySweeperOptions>()
+            .BindConfiguration(StorySweeperOptions.SectionName)
+            .Validate(
+                options => options.BatchSize is >= 1 and <= StorySweeperOptions.MaxBatchSize,
+                $"'{StorySweeperOptions.SectionName}:{nameof(StorySweeperOptions.BatchSize)}' must be between 1 and {StorySweeperOptions.MaxBatchSize}.")
+            .ValidateOnStart();
+        services.AddSingleton(provider => provider.GetRequiredService<IOptions<StorySweeperOptions>>().Value);
+        services.AddOptions<StoryReviewOptions>().BindConfiguration(StoryReviewOptions.SectionName).ValidateOnStart();
+        services.AddSingleton(provider => provider.GetRequiredService<IOptions<StoryReviewOptions>>().Value);
+        services.AddOutboxHandler<StoryGenerationRequested, GenerateStoryJobHandler>();
+        services.AddOutboxHandler<StoryGenerationStageChanged, StoryGenerationStageChangedRealtimeHandler>();
+        services.AddOutboxHandler<StoryGenerated, StoryGeneratedRealtimeHandler>();
+        services.AddOutboxHandler<StoryGenerationFailed, StoryGenerationFailedRealtimeHandler>();
 
         // 11.3.3-T1 (11 README D13/F09–F13): the render-node registry, the pinned-TLS connection factory,
         // the health cache, the drift/up instruments and the config seeder. The optional `RenderNodes`

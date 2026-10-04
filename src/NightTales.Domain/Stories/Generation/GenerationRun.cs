@@ -413,6 +413,38 @@ public sealed class GenerationRun : Entity, IUserOwned, IAuditable
         UpdatedAt = now;
     }
 
+    /// <summary>
+    /// Ends a queued or running run as <c>cancelled</c> with a D8 code and an explicit counting flag (02 CR-29,
+    /// from T1 QA): the sweeper's cancel of a stuck <c>queued</c> run writes <c>story_generation_cancelled</c> and
+    /// <c>counts_toward_limit = false</c>, which <see cref="Cancel(DateTimeOffset)"/> cannot express because it
+    /// leaves the flag as it was.
+    /// </summary>
+    /// <param name="errorCode">The D8 job-outcome code (<c>story_generation_cancelled</c>).</param>
+    /// <param name="detail">Safe text about the outcome (<c>stale_run_sweep</c>), never content.</param>
+    /// <param name="countsTowardLimit">Whether the cancel counts toward FR-02-7; <see langword="false"/> for a sweep.</param>
+    /// <param name="now">The caller's clock reading, stored as <see cref="FinishedAt"/>.</param>
+    /// <exception cref="ArgumentException"><paramref name="errorCode"/> is empty.</exception>
+    /// <exception cref="InvalidOperationException">The run already ended another way.</exception>
+    public void Cancel(string errorCode, string? detail, bool countsTowardLimit, DateTimeOffset now)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(errorCode);
+
+        if (Status == GenerationRunStatus.Cancelled)
+        {
+            return;
+        }
+
+        RequireOpen(nameof(Cancel));
+
+        Status = GenerationRunStatus.Cancelled;
+        ErrorCode = errorCode;
+        ErrorDetail = detail;
+        CountsTowardLimit = countsTowardLimit;
+        PauseReason = null;
+        FinishedAt = now;
+        UpdatedAt = now;
+    }
+
     private void RequireStatus(GenerationRunStatus expected, string operation)
     {
         if (Status != expected)

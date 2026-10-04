@@ -253,6 +253,14 @@ Rules for any change that runs at start-up:
   pinned relay outside Development.
   02.4.1-T1 adds `OpenAi:Moderation:{Model,MaxCharsPerChunk,TimeoutSeconds}`: all optional (in-code defaults, Worker `appsettings.json`),
   so no placeholder is needed; the moderation call uses the same `OpenAi:BaseUrl` and the `"openai"` HttpClient.
+  02.2.2-T3 adds the Worker keys `Story:Job:{TimeoutSeconds,TimeoutSecondsLong}` (per-run deadline, defaults 360 / 480 s, bounds 60–3600,
+  Long not below the base value) and `Story:Sweeper:BatchSize` (default 200, bounds 1–5000); `Story:Review:Enabled` (02.6.1-T1) is read
+  by the same job. All three are optional (in-code defaults, Worker `appsettings.json`) and validated on start; the `WorkerHost`
+  harness inherits the defaults. The Api does not bind them. A value outside the bounds fails the Worker's boot with a named options
+  error. The Worker now also composes `StoryQualityChecker`, so the **required** `Story:Quality:*` thresholds (02.3.4-T1, no code
+  default) are a Worker boot key too: the shipped Worker `appsettings.json` carries them, and `StoryTestSettings.WorkerSettings`
+  (TestKit) feeds them to `WorkerHost.HarnessSettings` and `WorkerHealthProbe`, which clear that file. Every other Worker row reads
+  `appsettings.json`, so none needs a placeholder.
   The generator reports a missing key as `MSB3073` from `dotnet-getdocument` with a long hosting stack
   (see the build-time block), so check this list before hunting.
 - A new way of starting a host adds a row to this table.

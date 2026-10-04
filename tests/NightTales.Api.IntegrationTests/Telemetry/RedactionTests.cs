@@ -140,12 +140,13 @@ public sealed class RedactionTests(TestDatabase database) : IntegrationTest(data
         using var factory = Factory(sink);
         using var client = factory.AnonymousClient();
 
-        using var response = await client.GetAsync($"{ProbePath}/{Guid.NewGuid()}?ticket=abc%zz&token=x", Ct);
+        // The value uses non-hex letters: "abc" also occurs by chance inside random hex ids/trace ids in the log.
+        using var response = await client.GetAsync($"{ProbePath}/{Guid.NewGuid()}?ticket=qjx%zz&token=x", Ct);
 
         // The client may re-encode the stray '%'; either way no part of the raw value survives (the
         // undecodable case itself is the fail-closed unit test).
-        Text(Probe(sink), "QueryString").ShouldNotBeNull().ShouldNotContain("abc", Case.Sensitive);
-        sink.AllText().ShouldNotContain("abc", Case.Sensitive);
+        Text(Probe(sink), "QueryString").ShouldNotBeNull().ShouldNotContain("qjx", Case.Sensitive);
+        sink.AllText().ShouldNotContain("qjx", Case.Sensitive);
     }
 
     [Fact]
