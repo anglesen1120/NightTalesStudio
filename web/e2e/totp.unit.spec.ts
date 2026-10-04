@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures/csp.fixture';
 import { msUntilNextStep, totp } from './fixtures/auth';
 
 // RFC 6238 Appendix B, SHA-1, secret "12345678901234567890" (base32 below). Times are in seconds there;

@@ -15,7 +15,8 @@
     "lint:app": "ng lint",
     "lint:forbidden": "node tools/web/lint-forbidden-patterns.mjs",
     "lint:fixtures": "node tools/web/check-lint-fixtures.mjs",
-    "container:smoke": "bash tools/web/container-smoke.sh"
+    "container:smoke": "bash tools/web/container-smoke.sh",
+    "csp:gen": "node tools/web/gen-csp.mjs"
   },
   "private": true,
   "dependencies": {
