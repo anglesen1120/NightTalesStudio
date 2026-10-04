@@ -215,6 +215,7 @@ public sealed class ApiFactory(TestDatabase database, FakeClock clock) : WebAppl
         return new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
             ApplyRequiredStartupSettings(builder, withKeyRing);
+            builder.ConfigureServices(RateLimiterDisposal.Register);
 
             builder.UseSetting(
                 $"ConnectionStrings:{PersistenceOptions.ConnectionStringName}",
@@ -283,6 +284,8 @@ public sealed class ApiFactory(TestDatabase database, FakeClock clock) : WebAppl
 
         builder.ConfigureServices(services =>
         {
+            RateLimiterDisposal.Register(services);
+
             if (_logProviders.Count > 0)
             {
                 services.AddLogging(logging =>
