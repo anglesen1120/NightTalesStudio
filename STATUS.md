@@ -74,6 +74,14 @@ Plans 06, 07, 08, 12: not started. Plan 10: approved HTML design handoff and ref
 
 **Working method:** worktree per task `../nts-wt/<task-id>`, branch `feature/<task-id>-s6`; every wave merges into one combined branch `feature/s6-web-stage-a` (one PR into `develop`, the owner merges). Verification is the web toolchain (`npm ci`, `npm run build`, `npm run lint`, `npm run test:ci`); `gate.sh` is not needed while no .NET path changes. Gates per `~/.omp/agent/RULES.md` (QA agent first, then reviews). STATUS conflicts with Session 5 rows are additive.
 
+**Open hand-overs from Stage A (10 CR-45; remove each line when its owner closes it):**
+- **Backend (.NET session, 09.x):** `POST /api/v1/auth/register` and `GET /health/live` carry the dotted tag `NightTales.Api`, which breaks `ng-openapi-gen`, so `web/api-gen.config.json` `excludeTags` drops them (no web client for register yet). Fix with `WithTags(...)`, then remove the exclusion. Also: no operation has an `operationId`, and the `ProblemDetails` schema has no `errors` field (field-level validation errors cannot be typed in the web client).
+- **`web/openapi.json` is pinned before #121:** the generated client lacks the Session 5 endpoints (e.g. `PUT /api/v1/episodes/{id}/story`). The first web task that calls a newer endpoint runs `npm run api:gen:local -- <openapi.json from the 09.1.5-T1 build>`, commits the spec, the lock and `src/app/shared/api/**`, and checks that `api:gen:check` is green.
+- **11.1.1-T1 / 11.5.1-T1:** the `web` container runs on a read-only root filesystem only with tmpfs on `/tmp` and `/etc/nginx/conf.d` (uid 101, gid 101, mode 0755). **11.5.1-T1** `e2e.yml` must also exclude or scrub `*.md`/`*.png` from auth-spec results before upload (they can hold the TOTP manual key). Both are in the task Notes.
+- **10.4.2-T1:** `voices.tag.<tag>` (04 CR-11) cannot live in the `series` scope under that exact name (the runtime key becomes `series.voices.tag.*`): add a `voices` scope or get an owner decision. Today `web/tools/web/i18n-keys.mjs` checks the pattern as written.
+- **10.3.1-T1:** the prerendered legal pages must add their `public` JSONs to `bundled-translations.ts`, because a prerender cannot fetch `/assets/i18n/**` (10.2.5-T1 Notes, 10.2.4 `plan.md`).
+- **Accepted, no action:** `http://` media origins allowed in CSP and no `upgrade-insecure-requests` (D4 does not list it); `warn`/`info` chips reuse the error/success colours.
+
 ## Open tasks
 
 | Task | Status | Note |
