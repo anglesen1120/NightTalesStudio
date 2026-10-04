@@ -21,12 +21,13 @@
     },
     "issues": {
       "type": "array",
+      "maxItems": 20,
       "items": {
         "type": "object",
         "additionalProperties": false,
         "required": ["id", "type", "severity", "segment", "evidence", "impact", "repair_direction"],
         "properties": {
-          "id": { "type": "string" },
+          "id": { "type": "string", "pattern": "^[a-z][a-z0-9_]{0,31}$" },
           "type": {
             "type": "string",
             "enum": [
@@ -52,13 +53,14 @@
           "severity": { "type": "string", "enum": ["blocking", "advisory"] },
           "segment": { "type": "string", "pattern": "^(title|hook|ending|meta|p:\\d+)$" },
           "evidence": { "type": "string" },
-          "impact": { "type": "string" },
-          "repair_direction": { "type": "string" }
+          "impact": { "type": "string", "maxLength": 300 },
+          "repair_direction": { "type": "string", "maxLength": 300 }
         }
       }
     },
     "ear_rule_answers": {
       "type": "array",
+      "maxItems": 6,
       "items": {
         "type": "object",
         "additionalProperties": false,
@@ -94,6 +96,7 @@
     },
     "real_world_claims": {
       "type": "array",
+      "maxItems": 20,
       "items": {
         "type": "object",
         "additionalProperties": false,

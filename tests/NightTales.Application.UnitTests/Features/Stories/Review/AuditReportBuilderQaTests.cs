@@ -21,16 +21,18 @@ public sealed class AuditReportBuilderQaTests
     private static readonly string Stored =
         $$$"""{"schema_version":"audit.v1","local":{{{Local}}},"moderation":{{{Moderation}}},"model_review":{"stale":true,"old":1},"revision":{{{Revision}}},"similarity":{{{Similarity}}},"future_key":{"x":[1,2,3]}}""";
 
-    private static StoryReviewV1 Review(string evidence = "e", string summary = "s", int? factual = null) =>
+    private static ValidatedReview Review(string evidence = "e", string summary = "s", int? factual = null) =>
         new(
-            new ReviewScores(4, 3, 4, 4, 3, factual, 4),
-            [new ReviewIssueV1("r1", "weak_hook", "advisory", "hook", evidence, "impact", "repair")],
-            [new EarRuleAnswer("Q1", true, "p:0", "ok")],
-            null,
-            [new RealWorldClaim("p:1", "a claim")],
-            summary);
+            new StoryReviewV1(
+                new ReviewScores(4, 3, 4, 4, 3, factual, 4),
+                [new ReviewIssueV1("r1", "weak_hook", "advisory", "hook", evidence, "impact", "repair")],
+                [new EarRuleAnswer("Q1", true, "p:0", "ok")],
+                null,
+                [new RealWorldClaim("p:1", "a claim")],
+                summary),
+            []);
 
-    private static JsonObject Merge(string stored, StoryReviewV1? review = null) =>
+    private static JsonObject Merge(string stored, ValidatedReview? review = null) =>
         JsonNode.Parse(AuditReportBuilder.MergeModelReview(stored, review ?? Review(), "gpt-6-luna", "rel=1;review=v1"))!.AsObject();
 
     [Fact]
@@ -140,7 +142,7 @@ public sealed class AuditReportBuilderQaTests
         // D22 issues have id, severity, kind, segment, evidence, impact, repair_direction: the server derives kind from the type.
         var objective = new ReviewIssueV1("r1", "missing_setup_before_twist", "blocking", "p:1", "e", "i", "r");
         var taste = new ReviewIssueV1("r2", "weak_hook", "advisory", "hook", "e", "i", "r");
-        var review = Review() with { Issues = [objective, taste] };
+        var review = new ValidatedReview(Review().Review with { Issues = [objective, taste] }, []);
 
         var issues = Merge(Stored, review)["model_review"]!["issues"]!.AsArray();
 

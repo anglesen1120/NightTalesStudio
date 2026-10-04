@@ -17,12 +17,17 @@ public sealed class ReviewResultValidatorTests
     private static ReviewIssueV1 Issue(string type = "missing_setup_before_twist", string severity = "advisory", string segment = "p:3", string evidence = "x", string id = "r1") =>
         new(id, type, severity, segment, evidence, "impact", "repair");
 
+    // CR-1: every question that was sent is answered; `overrides` replace the passing answer of their question.
+    private static EarRuleAnswer[] AllAnswers(params EarRuleAnswer[] overrides) =>
+        [.. Questions.Select(question => overrides.FirstOrDefault(answer => answer.QuestionId == question) ?? new EarRuleAnswer(question, true, "meta", string.Empty))];
+
     private static StoryReviewV1 Review(
         ReviewIssueV1[]? issues = null,
         ReviewScores? scores = null,
         FactualCareReview? factual = null,
-        EarRuleAnswer[]? answers = null) =>
-        new(scores ?? Scores(), issues ?? [], answers ?? [], factual, [], "ok");
+        EarRuleAnswer[]? answers = null,
+        RealWorldClaim[]? claims = null) =>
+        new(scores ?? Scores(), issues ?? [], answers ?? AllAnswers(), factual, claims ?? [], "ok");
 
     private static IEnumerable<string> Rejected(ValidatedReview result) => result.Rejections.Select(violation => violation.RuleId);
 
@@ -115,7 +120,7 @@ public sealed class ReviewResultValidatorTests
     [Fact]
     public void ReviewResultValidator_FailedEarRuleAnswerWithoutIssue_AddsAnEarRuleViolationIssue()
     {
-        var answers = new[] { new EarRuleAnswer("Q5", Passed: false, "p:2", "a clause") };
+        var answers = AllAnswers(new EarRuleAnswer("Q5", Passed: false, "p:2", "a clause"));
 
         var result = ReviewResultValidator.Validate(Review(answers: answers), Topic.Ghost, Paragraphs, Questions);
 
@@ -123,6 +128,122 @@ public sealed class ReviewResultValidatorTests
         result.Review.Issues.Single().ShouldSatisfyAllConditions(
             issue => issue.Type.ShouldBe("ear_rule_violation"),
             issue => issue.Segment.ShouldBe("p:2"));
+    }
+
+    [Fact]
+    public void ReviewResultValidator_MissingAnswerForASentQuestion_Fails()
+    {
+        var none = ReviewResultValidator.Validate(Review(answers: []), Topic.Ghost, Paragraphs, Questions);
+        var onlyQ1 = ReviewResultValidator.Validate(Review(answers: [new EarRuleAnswer("Q1", true, "meta", string.Empty)]), Topic.Ghost, Paragraphs, Questions);
+
+        Rejected(none).ShouldBe(Enumerable.Repeat(ReviewResultValidator.MissingEarRuleAnswer, Questions.Length));
+        Rejected(onlyQ1).ShouldBe(Enumerable.Repeat(ReviewResultValidator.MissingEarRuleAnswer, Questions.Length - 1));
+        onlyQ1.Violations.Select(violation => violation.Path).ShouldNotContain("ear_rule_answers[Q1]");
+    }
+
+    [Fact]
+    public void ReviewResultValidator_NoQuestionsSent_NeedsNoAnswers()
+    {
+        ReviewResultValidator.Validate(Review(answers: []), Topic.Ghost, Paragraphs, []).IsAccepted.ShouldBeTrue();
+    }
+
+    [Fact]
+    public void ReviewResultValidator_FictionFactualCareWithBadClaims_IsClearedNotRejected()
+    {
+        // CR-3: the block is cleared for fiction before its content is checked, so its slips cannot reject the review.
+        var factual = new FactualCareReview(1, [new UnsupportedClaim("paragraph 9", new string('c', 500))], "n");
+
+        var result = ReviewResultValidator.Validate(Review(scores: Scores(factual: 4), factual: factual), Topic.Ghost, Paragraphs, Questions);
+
+        result.IsAccepted.ShouldBeTrue();
+        result.Warnings.Select(violation => violation.RuleId).ShouldBe([ReviewResultValidator.FactualCareForFiction]);
+        result.Review.FactualCare.ShouldBeNull();
+    }
+
+    [Fact]
+    public void ReviewResultValidator_TrueCrimeFactualCareWithBadClaim_StillFails()
+    {
+        var factual = new FactualCareReview(1, [new UnsupportedClaim("paragraph 9", "claim")], "n");
+
+        var result = ReviewResultValidator.Validate(Review(scores: Scores(factual: 4), factual: factual), Topic.TrueCrime, Paragraphs, Questions);
+
+        Rejected(result).ShouldBe([ReviewResultValidator.BadSegment]);
+    }
+
+    [Theory]
+    [InlineData("ear_q5")]
+    [InlineData("ear_x")]
+    [InlineData("Bad Id")]
+    [InlineData("1abc")]
+    [InlineData("a-b")]
+    public void ReviewResultValidator_ModelIssueIdOutsideThePatternOrReserved_Fails(string id)
+    {
+        var result = ReviewResultValidator.Validate(Review([Issue(id: id)]), Topic.Ghost, Paragraphs, Questions);
+
+        Rejected(result).ShouldBe([ReviewResultValidator.BadIssueId]);
+    }
+
+    [Fact]
+    public void ReviewResultValidator_ModelIssueTryingToTakeTheSynthesisedEarId_NeverLeavesAFailedAnswerWithoutItsIssue()
+    {
+        // CR-4/S3: the model sends "ear_q5" on an unrelated issue and fails Q5 without an ear_rule_violation; the review is rejected
+        // instead of silently dropping the issue the validator would have synthesised.
+        var result = ReviewResultValidator.Validate(
+            Review([Issue(type: "weak_hook", segment: "hook", id: "ear_q5")], answers: AllAnswers(new EarRuleAnswer("Q5", false, "p:2", "clause"))),
+            Topic.Ghost,
+            Paragraphs,
+            Questions);
+
+        Rejected(result).ShouldBe([ReviewResultValidator.BadIssueId]);
+    }
+
+    [Fact]
+    public void ReviewResultValidator_SynthesisedEarIssueIdsAreUniqueAmongAllIssues()
+    {
+        var result = ReviewResultValidator.Validate(
+            Review(answers: AllAnswers(new EarRuleAnswer("Q1", false, "p:1", "a"), new EarRuleAnswer("Q2", false, "p:2", "b"))),
+            Topic.Ghost,
+            Paragraphs,
+            Questions);
+
+        result.IsAccepted.ShouldBeTrue();
+        result.Review.Issues.Select(issue => issue.Id).ShouldBe(["ear_q1", "ear_q2"]);
+    }
+
+    [Fact]
+    public void ReviewResultValidator_CountCaps_AreAtTheBoundAndRejectOverIt()
+    {
+        var issues = Enumerable.Range(0, ReviewResultValidator.MaxIssues).Select(index => Issue(id: $"i{index}")).ToArray();
+        var claims = Enumerable.Repeat(new RealWorldClaim("p:1", "c"), ReviewResultValidator.MaxRealWorldClaims).ToArray();
+
+        ReviewResultValidator.Validate(Review(issues, claims: claims), Topic.Ghost, Paragraphs, Questions).IsAccepted.ShouldBeTrue();
+
+        var tooManyIssues = ReviewResultValidator.Validate(Review([.. issues, Issue(id: "i99")]), Topic.Ghost, Paragraphs, Questions);
+        var tooManyClaims = ReviewResultValidator.Validate(Review(claims: [.. claims, claims[0]]), Topic.Ghost, Paragraphs, Questions);
+
+        Rejected(tooManyIssues).ShouldBe([ReviewResultValidator.TooManyItems]);
+        Rejected(tooManyClaims).ShouldBe([ReviewResultValidator.TooManyItems]);
+    }
+
+    [Fact]
+    public void ReviewResultValidator_MoreAnswersThanTheCap_Fails()
+    {
+        var answers = Enumerable.Range(1, ReviewResultValidator.MaxEarRuleAnswers + 1).Select(index => new EarRuleAnswer($"Q{index}", true, "meta", string.Empty)).ToArray();
+
+        var result = ReviewResultValidator.Validate(Review(answers: answers), Topic.Ghost, Paragraphs, Questions);
+
+        Rejected(result).ShouldContain(ReviewResultValidator.TooManyItems);
+    }
+
+    [Fact]
+    public void ReviewResultValidator_ImpactAndRepairDirectionOver300Chars_Fail()
+    {
+        var atBound = new ReviewIssueV1("r1", "weak_hook", "advisory", "hook", "x", new string('a', 300), new string('a', 300));
+        var over = new ReviewIssueV1("r2", "weak_hook", "advisory", "hook", "x", new string('a', 301), new string('a', 301));
+
+        ReviewResultValidator.Validate(Review([atBound]), Topic.Ghost, Paragraphs, Questions).IsAccepted.ShouldBeTrue();
+        Rejected(ReviewResultValidator.Validate(Review([over]), Topic.Ghost, Paragraphs, Questions))
+            .ShouldBe([ReviewResultValidator.FieldTooLong, ReviewResultValidator.FieldTooLong]);
     }
 
     [Fact]

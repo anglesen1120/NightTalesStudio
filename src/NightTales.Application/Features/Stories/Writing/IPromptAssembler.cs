@@ -1,3 +1,5 @@
+using ErrorOr;
+
 namespace NightTales.Application.Features.Stories.Writing;
 
 /// <summary>
@@ -17,6 +19,6 @@ public interface IPromptAssembler
     /// data object that carries the draft, the facts, the bible and the ear-rule questions.
     /// </summary>
     /// <param name="req">The review request.</param>
-    /// <returns>The two strings, the composite prompt version and the prompt-cache key.</returns>
-    AssembledPrompt Review(Review.StoryReviewRequest req);
+    /// <returns>The two strings, the composite prompt version and the prompt-cache key; or <c>prompt_too_large</c> when the data object exceeds twice <c>Story:Prompt:MaxDataObjectBytes</c>.</returns>
+    ErrorOr<AssembledPrompt> Review(Review.StoryReviewRequest req);
 }

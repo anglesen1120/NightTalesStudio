@@ -13,14 +13,16 @@ public sealed class AuditReportBuilderTests
         {"schema_version":"audit.v1","local":{"issues":[]},"moderation":{"flagged":false,"categories":[]},"model_review":{"stale":true,"old":1}}
         """;
 
-    private static StoryReviewV1 Review(params ReviewIssueV1[] issues) =>
+    private static ValidatedReview Review(params ReviewIssueV1[] issues) =>
         new(
-            new ReviewScores(4, 3, 4, 4, 3, null, 4),
-            issues,
-            [new EarRuleAnswer("Q1", Passed: false, "p:2", "ý")],
-            null,
-            [new RealWorldClaim("p:1", "a quoted claim")],
-            "summary");
+            new StoryReviewV1(
+                new ReviewScores(4, 3, 4, 4, 3, null, 4),
+                issues,
+                [new EarRuleAnswer("Q1", Passed: false, "p:2", "ý")],
+                null,
+                [new RealWorldClaim("p:1", "a quoted claim")],
+                "summary"),
+            []);
 
     private static JsonObject Merge(string existing, params ReviewIssueV1[] issues) =>
         JsonNode.Parse(AuditReportBuilder.MergeModelReview(existing, Review(issues), "gpt-6-luna", "rel=1;review=v1"))!.AsObject();
@@ -79,5 +81,22 @@ public sealed class AuditReportBuilderTests
     public void AuditReportBuilder_MergeModelReview_NotAnObject_Throws()
     {
         Should.Throw<System.Text.Json.JsonException>(() => AuditReportBuilder.MergeModelReview("[]", Review(), "m", "v"));
+    }
+
+    [Fact]
+    public void AuditReportBuilder_MergeModelReview_RejectedReview_Throws()
+    {
+        var rejected = new ValidatedReview(Review().Review, [new ReviewViolation(ReviewResultValidator.BadSegment, "issues[0].segment", Repaired: false)]);
+
+        var error = Should.Throw<InvalidOperationException>(() => AuditReportBuilder.MergeModelReview(Existing, rejected, "gpt-6-luna", "rel=1"));
+        error.Message.ShouldContain(ReviewResultValidator.BadSegment);
+    }
+
+    [Fact]
+    public void AuditReportBuilder_MergeModelReview_ReviewWithOnlyRepairedFindings_IsMerged()
+    {
+        var repaired = new ValidatedReview(Review().Review, [new ReviewViolation(ReviewResultValidator.TasteIssueBlocking, "issues[0].severity", Repaired: true)]);
+
+        AuditReportBuilder.MergeModelReview(Existing, repaired, "gpt-6-luna", "rel=1").ShouldContain("model_review");
     }
 }

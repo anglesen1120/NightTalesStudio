@@ -1,6 +1,7 @@
 // The Responses API of OpenAI 2.14.0 is marked experimental (OPENAI001); the adapter under test uses it.
 #pragma warning disable OPENAI001
 using System.Net;
+using System.Text;
 using System.Text.Json;
 using ErrorOr;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -8,6 +9,8 @@ using NightTales.Application.Abstractions.Money;
 using NightTales.Application.Abstractions.Research;
 using NightTales.Application.Abstractions.Text;
 using NightTales.Application.Abstractions.Usage;
+using NightTales.Application.Abstractions.Prompts;
+using NightTales.Application.Common.Errors;
 using NightTales.Application.Features.Stories.Review;
 using NightTales.Application.Features.Stories.Writing;
 using NightTales.Domain.Common;
@@ -16,6 +19,7 @@ using NightTales.Domain.Series;
 using NightTales.Domain.Series.Bible;
 using NightTales.Domain.Stories.Content;
 using NightTales.Domain.Stories.Generation;
+using NightTales.Domain.Stories.Prompts;
 using NightTales.Domain.Stories.Length;
 using NightTales.Domain.Stories.Review;
 using NightTales.Infrastructure.Prompts;
@@ -49,7 +53,7 @@ public sealed class ReviewStepTests
         var verdict = ReviewResultValidator.Validate(ok.Draft, req.Topic, req.Draft.Paragraphs.Count, [.. req.EarRuleQuestions.Select(q => q.QuestionId)]);
         verdict.IsAccepted.ShouldBeTrue();
 
-        var merged = AuditReportBuilder.MergeModelReview(string.Empty, verdict.Review, "gpt-6-luna", "rel=test");
+        var merged = AuditReportBuilder.MergeModelReview(string.Empty, verdict, "gpt-6-luna", "rel=test");
         var model = JsonDocument.Parse(merged).RootElement.GetProperty("model_review");
         model.GetProperty("scores").EnumerateObject().Select(p => p.Name).Count().ShouldBe(7);
         model.GetProperty("stale").GetBoolean().ShouldBeFalse();
@@ -84,7 +88,7 @@ public sealed class ReviewStepTests
         // the job treats both as InvalidOutput (retry once, then story_invalid_output).
         var parsed = second.ShouldBeOfType<TextCallOk<StoryReviewV1>>();
         var req = Request(Topic.Ghost);
-        ReviewResultValidator.Validate(parsed.Draft, req.Topic, req.Draft.Paragraphs.Count, ["Q1", "Q2", "Q3", "Q4", "Q5", "Q6"])
+        ReviewResultValidator.Validate(parsed.Draft, req.Topic, req.Draft.Paragraphs.Count, [.. req.EarRuleQuestions.Select(q => q.QuestionId)])
             .Rejections.Select(violation => violation.RuleId).ShouldBe([ReviewResultValidator.UnknownIssueType]);
         meter.Items.Count.ShouldBe(2);
         meter.Items.ShouldAllBe(item => item.Operation == "story_review");
@@ -134,16 +138,70 @@ public sealed class ReviewStepTests
             var hostile = Request(Topic.Ghost, text: fixture.Value);
             var clean = Request(Topic.Ghost);
 
-            var prompt = assembler.Review(hostile);
+            var prompt = assembler.Review(hostile).Value;
 
             prompt.SystemPrompt.ShouldNotContain(fixture.Canary);
-            prompt.SystemPrompt.ShouldBe(assembler.Review(clean).SystemPrompt);
+            prompt.SystemPrompt.ShouldBe(assembler.Review(clean).Value.SystemPrompt);
             var data = JsonDocument.Parse(prompt.UserDataJson).RootElement;
             data.GetProperty("task").GetString().ShouldBe("review_story");
             data.GetProperty("story").GetProperty("paragraphs")[0].GetProperty("text").GetString().ShouldNotBeNull().ShouldContain(fixture.Canary);
             JsonSerializer.Serialize(data.GetProperty("facts")).ShouldNotContain(fixture.Canary);
             JsonSerializer.Serialize(data.GetProperty("ear_rules")).ShouldNotContain(fixture.Canary);
         }
+    }
+
+    [Theory]
+    [InlineData(Language.En)]
+    [InlineData(Language.Vi)]
+    public void ReviewStep_SystemPrompt_CarriesTheSharedOverusedPhrasesOfItsLanguage(Language language)
+    {
+        // CR-2: the reviewer judges Q4 and E10 against the same list the writer was given, injected through the D5 placeholder.
+        var catalog = new PromptCatalog(new EmbeddedPromptResourceSource());
+        var assembler = new PromptAssembler(catalog, NullLogger<PromptAssembler>.Instance);
+        var list = catalog.GetShared(PromptFile.Overused, language);
+        list.Trim().ShouldNotBeEmpty();
+
+        var system = assembler.Review(Request(Topic.Ghost, language: language)).Value.SystemPrompt;
+
+        system.ShouldContain(list.Trim());
+        system.ShouldNotContain("{{");
+        var other = language == Language.En ? Language.Vi : Language.En;
+        system.ShouldNotContain(catalog.GetShared(PromptFile.Overused, other).Trim());
+    }
+
+    [Fact]
+    public void ReviewStep_DataObjectOverTwiceTheBudget_IsATypedErrorAndNothingIsSent()
+    {
+        // S4: the worst-case estimate bounds the review input at twice Story:Prompt:MaxDataObjectBytes, so the assembler enforces it.
+        var catalog = new PromptCatalog(new EmbeddedPromptResourceSource());
+        var fitting = new PromptAssembler(catalog, NullLogger<PromptAssembler>.Instance)
+            .Review(Request(Topic.Ghost, text: new string('a', 1_000))).Value.UserDataJson;
+        var budget = new PromptDataBudget((Encoding.UTF8.GetByteCount(fitting) + 1) / 2);
+        var assembler = new PromptAssembler(catalog, NullLogger<PromptAssembler>.Instance, budget);
+
+        var atBound = assembler.Review(Request(Topic.Ghost, text: new string('a', 1_000)));
+        var over = assembler.Review(Request(Topic.Ghost, text: new string('a', 1_100)));
+
+        atBound.IsError.ShouldBeFalse();
+        Encoding.UTF8.GetByteCount(atBound.Value.UserDataJson).ShouldBeLessThanOrEqualTo(2 * budget.MaxDataObjectBytes);
+        over.IsError.ShouldBeTrue();
+        over.FirstError.Code.ShouldBe(ErrorCodes.PromptTooLarge);
+    }
+
+    [Fact]
+    public async Task ReviewStep_DataObjectOverTheBudget_NeverCallsTheProviderOrMeters()
+    {
+        using var host = new OpenAiTestHost();
+        var meter = new RecordingMeter();
+        var catalog = new PromptCatalog(new EmbeddedPromptResourceSource());
+        var assembler = new PromptAssembler(catalog, NullLogger<PromptAssembler>.Instance, new PromptDataBudget(500));
+        var writer = new OpenAiStoryWriter(assembler, host.Client, catalog, meter, new FixedEstimator());
+
+        var error = await Should.ThrowAsync<InvalidOperationException>(async () => await writer.ReviewAsync(Request(Topic.Ghost, text: new string('a', 5_000)), Ct));
+
+        error.Message.ShouldContain(ErrorCodes.PromptTooLarge);
+        host.Handler.Requests.ShouldBeEmpty();
+        meter.Items.ShouldBeEmpty();
     }
 
     [Fact]
@@ -154,7 +212,7 @@ public sealed class ReviewStepTests
         var req = Request(Topic.Ghost);
 
         var ok = (await Writer(host, new RecordingMeter()).ReviewAsync(req, Ct)).ShouldBeOfType<TextCallOk<StoryReviewV1>>();
-        var verdict = ReviewResultValidator.Validate(ok.Draft, Topic.Ghost, req.Draft.Paragraphs.Count, ["Q1", "Q2", "Q3", "Q4", "Q5", "Q6"]);
+        var verdict = ReviewResultValidator.Validate(ok.Draft, Topic.Ghost, req.Draft.Paragraphs.Count, [.. req.EarRuleQuestions.Select(q => q.QuestionId)]);
 
         verdict.Violations.ShouldBeEmpty();
         verdict.Review.FactualCare.ShouldBeNull();
@@ -170,7 +228,7 @@ public sealed class ReviewStepTests
         var req = Request(Topic.TrueCrime);
 
         var ok = (await Writer(host, new RecordingMeter()).ReviewAsync(req, Ct)).ShouldBeOfType<TextCallOk<StoryReviewV1>>();
-        var verdict = ReviewResultValidator.Validate(ok.Draft, Topic.TrueCrime, req.Draft.Paragraphs.Count, ["Q1", "Q2", "Q3", "Q4", "Q5"]);
+        var verdict = ReviewResultValidator.Validate(ok.Draft, Topic.TrueCrime, req.Draft.Paragraphs.Count, [.. req.EarRuleQuestions.Select(q => q.QuestionId)]);
 
         verdict.IsAccepted.ShouldBeTrue();
         verdict.Review.FactualCare.ShouldNotBeNull().UnsupportedClaims.ShouldHaveSingleItem().Segment.ShouldBe("p:0");
@@ -184,9 +242,8 @@ public sealed class ReviewStepTests
         return new OpenAiStoryWriter(new PromptAssembler(catalog, NullLogger<PromptAssembler>.Instance), host.Client, catalog, meter, new FixedEstimator());
     }
 
-    private static StoryReviewRequest Request(Topic topic, string text = "The corridor was quiet.")
+    private static StoryReviewRequest Request(Topic topic, string text = "The corridor was quiet.", Language language = Language.En)
     {
-        var language = Language.En;
         var segment = new StorySegmentV1(text, ["hall"], []);
         var draft = new StoryContentV1(
             "T",
@@ -215,7 +272,9 @@ public sealed class ReviewStepTests
         $$"""
         {"scores":{"hook":4,"pacing":3,"atmosphere":4,"natural_language":4,"originality":3,"factual_care":{{factualScore}},"length_fit":4},
          "issues":[{"id":"r1","type":"tone_violation","severity":"advisory","segment":"p:1","evidence":"a flat line","impact":"breaks the mood","repair_direction":"shorten"}],
-         "ear_rule_answers":[{"question_id":"Q1","passed":true,"segment":"p:0","evidence":"moves the fear"}],
+         "ear_rule_answers":[{"question_id":"Q1","passed":true,"segment":"p:0","evidence":"moves the fear"},
+           {"question_id":"Q2","passed":true,"segment":"meta","evidence":""},{"question_id":"Q3","passed":true,"segment":"meta","evidence":""},
+           {"question_id":"Q4","passed":true,"segment":"meta","evidence":""},{"question_id":"Q5","passed":true,"segment":"meta","evidence":""}],
          "factual_care":{{factual}},
          "real_world_claims":[{"segment":"p:0","evidence":"a named city"}],
          "summary":"solid draft"}

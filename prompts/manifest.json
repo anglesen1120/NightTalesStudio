@@ -3,11 +3,11 @@
   "files": {
     "review/v1.md": {
       "version": "v1",
-      "sha256": "83b738628908a5533e6c57147f14e6d18a84540b038567339933edb795dcda34"
+      "sha256": "68b5c06c071c0d6153943876bc6c64bf542bac39507a01dc7d260698e4ac4bea"
     },
     "schemas/review.v1.json": {
       "version": "v1",
-      "sha256": "37047e8aa1f71cdc28604d7315ad90158eec1d9d907142c848d45d4fb4b1ba30"
+      "sha256": "e4790f0c29f315e882c99bff3a813df36d0fb0fb2843d1deadf60943004b0ab4"
     },
     "schemas/story.v1.json": {
       "version": "v1",

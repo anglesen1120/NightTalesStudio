@@ -55,6 +55,30 @@ public static partial class ReviewResultValidator
     /// <summary>Rule id: an answer for a question that was not asked, or two answers to one question.</summary>
     public const string BadEarRuleAnswer = "review_bad_ear_rule_answer";
 
+    /// <summary>Rule id: a question that was asked has no answer in <c>ear_rule_answers</c> (CR-1).</summary>
+    public const string MissingEarRuleAnswer = "review_missing_ear_rule_answer";
+
+    /// <summary>Rule id: an issue id outside <c>^[a-z][a-z0-9_]{0,31}$</c> or one that uses the reserved <c>ear_</c> prefix of the synthesised ear-rule issues (CR-4, S2).</summary>
+    public const string BadIssueId = "review_bad_issue_id";
+
+    /// <summary>Rule id: a list longer than its cap (<see cref="MaxIssues"/>, <see cref="MaxEarRuleAnswers"/>, <see cref="MaxRealWorldClaims"/>) (S2).</summary>
+    public const string TooManyItems = "review_too_many_items";
+
+    /// <summary>Rule id: an <c>impact</c> or <c>repair_direction</c> longer than <see cref="MaxFieldChars"/> (S2).</summary>
+    public const string FieldTooLong = "review_field_too_long";
+
+    /// <summary>The most issues a review may list; the same cap as <c>review.v1.json</c> and the prompt.</summary>
+    public const int MaxIssues = 20;
+
+    /// <summary>The most naturalness answers a review may carry; one per question Q1–Q6.</summary>
+    public const int MaxEarRuleAnswers = 6;
+
+    /// <summary>The most <c>real_world_claims</c> a review may list.</summary>
+    public const int MaxRealWorldClaims = 20;
+
+    /// <summary>The longest <c>impact</c> or <c>repair_direction</c>, in characters.</summary>
+    public const int MaxFieldChars = 300;
+
     /// <summary>Rule id (repaired): a <c>blocking</c> issue of a taste type, downgraded to <c>advisory</c>.</summary>
     public const string TasteIssueBlocking = "review_taste_issue_blocking";
 
@@ -69,6 +93,7 @@ public static partial class ReviewResultValidator
 
     private const string Blocking = "blocking";
     private const string Advisory = "advisory";
+    private const string ReservedIdPrefix = "ear_";
 
     /// <summary>Validates a review and repairs its model slips.</summary>
     /// <param name="review">The parsed model output.</param>
@@ -88,6 +113,9 @@ public static partial class ReviewResultValidator
         var found = new List<ReviewViolation>();
 
         CheckScores(review.Scores, found);
+        CheckCount(review.Issues.Count, MaxIssues, "issues", found);
+        CheckCount(review.EarRuleAnswers.Count, MaxEarRuleAnswers, "ear_rule_answers", found);
+        CheckCount(review.RealWorldClaims.Count, MaxRealWorldClaims, "real_world_claims", found);
 
         var issues = new List<ReviewIssueV1>(review.Issues.Count + 2);
         var seenIds = new HashSet<string>(StringComparer.Ordinal);
@@ -97,10 +125,12 @@ public static partial class ReviewResultValidator
         }
 
         CheckAnswers(review.EarRuleAnswers, questionIds, paragraphCount, found);
-        CheckClaims(review, paragraphCount, found);
 
+        // CR-3: normalise factual_care for the topic first, so a block that is about to be cleared (fiction) is never checked and
+        // cannot reject the review for its content.
         var scores = review.Scores;
         var factual = review.FactualCare;
+
         if (topic == Topic.TrueCrime)
         {
             if (scores.FactualCare is null || factual is null)
@@ -122,6 +152,8 @@ public static partial class ReviewResultValidator
             scores = scores with { FactualCare = null };
             factual = null;
         }
+
+        CheckClaims(review.RealWorldClaims, factual, paragraphCount, found);
 
         AddMissingEarRuleIssues(review.EarRuleAnswers, issues, found);
 
@@ -154,6 +186,11 @@ public static partial class ReviewResultValidator
         {
             found.Add(new ReviewViolation(DuplicateIssueId, path + ".id", Repaired: false));
         }
+        else if (!IdPattern().IsMatch(issue.Id) || issue.Id.StartsWith(ReservedIdPrefix, StringComparison.Ordinal))
+        {
+            // CR-4/S2: the ear_ prefix is reserved for the issues the validator synthesises, so a model id can never collide with one.
+            found.Add(new ReviewViolation(BadIssueId, path + ".id", Repaired: false));
+        }
 
         var knownType = ReviewIssueTypes.TryParse(issue.Type, out var type);
         if (!knownType)
@@ -174,6 +211,8 @@ public static partial class ReviewResultValidator
 
         CheckSegment(issue.Segment, paragraphCount, path + ".segment", found);
         CheckLength(issue.Evidence, path + ".evidence", found);
+        CheckFieldLength(issue.Impact, path + ".impact", found);
+        CheckFieldLength(issue.RepairDirection, path + ".repair_direction", found);
 
         return issue with { Severity = severity };
     }
@@ -198,18 +237,27 @@ public static partial class ReviewResultValidator
             CheckSegment(answer.Segment, paragraphCount, path + ".segment", found);
             CheckLength(answer.Evidence, path + ".evidence", found);
         }
+
+        // CR-1: every question that was asked must be answered.
+        foreach (var questionId in questionIds)
+        {
+            if (!seen.Contains(questionId))
+            {
+                found.Add(new ReviewViolation(MissingEarRuleAnswer, $"ear_rule_answers[{questionId}]", Repaired: false));
+            }
+        }
     }
 
-    private static void CheckClaims(StoryReviewV1 review, int paragraphCount, List<ReviewViolation> found)
+    private static void CheckClaims(IReadOnlyList<RealWorldClaim> claims, FactualCareReview? factual, int paragraphCount, List<ReviewViolation> found)
     {
-        for (var index = 0; index < review.RealWorldClaims.Count; index++)
+        for (var index = 0; index < claims.Count; index++)
         {
-            var claim = review.RealWorldClaims[index];
+            var claim = claims[index];
             CheckSegment(claim.Segment, paragraphCount, $"real_world_claims[{index}].segment", found);
             CheckLength(claim.Evidence, $"real_world_claims[{index}].evidence", found);
         }
 
-        if (review.FactualCare is { } factual)
+        if (factual is not null)
         {
             for (var index = 0; index < factual.UnsupportedClaims.Count; index++)
             {
@@ -240,11 +288,8 @@ public static partial class ReviewResultValidator
                 continue;
             }
 
-            var id = "ear_" + answer.QuestionId.ToLowerInvariant();
-            if (issues.Any(issue => issue.Id == id))
-            {
-                continue;
-            }
+            // The ear_ prefix is reserved (BadIssueId), so no model issue can already hold this id.
+            var id = ReservedIdPrefix + answer.QuestionId.ToLowerInvariant();
 
             found.Add(new ReviewViolation(EarRuleFailureWithoutIssue, $"ear_rule_answers[{index}]", Repaired: true));
             issues.Add(new ReviewIssueV1(
@@ -281,6 +326,25 @@ public static partial class ReviewResultValidator
             found.Add(new ReviewViolation(EvidenceTooLong, path, Repaired: false));
         }
     }
+
+    private static void CheckFieldLength(string text, string path, List<ReviewViolation> found)
+    {
+        if (text.Length > MaxFieldChars)
+        {
+            found.Add(new ReviewViolation(FieldTooLong, path, Repaired: false));
+        }
+    }
+
+    private static void CheckCount(int count, int max, string path, List<ReviewViolation> found)
+    {
+        if (count > max)
+        {
+            found.Add(new ReviewViolation(TooManyItems, path, Repaired: false));
+        }
+    }
+
+    [GeneratedRegex(@"^[a-z][a-z0-9_]{0,31}\z", RegexOptions.CultureInvariant)]
+    private static partial Regex IdPattern();
 
     [GeneratedRegex(@"^(title|hook|ending|meta|p:\d+)\z", RegexOptions.CultureInvariant)]
     private static partial Regex SegmentPattern();

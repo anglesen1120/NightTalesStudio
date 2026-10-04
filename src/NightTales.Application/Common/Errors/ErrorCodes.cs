@@ -525,6 +525,9 @@ public static class ErrorCodes
     /// <summary>A step of the worst-case estimate has no shipped prompt yet, so the cost bound cannot be computed and the run fails closed (02.2.4-T1, CR-2).</summary>
     public const string PromptNotShipped = "prompt_not_shipped";
 
+    /// <summary>The data object of a review call exceeds twice <c>Story:Prompt:MaxDataObjectBytes</c>, the bound the worst-case cost estimate assumes; the call is not sent (02.6.1-T1 S4).</summary>
+    public const string PromptTooLarge = "prompt_too_large";
+
     /// <summary>Source-run outcome: provider error or unavailable (02 D8).</summary>
     public const string FindSourcesGenerationFailed = "find_sources_generation_failed";
 

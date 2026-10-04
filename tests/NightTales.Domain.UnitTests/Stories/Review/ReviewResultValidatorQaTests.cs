@@ -19,13 +19,17 @@ public sealed class ReviewResultValidatorQaTests
     private static ReviewIssueV1 Issue(string type = "missing_setup_before_twist", string severity = "advisory", string segment = "p:3", string evidence = "x", string id = "r1") =>
         new(id, type, severity, segment, evidence, "impact", "repair");
 
+    // CR-1: every question that was sent is answered; `overrides` replace the passing answer of their question.
+    private static EarRuleAnswer[] AllAnswers(params EarRuleAnswer[] overrides) =>
+        [.. Questions.Select(question => overrides.FirstOrDefault(answer => answer.QuestionId == question) ?? new EarRuleAnswer(question, true, "meta", string.Empty))];
+
     private static StoryReviewV1 Review(
         ReviewIssueV1[]? issues = null,
         ReviewScores? scores = null,
         FactualCareReview? factual = null,
         EarRuleAnswer[]? answers = null,
         RealWorldClaim[]? claims = null) =>
-        new(scores ?? Scores(), issues ?? [], answers ?? [], factual, claims ?? [], "ok");
+        new(scores ?? Scores(), issues ?? [], answers ?? AllAnswers(), factual, claims ?? [], "ok");
 
     private static ValidatedReview Validate(StoryReviewV1 review, Topic topic = Topic.Ghost) =>
         ReviewResultValidator.Validate(review, topic, Paragraphs, Questions);
@@ -153,7 +157,7 @@ public sealed class ReviewResultValidatorQaTests
         var text = new string('a', length);
 
         Validate(Review([Issue(evidence: text)])).IsAccepted.ShouldBe(accepted);
-        Validate(Review(answers: [new EarRuleAnswer("Q1", true, "p:0", text)])).IsAccepted.ShouldBe(accepted);
+        Validate(Review(answers: AllAnswers(new EarRuleAnswer("Q1", true, "p:0", text)))).IsAccepted.ShouldBe(accepted);
         Validate(Review(claims: [new RealWorldClaim("p:0", text)])).IsAccepted.ShouldBe(accepted);
     }
 
@@ -200,11 +204,12 @@ public sealed class ReviewResultValidatorQaTests
     [Fact]
     public void ReviewResultValidator_QuestionIdOutsideTheAskedSet_OrRepeated_IsRejected()
     {
-        var unknown = Validate(Review(answers: [new EarRuleAnswer("Q9", true, "p:0", "x")]));
-        var repeated = Validate(Review(answers: [new EarRuleAnswer("Q1", true, "p:0", "x"), new EarRuleAnswer("Q1", true, "p:1", "y")]));
+        var unknown = Validate(Review(answers: [.. AllAnswers()[..5], new EarRuleAnswer("Q9", true, "p:0", "x")]));
+        var repeated = Validate(Review(answers: [.. AllAnswers()[..5], new EarRuleAnswer("Q1", true, "p:1", "y")]));
 
-        Rules(unknown).ShouldBe([ReviewResultValidator.BadEarRuleAnswer]);
-        Rules(repeated).ShouldBe([ReviewResultValidator.BadEarRuleAnswer]);
+        // Q9 was never asked and the second Q1 repeats one; each is exactly one bad answer, and Q6 is then also unanswered.
+        Rules(unknown).ShouldBe([ReviewResultValidator.BadEarRuleAnswer, ReviewResultValidator.MissingEarRuleAnswer]);
+        Rules(repeated).ShouldBe([ReviewResultValidator.BadEarRuleAnswer, ReviewResultValidator.MissingEarRuleAnswer]);
     }
 
     [Fact]

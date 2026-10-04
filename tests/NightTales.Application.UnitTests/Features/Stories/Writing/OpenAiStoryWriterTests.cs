@@ -312,8 +312,8 @@ public sealed class OpenAiStoryWriterTests
             return new AssembledPrompt("SYSTEM", "{\"data\":1}", "rel=test", "writer:ghost.vi.v1");
         }
 
-        public AssembledPrompt Review(StoryReviewRequest req) =>
-            new("REVIEW-SYSTEM", "{\"data\":2}", "rel=test;review=v1", "review:ghost.vi.v1");
+        public ErrorOr.ErrorOr<AssembledPrompt> Review(StoryReviewRequest req) =>
+            new AssembledPrompt("REVIEW-SYSTEM", "{\"data\":2}", "rel=test;review=v1", "review:ghost.vi.v1");
     }
 
     private sealed class RecordingMeter : IUsageMeter

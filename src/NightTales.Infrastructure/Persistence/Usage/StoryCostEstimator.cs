@@ -37,7 +37,7 @@ public sealed class StoryCostEstimator(
     public const string DefaultModel = "gpt-6-luna";
 
     /// <summary>The default of <c>Story:Prompt:MaxDataObjectBytes</c> (02.6.3-T3, D6).</summary>
-    public const int DefaultMaxDataObjectBytes = 65_536;
+    public const int DefaultMaxDataObjectBytes = NightTales.Application.Features.Stories.Writing.PromptDataBudget.DefaultMaxDataObjectBytes;
 
     private readonly ConcurrentDictionary<(LengthTier Tier, Language Language, string Release, int DataBudget), StepInputs> _inputs = new();
 

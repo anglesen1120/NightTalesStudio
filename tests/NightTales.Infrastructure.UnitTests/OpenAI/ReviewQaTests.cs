@@ -219,7 +219,7 @@ public sealed class ReviewQaTests
     [Fact]
     public async Task ReviewStep_MissingRequiredKeys_AreNeverAccepted()
     {
-        foreach (var key in new[] { "\"issues\":[", "\"ear_rule_answers\":[", "\"real_world_claims\":[", "\"summary\":", "\"scores\":{", "\"hook\":4,", "\"length_fit\":4"})
+        foreach (var key in new[] { "\"issues\":[", "\"ear_rule_answers\":[", "\"real_world_claims\":[", "\"summary\":", "\"scores\":{", "\"hook\":4,", "\"length_fit\":4" })
         {
             var removed = Valid().Replace(key, "\"zz_" + key.TrimStart('"'), StringComparison.Ordinal);
 
@@ -257,7 +257,7 @@ public sealed class ReviewQaTests
         var (call, verdict) = await RunAsync(json);
 
         call.ShouldBeOfType<TextCallOk<StoryReviewV1>>();
-        var merged = AuditReportBuilder.MergeModelReview(string.Empty, verdict!.Review, "gpt-6-luna", "rel=test");
+        var merged = AuditReportBuilder.MergeModelReview(string.Empty, verdict!, "gpt-6-luna", "rel=test");
         merged.ShouldNotContain("forged");
         merged.ShouldNotContain("\"extra\"");
         merged.ShouldNotContain("\"debug\"");
@@ -293,13 +293,13 @@ public sealed class ReviewQaTests
     {
         var catalog = new PromptCatalog(new EmbeddedPromptResourceSource());
         var assembler = new PromptAssembler(catalog, NullLogger<PromptAssembler>.Instance);
-        var baseline = assembler.Review(Request(Topic.TrueCrime));
+        var baseline = assembler.Review(Request(Topic.TrueCrime)).Value;
         var baselineData = JsonDocument.Parse(baseline.UserDataJson).RootElement;
 
         foreach (var fixture in InjectionFixture.LoadAll(InjectionFixture.ReviewStep))
         {
             // Forged control keys, a "new instruction" and an 'all fives' demand, in every segment of the draft.
-            var prompt = assembler.Review(Request(Topic.TrueCrime, text: fixture.Value));
+            var prompt = assembler.Review(Request(Topic.TrueCrime, text: fixture.Value)).Value;
             var data = JsonDocument.Parse(prompt.UserDataJson).RootElement;
 
             prompt.SystemPrompt.ShouldBe(baseline.SystemPrompt, fixture.Id);
@@ -452,12 +452,14 @@ public sealed class ReviewQaTests
             "story/ghost.en.v1.md");
     }
 
-    // A fully valid reply for the two-paragraph draft above (p:0 and p:1 exist, Q1 is asked).
+    // A fully valid reply for the two-paragraph draft above (p:0 and p:1 exist, Q1-Q5 are asked and all answered).
     private static string Valid() =>
         """
         {"scores":{"hook":4,"pacing":3,"atmosphere":4,"natural_language":4,"originality":3,"factual_care":null,"length_fit":4},
          "issues":[{"id":"r1","type":"tone_violation","severity":"advisory","segment":"p:1","evidence":"a flat line","impact":"breaks the mood","repair_direction":"shorten"}],
-         "ear_rule_answers":[{"question_id":"Q1","passed":true,"segment":"p:0","evidence":"moves the fear"}],
+         "ear_rule_answers":[{"question_id":"Q1","passed":true,"segment":"p:0","evidence":"moves the fear"},
+           {"question_id":"Q2","passed":true,"segment":"meta","evidence":""},{"question_id":"Q3","passed":true,"segment":"meta","evidence":""},
+           {"question_id":"Q4","passed":true,"segment":"meta","evidence":""},{"question_id":"Q5","passed":true,"segment":"meta","evidence":""}],
          "factual_care":null,
          "real_world_claims":[{"segment":"p:0","evidence":"a named city"}],
          "summary":"solid draft"}

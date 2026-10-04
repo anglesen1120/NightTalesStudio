@@ -29,16 +29,25 @@ public static class AuditReportBuilder
     /// on the document, replacing a previous block. <c>kind</c> of each issue is derived from its type, never read from the model.
     /// </summary>
     /// <param name="auditReportJson">The current <c>audit_report</c>; empty or blank starts a new document.</param>
-    /// <param name="review">The validated review (<see cref="ReviewResultValidator"/>).</param>
+    /// <param name="validated">The outcome of <see cref="ReviewResultValidator.Validate"/>; only an accepted outcome can be merged.</param>
     /// <param name="model">The model that served the review call.</param>
     /// <param name="promptVersion">The composite prompt version of the call.</param>
     /// <returns>The document with the new <c>model_review</c>.</returns>
+    /// <exception cref="InvalidOperationException">The outcome is not accepted: a rejected review is never persisted (02.6.1-T1 S1).</exception>
     /// <exception cref="JsonException">The document is not a JSON object.</exception>
-    public static string MergeModelReview(string auditReportJson, StoryReviewV1 review, string model, string promptVersion)
+    public static string MergeModelReview(string auditReportJson, ValidatedReview validated, string model, string promptVersion)
     {
-        ArgumentNullException.ThrowIfNull(review);
+        ArgumentNullException.ThrowIfNull(validated);
         ArgumentException.ThrowIfNullOrWhiteSpace(model);
         ArgumentException.ThrowIfNullOrWhiteSpace(promptVersion);
+
+        if (!validated.IsAccepted)
+        {
+            throw new InvalidOperationException(
+                $"A rejected review cannot be merged: {string.Join(", ", validated.Rejections.Select(rejection => rejection.RuleId))}.");
+        }
+
+        var review = validated.Review;
 
         var root = string.IsNullOrWhiteSpace(auditReportJson)
             ? new JsonObject { ["schema_version"] = SchemaVersion }

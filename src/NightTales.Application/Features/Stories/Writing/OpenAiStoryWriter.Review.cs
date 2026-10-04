@@ -15,7 +15,14 @@ public sealed partial class OpenAiStoryWriter
     {
         ArgumentNullException.ThrowIfNull(req);
 
-        var prompt = assembler.Review(req);
+        var assembled = assembler.Review(req);
+        if (assembled.IsError)
+        {
+            // S4: nothing was sent, so nothing is metered; the review job treats this like a missing prompt, a deploy defect.
+            throw new InvalidOperationException($"The review prompt cannot be assembled: {assembled.FirstError.Code}.");
+        }
+
+        var prompt = assembled.Value;
 
         var call = new TextCallRequest(
             req.Run,
