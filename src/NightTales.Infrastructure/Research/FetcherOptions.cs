@@ -63,6 +63,13 @@ public sealed class FetcherOptions
     /// <summary>How far a heartbeat moves the lease end from now, in seconds (02 D10: 60 s).</summary>
     public int HeartbeatSeconds { get; set; } = 60;
 
+    /// <summary>
+    /// The longest a lease may live in total, in seconds, counted from <c>leased_at</c> (SEC-1: 300). A heartbeat never
+    /// extends <c>lease_until</c> past it, and once it has passed the heartbeat answers <c>fetch_lease_lost</c> so the
+    /// sweeper reclaims a task whose fetcher keeps heartbeating while the fetch is stuck.
+    /// </summary>
+    public int MaxLeaseTotalSeconds { get; set; } = 300;
+
     /// <summary>The most tasks leased platform-wide at once (02 D10, FR-02-8: 4).</summary>
     public int MaxLeasesPlatformWide { get; set; } = 4;
 

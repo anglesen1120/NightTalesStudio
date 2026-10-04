@@ -14,6 +14,7 @@ namespace NightTales.Application.Abstractions.Fetching;
 /// <param name="GenerationRunId">The run of a <c>find_sources</c> task; <see langword="null"/> otherwise.</param>
 /// <param name="Kind">The task kind.</param>
 /// <param name="LeasedAt">When the lease was taken, for the lease-to-result duration.</param>
+/// <param name="DbNow">The database clock when the row was read, so a duration is <c>DbNow - LeasedAt</c> on one clock.</param>
 public sealed record ClaimedFetchTask(
     Guid TaskId,
     Guid UserId,
@@ -21,7 +22,8 @@ public sealed record ClaimedFetchTask(
     Guid? SourceId,
     Guid? GenerationRunId,
     FetchTaskKind Kind,
-    DateTimeOffset? LeasedAt);
+    DateTimeOffset? LeasedAt,
+    DateTimeOffset DbNow);
 
 /// <summary>
 /// The queue-claim half of the fetcher's internal API (02.5.2-T2, 02 D10): set-based SQL that EF cannot express.
@@ -38,7 +40,7 @@ public interface IFetchTaskLeaseStore
     /// <param name="workerId">The fetcher instance.</param>
     /// <param name="max">The most tasks wanted, 1 to the platform cap.</param>
     /// <param name="cancellationToken">Cancels the statement.</param>
-    /// <returns>The leased tasks (possibly none), or <c>service_unavailable</c>.</returns>
+    /// <returns>The leased tasks (possibly none), or <c>service_unavailable</c> (transient failure, or the platform lock was still contended after about 2 s).</returns>
     Task<ErrorOr<IReadOnlyList<LeaseDto>>> LeaseAsync(string workerId, int max, CancellationToken cancellationToken);
 
     /// <summary>Extends the lease of a task <paramref name="workerId"/> still holds.</summary>
@@ -59,12 +61,24 @@ public interface IFetchTaskLeaseStore
     /// <returns>The locked task, <c>fetch_task_not_found</c>, or <c>fetch_lease_lost</c>.</returns>
     Task<ErrorOr<ClaimedFetchTask>> ClaimForResultAsync(Guid taskId, string workerId, CancellationToken cancellationToken);
 
-    /// <summary>The owner of a task, or <see langword="null"/> when it does not exist; no tenant filter applies.</summary>
+    /// <summary>
+    /// The same predicate and result as <see cref="ClaimForResultAsync"/> but without <c>FOR UPDATE</c>: a read that takes
+    /// no lock. It runs in a scope of its own with no unit of work and opens and closes its own connection.
+    /// </summary>
+    /// <param name="taskId">The task.</param>
+    /// <param name="workerId">The fetcher instance.</param>
+    /// <param name="cancellationToken">Cancels the statement.</param>
+    /// <returns>The task, <c>fetch_task_not_found</c>, <c>fetch_lease_lost</c>, or <c>service_unavailable</c>.</returns>
+    Task<ErrorOr<ClaimedFetchTask>> PeekForResultAsync(Guid taskId, string workerId, CancellationToken cancellationToken);
+
+    /// <summary>The owner of a task; no tenant filter applies.</summary>
     /// <param name="taskId">The task.</param>
     /// <param name="cancellationToken">Cancels the statement.</param>
-    Task<Guid?> FindOwnerAsync(Guid taskId, CancellationToken cancellationToken);
+    /// <returns>The owner, <c>fetch_task_not_found</c>, or <c>service_unavailable</c> (transient failure or a deadline of the command's own).</returns>
+    Task<ErrorOr<Guid>> FindOwnerAsync(Guid taskId, CancellationToken cancellationToken);
 
     /// <summary>How many tasks are <c>leased</c> right now, platform-wide.</summary>
     /// <param name="cancellationToken">Cancels the statement.</param>
-    Task<int> CountLeasedAsync(CancellationToken cancellationToken);
+    /// <returns>The count, or <c>service_unavailable</c>; callers use it for a gauge and must treat an error as "unknown".</returns>
+    Task<ErrorOr<int>> CountLeasedAsync(CancellationToken cancellationToken);
 }

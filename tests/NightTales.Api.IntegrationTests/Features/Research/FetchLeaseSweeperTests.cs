@@ -2,6 +2,7 @@ using Microsoft.Extensions.DependencyInjection;
 using NightTales.Api.IntegrationTests.Harness;
 using NightTales.Api.IntegrationTests.Persistence;
 using NightTales.Application.Abstractions.Jobs;
+using NightTales.Application.Features.Research.Fetcher;
 using NightTales.Application.Features.Research.Jobs;
 using NightTales.TestKit;
 using NightTales.TestKit.Auth;
@@ -96,6 +97,10 @@ public sealed class FetchLeaseSweeperTests(TestDatabase database) : IntegrationT
                 Database,
                 $"SELECT status || '/' || error_code || '/' || (fetched_at IS NOT NULL)::text FROM story_sources WHERE id = '{source}'")
             .ShouldBe("failed/source_unreachable/true");
+        SqlProbe.Count(
+                Database,
+                $"SELECT count(*) FROM outbox_messages WHERE type = 'source_fetched.v1' AND user_id = '{world.UserId}'")
+            .ShouldBe(1);
     }
 
     [Fact]
@@ -112,6 +117,67 @@ public sealed class FetchLeaseSweeperTests(TestDatabase database) : IntegrationT
         SqlProbe.ScalarText(Database, $"SELECT status FROM fetch_tasks WHERE id = '{task}'").ShouldBe("failed");
         SqlProbe.ScalarText(Database, $"SELECT error_code FROM story_sources WHERE id = '{source}'")
             .ShouldBe("source_blocked_by_robots");
+    }
+
+    [Fact]
+    public async Task Sweeper_Reconcile_FailsThePendingSourceOfAnAlreadyFailedTask()
+    {
+        var world = await SeedWorldAsync();
+        var source = SeedSource(world, "e.example");
+        _ = SeedFailedTask(world, source, "source_blocked_by_robots");
+        await using var host = await StartWorkerAsync();
+
+        var summary = await SweepAsync(host);
+
+        summary.ShouldBe(new FetchLeaseSweepSummary(Requeued: 0, Failed: 0, SourcesFailed: 1));
+        SqlProbe.ScalarText(Database, $"SELECT status || '/' || error_code FROM story_sources WHERE id = '{source}'")
+            .ShouldBe("failed/source_blocked_by_robots");
+        SqlProbe.Count(
+                Database,
+                $"SELECT count(*) FROM outbox_messages WHERE type = 'source_fetched.v1' AND user_id = '{world.UserId}'")
+            .ShouldBe(1);
+
+        (await SweepAsync(host)).SourcesFailed.ShouldBe(0);
+        SqlProbe.Count(
+                Database,
+                $"SELECT count(*) FROM outbox_messages WHERE type = 'source_fetched.v1' AND user_id = '{world.UserId}'")
+            .ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task Sweeper_Reconcile_IgnoresAFailedTaskThatFinishedLongAgo()
+    {
+        var world = await SeedWorldAsync();
+        var source = SeedSource(world, "f.example");
+        var task = SeedFailedTask(world, source, "source_unreachable");
+        SqlProbe.Execute(Database, $"UPDATE fetch_tasks SET finished_at = now() - interval '48 hours' WHERE id = '{task}'");
+        await using var host = await StartWorkerAsync();
+
+        var summary = await SweepAsync(host);
+
+        summary.SourcesFailed.ShouldBe(0);
+        SqlProbe.ScalarText(Database, $"SELECT status FROM story_sources WHERE id = '{source}'").ShouldBe("pending");
+    }
+
+    [Fact]
+    public async Task Sweeper_SetsTheLeaseGaugeFromTheDatabase_AfterRequeues()
+    {
+        var world = await SeedWorldAsync();
+        _ = SeedLeasedTask(world, SeedSource(world, "g1.example"), attempts: 1, leaseUntil: "now() - interval '1 minute'");
+        _ = SeedLeasedTask(world, SeedSource(world, "g2.example"), attempts: 1, leaseUntil: "now() - interval '1 minute'");
+        _ = SeedLeasedTask(world, SeedSource(world, "g3.example"), attempts: 1, leaseUntil: "now() + interval '5 minutes'");
+        await using var host = await StartWorkerAsync();
+        using var scope = host.CreateScope();
+        var gauge = scope.ServiceProvider.GetRequiredService<FetchLeaseGauge>();
+
+        gauge.Value.ShouldBe(0);
+        _ = await SweepAsync(host);
+
+        // The database may hold leases from sibling tests of this class; the gauge must equal the database's own count,
+        // which includes the one live lease seeded here and none of the two requeued ones.
+        var leased = SqlProbe.Count(Database, "SELECT count(*) FROM fetch_tasks WHERE status = 'leased'");
+        leased.ShouldBeGreaterThanOrEqualTo(1);
+        ((long)gauge.Value).ShouldBe(leased);
     }
 
     [Fact]
@@ -220,6 +286,19 @@ public sealed class FetchLeaseSweeperTests(TestDatabase database) : IntegrationT
             + $"VALUES ('{id}', '{world.UserId}', '{world.EpisodeId}', '{source}', 'fetch_source', 'https://x.example/', 'x.example', "
             + $"'leased', {attempts}, now() - interval '10 minutes', now() - interval '10 minutes', 'fetcher-1', "
             + $"now() - interval '3 minutes', {leaseUntil})");
+
+        return id;
+    }
+
+    private Guid SeedFailedTask(World world, Guid source, string errorCode)
+    {
+        var id = Guid.NewGuid();
+        SqlProbe.Execute(
+            Database,
+            "INSERT INTO fetch_tasks (id, user_id, episode_id, source_id, kind, url, registrable_domain, status, attempts, "
+            + "not_before, created_at, error_code, finished_at) "
+            + $"VALUES ('{id}', '{world.UserId}', '{world.EpisodeId}', '{source}', 'fetch_source', 'https://x.example/', 'x.example', "
+            + $"'failed', 1, now() - interval '10 minutes', now() - interval '10 minutes', '{errorCode}', now() - interval '1 minute')");
 
         return id;
     }

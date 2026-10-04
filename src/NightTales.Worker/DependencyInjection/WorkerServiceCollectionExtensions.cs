@@ -11,6 +11,7 @@ using NightTales.Application.Abstractions.Outbox;
 using NightTales.Application.DependencyInjection;
 using NightTales.Application.Features.Assets.Jobs;
 using NightTales.Application.Features.Episodes.Outbox;
+using NightTales.Application.Features.Research.Fetcher;
 using NightTales.Application.Features.Research.Jobs;
 using NightTales.Application.Features.Research.Sources.Outbox;
 using NightTales.Application.Features.Stories.Jobs;
@@ -260,6 +261,7 @@ public static class WorkerServiceCollectionExtensions
                 $"'{FetchLeaseSweeperOptions.SectionName}:{nameof(FetchLeaseSweeperOptions.MaxAttempts)}', '{nameof(FetchLeaseSweeperOptions.RequeueBackoffSeconds)}' and '{nameof(FetchLeaseSweeperOptions.SweepIntervalSeconds)}' must each be at least 1.")
             .ValidateOnStart();
         services.AddSingleton(provider => provider.GetRequiredService<IOptions<FetchLeaseSweeperOptions>>().Value);
+        services.TryAddSingleton<FetchLeaseGauge>();
 
         services.AddHealthChecks()
             .AddCheck<DatabaseHealthCheck>("database")

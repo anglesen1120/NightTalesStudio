@@ -3,9 +3,10 @@ using NightTales.Application.Telemetry;
 namespace NightTales.Application.Features.Research.Fetcher;
 
 /// <summary>
-/// The <c>fetch_leases_active</c> gauge (02.5.2-T2, plan §7.4): how many tasks are <c>leased</c>. The Api refreshes it
-/// from an exact <c>count(*)</c> on every lease call and every accepted result, so it is exact on the Api process that
-/// served the last call; a sweeper requeue in the Worker is reflected at the next lease call.
+/// The <c>fetch_leases_active</c> gauge (02.5.2-T2, plan §7.4): how many tasks are <c>leased</c>. The process-local value
+/// is only correct where it is set from the database: the Worker's <c>FetchLeaseSweeperJob</c> sets it from an exact
+/// <c>count(*)</c> once a minute, after every requeue and failure it makes, so the exported metric is the Worker's.
+/// An Api process must not set it: its lease and result calls cannot see the sweeper's transitions.
 /// </summary>
 public sealed class FetchLeaseGauge
 {

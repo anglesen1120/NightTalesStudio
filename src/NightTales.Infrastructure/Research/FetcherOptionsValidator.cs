@@ -63,6 +63,11 @@ public sealed class FetcherOptionsValidator(IPublicSuffixList psl) : IValidateOp
             problems.Add($"'{FetcherOptions.SectionName}:{nameof(FetcherOptions.HeartbeatSeconds)}' must be at least 1 and less than LeaseSeconds.");
         }
 
+        if (options.MaxLeaseTotalSeconds <= options.LeaseSeconds || options.MaxLeaseTotalSeconds > 86_400)
+        {
+            problems.Add($"'{FetcherOptions.SectionName}:{nameof(FetcherOptions.MaxLeaseTotalSeconds)}' must be greater than LeaseSeconds and at most 86400.");
+        }
+
         if (options.MaxLeasesPlatformWide is < 1 or > 64)
         {
             problems.Add($"'{FetcherOptions.SectionName}:{nameof(FetcherOptions.MaxLeasesPlatformWide)}' must be between 1 and 64.");

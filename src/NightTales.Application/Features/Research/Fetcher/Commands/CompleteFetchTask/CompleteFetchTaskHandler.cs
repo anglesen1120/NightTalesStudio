@@ -3,8 +3,6 @@ using Mediator;
 using Microsoft.EntityFrameworkCore;
 using NightTales.Application.Abstractions.Fetching;
 using NightTales.Application.Abstractions.Persistence;
-using NightTales.Application.Abstractions.Storage;
-using NightTales.Application.Telemetry;
 using NightTales.Domain.Common;
 using NightTales.Domain.Research;
 
@@ -13,33 +11,36 @@ namespace NightTales.Application.Features.Research.Fetcher.Commands.CompleteFetc
 /// <summary>
 /// Accepts a fetcher's result (02.5.2-T2 Design, in the contract's order): the lease ownership (<c>FOR UPDATE</c> on
 /// the task row, <c>409 fetch_lease_lost</c>), then the body (<see cref="FetchTaskResultValidator"/>, 400 and the task
-/// stays leased), then the object write, then — in the one transaction — the source and task transitions and the
-/// <c>SourceFetched</c> outbox row.
+/// stays leased), then — in the one transaction — the source and task transitions and the <c>SourceFetched</c> outbox
+/// row.
 /// </summary>
 /// <remarks>
-/// The object is written <em>before</em> the row update: a crash between the two leaves an orphan object under
-/// <c>research/</c> (13.3's sweep) and never a row whose <c>extracted_text_key</c> points at nothing. The key is
-/// content-addressed, so a retry after a failed commit writes the same object again.
+/// <para>
+/// No object-store I/O runs here (PERF-1): the host writes the content-addressed text object <em>before</em> this
+/// command's transaction opens, with a deadline of its own, and passes the key in
+/// <see cref="CompleteFetchTaskCommand.StoredTextKey"/>. The <c>fetch_tasks</c> row lock is therefore held only for
+/// the row updates. A lease lost after the write leaves an orphan object under <c>research/</c> (13.3's sweep) and
+/// answers 409; a row never points at a missing object.
+/// </para>
+/// <para>
+/// The instruments are not touched here either (QA-9): the readings travel on <see cref="FetchResultAck.Telemetry"/>
+/// and the host emits them once the commit has succeeded. The duration is the claim's database <c>now()</c> minus the
+/// database <c>leased_at</c>, one clock.
+/// </para>
 /// </remarks>
 /// <param name="store">The queue-claim store.</param>
 /// <param name="db">The tracked write model, pinned to the task's owner by the host.</param>
-/// <param name="texts">The extracted-text object store.</param>
 /// <param name="clock">The command's clock reading.</param>
 /// <param name="limits">The body caps.</param>
 /// <param name="psl">The public-suffix list.</param>
 /// <param name="blocklist">The blocked domains.</param>
-/// <param name="metrics">The custom instruments.</param>
-/// <param name="gauge">The <c>fetch_leases_active</c> gauge.</param>
 public sealed class CompleteFetchTaskHandler(
     IFetchTaskLeaseStore store,
     IAppDbContext db,
-    IExtractedTextStore texts,
     IClock clock,
     FetchResultLimits limits,
     IPublicSuffixList psl,
-    DomainBlocklist blocklist,
-    NightTalesMetrics metrics,
-    FetchLeaseGauge gauge)
+    DomainBlocklist blocklist)
     : ICommandHandler<CompleteFetchTaskCommand, ErrorOr<FetchResultAck>>
 {
     private const string StatusDone = "done";
@@ -90,7 +91,7 @@ public sealed class CompleteFetchTaskHandler(
         }
 
         var now = clock.UtcNow;
-        var leasedBefore = await store.CountLeasedAsync(cancellationToken).ConfigureAwait(false);
+
         string metricStatus;
         string? metricCode = null;
 
@@ -98,20 +99,20 @@ public sealed class CompleteFetchTaskHandler(
         {
             case FetchedResult fetched:
                 {
-                    var key = await texts
-                        .WriteAsync(task.UserId, task.EpisodeId, source.Id, fetched.Sha256, fetched.Text, cancellationToken)
-                        .ConfigureAwait(false);
-                    if (key.IsError)
+                    if (command.StoredTextKey is not { Length: > 0 } storedKey)
                     {
-                        return key.Errors;
+                        throw new InvalidOperationException(
+                            "A done fetch_source result must carry the key of the text the host wrote before the transaction.");
                     }
+
+                    var key = storedKey;
 
                     source.MarkFetched(
                         fetched.FinalUrl,
                         fetched.Title,
                         fetched.ContentType,
                         fetched.Sha256,
-                        key.Value,
+                        key,
                         fetched.Text.Length,
                         now,
                         fetched.HttpStatus);
@@ -136,15 +137,14 @@ public sealed class CompleteFetchTaskHandler(
             .ConfigureAwait(false);
         episode?.RaiseSourceFetched(source.Id, now);
 
-        metrics.RecordFetchTask(metricStatus, metricCode);
-        if (task.LeasedAt is { } leasedAt)
-        {
-            // Lease to result, never created to result: the histogram must not measure queue time (plan §7.4).
-            metrics.RecordFetchDuration(Math.Max(0d, (now - leasedAt).TotalSeconds));
-        }
+        var telemetry = new FetchResultTelemetry(
+            metricStatus,
+            metricCode,
+            // Lease to result, never created to result (plan §7.4); leased_at and the claim's now() are both the
+            // database clock, so host clock skew cannot show up in the histogram (QA-9).
+            task.LeasedAt is { } leasedAt ? Math.Max(0d, (task.DbNow - leasedAt).TotalSeconds) : null);
 
-        gauge.Set(leasedBefore - 1);
-
-        return new FetchResultAck(task.TaskId, StatusDone);
+        // Emitted by the host after the unit of work commits, never here: a failed commit counts nothing.
+        return new FetchResultAck(task.TaskId, StatusDone) { Telemetry = telemetry };
     }
 }

@@ -57,6 +57,7 @@ public sealed class LeaseFetchTasksValidatorTests
     [Theory]
     [InlineData("w\0")]
     [InlineData("w\n1")]
+    [InlineData("worker\n")]
     [InlineData("w\r")]
     [InlineData("w\t")]
     [InlineData("w 1")]

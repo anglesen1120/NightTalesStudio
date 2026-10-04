@@ -1,3 +1,5 @@
+using System.Buffers;
+using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using ErrorOr;
@@ -107,7 +109,7 @@ public static class FetchTaskResultValidator
             return FetcherErrors.Job(ErrorCodes.SourceNoText, "The text is not valid UTF-8 text.");
         }
 
-        var sha256 = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(text)));
+        var sha256 = HashUtf8(text);
         if (!string.Equals(body.TextSha256, sha256, StringComparison.OrdinalIgnoreCase))
         {
             return FetcherErrors.Job(ErrorCodes.SourceNoText, "The text hash does not match the text.");
@@ -175,7 +177,10 @@ public static class FetchTaskResultValidator
         return mediaType.Length == 0 ? null : mediaType;
     }
 
-    /// <summary>A title or site name with control characters removed, trimmed and capped; <see langword="null"/> when nothing is left.</summary>
+    /// <summary>
+    /// A title or site name without control, format (bidi, zero-width, BOM), line/paragraph separator, private-use or
+    /// unassigned characters, with whitespace runs collapsed, trimmed and capped; <see langword="null"/> when nothing is left.
+    /// </summary>
     private static string? CleanLabel(string? value)
     {
         if (string.IsNullOrWhiteSpace(value) || !IsWellFormed(value))
@@ -184,12 +189,30 @@ public static class FetchTaskResultValidator
         }
 
         var builder = new StringBuilder(Math.Min(value.Length, FetchResultLimits.MaxLabelLength));
-        foreach (var character in value)
+        foreach (var rune in value.EnumerateRunes())
         {
-            if (!char.IsControl(character))
+            switch (Rune.GetUnicodeCategory(rune))
             {
-                builder.Append(character);
+                case UnicodeCategory.Control:
+                case UnicodeCategory.Format:
+                case UnicodeCategory.LineSeparator:
+                case UnicodeCategory.ParagraphSeparator:
+                case UnicodeCategory.PrivateUse:
+                case UnicodeCategory.OtherNotAssigned:
+                    continue;
             }
+
+            if (Rune.IsWhiteSpace(rune))
+            {
+                if (builder.Length > 0 && builder[^1] != ' ')
+                {
+                    builder.Append(' ');
+                }
+
+                continue;
+            }
+
+            builder.Append(rune.ToString());
         }
 
         var cleaned = builder.ToString().Trim();
@@ -205,6 +228,31 @@ public static class FetchTaskResultValidator
         }
 
         return cleaned.Length == 0 ? null : cleaned;
+    }
+
+    /// <summary>The lowercase hex SHA-256 of the UTF-8 form of a well-formed <paramref name="text"/>, without a full temporary array of the text.</summary>
+    private static string HashUtf8(string text)
+    {
+        const int ChunkChars = 16 * 1024;
+        using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        var encoder = Encoding.UTF8.GetEncoder();
+        var buffer = ArrayPool<byte>.Shared.Rent(Encoding.UTF8.GetMaxByteCount(ChunkChars));
+        try
+        {
+            for (var offset = 0; offset < text.Length; offset += ChunkChars)
+            {
+                var count = Math.Min(ChunkChars, text.Length - offset);
+                var flush = offset + count >= text.Length;
+                var written = encoder.GetBytes(text.AsSpan(offset, count), buffer, flush);
+                hash.AppendData(buffer, 0, written);
+            }
+
+            return Convert.ToHexStringLower(hash.GetHashAndReset());
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
+        }
     }
 
     private static bool IsWellFormed(string text)

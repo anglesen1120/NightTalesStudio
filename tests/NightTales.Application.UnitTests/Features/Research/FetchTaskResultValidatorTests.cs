@@ -243,6 +243,29 @@ public sealed class FetchTaskResultValidatorTests
     }
 
     [Theory]
+    [InlineData("pay\u202epal", "paypal")]
+    [InlineData("zero\u200bwidth", "zerowidth")]
+    [InlineData("line\u2028break", "linebreak")]
+    [InlineData("\ufeffbom title", "bom title")]
+    [InlineData("a  \t b \u00a0 c", "a b c")]
+    [InlineData("emoji \ud83d\ude00 ok", "emoji \ud83d\ude00 ok")]
+    public void Done_Title_DropsFormatAndSeparatorCharacters_AndCollapsesWhitespace(string title, string expected) =>
+        Fetch(Done(title: title)).Value.ShouldBeOfType<FetchedResult>().Title.ShouldBe(expected);
+
+    [Fact]
+    public void Done_Title_OnlyFormatCharacters_BecomesNull() =>
+        Fetch(Done(title: "\u202e\u200b\u2028\ufeff")).Value.ShouldBeOfType<FetchedResult>().Title.ShouldBeNull();
+
+    [Fact]
+    public void Done_LongText_HashMatchesAcrossChunkBoundary_WithSurrogatePairStraddlingIt()
+    {
+        // The validator hashes in 16 K-char chunks; the emoji's two chars sit on either side of the first boundary.
+        var text = new string('a', 16 * 1024 - 1) + "\ud83d\ude00" + new string('b', 40_000);
+
+        Fetch(Done(text: text)).Value.ShouldBeOfType<FetchedResult>().Sha256.ShouldBe(Sha(text));
+    }
+
+    [Theory]
     [InlineData(null)]
     [InlineData("")]
     [InlineData("ok")]

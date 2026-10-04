@@ -26,7 +26,7 @@ namespace NightTales.Infrastructure.Persistence.Queries;
 public sealed class FetchLeaseSweepStore(AppDbContext database) : IFetchLeaseSweepStore
 {
     /// <inheritdoc />
-    public async Task<ErrorOr<IReadOnlyList<ExpiredFetchLease>>> RequeueExpiredLeasesAsync(
+    public Task<ErrorOr<IReadOnlyList<ExpiredFetchLease>>> RequeueExpiredLeasesAsync(
         int maxAttempts,
         int backoffSeconds,
         CancellationToken cancellationToken)
@@ -34,6 +34,85 @@ public sealed class FetchLeaseSweepStore(AppDbContext database) : IFetchLeaseSwe
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxAttempts);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(backoffSeconds);
 
+        return RunAsync<IReadOnlyList<ExpiredFetchLease>>(
+            Sql,
+            command =>
+            {
+                command.Parameters.Add(new NpgsqlParameter("maxAttempts", maxAttempts));
+                command.Parameters.Add(new NpgsqlParameter("backoffSeconds", backoffSeconds));
+            },
+            async reader =>
+            {
+                var rows = new List<ExpiredFetchLease>();
+                while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+                {
+                    rows.Add(new ExpiredFetchLease(
+                        reader.GetGuid(0),
+                        reader.GetGuid(1),
+                        await reader.IsDBNullAsync(2, cancellationToken).ConfigureAwait(false) ? null : reader.GetGuid(2),
+                        reader.GetGuid(3),
+                        reader.GetInt32(4),
+                        string.Equals(reader.GetString(5), FailedStatus, StringComparison.Ordinal)));
+                }
+
+                return rows;
+            },
+            cancellationToken);
+    }
+
+    /// <inheritdoc />
+    public Task<ErrorOr<IReadOnlyList<FailedTaskWithPendingSource>>> ListFailedTasksWithPendingSourceAsync(
+        int lookbackHours,
+        int limit,
+        CancellationToken cancellationToken)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(lookbackHours);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(limit);
+
+        return RunAsync<IReadOnlyList<FailedTaskWithPendingSource>>(
+            PendingSourceSql,
+            command =>
+            {
+                command.Parameters.Add(new NpgsqlParameter("lookbackHours", lookbackHours));
+                command.Parameters.Add(new NpgsqlParameter("limit", limit));
+            },
+            async reader =>
+            {
+                var rows = new List<FailedTaskWithPendingSource>();
+                while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+                {
+                    rows.Add(new FailedTaskWithPendingSource(
+                        reader.GetGuid(0),
+                        reader.GetGuid(1),
+                        reader.GetGuid(2),
+                        reader.GetGuid(3),
+                        await reader.IsDBNullAsync(4, cancellationToken).ConfigureAwait(false) ? null : reader.GetString(4)));
+                }
+
+                return rows;
+            },
+            cancellationToken);
+    }
+
+    /// <inheritdoc />
+    public Task<ErrorOr<int>> CountLeasedAsync(CancellationToken cancellationToken) =>
+        RunAsync(
+            "SELECT count(*) FROM fetch_tasks WHERE status = 'leased'",
+            _ => { },
+            async reader =>
+            {
+                await reader.ReadAsync(cancellationToken).ConfigureAwait(false);
+
+                return (int)reader.GetInt64(0);
+            },
+            cancellationToken);
+
+    private async Task<ErrorOr<T>> RunAsync<T>(
+        string commandText,
+        Action<DbCommand> bind,
+        Func<DbDataReader, Task<T>> read,
+        CancellationToken cancellationToken)
+    {
         var opened = false;
 
         try
@@ -42,24 +121,12 @@ public sealed class FetchLeaseSweepStore(AppDbContext database) : IFetchLeaseSwe
             opened = true;
 
             await using var command = database.Database.GetDbConnection().CreateCommand();
-            command.CommandText = Sql;
-            command.Parameters.Add(new NpgsqlParameter("maxAttempts", maxAttempts));
-            command.Parameters.Add(new NpgsqlParameter("backoffSeconds", backoffSeconds));
+            command.CommandText = commandText;
+            bind(command);
 
-            var rows = new List<ExpiredFetchLease>();
             await using DbDataReader reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
-            {
-                rows.Add(new ExpiredFetchLease(
-                    reader.GetGuid(0),
-                    reader.GetGuid(1),
-                    await reader.IsDBNullAsync(2, cancellationToken).ConfigureAwait(false) ? null : reader.GetGuid(2),
-                    reader.GetGuid(3),
-                    reader.GetInt32(4),
-                    string.Equals(reader.GetString(5), FailedStatus, StringComparison.Ordinal)));
-            }
 
-            return rows;
+            return await read(reader).ConfigureAwait(false);
         }
         catch (Exception exception) when (IsTransient(exception) || IsDeadline(exception, cancellationToken))
         {
@@ -100,5 +167,19 @@ public sealed class FetchLeaseSweepStore(AppDbContext database) : IFetchLeaseSwe
             finished_at = CASE WHEN attempts >= @maxAttempts THEN now() ELSE NULL END
         WHERE status = 'leased' AND lease_until < now()
         RETURNING id, user_id, source_id, episode_id, attempts, status
+        """;
+
+    // Failed tasks whose source is still pending; `ORDER BY finished_at DESC LIMIT` bounds the pass and the join takes
+    // the rows a prior crash left behind (the source is flipped in the same pass that fails the task, so a healthy
+    // system returns none).
+    private const string PendingSourceSql =
+        """
+        SELECT t.id, t.user_id, t.source_id, t.episode_id, t.error_code
+        FROM fetch_tasks t
+        JOIN story_sources s ON s.id = t.source_id AND s.status = 'pending'
+        WHERE t.status = 'failed'
+          AND t.finished_at > now() - make_interval(hours => @lookbackHours)
+        ORDER BY t.finished_at DESC
+        LIMIT @limit
         """;
 }

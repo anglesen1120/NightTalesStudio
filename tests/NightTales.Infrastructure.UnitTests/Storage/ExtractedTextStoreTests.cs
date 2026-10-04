@@ -66,6 +66,18 @@ public sealed class ExtractedTextStoreTests
     }
 
     [Fact]
+    public async Task Write_Then_Read_KeepsALeadingZeroWidthNoBreakSpace()
+    {
+        const string text = "\ufeffstarts with a BOM character";
+
+        var key = (await WriteAsync(text)).Value;
+        var read = await Store.ReadAsync(key, TestContext.Current.CancellationToken);
+
+        read.IsError.ShouldBeFalse();
+        read.Value.ShouldBe(text);
+    }
+
+    [Fact]
     public async Task Write_WritesNoByteOrderMark()
     {
         var key = (await WriteAsync("abc")).Value;

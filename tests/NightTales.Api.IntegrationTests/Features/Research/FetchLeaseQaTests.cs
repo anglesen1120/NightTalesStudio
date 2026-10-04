@@ -186,7 +186,7 @@ public sealed class FetchLeaseQaTests(TestDatabase database) : IntegrationTest(d
         }
     }
 
-    [Fact(Skip = "QA-3 open: Web serializer defaults accept a quoted number for max")]
+    [Fact]
     public async Task Lease_QuotedMax_IsRejected_AsTheContractCallsForAnInteger()
     {
         var seed = NewSeed();
@@ -542,7 +542,9 @@ public sealed class FetchLeaseQaTests(TestDatabase database) : IntegrationTest(d
             seed.Count($"SELECT count(*) FROM story_sources WHERE id = '{task.SourceId}' AND status = 'fetched'").ShouldBe(1);
         }
 
-        FetchTaskSeed.ResearchPuts(blobs).ShouldBe(10, "only the winner of each race writes an object");
+        // PERF-1: the object is written before the locking claim, so the loser of a race may leave an orphan
+        // (the two bodies differ, so the keys differ); every race still stores at least the winner's object.
+        FetchTaskSeed.ResearchPuts(blobs).ShouldBeInRange(10, 20, "one object per winner, plus at most one orphan per race");
     }
 
     [Fact]
@@ -627,7 +629,7 @@ public sealed class FetchLeaseQaTests(TestDatabase database) : IntegrationTest(d
         seed.Count("SELECT count(*) FROM story_sources WHERE status = 'failed' AND error_code = 'source_unreachable'").ShouldBe(fail.Count);
     }
 
-    [Fact(Skip = "QA-2 open: a heartbeat sets lease_until = now()+60 s, which shortens a fresh 90 s lease")]
+    [Fact]
     public async Task Heartbeat_OnAFreshLease_DoesNotShortenIt()
     {
         var seed = NewSeed();
@@ -675,7 +677,7 @@ public sealed class FetchLeaseQaTests(TestDatabase database) : IntegrationTest(d
         (await FetchTaskSeed.LeaseAsync(client, "fetcher-2")).StatusCode.ShouldBe(HttpStatusCode.OK, "another worker id has its own budget");
     }
 
-    [Fact(Skip = "QA-4 open: the per-worker limiter keys on any <=64-char workerId before validation")]
+    [Fact]
     public async Task RateLimit_MalformedWorkerIds_DoNotEachGetAFreshBudget()
     {
         NewSeed();
@@ -732,7 +734,7 @@ public sealed class FetchLeaseQaTests(TestDatabase database) : IntegrationTest(d
         }
     }
 
-    [Fact(Skip = "QA-5 open: FETCHER_API_TOKEN is hashed untrimmed but the presented value is trimmed")]
+    [Fact]
     public async Task Token_ConfiguredWithTrailingWhitespace_StillAuthenticatesTheTrimmedValue()
     {
         NewSeed();
@@ -746,7 +748,7 @@ public sealed class FetchLeaseQaTests(TestDatabase database) : IntegrationTest(d
         response.StatusCode.ShouldBe(HttpStatusCode.OK, "QA-5: the stored digest is over the untrimmed token while the presented value is trimmed, so a secret delivered with a trailing newline can never authenticate");
     }
 
-    [Fact(Skip = "QA-6 open: a find_sources task without a generation_runs row is leased with no finderRequest")]
+    [Fact]
     public async Task Lease_FindSourcesTaskWithoutAGenerationRun_IsNotHandedOutWithoutItsPayload()
     {
         var seed = NewSeed();
@@ -777,7 +779,6 @@ public sealed class FetchLeaseQaTests(TestDatabase database) : IntegrationTest(d
         using var factory = NewFactory(new InMemoryBlobStore(), clock: DateTimeOffset.UtcNow);
         using var client = factory.InternalClient();
         var metrics = factory.Services.GetRequiredService<NightTalesMetrics>();
-        _ = factory.Services.GetRequiredService<FetchLeaseGauge>();
         using var probe = new MeterProbe(metrics.Meter);
 
         (await FetchTaskSeed.PostAsync(client, FetchTaskSeed.Route(done.TaskId, "result"), FetchTaskSeed.DoneBody())).StatusCode.ShouldBe(HttpStatusCode.OK);
@@ -789,10 +790,6 @@ public sealed class FetchLeaseQaTests(TestDatabase database) : IntegrationTest(d
         var durations = probe.Measures.Where(m => m.Name == NightTalesMetrics.FetchDurationSecondsName).Select(m => m.Value).ToList();
         durations.Count.ShouldBe(2);
         durations.ShouldAllBe(seconds => seconds >= 15 && seconds <= 120, "lease to result is ~20 s; created to result would be ~3600 s");
-
-        await FetchTaskSeed.LeaseAsync(client);
-        probe.Observe();
-        probe.Measures.Where(m => m.Name == FetchLeaseGauge.Name).Select(m => m.Value).Last().ShouldBe(seed.LeasedCount());
     }
 
     [Fact]

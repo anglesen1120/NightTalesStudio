@@ -81,7 +81,7 @@ public sealed class ExtractedTextStore(IBlobStore blobs, StorageSettings setting
         }
 
         await using var content = opened.Value.Content;
-        using var reader = new StreamReader(content, StrictUtf8);
+        using var reader = new StreamReader(content, StrictUtf8, detectEncodingFromByteOrderMarks: false);
 
         return await reader.ReadToEndAsync(cancellationToken).ConfigureAwait(false);
     }

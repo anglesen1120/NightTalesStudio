@@ -24,6 +24,17 @@ public static partial class WorkerIdRules
             .WithMessage("workerId may only contain letters, digits, '.', '_', ':' and '-'.");
     }
 
-    [GeneratedRegex("^[A-Za-z0-9._:-]*$", RegexOptions.CultureInvariant)]
+    /// <summary>
+    /// The same check as <see cref="MustBeWorkerId{T}"/> as a plain predicate, for callers (the internal listener's rate
+    /// limiter) that must classify an id before the command's validator runs.
+    /// </summary>
+    /// <param name="workerId">The id from the request body.</param>
+    /// <returns><see langword="true"/> when the id is 1 to <see cref="FetchResultLimits.MaxWorkerIdLength"/> allowed characters.</returns>
+    public static bool IsValid(string? workerId) =>
+        !string.IsNullOrEmpty(workerId)
+        && workerId.Length <= FetchResultLimits.MaxWorkerIdLength
+        && AllowedCharacters().IsMatch(workerId);
+
+    [GeneratedRegex(@"\A[A-Za-z0-9._:-]+\z", RegexOptions.CultureInvariant)]
     private static partial Regex AllowedCharacters();
 }

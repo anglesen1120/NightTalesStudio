@@ -1,7 +1,9 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using ErrorOr;
 using Mediator;
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Http.Features;
 using NightTales.Api.Http;
 using NightTales.Api.Internal.Fetcher;
 using NightTales.Api.Security;
@@ -24,12 +26,14 @@ namespace NightTales.Api.Endpoints.Internal;
 /// across every listener of the host, so a public-port request could match them; here the public pipeline has no
 /// knowledge of them at all and a request to the public port gets the ordinary <c>404</c>. The pipeline order is the
 /// security order: token authentication first (a bare <c>401</c>, even for an unknown path), then the route, then a
-/// bounded body read, then the per-worker rate limit, then one message through the D4 pipeline.
+/// bounded body read, then the per-worker rate limit, then one message through the D4 pipeline. The global in-flight
+/// and per-minute limit runs before the body read.
 /// </para>
 /// <para>
-/// The JSON is read by hand with strict number and string handling and the closed schema of the wire contract: a
-/// malformed body, a number where a string belongs or a numeric enum is a <c>400</c>, never a framework exception
-/// that the exception handler would turn into a <c>500</c>. Nothing from the body is logged (D19).
+/// The JSON is read by hand with strict number handling (a quoted number is not a number) and the wire contract's
+/// shapes: a malformed body, a number where a string belongs, a string where a number belongs or a numeric enum is a
+/// <c>400</c>, never a framework exception that the exception handler would turn into a <c>500</c>. Members the
+/// contract does not name are ignored, not rejected. Nothing from the body is logged (D19).
 /// </para>
 /// </remarks>
 public static class FetcherEndpoints
@@ -51,8 +55,9 @@ public static class FetcherEndpoints
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web)
     {
         MaxDepth = 16,
+        NumberHandling = JsonNumberHandling.Strict,
         ReadCommentHandling = JsonCommentHandling.Disallow,
-        DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull,
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
     };
 
     /// <summary>The terminal delegate of the internal listener's pipeline.</summary>
@@ -117,9 +122,20 @@ public static class FetcherEndpoints
             return;
         }
 
+        // The global in-flight and per-minute ceiling comes first: a refused request costs no body read and no parse.
+        var limiter = http.RequestServices.GetRequiredService<FetcherRateLimiter>();
+        if (!limiter.TryEnter(out var slot, out var retryAfterSeconds))
+        {
+            await WriteAsync(http, TooManyRequests(http, retryAfterSeconds)).ConfigureAwait(false);
+
+            return;
+        }
+
+        using var held = slot;
+
         var options = http.RequestServices.GetRequiredService<FetcherInternalOptions>();
         var raw = await ReadBodyAsync(http, options.MaxBodyBytes).ConfigureAwait(false);
-        if (raw is null)
+        if (raw is not { } body)
         {
             http.Response.StatusCode = StatusCodes.Status413PayloadTooLarge;
 
@@ -129,18 +145,18 @@ public static class FetcherEndpoints
         switch (route)
         {
             case Route.Lease:
-                await LeaseAsync(http, raw).ConfigureAwait(false);
+                await LeaseAsync(http, body).ConfigureAwait(false);
                 break;
             case Route.Heartbeat:
-                await HeartbeatAsync(http, taskId, raw).ConfigureAwait(false);
+                await HeartbeatAsync(http, taskId, body).ConfigureAwait(false);
                 break;
             default:
-                await ResultAsync(http, taskId, raw).ConfigureAwait(false);
+                await ResultAsync(http, taskId, body).ConfigureAwait(false);
                 break;
         }
     }
 
-    private static async Task LeaseAsync(HttpContext http, byte[] raw)
+    private static async Task LeaseAsync(HttpContext http, ReadOnlyMemory<byte> raw)
     {
         if (!TryParse<LeaseBody>(raw, out var body, out var invalid))
         {
@@ -164,7 +180,7 @@ public static class FetcherEndpoints
         await WriteAsync(http, result.IsError ? FetcherProblem.From(result.Errors, http) : Results.Json(result.Value, Json)).ConfigureAwait(false);
     }
 
-    private static async Task HeartbeatAsync(HttpContext http, Guid taskId, byte[] raw)
+    private static async Task HeartbeatAsync(HttpContext http, Guid taskId, ReadOnlyMemory<byte> raw)
     {
         if (!TryParse<WorkerBody>(raw, out var body, out var invalid))
         {
@@ -190,7 +206,7 @@ public static class FetcherEndpoints
             result.IsError ? FetcherProblem.From(result.Errors, http) : Results.Json(new HeartbeatAck(result.Value), Json)).ConfigureAwait(false);
     }
 
-    private static async Task ResultAsync(HttpContext http, Guid taskId, byte[] raw)
+    private static async Task ResultAsync(HttpContext http, Guid taskId, ReadOnlyMemory<byte> raw)
     {
         if (!TryParse<FetchResultRequest>(raw, out var body, out var invalid))
         {
@@ -217,22 +233,16 @@ public static class FetcherEndpoints
     {
         var limiter = http.RequestServices.GetRequiredService<FetcherRateLimiter>();
 
-        // A missing or oversized id shares one partition; the command's validator rejects it right after.
-        var key = string.IsNullOrEmpty(workerId) || workerId.Length > FetchResultLimits.MaxWorkerIdLength
-            ? "-"
-            : workerId;
-        if (limiter.TryAcquire(key, out var retryAfterSeconds))
-        {
-            return null;
-        }
+        return limiter.TryAcquire(workerId, out var retryAfterSeconds) ? null : TooManyRequests(http, retryAfterSeconds);
+    }
 
-        return ProblemDetailsWriter.ToProblem(
+    private static IResult TooManyRequests(HttpContext http, int retryAfterSeconds) =>
+        ProblemDetailsWriter.ToProblem(
             [Error.Failure(
                 ErrorCodes.RateLimited,
                 "Too many requests.",
                 new Dictionary<string, object> { [ErrorMetadata.RetryAfterSeconds] = retryAfterSeconds })],
             http);
-    }
 
     private static bool TryMatch(PathString path, out Route route, out Guid taskId)
     {
@@ -270,36 +280,63 @@ public static class FetcherEndpoints
         return false;
     }
 
-    /// <summary>Reads the whole body or answers <see langword="null"/> when it exceeds <paramref name="limit"/> bytes.</summary>
-    private static async Task<byte[]?> ReadBodyAsync(HttpContext http, int limit)
+    /// <summary>
+    /// Reads the whole body or answers <see langword="null"/> when it exceeds <paramref name="limit"/> bytes. Kestrel's
+    /// own limit for this request is set to the same cap (its global default is 1 MiB, whatever <c>MaxBodyBytes</c> says),
+    /// and the 413 it throws on a chunked body is the same answer. The buffer is sized from the declared length, so a
+    /// normal result costs one array and no copy.
+    /// </summary>
+    private static async Task<ReadOnlyMemory<byte>?> ReadBodyAsync(HttpContext http, int limit)
     {
-        if (http.Request.ContentLength > limit)
+        var declared = http.Request.ContentLength;
+        if (declared > limit)
         {
             return null;
         }
 
-        using var buffer = new MemoryStream();
-        var chunk = new byte[8 * 1_024];
-        int read;
-        while ((read = await http.Request.Body.ReadAsync(chunk, http.RequestAborted).ConfigureAwait(false)) > 0)
+        var feature = http.Features.Get<IHttpMaxRequestBodySizeFeature>();
+        if (feature is { IsReadOnly: false })
         {
-            if (buffer.Length + read > limit)
-            {
-                return null;
-            }
-
-            buffer.Write(chunk, 0, read);
+            feature.MaxRequestBodySize = limit;
         }
 
-        return buffer.ToArray();
+        // One byte of slack so that a body of exactly `limit` bytes is distinguishable from one that overflows it.
+        var buffer = new byte[declared is { } length ? (int)length + 1 : Math.Min(4 * 1_024, limit + 1)];
+        var total = 0;
+        try
+        {
+            while (true)
+            {
+                if (total == buffer.Length)
+                {
+                    Array.Resize(ref buffer, (int)Math.Min(buffer.Length * 2L, limit + 1L));
+                }
+
+                var read = await http.Request.Body.ReadAsync(buffer.AsMemory(total), http.RequestAborted).ConfigureAwait(false);
+                if (read == 0)
+                {
+                    return buffer.AsMemory(0, total);
+                }
+
+                total += read;
+                if (total > limit)
+                {
+                    return null;
+                }
+            }
+        }
+        catch (BadHttpRequestException exception) when (exception.StatusCode == StatusCodes.Status413PayloadTooLarge)
+        {
+            return null;
+        }
     }
 
-    private static bool TryParse<T>(byte[] raw, out T body, out IResult? problem)
+    private static bool TryParse<T>(ReadOnlyMemory<byte> raw, out T body, out IResult? problem)
         where T : class
     {
         try
         {
-            var parsed = JsonSerializer.Deserialize<T>(raw, Json);
+            var parsed = JsonSerializer.Deserialize<T>(raw.Span, Json);
             if (parsed is not null)
             {
                 body = parsed;

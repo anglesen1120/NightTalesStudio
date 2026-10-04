@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Net.Sockets;
 using ErrorOr;
 using Microsoft.EntityFrameworkCore;
@@ -22,17 +23,24 @@ namespace NightTales.Infrastructure.Persistence.Queries;
 /// <b>Lease.</b> The transaction first takes <c>pg_advisory_xact_lock</c> on one constant ([DECISION T42]), so two
 /// concurrent lease calls run one after the other and the platform cap (4) and the per-domain cap (1) are exact: the
 /// second statement's snapshot is taken after the first committed. <c>FOR UPDATE SKIP LOCKED</c> additionally keeps a
-/// row that another transaction is changing out of the batch instead of waiting for it.
+/// row that another transaction is changing out of the batch instead of waiting for it. The lock wait is bounded
+/// (about 2 s, <c>pg_try_advisory_xact_lock</c> polled): a contended call answers <c>service_unavailable</c> (503), not
+/// an empty list, so the fetcher backs off instead of reading it as "nothing queued", and a flood of callers cannot pin
+/// pooled connections behind the lock. At the platform cap the eligible scan is skipped. A <c>find_sources</c> task
+/// without a <c>generation_run_id</c> is never leased: the fetcher could not act on it (QA-6).
 /// </para>
 /// <para>
 /// <b>Heartbeat and result.</b> The ownership predicate (<c>status = 'leased' AND leased_by = @workerId AND
 /// lease_until &gt; now()</c>) is part of the statement that changes or locks the row, so there is no window between a
 /// read and a write in which the sweeper could requeue the task. All time comparisons use the database clock, the same
-/// one that stamped <c>lease_until</c>.
+/// one that stamped <c>lease_until</c>. A heartbeat never shortens a lease and never moves <c>lease_until</c> past
+/// <c>leased_at + Fetcher:MaxLeaseTotalSeconds</c>; past that point it answers <c>fetch_lease_lost</c> and leaves the
+/// task to the sweeper (SEC-1).
 /// </para>
 /// <para>
 /// Logs carry nothing here: no statement text, no URL, no worker id (D19). A transient database failure is
-/// <c>service_unavailable</c> like every other store; any other exception is a bug and propagates.
+/// <c>service_unavailable</c> like every other store, as is a cancellation that is not the caller's own; any other
+/// exception is a bug and propagates.
 /// </para>
 /// </remarks>
 /// <param name="database">The scope's context; its connection and transaction are the command's.</param>
@@ -49,11 +57,13 @@ public sealed class FetchTaskLeaseStore(AppDbContext database, IOptions<FetcherO
     /// <summary>The most candidates a finder run should return (D11: 10).</summary>
     private const int FinderMaxCandidates = 10;
 
+    /// <summary>How long a lease call waits for the platform lock before it answers <c>service_unavailable</c> (SEC-2.3).</summary>
+    private static readonly TimeSpan LeaseLockWait = TimeSpan.FromSeconds(2);
+
+    private static readonly TimeSpan LeaseLockPoll = TimeSpan.FromMilliseconds(20);
+
     private const string LeaseSql = """
-        WITH leased_now AS (
-            SELECT count(*) AS n FROM fetch_tasks WHERE status = 'leased'
-        ),
-        domain_busy AS (
+        WITH domain_busy AS (
             SELECT DISTINCT registrable_domain FROM fetch_tasks
             WHERE status = 'leased' AND registrable_domain IS NOT NULL
         ),
@@ -63,6 +73,7 @@ public sealed class FetchTaskLeaseStore(AppDbContext database, IOptions<FetcherO
             WHERE t.status = 'queued'
               AND t.not_before <= now()
               AND (t.registrable_domain IS NULL OR t.registrable_domain NOT IN (SELECT registrable_domain FROM domain_busy))
+              AND NOT (t.kind = 'find_sources' AND t.generation_run_id IS NULL)
         ),
         ranked AS (
             SELECT id,
@@ -75,7 +86,7 @@ public sealed class FetchTaskLeaseStore(AppDbContext database, IOptions<FetcherO
             WHERE id IN (SELECT id FROM ranked WHERE rn = 1)
             ORDER BY not_before, created_at
             FOR UPDATE SKIP LOCKED
-            LIMIT LEAST(@max, GREATEST(0, @platformCap - (SELECT n FROM leased_now)))
+            LIMIT LEAST(@max, @room)
         )
         UPDATE fetch_tasks t
         SET status = 'leased',
@@ -90,16 +101,24 @@ public sealed class FetchTaskLeaseStore(AppDbContext database, IOptions<FetcherO
 
     private const string HeartbeatSql = """
         UPDATE fetch_tasks
-        SET lease_until = now() + make_interval(secs => @heartbeatSeconds)
+        SET lease_until = LEAST(
+            GREATEST(lease_until, now() + make_interval(secs => @heartbeatSeconds)),
+            leased_at + make_interval(secs => @maxTotalSeconds))
         WHERE id = @id AND status = 'leased' AND leased_by = @workerId AND lease_until > now()
+          AND leased_at IS NOT NULL AND now() < leased_at + make_interval(secs => @maxTotalSeconds)
         RETURNING lease_until
         """;
 
-    private const string ClaimSql = """
+    private const string PeekSql = """
         SELECT user_id, episode_id, source_id, generation_run_id, kind, leased_at,
-               (status = 'leased' AND leased_by = @workerId AND lease_until > now()) AS live
+               (status = 'leased' AND leased_by = @workerId AND lease_until > now()) AS live,
+               now() AS db_now
         FROM fetch_tasks
         WHERE id = @id
+        """;
+
+    private const string ClaimSql = PeekSql + """
+
         FOR UPDATE
         """;
 
@@ -122,18 +141,25 @@ public sealed class FetchTaskLeaseStore(AppDbContext database, IOptions<FetcherO
     {
         try
         {
-            // First statement of the transaction: the second caller waits here, then reads a fresh snapshot.
-            await using (var lockCommand = CreateCommand("SELECT pg_advisory_xact_lock(@key)"))
+            // First statement of the transaction: the second caller waits here, then reads a fresh snapshot. The wait is
+            // bounded (SEC-2.3): a contended call answers 503 instead of pinning a pooled connection behind the lock.
+            if (!await TryAcquireLeaseLockAsync(cancellationToken).ConfigureAwait(false))
             {
-                lockCommand.Parameters.AddWithValue("key", LeaseLockKey);
-                await lockCommand.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+                return Unavailable();
+            }
+
+            // Exact under the lock. At the cap there is nothing to lease, so the eligible scan is skipped (PERF-2).
+            var leasedNow = await CountLeasedCoreAsync(cancellationToken).ConfigureAwait(false);
+            if (leasedNow >= _options.MaxLeasesPlatformWide)
+            {
+                return Array.Empty<LeaseDto>();
             }
 
             var rows = new List<LeasedRow>(max);
             await using (var command = CreateCommand(LeaseSql))
             {
                 command.Parameters.AddWithValue("max", max);
-                command.Parameters.AddWithValue("platformCap", _options.MaxLeasesPlatformWide);
+                command.Parameters.AddWithValue("room", _options.MaxLeasesPlatformWide - leasedNow);
                 command.Parameters.AddWithValue("workerId", workerId);
                 command.Parameters.AddWithValue("leaseSeconds", _options.LeaseSeconds);
 
@@ -161,7 +187,7 @@ public sealed class FetchTaskLeaseStore(AppDbContext database, IOptions<FetcherO
 
             return leases;
         }
-        catch (Exception exception) when (IsTransient(exception))
+        catch (Exception exception) when (IsUnavailable(exception, cancellationToken))
         {
             return Unavailable();
         }
@@ -177,6 +203,7 @@ public sealed class FetchTaskLeaseStore(AppDbContext database, IOptions<FetcherO
                 command.Parameters.AddWithValue("id", taskId);
                 command.Parameters.AddWithValue("workerId", workerId);
                 command.Parameters.AddWithValue("heartbeatSeconds", _options.HeartbeatSeconds);
+                command.Parameters.AddWithValue("maxTotalSeconds", _options.MaxLeaseTotalSeconds);
 
                 var leaseUntil = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
                 if (leaseUntil is DateTime moment)
@@ -195,7 +222,7 @@ public sealed class FetchTaskLeaseStore(AppDbContext database, IOptions<FetcherO
                 ? FetcherErrors.LeaseLost
                 : FetcherErrors.TaskNotFound;
         }
-        catch (Exception exception) when (IsTransient(exception))
+        catch (Exception exception) when (IsUnavailable(exception, cancellationToken))
         {
             return Unavailable();
         }
@@ -209,61 +236,152 @@ public sealed class FetchTaskLeaseStore(AppDbContext database, IOptions<FetcherO
     {
         try
         {
-            await using var command = CreateCommand(ClaimSql);
-            command.Parameters.AddWithValue("id", taskId);
-            command.Parameters.AddWithValue("workerId", workerId);
-
-            await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-            if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
-            {
-                return FetcherErrors.TaskNotFound;
-            }
-
-            if (!reader.GetBoolean(6))
-            {
-                return FetcherErrors.LeaseLost;
-            }
-
-            return new ClaimedFetchTask(
-                taskId,
-                reader.GetFieldValue<Guid>(0),
-                reader.GetFieldValue<Guid>(1),
-                await reader.IsDBNullAsync(2, cancellationToken).ConfigureAwait(false) ? null : reader.GetFieldValue<Guid>(2),
-                await reader.IsDBNullAsync(3, cancellationToken).ConfigureAwait(false) ? null : reader.GetFieldValue<Guid>(3),
-                ParseKind(reader.GetString(4)),
-                await reader.IsDBNullAsync(5, cancellationToken).ConfigureAwait(false) ? null : reader.GetFieldValue<DateTimeOffset>(5));
+            return await ReadClaimAsync(ClaimSql, taskId, workerId, requireTransaction: true, cancellationToken).ConfigureAwait(false);
         }
-        catch (Exception exception) when (IsTransient(exception))
+        catch (Exception exception) when (IsUnavailable(exception, cancellationToken))
         {
             return Unavailable();
         }
     }
 
     /// <inheritdoc />
-    public async Task<Guid?> FindOwnerAsync(Guid taskId, CancellationToken cancellationToken)
+    public async Task<ErrorOr<ClaimedFetchTask>> PeekForResultAsync(
+        Guid taskId,
+        string workerId,
+        CancellationToken cancellationToken)
     {
-        // The peek runs in a scope of its own with no unit of work: it reads one column and takes no lock, so it opens the
-        // connection itself and has no transaction to join.
-        await database.Database.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        // Like FindOwnerAsync: a scope of its own with no unit of work, so it opens the connection itself and takes no lock.
+        var opened = false;
         try
         {
-            await using var command = CreateCommand("SELECT user_id FROM fetch_tasks WHERE id = @id", requireTransaction: false);
-            command.Parameters.AddWithValue("id", taskId);
+            await database.Database.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+            opened = true;
 
-            return await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) is Guid owner ? owner : null;
+            return await ReadClaimAsync(PeekSql, taskId, workerId, requireTransaction: false, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception exception) when (IsUnavailable(exception, cancellationToken))
+        {
+            return Unavailable();
         }
         finally
         {
-            await database.Database.CloseConnectionAsync().ConfigureAwait(false);
+            if (opened)
+            {
+                await database.Database.CloseConnectionAsync().ConfigureAwait(false);
+            }
+        }
+    }
+
+    private async Task<ErrorOr<ClaimedFetchTask>> ReadClaimAsync(
+        string sql,
+        Guid taskId,
+        string workerId,
+        bool requireTransaction,
+        CancellationToken cancellationToken)
+    {
+        await using var command = CreateCommand(sql, requireTransaction);
+        command.Parameters.AddWithValue("id", taskId);
+        command.Parameters.AddWithValue("workerId", workerId);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            return FetcherErrors.TaskNotFound;
+        }
+
+        if (!reader.GetBoolean(6))
+        {
+            return FetcherErrors.LeaseLost;
+        }
+
+        return new ClaimedFetchTask(
+            taskId,
+            reader.GetFieldValue<Guid>(0),
+            reader.GetFieldValue<Guid>(1),
+            await reader.IsDBNullAsync(2, cancellationToken).ConfigureAwait(false) ? null : reader.GetFieldValue<Guid>(2),
+            await reader.IsDBNullAsync(3, cancellationToken).ConfigureAwait(false) ? null : reader.GetFieldValue<Guid>(3),
+            ParseKind(reader.GetString(4)),
+            await reader.IsDBNullAsync(5, cancellationToken).ConfigureAwait(false) ? null : reader.GetFieldValue<DateTimeOffset>(5),
+            reader.GetFieldValue<DateTimeOffset>(7));
+    }
+
+    /// <inheritdoc />
+    public async Task<ErrorOr<Guid>> FindOwnerAsync(Guid taskId, CancellationToken cancellationToken)
+    {
+        // The peek runs in a scope of its own with no unit of work: it reads one column and takes no lock, so it opens the
+        // connection itself and has no transaction to join.
+        var opened = false;
+        try
+        {
+            await database.Database.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+            opened = true;
+
+            await using var command = CreateCommand("SELECT user_id FROM fetch_tasks WHERE id = @id", requireTransaction: false);
+            command.Parameters.AddWithValue("id", taskId);
+
+            return await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) is Guid owner
+                ? owner
+                : FetcherErrors.TaskNotFound;
+        }
+        catch (Exception exception) when (IsUnavailable(exception, cancellationToken))
+        {
+            return Unavailable();
+        }
+        finally
+        {
+            if (opened)
+            {
+                await database.Database.CloseConnectionAsync().ConfigureAwait(false);
+            }
         }
     }
 
     /// <inheritdoc />
-    public async Task<int> CountLeasedAsync(CancellationToken cancellationToken)
+    public async Task<ErrorOr<int>> CountLeasedAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await CountLeasedCoreAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception exception) when (IsUnavailable(exception, cancellationToken))
+        {
+            return Unavailable();
+        }
+    }
+
+    private async Task<int> CountLeasedCoreAsync(CancellationToken cancellationToken)
     {
         await using var command = CreateCommand("SELECT count(*)::int FROM fetch_tasks WHERE status = 'leased'");
 
         return (int)(await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) ?? 0);
+    }
+
+    /// <summary>
+    /// Takes the platform lease lock, polling <c>pg_try_advisory_xact_lock</c> for at most <see cref="LeaseLockWait"/>.
+    /// A failed try leaves the transaction healthy (unlike <c>lock_timeout</c>, which would abort it), and the lock still
+    /// lives until the surrounding transaction ends.
+    /// </summary>
+    private async Task<bool> TryAcquireLeaseLockAsync(CancellationToken cancellationToken)
+    {
+        var started = Stopwatch.StartNew();
+        while (true)
+        {
+            await using (var command = CreateCommand("SELECT pg_try_advisory_xact_lock(@key)"))
+            {
+                command.Parameters.AddWithValue("key", LeaseLockKey);
+                if ((bool)(await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) ?? false))
+                {
+                    return true;
+                }
+            }
+
+            if (started.Elapsed >= LeaseLockWait)
+            {
+                return false;
+            }
+
+            await Task.Delay(LeaseLockPoll, cancellationToken).ConfigureAwait(false);
+        }
     }
 
     private static FetchTaskKind ParseKind(string wire) => wire switch
@@ -278,6 +396,13 @@ public sealed class FetchTaskLeaseStore(AppDbContext database, IOptions<FetcherO
         || exception.InnerException is NpgsqlException { IsTransient: true }
         || exception is NpgsqlException { InnerException: SocketException }
         || exception is SocketException;
+
+    /// <summary>
+    /// A transient database failure, or a cancellation that did not come from the caller's token (a deadline of the
+    /// command's own): both are <c>service_unavailable</c>. The caller's own cancellation keeps propagating.
+    /// </summary>
+    private static bool IsUnavailable(Exception exception, CancellationToken cancellationToken) =>
+        IsTransient(exception) || (exception is OperationCanceledException && !cancellationToken.IsCancellationRequested);
 
     private static Error Unavailable() =>
         Error.Failure(code: ErrorCodes.ServiceUnavailable, description: "The database is temporarily unavailable; retry.");

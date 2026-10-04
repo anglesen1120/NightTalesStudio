@@ -5,6 +5,7 @@ using NightTales.Application.Abstractions;
 using NightTales.Application.Abstractions.Jobs;
 using NightTales.Application.Abstractions.Persistence;
 using NightTales.Application.Common.Errors;
+using NightTales.Application.Features.Research.Fetcher;
 using NightTales.Application.Telemetry;
 using NightTales.Domain.Common;
 using NightTales.Domain.Research;
@@ -45,6 +46,7 @@ public sealed partial class FetchLeaseSweeperJob(
     FetchLeaseSweeperOptions options,
     IClock clock,
     NightTalesMetrics metrics,
+    FetchLeaseGauge gauge,
     ILogger<FetchLeaseSweeperJob> logger) : IBackgroundJob
 {
     /// <summary>The metric status of a task that went back to the queue.</summary>
@@ -52,6 +54,12 @@ public sealed partial class FetchLeaseSweeperJob(
 
     /// <summary>The metric status of a task that reached its attempt cap.</summary>
     public const string FailedStatus = "failed";
+
+    /// <summary>How far back (hours) the reconcile step looks for a failed task whose source is still pending.</summary>
+    public const int ReconcileLookbackHours = 24;
+
+    /// <summary>The most tasks one reconcile step repairs.</summary>
+    public const int ReconcileLimit = 50;
 
     /// <summary>Runs one sweep pass (the recurring job's entry).</summary>
     /// <param name="cancellationToken">Hangfire's shutdown token.</param>
@@ -94,32 +102,93 @@ public sealed partial class FetchLeaseSweeperJob(
             failed++;
             metrics.RecordFetchTask(FailedStatus, ErrorCodes.SourceUnreachable);
 
-            if (row.SourceId is { } sourceId
-                && await FailSourceAsync(row, sourceId, now, cancellationToken).ConfigureAwait(false))
-            {
-                sourcesFailed++;
-            }
+            // The task's source is failed by the reconcile step below, which also repairs a crash between the two writes.
         }
+
+        sourcesFailed += await ReconcileAsync(now, cancellationToken).ConfigureAwait(false);
+        await RefreshGaugeAsync(cancellationToken).ConfigureAwait(false);
 
         LogCompleted(requeued, failed, sourcesFailed);
 
         return new FetchLeaseSweepSummary(requeued, failed, sourcesFailed);
     }
 
+    /// <summary>
+    /// Heals a crash between the task flip and the source update: a task that is <c>failed</c> while its source is still
+    /// <c>pending</c> gets the source failed with the task's own code, in the same bounded pass, so the next tick repairs it.
+    /// </summary>
+    private async Task<int> ReconcileAsync(DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        var stuck = await store
+            .ListFailedTasksWithPendingSourceAsync(ReconcileLookbackHours, ReconcileLimit, cancellationToken)
+            .ConfigureAwait(false);
+        if (stuck.IsError)
+        {
+            LogUnavailable(stuck.FirstError.Code);
+
+            return 0;
+        }
+
+        var healed = 0;
+        foreach (var row in stuck.Value)
+        {
+            var code = string.IsNullOrWhiteSpace(row.ErrorCode) ? ErrorCodes.SourceUnreachable : row.ErrorCode;
+            if (await FailSourceAsync(row.Id, row.UserId, row.EpisodeId, row.SourceId, code, now, cancellationToken)
+                .ConfigureAwait(false))
+            {
+                healed++;
+            }
+        }
+
+        return healed;
+    }
+
+    /// <summary>Sets <c>fetch_leases_active</c> from the database; this process is the one that changes leases in bulk.</summary>
+    private async Task RefreshGaugeAsync(CancellationToken cancellationToken)
+    {
+        var leased = await store.CountLeasedAsync(cancellationToken).ConfigureAwait(false);
+        if (leased.IsError)
+        {
+            LogUnavailable(leased.FirstError.Code);
+
+            return;
+        }
+
+        gauge.Set(leased.Value);
+    }
+
     private async Task<bool> FailSourceAsync(
-        ExpiredFetchLease row,
+        Guid taskId,
+        Guid userId,
+        Guid episodeId,
         Guid sourceId,
+        string errorCode,
         DateTimeOffset now,
         CancellationToken cancellationToken)
     {
         try
         {
             await using var scope = scopes.CreateAsyncScope();
-            using var pinned = scope.ServiceProvider.GetRequiredService<ISystemContext>().For(row.UserId);
+            using var pinned = scope.ServiceProvider.GetRequiredService<ISystemContext>().For(userId);
             var db = scope.ServiceProvider.GetRequiredService<IAppDbContext>();
             var unitOfWork = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
 
             await unitOfWork.BeginAsync(cancellationToken).ConfigureAwait(false);
+
+            // Two Workers may reconcile the same row: this no-op UPDATE takes the row lock, so the second one waits for
+            // the first commit, re-evaluates "still pending" and skips - the source is failed (and the event raised) once.
+            var locked = await db.StorySources
+                .Where(candidate => candidate.Id == sourceId && candidate.Status == StorySourceStatus.Pending)
+                .ExecuteUpdateAsync(
+                    setters => setters.SetProperty(candidate => candidate.Status, candidate => candidate.Status),
+                    cancellationToken)
+                .ConfigureAwait(false);
+            if (locked == 0)
+            {
+                await unitOfWork.RollbackAsync(cancellationToken).ConfigureAwait(false);
+
+                return false;
+            }
 
             var source = await db.StorySources
                 .SingleOrDefaultAsync(candidate => candidate.Id == sourceId, cancellationToken)
@@ -131,12 +200,18 @@ public sealed partial class FetchLeaseSweeperJob(
                 return false;
             }
 
-            source.MarkFailed(ErrorCodes.SourceUnreachable, null, now);
+            source.MarkFailed(errorCode, null, now);
+
+            // The same transaction raises the event, so the outbox row commits with the flip and the UI refetches the list.
+            var episode = await db.Episodes
+                .SingleOrDefaultAsync(candidate => candidate.Id == episodeId, cancellationToken)
+                .ConfigureAwait(false);
+            episode?.RaiseSourceFetched(sourceId, now);
 
             var committed = await unitOfWork.CommitAsync(cancellationToken).ConfigureAwait(false);
             if (committed.IsError)
             {
-                LogSourceFailed(row.Id, committed.FirstError.Code);
+                LogSourceFailed(taskId, committed.FirstError.Code);
 
                 return false;
             }
@@ -145,7 +220,7 @@ public sealed partial class FetchLeaseSweeperJob(
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
-            LogSourceFailed(row.Id, exception.GetType().Name);
+            LogSourceFailed(taskId, exception.GetType().Name);
 
             return false;
         }

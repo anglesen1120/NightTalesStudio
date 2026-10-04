@@ -31,7 +31,6 @@ public static class FetcherLeaseServiceCollectionExtensions
         services.TryAddSingleton<IExtractedTextStore, ExtractedTextStore>();
         services.TryAddSingleton(provider =>
             new FetchResultLimits(provider.GetRequiredService<IOptions<FetcherOptions>>().Value.MaxTextChars));
-        services.TryAddSingleton<FetchLeaseGauge>();
 
         return services;
     }

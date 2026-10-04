@@ -283,6 +283,7 @@ Rules for any change that runs at start-up:
   list `8081` there). The other `Fetcher:Internal` keys are `MaxRequestsPerMinutePerWorker` (60) and
   `MaxBodyBytes` (1048576, bounds 1 KiB–16 MiB).
   Other keys of the `Fetcher` section: the **Api** binds `LeaseSeconds` (90), `HeartbeatSeconds` (60),
+  `MaxLeaseTotalSeconds` (300, must exceed `LeaseSeconds`: the hard ceiling of a lease, heartbeats included),
   `MaxLeasesPlatformWide` (4) and `MaxLeasesPerDomain` (1, the only accepted value); the **Worker**
   binds `MaxAttempts` (2), `RequeueBackoffSeconds` (30) and `SweepIntervalSeconds` (60, documents the
   fixed every-minute cron of `FetchLeaseSweeperJob`) from its own `appsettings.json` — keep

@@ -20,6 +20,11 @@ public sealed class FetcherInternalOptions
     /// <summary>The fewest characters of the token; a shorter one is a start-up error.</summary>
     public const int MinTokenLength = 32;
 
+    /// <summary>The one normalisation of the secret, applied to the configured and the presented value alike: surrounding whitespace is dropped.</summary>
+    /// <param name="token">The raw value; <see langword="null"/> is the empty string.</param>
+    /// <returns>The trimmed token.</returns>
+    public static string NormalizeToken(string? token) => token?.Trim() ?? string.Empty;
+
     /// <summary>Whether the internal listener and its routes exist at all.</summary>
     public bool Enabled { get; set; }
 
@@ -57,8 +62,8 @@ public sealed class FetcherInternalOptionsValidator(IConfiguration configuration
         }
 
         var problems = new List<string>();
-        var token = configuration[FetcherInternalOptions.TokenKey];
-        if (string.IsNullOrWhiteSpace(token))
+        var token = FetcherInternalOptions.NormalizeToken(configuration[FetcherInternalOptions.TokenKey]);
+        if (token.Length == 0)
         {
             problems.Add(
                 $"'{FetcherInternalOptions.TokenKey}' is required when '{FetcherInternalOptions.SectionName}:Enabled' is true: "

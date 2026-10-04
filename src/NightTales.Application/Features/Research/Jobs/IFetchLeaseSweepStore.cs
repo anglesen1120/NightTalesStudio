@@ -12,6 +12,14 @@ namespace NightTales.Application.Features.Research.Jobs;
 /// <see langword="false"/> when it went back to <c>queued</c>.</param>
 public sealed record ExpiredFetchLease(Guid Id, Guid UserId, Guid? SourceId, Guid EpisodeId, int Attempts, bool Failed);
 
+/// <summary>A <c>failed</c> <c>fetch_tasks</c> row whose source is still <c>pending</c> (a crash between the two writes).</summary>
+/// <param name="Id">The task id.</param>
+/// <param name="UserId">The task's owner; the job pins its per-row scope to it.</param>
+/// <param name="SourceId">The source that should have been failed.</param>
+/// <param name="EpisodeId">The task's episode.</param>
+/// <param name="ErrorCode">The task's <c>error_code</c>, or <see langword="null"/> when none was stored.</param>
+public sealed record FailedTaskWithPendingSource(Guid Id, Guid UserId, Guid SourceId, Guid EpisodeId, string? ErrorCode);
+
 /// <summary>
 /// The one statement of <c>FetchLeaseSweeperJob</c> (02.5.2-T2, D10): requeue or fail every <c>fetch_tasks</c> row whose
 /// lease ran out. It is a cross-user queue statement on purpose (the fetcher has no user), like the outbox cleanup.
@@ -34,4 +42,22 @@ public interface IFetchLeaseSweepStore
         int maxAttempts,
         int backoffSeconds,
         CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Lists, newest first and at most <paramref name="limit"/>, the <c>failed</c> tasks that finished within the last
+    /// <paramref name="lookbackHours"/> hours and whose source is still <c>pending</c>.
+    /// </summary>
+    /// <param name="lookbackHours">How far back <c>finished_at</c> may lie.</param>
+    /// <param name="limit">The most rows returned.</param>
+    /// <param name="cancellationToken">Cancels the statement.</param>
+    /// <returns>The rows, or <c>service_unavailable</c> (503) for a transient failure or a statement deadline.</returns>
+    Task<ErrorOr<IReadOnlyList<FailedTaskWithPendingSource>>> ListFailedTasksWithPendingSourceAsync(
+        int lookbackHours,
+        int limit,
+        CancellationToken cancellationToken);
+
+    /// <summary>Counts the tasks that are <c>leased</c> now: the value of the <c>fetch_leases_active</c> gauge.</summary>
+    /// <param name="cancellationToken">Cancels the statement.</param>
+    /// <returns>The count, or <c>service_unavailable</c> (503) for a transient failure or a statement deadline.</returns>
+    Task<ErrorOr<int>> CountLeasedAsync(CancellationToken cancellationToken);
 }

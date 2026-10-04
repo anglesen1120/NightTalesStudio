@@ -25,8 +25,8 @@ public sealed class FetcherTokenVerifier
     {
         ArgumentNullException.ThrowIfNull(configuration);
 
-        var token = configuration[FetcherInternalOptions.TokenKey];
-        _digest = string.IsNullOrWhiteSpace(token) ? null : SHA256.HashData(Encoding.UTF8.GetBytes(token));
+        var token = FetcherInternalOptions.NormalizeToken(configuration[FetcherInternalOptions.TokenKey]);
+        _digest = token.Length == 0 ? null : SHA256.HashData(Encoding.UTF8.GetBytes(token));
     }
 
     /// <summary>Whether a token is configured; without one every presented value is rejected.</summary>
@@ -38,7 +38,7 @@ public sealed class FetcherTokenVerifier
     {
         ArgumentNullException.ThrowIfNull(presented);
 
-        var candidate = SHA256.HashData(Encoding.UTF8.GetBytes(presented));
+        var candidate = SHA256.HashData(Encoding.UTF8.GetBytes(FetcherInternalOptions.NormalizeToken(presented)));
 
         // Hash the candidate even when nothing is configured, so the two paths cost the same.
         return _digest is not null && CryptographicOperations.FixedTimeEquals(candidate, _digest);
@@ -86,7 +86,7 @@ public sealed class FetcherTokenAuthenticationHandler(
             return Task.FromResult(AuthenticateResult.NoResult());
         }
 
-        var presented = value[BearerPrefix.Length..].Trim();
+        var presented = FetcherInternalOptions.NormalizeToken(value[BearerPrefix.Length..]);
         if (presented.Length is 0 or > MaxPresentedLength || !verifier.Verify(presented))
         {
             return Task.FromResult(AuthenticateResult.NoResult());

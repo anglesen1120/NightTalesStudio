@@ -126,6 +126,27 @@ public sealed class FetcherTokenHandlerTests
         result.Succeeded.ShouldBeFalse();
     }
 
+    [Theory]
+    [InlineData("\n")]
+    [InlineData("\r\n")]
+    [InlineData(" ")]
+    public async Task ConfiguredTokenWithSurroundingWhitespace_AuthenticatesTheTrimmedValue(string tail)
+    {
+        var (result, _) = await AuthenticateAsync(Token + tail, Bearer(Token));
+
+        result.Succeeded.ShouldBeTrue();
+    }
+
+    [Fact]
+    public void Validator_MeasuresTheTokenLengthAfterTrimming()
+    {
+        var padded = new string('a', FetcherInternalOptions.MinTokenLength - 1) + "\n";
+        var options = new FetcherInternalOptions { Enabled = true };
+
+        new FetcherInternalOptionsValidator(Config(padded)).Validate(null, options).Failed.ShouldBeTrue();
+        new FetcherInternalOptionsValidator(Config(Token + "\n")).Validate(null, options).Succeeded.ShouldBeTrue();
+    }
+
     [Fact]
     public async Task CorrectToken_AuthenticatesAsFetcherInstance()
     {
