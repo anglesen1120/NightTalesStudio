@@ -1,0 +1,8 @@
+<div class="empty-state__art" aria-hidden="true"><span></span></div>
+<div class="empty-state__copy">
+  <h2>{{ titleKey() | transloco }}</h2>
+  @if (bodyKey(); as body) { <p>{{ body | transloco }}</p> }
+  @if (actionLabelKey(); as label) {
+    <button type="button" (click)="action.emit()">{{ label | transloco }}</button>
+  }
+</div>

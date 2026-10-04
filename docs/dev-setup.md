@@ -53,6 +53,10 @@ a missing `.env`, a missing variable — named, with nothing started).
 | Web (`--web`) | `http://127.0.0.1:4200` |
 | PostgreSQL | `127.0.0.1:5432`, role and database from `.env` |
 
+### Web theme and shared UI
+
+The Angular design-system tokens live in `web/src/app/shared/ui/theme/_tokens.scss`; add every colour role to both the dark and light blocks so `tokens.spec.ts` can enforce parity and contrast. Typography is self-hosted from the exact-pinned `@fontsource/be-vietnam-pro` package, and shared controls are exported from `@shared/ui`. Icons must remain standalone inline SVG components: icon fonts, remote font/CDN requests and `MatIconRegistry` resource URLs are not allowed.
+
 Runtime state lives in the git-ignored `.nts/dev/` (`NTS_HOME`, 01 DEC-5): `<service>.pid` plus
 `<service>.identity` (the pid and the exact instance `up.sh` started — start time and command line),
 `<service>.log`, `config/` (the throwaway Auth/DataProtection material `up.sh` generates once —

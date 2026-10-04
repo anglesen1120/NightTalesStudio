@@ -1,0 +1,39 @@
+{
+  "common": {
+    "close": "Close",
+    "retry": "Retry",
+    "cancel": "Cancel",
+    "back": "Back",
+    "loading": "Loading…",
+    "translationUnavailable": "This part is not translated yet"
+  },
+  "core": {
+    "ui": {
+      "pageHeader": { "back": "Back", "actions": "Page actions" },
+      "emptyState": { "title": "Nothing here yet", "body": "Create the first item to get started." },
+      "errorState": { "title": "Content could not be loaded", "body": "Try again.", "retry": "Try again", "traceId": "Trace ID" },
+      "loadingState": { "label": "Loading" },
+      "confirm": { "title": "Confirm action", "cancel": "Cancel", "confirm": "Confirm", "pending": "Working" },
+      "dialog": { "close": "Close dialog" },
+      "statusChip": {
+        "unknown": "Unknown status",
+        "draft": "Draft",
+        "story_generating": "Writing story",
+        "story_review": "Story review",
+        "story_approved": "Story approved",
+        "rendering": "Rendering video",
+        "video_review": "Video review",
+        "ready": "Ready",
+        "scheduled": "Scheduled",
+        "published": "Published",
+        "failed": "Failed",
+        "cancelled": "Cancelled"
+      },
+      "stepper": { "step": "Step", "current": "current", "done": "done" },
+      "theme": { "toggle": "Change theme", "dark": "Dark", "light": "Light" },
+      "charCounter": { "label": "Characters", "over": "over limit" },
+      "copyableCode": { "copy": "Copy code", "copied": "Copied", "unavailable": "Automatic copy is unavailable. Select and copy the code." },
+      "icons": { "check": "Complete", "clock": "Pending", "alert": "Alert", "play": "Play", "pause": "Pause", "copy": "Copy", "unknown": "Unknown" }
+    }
+  }
+}

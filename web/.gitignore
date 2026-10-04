@@ -1,0 +1,21 @@
+# Build output and tool caches
+/dist
+/.angular/
+/out-tsc
+/coverage
+node_modules/
+npm-debug.log
+
+# Test output (10.1.5-T1)
+/e2e-results/
+/playwright-report/
+/test-results/
+# The enrolled owner TOTP secret must never be committed (WR14)
+/e2e/.auth/
+
+# Generated API client IS committed (10.1.4-T1) — re-include the models dir the root
+# .gitignore's bare `models/` pattern would otherwise hide.
+!/src/app/shared/api/models/
+
+# System files
+.DS_Store

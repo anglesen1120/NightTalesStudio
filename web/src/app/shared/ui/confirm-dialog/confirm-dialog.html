@@ -1,0 +1,16 @@
+<section class="confirm-dialog" tabindex="-1" [attr.role]="insideMatDialog ? null : 'dialog'" [attr.aria-modal]="insideMatDialog ? null : 'true'" [attr.aria-labelledby]="insideMatDialog ? null : titleId" [attr.aria-describedby]="insideMatDialog ? null : bodyId" cdkTrapFocus [cdkTrapFocusAutoCapture]="true" (keydown.escape)="onEscape()">
+  <div class="confirm-dialog__heading">
+    <h2 [id]="titleId">{{ resolvedTitleKey() | transloco }}</h2>
+    <button class="confirm-dialog__close" type="button" (click)="cancel()" [attr.aria-disabled]="isPending() ? 'true' : null" [attr.aria-label]="'core.ui.dialog.close' | transloco">×</button>
+  </div>
+  <p [id]="bodyId">{{ resolvedBodyKey() | transloco }}</p>
+  <ng-content select="[cost-line]" />
+  @if (costTemplate; as template) {
+    <ng-container [ngTemplateOutlet]="template" [ngTemplateOutletContext]="templateContext()" />
+  }
+  <p class="confirm-dialog__pending" aria-live="polite">{{ isPending() ? ('core.ui.confirm.pending' | transloco) : '' }}</p>
+  <div class="confirm-dialog__actions">
+    <button type="button" [attr.cdkFocusInitial]="isDestructive() ? '' : null" (click)="cancel()" [attr.aria-disabled]="isPending() ? 'true' : null">{{ 'core.ui.confirm.cancel' | transloco }}</button>
+    <button type="button" [class.confirm-dialog__danger]="isDestructive()" (click)="confirm()" [attr.aria-disabled]="isPending() ? 'true' : null">{{ resolvedConfirmLabelKey() | transloco }}</button>
+  </div>
+</section>

@@ -1,0 +1,27 @@
+name: web
+# 10.1.5-T1: the D15 pipeline for web/. The Playwright suite is not run here: e2e.yml (11.5.1-T1) runs it
+# against the full dev stack, so a PR that only touches styles does not pay for a browser.
+on:
+  pull_request:
+    paths: ['web/**', '.github/workflows/web.yml']
+  workflow_dispatch:
+permissions: { contents: read }
+concurrency: { group: 'web-${{ github.ref }}', cancel-in-progress: true }
+defaults: { run: { working-directory: web } }
+jobs:
+  build-test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with: { node-version-file: web/.nvmrc, cache: npm, cache-dependency-path: web/package-lock.json }
+      - run: npm ci
+      - run: npm run lint              # ng lint + forbidden-pattern scan + fixture matrix (10.1.2-T1)
+      - run: npm run i18n:check        # vi/en key parity + usage (10.2.5-T1, D10)
+      - run: npm run api:gen:check     # regeneration from the pinned openapi.json produces no diff (10.1.4-T1, D5)
+      - run: npm run test:ci
+      - run: npm run test:tools
+      - run: npm run build
+      - run: npm run budget:gzip
+      - run: npm run csp:gen           # tools/web/gen-csp.mjs (10.1.6-T1, D4): validation only — fails on inline handlers / javascript: URLs; its output (dist/nginx/csp-headers.conf) is never committed and is consumed by web/Dockerfile

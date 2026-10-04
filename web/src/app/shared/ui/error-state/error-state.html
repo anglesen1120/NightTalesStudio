@@ -1,0 +1,11 @@
+<div class="error-state__mark" aria-hidden="true">!</div>
+<div>
+  <h2>{{ titleKey() | transloco }}</h2>
+  <p [id]="bodyId">{{ bodyKey() | transloco }}</p>
+  @if (traceId(); as trace) {
+    <p class="error-state__trace">{{ 'core.ui.errorState.traceId' | transloco }}: <code>{{ trace }}</code></p>
+  }
+  @if (retryLabelKey(); as label) {
+    <button type="button" (click)="retry.emit()">{{ label | transloco }}</button>
+  }
+</div>
