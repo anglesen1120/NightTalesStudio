@@ -120,5 +120,6 @@ describe('web/openapi.json contract', () => {
     assert.ok(spec.info.version.length > 0, 'info.version must be present');
     assert.equal(lock.specVersion, spec.info.version);
     assert.equal(lock.sha256, createHash('sha256').update(specBytes).digest('hex'));
+    assert.match(lock.sourceCommit, /^[0-9a-f]{40}$/, 'lock.sourceCommit must record the backend commit (40-hex sha)');
   });
 });
