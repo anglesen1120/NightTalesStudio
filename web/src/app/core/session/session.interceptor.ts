@@ -2,23 +2,24 @@ import { DOCUMENT } from '@angular/common';
 import {
   HttpContext,
   HttpErrorResponse,
+  HttpHeaders,
   type HttpEvent,
   type HttpInterceptorFn,
   type HttpRequest,
 } from '@angular/common/http';
 import { inject } from '@angular/core';
 import { type Observable, catchError, from, switchMap, throwError } from 'rxjs';
-import { AppErrorMapper } from '@core/errors';
+import { AppErrorMapper, type AppError } from '@core/errors';
 import { RETRIED, SILENT_REQUEST, USER_ACTION } from '../http/http-context-tokens';
 import { SessionStore } from './session-store';
 
 const API_PREFIX = '/api/v1/';
 
 /**
- * Routes that never carry a `Bearer` header and are never refreshed on or replayed (WR9). Matched on the decoded,
- * normalised pathname — never on a substring — so `/api/v1/auth/refresh-evil` or a query string cannot spoof an entry.
- * `logout` authenticates with the refresh cookie (09.3.2-T1:165), and `SessionStore.logout` already treats its 401 as
- * "already logged out".
+ * Routes that never carry an automatic `Bearer` header and are never refreshed on or replayed (WR9). Matched on the
+ * decoded, normalised pathname — never on a substring — so `/api/v1/auth/refresh-evil` or a query string cannot spoof
+ * an entry. `logout` needs the access token too (`LogoutCommand` is not anonymous), but `SessionStore.logout` obtains
+ * it first and `HttpSessionRepository.logout` sets the `Authorization` header itself; it passes through untouched.
  */
 const AUTH_ROUTES: readonly string[] = [
   '/api/v1/auth/login',
@@ -79,10 +80,24 @@ function copyContext(source: HttpContext): HttpContext {
 }
 
 /** What a refresh rejection carries: the `AppError` the session API built. Anything else is an unexpected bug. */
-function readRefreshFailure(failure: unknown): { code: string; status: number } | null {
+function readRefreshFailure(failure: unknown): AppError | null {
   if (typeof failure !== 'object' || failure === null) return null;
   const { code, status } = failure as { code?: unknown; status?: unknown };
-  return typeof code === 'string' && typeof status === 'number' ? { code, status } : null;
+  return typeof code === 'string' && typeof status === 'number' ? (failure as AppError) : null;
+}
+
+/**
+ * The HTTP error the caller's `AppErrorMapper.from` maps back to the same `code`, `retryAfterSec` and `traceId` as the
+ * refresh failure. Only those safe members travel: never a token or any other body member.
+ */
+function rebuildFailure(refresh: AppError, url: string): HttpErrorResponse {
+  const traceId = refresh.traceId;
+  return new HttpErrorResponse({
+    status: refresh.status,
+    url,
+    headers: refresh.retryAfterSec === undefined ? undefined : new HttpHeaders({ 'Retry-After': String(refresh.retryAfterSec) }),
+    error: traceId === undefined ? { code: refresh.code } : { code: refresh.code, traceId },
+  });
 }
 
 /**
@@ -99,21 +114,24 @@ export const sessionInterceptor: HttpInterceptorFn = (req, next) => {
 
   const userAction = req.context.get(USER_ACTION);
 
-  const send = (request: HttpRequest<unknown>, token: string | null): Observable<HttpEvent<unknown>> => {
+  /**
+   * `bound` is the session generation the request belongs to. The header is attached only while it is still the
+   * current one (nothing of session B ever rides on a request of session A), and every response-side effect checks it
+   * again in `onResponseError`.
+   */
+  const send = (request: HttpRequest<unknown>, token: string | null, bound: number): Observable<HttpEvent<unknown>> => {
     // A `null` token is an idle-gated or absent access token: the request goes out bare (task Design, step 2); only
     // the enrolment-only token is presented in that case.
-    const value = token ?? store.enrolmentToken();
+    const value = store.generation() === bound ? (token ?? store.enrolmentToken()) : null;
     const outgoing = value === null ? request : request.clone({ setHeaders: { Authorization: bearer(value) } });
-    return next(outgoing).pipe(catchError((error: unknown) => onResponseError(outgoing, error)));
+    return next(outgoing).pipe(catchError((error: unknown) => onResponseError(outgoing, error, bound)));
   };
 
   /** A refresh that was attempted and failed: decide what the caller sees and whether the session ends. */
-  const onRefreshFailure = (failure: unknown, original: HttpErrorResponse | null): Observable<never> => {
+  const onRefreshFailure = (failure: unknown, original: HttpErrorResponse | null, bound: number): Observable<never> => {
     const refresh = readRefreshFailure(failure);
     if (refresh === null) return throwError(() => failure);
-    // The store has already ended the session for these two and set the `endReason`; do not overwrite it.
-    const storeOwned = refresh.code === 'refresh_token_reused' || refresh.code === 'session_revoked';
-    if (refresh.status === 0) {
+    if (refresh.code === 'network_error' || refresh.kind === 'network') {
       return throwError(() => new HttpErrorResponse({ status: 0, url: req.url }));
     }
     if (refresh.code === 'forbidden' || refresh.status === 403) {
@@ -121,16 +139,22 @@ export const sessionInterceptor: HttpInterceptorFn = (req, next) => {
       return throwError(() => new Error('refresh_forbidden'));
     }
     if (refresh.status === 401) {
-      if (!storeOwned) store.signOut('revoked');
-      return throwError(
-        () => original ?? new HttpErrorResponse({ status: 401, url: req.url, error: { code: refresh.code } }),
-      );
+      // The store has already ended the session for `session_revoked`/`refresh_token_reused`, and a failed restore
+      // retry left it anonymous: only a session that is still held in full, and still the request's own, ends here.
+      if (store.generation() === bound && store.accessToken() !== null && store.endReason() === null) {
+        store.signOut('revoked');
+      }
+      return throwError(() => original ?? rebuildFailure(refresh, req.url));
     }
-    return throwError(() => new HttpErrorResponse({ status: refresh.status, url: req.url, error: { code: refresh.code } }));
+    // No HTTP status (an unreadable token the store refused): not a network failure, the caller sees `unknown_error`.
+    if (refresh.status === 0) return throwError(() => new Error(refresh.code));
+    return throwError(() => rebuildFailure(refresh, req.url));
   };
 
-  const onResponseError = (request: HttpRequest<unknown>, error: unknown): Observable<HttpEvent<unknown>> => {
+  const onResponseError = (request: HttpRequest<unknown>, error: unknown, bound: number): Observable<HttpEvent<unknown>> => {
     if (!(error instanceof HttpErrorResponse) || error.status !== 401) return throwError(() => error);
+    // The session this request belonged to is gone: its late 401 neither signs out nor replays under the new one.
+    if (store.generation() !== bound) return throwError(() => error);
 
     const code = mapper.from(error).code;
     if (PASS_THROUGH_CODES.includes(code)) {
@@ -151,21 +175,24 @@ export const sessionInterceptor: HttpInterceptorFn = (req, next) => {
 
     const rejectedToken = request.headers.get('Authorization')?.replace(/^Bearer /, '') ?? undefined;
     return from(
-      store.ensureFreshAccessToken(rejectedToken === undefined ? { userAction } : { userAction, rejectedToken }),
+      store.ensureFreshAccessToken(
+        rejectedToken === undefined ? { userAction, generation: bound } : { userAction, rejectedToken, generation: bound },
+      ),
     ).pipe(
-      catchError((failure: unknown) => onRefreshFailure(failure, error)),
+      catchError((failure: unknown) => onRefreshFailure(failure, error, bound)),
       switchMap((fresh) => {
-        // Idle-gated or nothing to refresh (3b): keep the session and surface the 401.
-        if (fresh === null) return throwError(() => error);
+        // Idle-gated, nothing to refresh (3b) or the session changed meanwhile: keep the session, surface the 401.
+        if (fresh === null || store.generation() !== bound) return throwError(() => error);
         const context = copyContext(request.context);
         context.set(RETRIED, true);
-        return send(request.clone({ context }), fresh);
+        return send(request.clone({ context }), fresh, bound);
       }),
     );
   };
 
-  return from(store.ensureFreshAccessToken({ userAction })).pipe(
-    catchError((failure: unknown) => onRefreshFailure(failure, null)),
-    switchMap((token) => send(req, token)),
+  const entryGeneration = store.generation();
+  return from(store.ensureFreshAccessToken({ userAction, generation: entryGeneration })).pipe(
+    catchError((failure: unknown) => onRefreshFailure(failure, null, entryGeneration)),
+    switchMap((token) => send(req, token, entryGeneration)),
   );
 };

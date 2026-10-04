@@ -596,6 +596,156 @@ describe('SessionStore', () => {
       expect(store.accessToken()).toBeNull();
       expect(store.endReason()).toBe('logout');
     });
+
+    it('SessionStore_Logout_PresentsTheAccessToken', async () => {
+      const { store, fake } = setup();
+      const tokens = pair('user', FRESH, 'A');
+      store.signIn(tokens, 'user', []);
+      await store.logout();
+      expect(fake.logoutTokens).toEqual([tokens.accessToken]);
+    });
+
+    it('SessionStore_Logout_RefreshesAStaleTokenFirst', async () => {
+      const { store, fake } = setup();
+      store.signIn(pair('user', STALE, 'old'), 'user', []);
+      fake.next = pair('user', FRESH, 'new');
+      await store.logout();
+      expect(fake.logoutTokens).toEqual([fake.next.accessToken]);
+      expect(store.endReason()).toBe('logout');
+    });
+
+    it('SessionStore_Logout_RefreshFailure_NeverBlocksLogout', async () => {
+      const { store, fake } = setup();
+      store.signIn(pair('user', STALE, 'old'), 'user', []);
+      fake.mode = 'network';
+      await store.logout();
+      expect(fake.logoutTokens).toEqual([null]);
+      expect(store.accessToken()).toBeNull();
+      expect(store.endReason()).toBe('logout');
+    });
+
+    it('SessionStore_Logout_ClearsLocalStateBeforeTheServerAnswers', async () => {
+      class SlowLogoutApi extends FakeSessionApi {
+        release!: () => void;
+        override logout(accessToken: string | null): Promise<void> {
+          this.logoutCalls += 1;
+          this.logoutTokens.push(accessToken);
+          return new Promise<void>((resolve) => {
+            this.release = resolve;
+          });
+        }
+      }
+      const api = new SlowLogoutApi();
+      const scope = new CountingScope();
+      TestBed.configureTestingModule({
+        providers: [
+          ...ZONELESS_TEST_PROVIDERS,
+          provideRouter([
+            { path: 'login', children: [] },
+            { path: '**', children: [] },
+          ]),
+          { provide: SessionApi, useValue: api },
+          { provide: SESSION_SCOPED, multi: true, useValue: scope },
+        ],
+      });
+      const store = TestBed.inject(SessionStore);
+      const router = TestBed.inject(Router);
+      await router.navigateByUrl('/dashboard');
+      const tokens = pair('user', FRESH, 'A');
+      store.signIn(tokens, 'user', []);
+
+      const loggingOut = store.logout();
+      await vi.waitFor(() => expect(api.logoutCalls).toBe(1));
+
+      expect(api.logoutTokens).toEqual([tokens.accessToken]);
+      expect(store.accessToken()).toBeNull();
+      expect(store.endReason()).toBe('logout');
+      expect(scope.resets).toBe(1);
+      await TestBed.inject(ApplicationRef).whenStable();
+      expect(router.url).toBe('/login');
+      api.release();
+      await loggingOut;
+    });
+  });
+
+  describe('identity swap on refresh (shared refresh cookie)', () => {
+    const tokenFor = (sub: string, ttlMs: number): TokenPair => ({
+      accessToken: fakeJwt('user', ['pwd'], sub),
+      expiresAt: Date.now() + ttlMs,
+    });
+
+    it('SessionStore_Refresh_DifferentSub_IsNotAdopted_AndEndsExpired', async () => {
+      const scope = new CountingScope();
+      const { store, fake, router } = setup([scope]);
+      await router.navigateByUrl('/episodes/1');
+      store.signIn(tokenFor('user-A', STALE), 'user', ['pwd']);
+      store.setMe({ uiLocale: 'vi', role: 'user', features: [], displayName: 'A', email: 'a@example.test' });
+      const intruder = tokenFor('user-B', FRESH);
+      fake.next = intruder;
+
+      await expect(store.ensureFreshAccessToken({ userAction: true })).resolves.toBeNull();
+      await TestBed.inject(ApplicationRef).whenStable();
+
+      expect(store.accessToken()).toBeNull();
+      expect(store.me()).toBeNull();
+      expect(store.endReason()).toBe('expired');
+      expect(scope.resets).toBe(1);
+      expect(router.url).toBe('/login?returnUrl=%2Fepisodes%2F1');
+    });
+
+    it('SessionStore_Refresh_MissingSub_WhileOldPresent_IsNotAdopted', async () => {
+      const { store, fake } = setup();
+      store.signIn(tokenFor('user-A', STALE), 'user', ['pwd']);
+      fake.next = { accessToken: fakeJwt('user', ['pwd'], ''), expiresAt: Date.now() + FRESH };
+
+      await expect(store.ensureFreshAccessToken({ userAction: true })).resolves.toBeNull();
+      expect(store.accessToken()).toBeNull();
+      expect(store.endReason()).toBe('expired');
+    });
+
+    it('SessionStore_Refresh_SameSub_IsAdopted', async () => {
+      const { store, fake } = setup();
+      store.signIn(tokenFor('user-A', STALE), 'user', ['pwd']);
+      fake.next = tokenFor('user-A', FRESH);
+
+      await expect(store.ensureFreshAccessToken({ userAction: true })).resolves.toBe(fake.next.accessToken);
+      expect(store.endReason()).toBeNull();
+    });
+
+    it('SessionStore_Restore_CommitsAnySub_NoPriorSession', async () => {
+      const { store, fake } = setup();
+      fake.next = tokenFor('user-B', FRESH);
+      await store.restore();
+      expect(store.accessToken()).toBe(fake.next.accessToken);
+      expect(store.endReason()).toBeNull();
+    });
+
+    it('SessionStore_Refresh_AfterRestoreFailedRetry_CommitsAnySub', async () => {
+      const { store, fake } = setup();
+      fake.mode = 'network';
+      await store.restore();
+      expect(store.endReason()).toBe('restore_failed');
+      fake.mode = 'ok';
+      fake.next = tokenFor('user-B', FRESH);
+      await expect(store.ensureFreshAccessToken({ userAction: true })).resolves.toBe(fake.next.accessToken);
+      expect(store.endReason()).toBeNull();
+    });
+
+    it('SessionStore_EnsureFresh_BoundGeneration_NeverHandsAnotherSessionsToken', async () => {
+      const { store, fake } = setup();
+      store.signIn(tokenFor('user-A', STALE), 'user', ['pwd']);
+      const bound = store.generation();
+      fake.mode = 'deferred';
+      const flight = store.ensureFreshAccessToken({ userAction: true, generation: bound });
+      await vi.waitFor(() => expect(fake.calls).toBe(1));
+      const b = tokenFor('user-B', FRESH);
+      store.signIn(b, 'user', ['pwd']);
+
+      fake.resolveNext(tokenFor('user-A', FRESH));
+      await expect(flight).resolves.toBeNull();
+      await expect(store.ensureFreshAccessToken({ generation: bound })).resolves.toBeNull();
+      expect(store.accessToken()).toBe(b.accessToken);
+    });
   });
 
   describe('enrolment mode', () => {
@@ -672,7 +822,7 @@ describe('SessionStore', () => {
       expect(fake.calls).toBe(0);
     });
 
-    it('a refresh resolving after logout() commits nothing and the flight settles null', async () => {
+    it('a refresh resolving after sign-out commits nothing and the flight settles null', async () => {
       const scope = new CountingScope();
       const { store, fake } = setup([scope]);
       store.signIn(pair('user', STALE, 'A'), 'user', []);
@@ -680,12 +830,32 @@ describe('SessionStore', () => {
       const flight = store.ensureFreshAccessToken({ userAction: true });
       await vi.waitFor(() => expect(fake.calls).toBe(1));
 
-      await store.logout();
+      store.signOut('logout');
       fake.resolveNext(pair('user', FRESH, 'late'));
 
       await expect(flight).resolves.toBeNull();
       expect(store.accessToken()).toBeNull();
       expect(store.status()).toBe('ended');
+      expect(store.endReason()).toBe('logout');
+      expect(scope.resets).toBe(1);
+    });
+
+    it('logout() joins a refresh already in flight and presents its token', async () => {
+      const scope = new CountingScope();
+      const { store, fake } = setup([scope]);
+      store.signIn(pair('user', STALE, 'A'), 'user', []);
+      fake.mode = 'deferred';
+      const flight = store.ensureFreshAccessToken({ userAction: true });
+      await vi.waitFor(() => expect(fake.calls).toBe(1));
+
+      const loggingOut = store.logout();
+      const late = pair('user', FRESH, 'late');
+      fake.resolveNext(late);
+      await loggingOut;
+
+      await expect(flight).resolves.toBe(late.accessToken);
+      expect(fake.logoutTokens).toEqual([late.accessToken]);
+      expect(store.accessToken()).toBeNull();
       expect(store.endReason()).toBe('logout');
       expect(scope.resets).toBe(1);
     });
@@ -746,6 +916,7 @@ describe('SessionStore', () => {
       const loggingOut = store.logout();
       const b = pair('admin', FRESH, 'B');
       store.signIn(b, 'admin', ['pwd']);
+      await vi.waitFor(() => expect(api.logoutCalls).toBe(1));
       api.release();
       await loggingOut;
 

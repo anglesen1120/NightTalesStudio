@@ -18,6 +18,11 @@ export interface EnsureFreshOptions {
   readonly userAction?: boolean;
   /** A token the server just rejected with 401: when it is still the current one, refresh although it looks fresh. */
   readonly rejectedToken?: string;
+  /**
+   * The `generation()` of the session the caller belongs to. When it is no longer the current one (before or after
+   * the flight) the call resolves `null`: a request of session A never receives session B's token.
+   */
+  readonly generation?: number;
 }
 
 interface FlightOptions {
@@ -25,6 +30,11 @@ interface FlightOptions {
   /** Boot restore or a user-action retry after `restore_failed`: a failure is classified by `endRestore` instead
    *  of ending the session with a redirect. */
   readonly restoring: boolean;
+}
+
+/** The identity facts of an access token: `role`/`amr` for the UI, `sub` to detect an identity swap on refresh. */
+interface TokenClaims extends SessionUser {
+  readonly sub: string | null;
 }
 
 function isPlatformRole(value: unknown): value is PlatformRole {
@@ -35,17 +45,17 @@ function isPlatformRole(value: unknown): value is PlatformRole {
  * Reads `role` and `amr` from the middle segment of a JWT. No signature check: the server is the authority, this is
  * only the view the UI needs. Anything unparsable is `null` (treated as no usable session).
  */
-function readClaims(token: string): SessionUser | null {
+function readClaims(token: string): TokenClaims | null {
   const segment = token.split('.')[1];
   if (segment === undefined || segment === '') return null;
   try {
     const padded = segment.replace(/-/g, '+').replace(/_/g, '/').padEnd(Math.ceil(segment.length / 4) * 4, '=');
     const claims: unknown = JSON.parse(atob(padded));
     if (typeof claims !== 'object' || claims === null) return null;
-    const { role, amr } = claims as Record<string, unknown>;
+    const { role, amr, sub } = claims as Record<string, unknown>;
     if (!isPlatformRole(role)) return null;
     const methods = typeof amr === 'string' ? [amr] : Array.isArray(amr) ? amr.filter((m): m is string => typeof m === 'string') : [];
-    return { role, amr: methods };
+    return { role, amr: methods, sub: typeof sub === 'string' && sub !== '' ? sub : null };
   } catch {
     return null;
   }
@@ -81,6 +91,8 @@ export class SessionStore {
   private readonly generationState = signal(0);
 
   private refreshInFlight: Promise<string | null> | null = null;
+  /** The `sub` of the access token the session holds; a refresh answering with another one is never adopted. */
+  private subject: string | null = null;
   private restorePromise: Promise<void> | null = null;
 
   readonly accessToken = this.accessTokenState.asReadonly();
@@ -120,6 +132,14 @@ export class SessionStore {
    * the boot classification on failure (failure table L288).
    */
   async ensureFreshAccessToken(opts?: EnsureFreshOptions): Promise<string | null> {
+    const bound = opts?.generation;
+    // A request bound to a session that is gone never gets (or triggers a refresh for) another session's token.
+    if (bound !== undefined && bound !== this.generationState()) return null;
+    const token = await this.ensureFresh(opts);
+    return bound !== undefined && bound !== this.generationState() ? null : token;
+  }
+
+  private async ensureFresh(opts: EnsureFreshOptions | undefined): Promise<string | null> {
     if (!this.restoreSettledState()) await this.restore();
     const ended = this.endReasonState();
     if (ended !== null) {
@@ -144,6 +164,7 @@ export class SessionStore {
     this.expiresAtState.set(tokens.expiresAt);
     this.roleState.set(role);
     this.amrState.set([...amr]);
+    this.subject = readClaims(tokens.accessToken)?.sub ?? null;
   }
 
   setMe(summary: MeSummary | null): void {
@@ -160,14 +181,23 @@ export class SessionStore {
     this.enrolmentTokenState.set(token);
   }
 
-  /** The explicit user action: `POST /auth/logout`, then end the session locally even if the call failed. */
+  /**
+   * The explicit user action. `LogoutCommand` needs the access token as `Bearer` (not cookie alone), so one is
+   * obtained first (a failure there just means no token: it never blocks logout). The session then ends locally at
+   * once (memory cleared, scopes reset, `/login` without returnUrl), and only afterwards is the server told. A server
+   * failure reaches the caller; nothing is restored.
+   */
   async logout(): Promise<void> {
     const generation = this.generationState();
+    let token: string | null = null;
     try {
-      await this.api.logout();
-    } finally {
-      if (generation === this.generationState()) this.signOut('logout');
+      token = await this.ensureFreshAccessToken({ userAction: true, generation });
+    } catch {
+      token = null;
     }
+    // A session that replaced this one meanwhile (sign-in B) is not the one the user logged out of.
+    if (this.generationState() === generation) this.signOut('logout');
+    await this.api.logout(token);
   }
 
   /**
@@ -219,6 +249,7 @@ export class SessionStore {
     this.meState.set(null);
     this.enrolmentTokenState.set(null);
     this.endReasonState.set(null);
+    this.subject = null;
     this.refreshInFlight = null;
     this.refreshingState.set(false);
     // A session created or ended on purpose has nothing left to restore.
@@ -267,6 +298,8 @@ export class SessionStore {
     if (this.generationState() !== generation) return this.currentFreshToken();
     const current = this.accessTokenState();
     if (current !== null && !this.isStale(current, options.rejectedToken)) return current;
+    const hadSession = current !== null;
+    const previousSubject = this.subject;
 
     let tokens: TokenPair;
     try {
@@ -283,12 +316,20 @@ export class SessionStore {
       this.expiresAtState.set(null);
       this.roleState.set(null);
       this.amrState.set([]);
+      this.subject = null;
       return this.fail(this.mapper.from(new Error('unreadable access token')));
+    }
+    // The refresh cookie is shared by every tab: another tab may have signed in as somebody else. Never adopt a token
+    // of a different identity into this session; end it (identity cleared, scopes reset, `/login?returnUrl=`).
+    if (hadSession && previousSubject !== null && claims.sub !== previousSubject) {
+      this.signOut('expired');
+      return null;
     }
     this.accessTokenState.set(tokens.accessToken);
     this.expiresAtState.set(tokens.expiresAt);
     this.roleState.set(claims.role);
     this.amrState.set(claims.amr);
+    this.subject = claims.sub;
     this.endReasonState.set(null);
     return tokens.accessToken;
   }

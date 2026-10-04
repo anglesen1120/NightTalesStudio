@@ -79,32 +79,62 @@ describe('HttpSessionRepository', () => {
   });
 
   describe('logout', () => {
-    it('SessionRepository_Logout_Posts204_Resolves', async () => {
+    const TOKEN = 'access-A';
+    const bearerOf = (req: { request: { headers: { get: (name: string) => string | null } } }): string | null =>
+      req.request.headers.get('Authorization');
+
+    it('SessionRepository_Logout_Posts204WithBearer_Resolves', async () => {
       const { repository, http } = setup();
-      const result = repository.logout();
+      const result = repository.logout(TOKEN);
       const req = http.expectOne(LOGOUT_URL);
       expect(req.request.method).toBe('POST');
       expect(req.request.context.get(SILENT_REQUEST)).toBe(true);
+      expect(bearerOf(req)).toBe(`Bearer ${TOKEN}`);
       req.flush(null, { status: 204, statusText: 'No Content' });
 
       await expect(result).resolves.toBeUndefined();
     });
 
-    it('SessionRepository_Logout_401_AlreadyLoggedOut_Resolves', async () => {
+    it('SessionRepository_Logout_401SessionRevoked_FamilyGone_Resolves', async () => {
       const { repository, http } = setup();
-      const result = repository.logout();
-      http.expectOne(LOGOUT_URL).flush({ code: 'unauthorized' }, { status: 401, statusText: 'Unauthorized' });
+      const result = repository.logout(TOKEN);
+      http.expectOne(LOGOUT_URL).flush({ code: 'session_revoked' }, { status: 401, statusText: 'Unauthorized' });
 
       await expect(result).resolves.toBeUndefined();
     });
 
-    it('SessionRepository_Logout_OtherFailures_RejectWithAppError', async () => {
+    it('SessionRepository_Logout_401Unauthorized_WithToken_Rejects', async () => {
       const { repository, http } = setup();
-      const server = repository.logout();
+      const result = repository.logout(TOKEN);
+      http.expectOne(LOGOUT_URL).flush({ code: 'unauthorized' }, { status: 401, statusText: 'Unauthorized' });
+
+      await expect(result).rejects.toMatchObject({ code: 'unauthorized', status: 401 });
+    });
+
+    it('SessionRepository_Logout_NullToken_StillPostsWithoutHeader_AndResolvesOnAnyOutcome', async () => {
+      const { repository, http } = setup();
+      const unauthorized = repository.logout(null);
+      const first = http.expectOne(LOGOUT_URL);
+      expect(bearerOf(first)).toBeNull();
+      first.flush({ code: 'unauthorized' }, { status: 401, statusText: 'Unauthorized' });
+      await expect(unauthorized).resolves.toBeUndefined();
+
+      const server = repository.logout(null);
+      http.expectOne(LOGOUT_URL).flush(null, { status: 500, statusText: 'x' });
+      await expect(server).resolves.toBeUndefined();
+
+      const offline = repository.logout(null);
+      http.expectOne(LOGOUT_URL).error(new ProgressEvent('error'));
+      await expect(offline).resolves.toBeUndefined();
+    });
+
+    it('SessionRepository_Logout_OtherFailures_WithToken_RejectWithAppError', async () => {
+      const { repository, http } = setup();
+      const server = repository.logout(TOKEN);
       http.expectOne(LOGOUT_URL).flush(null, { status: 500, statusText: 'x' });
       await expect(server).rejects.toMatchObject({ status: 500, kind: 'server' });
 
-      const offline = repository.logout();
+      const offline = repository.logout(TOKEN);
       http.expectOne(LOGOUT_URL).error(new ProgressEvent('error'));
       await expect(offline).rejects.toMatchObject({ code: 'network_error', status: 0 });
     });

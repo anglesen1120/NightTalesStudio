@@ -1,8 +1,9 @@
+import { HttpClient, HttpHeaders } from '@angular/common/http';
 import { Injectable, inject, isDevMode } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
 import { AppErrorMapper, type AppError } from '@core/errors';
 import { silently } from '@core/http';
-import { AuthEndpointsClient } from '@shared/api';
+import { ApiConfiguration, AuthEndpointsClient, apiV1AuthLogoutPost } from '@shared/api';
 import { SessionApi } from '../session.api';
 import type { TokenPair } from '../token-pair';
 
@@ -27,6 +28,8 @@ function parseExpiresAt(raw: unknown): number {
 @Injectable()
 export class HttpSessionRepository extends SessionApi {
   private readonly client = inject(AuthEndpointsClient);
+  private readonly http = inject(HttpClient);
+  private readonly config = inject(ApiConfiguration);
   private readonly mapper = inject(AppErrorMapper);
 
   override async refresh(): Promise<TokenPair> {
@@ -38,13 +41,28 @@ export class HttpSessionRepository extends SessionApi {
     }
   }
 
-  override async logout(): Promise<void> {
+  /**
+   * `POST /auth/logout` needs the access token as `Bearer` next to the cookie (`LogoutCommand` is not anonymous: a
+   * Bearer-less call revokes nothing and answers 401 `unauthorized`). The generated client has no header parameter,
+   * so the request is built from its `PATH` with an explicit `Authorization`. Resolves on 204 and on 401
+   * `session_revoked` (the family is gone). Without a token the POST still goes out (it clears the browser's cookie
+   * copy) and every outcome resolves. Any other failure with a token rejects with its `AppError`.
+   */
+  override async logout(accessToken: string | null): Promise<void> {
+    const headers = accessToken === null ? new HttpHeaders() : new HttpHeaders({ Authorization: `Bearer ${accessToken}` });
     try {
-      await firstValueFrom(this.client.apiV1AuthLogoutPost(undefined, silently()), { defaultValue: undefined });
+      await firstValueFrom(
+        this.http.post(`${this.config.rootUrl}${apiV1AuthLogoutPost.PATH}`, null, {
+          headers,
+          context: silently(),
+          responseType: 'text',
+        }),
+        { defaultValue: undefined },
+      );
     } catch (cause) {
+      if (accessToken === null) return;
       const error = this.mapper.from(cause);
-      // 401: the session was already gone, which is what the caller wanted.
-      if (error.status === 401) return;
+      if (error.status === 401 && error.code === 'session_revoked') return;
       this.rethrow(error);
     }
   }

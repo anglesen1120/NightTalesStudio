@@ -7,6 +7,7 @@ import { AppErrorMapper } from '@core/errors';
 import { ZONELESS_TEST_PROVIDERS } from '../../testing/providers';
 import { SILENT_REQUEST } from '../http/http-context-tokens';
 import { silently, userAction } from '../http/http-context';
+import { HttpSessionRepository } from './data-access/session.repository';
 import { ActivityTracker } from './activity';
 import { SESSION_SCOPED, type SessionScoped } from './session-scope';
 import { SessionApi } from './session.api';
@@ -608,6 +609,219 @@ describe('SessionInterceptor', () => {
       expect(scopes.map((scope) => scope.resets)).toEqual([1, 1, 1]);
       await settle();
       mock.expectNone('/api/v1/series');
+    });
+  });
+
+  describe('Review fixes: generation binding, logout, failure fidelity', () => {
+    const SERIES = '/api/v1/series';
+    const LOGOUT = '/api/v1/auth/logout';
+
+    function signInB(): TokenPair {
+      const b: TokenPair = { accessToken: fakeJwt('admin', ['B'], 'user-B'), expiresAt: Date.now() + FRESH_MS };
+      store.signIn(b, 'admin', ['pwd']);
+      return b;
+    }
+
+    function expectBUntouched(b: TokenPair): void {
+      expect(store.accessToken()).toBe(b.accessToken);
+      expect(store.endReason()).toBeNull();
+      expect(scopes.map((scope) => scope.resets)).toEqual([0, 0, 0]);
+    }
+
+    /** Real repository behind the interceptor: the HTTP-level path of `SessionStore.logout`. */
+    function useRealRepository(): void {
+      TestBed.resetTestingModule();
+      scopes = [new CountingScope()];
+      TestBed.configureTestingModule({
+        providers: [
+          ...ZONELESS_TEST_PROVIDERS,
+          provideRouter([
+            { path: 'login', children: [] },
+            { path: '**', children: [] },
+          ]),
+          provideHttpClient(withInterceptors([sessionInterceptor])),
+          provideHttpClientTesting(),
+          { provide: SessionApi, useClass: HttpSessionRepository },
+          { provide: ActivityTracker, useValue: { isActive: () => active, isVisible: () => true } },
+          ...scopes.map((scope) => ({ provide: SESSION_SCOPED, useValue: scope, multi: true })),
+        ],
+      });
+      store = TestBed.inject(SessionStore);
+      http = TestBed.inject(HttpClient);
+      mock = TestBed.inject(HttpTestingController);
+      router = TestBed.inject(Router);
+    }
+
+    it('Interceptor_Logout_ExplicitAuthorizationPassesThroughUntouched_NeverRefreshedOrReplayed', async () => {
+      signIn(STALE_MS);
+      const done = run(http.post(LOGOUT, null, { headers: { Authorization: 'Bearer explicit' } }));
+      const req = await request(LOGOUT);
+      expect(authorization(req)).toBe('Bearer explicit');
+      unauthorized(req, { code: 'unauthorized' });
+      expect(httpError(await done).status).toBe(401);
+      expect(fake.calls).toBe(0);
+      expect(store.endReason()).toBeNull();
+      await settle();
+      mock.expectNone(LOGOUT);
+    });
+
+    it('Logout_SendsBearer_ClearsLocalStateBeforeServerAnswers_WithoutReturnUrl', async () => {
+      useRealRepository();
+      await router.navigateByUrl('/dashboard');
+      signIn(FRESH_MS);
+      const loggingOut = store.logout();
+      const req = await request(LOGOUT);
+      expect(authorization(req)).toBe(`Bearer ${first.accessToken}`);
+      // The server has not answered yet.
+      expect(store.accessToken()).toBeNull();
+      expect(store.endReason()).toBe('logout');
+      expect(scopes.map((scope) => scope.resets)).toEqual([1]);
+      await vi.waitFor(() => expect(router.url).toBe('/login'), { timeout: 2_000, interval: 1 });
+      req.flush(null, { status: 204, statusText: 'No Content' });
+      await expect(loggingOut).resolves.toBeUndefined();
+    });
+
+    it('Logout_401SessionRevoked_Resolves', async () => {
+      useRealRepository();
+      signIn(FRESH_MS);
+      const loggingOut = store.logout();
+      unauthorized(await request(LOGOUT), { code: 'session_revoked' });
+      await expect(loggingOut).resolves.toBeUndefined();
+      expect(store.endReason()).toBe('logout');
+    });
+
+    it('Logout_401Unauthorized_WithToken_Rejects_ButStateStaysCleared', async () => {
+      useRealRepository();
+      signIn(FRESH_MS);
+      const loggingOut = store.logout();
+      unauthorized(await request(LOGOUT), { code: 'unauthorized' });
+      await expect(loggingOut).rejects.toMatchObject({ code: 'unauthorized', status: 401 });
+      expect(store.accessToken()).toBeNull();
+      expect(store.endReason()).toBe('logout');
+      expect(scopes.map((scope) => scope.resets)).toEqual([1]);
+    });
+
+    it('Logout_NullToken_StillPostsWithoutHeader_AndResolves', async () => {
+      useRealRepository();
+      signIn(FRESH_MS);
+      store.signOut('expired');
+      const loggingOut = store.logout();
+      const req = await request(LOGOUT);
+      expect(authorization(req)).toBeNull();
+      req.flush(null, { status: 500, statusText: 'x' });
+      await expect(loggingOut).resolves.toBeUndefined();
+    });
+
+    it.each([['session_revoked'], ['refresh_token_reused'], ['unauthorized']])(
+      'a late %s 401 of A after signIn(B): B is not signed out and nothing is replayed',
+      async (code) => {
+        signIn(FRESH_MS);
+        const done = run(http.get(SERIES));
+        const req = await request(SERIES);
+        const b = signInB();
+        unauthorized(req, { code });
+        expect(httpError(await done).status).toBe(401);
+        expect(fake.calls).toBe(0);
+        await settle();
+        mock.expectNone(SERIES);
+        expectBUntouched(b);
+      },
+    );
+
+    it('a replay 401 of A after signIn(B) does not sign B out', async () => {
+      signIn(FRESH_MS);
+      const done = run(http.get(SERIES));
+      unauthorized(await request(SERIES), { code: 'unauthorized' });
+      const replay = await request(SERIES);
+      const b = signInB();
+      unauthorized(replay, { code: 'unauthorized' });
+      expect(httpError(await done).status).toBe(401);
+      await settle();
+      mock.expectNone(SERIES);
+      expectBUntouched(b);
+    });
+
+    it('a deferred refresh for A\'s request resolving after B signs in: the request never carries B\'s token', async () => {
+      signIn(STALE_MS);
+      fake.mode = 'deferred';
+      const done = run(http.post(SERIES, { x: 1 }));
+      await vi.waitFor(() => expect(fake.calls).toBe(1), { timeout: 2_000, interval: 1 });
+      const b = signInB();
+      fake.resolveNext(tokens(['late'], FRESH_MS));
+      const req = await request(SERIES);
+      expect(authorization(req)).toBeNull();
+      req.flush({});
+      await done;
+      expectBUntouched(b);
+    });
+
+    it('a deferred refresh after a 401 of A resolving after B signs in: no replay under B', async () => {
+      signIn(FRESH_MS);
+      fake.mode = 'deferred';
+      const done = run(http.post(SERIES, { x: 1 }));
+      unauthorized(await request(SERIES), { code: 'unauthorized' });
+      await vi.waitFor(() => expect(fake.calls).toBe(1), { timeout: 2_000, interval: 1 });
+      const b = signInB();
+      fake.resolveNext(tokens(['late'], FRESH_MS));
+      expect(httpError(await done).status).toBe(401);
+      await settle();
+      mock.expectNone(SERIES);
+      expectBUntouched(b);
+    });
+
+    it('boot network failure, then a USER_ACTION request whose refresh answers a plain 401: anonymous, no navigation, scopes reset once overall', async () => {
+      fake.mode = 'network';
+      await store.restore();
+      expect(store.endReason()).toBe('restore_failed');
+      expect(scopes.map((scope) => scope.resets)).toEqual([1, 1, 1]);
+      const navigate = vi.spyOn(router, 'navigate');
+
+      fake.mode = '401';
+      const outcome = await run(http.post(SERIES, {}, { context: userAction(new HttpContext()) }));
+
+      expect(httpError(outcome).status).toBe(401);
+      expect(store.endReason()).toBeNull();
+      expect(store.status()).toBe('anonymous');
+      expect(navigate).not.toHaveBeenCalled();
+      expect(scopes.map((scope) => scope.resets)).toEqual([1, 1, 1]);
+      mock.expectNone(SERIES);
+    });
+
+    it('an unreadable refreshed JWT reaches the caller as unknown_error, not network_error', async () => {
+      signIn(STALE_MS);
+      fake.next = { accessToken: 'garbage', expiresAt: Date.now() + FRESH_MS };
+      const outcome = await run(http.get(SERIES));
+      expect(outcome.ok).toBe(false);
+      if (outcome.ok) return;
+      expect(outcome.error).not.toBeInstanceOf(HttpErrorResponse);
+      expect(mapper.from(outcome.error).code).toBe('unknown_error');
+      mock.expectNone(SERIES);
+    });
+
+    it('a refresh 429 keeps code, Retry-After and traceId for the caller mapper', async () => {
+      signIn(STALE_MS);
+      fake.mode = 'deferred';
+      const done = run(http.get(SERIES));
+      await vi.waitFor(() => expect(fake.calls).toBe(1), { timeout: 2_000, interval: 1 });
+      fake.rejectNext({
+        code: 'rate_limited',
+        status: 429,
+        kind: 'rate_limit',
+        fieldErrors: {},
+        retryAfterSec: 7,
+        traceId: 'trace-7f3',
+        problem: { code: 'rate_limited', traceId: 'trace-7f3' },
+      });
+      const outcome = await done;
+      expect(outcome.ok).toBe(false);
+      if (outcome.ok) return;
+      expect(mapper.from(outcome.error)).toMatchObject({
+        code: 'rate_limited',
+        status: 429,
+        retryAfterSec: 7,
+        traceId: 'trace-7f3',
+      });
+      mock.expectNone(SERIES);
     });
   });
 });

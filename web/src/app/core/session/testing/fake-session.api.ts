@@ -22,9 +22,9 @@ function base64Url(text: string): string {
 }
 
 /** An unsigned, JWT-shaped token whose payload carries the `role` and `amr` claims the store decodes. */
-export function fakeJwt(role: PlatformRole, amr: readonly string[] = ['pwd']): string {
+export function fakeJwt(role: PlatformRole, amr: readonly string[] = ['pwd'], sub = 'user-1'): string {
   const header = base64Url(JSON.stringify({ alg: 'none', typ: 'JWT' }));
-  const payload = base64Url(JSON.stringify({ sub: 'user-1', role, amr: amr.length === 1 ? amr[0] : amr }));
+  const payload = base64Url(JSON.stringify({ sub, role, amr: amr.length === 1 ? amr[0] : amr }));
   return `${header}.${payload}.sig`;
 }
 
@@ -41,6 +41,8 @@ export class FakeSessionApi extends SessionApi {
   mode: FakeSessionMode = 'ok';
   calls = 0;
   logoutCalls = 0;
+  /** The `accessToken` argument of every `logout()` call, in order. */
+  readonly logoutTokens: (string | null)[] = [];
   /** Returned by `refresh()` in `ok` mode. */
   next: TokenPair = { accessToken: fakeJwt('user'), expiresAt: Date.now() + 15 * 60_000 };
   /** When set, `logout()` rejects with it. */
@@ -62,8 +64,9 @@ export class FakeSessionApi extends SessionApi {
     return Promise.reject(FAILURES[this.mode]);
   }
 
-  override logout(): Promise<void> {
+  override logout(accessToken: string | null): Promise<void> {
     this.logoutCalls += 1;
+    this.logoutTokens.push(accessToken);
     // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors -- the port rejects with an AppError by contract
     return this.logoutFailure === null ? Promise.resolve() : Promise.reject(this.logoutFailure);
   }
