@@ -23,7 +23,7 @@ export interface ResetPasswordFormControls {
     TranslocoPipe,
     RetryCountdown,
   ],
-  providers: [provideTranslocoScope('errors')],
+  providers: [provideTranslocoScope('auth', 'errors')],
   templateUrl: './reset-password-form.component.html',
   styleUrl: './reset-password-form.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -33,6 +33,7 @@ export class ResetPasswordFormComponent {
   readonly submitting = input(false);
   readonly canSubmit = input(true);
   readonly formError = input<string | null>(null);
+  readonly traceId = input<string | null>(null);
   readonly mismatch = input(false);
   readonly retryAfterSec = input<number | null>(null);
   readonly fieldState = input<unknown>();

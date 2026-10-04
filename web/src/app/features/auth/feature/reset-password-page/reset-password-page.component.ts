@@ -1,6 +1,7 @@
 import {
   ChangeDetectionStrategy,
   Component,
+  computed,
   ElementRef,
   afterNextRender,
   effect,
@@ -12,6 +13,7 @@ import { type AbstractControl, FormControl, FormGroup, Validators } from '@angul
 import { Router } from '@angular/router';
 import { merge } from 'rxjs';
 import { bindFieldErrors, clearServerErrors } from '@core/errors';
+import { traceIdOf } from '../../application/auth-failure';
 import { ResetPasswordStore } from '../../application/reset-password.store';
 import { AuthPageShellComponent } from '../../ui/auth-page-shell/auth-page-shell.component';
 import { AuthStatePanelComponent } from '../../ui/auth-state-panel/auth-state-panel.component';
@@ -29,6 +31,7 @@ import {
 })
 export class ResetPasswordPageComponent {
   protected readonly store = inject(ResetPasswordStore);
+  protected readonly traceId = computed(() => traceIdOf(this.store.error()));
   private readonly router = inject(Router);
   private readonly formHost = viewChild<ResetPasswordFormComponent, ElementRef<HTMLElement>>(ResetPasswordFormComponent, { read: ElementRef });
   private readonly stateHost = viewChild<AuthStatePanelComponent, ElementRef<HTMLElement>>(AuthStatePanelComponent, { read: ElementRef });

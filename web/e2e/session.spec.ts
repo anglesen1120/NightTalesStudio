@@ -87,15 +87,22 @@ for (const { tag, lang } of LOCALES) {
     test.use({ locale: tag });
 
     test(`a reload restores the session: one boot refresh, and /login bounces an authenticated user to /dashboard [${lang}]`, async ({ page }) => {
-      await page.route(LOGIN, (route) => fulfilJson(route, 200, loginBody()));
-      await page.route(REFRESH, (route) => fulfilJson(route, 200, tokenBody()));
+      // The refresh cookie exists only after the stubbed sign-in; before it the boot refresh must settle anonymous.
+      let signedIn = false;
+      await page.route(LOGIN, (route) => {
+        signedIn = true;
+        return fulfilJson(route, 200, loginBody());
+      });
+      await page.route(REFRESH, (route) => (signedIn ? fulfilJson(route, 200, tokenBody()) : fulfilJson(route, 401, REVOKED_PROBLEM)));
       await page.route(TICKET, (route) => fulfilJson(route, 200, TICKET_BODY));
       await signIn(page);
 
       const refreshes = countPosts(page, '/api/v1/auth/refresh');
       await page.reload();
       await expect(page).toHaveURL((url) => url.pathname === '/dashboard');
-      expect(refreshes.count(), 'exactly one boot refresh after the reload').toBe(1);
+      await expect.poll(() => refreshes.count(), { message: 'the boot refresh after the reload' }).toBe(1);
+      await page.waitForTimeout(500);
+      expect(refreshes.count(), 'exactly one boot refresh after the reload, no loop').toBe(1);
 
       await page.goto('/login');
       await expect(page).toHaveURL((url) => url.pathname === '/dashboard');
@@ -118,19 +125,27 @@ for (const { tag, lang } of LOCALES) {
     test(`an expired access token is refreshed once and the request is replayed once [${lang}]`, async ({ page }) => {
       // The sign-in hands over an already-expired token: the background hub-ticket call must trigger ONE refresh.
       let tickets = 0;
-      await page.route(LOGIN, (route) => fulfilJson(route, 200, loginBody(-60)));
-      await page.route(REFRESH, (route) => fulfilJson(route, 200, tokenBody()));
+      let signedIn = false;
+      await page.route(LOGIN, (route) => {
+        signedIn = true;
+        return fulfilJson(route, 200, loginBody(-60));
+      });
+      let refreshes = 0;
+      await page.route(REFRESH, (route) => {
+        if (!signedIn) return fulfilJson(route, 401, REVOKED_PROBLEM);
+        refreshes += 1;
+        return fulfilJson(route, 200, tokenBody());
+      });
       await page.route(TICKET, (route) => {
         tickets += 1;
         return route.request().headers()['authorization'] === undefined
           ? fulfilJson(route, 401, { code: 'unauthorized', status: 401, title: 'unauthorized', traceId: 'NTS-E2E' })
           : fulfilJson(route, 200, TICKET_BODY);
       });
-      const refreshes = countPosts(page, '/api/v1/auth/refresh');
       await signIn(page);
       await expect.poll(() => tickets, { timeout: 10_000 }).toBeGreaterThanOrEqual(1);
       await page.waitForTimeout(1_000);
-      expect(refreshes.count(), 'one refresh for the burst').toBe(1);
+      expect(refreshes, 'one refresh for the burst').toBe(1);
       expect(tickets, 'at most one replay').toBeLessThanOrEqual(2);
       expect(new URL(page.url()).pathname, 'the session survived').toBe('/dashboard');
     });

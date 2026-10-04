@@ -241,7 +241,8 @@ for (const { tag, lang } of LOCALES) {
       await expect(page.getByRole('link', { name: LABEL.signIn })).toHaveAttribute('href', /\/login(\?|$)/);
 
       await page.reload();
-      await expect(page.getByLabel(LABEL.newPassword)).toBeDisabled();
+      await expect(page.getByLabel(LABEL.newPassword)).toHaveCount(0);
+      await expect(page.getByRole('link', { name: LABEL.requestNew })).toHaveAttribute('href', /\/forgot-password/);
       expect(calls).toHaveLength(1);
     });
 
@@ -318,7 +319,7 @@ for (const { tag, lang } of LOCALES) {
       });
       const calls = record(page, '/api/v1/auth/reset-password');
       await page.goto(`/reset-password#t=${TOKEN}`);
-      await fillReset(page, 'short-pw-1', 'short-pw-1');
+      await fillReset(page, 'weak-but-12-chars', 'weak-but-12-chars');
       await page.getByRole('button', { name: LABEL.save }).click();
       await expect(page.getByLabel(LABEL.newPassword)).toHaveAttribute('aria-invalid', 'true');
       await expect(page.getByRole('button', { name: LABEL.save })).toBeEnabled();
@@ -381,6 +382,8 @@ for (const { tag, lang } of LOCALES) {
       await expectA11yClean(page);
       expect(await noScroll()).toBeLessThanOrEqual(0);
 
+      // Same path with a new fragment is a same-document navigation (the SPA does not restart); the e-mail link is a full load.
+      await page.goto('about:blank');
       await page.goto(`/reset-password#t=${TOKEN}`);
       await fillReset(page, PASSWORD, PASSWORD);
       await page.getByRole('button', { name: LABEL.save }).click();

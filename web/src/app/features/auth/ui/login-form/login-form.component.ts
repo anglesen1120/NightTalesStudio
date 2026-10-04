@@ -23,7 +23,7 @@ export interface LoginFormControls {
     TranslocoPipe,
     RetryCountdown,
   ],
-  providers: [provideTranslocoScope('errors')],
+  providers: [provideTranslocoScope('auth', 'errors')],
   templateUrl: './login-form.component.html',
   styleUrl: './login-form.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -33,6 +33,7 @@ export class LoginFormComponent {
   readonly submitting = input(false);
   readonly canSubmit = input(true);
   readonly formError = input<string | null>(null);
+  readonly traceId = input<string | null>(null);
   readonly retryAfterSec = input<number | null>(null);
   readonly sessionEndKey = input<string | null>(null);
   readonly fieldState = input<unknown>();

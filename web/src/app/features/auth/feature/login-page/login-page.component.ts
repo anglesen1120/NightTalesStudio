@@ -1,6 +1,7 @@
 import {
   ChangeDetectionStrategy,
   Component,
+  computed,
   ElementRef,
   afterNextRender,
   effect,
@@ -13,6 +14,7 @@ import { toSignal } from '@angular/core/rxjs-interop';
 import { merge } from 'rxjs';
 import { bindFieldErrors, clearServerErrors } from '@core/errors';
 import { type SessionEndReason, SessionStore } from '@core/session';
+import { traceIdOf } from '../../application/auth-failure';
 import { LoginStore } from '../../application/login.store';
 import { AuthPageShellComponent } from '../../ui/auth-page-shell/auth-page-shell.component';
 import { LoginFormComponent, type LoginFormControls } from '../../ui/login-form/login-form.component';
@@ -34,6 +36,7 @@ const SESSION_KEY: Readonly<Record<SessionEndReason, string>> = {
 })
 export class LoginPageComponent {
   protected readonly store = inject(LoginStore);
+  protected readonly traceId = computed(() => traceIdOf(this.store.error()));
   protected readonly session = inject(SessionStore);
   private readonly router = inject(Router);
   private readonly formHost = viewChild<LoginFormComponent, ElementRef<HTMLElement>>(LoginFormComponent, { read: ElementRef });

@@ -52,6 +52,11 @@ for (const { tag, lang } of LOCALES) {
   test.describe(`errors on /login (${lang}), stubbed API`, () => {
     test.use({ locale: tag });
 
+    test.beforeEach(async ({ page }) => {
+      // No backend runs: the boot session refresh must end quietly instead of adding a second alert to /login.
+      await page.route('**/api/v1/auth/refresh', (route) => fulfilJson(route, 401, problem(401, 'session_revoked')));
+    });
+
     test(`empty submit: errors.validation_failed on the bound controls, aria-describedby link, focus on the first invalid control [${lang}]`, async ({ page }) => {
       await page.route(LOGIN_URL, (route) =>
         fulfilJson(route, 400, problem(400, 'validation_failed', { errors: { email: ['English description, never rendered'], password: ['English description, never rendered'] } })),

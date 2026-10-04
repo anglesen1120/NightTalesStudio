@@ -22,7 +22,7 @@ export interface ForgotPasswordFormControls {
     TranslocoPipe,
     RetryCountdown,
   ],
-  providers: [provideTranslocoScope('errors')],
+  providers: [provideTranslocoScope('auth', 'errors')],
   templateUrl: './forgot-password-form.component.html',
   styleUrl: './forgot-password-form.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -32,6 +32,7 @@ export class ForgotPasswordFormComponent {
   readonly submitting = input(false);
   readonly canSubmit = input(true);
   readonly formError = input<string | null>(null);
+  readonly traceId = input<string | null>(null);
   readonly retryAfterSec = input<number | null>(null);
   readonly fieldState = input<unknown>();
 

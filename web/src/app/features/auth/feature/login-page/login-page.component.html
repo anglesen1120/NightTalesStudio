@@ -4,6 +4,7 @@
     [submitting]="store.submitting()"
     [canSubmit]="store.canSubmit()"
     [formError]="store.retryAfterSec() === null ? store.formError() : null"
+    [traceId]="traceId()"
     [retryAfterSec]="store.retryAfterSec()"
     [sessionEndKey]="sessionEndKey()"
     [fieldState]="fieldState()"

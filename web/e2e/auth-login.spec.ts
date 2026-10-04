@@ -20,6 +20,7 @@ const LABEL = {
   email: /^E-mail$/i,
   password: /^(Mật khẩu|Password)$/,
   signIn: /^(Đăng nhập|Sign in)$/,
+  signingIn: /^(Đang đăng nhập…|Signing in…)$/,
   forgot: /^(Quên mật khẩu\?|Forgot your password\?)$/,
 } as const;
 
@@ -179,7 +180,7 @@ for (const { tag, lang } of LOCALES) {
       await page.getByLabel(LABEL.password).fill('wrong-password-1');
       await page.getByLabel(LABEL.password).press('Enter');
       await page.getByLabel(LABEL.password).press('Enter').catch(() => undefined);
-      await expect(page.getByRole('button', { name: LABEL.signIn })).toBeDisabled();
+      await expect(page.getByRole('button', { name: LABEL.signingIn })).toBeDisabled();
       release();
       await expect(page.getByRole('alert')).toContainText(INVALID_CREDENTIALS);
       expect(login.calls).toHaveLength(1);
