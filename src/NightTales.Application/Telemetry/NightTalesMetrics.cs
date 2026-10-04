@@ -46,11 +46,25 @@ public sealed class NightTalesMetrics : IDisposable
     /// <summary>The tag key of an OpenAI operation (<c>story</c>, <c>image</c>).</summary>
     public const string OperationTag = "operation";
 
+    /// <summary>The counter of fetch-task transitions (02.5.2-T2, D19).</summary>
+    public const string FetchTasksTotalName = "fetch_tasks_total";
+
+    /// <summary>The histogram of a fetch's lease-to-result duration (02.5.2-T2, D19).</summary>
+    public const string FetchDurationSecondsName = "fetch_duration_seconds";
+
+    /// <summary>The tag key of a fetch task status.</summary>
+    public const string FetchStatusTag = "status";
+
+    /// <summary>The tag key of a fetch task error code.</summary>
+    public const string FetchErrorCodeTag = "error_code";
+
     private readonly Meter _meter = new(MeterName);
     private readonly Histogram<double> _renderDuration;
     private readonly Counter<double> _openAiCost;
     private long _renderJobsActive;
     private double _youtubeQuotaUsed;
+    private readonly Counter<long> _fetchTasks;
+    private readonly Histogram<double> _fetchDuration;
 
     /// <summary>Creates the instruments once; the host owns the single instance.</summary>
     public NightTalesMetrics()
@@ -76,6 +90,16 @@ public sealed class NightTalesMetrics : IDisposable
             () => Volatile.Read(ref _youtubeQuotaUsed),
             unit: "1",
             description: "Share of the YouTube daily quota used (0..1).");
+
+        _fetchTasks = _meter.CreateCounter<long>(
+            FetchTasksTotalName,
+            unit: "{task}",
+            description: "Fetch tasks that finished, failed or were requeued, by status and error code.");
+
+        _fetchDuration = _meter.CreateHistogram<double>(
+            FetchDurationSecondsName,
+            unit: "s",
+            description: "Lease-to-result duration of one fetch task.");
     }
 
     /// <summary>The host's meter; a test attaches a listener to this exact instance.</summary>
@@ -107,6 +131,24 @@ public sealed class NightTalesMetrics : IDisposable
     /// <param name="ratio">The share used, clamped into 0..1.</param>
     public void SetYoutubeQuotaUsed(double ratio) =>
         Volatile.Write(ref _youtubeQuotaUsed, Math.Clamp(ratio, 0d, 1d));
+
+    /// <summary>Counts one fetch task that left the queue or the lease (02.5.2-T2, D19).</summary>
+    /// <param name="status">The closed status: <c>done</c>, <c>failed</c> or <c>requeued</c>.</param>
+    /// <param name="errorCode">The closed D8 code of a failure; <see langword="null"/> otherwise.</param>
+    public void RecordFetchTask(string status, string? errorCode)
+    {
+        var tags = new TagList { { FetchStatusTag, status } };
+        if (errorCode is not null)
+        {
+            tags.Add(FetchErrorCodeTag, errorCode);
+        }
+
+        _fetchTasks.Add(1, tags);
+    }
+
+    /// <summary>Records one fetch's duration, measured from the lease (<c>leased_at</c>), never from <c>created_at</c>.</summary>
+    /// <param name="seconds">The lease-to-result time, in seconds.</param>
+    public void RecordFetchDuration(double seconds) => _fetchDuration.Record(seconds);
 
     /// <inheritdoc />
     public void Dispose() => _meter.Dispose();

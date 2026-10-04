@@ -114,6 +114,55 @@ public sealed class ApiFactory(TestDatabase database, FakeClock clock) : WebAppl
         return client;
     }
 
+    /// <summary>The internal port the fetcher's lease API listens on in a test host (02.5.2-T2, D10).</summary>
+    public const int FetcherInternalPort = 8081;
+
+    /// <summary>The public port of a test host: the internal routes must not exist there.</summary>
+    public const int PublicPort = 8080;
+
+    /// <summary>A throwaway <c>FETCHER_API_TOKEN</c> for a test host (32+ characters, not a secret).</summary>
+    public const string FetcherToken = "test-fetcher-api-token-0123456789abcdef";
+
+    /// <summary>
+    /// Enables the fetcher's internal lease API in this host (02.5.2-T2): <c>Fetcher:Internal:Enabled</c> and the
+    /// token a deployment's secret store would provide. The in-process <c>TestServer</c> has no listener, so the tests
+    /// pick the port a request "arrived on" with <see cref="InternalClient"/> / <see cref="PublicPortClient"/>.
+    /// </summary>
+    /// <param name="maxRequestsPerMinutePerWorker">The per-worker request budget; high by default so a loop of calls is not limited.</param>
+    public ApiFactory WithFetcherInternalApi(int maxRequestsPerMinutePerWorker = 10_000)
+    {
+        WithSetting("Fetcher:Internal:Enabled", "true");
+        WithSetting("FETCHER_API_TOKEN", FetcherToken);
+        WithSetting("Fetcher:Internal:MaxRequestsPerMinutePerWorker", maxRequestsPerMinutePerWorker.ToString(System.Globalization.CultureInfo.InvariantCulture));
+
+        return this;
+    }
+
+    /// <summary>
+    /// A client whose requests appear to arrive on the internal listener (port 8081), presenting
+    /// <paramref name="token"/> as the bearer token; <see langword="null"/> sends no <c>Authorization</c> header.
+    /// </summary>
+    /// <param name="token">The bearer token.</param>
+    public HttpClient InternalClient(string? token = FetcherToken)
+    {
+        var client = ClientOnPort(FetcherInternalPort);
+        if (token is not null)
+        {
+            client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
+        }
+
+        return client;
+    }
+
+    /// <summary>A client whose requests appear to arrive on the public listener (port 8080).</summary>
+    public HttpClient PublicPortClient() => ClientOnPort(PublicPort);
+
+    private HttpClient ClientOnPort(int localPort) =>
+        new(Server.CreateHandler(context => context.Connection.LocalPort = localPort))
+        {
+            BaseAddress = Server.BaseAddress,
+        };
+
     /// Replaces or adds services in the host's collection — the sibling of <see cref="MapEndpoints"/>
     /// for tests that must swap a port (a recording blob store, a fixed audit writer, an aging health
     /// cache) instead of adding a route.

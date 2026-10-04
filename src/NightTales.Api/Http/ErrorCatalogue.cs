@@ -83,6 +83,7 @@ public static class ErrorCatalogue
             [ErrorCodes.SettingSecretRequired] = StatusCodes.Status400BadRequest,
             [ErrorCodes.CancelTokenInvalid] = StatusCodes.Status400BadRequest,
             [ErrorCodes.EmailTemplateUnknown] = StatusCodes.Status400BadRequest,
+            [ErrorCodes.FetchTaskKindUnsupported] = StatusCodes.Status400BadRequest,
             [ErrorCodes.EmailTemplateKeys] = StatusCodes.Status400BadRequest,
             [ErrorCodes.AgeAttestationRequired] = StatusCodes.Status400BadRequest,
             [ErrorCodes.ReportTargetInvalid] = StatusCodes.Status400BadRequest,
@@ -119,9 +120,11 @@ public static class ErrorCatalogue
             [ErrorCodes.NotFound] = StatusCodes.Status404NotFound,
             [ErrorCodes.FeatureDisabled] = StatusCodes.Status404NotFound,
             [ErrorCodes.PackageNotFound] = StatusCodes.Status404NotFound,
+            [ErrorCodes.FetchTaskNotFound] = StatusCodes.Status404NotFound,
 
             // 409
             [ErrorCodes.EpisodeInvalidState] = StatusCodes.Status409Conflict,
+            [ErrorCodes.FetchLeaseLost] = StatusCodes.Status409Conflict,
             [ErrorCodes.ConcurrencyConflict] = StatusCodes.Status409Conflict,
             [ErrorCodes.SeriesArchived] = StatusCodes.Status409Conflict,
             [ErrorCodes.SeriesTopicLocked] = StatusCodes.Status409Conflict,

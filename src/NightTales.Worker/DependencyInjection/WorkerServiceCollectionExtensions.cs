@@ -11,6 +11,7 @@ using NightTales.Application.Abstractions.Outbox;
 using NightTales.Application.DependencyInjection;
 using NightTales.Application.Features.Assets.Jobs;
 using NightTales.Application.Features.Episodes.Outbox;
+using NightTales.Application.Features.Research.Jobs;
 using NightTales.Application.Features.Research.Sources.Outbox;
 using NightTales.Application.Features.Stories.Jobs;
 using NightTales.Application.Features.Stories.Outbox;
@@ -155,6 +156,10 @@ public static class WorkerServiceCollectionExtensions
         // the outbox row; the Worker delivers it.
         services.AddOutboxHandler<SourceRemoved, SourceRemovedRealtimeHandler>();
 
+        // 02.5.2-T2 (plan §5.5): `source_fetched.v1`, raised by the Api's result route, becomes the same `EpisodeUpdated`
+        // NOTIFY, ids only, so the sources list shows the fetched or failed source.
+        services.AddOutboxHandler<SourceFetched, SourceFetchedRealtimeHandler>();
+
         // 02.3.1-T1 (plan §Design step 7, 02 CR-7): `story_version_saved.v1` becomes an `EpisodeUpdated` NOTIFY, ids only,
         // so the editor and the episode page refetch after an edit.
         services.AddOutboxHandler<StoryVersionSaved, StoryVersionSavedRealtimeHandler>();
@@ -245,6 +250,16 @@ public static class WorkerServiceCollectionExtensions
             .ValidateOnStart();
         services.AddSingleton(provider => provider.GetRequiredService<IOptions<RetentionSweepOptions>>().Value);
         services.AddSingleton<RetentionSweepMetrics>();
+
+        // 02.5.2-T2 (02 D10): the fetch-lease sweeper's three keys of the `Fetcher` section. Every key has a default, so none
+        // is a required start-up key; a non-positive value fails the boot. The Api binds the same section into its own type.
+        services.AddOptions<FetchLeaseSweeperOptions>()
+            .BindConfiguration(FetchLeaseSweeperOptions.SectionName)
+            .Validate(
+                options => FetchLeaseSweeperOptions.Validate(options).Count == 0,
+                $"'{FetchLeaseSweeperOptions.SectionName}:{nameof(FetchLeaseSweeperOptions.MaxAttempts)}', '{nameof(FetchLeaseSweeperOptions.RequeueBackoffSeconds)}' and '{nameof(FetchLeaseSweeperOptions.SweepIntervalSeconds)}' must each be at least 1.")
+            .ValidateOnStart();
+        services.AddSingleton(provider => provider.GetRequiredService<IOptions<FetchLeaseSweeperOptions>>().Value);
 
         services.AddHealthChecks()
             .AddCheck<DatabaseHealthCheck>("database")

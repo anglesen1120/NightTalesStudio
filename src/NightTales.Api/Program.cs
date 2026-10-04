@@ -112,6 +112,12 @@ try
     // 09.3.2-T1 step 6: the bearer scheme over the same key.
     builder.Services.AddNightTalesJwtBearer();
 
+    // 02.5.2-T2 (02 D10): the fetcher's internal lease API — the `FetcherToken` scheme, the lease/heartbeat/result
+    // services, the extracted-text store and the `Fetcher:Internal` options. Enabled without FETCHER_API_TOKEN the
+    // host refuses to start, so the listener can never run unauthenticated.
+    builder.Services.AddFetcherInternalApi(builder.Configuration);
+    builder.ConfigureFetcherInternalListener();
+
     // 09.10.4-T1 (09 README §B10 WT34): the fallback policy that rejects BD4's enrolment-only token
     // everywhere, the MfaEnrolment policy of the two enrolment routes, and the result handler that answers
     // 404 not_found for a refused request (D10).
@@ -165,6 +171,12 @@ try
 
         return;
     }
+
+    // 02.5.2-T2 (02 D10, plan §5.2): every request that arrived on the internal port (`Fetcher:Internal:ListenPort`) is
+    // served by the fetcher's own pipeline — token scheme, bounded body, per-worker limit, three routes — and never
+    // reaches the public middleware below; the public port never maps these routes. A no-op while the listener is
+    // disabled.
+    app.UseFetcherInternalListener();
 
     app.UseExceptionHandler();
 
