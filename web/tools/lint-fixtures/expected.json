@@ -535,6 +535,23 @@
       "file": "control-on-lookalike-attributes/src/app/features/series/ui/lookalike.html",
       "linter": "forbidden",
       "rules": []
+    },
+    {
+      "file": "api-boundary-component/src/app/features/series/feature/series-list.component.ts",
+      "linter": "eslint",
+      "rules": [
+        "@typescript-eslint/no-restricted-imports"
+      ]
+    },
+    {
+      "file": "api-boundary-spec/src/app/shared/api-boundary.spec.ts",
+      "linter": "eslint",
+      "rules": []
+    },
+    {
+      "file": "api-boundary-ui-spec/src/app/features/series/ui/series-row.spec.ts",
+      "linter": "eslint",
+      "rules": []
     }
   ]
 }

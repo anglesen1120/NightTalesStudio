@@ -15,7 +15,11 @@
     "lint:app": "ng lint",
     "lint:forbidden": "node tools/web/lint-forbidden-patterns.mjs",
     "lint:fixtures": "node tools/web/check-lint-fixtures.mjs",
-    "container:smoke": "bash tools/web/container-smoke.sh"
+    "container:smoke": "bash tools/web/container-smoke.sh",
+    "api:gen": "ng-openapi-gen --config api-gen.config.json",
+    "api:gen:local": "node tools/web/api-gen-local.mjs",
+    "api:gen:check": "node tools/web/check-api-drift.mjs",
+    "api:check": "node tools/web/check-api-drift.mjs"
   },
   "private": true,
   "dependencies": {
@@ -46,6 +50,7 @@
     "angular-eslint": "22.5.0",
     "eslint": "10.12.0",
     "jsdom": "^30.0.0",
+    "ng-openapi-gen": "1.1.0",
     "prettier": "^3.8.1",
     "typescript": "6.0.3",
     "typescript-eslint": "8.71.0",

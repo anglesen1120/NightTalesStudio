@@ -76,26 +76,38 @@ const crossFeature = (feature) => ({
 
 const imports = (...patterns) => ['error', { patterns }];
 
-const importBlocks = [
-  // Everything under src: no generated client ...
-  { files: at('**/*.ts'), rules: { '@typescript-eslint/no-restricted-imports': imports(API) } },
-  // ... except data-access (features/*/data-access and core/**/data-access, D5).
-  { files: at('app/**/data-access/**/*.ts'), rules: { '@typescript-eslint/no-restricted-imports': 'off' } },
-  { files: at('app/shared/ui/**/*.ts'), rules: { '@typescript-eslint/no-restricted-imports': imports(API, UI) } },
-  { files: at('app/features/*/domain/**/*.ts'), rules: { '@typescript-eslint/no-restricted-imports': imports(DOMAIN) } },
-  { files: at('app/features/*/ui/**/*.ts'), rules: { '@typescript-eslint/no-restricted-imports': imports(API, UI) } },
-  // Per-feature blocks add the cross-feature rule on top of the layer lists above (and override them, so repeat them).
-  ...FEATURES.flatMap((feature) => {
-    const base = `app/features/${feature}`;
-    const cross = crossFeature(feature);
-    return [
-      { files: at(`${base}/**/*.ts`), rules: { '@typescript-eslint/no-restricted-imports': imports(API, cross) } },
-      { files: at(`${base}/data-access/**/*.ts`), rules: { '@typescript-eslint/no-restricted-imports': imports(cross) } },
-      { files: at(`${base}/domain/**/*.ts`), rules: { '@typescript-eslint/no-restricted-imports': imports(DOMAIN) } },
-      { files: at(`${base}/ui/**/*.ts`), rules: { '@typescript-eslint/no-restricted-imports': imports(API, UI, cross) } },
-    ];
-  }),
-];
+// Spec files (D5, 10.1.4-T1): `*.spec.ts` may import the generated client, because a spec asserts the generated types
+// and is not part of the shipped bundle. Every other layer rule still applies to specs, so the spec variant of each
+// block is the production block minus the generated client; it is listed after the production blocks and wins for
+// spec files.
+const importBlocks = (spec) => {
+  const ext = spec ? '*.spec.ts' : '*.ts';
+  const api = spec ? [] : [API];
+  const domain = spec ? { ...DOMAIN, group: DOMAIN.group.filter((pattern) => !pattern.startsWith('@shared/api')) } : DOMAIN;
+  return [
+    // Everything under src: no generated client ...
+    {
+      files: at(`**/${ext}`),
+      rules: { '@typescript-eslint/no-restricted-imports': spec ? 'off' : imports(API) },
+    },
+    // ... except data-access (features/*/data-access and core/**/data-access, D5).
+    ...(spec ? [] : [{ files: at('app/**/data-access/**/*.ts'), rules: { '@typescript-eslint/no-restricted-imports': 'off' } }]),
+    { files: at(`app/shared/ui/**/${ext}`), rules: { '@typescript-eslint/no-restricted-imports': imports(...api, UI) } },
+    { files: at(`app/features/*/domain/**/${ext}`), rules: { '@typescript-eslint/no-restricted-imports': imports(domain) } },
+    { files: at(`app/features/*/ui/**/${ext}`), rules: { '@typescript-eslint/no-restricted-imports': imports(...api, UI) } },
+    // Per-feature blocks add the cross-feature rule on top of the layer lists above (and override them, so repeat them).
+    ...FEATURES.flatMap((feature) => {
+      const base = `app/features/${feature}`;
+      const cross = crossFeature(feature);
+      return [
+        { files: at(`${base}/**/${ext}`), rules: { '@typescript-eslint/no-restricted-imports': imports(...api, cross) } },
+        { files: at(`${base}/data-access/**/${ext}`), rules: { '@typescript-eslint/no-restricted-imports': imports(cross) } },
+        { files: at(`${base}/domain/**/${ext}`), rules: { '@typescript-eslint/no-restricted-imports': imports(domain) } },
+        { files: at(`${base}/ui/**/${ext}`), rules: { '@typescript-eslint/no-restricted-imports': imports(...api, UI, cross) } },
+      ];
+    }),
+  ];
+};
 
 // ---------------------------------------------------------------------------------------------------------------
 // Resolved-path boundaries: relative specifiers, dynamic import(), `import('x')` types
@@ -392,7 +404,8 @@ export default defineConfig(
       '@angular-eslint/prefer-on-push-component-change-detection': 'error',
     },
   },
-  ...importBlocks,
+  ...importBlocks(false),
+  ...importBlocks(true),
   ...syntaxBlocks,
 
   // --- templates ----------------------------------------------------------------------------------------------
