@@ -116,6 +116,47 @@ describe('FormErrorAlert', () => {
     expect(styles).toContain('text-overflow: ellipsis');
   });
 
+  it('FormErrorAlert_RetryAfterZero_ShowsRetryNow_AndClearingTheErrorRemovesTheAlert', async () => {
+    await configure();
+    const fixture = TestBed.createComponent(FormErrorAlert);
+    fixture.componentRef.setInput('error', { ...validationError, retryAfterSec: 0 });
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const root = fixture.nativeElement as HTMLElement;
+    expect(root.textContent).toContain(errorsEn.retryNow);
+    expect(root.getAttribute('role')).toBe('alert');
+
+    fixture.componentRef.setInput('error', null);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(root.textContent?.trim()).toBe('');
+    expect(root.hasAttribute('role')).toBe(false);
+    expect(root.querySelector('nts-retry-countdown')).toBeNull();
+  });
+
+  it('FormErrorAlert_HostileTextInErrorFields_IsRenderedAsTextNeverAsMarkup', async () => {
+    await configure();
+    const fixture = TestBed.createComponent(FormErrorAlert);
+    const payload = '<img src=x onerror="window.__qaXss=1"><script>window.__qaXss=2</script>';
+    const error: AppError = {
+      code: 'unknown_error',
+      status: 500,
+      kind: 'unknown',
+      fieldErrors: { [payload]: [payload] },
+      traceId: payload,
+      problem: { code: 'x', title: payload, detail: payload, type: payload },
+    };
+    fixture.componentRef.setInput('error', error);
+    fixture.componentRef.setInput('unmappedKeys', [payload]);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const root = fixture.nativeElement as HTMLElement;
+    expect(root.querySelector('img, script')).toBeNull();
+    expect((window as unknown as Record<string, unknown>)['__qaXss']).toBeUndefined();
+    // only the trace id (a server-generated opaque id) is echoed, as text
+    expect(root.querySelector('.form-error-alert__trace')?.textContent).toContain(payload);
+  });
+
   it('keeps every new component template free of innerHTML bindings', () => {
     const root = join(process.cwd(), 'src/app/shared/ui');
     const templates = [

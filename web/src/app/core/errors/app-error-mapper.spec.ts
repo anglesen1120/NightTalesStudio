@@ -280,4 +280,90 @@ describe('AppErrorMapper', () => {
     expect(error.traceId).toBeUndefined();
     expect(mapper.traceFooter(error)).toBeNull();
   });
+
+  it.each([
+    ['grant_requires_approval', 202],
+    ['setting_change_pending', 202],
+    ['objection_recorded', 202],
+    ['grant_requires_approval', 200],
+  ])('AppErrorMapper_202BodyCode_%s_at_%s_IsUnknownError', (code, status) => {
+    const mapper = setup();
+    const error = mapper.from(http(status, { code, traceId: 't-202' }));
+    expect(error.code).toBe('unknown_error');
+    expect(error.status).toBe(status);
+    expect(error.kind).toBe('unknown');
+    expect(mapper.messageKey(error)).toBe('errors.unknown_error');
+    expect(error.traceId).toBe('t-202');
+  });
+
+  it('AppErrorMapper_RetryAfter_MultiValuedSignedAndSuffixedFormsAreIgnored', () => {
+    const mapper = setup();
+    const withHeader = (value: string) => mapper.from(http(429, { code: 'rate_limited' }, { 'Retry-After': value }));
+    for (const ignored of ['5, 10', '+5', '5s', '0x10', '\u0663', '1 2', '5.', '.5', '-0']) {
+      expect(withHeader(ignored).retryAfterSec, JSON.stringify(ignored)).toBeUndefined();
+    }
+    expect(withHeader('\t12\n').retryAfterSec).toBe(12);
+    expect(withHeader('007').retryAfterSec).toBe(7);
+    expect(withHeader('999999999').retryAfterSec).toBe(999_999_999);
+    // the header is read on any status that carries it (503 + Retry-After is a real load-balancer answer)
+    expect(mapper.from(http(503, null, { 'Retry-After': '9' })).retryAfterSec).toBe(9);
+  });
+
+  it('AppErrorMapper_JsonStringBody_KeywordsFlaggedRowsAndBomAreRead', () => {
+    const mapper = setup();
+    const text = JSON.stringify({
+      code: 'keywords_flagged',
+      traceId: 't-str',
+      errors: [{ segment: 'p:1', index: 2, rule: 'real_name', __proto__x: 1 }],
+    });
+    const fromText = mapper.from(http(409, text));
+    expect(fromText.code).toBe('keywords_flagged');
+    expect((fromText.problem?.errors as readonly Record<string, unknown>[])[0]).toMatchObject({ segment: 'p:1', index: 2, rule: 'real_name' });
+    // a UTF-8 BOM in front of the JSON (some proxies) does not turn a coded answer into a status fallback
+    expect(mapper.from(http(404, `\uFEFF{"code":"feature_disabled"}`)).code).toBe('feature_disabled');
+    // a JSON array or scalar delivered as text is not a ProblemDetails
+    expect(mapper.from(http(400, '["validation_failed"]')).code).toBe('validation_failed');
+    expect(mapper.from(http(404, '"not_found"')).problem).toBeUndefined();
+    // status 0 always wins, even over a parseable JSON text
+    expect(mapper.from(http(0, '{"code":"not_found"}')).code).toBe('network_error');
+  });
+
+  it('AppErrorMapper_HostileKeys_NeverReachObjectPrototypeOrProblem', () => {
+    const mapper = setup();
+    const body = JSON.parse(
+      '{"code":"keywords_flagged","errors":[{"__proto__":{"polluted":1},"constructor":"x","rule":"r","prototype":"p"}],' +
+        '"__proto__":{"polluted":2},"constructor":{"prototype":{"polluted":3}}}',
+    ) as unknown;
+    const error = mapper.from(http(409, body));
+    const row = (error.problem?.errors as readonly Record<string, unknown>[])[0] ?? {};
+    expect(Object.keys(row)).toEqual(['rule']);
+    expect(({} as Record<string, unknown>)['polluted']).toBeUndefined();
+    expect(Object.hasOwn(error.problem ?? {}, '__proto__')).toBe(false);
+    expect(Object.hasOwn(error.problem ?? {}, 'constructor')).toBe(false);
+    // validation: the reserved pointers (`__proto__`, `constructor`, `prototype`) are dropped, a sibling survives
+    const validation = mapper.from(http(400, JSON.parse('{"code":"validation_failed","errors":{"__proto__":["a"],"prototype":["b"],"constructor":["c"],"ok":["d"]}}') as unknown));
+    expect(Object.keys(validation.fieldErrors)).toEqual(['ok']);
+  });
+
+  it('AppErrorMapper_ClientBug_AllThreeCodesAreSilentOutsideDevMode', () => {
+    const mapper = setup(false);
+    for (const [status, code] of [
+      [428, 'if_match_required'],
+      [422, 'idempotency_key_reused'],
+      [400, 'idempotency_key_required'],
+    ] as const) {
+      expect(mapper.from(http(status, { code, traceId: 'x', detail: 'SECRET' })).kind).toBe('client_bug');
+    }
+    // also the status fallback of a code-less 428/422
+    expect(mapper.from(http(428, null)).kind).toBe('client_bug');
+    expect(mapper.from(http(422, null)).kind).toBe('client_bug');
+    expect(warnings).toEqual([]);
+  });
+
+  it('AppErrorMapper_ResultsAreFrozen_SoOneScreenCannotEditAnothersError', () => {
+    const error = setup().from(http(400, { code: 'validation_failed', errors: { title: ['x'] } }));
+    expect(Object.isFrozen(error)).toBe(true);
+    expect(Object.isFrozen(error.fieldErrors)).toBe(true);
+    expect(Object.isFrozen(error.fieldErrors['title'])).toBe(true);
+  });
 });

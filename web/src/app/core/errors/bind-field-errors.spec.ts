@@ -126,6 +126,28 @@ describe('bindFieldErrors', () => {
     expect(before).toEqual({ minlength: { requiredLength: 3, actualLength: 2 } });
     expect(form.controls.title.errors).not.toBe(before);
   });
+
+  it.each(['segments.3.text', 'segments.-1.text', 'segments.-3.text', 'segments.1.5.text', 'segments.1abc.text', 'segments. 1.text', 'segments.0x1.text', 'segments.NaN.text'])(
+    'BindFieldErrors_FormArrayIndexOutOfRangeOrMalformed_%j_IsUnmapped_AndBindsNoControl',
+    (pointer) => {
+      const form = storyForm();
+      const unmapped = bindFieldErrors(form, errorWith({ [pointer]: ['x'] }));
+      expect(unmapped).toEqual([pointer]);
+      for (let index = 0; index < 3; index++) {
+        expect(serverOf(form.controls.segments.at(index).controls.text), `segment ${index}`).toBeUndefined();
+      }
+    },
+  );
+
+  it('BindFieldErrors_DisabledAndMissingTargets_AreStillBoundOrUnmapped_NeverThrow', () => {
+    const form = storyForm();
+    form.controls.segments.at(1).controls.text.disable();
+    expect(() => bindFieldErrors(form, errorWith({ 'segments.1.text': ['x'], 'segments.1.text.deeper': ['y'] }))).not.toThrow();
+    expect(bindFieldErrors(form, errorWith({ 'segments.1.text.deeper': ['y'] }))).toEqual(['segments.1.text.deeper']);
+    // an empty FormArray resolves nothing
+    form.controls.segments.clear();
+    expect(bindFieldErrors(form, errorWith({ 'segments.0.text': ['z'] }))).toEqual(['segments.0.text']);
+  });
 });
 
 describe('clearServerErrors', () => {
