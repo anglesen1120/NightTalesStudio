@@ -69,4 +69,85 @@ describe('PreferencesStore', () => {
       theme: 'light',
     });
   });
+
+  it('falls back to defaults when the stored JSON is not an object', () => {
+    for (const raw of ['null', '42', '"vi"', 'true', '[]']) {
+      localStorage.setItem(PREFERENCES_STORAGE_KEY, raw);
+      TestBed.resetTestingModule();
+      TestBed.configureTestingModule({ providers: [provideZonelessChangeDetection()] });
+      const store = TestBed.inject(PreferencesStore);
+      expect(store.read(), raw).toEqual({ uiLanguage: 'vi', theme: 'dark' });
+    }
+  });
+
+  it('keeps a valid field when the other one is invalid or of the wrong type', () => {
+    localStorage.setItem(PREFERENCES_STORAGE_KEY, JSON.stringify({ uiLanguage: 'en', theme: 'blue' }));
+    expect(TestBed.inject(PreferencesStore).read()).toEqual({ uiLanguage: 'en', theme: 'dark' });
+
+    localStorage.setItem(PREFERENCES_STORAGE_KEY, JSON.stringify({ uiLanguage: 1, theme: 'light' }));
+    expect(TestBed.inject(PreferencesStore).read()).toEqual({ uiLanguage: 'vi', theme: 'light' });
+
+    localStorage.setItem(PREFERENCES_STORAGE_KEY, JSON.stringify({ theme: 'light' }));
+    expect(TestBed.inject(PreferencesStore).read()).toEqual({ uiLanguage: 'vi', theme: 'light' });
+  });
+
+  it('treats stored values as case-sensitive', () => {
+    localStorage.setItem(PREFERENCES_STORAGE_KEY, JSON.stringify({ uiLanguage: 'EN', theme: 'Light' }));
+    expect(TestBed.inject(PreferencesStore).read()).toEqual({ uiLanguage: 'vi', theme: 'dark' });
+  });
+
+  it('does not throw and falls back to defaults when getItem throws', () => {
+    vi.stubGlobal('localStorage', {
+      getItem: () => {
+        throw new Error('SecurityError');
+      },
+      setItem: () => undefined,
+    });
+    const store = TestBed.inject(PreferencesStore);
+    expect(() => store.read()).not.toThrow();
+    expect(store.uiLanguage()).toBe('vi');
+    expect(store.theme()).toBe('dark');
+  });
+
+  it('does not throw and keeps the in-memory value when setItem throws (quota or private mode)', () => {
+    vi.stubGlobal('localStorage', {
+      getItem: () => null,
+      setItem: () => {
+        throw new Error('QuotaExceededError');
+      },
+    });
+    const store = TestBed.inject(PreferencesStore);
+    expect(() => store.setLanguage('en')).not.toThrow();
+    expect(() => store.setTheme('light')).not.toThrow();
+    expect(store.uiLanguage()).toBe('en');
+    expect(store.theme()).toBe('light');
+  });
+
+  it('changing one preference keeps the other persisted value', () => {
+    const store = TestBed.inject(PreferencesStore);
+    store.setLanguage('en');
+    expect(JSON.parse(localStorage.getItem(PREFERENCES_STORAGE_KEY) ?? '')).toEqual({
+      uiLanguage: 'en',
+      theme: 'dark',
+    });
+    store.setTheme('light');
+    expect(JSON.parse(localStorage.getItem(PREFERENCES_STORAGE_KEY) ?? '')).toEqual({
+      uiLanguage: 'en',
+      theme: 'light',
+    });
+  });
+
+  it('persists only uiLanguage and theme, dropping unknown stored fields (README D6)', () => {
+    localStorage.setItem(
+      PREFERENCES_STORAGE_KEY,
+      JSON.stringify({ uiLanguage: 'en', theme: 'light', token: 'secret', extra: 1 }),
+    );
+    const store = TestBed.inject(PreferencesStore);
+    store.read();
+    store.setTheme('dark');
+    expect(Object.keys(JSON.parse(localStorage.getItem(PREFERENCES_STORAGE_KEY) ?? '')).sort()).toEqual([
+      'theme',
+      'uiLanguage',
+    ]);
+  });
 });
