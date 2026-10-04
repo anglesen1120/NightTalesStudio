@@ -552,6 +552,32 @@
       "file": "api-boundary-ui-spec/src/app/features/series/ui/series-row.spec.ts",
       "linter": "eslint",
       "rules": []
+    },
+    {
+"file": "control-sanitizer-exempt/src/app/core/security/nts-sanitizer.ts",
+      "linter": "eslint",
+      "rules": []
+    },
+    {
+      "file": "sanitizer-lookalike-not-exempt/src/app/core/security/other-sanitizer.ts",
+      "linter": "eslint",
+      "rules": [
+        "no-restricted-syntax"
+      ]
+    },
+    {
+      "file": "sanitizer-exempt-still-bans-eval/src/app/core/security/nts-sanitizer.ts",
+      "linter": "eslint",
+      "rules": [
+        "no-restricted-syntax"
+      ]
+    },
+    {
+      "file": "sanitizer-exempt-still-bans-inner-html/src/app/core/security/nts-sanitizer.ts",
+      "linter": "eslint",
+      "rules": [
+        "no-restricted-syntax"
+      ]
     }
   ]
 }

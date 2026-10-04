@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures/csp.fixture';
 import { expectA11yClean, expectA11yHarnessDetects } from './fixtures/axe';
 
 // This spec never signs in (`loginAsOwner` belongs to the specs of the screens that need the owner) and sets no
@@ -173,7 +173,8 @@ test.describe('smoke: container target (nginx serves; WR2 header matrix)', () =>
     const chunk = /<script[^>]+src="([^"]+\.js)"/.exec(document)?.[1];
     expect(chunk, 'no <script src> in the fallback document').toBeTruthy();
 
-    const response = await request.get(`/${chunk}`);
+    // `deployUrl: "/"` (base-uri 'none', 10.1.6-T1) makes the document reference root-relative URLs.
+    const response = await request.get(chunk?.startsWith('/') ? (chunk ?? '/') : `/${chunk}`);
     expect(response.status()).toBe(200);
     const headers = response.headers();
     expect(headers['cache-control']).toBe('public, max-age=31536000, immutable');

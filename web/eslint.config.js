@@ -285,6 +285,11 @@ const SECURITY = [
     message: 'document.write is banned (D2/D4)',
   },
 ];
+// The ONE exemption (10.1.6-T1, CR-2): the reviewed Trusted Types module may call the Angular
+// `bypassSecurityTrust*` family. Every other ban (eval, new Function, document.write, innerHTML assignment...)
+// still applies to it, and no other file is exempt.
+const BYPASS_SELECTOR = /bypassSecurityTrust/;
+const SECURITY_EXCEPT_BYPASS = SECURITY.filter((entry) => !BYPASS_SELECTOR.test(entry.selector));
 // Storage outside core/prefs: localStorage, sessionStorage, indexedDB and document.cookie (D2/D6).
 const STORAGE_MESSAGE = 'browser storage (localStorage, sessionStorage, indexedDB, document.cookie) only in core/prefs (D2/D6)';
 const STORAGE = [
@@ -359,6 +364,11 @@ const syntaxBlocks = [
   {
     files: at('app/shared/ui/**/*.ts', 'app/features/*/ui/**/*.ts'),
     rules: { 'no-restricted-syntax': syntax(...SECURITY, EXPLICIT_ONPUSH, ...STORAGE, SUBSCRIBE_IN_UI, ...INJECT_IN_UI) },
+  },
+  {
+    // Listed last so it wins for the one file; the fixtures prove the lookalike path is NOT exempt.
+    files: at('app/core/security/nts-sanitizer.ts'),
+    rules: { 'no-restricted-syntax': syntax(...SECURITY_EXCEPT_BYPASS, EXPLICIT_ONPUSH, ...STORAGE, SUBSCRIBE_IN_COMPONENT) },
   },
 ];
 

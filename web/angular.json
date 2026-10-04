@@ -25,6 +25,7 @@
             "server": "src/main.server.ts",
             "outputMode": "static",
             "outputPath": "dist/web",
+            "deployUrl": "/",
             "tsConfig": "tsconfig.app.json",
             "inlineStyleLanguage": "scss",
             "polyfills": [],
@@ -67,6 +68,7 @@
               }
             },
             "development": {
+              "baseHref": "/",
               "optimization": false,
               "extractLicenses": false,
               "sourceMap": true
