@@ -170,6 +170,50 @@ public sealed class ModerationEventWriterTests(TestDatabase database) : Integrat
     }
 
     [Fact]
+    public async Task ModerationEventWriter_CancelledCallerAndTimedOutSave_LogsTheDeadlineAndDoesNotThrow()
+    {
+        var logs = new CapturingLoggerProvider();
+        await using var host = new WriterHost(Database, logs, writeTimeout: TimeSpan.Zero);
+        var user = await Database.CreateUserBuilder().CreateAsync(ct: Ct);
+        using var cts = new CancellationTokenSource();
+        await cts.CancelAsync();
+
+        // The writer-owned deadline has already expired when the save starts, and the caller is cancelled too:
+        // the expiry is still a write failure and must be logged, not swallowed as the job's cancellation.
+        await Should.NotThrowAsync(async () =>
+            await host.Writer.WriteAsync(user.Id, null, ModerationSource.OpenaiText, ModerationStage.Draft, ["violence"], "text", cts.Token));
+
+        logs.Messages.ShouldContain(m => m.Contains("not written", StringComparison.Ordinal) && m.Contains("CanceledException", StringComparison.Ordinal));
+        (await Rows(user.Id)).ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task ModerationEventWriter_CancelledCallerAndHealthySave_LogsNothing()
+    {
+        var logs = new CapturingLoggerProvider();
+        await using var host = new WriterHost(Database, logs);
+        var user = await Database.CreateUserBuilder().CreateAsync(ct: Ct);
+        using var cts = new CancellationTokenSource();
+        await cts.CancelAsync();
+
+        await host.Writer.WriteAsync(user.Id, null, ModerationSource.OpenaiText, ModerationStage.Draft, ["violence"], "text", cts.Token);
+
+        logs.Messages.ShouldNotContain(m => m.Contains("not written", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task ModerationEvent_LoneSurrogateInTheMiddleOfTheExcerpt_StillWritesTheRow()
+    {
+        await using var host = new WriterHost(Database);
+        var user = await Database.CreateUserBuilder().CreateAsync(ct: Ct);
+
+        await host.Writer.WriteAsync(user.Id, null, ModerationSource.OpenaiText, ModerationStage.Draft, ["violence"], "ab\uD83Dcd\uDE00ef", Ct);
+
+        var row = (await Rows(user.Id)).ShouldHaveSingleItem("a lone surrogate must not lose the evidence row");
+        row.Excerpt.ShouldBe("ab\uFFFDcd\uFFFDef");
+    }
+
+    [Fact]
     public async Task ModerationEventWriter_DatabaseFailure_LogsTheExceptionTypeOnly_NeverTheText()
     {
         var logs = new CapturingLoggerProvider();
@@ -213,7 +257,7 @@ public sealed class ModerationEventWriterTests(TestDatabase database) : Integrat
     {
         private readonly ServiceProvider _provider;
 
-        internal WriterHost(TestDatabase database, CapturingLoggerProvider? logs = null)
+        internal WriterHost(TestDatabase database, CapturingLoggerProvider? logs = null, TimeSpan? writeTimeout = null)
         {
             var configuration = new ConfigurationBuilder()
                 .AddInMemoryCollection(new Dictionary<string, string?>(StringComparer.Ordinal)
@@ -237,7 +281,8 @@ public sealed class ModerationEventWriterTests(TestDatabase database) : Integrat
                 clock,
                 logs is null
                     ? NullLogger<ModerationEventWriter>.Instance
-                    : LoggerFactory.Create(builder => builder.AddProvider(logs)).CreateLogger<ModerationEventWriter>());
+                    : LoggerFactory.Create(builder => builder.AddProvider(logs)).CreateLogger<ModerationEventWriter>(),
+                writeTimeout);
         }
 
         internal ModerationEventWriter Writer { get; }

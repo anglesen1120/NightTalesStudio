@@ -16,10 +16,12 @@ namespace NightTales.Infrastructure.Compliance;
 /// <param name="scopeFactory">Creates the fresh scope per write.</param>
 /// <param name="clock">The row's creation instant.</param>
 /// <param name="log">The failure log.</param>
+/// <param name="writeTimeout">Overrides <see cref="WriteTimeout"/>; only the unit test passes it (the solution has no <c>InternalsVisibleTo</c>).</param>
 public sealed partial class ModerationEventWriter(
     IServiceScopeFactory scopeFactory,
     IClock clock,
-    ILogger<ModerationEventWriter> log) : IModerationEventWriter
+    ILogger<ModerationEventWriter> log,
+    TimeSpan? writeTimeout = null) : IModerationEventWriter
 {
     /// <summary>How long one write may take, independent of the caller's token: a cancelled job still keeps its evidence.</summary>
     public static readonly TimeSpan WriteTimeout = TimeSpan.FromSeconds(10);
@@ -36,10 +38,12 @@ public sealed partial class ModerationEventWriter(
     {
         ArgumentNullException.ThrowIfNull(categories);
 
+        // The deadline is the writer's own: it is NOT linked to the caller token, so a cancelled job
+        // still gets its full WriteTimeout for the evidence row.
+        using var deadline = new CancellationTokenSource(writeTimeout ?? WriteTimeout);
+
         try
         {
-            using var deadline = new CancellationTokenSource(WriteTimeout);
-
             await using var scope = scopeFactory.CreateAsyncScope();
             using var actor = scope.ServiceProvider.GetRequiredService<ISystemContext>().For(userId);
             var db = scope.ServiceProvider.GetRequiredService<IAppDbContext>();
@@ -56,8 +60,10 @@ public sealed partial class ModerationEventWriter(
 
             await db.SaveChangesAsync(deadline.Token).ConfigureAwait(false);
         }
-        catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
+        catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested || deadline.IsCancellationRequested)
         {
+            // An OperationCanceledException while the caller is cancelled is only logged when the
+            // writer's own deadline fired: that expiry is a write failure, not the job's cancellation.
             LogWriteFailed(ex.GetType().Name, stage.ToWireName());
         }
     }
