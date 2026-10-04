@@ -12,6 +12,7 @@ import { LocaleService, provideAppI18n } from '@core/i18n';
 import { PreferencesStore, ThemeStore } from '@core/prefs';
 import { provideRealtime } from '@core/realtime';
 import { provideSession, sessionInterceptor } from '@core/session';
+import { idempotencyInterceptor } from '@core/http';
 import { routes } from './app.routes';
 
 export const appConfig: ApplicationConfig = {
@@ -21,8 +22,9 @@ export const appConfig: ApplicationConfig = {
     // `base-uri 'none'` (D4): the document emits no <base>; assets are root-relative via `deployUrl: "/"`.
     { provide: APP_BASE_HREF, useValue: '/' },
     provideRouter(routes),
-    // Same-origin HttpClient for the i18n loader and the API. 10.2.3-T1 prepends `idempotencyInterceptor` to this list.
-    provideHttpClient(withFetch(), withInterceptors([sessionInterceptor])),
+    // Same-origin HttpClient for the i18n loader and the API. `idempotencyInterceptor` runs before `sessionInterceptor`
+    // so the single 401 replay keeps the Idempotency-Key header.
+    provideHttpClient(withFetch(), withInterceptors([idempotencyInterceptor, sessionInterceptor])),
     provideSession(),
     provideRealtime(),
     provideAppI18n(),
