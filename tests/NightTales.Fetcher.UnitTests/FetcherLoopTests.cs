@@ -228,4 +228,153 @@ public sealed class FetcherLoopTests
             await loop.StopAsync(TestContext.Current.CancellationToken);
         }
     }
+
+    [Fact]
+    public async Task Loop_MalformedTaskUrl_PostsSourceUnreachable()
+    {
+        var bad = Task_(1) with { Url = "not a url" };
+        _api.OnLease = call => call == 1 ? Lease(bad) : Lease();
+        var loop = Loop(new FakeSourceFetcher((_, _) => ValueTask.FromResult<ErrorOr<FetchedSource>>(FakeSourceFetcher.Page())));
+
+        await loop.StartAsync(TestContext.Current.CancellationToken);
+        try
+        {
+            await Wait.UntilAsync(() => _api.Posts.Count == 1, "a result");
+            _api.Posts[0].Body.Status.ShouldBe("failed");
+            _api.Posts[0].Body.ErrorCode.ShouldBe("source_unreachable");
+            _exit.Calls.ShouldBeEmpty();
+        }
+        finally
+        {
+            await loop.StopAsync(TestContext.Current.CancellationToken);
+        }
+    }
+
+    [Fact]
+    public async Task Loop_FetchThrowsOperationCanceledOfItsOwn_PostsFailedResult()
+    {
+        _api.OnLease = call => call == 1 ? Lease(Task_(1)) : Lease();
+        var loop = Loop(new FakeSourceFetcher((_, _) => throw new OperationCanceledException("per-fetch timeout")));
+
+        await loop.StartAsync(TestContext.Current.CancellationToken);
+        try
+        {
+            await Wait.UntilAsync(() => _api.Posts.Count == 1, "a failed result");
+            _api.Posts[0].Body.Status.ShouldBe("failed");
+            _api.Posts[0].Body.ErrorCode.ShouldBe("source_unreachable");
+        }
+        finally
+        {
+            await loop.StopAsync(TestContext.Current.CancellationToken);
+        }
+    }
+
+    [Fact]
+    public async Task Loop_TextWithNul_PostsSourceNoTextWithoutText()
+    {
+        _api.OnLease = call => call == 1 ? Lease(Task_(1)) : Lease();
+        var page = FakeSourceFetcher.Page() with { Text = "a\0b", TextChars = 3 };
+        var loop = Loop(new FakeSourceFetcher((_, _) => ValueTask.FromResult<ErrorOr<FetchedSource>>(page)));
+
+        await loop.StartAsync(TestContext.Current.CancellationToken);
+        try
+        {
+            await Wait.UntilAsync(() => _api.Posts.Count == 1, "a result");
+            _api.Posts[0].Body.ErrorCode.ShouldBe("source_no_text");
+            _api.Posts[0].Body.Text.ShouldBeNull();
+        }
+        finally
+        {
+            await loop.StopAsync(TestContext.Current.CancellationToken);
+        }
+    }
+}
+
+/// <summary>QA additions (02.5.2-T3): guards of <see cref="ResultBodies"/> and the worker-id alphabet.</summary>
+public sealed class ResultBodiesQaTests
+{
+    private static readonly FetcherOptions Options_ = new();
+
+    private static FetchedSource WithText(string text, string? title = "Title") =>
+        FakeSourceFetcher.Page() with { Text = text, TextChars = text.Length, Title = title };
+
+    [Fact]
+    public void Done_TextExactlyAtMax_IsDone()
+    {
+        var body = ResultBodies.Done("w", WithText(new string('a', Options_.MaxTextChars)), Options_);
+
+        body.Status.ShouldBe("done");
+        body.TextSha256!.Length.ShouldBe(64);
+    }
+
+    [Fact]
+    public void Done_TextOneOverMax_IsSourceTooLarge()
+    {
+        var body = ResultBodies.Done("w", WithText(new string('a', Options_.MaxTextChars + 1)), Options_);
+
+        body.Status.ShouldBe("failed");
+        body.ErrorCode.ShouldBe("source_too_large");
+        body.Text.ShouldBeNull();
+    }
+
+    [Theory]
+    [InlineData(0xD800, true)]
+    [InlineData(0xDC00, true)]
+    [InlineData(0xD800, false)]
+    [InlineData(0x0000, true)]
+    [InlineData(0x007F, true)]
+    [InlineData(0x0001, true)]
+    public void Done_IllFormedText_IsSourceNoText(int code, bool trailing)
+    {
+        // Built at run time: xunit's theory serialisation would replace a lone surrogate with U+FFFD.
+        var text = "abc" + (char)code + (trailing ? "def" : string.Empty);
+        var body = ResultBodies.Done("w", WithText(text), Options_);
+
+        body.Status.ShouldBe("failed");
+        body.ErrorCode.ShouldBe("source_no_text");
+        body.Text.ShouldBeNull();
+    }
+
+    [Fact]
+    public void Done_TabNewlineCarriageReturnAndSurrogatePair_AreAllowed()
+    {
+        ResultBodies.Done("w", WithText("a\tb\nc\r\n\ud83d\ude00"), Options_).Status.ShouldBe("done");
+    }
+
+    [Fact]
+    public void Done_IllFormedTitle_IsDroppedNotFailed()
+    {
+        var body = ResultBodies.Done("w", WithText("ok", "bad\ud800title"), Options_);
+
+        body.Status.ShouldBe("done");
+        body.Title.ShouldBeNull();
+    }
+
+    [Fact]
+    public void Failed_UnknownCode_BecomesSourceUnreachable_AndBadHttpStatusIsOmitted()
+    {
+        var body = ResultBodies.Failed("w", "totally_unknown", 999);
+
+        body.ErrorCode.ShouldBe("source_unreachable");
+        body.HttpStatus.ShouldBeNull();
+    }
+
+    [Theory]
+    [InlineData("my host name")]
+    [InlineData("héllo-wörld")]
+    [InlineData("a/b\\c?d#e")]
+    [InlineData("")]
+    [InlineData(null)]
+    public void WorkerId_AlwaysMatchesTheApiAlphabet(string? configured)
+    {
+        var id = FetcherApiOptions.ResolveWorkerId(configured);
+
+        System.Text.RegularExpressions.Regex.IsMatch(id, "^[A-Za-z0-9._:-]{1,64}$").ShouldBeTrue(id);
+    }
+
+    [Fact]
+    public void WorkerId_VeryLongConfigured_IsTruncatedTo64()
+    {
+        FetcherApiOptions.ResolveWorkerId(new string('x', 500)).Length.ShouldBeLessThanOrEqualTo(64);
+    }
 }

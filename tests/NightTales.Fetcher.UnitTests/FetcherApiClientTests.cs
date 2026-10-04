@@ -201,6 +201,53 @@ public sealed class FetcherApiClientTests : IDisposable
         _log.Messages.ShouldAllBe(message => !message.Contains(Token, StringComparison.Ordinal) && !message.Contains("127.0.0.1", StringComparison.Ordinal));
     }
 
+    [Fact]
+    public async Task Heartbeat_401_ReturnsUnauthorizedFatal()
+    {
+        _handler.Respond = _ => new HttpResponseMessage(HttpStatusCode.Unauthorized);
+
+        var beat = await Client().HeartbeatAsync(_taskId, "unit-worker", TestContext.Current.CancellationToken);
+
+        beat.FirstError.Code.ShouldBe(FetcherApiErrors.UnauthorizedCode);
+        FetcherApiErrors.IsRetryable(beat.FirstError).ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task Result_5xxThen409_IsLeaseLostAndNotRetriedFurther()
+    {
+        _handler.Respond = _ => _handler.Requests.Count == 1
+            ? new HttpResponseMessage(HttpStatusCode.ServiceUnavailable)
+            : Json(HttpStatusCode.Conflict, """{"code":"fetch_lease_lost"}""");
+
+        var posted = await Client().PostResultAsync(_taskId, Done(), TestContext.Current.CancellationToken);
+
+        posted.FirstError.Code.ShouldBe(FetcherApiErrors.LeaseLostCode);
+        _handler.Requests.Count.ShouldBe(2, "the 409 ends the retries");
+    }
+
+    [Fact]
+    public async Task Lease_400_IsNotRetried()
+    {
+        _handler.Respond = _ => Json(HttpStatusCode.BadRequest, """{"code":"validation_failed"}""", "application/problem+json");
+
+        var leased = await Client().LeaseAsync("unit-worker", 99, TestContext.Current.CancellationToken);
+
+        leased.IsError.ShouldBeTrue();
+        _handler.Requests.Count.ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task Result_OneByteUnderTheCap_IsSent()
+    {
+        _handler.Respond = _ => new HttpResponseMessage(HttpStatusCode.OK);
+        var body = Done() with { Text = new string('x', FetcherApiClient.MaxBodyBytes - 4096) };
+
+        var posted = await Client().PostResultAsync(_taskId, body, TestContext.Current.CancellationToken);
+
+        posted.IsError.ShouldBeFalse();
+        _handler.Requests.Count.ShouldBe(1);
+    }
+
     private static HttpResponseMessage Json(HttpStatusCode status, string json, string mediaType = "application/json") =>
         new(status) { Content = new StringContent(json, Encoding.UTF8, mediaType) };
 
