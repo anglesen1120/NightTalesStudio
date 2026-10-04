@@ -260,6 +260,18 @@ for (const { tag, lang } of LOCALES) {
       expect(calls).toHaveLength(0);
     });
 
+    test(`a malformed fragment that carries the token is still removed from the address bar and never rendered [${lang}]`, async ({ page }) => {
+      const calls = record(page, '/api/v1/auth/reset-password');
+      for (const hash of [`#t=${TOKEN}&x=1`, `#t=${TOKEN}=`, `#x=1&t=${TOKEN}`, `#t=${TOKEN}%0A`]) {
+        await page.goto('about:blank'); // a hash-only goto would be a same-document navigation that never re-creates the page
+        await page.goto(`/reset-password${hash}`);
+        await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+        expect(await page.evaluate(() => location.hash), `${hash} is removed`).toBe('');
+        expect(await leaks(page, TOKEN), `${hash} is not rendered or stored`).toEqual([]);
+      }
+      expect(calls).toHaveLength(0);
+    });
+
     test(`mismatching confirmation shows the mismatch message and sends no request [${lang}]`, async ({ page }) => {
       const calls = record(page, '/api/v1/auth/reset-password');
       await page.goto(`/reset-password#t=${TOKEN}`);

@@ -145,6 +145,43 @@ for (const { tag, lang } of LOCALES) {
       expect(count).toBe(2);
     });
 
+    test(`429 with a negative, fractional, textual or empty Retry-After never leaves submit stuck disabled [${lang}]`, async ({ page }) => {
+      await quietBackground(page);
+      for (const value of ['-5', '1.5', 'abc', '']) {
+        await page.route(LOGIN_URL, (route) => fulfilJson(route, 429, problem(429, 'rate_limited'), { 'Retry-After': value }));
+        await page.goto('/login');
+        await fillAndSubmit(page, 'ha.nguyen@example.test', 'wrong-password-1');
+        await expect(page.getByRole('alert').or(page.getByRole('status')).first(), `Retry-After "${value}" is announced`).toBeVisible();
+        await expect(page.getByRole('button', { name: LABEL.signIn }), `Retry-After "${value}" re-enables submit`).toBeEnabled({ timeout: 5000 });
+        await page.unroute(LOGIN_URL);
+      }
+    });
+
+    test(`a second 429 restarts the countdown on one live region instead of stacking [${lang}]`, async ({ page }) => {
+      await quietBackground(page);
+      let count = 0;
+      await page.route(LOGIN_URL, (route) => {
+        count += 1;
+        return fulfilJson(route, 429, problem(429, 'rate_limited'), { 'Retry-After': count === 1 ? '2' : '4' });
+      });
+      await page.goto('/login');
+      await fillAndSubmit(page, 'ha.nguyen@example.test', 'wrong-password-1');
+      const submit = page.getByRole('button', { name: LABEL.signIn });
+      const countdown = page.getByRole('status').filter({ hasText: COUNTDOWN });
+      await expect(countdown).toBeVisible();
+      await expect(submit).toBeEnabled({ timeout: 10_000 });
+
+      await submit.click();
+      await expect(countdown).toBeVisible();
+      await expect(countdown).toHaveCount(1);
+      const seconds = Number(COUNTDOWN.exec(await countdown.innerText())?.[1]);
+      expect(seconds, 'the restarted countdown starts from the second Retry-After, not the first').toBeGreaterThan(2);
+      expect(seconds).toBeLessThanOrEqual(4);
+      await expect(submit).toBeDisabled();
+      await expect(submit).toBeEnabled({ timeout: 10_000 });
+      expect(count).toBe(2);
+    });
+
     test(`network failure: network-error alert, no automatic retry, a manual submit sends one more request [${lang}]`, async ({ page }) => {
       await quietBackground(page);
       let count = 0;
@@ -251,6 +288,12 @@ test.describe('login: returnUrl is sanitised before any login attempt', () => {
     { name: '/\\evil', query: encodeURIComponent('/\\evil') },
     { name: '/login', query: encodeURIComponent('/login') },
     { name: '%2F%2Fevil.example (double-encoded)', query: encodeURIComponent(encodeURIComponent('//evil.example')) },
+    { name: '/%5Cevil.example (encoded backslash)', query: encodeURIComponent('/%5Cevil.example') },
+    { name: '/LOGIN (mixed case)', query: encodeURIComponent('/LOGIN') },
+    { name: '/\\t/evil.example (raw tab)', query: encodeURIComponent('/\t/evil.example') },
+    { name: '/\\n/evil.example (raw newline)', query: encodeURIComponent('/\n/evil.example') },
+    { name: '/%09/evil.example (encoded tab)', query: encodeURIComponent('/%09/evil.example') },
+    { name: '/login?returnUrl=/x (auth page with a query)', query: encodeURIComponent('/login?returnUrl=/x') },
   ];
 
   for (const { name, query } of REJECTED) {
