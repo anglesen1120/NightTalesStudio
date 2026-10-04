@@ -1,6 +1,6 @@
 import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { Router } from '@angular/router';
+import { provideRouter } from '@angular/router';
 import { TranslocoTestingModule, provideTranslocoScope } from '@jsverse/transloco';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { SessionStore } from '@core/session';
@@ -19,7 +19,6 @@ const translations = TranslocoTestingModule.forRoot({
 });
 
 const session = { generation: signal(0) };
-const router = { navigateByUrl: vi.fn(() => Promise.resolve(true)) };
 
 async function setup(hash: string) {
   window.history.replaceState(null, '', `/reset-password${hash}`);
@@ -31,7 +30,7 @@ async function setup(hash: string) {
       provideTranslocoScope('auth'),
       { provide: AuthRepository, useValue: repository },
       { provide: SessionStore, useValue: session },
-      { provide: Router, useValue: router },
+      provideRouter([]),
     ],
   }).compileComponents();
   const fixture = TestBed.createComponent(ResetPasswordPageComponent);
@@ -82,5 +81,46 @@ describe('ResetPasswordPageComponent', () => {
     const login = status?.querySelector<HTMLAnchorElement>('a[href="/login"]');
     expect(login?.textContent).toContain(authEn.reset.goToLogin);
     expect(repository.calls).toEqual([{ method: 'resetPassword', args: ['abc_123-token', 'a-secure-story-password'] }]);
+  });
+
+  it('sends exactly one request after a mismatch is corrected by fixing the confirmation', async () => {
+    const { fixture, repository, root } = await setup('#t=abc_123-token');
+    const submit = async (): Promise<void> => {
+      root.querySelector<HTMLFormElement>('form')?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+      await fixture.whenStable();
+      fixture.detectChanges();
+    };
+    type(root, '#reset-password', 'a-secure-story-password');
+    fixture.detectChanges();
+    type(root, '#reset-confirm', 'a-secure-story-passwor');
+    fixture.detectChanges();
+    await submit();
+    expect(repository.calls).toEqual([]);
+    expect(fixture.componentInstance.form.controls.confirm.errors?.['mismatch']).toBe(true);
+
+    type(root, '#reset-confirm', 'a-secure-story-password');
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(fixture.componentInstance.form.controls.confirm.errors?.['mismatch']).toBeUndefined();
+    await submit();
+    expect(repository.calls).toEqual([{ method: 'resetPassword', args: ['abc_123-token', 'a-secure-story-password'] }]);
+  });
+
+  it('sends exactly one request after a mismatch is corrected by fixing the password', async () => {
+    const { fixture, repository, root } = await setup('#t=abc_123-token');
+    type(root, '#reset-password', 'a-secure-story-passwor');
+    fixture.detectChanges();
+    type(root, '#reset-confirm', 'a-secure-story-password');
+    fixture.detectChanges();
+    root.querySelector<HTMLFormElement>('form')?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    await fixture.whenStable();
+    expect(repository.calls).toEqual([]);
+    type(root, '#reset-password', 'a-secure-story-password');
+    fixture.detectChanges();
+    await fixture.whenStable();
+    root.querySelector<HTMLFormElement>('form')?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    await fixture.whenStable();
+    expect(repository.calls).toHaveLength(1);
   });
 });

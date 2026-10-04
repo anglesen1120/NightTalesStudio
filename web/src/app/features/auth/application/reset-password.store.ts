@@ -1,8 +1,9 @@
 import { DOCUMENT } from '@angular/common';
-import { DestroyRef, Injectable, computed, inject, signal } from '@angular/core';
+import { DestroyRef, Injectable, computed, effect, inject, signal, untracked } from '@angular/core';
+import { Router } from '@angular/router';
 import type { AppError } from '@core/errors';
 import { SessionStore } from '@core/session';
-import { readTokenFromHash, stripHash } from '../data-access/reset-token';
+import { clearRouterFragment, readTokenFromHash, stripHash } from '../data-access/reset-token';
 import { formErrorKey, hasFieldErrors, retryAfterOf } from './auth-failure';
 import { AuthRepository } from './auth.repository';
 
@@ -37,6 +38,7 @@ export class ResetPasswordStore {
   private readonly repository = inject(AuthRepository);
   private readonly session = inject(SessionStore);
   private readonly document = inject(DOCUMENT);
+  private readonly router = inject(Router);
 
   private token: string | null = null;
   private readonly hasTokenState = signal(false);
@@ -66,10 +68,17 @@ export class ResetPasswordStore {
   constructor() {
     this.token = readTokenFromHash(this.document.location.hash);
     stripHash();
+    // The Router keeps its own copy of the fragment (`router.url`, route snapshots); drop it too.
+    void clearRouterFragment(this.router);
     this.hasTokenState.set(this.token !== null);
     inject(DestroyRef).onDestroy(() => {
       this.destroyed = true;
       this.token = null;
+    });
+    // A session generation change abandons the in-flight request: its late result is ignored, so the flag is reset here.
+    effect(() => {
+      this.session.generation();
+      untracked(() => this.submittingState.set(false));
     });
   }
 
@@ -86,15 +95,19 @@ export class ResetPasswordStore {
     this.errorState.set(null);
     this.formErrorState.set(null);
     const result = await this.repository.resetPassword(token, password);
-    if (this.destroyed) return;
+    if (this.destroyed || generation !== this.session.generation()) return;
     this.submittingState.set(false);
-    if (generation !== this.session.generation()) return;
     if (result.ok) {
       this.token = null;
       this.doneState.set(true);
       return;
     }
     this.fail(result.error);
+  }
+
+  /** The password or the confirmation changed: the previous mismatch verdict no longer applies. */
+  clearMismatch(): void {
+    this.mismatchState.set(false);
   }
 
   retryAfterElapsed(): void {

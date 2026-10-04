@@ -6,6 +6,7 @@ import {
   afterNextRender,
   effect,
   inject,
+  untracked,
   viewChild,
 } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
@@ -58,6 +59,7 @@ export class ResetPasswordPageComponent {
     effect(() => {
       this.valueState();
       clearServerErrors(this.form);
+      untracked(() => this.clearMismatch());
     });
 
     effect(() => {
@@ -97,6 +99,17 @@ export class ResetPasswordPageComponent {
     clearServerErrors(this.form);
     const { password, confirm } = this.form.getRawValue();
     void this.store.submit(password, confirm);
+  }
+
+  /** Password or confirmation changed: drop the local `mismatch` error and the store's verdict so the next submit can run. */
+  private clearMismatch(): void {
+    const confirm = this.form.controls.confirm;
+    if (confirm.errors?.['mismatch'] !== undefined) {
+      const rest = { ...confirm.errors };
+      delete rest['mismatch'];
+      confirm.setErrors(Object.keys(rest).length === 0 ? null : rest);
+    }
+    this.store.clearMismatch();
   }
 
   protected goToForgotPassword(): void {

@@ -125,9 +125,28 @@ describe('ForgotPasswordStore', () => {
     repo.defer();
     const pending = store.submit('a@b.c');
     session.reset();
+    TestBed.tick();
+    expect(store.submitting()).toBe(false);
     repo.resolveNext(OK);
     await pending;
     expect(store.sent()).toBe(false);
     expect(store.error()).toBeNull();
+    expect(store.formError()).toBeNull();
+    expect(store.retryAfterSec()).toBeNull();
+    expect(store.submitting()).toBe(false);
+  });
+
+  it('ForgotPasswordStore_FailureAfterGenerationChange_PaintsNoErrorAndNoCountdown', async () => {
+    const { store, repo, session } = setup();
+    repo.defer();
+    const pending = store.submit('a@b.c');
+    session.reset();
+    TestBed.tick();
+    repo.resolveNext({ ok: false, error: appError('rate_limited', 429, 'rate_limit', { retryAfterSec: 30 }) });
+    await pending;
+    expect(store.error()).toBeNull();
+    expect(store.formError()).toBeNull();
+    expect(store.retryAfterSec()).toBeNull();
+    expect(store.canSubmit()).toBe(true);
   });
 });

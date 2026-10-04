@@ -1,4 +1,4 @@
-import { DestroyRef, Injectable, computed, inject, signal } from '@angular/core';
+import { DestroyRef, Injectable, computed, effect, inject, signal, untracked } from '@angular/core';
 import type { AppError } from '@core/errors';
 import { SessionStore } from '@core/session';
 import { formErrorKey, retryAfterOf } from './auth-failure';
@@ -32,6 +32,11 @@ export class ForgotPasswordStore {
     inject(DestroyRef).onDestroy(() => {
       this.destroyed = true;
     });
+    // A session generation change abandons the in-flight request: its late result is ignored, so the flag is reset here.
+    effect(() => {
+      this.session.generation();
+      untracked(() => this.submittingState.set(false));
+    });
   }
 
   async submit(email: string): Promise<void> {
@@ -41,9 +46,8 @@ export class ForgotPasswordStore {
     this.errorState.set(null);
     this.formErrorState.set(null);
     const result = await this.repository.forgotPassword(email);
-    if (this.destroyed) return;
+    if (this.destroyed || generation !== this.session.generation()) return;
     this.submittingState.set(false);
-    if (generation !== this.session.generation()) return;
     if (result.ok) {
       this.sentState.set(true);
       return;

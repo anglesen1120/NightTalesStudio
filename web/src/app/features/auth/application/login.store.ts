@@ -57,7 +57,11 @@ export class LoginStore {
     effect(() => {
       this.session.endReason();
       this.session.generation();
-      untracked(() => this.clearChallenge());
+      untracked(() => {
+        this.clearChallenge();
+        // The request of the previous identity is abandoned: its late result is ignored, so the flag is reset here.
+        this.submittingState.set(false);
+      });
     });
   }
 
@@ -65,13 +69,13 @@ export class LoginStore {
     if (this.submittingState() || this.rateLimitedUntilState() !== null) return;
     const generation = this.session.generation();
     const returnUrl = this.route.snapshot.queryParamMap.get('returnUrl');
+    this.mfaTokenState.set(null);
     this.submittingState.set(true);
     this.errorState.set(null);
     this.formErrorState.set(null);
     const result = await this.repository.login(email, password);
-    if (this.destroyed) return;
+    if (this.destroyed || generation !== this.session.generation()) return;
     this.submittingState.set(false);
-    if (generation !== this.session.generation()) return;
     if (!result.ok) {
       this.fail(result.error);
       return;

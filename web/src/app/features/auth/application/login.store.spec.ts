@@ -213,6 +213,52 @@ describe('LoginStore', () => {
     expect(store.error()).toBeNull();
   });
 
+  it('LoginStore_ResultAfterGenerationChange_LeavesSubmittingErrorAndMfaTokenUntouched', async () => {
+    const { store, repo, session } = setup();
+    repo.defer();
+    const pending = store.submitPassword('a@b.c', 'pw');
+    expect(store.submitting()).toBe(true);
+    session.reset();
+    TestBed.tick();
+    expect(store.submitting()).toBe(false);
+    repo.resolveNext({ ok: false, error: appError('invalid_credentials', 401, 'auth') });
+    await pending;
+    expect(store.submitting()).toBe(false);
+    expect(store.error()).toBeNull();
+    expect(store.formError()).toBeNull();
+    expect(store.retryAfterSec()).toBeNull();
+    expect(store.rateLimitedUntil()).toBeNull();
+    expect(store.mfaToken()).toBeNull();
+  });
+
+  it('LoginStore_ResultAfterGenerationChange_DoesNotClearSubmittingOfNewerRequest', async () => {
+    const { store, repo, session } = setup();
+    repo.defer();
+    const first = store.submitPassword('a@b.c', 'pw');
+    session.reset();
+    TestBed.tick();
+    const second = store.submitPassword('a@b.c', 'pw');
+    expect(store.submitting()).toBe(true);
+    repo.resolveNext({ ok: false, error: appError('invalid_credentials', 401, 'auth') });
+    await first;
+    expect(store.submitting()).toBe(true);
+    expect(store.error()).toBeNull();
+    repo.resolveNext({ ok: false, error: appError('invalid_credentials', 401, 'auth') });
+    await second;
+    expect(store.submitting()).toBe(false);
+  });
+
+  it('LoginStore_Submit_ClearsStaleMfaTokenBeforeTheRequest', async () => {
+    const { store, repo } = setup();
+    repo.willReturn('login', { ok: true, value: { kind: 'mfa', mfaToken: 'mfa-secret' } });
+    await store.submitPassword('a@b.c', 'pw');
+    expect(store.mfaToken()).toBe('mfa-secret');
+    repo.willFail('login', appError('invalid_credentials', 401, 'auth'));
+    await store.submitPassword('a@b.c', 'pw');
+    expect(store.error()).not.toBeNull();
+    expect(store.mfaToken()).toBeNull();
+  });
+
   it('LoginStore_SessionEnd_ClearsMfaTokenAndError', async () => {
     const { store, repo, session } = setup();
     repo.willReturn('login', { ok: true, value: { kind: 'mfa', mfaToken: 'mfa-secret' } });

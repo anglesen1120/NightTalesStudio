@@ -1,26 +1,17 @@
 import type { Route, Routes } from '@angular/router';
-import { provideTranslocoScope } from '@jsverse/transloco';
 import { anonymousGuard } from '@core/session';
-import { AuthRepository } from './application/auth.repository';
-import { AuthApiRepository } from './data-access/auth.repository';
 
-// One shared provider list: the HTTP adapter bound to the port, and the `auth` copy scope (README D10). Route-level
-// providers create one environment injector per route, loaded with the lazy page; nothing lands in the main bundle.
-const providers = [{ provide: AuthRepository, useClass: AuthApiRepository }, provideTranslocoScope('auth')];
-
-const page = (path: string, loadComponent: Route['loadComponent']): Route => ({
+// Only the path table lives in the main bundle. Each path lazy-loads its own `*.routes.ts`, which carries the page, the
+// `AuthRepository` -> `AuthApiRepository` binding and the `auth` scope (see auth-route-providers.ts), so the adapter and
+// the generated client land in lazy chunks (README D13). Not an empty-path loadChildren: that would be tried for every URL.
+const page = (path: string, loadChildren: Route['loadChildren']): Route => ({
   path,
   canActivate: [anonymousGuard],
-  providers,
-  loadComponent,
+  loadChildren,
 });
 
 export const authRoutes: Routes = [
-  page('login', () => import('./feature/login-page/login-page.component').then((m) => m.LoginPageComponent)),
-  page('forgot-password', () =>
-    import('./feature/forgot-password-page/forgot-password-page.component').then((m) => m.ForgotPasswordPageComponent),
-  ),
-  page('reset-password', () =>
-    import('./feature/reset-password-page/reset-password-page.component').then((m) => m.ResetPasswordPageComponent),
-  ),
+  page('login', () => import('./login.routes')),
+  page('forgot-password', () => import('./forgot-password.routes')),
+  page('reset-password', () => import('./reset-password.routes')),
 ];

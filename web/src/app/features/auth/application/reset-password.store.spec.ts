@@ -1,5 +1,5 @@
 import { TestBed } from '@angular/core/testing';
-import { provideRouter } from '@angular/router';
+import { Router, provideRouter } from '@angular/router';
 import type { AppError } from '@core/errors';
 import { SessionApi, SessionStore } from '@core/session';
 import { FakeSessionApi } from '../../../core/session/testing/fake-session.api';
@@ -184,8 +184,59 @@ describe('ResetPasswordStore', () => {
     repo.defer();
     const pending = store.submit('p', 'p');
     session.reset();
+    TestBed.tick();
+    expect(store.submitting()).toBe(false);
     repo.resolveNext(OK);
     await pending;
     expect(store.done()).toBe(false);
+    expect(store.submitting()).toBe(false);
+    expect(store.error()).toBeNull();
+    expect(store.expired()).toBe(false);
+  });
+
+  it('ResetPasswordStore_FailureAfterGenerationChange_PaintsNothingAndKeepsTokenUsable', async () => {
+    const { store, repo, session } = setup('#t=abc');
+    repo.defer();
+    const pending = store.submit('p', 'p');
+    session.reset();
+    TestBed.tick();
+    repo.resolveNext({ ok: false, error: appError('validation_failed', 400, 'validation') });
+    await pending;
+    expect(store.error()).toBeNull();
+    expect(store.formError()).toBeNull();
+    expect(store.expired()).toBe(false);
+    expect(store.canSubmit()).toBe(true);
+  });
+
+  it('ResetPasswordStore_ClearMismatch_DropsTheMismatchVerdict', async () => {
+    const { store } = setup('#t=abc');
+    await store.submit('one', 'two');
+    expect(store.mismatch()).toBe(true);
+    store.clearMismatch();
+    expect(store.mismatch()).toBe(false);
+  });
+
+  it('ResetPasswordStore_Token_IsRemovedFromRouterStateButStillSent', async () => {
+    history.replaceState(null, '', '/reset-password#t=abc');
+    const repo = new FakeAuthRepository();
+    TestBed.configureTestingModule({
+      providers: [
+        ...ZONELESS_TEST_PROVIDERS,
+        provideRouter([{ path: 'reset-password', children: [] }]),
+        { provide: SessionApi, useValue: new FakeSessionApi() },
+        { provide: AuthRepository, useValue: repo },
+        ResetPasswordStore,
+      ],
+    });
+    const router = TestBed.inject(Router);
+    await router.navigateByUrl('/reset-password#t=abc');
+    expect(router.url).toContain('t=abc');
+    const store = TestBed.inject(ResetPasswordStore);
+    await vi.waitFor(() => expect(router.url).not.toContain('t='));
+    expect(router.url).toBe('/reset-password');
+    expect(router.routerState.snapshot.root.fragment).toBeNull();
+    repo.willReturn('resetPassword', OK);
+    await store.submit('Str0ng!pass', 'Str0ng!pass');
+    expect(repo.calls).toEqual([{ method: 'resetPassword', args: ['abc', 'Str0ng!pass'] }]);
   });
 });
