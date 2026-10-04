@@ -115,6 +115,38 @@ public sealed class StoryCostEstimator(
         return new UsageBound(cost, writer.Value, target.WriterMaxOutput);
     }
 
+    /// <inheritdoc />
+    public async Task<ErrorOr<UsageBound>> ReviewWorstCaseAsync(LengthTier tier, Language language, CancellationToken ct)
+    {
+        var active = await catalog.GetActiveAsync(clock.UtcNow, ct).ConfigureAwait(false);
+        if (active.IsError)
+        {
+            return active.Errors;
+        }
+
+        var version = active.Value;
+        var rates = version.ParseRates();
+        var target = LengthTargetResolver.Resolve(tier, language, version.ParseLimits());
+
+        var dataBudget = configuration.GetValue("Story:Prompt:MaxDataObjectBytes", DefaultMaxDataObjectBytes);
+        int review;
+        try
+        {
+            // Same measure as the review term of MeasureInputs: the review prompt plus the story and its context.
+            review = Bytes(prompts.GetStepPrompt(PromptStep.Review)) + (2 * dataBudget);
+        }
+        catch (PromptCatalogException exception)
+        {
+            return Error.Failure(ErrorCodes.PromptNotShipped, exception.Message);
+        }
+
+        // Same charge as the review term of WorstCaseAsync: every input token also written to the cache.
+        var cost = TextCostCalculator.Compute(rates.RatesFor(ModelOf("Review")), review, 0, review, target.ReviewMaxOutput, rates.SurchargeThresholdTokens)
+            ?? throw new InvalidOperationException("The calculator returned no cost for a bounded call.");
+
+        return new UsageBound(cost, review, target.ReviewMaxOutput);
+    }
+
     private string ModelOf(string step) => configuration[$"OpenAi:Models:{step}"] is { Length: > 0 } model ? model : DefaultModel;
 
     private ErrorOr<StepInputs> MeasureInputs(Language language, int dataBudget)

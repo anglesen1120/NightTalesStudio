@@ -15,7 +15,7 @@ namespace NightTales.Application.Features.Stories.Writing;
 /// <param name="catalog">Supplies the <c>story.v1</c> schema.</param>
 /// <param name="meter">Records the call in its own transaction (D14).</param>
 /// <param name="estimator">Supplies the writer call's D1 bound: the estimate of a call whose response carried no usage, and the meter's fallback when reported usage cannot be priced.</param>
-public sealed class OpenAiStoryWriter(
+public sealed partial class OpenAiStoryWriter(
     IPromptAssembler assembler,
     ITextClient client,
     IPromptCatalog catalog,

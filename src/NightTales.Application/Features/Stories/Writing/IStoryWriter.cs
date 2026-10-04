@@ -1,5 +1,7 @@
 using NightTales.Application.Abstractions.Text;
+using NightTales.Application.Features.Stories.Review;
 using NightTales.Domain.Stories.Content;
+using NightTales.Domain.Stories.Review;
 
 namespace NightTales.Application.Features.Stories.Writing;
 
@@ -18,4 +20,10 @@ public interface IStoryWriter
     /// <param name="ct">Cancels the call.</param>
     /// <returns>The mapped outcome of the call; its usage has already been recorded.</returns>
     ValueTask<TextCallResult<StoryContentV1>> WriteAsync(StoryWriteRequest req, CancellationToken ct);
+
+    /// <summary>Reviews one draft (02.6.1-T1): one model call that returns a <c>review.v1</c> document.</summary>
+    /// <param name="req">The review request.</param>
+    /// <param name="ct">Cancels the call.</param>
+    /// <returns>The mapped outcome of the call; its usage has already been recorded. The document is not validated.</returns>
+    ValueTask<TextCallResult<StoryReviewV1>> ReviewAsync(StoryReviewRequest req, CancellationToken ct);
 }

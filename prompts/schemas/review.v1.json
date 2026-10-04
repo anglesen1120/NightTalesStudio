@@ -1,0 +1,109 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "review.v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["scores", "issues", "ear_rule_answers", "factual_care", "real_world_claims", "summary"],
+  "properties": {
+    "scores": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["hook", "pacing", "atmosphere", "natural_language", "originality", "factual_care", "length_fit"],
+      "properties": {
+        "hook": { "type": "integer", "enum": [1, 2, 3, 4, 5] },
+        "pacing": { "type": "integer", "enum": [1, 2, 3, 4, 5] },
+        "atmosphere": { "type": "integer", "enum": [1, 2, 3, 4, 5] },
+        "natural_language": { "type": "integer", "enum": [1, 2, 3, 4, 5] },
+        "originality": { "type": "integer", "enum": [1, 2, 3, 4, 5] },
+        "factual_care": { "type": ["integer", "null"], "enum": [1, 2, 3, 4, 5, null] },
+        "length_fit": { "type": "integer", "enum": [1, 2, 3, 4, 5] }
+      }
+    },
+    "issues": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "type", "severity", "segment", "evidence", "impact", "repair_direction"],
+        "properties": {
+          "id": { "type": "string" },
+          "type": {
+            "type": "string",
+            "enum": [
+              "fact_ref_invalid",
+              "fact_not_in_sheet",
+              "missing_setup_before_twist",
+              "tone_violation",
+              "length_out_of_range",
+              "bible_contradiction",
+              "ear_rule_violation",
+              "keyword_rule_violation",
+              "hook_missing",
+              "ending_missing",
+              "beat_missing",
+              "markdown_or_url_in_text",
+              "content_warning_missing",
+              "weak_hook",
+              "flat_ending",
+              "pacing_issue",
+              "repetitive_phrasing"
+            ]
+          },
+          "severity": { "type": "string", "enum": ["blocking", "advisory"] },
+          "segment": { "type": "string", "pattern": "^(title|hook|ending|meta|p:\\d+)$" },
+          "evidence": { "type": "string" },
+          "impact": { "type": "string" },
+          "repair_direction": { "type": "string" }
+        }
+      }
+    },
+    "ear_rule_answers": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["question_id", "passed", "segment", "evidence"],
+        "properties": {
+          "question_id": { "type": "string", "enum": ["Q1", "Q2", "Q3", "Q4", "Q5", "Q6"] },
+          "passed": { "type": "boolean" },
+          "segment": { "type": "string", "pattern": "^(title|hook|ending|meta|p:\\d+)$" },
+          "evidence": { "type": "string" }
+        }
+      }
+    },
+    "factual_care": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["claims_checked", "unsupported_claims", "notes"],
+      "properties": {
+        "claims_checked": { "type": "integer" },
+        "unsupported_claims": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["segment", "claim"],
+            "properties": {
+              "segment": { "type": "string" },
+              "claim": { "type": "string" }
+            }
+          }
+        },
+        "notes": { "type": "string" }
+      }
+    },
+    "real_world_claims": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["segment", "evidence"],
+        "properties": {
+          "segment": { "type": "string", "pattern": "^(title|hook|ending|meta|p:\\d+)$" },
+          "evidence": { "type": "string" }
+        }
+      }
+    },
+    "summary": { "type": "string" }
+  }
+}

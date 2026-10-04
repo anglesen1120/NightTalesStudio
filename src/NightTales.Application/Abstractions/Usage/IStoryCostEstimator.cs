@@ -35,4 +35,16 @@ public interface IStoryCostEstimator
     /// <returns>The bound, or <c>price_catalog_empty</c> / <c>prompt_not_shipped</c> (the writer prompt itself).</returns>
     /// <exception cref="Domain.Usage.UnknownModelPricingException">The writer model is unpriced.</exception>
     Task<ErrorOr<UsageBound>> WriterWorstCaseAsync(LengthTier tier, Language language, CancellationToken ct);
+
+    /// <summary>
+    /// The worst case of one review call alone, at its <c>max_output_tokens</c>: the bound of a metered review call
+    /// whose response carried no usage or whose usage cannot be priced (02.6.1-T1). It measures only the review
+    /// prompt and the story it carries, so it does not depend on the revision prompt shipping.
+    /// </summary>
+    /// <param name="tier">The episode's length tier.</param>
+    /// <param name="language">The content language.</param>
+    /// <param name="ct">Cancels the estimate.</param>
+    /// <returns>The bound, or <c>price_catalog_empty</c> / <c>prompt_not_shipped</c> (the review prompt itself).</returns>
+    /// <exception cref="Domain.Usage.UnknownModelPricingException">The review model is unpriced.</exception>
+    Task<ErrorOr<UsageBound>> ReviewWorstCaseAsync(LengthTier tier, Language language, CancellationToken ct);
 }

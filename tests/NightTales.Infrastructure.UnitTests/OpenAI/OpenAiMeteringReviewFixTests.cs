@@ -314,6 +314,9 @@ public sealed class OpenAiMeteringReviewFixTests
         public Task<ErrorOr<UsageBound>> WorstCaseAsync(LengthTier tier, Language language, CancellationToken ct) =>
             throw new InvalidOperationException("The writer must not use the whole-pipeline bound.");
 
+        public Task<ErrorOr<UsageBound>> ReviewWorstCaseAsync(LengthTier tier, Language language, CancellationToken ct) =>
+            WriterWorstCaseAsync(tier, language, ct);
+
         public Task<ErrorOr<UsageBound>> WriterWorstCaseAsync(LengthTier tier, Language language, CancellationToken ct) =>
             Task.FromResult<ErrorOr<UsageBound>>(new UsageBound(Bound, 1, 1));
     }

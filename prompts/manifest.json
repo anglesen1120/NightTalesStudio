@@ -1,6 +1,14 @@
 {
   "release": "2026.10.1",
   "files": {
+    "review/v1.md": {
+      "version": "v1",
+      "sha256": "83b738628908a5533e6c57147f14e6d18a84540b038567339933edb795dcda34"
+    },
+    "schemas/review.v1.json": {
+      "version": "v1",
+      "sha256": "37047e8aa1f71cdc28604d7315ad90158eec1d9d907142c848d45d4fb4b1ba30"
+    },
     "schemas/story.v1.json": {
       "version": "v1",
       "sha256": "a32d53ccbad6c777e12a7efb84c65cef5bf577836b498a2d91c93e9dd0582d96"

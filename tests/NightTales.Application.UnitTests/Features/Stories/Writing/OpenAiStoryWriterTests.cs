@@ -4,6 +4,7 @@ using NightTales.Application.Abstractions.Prompts;
 using NightTales.Application.Abstractions.Research;
 using NightTales.Application.Abstractions.Text;
 using NightTales.Application.Abstractions.Usage;
+using NightTales.Application.Features.Stories.Review;
 using NightTales.Application.Features.Stories.Writing;
 using NightTales.Domain.Common;
 using NightTales.Domain.Episodes;
@@ -135,6 +136,9 @@ public sealed class OpenAiStoryWriterTests
     {
         public Task<ErrorOr<UsageBound>> WorstCaseAsync(LengthTier tier, Language language, CancellationToken ct) =>
             throw new InvalidOperationException("The writer must not use the whole-pipeline bound.");
+
+        public Task<ErrorOr<UsageBound>> ReviewWorstCaseAsync(LengthTier tier, Language language, CancellationToken ct) =>
+            WriterWorstCaseAsync(tier, language, ct);
 
         public async Task<ErrorOr<UsageBound>> WriterWorstCaseAsync(LengthTier tier, Language language, CancellationToken ct)
         {
@@ -307,6 +311,9 @@ public sealed class OpenAiStoryWriterTests
 
             return new AssembledPrompt("SYSTEM", "{\"data\":1}", "rel=test", "writer:ghost.vi.v1");
         }
+
+        public AssembledPrompt Review(StoryReviewRequest req) =>
+            new("REVIEW-SYSTEM", "{\"data\":2}", "rel=test;review=v1", "review:ghost.vi.v1");
     }
 
     private sealed class RecordingMeter : IUsageMeter
@@ -329,6 +336,9 @@ public sealed class OpenAiStoryWriterTests
         public Task<ErrorOr<UsageBound>> WorstCaseAsync(LengthTier tier, Language language, CancellationToken ct) =>
             throw new InvalidOperationException("The writer must not depend on the whole-pipeline bound (CR-1).");
 
+        public Task<ErrorOr<UsageBound>> ReviewWorstCaseAsync(LengthTier tier, Language language, CancellationToken ct) =>
+            WriterWorstCaseAsync(tier, language, ct);
+
         public Task<ErrorOr<UsageBound>> WriterWorstCaseAsync(LengthTier tier, Language language, CancellationToken ct) =>
             Task.FromResult<ErrorOr<UsageBound>>(bound is { } value ? new UsageBound(value, 1, 1) : Error.Failure("price_unavailable"));
     }
@@ -340,7 +350,7 @@ public sealed class OpenAiStoryWriterTests
         public IReadOnlyDictionary<string, PromptFileInfo> Files => throw new NotSupportedException();
 
         public ReadOnlyMemory<byte> GetSchema(string name) =>
-            name == "story.v1.json" ? System.Text.Encoding.UTF8.GetBytes("{\"schema\":true}") : throw new NotSupportedException(name);
+            name is "story.v1.json" or "review.v1.json" ? System.Text.Encoding.UTF8.GetBytes("{\"schema\":true}") : throw new NotSupportedException(name);
 
         public string GetSystemPrompt() => throw new NotSupportedException();
 
