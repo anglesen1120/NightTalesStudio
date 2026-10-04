@@ -73,6 +73,10 @@
     .spec-menu button[aria-checked="true"] { border-left: 3px solid var(--nts-color-signal); background: var(--nts-color-soft); font-weight: 600; }
     .spec-live { padding: var(--nts-space-3) var(--nts-space-4); border-left: 4px solid var(--nts-color-playhead); background: var(--nts-color-playhead-soft); }
     .spec-live--success { border-left-color: var(--nts-color-signal); background: var(--nts-color-signal-soft); }
+    .spec-profile-region { display: flex; align-items: center; }
+    .spec-profile-trigger .spec-profile-name { width: 6rem; height: var(--nts-space-3); }
+    html[data-theme="dark"] .theme-next--dark,
+    html[data-theme="light"] .theme-next--light { display: none; }
     @container app (max-width: 767px) {
       .spec-content, .spec-switches { grid-template-columns: minmax(0, 1fr); }
       .spec-states { grid-template-columns: minmax(0, 1fr); }
@@ -91,6 +95,7 @@
       <a href="#f-shell-lofi"><span data-l="vi">Wireframe responsive</span><span data-l="en">Responsive wireframe</span></a>
       <a href="#f-shell-state-matrix"><span data-l="vi">Ma trận màn hình × trạng thái</span><span data-l="en">Screen × state matrix</span></a>
       <a href="#f-shell-core-states"><span data-l="vi">Loading / empty / error / success</span><span data-l="en">Loading / empty / error / success</span></a>
+      <a href="#f-shell-null-me"><span data-l="vi">Hồ sơ đang tải</span><span data-l="en">Loading profile</span></a>
       <a href="#f-shell-a11y-flow"><span data-l="vi">Tiêu điểm và điều hướng</span><span data-l="en">Focus and navigation</span></a>
       <a href="#f-shell-theme-language"><span data-l="vi">Ngôn ngữ và giao diện</span><span data-l="en">Language and theme</span></a>
     </nav>
@@ -115,9 +120,9 @@
             <button class="icon-btn app-top__menu" type="button" aria-expanded="false"><svg aria-hidden="true"><use href="#i-menu"></use></svg><span class="sr-only"><span data-l="vi">Mở điều hướng</span><span data-l="en">Open navigation</span></span></button>
             <span class="app-top__context"><span data-l="vi">Loạt bài</span><span data-l="en">Series</span></span>
             <span class="app-top__spacer"></span>
-            <button class="app-top__locale" type="button" aria-expanded="false"><svg aria-hidden="true"><use href="#i-globe"></use></svg><span>Tiếng Việt</span></button>
-            <button class="icon-btn" type="button" aria-label="Đổi giao diện"><svg aria-hidden="true"><use href="#i-moon"></use></svg></button>
-            <button class="app-top__user" type="button" aria-expanded="false"><span class="avatar" aria-hidden="true">NA</span><span class="hide-sm">Nguyễn An</span></button>
+            <button class="app-top__locale" type="button" aria-expanded="false"><svg aria-hidden="true"><use href="#i-globe"></use></svg><span class="hide-sm" aria-hidden="true"><span data-l="vi">Tiếng Việt</span><span data-l="en">English</span></span><span class="sr-only" data-l="vi">Ngôn ngữ</span><span class="sr-only" data-l="en">Language</span></button>
+            <button class="icon-btn" type="button"><svg aria-hidden="true"><use href="#i-moon"></use></svg><span class="sr-only"><span class="theme-next--light"><span data-l="vi">Chuyển sang giao diện sáng</span><span data-l="en">Switch to light theme</span></span><span class="theme-next--dark"><span data-l="vi">Chuyển sang giao diện tối</span><span data-l="en">Switch to dark theme</span></span></span></button>
+            <button class="app-top__user" type="button" aria-haspopup="menu" aria-expanded="false"><span class="avatar" aria-hidden="true">NA</span><span class="hide-sm" aria-hidden="true">Nguyễn An</span><span class="sr-only" data-l="vi">Tài khoản</span><span class="sr-only" data-l="en">Account</span></button>
           </header>
           <div class="spec-live" role="status" aria-live="polite"><strong><span data-l="vi">Cập nhật trực tiếp đang tạm dừng</span><span data-l="en">Live updates paused</span></strong> <button class="btn btn--sm" type="button"><span data-l="vi">Tiếp tục</span><span data-l="en">Continue</span></button></div>
           <div class="app-content" id="lofi-content" tabindex="-1">
@@ -146,7 +151,7 @@
         <li><strong>TopBarComponent</strong><div class="spec-links"><a href="01-shell-auth.html#f-topbar-title">title + empty slot</a><a href="01-shell-auth.html#f-topbar-slot-filled">filled slot</a></div></li>
         <li><strong>SideNavComponent</strong><div class="spec-links"><a href="01-shell-auth.html#f-nav-baseline">empty baseline</a><a href="01-shell-auth.html#f-nav-three">3 items + active</a><a href="01-shell-auth.html#f-nav-long">long/full-role labels</a><a href="01-shell-auth.html#f-shell-360-open">overlay + restore</a></div></li>
         <li><strong>LanguageSwitchComponent</strong><div class="spec-links"><a href="01-shell-auth.html#f-lang-closed">closed</a><a href="01-shell-auth.html#f-lang-open">open</a><a href="01-shell-auth.html#f-lang-saving">saving</a><a href="01-shell-auth.html#f-lang-failed">save failed</a></div></li>
-        <li><strong>UserMenuComponent</strong><div class="spec-links"><a href="01-shell-auth.html#f-user-skeleton">me null / loading</a><a href="01-shell-auth.html#f-user-loaded">loaded</a><a href="01-shell-auth.html#f-user-open">open</a><a href="01-shell-auth.html#f-user-signout">sign-out in flight</a><a href="01-shell-auth.html#f-session-expired">session ended</a></div></li>
+        <li><strong>UserMenuComponent</strong><div class="spec-links"><a href="#f-shell-null-me">me null / labelled profile region</a><a href="01-shell-auth.html#f-user-loaded">loaded</a><a href="01-shell-auth.html#f-user-open">open</a><a href="01-shell-auth.html#f-user-signout">sign-out in flight</a><a href="01-shell-auth.html#f-session-expired">session ended</a></div></li>
         <li><strong>RealtimeStatusComponent</strong><div class="spec-links"><a href="01-shell-auth.html#f-shell-1280">connected / hidden</a><a href="01-shell-auth.html#f-rt-paused">paused</a><a href="01-shell-auth.html#f-rt-connecting">reconnecting</a><a href="01-shell-auth.html#f-rt-backoff">backoff</a><a href="01-shell-auth.html#f-rt-offline">offline composition</a><a href="01-shell-auth.html#f-rt-reconnected">reconnected composition</a></div></li>
         <li><strong>nav-items.ts</strong><div class="spec-links"><a href="01-shell-auth.html#f-nav-baseline">empty shell</a><a href="01-shell-auth.html#f-nav-three">dashboard / series / episodes</a><a href="01-shell-auth.html#f-nav-long">append pattern</a></div></li>
       </ul>
@@ -157,11 +162,39 @@
     </ul></details>
   </section>
 
+  <section class="frame" id="f-shell-null-me" aria-labelledby="f-shell-null-me-t">
+    <div class="frame__cap"><h2 id="f-shell-null-me-t">/dashboard — null_me_profile_skeleton</h2><span class="caption"><span data-l="vi">Khối hồ sơ có tên và trạng thái bận; điều hướng và trigger tài khoản vẫn dùng được trong lúc GET /me chậm.</span><span data-l="en">The profile region is named and busy; navigation and the account trigger remain available while GET /me is slow.</span></span></div>
+    <div class="frame__view"><div class="app">
+      <nav class="app-rail" aria-label="Điều hướng chính">
+        <a class="brand" href="../index.html"><span class="brand__mark" aria-hidden="true"></span><span class="brand__name">Night Tales Studio</span></a>
+        <a href="#"><svg aria-hidden="true"><use href="#i-home"></use></svg><span><span data-l="vi">Bảng điều khiển</span><span data-l="en">Dashboard</span></span></a>
+        <a href="#"><svg aria-hidden="true"><use href="#i-series"></use></svg><span><span data-l="vi">Loạt bài</span><span data-l="en">Series</span></span></a>
+        <a href="#"><svg aria-hidden="true"><use href="#i-episodes"></use></svg><span><span data-l="vi">Tập phim</span><span data-l="en">Episodes</span></span></a>
+      </nav>
+      <div class="app-main">
+        <header class="app-top">
+          <button class="icon-btn app-top__menu" type="button" aria-expanded="false"><svg aria-hidden="true"><use href="#i-menu"></use></svg><span class="sr-only"><span data-l="vi">Mở điều hướng</span><span data-l="en">Open navigation</span></span></button>
+          <span class="app-top__context">Night Tales Studio</span><span class="app-top__spacer"></span>
+          <div class="spec-profile-region" role="region" aria-labelledby="null-me-profile-label" aria-busy="true">
+            <span id="null-me-profile-label" class="sr-only"><span data-l="vi">Hồ sơ tài khoản</span><span data-l="en">Account profile</span></span>
+            <button class="app-top__user spec-profile-trigger" type="button" aria-haspopup="menu" aria-expanded="false"><span class="avatar skeleton" aria-hidden="true"></span><span class="spec-profile-name skeleton hide-sm" aria-hidden="true"></span><span class="sr-only"><span data-l="vi">Tài khoản</span><span data-l="en">Account</span></span></button>
+          </div>
+        </header>
+        <main class="app-content"><header class="page-header"><div><h1><span data-l="vi">Bảng điều khiển</span><span data-l="en">Dashboard</span></h1><p class="page-header__lede"><span data-l="vi">Nội dung và điều hướng không chờ hồ sơ tải xong.</span><span data-l="en">Content and navigation do not wait for the profile to finish loading.</span></p></div></header></main>
+      </div>
+    </div></div>
+    <details><summary><span data-l="vi">Hành vi null-/me và a11y</span><span data-l="en">Null-/me behaviour and a11y</span></summary><ul>
+      <li><span data-l="vi">Vùng hồ sơ lấy tên song ngữ từ <code>aria-labelledby</code> và đặt <code>aria-busy="true"</code>; hình skeleton là trang trí nên không công bố tên giả.</span><span data-l="en">The profile region takes its bilingual name from <code>aria-labelledby</code> and sets <code>aria-busy="true"</code>; skeleton shapes are decorative, so no fake name is announced.</span></li>
+      <li><span data-l="vi">Theo 10.2.6-T1, khi <code>me</code> còn null, thanh trên chỉ hiện tên sản phẩm; trigger vẫn nhận focus, có <code>aria-haspopup="menu"</code> và đọc <code>shell.menu.triggerLabel</code> (“Tài khoản”). Điều hướng vẫn hoạt động đầy đủ.</span><span data-l="en">Per 10.2.6-T1, while <code>me</code> is null the top bar shows only the product name; the trigger stays focusable, exposes <code>aria-haspopup="menu"</code> and reads <code>shell.menu.triggerLabel</code> (“Account”). Navigation remains fully functional.</span></li>
+      <li><span data-l="vi">Skeleton đứng yên khi reduced motion; lỗi GET /me không chặn shell mà thay riêng vùng hồ sơ bằng ErrorState.</span><span data-l="en">The skeleton is static under reduced motion; a GET /me failure does not block the shell and replaces only the profile region with ErrorState.</span></li>
+    </ul></details>
+  </section>
+
   <section class="frame" id="f-shell-core-states" aria-labelledby="f-shell-core-states-t">
     <div class="frame__cap"><h2 id="f-shell-core-states-t">Loading · empty · error · success · session-ended</h2><span class="caption"><span data-l="vi">Các pattern D11 trong chrome của shell; mỗi ô liên kết tới hi-fi chuyên biệt.</span><span data-l="en">D11 patterns inside shell chrome; each cell links to its dedicated high-fidelity frame.</span></span></div>
     <div class="frame__view"><div class="app app--bare"><div class="app-main"><div class="app-content">
       <div class="spec-states">
-        <section class="spec-state"><span class="chip chip--neutral"><span data-l="vi">Đang tải</span><span data-l="en">Loading</span></span><div class="loading" aria-busy="true"><div class="skeleton"></div><div class="skeleton"></div></div><a href="01-shell-auth.html#f-user-skeleton">#f-user-skeleton</a></section>
+        <section class="spec-state"><span class="chip chip--neutral"><span data-l="vi">Đang tải</span><span data-l="en">Loading</span></span><div class="loading" aria-busy="true"><div class="skeleton"></div><div class="skeleton"></div></div><a href="#f-shell-null-me">#f-shell-null-me</a></section>
         <section class="spec-state"><span class="chip chip--neutral"><span data-l="vi">Trống</span><span data-l="en">Empty</span></span><div class="empty"><div class="empty__art" aria-hidden="true"></div><div><strong><span data-l="vi">Chưa có mục điều hướng</span><span data-l="en">No navigation items yet</span></strong></div></div><a href="01-shell-auth.html#f-nav-baseline">#f-nav-baseline</a></section>
         <section class="spec-state"><span class="chip chip--error"><svg aria-hidden="true"><use href="#i-alert"></use></svg><span data-l="vi">Lỗi</span><span data-l="en">Error</span></span><div class="error-state"><div><strong><span data-l="vi">Không lưu được ngôn ngữ. Vui lòng thử lại.</span><span data-l="en">Could not save your language. Please try again.</span></strong></div></div><a href="01-shell-auth.html#f-lang-failed">#f-lang-failed</a></section>
         <section class="spec-state"><span class="chip chip--success"><svg aria-hidden="true"><use href="#i-check"></use></svg><span data-l="vi">Thành công</span><span data-l="en">Success</span></span><div class="spec-live spec-live--success" role="status"><strong><span data-l="vi">Đã kết nối lại</span><span data-l="en">Reconnected</span></strong></div><a href="01-shell-auth.html#f-rt-reconnected">#f-rt-reconnected</a></section>
