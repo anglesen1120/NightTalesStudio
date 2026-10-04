@@ -11,6 +11,7 @@ using NightTales.Domain.Stories.Prompts;
 using NightTales.Domain.Usage;
 using NightTales.Infrastructure.Persistence.Usage;
 using NightTales.Infrastructure.Prompts;
+using NightTales.Infrastructure.UnitTests.Prompts;
 using NightTales.TestKit.Time;
 using Shouldly;
 using Xunit;
@@ -200,6 +201,70 @@ public sealed class StoryCostEstimatorTests
         var sut = Estimator(prompts, out _);
 
         var result = await sut.WorstCaseAsync(LengthTier.Short, Language.En, TestContext.Current.CancellationToken);
+
+        result.IsError.ShouldBeTrue();
+        result.FirstError.Code.ShouldBe(ErrorCodes.PromptNotShipped);
+    }
+
+    // 02.6.1-T1 QA: ReviewWorstCaseAsync had no direct test (only a scripted fake in ReviewStepTests).
+    [Fact]
+    public async Task StoryCostEstimator_ReviewWorstCase_EmptyCatalog_ReturnsTheTypedError()
+    {
+        var sut = Estimator(new FakePrompts(), out var catalog);
+        catalog.Empty = true;
+
+        var result = await sut.ReviewWorstCaseAsync(LengthTier.Short, Language.En, TestContext.Current.CancellationToken);
+
+        result.IsError.ShouldBeTrue();
+        result.FirstError.Code.ShouldBe(ErrorCodes.PriceCatalogEmpty);
+    }
+
+    [Fact]
+    public async Task StoryCostEstimator_ReviewWorstCase_PricesExactlyOneReviewCallAtItsCap()
+    {
+        var prompts = new FakePrompts();
+        var sut = Estimator(prompts, out _);
+        var ct = TestContext.Current.CancellationToken;
+
+        foreach (var tier in Enum.GetValues<LengthTier>())
+        {
+            var bound = (await sut.ReviewWorstCaseAsync(tier, Language.En, ct)).Value;
+            var limit = PriceLimits.D4Defaults.Story[tier][Language.En];
+
+            bound.MaxInputTokens.ShouldBe(prompts.ReviewBytes);
+            bound.MaxOutputTokens.ShouldBe(limit.ReviewMaxOutput);
+            bound.WorstCaseUsd.ShouldBe(Cost(prompts.ReviewBytes, limit.ReviewMaxOutput));
+
+            // One review call is always cheaper than the whole pipeline it is part of.
+            var whole = (await sut.WorstCaseAsync(tier, Language.En, ct)).Value;
+            bound.WorstCaseUsd.ShouldBeLessThan(whole.WorstCaseUsd);
+        }
+    }
+
+    [Fact]
+    public async Task StoryCostEstimator_ReviewWorstCase_DoesNotNeedTheRevisionPrompt()
+    {
+        // The embedded release ships the review prompt but no revision prompt (02.6.2-T1): the review bound must still work
+        // while the whole-pipeline bound keeps failing closed.
+        var sut = Estimator(new PromptCatalog(new EmbeddedPromptResourceSource()), out _);
+        var ct = TestContext.Current.CancellationToken;
+
+        var review = await sut.ReviewWorstCaseAsync(LengthTier.Short, Language.En, ct);
+
+        review.IsError.ShouldBeFalse();
+        review.Value.WorstCaseUsd.ShouldBeGreaterThan(0m);
+        (await sut.WorstCaseAsync(LengthTier.Short, Language.En, ct)).FirstError.Code.ShouldBe(ErrorCodes.PromptNotShipped);
+    }
+
+    [Fact]
+    public async Task StoryCostEstimator_ReviewWorstCase_ReviewPromptNotShipped_ReturnsTheTypedError()
+    {
+        var tree = PromptsTree.Read();
+        PromptsTree.RemoveManifestEntry(tree, "review/v1.md");
+        tree.Remove("review/v1.md");
+        var sut = Estimator(PromptsTree.Load(tree), out _);
+
+        var result = await sut.ReviewWorstCaseAsync(LengthTier.Short, Language.En, TestContext.Current.CancellationToken);
 
         result.IsError.ShouldBeTrue();
         result.FirstError.Code.ShouldBe(ErrorCodes.PromptNotShipped);
