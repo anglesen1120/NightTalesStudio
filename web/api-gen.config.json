@@ -1,0 +1,14 @@
+{
+  "$schema": "node_modules/ng-openapi-gen/ng-openapi-gen-schema.json",
+  "input": "openapi.json",
+  "output": "src/app/shared/api",
+  "indexFile": true,
+  "services": true,
+  "promises": false,
+  "module": false,
+  "serviceSuffix": "Client",
+  "modelIndex": true,
+  "enumStyle": "alias",
+  "ignoreUnusedModels": false,
+  "excludeTags": ["NightTales.Api"]
+}
