@@ -15,12 +15,19 @@ namespace NightTales.Infrastructure.Pricing;
 public sealed class GenerationRunOpenBoundsReader(IReadDb readDb) : IOpenBoundsReader
 {
     /// <inheritdoc />
-    public async ValueTask<decimal> SumOpenWorstCaseUsdAsync(CancellationToken ct)
+    public async ValueTask<decimal> SumOpenWorstCaseUsdAsync(CancellationToken ct, Guid? excludingRunId = null)
     {
-        var total = await readDb
+        var open = readDb
             .Query<GenerationRun>()
             .IgnoreQueryFilters([TenantFilterConvention.FilterName])
-            .Where(run => run.Status == GenerationRunStatus.Queued || run.Status == GenerationRunStatus.Running)
+            .Where(run => run.Status == GenerationRunStatus.Queued || run.Status == GenerationRunStatus.Running);
+
+        if (excludingRunId is { } own)
+        {
+            open = open.Where(run => run.Id != own);
+        }
+
+        var total = await open
             .SumAsync(run => (decimal?)run.WorstCaseUsd, ct)
             .ConfigureAwait(false);
 

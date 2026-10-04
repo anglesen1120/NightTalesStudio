@@ -36,10 +36,11 @@ public static class StoryText
     }
 
     /// <summary>
-    /// The first C0 control character in <paramref name="text"/> that story text may not carry, or null. A
-    /// line feed, a carriage return and a tab are prose (the editor canonicalises <c>\r\n</c> and <c>\r</c> to
-    /// <c>\n</c>); every other character below U+0020 — above all NUL, which Postgres refuses in <c>text</c>
-    /// and <c>jsonb</c> — is not. The scan is over the raw text: NFC never adds or removes a control character.
+    /// The first character in <paramref name="text"/> that story text may not carry, or null: a C0 control character, or a
+    /// surrogate that is not part of a valid pair. A line feed, a carriage return and a tab are prose (the editor
+    /// canonicalises <c>\r\n</c> and <c>\r</c> to <c>\n</c>); every other character below U+0020 — above all NUL, which
+    /// Postgres refuses in <c>text</c> and <c>jsonb</c> — is not, and neither is a lone surrogate (invalid Unicode that
+    /// Npgsql would store as U+FFFD or refuse). The scan is over the raw text: NFC never adds or removes either.
     /// </summary>
     /// <param name="text">The raw field text; null and empty carry none.</param>
     /// <returns>The offending character, or null.</returns>
@@ -50,9 +51,27 @@ public static class StoryText
             return null;
         }
 
-        foreach (var character in text)
+        for (var index = 0; index < text.Length; index++)
         {
+            var character = text[index];
+
             if (character < ' ' && character is not ('\n' or '\r' or '\t'))
+            {
+                return character;
+            }
+
+            if (char.IsHighSurrogate(character))
+            {
+                if (index + 1 < text.Length && char.IsLowSurrogate(text[index + 1]))
+                {
+                    index++;
+                    continue;
+                }
+
+                return character;
+            }
+
+            if (char.IsLowSurrogate(character))
             {
                 return character;
             }

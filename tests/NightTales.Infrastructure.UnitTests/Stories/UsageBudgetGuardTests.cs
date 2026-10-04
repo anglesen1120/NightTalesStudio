@@ -109,6 +109,21 @@ public sealed class UsageBudgetGuardTests(TestDatabase database) : IntegrationTe
     }
 
     [Fact]
+    public async Task UsageBudgetGuard_ExcludingARun_LeavesOutOnlyThatRunsOpenBound()
+    {
+        var baseline = await BaselineAsync();
+        var options = Options(baseline, day: 0.7m, month: 10m);
+        var user = await NewUserAsync();
+        var own = await AddQueuedRunAsync(user, 0.4m);
+        await AddQueuedRunAsync(user, 0.1m);
+
+        (await CheckAsync(options, 0.5m)).IsError.ShouldBeTrue("0.4 + 0.1 open + 0.5 new > 0.7 at admission");
+        (await CheckAsync(options, 0.5m, own)).IsError.ShouldBeFalse("a dispatch of the admitted run does not count its own 0.4: 0.1 + 0.5 <= 0.7");
+        (await CheckAsync(options, 0.5m, Guid.CreateVersion7())).IsError.ShouldBeTrue("an unrelated run id excludes nothing");
+        (await CheckAsync(options, 0.65m, own)).IsError.ShouldBeTrue("the other run's 0.1 still counts: 0.1 + 0.65 > 0.7");
+    }
+
+    [Fact]
     public async Task UsageBudgetGuard_FinishedRuns_NoLongerHoldAnOpenBound()
     {
         var baseline = await BaselineAsync();
@@ -188,12 +203,12 @@ public sealed class UsageBudgetGuardTests(TestDatabase database) : IntegrationTe
     private static UsageBudgetGuard GuardOver(Infrastructure.Persistence.AppDbContext db, Infrastructure.Persistence.ReadDbContext read, BudgetOptions options) =>
         new(read, new GenerationRunOpenBoundsReader(read), db, options, new FakeClock(Now));
 
-    private async Task<ErrorOr.ErrorOr<ErrorOr.Success>> CheckAsync(BudgetOptions options, decimal worstCase)
+    private async Task<ErrorOr.ErrorOr<ErrorOr.Success>> CheckAsync(BudgetOptions options, decimal worstCase, Guid? excludingRunId = null)
     {
         await using var db = Database.CreateAppDbContext(new TestCurrentUser { Id = Guid.CreateVersion7() });
         await using var read = Database.CreateReadDbContext();
 
-        return await GuardOver(db, read, options).CheckAsync(new CostBound(worstCase), Ct);
+        return await GuardOver(db, read, options).CheckAsync(new CostBound(worstCase), Ct, excludingRunId);
     }
 
     /// <summary>The platform's spent-today, spent-this-month and open totals as the guard will read them at <see cref="Now"/>.</summary>
@@ -234,7 +249,7 @@ public sealed class UsageBudgetGuardTests(TestDatabase database) : IntegrationTe
         await db.SaveChangesAsync(Ct);
     }
 
-    private async Task AddQueuedRunAsync(Guid userId, decimal worstCase, bool cancel = false)
+    private async Task<Guid> AddQueuedRunAsync(Guid userId, decimal worstCase, bool cancel = false)
     {
         var actor = new TestCurrentUser();
         var series = await new SeriesBuilder(Database, actor).CreateAsync(userId, ct: Ct);
@@ -260,5 +275,7 @@ public sealed class UsageBudgetGuardTests(TestDatabase database) : IntegrationTe
         await using var db = Database.CreateAppDbContext(new TestCurrentUser { Id = userId });
         db.GenerationRuns.Add(run);
         await db.SaveChangesAsync(Ct);
+
+        return run.Id;
     }
 }

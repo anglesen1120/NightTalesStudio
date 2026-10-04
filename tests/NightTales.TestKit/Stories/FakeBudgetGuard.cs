@@ -8,6 +8,7 @@ namespace NightTales.TestKit.Stories;
 public sealed class FakeBudgetGuard : IBudgetGuard
 {
     private readonly List<decimal> _checked = [];
+    private readonly List<Guid?> _excluded = [];
 
     /// <summary>When true, every check answers <c>spend_cap_reached</c>.</summary>
     public bool Deny { get; set; }
@@ -15,11 +16,15 @@ public sealed class FakeBudgetGuard : IBudgetGuard
     /// <summary>The worst cases that were checked, in call order.</summary>
     public IReadOnlyList<decimal> Checked => _checked;
 
+    /// <summary>The run id each check asked to leave out of the open bounds (null for an admission check), in call order.</summary>
+    public IReadOnlyList<Guid?> ExcludedRunIds => _excluded;
+
     /// <inheritdoc />
-    public ValueTask<ErrorOr<Success>> CheckAsync(CostBound worstCaseUsd, CancellationToken ct)
+    public ValueTask<ErrorOr<Success>> CheckAsync(CostBound worstCaseUsd, CancellationToken ct, Guid? excludingRunId = null)
     {
         ArgumentNullException.ThrowIfNull(worstCaseUsd);
         _checked.Add(worstCaseUsd.WorstCaseUsd);
+        _excluded.Add(excludingRunId);
 
         return ValueTask.FromResult<ErrorOr<Success>>(
             Deny ? Error.Failure(ErrorCodes.SpendCapReached, "The platform's spending limit has been reached.") : Result.Success);

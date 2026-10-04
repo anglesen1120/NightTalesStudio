@@ -39,7 +39,7 @@ public sealed class UsageBudgetGuard(
     IClock clock) : IBudgetGuard
 {
     /// <inheritdoc />
-    public async ValueTask<ErrorOr<Success>> CheckAsync(CostBound worstCaseUsd, CancellationToken ct)
+    public async ValueTask<ErrorOr<Success>> CheckAsync(CostBound worstCaseUsd, CancellationToken ct, Guid? excludingRunId = null)
     {
         ArgumentNullException.ThrowIfNull(worstCaseUsd);
 
@@ -56,7 +56,7 @@ public sealed class UsageBudgetGuard(
         var dayStart = new DateTimeOffset(now.Date, TimeSpan.Zero);
         var monthStart = new DateTimeOffset(now.Year, now.Month, 1, 0, 0, 0, TimeSpan.Zero);
 
-        var open = await openBounds.SumOpenWorstCaseUsdAsync(ct).ConfigureAwait(false);
+        var open = await openBounds.SumOpenWorstCaseUsdAsync(ct, excludingRunId).ConfigureAwait(false);
         var spentToday = await SpentSinceAsync(dayStart, ct).ConfigureAwait(false);
         var spentThisMonth = await SpentSinceAsync(monthStart, ct).ConfigureAwait(false);
 
