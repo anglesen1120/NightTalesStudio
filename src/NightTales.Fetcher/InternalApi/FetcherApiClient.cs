@@ -7,6 +7,7 @@ using System.Text.Json.Serialization;
 using ErrorOr;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using NightTales.Domain.Research;
 
 namespace NightTales.Fetcher.InternalApi;
 
@@ -61,7 +62,14 @@ public sealed partial class FetcherApiClient(
         try
         {
             var leased = await response.Content.ReadFromJsonAsync<List<LeasedTask>>(Json, ct).ConfigureAwait(false);
-            return (leased ?? []).ToArray();
+            if (leased is null || leased.Count > max)
+            {
+                // A null root is not an empty lease, and the Api never answers more than the requested max.
+                LogMalformed("lease", leased is null ? "NullRoot" : "TooManyTasks");
+                return FetcherApiErrors.Unavailable(retryable: false);
+            }
+
+            return leased.ToArray();
         }
         catch (Exception ex) when (ex is JsonException or NotSupportedException or HttpRequestException)
         {
@@ -84,15 +92,23 @@ public sealed partial class FetcherApiClient(
     }
 
     /// <inheritdoc />
-    public async ValueTask<ErrorOr<Success>> PostResultAsync(Guid taskId, FetchResultBody body, CancellationToken ct)
+    public async ValueTask<ErrorOr<FetchResultBody>> PostResultAsync(Guid taskId, FetchResultBody body, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(body);
 
         var payload = JsonSerializer.SerializeToUtf8Bytes(body, Json);
         if (payload.Length > MaxBodyBytes)
         {
-            // Never sent: the Api would answer 413. The loop already caps the text, so this is a backstop.
-            return FetcherApiErrors.ValidationFailed("source_too_large");
+            // Never send an over-cap body (the Api would answer 413 and the lease would expire). A done body whose JSON is
+            // larger than the text-char cap implied (escaped characters) ends as the D8 failure it is, and the caller is told
+            // so (it returns the body actually posted) for its log and metric.
+            if (body.Status != "done")
+            {
+                return FetcherApiErrors.ValidationFailed("source_too_large");
+            }
+
+            body = ResultBodies.Failed(body.WorkerId, SourceErrors.SourceTooLargeCode, body.HttpStatus);
+            payload = JsonSerializer.SerializeToUtf8Bytes(body, Json);
         }
 
         ErrorOr<HttpResponseMessage> sent = FetcherApiErrors.Unavailable();
@@ -102,7 +118,7 @@ public sealed partial class FetcherApiClient(
             if (!sent.IsError)
             {
                 sent.Value.Dispose();
-                return Result.Success;
+                return body;
             }
 
             if (!FetcherApiErrors.IsRetryable(sent.FirstError) || attempt == ResultAttempts)

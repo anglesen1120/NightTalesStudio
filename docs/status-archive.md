@@ -4,6 +4,11 @@ History moved out of STATUS.md to keep the live file small. The initial archive 
 
 ## Resume-here history (Current/Previous blocks, Next actions)
 
+### Superseded Next line (2026-10-05, replaced when Session 12 opened the 02.5.2-T3 PR)
+
+- **Next (backend, start here):** **02.5.2-T3** fetcher host (consumes the frozen JSON hand-off in the 02.5.2-T2 task §Notes; send raw UTF-8 JSON, the body cap is 1 MiB; robots fail-closed → `source_blocked_by_robots`) → T4, 02.6.1-T2, 02.6.2-T1 revision (02 §10 T113(b)), 02.3.2-T1 approve (treat `moderation.stale`/`unavailable` as needs re-check; edit-path moderator wiring). First re-run CI on `develop` once GitHub Actions billing is fixed (#131 merged with no CI run). Claim the backend `gate.sh` lock in `nts-wt/SESSION-CLAIMS.md` first.
+- **Outcome:** 02.5.2-T3 built without a migration; T3 gates closed; PR from `feature/02.5.2-T3-s12`.
+
 ### Superseded Session 10 Current/Next lines (2026-10-04, replaced when #131 `312db85` merged)
 
 - **Outcome:** 02.5.2-T2 merged as #131 without a CI run (GitHub Actions billing); Session 10 claim released; next backend task 02.5.2-T3.

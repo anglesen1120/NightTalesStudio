@@ -34,6 +34,7 @@ public static class FetcherHostServiceCollectionExtensions
         var fetcherSection = configuration.GetSection(FetcherOptions.SectionName);
         services.AddOptions<FetcherOptions>().Bind(fetcherSection).ValidateOnStart();
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IValidateOptions<FetcherOptions>, FetcherOptionsValidator>());
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IValidateOptions<FetcherOptions>, FetcherHostOptionsValidator>());
 
         services.AddOptions<FetcherLoopOptions>().Bind(fetcherSection).ValidateOnStart();
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IValidateOptions<FetcherLoopOptions>, FetcherLoopOptionsValidator>());

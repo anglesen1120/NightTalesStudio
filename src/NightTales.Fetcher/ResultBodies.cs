@@ -47,8 +47,14 @@ internal static class ResultBodies
             Title: title,
             ContentType: source.ContentType,
             Text: text,
-            TextSha256: Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(text))));
+            TextSha256: IsLowerHexSha256(source.Sha256)
+                ? source.Sha256
+                : Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(text))));
     }
+
+    // The fetcher hashed exactly the posted text (SafeHttpSourceFetcher step 12); a malformed value is recomputed, never trusted.
+    private static bool IsLowerHexSha256(string? value) =>
+        value is { Length: 64 } && value.All(static c => c is (>= '0' and <= '9') or (>= 'a' and <= 'f'));
 
     /// <summary>The <c>failed</c> body of a D8 error from the fetcher; an unlisted code is reported as <c>source_unreachable</c>.</summary>
     public static FetchResultBody FromError(string workerId, Error error)

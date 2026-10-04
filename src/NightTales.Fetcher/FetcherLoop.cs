@@ -192,8 +192,10 @@ public sealed partial class FetcherLoop(
         }
 
         var posted = await api.PostResultAsync(item.TaskId, body, ct).ConfigureAwait(false);
-        var status = body.Status;
-        var code = ResultBodies.CodeOf(body);
+        // The outcome actually posted: the client may have replaced an over-cap done body with failed/source_too_large (D19).
+        var final = posted.IsError ? body : posted.Value;
+        var status = final.Status;
+        var code = ResultBodies.CodeOf(final);
         var outcome = "posted";
         if (posted.IsError)
         {
@@ -215,7 +217,7 @@ public sealed partial class FetcherLoop(
         metrics.RecordTask(status, code);
         var elapsedSeconds = time.GetElapsedTime(started).TotalSeconds;
         metrics.RecordDuration(elapsedSeconds);
-        var httpStatus = body.HttpStatus ?? 0;
+        var httpStatus = final.HttpStatus ?? 0;
         LogTaskFinished(item.TaskId, item.Kind, item.Attempt, status, code, httpStatus, elapsedSeconds, domain, outcome);
     }
 

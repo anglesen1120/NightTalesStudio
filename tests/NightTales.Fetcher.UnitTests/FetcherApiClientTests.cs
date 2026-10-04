@@ -121,6 +121,7 @@ public sealed class FetcherApiClientTests : IDisposable
         var posted = await Client().PostResultAsync(_taskId, Done(), TestContext.Current.CancellationToken);
 
         posted.IsError.ShouldBeFalse();
+        posted.Value.Status.ShouldBe("done", "a normal body is reported as posted unchanged");
         _handler.Requests.Count.ShouldBe(2);
     }
 
@@ -152,14 +153,78 @@ public sealed class FetcherApiClientTests : IDisposable
     }
 
     [Fact]
-    public async Task Result_OverOneMiB_IsNeverSent()
+    public async Task Result_DoneOverOneMiB_PostsASmallSourceTooLargeFailure()
     {
         var body = Done() with { Text = new string('x', FetcherApiClient.MaxBodyBytes) };
 
         var posted = await Client().PostResultAsync(_taskId, body, TestContext.Current.CancellationToken);
 
+        posted.IsError.ShouldBeFalse();
+        posted.Value.Status.ShouldBe("failed");
+        posted.Value.ErrorCode.ShouldBe("source_too_large");
+        AssertSingleSourceTooLargeFailure();
+    }
+
+    [Theory]
+    [InlineData("\u2028")]
+    [InlineData("\U0001F600")]
+    public async Task Result_EscapedCharactersPastTheCap_PostsSourceTooLargeFailed(string unit)
+    {
+        // 200 000 code points: under the 300 000-char text cap, yet each is a \uXXXX escape or 4 UTF-8 bytes.
+        var body = Done() with { Text = string.Concat(Enumerable.Repeat(unit, 200_000)) };
+
+        var posted = await Client().PostResultAsync(_taskId, body, TestContext.Current.CancellationToken);
+
+        posted.IsError.ShouldBeFalse();
+        posted.Value.Status.ShouldBe("failed");
+        posted.Value.ErrorCode.ShouldBe("source_too_large");
+        AssertSingleSourceTooLargeFailure();
+    }
+
+    private void AssertSingleSourceTooLargeFailure()
+    {
+        var sent = _handler.Requests.Single().Body;
+        Encoding.UTF8.GetByteCount(sent).ShouldBeLessThanOrEqualTo(FetcherApiClient.MaxBodyBytes);
+        using var document = JsonDocument.Parse(sent);
+        document.RootElement.GetProperty("status").GetString().ShouldBe("failed");
+        document.RootElement.GetProperty("errorCode").GetString().ShouldBe("source_too_large");
+        document.RootElement.GetProperty("httpStatus").GetInt32().ShouldBe(200);
+        document.RootElement.TryGetProperty("text", out _).ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task Result_NonDoneOverOneMiB_IsNeverSent()
+    {
+        var candidates = Enumerable.Range(0, 20_000).Select(i => new ResultCandidate("https://news.example.com/" + new string('p', 60) + i, null, null)).ToList();
+        var body = new FetchResultBody("unit-worker", "found", Candidates: candidates);
+
+        var posted = await Client().PostResultAsync(_taskId, body, TestContext.Current.CancellationToken);
+
         posted.FirstError.Code.ShouldBe("source_too_large");
         _handler.Requests.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task Lease_NullRoot_IsUnavailableNotAnEmptyLease()
+    {
+        _handler.Respond = _ => Json(HttpStatusCode.OK, "null");
+
+        var leased = await Client().LeaseAsync("unit-worker", 4, TestContext.Current.CancellationToken);
+
+        leased.IsError.ShouldBeTrue();
+        leased.FirstError.Code.ShouldBe(FetcherApiErrors.UnavailableCode);
+    }
+
+    [Fact]
+    public async Task Lease_MoreTasksThanMax_IsUnavailable()
+    {
+        string Task() => $$"""{"taskId":"{{Guid.NewGuid()}}","kind":"fetch_source","url":"https://news.example.com/a","attempt":1,"leaseUntil":"2026-10-05T10:00:00+00:00"}""";
+        _handler.Respond = _ => Json(HttpStatusCode.OK, $"[{Task()},{Task()}]");
+
+        var leased = await Client().LeaseAsync("unit-worker", 1, TestContext.Current.CancellationToken);
+
+        leased.IsError.ShouldBeTrue();
+        leased.FirstError.Code.ShouldBe(FetcherApiErrors.UnavailableCode);
     }
 
     [Fact]

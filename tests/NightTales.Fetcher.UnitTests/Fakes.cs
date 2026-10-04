@@ -177,6 +177,9 @@ internal sealed class FakeApi : IFetcherApi
     /// <summary>Answers a result POST; may throw.</summary>
     public Func<Guid, FetchResultBody, ErrorOr<Success>> OnPost { get; set; } = static (_, _) => Result.Success;
 
+    /// <summary>The body a successful POST reports as actually posted (the real client substitutes an over-cap done body); null echoes the sent one.</summary>
+    public Func<FetchResultBody, FetchResultBody>? PostedAs { get; set; }
+
     public int LeaseCalls => Volatile.Read(ref _leaseCalls);
 
     public int Heartbeats => Volatile.Read(ref _heartbeats);
@@ -201,11 +204,16 @@ internal sealed class FakeApi : IFetcherApi
         return ValueTask.FromResult(OnHeartbeat(taskId));
     }
 
-    public ValueTask<ErrorOr<Success>> PostResultAsync(Guid taskId, FetchResultBody body, CancellationToken ct)
+    public ValueTask<ErrorOr<FetchResultBody>> PostResultAsync(Guid taskId, FetchResultBody body, CancellationToken ct)
     {
         _posts.Enqueue((taskId, body));
+        var answer = OnPost(taskId, body);
+        if (answer.IsError)
+        {
+            return ValueTask.FromResult<ErrorOr<FetchResultBody>>(answer.Errors);
+        }
 
-        return ValueTask.FromResult(OnPost(taskId, body));
+        return ValueTask.FromResult<ErrorOr<FetchResultBody>>(PostedAs?.Invoke(body) ?? body);
     }
 }
 

@@ -1,4 +1,6 @@
+using System.Diagnostics.Metrics;
 using ErrorOr;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NightTales.Fetcher.Core.Fetching;
@@ -29,7 +31,7 @@ public sealed class FetcherLoopTests
 
     private static ErrorOr<IReadOnlyList<LeasedTask>> Lease(params LeasedTask[] tasks) => tasks;
 
-    private FetcherLoop Loop(ISourceFetcher fetcher, ISourceFinderRunner? finder = null) => new(
+    private FetcherLoop Loop(ISourceFetcher fetcher, ISourceFinderRunner? finder = null, ILogger<FetcherLoop>? logger = null) => new(
         _api,
         fetcher,
         new FakePublicSuffixList(),
@@ -39,7 +41,7 @@ public sealed class FetcherLoopTests
         _time,
         new FetcherMetrics(),
         _exit,
-        NullLogger<FetcherLoop>.Instance,
+        logger ?? NullLogger<FetcherLoop>.Instance,
         finder);
 
     private static FakeSourceFetcher Blocking(TaskCompletionSource release, List<CancellationToken>? seen = null) => new(async (_, ct) =>
@@ -288,6 +290,64 @@ public sealed class FetcherLoopTests
             await loop.StopAsync(TestContext.Current.CancellationToken);
         }
     }
+
+    [Fact]
+    public async Task Loop_DoneSubstitutedBySourceTooLarge_LogsAndCountsTheOutcomeActuallyPosted()
+    {
+        // The client replaces an over-cap done body by failed/source_too_large and reports it (D19): the loop must not log or
+        // count the original done body.
+        var counted = new List<(string Status, string ErrorCode)>();
+        using var listener = new MeterListener();
+        listener.InstrumentPublished = (instrument, l) =>
+        {
+            if (instrument.Meter.Name == FetcherMetrics.MeterName && instrument.Name == "fetch_tasks_total")
+            {
+                l.EnableMeasurementEvents(instrument);
+            }
+        };
+        listener.SetMeasurementEventCallback<long>((_, _, tags, _) =>
+        {
+            string status = string.Empty, code = string.Empty;
+            foreach (var tag in tags)
+            {
+                if (tag.Key == "status")
+                {
+                    status = (string)tag.Value!;
+                }
+                else if (tag.Key == "error_code")
+                {
+                    code = (string)tag.Value!;
+                }
+            }
+
+            lock (counted)
+            {
+                counted.Add((status, code));
+            }
+        });
+        listener.Start();
+        var logger = new CapturingLogger<FetcherLoop>();
+        _api.OnLease = call => call == 1 ? Lease(Task_(1)) : Lease();
+        _api.PostedAs = sent => ResultBodies.Failed(sent.WorkerId, "source_too_large", sent.HttpStatus);
+        var loop = Loop(new FakeSourceFetcher((_, _) => ValueTask.FromResult<ErrorOr<FetchedSource>>(FakeSourceFetcher.Page())), logger: logger);
+
+        await loop.StartAsync(TestContext.Current.CancellationToken);
+        try
+        {
+            await Wait.UntilAsync(() => _api.Posts.Count == 1 && logger.Messages.Any(m => m.Contains("attempt 1 ", StringComparison.Ordinal)), "a finished task");
+            _api.Posts[0].Body.Status.ShouldBe("done", "the loop sent the original body; only the client substitutes it");
+            logger.Messages.ShouldContain(m => m.Contains("failed code source_too_large", StringComparison.Ordinal));
+            logger.Messages.ShouldNotContain(m => m.Contains(" done code ", StringComparison.Ordinal));
+            lock (counted)
+            {
+                counted.ShouldBe([("failed", "source_too_large")]);
+            }
+        }
+        finally
+        {
+            await loop.StopAsync(TestContext.Current.CancellationToken);
+        }
+    }
 }
 
 /// <summary>QA additions (02.5.2-T3): guards of <see cref="ResultBodies"/> and the worker-id alphabet.</summary>
@@ -305,6 +365,25 @@ public sealed class ResultBodiesQaTests
 
         body.Status.ShouldBe("done");
         body.TextSha256!.Length.ShouldBe(64);
+    }
+
+    [Fact]
+    public void Done_ReusesTheFetchersHash_WhenWellFormed()
+    {
+        const string abc = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
+
+        var body = ResultBodies.Done("w", WithText("abc") with { Sha256 = abc }, Options_);
+
+        body.Status.ShouldBe("done");
+        body.TextSha256.ShouldBe(abc);
+    }
+
+    [Fact]
+    public void Done_HashesTheText_WhenTheFetchersHashIsMalformed()
+    {
+        var body = ResultBodies.Done("w", WithText("abc") with { Sha256 = "NOT-A-HASH" }, Options_);
+
+        body.TextSha256.ShouldBe("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
     }
 
     [Fact]

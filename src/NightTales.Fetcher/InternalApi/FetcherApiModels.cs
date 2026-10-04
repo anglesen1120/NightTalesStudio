@@ -72,8 +72,12 @@ public interface IFetcherApi
     /// <summary>Extends the lease of <paramref name="taskId"/>.</summary>
     ValueTask<ErrorOr<Success>> HeartbeatAsync(Guid taskId, string workerId, CancellationToken ct);
 
-    /// <summary>Posts the result of <paramref name="taskId"/>; only a transient failure is retried (3 attempts in all).</summary>
-    ValueTask<ErrorOr<Success>> PostResultAsync(Guid taskId, FetchResultBody body, CancellationToken ct);
+    /// <summary>
+    /// Posts the result of <paramref name="taskId"/>; only a transient failure is retried (3 attempts in all). On success it
+    /// returns the body actually posted: <paramref name="body"/>, or the small <c>failed</c>/<c>source_too_large</c> body that
+    /// replaced an over-cap <c>done</c> one.
+    /// </summary>
+    ValueTask<ErrorOr<FetchResultBody>> PostResultAsync(Guid taskId, FetchResultBody body, CancellationToken ct);
 }
 
 /// <summary>The typed errors of the internal API client (02.5.2-T3 step 3).</summary>

@@ -237,6 +237,13 @@ unprefixed provider. Liveness is "it can lease": the host exits non-zero after
 `Fetcher:ConsecutiveFailuresBeforeExit` (5) consecutive internal-API failures, and exits non-zero
 immediately on a 401. `tools/dev/up.sh` therefore starts it only after the Api is healthy.
 
+Two start-up rules belong to the fetcher host only (`FetcherHostOptionsValidator`, run on top of the shared
+`Fetcher` validator): `Fetcher:MaxLeasesPlatformWide` must be 1..4 here, because the lease API accepts `max`
+1..4 only and any other value would make every lease a 400. `Fetcher:TotalTimeoutSeconds` +
+`Fetcher:ExtractTimeoutSeconds` must be less than `Fetcher:MaxLeaseTotalSeconds` (300), so the watchdog ends a
+stuck fetch before the server's lease ceiling does. The shared validator keeps the wider range for the Api and
+Worker, which also bind these keys.
+
 |Context|Environment|Database|Configuration comes from|
 |---|---|---|---|
 |`dotnet run` / `tools/dev/up.sh`|Development|local PostgreSQL 17, migrated|`appsettings*.json` + the env exports above|
@@ -404,7 +411,7 @@ docker compose down                                    # or: down -v to discard 
   is reachable only from other services on the compose network; the published `127.0.0.1:5000:8080`
   never serves `/internal/fetcher/…`.
 - The `fetcher` service (02.5.2-T3) builds from `src/NightTales.Fetcher/Dockerfile` (multi-stage, digest-pinned,
-  final stage `dotnet/runtime:10.0-noble-chiseled`: no shell, no curl/wget, non-root, no `EXPOSE`). It runs
+  final stage `dotnet/runtime:10.0-noble-chiseled-extra`, which carries ICU for IDN/NFC: no shell, no curl/wget, non-root, no `EXPOSE`). It runs
   `read_only` with a 64 MiB tmpfs `/tmp`, no volumes, no ports, all capabilities dropped, and limits of 0.5
   CPU, 512M and 128 pids. Its environment is only `Fetcher__Internal__BaseUrl=http://api:8081` and
   `FETCHER_API_TOKEN` from `.nts/dev/config/fetcher.env` (written by `up.sh`; the token alone, because

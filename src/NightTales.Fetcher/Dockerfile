@@ -4,8 +4,12 @@
 #
 # The Fetcher is a console host with no listener (liveness = it can lease), so unlike the Api and the
 # Worker (aspnet:10.0, which carries a shell and apt tooling) it needs only the base runtime. The final
-# stage is therefore mcr.microsoft.com/dotnet/runtime:10.0-noble-chiseled: the distroless variant of the
-# same .NET 10 runtime, with no shell, no package manager and no curl/wget, and a built-in non-root user.
+# stage is therefore mcr.microsoft.com/dotnet/runtime:10.0-noble-chiseled-extra: the distroless variant of
+# the same .NET 10 runtime, with no shell, no package manager and no curl/wget, and a built-in non-root user.
+# The -extra variant (not plain -chiseled) is required: it carries libicu and does not force invariant
+# globalization. Plain -chiseled has no ICU and sets DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=true, which would
+# silently override Directory.Build.props (InvariantGlobalization=false) and change the IdnMapping (SourceUrl,
+# PublicSuffixListProvider) and NFC (TextNormalizer) behaviour the Fetcher relies on.
 #
 # The image carries no secret: FETCHER_API_TOKEN and Fetcher__Internal__BaseUrl are supplied at run time.
 FROM mcr.microsoft.com/dotnet/sdk:10.0@sha256:35d40304542c8689331f8cab17c65926cdf48fe711e289321d71924b230a7d29 AS build
@@ -26,7 +30,7 @@ COPY src/NightTales.Fetcher/ src/NightTales.Fetcher/
 RUN dotnet publish src/NightTales.Fetcher/NightTales.Fetcher.csproj -c Release -o /app --no-restore \
     -p:UseAppHost=false
 
-FROM mcr.microsoft.com/dotnet/runtime:10.0-noble-chiseled@sha256:cef1854a63da04795952a34c970591693d1f31c8e8f42ec14892d6198a49774b AS runtime
+FROM mcr.microsoft.com/dotnet/runtime:10.0-noble-chiseled-extra@sha256:b18ef5184a6afa186bdeb51cfff41751ab9f7daec068f1419af0982a0964ba90 AS runtime
 WORKDIR /app
 ENV DOTNET_EnableDiagnostics=0
 COPY --from=build /app ./
