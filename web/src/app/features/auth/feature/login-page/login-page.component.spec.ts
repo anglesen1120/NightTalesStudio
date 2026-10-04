@@ -36,7 +36,7 @@ const invalidCredentials: AppError = {
   fieldErrors: {},
 };
 
-async function setup(error?: AppError) {
+async function setup(error?: AppError, returnUrl?: string) {
   const repository = new FakeAuthRepository();
   if (error !== undefined) repository.willFail('login', error);
   else {
@@ -53,7 +53,10 @@ async function setup(error?: AppError) {
       { provide: AuthRepository, useValue: repository },
       { provide: SessionStore, useValue: session },
       { provide: Router, useValue: router },
-      { provide: ActivatedRoute, useValue: { snapshot: { queryParamMap: convertToParamMap({}) } } },
+      {
+        provide: ActivatedRoute,
+        useValue: { snapshot: { queryParamMap: convertToParamMap(returnUrl === undefined ? {} : { returnUrl }) } },
+      },
     ],
   }).compileComponents();
   const fixture = TestBed.createComponent(LoginPageComponent);
@@ -77,6 +80,8 @@ afterEach(() => {
   TestBed.resetTestingModule();
   vi.restoreAllMocks();
   vi.useRealTimers();
+  router.navigateByUrl.mockClear();
+  session.signIn.mockReset();
   session.generation.set(0);
   session.endReason.set(null);
   session.isAuthenticated.set(false);
@@ -154,5 +159,62 @@ describe('LoginPageComponent', () => {
     vi.advanceTimersByTime(1_000);
     await fixture.whenStable();
     expect(button?.disabled).toBe(false);
+  });
+
+  it('re-enables submit and shows no stuck countdown for a 429 with Retry-After 0', async () => {
+    const error: AppError = { code: 'rate_limited', status: 429, kind: 'rate_limit', fieldErrors: {}, retryAfterSec: 0 };
+    const { fixture, root } = await setup(error);
+    type(root, '#login-email', 'owner@example.test');
+    type(root, '#login-password', 'correct horse battery staple');
+    submit(root);
+    await fixture.whenStable();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(root.querySelector<HTMLButtonElement>('button[type="submit"]')?.disabled).toBe(false);
+  });
+
+  it('renders byte-identical alerts for 401s whose server detail differs (no account enumeration)', async () => {
+    async function alertFor(detail: string): Promise<string> {
+      const { fixture, root } = await setup({ ...invalidCredentials, problem: { code: 'invalid_credentials', detail } });
+      type(root, '#login-email', 'someone@example.test');
+      type(root, '#login-password', 'wrong password');
+      submit(root);
+      await fixture.whenStable();
+      const html = root.querySelector('[role="alert"]')?.outerHTML ?? '';
+      TestBed.resetTestingModule();
+      return html;
+    }
+    const unknownEmail = await alertFor('No account for that email');
+    const wrongPassword = await alertFor('Password does not match');
+    expect(unknownEmail).toContain(authEn.login.invalidCredentials);
+    expect(unknownEmail).not.toContain('No account');
+    expect(wrongPassword).toBe(unknownEmail);
+  });
+
+  it('navigates exactly once, to the sanitised returnUrl, after a successful sign-in', async () => {
+    session.signIn.mockImplementation(() => session.isAuthenticated.set(true));
+    const { fixture, root } = await setup(undefined, '/series/3?tab=story');
+    type(root, '#login-email', 'owner@example.test');
+    type(root, '#login-password', 'correct horse battery staple');
+    submit(root);
+    await fixture.whenStable();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(session.signIn).toHaveBeenCalledTimes(1);
+    expect(router.navigateByUrl).toHaveBeenCalledTimes(1);
+    expect(router.navigateByUrl).toHaveBeenCalledWith('/series/3?tab=story');
+  });
+
+  it('navigates to /dashboard exactly once when a boot restore resolves while idle on /login', async () => {
+    const { fixture } = await setup(undefined, '/series/3?tab=story');
+    session.isAuthenticated.set(true);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    session.isAuthenticated.set(false);
+    session.isAuthenticated.set(true);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(router.navigateByUrl).toHaveBeenCalledTimes(1);
+    expect(router.navigateByUrl).toHaveBeenCalledWith('/dashboard');
   });
 });

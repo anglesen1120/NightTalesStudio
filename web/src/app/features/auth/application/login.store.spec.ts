@@ -141,6 +141,17 @@ describe('LoginStore', () => {
     expect(store.formError()).toBe('auth.rateLimited.message');
   });
 
+  it('LoginStore_RateLimitedWithRetryAfterZero_KeepsZeroSoTheFormRendersTheCountdownThatElapsesAtOnce', async () => {
+    const { store, repo } = setup();
+    repo.willFail('login', appError('rate_limited', 429, 'rate_limit', { retryAfterSec: 0 }));
+    await store.submitPassword('a@b.c', 'pw');
+    expect(store.retryAfterSec()).toBe(0);
+    expect(store.canSubmit()).toBe(false);
+    store.retryAfterElapsed();
+    expect(store.retryAfterSec()).toBeNull();
+    expect(store.canSubmit()).toBe(true);
+  });
+
   it('LoginStore_SecondRateLimit_ReplacesValueInsteadOfStacking', async () => {
     const { store, repo } = setup();
     repo.willFail('login', appError('rate_limited', 429, 'rate_limit', { retryAfterSec: 30 }));

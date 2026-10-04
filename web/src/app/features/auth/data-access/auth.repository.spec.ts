@@ -129,6 +129,22 @@ describe('AuthApiRepository', () => {
       expect(await result).toEqual({ ok: true, value: undefined });
     });
 
+    it('AuthRepository_Forgot_Accepted_NeverBranchesOnBodyOrHeaders (account enumeration)', async () => {
+      const outcomes: unknown[] = [];
+      const replies: Array<{ body: object | null; headers: Record<string, string> }> = [
+        { body: null, headers: {} },
+        { body: { queued: true, id: 'mail-1' }, headers: { 'X-Mail': 'queued', 'Retry-After': '9' } },
+        { body: { queued: false }, headers: { 'X-Mail': 'skipped' } },
+      ];
+      const { repository, http } = setup();
+      for (const reply of replies) {
+        const result = repository.forgotPassword('a@b.c');
+        http.expectOne(FORGOT).flush(reply.body, { status: 202, statusText: 'Accepted', headers: reply.headers });
+        outcomes.push(await result);
+      }
+      for (const outcome of outcomes) expect(outcome).toEqual({ ok: true, value: undefined });
+    });
+
     it('AuthRepository_Forgot_RateLimited_IsErrorWithRetryAfter', async () => {
       const { repository, http } = setup();
       const result = repository.forgotPassword('a@b.c');

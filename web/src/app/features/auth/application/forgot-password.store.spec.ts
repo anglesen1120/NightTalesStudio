@@ -99,6 +99,17 @@ describe('ForgotPasswordStore', () => {
     expect(store.retryAfterSec()).toBe(7);
   });
 
+  it('ForgotPasswordStore_RateLimitedWithRetryAfterZero_KeepsZeroUntilTheCountdownElapses', async () => {
+    const { store, repo } = setup();
+    repo.willFail('forgotPassword', appError('rate_limited', 429, 'rate_limit', { retryAfterSec: 0 }));
+    await store.submit('a@b.c');
+    expect(store.retryAfterSec()).toBe(0);
+    expect(store.canSubmit()).toBe(false);
+    store.retryAfterElapsed();
+    expect(store.retryAfterSec()).toBeNull();
+    expect(store.canSubmit()).toBe(true);
+  });
+
   it('ForgotPasswordStore_ResultAfterDestroy_IsIgnored', async () => {
     const { store, repo } = setup();
     repo.defer();

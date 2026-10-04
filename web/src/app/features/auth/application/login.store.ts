@@ -29,6 +29,7 @@ export class LoginStore {
   private readonly retryAfterState = signal<number | null>(null);
   private readonly rateLimitedUntilState = signal<number | null>(null);
   private destroyed = false;
+  private readonly userSignedInState = signal(false);
 
   readonly step = this.stepState.asReadonly();
   readonly submitting = this.submittingState.asReadonly();
@@ -40,6 +41,12 @@ export class LoginStore {
   /** Epoch ms until which submit is refused (429). */
   readonly rateLimitedUntil = this.rateLimitedUntilState.asReadonly();
   readonly canSubmit = computed(() => !this.submittingState() && this.rateLimitedUntilState() === null);
+
+  /**
+   * `true` once this page's own password step signed the user in. The container's boot-refresh-race redirect must not
+   * fire for that transition: the sign-in navigates exactly once, to the sanitised `returnUrl` [WR8].
+   */
+  readonly userSignedIn = this.userSignedInState.asReadonly();
 
   constructor() {
     inject(DestroyRef).onDestroy(() => {
@@ -108,6 +115,7 @@ export class LoginStore {
     switch (outcome.kind) {
       case 'ok': {
         const { accessToken, expiresAt, role, amr } = outcome.session;
+        this.userSignedInState.set(true);
         this.session.signIn({ accessToken, expiresAt }, role, amr);
         await this.router.navigateByUrl(sanitizeReturnUrl(returnUrl));
         return;

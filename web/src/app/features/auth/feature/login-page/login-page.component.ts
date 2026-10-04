@@ -90,7 +90,8 @@ export class LoginPageComponent {
     });
 
     effect(() => {
-      if (!this.session.isAuthenticated() || this.bootRedirected) return;
+      // Boot restore only: this page's own sign-in navigates once, to the sanitised returnUrl (LoginStore).
+      if (!this.session.isAuthenticated() || this.store.userSignedIn() || this.bootRedirected) return;
       this.bootRedirected = true;
       void this.router.navigateByUrl('/dashboard');
     });
