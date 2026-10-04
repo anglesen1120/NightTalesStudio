@@ -94,6 +94,15 @@
             "include": ["**/*.spec.ts"],
             "setupFiles": ["src/test-setup.ts"]
           }
+        },
+        "lint": {
+          "builder": "@angular-eslint/builder:lint",
+          "options": {
+            "lintFilePatterns": [
+              "src/**/*.ts",
+              "src/**/*.html"
+            ]
+          }
         }
       }
     }

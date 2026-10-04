@@ -1,0 +1,540 @@
+{
+  "fixtures": [
+    {
+      "file": "domain-imports-angular/src/app/features/series/domain/episode-summary.ts",
+      "linter": "eslint",
+      "rules": [
+        "@typescript-eslint/no-restricted-imports"
+      ]
+    },
+    {
+      "file": "domain-imports-rxjs/src/app/features/series/domain/episode-stream.ts",
+      "linter": "eslint",
+      "rules": [
+        "@typescript-eslint/no-restricted-imports"
+      ]
+    },
+    {
+      "file": "domain-imports-sibling-layer/src/app/features/series/domain/leak.ts",
+      "linter": "eslint",
+      "rules": [
+        "@typescript-eslint/no-restricted-imports"
+      ]
+    },
+    {
+      "file": "ui-injects-httpclient/src/app/shared/ui/episode-list.ts",
+      "linter": "eslint",
+      "rules": [
+        "@typescript-eslint/no-restricted-imports",
+        "no-restricted-syntax"
+      ]
+    },
+    {
+      "file": "ui-injects-store/src/app/features/series/ui/series-list.ts",
+      "linter": "eslint",
+      "rules": [
+        "no-restricted-syntax"
+      ]
+    },
+    {
+      "file": "ui-injects-repository/src/app/features/episodes/ui/episode-card.component.ts",
+      "linter": "eslint",
+      "rules": [
+        "no-restricted-syntax"
+      ]
+    },
+    {
+      "file": "shared-ui-imports-data-access/src/app/shared/ui/page-header.ts",
+      "linter": "eslint",
+      "rules": [
+        "@typescript-eslint/no-restricted-imports"
+      ]
+    },
+    {
+      "file": "api-outside-data-access/src/app/features/series/application/series.store.ts",
+      "linter": "eslint",
+      "rules": [
+        "@typescript-eslint/no-restricted-imports"
+      ]
+    },
+    {
+      "file": "api-from-ui/src/app/features/series/ui/series-row.ts",
+      "linter": "eslint",
+      "rules": [
+        "@typescript-eslint/no-restricted-imports"
+      ]
+    },
+    {
+      "file": "cross-feature-deep-import/src/app/features/series/feature/series-page.ts",
+      "linter": "eslint",
+      "rules": [
+        "@typescript-eslint/no-restricted-imports"
+      ]
+    },
+    {
+      "file": "any/src/app/features/series/domain/cursor-page.ts",
+      "linter": "eslint",
+      "rules": [
+        "@typescript-eslint/no-explicit-any"
+      ]
+    },
+    {
+      "file": "no-onpush/src/app/features/series/feature/widget.component.ts",
+      "linter": "eslint",
+      "rules": [
+        "no-restricted-syntax"
+      ]
+    },
+    {
+      "file": "no-onpush-plain-name/src/app/features/series/ui/widget.ts",
+      "linter": "eslint",
+      "rules": [
+        "no-restricted-syntax"
+      ]
+    },
+    {
+      "file": "no-onpush-eager/src/app/features/series/feature/eager.component.ts",
+      "linter": "eslint",
+      "rules": [
+        "@angular-eslint/prefer-on-push-component-change-detection"
+      ]
+    },
+    {
+      "file": "component-subscribe/src/app/features/series/feature/series-list.component.ts",
+      "linter": "eslint",
+      "rules": [
+        "no-restricted-syntax"
+      ]
+    },
+    {
+      "file": "ui-subscribe-plain-class/src/app/features/series/ui/ticker.ts",
+      "linter": "eslint",
+      "rules": [
+        "no-restricted-syntax"
+      ]
+    },
+    {
+      "file": "bypass-security-trust/src/app/features/series/feature/xss.ts",
+      "linter": "eslint",
+      "rules": [
+        "no-restricted-syntax"
+      ]
+    },
+    {
+      "file": "eval/src/app/core/security/run-code.ts",
+      "linter": "eslint",
+      "rules": [
+        "no-restricted-syntax"
+      ]
+    },
+    {
+      "file": "new-function/src/app/core/security/make-function.ts",
+      "linter": "eslint",
+      "rules": [
+        "no-restricted-syntax"
+      ]
+    },
+    {
+      "file": "document-write/src/app/core/security/emit-html.ts",
+      "linter": "eslint",
+      "rules": [
+        "no-restricted-syntax"
+      ]
+    },
+    {
+      "file": "storage-outside-prefs/src/app/features/series/ui/sidebar.component.ts",
+      "linter": "eslint",
+      "rules": [
+        "no-restricted-syntax"
+      ]
+    },
+    {
+      "file": "session-storage-outside-prefs/src/app/core/state/session-copy.ts",
+      "linter": "eslint",
+      "rules": [
+        "no-restricted-syntax"
+      ]
+    },
+    {
+      "file": "console-log/src/app/core/diagnostics.ts",
+      "linter": "eslint",
+      "rules": [
+        "no-console"
+      ]
+    },
+    {
+      "file": "template-img-without-alt/src/app/features/series/ui/poster.html",
+      "linter": "eslint",
+      "rules": [
+        "@angular-eslint/template/alt-text"
+      ]
+    },
+    {
+      "file": "template-click-without-keyboard/src/app/features/series/ui/clicker.html",
+      "linter": "eslint",
+      "rules": [
+        "@angular-eslint/template/click-events-have-key-events",
+        "@angular-eslint/template/interactive-supports-focus"
+      ]
+    },
+    {
+      "file": "template-control-without-label/src/app/features/series/ui/field.html",
+      "linter": "eslint",
+      "rules": [
+        "@angular-eslint/template/label-has-associated-control"
+      ]
+    },
+    {
+      "file": "template-positive-tabindex/src/app/features/series/ui/tab-order.html",
+      "linter": "eslint",
+      "rules": [
+        "@angular-eslint/template/no-positive-tabindex"
+      ]
+    },
+    {
+      "file": "inline-handler/src/app/features/series/ui/template.html",
+      "linter": "forbidden",
+      "rules": [
+        "inline on*= handler"
+      ]
+    },
+    {
+      "file": "inner-html/src/app/features/series/ui/bound-html.html",
+      "linter": "forbidden",
+      "rules": [
+        "[innerHTML]"
+      ]
+    },
+    {
+      "file": "javascript-url/src/app/features/series/ui/js-link.html",
+      "linter": "forbidden",
+      "rules": [
+        "javascript:"
+      ]
+    },
+    {
+      "file": "iframe-srcdoc/src/app/features/series/ui/frame.html",
+      "linter": "forbidden",
+      "rules": [
+        "srcdoc=",
+        "<iframe"
+      ]
+    },
+    {
+      "file": "control-clean/src/app/features/series/ui/series-card.component.ts",
+      "linter": "eslint",
+      "rules": []
+    },
+    {
+      "file": "control-routed-container-injects-store/src/app/features/series/feature/series-page.component.ts",
+      "linter": "eslint",
+      "rules": []
+    },
+    {
+      "file": "control-shell-injects-store/src/app/core/shell/shell.component.ts",
+      "linter": "eslint",
+      "rules": []
+    },
+    {
+      "file": "control-data-access-api-and-subscribe/src/app/features/series/data-access/series.repository.ts",
+      "linter": "eslint",
+      "rules": []
+    },
+    {
+      "file": "control-core-data-access-api/src/app/core/auth/data-access/token.repository.ts",
+      "linter": "eslint",
+      "rules": []
+    },
+    {
+      "file": "control-prefs-storage/src/app/core/prefs/preferences.store.ts",
+      "linter": "eslint",
+      "rules": []
+    },
+    {
+      "file": "control-feature-index-import/src/app/features/series/feature/series-routes.ts",
+      "linter": "eslint",
+      "rules": []
+    },
+    {
+      "file": "control-domain-util-import/src/app/features/series/domain/series-title.ts",
+      "linter": "eslint",
+      "rules": []
+    },
+    {
+      "file": "qa-rel-api-outside-data-access/src/app/features/series/application/rel-api.ts",
+      "linter": "eslint",
+      "rules": [
+        "@typescript-eslint/no-restricted-imports"
+      ]
+    },
+    {
+      "file": "qa-rel-cross-feature-deep/src/app/features/series/application/rel-deep.ts",
+      "linter": "eslint",
+      "rules": [
+        "@typescript-eslint/no-restricted-imports"
+      ]
+    },
+    {
+      "file": "qa-rel-domain-data-access/src/app/features/series/domain/rel-data-access.ts",
+      "linter": "eslint",
+      "rules": [
+        "@typescript-eslint/no-restricted-imports"
+      ]
+    },
+    {
+      "file": "qa-rel-domain-core/src/app/features/series/domain/rel-core.ts",
+      "linter": "eslint",
+      "rules": [
+        "@typescript-eslint/no-restricted-imports"
+      ]
+    },
+    {
+      "file": "qa-dynamic-import-api/src/app/features/series/application/lazy-api.ts",
+      "linter": "eslint",
+      "rules": [
+        "@typescript-eslint/no-restricted-imports"
+      ]
+    },
+    {
+      "file": "qa-dynamic-import-cross-feature/src/app/features/series/application/lazy-deep.ts",
+      "linter": "eslint",
+      "rules": [
+        "@typescript-eslint/no-restricted-imports"
+      ]
+    },
+    {
+      "file": "qa-destructured-bypass-trust/src/app/core/security/destructured.ts",
+      "linter": "eslint",
+      "rules": [
+        "no-restricted-syntax"
+      ]
+    },
+    {
+      "file": "qa-bracket-bypass-trust/src/app/core/security/bracket.ts",
+      "linter": "eslint",
+      "rules": [
+        "no-restricted-syntax"
+      ]
+    },
+    {
+      "file": "qa-window-document-write/src/app/core/security/window-document.ts",
+      "linter": "eslint",
+      "rules": [
+        "no-restricted-syntax"
+      ]
+    },
+    {
+      "file": "qa-bracket-document-write/src/app/core/security/bracket-write.ts",
+      "linter": "eslint",
+      "rules": [
+        "no-restricted-syntax"
+      ]
+    },
+    {
+      "file": "qa-bracket-local-storage/src/app/core/state/bracket-local.ts",
+      "linter": "eslint",
+      "rules": [
+        "no-restricted-syntax"
+      ]
+    },
+    {
+      "file": "qa-bracket-session-storage/src/app/core/state/bracket-session.ts",
+      "linter": "eslint",
+      "rules": [
+        "no-restricted-syntax"
+      ]
+    },
+    {
+      "file": "qa-inline-template-inner-html/src/app/features/series/ui/inline-inner-html.component.ts",
+      "linter": "forbidden",
+      "rules": [
+        "[innerHTML]"
+      ]
+    },
+    {
+      "file": "qa-inline-template-on-handler/src/app/features/series/ui/inline-handler.component.ts",
+      "linter": "forbidden",
+      "rules": [
+        "inline on*= handler"
+      ]
+    },
+    {
+      "file": "qa-bind-innerhtml/src/app/features/series/ui/bind-inner-html.html",
+      "linter": "forbidden",
+      "rules": [
+        "[innerHTML]"
+      ]
+    },
+    {
+      "file": "qa-col0-inline-handler/src/app/features/series/ui/col0.html",
+      "linter": "forbidden",
+      "rules": [
+        "inline on*= handler"
+      ]
+    },
+    {
+      "file": "qa-import-type-domain/src/app/features/series/domain/type-only.ts",
+      "linter": "eslint",
+      "rules": [
+        "@typescript-eslint/no-restricted-imports"
+      ]
+    },
+    {
+      "file": "qa-reexport-star-api/src/app/features/series/application/barrel.ts",
+      "linter": "eslint",
+      "rules": [
+        "@typescript-eslint/no-restricted-imports"
+      ]
+    },
+    {
+      "file": "qa-spec-no-exemption/src/app/features/series/domain/leaky.spec.ts",
+      "linter": "eslint",
+      "rules": [
+        "@typescript-eslint/no-restricted-imports"
+      ]
+    },
+    {
+      "file": "qa-globalthis-storage/src/app/core/state/globalthis-storage.ts",
+      "linter": "eslint",
+      "rules": [
+        "no-restricted-syntax"
+      ]
+    },
+    {
+      "file": "review-barrel-rel-ui-data-access/src/app/features/series/ui/barrel-rel.ts",
+      "linter": "eslint",
+      "rules": [
+        "@typescript-eslint/no-restricted-imports"
+      ]
+    },
+    {
+      "file": "review-barrel-alias-application/src/app/features/series/ui/barrel-application.ts",
+      "linter": "eslint",
+      "rules": [
+        "@typescript-eslint/no-restricted-imports"
+      ]
+    },
+    {
+      "file": "review-barrel-core-data-access/src/app/shared/ui/barrel-core.ts",
+      "linter": "eslint",
+      "rules": [
+        "@typescript-eslint/no-restricted-imports"
+      ]
+    },
+    {
+      "file": "review-barrel-shared-ui-domain/src/app/features/series/domain/barrel-shared-ui.ts",
+      "linter": "eslint",
+      "rules": [
+        "@typescript-eslint/no-restricted-imports"
+      ]
+    },
+    {
+      "file": "review-ctor-param-property-store/src/app/features/series/ui/ctor-property.ts",
+      "linter": "eslint",
+      "rules": [
+        "no-restricted-syntax"
+      ]
+    },
+    {
+      "file": "review-ctor-plain-param-repository/src/app/features/series/ui/ctor-plain.ts",
+      "linter": "eslint",
+      "rules": [
+        "no-restricted-syntax"
+      ]
+    },
+    {
+      "file": "review-globalthis-computed-eval/src/app/core/security/computed-eval.ts",
+      "linter": "eslint",
+      "rules": [
+        "no-restricted-syntax"
+      ]
+    },
+    {
+      "file": "review-window-computed-function/src/app/core/security/computed-function.ts",
+      "linter": "eslint",
+      "rules": [
+        "no-restricted-syntax"
+      ]
+    },
+    {
+      "file": "review-template-literal-storage/src/app/core/state/template-storage.ts",
+      "linter": "eslint",
+      "rules": [
+        "no-restricted-syntax"
+      ]
+    },
+    {
+      "file": "review-inner-html-assign/src/app/core/security/assign-inner-html.ts",
+      "linter": "eslint",
+      "rules": [
+        "no-restricted-syntax"
+      ]
+    },
+    {
+      "file": "review-outer-html-assign/src/app/core/security/assign-outer-html.ts",
+      "linter": "eslint",
+      "rules": [
+        "no-restricted-syntax"
+      ]
+    },
+    {
+      "file": "review-insert-adjacent-html/src/app/core/security/insert-adjacent.ts",
+      "linter": "eslint",
+      "rules": [
+        "no-restricted-syntax"
+      ]
+    },
+    {
+      "file": "review-create-contextual-fragment/src/app/core/security/contextual-fragment.ts",
+      "linter": "eslint",
+      "rules": [
+        "no-restricted-syntax"
+      ]
+    },
+    {
+      "file": "review-renderer-set-property-inner-html/src/app/core/security/renderer-inner-html.ts",
+      "linter": "eslint",
+      "rules": [
+        "no-restricted-syntax"
+      ]
+    },
+    {
+      "file": "review-document-cookie/src/app/core/state/cookie.ts",
+      "linter": "eslint",
+      "rules": [
+        "no-restricted-syntax"
+      ]
+    },
+    {
+      "file": "review-indexed-db/src/app/core/state/indexed.ts",
+      "linter": "eslint",
+      "rules": [
+        "no-restricted-syntax"
+      ]
+    },
+    {
+      "file": "control-prefs-cookie-indexeddb/src/app/core/prefs/cookie-db.ts",
+      "linter": "eslint",
+      "rules": []
+    },
+    {
+      "file": "review-svg-onbegin/src/app/features/series/ui/spinner.html",
+      "linter": "forbidden",
+      "rules": [
+        "inline on*= handler"
+      ]
+    },
+    {
+      "file": "review-bypass-security-trust-template/src/app/features/series/ui/trusted.html",
+      "linter": "forbidden",
+      "rules": [
+        "bypassSecurityTrust"
+      ]
+    },
+    {
+      "file": "control-on-lookalike-attributes/src/app/features/series/ui/lookalike.html",
+      "linter": "forbidden",
+      "rules": []
+    }
+  ]
+}

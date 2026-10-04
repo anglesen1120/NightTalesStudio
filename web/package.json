@@ -1,6 +1,7 @@
 {
   "name": "web",
   "version": "0.0.0",
+  "type": "module",
   "scripts": {
     "ng": "ng",
     "start": "ng serve --host 127.0.0.1 --port 4200 --proxy-config proxy.conf.json",
@@ -9,7 +10,11 @@
     "test:ci": "ng test --watch=false",
     "test:tools": "node --test tools/web",
     "e2e": "playwright test",
-    "budget:gzip": "node tools/web/check-gzip-budget.mjs --dir dist/web/browser"
+    "budget:gzip": "node tools/web/check-gzip-budget.mjs --dir dist/web/browser",
+    "lint": "ng lint && node tools/web/lint-forbidden-patterns.mjs && node tools/web/check-lint-fixtures.mjs",
+    "lint:app": "ng lint",
+    "lint:forbidden": "node tools/web/lint-forbidden-patterns.mjs",
+    "lint:fixtures": "node tools/web/check-lint-fixtures.mjs"
   },
   "private": true,
   "dependencies": {
@@ -37,9 +42,12 @@
     "@playwright/test": "^1.63.0",
     "@types/node": "^22.12.0",
     "axe-core": "^4.13.0",
+    "angular-eslint": "22.5.0",
+    "eslint": "10.12.0",
     "jsdom": "^30.0.0",
     "prettier": "^3.8.1",
     "typescript": "6.0.3",
+    "typescript-eslint": "8.71.0",
     "vitest": "^5.0.0"
   },
   "engines": {
