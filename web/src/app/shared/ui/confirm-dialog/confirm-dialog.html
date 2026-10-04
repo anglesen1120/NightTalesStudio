@@ -1,0 +1,16 @@
+<section class="confirm-dialog" role="dialog" aria-modal="true" [attr.aria-labelledby]="'nts-confirm-title'" [attr.aria-describedby]="'nts-confirm-body'" cdkTrapFocus [cdkTrapFocusAutoCapture]="true" (keydown.escape)="cancel()">
+  <div class="confirm-dialog__heading">
+    <h2 id="nts-confirm-title">{{ resolvedTitleKey() | transloco }}</h2>
+    <button class="confirm-dialog__close" type="button" (click)="cancel()" [disabled]="isPending()" [attr.aria-label]="'core.ui.dialog.close' | transloco">×</button>
+  </div>
+  <p id="nts-confirm-body">{{ resolvedBodyKey() | transloco }}</p>
+  <ng-content select="[cost-line]" />
+  @if (costTemplate; as template) {
+    <ng-container [ngTemplateOutlet]="template" [ngTemplateOutletContext]="templateContext()" />
+  }
+  <p class="confirm-dialog__pending" aria-live="polite">{{ isPending() ? ('core.ui.confirm.pending' | transloco) : '' }}</p>
+  <div class="confirm-dialog__actions">
+    <button type="button" (click)="cancel()" [disabled]="isPending()">{{ 'core.ui.confirm.cancel' | transloco }}</button>
+    <button type="button" [class.confirm-dialog__danger]="isDestructive()" (click)="confirm()" [disabled]="isPending()">{{ resolvedConfirmLabelKey() | transloco }}</button>
+  </div>
+</section>

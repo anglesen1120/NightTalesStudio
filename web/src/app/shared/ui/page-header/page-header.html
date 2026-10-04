@@ -1,0 +1,17 @@
+<header class="page-header">
+  <div class="page-header__copy">
+    @if (safeBackHref(); as href) {
+      <a class="page-header__back" [routerLink]="href" [attr.aria-label]="'core.ui.pageHeader.back' | transloco">
+        <span aria-hidden="true">←</span>
+        <span>{{ 'core.ui.pageHeader.back' | transloco }}</span>
+      </a>
+    }
+    <h1>{{ titleKey() | transloco }}</h1>
+    @if (subtitleKey(); as subtitle) {
+      <p>{{ subtitle | transloco }}</p>
+    }
+  </div>
+  <div class="page-header__actions" [attr.aria-label]="'core.ui.pageHeader.actions' | transloco">
+    <ng-content select="[actions]" />
+  </div>
+</header>

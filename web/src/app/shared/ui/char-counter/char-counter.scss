@@ -1,0 +1,3 @@
+:host { display: inline-block; color: var(--nts-color-on-surface-muted); font-size: var(--nts-type-caption-size); line-height: var(--nts-type-caption-line); }
+:host(.char-counter--over) { color: var(--nts-color-error); font-weight: 500; }
+.char-counter__label { color: inherit; }

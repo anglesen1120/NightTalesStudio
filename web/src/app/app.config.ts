@@ -6,7 +6,7 @@ import {
   provideZonelessChangeDetection,
 } from '@angular/core';
 import { provideRouter } from '@angular/router';
-import { PreferencesStore } from '@core/prefs';
+import { PreferencesStore, ThemeStore } from '@core/prefs';
 import { routes } from './app.routes';
 
 export const appConfig: ApplicationConfig = {
@@ -14,7 +14,10 @@ export const appConfig: ApplicationConfig = {
     provideBrowserGlobalErrorListeners(),
     provideZonelessChangeDetection(),
     provideRouter(routes),
-    // Eager read of the persisted UI language/theme at startup.
-    provideEnvironmentInitializer(() => inject(PreferencesStore).read()),
+    // Read preferences once, then apply the validated theme before the first view renders.
+    provideEnvironmentInitializer(() => {
+      inject(PreferencesStore).read();
+      inject(ThemeStore).init();
+    }),
   ],
 };

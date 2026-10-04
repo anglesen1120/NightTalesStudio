@@ -1,0 +1,121 @@
+/* Night Tales Studio “Phòng thu” tokens. Dark is the default; theme blocks keep identical colour keys. */
+:root,
+[data-theme='dark'] {
+  color-scheme: dark;
+  --nts-color-room: #202523;
+  --nts-color-sheet: #2a312e;
+  --nts-color-ink: #f4f5ef;
+  --nts-color-muted: #bfc9c4;
+  --nts-color-signal: #6ecac0;
+  --nts-color-on-signal: #202523;
+  --nts-color-playhead: #ff786c;
+  --nts-color-on-playhead: #202523;
+  --nts-color-line: #52605a;
+  --nts-color-soft: #343c38;
+  --nts-color-scrim: rgba(11, 15, 13, 0.76);
+  --nts-color-bg: #202523;
+  --nts-color-surface: #2a312e;
+  --nts-color-surface-variant: #343c38;
+  --nts-color-on-surface: #f4f5ef;
+  --nts-color-on-surface-muted: #bfc9c4;
+  --nts-color-primary: #6ecac0;
+  --nts-color-on-primary: #202523;
+  --nts-color-outline: #52605a;
+  --nts-color-error: #ff786c;
+  --nts-color-warn: #ff786c;
+  --nts-color-success: #6ecac0;
+  --nts-color-focus: #6ecac0;
+  --nts-color-primary-soft: color-mix(in srgb, #6ecac0 16%, #2a312e);
+  --nts-color-error-soft: color-mix(in srgb, #ff786c 15%, #2a312e);
+}
+
+[data-theme='light'] {
+  color-scheme: light;
+  --nts-color-room: #eef2f0;
+  --nts-color-sheet: #ffffff;
+  --nts-color-ink: #16211d;
+  --nts-color-muted: #4b5a54;
+  --nts-color-signal: #006c65;
+  --nts-color-on-signal: #ffffff;
+  --nts-color-playhead: #b43b35;
+  --nts-color-on-playhead: #ffffff;
+  --nts-color-line: #b8c2bd;
+  --nts-color-soft: #e1e8e4;
+  --nts-color-scrim: rgba(22, 33, 29, 0.54);
+  --nts-color-bg: #eef2f0;
+  --nts-color-surface: #ffffff;
+  --nts-color-surface-variant: #e1e8e4;
+  --nts-color-on-surface: #16211d;
+  --nts-color-on-surface-muted: #4b5a54;
+  --nts-color-primary: #006c65;
+  --nts-color-on-primary: #ffffff;
+  --nts-color-outline: #b8c2bd;
+  --nts-color-error: #b43b35;
+  --nts-color-warn: #b43b35;
+  --nts-color-success: #006c65;
+  --nts-color-focus: #006c65;
+  --nts-color-primary-soft: color-mix(in srgb, #006c65 10%, #ffffff);
+  --nts-color-error-soft: color-mix(in srgb, #b43b35 9%, #ffffff);
+}
+
+:root {
+  --nts-font-sans: 'Be Vietnam Pro', system-ui, sans-serif;
+  --nts-font-mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  --nts-space-1: 4px;
+  --nts-space-2: 8px;
+  --nts-space-3: 12px;
+  --nts-space-4: 16px;
+  --nts-space-5: 24px;
+  --nts-space-6: 32px;
+  --nts-space-7: 48px;
+  --nts-space-8: 64px;
+  --nts-radius-control: 6px;
+  --nts-radius-sheet: 3px;
+  --nts-radius-dialog: 10px;
+  --nts-radius-pill: 999px;
+  --nts-radius-sm: var(--nts-radius-control);
+  --nts-radius-md: var(--nts-radius-control);
+  --nts-radius-lg: var(--nts-radius-dialog);
+  --nts-elevation-1: 0 12px 32px rgba(10, 15, 13, 0.28);
+  --nts-elevation-2: 0 24px 64px rgba(10, 15, 13, 0.4);
+  --nts-elevation-3: var(--nts-elevation-2);
+  --nts-type-display-size: 3.625rem;
+  --nts-type-display-line: 1.017;
+  --nts-type-display-weight: 600;
+  --nts-type-title-size: 1.375rem;
+  --nts-type-title-line: 1.273;
+  --nts-type-title-weight: 600;
+  --nts-type-body-size: 0.9375rem;
+  --nts-type-body-line: 1.533;
+  --nts-type-body-weight: 400;
+  --nts-type-label-size: 0.9375rem;
+  --nts-type-label-line: 1.533;
+  --nts-type-label-weight: 500;
+  --nts-type-caption-size: 0.75rem;
+  --nts-type-caption-line: 1.5;
+  --nts-type-caption-weight: 400;
+  --nts-type-page-size: 1.875rem;
+  --nts-type-page-line: 1.1;
+  --nts-type-page-weight: 600;
+  --nts-control-h: 36px;
+  --nts-control-h-sm: 28px;
+  --nts-target-min: 44px;
+  --nts-motion-fast: 160ms;
+  --nts-motion-base: 240ms;
+  --nts-ease: cubic-bezier(0.2, 0.7, 0.2, 1);
+  --nts-measure: 68ch;
+}
+
+@media (pointer: coarse) {
+  :root {
+    --nts-control-h: 44px;
+    --nts-control-h-sm: 36px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --nts-motion-fast: 0ms;
+    --nts-motion-base: 0ms;
+  }
+}

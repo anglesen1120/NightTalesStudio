@@ -1,0 +1,28 @@
+@use '@angular/material' as mat;
+
+/* Angular Material 22.2.1 exposes mat.theme() and mat.theme-overrides(); the approved Phòng thu CSS variables remain the single colour source. */
+html {
+  @include mat.theme((
+    typography: (
+      plain-family: var(--nts-font-sans),
+      brand-family: var(--nts-font-sans),
+      regular-weight: 400,
+      medium-weight: 500,
+      bold-weight: 600,
+    ),
+    density: 0,
+  ));
+  @include mat.theme-overrides((
+    background: var(--nts-color-bg),
+    surface: var(--nts-color-surface),
+    surface-container: var(--nts-color-surface),
+    surface-container-high: var(--nts-color-surface-variant),
+    on-surface: var(--nts-color-on-surface),
+    on-surface-variant: var(--nts-color-on-surface-muted),
+    outline: var(--nts-color-outline),
+    primary: var(--nts-color-primary),
+    on-primary: var(--nts-color-on-primary),
+    error: var(--nts-color-error),
+    on-error: var(--nts-color-on-primary),
+  ));
+}

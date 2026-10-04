@@ -1,0 +1,6 @@
+<p class="loading-state__label" aria-live="polite">{{ labelKey() | transloco }}</p>
+<div class="loading-state__skeletons" aria-hidden="true">
+  @for (_ of skeletonRows(); track $index) {
+    <span class="loading-state__skeleton" [style.width.%]="100 - $index * 9"></span>
+  }
+</div>

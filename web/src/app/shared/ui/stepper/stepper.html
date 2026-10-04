@@ -1,0 +1,15 @@
+<ol>
+  @for (item of labelledSteps(); track item.number) {
+    <li [class]="'stepper__step stepper__step--' + item.step.state" [attr.aria-current]="item.step.state === 'current' ? 'step' : null">
+      <span class="stepper__marker" aria-hidden="true">
+        @if (item.step.state === 'done') { <nts-icon-check /> } @else { {{ item.number }} }
+      </span>
+      <span>
+        <span class="stepper__meta">{{ 'core.ui.stepper.step' | transloco }} {{ item.number }}</span>
+        <span class="stepper__label">{{ item.step.labelKey | transloco }}</span>
+        @if (item.step.state === 'current') { <span class="stepper__sr">, {{ 'core.ui.stepper.current' | transloco }}</span> }
+        @if (item.step.state === 'done') { <span class="stepper__sr">, {{ 'core.ui.stepper.done' | transloco }}</span> }
+      </span>
+    </li>
+  }
+</ol>
