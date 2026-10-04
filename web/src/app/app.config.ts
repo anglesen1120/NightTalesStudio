@@ -10,6 +10,7 @@ import { APP_BASE_HREF } from '@angular/common';
 import { provideRouter } from '@angular/router';
 import { LocaleService, provideAppI18n } from '@core/i18n';
 import { PreferencesStore, ThemeStore } from '@core/prefs';
+import { provideRealtime } from '@core/realtime';
 import { provideSession, sessionInterceptor } from '@core/session';
 import { routes } from './app.routes';
 
@@ -23,6 +24,7 @@ export const appConfig: ApplicationConfig = {
     // Same-origin HttpClient for the i18n loader and the API. 10.2.3-T1 prepends `idempotencyInterceptor` to this list.
     provideHttpClient(withFetch(), withInterceptors([sessionInterceptor])),
     provideSession(),
+    provideRealtime(),
     provideAppI18n(),
     // Read preferences once, then apply the validated theme and the initial language before the first view renders.
     // The profile locale (`GET /me`) is not known yet; the shell re-activates it once `me()` is set.
