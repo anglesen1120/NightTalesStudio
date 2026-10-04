@@ -71,7 +71,7 @@ public sealed class StoryQualityChecker
     /// <summary>A segment text carries markdown, brackets, list markers or a URL.</summary>
     public const string FormattingInvalid = "Q-MD-01";
 
-    /// <summary>Moderation flagged a D12 blocking category.</summary>
+    /// <summary>Moderation flagged a D12 blocking category, or no moderation verdict is available (fails closed).</summary>
     public const string ModerationBlocked = "Q-MOD-01";
 
     /// <summary>The similarity verdict is <see cref="SimilarityVerdict.Warn"/>.</summary>
@@ -720,6 +720,17 @@ public sealed class StoryQualityChecker
                 SegmentAddress.Meta,
                 string.Join(", ", flagged),
                 "Remove the flagged content."), MetaOrder));
+        }
+        else if (ctx.ModerationUnavailable)
+        {
+            // Fail closed: no verdict is not a clean verdict, so the text counts as not moderated until it is re-checked.
+            issues.Add((Make(
+                ModerationBlocked,
+                QualitySeverity.Blocking,
+                QualityKind.Objective,
+                SegmentAddress.Meta,
+                "moderation unavailable",
+                "Run the content moderation again; approval is blocked until it has passed."), MetaOrder));
         }
 
         if (ctx.HasUrlSources || ctx.Topic == Topic.TrueCrime)

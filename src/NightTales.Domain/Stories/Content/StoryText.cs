@@ -35,6 +35,32 @@ public static class StoryText
             : text.Normalize(NormalizationForm.FormC);
     }
 
+    /// <summary>
+    /// The first C0 control character in <paramref name="text"/> that story text may not carry, or null. A
+    /// line feed, a carriage return and a tab are prose (the editor canonicalises <c>\r\n</c> and <c>\r</c> to
+    /// <c>\n</c>); every other character below U+0020 — above all NUL, which Postgres refuses in <c>text</c>
+    /// and <c>jsonb</c> — is not. The scan is over the raw text: NFC never adds or removes a control character.
+    /// </summary>
+    /// <param name="text">The raw field text; null and empty carry none.</param>
+    /// <returns>The offending character, or null.</returns>
+    public static char? FindControlCharacter(string? text)
+    {
+        if (string.IsNullOrEmpty(text))
+        {
+            return null;
+        }
+
+        foreach (var character in text)
+        {
+            if (character < ' ' && character is not ('\n' or '\r' or '\t'))
+            {
+                return character;
+            }
+        }
+
+        return null;
+    }
+
     /// <summary>Whether <paramref name="text"/> holds a surrogate that is not part of a valid pair.</summary>
     private static bool HasUnpairedSurrogate(ReadOnlySpan<char> text)
     {

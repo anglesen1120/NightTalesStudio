@@ -300,6 +300,31 @@ public sealed class StoryQualityCheckerTests
         Checker.Check(Draft(), Context(moderation: ["harassment"])).Issues.ShouldBeEmpty();
     }
 
+    /// <summary>NTS-EDIT-L1: no verdict is not a clean verdict; the checker fails closed on the unavailable marker.</summary>
+    [Fact]
+    public void Check_ModerationUnavailable_EmitsBlockingQMod01()
+    {
+        var report = Checker.Check(Draft(), Context() with { ModerationUnavailable = true });
+
+        Only(report, StoryQualityChecker.ModerationBlocked, QualitySeverity.Blocking, QualityKind.Objective, "meta");
+        report.HasBlocking.ShouldBeTrue();
+        report.Issues.Single().Evidence.ShouldBe("moderation unavailable");
+    }
+
+    [Fact]
+    public void Check_ModerationUnavailableAndFlagged_EmitsOneQMod01NamingTheCategory()
+    {
+        var report = Checker.Check(Draft(), Context(moderation: ["hate/threatening"]) with { ModerationUnavailable = true });
+
+        report.Issues.ShouldHaveSingleItem().Evidence.ShouldBe("hate/threatening");
+    }
+
+    [Fact]
+    public void Check_ModerationAvailable_EmitsNoQMod01()
+    {
+        Checker.Check(Draft(), Context(moderation: [])).Issues.ShouldNotContain(issue => issue.RuleId == StoryQualityChecker.ModerationBlocked);
+    }
+
     [Fact]
     public void Check_StaleModelReview_EmitsQReview01()
     {

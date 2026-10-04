@@ -190,6 +190,27 @@ public sealed class OpenApiDocumentTests
         responses.TryGetProperty("403", out _).ShouldBeTrue("a user cannot name a system trigger");
     }
 
+    [Fact]
+    public void Edit_story_route_documents_the_if_match_header_and_the_400_401_404_409_412_428_responses()
+    {
+        var operation = Root
+            .GetProperty("paths")
+            .GetProperty("/api/v1/episodes/{id}/story")
+            .GetProperty("put");
+
+        // The header is documented like every other If-Match route (a [FromHeader] string?); the 428 for a
+        // missing header is the RequireIfMatch filter's, and is asserted below as a response.
+        operation.GetProperty("parameters").EnumerateArray().Count(parameter =>
+            parameter.GetProperty("in").GetString() == "header"
+            && parameter.GetProperty("name").GetString() == "If-Match").ShouldBe(1);
+
+        var responses = operation.GetProperty("responses");
+        foreach (var status in new[] { "200", "400", "401", "404", "409", "412", "428" })
+        {
+            responses.TryGetProperty(status, out _).ShouldBeTrue($"PUT story documents {status}");
+        }
+    }
+
     private static JsonElement Root => Document.Value.RootElement;
 
     private static JsonElement Schemas =>
