@@ -1,4 +1,12 @@
 {
+  "common": {
+    "close": "Đóng",
+    "retry": "Thử lại",
+    "cancel": "Huỷ",
+    "back": "Quay lại",
+    "loading": "Đang tải…",
+    "translationUnavailable": "Chưa có bản dịch cho phần này"
+  },
   "core": {
     "ui": {
       "pageHeader": { "back": "Quay lại", "actions": "Thao tác trang" },
