@@ -118,4 +118,27 @@ describe('check-gzip-budget', () => {
 
     assert.deepEqual([...initialReferences(html)].sort(), ['chunk-A.js', 'main.js', 'styles.css']);
   });
+
+  it('does not count a lazy chunk the document never references, but counts a modulepreloaded one', () => {
+    const script = Buffer.from('export const a = 1;\n'.repeat(500));
+    const lazy = randomBytes(BUDGET_BYTES + 5_000);
+    const dir = fixture('lazy', { script });
+    writeFileSync(join(dir, 'chunk-LAZY.js'), lazy);
+    const base = gzipSize(script) + gzipSize(Buffer.from('body{margin:0}'));
+
+    const unreferenced = run('--dir', dir);
+    assert.equal(unreferenced.code, 0, unreferenced.out);
+    assert.match(unreferenced.out, new RegExp(`total gzip ${base} bytes`));
+    assert.doesNotMatch(unreferenced.out, /chunk-LAZY/);
+
+    const preloadedDir = fixture('preloaded', {
+      script,
+      extraHtml: '<link rel="modulepreload" href="chunk-INITIAL.js">',
+    });
+    writeFileSync(join(preloadedDir, 'chunk-INITIAL.js'), lazy);
+    const preloaded = run('--dir', preloadedDir);
+    assert.equal(preloaded.code, 1);
+    assert.match(preloaded.out, new RegExp(`chunk-INITIAL\\.js ${lazy.length} ${gzipSize(lazy)}`));
+    assert.match(preloaded.err, /exceeds the budget by/);
+  });
 });
