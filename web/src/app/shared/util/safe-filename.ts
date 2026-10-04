@@ -31,8 +31,10 @@ function isControlOrSpoofing(codePoint: number): boolean {
  * Windows device names: reserved with or without an extension, in any case (`CON`, `nul.txt`,
  * `Com1.tar.gz`). Windows silently strips trailing dots and spaces off the stem, so `CON .txt` and
  * `NUL.` are reserved too — the stem is followed by dots/spaces and then an extension or the end.
+ * The superscript digits `¹ ² ³` (U+00B9, U+00B2, U+00B3) are reserved as well (`COM¹`, `LPT²`): Windows
+ * lists them as device names, and NFC leaves them untouched, so they must be matched explicitly.
  */
-const WINDOWS_RESERVED = /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])[. ]*(?:\.|$)/i;
+const WINDOWS_RESERVED = /^(?:con|prn|aux|nul|(?:com|lpt)[1-9\u00b9\u00b2\u00b3])[. ]*(?:\.|$)/i;
 
 /**
  * Makes a file name that came from the server (`Content-Disposition`, API field) safe to hand to `a.download`

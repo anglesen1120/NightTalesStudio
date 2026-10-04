@@ -45,6 +45,17 @@ describe('safeFilename', () => {
     ['Com9', '_Com9'],
     ['lpt1.log', '_lpt1.log'],
     ['LPT9', '_LPT9'],
+    // Superscript digits are reserved too (Windows: COM¹ COM² COM³ LPT¹ LPT² LPT³).
+    ['COM\u00B9', '_COM\u00B9'],
+    ['com\u00B2.txt', '_com\u00B2.txt'],
+    ['Com\u00B3.tar.gz', '_Com\u00B3.tar.gz'],
+    ['LPT\u00B9', '_LPT\u00B9'],
+    ['lpt\u00B2 .log', '_lpt\u00B2 .log'],
+    ['Lpt\u00B3.', '_Lpt\u00B3'],
+    // Not device names: a different superscript, or more text after the stem.
+    ['COM\u2074', 'COM\u2074'],
+    ['com\u00B9\u00B2.txt', 'com\u00B9\u00B2.txt'],
+    ['COM\u00B9 x', 'COM\u00B9 x'],
     // Not device names: no reserved stem.
     ['console.log', 'console.log'],
     ['com10.txt', 'com10.txt'],

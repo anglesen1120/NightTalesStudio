@@ -1,7 +1,6 @@
-import { createHash } from 'node:crypto';
-
 import { expectA11yClean } from '../fixtures/axe';
 import { expect, test } from '../fixtures/csp.fixture';
+import { directive, expectInlineScriptsCoveredByCsp } from './csp-inline-scripts';
 import { CSP_ROUTES } from './routes';
 
 // The header assertions need nginx: `ng serve` sends no D4 headers (documented in 10.1.6-T1). Run with
@@ -29,17 +28,6 @@ const D4_HEADERS: Record<string, string> = {
   'permissions-policy': 'camera=(), microphone=(), geolocation=(), payment=()',
   'cross-origin-opener-policy': 'same-origin',
 };
-
-/**
- * One directive of the policy, compared EXACTLY: only the `; ` separator's leading space is dropped, never trailing
- * whitespace (an empty `NTS_CSP_MEDIA_ORIGINS` must leave `img-src 'self' data:` with nothing after it).
- */
-function directive(policy: string, name: string): string | undefined {
-  return policy
-    .split(';')
-    .map((part) => part.trimStart())
-    .find((part) => part === name || part.startsWith(`${name} `));
-}
 
 for (const route of CSP_ROUTES) {
   test(`CSP header, hash coverage, inherited headers and axe on ${route}`, async ({ page, request }) => {
@@ -69,27 +57,12 @@ for (const route of CSP_ROUTES) {
       expect(headers[name], `${route} ${name}`).toBe(value);
     }
 
-    // Every executable inline <script> of the served document is covered by a hash in the header: hash the
-    // browser-parsed text of each one (`script.text`, already LF-normalised by the HTML parser) and require its
-    // digest in `script-src`. No count comparison: the header holds one deduplicated set for the whole site.
+    // Every executable inline <script> of the served document is covered by a hash in the header (shared helper,
+    // proven against a negative control in csp-negative.spec.ts). A page without inline scripts logs
+    // `0 inline scripts checked` rather than passing silently.
     await page.goto(route);
     await page.waitForLoadState('networkidle');
-    // Non-executable data blocks and empty bodies are never hashed: the same rules as tools/web/gen-csp.mjs
-    // (INERT_SCRIPT_TYPES, empty-body skip).
-    const inlineScriptTexts = await page.evaluate(() => {
-      const inert = ['application/json', 'application/ld+json', 'importmap', 'speculationrules'];
-      return [...document.querySelectorAll<HTMLScriptElement>('script:not([src])')]
-        .filter(
-          (script) =>
-            !inert.includes((script.getAttribute('type') ?? '').trim().toLowerCase()) && script.text.trim() !== '',
-        )
-        .map((script) => script.text);
-    });
-    const headerHashes = new Set(scriptSrc.match(/'sha256-[A-Za-z0-9+/=]+'/g) ?? []);
-    for (const text of inlineScriptTexts) {
-      const digest = `'sha256-${createHash('sha256').update(text, 'utf8').digest('base64')}'`;
-      expect(headerHashes.has(digest), `${route}: inline script ${digest} is not in the script-src hashes`).toBe(true);
-    }
+    await expectInlineScriptsCoveredByCsp(page, scriptSrc, route);
 
     await expectA11yClean(page);
   });
