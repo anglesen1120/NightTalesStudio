@@ -21,12 +21,13 @@
   --nts-color-primary: #6ecac0;
   --nts-color-on-primary: #202523;
   --nts-color-outline: #52605a;
+  --nts-color-control-outline: #727e78;
   --nts-color-error: #ff786c;
   --nts-color-warn: #ff786c;
   --nts-color-success: #6ecac0;
   --nts-color-focus: #6ecac0;
   --nts-color-primary-soft: color-mix(in srgb, #6ecac0 16%, #2a312e);
-  --nts-color-error-soft: color-mix(in srgb, #ff786c 15%, #2a312e);
+  --nts-color-error-soft: color-mix(in srgb, #ff786c 9%, #2a312e);
 }
 
 [data-theme='light'] {
@@ -50,6 +51,7 @@
   --nts-color-primary: #006c65;
   --nts-color-on-primary: #ffffff;
   --nts-color-outline: #b8c2bd;
+  --nts-color-control-outline: #7f8a85;
   --nts-color-error: #b43b35;
   --nts-color-warn: #b43b35;
   --nts-color-success: #006c65;
