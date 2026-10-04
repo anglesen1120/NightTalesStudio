@@ -144,7 +144,6 @@ describe('SessionStore', () => {
 
     it.each([
       ['reused', 'reused'],
-      ['revoked', 'revoked'],
       ['network', 'restore_failed'],
       ['server', 'restore_failed'],
       ['forbidden', 'restore_failed'],
@@ -351,12 +350,14 @@ describe('SessionStore', () => {
   });
 
   describe('refresh lock', () => {
-    it('SessionStore_Refresh_RechecksTokenInsideLock', async () => {
+    // Under the lock the refresh is serialised, and a generation change while waiting commits nothing and issues no
+    // call. The freshness branch itself covers same-tab only (cross-tab cannot share the in-memory token).
+    it('SessionStore_Refresh_UnderLock_IsSerialisedAndStaleGenerationCommitsNothing', async () => {
       const locks = lockedNavigator();
       const { store, fake } = setup();
       store.signIn(pair('user', STALE, 'old'), 'user', []);
-      const rotated = pair('user', FRESH, 'rotated-by-other-tab');
-      // Another tab rotated the cookie while this one waited for the lock.
+      const rotated = pair('user', FRESH, 'signed-in-while-waiting');
+      // A new session replaced this one while the flight waited for the lock.
       locks.hook(() => {
         store.signIn(rotated, 'user', []);
       });
@@ -755,17 +756,97 @@ describe('SessionStore', () => {
 
     // The real backend answers a refresh WITHOUT any cookie with 401 `session_revoked`
     // (AuthEndpoints.RefreshAsync, 09 README WT21, RefreshTokenTests.Refresh_WithoutCookie_ReturnsSessionRevoked), so
-    // every first-time anonymous visitor boots through this exact branch. README D6 / Acceptance L190-192 require the
-    // anonymous boot to carry no end reason and no banner. `it.fails` documents the open defect (QA10_2_1 D1): flip
-    // it to `it` once `endRestore` treats `session_revoked` like the plain anonymous denial.
-    it.fails('QA-DEFECT D1: a boot refresh answered by 401 session_revoked (no cookie, WT21) settles anonymous', async () => {
+    // every first-time anonymous visitor boots through this exact branch: anonymous, no banner, no scope reset.
+    it('SessionStore_Restore_OnSessionRevoked401_IsAnonymous (no cookie, WT21)', async () => {
       const scope = new CountingScope();
-      const { store, fake } = setup([scope]);
+      const { store, fake, router } = setup([scope]);
       fake.mode = 'revoked';
       await store.restore();
       expect(store.endReason()).toBeNull();
       expect(store.status()).toBe('anonymous');
       expect(scope.resets).toBe(0);
+      expect(router.url).toBe('/');
+    });
+
+    it('SessionStore_Restore_OnUnknown401Code_IsAnonymous', async () => {
+      const scope = new CountingScope();
+      const { store, fake } = setup([scope]);
+      fake.mode = 'deferred';
+      const restoring = store.restore();
+      await vi.waitFor(() => expect(fake.calls).toBe(1));
+      fake.rejectNext(appError('something_new', 401));
+      await restoring;
+      expect(store.endReason()).toBeNull();
+      expect(store.status()).toBe('anonymous');
+      expect(scope.resets).toBe(0);
+    });
+
+    it('SessionStore_Restore_On403EmailNotVerified_IsRestoreFailed', async () => {
+      const scope = new CountingScope();
+      const { store, fake, router } = setup([scope]);
+      fake.mode = 'deferred';
+      const restoring = store.restore();
+      await vi.waitFor(() => expect(fake.calls).toBe(1));
+      fake.rejectNext(appError('email_not_verified', 403));
+      await restoring;
+      expect(store.endReason()).toBe('restore_failed');
+      expect(store.status()).toBe('ended');
+      expect(scope.resets).toBe(1);
+      expect(router.url).toBe('/');
+    });
+
+    describe('restore_failed retry', () => {
+      async function failedBoot(scope?: CountingScope): Promise<Harness> {
+        const harness = setup(scope === undefined ? [] : [scope]);
+        harness.fake.mode = 'network';
+        await harness.store.restore();
+        expect(harness.store.endReason()).toBe('restore_failed');
+        harness.fake.calls = 0;
+        return harness;
+      }
+
+      it('a user action refreshes again; success commits the session and clears the end reason', async () => {
+        const { store, fake } = await failedBoot();
+        fake.mode = 'ok';
+        fake.next = pair('admin', FRESH, 'retry');
+
+        await expect(store.ensureFreshAccessToken({ userAction: true })).resolves.toBe(fake.next.accessToken);
+        expect(fake.calls).toBe(1);
+        expect(store.endReason()).toBeNull();
+        expect(store.status()).toBe('authenticated');
+        expect(store.role()).toBe('admin');
+      });
+
+      it('a background call returns null without any call and keeps restore_failed', async () => {
+        const { store, fake } = await failedBoot();
+        fake.mode = 'ok';
+        await expect(store.ensureFreshAccessToken()).resolves.toBeNull();
+        expect(fake.calls).toBe(0);
+        expect(store.endReason()).toBe('restore_failed');
+      });
+
+      it('a user action whose retry is answered by session_revoked settles anonymous without a banner or navigation', async () => {
+        const scope = new CountingScope();
+        const { store, fake, router } = await failedBoot(scope);
+        expect(scope.resets).toBe(1);
+        fake.mode = 'revoked';
+
+        await expect(store.ensureFreshAccessToken({ userAction: true })).rejects.toMatchObject({ code: 'session_revoked' });
+        expect(fake.calls).toBe(1);
+        expect(store.endReason()).toBeNull();
+        expect(store.status()).toBe('anonymous');
+        expect(scope.resets).toBe(1);
+        expect(router.url).toBe('/');
+      });
+
+      it('a user action whose retry fails again transiently stays restore_failed and resets the scopes once', async () => {
+        const scope = new CountingScope();
+        const { store, fake } = await failedBoot(scope);
+        fake.mode = 'server';
+        await expect(store.ensureFreshAccessToken({ userAction: true })).rejects.toMatchObject({ status: 503 });
+        expect(store.endReason()).toBe('restore_failed');
+        expect(scope.resets).toBe(1);
+      });
     });
   });
 });

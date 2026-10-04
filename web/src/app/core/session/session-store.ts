@@ -22,7 +22,8 @@ export interface EnsureFreshOptions {
 
 interface FlightOptions {
   readonly rejectedToken: string | undefined;
-  /** Boot restore: a failure is classified by `endRestore` instead of ending the session with a redirect. */
+  /** Boot restore or a user-action retry after `restore_failed`: a failure is classified by `endRestore` instead
+   *  of ending the session with a redirect. */
   readonly restoring: boolean;
 }
 
@@ -114,11 +115,17 @@ export class SessionStore {
   /**
    * The token to present, refreshing on demand (D6/D7, no timer). `null` without any HTTP call when the session is
    * ended, there is nothing to refresh, or a background caller meets an idle tab. Rejects with the refresh's
-   * `AppError` when a refresh was attempted and failed.
+   * `AppError` when a refresh was attempted and failed. The one ended state a call may leave is `restore_failed`:
+   * transient, the cookie may still be valid, so a `userAction` call retries the refresh once more and re-applies
+   * the boot classification on failure (failure table L288).
    */
   async ensureFreshAccessToken(opts?: EnsureFreshOptions): Promise<string | null> {
     if (!this.restoreSettledState()) await this.restore();
-    if (this.endReasonState() !== null) return null;
+    const ended = this.endReasonState();
+    if (ended !== null) {
+      if (ended !== 'restore_failed' || opts?.userAction !== true) return null;
+      return this.startFlight({ rejectedToken: undefined, restoring: true });
+    }
     const token = this.accessTokenState();
     if (token === null) return null;
     if (!this.isStale(token, opts?.rejectedToken)) return token;
@@ -282,6 +289,7 @@ export class SessionStore {
     this.expiresAtState.set(tokens.expiresAt);
     this.roleState.set(claims.role);
     this.amrState.set(claims.amr);
+    this.endReasonState.set(null);
     return tokens.accessToken;
   }
 
@@ -297,13 +305,20 @@ export class SessionStore {
   }
 
   /**
-   * Boot restore failure policy (README D6): the normal anonymous denial stays anonymous; terminal family codes and
-   * everything else (network, timeout, 5xx, 403, unknown) end the session without navigating.
+   * Boot restore failure policy (README D6). The SPA cannot see the HttpOnly cookie, so a 401 — missing cookie
+   * (`session_revoked`, WT21), expired family, unknown code — is indistinguishable from the anonymous denial and
+   * settles anonymous: no banner, no scope reset, no navigation. Only `refresh_token_reused` is terminal
+   * (`reused`). Everything else (network, timeout, 5xx, 403, unknown) ends the session in place as
+   * `restore_failed`; a later user action may retry (failure table L288).
    */
   private endRestore(error: AppError): void {
-    if (error.status === 401 && (error.code === 'unauthorized' || error.code === 'unauthenticated')) return;
-    if (error.code === 'refresh_token_reused') this.endSession('reused', false);
-    else if (error.code === 'session_revoked') this.endSession('revoked', false);
+    const terminal = error.code === 'refresh_token_reused';
+    const anonymous = error.status === 401 && !terminal;
+    // A retry from `restore_failed` re-settles: leave that state when the new outcome differs; a repeated transient
+    // failure keeps it (and does not reset the scopes twice).
+    if (this.endReasonState() === 'restore_failed' && (anonymous || terminal)) this.endReasonState.set(null);
+    if (anonymous) return;
+    if (terminal) this.endSession('reused', false);
     else {
       if (error.code === 'forbidden' && isDevMode()) console.warn('session refresh refused by the origin check (403)');
       this.endSession('restore_failed', false);
