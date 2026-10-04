@@ -6,4 +6,11 @@
  * Today the container serves the SPA shell on `/` and the client fallback (`index.csr.html`) on any other path,
  * so a deep route proves deep-link reload and lazy-asset loading under `base-uri 'none'`.
  */
-export const CSP_ROUTES: readonly string[] = ['/', '/dashboard/episodes/42'];
+export const CSP_ROUTES: readonly string[] = [
+  '/',
+  '/dashboard/episodes/42',
+  '/vi/privacy',
+  '/en/privacy',
+  '/vi/terms',
+  '/en/terms',
+];

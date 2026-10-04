@@ -7,7 +7,7 @@ import {
   provideZonelessChangeDetection,
 } from '@angular/core';
 import { APP_BASE_HREF } from '@angular/common';
-import { provideRouter } from '@angular/router';
+import { provideRouter, withComponentInputBinding } from '@angular/router';
 import { LocaleService, provideAppI18n } from '@core/i18n';
 import { PreferencesStore, ThemeStore } from '@core/prefs';
 import { provideRealtime } from '@core/realtime';
@@ -21,7 +21,7 @@ export const appConfig: ApplicationConfig = {
     provideZonelessChangeDetection(),
     // `base-uri 'none'` (D4): the document emits no <base>; assets are root-relative via `deployUrl: "/"`.
     { provide: APP_BASE_HREF, useValue: '/' },
-    provideRouter(routes),
+    provideRouter(routes, withComponentInputBinding()),
     // Same-origin HttpClient for the i18n loader and the API. `idempotencyInterceptor` runs before `sessionInterceptor`
     // so the single 401 replay keeps the Idempotency-Key header.
     provideHttpClient(withFetch(), withInterceptors([idempotencyInterceptor, sessionInterceptor])),

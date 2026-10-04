@@ -6,7 +6,11 @@
         <span>{{ 'core.ui.pageHeader.back' | transloco }}</span>
       </a>
     }
-    <h1>{{ titleKey() | transloco }}</h1>
+    @if (title(); as authoredTitle) {
+      <h1>{{ authoredTitle }}</h1>
+    } @else if (titleKey(); as translatedTitleKey) {
+      <h1>{{ translatedTitleKey | transloco }}</h1>
+    }
     @if (subtitleKey(); as subtitle) {
       <p>{{ subtitle | transloco }}</p>
     }

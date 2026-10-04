@@ -1,0 +1,95 @@
+<main class="legal-page">
+  <nts-page-header
+    [title]="viewModel().document?.title"
+    [titleKey]="viewModel().document === null ? 'public.nav.' + viewModel().doc : undefined"
+  />
+
+  @if (viewModel().document; as legalDocument) {
+    <p class="legal-page__meta">
+      <span>{{ 'public.legal.version' | transloco: { version: legalDocument.version } }}</span>
+      <time [attr.datetime]="legalDocument.effectiveDate">
+        {{ 'public.legal.updated' | transloco: { date: legalDocument.effectiveDate } }}
+      </time>
+    </p>
+
+    @if (legalDocument.blocks.length > 0) {
+      <div class="legal-page__layout">
+        <nav class="legal-page__toc" aria-labelledby="legal-toc-title">
+          <h2 id="legal-toc-title">{{ 'public.legal.toc' | transloco }}</h2>
+          <ol>
+            @for (heading of viewModel().toc; track heading.id) {
+              <li>
+                <a
+                  [class.legal-page__toc-link--nested]="heading.level === 3"
+                  [href]="'#' + heading.id"
+                >
+                  @for (run of heading.runs ?? []; track $index) {<ng-container>{{ run.text }}</ng-container>}
+                </a>
+              </li>
+            }
+          </ol>
+        </nav>
+
+        <article class="legal-page__body">
+          @for (block of legalDocument.blocks; track block.id) {
+            @switch (block.kind) {
+              @case ('heading') {
+                @if (block.level === 2) {
+                  <h2 [id]="block.id" tabindex="-1" data-legal-block>
+                    @for (run of block.runs ?? []; track $index) {@switch (run.kind) {@case ('text') {<ng-container>{{ run.text }}</ng-container>} @case ('emphasis') {<strong>{{ run.text }}</strong>} @case ('link') {<a [href]="run.href" [attr.rel]="run.href.startsWith('https://') ? 'noopener noreferrer' : null">{{ run.text }}</a>}}}
+                  </h2>
+                } @else {
+                  <h3 [id]="block.id" tabindex="-1" data-legal-block>
+                    @for (run of block.runs ?? []; track $index) {@switch (run.kind) {@case ('text') {<ng-container>{{ run.text }}</ng-container>} @case ('emphasis') {<strong>{{ run.text }}</strong>} @case ('link') {<a [href]="run.href" [attr.rel]="run.href.startsWith('https://') ? 'noopener noreferrer' : null">{{ run.text }}</a>}}}
+                  </h3>
+                }
+              }
+              @case ('paragraph') {
+                <p data-legal-block>
+                  @for (run of block.runs ?? []; track $index) {@switch (run.kind) {@case ('text') {<ng-container>{{ run.text }}</ng-container>} @case ('emphasis') {<strong>{{ run.text }}</strong>} @case ('link') {<a [href]="run.href" [attr.rel]="run.href.startsWith('https://') ? 'noopener noreferrer' : null">{{ run.text }}</a>}}}
+                </p>
+              }
+              @case ('list') {
+                @if (block.ordered) {
+                  <ol data-legal-block>
+                    @for (item of block.items ?? []; track $index) {
+                      <li>
+                        @for (run of item; track $index) {@switch (run.kind) {@case ('text') {<ng-container>{{ run.text }}</ng-container>} @case ('emphasis') {<strong>{{ run.text }}</strong>} @case ('link') {<a [href]="run.href" [attr.rel]="run.href.startsWith('https://') ? 'noopener noreferrer' : null">{{ run.text }}</a>}}}
+                      </li>
+                    }
+                  </ol>
+                } @else {
+                  <ul data-legal-block>
+                    @for (item of block.items ?? []; track $index) {
+                      <li>
+                        @for (run of item; track $index) {@switch (run.kind) {@case ('text') {<ng-container>{{ run.text }}</ng-container>} @case ('emphasis') {<strong>{{ run.text }}</strong>} @case ('link') {<a [href]="run.href" [attr.rel]="run.href.startsWith('https://') ? 'noopener noreferrer' : null">{{ run.text }}</a>}}}
+                      </li>
+                    }
+                  </ul>
+                }
+              }
+              @case ('quote') {
+                <blockquote data-legal-block>
+                  @for (run of block.runs ?? []; track $index) {@switch (run.kind) {@case ('text') {<ng-container>{{ run.text }}</ng-container>} @case ('emphasis') {<strong>{{ run.text }}</strong>} @case ('link') {<a [href]="run.href" [attr.rel]="run.href.startsWith('https://') ? 'noopener noreferrer' : null">{{ run.text }}</a>}}}
+                </blockquote>
+              }
+            }
+          }
+        </article>
+      </div>
+    } @else {
+      <nts-empty-state titleKey="public.legal.empty" />
+    }
+  } @else {
+    <nts-empty-state titleKey="public.legal.empty" />
+  }
+
+  <footer class="legal-page__footer">
+    <a
+      [routerLink]="viewModel().siblingRoute"
+      [attr.hreflang]="viewModel().otherLang"
+      [attr.lang]="viewModel().otherLang"
+    >{{ 'public.legal.otherLanguage' | transloco }}</a>
+    <a routerLink="/">{{ 'public.legal.backHome' | transloco }}</a>
+  </footer>
+</main>

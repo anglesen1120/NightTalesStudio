@@ -1,0 +1,15 @@
+{
+  "legal": {
+    "toc": "In this document",
+    "version": "Version {{ version }}",
+    "updated": "Updated {{ date }}",
+    "otherLanguage": "Tiếng Việt",
+    "backHome": "Back to home",
+    "empty": "This content is being updated",
+    "emptyDescription": "This version’s text is missing from the build."
+  },
+  "nav": {
+    "privacy": "Privacy policy",
+    "terms": "Terms of use"
+  }
+}

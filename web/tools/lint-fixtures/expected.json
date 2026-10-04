@@ -246,6 +246,25 @@
       "rules": []
     },
     {
+      "file": "public-data-access-httpclient/src/app/features/public/data-access/legal.repository.ts",
+      "linter": "eslint",
+      "rules": [
+        "@typescript-eslint/no-restricted-imports"
+      ]
+    },
+    {
+      "file": "public-application-httpclient/src/app/features/public/application/public-seo.service.ts",
+      "linter": "eslint",
+      "rules": [
+        "@typescript-eslint/no-restricted-imports"
+      ]
+    },
+    {
+      "file": "control-other-feature-httpclient/src/app/features/series/data-access/series-http.repository.ts",
+      "linter": "eslint",
+      "rules": []
+    },
+    {
       "file": "signalr-outside-adapter/src/app/features/series/application/live.store.ts",
       "linter": "eslint",
       "rules": [

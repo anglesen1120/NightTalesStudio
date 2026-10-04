@@ -1,0 +1,355 @@
+import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
+import { after, describe, it } from 'node:test';
+import { fileURLToPath } from 'node:url';
+import { convert } from './legal-to-json.mjs';
+
+const HERE = dirname(fileURLToPath(import.meta.url));
+const SCRIPT = join(HERE, 'legal-to-json.mjs');
+const FIXTURES = join(HERE, '__fixtures__', 'legal');
+const WEB_ROOT = join(HERE, '..', '..');
+const COMMITTED = join(WEB_ROOT, 'src', 'app', 'features', 'public', 'data-access', 'legal-content.generated.ts');
+const scratch = mkdtempSync(join(tmpdir(), 'nts-legal-to-json-'));
+after(() => rmSync(scratch, { recursive: true, force: true }));
+
+let counter = 0;
+const fresh = (label) => {
+  counter += 1;
+  const dir = join(scratch, `${label}-${counter}`);
+  mkdirSync(dir, { recursive: true });
+  return dir;
+};
+
+function cli(...args) {
+  const result = spawnSync(process.execPath, [SCRIPT, ...args], { encoding: 'utf8' });
+  return { code: result.status, out: result.stdout, err: result.stderr };
+}
+
+/** A copy of the sample fixture (manifest + four documents) that a test may then break. */
+function sample(label) {
+  const dir = fresh(label);
+  for (const name of ['manifest.json', 'privacy.1.2.3.vi.md', 'privacy.1.2.3.en.md', 'terms.2.0.0.vi.md', 'terms.2.0.0.en.md']) {
+    copyFileSync(join(FIXTURES, name), join(dir, name));
+  }
+  return dir;
+}
+
+/** Runs the generator on `dir`; the output file is pre-seeded so "never touched on failure" is observable. */
+function generate(dir) {
+  const out = join(dir, 'out', 'legal.generated.ts');
+  mkdirSync(dirname(out), { recursive: true });
+  writeFileSync(out, 'KEEP');
+  const result = cli('--fixtures', dir, '--out', out);
+  return { ...result, out, outText: readFileSync(out, 'utf8') };
+}
+
+function assertRejected(result, fileName, line, reason) {
+  assert.equal(result.code, 1, `expected exit 1, got ${result.code}: ${result.err}`);
+  const first = result.err.trim().split('\n');
+  assert.equal(first.length, 1, `exactly one diagnostic expected: ${result.err}`);
+  assert.match(first[0], new RegExp(`${fileName.replace(/\./g, '\\.')}:${line}: `), result.err);
+  assert.match(first[0], reason, result.err);
+  assert.equal(result.outText, 'KEEP', 'the output file must not be touched on failure');
+}
+
+describe('legal-to-json: conversion', () => {
+  it('converts the sample fixture: title, block order, ids, kinds and runs', () => {
+    const { documents, entries } = convert(FIXTURES);
+    assert.deepEqual(entries.map((entry) => [entry.key, entry.doc, entry.version]), [
+      ['privacy', 'privacy', '1.2.3'],
+      ['tos', 'terms', '2.0.0'],
+    ]);
+    assert.deepEqual(documents.map((d) => `${d.doc}/${d.lang}`), ['privacy/vi', 'privacy/en', 'terms/vi', 'terms/en']);
+    const doc = documents[0];
+    assert.equal(doc.title, 'Sample privacy title (vi)');
+    assert.equal(doc.version, '1.2.3');
+    assert.equal(doc.effectiveDate, '2026-01-31');
+    assert.deepEqual(doc.blocks.map((b) => [b.id, b.kind, b.level ?? null]), [
+      ['block-1', 'paragraph', null],
+      ['block-2', 'heading', 2],
+      ['block-3', 'paragraph', null],
+      ['block-4', 'heading', 3],
+      ['block-5', 'list', null],
+      ['block-6', 'list', null],
+      ['block-7', 'quote', null],
+      ['block-8', 'paragraph', null],
+    ]);
+    assert.deepEqual(doc.blocks[0].runs, [{ kind: 'text', text: 'Sample filler paragraph one, first line second line of the same paragraph.' }]);
+    assert.deepEqual(doc.blocks[2].runs, [
+      { kind: 'text', text: 'A sentence with ' },
+      { kind: 'emphasis', text: 'strong text' },
+      { kind: 'text', text: ', a ' },
+      { kind: 'link', text: 'secure link', href: 'https://example.com/a?b=1' },
+      { kind: 'text', text: ', a ' },
+      { kind: 'link', text: 'mail link', href: 'mailto:someone@example.com' },
+      { kind: 'text', text: ' and a ' },
+      { kind: 'link', text: 'local link', href: '/vi/terms' },
+      { kind: 'text', text: '.' },
+    ]);
+    assert.equal(doc.blocks[4].ordered, false);
+    assert.equal(doc.blocks[4].items.length, 2);
+    assert.deepEqual(doc.blocks[4].items[1], [
+      { kind: 'text', text: 'Second sample item with ' },
+      { kind: 'emphasis', text: 'emphasis' },
+    ]);
+    assert.equal(doc.blocks[5].ordered, true);
+    assert.deepEqual(doc.blocks[6].runs, [{ kind: 'text', text: 'Sample quote line one sample quote line two' }]);
+  });
+
+  it('CLI: the acceptance command exits 0 and writes the typed module with the header', () => {
+    const out = join(fresh('accept'), 'legal.generated.ts');
+    const result = cli('--fixtures', FIXTURES, '--out', out);
+    assert.equal(result.code, 0, result.err);
+    const text = readFileSync(out, 'utf8');
+    assert.match(text, /^\/\/ GENERATED by tools\/web\/legal-to-json\.mjs from .* \(privacy 1\.2\.3, tos 2\.0\.0\)\. Do not edit\.\n/);
+    assert.match(text, /import type \{ LegalDoc, LegalDocument, LegalLang \} from '\.\.\/domain\/legal\.model';/);
+    assert.match(text, /export const LEGAL_CONTENT: Readonly<Record<LegalDoc, Readonly<Record<LegalLang, LegalDocument>>>> = \{/);
+    assert.equal((text.match(/id: 'block-1',/g) ?? []).length, 4);
+    assert.ok(text.endsWith('};\n'));
+  });
+
+  it('is deterministic and ignores files of any other version', () => {
+    const dir = sample('det');
+    writeFileSync(join(dir, 'privacy.0.9.0.en.md'), '# Stale\n\n<b>raw html</b>\n');
+    const first = generate(dir);
+    const second = generate(dir);
+    assert.equal(first.code, 0, first.err);
+    assert.equal(first.outText, second.outText);
+    assert.ok(!first.outText.includes('Stale'));
+  });
+
+  it('escapes quotes and backslash-free text safely for a single-quoted literal', () => {
+    const dir = sample('quotes');
+    writeFileSync(join(dir, 'privacy.1.2.3.vi.md'), "# It's a title\n\nDon't break the 'literal'.\n");
+    const result = generate(dir);
+    assert.equal(result.code, 0, result.err);
+    assert.match(result.outText, /title: 'It\\'s a title',/);
+    assert.match(result.outText, /text: 'Don\\'t break the \\'literal\\'\.'/);
+  });
+});
+
+/** [name, markdown after the `# T` + blank lines (line 3 onwards), expected line, reason] */
+const BODY_CASES = [
+  ['raw HTML', 'Text <script>x</script> here.', 3, /raw HTML/],
+  ['raw HTML closing tag', 'Text </div> here.', 3, /raw HTML/],
+  ['HTML comment', '<!-- c -->', 3, /raw HTML/],
+  ['autolink', 'See <https://example.com> now.', 3, /raw HTML|autolink/],
+  ['javascript: link with parenthesis', 'ok\n\nA [x](javascript:alert(1)) link.', 5, /link scheme not allowed|parenthesis/],
+  ['JAVASCRIPT: mixed-case link', 'A [x](JaVaScRiPt:alert) link.', 3, /link scheme not allowed/],
+  ['entity-obfuscated javascript:', 'A [x](jav&#x61;script:alert) link.', 3, /HTML entity/],
+  ['named-entity colon', 'A [x](javascript&colon;alert) link.', 3, /HTML entity/],
+  ['whitespace-obfuscated javascript:', 'A [x]( javascript:alert) link.', 3, /whitespace/],
+  ['data: link', 'A [x](data:text/html,hi) link.', 3, /link scheme not allowed/],
+  ['vbscript: link', 'A [x](vbscript:run) link.', 3, /link scheme not allowed/],
+  ['http: link', 'A [x](http://example.com) link.', 3, /link scheme not allowed/],
+  ['uppercase HTTPS link', 'A [x](HTTPS://example.com) link.', 3, /link scheme not allowed/],
+  ['protocol-relative link', 'A [x](//example.com) link.', 3, /protocol-relative/],
+  ['https with credentials', 'A [x](https://user:pw@example.com/) link.', 3, /credentials/],
+  ['https with empty host', 'A [x](https:///path) link.', 3, /valid https URL|valid URL/],
+  ['anchor-only link', 'A [x](#top) link.', 3, /link scheme not allowed/],
+  ['empty href', 'A [x]() link.', 3, /href is empty/],
+  ['table', '| a | b |\n|---|---|\n| 1 | 2 |', 3, /table/],
+  ['image', 'See ![alt](/a.png) here.', 3, /image/],
+  ['footnote', 'Text[^1] here.', 3, /footnote/],
+  ['nested list', '- one\n  - two', 4, /nested list/],
+  ['list continuation line', '- one\ncontinued', 4, /continuation/],
+  ['quote continuation', '> one\ncontinued', 4, /continuation/],
+  ['h4 heading', '#### Deep', 3, /h4/],
+  ['second H1', '# Again', 3, /second H1/],
+  ['fenced code', '```\ncode\n```', 3, /fenced code/],
+  ['tilde fence', '~~~\ncode\n~~~', 3, /fenced code/],
+  ['indented code', 'ok\n\n    code', 5, /indented code/],
+  ['setext heading', 'Title line\n=====', 4, /setext/],
+  ['setext dash heading', 'Title line\n-----', 4, /setext/],
+  ['horizontal rule', '---', 3, /horizontal rule/],
+  ['star emphasis', 'A *word* here.', 3, /'\*' emphasis/],
+  ['underscore emphasis', 'A _word_ here.', 3, /'_' emphasis/],
+  ['star bullet', '* one', 3, /list marker/],
+  ['paren ordered marker', '1) one', 3, /list marker/],
+  ['backtick', 'A `code` here.', 3, /backtick/],
+  ['unbalanced bold', 'A **word here.', 3, /unbalanced '\*\*'/],
+  ['unbalanced bracket', 'A [word here.', 3, /unbalanced '\['/],
+  ['stray close bracket', 'A word] here.', 3, /unbalanced '\]'/],
+  ['unbalanced paren', 'A [word](https://example.com here.', 3, /unbalanced '\('/],
+  ['reference link', 'A [word][ref] here.', 3, /reference link/],
+  ['link reference definition', '[ref]: https://example.com', 3, /reference definition/],
+  ['nested markup in link text', 'A [**w**](/x) here.', 3, /nested inside link text/],
+  ['nested markup in emphasis', 'A **[w](/x)** here.', 3, /nested inside emphasis/],
+  ['trailing backslash break', 'one\\\ntwo', 3, /trailing backslash/],
+  ['backslash escape', 'one \\* two', 3, /backslash escape/],
+  ['trailing-space hard break', 'one  \ntwo', 3, /trailing spaces/],
+  ['empty list item', '-', 3, /empty list item|setext|horizontal/],
+  ['ordered list not starting at 1', '2. two', 3, /start at/],
+  ['nested quote', '> > deep', 3, /nested quote/],
+  ['heading inside quote', '> ## h', 3, /block construct inside a quote/],
+  ['leading whitespace', ' indented', 3, /leading whitespace/],
+  ['control character', 'bad\u0001char', 3, /control or bidi character U\+0001/],
+  ['tab character', 'bad\tchar', 3, /control or bidi character U\+0009/],
+  ['lone carriage return', 'bad\rchar', 3, /U\+000D/],
+  ['bidi override', 'bad\u202echar', 3, /U\+202E/],
+  ['bidi isolate', 'bad\u2066char', 3, /U\+2066/],
+  ['line separator', 'bad\u2028char', 3, /U\+2028/],
+  ['C1 control', 'bad\u0085char', 3, /U\+0085/],
+  ['BOM in the middle', 'bad\ufeffchar', 3, /byte order mark/],
+];
+
+describe('legal-to-json: rejections name file and line and never write output', () => {
+  for (const [name, body, line, reason] of BODY_CASES) {
+    it(`rejects ${name}`, () => {
+      const dir = sample('body');
+      writeFileSync(join(dir, 'privacy.1.2.3.vi.md'), `# T\n\n${body}\n`);
+      assertRejected(generate(dir), 'privacy.1.2.3.vi.md', line, reason);
+    });
+  }
+
+  it('rejects a missing or wrong title line', () => {
+    for (const [text, reason] of [
+      ['Just text\n', /first non-blank line must be exactly one '# Title'/],
+      ['## Not an H1\n', /first non-blank line must be exactly one '# Title'/],
+      ['# *Marked* title\n', /inline markup is not allowed in the title|emphasis/],
+    ]) {
+      const dir = sample('title');
+      writeFileSync(join(dir, 'terms.2.0.0.en.md'), text);
+      assertRejected(generate(dir), 'terms.2.0.0.en.md', 1, reason);
+    }
+  });
+
+  it('rejects a blank file naming it', () => {
+    for (const text of ['', '\n\n   \n']) {
+      const dir = sample('blank');
+      writeFileSync(join(dir, 'privacy.1.2.3.en.md'), text);
+      assertRejected(generate(dir), 'privacy.1.2.3.en.md', 1, /blank file/);
+    }
+  });
+
+  it('rejects invalid UTF-8 bytes and a lone surrogate (CESU bytes) at the right line', () => {
+    const cases = [
+      ['stray continuation byte', Buffer.from([0x23, 0x20, 0x54, 0x0a, 0x0a, 0x61, 0xff, 0x62, 0x0a]), 3],
+      ['truncated sequence', Buffer.from([0x23, 0x20, 0x54, 0x0a, 0x0a, 0xe1, 0x80, 0x0a]), 3],
+      ['overlong slash', Buffer.from([0x23, 0x20, 0x54, 0x0a, 0x0a, 0xc0, 0xaf, 0x0a]), 3],
+      ['lone surrogate U+D800', Buffer.from([0x23, 0x20, 0x54, 0x0a, 0x0a, 0x61, 0xed, 0xa0, 0x80, 0x0a]), 3],
+    ];
+    for (const [, bytes, line] of cases) {
+      const dir = sample('utf8');
+      writeFileSync(join(dir, 'privacy.1.2.3.vi.md'), bytes);
+      assertRejected(generate(dir), 'privacy.1.2.3.vi.md', line, /invalid UTF-8/);
+    }
+  });
+
+  it('accepts CRLF line endings (normalised to LF) and rejects nothing else about them', () => {
+    const dir = sample('crlf');
+    writeFileSync(join(dir, 'privacy.1.2.3.vi.md'), '# T\r\n\r\nLine one\r\nline two\r\n');
+    const result = generate(dir);
+    assert.equal(result.code, 0, result.err);
+    assert.match(result.outText, /text: 'Line one line two'/);
+  });
+});
+
+describe('legal-to-json: manifest and version-skew guard', () => {
+  const manifest = (dir, value) => writeFileSync(join(dir, 'manifest.json'), typeof value === 'string' ? value : JSON.stringify(value, null, 2));
+  const good = { privacy: { version: '1.2.3', effectiveDate: '2026-01-31' }, tos: { version: '2.0.0', effectiveDate: '2026-02-28' } };
+
+  it('fails a missing language file, naming the expected path', () => {
+    const dir = sample('missing-lang');
+    rmSync(join(dir, 'terms.2.0.0.en.md'));
+    assertRejected(generate(dir), 'terms.2.0.0.en.md', 1, /missing legal content file for terms\/en/);
+  });
+
+  it('fails when vi and en versions differ (en only present at another version)', () => {
+    const dir = sample('skew');
+    rmSync(join(dir, 'privacy.1.2.3.en.md'));
+    copyFileSync(join(FIXTURES, 'privacy.1.2.3.en.md'), join(dir, 'privacy.1.2.4.en.md'));
+    assertRejected(generate(dir), 'privacy.1.2.3.en.md', 1, /manifest\.json says version 1\.2\.3/);
+  });
+
+  it('fails when the manifest version was bumped but no file was', () => {
+    const dir = sample('bumped');
+    manifest(dir, { ...good, tos: { version: '2.0.1', effectiveDate: '2026-02-28' } });
+    assertRejected(generate(dir), 'terms.2.0.1.vi.md', 1, /missing legal content file for terms\/vi/);
+  });
+
+  for (const [name, value, reason] of [
+    ['an unknown key', { ...good, cookies: { version: '1.0.0', effectiveDate: '2026-01-01' } }, /unknown manifest key 'cookies'/],
+    ['the key "terms" instead of "tos"', { privacy: good.privacy, terms: good.tos }, /unknown manifest key 'terms'/],
+    ['a missing key', { privacy: good.privacy }, /missing manifest key 'tos'/],
+    ['a two-part version', { ...good, privacy: { version: '1.2', effectiveDate: '2026-01-31' } }, /x\.y\.z/],
+    ['a v-prefixed version', { ...good, privacy: { version: 'v1.2.3', effectiveDate: '2026-01-31' } }, /x\.y\.z/],
+    ['a leading-zero version', { ...good, privacy: { version: '01.2.3', effectiveDate: '2026-01-31' } }, /x\.y\.z/],
+    ['a non-date effectiveDate', { ...good, tos: { version: '2.0.0', effectiveDate: '31/01/2026' } }, /YYYY-MM-DD/],
+    ['an impossible date', { ...good, tos: { version: '2.0.0', effectiveDate: '2026-02-30' } }, /real YYYY-MM-DD/],
+    ['a numeric version', { ...good, tos: { version: 2, effectiveDate: '2026-02-28' } }, /x\.y\.z/],
+    ['an array manifest', [], /JSON object/],
+    ['invalid JSON', '{ nope', /not valid JSON/],
+  ]) {
+    it(`rejects a manifest with ${name}`, () => {
+      const dir = sample('manifest');
+      manifest(dir, value);
+      assertRejected(generate(dir), 'manifest.json', '\\d+', reason);
+    });
+  }
+
+  it('names the manifest line of an offending key', () => {
+    const dir = sample('manifest-line');
+    manifest(dir, '{\n  "privacy": {\n    "version": "1.2.3",\n    "effectiveDate": "2026-01-31"\n  },\n  "cookies": {},\n  "tos": {}\n}\n');
+    assertRejected(generate(dir), 'manifest.json', 6, /unknown manifest key 'cookies'/);
+  });
+
+  it('fails when manifest.json is absent', () => {
+    const dir = sample('no-manifest');
+    rmSync(join(dir, 'manifest.json'));
+    assertRejected(generate(dir), 'manifest.json', 1, /file not found/);
+  });
+});
+
+describe('legal-to-json: CLI', () => {
+  it('--file validates one Markdown file: bad-html.md and bad-scheme.md exit 1 naming file:line', () => {
+    const html = cli('--fixtures', FIXTURES, '--file', 'bad-html.md');
+    assert.equal(html.code, 1);
+    assert.match(html.err, /bad-html\.md:5: raw HTML/);
+    const scheme = cli('--fixtures', FIXTURES, '--file', 'bad-scheme.md');
+    assert.equal(scheme.code, 1);
+    assert.match(scheme.err, /bad-scheme\.md:5: link scheme not allowed in 'javascript:alert'/);
+    const ok = cli('--fixtures', FIXTURES, '--file', 'privacy.1.2.3.en.md');
+    assert.equal(ok.code, 0, ok.err);
+  });
+
+  it('does not write anything when a document fails, even with no pre-existing output', () => {
+    const dir = sample('nowrite');
+    writeFileSync(join(dir, 'terms.2.0.0.vi.md'), '# T\n\nbad <b>html</b>\n');
+    const out = join(dir, 'nested', 'out.ts');
+    const result = cli('--fixtures', dir, '--out', out);
+    assert.equal(result.code, 1);
+    assert.match(result.err, /terms\.2\.0\.0\.vi\.md:3: raw HTML/);
+    assert.equal(existsSync(out), false);
+    assert.equal(existsSync(dirname(out)), false);
+  });
+
+  it('exits 2 on a usage error', () => {
+    for (const args of [['--bogus'], ['--out'], ['--fixtures'], ['--file', 'x.md', '--out', 'y.ts'], ['extra']]) {
+      const result = cli(...args);
+      assert.equal(result.code, 2, `${args.join(' ')}: ${result.err}`);
+      assert.match(result.err, /usage:/);
+    }
+  });
+});
+
+describe('legal-to-json: committed real content', () => {
+  it('regenerating web/src/content/legal is byte-identical to the committed module (legal:gen:check contract)', () => {
+    const out = join(fresh('real'), 'legal-content.generated.ts');
+    const result = cli('--out', out);
+    assert.equal(result.code, 0, result.err);
+    assert.equal(Buffer.compare(readFileSync(out), readFileSync(COMMITTED)), 0);
+  });
+
+  it('the committed module holds all four documents with the manifest versions', () => {
+    const text = readFileSync(COMMITTED, 'utf8');
+    assert.match(text, /^\/\/ GENERATED by tools\/web\/legal-to-json\.mjs from src\/content\/legal \(privacy 1\.0\.0, tos 1\.0\.0\)\. Do not edit\.\n/);
+    for (const [doc, lang] of [['privacy', 'vi'], ['privacy', 'en'], ['terms', 'vi'], ['terms', 'en']]) {
+      assert.match(text, new RegExp(`doc: '${doc}',\\n\\s+lang: '${lang}',`));
+    }
+    assert.equal((text.match(/effectiveDate: '2026-10-01'/g) ?? []).length, 4);
+  });
+});
