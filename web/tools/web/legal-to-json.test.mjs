@@ -194,6 +194,13 @@ const BODY_CASES = [
   ['line separator', 'bad\u2028char', 3, /U\+2028/],
   ['C1 control', 'bad\u0085char', 3, /U\+0085/],
   ['BOM in the middle', 'bad\ufeffchar', 3, /byte order mark/],
+  ['percent-encoded javascript scheme', 'A [x](%6Aavascript:alert) link.', 3, /link scheme not allowed/],
+  ['tab inside a javascript scheme', 'A [x](java\tscript:alert) link.', 3, /control or bidi character U\+0009/],
+  ['backslash-led site-relative link', 'A [x](/\\evil.example) link.', 3, /backslash|illegal character/],
+  ['backslash before an https host separator', 'A [x](https://example.com\\@evil.example/) link.', 3, /backslash|illegal character/],
+  ['https with a username only', 'A [x](https://user@example.com/) link.', 3, /credentials/],
+  ['https scheme without slashes', 'A [x](https:javascript:alert) link.', 3, /link scheme not allowed/],
+  ['mailto with no address', 'A [x](mailto:) link.', 3, /no address/],
 ];
 
 describe('legal-to-json: rejections name file and line and never write output', () => {
@@ -237,6 +244,12 @@ describe('legal-to-json: rejections name file and line and never write output', 
       writeFileSync(join(dir, 'privacy.1.2.3.vi.md'), bytes);
       assertRejected(generate(dir), 'privacy.1.2.3.vi.md', line, /invalid UTF-8/);
     }
+  });
+
+  it('rejects a byte order mark at the very start of a file', () => {
+    const dir = sample('bom-start');
+    writeFileSync(join(dir, 'privacy.1.2.3.vi.md'), Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from('# T\n\nText\n')]));
+    assertRejected(generate(dir), 'privacy.1.2.3.vi.md', 1, /byte order mark/);
   });
 
   it('accepts CRLF line endings (normalised to LF) and rejects nothing else about them', () => {
@@ -283,6 +296,8 @@ describe('legal-to-json: manifest and version-skew guard', () => {
     ['a numeric version', { ...good, tos: { version: 2, effectiveDate: '2026-02-28' } }, /x\.y\.z/],
     ['an array manifest', [], /JSON object/],
     ['invalid JSON', '{ nope', /not valid JSON/],
+    ['an empty manifest object', {}, /missing manifest key '(privacy|tos)'/],
+    ['a null manifest', 'null', /JSON object/],
   ]) {
     it(`rejects a manifest with ${name}`, () => {
       const dir = sample('manifest');

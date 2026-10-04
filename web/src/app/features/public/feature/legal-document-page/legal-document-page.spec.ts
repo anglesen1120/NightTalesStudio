@@ -9,6 +9,8 @@ import publicVi from '../../../../../assets/i18n/public/vi.json';
 import { ZONELESS_TEST_PROVIDERS } from '../../../../testing/providers';
 import type { LegalDocument } from '../../domain/legal.model';
 import { LegalRepository } from '../../domain/legal.port';
+import { LEGAL_CONTENT } from '../../data-access/legal-content.generated';
+import { GeneratedLegalRepository } from '../../data-access/legal.repository';
 import { FakeLegalRepository } from '../../testing/fake-legal.repository';
 import { LegalDocumentPage } from './legal-document-page';
 
@@ -43,7 +45,11 @@ const legalDocument: LegalDocument = {
   ],
 };
 
-async function render(repository: FakeLegalRepository): Promise<ComponentFixture<LegalDocumentPage>> {
+async function render(
+  repository: LegalRepository,
+  doc: string = 'privacy',
+  lang: string = 'vi',
+): Promise<ComponentFixture<LegalDocumentPage>> {
   await TestBed.configureTestingModule({
     imports: [LegalDocumentPage, translations],
     providers: [
@@ -54,8 +60,8 @@ async function render(repository: FakeLegalRepository): Promise<ComponentFixture
     ],
   }).compileComponents();
   const fixture = TestBed.createComponent(LegalDocumentPage);
-  fixture.componentRef.setInput('doc', 'privacy');
-  fixture.componentRef.setInput('lang', 'vi');
+  fixture.componentRef.setInput('doc', doc);
+  fixture.componentRef.setInput('lang', lang);
   await fixture.whenStable();
   return fixture;
 }
@@ -78,5 +84,32 @@ describe('LegalDocumentPage', () => {
     expect(root.querySelector('nts-empty-state')).not.toBeNull();
     expect(root.textContent).toContain(publicVi.legal.empty);
     expect(root.querySelector('[data-legal-block]')).toBeNull();
+  });
+
+  it.each(['__proto__', 'constructor', 'toString'])(
+    'renders the EmptyState for the inherited property name %s with the generated repository',
+    async (doc) => {
+      const fixture = await render(new GeneratedLegalRepository(), doc);
+      const root = fixture.nativeElement as HTMLElement;
+
+      expect(root.querySelector('nts-empty-state')).not.toBeNull();
+      expect(root.querySelector('[data-legal-block]')).toBeNull();
+    },
+  );
+
+  it.each([
+    ['privacy', 'vi'],
+    ['privacy', 'en'],
+    ['terms', 'vi'],
+    ['terms', 'en'],
+  ] as const)('renders the committed %s/%s document through the generated repository', async (doc, lang) => {
+    const fixture = await render(new GeneratedLegalRepository(), doc, lang);
+    const root = fixture.nativeElement as HTMLElement;
+    const expected = LEGAL_CONTENT[doc][lang];
+
+    expect(root.querySelector('h1')?.textContent).toContain(expected.title);
+    expect(root.querySelectorAll('[data-legal-block]').length).toBe(expected.blocks.length);
+    expect(root.querySelector('nts-empty-state')).toBeNull();
+    expect(root.textContent).toContain(expected.version);
   });
 });

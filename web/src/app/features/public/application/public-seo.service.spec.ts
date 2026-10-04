@@ -94,6 +94,31 @@ describe('PublicSeoService', () => {
     expect(head.contains(foreign)).toBe(true);
     foreign.remove();
   });
+
+  it('keeps markup-looking title and paragraph text inert in the head', () => {
+    const { seo, head, meta, title } = setup();
+    const hostile = '<img src=x onerror=alert(1)> "q" </title><script>x</script>';
+    seo.apply(
+      doc({ title: hostile, blocks: [{ id: 'block-1', kind: 'paragraph', runs: [{ kind: 'text', text: hostile }] }] }),
+      alternatesOf('privacy'),
+    );
+
+    expect(title.getTitle()).toBe(`${hostile} · NightTales Studio`);
+    expect(meta.getTag('name="description"')?.content).toBe(hostile);
+    expect(head.querySelector('img')).toBeNull();
+    expect(head.querySelector('script[src="x"], title script')).toBeNull();
+  });
+
+  it('swaps canonical, og:locale and keeps one set of tags when the language changes between runs', () => {
+    const { seo, head, meta } = setup();
+    seo.apply(doc({ lang: 'vi' }), alternatesOf('privacy'));
+    seo.apply(doc({ lang: 'en', title: 'Privacy policy' }), alternatesOf('privacy'));
+
+    expect(owned(head, '[rel="canonical"]').map((e) => e.getAttribute('href'))).toEqual(['/en/privacy']);
+    expect(owned(head, '[rel="alternate"]')).toHaveLength(3);
+    expect(meta.getTag('property="og:locale"')?.content).toBe('en_US');
+    expect(head.querySelectorAll('meta[property="og:locale"]')).toHaveLength(1);
+  });
 });
 
 describe('describeLegalDocument', () => {
