@@ -4,6 +4,13 @@ History moved out of STATUS.md to keep the live file small. The initial archive 
 
 ## Resume-here history (Current/Previous blocks, Next actions)
 
+### Superseded Session 10 Current/Next lines (2026-10-04, replaced when #131 `312db85` merged)
+
+- **Outcome:** 02.5.2-T2 merged as #131 without a CI run (GitHub Actions billing); Session 10 claim released; next backend task 02.5.2-T3.
+
+- **Current (2026-10-04).** 10.2.1-T1 session store merged as #126 (`6ae07ec`, Session 9 claim released). 02.2.2-T3 generate-story job pipeline merged as #125 (`a2667da`, CI 4/4, Session 7 claim released). Session 5 wave merged as PR #121 (`0028aa0`): 02.4.1-T1 content moderator, 02.5.2-T1 safe HTTP fetcher, 02.3.1-T1 edit-story command, 02.6.1-T1 self-review. Web Stage A (plan 10 foundation, 9 tasks) merged as #122 (`a2c4a12`, CI 5/5).
+- **Next (backend, start here):** 02.5.2-T2 internal lease API + sweeper + text storage is in a PR from `feature/02.5.2-T2-s10` (Session 10, T3 gates closed, no migration; §Open tasks row) waiting for the owner. After it merges: **02.5.2-T3** fetcher host (consumes the frozen JSON hand-off in the 02.5.2-T2 task §Notes; send raw UTF-8 JSON, the body cap is 1 MiB) → T4, 02.6.1-T2, 02.6.2-T1 revision (02 §10 T113(b)), 02.3.2-T1 approve (treat `moderation.stale`/`unavailable` as needs re-check; edit-path moderator wiring). Claim the backend `gate.sh` lock in `nts-wt/SESSION-CLAIMS.md` first.
+
 ### Superseded Web next line (2026-10-04, replaced when #130 `4a6e227` merged and Session 11 closed)
 
 Outcome: 10.2.4-T1 merged as #130; next web task 10.2.6-T1.
@@ -14,6 +21,7 @@ Outcome: 10.2.4-T1 merged as #130; next web task 10.2.6-T1.
 
 - **Next (backend, start here):** **02.5.2-T2** internal lease API + sweeper + text storage (`plans/features/02-story-writing/02.5.1-sources-fetcher/02.5.2-T2-internal-lease-api-sweeper-text-storage.md`, M, tier T3: network/external input). Hard deps merged (02.5.1-T1, 02.5.2-T1, 09.7.2-T1); `leased_at`/`generation_run_id` already exist in `02_SourcesAndFetchTasks`, so confirm at kickoff whether any migration is needed. Then 02.5.2-T3 → T4, 02.6.1-T2, 02.6.2-T1 revision (02 §10 T113(b)), 02.3.2-T1 approve (treat `moderation.stale`/`unavailable` as needs re-check; edit-path moderator wiring). Claim the backend `gate.sh` lock in `nts-wt/SESSION-CLAIMS.md` first.
 - **Outcome:** 02.5.2-T2 built without a migration; T3 gates closed; PR from `feature/02.5.2-T2-s10`.
+
 ### Superseded Session 11 Web next lines (2026-10-04, replaced when #129 `2ad5b05` merged and `develop` was merged into the 10.2.4-T1 branch)
 
 Outcome: 10.2.3-T1 merged as #129; 10.2.4-T1 in PR #130.
