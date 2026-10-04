@@ -6,8 +6,9 @@ Stories 10.2.1 (session and silent refresh), 10.2.2 (error handling), 10.2.3 (id
 
 Tasks in this folder: **10.2.2-T1** (`AppError` mapper + form error binding, S 0.5), **10.2.1-T1** (session store,
 single-flight refresh, guards, activity gate, M 1.0), **10.2.3-T1** (`Idempotency-Key` per user intent, XS 0.25) —
-1.75 d raw, all P · M1. No code exists yet: `web/` is created by 10.1.1-T1; every path below is a path to be
-created by the task that names it.
+1.75 d raw, all P · M1. Status: **10.2.2-T1 implemented** (#123, `669f082`), **10.2.1-T1 implemented** (#126,
+`6ae07ec`; as-built API in its task §Notes), **10.2.3-T1 todo**. The paths below were written before the code;
+where they differ, the code and the task Notes win.
 
 ## 1. Scope
 
