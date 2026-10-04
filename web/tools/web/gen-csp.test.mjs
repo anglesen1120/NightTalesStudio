@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -180,6 +181,137 @@ describe('gen-csp: hard failures (no bypass flag)', () => {
     ]) {
       assert.deepEqual(analyseHtml(meta, 'x.html'), [], meta);
     }
+  });
+});
+
+describe('gen-csp: scan agrees with the HTML parser', () => {
+  const sha = (text) => `'sha256-${createHash('sha256').update(text, 'utf8').digest('base64')}'`;
+
+  it('decides src/type from real attribute names: data-src / data-type are not src / type (CR1, SEC1a)', () => {
+    const { dir, out } = tree('data-attrs', 'data-src-external.html');
+    assert.throws(() => generate(dir, out), /data-src-external\.html:5: external <script src="https:\/\/evil\.example\/x\.js"> is banned/);
+    assert.deepEqual(analyseHtml('<script data-type="application/json">alert(1)</script>', 'x.html'), [sha('alert(1)')]);
+    const fixture = tree('data-type', 'data-type-executable.html');
+    assert.deepEqual(generate(fixture.dir, fixture.out).hashes, [sha('alert(1)')]);
+    // The real type still wins when both are present.
+    assert.deepEqual(analyseHtml('<script data-type="x" type="application/json">{}</script>', 'x.html'), []);
+    assert.deepEqual(analyseHtml('<script data-src="https://evil.example/x.js">var local=1;</script>', 'x.html'), [sha('var local=1;')]);
+  });
+
+  it('a quoted > in an attribute does not change the captured script body (CR1)', () => {
+    const { dir, out } = tree('quoted-gt', 'quoted-gt.html');
+    assert.deepEqual(generate(dir, out).hashes, [sha('var quoted=1;')]);
+    assert.deepEqual(analyseHtml('<script title="a>b">var q=1;</script>', 'x.html'), [sha('var q=1;')]);
+    assert.deepEqual(analyseHtml("<script title='a>b' type=\"application/json\">{\"k\":1}</script>", 'x.html'), []);
+  });
+
+  it('normalises <script src> (entities, tab/newline) before the same-origin check (CR2, SEC1c)', () => {
+    for (const fixture of ['entity-src.html', 'tab-split-src.html']) {
+      const { dir, out } = tree(`src-${fixture}`, fixture);
+      assert.throws(() => generate(dir, out), /external <script src="[^"]+"> is banned/, fixture);
+    }
+    for (const src of [
+      '&#104;ttps://evil.example/x.js',
+      '&#x68;ttps://evil.example/x.js',
+      'https&colon;//evil.example/x.js',
+      'ht&Tab;tps://evil.example/x.js',
+      'ht\ttps://evil.example/x.js',
+      'ht\ntps://evil.example/x.js',
+      '/\t/evil.example/x.js',
+      '/&#10;/evil.example/x.js',
+      '\t//evil.example/x.js',
+      '&#1;  //evil.example/x.js',
+      '//evil.example/x.js',
+      'javascript:alert(1)',
+      'data:text/javascript,alert(1)',
+      'blob:https://evil.example/uuid',
+      'HTTPS://evil.example/x.js',
+    ]) {
+      assert.throws(() => analyseHtml(`<script src="${src}"></script>`, 'x.html'), /(external <script src|javascript: URL is banned)/, JSON.stringify(src));
+    }
+  });
+
+  it('rejects every backslash spelling of a protocol-relative src (SEC1b)', () => {
+    const { dir, out } = tree('backslash', 'backslash-src.html');
+    assert.throws(() => generate(dir, out), /external <script src="\/\\evil\.example\/x\.js"> is banned/);
+    for (const src of ['/\\evil.example/x.js', '\\/evil.example/x.js', '\\\\evil.example/x.js', '/&bsol;evil.example/x.js']) {
+      assert.throws(() => analyseHtml(`<script src="${src}"></script>`, 'x.html'), /external <script src/, JSON.stringify(src));
+      assert.throws(
+        () => analyseHtml(`<link rel="stylesheet" href="${src}">`, 'x.html'),
+        /external <link rel="stylesheet"/,
+        JSON.stringify(src),
+      );
+    }
+  });
+
+  it('accepts same-origin relative script URLs', () => {
+    for (const src of ['main-ABC.js', './main.js', '../main.js', '/main.js', '/a/b/c.js', 'sub/dir/x.js?v=1:2', 'a\\b.js', '']) {
+      assert.deepEqual(analyseHtml(`<script src="${src}"></script>`, 'x.html'), [], JSON.stringify(src));
+    }
+  });
+
+  it('checks external src on SVG <script> too (href / xlink:href)', () => {
+    assert.throws(() => analyseHtml('<svg><script href="https://evil.example/x.js"></script></svg>', 'x.html'), /external <script src/);
+    assert.throws(
+      () => analyseHtml('<svg xmlns:xlink="http://www.w3.org/1999/xlink"><script xlink:href="//evil.example/x.js"></script></svg>', 'x.html'),
+      /external <script src/,
+    );
+    assert.deepEqual(analyseHtml('<svg><script>var s=1;</script></svg>', 'x.html'), [sha('var s=1;')]);
+  });
+
+  it('handler check uses real on* attribute names only (CR3)', () => {
+    const { dir, out } = tree('benign', 'benign-attrs.html');
+    assert.deepEqual(generate(dir, out).hashes.length, 1, 'only the real inline script is hashed');
+    assert.deepEqual(analyseHtml('<a title="onclick=x" data-note=" onmouseover=y ">t</a>', 'x.html'), []);
+    assert.deepEqual(analyseHtml('<p><!-- <b onclick="x"> --></p>', 'x.html'), []);
+    assert.deepEqual(analyseHtml('<style>a[onclick="q"]{color:red}</style>', 'x.html'), []);
+    assert.deepEqual(analyseHtml('<script>var s = \'<p onclick="z">\';</script>', 'x.html').length, 1);
+    // Real handlers are still caught, whatever the quoting or case, on any element (SVG, template content, noscript).
+    for (const markup of [
+      '<a onclick="x">t</a>',
+      "<a ONCLICK='x'>t</a>",
+      '<a onclick=x>t</a>',
+      '<a title="a>b" onmouseover="x">t</a>',
+      '<svg><circle onload="x"/></svg>',
+      '<template><b onerror="x"></b></template>',
+      '<noscript><img src=x onerror="x"></noscript>',
+      '<a data-x=1 onfocus="x">t</a>',
+    ]) {
+      assert.throws(() => analyseHtml(markup, 'x.html'), /inline event handler on[a-z]+= is banned/, markup);
+    }
+  });
+
+  it('does not flag javascript: text outside URL attributes (comments, script strings, other attributes)', () => {
+    assert.deepEqual(analyseHtml('<!-- <a href="javascript:1"> --><p title="href=javascript:1">x</p>', 'x.html'), []);
+    assert.deepEqual(analyseHtml('<script>var s=\'<a href="javascript:1">\';</script>', 'x.html').length, 1);
+  });
+
+  it('hashes the script text as the browser sees it: CRLF/CR become LF, no trimming (CR4)', () => {
+    const lf = '\n  var a = 1;\n  var b = "x";\n';
+    const { dir, out } = tree('crlf');
+    writeFileSync(join(dir, 'crlf.html'), `<!doctype html><html><body><script>${lf.replaceAll('\n', '\r\n')}</script></body></html>`);
+    assert.deepEqual(generate(dir, out).hashes, [sha(lf)]);
+    assert.deepEqual(analyseHtml(`<script>${lf.replaceAll('\n', '\r')}</script>`, 'x.html'), [sha(lf)]);
+    assert.deepEqual(analyseHtml(`<script>${lf}</script>`, 'x.html'), [sha(lf)], 'LF source hashes identically');
+    // Mixed endings and surrounding whitespace are part of the hash.
+    assert.deepEqual(analyseHtml('<script> a\r\nb\rc\nd </script>', 'x.html'), [sha(' a\nb\nc\nd ')]);
+    assert.notDeepEqual(analyseHtml(`<script>${lf}</script>`, 'x.html'), [sha(lf.trim())]);
+  });
+
+  it('scans every served directory, including ones named dist / node_modules / .git (SEC1d)', () => {
+    for (const name of ['dist', 'node_modules', '.git']) {
+      const { dir, out } = tree(`nested-${name}`, 'clean.html');
+      mkdirSync(join(dir, name, 'deep'), { recursive: true });
+      writeFileSync(join(dir, name, 'deep', 'index.html'), '<script src="https://evil.example/x.js"></script>');
+      assert.throws(() => generate(dir, out), new RegExp(`external <script src="https://evil\\.example/x\\.js"> is banned`), name);
+      assert.equal(existsSync(out), false, 'nothing is written on failure');
+    }
+    const { dir, out } = tree('nested-hash', 'clean.html');
+    mkdirSync(join(dir, 'node_modules'), { recursive: true });
+    writeFileSync(join(dir, 'node_modules', 'page.html'), '<script>var inside=1;</script>');
+    const result = generate(dir, out);
+    assert.equal(result.htmlFiles, 2);
+    assert.ok(result.hashes.includes(sha('var inside=1;')));
   });
 });
 

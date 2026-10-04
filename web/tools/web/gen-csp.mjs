@@ -9,7 +9,8 @@
 // Hard failures (no bypass flag, by design): an inline on*= event handler, a javascript: URL in
 // href/src/action/formaction, a <script src> that is not same-origin, a produced file with more
 // than one add_header / unsafe-eval / unsafe-inline in script-src / a missing D4 directive, or a
-// policy over 8 000 characters (proxy header limit).
+// policy over 8 000 characters (proxy header limit). Every served *.html is parsed with the HTML5
+// parser (parse5) and checked on real elements/attributes, never with regexes over raw markup.
 //
 // Usage: node tools/web/gen-csp.mjs [--dir dist/web/browser] [--out dist/nginx/csp-headers.conf]
 
@@ -17,6 +18,7 @@ import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { parse } from 'parse5';
 
 const webRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
@@ -29,25 +31,21 @@ export const MAX_POLICY_CHARS = 8_000;
 export class CspError extends Error {}
 
 const HTML_SUFFIX = /\.html?$/i;
-const SKIP_DIRS = new Set(['node_modules', '.git', 'dist']);
+const SVG_NS = 'http://www.w3.org/2000/svg';
 
+/**
+ * Every *.html under the served root, whatever the directory is called: nginx serves `dist/`, `node_modules/` and
+ * `.git/` folders in the built tree like any other, so none may be skipped.
+ */
 function* walkHtml(dir) {
   for (const entry of readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
     const path = join(dir, entry.name);
     if (entry.isDirectory()) {
-      if (!SKIP_DIRS.has(entry.name)) yield* walkHtml(path);
+      yield* walkHtml(path);
     } else if (entry.isFile() && HTML_SUFFIX.test(entry.name)) {
       yield path;
     }
   }
-}
-
-function lineOf(text, index) {
-  let line = 1;
-  for (let i = 0; i < index && i < text.length; i++) {
-    if (text.charCodeAt(i) === 10) line++;
-  }
-  return line;
 }
 
 function snippet(text, index, span = 80) {
@@ -65,132 +63,131 @@ const INERT_SCRIPT_TYPES = new Set([
   'speculationrules',
 ]);
 
-// Same-origin <script src>: relative URL or scheme-relative-less absolute path. Anything else fails.
-function isSameOrigin(src) {
-  const value = src.trim();
+/** ASCII whitespace as the HTML spec defines it (String.trim also strips U+00A0, U+FEFF, ...). */
+const ASCII_WHITESPACE_EDGES = /^[\t\n\f\r ]+|[\t\n\f\r ]+$/g;
+
+/**
+ * Attribute values arrive entity-decoded and CRLF-normalised from the HTML parser; what is left to do is what
+ * the URL parser does: drop leading C0 controls/spaces and remove ASCII tab/newline anywhere.
+ */
+function normalizeUrl(value) {
+  return value.replace(/[\t\n\r]/g, '').replace(/^[\u0000-\u0020]+/, '');
+}
+
+/**
+ * Same-origin URL: a relative reference without a scheme or authority. The browser reads `\` as `/` for
+ * http(s) URLs, so `/\host`, `\/host` and `\\host` are protocol-relative (off-origin) just like `//host`.
+ */
+function isSameOrigin(url) {
+  const value = normalizeUrl(url).replace(/\\/g, '/');
   if (/^[a-z][a-z0-9+.-]*:/i.test(value)) return false; // https:, http:, data:, javascript:, etc.
-  if (value.startsWith('//')) return false; // protocol-relative = off-origin
-  return true;
+  return !value.startsWith('//');
 }
 
 /** Attributes whose value the browser may navigate to or load. */
 const URL_ATTRIBUTES = new Set(['href', 'src', 'action', 'formaction', 'xlink:href']);
 
-const NAMED_ENTITIES = new Map([
-  ['colon', ':'],
-  ['tab', '\t'],
-  ['newline', '\n'],
-  ['amp', '&'],
-  ['lt', '<'],
-  ['gt', '>'],
-  ['quot', '"'],
-  ['apos', "'"],
-]);
+/** `on…` names that are not event handlers. Mirrors tools/web/lint-forbidden-patterns.mjs. */
+const NON_EVENT_ON = new Set(['ongoing', 'online', 'onboarding']);
 
-/** One pass of HTML character-reference decoding (numeric with/without `;`, plus the few named ones a URL needs). */
-function decodeEntities(value) {
-  return value.replace(/&(?:#(?:x([0-9a-f]+)|(\d+))|([a-z]+));?/gi, (whole, hex, decimal, named) => {
-    if (named !== undefined) return NAMED_ENTITIES.get(named.toLowerCase()) ?? whole;
-    const codePoint = Number.parseInt(hex ?? decimal, hex === undefined ? 10 : 16);
-    return codePoint > 0 && codePoint <= 0x10ffff ? String.fromCodePoint(codePoint) : '\ufffd';
-  });
-}
-
-/** A URL as the browser sees it: entities decoded, ASCII tab/newline removed, leading controls and spaces dropped. */
-function normalizeUrl(value) {
-  return decodeEntities(value)
-    .replace(/[\t\n\r]/g, '')
-    .replace(/^[\u0000-\u0020]+/, '');
-}
-
-/** A keyword attribute (`rel`, `http-equiv`): entities decoded, lower-cased, trimmed. */
+/** A keyword attribute (`rel`, `http-equiv`): tab/newline as space, trimmed, lower-cased. */
 function normalizeToken(value) {
-  return decodeEntities(value).replace(/[\t\n\r]/g, ' ').trim().toLowerCase();
+  return value.replace(/[\t\n\r]/g, ' ').trim().toLowerCase();
 }
 
-/** The attributes of one start tag: lower-cased name, raw value ('' when absent) and its offset in the tag. */
-function parseAttributes(tagSource) {
-  const attributes = [];
-  const body = tagSource.replace(/^<[a-zA-Z][^\s>/]*/, (match) => ' '.repeat(match.length));
-  for (const match of body.matchAll(/([^\s"'<>/=]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+)))?/g)) {
-    attributes.push({ name: match[1].toLowerCase(), value: match[2] ?? match[3] ?? match[4] ?? '', index: match.index });
+/** Every element of a parsed document in document order, including <template> content. */
+function* elementsOf(root) {
+  const stack = [root];
+  while (stack.length > 0) {
+    const node = stack.pop();
+    if (node.tagName !== undefined) yield node;
+    const children = [...(node.childNodes ?? [])];
+    if (node.content !== undefined) children.push(node.content);
+    for (let index = children.length - 1; index >= 0; index--) stack.push(children[index]);
   }
-  return attributes;
 }
 
-/** Analyses one HTML document. Returns { hashes } or throws CspError on a hard failure. */
+/** The real attributes of an element: qualified lower-case name (`xlink:href`) and decoded value. */
+function attributesOf(element) {
+  return element.attrs.map((attribute) => ({
+    name: (attribute.prefix ? `${attribute.prefix}:${attribute.name}` : attribute.name).toLowerCase(),
+    value: attribute.value,
+  }));
+}
+
+/**
+ * Analyses one HTML document with the same HTML5 parser the browser spec defines (parse5), so attribute
+ * names, quoting, entities, raw-text bodies and newline normalisation are decided exactly once, by the
+ * parser. Returns the inline-script hashes or throws CspError on a hard failure.
+ */
 export function analyseHtml(html, displayPath) {
-  const fail = (what, index) => {
-    throw new CspError(`${displayPath}:${lineOf(html, index)}: ${what} — ${snippet(html, index)}`);
+  // scriptingEnabled:false parses <noscript> content as markup, so it is scanned too (the strict choice).
+  const document = parse(html, { sourceCodeLocationInfo: true, scriptingEnabled: false });
+  const fail = (what, element, attributeName) => {
+    const location = element.sourceCodeLocation;
+    const at = (attributeName === undefined ? undefined : location?.attrs?.[attributeName]) ?? location;
+    throw new CspError(`${displayPath}:${at?.startLine ?? 1}: ${what} — ${snippet(html, at?.startOffset ?? 0)}`);
   };
   const hashes = [];
 
-  // 1. Inline event handlers: any on[a-z]+= attribute in the raw markup. Deliberately allow-listed
-  //    names mirror tools/web/lint-forbidden-patterns.mjs so a build artefact that passes that scan
-  //    also passes here.
-  const NON_EVENT_ON = new Set(['ongoing', 'online', 'onboarding']);
-  // Only start tags are scanned: script/style bodies are code, not attributes (a JS `once=` is not a handler).
-  for (const tag of html.matchAll(/<[a-zA-Z][^\s>/]*(?:"[^"]*"|'[^']*'|[^'">])*>/g)) {
-    for (const match of tag[0].matchAll(/(?:^|[\s"'/])(on[a-z]{3,})\s*=/gi)) {
-      const name = match[1].toLowerCase();
-      if (NON_EVENT_ON.has(name)) continue;
-      fail(`inline event handler ${name}= is banned (CSP is hash-only; fix the template)`, tag.index + match.index);
-    }
-  }
-
-  // 2. javascript: URLs in any URL-bearing attribute. The raw pass catches the plain spelling; the attribute pass
-  //    below catches what the HTML parser would turn into one (entities, embedded tab/newline).
-  for (const match of html.matchAll(/\b(?:href|src|action|formaction)\s*=\s*("|'|)\s*javascript\s*:/gi)) {
-    fail('javascript: URL is banned (fix the template; there is no bypass flag)', match.index);
-  }
-  for (const tag of html.matchAll(/<[a-zA-Z][^\s>/]*(?:"[^"]*"|'[^']*'|[^'">])*>/g)) {
-    const tagName = /^<([a-zA-Z][^\s>/]*)/.exec(tag[0])?.[1]?.toLowerCase() ?? '';
-    const attributes = parseAttributes(tag[0]);
+  for (const element of elementsOf(document)) {
+    const attributes = attributesOf(element);
     const attr = (name) => attributes.find((candidate) => candidate.name === name);
-    for (const { name, value, index } of attributes) {
+
+    for (const { name, value } of attributes) {
+      // 1. Inline event handlers: a real attribute named on<event>, never text inside a value, a comment or a
+      //    script/style body.
+      if (/^on[a-z]{3,}$/.test(name) && !NON_EVENT_ON.has(name)) {
+        fail(`inline event handler ${name}= is banned (CSP is hash-only; fix the template)`, element, name);
+      }
+      // 2. javascript: URLs in any URL-bearing attribute (value already entity-decoded by the parser).
       if (URL_ATTRIBUTES.has(name) && /^javascript:/i.test(normalizeUrl(value))) {
-        fail('javascript: URL is banned (fix the template; there is no bypass flag)', tag.index + index);
+        fail('javascript: URL is banned (fix the template; there is no bypass flag)', element, name);
       }
     }
+
     // 2b. A <link> that pulls a stylesheet or module graph from another origin (style-src / script-src would block
     //     it at runtime, but the build must say so before the image ships).
-    if (tagName === 'link') {
+    if (element.tagName === 'link') {
       const rel = normalizeToken(attr('rel')?.value ?? '').split(/\s+/);
       const href = attr('href');
       if (href !== undefined && (rel.includes('stylesheet') || rel.includes('modulepreload'))) {
         const target = normalizeUrl(href.value);
         if (!isSameOrigin(target)) {
-          fail(`external <link rel="${rel.join(' ')}" href="${target}"> is banned (self-host it)`, tag.index + href.index);
+          fail(`external <link rel="${rel.join(' ')}" href="${target}"> is banned (self-host it)`, element, 'href');
         }
       }
     }
+
     // 2c. <meta http-equiv="refresh" content="0;url=javascript:...">.
-    if (tagName === 'meta' && normalizeToken(attr('http-equiv')?.value ?? '') === 'refresh') {
+    if (element.tagName === 'meta' && normalizeToken(attr('http-equiv')?.value ?? '') === 'refresh') {
       const content = attr('content');
       if (content !== undefined && /javascript\s*:/i.test(normalizeUrl(content.value))) {
-        fail('javascript: URL in <meta http-equiv="refresh"> is banned', tag.index + content.index);
+        fail('javascript: URL in <meta http-equiv="refresh"> is banned', element, 'content');
       }
     }
-  }
 
-  // 3. Scripts: hash executable inline bodies; reject off-origin src.
-  for (const match of html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script\s*>/gi)) {
-    const attrs = match[1];
-    const src = /\bsrc\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i.exec(attrs);
-    if (src !== null) {
-      const value = src[1] ?? src[2] ?? src[3] ?? '';
-      if (!isSameOrigin(value)) {
-        fail(`external <script src="${value}"> is banned (self-host it; never widen script-src)`, match.index);
+    // 3. Scripts (HTML and SVG): reject off-origin src/href, hash executable inline bodies.
+    if (element.tagName === 'script') {
+      const source = element.namespaceURI === SVG_NS ? (attr('href') ?? attr('xlink:href')) : attr('src');
+      if (source !== undefined) {
+        const value = normalizeUrl(source.value);
+        if (!isSameOrigin(value)) {
+          fail(`external <script src="${value}"> is banned (self-host it; never widen script-src)`, element);
+        }
+        continue;
       }
-      continue;
+      const type = (attr('type')?.value ?? '').replace(ASCII_WHITESPACE_EDGES, '').toLowerCase();
+      if (INERT_SCRIPT_TYPES.has(type)) continue;
+      // The text the browser executes (and hashes): parser-normalised newlines (CRLF/CR -> LF), not trimmed.
+      const body = element.childNodes
+        .filter((child) => child.nodeName === '#text')
+        .map((child) => child.value)
+        .join('');
+      if (body.trim().length === 0) continue; // <script></script> carries nothing to allow
+      const digest = createHash('sha256').update(body, 'utf8').digest('base64');
+      hashes.push(`'sha256-${digest}'`);
     }
-    const type = /\btype\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i.exec(attrs);
-    const typeValue = (type?.[1] ?? type?.[2] ?? type?.[3] ?? '').trim().toLowerCase();
-    if (INERT_SCRIPT_TYPES.has(typeValue)) continue;
-    const body = match[2];
-    if (body.trim().length === 0) continue; // <script></script> carries nothing to allow
-    const digest = createHash('sha256').update(body, 'utf8').digest('base64');
-    hashes.push(`'sha256-${digest}'`);
   }
   return hashes;
 }
