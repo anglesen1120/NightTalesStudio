@@ -1,0 +1,22 @@
+<section class="conflict-dialog">
+  <h2 [id]="titleId">{{ 'errors.conflict.title' | transloco }}</h2>
+  <div class="conflict-dialog__body" [id]="bodyId">
+    <p>{{ data.messageKey | transloco }}</p>
+    @if (data.detailKeys; as detailKeys) {
+      @if (detailKeys.length > 0) {
+        <ul>
+          @for (detailKey of detailKeys; track detailKey) {
+            <li>{{ detailKey | transloco }}</li>
+          }
+        </ul>
+      }
+    }
+  </div>
+  <div class="conflict-dialog__actions">
+    <button type="button" data-outcome="cancel" cdkFocusInitial (click)="chooseCancel()">{{ 'errors.conflict.cancel' | transloco }}</button>
+    @if (data.saveAsNewLabel; as label) {
+      <button type="button" data-outcome="saveAsNew" (click)="chooseSaveAsNew()">{{ label | transloco }}</button>
+    }
+    <button class="conflict-dialog__primary" type="button" data-outcome="reload" (click)="chooseReload()">{{ 'errors.conflict.reload' | transloco }}</button>
+  </div>
+</section>
