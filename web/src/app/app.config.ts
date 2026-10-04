@@ -10,6 +10,7 @@ import { APP_BASE_HREF } from '@angular/common';
 import { provideRouter } from '@angular/router';
 import { LocaleService, provideAppI18n } from '@core/i18n';
 import { PreferencesStore, ThemeStore } from '@core/prefs';
+import { provideRealtime } from '@core/realtime';
 import { provideSession, sessionInterceptor } from '@core/session';
 import { idempotencyInterceptor } from '@core/http';
 import { routes } from './app.routes';
@@ -25,6 +26,7 @@ export const appConfig: ApplicationConfig = {
     // so the single 401 replay keeps the Idempotency-Key header.
     provideHttpClient(withFetch(), withInterceptors([idempotencyInterceptor, sessionInterceptor])),
     provideSession(),
+    provideRealtime(),
     provideAppI18n(),
     // Read preferences once, then apply the validated theme and the initial language before the first view renders.
     // The profile locale (`GET /me`) is not known yet; the shell re-activates it once `me()` is set.

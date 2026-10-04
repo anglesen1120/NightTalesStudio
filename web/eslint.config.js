@@ -39,6 +39,11 @@ const API = {
   group: ['@shared/api', '@shared/api/**'],
   message: 'only data-access imports the generated client (D2/D5)',
 };
+// The SignalR client is a transport detail: only the adapter behind `HubConnectionPort` may import it (10.2.4-T1, D8).
+const SIGNALR = {
+  group: ['@microsoft/signalr', '@microsoft/signalr/**'],
+  message: 'only core/realtime/data-access/signalr-hub-connection.ts imports @microsoft/signalr (D2/D8)',
+};
 const DOMAIN = {
   group: [
     '@angular/**',
@@ -82,18 +87,18 @@ const imports = (...patterns) => ['error', { patterns }];
 // spec files.
 const importBlocks = (spec) => {
   const ext = spec ? '*.spec.ts' : '*.ts';
-  const api = spec ? [] : [API];
+  const api = spec ? [SIGNALR] : [API, SIGNALR];
   const domain = spec ? { ...DOMAIN, group: DOMAIN.group.filter((pattern) => !pattern.startsWith('@shared/api')) } : DOMAIN;
   return [
     // Everything under src: no generated client ...
     {
       files: at(`**/${ext}`),
-      rules: { '@typescript-eslint/no-restricted-imports': spec ? 'off' : imports(API) },
+      rules: { '@typescript-eslint/no-restricted-imports': spec ? imports(SIGNALR) : imports(API, SIGNALR) },
     },
     // ... except data-access (features/*/data-access and core/**/data-access, D5).
-    ...(spec ? [] : [{ files: at('app/**/data-access/**/*.ts'), rules: { '@typescript-eslint/no-restricted-imports': 'off' } }]),
+    ...(spec ? [] : [{ files: at('app/**/data-access/**/*.ts'), rules: { '@typescript-eslint/no-restricted-imports': imports(SIGNALR) } }]),
     { files: at(`app/shared/ui/**/${ext}`), rules: { '@typescript-eslint/no-restricted-imports': imports(...api, UI) } },
-    { files: at(`app/features/*/domain/**/${ext}`), rules: { '@typescript-eslint/no-restricted-imports': imports(domain) } },
+    { files: at(`app/features/*/domain/**/${ext}`), rules: { '@typescript-eslint/no-restricted-imports': imports(domain, SIGNALR) } },
     { files: at(`app/features/*/ui/**/${ext}`), rules: { '@typescript-eslint/no-restricted-imports': imports(...api, UI) } },
     // Per-feature blocks add the cross-feature rule on top of the layer lists above (and override them, so repeat them).
     ...FEATURES.flatMap((feature) => {
@@ -101,11 +106,13 @@ const importBlocks = (spec) => {
       const cross = crossFeature(feature);
       return [
         { files: at(`${base}/**/${ext}`), rules: { '@typescript-eslint/no-restricted-imports': imports(...api, cross) } },
-        { files: at(`${base}/data-access/**/${ext}`), rules: { '@typescript-eslint/no-restricted-imports': imports(cross) } },
-        { files: at(`${base}/domain/**/${ext}`), rules: { '@typescript-eslint/no-restricted-imports': imports(domain) } },
+        { files: at(`${base}/data-access/**/${ext}`), rules: { '@typescript-eslint/no-restricted-imports': imports(SIGNALR, cross) } },
+        { files: at(`${base}/domain/**/${ext}`), rules: { '@typescript-eslint/no-restricted-imports': imports(domain, SIGNALR) } },
         { files: at(`${base}/ui/**/${ext}`), rules: { '@typescript-eslint/no-restricted-imports': imports(...api, UI, cross) } },
       ];
     }),
+    // The one adapter (and its spec) may import the SignalR client; listed last so it wins over every block above.
+    { files: at(`app/core/realtime/data-access/signalr-hub-connection*.ts`), rules: { '@typescript-eslint/no-restricted-imports': 'off' } },
   ];
 };
 

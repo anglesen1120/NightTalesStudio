@@ -8,6 +8,17 @@ History moved out of STATUS.md to keep the live file small. The initial archive 
 
 - **Next (backend, start here):** **02.5.2-T2** internal lease API + sweeper + text storage (`plans/features/02-story-writing/02.5.1-sources-fetcher/02.5.2-T2-internal-lease-api-sweeper-text-storage.md`, M, tier T3: network/external input). Hard deps merged (02.5.1-T1, 02.5.2-T1, 09.7.2-T1); `leased_at`/`generation_run_id` already exist in `02_SourcesAndFetchTasks`, so confirm at kickoff whether any migration is needed. Then 02.5.2-T3 → T4, 02.6.1-T2, 02.6.2-T1 revision (02 §10 T113(b)), 02.3.2-T1 approve (treat `moderation.stale`/`unavailable` as needs re-check; edit-path moderator wiring). Claim the backend `gate.sh` lock in `nts-wt/SESSION-CLAIMS.md` first.
 - **Outcome:** 02.5.2-T2 built without a migration; T3 gates closed; PR from `feature/02.5.2-T2-s10`.
+### Superseded Session 11 Web next lines (2026-10-04, replaced when #129 `2ad5b05` merged and `develop` was merged into the 10.2.4-T1 branch)
+
+Outcome: 10.2.3-T1 merged as #129; 10.2.4-T1 in PR #130.
+
+From `develop` (`526ff09`):
+
+- **Web next (plan 10 Stage B):** Session 11: 10.2.3-T1 idempotency key in PR (`feature/10.2.3-T1-s11`, T1 gates closed); 10.2.4-T1 realtime service in PR or in progress (`feature/10.2.4-T1-s11`) → then 10.2.6-T1 shell (§Progress by plan); first read §Plan 10 hand-overs (pinned pre-#121 `web/openapi.json`, backend OpenAPI gaps, 10 CR-46, 10 CR-47) and the as-built `core/session` + `core/http` API (10.2.1-T1 and 10.2.3-T1 task §Notes; `signIn` takes three arguments, guards are standalone functions, `withIdempotency(intent, ctx?)` returns an `HttpContext`).
+
+From `feature/10.2.4-T1-s11` (`2c50d5a`):
+
+- **Web next (plan 10 Stage B):** Session 11: 10.2.3-T1 idempotency key in PR #129 and 10.2.4-T1 realtime service in PR (`feature/10.2.4-T1-s11`), both gates closed → after both merge, 10.2.6-T1 shell (first consumer of `RealtimeService`; §Progress by plan); first read §Plan 10 hand-overs (pinned pre-#121 `web/openapi.json`, backend OpenAPI gaps, 10 CR-46, 10 CR-47, 10 CR-48) and the as-built `core/session` + `core/http` + `core/realtime` API (10.2.1-T1, 10.2.3-T1 and 10.2.4-T1 task §Notes; `signIn` takes three arguments, guards are standalone functions, `withIdempotency(intent, ctx?)` returns an `HttpContext`, `provideRealtime()` is already in `app.config.ts`).
 
 ### Superseded Web next line (2026-10-04, replaced when Session 11 opened the 10.2.3-T1 PR)
 

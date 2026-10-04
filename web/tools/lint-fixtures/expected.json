@@ -246,6 +246,25 @@
       "rules": []
     },
     {
+      "file": "signalr-outside-adapter/src/app/features/series/application/live.store.ts",
+      "linter": "eslint",
+      "rules": [
+        "@typescript-eslint/no-restricted-imports"
+      ]
+    },
+    {
+      "file": "signalr-in-sibling-data-access/src/app/core/realtime/data-access/other.repository.ts",
+      "linter": "eslint",
+      "rules": [
+        "@typescript-eslint/no-restricted-imports"
+      ]
+    },
+    {
+      "file": "control-signalr-adapter/src/app/core/realtime/data-access/signalr-hub-connection.ts",
+      "linter": "eslint",
+      "rules": []
+    },
+    {
       "file": "control-prefs-storage/src/app/core/prefs/preferences.store.ts",
       "linter": "eslint",
       "rules": []
