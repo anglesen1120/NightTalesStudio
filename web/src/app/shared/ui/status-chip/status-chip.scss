@@ -1,0 +1,5 @@
+:host { display: inline-flex; align-items: center; gap: 6px; width: max-content; max-width: 100%; min-height: 28px; padding: 2px 10px 2px 8px; border: 1px solid currentColor; border-radius: var(--nts-radius-pill); font-size: var(--nts-type-caption-size); line-height: var(--nts-type-caption-line); font-weight: 500; }
+nts-icon-check, nts-icon-clock, nts-icon-alert, nts-icon-unknown { width: 14px; height: 14px; }
+:host(.status-chip--neutral) { color: var(--nts-color-on-surface-muted); }
+:host(.status-chip--info), :host(.status-chip--success) { color: var(--nts-color-primary); background: var(--nts-color-primary-soft); }
+:host(.status-chip--warn), :host(.status-chip--error) { color: var(--nts-color-error); background: var(--nts-color-error-soft); }

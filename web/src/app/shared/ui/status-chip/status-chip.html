@@ -1,0 +1,7 @@
+@switch (icon()) {
+  @case ('check') { <nts-icon-check /> }
+  @case ('clock') { <nts-icon-clock /> }
+  @case ('alert') { <nts-icon-alert /> }
+  @default { <nts-icon-unknown /> }
+}
+<span>{{ labelKey() | transloco }}</span>

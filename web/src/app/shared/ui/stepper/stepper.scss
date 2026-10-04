@@ -1,0 +1,12 @@
+:host { display: block; }
+ol { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: var(--nts-space-3); margin: 0; padding: 0; list-style: none; }
+.stepper__step { position: relative; display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: var(--nts-space-2); align-items: start; color: var(--nts-color-on-surface-muted); }
+.stepper__marker { display: grid; place-items: center; width: 28px; height: 28px; border: 1px solid var(--nts-color-outline); border-radius: 50%; }
+.stepper__step--current { color: var(--nts-color-on-surface); }
+.stepper__step--current .stepper__marker { border-color: var(--nts-color-primary); background: var(--nts-color-primary); color: var(--nts-color-on-primary); }
+.stepper__step--done .stepper__marker { color: var(--nts-color-primary); }
+.stepper__meta { display: block; font-size: var(--nts-type-caption-size); line-height: var(--nts-type-caption-line); }
+.stepper__label { display: block; color: inherit; font-weight: 500; }
+.stepper__sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+:host(.stepper--vertical) ol { grid-template-columns: 1fr; }
+@media (max-width: 359px) { ol { grid-template-columns: 1fr; } }

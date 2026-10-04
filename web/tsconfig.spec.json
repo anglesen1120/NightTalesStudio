@@ -4,8 +4,11 @@
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "types": [
-      "vitest/globals"
-    ]
+      "vitest/globals",
+      "node"
+    ],
+    "resolveJsonModule": true,
+    "allowSyntheticDefaultImports": true
   },
   "include": [
     "src/**/*.d.ts",
