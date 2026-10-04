@@ -1,0 +1,15 @@
+# Build output and tool caches
+/dist
+/.angular/
+/out-tsc
+/coverage
+node_modules/
+npm-debug.log
+
+# Test output (10.1.5-T1)
+/e2e-results/
+/playwright-report/
+/test-results/
+
+# System files
+.DS_Store
