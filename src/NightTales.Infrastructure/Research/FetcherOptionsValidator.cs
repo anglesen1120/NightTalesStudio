@@ -53,6 +53,31 @@ public sealed class FetcherOptionsValidator(IPublicSuffixList psl) : IValidateOp
             problems.Add($"'{FetcherOptions.SectionName}:{nameof(FetcherOptions.MinTextChars)}' must not exceed MaxTextChars.");
         }
 
+        if (options.LeaseSeconds is < 10 or > 3_600)
+        {
+            problems.Add($"'{FetcherOptions.SectionName}:{nameof(FetcherOptions.LeaseSeconds)}' must be between 10 and 3600.");
+        }
+
+        if (options.HeartbeatSeconds < 1 || options.HeartbeatSeconds >= options.LeaseSeconds)
+        {
+            problems.Add($"'{FetcherOptions.SectionName}:{nameof(FetcherOptions.HeartbeatSeconds)}' must be at least 1 and less than LeaseSeconds.");
+        }
+
+        if (options.MaxLeaseTotalSeconds <= options.LeaseSeconds || options.MaxLeaseTotalSeconds > 86_400)
+        {
+            problems.Add($"'{FetcherOptions.SectionName}:{nameof(FetcherOptions.MaxLeaseTotalSeconds)}' must be greater than LeaseSeconds and at most 86400.");
+        }
+
+        if (options.MaxLeasesPlatformWide is < 1 or > 64)
+        {
+            problems.Add($"'{FetcherOptions.SectionName}:{nameof(FetcherOptions.MaxLeasesPlatformWide)}' must be between 1 and 64.");
+        }
+
+        if (options.MaxLeasesPerDomain != 1)
+        {
+            problems.Add($"'{FetcherOptions.SectionName}:{nameof(FetcherOptions.MaxLeasesPerDomain)}' must be 1: the lease statement leases one task per registrable domain.");
+        }
+
         if (string.IsNullOrWhiteSpace(options.PublicHost) || options.PublicHost.Contains('/', StringComparison.Ordinal)
             || options.PublicHost.Contains(':', StringComparison.Ordinal) || options.PublicHost.Any(char.IsWhiteSpace))
         {

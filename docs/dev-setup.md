@@ -69,7 +69,9 @@ generated with (the secret is never printed). The ports are `.env` rows
 `DEV_STORAGE_VOLUME_PORT`, `DEV_MAIL_SMTP_PORT`, `DEV_MAIL_UI_PORT`); each is validated as an integer
 in 1–65535 during preflight (a malformed row exits 2 before anything is built or started), and `up.sh`
 exits 1 naming a port that is already taken. The Api's internal 8081 listener (02 D10,
-code-configured by 02.5.2-T2) has no row and is only checked for conflicts.
+02.5.2-T2) has no `.env` row and is only checked for conflicts; `up.sh` enables it on `127.0.0.1` with a
+throwaway `FETCHER_API_TOKEN` it generates once into `.nts/dev/config/fetcher-api-token` (mode 0600,
+never printed, passed through the environment and never in argv).
 
 The default `DEV_API_PORT=5000` collides with the Mac's **AirPlay Receiver** (System Settings → General →
 AirDrop & Handoff): when it is on, ControlCenter listens on `*:5000`, so `up.sh` exits 1 naming
@@ -264,6 +266,29 @@ Rules for any change that runs at start-up:
   The generator reports a missing key as `MSB3073` from `dotnet-getdocument` with a long hosting stack
   (see the build-time block), so check this list before hunting.
 - A new way of starting a host adds a row to this table.
+- **`FETCHER_API_TOKEN` (02.5.2-T2) is a conditional required secret**: it is required only when
+  `Fetcher:Internal:Enabled=true` (committed default `false` in the Api `appsettings.json`), must be at
+  least 32 characters (`openssl rand -hex 32`), and is read from the host configuration (environment
+  variable `FETCHER_API_TOKEN`, from the secret store `11.5.2`, never from `appsettings*.json`). Enabled
+  with a missing, blank or short token, the Api fails **start-up** with a named options error
+  (`FetcherInternalOptionsValidator`: `'FETCHER_API_TOKEN' is required when 'Fetcher:Internal:Enabled'
+  is true` / `must be at least 32 characters`), so the lease API can never run unauthenticated. Because
+  the default is off, no placeholder is needed in the Production-like rows above; the TestKit
+  `ApiFactory.WithFetcherInternalApi` supplies a token when a test enables the listener.
+  The internal listener is a second Kestrel endpoint: `Fetcher:Internal:ListenAddress` defaults to
+  `127.0.0.1` (loopback, the native and `up.sh` value) and is `0.0.0.0` only in the container
+  environment (compose, staging, prod); `Fetcher:Internal:ListenPort` defaults to `8081`. Enabling it
+  makes Kestrel ignore `ASPNETCORE_URLS` / `ASPNETCORE_HTTP_PORTS`, so the host re-declares the public
+  listeners from `Kestrel:Endpoints`, else from those same values minus the internal port (do not
+  list `8081` there). The other `Fetcher:Internal` keys are `MaxRequestsPerMinutePerWorker` (60) and
+  `MaxBodyBytes` (1048576, bounds 1 KiB–16 MiB).
+  Other keys of the `Fetcher` section: the **Api** binds `LeaseSeconds` (90), `HeartbeatSeconds` (60),
+  `MaxLeaseTotalSeconds` (300, must exceed `LeaseSeconds`: the hard ceiling of a lease, heartbeats included),
+  `MaxLeasesPlatformWide` (4) and `MaxLeasesPerDomain` (1, the only accepted value); the **Worker**
+  binds `MaxAttempts` (2), `RequeueBackoffSeconds` (30) and `SweepIntervalSeconds` (60, documents the
+  fixed every-minute cron of `FetchLeaseSweeperJob`) from its own `appsettings.json` — keep
+  `MaxAttempts` and `RequeueBackoffSeconds` equal in both. All are optional, validated on start, and
+  need no placeholder.
 - `Seed__Owner__Email` / `Seed__Owner__Password` (09.2.5-T2) are optional: `OwnerSeeder` creates the one
   owner from them when none exists and otherwise skips with a warning, so they need no placeholder in the
   rows above. Supply them from the secret store (11.5.2) only for the `nts-seed` run; never commit them.
@@ -351,6 +376,12 @@ docker compose down                                    # or: down -v to discard 
   default, and `up.sh` pins it), and the compose service sets `0.0.0.0` so the published host port
   `127.0.0.1:8082` can reach it across the container's network namespace. The host side is never
   wider than `127.0.0.1`.
+- The Api's internal lease API (02 D10, 02.5.2-T2) runs in the `api` container with
+  `Fetcher__Internal__Enabled=true` and `Fetcher__Internal__ListenAddress=0.0.0.0`; `FETCHER_API_TOKEN`
+  comes from `.nts/dev/config/compose.env` (written by `up.sh`, loaded by the Api only). Port `8081` is
+  **not** published to the host and is not in `ASPNETCORE_HTTP_PORTS` (the host binds it in code), so it
+  is reachable only from other services on the compose network; the published `127.0.0.1:5000:8080`
+  never serves `/internal/fetcher/…`.
 
 - Do not run both paths at once: `5432`, `8333` and `1025` collide. The override file can move the
   host side of a published port.

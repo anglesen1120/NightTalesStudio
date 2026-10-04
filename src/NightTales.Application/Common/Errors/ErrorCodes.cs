@@ -545,4 +545,13 @@ public static class ErrorCodes
 
     /// <summary>Source outcome: no extractable text (02 D8).</summary>
     public const string SourceNoText = "source_no_text";
+
+    /// <summary>Internal fetcher API only (02.5.2-T2, T43): the leased task does not exist (it was deleted with its source or episode); never shown to a user.</summary>
+    public const string FetchTaskNotFound = "fetch_task_not_found";
+
+    /// <summary>Internal fetcher API only (02.5.2-T2, T43): the caller no longer holds a live lease on the task; never shown to a user.</summary>
+    public const string FetchLeaseLost = "fetch_lease_lost";
+
+    /// <summary>Internal fetcher API only (02.5.2-T2): the task kind has no consumer yet (<c>find_sources</c> candidates arrive with 02.7.2-T3); never shown to a user.</summary>
+    public const string FetchTaskKindUnsupported = "fetch_task_kind_unsupported";
 }

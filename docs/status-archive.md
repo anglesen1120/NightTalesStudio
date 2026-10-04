@@ -4,6 +4,10 @@ History moved out of STATUS.md to keep the live file small. The initial archive 
 
 ## Resume-here history (Current/Previous blocks, Next actions)
 
+### Superseded Next line (2026-10-04, replaced when Session 10 opened the 02.5.2-T2 PR)
+
+- **Next (backend, start here):** **02.5.2-T2** internal lease API + sweeper + text storage (`plans/features/02-story-writing/02.5.1-sources-fetcher/02.5.2-T2-internal-lease-api-sweeper-text-storage.md`, M, tier T3: network/external input). Hard deps merged (02.5.1-T1, 02.5.2-T1, 09.7.2-T1); `leased_at`/`generation_run_id` already exist in `02_SourcesAndFetchTasks`, so confirm at kickoff whether any migration is needed. Then 02.5.2-T3 → T4, 02.6.1-T2, 02.6.2-T1 revision (02 §10 T113(b)), 02.3.2-T1 approve (treat `moderation.stale`/`unavailable` as needs re-check; edit-path moderator wiring). Claim the backend `gate.sh` lock in `nts-wt/SESSION-CLAIMS.md` first.
+- **Outcome:** 02.5.2-T2 built without a migration; T3 gates closed; PR from `feature/02.5.2-T2-s10`.
 ### Superseded Session 11 Web next lines (2026-10-04, replaced when #129 `2ad5b05` merged and `develop` was merged into the 10.2.4-T1 branch)
 
 Outcome: 10.2.3-T1 merged as #129; 10.2.4-T1 in PR #130.

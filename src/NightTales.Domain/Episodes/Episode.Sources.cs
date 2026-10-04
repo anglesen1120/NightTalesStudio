@@ -13,4 +13,15 @@ public sealed partial class Episode
     /// <param name="now">The command's clock reading.</param>
     public void RaiseSourceRemoved(Guid sourceId, DateTimeOffset now) =>
         Raise(new SourceRemoved(sourceId, Id, UserId, now));
+
+    /// <summary>
+    /// Records that the fetcher's result for a url source was accepted (02.5.2-T2, plan §5.5): raises
+    /// <see cref="SourceFetched"/> on the aggregate, so the outbox row commits in the transaction that stores the text
+    /// and the Worker can send <c>EpisodeUpdated</c>. It is raised for a failed fetch too: the UI refetches the list
+    /// either way, and the event carries ids only (D19).
+    /// </summary>
+    /// <param name="sourceId">The source the result belongs to.</param>
+    /// <param name="now">The command's clock reading.</param>
+    public void RaiseSourceFetched(Guid sourceId, DateTimeOffset now) =>
+        Raise(new SourceFetched(sourceId, Id, UserId, now));
 }
