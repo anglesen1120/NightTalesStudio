@@ -95,6 +95,15 @@ LEAK=$(docker run --rm --entrypoint sh "$IMAGE" -c \
 [ -z "$LEAK" ] || fail "no node_modules / .map / package.json in image" "none" "$LEAK"
 pass "no node_modules / .map / package.json in image"
 
+# Dockerfile static contract (QA): multi-stage, both bases digest-pinned, no ADD / remote URL.
+DOCKERFILE="$(cd "$(dirname "$0")/../.." && pwd)/Dockerfile"
+[ -f "$DOCKERFILE" ] || fail "Dockerfile found" "$DOCKERFILE" "missing"
+[ "$(grep -cE '^FROM ' "$DOCKERFILE")" -ge 2 ] || fail "multi-stage Dockerfile" ">= 2 FROM" "fewer"
+UNPINNED=$(grep -E '^FROM ' "$DOCKERFILE" | grep -v '@sha256:[0-9a-f]\{64\}' || true)
+[ -z "$UNPINNED" ] || fail "every FROM is digest-pinned" "@sha256:<64 hex>" "$UNPINNED"
+! grep -qE '^ADD |https?://[^ ]*\.(tar|tgz|zip|sh)' "$DOCKERFILE" || fail "no ADD / remote archive in Dockerfile" "none" "found"
+pass "Dockerfile: multi-stage, FROM digest-pinned, no ADD / remote URL"
+
 # --- default run: dev-shaped, no upstream, no HSTS ----------------------------------
 start default
 UID_IN=$(docker exec "$CURRENT" id -u)
@@ -112,12 +121,57 @@ curl -fsS "http://127.0.0.1:$PORT/khong-ton-tai" | grep -qi '<app-root' \
     || fail "unknown path serves the fallback HTML" "<app-root> document" "other body"
 pass "/khong-ton-tai -> 200 fallback HTML"
 
+# Root document (QA): "/" must be the SPA, never a document left over from the base image.
+ROOT_BODY=$(curl -fsS "http://127.0.0.1:$PORT/")
+printf '%s' "$ROOT_BODY" | grep -qi '<app-root' \
+    || fail "/ serves the SPA document" "<app-root> document" "$(printf '%s' "$ROOT_BODY" | grep -oiE '<title>[^<]*</title>' | head -n1)"
+pass "/ serves the SPA document"
+IDX_BODY=$(curl -sS "http://127.0.0.1:$PORT/index.html")
+case "$IDX_BODY" in
+    *"Welcome to nginx"*) fail "no base-image index.html is served" "no nginx welcome page at /index.html" "Welcome to nginx!" ;;
+esac
+pass "/index.html is not the nginx welcome page"
+hdrs /index.csr.html
+header_has "/index.csr.html: Cache-Control no-cache (never immutable)" "cache-control: no-cache"
+if printf '%s\n' "$HDRS" | grep -qiE '^cache-control:.*immutable'; then
+    fail "/index.csr.html: not immutable" "no immutable Cache-Control" "$(printf '%s' "$HDRS" | tr '\n' '|')"
+fi
+pass "/index.csr.html: not immutable"
+
+# /healthz header set (QA): plain text, never cached, and no SPA/CSP headers.
+hdrs /healthz
+header_has "/healthz: Content-Type text/plain" "content-type: text/plain"
+header_has "/healthz: Cache-Control no-store" "cache-control: no-store"
+header_absent "/healthz: no Content-Security-Policy" "content-security-policy"
+
+# Dotfiles, traversal, methods, long URI, gzip (QA).
+for p in /.git /.git/config /.env; do
+    [ "$(status_of "$p")" = "404" ] || fail "dotfile $p -> 404" "404" "$(status_of "$p")"
+    pass "dotfile $p -> 404"
+done
+for p in '/../etc/passwd' '/%2e%2e/%2e%2e/etc/passwd' '/..%2f..%2fetc%2fpasswd' '/assets/../../etc/passwd'; do
+    RESP=$(curl -sS --path-as-is -w '\n%{http_code}' "http://127.0.0.1:$PORT$p")
+    printf '%s' "$RESP" | grep -q 'root:' && fail "traversal $p leaks no file" "no /etc/passwd content" "root: entry in body"
+    pass "traversal $p -> $(printf '%s' "$RESP" | tail -n1), no file content"
+done
+for m in TRACE POST PUT DELETE; do
+    OUT=$(curl -sS -o /dev/null -w '%{http_code}' -X "$m" "http://127.0.0.1:$PORT/")
+    [ "$OUT" = "405" ] || fail "$m / -> 405" "405" "$OUT"
+    pass "$m / -> 405"
+done
+OUT=$(curl -sS -o /dev/null -w '%{http_code}' "http://127.0.0.1:$PORT/$(head -c 9000 /dev/zero | tr '\0' a)")
+[ "$OUT" = "414" ] || fail "9000-char URI -> 414" "414" "$OUT"
+pass "9000-char URI -> 414"
+
 CHUNK=$(docker exec "$CURRENT" sh -c 'ls /usr/share/nginx/html' | grep -E -- '-[A-Za-z0-9]{8}\.js$' | head -n1)
 [ -n "$CHUNK" ] || fail "a hashed chunk with an 8-char hash exists" "name-XXXXXXXX.js" "none"
 hdrs "/$CHUNK"
 header_has "hashed chunk /$CHUNK: immutable" "cache-control: public, max-age=31536000, immutable"
 for h in "${D4_HEADERS[@]}"; do header_has "hashed chunk: $h" "$h"; done
 header_absent "hashed chunk: no Content-Security-Policy" "content-security-policy"
+GZ=$(curl -sS -H 'Accept-Encoding: gzip' -D - -o /dev/null "http://127.0.0.1:$PORT/$CHUNK" | tr -d '\r' | tr 'A-Z' 'a-z')
+printf '%s\n' "$GZ" | grep -q '^content-encoding: gzip' || fail "hashed js is gzip-compressed" "content-encoding: gzip" "$(printf '%s' "$GZ" | tr '\n' '|')"
+pass "hashed js is gzip-compressed"
 
 ASSET=$(docker exec "$CURRENT" sh -c 'cd /usr/share/nginx/html && find assets -type f | head -n1')
 [ -n "$ASSET" ] || fail "an /assets file exists" "any file" "none"
@@ -135,6 +189,13 @@ for p in /api/v1/anything /hubs/episodes /health/ready; do
     case "$OUT" in
         *text/html*) fail "guard $p content type" "not text/html" "$OUT" ;;
     esac
+    pass "guard $p -> $OUT"
+done
+
+# API-guard prefix confusion: encoded slash and doubled slashes still hit the guard.
+for p in '/api%2fv1' '//api/x' '/api//x'; do
+    OUT=$(curl -sS --path-as-is -o /dev/null -w '%{http_code} %{content_type}' "http://127.0.0.1:$PORT$p")
+    [ "$OUT" = "404 text/plain" ] || fail "guard $p -> 404 text/plain" "404 text/plain" "$OUT"
     pass "guard $p -> $OUT"
 done
 
@@ -166,7 +227,13 @@ for bad in \
     "NTS_CSP_MEDIA_ORIGINS=https://a.example.com'" \
     "NTS_CSP_MEDIA_ORIGINS=ftp://a.example.com" \
     "NTS_HSTS=max-age=abc" \
-    "NTS_SPA_FALLBACK=../etc/passwd"; do
+    "NTS_SPA_FALLBACK=../etc/passwd" \
+    $'NTS_CSP_MEDIA_ORIGINS=https://a.example\nevil' \
+    "NTS_CSP_MEDIA_ORIGINS=*" \
+    "NTS_CSP_MEDIA_ORIGINS=http:" \
+    "NTS_CSP_MEDIA_ORIGINS=https://a.example/" \
+    "NTS_HSTS=max-age=1; preload" \
+    "NTS_API_UPSTREAM=http://x/path"; do
     name="${bad%%=*}"
     set +e
     OUT=$(docker run --rm --read-only --tmpfs /tmp --tmpfs /etc/nginx/conf.d:uid=101,gid=101,mode=0755 \
@@ -194,5 +261,36 @@ case "$LOGLINE" in
     *ticket=*|*\?*) fail "hub log line has no query string" "path only" "$LOGLINE" ;;
 esac
 pass "hub access log line is path-only"
+
+# --- proxy mode with a REACHABLE upstream (QA): a second container of this same image ----
+# The upstream runs in guard mode, so a proxied /api/** answers its own 404 text/plain
+# ("not found"); an unreachable upstream would answer nginx's 502 HTML instead.
+UP="$PREFIX-upstream"
+CONTAINERS+=("$UP")
+docker run -d --name "$UP" --read-only --tmpfs /tmp \
+    --tmpfs /etc/nginx/conf.d:uid=101,gid=101,mode=0755 "$IMAGE" >/dev/null
+UPIP=""
+for _ in $(seq 1 40); do
+    UPIP=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$UP" 2>/dev/null || true)
+    if [ -n "$UPIP" ] && docker exec "$UP" wget -qO- http://127.0.0.1:8080/healthz >/dev/null 2>&1; then break; fi
+    UPIP=""
+    sleep 0.5
+done
+[ -n "$UPIP" ] || fail "reachable upstream container is ready" "an IP answering /healthz" "none"
+start proxy-up -e "NTS_API_UPSTREAM=http://$UPIP:8080"
+for p in /api/v1/anything /health/ready /hubs/episodes?ticket=abc; do
+    OUT=$(curl -sS -o /dev/null -w '%{http_code} %{content_type}' "http://127.0.0.1:$PORT$p")
+    [ "$OUT" = "404 text/plain" ] || fail "proxy mode: $p reaches the upstream" "404 text/plain (upstream answer, not 502)" "$OUT"
+    pass "proxy mode: $p proxied to the upstream ($OUT)"
+done
+OUT=$(curl -sS -o /dev/null -w '%{http_code} %{content_type}' "http://127.0.0.1:$PORT/apix")
+case "$OUT" in "200 text/html"*) pass "proxy mode: /apix is not proxied (SPA fallback)" ;; *) fail "proxy mode: /apix stays on the SPA" "200 text/html" "$OUT" ;; esac
+sleep 1
+LOGLINE=$(docker logs "$CURRENT" 2>/dev/null | grep '/hubs/' || true)
+[ -n "$LOGLINE" ] || fail "proxy mode (reachable): hub request is access-logged" "a /hubs/ line" "none"
+case "$LOGLINE" in
+    *ticket=*|*\?*) fail "proxy mode (reachable): hub log line has no query string" "path only" "$LOGLINE" ;;
+esac
+pass "proxy mode (reachable): hub access log line is path-only"
 
 echo "container smoke: ALL PASSED"
