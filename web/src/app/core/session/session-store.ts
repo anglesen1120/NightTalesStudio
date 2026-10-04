@@ -141,6 +141,9 @@ export class SessionStore {
 
   private async ensureFresh(opts: EnsureFreshOptions | undefined): Promise<string | null> {
     if (!this.restoreSettledState()) await this.restore();
+    // A stale-generation caller that waited on the boot restore ends here: it never retries a `restore_failed`,
+    // reads the new session's token, or starts a refresh on its behalf.
+    if (opts?.generation !== undefined && opts.generation !== this.generationState()) return null;
     const ended = this.endReasonState();
     if (ended !== null) {
       if (ended !== 'restore_failed' || opts?.userAction !== true) return null;
@@ -195,8 +198,10 @@ export class SessionStore {
     } catch {
       token = null;
     }
-    // A session that replaced this one meanwhile (sign-in B) is not the one the user logged out of.
-    if (this.generationState() === generation) this.signOut('logout');
+    // A session that replaced this one meanwhile (sign-in B) is not the one the user logged out of: no POST at all
+    // (the backend would clear B's cookie), and B stays untouched.
+    if (this.generationState() !== generation) return;
+    this.signOut('logout');
     await this.api.logout(token);
   }
 

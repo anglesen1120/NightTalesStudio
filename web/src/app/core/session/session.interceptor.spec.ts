@@ -769,6 +769,48 @@ describe('SessionInterceptor', () => {
       expectBUntouched(b);
     });
 
+    it('a request issued during the boot restore (generation 0) never refreshes on behalf of the old session after signIn(B)', async () => {
+      fake.mode = 'deferred';
+      void store.restore();
+      await vi.waitFor(() => expect(fake.calls).toBe(1), { timeout: 2_000, interval: 1 });
+      const done = run(http.get(SERIES));
+      await settle();
+      mock.expectNone(SERIES);
+
+      // B signs in with a token that is already inside the freshness margin: a refresh on the old request's behalf
+      // would be the visible symptom of the leak.
+      const b: TokenPair = { accessToken: fakeJwt('admin', ['B'], 'user-B'), expiresAt: Date.now() + STALE_MS };
+      store.signIn(b, 'admin', ['pwd']);
+      fake.resolveNext(tokens(['late'], FRESH_MS));
+
+      const req = await request(SERIES);
+      expect(authorization(req)).toBeNull();
+      req.flush({});
+      expect((await done).ok).toBe(true);
+      await settle();
+      expect(fake.calls).toBe(1);
+      expect(store.accessToken()).toBe(b.accessToken);
+      expect(store.endReason()).toBeNull();
+      expect(scopes.map((scope) => scope.resets)).toEqual([0, 0, 0]);
+    });
+
+    it('Logout_SessionReplacedWhileRefreshing_SendsNoLogoutPost_AndBIsIntact', async () => {
+      useRealRepository();
+      signIn(STALE_MS);
+      const loggingOut = store.logout();
+      const refresh = await vi.waitFor(() => mock.expectOne((r) => r.url.endsWith('/auth/refresh')), { timeout: 2_000, interval: 1 });
+      const b: TokenPair = { accessToken: fakeJwt('admin', ['B'], 'user-B'), expiresAt: Date.now() + FRESH_MS };
+      store.signIn(b, 'admin', ['pwd']);
+      refresh.flush({ accessToken: fakeJwt('user', ['late']), expiresAt: new Date(Date.now() + FRESH_MS).toISOString() });
+
+      await expect(loggingOut).resolves.toBeUndefined();
+      await settle();
+      mock.expectNone(LOGOUT);
+      expect(store.accessToken()).toBe(b.accessToken);
+      expect(store.endReason()).toBeNull();
+      expect(scopes.map((scope) => scope.resets)).toEqual([0]);
+    });
+
     it('boot network failure, then a USER_ACTION request whose refresh answers a plain 401: anonymous, no navigation, scopes reset once overall', async () => {
       fake.mode = 'network';
       await store.restore();

@@ -914,15 +914,51 @@ describe('SessionStore', () => {
       const store = TestBed.inject(SessionStore);
       store.signIn(pair('user', FRESH, 'A'), 'user', []);
       const loggingOut = store.logout();
+      await vi.waitFor(() => expect(api.logoutCalls).toBe(1));
       const b = pair('admin', FRESH, 'B');
       store.signIn(b, 'admin', ['pwd']);
-      await vi.waitFor(() => expect(api.logoutCalls).toBe(1));
       api.release();
       await loggingOut;
 
       expect(store.accessToken()).toBe(b.accessToken);
       expect(store.endReason()).toBeNull();
       expect(store.status()).toBe('authenticated');
+    });
+
+    it('SessionStore_Logout_SessionReplacedWhileAwaitingToken_SendsNoLogoutAndKeepsB', async () => {
+      const scope = new CountingScope();
+      const { store, fake } = setup([scope]);
+      store.signIn(pair('user', STALE, 'A'), 'user', []);
+      fake.mode = 'deferred';
+      const loggingOut = store.logout();
+      await vi.waitFor(() => expect(fake.calls).toBe(1));
+      const b = pair('admin', FRESH, 'B');
+      store.signIn(b, 'admin', ['pwd']);
+      fake.resolveNext(pair('user', FRESH, 'late'));
+      await loggingOut;
+
+      expect(fake.logoutCalls).toBe(0);
+      expect(store.accessToken()).toBe(b.accessToken);
+      expect(store.endReason()).toBeNull();
+      expect(scope.resets).toBe(0);
+    });
+
+    it('SessionStore_EnsureFresh_BoundCallerWaitingOnBootRestore_ResolvesNullWithoutFlightWhenSessionReplaced', async () => {
+      const { store, fake } = setup();
+      fake.mode = 'deferred';
+      const restoring = store.restore();
+      await vi.waitFor(() => expect(fake.calls).toBe(1));
+      const bound = store.generation();
+      const caller = store.ensureFreshAccessToken({ userAction: true, generation: bound });
+      const b = pair('user', STALE, 'B');
+      store.signIn(b, 'user', []);
+      fake.rejectNext(appError('network_error', 0));
+      await restoring;
+
+      await expect(caller).resolves.toBeNull();
+      expect(fake.calls).toBe(1);
+      expect(store.accessToken()).toBe(b.accessToken);
+      expect(store.endReason()).toBeNull();
     });
 
     // The real backend answers a refresh WITHOUT any cookie with 401 `session_revoked`
