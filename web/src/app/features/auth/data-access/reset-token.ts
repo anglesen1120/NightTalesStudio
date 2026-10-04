@@ -25,7 +25,7 @@ export function stripHash(): void {
  * during one). A fragment-only change re-runs no guard and recreates no component.
  */
 export async function clearRouterFragment(router: Router): Promise<void> {
-  if (router.getCurrentNavigation() !== null) {
+  if (router.currentNavigation() !== null) {
     await firstValueFrom(
       router.events.pipe(
         filter((e) => e instanceof NavigationEnd || e instanceof NavigationCancel || e instanceof NavigationError || e instanceof NavigationSkipped),

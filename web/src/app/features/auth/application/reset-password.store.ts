@@ -69,7 +69,7 @@ export class ResetPasswordStore {
     this.token = readTokenFromHash(this.document.location.hash);
     stripHash();
     // The Router keeps its own copy of the fragment (`router.url`, route snapshots); drop it too.
-    void clearRouterFragment(this.router);
+    void clearRouterFragment(this.router).catch(() => undefined);
     this.hasTokenState.set(this.token !== null);
     inject(DestroyRef).onDestroy(() => {
       this.destroyed = true;

@@ -239,4 +239,46 @@ describe('ResetPasswordStore', () => {
     await store.submit('Str0ng!pass', 'Str0ng!pass');
     expect(repo.calls).toEqual([{ method: 'resetPassword', args: ['abc', 'Str0ng!pass'] }]);
   });
+
+  it('ResetPasswordStore_RouterFragmentClearRejects_NoUnhandledRejectionAndTokenStillSent', async () => {
+    history.replaceState(null, '', '/reset-password#t=abc');
+    const repo = new FakeAuthRepository();
+    TestBed.configureTestingModule({
+      providers: [
+        ...ZONELESS_TEST_PROVIDERS,
+        provideRouter([{ path: 'reset-password', children: [] }]),
+        { provide: SessionApi, useValue: new FakeSessionApi() },
+        { provide: AuthRepository, useValue: repo },
+        ResetPasswordStore,
+      ],
+    });
+    const router = TestBed.inject(Router);
+    await router.navigateByUrl('/reset-password#t=abc');
+    const navigate = vi.spyOn(router, 'navigateByUrl').mockRejectedValue(new Error('navigation failed'));
+    const unhandled: unknown[] = [];
+    const onUnhandled = (event: PromiseRejectionEvent): void => {
+      event.preventDefault();
+      unhandled.push(event.reason);
+    };
+    const onProcessUnhandled = (reason: unknown): void => {
+      unhandled.push(reason);
+    };
+    globalThis.addEventListener('unhandledrejection', onUnhandled);
+    process.on('unhandledRejection', onProcessUnhandled);
+    try {
+      const store = TestBed.inject(ResetPasswordStore);
+      await vi.waitFor(() => expect(navigate).toHaveBeenCalledTimes(1));
+      // The tsconfig lib predates Promise.withResolvers, so the executor form is the only typed option here.
+      await new Promise<void>((resolve) => {
+        setTimeout(resolve, 20);
+      });
+      expect(unhandled).toEqual([]);
+      repo.willReturn('resetPassword', OK);
+      await store.submit('Str0ng!pass', 'Str0ng!pass');
+      expect(repo.calls).toEqual([{ method: 'resetPassword', args: ['abc', 'Str0ng!pass'] }]);
+    } finally {
+      globalThis.removeEventListener('unhandledrejection', onUnhandled);
+      process.off('unhandledRejection', onProcessUnhandled);
+    }
+  });
 });
