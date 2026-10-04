@@ -1,5 +1,6 @@
-using NightTales.Infrastructure.Research;
-using NightTales.Infrastructure.Research.Http;
+using NightTales.Fetcher.Core.Fetching;
+using NightTales.Fetcher.Core.Research;
+using NightTales.Fetcher.Core.Research.Http;
 using Shouldly;
 using Xunit;
 

@@ -3,12 +3,12 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using NightTales.Application.Abstractions.Fetching;
+using NightTales.Fetcher.Core.Fetching;
 using NightTales.Application.Features.Research.Sources;
 using NightTales.Domain.Research;
-using NightTales.Infrastructure.Research;
-using NightTales.Infrastructure.Research.Extraction;
-using NightTales.Infrastructure.Research.Http;
+using NightTales.Fetcher.Core.Research;
+using NightTales.Fetcher.Core.Research.Extraction;
+using NightTales.Fetcher.Core.Research.Http;
 
 namespace NightTales.Infrastructure.DependencyInjection;
 

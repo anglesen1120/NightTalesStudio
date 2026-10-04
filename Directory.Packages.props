@@ -36,6 +36,11 @@
     <PackageVersion Include="Npgsql.OpenTelemetry" Version="10.0.3" />
     <!-- 02.2.1-T2 (02 README O1/D7): the Responses API client and the single retry layer of the text adapter. -->
     <PackageVersion Include="Microsoft.Extensions.Http.Resilience" Version="10.4.0" />
+    <!-- 02.5.2-T3: Fetcher.Core declares these itself (it has no EF Core / Hangfire to bring them); pinned to the 10.0.12 train the rest of the solution resolves. -->
+    <PackageVersion Include="Microsoft.Extensions.Http" Version="10.0.12" />
+    <PackageVersion Include="Microsoft.Extensions.Hosting" Version="10.0.12" />
+    <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.12" />
+    <PackageVersion Include="Microsoft.Extensions.Options" Version="10.0.12" />
     <PackageVersion Include="OpenAI" Version="2.14.0" />
     <PackageVersion Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.19.1" />
     <PackageVersion Include="OpenTelemetry.Extensions.Hosting" Version="1.19.1" />

@@ -192,9 +192,9 @@ src/
   NightTales.Api/                    presentation: Minimal API endpoint groups per feature, auth, SignalR hub,
                                      ProblemDetails mapping from ErrorOr, rate limiting, OpenAPI
   NightTales.Worker/                 composition root for Hangfire server, recurring jobs, outbox dispatcher
-  NightTales.Fetcher.Core/           references Domain only: SafeHttpSourceFetcher, address validation, robots, main-text extraction (02 CR-19)
+  NightTales.Fetcher.Core/           references Domain only: SafeHttpSourceFetcher, address validation, robots, main-text extraction (02 CR-19, 02 T40)
   NightTales.Fetcher/                console host (BackgroundService) for the fetcher container; references Fetcher.Core only,
-                                     never Infrastructure/Application (no EF, no OpenAI SDK, no Hangfire) — architecture test
+                                     never Infrastructure/Application (no EF, no OpenAI SDK, no Hangfire) — architecture test (02 T40)
   NightTales.RenderNode.Contract/    render-node.v1 wire DTOs (BCL only); referenced by Application, the adapter and the mock (11 CR-2)
   NightTales.RenderNode.Server/      shared render-node.v1 server core (routes, auth, limits, store seam); never Domain/Application/Infrastructure (11 CR-2)
   NightTales.MptAdapter/             `mpt-adapter` host on each GPU node: MPT backend, post-processing, health, image relay (11 CR-2)

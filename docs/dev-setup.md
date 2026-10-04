@@ -96,6 +96,10 @@ fresh database.
 ## .NET solution
 
 - SDK 10.0.401 (`global.json`, `rollForward: latestPatch`).
+- Two projects belong to the source fetcher (02.5.2-T3, [DECISION T40]): `src/NightTales.Fetcher.Core`
+  (class library; references `NightTales.Domain` only; owns `SafeHttpSourceFetcher`, the HTTP/extraction
+  pieces and `FetcherOptions`) and `src/NightTales.Fetcher` (console host; references `Fetcher.Core` only).
+  Neither references Application or Infrastructure.
 - The two commands below are exactly what `.github/workflows/backend.yml` runs (`build-test`, then
   `integration`). The build-time OpenAPI generator boots the Api, so every build and test command needs
   the five values a deployment always provides: a parseable connection string, which it never uses to
@@ -217,6 +221,21 @@ The Api and the Worker have several boot contexts beyond `dotnet run`. A host th
 registered `ValidateOnStart` checks and hosted services, but TestKit harnesses and CLI modes do not
 execute every normal entry-point step or background service. Code that works under `dotnet run` can
 still fail the build or the gate in another context.
+
+**Fetcher host (`src/NightTales.Fetcher`, 02.5.2-T3).** A console host, not a web host: it opens no listening
+port, and it holds no database, storage, mail or OpenAI setting (no connection string, no `Storage:*`, no
+`OpenAi:ApiKey`). It needs two values and fails at start-up without them:
+
+- `FETCHER_API_TOKEN`, the raw environment variable (never `appsettings*.json`): when it is missing or empty
+  the process exits 1 before leasing, and the message never contains the token.
+- `Fetcher:Internal:BaseUrl`, the Api's internal listener (`http://127.0.0.1:8081` native,
+  `http://api:8081` in compose); required.
+
+Optional: `Fetcher:WorkerId` and the other `Fetcher:*` keys. Every key can also be set as an environment
+variable with the `NTS_` prefix (for example `NTS_Fetcher__Internal__BaseUrl`), next to the default
+unprefixed provider. Liveness is "it can lease": the host exits non-zero after
+`Fetcher:ConsecutiveFailuresBeforeExit` (5) consecutive internal-API failures, and exits non-zero
+immediately on a 401. `tools/dev/up.sh` therefore starts it only after the Api is healthy.
 
 |Context|Environment|Database|Configuration comes from|
 |---|---|---|---|
@@ -342,8 +361,9 @@ Each class database's Npgsql pool is cleared before the `DROP DATABASE … WITH 
 ## Optional Compose stack
 
 For end-to-end runs and image smoke only — never required for daily development (11.1.1-T1, 11 CR-16).
-`docker-compose.yml` is one file with one `name: nighttales`: `postgres` (09.1.1-T2), `api`, `worker`
-and `web` (11.1.1-T1), plus `storage` (SeaweedFS) and `mail` (Mailpit) (11.1.1-T2). Every published
+`docker-compose.yml` is one file with one `name: nighttales`: `postgres` (09.1.1-T2), `api`, `worker`,
+`fetcher` (profile `fetcher`, 02.5.2-T3) and `web` (11.1.1-T1), plus `storage` (SeaweedFS) and `mail`
+(Mailpit) (11.1.1-T2). Every published
 port is `127.0.0.1:<host>:<container>`, every service has a healthcheck, and every value comes from
 `.env` (the file has `${VAR:?…}` guards, so no credential is committed).
 
@@ -352,6 +372,7 @@ docker compose config --quiet                          # validates the merged fi
                                                        # Never print the resolved file: it interpolates secrets.
 docker compose up -d --wait                            # postgres, api, worker, storage and mail all healthy
 docker compose --profile web up -d --wait              # adds web; 10.1.1-T2 owns that image
+docker compose --profile fetcher up fetcher            # adds the fetcher; builds src/NightTales.Fetcher/Dockerfile
 docker compose ps --format '{{.Service}} {{.Ports}}'   # every published port starts with 127.0.0.1:
 docker compose down                                    # or: down -v to discard the pgdata and seaweedfs volumes
 ```
@@ -382,6 +403,13 @@ docker compose down                                    # or: down -v to discard 
   **not** published to the host and is not in `ASPNETCORE_HTTP_PORTS` (the host binds it in code), so it
   is reachable only from other services on the compose network; the published `127.0.0.1:5000:8080`
   never serves `/internal/fetcher/…`.
+- The `fetcher` service (02.5.2-T3) builds from `src/NightTales.Fetcher/Dockerfile` (multi-stage, digest-pinned,
+  final stage `dotnet/runtime:10.0-noble-chiseled`: no shell, no curl/wget, non-root, no `EXPOSE`). It runs
+  `read_only` with a 64 MiB tmpfs `/tmp`, no volumes, no ports, all capabilities dropped, and limits of 0.5
+  CPU, 512M and 128 pids. Its environment is only `Fetcher__Internal__BaseUrl=http://api:8081` and
+  `FETCHER_API_TOKEN` from `.nts/dev/config/fetcher.env` (written by `up.sh`; the token alone, because
+  `compose.env` also holds the Api's signing key). Dev compose cannot enforce egress deny: the dedicated subnet
+  with internet-only egress is 11.2.2-T2.
 
 - Do not run both paths at once: `5432`, `8333` and `1025` collide. The override file can move the
   host side of a published port.

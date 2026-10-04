@@ -1,4 +1,4 @@
-using NightTales.Infrastructure.Research.Http;
+using NightTales.Fetcher.Core.Research.Http;
 using NightTales.TestKit.Time;
 using Shouldly;
 using Xunit;

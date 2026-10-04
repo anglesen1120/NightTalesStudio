@@ -10,12 +10,13 @@ usage() {
 Usage: tools/dev/up.sh [--web] [--skip-storage-init] [--help]
 
 Starts the native dev stack, every listener on 127.0.0.1 (no Docker):
-  1. builds src/NightTales.Api, src/NightTales.Worker and tools/mock-mpt once, sequentially
+  1. builds src/NightTales.Api, src/NightTales.Worker, src/NightTales.Fetcher and tools/mock-mpt once, sequentially
      (OpenApiGenerateDocuments off, the Dockerfile publish flag); a failed build stops here
   2. the Homebrew postgresql@17 service, then tools/dev/db-init.sh (role and database, idempotent)
   3. seaweedfs (S3 8333, volume 8084) and mailpit (SMTP 1025, UI 8025) as up.sh-owned processes
   4. tools/dev/storage-init.sh when that script exists (11.1.1-T2 creates the dev buckets)
-  5. starts each host with dotnet run --no-build: Api (5000), Worker (health 8082), mock-mpt (8090)
+  5. starts each host with dotnet run --no-build: Api (5000), Worker (health 8082), mock-mpt (8090);
+     once the Api is healthy, the Fetcher (no listener; leases from the Api's internal 127.0.0.1:8081)
   6. with --web: ng serve (4200)
 then waits for every health endpoint (DEV_HEALTH_TIMEOUT, default 90 s) and prints the URLs.
 
@@ -333,6 +334,7 @@ build_host() {
 
 owned_running api >/dev/null || build_host src/NightTales.Api
 owned_running worker >/dev/null || build_host src/NightTales.Worker
+owned_running fetcher >/dev/null || build_host src/NightTales.Fetcher
 if [ "$mock_present" -eq 1 ]; then
   owned_running mock >/dev/null || build_host tools/mock-mpt
 fi
@@ -396,6 +398,11 @@ chmod 600 "$fetcher_token_file"
   printf 'FETCHER_API_TOKEN=%s\n' "$(cat "$fetcher_token_file")"
 } > "$compose_env_file"
 chmod 600 "$compose_env_file"
+
+# The optional compose fetcher (02.5.2-T3) gets the token alone: compose.env also holds the Api's
+# signing key, which the fetcher must never see.
+printf 'FETCHER_API_TOKEN=%s\n' "$(cat "$fetcher_token_file")" > "$config_dir/fetcher.env"
+chmod 600 "$config_dir/fetcher.env"
 
 # ---------------------------------------------------------------- PostgreSQL
 
@@ -541,6 +548,15 @@ worker_environment() {
   fi
 }
 
+# The fetcher (02.5.2-T3) holds no DB, storage or OpenAI setting: only the Api's internal listener
+# address and the lease token. The token reaches the child through the environment, never argv (01 D9).
+fetcher_environment() {
+  export DOTNET_ENVIRONMENT="$app_environment"
+  export Fetcher__Internal__BaseUrl="http://127.0.0.1:8081"
+  FETCHER_API_TOKEN="$(cat "$fetcher_token_file")"
+  export FETCHER_API_TOKEN
+}
+
 mock_environment() {
   export ASPNETCORE_ENVIRONMENT="$app_environment"
   export ASPNETCORE_URLS="http://127.0.0.1:$dev_mock_port"
@@ -577,6 +593,16 @@ start_worker() {
     exec dotnet run --project src/NightTales.Worker --no-launch-profile --no-build
   ) >>"$log_dir/worker.log" 2>&1 &
   record_identity worker "$!"
+}
+
+start_fetcher() {
+  needs_start fetcher || return 0
+  log "starting Fetcher (leases from http://127.0.0.1:8081) -> $log_dir/fetcher.log"
+  (
+    fetcher_environment
+    exec dotnet run --project src/NightTales.Fetcher --no-launch-profile --no-build
+  ) >>"$log_dir/fetcher.log" 2>&1 &
+  record_identity fetcher "$!"
 }
 
 start_mock() {
@@ -665,12 +691,23 @@ if [ -n "$pending$failed" ]; then
   die 1 "the stack is not healthy:$pending$failed - read the log files under $log_dir"
 fi
 
+# ---------------------------------------------------------------- start the fetcher (after the Api)
+# The Fetcher has no listener, so liveness is "it keeps leasing": it exits non-zero after five
+# consecutive internal-API failures. It therefore starts only once the Api is healthy (its internal
+# listener is up), never in parallel with it.
+
+start_fetcher
+sleep 2
+owned_running fetcher >/dev/null \
+  || die 1 "the fetcher exited right after start - read $log_dir/fetcher.log"
+
 # ---------------------------------------------------------------- service table
 
 printf '\n'
 printf 'Service        URL\n'
 printf 'Api            http://127.0.0.1:%s\n' "$dev_api_port"
 printf 'Worker health  http://127.0.0.1:%s/health/ready\n' "$dev_worker_health_port"
+printf 'Fetcher        no listener (leases from http://127.0.0.1:8081)\n'
 if [ "$mock_present" -eq 1 ]; then
   printf 'mock-mpt       http://127.0.0.1:%s\n' "$dev_mock_port"
 else

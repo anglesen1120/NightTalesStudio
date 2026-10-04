@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk.Worker">
+
+  <!--
+    02.5.2-T3 (02 README D10, [DECISION T40/T43]): the fetcher console host. It references the Fetcher.Core library (and
+    through it Domain) and nothing else of NightTales.*: no Application, no Infrastructure, no ASP.NET Core framework
+    reference (the image is the plain .NET runtime, no listener). The architecture tests enforce it.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <!-- The host has no secrets file: the only secret is the FETCHER_API_TOKEN environment variable. -->
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\NightTales.Fetcher.Core\NightTales.Fetcher.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Hosting" />
+    <PackageReference Include="Microsoft.Extensions.Http" />
+    <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" />
+    <PackageReference Include="OpenTelemetry.Extensions.Hosting" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="NightTales.Fetcher.UnitTests" />
+  </ItemGroup>
+
+</Project>
