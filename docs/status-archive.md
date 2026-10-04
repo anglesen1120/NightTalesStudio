@@ -4,6 +4,10 @@ History moved out of STATUS.md to keep the live file small. The initial archive 
 
 ## Resume-here history (Current/Previous blocks, Next actions)
 
+### Superseded Next line (2026-10-04, replaced when the owner accepted SEC-5 for phase P, 02 §10 T114)
+
+- **Next:** owner decision SEC-5 (§Open tasks, 02.2.2-T3 row). Then 02.5.2-T2 → T3 → T4 fetcher, 02.6.1-T2, 02.6.2-T1 revision (plugs into the pipeline, 02 §10 T113(b)), then 02.3.2-T1 approve (must treat `moderation.stale`/`unavailable` as needs re-check; decides the edit-path moderator wiring, owner deferred 2026-10-04). No backend session holds the `gate.sh` lock now. Check each task header first.
+
 ### Superseded Session 7 Current/Next lines (2026-10-04, replaced when #125 `a2667da` merged)
 
 - **Current (2026-10-04).** Session 5 wave merged to `develop` as PR #121 (`0028aa0`): 02.4.1-T1 content moderator, 02.5.2-T1 safe HTTP fetcher, 02.3.1-T1 edit-story command, 02.6.1-T1 self-review; each closed its T3 gates, combined tip full gate green, CI 4/4. Step 0 (#120 rate-limiter leak) merged. Web Stage A (plan 10 foundation, 9 tasks) merged as #122 (`a2c4a12`, CI 5/5); the Session 6 claim is released (`/Volumes/Project/nts-wt/SESSION-CLAIMS.md`).
