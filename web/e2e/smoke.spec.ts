@@ -122,7 +122,15 @@ test.describe('smoke: both targets', () => {
 });
 
 test.describe('smoke: container target (nginx serves; WR2 header matrix)', () => {
-  test.skip(!CONTAINER, 'dev server sends no D4 headers and answers /healthz with the SPA fallback; run with NTS_E2E_TARGET=container');
+  const containerSkipReason =
+    'dev server sends no D4 headers and answers /healthz with the SPA fallback; run with NTS_E2E_TARGET=container';
+  if (process.env.CI && !process.env.NTS_E2E_TARGET) {
+    throw new Error('CI e2e job: NTS_E2E_TARGET is unset; container-only smoke tests would skip silently (QA D3)');
+  }
+  if (!CONTAINER) {
+    console.log(`skipping container target tests: ${containerSkipReason}`);
+  }
+  test.skip(!CONTAINER, containerSkipReason);
 
   // These FAIL (never skip) when a header is missing: the only skip is the legal route below.
   test('D4 headers on / and on a deep client route that falls back', async ({ request }) => {
