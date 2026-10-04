@@ -105,8 +105,8 @@ public static class OpenAiServiceCollectionExtensions
                 options => !string.IsNullOrWhiteSpace(options.Model),
                 $"'{ModerationOptions.SectionName}:{nameof(ModerationOptions.Model)}' is required.")
             .Validate(
-                options => options.MaxCharsPerChunk > 0,
-                $"'{ModerationOptions.SectionName}:{nameof(ModerationOptions.MaxCharsPerChunk)}' must be positive.")
+                options => options.MaxCharsPerChunk >= ModerationOptions.MinCharsPerChunk,
+                $"'{ModerationOptions.SectionName}:{nameof(ModerationOptions.MaxCharsPerChunk)}' must be at least {ModerationOptions.MinCharsPerChunk}.")
             .Validate(
                 options => options.TimeoutSeconds > 0,
                 $"'{ModerationOptions.SectionName}:{nameof(ModerationOptions.TimeoutSeconds)}' must be positive.")

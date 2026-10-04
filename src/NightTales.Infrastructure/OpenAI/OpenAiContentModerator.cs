@@ -1,5 +1,6 @@
 using System.ClientModel;
 using System.ClientModel.Primitives;
+using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using NightTales.Application.Abstractions.Moderation;
@@ -23,6 +24,14 @@ namespace NightTales.Infrastructure.OpenAI;
 /// Any failure after the retry budget throws <see cref="ModerationUnavailableException"/>: fail closed, never a
 /// silent pass. One <c>usage_records</c> row (<c>operation = moderation</c>, cost 0, estimated) is written per
 /// answered call when a <see cref="ModerationScope"/> names the run.
+/// </para>
+/// <para>
+/// Verdict rules (D12, SEC-01): a result with <c>flagged: true</c> and no category of the omni table
+/// (<see cref="ModerationOptions.KnownCategories"/>) gets the <see cref="ModerationOptions.UnclassifiedCategory"/>
+/// sentinel, which <see cref="ModerationOptions.Classify"/> treats as blocking; an unknown category name next to a
+/// known one stays advisory. The port never lets anything but <see cref="ModerationUnavailableException"/> (or the
+/// caller's own cancellation) escape: building the request, parsing the answer and reading its scores all map to it
+/// (SEC-02). A lone surrogate in a text is replaced with U+FFFD and the replaced text is still moderated.
 /// </para>
 /// <para>
 /// Logging (D19): identifiers, counts and the outcome only. No checked text, category-bearing body or provider
@@ -51,6 +60,9 @@ public sealed partial class OpenAiContentModerator(
     /// <summary>The D14 operation of the free call.</summary>
     public const string Operation = "moderation";
 
+    /// <summary>The characters two adjacent pieces of a long text share, so a phrase over a cut is whole in one of them (SEC-03).</summary>
+    public const int ChunkOverlap = 200;
+
     /// <inheritdoc />
     public async ValueTask<ModerationResult> CheckAsync(IReadOnlyList<string> texts, ModerationStage stage, CancellationToken ct)
     {
@@ -62,10 +74,9 @@ public sealed partial class OpenAiContentModerator(
             return ModerationResult.Clean;
         }
 
-        var body = BuildBody(options.Model, chunks);
-
         try
         {
+            var body = BuildBody(options.Model, chunks);
             var response = await pipelines.GetPipeline(PipelineKey)
                 .ExecuteAsync(
                     async token =>
@@ -99,10 +110,11 @@ public sealed partial class OpenAiContentModerator(
 
             throw new ModerationUnavailableException(ex.Status);
         }
-        catch (Exception ex) when (ex is TimeoutRejectedException or HttpRequestException or JsonException or InvalidDataException
-            || (ex is OperationCanceledException && !ct.IsCancellationRequested))
+        catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
         {
-            // The type only, never the message: a provider message can echo the request text (D19).
+            // SEC-02: a timeout, a transport failure, a malformed answer, an unwritable request or an unreadable score
+            // all fail closed as the one typed exception. Only the caller's own cancellation passes through. The type
+            // only, never the message: a provider message can echo the request text (D19).
             LogFailed(stage, null);
 
             throw new ModerationUnavailableException(null);
@@ -110,38 +122,92 @@ public sealed partial class OpenAiContentModerator(
     }
 
     /// <summary>
-    /// Splits every non-blank text into pieces of at most <paramref name="maxChars"/> characters, never between the
-    /// two halves of a surrogate pair.
+    /// Splits every non-blank text into pieces of at most <paramref name="maxChars"/> characters (CR-3, SEC-03).
+    /// A piece that has to be cut ends after the last whitespace of the final 20% of its window when there is one,
+    /// and adjacent pieces overlap by <see cref="ChunkOverlap"/> characters (never more than <c>maxChars - 1</c>), so
+    /// a phrase over a cut is whole in one piece. A piece never starts or ends inside a surrogate pair, and a lone
+    /// surrogate is replaced with U+FFFD first (SEC-02), so every piece is well-formed UTF-16.
     /// </summary>
     /// <param name="texts">The texts.</param>
-    /// <param name="maxChars">The cap per piece.</param>
+    /// <param name="maxChars">The cap per piece, at least <see cref="ModerationOptions.MinCharsPerChunk"/>.</param>
     /// <returns>The pieces, in order.</returns>
     public static List<string> Chunk(IReadOnlyList<string> texts, int maxChars)
     {
+        ArgumentOutOfRangeException.ThrowIfLessThan(maxChars, ModerationOptions.MinCharsPerChunk);
+
+        var overlap = Math.Min(ChunkOverlap, maxChars - 1);
+        var wordWindow = maxChars / 5;
         var chunks = new List<string>();
 
-        foreach (var text in texts)
+        foreach (var original in texts)
         {
-            if (string.IsNullOrWhiteSpace(text))
+            if (string.IsNullOrWhiteSpace(original))
             {
                 continue;
             }
 
+            var text = ReplaceLoneSurrogates(original);
             var start = 0;
-            while (start < text.Length)
+            while (text.Length - start > maxChars)
             {
-                var length = Math.Min(maxChars, text.Length - start);
-                if (length < text.Length - start && length > 1 && char.IsHighSurrogate(text[start + length - 1]))
-                {
-                    length--;
-                }
+                var cut = CutPoint(text, start, maxChars, wordWindow);
+                chunks.Add(text.Substring(start, cut - start));
 
-                chunks.Add(text.Substring(start, length));
-                start += length;
+                // Step back by the overlap, off the low half of a pair. The cut is at least 80% of the window, so
+                // the next piece always starts after this one does.
+                start = cut - overlap;
+                if (char.IsLowSurrogate(text[start]))
+                {
+                    start--;
+                }
             }
+
+            chunks.Add(start == 0 ? text : text.Substring(start));
         }
 
         return chunks;
+    }
+
+    private static int CutPoint(string text, int start, int maxChars, int wordWindow)
+    {
+        var end = start + maxChars;
+        for (var i = end - 1; i >= end - wordWindow; i--)
+        {
+            if (char.IsWhiteSpace(text[i]))
+            {
+                return i + 1;
+            }
+        }
+
+        return char.IsHighSurrogate(text[end - 1]) ? end - 1 : end;
+    }
+
+    private static string ReplaceLoneSurrogates(string text)
+    {
+        StringBuilder? replaced = null;
+        for (var i = 0; i < text.Length; i++)
+        {
+            var c = text[i];
+            if (char.IsHighSurrogate(c) && i + 1 < text.Length && char.IsLowSurrogate(text[i + 1]))
+            {
+                replaced?.Append(c).Append(text[i + 1]);
+                i++;
+
+                continue;
+            }
+
+            if (char.IsSurrogate(c))
+            {
+                replaced ??= new StringBuilder(text.Length).Append(text, 0, i);
+                replaced.Append('\uFFFD');
+
+                continue;
+            }
+
+            replaced?.Append(c);
+        }
+
+        return replaced?.ToString() ?? text;
     }
 
     private static byte[] BuildBody(string model, List<string> chunks)
@@ -202,21 +268,37 @@ public sealed partial class OpenAiContentModerator(
                 throw new ModerationUnavailableException(null);
             }
 
-            flagged |= f.ValueKind == JsonValueKind.True;
+            var resultFlagged = f.ValueKind == JsonValueKind.True;
+            flagged |= resultFlagged;
+            var knownCategory = false;
 
             if (result.TryGetProperty("categories", out var flags) && flags.ValueKind == JsonValueKind.Object)
             {
                 foreach (var category in flags.EnumerateObject().Where(p => p.Value.ValueKind == JsonValueKind.True))
                 {
                     categories.Add(category.Name);
+                    knownCategory |= ModerationOptions.KnownCategories.Contains(category.Name);
                 }
+            }
+
+            // SEC-01: flagged with no category the omni table knows (absent, all false, or renamed by the provider)
+            // is not "clean" and not merely advisory: the sentinel makes Classify block approval. An unknown name
+            // beside a known category stays advisory; a flagged result with only unknown names gets the sentinel too.
+            if (resultFlagged && !knownCategory)
+            {
+                categories.Add(ModerationOptions.UnclassifiedCategory);
             }
 
             if (result.TryGetProperty("category_scores", out var values) && values.ValueKind == JsonValueKind.Object)
             {
                 foreach (var score in values.EnumerateObject().Where(p => p.Value.ValueKind == JsonValueKind.Number))
                 {
-                    var value = score.Value.GetDouble();
+                    // SEC-02: a number outside double range is an unusable answer, not an untyped FormatException.
+                    if (!score.Value.TryGetDouble(out var value) || !double.IsFinite(value))
+                    {
+                        throw new InvalidDataException("A moderation score is not a finite number.");
+                    }
+
                     scores[score.Name] = scores.TryGetValue(score.Name, out var best) ? Math.Max(best, value) : value;
                 }
             }
@@ -258,9 +340,11 @@ public sealed partial class OpenAiContentModerator(
                     run.GenerationRunId),
                 ct).ConfigureAwait(false);
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
         {
-            // The check already answered; a lost bookkeeping row must not turn a verdict into a failure.
+            // CR-1: the check already answered; a lost bookkeeping row must not turn a verdict into a failure. That
+            // includes the meter's own settlement timeout, which surfaces as an OperationCanceledException while the
+            // caller's token is still live. Only the caller's own cancellation propagates.
             LogMeterFailed(ex.GetType().Name);
         }
     }

@@ -1,6 +1,7 @@
 // The Responses API of OpenAI 2.14.0 is marked experimental (OPENAI001); the text adapter used below needs it.
 #pragma warning disable OPENAI001
 
+using System.Globalization;
 using System.Net;
 using System.Text;
 using System.Text.Json;
@@ -9,6 +10,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Http;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using NightTales.Application.Abstractions.Flags;
 using NightTales.Application.Abstractions.Moderation;
 using NightTales.Application.Abstractions.Money;
@@ -35,12 +37,18 @@ internal sealed class RecordingUsageMeter : IUsageMeter
     }
 }
 
+/// <summary>A meter whose write is a script, to reproduce a slow, cancelled or failing settlement.</summary>
+internal sealed class ScriptedUsageMeter(Func<CancellationToken, Task> record) : IUsageMeter
+{
+    public Task RecordAsync(UsageItem item, CancellationToken ct) => record(ct);
+}
+
 /// <summary>The moderation composition over the real registration and a scripted transport — no live call.</summary>
 internal sealed class ModerationTestHost : IDisposable
 {
     private readonly ServiceProvider _provider;
 
-    internal ModerationTestHost(Dictionary<string, string?>? settings = null)
+    internal ModerationTestHost(Dictionary<string, string?>? settings = null, IUsageMeter? meter = null)
     {
         Handler = new ScriptedHandler();
         Logs = new CapturingLoggerProvider();
@@ -51,7 +59,7 @@ internal sealed class ModerationTestHost : IDisposable
         services.AddLogging(builder => builder.AddProvider(Logs));
         services.AddSingleton<IFeatureFlags>(new FakeFlags());
         services.AddSingleton<IHostEnvironment>(new TestEnvironment { EnvironmentName = Environments.Production });
-        services.AddSingleton<IUsageMeter>(Meter);
+        services.AddSingleton<IUsageMeter>(meter ?? Meter);
         services.AddOpenAiTextClient();
         services.Configure<OpenAiOptions>(options =>
         {
@@ -143,7 +151,7 @@ public sealed class ContentModeratorTests
 
         var input = host.Handler.Requests.ShouldHaveSingleItem().Json.GetProperty("input");
         input.GetArrayLength().ShouldBe(3);
-        input.EnumerateArray().Select(chunk => chunk.GetString()!.Length).ShouldBe([8_000, 8_000, 500]);
+        input.EnumerateArray().Select(chunk => chunk.GetString()!.Length).ShouldBe([8_000, 8_000, 900]);
         result.Flagged.ShouldBeTrue("a flag in any chunk flags the whole text");
         result.Categories.ShouldBe(["harassment", "hate/threatening", "violence"]);
     }
@@ -156,9 +164,10 @@ public sealed class ContentModeratorTests
         var chunks = OpenAiContentModerator.Chunk([text], 8_000);
 
         chunks.Count.ShouldBe(2);
-        chunks[0].Length.ShouldBe(7_999);
-        chunks[1].ShouldStartWith("\U0001F600");
-        string.Concat(chunks).ShouldBe(text);
+        chunks[0].Length.ShouldBe(7_999, "the cut moves off the pair");
+        chunks.ShouldAllBe(c => !char.IsHighSurrogate(c[c.Length - 1]) && !char.IsLowSurrogate(c[0]));
+        chunks[1].ShouldContain("\U0001F600" + "tail");
+        chunks[1].Length.ShouldBe(text.Length - (7_999 - OpenAiContentModerator.ChunkOverlap));
     }
 
     [Fact]
@@ -292,15 +301,18 @@ public sealed class ContentModeratorTests
     [InlineData(7_999, 1)]
     [InlineData(8_000, 1)]
     [InlineData(8_001, 2)]
-    [InlineData(16_000, 2)]
-    [InlineData(16_001, 3)]
+    [InlineData(15_800, 2)]
+    [InlineData(15_801, 3)]
     public void Chunk_AtTheCap_SplitsOnlyAboveIt(int length, int expectedChunks)
     {
         var chunks = OpenAiContentModerator.Chunk([new string('a', length)], 8_000);
 
         chunks.Count.ShouldBe(expectedChunks);
         chunks.ShouldAllBe(chunk => chunk.Length <= 8_000);
-        string.Concat(chunks).Length.ShouldBe(length);
+
+        // Adjacent pieces share ChunkOverlap characters, so dropping the shared head of each later piece rebuilds the text.
+        var rebuilt = chunks[0] + string.Concat(chunks.Skip(1).Select(c => c[OpenAiContentModerator.ChunkOverlap..]));
+        rebuilt.Length.ShouldBe(length);
     }
 
     [Fact]
@@ -315,7 +327,7 @@ public sealed class ContentModeratorTests
         await host.Moderator.CheckAsync([new string('a', 8_001)], ModerationStage.Draft, Ct);
 
         host.Handler.Requests[0].Json.GetProperty("input").GetArrayLength().ShouldBe(1);
-        host.Handler.Requests[1].Json.GetProperty("input").EnumerateArray().Select(c => c.GetString()!.Length).ShouldBe([8_000, 1]);
+        host.Handler.Requests[1].Json.GetProperty("input").EnumerateArray().Select(c => c.GetString()!.Length).ShouldBe([8_000, 201]);
     }
 
     [Theory]
@@ -329,8 +341,8 @@ public sealed class ContentModeratorTests
         var chunks = OpenAiContentModerator.Chunk([text], 8_000);
 
         chunks.ShouldAllBe(c => c.Length <= 8_000);
-        chunks.ShouldAllBe(c => !char.IsHighSurrogate(c.Last()) && !char.IsLowSurrogate(c.First()));
-        string.Concat(chunks).ShouldBe(text);
+        chunks.ShouldAllBe(c => !char.IsHighSurrogate(c[c.Length - 1]) && !char.IsLowSurrogate(c[0]));
+        chunks.ShouldContain(c => c.Contains("\U0001F600" + "tail", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -341,25 +353,29 @@ public sealed class ContentModeratorTests
 
         var chunks = OpenAiContentModerator.Chunk([text], 8_001);
 
+        chunks.Count.ShouldBe(3);
         chunks.ShouldAllBe(c => c.Length <= 8_001 && c.Length % 2 == 0);
         foreach (var chunk in chunks)
         {
             Should.NotThrow(() => strict.GetBytes(chunk));
         }
 
-        string.Concat(chunks).ShouldBe(text);
+        text.StartsWith(chunks[0], StringComparison.Ordinal).ShouldBeTrue();
+        text.EndsWith(chunks[^1], StringComparison.Ordinal).ShouldBeTrue();
     }
 
     [Fact]
-    public async Task Moderator_LoneSurrogateInTheText_AnswersOrFailsClosed_NeverAnUntypedException()
+    public async Task Moderator_LoneSurrogateInTheText_IsReplacedWithFffd_AndStillModerated()
     {
         using var host = new ModerationTestHost();
-        host.Handler.Reply(HttpStatusCode.OK, ModerationTestHost.Body(Array.Empty<string>()));
+        host.Handler.Reply(HttpStatusCode.OK, ModerationTestHost.Body(["violence"], []));
 
-        var failure = await Record.ExceptionAsync(async () =>
-            await host.Moderator.CheckAsync(["abc\ud83d"], ModerationStage.Brief, Ct));
+        var result = await host.Moderator.CheckAsync(["abc\ud83d", "\ude00def"], ModerationStage.Brief, Ct);
 
-        (failure is null or ModerationUnavailableException).ShouldBeTrue($"the port contract allows only ModerationUnavailableException, got {failure}");
+        var input = host.Handler.Requests.ShouldHaveSingleItem().Json.GetProperty("input");
+        input.EnumerateArray().Select(e => e.GetString()).ShouldBe(["abc\uFFFD", "\uFFFDdef"]);
+        result.Flagged.ShouldBeTrue("the replaced text is still moderated and its verdict is used");
+        result.Categories.ShouldBe(["violence"]);
     }
 
     [Fact]
@@ -622,7 +638,7 @@ public sealed class ContentModeratorTests
     }
 
     [Fact]
-    public async Task Moderator_FlaggedTrueWithNoCategory_StillFlags()
+    public async Task Moderator_FlaggedTrueWithNoCategory_GetsTheUnclassifiedSentinel_AndBlocks()
     {
         using var host = new ModerationTestHost();
         host.Handler.Reply(HttpStatusCode.OK, "{\"results\":[{\"flagged\":true,\"categories\":{\"hate\":false},\"category_scores\":{}}]}");
@@ -630,8 +646,10 @@ public sealed class ContentModeratorTests
         var result = await host.Moderator.CheckAsync(["text"], ModerationStage.Brief, Ct);
 
         result.Flagged.ShouldBeTrue();
-        result.Categories.ShouldBeEmpty();
-        new ModerationOptions().Classify(result.Categories).BlocksApproval.ShouldBeFalse();
+        result.Categories.ShouldBe([ModerationOptions.UnclassifiedCategory]);
+        var classification = new ModerationOptions().Classify(result.Categories);
+        classification.BlocksApproval.ShouldBeTrue("flagged with no known category fails closed (SEC-01)");
+        classification.Blocking.ShouldBe([ModerationOptions.UnclassifiedCategory]);
     }
 
     [Fact]
@@ -670,6 +688,263 @@ public sealed class ContentModeratorTests
         host.Logs.Messages.ShouldNotContain(m => m.Contains("PROVIDER-MESSAGE-SECRET", StringComparison.Ordinal) || m.Contains("BRIEF-TEXT-SECRET", StringComparison.Ordinal));
         failure.ToString().ShouldNotContain("PROVIDER-MESSAGE-SECRET");
         failure.ToString().ShouldNotContain("BRIEF-TEXT-SECRET");
+    }
+
+    // ---- Review fixes A (02.4.1-T1): CR-1 meter timeout, CR-3/SEC-03 chunking, SEC-01 sentinel, SEC-02 typed failures ----
+
+    [Theory]
+    [InlineData(typeof(OperationCanceledException))] // the meter's own settlement deadline, caller token still live
+    [InlineData(typeof(TaskCanceledException))]
+    [InlineData(typeof(TimeoutException))]
+    [InlineData(typeof(InvalidOperationException))]
+    public async Task Moderator_MeterLocalFailure_KeepsTheVerdict_AndLogsIt(Type failure)
+    {
+        var meter = new ScriptedUsageMeter(_ => throw (Exception)Activator.CreateInstance(failure)!);
+        using var host = new ModerationTestHost(meter: meter);
+        host.Handler.Reply(HttpStatusCode.OK, ModerationTestHost.Body(["violence"]));
+
+        ModerationResult result;
+        using (ModerationScope.Push(ModerationTestHost.Run()))
+        {
+            result = await host.Moderator.CheckAsync(["text"], ModerationStage.Draft, Ct);
+        }
+
+        result.Flagged.ShouldBeTrue("the verdict the provider already gave is kept");
+        result.Categories.ShouldBe(["violence"]);
+        host.Logs.Messages.ShouldContain(m => m.Contains("usage row not written", StringComparison.Ordinal) && m.Contains(failure.Name, StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task Moderator_CallerCancelsWhileMetering_PropagatesTheCancellation()
+    {
+        using var cts = new CancellationTokenSource();
+        var meter = new ScriptedUsageMeter(async token =>
+        {
+            await cts.CancelAsync();
+            token.ThrowIfCancellationRequested();
+        });
+        using var host = new ModerationTestHost(meter: meter);
+        host.Handler.Reply(HttpStatusCode.OK, ModerationTestHost.Body(["violence"]));
+
+        var failure = await Record.ExceptionAsync(async () =>
+        {
+            using (ModerationScope.Push(ModerationTestHost.Run()))
+            {
+                await host.Moderator.CheckAsync(["text"], ModerationStage.Draft, cts.Token);
+            }
+        });
+
+        failure.ShouldNotBeNull();
+        failure.ShouldBeAssignableTo<OperationCanceledException>();
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(499)]
+    public void Chunk_CapBelowTheFloor_IsRejected(int cap) =>
+        Should.Throw<ArgumentOutOfRangeException>(() => OpenAiContentModerator.Chunk(["text"], cap));
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(499)]
+    public void Moderator_ChunkCapBelowTheFloor_FailsOptionsValidation(int cap)
+    {
+        var settings = new Dictionary<string, string?> { ["OpenAi:Moderation:MaxCharsPerChunk"] = cap.ToString(CultureInfo.InvariantCulture) };
+
+        var failure = Should.Throw<OptionsValidationException>(() => new ModerationTestHost(settings));
+
+        failure.Message.ShouldContain("at least 500");
+    }
+
+    [Fact]
+    public async Task Moderator_ChunkCapAtTheFloor_IsAccepted()
+    {
+        using var host = new ModerationTestHost(new Dictionary<string, string?> { ["OpenAi:Moderation:MaxCharsPerChunk"] = "500" });
+        host.Handler.Reply(HttpStatusCode.OK, ModerationTestHost.Body([], []));
+
+        await host.Moderator.CheckAsync([new string('a', 501)], ModerationStage.Draft, Ct);
+
+        var input = host.Handler.Requests.ShouldHaveSingleItem().Json.GetProperty("input");
+        input.EnumerateArray().Select(c => c.GetString()!.Length).ShouldBe([500, 201]);
+    }
+
+    [Fact]
+    public void Chunk_CutsAtTheLastWhitespaceInTheFinalFifthOfTheWindow()
+    {
+        var text = new string('a', 850) + " " + new string('b', 600);
+
+        var chunks = OpenAiContentModerator.Chunk([text], 1_000);
+
+        chunks.Count.ShouldBe(2);
+        chunks[0].ShouldBe(new string('a', 850) + " ");
+        chunks[1].ShouldBe(text[(851 - OpenAiContentModerator.ChunkOverlap)..]);
+    }
+
+    [Fact]
+    public void Chunk_WhitespaceBeforeTheFinalFifth_IsIgnored_HardCutAtTheCap()
+    {
+        var text = new string('a', 500) + " " + new string('b', 700);
+
+        var chunks = OpenAiContentModerator.Chunk([text], 1_000);
+
+        chunks[0].Length.ShouldBe(1_000);
+    }
+
+    [Fact]
+    public void Chunk_AdjacentPiecesOverlapBy200_SoAPhraseOverACutIsWholeInOnePiece()
+    {
+        const string Phrase = "FLAGGED-PHRASE";
+        var text = new string('a', 995) + Phrase + new string('a', 1_500);
+
+        var chunks = OpenAiContentModerator.Chunk([text], 1_000);
+
+        chunks.Select(c => c.Length).ShouldBe([1_000, 1_000, 909]);
+        for (var i = 1; i < chunks.Count; i++)
+        {
+            chunks[i].StartsWith(chunks[i - 1][^OpenAiContentModerator.ChunkOverlap..], StringComparison.Ordinal).ShouldBeTrue();
+        }
+
+        chunks.ShouldContain(c => c.Contains(Phrase, StringComparison.Ordinal), "the phrase straddles the first cut");
+    }
+
+    [Fact]
+    public void Chunk_WordText_AtTheFloor_TerminatesAndRebuildsExactlyFromTheOverlap()
+    {
+        var text = string.Concat(Enumerable.Repeat("lorem ipsum dolor ", 400));
+
+        var chunks = OpenAiContentModerator.Chunk([text], ModerationOptions.MinCharsPerChunk);
+
+        chunks.Count.ShouldBeGreaterThan(2);
+        chunks.ShouldAllBe(c => c.Length <= ModerationOptions.MinCharsPerChunk);
+        chunks.Take(chunks.Count - 1).ShouldAllBe(c => char.IsWhiteSpace(c[c.Length - 1]), "a cut piece ends after a word");
+        var rebuilt = chunks[0] + string.Concat(chunks.Skip(1).Select(c => c[OpenAiContentModerator.ChunkOverlap..]));
+        rebuilt.ShouldBe(text);
+    }
+
+    [Fact]
+    public void Chunk_OverlapStartOnALowSurrogate_StepsBackOntoTheWholePair()
+    {
+        // The second piece would start at 800, the low half of a pair at 799-800.
+        var text = new string('a', 799) + "\U0001F600" + new string('a', 2_000);
+        var strict = new UTF8Encoding(false, true);
+
+        var chunks = OpenAiContentModerator.Chunk([text], 1_000);
+
+        chunks.Count.ShouldBeGreaterThan(1);
+        chunks[1].ShouldStartWith("\U0001F600");
+        chunks.ShouldAllBe(c => !char.IsHighSurrogate(c[c.Length - 1]) && !char.IsLowSurrogate(c[0]));
+        foreach (var chunk in chunks)
+        {
+            Should.NotThrow(() => strict.GetBytes(chunk));
+        }
+    }
+
+    [Fact]
+    public void Chunk_LoneSurrogates_AreReplacedWithFffd()
+    {
+        var chunks = OpenAiContentModerator.Chunk(["a\ud83d b", "\ude00x", "ok \U0001F600"], 1_000);
+
+        chunks.ShouldBe(["a\uFFFD b", "\uFFFDx", "ok \U0001F600"]);
+    }
+
+    [Theory]
+    [InlineData("{\"results\":[{\"flagged\":true}]}")]
+    [InlineData("{\"results\":[{\"flagged\":true,\"categories\":null}]}")]
+    [InlineData("{\"results\":[{\"flagged\":true,\"categories\":{}}]}")]
+    [InlineData("{\"results\":[{\"flagged\":true,\"categories\":{\"hate\":false,\"violence\":\"yes\"}}]}")]
+    public async Task Moderator_FlaggedWithoutAnyTrueCategory_IsUnclassified_AndBlocks(string body)
+    {
+        using var host = new ModerationTestHost();
+        host.Handler.Reply(HttpStatusCode.OK, body);
+
+        var result = await host.Moderator.CheckAsync(["text"], ModerationStage.Draft, Ct);
+
+        result.Flagged.ShouldBeTrue();
+        result.Categories.ShouldBe([ModerationOptions.UnclassifiedCategory]);
+        new ModerationOptions().Classify(result.Categories).BlocksApproval.ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task Moderator_FlaggedWithOnlyAnUnknownCategory_AddsTheSentinel_AndBlocks()
+    {
+        using var host = new ModerationTestHost();
+        host.Handler.Reply(HttpStatusCode.OK, "{\"results\":[{\"flagged\":true,\"categories\":{\"sexual_minors\":true}}]}");
+
+        var result = await host.Moderator.CheckAsync(["text"], ModerationStage.Draft, Ct);
+
+        result.Categories.ShouldBe(["sexual_minors", ModerationOptions.UnclassifiedCategory]);
+        new ModerationOptions().Classify(result.Categories).BlocksApproval.ShouldBeTrue("a renamed provider category must not open the gate");
+    }
+
+    [Fact]
+    public async Task Moderator_FlaggedUnknownCategoryBesideAKnownOne_StaysAdvisory()
+    {
+        using var host = new ModerationTestHost();
+        host.Handler.Reply(HttpStatusCode.OK, "{\"results\":[{\"flagged\":true,\"categories\":{\"violence\":true,\"future/x\":true}}]}");
+
+        var result = await host.Moderator.CheckAsync(["text"], ModerationStage.Draft, Ct);
+
+        result.Categories.ShouldBe(["future/x", "violence"]);
+        new ModerationOptions().Classify(result.Categories).BlocksApproval.ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task Moderator_UnknownCategoryOnAnUnflaggedResult_IsAdvisoryOnly()
+    {
+        using var host = new ModerationTestHost();
+        host.Handler.Reply(HttpStatusCode.OK, "{\"results\":[{\"flagged\":false,\"categories\":{\"future/x\":true}}]}");
+
+        var result = await host.Moderator.CheckAsync(["text"], ModerationStage.Draft, Ct);
+
+        result.Categories.ShouldBe(["future/x"]);
+        new ModerationOptions().Classify(result.Categories).BlocksApproval.ShouldBeFalse("an unknown name alone is advisory unless flagged with no known category");
+    }
+
+    [Fact]
+    public async Task Moderator_OneFlaggedChunkWithNoKnownCategory_MakesTheUnionUnclassified()
+    {
+        using var host = new ModerationTestHost();
+        host.Handler.Reply(HttpStatusCode.OK, "{\"results\":[{\"flagged\":false,\"categories\":{\"hate\":false}},{\"flagged\":true,\"categories\":{}}]}");
+
+        var result = await host.Moderator.CheckAsync([new string('a', 8_001)], ModerationStage.Draft, Ct);
+
+        result.Categories.ShouldBe([ModerationOptions.UnclassifiedCategory]);
+    }
+
+    [Theory]
+    [InlineData("1e999")]
+    [InlineData("-1e999")]
+    public async Task Moderator_ScoreOutsideDoubleRange_FailsClosedAsTyped_WithoutRetry(string score)
+    {
+        using var host = new ModerationTestHost();
+        host.Handler.Reply(HttpStatusCode.OK, "{\"results\":[{\"flagged\":false,\"categories\":{\"hate\":false},\"category_scores\":{\"hate\":" + score + "}}]}");
+
+        using (ModerationScope.Push(ModerationTestHost.Run()))
+        {
+            var failure = await Should.ThrowAsync<ModerationUnavailableException>(async () =>
+                await host.Moderator.CheckAsync(["text"], ModerationStage.Draft, Ct));
+
+            failure.Status.ShouldBeNull();
+        }
+
+        host.Handler.Requests.Count.ShouldBe(1);
+        host.Meter.Items.ShouldBeEmpty("an unusable answer has no usage row");
+    }
+
+    [Fact]
+    public async Task Moderator_UntypedTransportException_FailsClosedAsTyped_WithoutTheMessage()
+    {
+        using var host = new ModerationTestHost();
+        host.Handler.Then(_ => throw new FormatException("ECHO-SECRET brief text"));
+
+        var failure = await Should.ThrowAsync<ModerationUnavailableException>(async () =>
+            await host.Moderator.CheckAsync(["BRIEF-TEXT-SECRET"], ModerationStage.Brief, Ct));
+
+        failure.Status.ShouldBeNull();
+        failure.ToString().ShouldNotContain("ECHO-SECRET");
+        host.Logs.Messages.ShouldNotContain(m => m.Contains("ECHO-SECRET", StringComparison.Ordinal) || m.Contains("BRIEF-TEXT-SECRET", StringComparison.Ordinal));
     }
 
     [Fact]

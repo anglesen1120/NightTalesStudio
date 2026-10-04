@@ -13,6 +13,20 @@ public sealed class ModerationOptions
     /// <summary>The default moderation model (02 README O7, free).</summary>
     public const string DefaultModel = "omni-moderation-latest";
 
+    /// <summary>
+    /// The floor of <see cref="MaxCharsPerChunk"/> (CR-3/SEC-03): under it the word-edge cuts and the
+    /// inter-chunk overlap that keep a flag from hiding across a boundary cannot work, and a cap of one
+    /// character would split a surrogate pair into invalid UTF-16.
+    /// </summary>
+    public const int MinCharsPerChunk = 500;
+
+    /// <summary>
+    /// The sentinel the moderation port adds to the flagged categories when a result says <c>flagged</c> but
+    /// carries no category the omni table knows (absent, all-false or renamed categories: schema drift or a
+    /// hostile answer). It blocks approval exactly like a D12 name (SEC-01).
+    /// </summary>
+    public const string UnclassifiedCategory = "unclassified";
+
     /// <summary>The D12 default blocking categories for the human path (a draft carrying one cannot be approved).</summary>
     public static IReadOnlySet<string> DefaultBlockingCategories { get; } = new HashSet<string>(StringComparer.Ordinal)
     {
@@ -20,6 +34,28 @@ public sealed class ModerationOptions
         "self-harm/instructions",
         "illicit/violent",
         "hate/threatening",
+    };
+
+    /// <summary>
+    /// The omni-moderation category table (02 README O7). The port needs it to tell a known-but-advisory flag
+    /// from a flagged result whose categories are all names the provider contract does not define: only the
+    /// latter becomes <see cref="UnclassifiedCategory"/>.
+    /// </summary>
+    public static IReadOnlySet<string> KnownCategories { get; } = new HashSet<string>(StringComparer.Ordinal)
+    {
+        "harassment",
+        "harassment/threatening",
+        "hate",
+        "hate/threatening",
+        "illicit",
+        "illicit/violent",
+        "self-harm",
+        "self-harm/intent",
+        "self-harm/instructions",
+        "sexual",
+        "sexual/minors",
+        "violence",
+        "violence/graphic",
     };
 
     /// <summary>Gets or sets the moderation model.</summary>
@@ -46,7 +82,11 @@ public sealed class ModerationOptions
 
         foreach (var category in categories.Distinct(StringComparer.Ordinal))
         {
-            (BlockingCategories.Contains(category) ? blocking : advisory).Add(category);
+            // SEC-01: the `unclassified` sentinel means "the provider flagged the text yet no known category
+            // fired", so it blocks like a D12 name. Any other name outside BlockingCategories (advisory or
+            // provider-new) is a hint only; an unknown name alone blocks only when the result was flagged
+            // with no known category at all, which is exactly the case the port encodes as the sentinel.
+            (category == UnclassifiedCategory || BlockingCategories.Contains(category) ? blocking : advisory).Add(category);
         }
 
         return new ModerationClassification(blocking, advisory);

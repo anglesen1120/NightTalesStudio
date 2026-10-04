@@ -56,6 +56,42 @@ public sealed class ModerationOptionsTests
     }
 
     [Fact]
+    public void Classify_UnclassifiedSentinel_Blocks_AlongsideAdvisoryNames()
+    {
+        var classification = new ModerationOptions().Classify([ModerationOptions.UnclassifiedCategory, "violence"]);
+
+        classification.BlocksApproval.ShouldBeTrue("flagged with no known category fails closed (SEC-01)");
+        classification.Blocking.ShouldBe([ModerationOptions.UnclassifiedCategory]);
+        classification.Advisory.ShouldBe(["violence"]);
+    }
+
+    [Fact]
+    public void Classify_UnknownCategoryNameAlone_IsAdvisory()
+    {
+        // A provider-new name next to no sentinel is a hint: the port adds the sentinel only for a flagged result with no known category.
+        var classification = new ModerationOptions().Classify(["future/new-category"]);
+
+        classification.BlocksApproval.ShouldBeFalse();
+        classification.Advisory.ShouldBe(["future/new-category"]);
+    }
+
+    [Fact]
+    public void Classify_UnclassifiedSentinel_BlocksEvenWithAConfiguredBlockingSet()
+    {
+        var options = new ModerationOptions { BlockingCategories = new HashSet<string>(StringComparer.Ordinal) { "violence" } };
+
+        options.Classify([ModerationOptions.UnclassifiedCategory]).BlocksApproval.ShouldBeTrue();
+    }
+
+    [Fact]
+    public void ModerationOptions_KnownCategories_CoverTheBlockingDefaults_AndTheFloorIs500()
+    {
+        ModerationOptions.DefaultBlockingCategories.ShouldAllBe(category => ModerationOptions.KnownCategories.Contains(category));
+        ModerationOptions.KnownCategories.ShouldNotContain(ModerationOptions.UnclassifiedCategory);
+        ModerationOptions.MinCharsPerChunk.ShouldBe(500);
+    }
+
+    [Fact]
     public void ModerationOptions_Defaults_AreD12AndTL21()
     {
         var options = new ModerationOptions();
