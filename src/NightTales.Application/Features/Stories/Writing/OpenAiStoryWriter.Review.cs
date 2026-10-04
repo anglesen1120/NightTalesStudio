@@ -18,7 +18,9 @@ public sealed partial class OpenAiStoryWriter
         var assembled = assembler.Review(req);
         if (assembled.IsError)
         {
-            // S4: nothing was sent, so nothing is metered; the review job treats this like a missing prompt, a deploy defect.
+            // S4: nothing was sent, so nothing is metered. Same class as the assembler failures WriteAsync lets escape (Guard's
+            // ArgumentException, Substitute's InvalidOperationException): the prompt cannot be built from this input, a deploy or
+            // configuration defect, not an outcome of a provider call, and TextCallResult has no variant for it.
             throw new InvalidOperationException($"The review prompt cannot be assembled: {assembled.FirstError.Code}.");
         }
 
