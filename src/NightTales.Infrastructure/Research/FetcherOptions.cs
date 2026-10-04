@@ -11,4 +11,49 @@ public sealed class FetcherOptions
 
     /// <summary>The blocked registrable domains (02 D11): data, changed only through a reviewed PR.</summary>
     public IList<string> BlockedDomains { get; set; } = [];
+
+    /// <summary>The crawler token of the user agent and of robots.txt matching (02 D11).</summary>
+    public const string UserAgentToken = "NightTalesStudioBot";
+
+    /// <summary>The public host named in the user-agent contact URL, <c>https://{PublicHost}/bot</c> (02 D11).</summary>
+    public string PublicHost { get; set; } = "nighttales.example";
+
+    /// <summary>The one budget for robots, DNS and every redirect hop of a page, in seconds (D11: 10 s).</summary>
+    public int TotalTimeoutSeconds { get; set; } = 10;
+
+    /// <summary>The budget of one robots.txt fetch, in seconds (D11: 5 s).</summary>
+    public int RobotsTimeoutSeconds { get; set; } = 5;
+
+    /// <summary>How long a robots.txt verdict is cached per origin, in hours (D11: 24 h).</summary>
+    public int RobotsCacheHours { get; set; } = 24;
+
+    /// <summary>The longest robots.txt crawl-delay honoured, in seconds; above it the fetch is refused (T43).</summary>
+    public int CrawlDelayMaxSeconds { get; set; } = 10;
+
+    /// <summary>The most redirect hops followed for a page or a robots.txt (D11: 3).</summary>
+    public int MaxRedirects { get; set; } = 3;
+
+    /// <summary>The cap on decompressed page bytes (D11: 2 MiB).</summary>
+    public int MaxResponseBytes { get; set; } = 2 * 1024 * 1024;
+
+    /// <summary>The cap on decompressed robots.txt bytes (512 KiB).</summary>
+    public int MaxRobotsBytes { get; set; } = 512 * 1024;
+
+    /// <summary>The fewest extracted characters that count as an article; below it the page is <c>source_no_text</c> (T0: 1,275, T104).</summary>
+    public int MinTextChars { get; set; } = 1_275;
+
+    /// <summary>The most extracted characters stored; a longer article is <c>source_too_large</c> (D11: 300,000).</summary>
+    public int MaxTextChars { get; set; } = 300_000;
+
+    /// <summary>The watchdog of the synchronous extraction, in seconds (T105).</summary>
+    public int ExtractTimeoutSeconds { get; set; } = 5;
+
+    /// <summary>The most elements the pre-parse guard accepts (T105).</summary>
+    public int ExtractMaxElements { get; set; } = 50_000;
+
+    /// <summary>The deepest element nesting the pre-parse guard accepts (T105).</summary>
+    public int ExtractMaxDepth { get; set; } = 512;
+
+    /// <summary>The <c>Accept-Language</c> sent when the request carries no episode language.</summary>
+    public string AcceptLanguage { get; set; } = "en";
 }
