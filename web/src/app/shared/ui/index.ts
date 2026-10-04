@@ -17,3 +17,5 @@ export * from './icons/icon-play/icon-play';
 export * from './icons/icon-pause/icon-pause';
 export * from './icons/icon-copy/icon-copy';
 export * from './icons/icon-unknown/icon-unknown';
+export * from './icons/icon-menu/icon-menu';
+export * from './icons/icon-language/icon-language';

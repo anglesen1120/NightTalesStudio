@@ -1,0 +1,102 @@
+:host {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  overflow: hidden auto;
+  border-right: 1px solid var(--nts-color-line);
+  background: var(--nts-color-room);
+  color: var(--nts-color-ink);
+}
+
+.side-nav__brand {
+  display: flex;
+  min-height: 64px;
+  align-items: center;
+  gap: var(--nts-space-3);
+  padding-inline: var(--nts-space-5);
+  border-bottom: 1px solid var(--nts-color-line);
+  font-weight: 600;
+}
+
+.side-nav__brand-mark {
+  width: 16px;
+  height: 28px;
+  flex: none;
+  border-left: 4px solid var(--nts-color-playhead);
+  border-right: 4px solid var(--nts-color-signal);
+}
+
+.side-nav__brand-name,
+.side-nav__label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+mat-nav-list {
+  padding-block: var(--nts-space-3);
+}
+
+.side-nav__link {
+  min-height: var(--nts-target-min);
+  color: var(--nts-color-muted);
+  border-left: 4px solid transparent;
+}
+
+.side-nav__link:hover {
+  background: var(--nts-color-soft);
+  color: var(--nts-color-ink);
+}
+
+.side-nav__link--active {
+  border-left-color: var(--nts-color-signal);
+  background: var(--nts-color-soft);
+  color: var(--nts-color-ink);
+  font-weight: 600;
+}
+
+.side-nav__icon {
+  display: inline-grid;
+  width: 22px;
+  height: 22px;
+  place-items: center;
+  margin-inline-end: var(--nts-space-3);
+}
+
+.side-nav__icon > * {
+  width: 20px;
+  height: 20px;
+}
+
+@media (min-width: 600px) and (max-width: 899px) {
+  .side-nav__brand {
+    justify-content: center;
+    padding-inline: 0;
+  }
+
+  .side-nav__brand-name,
+  .side-nav__label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .side-nav__link {
+    display: grid;
+    place-items: center;
+  }
+
+  .side-nav__icon {
+    margin: 0;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  :host(.side-nav--over) {
+    transition: transform var(--nts-motion-base) var(--nts-ease);
+  }
+}

@@ -1,0 +1,71 @@
+:host {
+  display: block;
+  min-width: 0;
+}
+
+:host:empty {
+  display: none;
+}
+
+.realtime-status {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: var(--nts-space-3);
+  padding: var(--nts-space-3) var(--nts-space-5);
+  border-bottom: 1px solid var(--nts-color-line);
+  border-left: 5px solid var(--nts-color-playhead);
+  background: var(--nts-color-error-soft);
+  color: var(--nts-color-on-surface);
+}
+
+.realtime-status strong {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow-wrap: anywhere;
+}
+
+.realtime-status__icon {
+  width: 18px;
+  height: 18px;
+  flex: none;
+  color: var(--nts-color-playhead);
+}
+
+.realtime-status button {
+  min-height: var(--nts-target-min);
+  padding-inline: var(--nts-space-3);
+  border: 1px solid var(--nts-color-control-outline);
+  border-radius: var(--nts-radius-control);
+  background: transparent;
+  color: var(--nts-color-on-surface);
+  font-weight: 600;
+}
+
+.realtime-status button:hover {
+  border-color: var(--nts-color-on-surface);
+  background: var(--nts-color-surface-variant);
+}
+
+@keyframes nts-reconnect-turn {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .realtime-status__icon--moving {
+    animation: nts-reconnect-turn 1.2s linear infinite;
+  }
+}
+
+@media (max-width: 599px) {
+  .realtime-status {
+    align-items: flex-start;
+    flex-wrap: wrap;
+    gap: var(--nts-space-2);
+    padding: var(--nts-space-3);
+  }
+
+  .realtime-status button {
+    margin-inline-start: 26px;
+  }
+}
