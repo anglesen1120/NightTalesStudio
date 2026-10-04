@@ -37,7 +37,9 @@ internal static class AllowLists
     /// without the pin/redirect/timeout rules (11.3.3-T1 step 9). The <c>tools/mock-mpt</c> entry is the
     /// dev-only mock's <c>--healthcheck</c> loopback self-probe (11.1.2-T1), not a render-node client. The
     /// <c>MptHttpClient</c> entry is the adapter's own loopback client to MPT on the node (11.3.5-T2, 11 README
-    /// D6: no redirects, 2 s connect timeout), not a backend-to-node client.
+    /// D6: no redirects, 2 s connect timeout), not a backend-to-node client. The <c>SafeHttpClientFactory</c> entry is the
+    /// source fetcher's single client (02.5.2-T1): no proxy, no cookies, no automatic redirect or decompression, and a
+    /// connect callback that resolves, validates and connects to the checked address (02 D11).
     /// </summary>
     internal static readonly IReadOnlySet<string> HttpClientProducerTypeNames =
         new HashSet<string>(StringComparer.Ordinal)
@@ -46,6 +48,7 @@ internal static class AllowLists
             "NightTales.Infrastructure.DependencyInjection.IdentityServiceCollectionExtensions",
             "NightTales.MockMpt.Health.MockHealthCheck",
             "NightTales.MptAdapter.MptHttpClient",
+            "NightTales.Infrastructure.Research.Http.SafeHttpClientFactory",
         };
 
 

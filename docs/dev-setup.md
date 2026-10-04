@@ -251,6 +251,8 @@ Rules for any change that runs at start-up:
   feeds `WorkerHost.HarnessSettings` and `WorkerHealthProbe`, `tools/dev/up.sh` exports `OpenAi__ApiKey` from `OPENAI_API_KEY`
   (placeholder when unset), and a real Worker deployment sets `OpenAi__ApiKey` from the secret store. `OpenAi:BaseUrl` must be the
   pinned relay outside Development.
+  02.4.1-T1 adds `OpenAi:Moderation:{Model,MaxCharsPerChunk,TimeoutSeconds}`: all optional (in-code defaults, Worker `appsettings.json`),
+  so no placeholder is needed; the moderation call uses the same `OpenAi:BaseUrl` and the `"openai"` HttpClient.
   The generator reports a missing key as `MSB3073` from `dotnet-getdocument` with a long hosting stack
   (see the build-time block), so check this list before hunting.
 - A new way of starting a host adds a row to this table.

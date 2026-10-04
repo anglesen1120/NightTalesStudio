@@ -1,5 +1,10 @@
 using System.Reflection;
 using System.Text.Json;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using NightTales.Domain.Research;
+using NightTales.Infrastructure.DependencyInjection;
+using NightTales.Infrastructure.Research.Http;
 using Shouldly;
 using Xunit;
 
@@ -77,6 +82,30 @@ public sealed class AssemblyReferenceRules
                 AllowLists.FetcherAllowedPrefixes,
                 nameof(Fetcher_ReferencesOnlyDomainAndCore));
         }
+    }
+
+    [Fact]
+    public void ProductionComposition_DoesNotRegisterLoopbackAllowingAddressValidator()
+    {
+        // 02 D20: the loopback bypass is a test-only IAddressValidator in NightTales.TestKit. No production assembly may
+        // define it or reference the test kit, and the production registration of the fetcher resolves the global-unicast
+        // validator and nothing else.
+        foreach (var assembly in ArchitectureModel.SourceAssemblies)
+        {
+            assembly.GetReferencedAssemblies()
+                .Select(reference => reference.Name)
+                .ShouldNotContain("NightTales.TestKit", $"{assembly.GetName().Name} references the test kit");
+            assembly.GetTypes()
+                .Select(type => type.Name)
+                .ShouldNotContain("LoopbackAllowingAddressValidator", $"{assembly.GetName().Name} defines the loopback bypass");
+        }
+
+        var services = new ServiceCollection();
+        services.AddSourceFetcher(new ConfigurationBuilder().Build());
+
+        services.Where(descriptor => descriptor.ServiceType == typeof(IAddressValidator))
+            .ShouldHaveSingleItem()
+            .ImplementationType.ShouldBe(typeof(GlobalUnicastAddressValidator));
     }
 
     [Fact]

@@ -270,6 +270,7 @@ public static class ErrorCatalogue
             ErrorCodes.SourceNoText,
             ErrorCodes.PriceCatalogEmpty,
             ErrorCodes.PromptNotShipped,
+            ErrorCodes.PromptTooLarge,
         }.ToFrozenSet(StringComparer.Ordinal);
 
     /// <summary>The problem-details <c>type</c> URI of <paramref name="code"/>.</summary>

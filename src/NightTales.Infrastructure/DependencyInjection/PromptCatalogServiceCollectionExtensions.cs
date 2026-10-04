@@ -1,6 +1,8 @@
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using NightTales.Application.Abstractions.Prompts;
+using NightTales.Application.Features.Stories.Writing;
 using NightTales.Infrastructure.Prompts;
 
 namespace NightTales.Infrastructure.DependencyInjection;
@@ -27,6 +29,10 @@ public static class PromptCatalogServiceCollectionExtensions
         services.AddSingleton<IPromptResourceSource, EmbeddedPromptResourceSource>();
         services.AddSingleton<IPromptCatalog, PromptCatalog>();
         services.AddSingleton<IHostedService, PromptCatalogStartupValidator>();
+
+        // 02.6.1-T1 S4: the assembler enforces the same data-object budget the cost estimator bounds the input with.
+        services.AddSingleton(provider => new PromptDataBudget(
+            provider.GetRequiredService<IConfiguration>().GetValue(PromptDataBudget.ConfigurationKey, PromptDataBudget.DefaultMaxDataObjectBytes)));
 
         return services;
     }

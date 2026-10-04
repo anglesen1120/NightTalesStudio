@@ -61,6 +61,7 @@ All under `src/NightTales.Domain/` (folders per 00 §5.2 / F38):
 | `beat_invalid`, `narrator_mode_invalid`, `warning_invalid` | D3 enums |
 | `structure_vocab_unknown` | free string not in `structure-vocab.v1.json` → stored `other:<text>` by the mapper only (the model emits the plain string); advisory, never fails a run |
 | `structure_text_invalid` | unmapped structure free string > 40 chars or with URL/markup — blocking; the mapper strips a model-supplied `other:` prefix (02 T71) |
+| `control_characters_invalid` | NUL or another C0 control character other than LF, CR and TAB in a free-text field — blocking; the persisting paths (edit 02.3.1-T1, job 02.2.2-T3) never reach Postgres with one (QA-1) |
 
 The validator never throws and never truncates: it returns issues; the job decides (D21, D7 `InvalidOutput`).
 
