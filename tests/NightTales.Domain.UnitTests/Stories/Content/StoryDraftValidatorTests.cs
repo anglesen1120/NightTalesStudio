@@ -542,6 +542,7 @@ public sealed class StoryDraftValidatorTests
             "narrator_mode_invalid",
             "warning_invalid",
             "structure_text_invalid",
+            "control_characters_invalid",
         ];
 
         result.BlockingRuleIds.ShouldBe(expected, ignoreOrder: true);
@@ -779,6 +780,95 @@ public sealed class StoryDraftValidatorTests
         result.BlockingRuleIds.ShouldContain("length_out_of_range");
     }
 
+    /// <summary>
+    /// QA-1: NUL (and any other C0 control character but LF, CR, TAB) in any free-text field is a blocking
+    /// issue that names the field and carries the D22 address, so no path that validates can persist it.
+    /// </summary>
+    [Theory]
+    [InlineData("title", "title")]
+    [InlineData("description", "meta")]
+    [InlineData("tags[1]", "meta")]
+    [InlineData("hook.text", "hook")]
+    [InlineData("paragraphs[1].text", "p:1")]
+    [InlineData("ending.text", "ending")]
+    [InlineData("structure.sub_genre", "meta")]
+    [InlineData("structure.setting", "meta")]
+    [InlineData("structure.opening", "meta")]
+    [InlineData("structure.twist_type", "meta")]
+    public void Validate_NulInTextField_ControlCharactersInvalid_NamingTheField(string field, string address)
+    {
+        var result = StoryDraftValidator.Validate(WithControlCharacter(ValidDraft(), field, "\u0000"), Rules());
+
+        result.IsValid.ShouldBeFalse();
+        result.BlockingRuleIds.ShouldContain("control_characters_invalid");
+        var issue = result.Issues.Single(found => found.RuleId == "control_characters_invalid");
+        issue.Severity.ShouldBe(IssueSeverity.Blocking);
+        issue.Segment.ShouldBe(address);
+        issue.Evidence.ShouldBe($"U+0000 in {field}");
+        issue.RepairDirection.ShouldContain(field);
+    }
+
+    /// <summary>Every C0 control character except LF, CR and TAB is refused, not only NUL.</summary>
+    [Theory]
+    [InlineData("\u0000")]
+    [InlineData("\u0001")]
+    [InlineData("\u0007")]
+    [InlineData("\u000B")]
+    [InlineData("\u000C")]
+    [InlineData("\u001B")]
+    [InlineData("\u001F")]
+    public void Validate_C0ControlCharacterInParagraph_ControlCharactersInvalid(string control)
+    {
+        var result = StoryDraftValidator.Validate(
+            WithParagraphText(0, "Anh nghe tiếng gõ" + control + " từ trong phòng."),
+            Rules());
+
+        result.Issues.ShouldContain(issue =>
+            issue.RuleId == "control_characters_invalid" && issue.Segment == "p:0" && issue.Severity == IssueSeverity.Blocking);
+    }
+
+    /// <summary>A line feed, a carriage return and a tab are prose: the editor canonicalises CR and CRLF to LF.</summary>
+    [Theory]
+    [InlineData("\n")]
+    [InlineData("\r\n")]
+    [InlineData("\r")]
+    [InlineData("\t")]
+    public void Validate_LineBreaksAndTabs_NoControlCharactersIssue(string whitespace)
+    {
+        var result = StoryDraftValidator.Validate(
+            WithParagraphText(0, "Anh nghe tiếng gõ" + whitespace + "từ trong phòng."),
+            Rules());
+
+        result.Issues.ShouldNotContain(issue => issue.RuleId == "control_characters_invalid");
+    }
+
+    /// <summary>One issue per offending field: two fields give two issues, a clean draft gives none.</summary>
+    [Fact]
+    public void Validate_NulInTwoFields_OneIssuePerField_CleanDraftNone()
+    {
+        var dirty = WithControlCharacter(WithControlCharacter(ValidDraft(), "title", "\u0000"), "ending.text", "\u0002");
+
+        StoryDraftValidator.Validate(dirty, Rules()).Issues
+            .Where(issue => issue.RuleId == "control_characters_invalid")
+            .Select(issue => issue.Segment)
+            .ShouldBe(["title", "ending"], ignoreOrder: true);
+        StoryDraftValidator.Validate(ValidDraft(), Rules()).Issues
+            .ShouldNotContain(issue => issue.RuleId == "control_characters_invalid");
+    }
+
+    /// <summary>A null segment, tag or structure is reported by its own rule; the control-character scan never dereferences it.</summary>
+    [Fact]
+    public void Validate_NullMembers_ControlCharacterScanDoesNotThrow()
+    {
+        var valid = ValidDraft();
+
+        var result = StoryDraftValidator.Validate(
+            valid with { Hook = null!, Ending = null!, Structure = null!, Tags = [null!, "tag"] },
+            Rules());
+
+        result.Issues.ShouldNotContain(issue => issue.RuleId == "control_characters_invalid");
+    }
+
     /// <summary>A structure free string at exactly 40 characters is inside the 02 T71 limit.</summary>
     [Fact]
     public void Validate_UnmappedStructureAt40Chars_NoStructureTextInvalid()
@@ -833,7 +923,7 @@ public sealed class StoryDraftValidatorTests
             title: new string('t', 101) + " https://x.test",
             hook: new StorySegmentV1("Một. Hai. Ba. Bốn.", ["old house by the river"], []),
             paragraphs: paragraphs,
-            description: new string('d', 1_001),
+            description: new string('d', 1_001) + "\u0000",
             tags: SixteenTags(),
             warnings: ["kittens"],
             structure: new StoryStructureV1(
@@ -899,6 +989,40 @@ public sealed class StoryDraftValidatorTests
         "một cuộc điện thoại lúc nửa đêm",
         "người kể là nguyên nhân",
         "first_person");
+
+    /// <summary>The same draft with <paramref name="control"/> appended to one named free-text field.</summary>
+    private static StoryContentV1 WithControlCharacter(StoryContentV1 draft, string field, string control)
+    {
+        var paragraphs = draft.Paragraphs.ToArray();
+        var tags = draft.Tags.ToArray();
+        switch (field)
+        {
+            case "title":
+                return draft with { Title = draft.Title + control };
+            case "description":
+                return draft with { Description = draft.Description + control };
+            case "tags[1]":
+                tags[1] += control;
+                return draft with { Tags = tags };
+            case "hook.text":
+                return draft with { Hook = draft.Hook with { Text = draft.Hook.Text + control } };
+            case "paragraphs[1].text":
+                paragraphs[1] = paragraphs[1] with { Text = paragraphs[1].Text + control };
+                return draft with { Paragraphs = paragraphs };
+            case "ending.text":
+                return draft with { Ending = draft.Ending with { Text = draft.Ending.Text + control } };
+            case "structure.sub_genre":
+                return draft with { Structure = draft.Structure with { SubGenre = draft.Structure.SubGenre + control } };
+            case "structure.setting":
+                return draft with { Structure = draft.Structure with { Setting = draft.Structure.Setting + control } };
+            case "structure.opening":
+                return draft with { Structure = draft.Structure with { Opening = draft.Structure.Opening + control } };
+            case "structure.twist_type":
+                return draft with { Structure = draft.Structure with { TwistType = draft.Structure.TwistType + control } };
+            default:
+                throw new ArgumentOutOfRangeException(nameof(field), field, "Unknown field.");
+        }
+    }
 
     /// <summary>The same draft with one paragraph's text replaced; the body is re-padded to the band.</summary>
     private static StoryContentV1 WithParagraphText(int index, string text)
