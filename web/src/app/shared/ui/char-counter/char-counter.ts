@@ -15,6 +15,6 @@ export class CharCounter {
   readonly value = input.required<number>();
   readonly max = input.required<number>();
   readonly labelKey = input('core.ui.charCounter.label');
-  readonly descriptionId = input(`nts-char-counter-${++nextCharCounterId}`, { alias: 'id' });
+  readonly id = input(`nts-char-counter-${++nextCharCounterId}`);
   protected readonly isOver = computed(() => this.value() > this.max());
 }

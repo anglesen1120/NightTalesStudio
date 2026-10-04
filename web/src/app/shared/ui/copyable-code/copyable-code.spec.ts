@@ -3,8 +3,15 @@ import { describe, expect, it, vi } from 'vitest';
 import { uiTestingTranslations } from '../testing/ui-testing-translations';
 import { CopyableCode } from './copyable-code';
 
-const liveText = (fixture: ComponentFixture<CopyableCode>): string =>
-  (fixture.nativeElement.querySelector('[aria-live="polite"]').textContent as string).trim();
+const query = <T extends Element>(fixture: ComponentFixture<CopyableCode>, selector: string): T => {
+  const found = (fixture.nativeElement as HTMLElement).querySelector<T>(selector);
+  if (found === null) throw new Error(`missing element: ${selector}`);
+  return found;
+};
+
+const liveRegion = (fixture: ComponentFixture<CopyableCode>): HTMLElement => query<HTMLElement>(fixture, '[aria-live="polite"]');
+
+const liveText = (fixture: ComponentFixture<CopyableCode>): string => (liveRegion(fixture).textContent ?? '').trim();
 
 const waitForLive = (fixture: ComponentFixture<CopyableCode>, expected: string): Promise<void> =>
   vi.waitFor(() => {
@@ -21,9 +28,9 @@ describe('CopyableCode', () => {
     fixture.componentRef.setInput('value', 'RECOVERY-01');
     fixture.detectChanges();
     await fixture.whenStable();
-    const button = fixture.nativeElement.querySelector('button') as HTMLButtonElement;
+    const button = query<HTMLButtonElement>(fixture, 'button');
     expect(button.getAttribute('aria-label')).toBe('Sao chép mã');
-    expect(fixture.nativeElement.querySelector('code').getAttribute('tabindex')).toBe('0');
+    expect(query<HTMLElement>(fixture, 'code').getAttribute('tabindex')).toBe('0');
     button.click();
     expect(writeText).toHaveBeenCalledWith('RECOVERY-01');
     await waitForLive(fixture, 'Đã sao chép');
@@ -36,7 +43,7 @@ describe('CopyableCode', () => {
     fixture.componentRef.setInput('value', 'RECOVERY-02');
     fixture.detectChanges();
     await fixture.whenStable();
-    (fixture.nativeElement.querySelector('button') as HTMLButtonElement).click();
+    query<HTMLButtonElement>(fixture, 'button').click();
     await waitForLive(fixture, 'Không thể sao chép');
   });
 
@@ -49,7 +56,7 @@ describe('CopyableCode', () => {
     fixture.detectChanges();
     await fixture.whenStable();
     expect(liveText(fixture)).toBe('');
-    (fixture.nativeElement.querySelector('button') as HTMLButtonElement).click();
+    query<HTMLButtonElement>(fixture, 'button').click();
     await waitForLive(fixture, 'Không thể sao chép');
     expect(writeText).toHaveBeenCalledWith('RECOVERY-03');
     expect(liveText(fixture)).not.toContain('Đã sao chép');
@@ -63,7 +70,7 @@ describe('CopyableCode', () => {
     fixture.componentRef.setInput('value', 'RECOVERY-04');
     fixture.detectChanges();
     await fixture.whenStable();
-    (fixture.nativeElement.querySelector('button') as HTMLButtonElement).click();
+    query<HTMLButtonElement>(fixture, 'button').click();
     await waitForLive(fixture, 'Đã sao chép');
     fixture.componentRef.setInput('value', 'RECOVERY-05');
     fixture.detectChanges();
@@ -79,13 +86,13 @@ describe('CopyableCode', () => {
     fixture.componentRef.setInput('value', 'RECOVERY-06');
     fixture.detectChanges();
     await fixture.whenStable();
-    const button = fixture.nativeElement.querySelector('button') as HTMLButtonElement;
+    const button = query<HTMLButtonElement>(fixture, 'button');
     button.click();
     await waitForLive(fixture, 'Đã sao chép');
 
     const snapshots: string[] = [];
     const observer = new MutationObserver(() => snapshots.push(liveText(fixture)));
-    observer.observe(fixture.nativeElement.querySelector('[aria-live="polite"]'), {
+    observer.observe(liveRegion(fixture), {
       childList: true,
       characterData: true,
       subtree: true,

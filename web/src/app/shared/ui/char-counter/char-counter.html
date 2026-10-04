@@ -1,4 +1,4 @@
-<span [id]="descriptionId()">
+<span [id]="id()">
   <span class="char-counter__label">{{ labelKey() | transloco }}: </span>
   <span>{{ value() }}/{{ max() }}</span>
   @if (isOver()) { <span>, {{ 'core.ui.charCounter.over' | transloco }}</span> }

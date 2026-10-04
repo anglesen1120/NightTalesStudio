@@ -74,20 +74,22 @@ export class ConfirmDialogComponent {
     // The service opens the dialog with `disableClose: true` for its whole lifetime, so MatDialog never
     // closes it on its own. Escape and backdrop clicks come through cancel(), which reads the live
     // `isPending()` — pending stays authoritative even when it flips after the dialog opened.
-    this.dialogRef
+    // `forEach` consumes the stream without a hand-written subscribe() (D2 bans it in shared/ui);
+    // takeUntilDestroyed() completes the stream, and so the returned promise, with the component.
+    void this.dialogRef
       ?.keydownEvents()
       .pipe(takeUntilDestroyed())
-      .subscribe((event) => {
+      .forEach((event) => {
         const isEscape = event.key === 'Escape' || event.keyCode === 27;
         if (isEscape && !event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey) {
           event.preventDefault();
           this.cancel();
         }
       });
-    this.dialogRef
+    void this.dialogRef
       ?.backdropClick()
       .pipe(takeUntilDestroyed())
-      .subscribe(() => this.cancel());
+      .forEach(() => this.cancel());
   }
 
   protected confirm(): void {

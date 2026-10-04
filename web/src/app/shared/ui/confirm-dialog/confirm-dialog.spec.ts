@@ -1,18 +1,21 @@
-import { TemplateRef, ViewChild, Component, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, TemplateRef, ViewChild, Component, inject, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { MatDialogModule, MatDialogRef } from '@angular/material/dialog';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { describe, expect, it, vi } from 'vitest';
 import { uiTestingTranslations } from '../testing/ui-testing-translations';
+import { onEmit } from '../testing/on-emit';
 import { ConfirmDialog, ConfirmDialogComponent, type ConfirmDialogTemplateContext } from './confirm-dialog';
 
 @Component({
   imports: [ConfirmDialogComponent],
+  changeDetection: ChangeDetectionStrategy.OnPush,
   template: `<nts-confirm-dialog titleKey="core.ui.confirm.title" bodyKey="core.ui.errorState.body" confirmLabelKey="core.ui.confirm.confirm" [pending]="pending" (confirmed)="confirmed()"><span cost-line>cost line</span></nts-confirm-dialog>`,
 })
 class StaticHost { pending = false; confirmed = vi.fn(); }
 
 @Component({
+  changeDetection: ChangeDetectionStrategy.OnPush,
   template: `<button id="trigger" type="button" (click)="open()">open</button><ng-template #cost let-pending="pending"><span id="dynamic-cost">cost {{ pending }}</span></ng-template>`,
 })
 class DynamicHost {
@@ -31,16 +34,18 @@ describe('ConfirmDialog', () => {
     fixture.componentInstance.pending = true;
     fixture.detectChanges();
     await fixture.whenStable();
-    expect(fixture.nativeElement.textContent).toContain('cost line');
-    expect([...fixture.nativeElement.querySelectorAll('button')].every((button: HTMLButtonElement) => button.getAttribute('aria-disabled') === 'true' && !button.disabled)).toBe(true);
-    expect(fixture.nativeElement.querySelector('[aria-modal="true"]')).not.toBeNull();
+    const root = fixture.nativeElement as HTMLElement;
+    expect(root.textContent).toContain('cost line');
+    expect(Array.from(root.querySelectorAll<HTMLButtonElement>('button')).every((button) => button.getAttribute('aria-disabled') === 'true' && !button.disabled)).toBe(true);
+    expect(root.querySelector('[aria-modal="true"]')).not.toBeNull();
   });
 
   it('traps focus, renders typed dynamic cost, cancels on Escape, destroys content and restores focus', async () => {
     await TestBed.configureTestingModule({ imports: [DynamicHost, MatDialogModule, NoopAnimationsModule, uiTestingTranslations()] }).compileComponents();
     const fixture = TestBed.createComponent(DynamicHost);
     fixture.detectChanges();
-    const trigger = fixture.nativeElement.querySelector('#trigger') as HTMLButtonElement;
+    const trigger = (fixture.nativeElement as HTMLElement).querySelector<HTMLButtonElement>('#trigger');
+    if (trigger === null) throw new Error('missing trigger');
     trigger.focus();
     trigger.click();
     await fixture.whenStable();
@@ -60,7 +65,7 @@ describe('ConfirmDialog', () => {
     const dialogs = TestBed.inject(ConfirmDialog);
     const ref = dialogs.confirm({ titleKey: 'core.ui.confirm.title', bodyKey: 'core.ui.errorState.body', confirmLabelKey: 'core.ui.confirm.confirm', pending: true });
     const closed = vi.fn();
-    ref.afterClosed().subscribe(closed);
+    onEmit(ref.afterClosed(), closed);
     await fixture.whenStable();
     const overlay = document.querySelector('.cdk-overlay-pane') as HTMLElement;
     const buttons = [...overlay.querySelectorAll('button')] as HTMLButtonElement[];
@@ -86,7 +91,7 @@ describe('ConfirmDialog', () => {
     for (const [index, expected] of [[1, false], [2, true]] as const) {
       const ref = dialogs.confirm(data);
       const closed = vi.fn();
-      ref.afterClosed().subscribe(closed);
+      onEmit(ref.afterClosed(), closed);
       await fixture.whenStable();
       const buttons = [...document.querySelectorAll('.cdk-overlay-pane .confirm-dialog__actions button')] as HTMLButtonElement[];
       const target = buttons[index - 1];
@@ -118,9 +123,9 @@ describe('ConfirmDialog', () => {
       const ref = dialogs.confirm({ ...data, pending });
       const closed = vi.fn();
       const cancelled = vi.fn();
-      ref.afterClosed().subscribe(closed);
+      onEmit(ref.afterClosed(), closed);
       await fixture.whenStable();
-      ref.componentInstance.cancelled.subscribe(cancelled);
+      onEmit(ref.componentInstance.cancelled, cancelled);
 
       pending.set(true);
       fixture.detectChanges();
@@ -146,9 +151,9 @@ describe('ConfirmDialog', () => {
       const ref = dialogs.confirm({ ...data, pending });
       const closed = vi.fn();
       const confirmed = vi.fn();
-      ref.afterClosed().subscribe(closed);
+      onEmit(ref.afterClosed(), closed);
       await fixture.whenStable();
-      ref.componentInstance.confirmed.subscribe(confirmed);
+      onEmit(ref.componentInstance.confirmed, confirmed);
       const [, confirm] = [...document.querySelectorAll('.cdk-overlay-pane .confirm-dialog__actions button')] as HTMLButtonElement[];
       expect(confirm).toBeDefined();
       confirm!.focus();
@@ -186,10 +191,10 @@ describe('ConfirmDialog', () => {
       const closed = vi.fn();
       const cancelled = vi.fn();
       const confirmed = vi.fn();
-      ref.afterClosed().subscribe(closed);
+      onEmit(ref.afterClosed(), closed);
       await fixture.whenStable();
-      ref.componentInstance.cancelled.subscribe(cancelled);
-      ref.componentInstance.confirmed.subscribe(confirmed);
+      onEmit(ref.componentInstance.cancelled, cancelled);
+      onEmit(ref.componentInstance.confirmed, confirmed);
       dismiss();
       await fixture.whenStable();
       expect(closed).toHaveBeenCalledExactlyOnceWith(false);

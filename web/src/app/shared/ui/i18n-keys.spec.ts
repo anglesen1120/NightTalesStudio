@@ -1,4 +1,4 @@
-import { Component } from '@angular/core';
+import { ChangeDetectionStrategy, Component } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { TranslocoService } from '@jsverse/transloco';
 import { describe, expect, it } from 'vitest';
@@ -29,6 +29,7 @@ const required = [
 
 @Component({
   imports: [PageHeader, EmptyState, ErrorState, LoadingState, StatusChip, Stepper],
+  changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <nts-page-header titleKey="core.ui.emptyState.title" />
     <nts-empty-state titleKey="core.ui.emptyState.title" bodyKey="core.ui.emptyState.body" />
@@ -70,7 +71,7 @@ describe('core UI i18n keys', () => {
       transloco.setActiveLang(lang);
       fixture.detectChanges();
       await fixture.whenStable();
-      const text = fixture.nativeElement.textContent as string;
+      const text = (fixture.nativeElement as HTMLElement).textContent ?? '';
       for (const value of expected) expect(text).toContain(value);
     }
   });

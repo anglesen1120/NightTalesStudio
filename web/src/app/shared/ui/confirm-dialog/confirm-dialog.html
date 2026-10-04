@@ -1,4 +1,4 @@
-<section class="confirm-dialog" [attr.role]="insideMatDialog ? null : 'dialog'" [attr.aria-modal]="insideMatDialog ? null : 'true'" [attr.aria-labelledby]="insideMatDialog ? null : titleId" [attr.aria-describedby]="insideMatDialog ? null : bodyId" cdkTrapFocus [cdkTrapFocusAutoCapture]="true" (keydown.escape)="onEscape()">
+<section class="confirm-dialog" tabindex="-1" [attr.role]="insideMatDialog ? null : 'dialog'" [attr.aria-modal]="insideMatDialog ? null : 'true'" [attr.aria-labelledby]="insideMatDialog ? null : titleId" [attr.aria-describedby]="insideMatDialog ? null : bodyId" cdkTrapFocus [cdkTrapFocusAutoCapture]="true" (keydown.escape)="onEscape()">
   <div class="confirm-dialog__heading">
     <h2 [id]="titleId">{{ resolvedTitleKey() | transloco }}</h2>
     <button class="confirm-dialog__close" type="button" (click)="cancel()" [attr.aria-disabled]="isPending() ? 'true' : null" [attr.aria-label]="'core.ui.dialog.close' | transloco">×</button>

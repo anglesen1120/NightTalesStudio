@@ -10,11 +10,12 @@ describe('LoadingState', () => {
     fixture.componentRef.setInput('rows', 9);
     fixture.detectChanges();
     await fixture.whenStable();
-    expect(fixture.nativeElement.getAttribute('aria-busy')).toBe('true');
-    expect(fixture.nativeElement.querySelector('[aria-live="polite"]')?.textContent).toContain('Đang tải');
-    expect(fixture.nativeElement.querySelector('[role="status"]')?.textContent).toContain('Đang tải');
-    expect(fixture.nativeElement.querySelectorAll('.loading-state__skeleton')).toHaveLength(6);
-    expect(fixture.nativeElement.querySelector('[aria-hidden="true"]')).not.toBeNull();
+    const root = fixture.nativeElement as HTMLElement;
+    expect(root.getAttribute('aria-busy')).toBe('true');
+    expect(root.querySelector('[aria-live="polite"]')?.textContent).toContain('Đang tải');
+    expect(root.querySelector('[role="status"]')?.textContent).toContain('Đang tải');
+    expect(root.querySelectorAll('.loading-state__skeleton')).toHaveLength(6);
+    expect(root.querySelector('[aria-hidden="true"]')).not.toBeNull();
   });
 
   for (const rows of [0, -4, 1]) {
@@ -24,7 +25,7 @@ describe('LoadingState', () => {
       fixture.componentRef.setInput('rows', rows);
       fixture.detectChanges();
       await fixture.whenStable();
-      expect(fixture.nativeElement.querySelectorAll('.loading-state__skeleton')).toHaveLength(3);
+      expect((fixture.nativeElement as HTMLElement).querySelectorAll('.loading-state__skeleton')).toHaveLength(3);
     });
   }
 
@@ -35,7 +36,7 @@ describe('LoadingState', () => {
       fixture.componentRef.setInput('rows', rows);
       fixture.detectChanges();
       await fixture.whenStable();
-      expect(fixture.nativeElement.querySelectorAll('.loading-state__skeleton')).toHaveLength(3);
+      expect((fixture.nativeElement as HTMLElement).querySelectorAll('.loading-state__skeleton')).toHaveLength(3);
     });
   }
 });

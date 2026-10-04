@@ -1,6 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { describe, expect, it, vi } from 'vitest';
 import { uiTestingTranslations } from '../testing/ui-testing-translations';
+import { onEmit } from '../testing/on-emit';
 import { ErrorState } from './error-state';
 
 describe('ErrorState', () => {
@@ -12,13 +13,14 @@ describe('ErrorState', () => {
     fixture.componentRef.setInput('retryLabelKey', 'core.ui.errorState.retry');
     const retry = vi.fn();
     const log = vi.spyOn(console, 'log');
-    fixture.componentInstance.retry.subscribe(retry);
+    onEmit(fixture.componentInstance.retry, retry);
     fixture.detectChanges();
     await fixture.whenStable();
-    expect(fixture.nativeElement.getAttribute('role')).toBe('alert');
-    expect(fixture.nativeElement.getAttribute('aria-describedby')).toBe(fixture.nativeElement.querySelector('p')?.id);
-    expect(fixture.nativeElement.textContent).toContain('trace-123');
-    (fixture.nativeElement.querySelector('button') as HTMLButtonElement).click();
+    const root = fixture.nativeElement as HTMLElement;
+    expect(root.getAttribute('role')).toBe('alert');
+    expect(root.getAttribute('aria-describedby')).toBe(root.querySelector('p')?.id);
+    expect(root.textContent).toContain('trace-123');
+    root.querySelector<HTMLButtonElement>('button')?.click();
     expect(retry).toHaveBeenCalledOnce();
     expect(log).not.toHaveBeenCalled();
     log.mockRestore();
@@ -30,8 +32,9 @@ describe('ErrorState', () => {
     fixture.componentRef.setInput('bodyKey', 'core.ui.errorState.body');
     fixture.detectChanges();
     await fixture.whenStable();
-    expect(fixture.nativeElement.querySelector('button')).toBeNull();
-    expect(fixture.nativeElement.querySelector('.error-state__trace')).toBeNull();
+    const root = fixture.nativeElement as HTMLElement;
+    expect(root.querySelector('button')).toBeNull();
+    expect(root.querySelector('.error-state__trace')).toBeNull();
   });
 
   it('renders a hostile trace id as inert text, never as markup', async () => {
@@ -41,7 +44,8 @@ describe('ErrorState', () => {
     fixture.componentRef.setInput('traceId', '<img src=x onerror=alert(1)>');
     fixture.detectChanges();
     await fixture.whenStable();
-    expect(fixture.nativeElement.querySelector('img')).toBeNull();
-    expect(fixture.nativeElement.querySelector('code')?.textContent).toBe('<img src=x onerror=alert(1)>');
+    const root = fixture.nativeElement as HTMLElement;
+    expect(root.querySelector('img')).toBeNull();
+    expect(root.querySelector('code')?.textContent).toBe('<img src=x onerror=alert(1)>');
   });
 });

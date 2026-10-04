@@ -145,7 +145,8 @@ describe('PreferencesStore', () => {
     const store = TestBed.inject(PreferencesStore);
     store.read();
     store.setTheme('dark');
-    expect(Object.keys(JSON.parse(localStorage.getItem(PREFERENCES_STORAGE_KEY) ?? '')).sort()).toEqual([
+    const stored = JSON.parse(localStorage.getItem(PREFERENCES_STORAGE_KEY) ?? '') as Record<string, unknown>;
+    expect(Object.keys(stored).sort()).toEqual([
       'theme',
       'uiLanguage',
     ]);

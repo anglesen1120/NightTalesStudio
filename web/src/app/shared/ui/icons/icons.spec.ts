@@ -23,17 +23,18 @@ describe('inline icons', () => {
       await TestBed.configureTestingModule({ imports: [icon, uiTestingTranslations()] }).compileComponents();
       const fixture = TestBed.createComponent(icon);
       fixture.detectChanges();
-      let svg = fixture.nativeElement.querySelector('svg') as SVGElement;
-      expect(fixture.nativeElement.querySelectorAll('svg')).toHaveLength(1);
-      expect(svg.getAttribute('aria-hidden')).toBe('true');
-      expect(svg.getAttribute('role')).toBeNull();
+      const root = fixture.nativeElement as HTMLElement;
+      let svg = root.querySelector<SVGElement>('svg');
+      expect(root.querySelectorAll('svg')).toHaveLength(1);
+      expect(svg?.getAttribute('aria-hidden')).toBe('true');
+      expect(svg?.getAttribute('role')).toBeNull();
       fixture.componentRef.setInput('labelKey', labelKey);
       fixture.detectChanges();
       await fixture.whenStable();
-      svg = fixture.nativeElement.querySelector('svg');
-      expect(svg.getAttribute('aria-hidden')).toBeNull();
-      expect(svg.getAttribute('role')).toBe('img');
-      expect(svg.getAttribute('aria-label')).toBeTruthy();
+      svg = root.querySelector<SVGElement>('svg');
+      expect(svg?.getAttribute('aria-hidden')).toBeNull();
+      expect(svg?.getAttribute('role')).toBe('img');
+      expect(svg?.getAttribute('aria-label')).toBeTruthy();
     });
   }
 

@@ -11,10 +11,11 @@ describe('StatusChip', () => {
     fixture.componentRef.setInput('appearance', 'success');
     fixture.detectChanges();
     await fixture.whenStable();
-    const text = fixture.nativeElement.textContent.trim();
+    const root = fixture.nativeElement as HTMLElement;
+    const text = (root.textContent ?? '').trim();
     expect(text).toBe('Đã xuất bản');
-    expect(fixture.nativeElement.getAttribute('aria-label')).toBe(text);
-    expect(fixture.nativeElement.querySelector('svg')).not.toBeNull();
+    expect(root.getAttribute('aria-label')).toBe(text);
+    expect(root.querySelector('svg')).not.toBeNull();
   });
 
   it('falls back unknown wire codes to a neutral icon-and-text state', async () => {
@@ -24,9 +25,10 @@ describe('StatusChip', () => {
     fixture.componentRef.setInput('appearance', 'error');
     fixture.detectChanges();
     await fixture.whenStable();
-    expect(fixture.nativeElement.textContent).toContain('Trạng thái chưa xác định');
-    expect(fixture.nativeElement.classList.contains('status-chip--neutral')).toBe(true);
-    expect(fixture.nativeElement.querySelector('nts-icon-unknown')).not.toBeNull();
+    const root = fixture.nativeElement as HTMLElement;
+    expect(root.textContent).toContain('Trạng thái chưa xác định');
+    expect(root.classList.contains('status-chip--neutral')).toBe(true);
+    expect(root.querySelector('nts-icon-unknown')).not.toBeNull();
   });
 
   for (const appearance of ['info', 'success', 'warn', 'error'] as const) {
@@ -37,9 +39,10 @@ describe('StatusChip', () => {
       fixture.componentRef.setInput('appearance', appearance);
       fixture.detectChanges();
       await fixture.whenStable();
-      expect(fixture.nativeElement.classList.contains('status-chip--neutral')).toBe(true);
-      expect(fixture.nativeElement.classList.contains(`status-chip--${appearance}`)).toBe(false);
-      expect(fixture.nativeElement.getAttribute('aria-label')).toBe('Trạng thái chưa xác định');
+      const root = fixture.nativeElement as HTMLElement;
+      expect(root.classList.contains('status-chip--neutral')).toBe(true);
+      expect(root.classList.contains(`status-chip--${appearance}`)).toBe(false);
+      expect(root.getAttribute('aria-label')).toBe('Trạng thái chưa xác định');
     });
   }
 
@@ -51,11 +54,12 @@ describe('StatusChip', () => {
       fixture.componentRef.setInput('appearance', 'success');
       fixture.detectChanges();
       await fixture.whenStable();
-      expect(fixture.nativeElement.classList.contains('status-chip--neutral')).toBe(true);
-      expect(fixture.nativeElement.classList.contains('status-chip--success')).toBe(false);
-      expect(fixture.nativeElement.getAttribute('aria-label')).toBe('Trạng thái chưa xác định');
-      expect(fixture.nativeElement.textContent).toContain('Trạng thái chưa xác định');
-      expect(fixture.nativeElement.querySelector('nts-icon-unknown')).not.toBeNull();
+      const root = fixture.nativeElement as HTMLElement;
+      expect(root.classList.contains('status-chip--neutral')).toBe(true);
+      expect(root.classList.contains('status-chip--success')).toBe(false);
+      expect(root.getAttribute('aria-label')).toBe('Trạng thái chưa xác định');
+      expect(root.textContent).toContain('Trạng thái chưa xác định');
+      expect(root.querySelector('nts-icon-unknown')).not.toBeNull();
     });
   }
 });

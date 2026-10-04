@@ -1,10 +1,14 @@
-import { Component } from '@angular/core';
+import { ChangeDetectionStrategy, Component } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { describe, expect, it } from 'vitest';
 import { uiTestingTranslations } from '../testing/ui-testing-translations';
 import { CharCounter } from './char-counter';
 
-@Component({ imports: [CharCounter], template: '<input aria-describedby="counter"><nts-char-counter id="counter" [value]="value" [max]="10" />' })
+@Component({
+  imports: [CharCounter],
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  template: '<input aria-describedby="counter"><nts-char-counter id="counter" [value]="value" [max]="10" />',
+})
 class Host { value = 0; }
 
 describe('CharCounter', () => {
@@ -15,11 +19,12 @@ describe('CharCounter', () => {
       fixture.componentInstance.value = value;
       fixture.detectChanges();
       await fixture.whenStable();
-      const counter = fixture.nativeElement.querySelector('nts-char-counter');
-      expect(counter.textContent).toContain(`${value}/10`);
-      expect(counter.classList.contains('char-counter--over')).toBe(over);
-      expect(counter.querySelector('[aria-live]')).toBeNull();
-      expect(fixture.nativeElement.querySelector('input').getAttribute('aria-describedby')).toBe(counter.querySelector('span').id);
+      const root = fixture.nativeElement as HTMLElement;
+      const counter = root.querySelector<HTMLElement>('nts-char-counter');
+      expect(counter?.textContent).toContain(`${value}/10`);
+      expect(counter?.classList.contains('char-counter--over')).toBe(over);
+      expect(counter?.querySelector('[aria-live]')).toBeNull();
+      expect(root.querySelector<HTMLInputElement>('input')?.getAttribute('aria-describedby')).toBe(counter?.querySelector('span')?.id);
     });
   }
 
@@ -30,19 +35,23 @@ describe('CharCounter', () => {
       fixture.componentInstance.value = value;
       fixture.detectChanges();
       await fixture.whenStable();
-      const text: string = fixture.nativeElement.querySelector('nts-char-counter').textContent;
+      const text = (fixture.nativeElement as HTMLElement).querySelector<HTMLElement>('nts-char-counter')?.textContent ?? '';
       expect(text.includes('vượt giới hạn')).toBe(announced);
     });
   }
 
   it('gives each instance a distinct default id that exists exactly once in the DOM', async () => {
-    @Component({ imports: [CharCounter], template: '<nts-char-counter [value]="1" [max]="10" /><nts-char-counter [value]="2" [max]="10" />' })
+    @Component({
+      imports: [CharCounter],
+      changeDetection: ChangeDetectionStrategy.OnPush,
+      template: '<nts-char-counter [value]="1" [max]="10" /><nts-char-counter [value]="2" [max]="10" />',
+    })
     class TwoDefaults {}
     await TestBed.configureTestingModule({ imports: [TwoDefaults, uiTestingTranslations()] }).compileComponents();
     const fixture = TestBed.createComponent(TwoDefaults);
     fixture.detectChanges();
     await fixture.whenStable();
-    const root: HTMLElement = fixture.nativeElement;
+    const root = fixture.nativeElement as HTMLElement;
     const hosts = Array.from(root.querySelectorAll('nts-char-counter'));
     const ids = hosts.map((host) => host.querySelector('span')?.id ?? '');
     expect(ids[0]).not.toBe('');
@@ -57,9 +66,10 @@ describe('CharCounter', () => {
     const fixture = TestBed.createComponent(Host);
     fixture.detectChanges();
     await fixture.whenStable();
-    const matches = fixture.nativeElement.querySelectorAll('[id="counter"]');
+    const root = fixture.nativeElement as HTMLElement;
+    const matches = root.querySelectorAll('[id="counter"]');
     expect(matches).toHaveLength(1);
-    expect(matches[0].tagName).toBe('SPAN');
-    expect(fixture.nativeElement.querySelector('nts-char-counter').hasAttribute('id')).toBe(false);
+    expect(matches[0]?.tagName).toBe('SPAN');
+    expect(root.querySelector('nts-char-counter')?.hasAttribute('id')).toBe(false);
   });
 });

@@ -14,9 +14,10 @@ describe('Stepper', () => {
     ]);
     fixture.detectChanges();
     await fixture.whenStable();
-    expect(fixture.nativeElement.querySelector('ol')?.getAttribute('role')).toBe('list');
-    expect(fixture.nativeElement.querySelectorAll('li')).toHaveLength(3);
-    expect(fixture.nativeElement.querySelector('[aria-current="step"]')?.textContent).toContain('Sáng');
-    expect(fixture.nativeElement.querySelector('.stepper__step--done')?.textContent).toContain('đã xong');
+    const root = fixture.nativeElement as HTMLElement;
+    expect(root.querySelector('ol')?.getAttribute('role')).toBe('list');
+    expect(root.querySelectorAll('li')).toHaveLength(3);
+    expect(root.querySelector('[aria-current="step"]')?.textContent).toContain('Sáng');
+    expect(root.querySelector('.stepper__step--done')?.textContent).toContain('đã xong');
   });
 });
