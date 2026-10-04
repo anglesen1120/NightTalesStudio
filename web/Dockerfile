@@ -21,7 +21,8 @@ RUN npm run build && npm run csp:gen
 FROM nginxinc/nginx-unprivileged@sha256:0c79d56aee561a1d81c63f00eee5fb5fe29279560cdc55e91425133104c7fbe6
 ENV NTS_SPA_FALLBACK=index.csr.html \
     NTS_CSP_MEDIA_ORIGINS="" \
-    NTS_HSTS=""
+    NTS_HSTS="" \
+    NGINX_ENVSUBST_FILTER=^NTS_
 # The base image ships stock index.html ("Welcome to nginx!") and 50x.html in
 # /usr/share/nginx/html; the Angular output has no index.html (the fallback is
 # index.csr.html), so the stock file would be served for "/" and "/index.html".

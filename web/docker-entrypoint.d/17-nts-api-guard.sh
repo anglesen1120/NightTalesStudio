@@ -13,7 +13,17 @@ OUT=/etc/nginx/conf.d/nts-api-guard.inc
 GUARDS=/etc/nginx/guards
 
 if [ -n "${NTS_API_UPSTREAM:-}" ]; then
-    # Only a plain http(s) origin is accepted: it lands inside proxy_pass.
+    # Only a plain http(s) origin is accepted: it lands inside proxy_pass. grep is
+    # line-based, so a newline / control character is rejected BEFORE the format check
+    # (a valid first line would otherwise validate the whole multi-line value).
+    case "$NTS_API_UPSTREAM" in
+        *"
+"*) echo "$ME: ERROR: NTS_API_UPSTREAM contains a newline" >&2; exit 1 ;;
+    esac
+    if printf '%s' "$NTS_API_UPSTREAM" | LC_ALL=C grep -q '[[:cntrl:]]'; then
+        echo "$ME: ERROR: NTS_API_UPSTREAM contains a control character" >&2
+        exit 1
+    fi
     printf '%s' "$NTS_API_UPSTREAM" | grep -Eq '^https?://[A-Za-z0-9.-]+(:[0-9]{1,5})?$' || {
         echo "$ME: ERROR: NTS_API_UPSTREAM must be an http(s) origin without path" >&2
         exit 1

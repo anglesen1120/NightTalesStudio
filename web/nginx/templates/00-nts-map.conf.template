@@ -1,9 +1,9 @@
 # NightTales web — http-context extras (envsubst'ed into /etc/nginx/conf.d/00-nts-map.conf).
 #
-# NOTE on envsubst safety (WR13): the image's 20-envsubst-on-templates.sh substitutes
-# ONLY names that exist in the container environment (defined_envs filter). All our
-# variables are NTS_*; nginx's own $host/$uri/$http_* are never in the environment,
-# so they pass through untouched.
+# NOTE on envsubst safety (WR13): the Dockerfile sets NGINX_ENVSUBST_FILTER=^NTS_, so the
+# image's 20-envsubst-on-templates.sh substitutes ONLY environment variables whose name
+# starts with NTS_. nginx's own $host/$uri/$http_* — and any unrelated environment
+# variable that happens to share such a name — pass through untouched.
 #
 # WebSocket Connection header mapping for /hubs/ (api-proxy guard, dev/compose only).
 map $http_upgrade $connection_upgrade {

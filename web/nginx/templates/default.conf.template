@@ -11,6 +11,7 @@
 # No `if`, no `rewrite`, no per-request work (NFR-10-1/2).
 
 gzip on;
+gzip_vary on;
 gzip_types text/css application/javascript application/json image/svg+xml;
 gzip_min_length 1024;
 
@@ -21,8 +22,14 @@ server {
     root /usr/share/nginx/html;
     autoindex off;
 
-    # Dotfiles are never served.
-    location ~ /\. { return 404; }
+    # Dotfiles are never served. Logged path-only and with a restricted error_log: a
+    # request such as /hubs/.probe?ticket=… matches this regex BEFORE the hubs/guard
+    # location, so it must not write the query string (hub ticket) anywhere (D8/WR13).
+    location ~ /\. {
+        access_log /dev/stdout nts_noquery;
+        error_log /dev/stderr crit;
+        return 404;
+    }
 
     # API guard — MUST precede `location /` so /api, /hubs, /health can never fall
     # through to try_files and answer with HTML. 17-nts-api-guard.sh writes either the

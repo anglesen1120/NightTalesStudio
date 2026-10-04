@@ -188,6 +188,9 @@ header_absent "hashed chunk: no Content-Security-Policy" "content-security-polic
 GZ=$(curl -sS -H 'Accept-Encoding: gzip' -D - -o /dev/null "http://127.0.0.1:$PORT/$CHUNK" | tr -d '\r' | tr 'A-Z' 'a-z')
 printf '%s\n' "$GZ" | grep -q '^content-encoding: gzip' || fail "hashed js is gzip-compressed" "content-encoding: gzip" "$(printf '%s' "$GZ" | tr '\n' '|')"
 pass "hashed js is gzip-compressed"
+printf '%s\n' "$GZ" | grep -q '^vary:.*accept-encoding' \
+    || fail "gzipped response carries Vary: Accept-Encoding (gzip_vary)" "vary: accept-encoding" "$(printf '%s' "$GZ" | tr '\n' '|')"
+pass "gzipped hashed js carries Vary: Accept-Encoding"
 
 ASSET=$(docker exec "$CURRENT" sh -c 'cd /usr/share/nginx/html && find assets -type f | head -n1')
 [ -n "$ASSET" ] || fail "an /assets file exists" "any file" "none"
@@ -227,6 +230,19 @@ for p in /apix /healthzz /hubsx; do
     case "$OUT" in "200 text/html"*) pass "$p stays on the SPA fallback" ;; *) fail "$p stays on the SPA fallback" "200 text/html" "$OUT" ;; esac
 done
 
+# Guard mode: a misrouted /hubs request (and a dotfile under /hubs) carries the single-use
+# ticket in its query string; neither the access log nor the error log may contain it.
+for p in '/hubs/episodes?ticket=SECRET' '/HUBS/x?ticket=SECRET' '/hubs?ticket=SECRET' '/hubs/.probe?ticket=SECRET' '/.env?ticket=SECRET'; do
+    curl -sS -o /dev/null "http://127.0.0.1:$PORT$p" || true
+done
+sleep 1
+LEAKED=$(docker logs "$CURRENT" 2>&1 | grep -c 'SECRET' || true)
+[ "$LEAKED" = "0" ] || fail "guard mode: hub ticket absent from docker logs (stdout+stderr)" "0 occurrences of SECRET" "$LEAKED"
+pass "guard mode: hub ticket absent from docker logs (stdout+stderr)"
+LOGLINE=$(docker logs "$CURRENT" 2>/dev/null | grep '/hubs/episodes' || true)
+[ -n "$LOGLINE" ] || fail "guard mode: /hubs request is access-logged" "a /hubs/episodes line" "none"
+pass "guard mode: /hubs access log line is path-only"
+
 echo "== stability: ${STABLE_SECONDS}s"
 sleep "$STABLE_SECONDS"
 RUNNING=$(docker inspect -f '{{.State.Running}}' "$CURRENT")
@@ -257,6 +273,11 @@ for bad in \
     "NTS_HSTS=max-age=abc" \
     "NTS_SPA_FALLBACK=../etc/passwd" \
     $'NTS_CSP_MEDIA_ORIGINS=https://a.example\nevil' \
+    $'NTS_API_UPSTREAM=http://127.0.0.1:9\n; add_header X-Injected yes; #' \
+    $'NTS_HSTS=max-age=1\n"; add_header X-Injected yes; #' \
+    $'NTS_SPA_FALLBACK=index.csr.html\n; evil' \
+    $'NTS_HSTS=max-age=1\revil' \
+    $'NTS_API_UPSTREAM=http://127.0.0.1:9\revil' \
     "NTS_CSP_MEDIA_ORIGINS=*" \
     "NTS_CSP_MEDIA_ORIGINS=http:" \
     "NTS_CSP_MEDIA_ORIGINS=https://a.example/" \
@@ -286,6 +307,16 @@ for p in /api /health; do
     [ "$(status_of "$p")" = "502" ] || fail "proxy mode: bare $p is proxied" "502 (unreachable upstream)" "$(status_of "$p")"
 done
 pass "proxy mode: bare /api and /health are proxied"
+# Rendered proxy include: hubs overwrites the forwarded headers like /api, is unbuffered;
+# /api|/health reuse upstream connections (Connection "").
+INC=$(docker exec "$CURRENT" cat /etc/nginx/conf.d/nts-api-guard.inc)
+[ "$(printf '%s\n' "$INC" | grep -c 'proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;')" = "2" ] \
+    || fail "X-Forwarded-For set on /hubs and /api" "2 occurrences" "$(printf '%s\n' "$INC" | grep -c 'X-Forwarded-For')"
+[ "$(printf '%s\n' "$INC" | grep -c 'proxy_set_header X-Forwarded-Proto \$scheme;')" = "2" ] \
+    || fail "X-Forwarded-Proto set on /hubs and /api" "2 occurrences" "$(printf '%s\n' "$INC" | grep -c 'X-Forwarded-Proto')"
+printf '%s\n' "$INC" | grep -q 'proxy_buffering off;' || fail "/hubs is unbuffered" "proxy_buffering off;" "missing"
+printf '%s\n' "$INC" | grep -q 'proxy_set_header Connection "";' || fail "/api|/health clears Connection" 'proxy_set_header Connection "";' "missing"
+pass "proxy include: hubs forwarded headers + unbuffered, api keepalive"
 curl -sS -o /dev/null "http://127.0.0.1:$PORT/hubs/episodes?ticket=abc" || true
 sleep 1
 # Access log = stdout. nginx's error log (stderr) is a separate stream and is not part of
@@ -300,6 +331,8 @@ pass "hub access log line is path-only"
 # must not log the single-use ticket anywhere (stdout + stderr).
 curl -sS -o /dev/null "http://127.0.0.1:$PORT/hubs/x?ticket=SECRET" || true
 curl -sS -o /dev/null "http://127.0.0.1:$PORT/HUBS/y?ticket=SECRET" || true
+curl -sS -o /dev/null "http://127.0.0.1:$PORT/hubs/.probe?ticket=SECRET" || true
+curl -sS -o /dev/null "http://127.0.0.1:$PORT/.env?ticket=SECRET" || true
 sleep 1
 LEAKED=$(docker logs "$CURRENT" 2>&1 | grep -c 'SECRET' || true)
 [ "$LEAKED" = "0" ] || fail "hub ticket absent from docker logs (stdout+stderr)" "0 occurrences of SECRET" "$LEAKED"
@@ -310,6 +343,16 @@ sleep 1
 docker logs "$CURRENT" 2>&1 | grep -q 'err-probe' \
     || fail "non-hub upstream errors are still logged" "an err-probe line in docker logs" "none"
 pass "non-hub upstream errors are still logged"
+
+# NGINX_ENVSUBST_FILTER=^NTS_: unrelated environment variables named like nginx variables
+# must not rewrite $uri / $host / $http_upgrade in the rendered config.
+start envfilter -e host=EVIL -e uri=/EVIL -e http_upgrade=EVIL -e NTS_API_UPSTREAM=http://127.0.0.1:9
+docker exec "$CURRENT" grep -q 'try_files \$uri \$uri/index.html' /etc/nginx/conf.d/default.conf \
+    || fail "envsubst filter keeps \$uri literal" 'try_files $uri $uri/index.html' "$(docker exec "$CURRENT" grep -n try_files /etc/nginx/conf.d/default.conf | tr '\n' '|')"
+docker exec "$CURRENT" grep -q 'map \$http_upgrade \$connection_upgrade' /etc/nginx/conf.d/00-nts-map.conf \
+    || fail "envsubst filter keeps \$http_upgrade literal" 'map $http_upgrade $connection_upgrade' "rewritten"
+docker exec "$CURRENT" grep -rq 'EVIL' /etc/nginx/conf.d && fail "no unrelated env value rendered into conf.d" "no EVIL" "found"
+pass "NGINX_ENVSUBST_FILTER=^NTS_: unrelated env vars are not substituted"
 
 # --- proxy mode with a REACHABLE upstream (QA): a second container of this same image ----
 # The upstream runs in guard mode, so a proxied /api/** answers its own 404 text/plain
