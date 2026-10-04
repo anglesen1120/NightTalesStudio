@@ -94,6 +94,12 @@ LEAK=$(docker run --rm --entrypoint sh "$IMAGE" -c \
     'find / -xdev \( -name node_modules -o -name "*.map" -o -name package.json \) -not -path "/proc/*" -not -path "/usr/lib/node_modules/*" 2>/dev/null | head -n 5')
 [ -z "$LEAK" ] || fail "no node_modules / .map / package.json in image" "none" "$LEAK"
 pass "no node_modules / .map / package.json in image"
+# D1: the base image's stock pages must not survive in the runtime stage.
+for f in index.html 50x.html; do
+    docker run --rm --entrypoint test "$IMAGE" ! -e "/usr/share/nginx/html/$f" \
+        || fail "stock /usr/share/nginx/html/$f removed from image" "absent" "present"
+done
+pass "stock index.html and 50x.html removed from image"
 
 # Dockerfile static contract (QA): multi-stage, both bases digest-pinned, no ADD / remote URL.
 DOCKERFILE="$(cd "$(dirname "$0")/../.." && pwd)/Dockerfile"
@@ -126,11 +132,21 @@ ROOT_BODY=$(curl -fsS "http://127.0.0.1:$PORT/")
 printf '%s' "$ROOT_BODY" | grep -qi '<app-root' \
     || fail "/ serves the SPA document" "<app-root> document" "$(printf '%s' "$ROOT_BODY" | grep -oiE '<title>[^<]*</title>' | head -n1)"
 pass "/ serves the SPA document"
-IDX_BODY=$(curl -sS "http://127.0.0.1:$PORT/index.html")
-case "$IDX_BODY" in
-    *"Welcome to nginx"*) fail "no base-image index.html is served" "no nginx welcome page at /index.html" "Welcome to nginx!" ;;
+SPA_TITLE='<title>NightTales Studio</title>'
+for p in / /index.html; do
+    OUT=$(curl -sS "http://127.0.0.1:$PORT$p")
+    case "$OUT" in
+        *"Welcome to nginx"*) fail "$p is not the nginx welcome page" "no stock page" "Welcome to nginx!" ;;
+    esac
+    printf '%s' "$OUT" | grep -qF "$SPA_TITLE" \
+        || fail "$p serves the SPA title" "$SPA_TITLE" "$(printf '%s' "$OUT" | grep -oiE '<title>[^<]*</title>' | head -n1)"
+    pass "$p serves the SPA title"
+done
+OUT=$(curl -sS -w '\n%{http_code}' "http://127.0.0.1:$PORT/50x.html")
+case "$OUT" in
+    *"Welcome to nginx"*|*"An error occurred"*) fail "/50x.html is not the stock error page" "no stock page" "stock page served" ;;
 esac
-pass "/index.html is not the nginx welcome page"
+pass "/50x.html is not the stock error page ($(printf '%s' "$OUT" | tail -n1))"
 hdrs /index.csr.html
 header_has "/index.csr.html: Cache-Control no-cache (never immutable)" "cache-control: no-cache"
 if printf '%s\n' "$HDRS" | grep -qiE '^cache-control:.*immutable'; then
@@ -199,6 +215,18 @@ for p in '/api%2fv1' '//api/x' '/api//x'; do
     pass "guard $p -> $OUT"
 done
 
+# D5: bare and mixed-case API paths never fall through to the SPA; /apix, /healthzz,
+# /hubsx are ordinary SPA routes, /healthz stays the container's own endpoint.
+for p in /api /API/v1 /Api /hubs /HUBS/x /health /Health/ready; do
+    OUT=$(curl -sS -o /dev/null -w '%{http_code} %{content_type}' "http://127.0.0.1:$PORT$p")
+    [ "$OUT" = "404 text/plain" ] || fail "guard $p -> 404 text/plain" "404 text/plain" "$OUT"
+    pass "guard $p -> $OUT"
+done
+for p in /apix /healthzz /hubsx; do
+    OUT=$(curl -sS -o /dev/null -w '%{http_code} %{content_type}' "http://127.0.0.1:$PORT$p")
+    case "$OUT" in "200 text/html"*) pass "$p stays on the SPA fallback" ;; *) fail "$p stays on the SPA fallback" "200 text/html" "$OUT" ;; esac
+done
+
 echo "== stability: ${STABLE_SECONDS}s"
 sleep "$STABLE_SECONDS"
 RUNNING=$(docker inspect -f '{{.State.Running}}' "$CURRENT")
@@ -251,6 +279,13 @@ done
 start proxy -e NTS_API_UPSTREAM=http://127.0.0.1:9
 [ "$(status_of /api/v1/anything)" = "502" ] || fail "proxy mode: unreachable upstream -> 502" "502" "$(status_of /api/v1/anything)"
 pass "proxy mode: /api/** reaches the proxy (unreachable upstream -> 502)"
+BODY=$(curl -fsS "http://127.0.0.1:$PORT/healthz")
+[ "$BODY" = "ok" ] || fail "proxy mode: /healthz stays the container's own endpoint" "ok" "$BODY"
+pass "proxy mode: /healthz is not proxied"
+for p in /api /health; do
+    [ "$(status_of "$p")" = "502" ] || fail "proxy mode: bare $p is proxied" "502 (unreachable upstream)" "$(status_of "$p")"
+done
+pass "proxy mode: bare /api and /health are proxied"
 curl -sS -o /dev/null "http://127.0.0.1:$PORT/hubs/episodes?ticket=abc" || true
 sleep 1
 # Access log = stdout. nginx's error log (stderr) is a separate stream and is not part of
@@ -261,6 +296,20 @@ case "$LOGLINE" in
     *ticket=*|*\?*) fail "hub log line has no query string" "path only" "$LOGLINE" ;;
 esac
 pass "hub access log line is path-only"
+# D4: nginx's error log quotes the request line on upstream failures; the hubs location
+# must not log the single-use ticket anywhere (stdout + stderr).
+curl -sS -o /dev/null "http://127.0.0.1:$PORT/hubs/x?ticket=SECRET" || true
+curl -sS -o /dev/null "http://127.0.0.1:$PORT/HUBS/y?ticket=SECRET" || true
+sleep 1
+LEAKED=$(docker logs "$CURRENT" 2>&1 | grep -c 'SECRET' || true)
+[ "$LEAKED" = "0" ] || fail "hub ticket absent from docker logs (stdout+stderr)" "0 occurrences of SECRET" "$LEAKED"
+pass "hub ticket absent from docker logs (stdout+stderr)"
+# Error logging for other locations is kept: the failed /api request is still logged.
+curl -sS -o /dev/null "http://127.0.0.1:$PORT/api/v1/err-probe" || true
+sleep 1
+docker logs "$CURRENT" 2>&1 | grep -q 'err-probe' \
+    || fail "non-hub upstream errors are still logged" "an err-probe line in docker logs" "none"
+pass "non-hub upstream errors are still logged"
 
 # --- proxy mode with a REACHABLE upstream (QA): a second container of this same image ----
 # The upstream runs in guard mode, so a proxied /api/** answers its own 404 text/plain

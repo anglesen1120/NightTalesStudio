@@ -49,6 +49,16 @@ server {
         add_header Cache-Control "public, max-age=3600, must-revalidate";
     }
 
+    # The stock /index.html is removed from the image and the SPA document lives
+    # at index.csr.html, so /index.html must not 404 via the .html location
+    # below: serve it if the app ever ships one, else the SPA fallback (D1).
+    location = /index.html {
+        try_files /index.html /${NTS_SPA_FALLBACK};
+        include /etc/nginx/conf.d/security-headers.conf;
+        include /etc/nginx/conf.d/includes/csp-headers.conf;
+        add_header Cache-Control "no-cache";
+    }
+
     # Explicit HTML documents.
     location ~* \.html$ {
         include /etc/nginx/conf.d/security-headers.conf;

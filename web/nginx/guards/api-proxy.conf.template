@@ -4,25 +4,18 @@
 #
 # The 17- script substitutes ONLY ${NTS_API_UPSTREAM}; nginx variables pass through.
 # Proxy temp paths live under /tmp (unprivileged image), so --read-only works.
-location /api/ {
-    proxy_pass ${NTS_API_UPSTREAM};
-    proxy_http_version 1.1;
-    proxy_set_header Host $host;
-    proxy_set_header X-Forwarded-Proto $scheme;
-    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-}
+# Regex locations: bare /api, /hubs and /health proxy too, case-insensitively.
+# The trailing (/|$) keeps /apix and /hubsx on the SPA; = /healthz in
+# default.conf still wins over every regex, so the container health endpoint is
+# never proxied (D5). Regex order matters: /hubs is listed first.
 
-location /health/ {
-    proxy_pass ${NTS_API_UPSTREAM};
-    proxy_http_version 1.1;
-    proxy_set_header Host $host;
-    proxy_set_header X-Forwarded-Proto $scheme;
-    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-}
-
-# WebSocket (SignalR). The access log drops the query string: the single-use hub
-# ticket in /hubs/*?ticket=… must never be logged (D8/WR13).
-location /hubs/ {
+# WebSocket (SignalR). Two log protections for the single-use hub ticket in
+# /hubs/*?ticket=… (D8/WR13): the access log uses nts_noquery (path only, no
+# query string), and error_log is dropped to crit so an upstream connect
+# failure — which nginx logs at error level WITH the request line — never
+# writes the ticket to the error log (D4). Other locations keep normal error
+# logging.
+location ~* ^/hubs(/|$) {
     proxy_pass ${NTS_API_UPSTREAM};
     proxy_http_version 1.1;
     proxy_set_header Upgrade $http_upgrade;
@@ -31,4 +24,13 @@ location /hubs/ {
     proxy_read_timeout 3600s;
     proxy_send_timeout 3600s;
     access_log /dev/stdout nts_noquery;
+    error_log /dev/stderr crit;
+}
+
+location ~* ^/(api|health)(/|$) {
+    proxy_pass ${NTS_API_UPSTREAM};
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
 }

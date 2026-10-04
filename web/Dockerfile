@@ -22,6 +22,13 @@ FROM nginxinc/nginx-unprivileged@sha256:0c79d56aee561a1d81c63f00eee5fb5fe2927956
 ENV NTS_SPA_FALLBACK=index.csr.html \
     NTS_CSP_MEDIA_ORIGINS="" \
     NTS_HSTS=""
+# The base image ships stock index.html ("Welcome to nginx!") and 50x.html in
+# /usr/share/nginx/html; the Angular output has no index.html (the fallback is
+# index.csr.html), so the stock file would be served for "/" and "/index.html".
+# Remove both before the app copy; the smoke asserts they are gone (D1).
+USER root
+RUN rm -f /usr/share/nginx/html/index.html /usr/share/nginx/html/50x.html
+USER 101
 COPY --from=build /app/dist/web/browser /usr/share/nginx/html
 COPY --from=build /app/dist/nginx/csp-headers.conf /etc/nginx/templates/includes/csp-headers.conf.template
 COPY nginx/templates/ /etc/nginx/templates/
