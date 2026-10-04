@@ -1,0 +1,163 @@
+:host {
+  display: block;
+  min-width: 0;
+}
+
+.auth-page-shell {
+  min-height: 100dvh;
+  overflow-x: clip;
+  background: var(--nts-color-room);
+  color: var(--nts-color-ink);
+}
+
+.auth-page-shell__top {
+  display: flex;
+  align-items: center;
+  min-height: 72px;
+  padding-inline: var(--nts-space-6);
+  border-bottom: 1px solid var(--nts-color-line);
+}
+
+.auth-page-shell__brand {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--nts-space-3);
+  min-height: var(--nts-target-min);
+  color: var(--nts-color-ink);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.auth-page-shell__brand-mark {
+  position: relative;
+  width: 24px;
+  height: 24px;
+  border: 1px solid var(--nts-color-signal);
+}
+
+.auth-page-shell__brand-mark::before,
+.auth-page-shell__brand-mark::after {
+  position: absolute;
+  background: var(--nts-color-playhead);
+  content: '';
+}
+
+.auth-page-shell__brand-mark::before {
+  inset: 4px 50%;
+  width: 1px;
+}
+
+.auth-page-shell__brand-mark::after {
+  inset: 50% 4px;
+  height: 1px;
+}
+
+.auth-page-shell__stage {
+  display: flex;
+  justify-content: center;
+  min-height: calc(100dvh - 72px);
+  padding: var(--nts-space-7) var(--nts-space-5) var(--nts-space-8);
+}
+
+.auth-page-shell__sheet {
+  align-self: flex-start;
+  width: min(520px, 100%);
+  padding: var(--nts-space-6);
+  border-top: 5px solid var(--nts-color-signal);
+  border-bottom: 1px solid var(--nts-color-line);
+  border-radius: var(--nts-radius-sheet);
+  background: var(--nts-color-sheet);
+}
+
+:host ::ng-deep .auth-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--nts-space-4);
+  min-width: 0;
+}
+
+:host ::ng-deep .auth-lede {
+  color: var(--nts-color-muted);
+}
+
+:host ::ng-deep .auth-heading {
+  font-size: var(--nts-type-page-size);
+  line-height: var(--nts-type-page-line);
+  font-weight: var(--nts-type-page-weight);
+}
+
+:host ::ng-deep .auth-actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--nts-space-3);
+}
+
+:host ::ng-deep .auth-primary {
+  width: 100%;
+  min-height: var(--nts-target-min);
+}
+
+:host ::ng-deep .auth-link {
+  align-self: flex-start;
+  min-height: var(--nts-target-min);
+  display: inline-flex;
+  align-items: center;
+}
+
+:host ::ng-deep .auth-alert,
+:host ::ng-deep .auth-status {
+  display: flex;
+  flex-direction: column;
+  gap: var(--nts-space-2);
+  padding: var(--nts-space-3) var(--nts-space-4);
+  border: 1px solid var(--nts-color-line);
+  border-left: 4px solid var(--nts-color-playhead);
+  border-radius: var(--nts-radius-control);
+  background: var(--nts-color-error-soft);
+}
+
+:host ::ng-deep .auth-status {
+  border-left-color: var(--nts-color-signal);
+  background: var(--nts-color-primary-soft);
+}
+
+:host ::ng-deep .auth-spinner {
+  display: inline-block;
+  width: 18px !important;
+  height: 18px !important;
+  margin-right: var(--nts-space-2);
+  vertical-align: middle;
+}
+
+:host ::ng-deep .auth-field-error {
+  color: var(--nts-color-error);
+}
+
+:host ::ng-deep .auth-state-icon {
+  width: 36px;
+  height: 36px;
+  color: var(--nts-color-signal);
+}
+
+@media (max-width: 599px) {
+  .auth-page-shell__top {
+    min-height: 60px;
+    padding-inline: var(--nts-space-4);
+  }
+
+  .auth-page-shell__stage {
+    min-height: calc(100dvh - 60px);
+    padding: var(--nts-space-5) var(--nts-space-4) var(--nts-space-7);
+  }
+
+  .auth-page-shell__sheet {
+    padding: var(--nts-space-5) var(--nts-space-4);
+    border-top-width: 4px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :host ::ng-deep .auth-spinner circle {
+    animation: none !important;
+  }
+}

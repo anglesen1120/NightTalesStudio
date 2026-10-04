@@ -1,0 +1,97 @@
+<div class="auth-stack">
+  <ol class="login-steps" [attr.aria-label]="'auth.login.progress' | transloco">
+    <li aria-current="step"><span>1</span><span>{{ 'auth.login.passwordStep' | transloco }}</span></li>
+    <li><span>2</span><span>{{ 'auth.login.verificationStep' | transloco }}</span></li>
+  </ol>
+
+  @if (sessionEndKey(); as key) {
+    <div class="auth-alert" role="alert" aria-live="polite" aria-atomic="true">
+      @if (key !== 'core.session.restoreFailed') {
+        <strong>{{ (key + '.title') | transloco }}</strong>
+      }
+      <span>{{ (key + '.body') | transloco }}</span>
+    </div>
+  }
+
+  <h1 class="auth-heading" tabindex="-1" data-page-heading>{{ 'auth.login.title' | transloco }}</h1>
+  <p class="auth-lede">{{ 'auth.login.subtitle' | transloco }}</p>
+
+  @if (formError(); as errorKey) {
+    <div id="login-form-alert" class="auth-alert" role="alert" tabindex="-1" aria-atomic="true" data-form-alert>
+      <strong>{{ errorKey | transloco }}</strong>
+      @if (errorKey === 'auth.login.invalidCredentials') {
+        <span>{{ 'auth.login.checkAndRetry' | transloco }}</span>
+      }
+      @if (errorKey === 'errors.network_error' || errorKey === 'errors.unknown_error') {
+        <button mat-button type="button" (click)="submitPassword.emit()">{{ 'errors.action.retry' | transloco }}</button>
+      }
+    </div>
+  }
+
+  @if (retryAfterSec(); as seconds) {
+    <div id="login-retry" class="auth-status" role="status">
+      <strong>{{ 'auth.rateLimited.message' | transloco }}</strong>
+      <nts-retry-countdown
+        [seconds]="seconds"
+        messageKey="auth.rateLimited.retryIn"
+        (elapsed)="retryAfterElapsed.emit()"
+      />
+    </div>
+  }
+
+  <form class="auth-stack" [formGroup]="form()" (ngSubmit)="submitPassword.emit()" novalidate>
+    <mat-form-field appearance="outline">
+      <mat-label>{{ 'auth.login.email' | transloco }}</mat-label>
+      <input
+        matInput
+        id="login-email"
+        type="email"
+        autocomplete="username"
+        formControlName="email"
+        [attr.aria-describedby]="describedBy(form().controls.email, 'login-email')"
+      />
+      @if (fieldErrorKey(form().controls.email); as errorKey) {
+        <mat-error id="login-email-error">{{ errorKey | transloco }}</mat-error>
+      }
+    </mat-form-field>
+
+    <mat-form-field appearance="outline">
+      <mat-label>{{ 'auth.login.password' | transloco }}</mat-label>
+      <input
+        matInput
+        id="login-password"
+        type="password"
+        autocomplete="current-password"
+        formControlName="password"
+        [attr.aria-describedby]="describedBy(form().controls.password, 'login-password')"
+      />
+      @if (fieldErrorKey(form().controls.password); as errorKey) {
+        <mat-error id="login-password-error">{{ errorKey | transloco }}</mat-error>
+      }
+    </mat-form-field>
+
+    <div class="auth-actions">
+      <button
+        class="auth-primary"
+        mat-flat-button
+        type="submit"
+        [disabled]="!canSubmit()"
+        [attr.aria-disabled]="!canSubmit()"
+        [attr.aria-describedby]="retryAfterSec() !== null ? 'login-retry' : null"
+      >
+        @if (submitting()) {
+          <mat-spinner class="auth-spinner" diameter="18" aria-hidden="true" />
+          <span>{{ 'auth.login.submitting' | transloco }}</span>
+        } @else {
+          <span>{{ 'auth.login.submit' | transloco }}</span>
+        }
+      </button>
+      @if (submitting()) {
+        <span class="visually-hidden" role="status">{{ 'auth.login.submitting' | transloco }}</span>
+      }
+      <a class="auth-link" href="/forgot-password" (click)="$event.preventDefault(); forgotPassword.emit()">
+        {{ 'auth.login.forgot' | transloco }}
+      </a>
+    </div>
+  </form>
+</div>

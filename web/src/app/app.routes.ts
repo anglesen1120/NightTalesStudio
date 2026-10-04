@@ -1,5 +1,5 @@
 import { Routes } from '@angular/router';
+import { authRoutes } from '@features/auth';
 
-// Intentionally empty: the first routes arrive with 10.3.1-T1 (public/legal pages)
-// and 10.2.6-T1 (shell + not-found).
-export const routes: Routes = [];
+// Public entries (10.3.1-T1, S15) go before the auth routes; the shell and the `**` not-found route (10.2.6-T1, S13) go after.
+export const routes: Routes = [...authRoutes];

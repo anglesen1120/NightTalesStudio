@@ -1,0 +1,48 @@
+{
+  "login": {
+    "title": "Sign in",
+    "subtitle": "Enter your production desk.",
+    "email": "E-mail",
+    "password": "Password",
+    "submit": "Sign in",
+    "submitting": "Signing in…",
+    "forgot": "Forgot your password?",
+    "invalidCredentials": "That e-mail or password is not right",
+    "emailNotVerified": "Verify your e-mail address before signing in.",
+    "checkAndRetry": "Check it and try again.",
+    "progress": "Sign-in progress",
+    "passwordStep": "Password",
+    "verificationStep": "Verification"
+  },
+  "rateLimited": {
+    "message": "Too many attempts",
+    "retryIn": "Try again in {{seconds}} seconds"
+  },
+  "forgot": {
+    "title": "Forgot your password",
+    "hint": "Enter your account e-mail. We will send a reset link.",
+    "email": "E-mail",
+    "submit": "Send reset link",
+    "submitting": "Sending…",
+    "sent": "Check your inbox",
+    "sentHint": "If that address has an account, a reset link is on its way. The link works for 60 minutes.",
+    "back": "Back to sign in"
+  },
+  "reset": {
+    "title": "Set a new password",
+    "intro": "Choose a new password for your account.",
+    "password": "New password",
+    "passwordHint": "At least 12 characters.",
+    "passwordTooShort": "The password needs at least 12 characters.",
+    "confirm": "Repeat the new password",
+    "submit": "Save new password",
+    "submitting": "Saving…",
+    "mismatch": "The two passwords do not match.",
+    "success": "Password changed",
+    "successHint": "Every other device was signed out. Sign in again with your new password.",
+    "goToLogin": "Sign in",
+    "missingToken": "This reset link cannot be used",
+    "missingTokenHint": "The link expired or was already used. Request a new one to continue.",
+    "requestNew": "Request a new link"
+  }
+}
