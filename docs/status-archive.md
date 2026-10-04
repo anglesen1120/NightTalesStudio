@@ -4,6 +4,20 @@ History moved out of STATUS.md to keep the live file small. The initial archive 
 
 ## Resume-here history (Current/Previous blocks, Next actions)
 
+### Superseded Session 6 plan section (2026-10-04, Stage A merged as #122 `a2c4a12`; open hand-overs stay in STATUS §Plan 10 hand-overs)
+
+**Recorded 2026-10-04 at the owner's request.** Runs in a second omp session alongside Session 5 (owner: "the other session runs Session 5; this session takes the next plan"). Plan 10 Stage A–B per [implementation roadmap](../plans/features/10-web-ui/implementation-roadmap.md) §1; dependencies from task headers. Write set is `web/`, `.github/workflows/web.yml`, `web/` hosting files and the 10.1.x task files only — **no `src/`, `tests/`, `prompts/` or migration changes**, so it cannot collide with the Session 5 lanes. Session 5 must not start any 10.x task; Session 6 must not start any 02.x/09.x/11.x task.
+
+| Wave | Tasks | Depends on | Tier | Notes |
+|---|---|---|---|---|
+| W1 | 10.1.1-T1 workspace (`ng new`, zoneless, static output, budgets) | — | T1 | Preserve tracked `web/src/assets`, `web/src/content` |
+| W2 | 10.1.1-T2 container + routing · 10.1.2-T1 lint boundaries · 10.1.5-T1 Vitest/Playwright + `web.yml` · 10.1.3-T1 theme + UI kit (`design-ui` agent) | 10.1.1-T1 | T1 (10.1.1-T2: T3, network exposure) | `web.yml` push needs the OAuth `workflow` scope |
+| W3 | 10.1.4-T1 generated API client · 10.1.6-T1 CSP/Trusted Types · 10.2.4-T0 shell UI design · 10.2.5-T1 Transloco | W2 (+ 10.2.4-T0 for 10.2.5-T1) | T1 / T3 (10.1.6-T1) | 10.2.4-T0 needs owner approval before 10.2.4-T1/10.2.6-T1 |
+
+**Working method:** worktree per task `../nts-wt/<task-id>`, branch `feature/<task-id>-s6`; every wave merges into one combined branch `feature/s6-web-stage-a` (one PR into `develop`, the owner merges). Verification is the web toolchain (`npm ci`, `npm run build`, `npm run lint`, `npm run test:ci`); `gate.sh` is not needed while no .NET path changes. Gates per `~/.omp/agent/RULES.md` (QA agent first, then reviews). STATUS conflicts with Session 5 rows are additive.
+
+**Outcome:** all W1–W3 tasks merged in #122 (CI 5/5); worktrees and `*-s6` branches removed; Session 6 claim released (`nts-wt/SESSION-CLAIMS.md`).
+
 ### Superseded Session 5 step-0 block (2026-10-04, before the Session 5 combined PR)
 
 - **Current (2026-10-03).** Session 4 next wave merged as one combined PR (#119 → `develop` `c004846`): 09.2.5-T2 owner seed, 02.3.4-T1 quality checker, 02.2.1-T2 OpenAI text client + writer, 02.2.2-T2 generate-story command, 02.5.1-T1 sources + fetch tasks. Each branch closed its tier gates; combined tip: local full gate green, integration review 0 findings. CI `integration` on #119 hung and was cancelled (Session 5 step 0).
