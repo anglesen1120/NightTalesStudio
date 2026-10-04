@@ -43,4 +43,15 @@ public sealed class HttpClientFactoryTests
 
         client.Timeout.ShouldBe(Timeout.InfiniteTimeSpan);
     }
+
+    // QUIC (HTTP/3) does not use ConnectCallback, so the address validator would be bypassed. Pinning the request to
+    // 2.0 with RequestVersionOrLower keeps every connection on 1.1/2; this test makes the pin explicit.
+    [Fact]
+    public void CreateGet_PinsHttp2_OrLower_NeverHttp3()
+    {
+        using var request = SafeHttp.CreateGet(new Uri("https://example.com/"), "ua", SafeHttp.PageAccept, null);
+
+        request.Version.ShouldBe(HttpVersion.Version20);
+        request.VersionPolicy.ShouldBe(HttpVersionPolicy.RequestVersionOrLower);
+    }
 }

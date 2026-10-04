@@ -15,7 +15,8 @@ namespace NightTales.Infrastructure.Research.Http;
 /// The optional <c>endpointFor</c> maps a validated address and the requested port to the endpoint to dial. Production
 /// passes none (the endpoint is the validated address and the requested port); the loopback test server uses it to
 /// listen on a random port while the URL keeps the only ports a source URL may have, 80 and 443. It runs after the
-/// address check and cannot widen what <see cref="IAddressValidator"/> allows (D20).
+/// address check and is not checked by <see cref="IAddressValidator"/>: it can return any endpoint, so production code
+/// must never pass one (D20). The hook is public only because this solution has no <c>InternalsVisibleTo</c>.
 /// </remarks>
 public sealed partial class SafeHttpConnector(
     IDnsResolver dns,

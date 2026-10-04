@@ -44,8 +44,12 @@ public sealed class GlobalUnicastAddressValidatorTests
     }
 
     [Fact]
-    public void TheTablesHoldEveryCidrOfTheSpec() =>
-        (GlobalUnicastAddressValidator.BlockedIpv4.Count + GlobalUnicastAddressValidator.BlockedIpv6.Count).ShouldBe(38);
+    public void TheTablesHoldEveryCidrOfTheSpec()
+    {
+        (GlobalUnicastAddressValidator.BlockedIpv4.Count + GlobalUnicastAddressValidator.BlockedIpv6.Count).ShouldBe(40);
+        GlobalUnicastAddressValidator.BlockedIpv6.ShouldContain(("::ffff:0:0:0/96", "ipv4_translated"));
+        GlobalUnicastAddressValidator.BlockedIpv6.ShouldContain(("100:0:0:1::/64", "ipv4v6_translation"));
+    }
 
     [Theory]
     [InlineData("127.0.0.1")]
@@ -136,6 +140,26 @@ public sealed class GlobalUnicastAddressValidatorTests
     [InlineData("2606:2800:220:1:248:1893:25c8:1946")]
     [InlineData("2a00:1450:4001:81b::200e")]
     public void IsAllowed_PublicV6_True(string address) => Validator.IsAllowed(IPAddress.Parse(address), out _).ShouldBeTrue(address);
+
+    // F3: a v6 is allowed only inside 2000::/3 and outside the table; the default-allow of the table alone is not enough.
+    [Theory]
+    [InlineData("4000::1")]
+    [InlineData("8000::1")]
+    [InlineData("c000::1")]
+    [InlineData("e000::1")]
+    [InlineData("::ffff:0:10.0.0.1")]
+    [InlineData("100:0:0:1::1")]
+    public void IsAllowed_V6OutsideGlobalUnicast_False(string address)
+    {
+        Validator.IsAllowed(IPAddress.Parse(address), out var reason).ShouldBeFalse(address);
+        reason.ShouldBe("not_global_unicast", address);
+    }
+
+    [Theory]
+    [InlineData("2000::1")]
+    [InlineData("3ffe:ffff::1")]
+    public void IsAllowed_V6EdgesOf2000Slash3_True(string address) =>
+        Validator.IsAllowed(IPAddress.Parse(address), out _).ShouldBeTrue(address);
 
     [Fact]
     public void IsAllowed_ScopedV6_False()

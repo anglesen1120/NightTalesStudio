@@ -6,8 +6,9 @@ namespace NightTales.Infrastructure.Research.Http;
 
 /// <summary>
 /// The production <see cref="IAddressValidator"/> (02 D11 "global unicast only", F14; 02.5.2-T1 Design): normalise the
-/// address, then reject it when it falls in a block table. The IANA special-purpose registry is a closed list and every
-/// non-global entry is in the tables, so the default is to allow. There is no loopback or private-network bypass here
+/// address, then allow an IPv4 address that is in no IPv4 block row, and an IPv6 address only when it is inside
+/// <c>2000::/3</c> (the global unicast block) and in no IPv6 block row. Any other IPv6 address is rejected before the table
+/// is consulted. There is no loopback or private-network bypass here
 /// (D20): the test double lives in <c>NightTales.TestKit</c>.
 /// </summary>
 /// <remarks>
@@ -43,9 +44,11 @@ public sealed class GlobalUnicastAddressValidator : IAddressValidator
         ("::/128", "unspecified"),
         ("::1/128", "loopback"),
         ("::/96", "ipv4_compatible"),
+        ("::ffff:0:0:0/96", "ipv4_translated"),
         ("64:ff9b::/96", "nat64"),
         ("64:ff9b:1::/48", "nat64_local"),
         ("100::/64", "discard_only"),
+        ("100:0:0:1::/64", "ipv4v6_translation"),
         ("2001::/32", "teredo"),
         ("2001:1::1/128", "protocol_assignment"),
         ("2001:1::2/128", "protocol_assignment"),
@@ -91,6 +94,16 @@ public sealed class GlobalUnicastAddressValidator : IAddressValidator
         if (!address.TryWriteBytes(bytes, out var written))
         {
             reason = "unreadable_address";
+            return false;
+        }
+
+        // Positive check first (02.5.2-T1 §address rule): a v6 is a global unicast candidate only inside 2000::/3.
+        // Anything else is rejected here and never reaches the table; the table then catches the bad ranges inside
+        // 2000::/3 and keeps the full IANA list for auditability. An IPv4-mapped address was unwrapped above and is
+        // judged as its IPv4 address, so it never meets this check.
+        if (written == 16 && (bytes[0] & 0xE0) != 0x20)
+        {
+            reason = "not_global_unicast";
             return false;
         }
 
