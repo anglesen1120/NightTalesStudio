@@ -1,25 +1,22 @@
+using AngleSharp.Dom;
+using AngleSharp.Html.Dom;
+using AngleSharp.Html.Parser;
 using NightTales.Domain.Research;
 
 namespace NightTales.Infrastructure.Research.Extraction;
 
 /// <summary>
-/// The pre-parse guard of the extract phase (02.5.2-T1 T105, SEC-0928-1): a streaming tokenizer that counts elements and
-/// nesting depth over the decoded HTML <em>without building a DOM</em>, so a pathological document is rejected before
-/// AngleSharp sees it — a <see cref="StackOverflowException"/> in the parser cannot be caught, so the depth check must run
-/// first. Memory is bounded: the open-element stack never holds more than <c>maxDepth + 1</c> names.
+/// The pre-extract guard of the extract phase (02.5.2-T1 T105, SEC-0928-1). It measures the <em>real</em> DOM instead of
+/// approximating the HTML tokenizer: the document is parsed by AngleSharp's <see cref="HtmlParser"/> (an explicit-stack
+/// tree builder, so the parse itself does not recurse and its cost is bounded by the byte cap the caller already
+/// enforced), the element cap aborts the parse as soon as it is crossed, and the depth cap is checked by an iterative
+/// walk (explicit stack, no recursion). Anything the real tokenizer and tree builder do — self-closing flags on non-void
+/// elements, foreign content, abruptly closed comments, mismatched end tags, odd quoting — is therefore counted exactly,
+/// because the count comes from the tree they built. A <see cref="StackOverflowException"/> cannot be caught, so a
+/// document over the depth cap must never reach a recursive consumer.
 /// </summary>
 public static class HtmlBudgetGuard
 {
-    private static readonly HashSet<string> VoidElements = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr",
-    };
-
-    private static readonly HashSet<string> RawTextElements = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "script", "style", "textarea", "title",
-    };
-
     /// <summary>Throws <c>source_too_large</c> when <paramref name="html"/> exceeds either bound.</summary>
     /// <param name="html">The decoded HTML.</param>
     /// <param name="maxElements">The most elements allowed (<c>Fetcher:ExtractMaxElements</c>).</param>
@@ -27,142 +24,94 @@ public static class HtmlBudgetGuard
     /// <exception cref="SourceFetchException"><c>source_too_large</c>: a bound is exceeded.</exception>
     public static void Check(string html, int maxElements, int maxDepth)
     {
+        using var document = Parse(html, maxElements, maxDepth);
+    }
+
+    /// <summary>
+    /// Parses <paramref name="html"/> and returns the document only when it is within both bounds, so the caller can
+    /// hand the already-checked tree to its consumer instead of parsing a second time.
+    /// </summary>
+    /// <param name="html">The decoded HTML.</param>
+    /// <param name="maxElements">The most elements allowed, counting the implied <c>html</c>, <c>head</c> and <c>body</c>.</param>
+    /// <param name="maxDepth">The deepest element nesting allowed; <c>html</c> is depth 1.</param>
+    /// <returns>The parsed document; the caller disposes it.</returns>
+    /// <exception cref="SourceFetchException"><c>source_too_large</c>: a bound is exceeded.</exception>
+    public static IHtmlDocument Parse(string html, int maxElements, int maxDepth)
+    {
         ArgumentNullException.ThrowIfNull(html);
 
+        var created = 0;
+        IElement? previous = null;
+        var parser = new HtmlParser(new HtmlParserOptions
+        {
+            // Aborts a hostile document while it is being built instead of after: the parse is superlinear in depth (50,000
+            // nested elements cost seconds), so waiting for the finished tree would spend the watchdog on it. An element is
+            // not attached yet when this fires, but the one created before it is, so its real ancestor count is read here.
+            OnCreated = (element, _) =>
+            {
+                if (++created > maxElements || (previous is not null && DepthOf(previous, maxDepth) > maxDepth))
+                {
+                    throw new SourceFetchException(SourceErrors.SourceTooLarge);
+                }
+
+                previous = element;
+            },
+        });
+
+        var document = parser.ParseDocument(html);
+
+        // A rejected document is dropped, not disposed: it can be as deep as the element cap allows.
+        EnsureWithinBounds(document, maxElements, maxDepth);
+
+        return document;
+    }
+
+    // The element's real ancestor count (itself included), counting no further than the cap is exceeded.
+    private static int DepthOf(IElement element, int maxDepth)
+    {
+        var depth = 1;
+        for (var parent = element.ParentElement; parent is not null && depth <= maxDepth; parent = parent.ParentElement)
+        {
+            depth++;
+        }
+
+        return depth;
+    }
+
+    // Iterative on purpose: the tree may be as deep as the element cap before it is rejected. A <template>'s children
+    // live in its content fragment, not in ChildNodes, so the walk enters that too.
+    private static void EnsureWithinBounds(IDocument document, int maxElements, int maxDepth)
+    {
         var elements = 0;
-        var open = new List<string>();
-        var index = 0;
+        var pending = new Stack<(INode Node, int Depth)>();
+        pending.Push((document, 0));
 
-        while (index < html.Length)
+        while (pending.TryPop(out var current))
         {
-            var lt = html.IndexOf('<', index);
-            if (lt < 0 || lt + 1 >= html.Length)
+            Visit(current.Node.ChildNodes, current.Depth);
+
+            if (current.Node is IHtmlTemplateElement template)
             {
-                return;
+                Visit(template.Content.ChildNodes, current.Depth);
             }
+        }
 
-            var next = html[lt + 1];
-            if (next == '!')
+        void Visit(INodeList children, int parentDepth)
+        {
+            foreach (var child in children)
             {
-                index = SkipComment(html, lt);
-                continue;
-            }
-
-            if (next == '?')
-            {
-                index = IndexAfter(html, '>', lt + 2);
-                continue;
-            }
-
-            var closing = next == '/';
-            var nameStart = lt + (closing ? 2 : 1);
-            if (nameStart >= html.Length || !char.IsAsciiLetter(html[nameStart]))
-            {
-                index = lt + 1;
-                continue;
-            }
-
-            var nameEnd = nameStart;
-            while (nameEnd < html.Length && IsNameChar(html[nameEnd]))
-            {
-                nameEnd++;
-            }
-
-            var name = html[nameStart..nameEnd].ToLowerInvariant();
-            var tagEnd = SkipTag(html, nameEnd, out var selfClosing);
-
-            if (closing)
-            {
-                var at = open.LastIndexOf(name);
-                if (at >= 0)
+                if (child is not IElement)
                 {
-                    open.RemoveRange(at, open.Count - at);
+                    continue;
                 }
 
-                index = tagEnd;
-                continue;
-            }
-
-            elements++;
-            if (elements > maxElements)
-            {
-                throw new SourceFetchException(SourceErrors.SourceTooLarge);
-            }
-
-            if (VoidElements.Contains(name) || selfClosing)
-            {
-                index = tagEnd;
-                continue;
-            }
-
-            open.Add(name);
-            if (open.Count > maxDepth)
-            {
-                throw new SourceFetchException(SourceErrors.SourceTooLarge);
-            }
-
-            index = RawTextElements.Contains(name) ? SkipRawText(html, tagEnd, name) : tagEnd;
-        }
-    }
-
-    private static bool IsNameChar(char c) => char.IsAsciiLetterOrDigit(c) || c is '-' or ':' or '_';
-
-    private static int IndexAfter(string html, char c, int from)
-    {
-        var at = html.IndexOf(c, from);
-
-        return at < 0 ? html.Length : at + 1;
-    }
-
-    private static int SkipComment(string html, int lt)
-    {
-        if (string.CompareOrdinal(html, lt, "<!--", 0, 4) == 0)
-        {
-            var end = html.IndexOf("-->", lt + 4, StringComparison.Ordinal);
-
-            return end < 0 ? html.Length : end + 3;
-        }
-
-        return IndexAfter(html, '>', lt + 2);
-    }
-
-    // Walks the attributes honouring quotes, so a '>' inside a value does not end the tag.
-    private static int SkipTag(string html, int from, out bool selfClosing)
-    {
-        selfClosing = false;
-        var quote = '\0';
-        for (var i = from; i < html.Length; i++)
-        {
-            var c = html[i];
-            if (quote != '\0')
-            {
-                if (c == quote)
+                if (++elements > maxElements || parentDepth + 1 > maxDepth)
                 {
-                    quote = '\0';
+                    throw new SourceFetchException(SourceErrors.SourceTooLarge);
                 }
 
-                continue;
-            }
-
-            if (c is '"' or '\'')
-            {
-                quote = c;
-            }
-            else if (c == '>')
-            {
-                selfClosing = i > from && html[i - 1] == '/';
-
-                return i + 1;
+                pending.Push((child, parentDepth + 1));
             }
         }
-
-        return html.Length;
-    }
-
-    private static int SkipRawText(string html, int from, string name)
-    {
-        var end = html.IndexOf("</" + name, from, StringComparison.OrdinalIgnoreCase);
-
-        return end < 0 ? html.Length : end;
     }
 }

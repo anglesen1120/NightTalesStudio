@@ -51,6 +51,11 @@ public sealed partial class SafeHttpSourceFetcher(
     private const int SniffBytes = 512;
     private const int MetaScanBytes = 4096;
 
+    // The most extractions that may be alive at once, timed-out ones included (see ExtractAsync).
+    private const int MaxInFlightExtractions = 4;
+
+    // A counting slot, not a SemaphoreSlim: it owns nothing disposable, so an abandoned worker can always release it.
+    private int _extractionsInFlight;
     private readonly FetcherOptions _options = opt.Value;
     private readonly string _userAgent = SafeHttp.UserAgent(opt.Value);
 
@@ -237,16 +242,51 @@ public sealed partial class SafeHttpSourceFetcher(
 
     private async Task<ArticleExtraction> ExtractAsync(string html, Uri uri, string? mediaType, string domain, CancellationToken ct)
     {
-        // T105: the guard rejects a pathological document before any DOM is built.
-        HtmlBudgetGuard.Check(html, _options.ExtractMaxElements, _options.ExtractMaxDepth);
+        // T105 / F2: the parse cannot be interrupted, so the number of extractions that are alive is bounded instead. The
+        // slot is released by the worker itself when its thread ends — never on timeout — so a hostile page cannot start
+        // another parse while abandoned ones still run. A full house is answered, not queued, and starts no thread.
+        if (Interlocked.Increment(ref _extractionsInFlight) > MaxInFlightExtractions)
+        {
+            Interlocked.Decrement(ref _extractionsInFlight);
+            LogExtractBusy(domain);
 
-        // The parse is synchronous and outside the request budget: run it on a dedicated worker with a watchdog.
+            throw new SourceFetchException(SourceErrors.SourceNoText);
+        }
+
         using var worker = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        var work = Task.Factory.StartNew(
-            () => extractor.Extract(html, uri, mediaType, worker.Token),
-            worker.Token,
-            TaskCreationOptions.LongRunning,
-            TaskScheduler.Default);
+        var token = worker.Token;
+        Task<ArticleExtraction> work;
+        try
+        {
+            // CancellationToken.None to StartNew on purpose: the delegate must always run so its finally releases the slot.
+            work = Task.Factory.StartNew(
+                () =>
+                {
+                    try
+                    {
+                        token.ThrowIfCancellationRequested();
+
+                        // The guard measures the real DOM, so it runs on the watchdogged worker too (the extractor parses
+                        // again from the same string; a rejected document never reaches SmartReader).
+                        HtmlBudgetGuard.Check(html, _options.ExtractMaxElements, _options.ExtractMaxDepth);
+
+                        return extractor.Extract(html, uri, mediaType, token);
+                    }
+                    finally
+                    {
+                        Interlocked.Decrement(ref _extractionsInFlight);
+                    }
+                },
+                CancellationToken.None,
+                TaskCreationOptions.LongRunning,
+                TaskScheduler.Default);
+        }
+        catch
+        {
+            Interlocked.Decrement(ref _extractionsInFlight);
+
+            throw;
+        }
 
         try
         {
@@ -345,6 +385,9 @@ public sealed partial class SafeHttpSourceFetcher(
 
     [LoggerMessage(EventId = 3, Level = LogLevel.Warning, Message = "fetch extract_timeout for {Domain}")]
     private partial void LogExtractTimeout(string domain);
+
+    [LoggerMessage(EventId = 5, Level = LogLevel.Warning, Message = "fetch extract_busy for {Domain}")]
+    private partial void LogExtractBusy(string domain);
 
     [LoggerMessage(EventId = 4, Level = LogLevel.Warning, Message = "fetch failed unexpectedly: {ExceptionType}")]
     private partial void LogUnexpected(string exceptionType);

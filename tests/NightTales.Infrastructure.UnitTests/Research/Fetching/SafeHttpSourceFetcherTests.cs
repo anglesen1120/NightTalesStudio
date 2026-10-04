@@ -498,6 +498,75 @@ public sealed class SafeHttpSourceFetcherTests
         h.Logs.Lines.ShouldContain(line => line.Contains("extract_timeout", StringComparison.Ordinal));
     }
 
+    // CR-06 / PERF-01 / F2: the watchdog cannot stop a parser, so a timed-out worker keeps its in-flight slot until its
+    // thread really ends. While the slots are full a fetch is answered at once and starts no thread.
+    [Fact]
+    public async Task Fetch_TimedOutExtractions_KeepTheirSlots_AndAFullHouseStartsNoNewWorker()
+    {
+        var gate = new GateExtractor();
+        await using var h = FetchHarness.Create(_ => Page(Article("Mùa thu", VietnameseParagraphs)), o => o.ExtractTimeoutSeconds = 1, extractor: gate);
+        try
+        {
+            // Fill every slot with an extraction that ignores its token, as SmartReader does mid-parse.
+            var filling = Enumerable.Range(0, 4).Select(_ => h.FetchAsync(ct: TestContext.Current.CancellationToken).AsTask()).ToArray();
+            foreach (var result in await Task.WhenAll(filling))
+            {
+                Code(result).ShouldBe(SourceErrors.SourceNoTextCode);
+            }
+
+            gate.Started.ShouldBe(4);
+            gate.Finished.ShouldBe(0);
+
+            var clock = Stopwatch.StartNew();
+            Code(await h.FetchAsync(ct: TestContext.Current.CancellationToken)).ShouldBe(SourceErrors.SourceNoTextCode);
+
+            clock.Elapsed.ShouldBeLessThan(TimeSpan.FromSeconds(1), "a full house must not wait for the watchdog");
+            gate.Started.ShouldBe(4, "no fifth worker may start while four are alive");
+            h.Logs.Lines.ShouldContain(line => line.Contains("extract_busy", StringComparison.Ordinal));
+
+            // The threads end: the slots come back and extraction runs again.
+            gate.Release();
+            var deadline = Stopwatch.StartNew();
+            while (gate.Started < 5 && deadline.Elapsed < TimeSpan.FromSeconds(10))
+            {
+                _ = await h.FetchAsync(ct: TestContext.Current.CancellationToken);
+            }
+
+            gate.Started.ShouldBe(5);
+        }
+        finally
+        {
+            gate.Release();
+        }
+    }
+
+    [Fact]
+    public async Task Fetch_GuardRejections_ReleaseTheirSlots()
+    {
+        var html = "<html><body>" + string.Concat(Enumerable.Repeat("<div/>", 1_000)) + "x";
+        await using var h = FetchHarness.Create(_ => Page(html));
+
+        // More rejections than slots: each must still be source_too_large, never the full-house answer.
+        for (var i = 0; i < 12; i++)
+        {
+            Code(await h.FetchAsync(ct: TestContext.Current.CancellationToken)).ShouldBe(SourceErrors.SourceTooLargeCode);
+        }
+    }
+
+    [Fact]
+    public async Task Fetch_ExtractorFailures_ReleaseTheirSlots()
+    {
+        var extractor = new StubExtractor(_ => throw new InvalidOperationException("boom"));
+        await using var h = FetchHarness.Create(_ => Page(Article("Mùa thu", VietnameseParagraphs)), extractor: extractor);
+
+        for (var i = 0; i < 12; i++)
+        {
+            Code(await h.FetchAsync(ct: TestContext.Current.CancellationToken)).ShouldBe(SourceErrors.SourceUnreachableCode);
+        }
+
+        extractor.Calls.ShouldBe(12);
+    }
+
     [Fact]
     public async Task Fetch_ExtractorThrows_ReturnsSourceUnreachable_LogsOnlyTheExceptionType()
     {
@@ -574,6 +643,29 @@ public sealed class SafeHttpSourceFetcherTests
         {
             ct.WaitHandle.WaitOne(TimeSpan.FromSeconds(30));
             ct.ThrowIfCancellationRequested();
+
+            return new ArticleExtraction(null, string.Empty, 0, IsMainTextFound: false);
+        }
+    }
+
+    // Ignores its token until released, like a parser in the middle of GetArticle().
+    private sealed class GateExtractor : IArticleExtractor
+    {
+        private readonly TaskCompletionSource _release = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private int _started;
+        private int _finished;
+
+        public int Started => Volatile.Read(ref _started);
+
+        public int Finished => Volatile.Read(ref _finished);
+
+        public void Release() => _release.TrySetResult();
+
+        public ArticleExtraction Extract(string html, Uri url, string? contentType, CancellationToken ct)
+        {
+            _ = Interlocked.Increment(ref _started);
+            _ = _release.Task.Wait(TimeSpan.FromSeconds(60), CancellationToken.None);
+            _ = Interlocked.Increment(ref _finished);
 
             return new ArticleExtraction(null, string.Empty, 0, IsMainTextFound: false);
         }
