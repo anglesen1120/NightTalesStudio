@@ -1,5 +1,6 @@
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
+import { PLATFORM_ID } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { TranslocoService } from '@jsverse/transloco';
 import { PreferencesStore } from '@core/prefs';
@@ -11,9 +12,15 @@ import { provideAppI18n } from './transloco.config';
 const INSTANT = Date.UTC(2026, 9, 4, 14, 30); // 2026-10-04T14:30Z = 21:30 in Asia/Ho_Chi_Minh
 const DATE_UTC: Intl.DateTimeFormatOptions = { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'UTC' };
 
-function setup(): LocaleService {
+function setup(platform: 'browser' | 'server' = 'browser'): LocaleService {
   TestBed.configureTestingModule({
-    providers: [...ZONELESS_TEST_PROVIDERS, provideHttpClient(), provideHttpClientTesting(), provideAppI18n()],
+    providers: [
+      ...ZONELESS_TEST_PROVIDERS,
+      provideHttpClient(),
+      provideHttpClientTesting(),
+      provideAppI18n(),
+      { provide: PLATFORM_ID, useValue: platform },
+    ],
   });
   return TestBed.inject(LocaleService);
 }
@@ -46,6 +53,25 @@ describe('LocaleService', () => {
     }
   });
 
+  describe('resolveStartup (never reads the build host on the server platform)', () => {
+    afterEach(() => vi.unstubAllGlobals());
+
+    it('browser platform follows navigator.languages', () => {
+      vi.stubGlobal('navigator', { languages: ['en-NZ'] });
+      expect(setup('browser').resolveStartup(null)).toBe('en');
+    });
+
+    it('server platform ignores navigator.languages and resolves to the default vi', () => {
+      vi.stubGlobal('navigator', { languages: ['en-NZ'] });
+      expect(setup('server').resolveStartup(null)).toBe('vi');
+    });
+
+    it('server platform still honours an explicit profile locale', () => {
+      vi.stubGlobal('navigator', { languages: ['vi-VN'] });
+      expect(setup('server').resolveStartup('en')).toBe('en');
+    });
+  });
+
   describe('activate', () => {
     it('sets Transloco, <html lang>, the signal and the saved preference', () => {
       const locale = setup();
@@ -74,23 +100,6 @@ describe('LocaleService', () => {
       expect(TestBed.inject(PreferencesStore).savedUiLanguage()).toBeNull();
       expect(document.documentElement.lang).toBe('en');
       expect(TestBed.inject(TranslocoService).getActiveLang()).toBe('en');
-    });
-
-    it('keeps the local locale when persistence fails (storage unavailable)', () => {
-      const locale = setup();
-      vi.stubGlobal('localStorage', {
-        getItem: () => null,
-        setItem: () => {
-          throw new Error('quota');
-        },
-      });
-      try {
-        locale.activate('en', { persist: true });
-        expect(locale.locale()).toBe('en');
-        expect(document.documentElement.lang).toBe('en');
-      } finally {
-        vi.unstubAllGlobals();
-      }
     });
   });
 

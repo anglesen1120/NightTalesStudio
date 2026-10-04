@@ -16,7 +16,7 @@ export const appConfig: ApplicationConfig = {
     provideBrowserGlobalErrorListeners(),
     provideZonelessChangeDetection(),
     provideRouter(routes),
-    // Same-origin HttpClient for the i18n loader; interceptors and the generated client arrive with 10.1.4-T1.
+    // Same-origin HttpClient for the i18n loader; the session and idempotency interceptors arrive with 10.2.1-T1/10.2.3-T1.
     provideHttpClient(withFetch()),
     provideAppI18n(),
     // Read preferences once, then apply the validated theme and the initial language before the first view renders.
@@ -25,9 +25,9 @@ export const appConfig: ApplicationConfig = {
       const prefs = inject(PreferencesStore);
       prefs.read();
       inject(ThemeStore).init();
+      // The server platform (prerender) never reads the build host's locale: `resolveStartup` yields `vi` there.
       const locale = inject(LocaleService);
-      const browserLangs = typeof navigator === 'undefined' ? [] : navigator.languages;
-      locale.activate(locale.resolveInitial(null, prefs.savedUiLanguage(), browserLangs), { persist: false });
+      locale.activate(locale.resolveStartup(null), { persist: false });
     }),
   ],
 };

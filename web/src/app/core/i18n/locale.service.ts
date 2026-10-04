@@ -1,5 +1,5 @@
-import { DOCUMENT } from '@angular/common';
-import { Injectable, inject, signal } from '@angular/core';
+import { DOCUMENT, isPlatformServer } from '@angular/common';
+import { Injectable, PLATFORM_ID, inject, signal } from '@angular/core';
 import { TranslocoService } from '@jsverse/transloco';
 import { PreferencesStore } from '@core/prefs';
 import { DEFAULT_LOCALE, LOCALE_TAG, isAppLocale, type AppLocale } from './locale.model';
@@ -44,6 +44,7 @@ export class LocaleService {
   private readonly transloco = inject(TranslocoService);
   private readonly prefs = inject(PreferencesStore);
   private readonly document = inject(DOCUMENT);
+  private readonly server = isPlatformServer(inject(PLATFORM_ID));
 
   private readonly localeState = signal<AppLocale>(DEFAULT_LOCALE);
   readonly locale = this.localeState.asReadonly();
@@ -65,6 +66,18 @@ export class LocaleService {
       if (isAppLocale(primary)) return primary;
     }
     return DEFAULT_LOCALE;
+  }
+
+  /**
+   * The language to start with, before the first view renders. In the browser: `resolveInitial` over the saved
+   * preference and `navigator.languages`. On the server platform (prerender) nothing of the build host is read —
+   * neither its `navigator` (Node defines one that mirrors the host locale) nor its storage — so the page gets
+   * `profile` or the default `vi`; a per-language route (10.3.1-T1, README D12) activates its own language.
+   */
+  resolveStartup(profile: unknown): AppLocale {
+    if (this.server) return this.resolveInitial(profile, null, []);
+    const browserLangs = typeof navigator === 'undefined' ? [] : navigator.languages;
+    return this.resolveInitial(profile, this.prefs.savedUiLanguage(), browserLangs);
   }
 
   /**

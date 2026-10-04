@@ -31,6 +31,23 @@ describe('LocaleService persistence', () => {
     expect(localStorage.length).toBe(0);
   });
 
+  it('keeps the local locale when persistence fails (storage unavailable)', () => {
+    const locale = TestBed.inject(LocaleService);
+    vi.stubGlobal('localStorage', {
+      getItem: () => null,
+      setItem: () => {
+        throw new Error('quota');
+      },
+    });
+    try {
+      locale.activate('en', { persist: true });
+      expect(locale.locale()).toBe('en');
+      expect(document.documentElement.lang).toBe('en');
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it('formatting never writes', () => {
     const locale = TestBed.inject(LocaleService);
     locale.formatDate(Date.now());
