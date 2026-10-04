@@ -33,4 +33,29 @@ describe('PageHeader', () => {
       expect(TestBed.inject(Router).url).toBe('/');
     });
   }
+
+  for (const nonPath of ['javascript:alert(1)', 'data:text/html,x', 'relative/path', '']) {
+    it(`rejects non-absolute-path backHref "${nonPath}"`, async () => {
+      await TestBed.configureTestingModule({ imports: [Host, uiTestingTranslations()], providers: [provideRouter([])] }).compileComponents();
+      const fixture = TestBed.createComponent(Host);
+      fixture.componentInstance.href = nonPath;
+      fixture.detectChanges();
+      await fixture.whenStable();
+      expect(fixture.nativeElement.querySelector('a')).toBeNull();
+    });
+  }
+
+  for (const smuggled of ['/\t/evil.example', '/\n/evil.example']) {
+    it(`never renders a cross-origin href for ${JSON.stringify(smuggled)}`, async () => {
+      await TestBed.configureTestingModule({ imports: [Host, uiTestingTranslations()], providers: [provideRouter([])] }).compileComponents();
+      const fixture = TestBed.createComponent(Host);
+      fixture.componentInstance.href = smuggled;
+      fixture.detectChanges();
+      await fixture.whenStable();
+      const anchor = fixture.nativeElement.querySelector('a') as HTMLAnchorElement | null;
+      if (anchor !== null) {
+        expect(new URL(anchor.href, document.baseURI).origin).toBe(location.origin);
+      }
+    });
+  }
 });

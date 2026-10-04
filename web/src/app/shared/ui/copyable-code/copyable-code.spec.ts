@@ -32,4 +32,20 @@ describe('CopyableCode', () => {
     await fixture.whenStable();
     expect(fixture.nativeElement.querySelector('[aria-live="polite"]').textContent).toContain('Không thể sao chép');
   });
+
+  it('announces the fallback when writeText rejects and shows no result before any click', async () => {
+    const writeText = vi.fn().mockRejectedValue(new Error('denied'));
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
+    await TestBed.configureTestingModule({ imports: [CopyableCode, uiTestingTranslations()] }).compileComponents();
+    const fixture = TestBed.createComponent(CopyableCode);
+    fixture.componentRef.setInput('value', 'RECOVERY-03');
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(fixture.nativeElement.querySelector('[aria-live="polite"]').textContent.trim()).toBe('');
+    (fixture.nativeElement.querySelector('button') as HTMLButtonElement).click();
+    await fixture.whenStable();
+    expect(writeText).toHaveBeenCalledWith('RECOVERY-03');
+    expect(fixture.nativeElement.querySelector('[aria-live="polite"]').textContent).toContain('Không thể sao chép');
+    expect(fixture.nativeElement.querySelector('[aria-live="polite"]').textContent).not.toContain('Đã sao chép');
+  });
 });

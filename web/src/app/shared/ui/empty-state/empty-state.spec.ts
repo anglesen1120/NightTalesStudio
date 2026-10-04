@@ -19,4 +19,15 @@ describe('EmptyState', () => {
     (fixture.nativeElement.querySelector('button') as HTMLButtonElement).click();
     expect(action).toHaveBeenCalledOnce();
   });
+
+  it('renders no body and no action button when those inputs are absent', async () => {
+    await TestBed.configureTestingModule({ imports: [EmptyState, uiTestingTranslations()] }).compileComponents();
+    const fixture = TestBed.createComponent(EmptyState);
+    fixture.componentRef.setInput('titleKey', 'core.ui.emptyState.title');
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(fixture.nativeElement.querySelector('button')).toBeNull();
+    expect(fixture.nativeElement.querySelector('p')).toBeNull();
+    expect(fixture.nativeElement.querySelectorAll('h2')).toHaveLength(1);
+  });
 });

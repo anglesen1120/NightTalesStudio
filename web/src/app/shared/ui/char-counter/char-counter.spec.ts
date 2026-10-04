@@ -22,4 +22,16 @@ describe('CharCounter', () => {
       expect(fixture.nativeElement.querySelector('input').getAttribute('aria-describedby')).toBe(counter.querySelector('span').id);
     });
   }
+
+  for (const [value, announced] of [[10, false], [11, true]] as const) {
+    it(`${announced ? 'announces' : 'does not announce'} the over-limit text at ${value}/10`, async () => {
+      await TestBed.configureTestingModule({ imports: [Host, uiTestingTranslations()] }).compileComponents();
+      const fixture = TestBed.createComponent(Host);
+      fixture.componentInstance.value = value;
+      fixture.detectChanges();
+      await fixture.whenStable();
+      const text: string = fixture.nativeElement.querySelector('nts-char-counter').textContent;
+      expect(text.includes('vượt giới hạn')).toBe(announced);
+    });
+  }
 });

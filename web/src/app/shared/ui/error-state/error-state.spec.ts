@@ -23,4 +23,25 @@ describe('ErrorState', () => {
     expect(log).not.toHaveBeenCalled();
     log.mockRestore();
   });
+
+  it('renders no retry button or trace line when their inputs are absent', async () => {
+    await TestBed.configureTestingModule({ imports: [ErrorState, uiTestingTranslations()] }).compileComponents();
+    const fixture = TestBed.createComponent(ErrorState);
+    fixture.componentRef.setInput('bodyKey', 'core.ui.errorState.body');
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(fixture.nativeElement.querySelector('button')).toBeNull();
+    expect(fixture.nativeElement.querySelector('.error-state__trace')).toBeNull();
+  });
+
+  it('renders a hostile trace id as inert text, never as markup', async () => {
+    await TestBed.configureTestingModule({ imports: [ErrorState, uiTestingTranslations()] }).compileComponents();
+    const fixture = TestBed.createComponent(ErrorState);
+    fixture.componentRef.setInput('bodyKey', 'core.ui.errorState.body');
+    fixture.componentRef.setInput('traceId', '<img src=x onerror=alert(1)>');
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(fixture.nativeElement.querySelector('img')).toBeNull();
+    expect(fixture.nativeElement.querySelector('code')?.textContent).toBe('<img src=x onerror=alert(1)>');
+  });
 });

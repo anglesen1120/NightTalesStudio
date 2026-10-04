@@ -28,4 +28,18 @@ describe('StatusChip', () => {
     expect(fixture.nativeElement.classList.contains('status-chip--neutral')).toBe(true);
     expect(fixture.nativeElement.querySelector('nts-icon-unknown')).not.toBeNull();
   });
+
+  for (const appearance of ['info', 'success', 'warn', 'error'] as const) {
+    it(`keeps unknown codes neutral even when ${appearance} is requested`, async () => {
+      await TestBed.configureTestingModule({ imports: [StatusChip, uiTestingTranslations()] }).compileComponents();
+      const fixture = TestBed.createComponent(StatusChip);
+      fixture.componentRef.setInput('statusKey', 'brand_new_code');
+      fixture.componentRef.setInput('appearance', appearance);
+      fixture.detectChanges();
+      await fixture.whenStable();
+      expect(fixture.nativeElement.classList.contains('status-chip--neutral')).toBe(true);
+      expect(fixture.nativeElement.classList.contains(`status-chip--${appearance}`)).toBe(false);
+      expect(fixture.nativeElement.getAttribute('aria-label')).toBe('Trạng thái chưa xác định');
+    });
+  }
 });
