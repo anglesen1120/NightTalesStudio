@@ -100,31 +100,70 @@ describe('TranslocoHttpLoader', () => {
     http.verify();
   });
 
-  it('resolves {} on HTTP 404 without throwing, logs once, and does not retry', async () => {
+  it('rejects on HTTP 404, logs once, and the next load retries and gets the real JSON', async () => {
     const http = setup();
     const loader = TestBed.inject(TranslocoHttpLoader);
-    let result: unknown;
 
     const logged = await captureConsoleError(async () => {
-      const pending = firstValueFrom(loader.getTranslation('vi', { scope: 'nope' }));
-      http.expectOne('/assets/i18n/nope/vi.json').flush('missing', { status: 404, statusText: 'Not Found' });
-      result = await pending;
-      await firstValueFrom(loader.getTranslation('vi', { scope: 'nope' }));
+      const failed = firstValueFrom(loader.getTranslation('vi', { scope: 'quality' }));
+      http.expectOne('/assets/i18n/quality/vi.json').flush('missing', { status: 404, statusText: 'Not Found' });
+      await expect(failed).rejects.toBeTruthy();
     });
+    expect(logged).toEqual([['i18n scope failed', 'quality', 'vi']]);
 
-    expect(result).toEqual({});
-    expect(logged).toEqual([['i18n scope failed', 'nope', 'vi']]);
-    http.expectNone('/assets/i18n/nope/vi.json');
-    http.verify();
+    const retried = firstValueFrom(loader.getTranslation('vi', { scope: 'quality' }));
+    http.expectOne('/assets/i18n/quality/vi.json').flush(qualityVi);
+    expect(await retried).toEqual(qualityVi);
+
+    await firstValueFrom(loader.getTranslation('vi', { scope: 'quality' }));
+    http.verify(); // the success is cached again: no third request
   });
 
-  it('resolves {} when the body is not an object (offline / parse error path)', async () => {
+  it('does not cache a network error either: failed then succeeded fetch yields the real JSON', async () => {
     const http = setup();
     const loader = TestBed.inject(TranslocoHttpLoader);
     await captureConsoleError(async () => {
-      const pending = firstValueFrom(loader.getTranslation('en', { scope: 'broken' }));
-      http.expectOne('/assets/i18n/broken/en.json').error(new ProgressEvent('error'));
-      expect(await pending).toEqual({});
+      const failed = firstValueFrom(loader.getTranslation('en', { scope: 'quality' }));
+      http.expectOne('/assets/i18n/quality/en.json').error(new ProgressEvent('error'));
+      await expect(failed).rejects.toBeTruthy();
+    });
+
+    const retried = firstValueFrom(loader.getTranslation('en', { scope: 'quality' }));
+    http.expectOne('/assets/i18n/quality/en.json').flush({ hook_missing: 'No hook' });
+    expect(await retried).toEqual({ hook_missing: 'No hook' });
+  });
+
+  describe('input validation', () => {
+    it.each(['../..', 'x/../y', '__proto__', 'Quality', 'a--b', '-a', 'a-', 'a/b', '', 'a.b', '%2e%2e'])(
+      'resolves {} with no request for scope %j',
+      async (scope) => {
+        const http = setup();
+        const loader = TestBed.inject(TranslocoHttpLoader);
+        await captureConsoleError(async () => {
+          expect(await firstValueFrom(loader.getTranslation('vi', { scope }))).toEqual({});
+          expect(await firstValueFrom(loader.getTranslation(`${scope}/en`, { scope }))).toEqual({});
+        });
+        http.expectNone(() => true);
+      },
+    );
+
+    it.each(['fr', 'VI', '__proto__', 'vi.json', '', 'x/__proto__', '../..'])('resolves {} with no request for language %j', async (lang) => {
+      const http = setup();
+      const loader = TestBed.inject(TranslocoHttpLoader);
+      await captureConsoleError(async () => {
+        expect(await firstValueFrom(loader.getTranslation(lang))).toEqual({});
+        expect(await firstValueFrom(loader.getTranslation(lang, { scope: 'quality' }))).toEqual({});
+      });
+      http.expectNone(() => true);
+    });
+
+    it('rejects a hostile scope on the server platform before any bundle lookup', async () => {
+      const http = setup([{ provide: PLATFORM_ID, useValue: 'server' }]);
+      const loader = TestBed.inject(TranslocoHttpLoader);
+      await captureConsoleError(async () => {
+        expect(await firstValueFrom(loader.getTranslation('vi', { scope: '__proto__' }))).toEqual({});
+      });
+      http.expectNone(() => true);
     });
   });
 
@@ -141,15 +180,80 @@ describe('TranslocoHttpLoader', () => {
       http.expectNone(() => true);
     });
 
-    it('takes the error path ({} + dev log, still no HTTP) for a scope that is not bundled', async () => {
+    it('takes the error path (rejects + dev log, still no HTTP) for a scope that is not bundled, and does not cache it', async () => {
       const http = setup([{ provide: PLATFORM_ID, useValue: 'server' }]);
       const loader = TestBed.inject(TranslocoHttpLoader);
       const logged = await captureConsoleError(async () => {
-        expect(await firstValueFrom(loader.getTranslation('vi', { scope: 'series' }))).toEqual({});
+        await expect(firstValueFrom(loader.getTranslation('vi', { scope: 'series' }))).rejects.toThrow('not bundled');
+        await expect(firstValueFrom(loader.getTranslation('vi', { scope: 'series' }))).rejects.toThrow('not bundled');
       });
-      expect(logged).toEqual([['i18n scope failed', 'series', 'vi']]);
+      expect(logged).toEqual([
+        ['i18n scope failed', 'series', 'vi'],
+        ['i18n scope failed', 'series', 'vi'],
+      ]);
       http.expectNone(() => true);
     });
+  });
+});
+
+describe('Transloco service with a failing scope', () => {
+  const notFound = { status: 404, statusText: 'Not Found' };
+
+  it('a scope that fails in vi and in the fallback language rejects once, and the next activation refetches the real JSON', async () => {
+    const http = setup();
+    const transloco = TestBed.inject(TranslocoService);
+    const events: string[] = [];
+    const first = await captureConsoleError(async () => {
+      const core = firstValueFrom(transloco.load('vi'));
+      http.expectOne('/assets/i18n/core/vi.json').flush(coreVi);
+      await core;
+
+      const failed = firstValueFrom(transloco.load('quality/vi')).then(
+        () => events.push('resolved'),
+        (error: unknown) => events.push(`rejected ${(error as Error).name}`),
+      );
+      const requests = http.match(() => true);
+      events.push(`requests: ${urlsOf(requests).join(',')}`);
+      for (const request of requests) request.flush('x', notFound);
+      const fallbackRequests = http.match(() => true);
+      events.push(`fallback requests: ${urlsOf(fallbackRequests).join(',')}`);
+      for (const request of fallbackRequests) request.flush('x', notFound);
+      await failed;
+    });
+    expect(first).toEqual(expect.arrayContaining([['i18n scope failed', 'quality', 'vi'], ['i18n scope failed', 'quality', 'en']]));
+    expect(events).toEqual([
+      'requests: /assets/i18n/quality/vi.json',
+      'fallback requests: /assets/i18n/quality/en.json',
+      'rejected TranslationLoadError',
+    ]);
+
+    const retry = firstValueFrom(transloco.load('quality/vi'));
+    const again = http.match(() => true);
+    expect(urlsOf(again)).toEqual(['/assets/i18n/quality/vi.json']);
+    for (const request of again) request.flush(qualityVi);
+    await retry;
+    expect(transloco.translate('hook_missing', {}, 'quality/vi')).toBe(qualityVi.hook_missing);
+  });
+
+  it('a scope that fails in vi while its en file loads does not reject, stores nothing for vi, and retries on the next load', async () => {
+    const http = setup();
+    const transloco = TestBed.inject(TranslocoService);
+    await captureConsoleError(async () => {
+      const core = firstValueFrom(transloco.load('vi'));
+      http.expectOne('/assets/i18n/core/vi.json').flush(coreVi);
+      await core;
+
+      const loading = firstValueFrom(transloco.load('quality/vi'));
+      http.expectOne('/assets/i18n/quality/vi.json').flush('x', notFound);
+      http.expectOne('/assets/i18n/quality/en.json').flush({ hook_missing: 'No hook' });
+      await loading;
+    });
+    expect(transloco.translate('hook_missing', {}, 'quality/vi')).toBe('quality.hook_missing');
+
+    const retry = firstValueFrom(transloco.load('quality/vi'));
+    http.expectOne('/assets/i18n/quality/vi.json').flush(qualityVi);
+    await retry;
+    expect(transloco.translate('hook_missing', {}, 'quality/vi')).toBe(qualityVi.hook_missing);
   });
 });
 
