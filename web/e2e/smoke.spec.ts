@@ -11,7 +11,8 @@ if (TARGET !== 'dev' && TARGET !== 'container') {
 const CONTAINER = TARGET === 'container';
 
 // What a page that has only the document and its chunks may request (README D13/D17: no polling, no extra fetch).
-const BOOT_RESOURCE_TYPES = ['document', 'script', 'stylesheet'];
+// `font` is the self-hosted Be Vietnam Pro from 10.1.3-T1; every boot response must stay same-origin.
+const BOOT_RESOURCE_TYPES = ['document', 'script', 'stylesheet', 'font'];
 
 /** The D4 headers every web response carries except CSP, which only HTML responses carry (README D4, WR2). */
 const D4_HEADERS: Record<string, string> = {
@@ -52,8 +53,10 @@ test.describe('smoke: both targets', () => {
 
     expect(consoleErrors).toEqual([]);
     expect(failedRequests).toEqual([]);
-    // Nothing beyond the document and its script/style chunks: guards accidental polling and early fetches.
+    // Nothing beyond the document, its script/style chunks and the self-hosted fonts: guards accidental polling and early fetches.
     expect(responses.filter(({ type }) => !BOOT_RESOURCE_TYPES.includes(type))).toEqual([]);
+    const pageOrigin = new URL(page.url()).origin;
+    expect(responses.filter(({ url }) => !url.startsWith('data:') && new URL(url).origin !== pageOrigin)).toEqual([]);
     expect(responses.filter(({ status }) => status >= 400)).toEqual([]);
     expect(responses.some(({ type }) => type === 'document')).toBe(true);
   });

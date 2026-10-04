@@ -17,7 +17,7 @@ import { expect, type Locator, type Page } from '@playwright/test';
 /** `test.use(AUTH_SPEC_USE)` at the top of every spec that authenticates: no trace or video, even on failure. */
 export const AUTH_SPEC_USE = { trace: 'off', video: 'off' } as const;
 
-export const AUTH_DIR = resolve(__dirname, '..', '.auth');
+export const AUTH_DIR = resolve(import.meta.dirname, '..', '.auth');
 const SECRET_FILE = join(AUTH_DIR, 'owner-totp.json');
 
 const STEP_SECONDS = 30;

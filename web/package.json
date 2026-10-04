@@ -14,7 +14,8 @@
     "lint": "ng lint && node tools/web/lint-forbidden-patterns.mjs && node tools/web/check-lint-fixtures.mjs",
     "lint:app": "ng lint",
     "lint:forbidden": "node tools/web/lint-forbidden-patterns.mjs",
-    "lint:fixtures": "node tools/web/check-lint-fixtures.mjs"
+    "lint:fixtures": "node tools/web/check-lint-fixtures.mjs",
+    "container:smoke": "bash tools/web/container-smoke.sh"
   },
   "private": true,
   "dependencies": {

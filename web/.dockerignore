@@ -1,0 +1,8 @@
+node_modules
+dist
+.angular
+e2e-results
+playwright-report
+test-results
+.git
+.pr-evidence-*.md
