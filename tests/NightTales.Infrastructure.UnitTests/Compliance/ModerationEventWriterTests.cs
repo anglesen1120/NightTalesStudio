@@ -113,7 +113,7 @@ public sealed class ModerationEventWriterTests(TestDatabase database) : Integrat
 
     // ---- QA additions (02.4.1-T1) ----
 
-    [Fact(Skip = "DEFECT QA-1 (02.4.1-T1): an emoji at the 300-char cut leaves a lone surrogate; the insert fails and the writer swallows it, so the evidence row is lost. Remove Skip when fixed.")]
+    [Fact]
     public async Task ModerationEvent_ExcerptCutAcrossASurrogatePair_StillWritesTheRow()
     {
         await using var host = new WriterHost(Database);

@@ -419,7 +419,7 @@ public sealed class ContentModeratorTests
         failure.ToString().ShouldNotContain("MALFORMED-BODY-SECRET");
     }
 
-    [Theory(Skip = "DEFECT QA-2 (02.4.1-T1): Parse treats a result without a boolean flagged/categories as clean (fail-open). Remove Skip when fixed.")]
+    [Theory]
     [InlineData("{\"results\":[{}]}")]
     [InlineData("{\"results\":[{\"flagged\":null,\"categories\":null}]}")]
     [InlineData("{\"results\":[{\"flagged\":\"true\",\"categories\":{\"violence\":\"true\"}}]}")]
@@ -432,7 +432,7 @@ public sealed class ContentModeratorTests
             await host.Moderator.CheckAsync(["a brief"], ModerationStage.Brief, Ct));
     }
 
-    [Fact(Skip = "DEFECT QA-3 (02.4.1-T1): fewer results[] than inputs is accepted; an unchecked chunk passes silently (fail-open). Remove Skip when fixed.")]
+    [Fact]
     public async Task Moderator_FewerResultsThanInputs_FailsClosed()
     {
         using var host = new ModerationTestHost();
@@ -672,7 +672,7 @@ public sealed class ContentModeratorTests
         failure.ToString().ShouldNotContain("BRIEF-TEXT-SECRET");
     }
 
-    [Fact(Skip = "DEFECT QA-1 (02.4.1-T1): ModerationEvent.Record cuts excerpt[..300] across a surrogate pair. Remove Skip when fixed.")]
+    [Fact]
     public void ModerationEvent_ExcerptCutAt300_NeverEndsInAHalfSurrogatePair()
     {
         var text = new string('a', 299) + "\U0001F600" + "tail";

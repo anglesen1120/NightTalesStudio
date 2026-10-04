@@ -78,13 +78,20 @@ public sealed partial class OpenAiContentModerator(
                 .ConfigureAwait(false);
 
             var raw = response.GetRawResponse();
-            var result = Parse(raw.Content);
+            var result = Parse(raw.Content, chunks.Count);
             var requestId = raw.Headers.TryGetValue("x-request-id", out var id) ? id : null;
 
             LogCall(stage, chunks.Count, result.Flagged, result.Categories.Count, requestId);
             await RecordUsageAsync(requestId, ct).ConfigureAwait(false);
 
             return result;
+        }
+        catch (ModerationUnavailableException)
+        {
+            // An unusable answer (no verdict, wrong result count): fail closed, type only (D19).
+            LogFailed(stage, null);
+
+            throw;
         }
         catch (ClientResultException ex)
         {
@@ -157,8 +164,11 @@ public sealed partial class OpenAiContentModerator(
         return stream.ToArray();
     }
 
-    /// <summary>The union verdict of a <c>results[]</c> body: a flag in any result flags it; the highest score per category wins.</summary>
-    private static ModerationResult Parse(BinaryData content)
+    /// <summary>
+    /// The union verdict of a <c>results[]</c> body: a flag in any result flags it; the highest score per category wins.
+    /// One result per sent chunk with a boolean <c>flagged</c> is required; anything else is not "clean" and fails closed.
+    /// </summary>
+    private static ModerationResult Parse(BinaryData content, int expectedResults)
     {
         using var doc = JsonDocument.Parse(content);
         if (doc.RootElement.ValueKind != JsonValueKind.Object
@@ -168,6 +178,12 @@ public sealed partial class OpenAiContentModerator(
         {
             // Nothing usable is not "clean": fail closed.
             throw new InvalidDataException("The moderation response carries no results.");
+        }
+
+        if (results.GetArrayLength() != expectedResults)
+        {
+            // An unchecked chunk must never pass silently.
+            throw new ModerationUnavailableException(null);
         }
 
         var flagged = false;
@@ -181,7 +197,12 @@ public sealed partial class OpenAiContentModerator(
                 throw new InvalidDataException("A moderation result is not an object.");
             }
 
-            flagged |= result.TryGetProperty("flagged", out var f) && f.ValueKind == JsonValueKind.True;
+            if (!result.TryGetProperty("flagged", out var f) || f.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
+            {
+                throw new ModerationUnavailableException(null);
+            }
+
+            flagged |= f.ValueKind == JsonValueKind.True;
 
             if (result.TryGetProperty("categories", out var flags) && flags.ValueKind == JsonValueKind.Object)
             {

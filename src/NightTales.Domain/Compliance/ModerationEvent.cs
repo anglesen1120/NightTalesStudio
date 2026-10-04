@@ -57,7 +57,7 @@ public sealed class ModerationEvent : Entity, IUserOwned, ICreatedAt
             ? null
             : excerpt.Length <= ExcerptMaxLength
                 ? excerpt
-                : excerpt[..ExcerptMaxLength];
+                : CutToExcerptLimit(excerpt);
 
         var moderationEvent = new ModerationEvent
         {
@@ -74,5 +74,16 @@ public sealed class ModerationEvent : Entity, IUserOwned, ICreatedAt
         moderationEvent._categories.AddRange(categories);
 
         return moderationEvent;
+    }
+
+    /// <summary>
+    /// Cuts at the cap without leaving half a surrogate pair: a trailing high surrogate cannot be
+    /// encoded as UTF-8, so the insert would fail and the evidence row would be lost.
+    /// </summary>
+    private static string CutToExcerptLimit(string excerpt)
+    {
+        var text = excerpt[..ExcerptMaxLength];
+
+        return char.IsHighSurrogate(text[^1]) ? text[..^1] : text;
     }
 }
