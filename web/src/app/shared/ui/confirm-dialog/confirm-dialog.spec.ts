@@ -1,4 +1,4 @@
-import { TemplateRef, ViewChild, Component, inject } from '@angular/core';
+import { TemplateRef, ViewChild, Component, inject, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { MatDialogModule, MatDialogRef } from '@angular/material/dialog';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
@@ -95,5 +95,125 @@ describe('ConfirmDialog', () => {
       await fixture.whenStable();
       expect(closed).toHaveBeenCalledWith(expected);
     }
+  });
+
+  describe('pending lifetime, cancel semantics, focus and ARIA', () => {
+    const data = { titleKey: 'core.ui.confirm.title', bodyKey: 'core.ui.errorState.body', confirmLabelKey: 'core.ui.confirm.confirm' };
+    const escape = (): void => {
+      document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', keyCode: 27, bubbles: true }));
+    };
+    const backdrop = (): void => {
+      (document.querySelector('.cdk-overlay-backdrop') as HTMLElement).click();
+    };
+    const setup = async () => {
+      await TestBed.configureTestingModule({ imports: [DynamicHost, MatDialogModule, NoopAnimationsModule, uiTestingTranslations()] }).compileComponents();
+      const fixture = TestBed.createComponent(DynamicHost);
+      fixture.detectChanges();
+      return { fixture, dialogs: TestBed.inject(ConfirmDialog) };
+    };
+
+    it('blocks Escape and backdrop when pending flips true after open, and works again once it flips back', async () => {
+      const { fixture, dialogs } = await setup();
+      const pending = signal(false);
+      const ref = dialogs.confirm({ ...data, pending });
+      const closed = vi.fn();
+      const cancelled = vi.fn();
+      ref.afterClosed().subscribe(closed);
+      await fixture.whenStable();
+      ref.componentInstance.cancelled.subscribe(cancelled);
+
+      pending.set(true);
+      fixture.detectChanges();
+      await fixture.whenStable();
+      escape();
+      backdrop();
+      await fixture.whenStable();
+      expect(closed).not.toHaveBeenCalled();
+      expect(cancelled).not.toHaveBeenCalled();
+      expect(document.querySelector('.confirm-dialog')).not.toBeNull();
+
+      pending.set(false);
+      fixture.detectChanges();
+      escape();
+      await fixture.whenStable();
+      expect(closed).toHaveBeenCalledExactlyOnceWith(false);
+      expect(cancelled).toHaveBeenCalledTimes(1);
+    });
+
+    it.each([
+      ['Escape', escape],
+      ['backdrop click', backdrop],
+    ])('resolves false and fires cancelled on %s for a non-pending dialog', async (_label, dismiss) => {
+      const { fixture, dialogs } = await setup();
+      const ref = dialogs.confirm(data);
+      const closed = vi.fn();
+      const cancelled = vi.fn();
+      const confirmed = vi.fn();
+      ref.afterClosed().subscribe(closed);
+      await fixture.whenStable();
+      ref.componentInstance.cancelled.subscribe(cancelled);
+      ref.componentInstance.confirmed.subscribe(confirmed);
+      dismiss();
+      await fixture.whenStable();
+      expect(closed).toHaveBeenCalledExactlyOnceWith(false);
+      expect(cancelled).toHaveBeenCalledTimes(1);
+      expect(confirmed).not.toHaveBeenCalled();
+    });
+
+    it('puts initial focus on Cancel for a destructive dialog only', async () => {
+      const { fixture, dialogs } = await setup();
+      // jsdom has no layout: CDK's isVisible() needs geometry, otherwise nothing counts as focusable.
+      const geometry = vi.spyOn(HTMLElement.prototype, 'getClientRects').mockReturnValue([{}] as unknown as DOMRectList);
+      try {
+        const destructive = dialogs.confirm({ ...data, destructive: true });
+        await fixture.whenStable();
+        const [cancel] = [...document.querySelectorAll('.cdk-overlay-pane .confirm-dialog__actions button')] as HTMLButtonElement[];
+        await vi.waitFor(() => expect(document.activeElement).toBe(cancel));
+        destructive.close();
+        await fixture.whenStable();
+
+        const plain = dialogs.confirm(data);
+        await fixture.whenStable();
+        const [plainCancel] = [...document.querySelectorAll('.cdk-overlay-pane .confirm-dialog__actions button')] as HTMLButtonElement[];
+        expect(plainCancel?.hasAttribute('cdkFocusInitial')).toBe(false);
+        expect(document.activeElement).not.toBe(plainCancel);
+        plain.close();
+        await fixture.whenStable();
+      } finally {
+        geometry.mockRestore();
+      }
+    });
+
+    it('gives two open dialogs distinct title/body ids wired to their own container', async () => {
+      const { fixture, dialogs } = await setup();
+      const first = dialogs.confirm(data);
+      const second = dialogs.confirm(data);
+      await fixture.whenStable();
+      const panes = [...document.querySelectorAll('.cdk-overlay-pane')] as HTMLElement[];
+      expect(panes.length).toBe(2);
+      const ids = panes.flatMap((pane) => [pane.querySelector('h2')!.id, pane.querySelector('.confirm-dialog > p')!.id]);
+      expect(ids.every((id) => id.length > 0)).toBe(true);
+      expect(new Set(ids).size).toBe(4);
+      for (const pane of panes) {
+        const container = pane.querySelector('[role="dialog"]') as HTMLElement;
+        expect(container.getAttribute('aria-labelledby')).toBe(pane.querySelector('h2')!.id);
+        expect(container.getAttribute('aria-describedby')).toBe(pane.querySelector('.confirm-dialog > p')!.id);
+      }
+      first.close();
+      second.close();
+      await fixture.whenStable();
+    });
+
+    it('renders exactly one role=dialog with aria-modal in the overlay', async () => {
+      const { fixture, dialogs } = await setup();
+      const ref = dialogs.confirm(data);
+      await fixture.whenStable();
+      const dialogsInOverlay = document.querySelectorAll('.cdk-overlay-container [role="dialog"]');
+      expect(dialogsInOverlay.length).toBe(1);
+      expect(dialogsInOverlay[0]?.getAttribute('aria-modal')).toBe('true');
+      expect(document.querySelector('.confirm-dialog')?.hasAttribute('role')).toBe(false);
+      ref.close();
+      await fixture.whenStable();
+    });
   });
 });
