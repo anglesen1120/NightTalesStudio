@@ -10,6 +10,8 @@ npm-debug.log
 /e2e-results/
 /playwright-report/
 /test-results/
+# The enrolled owner TOTP secret must never be committed (WR14)
+/e2e/.auth/
 
 # System files
 .DS_Store

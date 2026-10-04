@@ -1,11 +1,11 @@
 import { TestBed } from '@angular/core/testing';
-import { provideZonelessChangeDetection } from '@angular/core';
+import { ZONELESS_TEST_PROVIDERS } from '../../testing/providers';
 import { PREFERENCES_STORAGE_KEY, PreferencesStore } from './preferences.store';
 
 describe('PreferencesStore', () => {
   beforeEach(() => {
     localStorage.clear();
-    TestBed.configureTestingModule({ providers: [provideZonelessChangeDetection()] });
+    TestBed.configureTestingModule({ providers: [...ZONELESS_TEST_PROVIDERS] });
   });
 
   afterEach(() => {
@@ -26,7 +26,7 @@ describe('PreferencesStore', () => {
     first.setTheme('light');
 
     TestBed.resetTestingModule();
-    TestBed.configureTestingModule({ providers: [provideZonelessChangeDetection()] });
+    TestBed.configureTestingModule({ providers: [...ZONELESS_TEST_PROVIDERS] });
     const second = TestBed.inject(PreferencesStore);
 
     expect(second.read()).toEqual({ uiLanguage: 'en', theme: 'light' });
@@ -74,7 +74,7 @@ describe('PreferencesStore', () => {
     for (const raw of ['null', '42', '"vi"', 'true', '[]']) {
       localStorage.setItem(PREFERENCES_STORAGE_KEY, raw);
       TestBed.resetTestingModule();
-      TestBed.configureTestingModule({ providers: [provideZonelessChangeDetection()] });
+      TestBed.configureTestingModule({ providers: [...ZONELESS_TEST_PROVIDERS] });
       const store = TestBed.inject(PreferencesStore);
       expect(store.read(), raw).toEqual({ uiLanguage: 'vi', theme: 'dark' });
     }
