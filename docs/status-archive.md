@@ -4,6 +4,13 @@ History moved out of STATUS.md to keep the live file small. The initial archive 
 
 ## Resume-here history (Current/Previous blocks, Next actions)
 
+### Superseded Session 7 Current/Next lines (2026-10-04, replaced when #125 `a2667da` merged)
+
+- **Current (2026-10-04).** Session 5 wave merged to `develop` as PR #121 (`0028aa0`): 02.4.1-T1 content moderator, 02.5.2-T1 safe HTTP fetcher, 02.3.1-T1 edit-story command, 02.6.1-T1 self-review; each closed its T3 gates, combined tip full gate green, CI 4/4. Step 0 (#120 rate-limiter leak) merged. Web Stage A (plan 10 foundation, 9 tasks) merged as #122 (`a2c4a12`, CI 5/5); the Session 6 claim is released (`/Volumes/Project/nts-wt/SESSION-CLAIMS.md`).
+- **Next:** 02.2.2-T3 generate-story job — Session 7, branch `feature/02.2.2-T3-s7`, T3 gates closed, PR to `develop` waiting for the owner (§Open tasks row; owner decision SEC-5 there). Then 02.5.2-T2 → T3 → T4 fetcher, 02.6.1-T2, 02.6.2-T1 revision (plugs into the pipeline, 02 §10 T113(b)), then 02.3.2-T1 approve (must treat `moderation.stale`/`unavailable` as needs re-check; decides the edit-path moderator wiring, owner deferred 2026-10-04). Check each task header first.
+
+**Outcome:** 02.2.2-T3 merged as #125 (`a2667da`); STATUS flipped in `f12ecc2`, this archive entry follows in the next commit.
+
 ### Superseded Session 6 plan section (2026-10-04, Stage A merged as #122 `a2c4a12`; open hand-overs stay in STATUS §Plan 10 hand-overs)
 
 **Recorded 2026-10-04 at the owner's request.** Runs in a second omp session alongside Session 5 (owner: "the other session runs Session 5; this session takes the next plan"). Plan 10 Stage A–B per [implementation roadmap](../plans/features/10-web-ui/implementation-roadmap.md) §1; dependencies from task headers. Write set is `web/`, `.github/workflows/web.yml`, `web/` hosting files and the 10.1.x task files only — **no `src/`, `tests/`, `prompts/` or migration changes**, so it cannot collide with the Session 5 lanes. Session 5 must not start any 10.x task; Session 6 must not start any 02.x/09.x/11.x task.
