@@ -270,7 +270,8 @@ expect_directive() { # NAME EXPECTED LABEL
     pass "$3"
 }
 
-start media-empty
+# Defined-empty is a valid value (set explicitly here, not just inherited from the image default).
+start media-empty -e 'NTS_CSP_MEDIA_ORIGINS='
 expect_directive img-src "img-src 'self' data:" "empty NTS_CSP_MEDIA_ORIGINS: img-src is exactly 'self' data: (no trailing space)"
 expect_directive media-src "media-src 'self'" "empty NTS_CSP_MEDIA_ORIGINS: media-src is exactly 'self' (no trailing space)"
 
@@ -314,6 +315,20 @@ for bad in \
         && fail "nginx must not start for '$bad'" "no worker started" "$OUT"
     pass "rejected $name (exit $RC, nginx not started)"
 done
+
+# An UNSET NTS_CSP_MEDIA_ORIGINS must refuse to start (the image default is a defined-empty value, which
+# `docker run` cannot unset), so the entrypoint is run through `env -u`. nginx must not be started.
+set +e
+OUT=$(docker run --rm --read-only --tmpfs /tmp --tmpfs /etc/nginx/conf.d:uid=101,gid=101,mode=0755 \
+    --entrypoint sh "$IMAGE" -c 'exec env -u NTS_CSP_MEDIA_ORIGINS /docker-entrypoint.sh nginx -g "daemon off;"' 2>&1)
+RC=$?
+set -e
+[ "$RC" -ne 0 ] || fail "unset NTS_CSP_MEDIA_ORIGINS fails start-up" "non-zero exit" "exit 0"
+printf '%s' "$OUT" | grep -q 'NTS_CSP_MEDIA_ORIGINS is not set' \
+    || fail "unset NTS_CSP_MEDIA_ORIGINS message names the variable" "'NTS_CSP_MEDIA_ORIGINS is not set' in output" "$OUT"
+printf '%s' "$OUT" | grep -q 'nginx.*start worker\|worker process' \
+    && fail "nginx must not start when NTS_CSP_MEDIA_ORIGINS is unset" "no worker started" "$OUT"
+pass "unset NTS_CSP_MEDIA_ORIGINS rejected (exit $RC, nginx not started)"
 
 # --- proxy mode: upstream set; hub ticket never logged --------------------------------
 start proxy -e NTS_API_UPSTREAM=http://127.0.0.1:9

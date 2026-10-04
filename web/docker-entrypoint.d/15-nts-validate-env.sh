@@ -24,8 +24,12 @@ reject_multiline() {
     fi
 }
 
-# --- NTS_CSP_MEDIA_ORIGINS: space-separated origins, empty allowed -----------------
-origins="${NTS_CSP_MEDIA_ORIGINS:-}"
+# --- NTS_CSP_MEDIA_ORIGINS: space-separated origins; defined-empty allowed, UNSET refused ---
+# The image default is `NTS_CSP_MEDIA_ORIGINS=""` (Dockerfile), so an unset variable means someone
+# cleared it on purpose or by accident: fail before any `:-` fallback can turn it into "empty".
+[ "${NTS_CSP_MEDIA_ORIGINS+set}" = "set" ] \
+    || fail "NTS_CSP_MEDIA_ORIGINS is not set (use an empty value for no media origins)"
+origins="$NTS_CSP_MEDIA_ORIGINS"
 if [ -n "$origins" ]; then
     # Reject characters that could break out of the CSP directive / nginx string,
     # before any token handling. Control characters are rejected; a plain space is the

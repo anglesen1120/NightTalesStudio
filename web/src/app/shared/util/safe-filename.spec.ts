@@ -11,6 +11,21 @@ describe('safeFilename', () => {
     ['a\u0085b\u009fc\u007f', 'abc'],
     ['gpj.\u202Eexe', 'gpj.exe'],
     ['a\u200Bb\ufeffc', 'abc'],
+    // Further invisible / spoofing characters: each is dropped, never replaced.
+    ['a\u061Cb', 'ab'],
+    ['a\u2060b\u2061c\u2062d\u2063e\u2064f', 'abcdef'],
+    ['a\u206Ab\u206Bc\u206Cd\u206De\u206Ef\u206F', 'abcdef'],
+    ['a\u2066b\u2067c\u2068d\u2069e', 'abcde'],
+    ['a\u00ADb', 'ab'],
+    ['a\u034Fb', 'ab'],
+    ['a\u180Bb\u180Cc\u180Dd\u180Ee', 'abcde'],
+    ['a\uFE00b\uFE0Fc', 'abc'],
+    ['a\u115Fb\u1160c', 'abc'],
+    ['a\u3164b', 'ab'],
+    ['a\uFFA0b', 'ab'],
+    ['a\u{E0000}b\u{E0041}c\u{E007F}d', 'abcd'],
+    // A device name hidden behind an invisible character is still a device name.
+    ['C\u00ADON', '_CON'],
     ['.\u0000.', 'download'],
     ['...', 'download'],
     ['.', 'download'],
@@ -44,6 +59,14 @@ describe('safeFilename', () => {
     ['file. ', 'file'],
     ['file .', 'file'],
     ['CON. ', '_CON'],
+    // Windows also strips dots/spaces between the device stem and the extension.
+    ['CON .txt', '_CON .txt'],
+    ['NUL.', '_NUL'],
+    ['nul .', '_nul'],
+    ['Com1 . log', '_Com1 . log'],
+    // Not device names: a stem followed by other text.
+    ['con x.txt', 'con x.txt'],
+    ['com1 x', 'com1 x'],
   ];
 
   it.each(hostile)('sanitises %j to %j', (raw, expected) => {
