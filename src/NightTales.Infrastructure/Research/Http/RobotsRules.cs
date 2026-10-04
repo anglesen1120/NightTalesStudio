@@ -11,10 +11,13 @@ namespace NightTales.Infrastructure.Research.Http;
 public sealed class RobotsRules
 {
     /// <summary>The most rules kept for the selected group; the rest are dropped (a permissive degradation).</summary>
-    public const int MaxRules = 1_000;
+    public const int MaxRules = 100;
 
-    /// <summary>A rule value longer than this is ignored: the longest URL the platform fetches is 2,048 characters.</summary>
-    public const int MaxRuleLength = 2_048;
+    /// <summary>
+    /// A rule value longer than this is ignored (a permissive degradation). With <see cref="MaxRules"/> it bounds the
+    /// matcher's worst case, which is O(rules × pattern × path) per decision (02.5.2-T1 review F4).
+    /// </summary>
+    public const int MaxRuleLength = 256;
 
     private readonly Rule[] _rules;
 
@@ -152,7 +155,9 @@ public sealed class RobotsRules
                     break;
 
                 default:
-                    // sitemap, host, request-rate, visit-time and every unknown field are ignored and do not split a group.
+                    // sitemap, host, request-rate, visit-time and every unknown field are ignored (their values are not
+                    // read), but they end the run of consecutive user-agent lines: a later user-agent starts a new group (T0 §2).
+                    lastWasAgent = false;
                     break;
             }
         }

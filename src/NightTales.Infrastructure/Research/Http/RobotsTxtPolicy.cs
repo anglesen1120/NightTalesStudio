@@ -20,6 +20,7 @@ namespace NightTales.Infrastructure.Research.Http;
 /// </remarks>
 /// <param name="http">The safe client from <see cref="SafeHttpClientFactory"/>.</param>
 /// <param name="psl">The public-suffix list that checks every redirect target.</param>
+/// <param name="limiter">The shared per-domain limiter: every robots request (each redirect hop) waits and records on it.</param>
 /// <param name="blocklist">The blocked domains, checked at every robots redirect hop.</param>
 /// <param name="options">The fetcher options.</param>
 /// <param name="time">The time source of the cache.</param>
@@ -27,6 +28,7 @@ namespace NightTales.Infrastructure.Research.Http;
 public sealed partial class RobotsTxtPolicy(
     HttpClient http,
     IPublicSuffixList psl,
+    IHostRateLimiter limiter,
     DomainBlocklist blocklist,
     IOptions<FetcherOptions> options,
     TimeProvider time,
@@ -101,8 +103,13 @@ public sealed partial class RobotsTxtPolicy(
         try
         {
             var current = new Uri(url.GetLeftPart(UriPartial.Authority) + "/robots.txt");
+            var domain = psl.GetRegistrableDomain(current.IdnHost) ?? current.IdnHost;
             for (var hop = 0; ; hop++)
             {
+                // D11: the robots request obeys the same one-request-per-second rule per registrable domain as a page, at
+                // every hop, so the page request that follows waits too.
+                await limiter.WaitAsync(domain, MinIntervalFloor, robotsBudget.Token).ConfigureAwait(false);
+
                 using var request = SafeHttp.CreateGet(current, _userAgent, SafeHttp.RobotsAccept, acceptLanguage: null);
                 using var response = await http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, robotsBudget.Token)
                     .ConfigureAwait(false);
@@ -122,6 +129,7 @@ public sealed partial class RobotsTxtPolicy(
                     }
 
                     current = new Uri(target.Value.Value);
+                    domain = target.Value.RegistrableDomain;
                     continue;
                 }
 

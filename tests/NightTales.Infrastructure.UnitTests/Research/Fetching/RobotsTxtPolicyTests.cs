@@ -18,6 +18,7 @@ public sealed class RobotsTxtPolicyTests : IAsyncDisposable
     private static readonly Uri Page = new("http://www.example.com/a/page");
 
     private readonly ManualTimeProvider _time = new();
+    private readonly FakeHostRateLimiter _limiter = new();
     private readonly List<HttpTestServer> _servers = [];
     private readonly List<HttpClient> _clients = [];
 
@@ -119,6 +120,62 @@ public sealed class RobotsTxtPolicyTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task RobotsRequest_WaitsOnTheSharedLimiter_ForTheRegistrableDomain_AtTheFloor()
+    {
+        // 02.5.2-T1 review CR-02.
+        var (policy, _) = Create(_ => new TestResponse(404));
+
+        await policy.IsAllowedAsync(Page, TestContext.Current.CancellationToken);
+
+        _limiter.Calls.ShouldHaveSingleItem().ShouldBe(("example.com", TimeSpan.FromSeconds(1)));
+    }
+
+    [Fact]
+    public async Task RobotsRedirectHops_EachWaitOnTheLimiter_ForTheirOwnRegistrableDomain()
+    {
+        var (policy, server) = Create(request => request.Target switch
+        {
+            "/robots.txt" when request.Host.StartsWith("www.example.com", StringComparison.Ordinal) => TestResponse.Redirect("http://news.example.org/r1"),
+            "/r1" => TestResponse.Redirect("/robots2.txt"),
+            _ => new TestResponse(404),
+        });
+
+        await policy.IsAllowedAsync(Page, TestContext.Current.CancellationToken);
+
+        server.Requests.Count.ShouldBe(3);
+        _limiter.Calls.Select(call => call.Domain).ShouldBe(["example.com", "example.org", "example.org"]);
+    }
+
+    [Fact]
+    public async Task CachedVerdict_DoesNotTouchTheLimiterAgain()
+    {
+        var (policy, _) = Create(_ => new TestResponse(404));
+        var ct = TestContext.Current.CancellationToken;
+
+        await policy.IsAllowedAsync(Page, ct);
+        await policy.IsAllowedAsync(Page, ct);
+
+        _limiter.Calls.Count.ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task PageRequestAfterTheRobotsFetch_WaitsOutTheInterval_OnTheSameLimiter()
+    {
+        // The real limiter shared by the robots fetch and the page: the first page request after a cold robots fetch must wait.
+        var clock = new ManualTimeProvider();
+        var limiter = new HostRateLimiter(clock);
+        var (policy, _) = Create(_ => new TestResponse(404), limiter);
+        var ct = TestContext.Current.CancellationToken;
+
+        var decision = await policy.IsAllowedAsync(Page, ct);
+        var page = limiter.WaitAsync("example.com", decision.MinInterval, ct).AsTask();
+
+        page.IsCompleted.ShouldBeFalse("the robots request was recorded, so the page request waits");
+        clock.Advance(decision.MinInterval);
+        await page.WaitAsync(TimeSpan.FromSeconds(5), ct);
+    }
+
+    [Fact]
     public async Task Cache_DisallowVerdictIsCachedToo()
     {
         var (policy, server) = Create(_ => new TestResponse(503));
@@ -212,7 +269,7 @@ public sealed class RobotsTxtPolicyTests : IAsyncDisposable
 
     private static FetcherOptions RobotsTxtPolicyOptions() => FetchHarness.DefaultOptions();
 
-    private (RobotsTxtPolicy Policy, HttpTestServer Server) Create(Func<TestRequest, TestResponse> script)
+    private (RobotsTxtPolicy Policy, HttpTestServer Server) Create(Func<TestRequest, TestResponse> script, IHostRateLimiter? limiter = null)
     {
         var server = new HttpTestServer(script);
         _servers.Add(server);
@@ -228,6 +285,7 @@ public sealed class RobotsTxtPolicyTests : IAsyncDisposable
         var policy = new RobotsTxtPolicy(
             http,
             new FakePublicSuffixList(),
+            limiter ?? _limiter,
             new DomainBlocklist(options.BlockedDomains.ToHashSet(StringComparer.Ordinal)),
             Options.Create(options),
             _time,

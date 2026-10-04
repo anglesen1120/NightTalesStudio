@@ -526,7 +526,7 @@ public sealed class SafeHttpSourceFetcherQaTests
         var http = SafeHttpClientFactory.Create(connector);
         var psl = new FakePublicSuffixList();
         var blocklist = new DomainBlocklist(options.BlockedDomains.ToHashSet(StringComparer.Ordinal));
-        var robots = new RobotsTxtPolicy(http, psl, blocklist, FetchHarness.Options2(options), TimeProvider.System,
+        var robots = new RobotsTxtPolicy(http, psl, new FakeHostRateLimiter(), blocklist, FetchHarness.Options2(options), TimeProvider.System,
             factory.CreateLogger<RobotsTxtPolicy>());
         var stack = new Stack(
             new SafeHttpSourceFetcher(
@@ -561,7 +561,7 @@ public sealed class SafeHttpSourceFetcherQaTests
         var http = SafeHttpClientFactory.Create(connector);
         var psl = new FakePublicSuffixList();
         var blocklist = new DomainBlocklist(options.BlockedDomains.ToHashSet(StringComparer.Ordinal));
-        var robots = new RobotsTxtPolicy(http, psl, blocklist, FetchHarness.Options2(options), TimeProvider.System,
+        var robots = new RobotsTxtPolicy(http, psl, new FakeHostRateLimiter(), blocklist, FetchHarness.Options2(options), TimeProvider.System,
             factory.CreateLogger<RobotsTxtPolicy>());
         var stack = new Stack(
             new SafeHttpSourceFetcher(

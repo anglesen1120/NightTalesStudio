@@ -74,16 +74,31 @@ public sealed class RobotsRulesTests
     }
 
     [Fact]
-    public void RuleCap_DropsTheRulesBeyondOneThousand()
+    public void RuleCap_DropsTheRulesBeyondOneHundred()
     {
-        var content = "User-agent: *\n" + string.Concat(Enumerable.Range(0, 1_001).Select(index => $"Disallow: /p{index}/\n"));
+        var content = "User-agent: *\n" + string.Concat(Enumerable.Range(0, RobotsRules.MaxRules + 1).Select(index => $"Disallow: /p{index}/\n"));
 
         var rules = Parse(content);
 
+        RobotsRules.MaxRules.ShouldBe(100);
         rules.RuleLimitExceeded.ShouldBeTrue();
         rules.IsAllowed("/p0/x").ShouldBeFalse();
-        rules.IsAllowed("/p999/x").ShouldBeFalse();
-        rules.IsAllowed("/p1000/x").ShouldBeTrue("the rule beyond the cap is dropped (permissive degradation)");
+        rules.IsAllowed("/p99/x").ShouldBeFalse();
+        rules.IsAllowed("/p100/x").ShouldBeTrue("the rule beyond the cap is dropped (permissive degradation)");
+    }
+
+    [Fact]
+    public void RuleLengthCap_IgnoresARuleLongerThan256_AndKeepsOneOfExactly256()
+    {
+        // 02.5.2-T1 review F4: the matcher cost is bounded by rules x pattern x path, so oversized patterns are ignored.
+        RobotsRules.MaxRuleLength.ShouldBe(256);
+        var atCap = "/" + new string('a', RobotsRules.MaxRuleLength - 1);
+        var overCap = "/" + new string('b', RobotsRules.MaxRuleLength);
+
+        var rules = Parse($"User-agent: *\nDisallow: {atCap}\nDisallow: {overCap}\n");
+
+        rules.IsAllowed(atCap).ShouldBeFalse();
+        rules.IsAllowed(overCap).ShouldBeTrue("a rule longer than the cap is ignored");
     }
 
     [Fact]
@@ -128,6 +143,24 @@ public sealed class RobotsRulesTests
 
         rules.IsAllowed("/one").ShouldBeFalse();
         rules.IsAllowed("/two").ShouldBeTrue("/two belongs to the Bingbot group");
+    }
+
+    [Fact]
+    public void IgnoredDirective_EndsTheRunOfUserAgentLines_ANewUserAgentStartsANewGroup()
+    {
+        // 02.5.2-T1 review CR-04: the Sitemap line ends the run, so OtherBot's Disallow does not belong to NightTalesStudioBot.
+        var rules = Parse("User-agent: NightTalesStudioBot\nSitemap: https://example.com/s.xml\nUser-agent: OtherBot\nDisallow: /\n");
+
+        rules.IsAllowed("/anything").ShouldBeTrue("NightTalesStudioBot's own group is empty; the Disallow is OtherBot's");
+    }
+
+    [Fact]
+    public void IgnoredDirective_BetweenUserAgentLines_DoesNotHideTheRulesOfTheGroupItFollows()
+    {
+        var rules = Parse("User-agent: NightTalesStudioBot\nDisallow: /one\nSitemap: https://example.com/s.xml\nUser-agent: OtherBot\nDisallow: /two\n");
+
+        rules.IsAllowed("/one").ShouldBeFalse();
+        rules.IsAllowed("/two").ShouldBeTrue();
     }
 
     [Fact]

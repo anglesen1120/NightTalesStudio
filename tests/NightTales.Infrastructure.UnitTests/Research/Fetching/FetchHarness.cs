@@ -154,6 +154,7 @@ internal sealed class FetchHarness : IAsyncDisposable
             ? new RobotsTxtPolicy(
                 http,
                 psl,
+                new FakeHostRateLimiter(),
                 new DomainBlocklist(options.BlockedDomains.ToHashSet(StringComparer.Ordinal)),
                 Options2(options),
                 TimeProvider.System,
