@@ -35,7 +35,8 @@ export class RetryCountdown implements OnChanges, OnDestroy {
   /** The live-region snapshot changes only when armed and when elapsed; visual ticks are aria-hidden. */
   protected readonly announcementKey = signal('errors.retryNow');
   protected readonly announcementSeconds = signal(0);
-  private timer: ReturnType<typeof globalThis.setInterval> | null = null;
+  /** Browser-only: arm() returns before scheduling on the server platform, so the DOM timer type applies. */
+  private timer: number | null = null;
   private stopVisibilityListener: (() => void) | null = null;
   private deadline = 0;
   private active = false;
@@ -69,7 +70,7 @@ export class RetryCountdown implements OnChanges, OnDestroy {
     this.stopVisibilityListener = this.renderer.listen(this.document, 'visibilitychange', () => {
       if (this.document.visibilityState === 'visible') this.syncRemaining();
     });
-    this.timer = globalThis.setInterval(() => this.syncRemaining(), 1_000);
+    this.timer = window.setInterval(() => this.syncRemaining(), 1_000);
   }
 
   private syncRemaining(): void {
@@ -87,7 +88,7 @@ export class RetryCountdown implements OnChanges, OnDestroy {
   private cancelArm(): void {
     this.active = false;
     if (this.timer !== null) {
-      globalThis.clearInterval(this.timer);
+      window.clearInterval(this.timer);
       this.timer = null;
     }
     this.stopVisibilityListener?.();
