@@ -1,0 +1,67 @@
+# NightTales web — the single server block (envsubst'ed by the image entrypoint into
+# /etc/nginx/conf.d/default.conf). Owned by 10.1.1-T2 (D3/D4, WR2, WR13).
+#
+# add_header inheritance gotcha (WR2): an add_header inside a `location` CANCELS every
+# add_header inherited from the server level. Therefore every location that sets
+# headers re-includes the substituted security-headers snippet, and HTML-serving
+# locations additionally include the generated policy snippet. A wrong include path
+# silently drops ALL headers of that location; the header matrix in
+# tools/web/container-smoke.sh is the detector.
+#
+# No `if`, no `rewrite`, no per-request work (NFR-10-1/2).
+
+gzip on;
+gzip_types text/css application/javascript application/json image/svg+xml;
+gzip_min_length 1024;
+
+server {
+    listen 8080;
+    server_name _;
+    server_tokens off;
+    root /usr/share/nginx/html;
+    autoindex off;
+
+    # Dotfiles are never served.
+    location ~ /\. { return 404; }
+
+    # API guard — MUST precede `location /` so /api, /hubs, /health can never fall
+    # through to try_files and answer with HTML. 17-nts-api-guard.sh writes either the
+    # dev/compose proxy (NTS_API_UPSTREAM set) or the prod hard-404 guard here.
+    include /etc/nginx/conf.d/nts-api-guard.inc;
+
+    # Container health + rollout gate (11.5.1-T1). Never touches the SPA.
+    location = /healthz {
+        access_log off;
+        default_type text/plain;
+        add_header Cache-Control "no-store";
+        return 200 "ok\n";
+    }
+
+    # Content-hashed bundles: immutable. No policy header here (WR2) — assets only.
+    location ~* "-[A-Za-z0-9]{8}\.(?:js|css|woff2)$" {
+        include /etc/nginx/conf.d/security-headers.conf;
+        add_header Cache-Control "public, max-age=31536000, immutable";
+    }
+
+    # i18n JSON and images are not content-hashed (D3/D10).
+    location /assets/ {
+        include /etc/nginx/conf.d/security-headers.conf;
+        add_header Cache-Control "public, max-age=3600, must-revalidate";
+    }
+
+    # Explicit HTML documents.
+    location ~* \.html$ {
+        include /etc/nginx/conf.d/security-headers.conf;
+        include /etc/nginx/conf.d/includes/csp-headers.conf;
+        add_header Cache-Control "no-cache";
+    }
+
+    # Prerendered documents are real files/directory indexes; everything else gets the
+    # client fallback HTML so the router handles it (WR13: no-cache on these hits too).
+    location / {
+        try_files $uri $uri/index.html /${NTS_SPA_FALLBACK};
+        include /etc/nginx/conf.d/security-headers.conf;
+        include /etc/nginx/conf.d/includes/csp-headers.conf;
+        add_header Cache-Control "no-cache";
+    }
+}

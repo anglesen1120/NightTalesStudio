@@ -1,0 +1,21 @@
+# NightTales web — D4 security headers, envsubst'ed at container start into
+# /etc/nginx/conf.d/security-headers.conf. Owned by 10.1.1-T2.
+#
+# Included at server level AND inside every location that sets its own add_header
+# (the WR2 inheritance gotcha: an add_header inside a location cancels every
+# add_header inherited from the server level — so each such location re-includes
+# this file; see default.conf.template).
+# The CSP header is deliberately NOT here: it lives only in the
+# generated template (dist/nginx/csp-headers.conf, produced by 10.1.6-T1's csp:gen)
+# and is included by HTML-serving locations only.
+#
+# HSTS mechanism (WR13, verified): nginx does not emit a header whose value is the
+# empty string, so NTS_HSTS="" (dev/compose default) emits NO Strict-Transport-
+# Security header at all; staging/prod set e.g. "max-age=31536000; includeSubDomains".
+# No `if` block is used anywhere in this config.
+
+add_header Referrer-Policy "no-referrer" always;
+add_header X-Content-Type-Options "nosniff" always;
+add_header Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=()" always;
+add_header Cross-Origin-Opener-Policy "same-origin" always;
+add_header Strict-Transport-Security "$NTS_HSTS" always;
