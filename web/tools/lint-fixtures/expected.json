@@ -399,6 +399,142 @@
       "rules": [
         "no-restricted-syntax"
       ]
+    },
+    {
+      "file": "review-barrel-rel-ui-data-access/src/app/features/series/ui/barrel-rel.ts",
+      "linter": "eslint",
+      "rules": [
+        "@typescript-eslint/no-restricted-imports"
+      ]
+    },
+    {
+      "file": "review-barrel-alias-application/src/app/features/series/ui/barrel-application.ts",
+      "linter": "eslint",
+      "rules": [
+        "@typescript-eslint/no-restricted-imports"
+      ]
+    },
+    {
+      "file": "review-barrel-core-data-access/src/app/shared/ui/barrel-core.ts",
+      "linter": "eslint",
+      "rules": [
+        "@typescript-eslint/no-restricted-imports"
+      ]
+    },
+    {
+      "file": "review-barrel-shared-ui-domain/src/app/features/series/domain/barrel-shared-ui.ts",
+      "linter": "eslint",
+      "rules": [
+        "@typescript-eslint/no-restricted-imports"
+      ]
+    },
+    {
+      "file": "review-ctor-param-property-store/src/app/features/series/ui/ctor-property.ts",
+      "linter": "eslint",
+      "rules": [
+        "no-restricted-syntax"
+      ]
+    },
+    {
+      "file": "review-ctor-plain-param-repository/src/app/features/series/ui/ctor-plain.ts",
+      "linter": "eslint",
+      "rules": [
+        "no-restricted-syntax"
+      ]
+    },
+    {
+      "file": "review-globalthis-computed-eval/src/app/core/security/computed-eval.ts",
+      "linter": "eslint",
+      "rules": [
+        "no-restricted-syntax"
+      ]
+    },
+    {
+      "file": "review-window-computed-function/src/app/core/security/computed-function.ts",
+      "linter": "eslint",
+      "rules": [
+        "no-restricted-syntax"
+      ]
+    },
+    {
+      "file": "review-template-literal-storage/src/app/core/state/template-storage.ts",
+      "linter": "eslint",
+      "rules": [
+        "no-restricted-syntax"
+      ]
+    },
+    {
+      "file": "review-inner-html-assign/src/app/core/security/assign-inner-html.ts",
+      "linter": "eslint",
+      "rules": [
+        "no-restricted-syntax"
+      ]
+    },
+    {
+      "file": "review-outer-html-assign/src/app/core/security/assign-outer-html.ts",
+      "linter": "eslint",
+      "rules": [
+        "no-restricted-syntax"
+      ]
+    },
+    {
+      "file": "review-insert-adjacent-html/src/app/core/security/insert-adjacent.ts",
+      "linter": "eslint",
+      "rules": [
+        "no-restricted-syntax"
+      ]
+    },
+    {
+      "file": "review-create-contextual-fragment/src/app/core/security/contextual-fragment.ts",
+      "linter": "eslint",
+      "rules": [
+        "no-restricted-syntax"
+      ]
+    },
+    {
+      "file": "review-renderer-set-property-inner-html/src/app/core/security/renderer-inner-html.ts",
+      "linter": "eslint",
+      "rules": [
+        "no-restricted-syntax"
+      ]
+    },
+    {
+      "file": "review-document-cookie/src/app/core/state/cookie.ts",
+      "linter": "eslint",
+      "rules": [
+        "no-restricted-syntax"
+      ]
+    },
+    {
+      "file": "review-indexed-db/src/app/core/state/indexed.ts",
+      "linter": "eslint",
+      "rules": [
+        "no-restricted-syntax"
+      ]
+    },
+    {
+      "file": "control-prefs-cookie-indexeddb/src/app/core/prefs/cookie-db.ts",
+      "linter": "eslint",
+      "rules": []
+    },
+    {
+      "file": "review-svg-onbegin/src/app/features/series/ui/spinner.html",
+      "linter": "forbidden",
+      "rules": [
+        "inline on*= handler"
+      ]
+    },
+    {
+      "file": "review-bypass-security-trust-template/src/app/features/series/ui/trusted.html",
+      "linter": "forbidden",
+      "rules": [
+        "bypassSecurityTrust"
+      ]
+    },
+    {
+      "file": "control-on-lookalike-attributes/src/app/features/series/ui/lookalike.html",
+      "linter": "forbidden",
+      "rules": []
     }
   ]
 }

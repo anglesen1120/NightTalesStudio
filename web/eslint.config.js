@@ -8,13 +8,26 @@
 // Fixtures: every glob is also registered under `tools/lint-fixtures/*/src/` so the negative fixtures mirror the
 // real tree (`<case>/src/app/features/series/domain/...`) and hit exactly the blocks the real files hit.
 // The fixtures are in the global `ignores`; `tools/web/check-lint-fixtures.mjs` lints them with `--no-ignore`.
-import { dirname, resolve, sep } from 'node:path';
+import { readdirSync } from 'node:fs';
+import { dirname, join, resolve, sep } from 'node:path';
 import { defineConfig } from 'eslint/config';
 import angular from 'angular-eslint';
 import tseslint from 'typescript-eslint';
 
-// Wave-1 features (README D2). Adding a feature = adding it here (cross-feature deep imports are then banned for it).
-const FEATURES = ['public', 'auth', 'dashboard', 'series', 'episodes'];
+// Wave-1 features (README D2). The list is the union of these static names and the directories that
+// actually exist under src/app/features, so a new feature folder gets the cross-feature deep-import
+// ban automatically (review F-6); the static entries keep the wave-1 features not yet on disk.
+const STATIC_FEATURES = ['public', 'auth', 'dashboard', 'series', 'episodes'];
+const featureDirs = (() => {
+  try {
+    return readdirSync(join(import.meta.dirname, 'src/app/features'), { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name);
+  } catch {
+    return [];
+  }
+})();
+const FEATURES = [...new Set([...STATIC_FEATURES, ...featureDirs])];
 
 const ROOTS = ['src/', 'tools/lint-fixtures/*/src/'];
 const at = (...suffixes) => ROOTS.flatMap((root) => suffixes.map((suffix) => root + suffix));
@@ -35,6 +48,7 @@ const DOMAIN = {
     '@features/**',
     '@shared/api',
     '@shared/api/**',
+    '@shared/ui',
     '@shared/ui/**',
     '../data-access/**',
     '../application/**',
@@ -44,7 +58,15 @@ const DOMAIN = {
 };
 // `@shared/api` is already reported by API wherever both apply, so it is not repeated here (one report per import).
 const UI = {
-  group: ['@angular/common/http', '@angular/common/http/**', '**/data-access/**', '**/application/**'],
+  group: [
+    '@angular/common/http',
+    '@angular/common/http/**',
+    // Bare layer directories (a barrel index.ts) as well as deep paths: `ignore` does not match `x/**` against `x`.
+    '**/data-access',
+    '**/data-access/**',
+    '**/application',
+    '**/application/**',
+  ],
   message: 'presentational ui takes inputs/outputs only (D2)',
 };
 const crossFeature = (feature) => ({
@@ -162,6 +184,39 @@ const withResolvedPaths = (base) => ({
 });
 // Flat config forbids registering a second '@typescript-eslint' plugin object, so the rule is replaced in place
 // (every config block that enables '@typescript-eslint/no-restricted-imports' then gets the wrapped version).
+//
+// The wrapper depends on the internals of a rule that typescript-eslint has deprecated (8.64.0, replaced by the
+// core rule): its existence and the handler keys it returns. Fail at config load, naming the cause, instead of
+// `base.create is not a function` on the first linted file or a silently unwrapped handler (review F-5).
+const RESTRICTED_IMPORTS_HANDLERS = [
+  'ImportDeclaration',
+  'ExportAllDeclaration',
+  'ExportNamedDeclaration[source]',
+  'TSImportEqualsDeclaration',
+];
+const assertRestrictedImportsRule = (rule) => {
+  const fail = (reason) => {
+    throw new Error(
+      `web/eslint.config.js: ${reason}. This file wraps '@typescript-eslint/no-restricted-imports' ` +
+        `(typescript-eslint, exact-pinned in web/package.json) to resolve relative and dynamic imports; ` +
+        `re-check the wrapper against the installed typescript-eslint before upgrading.`,
+    );
+  };
+  if (typeof rule?.create !== 'function') {
+    fail("tseslint.plugin.rules['no-restricted-imports'] is missing or has no create()");
+  }
+  const probe = rule.create({
+    options: [{ patterns: [{ group: ['probe'] }] }],
+    sourceCode: {},
+    filename: 'probe.ts',
+    report() {},
+  });
+  const missing = RESTRICTED_IMPORTS_HANDLERS.filter((key) => typeof probe[key] !== 'function');
+  if (missing.length > 0) {
+    fail(`'@typescript-eslint/no-restricted-imports' no longer exposes the handler(s) ${missing.join(', ')}`);
+  }
+};
+assertRestrictedImportsRule(tseslint.plugin.rules['no-restricted-imports']);
 tseslint.plugin.rules['no-restricted-imports'] = withResolvedPaths(tseslint.plugin.rules['no-restricted-imports']);
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -189,20 +244,53 @@ const SECURITY = [
     message: 'eval / new Function are banned (D2/D4)',
   },
   {
+    // globalThis['eval'](...), window['Function']('...'), window[`eval`](...): computed access skips the Identifier ban
+    selector:
+      'MemberExpression[computed=true]:matches([property.value=/^(eval|Function)$/], [property.quasis.0.value.cooked=/^(eval|Function)$/])',
+    message: 'eval / new Function are banned (D2/D4)',
+  },
+  // D4: no HTML sink that skips the Angular sanitizer. `[innerHTML]` in templates is covered by the template scan.
+  {
+    selector:
+      'AssignmentExpression[left.type="MemberExpression"]:matches([left.property.name=/^(innerHTML|outerHTML)$/], [left.property.value=/^(innerHTML|outerHTML)$/], [left.property.quasis.0.value.cooked=/^(innerHTML|outerHTML)$/])',
+    message: 'innerHTML / outerHTML assignment skips the Angular sanitizer and is banned (D2/D4)',
+  },
+  {
+    selector:
+      'CallExpression[callee.type="MemberExpression"]:matches([callee.property.name=/^(insertAdjacentHTML|createContextualFragment)$/], [callee.property.value=/^(insertAdjacentHTML|createContextualFragment)$/], [callee.property.quasis.0.value.cooked=/^(insertAdjacentHTML|createContextualFragment)$/])',
+    message: 'insertAdjacentHTML / createContextualFragment skip the Angular sanitizer and are banned (D2/D4)',
+  },
+  {
+    // renderer.setProperty(el, 'innerHTML', html)
+    selector:
+      'CallExpression[callee.property.name="setProperty"]:matches([arguments.1.value=/^(innerHTML|outerHTML)$/], [arguments.1.quasis.0.value.cooked=/^(innerHTML|outerHTML)$/])',
+    message: 'Renderer2.setProperty of innerHTML / outerHTML skips the Angular sanitizer and is banned (D2/D4)',
+  },
+  {
     // document.write(...), window.document.write(...), globalThis.document['write'](...), document['writeln'](...)
     selector:
       "MemberExpression:matches([object.name='document'], [object.property.name='document'], [object.property.value='document']):matches([computed=false][property.name=/^write(ln)?$/], [computed=true][property.value=/^write(ln)?$/])",
     message: 'document.write is banned (D2/D4)',
   },
 ];
+// Storage outside core/prefs: localStorage, sessionStorage, indexedDB and document.cookie (D2/D6).
+const STORAGE_MESSAGE = 'browser storage (localStorage, sessionStorage, indexedDB, document.cookie) only in core/prefs (D2/D6)';
 const STORAGE = [
   {
-    selector: 'Identifier[name=/^(localStorage|sessionStorage)$/]',
-    message: 'browser storage only in core/prefs (D2/D6)',
+    selector: 'Identifier[name=/^(localStorage|sessionStorage|indexedDB)$/]',
+    message: STORAGE_MESSAGE,
   },
   {
-    selector: "MemberExpression[computed=true][property.value=/^(localStorage|sessionStorage)$/]",
-    message: 'browser storage only in core/prefs (D2/D6)',
+    // window['localStorage'], globalThis[`indexedDB`]
+    selector:
+      'MemberExpression[computed=true]:matches([property.value=/^(localStorage|sessionStorage|indexedDB)$/], [property.quasis.0.value.cooked=/^(localStorage|sessionStorage|indexedDB)$/])',
+    message: STORAGE_MESSAGE,
+  },
+  {
+    // document.cookie, window.document.cookie, document['cookie']
+    selector:
+      "MemberExpression:matches([object.name='document'], [object.property.name='document'], [object.property.value='document']):matches([computed=false][property.name='cookie'], [computed=true][property.value='cookie'], [computed=true][property.quasis.0.value.cooked='cookie'])",
+    message: STORAGE_MESSAGE,
   },
 ];
 // D2/D13: every component states `changeDetection: ChangeDetectionStrategy.OnPush` explicitly, wherever it lives.
@@ -227,10 +315,23 @@ const SUBSCRIBE_IN_UI = {
   message: 'use toSignal() or takeUntilDestroyed() (D2)',
 };
 // Composition roots (core/shell/**, features/*/feature/**) are outside these globs, so they may inject stores.
-const INJECT_IN_UI = {
-  selector: "CallExpression[callee.name='inject'][arguments.0.name=/^(HttpClient|.*Repository|.*Store)$/]",
-  message: 'presentational ui takes inputs/outputs only: no store, repository or HttpClient injection (D2)',
-};
+// Covers inject(X), constructor parameter properties (`private store: X`) and plain constructor parameters.
+const INJECTED_TYPE = '/^(HttpClient|.*Repository|.*Store)$/';
+const INJECT_MESSAGE = 'presentational ui takes inputs/outputs only: no store, repository or HttpClient injection (D2)';
+const INJECT_IN_UI = [
+  {
+    selector: `CallExpression[callee.name='inject'][arguments.0.name=${INJECTED_TYPE}]`,
+    message: INJECT_MESSAGE,
+  },
+  {
+    selector: `TSParameterProperty[parameter.typeAnnotation.typeAnnotation.typeName.name=${INJECTED_TYPE}]`,
+    message: INJECT_MESSAGE,
+  },
+  {
+    selector: `MethodDefinition[kind='constructor'] > FunctionExpression > Identifier.params[typeAnnotation.typeAnnotation.typeName.name=${INJECTED_TYPE}]`,
+    message: INJECT_MESSAGE,
+  },
+];
 
 const syntax = (...selectors) => ['error', ...selectors];
 
@@ -245,7 +346,7 @@ const syntaxBlocks = [
   },
   {
     files: at('app/shared/ui/**/*.ts', 'app/features/*/ui/**/*.ts'),
-    rules: { 'no-restricted-syntax': syntax(...SECURITY, EXPLICIT_ONPUSH, ...STORAGE, SUBSCRIBE_IN_UI, INJECT_IN_UI) },
+    rules: { 'no-restricted-syntax': syntax(...SECURITY, EXPLICIT_ONPUSH, ...STORAGE, SUBSCRIBE_IN_UI, ...INJECT_IN_UI) },
   },
 ];
 
