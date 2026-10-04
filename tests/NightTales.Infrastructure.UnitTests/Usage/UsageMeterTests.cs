@@ -149,6 +149,22 @@ public sealed class UsageMeterTests(TestDatabase database) : IntegrationTest(dat
         (await Rows(request)).ShouldHaveSingleItem("the meter committed in its own transaction");
     }
 
+    [Fact]
+    public async Task UsageMeter_ModerationWithoutUsage_WritesZeroCostEstimatedRow()
+    {
+        await using var host = new UsageTestHost(Database, new FakeClock());
+        var (userId, version) = await ArrangeAsync(671);
+        var request = Request();
+
+        // 02.4.1-T1 (D12): the moderation endpoint is free and reports no usage; it needs no D1 bound.
+        await host.Meter.RecordAsync(Item(userId, version, "moderation", providerRequestId: request, withUsage: false, costUsd: 0m), Ct);
+
+        var row = (await Rows(request)).ShouldHaveSingleItem();
+        row.Operation.ShouldBe("moderation");
+        row.Estimated.ShouldBe("true");
+        decimal.Parse(row.CostUsd, CultureInfo.InvariantCulture).ShouldBe(0m);
+    }
+
     private async Task<(Guid UserId, string Version)> ArrangeAsync(int version)
     {
         var user = await Database.CreateUserBuilder().CreateAsync(ct: Ct);

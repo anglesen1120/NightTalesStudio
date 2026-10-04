@@ -5,14 +5,21 @@ using System.ClientModel;
 using System.ClientModel.Primitives;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using NightTales.Application.Abstractions.Moderation;
 using NightTales.Application.Abstractions.Text;
+using NightTales.Application.Abstractions.Usage;
 using NightTales.Application.Features.Stories.Writing;
+using NightTales.Infrastructure.Compliance;
+using OpenAI;
 using OpenAI.Responses;
 using Polly;
+using Polly.Registry;
 using Polly.Retry;
 using Polly.Timeout;
+using ModerationClient = OpenAI.Moderations.ModerationClient;
 
 namespace NightTales.Infrastructure.OpenAI;
 
@@ -79,7 +86,65 @@ public static class OpenAiServiceCollectionExtensions
         services.TryAddSingleton<ITextClient, OpenAiTextClient>();
         services.TryAddSingleton<IStoryWriter, OpenAiStoryWriter>();
 
+        AddContentModerator(services);
+
         return services;
+    }
+
+    /// <summary>
+    /// 02.4.1-T1 (02 README D12): <see cref="ModerationOptions"/> bound from <c>OpenAi:Moderation</c>, the
+    /// <c>openai-moderation</c> pipeline (the text calls' retry shape with the moderation timeout), the moderation
+    /// client over the same <c>"openai"</c> HttpClient and base URL as the text client (10 CR-16: the e2e stub also
+    /// answers <c>/moderations</c>), <see cref="IContentModerator"/> and <see cref="IModerationEventWriter"/>.
+    /// </summary>
+    private static void AddContentModerator(IServiceCollection services)
+    {
+        services.AddOptions<ModerationOptions>()
+            .BindConfiguration(ModerationOptions.SectionName)
+            .Validate(
+                options => !string.IsNullOrWhiteSpace(options.Model),
+                $"'{ModerationOptions.SectionName}:{nameof(ModerationOptions.Model)}' is required.")
+            .Validate(
+                options => options.MaxCharsPerChunk > 0,
+                $"'{ModerationOptions.SectionName}:{nameof(ModerationOptions.MaxCharsPerChunk)}' must be positive.")
+            .Validate(
+                options => options.TimeoutSeconds > 0,
+                $"'{ModerationOptions.SectionName}:{nameof(ModerationOptions.TimeoutSeconds)}' must be positive.")
+            .ValidateOnStart();
+
+        services.AddResiliencePipeline(OpenAiContentModerator.PipelineKey, (builder, context) =>
+        {
+            var provider = context.ServiceProvider;
+            var moderation = provider.GetRequiredService<IOptions<ModerationOptions>>().Value;
+            var retryBaseDelay = provider.GetRequiredService<IOptionsMonitor<OpenAiOptions>>().CurrentValue.RetryBaseDelay;
+            ConfigurePipeline(builder, TimeSpan.FromSeconds(moderation.TimeoutSeconds), retryBaseDelay);
+        });
+
+        // The SDK's own retry is off here too (F23); the pipeline above is the only retry layer.
+        services.TryAddSingleton(provider =>
+        {
+            var settings = provider.GetRequiredService<IOptionsMonitor<OpenAiOptions>>().CurrentValue;
+            var moderation = provider.GetRequiredService<IOptions<ModerationOptions>>().Value;
+            var http = provider.GetRequiredService<IHttpClientFactory>().CreateClient(HttpClientName);
+
+            return new ModerationClient(
+                moderation.Model,
+                new ApiKeyCredential(settings.ApiKey),
+                new OpenAIClientOptions
+                {
+                    Endpoint = new Uri(settings.BaseUrl.TrimEnd('/') + "/"),
+                    Transport = new HttpClientPipelineTransport(http),
+                    RetryPolicy = new ClientRetryPolicy(0),
+                    NetworkTimeout = Timeout.InfiniteTimeSpan,
+                });
+        });
+        services.TryAddSingleton<IContentModerator>(provider => new OpenAiContentModerator(
+            provider.GetRequiredService<ModerationClient>(),
+            provider.GetRequiredService<IUsageMeter>(),
+            provider.GetRequiredService<IOptions<ModerationOptions>>().Value,
+            provider.GetRequiredService<ResiliencePipelineProvider<string>>(),
+            provider.GetRequiredService<ILogger<OpenAiContentModerator>>()));
+        services.TryAddSingleton<IModerationEventWriter, ModerationEventWriter>();
     }
 
     /// <summary>

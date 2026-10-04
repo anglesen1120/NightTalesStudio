@@ -38,13 +38,13 @@ public sealed class UsageMeter(
         ArgumentNullException.ThrowIfNull(item);
 
         var operation = ParseOperation(item.Operation);
-        var priceVersion = Validate(item);
+        var priceVersion = Validate(item, operation);
 
         // The caller's token ends here: the call is already paid for.
         using var settlement = new CancellationTokenSource(SettlementTimeout);
         var settle = settlement.Token;
 
-        var (cost, estimated) = await CostOfAsync(item, priceVersion, settle).ConfigureAwait(false);
+        var (cost, estimated) = await CostOfAsync(item, operation, priceVersion, settle).ConfigureAwait(false);
 
         // Not the caller's scope: a new one, so the context and its transaction belong to this write alone.
         await using var scope = scopeFactory.CreateAsyncScope();
@@ -73,7 +73,7 @@ public sealed class UsageMeter(
     }
 
     /// <summary>Rejects a malformed item before anything is priced or written; returns the parsed price version.</summary>
-    private static int Validate(UsageItem item)
+    private static int Validate(UsageItem item, UsageOperation operation)
     {
         if (!int.TryParse(item.PriceVersion, NumberStyles.None, CultureInfo.InvariantCulture, out var priceVersion) || priceVersion <= 0)
         {
@@ -86,7 +86,9 @@ public sealed class UsageMeter(
         }
 
         var estimated = item.Estimated || item.InputTokens is null;
-        if (estimated && item.CostUsd is not > 0m)
+
+        // The moderation endpoint is free and reports no usage (D12): it is the one estimated item whose bound is 0.
+        if (estimated && operation != UsageOperation.Moderation && item.CostUsd is not > 0m)
         {
             throw new ArgumentException("An estimated usage item must carry the D1 bound (> 0) as CostUsd.", nameof(item));
         }
@@ -99,8 +101,14 @@ public sealed class UsageMeter(
         return priceVersion;
     }
 
-    private async Task<(decimal Cost, bool Estimated)> CostOfAsync(UsageItem item, int priceVersion, CancellationToken ct)
+    private async Task<(decimal Cost, bool Estimated)> CostOfAsync(UsageItem item, UsageOperation operation, int priceVersion, CancellationToken ct)
     {
+        if (operation == UsageOperation.Moderation)
+        {
+            // Free endpoint, no usage in the response: always cost 0, estimated (D12).
+            return (0m, true);
+        }
+
         if (item.InputTokens is null || item.Estimated)
         {
             // No usage reported: the D1 bound, never 0 and never null - an unmetered call must not look free.
