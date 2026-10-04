@@ -43,10 +43,10 @@ Plans 06, 07, 08, 12: not started. Plan 10: approved HTML design handoff and ref
 
 | Lane | Start now (after step 0) | Next, after prerequisite merges | Tier | Collision / notes |
 |---|---|---|---|---|
-| A Moderation → job | 02.4.1-T1 content moderator (S) | 02.2.2-T3 generate-story job pipeline (M; needs 02.4.1-T1 + 02.2.1-T2 + 02.2.2-T2) | T3 | No migration; 02.2.2-T3 is the M1 critical path |
-| B Self-review | 02.6.1-T1 review prompt + `ReviewAsync` + audit merge (M) | 02.6.1-T2 | T3 | No migration; shares `OpenAiStoryWriter` / prompt catalog with lane A |
-| C Edit | 02.3.1-T1 edit-story command (S; calls the 02.3.4 checker) | 02.3.2-T1 (also needs 02.2.2-T3) | T3 | Header says no migration; confirm the [OPEN] `parent_version_id`/`fact_sheet_id`/`schema_version` note against `story_versions` at kickoff |
-| D Fetcher | 02.5.2-T1 safe HTTP source fetcher (M; network egress) | 02.5.2-T2 → T3 → T4, then 02.5.3-T1 fact extractor (needs the whole 02.5.2 story) | T3 | No migration, no API change |
+| A Moderation → job | ~~02.4.1-T1 content moderator (S)~~ merged #121 | 02.2.2-T3 generate-story job pipeline (M; needs 02.4.1-T1 + 02.2.1-T2 + 02.2.2-T2) | T3 | No migration; 02.2.2-T3 is the M1 critical path |
+| B Self-review | ~~02.6.1-T1 review prompt + `ReviewAsync` + audit merge (M)~~ merged #121 | 02.6.1-T2 | T3 | No migration; shares `OpenAiStoryWriter` / prompt catalog with lane A |
+| C Edit | ~~02.3.1-T1 edit-story command (S; calls the 02.3.4 checker)~~ merged #121 | 02.3.2-T1 (also needs 02.2.2-T3) | T3 | Edit-path moderator wiring deferred to 02.3.2-T1 (owner 2026-10-04) |
+| D Fetcher | ~~02.5.2-T1 safe HTTP source fetcher (M; network egress)~~ merged #121 | 02.5.2-T2 → T3 → T4, then 02.5.3-T1 fact extractor (needs the whole 02.5.2 story) | T3 | No migration, no API change |
 
 **Not in P:** 09.3.2-T2 per-request suspension is phase S (`S · M2`); 09.3.4 QA-2 stays accepted until the S go decision. 09.6.2-T1 still needs 05.1.2-T1.
 
@@ -66,6 +66,10 @@ Plans 06, 07, 08, 12: not started. Plan 10: approved HTML design handoff and ref
 
 | Task | Status | Note |
 |---|---|---|
+| 02.4.1-T1 Content moderator | merged (#121, develop `0028aa0`) | T3 gates closed. Accepted: metering outside `ModerationScope` is best effort (02.2.2-T3 must wrap calls in `ModerationScope.Push`); excerpt retention follows 13.3 |
+| 02.5.2-T1 Safe HTTP fetcher | merged (#121) | T3 gates closed. Next 02.5.2-T2 → T3 → T4; 02.5.2-T3 error mapping must know robots fail-closed → `source_blocked_by_robots` |
+| 02.3.1-T1 Edit story | merged (#121) | T3 gates closed. OPEN (owner deferred 2026-10-04): edit carries moderation `stale`/`unavailable`, real moderator call decided with 02.3.2-T1; similarity null until 02.5.6 |
+| 02.6.1-T1 Self-review | merged (#121) | T3 gates closed. OPEN: job wiring (steps 4–5) + GET `currentStory.review` wait for 02.2.2-T3 / 02.3.4-T2; 02.2.2-T3 header lists 02.6.1-T1 under Blocks (plan inconsistency) |
 | 05.3.2-T3 Music metadata | merged (combined Session 3 PR; migration regenerated as `20261003073358_05_MusicTracks`) | `music_tracks` + `MusicTrackSeeder` (`ISeeder`; Development auto-seed, `nts-seed` elsewhere, 05 §10 T85) + `MusicSelector` (D8). T3 gates closed. Owns `migrations[^1]` |
 | 02.2.4-T1 M1 cost persistence | merged (#104, develop `f0f2fd3`; migration `20261002234448_02_PriceVersions`) | Price versions + `TextCostCalculator` + `UsageMeter` + `StoryCostEstimator`; T3 gates closed. Rulings 02 §10 T111/T112 (ISeeder; typed `price_catalog_empty`/`prompt_not_shipped`; `UsageItem` keys; active-row versioning; RunContext/budget-guard wiring with 02.2.1-T2). Down test now finds its migration by name |
 | 13.3.1-T1 Deletion engine | merged (#118, develop `384041c`; migration `20261003092804_13_DataDeletionRequests`) | Session 4 lane A. T3 gates closed. Rulings: default `DataDeletion:DeferredScopes` stays [account, channel] until 06.4.3-T1 registers the channel handler and drops `channel` (plan §10.1); unknown/foreign episode target completes idempotently (deviation from plan §7.3); stale claims at MaxAttempts → Failed `service_unavailable`; account erasure must also delete `source_creations` (02.5.1-T1, RESTRICT FK) |
