@@ -500,4 +500,114 @@ describe('SessionInterceptor', () => {
       for (const spy of spies) expect(spy).not.toHaveBeenCalled();
     });
   });
+
+  describe('QA: exploratory', () => {
+    it('retries an unknown-code 401 only when it carries an invalid_token challenge', async () => {
+      signIn(FRESH_MS);
+      const challenged = run(http.get('/api/v1/series'));
+      unauthorized(await request('/api/v1/series'), { code: 'weird_code' }, { 'WWW-Authenticate': 'Bearer error="invalid_token"' });
+      (await request('/api/v1/series')).flush({});
+      expect((await challenged).ok).toBe(true);
+      expect(fake.calls).toBe(1);
+
+      const otherChallenge = run(http.get('/api/v1/other'));
+      unauthorized(await request('/api/v1/other'), { code: 'weird_code' }, { 'WWW-Authenticate': 'Bearer error="insufficient_scope"' });
+      expect(httpError(await otherChallenge).status).toBe(401);
+
+      const noChallenge = run(http.get('/api/v1/third'));
+      unauthorized(await request('/api/v1/third'), { code: 'weird_code' });
+      expect(httpError(await noChallenge).status).toBe(401);
+      expect(fake.calls).toBe(1);
+      await settle();
+      mock.expectNone('/api/v1/other');
+      mock.expectNone('/api/v1/third');
+    });
+
+    it('a pass-through code wins over an invalid_token challenge', async () => {
+      signIn(FRESH_MS);
+      const done = run(http.get('/api/v1/series'));
+      unauthorized(await request('/api/v1/series'), { code: 'reauth_required' }, { 'WWW-Authenticate': 'Bearer error="invalid_token"' });
+      expect(httpError(await done).status).toBe(401);
+      expect(fake.calls).toBe(0);
+      await settle();
+      mock.expectNone('/api/v1/series');
+    });
+
+    it('a 401 on an enrolment-token request neither refreshes nor ends anything', async () => {
+      store.beginEnrolment('enrol-token');
+      const done = run(http.post('/api/v1/me/mfa/verify', { code: '123456' }));
+      const req = await request('/api/v1/me/mfa/verify');
+      expect(authorization(req)).toBe('Bearer enrol-token');
+      unauthorized(req, { code: 'unauthorized' });
+      expect(httpError(await done).status).toBe(401);
+      expect(fake.calls).toBe(0);
+      expect(store.endReason()).toBeNull();
+      expect(store.mode()).toBe('enrolment');
+      expect(scopes.map((scope) => scope.resets)).toEqual([0, 0, 0]);
+    });
+
+    it('treats a protocol-relative host as foreign and a same-origin absolute URL as the API', async () => {
+      signIn(FRESH_MS);
+      const foreign = run(http.get('//evil.example/api/v1/series'));
+      const foreignReq = await request('//evil.example/api/v1/series');
+      expect(authorization(foreignReq)).toBeNull();
+      foreignReq.flush({});
+      await foreign;
+
+      const sameOrigin = `${document.location.origin}/api/v1/series`;
+      const own = run(http.get(sameOrigin));
+      const ownReq = await request(sameOrigin);
+      expect(authorization(ownReq)).toBe(`Bearer ${first.accessToken}`);
+      ownReq.flush({});
+      await own;
+    });
+
+    it('replays the same method and body with the new token', async () => {
+      signIn(FRESH_MS);
+      const done = run(http.post('/api/v1/series', { title: 'x' }));
+      unauthorized(await request('/api/v1/series'), { code: 'unauthorized' });
+      const replay = await request('/api/v1/series');
+      expect(replay.request.method).toBe('POST');
+      expect(replay.request.body).toEqual({ title: 'x' });
+      expect(authorization(replay)).toBe(`Bearer ${fake.next.accessToken}`);
+      replay.flush({});
+      await done;
+    });
+
+    it('a request issued while the boot restore is pending waits for it and carries the restored token', async () => {
+      fake.mode = 'deferred';
+      void store.restore();
+      const done = run(http.get('/api/v1/series'));
+      await settle();
+      mock.expectNone('/api/v1/series');
+
+      fake.resolveNext(fake.next);
+      const req = await request('/api/v1/series');
+      expect(authorization(req)).toBe(`Bearer ${fake.next.accessToken}`);
+      req.flush({});
+      await done;
+      expect(fake.calls).toBe(1);
+    });
+
+    it('signOut while the pre-request refresh is in flight: the request goes out bare, its 401 neither refreshes nor ends twice', async () => {
+      signIn(STALE_MS);
+      fake.mode = 'deferred';
+      const done = run(http.get('/api/v1/series'));
+      await vi.waitFor(() => expect(fake.calls).toBe(1), { timeout: 2_000, interval: 1 });
+
+      store.signOut('expired');
+      fake.resolveNext(fake.next);
+      const req = await request('/api/v1/series');
+      expect(authorization(req)).toBeNull();
+      unauthorized(req, { code: 'unauthorized' });
+
+      expect(httpError(await done).status).toBe(401);
+      expect(fake.calls).toBe(1);
+      expect(store.endReason()).toBe('expired');
+      expect(store.accessToken()).toBeNull();
+      expect(scopes.map((scope) => scope.resets)).toEqual([1, 1, 1]);
+      await settle();
+      mock.expectNone('/api/v1/series');
+    });
+  });
 });

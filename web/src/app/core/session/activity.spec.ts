@@ -139,4 +139,29 @@ describe('ActivityTracker', () => {
     vi.setSystemTime(T0 + 26 * MINUTE);
     expect(tracker.isActive()).toBe(false);
   });
+
+  it('throttle boundary: an input exactly 100 ms after the last one is recorded, 99 ms is dropped', () => {
+    const { tracker } = setup();
+    tracker.start();
+    vi.setSystemTime(T0 + 99);
+    window.dispatchEvent(new Event('keydown'));
+    expect(tracker.lastInputAt()).toBe(T0);
+    vi.setSystemTime(T0 + ACTIVITY_THROTTLE_MS);
+    window.dispatchEvent(new Event('keydown'));
+    expect(tracker.lastInputAt()).toBe(T0 + ACTIVITY_THROTTLE_MS);
+    tracker.stop();
+  });
+
+  it('user window boundary: 13 days minus 1 ms is still active, a visibility change alone does not revive an idle tab', () => {
+    const { tracker, store } = setup();
+    tracker.start();
+    signInAs(store, 'user');
+    vi.setSystemTime(T0 + 13 * 86_400_000 - 1);
+    expect(tracker.isActive()).toBe(true);
+    vi.setSystemTime(T0 + 13 * 86_400_000);
+    expect(tracker.isActive()).toBe(false);
+    document.dispatchEvent(new Event('visibilitychange'));
+    expect(tracker.isActive()).toBe(false);
+    tracker.stop();
+  });
 });

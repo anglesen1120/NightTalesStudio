@@ -218,3 +218,46 @@ describe('MfaEnrolmentGuard', () => {
     expect(loginReturnUrl(router)).toBe('/account/security/mfa-setup');
   });
 });
+
+describe('QA: guards after a failed boot and during a refresh', () => {
+  it.each([
+    ['network', 'restore_failed'],
+    ['server', 'restore_failed'],
+    ['reused', 'reused'],
+  ] as const)('boot %s (%s): protected route goes to /login?returnUrl and /login then stays (no redirect loop)', async (mode, reason) => {
+    const { store, router } = setup(mode);
+    const harness = await RouterTestingHarness.create();
+
+    await harness.navigateByUrl('/dashboard');
+    expect(loginReturnUrl(router)).toBe('/dashboard');
+    expect(store.endReason()).toBe(reason);
+
+    await harness.navigateByUrl('/login');
+    expect(router.url).toBe('/login');
+    await tick();
+    expect(router.url).toBe('/login');
+  });
+
+  it('keeps the query string in the sanitized returnUrl', async () => {
+    const { router } = setup('401');
+    const harness = await RouterTestingHarness.create();
+    await harness.navigateByUrl('/app/a?tab=story');
+    expect(loginReturnUrl(router)).toBe('/app/a?tab=story');
+  });
+
+  it('lets an authenticated session through while its refresh is in flight (refreshing is never a sign-out)', async () => {
+    const { api, store, router } = setup('deferred');
+    store.signIn({ accessToken: fakeJwt('user'), expiresAt: Date.now() + 1_000 }, 'user', []);
+    const flight = store.ensureFreshAccessToken({ userAction: true });
+    await tick();
+    expect(store.status()).toBe('refreshing');
+    const harness = await RouterTestingHarness.create();
+
+    await harness.navigateByUrl('/dashboard');
+    expect(router.url).toBe('/dashboard');
+
+    api.resolveNext(freshTokens());
+    await flight;
+    expect(store.status()).toBe('authenticated');
+  });
+});

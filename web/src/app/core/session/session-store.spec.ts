@@ -650,4 +650,122 @@ describe('SessionStore', () => {
       expect(cookieWrite).not.toHaveBeenCalled();
     });
   });
+
+  describe('QA: boundaries, races and backend contract', () => {
+    it('treats a token with exactly the freshness margin left as stale (task rule: only `> margin` is returned as is)', async () => {
+      vi.useFakeTimers({ toFake: ['Date'] });
+      vi.setSystemTime(T0);
+      const { store, fake } = setup();
+      store.signIn({ accessToken: fakeJwt('user', ['edge']), expiresAt: T0 + FRESHNESS_MARGIN_MS }, 'user', []);
+      await store.ensureFreshAccessToken();
+      expect(fake.calls).toBe(1);
+    });
+
+    it('a rejectedToken that is not the current token does not force a refresh', async () => {
+      const { store, fake } = setup();
+      const current = pair('user', FRESH, 'current');
+      store.signIn(current, 'user', []);
+      await expect(store.ensureFreshAccessToken({ userAction: true, rejectedToken: 'some-older-token' })).resolves.toBe(
+        current.accessToken,
+      );
+      expect(fake.calls).toBe(0);
+    });
+
+    it('a refresh resolving after logout() commits nothing and the flight settles null', async () => {
+      const scope = new CountingScope();
+      const { store, fake } = setup([scope]);
+      store.signIn(pair('user', STALE, 'A'), 'user', []);
+      fake.mode = 'deferred';
+      const flight = store.ensureFreshAccessToken({ userAction: true });
+      await vi.waitFor(() => expect(fake.calls).toBe(1));
+
+      await store.logout();
+      fake.resolveNext(pair('user', FRESH, 'late'));
+
+      await expect(flight).resolves.toBeNull();
+      expect(store.accessToken()).toBeNull();
+      expect(store.status()).toBe('ended');
+      expect(store.endReason()).toBe('logout');
+      expect(scope.resets).toBe(1);
+    });
+
+    it('signOut during the boot restore keeps its end reason, resets once and still settles the restore', async () => {
+      const scope = new CountingScope();
+      const { store, fake } = setup([scope]);
+      fake.mode = 'deferred';
+      const restoring = store.restore();
+      await vi.waitFor(() => expect(fake.calls).toBe(1));
+
+      store.signOut('expired');
+      fake.resolveNext(pair('user', FRESH, 'late'));
+      await restoring;
+
+      expect(store.restoreSettled()).toBe(true);
+      expect(store.accessToken()).toBeNull();
+      expect(store.endReason()).toBe('expired');
+      expect(store.status()).toBe('ended');
+      expect(scope.resets).toBe(1);
+    });
+
+    it('a late refresh_token_reused for a restore that signOut already replaced does not overwrite the end reason', async () => {
+      const scope = new CountingScope();
+      const { store, fake } = setup([scope]);
+      fake.mode = 'deferred';
+      const restoring = store.restore();
+      await vi.waitFor(() => expect(fake.calls).toBe(1));
+
+      store.signOut('expired');
+      fake.rejectNext(appError('refresh_token_reused', 401));
+      await restoring;
+
+      expect(store.endReason()).toBe('expired');
+      expect(scope.resets).toBe(1);
+    });
+
+    it('a logout() whose call is still pending does not end a session that signed in meanwhile', async () => {
+      class SlowLogoutApi extends FakeSessionApi {
+        release!: () => void;
+        override logout(): Promise<void> {
+          this.logoutCalls += 1;
+          return new Promise<void>((resolve) => {
+            this.release = resolve;
+          });
+        }
+      }
+      const api = new SlowLogoutApi();
+      TestBed.configureTestingModule({
+        providers: [
+          ...ZONELESS_TEST_PROVIDERS,
+          provideRouter([{ path: '**', children: [] }]),
+          { provide: SessionApi, useValue: api },
+        ],
+      });
+      const store = TestBed.inject(SessionStore);
+      store.signIn(pair('user', FRESH, 'A'), 'user', []);
+      const loggingOut = store.logout();
+      const b = pair('admin', FRESH, 'B');
+      store.signIn(b, 'admin', ['pwd']);
+      api.release();
+      await loggingOut;
+
+      expect(store.accessToken()).toBe(b.accessToken);
+      expect(store.endReason()).toBeNull();
+      expect(store.status()).toBe('authenticated');
+    });
+
+    // The real backend answers a refresh WITHOUT any cookie with 401 `session_revoked`
+    // (AuthEndpoints.RefreshAsync, 09 README WT21, RefreshTokenTests.Refresh_WithoutCookie_ReturnsSessionRevoked), so
+    // every first-time anonymous visitor boots through this exact branch. README D6 / Acceptance L190-192 require the
+    // anonymous boot to carry no end reason and no banner. `it.fails` documents the open defect (QA10_2_1 D1): flip
+    // it to `it` once `endRestore` treats `session_revoked` like the plain anonymous denial.
+    it.fails('QA-DEFECT D1: a boot refresh answered by 401 session_revoked (no cookie, WT21) settles anonymous', async () => {
+      const scope = new CountingScope();
+      const { store, fake } = setup([scope]);
+      fake.mode = 'revoked';
+      await store.restore();
+      expect(store.endReason()).toBeNull();
+      expect(store.status()).toBe('anonymous');
+      expect(scope.resets).toBe(0);
+    });
+  });
 });
