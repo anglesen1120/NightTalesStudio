@@ -1,0 +1,264 @@
+{
+  "fixtures": [
+    {
+      "file": "domain-imports-angular/src/app/features/series/domain/episode-summary.ts",
+      "linter": "eslint",
+      "rules": [
+        "@typescript-eslint/no-restricted-imports"
+      ]
+    },
+    {
+      "file": "domain-imports-rxjs/src/app/features/series/domain/episode-stream.ts",
+      "linter": "eslint",
+      "rules": [
+        "@typescript-eslint/no-restricted-imports"
+      ]
+    },
+    {
+      "file": "domain-imports-sibling-layer/src/app/features/series/domain/leak.ts",
+      "linter": "eslint",
+      "rules": [
+        "@typescript-eslint/no-restricted-imports"
+      ]
+    },
+    {
+      "file": "ui-injects-httpclient/src/app/shared/ui/episode-list.ts",
+      "linter": "eslint",
+      "rules": [
+        "@typescript-eslint/no-restricted-imports",
+        "no-restricted-syntax"
+      ]
+    },
+    {
+      "file": "ui-injects-store/src/app/features/series/ui/series-list.ts",
+      "linter": "eslint",
+      "rules": [
+        "no-restricted-syntax"
+      ]
+    },
+    {
+      "file": "ui-injects-repository/src/app/features/episodes/ui/episode-card.component.ts",
+      "linter": "eslint",
+      "rules": [
+        "no-restricted-syntax"
+      ]
+    },
+    {
+      "file": "shared-ui-imports-data-access/src/app/shared/ui/page-header.ts",
+      "linter": "eslint",
+      "rules": [
+        "@typescript-eslint/no-restricted-imports"
+      ]
+    },
+    {
+      "file": "api-outside-data-access/src/app/features/series/application/series.store.ts",
+      "linter": "eslint",
+      "rules": [
+        "@typescript-eslint/no-restricted-imports"
+      ]
+    },
+    {
+      "file": "api-from-ui/src/app/features/series/ui/series-row.ts",
+      "linter": "eslint",
+      "rules": [
+        "@typescript-eslint/no-restricted-imports"
+      ]
+    },
+    {
+      "file": "cross-feature-deep-import/src/app/features/series/feature/series-page.ts",
+      "linter": "eslint",
+      "rules": [
+        "@typescript-eslint/no-restricted-imports"
+      ]
+    },
+    {
+      "file": "any/src/app/features/series/domain/cursor-page.ts",
+      "linter": "eslint",
+      "rules": [
+        "@typescript-eslint/no-explicit-any"
+      ]
+    },
+    {
+      "file": "no-onpush/src/app/features/series/feature/widget.component.ts",
+      "linter": "eslint",
+      "rules": [
+        "no-restricted-syntax"
+      ]
+    },
+    {
+      "file": "no-onpush-plain-name/src/app/features/series/ui/widget.ts",
+      "linter": "eslint",
+      "rules": [
+        "no-restricted-syntax"
+      ]
+    },
+    {
+      "file": "no-onpush-eager/src/app/features/series/feature/eager.component.ts",
+      "linter": "eslint",
+      "rules": [
+        "@angular-eslint/prefer-on-push-component-change-detection"
+      ]
+    },
+    {
+      "file": "component-subscribe/src/app/features/series/feature/series-list.component.ts",
+      "linter": "eslint",
+      "rules": [
+        "no-restricted-syntax"
+      ]
+    },
+    {
+      "file": "ui-subscribe-plain-class/src/app/features/series/ui/ticker.ts",
+      "linter": "eslint",
+      "rules": [
+        "no-restricted-syntax"
+      ]
+    },
+    {
+      "file": "bypass-security-trust/src/app/features/series/feature/xss.ts",
+      "linter": "eslint",
+      "rules": [
+        "no-restricted-syntax"
+      ]
+    },
+    {
+      "file": "eval/src/app/core/security/run-code.ts",
+      "linter": "eslint",
+      "rules": [
+        "no-restricted-syntax"
+      ]
+    },
+    {
+      "file": "new-function/src/app/core/security/make-function.ts",
+      "linter": "eslint",
+      "rules": [
+        "no-restricted-syntax"
+      ]
+    },
+    {
+      "file": "document-write/src/app/core/security/emit-html.ts",
+      "linter": "eslint",
+      "rules": [
+        "no-restricted-syntax"
+      ]
+    },
+    {
+      "file": "storage-outside-prefs/src/app/features/series/ui/sidebar.component.ts",
+      "linter": "eslint",
+      "rules": [
+        "no-restricted-syntax"
+      ]
+    },
+    {
+      "file": "session-storage-outside-prefs/src/app/core/state/session-copy.ts",
+      "linter": "eslint",
+      "rules": [
+        "no-restricted-syntax"
+      ]
+    },
+    {
+      "file": "console-log/src/app/core/diagnostics.ts",
+      "linter": "eslint",
+      "rules": [
+        "no-console"
+      ]
+    },
+    {
+      "file": "template-img-without-alt/src/app/features/series/ui/poster.html",
+      "linter": "eslint",
+      "rules": [
+        "@angular-eslint/template/alt-text"
+      ]
+    },
+    {
+      "file": "template-click-without-keyboard/src/app/features/series/ui/clicker.html",
+      "linter": "eslint",
+      "rules": [
+        "@angular-eslint/template/click-events-have-key-events",
+        "@angular-eslint/template/interactive-supports-focus"
+      ]
+    },
+    {
+      "file": "template-control-without-label/src/app/features/series/ui/field.html",
+      "linter": "eslint",
+      "rules": [
+        "@angular-eslint/template/label-has-associated-control"
+      ]
+    },
+    {
+      "file": "template-positive-tabindex/src/app/features/series/ui/tab-order.html",
+      "linter": "eslint",
+      "rules": [
+        "@angular-eslint/template/no-positive-tabindex"
+      ]
+    },
+    {
+      "file": "inline-handler/src/app/features/series/ui/template.html",
+      "linter": "forbidden",
+      "rules": [
+        "inline on*= handler"
+      ]
+    },
+    {
+      "file": "inner-html/src/app/features/series/ui/bound-html.html",
+      "linter": "forbidden",
+      "rules": [
+        "[innerHTML]"
+      ]
+    },
+    {
+      "file": "javascript-url/src/app/features/series/ui/js-link.html",
+      "linter": "forbidden",
+      "rules": [
+        "javascript:"
+      ]
+    },
+    {
+      "file": "iframe-srcdoc/src/app/features/series/ui/frame.html",
+      "linter": "forbidden",
+      "rules": [
+        "srcdoc=",
+        "<iframe"
+      ]
+    },
+    {
+      "file": "control-clean/src/app/features/series/ui/series-card.component.ts",
+      "linter": "eslint",
+      "rules": []
+    },
+    {
+      "file": "control-routed-container-injects-store/src/app/features/series/feature/series-page.component.ts",
+      "linter": "eslint",
+      "rules": []
+    },
+    {
+      "file": "control-shell-injects-store/src/app/core/shell/shell.component.ts",
+      "linter": "eslint",
+      "rules": []
+    },
+    {
+      "file": "control-data-access-api-and-subscribe/src/app/features/series/data-access/series.repository.ts",
+      "linter": "eslint",
+      "rules": []
+    },
+    {
+      "file": "control-core-data-access-api/src/app/core/auth/data-access/token.repository.ts",
+      "linter": "eslint",
+      "rules": []
+    },
+    {
+      "file": "control-prefs-storage/src/app/core/prefs/preferences.store.ts",
+      "linter": "eslint",
+      "rules": []
+    },
+    {
+      "file": "control-feature-index-import/src/app/features/series/feature/series-routes.ts",
+      "linter": "eslint",
+      "rules": []
+    },
+    {
+      "file": "control-domain-util-import/src/app/features/series/domain/series-title.ts",
+      "linter": "eslint",
+      "rules": []
+    }
+  ]
+}
