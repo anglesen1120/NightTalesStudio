@@ -34,6 +34,16 @@
       "charCounter": { "label": "Số ký tự", "over": "vượt giới hạn" },
       "copyableCode": { "copy": "Sao chép mã", "copied": "Đã sao chép", "unavailable": "Không thể sao chép tự động. Hãy chọn và sao chép mã." },
       "icons": { "check": "Hoàn tất", "clock": "Đang chờ", "alert": "Cảnh báo", "play": "Phát", "pause": "Tạm dừng", "copy": "Sao chép", "unknown": "Chưa xác định" }
+    },
+    "session": {
+      "signedOut": { "title": "Bạn đã đăng xuất", "body": "Phiên làm việc đã kết thúc. Đăng nhập lại để tiếp tục." },
+      "expired": { "title": "Phiên đã hết hạn", "body": "Vì lý do bảo mật, hãy đăng nhập lại để tiếp tục." },
+      "revoked": { "title": "Phiên đã bị thu hồi", "body": "Phiên này không còn hiệu lực. Hãy đăng nhập lại." },
+      "reused": { "title": "Phát hiện phiên bất thường", "body": "Phiên của bạn đã bị đóng để bảo vệ tài khoản. Hãy đăng nhập lại và đổi mật khẩu nếu bạn không nhận ra hoạt động này." },
+      "restoreFailed": { "body": "Không thể khôi phục phiên làm việc. Hãy đăng nhập lại." },
+      "signIn": "Đăng nhập",
+      "signOut": "Đăng xuất",
+      "reauthRequired": { "title": "Cần xác nhận lại", "body": "Hãy nhập lại mật khẩu để thực hiện thao tác nhạy cảm này." }
     }
   }
 }

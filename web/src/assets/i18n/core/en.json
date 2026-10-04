@@ -34,6 +34,16 @@
       "charCounter": { "label": "Characters", "over": "over limit" },
       "copyableCode": { "copy": "Copy code", "copied": "Copied", "unavailable": "Automatic copy is unavailable. Select and copy the code." },
       "icons": { "check": "Complete", "clock": "Pending", "alert": "Alert", "play": "Play", "pause": "Pause", "copy": "Copy", "unknown": "Unknown" }
+    },
+    "session": {
+      "signedOut": { "title": "You have signed out", "body": "Your session has ended. Sign in again to continue." },
+      "expired": { "title": "Your session expired", "body": "For your security, sign in again to continue." },
+      "revoked": { "title": "Your session was revoked", "body": "This session is no longer valid. Please sign in again." },
+      "reused": { "title": "Unusual session activity detected", "body": "Your session was closed to protect your account. Sign in again and change your password if you do not recognise this activity." },
+      "restoreFailed": { "body": "Your session could not be restored. Please sign in again." },
+      "signIn": "Sign in",
+      "signOut": "Sign out",
+      "reauthRequired": { "title": "Confirmation required", "body": "Enter your password again to perform this sensitive action." }
     }
   }
 }
