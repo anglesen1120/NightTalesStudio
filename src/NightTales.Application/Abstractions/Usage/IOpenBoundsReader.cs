@@ -9,5 +9,6 @@ public interface IOpenBoundsReader
 {
     /// <summary>The platform-wide total of the open worst-case bounds, in USD.</summary>
     /// <param name="ct">Cancels the query.</param>
-    ValueTask<decimal> SumOpenWorstCaseUsdAsync(CancellationToken ct);
+    /// <param name="excludingRunId">A generation run left out of the sum (its own reservation), or null to count them all.</param>
+    ValueTask<decimal> SumOpenWorstCaseUsdAsync(CancellationToken ct, Guid? excludingRunId = null);
 }

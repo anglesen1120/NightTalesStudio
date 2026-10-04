@@ -22,6 +22,7 @@ using NightTales.TestKit.Email;
 using NightTales.TestKit.OpenAI;
 using NightTales.TestKit.Security;
 using NightTales.TestKit.Storage;
+using NightTales.TestKit.Stories;
 using NightTales.TestKit.Time;
 using NightTalesWorkerHost::NightTales.Worker.DependencyInjection;
 using WorkerComposition = NightTalesWorkerHost::NightTales.Worker.DependencyInjection.WorkerServiceCollectionExtensions;
@@ -347,6 +348,12 @@ public sealed class WorkerHost(TestDatabase database, FakeClock clock) : IAsyncD
 
         // 02.2.1-T2: the Worker composes the OpenAI text adapter, which requires OpenAi:ApiKey in every environment.
         foreach (var (key, value) in OpenAiTestSettings.WorkerSettings)
+        {
+            settings[key] = value;
+        }
+
+        // 02.2.2-T3: the Worker composes StoryQualityChecker, whose Story:Quality thresholds are required.
+        foreach (var (key, value) in StoryTestSettings.WorkerSettings)
         {
             settings[key] = value;
         }

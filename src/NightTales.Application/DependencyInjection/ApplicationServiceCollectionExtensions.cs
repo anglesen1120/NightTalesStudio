@@ -44,4 +44,23 @@ public static class ApplicationServiceCollectionExtensions
 
         return services;
     }
+
+    /// <summary>
+    /// Registers the story generation job's services (02.2.2-T3): the pipeline, the progress writer, the request factory and
+    /// the metrics. The Worker calls it; the options (<c>Story:Job</c>, <c>Story:Sweeper</c>, <c>Story:Review</c>) are bound
+    /// in the Worker's composition root.
+    /// </summary>
+    /// <param name="services">The composition root's service collection.</param>
+    /// <returns>The same collection, for chaining.</returns>
+    public static IServiceCollection AddStoryGeneration(this IServiceCollection services)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+
+        services.TryAddSingleton<StoryGenerationMetrics>();
+        services.TryAddScoped<StoryWriteRequestFactory>();
+        services.TryAddScoped<StoryGenerationProgress>();
+        services.TryAddScoped<StoryGenerationPipeline>();
+
+        return services;
+    }
 }

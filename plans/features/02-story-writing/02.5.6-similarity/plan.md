@@ -175,7 +175,7 @@ Total **0.75 d** — matches README §9 ("0.5 → 0.75, per-language shingles + 
 - **[OPEN] Dilution.** The score is a share of the whole story, so one copied paragraph inside a long story can fall under `BlockAbove`. Per-segment shares are stored (D22) and T2 reports the dilution; a per-segment **block** rule would extend the frozen `SimilarityOptions`/guard contract (S10) and is a TL decision.
 - **[OPEN] `ScoreFact` severity.** This feature owns the threshold (0.5); 02.5.3-T2 owns whether the resulting issue is advisory or blocking, and the fact-sheet UX.
 - **[OPEN] `meta` not scored.** D22 lists `meta` as addressable; the scorer deliberately excludes `description`/`tags` (FR-02-10 is about prose overlap). Say so before T1 freezes `StoryText.From` if it should change.
-- **[OPEN] `similarity_unavailable_total{reason}` label set.** S8 names the issue; a closed reason set (`storage_error`, `db_error`, `timeout`) is owned by 02.2.2-T3.
+- **[OPEN] `similarity_unavailable_total{reason}` label set.** S8 names the issue; a closed reason set (`storage_error`, `db_error`, `timeout`) is owned by 02.5.6-T1 (moved from 02.2.2-T3, which ships without a corpus provider).
 - **[OPEN] `plans/features/README.md` index row** for `02.5.6-similarity/` may be expected by the folder convention; it is outside this feature folder and was not edited.
 
 ## 11. Rollout
