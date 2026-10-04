@@ -94,6 +94,17 @@ public static partial class ProblemDetailsWriter
         }.ToFrozenSet(StringComparer.Ordinal);
 
     /// <summary>
+    /// The catalogued 400 codes that keep their own code <em>and</em> carry the grouped <c>errors</c> object, because
+    /// the client needs the per-field list as well as the reason (02.3.1-T1: <c>story_invalid_content</c> lists the
+    /// segment addresses and rules that failed). Every error of the list must be a validation error of that code.
+    /// </summary>
+    private static readonly FrozenSet<string> FieldErrorCodes =
+        new HashSet<string>(StringComparer.Ordinal)
+        {
+            ErrorCodes.StoryInvalidContent,
+        }.ToFrozenSet(StringComparer.Ordinal);
+
+    /// <summary>
     /// camelCase naming on the wire (<c>traceId</c>), which is also the policy the default problem
     /// details writer of <c>AddProblemDetails()</c> uses.
     /// </summary>
@@ -182,14 +193,18 @@ public static partial class ProblemDetailsWriter
         // breached_password (09 §5.4) is the client-visible reason, not a shape failure. Several errors,
         // or one whose code is the generic one, still collapse into validation_failed — a mixed list has
         // no single client-visible meaning.
-        var ownValidationCode = isValidation && errors.Count == 1 && IsCataloguedBadRequest(driving);
+        var groupsFieldErrors = isValidation
+            && FieldErrorCodes.Contains(driving.Code)
+            && errors.TrueForAll(error => error.Type == ErrorType.Validation && error.Code == driving.Code);
+        var ownValidationCode = isValidation
+            && (groupsFieldErrors || (errors.Count == 1 && IsCataloguedBadRequest(driving)));
 
         if (isValidation)
         {
             status = StatusCodes.Status400BadRequest;
             code = ownValidationCode ? driving.Code : ErrorCodes.ValidationFailed;
-            title = ownValidationCode ? TitleFor(driving, status) : ValidationFailedTitle;
-            fieldErrors = ownValidationCode ? null : GroupByField(errors);
+            title = ownValidationCode && !groupsFieldErrors ? TitleFor(driving, status) : ValidationFailedTitle;
+            fieldErrors = !ownValidationCode || groupsFieldErrors ? GroupByField(errors) : null;
             metadataSource = ownValidationCode ? driving : FirstValidationError(errors);
             LogSuppressedNonValidationErrors(http, errors);
         }
@@ -220,7 +235,10 @@ public static partial class ProblemDetailsWriter
             Code = code,
             TraceId = TraceId(http),
             Errors = fieldErrors,
-            Metadata = AllowedMetadata(metadataSource, includeField: !isValidation || ownValidationCode, http),
+            Metadata = AllowedMetadata(
+                metadataSource,
+                includeField: !isValidation || (ownValidationCode && !groupsFieldErrors),
+                http),
         };
 
         return Results.Json(body, SerializerOptions, contentType: JsonContentType, statusCode: status);
