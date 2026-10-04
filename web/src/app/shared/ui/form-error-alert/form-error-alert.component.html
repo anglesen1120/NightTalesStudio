@@ -1,0 +1,22 @@
+@if (error(); as current) {
+  <nts-icon-alert />
+  <div class="form-error-alert__body">
+    <h2>{{ titleKey()! | transloco }}</h2>
+    @if (unmappedMessages(); as messages) {
+      @if (messages.length > 0) {
+        <p class="form-error-alert__summary">{{ 'errors.form.unmappedCount' | transloco: { count: messages.length } }}</p>
+        <ul>
+          @for (message of messages; track message.pointer) {
+            <li>{{ message.messageKey | transloco }}</li>
+          }
+        </ul>
+      }
+    }
+    @if (current.retryAfterSec !== undefined) {
+      <nts-retry-countdown [seconds]="current.retryAfterSec" />
+    }
+    @if (traceFooter(); as footer) {
+      <p class="form-error-alert__trace" [title]="footer.params.traceId"> {{ footer.key | transloco: footer.params }}</p>
+    }
+  </div>
+}

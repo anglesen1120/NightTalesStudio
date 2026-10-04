@@ -1,0 +1,2 @@
+<span class="retry-countdown__value" aria-hidden="true">{{ (remaining() === 0 ? 'errors.retryNow' : (messageKey() ?? 'errors.retryIn')) | transloco: { seconds: remaining() } }}</span>
+<span class="retry-countdown__announcement" aria-live="polite" aria-atomic="true">{{ announcementKey() | transloco: { seconds: announcementSeconds() } }}</span>
