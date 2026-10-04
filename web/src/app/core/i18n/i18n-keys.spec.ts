@@ -196,6 +196,15 @@ describe('HANDED_OVER_KEYS', () => {
     expect(checkHandedOverKeys(missingTag)).toEqual(['series: handed-over key voices.tag.* not found']);
   });
 
+  it('matches the scope-prefixed patterns on the runtime key only: a file repeating the scope prefix is reported', () => {
+    const repeated = ['series.style.trueCrimeNotice', 'series.style.documentary.label', 'series.style.documentary.hint', 'voices.tag.male'];
+    expect(checkHandedOverKeys({ series: { vi: repeated, en: repeated } })).toEqual([
+      'series: handed-over key series.style.trueCrimeNotice not found',
+      'series: handed-over key series.style.*.label not found',
+      'series: handed-over key series.style.*.hint not found',
+    ]);
+  });
+
   it('is never red while the owning scope directory is absent', () => {
     expect(checkHandedOverKeys({})).toEqual([]);
     expect(checkHandedOverKeys({ core: { vi: ['common.close'], en: ['common.close'] } })).toEqual([]);

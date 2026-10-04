@@ -19,6 +19,8 @@ export const HANDED_OVER_KEYS = Object.freeze([
   { pattern: 'series.style.trueCrimeNotice', scope: 'series' },
   { pattern: 'series.style.*.label', scope: 'series' },
   { pattern: 'series.style.*.hint', scope: 'series' },
+  // `voices.tag.<tag>` is open: used verbatim it cannot also sit inside the `series` scope under Transloco's alias prefix
+  // (runtime key `series.voices.tag.*`). It needs a `voices` scope or an owner decision in 10.4.2-T1; checked as written.
   { pattern: 'voices.tag.*', scope: 'series' },
   { pattern: 'quality.*', scope: 'quality' },
   { pattern: 'render.*', scope: 'render' },
@@ -228,8 +230,10 @@ export function checkScopeFiles(scope, files) {
 }
 
 /**
- * Handed-over patterns owned by a scope that exists must match at least one of its keys, as written in the file or
- * as code uses it (scope alias prefix).
+ * Handed-over patterns owned by a scope that exists must match at least one of its keys. A pattern that starts with the
+ * scope's alias (`series.style.*`, `quality.*`, `render.*`) is a runtime key and matches only `runtimeKey(scope, key)`,
+ * so a file that repeats the prefix (`series.series.style…`) fails. A pattern with a foreign first segment
+ * (`voices.tag.*`) cannot be a runtime key of its scope; it keeps matching the key as written in the file.
  * @param {Readonly<Record<string, { vi: readonly string[]; en: readonly string[] }>>} scopes flattened keys per existing scope
  * @returns {string[]}
  */
@@ -239,7 +243,8 @@ export function checkHandedOverKeys(scopes) {
     const present = scopes[scope];
     if (!present) continue;
     const fileKeys = [...new Set([...present.vi, ...present.en])];
-    const candidates = fileKeys.flatMap((key) => [key, runtimeKey(scope, key)]);
+    const runtime = normalizePattern(pattern).split('.')[0] === scopeAlias(scope);
+    const candidates = runtime ? fileKeys.map((key) => runtimeKey(scope, key)) : fileKeys;
     if (!candidates.some((candidate) => matchesPattern(candidate, pattern))) {
       problems.push(`${scope}: handed-over key ${pattern} not found`);
     }

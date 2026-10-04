@@ -22,6 +22,7 @@ import {
   checkUsedKeys,
   flattenKeys,
   runtimeKey,
+  scopeAlias,
 } from './i18n-keys.mjs';
 
 const TOOL_DIR = dirname(fileURLToPath(import.meta.url));
@@ -71,8 +72,12 @@ function checkScopes(root) {
   return { problems, scopes };
 }
 
-/** Runs the pinned keys-manager `extract` into a scratch directory and returns the used keys per scope. */
-function extractUsedKeys(root, keysManagerBin) {
+/**
+ * Runs the pinned keys-manager `extract` into a scratch directory and returns the used keys per scope. The extractor
+ * names a scope's output directory by its Transloco alias (`my-scope` → `myScope`); `scopeDirs` maps it back.
+ */
+function extractUsedKeys(root, keysManagerBin, scopeDirs) {
+  const dirByAlias = new Map(scopeDirs.map((dir) => [scopeAlias(dir), dir]));
   const scratch = mkdtempSync(join(tmpdir(), 'nts-i18n-used-'));
   try {
     const run = spawnSync(
@@ -87,7 +92,8 @@ function extractUsedKeys(root, keysManagerBin) {
     const used = [];
     for (const file of walk(scratch, (path) => path.endsWith(`${sep}en.json`))) {
       const relativeDir = relative(scratch, dirname(file));
-      const scope = relativeDir === '' ? CORE_SCOPE : relativeDir.split(sep).join('/');
+      const alias = relativeDir === '' ? CORE_SCOPE : relativeDir.split(sep).join('/');
+      const scope = dirByAlias.get(alias) ?? alias;
       for (const key of flattenKeys(JSON.parse(readFileSync(file, 'utf8')))) used.push({ scope, key });
     }
     return { error: null, used };
@@ -118,7 +124,7 @@ export function runCheck({ root = DEFAULT_ROOT, keysManagerBin = KEYS_MANAGER_BI
   const { problems, scopes } = checkScopes(root);
   problems.push(...checkHandedOverKeys(scopes));
 
-  const extraction = extractUsedKeys(root, keysManagerBin);
+  const extraction = extractUsedKeys(root, keysManagerBin, Object.keys(scopes));
   if (extraction.error) problems.push(extraction.error);
   const used = attributeFiles(root, extraction.used);
   problems.push(...checkUsedKeys(used, scopes));

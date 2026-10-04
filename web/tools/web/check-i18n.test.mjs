@@ -111,6 +111,16 @@ describe('i18n:check CLI', () => {
     assert.match(undef.out, /used but undefined: quality\.nope/);
   });
 
+  test('a hyphenated scope dir is resolved from its camel-cased alias (defined: green, undefined: red)', () => {
+    const myScope = i18n('my-scope', '{ "k": "x" }', '{ "k": "y" }');
+    const defined = run(tree({ ...i18n('core', CORE, CORE_EN), ...myScope, ...scopedComponent('my-scope', 'myScope.k') }));
+    assert.equal(defined.status, 0, defined.out);
+    assert.match(defined.out, /i18n ok: 2 scopes, 3 keys, 1 used keys/);
+    const undef = run(tree({ ...i18n('core', CORE, CORE_EN), ...myScope, ...scopedComponent('my-scope', 'myScope.nope') }));
+    assert.equal(undef.status, 1);
+    assert.match(undef.out, /used but undefined: myScope\.nope/);
+  });
+
   test('handed-over keys: red only while the owning scope exists without a match', () => {
     const absent = run(tree(i18n('core', CORE, CORE_EN)));
     assert.equal(absent.status, 0, absent.out);
@@ -132,6 +142,20 @@ describe('i18n:check CLI', () => {
       ),
     );
     assert.equal(series.status, 0, series.out);
+  });
+
+  test('handed-over keys of a non-core scope match the runtime key only (a repeated scope prefix is red)', () => {
+    const doc = '{ "trueCrimeNotice": "a", "doc": { "label": "l", "hint": "h" } }';
+    const file = (style) => `{ ${style}, "voices": { "tag": { "male": "m" } } }`;
+    const right = run(tree(i18n('series', file(`"style": ${doc}`), file(`"style": ${doc}`))));
+    assert.equal(right.status, 0, right.out);
+
+    const nested = file(`"series": { "style": ${doc} }`);
+    const repeated = run(tree(i18n('series', nested, nested)));
+    assert.equal(repeated.status, 1);
+    assert.match(repeated.out, /series: handed-over key series\.style\.trueCrimeNotice not found/);
+    assert.match(repeated.out, /series: handed-over key series\.style\.\*\.label not found/);
+    assert.doesNotMatch(repeated.out, /voices\.tag\.\*/);
   });
 
   test('the committed tree is green', () => {
