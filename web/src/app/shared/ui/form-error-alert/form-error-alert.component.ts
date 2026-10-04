@@ -3,6 +3,7 @@ import { TranslocoPipe, provideTranslocoScope } from '@jsverse/transloco';
 import { type AppError, AppErrorMapper } from '@core/errors';
 import { IconAlert } from '../icons/icon-alert/icon-alert';
 import { RetryCountdown } from '../retry-countdown/retry-countdown.component';
+const MAX_UNMAPPED_MESSAGES = 10;
 
 let nextFormErrorAlertId = 0;
 
@@ -34,13 +35,23 @@ export class FormErrorAlert {
     return error === null ? null : this.mapper.messageKey(error);
   });
 
+  protected readonly unmappedCount = computed(() => this.unmappedKeys().length);
+
   protected readonly unmappedMessages = computed(() => {
     const error = this.error();
     if (error === null) return [];
-    return this.unmappedKeys().map((pointer) => ({
-      pointer,
-      messageKey: this.mapper.fieldMessageKey(error, pointer),
-    }));
+
+    const titleKey = this.titleKey();
+    const seen = new Set<string>();
+    const messageKeys: string[] = [];
+    for (const pointer of this.unmappedKeys()) {
+      const messageKey = this.mapper.fieldMessageKey(error, pointer);
+      if (messageKey === titleKey || seen.has(messageKey)) continue;
+      seen.add(messageKey);
+      messageKeys.push(messageKey);
+      if (messageKeys.length === MAX_UNMAPPED_MESSAGES) break;
+    }
+    return messageKeys;
   });
 
   protected readonly traceFooter = computed(() => {

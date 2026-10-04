@@ -1,3 +1,4 @@
+import { PLATFORM_ID } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { TranslocoTestingModule } from '@jsverse/transloco';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -12,6 +13,7 @@ const translations = TranslocoTestingModule.forRoot({
 });
 
 afterEach(() => {
+  vi.restoreAllMocks();
   vi.useRealTimers();
 });
 
@@ -47,6 +49,76 @@ describe('RetryCountdown', () => {
     fixture.destroy();
     vi.advanceTimersByTime(5_000);
     expect(elapsed).toHaveBeenCalledTimes(1);
+  });
+
+  it('RetryCountdown_UsesDeadlineWhenATickArrivesLate', async () => {
+    vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
+    vi.setSystemTime(0);
+    await TestBed.configureTestingModule({ imports: [RetryCountdown, translations] }).compileComponents();
+    const fixture = TestBed.createComponent(RetryCountdown);
+    const elapsed = vi.fn();
+    onEmit(fixture.componentInstance.elapsed, elapsed);
+    const baselineTimerCount = vi.getTimerCount();
+    fixture.componentRef.setInput('seconds', 60);
+    fixture.detectChanges();
+
+    vi.setSystemTime(59_000);
+    vi.advanceTimersByTime(1_000);
+
+    expect(fixture.componentInstance.remaining()).toBe(0);
+    expect(elapsed).toHaveBeenCalledTimes(1);
+    expect(vi.getTimerCount()).toBe(baselineTimerCount);
+    fixture.destroy();
+  });
+
+  it('RetryCountdown_VisibleDocument_ResyncsFromTheDeadline', async () => {
+    vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
+    vi.setSystemTime(0);
+    const visibilityState = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden');
+    await TestBed.configureTestingModule({ imports: [RetryCountdown, translations] }).compileComponents();
+    const fixture = TestBed.createComponent(RetryCountdown);
+    const elapsed = vi.fn();
+    onEmit(fixture.componentInstance.elapsed, elapsed);
+    const baselineTimerCount = vi.getTimerCount();
+    fixture.componentRef.setInput('seconds', 60);
+    fixture.detectChanges();
+
+    vi.setSystemTime(58_250);
+    visibilityState.mockReturnValue('visible');
+    document.dispatchEvent(new Event('visibilitychange'));
+    expect(fixture.componentInstance.remaining()).toBe(2);
+    expect(elapsed).not.toHaveBeenCalled();
+
+    vi.setSystemTime(60_000);
+    document.dispatchEvent(new Event('visibilitychange'));
+    expect(fixture.componentInstance.remaining()).toBe(0);
+    expect(elapsed).toHaveBeenCalledTimes(1);
+    expect(vi.getTimerCount()).toBe(baselineTimerCount);
+
+    fixture.destroy();
+    document.dispatchEvent(new Event('visibilitychange'));
+    expect(elapsed).toHaveBeenCalledTimes(1);
+  });
+
+  it('RetryCountdown_ServerRender_ShowsInitialTextWithoutTimers', async () => {
+    vi.useFakeTimers();
+    await TestBed.configureTestingModule({
+      imports: [RetryCountdown, translations],
+      providers: [{ provide: PLATFORM_ID, useValue: 'server' }],
+    }).compileComponents();
+    const fixture = TestBed.createComponent(RetryCountdown);
+    const elapsed = vi.fn();
+    onEmit(fixture.componentInstance.elapsed, elapsed);
+    fixture.componentRef.setInput('seconds', 5);
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    const root = fixture.nativeElement as HTMLElement;
+    expect(fixture.componentInstance.remaining()).toBe(5);
+    expect(root.textContent).toContain(errorsEn.retryIn.replace('{{seconds}}', '5'));
+    expect(vi.getTimerCount()).toBe(0);
+    expect(elapsed).not.toHaveBeenCalled();
+    fixture.destroy();
   });
 
   it('RetryCountdown_RequiredInput_Rearm_AndDestroy', async () => {

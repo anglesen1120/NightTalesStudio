@@ -3,11 +3,12 @@ import { join } from 'node:path';
 import { TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { TranslocoTestingModule } from '@jsverse/transloco';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { type AppError, AppErrorMapper } from '@core/errors';
 import errorsEn from '../../../../assets/i18n/errors/en.json';
 import { FormErrorAlert } from './form-error-alert.component';
 import { RetryCountdown } from '../retry-countdown/retry-countdown.component';
+import { onEmit } from '../testing/on-emit';
 
 const translations = TranslocoTestingModule.forRoot({
   langs: {
@@ -46,6 +47,10 @@ const configure = async () => {
   }).compileComponents();
 };
 
+afterEach(() => {
+  vi.useRealTimers();
+});
+
 describe('FormErrorAlert', () => {
   it('FormErrorAlert_RendersUnmappedSummary', async () => {
     await configure();
@@ -61,7 +66,42 @@ describe('FormErrorAlert', () => {
     expect(root.tabIndex).toBe(-1);
     expect(root.textContent).toContain(errorsEn.validation_failed);
     expect(root.textContent).toContain(errorsEn.form.unmappedCount.replace('{{count}}', '1'));
-    expect(root.querySelector('li')?.textContent).toBe(errorsEn.validation_failed);
+    expect(root.querySelectorAll('li')).toHaveLength(0);
+  });
+
+  it('FormErrorAlert_5000UnmappedPointers_RendersAtMostTenDistinctNonTitleRows', async () => {
+    await configure();
+    const fixture = TestBed.createComponent(FormErrorAlert);
+    const messageKeys = [
+      'errors.validation_failed',
+      'errors.voice_language_mismatch',
+      'errors.story_invalid_content',
+      'errors.fact_sheet_invalid_content',
+      'errors.bible_invalid_content',
+      'errors.source_url_invalid',
+      'errors.source_domain_not_allowed',
+      'errors.autopilot_settings_invalid',
+      'errors.story_attestation_required',
+      'errors.idempotency_key_required',
+      'errors.unauthorized',
+      'errors.session_revoked',
+      'errors.refresh_token_reused',
+    ] as const;
+    const pointers = Array.from({ length: 5_000 }, (_, index) => `missing.${index}`);
+    const fieldErrors = Object.fromEntries(
+      pointers.map((pointer, index) => [pointer, [messageKeys[index % messageKeys.length]!]]),
+    );
+    fixture.componentRef.setInput('error', { ...validationError, fieldErrors });
+    fixture.componentRef.setInput('unmappedKeys', pointers);
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    const root = fixture.nativeElement as HTMLElement;
+    const rows = Array.from(root.querySelectorAll('li'), (row) => row.textContent?.trim() ?? '');
+    expect(root.textContent).toContain(errorsEn.form.unmappedCount.replace('{{count}}', '5000'));
+    expect(rows).toHaveLength(10);
+    expect(new Set(rows).size).toBe(rows.length);
+    expect(rows).not.toContain(errorsEn.validation_failed);
   });
 
   it('renders nothing for a null error and hides the trace when requested', async () => {
@@ -89,6 +129,34 @@ describe('FormErrorAlert', () => {
     await fixture.whenStable();
     const countdown = fixture.debugElement.query(By.directive(RetryCountdown)).injector.get(RetryCountdown);
     expect(countdown.remaining()).toBe(30);
+    fixture.destroy();
+  });
+
+  it('FormErrorAlert_EqualRetryAfterOnANewError_RestartsAndElapses', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    await configure();
+    const fixture = TestBed.createComponent(FormErrorAlert);
+    fixture.componentRef.setInput('error', { ...validationError, retryAfterSec: 30 });
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const firstCountdown = fixture.debugElement.query(By.directive(RetryCountdown)).injector.get(RetryCountdown);
+
+    vi.advanceTimersByTime(10_000);
+    expect(firstCountdown.remaining()).toBe(20);
+
+    fixture.componentRef.setInput('error', { ...validationError, retryAfterSec: 30 });
+    fixture.detectChanges();
+    const replacementCountdown = fixture.debugElement.query(By.directive(RetryCountdown)).injector.get(RetryCountdown);
+    const elapsed = vi.fn();
+    onEmit(replacementCountdown.elapsed, elapsed);
+    expect(replacementCountdown).not.toBe(firstCountdown);
+    expect(replacementCountdown.remaining()).toBe(30);
+    expect(vi.getTimerCount()).toBe(1);
+
+    vi.advanceTimersByTime(30_000);
+    expect(elapsed).toHaveBeenCalledTimes(1);
+    expect(vi.getTimerCount()).toBe(0);
     fixture.destroy();
   });
 

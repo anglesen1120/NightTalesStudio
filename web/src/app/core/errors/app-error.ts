@@ -57,3 +57,6 @@ export function isRateLimited(error: AppError): boolean {
 export function isClientBug(error: AppError): boolean {
   return error.kind === 'client_bug';
 }
+
+/** The core-wide union callers wrap their outcome in instead of throwing. */
+export type Result<T> = { readonly ok: true; readonly value: T } | { readonly ok: false; readonly error: AppError };

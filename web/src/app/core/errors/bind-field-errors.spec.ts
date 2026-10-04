@@ -139,11 +139,16 @@ describe('bindFieldErrors', () => {
     },
   );
 
-  it('BindFieldErrors_DisabledAndMissingTargets_AreStillBoundOrUnmapped_NeverThrow', () => {
+  it('BindFieldErrors_DisabledOrDanglingTarget_IsUnmapped_AndBindsNoControl', () => {
     const form = storyForm();
     form.controls.segments.at(1).controls.text.disable();
-    expect(() => bindFieldErrors(form, errorWith({ 'segments.1.text': ['x'], 'segments.1.text.deeper': ['y'] }))).not.toThrow();
-    expect(bindFieldErrors(form, errorWith({ 'segments.1.text.deeper': ['y'] }))).toEqual(['segments.1.text.deeper']);
+    const unmapped = bindFieldErrors(form, errorWith({ 'segments.1.text': ['x'], 'segments.1.text.deeper': ['y'], title: ['z'] }));
+    expect(unmapped).toEqual(['segments.1.text', 'segments.1.text.deeper']);
+    // the disabled control carries no server error, and neither does its segment group
+    expect(serverOf(form.controls.segments.at(1).controls.text)).toBeUndefined();
+    expect(serverOf(form.controls.segments.at(1))).toBeUndefined();
+    // enabled siblings still bind
+    expect(serverOf(form.controls.title)).toEqual({ messageKeys: ['errors.validation_failed'] });
     // an empty FormArray resolves nothing
     form.controls.segments.clear();
     expect(bindFieldErrors(form, errorWith({ 'segments.0.text': ['z'] }))).toEqual(['segments.0.text']);

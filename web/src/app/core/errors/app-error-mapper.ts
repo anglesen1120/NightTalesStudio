@@ -13,6 +13,20 @@ export const APP_ERROR_DEV_MODE = new InjectionToken<boolean>('APP_ERROR_DEV_MOD
 /** A body string longer than this is not parsed (a proxy page, not a ProblemDetails). */
 const MAX_BODY_TEXT_LENGTH = 65_536;
 
+/** Bounds on the copied field errors: 200 pointers in payload order, 20 messages each, pointer keys of ≤ 256 chars. */
+const MAX_FIELD_POINTERS = 200;
+const MAX_FIELD_MESSAGES = 20;
+const MAX_FIELD_POINTER_LENGTH = 256;
+
+/** String members kept on `problem` are capped at this length (detail/title can carry a whole page). */
+const MAX_PROBLEM_STRING_LENGTH = 1_024;
+
+/** A trace id is a correlation token, never markup: alphanumerics and `.` `_` `:` `-`, at most 128 chars. */
+const TRACE_ID_PATTERN = /^[A-Za-z0-9._:-]{1,128}$/;
+
+/** `Retry-After` is honoured on 429 and 503 only, and never waits past an hour. */
+const MAX_RETRY_AFTER_SECONDS = 3_600;
+
 type FieldErrors = Readonly<Record<string, readonly string[]>>;
 
 /** A key that could reach `Object.prototype` if it were assigned onto an object. Never a real field name. */
@@ -34,8 +48,11 @@ function isScalarOrNull(value: unknown): value is string | number | boolean | nu
 function sanitizeFieldErrors(errors: Record<string, unknown>): FieldErrors {
   const fields = Object.create(null) as Record<string, readonly string[]>;
   for (const [pointer, messages] of Object.entries(errors)) {
-    if (isBlockedKey(pointer) || !Array.isArray(messages)) continue;
-    const strings = messages.filter((message): message is string => typeof message === 'string');
+    if (Object.keys(fields).length >= MAX_FIELD_POINTERS) break;
+    if (isBlockedKey(pointer) || pointer.length > MAX_FIELD_POINTER_LENGTH || !Array.isArray(messages)) continue;
+    const strings = messages
+      .filter((message): message is string => typeof message === 'string')
+      .slice(0, MAX_FIELD_MESSAGES);
     if (strings.length > 0) fields[pointer] = Object.freeze(strings);
   }
   return Object.freeze(fields);
@@ -70,16 +87,20 @@ function readBody(raw: unknown): ReadBody {
   const problem: { -readonly [K in keyof ProblemWire]: ProblemWire[K] } = {};
   let fieldErrors: FieldErrors | undefined;
   if (typeof code === 'string') problem.code = code;
-  if (typeof traceId === 'string') problem.traceId = traceId;
-  if (typeof type === 'string' || type === null) problem.type = type;
-  if (typeof title === 'string' || title === null) problem.title = title;
-  if (typeof detail === 'string' || detail === null) problem.detail = detail;
-  if (typeof instance === 'string' || instance === null) problem.instance = instance;
+  if (typeof traceId === 'string' && TRACE_ID_PATTERN.test(traceId)) problem.traceId = traceId;
+  if (typeof type === 'string') problem.type = type.slice(0, MAX_PROBLEM_STRING_LENGTH);
+  else if (type === null) problem.type = type;
+  if (typeof title === 'string') problem.title = title.slice(0, MAX_PROBLEM_STRING_LENGTH);
+  else if (title === null) problem.title = title;
+  if (typeof detail === 'string') problem.detail = detail.slice(0, MAX_PROBLEM_STRING_LENGTH);
+  else if (detail === null) problem.detail = detail;
+  if (typeof instance === 'string') problem.instance = instance.slice(0, MAX_PROBLEM_STRING_LENGTH);
+  else if (instance === null) problem.instance = instance;
   if (typeof status === 'number' || typeof status === 'string' || status === null) problem.status = status;
   if (typeof retryAfterSeconds === 'number') problem.retryAfterSeconds = retryAfterSeconds;
-  if (typeof field === 'string') problem.field = field;
+  if (typeof field === 'string') problem.field = field.slice(0, MAX_PROBLEM_STRING_LENGTH);
   if (typeof limit === 'number') problem.limit = limit;
-  if (typeof mfaToken === 'string') problem.mfaToken = mfaToken;
+  if (typeof mfaToken === 'string') problem.mfaToken = mfaToken.slice(0, MAX_PROBLEM_STRING_LENGTH);
   if (Array.isArray(errors)) {
     problem.errors = sanitizeRows(errors as readonly unknown[]);
   } else if (isPlainObject(errors)) {
@@ -154,8 +175,9 @@ export class AppErrorMapper {
     let code: string;
     if (status === 0) code = 'network_error';
     else if (wireCode === '') code = codeForStatus(status);
-    else code = isKnownCode(wireCode) ? wireCode : 'unknown_error';
-    const seconds = retryAfter !== null && Number.isSafeInteger(retryAfter) && retryAfter >= 0 ? retryAfter : null;
+    else code = isKnownCode(wireCode) && wireCode !== 'network_error' && wireCode !== 'unknown_error' ? wireCode : 'unknown_error';
+    const usable = retryAfter !== null && Number.isSafeInteger(retryAfter) && retryAfter >= 0 && (status === 429 || status === 503);
+    const seconds = usable ? Math.min(retryAfter, MAX_RETRY_AFTER_SECONDS) : null;
     return this.build(code, status, body, seconds);
   }
 

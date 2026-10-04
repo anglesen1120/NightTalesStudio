@@ -2,18 +2,22 @@
   <nts-icon-alert />
   <div class="form-error-alert__body">
     <h2>{{ titleKey()! | transloco }}</h2>
-    @if (unmappedMessages(); as messages) {
-      @if (messages.length > 0) {
-        <p class="form-error-alert__summary">{{ 'errors.form.unmappedCount' | transloco: { count: messages.length } }}</p>
-        <ul>
-          @for (message of messages; track message.pointer) {
-            <li>{{ message.messageKey | transloco }}</li>
-          }
-        </ul>
+    @if (unmappedCount() > 0) {
+      <p class="form-error-alert__summary">{{ 'errors.form.unmappedCount' | transloco: { count: unmappedCount() } }}</p>
+      @if (unmappedMessages(); as messages) {
+        @if (messages.length > 0) {
+          <ul>
+            @for (messageKey of messages; track messageKey) {
+              <li>{{ messageKey | transloco }}</li>
+            }
+          </ul>
+        }
       }
     }
-    @if (current.retryAfterSec !== undefined) {
-      <nts-retry-countdown [seconds]="current.retryAfterSec" />
+    @for (retryError of [current]; track retryError) {
+      @if (retryError.retryAfterSec !== undefined) {
+        <nts-retry-countdown [seconds]="retryError.retryAfterSec" />
+      }
     }
     @if (traceFooter(); as footer) {
       <p class="form-error-alert__trace" [title]="footer.params.traceId"> {{ footer.key | transloco: footer.params }}</p>

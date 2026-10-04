@@ -304,8 +304,8 @@ describe('AppErrorMapper', () => {
     }
     expect(withHeader('\t12\n').retryAfterSec).toBe(12);
     expect(withHeader('007').retryAfterSec).toBe(7);
-    expect(withHeader('999999999').retryAfterSec).toBe(999_999_999);
-    // the header is read on any status that carries it (503 + Retry-After is a real load-balancer answer)
+    expect(withHeader('999999999').retryAfterSec).toBe(3600);
+    // the header is read on 429 and 503 only (503 + Retry-After is a real load-balancer answer)
     expect(mapper.from(http(503, null, { 'Retry-After': '9' })).retryAfterSec).toBe(9);
   });
 
@@ -365,5 +365,87 @@ describe('AppErrorMapper', () => {
     expect(Object.isFrozen(error)).toBe(true);
     expect(Object.isFrozen(error.fieldErrors)).toBe(true);
     expect(Object.isFrozen(error.fieldErrors['title'])).toBe(true);
+  });
+
+  it.each([
+    ['bidi override', 'abc\u202Edef'],
+    ['200 chars', 'a'.repeat(200)],
+    ['markup', '<script>alert(1)</script>'],
+    ['whitespace', 'a b'],
+  ])('AppErrorMapper_HostileTraceId_%s_IsDropped', (_name, traceId) => {
+    const mapper = setup(true);
+    const error = mapper.from(http(428, { code: 'if_match_required', traceId }));
+    expect(error.traceId).toBeUndefined();
+    expect(error.problem?.traceId).toBeUndefined();
+    expect(mapper.traceFooter(error)).toBeNull();
+    expect(warnings).toEqual([['client_bug if_match_required/428/-']]);
+    expect(mapper.from(http(500, { code: 'internal_error', traceId: 'a'.repeat(128) })).traceId).toBe('a'.repeat(128));
+    expect(mapper.from(http(500, { code: 'internal_error', traceId: '00-ab.cd_ef:gh-01' })).traceId).toBe('00-ab.cd_ef:gh-01');
+  });
+
+  it('AppErrorMapper_FieldErrors_AreCapped_OnObjectAndStringBodies', () => {
+    const mapper = setup();
+    const many: Record<string, string[]> = {};
+    for (let i = 0; i < 300; i++) many[`f${i}`] = ['x'];
+    const manyMessages = { title: Array.from({ length: 50 }, (_unused, i) => `m${i}`), ['p'.repeat(400)]: ['x'], ok: ['y'] };
+    for (const body of [{ code: 'validation_failed', errors: many }, JSON.stringify({ code: 'validation_failed', errors: many })]) {
+      const keys = Object.keys(mapper.from(http(400, body)).fieldErrors);
+      expect(keys).toHaveLength(200);
+      expect(keys[0]).toBe('f0');
+      expect(keys[199]).toBe('f199');
+    }
+    for (const body of [{ code: 'validation_failed', errors: manyMessages }, JSON.stringify({ code: 'validation_failed', errors: manyMessages })]) {
+      const error = mapper.from(http(400, body));
+      expect(error.fieldErrors['title']).toHaveLength(20);
+      expect(error.fieldErrors['title']?.[19]).toBe('m19');
+      expect(Object.keys(error.fieldErrors)).toEqual(['title', 'ok']);
+      expect(Object.keys(error.problem?.errors ?? {})).toEqual(['title', 'ok']);
+    }
+    // a 256-char pointer is kept, a 257-char one is dropped
+    const edge = mapper.from(http(400, { code: 'validation_failed', errors: { ['e'.repeat(256)]: ['x'], ['e'.repeat(257)]: ['x'] } }));
+    expect(Object.keys(edge.fieldErrors)).toEqual(['e'.repeat(256)]);
+  });
+
+  it('AppErrorMapper_ProblemStrings_AreTruncated_AndNonStringsDropped', () => {
+    const mapper = setup();
+    const error = mapper.from(
+      http(400, { code: 'validation_failed', title: 't'.repeat(5000), detail: 'd'.repeat(1024), instance: 'i'.repeat(1025), field: 'f'.repeat(2000), mfaToken: 'm'.repeat(3000), type: 'ty' }),
+    );
+    expect(error.problem?.title).toHaveLength(1024);
+    expect(error.problem?.detail).toHaveLength(1024);
+    expect(error.problem?.instance).toHaveLength(1024);
+    expect(error.problem?.field).toHaveLength(1024);
+    expect(error.problem?.mfaToken).toHaveLength(1024);
+    expect(error.problem?.type).toBe('ty');
+    const dropped = mapper.from(http(400, { code: 'validation_failed', title: 5, detail: { a: 1 }, field: ['x'], mfaToken: 7 }));
+    expect(dropped.problem).toEqual({ code: 'validation_failed' });
+  });
+
+  it.each([
+    [500, 'server'],
+    [400, 'unknown'],
+  ])('AppErrorMapper_ClientOnlyBodyCodes_AreUnknown_at_%s', (status, kind) => {
+    const mapper = setup();
+    for (const code of ['network_error', 'unknown_error']) {
+      const error = mapper.from(http(status, { code }));
+      expect(error.code).toBe('unknown_error');
+      expect(error.kind).toBe(kind);
+      expect(error.kind).not.toBe('network');
+      expect(error.problem?.code).toBe(code);
+    }
+  });
+
+  it('AppErrorMapper_RetryAfter_OnlyOn429And503_AndClampedToOneHour', () => {
+    const mapper = setup();
+    const retry = (status: number, value: string) => mapper.from(http(status, { code: 'rate_limited' }, { 'Retry-After': value })).retryAfterSec;
+    expect(retry(400, '30')).toBeUndefined();
+    expect(retry(500, '30')).toBeUndefined();
+    expect(retry(429, '30')).toBe(30);
+    expect(retry(503, '30')).toBe(30);
+    expect(retry(429, '999999')).toBe(3600);
+    expect(retry(503, '999999999')).toBe(3600);
+    expect(retry(429, '3600')).toBe(3600);
+    expect(mapper.fromProblem({ code: 'rate_limited' }, 400, 30).retryAfterSec).toBeUndefined();
+    expect(mapper.fromProblem({ code: 'rate_limited' }, 429, 7200).retryAfterSec).toBe(3600);
   });
 });

@@ -124,4 +124,58 @@ describe('ConflictDialog', () => {
     expect(cancelled).toHaveBeenCalledTimes(1);
     expect(closed).toHaveBeenCalledExactlyOnceWith('cancel');
   });
+
+  it('settles as reload when Escape follows the Reload click before closing completes', async () => {
+    await TestBed.configureTestingModule({
+      imports: [DialogHost, MatDialogModule, NoopAnimationsModule, translations],
+    }).compileComponents();
+    const fixture = TestBed.createComponent(DialogHost);
+    fixture.detectChanges();
+    const ref = TestBed.inject(ConflictDialog).open({ messageKey: 'errors.concurrency_conflict' });
+    const reloaded = vi.fn();
+    const cancelled = vi.fn();
+    const closed = vi.fn();
+    onEmit(ref.componentInstance.reload, reloaded);
+    onEmit(ref.componentInstance.cancel, cancelled);
+    onEmit(ref.afterClosed(), closed);
+    await fixture.whenStable();
+    const reloadButton = document.querySelector<HTMLButtonElement>('.cdk-overlay-pane button[data-outcome="reload"]');
+    if (reloadButton === null) throw new Error('missing reload button');
+
+    reloadButton.click();
+    document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', keyCode: 27, bubbles: true }));
+    await fixture.whenStable();
+
+    expect(reloaded).toHaveBeenCalledTimes(1);
+    expect(cancelled).not.toHaveBeenCalled();
+    expect(closed).toHaveBeenCalledExactlyOnceWith('reload');
+  });
+
+  it('emits Save as new only once when its button is double-clicked', async () => {
+    await TestBed.configureTestingModule({
+      imports: [DialogHost, MatDialogModule, NoopAnimationsModule, translations],
+    }).compileComponents();
+    const fixture = TestBed.createComponent(DialogHost);
+    fixture.detectChanges();
+    const ref = TestBed.inject(ConflictDialog).open({
+      messageKey: 'errors.concurrency_conflict',
+      saveAsNewLabel: 'errors.conflict.saveAsNew',
+    });
+    const savedAsNew = vi.fn();
+    const closed = vi.fn();
+    onEmit(ref.componentInstance.saveAsNew, savedAsNew);
+    onEmit(ref.afterClosed(), closed);
+    await fixture.whenStable();
+    const saveAsNewButton = document.querySelector<HTMLButtonElement>(
+      '.cdk-overlay-pane button[data-outcome="saveAsNew"]',
+    );
+    if (saveAsNewButton === null) throw new Error('missing Save as new button');
+
+    saveAsNewButton.click();
+    saveAsNewButton.click();
+    await fixture.whenStable();
+
+    expect(savedAsNew).toHaveBeenCalledTimes(1);
+    expect(closed).toHaveBeenCalledExactlyOnceWith('saveAsNew');
+  });
 });

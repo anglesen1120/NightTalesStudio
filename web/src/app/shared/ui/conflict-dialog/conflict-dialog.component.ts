@@ -38,6 +38,9 @@ export interface ConflictDialogOptions {
 export class ConflictDialogComponent {
   protected readonly data = inject<ResolvedConflictDialogData>(MAT_DIALOG_DATA);
   private readonly dialogRef = inject(MatDialogRef<ConflictDialogComponent, ConflictDialogOutcome>);
+  private settled = false;
+
+  // Outputs remain the task contract; service callers use afterClosed() because MatDialog has no template subscribers.
 
   readonly reload = output<void>();
   readonly saveAsNew = output<void>();
@@ -67,18 +70,33 @@ export class ConflictDialogComponent {
   }
 
   protected chooseReload(): void {
-    this.reload.emit();
-    this.dialogRef.close('reload');
+    this.settle('reload');
   }
 
   protected chooseSaveAsNew(): void {
-    this.saveAsNew.emit();
-    this.dialogRef.close('saveAsNew');
+    this.settle('saveAsNew');
   }
 
   protected chooseCancel(): void {
-    this.cancel.emit();
-    this.dialogRef.close('cancel');
+    this.settle('cancel');
+  }
+
+  private settle(outcome: ConflictDialogOutcome): void {
+    if (this.settled) return;
+    this.settled = true;
+
+    switch (outcome) {
+      case 'reload':
+        this.reload.emit();
+        break;
+      case 'saveAsNew':
+        this.saveAsNew.emit();
+        break;
+      case 'cancel':
+        this.cancel.emit();
+        break;
+    }
+    this.dialogRef.close(outcome);
   }
 }
 

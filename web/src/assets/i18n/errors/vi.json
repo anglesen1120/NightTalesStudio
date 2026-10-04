@@ -63,7 +63,7 @@
   "unknown_error": "Đã xảy ra lỗi. Hãy thử lại sau ít phút.",
   "form": {
     "summaryTitle": "Hãy kiểm tra lại biểu mẫu",
-    "unmappedCount": "Còn {{count}} vấn đề khác chưa gắn được với trường nào."
+    "unmappedCount": "Số vấn đề không gắn được với trường: {{count}}"
   },
   "unknown": {
     "trace": "Mã theo dõi: {{traceId}}"

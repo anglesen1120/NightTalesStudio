@@ -63,7 +63,7 @@
   "unknown_error": "Something went wrong. Try again in a moment.",
   "form": {
     "summaryTitle": "Please check the form",
-    "unmappedCount": "{{count}} more problems could not be matched to a field."
+    "unmappedCount": "Problems not matched to a field: {{count}}"
   },
   "unknown": {
     "trace": "Trace ID: {{traceId}}"

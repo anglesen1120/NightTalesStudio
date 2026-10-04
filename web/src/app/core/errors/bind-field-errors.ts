@@ -17,10 +17,20 @@ export interface BindFieldErrorsOptions {
   readonly markTouched?: boolean;
 }
 
-/** Resolves a dotted pointer to a control. `FormArray` segments are indexes; `length` and the like never resolve. */
+/** A segment is a control name (`title`, `text`) or a FormArray index (`2`); anything else never resolves. */
+const IDENTIFIER_SEGMENT = /^[A-Za-z_$][A-Za-z0-9_$]*$/;
+const INDEX_SEGMENT = /^\d+$/;
+
+/**
+ * Resolves a dotted pointer to a control. `FormArray` segments are indexes; `length` and the like never resolve.
+ * Malformed segments (`-1`, `1.5`, `1abc`, empty) and disabled controls count as unmapped: a server error is never
+ * written onto a control the user cannot edit.
+ */
 function resolve(form: AbstractControl, pointer: string, separator: string): AbstractControl | null {
-  const found = form.get(pointer.split(separator));
-  return found instanceof AbstractControl ? found : null;
+  const segments = pointer.split(separator);
+  if (segments.some((segment) => !IDENTIFIER_SEGMENT.test(segment) && !INDEX_SEGMENT.test(segment))) return null;
+  const found = form.get(segments);
+  return found instanceof AbstractControl && found.enabled ? found : null;
 }
 
 function withoutServer(errors: ValidationErrors | null): ValidationErrors | null {
