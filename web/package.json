@@ -20,7 +20,10 @@
     "api:gen:local": "node tools/web/api-gen-local.mjs",
     "api:gen:check": "node tools/web/check-api-drift.mjs",
     "api:check": "node tools/web/check-api-drift.mjs",
-    "csp:gen": "node tools/web/gen-csp.mjs"
+    "csp:gen": "node tools/web/gen-csp.mjs",
+    "i18n:check": "node tools/web/check-i18n.mjs",
+    "i18n:find": "transloco-keys-manager find",
+    "i18n:extract": "transloco-keys-manager extract"
   },
   "private": true,
   "dependencies": {
@@ -45,6 +48,7 @@
     "@angular/cli": "22.2.1",
     "@angular/compiler-cli": "22.2.1",
     "@axe-core/playwright": "^4.13.0",
+    "@jsverse/transloco-keys-manager": "8.1.1",
     "@playwright/test": "^1.63.0",
     "@types/node": "^22.12.0",
     "axe-core": "^4.13.0",

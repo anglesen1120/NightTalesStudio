@@ -1,4 +1,12 @@
 {
+  "common": {
+    "close": "Close",
+    "retry": "Retry",
+    "cancel": "Cancel",
+    "back": "Back",
+    "loading": "Loading…",
+    "translationUnavailable": "This part is not translated yet"
+  },
   "core": {
     "ui": {
       "pageHeader": { "back": "Back", "actions": "Page actions" },

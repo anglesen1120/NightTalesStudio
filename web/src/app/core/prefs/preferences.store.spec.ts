@@ -161,4 +161,27 @@ describe('PreferencesStore', () => {
       theme: 'dark',
     });
   });
+
+  it('savedUiLanguage is null until a language is stored or set, even after setTheme', () => {
+    const store = TestBed.inject(PreferencesStore);
+    expect(store.read()).toEqual({ uiLanguage: 'vi', theme: 'dark' });
+    expect(store.savedUiLanguage()).toBeNull();
+    store.setTheme('light');
+    expect(store.savedUiLanguage()).toBeNull();
+    expect(JSON.parse(localStorage.getItem(PREFERENCES_STORAGE_KEY) ?? '')).toEqual({ theme: 'light' });
+    store.setLanguage('vi');
+    expect(store.savedUiLanguage()).toBe('vi');
+    expect(JSON.parse(localStorage.getItem(PREFERENCES_STORAGE_KEY) ?? '')).toEqual({ uiLanguage: 'vi', theme: 'light' });
+  });
+
+  it('savedUiLanguage reflects a valid stored value and ignores an invalid one', () => {
+    localStorage.setItem(PREFERENCES_STORAGE_KEY, JSON.stringify({ uiLanguage: 'en', theme: 'light' }));
+    const stored = TestBed.inject(PreferencesStore);
+    stored.read();
+    expect(stored.savedUiLanguage()).toBe('en');
+
+    localStorage.setItem(PREFERENCES_STORAGE_KEY, JSON.stringify({ uiLanguage: 'fr', theme: 'light' }));
+    stored.read();
+    expect(stored.savedUiLanguage()).toBeNull();
+  });
 });

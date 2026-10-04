@@ -1,4 +1,4 @@
-import { Injectable, signal } from '@angular/core';
+import { Injectable, computed, signal } from '@angular/core';
 
 export type UiLanguage = 'vi' | 'en';
 export type ThemePreference = 'dark' | 'light';
@@ -31,13 +31,18 @@ export class PreferencesStore {
   readonly uiLanguage = this.languageState.asReadonly();
   readonly theme = this.themeState.asReadonly();
 
+  private readonly languageSavedState = signal(false);
+  /** The language the user saved (stored value or `setLanguage`), `null` while only the default applies. */
+  readonly savedUiLanguage = computed(() => (this.languageSavedState() ? this.languageState() : null));
+
   private hydrated = false;
 
   /** Loads the persisted preferences into the signals; falls back to defaults on any problem. */
   read(): StoredPreferences {
-    const stored = this.load();
+    const { stored, languageSaved } = this.load();
     this.languageState.set(stored.uiLanguage);
     this.themeState.set(stored.theme);
+    this.languageSavedState.set(languageSaved);
     this.hydrated = true;
     return stored;
   }
@@ -55,6 +60,7 @@ export class PreferencesStore {
   setLanguage(lang: UiLanguage): void {
     this.ensureHydrated();
     this.languageState.set(lang);
+    this.languageSavedState.set(true);
     this.persist();
   }
 
@@ -64,26 +70,31 @@ export class PreferencesStore {
     this.persist();
   }
 
-  private load(): StoredPreferences {
+  private load(): { stored: StoredPreferences; languageSaved: boolean } {
+    const defaults = { stored: { ...DEFAULTS }, languageSaved: false };
     try {
       if (typeof localStorage === 'undefined') {
-        return { ...DEFAULTS };
+        return defaults;
       }
       const raw = localStorage.getItem(PREFERENCES_STORAGE_KEY);
       if (raw === null) {
-        return { ...DEFAULTS };
+        return defaults;
       }
       const parsed: unknown = JSON.parse(raw);
       if (typeof parsed !== 'object' || parsed === null) {
-        return { ...DEFAULTS };
+        return defaults;
       }
       const record = parsed as Record<string, unknown>;
+      const languageSaved = isUiLanguage(record['uiLanguage']);
       return {
-        uiLanguage: isUiLanguage(record['uiLanguage']) ? record['uiLanguage'] : DEFAULTS.uiLanguage,
-        theme: isTheme(record['theme']) ? record['theme'] : DEFAULTS.theme,
+        stored: {
+          uiLanguage: isUiLanguage(record['uiLanguage']) ? record['uiLanguage'] : DEFAULTS.uiLanguage,
+          theme: isTheme(record['theme']) ? record['theme'] : DEFAULTS.theme,
+        },
+        languageSaved,
       };
     } catch {
-      return { ...DEFAULTS };
+      return defaults;
     }
   }
 
@@ -92,7 +103,11 @@ export class PreferencesStore {
       if (typeof localStorage === 'undefined') {
         return;
       }
-      const value: StoredPreferences = { uiLanguage: this.languageState(), theme: this.themeState() };
+      // The default language is never written, so "no saved choice" stays distinguishable (README D10 order).
+      const value: Partial<StoredPreferences> = {
+        ...(this.languageSavedState() ? { uiLanguage: this.languageState() } : {}),
+        theme: this.themeState(),
+      };
       localStorage.setItem(PREFERENCES_STORAGE_KEY, JSON.stringify(value));
     } catch {
       // Storage unavailable or full: the in-memory signals remain authoritative.
