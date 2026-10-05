@@ -4,6 +4,26 @@ History moved out of STATUS.md to keep the live file small. The initial archive 
 
 ## Resume-here history (Current/Previous blocks, Next actions)
 
+### Superseded Next line (2026-10-05, replaced when 02.5.2-T4 merged as #147)
+
+- **Outcome:** 02.5.2-T4 merged as #147 (`d670978`); the 02.5.2 story is complete; next backend task 02.5.3-T1.
+
+- **Next (backend, start here):** **02.5.2-T4** SSRF/abuse suite is in a PR from `feature/02.5.2-T4-s12` (Session 12, tests only, T3 gates closed; §Open tasks row; gate evidence `ssrf-suite-evidence.md`) waiting for the owner; it completes the 02.5.2 story → **02.5.3-T1** fact extractor, 02.6.1-T2, 02.6.2-T1 revision (02 §10 T113(b)), 02.3.2-T1 approve (treat `moderation.stale`/`unavailable` as needs re-check; edit-path moderator wiring). First re-run CI on `develop` once GitHub Actions billing is fixed (#131 and #136 merged with no CI run). Claim the backend `gate.sh` lock in `nts-wt/SESSION-CLAIMS.md` first.
+
+### Superseded Next line (2026-10-05, replaced when Session 12 opened the 02.5.2-T4 PR)
+
+- **Outcome:** 02.5.2-T4 SSRF/abuse suite built (tests only, T3 gates closed); PR from `feature/02.5.2-T4-s12`.
+
+- **Next (backend, start here):** **02.5.2-T3** fetcher host merged as #136 (`d35284e`, no CI run: CI-01; local full `gate.sh` `GATE_RC=0` on the identical tip `029fb34`) → **02.5.2-T4** SSRF/abuse suite in progress (Session 12, `feature/02.5.2-T4-s12`; drives the real loop; failure behaviours handed over in the 02.5.2-T3 row) → 02.6.1-T2, 02.6.2-T1 revision (02 §10 T113(b)), 02.3.2-T1 approve (treat `moderation.stale`/`unavailable` as needs re-check; edit-path moderator wiring). First re-run CI on `develop` once GitHub Actions billing is fixed (#131 and #136 merged with no CI run). Claim the backend `gate.sh` lock in `nts-wt/SESSION-CLAIMS.md` first.
+
+### Superseded Session 17 Web next part (2026-10-05, replaced when #145 `9210327` merged)
+
+- Part of the **Web next (plan 10 Stage B)** bullet: "**10.5.1-T1** episode list in PR #145 (Session 17, `feature/10.5.1-T1-s17`; `/episodes` + the first `NAV_ITEMS` entry; T0 design owner-approved 2026-10-02) → next **10.5.2-T1** episode detail (adds `/episodes/:id`);"
+
+### Superseded Session 17 Web next part (2026-10-05, replaced when 10.5.1-T1 opened as PR #145)
+
+- Part of the **Web next (plan 10 Stage B)** bullet: "**10.5.1-T0** design → **10.5.1-T1** episode list (first `cursorList` consumer); **10.4.1-T1** dashboard (adds `/dashboard` + the first `NAV_ITEMS` entry);"
+
 ### Superseded Session 18 Web next part (2026-10-05, replaced when #143 `7b5a6e9` merged)
 
 - **Web next (plan 10 Stage B):** open web lanes: **10.5.1-T0** design → **10.5.1-T1** episode list (first `cursorList` consumer); **10.4.1-T1** dashboard (adds `/dashboard` + the first `NAV_ITEMS` entry); **10.3.3-T3** MFA step + enrolment + recovery codes + re-auth (deps merged). **10.4.2-T2** voice picker + `voices` scope (10 CR-50) in PR #143 (Session 18), then **10.4.2-T1** series pages (mounts the voice step, writes its e2e). Check each header's `Depends on`. **10.3.1-T2** (content-policy + sitemap) is phase S and waits for the owner/TL site-origin decision (canonical/hreflang, 10.3.1-T1 §Notes). No `**` not-found route yet (owner 2026-10-05); `/dashboard` has no route until 10.4.1-T1, so the `/dashboard`-path e2e tests (17 failed locally) stay red until then. First read §Plan 10 hand-overs and the as-built surfaces in the 10.2.6-T1, 10.3.1-T1 and 10.3.3-T1 task §Notes.

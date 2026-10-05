@@ -1,0 +1,41 @@
+{
+  "list": {
+    "title": "Episodes",
+    "subtitle": "Track every episode from idea to publish.",
+    "filterStatus": "Status",
+    "filterSeries": "Series",
+    "all": "All",
+    "untitled": "Untitled episode",
+    "continue": "Continue",
+    "loadMore": "Load more",
+    "loading": "Loading episodes",
+    "loadingMore": "Loading more episodes",
+    "rowsAppended": "{{count}} more episodes loaded",
+    "empty": "No episodes yet",
+    "emptyBody": "Choose a series to begin your first episode.",
+    "emptyAction": "Choose a series",
+    "emptyFilteredTitle": "No matching episodes",
+    "emptyFilteredBody": "No episodes match the current filters.",
+    "clearFilters": "Clear filters",
+    "filterActive": "Active filters",
+    "filtersSavedInUrl": "Filters are saved in the URL.",
+    "seriesFilter": "Series",
+    "seriesFilterUnavailable": "The series name is unavailable. The id filter still applies.",
+    "seriesFilterBounded": "Only the first 100 series are listed.",
+    "clearFilter": "Clear {{name}} filter",
+    "errorTitle": "Episodes could not be loaded"
+  },
+  "status": {
+    "draft": "Draft",
+    "story_generating": "Generating",
+    "story_review": "Needs your review",
+    "story_approved": "Story approved",
+    "rendering": "Rendering",
+    "video_review": "Video review",
+    "ready": "Ready",
+    "scheduled": "Scheduled",
+    "published": "Published",
+    "failed": "Failed",
+    "cancelled": "Cancelled"
+  }
+}
