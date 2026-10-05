@@ -7,6 +7,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using NightTales.Api.IntegrationTests.Harness;
 using NightTales.Api.IntegrationTests.Http;
 using NightTales.Api.IntegrationTests.Persistence;
+using NightTales.Application.Abstractions.Moderation;
 using NightTales.Application.Abstractions.Text;
 using NightTales.Application.Features.Stories;
 using NightTales.Domain.Common;
@@ -146,6 +147,7 @@ public sealed class EditStoryEndpointTests(TestDatabase database) : IntegrationT
         response.Headers.ETag!.Tag.ShouldBe(StoryEtag.For(world.VersionId));
         (await ReadBodyAsync(response)).GetProperty("versionId").GetGuid().ShouldBe(world.VersionId);
         AssertNothingSaved(world);
+        factory.Moderator.Calls.ShouldBe(0, "no-op edits never moderate");
     }
 
     [Fact]
@@ -167,6 +169,7 @@ public sealed class EditStoryEndpointTests(TestDatabase database) : IntegrationT
         response.StatusCode.ShouldBe(HttpStatusCode.OK, await response.Content.ReadAsStringAsync(Ct));
         response.Headers.ETag!.Tag.ShouldBe(StoryEtag.For(world.VersionId));
         AssertNothingSaved(world);
+        factory.Moderator.Calls.ShouldBe(0, "canonical no-op edits never moderate");
     }
 
     [Fact]
@@ -275,6 +278,7 @@ public sealed class EditStoryEndpointTests(TestDatabase database) : IntegrationT
     {
         var world = await SeedAsync();
         using var factory = Factory();
+        factory.Moderator.EnqueueUnavailable(ModerationStage.Draft);
         using var client = factory.ClientFor(world.UserId);
 
         using var response = await PutAsync(client, world.EpisodeId, Edited(), StoryEtag.For(world.VersionId));
@@ -287,6 +291,7 @@ public sealed class EditStoryEndpointTests(TestDatabase database) : IntegrationT
             .ShouldBe("false", "the kept verdict is not rewritten");
         SqlProbe.ScalarText(Database, $"SELECT audit_report->'moderation'->>'stale' FROM story_versions WHERE id = '{world.VersionId}'")
             .ShouldBe("false", "the previous version keeps its own verdict");
+        factory.Moderator.Calls.ShouldBe(1);
     }
 
     /// <summary>
@@ -302,6 +307,7 @@ public sealed class EditStoryEndpointTests(TestDatabase database) : IntegrationT
         var world = await SeedAsync();
         SqlProbe.Execute(Database, $"UPDATE story_versions SET audit_report = {previousAudit} WHERE id = '{world.VersionId}'");
         using var factory = Factory();
+        factory.Moderator.EnqueueUnavailable(ModerationStage.Draft).EnqueueUnavailable(ModerationStage.Draft);
         using var client = factory.ClientFor(world.UserId);
 
         using var response = await PutAsync(client, world.EpisodeId, Edited(), StoryEtag.For(world.VersionId));
@@ -344,10 +350,11 @@ public sealed class EditStoryEndpointTests(TestDatabase database) : IntegrationT
             .Select(found => found.GetProperty("ruleId").GetString())
             .ShouldContain("Q-MOD-01");
         AssertNothingSaved(world);
+        factory.Moderator.Calls.ShouldBe(0);
     }
 
     [Fact]
-    public async Task EditStory_CleanCarriedModerationVerdict_RaisesNoModerationHint()
+    public async Task EditStory_FreshCleanModerationVerdict_RaisesNoModerationHint()
     {
         var world = await SeedAsync();
         using var factory = Factory();
@@ -356,9 +363,15 @@ public sealed class EditStoryEndpointTests(TestDatabase database) : IntegrationT
         using var response = await PutAsync(client, world.EpisodeId, Edited(), StoryEtag.For(world.VersionId));
 
         response.StatusCode.ShouldBe(HttpStatusCode.OK, await response.Content.ReadAsStringAsync(Ct));
-        (await ReadBodyAsync(response)).GetProperty("qualityHints").EnumerateArray()
+        var body = await ReadBodyAsync(response);
+        body.GetProperty("qualityHints").EnumerateArray()
             .Select(found => found.GetProperty("ruleId").GetString())
-            .ShouldNotContain("Q-MOD-01", "a carried clean verdict is not the unavailable marker");
+            .ShouldNotContain("Q-MOD-01", "a fresh clean verdict replaces the previous moderation");
+        var newId = body.GetProperty("versionId").GetGuid();
+        JsonNode.DeepEquals(
+            JsonNode.Parse(SqlProbe.ScalarText(Database, $"SELECT audit_report->'moderation' FROM story_versions WHERE id = '{newId}'")),
+            JsonNode.Parse("""{"flagged":false,"categories":[],"blocking":[],"stale":false,"unavailable":false}""")).ShouldBeTrue();
+        factory.Moderator.Calls.ShouldBe(1);
     }
 
     [Fact]
@@ -366,6 +379,7 @@ public sealed class EditStoryEndpointTests(TestDatabase database) : IntegrationT
     {
         var world = await SeedAsync(audit: AuditJson(moderation: """{"flagged":true,"categories":["sexual/minors"],"stale":false}"""));
         using var factory = Factory();
+        factory.Moderator.EnqueueUnavailable(ModerationStage.Draft);
         using var client = factory.ClientFor(world.UserId);
 
         using var response = await PutAsync(client, world.EpisodeId, Edited(), StoryEtag.For(world.VersionId));
@@ -375,6 +389,75 @@ public sealed class EditStoryEndpointTests(TestDatabase database) : IntegrationT
         body.GetProperty("qualityHints").EnumerateArray()
             .Select(hint => hint.GetProperty("ruleId").GetString())
             .ShouldContain("Q-MOD-01", "a stale verdict is not a pass: its blocking categories keep applying");
+    }
+
+    [Fact]
+    public async Task EditStory_FreshBlockingModeration_WritesVerdictHintAndEvidence()
+    {
+        var world = await SeedAsync();
+        using var factory = Factory();
+        factory.Moderator.EnqueueFlagged(ModerationStage.Draft, "sexual/minors");
+        using var client = factory.ClientFor(world.UserId);
+
+        using var response = await PutAsync(client, world.EpisodeId, Edited(), StoryEtag.For(world.VersionId));
+
+        response.StatusCode.ShouldBe(HttpStatusCode.OK, await response.Content.ReadAsStringAsync(Ct));
+        var body = await ReadBodyAsync(response);
+        var newId = body.GetProperty("versionId").GetGuid();
+        body.GetProperty("qualityHints").EnumerateArray()
+            .Single(hint => hint.GetProperty("ruleId").GetString() == "Q-MOD-01")
+            .GetProperty("severity").GetString().ShouldBe("blocking");
+        JsonNode.DeepEquals(
+            JsonNode.Parse(SqlProbe.ScalarText(Database, $"SELECT audit_report->'moderation' FROM story_versions WHERE id = '{newId}'")),
+            JsonNode.Parse("""{"flagged":true,"categories":["sexual/minors"],"blocking":["sexual/minors"],"stale":false,"unavailable":false}""")).ShouldBeTrue();
+        SqlProbe.Count(Database, $"SELECT count(*) FROM moderation_events WHERE user_id = '{world.UserId}' AND episode_id = '{world.EpisodeId}'")
+            .ShouldBe(1);
+        factory.Moderator.Calls.ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task EditStory_FreshCleanModeration_ReplacesPreviousBlockingVerdict()
+    {
+        var world = await SeedAsync(audit: AuditJson(moderation: """{"flagged":true,"categories":["sexual/minors"],"stale":true}"""));
+        using var factory = Factory();
+        factory.Moderator.EnqueueClean(ModerationStage.Draft);
+        using var client = factory.ClientFor(world.UserId);
+
+        using var response = await PutAsync(client, world.EpisodeId, Edited(), StoryEtag.For(world.VersionId));
+
+        response.StatusCode.ShouldBe(HttpStatusCode.OK, await response.Content.ReadAsStringAsync(Ct));
+        var body = await ReadBodyAsync(response);
+        body.GetProperty("qualityHints").EnumerateArray()
+            .Select(hint => hint.GetProperty("ruleId").GetString()).ShouldNotContain("Q-MOD-01");
+        var newId = body.GetProperty("versionId").GetGuid();
+        SqlProbe.ScalarText(Database, $"SELECT audit_report->'moderation'->>'flagged' FROM story_versions WHERE id = '{newId}'")
+            .ShouldBe("false");
+        SqlProbe.ScalarText(Database, $"SELECT audit_report->'moderation'->>'stale' FROM story_versions WHERE id = '{newId}'")
+            .ShouldBe("false");
+        factory.Moderator.Calls.ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task EditStory_FreshAdvisoryModeration_KeepsCategoryWithoutBlockingApproval()
+    {
+        var world = await SeedAsync();
+        using var factory = Factory();
+        factory.Moderator.EnqueueFlagged(ModerationStage.Draft, "violence");
+        using var client = factory.ClientFor(world.UserId);
+
+        using var response = await PutAsync(client, world.EpisodeId, Edited(), StoryEtag.For(world.VersionId));
+
+        response.StatusCode.ShouldBe(HttpStatusCode.OK, await response.Content.ReadAsStringAsync(Ct));
+        var body = await ReadBodyAsync(response);
+        body.GetProperty("qualityHints").EnumerateArray()
+            .Select(hint => hint.GetProperty("ruleId").GetString())
+            .ShouldNotContain("Q-MOD-01", "D12 advisory categories are stored but do not create a blocking moderation hint");
+        var newId = body.GetProperty("versionId").GetGuid();
+        SqlProbe.ScalarText(Database, $"SELECT audit_report->'moderation'->'categories'->>0 FROM story_versions WHERE id = '{newId}'")
+            .ShouldBe("violence");
+        SqlProbe.Count(Database, $"SELECT jsonb_array_length(audit_report->'moderation'->'blocking') FROM story_versions WHERE id = '{newId}'")
+            .ShouldBe(0);
+        factory.Moderator.Calls.ShouldBe(1);
     }
 
     [Fact]

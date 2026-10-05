@@ -1,8 +1,10 @@
 import { ChangeDetectionStrategy, Component } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
+import { TranslocoService } from '@jsverse/transloco';
 import { describe, expect, it } from 'vitest';
 import { uiTestingTranslations } from '../testing/ui-testing-translations';
 import { CharCounter } from './char-counter';
+import { ZONELESS_TEST_PROVIDERS } from '../../../testing/providers';
 
 @Component({
   imports: [CharCounter],
@@ -71,5 +73,27 @@ describe('CharCounter', () => {
     expect(matches).toHaveLength(1);
     expect(matches[0]?.tagName).toBe('SPAN');
     expect(root.querySelector('nts-char-counter')?.hasAttribute('id')).toBe(false);
+  });
+
+  it('formats thousands and reacts to the active language without changing its public inputs', async () => {
+    await TestBed.configureTestingModule({
+      imports: [CharCounter, uiTestingTranslations()],
+      providers: [...ZONELESS_TEST_PROVIDERS],
+    }).compileComponents();
+    const fixture = TestBed.createComponent(CharCounter);
+    fixture.componentRef.setInput('value', 1000);
+    fixture.componentRef.setInput('max', 1000);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const counter = fixture.nativeElement as HTMLElement;
+    expect(counter.textContent).toContain('1.000/1.000');
+    TestBed.inject(TranslocoService).setActiveLang('en');
+    await fixture.whenStable();
+    expect(counter.textContent).toContain('1,000/1,000');
+    fixture.componentRef.setInput('value', 1001);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(counter.textContent).toContain('1,001/1,000');
+    expect(counter.classList.contains('char-counter--over')).toBe(true);
   });
 });

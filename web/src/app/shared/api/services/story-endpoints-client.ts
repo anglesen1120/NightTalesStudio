@@ -12,7 +12,16 @@ import { StrictHttpResponse } from '../strict-http-response';
 
 import { apiV1EpisodesIdStoryGeneratePost } from '../fn/story-endpoints/api-v-1-episodes-id-story-generate-post';
 import { ApiV1EpisodesIdStoryGeneratePost$Params } from '../fn/story-endpoints/api-v-1-episodes-id-story-generate-post';
+import { apiV1EpisodesIdStoryPut } from '../fn/story-endpoints/api-v-1-episodes-id-story-put';
+import { ApiV1EpisodesIdStoryPut$Params } from '../fn/story-endpoints/api-v-1-episodes-id-story-put';
+import { apiV1EpisodesIdStoryVersionsGet } from '../fn/story-endpoints/api-v-1-episodes-id-story-versions-get';
+import { ApiV1EpisodesIdStoryVersionsGet$Params } from '../fn/story-endpoints/api-v-1-episodes-id-story-versions-get';
+import { apiV1EpisodesIdStoryVersionsVersionIdGet } from '../fn/story-endpoints/api-v-1-episodes-id-story-versions-version-id-get';
+import { ApiV1EpisodesIdStoryVersionsVersionIdGet$Params } from '../fn/story-endpoints/api-v-1-episodes-id-story-versions-version-id-get';
 import { GenerateStoryAccepted } from '../models/generate-story-accepted';
+import { StoryVersionDetailDto } from '../models/story-version-detail-dto';
+import { StoryVersionDto } from '../models/story-version-dto';
+import { StoryVersionSummaryDto } from '../models/story-version-summary-dto';
 
 @Injectable({ providedIn: 'root' })
 export class StoryEndpointsClient extends BaseService {
@@ -44,6 +53,87 @@ export class StoryEndpointsClient extends BaseService {
     const resp = this.apiV1EpisodesIdStoryGeneratePost$Response(params, context);
     return resp.pipe(
       map((r: StrictHttpResponse<GenerateStoryAccepted>): GenerateStoryAccepted => r.body)
+    );
+  }
+
+  /** Path part for operation `apiV1EpisodesIdStoryPut()` */
+  static readonly ApiV1EpisodesIdStoryPutPath = '/api/v1/episodes/{id}/story';
+
+  /**
+   * This method provides access to the full `HttpResponse`, allowing access to response headers.
+   * To access only the response body, use `apiV1EpisodesIdStoryPut()` instead.
+   *
+   * This method sends `application/json` and handles request body of type `application/json`.
+   */
+  apiV1EpisodesIdStoryPut$Response(params: ApiV1EpisodesIdStoryPut$Params, context?: HttpContext): Observable<StrictHttpResponse<StoryVersionDto>> {
+    const obs = apiV1EpisodesIdStoryPut(this.http, this.rootUrl, params, context);
+    return obs;
+  }
+
+  /**
+   * This method provides access only to the response body.
+   * To access the full response (for headers, for example), `apiV1EpisodesIdStoryPut$Response()` instead.
+   *
+   * This method sends `application/json` and handles request body of type `application/json`.
+   */
+  apiV1EpisodesIdStoryPut(params: ApiV1EpisodesIdStoryPut$Params, context?: HttpContext): Observable<StoryVersionDto> {
+    const resp = this.apiV1EpisodesIdStoryPut$Response(params, context);
+    return resp.pipe(
+      map((r: StrictHttpResponse<StoryVersionDto>): StoryVersionDto => r.body)
+    );
+  }
+
+  /** Path part for operation `apiV1EpisodesIdStoryVersionsGet()` */
+  static readonly ApiV1EpisodesIdStoryVersionsGetPath = '/api/v1/episodes/{id}/story/versions';
+
+  /**
+   * This method provides access to the full `HttpResponse`, allowing access to response headers.
+   * To access only the response body, use `apiV1EpisodesIdStoryVersionsGet()` instead.
+   *
+   * This method doesn't expect any request body.
+   */
+  apiV1EpisodesIdStoryVersionsGet$Response(params: ApiV1EpisodesIdStoryVersionsGet$Params, context?: HttpContext): Observable<StrictHttpResponse<Array<StoryVersionSummaryDto>>> {
+    const obs = apiV1EpisodesIdStoryVersionsGet(this.http, this.rootUrl, params, context);
+    return obs;
+  }
+
+  /**
+   * This method provides access only to the response body.
+   * To access the full response (for headers, for example), `apiV1EpisodesIdStoryVersionsGet$Response()` instead.
+   *
+   * This method doesn't expect any request body.
+   */
+  apiV1EpisodesIdStoryVersionsGet(params: ApiV1EpisodesIdStoryVersionsGet$Params, context?: HttpContext): Observable<Array<StoryVersionSummaryDto>> {
+    const resp = this.apiV1EpisodesIdStoryVersionsGet$Response(params, context);
+    return resp.pipe(
+      map((r: StrictHttpResponse<Array<StoryVersionSummaryDto>>): Array<StoryVersionSummaryDto> => r.body)
+    );
+  }
+
+  /** Path part for operation `apiV1EpisodesIdStoryVersionsVersionIdGet()` */
+  static readonly ApiV1EpisodesIdStoryVersionsVersionIdGetPath = '/api/v1/episodes/{id}/story/versions/{versionId}';
+
+  /**
+   * This method provides access to the full `HttpResponse`, allowing access to response headers.
+   * To access only the response body, use `apiV1EpisodesIdStoryVersionsVersionIdGet()` instead.
+   *
+   * This method doesn't expect any request body.
+   */
+  apiV1EpisodesIdStoryVersionsVersionIdGet$Response(params: ApiV1EpisodesIdStoryVersionsVersionIdGet$Params, context?: HttpContext): Observable<StrictHttpResponse<StoryVersionDetailDto>> {
+    const obs = apiV1EpisodesIdStoryVersionsVersionIdGet(this.http, this.rootUrl, params, context);
+    return obs;
+  }
+
+  /**
+   * This method provides access only to the response body.
+   * To access the full response (for headers, for example), `apiV1EpisodesIdStoryVersionsVersionIdGet$Response()` instead.
+   *
+   * This method doesn't expect any request body.
+   */
+  apiV1EpisodesIdStoryVersionsVersionIdGet(params: ApiV1EpisodesIdStoryVersionsVersionIdGet$Params, context?: HttpContext): Observable<StoryVersionDetailDto> {
+    const resp = this.apiV1EpisodesIdStoryVersionsVersionIdGet$Response(params, context);
+    return resp.pipe(
+      map((r: StrictHttpResponse<StoryVersionDetailDto>): StoryVersionDetailDto => r.body)
     );
   }
 

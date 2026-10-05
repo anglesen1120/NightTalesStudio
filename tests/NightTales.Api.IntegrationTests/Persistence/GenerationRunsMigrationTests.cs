@@ -518,14 +518,24 @@ public sealed class GenerationRunsMigrationTests(TestDatabase database) : Integr
     }
 
     [Fact]
-    public async Task StoryVersion_Model_EveryPropertyIsImmutable()
+    public async Task StoryVersion_Model_EveryPropertyExceptAuditReportIsImmutable()
     {
         await using var context = Database.CreateAppDbContext();
         var entity = context.Model.FindEntityType(typeof(StoryVersion))!;
 
+        // 02.3.2-T1, plan §3.6 "02.3.2 approve": moderation write-back is the sole mutable field.
+        entity.GetProperties()
+            .Where(property => property.GetAfterSaveBehavior() != PropertySaveBehavior.Throw)
+            .Select(property => property.Name)
+            .ToHashSet(StringComparer.Ordinal)
+            .SetEquals([nameof(StoryVersion.AuditReport)])
+            .ShouldBeTrue("AuditReport is the single explicit immutability exception");
+
         foreach (var property in entity.GetProperties())
         {
-            property.GetAfterSaveBehavior().ShouldBe(PropertySaveBehavior.Throw, property.Name);
+            property.GetAfterSaveBehavior().ShouldBe(
+                property.Name == nameof(StoryVersion.AuditReport) ? PropertySaveBehavior.Save : PropertySaveBehavior.Throw,
+                property.Name);
             property.ValueGenerated.ShouldBe(ValueGenerated.Never, property.Name);
         }
     }
@@ -587,6 +597,47 @@ public sealed class GenerationRunsMigrationTests(TestDatabase database) : Integr
         await transaction.CommitAsync(Ct);
 
         SqlProbe.Execute(Database, lockStatement);
+    }
+
+    [Fact]
+    public async Task LockEpisodeForUpdateAsync_AllowsIndependentModerationEvidenceButSerializesAnotherLocker()
+    {
+        var parents = await ParentsAsync();
+        var user = new TestCurrentUser { Id = parents.UserId };
+        await using var holder = Database.CreateAppDbContext(user);
+        await using var heldTransaction = await holder.Database.BeginTransactionAsync(Ct);
+        await holder.LockEpisodeForUpdateAsync(parents.EpisodeId, Ct);
+
+        await using (var evidence = Database.CreateAppDbContext(user))
+        {
+            evidence.Database.SetCommandTimeout(TimeSpan.FromSeconds(2));
+            evidence.ModerationEvents.Add(NightTales.Domain.Compliance.ModerationEvent.Record(
+                parents.UserId,
+                NightTales.Domain.Compliance.ModerationSource.OpenaiText,
+                "draft",
+                ["sexual/minors"],
+                DateTimeOffset.UtcNow,
+                parents.EpisodeId,
+                null));
+            await evidence.SaveChangesAsync(Ct);
+        }
+
+        SqlProbe.Count(Database,
+                $"SELECT count(*) FROM moderation_events WHERE user_id = '{parents.UserId}' AND episode_id = '{parents.EpisodeId}'")
+            .ShouldBe(1, "the foreign-key check must not wait for the episode's state lock");
+
+        await using var contender = Database.CreateAppDbContext(user);
+        await using (var waitingTransaction = await contender.Database.BeginTransactionAsync(Ct))
+        {
+            await contender.Database.ExecuteSqlRawAsync("SET LOCAL lock_timeout = '200ms'", Ct);
+            var blocked = await Should.ThrowAsync<Npgsql.PostgresException>(
+                () => contender.LockEpisodeForUpdateAsync(parents.EpisodeId, Ct));
+            blocked.SqlState.ShouldBe("55P03", "a second state-changing command still waits for the row lock");
+            await waitingTransaction.RollbackAsync(Ct);
+        }
+
+        await heldTransaction.CommitAsync(Ct);
+        await contender.LockEpisodeForUpdateAsync(parents.EpisodeId, Ct);
     }
 
     [Fact]

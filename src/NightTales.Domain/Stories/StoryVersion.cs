@@ -7,9 +7,9 @@ namespace NightTales.Domain.Stories;
 /// One immutable story version of an episode (00 overview §6 <c>story_versions</c>). 09.2.2-T1 owns the base
 /// columns of plan §3; 02.2.2-T1 adds the CR-4 provenance columns (<see cref="ParentVersionId"/>,
 /// <see cref="GenerationRunId"/>, <see cref="FactSheetId"/>, <see cref="SchemaVersion"/>), the factory and the
-/// D3 derivation. Append-only, so it stops at <see cref="ICreatedAt"/>: there is no setter and no mutating
-/// method, the persistence model maps every property with <c>AfterSaveBehavior.Throw</c>, and only
-/// <c>Features/Admin</c> (09.9.1) may delete a row.
+/// D3 derivation. Story content is append-only, so it stops at <see cref="ICreatedAt"/>. The explicit
+/// exception is <see cref="RefreshModerationVerdict"/>, which refreshes the audit report at approval
+/// without rewriting content; only <c>Features/Admin</c> (09.9.1) may delete a row.
 /// </summary>
 public sealed class StoryVersion : Entity, IUserOwned, ICreatedAt
 {
@@ -69,6 +69,13 @@ public sealed class StoryVersion : Entity, IUserOwned, ICreatedAt
     /// <summary>The <c>content</c> document's schema, <c>story.v1</c> today.</summary>
     public string SchemaVersion { get; private set; } = CurrentSchemaVersion;
 
+    /// <summary>Refreshes the approval-time audit report without changing the append-only story content.</summary>
+    public void RefreshModerationVerdict(string auditReportJson)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(auditReportJson);
+        AuditReport = auditReportJson;
+    }
+
     /// <summary>
     /// Derives the D3 fields — <c>body</c>, <c>keywords</c>, <c>word_count</c> — from a draft. The factory uses
     /// exactly this, so what is stored is what the validator counted.
@@ -99,7 +106,7 @@ public sealed class StoryVersion : Entity, IUserOwned, ICreatedAt
     /// <param name="auditReportJson">The <c>audit.v1</c> document (02 D22), when the job wrote one.</param>
     /// <param name="similarityScore">The source-similarity score in [0, 1), when computed.</param>
     /// <param name="now">The caller's clock reading, stored as <see cref="CreatedAt"/>.</param>
-    /// <returns>The new version, to be added to the context and never modified again.</returns>
+    /// <returns>The new version, to be added to the context; its story content is never modified again.</returns>
     /// <exception cref="ArgumentException">An id is empty, the version is below 1, the JSON is empty or an edit names a run.</exception>
     public static StoryVersion Create(
         Guid userId,

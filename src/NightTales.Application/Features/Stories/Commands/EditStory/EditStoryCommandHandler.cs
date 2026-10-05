@@ -7,6 +7,7 @@ using Microsoft.Extensions.Logging;
 using NightTales.Application.Abstractions.Persistence;
 using NightTales.Application.Abstractions.Usage;
 using NightTales.Application.Common.Errors;
+using NightTales.Application.Features.Stories.Moderation;
 using NightTales.Application.Features.Stories.Quality;
 using NightTales.Domain.Common;
 using NightTales.Domain.Episodes;
@@ -25,28 +26,28 @@ namespace NightTales.Application.Features.Stories.Commands.EditStory;
 /// </summary>
 /// <remarks>
 /// <para>
-/// No paid call and no network call: the local check (<see cref="StoryQualityChecker"/>) is pure. The model review is only
-/// flipped to <c>stale</c>, its scores stay (F25).
+/// No paid text call: the local check (<see cref="StoryQualityChecker"/>) is pure. Draft moderation runs once for a
+/// material edit, unmetered and outside a generation scope. The model review is marked stale; its scores stay (F25).
 /// </para>
 /// <para>
-/// Two inputs of the plan do not exist yet on this base: the content moderator (02.4.1-T1) and the similarity scorer and
-/// corpus (02.5.6). Until they land the previous <c>moderation</c> verdict is carried over marked <c>stale</c> (the plan's
-/// own outage rule, so the approve gate re-checks it; when the previous <c>audit_report</c> is missing or unreadable there is
-/// no verdict to carry and the new version gets <c>{ stale: true, unavailable: true }</c>, which the checker reports as a
-/// blocking Q-MOD-01, never as clean) and <c>similarity</c> is the unscorable
-/// <c>{ score: null, n: 0 }</c>. The fact ids a client may cite are the ones the current version already cites, and
+/// A fresh draft moderation verdict replaces the previous one. On provider failure the previous verdict is carried
+/// marked stale for approval to re-check; a missing verdict gets the fail-closed unavailable marker. The similarity
+/// scorer and corpus (02.5.6) remain unavailable, so similarity is the unscorable <c>{ score: null, n: 0 }</c>.
+/// The fact ids a client may cite are the ones the current version already cites, and
 /// <c>fact_sources</c> are carried over from it: the id-to-source mapping lives in the fact sheet (02.5.5) that this
 /// base does not have, and a client-sent <c>fact_sources</c> or URL is never read.
 /// </para>
 /// </remarks>
 /// <param name="db">The tracked write model; the pipeline saves and commits it.</param>
 /// <param name="checker">The local quality checker (02.3.4-T1).</param>
+/// <param name="moderation">The unmetered D12 draft moderation helper.</param>
 /// <param name="prices">The active price version, which carries the D4 length limits.</param>
 /// <param name="clock">The command's clock reading.</param>
 /// <param name="logger">Logs a current version that has no <c>audit_report</c>.</param>
 public sealed partial class EditStoryCommandHandler(
     IAppDbContext db,
     StoryQualityChecker checker,
+    StoryDraftModeration moderation,
     IPriceCatalog prices,
     IClock clock,
     ILogger<EditStoryCommandHandler> logger)
@@ -144,11 +145,30 @@ public sealed partial class EditStoryCommandHandler(
             LogAuditReportMissing(logger, previous.Id);
         }
 
+        var derived = StoryVersion.Derive(command.Content);
+        var freshModeration = await moderation.CheckAsync(
+            episode.UserId,
+            episode.Id,
+            command.Content.Title,
+            derived.Body,
+            command.Content.Description,
+            command.Content.Tags ?? [],
+            cancellationToken).ConfigureAwait(false);
+        var checkedAudit = new JsonObject();
+        checkedAudit["moderation"] = freshModeration
+            ?? (previousAudit?["moderation"] is JsonObject kept
+                ? kept.DeepClone()
+                : new JsonObject { ["stale"] = true, ["unavailable"] = true });
+        if (freshModeration is null)
+        {
+            checkedAudit["moderation"]!["stale"] = true;
+        }
+
         var report = checker.Check(
             command.Content,
-            CheckContext(series, episode.LengthTier, rules, hasUrlSources, previousAudit, modelReviewStale: true));
+            CheckContext(series, episode.LengthTier, rules, hasUrlSources, checkedAudit, modelReviewStale: true));
         var contentJson = StoryContentJson.Write(command.Content, StoryContentJson.ReadFactSources(previous.Content));
-        var auditJson = BuildAuditReport(previousAudit, report);
+        var auditJson = BuildAuditReport(previousAudit, report, (JsonObject)checkedAudit["moderation"]!);
 
         // Step 7: the new row, the pointer move and the event; the pipeline commits them with the audit row.
         var maxVersion = await db.StoryVersions
@@ -189,8 +209,10 @@ public sealed partial class EditStoryCommandHandler(
         StoryRules rules,
         bool hasUrlSources,
         JsonObject? previousAudit,
-        bool modelReviewStale) =>
-        new(
+        bool modelReviewStale)
+    {
+        var categories = ModerationCategoriesOf(previousAudit);
+        return new(
             series.Topic,
             tier,
             rules.Length,
@@ -200,10 +222,11 @@ public sealed partial class EditStoryCommandHandler(
             hasUrlSources,
             null,
             SimilarityVerdict.Pass,
-            ModerationCategoriesOf(previousAudit),
+            categories,
             modelReviewStale,
             null,
-            ModerationIsUnavailable(previousAudit));
+            categories.Contains(StoryQualityChecker.UnspecifiedModerationCategory));
+    }
 
     private static HashSet<string> FactRefsOf(StoryContentV1 content)
     {
@@ -260,36 +283,26 @@ public sealed partial class EditStoryCommandHandler(
         || !stale.TryGetValue<bool>(out var flag)
         || flag;
 
-    private static List<string>? ModerationCategoriesOf(JsonObject? audit)
+    private static List<string> ModerationCategoriesOf(JsonObject? audit)
     {
-        if (audit?["moderation"] is not JsonObject moderation || moderation["categories"] is not JsonArray categories)
+        var blockers = StoryDraftModeration.BlockingCategoriesOf(audit?["moderation"]);
+        if (blockers.Contains(StoryQualityChecker.UnspecifiedModerationCategory))
         {
-            return null;
+            return blockers.ToList();
         }
 
-        return categories
-            .Select(node => node is JsonValue value && value.TryGetValue<string>(out var text) ? text : null)
-            .OfType<string>()
+        // BlockingCategoriesOf has validated every flag and category, including contradictory empty blockers.
+        return ((JsonArray)audit!["moderation"]!["categories"]!)
+            .Select(node => node!.GetValue<string>())
             .ToList();
     }
 
     /// <summary>
-    /// True when there is no moderation verdict to carry: the previous <c>audit_report</c> is missing or unreadable, or it
-    /// already carries the <c>unavailable</c> marker. The checker then reports the text as not moderated (fails closed).
-    /// </summary>
-    private static bool ModerationIsUnavailable(JsonObject? audit) =>
-        audit is null
-        || (audit["moderation"] is JsonObject moderation
-            && moderation["unavailable"] is JsonValue unavailable
-            && unavailable.TryGetValue<bool>(out var flag)
-            && flag);
-
-    /// <summary>
     /// The new <c>audit.v1</c> document (02 README D22): <c>local</c> recomputed, <c>model_review</c> kept with
-    /// <c>stale = true</c>, the previous <c>moderation</c> verdict kept marked stale, <c>revision</c> carried over and
+    /// <c>stale = true</c>, the checked <c>moderation</c> verdict kept, <c>revision</c> carried over and
     /// <c>similarity</c> reset to the unscorable shape.
     /// </summary>
-    private static string BuildAuditReport(JsonObject? previous, QualityReport report)
+    private static string BuildAuditReport(JsonObject? previous, QualityReport report, JsonObject moderationVerdict)
     {
         var root = new JsonObject
         {
@@ -310,19 +323,7 @@ public sealed partial class EditStoryCommandHandler(
             },
         };
 
-        if (previous is null)
-        {
-            // NTS-EDIT-L1: no readable previous report means no verdict to carry. A missing key would read as "never
-            // flagged", so the marker says the verdict is unavailable and stale; the approve gate and the moderator
-            // (02.3.2 / 02.4.1) must treat it as not moderated and re-check.
-            root["moderation"] = new JsonObject { ["stale"] = true, ["unavailable"] = true };
-        }
-        else if (previous["moderation"] is JsonObject moderation)
-        {
-            var kept = (JsonObject)moderation.DeepClone();
-            kept["stale"] = true;
-            root["moderation"] = kept;
-        }
+        root["moderation"] = moderationVerdict.DeepClone();
 
         var review = previous?["model_review"] is JsonObject previousReview
             ? (JsonObject)previousReview.DeepClone()

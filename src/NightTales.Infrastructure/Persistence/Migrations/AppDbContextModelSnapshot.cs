@@ -698,6 +698,10 @@ namespace NightTales.Infrastructure.Persistence.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("id");
 
+                    b.Property<DateTimeOffset?>("ApprovedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("approved_at");
+
                     b.Property<Guid?>("ApprovedStoryVersionId")
                         .HasColumnType("uuid")
                         .HasColumnName("approved_story_version_id");

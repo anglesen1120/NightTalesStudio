@@ -14,6 +14,7 @@ using NightTales.Api.Realtime;
 using NightTales.Application.DependencyInjection;
 using NightTales.Infrastructure.DependencyInjection;
 using NightTales.Infrastructure.Email;
+using NightTales.Infrastructure.OpenAI;
 using NightTales.Infrastructure.Persistence;
 using NightTales.Infrastructure.Persistence.Flags;
 using NightTales.Infrastructure.Persistence.Seeding;
@@ -30,6 +31,14 @@ Log.Logger = BootstrapLogging.Create();
 try
 {
     var builder = WebApplication.CreateBuilder(args);
+
+    // The local tooling already supplies OPENAI_API_KEY. Preserve an explicit canonical setting,
+    // otherwise map that same credential into OpenAi:ApiKey; absent credentials still fail validation.
+    if (string.IsNullOrWhiteSpace(builder.Configuration["OpenAi:ApiKey"])
+        && !string.IsNullOrWhiteSpace(builder.Configuration["OPENAI_API_KEY"]))
+    {
+        builder.Configuration["OpenAi:ApiKey"] = builder.Configuration["OPENAI_API_KEY"];
+    }
 
     // 09.9.3-T1 (09 README BD12): Serilog (compact JSON on stdout, OTLP sink when `Otlp:Enabled`), OpenTelemetry
     // traces/metrics and the custom metrics; the health checks behind /health/ready.
@@ -62,6 +71,10 @@ try
 
     // 02.2.4-T1 (02 README D14): price versions, the usage meter and the worst-case cost estimator.
     builder.Services.AddUsageMetering();
+
+    // 02.3.2-T1 (D12): edited and approved drafts use the real moderation provider, outside generation metering.
+    // The Api now requires the same existing OpenAi:ApiKey secret as the Worker; there is no allow-all fallback.
+    builder.Services.AddOpenAiContentModerator();
 
     // 02.4.2-T1 (02 README D2): the FR-02-7 rolling-24 h limit that `GenerateStoryCommand` checks at step 5.
     builder.Services.AddGenerationLimit();

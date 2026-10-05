@@ -514,6 +514,10 @@ api_environment() {
   export Auth__Jwt__SigningKey="$signing_key"
   export DataProtection__KekPfxPath="$kek_pfx"
   export DataProtection__KekPfxPassword="$dev_kek_pass"
+  # 02.3.2-T1: the Api moderates edits and approvals with the same provider credential as the Worker.
+  # Preserve the canonical setting, otherwise forward OPENAI_API_KEY; no key means startup fails.
+  # Credentials reach the child through its environment only, never argv or logs.
+  export OpenAi__ApiKey="${OpenAi__ApiKey:-${OPENAI_API_KEY:-}}"
   storage_mail_environment
   # The 8081 internal listener (02.5.2-T2) is on in dev, bound to loopback only (T10), and protected by the
   # throwaway token; it is committed disabled in appsettings.json. The token stays out of argv (01 D9).

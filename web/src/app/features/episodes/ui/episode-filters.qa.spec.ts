@@ -67,4 +67,14 @@ describe('EpisodeFiltersComponent (QA)', () => {
     expect(seriesSelect?.querySelector('option img')).toBeNull();
     expect(root.textContent).toContain(payload);
   });
+
+  it('preserves interpolation-shaped user titles as literal text in the chip and its accessible name', async () => {
+    const title = '{{ name }} {{x}} <strong>literal</strong>';
+    const { root } = await setup(model({ seriesId: SERIES_ID, seriesOptions: [{ id: SERIES_ID, title }] }));
+    const chip = root.querySelector('.episode-filters__chip');
+    expect(chip?.textContent).toContain(title);
+    expect(chip?.tagName).toBe('BUTTON');
+    expect(chip?.getAttribute('aria-label')).toBe(`${episodesVi.list.clearSeriesFilter}: ${title}`);
+    expect(chip?.querySelector('strong')).toBeNull();
+  });
 });
