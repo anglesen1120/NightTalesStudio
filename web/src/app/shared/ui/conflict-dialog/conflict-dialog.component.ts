@@ -12,6 +12,8 @@ export interface ConflictDialogData {
   readonly detailKeys?: readonly string[];
   /** Translation key; its presence enables Save as new (normally `errors.conflict.saveAsNew`). */
   readonly saveAsNewLabel?: string;
+  /** Server trace id of the conflicting response; shown as `errors.unknown.trace` in the details (text only). */
+  readonly traceId?: string | null;
 }
 
 interface ResolvedConflictDialogData extends ConflictDialogData {

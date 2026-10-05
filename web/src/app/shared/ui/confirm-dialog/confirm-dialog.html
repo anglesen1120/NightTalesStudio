@@ -3,7 +3,7 @@
     <h2 [id]="titleId">{{ resolvedTitleKey() | transloco }}</h2>
     <button class="confirm-dialog__close" type="button" (click)="cancel()" [attr.aria-disabled]="isPending() ? 'true' : null" [attr.aria-label]="'core.ui.dialog.close' | transloco">×</button>
   </div>
-  <p [id]="bodyId">{{ resolvedBodyKey() | transloco }}</p>
+  <p [id]="bodyId">{{ resolvedBodyKey() | transloco: bodyParams }}</p>
   <ng-content select="[cost-line]" />
   @if (costTemplate; as template) {
     <ng-container [ngTemplateOutlet]="template" [ngTemplateOutletContext]="templateContext()" />

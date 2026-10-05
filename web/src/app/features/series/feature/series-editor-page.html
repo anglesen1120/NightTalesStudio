@@ -1,0 +1,96 @@
+<nts-page-header [titleKey]="store.mode() === 'edit' ? 'series.editor.editTitle' : 'series.list.new'" [subtitleKey]="store.mode() === 'edit' ? 'series.editor.editSubtitle' : 'series.editor.subtitle'" backHref="/series">
+  @if (store.mode() === 'edit' && !store.loadingEntity() && !store.notFound()) {
+    <button actions mat-flat-button type="button" [disabled]="blocked() || !allValid()" (click)="submit()">{{ (store.saving() ? 'series.save.saving' : 'series.save.changes') | transloco }}</button>
+  }
+</nts-page-header>
+@if (store.loadingEntity()) {
+  <nts-loading-state />
+} @else if (store.notFound()) {
+  <nts-empty-state titleKey="series.detail.notFound" bodyKey="series.detail.notFoundBody" actionLabelKey="series.detail.backToList" (action)="backToList()" />
+} @else {
+  @if (store.archived()) {
+    <div class="series-editor__notice" role="status"><span class="series-editor__chip">{{ 'series.list.archived' | transloco }}</span><p>{{ 'errors.series_archived' | transloco }}</p></div>
+  }
+  <form class="series-editor" [formGroup]="store.form" (ngSubmit)="submit()" [attr.aria-busy]="store.saving()">
+    <nts-stepper [steps]="steps()" />
+    <nts-form-error-alert [error]="store.error()" [unmappedKeys]="unmappedKeys()" />
+    @switch (store.step()) {
+      @case (1) {
+        <fieldset [disabled]="blocked()">
+          <legend tabindex="-1" data-step-heading>{{ 'series.step.topic' | transloco }}</legend>
+          <mat-form-field appearance="outline" class="series-editor__title">
+            <mat-label>{{ 'series.field.title' | transloco }}</mat-label>
+            <input matInput id="series-title" data-control="title" [formControl]="store.form.controls.title" [maxlength]="titleMax" required [attr.aria-describedby]="fieldError('title') !== null ? 'series-title-count series-title-error' : 'series-title-count'" />
+            @if (fieldError('title'); as key) { <mat-error id="series-title-error">{{ key | transloco }}</mat-error> }
+          </mat-form-field>
+          <nts-char-counter id="series-title-count" aria-live="polite" aria-atomic="true" [value]="value().title.length" [max]="titleMax" />
+          <h2 id="series-topic-label" class="series-editor__label">{{ 'series.field.topic' | transloco }}</h2>
+          <mat-radio-group class="series-editor__choices" data-control="topic" [value]="value().topic" [disabled]="blocked() || store.form.controls.topic.disabled" aria-labelledby="series-topic-label" [attr.aria-describedby]="store.autopilotEnabled() ? 'series-topic-locked' : fieldError('topic') !== null ? 'series-topic-error' : null" (change)="store.setTopic($event.value)">
+            @for (topic of topics; track topic) {
+              <mat-radio-button [value]="topic"><strong>{{ topicKey(topic) | transloco }}</strong><span class="series-editor__hint">{{ topicHints[topic] | transloco }}</span></mat-radio-button>
+            }
+          </mat-radio-group>
+          @if (store.autopilotEnabled() || store.error()?.code === 'series_topic_locked') {
+            <p id="series-topic-locked" class="series-editor__hint">{{ 'autopilot.topic_locked' | transloco }} <a [routerLink]="['/series', store.seriesId()]" [queryParams]="{ tab: 'autopilot' }">{{ 'series.detail.autopilot' | transloco }}</a></p>
+          }
+          @if (fieldError('topic'); as key) { <p id="series-topic-error" class="series-editor__error">{{ key | transloco }}</p> }
+          <mat-form-field appearance="outline" class="series-editor__language" data-control="language">
+            <mat-label>{{ 'series.field.language' | transloco }}</mat-label>
+            <mat-select [value]="value().language" [disabled]="blocked() || store.form.controls.language.disabled" [attr.aria-invalid]="voices.fieldError() !== null || fieldError('language') !== null ? 'true' : null" [aria-describedby]="languageDescribedBy()" (selectionChange)="store.setLanguage($event.value)">
+              <mat-option value="vi">{{ 'series.language.vi' | transloco }}</mat-option>
+              <mat-option value="en">{{ 'series.language.en' | transloco }}</mat-option>
+            </mat-select>
+          </mat-form-field>
+          @if (store.mode() === 'edit') { <p id="series-language-locked" class="series-editor__hint">{{ 'series.language.locked' | transloco }}</p> }
+          @if (voices.fieldError() ?? fieldError('language'); as key) { <p id="series-language-error" class="series-editor__error" role="alert">{{ key | transloco }}</p> }
+        </fieldset>
+      }
+      @case (2) {
+        <fieldset [disabled]="blocked()">
+          <legend tabindex="-1" data-step-heading>{{ 'series.step.aspect' | transloco }}</legend>
+          <mat-radio-group class="series-editor__aspects" data-control="aspect" [value]="value().aspect" [disabled]="blocked()" [attr.aria-label]="'series.field.aspect' | transloco" [attr.aria-describedby]="fieldError('aspect') !== null ? 'series-aspect-error' : null" (change)="store.setAspect($event.value)">
+            @for (aspect of aspects; track aspect) {
+              <mat-radio-button [value]="aspect"><span class="series-editor__aspect-icon" [class.series-editor__aspect-icon--portrait]="aspect === 'portrait'" aria-hidden="true"></span><strong>{{ aspectKey(aspect) | transloco }}</strong><span class="series-editor__hint">{{ aspect === 'landscape' ? '16:9 · YouTube' : '9:16 · YouTube Shorts' }}</span></mat-radio-button>
+            }
+          </mat-radio-group>
+          @if (fieldError('aspect'); as key) { <p id="series-aspect-error" class="series-editor__error">{{ key | transloco }}</p> }
+        </fieldset>
+      }
+      @case (3) {
+        <fieldset [disabled]="blocked()">
+          <legend tabindex="-1" data-step-heading>{{ 'series.step.voice' | transloco }}</legend>
+          <div data-control="voiceId" tabindex="-1" [attr.aria-describedby]="fieldError('voiceId') !== null ? 'series-voice-error' : null">
+            <nts-voice-picker [voices]="voices.voices()" [selectedId]="value().voiceId" [disabled]="blocked()" [loading]="voices.loading()" [errorKey]="voiceErrorKey()" [retryAfterSec]="voices.retryAfterSec()" [traceId]="voices.error()?.traceId ?? null" (selected)="store.setVoice($event)" (retry)="voices.retry()" (backToLanguage)="store.goTo(1)" />
+            @if (inactiveVoiceId(); as id) { <p class="series-editor__hint">{{ 'series.voice.inactive' | transloco }} <span class="series-editor__id">{{ id }}</span></p> }
+          </div>
+          @if (fieldError('voiceId'); as key) { <p id="series-voice-error" class="series-editor__error" role="alert">{{ key | transloco }}</p> }
+        </fieldset>
+      }
+      @case (4) {
+        <fieldset [disabled]="blocked()">
+          <legend tabindex="-1" data-step-heading>{{ 'series.step.style' | transloco }}</legend>
+          @if (store.loadingTemplates()) { <nts-loading-state [rows]="3" /> }
+          @if (templatesErrorKey(); as key) {
+            <nts-error-state [bodyKey]="key" [traceId]="store.templatesError()?.traceId ?? undefined" [retryLabelKey]="templatesRetryAfter() === null ? 'errors.action.retry' : undefined" (retry)="retryTemplates()" />
+            @if (templatesRetryAfter() !== null) {
+              <div class="series-editor__retry" role="status"><nts-retry-countdown [seconds]="templatesRetryAfter()!" (elapsed)="templatesRetryLocked.set(false)" /><button mat-button type="button" [disabled]="templatesRetryLocked() || blocked()" (click)="retryTemplates()">{{ 'errors.action.retry' | transloco }}</button></div>
+            }
+          }
+          @if (!store.loadingTemplates() && templatesErrorKey() === null && store.templates().length === 0) { <nts-empty-state titleKey="series.style.empty" /> }
+          <div data-control="styleTemplateId" tabindex="-1">
+            <nts-style-grid [templates]="store.templates()" [selectedId]="value().styleTemplateId" [topic]="value().topic" [locale]="value().language" [inactiveTemplateId]="store.inactiveTemplateId()" [disabled]="blocked() || store.loadingTemplates()" [invalid]="fieldError('styleTemplateId') !== null" [describedBy]="fieldError('styleTemplateId') !== null ? 'series-style-error' : null" (selected)="store.setStyleTemplate($event)" />
+          </div>
+          @if (fieldError('styleTemplateId'); as key) { <p id="series-style-error" class="series-editor__error" role="alert">{{ key | transloco }}</p> }
+        </fieldset>
+      }
+    }
+    <div class="series-editor__actions">
+      @if (store.step() > 1) { <button mat-button type="button" [disabled]="store.saving()" (click)="store.goBack()">{{ 'common.back' | transloco }}</button> }
+      @if (store.step() < 4) {
+        <button mat-flat-button type="button" [disabled]="!store.canGoNext() || store.saving()" (click)="store.goNext()">{{ 'series.editor.next' | transloco }}</button>
+      } @else {
+        <button mat-flat-button type="submit" [disabled]="blocked() || !allValid() || store.loadingTemplates()">{{ (store.saving() ? 'series.save.saving' : store.mode() === 'edit' ? 'series.save.changes' : 'series.list.new') | transloco }}</button>
+      }
+    </div>
+  </form>
+}

@@ -1,0 +1,43 @@
+@if (store.loading()) {
+  <nts-page-header titleKey="series.detail.title" backHref="/series" />
+  <nts-loading-state />
+} @else if (store.notFound()) {
+  <nts-page-header titleKey="series.detail.title" backHref="/series" />
+  <nts-empty-state titleKey="series.detail.notFound" bodyKey="series.detail.notFoundBody" actionLabelKey="series.detail.backToList" (action)="backToList()" />
+} @else if (store.series(); as series) {
+  <nts-page-header [title]="series.title" subtitleKey="series.detail.subtitle" backHref="/series">
+    @if (series.archivedAt === null) { <a actions mat-stroked-button [routerLink]="['/series', series.id, 'edit']">{{ 'series.detail.edit' | transloco }}</a> }
+  </nts-page-header>
+  @if (series.archivedAt !== null) {
+    <div class="series-detail__archived" role="status"><span class="series-detail__chip"><nts-icon-pause aria-hidden="true" />{{ 'series.list.archived' | transloco }}</span><p>{{ 'series.detail.archivedBody' | transloco }}</p></div>
+  }
+  <nav class="series-detail__tabs" [attr.aria-label]="'series.detail.tabs' | transloco">
+    <a [routerLink]="['/series', series.id]" [queryParams]="{ tab: 'overview' }" [attr.aria-current]="tab() === 'overview' ? 'page' : null">{{ 'series.detail.overview' | transloco }}</a>
+    @if (series.archivedAt === null) {
+      <a [routerLink]="['/series', series.id]" [queryParams]="{ tab: 'autopilot' }" [attr.aria-current]="tab() === 'autopilot' ? 'page' : null">{{ 'series.detail.autopilot' | transloco }}</a>
+    } @else { <span aria-disabled="true">{{ 'series.detail.autopilot' | transloco }}</span> }
+  </nav>
+  @if (tab() === 'overview' || series.archivedAt !== null) {
+    <section class="series-detail__summary" aria-labelledby="series-summary-title">
+      <h2 id="series-summary-title">{{ 'series.detail.summary' | transloco }}</h2>
+      <dl>
+        <div><dt>{{ 'series.field.topic' | transloco }}</dt><dd>{{ topicKey(series.topic) | transloco }}</dd></div>
+        <div><dt>{{ 'series.field.language' | transloco }}</dt><dd>{{ (series.language === 'vi' ? 'series.language.vi' : 'series.language.en') | transloco }}</dd></div>
+        <div><dt>{{ 'series.field.aspect' | transloco }}</dt><dd>{{ aspectKey(series.aspect) | transloco }}</dd></div>
+        <div><dt>{{ 'series.field.voice' | transloco }}</dt><dd>{{ series.voiceId }}</dd></div>
+        <div><dt>{{ 'series.field.style' | transloco }}</dt><dd>{{ series.styleTemplateId }}</dd></div>
+        <div><dt>{{ 'series.detail.storyPreset' | transloco }}</dt><dd>{{ series.storyPreset ?? ('series.detail.defaultPreset' | transloco) }}</dd></div>
+        <div><dt>{{ 'series.detail.autopilot' | transloco }}</dt><dd>{{ (series.autopilotEnabled ? 'series.row.autopilotOn' : 'series.row.autopilotOff') | transloco }}</dd></div>
+      </dl>
+    </section>
+  } @else {
+    <section class="series-detail__autopilot" [attr.aria-label]="'series.detail.autopilot' | transloco">
+      @defer (on interaction(autopilotMount)) {
+        <!-- 10.4.3-T1 owns the Autopilot tab body; no API or placeholder data in phase P here. -->
+      } @placeholder { <div #autopilotMount></div> }
+    </section>
+  }
+} @else if (errorKey(); as key) {
+  <nts-page-header titleKey="series.detail.title" backHref="/series" />
+  <nts-error-state [bodyKey]="key" [traceId]="store.error()?.traceId ?? undefined" retryLabelKey="errors.action.retry" (retry)="retry()" />
+}
