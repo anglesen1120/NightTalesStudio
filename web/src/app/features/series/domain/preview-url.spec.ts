@@ -22,6 +22,8 @@ describe('safePreviewUrl', () => {
     ['newline', 'https://example.com/a\n.mp3'],
     ['NUL', 'https://example.com/a\u0000.mp3'],
     ['DEL', '/a\u007f.mp3'],
+    ['userinfo (user only)', 'https://u@cdn.example.com/a.mp3'],
+    ['userinfo (user:pass)', 'https://u:p@cdn.example.com/a.mp3'],
     ['empty', ''],
   ])('rejects %s', (_name, url) => expect(safePreviewUrl(url)).toBeNull());
 

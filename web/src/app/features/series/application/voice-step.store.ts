@@ -65,7 +65,7 @@ export class VoiceStepStore {
       this.inFlight.clear();
       if (this.selectedId() !== null) {
         this.clear();
-        void this.announceCleared();
+        void this.announceCleared().catch(() => undefined);
       }
     }
     const running = this.inFlight.get(language);

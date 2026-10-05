@@ -208,6 +208,17 @@ describe('VoicePicker', () => {
     expect(text).not.toContain('voices.tag.');
   });
 
+  it('DuplicateTags_RenderOneChip', async () => {
+    const { fixture, host, root } = await setup();
+    host.voices.set([{ ...voices[0]!, tags: ['warm', 'warm'] }]);
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    const chips = root.querySelectorAll('.voice-picker__tag');
+    expect(chips.length).toBe(1);
+    expect(chips[0]?.textContent).toBe('Ấm');
+  });
+
   it('NoRateControl', async () => {
     const { root } = await setup();
     expect(root.querySelector('input[type="range"]')).toBeNull();
@@ -265,6 +276,26 @@ describe('VoicePicker', () => {
     fixture.detectChanges();
     await fixture.whenStable();
     expect(host.lastSelected).toBe('minh-anh');
+  });
+
+  it('Keyboard_ArrowDownOnPreview_DoesNotSelectOrMoveFocus', async () => {
+    const { fixture, host, root } = await setup();
+    host.selectedId.set('minh-anh');
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    const preview = previewButtons(root)[0]!;
+    preview.focus();
+    expect(document.activeElement).toBe(preview);
+    const event = new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true });
+    preview.dispatchEvent(event);
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(host.selects).toBe(0);
+    expect(host.selectedId()).toBe('minh-anh');
+    expect(document.activeElement).toBe(preview);
+    expect(event.defaultPrevented).toBe(false);
   });
 
   it('UnknownTag_IsDropped', async () => {
@@ -362,6 +393,22 @@ describe('VoicePicker', () => {
     (retryBtn as HTMLButtonElement | null)?.click();
     fixture.detectChanges();
     await fixture.whenStable();
+    expect(host.retries).toBe(1);
+  });
+
+  it('RateLimited_ZeroRetryAfter_EnablesRetryAndEmits', async () => {
+    const { fixture, host, root } = await setup();
+    host.errorKey.set('errors.rate_limited');
+    host.retryAfterSec.set(0);
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(root.querySelector('nts-retry-countdown')).not.toBeNull();
+    expect(host.elapsed).toBe(1);
+    const retryBtn = root.querySelector<HTMLButtonElement>('.voice-picker__retry');
+    expect(retryBtn).not.toBeNull();
+    expect(retryBtn?.disabled).toBe(false);
+    retryBtn?.click();
     expect(host.retries).toBe(1);
   });
 

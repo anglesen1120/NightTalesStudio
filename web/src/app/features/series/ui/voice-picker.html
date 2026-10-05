@@ -12,9 +12,9 @@
       [retryLabelKey]="retryAfterSec() === null ? 'errors.action.retry' : undefined"
       (retry)="onRetry()"
     />
-    @if (retryAfterSec(); as seconds) {
+    @if (retryAfterSec() !== null) {
       <div class="voice-picker__rate-limit" role="status">
-        <nts-retry-countdown [seconds]="seconds" (elapsed)="onRetryElapsed()" />
+        <nts-retry-countdown [seconds]="retryAfterSec()!" (elapsed)="onRetryElapsed()" />
         <button
           type="button"
           class="voice-picker__retry"

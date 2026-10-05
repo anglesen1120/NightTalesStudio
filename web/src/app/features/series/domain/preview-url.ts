@@ -11,6 +11,7 @@
  * - `null`/empty and any string containing whitespace or C0/DEL control characters (header smuggling);
  * - protocol-relative `//host/…` and backslash paths (`\…`, `/\…`), which browsers resolve like `//`;
  * - `javascript:`, `data:`, `blob:` and every other non-http(s) scheme;
+ * - absolute URLs carrying userinfo (`user@host`, `user:pass@host`);
  * - relative paths without a leading slash (would resolve against the current route).
  *
  * Never paired with `bypassSecurityTrust*` (D4): a rejected URL is simply a missing preview.
@@ -23,6 +24,7 @@ export function safePreviewUrl(url: string | null): string | null {
   if (url.includes('\\')) return null;
   try {
     const parsed = new URL(url);
+    if (parsed.username !== '' || parsed.password !== '') return null;
     return parsed.protocol === 'https:' || parsed.protocol === 'http:' ? url : null;
   } catch {
     return null;

@@ -188,6 +188,66 @@ describe('AudioPreviewButton', () => {
     expect(playCalls.length).toBe(1);
   });
 
+  it('PlayRejected_NotAllowedError_ShowsPreviewFailed_StopsOnce_AndDoesNotRetry', async () => {
+    // PS-2: a rejected play() (autoplay policy) is a real failure, not a swallowed one.
+    const { fixture, host, root } = await setup();
+    vi.spyOn(HTMLMediaElement.prototype, 'play').mockImplementation(function (this: HTMLMediaElement) {
+      playCalls.push(this);
+      return Promise.reject(new DOMException('autoplay blocked', 'NotAllowedError'));
+    });
+
+    button(root).click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    host.playing.set(true);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(playCalls.length).toBe(1);
+
+    // The rejection handler runs in a microtask; `stopped` flips before any re-render.
+    await vi.waitFor(() => expect(host.stops).toBe(1));
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(root.textContent).toContain('Không phát được bản nghe thử');
+    expect(root.querySelector('[aria-live="polite"]')).not.toBeNull();
+    expect(button(root).getAttribute('aria-pressed')).toBe('false');
+    expect(host.stops).toBe(1);
+
+    // No retry loop: later change-detection cycles never call play() again.
+    for (let i = 0; i < 3; i++) {
+      fixture.detectChanges();
+      await fixture.whenStable();
+    }
+    expect(playCalls.length).toBe(1);
+  });
+
+  it('PlayRejected_AbortError_IsIgnored', async () => {
+    // PS-2: `AbortError` is our own pause() interrupting play(); it must not surface as a failure.
+    const { fixture, host, root } = await setup();
+    vi.spyOn(HTMLMediaElement.prototype, 'play').mockImplementation(function (this: HTMLMediaElement) {
+      playCalls.push(this);
+      return Promise.reject(new DOMException('interrupted by pause()', 'AbortError'));
+    });
+
+    button(root).click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    host.playing.set(true);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(playCalls.length).toBe(1);
+
+    await Promise.resolve();
+    await Promise.resolve();
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(host.stops).toBe(0);
+    expect(root.textContent).not.toContain('Không phát được bản nghe thử');
+    expect(button(root).getAttribute('aria-pressed')).toBe('true');
+  });
+
   it('Destroy_StopsAndReleasesAudio', async () => {
     const { fixture, host, root } = await setup();
     button(root).click();

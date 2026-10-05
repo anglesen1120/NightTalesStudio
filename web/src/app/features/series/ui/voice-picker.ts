@@ -78,13 +78,13 @@ export class VoicePicker {
           ? -1
           : 0;
     if (delta === 0 || rows.length === 0 || this.disabled()) return;
-    event.preventDefault();
     const radios = Array.from(
       (event.currentTarget as HTMLElement).querySelectorAll<HTMLInputElement>('input[type="radio"]'),
     );
     const focused = radios.indexOf(event.target as HTMLInputElement);
-    const from = focused >= 0 ? focused : Math.max(0, rows.findIndex((row) => row.id === this.selectedId()));
-    const nextIndex = (from + delta + rows.length) % rows.length;
+    if (focused < 0) return;
+    event.preventDefault();
+    const nextIndex = (focused + delta + rows.length) % rows.length;
     const next = rows[nextIndex];
     if (next === undefined || next.id === this.selectedId()) return;
     this.selected.emit(next.id);

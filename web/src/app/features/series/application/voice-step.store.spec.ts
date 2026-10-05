@@ -1,6 +1,7 @@
 import { LiveAnnouncer } from '@angular/cdk/a11y';
 import { TestBed } from '@angular/core/testing';
-import { TranslocoTestingModule } from '@jsverse/transloco';
+import { TranslocoService, TranslocoTestingModule } from '@jsverse/transloco';
+import { of, throwError } from 'rxjs';
 import type { AppError } from '@core/errors';
 import { SessionApi } from '@core/session';
 import { FakeSessionApi } from '../../../core/session/testing/fake-session.api';
@@ -21,7 +22,16 @@ function appError(code: string, status: number, kind: AppError['kind'], extra: P
   return { code, status, kind, fieldErrors: {}, ...extra };
 }
 
-function setup(): { store: VoiceStepStore; repo: FakeCatalogRepository; announcer: FakeAnnouncer } {
+interface SetupOptions {
+  /**
+   * Replaces the injected `TranslocoService`, e.g. with a failing `selectTranslate` (PS-4 regression).
+   * `load` must be present: `TranslocoTestingModule`'s `preloadLangs` initializer calls it once per
+   * language in `langs` before the test module finishes compiling.
+   */
+  readonly transloco?: { selectTranslate: (key: string) => unknown; load: (lang: string) => unknown };
+}
+
+function setup(options: SetupOptions = {}): { store: VoiceStepStore; repo: FakeCatalogRepository; announcer: FakeAnnouncer } {
   const repo = new FakeCatalogRepository();
   const announcer = new FakeAnnouncer();
   TestBed.configureTestingModule({
@@ -37,6 +47,7 @@ function setup(): { store: VoiceStepStore; repo: FakeCatalogRepository; announce
       { provide: SessionApi, useValue: new FakeSessionApi() },
       { provide: CatalogRepository, useValue: repo },
       { provide: LiveAnnouncer, useValue: announcer },
+      ...(options.transloco === undefined ? [] : [{ provide: TranslocoService, useValue: options.transloco }]),
       VoiceStepStore,
     ],
   });
@@ -91,6 +102,46 @@ describe('VoiceStepStore', () => {
     store.select('vi-warm');
     await store.load('en');
     await vi.waitFor(() => expect(announcer.messages).toEqual(['Đã xoá giọng đọc']));
+  });
+
+  it('VoiceStep_LanguageChange_AnnounceTranslationFailure_DoesNotRejectTheLoad', async () => {
+    // PS-4: the cleared-by-language announcement is fire-and-forget; a failing translation lookup must be
+    // swallowed, never surface as an unhandled rejection (which vitest would fail this file for).
+    const unhandled: unknown[] = [];
+    const onGlobalUnhandled = (event: PromiseRejectionEvent): void => {
+      event.preventDefault();
+      unhandled.push(event.reason);
+    };
+    const onProcessUnhandled = (reason: unknown): void => {
+      unhandled.push(reason);
+    };
+    globalThis.addEventListener('unhandledrejection', onGlobalUnhandled);
+    process.on('unhandledRejection', onProcessUnhandled);
+    try {
+      const { store, announcer } = setup({
+        transloco: {
+          load: () => of({}),
+          selectTranslate: () => throwError(() => new Error('translations unavailable')),
+        },
+      });
+      await store.load('vi');
+      store.select('vi-warm');
+
+      await expect(store.load('en')).resolves.toBeUndefined();
+
+      // The tsconfig lib predates Promise.withResolvers, so the executor form is the only typed option here.
+      await new Promise<void>((resolve) => {
+        setTimeout(resolve, 20);
+      });
+      expect(unhandled).toEqual([]);
+      expect(store.selectedId()).toBeNull();
+      expect(store.voices().map((v) => v.id)).toEqual(['en-news']);
+      expect(store.error()).toBeNull();
+      expect(announcer.messages).toEqual([]);
+    } finally {
+      globalThis.removeEventListener('unhandledrejection', onGlobalUnhandled);
+      process.off('unhandledRejection', onProcessUnhandled);
+    }
   });
 
   it('VoiceStepStore_Load_NewLanguageWithoutSelection_DoesNotAnnounce', async () => {

@@ -15,7 +15,7 @@ export interface VoiceRowViewModel {
   readonly genderKey: `series.voice.gender.${VoiceGender}` | null;
   /** Raw wire gender, shown verbatim only when `genderKey` is `null` (04/09 owns the vocabulary). */
   readonly genderRaw: string;
-  /** Transloco keys `voices.tag.<tag>`; only allow-listed tags survive. */
+  /** Transloco keys `voices.tag.<tag>`; unique allow-listed tags in first-seen order. */
   readonly tagKeys: readonly string[];
   readonly preview: AudioPreviewViewModel;
 }
@@ -33,7 +33,7 @@ export function toAudioPreviewViewModel(voice: Voice): AudioPreviewViewModel {
 
 export function toVoiceRowViewModel(voice: Voice): VoiceRowViewModel {
   const genderKey = isVoiceGender(voice.gender) ? (`series.voice.gender.${voice.gender}` as const) : null;
-  const tagKeys = voice.tags.filter(isVoiceTag).map((tag: VoiceTag) => `voices.tag.${tag}`);
+  const tagKeys = [...new Set(voice.tags.filter(isVoiceTag))].map((tag: VoiceTag) => `voices.tag.${tag}`);
   return {
     id: voice.id,
     displayName: voice.displayName,

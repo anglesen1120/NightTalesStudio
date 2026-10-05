@@ -14,7 +14,8 @@ let nextPreviewButtonId = 0;
  * - Otherwise the native `<audio preload="none">` is created inside `@defer (on interaction)`
  *   keyed to the toggle, so zero media request happens before the user asks (D13/F12).
  * - `aria-pressed` tracks `playing`; starting emits `started` exactly once per activation.
- * - A media error surfaces `series.voice.previewFailed` inline (aria-live), with no retry loop.
+ * - A media error — the `error` event or a `play()` rejection other than our own `AbortError` — surfaces
+ *   `series.voice.previewFailed` inline (aria-live), with no retry loop.
  * - The URL is used verbatim — it is already validated by the repository mapper (D4 CSP; no
  *   `bypassSecurityTrust*` here).
  */
@@ -55,7 +56,12 @@ export class AudioPreviewButton implements OnDestroy {
     if (this.playing() && !this.failed()) {
       // Once armed, the button is the only place that sets `src`; play() may reject in
       // unsupported-media environments — the media `error` event still reports the failure.
-      void el.play().catch(() => undefined);
+      // `AbortError` is our own pause() interrupting play(); every other rejection (e.g. an autoplay
+      // policy `NotAllowedError`) is a real failure and takes the same path as the `error` event.
+      void el.play().catch((reason: unknown) => {
+        if (reason instanceof DOMException && reason.name === 'AbortError') return;
+        this.onError();
+      });
     } else {
       el.pause();
       el.currentTime = 0;
