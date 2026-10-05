@@ -1,4 +1,5 @@
 using ErrorOr;
+using NightTales.Domain.Stories;
 using NightTales.Domain.Stories.Events;
 using NightTales.Domain.Stories.Generation;
 using NightTales.Domain.Stories.Generation.Events;
@@ -298,6 +299,49 @@ public sealed partial class Episode
         UpdatedAt = now;
 
         Raise(new StoryVersionSaved(Id, UserId, storyVersionId, version, now));
+
+        return Result.Success;
+    }
+
+    /// <summary>Approves the current review version and records the caller's approval source.</summary>
+    public ErrorOr<Success> ApproveStory(Guid storyVersionId, ApprovalSource source, DateTimeOffset now)
+    {
+        if (Status != EpisodeStatus.StoryReview || SeriesId == Guid.Empty)
+        {
+            return Error.Conflict(InvalidStateCode, "Only a story in review can be approved.");
+        }
+
+        if (storyVersionId == Guid.Empty || CurrentStoryVersionId != storyVersionId)
+        {
+            return Error.Conflict("story_version_conflict", "Only the current story version can be approved.");
+        }
+
+        ApprovedStoryVersionId = storyVersionId;
+        ApprovedAt = now;
+        Status = EpisodeStatus.StoryApproved;
+        UpdatedAt = now;
+
+        Raise(new StoryApproved(Id, SeriesId, UserId, storyVersionId, source, now));
+
+        return Result.Success;
+    }
+
+    /// <summary>Reopens an approved story without changing its current version or story content.</summary>
+    public ErrorOr<Success> ReopenStory(DateTimeOffset now)
+    {
+        var approvedVersionId = ApprovedStoryVersionId ?? CurrentStoryVersionId;
+        if (Status != EpisodeStatus.StoryApproved || SeriesId == Guid.Empty
+            || approvedVersionId is null || approvedVersionId == Guid.Empty)
+        {
+            return Error.Conflict(InvalidStateCode, "Only an approved story can be reopened.");
+        }
+
+        ApprovedStoryVersionId = null;
+        ApprovedAt = null;
+        Status = EpisodeStatus.StoryReview;
+        UpdatedAt = now;
+
+        Raise(new StoryReopened(Id, SeriesId, UserId, approvedVersionId.Value, now));
 
         return Result.Success;
     }

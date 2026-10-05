@@ -34,6 +34,9 @@ env:
   # world does not know (09 README BD16). This is a constant, never a real secret, exactly like the
   # connection string and the public origin above; a deployment supplies its own Email__AddressHashPepper.
   Email__AddressHashPepper: "ci-openapi-document-generation-placeholder"
+  # 02.3.2-T1: the Api's real moderation registration validates the existing shared provider key.
+  # Document generation never calls it; all build/test/base-document jobs inherit this non-secret value.
+  OpenAi__ApiKey: "ci-openapi-document-generation-placeholder"
 
 jobs:
   build-test:
