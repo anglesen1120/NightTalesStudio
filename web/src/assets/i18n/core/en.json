@@ -45,5 +45,34 @@
       "signOut": "Sign out",
       "reauthRequired": { "title": "Confirmation required", "body": "Enter your password again to perform this sensitive action." }
     }
+  },
+  "shell": {
+    "nav": {
+      "label": "Main navigation",
+      "dashboard": "Dashboard",
+      "series": "Series",
+      "episodes": "Episodes",
+      "open": "Open navigation"
+    },
+    "menu": {
+      "triggerLabel": "Account",
+      "logOut": "Sign out",
+      "role": { "user": "User", "admin": "Admin", "owner": "Owner" }
+    },
+    "language": {
+      "label": "Language",
+      "vi": "Tiếng Việt",
+      "en": "English",
+      "saveFailed": "Could not save your language. Please try again."
+    },
+    "realtime": {
+      "connected": "Live updates on",
+      "reconnecting": "Reconnecting…",
+      "paused": "Live updates paused",
+      "continue": "Continue"
+    },
+    "skipToContent": "Skip to main content",
+    "title": { "dashboard": "Dashboard", "series": "Series", "episodes": "Episodes" },
+    "profile": { "loadFailed": "Could not load your account" }
   }
 }
