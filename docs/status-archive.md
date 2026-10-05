@@ -4,6 +4,12 @@ History moved out of STATUS.md to keep the live file small. The initial archive 
 
 ## Resume-here history (Current/Previous blocks, Next actions)
 
+### Superseded Next line (2026-10-05, replaced when 02.5.2-T4 merged as #147)
+
+- **Outcome:** 02.5.2-T4 merged as #147 (`d670978`); the 02.5.2 story is complete; next backend task 02.5.3-T1.
+
+- **Next (backend, start here):** **02.5.2-T4** SSRF/abuse suite is in a PR from `feature/02.5.2-T4-s12` (Session 12, tests only, T3 gates closed; §Open tasks row; gate evidence `ssrf-suite-evidence.md`) waiting for the owner; it completes the 02.5.2 story → **02.5.3-T1** fact extractor, 02.6.1-T2, 02.6.2-T1 revision (02 §10 T113(b)), 02.3.2-T1 approve (treat `moderation.stale`/`unavailable` as needs re-check; edit-path moderator wiring). First re-run CI on `develop` once GitHub Actions billing is fixed (#131 and #136 merged with no CI run). Claim the backend `gate.sh` lock in `nts-wt/SESSION-CLAIMS.md` first.
+
 ### Superseded Next line (2026-10-05, replaced when Session 12 opened the 02.5.2-T4 PR)
 
 - **Outcome:** 02.5.2-T4 SSRF/abuse suite built (tests only, T3 gates closed); PR from `feature/02.5.2-T4-s12`.
