@@ -10,7 +10,8 @@ import { TranslocoPipe } from '@jsverse/transloco';
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class PageHeader {
-  readonly titleKey = input.required<string>();
+  readonly title = input<string>();
+  readonly titleKey = input<string>();
   readonly subtitleKey = input<string>();
   readonly backHref = input<string>();
 
