@@ -65,10 +65,11 @@ class DialogController {
   refreshCalls = 0;
   signOutCalls = 0;
   acceptHandler: (tos: string, privacy: string) => Promise<boolean> = () => Promise.resolve(false);
+  refreshHandler: () => Promise<boolean> = () => Promise.resolve(true);
 
   refresh(): Promise<boolean> {
     this.refreshCalls += 1;
-    return Promise.resolve(true);
+    return this.refreshHandler();
   }
 
   accept(tos: string, privacy: string): Promise<boolean> {
@@ -306,6 +307,39 @@ describe('LegalAcceptanceDialogComponent', () => {
 
     expect(dialog.querySelector('[role="status"]')?.textContent).toContain(coreEn.common.loading);
     expect(dialog.querySelector<HTMLButtonElement>('.legal-dialog__accept')?.disabled).toBe(true);
+  });
+
+  it('retries a failed initial refresh and renders the documents after recovery', async () => {
+    const { fixture, controller, dialog } = await setup('en', (value) => {
+      value.acceptance.set(null);
+      value.errorKey.set('account.legal.error.generic');
+      value.refreshHandler = () => {
+        if (value.refreshCalls === 2) {
+          value.acceptance.set(ACCEPTANCE);
+          value.errorKey.set(null);
+        }
+        return Promise.resolve(value.refreshCalls === 2);
+      };
+    });
+    const retry = [...dialog.querySelectorAll<HTMLButtonElement>('button')].find((button) =>
+      button.textContent?.includes(coreEn.common.retry),
+    );
+
+    expect(controller.refreshCalls).toBe(1);
+    expect(retry).toBeDefined();
+    retry?.click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(controller.refreshCalls).toBe(2);
+    expect(dialog.textContent).toContain(accountEn.legal.termsLabel);
+    expect(dialog.textContent).toContain(accountEn.legal.privacyLabel);
+    expect(dialog.querySelector<HTMLButtonElement>('.legal-dialog__accept')?.disabled).toBe(true);
+    expect(
+      [...dialog.querySelectorAll<HTMLButtonElement>('button')].some((button) =>
+        button.textContent?.includes(coreEn.common.retry),
+      ),
+    ).toBe(false);
   });
 
   it('offers sign out only for a gate opening and never disables it while acceptance is pending', async () => {

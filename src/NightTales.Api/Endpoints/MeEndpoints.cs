@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using NightTales.Api.Http;
 using NightTales.Api.Http.Filters;
+using NightTales.Api.RateLimiting;
 using NightTales.Application.Features.Account.Legal;
 using NightTales.Application.Features.Account.Legal.Commands.AcceptLegalDocuments;
 using NightTales.Application.Features.Account.Legal.Queries.GetLegalAcceptance;
@@ -103,11 +104,13 @@ public static class MeEndpoints
             return result.IsError ? ProblemDetailsWriter.ToProblem(result.Errors, http) : Results.Ok(result.Value);
         })
             .RequireAuthorization()
+            .RequireRateLimiting(RateLimitPolicies.Paid)
             .AddEndpointFilter<RequireSameOriginFilter>()
             .Produces<LegalAcceptanceDto>(StatusCodes.Status200OK)
             .ProducesProblem(StatusCodes.Status400BadRequest)
             .ProducesProblem(StatusCodes.Status401Unauthorized)
-            .ProducesProblem(StatusCodes.Status409Conflict);
+            .ProducesProblem(StatusCodes.Status409Conflict)
+            .ProducesProblem(StatusCodes.Status429TooManyRequests);
 
         me.MapPost("/mfa/setup", SetupAsync)
             .RequireMfaEnrolmentScope()

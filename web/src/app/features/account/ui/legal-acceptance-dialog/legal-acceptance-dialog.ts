@@ -94,6 +94,10 @@ export class LegalAcceptanceDialogComponent {
     if (!this.pending()) this.confirmed.set(checked);
   }
 
+  protected refresh(): void {
+    void this.data.refresh();
+  }
+
   protected async submit(): Promise<void> {
     const versions = this.currentVersions();
     if (this.pending() || !this.confirmed() || versions === null) return;

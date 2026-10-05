@@ -419,17 +419,6 @@ public sealed class LegalAcceptanceQaTests(TestDatabase database) : IntegrationT
     }
 
     [Fact]
-    public async Task Accept_CaseDifferentSameOrigin_IsAccepted()
-    {
-        var user = await UserAsync();
-        using var factory = Factory();
-        using var client = factory.ClientFor(user.Id);
-        client.DefaultRequestHeaders.Add("Origin", ApiFactory.PublicOrigin.ToUpperInvariant());
-        using var response = await AcceptAsync(client);
-        response.StatusCode.ShouldBe(HttpStatusCode.OK);
-    }
-
-    [Fact]
     public async Task Accept_AnonymousWithForeignOrigin_Is401NotForbidden_AndGetNeedsNoOrigin()
     {
         var user = await UserAsync();

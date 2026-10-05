@@ -7,6 +7,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using NightTales.Api.IntegrationTests.Persistence;
+using NightTales.Api.RateLimiting;
 using NightTales.Application.Abstractions.Compliance;
 using NightTales.Application.Abstractions.Identity;
 using NightTales.Application.Abstractions.Security;
@@ -114,6 +115,28 @@ public sealed class LegalEndpointsTests(TestDatabase database) : IntegrationTest
         var accepted = await OkAsync(second);
         accepted.GetProperty("documents")[0].GetProperty("acceptedAt").GetDateTimeOffset().ShouldBe(_clock.UtcNow);
         SqlProbe.Count(Database, $"SELECT count(*) FROM user_consents WHERE user_id = '{user.Id}'").ShouldBe(4);
+    }
+
+    [Fact]
+    public async Task Accept_PaidRateLimit_AllowsTwoAccepts_ThenRejectsWithoutAppending()
+    {
+        var user = await UserAsync();
+        using var factory = Factory()
+            .WithSetting($"{RateLimitingOptions.SectionName}:{nameof(RateLimitingOptions.Paid)}:PermitLimit", "2")
+            .WithSetting($"{RateLimitingOptions.SectionName}:{nameof(RateLimitingOptions.Paid)}:SegmentsPerWindow", "2");
+        using var client = Client(factory, user.Id);
+
+        using var first = await AcceptAsync(client);
+        await OkAsync(first);
+        using var second = await AcceptAsync(client);
+        await OkAsync(second);
+
+        using var rejected = await AcceptAsync(client);
+        rejected.StatusCode.ShouldBe(HttpStatusCode.TooManyRequests);
+        (await JsonAsync(rejected)).GetProperty("code").GetString().ShouldBe(ErrorCodes.RateLimited);
+        SqlProbe.Count(Database, $"SELECT count(*) FROM user_consents WHERE user_id = '{user.Id}'").ShouldBe(4);
+        SqlProbe.Count(Database, $"SELECT count(*) FROM audit_logs WHERE subject_user_id = '{user.Id}' AND action = 'account.legal_accepted'")
+            .ShouldBe(2);
     }
 
     [Theory]

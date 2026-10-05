@@ -73,6 +73,11 @@
         {{ 'account.legal.signOut' | transloco }}
       </button>
     }
+    @if (acceptance() === null && !pending() && errorKey() !== null) {
+      <button mat-button type="button" (click)="refresh()">
+        {{ 'common.retry' | transloco }}
+      </button>
+    }
     <button
       class="legal-dialog__accept"
       mat-flat-button
