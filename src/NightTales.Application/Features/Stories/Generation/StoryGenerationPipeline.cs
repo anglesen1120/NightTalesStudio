@@ -619,7 +619,15 @@ public sealed partial class StoryGenerationPipeline(
             var reason = HasDatabaseCause(exception)
                 ? SimilarityUnavailableReason.DbError
                 : SimilarityUnavailableReason.StorageError;
-            LogSimilarityReadError(s.Episode.Id, s.Run.Id, reason, exception.GetType().Name);
+            if (reason == SimilarityUnavailableReason.DbError)
+            {
+                LogSimilarityReadError(s.Episode.Id, s.Run.Id, reason, exception.GetType().Name);
+            }
+            else
+            {
+                LogSimilarityUnexpectedError(s.Episode.Id, s.Run.Id, reason, exception.GetType().FullName ?? exception.GetType().Name);
+            }
+
             return Unavailable(reason);
         }
 
@@ -1047,4 +1055,7 @@ public sealed partial class StoryGenerationPipeline(
 
     [LoggerMessage(EventId = 6122, Level = LogLevel.Information, Message = "similarity_scored episodeId={EpisodeId} runId={RunId} corpus={Corpus} n={N} score={Score} segmentsOverWarn={SegmentsOverWarn} durationMs={DurationMs}")]
     private partial void LogSimilarityScored(Guid episodeId, Guid runId, string corpus, int n, decimal score, int segmentsOverWarn, double durationMs);
+
+    [LoggerMessage(EventId = 6123, Level = LogLevel.Error, Message = "similarity_unexpected_error episodeId={EpisodeId} runId={RunId} reason={Reason} exceptionType={ExceptionType}")]
+    private partial void LogSimilarityUnexpectedError(Guid episodeId, Guid runId, string reason, string exceptionType);
 }

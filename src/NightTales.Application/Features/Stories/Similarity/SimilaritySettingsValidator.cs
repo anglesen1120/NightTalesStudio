@@ -46,9 +46,19 @@ public sealed partial class SimilaritySettingsValidator(ILogger<SimilaritySettin
             failures.Add("Similarity:Corpus:MaxSourceTexts must be greater than or equal to 1.");
         }
 
+        if (options.Corpus.MaxSourceTexts > 50)
+        {
+            failures.Add("Similarity:Corpus:MaxSourceTexts must be less than or equal to 50.");
+        }
+
         if (options.Corpus.MaxPastEpisodes < 0)
         {
             failures.Add("Similarity:Corpus:MaxPastEpisodes must be greater than or equal to 0.");
+        }
+
+        if (options.Corpus.MaxPastEpisodes > 200)
+        {
+            failures.Add("Similarity:Corpus:MaxPastEpisodes must be less than or equal to 200.");
         }
 
         if (options.Corpus.MaxSourceTextChars < 1)
@@ -56,9 +66,20 @@ public sealed partial class SimilaritySettingsValidator(ILogger<SimilaritySettin
             failures.Add("Similarity:Corpus:MaxSourceTextChars must be greater than or equal to 1.");
         }
 
+        // D10's corpus shape matches the fetch-time extracted text cap.
+        if (options.Corpus.MaxSourceTextChars > 300000)
+        {
+            failures.Add("Similarity:Corpus:MaxSourceTextChars must be less than or equal to 300000.");
+        }
+
         if (options.Perf.BudgetMs < 1)
         {
             failures.Add("Similarity:Perf:BudgetMs must be greater than or equal to 1.");
+        }
+
+        if (options.Perf.BudgetMs > 60000)
+        {
+            failures.Add("Similarity:Perf:BudgetMs must be less than or equal to 60000.");
         }
 
         if (!options.N.ContainsKey("vi"))

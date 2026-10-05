@@ -78,7 +78,7 @@ public static class SimilarityScorer
 
         foreach (var text in corpus)
         {
-            if (TextNormalizer.Normalize(text.Text, opt.Language).Length > 0)
+            if (TextNormalizer.HasTokenContent(text.Text))
             {
                 return true;
             }

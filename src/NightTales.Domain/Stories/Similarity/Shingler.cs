@@ -51,7 +51,8 @@ public static class Shingler
         }
         finally
         {
-            ArrayPool<byte>.Shared.Return(buffer, clearArray: true);
+            buffer.AsSpan(0, byteCount).Clear();
+            ArrayPool<byte>.Shared.Return(buffer);
             ArrayPool<int>.Shared.Return(ends);
         }
     }
@@ -66,38 +67,67 @@ public static class Shingler
             yield break;
         }
 
-        var buffer = ArrayPool<byte>.Shared.Rent(Encoding.UTF8.GetMaxByteCount(normalized.Length));
         var starts = new int[n];
+        var offset = 0;
+        var tokenCount = 0;
+        var windowBytes = 0;
+        var maxWindowBytes = 0;
+        // Reuse the ring as byte lengths for this sizing pass, then as offsets for hashing.
+        while (ReadToken(normalized, ref offset, out var start, out var length))
+        {
+            var bytes = Encoding.UTF8.GetByteCount(normalized.AsSpan(start, length));
+            var slot = tokenCount % n;
+            if (tokenCount >= n)
+            {
+                windowBytes -= starts[slot];
+            }
+
+            starts[slot] = bytes;
+            windowBytes = checked(windowBytes + bytes);
+            tokenCount++;
+            if (tokenCount >= n)
+            {
+                maxWindowBytes = Math.Max(maxWindowBytes, checked(windowBytes + n - 1));
+            }
+        }
+
+        if (tokenCount < n)
+        {
+            yield break;
+        }
+
+        var buffer = ArrayPool<byte>.Shared.Rent(maxWindowBytes);
+        var written = 0;
         try
         {
             var position = 0;
-            var offset = 0;
-            var tokenCount = 0;
-            while (offset < normalized.Length)
+            offset = 0;
+            tokenCount = 0;
+            while (ReadToken(normalized, ref offset, out var start, out var length))
             {
-                while (offset < normalized.Length && char.IsWhiteSpace(normalized[offset]))
+                var bytes = Encoding.UTF8.GetByteCount(normalized.AsSpan(start, length));
+                var separatorBytes = tokenCount > 0 && n > 1 ? 1 : 0;
+                if (bytes + separatorBytes > buffer.Length - position)
                 {
-                    offset++;
+                    // Retain only the previous n-1 tokens. Compact only when the buffer fills,
+                    // rather than copying a window after every hash; n=1 retains nothing.
+                    var retainedStart = n == 1 ? position : starts[(tokenCount - n + 1) % n];
+                    buffer.AsSpan(retainedStart, position - retainedStart).CopyTo(buffer);
+                    position -= retainedStart;
+                    for (var i = Math.Max(0, tokenCount - n + 1); i < tokenCount; i++)
+                    {
+                        starts[i % n] -= retainedStart;
+                    }
                 }
 
-                var start = offset;
-                while (offset < normalized.Length && !char.IsWhiteSpace(normalized[offset]))
-                {
-                    offset++;
-                }
-
-                if (start == offset)
-                {
-                    break;
-                }
-
-                if (tokenCount > 0)
+                if (separatorBytes > 0)
                 {
                     buffer[position++] = 0x1f;
                 }
 
                 starts[tokenCount % n] = position;
-                position += Encoding.UTF8.GetBytes(normalized.AsSpan(start, offset - start), buffer.AsSpan(position));
+                position += Encoding.UTF8.GetBytes(normalized.AsSpan(start, length), buffer.AsSpan(position));
+                written = Math.Max(written, position);
                 tokenCount++;
                 if (tokenCount >= n)
                 {
@@ -108,7 +138,25 @@ public static class Shingler
         }
         finally
         {
-            ArrayPool<byte>.Shared.Return(buffer, clearArray: true);
+            buffer.AsSpan(0, written).Clear();
+            ArrayPool<byte>.Shared.Return(buffer);
         }
+    }
+
+    private static bool ReadToken(string text, ref int offset, out int start, out int length)
+    {
+        while (offset < text.Length && char.IsWhiteSpace(text[offset]))
+        {
+            offset++;
+        }
+
+        start = offset;
+        while (offset < text.Length && !char.IsWhiteSpace(text[offset]))
+        {
+            offset++;
+        }
+
+        length = offset - start;
+        return length > 0;
     }
 }

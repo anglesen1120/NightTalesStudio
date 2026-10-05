@@ -85,6 +85,36 @@ public sealed class SimilaritySettingsValidatorTests
         result.Failures.ShouldContain(failure => failure.StartsWith(path, StringComparison.Ordinal));
     }
 
+    [Theory]
+    [InlineData("Similarity:Corpus:MaxSourceTexts", 50, false)]
+    [InlineData("Similarity:Corpus:MaxSourceTexts", 50, true)]
+    [InlineData("Similarity:Corpus:MaxSourceTextChars", 300000, false)]
+    [InlineData("Similarity:Corpus:MaxSourceTextChars", 300000, true)]
+    [InlineData("Similarity:Corpus:MaxPastEpisodes", 200, false)]
+    [InlineData("Similarity:Corpus:MaxPastEpisodes", 200, true)]
+    [InlineData("Similarity:Perf:BudgetMs", 60000, false)]
+    [InlineData("Similarity:Perf:BudgetMs", 60000, true)]
+    public void SimilaritySettingsValidator_UpperBound_RejectsOnlyAboveBound(string path, int bound, bool exceedsBound)
+    {
+        var settings = new SimilaritySettings();
+        var value = bound + (exceedsBound ? 1 : 0);
+        switch (path)
+        {
+            case "Similarity:Corpus:MaxSourceTexts": settings.Corpus.MaxSourceTexts = value; break;
+            case "Similarity:Corpus:MaxSourceTextChars": settings.Corpus.MaxSourceTextChars = value; break;
+            case "Similarity:Corpus:MaxPastEpisodes": settings.Corpus.MaxPastEpisodes = value; break;
+            case "Similarity:Perf:BudgetMs": settings.Perf.BudgetMs = value; break;
+        }
+
+        var result = Validator.Validate(null, settings);
+        result.Failed.ShouldBe(exceedsBound);
+        result.Succeeded.ShouldBe(!exceedsBound);
+        if (exceedsBound)
+        {
+            result.Failures.ShouldHaveSingleItem().ShouldBe($"{path} must be less than or equal to {bound}.");
+        }
+    }
+
     [Fact]
     public void SimilaritySettingsValidator_LowerBoundCountsAndWarnOnlyRollback_AreValid()
     {

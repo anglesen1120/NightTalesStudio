@@ -37,6 +37,7 @@ using NightTales.TestKit.Telemetry;
 using NightTales.TestKit.Threading;
 using NightTales.TestKit.Time;
 using Serilog.Core;
+using Serilog.Events;
 using Shouldly;
 using Xunit;
 
@@ -137,6 +138,42 @@ public sealed class StoryGenerationSimilarityTests(TestDatabase database) : Inte
         issue.GetProperty("kind").GetString().ShouldBe("objective");
         store.ReadCalls.ShouldBe(1);
         sink.AllText().ShouldContain("storage_error");
+        sink.Events.ShouldNotContain(log => log.MessageTemplate.Text.StartsWith("similarity_unexpected_error ", StringComparison.Ordinal));
+        AssertPrivateLogs(sink);
+    }
+
+    [Fact]
+    public async Task CorpusReadUnexpectedFailure_DegradesToNullAndAdvisoryIssueAndLogsPrivateError()
+    {
+        const string exceptionMarker = "UNEXPECTEDCORPUSFAILUREHERON";
+        var exceptionMessage = $"{exceptionMarker} {TextKey} {SourceUrlText} {StoryMarker} {Paragraph}";
+        var store = new UnexpectedFailureExtractedTextStore(exceptionMessage);
+        var world = await SeedAsync(SourceKind.Url);
+        var sink = new TestLogSink();
+        await using var worker = await StartWorkerAsync(store, sink);
+
+        await GenerateAndRunAsync(world, worker);
+
+        using var audit = ReadAudit(world);
+        audit.RootElement.TryGetProperty("similarity", out _).ShouldBeFalse();
+        AssertNullScore(world);
+        var issue = Issues(audit).Single(item => item.GetProperty("rule").GetString() == "similarity_unavailable");
+        issue.GetProperty("severity").GetString().ShouldBe("advisory");
+        issue.GetProperty("kind").GetString().ShouldBe("objective");
+
+        var error = sink.Events.Where(log => log.MessageTemplate.Text.StartsWith("similarity_unexpected_error ", StringComparison.Ordinal))
+            .ShouldHaveSingleItem();
+        error.Level.ShouldBe(LogEventLevel.Error);
+        error.Exception.ShouldBeNull();
+        var eventId = error.Properties["EventId"].ShouldBeOfType<StructureValue>();
+        eventId.Properties.Single(property => property.Name == "Id").Value.ShouldBeOfType<ScalarValue>().Value.ShouldBe(6123);
+        error.Properties["EpisodeId"].ShouldBeOfType<ScalarValue>().Value.ShouldBe(world.EpisodeId);
+        var runId = Guid.Parse(SqlProbe.ScalarText(Database, $"SELECT id::text FROM generation_runs WHERE episode_id = '{world.EpisodeId}'"));
+        error.Properties["RunId"].ShouldBeOfType<ScalarValue>().Value.ShouldBe(runId);
+        error.Properties["Reason"].ShouldBeOfType<ScalarValue>().Value.ShouldBe(SimilarityUnavailableReason.StorageError);
+        error.Properties["ExceptionType"].ShouldBeOfType<ScalarValue>().Value.ShouldBe(typeof(InvalidOperationException).FullName);
+        sink.AllText().ShouldNotContain(exceptionMarker);
+        sink.AllText().ShouldNotContain(exceptionMessage);
         AssertPrivateLogs(sink);
     }
 
@@ -276,7 +313,7 @@ public sealed class StoryGenerationSimilarityTests(TestDatabase database) : Inte
         SqlProbe.Count(Database, $"SELECT count(*) FROM story_versions WHERE episode_id = '{world.EpisodeId}'").ShouldBe(1);
     }
 
-    private async Task<WorkerHost> StartWorkerAsync(FakeExtractedTextStore store, TestLogSink sink, bool shortDraft = false)
+    private async Task<WorkerHost> StartWorkerAsync(IExtractedTextStore store, TestLogSink sink, bool shortDraft = false)
     {
         var host = new WorkerHost(Database, new FakeClock(Start))
             .WithSetting("Story:Review:Enabled", "false")
@@ -297,6 +334,21 @@ public sealed class StoryGenerationSimilarityTests(TestDatabase database) : Inte
             });
         await host.StartAsync(Ct);
         return host;
+    }
+
+    private sealed class UnexpectedFailureExtractedTextStore(string message) : IExtractedTextStore
+    {
+        private readonly FakeExtractedTextStore _store = new();
+
+        public Task<ErrorOr<string>> WriteAsync(
+            Guid userId, Guid episodeId, Guid sourceId, string sha256, string text, CancellationToken cancellationToken) =>
+            _store.WriteAsync(userId, episodeId, sourceId, sha256, text, cancellationToken);
+
+        public Task<ErrorOr<string>> ReadAsync(string key, CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromException<ErrorOr<string>>(new InvalidOperationException(message));
+        }
     }
 
     private static StoryContentV1 Draft(bool shortDraft = false) => new(

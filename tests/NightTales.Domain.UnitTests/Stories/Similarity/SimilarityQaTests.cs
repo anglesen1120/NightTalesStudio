@@ -33,15 +33,16 @@ public sealed class SimilarityQaTests
     }
 
     [Theory]
-    [InlineData("\uFEFF")]
-    [InlineData("\u200B")]
-    [InlineData("\u200C")]
-    [InlineData("\u200D")]
-    [InlineData("\U0001F600")]
-    [InlineData("\U00010400")]
-    public void Normalize_FormatAndSupplementaryCharacters_AreValidAndStable(string character)
+    [InlineData("\uFEFF", "tôi đã đi")]
+    [InlineData("\u200B", "tôi đã đi")]
+    [InlineData("\u200C", "tôi đã đi")]
+    [InlineData("\u200D", "tôi đã đi")]
+    [InlineData("\U0001F600", "tôi \U0001F600 đã đi")]
+    [InlineData("\U00010400", "tôi \U00010428 đã đi")]
+    public void Normalize_FormatAndSupplementaryCharacters_AreValidAndStable(string character, string expected)
     {
         var normalized = TextNormalizer.Normalize("Tôi " + character + " đã đi", Language.Vi);
+        normalized.ShouldBe(expected);
         normalized.IsNormalized(NormalizationForm.FormC).ShouldBeTrue();
         TextNormalizer.Normalize(normalized, Language.Vi).ShouldBe(normalized);
         var story = Story(string.Join(' ', Enumerable.Repeat(normalized, 12)));
@@ -66,6 +67,7 @@ public sealed class SimilarityQaTests
     [Theory]
     [InlineData(" \t\r\n \u00A0 ")]
     [InlineData("“”——.,;:!?()[]_ / ")]
+    [InlineData("\u00AD\u200B\u202E\u2060\u2069\uFEFF\uFE0F\U000E0100.,!")]
     public void IsScorable_WhitespaceAndPunctuationOnlyCorpus_IsFalse(string empty)
     {
         SimilarityScorer.IsScorable(Story(Tokens(50)), Corpus(empty), Options).ShouldBeFalse();

@@ -24,6 +24,56 @@ public sealed class SimilarityScorerTests
     }
 
     [Theory]
+    [InlineData("\u200B")]
+    [InlineData("\u00AD")]
+    public void Score_CopiedPassageWithInvisibleCharacterInsideEveryWord_IsOne(string invisible)
+    {
+        var clean = SimilarityFixtures.EnglishSource;
+        var obfuscated = string.Join(' ', clean.Split(' ').Select(word => word.Insert(1, invisible)));
+        var options = SimilarityFixtures.Options(Language.En);
+        var story = SimilarityFixtures.Story(obfuscated);
+        SimilarityScorer.IsScorable(story, SimilarityFixtures.Corpus(clean), options).ShouldBeTrue();
+        SimilarityScorer.Score(story, SimilarityFixtures.Corpus(clean), options).Score.ShouldBe(1);
+        SimilarityScorer.Score(SimilarityFixtures.Story(clean), SimilarityFixtures.Corpus(obfuscated), options).Score.ShouldBe(1);
+    }
+
+    [Theory]
+    [InlineData(Language.En, SimilarityFixtures.EnglishSource)]
+    [InlineData(Language.En, SimilarityFixtures.EnglishNew)]
+    [InlineData(Language.En, SimilarityFixtures.CopiedSentence)]
+    [InlineData(Language.Vi, SimilarityFixtures.VietnameseSource)]
+    [InlineData(Language.Vi, SimilarityFixtures.VietnameseNew)]
+    public void IsScorable_ExistingPassageFixtures_AgreeWithNormalizedTokenCountAndScore(Language language, string text)
+    {
+        var options = SimilarityFixtures.Options(language);
+        var story = SimilarityFixtures.Story(text);
+        var corpus = SimilarityFixtures.Corpus(text);
+        var normalized = TextNormalizer.Normalize(text, language);
+        var tokenCount = normalized.Split(' ', StringSplitOptions.RemoveEmptyEntries).Length;
+        SimilarityScorer.IsScorable(story, corpus, options).ShouldBe(tokenCount >= options.MinTokens);
+        SimilarityScorer.Score(story, corpus, options).Score.ShouldBe(tokenCount >= options.N ? 1 : 0);
+    }
+
+    [Theory]
+    [InlineData(" .—\u00AD\u200B\u200F\u202E\u2060\u2069\uFEFF\uFE0F\U000E0100 ")]
+    [InlineData("\0\ud800\udc00\u0085")]
+    [InlineData("\u0301\u0316")]
+    [InlineData("\u0903\u20DD")]
+    [InlineData("\uE000\u0378\U000F0000")]
+    [InlineData("\U00010400\U0001F600")]
+    [InlineData("Tôi đã đi")]
+    public void IsScorable_CorpusScan_AgreesWithNormalizationAndScore(string text)
+    {
+        var options = SimilarityFixtures.Options(Language.En) with { N = 1, MinTokens = 1 };
+        var normalized = TextNormalizer.Normalize(text, Language.En);
+        var corpus = SimilarityFixtures.Corpus(text);
+        SimilarityScorer.IsScorable(SimilarityFixtures.Story("story"), corpus, options)
+            .ShouldBe(normalized.Length > 0);
+        SimilarityScorer.Score(SimilarityFixtures.Story(text), corpus, options).Score
+            .ShouldBe(normalized.Length > 0 ? 1 : 0);
+    }
+
+    [Theory]
     [InlineData(Language.En)]
     [InlineData(Language.Vi)]
     public void Score_UnrelatedText_IsZero(Language language)
