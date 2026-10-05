@@ -4,6 +4,12 @@ History moved out of STATUS.md to keep the live file small. The initial archive 
 
 ## Resume-here history (Current/Previous blocks, Next actions)
 
+### Closed Plan 10 hand-over (2026-10-05, 10.3.1-T1)
+
+Outcome: 10.3.1-T1 built (T3 gates closed; PR from `feature/10.3.1-T1-s15`): the `public` Transloco scope is bundled in `bundled-translations.ts`, so the four prerendered legal routes render without fetching `/assets/i18n/**`.
+
+- **10.3.1-T1:** the prerendered legal pages must add their `public` JSONs to `bundled-translations.ts`, because a prerender cannot fetch `/assets/i18n/**` (10.2.5-T1 Notes, 10.2.4 `plan.md`).
+
 ### Superseded Web next line (2026-10-05, replaced when Session 13 opened the 10.2.6-T1 PR)
 
 Outcome: 10.2.6-T1 shell built (T3 gates closed); PR from `feature/10.2.6-T1-s13`.
