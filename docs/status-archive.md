@@ -4,6 +4,12 @@ History moved out of STATUS.md to keep the live file small. The initial archive 
 
 ## Resume-here history (Current/Previous blocks, Next actions)
 
+### Superseded Web next line (2026-10-05, replaced when Session 13 closed after #134 merged)
+
+Outcome: 10.2.6-T1 shell merged as #134 (`945405c`).
+
+- **Web next (plan 10 Stage B):** Session 13: **10.2.6-T1 shell** in a PR from `feature/10.2.6-T1-s13` (T3 gates closed; §Open tasks row) waiting for the owner. After it merges: **10.5.1-T0** design → **10.5.1-T1** episode list (first `cursorList` consumer; check each header's `Depends on`), then 10.4.1-T1 dashboard (adds `/dashboard` + the first `NAV_ITEMS` entry). The shell has no `**` not-found route yet (owner 2026-10-05, §Plan 10 hand-overs). Read §Plan 10 hand-overs and the as-built shell surface in the 10.2.6-T1 task §Notes first.
+
 ### Superseded Next line (2026-10-05, replaced when Session 12 opened the 02.5.2-T3 PR)
 
 - **Next (backend, start here):** **02.5.2-T3** fetcher host (consumes the frozen JSON hand-off in the 02.5.2-T2 task §Notes; send raw UTF-8 JSON, the body cap is 1 MiB; robots fail-closed → `source_blocked_by_robots`) → T4, 02.6.1-T2, 02.6.2-T1 revision (02 §10 T113(b)), 02.3.2-T1 approve (treat `moderation.stale`/`unavailable` as needs re-check; edit-path moderator wiring). First re-run CI on `develop` once GitHub Actions billing is fixed (#131 merged with no CI run). Claim the backend `gate.sh` lock in `nts-wt/SESSION-CLAIMS.md` first.
