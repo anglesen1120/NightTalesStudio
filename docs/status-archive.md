@@ -4,6 +4,10 @@ History moved out of STATUS.md to keep the live file small. The initial archive 
 
 ## Resume-here history (Current/Previous blocks, Next actions)
 
+### Superseded Web next part (2026-10-05, replaced when 10.3.3-T3 went into a PR, Session 16)
+
+- Part of the **Web next (plan 10 Stage B)** bullet: **10.3.3-T3** MFA step + enrolment + recovery codes + re-auth (deps merged).
+
 ### Superseded Next line (2026-10-05, replaced when 02.5.2-T4 merged as #147)
 
 - **Outcome:** 02.5.2-T4 merged as #147 (`d670978`); the 02.5.2 story is complete; next backend task 02.5.3-T1.
