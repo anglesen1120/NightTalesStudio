@@ -9,6 +9,17 @@ History moved out of STATUS.md to keep the live file small. The initial archive 
 - **Next (backend, start here):** **02.5.2-T3** fetcher host (consumes the frozen JSON hand-off in the 02.5.2-T2 task §Notes; send raw UTF-8 JSON, the body cap is 1 MiB; robots fail-closed → `source_blocked_by_robots`) → T4, 02.6.1-T2, 02.6.2-T1 revision (02 §10 T113(b)), 02.3.2-T1 approve (treat `moderation.stale`/`unavailable` as needs re-check; edit-path moderator wiring). First re-run CI on `develop` once GitHub Actions billing is fixed (#131 merged with no CI run). Claim the backend `gate.sh` lock in `nts-wt/SESSION-CLAIMS.md` first.
 - **Outcome:** 02.5.2-T3 built without a migration; T3 gates closed; PR from `feature/02.5.2-T3-s12`.
 
+### Superseded Plan 10 hand-over lines (2026-10-05, 10 CR-46 / 10 CR-47 e2e parts closed by 10.3.3-T1)
+
+- **10 CR-46 (from 10.2.2-T1):** `web/e2e/errors.spec.ts` is written by **10.3.3-T1** (needs `/login`); `errors.keywords_flagged` is a string leaf, so the row copy cannot be `errors.keywords_flagged.rules.<rule>` — **10.5.10-T1** picks a sibling key family with the TL; **10.9.3-T1** must branch on `problem.code === 'setting_change_pending'` (409, not in `ERROR_CODES`) or catalogue it. Bound controls show `errors.<code>` (wire `errors` values are English descriptions, never rendered) until per-field copy keys exist. All three are in the receiving task Notes.
+- **10 CR-47 (from 10.2.1-T1):** `web/e2e/session.spec.ts` (reload restores, one refresh per burst, server revoke → `/login?returnUrl`, `returnUrl=//evil.example` → `/dashboard`, axe on `/login`, no CSP violation) and the D16 a11y e2e (session-end banner live region, focus to the `/login` heading, 360 px) are written by **10.3.3-T1**: no `/login`/`/dashboard` route exists before 10.3.3-T1/10.2.6-T1. 10.3.3-T1 also owns any `email_not_verified` (refresh 403) UX. In the receiving task Notes.
+
+### Superseded Web next line (2026-10-05, replaced when Session 13 opened the 10.2.6-T1 PR)
+
+Outcome: 10.2.6-T1 shell built (T3 gates closed); PR from `feature/10.2.6-T1-s13`.
+
+- **Web next (plan 10 Stage B):** Session 11 closed: 10.2.3-T1 merged as #129 (`2ad5b05`), 10.2.4-T1 merged as #130 (`4a6e227`) → next **10.2.6-T1 shell** (first consumer of `RealtimeService`; check its header `Depends on`, §Progress by plan); first read §Plan 10 hand-overs (pinned pre-#121 `web/openapi.json`, backend OpenAPI gaps, 10 CR-46, 10 CR-47, 10 CR-48) and the as-built `core/session` + `core/http` + `core/realtime` API (10.2.1-T1, 10.2.3-T1 and 10.2.4-T1 task §Notes; `signIn` takes three arguments, guards are standalone functions, `withIdempotency(intent, ctx?)` returns an `HttpContext`, `provideRealtime()` is already in `app.config.ts`). #130 merged without a green CI run (GitHub Actions billing, §Open findings).
+
 ### Superseded Session 10 Current/Next lines (2026-10-04, replaced when #131 `312db85` merged)
 
 - **Outcome:** 02.5.2-T2 merged as #131 without a CI run (GitHub Actions billing); Session 10 claim released; next backend task 02.5.2-T3.

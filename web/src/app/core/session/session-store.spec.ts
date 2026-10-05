@@ -440,7 +440,7 @@ describe('SessionStore', () => {
 
       const b = pair('owner', FRESH, 'B');
       store.signIn(b, 'owner', ['pwd']);
-      store.setMe({ uiLocale: 'en', role: 'owner', features: ['source_finder'], displayName: 'B', email: 'b@example.test' });
+      store.setMe({ id: 'B', uiLocale: 'en', role: 'owner', features: ['source_finder'], displayName: 'B', email: 'b@example.test' });
       fake.resolveNext(pair('user', FRESH, 'A-late'));
       await restoring;
 
@@ -536,7 +536,7 @@ describe('SessionStore', () => {
     it('SessionStore_SetMe_DrivesHasFeature_AndClearsOnSignOut', () => {
       const { store } = setup();
       store.signIn(pair('user', FRESH), 'user', []);
-      const me: MeSummary = { uiLocale: 'vi', role: 'user', features: ['source_finder'], displayName: 'An', email: 'an@example.test' };
+      const me: MeSummary = { id: 'an', uiLocale: 'vi', role: 'user', features: ['source_finder'], displayName: 'An', email: 'an@example.test' };
 
       expect(store.hasFeature('source_finder')).toBe(false);
       store.setMe(me);
@@ -552,7 +552,7 @@ describe('SessionStore', () => {
     it('reset() clears identity and the end reason without navigating', async () => {
       const { store, router } = setup();
       store.signIn(pair('user', FRESH), 'user', []);
-      store.setMe({ uiLocale: 'vi', role: 'user', features: [], displayName: 'An', email: 'an@example.test' });
+      store.setMe({ id: 'an', uiLocale: 'vi', role: 'user', features: [], displayName: 'An', email: 'an@example.test' });
       const navigate = vi.spyOn(router, 'navigate');
       const before = store.generation();
 
@@ -573,7 +573,7 @@ describe('SessionStore', () => {
       const { store, fake, router } = setup([scope]);
       await router.navigateByUrl('/dashboard');
       store.signIn(pair('user', FRESH), 'user', []);
-      store.setMe({ uiLocale: 'vi', role: 'user', features: [], displayName: 'An', email: 'an@example.test' });
+      store.setMe({ id: 'an', uiLocale: 'vi', role: 'user', features: [], displayName: 'An', email: 'an@example.test' });
 
       await store.logout();
       await TestBed.inject(ApplicationRef).whenStable();
@@ -679,7 +679,7 @@ describe('SessionStore', () => {
       const { store, fake, router } = setup([scope]);
       await router.navigateByUrl('/episodes/1');
       store.signIn(tokenFor('user-A', STALE), 'user', ['pwd']);
-      store.setMe({ uiLocale: 'vi', role: 'user', features: [], displayName: 'A', email: 'a@example.test' });
+      store.setMe({ id: 'a', uiLocale: 'vi', role: 'user', features: [], displayName: 'A', email: 'a@example.test' });
       const intruder = tokenFor('user-B', FRESH);
       fake.next = intruder;
 

@@ -1,0 +1,27 @@
+<button
+  class="user-menu__trigger"
+  type="button"
+  mat-button
+  [matMenuTriggerFor]="accountMenu"
+  [attr.aria-label]="'shell.menu.triggerLabel' | transloco"
+>
+  @if (me(); as summary) {
+    <span class="user-menu__avatar" aria-hidden="true">{{ initials(summary.displayName) }}</span>
+    <span class="user-menu__trigger-name">{{ userLabel() || summary.displayName }}</span>
+  } @else {
+    <span class="user-menu__trigger-label">{{ 'shell.menu.triggerLabel' | transloco }}</span>
+  }
+</button>
+
+<mat-menu #accountMenu="matMenu" class="user-menu__panel">
+  @if (me(); as summary) {
+    <div class="user-menu__header">
+      <strong class="user-menu__full-name">{{ summary.displayName }}</strong>
+      <span class="user-menu__email">{{ summary.email }}</span>
+      <span class="user-menu__role">{{ roleKey(summary.role) | transloco }}</span>
+    </div>
+    <button mat-menu-item type="button" (click)="logOut.emit()">
+      {{ 'shell.menu.logOut' | transloco }}
+    </button>
+  }
+</mat-menu>

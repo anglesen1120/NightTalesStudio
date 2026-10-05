@@ -1,0 +1,23 @@
+:host {
+  display: block;
+}
+
+.auth-state-panel__mark {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--nts-color-signal);
+  color: var(--nts-color-signal);
+  font-size: var(--nts-type-title-size);
+}
+
+.auth-state-panel--success .auth-state-panel__mark {
+  color: var(--nts-color-on-signal);
+  background: var(--nts-color-signal);
+}
+
+a {
+  align-self: flex-start;
+  min-height: var(--nts-target-min);
+}

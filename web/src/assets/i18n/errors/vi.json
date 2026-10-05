@@ -21,6 +21,8 @@
   "hub_ticket_invalid": "Không thể xác thực kết nối trực tiếp. Hãy tải lại trang.",
   "forbidden": "Bạn không có quyền thực hiện thao tác này.",
   "email_not_verified": "Hãy xác minh địa chỉ email trước.",
+  "breached_password": "Mật khẩu này đã lộ trong một vụ rò rỉ dữ liệu. Hãy chọn mật khẩu khác.",
+  "registration_closed": "Hiện chưa mở đăng ký tài khoản mới.",
   "not_found": "Không tìm thấy nội dung bạn cần.",
   "feature_disabled": "Tính năng này hiện chưa khả dụng.",
   "episode_invalid_state": "Tập đã thay đổi nên không thể thực hiện thao tác này. Hãy tải lại để xem trạng thái hiện tại.",
