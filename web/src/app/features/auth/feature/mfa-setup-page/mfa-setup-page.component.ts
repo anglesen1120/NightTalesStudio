@@ -8,7 +8,7 @@ import {
   inject,
   untracked,
 } from '@angular/core';
-import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
+import { toSignal } from '@angular/core/rxjs-interop';
 import { type AbstractControl, FormControl, FormGroup, Validators } from '@angular/forms';
 import { Router } from '@angular/router';
 import { merge } from 'rxjs';
@@ -53,18 +53,12 @@ export class MfaSetupPageComponent {
   });
 
   protected readonly fieldState = toSignal(merge(this.form.statusChanges, this.form.valueChanges), { initialValue: this.form.status });
+
+  /** The code value of the last submit; any pending server error belongs to it (D2: no `valueChanges` subscribe). */
   private lastCode = '';
 
   constructor() {
     void this.store.load();
-
-    // Clear only server feedback synchronously on a code edit, before the next submit can read form.invalid.
-    // enable()/disable() also emit: unchanged values must leave the current server error intact.
-    this.form.controls.code.valueChanges.pipe(takeUntilDestroyed()).subscribe((code) => {
-      if (code === this.lastCode) return;
-      this.lastCode = code;
-      clearServerErrors(this.form);
-    });
 
     effect(() => {
       const submitting = this.store.submitting();
@@ -96,13 +90,18 @@ export class MfaSetupPageComponent {
   }
 
   protected verifyCode(): void {
+    const code = this.form.controls.code.getRawValue();
+    // A server error belongs to the code that produced it: a different code drops it synchronously, before the
+    // `form.invalid` guard, so the corrected code is not blocked by a stale server error. An unchanged value
+    // (e.g. an enable()/disable() emission) leaves the current error intact.
+    if (code !== this.lastCode) clearServerErrors(this.form);
     this.form.markAllAsTouched();
     if (this.form.invalid) {
       this.focusCode();
       return;
     }
-    clearServerErrors(this.form);
-    void this.store.verify(this.form.controls.code.getRawValue());
+    this.lastCode = code;
+    void this.store.verify(code);
   }
 
   protected confirmSavedChange(value: boolean): void {
