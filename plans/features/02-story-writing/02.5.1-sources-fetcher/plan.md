@@ -183,7 +183,7 @@ Migration `20261005_SourcesAndFetchTasks` (single migration, both tables + index
 | `Sources:MaxPerEpisode` | `10` | hard cap → 409 `source_limit_reached` |
 | `Sources:MaxUrlSourcesPerUserPerDay` | `30` | rolling 24 h → 429 `source_fetch_limit_reached` |
 | `Sources:MaxNoteChars` | `3000` | `user_note` limit |
-| `Fetcher:BlockedDomains` | 20 entries from D11 | data, PR-reviewed |
+| `Fetcher:BlockedDomains` | the 19 entries from D11 (02.5.2-T4 corrected the stale "20") | data, PR-reviewed |
 | `Fetcher:UserAgent` | `NightTalesStudioBot/0.1.0 (+https://{PublicHost}/bot)` | `Fetcher:PublicHost` required |
 | `Fetcher:MaxDecompressedBytes` | `2097152` | counting stream, gzip/br |
 | `Fetcher:TotalTimeoutSeconds` / `RobotsTimeoutSeconds` | `10` / `5` | per page / per robots fetch |

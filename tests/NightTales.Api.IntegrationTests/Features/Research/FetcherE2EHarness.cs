@@ -146,6 +146,7 @@ internal sealed class FetcherE2EHarness : IAsyncDisposable
             {
                 services.RemoveAll<IBlobStore>();
                 services.AddSingleton<IBlobStore>(Blobs);
+                services.AddLogging(logging => logging.AddProvider(ApiLogs));
             });
         Pages = new HttpTestServer(request => request.Target.StartsWith("/robots.txt", StringComparison.Ordinal)
             ? TestResponse.Text(200, "text/plain", "User-agent: *\nAllow: /\n")
@@ -164,6 +165,9 @@ internal sealed class FetcherE2EHarness : IAsyncDisposable
     public FakeDnsResolver Dns { get; }
 
     public CapturingLoggerProvider Logs { get; } = new();
+
+    /// <summary>Every log line the in-process Api wrote (02.5.2-T4 leak scan; <see cref="Logs"/> is the fetcher host's).</summary>
+    public CapturingLoggerProvider ApiLogs { get; } = new();
 
     public ApiTrafficRecorder Traffic { get; } = new();
 
