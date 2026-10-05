@@ -3,7 +3,10 @@
 
 export type { AcceptLegalDocumentsCommand } from './models/accept-legal-documents-command';
 export type { AddSourceRequest } from './models/add-source-request';
+export type { ApprovedStoryDto } from './models/approved-story-dto';
+export type { ApproveStoryRequest } from './models/approve-story-request';
 export type { Aspect } from './models/aspect';
+export type { AttestationInput } from './models/attestation-input';
 export type { CatalogResponseOfStyleTemplateListItemDto } from './models/catalog-response-of-style-template-list-item-dto';
 export type { CatalogResponseOfVoiceListItemDto } from './models/catalog-response-of-voice-list-item-dto';
 export type { ConsentAcceptance } from './models/consent-acceptance';
@@ -14,6 +17,7 @@ export type { EpisodeDetailDto } from './models/episode-detail-dto';
 export type { EpisodeListItemDto } from './models/episode-list-item-dto';
 export type { EpisodeNextAction } from './models/episode-next-action';
 export type { EpisodeStatus } from './models/episode-status';
+export type { EpisodeStoryStateDto } from './models/episode-story-state-dto';
 export type { FinalVideoAssetDto } from './models/final-video-asset-dto';
 export type { ForgotPasswordCommand } from './models/forgot-password-command';
 export type { GenerateStoryAccepted } from './models/generate-story-accepted';

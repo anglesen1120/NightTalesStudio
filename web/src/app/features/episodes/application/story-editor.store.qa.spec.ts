@@ -50,7 +50,7 @@ interface Harness {
 }
 function harness(snapshot: StorySnapshot | null, actions: readonly string[], status = 'story_review'): Harness {
   const episodes = new FakeEpisodesRepository();
-  episodes.scriptGet(() => Promise.resolve(episodeDetail({ currentStory: snapshot, hasCurrentStory: snapshot !== null, nextActions: actions, status: status as EpisodeDetail['status'] })));
+  episodes.scriptGet(() => Promise.resolve(episodeDetail({ currentStory: snapshot, hasCurrentStory: snapshot !== null, nextActions: actions, status })));
   return { episodes, stories: new FakeStoryRepository(), realtime: new FakeEpisodeRealtime(), sessionGeneration: signal(0) };
 }
 function providers(h: Harness) {
@@ -357,7 +357,7 @@ describe('StoryEditorStore QA', () => {
 
     it('setMeta ignores structure patches and does not alias caller arrays', async () => {
       const h = await loaded(storySnapshot({ content: rich() })); const tags = ['one'];
-      h.store.setMeta({ structure: { evil: true }, tags } as never); tags.push('mutated-after');
+      h.store.setMeta({ structure: { evil: true }, tags }); tags.push('mutated-after');
       await h.store.saveVersion(); const sent = h.stories.calls[0]!.content;
       expect(sent.structure).toEqual(structure); expect(sent.tags).toEqual(['one']);
     });
