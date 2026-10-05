@@ -3,6 +3,7 @@
 .confirm-dialog__heading { display: flex; align-items: start; justify-content: space-between; gap: var(--nts-space-3); }
 h2 { margin: 0; font-size: var(--nts-type-title-size); line-height: var(--nts-type-title-line); }
 p { max-width: var(--nts-measure); margin: 0; color: var(--nts-color-on-surface-muted); }
+.confirm-dialog__subject { display: block; margin-block-start: var(--nts-space-2); color: var(--nts-color-on-surface); font-weight: 600; overflow-wrap: anywhere; }
 button { min-height: var(--nts-control-h); padding-inline: var(--nts-space-3); border: 1px solid var(--nts-color-control-outline); border-radius: var(--nts-radius-control); background: transparent; color: var(--nts-color-on-surface); font-weight: 500; }
 button:hover:not(:disabled):not([aria-disabled='true']) { border-color: var(--nts-color-on-surface); background: var(--nts-color-surface-variant); }
 button:disabled, button[aria-disabled='true'] { cursor: not-allowed; opacity: 0.48; }

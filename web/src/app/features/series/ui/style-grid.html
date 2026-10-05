@@ -1,0 +1,44 @@
+@if (topic() === 'true_crime') {
+  <p class="style-grid__notice" role="note">{{ 'series.style.trueCrimeNotice' | transloco }}</p>
+}
+<div
+  class="style-grid"
+  role="radiogroup"
+  tabindex="-1"
+  [attr.aria-label]="'series.field.style' | transloco"
+  [attr.aria-describedby]="describedBy()"
+  [attr.aria-invalid]="invalid() ? 'true' : null"
+  [attr.aria-disabled]="disabled()"
+  (keydown)="onGroupKeydown($event)"
+>
+  @for (row of rows(); track row.id) {
+    <label class="style-grid__card" [class.style-grid__card--selected]="row.id === selectedId()" [class.style-grid__card--disabled]="disabled()">
+      <input
+        type="radio"
+        [name]="groupName"
+        [value]="row.id"
+        [checked]="row.id === selectedId()"
+        [disabled]="disabled()"
+        [attr.aria-describedby]="describedBy()"
+        (change)="select(row.id)"
+      />
+      @if (row.preview !== null && !failedUrls().has(row.preview)) {
+        <span class="style-grid__preview" #previewAnchor>
+          @defer (on viewport(previewAnchor)) {
+            <img [src]="row.preview" [alt]="row.rawLabel ? row.id : (row.labelKey | transloco)" loading="lazy" decoding="async" (error)="previewFailed(row.preview!)" />
+          } @placeholder {
+            <span class="style-grid__preview-placeholder" aria-hidden="true"></span>
+          }
+        </span>
+      }
+      <span class="style-grid__copy">
+        <strong>{{ row.rawLabel ? row.id : (row.labelKey | transloco) }}</strong>
+        @if (!row.rawLabel) { <span class="style-grid__hint">{{ row.hintKey | transloco }}</span> }
+        @if (row.inactive) { <span class="style-grid__inactive">{{ 'series.style.inactive' | transloco }}</span> }
+      </span>
+      @if (row.id === selectedId()) {
+        <span class="style-grid__selected"><nts-icon-check aria-hidden="true" /><span>{{ 'series.style.selected' | transloco }}</span></span>
+      }
+    </label>
+  }
+</div>

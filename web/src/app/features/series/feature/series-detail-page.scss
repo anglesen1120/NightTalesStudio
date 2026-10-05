@@ -1,0 +1,14 @@
+:host { display: block; min-width: 0; }
+.series-detail__tabs { display: flex; flex-wrap: wrap; gap: var(--nts-space-4); margin-bottom: var(--nts-space-6); border-bottom: 1px solid var(--nts-color-line); }
+.series-detail__tabs a, .series-detail__tabs span { display: inline-flex; align-items: center; min-height: var(--nts-target-min); padding: var(--nts-space-2) 0; color: var(--nts-color-muted); text-decoration: none; border-bottom: 2px solid transparent; }
+.series-detail__tabs a[aria-current='page'] { color: var(--nts-color-ink); border-color: var(--nts-color-primary); }
+.series-detail__tabs a:hover { color: var(--nts-color-primary); }
+.series-detail__tabs a:focus-visible { outline: 2px solid var(--nts-color-focus); outline-offset: var(--nts-space-1); }
+.series-detail__summary { max-width: var(--nts-measure); padding: var(--nts-space-5); background: var(--nts-color-surface); border: 1px solid var(--nts-color-line); border-radius: var(--nts-radius-sheet); }
+h2 { margin: 0 0 var(--nts-space-4); font-size: var(--nts-type-title-size); font-weight: var(--nts-type-title-weight); line-height: var(--nts-type-title-line); }
+dl { margin: 0; } dl > div { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); gap: var(--nts-space-4); padding: var(--nts-space-3) 0; border-top: 1px solid var(--nts-color-line); }
+dt { color: var(--nts-color-muted); } dd { margin: 0; overflow-wrap: anywhere; }
+.series-detail__archived { margin-bottom: var(--nts-space-5); padding: var(--nts-space-4); border-inline-start: var(--nts-space-1) solid var(--nts-color-control-outline); background: var(--nts-color-soft); }
+.series-detail__chip { display: inline-flex; align-items: center; gap: var(--nts-space-1); padding: var(--nts-space-1) var(--nts-space-2); border: 1px solid var(--nts-color-line); border-radius: var(--nts-radius-pill); }
+a[actions] { min-height: var(--nts-target-min); }
+@media (max-width: 599px) { .series-detail__summary { padding: var(--nts-space-4); } dl > div { grid-template-columns: 1fr; gap: var(--nts-space-1); } }

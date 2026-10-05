@@ -71,7 +71,7 @@ describe('AppRoutes_RouteTable', () => {
     expect(parent.path).toBe('');
     expect(parent.canActivate).toEqual([authGuard]);
     expect(parent.canActivateChild).toEqual([authChildGuard]);
-    expect(parent.children?.map((child) => child.path)).toEqual(['episodes', 'dashboard']);
+    expect(parent.children?.map((child) => child.path)).toEqual(['episodes', 'dashboard', 'series']);
     expect(typeof parent.loadComponent).toBe('function');
   });
 
@@ -79,7 +79,7 @@ describe('AppRoutes_RouteTable', () => {
     const paths = routes.map((route) => route.path);
     expect(paths).not.toContain('**');
     const children = shellParent().children ?? [];
-    expect(children.map((child) => child.path)).toEqual(['episodes', 'dashboard']);
+    expect(children.map((child) => child.path)).toEqual(['episodes', 'dashboard', 'series']);
     for (const child of children) expect(typeof child.loadChildren).toBe('function');
   });
 

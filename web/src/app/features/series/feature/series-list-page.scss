@@ -1,0 +1,5 @@
+:host { display: block; min-width: 0; }
+mat-checkbox { margin-bottom: var(--nts-space-5); }
+.series-list__rows { list-style: none; margin: var(--nts-space-5) 0; padding: 0; border-top: 1px solid var(--nts-color-line); }
+.series-list__retry { display: flex; flex-wrap: wrap; align-items: center; gap: var(--nts-space-3); padding: var(--nts-space-3) 0; }
+button, a[mat-flat-button] { min-height: var(--nts-target-min); }

@@ -53,6 +53,10 @@ export class AudioPreviewButton implements OnDestroy {
     const el = this.audio()?.nativeElement;
     if (el !== undefined) this.lastAudioEl = el;
     if (el === undefined) return;
+    // The `@defer` inserts the element before any template binding would land; the button is the only place that
+    // sets `src`, so it is assigned here the moment the player exists, before `play()` is ever asked (once).
+    const url = this.previewUrl();
+    if (url !== null && el.src === '') el.src = url;
     if (this.playing() && !this.failed()) {
       // Once armed, the button is the only place that sets `src`; play() may reject in
       // unsupported-media environments — the media `error` event still reports the failure.

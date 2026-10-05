@@ -11,6 +11,9 @@
         </ul>
       }
     }
+    @if (data.traceId; as traceId) {
+      <p class="conflict-dialog__trace">{{ 'errors.unknown.trace' | transloco: { traceId } }}</p>
+    }
   </div>
   <div class="conflict-dialog__actions">
     <button type="button" data-outcome="cancel" cdkFocusInitial (click)="chooseCancel()">{{ 'errors.conflict.cancel' | transloco }}</button>

@@ -102,6 +102,23 @@ describe('ConfirmDialog', () => {
     }
   });
 
+  it.each(['{{title}}', '{{ x }}'])('renders a literal-brace subject %s verbatim as plain text, never through Transloco', async (subject) => {
+    // PS1 regression: subject is user-controlled text rendered by interpolation only. As a Transloco
+    // param, "{{title}}" re-entered the transpiler matcher and looped it forever.
+    await TestBed.configureTestingModule({ imports: [DynamicHost, MatDialogModule, NoopAnimationsModule, uiTestingTranslations()] }).compileComponents();
+    const fixture = TestBed.createComponent(DynamicHost);
+    fixture.detectChanges();
+    const dialogs = TestBed.inject(ConfirmDialog);
+    const ref = dialogs.confirm({ titleKey: 'core.ui.confirm.title', bodyKey: 'core.ui.errorState.body', confirmLabelKey: 'core.ui.confirm.confirm', subject });
+    await fixture.whenStable();
+    const subjectLine = document.querySelector<HTMLElement>('.cdk-overlay-pane .confirm-dialog__subject');
+    expect(subjectLine?.textContent?.trim()).toBe(subject);
+    expect(subjectLine?.closest('p')?.id).toMatch(/^nts-confirm-body-/);
+    ref.close();
+    await fixture.whenStable();
+  });
+
+
   describe('pending lifetime, cancel semantics, focus and ARIA', () => {
     const data = { titleKey: 'core.ui.confirm.title', bodyKey: 'core.ui.errorState.body', confirmLabelKey: 'core.ui.confirm.confirm' };
     const escape = (): void => {

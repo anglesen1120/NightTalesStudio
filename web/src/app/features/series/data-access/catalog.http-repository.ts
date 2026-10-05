@@ -2,18 +2,29 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
 import { AppErrorMapper, type Result } from '@core/errors';
-import { CatalogEndpointsClient, type VoiceListItemDto } from '@shared/api';
-import { CatalogRepository, type VoiceCatalogResponse } from '../application/catalog.repository';
+import { CatalogEndpointsClient, type StyleTemplateListItemDto, type VoiceListItemDto } from '@shared/api';
+import {
+  CatalogRepository,
+  type StyleTemplateCatalogResponse,
+  type VoiceCatalogResponse,
+} from '../application/catalog.repository';
 import { safePreviewUrl } from '../domain/preview-url';
+import { isTopic, type Topic } from '../domain/series.model';
+import { isStyleName, type StyleTemplate } from '../domain/style-template.model';
 import { isLanguage, isVoiceTag, type Language, type Voice } from '../domain/voice.model';
 
-/** A response ETag that is a plain header token; anything else is treated as absent (never echoed anywhere). */
+/** A plain header token that is a well-formed entity tag; anything else is treated as absent (never echoed anywhere). */
 const ETAG_PATTERN = /^(?:W\/)?"[\x21\x23-\x7e]{0,256}"$/;
+
+/** Whether `value` is a well-formed entity tag — the one grammar both the `ETag` header and a body member use. */
+export function isEntityTag(value: string | null): boolean {
+  return value !== null && ETAG_PATTERN.test(value);
+}
 
 /** `ETag` header of a response, or `null` when absent or not a well-formed entity tag. */
 export function readEtag(headers: { get(name: string): string | null }): string | null {
   const value = headers.get('ETag');
-  return value !== null && ETAG_PATTERN.test(value) ? value : null;
+  return isEntityTag(value) ? value : null;
 }
 
 /**
@@ -32,6 +43,19 @@ export function toVoice(dto: VoiceListItemDto): Voice | null {
     tags: (dto.tags ?? []).filter(isVoiceTag),
     previewUrl: safePreviewUrl(dto.previewUrl),
   };
+}
+
+/**
+ * DTO -> model, explicit field by field: a `name` that is not a seed slug is dropped (it would be interpolated into
+ * an i18n key), an unknown `topicHint` drops the row (the compatibility rule would be judged against garbage) and an
+ * unsafe `previewUrl` becomes `null` (the card renders without an image).
+ */
+export function toStyleTemplate(dto: StyleTemplateListItemDto): StyleTemplate | null {
+  if (!isStyleName(dto.name)) return null;
+  const hint = dto.topicHint;
+  if (hint !== null && hint !== undefined && !isTopic(hint)) return null;
+  const topicHint: Topic | null = hint ?? null;
+  return { id: dto.id, name: dto.name, topicHint, previewUrl: safePreviewUrl(dto.previewUrl) };
 }
 
 /**
@@ -54,6 +78,25 @@ export class CatalogHttpRepository extends CatalogRepository {
       }
       const voices = response.body.items.map(toVoice).filter((voice): voice is Voice => voice !== null);
       return { ok: true, value: { kind: 'ok', voices, etag } };
+    } catch (cause) {
+      if (cause instanceof HttpErrorResponse && cause.status === 304) {
+        return { ok: true, value: { kind: 'notModified' } };
+      }
+      return { ok: false, error: this.mapper.from(cause) };
+    }
+  }
+
+  override async styleTemplates(topic: Topic, ifNoneMatch?: string | null): Promise<Result<StyleTemplateCatalogResponse>> {
+    try {
+      const response = await firstValueFrom(this.client.apiV1StyleTemplatesGet$Response({ topic }));
+      const etag = readEtag(response.headers);
+      if (ifNoneMatch != null && etag !== null && etag === ifNoneMatch) {
+        return { ok: true, value: { kind: 'notModified' } };
+      }
+      const templates = response.body.items
+        .map(toStyleTemplate)
+        .filter((template): template is StyleTemplate => template !== null);
+      return { ok: true, value: { kind: 'ok', templates, etag } };
     } catch (cause) {
       if (cause instanceof HttpErrorResponse && cause.status === 304) {
         return { ok: true, value: { kind: 'notModified' } };

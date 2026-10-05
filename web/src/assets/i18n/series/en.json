@@ -1,6 +1,11 @@
 {
   "field": {
-    "voice": "Voice"
+    "voice": "Voice",
+    "title": "Series title",
+    "topic": "Topic",
+    "language": "Language",
+    "aspect": "Aspect",
+    "style": "Visual style"
   },
   "voice": {
     "preview": "Play preview",
@@ -46,6 +51,42 @@
       "label": "Case-file illustration",
       "hint": "Muted case-file drawings, no faces"
     },
-    "trueCrimeNotice": "Only illustration styles without real faces are available for true crime."
+    "trueCrimeNotice": "Only illustration styles without real faces are available for true crime.",
+    "clearedByTopic": "The visual style was cleared because it does not match the topic",
+    "inactive": "This style is no longer available",
+    "selected": "Selected",
+    "empty": "No suitable visual styles are available yet"
+  },
+  "list": {
+    "title": "Your series",
+    "subtitle": "Narration, aspect and publishing schedule share one row.",
+    "empty": "No series yet",
+    "emptyBody": "Create your first series to keep narration and visual style consistent across episodes.",
+    "new": "Create series",
+    "archived": "Archived",
+    "includeArchived": "Include archived",
+    "loadMore": "Load more"
+  },
+  "step": { "topic": "Topic and language", "aspect": "Aspect", "voice": "Voice", "style": "Visual style" },
+  "topic": { "ghost": "Ghost stories", "spiritual": "Spiritual", "trueCrime": "True crime" },
+  "topicHint": { "ghost": "Fiction with a cold, mysterious atmosphere", "spiritual": "Beliefs and folk tales", "true_crime": "Source-based, without conclusions beyond the evidence" },
+  "aspect": { "landscape": "Landscape (long-form)", "portrait": "Portrait (Shorts)" },
+  "language": { "vi": "Tiếng Việt", "en": "English", "locked": "The language cannot change after creation; create a new series" },
+  "editor": {
+    "subtitle": "Four decisions make one consistent production line.",
+    "editTitle": "Edit series",
+    "editSubtitle": "This configuration applies to future episodes.",
+    "next": "Continue"
+  },
+  "validation": { "required": "Fill in or select this field.", "titleMax": "The series title must be no longer than 120 characters." },
+  "save": { "saved": "Saved", "conflict": "The series changed elsewhere", "changes": "Save changes", "saving": "Saving…", "reloaded": "The latest server version was reloaded." },
+  "archive": { "title": "Archive series?", "confirm": "Archive this series? Its data stays readable, but you cannot edit it or create new episodes.", "failed": "The series could not be archived. It has been restored to the list.", "done": "Series archived" },
+  "row": { "open": "Open", "archive": "Archive", "openNamed": "Open series", "archiveNamed": "Archive series", "autopilotOn": "Autopilot on", "autopilotOff": "Autopilot off" },
+  "detail": {
+    "title": "Series", "subtitle": "One consistent narration and visual style for the whole series.",
+    "edit": "Edit series", "tabs": "Series tabs", "overview": "Overview", "autopilot": "Autopilot", "summary": "Series configuration",
+    "storyPreset": "Story preset", "defaultPreset": "Default",
+    "archivedBody": "This series cannot be edited, receive new episodes or enable autopilot in this phase. All data stays readable.",
+    "notFound": "Series not found", "notFoundBody": "The series does not exist or does not belong to this account.", "backToList": "Back to series list"
   }
 }

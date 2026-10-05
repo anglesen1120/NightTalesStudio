@@ -21,3 +21,4 @@ export * from './icons/icon-menu/icon-menu';
 export * from './icons/icon-language/icon-language';
 export * from './icons/icon-episodes/icon-episodes';
 export * from './icons/icon-dashboard/icon-dashboard';
+export * from './icons/icon-series/icon-series';
