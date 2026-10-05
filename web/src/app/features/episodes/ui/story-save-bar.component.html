@@ -1,0 +1,14 @@
+<div class="story-save-bar">
+  <p class="story-save-bar__total">{{ 'episodes.editor.totalTokens' | transloco: { count: totalTokens() } }}</p>
+  <p class="story-save-bar__status" role="status" aria-live="polite" aria-atomic="true">
+    @if (statusKey(); as key) { {{ key | transloco }} }
+  </p>
+  @if (!readOnly()) {
+    <button
+      type="button"
+      [disabled]="viewModel().disabled"
+      [attr.aria-busy]="viewModel().state === 'saving' ? 'true' : null"
+      (click)="save()"
+    >{{ 'episodes.editor.saveVersion' | transloco }}</button>
+  }
+</div>

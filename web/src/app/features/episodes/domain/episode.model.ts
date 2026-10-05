@@ -1,3 +1,5 @@
+import type { StorySnapshot } from './story.model';
+
 /** The 11 wire statuses of an episode, in enum order (plan F19). */
 export const EPISODE_STATUSES = [
   'draft',
@@ -80,6 +82,7 @@ export interface EpisodeDetail {
   readonly etag: string;
   readonly generation: EpisodeGeneration | null;
   readonly hasCurrentStory: boolean;
+  readonly currentStory: StorySnapshot | null;
   readonly nextActions: readonly string[];
 }
 

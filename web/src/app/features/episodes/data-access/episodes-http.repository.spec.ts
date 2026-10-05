@@ -120,6 +120,14 @@ describe('EpisodesHttpRepository new methods', () => {
     await expect(response).rejects.toMatchObject({ code: 'story_generation_limit', status: 429, retryAfterSec: 9, traceId: 'trace-123' });
   });
 
+  it('get_MalformedCurrentStory_IsTypedFailureNeverAnEmptyDraft', async () => {
+    const { repository, http } = setup();
+    const response = repository.get(EPISODE);
+    const rejected = expect(response).rejects.toMatchObject({ status: 502, code: 'internal_error', kind: 'server' });
+    http.expectOne(`/api/v1/episodes/${EPISODE}`).flush({ ...DETAIL, currentStory: { content: null } });
+    await rejected;
+  });
+
   it('create_NetworkFailure_IsMappedAndNeverAutomaticallyRetried', async () => {
     const { repository, http } = setup();
     const response = repository.create(SERIES, INPUT);

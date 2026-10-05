@@ -1,0 +1,33 @@
+<section class="story-meta" role="group" aria-labelledby="story-meta-heading">
+  <h2 id="story-meta-heading">{{ 'episodes.editor.metadata' | transloco }}</h2>
+  <label for="seg-meta">{{ 'episodes.editor.description' | transloco }}</label>
+  <textarea
+    id="seg-meta"
+    data-segment="meta"
+    [value]="meta().description"
+    [readOnly]="readOnly()"
+    [attr.aria-invalid]="errorKeys().length > 0 ? 'true' : null"
+    [attr.aria-describedby]="describedBy()"
+    (input)="editDescription($event)"
+  ></textarea>
+  <p id="seg-meta-counter" class="story-meta__counter">{{ 'episodes.editor.tokens' | transloco: { count: tokens() } }}</p>
+  @if (errorKeys().length > 0) {
+    <ul id="seg-meta-errors" class="story-meta__errors">
+      @for (errorKey of errorKeys(); track errorKey) { <li>{{ errorKey | transloco }}</li> }
+    </ul>
+  }
+  <div class="story-meta__readonly">
+    <section aria-labelledby="story-tags-heading">
+      <h3 id="story-tags-heading">{{ 'episodes.editor.tags' | transloco }}</h3>
+      @if (meta().tags.length > 0) {
+        <ul>@for (tag of meta().tags; track tag) { <li>{{ tag }}</li> }</ul>
+      } @else { <p>{{ 'episodes.editor.none' | transloco }}</p> }
+    </section>
+    <section aria-labelledby="story-warnings-heading">
+      <h3 id="story-warnings-heading">{{ 'episodes.editor.contentWarnings' | transloco }}</h3>
+      @if (meta().contentWarnings.length > 0) {
+        <ul>@for (warning of meta().contentWarnings; track warning) { <li>{{ warning }}</li> }</ul>
+      } @else { <p>{{ 'episodes.editor.none' | transloco }}</p> }
+    </section>
+  </div>
+</section>

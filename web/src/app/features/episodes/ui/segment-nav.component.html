@@ -1,0 +1,11 @@
+<nav class="segment-nav" [attr.aria-label]="'episodes.editor.segmentNav' | transloco">
+  <label for="story-segment-nav">{{ 'episodes.editor.chooseSegment' | transloco }}</label>
+  <select id="story-segment-nav" (change)="select($event)">
+    @for (segment of segments(); track segment.segKey) {
+      <option [value]="segment.address">
+        {{ segment.labelKey | transloco }}@if (segment.labelIndex !== null) { {{ segment.labelIndex }} }
+      </option>
+    }
+    <option value="meta">{{ 'episodes.editor.description' | transloco }}</option>
+  </select>
+</nav>

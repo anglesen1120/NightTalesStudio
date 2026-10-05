@@ -1,0 +1,51 @@
+<div class="story-editor">
+  <nts-segment-nav [segments]="textSegments()" (openSegment)="open($event)" />
+
+  @if (viewModel().formErrors.length > 0) {
+    <div class="story-editor__form-errors" role="alert">
+      <strong>{{ 'episodes.editor.saveError' | transloco }}</strong>
+      <ul>
+        @for (errorKey of viewModel().formErrors; track errorKey) { <li>{{ errorKey | transloco }}</li> }
+      </ul>
+    </div>
+  }
+
+  <section class="story-editor__sheet" [attr.aria-label]="'episodes.editor.manuscript' | transloco">
+    <nts-segment-editor
+      [viewModel]="viewModel().title"
+      [limitHit]="viewModel().keywordLimitHit === viewModel().title.segKey"
+      (intent)="forward($event)"
+    />
+    <nts-segment-editor
+      [viewModel]="viewModel().hook"
+      [limitHit]="viewModel().keywordLimitHit === viewModel().hook.segKey"
+      (intent)="forward($event)"
+    />
+    @for (paragraph of viewModel().paragraphs; track paragraph.segKey) {
+      <nts-segment-editor
+        [viewModel]="paragraph"
+        [limitHit]="viewModel().keywordLimitHit === paragraph.segKey"
+        (intent)="forward($event)"
+      />
+    }
+    <nts-segment-editor
+      [viewModel]="viewModel().ending"
+      [limitHit]="viewModel().keywordLimitHit === viewModel().ending.segKey"
+      (intent)="forward($event)"
+    />
+    <nts-story-meta-editor
+      [meta]="viewModel().meta"
+      [tokens]="metaTokens()"
+      [readOnly]="viewModel().readOnly"
+      [errorKeys]="metaErrors()"
+      (intent)="forward($event)"
+    />
+    <nts-scene-strip [segments]="sceneSegments()" />
+    <nts-story-save-bar
+      [viewModel]="viewModel().saveBar"
+      [totalTokens]="viewModel().totalTokens"
+      [readOnly]="viewModel().readOnly"
+      (intent)="forward($event)"
+    />
+  </section>
+</div>

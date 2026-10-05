@@ -68,5 +68,66 @@
     "gate": {
       "writeStoryBlocked": "Approve the fact sheet with at least 2 fetched sources before writing the story."
     }
+  },
+  "editor": {
+    "pageTitle": "Episode story",
+    "loading": "Loading story",
+    "saveVersion": "Save version",
+    "saving": "Saving…",
+    "saved": "Saved",
+    "unsaved": "Unsaved changes",
+    "segment": {
+      "title": "Title",
+      "hook": "Hook",
+      "paragraph": "Paragraph",
+      "ending": "Ending"
+    },
+    "beat": "Beat",
+    "keywords": "Scenes",
+    "keywordLabel": "Scene {{index}}",
+    "addKeyword": "Add scene",
+    "removeKeyword": "Remove scene",
+    "keywordLimit": "Each paragraph needs 1–2 scenes",
+    "tokens": "{{count}} words",
+    "totalTokens": "{{count}} words total",
+    "description": "Description",
+    "tags": "Tags",
+    "contentWarnings": "Content warnings",
+    "metadata": "Story information",
+    "none": "None",
+    "sceneStrip": "Scene strip",
+    "sceneStripHint": "Read-only preview from each segment's scenes.",
+    "sceneStripEmpty": "There are no scenes to preview yet.",
+    "segmentNav": "Story segment navigation",
+    "chooseSegment": "Choose segment",
+    "saveError": "The story could not be saved",
+    "manuscript": "Story manuscript",
+    "emptyTitle": "No story yet",
+    "emptyBody": "Generate the story before opening the editor.",
+    "readOnlyBody": "The story is read-only in its current state. Only actions allowed by the server are shown.",
+    "allowedActions": "Allowed actions",
+    "action": {
+      "generate_story": "Write story",
+      "approve_story": "Approve story",
+      "reopen_story": "Reopen story",
+      "render": "Make video",
+      "retry_render": "Retry video",
+      "cancel": "Cancel",
+      "approve_video": "Approve video",
+      "reject_video": "Request video changes",
+      "publish": "Publish",
+      "download": "Download",
+      "unavailable": "Action unavailable"
+    }
+  },
+  "conflict": {
+    "title": "The story changed",
+    "body": "Another tab or person saved a newer version. Your unsaved text is still kept.",
+    "reload": "Reload latest",
+    "saveMine": "Save mine as new version",
+    "cancel": "Cancel",
+    "reloadConfirmTitle": "Discard unsaved changes?",
+    "reloadConfirmBody": "Reloading the latest version replaces the unsaved text on this screen. This cannot be undone.",
+    "reloadConfirm": "Reload latest"
   }
 }

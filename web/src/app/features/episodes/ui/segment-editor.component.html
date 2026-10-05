@@ -1,0 +1,39 @@
+<section class="segment-editor" role="group" [attr.aria-labelledby]="labelId()" [class.segment-editor--read-only]="viewModel().readOnly">
+  <div class="segment-editor__heading">
+    <label [id]="labelId()" [for]="controlId()">
+      {{ viewModel().labelKey | transloco }}@if (viewModel().labelIndex !== null) { {{ viewModel().labelIndex }} }
+    </label>
+    @if (viewModel().beat; as beat) {
+      <span class="segment-editor__beat"><span>{{ 'episodes.editor.beat' | transloco }}:</span> {{ beat }}</span>
+    }
+  </div>
+
+  <textarea
+    [id]="controlId()"
+    [attr.data-segment]="viewModel().address"
+    [value]="viewModel().text"
+    [readOnly]="viewModel().readOnly"
+    [attr.aria-invalid]="viewModel().errorKeys.length > 0 ? 'true' : null"
+    [attr.aria-describedby]="describedBy()"
+    (input)="editText($event)"
+  ></textarea>
+
+  <p class="segment-editor__counter" [id]="counterId()">{{ 'episodes.editor.tokens' | transloco: { count: viewModel().tokens } }}</p>
+
+  @if (viewModel().errorKeys.length > 0) {
+    <ul class="segment-editor__errors" [id]="errorId()">
+      @for (errorKey of viewModel().errorKeys; track errorKey) { <li>{{ errorKey | transloco }}</li> }
+    </ul>
+  }
+
+  @if (showKeywords()) {
+    <nts-segment-chips
+      [keywords]="viewModel().keywords"
+      [readOnly]="viewModel().readOnly"
+      [limitHit]="limitHit()"
+      (addKeyword)="addKeyword()"
+      (editKeyword)="updateKeyword($event)"
+      (removeKeyword)="removeKeyword($event)"
+    />
+  }
+</section>
