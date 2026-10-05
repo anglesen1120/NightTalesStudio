@@ -27,6 +27,10 @@ export const routes: Routes = [
         data: { titleKey: 'shell.title.series' },
         loadChildren: () => import('./features/series/series.routes').then((m) => m.SERIES_ROUTES),
       },
+      {
+        path: 'series/:id/episodes/new',
+        loadChildren: () => import('./features/episodes/episodes.routes').then((m) => m.newEpisodeRoutes),
+      }
     ],
   },
 ];

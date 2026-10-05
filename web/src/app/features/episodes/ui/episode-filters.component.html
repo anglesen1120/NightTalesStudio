@@ -46,7 +46,7 @@
       <button
         type="button"
         class="episode-filters__chip"
-        [attr.aria-label]="'episodes.list.clearFilter' | transloco: { name: ('episodes.list.seriesFilter' | transloco) + ': ' + seriesName }"
+        [attr.aria-label]="('episodes.list.clearSeriesFilter' | transloco) + ': ' + seriesName"
         (click)="seriesChange.emit(null)"
         ><span class="episode-filters__chip-value"
           >{{ 'episodes.list.seriesFilter' | transloco }}: {{ seriesName }}</span

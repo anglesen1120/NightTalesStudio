@@ -86,3 +86,24 @@ describe('SeriesOptionsHttpRepository', () => {
     await expect(result).rejects.toMatchObject({ status: 500 });
   });
 });
+
+describe('SeriesOptionsHttpRepository page-open read', () => {
+  afterEach(() => TestBed.inject(HttpTestingController).verify());
+
+  it('get_ReadsSeriesSummaryAndMarksUserAction', async () => {
+    const { repository, http } = setup();
+    const response = repository.get('series-1');
+    const request = http.expectOne('/api/v1/series/series-1');
+    expect(request.request.method).toBe('GET');
+    expect(request.request.context.get(USER_ACTION)).toBe(true);
+    request.flush({ ...series('series-1', 'Investigation'), topic: 'true_crime' });
+    expect(await response).toEqual({ id: 'series-1', title: 'Investigation', topic: 'true_crime' });
+  });
+
+  it('get_RejectionIsAnAppError', async () => {
+    const { repository, http } = setup();
+    const response = repository.get('missing');
+    http.expectOne('/api/v1/series/missing').flush({ code: 'series_not_found' }, { status: 404, statusText: 'Not Found' });
+    await expect(response).rejects.toMatchObject({ status: 404, fieldErrors: {} });
+  });
+});

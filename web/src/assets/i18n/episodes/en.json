@@ -23,6 +23,7 @@
     "seriesFilterUnavailable": "The series name is unavailable. The id filter still applies.",
     "seriesFilterBounded": "Only the first 100 series are listed.",
     "clearFilter": "Clear {{name}} filter",
+    "clearSeriesFilter": "Clear series filter",
     "errorTitle": "Episodes could not be loaded"
   },
   "status": {
@@ -37,5 +38,35 @@
     "published": "Published",
     "failed": "Failed",
     "cancelled": "Cancelled"
+  },
+  "new": {
+    "title": "New episode",
+    "briefLabel": "Your idea",
+    "briefHint": "Up to 1,000 characters",
+    "titleOptional": "Title (optional)",
+    "lengthTier": "Length",
+    "tier": { "short": "Short", "standard": "Standard", "long": "Long" },
+    "trueCrimeNext": "Create episode and add sources",
+    "trueCrimeNotice": "A true-crime episode needs sources and an approved fact sheet before it is written.",
+    "createLost": "The episode creation could not be confirmed. Check the episode list before creating it again.",
+    "openEpisode": "Open episode",
+    "openResearch": "Open research",
+    "submitting": "Creating episode",
+    "validation": {
+      "briefRequired": "Enter your idea.",
+      "briefMax": "Your idea is limited to 1,000 characters.",
+      "titleMax": "The title is limited to 120 characters."
+    }
+  },
+  "generation": {
+    "heading": "Generating your story",
+    "retrying": "Retrying",
+    "stage": { "queued": "Queued", "done": "Done" },
+    "paused": "Processing is paused. Come back later; there is nothing to retry."
+  },
+  "research": {
+    "gate": {
+      "writeStoryBlocked": "Approve the fact sheet with at least 2 fetched sources before writing the story."
+    }
   }
 }

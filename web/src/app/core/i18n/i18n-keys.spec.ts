@@ -184,6 +184,12 @@ describe('HANDED_OVER_KEYS', () => {
       'series:series.style.*.hint',
       'voices:voices.tag.*',
       'quality:quality.*',
+      'story:story.generation.stage.*',
+      'story:story.generation.error.*',
+      'story:story.generation.paused.*',
+      'story:story.generation.moderation.*',
+      'story:story.generation.revised.badge',
+      'story:story.generation.action.*',
       'render:render.*',
     ]);
   });
