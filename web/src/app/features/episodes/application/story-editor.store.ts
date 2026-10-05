@@ -43,6 +43,7 @@ export class StoryEditorStore {
   readonly canGenerate = computed(() => this.active() && !this.loading() && !this.generating() &&
     this.detail.detail()?.currentStory === null && this.detail.nextActions().includes('generate_story'));
   readonly error = signal<AppError | null>(null);
+  private readError: AppError | null = null;
   readonly snapshot = signal<StorySnapshot | null>(null);
   readonly title = signal('');
   readonly hook = signal('');
@@ -281,10 +282,13 @@ export class StoryEditorStore {
     const generation = this.generation, read = ++this.readGeneration;
     const fresh = await this.detail.refetch(userAction ? { userAction: true } : undefined);
     if (!this.current(generation) || read !== this.readGeneration) return;
-    if (fresh === null) { this.error.set(this.detail.error()); return; }
+    if (fresh === null) { this.readError = this.detail.error(); this.error.set(this.readError); return; }
     if (fresh.nextActions.includes('edit_story')) this.invalidState.set(false);
     if (this.saving() || (!replaceDraft && (this.hasUnsavedChanges() || this.conflict() !== null))) return;
-    if (!replaceDraft && fresh.currentStory?.etag === this.snapshot()?.etag) return;
+    if (!replaceDraft && fresh.currentStory?.etag === this.snapshot()?.etag) {
+      if (this.readError !== null && this.error() === this.readError) { this.error.set(null); this.readError = null; }
+      return;
+    }
     this.adopt(fresh.currentStory); this.clearErrors();
   }
 
@@ -363,7 +367,7 @@ export class StoryEditorStore {
 
   private showError(cause: unknown): AppError {
     const error = isAppError(cause) ? cause : this.mapper.from(cause);
-    this.error.set(error);
+    this.readError = null; this.error.set(error);
     if (error.status === 428) {
       this.formErrors.set(['errors.unknown_error']);
       if (isDevMode()) console.warn('if_match_required', error.traceId ?? '-');
@@ -390,7 +394,7 @@ export class StoryEditorStore {
     return error;
   }
 
-  private clearErrors(): void { this.error.set(null); this.fieldErrors.set({}); this.formErrors.set([]); }
+  private clearErrors(): void { this.readError = null; this.error.set(null); this.fieldErrors.set({}); this.formErrors.set([]); }
   private clearDraft(): void {
     this.snapshot.set(null); this.title.set(''); this.hook.set(''); this.ending.set(''); this.meta.set(EMPTY_META);
     this.paragraphs.set([]); this.hookKeywords.set([]); this.endingKeywords.set([]); this.hookKey.set(''); this.endingKey.set('');

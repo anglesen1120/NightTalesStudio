@@ -306,4 +306,26 @@ describe('StoryEditorStore', () => {
       store.setMeta({ description: 'Một hai ba bốn' }); expect(store.metaTokens()).toBe(4); expect(store.totalTokens()).toBe(23); expect(normalize).toHaveBeenCalledTimes(2);
     } finally { normalize.mockRestore(); }
   });
+  it('realtime_UnchangedEtag_ClearsRecoveredReadErrorButPreservesSaveError', async () => {
+    const state = await loaded(); const paragraphs = state.store.paragraphs();
+    const readError = appError('network_error', 0, { kind: 'network' });
+    state.episodes.scriptGet(() => rejected(readError));
+    state.realtime.resync(); vi.advanceTimersByTime(250); await settle();
+    expect(state.store.error()).toBe(readError);
+    state.episodes.scriptGet(() => Promise.resolve(episodeDetail({ currentStory: storySnapshot(), nextActions: ['edit_story'] })));
+    state.realtime.resync(); vi.advanceTimersByTime(250); await settle();
+    expect(state.store.error()).toBeNull(); expect(state.store.paragraphs()).toBe(paragraphs);
+    const saveError = appError('unknown_error', 500);
+    edit(state.store);
+    state.stories.scriptSave(() => {
+      // Revert while the PUT is in flight, so the subsequent refresh reaches its clean/unchanged branch.
+      edit(state.store, 'The lantern'); return rejected(saveError);
+    });
+    await state.store.saveVersion();
+    expect(state.store.hasUnsavedChanges()).toBe(false); expect(state.store.error()).toBe(saveError);
+    const formErrors = state.store.formErrors();
+    state.episodes.scriptGet(() => Promise.resolve(episodeDetail({ currentStory: storySnapshot(), nextActions: ['edit_story'] })));
+    state.realtime.resync(); vi.advanceTimersByTime(250); await settle();
+    expect(state.store.error()).toBe(saveError); expect(state.store.formErrors()).toBe(formErrors); expect(state.store.paragraphs()).toBe(paragraphs);
+  });
 });
