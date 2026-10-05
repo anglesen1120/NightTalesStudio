@@ -1,0 +1,73 @@
+:host {
+  display: block;
+  min-width: 0;
+}
+
+.user-menu__trigger {
+  display: flex;
+  min-width: var(--nts-target-min);
+  max-width: 220px;
+  min-height: var(--nts-target-min);
+  align-items: center;
+  gap: var(--nts-space-2);
+  color: var(--nts-color-on-surface);
+}
+
+.user-menu__trigger:focus-visible,
+button[mat-menu-item]:focus-visible {
+  outline: 3px solid var(--nts-color-focus);
+  outline-offset: 3px;
+}
+
+.user-menu__avatar {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  flex: none;
+  place-items: center;
+  border: 1px solid var(--nts-color-primary);
+  border-radius: 50%;
+  color: var(--nts-color-primary);
+  font-size: var(--nts-type-caption-size);
+  font-weight: 600;
+}
+
+.user-menu__trigger-name,
+.user-menu__trigger-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.user-menu__header {
+  display: flex;
+  max-width: min(320px, calc(100vw - 32px));
+  flex-direction: column;
+  gap: var(--nts-space-1);
+  padding: var(--nts-space-3) var(--nts-space-4);
+  border-bottom: 1px solid var(--nts-color-line);
+  color: var(--nts-color-on-surface);
+}
+
+.user-menu__full-name,
+.user-menu__email {
+  overflow-wrap: anywhere;
+}
+
+.user-menu__email,
+.user-menu__role {
+  color: var(--nts-color-on-surface-muted);
+  font-size: var(--nts-type-caption-size);
+}
+
+@media (max-width: 599px) {
+  .user-menu__trigger-name {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}

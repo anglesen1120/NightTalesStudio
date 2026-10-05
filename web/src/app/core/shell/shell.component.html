@@ -1,0 +1,64 @@
+<a class="shell__skip-link" href="#content" (click)="focusContent($event)">
+  {{ 'shell.skipToContent' | transloco }}
+</a>
+
+<div class="shell" [class.shell--navigation-open]="navigationOpen()">
+  <nts-side-nav
+    #navigation
+    class="shell__navigation"
+    tabindex="-1"
+    [items]="store.navItems()"
+    [mode]="isMobile() ? 'over' : 'side'"
+    [attr.aria-hidden]="isMobile() && !navigationOpen() ? 'true' : null"
+    [attr.inert]="isMobile() && !navigationOpen() ? '' : null"
+    (navigate)="closeNavigation()"
+    (menuToggle)="closeNavigation()"
+  />
+
+  @if (isMobile() && navigationOpen()) {
+    <button
+      class="shell__scrim"
+      type="button"
+      tabindex="-1"
+      aria-hidden="true"
+      (click)="closeNavigation()"
+    ></button>
+  }
+
+  <div
+    class="shell__workspace"
+    [attr.aria-hidden]="isMobile() && navigationOpen() ? 'true' : null"
+    [attr.inert]="isMobile() && navigationOpen() ? '' : null"
+  >
+    <header class="shell__header">
+      <nts-top-bar
+        [title]="store.summary() === null ? '' : store.pageTitle()"
+        [userLabel]="store.summary()?.displayName ?? ''"
+        [me]="store.summary()"
+        [locale]="store.locale()"
+        [localeSaving]="store.localeSaving()"
+        [realtimeState]="store.realtimeState()"
+        [headerEnd]="registry.template()"
+        [menuExpanded]="navigationOpen()"
+        [showMenuButton]="isMobile()"
+        (menuToggle)="toggleNavigation()"
+        (localeChange)="store.changeLocale($event)"
+        (logOut)="store.logOut()"
+        (resumeRequested)="store.resumeRealtime()"
+      />
+    </header>
+
+    <main #content id="content" class="shell__content" tabindex="-1">
+      @if (store.profileError()) {
+        <section class="shell__profile-error">
+          <nts-error-state
+            bodyKey="shell.profile.loadFailed"
+            retryLabelKey="common.retry"
+            (retry)="store.retryProfile()"
+          />
+        </section>
+      }
+      <router-outlet />
+    </main>
+  </div>
+</div>

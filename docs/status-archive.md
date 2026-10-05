@@ -4,6 +4,12 @@ History moved out of STATUS.md to keep the live file small. The initial archive 
 
 ## Resume-here history (Current/Previous blocks, Next actions)
 
+### Superseded Web next line (2026-10-05, replaced when Session 13 opened the 10.2.6-T1 PR)
+
+Outcome: 10.2.6-T1 shell built (T3 gates closed); PR from `feature/10.2.6-T1-s13`.
+
+- **Web next (plan 10 Stage B):** Session 11 closed: 10.2.3-T1 merged as #129 (`2ad5b05`), 10.2.4-T1 merged as #130 (`4a6e227`) → next **10.2.6-T1 shell** (first consumer of `RealtimeService`; check its header `Depends on`, §Progress by plan); first read §Plan 10 hand-overs (pinned pre-#121 `web/openapi.json`, backend OpenAPI gaps, 10 CR-46, 10 CR-47, 10 CR-48) and the as-built `core/session` + `core/http` + `core/realtime` API (10.2.1-T1, 10.2.3-T1 and 10.2.4-T1 task §Notes; `signIn` takes three arguments, guards are standalone functions, `withIdempotency(intent, ctx?)` returns an `HttpContext`, `provideRealtime()` is already in `app.config.ts`). #130 merged without a green CI run (GitHub Actions billing, §Open findings).
+
 ### Superseded Session 10 Current/Next lines (2026-10-04, replaced when #131 `312db85` merged)
 
 - **Outcome:** 02.5.2-T2 merged as #131 without a CI run (GitHub Actions billing); Session 10 claim released; next backend task 02.5.2-T3.

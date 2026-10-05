@@ -1,0 +1,24 @@
+<div class="side-nav__brand" aria-hidden="true">
+  <span class="side-nav__brand-mark"></span>
+  <span class="side-nav__brand-name">NightTales Studio</span>
+</div>
+<mat-nav-list id="shell-navigation" [attr.aria-label]="'shell.nav.label' | transloco">
+  @for (item of items(); track item.id) {
+    <a
+      mat-list-item
+      class="side-nav__link"
+      [class.side-nav__link--active]="activeRouteId() === item.id"
+      [routerLink]="item.route"
+      routerLinkActive="side-nav__link--active"
+      ariaCurrentWhenActive="page"
+      [attr.aria-current]="activeRouteId() === item.id ? 'page' : null"
+      (click)="activate()"
+      (keydown.enter)="activateFromKeyboard($event)"
+    >
+      <span class="side-nav__icon" aria-hidden="true">
+        <ng-container *ngComponentOutlet="item.icon" />
+      </span>
+      <span class="side-nav__label">{{ item.labelKey | transloco }}</span>
+    </a>
+  }
+</mat-nav-list>

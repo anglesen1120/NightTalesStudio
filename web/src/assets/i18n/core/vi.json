@@ -45,5 +45,34 @@
       "signOut": "Đăng xuất",
       "reauthRequired": { "title": "Cần xác nhận lại", "body": "Hãy nhập lại mật khẩu để thực hiện thao tác nhạy cảm này." }
     }
+  },
+  "shell": {
+    "nav": {
+      "label": "Điều hướng chính",
+      "dashboard": "Bảng điều khiển",
+      "series": "Loạt bài",
+      "episodes": "Tập phim",
+      "open": "Mở điều hướng"
+    },
+    "menu": {
+      "triggerLabel": "Tài khoản",
+      "logOut": "Đăng xuất",
+      "role": { "user": "Người dùng", "admin": "Quản trị viên", "owner": "Chủ sở hữu" }
+    },
+    "language": {
+      "label": "Ngôn ngữ",
+      "vi": "Tiếng Việt",
+      "en": "English",
+      "saveFailed": "Không lưu được ngôn ngữ. Vui lòng thử lại."
+    },
+    "realtime": {
+      "connected": "Đã kết nối trực tiếp",
+      "reconnecting": "Đang kết nối lại…",
+      "paused": "Cập nhật trực tiếp đang tạm dừng",
+      "continue": "Tiếp tục"
+    },
+    "skipToContent": "Chuyển tới nội dung chính",
+    "title": { "dashboard": "Bảng điều khiển", "series": "Loạt bài", "episodes": "Tập phim" },
+    "profile": { "loadFailed": "Không tải được thông tin tài khoản" }
   }
 }

@@ -1,0 +1,12 @@
+@if (state() === 'connecting' || state() === 'backoff') {
+  <div class="realtime-status realtime-status--reconnecting">
+    <nts-icon-clock class="realtime-status__icon realtime-status__icon--moving" aria-hidden="true" />
+    <strong>{{ 'shell.realtime.reconnecting' | transloco }}</strong>
+  </div>
+} @else if (state() === 'paused') {
+  <div class="realtime-status realtime-status--paused">
+    <nts-icon-pause class="realtime-status__icon" aria-hidden="true" />
+    <strong>{{ 'shell.realtime.paused' | transloco }}</strong>
+    <button type="button" (click)="resumeRequested.emit()">{{ 'shell.realtime.continue' | transloco }}</button>
+  </div>
+}
