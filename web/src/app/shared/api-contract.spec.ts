@@ -36,8 +36,10 @@ const renderJob = {
 
 const detail = {
   brief: 'brief',
+  currentStory: null,
   etag: '"v3"',
   finalVideo: null,
+  generation: null,
   id: 'ep-1',
   lengthTier: 'short',
   nextActions: ['cancel'],
