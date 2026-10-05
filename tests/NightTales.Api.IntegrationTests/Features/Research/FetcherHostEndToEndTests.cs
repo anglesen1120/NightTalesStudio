@@ -65,6 +65,8 @@ public sealed class FetcherHostEndToEndTests(TestDatabase database) : Integratio
         {
             (await FetcherE2EHarness.WaitAsync(() => h.Seed.SourceStatus(task.SourceId) == "fetched", Bound, Ct))
                 .ShouldBeTrue($"source stayed {h.Seed.SourceStatus(task.SourceId)}; logs: {string.Join(" // ", h.Logs.Lines.Where(l => !l.StartsWith("Trace", StringComparison.Ordinal)).Take(20))}");
+            (await h.WaitForPostedResultAsync(task.TaskId, Bound, Ct))
+                .ShouldBeTrue("the result POST was not acknowledged by the fetcher");
         }
         finally
         {
@@ -159,6 +161,8 @@ public sealed class FetcherHostEndToEndTests(TestDatabase database) : Integratio
 
             (await FetcherE2EHarness.WaitAsync(() => h.Seed.SourceStatus(task.SourceId) == "fetched", Bound, Ct))
                 .ShouldBeTrue($"attempt 2 did not complete; source {h.Seed.SourceStatus(task.SourceId)}");
+            (await h.WaitForPostedResultAsync(task.TaskId, Bound, Ct))
+                .ShouldBeTrue("attempt 2's result POST was not acknowledged by the fetcher");
         }
         finally
         {
@@ -218,6 +222,8 @@ public sealed class FetcherHostEndToEndTests(TestDatabase database) : Integratio
         {
             (await FetcherE2EHarness.WaitAsync(() => h.Seed.SourceStatus(fetch.SourceId) == "fetched", Bound, Ct))
                 .ShouldBeTrue("the loop stopped after the find_sources task");
+            (await h.WaitForPostedResultAsync(fetch.TaskId, Bound, Ct))
+                .ShouldBeTrue("the fetch result POST was not acknowledged by the fetcher");
         }
         finally
         {
@@ -255,6 +261,8 @@ public sealed class FetcherHostEndToEndTests(TestDatabase database) : Integratio
             next = h.QueueHttpTask(world, "zeta-e2e.com", "/story/survivor");
             (await FetcherE2EHarness.WaitAsync(() => h.Seed.SourceStatus(next.SourceId) == "fetched", Bound, Ct))
                 .ShouldBeTrue("the loop did not continue after the 404");
+            (await h.WaitForPostedResultAsync(next.TaskId, Bound, Ct))
+                .ShouldBeTrue("the survivor's result POST was not acknowledged by the fetcher");
         }
         finally
         {
