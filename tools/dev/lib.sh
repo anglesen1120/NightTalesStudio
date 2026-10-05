@@ -17,6 +17,7 @@ nts_service_pattern() {
   case "$1" in
     api) printf 'NightTales.Api' ;;
     worker) printf 'NightTales.Worker' ;;
+    fetcher) printf 'NightTales.Fetcher' ;;
     mock) printf 'tools/mock-mpt' ;;
     web) printf 'node' ;;
     seaweedfs) printf 'weed' ;;

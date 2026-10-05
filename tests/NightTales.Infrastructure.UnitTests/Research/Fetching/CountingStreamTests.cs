@@ -1,5 +1,5 @@
 using NightTales.Domain.Research;
-using NightTales.Infrastructure.Research.Http;
+using NightTales.Fetcher.Core.Research.Http;
 using Shouldly;
 using Xunit;
 

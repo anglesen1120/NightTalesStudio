@@ -4,7 +4,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using NightTales.Domain.Research;
 using NightTales.Infrastructure.DependencyInjection;
-using NightTales.Infrastructure.Research.Http;
+using NightTales.Fetcher.Core.Research.Http;
 using Shouldly;
 using Xunit;
 
@@ -59,12 +59,12 @@ public sealed class AssemblyReferenceRules
             AssertAllowed(
                 core,
                 AllowLists.FetcherCoreAllowedReferences,
-                AllowLists.NoExtraPrefixes,
+                AllowLists.FetcherCoreAllowedPrefixes,
                 nameof(Fetcher_ReferencesOnlyDomainAndCore));
             AssertDeclaredAllowed(
                 core,
                 AllowLists.FetcherCoreAllowedReferences,
-                AllowLists.NoExtraPrefixes,
+                AllowLists.FetcherCoreAllowedPrefixes,
                 nameof(Fetcher_ReferencesOnlyDomainAndCore));
         }
 

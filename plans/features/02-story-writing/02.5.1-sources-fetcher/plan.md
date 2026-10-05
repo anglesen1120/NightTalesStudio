@@ -4,7 +4,7 @@
 > Contract: `../README.md` (D8, D10, D11, D19, D20, D21; F02, F13, F14, F15, F29; CR-1, CR-4).
 > Template: `../../../00-overview.md` §10.1 · Layout: `00-overview.md` §5.2, §6, §8.
 > Legend: ✅ read from source/docs · ⚠️ unverified · [DECISION] · [OPEN] · [INFERENCE].
-> Status: detailed plan, 2026-09-23. Implemented: 02.5.1-T1 (#119), 02.5.2-T1 (#121), 02.5.2-T2 (#131, develop `312db85`). Next: 02.5.2-T3 → T4.
+> Status: detailed plan, 2026-09-23. Implemented: 02.5.1-T1 (#119), 02.5.2-T1 (#121), 02.5.2-T2 (#131, develop `312db85`); 02.5.2-T3 in a PR (Session 12). Next: 02.5.2-T4.
 
 ## 1. Scope
 

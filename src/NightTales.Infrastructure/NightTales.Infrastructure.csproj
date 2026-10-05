@@ -2,6 +2,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\NightTales.Application\NightTales.Application.csproj" />
+    <!-- 02.5.2-T3 [DECISION T40]: the safe fetcher classes live in Fetcher.Core (Domain only) so the Fetcher host can use them without Infrastructure. -->
+    <ProjectReference Include="..\NightTales.Fetcher.Core\NightTales.Fetcher.Core.csproj" />
   </ItemGroup>
 
   <!--
@@ -43,7 +45,6 @@
     <PackageReference Include="Serilog.Formatting.Compact" />
     <PackageReference Include="Serilog.Sinks.Async" />
     <PackageReference Include="Serilog.Sinks.OpenTelemetry" />
-    <PackageReference Include="SmartReader" />
   </ItemGroup>
 
   <!--
@@ -54,16 +55,6 @@
   -->
   <ItemGroup>
     <EmbeddedResource Include="Identity/Resources/breached-passwords.txt" LogicalName="NightTales.Infrastructure.Identity.Resources.breached-passwords.txt" />
-  </ItemGroup>
-
-  <!--
-    02.5.1-T1 (02.5.1 plan §3.1): the IANA/Mozilla public suffix list that decides a source URL's registrable domain.
-    Vendored verbatim, MPL-2.0 header intact (the list is data; the licence applies to the list text), embedded so a
-    deployment cannot ship without it. `PublicSuffixListProvider` addresses it by this logical name; refresh it with
-    a PR that replaces the file from https://publicsuffix.org/list/public_suffix_list.dat.
-  -->
-  <ItemGroup>
-    <EmbeddedResource Include="Research/public_suffix_list.dat" LogicalName="NightTales.Infrastructure.Research.public_suffix_list.dat" />
   </ItemGroup>
 
   <!--

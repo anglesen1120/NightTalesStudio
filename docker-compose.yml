@@ -124,6 +124,34 @@ services:
       retries: 12
       start_period: 30s
 
+  fetcher:
+    # The source fetcher (02.5.2-T3, 02 D10/D11/D19). Opt-in: `docker compose --profile fetcher up fetcher`.
+    # It leases tasks from the api's internal listener (http://api:8081, on the compose network only) and
+    # fetches public web pages; it holds no database, storage, mail or OpenAI credential and listens on no
+    # port. Hardening: read-only root, a 64 MiB tmpfs /tmp, no volumes, no ports, no capabilities.
+    # The authoritative network (a dedicated subnet with internet-only egress, no route to postgres,
+    # storage, mail or the render nodes) is 11.2.2-T2; this dev compose cannot enforce an egress deny.
+    profiles: ["fetcher"]
+    build: { context: ., dockerfile: src/NightTales.Fetcher/Dockerfile }
+    image: nighttales-fetcher:dev
+    # Only the token: .nts/dev/config/compose.env also carries the Api's ES256 signing key, which the
+    # fetcher must never see, so tools/dev/up.sh writes the token alone to fetcher.env.
+    env_file:
+      - path: .nts/dev/config/fetcher.env
+        required: false
+    environment:
+      Fetcher__Internal__BaseUrl: http://api:8081
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    deploy:
+      resources:
+        limits: { cpus: "0.5", memory: 512M, pids: 128 }
+    depends_on:
+      api: { condition: service_healthy }
+
   mock-mpt:
     # The fake render node (11.1.2-T1, 11 README D14/F25): the optional Compose variant used by e2e.yml and
     # image smoke. The daily path is native (`tools/dev/up.sh` runs `dotnet run --project tools/mock-mpt` on

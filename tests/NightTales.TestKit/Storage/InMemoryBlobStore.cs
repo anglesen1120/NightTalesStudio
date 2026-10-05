@@ -81,21 +81,38 @@ public sealed class InMemoryBlobStore : IBlobStore
     /// <summary>How many calls of one operation were recorded.</summary>
     /// <param name="operation">The operation to count.</param>
     /// <returns>The number of recorded calls.</returns>
-    public int CountOf(BlobOperation operation) => _calls.Count(call => call.Operation == operation);
+    public int CountOf(BlobOperation operation)
+    {
+        lock (_objects)
+        {
+            return _calls.Count(call => call.Operation == operation);
+        }
+    }
 
     /// <summary>Places an object in the store without recording a call (test setup, not production traffic).</summary>
     /// <param name="bucket">The bucket.</param>
     /// <param name="key">The key.</param>
     /// <param name="content">The bytes.</param>
     /// <param name="contentType">The stored content type.</param>
-    public void Seed(string bucket, string key, byte[] content, string contentType = "video/mp4") =>
-        _objects[Locator(bucket, key)] = new StoredObject(content, contentType);
+    public void Seed(string bucket, string key, byte[] content, string contentType = "video/mp4")
+    {
+        lock (_objects)
+        {
+            _objects[Locator(bucket, key)] = new StoredObject(content, contentType);
+        }
+    }
 
     /// <summary>Whether the key is present.</summary>
     /// <param name="bucket">The bucket.</param>
     /// <param name="key">The key.</param>
     /// <returns>True when the key exists.</returns>
-    public bool Contains(string bucket, string key) => _objects.ContainsKey(Locator(bucket, key));
+    public bool Contains(string bucket, string key)
+    {
+        lock (_objects)
+        {
+            return _objects.ContainsKey(Locator(bucket, key));
+        }
+    }
 
     /// <inheritdoc />
     public async Task<ErrorOr<BlobInfo>> PutAsync(
@@ -106,7 +123,10 @@ public sealed class InMemoryBlobStore : IBlobStore
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(content);
-        _calls.Add(new BlobCall(BlobOperation.Put, bucket, key));
+        lock (_objects)
+        {
+            _calls.Add(new BlobCall(BlobOperation.Put, bucket, key));
+        }
 
         if (AsyncFailure is { } failure)
         {
@@ -117,7 +137,10 @@ public sealed class InMemoryBlobStore : IBlobStore
         await content.CopyToAsync(buffer, cancellationToken).ConfigureAwait(false);
 
         var bytes = buffer.ToArray();
-        _objects[Locator(bucket, key)] = new StoredObject(bytes, contentType);
+        lock (_objects)
+        {
+            _objects[Locator(bucket, key)] = new StoredObject(bytes, contentType);
+        }
 
         return new BlobInfo(bytes.LongLength, Convert.ToHexString(
             System.Security.Cryptography.SHA256.HashData(bytes)).ToLowerInvariant());
@@ -126,9 +149,12 @@ public sealed class InMemoryBlobStore : IBlobStore
     /// <inheritdoc />
     public Task<ErrorOr<BlobObject>> OpenReadAsync(string bucket, string key, CancellationToken cancellationToken)
     {
-        _calls.Add(new BlobCall(BlobOperation.Read, bucket, key));
+        lock (_objects)
+        {
+            _calls.Add(new BlobCall(BlobOperation.Read, bucket, key));
 
-        return Task.FromResult(Open(bucket, key, fromByte: 0));
+            return Task.FromResult(Open(bucket, key, fromByte: 0));
+        }
     }
 
     /// <inheritdoc />
@@ -138,35 +164,44 @@ public sealed class InMemoryBlobStore : IBlobStore
         long fromByte,
         CancellationToken cancellationToken)
     {
-        _calls.Add(new BlobCall(BlobOperation.Read, bucket, key));
+        lock (_objects)
+        {
+            _calls.Add(new BlobCall(BlobOperation.Read, bucket, key));
 
-        return Task.FromResult(Open(bucket, key, fromByte));
+            return Task.FromResult(Open(bucket, key, fromByte));
+        }
     }
 
     /// <inheritdoc />
     public Task<ErrorOr<Success>> DeleteAsync(string bucket, string key, CancellationToken cancellationToken)
     {
-        _calls.Add(new BlobCall(BlobOperation.Delete, bucket, key));
-
-        if (AsyncFailure is { } failure)
+        lock (_objects)
         {
-            return Task.FromResult<ErrorOr<Success>>(failure);
+            _calls.Add(new BlobCall(BlobOperation.Delete, bucket, key));
+
+            if (AsyncFailure is { } failure)
+            {
+                return Task.FromResult<ErrorOr<Success>>(failure);
+            }
+
+            // A missing key is success, exactly as the port promises.
+            _objects.Remove(Locator(bucket, key));
+
+            return Task.FromResult<ErrorOr<Success>>(Result.Success);
         }
-
-        // A missing key is success, exactly as the port promises.
-        _objects.Remove(Locator(bucket, key));
-
-        return Task.FromResult<ErrorOr<Success>>(Result.Success);
     }
 
     /// <inheritdoc />
     public Task<ErrorOr<bool>> ExistsAsync(string bucket, string key, CancellationToken cancellationToken)
     {
-        _calls.Add(new BlobCall(BlobOperation.Exists, bucket, key));
+        lock (_objects)
+        {
+            _calls.Add(new BlobCall(BlobOperation.Exists, bucket, key));
 
-        return Task.FromResult(AsyncFailure is { } failure
-            ? (ErrorOr<bool>)failure
-            : _objects.ContainsKey(Locator(bucket, key)));
+            return Task.FromResult(AsyncFailure is { } failure
+                ? (ErrorOr<bool>)failure
+                : _objects.ContainsKey(Locator(bucket, key)));
+        }
     }
 
     /// <inheritdoc />
@@ -175,11 +210,16 @@ public sealed class InMemoryBlobStore : IBlobStore
         string prefix,
         [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
     {
-        _calls.Add(new BlobCall(BlobOperation.List, bucket, prefix));
+        List<string> snapshot;
+        lock (_objects)
+        {
+            _calls.Add(new BlobCall(BlobOperation.List, bucket, prefix));
 
-        var prefixKey = $"{bucket}\u001f{prefix}";
+            var prefixKey = $"{bucket}\u001f{prefix}";
+            snapshot = [.. _objects.Keys.Where(key => key.StartsWith(prefixKey, StringComparison.Ordinal))];
+        }
 
-        foreach (var stored in _objects.Keys.Where(key => key.StartsWith(prefixKey, StringComparison.Ordinal)).ToList())
+        foreach (var stored in snapshot)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
@@ -192,8 +232,11 @@ public sealed class InMemoryBlobStore : IBlobStore
     /// <inheritdoc />
     public ErrorOr<Uri> CreateReadUrl(string bucket, string key, TimeSpan ttl, string? downloadFileName)
     {
-        _calls.Add(new BlobCall(BlobOperation.ReadUrl, bucket, key));
-        _readUrlRequests.Add(new BlobReadUrlRequest(bucket, key, ttl, downloadFileName));
+        lock (_objects)
+        {
+            _calls.Add(new BlobCall(BlobOperation.ReadUrl, bucket, key));
+            _readUrlRequests.Add(new BlobReadUrlRequest(bucket, key, ttl, downloadFileName));
+        }
 
         if (ReadUrlFailure is { } failure)
         {
