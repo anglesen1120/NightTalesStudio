@@ -41,6 +41,8 @@ class FakeDialogRef {
     },
   };
   closed = false;
+  /** Mirrors `MatDialogRef.disableClose` (the dialog's own Escape/Cancel are blocked by the component). */
+  disableClose = false;
   private readonly closedSubject = new Subject<void>();
 
   afterClosed(): Subject<void> {
@@ -53,6 +55,11 @@ class FakeDialogRef {
     this.closed = true;
     this.closedSubject.next();
     this.closedSubject.complete();
+  }
+
+  /** MatDialog closes on a backdrop click only while `disableClose` is false. */
+  backdropClick(): void {
+    if (!this.disableClose) this.close();
   }
 
   submit(password = 'pw', code = '123456'): void {
@@ -129,6 +136,11 @@ function setup(signedIn = true): Harness {
 
 const flush = (): Promise<void> => new Promise((resolve) => setTimeout(resolve));
 
+/** The dialog module loads lazily on first open: poll until `MatDialog.open` produced `count` refs. */
+function opened(dialog: FakeMatDialog, count = 1): Promise<void> {
+  return vi.waitFor(() => expect(dialog.refs).toHaveLength(count), { timeout: 2_000, interval: 1 });
+}
+
 const REAUTH_REQUIRED: Result<never> = {
   ok: false,
   error: { code: 'reauth_required', status: 401, kind: 'auth', fieldErrors: {} },
@@ -140,9 +152,10 @@ function errorOf(result: Result<unknown>): AppError {
 }
 
 describe('ReauthService', () => {
-  it('ReauthService_Open_UsesFocusSafeDialogConfigAndRequiresCode', () => {
+  it('ReauthService_Open_UsesFocusSafeDialogConfigAndRequiresCode', async () => {
     const { service, dialog } = setup();
     void service.ensureReauthenticated();
+    await opened(dialog);
 
     expect(dialog.configs).toEqual([{ data: { requireCode: true }, restoreFocus: true, autoFocus: '#reauth-password', ariaModal: true }]);
     expect(service.isDialogOpen()).toBe(true);
@@ -151,7 +164,10 @@ describe('ReauthService', () => {
   it('ReauthService_ConcurrentCallers_ShareOneDialogOnePostAndBothResolve', async () => {
     const { service, dialog, repo } = setup();
     const first = service.ensureReauthenticated();
+    // The flight registers before the lazy import resolves: a second caller joins the SAME promise synchronously.
     const second = service.ensureReauthenticated();
+    expect(second).toBe(first);
+    await opened(dialog);
     expect(dialog.refs).toHaveLength(1);
 
     dialog.at(0).submit('pw', '123456');
@@ -168,6 +184,7 @@ describe('ReauthService', () => {
     let release!: (result: FakeReauthResult) => void;
     repo.enqueue(new Promise<FakeReauthResult>((resolve) => (release = resolve)));
     const pending = service.ensureReauthenticated();
+    await opened(dialog);
 
     dialog.at(0).submit();
     dialog.at(0).submit();
@@ -189,8 +206,7 @@ describe('ReauthService', () => {
     };
 
     const result = service.withReauth(action);
-    await flush();
-    expect(dialog.refs).toHaveLength(1);
+    await opened(dialog);
     expect(calls).toBe(1);
     dialog.at(0).submit();
 
@@ -210,7 +226,7 @@ describe('ReauthService', () => {
       calls += 1;
       return Promise.resolve(REAUTH_REQUIRED);
     });
-    await flush();
+    await opened(dialog);
     dialog.at(0).submit();
 
     expect(errorOf(await result).code).toBe('reauth_required');
@@ -236,7 +252,7 @@ describe('ReauthService', () => {
       calls += 1;
       return Promise.resolve(REAUTH_REQUIRED);
     });
-    await flush();
+    await opened(dialog);
     dialog.at(0).close();
 
     expect(errorOf(await result)).toMatchObject({ code: 'reauth_required', status: 0 });
@@ -250,7 +266,7 @@ describe('ReauthService', () => {
       calls += 1;
       return Promise.resolve(REAUTH_REQUIRED);
     });
-    await flush();
+    await opened(dialog);
     store.signIn(ownerTokens('owner-2'), 'owner', ['pwd', 'otp']);
     TestBed.tick();
 
@@ -268,6 +284,7 @@ describe('ReauthService', () => {
     const settled = vi.fn();
     const pending = service.ensureReauthenticated();
     void pending.then(settled);
+    await opened(dialog);
 
     dialog.at(0).submit();
     await flush();
@@ -293,6 +310,7 @@ describe('ReauthService', () => {
     const { service, dialog, repo } = setup();
     repo.enqueue(fakeReauthError('session_revoked', 401, 'auth'));
     const pending = service.ensureReauthenticated();
+    await opened(dialog);
 
     dialog.at(0).submit();
 
@@ -305,6 +323,7 @@ describe('ReauthService', () => {
     const { service, dialog, repo } = setup();
     repo.enqueue(fakeReauthError('rate_limited', 429, 'rate_limit', 30));
     const pending = service.ensureReauthenticated();
+    await opened(dialog);
     const ref = dialog.at(0);
 
     ref.submit();
@@ -327,6 +346,7 @@ describe('ReauthService', () => {
     const { service, dialog, repo } = setup();
     repo.enqueue(fakeReauthError('network_error', 0, 'network'));
     void service.ensureReauthenticated();
+    await opened(dialog);
 
     dialog.at(0).submit();
     await flush();
@@ -339,6 +359,7 @@ describe('ReauthService', () => {
     const { service, store, dialog } = setup();
     const first = service.ensureReauthenticated();
     const second = service.ensureReauthenticated();
+    await opened(dialog);
 
     store.signOut('logout');
 
@@ -353,6 +374,7 @@ describe('ReauthService', () => {
     let release!: (result: FakeReauthResult) => void;
     repo.enqueue(new Promise<FakeReauthResult>((resolve) => (release = resolve)));
     const pending = service.ensureReauthenticated();
+    await opened(dialog);
     const ref = dialog.at(0);
     ref.submit();
     const painted = ref.states.length;
@@ -371,6 +393,7 @@ describe('ReauthService', () => {
     let release!: (result: FakeReauthResult) => void;
     repo.enqueue(new Promise<FakeReauthResult>((resolve) => (release = resolve)));
     const pending = service.ensureReauthenticated();
+    await opened(dialog);
     dialog.at(0).submit();
 
     store.signIn(ownerTokens('owner-2'), 'owner', ['pwd', 'otp']);
@@ -383,10 +406,11 @@ describe('ReauthService', () => {
   it('ReauthService_AfterGenerationChange_NextCallerOpensANewDialog', async () => {
     const { service, store, dialog } = setup();
     const old = service.ensureReauthenticated();
+    await opened(dialog);
     store.signIn(ownerTokens('owner-2'), 'owner', ['pwd', 'otp']);
 
     const fresh = service.ensureReauthenticated();
-    expect(dialog.refs).toHaveLength(2);
+    await opened(dialog, 2);
     expect(errorOf(await old).status).toBe(0);
 
     dialog.at(1).submit();
@@ -396,6 +420,7 @@ describe('ReauthService', () => {
   it('ReauthService_DialogClosedWithoutSuccess_ResolvesCancelledAndIssuesNoPost', async () => {
     const { service, dialog, repo } = setup();
     const pending = service.ensureReauthenticated();
+    await opened(dialog);
 
     dialog.at(0).close();
 
@@ -409,12 +434,74 @@ describe('ReauthService', () => {
     let release!: (result: FakeReauthResult) => void;
     repo.enqueue(new Promise<FakeReauthResult>((resolve) => (release = resolve)));
     const pending = service.ensureReauthenticated();
+    await opened(dialog);
     dialog.at(0).submit();
 
     dialog.at(0).close();
     release(fakeReauthOk());
 
     expect(errorOf(await pending)).toMatchObject({ code: 'reauth_required', status: 0 });
+  });
+
+  it('ReauthService_SessionReplacedWhileDialogModuleLoads_OpensNoDialog', async () => {
+    const { service, store, dialog } = setup();
+    const pending = service.ensureReauthenticated();
+    // The flight is registered but the lazy import has not resolved: sign-in bumps the generation underneath it.
+    store.signIn(ownerTokens('owner-2'), 'owner', ['pwd', 'otp']);
+
+    expect(errorOf(await pending)).toMatchObject({ code: 'session_revoked', status: 0 });
+    await flush(); // let the import resolve: it must never open a dialog for the ended flight
+    expect(dialog.refs).toHaveLength(0);
+    expect(service.isDialogOpen()).toBe(false);
+  });
+
+  it('ReauthService_LogoutWhileDialogModuleLoads_OpensNoDialog', async () => {
+    const { service, store, dialog } = setup();
+    const pending = service.ensureReauthenticated();
+
+    store.signOut('logout');
+
+    expect(errorOf(await pending)).toMatchObject({ code: 'session_revoked', status: 0 });
+    await flush();
+    expect(dialog.refs).toHaveLength(0);
+    expect(service.isDialogOpen()).toBe(false);
+  });
+
+  it('ReauthService_SubmitBlocksBackdropWhilePostInFlight_AndRestoresAfter', async () => {
+    const { service, dialog, repo } = setup();
+    let release!: (result: FakeReauthResult) => void;
+    repo.enqueue(new Promise<FakeReauthResult>((resolve) => (release = resolve)));
+    const pending = service.ensureReauthenticated();
+    await opened(dialog);
+    const ref = dialog.at(0);
+
+    ref.submit();
+    expect(ref.disableClose).toBe(true);
+    ref.backdropClick(); // Escape/Cancel are blocked too: the third dismiss path must not close mid-POST
+    expect(ref.closed).toBe(false);
+
+    release(fakeReauthError('invalid_credentials', 401, 'auth'));
+    await flush();
+    expect(ref.disableClose).toBe(false);
+
+    ref.backdropClick();
+    expect(ref.closed).toBe(true);
+    expect(errorOf(await pending)).toMatchObject({ code: 'reauth_required', status: 0 });
+  });
+
+  it('ReauthService_WithReauth_GenerationChangedByFirstAction_EndsWithoutOpening', async () => {
+    const { service, store, dialog } = setup();
+    let calls = 0;
+    const result = service.withReauth(() => {
+      calls += 1;
+      if (calls === 1) store.signIn(ownerTokens('owner-2'), 'owner', ['pwd', 'otp']); // session replaced mid-action
+      return Promise.resolve(REAUTH_REQUIRED);
+    });
+
+    expect(errorOf(await result)).toMatchObject({ code: 'session_revoked', status: 0 });
+    await flush();
+    expect(calls).toBe(1);
+    expect(dialog.refs).toHaveLength(0);
   });
 
   it('ReauthService_NoFullSession_ResolvesErrWithoutOpeningADialog', async () => {

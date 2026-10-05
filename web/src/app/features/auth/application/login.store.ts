@@ -31,6 +31,8 @@ export class LoginStore {
   private readonly retryAfterState = signal<number | null>(null);
   private readonly rateLimitedUntilState = signal<number | null>(null);
   private destroyed = false;
+  /** Bumped per `submitMfa` attempt and per `backToPassword`/`toggleRecovery`, so a result of a superseded attempt is dropped. */
+  private mfaAttempt = 0;
   private readonly userSignedInState = signal(false);
 
   readonly step = this.stepState.asReadonly();
@@ -94,7 +96,13 @@ export class LoginStore {
     this.rateLimitedUntilState.set(null);
   }
 
+  /**
+   * Leaves the MFA step for the password form. On the MFA step an in-flight request is always the `loginMfa` POST:
+   * superseding the attempt unlocks the form at once and makes the late result a no-op.
+   */
   backToPassword(): void {
+    this.mfaAttempt += 1;
+    if (this.stepState() === 'mfa') this.submittingState.set(false);
     this.mfaTokenState.set(null);
     this.recoveryModeState.set(false);
     this.stepState.set('password');
@@ -124,19 +132,21 @@ export class LoginStore {
 
   /**
    * The MFA step: one POST with `code` (TOTP) or `recoveryCode` (recovery mode), never both and never empty (C10).
-   * Single-flight; a late result after destroy or a session generation change paints nothing and signs nobody in.
-   * `invalid_mfa_code` keeps the step; `mfa_token_invalid` (challenge killed or expired) returns to the password step.
+   * Single-flight; a late result after destroy, a session generation change or a superseded attempt (`backToPassword`,
+   * `toggleRecovery`) paints nothing and signs nobody in. `invalid_mfa_code` keeps the step; `mfa_token_invalid`
+   * (challenge killed or expired) returns to the password step.
    */
   async submitMfa(rawCode: string): Promise<void> {
     const mfaToken = this.mfaTokenState();
     const code = rawCode.trim();
     if (mfaToken === null || code === '' || this.submittingState() || this.rateLimitedUntilState() !== null) return;
     const generation = this.session.generation();
+    const attempt = ++this.mfaAttempt;
     const returnUrl = this.route.snapshot.queryParamMap.get('returnUrl');
     this.submittingState.set(true);
     this.clearError();
     const result = await this.repository.loginMfa(mfaToken, code, this.recoveryModeState() ? 'recovery' : 'totp');
-    if (this.destroyed || generation !== this.session.generation()) return;
+    if (this.destroyed || generation !== this.session.generation() || attempt !== this.mfaAttempt) return;
     this.submittingState.set(false);
     if (!result.ok) {
       if (result.error.code === 'mfa_token_invalid') {
@@ -150,8 +160,13 @@ export class LoginStore {
     await this.proceed(result.value, returnUrl);
   }
 
-  /** Swaps TOTP and recovery-code entry; drops the previous attempt's error. */
+  /**
+   * Swaps TOTP and recovery-code entry; drops the previous attempt's error. The user moved on to a different
+   * credential, so like `backToPassword` it supersedes an in-flight `submitMfa` and its late result is a no-op.
+   */
   toggleRecovery(): void {
+    this.mfaAttempt += 1;
+    if (this.stepState() === 'mfa') this.submittingState.set(false);
     this.recoveryModeState.update((on) => !on);
     this.clearError();
   }

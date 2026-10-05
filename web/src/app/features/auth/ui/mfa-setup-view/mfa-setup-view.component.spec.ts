@@ -184,6 +184,57 @@ describe('MfaSetupViewComponent', () => {
     expect(root.querySelectorAll('.enrol-codes .enrol-copy').length).toBe(10);
   });
 
+  it.each([
+    ['errors.network_error', errorsEn.network_error],
+    ['errors.service_unavailable', errorsEn.service_unavailable],
+  ])('codes step renders the %s failure as a live alert and retries regeneration', async (formError, message) => {
+    const { fixture, root } = await setupView(viewModel({ step: 'codes', codes: CODES, formError }));
+    const regenerate = vi.fn();
+    onEmit(fixture.componentInstance.regenerate, regenerate);
+
+    const alert = root.querySelector<HTMLElement>('#enrol-codes-form-alert');
+    expect(alert?.getAttribute('role')).toBe('alert');
+    expect(alert?.getAttribute('tabindex')).toBe('-1');
+    expect(alert?.textContent).toContain(message);
+    [...(alert?.querySelectorAll<HTMLButtonElement>('button') ?? [])]
+      .find((button) => button.textContent?.includes(errorsEn.action.retry))
+      ?.click();
+    expect(regenerate).toHaveBeenCalledTimes(1);
+  });
+
+  it('codes step renders cancelled re-auth as a status and retries regeneration', async () => {
+    const { fixture, root } = await setupView(
+      viewModel({ step: 'codes', codes: CODES, reauthRequired: true }),
+    );
+    const regenerate = vi.fn();
+    onEmit(fixture.componentInstance.regenerate, regenerate);
+
+    const banner = root.querySelector<HTMLElement>('.enrol-banner');
+    expect(banner?.getAttribute('role')).toBe('status');
+    expect(banner?.textContent).toContain(authEn.enrol.reauthTitle);
+    expect(banner?.textContent).toContain(errorsEn.reauth_required);
+    banner?.querySelector<HTMLButtonElement>('button')?.click();
+    expect(regenerate).toHaveBeenCalledTimes(1);
+  });
+
+  it('codes step renders the rate-limit countdown and locks regeneration', async () => {
+    const { root } = await setupView(
+      viewModel({ step: 'codes', codes: CODES, formError: 'errors.rate_limited', retryAfterSec: 120 }),
+    );
+
+    expect(root.querySelector('#enrol-codes-retry nts-retry-countdown')).not.toBeNull();
+    expect(root.querySelector('#enrol-codes-retry')?.textContent).toContain(authEn.rateLimited.message);
+    const regenerate = [...root.querySelectorAll<HTMLButtonElement>('button')].find((button) =>
+      button.textContent?.includes(authEn.enrol.regenerate),
+    );
+    expect(regenerate?.disabled).toBe(true);
+  });
+
+  it('codes step hides regeneration for an enrolment-only visit', async () => {
+    const { root } = await setupView(viewModel({ step: 'codes', codes: CODES, enrolmentOnly: true }));
+    expect(root.textContent).not.toContain(authEn.enrol.regenerate);
+  });
+
   it('primary action is disabled until confirmSaved and emits finish when allowed', async () => {
     const { fixture, root } = await setupView(viewModel({ step: 'codes', codes: CODES, confirmedSaved: false }));
     const finish = vi.fn();

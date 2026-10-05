@@ -304,6 +304,13 @@ describe('LoginPageComponent MFA step', () => {
     expect(root.querySelector('nts-mfa-step-form')).not.toBeNull();
     expect(session.signIn).not.toHaveBeenCalled();
     expect(router.navigateByUrl).not.toHaveBeenCalled();
+    // `invalid_mfa_code` is a field error on the code control, never the form alert (D9 wiring).
+    const error = root.querySelector('#mfa-code-error');
+    expect(error?.textContent?.trim()).toBe(errorsEn.invalid_mfa_code);
+    const input = root.querySelector<HTMLInputElement>('#mfa-code');
+    expect(input?.getAttribute('aria-invalid')).toBe('true');
+    expect(input?.getAttribute('aria-describedby')).toContain('mfa-code-error');
+    expect(root.querySelector('nts-mfa-step-form [role="alert"]')).toBeNull();
   });
 
   it('returns to the password form with the expired-challenge alert when the mfaToken is rejected', async () => {

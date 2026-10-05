@@ -126,4 +126,20 @@ describe('MfaStepFormComponent', () => {
     expect(root.querySelector('#mfa-retry')).not.toBeNull();
     expect(elapsed).not.toHaveBeenCalled();
   });
+
+  it('disables the back and recovery-toggle buttons while the request is in flight', async () => {
+    const { fixture, root } = await setup(viewModel({ submitting: true, canSubmit: false }));
+    const toggleRecovery = vi.fn();
+    const backToPassword = vi.fn();
+    onEmit(fixture.componentInstance.toggleRecovery, toggleRecovery);
+    onEmit(fixture.componentInstance.backToPassword, backToPassword);
+    const mode = root.querySelector<HTMLButtonElement>('button.mfa-mode');
+    const back = root.querySelector<HTMLButtonElement>('button.mfa-back');
+    expect(mode?.disabled).toBe(true);
+    expect(back?.disabled).toBe(true);
+    mode?.click();
+    back?.click();
+    expect(toggleRecovery).not.toHaveBeenCalled();
+    expect(backToPassword).not.toHaveBeenCalled();
+  });
 });

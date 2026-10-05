@@ -72,10 +72,10 @@
       @if (vm().submitting) {
         <span class="visually-hidden" role="status">{{ 'auth.mfa.submitting' | transloco }}</span>
       }
-      <button class="mfa-mode" mat-button type="button" (click)="toggleRecovery.emit()">
+      <button class="mfa-mode" mat-button type="button" [disabled]="vm().submitting" (click)="toggleRecovery.emit()">
         {{ (vm().recoveryMode ? 'auth.mfa.useTotp' : 'auth.mfa.useRecovery') | transloco }}
       </button>
-      <button class="mfa-back" mat-button type="button" (click)="backToPassword.emit()">
+      <button class="mfa-back" mat-button type="button" [disabled]="vm().submitting" (click)="backToPassword.emit()">
         {{ 'auth.mfa.back' | transloco }}
       </button>
     </div>

@@ -37,6 +37,8 @@ export class EnrolmentStore {
   private readonly rateLimitedUntilState = signal<number | null>(null);
   private readonly enrolmentOnlyState = signal(this.session.mode() === 'enrolment');
   private destroyed = false;
+  /** Generation created when a successful enrolment-only verify clears its token; its recovery codes stay visible. */
+  private retainCodesThroughGeneration: number | null = null;
 
   readonly step = this.stepState.asReadonly();
   readonly setup = this.setupState.asReadonly();
@@ -75,12 +77,17 @@ export class EnrolmentStore {
       this.destroyed = true;
       this.dropSecrets();
     });
-    // A session end or any identity change (logout, interceptor sign-out, another sign-in) drops every secret; an
-    // in-flight call of the previous identity is abandoned (its late result is ignored by the generation check).
+    // An external session end or identity change drops every secret. The exact generation created when a successful
+    // enrolment-only verify clears its narrow token is the sole exception: its one-time codes must remain saveable.
     effect(() => {
       this.session.endReason();
-      this.session.generation();
+      const generation = this.session.generation();
       untracked(() => {
+        if (generation === this.retainCodesThroughGeneration && this.stepState() === 'codes') {
+          this.retainCodesThroughGeneration = null;
+          return;
+        }
+        this.retainCodesThroughGeneration = null;
         this.dropSecrets();
         this.submittingState.set(false);
       });
@@ -137,6 +144,12 @@ export class EnrolmentStore {
     this.codesState.set(result.value);
     this.confirmedSavedState.set(false);
     this.stepState.set('codes');
+    if (this.enrolmentOnlyState()) {
+      // The verify response is the last request allowed for this narrow token. Clear it immediately, while retaining
+      // the one-time codes in this page-scoped store until the owner confirms that they have saved them.
+      this.retainCodesThroughGeneration = this.session.generation() + 1;
+      this.session.reset();
+    }
   }
 
   /**

@@ -1,7 +1,13 @@
-import { Injectable, Injector, effect, inject, signal, untracked } from '@angular/core';
-import { MatDialog, type MatDialogRef } from '@angular/material/dialog';
+import { Injectable, Injector, effect, inject, signal, untracked, type Type } from '@angular/core';
+import type { MatDialog, MatDialogRef } from '@angular/material/dialog';
 import { messageKeyOf, type AppError, type Result } from '@core/errors';
-import { REAUTH_DIALOG_IDLE, ReauthDialogComponent, type ReauthDialogResult, type ReauthDialogState } from '@shared/ui';
+import type { ReauthDialogComponent } from '@shared/ui/dialog/reauth-dialog/reauth-dialog.component';
+import {
+  REAUTH_DIALOG_IDLE,
+  type ReauthDialogData,
+  type ReauthDialogResult,
+  type ReauthDialogState,
+} from '@shared/ui/dialog/reauth-dialog/reauth-dialog.model';
 import { ReauthPort } from './reauth.port';
 import type { SessionScoped } from './session-scope';
 import { SessionStore } from './session-store';
@@ -23,9 +29,10 @@ const CANCELLED: AppError = { code: 'reauth_required', status: 0, kind: 'auth', 
 const ENDED: AppError = { code: 'session_revoked', status: 0, kind: 'auth', fieldErrors: {} };
 
 interface Flight {
-  /** `SessionStore.generation()` captured when the dialog opened; the flight never outlives it. */
+  /** `SessionStore.generation()` captured when the flight registered; the flight never outlives it. */
   readonly generation: number;
-  readonly ref: MatDialogRef<ReauthDialogComponent, void>;
+  /** `null` while the lazily imported dialog module is still loading; never read without a null check. */
+  ref: MatDialogRef<ReauthDialogComponent, void> | null;
   readonly promise: Promise<Result<void>>;
   readonly resolve: (result: Result<void>) => void;
   /** `OutputRefSubscription` (outputs) and rxjs `Subscription` (`afterClosed`) both expose `unsubscribe()`. */
@@ -54,9 +61,10 @@ function fail(error: AppError): Result<never> {
  */
 @Injectable({ providedIn: 'root' })
 export class ReauthService implements SessionScoped {
-  private readonly dialog = inject(MatDialog);
-  // Resolved on the first submit, not at construction: `SESSION_SCOPED.reset()` instantiates this service on every
-  // sign-out, and that must not pull the HTTP repository (and `HttpClient`) in for a dialog that never opened.
+  // `Injector`, not `inject(MatDialog)`: nothing else eagerly loads `@angular/material/dialog`, so the service
+  // resolves it (and the lazily imported component module) only at first open, keeping both out of the initial
+  // chunk — the same lazy pattern as `ReauthPort`, resolved below so construction on `SESSION_SCOPED.reset()`
+  // never pulls in the HTTP repository (PERF-1).
   private readonly injector = inject(Injector);
   private readonly session = inject(SessionStore);
 
@@ -102,6 +110,9 @@ export class ReauthService implements SessionScoped {
     const generation = this.session.generation();
     const first = await action();
     if (first.ok || first.error.code !== 'reauth_required') return first;
+    // Re-check before touching the flight: a session that ended or was replaced while `action` ran must never
+    // open a dialog (SEC-2); the post-dialog check below still guards the dialog window.
+    if (this.session.generation() !== generation) return fail(ENDED);
     const reauth = await this.ensureReauthenticated();
     if (!reauth.ok) return fail(reauth.error);
     if (this.session.generation() !== generation) return fail(ENDED);
@@ -114,20 +125,20 @@ export class ReauthService implements SessionScoped {
     if (flight !== null) this.settle(flight, fail(ENDED));
   }
 
+  /**
+   * Registers the flight synchronously — before the lazy imports below start — so a second caller arriving while
+   * the module loads shares this flight: one promise, one dialog. The component module and `@angular/material/dialog`
+   * load on first open only (PERF-1); a reset or generation change that lands meanwhile settles the flight in
+   * `attachDialog` before anything opens.
+   */
   private open(generation: number): Flight {
     let resolve!: (result: Result<void>) => void;
     const promise = new Promise<Result<void>>((r) => {
       resolve = r;
     });
-    const ref = this.dialog.open<ReauthDialogComponent, { requireCode: boolean }, void>(ReauthDialogComponent, {
-      data: { requireCode: REQUIRE_CODE },
-      restoreFocus: true,
-      autoFocus: '#reauth-password',
-      ariaModal: true,
-    });
     const flight: Flight = {
       generation,
-      ref,
+      ref: null,
       promise,
       resolve,
       subscriptions: [],
@@ -136,14 +147,47 @@ export class ReauthService implements SessionScoped {
       done: false,
     };
     this.flight = flight;
+    void this.attachDialog(flight);
+    return flight;
+  }
+
+  private async attachDialog(flight: Flight): Promise<void> {
+    let component: Type<ReauthDialogComponent>;
+    let dialog: MatDialog;
+    try {
+      const [componentModule, dialogModule] = await Promise.all([
+        import('@shared/ui/dialog/reauth-dialog/reauth-dialog.component'),
+        import('@angular/material/dialog'),
+      ]);
+      component = componentModule.ReauthDialogComponent;
+      dialog = this.injector.get(dialogModule.MatDialog);
+    } catch {
+      // A failed chunk load ends the waiters with a catalogue code (`network_error` renders), never a silent hang.
+      this.settle(flight, fail({ code: 'network_error', status: 0, kind: 'network', fieldErrors: {} }));
+      return;
+    }
+    // The flight ended while the imports were pending (reset, sign-out) or the generation changed under it:
+    // nothing may open for a flight of another session.
+    if (flight.done) return;
+    if (this.session.generation() !== flight.generation) {
+      this.settle(flight, fail(ENDED));
+      return;
+    }
+
+    const ref = dialog.open<ReauthDialogComponent, ReauthDialogData, void>(component, {
+      data: { requireCode: REQUIRE_CODE },
+      restoreFocus: true,
+      autoFocus: '#reauth-password',
+      ariaModal: true,
+    });
+    flight.ref = ref;
     this.openState.set(true);
 
-    const component = ref.componentInstance;
     flight.subscriptions.push(
-      component.submitted.subscribe((result) => {
+      ref.componentInstance.submitted.subscribe((result) => {
         void this.submit(flight, result);
       }),
-      component.retryAfterElapsed.subscribe(() => {
+      ref.componentInstance.retryAfterElapsed.subscribe(() => {
         if (!flight.done) this.push(flight, REAUTH_DIALOG_IDLE);
       }),
       // Escape / Cancel (`mat-dialog-close`) / backdrop: closed without a success.
@@ -151,17 +195,22 @@ export class ReauthService implements SessionScoped {
         this.settle(flight, fail(CANCELLED));
       }),
     );
-    return flight;
   }
 
   private async submit(flight: Flight, result: ReauthDialogResult): Promise<void> {
     // One POST per submit: ignore a repeat while one is in flight and while a 429 countdown disables the button.
     if (flight.done || flight.submitting || flight.state.retryAfterSec !== null) return;
+    const ref = flight.ref;
+    if (ref === null) return; // unreachable: `submitted` only fires after `attachDialog` set the ref
     flight.submitting = true;
+    // Block the backdrop too while the POST is in flight: Escape/Cancel are already disabled by the dialog, and a
+    // backdrop close would settle the flight CANCELLED while the request may already have succeeded (CR-3).
+    ref.disableClose = true;
     this.push(flight, { ...flight.state, submitting: true, errorKey: null, errorField: null, traceId: null });
 
     const outcome = await this.injector.get(ReauthPort).reauth(result.password, result.code);
     flight.submitting = false;
+    ref.disableClose = false;
 
     if (flight.done) return; // closed or ended meanwhile: a late answer paints nothing
     if (this.session.generation() !== flight.generation) {
@@ -196,10 +245,10 @@ export class ReauthService implements SessionScoped {
 
   private push(flight: Flight, state: ReauthDialogState): void {
     flight.state = state;
-    flight.ref.componentRef?.setInput('state', state);
+    flight.ref?.componentRef?.setInput('state', state);
   }
 
-  /** Ends the flight once: detaches, closes the dialog, resolves every waiter. A second call is a no-op. */
+  /** Ends the flight once: detaches, closes the dialog if it opened, resolves every waiter. A second call is a no-op. */
   private settle(flight: Flight, result: Result<void>): void {
     if (flight.done) return;
     flight.done = true;
@@ -208,7 +257,7 @@ export class ReauthService implements SessionScoped {
       this.flight = null;
       this.openState.set(false);
     }
-    flight.ref.close();
+    flight.ref?.close();
     flight.resolve(result);
   }
 }

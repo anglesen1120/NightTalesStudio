@@ -462,5 +462,56 @@ describe('LoginStore', () => {
       expect(signIn).not.toHaveBeenCalled();
       expect(navigate).not.toHaveBeenCalled();
     });
+
+    it('LoginStore_SubmitMfa_BackToPasswordMidFlight_DropsLateSuccess', async () => {
+      const { store, repo, session, navigate } = await atMfaStep();
+      repo.defer();
+      repo.willReturn('loginMfa', { ok: true, value: { kind: 'ok', session: SESSION } });
+      const pending = store.submitMfa('123456');
+      expect(store.submitting()).toBe(true);
+      store.backToPassword();
+      expect(store.step()).toBe('password');
+      expect(store.submitting()).toBe(false);
+      const signIn = vi.spyOn(session, 'signIn');
+      repo.resolveNext();
+      await pending;
+      expect(signIn).not.toHaveBeenCalled();
+      expect(navigate).not.toHaveBeenCalled();
+      expect(store.step()).toBe('password');
+      expect(store.error()).toBeNull();
+    });
+
+    it('LoginStore_SubmitMfa_BackToPasswordMidFlight_LateMfaTokenInvalidPaintsNoAlert', async () => {
+      const { store, repo, session } = await atMfaStep();
+      repo.defer();
+      repo.willFail('loginMfa', appError('mfa_token_invalid', 401, 'auth'));
+      const pending = store.submitMfa('123456');
+      store.backToPassword();
+      const signIn = vi.spyOn(session, 'signIn');
+      repo.resolveNext();
+      await pending;
+      expect(store.step()).toBe('password');
+      expect(store.formError()).toBeNull();
+      expect(store.error()).toBeNull();
+      expect(signIn).not.toHaveBeenCalled();
+    });
+
+    it('LoginStore_SubmitMfa_ToggleRecoveryMidFlight_SupersedesTheAttempt', async () => {
+      const { store, repo, session, navigate } = await atMfaStep();
+      repo.defer();
+      repo.willReturn('loginMfa', { ok: true, value: { kind: 'ok', session: SESSION } });
+      const pending = store.submitMfa('123456');
+      store.toggleRecovery();
+      expect(store.recoveryMode()).toBe(true);
+      expect(store.submitting()).toBe(false);
+      const signIn = vi.spyOn(session, 'signIn');
+      repo.resolveNext();
+      await pending;
+      expect(signIn).not.toHaveBeenCalled();
+      expect(navigate).not.toHaveBeenCalled();
+      expect(store.step()).toBe('mfa');
+      expect(store.recoveryMode()).toBe(true);
+      expect(store.error()).toBeNull();
+    });
   });
 });

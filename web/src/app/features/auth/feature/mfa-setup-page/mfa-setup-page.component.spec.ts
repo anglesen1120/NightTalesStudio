@@ -247,6 +247,18 @@ describe('MfaSetupPageComponent', () => {
       expect(navigate).toHaveBeenCalledWith('/dashboard');
     });
 
+    it('MfaSetupPage_Finish_FromDone_RetriesDashboardNavigation', async () => {
+      const { store, page, navigate } = await atCodes({ enrolmentOnly: false });
+      page.confirmSavedChange(true);
+      page.finish();
+      expect(store.step()).toBe('done');
+      navigate.mockClear();
+
+      page.finish();
+      expect(navigate).toHaveBeenCalledOnce();
+      expect(navigate).toHaveBeenCalledWith('/dashboard');
+    });
+
     it('MfaSetupPage_Finish_EnrolmentOnly_StaysOnDoneAndReLoginClearsTheTokenThenGoesToLogin', async () => {
       const { store, page, navigate, session } = await atCodes({ enrolmentOnly: true });
       page.confirmSavedChange(true);

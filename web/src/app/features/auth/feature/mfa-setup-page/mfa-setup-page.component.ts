@@ -108,9 +108,10 @@ export class MfaSetupPageComponent {
     this.store.setConfirmedSaved(value);
   }
 
-  /** Leaves the page after the checkbox; an enrolment-only owner stays on the done state and uses `reLogin`. */
+  /** Completes the codes gate, or retries navigation when an earlier dashboard navigation left this page mounted. */
   protected finish(): void {
-    if (this.store.finish() && !this.store.enrolmentOnly()) void this.router.navigateByUrl(FULL_SESSION_HOME);
+    const completed = this.store.step() === 'done' || this.store.finish();
+    if (completed && !this.store.enrolmentOnly()) void this.router.navigateByUrl(FULL_SESSION_HOME);
   }
 
   protected regenerate(): void {

@@ -14,8 +14,11 @@ import { expect, type Locator, type Page, type Route } from '@playwright/test';
  *   deleted by `global-teardown.ts` at the end of every run.
  */
 
-/** `test.use(AUTH_SPEC_USE)` at the top of every spec that authenticates: no trace or video, even on failure. */
-export const AUTH_SPEC_USE = { trace: 'off', video: 'off' } as const;
+/** `test.use(AUTH_SPEC_USE)` at the top of every spec that authenticates: no trace, video or screenshot, even
+ * on failure (the global config's `screenshot: 'only-on-failure'` could otherwise persist the real manual key
+ * or recovery codes into e2e-results/ and playwright-report/). The failure `error-context.md` has no
+ * `use`-level switch in Playwright 1.63.0; `global-teardown.ts` scrubs it instead. */
+export const AUTH_SPEC_USE = { trace: 'off', video: 'off', screenshot: 'off' } as const;
 
 export const AUTH_DIR = resolve(import.meta.dirname, '..', '.auth');
 const SECRET_FILE = join(AUTH_DIR, 'owner-totp.json');

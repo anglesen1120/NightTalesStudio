@@ -40,6 +40,43 @@
         <strong>{{ 'auth.enrol.recoveryWarning' | transloco }}</strong>
         <span>{{ 'auth.enrol.recoverySaveAll' | transloco }}</span>
       </div>
+      @if (vm().reauthRequired) {
+        <!-- f-enrol-reauth: cancelled/failed re-auth keeps the valid codes visible and offers the same action again. -->
+        <div class="enrol-banner auth-alert" role="status" aria-atomic="true">
+          <strong>{{ 'auth.enrol.reauthTitle' | transloco }}</strong>
+          <span>{{ 'errors.reauth_required' | transloco }}</span>
+          <button mat-button type="button" [disabled]="vm().submitting" (click)="regenerate.emit()">
+            {{ 'errors.action.retry' | transloco }}
+          </button>
+        </div>
+      }
+      @if (vm().formError; as errorKey) {
+        <div id="enrol-codes-form-alert" class="auth-alert" role="alert" tabindex="-1" aria-atomic="true" data-form-alert>
+          <strong>{{ errorKey | transloco }}</strong>
+          <button
+            mat-button
+            type="button"
+            [disabled]="vm().submitting || vm().retryAfterSec !== null"
+            (click)="regenerate.emit()"
+          >
+            {{ 'errors.action.retry' | transloco }}
+          </button>
+          @if (vm().traceId; as id) {
+            <span>{{ 'errors.unknown.trace' | transloco: { traceId: id } }}</span>
+          }
+        </div>
+      }
+      @let codesRetryIn = vm().retryAfterSec;
+      @if (codesRetryIn !== null) {
+        <div id="enrol-codes-retry" class="auth-status" role="status">
+          <strong>{{ 'auth.rateLimited.message' | transloco }}</strong>
+          <nts-retry-countdown
+            [seconds]="codesRetryIn"
+            messageKey="auth.rateLimited.retryIn"
+            (elapsed)="retryAfterElapsed.emit()"
+          />
+        </div>
+      }
       <ol class="enrol-codes">
         @for (code of vm().codes ?? []; track $index) {
           <li>
@@ -60,9 +97,16 @@
         <button mat-stroked-button type="button" [disabled]="vm().codes === null" (click)="download.emit()">
           {{ 'auth.enrol.download' | transloco }}
         </button>
-        <button mat-stroked-button type="button" (click)="regenerate.emit()">
-          {{ 'auth.enrol.regenerate' | transloco }}
-        </button>
+        @if (!vm().enrolmentOnly) {
+          <button
+            mat-stroked-button
+            type="button"
+            [disabled]="vm().submitting || vm().retryAfterSec !== null"
+            (click)="regenerate.emit()"
+          >
+            {{ 'auth.enrol.regenerate' | transloco }}
+          </button>
+        }
       </div>
       <label class="enrol-confirm">
         <input type="checkbox" [checked]="vm().confirmedSaved" (change)="onConfirmSaved($event)" />

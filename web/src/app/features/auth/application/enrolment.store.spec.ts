@@ -196,6 +196,19 @@ describe('EnrolmentStore', () => {
       expect(reauth.ensureCalls).toBe(0);
     });
 
+    it('EnrolmentStore_Verify_EnrolmentOnly_ClearsTokenImmediatelyAndKeepsCodesVisible', async () => {
+      const { store, session } = await atShow();
+      await store.verify('123456');
+
+      expect(session.enrolmentToken()).toBeNull();
+      expect(session.mode()).toBe('full');
+      expect(store.step()).toBe('codes');
+      expect(store.codes()).toHaveLength(10);
+      TestBed.tick();
+      expect(store.step()).toBe('codes');
+      expect(store.codes()).toHaveLength(10);
+    });
+
     it('EnrolmentStore_Verify_FullSession_RunsThroughWithReauth', async () => {
       const { store, reauth } = await atShow({ enrolmentOnly: false });
       await store.verify('123456');
