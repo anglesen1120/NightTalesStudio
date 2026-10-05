@@ -1,7 +1,9 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using NightTales.Application.Abstractions.Catalog;
+using NightTales.Application.Abstractions.Compliance;
 using NightTales.Application.Abstractions.Research;
+using NightTales.Application.Features.Account.Legal;
 using NightTales.Application.Features.Stories.Generation;
 using NightTales.Application.Features.Stories.Writing;
 
@@ -41,6 +43,9 @@ public static class ApplicationServiceCollectionExtensions
 
         // 02.2.2-T2 (02 CR-24): the fail-closed default until 02.5.5-T1 registers the real guard.
         services.TryAddSingleton<IFactSheetGuard, NullFactSheetGuard>();
+
+        services.TryAddScoped<LegalAcceptanceReader>();
+        services.TryAddScoped<ILegalAcceptance, LegalAcceptanceService>();
 
         return services;
     }

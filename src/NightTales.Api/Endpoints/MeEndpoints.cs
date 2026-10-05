@@ -6,6 +6,9 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using NightTales.Api.Http;
 using NightTales.Api.Http.Filters;
+using NightTales.Application.Features.Account.Legal;
+using NightTales.Application.Features.Account.Legal.Commands.AcceptLegalDocuments;
+using NightTales.Application.Features.Account.Legal.Queries.GetLegalAcceptance;
 using NightTales.Application.Features.Auth.Mfa.Disable.Commands;
 using NightTales.Application.Features.Auth.Mfa.RecoveryCodes.Commands;
 using NightTales.Application.Features.Auth.Mfa.Setup.Commands;
@@ -82,6 +85,29 @@ public static class MeEndpoints
             .Produces<MeDto>(StatusCodes.Status200OK)
             .ProducesProblem(StatusCodes.Status400BadRequest)
             .ProducesProblem(StatusCodes.Status401Unauthorized);
+
+        me.MapGet("/legal", async (ISender sender, HttpContext http, CancellationToken ct) =>
+        {
+            NoStore(http);
+            var result = await sender.Send(new GetLegalAcceptanceQuery(), ct).ConfigureAwait(false);
+            return result.IsError ? ProblemDetailsWriter.ToProblem(result.Errors, http) : Results.Ok(result.Value);
+        })
+            .RequireAuthorization()
+            .Produces<LegalAcceptanceDto>(StatusCodes.Status200OK)
+            .ProducesProblem(StatusCodes.Status401Unauthorized);
+
+        me.MapPost("/legal/accept", async (AcceptLegalDocumentsCommand command, ISender sender, HttpContext http, CancellationToken ct) =>
+        {
+            NoStore(http);
+            var result = await sender.Send(command, ct).ConfigureAwait(false);
+            return result.IsError ? ProblemDetailsWriter.ToProblem(result.Errors, http) : Results.Ok(result.Value);
+        })
+            .RequireAuthorization()
+            .AddEndpointFilter<RequireSameOriginFilter>()
+            .Produces<LegalAcceptanceDto>(StatusCodes.Status200OK)
+            .ProducesProblem(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status409Conflict);
 
         me.MapPost("/mfa/setup", SetupAsync)
             .RequireMfaEnrolmentScope()

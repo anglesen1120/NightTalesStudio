@@ -17,7 +17,7 @@ import tseslint from 'typescript-eslint';
 // Wave-1 features (README D2). The list is the union of these static names and the directories that
 // actually exist under src/app/features, so a new feature folder gets the cross-feature deep-import
 // ban automatically (review F-6); the static entries keep the wave-1 features not yet on disk.
-const STATIC_FEATURES = ['public', 'auth', 'dashboard', 'series', 'episodes'];
+const STATIC_FEATURES = ['public', 'auth', 'dashboard', 'series', 'episodes', 'account'];
 const featureDirs = (() => {
   try {
     return readdirSync(join(import.meta.dirname, 'src/app/features'), { withFileTypes: true })
