@@ -46,6 +46,13 @@ public sealed class ErrorCatalogueTests
     }
 
     [Fact]
+    public void PayloadTooLarge_IsCataloguedAs413()
+    {
+        ErrorCodes.PayloadTooLarge.ShouldBe("payload_too_large");
+        ErrorCatalogue.Status[ErrorCodes.PayloadTooLarge].ShouldBe(413);
+    }
+
+    [Fact]
     public void ErrorCodes_AreSnakeCaseAndUnique()
     {
         var fields = ConstantFields();

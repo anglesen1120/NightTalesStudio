@@ -67,6 +67,7 @@ public static class StoryEndpoints
                 .ProducesProblem(StatusCodes.Status403Forbidden)
                 .ProducesProblem(StatusCodes.Status404NotFound)
                 .ProducesProblem(StatusCodes.Status409Conflict)
+                .ProducesProblem(StatusCodes.Status413PayloadTooLarge)
                 .ProducesProblem(StatusCodes.Status422UnprocessableEntity)
                 .ProducesProblem(StatusCodes.Status429TooManyRequests)
                 .RequireCors(SecurityHeadersExtensions.SpaCorsPolicy));
@@ -81,6 +82,7 @@ public static class StoryEndpoints
                 .ProducesProblem(StatusCodes.Status404NotFound)
                 .ProducesProblem(StatusCodes.Status409Conflict)
                 .ProducesProblem(StatusCodes.Status412PreconditionFailed)
+                .ProducesProblem(StatusCodes.Status413PayloadTooLarge)
                 .ProducesProblem(StatusCodes.Status428PreconditionRequired)
                 .RequireCors(SecurityHeadersExtensions.SpaCorsPolicy));
 
@@ -89,6 +91,7 @@ public static class StoryEndpoints
                 .Produces<IReadOnlyList<StoryVersionSummaryDto>>(StatusCodes.Status200OK)
                 .ProducesProblem(StatusCodes.Status401Unauthorized)
                 .ProducesProblem(StatusCodes.Status404NotFound)
+                .ProducesProblem(StatusCodes.Status413PayloadTooLarge)
                 .RequireCors(SecurityHeadersExtensions.SpaCorsPolicy));
 
         EpisodeIdRouteParameter.Declare(
@@ -96,6 +99,7 @@ public static class StoryEndpoints
                 .Produces<StoryVersionDetailDto>(StatusCodes.Status200OK)
                 .ProducesProblem(StatusCodes.Status401Unauthorized)
                 .ProducesProblem(StatusCodes.Status404NotFound)
+                .ProducesProblem(StatusCodes.Status413PayloadTooLarge)
                 .RequireCors(SecurityHeadersExtensions.SpaCorsPolicy));
 
         // These commands validate ownership and state before If-Match (02.3.2-T1 fixed order).
@@ -117,7 +121,7 @@ public static class StoryEndpoints
                 .ProducesProblem(StatusCodes.Status404NotFound)
                 .ProducesProblem(StatusCodes.Status409Conflict)
                 .ProducesProblem(StatusCodes.Status412PreconditionFailed)
-                .Produces(StatusCodes.Status413PayloadTooLarge)
+                .ProducesProblem(StatusCodes.Status413PayloadTooLarge)
                 .ProducesProblem(StatusCodes.Status428PreconditionRequired)
                 .RequireCors(SecurityHeadersExtensions.SpaCorsPolicy)));
 
@@ -128,6 +132,7 @@ public static class StoryEndpoints
                 .ProducesProblem(StatusCodes.Status404NotFound)
                 .ProducesProblem(StatusCodes.Status409Conflict)
                 .ProducesProblem(StatusCodes.Status412PreconditionFailed)
+                .ProducesProblem(StatusCodes.Status413PayloadTooLarge)
                 .ProducesProblem(StatusCodes.Status428PreconditionRequired)
                 .RequireCors(SecurityHeadersExtensions.SpaCorsPolicy)));
 
@@ -234,7 +239,9 @@ public static class StoryEndpoints
         var raw = await ReadApprovalBodyAsync(http, checked((int)limits.Value.MaxRequestBodySize), ct).ConfigureAwait(false);
         if (raw is null)
         {
-            return Results.StatusCode(StatusCodes.Status413PayloadTooLarge);
+            return ProblemDetailsWriter.ToProblem(
+                [Error.Failure(ErrorCodes.PayloadTooLarge, "The request body exceeds the allowed size.")],
+                http);
         }
 
         // The command checks ownership before reporting body errors, so foreign/unknown episodes stay 404.

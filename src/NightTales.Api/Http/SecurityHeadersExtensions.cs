@@ -1,3 +1,4 @@
+using ErrorOr;
 using Microsoft.AspNetCore.Cors.Infrastructure;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Http.Metadata;
@@ -8,6 +9,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using NightTales.Api.Internal.Jobs;
+using NightTales.Application.Common.Errors;
 
 namespace NightTales.Api.Http;
 
@@ -238,9 +240,11 @@ public static class SecurityHeadersExtensions
 
         if (context.Request.ContentLength is { } declared && declared > limit)
         {
-            // Refused before the handler and before any body byte is read: no ProblemDetails (the SPA maps
-            // 413 generically, 10 D9), no allocation proportional to the refused body.
-            context.Response.StatusCode = StatusCodes.Status413PayloadTooLarge;
+            // Refuse before any body byte is read, with a small catalogued problem (10 D9).
+            // Executing the result preserves the earlier CORS/hardening middleware's response headers.
+            await ProblemDetailsWriter.ToProblem(
+                [Error.Failure(ErrorCodes.PayloadTooLarge, "The request body exceeds the allowed size.")],
+                context).ExecuteAsync(context).ConfigureAwait(false);
 
             return;
         }
