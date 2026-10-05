@@ -240,7 +240,7 @@ public static class StoryEndpoints
         if (raw is null)
         {
             return ProblemDetailsWriter.ToProblem(
-                [Error.Failure(ErrorCodes.PayloadTooLarge, "The request body exceeds the allowed size.")],
+                [ProblemDetailsWriter.PayloadTooLargeError],
                 http);
         }
 

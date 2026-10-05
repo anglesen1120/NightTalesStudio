@@ -136,7 +136,7 @@ public sealed class RequestLimitTests(TestDatabase database) : IntegrationTest(d
 
     private static async Task AssertPayloadTooLargeProblemAsync(HttpResponseMessage response)
     {
-        response.Content.Headers.ContentType?.MediaType.ShouldBe("application/problem+json");
+        response.Content.Headers.ContentType.ShouldNotBeNull().MediaType.ShouldBe("application/problem+json");
         var json = await response.Content.ReadAsByteArrayAsync(TestContextToken.Value);
         json.Length.ShouldBeLessThan(1024, "the refusal must stay small regardless of request size");
         using var document = JsonDocument.Parse(json);

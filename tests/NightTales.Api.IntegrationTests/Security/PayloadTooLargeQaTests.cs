@@ -2,8 +2,12 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
+using NightTales.Api.Http;
 using NightTales.Api.IntegrationTests.Features.Research;
 using NightTales.Api.IntegrationTests.Harness;
+using NightTales.Application.Common.Errors;
 using NightTales.TestKit;
 using NightTales.TestKit.Api;
 using NightTales.TestKit.Database;
@@ -27,6 +31,33 @@ public sealed class PayloadTooLargeQaTests(TestDatabase database) : IntegrationT
     private const string StoryPath = "/api/v1/episodes/00000000-0000-0000-0000-000000000001/story";
 
     private static CancellationToken Ct => TestContextToken.Value;
+
+    [Theory]
+    [InlineData(StatusCodes.Status413PayloadTooLarge, ErrorCodes.PayloadTooLarge, "The request body exceeds the allowed size.")]
+    [InlineData(StatusCodes.Status400BadRequest, ErrorCodes.ValidationFailed, ProblemDetailsWriter.ValidationFailedTitle)]
+    public void FrameworkBodyBindingFailure_UsesTheMatchingProblem(int status, string code, string title)
+    {
+        var options = new ProblemDetailsOptions();
+        ProblemDetailsWriter.ConfigureProblemDetails(options);
+        var http = new DefaultHttpContext();
+        var problem = new ProblemDetails { Detail = "unsafe framework detail" };
+        problem.Extensions["exception"] = "unsafe exception text";
+
+        options.CustomizeProblemDetails.ShouldNotBeNull()(new ProblemDetailsContext
+        {
+            HttpContext = http,
+            ProblemDetails = problem,
+            Exception = new BadHttpRequestException("unsafe exception text", status),
+        });
+
+        http.Response.StatusCode.ShouldBe(status);
+        problem.Status.ShouldBe(status);
+        problem.Extensions[ProblemDetailsWriter.CodeMemberName].ShouldBe(code);
+        problem.Type.ShouldBe(ErrorCatalogue.ProblemType(code));
+        problem.Title.ShouldBe(title);
+        problem.Detail.ShouldBeNull();
+        problem.Extensions.ContainsKey("exception").ShouldBeFalse();
+    }
 
     [Theory]
     [InlineData("POST", ApprovePath)]
@@ -124,7 +155,7 @@ public sealed class PayloadTooLargeQaTests(TestDatabase database) : IntegrationT
             "/internal/fetcher/v1/tasks/lease", new ByteArrayContent(Padded(Mebibyte + 1)), Ct);
 
         response.StatusCode.ShouldBe(HttpStatusCode.RequestEntityTooLarge);
-        response.Content.Headers.ContentType?.MediaType.ShouldNotBe("application/problem+json");
+        response.Content.Headers.ContentType.ShouldBeNull("the fetcher listener's bodiless 413 has no media type");
         (await response.Content.ReadAsByteArrayAsync(Ct)).ShouldBeEmpty("the fetcher listener's 413 is frozen bodiless");
     }
 
@@ -158,7 +189,7 @@ public sealed class PayloadTooLargeQaTests(TestDatabase database) : IntegrationT
 
     private static async Task<string> AssertProblemAsync(HttpResponseMessage response)
     {
-        response.Content.Headers.ContentType?.MediaType.ShouldBe("application/problem+json");
+        response.Content.Headers.ContentType.ShouldNotBeNull().MediaType.ShouldBe("application/problem+json");
         var text = await response.Content.ReadAsStringAsync(Ct);
         using var document = JsonDocument.Parse(text);
         var problem = document.RootElement;
