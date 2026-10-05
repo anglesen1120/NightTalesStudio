@@ -1,6 +1,5 @@
 import { ChangeDetectionStrategy, Component, computed, inject, input, output } from '@angular/core';
-import { toSignal } from '@angular/core/rxjs-interop';
-import { TranslocoPipe, TranslocoService, provideTranslocoScope } from '@jsverse/transloco';
+import { TranslocoPipe, TranslocoService } from '@jsverse/transloco';
 import { LocaleService } from '@core/i18n';
 import { EPISODE_STATUS_TONE } from '@features/episodes';
 import { IconAlert, IconCheck, IconClock, IconUnknown, STATUS_ICON } from '@shared/ui';
@@ -26,7 +25,6 @@ const ACTION_LABEL_KEY: Readonly<Record<PrimaryAction, string>> = {
 @Component({
   selector: 'li[nts-next-action-row]',
   imports: [TranslocoPipe, IconAlert, IconCheck, IconClock, IconUnknown],
-  providers: [provideTranslocoScope('dashboard', 'episodes')],
   templateUrl: './next-action-row.html',
   styleUrl: './next-action-row.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -35,17 +33,15 @@ const ACTION_LABEL_KEY: Readonly<Record<PrimaryAction, string>> = {
 export class NextActionRow {
   readonly vm = input.required<NextActionRowViewModel>();
   readonly now = input.required<number>();
+  readonly untitledLabel = input.required<string>();
 
   readonly open = output<string>();
   readonly primaryAction = output<NextActionRowViewModel>();
 
   private readonly locale = inject(LocaleService);
   private readonly transloco = inject(TranslocoService);
-  private readonly untitledText = toSignal(this.transloco.selectTranslate<string>('list.untitled', {}, 'episodes'), {
-    initialValue: '',
-  });
 
-  protected readonly displayTitle = computed(() => this.vm().episode.title?.trim() || this.untitledText());
+  protected readonly displayTitle = computed(() => this.vm().episode.title?.trim() || this.untitledLabel());
   protected readonly statusKey = computed(() => `episodes.status.${this.vm().episode.status}`);
   protected readonly icon = computed<EpisodeStatusIcon>(
     () => STATUS_ICON[this.vm().episode.status] ?? 'unknown',

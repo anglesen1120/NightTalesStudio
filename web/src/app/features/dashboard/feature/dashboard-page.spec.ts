@@ -4,23 +4,30 @@ import { RouterTestingHarness } from '@angular/router/testing';
 import { provideRouter } from '@angular/router';
 import { TranslocoTestingModule } from '@jsverse/transloco';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { LocaleService } from '@core/i18n';
 import { SessionStore } from '@core/session';
 import { EpisodesRepository } from '@features/episodes';
 import { ZONELESS_TEST_PROVIDERS } from '../../../testing/providers';
+import dashboardEn from '../../../../assets/i18n/dashboard/en.json';
 import dashboardVi from '../../../../assets/i18n/dashboard/vi.json';
 import episodesVi from '../../../../assets/i18n/episodes/vi.json';
+import episodesEn from '../../../../assets/i18n/episodes/en.json';
 import errorsVi from '../../../../assets/i18n/errors/vi.json';
+import errorsEn from '../../../../assets/i18n/errors/en.json';
 import { FakeDashboardEpisodesRepository, dashboardEpisode } from '../testing/fake-episode.repository';
 import { DashboardPage } from './dashboard-page';
 
 const translations = TranslocoTestingModule.forRoot({
   langs: {
     'dashboard/vi': dashboardVi,
+    'dashboard/en': dashboardEn,
     'episodes/vi': episodesVi,
+    'episodes/en': episodesEn,
     'errors/vi': errorsVi,
+    'errors/en': errorsEn,
   },
   translocoConfig: {
-    availableLangs: ['vi'],
+    availableLangs: ['vi', 'en'],
     defaultLang: 'vi',
     fallbackLang: 'vi',
     reRenderOnLangChange: true,
@@ -84,7 +91,9 @@ describe('DashboardPage', () => {
     repository.defer();
     const { root } = await setup(repository);
     expect(root.querySelectorAll('section[aria-busy="true"]')).toHaveLength(3);
-    expect(root.querySelectorAll('nts-loading-state')).toHaveLength(3);
+    expect(root.querySelectorAll('.dashboard-group__skeletons')).toHaveLength(3);
+    expect(root.querySelectorAll('nts-loading-state')).toHaveLength(1);
+    expect(root.querySelectorAll('[role="status"]')).toHaveLength(1);
     repository.resolveAll();
   });
 
@@ -150,19 +159,59 @@ describe('DashboardPage', () => {
     const repository = new FakeDashboardEpisodesRepository();
     repository.withStatus('story_review', [dashboardEpisode(1, { status: 'story_review' })]);
     const { harness, root } = await setup(repository);
-    const liveRegions = root.querySelectorAll('[aria-live="polite"].dashboard-page__announcement');
-    expect(liveRegions).toHaveLength(1);
-    expect(liveRegions[0]?.textContent).toContain('1');
+    const liveRegion = root.querySelector<HTMLElement>('.dashboard-page__announcement');
+    const initialText = '1 tập cần bạn xem, 0 tập đang thực hiện, 0 tập sẵn sàng đăng';
+    const refreshedText = '2 tập cần bạn xem, 0 tập đang thực hiện, 0 tập sẵn sàng đăng';
+    expect(liveRegion?.textContent?.trim()).toBe(initialText);
 
+    const announcements: string[] = [];
+    const observer = new MutationObserver(() => {
+      const text = liveRegion?.textContent?.trim() ?? '';
+      if (text !== '' && announcements[announcements.length - 1] !== text) announcements.push(text);
+    });
+    if (liveRegion !== null) observer.observe(liveRegion, { childList: true, characterData: true, subtree: true });
+
+    repository.withStatus('story_review', [
+      dashboardEpisode(1, { status: 'story_review' }),
+      dashboardEpisode(2, { status: 'story_review' }),
+    ]);
     vi.setSystemTime(new Date('2026-10-05T10:00:11Z'));
     root.querySelector<HTMLButtonElement>('.dashboard-page__refresh')?.click();
     await flush(harness.fixture);
-    expect(root.querySelectorAll('[aria-live="polite"].dashboard-page__announcement')).toHaveLength(1);
+    await Promise.resolve();
+    observer.disconnect();
+
+    expect(liveRegion?.textContent?.trim()).toBe(refreshedText);
+    expect(announcements).toEqual([refreshedText]);
     expect(repository.calls).toHaveLength(10);
   });
 
+  it('CountsAnnouncement_LanguageSwitch_ResolvesLoadedScope', async () => {
+    const repository = new FakeDashboardEpisodesRepository();
+    repository.withStatus('story_review', [dashboardEpisode(1, { status: 'story_review' })]);
+    const { harness, root } = await setup(repository);
+    const liveRegion = root.querySelector<HTMLElement>('.dashboard-page__announcement');
+    const observed: string[] = [];
+    const observer = new MutationObserver(() => {
+      const text = liveRegion?.textContent?.trim() ?? '';
+      if (text !== '') observed.push(text);
+    });
+    if (liveRegion !== null) observer.observe(liveRegion, { childList: true, characterData: true, subtree: true });
+
+    TestBed.inject(LocaleService).activate('en', { persist: false });
+    await flush(harness.fixture);
+    await Promise.resolve();
+    observer.disconnect();
+
+    expect(liveRegion?.textContent?.trim()).toBe('1 need your review, 0 in progress, 0 ready to publish');
+    expect(observed).not.toContain('dashboard.counts');
+  });
+
   it('HiddenDocument_IssuesNoRequest', async () => {
-    const { repository } = await setup(new FakeDashboardEpisodesRepository(), 'hidden');
+    const { repository, root } = await setup(new FakeDashboardEpisodesRepository(), 'hidden');
+    expect(root.querySelectorAll('.dashboard-group__skeletons')).toHaveLength(3);
+    expect(root.querySelectorAll('nts-empty-state')).toHaveLength(0);
+    expect(root.querySelectorAll('.dashboard-group__count')).toHaveLength(0);
     expect(repository.calls).toHaveLength(0);
   });
 

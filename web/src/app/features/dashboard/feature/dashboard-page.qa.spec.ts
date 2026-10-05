@@ -188,7 +188,7 @@ describe('DashboardPage_QA_Staleness', () => {
     const repository = new FakeDashboardEpisodesRepository();
     repository.defer();
     const { harness, root } = await setup(repository);
-    expect(root.querySelectorAll('nts-loading-state')).toHaveLength(3);
+    expect(root.querySelectorAll('nts-loading-state')).toHaveLength(1);
     // The session generation moved on mid-load (logout / sign-out): the late answer commits nothing and
     // the failure path paints no error state.
     sessionStub.generation.set(9);

@@ -36,12 +36,14 @@ class StubPage {}
 /** Semantic host: `TestBed.createComponent` hosts an attribute-selector component on a `<div>`, so the li contract is exercised inside a real template. */
 @Component({
   imports: [NextActionRow],
-  template: '<ul><li nts-next-action-row [vm]="vm()" [now]="now()"></li></ul>',
+  template:
+    '<ul><li nts-next-action-row [vm]="vm()" [now]="now()" [untitledLabel]="untitledLabel()"></li></ul>',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 class RowHost {
   readonly vm = input.required<NextActionRowViewModel>();
   readonly now = input.required<number>();
+  readonly untitledLabel = input(episodesVi.list.untitled);
 }
 
 function viewModel(action: PrimaryAction = 'reviewStory'): NextActionRowViewModel {
@@ -73,6 +75,7 @@ async function setup(vm: NextActionRowViewModel = viewModel()) {
   const fixture = TestBed.createComponent(NextActionRow);
   fixture.componentRef.setInput('vm', vm);
   fixture.componentRef.setInput('now', new Date('2026-10-05T10:00:00Z').getTime());
+  fixture.componentRef.setInput('untitledLabel', episodesVi.list.untitled);
   fixture.detectChanges();
   await fixture.whenStable();
   return { fixture, component: fixture.componentInstance, root: fixture.nativeElement as HTMLElement };

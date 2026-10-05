@@ -36,20 +36,30 @@
       }
     </div>
   } @else {
+    @if (store.loading() || !store.hasLoaded()) {
+      <nts-loading-state class="dashboard-page__loading-status" labelKey="dashboard.loading" [rows]="3" />
+    }
+
     <div class="dashboard-page__groups">
       @for (group of groups; track group.group) {
         <section
           class="dashboard-group"
           [attr.aria-labelledby]="group.headingId"
-          [attr.aria-busy]="store.loading() ? true : null"
+          [attr.aria-busy]="store.loading() || !store.hasLoaded() ? true : null"
         >
           <header class="dashboard-group__header">
             <h2 [id]="group.headingId">{{ group.titleKey | transloco }}</h2>
-            <span class="dashboard-group__count">{{ group.rows().length }}</span>
+            @if (store.hasLoaded()) {
+              <span class="dashboard-group__count">{{ group.rows().length }}</span>
+            }
           </header>
 
-          @if (store.loading()) {
-            <nts-loading-state labelKey="dashboard.loading" [rows]="3" />
+          @if (store.loading() || !store.hasLoaded()) {
+            <div class="dashboard-group__skeletons" aria-hidden="true">
+              <span class="dashboard-group__skeleton"></span>
+              <span class="dashboard-group__skeleton"></span>
+              <span class="dashboard-group__skeleton"></span>
+            </div>
           } @else if (group.rows().length === 0) {
             <nts-empty-state [titleKey]="group.emptyKey" />
           } @else {
@@ -59,6 +69,7 @@
                   nts-next-action-row
                   [vm]="row"
                   [now]="now()"
+                  [untitledLabel]="untitledLabel()"
                   (open)="openEpisode($event)"
                   (primaryAction)="runPrimaryAction($event)"
                 ></li>
@@ -79,6 +90,8 @@
   }
 
   <p class="dashboard-page__announcement" aria-live="polite" aria-atomic="true">
-    {{ countsAnnouncement() }}
+    @if (countsAnnouncement(); as counts) {
+      {{ 'dashboard.counts' | transloco: counts }}
+    }
   </p>
 </div>

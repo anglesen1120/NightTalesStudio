@@ -51,6 +51,7 @@ async function setup(vm: NextActionRowViewModel = viewModel()) {
   const fixture = TestBed.createComponent(NextActionRow);
   fixture.componentRef.setInput('vm', vm);
   fixture.componentRef.setInput('now', new Date('2026-10-05T10:00:00Z').getTime());
+  fixture.componentRef.setInput('untitledLabel', episodesVi.list.untitled);
   fixture.detectChanges();
   await fixture.whenStable();
   return { fixture, component: fixture.componentInstance, root: fixture.nativeElement as HTMLElement };

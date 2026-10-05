@@ -9,12 +9,13 @@ import {
   effect,
   inject,
   signal,
+  untracked,
   type Signal,
 } from '@angular/core';
+import { toSignal } from '@angular/core/rxjs-interop';
 import { Router, RouterLink } from '@angular/router';
 import { TranslocoPipe, TranslocoService, provideTranslocoScope } from '@jsverse/transloco';
 import { messageKeyOf } from '@core/errors';
-import { LocaleService } from '@core/i18n';
 import { EmptyState, ErrorState, LoadingState, PageHeader, RetryCountdown } from '@shared/ui';
 import { DashboardStore } from '../application/dashboard.store';
 import { destinationFor, type DashboardGroup, type NextActionRowViewModel } from '../dashboard.model';
@@ -56,7 +57,6 @@ export class DashboardPage {
   private readonly renderer = inject(Renderer2);
   private readonly router = inject(Router);
   private readonly transloco = inject(TranslocoService);
-  private readonly locale = inject(LocaleService);
   private initialLoadRequested = false;
   private lastFocusRefreshRequestedAt = 0;
 
@@ -106,19 +106,24 @@ export class DashboardPage {
     const seconds = this.retryAfterSec();
     return seconds !== undefined && seconds > 0 && !this.retryElapsed();
   });
-  protected readonly countsAnnouncement = signal('');
+  protected readonly countsAnnouncement = signal<{
+    readonly needsReview: number;
+    readonly inProgress: number;
+    readonly ready: number;
+  } | null>(null);
+  protected readonly untitledLabel = toSignal(
+    this.transloco.selectTranslate<string>('list.untitled', {}, 'episodes'),
+    { initialValue: '' },
+  );
   protected readonly now = signal(Date.now());
 
   constructor() {
     let lastAnnouncedAt: number | null = null;
-    let lastAnnouncedLocale: string | null = null;
     effect(() => {
       const refreshedAt = this.store.lastRefreshedAt();
-      const locale = this.locale.locale();
-      if (refreshedAt === null || (refreshedAt === lastAnnouncedAt && locale === lastAnnouncedLocale)) return;
+      if (refreshedAt === null || refreshedAt === lastAnnouncedAt) return;
       lastAnnouncedAt = refreshedAt;
-      lastAnnouncedLocale = locale;
-      this.countsAnnouncement.set(this.transloco.translate('counts', this.store.counts(), 'dashboard'));
+      this.countsAnnouncement.set({ ...untracked(this.store.counts) });
     });
 
     effect(() => {
