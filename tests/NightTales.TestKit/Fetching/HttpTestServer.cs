@@ -43,8 +43,7 @@ public sealed class HttpTestServer : IAsyncDisposable
 {
     private readonly TcpListener _listener = new(IPAddress.Loopback, 0);
     private readonly CancellationTokenSource _stop = new();
-    private readonly ConcurrentQueue<TestRequest> _requests = new();
-    private readonly ConcurrentQueue<DateTimeOffset> _times = new();
+    private readonly ConcurrentQueue<(TestRequest Request, DateTimeOffset Time)> _received = new();
     private readonly Func<TestRequest, TestResponse> _script;
     private readonly Task _accepting;
     private readonly ConcurrentBag<Task> _clients = [];
@@ -69,10 +68,10 @@ public sealed class HttpTestServer : IAsyncDisposable
     public int Connections => Volatile.Read(ref _connections);
 
     /// <summary>The requests received, in arrival order.</summary>
-    public IReadOnlyList<TestRequest> Requests => [.. _requests];
+    public IReadOnlyList<TestRequest> Requests => [.. _received.ToArray().Select(r => r.Request)];
 
     /// <summary>When each request of <see cref="Requests"/> arrived, in the same order (rate-limit assertions).</summary>
-    public IReadOnlyList<DateTimeOffset> RequestTimes => [.. _times];
+    public IReadOnlyList<DateTimeOffset> RequestTimes => [.. _received.ToArray().Select(r => r.Time)];
 
     /// <summary>
     /// A port nothing listens on, so a connect to it is refused at once. A fetch test maps every <em>non-loopback</em>
@@ -127,8 +126,7 @@ public sealed class HttpTestServer : IAsyncDisposable
                     return;
                 }
 
-                _requests.Enqueue(request);
-                _times.Enqueue(DateTimeOffset.UtcNow);
+                _received.Enqueue((request, DateTimeOffset.UtcNow));
                 var response = _script(request);
                 if (response.Delay > TimeSpan.Zero)
                 {

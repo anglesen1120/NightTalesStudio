@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Net;
+using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -86,31 +87,69 @@ internal sealed class ApiTrafficRecorder : DelegatingHandler
     }
 }
 
-/// <summary>Collects every log line (level, category, formatted message and exception) so a test can grep what was logged (D19).</summary>
-internal sealed class CapturingLoggerProvider : ILoggerProvider
+/// <summary>
+/// Collects every log line (level, category, formatted message, structured state, scope values and exception) so a test can
+/// grep what was logged (D19). The structured state and the scope values are captured as well as the formatted message: a
+/// message template can carry the URL in a named parameter, and a logger scope can carry it too, so the leak scan must see
+/// both, not only the formatted text.
+/// </summary>
+internal sealed class CapturingLoggerProvider : ILoggerProvider, ISupportExternalScope
 {
     private readonly ConcurrentQueue<string> _lines = new();
+
+    private IExternalScopeProvider? _scopes;
 
     /// <summary>The lines, in arrival order.</summary>
     public IReadOnlyList<string> Lines => [.. _lines];
 
     /// <inheritdoc />
-    public ILogger CreateLogger(string categoryName) => new Logger(_lines, categoryName);
+    public ILogger CreateLogger(string categoryName) => new Logger(this, categoryName);
+
+    /// <inheritdoc />
+    public void SetScopeProvider(IExternalScopeProvider scopeProvider) => _scopes = scopeProvider;
 
     /// <inheritdoc />
     public void Dispose()
     {
     }
 
-    private sealed class Logger(ConcurrentQueue<string> lines, string category) : ILogger
+    /// <summary>One structured value as <c>key=value</c> pairs, or its text when it is not a set of named values.</summary>
+    private static string Describe(object? value) =>
+        value switch
+        {
+            IEnumerable<KeyValuePair<string, object?>> pairs => string.Join(' ', pairs.Select(pair => $"{pair.Key}={pair.Value}")),
+            _ => value?.ToString() ?? string.Empty,
+        };
+
+    private sealed class Logger(CapturingLoggerProvider owner, string category) : ILogger
     {
         public IDisposable? BeginScope<TState>(TState state)
-            where TState : notnull => null;
+            where TState : notnull => owner._scopes?.Push(state);
 
         public bool IsEnabled(LogLevel logLevel) => true;
 
-        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter) =>
-            lines.Enqueue($"{logLevel} {category}: {formatter(state, exception)}{(exception is null ? string.Empty : " | " + exception)}");
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
+        {
+            var line = new StringBuilder()
+                .Append(logLevel).Append(' ').Append(category).Append(": ").Append(formatter(state, exception));
+            if (state is IEnumerable<KeyValuePair<string, object?>> values)
+            {
+                foreach (var (key, value) in values)
+                {
+                    line.Append(" | ").Append(key).Append('=').Append(value);
+                }
+            }
+
+            owner._scopes?.ForEachScope(
+                static (scope, builder) => builder.Append(" | scope ").Append(Describe(scope)),
+                line);
+            if (exception is not null)
+            {
+                line.Append(" | ").Append(exception);
+            }
+
+            owner._lines.Enqueue(line.ToString());
+        }
     }
 }
 

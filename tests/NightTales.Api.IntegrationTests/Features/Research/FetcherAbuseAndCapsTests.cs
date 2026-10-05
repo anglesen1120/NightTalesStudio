@@ -34,6 +34,9 @@ public sealed class FetcherAbuseAndCapsTests(TestDatabase database) : Integratio
 {
     private static readonly DateTimeOffset Start = new(2026, 10, 4, 12, 0, 0, TimeSpan.Zero);
 
+    /// <summary>The hosts the leak test fetches; only their spans are scanned (co-running test classes share the process).</summary>
+    private static readonly string[] LeakTraceHosts = ["page-e2e.com", "denied-e2e.com", "youtube.com"];
+
     private static CancellationToken Ct => TestContextToken.Value;
 
     private static FetchStack NewStack(
@@ -380,7 +383,27 @@ public sealed class FetcherAbuseAndCapsTests(TestDatabase database) : Integratio
     [Fact]
     public async Task Leak_NoUrlTitleOrTextInLogsOrTraces()
     {
-        // D19: success and every failure shape on one stack; its log must carry no path, query, title or extracted text.
+        // D19: the listener is registered before the first fetch, so the failure-path spans are scanned too. The fetcher
+        // registers no tracing source of its own (FetcherTelemetry is metrics-only, D19), so the only span the stack can
+        // produce is the SDK's System.Net.Http one; scoping ShouldListenTo to that name keeps the scan on this stack's
+        // own surface (any other source is out of contract for the fetcher).
+        var traces = new List<string>();
+        using var listener = new ActivityListener
+        {
+            ShouldListenTo = source => source.Name == "System.Net.Http",
+            Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllDataAndRecorded,
+            ActivityStopped = activity =>
+            {
+                // Classes run in parallel in one process: scan only the spans of the hosts this test fetches.
+                if (activity.GetTagItem("server.address") is string address && LeakTraceHosts.Contains(address, StringComparer.Ordinal))
+                {
+                    traces.Add(TraceText(activity));
+                }
+            },
+        };
+        ActivitySource.AddActivityListener(listener);
+
+        // Success and every failure shape on one stack; the log and the traces must carry no path, query, title or text.
         await using var stack = NewStack(options => options.RobotsTimeoutSeconds = 1);
         (await stack.FetchAsync("http://page-e2e.com/ok?q=secret-q", Ct)).IsError.ShouldBeFalse();
         foreach (var path in new[] { "/gzip-bomb", "/pdf", "/spa", "/long-text", "/chain?n=4" })
@@ -388,25 +411,29 @@ public sealed class FetcherAbuseAndCapsTests(TestDatabase database) : Integratio
             FetchStack.Code(await stack.FetchAsync($"http://page-e2e.com{path}{(path.Contains('?', StringComparison.Ordinal) ? '&' : '?')}q=secret-q", Ct));
         }
 
+        // Blocked by the blocklist and a rejected redirect target: their secret path is never dialled, so no span may carry it.
+        FetchStack.Code(await stack.FetchAsync("http://youtube.com/secret-path/article?q=secret-q", Ct))
+            .ShouldBe(SourceErrors.SourceDomainNotAllowedCode);
+        var rejected = Uri.EscapeDataString("http://169.254.169.254/secret-path?q=secret-q");
+        FetchStack.Code(await stack.FetchAsync($"http://page-e2e.com/redirect?to={rejected}", Ct))
+            .ShouldBe(SourceErrors.SourceUrlInvalidCode);
+
         // A robots denial is a path that logs (the registrable domain and reason); the scan needs at least one line to scan.
         stack.Robots = _ => HttpTestRoutes.RobotsDisallowAll();
         FetchStack.Code(await stack.FetchAsync("http://denied-e2e.com/secret-path/article?q=secret-q", Ct)).ShouldBe(SourceErrors.SourceBlockedByRobotsCode);
         stack.Robots = _ => HttpTestRoutes.RobotsNotFound();
 
-        var traces = new List<string>();
-        using var listener = new System.Diagnostics.ActivityListener
-        {
-            ShouldListenTo = _ => true,
-            Sample = (ref ActivityCreationOptions<ActivityContext> _) => ActivitySamplingResult.AllDataAndRecorded,
-            ActivityStopped = activity => traces.Add(activity.DisplayName + " " + string.Join(' ', activity.Tags.Select(tag => $"{tag.Key}={tag.Value}"))),
-        };
-        ActivitySource.AddActivityListener(listener);
-        (await stack.FetchAsync("http://page-e2e.com/ok?q=secret-q", Ct)).IsError.ShouldBeFalse();
-
         stack.Logs.Lines.ShouldNotBeEmpty("the scan must have something to scan");
         stack.AssertNoLeak();
+        traces.ShouldNotBeEmpty("the trace scan must have something to scan (no fetcher span means the scan is vacuous)");
         FetcherSuiteAsserts.NoSecrets(traces, FetchStack.Secrets, "trace");
     }
+
+    /// <summary>Every surface of a span the scan must read: source, display name, tags and event payloads.</summary>
+    private static string TraceText(Activity activity) =>
+        activity.Source.Name + " " + activity.DisplayName
+        + " " + string.Join(' ', activity.TagObjects.Select(tag => $"{tag.Key}={tag.Value}"))
+        + " " + string.Join(' ', activity.Events.SelectMany(item => item.Tags).Select(tag => $"{tag.Key}={tag.Value}"));
 
     [Fact]
     public async Task Persistence_ExtractedTextObjectHasNoHtml_FailedCaseWritesNone_ApiLogsDoNotLeak()
@@ -465,7 +492,7 @@ public sealed class FetcherAbuseAndCapsTests(TestDatabase database) : Integratio
     }
 
     [Fact]
-    public void ErrorCodes_AreInCatalogue()
+    public async Task ErrorCodes_AreInCatalogue()
     {
         // Every D8 job code is a catalogue member, and every code any fetch of this process produced is a D8 job code.
         var catalogue = FetcherSuiteAsserts.Catalogue();
@@ -474,7 +501,18 @@ public sealed class FetcherAbuseAndCapsTests(TestDatabase database) : Integratio
             catalogue.ShouldContain(code, "SourceErrors code missing from the ErrorCodes catalogue");
         }
 
-        foreach (var code in FetchStack.ObservedCodes.Distinct())
+        // The observed-code half is only meaningful when this process actually produced codes: run a representative
+        // failing set here, so the loop cannot pass on an empty set when this test runs alone.
+        await using var stack = NewStack();
+        FetchStack.Code(await stack.FetchAsync("http://page-e2e.com/gzip-bomb", Ct)).ShouldBe(SourceErrors.SourceTooLargeCode);
+        FetchStack.Code(await stack.FetchAsync("http://page-e2e.com/pdf", Ct)).ShouldBe(SourceErrors.SourceUnsupportedTypeCode);
+        FetchStack.Code(await stack.FetchAsync("http://page-e2e.com/spa", Ct)).ShouldBe(SourceErrors.SourceNoTextCode);
+        FetchStack.Code(await stack.FetchAsync("http://page-e2e.com/chain?n=4", Ct)).ShouldBe(SourceErrors.SourceUnreachableCode);
+        FetchStack.Code(await stack.FetchAsync("http://youtube.com/article", Ct)).ShouldBe(SourceErrors.SourceDomainNotAllowedCode);
+
+        var observed = FetchStack.ObservedCodes.Distinct().ToList();
+        observed.ShouldNotBeEmpty("the observed-code loop must not be vacuous");
+        foreach (var code in observed)
         {
             FetcherSuiteAsserts.JobCodes.ShouldContain(code, "the suite observed a code outside the D8 job-code set");
         }

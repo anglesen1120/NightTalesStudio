@@ -1,5 +1,7 @@
+using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Http.Headers;
+using Microsoft.Extensions.Logging;
 using NightTales.Api.IntegrationTests.Harness;
 using NightTales.Domain.Research;
 using NightTales.Fetcher.Core.Research.Http;
@@ -60,7 +62,7 @@ public sealed class FetcherSsrfSuiteTests(TestDatabase database) : IntegrationTe
         // threat row 1, case 1: the production validator, the server on 127.0.0.1.
         await using var stack = NewStack(ValidatorMode.GlobalUnicast);
 
-        await AssertBlockedAsync(stack, $"http://127.0.0.1:{stack.Server.Port}/ok", SourceErrors.SourceUrlInvalidCode, "loopback IP literal");
+        await AssertBlockedAsync(stack, "http://127.0.0.1/ok", SourceErrors.SourceUrlInvalidCode, "loopback IP literal");
         await AssertBlockedAsync(stack, "http://loopback-e2e.com/ok", HostnameBlockedCode, "a name resolving to loopback under the production validator");
         stack.Dns.Lookups.ShouldNotContain("127.0.0.1");
     }
@@ -115,14 +117,11 @@ public sealed class FetcherSsrfSuiteTests(TestDatabase database) : IntegrationTe
     [InlineData("http://0x7f.0.0.1/")]
     public void Ssrf_IpLiteralDecimalOctalHex_RejectedBeforeDns(string url)
     {
-        // threat row 3, case 5 (F14: decimal/octal/hex literals): rejected at Parse, the resolver is never asked.
-        var dns = new FakeDnsResolver { DefaultAnswer = [IPAddress.Loopback] };
-
+        // threat row 3, case 5 (F14: decimal/octal/hex literals): rejected at Parse. The fetcher twin below proves that DNS is never asked.
         var result = SourceUrl.Parse(url, new FakePublicSuffixList());
 
         result.IsError.ShouldBeTrue(url);
         result.FirstError.Code.ShouldBe(SourceErrors.SourceUrlInvalidCode);
-        dns.Lookups.ShouldBeEmpty("no DNS call happens for a rejected literal");
     }
 
     [Fact]
@@ -205,6 +204,57 @@ public sealed class FetcherSsrfSuiteTests(TestDatabase database) : IntegrationTe
         await using var production = NewStack(ValidatorMode.GlobalUnicast, mixed);
         FetchStack.Code(await production.FetchAsync("http://mixed-e2e.com/ok", Ct)).ShouldBe(SourceErrors.SourceBlockedByRobotsCode);
         production.ShouldNeverHaveReachedTheServer("rebinding with a mixed answer");
+    }
+
+    [Fact]
+    public async Task Ssrf_DnsRebinding_FlipAfterFirstResolve_ConnectsOnlyToValidatedAddress()
+    {
+        // threat row 4 (DNS rebinding, a real flip): the name answers a PUBLIC address on the first resolution and loopback
+        // on every later one. The seam dials the test server for every loopback address, so a second resolution or a dial
+        // by host name (both of which would see loopback) reaches the loopback server. A correct connector resolves once,
+        // validates that answer and dials exactly it, so the server stays at zero connections. Case 10 (fixed answer) is
+        // unchanged; this is the scripted flip it does not exercise.
+        const string Host = "rebind-flip-e2e.com";
+        var publicAddress = IPAddress.Parse("93.184.216.34");
+        await using var server = new HttpTestServer(HttpTestRoutes.Standard);
+        var dns = new FakeDnsResolver().FlipAfterFirstResolve(Host, [publicAddress], [IPAddress.Loopback]);
+        var dialed = new ConcurrentQueue<IPAddress>();
+        var endpointFor = (IPAddress address, int _) =>
+        {
+            // Recorded so the test can prove the validated address (not a re-resolved one) is what the socket dials.
+            dialed.Enqueue(address);
+
+            return IPAddress.IsLoopback(address)
+                ? new IPEndPoint(address, server.Port)
+                : new IPEndPoint(IPAddress.Loopback, HttpTestServer.ClosedPort());
+        };
+        using var loggers = LoggerFactory.Create(_ => { });
+        var connector = new SafeHttpConnector(
+            dns, new LoopbackAllowingAddressValidator(), loggers.CreateLogger<SafeHttpConnector>(), endpointFor);
+
+        using (var client = SafeHttpClientFactory.Create(connector))
+        {
+            await Should.ThrowAsync<Exception>(() => client.GetAsync($"http://{Host}/ok", Ct));
+        }
+
+        dns.Lookups.ShouldBe([Host], "exactly one resolution per connect attempt");
+        dialed.ToArray().ShouldBe([publicAddress], "the dialled address is the validated one, never a re-resolved one");
+        server.Connections.ShouldBe(0, "a re-resolve or a dial by host name would have reached the loopback server");
+        server.Requests.ShouldBeEmpty();
+
+        // Positive control: when the validated answer itself is loopback (allowed here), the same seam reaches the server.
+        var loopbackDns = new FakeDnsResolver().Map(Host, IPAddress.Loopback);
+        var control = new SafeHttpConnector(
+            loopbackDns, new LoopbackAllowingAddressValidator(), loggers.CreateLogger<SafeHttpConnector>(), endpointFor);
+        using (var client = SafeHttpClientFactory.Create(control))
+        using (var response = await client.GetAsync($"http://{Host}/ok", Ct))
+        {
+            response.StatusCode.ShouldBe(HttpStatusCode.OK, "the control: the server is reachable when the validated address is loopback");
+        }
+
+        server.Connections.ShouldBeGreaterThan(0);
+        loopbackDns.Lookups.ShouldBe([Host]);
+        dialed.ToArray().ShouldBe([publicAddress, IPAddress.Loopback], "the control dialled the valid loopback answer");
     }
 
     [Fact]
@@ -310,7 +360,7 @@ public sealed class FetcherSsrfSuiteTests(TestDatabase database) : IntegrationTe
     {
         // threat row 5, case 15.
         await using var stack = NewStack();
-        var target = Uri.EscapeDataString($"http://127.0.0.1:{stack.Server.Port}/ok");
+        var target = Uri.EscapeDataString("http://127.0.0.1/ok");
 
         FetchStack.Code(await stack.FetchAsync($"http://page-e2e.com/redirect?to={target}", Ct)).ShouldBe(SourceErrors.SourceUrlInvalidCode);
 
@@ -392,7 +442,7 @@ public sealed class FetcherSsrfSuiteTests(TestDatabase database) : IntegrationTe
     [Theory]
     [InlineData("http://loopback-e2e.com/ok")]
     [InlineData("http://page-e2e.com/chain?n=1&via=loopback")]
-    [InlineData("http://127.0.0.1:PORT/ok")]
+    [InlineData("http://127.0.0.1/ok")]
     [InlineData("REDIRECT")]
     [InlineData("http://10.0.0.1/ok")]
     [InlineData("http://169.254.169.254/latest/meta-data/")]
@@ -407,9 +457,8 @@ public sealed class FetcherSsrfSuiteTests(TestDatabase database) : IntegrationTe
         // the loopback test server must see no connection at all. The first run is every other test of this class, which uses
         // the loopback-allowing validator. A test that only passes with the test validator is a finding.
         await using var stack = NewStack(ValidatorMode.GlobalUnicast);
-        var text = url
-            .Replace("PORT", stack.Server.Port.ToString(System.Globalization.CultureInfo.InvariantCulture), StringComparison.Ordinal)
-            .Replace("REDIRECT", $"http://page-e2e.com/redirect?to={Uri.EscapeDataString("http://redirect-target-e2e.com/ok")}", StringComparison.Ordinal);
+        var text = url.Replace(
+            "REDIRECT", $"http://page-e2e.com/redirect?to={Uri.EscapeDataString("http://redirect-target-e2e.com/ok")}", StringComparison.Ordinal);
 
         TestContext.Current.SendDiagnosticMessage($"D20 run: validator={stack.Mode}, url={text}");
         stack.Mode.ShouldBe(ValidatorMode.GlobalUnicast, "the D20 run must use the production validator");

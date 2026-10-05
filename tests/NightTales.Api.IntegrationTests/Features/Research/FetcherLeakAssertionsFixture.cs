@@ -65,6 +65,7 @@ internal sealed class FetchStack : IAsyncDisposable
     private static readonly ConcurrentQueue<string> ObservedQueue = new();
 
     private readonly HttpClient _http;
+    private readonly ILoggerFactory _loggerFactory;
 
     private FetchStack(
         ValidatorMode mode,
@@ -72,6 +73,7 @@ internal sealed class FetchStack : IAsyncDisposable
         FakeDnsResolver dns,
         FetcherOptions options,
         CapturingLoggerProvider logs,
+        ILoggerFactory loggerFactory,
         HttpClient http,
         IHostRateLimiter limiter,
         SafeHttpSourceFetcher fetcher)
@@ -82,6 +84,7 @@ internal sealed class FetchStack : IAsyncDisposable
         Options = options;
         Logs = logs;
         _http = http;
+        _loggerFactory = loggerFactory;
         Limiter = limiter;
         Fetcher = fetcher;
     }
@@ -187,7 +190,7 @@ internal sealed class FetchStack : IAsyncDisposable
             psl,
             accessor,
             factory.CreateLogger<SafeHttpSourceFetcher>());
-        var stack = new FetchStack(mode, server, dns, options, logs, http, limiter, fetcher);
+        var stack = new FetchStack(mode, server, dns, options, logs, factory, http, limiter, fetcher);
         box.Stack = stack;
 
         return stack;
@@ -234,6 +237,7 @@ internal sealed class FetchStack : IAsyncDisposable
         _http.Dispose();
         await Server.DisposeAsync();
         AssertNoLeak();
+        _loggerFactory.Dispose();
     }
 
     private sealed class RobotsBox
