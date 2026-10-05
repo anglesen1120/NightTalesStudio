@@ -4,6 +4,10 @@ History moved out of STATUS.md to keep the live file small. The initial archive 
 
 ## Resume-here history (Current/Previous blocks, Next actions)
 
+### Superseded Session 17 Web next part (2026-10-05, replaced when 10.5.1-T1 opened as PR #145)
+
+- Part of the **Web next (plan 10 Stage B)** bullet: "**10.5.1-T0** design → **10.5.1-T1** episode list (first `cursorList` consumer); **10.4.1-T1** dashboard (adds `/dashboard` + the first `NAV_ITEMS` entry);"
+
 ### Superseded Session 18 Web next part (2026-10-05, replaced when #143 `7b5a6e9` merged)
 
 - **Web next (plan 10 Stage B):** open web lanes: **10.5.1-T0** design → **10.5.1-T1** episode list (first `cursorList` consumer); **10.4.1-T1** dashboard (adds `/dashboard` + the first `NAV_ITEMS` entry); **10.3.3-T3** MFA step + enrolment + recovery codes + re-auth (deps merged). **10.4.2-T2** voice picker + `voices` scope (10 CR-50) in PR #143 (Session 18), then **10.4.2-T1** series pages (mounts the voice step, writes its e2e). Check each header's `Depends on`. **10.3.1-T2** (content-policy + sitemap) is phase S and waits for the owner/TL site-origin decision (canonical/hreflang, 10.3.1-T1 §Notes). No `**` not-found route yet (owner 2026-10-05); `/dashboard` has no route until 10.4.1-T1, so the `/dashboard`-path e2e tests (17 failed locally) stay red until then. First read §Plan 10 hand-overs and the as-built surfaces in the 10.2.6-T1, 10.3.1-T1 and 10.3.3-T1 task §Notes.

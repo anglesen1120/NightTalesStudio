@@ -1,0 +1,62 @@
+@if (error(); as failure) {
+  <nts-error-state
+    titleKey="episodes.list.errorTitle"
+    [bodyKey]="errorKey()"
+    [traceId]="failure.traceId"
+    retryLabelKey="errors.action.retry"
+    (retry)="retry.emit()"
+  />
+} @else if (loading()) {
+  <nts-loading-state labelKey="episodes.list.loading" [rows]="4" />
+} @else {
+  @if (isEmpty() && !hasMore()) {
+    @if (filtered()) {
+      <nts-empty-state
+        titleKey="episodes.list.emptyFilteredTitle"
+        bodyKey="episodes.list.emptyFilteredBody"
+        actionLabelKey="episodes.list.clearFilters"
+        (action)="clearFilters.emit()"
+      />
+    } @else {
+      <nts-empty-state
+        titleKey="episodes.list.empty"
+        bodyKey="episodes.list.emptyBody"
+        actionLabelKey="episodes.list.emptyAction"
+        (action)="emptyAction.emit()"
+      />
+    }
+  } @else {
+    <ul class="episode-list__rows" [attr.aria-busy]="loadingMore()">
+      @for (item of items(); track item.id) {
+        <li><nts-episode-row [item]="item" (open)="open.emit($event)" /></li>
+      }
+      @if (loadingMore()) {
+        @for (skeleton of skeletonRows; track skeleton) {
+          <li class="episode-list__skeleton" aria-hidden="true"><span></span></li>
+        }
+      }
+    </ul>
+  }
+}
+
+@if (hasMore()) {
+  <footer class="episode-list__footer">
+    <button
+      type="button"
+      class="episode-list__load-more"
+      [class.episode-list__load-more--busy]="loadingMore()"
+      [attr.aria-busy]="loadingMore()"
+      [attr.aria-disabled]="loadingMore() ? true : null"
+      (click)="onLoadMore()"
+      >{{ 'episodes.list.loadMore' | transloco }}</button
+    >
+  </footer>
+}
+
+<p class="episode-list__announce" role="status">
+  @if (loadingMore()) {
+    {{ 'episodes.list.loadingMore' | transloco }}
+  } @else if (appendedCount() > 0) {
+    {{ 'episodes.list.rowsAppended' | transloco: { count: appendedCount() } }}
+  }
+</p>
