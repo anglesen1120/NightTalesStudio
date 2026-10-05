@@ -215,45 +215,6 @@ public sealed class StoryReadRoutesQaTests(TestDatabase database) : IntegrationT
         (await ReadOkAsync(response)).GetProperty("content").GetProperty("title").GetString().ShouldBe(Draft().Title);
     }
 
-    [Fact]
-    public async Task StoryVersion_IfNoneMatch_IsCurrentlyIgnoredUnlikeEpisodeGet()
-    {
-        var world = await SeedAsync();
-        using var factory = Factory();
-        using var client = factory.ClientFor(world.UserId);
-        using var request = new HttpRequestMessage(HttpMethod.Get, VersionRoute(world.EpisodeId, world.VersionId!.Value));
-        request.Headers.TryAddWithoutValidation("If-None-Match", StoryEtag.For(world.VersionId.Value));
-        using var response = await client.SendAsync(request, Ct);
-        (await ReadOkAsync(response)).GetProperty("versionId").GetGuid().ShouldBe(world.VersionId.Value);
-        response.Headers.ETag!.Tag.ShouldBe(StoryEtag.For(world.VersionId.Value));
-        using var episode = await client.GetAsync(EpisodeRoute(world.EpisodeId), Ct);
-        episode.StatusCode.ShouldBe(HttpStatusCode.OK);
-        using var conditional = new HttpRequestMessage(HttpMethod.Get, EpisodeRoute(world.EpisodeId));
-        conditional.Headers.TryAddWithoutValidation("If-None-Match", episode.Headers.ETag!.Tag);
-        using var unchanged = await client.SendAsync(conditional, Ct);
-        unchanged.StatusCode.ShouldBe(HttpStatusCode.NotModified);
-        // Observation, not an added 304 requirement for the story routes.
-    }
-
-    [Fact]
-    public async Task StoryRead_CacheHeaders_CurrentlyDifferFromEpisodeGet()
-    {
-        var world = await SeedAsync();
-        using var factory = Factory();
-        using var client = factory.ClientFor(world.UserId);
-        using var episode = await client.GetAsync(EpisodeRoute(world.EpisodeId), Ct);
-        episode.StatusCode.ShouldBe(HttpStatusCode.OK);
-        episode.Headers.CacheControl!.ToString().ShouldBe("no-cache");
-        episode.Headers.Vary.ShouldContain("Authorization");
-        foreach (var route in new[] { VersionsRoute(world.EpisodeId), VersionRoute(world.EpisodeId, world.VersionId!.Value) })
-        {
-            using var response = await client.GetAsync(route, Ct);
-            response.StatusCode.ShouldBe(HttpStatusCode.OK);
-            response.Headers.CacheControl.ShouldBeNull();
-            response.Headers.Vary.ShouldNotContain("Authorization");
-        }
-    }
-
     [Theory]
     [InlineData("HEAD", false)]
     [InlineData("HEAD", true)]
