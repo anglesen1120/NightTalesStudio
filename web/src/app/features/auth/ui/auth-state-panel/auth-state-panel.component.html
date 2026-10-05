@@ -1,0 +1,14 @@
+<div
+  class="auth-stack auth-state-panel"
+  [class.auth-state-panel--success]="success()"
+  [attr.role]="announce() ? 'status' : null"
+  [attr.aria-live]="announce() ? 'polite' : null"
+  [attr.aria-atomic]="announce() ? 'true' : null"
+>
+  <span class="auth-state-panel__mark" aria-hidden="true">{{ success() ? '✓' : '↗' }}</span>
+  <h1 class="auth-heading" tabindex="-1" data-page-heading>{{ titleKey() | transloco }}</h1>
+  <p>{{ hintKey() | transloco }}</p>
+  <a mat-flat-button [href]="actionHref()" (click)="$event.preventDefault(); navigate.emit()">
+    {{ actionKey() | transloco }}
+  </a>
+</div>

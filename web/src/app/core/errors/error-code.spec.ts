@@ -56,6 +56,14 @@ describe('ERROR_CODES', () => {
     }
   });
 
+  it('catalogues the auth-flow backend codes breached_password (400) and registration_closed (403)', () => {
+    expect(ERROR_CODES.breached_password).toEqual({ status: 400, kind: 'validation' });
+    expect(ERROR_CODES.registration_closed).toEqual({ status: 403, kind: 'auth' });
+    expect(isKnownCode('breached_password')).toBe(true);
+    expect(messageCodeFor('registration_closed')).toBe('registration_closed');
+    expect(kindFor('breached_password', 400)).toBe('validation');
+  });
+
   it('aliases unauthenticated to the session_revoked leaf and nothing else', () => {
     expect(ERROR_CODE_ALIASES).toEqual({ unauthenticated: 'session_revoked' });
     expect(messageCodeFor('unauthenticated')).toBe('session_revoked');
