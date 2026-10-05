@@ -4,6 +4,12 @@ History moved out of STATUS.md to keep the live file small. The initial archive 
 
 ## Resume-here history (Current/Previous blocks, Next actions)
 
+### Superseded Session 15 Web next line (2026-10-05, replaced when #139 `29e920c` merged and Session 15 closed)
+
+Outcome: 10.3.1-T1 merged as #139; next for this lane 10.3.1-T2 (phase S).
+
+- **Web next (Session 15):** **10.3.1-T1** legal pages in a PR from `feature/10.3.1-T1-s15` (T3 gates closed; 10 CR-49 skips the boot refresh on legal paths).
+
 ### Closed Plan 10 hand-over (2026-10-05, 10.3.1-T1)
 
 Outcome: 10.3.1-T1 built (T3 gates closed; PR from `feature/10.3.1-T1-s15`): the `public` Transloco scope is bundled in `bundled-translations.ts`, so the four prerendered legal routes render without fetching `/assets/i18n/**`.
