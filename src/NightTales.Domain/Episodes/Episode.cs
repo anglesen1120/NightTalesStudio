@@ -41,6 +41,8 @@ public sealed partial class Episode : AggregateRoot, IUserOwned, IAuditable
 
     public Guid? ApprovedStoryVersionId { get; private set; }
 
+    public DateTimeOffset? ApprovedAt { get; private set; }
+
     public Guid? FinalVideoAssetId { get; private set; }
 
     public DateTimeOffset CreatedAt { get; private set; }

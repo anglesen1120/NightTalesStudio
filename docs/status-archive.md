@@ -4,6 +4,22 @@ History moved out of STATUS.md to keep the live file small. The initial archive 
 
 ## Resume-here history (Current/Previous blocks, Next actions)
 
+### Superseded Session 21 hand-off and gate-pending wording (2026-10-05, replaced after integrating develop `cf4625c`)
+
+- Task Notes: [HAND-OFF — owner 2026-10-05] Acceptance check "GET episode exposes `currentStory.etag`" depends on 02.3.4-T2 (Session 22). This task proves the `sv-` ETag through approve/reopen response bodies and headers; the GET assertion remains open until that read-model task lands.
+- Feature plan §4.4: **CR-7 hand-off (owner 2026-10-05):** GET episode `currentStory.etag` acceptance belongs to 02.3.4-T2 (Session 22); it remains open here until that read-model task lands. 02.3.2-T1 proves the `sv-` ETag via approve/reopen response bodies and headers instead, without marking the GET assertion passed.
+- Feature plan open item: **Open, CR-7 / 02.3.4-T2 (Session 22):** GET episode `currentStory.etag` assertion; approve/reopen bodies and headers cover this task's ETag proof, not GET acceptance.
+
+| 2026-10-05 | Session 21 (`feature/02.3.2-T1-s21`): 02.3.2-T1 approve/reopen + render hand-off | Implementation written; gates pending. Owner authorized nullable `episodes.approved_at` generated EF migration (02 CR-32). Current contracts reconciled: R1 absent report refreshes/fails closed; rejected fresh verdict write-back rolls back, successful verdict commits atomically; new POSTs defer runtime If-Match checks to handlers for owner404/state409 before428/412 while keeping required-header OpenAPI; existing PUT unchanged. `ApprovalSource` is Domain; explicit `NullStoryApprovalGate` retained (no real downstream gates claimed). Edit/approve moderation unmetered outside `ModerationScope` is open for plan 12 / 12.1.x; CR-7 GET ETag handed to 02.3.4-T2 (Session 22). Acceptance checkboxes, runtime/migration gates, separate QA and T3 reviews remain pending; no pass or PR claim. |
+
+### Superseded develop backend Next line (2026-10-05, replaced by active Session 21 after the develop union)
+
+- **Next (backend, start here):** 02.3.4-T2 story read models: PR open (Session 22; unblocks web 10.5.2-T1/10.5.3-T1/10.5.4-T1 after an `openapi.json` re-pin, and 02.8.2-T1). 02.5.2-T4 SSRF/abuse suite merged as #147 (`d670978`, CI refused for billing: CI-01, owner treats as pass; local full `gate.sh` `GATE_RC=0`), so the 02.5.2 story is complete → **02.5.3-T1** fact extractor (lane D; check its header `Depends on`), then 02.6.1-T2, 02.6.2-T1 revision (02 §10 T113(b)), 02.3.2-T1 approve (treat `moderation.stale`/`unavailable` as needs re-check; edit-path moderator wiring). The `02-M1-research` gate still needs the 11.2.2-T2 egress test. First re-run CI on `develop` once GitHub Actions billing is fixed (#131, #136, #147 merged with no CI run). Claim the backend `gate.sh` lock in `nts-wt/SESSION-CLAIMS.md` first.
+
+### Superseded backend Next line (2026-10-05, replaced when Session 21 wrote 02.3.2-T1 implementation; gates pending)
+
+- **Next (backend, start here):** 02.5.2-T4 SSRF/abuse suite merged as #147 (`d670978`, CI refused for billing: CI-01, owner treats as pass; local full `gate.sh` `GATE_RC=0`), so the 02.5.2 story is complete → **02.5.3-T1** fact extractor (lane D; check its header `Depends on`), then 02.6.1-T2, 02.6.2-T1 revision (02 §10 T113(b)), 02.3.2-T1 approve (treat `moderation.stale`/`unavailable` as needs re-check; edit-path moderator wiring). The `02-M1-research` gate still needs the 11.2.2-T2 egress test. First re-run CI on `develop` once GitHub Actions billing is fixed (#131, #136, #147 merged with no CI run). Claim the backend `gate.sh` lock in `nts-wt/SESSION-CLAIMS.md` first.
+
 ### Superseded Web next wording for 10.3.3-T3 (2026-10-05, replaced when #150 merged, Session 16)
 
 Replaced text (verbatim): `**10.3.3-T3** MFA step + enrolment + recovery codes + re-auth in a PR from `feature/10.3.3-T3-s16` (Session 16; T3 gates closed; real-stack enrolment/MFA sign-in blocked on the backend enrolment token, §Plan 10 hand-overs).` (Web next), `Stage B: 10.3.3-T3 MFA/enrolment/re-auth (in PR, Session 16)` (Progress row) and `in PR (`feature/10.3.3-T3-s16`, Session 16); T3 gates closed;` (Open-tasks row).

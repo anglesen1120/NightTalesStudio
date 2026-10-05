@@ -9,6 +9,7 @@ using Npgsql;
 using NightTales.Api.IntegrationTests.Harness;
 using NightTales.Api.IntegrationTests.Http;
 using NightTales.Api.IntegrationTests.Persistence;
+using NightTales.Application.Abstractions.Moderation;
 using NightTales.Application.Abstractions.Text;
 using NightTales.Application.Features.Stories;
 using NightTales.Domain.Common;
@@ -641,6 +642,7 @@ public sealed class EditStoryQaTests(TestDatabase database) : IntegrationTest(da
     {
         var world = await SeedAsync(audit: AuditJson(moderation: """{"flagged":true,"categories":["sexual/minors"],"stale":false}"""));
         using var factory = Factory();
+        factory.Moderator.EnqueueUnavailable(ModerationStage.Draft);
         using var client = factory.ClientFor(world.UserId);
         var node = ToNode(Edited());
         var forged = JsonNode.Parse("""
@@ -737,7 +739,8 @@ public sealed class EditStoryQaTests(TestDatabase database) : IntegrationTest(da
         stored.ShouldNotContain("evil");
         stored.ShouldNotContain("gpt-evil");
         SqlProbe.ScalarText(Database, $"SELECT audit_report->'model_review'->>'stale' FROM story_versions WHERE id = '{newId}'").ShouldBe("true");
-        SqlProbe.ScalarText(Database, $"SELECT coalesce(audit_report->'moderation'->>'stale', 'none') FROM story_versions WHERE id = '{newId}'").ShouldBe("true");
+        SqlProbe.ScalarText(Database, $"SELECT coalesce(audit_report->'moderation'->>'stale', 'none') FROM story_versions WHERE id = '{newId}'").ShouldBe("false");
+        factory.Moderator.Calls.ShouldBe(1, "the server rechecks rather than trusting client moderation fields");
         SqlProbe.Count(Database, $"SELECT count(*) FROM story_versions WHERE episode_id = '{stranger.EpisodeId}'").ShouldBe(1);
         SqlProbe.ScalarText(Database, $"SELECT current_story_version_id::text FROM episodes WHERE id = '{stranger.EpisodeId}'")
             .ShouldBe(stranger.VersionId.ToString());
@@ -759,6 +762,31 @@ public sealed class EditStoryQaTests(TestDatabase database) : IntegrationTest(da
         problem.Code.ShouldBe("story_invalid_content");
         Messages(problem).ShouldContain(message => message.StartsWith("fact_ref_unknown:", StringComparison.Ordinal));
         AssertNothingSaved(world);
+    }
+
+    [Theory]
+    [InlineData("""{"flagged":"false","categories":[],"blocking":[],"stale":false,"unavailable":false}""")]
+    [InlineData("""{"flagged":false,"categories":[null],"blocking":[],"stale":false,"unavailable":false}""")]
+    [InlineData("""{"flagged":true,"categories":[],"blocking":[],"stale":false,"unavailable":false}""")]
+    [InlineData("""{"flagged":true,"categories":["sexual/minors"],"blocking":[],"stale":false,"unavailable":false}""")]
+    public async Task QA_MalformedCarriedModeration_OnOutage_IsBlockingNotClean(string moderation)
+    {
+        var world = await SeedAsync(audit: AuditJson(moderation));
+        using var factory = Factory();
+        factory.Moderator.EnqueueUnavailable(ModerationStage.Draft);
+        using var client = factory.ClientFor(world.UserId);
+
+        using var response = await PutAsync(client, world.EpisodeId, Edited(), StoryEtag.For(world.VersionId));
+
+        response.StatusCode.ShouldBe(HttpStatusCode.OK, await ShortBodyAsync(response));
+        var body = await ReadBodyAsync(response);
+        body.GetProperty("qualityHints").EnumerateArray()
+            .Single(hint => hint.GetProperty("ruleId").GetString() == "Q-MOD-01")
+            .GetProperty("severity").GetString().ShouldBe("blocking");
+        var newId = body.GetProperty("versionId").GetGuid();
+        SqlProbe.ScalarText(Database, $"SELECT audit_report->'moderation'->>'stale' FROM story_versions WHERE id = '{newId}'")
+            .ShouldBe("true");
+        factory.Moderator.Calls.ShouldBe(1);
     }
 
     // ---- helpers ------------------------------------------------------------------------------------------------------

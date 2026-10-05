@@ -2,23 +2,28 @@ using System.Text.Json;
 using ErrorOr;
 using Mediator;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Options;
+using Microsoft.OpenApi;
 using NightTales.Api.Http;
 using NightTales.Api.Http.Filters;
 using NightTales.Api.RateLimiting;
 using NightTales.Application.Common.Errors;
 using NightTales.Application.Features.Stories;
+using NightTales.Application.Features.Stories.Commands.ApproveStory;
 using NightTales.Application.Features.Stories.Commands.EditStory;
 using NightTales.Application.Features.Stories.Commands.GenerateStory;
 using NightTales.Application.Features.Stories.ReadModels;
 using NightTales.Application.Features.Stories.Queries.GetStoryVersion;
 using NightTales.Application.Features.Stories.Queries.GetStoryVersions;
+using NightTales.Application.Features.Stories.Commands.ReopenStory;
+using NightTales.Domain.Stories;
 using NightTales.Domain.Stories.Generation;
 
 namespace NightTales.Api.Endpoints;
 
 /// <summary>
-/// The story routes (02 README D9, 02.2.2 plan §5.1, 02.3.1 plan §Route): generation, full edits and
-/// read-only version history. Other story operations belong to their own tasks.
+/// The story routes (02 README D9, 02.2.2 plan §5.1, 02.3.1 plan §Route, 02.3.2-T1, 02.3.4-T2): generation,
+/// full edits, approval, reopening and read-only version history. Other story operations belong to their own tasks.
 /// </summary>
 /// <remarks>
 /// Like every route it is denied to anonymous callers by the pipeline; a caller who does not own the episode gets
@@ -39,6 +44,12 @@ public static class StoryEndpoints
 
     /// <summary>The read-only version detail route (02 README CR-12).</summary>
     public const string VersionRoute = "/api/v1/episodes/{id:guid}/story/versions/{versionId:guid}";
+
+    /// <summary>Locks the reviewed story version (02.3.2-T1).</summary>
+    public const string ApproveRoute = StoryRoute + "/approve";
+
+    /// <summary>Unlocks the approved story version (02.3.2-T1).</summary>
+    public const string ReopenRoute = StoryRoute + "/reopen";
 
     /// <summary>Maps the story routes onto the host's route builder.</summary>
     /// <param name="routes">The host's endpoint route builder.</param>
@@ -86,6 +97,39 @@ public static class StoryEndpoints
                 .ProducesProblem(StatusCodes.Status401Unauthorized)
                 .ProducesProblem(StatusCodes.Status404NotFound)
                 .RequireCors(SecurityHeadersExtensions.SpaCorsPolicy));
+
+        // These commands validate ownership and state before If-Match (02.3.2-T1 fixed order).
+        // Document the required header without the PUT route's early RequireIfMatchFilter.
+        EpisodeIdRouteParameter.Declare(
+            DocumentRequiredIfMatch(routes.MapPost(ApproveRoute, ApproveAsync)
+                // The bounded reader below owns content-type validation (400), not routing's 415 matcher.
+                .Accepts<ApproveStoryRequest>(isOptional: true, "*/*")
+                .AddOpenApiOperationTransformer((operation, _, _) =>
+                {
+                    var content = operation.RequestBody!.Content!;
+                    content["application/json"] = content["*/*"];
+                    content.Remove("*/*");
+                    return Task.CompletedTask;
+                })
+                .Produces<ApprovedStoryDto>(StatusCodes.Status200OK)
+                .ProducesProblem(StatusCodes.Status400BadRequest)
+                .ProducesProblem(StatusCodes.Status401Unauthorized)
+                .ProducesProblem(StatusCodes.Status404NotFound)
+                .ProducesProblem(StatusCodes.Status409Conflict)
+                .ProducesProblem(StatusCodes.Status412PreconditionFailed)
+                .Produces(StatusCodes.Status413PayloadTooLarge)
+                .ProducesProblem(StatusCodes.Status428PreconditionRequired)
+                .RequireCors(SecurityHeadersExtensions.SpaCorsPolicy)));
+
+        EpisodeIdRouteParameter.Declare(
+            DocumentRequiredIfMatch(routes.MapPost(ReopenRoute, ReopenAsync)
+                .Produces<EpisodeStoryStateDto>(StatusCodes.Status200OK)
+                .ProducesProblem(StatusCodes.Status401Unauthorized)
+                .ProducesProblem(StatusCodes.Status404NotFound)
+                .ProducesProblem(StatusCodes.Status409Conflict)
+                .ProducesProblem(StatusCodes.Status412PreconditionFailed)
+                .ProducesProblem(StatusCodes.Status428PreconditionRequired)
+                .RequireCors(SecurityHeadersExtensions.SpaCorsPolicy)));
 
         return routes;
     }
@@ -156,6 +200,168 @@ public static class StoryEndpoints
             .Send(new EditStoryCommand(id, content, ifMatch ?? string.Empty), ct)
             .ConfigureAwait(false))
             .ToHttpResult(http);
+    }
+
+    /// <summary>The optional approval body; the caller cannot bind an approval source.</summary>
+    public sealed record ApproveStoryRequest(AttestationInput? Attestation = null);
+
+    private static RouteHandlerBuilder DocumentRequiredIfMatch(RouteHandlerBuilder route) =>
+        route.AddOpenApiOperationTransformer((operation, _, _) =>
+        {
+            if (operation.Parameters is not null)
+            {
+                foreach (var parameter in operation.Parameters)
+                {
+                    if (parameter is OpenApiParameter { In: ParameterLocation.Header } header
+                        && string.Equals(header.Name, RequireIfMatchFilter.HeaderName, StringComparison.OrdinalIgnoreCase))
+                    {
+                        header.Required = true;
+                    }
+                }
+            }
+
+            return Task.CompletedTask;
+        });
+
+    private static async Task<IResult> ApproveAsync(
+        Guid id,
+        [FromHeader(Name = RequireIfMatchFilter.HeaderName)] string? ifMatch,
+        ISender sender,
+        IOptions<RequestLimitsOptions> limits,
+        HttpContext http,
+        CancellationToken ct)
+    {
+        var raw = await ReadApprovalBodyAsync(http, checked((int)limits.Value.MaxRequestBodySize), ct).ConfigureAwait(false);
+        if (raw is null)
+        {
+            return Results.StatusCode(StatusCodes.Status413PayloadTooLarge);
+        }
+
+        if (!TryReadAttestation(raw.Value, http.Request, out var attestation))
+        {
+            return ProblemDetailsWriter.ToProblem(
+                [Error.Validation(
+                    ErrorCodes.StoryAttestationRequired,
+                    "The approval body must be a JSON object with an optional attestation containing accepted and textVersion.",
+                    new Dictionary<string, object> { [ErrorMetadata.Field] = "body" })],
+                http);
+        }
+
+        return (await sender
+            .Send(new ApproveStoryCommand(id, ifMatch ?? string.Empty, attestation, ApprovalSource.User), ct)
+            .ConfigureAwait(false))
+            .ToHttpResult(http);
+    }
+
+    private static async Task<IResult> ReopenAsync(
+        Guid id,
+        [FromHeader(Name = RequireIfMatchFilter.HeaderName)] string? ifMatch,
+        ISender sender,
+        HttpContext http,
+        CancellationToken ct) =>
+        (await sender.Send(new ReopenStoryCommand(id, ifMatch ?? string.Empty), ct).ConfigureAwait(false))
+        .ToHttpResult(http);
+
+    // Same bounded reading convention as the fetcher endpoints; no body is a valid fiction approval.
+    private static async Task<ReadOnlyMemory<byte>?> ReadApprovalBodyAsync(HttpContext http, int limit, CancellationToken ct)
+    {
+        ct.ThrowIfCancellationRequested();
+        var declared = http.Request.ContentLength;
+        if (declared > limit)
+        {
+            return null;
+        }
+
+        if (declared == 0
+            || http.Features.Get<Microsoft.AspNetCore.Http.Features.IHttpRequestBodyDetectionFeature>() is { CanHaveBody: false })
+        {
+            return ReadOnlyMemory<byte>.Empty;
+        }
+
+        if (http.Features.Get<Microsoft.AspNetCore.Http.Features.IHttpMaxRequestBodySizeFeature>() is { IsReadOnly: false } feature)
+        {
+            feature.MaxRequestBodySize = limit;
+        }
+
+        var buffer = new byte[declared is { } length ? (int)length + 1 : Math.Min(4 * 1_024, limit + 1)];
+        var total = 0;
+        try
+        {
+            while (true)
+            {
+                if (total == buffer.Length)
+                {
+                    Array.Resize(ref buffer, (int)Math.Min(buffer.Length * 2L, limit + 1L));
+                }
+
+                var read = await http.Request.Body.ReadAsync(buffer.AsMemory(total), ct).ConfigureAwait(false);
+                if (read == 0)
+                {
+                    return buffer.AsMemory(0, total);
+                }
+
+                total += read;
+                if (total > limit)
+                {
+                    return null;
+                }
+            }
+        }
+        catch (BadHttpRequestException exception) when (exception.StatusCode == StatusCodes.Status413PayloadTooLarge)
+        {
+            return null;
+        }
+    }
+
+    private static bool TryReadAttestation(ReadOnlyMemory<byte> raw, HttpRequest request, out AttestationInput? attestation)
+    {
+        attestation = null;
+        if (raw.IsEmpty)
+        {
+            return true;
+        }
+
+        if (!request.HasJsonContentType())
+        {
+            return false;
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(raw);
+            var body = document.RootElement;
+            if (body.ValueKind != JsonValueKind.Object)
+            {
+                return false;
+            }
+
+            if (!body.TryGetProperty("attestation", out var value) || value.ValueKind == JsonValueKind.Null)
+            {
+                return true;
+            }
+
+            if (value.ValueKind != JsonValueKind.Object
+                || !value.TryGetProperty("accepted", out var accepted)
+                || accepted.ValueKind is not (JsonValueKind.True or JsonValueKind.False)
+                || !value.TryGetProperty("textVersion", out var textVersion)
+                || textVersion.ValueKind != JsonValueKind.String)
+            {
+                return false;
+            }
+
+            // Shape only: topic-specific acceptance and text-version checks belong to the approval gate.
+            attestation = new AttestationInput(accepted.GetBoolean(), textVersion.GetString()!);
+            return true;
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+        catch (InvalidOperationException)
+        {
+            // A lone surrogate escape cannot be transcoded. Do not expose body text through an exception.
+            return false;
+        }
     }
 
     /// <summary>

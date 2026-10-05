@@ -88,12 +88,14 @@ public interface IAppDbContext
     DbSet<MusicTrack> MusicTracks { get; }
 
     /// <summary>
-    /// Takes the row lock of the current user's episode (<c>SELECT … FOR UPDATE</c>, 02.2.2 plan §4 U6) as the
+    /// Takes the row lock of the current user's episode (<c>SELECT … FOR NO KEY UPDATE</c>, 02.2.2 plan §4 U6) as the
     /// first statement of a command's transaction, so the status read, the daily count and the run insert of two
     /// concurrent generate calls serialise on the episode. The lock is held until the surrounding transaction
     /// ends. Like the tenant filter, it matches only rows owned by the scope's user: another user's id, an
     /// unknown id and an anonymous scope lock nothing, so one tenant cannot block another; the tenant-filtered
     /// load that follows is what answers 404.
+    /// Concurrent state changes and deletion still wait, but foreign-key KEY SHARE checks may proceed, so
+    /// independently committed moderation evidence can reference the episode while this command holds its lock.
     /// </summary>
     /// <param name="episodeId">The episode to lock.</param>
     /// <param name="cancellationToken">Cancels the statement.</param>

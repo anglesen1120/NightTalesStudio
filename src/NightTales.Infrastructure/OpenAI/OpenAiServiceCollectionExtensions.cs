@@ -12,7 +12,6 @@ using NightTales.Application.Abstractions.Moderation;
 using NightTales.Application.Abstractions.Text;
 using NightTales.Application.Abstractions.Usage;
 using NightTales.Application.Features.Stories.Writing;
-using NightTales.Infrastructure.Compliance;
 using OpenAI;
 using OpenAI.Responses;
 using Polly;
@@ -47,16 +46,7 @@ public static class OpenAiServiceCollectionExtensions
     {
         ArgumentNullException.ThrowIfNull(services);
 
-        services.AddOptions<OpenAiOptions>()
-            .BindConfiguration(OpenAiOptions.SectionName)
-            .ValidateOnStart();
-        services.TryAddEnumerable(ServiceDescriptor.Singleton<IValidateOptions<OpenAiOptions>, OpenAiOptionsValidator>());
-
-        services.TryAddTransient<ClientRequestIdHandler>();
-        services.AddHttpClient(HttpClientName, client => client.Timeout = Timeout.InfiniteTimeSpan)
-            // No redirects: a 3xx from the pinned host would replay the prompt body elsewhere; it surfaces as ProviderError.
-            .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { PooledConnectionLifetime = TimeSpan.FromMinutes(2), AllowAutoRedirect = false })
-            .AddHttpMessageHandler<ClientRequestIdHandler>();
+        AddOpenAiTransport(services);
 
         foreach (var step in Enum.GetValues<TextStep>())
         {
@@ -92,10 +82,40 @@ public static class OpenAiServiceCollectionExtensions
     }
 
     /// <summary>
+    /// Registers the real moderation adapter without the text-generation services. The Api uses the same
+    /// <c>OpenAi:ApiKey</c>, transport and validated options as the Worker for edit and approval checks.
+    /// </summary>
+    /// <param name="services">The service collection; persistence supplies the moderation-event writer.</param>
+    /// <returns>The same collection.</returns>
+    public static IServiceCollection AddOpenAiContentModerator(this IServiceCollection services)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+
+        AddOpenAiTransport(services);
+        AddContentModerator(services);
+
+        return services;
+    }
+
+    private static void AddOpenAiTransport(IServiceCollection services)
+    {
+        services.AddOptions<OpenAiOptions>()
+            .BindConfiguration(OpenAiOptions.SectionName)
+            .ValidateOnStart();
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IValidateOptions<OpenAiOptions>, OpenAiOptionsValidator>());
+
+        services.TryAddTransient<ClientRequestIdHandler>();
+        services.AddHttpClient(HttpClientName, client => client.Timeout = Timeout.InfiniteTimeSpan)
+            // No redirects: neither prompts nor moderation input may be replayed to another host.
+            .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { PooledConnectionLifetime = TimeSpan.FromMinutes(2), AllowAutoRedirect = false })
+            .AddHttpMessageHandler<ClientRequestIdHandler>();
+    }
+
+    /// <summary>
     /// 02.4.1-T1 (02 README D12): <see cref="ModerationOptions"/> bound from <c>OpenAi:Moderation</c>, the
     /// <c>openai-moderation</c> pipeline (the text calls' retry shape with the moderation timeout), the moderation
     /// client over the same <c>"openai"</c> HttpClient and base URL as the text client (10 CR-16: the e2e stub also
-    /// answers <c>/moderations</c>), <see cref="IContentModerator"/> and <see cref="IModerationEventWriter"/>.
+    /// answers <c>/moderations</c>) and <see cref="IContentModerator"/>. Persistence supplies the event writer.
     /// </summary>
     private static void AddContentModerator(IServiceCollection services)
     {
@@ -144,7 +164,6 @@ public static class OpenAiServiceCollectionExtensions
             provider.GetRequiredService<IOptions<ModerationOptions>>().Value,
             provider.GetRequiredService<ResiliencePipelineProvider<string>>(),
             provider.GetRequiredService<ILogger<OpenAiContentModerator>>()));
-        services.TryAddSingleton<IModerationEventWriter, ModerationEventWriter>();
     }
 
     /// <summary>

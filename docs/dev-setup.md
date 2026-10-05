@@ -102,21 +102,24 @@ fresh database.
   Neither references Application or Infrastructure.
 - The two commands below are exactly what `.github/workflows/backend.yml` runs (`build-test`, then
   `integration`). The build-time OpenAPI generator boots the Api, so every build and test command needs
-  the five values a deployment always provides: a parseable connection string, which it never uses to
+  the required values a deployment always provides: a parseable connection string, which it never uses to
   connect; an ES256 signing key for the start-up validation of 09.3.2-T1 (secret
   `nts/<env>/api/JWT_SIGNING_KEY`); a valid `App:PublicOrigin` for the validation of 09.9.4-T1 (BD12) —
   the base `appsettings.json` carries the Development value `http://localhost:4200`, which is rejected
   outside Development; the `DP_KEK` PFX of the Data Protection key ring (09.9.4-T1, WF15, secret
-  `nts/<env>/shared/DP_KEK`); and a non-default `Email:AddressHashPepper` (09.2.6-T3, BD16) — the base
+  `nts/<env>/shared/DP_KEK`); a non-default `Email:AddressHashPepper` (09.2.6-T3, BD16) — the base
   `appsettings.json` carries the Development pepper, which the e-mail validator rejects outside
-  Development. Generate throwaway values for all of them — CI does the same with `openssl` and fixed
-  placeholders, so no private key or certificate is ever committed.
+  Development; and the existing shared `OpenAi:ApiKey`, now consumed by Api edit/approval moderation
+  as well as Worker generation (02.3.2-T1). Generate throwaway values for build-time document generation —
+  CI does the same with `openssl` and fixed placeholders, so no private key, certificate or provider credential
+  is ever committed. Real deployments must supply the actual shared provider key, not the placeholder.
 
 ```bash
 export ConnectionStrings__Postgres='Host=127.0.0.1;Database=nighttales;Username=nighttales;Password=ci-openapi-document-generation-placeholder'
 export Auth__Jwt__SigningKey="$(openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256)"
 export App__PublicOrigin='https://localhost:4200'   # any valid https origin; never a real deployment one
 export Email__AddressHashPepper='ci-openapi-document-generation-placeholder'   # non-secret; same as CI
+export OpenAi__ApiKey='ci-openapi-document-generation-placeholder'   # non-secret; the generator never calls the provider
 # A throwaway DP_KEK: an RSA self-signed PFX (RSA because the ring is encrypted with EncryptedXml,
 # which accepts RSA only) in a temporary directory, generated once per shell.
 export KEK_PASSWORD="$(openssl rand -hex 24)"
@@ -145,9 +148,9 @@ env -u NTS_TEST_PG dotnet test NightTales.ci.slnf -c Release --no-build \
 ```bash
 # Integration job (needs the server from the Database section below). The count grows with every
 # feature (56 on the 2026-09-29 wave-2 tree, 23 when this block was written). Self-contained: the
-# build-time values from the block above plus NTS_TEST_PG are exported here (the same five values the
+# build-time values from the block above plus NTS_TEST_PG are exported here (the same required values the
 # first block exports, so re-run that block or export them again). `ConnectionStrings__Postgres`,
-# `Auth__Jwt__SigningKey`, `App__PublicOrigin`, `Email__AddressHashPepper` and the `DP_KEK` pair are required by the build-time
+# `Auth__Jwt__SigningKey`, `App__PublicOrigin`, `Email__AddressHashPepper`, `OpenAi__ApiKey` and the `DP_KEK` pair are required by the build-time
 # OpenAPI generator, which boots the Api and runs its start-up validation — not by the tests, which
 # read NTS_TEST_PG. Without the connection string a build fails inside the generator: MSB3073 from the
 # `dotnet-getdocument` tool that Microsoft.Extensions.ApiDescription.Server.targets invokes, with
@@ -161,6 +164,7 @@ export ConnectionStrings__Postgres='Host=127.0.0.1;Database=nighttales;Username=
 export Auth__Jwt__SigningKey="$(openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256)"
 export App__PublicOrigin='https://localhost:4200'
 export Email__AddressHashPepper='ci-openapi-document-generation-placeholder'
+export OpenAi__ApiKey='ci-openapi-document-generation-placeholder'
 export KEK_PASSWORD="$(openssl rand -hex 24)"
 openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj '/CN=nts-dev-dp-kek' \
   -keyout "${TMPDIR:-/tmp}/dp-kek.key" -out "${TMPDIR:-/tmp}/dp-kek.crt"
@@ -249,11 +253,11 @@ Worker, which also bind these keys.
 |`dotnet run` / `tools/dev/up.sh`|Development|local PostgreSQL 17, migrated|`appsettings*.json` + the env exports above|
 |`nts-migrate` (EF migration bundle)|No Api/Worker host environment or startup services|target PostgreSQL database; applies migrations|`AppDbContextDesignFactory` reads `ConnectionStrings__Postgres` / `ConnectionStrings:Postgres`; the bundle can override the connection with `--connection`. Factory construction needs no Api/Worker secrets.|
 |`nts-seed` / Api or Worker `--seed`|Environment of the invoking host/process|target PostgreSQL database, already migrated|Same configuration sources and eager composition checks as the invoking Api/Worker. The host is built, then `SeedCommand.Run` executes `SeedRunner` and exits without starting listeners or hosted services; host-start `ValidateOnStart` checks are not automatically run.|
-|`ApiFactory` (TestKit)|Development (WebApplicationFactory)|per-class test database|`ApiFactory.ApplyRequiredStartupSettings` (`tests/NightTales.TestKit/Api/ApiFactory.cs`)|
-|`ApiFactory.ProductionHost` (TestKit)|Development by default (WebApplicationFactory); the callback may select Production with `UseEnvironment`|per-class test database|`appsettings*.json` + process configuration, overridden by `ApplyRequiredStartupSettings`, the connection string and the caller's callback; production registrations, without the test authentication scheme or fake clock|
+|`ApiFactory` (TestKit)|Development (WebApplicationFactory)|per-class test database|`ApiFactory.ApplyRequiredStartupSettings` (`tests/NightTales.TestKit/Api/ApiFactory.cs`) supplies the required values, including a non-secret OpenAI key placeholder; `ConfigureTestServices` installs a deterministic moderator after production registration, then explicit service overrides. The moderation-event writer remains real.|
+|`ApiFactory.ProductionHost` (TestKit)|Development by default (WebApplicationFactory); the callback may select Production with `UseEnvironment`|per-class test database|`appsettings*.json` + process configuration, overridden by `ApplyRequiredStartupSettings`, the connection string and the caller's callback; production authentication and clock, with a test-only deterministic moderator and non-secret OpenAI key placeholder.|
 |`WorkerHost` (TestKit)|Process-selected Generic Host environment; not explicitly forced to Development|per-class test database|`WorkerHost.HarnessSettings` + `EmailTestSettings`; default configuration sources are cleared. Telemetry is opt-in and `WithTelemetry()` supplies `Logging:UserHashSalt`; the harness removes the outbox and node-health loops, defaults to inline jobs and does not run entry-point node registration.|
 |`NightTales.MptAdapter` executable (`AdapterHost.RunAsync`)|Process-selected WebApplication environment; Development affects allowed listen addresses|local SQLite under `Adapter:DataDir`, migrated before listening|Default WebApplication configuration providers plus `Adapter` and `RenderNodeServer` option defaults. `RenderNodeServer:ApiKey` is required, with `ADAPTER_API_KEY` as fallback; the optional next key has the analogous `ADAPTER_API_KEY_NEXT` fallback. Startup checks key separation, `Adapter:ListenAddress`, valid `Adapter:CertPath` / `Adapter:KeyPath` files and writable `Adapter:DataDir`; options are validated on start.|
-|**Build-time OpenAPI generator** (every `dotnet build` of the Api, `OpenApiGenerateDocuments=true` in `NightTales.Api.csproj`)|Production|**none you can rely on**: CI passes a placeholder connection string; the local gate script points at the shared server, whose database may lack the newest tables|`appsettings.json` (Development defaults, some refused outside Development) overridden by process env: the `env:` block of `.github/workflows/backend.yml`, the local gate script, the build-time blocks in [.NET solution](#net-solution)|
+|**Build-time OpenAPI generator** (every `dotnet build` of the Api, `OpenApiGenerateDocuments=true` in `NightTales.Api.csproj`)|Production|**none you can rely on**: CI passes a placeholder connection string; the local gate script points at the shared server, whose database may lack the newest tables|`appsettings.json` (Development defaults, some refused outside Development) overridden by process env: the global `env:` block of `.github/workflows/backend.yml` (including non-secret `OpenAi__ApiKey`), the local gate script's existing shared `OPENAI_API_KEY`, or the build-time blocks in [.NET solution](#net-solution). No moderation call is made while generating the document.|
 |Docker image publish (`src/NightTales.Api/Dockerfile`)|n/a|n/a|the generator is off (`-p:OpenApiGenerateDocuments=false`); `tools/dev/up.sh` turns it off the same way|
 
 TestKit also applies a process-wide host default before its factories run: `TestHostDefaults` sets
@@ -275,10 +279,19 @@ Rules for any change that runs at start-up:
   `.github/workflows/backend.yml`, the local gate script, both build-time blocks in
   [.NET solution](#net-solution), `ApiFactory.ApplyRequiredStartupSettings`, and `WorkerHost.HarnessSettings` /
   `EmailTestSettings` when the Worker binds it. Precedent: `Email__AddressHashPepper` (09.2.6-T3).
-  02.2.1-T2 adds `OpenAi:ApiKey` (Worker only; the Api does not compose the text adapter): `OpenAiTestSettings.WorkerSettings`
-  feeds `WorkerHost.HarnessSettings` and `WorkerHealthProbe`, `tools/dev/up.sh` exports `OpenAi__ApiKey` from `OPENAI_API_KEY`
-  (placeholder when unset), and a real Worker deployment sets `OpenAi__ApiKey` from the secret store. `OpenAi:BaseUrl` must be the
-  pinned relay outside Development.
+  02.2.1-T2 adds the existing shared `OpenAi:ApiKey`: `OpenAiTestSettings.WorkerSettings` feeds
+  `WorkerHost.HarnessSettings` and `WorkerHealthProbe`. 02.3.2-T1 also requires it for Api edit/approval
+  moderation; no new key name is introduced. The Api preserves a nonblank canonical `OpenAi:ApiKey`
+  (environment `OpenAi__ApiKey`), otherwise maps the existing `OPENAI_API_KEY` into that setting. Missing
+  both fails Api startup through `OpenAiOptionsValidator`; no production no-op/allow-all moderator or
+  placeholder fallback exists. `tools/dev/up.sh` forwards that same canonical-or-existing-environment key
+  to the Api without a placeholder, so native dev Api startup also requires it. The Worker's existing dev
+  launch still uses `OPENAI_API_KEY` (placeholder when unset). Real Api and Worker deployments supply
+  `OpenAi__ApiKey` from the shared secret store. `OpenAi:BaseUrl` must be the pinned relay outside Development.
+  ApiFactory's key placeholder and deterministic moderator are test-only; CI and both build-time command
+  blocks above use a non-secret placeholder solely to generate the document without calling a provider.
+  The optional `docker-compose.yml` Api environment forwards `OpenAi__ApiKey`, falling back to
+  `OPENAI_API_KEY`, with no placeholder when both are missing. The compose file contains no credential.
   02.4.1-T1 adds `OpenAi:Moderation:{Model,MaxCharsPerChunk,TimeoutSeconds}`: all optional (in-code defaults, Worker `appsettings.json`),
   so no placeholder is needed; the moderation call uses the same `OpenAi:BaseUrl` and the `"openai"` HttpClient.
   02.2.2-T3 adds the Worker keys `Story:Job:{TimeoutSeconds,TimeoutSecondsLong}` (per-run deadline, defaults 360 / 480 s, bounds 60–3600,

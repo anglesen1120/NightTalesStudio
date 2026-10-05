@@ -15,8 +15,8 @@ namespace NightTales.Api.IntegrationTests.Migrations;
 /// <summary>
 /// The <c>_02_SourcesAndFetchTasks</c> migration (02.5.1-T1, 02.5.1 plan §3.2): both tables, their CHECKs and the index set
 /// 02.5.2-T2's lease SQL depends on — above all the partial unique index of one live task per source and the same-owner
-/// cascade keys. This class owns the last-migration check (<c>migrations[^1]</c>); older migration tests find their own
-/// migration by name.
+/// cascade keys. This class finds its migration by name; EpisodeApprovedAtMigrationTests owns the
+/// last-migration check (<c>migrations[^1]</c>).
 /// </summary>
 [Trait("Category", "Integration")]
 [Trait("Category", "Migration")]
@@ -27,11 +27,11 @@ public sealed class SourcesAndFetchTasksMigrationTests(TestDatabase database) : 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
     [Fact]
-    public async Task Migration_IsTheLastOne_AndModelHasNoPendingChange()
+    public async Task Migration_IsPresent_AndModelHasNoPendingChange()
     {
         await using var context = Database.CreateAppDbContext();
         var migrations = context.Database.GetMigrations().Order(StringComparer.Ordinal).ToList();
-        migrations[^1].ShouldEndWith("_" + MigrationName, customMessage: "this test owns the last migration");
+        migrations.ShouldContain(migration => migration.EndsWith("_" + MigrationName, StringComparison.Ordinal));
 
         context.Database.HasPendingModelChanges().ShouldBeFalse();
         context.Model.FindEntityType(typeof(StorySource))!.GetTableName().ShouldBe("story_sources");
@@ -149,16 +149,16 @@ public sealed class SourcesAndFetchTasksMigrationTests(TestDatabase database) : 
     {
         await using var context = Database.CreateAppDbContext();
         var migrations = context.Database.GetMigrations().Order(StringComparer.Ordinal).ToList();
-        migrations[^1].ShouldEndWith("_" + MigrationName, customMessage: "this test owns the last migration");
-        migrations.Count.ShouldBeGreaterThan(1);
+        var own = migrations.FindIndex(migration => migration.EndsWith("_" + MigrationName, StringComparison.Ordinal));
+        own.ShouldBeGreaterThan(0);
 
         const string Probe = "SELECT coalesce(to_regclass('public.story_sources')::text, '') || '|' || coalesce(to_regclass('public.fetch_tasks')::text, '') || '|' || coalesce(to_regclass('public.source_creations')::text, '')";
         try
         {
-            await context.Database.GetService<IMigrator>().MigrateAsync(migrations[^2], Ct);
+            await context.Database.GetService<IMigrator>().MigrateAsync(migrations[own - 1], Ct);
             (await Database.QueryStringsAsync(Probe, Ct)).ShouldBe(["||"]);
 
-            await context.Database.GetService<IMigrator>().MigrateAsync(migrations[^1], Ct);
+            await context.Database.GetService<IMigrator>().MigrateAsync(migrations[own], Ct);
             (await Database.QueryStringsAsync(Probe, Ct)).ShouldBe(["story_sources|fetch_tasks|source_creations"]);
         }
         finally
