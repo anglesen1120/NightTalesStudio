@@ -175,7 +175,7 @@ export class SessionStore {
   }
 
   hasFeature(key: string): boolean {
-    return (this.meState()?.features ?? []).includes(key);
+    return ((this.meState()?.features ?? []) as readonly string[]).includes(key);
   }
 
   /** Holds the enrolment-only token (WR8): `status()` stays out of `'authenticated'`, `/me` and realtime never start. */

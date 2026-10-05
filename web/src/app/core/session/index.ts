@@ -3,6 +3,7 @@
 export * from './activity';
 export * from './auth.guard';
 export * from './me-summary';
+export * from './me.repository';
 export * from './provide-session';
 export * from './refresh-lock';
 export * from './return-url';

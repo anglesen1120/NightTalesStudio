@@ -1,0 +1,15 @@
+<mat-form-field appearance="outline" subscriptSizing="dynamic">
+  <mat-label>{{ 'shell.language.label' | transloco }}</mat-label>
+  <mat-select
+    [value]="locale()"
+    [disabled]="saving()"
+    (valueChange)="selectLocale($event)"
+  >
+    <mat-select-trigger>
+      <nts-icon-language aria-hidden="true" />
+      <span class="language-switch__value">{{ locale() === 'vi' ? 'Tiếng Việt' : 'English' }}</span>
+    </mat-select-trigger>
+    <mat-option value="vi">Tiếng Việt</mat-option>
+    <mat-option value="en">English</mat-option>
+  </mat-select>
+</mat-form-field>

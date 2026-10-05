@@ -1,0 +1,36 @@
+:host {
+  display: block;
+  width: 148px;
+  max-width: 100%;
+}
+
+mat-form-field {
+  width: 100%;
+}
+
+mat-select:focus-visible {
+  outline: 3px solid var(--nts-color-focus);
+  outline-offset: 3px;
+}
+
+nts-icon-language {
+  width: 18px;
+  height: 18px;
+  margin-inline-end: var(--nts-space-2);
+  vertical-align: middle;
+}
+
+@media (max-width: 599px) {
+  :host {
+    width: 88px;
+  }
+
+  .language-switch__value {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}
