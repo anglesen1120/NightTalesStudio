@@ -4,6 +4,13 @@ History moved out of STATUS.md to keep the live file small. The initial archive 
 
 ## Resume-here history (Current/Previous blocks, Next actions)
 
+### Superseded backend Next line, Migrations bullet and Session 21 interim log row (2026-10-05, replaced when 02.3.2-T1 closed its T3 gates)
+
+- **Next (backend, start here):** 02.3.4-T2 story read models merged as #156 (`cf4625c`, Session 22; CI refused for billing: CI-01, owner treats as pass; local full `gate.sh` `GATE_RC=0`; unblocks web 10.5.2-T1/10.5.3-T1/10.5.4-T1 after an `openapi.json` re-pin, and 02.8.2-T1). 02.5.2-T4 SSRF/abuse suite merged as #147 (`d670978`, CI refused for billing: CI-01, owner treats as pass; local full `gate.sh` `GATE_RC=0`), so the 02.5.2 story is complete → **02.5.3-T1** fact extractor (lane D; check its header `Depends on`), then 02.6.1-T2, 02.6.2-T1 revision (02 §10 T113(b)), 02.3.2-T1 approve (treat `moderation.stale`/`unavailable` as needs re-check; edit-path moderator wiring). The `02-M1-research` gate still needs the 11.2.2-T2 egress test. First re-run CI on `develop` once GitHub Actions billing is fixed (#131, #136, #147 merged with no CI run). Claim the backend `gate.sh` lock in `nts-wt/SESSION-CLAIMS.md` first.
+- **Migrations** end `…20261003114329_09_AssetsRetentionIndex` → `20261003140736_02_SourcesAndFetchTasks`; `SourcesAndFetchTasksMigrationTests` owns `migrations[^1]`. New required Worker key `OpenAi:ApiKey` (dev: `OPENAI_API_KEY` via `tools/dev/up.sh`).
+
+| 2026-10-05 | Session 21 (`feature/02.3.2-T1-s21`): develop integration + gate recovery | Full gate failed (`GATE_RC=2`, 1,224 failures); moderation host DI repair in progress, all gates pending. Develop `cf4625c` merged, including S22 read models (#156); endpoint/status/archive conflicts union-resolved. New POSTs retain owner404/state409 before428/412 and required-header OpenAPI; existing PUT unchanged. Approve→GET `currentStory.etag` and episode `ep-<xmin>` assertions written in `ApproveStory_ReviewStateCurrentEtag_SetsApprovedVersionAndStatus_ExposesCurrentStoryEtag`, not executed/passed. Nullable `episodes.approved_at` migration authorized (02 CR-32); R1 absent-report fail-closed behavior and explicit null gate retained. Unmetered edit/approve moderation remains open for plan 12 / 12.1.x. Separate QA/T3 reviews and full gate rerun pending; no PR/pass claim. |
+
 ### Superseded Session 21 hand-off and gate-pending wording (2026-10-05, replaced after integrating develop `cf4625c`)
 
 - Task Notes: [HAND-OFF — owner 2026-10-05] Acceptance check "GET episode exposes `currentStory.etag`" depends on 02.3.4-T2 (Session 22). This task proves the `sv-` ETag through approve/reopen response bodies and headers; the GET assertion remains open until that read-model task lands.

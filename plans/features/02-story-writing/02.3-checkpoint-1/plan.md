@@ -4,7 +4,7 @@
 > Contract: `../README.md` (D3, D4, D8, D9, D12, D13, D21, D22; F11, F12, F13, F25, F29; CR-3, CR-4, CR-7, CR-8, CR-12, CR-32).
 > Template: `../../../00-overview.md` §10.1.
 > Legend: ✅ read from source/docs · ⚠️ unverified · [DECISION] · [OPEN] · [INFERENCE].
-> Status: 02.3.2-T1 doing (Session 21, 2026-10-05); implementation written, gates pending. This is not acceptance or release evidence; task checkboxes remain unchecked until exercised.
+> Status: 02.3.2-T1 doing (Session 21, 2026-10-05); implementation and T3 gates closed, local full `gate.sh` `GATE_RC=0`, PR open. Task acceptance checks are ticked with test evidence in the task file.
 
 ## 1. Scope
 
@@ -136,7 +136,7 @@ Approval also sets `episodes.approved_at = now` (02 CR-32). Fresh moderation wri
 
 `GetCurrentStoryQuery` feeds `currentStory` (CR-7); `GetStoryVersionsQuery` → version list; `GetStoryVersionQuery(EpisodeId, VersionId)` → version detail. All are read-only, project `qualityHints` from `audit_report` (local + model issues filtered to hints), and never return another user's episode (09 authorization).
 
-**CR-7 hand-off (dependency merged 2026-10-05):** 02.3.4-T2 (Session 22) merged as #156 (`cf4625c`) and is integrated into the Session 21 worktree. `ApproveStory_ReviewStateCurrentEtag_SetsApprovedVersionAndStatus_ExposesCurrentStoryEtag` now GETs the episode after approve and checks the reviewed `sv-` value in `currentStory.etag`, preserving the episode header/body `ep-<xmin>` ETag. Test written, not executed; GET acceptance remains unchecked and all Session 21 gates pending after the full gate failed (`GATE_RC=2`, 1,224 failures).
+**CR-7 hand-off (closed 2026-10-05):** 02.3.4-T2 (Session 22) merged as #156 (`cf4625c`); `ApproveStory_ReviewStateCurrentEtag_SetsApprovedVersionAndStatus_ExposesCurrentStoryEtag` GETs the episode after approve and asserts the reviewed `sv-` value in `currentStory.etag` and the episode's own `ep-<xmin>` ETag (passes in the QA run and the full gate).
 
 ### 4.5 `IStoryRenderInputProvider` hand-off (02.3.2-T1)
 
@@ -271,9 +271,9 @@ Remaining, owned elsewhere: the version-detail route is CR-12 (00 §8). `Quality
 
 - **Decided, 02 CR-32:** 02.3.2-T1 adds nullable `episodes.approved_at` with a generated EF migration; the newest migration test owns `migrations[^1]`, and the previous owner is demoted.
 - **Decided, R1:** absent entire `audit_report` uses the same one-shot moderation refresh as an absent/malformed/stale/unavailable block; failure is closed with 409 `story_moderated`, never an absent-report bypass. Rejected fresh verdict write-back rolls back; the next attempt reruns.
-- **Decided, owner 2026-10-05 — API host prerequisite:** API edit/approve uses the real moderator and requires the existing shared `OpenAi:ApiKey` (same Worker key), failing startup when missing. This overrides "no config key" only as a new API requirement for an existing key name; no new key name is introduced. API environment injection in `tools/dev/up.sh` is authorized as an edit only, without stack/dev-DB operations. Host DI/test-host correction and startup verification remain pending after the full gate failed (`GATE_RC=2`); no green-gate claim.
+- **Decided, owner 2026-10-05 — API host prerequisite:** API edit/approve uses the real moderator and requires the existing shared `OpenAi:ApiKey` (same Worker key), failing startup when missing. This overrides "no config key" only as a new API requirement for an existing key name; no new key name is introduced. API environment injection in `tools/dev/up.sh` is authorized as an edit only, without stack/dev-DB operations. Api host DI, `docker-compose.yml`, CI placeholder and the `nts-wt/gate.sh` placeholder line followed; startup tests cover the missing-key and alias cases; local full `gate.sh` `GATE_RC=0`.
 - **Open, plan 12 / 12.1.x:** define metering for edit/approve moderation calls outside `ModerationScope`, without a generation run or reservation. Current calls are unmetered and retain the moderator warning (owner 2026-10-05).
-- **Dependency merged; acceptance pending, CR-7 / 02.3.4-T2 (#156, `cf4625c`):** Session 21's approve→GET `currentStory.etag` and episode `ep-<xmin>` assertions are written in `ApproveStory_ReviewStateCurrentEtag_SetsApprovedVersionAndStatus_ExposesCurrentStoryEtag`, not executed or passed; the 02.3.2-T1 acceptance checkbox remains unchecked.
+- **Closed, CR-7 / 02.3.4-T2 (#156, `cf4625c`):** approve→GET `currentStory.etag` asserted by `ApproveStory_ReviewStateCurrentEtag_SetsApprovedVersionAndStatus_ExposesCurrentStoryEtag` (pass).
 
 ## 11. Rollout
 
