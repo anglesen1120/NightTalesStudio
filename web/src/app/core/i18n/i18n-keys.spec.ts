@@ -27,9 +27,10 @@ function readScope(scope: string): { vi: string | null; en: string | null } {
 
 const SYNTHETIC: Record<string, ScopeKeys> = {
   series: {
-    vi: ['style.trueCrimeNotice', 'style.documentary.label', 'style.documentary.hint', 'voices.tag.male'],
-    en: ['style.trueCrimeNotice', 'style.documentary.label', 'style.documentary.hint', 'voices.tag.male'],
+    vi: ['style.trueCrimeNotice', 'style.documentary.label', 'style.documentary.hint'],
+    en: ['style.trueCrimeNotice', 'style.documentary.label', 'style.documentary.hint'],
   },
+  voices: { vi: ['tag.male'], en: ['tag.male'] },
 };
 
 describe('flattenKeys / diffKeySets', () => {
@@ -181,7 +182,7 @@ describe('HANDED_OVER_KEYS', () => {
       'series:series.style.trueCrimeNotice',
       'series:series.style.*.label',
       'series:series.style.*.hint',
-      'series:voices.tag.*',
+      'voices:voices.tag.*',
       'quality:quality.*',
       'render:render.*',
     ]);
@@ -192,12 +193,12 @@ describe('HANDED_OVER_KEYS', () => {
   });
 
   it('is reported when an existing scope lacks a handed-over key', () => {
-    const missingTag = { series: { vi: SYNTHETIC['series']!.vi.slice(0, 3), en: SYNTHETIC['series']!.en.slice(0, 3) } };
-    expect(checkHandedOverKeys(missingTag)).toEqual(['series: handed-over key voices.tag.* not found']);
+    const missingTag = { ...SYNTHETIC, voices: { vi: ['other.male'], en: ['other.male'] } };
+    expect(checkHandedOverKeys(missingTag)).toEqual(['voices: handed-over key voices.tag.* not found']);
   });
 
   it('matches the scope-prefixed patterns on the runtime key only: a file repeating the scope prefix is reported', () => {
-    const repeated = ['series.style.trueCrimeNotice', 'series.style.documentary.label', 'series.style.documentary.hint', 'voices.tag.male'];
+    const repeated = ['series.style.trueCrimeNotice', 'series.style.documentary.label', 'series.style.documentary.hint'];
     expect(checkHandedOverKeys({ series: { vi: repeated, en: repeated } })).toEqual([
       'series: handed-over key series.style.trueCrimeNotice not found',
       'series: handed-over key series.style.*.label not found',

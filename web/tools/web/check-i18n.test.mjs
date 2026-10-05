@@ -136,17 +136,24 @@ describe('i18n:check CLI', () => {
       tree(
         i18n(
           'series',
-          '{ "style": { "trueCrimeNotice": "a", "doc": { "label": "l", "hint": "h" } }, "voices": { "tag": { "male": "m" } } }',
-          '{ "style": { "trueCrimeNotice": "a", "doc": { "label": "l", "hint": "h" } }, "voices": { "tag": { "male": "m" } } }',
+          '{ "style": { "trueCrimeNotice": "a", "doc": { "label": "l", "hint": "h" } } }',
+          '{ "style": { "trueCrimeNotice": "a", "doc": { "label": "l", "hint": "h" } } }',
         ),
       ),
     );
     assert.equal(series.status, 0, series.out);
+
+    const voices = run(tree(i18n('voices', '{ "tag": { "male": "m" } }', '{ "tag": { "male": "n" } }')));
+    assert.equal(voices.status, 0, voices.out);
+
+    const wrongVoices = run(tree(i18n('voices', '{ "other": { "male": "m" } }', '{ "other": { "male": "n" } }')));
+    assert.equal(wrongVoices.status, 1);
+    assert.match(wrongVoices.out, /voices: handed-over key voices\.tag\.\* not found/);
   });
 
   test('handed-over keys of a non-core scope match the runtime key only (a repeated scope prefix is red)', () => {
     const doc = '{ "trueCrimeNotice": "a", "doc": { "label": "l", "hint": "h" } }';
-    const file = (style) => `{ ${style}, "voices": { "tag": { "male": "m" } } }`;
+    const file = (style) => `{ ${style} }`;
     const right = run(tree(i18n('series', file(`"style": ${doc}`), file(`"style": ${doc}`))));
     assert.equal(right.status, 0, right.out);
 
@@ -155,7 +162,6 @@ describe('i18n:check CLI', () => {
     assert.equal(repeated.status, 1);
     assert.match(repeated.out, /series: handed-over key series\.style\.trueCrimeNotice not found/);
     assert.match(repeated.out, /series: handed-over key series\.style\.\*\.label not found/);
-    assert.doesNotMatch(repeated.out, /voices\.tag\.\*/);
   });
 
   test('the committed tree is green', () => {
