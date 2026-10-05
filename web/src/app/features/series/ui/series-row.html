@@ -1,0 +1,19 @@
+<div class="series-row__body">
+  <button type="button" class="series-row__title" [attr.aria-label]="('series.row.openNamed' | transloco) + ' ' + vm().series.title" (click)="open.emit(vm().series.id)">{{ vm().series.title }}</button>
+  <div class="series-row__chips">
+    <span class="series-row__chip">{{ topicKey(vm().series.topic) | transloco }}</span>
+    <span class="series-row__chip">{{ (vm().series.language === 'vi' ? 'series.language.vi' : 'series.language.en') | transloco }}</span>
+    <span class="series-row__chip">{{ aspectKey(vm().series.aspect) | transloco }}</span>
+    <span class="series-row__chip" [class.series-row__chip--active]="vm().autopilot">
+      @if (vm().autopilot) { <nts-icon-check aria-hidden="true" /> } @else { <nts-icon-pause aria-hidden="true" /> }
+      {{ (vm().autopilot ? 'series.row.autopilotOn' : 'series.row.autopilotOff') | transloco }}
+    </span>
+    @if (vm().archived) { <span class="series-row__chip"><nts-icon-pause aria-hidden="true" />{{ 'series.list.archived' | transloco }}</span> }
+  </div>
+</div>
+<div class="series-row__actions">
+  <button type="button" [attr.aria-label]="('series.row.openNamed' | transloco) + ' ' + vm().series.title" (click)="open.emit(vm().series.id)">{{ 'series.row.open' | transloco }}</button>
+  @if (!vm().archived) {
+    <button type="button" [disabled]="busy()" [attr.aria-label]="('series.row.archiveNamed' | transloco) + ' ' + vm().series.title" (click)="archive.emit(vm().series.id)">{{ 'series.row.archive' | transloco }}</button>
+  }
+</div>

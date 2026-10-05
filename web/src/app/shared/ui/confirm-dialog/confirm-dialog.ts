@@ -15,6 +15,13 @@ export interface ConfirmDialogTemplateContext {
 export interface ConfirmDialogData {
   readonly titleKey: string;
   readonly bodyKey: string;
+  /**
+   * Plain-text subject shown on its own line under the body (e.g. the item title). Rendered by
+   * interpolation, never through the Transloco pipe: Transloco re-interpolates substituted values,
+   * so passing user-controlled text as a param would re-enter the matcher (a title containing
+   * `{{title}}` loops forever). Never put user text into a `*Key`'s placeholders.
+   */
+  readonly subject?: string;
   readonly confirmLabelKey: string;
   readonly destructive?: boolean;
   /** A `Signal` lets the opener flip pending after the dialog is open; a plain boolean is fixed at open. */
@@ -57,6 +64,7 @@ export class ConfirmDialogComponent {
 
   protected readonly resolvedTitleKey = computed(() => this.data?.titleKey ?? this.titleKey());
   protected readonly resolvedBodyKey = computed(() => this.data?.bodyKey ?? this.bodyKey());
+  protected readonly subject = this.data?.subject;
   protected readonly resolvedConfirmLabelKey = computed(() => this.data?.confirmLabelKey ?? this.confirmLabelKey());
   protected readonly isDestructive = computed(() => this.data?.destructive ?? this.destructive());
   protected readonly isPending = computed(() => {

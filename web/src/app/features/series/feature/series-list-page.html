@@ -1,0 +1,27 @@
+<nts-page-header titleKey="series.list.title" subtitleKey="series.list.subtitle">
+  <a actions mat-flat-button routerLink="/series/new">{{ 'series.list.new' | transloco }}</a>
+</nts-page-header>
+<mat-checkbox [checked]="store.includeArchived()" [disabled]="store.loading() || archiveBusy() !== null" (change)="store.toggleIncludeArchived()">{{ 'series.list.includeArchived' | transloco }}</mat-checkbox>
+@if (store.loading() && rows().length === 0) { <nts-loading-state [rows]="3" /> }
+@if (errorKey(); as key) {
+  <nts-error-state [bodyKey]="key" [traceId]="store.error()?.traceId ?? undefined" [retryLabelKey]="store.retryAfterSec() === null ? 'errors.action.retry' : undefined" (retry)="retry()" />
+  @if (store.retryAfterSec() !== null) {
+    <div class="series-list__retry" role="status">
+      <nts-retry-countdown [seconds]="store.retryAfterSec()!" (elapsed)="retryLocked.set(false)" />
+      <button mat-button type="button" [disabled]="retryLocked() || store.loading()" (click)="retry()">{{ 'errors.action.retry' | transloco }}</button>
+    </div>
+  }
+}
+@if (!store.loading() && errorKey() === null && rows().length === 0) {
+  <nts-empty-state titleKey="series.list.empty" bodyKey="series.list.emptyBody" actionLabelKey="series.list.new" (action)="create()" />
+}
+@if (rows().length > 0) {
+  <ul class="series-list__rows" [attr.aria-label]="'series.list.title' | transloco" [attr.aria-busy]="store.loading() || store.loadingMore()">
+    @for (row of rows(); track row.series.id) {
+      <li nts-series-row [vm]="row" [busy]="archiveBusy() !== null" (open)="open($event)" (archive)="archive($event)"></li>
+    }
+  </ul>
+  @if (store.hasMore()) {
+    <button mat-stroked-button type="button" [disabled]="store.loadingMore() || store.loading()" (click)="store.loadMore()">{{ (store.loadingMore() ? 'common.loading' : 'series.list.loadMore') | transloco }}</button>
+  }
+}

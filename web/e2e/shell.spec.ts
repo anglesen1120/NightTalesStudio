@@ -206,15 +206,16 @@ test.describe('shell (desktop)', () => {
     await expect(page.locator('#content')).toBeFocused();
   });
 
-  test('landmarks: banner, labelled navigation with the episodes and dashboard links, main', async ({ page }) => {
+  test('landmarks: banner, labelled navigation with the episodes, dashboard and series links, main', async ({ page }) => {
     await openShell(page);
     await expect(page.getByRole('banner')).toBeVisible();
     const navigation = page.getByRole('navigation', { name: LABELS.vi.nav });
     await expect(navigation).toBeVisible();
     await expect(page.getByRole('main')).toBeVisible();
-    await expect(navigation.getByRole('link')).toHaveCount(2);
+    await expect(navigation.getByRole('link')).toHaveCount(3);
     await expect(navigation.getByRole('link', { name: 'Tập' })).toBeVisible();
     await expect(navigation.getByRole('link', { name: 'Bảng điều khiển' })).toBeVisible();
+    await expect(navigation.getByRole('link', { name: 'Loạt bài' })).toBeVisible();
   });
 
   test('user menu: opens, Escape closes it and focus returns to the trigger', async ({ page }) => {
@@ -299,9 +300,9 @@ test.describe('shell (A14: themes, targets, focus, reduced motion)', () => {
   test('desktop: interactive targets are >= 24 px and keyboard focus shows an indicator', async ({ page }) => {
     await openShell(page);
     await expectTargetsAtLeast24(page);
-    // Stops: skip link, the episodes nav link (10.5.1-T1), the dashboard nav link (10.4.1-T1), language select,
-    // user menu.
-    const samples = await tabWalk(page, 5);
+    // Stops: skip link, the episodes nav link (10.5.1-T1), the dashboard nav link (10.4.1-T1), the series nav link
+    // (10.4.2-T1), language select, user menu.
+    const samples = await tabWalk(page, 6);
     const labels = samples.map((sample) => sample.label);
     expect(labels[0], 'first Tab stop is the skip link').toContain(LABELS.vi.skip);
     const skipBox = await page.getByRole('link', { name: LABELS.vi.skip }).boundingBox();
