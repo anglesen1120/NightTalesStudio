@@ -4,6 +4,12 @@ History moved out of STATUS.md to keep the live file small. The initial archive 
 
 ## Resume-here history (Current/Previous blocks, Next actions)
 
+### Superseded Next line (2026-10-05, replaced when Session 12 opened the 02.5.2-T4 PR)
+
+- **Outcome:** 02.5.2-T4 SSRF/abuse suite built (tests only, T3 gates closed); PR from `feature/02.5.2-T4-s12`.
+
+- **Next (backend, start here):** **02.5.2-T3** fetcher host merged as #136 (`d35284e`, no CI run: CI-01; local full `gate.sh` `GATE_RC=0` on the identical tip `029fb34`) → **02.5.2-T4** SSRF/abuse suite in progress (Session 12, `feature/02.5.2-T4-s12`; drives the real loop; failure behaviours handed over in the 02.5.2-T3 row) → 02.6.1-T2, 02.6.2-T1 revision (02 §10 T113(b)), 02.3.2-T1 approve (treat `moderation.stale`/`unavailable` as needs re-check; edit-path moderator wiring). First re-run CI on `develop` once GitHub Actions billing is fixed (#131 and #136 merged with no CI run). Claim the backend `gate.sh` lock in `nts-wt/SESSION-CLAIMS.md` first.
+
 ### Superseded Current line and Web next lines (2026-10-05, replaced after the #134/#135/#136/#139 wave merged; develop `e8d9743`)
 
 Outcome: one Current line for the 2026-10-05 wave and one merged Web next line for all open web lanes.

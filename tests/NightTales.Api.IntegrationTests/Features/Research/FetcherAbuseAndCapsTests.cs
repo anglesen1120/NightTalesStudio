@@ -387,7 +387,8 @@ public sealed class FetcherAbuseAndCapsTests(TestDatabase database) : Integratio
         // registers no tracing source of its own (FetcherTelemetry is metrics-only, D19), so the only span the stack can
         // produce is the SDK's System.Net.Http one; scoping ShouldListenTo to that name keeps the scan on this stack's
         // own surface (any other source is out of contract for the fetcher).
-        var traces = new List<string>();
+        // ActivityStopped can fire concurrently from several threads, so the sink must be thread-safe.
+        var traces = new System.Collections.Concurrent.ConcurrentQueue<string>();
         using var listener = new ActivityListener
         {
             ShouldListenTo = source => source.Name == "System.Net.Http",
@@ -397,7 +398,7 @@ public sealed class FetcherAbuseAndCapsTests(TestDatabase database) : Integratio
                 // Classes run in parallel in one process: scan only the spans of the hosts this test fetches.
                 if (activity.GetTagItem("server.address") is string address && LeakTraceHosts.Contains(address, StringComparer.Ordinal))
                 {
-                    traces.Add(TraceText(activity));
+                    traces.Enqueue(TraceText(activity));
                 }
             },
         };

@@ -88,8 +88,10 @@ Files: `S` = `tests/NightTales.Api.IntegrationTests/Features/Research/FetcherSsr
 | Item | Value |
 |---|---|
 | Command | `TEST_FILTER='FullyQualifiedName~Fetcher' gate.sh` (Api.IntegrationTests + Fetcher unit tests that match) |
-| Run 1 | total 299, passed 299, failed 0, skipped 0; test duration 16.2 s; gate wall 48 s |
-| Run 2 (repeat) | total 299, passed 299, failed 0, skipped 0; test duration 16.1 s; gate wall 45 s |
+| Run 1 (after review fixes) | total 341, passed 341, failed 0, skipped 0; test duration 16.9 s |
+| Run 2 (repeat) | total 341, passed 341, failed 0, skipped 0; test duration 17.0 s |
+| Earlier runs | implementation 299/299 twice (16.2 s / 16.1 s); QA: 299/299 twice, 307/307 with its attribution test |
+| QA mutations | deleting the `RemoteEndPoint` re-check leaves case 10 green and fails the defence-in-depth test (Acceptance 131); deleting `10.0.0.0/8` is caught only by `FetcherAddressRuleAttributionQaTests` (now covers every v4/v6 block row) |
 | Limit | < 3 min: met |
 | Validator mode | D20 test sends a diagnostic message `D20 run: validator=GlobalUnicast, url=...` and asserts `stack.Mode == GlobalUnicast`; the quiet gate log does not show diagnostic messages |
 | Build-only gate | `BUILD+FORMAT OK` |

@@ -77,13 +77,19 @@ public sealed class FetcherAddressRuleAttributionQaTests
     public async Task HostNameResolvingToPrivateAddress_IsBlockedByTheAddressRule_NotByARefusedConnection(string address)
     {
         const string Url = "http://private-attribution-e2e.com/ok";
-        await using var server = new HttpTestServer(HttpTestRoutes.Standard);
-        await using var v6 = new Ipv6LoopbackServer();
         var isV6 = IPAddress.Parse(address).AddressFamily == AddressFamily.InterNetworkV6;
+        if (isV6 && !Socket.OSSupportsIPv6)
+        {
+            Assert.Skip($"{address}: this host has no IPv6 loopback, so the IPv6 attribution row cannot run");
+        }
+
+        await using var server = new HttpTestServer(HttpTestRoutes.Standard);
+        // Only IPv6 rows bind ::1, so the IPv4 rows never depend on the host's IPv6 support.
+        await using var v6 = isV6 ? new Ipv6LoopbackServer() : null;
 
         // The seam dials a reachable loopback endpoint of the address's own family for every validated address, so a
         // refused connection can never be the cause of the block (a v6 address can never reach the IPv4-only HttpTestServer).
-        var endpointFor = (IPAddress dialed, int _) => dialed.AddressFamily == AddressFamily.InterNetworkV6
+        var endpointFor = (IPAddress dialed, int _) => dialed.AddressFamily == AddressFamily.InterNetworkV6 && v6 is not null
             ? new IPEndPoint(IPAddress.IPv6Loopback, v6.Port)
             : new IPEndPoint(IPAddress.Loopback, server.Port);
         using var loggers = LoggerFactory.Create(_ => { });
@@ -97,7 +103,7 @@ public sealed class FetcherAddressRuleAttributionQaTests
 
         server.Connections.ShouldBe(0, $"{address}: the address rule must block before any connect");
         server.Requests.ShouldBeEmpty($"{address}: the server must see no request at all");
-        v6.Connections.ShouldBe(0, $"{address}: the IPv6 loopback endpoint must see no connection either");
+        (v6?.Connections ?? 0).ShouldBe(0, $"{address}: the IPv6 loopback endpoint must see no connection either");
 
         var permissive = new SafeHttpConnector(
             Resolver(address), new AllowEveryAddressValidator(), loggers.CreateLogger<SafeHttpConnector>(), endpointFor);
@@ -109,7 +115,7 @@ public sealed class FetcherAddressRuleAttributionQaTests
 
         if (isV6)
         {
-            v6.Connections.ShouldBeGreaterThan(0, $"{address}: the positive control proves the IPv6 loopback endpoint is reachable");
+            v6!.Connections.ShouldBeGreaterThan(0, $"{address}: the positive control proves the IPv6 loopback endpoint is reachable");
             server.Connections.ShouldBe(0, $"{address}: a v6 address never touches the IPv4 server");
         }
         else
