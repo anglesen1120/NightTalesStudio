@@ -1,0 +1,51 @@
+{
+  "field": {
+    "voice": "Giọng đọc"
+  },
+  "voice": {
+    "preview": "Nghe thử",
+    "stop": "Dừng nghe thử",
+    "previewUnavailable": "Chưa có bản nghe thử cho giọng này",
+    "previewFailed": "Không phát được bản nghe thử",
+    "rateFixed": "Tốc độ đọc được cố định",
+    "clearedByLanguage": "Giọng đọc đã được xoá vì không khớp ngôn ngữ",
+    "empty": "Chưa có giọng đọc cho ngôn ngữ này",
+    "inactive": "Giọng đọc này không còn khả dụng",
+    "gender": {
+      "male": "Nam",
+      "female": "Nữ",
+      "neutral": "Trung tính"
+    }
+  },
+  "style": {
+    "dark-folklore-ink": {
+      "label": "Mực tàu dân gian u tối",
+      "hint": "Cảnh dân gian vẽ mực, ánh trăng và bóng tối"
+    },
+    "foggy-cinematic": {
+      "label": "Điện ảnh sương mù",
+      "hint": "Khung hình điện ảnh mờ sương, ánh sáng lạnh"
+    },
+    "vintage-photo-grain": {
+      "label": "Ảnh cũ nhiễu hạt",
+      "hint": "Ảnh cũ bạc màu, nhiễu hạt phim"
+    },
+    "watercolor-night": {
+      "label": "Màu nước đêm",
+      "hint": "Màu nước đêm dịu, ánh đèn lồng"
+    },
+    "temple-candlelight": {
+      "label": "Ánh nến đền chùa",
+      "hint": "Cảnh đền chùa ấm áp dưới ánh nến"
+    },
+    "noir-sketch": {
+      "label": "Phác thảo noir",
+      "hint": "Than chì đen trắng, chỉ cảnh vật và đồ vật"
+    },
+    "case-file-illustration": {
+      "label": "Minh hoạ hồ sơ vụ án",
+      "hint": "Tranh hồ sơ vụ án tông trầm, không có khuôn mặt"
+    },
+    "trueCrimeNotice": "Vụ án có thật chỉ dùng được phong cách minh hoạ, không có khuôn mặt người thật."
+  }
+}

@@ -1,0 +1,78 @@
+<fieldset class="voice-picker" [disabled]="disabled()">
+  <legend class="voice-picker__legend">{{ 'series.field.voice' | transloco }}</legend>
+
+  @if (loading() && vm().rows.length === 0) {
+    <nts-loading-state [rows]="3" />
+  }
+
+  @if (errorKey(); as key) {
+    <nts-error-state
+      [bodyKey]="key"
+      [traceId]="traceId() ?? undefined"
+      [retryLabelKey]="retryAfterSec() === null ? 'errors.action.retry' : undefined"
+      (retry)="onRetry()"
+    />
+    @if (retryAfterSec(); as seconds) {
+      <div class="voice-picker__rate-limit" role="status">
+        <nts-retry-countdown [seconds]="seconds" (elapsed)="onRetryElapsed()" />
+        <button
+          type="button"
+          class="voice-picker__retry"
+          [disabled]="retryLocked() || disabled()"
+          (click)="onRetry()"
+        >
+          {{ 'errors.action.retry' | transloco }}
+        </button>
+      </div>
+    }
+  }
+
+  @if (vm().rows.length === 0 && !loading() && errorKey() === null) {
+    <nts-empty-state
+      titleKey="series.voice.empty"
+      actionLabelKey="common.back"
+      (action)="backToLanguage.emit()"
+    />
+  }
+
+  @if (vm().rows.length > 0) {
+    <mat-radio-group
+      class="voice-picker__list"
+      [name]="groupName"
+      [value]="selectedId()"
+      [disabled]="disabled()"
+      (change)="onSelectionChange($event.value)"
+      (keydown)="onGroupKeydown($event)"
+    >
+      @for (row of vm().rows; track row.id) {
+        <div class="voice-picker__row">
+          <mat-radio-button class="voice-picker__choice" [value]="row.id" [disabled]="disabled()">
+            <span class="voice-picker__row-body">
+              <strong class="voice-picker__name">{{ row.displayName }}</strong>
+              <span class="voice-picker__meta">
+                @if (row.genderKey !== null) {
+                  <span class="voice-picker__meta-item">{{ row.genderKey | transloco }}</span>
+                } @else {
+                  <span class="voice-picker__meta-item">{{ row.genderRaw }}</span>
+                }
+                @for (tagKey of row.tagKeys; track tagKey) {
+                  <span class="voice-picker__meta-item voice-picker__tag">{{ tagKey | transloco }}</span>
+                }
+              </span>
+            </span>
+          </mat-radio-button>
+          <nts-audio-preview-button
+            [previewUrl]="row.preview.url"
+            [displayName]="row.displayName"
+            [playing]="activeId() === row.id"
+            [disabled]="disabled()"
+            (started)="onPreviewStarted(row.id)"
+            (stopped)="onPreviewStopped(row.id)"
+          />
+        </div>
+      }
+    </mat-radio-group>
+  }
+
+  <p class="voice-picker__hint">{{ 'series.voice.rateFixed' | transloco }}</p>
+</fieldset>

@@ -4,6 +4,10 @@ History moved out of STATUS.md to keep the live file small. The initial archive 
 
 ## Resume-here history (Current/Previous blocks, Next actions)
 
+### Closed Plan 10 hand-over (2026-10-05, 10.4.2-T2: owner decision `voices` scope, 10 CR-50)
+
+- **10.4.2-T1:** `voices.tag.<tag>` (04 CR-11) cannot live in the `series` scope under that exact name (the runtime key becomes `series.voices.tag.*`): add a `voices` scope or get an owner decision. Today `web/tools/web/i18n-keys.mjs` checks the pattern as written.
+
 ### Superseded Current line and Web next lines (2026-10-05, replaced after the #134/#135/#136/#139 wave merged; develop `e8d9743`)
 
 Outcome: one Current line for the 2026-10-05 wave and one merged Web next line for all open web lanes.

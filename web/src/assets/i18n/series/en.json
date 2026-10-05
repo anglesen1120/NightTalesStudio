@@ -1,0 +1,51 @@
+{
+  "field": {
+    "voice": "Voice"
+  },
+  "voice": {
+    "preview": "Play preview",
+    "stop": "Stop preview",
+    "previewUnavailable": "No preview is available for this voice",
+    "previewFailed": "The preview could not be played",
+    "rateFixed": "The speaking rate is fixed",
+    "clearedByLanguage": "The voice was cleared because it does not match the language",
+    "empty": "No voices are available for this language",
+    "inactive": "This voice is no longer available",
+    "gender": {
+      "male": "Male",
+      "female": "Female",
+      "neutral": "Neutral"
+    }
+  },
+  "style": {
+    "dark-folklore-ink": {
+      "label": "Dark folklore ink",
+      "hint": "Ink-wash folklore scenes, moonlit and shadowy"
+    },
+    "foggy-cinematic": {
+      "label": "Foggy cinematic",
+      "hint": "Misty film stills with cold light"
+    },
+    "vintage-photo-grain": {
+      "label": "Vintage photo grain",
+      "hint": "Old faded photos with film grain"
+    },
+    "watercolor-night": {
+      "label": "Watercolor night",
+      "hint": "Soft night watercolours with lantern glow"
+    },
+    "temple-candlelight": {
+      "label": "Temple candlelight",
+      "hint": "Warm candlelit temple scenes"
+    },
+    "noir-sketch": {
+      "label": "Noir sketch",
+      "hint": "Black-and-white charcoal, places and objects only"
+    },
+    "case-file-illustration": {
+      "label": "Case-file illustration",
+      "hint": "Muted case-file drawings, no faces"
+    },
+    "trueCrimeNotice": "Only illustration styles without real faces are available for true crime."
+  }
+}
