@@ -15,6 +15,7 @@ using NightTales.Domain.Audit;
 using NightTales.Domain.Common;
 using NightTales.Domain.Episodes;
 using NightTales.Domain.Series;
+using NightTales.Domain.Stories.Quality;
 
 namespace NightTales.Application.Features.Stories.Commands.ApproveStory;
 
@@ -44,6 +45,16 @@ public sealed partial class ApproveStoryCommandHandler(
         {
             return Errors.NotFound();
         }
+
+        if (command.BodyInvalid)
+        {
+            return Error.Validation(ErrorCodes.StoryAttestationRequired,
+                "The approval body must be a JSON object with an optional attestation containing accepted and textVersion.",
+                new Dictionary<string, object> { [ErrorMetadata.Field] = "body" });
+        }
+
+        // Keep the topic stable until the command transaction commits, including the gate and attestation audit.
+        await db.LockSeriesForShareAsync(episode.SeriesId, cancellationToken).ConfigureAwait(false);
 
         // Stage 1 precedes ETag validation: only the already approved version is an idempotent success.
         if (episode.Status == EpisodeStatus.StoryApproved
@@ -110,6 +121,20 @@ public sealed partial class ApproveStoryCommandHandler(
 
             report ??= new JsonObject { ["schema_version"] = "audit.v1" };
             report["moderation"] = fresh;
+            if (StoryDraftModeration.BlockingCategoriesOf(fresh).Count == 0
+                && report["local"] is JsonObject local && local["issues"] is JsonArray issues)
+            {
+                // Q-MOD-01 is the checker's only moderation-derived rule. Keep every other issue unchanged.
+                for (var index = issues.Count - 1; index >= 0; index--)
+                {
+                    if (issues[index] is JsonObject issue && issue["rule"] is JsonValue rule
+                        && rule.TryGetValue<string>(out var ruleId) && ruleId == StoryQualityChecker.ModerationBlocked)
+                    {
+                        issues.RemoveAt(index);
+                    }
+                }
+            }
+
             var updatedJson = report.ToJsonString();
             if (!TextSafety.IsPersistableJson(updatedJson))
             {

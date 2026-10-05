@@ -10,7 +10,7 @@ namespace NightTales.Application.UnitTests.Features.Stories;
 /// <summary>Pure reopen contracts; state/locking/transaction cases live in ReopenStoryEndpointTests.</summary>
 public sealed class ReopenStoryTests
 {
-    private static readonly string[] AuditKeys = ["episodeId", "versionId"];
+    private static readonly string[] AuditKeys = ["episode_id", "story_version_id"];
 
     [Fact]
     public void ReopenStory_AuditDataBeforeSuccess_IsNull()
@@ -36,8 +36,8 @@ public sealed class ReopenStoryTests
         data.EntityId.ShouldBe(episodeId);
         data.SubjectUserId.ShouldBeNull();
         data.Summary.Keys.Order(StringComparer.Ordinal).ShouldBe(AuditKeys);
-        data.Summary["episodeId"].ShouldBe(episodeId.ToString("D", System.Globalization.CultureInfo.InvariantCulture));
-        data.Summary["versionId"].ShouldBe(versionId.ToString("D", System.Globalization.CultureInfo.InvariantCulture));
+        data.Summary["episode_id"].ShouldBe(episodeId.ToString("D", System.Globalization.CultureInfo.InvariantCulture));
+        data.Summary["story_version_id"].ShouldBe(versionId.ToString("D", System.Globalization.CultureInfo.InvariantCulture));
     }
 
     [Theory]

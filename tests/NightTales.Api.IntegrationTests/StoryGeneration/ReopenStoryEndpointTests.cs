@@ -32,7 +32,7 @@ namespace NightTales.Api.IntegrationTests.StoryGeneration;
 public sealed class ReopenStoryEndpointTests(TestDatabase database) : IntegrationTest(database)
 {
     private static readonly DateTimeOffset Start = new(2026, 10, 5, 9, 0, 0, TimeSpan.Zero);
-    private static readonly string[] AuditKeys = ["episodeId", "versionId"];
+    private static readonly string[] AuditKeys = ["episode_id", "story_version_id"];
     private static CancellationToken Ct => TestContextToken.Value;
 
     [Fact]
@@ -62,8 +62,8 @@ public sealed class ReopenStoryEndpointTests(TestDatabase database) : Integratio
         using var document = JsonDocument.Parse(audit!);
         document.RootElement.EnumerateObject().Select(property => property.Name).Order(StringComparer.Ordinal)
             .ShouldBe(AuditKeys);
-        document.RootElement.GetProperty("episodeId").GetGuid().ShouldBe(world.EpisodeId);
-        document.RootElement.GetProperty("versionId").GetGuid().ShouldBe(world.VersionId);
+        document.RootElement.GetProperty("episode_id").GetGuid().ShouldBe(world.EpisodeId);
+        document.RootElement.GetProperty("story_version_id").GetGuid().ShouldBe(world.VersionId);
 
         using var repeat = await PostAsync(client, world, "reopen", StoryEtag.For(world.VersionId));
         repeat.StatusCode.ShouldBe(HttpStatusCode.Conflict);
@@ -194,7 +194,7 @@ public sealed class ReopenStoryEndpointTests(TestDatabase database) : Integratio
         (await ReadBodyAsync(response)).GetProperty("storyVersionId").GetGuid().ShouldBe(newer.Id);
         AssertReviewWithoutApproval(world);
         SqlProbe.ScalarText(Database,
-            $"SELECT data->>'versionId' FROM audit_logs WHERE action = 'episode.story_reopened' AND subject_user_id = '{world.UserId}'")
+            $"SELECT data->>'story_version_id' FROM audit_logs WHERE action = 'episode.story_reopened' AND subject_user_id = '{world.UserId}'")
             .ShouldBe(world.VersionId.ToString());
     }
 

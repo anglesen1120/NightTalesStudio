@@ -15,6 +15,10 @@ public sealed record ApproveStoryCommand(
     AttestationInput? Attestation,
     ApprovalSource Source = ApprovalSource.User) : ICommand<ErrorOr<ApprovedStoryDto>>, IAuditData
 {
+    /// <summary>HTTP body shape failed validation; report only after the owner-scoped lookup.</summary>
+    [JsonIgnore]
+    public bool BodyInvalid { get; init; }
+
     /// <summary>The accepted version; null for failures and idempotent approvals.</summary>
     [JsonIgnore]
     public Guid? ApprovedVersionId { get; set; }

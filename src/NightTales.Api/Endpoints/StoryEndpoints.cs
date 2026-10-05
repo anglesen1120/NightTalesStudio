@@ -237,18 +237,14 @@ public static class StoryEndpoints
             return Results.StatusCode(StatusCodes.Status413PayloadTooLarge);
         }
 
-        if (!TryReadAttestation(raw.Value, http.Request, out var attestation))
-        {
-            return ProblemDetailsWriter.ToProblem(
-                [Error.Validation(
-                    ErrorCodes.StoryAttestationRequired,
-                    "The approval body must be a JSON object with an optional attestation containing accepted and textVersion.",
-                    new Dictionary<string, object> { [ErrorMetadata.Field] = "body" })],
-                http);
-        }
+        // The command checks ownership before reporting body errors, so foreign/unknown episodes stay 404.
+        var bodyInvalid = !TryReadAttestation(raw.Value, http.Request, out var attestation);
 
         return (await sender
-            .Send(new ApproveStoryCommand(id, ifMatch ?? string.Empty, attestation, ApprovalSource.User), ct)
+            .Send(new ApproveStoryCommand(id, ifMatch ?? string.Empty, attestation, ApprovalSource.User)
+            {
+                BodyInvalid = bodyInvalid,
+            }, ct)
             .ConfigureAwait(false))
             .ToHttpResult(http);
     }
@@ -283,7 +279,7 @@ public static class StoryEndpoints
             feature.MaxRequestBodySize = limit;
         }
 
-        var buffer = new byte[declared is { } length ? (int)length + 1 : Math.Min(4 * 1_024, limit + 1)];
+        var buffer = new byte[Math.Min(4 * 1_024, declared is { } length ? (int)length + 1 : limit + 1)];
         var total = 0;
         try
         {

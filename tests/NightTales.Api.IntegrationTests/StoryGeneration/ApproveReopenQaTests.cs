@@ -31,9 +31,8 @@ using Xunit;
 namespace NightTales.Api.IntegrationTests.StoryGeneration;
 
 /// <summary>
-/// Independent QA probes for 02.3.2-T1 (negative, boundary and exploratory cases) against the real host and
-/// PostgreSQL. Tests named <c>Characterization_*</c> pin today's behaviour for a reported QA defect; flip the
-/// assertion when the defect is fixed.
+/// Independent QA regressions for 02.3.2-T1 (negative, boundary and exploratory cases) against the real host and
+/// PostgreSQL, including reviewed defect fixes and the explicitly unreachable legacy approval case.
 /// </summary>
 [Trait("Category", "Integration")]
 public sealed class ApproveReopenQaTests(TestDatabase database) : IntegrationTest(database)
@@ -42,6 +41,7 @@ public sealed class ApproveReopenQaTests(TestDatabase database) : IntegrationTes
     private const string StaleClean = """{"flagged":false,"categories":[],"blocking":[],"stale":true,"unavailable":false}""";
     private const string StoryTitle = "The house by the river";
     private static readonly DateTimeOffset Start = new(2026, 10, 5, 9, 0, 0, TimeSpan.Zero);
+    private static readonly string[] InvalidApprovalBodies = ["{", "[]", "{\"attestation\":true}"];
     private static CancellationToken Ct => TestContextToken.Value;
 
     [Theory]
@@ -461,10 +461,8 @@ public sealed class ApproveReopenQaTests(TestDatabase database) : IntegrationTes
     }
 
     [Fact]
-    public async Task Characterization_QA1_ReopenAuditDataUsesCamelCaseKeysInsteadOfTheContractedSnakeCaseKeys()
+    public async Task ReopenAuditData_UsesTheContractedSnakeCaseKeys()
     {
-        // QA-1: Design/Reopen contracts `data { episode_id, story_version_id }` (the approve audit is snake_case).
-        // Expected after fix: ["episode_id", "story_version_id"].
         var world = await SeedAsync();
         using var factory = Factory();
         using var client = factory.ClientFor(world.UserId);
@@ -472,23 +470,35 @@ public sealed class ApproveReopenQaTests(TestDatabase database) : IntegrationTes
         (await SendAsync(client, world.EpisodeId, "reopen", Tag(world))).StatusCode.ShouldBe(HttpStatusCode.OK);
 
         Keys($"SELECT data::text FROM audit_logs WHERE action = 'episode.story_reopened' AND subject_user_id = '{world.UserId}'")
-            .ShouldBe(["episodeId", "versionId"]);
+            .ShouldBe(["episode_id", "story_version_id"]);
     }
 
-    [Fact]
-    public async Task Characterization_QA2_MalformedBodyOnAForeignEpisode_Returns400BeforeTheOwnerScoped404()
+    [Theory]
+    [InlineData("foreign", 404)]
+    [InlineData("unknown", 404)]
+    [InlineData("owned", 400)]
+    public async Task Approve_MalformedBody_ReportsOwnershipBeforeBodyValidation(string ownership, int expectedStatus)
     {
-        // QA-2: README/task "owner 404 -> state 409 before If-Match" order; body shape is validated first today.
-        // Expected after fix (if body validation is moved behind ownership): 404 not_found.
         var owner = await SeedAsync();
         var stranger = await SeedAsync();
         using var factory = Factory();
-        using var client = factory.ClientFor(stranger.UserId);
+        using var client = factory.ClientFor(ownership == "foreign" ? stranger.UserId : owner.UserId);
+        var episodeId = ownership == "unknown" ? Guid.CreateVersion7() : owner.EpisodeId;
 
-        using var response = await SendAsync(client, owner.EpisodeId, "approve", Tag(owner), Json("{"));
+        foreach (var json in InvalidApprovalBodies)
+        {
+            foreach (var tag in new[] { null, Tag(owner) })
+            {
+                using var response = await SendAsync(client, episodeId, "approve", tag, Json(json));
 
-        response.StatusCode.ShouldBe(HttpStatusCode.BadRequest, await response.Content.ReadAsStringAsync(Ct));
-        (await CodeAsync(response)).ShouldBe("story_attestation_required");
+                response.StatusCode.ShouldBe((HttpStatusCode)expectedStatus, await response.Content.ReadAsStringAsync(Ct));
+                (await CodeAsync(response)).ShouldBe(expectedStatus == 404 ? "not_found" : "story_attestation_required");
+            }
+        }
+
+        Snapshot(owner).ShouldBe("story_review|null|null");
+        Count(owner, "audit_logs", "action = 'episode.story_approved'").ShouldBe(0);
+        Count(owner, "outbox_messages", "type = 'story_approved.v1'").ShouldBe(0);
     }
 
     [Theory]
@@ -511,11 +521,10 @@ public sealed class ApproveReopenQaTests(TestDatabase database) : IntegrationTes
     }
 
     [Fact]
-    public async Task Characterization_QA3_ApprovedRowWithoutApprovedAt_IsNotTheIdempotentNoOp_ButStillReopens()
+    public async Task LegacyApprovedRowWithoutApprovedAt_IsNotIdempotent_Unreachable()
     {
-        // QA-3: row 1 says an approved episode whose If-Match equals approved_story_version_id is a 200 no-op. The
-        // handler also demands approved_at, so a row approved without it (legacy/other writer) answers 409.
-        // Expected after fix: 200 (idempotent). Reopen of the same row works and is asserted unchanged.
+        // QA-3 owner ruling (2026-10-05): won't fix; no production writer can create story_approved with null
+        // approved_at. Keep this manually corrupted/legacy row probe explicit, including its reopen behaviour.
         var world = await SeedAsync(EpisodeStatus.StoryApproved);
         SqlProbe.Execute(Database, $"UPDATE episodes SET approved_story_version_id = '{world.VersionId}', approved_at = NULL WHERE id = '{world.EpisodeId}'");
         using var factory = Factory();
@@ -533,12 +542,10 @@ public sealed class ApproveReopenQaTests(TestDatabase database) : IntegrationTes
     [Theory]
     [InlineData("manyCategories")]
     [InlineData("hugeCategory")]
-    public async Task Characterization_QA4_FreshVerdictHasNoSizeCap_AndIsPersistedWhole(string kind)
+    public async Task Approve_OversizedFreshVerdict_IsRejectedWithoutOverwritingAudit(string kind)
     {
-        // QA-4: neither OpenAiContentModerator.Parse (only the results-array length is checked) nor
-        // StoryDraftModeration caps category count or name length before the verdict is written to jsonb.
-        // Expected after fix: reject or truncate (fail closed).
         var world = await SeedAsync(audit: Audit(StaleClean));
+        var before = StoredAudit(world);
         var names = kind == "manyCategories"
             ? Enumerable.Range(0, 3000).Select(index => $"advisory-{index:D4}").ToArray()
             : [new string('x', 200_000)];
@@ -548,23 +555,31 @@ public sealed class ApproveReopenQaTests(TestDatabase database) : IntegrationTes
 
         using var response = await SendAsync(client, world.EpisodeId, "approve", Tag(world));
 
-        response.StatusCode.ShouldBe(HttpStatusCode.OK, await response.Content.ReadAsStringAsync(Ct));
-        StoredAudit(world)["moderation"]!["categories"]!.AsArray().Count.ShouldBe(names.Length);
+        response.StatusCode.ShouldBe(HttpStatusCode.Conflict, await response.Content.ReadAsStringAsync(Ct));
+        (await CodeAsync(response)).ShouldBe("story_moderated");
+        moderator.Calls.ShouldBe(1);
+        Snapshot(world).ShouldBe("story_review|null|null");
+        JsonNode.DeepEquals(StoredAudit(world), before).ShouldBeTrue("an oversized verdict must not overwrite audit_report");
+        Count(world, "audit_logs", "action = 'episode.story_approved'").ShouldBe(0);
+        Count(world, "outbox_messages", "type = 'story_approved.v1'").ShouldBe(0);
     }
 
     [Fact]
-    public async Task Characterization_TrueCrimeWithTheDefaultNullGate_ApprovesWithoutAttestationOrFactSheet()
+    public async Task TrueCrimeWithTheDefaultNullGate_FailsClosedWithoutAttestationOrFactSheet()
     {
-        // Documented decision (task Notes): NullStoryApprovalGate is inert until 02.3.3-T1 swaps the DI line.
-        // This pins the release risk: a true-crime episode is approvable with no attestation today.
         var world = await SeedAsync(topic: Topic.TrueCrime);
         using var factory = Factory();
-        factory.Services.CreateScope().ServiceProvider.GetRequiredService<IStoryApprovalGate>().ShouldBeOfType<NullStoryApprovalGate>();
+        using var scope = factory.Services.CreateScope();
+        scope.ServiceProvider.GetRequiredService<IStoryApprovalGate>().ShouldBeOfType<NullStoryApprovalGate>();
         using var client = factory.ClientFor(world.UserId);
 
         using var response = await SendAsync(client, world.EpisodeId, "approve", Tag(world));
 
-        response.StatusCode.ShouldBe(HttpStatusCode.OK, await response.Content.ReadAsStringAsync(Ct));
+        response.StatusCode.ShouldBe(HttpStatusCode.Conflict, await response.Content.ReadAsStringAsync(Ct));
+        (await CodeAsync(response)).ShouldBe("story_fact_sheet_outdated");
+        Snapshot(world).ShouldBe("story_review|null|null");
+        Count(world, "audit_logs", "action = 'episode.story_approved'").ShouldBe(0);
+        Count(world, "outbox_messages", "type = 'story_approved.v1'").ShouldBe(0);
         Count(world, "audit_logs", "action = 'episode.true_crime_attested'").ShouldBe(0);
     }
 

@@ -28,7 +28,7 @@ public sealed record ReopenStoryCommand(Guid EpisodeId, string IfMatch)
                 EpisodeId,
                 new Dictionary<string, object>(StringComparer.Ordinal)
                 {
-                    ["episodeId"] = EpisodeId.ToString("D", CultureInfo.InvariantCulture),
-                    ["versionId"] = versionId.ToString("D", CultureInfo.InvariantCulture),
+                    ["episode_id"] = EpisodeId.ToString("D", CultureInfo.InvariantCulture),
+                    ["story_version_id"] = versionId.ToString("D", CultureInfo.InvariantCulture),
                 });
 }

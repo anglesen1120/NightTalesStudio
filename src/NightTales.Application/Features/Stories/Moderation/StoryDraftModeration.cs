@@ -13,6 +13,11 @@ public sealed partial class StoryDraftModeration(
     IModerationEventWriter events,
     ILogger<StoryDraftModeration> logger)
 {
+    // The episode row is locked by the caller. Keep provider retries well below the 30 s DB command timeout.
+    private const int ProviderBudgetSeconds = 10;
+    private const int MaxCategoryCount = 32;
+    private const int MaxCategoryLength = 64;
+
     /// <summary>Returns a fresh, persistable verdict, or null when the provider cannot supply one.</summary>
     public async ValueTask<JsonObject?> CheckAsync(
         Guid userId,
@@ -35,13 +40,20 @@ public sealed partial class StoryDraftModeration(
         }
 
         ModerationResult result;
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        deadline.CancelAfter(TimeSpan.FromSeconds(ProviderBudgetSeconds));
         try
         {
-            result = await moderator.CheckAsync(texts, ModerationStage.Draft, ct).ConfigureAwait(false);
+            var pending = moderator.CheckAsync(texts, ModerationStage.Draft, deadline.Token);
+            result = pending.IsCompletedSuccessfully
+                ? pending.Result
+                : await pending.AsTask().WaitAsync(deadline.Token).ConfigureAwait(false);
             ct.ThrowIfCancellationRequested();
+            deadline.Token.ThrowIfCancellationRequested();
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
+            ct.ThrowIfCancellationRequested();
             throw;
         }
         catch (Exception exception)
@@ -60,26 +72,7 @@ public sealed partial class StoryDraftModeration(
 
         // Match the pipeline: categories without a flag are still flagged; a flag without categories fails closed.
         var flagged = result.Flagged || result.Categories.Count > 0;
-        var categories = result.Categories
-            .Select(category => string.IsNullOrWhiteSpace(category)
-                ? StoryQualityChecker.UnspecifiedModerationCategory
-                : TextSafety.Clean(category).Trim())
-            .Select(category => string.IsNullOrWhiteSpace(category)
-                ? StoryQualityChecker.UnspecifiedModerationCategory
-                : category)
-            .Distinct(StringComparer.Ordinal)
-            .ToArray();
-        if (flagged && categories.Length == 0)
-        {
-            categories = [StoryQualityChecker.UnspecifiedModerationCategory];
-        }
-        if (!categories.Contains(StoryQualityChecker.UnspecifiedModerationCategory, StringComparer.Ordinal)
-            && result.Categories.Any(category =>
-                !string.Equals(category, TextSafety.Clean(category), StringComparison.Ordinal)))
-        {
-            // Sanitising provider corruption must not turn a blocking flag into an advisory-only verdict.
-            categories = [.. categories, StoryQualityChecker.UnspecifiedModerationCategory];
-        }
+        var categories = NormaliseCategories(result.Categories, flagged);
 
         var blocking = categories.Where(StoryQualityChecker.BlockingModerationCategories.Contains).ToArray();
         var verdict = new JsonObject
@@ -99,6 +92,8 @@ public sealed partial class StoryDraftModeration(
         if (flagged)
         {
             // D22: draft-stage evidence has no stored-version excerpt. The writer owns its independent transaction.
+            // Its independent 10 s write timeout plus our 10 s provider budget keeps lock-held I/O below 30 s.
+            // Do not abandon the evidence write: D22 requires it to survive caller cancellation/rollback.
             await events.WriteAsync(
                 userId, episodeId, ModerationSource.OpenaiText, ModerationStage.Draft, categories, null, ct)
                 .ConfigureAwait(false);
@@ -114,6 +109,43 @@ public sealed partial class StoryDraftModeration(
                 texts.Add(text);
             }
         }
+    }
+
+    private static string[] NormaliseCategories(IReadOnlyList<string> rawCategories, bool flagged)
+    {
+        // Reject the raw count too: duplicate names must not hide an oversized provider payload.
+        if (rawCategories.Count > MaxCategoryCount)
+        {
+            return [StoryQualityChecker.UnspecifiedModerationCategory];
+        }
+
+        var categories = new HashSet<string>(StringComparer.Ordinal);
+        var corrupted = false;
+        foreach (var raw in rawCategories)
+        {
+            var cleaned = TextSafety.Clean(raw);
+            corrupted |= !string.Equals(raw, cleaned, StringComparison.Ordinal);
+            var category = cleaned.Trim();
+            if (category.Length > MaxCategoryLength)
+            {
+                // Never truncate a name (including a surrogate pair) or silently discard a blocker.
+                return [StoryQualityChecker.UnspecifiedModerationCategory];
+            }
+
+            categories.Add(string.IsNullOrWhiteSpace(category)
+                ? StoryQualityChecker.UnspecifiedModerationCategory
+                : category);
+        }
+
+        if (corrupted || (flagged && categories.Count == 0))
+        {
+            categories.Add(StoryQualityChecker.UnspecifiedModerationCategory);
+        }
+
+        // The corruption sentinel is also subject to the persisted count cap.
+        return categories.Count > MaxCategoryCount
+            ? [StoryQualityChecker.UnspecifiedModerationCategory]
+            : [.. categories];
     }
 
     /// <summary>Missing, malformed, stale or unavailable verdicts require a fresh check before approval.</summary>
@@ -165,7 +197,7 @@ public sealed partial class StoryDraftModeration(
     private static bool ReadCategories(JsonNode? node, out string[] categories)
     {
         categories = [];
-        if (node is not JsonArray array)
+        if (node is not JsonArray array || array.Count > MaxCategoryCount)
         {
             return false;
         }
@@ -176,6 +208,7 @@ public sealed partial class StoryDraftModeration(
             if (array[index] is not JsonValue value
                 || !value.TryGetValue<string>(out var text)
                 || string.IsNullOrWhiteSpace(text)
+                || text.Length > MaxCategoryLength
                 || !string.Equals(text, TextSafety.Clean(text).Trim(), StringComparison.Ordinal)
                 || !TextSafety.IsPersistableJson(value.ToJsonString()))
             {

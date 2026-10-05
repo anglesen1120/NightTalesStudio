@@ -44,7 +44,8 @@ public sealed class StoryDraftModerationTests
             ModerationScope.Current.ShouldBeNull();
             texts.ShouldBe(["title", "body", "description", "first", "second"]);
             stage.ShouldBe(ModerationStage.Draft);
-            ct.ShouldBe(Ct);
+            ct.CanBeCanceled.ShouldBeTrue();
+            ct.IsCancellationRequested.ShouldBeFalse();
             return ValueTask.FromResult(ModerationResult.Clean);
         });
 
@@ -125,6 +126,80 @@ public sealed class StoryDraftModerationTests
         events.Items[0].Categories.ShouldBe(categories);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task OversizedCategories_CollapseToUnspecifiedBlockingVerdictAndEvidence(bool excessiveCount)
+    {
+        string[] categories = excessiveCount
+            ? Enumerable.Repeat("violence", 33).ToArray()
+            : [new string('x', 65)];
+        var events = new RecordingEvents();
+        var result = new ModerationResult(true, categories, new Dictionary<string, double>());
+        var moderator = new StubModerator((_, _, _) => ValueTask.FromResult(result));
+
+        var verdict = await CheckAsync(Helper(moderator, events));
+
+        verdict.ShouldNotBeNull();
+        verdict["flagged"]!.GetValue<bool>().ShouldBeTrue();
+        verdict["categories"]!.AsArray().Select(node => node!.GetValue<string>()).ShouldBe(["unspecified"]);
+        StoryDraftModeration.BlockingCategoriesOf(verdict).ShouldBe(["unspecified"]);
+        StoryDraftModeration.NeedsRecheck(verdict).ShouldBeFalse();
+        events.Items.ShouldHaveSingleItem().Categories.ShouldBe(["unspecified"]);
+    }
+
+    [Fact]
+    public async Task CategoriesExactlyAtBothCaps_PassThroughUnchanged()
+    {
+        var categories = Enumerable.Range(0, 32).Select(index => new string((char)('A' + index), 64)).ToArray();
+        var events = new RecordingEvents();
+        var moderator = new FakeContentModerator().EnqueueFlagged(ModerationStage.Draft, categories);
+
+        var verdict = await CheckAsync(Helper(moderator, events));
+
+        verdict.ShouldNotBeNull();
+        verdict["categories"]!.AsArray().Select(node => node!.GetValue<string>()).ShouldBe(categories);
+        StoryDraftModeration.BlockingCategoriesOf(verdict).ShouldBeEmpty();
+        StoryDraftModeration.NeedsRecheck(verdict).ShouldBeFalse();
+        events.Items.ShouldHaveSingleItem().Categories.ShouldBe(categories);
+    }
+
+    [Theory]
+    [InlineData(62, false)]
+    [InlineData(63, true)]
+    public async Task CategoryLengthCap_NeverSplitsSurrogatePair(int prefixLength, bool oversized)
+    {
+        var category = new string('x', prefixLength) + "\U0001F600";
+        var events = new RecordingEvents();
+        var moderator = new FakeContentModerator().EnqueueFlagged(ModerationStage.Draft, category);
+
+        var verdict = await CheckAsync(Helper(moderator, events));
+
+        verdict.ShouldNotBeNull();
+        string[] expected = oversized ? ["unspecified"] : [category];
+        verdict["categories"]!.AsArray().Select(node => node!.GetValue<string>()).ShouldBe(expected);
+        StoryDraftModeration.BlockingCategoriesOf(verdict)
+            .ShouldBe(oversized ? ["unspecified"] : Array.Empty<string>());
+        StoryDraftModeration.NeedsRecheck(verdict).ShouldBeFalse();
+        events.Items.ShouldHaveSingleItem().Categories.ShouldBe(expected);
+    }
+
+    [Fact]
+    public async Task CorruptionSentinelBeyondCountCap_CollapsesEntireVerdict()
+    {
+        var categories = Enumerable.Range(0, 32).Select(index => new string((char)('A' + index), 3)).ToArray();
+        categories[0] += '\0';
+        var events = new RecordingEvents();
+        var moderator = new FakeContentModerator().EnqueueFlagged(ModerationStage.Draft, categories);
+
+        var verdict = await CheckAsync(Helper(moderator, events));
+
+        verdict.ShouldNotBeNull();
+        verdict["categories"]!.AsArray().Select(node => node!.GetValue<string>()).ShouldBe(["unspecified"]);
+        StoryDraftModeration.BlockingCategoriesOf(verdict).ShouldBe(["unspecified"]);
+        events.Items.ShouldHaveSingleItem().Categories.ShouldBe(["unspecified"]);
+    }
+
     [Fact]
     public async Task Unavailable_ReturnsNullWithoutEvent()
     {
@@ -144,6 +219,29 @@ public sealed class StoryDraftModerationTests
         var events = new RecordingEvents();
 
         (await CheckAsync(Helper(moderator, events))).ShouldBeNull();
+        events.Items.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task ProviderBudgetExpiryWithNeverCompletingModerator_ReturnsNullWithLiveCaller()
+    {
+        // Exercise the production 10 s budget rather than expose a configurable test-only deadline.
+        using var caller = CancellationTokenSource.CreateLinkedTokenSource(Ct);
+        var pending = new TaskCompletionSource<ModerationResult>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var providerToken = CancellationToken.None;
+        var moderator = new StubModerator((_, _, ct) =>
+        {
+            providerToken = ct;
+            return new ValueTask<ModerationResult>(pending.Task);
+        });
+        var events = new RecordingEvents();
+        var helper = Helper(moderator, events);
+
+        (await helper.CheckAsync(UserId, EpisodeId, "title", "body", null, [], caller.Token)).ShouldBeNull();
+
+        caller.IsCancellationRequested.ShouldBeFalse();
+        providerToken.IsCancellationRequested.ShouldBeTrue();
+        pending.Task.IsCompleted.ShouldBeFalse();
         events.Items.ShouldBeEmpty();
     }
 
@@ -184,10 +282,11 @@ public sealed class StoryDraftModerationTests
     public async Task CallerCancellationDuringProviderCall_Propagates()
     {
         using var cancellation = new CancellationTokenSource();
-        var moderator = new StubModerator((_, _, ct) =>
+        var pending = new TaskCompletionSource<ModerationResult>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var moderator = new StubModerator((_, _, _) =>
         {
             cancellation.Cancel();
-            throw new OperationCanceledException(ct);
+            return new ValueTask<ModerationResult>(pending.Task);
         });
         var helper = Helper(moderator, new RecordingEvents());
 
@@ -195,6 +294,7 @@ public sealed class StoryDraftModerationTests
             await helper.CheckAsync(UserId, EpisodeId, "title", "body", null, [], cancellation.Token));
 
         exception.CancellationToken.ShouldBe(cancellation.Token);
+        pending.Task.IsCompleted.ShouldBeFalse();
     }
 
     [Theory]
@@ -227,6 +327,27 @@ public sealed class StoryDraftModerationTests
         StoryDraftModeration.NeedsRecheck(moderation).ShouldBe(recheck);
         StoryDraftModeration.BlockingCategoriesOf(moderation)
             .ShouldBe(expectedBlocking.Length == 0 ? Array.Empty<string>() : [expectedBlocking]);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void OversizedStoredCategories_RequireRecheck_AndFailClosed(bool excessiveCount)
+    {
+        var categories = excessiveCount
+            ? new JsonArray(Enumerable.Repeat("violence", 33).Select(value => (JsonNode)JsonValue.Create(value)!).ToArray())
+            : new JsonArray(new string('x', 65));
+        var verdict = new JsonObject
+        {
+            ["flagged"] = true,
+            ["categories"] = categories,
+            ["blocking"] = new JsonArray(),
+            ["stale"] = false,
+            ["unavailable"] = false,
+        };
+
+        StoryDraftModeration.NeedsRecheck(verdict).ShouldBeTrue();
+        StoryDraftModeration.BlockingCategoriesOf(verdict).ShouldBe(["unspecified"]);
     }
 
     [Theory]

@@ -34,7 +34,7 @@ namespace NightTales.Api.IntegrationTests.StoryGeneration;
 
 /// <summary>Approval ordering, refresh and atomic writes against the real host and PostgreSQL.</summary>
 [Trait("Category", "Integration")]
-public sealed class ApproveStoryEndpointTests(TestDatabase database) : IntegrationTest(database)
+public sealed partial class ApproveStoryEndpointTests(TestDatabase database) : IntegrationTest(database)
 {
     private const string Action = "episode.story_approved";
     private const string Clean = """{"flagged":false,"categories":[],"blocking":[],"stale":false,"unavailable":false}""";
@@ -516,7 +516,7 @@ public sealed class ApproveStoryEndpointTests(TestDatabase database) : Integrati
             await db.SaveChangesAsync(Ct);
         }
         SqlProbe.Execute(Database, $"UPDATE episodes SET current_story_version_id='{version.Id}' WHERE id='{episode.Id}'");
-        return new World(user.Id, episode.Id, version.Id);
+        return new World(user.Id, episode.Id, version.Id, series.Id);
     }
 
     private void AssertApproved(World world)
@@ -581,7 +581,7 @@ public sealed class ApproveStoryEndpointTests(TestDatabase database) : Integrati
         (await ProblemAsync(response)).Code.ShouldBe(code);
     }
 
-    private sealed record World(Guid UserId, Guid EpisodeId, Guid VersionId);
+    private sealed record World(Guid UserId, Guid EpisodeId, Guid VersionId, Guid SeriesId);
 
     private sealed class RecordingGate(Error? error = null, string? acceptedTextVersion = null) : IStoryApprovalGate
     {

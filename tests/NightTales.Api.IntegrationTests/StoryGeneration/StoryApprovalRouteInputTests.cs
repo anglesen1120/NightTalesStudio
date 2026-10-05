@@ -154,6 +154,30 @@ public sealed class StoryApprovalRouteInputTests(TestDatabase database) : Integr
     }
 
     [Theory]
+    [InlineData(4095, false)]
+    [InlineData(4096, false)]
+    [InlineData(4097, false)]
+    [InlineData(4095, true)]
+    [InlineData(4096, true)]
+    [InlineData(4097, true)]
+    public async Task Approval_BodyAroundInitialBufferCapacity_IsAccepted(int byteLength, bool streamed)
+    {
+        var world = await SeedAsync();
+        using var factory = Factory();
+        using var client = factory.ClientFor(world.UserId);
+        using var request = Request(world, "approve", StoryEtag.For(world.VersionId));
+        var json = "{}" + new string(' ', byteLength - 2);
+        request.Content = streamed
+            ? new StreamedJsonContent(Encoding.UTF8.GetBytes(json))
+            : new StringContent(json, Encoding.UTF8, "application/json");
+
+        using var response = await client.SendAsync(request, Ct);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.OK, await response.Content.ReadAsStringAsync(Ct));
+        await AssertStoryResponseAsync(response, world, "story_approved");
+    }
+
+    [Theory]
     [InlineData("approve")]
     [InlineData("reopen")]
     public async Task ApprovalRoutes_MissingIfMatchInRequiredState_Return428(string action)
