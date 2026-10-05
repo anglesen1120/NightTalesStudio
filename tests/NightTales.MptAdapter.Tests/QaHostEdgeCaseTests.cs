@@ -334,6 +334,7 @@ public sealed class QaOptionsValidatorTests
 public sealed class QaHostRunTests : IDisposable
 {
     private const string Key = "adapter-key-0123456789abcdef0123456789";
+    private const string NextKey = "adapter-next-key-0123456789abcdef012345";
 
     private readonly CertFiles _cert = CertFiles.Valid();
     private readonly string _dataDir = Path.Combine(Path.GetTempPath(), "nts-run-" + Guid.NewGuid().ToString("N"));
@@ -404,6 +405,8 @@ public sealed class QaHostRunTests : IDisposable
         "--Adapter:CertPath=" + _cert.CertPath,
         "--Adapter:KeyPath=" + _cert.KeyPath,
         "--RenderNodeServer:ApiKey=" + Key,
+        // Pin NEXT too: the child-environment test sets a short ADAPTER_API_KEY_NEXT process-wide in parallel.
+        "--RenderNodeServer:ApiKeyNext=" + NextKey,
         .. extra,
     ];
 
