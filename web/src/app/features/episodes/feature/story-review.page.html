@@ -1,0 +1,47 @@
+<div class="story-review-page">
+  @if (loading()) {
+    <nts-loading-state [rows]="5" labelKey="episodes.editor.loading" />
+  } @else if (fatalError() !== null) {
+    <nts-error-state
+      [bodyKey]="errorKey()"
+      [traceId]="traceId()"
+      retryLabelKey="errors.action.retry"
+      (retry)="retry()"
+    />
+  } @else if (episode(); as detail) {
+    @if (detail.currentStory === null) {
+      <nts-page-header titleKey="episodes.editor.pageTitle" backHref="/episodes">
+        <nts-status-chip actions [statusKey]="detail.status" appearance="neutral" />
+      </nts-page-header>
+      @if (store.generationError(); as error) {
+        <nts-form-error-alert [error]="error" [showTrace]="true" />
+      }
+      <nts-empty-state
+        titleKey="episodes.editor.emptyTitle"
+        bodyKey="episodes.editor.emptyBody"
+        [actionLabelKey]="store.canGenerate() ? actionKey('generate_story') : undefined"
+        (action)="store.generateStory()"
+      />
+    } @else {
+      <nts-page-header [title]="store.title()" backHref="/episodes">
+        <nts-status-chip actions [statusKey]="detail.status" [appearance]="store.readOnly() ? 'success' : 'neutral'" />
+      </nts-page-header>
+
+      @if (store.invalidState() || store.readOnly()) {
+        <section class="story-review-page__notice" role="note" aria-labelledby="story-readonly-heading">
+          <h2 id="story-readonly-heading">{{ 'errors.episode_invalid_state' | transloco }}</h2>
+          <p>{{ 'episodes.editor.readOnlyBody' | transloco }}</p>
+          @if (allowedActions().length > 0) {
+            <div class="story-review-page__actions" [attr.aria-label]="'episodes.editor.allowedActions' | transloco">
+              @for (action of allowedActions(); track action) {
+                <button type="button" disabled>{{ actionKey(action) | transloco }}</button>
+              }
+            </div>
+          }
+        </section>
+      }
+
+      <nts-story-editor [viewModel]="viewModel()" [segmentTexts]="segmentTexts()" (intent)="handleIntent($event)" />
+    }
+  }
+</div>

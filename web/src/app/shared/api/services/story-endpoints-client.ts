@@ -10,14 +10,20 @@ import { BaseService } from '../base-service';
 import { ApiConfiguration } from '../api-configuration';
 import { StrictHttpResponse } from '../strict-http-response';
 
+import { apiV1EpisodesIdStoryApprovePost } from '../fn/story-endpoints/api-v-1-episodes-id-story-approve-post';
+import { ApiV1EpisodesIdStoryApprovePost$Params } from '../fn/story-endpoints/api-v-1-episodes-id-story-approve-post';
 import { apiV1EpisodesIdStoryGeneratePost } from '../fn/story-endpoints/api-v-1-episodes-id-story-generate-post';
 import { ApiV1EpisodesIdStoryGeneratePost$Params } from '../fn/story-endpoints/api-v-1-episodes-id-story-generate-post';
 import { apiV1EpisodesIdStoryPut } from '../fn/story-endpoints/api-v-1-episodes-id-story-put';
 import { ApiV1EpisodesIdStoryPut$Params } from '../fn/story-endpoints/api-v-1-episodes-id-story-put';
+import { apiV1EpisodesIdStoryReopenPost } from '../fn/story-endpoints/api-v-1-episodes-id-story-reopen-post';
+import { ApiV1EpisodesIdStoryReopenPost$Params } from '../fn/story-endpoints/api-v-1-episodes-id-story-reopen-post';
 import { apiV1EpisodesIdStoryVersionsGet } from '../fn/story-endpoints/api-v-1-episodes-id-story-versions-get';
 import { ApiV1EpisodesIdStoryVersionsGet$Params } from '../fn/story-endpoints/api-v-1-episodes-id-story-versions-get';
 import { apiV1EpisodesIdStoryVersionsVersionIdGet } from '../fn/story-endpoints/api-v-1-episodes-id-story-versions-version-id-get';
 import { ApiV1EpisodesIdStoryVersionsVersionIdGet$Params } from '../fn/story-endpoints/api-v-1-episodes-id-story-versions-version-id-get';
+import { ApprovedStoryDto } from '../models/approved-story-dto';
+import { EpisodeStoryStateDto } from '../models/episode-story-state-dto';
 import { GenerateStoryAccepted } from '../models/generate-story-accepted';
 import { StoryVersionDetailDto } from '../models/story-version-detail-dto';
 import { StoryVersionDto } from '../models/story-version-dto';
@@ -134,6 +140,60 @@ export class StoryEndpointsClient extends BaseService {
     const resp = this.apiV1EpisodesIdStoryVersionsVersionIdGet$Response(params, context);
     return resp.pipe(
       map((r: StrictHttpResponse<StoryVersionDetailDto>): StoryVersionDetailDto => r.body)
+    );
+  }
+
+  /** Path part for operation `apiV1EpisodesIdStoryApprovePost()` */
+  static readonly ApiV1EpisodesIdStoryApprovePostPath = '/api/v1/episodes/{id}/story/approve';
+
+  /**
+   * This method provides access to the full `HttpResponse`, allowing access to response headers.
+   * To access only the response body, use `apiV1EpisodesIdStoryApprovePost()` instead.
+   *
+   * This method sends `application/json` and handles request body of type `application/json`.
+   */
+  apiV1EpisodesIdStoryApprovePost$Response(params: ApiV1EpisodesIdStoryApprovePost$Params, context?: HttpContext): Observable<StrictHttpResponse<ApprovedStoryDto>> {
+    const obs = apiV1EpisodesIdStoryApprovePost(this.http, this.rootUrl, params, context);
+    return obs;
+  }
+
+  /**
+   * This method provides access only to the response body.
+   * To access the full response (for headers, for example), `apiV1EpisodesIdStoryApprovePost$Response()` instead.
+   *
+   * This method sends `application/json` and handles request body of type `application/json`.
+   */
+  apiV1EpisodesIdStoryApprovePost(params: ApiV1EpisodesIdStoryApprovePost$Params, context?: HttpContext): Observable<ApprovedStoryDto> {
+    const resp = this.apiV1EpisodesIdStoryApprovePost$Response(params, context);
+    return resp.pipe(
+      map((r: StrictHttpResponse<ApprovedStoryDto>): ApprovedStoryDto => r.body)
+    );
+  }
+
+  /** Path part for operation `apiV1EpisodesIdStoryReopenPost()` */
+  static readonly ApiV1EpisodesIdStoryReopenPostPath = '/api/v1/episodes/{id}/story/reopen';
+
+  /**
+   * This method provides access to the full `HttpResponse`, allowing access to response headers.
+   * To access only the response body, use `apiV1EpisodesIdStoryReopenPost()` instead.
+   *
+   * This method doesn't expect any request body.
+   */
+  apiV1EpisodesIdStoryReopenPost$Response(params: ApiV1EpisodesIdStoryReopenPost$Params, context?: HttpContext): Observable<StrictHttpResponse<EpisodeStoryStateDto>> {
+    const obs = apiV1EpisodesIdStoryReopenPost(this.http, this.rootUrl, params, context);
+    return obs;
+  }
+
+  /**
+   * This method provides access only to the response body.
+   * To access the full response (for headers, for example), `apiV1EpisodesIdStoryReopenPost$Response()` instead.
+   *
+   * This method doesn't expect any request body.
+   */
+  apiV1EpisodesIdStoryReopenPost(params: ApiV1EpisodesIdStoryReopenPost$Params, context?: HttpContext): Observable<EpisodeStoryStateDto> {
+    const resp = this.apiV1EpisodesIdStoryReopenPost$Response(params, context);
+    return resp.pipe(
+      map((r: StrictHttpResponse<EpisodeStoryStateDto>): EpisodeStoryStateDto => r.body)
     );
   }
 

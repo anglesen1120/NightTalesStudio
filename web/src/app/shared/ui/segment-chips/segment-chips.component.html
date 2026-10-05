@@ -1,0 +1,34 @@
+<div class="segment-chips">
+  <span class="segment-chips__label">{{ 'episodes.editor.keywords' | transloco }}</span>
+  <div class="segment-chips__list" role="list" [attr.aria-label]="'episodes.editor.keywords' | transloco">
+    @for (keyword of keywords(); track $index) {
+      <div class="segment-chips__item" role="listitem">
+        <input
+          type="text"
+          [value]="keyword"
+          [readOnly]="readOnly()"
+          [attr.aria-label]="'episodes.editor.keywordLabel' | transloco: { index: $index + 1 }"
+          (input)="edit($index, $event)"
+        />
+        @if (!readOnly()) {
+          <button type="button" class="segment-chips__remove" (click)="remove($index)">
+            <span aria-hidden="true">×</span>
+            <span class="sr-only">{{ 'episodes.editor.removeKeyword' | transloco }} {{ keyword }}</span>
+          </button>
+        }
+      </div>
+    }
+  </div>
+  @if (!readOnly()) {
+    <button type="button" class="segment-chips__add" (click)="add()">
+      <span aria-hidden="true">+</span>
+      <span>{{ 'episodes.editor.addKeyword' | transloco }}</span>
+    </button>
+  }
+  @if (limitHit()) {
+    <p class="segment-chips__limit" role="status">
+      <span aria-hidden="true">!</span>
+      <span>{{ 'episodes.editor.keywordLimit' | transloco }}</span>
+    </p>
+  }
+</div>

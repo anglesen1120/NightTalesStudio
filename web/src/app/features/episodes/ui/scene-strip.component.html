@@ -1,0 +1,23 @@
+<section class="scene-strip" data-testid="scene-strip" aria-labelledby="scene-strip-heading">
+  <div class="scene-strip__heading">
+    <h2 id="scene-strip-heading">{{ 'episodes.editor.sceneStrip' | transloco }}</h2>
+    <p id="scene-strip-hint">{{ 'episodes.editor.sceneStripHint' | transloco }}</p>
+  </div>
+  @if (scenes().length > 0) {
+    <div class="scene-strip__track" tabindex="0" aria-labelledby="scene-strip-heading" aria-describedby="scene-strip-hint">
+      @for (scene of scenes(); track scene.key) {
+        <article class="scene-strip__scene">
+          <span class="scene-strip__segment">
+            {{ scene.labelKey | transloco }}@if (scene.labelIndex !== null) { {{ scene.labelIndex }} }
+          </span>
+          <strong>{{ scene.keyword }}</strong>
+          @if (segmentTexts().get(scene.address); as text) {
+            <p ntsSceneExcerpt [text]="text"></p>
+          }
+        </article>
+      }
+    </div>
+  } @else {
+    <p class="scene-strip__empty">{{ 'episodes.editor.sceneStripEmpty' | transloco }}</p>
+  }
+</section>

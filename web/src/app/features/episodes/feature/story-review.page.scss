@@ -1,0 +1,12 @@
+:host { display: block; min-width: 0; }
+.story-review-page { display: flex; flex-direction: column; gap: var(--nts-space-5); width: 100%; max-width: 80rem; min-width: 0; }
+.story-review-page__notice { display: flex; flex-direction: column; gap: var(--nts-space-3); padding: var(--nts-space-4); border-inline-start: var(--nts-space-1) solid var(--nts-color-primary); background: var(--nts-color-primary-soft); }
+.story-review-page__notice h2, .story-review-page__notice p { margin: 0; }
+.story-review-page__notice h2 { font-size: var(--nts-type-title-size); line-height: var(--nts-type-title-line); }
+.story-review-page__actions { display: flex; flex-wrap: wrap; gap: var(--nts-space-3); }
+.story-review-page__actions button { min-height: var(--nts-target-min); padding: var(--nts-space-2) var(--nts-space-4); border: 1px solid var(--nts-color-control-outline); border-radius: var(--nts-radius-control); background: var(--nts-color-surface-variant); color: var(--nts-color-on-surface-muted); font: inherit; }
+@media (max-width: 30rem) {
+  .story-review-page { gap: var(--nts-space-4); max-width: 100%; overflow-x: clip; }
+  .story-review-page__actions { flex-direction: column; }
+  .story-review-page__actions button { width: 100%; }
+}
