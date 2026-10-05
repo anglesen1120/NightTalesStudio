@@ -4,6 +4,12 @@ History moved out of STATUS.md to keep the live file small. The initial archive 
 
 ## Resume-here history (Current/Previous blocks, Next actions)
 
+### Superseded Web next line (2026-10-05, replaced when Session 13 closed after #134 merged)
+
+Outcome: 10.2.6-T1 shell merged as #134 (`945405c`).
+
+- **Web next (plan 10 Stage B):** Session 13: **10.2.6-T1 shell** in a PR from `feature/10.2.6-T1-s13` (T3 gates closed; §Open tasks row) waiting for the owner. After it merges: **10.5.1-T0** design → **10.5.1-T1** episode list (first `cursorList` consumer; check each header's `Depends on`), then 10.4.1-T1 dashboard (adds `/dashboard` + the first `NAV_ITEMS` entry). The shell has no `**` not-found route yet (owner 2026-10-05, §Plan 10 hand-overs). Read §Plan 10 hand-overs and the as-built shell surface in the 10.2.6-T1 task §Notes first.
+
 ### Superseded Web next line (2026-10-05, replaced when Session 13 opened the 10.2.6-T1 PR)
 
 Outcome: 10.2.6-T1 shell built (T3 gates closed); PR from `feature/10.2.6-T1-s13`.
