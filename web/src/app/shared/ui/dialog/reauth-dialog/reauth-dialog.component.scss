@@ -1,0 +1,101 @@
+::host {
+  display: block;
+}
+
+.reauth-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: var(--nts-space-4);
+  width: min(520px, 100%);
+  padding: var(--nts-space-5);
+  border: 1px solid var(--nts-color-outline);
+  border-radius: var(--nts-radius-dialog);
+  background: var(--nts-color-surface);
+  color: var(--nts-color-on-surface);
+  box-shadow: var(--nts-elevation-2);
+}
+
+h2 {
+  margin: 0;
+  font-size: var(--nts-type-title-size);
+  line-height: var(--nts-type-title-line);
+}
+
+.reauth-dialog__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--nts-space-3);
+  min-width: 0;
+}
+
+.reauth-dialog__reason {
+  max-width: var(--nts-measure);
+  margin: 0;
+  color: var(--nts-color-on-surface-muted);
+}
+
+mat-form-field {
+  width: 100%;
+}
+
+.reauth-dialog__alert {
+  display: flex;
+  flex-direction: column;
+  gap: var(--nts-space-1);
+  padding: var(--nts-space-3) var(--nts-space-4);
+  border: 1px solid var(--nts-color-line);
+  border-left: 4px solid var(--nts-color-playhead);
+  border-radius: var(--nts-radius-control);
+  background: var(--nts-color-error-soft);
+}
+
+.reauth-dialog__status {
+  display: flex;
+  flex-direction: column;
+  gap: var(--nts-space-1);
+  padding: var(--nts-space-3) var(--nts-space-4);
+  border: 1px solid var(--nts-color-line);
+  border-left: 4px solid var(--nts-color-signal);
+  border-radius: var(--nts-radius-control);
+  background: var(--nts-color-primary-soft);
+}
+
+.reauth-dialog__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--nts-space-2);
+  flex-wrap: wrap;
+}
+
+.reauth-dialog__actions button {
+  min-height: var(--nts-control-h);
+}
+
+.reauth-dialog__confirm:disabled,
+.reauth-dialog__confirm[aria-disabled='true'] {
+  opacity: 0.48;
+}
+
+.reauth-dialog__spinner {
+  display: inline-block;
+  width: 18px !important;
+  height: 18px !important;
+  margin-right: var(--nts-space-2);
+  vertical-align: middle;
+}
+
+@media (max-width: 767px) {
+  .reauth-dialog {
+    padding: var(--nts-space-4);
+  }
+
+  .reauth-dialog__actions button {
+    flex: 1 1 120px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .reauth-dialog__spinner circle {
+    animation: none !important;
+  }
+}

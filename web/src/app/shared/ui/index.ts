@@ -7,6 +7,8 @@ export * from './confirm-dialog/confirm-dialog';
 export * from './form-error-alert/form-error-alert.component';
 export * from './retry-countdown/retry-countdown.component';
 export * from './conflict-dialog/conflict-dialog.component';
+export * from './dialog/reauth-dialog/reauth-dialog.component';
+export * from './dialog/reauth-dialog/reauth-dialog.model';
 export * from './stepper/stepper';
 export * from './char-counter/char-counter';
 export * from './copyable-code/copyable-code';

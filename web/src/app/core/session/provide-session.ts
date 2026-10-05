@@ -2,6 +2,7 @@ import { DOCUMENT, isPlatformBrowser } from '@angular/common';
 import {
   DestroyRef,
   EnvironmentProviders,
+  Injector,
   PLATFORM_ID,
   inject,
   makeEnvironmentProviders,
@@ -9,6 +10,10 @@ import {
 } from '@angular/core';
 import { ActivityTracker } from './activity';
 import { HttpSessionRepository } from './data-access/session.repository';
+import { ReauthApiRepository } from './data-access/reauth.repository';
+import { ReauthPort } from './reauth.port';
+import { ReauthService } from './reauth.service';
+import { SESSION_SCOPED } from './session-scope';
 import { SESSION_FREE_PATH } from './session-free-path';
 import { SessionApi } from './session.api';
 import { SessionStore } from './session-store';
@@ -25,6 +30,21 @@ const FIRST_GESTURE_EVENTS = ['pointerdown', 'keydown'] as const;
 export function provideSession(): EnvironmentProviders {
   return makeEnvironmentProviders([
     { provide: SessionApi, useClass: HttpSessionRepository },
+    { provide: ReauthPort, useClass: ReauthApiRepository },
+    {
+      // Resolved lazily: `SessionStore` injects `SESSION_SCOPED` and `ReauthService` injects `SessionStore`, so a
+      // direct reference would be a cycle (same shape as `provideRealtime`).
+      provide: SESSION_SCOPED,
+      multi: true,
+      useFactory: () => {
+        const injector = inject(Injector);
+        return {
+          reset: (): void => {
+            injector.get(ReauthService).reset();
+          },
+        };
+      },
+    },
     provideAppInitializer(() => {
       if (!isPlatformBrowser(inject(PLATFORM_ID))) {
         return;

@@ -25,6 +25,10 @@ Replaced text (verbatim):
 - 10.2.6-T1 sentence: No route set `data.titleKey` before 10.4.1-T1; `/dashboard` (PR #149) sets `shell.title.dashboard`, so the document-title-on-locale-change e2e assertion can now target it (not added by 10.4.1-T1).
 - Open-tasks status cell: PR #149 (Session 20, `feature/10.4.1-T1-s20`; T2 gates closed: QA, code review, perf+security review, fixes, delta)
 
+### Superseded Web next part (2026-10-05, replaced when 10.3.3-T3 went into a PR, Session 16)
+
+- Part of the **Web next (plan 10 Stage B)** bullet: **10.3.3-T3** MFA step + enrolment + recovery codes + re-auth (deps merged).
+
 ### Superseded Session 20 Web next part and 10 CR-47 hand-over line (2026-10-05, replaced when 10.4.1-T1 opened as PR #149)
 
 - Web next part: **10.4.1-T1** dashboard (adds `/dashboard`; consumes `EpisodeListComponent` + `EpisodeListStore` from `@features/episodes`); … No `**` not-found route yet (owner 2026-10-05); `/dashboard` has no route until 10.4.1-T1, so the `/dashboard`-path e2e tests (17 failed locally) stay red until then.

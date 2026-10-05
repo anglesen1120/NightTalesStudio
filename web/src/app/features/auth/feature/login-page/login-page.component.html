@@ -1,15 +1,27 @@
 <nts-auth-page-shell>
-  <nts-login-form
-    [form]="form"
-    [submitting]="store.submitting()"
-    [canSubmit]="store.canSubmit()"
-    [formError]="store.retryAfterSec() === null ? store.formError() : null"
-    [traceId]="traceId()"
-    [retryAfterSec]="store.retryAfterSec()"
-    [sessionEndKey]="sessionEndKey()"
-    [fieldState]="fieldState()"
-    (submitPassword)="submit()"
-    (retryAfterElapsed)="store.retryAfterElapsed()"
-    (forgotPassword)="goToForgotPassword()"
-  />
+  @if (store.step() === 'mfa') {
+    <nts-mfa-step-form
+      [form]="mfaForm"
+      [vm]="mfaViewModel()"
+      [fieldState]="mfaFieldState()"
+      (submitCode)="submitMfa()"
+      (toggleRecovery)="store.toggleRecovery()"
+      (backToPassword)="store.backToPassword()"
+      (retryAfterElapsed)="store.retryAfterElapsed()"
+    />
+  } @else {
+    <nts-login-form
+      [form]="form"
+      [submitting]="store.submitting()"
+      [canSubmit]="store.canSubmit()"
+      [formError]="store.retryAfterSec() === null ? store.formError() : null"
+      [traceId]="traceId()"
+      [retryAfterSec]="store.retryAfterSec()"
+      [sessionEndKey]="sessionEndKey()"
+      [fieldState]="fieldState()"
+      (submitPassword)="submit()"
+      (retryAfterElapsed)="store.retryAfterElapsed()"
+      (forgotPassword)="goToForgotPassword()"
+    />
+  }
 </nts-auth-page-shell>

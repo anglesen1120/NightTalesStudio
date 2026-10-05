@@ -74,12 +74,14 @@ function countPosts(page: Page, pathname: string): { readonly count: () => numbe
   return { count: () => seen };
 }
 
-async function signIn(page: Page, returnUrl?: string): Promise<void> {
+async function signIn(page: Page, returnUrl?: string, expectDashboard = true): Promise<void> {
   await page.goto(returnUrl === undefined ? '/login' : `/login?returnUrl=${encodeURIComponent(returnUrl)}`);
   await page.getByLabel(LABEL.email).fill('owner@example.test');
   await page.getByLabel(LABEL.password).fill('Correct-horse-1');
+  const loginResponse = page.waitForResponse((response) => response.request().method() === 'POST' && new URL(response.url()).pathname === '/api/v1/auth/login');
   await page.getByRole('button', { name: LABEL.signIn }).click();
-  await expect(page).toHaveURL((url) => url.pathname === '/dashboard');
+  expect((await loginResponse).status(), 'the submitted login succeeded').toBe(200);
+  if (expectDashboard) await expect(page).toHaveURL((url) => url.pathname === '/dashboard');
 }
 
 for (const { tag, lang } of LOCALES) {
@@ -154,10 +156,9 @@ for (const { tag, lang } of LOCALES) {
       await page.route(LOGIN, (route) => fulfilJson(route, 200, loginBody()));
       await page.route(REFRESH, (route) => fulfilJson(route, 401, REVOKED_PROBLEM));
       await page.route(TICKET, (route) => fulfilJson(route, 401, REVOKED_PROBLEM));
-      await signIn(page);
+      await signIn(page, undefined, false);
 
-      await expect(page).toHaveURL((url) => url.pathname === '/login');
-      expect(new URL(page.url()).searchParams.get('returnUrl')).toBe('/dashboard');
+      await expect(page).toHaveURL((url) => url.pathname === '/login' && url.searchParams.get('returnUrl') === '/dashboard');
 
       const banner = page.locator('[aria-live="polite"]').filter({ hasText: BANNER.revoked });
       await expect(banner).toBeVisible();
@@ -173,8 +174,10 @@ for (const { tag, lang } of LOCALES) {
       await page.route(LOGIN, (route) => fulfilJson(route, 200, loginBody()));
       await page.route(REFRESH, (route) => fulfilJson(route, 401, REVOKED_PROBLEM));
       await page.route(TICKET, (route) => (phase === 'revoke' ? fulfilJson(route, 401, REVOKED_PROBLEM) : fulfilJson(route, 200, TICKET_BODY)));
-      await signIn(page);
-      await expect(page).toHaveURL((url) => url.pathname === '/login');
+      await signIn(page, undefined, false);
+      await expect(page).toHaveURL((url) => url.pathname === '/login' && url.searchParams.get('returnUrl') === '/dashboard');
+      await expect(page.locator('[aria-live="polite"]').filter({ hasText: BANNER.revoked })).toBeVisible();
+      await expect(page.getByRole('heading', { level: 1 })).toBeFocused();
       phase = 'healthy';
       await page.getByLabel(LABEL.email).fill('owner@example.test');
       await page.getByLabel(LABEL.password).fill('Correct-horse-1');
@@ -228,7 +231,9 @@ for (const { tag, lang } of LOCALES) {
       await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
       await expectA11yClean(page);
 
-      await signIn(page);
+      await signIn(page, undefined, false);
+      await expect(page).toHaveURL((url) => url.pathname === '/login' && url.searchParams.get('returnUrl') === '/dashboard');
+      await expect(page.getByRole('heading', { level: 1 })).toBeFocused();
       const banner = page.locator('[aria-live="polite"]').filter({ hasText: BANNER.revoked });
       await expect(banner).toBeVisible();
       await expect(banner).toBeInViewport();
