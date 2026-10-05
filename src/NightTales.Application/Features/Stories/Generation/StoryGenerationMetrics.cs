@@ -4,7 +4,7 @@ namespace NightTales.Application.Features.Stories.Generation;
 
 /// <summary>
 /// The instruments of the story generation job and sweeper (02.2.2-T3 step 7). Tags carry bounded values only (tier,
-/// stage, kind, status, trigger), never an id or any text (D19).
+/// stage, kind, status, trigger, corpus, reason), never an id or any text (D19).
 /// </summary>
 public sealed class StoryGenerationMetrics : IDisposable
 {
@@ -23,11 +23,23 @@ public sealed class StoryGenerationMetrics : IDisposable
     /// <summary>Runs that passed 80 % of their deadline.</summary>
     public const string SoftTimeoutCounterName = "story_generation_soft_timeout_total";
 
+    /// <summary>Generation similarity scores, by corpus.</summary>
+    public const string SimilarityScoreHistogramName = "similarity_score";
+
+    /// <summary>Seconds spent loading and scoring a similarity corpus.</summary>
+    public const string SimilarityDurationHistogramName = "similarity_duration_seconds";
+
+    /// <summary>Corpus failures, by bounded reason.</summary>
+    public const string SimilarityUnavailableCounterName = "similarity_unavailable_total";
+
     private readonly Meter _meter = new(MeterName);
     private readonly Histogram<double> _duration;
     private readonly Counter<long> _invalidOutput;
     private readonly Counter<long> _runs;
     private readonly Counter<long> _softTimeout;
+    private readonly Histogram<double> _similarityScore;
+    private readonly Histogram<double> _similarityDuration;
+    private readonly Counter<long> _similarityUnavailable;
 
     /// <summary>Creates the instruments.</summary>
     public StoryGenerationMetrics()
@@ -36,6 +48,9 @@ public sealed class StoryGenerationMetrics : IDisposable
         _invalidOutput = _meter.CreateCounter<long>(InvalidOutputCounterName, "1", "Invalid writer or review outputs.");
         _runs = _meter.CreateCounter<long>(RunsCounterName, "1", "Generation runs that reached a status.");
         _softTimeout = _meter.CreateCounter<long>(SoftTimeoutCounterName, "1", "Runs that passed 80 % of their deadline.");
+        _similarityScore = _meter.CreateHistogram<double>(SimilarityScoreHistogramName, "1", "Generation similarity score.");
+        _similarityDuration = _meter.CreateHistogram<double>(SimilarityDurationHistogramName, "s", "Time spent loading and scoring similarity.");
+        _similarityUnavailable = _meter.CreateCounter<long>(SimilarityUnavailableCounterName, "1", "Similarity corpus failures.");
     }
 
     /// <summary>Records the time one stage took.</summary>
@@ -64,6 +79,17 @@ public sealed class StoryGenerationMetrics : IDisposable
 
     /// <summary>Counts one run that passed 80 % of its deadline.</summary>
     public void SoftTimeout() => _softTimeout.Add(1);
+
+    /// <summary>Records a completed score and its duration.</summary>
+    public void SimilarityScored(string corpus, double score, double seconds)
+    {
+        _similarityScore.Record(score, new KeyValuePair<string, object?>("corpus", corpus));
+        _similarityDuration.Record(seconds);
+    }
+
+    /// <summary>Counts a corpus failure using the closed unavailable-reason set.</summary>
+    public void SimilarityUnavailable(string reason) =>
+        _similarityUnavailable.Add(1, new KeyValuePair<string, object?>("reason", reason));
 
     /// <inheritdoc />
     public void Dispose() => _meter.Dispose();

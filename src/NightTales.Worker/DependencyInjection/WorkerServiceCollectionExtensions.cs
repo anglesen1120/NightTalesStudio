@@ -169,6 +169,7 @@ public static class WorkerServiceCollectionExtensions
         // Every key has a default, so none is a required start-up key; a value out of range fails the boot.
         services.AddStoryGeneration();
         services.AddStoryQuality();
+        services.AddSimilarity();
         services.AddOptions<StoryJobOptions>()
             .BindConfiguration(StoryJobOptions.SectionName)
             .Validate(

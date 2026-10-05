@@ -2,5 +2,6 @@
 
   <ItemGroup>
     <PackageReference Include="ErrorOr" />
+    <InternalsVisibleTo Include="NightTales.Domain.UnitTests" />
   </ItemGroup>
 </Project>

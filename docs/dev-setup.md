@@ -289,6 +289,10 @@ Rules for any change that runs at start-up:
   default) are a Worker boot key too: the shipped Worker `appsettings.json` carries them, and `StoryTestSettings.WorkerSettings`
   (TestKit) feeds them to `WorkerHost.HarnessSettings` and `WorkerHealthProbe`, which clear that file. Every other Worker row reads
   `appsettings.json`, so none needs a placeholder.
+  02.5.6-T1 adds `Similarity:{WarnAbove,BlockAbove,MinTokens,N,Corpus,Perf}` to both hosts. All keys have Domain
+  defaults, so TestKit's cleared Worker configuration and build-time hosts need no placeholders. Both hosts validate
+  bounds on start (including finite thresholds and `BlockAbove > WarnAbove`); a missing `N:vi` or `N:en` warns and
+  falls back to the English N. Both appsettings files also carry `Research:FactSheet:CopiedFactThreshold` (0.5).
   The generator reports a missing key as `MSB3073` from `dotnet-getdocument` with a long hosting stack
   (see the build-time block), so check this list before hunting.
 - A new way of starting a host adds a row to this table.
