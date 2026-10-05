@@ -2,7 +2,11 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using NightTales.Application.Abstractions.Catalog;
 using NightTales.Application.Abstractions.Research;
+using NightTales.Application.Abstractions.Stories;
+using NightTales.Application.Features.Stories.Approval;
 using NightTales.Application.Features.Stories.Generation;
+using NightTales.Application.Features.Stories.Moderation;
+using NightTales.Application.Features.Stories.Render;
 using NightTales.Application.Features.Stories.Writing;
 
 namespace NightTales.Application.DependencyInjection;
@@ -41,6 +45,12 @@ public static class ApplicationServiceCollectionExtensions
 
         // 02.2.2-T2 (02 CR-24): the fail-closed default until 02.5.5-T1 registers the real guard.
         services.TryAddSingleton<IFactSheetGuard, NullFactSheetGuard>();
+
+        // 02.3.2-T1: shared edit/approve moderation and approved-version rendering inputs.
+        // The null gate is explicitly permitted until 02.3.3-T1 supplies the real approval checks.
+        services.TryAddScoped<IStoryApprovalGate, NullStoryApprovalGate>();
+        services.TryAddScoped<IStoryRenderInputProvider, StoryRenderInputProvider>();
+        services.TryAddScoped<StoryDraftModeration>();
 
         return services;
     }

@@ -14,9 +14,9 @@ namespace NightTales.Infrastructure.Persistence.Configurations;
 /// index the version counter relies on. Immutable, so it carries only <c>created_at</c>.
 /// </summary>
 /// <remarks>
-/// Append-only (02.2.2 plan §3.2, FR-02-3): every property is <c>ValueGeneratedNever</c> and maps
-/// <c>AfterSaveBehavior.Throw</c>, so changing a tracked row's property fails on <c>SaveChanges</c> instead of
-/// writing. <c>fact_sheet_id</c> is a plain column until 02.5.3-T2 creates <c>fact_sheets</c> and adds its
+/// Append-only story content (02.2.2 plan §3.2, FR-02-3): every property is <c>ValueGeneratedNever</c>.
+/// Only <c>audit_report</c> may be refreshed during approval (02.3.2); all other properties map
+/// <c>AfterSaveBehavior.Throw</c>. <c>fact_sheet_id</c> is a plain column until 02.5.3-T2 adds its
 /// <c>ON DELETE SET NULL</c> constraint. The two new FKs are same-owner composites like the rest (CR-46); their
 /// <c>SET NULL</c> nulls only the parent column, which the migration writes with raw SQL.
 /// </remarks>
@@ -66,11 +66,13 @@ internal sealed class StoryVersionConfiguration : IEntityTypeConfiguration<Story
             .IsUnique();
         builder.HasIndex(version => version.GenerationRunId).HasDatabaseName("ix_story_versions_generation_run_id");
 
-        // Immutability: the domain supplies every value, and a changed property of a saved row throws.
+        // Approval refreshes only the audit report; every saved story-content or identity field stays immutable.
         foreach (var property in builder.Metadata.GetProperties())
         {
             property.ValueGenerated = ValueGenerated.Never;
-            property.SetAfterSaveBehavior(PropertySaveBehavior.Throw);
+            property.SetAfterSaveBehavior(property.Name == nameof(StoryVersion.AuditReport)
+                ? PropertySaveBehavior.Save
+                : PropertySaveBehavior.Throw);
         }
     }
 }

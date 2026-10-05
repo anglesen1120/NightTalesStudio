@@ -3,15 +3,19 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.Routing;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using NightTales.Api.Http;
+using NightTales.Application.Abstractions.Moderation;
 using NightTales.Application.Abstractions.Storage;
 using NightTales.Domain.Common;
+using NightTales.Infrastructure.OpenAI;
 using NightTales.Infrastructure.Persistence;
 using NightTales.TestKit.Database;
 using NightTales.TestKit.Email;
+using NightTales.TestKit.Moderation;
 using NightTales.TestKit.Security;
 using NightTales.TestKit.Time;
 
@@ -22,8 +26,8 @@ namespace NightTales.TestKit.Api;
 /// with the class database's connection string, the <see cref="FakeClock"/> in place of the system
 /// clock, the configuration a deployment always provides (an ephemeral ES256 key, the public origin and
 /// the run's throwaway <c>DP_KEK</c> — see <see cref="ApplyRequiredStartupSettings"/>), and the
-/// <see cref="TestAuthHandler"/> scheme (<c>Test</c>) as the default — nothing else differs from the
-/// production composition root.
+/// <see cref="TestAuthHandler"/> scheme (<c>Test</c>) and a deterministic content moderator. Explicit service overrides
+/// run after these defaults; <see cref="ProductionHost"/> keeps production authentication but isolates moderation.
 /// </summary>
 /// <param name="database">The database of the test class; its connection string is handed to the host.</param>
 /// <param name="clock">The clock every component resolves instead of the system clock.</param>
@@ -40,6 +44,9 @@ public sealed class ApiFactory(TestDatabase database, FakeClock clock) : WebAppl
     private readonly List<KeyValuePair<string, string?>> _settings = [];
     private readonly List<ILoggerProvider> _logProviders = [];
     private readonly List<Action<IServiceCollection>> _serviceConfigurations = [];
+
+    /// <summary>The default draft moderator; tests may script its verdicts before the host starts.</summary>
+    public FakeContentModerator Moderator { get; } = new();
 
     /// <summary>
     /// Registers routes that only exist in the test host (the probe endpoints of
@@ -241,10 +248,10 @@ public sealed class ApiFactory(TestDatabase database, FakeClock clock) : WebAppl
     public HttpClient AnonymousClient() => CreateClient();
 
     /// <summary>
-    /// The host of <c>Program</c> with only the settings a real deployment always has — the connection
-    /// string, the required start-up configuration and the run's Data Protection KEK — and no
-    /// <see cref="TestAuthHandler"/> scheme or <see cref="FakeClock"/>, for tests that prove the
-    /// production composition root stays free of test doubles (09 README D13, plan §8).
+    /// The host of <c>Program</c> with the settings a real deployment always has — the connection
+    /// string, required start-up configuration and the run's Data Protection KEK — and no
+    /// <see cref="TestAuthHandler"/> scheme or <see cref="FakeClock"/>. Moderation alone is deterministic
+    /// so authentication and start-up probes cannot contact a provider.
     /// <paramref name="configure"/> adds whatever the test itself needs on top, and can override any of
     /// the settings above. <paramref name="withKeyRing"/> false leaves
     /// <c>DataProtection:KekPfxPath</c> unset, which is how 09.9.4-T1's start-up validation is tested.
@@ -265,6 +272,11 @@ public sealed class ApiFactory(TestDatabase database, FakeClock clock) : WebAppl
         {
             ApplyRequiredStartupSettings(builder, withKeyRing);
             builder.ConfigureServices(RateLimiterDisposal.Register);
+            builder.ConfigureTestServices(services =>
+            {
+                services.RemoveAll<IContentModerator>();
+                services.AddSingleton<IContentModerator>(new FakeContentModerator());
+            });
 
             builder.UseSetting(
                 $"ConnectionStrings:{PersistenceOptions.ConnectionStringName}",
@@ -297,6 +309,10 @@ public sealed class ApiFactory(TestDatabase database, FakeClock clock) : WebAppl
         // BD16), which is why even the production-composition-root host gets it.
         builder.UseSetting(EmailTestSettings.AddressHashPepperKey, EmailTestSettings.AddressHashPepper);
         builder.UseSetting("Logging:UserHashSalt", "harness-user-hash-salt");
+
+        // The Api shares the Worker's existing provider configuration. Tests validate that contract
+        // with a placeholder credential, while ConfigureTestServices replaces only the moderator.
+        builder.UseSetting($"{OpenAiOptions.SectionName}:{nameof(OpenAiOptions.ApiKey)}", "harness-openai-key-placeholder");
 
         if (!withKeyRing)
         {
@@ -331,7 +347,7 @@ public sealed class ApiFactory(TestDatabase database, FakeClock clock) : WebAppl
             builder.UseSetting(key, value);
         }
 
-        builder.ConfigureServices(services =>
+        builder.ConfigureTestServices(services =>
         {
             RateLimiterDisposal.Register(services);
 
@@ -348,6 +364,10 @@ public sealed class ApiFactory(TestDatabase database, FakeClock clock) : WebAppl
 
             services.RemoveAll<IClock>();
             services.AddSingleton<IClock>(clock);
+
+            // Edits and approval checks must never reach a provider from an ordinary integration-test host.
+            services.RemoveAll<IContentModerator>();
+            services.AddSingleton<IContentModerator>(Moderator);
 
             foreach (var override1 in _serviceOverrides)
             {

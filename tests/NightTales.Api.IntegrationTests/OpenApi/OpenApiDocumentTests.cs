@@ -211,6 +211,86 @@ public sealed class OpenApiDocumentTests
         }
     }
 
+    [Theory]
+    [InlineData("approve", "ApprovedStoryDto")]
+    [InlineData("reopen", "EpisodeStoryStateDto")]
+    public void Approval_routes_document_required_if_match_typed_success_and_errors(string action, string responseType)
+    {
+        var operation = Root.GetProperty("paths")
+            .GetProperty("/api/v1/episodes/{id}/story/" + action)
+            .GetProperty("post");
+        var header = operation.GetProperty("parameters").EnumerateArray().Single(parameter =>
+            parameter.GetProperty("in").GetString() == "header"
+            && parameter.GetProperty("name").GetString() == "If-Match");
+        header.GetProperty("required").GetBoolean().ShouldBeTrue();
+
+        var responses = operation.GetProperty("responses");
+        foreach (var status in new[] { "200", "401", "404", "409", "412", "428" })
+        {
+            responses.TryGetProperty(status, out _).ShouldBeTrue($"POST story/{action} documents {status}");
+        }
+
+        var success = responses.GetProperty("200").GetProperty("content")
+            .GetProperty("application/json").GetProperty("schema");
+        success.GetProperty("$ref").GetString().ShouldBe($"#/components/schemas/{responseType}");
+        var properties = ResolveSchema(success).GetProperty("properties");
+        foreach (var member in new[] { "episodeId", "storyVersionId", "etag", "status" })
+        {
+            properties.TryGetProperty(member, out _).ShouldBeTrue($"{responseType} documents {member}");
+        }
+
+        if (action == "approve")
+        {
+            properties.TryGetProperty("approvedAt", out _).ShouldBeTrue();
+            responses.TryGetProperty("400", out _).ShouldBeTrue();
+            responses.TryGetProperty("413", out _).ShouldBeTrue("BD12 retains the host's body-size protection");
+        }
+        else
+        {
+            operation.TryGetProperty("requestBody", out _).ShouldBeFalse("reopen is bodyless");
+        }
+    }
+
+    [Fact]
+    public void Approve_route_documents_an_optional_attestation_body_without_an_approval_source()
+    {
+        var operation = Root.GetProperty("paths")
+            .GetProperty("/api/v1/episodes/{id}/story/approve").GetProperty("post");
+        var body = operation.GetProperty("requestBody");
+        if (body.TryGetProperty("required", out var required))
+        {
+            required.GetBoolean().ShouldBeFalse("fiction may approve without a body");
+        }
+
+        var request = ResolveSchema(body.GetProperty("content").GetProperty("application/json").GetProperty("schema"));
+        var properties = request.GetProperty("properties");
+        properties.TryGetProperty("source", out _).ShouldBeFalse();
+        properties.TryGetProperty("approvalSource", out _).ShouldBeFalse();
+        var attestation = ResolveSchema(properties.GetProperty("attestation")).GetProperty("properties");
+        attestation.GetProperty("accepted").GetProperty("type").GetString().ShouldBe("boolean");
+        attestation.GetProperty("textVersion").GetProperty("type").GetString().ShouldBe("string");
+    }
+
+    private static JsonElement ResolveSchema(JsonElement schema)
+    {
+        if (schema.TryGetProperty("$ref", out var reference))
+        {
+            return Schemas.GetProperty(reference.GetString()!.Split('/')[^1]);
+        }
+
+        if (schema.TryGetProperty("anyOf", out var alternatives))
+        {
+            return ResolveSchema(alternatives.EnumerateArray().Single(candidate => candidate.TryGetProperty("$ref", out _)));
+        }
+
+        if (schema.TryGetProperty("oneOf", out var variants))
+        {
+            return ResolveSchema(variants.EnumerateArray().Single(candidate => candidate.TryGetProperty("$ref", out _)));
+        }
+
+        return schema;
+    }
+
     private static JsonElement Root => Document.Value.RootElement;
 
     private static JsonElement Schemas =>

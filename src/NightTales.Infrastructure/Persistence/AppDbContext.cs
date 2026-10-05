@@ -178,7 +178,7 @@ public sealed class AppDbContext : IdentityDbContext<AppUser, AppRole, Guid>, IA
     public Task LockEpisodeForUpdateAsync(Guid episodeId, CancellationToken cancellationToken) =>
         CurrentUserId is { } userId
             ? Database.ExecuteSqlInterpolatedAsync(
-                $"SELECT id FROM episodes WHERE id = {episodeId} AND user_id = {userId} FOR UPDATE",
+                $"SELECT id FROM episodes WHERE id = {episodeId} AND user_id = {userId} FOR NO KEY UPDATE",
                 cancellationToken)
             : Task.CompletedTask;
 

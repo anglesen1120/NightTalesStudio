@@ -1,6 +1,8 @@
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using NightTales.Api.Http;
+using NightTales.Infrastructure.OpenAI;
 using NightTales.Infrastructure.Security;
 using NightTales.TestKit;
 using NightTales.TestKit.Api;
@@ -58,6 +60,37 @@ public sealed class StartupValidationTests(TestDatabase database) : IntegrationT
 
         exception.Message.ShouldBe(DataProtectionKek.MissingPathFailure);
         exception.Message.ShouldNotContain("DataProtection:KekPfxPassword", Case.Sensitive);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData(" \t ")]
+    public void Missing_shared_openai_key_fails_startup(string absentKey)
+    {
+        var exception = Should.Throw<OptionsValidationException>(() => StartHost(
+            ("OpenAi:ApiKey", absentKey),
+            ("OPENAI_API_KEY", absentKey)));
+
+        exception.Message.ShouldBe("'OpenAi:ApiKey' is required (set OpenAi__ApiKey from the secret store).");
+    }
+
+    [Theory]
+    [InlineData("canonical-test-key", "alias-test-key", "canonical-test-key")]
+    [InlineData("", "alias-test-key", "alias-test-key")]
+    [InlineData(" \t ", "alias-test-key", "alias-test-key")]
+    public void Shared_openai_key_preserves_canonical_setting_before_existing_alias(
+        string canonicalKey,
+        string aliasKey,
+        string expectedKey)
+    {
+        using var host = ApiFactory.ProductionHost(Database.ConnectionString, builder =>
+        {
+            builder.UseSetting("OpenAi:ApiKey", canonicalKey);
+            builder.UseSetting("OPENAI_API_KEY", aliasKey);
+        });
+        using var client = host.CreateClient();
+
+        host.Services.GetRequiredService<IOptions<OpenAiOptions>>().Value.ApiKey.ShouldBe(expectedKey);
     }
 
     /// <summary>Builds the production-composition-root host with <paramref name="settings"/> on top and starts it.</summary>
