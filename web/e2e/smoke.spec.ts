@@ -135,7 +135,7 @@ test.describe('smoke: container target (nginx serves; WR2 header matrix)', () =>
   }
   test.skip(!CONTAINER, containerSkipReason);
 
-  // These FAIL (never skip) when a header is missing: the only skip is the legal route below.
+  // These FAIL (never skip) when a header is missing.
   test('D4 headers on / and on a deep client route that falls back', async ({ request }) => {
     for (const path of ['/', '/dashboard/episodes/42']) {
       const response = await request.get(path);
@@ -152,21 +152,33 @@ test.describe('smoke: container target (nginx serves; WR2 header matrix)', () =>
     }
   });
 
-  test('D4 headers on a prerendered legal route (/vi/privacy)', async ({ request }) => {
-    const [legal, fallback] = await Promise.all([request.get('/vi/privacy'), request.get('/')]);
-    const prerendered = legal.status() === 200 && (await legal.text()) !== (await fallback.text());
-    const skipReason = '/vi/privacy is not prerendered yet (it ships with 10.3.1-T1); the fallback is served instead';
-    if (!prerendered) {
-      console.log(skipReason);
-    }
-    test.skip(!prerendered, skipReason);
+  // The four legal routes are prerendered (10.3.1-T1): the body must be the prerendered page (its H1, authored in
+  // `src/content/legal/*.md`), never the SPA fallback, and the D4 headers must be on it.
+  const LEGAL_ROUTES = [
+    { path: '/vi/privacy', h1: 'Chính sách quyền riêng tư' },
+    { path: '/en/privacy', h1: 'Privacy Policy' },
+    { path: '/vi/terms', h1: 'Điều khoản dịch vụ' },
+    { path: '/en/terms', h1: 'Terms of Service' },
+  ];
+  for (const { path, h1 } of LEGAL_ROUTES) {
+    test(`D4 headers on the prerendered legal route (${path})`, async ({ request }) => {
+      const response = await request.get(path);
+      expect(response.status(), path).toBe(200);
+      const body = await response.text();
+      expect(body, `${path} is the prerendered page, not the SPA fallback`).toMatch(
+        new RegExp(`<h1[^>]*>\\s*${h1}\\s*</h1>`),
+      );
 
-    const headers = legal.headers();
-    for (const [name, value] of Object.entries(D4_HEADERS)) {
-      expect(headers[name], `/vi/privacy ${name}`).toBe(value);
-    }
-    expect(headers['content-security-policy'], '/vi/privacy content-security-policy').toContain("default-src 'none'");
-  });
+      const headers = response.headers();
+      for (const [name, value] of Object.entries(D4_HEADERS)) {
+        expect(headers[name], `${path} ${name}`).toBe(value);
+      }
+      expect(headers['content-security-policy'], `${path} content-security-policy`).toContain("default-src 'none'");
+      expect(headers['content-security-policy'], `${path} content-security-policy`).toContain(
+        "require-trusted-types-for 'script'",
+      );
+    });
+  }
 
   test('a hashed asset is immutable, has the security headers and no CSP', async ({ request }) => {
     const document = await (await request.get('/')).text();

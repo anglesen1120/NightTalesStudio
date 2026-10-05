@@ -9,6 +9,7 @@ export * from './refresh-lock';
 export * from './return-url';
 export * from './session-end';
 export * from './session-scope';
+export * from './session-free-path';
 export * from './session-store';
 export * from './session.api';
 export * from './session.interceptor';
