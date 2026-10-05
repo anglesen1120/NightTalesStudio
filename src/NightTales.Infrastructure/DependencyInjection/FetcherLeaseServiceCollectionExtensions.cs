@@ -5,7 +5,7 @@ using NightTales.Application.Abstractions.Fetching;
 using NightTales.Application.Abstractions.Storage;
 using NightTales.Application.Features.Research.Fetcher;
 using NightTales.Infrastructure.Persistence.Queries;
-using NightTales.Infrastructure.Research;
+using NightTales.Fetcher.Core.Fetching;
 using NightTales.Infrastructure.Storage;
 
 namespace NightTales.Infrastructure.DependencyInjection;

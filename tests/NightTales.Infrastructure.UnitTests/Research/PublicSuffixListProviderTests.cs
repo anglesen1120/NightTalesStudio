@@ -1,5 +1,5 @@
 using Microsoft.Extensions.Logging.Abstractions;
-using NightTales.Infrastructure.Research;
+using NightTales.Fetcher.Core.Research;
 using Shouldly;
 using Xunit;
 

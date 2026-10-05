@@ -3,9 +3,10 @@ using System.IO.Compression;
 using System.Net;
 using System.Text;
 using ErrorOr;
-using NightTales.Application.Abstractions.Fetching;
+using NightTales.Fetcher.Core.Fetching;
 using NightTales.Domain.Research;
-using NightTales.Infrastructure.Research;
+using NightTales.Fetcher.Core.Research;
+using NightTales.Fetcher.Core.Research.Http;
 using NightTales.TestKit.Fetching;
 using Shouldly;
 using Xunit;
@@ -607,7 +608,7 @@ public sealed class SafeHttpSourceFetcherTests
             (await withTestValidator.FetchAsync(ct: TestContext.Current.CancellationToken)).IsError.ShouldBeFalse();
         }
 
-        await using var production = FetchHarness.Create(script, validator: new NightTales.Infrastructure.Research.Http.GlobalUnicastAddressValidator());
+        await using var production = FetchHarness.Create(script, validator: new GlobalUnicastAddressValidator());
         var result = await production.FetchAsync(ct: TestContext.Current.CancellationToken);
 
         // robots (fail closed) or the page itself: either way nothing reaches the loopback server.

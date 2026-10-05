@@ -392,6 +392,14 @@
           "ErrorOr": "[2.1.1, )"
         }
       },
+      "nighttales.fetcher.core": {
+        "type": "Project",
+        "dependencies": {
+          "ErrorOr": "[2.1.1, )",
+          "NightTales.Domain": "[1.0.0, )",
+          "SmartReader": "[0.11.1, )"
+        }
+      },
       "nighttales.infrastructure": {
         "type": "Project",
         "dependencies": {
@@ -406,6 +414,7 @@
           "Microsoft.AspNetCore.Identity.EntityFrameworkCore": "[10.0.12, )",
           "Microsoft.Extensions.Http.Resilience": "[10.4.0, )",
           "NightTales.Application": "[1.0.0, )",
+          "NightTales.Fetcher.Core": "[1.0.0, )",
           "Npgsql.EntityFrameworkCore.PostgreSQL": "[10.0.3, )",
           "Npgsql.OpenTelemetry": "[10.0.3, )",
           "OpenAI": "[2.14.0, )",
@@ -416,8 +425,7 @@
           "Serilog.AspNetCore": "[10.0.0, )",
           "Serilog.Formatting.Compact": "[3.0.0, )",
           "Serilog.Sinks.Async": "[2.1.0, )",
-          "Serilog.Sinks.OpenTelemetry": "[4.2.0, )",
-          "SmartReader": "[0.11.1, )"
+          "Serilog.Sinks.OpenTelemetry": "[4.2.0, )"
         }
       },
       "nighttales.rendernode.contract": {
