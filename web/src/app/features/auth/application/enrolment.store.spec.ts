@@ -338,6 +338,16 @@ describe('EnrolmentStore', () => {
       expect(store.codes()).toEqual(old);
       expect(store.viewModel().formError).toBe('errors.network_error');
     });
+
+    it('EnrolmentStore_Regenerate_DuringRateLimitCooldown_MakesNoRequestAndKeepsCountdown', async () => {
+      const { store, repo } = await atCodes();
+      repo.willFail('regenerateRecoveryCodes', appError('rate_limited', 429, 'rate_limit', { retryAfterSec: 900 }));
+      await store.regenerate();
+      expect(store.retryAfterSec()).toBe(900);
+      await store.regenerate();
+      expect(repo.callsOf('regenerateRecoveryCodes')).toBe(1);
+      expect(store.retryAfterSec()).toBe(900);
+    });
   });
 
   describe('leaving and teardown', () => {

@@ -157,7 +157,7 @@ export class EnrolmentStore {
    * cancelled re-auth issues no request and leaves the old codes valid; the outcome is shown, never silent.
    */
   async regenerate(): Promise<void> {
-    if (this.submittingState()) return;
+    if (this.submittingState() || this.rateLimitedUntilState() !== null) return;
     const generation = this.session.generation();
     this.resetFeedback();
     this.submittingState.set(true);
