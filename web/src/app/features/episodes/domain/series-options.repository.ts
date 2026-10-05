@@ -1,6 +1,7 @@
-import type { SeriesOptionsPage } from './episode.model';
+import type { SeriesOptionsPage, SeriesSummary } from './episode.model';
 
-/** Port of the series filter options: exactly the first page (limit 100) of the caller's active series. */
+/** Port of the bounded series filter options and the series read on page open. */
 export abstract class SeriesOptionsRepository {
   abstract list(): Promise<SeriesOptionsPage>;
+  abstract get(id: string): Promise<SeriesSummary>;
 }

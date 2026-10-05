@@ -227,6 +227,20 @@ public static partial class ProblemDetailsWriter
             ApplyRetryAfter(http, driving);
         }
 
+        // Legal conflicts carry only a bounded list of public document names, never arbitrary metadata.
+        if (status == StatusCodes.Status409Conflict
+            && code is ErrorCodes.LegalAcceptanceRequired or ErrorCodes.LegalVersionOutdated
+            && driving.Metadata is not null
+            && driving.Metadata.TryGetValue("documents", out var documentValue)
+            && documentValue is string[] { Length: > 0 and <= 2 } documents
+            && documents.All(document => document is "privacy" or "tos"))
+        {
+            fieldErrors = new(StringComparer.Ordinal)
+            {
+                ["documents"] = documents.Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToList(),
+            };
+        }
+
         var body = new ProblemBody
         {
             Type = ErrorCatalogue.ProblemType(code),

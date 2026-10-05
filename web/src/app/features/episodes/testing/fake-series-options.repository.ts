@@ -1,4 +1,4 @@
-import type { SeriesOptionsPage } from '../domain/episode.model';
+import type { SeriesOptionsPage, SeriesSummary } from '../domain/episode.model';
 import { SeriesOptionsRepository } from '../domain/series-options.repository';
 
 /**
@@ -11,6 +11,19 @@ export class FakeSeriesOptionsRepository extends SeriesOptionsRepository {
   error: unknown = null;
   private deferred = false;
   private pending: { resolve: (page: SeriesOptionsPage) => void; reject: (error: unknown) => void } | null = null;
+  readonly getCalls: string[] = [];
+  summary: SeriesSummary = { id: '11111111-1111-4111-8111-111111111111', title: 'Series', topic: 'ghost' };
+  private readonly getScript: Array<() => Promise<SeriesSummary>> = [];
+
+  scriptGet(answer: () => Promise<SeriesSummary>): this {
+    this.getScript.push(answer);
+    return this;
+  }
+
+  override get(id: string): Promise<SeriesSummary> {
+    this.getCalls.push(id);
+    return this.getScript.shift()?.() ?? Promise.resolve({ ...this.summary, id });
+  }
 
   defer(on = true): this {
     this.deferred = on;

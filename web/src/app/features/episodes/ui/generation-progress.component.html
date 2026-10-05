@@ -1,0 +1,30 @@
+<section class="generation-progress">
+  <h2>{{ 'episodes.generation.heading' | transloco }}</h2>
+  <p class="generation-progress__stage" aria-live="polite" aria-atomic="true">
+    @if (visibleStageKey(); as key) { {{ key | transloco }} }
+  </p>
+  @if (paused() !== null) {
+    <p class="generation-progress__notice" role="status">{{ pausedKey() | transloco }}</p>
+  } @else {
+    @if (failureKey(); as key) {
+      <nts-error-state [bodyKey]="key" />
+    } @else if (visibleStageKey() !== null) {
+      <nts-status-chip statusKey="story_generating" appearance="neutral" />
+    }
+    @if (canRetry()) {
+      <div class="generation-progress__actions">
+        <button type="button" class="generation-progress__retry" [disabled]="retrying()" [attr.aria-busy]="retrying()" (click)="onRetry()">{{ 'story.generation.action.retry' | transloco }}</button>
+        @if (episodeId(); as id) {
+          <a [routerLink]="['/episodes', id]">{{ 'episodes.new.openEpisode' | transloco }}</a>
+        }
+      </div>
+    } @else if (failureKey() !== null) {
+      @if (episodeId(); as id) {
+        <a [routerLink]="['/episodes', id]">{{ 'episodes.new.openEpisode' | transloco }}</a>
+      }
+    }
+    @if (retrying()) {
+      <p role="status">{{ 'episodes.generation.retrying' | transloco }}</p>
+    }
+  }
+</section>

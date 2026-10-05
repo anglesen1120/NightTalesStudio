@@ -71,6 +71,19 @@ export class FakeDashboardEpisodesRepository extends EpisodesRepository {
     return Promise.resolve(this.answer(q));
   }
 
+  /** The dashboard never creates, generates or reads one episode; a call is a test bug. */
+  override create(): Promise<never> {
+    return Promise.reject(new Error('FakeDashboardEpisodesRepository.create is not used by the dashboard'));
+  }
+
+  override generateStory(): Promise<never> {
+    return Promise.reject(new Error('FakeDashboardEpisodesRepository.generateStory is not used by the dashboard'));
+  }
+
+  override get(): Promise<never> {
+    return Promise.reject(new Error('FakeDashboardEpisodesRepository.get is not used by the dashboard'));
+  }
+
   private answer(q: DashboardListQuery): CursorPage<EpisodeListItem> {
     const page = q.status === undefined ? undefined : this.pages.get(q.status);
     return page ?? { items: [], nextCursor: null };

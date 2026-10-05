@@ -198,6 +198,225 @@
         }
       }
     },
+    "/api/v1/episodes/{id}/story": {
+      "put": {
+        "tags": [
+          "StoryEndpoints"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/JsonElement"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StoryVersionDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "Precondition Failed",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "Precondition Required",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/episodes/{id}/story/versions": {
+      "get": {
+        "tags": [
+          "StoryEndpoints"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/StoryVersionSummaryDto"
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/episodes/{id}/story/versions/{versionId}": {
+      "get": {
+        "tags": [
+          "StoryEndpoints"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "versionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StoryVersionDetailDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/voices": {
       "get": {
         "tags": [
@@ -683,6 +902,104 @@
           },
           "401": {
             "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/me/legal": {
+      "get": {
+        "tags": [
+          "NightTales.Api"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LegalAcceptanceDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/me/legal/accept": {
+      "post": {
+        "tags": [
+          "NightTales.Api"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AcceptLegalDocumentsCommand"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LegalAcceptanceDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too Many Requests",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -1560,6 +1877,21 @@
   },
   "components": {
     "schemas": {
+      "AcceptLegalDocumentsCommand": {
+        "required": [
+          "tos",
+          "privacy"
+        ],
+        "type": "object",
+        "properties": {
+          "tos": {
+            "type": "string"
+          },
+          "privacy": {
+            "type": "string"
+          }
+        }
+      },
       "AddSourceRequest": {
         "required": [
           "url",
@@ -1691,6 +2023,125 @@
           }
         }
       },
+      "CurrentStoryDto": {
+        "required": [
+          "versionId",
+          "version",
+          "source",
+          "etag",
+          "status",
+          "content",
+          "body",
+          "keywords",
+          "wordCount",
+          "qualityHints",
+          "auditReport",
+          "similarityScore",
+          "factSheetId",
+          "approvedStoryVersionId",
+          "review"
+        ],
+        "type": "object",
+        "properties": {
+          "versionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "version": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "source": {
+            "type": "string"
+          },
+          "etag": {
+            "type": "string"
+          },
+          "status": {
+            "$ref": "#/components/schemas/EpisodeStatus"
+          },
+          "content": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/JsonElement"
+              }
+            ]
+          },
+          "body": {
+            "type": "string"
+          },
+          "keywords": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "wordCount": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "qualityHints": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/QualityHintDto"
+            }
+          },
+          "auditReport": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/JsonElement"
+              }
+            ]
+          },
+          "similarityScore": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$",
+            "type": [
+              "null",
+              "number",
+              "string"
+            ],
+            "format": "double"
+          },
+          "factSheetId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
+          "approvedStoryVersionId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
+          "review": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/StoryReviewSummaryDto"
+              }
+            ]
+          }
+        }
+      },
       "EpisodeDetailDto": {
         "required": [
           "id",
@@ -1703,7 +2154,9 @@
           "etag",
           "renderJob",
           "finalVideo",
-          "publications"
+          "publications",
+          "generation",
+          "currentStory"
         ],
         "type": "object",
         "properties": {
@@ -1766,6 +2219,26 @@
               },
               {
                 "$ref": "#/components/schemas/PublicationsSummaryDto"
+              }
+            ]
+          },
+          "generation": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/GenerationStatusDto"
+              }
+            ]
+          },
+          "currentStory": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/CurrentStoryDto"
               }
             ]
           }
@@ -1925,6 +2398,70 @@
           }
         }
       },
+      "GenerationKind": {
+        "enum": [
+          "story",
+          "fact_sheet",
+          "bible_proposal",
+          "ideas",
+          "find_sources"
+        ]
+      },
+      "GenerationRunStatus": {
+        "enum": [
+          "queued",
+          "running",
+          "succeeded",
+          "failed",
+          "cancelled"
+        ]
+      },
+      "GenerationStage": {
+        "enum": [
+          "queued",
+          "writing",
+          "checking",
+          "reviewing",
+          "revising",
+          "scoring",
+          "saving",
+          "done"
+        ]
+      },
+      "GenerationStatusDto": {
+        "required": [
+          "kind",
+          "status",
+          "stage",
+          "errorCode",
+          "startedAt"
+        ],
+        "type": "object",
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/GenerationKind"
+          },
+          "status": {
+            "$ref": "#/components/schemas/GenerationRunStatus"
+          },
+          "stage": {
+            "$ref": "#/components/schemas/GenerationStage"
+          },
+          "errorCode": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "startedAt": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          }
+        }
+      },
       "HubTicketDto": {
         "required": [
           "ticket",
@@ -1948,11 +2485,55 @@
           "en"
         ]
       },
+      "LegalAcceptanceDto": {
+        "required": [
+          "documents"
+        ],
+        "type": "object",
+        "properties": {
+          "documents": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LegalDocumentStatusDto"
+            }
+          }
+        }
+      },
       "LegalDocument": {
         "enum": [
           "tos",
           "privacy"
         ]
+      },
+      "LegalDocumentStatusDto": {
+        "required": [
+          "document",
+          "currentVersion",
+          "acceptedVersion",
+          "acceptedAt"
+        ],
+        "type": "object",
+        "properties": {
+          "document": {
+            "type": "string"
+          },
+          "currentVersion": {
+            "type": "string"
+          },
+          "acceptedVersion": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "acceptedAt": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          }
+        }
       },
       "LengthTier": {
         "enum": [
@@ -2217,6 +2798,64 @@
               "string"
             ],
             "format": "date-time"
+          }
+        }
+      },
+      "QualityHintDto": {
+        "required": [
+          "ruleId",
+          "severity",
+          "kind",
+          "segment",
+          "messageKey",
+          "evidence",
+          "repairDirection",
+          "measured",
+          "threshold"
+        ],
+        "type": "object",
+        "properties": {
+          "ruleId": {
+            "type": "string"
+          },
+          "severity": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "segment": {
+            "type": "string"
+          },
+          "messageKey": {
+            "type": "string"
+          },
+          "evidence": {
+            "type": "string"
+          },
+          "repairDirection": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "measured": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$",
+            "type": [
+              "null",
+              "number",
+              "string"
+            ],
+            "format": "double"
+          },
+          "threshold": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$",
+            "type": [
+              "null",
+              "number",
+              "string"
+            ],
+            "format": "double"
           }
         }
       },
@@ -2846,6 +3485,57 @@
           }
         }
       },
+      "StoryIssueCountsDto": {
+        "required": [
+          "blocking",
+          "advisory"
+        ],
+        "type": "object",
+        "properties": {
+          "blocking": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "advisory": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          }
+        }
+      },
+      "StoryReviewSummaryDto": {
+        "required": [
+          "scores",
+          "issueCounts",
+          "stale"
+        ],
+        "type": "object",
+        "properties": {
+          "scores": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/JsonElement"
+              }
+            ]
+          },
+          "issueCounts": {
+            "$ref": "#/components/schemas/StoryIssueCountsDto"
+          },
+          "stale": {
+            "type": "boolean"
+          }
+        }
+      },
       "StorySourceKind": {
         "enum": [
           "url",
@@ -2859,6 +3549,253 @@
           "failed",
           "rejected"
         ]
+      },
+      "StoryVersionDetailDto": {
+        "required": [
+          "versionId",
+          "version",
+          "source",
+          "createdAt",
+          "createdBy",
+          "etag",
+          "content",
+          "body",
+          "keywords",
+          "wordCount",
+          "qualityHints",
+          "auditReport",
+          "similarityScore",
+          "factSheetId"
+        ],
+        "type": "object",
+        "properties": {
+          "versionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "version": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "source": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "createdBy": {
+            "type": "string"
+          },
+          "etag": {
+            "type": "string"
+          },
+          "content": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/JsonElement"
+              }
+            ]
+          },
+          "body": {
+            "type": "string"
+          },
+          "keywords": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "wordCount": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "qualityHints": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/QualityHintDto"
+            }
+          },
+          "auditReport": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/JsonElement"
+              }
+            ]
+          },
+          "similarityScore": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$",
+            "type": [
+              "null",
+              "number",
+              "string"
+            ],
+            "format": "double"
+          },
+          "factSheetId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          }
+        }
+      },
+      "StoryVersionDto": {
+        "required": [
+          "versionId",
+          "version",
+          "source",
+          "parentVersionId",
+          "factSheetId",
+          "title",
+          "wordCount",
+          "keywords",
+          "createdAt",
+          "content",
+          "qualityHints",
+          "etag"
+        ],
+        "type": "object",
+        "properties": {
+          "versionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "version": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "source": {
+            "type": "string"
+          },
+          "parentVersionId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
+          "factSheetId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
+          "title": {
+            "type": "string"
+          },
+          "wordCount": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "keywords": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "content": {
+            "$ref": "#/components/schemas/JsonElement"
+          },
+          "qualityHints": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/QualityHintDto"
+            }
+          },
+          "etag": {
+            "type": "string"
+          }
+        }
+      },
+      "StoryVersionSummaryDto": {
+        "required": [
+          "versionId",
+          "version",
+          "source",
+          "createdAt",
+          "wordCount",
+          "etag",
+          "similarityScore",
+          "approved",
+          "isCurrent"
+        ],
+        "type": "object",
+        "properties": {
+          "versionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "version": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "source": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "wordCount": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "etag": {
+            "type": "string"
+          },
+          "similarityScore": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$",
+            "type": [
+              "null",
+              "number",
+              "string"
+            ],
+            "format": "double"
+          },
+          "approved": {
+            "type": "boolean"
+          },
+          "isCurrent": {
+            "type": "boolean"
+          }
+        }
       },
       "StyleTemplateListItemDto": {
         "required": [

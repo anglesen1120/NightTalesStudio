@@ -1,0 +1,97 @@
+<section
+  class="legal-dialog"
+  tabindex="-1"
+  [cdkTrapFocus]="!insideMatDialog"
+  [cdkTrapFocusAutoCapture]="!insideMatDialog"
+  [attr.role]="insideMatDialog ? null : 'dialog'"
+  [attr.aria-modal]="insideMatDialog ? null : 'true'"
+  [attr.aria-labelledby]="insideMatDialog ? null : titleId"
+  [attr.aria-describedby]="insideMatDialog ? null : bodyId"
+  (keydown.escape)="onEscape($event)"
+>
+  <h2 mat-dialog-title class="legal-dialog__title" [id]="titleId" tabindex="-1" cdkFocusInitial>
+    {{ 'account.legal.title' | transloco }}
+  </h2>
+
+  <div class="legal-dialog__body" [id]="bodyId">
+    <p class="legal-dialog__intro">{{ 'account.legal.intro' | transloco }}</p>
+
+    @if (acceptance(); as projection) {
+      <ul class="legal-dialog__documents">
+        @for (document of projection.documents; track document.document) {
+          <li class="legal-dialog__document">
+            <div class="legal-dialog__document-heading">
+              <a
+                [href]="linkHref(document.document)"
+                target="_blank"
+                rel="noopener noreferrer"
+                [attr.aria-label]="linkLabelKey(document.document) | transloco"
+              >
+                {{ labelKey(document.document) | transloco }}
+              </a>
+              @if (statusKey(document); as key) {
+                <span class="legal-dialog__document-status">{{ key | transloco }}</span>
+              }
+            </div>
+            <p class="legal-dialog__version">
+              {{ 'account.legal.currentVersion' | transloco: { version: document.currentVersion } }}
+            </p>
+            @if (document.acceptedAt; as acceptedAt) {
+              <p class="legal-dialog__accepted">
+                {{ 'account.legal.acceptedOn' | transloco: { date: acceptedOn(acceptedAt) } }}
+              </p>
+            }
+          </li>
+        }
+      </ul>
+
+      <mat-checkbox
+        class="legal-dialog__checkbox"
+        [checked]="confirmed()"
+        [disabled]="pending()"
+        (change)="setConfirmed($event.checked)"
+      >
+        {{ 'account.legal.checkbox' | transloco }}
+      </mat-checkbox>
+    } @else if (pending()) {
+      <div class="legal-dialog__loading" role="status" aria-live="polite">
+        <mat-spinner diameter="24" aria-hidden="true" />
+        <span>{{ 'common.loading' | transloco }}</span>
+      </div>
+    }
+
+    @if (errorKey(); as key) {
+      <div class="legal-dialog__alert" [id]="errorId" role="alert" aria-atomic="true">
+        {{ key | transloco }}
+      </div>
+    }
+  </div>
+
+  <div class="legal-dialog__actions">
+    @if (canSignOut) {
+      <button mat-button type="button" (click)="signOut()">
+        {{ 'account.legal.signOut' | transloco }}
+      </button>
+    }
+    @if (acceptance() === null && !pending() && errorKey() !== null) {
+      <button mat-button type="button" (click)="refresh()">
+        {{ 'common.retry' | transloco }}
+      </button>
+    }
+    <button
+      class="legal-dialog__accept"
+      mat-flat-button
+      type="button"
+      [disabled]="pending() || !confirmed() || acceptance() === null"
+      [attr.aria-describedby]="errorKey() === null ? null : errorId"
+      (click)="submit()"
+    >
+      @if (pending() && acceptance() !== null) {
+        <mat-spinner class="legal-dialog__spinner" diameter="18" aria-hidden="true" />
+        <span>{{ 'core.ui.confirm.pending' | transloco }}</span>
+      } @else {
+        <span>{{ 'account.legal.accept' | transloco }}</span>
+      }
+    </button>
+  </div>
+</section>

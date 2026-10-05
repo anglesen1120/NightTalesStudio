@@ -23,6 +23,12 @@ export const HANDED_OVER_KEYS = Object.freeze([
   // holds `tag.<tag>`, the runtime key is `voices.tag.<tag>`.
   { pattern: 'voices.tag.*', scope: 'voices' },
   { pattern: 'quality.*', scope: 'quality' },
+  { pattern: 'story.generation.stage.*', scope: 'story' },
+  { pattern: 'story.generation.error.*', scope: 'story' },
+  { pattern: 'story.generation.paused.*', scope: 'story' },
+  { pattern: 'story.generation.moderation.*', scope: 'story' },
+  { pattern: 'story.generation.revised.badge', scope: 'story' },
+  { pattern: 'story.generation.action.*', scope: 'story' },
   { pattern: 'render.*', scope: 'render' },
 ]);
 

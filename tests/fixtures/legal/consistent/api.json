@@ -1,0 +1,5 @@
+{
+  // Production appsettings contain comments; URLs are not comments.
+  "App": {"PublicOrigin": "https://example.invalid/path//segment"},
+  "LegalDocuments": {"Current": {"Tos": "1.0.0", "Privacy": "1.0.0"}}
+}

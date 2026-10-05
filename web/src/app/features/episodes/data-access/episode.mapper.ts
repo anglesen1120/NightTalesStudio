@@ -1,5 +1,5 @@
-import type { EpisodeListItemDto } from '@shared/api';
-import { EPISODE_STATUSES, type EpisodeListItem } from '../domain/episode.model';
+import type { EpisodeDetailDto, EpisodeListItemDto } from '@shared/api';
+import { EPISODE_STATUSES, type EpisodeDetail, type EpisodeListItem } from '../domain/episode.model';
 
 /**
  * Maps one wire row. A status this client does not know (a newer server) yields `null`: the row cannot be given a
@@ -18,5 +18,26 @@ export function mapEpisodeListItem(dto: EpisodeListItemDto): EpisodeListItem | n
     createdAt: dto.createdAt,
     updatedAt: dto.updatedAt,
     etag: dto.etag,
+  };
+}
+
+export function mapEpisodeDetail(dto: EpisodeDetailDto): EpisodeDetail {
+  const generation = dto.generation;
+  const paused = (generation as { processingPaused?: unknown } | null)?.processingPaused;
+  return {
+    id: dto.id,
+    seriesId: dto.seriesId,
+    status: dto.status,
+    etag: dto.etag,
+    generation: generation === null ? null : {
+      kind: generation.kind,
+      status: generation.status,
+      stage: generation.stage,
+      errorCode: generation.errorCode,
+      startedAt: generation.startedAt,
+      processingPaused: typeof paused === 'string' ? paused : null,
+    },
+    hasCurrentStory: dto.currentStory !== null,
+    nextActions: dto.nextActions,
   };
 }

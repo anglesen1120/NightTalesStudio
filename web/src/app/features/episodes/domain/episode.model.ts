@@ -57,3 +57,39 @@ export const nextActionFor: (status: EpisodeStatus) => { readonly labelKey: stri
   labelKey: 'episodes.list.continue',
   segment: 'detail',
 });
+
+export type GenerationStage = 'queued' | 'writing' | 'checking' | 'reviewing' | 'revising' | 'scoring' | 'saving' | 'done';
+export type GenerationRunStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled';
+export type LengthTier = 'short' | 'standard' | 'long';
+
+export interface EpisodeGeneration {
+  readonly kind: string;
+  /** Forward-compatible wire value; generation-state guards recognise the closed run status set. */
+  readonly status: string;
+  readonly stage: string;
+  readonly errorCode: string | null;
+  readonly startedAt: string | null;
+  readonly processingPaused: string | null;
+}
+
+export interface EpisodeDetail {
+  readonly id: string;
+  readonly seriesId: string;
+  /** Forward-compatible wire value; consumers compare only recognised episode statuses. */
+  readonly status: string;
+  readonly etag: string;
+  readonly generation: EpisodeGeneration | null;
+  readonly hasCurrentStory: boolean;
+  readonly nextActions: readonly string[];
+}
+
+export interface SeriesSummary {
+  readonly id: string;
+  readonly title: string;
+  readonly topic: string;
+}
+
+export interface CreatedEpisode {
+  readonly id: string;
+  readonly etag: string | null;
+}
