@@ -4,6 +4,10 @@ History moved out of STATUS.md to keep the live file small. The initial archive 
 
 ## Resume-here history (Current/Previous blocks, Next actions)
 
+### Superseded Session 24 PR-open Resume clause (2026-10-05, replaced when #165 merged as `59b2239`)
+
+Replaced text (verbatim): `02.5.6-T1 similarity scorer + corpus provider + approval guard: PR #165 open (Session 24; generation step 6 now stores `similarity_score` + `audit_report.similarity`; `SimilarityApprovalGuard` gets its approve caller when 02.3.3-T1 replaces the interim `NullStoryApprovalGate` (order row 5, T31); edit re-score stays with 02.3.1-T1; unblocks 02.5.6-T2, 02.8.2-T1, 02.5.3-T2).`
+
 ### Superseded Session 24 approval hand-over (2026-10-05, after #159 and #161)
 
 Replaced Session 24 Resume clause (verbatim): `02.5.6-T1 similarity scorer + corpus provider + approval guard: PR open (Session 24; generation step 6 now stores `similarity_score` + `audit_report.similarity`; 02.3.2-T1 wires `SimilarityApprovalGuard` for the 409, edit re-score stays with 02.3.1-T1; unblocks 02.5.6-T2, 02.8.2-T1, 02.5.3-T2).`
