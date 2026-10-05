@@ -195,6 +195,32 @@ describe('ReauthService', () => {
     await expect(pending).resolves.toMatchObject({ ok: true });
   });
 
+  it('ReauthService_Submit_SpacedCode_SendsCompactDigits', async () => {
+    const { service, dialog, repo } = setup();
+    repo.enqueue(Promise.resolve(fakeReauthOk()));
+    const pending = service.ensureReauthenticated();
+    await opened(dialog);
+
+    dialog.at(0).submit('pw', '123 456');
+    await expect(pending).resolves.toMatchObject({ ok: true });
+    expect(repo.calls).toHaveLength(1);
+    expect(JSON.stringify(repo.calls[0])).toContain('123456');
+    expect(JSON.stringify(repo.calls[0])).not.toContain('123 456');
+  });
+
+  it('ReauthService_Submit_WhitespaceOnlyCode_SendsNothingAndKeepsDialogOpen', async () => {
+    const { service, dialog, repo } = setup();
+    const pending = service.ensureReauthenticated();
+    await opened(dialog);
+
+    dialog.at(0).submit('pw', '   ');
+    expect(repo.calls).toHaveLength(0);
+    expect(dialog.at(0).lastState).not.toMatchObject({ submitting: true });
+
+    dialog.at(0).close();
+    await expect(pending).resolves.toMatchObject({ ok: false });
+  });
+
   it('ReauthService_WithReauth_Ok_RetriesActionOnceAndWritesNoClientState', async () => {
     const { service, store, dialog, repo, sessionApi } = setup();
     const token = store.accessToken();

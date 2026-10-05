@@ -209,13 +209,17 @@ export class ReauthService implements SessionScoped {
     if (flight.done || flight.submitting || flight.state.retryAfterSec !== null) return;
     const ref = flight.ref;
     if (ref === null) return; // unreachable: `submitted` only fires after `attachDialog` set the ref
+    // Normalise once, here: display spaces in a pasted code never reach the port. A whitespace-only code sends nothing
+    // (it would be charged as a wrong code against the MFA attempt window).
+    const code = result.code.replace(/\s+/g, '');
+    if (REQUIRE_CODE && code === '') return;
     flight.submitting = true;
     // Block the backdrop too while the POST is in flight: Escape/Cancel are already disabled by the dialog, and a
     // backdrop close would settle the flight CANCELLED while the request may already have succeeded (CR-3).
     ref.disableClose = true;
     this.push(flight, { ...flight.state, submitting: true, errorKey: null, errorField: null, traceId: null });
 
-    const outcome = await this.injector.get(ReauthPort).reauth(result.password, result.code.replace(/\s+/g, ''));
+    const outcome = await this.injector.get(ReauthPort).reauth(result.password, code);
     flight.submitting = false;
     ref.disableClose = false;
 
