@@ -4,6 +4,15 @@ History moved out of STATUS.md to keep the live file small. The initial archive 
 
 ## Resume-here history (Current/Previous blocks, Next actions)
 
+### Superseded Current line and Web next lines (2026-10-05, replaced after the #134/#135/#136/#139 wave merged; develop `e8d9743`)
+
+Outcome: one Current line for the 2026-10-05 wave and one merged Web next line for all open web lanes.
+
+- **Current (2026-10-04).** 02.5.2-T2 internal lease API + sweeper + text storage merged as #131 (`312db85`, Session 10 claim released; CI never started, GitHub Actions billing; local full `gate.sh` on the merged tree, session log). 10.2.1-T1 session store merged as #126 (`6ae07ec`, Session 9 claim released). 02.2.2-T3 generate-story job pipeline merged as #125 (`a2667da`, CI 4/4, Session 7 claim released). Session 5 wave merged as PR #121 (`0028aa0`): 02.4.1-T1 content moderator, 02.5.2-T1 safe HTTP fetcher, 02.3.1-T1 edit-story command, 02.6.1-T1 self-review. Web Stage A (plan 10 foundation, 9 tasks) merged as #122 (`a2c4a12`, CI 5/5).
+- **Web next (plan 10 Stage B):** Session 13 closed: 10.2.6-T1 shell merged as #134 (`945405c`, no CI run: CI-01) → next **10.5.1-T0** design → **10.5.1-T1** episode list (first `cursorList` consumer; check each header's `Depends on`), then 10.4.1-T1 dashboard (adds `/dashboard` + the first `NAV_ITEMS` entry). No `**` not-found route yet (owner 2026-10-05, §Plan 10 hand-overs). Read §Plan 10 hand-overs and the as-built shell surface in the 10.2.6-T1 task §Notes first.
+- **Web next (Session 15):** Session 15 closed: **10.3.1-T1** legal pages merged as #139 (`29e920c`, no CI run: CI-01; local `web.yml` steps green on the tip `b1b045a`, merged tree identical) → this lane's next task is **10.3.1-T2** (content-policy + sitemap, phase S; needs the owner/TL site-origin decision for canonical/hreflang first, 10.3.1-T1 §Notes).
+- **Web next (plan 10 Stage B):** Session 14 closed: **10.3.3-T1** login/forgot/reset merged as #135 (`64141f1`, no CI run, CI-01; local `web.yml` steps on the merged tree `97e30ea` all exit 0, `test:ci` 1202/1202) → this lane's next task is **10.3.3-T3** MFA step + enrolment + re-auth (deps 10.3.3-T1, 10.1.6-T1, 09.3.2-T3, 09.10.4-T1 all merged). `/dashboard` has no route until 10.4.1-T1, so the `/dashboard`-path e2e tests (17 failed locally without a matching route) stay red until then. First read §Plan 10 hand-overs and the as-built `features/auth` surface (10.3.3-T1 task §Notes, last bullet).
+
 ### Superseded Session 15 Web next line (2026-10-05, replaced when #139 `29e920c` merged and Session 15 closed)
 
 Outcome: 10.3.1-T1 merged as #139; next for this lane 10.3.1-T2 (phase S).
