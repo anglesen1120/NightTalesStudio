@@ -64,24 +64,29 @@ function onLogin(router: Router): boolean {
 }
 
 describe('AppRoutes_RouteTable', () => {
-  it('has exactly one shell parent guarded by authGuard/authChildGuard whose children so far are episodes and series', () => {
+  it('has exactly one shell parent guarded by authGuard/authChildGuard whose children are the screen tasks in order', () => {
     const parents = routes.filter((route) => route.canActivate?.includes(authGuard) === true && typeof route.loadComponent === 'function');
     expect(parents).toHaveLength(1);
     const parent = shellParent();
     expect(parent.path).toBe('');
     expect(parent.canActivate).toEqual([authGuard]);
     expect(parent.canActivateChild).toEqual([authChildGuard]);
-    // 10.5.1-T1 appended `episodes`; 10.4.2-T1 appends `series` (each screen task adds one lazy child).
-    expect(parent.children?.map((child) => child.path)).toEqual(['episodes', 'series']);
+    expect(parent.children?.map((child) => child.path)).toEqual(['episodes', 'dashboard', 'series']);
     expect(typeof parent.loadComponent).toBe('function');
   });
 
-  it('declares no stub routes: no wildcard, no /dashboard', () => {
+  it('declares no stub routes: no wildcard, and the screen children stay lazy', () => {
     const paths = routes.map((route) => route.path);
     expect(paths).not.toContain('**');
-    expect(paths).not.toContain('dashboard');
-    // Exactly the two real screen children: any extra entry would be a stub route.
-    expect(shellParent().children).toHaveLength(2);
+    const children = shellParent().children ?? [];
+    expect(children.map((child) => child.path)).toEqual(['episodes', 'dashboard', 'series']);
+    for (const child of children) expect(typeof child.loadChildren).toBe('function');
+  });
+
+  it('the dashboard child carries the shell title key and no eager component', () => {
+    const dashboard = (shellParent().children ?? []).find((child) => child.path === 'dashboard');
+    expect(dashboard?.data).toEqual({ titleKey: 'shell.title.dashboard' });
+    expect(dashboard?.loadComponent).toBeUndefined();
   });
 });
 

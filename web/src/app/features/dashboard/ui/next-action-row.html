@@ -1,0 +1,38 @@
+<div class="next-action-row__main">
+  <button class="next-action-row__title" type="button" (click)="open.emit(vm().episode.id)">
+    <strong>{{ displayTitle() }}</strong>
+  </button>
+  <time
+    class="next-action-row__updated"
+    [attr.datetime]="vm().episode.updatedAt"
+    [attr.title]="absoluteUpdated()"
+    >{{ 'dashboard.card.updated' | transloco: { time: relativeUpdated() } }}</time
+  >
+</div>
+
+<span [class]="toneClass()" role="img" [attr.aria-label]="statusKey() | transloco">
+  @switch (icon()) {
+    @case ('check') {
+      <nts-icon-check />
+    }
+    @case ('clock') {
+      <nts-icon-clock />
+    }
+    @case ('alert') {
+      <nts-icon-alert />
+    }
+    @default {
+      <nts-icon-unknown />
+    }
+  }
+  <span>{{ statusKey() | transloco }}</span>
+</span>
+
+<button
+  class="next-action-row__action"
+  type="button"
+  [attr.aria-label]="actionLabelKey() | transloco: { title: displayTitle() }"
+  (click)="primaryAction.emit(vm())"
+>
+  {{ actionKey() | transloco }}
+</button>

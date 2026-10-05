@@ -4,6 +4,34 @@ History moved out of STATUS.md to keep the live file small. The initial archive 
 
 ## Resume-here history (Current/Previous blocks, Next actions)
 
+### Superseded Session 20 Web next part, 10 CR-47 / 10.2.6-T1 hand-over lines and 10.4.1-T1 Open-tasks status (2026-10-05, replaced when #149 merged as `070b8e6`)
+
+- Web next part: **10.4.1-T1** dashboard in PR #149 (Session 20, `feature/10.4.1-T1-s20`; `/dashboard` + its `NAV_ITEMS` entry; consumes the port/models from `@features/episodes`, read its §Notes "As built"); … No `**` not-found route yet (owner 2026-10-05); with `/dashboard` (PR #149) the `/dashboard`-path e2e tests pass except `session.spec.ts` L153/L171/L220 (§Plan 10 hand-overs, 10 CR-47).
+- 10 CR-47 sentence: The tests that assert the URL path `/dashboard` (returnUrl fallback, sign-in) need a matching route: 10.4.1-T1 adds `/dashboard` (PR #149, Session 20); with it `auth-login`/`errors`/`session` give 53 passed, 3 skipped, 6 failed.
+- 10.2.6-T1 sentence: No route set `data.titleKey` before 10.4.1-T1; `/dashboard` (PR #149) sets `shell.title.dashboard`, so the document-title-on-locale-change e2e assertion can now target it (not added by 10.4.1-T1).
+- Open-tasks status cell: PR #149 (Session 20, `feature/10.4.1-T1-s20`; T2 gates closed: QA, code review, perf+security review, fixes, delta)
+
+### Superseded Session 20 Web next part and 10 CR-47 hand-over line (2026-10-05, replaced when 10.4.1-T1 opened as PR #149)
+
+- Web next part: **10.4.1-T1** dashboard (adds `/dashboard`; consumes `EpisodeListComponent` + `EpisodeListStore` from `@features/episodes`); … No `**` not-found route yet (owner 2026-10-05); `/dashboard` has no route until 10.4.1-T1, so the `/dashboard`-path e2e tests (17 failed locally) stay red until then.
+- **10 CR-47 e2e (from 10.2.1-T1, written by 10.3.3-T1):** `web/e2e/session.spec.ts` + the D16 a11y checks exist and run against `page.route` stubs (P seeds only an MFA owner; the real-backend authenticated path is 10.3.3-T3's `auth-mfa.spec.ts`). The tests that assert the URL path `/dashboard` (returnUrl fallback, sign-in) pass only once a route matches it: the 10.4.1-T1 dashboard (or a future `**` route; none is shipped, owner 2026-10-05); verified locally with a temporary wildcard route. **11.5.1-T1** `e2e.yml` runs them; set `NTS_E2E_STACK=1` for the real-stack blocks in `auth-login.spec.ts`/`auth-reset.spec.ts`.
+
+### Superseded Next line (2026-10-05, replaced when 02.5.2-T4 merged as #147)
+
+- **Outcome:** 02.5.2-T4 merged as #147 (`d670978`); the 02.5.2 story is complete; next backend task 02.5.3-T1.
+
+- **Next (backend, start here):** **02.5.2-T4** SSRF/abuse suite is in a PR from `feature/02.5.2-T4-s12` (Session 12, tests only, T3 gates closed; §Open tasks row; gate evidence `ssrf-suite-evidence.md`) waiting for the owner; it completes the 02.5.2 story → **02.5.3-T1** fact extractor, 02.6.1-T2, 02.6.2-T1 revision (02 §10 T113(b)), 02.3.2-T1 approve (treat `moderation.stale`/`unavailable` as needs re-check; edit-path moderator wiring). First re-run CI on `develop` once GitHub Actions billing is fixed (#131 and #136 merged with no CI run). Claim the backend `gate.sh` lock in `nts-wt/SESSION-CLAIMS.md` first.
+
+### Superseded Next line (2026-10-05, replaced when Session 12 opened the 02.5.2-T4 PR)
+
+- **Outcome:** 02.5.2-T4 SSRF/abuse suite built (tests only, T3 gates closed); PR from `feature/02.5.2-T4-s12`.
+
+- **Next (backend, start here):** **02.5.2-T3** fetcher host merged as #136 (`d35284e`, no CI run: CI-01; local full `gate.sh` `GATE_RC=0` on the identical tip `029fb34`) → **02.5.2-T4** SSRF/abuse suite in progress (Session 12, `feature/02.5.2-T4-s12`; drives the real loop; failure behaviours handed over in the 02.5.2-T3 row) → 02.6.1-T2, 02.6.2-T1 revision (02 §10 T113(b)), 02.3.2-T1 approve (treat `moderation.stale`/`unavailable` as needs re-check; edit-path moderator wiring). First re-run CI on `develop` once GitHub Actions billing is fixed (#131 and #136 merged with no CI run). Claim the backend `gate.sh` lock in `nts-wt/SESSION-CLAIMS.md` first.
+
+### Superseded Session 17 Web next part (2026-10-05, replaced when #145 `9210327` merged)
+
+- Part of the **Web next (plan 10 Stage B)** bullet: "**10.5.1-T1** episode list in PR #145 (Session 17, `feature/10.5.1-T1-s17`; `/episodes` + the first `NAV_ITEMS` entry; T0 design owner-approved 2026-10-02) → next **10.5.2-T1** episode detail (adds `/episodes/:id`);"
+
 ### Superseded Session 17 Web next part (2026-10-05, replaced when 10.5.1-T1 opened as PR #145)
 
 - Part of the **Web next (plan 10 Stage B)** bullet: "**10.5.1-T0** design → **10.5.1-T1** episode list (first `cursorList` consumer); **10.4.1-T1** dashboard (adds `/dashboard` + the first `NAV_ITEMS` entry);"

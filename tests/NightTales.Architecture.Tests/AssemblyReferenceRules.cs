@@ -1,10 +1,13 @@
+using System.Net;
 using System.Reflection;
 using System.Text.Json;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using NightTales.Domain.Research;
-using NightTales.Infrastructure.DependencyInjection;
+using NightTales.Fetcher;
 using NightTales.Fetcher.Core.Research.Http;
+using NightTales.Infrastructure.DependencyInjection;
 using Shouldly;
 using Xunit;
 
@@ -100,12 +103,52 @@ public sealed class AssemblyReferenceRules
                 .ShouldNotContain("LoopbackAllowingAddressValidator", $"{assembly.GetName().Name} defines the loopback bypass");
         }
 
-        var services = new ServiceCollection();
-        services.AddSourceFetcher(new ConfigurationBuilder().Build());
+        foreach (var (name, services) in ProductionCompositions())
+        {
+            services.Where(descriptor => descriptor.ServiceType == typeof(IAddressValidator))
+                .ShouldHaveSingleItem(name)
+                .ImplementationType.ShouldBe(typeof(GlobalUnicastAddressValidator), name);
+            services.Where(descriptor => descriptor.ServiceType == typeof(IDnsResolver))
+                .ShouldHaveSingleItem(name)
+                .ImplementationType.ShouldBe(typeof(SocketDnsResolver), name);
+        }
+    }
 
-        services.Where(descriptor => descriptor.ServiceType == typeof(IAddressValidator))
-            .ShouldHaveSingleItem()
-            .ImplementationType.ShouldBe(typeof(GlobalUnicastAddressValidator));
+    [Fact]
+    public void ProductionComposition_ConstructsSafeHttpConnectorWithoutEndpointOverride()
+    {
+        // 02 D20: SafeHttpConnector's endpointFor hook can dial any endpoint after the address check, so no production
+        // composition may pass one. The hook is a captured primary-constructor parameter, so it is found by its type
+        // rather than its compiler-generated name; the single-item guard fails loudly if that field ever disappears.
+        foreach (var (name, services) in ProductionCompositions())
+        {
+            services.Where(descriptor => descriptor.ServiceType == typeof(SafeHttpConnector))
+                .ShouldHaveSingleItem(name);
+            services.AddLogging();
+            using var provider = services.BuildServiceProvider();
+            var connector = provider.GetRequiredService<SafeHttpConnector>();
+
+            var hooks = typeof(SafeHttpConnector)
+                .GetFields(BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public)
+                .Where(field => field.FieldType == typeof(Func<IPAddress, int, IPEndPoint>))
+                .ToList();
+
+            hooks.ShouldHaveSingleItem($"{name}: the endpointFor field must be discoverable for this check to mean anything");
+            hooks[0].GetValue(connector).ShouldBeNull($"{name} passes an endpointFor to SafeHttpConnector");
+        }
+    }
+
+    private static IEnumerable<(string Name, ServiceCollection Services)> ProductionCompositions()
+    {
+        var configuration = new ConfigurationBuilder().Build();
+
+        var api = new ServiceCollection();
+        api.AddSourceFetcher(configuration);
+        yield return ("AddSourceFetcher (Api/Worker)", api);
+
+        var host = new ServiceCollection();
+        host.AddFetcherHost(configuration);
+        yield return ("AddFetcherHost (fetcher host)", host);
     }
 
     [Fact]

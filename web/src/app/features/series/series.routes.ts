@@ -29,7 +29,6 @@ export const SERIES_ROUTES: Routes = [
   {
     path: '',
     loadComponent: () => import('./feature/series-list-page').then((m) => m.SeriesListPage),
-    data: { titleKey: 'series.list.title' },
     providers: provideSeriesDataAccess(),
   },
   {
