@@ -665,7 +665,7 @@ public sealed class StoryGenerationQaTests(TestDatabase database) : IntegrationT
                 new StoryJobOptions { TimeoutSeconds = timeoutSeconds, TimeoutSecondsLong = timeoutSeconds },
                 new StoryReviewOptions { Enabled = reviewEnabled },
                 new SimilarityCorpusProvider(_db, new FakeExtractedTextStore(), Options.Create(new SimilaritySettings())),
-                Options.Create(new SimilaritySettings()),
+                new SimilaritySettings(),
                 new StoryGenerationMetrics(),
                 clock,
                 Logs.For<StoryGenerationPipeline>());

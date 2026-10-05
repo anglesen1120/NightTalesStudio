@@ -1,12 +1,12 @@
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
-using NightTales.Application.Features.Stories.Similarity;
+using NightTales.Infrastructure.DependencyInjection;
 using NightTales.Domain.Common;
 using NightTales.Domain.Stories.Similarity;
 using Shouldly;
 using Xunit;
 
-namespace NightTales.Application.UnitTests.Features.Stories.Similarity;
+namespace NightTales.Infrastructure.UnitTests.Stories;
 
 public sealed class SimilaritySettingsValidatorTests
 {

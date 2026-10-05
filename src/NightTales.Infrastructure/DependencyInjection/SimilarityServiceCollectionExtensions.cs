@@ -2,7 +2,6 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using NightTales.Application.Abstractions.Similarity;
-using NightTales.Application.Features.Stories.Similarity;
 using NightTales.Domain.Stories.Similarity;
 using NightTales.Infrastructure.Persistence.Queries;
 
@@ -18,6 +17,8 @@ public static class SimilarityServiceCollectionExtensions
         services.AddOptions<SimilaritySettings>().BindConfiguration("Similarity").ValidateOnStart();
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IValidateOptions<SimilaritySettings>, SimilaritySettingsValidator>());
+        // Application receives the plain validated settings; IOptions stays in the composition root.
+        services.TryAddSingleton(provider => provider.GetRequiredService<IOptions<SimilaritySettings>>().Value);
         services.TryAddScoped<ISimilarityCorpusProvider, SimilarityCorpusProvider>();
         return services;
     }

@@ -2,7 +2,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using NightTales.Domain.Stories.Similarity;
 
-namespace NightTales.Application.Features.Stories.Similarity;
+namespace NightTales.Infrastructure.DependencyInjection;
 
 /// <summary>Validates similarity bounds at host startup and warns about language fallback.</summary>
 public sealed partial class SimilaritySettingsValidator(ILogger<SimilaritySettingsValidator> logger)

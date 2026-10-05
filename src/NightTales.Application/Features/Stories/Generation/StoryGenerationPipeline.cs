@@ -7,7 +7,6 @@ using System.Text.RegularExpressions;
 using System.Text.Unicode;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 using NightTales.Application.Abstractions.Moderation;
 using NightTales.Application.Abstractions.Prompts;
 using NightTales.Application.Abstractions.Research;
@@ -66,7 +65,7 @@ public sealed partial class StoryGenerationPipeline(
     StoryJobOptions jobOptions,
     StoryReviewOptions reviewOptions,
     ISimilarityCorpusProvider similarityCorpus,
-    IOptions<SimilaritySettings> similaritySettings,
+    SimilaritySettings similaritySettings,
     StoryGenerationMetrics metrics,
     IClock clock,
     ILogger<StoryGenerationPipeline> logger)
@@ -594,7 +593,7 @@ public sealed partial class StoryGenerationPipeline(
 
     private async Task<SimilarityOutcome> ScoreSimilarityAsync(RunState s, Written written, CancellationToken ct)
     {
-        var options = SimilarityOptions.For(s.Language, similaritySettings.Value);
+        var options = SimilarityOptions.For(s.Language, similaritySettings);
         var started = Stopwatch.GetTimestamp();
         IReadOnlyList<CorpusText> corpus;
         using var deadline = new CancellationTokenSource(SimilarityReadTimeout);
