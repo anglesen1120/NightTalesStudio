@@ -58,6 +58,10 @@ public static partial class ProblemDetailsWriter
     /// <summary>The title of a validation response; the fields and messages are in <c>errors</c>.</summary>
     public const string ValidationFailedTitle = "Validation failed.";
 
+    /// <summary>The shared client-safe error for every request-body size rejection.</summary>
+    public static Error PayloadTooLargeError { get; } =
+        Error.Failure(ErrorCodes.PayloadTooLarge, "The request body exceeds the allowed size.");
+
     /// <summary>
     /// The fixed title of a <c>503 service_unavailable</c> written from a transient database
     /// exception. It is the same client-safe sentence the unit of work carries as its error
@@ -280,20 +284,20 @@ public static partial class ProblemDetailsWriter
 
         var problem = context.ProblemDetails;
 
-        // A body the framework could not bind — malformed JSON, a value outside a closed enum — reaches
-        // the exception handler as BadHttpRequestException(400) with no status on the problem yet, so the
-        // 5xx rewrite below would turn a client error into 500 internal_error (09.3.1-T1: register).
-        // The framework's status is honoured on the response as well as in the body.
+        // Framework binding failures retain their 4xx status rather than becoming internal errors.
+        // Oversized streamed bodies use the same catalogued problem as declared-size rejections.
         if (context.Exception is BadHttpRequestException badRequest
             && badRequest.StatusCode is >= StatusCodes.Status400BadRequest and < StatusCodes.Status500InternalServerError)
         {
             context.HttpContext.Response.StatusCode = badRequest.StatusCode;
             problem.Status = badRequest.StatusCode;
-            problem.Title = ValidationFailedTitle;
-            problem.Type = ErrorCatalogue.ProblemType(ErrorCodes.ValidationFailed);
+            var oversized = badRequest.StatusCode == StatusCodes.Status413PayloadTooLarge;
+            var code = oversized ? PayloadTooLargeError.Code : ErrorCodes.ValidationFailed;
+            problem.Title = oversized ? PayloadTooLargeError.Description : ValidationFailedTitle;
+            problem.Type = ErrorCatalogue.ProblemType(code);
             problem.Detail = null;
             problem.Extensions.Remove(ExceptionExtensionKey);
-            problem.Extensions[CodeMemberName] = ErrorCodes.ValidationFailed;
+            problem.Extensions[CodeMemberName] = code;
             return;
         }
 

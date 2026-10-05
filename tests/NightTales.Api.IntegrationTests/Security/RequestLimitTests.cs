@@ -1,6 +1,8 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Text.Json;
+using NightTales.Api.Http;
 using NightTales.Api.IntegrationTests.Harness;
 using NightTales.TestKit;
 using NightTales.TestKit.Api;
@@ -41,6 +43,7 @@ public sealed class RequestLimitTests(TestDatabase database) : IntegrationTest(d
         response.StatusCode.ShouldBe(
             HttpStatusCode.RequestEntityTooLarge,
             "the host default is 1 MiB and the probe route declares nothing larger");
+        await AssertPayloadTooLargeProblemAsync(response);
     }
 
     [Fact]
@@ -93,9 +96,8 @@ public sealed class RequestLimitTests(TestDatabase database) : IntegrationTest(d
 
         response.StatusCode.ShouldBe(HttpStatusCode.RequestEntityTooLarge);
 
-        // Refused before the handler: no ProblemDetails and no echo, so the handler never ran and nothing
-        // proportional to the refused body was read (plan §9 / the task's failure table).
-        (await response.Content.ReadAsByteArrayAsync(TestContextToken.Value)).ShouldBeEmpty();
+        // The small problem replaces the echo: the handler never runs on an oversized declared body.
+        await AssertPayloadTooLargeProblemAsync(response);
     }
 
     [Fact]
@@ -125,6 +127,25 @@ public sealed class RequestLimitTests(TestDatabase database) : IntegrationTest(d
         response.Headers.TryGetValues("Access-Control-Allow-Origin", out var origins).ShouldBeTrue(
             "a 413 refused by the body cap must still carry the CORS allow origin");
         origins!.ShouldHaveSingleItem().ShouldBe(ApiFactory.PublicOrigin);
+        response.Headers.TryGetValues("Access-Control-Allow-Credentials", out var credentials).ShouldBeTrue();
+        credentials!.ShouldHaveSingleItem().ShouldBe("true");
+        response.Headers.TryGetValues("X-Content-Type-Options", out var contentTypeOptions).ShouldBeTrue();
+        contentTypeOptions!.ShouldHaveSingleItem().ShouldBe("nosniff");
+        await AssertPayloadTooLargeProblemAsync(response);
+    }
+
+    private static async Task AssertPayloadTooLargeProblemAsync(HttpResponseMessage response)
+    {
+        response.Content.Headers.ContentType.ShouldNotBeNull().MediaType.ShouldBe("application/problem+json");
+        var json = await response.Content.ReadAsByteArrayAsync(TestContextToken.Value);
+        json.Length.ShouldBeLessThan(1024, "the refusal must stay small regardless of request size");
+        using var document = JsonDocument.Parse(json);
+        var problem = document.RootElement;
+        problem.GetProperty("code").GetString().ShouldBe("payload_too_large");
+        problem.GetProperty("type").GetString().ShouldBe(ErrorCatalogue.ProblemType("payload_too_large"));
+        problem.GetProperty("title").GetString().ShouldNotBeNullOrWhiteSpace();
+        problem.GetProperty("status").GetInt32().ShouldBe(413);
+        problem.GetProperty("traceId").GetString().ShouldNotBeNullOrWhiteSpace();
     }
 
     private static ByteArrayContent Body(int bytes)

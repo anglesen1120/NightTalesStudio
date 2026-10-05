@@ -4,6 +4,17 @@ History moved out of STATUS.md to keep the live file small. The initial archive 
 
 ## Resume-here history (Current/Previous blocks, Next actions)
 
+### Superseded Session 21 follow-up state (2026-10-05, after full-gate fixture recovery)
+
+- **Next (backend, start here):** Session 21 current: **413 ProblemDetails follow-up** (`fix/413-problem-details-s21`, T2) implementation + separate QA/reviews fixed, CR413-1..3 fixed; filtered `TEST rc0`; delta review, final full `gate.sh` and PR pending (§Open tasks). **02.3.2-T1** merged as #159 (`5130861`; T3 gates closed). Next backend for this lane remains **02.5.3-T1** fact extractor (check header `Depends on`), then 02.6.1-T2, 02.6.2-T1 revision (02 §10 T113(b)); 02.3.3-T1 replaces the interim fail-closed `NullStoryApprovalGate`. Other backend lane: 13.2.1-T1 legal acceptance PR #163 open (Session 23). 02.3.4-T2 story read models merged as #156 (`cf4625c`, Session 22); web consumers need an `openapi.json` re-pin after the 413 fix lands. The `02-M1-research` gate still needs the 11.2.2-T2 egress test. Claim the backend `gate.sh` lock in `nts-wt/SESSION-CLAIMS.md` first.
+
+| Defect: approve body 413 without ProblemDetails | implementation + T2 gates closed; final full gate and PR pending (Session 21 follow-up lane, `fix/413-problem-details-s21`; claim stays active until this fix merges) | Catalogued `payload_too_large` ProblemDetails 413 across declared-length, approve-body and framework-binding paths; `ProducesProblem(413)` on all six public story routes. Internal fetcher unchanged. Separate QA PASS (88 public OpenAPI error schemas, none missing ProblemDetails); code and perf+security reviews completed, CR413-1..3 fixed; delta CLEAN on `6b82c764`. BUILD + FORMAT OK and filtered `TEST rc=0`; final full `gate.sh` and CI verdict not yet observed. (from 02.3.2-T1 #159) |
+
+| 2026-10-05 | Session 21 follow-up: 413 ProblemDetails (`fix/413-problem-details-s21`, T2) | Adds the `payload_too_large` 413 catalogue and ProblemDetails for declared-length, approve-body and framework-binding paths, with `ProducesProblem(413)` on all six public story routes; internal fetcher unchanged. Separate QA PASS (88 public OpenAPI error schemas); code and perf+security reviews, one jev triage, CR413-1..3 fixed; delta CLEAN on `6b82c764`. BUILD + FORMAT OK, filtered `TEST rc=0`. Final full `gate.sh` and PR pending; no CI verdict claimed. Next backend for this lane remains 02.5.3-T1. |
+
+### Superseded backend Next bullet (2026-10-05, Session 21 413 follow-up implementation and review fixes)
+
+- **Next (backend, start here):** 13.2.1-T1 legal acceptance: PR #163 open (Session 23; `GET`/`POST /me/legal`, `ILegalAcceptance` gate, owner dialog; unblocks 06.1.2-T1, 06.5.1-T1, 10.7.1-T1, 13.2.1-T2, 10.8.2-T1, 07.1.2-T1 and the 02.8.3-T2 legal gate). **02.3.2-T1** merged as #159 (`5130861`; CI-01 billing refusal, owner treats as pass; local full `gate.sh` `GATE_RC=0` on `e450682`; T3 gates closed). Next backend for this lane: **02.5.3-T1** fact extractor (check header `Depends on`), then 02.6.1-T2, 02.6.2-T1 revision (02 §10 T113(b)); 02.3.3-T1 replaces the interim fail-closed `NullStoryApprovalGate`. 02.3.4-T2 story read models merged as #156 (`cf4625c`, Session 22; CI refused for billing: CI-01, owner treats as pass; local full `gate.sh` `GATE_RC=0`; unblocks web 10.5.2-T1/10.5.3-T1/10.5.4-T1 after an `openapi.json` re-pin, and 02.8.2-T1). The `02-M1-research` gate still needs the 11.2.2-T2 egress test. Claim the backend `gate.sh` lock in `nts-wt/SESSION-CLAIMS.md` first.
 ### Superseded Session 24 PR-open Resume clause (2026-10-05, replaced when #165 merged as `59b2239`)
 
 Replaced text (verbatim): `02.5.6-T1 similarity scorer + corpus provider + approval guard: PR #165 open (Session 24; generation step 6 now stores `similarity_score` + `audit_report.similarity`; `SimilarityApprovalGuard` gets its approve caller when 02.3.3-T1 replaces the interim `NullStoryApprovalGate` (order row 5, T31); edit re-score stays with 02.3.1-T1; unblocks 02.5.6-T2, 02.8.2-T1, 02.5.3-T2).`
@@ -13,7 +24,6 @@ Replaced text (verbatim): `02.5.6-T1 similarity scorer + corpus provider + appro
 Replaced Session 24 Resume clause (verbatim): `02.5.6-T1 similarity scorer + corpus provider + approval guard: PR open (Session 24; generation step 6 now stores `similarity_score` + `audit_report.similarity`; 02.3.2-T1 wires `SimilarityApprovalGuard` for the 409, edit re-score stays with 02.3.1-T1; unblocks 02.5.6-T2, 02.8.2-T1, 02.5.3-T2).`
 
 The merged 02.3.2-T1 §Notes T31/R2 delegates the real similarity sub-check to 02.3.3-T1's `IStoryApprovalGate`; the interim gate performs no comparison. Session 24's current STATUS/task Notes now name that owner. Earlier backend Next lines are already preserved in the Session 21 entries below.
-
 ### Superseded Session 23 backend Next sentence (2026-10-05, replaced when #163 merged as `6c17462`)
 
 Replaced text (verbatim): 13.2.1-T1 legal acceptance: PR #163 open (Session 23; `GET`/`POST /me/legal`, `ILegalAcceptance` gate, owner dialog; unblocks 06.1.2-T1, 06.5.1-T1, 10.7.1-T1, 13.2.1-T2, 10.8.2-T1, 07.1.2-T1 and the 02.8.3-T2 legal gate).

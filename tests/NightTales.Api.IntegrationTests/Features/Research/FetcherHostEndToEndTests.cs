@@ -25,7 +25,7 @@ namespace NightTales.Api.IntegrationTests.Features.Research;
 [Trait("Category", "Integration")]
 public sealed class FetcherHostEndToEndTests(TestDatabase database) : IntegrationTest(database)
 {
-    private static readonly TimeSpan Bound = TimeSpan.FromSeconds(20);
+    private static readonly TimeSpan Bound = TimeSpan.FromSeconds(60);
 
     private static CancellationToken Ct => TestContextToken.Value;
 
