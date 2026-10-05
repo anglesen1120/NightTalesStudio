@@ -5,8 +5,10 @@ using Microsoft.Extensions.Logging;
 using NightTales.Application.Abstractions.Persistence;
 using NightTales.Application.Common;
 using NightTales.Application.Common.Errors;
+using NightTales.Application.Features.Stories.ReadModels;
 using NightTales.Domain.Assets;
 using NightTales.Domain.Episodes;
+using NightTales.Domain.Stories.Generation;
 
 // The feature namespace `…Features.Episodes` contains the aggregate's namespace segment, so the entity
 // is aliased the way the series handlers alias theirs (09.4.1-T1).
@@ -21,11 +23,13 @@ namespace NightTales.Application.Features.Episodes.Queries.GetEpisode;
 /// </summary>
 /// <remarks>
 /// <para>
-/// One projection through the tenant-filtered read model, then at most one more read for the episode's
-/// final video asset, <em>sequentially</em> on the same <see cref="IReadDb"/> ([RULED — README §B10
-/// WT46]: EF forbids concurrent operations on one context, so there is no <c>Task.WhenAll</c> here), and
-/// no <c>Include</c>, no N+1 and no third query (BD16). Another user's episode is simply not in the
-/// projection, so it, an unknown id and a cancelled row all answer the same 404 (09 README D10, F14).
+/// One projection through the tenant-filtered read model, followed by bounded single-row reads for
+/// the final video, current story and latest generation run, sequentially on the same
+/// <see cref="IReadDb"/> (BD16: EF forbids concurrent operations on one context).
+/// 02.3.4-T2 extends BD16 with one read each for the latest generation run and the current version;
+/// the current-version read is skipped when its pointer is null. No <c>Include</c>, no N+1, and no
+/// nested mediator pipeline. Another user's episode, an unknown id and a cancelled row all answer
+/// the same 404 (09 README D10, F14).
 /// </para>
 /// <para>
 /// The ETag is built from the row's <c>xmin</c>, which the D8 convention maps to
@@ -35,9 +39,9 @@ namespace NightTales.Application.Features.Episodes.Queries.GetEpisode;
 /// <para>
 /// Extension points, one route and one projection each — never a second handler for this resource
 /// (09.5.3 plan §Steps 6): 09.6.1-T1 adds the latest render job (<c>id DESC</c>, WT49) between the
-/// episode read and the asset read; 03.4.2-T1 adds this block's <c>images</c>; 02.3.4-T2 adds
-/// <c>currentStory</c>/<c>generation</c>; 06.2.1-T1 fills <c>publications</c> from its own approved
-/// third query. None of them replaces the episode read, so the ETag and the 404 stay identical.
+/// episode read and the asset read; 03.4.2-T1 adds this block's <c>images</c>; current story and
+/// generation are read by 02.3.4-T2's shared projection. 06.2.1-T1 fills publications sequentially.
+/// None replaces the episode read, so its ETag and 404 stay identical.
 /// </para>
 /// </remarks>
 /// <param name="readDb">The no-tracking read model; the D10 tenant filter applies to it.</param>
@@ -60,7 +64,9 @@ public sealed partial class GetEpisodeByIdHandler(IReadDb readDb, ILogger<GetEpi
                 row.LengthTier,
                 row.Status,
                 row.FinalVideoAssetId,
-                row.Version))
+                row.Version,
+                row.CurrentStoryVersionId,
+                row.ApprovedStoryVersionId))
             .SingleOrDefaultAsync(cancellationToken)
             .ConfigureAwait(false);
 
@@ -79,8 +85,7 @@ public sealed partial class GetEpisodeByIdHandler(IReadDb readDb, ILogger<GetEpi
 
         if (episode.FinalVideoAssetId is { } assetId)
         {
-            // The second and last read, on the same context: `assets` is IUserOwned, so the tenant filter
-            // narrows it exactly as the episode read was narrowed.
+            // A sequential read on the same context: the asset's tenant filter applies as above.
             var asset = await readDb.Query<Asset>()
                 .Where(row => row.Id == assetId)
                 .Select(row => new AssetRow(
@@ -112,6 +117,20 @@ public sealed partial class GetEpisodeByIdHandler(IReadDb readDb, ILogger<GetEpi
             }
         }
 
+        var currentStory = await StoryReadProjection.CurrentAsync(
+            readDb, episode.Id, episode.CurrentStoryVersionId, episode.Status,
+            episode.ApprovedStoryVersionId, logger, cancellationToken).ConfigureAwait(false);
+
+        // CreatedAt identifies the latest attempt, including queued runs whose StartedAt is null.
+        // Id DESC is the deterministic tie-breaker for equal timestamps.
+        var generation = await readDb.Query<GenerationRun>().AsNoTracking()
+            .Where(row => row.EpisodeId == episode.Id)
+            .OrderByDescending(row => row.CreatedAt)
+            .ThenByDescending(row => row.Id)
+            .Select(row => new GenerationStatusDto(
+                row.Kind, row.Status, row.Stage, row.ErrorCode, row.StartedAt))
+            .FirstOrDefaultAsync(cancellationToken).ConfigureAwait(false);
+
         return new EpisodeDetailDto(
             episode.Id,
             episode.SeriesId,
@@ -123,7 +142,9 @@ public sealed partial class GetEpisodeByIdHandler(IReadDb readDb, ILogger<GetEpi
             ETags.Episode(episode.Version),
             renderJob,
             finalVideo,
-            Publications: null);
+            Publications: null,
+            Generation: generation,
+            CurrentStory: currentStory);
     }
 
     /// <summary>The episode's own columns, including the concurrency token the ETag is built from.</summary>
@@ -135,7 +156,9 @@ public sealed partial class GetEpisodeByIdHandler(IReadDb readDb, ILogger<GetEpi
         LengthTier LengthTier,
         EpisodeStatus Status,
         Guid? FinalVideoAssetId,
-        uint Version);
+        uint Version,
+        Guid? CurrentStoryVersionId,
+        Guid? ApprovedStoryVersionId);
 
     /// <summary>
     /// The asset row of <c>episodes.final_video_asset_id</c>. <c>duration_sec</c> is read as its stored

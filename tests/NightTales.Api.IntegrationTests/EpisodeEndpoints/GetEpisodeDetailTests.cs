@@ -28,7 +28,7 @@ namespace NightTales.Api.IntegrationTests.EpisodeEndpoints;
 /// <summary>
 /// <c>GET /api/v1/episodes/{id}</c> against the real host and a real PostgreSQL 17 (09.5.3 plan §4 UC3–UC5,
 /// §9): the episode page in one call, the D15 ETag with its <c>304</c>, the D10 tenant isolation, the two
-/// <c>nextActions</c> contracts and the two-command budget of BD16/WT46.
+/// <c>nextActions</c> contracts and the exact sequential query budgets of BD16/WT46 plus CR-7.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -64,7 +64,7 @@ public sealed class GetEpisodeDetailTests(TestDatabase database) : IntegrationTe
     private static readonly string[] DetailMemberNames = new[]
     {
         "id", "seriesId", "title", "brief", "lengthTier", "status", "nextActions", "etag",
-        "renderJob", "finalVideo", "publications",
+        "renderJob", "finalVideo", "publications", "generation", "currentStory",
     };
     private static readonly string[] FinalVideoMemberNames = new[]
     {
@@ -221,7 +221,7 @@ public sealed class GetEpisodeDetailTests(TestDatabase database) : IntegrationTe
 
         // Its absence does not move, drop or reorder any other member (09.5.3 plan §Acceptance).
         json.GetProperty("publications").ValueKind.ShouldBe(JsonValueKind.Null);
-        MemberNames(json).Count.ShouldBe(11);
+        MemberNames(json).Count.ShouldBe(13);
     }
 
     [Fact]
@@ -415,7 +415,7 @@ public sealed class GetEpisodeDetailTests(TestDatabase database) : IntegrationTe
         response.Headers.ETag!.ToString().ShouldBe(current, "the 304 repeats the tag the client sent");
         response.Headers.CacheControl!.ToString().ShouldBe("no-cache", "the page is revalidated every time");
         response.Headers.Vary.ShouldContain("Authorization");
-        interceptor.Count.ShouldBe(1, "one episode projection, and no asset read for an episode without a video");
+        interceptor.Count.ShouldBe(2, "the episode projection and the CR-7 latest-generation read; no asset read for an episode without a video");
     }
 
     [Fact]
@@ -547,10 +547,11 @@ public sealed class GetEpisodeDetailTests(TestDatabase database) : IntegrationTe
         (await response.Content.ReadAsStringAsync(Ct)).ShouldBeEmpty();
         response.Headers.ETag!.ToString().ShouldBe(current);
         interceptor.Count.ShouldBe(
-            2,
-            "the endpoint compares only after the handler has read the episode and its video asset");
+            3,
+            "the endpoint compares only after the handler has read the episode, its video asset and the CR-7 latest generation");
         interceptor.Commands[0].Text.ShouldContain("episodes", Case.Insensitive);
         interceptor.Commands[1].Text.ShouldContain("assets", Case.Insensitive);
+        interceptor.Commands[2].Text.ShouldContain("generation_runs", Case.Insensitive);
     }
 
     [Fact]
@@ -609,7 +610,7 @@ public sealed class GetEpisodeDetailTests(TestDatabase database) : IntegrationTe
     }
 
     [Fact]
-    public async Task Uses_Two_Database_Commands_Only()
+    public async Task Uses_Three_Database_Commands_With_Final_Video_And_No_Story()
     {
         var userId = await CreateUserAsync();
         var seriesId = await SeedSeriesAsync(userId);
@@ -630,16 +631,18 @@ public sealed class GetEpisodeDetailTests(TestDatabase database) : IntegrationTe
         status.ShouldBe(HttpStatusCode.OK);
         body.FinalVideo.ShouldNotBeNull();
 
-        // Exactly two round trips (BD16): one episode projection plus one asset read. The episode's second
-        // asset must not add a third command — that would be an N+1.
-        interceptor.Count.ShouldBe(2, string.Join(" | ", interceptor.Texts));
+        // CR-7 adds the latest generation lookup to BD16's episode + asset reads. A second asset must
+        // not add a fourth round trip, and a null story pointer must skip the version read.
+        interceptor.Count.ShouldBe(3, string.Join(" | ", interceptor.Texts));
         interceptor.Texts.ShouldContain(text => text.Contains("episodes", StringComparison.OrdinalIgnoreCase));
         interceptor.Texts.ShouldContain(text => text.Contains("assets", StringComparison.OrdinalIgnoreCase));
         interceptor.Texts.ShouldNotContain(text => text.Contains("render_jobs", StringComparison.OrdinalIgnoreCase));
+        interceptor.Texts.ShouldContain(text => text.Contains("generation_runs", StringComparison.OrdinalIgnoreCase));
+        interceptor.Texts.ShouldNotContain(text => text.Contains("story_versions", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]
-    public async Task Uses_One_Database_Command_When_No_Final_Video()
+    public async Task Uses_Two_Database_Commands_When_No_Final_Video_Or_Story()
     {
         var userId = await CreateUserAsync();
         var seriesId = await SeedSeriesAsync(userId);
@@ -655,7 +658,11 @@ public sealed class GetEpisodeDetailTests(TestDatabase database) : IntegrationTe
         var (status, _, _, _) = await ReadDetailAsync(client, episodeId);
 
         status.ShouldBe(HttpStatusCode.OK);
-        interceptor.Count.ShouldBe(1, "without `final_video_asset_id` there is nothing else to read");
+        interceptor.Count.ShouldBe(2, "CR-7 reads the episode and latest generation even when no run exists");
+        interceptor.Commands[0].Text.ShouldContain("episodes", Case.Insensitive);
+        interceptor.Commands[1].Text.ShouldContain("generation_runs", Case.Insensitive);
+        interceptor.Texts.ShouldNotContain(text => text.Contains("assets", StringComparison.OrdinalIgnoreCase));
+        interceptor.Texts.ShouldNotContain(text => text.Contains("story_versions", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]
@@ -682,10 +689,11 @@ public sealed class GetEpisodeDetailTests(TestDatabase database) : IntegrationTe
         // would have shown up as a command that started while another was still in flight.
         interceptor.ObservedConcurrentExecution.ShouldBeFalse(
             $"no two commands may overlap: {string.Join(" | ", interceptor.Texts)}");
-        interceptor.Commands.Count.ShouldBe(2);
+        interceptor.Commands.Count.ShouldBe(3);
         interceptor.Commands.ShouldAllBe(command => command.ActiveWhenStarted == 0);
         interceptor.Commands[0].Text.ShouldContain("episodes", Case.Insensitive);
         interceptor.Commands[1].Text.ShouldContain("assets", Case.Insensitive);
+        interceptor.Commands[2].Text.ShouldContain("generation_runs", Case.Insensitive);
     }
 
     [Fact]

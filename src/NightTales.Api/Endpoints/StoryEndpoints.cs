@@ -9,13 +9,16 @@ using NightTales.Application.Common.Errors;
 using NightTales.Application.Features.Stories;
 using NightTales.Application.Features.Stories.Commands.EditStory;
 using NightTales.Application.Features.Stories.Commands.GenerateStory;
+using NightTales.Application.Features.Stories.ReadModels;
+using NightTales.Application.Features.Stories.Queries.GetStoryVersion;
+using NightTales.Application.Features.Stories.Queries.GetStoryVersions;
 using NightTales.Domain.Stories.Generation;
 
 namespace NightTales.Api.Endpoints;
 
 /// <summary>
-/// The story routes (02 README D9, 02.2.2 plan §5.1, 02.3.1 plan §Route). Generation and the full edit are mapped here
-/// so far: the other story routes belong to their own tasks.
+/// The story routes (02 README D9, 02.2.2 plan §5.1, 02.3.1 plan §Route): generation, full edits and
+/// read-only version history. Other story operations belong to their own tasks.
 /// </summary>
 /// <remarks>
 /// Like every route it is denied to anonymous callers by the pipeline; a caller who does not own the episode gets
@@ -30,6 +33,12 @@ public static class StoryEndpoints
 
     /// <summary>The story route: <c>PUT</c> saves an edit (02.3.1-T1).</summary>
     public const string StoryRoute = "/api/v1/episodes/{id:guid}/story";
+
+    /// <summary>The read-only version history route (02.3.4-T2).</summary>
+    public const string VersionsRoute = "/api/v1/episodes/{id:guid}/story/versions";
+
+    /// <summary>The read-only version detail route (02 README CR-12).</summary>
+    public const string VersionRoute = "/api/v1/episodes/{id:guid}/story/versions/{versionId:guid}";
 
     /// <summary>Maps the story routes onto the host's route builder.</summary>
     /// <param name="routes">The host's endpoint route builder.</param>
@@ -64,8 +73,47 @@ public static class StoryEndpoints
                 .ProducesProblem(StatusCodes.Status428PreconditionRequired)
                 .RequireCors(SecurityHeadersExtensions.SpaCorsPolicy));
 
+        EpisodeIdRouteParameter.Declare(
+            routes.MapGet(VersionsRoute, GetVersionsAsync)
+                .WithName("GetStoryVersions")
+                .WithTags("Stories")
+                .WithSummary("Read an episode's story version history.")
+                .Produces<IReadOnlyList<StoryVersionSummaryDto>>(StatusCodes.Status200OK)
+                .ProducesProblem(StatusCodes.Status401Unauthorized)
+                .ProducesProblem(StatusCodes.Status404NotFound)
+                .RequireCors(SecurityHeadersExtensions.SpaCorsPolicy));
+
+        EpisodeIdRouteParameter.Declare(
+            routes.MapGet(VersionRoute, GetVersionAsync)
+                .WithName("GetStoryVersion")
+                .WithTags("Stories")
+                .WithSummary("Read one story version and its audit report.")
+                .Produces<StoryVersionDetailDto>(StatusCodes.Status200OK)
+                .ProducesProblem(StatusCodes.Status401Unauthorized)
+                .ProducesProblem(StatusCodes.Status404NotFound)
+                .RequireCors(SecurityHeadersExtensions.SpaCorsPolicy));
+
         return routes;
     }
+
+    /// <summary>Reads summary columns only; a missing or foreign episode answers the same 404.</summary>
+    private static async Task<IResult> GetVersionsAsync(
+        Guid id,
+        ISender sender,
+        HttpContext http,
+        CancellationToken ct)
+        => (await sender.Send(new GetStoryVersionsQuery(id), ct).ConfigureAwait(false))
+            .ToHttpResult(http);
+
+    /// <summary>Reads one version; the shared result helper emits its <c>IHasETag</c> story tag.</summary>
+    private static async Task<IResult> GetVersionAsync(
+        Guid id,
+        Guid versionId,
+        ISender sender,
+        HttpContext http,
+        CancellationToken ct)
+        => (await sender.Send(new GetStoryVersionQuery(id, versionId), ct).ConfigureAwait(false))
+            .ToHttpResult(http);
 
     /// <summary>
     /// <c>PUT /api/v1/episodes/{id}/story</c> (02.3.1-T1): 200 with the saved version and its <c>ETag</c> (the unchanged

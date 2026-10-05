@@ -540,10 +540,6 @@ public sealed class EditStoryEndpointTests(TestDatabase database) : IntegrationT
         response.StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
     }
 
-    /// <remarks>
-    /// The detail route has no <c>currentStory</c> block yet (02.3.4-T2 adds it to the same DTO), so what the route can
-    /// show today is that the episode row moved: its ETag changes and the pointer names the new version.
-    /// </remarks>
     [Fact]
     public async Task EditStory_ThenGetEpisodeDetail_CurrentStoryReflectsTheEdit()
     {
@@ -561,7 +557,10 @@ public sealed class EditStoryEndpointTests(TestDatabase database) : IntegrationT
         using var after = await client.GetAsync($"/api/v1/episodes/{world.EpisodeId}", Ct);
         after.StatusCode.ShouldBe(HttpStatusCode.OK, await after.Content.ReadAsStringAsync(Ct));
         after.Headers.ETag!.Tag.ShouldNotBe(before.Headers.ETag!.Tag, "the edit moved the episode row");
-        (await ReadBodyAsync(after)).GetProperty("status").GetString().ShouldBe("story_review");
+        var detail = await ReadBodyAsync(after);
+        detail.GetProperty("status").GetString().ShouldBe("story_review");
+        detail.GetProperty("currentStory").GetProperty("versionId").GetGuid().ShouldBe(newId);
+        detail.GetProperty("currentStory").GetProperty("etag").GetString().ShouldBe(StoryEtag.For(newId));
         SqlProbe.ScalarText(Database, $"SELECT current_story_version_id::text FROM episodes WHERE id = '{world.EpisodeId}'")
             .ShouldBe(newId.ToString());
     }
