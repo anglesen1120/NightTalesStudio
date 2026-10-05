@@ -227,7 +227,7 @@ describe('MfaSetupViewComponent', () => {
     const regenerate = [...root.querySelectorAll<HTMLButtonElement>('button')].find((button) =>
       button.textContent?.includes(authEn.enrol.regenerate),
     );
-    expect(regenerate?.disabled).toBe(true);
+    expect(regenerate?.getAttribute('aria-disabled')).toBe('true');
   });
 
   it('codes step hides regeneration for an enrolment-only visit', async () => {
