@@ -1,25 +1,38 @@
 import { ChangeDetectionStrategy, Component, computed, input } from '@angular/core';
+import type { Signal } from '@angular/core';
+import type { SegmentAddress } from '@shared/util/segment-address';
 import { TranslocoPipe, provideTranslocoScope } from '@jsverse/transloco';
-import type { SegmentEditorViewModel } from './story-editor.view-model';
+import type { SceneSegmentViewModel, SegmentTexts } from './story-editor.view-model';
 
 interface ScenePreview {
   readonly key: string;
   readonly labelKey: string;
   readonly labelIndex: number | null;
   readonly keyword: string;
-  readonly text: string;
+  readonly address: SegmentAddress;
+}
+
+// Only the corresponding excerpt observes text edits; the strip observes scene structure.
+@Component({
+  selector: 'p[ntsSceneExcerpt]',
+  template: '{{ text()() }}',
+  changeDetection: ChangeDetectionStrategy.OnPush,
+})
+export class SceneExcerptComponent {
+  readonly text = input.required<Signal<string>>();
 }
 
 @Component({
   selector: 'nts-scene-strip',
-  imports: [TranslocoPipe],
+  imports: [TranslocoPipe, SceneExcerptComponent],
   providers: [provideTranslocoScope('episodes')],
   templateUrl: './scene-strip.component.html',
   styleUrl: './scene-strip.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class SceneStripComponent {
-  readonly segments = input.required<readonly SegmentEditorViewModel[]>();
+  readonly segments = input.required<readonly SceneSegmentViewModel[]>();
+  readonly segmentTexts = input.required<SegmentTexts>();
 
   protected readonly scenes = computed<readonly ScenePreview[]>(() => this.segments().flatMap((segment) =>
     segment.keywords.map((keyword, index) => ({
@@ -27,7 +40,7 @@ export class SceneStripComponent {
       labelKey: segment.labelKey,
       labelIndex: segment.labelIndex,
       keyword,
-      text: segment.text,
+      address: segment.address,
     })),
   ));
 }

@@ -11,7 +11,9 @@
             {{ scene.labelKey | transloco }}@if (scene.labelIndex !== null) { {{ scene.labelIndex }} }
           </span>
           <strong>{{ scene.keyword }}</strong>
-          <p>{{ scene.text }}</p>
+          @if (segmentTexts().get(scene.address); as text) {
+            <p ntsSceneExcerpt [text]="text"></p>
+          }
         </article>
       }
     </div>

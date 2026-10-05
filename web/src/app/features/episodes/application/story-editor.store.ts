@@ -1,5 +1,5 @@
 import { DestroyRef, Injectable, computed, effect, inject, isDevMode, signal } from '@angular/core';
-import type { WritableSignal } from '@angular/core';
+import type { Signal, WritableSignal } from '@angular/core';
 import { AppErrorMapper } from '@core/errors';
 import type { AppError } from '@core/errors';
 import { IdempotencyKeys } from '@core/http';
@@ -7,7 +7,7 @@ import type { IdempotencyIntent } from '@core/http';
 import { RealtimeService } from '@core/realtime';
 import type { RealtimeSubscription } from '@core/realtime';
 import { SessionStore } from '@core/session';
-import { addressForParagraph, formatAddress, parseAddress } from '@shared/util/segment-address';
+import { addressForParagraph, parseAddress, parsePointerAddress } from '@shared/util/segment-address';
 import type { SegmentAddress } from '@shared/util/segment-address';
 import { fromContent, serialize, toContent } from '../domain/story-codec';
 import type { StoryDraft, StoryMetadata, StorySegment, StorySnapshot } from '../domain/story.model';
@@ -21,6 +21,7 @@ export interface ParagraphState {
   readonly beat: string;
   readonly text: WritableSignal<string>;
   readonly keywords: WritableSignal<readonly string[]>;
+  readonly tokens: Signal<number>;
   readonly factRefs: readonly unknown[];
 }
 const EMPTY_META: StoryMetadata = { title: '', description: '', tags: [], contentWarnings: [], structure: null };
@@ -57,21 +58,29 @@ export class StoryEditorStore {
   private readonly baselineJson = signal('');
   private readonly dirtyJson = signal('');
   readonly isDirty = computed(() => this.snapshot() !== null && this.dirtyJson() !== this.baselineJson());
+  private readonly baselineValues = new Map<string, string | readonly string[]>();
+  private readonly changedFields = new Set<string>();
+  private readonly changedCount = signal(0);
   readonly saving = signal(false);
   private readonly resolving = signal(false);
   readonly savedAt = signal<number | null>(null);
-  readonly conflict = signal<{ serverEtag: string; serverVersion: number } | null>(null);
+  readonly conflict = signal<true | null>(null);
   readonly fieldErrors = signal<Readonly<Partial<Record<SegmentAddress, readonly string[]>>>>({});
   readonly formErrors = signal<readonly string[]>([]);
   readonly keywordLimitHit = signal<string | null>(null);
   readonly invalidState = signal(false);
   readonly readOnly = computed(() => !this.detail.nextActions().includes('edit_story'));
-  readonly saveDisabled = computed(() => !this.active() || this.loading() || this.saving() || this.resolving() || this.readOnly() || this.invalidState() || !this.hasUnsavedChanges());
+  readonly saveDisabled = computed(() => !this.active() || this.loading() || this.saving() || this.resolving() || this.readOnly() || this.invalidState() || this.changedCount() === 0);
+  readonly titleTokens = computed(() => countTokens(this.title()));
+  readonly hookTokens = computed(() => countTokens(this.hook()));
+  readonly endingTokens = computed(() => countTokens(this.ending()));
+  private readonly metaDescription = computed(() => this.meta().description);
+  readonly metaTokens = computed(() => countTokens(this.metaDescription()));
   readonly segmentTokens = computed<ReadonlyMap<SegmentAddress, number>>(() => {
-    const tokens = new Map<SegmentAddress, number>([['title', countTokens(this.title())], ['hook', countTokens(this.hook())]]);
-    this.paragraphs().forEach((paragraph, index) => tokens.set(addressForParagraph(index), countTokens(paragraph.text())));
-    tokens.set('ending', countTokens(this.ending()));
-    tokens.set('meta', countTokens(this.meta().description));
+    const tokens = new Map<SegmentAddress, number>([['title', this.titleTokens()], ['hook', this.hookTokens()]]);
+    this.paragraphs().forEach((paragraph, index) => tokens.set(addressForParagraph(index), paragraph.tokens()));
+    tokens.set('ending', this.endingTokens());
+    tokens.set('meta', this.metaTokens());
     return tokens;
   });
   readonly totalTokens = computed(() => [...this.segmentTokens().values()].reduce((sum, value) => sum + value, 0));
@@ -161,34 +170,34 @@ export class StoryEditorStore {
       if (!paragraph) return;
       paragraph.text.set(text);
     }
-    this.edited();
+    this.trackChange(segKey, text); this.edited();
   }
 
   setSegmentText(kind: 'title' | 'hook' | 'ending', text: string): void {
     if (!this.canEdit()) return;
     this[kind].set(text);
     if (kind === 'title') this.meta.update((meta) => ({ ...meta, title: text }));
-    this.edited();
+    this.trackChange(kind === 'title' ? 'title' : kind === 'hook' ? this.hookKey() : this.endingKey(), text); this.edited();
   }
 
   addKeyword(segKey: string, keyword: string): void {
     const keywords = this.keywordSignal(segKey);
     if (!this.canEdit() || !keywords) return;
     if (keywords().length >= 2) { this.keywordLimitHit.set(segKey); return; }
-    keywords.update((values) => [...values, keyword]); this.edited();
+    keywords.update((values) => [...values, keyword]); this.trackChange(`${segKey}:keywords`, keywords()); this.edited();
   }
 
   updateKeyword(segKey: string, index: number, keyword: string): void {
     const keywords = this.keywordSignal(segKey);
     if (!this.canEdit() || !keywords || !Number.isInteger(index) || index < 0 || index >= keywords().length) return;
-    keywords.update((values) => values.map((value, i) => i === index ? keyword : value)); this.edited();
+    keywords.update((values) => values.map((value, i) => i === index ? keyword : value)); this.trackChange(`${segKey}:keywords`, keywords()); this.edited();
   }
 
   removeKeyword(segKey: string, index: number): void {
     const keywords = this.keywordSignal(segKey);
     if (!this.canEdit() || !keywords || !Number.isInteger(index) || index < 0 || index >= keywords().length) return;
     if (keywords().length <= 1) { this.keywordLimitHit.set(segKey); return; }
-    keywords.update((values) => values.filter((_, i) => i !== index)); this.edited();
+    keywords.update((values) => values.filter((_, i) => i !== index)); this.trackChange(`${segKey}:keywords`, keywords()); this.edited();
   }
 
   setMeta(patch: Partial<StoryMetadata>): void {
@@ -197,9 +206,13 @@ export class StoryEditorStore {
     const { title, description, tags, contentWarnings } = patch;
     this.meta.update((meta) => ({ ...meta,
       ...(title === undefined ? {} : { title }), ...(description === undefined ? {} : { description }),
-      ...(tags === undefined ? {} : { tags: [...tags] }), ...(contentWarnings === undefined ? {} : { contentWarnings: [...contentWarnings] }),
+      ...(tags === undefined ? {} : { tags: [...new Set(tags)] }), ...(contentWarnings === undefined ? {} : { contentWarnings: [...new Set(contentWarnings)] }),
     }));
-    if (title !== undefined) this.title.set(title);
+    if (title !== undefined) { this.title.set(title); this.trackChange('title', title); }
+    const meta = this.meta();
+    if (description !== undefined) this.trackChange('description', meta.description);
+    if (tags !== undefined) this.trackChange('tags', meta.tags);
+    if (contentWarnings !== undefined) this.trackChange('contentWarnings', meta.contentWarnings);
     this.edited();
   }
 
@@ -218,8 +231,9 @@ export class StoryEditorStore {
       // Keep every live signal while the user-authorized read obtains the latest story ETag.
       const fresh = await this.detail.refetch({ userAction: true });
       if (!this.current(generation)) return;
-      if (fresh === null) { this.error.set(this.detail.error()); return; }
+      if (fresh === null) { this.conflict.set(null); this.error.set(this.detail.error()); return; }
       if (!fresh.nextActions.includes('edit_story')) { this.conflict.set(null); this.invalidState.set(true); this.showError(this.mapper.fromProblem({ code: 'episode_invalid_state' }, 409, null)); return; }
+      this.invalidState.set(false);
       await this.put(fresh.currentStory?.etag ?? '');
     } finally {
       if (this.current(generation)) this.resolving.set(false);
@@ -229,7 +243,7 @@ export class StoryEditorStore {
   private async put(etag: string): Promise<void> {
     if (!this.active() || this.id === null || this.saving()) return;
     if (!etag || !/^"sv-[^"]+"$/.test(etag)) {
-      this.showError(this.mapper.fromProblem({ code: 'if_match_required' }, 428, null)); return;
+      this.conflict.set(null); this.showError(this.mapper.fromProblem({ code: 'if_match_required' }, 428, null)); return;
     }
     const generation = this.generation, id = this.id;
     const sent = this.version(), draft = this.buildDraft(), sentJson = serialize(draft);
@@ -240,18 +254,22 @@ export class StoryEditorStore {
       if (!this.current(generation)) return;
       this.readGeneration++;
       this.snapshot.set(snapshot); this.baselineJson.set(sentJson); this.savedVersion.set(sent);
+      this.recordBaseline(draft);
+      for (const [key, value] of this.draftValues(this.buildDraft())) this.trackChange(key, value);
       if (this.version() === sent) this.dirtyJson.set(sentJson);
       this.savedAt.set(Date.now()); this.conflict.set(null);
     } catch (cause) {
       if (!this.current(generation)) return;
       const error = this.showError(cause);
       if (error.status === 412) {
-        const server = this.detail.episode()?.currentStory ?? this.snapshot();
-        this.conflict.set({ serverEtag: server?.etag ?? etag, serverVersion: server?.version ?? 0 });
-      } else if (error.status === 409 && error.code === 'episode_invalid_state') {
+        this.conflict.set(true);
+      } else {
         this.conflict.set(null);
-        this.invalidState.set(true);
-        await this.detail.refetch();
+        if (error.status === 409 && error.code === 'episode_invalid_state') {
+          this.invalidState.set(true);
+          const fresh = await this.detail.refetch();
+          if (this.current(generation) && fresh?.nextActions.includes('edit_story')) this.invalidState.set(false);
+        }
       }
     } finally {
       if (this.current(generation)) this.saving.set(false);
@@ -264,8 +282,10 @@ export class StoryEditorStore {
     const fresh = await this.detail.refetch(userAction ? { userAction: true } : undefined);
     if (!this.current(generation) || read !== this.readGeneration) return;
     if (fresh === null) { this.error.set(this.detail.error()); return; }
+    if (fresh.nextActions.includes('edit_story')) this.invalidState.set(false);
     if (this.saving() || (!replaceDraft && (this.hasUnsavedChanges() || this.conflict() !== null))) return;
-    this.adopt(fresh.currentStory); this.invalidState.set(false); this.clearErrors();
+    if (!replaceDraft && fresh.currentStory?.etag === this.snapshot()?.etag) return;
+    this.adopt(fresh.currentStory); this.clearErrors();
   }
 
   private adopt(snapshot: StorySnapshot | null): void {
@@ -276,12 +296,14 @@ export class StoryEditorStore {
     this.hookKey.set(draft.hook.segKey); this.endingKey.set(draft.ending.segKey);
     this.hookKeywords.set(draft.hook.keywords); this.endingKeywords.set(draft.ending.keywords);
     this.hookFacts = draft.hook.factRefs; this.endingFacts = draft.ending.factRefs;
-    this.paragraphs.set(draft.paragraphs.map((paragraph) => ({ segKey: paragraph.segKey, beat: paragraph.beat,
-      text: signal(paragraph.text), keywords: signal(paragraph.keywords), factRefs: paragraph.factRefs,
-    })));
+    this.paragraphs.set(draft.paragraphs.map((paragraph) => {
+      const text = signal(paragraph.text);
+      return { segKey: paragraph.segKey, beat: paragraph.beat, text,
+        tokens: computed(() => countTokens(text())), keywords: signal(paragraph.keywords), factRefs: paragraph.factRefs };
+    }));
     this.meta.set({ title: draft.title, description: draft.description, tags: draft.tags, contentWarnings: draft.contentWarnings, structure: draft.structure });
     const baseline = serialize(draft);
-    this.baselineJson.set(baseline); this.dirtyJson.set(baseline); this.savedVersion.set(this.version());
+    this.baselineJson.set(baseline); this.dirtyJson.set(baseline); this.savedVersion.set(this.version()); this.recordBaseline(draft);
     this.conflict.set(null); this.savedAt.set(null);
     window.clearTimeout(this.dirtyTimer);
     this.dirtyTimer = undefined;
@@ -302,6 +324,31 @@ export class StoryEditorStore {
     if (segKey === this.hookKey()) return this.hookKeywords;
     if (segKey === this.endingKey()) return this.endingKeywords;
     return this.paragraphs().find((paragraph) => paragraph.segKey === segKey)?.keywords;
+  }
+
+  private draftValues(draft: StoryDraft): ReadonlyMap<string, string | readonly string[]> {
+    const values = new Map<string, string | readonly string[]>([
+      ['title', draft.title], ['description', draft.description], ['tags', draft.tags], ['contentWarnings', draft.contentWarnings],
+      [draft.hook.segKey, draft.hook.text], [`${draft.hook.segKey}:keywords`, draft.hook.keywords],
+      [draft.ending.segKey, draft.ending.text], [`${draft.ending.segKey}:keywords`, draft.ending.keywords],
+    ]);
+    for (const paragraph of draft.paragraphs) {
+      values.set(paragraph.segKey, paragraph.text); values.set(`${paragraph.segKey}:keywords`, paragraph.keywords);
+    }
+    return values;
+  }
+
+  private recordBaseline(draft: StoryDraft): void {
+    this.baselineValues.clear();
+    for (const [key, value] of this.draftValues(draft)) this.baselineValues.set(key, value);
+    this.changedFields.clear(); this.changedCount.set(0);
+  }
+
+  private trackChange(key: string, value: string | readonly string[]): void {
+    const baseline = this.baselineValues.get(key);
+    const equal = typeof value === 'string' ? value === baseline : Array.isArray(baseline) && value.length === baseline.length && value.every((item, index) => item === baseline[index]);
+    if (equal) this.changedFields.delete(key); else this.changedFields.add(key);
+    this.changedCount.set(this.changedFields.size);
   }
 
   private edited(): void {
@@ -333,19 +380,11 @@ export class StoryEditorStore {
       if (typeof field === 'string') pointers.add(field);
     }
     for (const pointer of pointers) {
-      let address = parseAddress(pointer);
-      if (address === null) {
-        const paragraph = /^paragraphs\[(0|[1-9]\d*)\](?:\.(?:text|keywords|fact_refs|beat)(?:\[\d+\])?)?$/.exec(pointer);
-        if (paragraph?.[1] !== undefined) address = parseAddress(`p:${paragraph[1]}`);
-        else if (/^(?:hook|ending)(?:\.(?:text|keywords|fact_refs)(?:\[\d+\])?)?$/.test(pointer)) address = parseAddress(pointer.split('.')[0] ?? '');
-        else if (pointer === 'description' || pointer === 'tags' || pointer === 'content_warnings') address = parseAddress('meta');
-      }
+      const target = parsePointerAddress(pointer);
+      const address = target === null ? null : parseAddress(target);
       const key = Object.hasOwn(error.fieldErrors, pointer) ? this.mapper.fieldMessageKey(error, pointer) : this.mapper.messageKey(error);
       if (address === null || (address.kind === 'paragraph' && (address.index ?? -1) >= this.paragraphs().length)) form.push(key);
-      else {
-        const target = formatAddress(address.kind, address.index ?? undefined);
-        fields[target] = [...(fields[target] ?? []), key];
-      }
+      else if (target !== null) fields[target] = [...new Set([...(fields[target] ?? []), key])];
     }
     this.fieldErrors.set(fields); this.formErrors.set(form.length > 0 || pointers.size === 0 ? [...new Set(form.length > 0 ? form : [this.mapper.messageKey(error)])] : []);
     return error;
@@ -356,6 +395,7 @@ export class StoryEditorStore {
     this.snapshot.set(null); this.title.set(''); this.hook.set(''); this.ending.set(''); this.meta.set(EMPTY_META);
     this.paragraphs.set([]); this.hookKeywords.set([]); this.endingKeywords.set([]); this.hookKey.set(''); this.endingKey.set('');
     this.hookFacts = []; this.endingFacts = []; this.baselineJson.set(''); this.dirtyJson.set('');
+    this.baselineValues.clear(); this.changedFields.clear(); this.changedCount.set(0);
     this.savedVersion.set(this.version()); this.savedAt.set(null); this.conflict.set(null); this.keywordLimitHit.set(null);
   }
   private teardown(): void {

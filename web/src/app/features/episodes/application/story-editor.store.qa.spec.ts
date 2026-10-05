@@ -220,12 +220,12 @@ describe('StoryEditorStore QA', () => {
       expect(h.stories.calls[1]).toMatchObject({ etag: '"sv-fresh"' }); expect(h.stories.calls[1]?.content.title).toBe('typed behind the dialog');
     });
 
-    it('Save-as-new whose re-read fails sends no PUT, keeps the draft and leaves the conflict open', async () => {
+    it('Save-as-new whose re-read fails sends no PUT, keeps the draft and clears the stale conflict', async () => {
       const h = await loaded(); h.store.setSegmentText('title', 'mine');
       failWith(h, appError('story_version_conflict', 412)); await h.store.saveVersion();
       h.episodes.scriptGet(() => rejected(appError('network_error', 0, { kind: 'network' })));
       await h.store.resolveConflict('saveAsNew');
-      expect(h.stories.calls).toHaveLength(1); expect(h.store.title()).toBe('mine'); expect(h.store.conflict()).not.toBeNull(); expect(h.store.error()).not.toBeNull();
+      expect(h.stories.calls).toHaveLength(1); expect(h.store.title()).toBe('mine'); expect(h.store.conflict()).toBeNull(); expect(h.store.error()?.status).toBe(0);
       expect(h.store.saving()).toBe(false);
       await h.store.resolveConflict('cancel'); expect(h.store.conflict()).toBeNull();
     });

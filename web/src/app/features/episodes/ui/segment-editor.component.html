@@ -22,7 +22,7 @@
 
   @if (viewModel().errorKeys.length > 0) {
     <ul class="segment-editor__errors" [id]="errorId()">
-      @for (errorKey of viewModel().errorKeys; track errorKey) { <li>{{ errorKey | transloco }}</li> }
+      @for (errorKey of viewModel().errorKeys; track $index) { <li>{{ errorKey | transloco }}</li> }
     </ul>
   }
 

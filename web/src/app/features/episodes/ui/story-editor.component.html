@@ -5,7 +5,7 @@
     <div class="story-editor__form-errors" role="alert">
       <strong>{{ 'episodes.editor.saveError' | transloco }}</strong>
       <ul>
-        @for (errorKey of viewModel().formErrors; track errorKey) { <li>{{ errorKey | transloco }}</li> }
+        @for (errorKey of viewModel().formErrors; track $index) { <li>{{ errorKey | transloco }}</li> }
       </ul>
     </div>
   }
@@ -35,12 +35,12 @@
     />
     <nts-story-meta-editor
       [meta]="viewModel().meta"
-      [tokens]="metaTokens()"
+      [tokens]="viewModel().metaTokens"
       [readOnly]="viewModel().readOnly"
       [errorKeys]="metaErrors()"
       (intent)="forward($event)"
     />
-    <nts-scene-strip [segments]="sceneSegments()" />
+    <nts-scene-strip [segments]="sceneSegments()" [segmentTexts]="segmentTexts()" />
     <nts-story-save-bar
       [viewModel]="viewModel().saveBar"
       [totalTokens]="viewModel().totalTokens"

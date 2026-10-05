@@ -41,11 +41,7 @@
         </section>
       }
 
-      @if (store.error() !== null && store.formErrors().length > 0) {
-        <nts-form-error-alert [error]="store.error()" [showTrace]="true" />
-      }
-
-      <nts-story-editor [viewModel]="viewModel()" (intent)="handleIntent($event)" />
+      <nts-story-editor [viewModel]="viewModel()" [segmentTexts]="segmentTexts()" (intent)="handleIntent($event)" />
     }
   }
 </div>

@@ -88,8 +88,9 @@ describe('StoryEditorStore', () => {
     expect(stories.calls[0]?.content.title).toBe('Changed title'); expect(store.snapshot()).toMatchObject({ etag: '"sv-next"', version: 2, wordCount: 42 });
     expect(store.snapshot()?.qualityHints).toHaveLength(1); expect(store.hasUnsavedChanges()).toBe(false); expect(store.isDirty()).toBe(false); expect(store.savedAt()).not.toBeNull();
   });
-  it('save_NoChangeBody_KeepsEtagAndClearsDirty', async () => {
+  it('save_AdoptsRepositoryEtagAndClearsDirtyForChangedBody', async () => {
     const { store, stories } = await loaded(); edit(store, 'The lantern '); await store.saveVersion();
+    expect(stories.calls[0]?.content.title).toBe('The lantern ');
     expect(store.snapshot()?.etag).toBe(storySnapshot().etag); expect(store.hasUnsavedChanges()).toBe(false); expect(store.isDirty()).toBe(false); expect(stories.calls).toHaveLength(1);
   });
   it('save_400_MapsFieldErrorsToSegments', async () => {
@@ -182,7 +183,7 @@ describe('StoryEditorStore', () => {
   });
   it('textEdits_UpdateTokensWithoutRecreatingOtherParagraphsOrRequests', async () => {
     const { store, stories, episodes } = await loaded(); const paragraphs = store.paragraphs(); const target = paragraphs[0]; if (!target) throw new Error('Missing paragraph');
-    store.setText(target.segKey, 'Một hai'); expect(store.segmentTokens().get('p:0')).toBe(2); expect(store.totalTokens()).toBe([...store.segmentTokens().values()].reduce((sum, value) => sum + value, 0)); expect(store.paragraphs()[1]).toBe(paragraphs[1]);
+    store.setText(target.segKey, 'Một hai'); expect(store.segmentTokens().get('p:0')).toBe(2); expect(store.totalTokens()).toBe(22); expect(store.paragraphs()[1]).toBe(paragraphs[1]);
     vi.advanceTimersByTime(1000); expect(stories.calls).toHaveLength(0); expect(episodes.getCalls).toHaveLength(1);
   });
   it('realtime_Burst_CoalescesBackgroundReadAndKeepsDirtyDraftAndEtag', async () => {
@@ -192,7 +193,7 @@ describe('StoryEditorStore', () => {
     expect(episodes.getCalls).toHaveLength(2); expect(episodes.getCalls[1]?.userAction).toBe(false); expect(detail.episode()?.currentStory?.etag).toBe('"sv-elsewhere"'); expect(store.title()).toBe('Changed title'); expect(store.snapshot()?.etag).toBe(storySnapshot().etag);
   });
   it('realtime_CleanDraft_AdoptsFreshSnapshot', async () => {
-    const { store, episodes, realtime } = await loaded(); episodes.scriptGet(() => Promise.resolve(episodeDetail({ currentStory: storySnapshot({ content: storyContent({ title: 'Fresh title' }) }), nextActions: ['edit_story'] })));
+    const { store, episodes, realtime } = await loaded(); episodes.scriptGet(() => Promise.resolve(episodeDetail({ currentStory: storySnapshot({ etag: '"sv-fresh"', content: storyContent({ title: 'Fresh title' }) }), nextActions: ['edit_story'] })));
     realtime.resync(); vi.advanceTimersByTime(250); await settle(); expect(store.title()).toBe('Fresh title'); expect(store.hasUnsavedChanges()).toBe(false);
   });
   it('load_LatePreviousGet_CannotOverwriteNewEpisode', async () => {
@@ -227,5 +228,82 @@ describe('StoryEditorStore', () => {
   it('save_400_OversizedParagraphAddress_IsFormErrorNotException', async () => {
     const state = await loaded(); edit(state.store); state.stories.scriptSave(() => rejected(appError('story_invalid_content', 400, { fieldErrors: { 'paragraphs[9007199254740992].text': ['bad'] } })));
     await state.store.saveVersion(); expect(state.store.formErrors()).toEqual(['errors.story_invalid_content']);
+  });
+  it('realtime_UnchangedEtag_KeepsKeysParagraphSignalsAndSavedAt', async () => {
+    const state = await loaded(); edit(state.store); await state.store.saveVersion();
+    const paragraphs = state.store.paragraphs(), hookKey = state.store.hookKey(), endingKey = state.store.endingKey(), savedAt = state.store.savedAt();
+    state.store.invalidState.set(true);
+    state.episodes.scriptGet(() => Promise.resolve(episodeDetail({ currentStory: state.store.snapshot(), nextActions: ['edit_story'] })));
+    state.realtime.resync(); vi.advanceTimersByTime(250); await settle();
+    expect(state.store.paragraphs()).toBe(paragraphs); expect(state.store.hookKey()).toBe(hookKey); expect(state.store.endingKey()).toBe(endingKey);
+    expect(state.store.title()).toBe('Changed title'); expect(state.store.savedAt()).toBe(savedAt); expect(state.store.invalidState()).toBe(false);
+  });
+  it('realtime_EditStoryReturns_UnlocksDirtyDraftWithoutAdopting', async () => {
+    const state = await loaded(); edit(state.store);
+    state.episodes.scriptGet(() => Promise.resolve(episodeDetail({ nextActions: ['reopen_story'], currentStory: storySnapshot() })));
+    state.stories.scriptSave(() => rejected(appError('episode_invalid_state', 409))); await state.store.saveVersion();
+    expect(state.store.invalidState()).toBe(true);
+    state.episodes.scriptGet(() => Promise.resolve(episodeDetail({ nextActions: ['edit_story'], currentStory: storySnapshot({ etag: '"sv-other"' }) })));
+    state.realtime.resync(); vi.advanceTimersByTime(250); await settle();
+    expect(state.store.invalidState()).toBe(false); expect(state.store.title()).toBe('Changed title'); expect(state.store.saveDisabled()).toBe(false);
+    edit(state.store, 'Editing resumed'); expect(state.store.title()).toBe('Editing resumed');
+  });
+  it.each([{ code: 'network_error', status: 0 }, { code: 'unknown_error', status: 500 }, { code: 'story_invalid_content', status: 400 }, { code: 'payload_too_large', status: 413 }])('resolveConflict_SaveAsNew_$code_ClearsStaleConflict', async ({ code, status }) => {
+    const state = await loaded(); await conflict(state);
+    state.episodes.scriptGet(() => Promise.resolve(episodeDetail({ currentStory: storySnapshot({ etag: '"sv-fresh"' }), nextActions: ['edit_story'] })));
+    state.stories.scriptSave(() => rejected(appError(code, status)));
+    await state.store.resolveConflict('saveAsNew');
+    expect(state.store.conflict()).toBeNull(); expect(state.store.error()?.status).toBe(status); expect(state.store.hasUnsavedChanges()).toBe(true);
+    expect(state.store.title()).toBe('Changed title'); expect(state.stories.calls).toHaveLength(2);
+  });
+  it('resolveConflict_SaveAsNew_FailedRead_ClearsStaleConflict', async () => {
+    const state = await loaded(); await conflict(state);
+    state.episodes.scriptGet(() => rejected(appError('network_error', 0)));
+    await state.store.resolveConflict('saveAsNew');
+    expect(state.store.conflict()).toBeNull(); expect(state.store.error()?.status).toBe(0); expect(state.stories.calls).toHaveLength(1);
+  });
+  it('save_400_DeduplicatesMultiplePointersOnOneSegment', async () => {
+    const state = await loaded(); edit(state.store);
+    state.stories.scriptSave(() => rejected(appError('story_invalid_content', 400, {
+      fieldErrors: { 'p:1': ['invalid'], 'paragraphs[1].keywords': ['invalid'], description: ['invalid'], tags: ['invalid'] },
+      problem: { errors: [{ field: 'paragraphs[1].text' }, { field: 'content_warnings' }] },
+    })));
+    await state.store.saveVersion();
+    expect(state.store.fieldErrors()['p:1']).toEqual(['errors.story_invalid_content']); expect(state.store.fieldErrors().meta).toEqual(['errors.story_invalid_content']);
+  });
+  it('metadata_DeduplicatesServerAndEditedTagsAndWarnings', async () => {
+    const { store } = await loaded(storySnapshot({ content: storyContent({ tags: ['night', 'night'], content_warnings: ['fear', 'fear'] }) }));
+    expect(store.meta().tags).toEqual(['night']); expect(store.meta().contentWarnings).toEqual(['fear']); expect(store.hasUnsavedChanges()).toBe(false);
+    store.setMeta({ tags: ['night', 'night'], contentWarnings: ['fear', 'fear'] }); expect(store.saveDisabled()).toBe(true);
+    store.setMeta({ tags: ['moon', 'moon'], contentWarnings: ['storm', 'storm'] });
+    expect(store.meta().tags).toEqual(['moon']); expect(store.meta().contentWarnings).toEqual(['storm']); expect(store.saveDisabled()).toBe(false);
+  });
+  it('saveDisabled_DoesNotSerializeWhileTypingOrRevertingAnyField', async () => {
+    const { store } = await loaded(); const stringify = vi.spyOn(JSON, 'stringify');
+    try {
+      store.setSegmentText('title', 'changed'); expect(store.saveDisabled()).toBe(false);
+      store.setSegmentText('title', 'The lantern'); expect(store.saveDisabled()).toBe(true);
+      const paragraph = store.paragraphs()[0]; if (!paragraph) throw new Error('Missing paragraph');
+      store.setText(paragraph.segKey, 'changed'); store.setSegmentText('hook', 'changed hook');
+      store.setText(paragraph.segKey, 'Paragraph 1 waits.'); expect(store.saveDisabled()).toBe(false);
+      store.setSegmentText('hook', 'A light appeared.'); expect(store.saveDisabled()).toBe(true);
+      store.updateKeyword(paragraph.segKey, 0, 'new'); expect(store.saveDisabled()).toBe(false);
+      store.updateKeyword(paragraph.segKey, 0, 'road'); expect(store.saveDisabled()).toBe(true);
+      store.setMeta({ description: 'new', tags: ['moon'] }); expect(store.saveDisabled()).toBe(false);
+      store.setMeta({ description: 'A midnight story', tags: ['night'] }); expect(store.saveDisabled()).toBe(true);
+      expect(stringify).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(150); expect(stringify).toHaveBeenCalledTimes(1); expect(store.isDirty()).toBe(false);
+    } finally { stringify.mockRestore(); }
+  });
+  it('tokenCounts_MemoizeEachSegmentAndShareTheMetaCount', async () => {
+    const { store } = await loaded(); expect(store.totalTokens()).toBe(23);
+    const normalize = vi.spyOn(String.prototype, 'normalize');
+    try {
+      const paragraph = store.paragraphs()[0]; if (!paragraph) throw new Error('Missing paragraph');
+      store.setText(paragraph.segKey, 'Một hai'); expect(store.totalTokens()).toBe(22);
+      expect(store.metaTokens()).toBe(3); expect(paragraph.tokens()).toBe(2); expect(normalize).toHaveBeenCalledTimes(1);
+      store.setMeta({ tags: ['moon'] }); expect(store.totalTokens()).toBe(22); expect(store.metaTokens()).toBe(3); expect(normalize).toHaveBeenCalledTimes(1);
+      store.setMeta({ description: 'Một hai ba bốn' }); expect(store.metaTokens()).toBe(4); expect(store.totalTokens()).toBe(23); expect(normalize).toHaveBeenCalledTimes(2);
+    } finally { normalize.mockRestore(); }
   });
 });

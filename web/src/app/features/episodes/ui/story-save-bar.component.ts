@@ -21,7 +21,7 @@ export class StorySaveBarComponent {
       case 'dirty': return 'episodes.editor.unsaved';
       case 'saving': return 'episodes.editor.saving';
       case 'saved': return 'episodes.editor.saved';
-      case 'error': return 'errors.unknown_error';
+      case 'error': return this.viewModel().errorKey;
       case 'clean': return null;
     }
   });

@@ -22,8 +22,8 @@ export function fromContent(content: StoryDraftWire): StoryDraft {
     paragraphs: content.paragraphs.map((paragraph) => ({ beat: paragraph.beat, ...segment(paragraph) })),
     ending: segment(content.ending),
     description: content.description,
-    tags: [...content.tags],
-    contentWarnings: [...content.content_warnings],
+    tags: [...new Set(content.tags)],
+    contentWarnings: [...new Set(content.content_warnings)],
     structure: content.structure,
   };
 }

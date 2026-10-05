@@ -26,4 +26,9 @@ describe('story-codec', () => {
   });
   it('structure_RoundTripsIdenticallyAndRemainsOpaque', () => expect(toContent(fromContent(CONTENT)).structure).toBe(CONTENT.structure));
   it('factRefs_ArePreserved', () => expect(toContent(fromContent(CONTENT)).hook.fact_refs).toEqual(CONTENT.hook.fact_refs));
+  it('fromContent_DeduplicatesTagsAndWarningsWithoutReordering', () => {
+    const draft = fromContent({ ...CONTENT, tags: ['night', 'moon', 'night'], content_warnings: ['fear', 'fear', 'storm'] });
+    expect(draft.tags).toEqual(['night', 'moon']); expect(draft.contentWarnings).toEqual(['fear', 'storm']);
+    expect(toContent(draft).tags).toEqual(['night', 'moon']); expect(toContent(draft).content_warnings).toEqual(['fear', 'storm']);
+  });
 });

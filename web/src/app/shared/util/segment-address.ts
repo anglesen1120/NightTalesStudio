@@ -5,9 +5,26 @@ export interface ParsedAddress { readonly kind: SegmentKind; readonly index: num
 /** Canonical, zero-based addresses only; unknown values never select a segment. */
 export function parseAddress(address: string): ParsedAddress | null {
   if (address === 'title' || address === 'hook' || address === 'ending' || address === 'meta') return { kind: address, index: null };
-  if (!/^p:(0|[1-9]\d*)$/.test(address)) return null;
-  const index = Number(address.substring(2));
+  const match = /^p:(0|[1-9]\d*)$/.exec(address);
+  if (!match || match[0] !== address) return null;
+  const index = Number(match[1]);
   return Number.isSafeInteger(index) ? { kind: 'paragraph', index } : null;
+}
+
+/** Map validated story.v1 field pointers to canonical editor addresses. */
+export function parsePointerAddress(pointer: string): SegmentAddress | null {
+  if (/[\u0000-\u0020\u007f-\u009f]/u.test(pointer)) return null;
+  const canonical = parseAddress(pointer);
+  if (canonical !== null) return formatAddress(canonical.kind, canonical.index ?? undefined);
+  const paragraph = /^paragraphs\[(0|[1-9]\d*)\](?:\.(?:text|beat|(?:keywords|fact_refs)(?:\[(0|[1-9]\d*)\])?))?$/.exec(pointer);
+  if (paragraph !== null) {
+    const address = parseAddress(`p:${paragraph[1]}`);
+    return address?.kind === 'paragraph' ? addressForParagraph(address.index ?? -1) : null;
+  }
+  const segment = /^(hook|ending)(?:\.(?:text|(?:keywords|fact_refs)(?:\[(0|[1-9]\d*)\])?))?$/.exec(pointer);
+  if (segment?.[1] === 'hook' || segment?.[1] === 'ending') return segment[1];
+  if (/^(?:description|(?:tags|content_warnings)(?:\[(0|[1-9]\d*)\])?)$/.test(pointer)) return 'meta';
+  return null;
 }
 
 export function addressForParagraph(index: number): SegmentAddress {

@@ -1,10 +1,11 @@
 import { ChangeDetectionStrategy, Component, DestroyRef, ViewContainerRef, afterRenderEffect, computed, effect, inject, signal, untracked, viewChild } from '@angular/core';
+import type { Signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute } from '@angular/router';
 import { TranslocoPipe, provideTranslocoScope } from '@jsverse/transloco';
 import { AppErrorMapper } from '@core/errors';
 import { ConfirmDialog, ConflictDialog, EmptyState, ErrorState, FormErrorAlert, LoadingState, PageHeader, StatusChip } from '@shared/ui';
-import { formatAddress, parseAddress } from '@shared/util/segment-address';
+import { addressForParagraph, formatAddress, parseAddress } from '@shared/util/segment-address';
 import type { SegmentAddress } from '@shared/util/segment-address';
 import { firstValueFrom } from 'rxjs';
 import { combineLatest } from 'rxjs';
@@ -12,7 +13,7 @@ import { EpisodeDetailStore } from '../application/episode-detail.store';
 import { StoryEditorStore } from '../application/story-editor.store';
 import { StoryEditorComponent } from '../ui/story-editor.component';
 import { buildStoryEditorViewModel } from '../ui/story-editor.view-model';
-import type { StoryEditorIntent } from '../ui/story-editor.view-model';
+import type { SegmentTexts, StoryEditorIntent, StoryEditorViewModel } from '../ui/story-editor.view-model';
 
 const ACTION_KEYS: Readonly<Record<string, string>> = {
   generate_story: 'episodes.editor.action.generate_story',
@@ -54,16 +55,32 @@ export class StoryReviewPage {
   private focusSequence = 0;
   private conflictOpen = false;
 
-  protected readonly viewModel = computed(() => buildStoryEditorViewModel({
-    title: this.store.title(), hook: this.store.hook(), ending: this.store.ending(),
-    hookKey: this.store.hookKey(), endingKey: this.store.endingKey(),
-    hookKeywords: this.store.hookKeywords(), endingKeywords: this.store.endingKeywords(),
-    paragraphs: this.store.paragraphs().map((paragraph) => ({ segKey: paragraph.segKey, beat: paragraph.beat, text: paragraph.text(), keywords: paragraph.keywords() })),
-    meta: this.store.meta(), segmentTokens: this.store.segmentTokens(), totalTokens: this.store.totalTokens(),
-    fieldErrors: this.store.fieldErrors(), formErrors: this.store.formErrors(), readOnly: this.store.readOnly(),
-    keywordLimitHit: this.store.keywordLimitHit(), isDirty: this.store.isDirty(), saving: this.store.saving(),
-    savedAt: this.store.savedAt(), error: this.store.error() !== null, saveDisabled: this.store.saveDisabled(),
-  }));
+  private previousViewModel: StoryEditorViewModel | undefined;
+  protected readonly segmentTexts = computed<SegmentTexts>(() => new Map<SegmentAddress, Signal<string>>([
+    ['hook', this.store.hook],
+    ...this.store.paragraphs().map((paragraph, index) => [addressForParagraph(index), paragraph.text] as const),
+    ['ending', this.store.ending],
+  ]));
+  private readonly saveErrorKey = computed(() => {
+    const error = this.store.error();
+    // A cancelled conflict keeps the draft, not an active save failure announcement.
+    if (error === null || (error.status === 412 && this.store.conflict() === null)) return null;
+    return this.mapper.messageKey(error);
+  });
+  protected readonly viewModel = computed(() => {
+    const next = buildStoryEditorViewModel({
+      title: this.store.title(), hook: this.store.hook(), ending: this.store.ending(),
+      hookKey: this.store.hookKey(), endingKey: this.store.endingKey(),
+      hookKeywords: this.store.hookKeywords(), endingKeywords: this.store.endingKeywords(),
+      paragraphs: this.store.paragraphs().map((paragraph) => ({ segKey: paragraph.segKey, beat: paragraph.beat, text: paragraph.text(), keywords: paragraph.keywords() })),
+      meta: this.store.meta(), metaTokens: this.store.metaTokens(), segmentTokens: this.store.segmentTokens(), totalTokens: this.store.totalTokens(),
+      fieldErrors: this.store.fieldErrors(), formErrors: this.store.formErrors(), readOnly: this.store.readOnly(),
+      keywordLimitHit: this.store.keywordLimitHit(), isDirty: this.store.isDirty(), saving: this.store.saving(),
+      savedAt: this.store.savedAt(), errorKey: this.saveErrorKey(), saveDisabled: this.store.saveDisabled(),
+    }, this.previousViewModel);
+    this.previousViewModel = next;
+    return next;
+  });
   protected readonly loading = computed(() => this.store.loading() || this.store.generating() ||
     (this.store.snapshot() === null && this.detailStore.loading()));
   protected readonly fatalError = computed(() => this.store.snapshot() === null ? this.store.error() ?? this.detailStore.error() : null);

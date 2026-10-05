@@ -1,4 +1,4 @@
-import { addressForParagraph, compareAddresses, formatAddress, parseAddress, remapAfterReorder } from './segment-address';
+import { addressForParagraph, compareAddresses, formatAddress, parseAddress, parsePointerAddress, remapAfterReorder } from './segment-address';
 import type { SegmentAddress } from './segment-address';
 
 describe('segment-address', () => {
@@ -8,7 +8,19 @@ describe('segment-address', () => {
     if (parsed) expect(formatAddress(parsed.kind, parsed.index ?? undefined)).toBe(address);
   });
   it('paragraph_Zero_IsValid', () => { expect(addressForParagraph(0)).toBe('p:0'); expect(parseAddress('p:0')).toEqual({ kind: 'paragraph', index: 0 }); });
-  it.each(['unknown', 'p:-1', 'p:01', 'p:1.2', 'p:Infinity', 'p:9007199254740992', 'p:', ' p:0', 'p:0.text'])('unknownAddress_ReturnsNull_%s', (value) => expect(parseAddress(value)).toBeNull());
+  it.each(['unknown', 'p:-1', 'p:01', 'p:1.2', 'p:Infinity', 'p:9007199254740992', 'p:', ' p:0', 'p:0.text', 'p:1\n'])('unknownAddress_ReturnsNull_%s', (value) => expect(parseAddress(value)).toBeNull());
+  it.each([
+    ['title', 'title'], ['p:0', 'p:0'], ['paragraphs[0]', 'p:0'], ['paragraphs[3].text', 'p:3'],
+    ['paragraphs[2].keywords[1]', 'p:2'], ['paragraphs[1].fact_refs[0]', 'p:1'], ['paragraphs[2].beat', 'p:2'],
+    ['hook.text', 'hook'], ['hook.keywords[0]', 'hook'], ['ending.fact_refs[1]', 'ending'],
+    ['meta', 'meta'], ['description', 'meta'], ['tags[0]', 'meta'], ['content_warnings[1]', 'meta'],
+  ])('parsePointerAddress_Maps_%s', (pointer, address) => expect(parsePointerAddress(pointer)).toBe(address));
+  it.each([
+    '', '__proto__', 'constructor', 'toString', 'HOOK', ' hook', 'hook.', 'hook.text\u0000', 'p:1\n', 'p:\uD800',
+    'paragraphs[-1].text', 'paragraphs[01].text', 'paragraphs[1.5].text', 'paragraphs[9007199254740992].text',
+    'paragraphs[0].text[1]', 'paragraphs[0].keywords[-1]', 'paragraphs[0].keywords[01]', 'paragraphs[0].secret',
+    'tags[-1]', 'content_warnings[01]', 'structure.sub_genre', 'meta.__proto__', 'ending.text.other',
+  ])('parsePointerAddress_RejectsHostileOrUnknown_%j', (pointer) => expect(parsePointerAddress(pointer)).toBeNull());
   it('compareAddresses_UsesDocumentOrder', () => {
     const values: SegmentAddress[] = ['meta', 'p:1', 'ending', 'title', 'p:0', 'hook'];
     expect(values.sort(compareAddresses)).toEqual(['title', 'hook', 'p:0', 'p:1', 'ending', 'meta']);

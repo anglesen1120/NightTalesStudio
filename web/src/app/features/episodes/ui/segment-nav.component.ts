@@ -2,7 +2,7 @@ import { ChangeDetectionStrategy, Component, input, output } from '@angular/core
 import { TranslocoPipe, provideTranslocoScope } from '@jsverse/transloco';
 import { formatAddress, parseAddress } from '@shared/util/segment-address';
 import type { SegmentAddress } from '@shared/util/segment-address';
-import type { SegmentEditorViewModel } from './story-editor.view-model';
+import type { SegmentNavViewModel } from './story-editor.view-model';
 
 @Component({
   selector: 'nts-segment-nav',
@@ -13,7 +13,7 @@ import type { SegmentEditorViewModel } from './story-editor.view-model';
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class SegmentNavComponent {
-  readonly segments = input.required<readonly SegmentEditorViewModel[]>();
+  readonly segments = input.required<readonly SegmentNavViewModel[]>();
   readonly openSegment = output<SegmentAddress>();
 
   protected select(event: Event): void {

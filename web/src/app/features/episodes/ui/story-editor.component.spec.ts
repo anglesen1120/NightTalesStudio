@@ -1,12 +1,16 @@
+import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { TranslocoTestingModule } from '@jsverse/transloco';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { By } from '@angular/platform-browser';
 import type { SegmentAddress } from '@shared/util/segment-address';
 import { ZONELESS_TEST_PROVIDERS } from '../../../testing/providers';
 import episodesVi from '../../../../assets/i18n/episodes/vi.json';
 import errorsVi from '../../../../assets/i18n/errors/vi.json';
 import { StoryEditorComponent } from './story-editor.component';
 import type { SegmentEditorViewModel, StoryEditorViewModel } from './story-editor.view-model';
+import { SceneStripComponent } from './scene-strip.component';
+import { SegmentNavComponent } from './segment-nav.component';
 
 const translations = TranslocoTestingModule.forRoot({
   langs: { vi: episodesVi, 'episodes/vi': episodesVi, 'errors/vi': errorsVi },
@@ -25,12 +29,12 @@ function viewModel(paragraphs = 2): StoryEditorViewModel {
     paragraphs: Array.from({ length: paragraphs }, (_, index) => segment(`p:${index}`, `paragraph-${index}`, `Đoạn ${index + 1}`, index + 3, index + 1, index === 0 ? 'Gieo chuyện' : 'Dồn dập')),
     ending: segment('ending', 'ending-key', 'Kết truyện', 2),
     meta: { title: 'Chuyến xe', description: 'Mô tả ngắn', tags: ['ma'], contentWarnings: [], structure: null },
-    totalTokens: 12,
+    metaTokens: 3, totalTokens: 12,
     readOnly: false,
     fieldErrors: {},
     formErrors: [],
     keywordLimitHit: null,
-    saveBar: { state: 'dirty', disabled: false },
+    saveBar: { state: 'dirty', disabled: false, errorKey: null },
   };
 }
 
@@ -38,9 +42,11 @@ async function setup(vm = viewModel()) {
   await TestBed.configureTestingModule({ imports: [StoryEditorComponent, translations], providers: ZONELESS_TEST_PROVIDERS }).compileComponents();
   const fixture = TestBed.createComponent(StoryEditorComponent);
   fixture.componentRef.setInput('viewModel', vm);
+  const texts = new Map([vm.hook, ...vm.paragraphs, vm.ending].map((segment) => [segment.address, signal(segment.text)] as const));
+  fixture.componentRef.setInput('segmentTexts', texts);
   fixture.detectChanges();
   await fixture.whenStable();
-  return { fixture, root: fixture.nativeElement as HTMLElement, component: fixture.componentInstance };
+  return { fixture, root: fixture.nativeElement as HTMLElement, component: fixture.componentInstance, texts };
 }
 
 afterEach(() => TestBed.resetTestingModule());
@@ -82,5 +88,62 @@ describe('StoryEditorComponent', () => {
     const { root } = await setup();
     const strip = root.querySelector('[data-testid="scene-strip"]')!;
     expect(strip.querySelectorAll('input, textarea, button, select')).toHaveLength(0);
+  });
+  it('keeps nav and scene structure inputs stable during a single text edit', async () => {
+    const initial = viewModel();
+    const { fixture, root, texts } = await setup(initial);
+    const nav = fixture.debugElement.query(By.directive(SegmentNavComponent)).componentInstance as SegmentNavComponent;
+    const strip = fixture.debugElement.query(By.directive(SceneStripComponent)).componentInstance as SceneStripComponent;
+    const navBefore = nav.segments();
+    const scenesBefore = strip.segments();
+    const changed = { ...initial.paragraphs[0]!, text: 'Đoạn 1!' };
+    texts.get('p:0')!.set(changed.text);
+    fixture.componentRef.setInput('viewModel', { ...initial, paragraphs: [changed, initial.paragraphs[1]!] });
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(nav.segments()).toBe(navBefore);
+    expect(strip.segments()).toBe(scenesBefore);
+    expect(root.querySelector('[data-testid="scene-strip"]')?.textContent).toContain('Đoạn 1!');
+
+    fixture.componentRef.setInput('viewModel', { ...initial, paragraphs: [{ ...changed, keywords: ['Sương'] }, initial.paragraphs[1]!] });
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(nav.segments()).toBe(navBefore);
+    expect(strip.segments()).not.toBe(scenesBefore);
+    expect(root.querySelector('[data-testid="scene-strip"]')?.textContent).toContain('Sương');
+  });
+
+  it('announces the mapped error rather than an unknown error, then the unsaved draft', async () => {
+    const initial = viewModel();
+    const { fixture, root } = await setup({ ...initial, saveBar: { state: 'error', disabled: false, errorKey: 'errors.story_invalid_content' }, formErrors: ['errors.story_invalid_content'] });
+    expect(root.querySelectorAll('[role="alert"]')).toHaveLength(1);
+    expect(root.querySelector('[role="status"]')?.textContent).toContain(errorsVi.story_invalid_content);
+    fixture.componentRef.setInput('viewModel', initial);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(root.querySelector('[role="status"]')?.textContent).toContain(episodesVi.editor.unsaved);
+  });
+
+  it('tolerates duplicate field errors, tags and warnings without duplicate track keys', async () => {
+    const initial = viewModel();
+    const warn = vi.spyOn(console, 'warn');
+    const error = vi.spyOn(console, 'error');
+    try {
+      const { root } = await setup({
+        ...initial,
+        hook: { ...initial.hook, errorKeys: ['errors.story_invalid_content', 'errors.story_invalid_content'] },
+        fieldErrors: { meta: ['errors.story_invalid_content', 'errors.story_invalid_content'] },
+        formErrors: ['errors.story_invalid_content', 'errors.story_invalid_content'],
+        meta: { ...initial.meta, tags: ['ma', 'ma'], contentWarnings: ['bạo lực', 'bạo lực'] },
+      });
+      expect(root.querySelectorAll('#seg-hook-errors li')).toHaveLength(2);
+      expect(root.querySelectorAll('#seg-meta-errors li')).toHaveLength(2);
+      expect(root.querySelectorAll('.story-meta__readonly li')).toHaveLength(4);
+      expect(root.querySelectorAll('.story-editor__form-errors li')).toHaveLength(2);
+      expect([...warn.mock.calls, ...error.mock.calls].flat().join(' ')).not.toContain('NG0955');
+    } finally {
+      warn.mockRestore();
+      error.mockRestore();
+    }
   });
 });
