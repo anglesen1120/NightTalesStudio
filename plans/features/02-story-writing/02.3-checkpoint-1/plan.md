@@ -4,7 +4,7 @@
 > Contract: `../README.md` (D3, D4, D8, D9, D12, D13, D21, D22; F11, F12, F13, F25, F29; CR-3, CR-4, CR-7, CR-8, CR-12, CR-32).
 > Template: `../../../00-overview.md` §10.1.
 > Legend: ✅ read from source/docs · ⚠️ unverified · [DECISION] · [OPEN] · [INFERENCE].
-> Status: 02.3.2-T1 doing (Session 21, 2026-10-05); implementation and T3 gates closed, local full `gate.sh` `GATE_RC=0`, PR open. Task acceptance checks are ticked with test evidence in the task file.
+> Status: 02.3.2-T1 done — merged (#159, `5130861`, 2026-10-05); CI refused for billing (CI-01, owner treats as pass), local full `gate.sh` `GATE_RC=0` on `e450682`; T3 gates closed. Task acceptance checks are ticked with test evidence in the task file.
 
 ## 1. Scope
 
