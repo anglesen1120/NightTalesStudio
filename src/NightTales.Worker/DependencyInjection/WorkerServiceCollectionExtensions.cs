@@ -165,6 +165,10 @@ public static class WorkerServiceCollectionExtensions
         // so the editor and the episode page refetch after an edit.
         services.AddOutboxHandler<StoryVersionSaved, StoryVersionSavedRealtimeHandler>();
 
+        // 02.3.2-T1: checkpoint transitions invalidate the owner's episode projection, ids only.
+        services.AddOutboxHandler<StoryApproved, StoryApprovedRealtimeHandler>();
+        services.AddOutboxHandler<StoryReopened, StoryReopenedRealtimeHandler>();
+
         // 02.2.2-T3 (02 README D21): the story generation job, its outbox consumers, the stage progress and the sweeper.
         // Every key has a default, so none is a required start-up key; a value out of range fails the boot.
         services.AddStoryGeneration();

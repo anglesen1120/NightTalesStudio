@@ -1,10 +1,10 @@
 # 02.3 — Checkpoint #1: edit, approve/reopen, true-crime attestation, quality hints
 
 > Refines: `../../02-story-writing.md` §4 epic 02.3 (stories 02.3.1–02.3.4), §6 (mapping).
-> Contract: `../README.md` (D3, D4, D8, D9, D12, D13, D21, D22; F11, F12, F13, F25, F29; CR-3, CR-4, CR-7, CR-8, CR-12).
+> Contract: `../README.md` (D3, D4, D8, D9, D12, D13, D21, D22; F11, F12, F13, F25, F29; CR-3, CR-4, CR-7, CR-8, CR-12, CR-32).
 > Template: `../../../00-overview.md` §10.1.
 > Legend: ✅ read from source/docs · ⚠️ unverified · [DECISION] · [OPEN] · [INFERENCE].
-> Status: detailed plan, 2026-09-23. Nothing implemented yet.
+> Status: 02.3.2-T1 doing (Session 21, 2026-10-05); implementation and T3 gates closed, local full `gate.sh` `GATE_RC=0`, PR open. Task acceptance checks are ticked with test evidence in the task file.
 
 ## 1. Scope
 
@@ -66,11 +66,11 @@ Referenced, not restated (README ids):
 | `created_by` | `uuid` | |
 | `created_at` | `timestamptz` | |
 
-Indexes/constraints: `UNIQUE (episode_id, version)`, `INDEX (episode_id, version DESC)`. No column is added by this feature (all exist via CR-4) — this is deliberate, so 02.3 ships without a migration of its own.
+Indexes/constraints: `UNIQUE (episode_id, version)`, `INDEX (episode_id, version DESC)`. No `story_versions` column is added here (all exist via CR-4). The feature does add the `episodes.approved_at` column below (owner 2026-10-05, 02 CR-32), so the former feature-wide no-migration statement is superseded.
 
 ### 3.2 `episodes` columns used
 
-`status` (09 §7), `current_story_version_id uuid?`, `approved_story_version_id uuid?` (02.3.2), `length_tier`, `topic`. No new column.
+Existing columns: `status` (09 §7), `current_story_version_id uuid?`, `approved_story_version_id uuid?` (02.3.2), `length_tier`, `topic`. **New (02 CR-32, owner 2026-10-05):** `approved_at timestamptz NULL`, added by a generated EF migration in 02.3.2-T1. `Episode.ApproveStory` sets it; `Episode.ReopenStory` clears it. `ApprovalSource { User, Autopilot }` is a Domain `Stories` enum because Domain approval events consume it; the Application command accepts the same enum.
 
 ### 3.3 Attestation: audit, not a column [DECISION]
 
@@ -90,9 +90,9 @@ Text version `ta.v1`, two languages, embedded resources (same mechanism as D5): 
 |---|---|---|---|---|---|
 | job writes a draft (02.2.2-T3) | set | set | set | set | set |
 | 02.3.1 edit | recomputed | recomputed (free, D12); on failure the previous verdict is kept with `stale = true` | scores kept, `stale = true` | recomputed (free) | carried over |
-| 02.3.2 approve | untouched | re-run once and **written back** when the block is absent or `stale = true`, otherwise untouched | untouched | untouched | untouched |
+| 02.3.2 approve | untouched | re-run once when the entire report or block is absent, malformed, stale or unavailable; fresh nonblocking verdict commits with successful approval; rejected fresh verdict write-back rolls back with the failed Unit of Work | untouched | untouched | untouched |
 
-`moderation.stale` is a boolean **inside** the existing `audit_report.moderation` block (mirroring `model_review.stale`), set by 02.3.1 when the free check could not run: it extends D22's `audit.v1` moderation block by one property and adds **no** column, so plan §11's "no migration from this feature" holds. It is cleared by the approve write-back (§4.2 step 5).
+`moderation.stale` is a boolean **inside** the existing `audit_report.moderation` block (mirroring `model_review.stale`), set by 02.3.1 when the moderator check could not run. This JSON property adds no column; it does not eliminate the separate `episodes.approved_at` migration (02 CR-32). Approve clears stale/unavailable markers only with a successful fresh verdict and atomic commit (§4.2 step 7). Edit/approve moderation runs outside `ModerationScope`, currently unmetered; keep the existing warning, with metering owned by plan 12 / 12.1.x (owner 2026-10-05). No synthetic generation run or reservation is created.
 
 ## 4. Use cases
 
@@ -111,7 +111,7 @@ All commands return `ErrorOr<T>`; ProblemDetails `code` per D8. ETags are D9 (`s
 
 ### 4.2 `ApproveStoryCommand(Guid EpisodeId, string IfMatch, AttestationInput? Attestation)` → `ErrorOr<ApprovedStoryDto>`
 
-Precondition order is observable and tested in this order:
+Precondition order is observable and tested in this order. Owner-scoped loading precedes it (unknown/foreign episode → 404). Rows 3–6 describe the real gate owned by 02.3.3-T1 and its prerequisites; 02.3.2-T1 explicitly registers `NullStoryApprovalGate` (success, accepted text version null), which implements no fact-sheet, source, similarity or attestation checks. This task establishes the gate seam/order, not those real checks.
 
 | # | Check | Failure |
 |---|---|---|
@@ -121,18 +121,22 @@ Precondition order is observable and tested in this order:
 | 4 | **true-crime only**: ≥ 2 distinct `fetched` url sources, each cited by ≥ 1 kept fact, distinct `content_sha256` (F13) | 409 `story_sources_required` |
 | 5 | **any topic, whenever the episode has url sources** (02 §5.9 "only true-crime and sourced episodes are checked"; FR-02-10): recompute the score first if it is null (**T31**: `IsScorable` → `Score(...).Score` over the sources corpus only, as in D21 stage 6), then `SimilarityApprovalGuard.Classify(score, options)` (Domain, 02.5.6-T1) must not be `Block` | 409 `story_too_similar_to_source` |
 | 6 | **true-crime only**: `Attestation.Accepted = true` and `Attestation.TextVersion` = `Story:TrueCrime:AttestationVersion` | 400 `story_attestation_required` |
-| 7 | `audit_report.moderation.flagged` has no blocking category (D12). When the block is absent or `stale = true` (an edit during a moderation outage), re-run the free `IContentModerator` check once and **write the fresh verdict back** to the version | 409 `story_moderated` (D8 HTTP table, ✅ T30) |
+| 7 | `audit_report.moderation` has no blocking category (D12). When the entire report or block is absent, malformed, `stale = true` or `unavailable = true`, re-run `IContentModerator` once outside `ModerationScope`, without trusting kept categories as fresh. Re-check failure or a fresh blocking verdict rejects approval (owner R1, 2026-10-05); a fresh nonblocking verdict is written back with stale/unavailable false only with successful approval | 409 `story_moderated` (D8 HTTP table, ✅ T30) |
 | 8 | commit | — |
 
 On success: `episodes.approved_story_version_id = current_story_version_id`, `status = story_approved`; audit `episode.story_approved` and, for true crime, `episode.true_crime_attested` (`data { story_version_id, text_version }`); outbox domain event `StoryApproved { EpisodeId, SeriesId, UserId, StoryVersionId, ApprovalSource = user }` (autopilot calls the same handler with `ApprovalSource = autopilot`). The order puts the cheap idempotent checks first, then the deterministic checks — the true-crime fact-sheet and source rules (3–4) and the source-similarity block (5, which applies to any sourced episode per §5.9) — and only then the human action, the attestation tick (6), so a tick is never collected for an approval that cannot proceed; the moderation verdict is refreshed last (7), exactly once before the commit.
 
+Approval also sets `episodes.approved_at = now` (02 CR-32). Fresh moderation write-back, approval, audit and outbox share one Unit of Work: a rejected fresh verdict or later failure rolls the write-back back; the next approve reruns moderation. Only successful approval commits the fresh verdict atomically. `NullStoryApprovalGate` returns no accepted attestation version, so this task writes no real true-crime attestation audit.
+
 ### 4.3 `ReopenStoryCommand(Guid EpisodeId, string IfMatch)` → `ErrorOr<EpisodeStatusDto>`
 
-`story_approved` only (else 409 `episode_invalid_state`); `If-Match` required (428/412, D9) against the approved current version. Sets `status = story_review` and clears `approved_story_version_id` [DECISION — an approval is not reusable after reopen]; audit `episode.story_reopened`; outbox `StoryReopened { EpisodeId, SeriesId, UserId, StoryVersionId }`. Never allowed from `rendering` (409).
+`story_approved` only (else 409 `episode_invalid_state`); `If-Match` required (428/412, D9) against the approved current version. Sets `status = story_review` and clears `approved_story_version_id` and `approved_at` [DECISION — an approval is not reusable after reopen]; audit `episode.story_reopened`; outbox `StoryReopened { EpisodeId, SeriesId, UserId, StoryVersionId }`. Never allowed from `rendering` (409).
 
 ### 4.4 Queries (02.3.4-T2)
 
 `GetCurrentStoryQuery` feeds `currentStory` (CR-7); `GetStoryVersionsQuery` → version list; `GetStoryVersionQuery(EpisodeId, VersionId)` → version detail. All are read-only, project `qualityHints` from `audit_report` (local + model issues filtered to hints), and never return another user's episode (09 authorization).
+
+**CR-7 hand-off (closed 2026-10-05):** 02.3.4-T2 (Session 22) merged as #156 (`cf4625c`); `ApproveStory_ReviewStateCurrentEtag_SetsApprovedVersionAndStatus_ExposesCurrentStoryEtag` GETs the episode after approve and asserts the reviewed `sv-` value in `currentStory.etag` and the episode's own `ep-<xmin>` ETag (passes in the QA run and the full gate).
 
 ### 4.5 `IStoryRenderInputProvider` hand-off (02.3.2-T1)
 
@@ -147,6 +151,8 @@ On success: `episodes.approved_story_version_id = current_story_version_id`, `st
 | POST | `/api/v1/episodes/{id}/story/reopen` | owner | — + `If-Match` | 200 `{ status, currentStory }` | 409, 412, 428 |
 | GET | `/api/v1/episodes/{id}/story/versions` | owner | — | 200 `StoryVersionSummaryDto[]` | 404 |
 | GET | `/api/v1/episodes/{id}/story/versions/{versionId}` | owner | — | 200 `StoryVersionDetailDto` | 404 |
+
+The new approve/reopen POST routes omit the early runtime `RequireIfMatchFilter` so owner-scoped 404 and state 409 precede missing/stale-header 428/412 (including idempotent re-approve). OpenAPI still declares the required `If-Match` header. Existing PUT story runtime filtering is unchanged. Both POST responses carry the `sv-` ETag in the body and response header.
 
 `StoryVersionDto { versionId, version, source, etag, body, keywords, wordCount, qualityHints[], similarityScore }`. `StoryVersionSummaryDto { versionId, version, source, createdAt, wordCount, etag, similarityScore, approved }`. `QualityHintDto { ruleId, severity, kind, segment, messageKey, evidence, repairDirection? }`.
 
@@ -183,7 +189,7 @@ The UI contract is one-directional: the API section 5 is authoritative; the comp
 
 ## 7. Jobs and integrations
 
-- **No new Hangfire job.** Editing and approving are synchronous commands (no provider call); the only outbound call an edit makes is the free moderation call (D12).
+- **No new Hangfire job.** Editing and approving are synchronous commands; their outbound provider call is draft moderation (D12), including a one-shot approve re-check when needed. Both run outside `ModerationScope`, currently unmetered (plan 12 / 12.1.x open item, owner 2026-10-05); this is not per-call metering evidence.
 - **No paid call on edit** (F25): `ITextClient` is never invoked by 02.3; `model_review` only becomes `stale`.
 - **Reads:** `IContentModerator` (D12), `SimilarityScorer` (D21/02.5.6), `IFactSheetGuard` (D21/02.5.3), `LengthTargetResolver` (D21/02.2), `IAuditLogger`/`AuditBehavior` (D13/CR-3), outbox → `EpisodeUpdated`.
 - **Renders** consume `IStoryRenderInputProvider` (05.5.1); 05 must never read `current_story_version_id` directly, or a reopened story would be rendered.
@@ -246,11 +252,11 @@ Manual: run the true-crime flow on a real episode (sources → sheet → story �
 | 02.3.4-T1 | `StoryQualityChecker` rules | M (1.0) | 02.2.1-T1 |
 | 02.3.4-T2 | Story read models | S (0.5) | 02.2.2-T1, 02.3.4-T1 |
 
-**Total 3.0 d** (README §9 keeps this feature at 3.0, up from the high-level 2.5 — read models + `If-Match` on approve, F11/F25). No new migration, no new project, no new flag.
+**Total 3.0 d** (README §9 keeps this feature at 3.0, up from the high-level 2.5 — read models + `If-Match` on approve, F11/F25). Owner authorized a generated EF migration for nullable `episodes.approved_at` (02 CR-32, 2026-10-05); no new project or flag.
 
 ### Open items for the TL
 
-Every item this plan raised was decided by the TL on 2026-09-23 (README §10) — **nothing is open**:
+The original items below were decided by the TL on 2026-09-23 (README §10). Current owner decisions and open hand-offs (2026-10-05) follow the table; the former "nothing is open" statement is superseded:
 
 | Item raised | Ruling | Applied in |
 |---|---|---|
@@ -263,10 +269,16 @@ Every item this plan raised was decided by the TL on 2026-09-23 (README §10) �
 
 Remaining, owned elsewhere: the version-detail route is CR-12 (00 §8). `QualityIssue.Severity = blocking` is a presentation flag meaning "the server enforces this rule elsewhere" — it never gates approve and never disables the UI button (plan §6), so it needs no contract change.
 
+- **Decided, 02 CR-32:** 02.3.2-T1 adds nullable `episodes.approved_at` with a generated EF migration; the newest migration test owns `migrations[^1]`, and the previous owner is demoted.
+- **Decided, R1:** absent entire `audit_report` uses the same one-shot moderation refresh as an absent/malformed/stale/unavailable block; failure is closed with 409 `story_moderated`, never an absent-report bypass. Rejected fresh verdict write-back rolls back; the next attempt reruns.
+- **Decided, owner 2026-10-05 — API host prerequisite:** API edit/approve uses the real moderator and requires the existing shared `OpenAi:ApiKey` (same Worker key), failing startup when missing. This overrides "no config key" only as a new API requirement for an existing key name; no new key name is introduced. API environment injection in `tools/dev/up.sh` is authorized as an edit only, without stack/dev-DB operations. Api host DI, `docker-compose.yml`, CI placeholder and the `nts-wt/gate.sh` placeholder line followed; startup tests cover the missing-key and alias cases; local full `gate.sh` `GATE_RC=0`.
+- **Open, plan 12 / 12.1.x:** define metering for edit/approve moderation calls outside `ModerationScope`, without a generation run or reservation. Current calls are unmetered and retain the moderator warning (owner 2026-10-05).
+- **Closed, CR-7 / 02.3.4-T2 (#156, `cf4625c`):** approve→GET `currentStory.etag` asserted by `ApproveStory_ReviewStateCurrentEtag_SetsApprovedVersionAndStatus_ExposesCurrentStoryEtag` (pass).
+
 ## 11. Rollout
 
-- **Order:** 02.3.1-T1 → 02.3.2-T1 → 02.3.4-T1/T2 (parallel with 02.3.2) → 02.3.3-T1 once 02.5.3-T2 (fact sheet) and 02.5.6-T1 (similarity) land. The true-crime gates are inert until then because `topic = true_crime` episodes cannot have an approved sheet before 02.5.3.
-- **Migrations:** none from this feature. It depends on CR-4 columns (`story_versions.parent_version_id/fact_sheet_id/schema_version`, `audit_report`) landing in 02.2.2-T1's migration; if that migration ships without them, 02.3.1 adds a small follow-up migration rather than folding into 02.2.2.
+- **Order:** 02.3.1-T1 → 02.3.2-T1 → 02.3.4-T1/T2 (parallel with 02.3.2) → 02.3.3-T1 once 02.5.3-T2 (fact sheet) and 02.5.6-T1 (similarity) land. The explicit `NullStoryApprovalGate` registration remains until 02.3.3-T1 replaces it; no real fact-sheet, source, similarity or attestation gate is delivered by 02.3.2-T1.
+- **Migrations:** 02.3.2-T1 adds nullable `episodes.approved_at timestamptz` with a generated EF migration (owner 2026-10-05, 02 CR-32). Existing CR-4 columns (`story_versions.parent_version_id/fact_sheet_id/schema_version`, `audit_report`) remain owned by 02.2.2-T1. The previous feature-wide "no migration" statement is superseded.
 - **Flags:** no new flag. `source_finder` (02.7) is unrelated; autopilot approval reuses the same command and is gated by 02.8.3.
 - **Rollback:** all four stories are additive. Disabling the true-crime gates (config) is **not** an option — they are the liability control of 02.3.3; rollback means reverting the deploy.
-- **Exit evidence for 02-M1-core:** edit → hint → approve → reopen → edit → approve passes through the API with per-call metering intact, the approved version is what the render reads, and the no-op edit leaves no new version.
+- **Exit evidence for 02-M1-core (not yet exercised by Session 21):** edit → hint → approve → reopen → edit → approve through the API, approved version read by render, and no-op edit leaves no new version. Edit/approve moderation is currently unmetered outside `ModerationScope`; per-call metering is an open plan 12 / 12.1.x requirement, not claimed intact.

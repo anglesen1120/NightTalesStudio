@@ -7,6 +7,7 @@ using Microsoft.Extensions.Options;
 using NightTales.Application.Abstractions;
 using NightTales.Application.Abstractions.Audit;
 using NightTales.Application.Abstractions.Idempotency;
+using NightTales.Application.Abstractions.Moderation;
 using NightTales.Application.Abstractions.Outbox;
 using NightTales.Application.Abstractions.Persistence;
 using NightTales.Application.Abstractions.Realtime;
@@ -20,6 +21,7 @@ using NightTales.Infrastructure.Persistence.Audit;
 using NightTales.Infrastructure.Persistence.Idempotency;
 using NightTales.Infrastructure.Persistence.Outbox;
 using NightTales.Infrastructure.Compliance.Deletion;
+using NightTales.Infrastructure.Compliance;
 using NightTales.Infrastructure.Persistence.Queries;
 using NightTales.Infrastructure.Persistence.Seeding;
 using NightTales.Infrastructure.Persistence.UnitOfWork;
@@ -95,6 +97,10 @@ public static class PersistenceServiceCollectionExtensions
         // The audit interceptor stamps every ICreatedAt/IAuditable row from this clock (09 W3 CR-38).
         // TryAdd, so a host may replace the clock (the tests do, with FakeClock).
         services.TryAddSingleton<IClock, SystemClock>();
+
+        // Moderation evidence is persisted by both hosts, independently of provider composition.
+        // The singleton creates a separate actor-pinned scope for every write; it captures no DbContext.
+        services.TryAddSingleton<IModerationEventWriter, ModerationEventWriter>();
 
         // 09.2.4-T1: the name ↔ type map of the domain events, built here — at composition time — so two
         // events sharing a name fail the start-up instead of a dispatch (09 README D11). The Domain

@@ -84,6 +84,9 @@ services:
         required: false
     environment:
       <<: [*app-env, *dev-env, *storage-mail-env]
+      # 02.3.2-T1: edit/approval moderation shares the existing Worker provider credential.
+      # Canonical configuration wins; absent both values, the Api refuses startup (no dev placeholder).
+      OpenAi__ApiKey: ${OpenAi__ApiKey:-${OPENAI_API_KEY:-}}
       # The internal lease API (02 D10, 02.5.2-T2) is enabled in the container with its own Kestrel endpoint on
       # 0.0.0.0:8081; FETCHER_API_TOKEN comes from compose.env above. 8081 is NOT in ASPNETCORE_HTTP_PORTS (the
       # host declares it in code and the public pipeline never serves it, so listing it would double-bind).

@@ -80,7 +80,24 @@ internal static class SeedPrevious
                                         content, created_at)
             VALUES ('01920000-0000-7000-8000-000000000006', '01920000-0000-7000-8000-000000000001',
                     '01920000-0000-7000-8000-000000000004', 1, 'generated', 'Seed story', 'Seed body', '{}', 2,
-                    '{}'::jsonb, now())
+                    '{}'::jsonb, now());
+
+            -- 02.3.2-T1: only schema N-1 after 02_EpisodeApprovedAt has this column. Reuse the
+            -- existing owner/series/episode/version so the next migration must preserve approval data.
+            DO $$
+            BEGIN
+                IF EXISTS (SELECT 1 FROM information_schema.columns
+                           WHERE table_schema = 'public' AND table_name = 'episodes'
+                             AND column_name = 'approved_at') THEN
+                    UPDATE episodes
+                    SET approved_at = TIMESTAMPTZ '2026-10-05 08:00:00+00', status = 'story_approved',
+                        current_story_version_id = '01920000-0000-7000-8000-000000000006',
+                        approved_story_version_id = '01920000-0000-7000-8000-000000000006'
+                    WHERE id = '01920000-0000-7000-8000-000000000004'
+                      AND user_id = '01920000-0000-7000-8000-000000000001'
+                      AND series_id = '01920000-0000-7000-8000-000000000002';
+                END IF;
+            END $$;
             """),
         (
             "usage_records",
