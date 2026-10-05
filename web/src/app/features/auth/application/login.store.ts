@@ -138,7 +138,7 @@ export class LoginStore {
    */
   async submitMfa(rawCode: string): Promise<void> {
     const mfaToken = this.mfaTokenState();
-    const code = rawCode.trim();
+    const code = rawCode.replace(/\s+/g, '');
     if (mfaToken === null || code === '' || this.submittingState() || this.rateLimitedUntilState() !== null) return;
     const generation = this.session.generation();
     const attempt = ++this.mfaAttempt;

@@ -125,7 +125,7 @@ export class EnrolmentStore {
 
   /** `POST /me/mfa/verify { code }` → exactly 10 recovery codes (`step 'codes'`); the secret is dropped with them. */
   async verify(rawCode: string): Promise<void> {
-    const code = rawCode.trim();
+    const code = rawCode.replace(/\s+/g, '');
     const step = this.stepState();
     if (code === '' || (step !== 'show' && step !== 'verify') || !this.canSubmit()) return;
     const generation = this.session.generation();

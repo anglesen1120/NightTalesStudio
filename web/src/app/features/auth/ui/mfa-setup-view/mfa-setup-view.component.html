@@ -102,6 +102,7 @@
             mat-stroked-button
             type="button"
             [disabled]="vm().submitting || vm().retryAfterSec !== null"
+            [disabledInteractive]="true"
             (click)="regenerate.emit()"
           >
             {{ 'auth.enrol.regenerate' | transloco }}

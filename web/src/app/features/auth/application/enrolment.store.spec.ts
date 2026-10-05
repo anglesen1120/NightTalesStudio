@@ -250,6 +250,13 @@ describe('EnrolmentStore', () => {
       expect(repo.callsOf('verify')).toBe(0);
     });
 
+    it('EnrolmentStore_Verify_SpacedDisplayCode_SendsCompactDigits', async () => {
+      const { store, repo } = await atShow();
+      repo.willReturn('verify', { ok: true, value: fakeRecoveryCodes('rc') });
+      await store.verify('123 456');
+      expect(repo.calls.at(-1)).toEqual({ method: 'verify', args: ['123456'] });
+    });
+
     it('EnrolmentStore_Verify_BeforeSetupLoaded_MakesNoRequest', async () => {
       const { store, repo } = setup();
       await store.verify('123456');

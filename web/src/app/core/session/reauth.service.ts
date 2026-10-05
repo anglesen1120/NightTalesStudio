@@ -147,11 +147,13 @@ export class ReauthService implements SessionScoped {
       done: false,
     };
     this.flight = flight;
-    void this.attachDialog(flight);
+    // Captured before the lazy imports: by the time the dialog attaches, focus may already have moved.
+    const trigger = typeof document !== 'undefined' && document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    void this.attachDialog(flight, trigger);
     return flight;
   }
 
-  private async attachDialog(flight: Flight): Promise<void> {
+  private async attachDialog(flight: Flight, trigger: HTMLElement | null): Promise<void> {
     let component: Type<ReauthDialogComponent>;
     let dialog: MatDialog;
     try {
@@ -177,7 +179,7 @@ export class ReauthService implements SessionScoped {
     try {
       const ref = dialog.open<ReauthDialogComponent, ReauthDialogData, void>(component, {
         data: { requireCode: REQUIRE_CODE },
-        restoreFocus: true,
+        restoreFocus: trigger !== null && trigger !== document.body ? trigger : true,
         autoFocus: '#reauth-password',
         ariaModal: true,
       });
@@ -213,7 +215,7 @@ export class ReauthService implements SessionScoped {
     ref.disableClose = true;
     this.push(flight, { ...flight.state, submitting: true, errorKey: null, errorField: null, traceId: null });
 
-    const outcome = await this.injector.get(ReauthPort).reauth(result.password, result.code);
+    const outcome = await this.injector.get(ReauthPort).reauth(result.password, result.code.replace(/\s+/g, ''));
     flight.submitting = false;
     ref.disableClose = false;
 

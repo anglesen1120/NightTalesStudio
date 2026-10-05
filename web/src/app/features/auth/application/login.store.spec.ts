@@ -312,6 +312,20 @@ describe('LoginStore', () => {
       expect(store.mfaToken()).toBeNull();
     });
 
+    it('LoginStore_SubmitMfa_SpacedTotp_SendsCodeWithoutWhitespace', async () => {
+      const { store, repo } = await atMfaStep();
+      repo.willReturn('loginMfa', { ok: true, value: { kind: 'ok', session: SESSION } });
+      await store.submitMfa('123 456');
+      expect(lastCall(repo)?.args).toEqual(['mfa-secret', '123456', 'totp']);
+    });
+
+    it('LoginStore_SubmitMfa_WhitespaceOnly_MakesNoRequest', async () => {
+      const { store, repo } = await atMfaStep();
+      await store.submitMfa(' \t\n ');
+      expect(repo.calls.filter((call) => call.method === 'loginMfa')).toHaveLength(0);
+      expect(store.submitting()).toBe(false);
+    });
+
     it.each(['https://evil.example', '//evil.example'])('LoginStore_SubmitMfa_Ok_RejectsReturnUrl_%s', async (bad) => {
       const { store, repo, navigate } = await atMfaStep(bad);
       repo.willReturn('loginMfa', { ok: true, value: { kind: 'ok', session: SESSION } });

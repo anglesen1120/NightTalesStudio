@@ -146,6 +146,13 @@ export class LoginPageComponent {
       this.bootRedirected = true;
       void this.router.navigateByUrl('/dashboard');
     });
+
+    // A session end that lands while this page is already mounted (a guard bounce reuses the component) shows the
+    // banner; focus moves to the heading exactly as on a fresh mount.
+    effect(() => {
+      if (this.session.endReason() === null) return;
+      afterNextRender(() => this.focusIn(this.host.nativeElement, '[data-page-heading]'), { injector: this.injector });
+    });
   }
 
   protected submit(): void {
