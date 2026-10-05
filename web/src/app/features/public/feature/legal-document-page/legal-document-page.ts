@@ -1,9 +1,14 @@
-import { ChangeDetectionStrategy, Component, computed, inject, input } from '@angular/core';
+import { ChangeDetectionStrategy, Component, inject } from '@angular/core';
+import { ActivatedRoute } from '@angular/router';
 import type { LegalDocumentViewModel } from '../../domain/legal-document-view.model';
 import type { LegalDoc, LegalDocument, LegalLang } from '../../domain/legal.model';
-import { LegalRepository } from '../../domain/legal.port';
 import { LegalDocumentView } from '../../ui/legal-document-view/legal-document-view';
 
+/**
+ * Routed container of the four legal pages. The route is static, so its snapshot data is final: `doc` / `lang` come
+ * from the route definition and `legal` is the document `legalResolver` already looked up (`null` for
+ * `legal_content_missing`, which renders the EmptyState). No second repository lookup.
+ */
 @Component({
   selector: 'nts-legal-document-page',
   imports: [LegalDocumentView],
@@ -11,21 +16,12 @@ import { LegalDocumentView } from '../../ui/legal-document-view/legal-document-v
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class LegalDocumentPage {
-  readonly doc = input.required<LegalDoc>();
-  readonly lang = input.required<LegalLang>();
+  private readonly data = inject(ActivatedRoute).snapshot.data;
 
-  private readonly repository = inject(LegalRepository);
-
-  protected readonly viewModel = computed<LegalDocumentViewModel>(() => {
-    const doc = this.doc();
-    const lang = this.lang();
-    let document: LegalDocument | null;
-    try {
-      document = this.repository.get(doc, lang);
-    } catch (error: unknown) {
-      if (!(error instanceof Error) || error.message !== 'legal_content_missing') throw error;
-      document = null;
-    }
+  protected readonly viewModel: LegalDocumentViewModel = (() => {
+    const doc = this.data['doc'] as LegalDoc;
+    const lang = this.data['lang'] as LegalLang;
+    const document = (this.data['legal'] ?? null) as LegalDocument | null;
     const otherLang: LegalLang = lang === 'vi' ? 'en' : 'vi';
     return {
       doc,
@@ -34,5 +30,5 @@ export class LegalDocumentPage {
       otherLang,
       siblingRoute: ['/', otherLang, doc],
     };
-  });
+  })();
 }

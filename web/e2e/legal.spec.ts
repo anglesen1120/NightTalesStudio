@@ -15,6 +15,44 @@ const LANGS = ['vi', 'en'] as const;
 const ROUTES = LANGS.flatMap((lang) => DOCS.map((doc) => ({ lang, doc, path: `/${lang}/${doc}` })));
 const SIBLING = { vi: 'en', en: 'vi' } as const;
 
+// Independent of the generated module: fixed strings copied verbatim from the authored Markdown in
+// `src/content/legal/<doc>.1.0.0.<lang>.md`, so a generator that silently drops a block cannot pass (CR3).
+// Per document x language: one `##` heading, one paragraph sentence fragment and one list item.
+const MARKERS = {
+  privacy: {
+    vi: {
+      heading: '2. Dữ liệu chúng tôi thu thập',
+      paragraph: 'là một dịch vụ cá nhân do chính chủ vận hành',
+      item: 'Yêu cầu xoá tài khoản của bạn được hoàn thành trong vòng 7 ngày.',
+    },
+    en: {
+      heading: '2. Data we collect',
+      paragraph: 'is a personal, owner-operated service',
+      item: 'Account data: your e-mail address, your display name',
+    },
+  },
+  terms: {
+    vi: {
+      heading: '2. Điều kiện sử dụng',
+      paragraph: 'là một dịch vụ cá nhân do chính chủ vận hành',
+      item: 'Tín dụng được cấp dùng thử hết hạn sau 30 (ba mươi) ngày kể từ khi được cấp.',
+    },
+    en: {
+      heading: '2. Eligibility',
+      paragraph: 'is a personal, owner-operated service that turns a story you approve',
+      item: 'Credits granted as a trial expire 30 (thirty) days after they are granted.',
+    },
+  },
+} as const;
+
+/** Asserts the three authored markers of one document x language are on the page. */
+async function expectMarkers(page: Page, doc: (typeof DOCS)[number], lang: (typeof LANGS)[number]): Promise<void> {
+  const marker = MARKERS[doc][lang];
+  await expect(page.locator('h2', { hasText: marker.heading }).first()).toBeVisible();
+  await expect(page.locator('p', { hasText: marker.paragraph }).first()).toBeVisible();
+  await expect(page.locator('li', { hasText: marker.item }).first()).toBeVisible();
+}
+
 /** Blocks every `/api/**` request and records it; the pages have no runtime data, so the list must stay empty. */
 async function blockApi(page: Page): Promise<string[]> {
   const seen: string[] = [];
@@ -42,6 +80,7 @@ for (const { lang, doc, path } of ROUTES) {
       await page.waitForLoadState('networkidle');
 
       await expect(page.locator('h1')).toHaveText(content.title);
+      await expectMarkers(page, doc, lang);
       await expect(page.locator('html')).toHaveAttribute('lang', lang);
       const body = page.locator('body');
       await expect(body).toContainText(content.version);
@@ -84,6 +123,7 @@ for (const { lang, doc, path } of ROUTES) {
         expect(response?.status()).toBe(200);
 
         await expect(page.locator('h1')).toHaveText(content.title);
+        await expectMarkers(page, doc, lang);
         await expect(page.locator('body')).toContainText(content.version);
         const firstHeading = content.blocks.find((block) => block.kind === 'heading');
         const headingText = (firstHeading?.runs ?? []).map((run) => run.text).join('');
@@ -140,10 +180,14 @@ for (const { lang, doc, path } of ROUTES) {
 
 test.describe('default-language redirects', () => {
   for (const doc of DOCS) {
-    test(`/${doc} lands on /vi/${doc}`, async ({ page }) => {
+    // The redirect path is not a legal leaf, but it is session-free too: no `/api/**` request (no boot refresh).
+    test(`/${doc} lands on /vi/${doc} with zero API requests`, async ({ page }) => {
+      const api = await blockApi(page);
       await page.goto(`/${doc}`);
       await expect(page).toHaveURL(new RegExp(`/vi/${doc}$`));
       await expect(page.locator('h1')).toHaveText(LEGAL_CONTENT[doc].vi.title);
+      await page.waitForLoadState('networkidle');
+      expect(api, 'no /api/** request may be issued on the redirect path').toEqual([]);
     });
   }
 });

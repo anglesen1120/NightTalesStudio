@@ -1,5 +1,6 @@
-import { TestBed, type ComponentFixture } from '@angular/core/testing';
+import { TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
+import { RouterTestingHarness } from '@angular/router/testing';
 import { TranslocoTestingModule, provideTranslocoScope } from '@jsverse/transloco';
 import { describe, expect, it } from 'vitest';
 import coreEn from '../../../../../assets/i18n/core/en.json';
@@ -7,8 +8,8 @@ import coreVi from '../../../../../assets/i18n/core/vi.json';
 import publicEn from '../../../../../assets/i18n/public/en.json';
 import publicVi from '../../../../../assets/i18n/public/vi.json';
 import { ZONELESS_TEST_PROVIDERS } from '../../../../testing/providers';
-import type { LegalDocument } from '../../domain/legal.model';
-import { LegalRepository } from '../../domain/legal.port';
+import type { LegalDoc, LegalDocument, LegalLang } from '../../domain/legal.model';
+import type { LegalRepository } from '../../domain/legal.port';
 import { LEGAL_CONTENT } from '../../data-access/legal-content.generated';
 import { GeneratedLegalRepository } from '../../data-access/legal.repository';
 import { FakeLegalRepository } from '../../testing/fake-legal.repository';
@@ -45,41 +46,62 @@ const legalDocument: LegalDocument = {
   ],
 };
 
+// Mirrors what `legalResolver` hands the page: the looked-up document, or `null` for `legal_content_missing`.
+function lookup(repository: LegalRepository, doc: string, lang: string): LegalDocument | null {
+  try {
+    return repository.get(doc as LegalDoc, lang as LegalLang);
+  } catch (error: unknown) {
+    if (error instanceof Error && error.message === 'legal_content_missing') return null;
+    throw error;
+  }
+}
+
+// The page reads `doc`, `lang` and the resolved `legal` from ActivatedRoute data; `lookups` proves one lookup per route.
 async function render(
   repository: LegalRepository,
   doc: string = 'privacy',
   lang: string = 'vi',
-): Promise<ComponentFixture<LegalDocumentPage>> {
+): Promise<{ root: HTMLElement; lookups: number }> {
+  const state = { lookups: 0 };
   await TestBed.configureTestingModule({
-    imports: [LegalDocumentPage, translations],
+    imports: [translations],
     providers: [
       ...ZONELESS_TEST_PROVIDERS,
-      provideRouter([]),
-      provideTranslocoScope('public'),
-      { provide: LegalRepository, useValue: repository },
+      provideRouter([
+        {
+          path: 'legal',
+          component: LegalDocumentPage,
+          data: { doc, lang },
+          resolve: {
+            legal: () => {
+              state.lookups += 1;
+              return lookup(repository, doc, lang);
+            },
+          },
+          providers: [provideTranslocoScope('public')],
+        },
+      ]),
     ],
   }).compileComponents();
-  const fixture = TestBed.createComponent(LegalDocumentPage);
-  fixture.componentRef.setInput('doc', doc);
-  fixture.componentRef.setInput('lang', lang);
-  await fixture.whenStable();
-  return fixture;
+  const harness = await RouterTestingHarness.create();
+  await harness.navigateByUrl('/legal', LegalDocumentPage);
+  await harness.fixture.whenStable();
+  return { root: harness.routeNativeElement as HTMLElement, lookups: state.lookups };
 }
 
 describe('LegalDocumentPage', () => {
-  it('looks up the bound doc and lang and passes the document to the legal view', async () => {
+  it('shows the document the route resolved, with a single lookup', async () => {
     const repository = new FakeLegalRepository();
     repository.set(legalDocument);
-    const fixture = await render(repository);
-    const root = fixture.nativeElement as HTMLElement;
+    const { root, lookups } = await render(repository);
 
+    expect(lookups).toBe(1);
     expect(root.querySelector('h1')?.textContent).toContain(legalDocument.title);
     expect(root.querySelector('[data-legal-block]')?.textContent).toContain('Repository content');
   });
 
-  it('maps legal_content_missing to the legal EmptyState', async () => {
-    const fixture = await render(new FakeLegalRepository());
-    const root = fixture.nativeElement as HTMLElement;
+  it('renders the legal EmptyState when the resolved document is null (legal_content_missing)', async () => {
+    const { root } = await render(new FakeLegalRepository());
 
     expect(root.querySelector('nts-empty-state')).not.toBeNull();
     expect(root.textContent).toContain(publicVi.legal.empty);
@@ -89,8 +111,7 @@ describe('LegalDocumentPage', () => {
   it.each(['__proto__', 'constructor', 'toString'])(
     'renders the EmptyState for the inherited property name %s with the generated repository',
     async (doc) => {
-      const fixture = await render(new GeneratedLegalRepository(), doc);
-      const root = fixture.nativeElement as HTMLElement;
+      const { root } = await render(new GeneratedLegalRepository(), doc);
 
       expect(root.querySelector('nts-empty-state')).not.toBeNull();
       expect(root.querySelector('[data-legal-block]')).toBeNull();
@@ -103,8 +124,7 @@ describe('LegalDocumentPage', () => {
     ['terms', 'vi'],
     ['terms', 'en'],
   ] as const)('renders the committed %s/%s document through the generated repository', async (doc, lang) => {
-    const fixture = await render(new GeneratedLegalRepository(), doc, lang);
-    const root = fixture.nativeElement as HTMLElement;
+    const { root } = await render(new GeneratedLegalRepository(), doc, lang);
     const expected = LEGAL_CONTENT[doc][lang];
 
     expect(root.querySelector('h1')?.textContent).toContain(expected.title);

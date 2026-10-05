@@ -15,8 +15,8 @@
 //   href: `https://…` (valid URL, no credentials), `mailto:…`, or a site-relative `/…` (not `//`).
 //
 // Text rules: UTF-8 is validated strictly (TextDecoder fatal). CRLF is normalised to LF; any other control
-// character (a lone CR and TAB included), DEL, C1, U+2028/2029, bidi controls (U+202A-202E, U+2066-2069) and
-// U+FEFF (a BOM, anywhere) are rejected.
+// character (a lone CR and TAB included), DEL, C1, U+2028/2029, bidi and invisible formatting characters
+// (U+061C, U+200B-200F, U+202A-202E, U+2060, U+2066-2069) and U+FEFF (a BOM, anywhere) are rejected.
 //
 // Every rejection is `<file>:<line>: <reason>` on stderr and exit 1; the output file is written only after every
 // document passed (temp file + rename), so a failed run never leaves a partial or stale-mixed file.
@@ -100,7 +100,7 @@ const lineOfOffset = (bytes, offset) => {
   return line;
 };
 
-const FORBIDDEN_CHAR = /[\u0000-\u0009\u000b-\u001f\u007f-\u009f\u2028\u2029\u202a-\u202e\u2066-\u2069\ufeff]/u;
+const FORBIDDEN_CHAR = /[\u0000-\u0009\u000b-\u001f\u007f-\u009f\u061c\u200b-\u200f\u2028\u2029\u202a-\u202e\u2060\u2066-\u2069\ufeff]/u;
 const charName = (ch) => `U+${ch.codePointAt(0).toString(16).toUpperCase().padStart(4, '0')}`;
 
 /** Reads one Markdown file: strict UTF-8, CRLF -> LF, forbidden characters rejected. Returns its lines. */
@@ -281,6 +281,7 @@ export function parseMarkdown(lines, file) {
   };
   const blocks = [];
   let title = null;
+  let titleLine = 1;
   let paragraph = null; // { kind: 'paragraph'|'quote', items: [{ text, line }] }
   let list = null; // { ordered, items: [{ text, line }] , pendingBlank }
   let previousBlank = true;
@@ -325,6 +326,7 @@ export function parseMarkdown(lines, file) {
       const runs = parseInline(joinLines([{ text, line }]), file, { plain: true });
       title = runs.map((run) => run.text).join('');
       if (title === '') fail(line, 'title is empty');
+      titleLine = line;
       previousBlank = false;
       previousWasItem = false;
       return;
@@ -406,6 +408,8 @@ export function parseMarkdown(lines, file) {
     previousWasItem = false;
   });
   closeAll();
+  if (title === null) fail(1, 'missing H1 title');
+  if (blocks.length === 0) fail(titleLine, 'document has no content after the title');
   return { title, blocks };
 }
 

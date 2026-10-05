@@ -10,7 +10,7 @@ function legalRoute(doc: LegalDoc, lang: LegalLang): Route {
     path: `${lang}/${doc}`,
     loadComponent: () =>
       import('./feature/legal-document-page/legal-document-page').then((module) => module.LegalDocumentPage),
-    // Static data is bound to the page's `doc` / `lang` inputs (withComponentInputBinding in app.config.ts).
+    // Static data feeds `legalResolver` and the page, which reads it (and the resolved `legal`) from ActivatedRoute.
     data: { doc, lang },
     resolve: { legal: legalResolver },
     providers: [{ provide: LegalRepository, useClass: GeneratedLegalRepository }, provideTranslocoScope('public')],

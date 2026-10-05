@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { after, describe, it } from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { convert } from './legal-to-json.mjs';
+import { convert, LegalError, parseMarkdown } from './legal-to-json.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SCRIPT = join(HERE, 'legal-to-json.mjs');
@@ -194,6 +194,13 @@ const BODY_CASES = [
   ['line separator', 'bad\u2028char', 3, /U\+2028/],
   ['C1 control', 'bad\u0085char', 3, /U\+0085/],
   ['BOM in the middle', 'bad\ufeffchar', 3, /byte order mark/],
+  ['Arabic letter mark', 'bad\u061cchar', 3, /U\+061C/],
+  ['zero width space', 'bad\u200bchar', 3, /U\+200B/],
+  ['zero width non-joiner', 'bad\u200cchar', 3, /U\+200C/],
+  ['zero width joiner', 'bad\u200dchar', 3, /U\+200D/],
+  ['left-to-right mark', 'bad\u200echar', 3, /U\+200E/],
+  ['right-to-left mark', 'bad\u200fchar', 3, /U\+200F/],
+  ['word joiner', 'bad\u2060char', 3, /U\+2060/],
   ['percent-encoded javascript scheme', 'A [x](%6Aavascript:alert) link.', 3, /link scheme not allowed/],
   ['tab inside a javascript scheme', 'A [x](java\tscript:alert) link.', 3, /control or bidi character U\+0009/],
   ['backslash-led site-relative link', 'A [x](/\\evil.example) link.', 3, /backslash|illegal character/],
@@ -230,6 +237,36 @@ describe('legal-to-json: rejections name file and line and never write output', 
       writeFileSync(join(dir, 'privacy.1.2.3.en.md'), text);
       assertRejected(generate(dir), 'privacy.1.2.3.en.md', 1, /blank file/);
     }
+  });
+
+  it('rejects an H1-only file (no content after the title) naming the title line', () => {
+    for (const text of ['# T\n', '# T\n\n\n', '\n# T\n\n']) {
+      const dir = sample('h1-only');
+      writeFileSync(join(dir, 'privacy.1.2.3.en.md'), text);
+      assertRejected(generate(dir), 'privacy.1.2.3.en.md', text.startsWith('\n') ? 2 : 1, /document has no content after the title/);
+    }
+  });
+
+  it('--file rejects empty, whitespace-only and H1-only files with one file:line diagnostic and no stack', () => {
+    const dir = fresh('file-mode');
+    for (const [name, text, line, reason] of [
+      ['empty.md', '', 1, /blank file/],
+      ['whitespace.md', '\n \n\n', 1, /blank file/],
+      ['h1-only.md', '# T\n', 1, /document has no content after the title/],
+    ]) {
+      writeFileSync(join(dir, name), text);
+      const result = cli('--fixtures', dir, '--file', name);
+      assert.equal(result.code, 1, result.err);
+      assert.equal(result.err.trim().split('\n').length, 1, result.err);
+      assert.match(result.err, new RegExp(`${name.replace('.', '\\.')}:${line}: `));
+      assert.match(result.err, reason);
+      assert.doesNotMatch(result.err, /\n\s+at |TypeError/);
+    }
+  });
+
+  it('parseMarkdown rejects a document without a title as a LegalError, not a TypeError', () => {
+    assert.throws(() => parseMarkdown([], 'x.md'), (error) => error instanceof LegalError && /^x\.md:1: missing H1 title$/.test(error.message));
+    assert.throws(() => parseMarkdown([''], 'x.md'), (error) => error instanceof LegalError && /missing H1 title/.test(error.message));
   });
 
   it('rejects invalid UTF-8 bytes and a lone surrogate (CESU bytes) at the right line', () => {
