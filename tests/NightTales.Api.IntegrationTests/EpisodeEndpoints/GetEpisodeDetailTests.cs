@@ -8,6 +8,7 @@ using NightTales.Api.IntegrationTests.Harness;
 using NightTales.Domain.Assets;
 using NightTales.Domain.Common;
 using NightTales.Domain.Episodes;
+using NightTales.Domain.Stories.Generation;
 using NightTales.Infrastructure.Persistence;
 using NightTales.TestKit;
 using NightTales.TestKit.Api;
@@ -416,6 +417,98 @@ public sealed class GetEpisodeDetailTests(TestDatabase database) : IntegrationTe
         response.Headers.CacheControl!.ToString().ShouldBe("no-cache", "the page is revalidated every time");
         response.Headers.Vary.ShouldContain("Authorization");
         interceptor.Count.ShouldBe(2, "the episode projection and the CR-7 latest-generation read; no asset read for an episode without a video");
+    }
+
+    [Theory]
+    [InlineData(GenerationRunStatus.Queued)]
+    [InlineData(GenerationRunStatus.Running)]
+    public async Task IfNoneMatch_Current_Etag_WithActiveGeneration_Returns_200_With_Body(GenerationRunStatus status)
+    {
+        var userId = await CreateUserAsync();
+        var seriesId = await SeedSeriesAsync(userId);
+        var episodeId = await SeedEpisodeAsync(userId, seriesId, status: EpisodeStatus.StoryGenerating);
+        var queued = GenerationRun.Queue(userId, seriesId, episodeId, GenerationKind.Story,
+            GenerationTrigger.User, null, EpisodeStatus.Draft, null, null, 0m, Start);
+        queued.IsError.ShouldBeFalse();
+        var run = queued.Value;
+        if (status == GenerationRunStatus.Running)
+        {
+            run.Start(Start.AddSeconds(1));
+        }
+
+        await using (var db = Database.CreateAppDbContext(new TestCurrentUser { Id = userId }))
+        {
+            db.GenerationRuns.Add(run);
+            await db.SaveChangesAsync(Ct);
+        }
+
+        using var factory = new ApiFactory(Database, new FakeClock(Start));
+        using var client = factory.ClientFor(userId);
+        var current = await ReadETagAsync(client, episodeId);
+
+        if (status == GenerationRunStatus.Running)
+        {
+            // Progress can advance independently of episodes.xmin: the cached tag must not hide it.
+            await using var db = Database.CreateAppDbContext(new TestCurrentUser { Id = userId });
+            var tracked = await db.GenerationRuns.SingleAsync(candidate => candidate.Id == run.Id, Ct);
+            tracked.AdvanceStage(GenerationStage.Reviewing, Start.AddSeconds(2)).IsError.ShouldBeFalse();
+            await db.SaveChangesAsync(Ct);
+        }
+
+        using var response = await ConditionalGetAsync(client, episodeId, current);
+        response.StatusCode.ShouldBe(HttpStatusCode.OK);
+        response.Headers.ETag!.ToString().ShouldBe(current, "the D15 write precondition is unchanged");
+        response.Headers.CacheControl!.ToString().ShouldBe("no-cache");
+        response.Headers.Vary.ShouldContain("Authorization");
+        using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync(Ct));
+        var generation = body.RootElement.GetProperty("generation");
+        generation.ValueKind.ShouldBe(JsonValueKind.Object);
+        generation.GetProperty("status").GetString().ShouldBe(status.ToString().ToLowerInvariant());
+        if (status == GenerationRunStatus.Running)
+        {
+            generation.GetProperty("stage").GetString().ShouldBe("reviewing");
+        }
+    }
+
+    [Theory]
+    [InlineData(GenerationRunStatus.Failed)]
+    [InlineData(GenerationRunStatus.Cancelled)]
+    public async Task IfNoneMatch_Current_Etag_WithTerminalGeneration_Returns_304_Without_Body(GenerationRunStatus status)
+    {
+        var userId = await CreateUserAsync();
+        var seriesId = await SeedSeriesAsync(userId);
+        var episodeId = await SeedEpisodeAsync(userId, seriesId);
+        var queued = GenerationRun.Queue(userId, seriesId, episodeId, GenerationKind.Story,
+            GenerationTrigger.User, null, EpisodeStatus.Draft, null, null, 0m, Start);
+        queued.IsError.ShouldBeFalse();
+        var run = queued.Value;
+        run.Start(Start.AddSeconds(1));
+        if (status == GenerationRunStatus.Failed)
+        {
+            run.Fail("story_generation_failed", "safe test outcome", true, Start.AddSeconds(2));
+        }
+        else
+        {
+            run.Cancel("story_generation_cancelled", "safe test outcome", false, Start.AddSeconds(2));
+        }
+
+        await using (var db = Database.CreateAppDbContext(new TestCurrentUser { Id = userId }))
+        {
+            db.GenerationRuns.Add(run);
+            await db.SaveChangesAsync(Ct);
+        }
+
+        using var factory = new ApiFactory(Database, new FakeClock(Start));
+        using var client = factory.ClientFor(userId);
+        var (_, current, _, initial) = await ReadDetailAsync(client, episodeId);
+        initial.GetProperty("generation").GetProperty("status").GetString().ShouldBe(status.ToString().ToLowerInvariant());
+        using var response = await ConditionalGetAsync(client, episodeId, current);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.NotModified);
+        (await response.Content.ReadAsStringAsync(Ct)).ShouldBeEmpty();
+        response.Headers.ETag!.ToString().ShouldBe(current);
+        response.Headers.CacheControl!.ToString().ShouldBe("no-cache");
+        response.Headers.Vary.ShouldContain("Authorization");
     }
 
     [Fact]

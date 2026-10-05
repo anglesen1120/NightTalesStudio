@@ -2,6 +2,8 @@ using System.Net;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using Microsoft.AspNetCore.Http.Metadata;
+using Microsoft.AspNetCore.Routing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -40,6 +42,22 @@ public sealed class StoryReadRoutesTests(TestDatabase database) : IntegrationTes
         ["ruleId", "severity", "kind", "segment", "messageKey", "evidence", "repairDirection", "measured", "threshold"];
     private static readonly string[] GenerationKeys = ["kind", "status", "stage", "errorCode", "startedAt"];
     private static CancellationToken Ct => TestContextToken.Value;
+
+    [Theory]
+    [InlineData("/api/v1/episodes/{id:guid}/story/versions")]
+    [InlineData("/api/v1/episodes/{id:guid}/story/versions/{versionId:guid}")]
+    public void StoryVersionRoutes_UseDefaultOpenApiMetadata(string route)
+    {
+        using var factory = Factory();
+        using var client = factory.CreateClient();
+        var endpoints = factory.Services.GetRequiredService<EndpointDataSource>();
+        var endpoint = endpoints.Endpoints.OfType<RouteEndpoint>()
+            .Single(candidate => candidate.RoutePattern.RawText == route);
+
+        endpoint.Metadata.GetMetadata<IEndpointNameMetadata>().ShouldBeNull();
+        endpoint.Metadata.GetMetadata<ITagsMetadata>().ShouldBeNull();
+        endpoint.Metadata.GetMetadata<IEndpointSummaryMetadata>().ShouldBeNull();
+    }
 
     [Fact]
     public async Task EpisodeDetail_IncludesCurrentStoryBlock()
@@ -149,6 +167,8 @@ public sealed class StoryReadRoutesTests(TestDatabase database) : IntegrationTes
             $"UPDATE episodes SET approved_story_version_id = '{ids[0]}' WHERE id = '{world.EpisodeId}'");
         using var list = await client.GetAsync(VersionsRoute(world.EpisodeId), Ct);
         var rows = (await ReadOkAsync(list)).EnumerateArray().ToArray();
+        list.Headers.CacheControl!.ToString().ShouldBe("no-cache");
+        list.Headers.Vary.ShouldContain("Authorization");
 
         rows.Length.ShouldBe(4);
         rows.Select(row => row.GetProperty("version").GetInt32()).ShouldBe([4, 3, 2, 1]);
@@ -236,6 +256,8 @@ public sealed class StoryReadRoutesTests(TestDatabase database) : IntegrationTes
         using var client = factory.ClientFor(world.UserId);
         using var response = await client.GetAsync(VersionRoute(world.EpisodeId, world.VersionId!.Value), Ct);
         var body = await ReadOkAsync(response);
+        response.Headers.CacheControl!.ToString().ShouldBe("no-cache");
+        response.Headers.Vary.ShouldContain("Authorization");
 
         response.Headers.ETag!.Tag.ShouldBe(StoryEtag.For(world.VersionId!.Value));
         body.GetProperty("etag").GetString().ShouldBe(response.Headers.ETag!.Tag);

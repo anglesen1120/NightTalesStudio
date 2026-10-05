@@ -286,7 +286,44 @@ public sealed class StoryReadModelTests
         var result = await rig.Current.Handle(new(rig.Episode.Id), CancellationToken.None);
         result.Value!.QualityHints.ShouldBeEmpty();
         result.Value.AuditReport.ShouldNotBeNull();
-        rig.Log.Messages.Count.ShouldBe(1);
+        rig.Log.Messages.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task StoryRead_UncataloguedPipelineIssues_KeepAuditAndHintOrderWithoutLogging()
+    {
+        var rig = new Rig();
+        var audit = JsonSerializer.Serialize(new
+        {
+            local = new
+            {
+                issues = new[]
+                {
+                    new { rule = StoryQualityChecker.KeywordCountPerSegment },
+                    new { rule = StoryDraftValidator.LengthAdvisory },
+                    new { rule = "Q-HOOK-01" },
+                    new { rule = "similarity_unavailable" },
+                },
+            },
+        });
+        var row = rig.AddVersion(1, audit: audit);
+        rig.Pointers(row.Id, null);
+
+        for (var read = 0; read < 2; read++)
+        {
+            var result = await rig.Current.Handle(new(rig.Episode.Id), CancellationToken.None);
+            var hints = result.Value!.QualityHints;
+            hints.Count.ShouldBe(2);
+            hints[0].RuleId.ShouldBe(StoryQualityChecker.KeywordCountPerSegment);
+            hints[1].RuleId.ShouldBe("Q-HOOK-01");
+            foreach (var hint in hints)
+            {
+                hint.MessageKey.ShouldBe(StoryQualityChecker.MessageKeys[hint.RuleId]);
+            }
+
+            result.Value.AuditReport!.Value.GetRawText().ShouldBe(audit);
+            rig.Log.Messages.ShouldBeEmpty();
+        }
     }
 
     [Fact]

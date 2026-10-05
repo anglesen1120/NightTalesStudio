@@ -75,9 +75,6 @@ public static class StoryEndpoints
 
         EpisodeIdRouteParameter.Declare(
             routes.MapGet(VersionsRoute, GetVersionsAsync)
-                .WithName("GetStoryVersions")
-                .WithTags("Stories")
-                .WithSummary("Read an episode's story version history.")
                 .Produces<IReadOnlyList<StoryVersionSummaryDto>>(StatusCodes.Status200OK)
                 .ProducesProblem(StatusCodes.Status401Unauthorized)
                 .ProducesProblem(StatusCodes.Status404NotFound)
@@ -85,9 +82,6 @@ public static class StoryEndpoints
 
         EpisodeIdRouteParameter.Declare(
             routes.MapGet(VersionRoute, GetVersionAsync)
-                .WithName("GetStoryVersion")
-                .WithTags("Stories")
-                .WithSummary("Read one story version and its audit report.")
                 .Produces<StoryVersionDetailDto>(StatusCodes.Status200OK)
                 .ProducesProblem(StatusCodes.Status401Unauthorized)
                 .ProducesProblem(StatusCodes.Status404NotFound)
@@ -102,8 +96,16 @@ public static class StoryEndpoints
         ISender sender,
         HttpContext http,
         CancellationToken ct)
-        => (await sender.Send(new GetStoryVersionsQuery(id), ct).ConfigureAwait(false))
-            .ToHttpResult(http);
+    {
+        var result = await sender.Send(new GetStoryVersionsQuery(id), ct).ConfigureAwait(false);
+        if (!result.IsError)
+        {
+            http.Response.Headers.Vary = "Authorization";
+            http.Response.Headers.CacheControl = "no-cache";
+        }
+
+        return result.ToHttpResult(http);
+    }
 
     /// <summary>Reads one version; the shared result helper emits its <c>IHasETag</c> story tag.</summary>
     private static async Task<IResult> GetVersionAsync(
@@ -112,8 +114,16 @@ public static class StoryEndpoints
         ISender sender,
         HttpContext http,
         CancellationToken ct)
-        => (await sender.Send(new GetStoryVersionQuery(id, versionId), ct).ConfigureAwait(false))
-            .ToHttpResult(http);
+    {
+        var result = await sender.Send(new GetStoryVersionQuery(id, versionId), ct).ConfigureAwait(false);
+        if (!result.IsError)
+        {
+            http.Response.Headers.Vary = "Authorization";
+            http.Response.Headers.CacheControl = "no-cache";
+        }
+
+        return result.ToHttpResult(http);
+    }
 
     /// <summary>
     /// <c>PUT /api/v1/episodes/{id}/story</c> (02.3.1-T1): 200 with the saved version and its <c>ETag</c> (the unchanged

@@ -51,7 +51,7 @@ internal static partial class StoryReadProjection
             row.VersionId, row.Version, Wire(row.Source), row.CreatedAt,
             row.Source == StoryVersionSource.Edited ? "user" : "system", StoryEtag.For(row.VersionId),
             content, row.Body, row.Keywords, row.WordCount,
-            Hints(audit, episodeId, row.VersionId, logger), audit, row.SimilarityScore, row.FactSheetId);
+            Hints(audit), audit, row.SimilarityScore, row.FactSheetId);
     }
 
     internal static string Wire(StoryVersionSource source) =>
@@ -89,8 +89,7 @@ internal static partial class StoryReadProjection
         return null;
     }
 
-    private static List<QualityHintDto> Hints(
-        JsonElement? audit, Guid episodeId, Guid versionId, ILogger logger)
+    private static List<QualityHintDto> Hints(JsonElement? audit)
     {
         if (audit is not { } root || !Object(root, "local", out var local)
             || !Array(local, "issues", out var issues))
@@ -110,8 +109,8 @@ internal static partial class StoryReadProjection
 
             if (rule is null || string.IsNullOrWhiteSpace(messageKey))
             {
-                // An unknown legacy rule without a stored key cannot acquire an invented i18n key (R7).
-                LogHintUnreadable(logger, episodeId, versionId);
+                // Pipeline issues without a catalogue key stay verbatim in auditReport.local.issues (R8).
+                // Do not invent an i18n key or log them on every read.
                 continue;
             }
 
@@ -183,8 +182,4 @@ internal static partial class StoryReadProjection
     [LoggerMessage(EventId = 6021, Level = LogLevel.Warning,
         Message = "story.read.audit-unreadable episode={EpisodeId} version={VersionId}")]
     private static partial void LogAuditUnreadable(ILogger logger, Guid episodeId, Guid versionId);
-
-    [LoggerMessage(EventId = 6022, Level = LogLevel.Warning,
-        Message = "story.read.local-hint-unreadable episode={EpisodeId} version={VersionId}")]
-    private static partial void LogHintUnreadable(ILogger logger, Guid episodeId, Guid versionId);
 }
