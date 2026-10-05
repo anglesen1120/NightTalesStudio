@@ -192,7 +192,7 @@ export abstract class PublicationRepository {
   abstract cancel(id: string, ifMatch: string): Promise<void>;                                            // 06 D7 (10 CR-20)
 }
 ```
-`features/dashboard/domain/` re-uses `EpisodeSummary` + `EpisodeRepository` **from `@features/episodes`** (`features/episodes/index.ts` is the only import path — D2). The dashboard adds no repository of its own.
+`features/dashboard/dashboard.model.ts` (feature root: the D2 lint rule bars `domain/` from importing another feature) re-uses `EpisodeListItem` + `EpisodesRepository` (as-built names of `EpisodeSummary`/`EpisodeRepository`) **from `@features/episodes`** (`features/episodes/index.ts` is the only import path — D2). The dashboard adds no repository of its own.
 
 ### 3.3 Stores (signal stores, `@Injectable()` per routed page unless noted)
 

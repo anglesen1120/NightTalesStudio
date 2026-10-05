@@ -1,0 +1,97 @@
+<div class="dashboard-page">
+  <nts-page-header titleKey="dashboard.title">
+    <button
+      actions
+      class="dashboard-page__refresh"
+      type="button"
+      [disabled]="store.loading() || store.refreshing()"
+      [attr.aria-busy]="store.refreshing()"
+      (click)="refresh()"
+    >
+      {{ 'dashboard.refresh' | transloco }}
+    </button>
+  </nts-page-header>
+
+  @if (store.refreshError()) {
+    <p class="dashboard-page__refresh-error" role="status">
+      {{ 'dashboard.partialRefreshFailed' | transloco }}
+    </p>
+  }
+
+  @if (store.error(); as failure) {
+    <div class="dashboard-page__error">
+      <nts-error-state
+        [bodyKey]="errorKey()"
+        [traceId]="failure.traceId"
+        [retryLabelKey]="retryAfterSec() === undefined ? 'dashboard.retry' : undefined"
+        (retry)="retry()"
+      />
+      @if (retryAfterSec() !== undefined) {
+        <div class="dashboard-page__retry">
+          <nts-retry-countdown [seconds]="retryAfterSec() ?? 0" (elapsed)="retryElapsed.set(true)" />
+          <button type="button" [disabled]="retryDisabled()" (click)="retry()">
+            {{ 'dashboard.retry' | transloco }}
+          </button>
+        </div>
+      }
+    </div>
+  } @else {
+    @if (store.loading() || !store.hasLoaded()) {
+      <nts-loading-state class="dashboard-page__loading-status" labelKey="dashboard.loading" [rows]="3" />
+    }
+
+    <div class="dashboard-page__groups">
+      @for (group of groups; track group.group) {
+        <section
+          class="dashboard-group"
+          [attr.aria-labelledby]="group.headingId"
+          [attr.aria-busy]="store.loading() || !store.hasLoaded() ? true : null"
+        >
+          <header class="dashboard-group__header">
+            <h2 [id]="group.headingId">{{ group.titleKey | transloco }}</h2>
+            @if (store.hasLoaded()) {
+              <span class="dashboard-group__count">{{ group.rows().length }}</span>
+            }
+          </header>
+
+          @if (store.loading() || !store.hasLoaded()) {
+            <div class="dashboard-group__skeletons" aria-hidden="true">
+              <span class="dashboard-group__skeleton"></span>
+              <span class="dashboard-group__skeleton"></span>
+              <span class="dashboard-group__skeleton"></span>
+            </div>
+          } @else if (group.rows().length === 0) {
+            <nts-empty-state [titleKey]="group.emptyKey" />
+          } @else {
+            <ul class="dashboard-group__rows">
+              @for (row of group.rows(); track row.episode.id) {
+                <li
+                  nts-next-action-row
+                  [vm]="row"
+                  [now]="now()"
+                  [untitledLabel]="untitledLabel()"
+                  (open)="openEpisode($event)"
+                  (primaryAction)="runPrimaryAction($event)"
+                ></li>
+              }
+            </ul>
+          }
+        </section>
+      }
+    </div>
+
+    @if (allEmpty()) {
+      <section class="dashboard-page__all-empty" aria-labelledby="dashboard-all-empty-title">
+        <h2 id="dashboard-all-empty-title">{{ 'dashboard.allEmpty.title' | transloco }}</h2>
+        <p>{{ 'dashboard.allEmpty.body' | transloco }}</p>
+        <a routerLink="/series/new">{{ 'dashboard.allEmpty.action' | transloco }}</a>
+      </section>
+    }
+  }
+
+  <p class="dashboard-page__announcement" aria-live="polite" aria-atomic="true">
+    @if (countsAnnouncement(); as counts) {
+      {{ 'dashboard.counts' | transloco: counts }}
+    }
+  </p>
+</div>

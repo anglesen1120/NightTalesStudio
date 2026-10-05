@@ -8,6 +8,11 @@ History moved out of STATUS.md to keep the live file small. The initial archive 
 
 - Part of the **Web next (plan 10 Stage B)** bullet: **10.3.3-T3** MFA step + enrolment + recovery codes + re-auth (deps merged).
 
+### Superseded Session 20 Web next part and 10 CR-47 hand-over line (2026-10-05, replaced when 10.4.1-T1 opened as PR #149)
+
+- Web next part: **10.4.1-T1** dashboard (adds `/dashboard`; consumes `EpisodeListComponent` + `EpisodeListStore` from `@features/episodes`); … No `**` not-found route yet (owner 2026-10-05); `/dashboard` has no route until 10.4.1-T1, so the `/dashboard`-path e2e tests (17 failed locally) stay red until then.
+- **10 CR-47 e2e (from 10.2.1-T1, written by 10.3.3-T1):** `web/e2e/session.spec.ts` + the D16 a11y checks exist and run against `page.route` stubs (P seeds only an MFA owner; the real-backend authenticated path is 10.3.3-T3's `auth-mfa.spec.ts`). The tests that assert the URL path `/dashboard` (returnUrl fallback, sign-in) pass only once a route matches it: the 10.4.1-T1 dashboard (or a future `**` route; none is shipped, owner 2026-10-05); verified locally with a temporary wildcard route. **11.5.1-T1** `e2e.yml` runs them; set `NTS_E2E_STACK=1` for the real-stack blocks in `auth-login.spec.ts`/`auth-reset.spec.ts`.
+
 ### Superseded Next line (2026-10-05, replaced when 02.5.2-T4 merged as #147)
 
 - **Outcome:** 02.5.2-T4 merged as #147 (`d670978`); the 02.5.2 story is complete; next backend task 02.5.3-T1.
