@@ -22,6 +22,8 @@ jobs:
       - run: npm run api:gen:check     # regeneration from the pinned openapi.json produces no diff (10.1.4-T1, D5)
       - run: npm run test:ci
       - run: npm run test:tools
+      # 10.3.1-T1
+      - run: npm run legal:gen:check
       - run: npm run build
       - run: npm run budget:gzip
       - run: npm run csp:gen           # tools/web/gen-csp.mjs (10.1.6-T1, D4): validation only — fails on inline handlers / javascript: URLs; its output (dist/nginx/csp-headers.conf) is never committed and is consumed by web/Dockerfile
