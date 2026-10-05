@@ -13,7 +13,7 @@ describe('generation-state', () => {
   it.each(['queued', 'running', 'unknown', null])('nonterminal_%s_IsNotTerminal', (status) => {
     expect(isTerminal(status)).toBe(false);
   });
-  it.each(['story_invalid_output', 'story_generation_failed', 'story_generation_limit', 'spend_cap_reached'])('failure_%s_UsesStoryCopy', (code) => {
+  it.each(['story_invalid_output', 'story_generation_failed', 'spend_cap_reached'])('failure_%s_UsesStoryCopy', (code) => {
     expect(failureKey(code)).toBe(`story.generation.error.${code}`);
   });
   it('moderated_UsesBriefModerationCopy', () => {
@@ -25,5 +25,6 @@ describe('generation-state', () => {
   it('otherError_DefersCatalogueFallbackToApplication', () => {
     expect(failureKey('fact_sheet_required')).toBeNull();
     expect(failureKey('future_error')).toBeNull();
+    expect(failureKey('story_generation_limit')).toBeNull();
   });
 });

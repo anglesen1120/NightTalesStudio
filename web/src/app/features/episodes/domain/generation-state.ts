@@ -26,9 +26,11 @@ export function failureKey(code: string | null | undefined): string | null {
       return 'story.generation.moderation.brief';
     case 'story_invalid_output':
     case 'story_generation_failed':
-    case 'story_generation_limit':
     case 'spend_cap_reached':
       return `story.generation.error.${code}`;
+    case 'story_generation_limit':
+      // Run failures have no Retry-After; application resolves errors.story_generation_limit without {{seconds}}.
+      return null;
     default:
       // Core's error catalogue belongs to application; null asks that layer to resolve its fallback copy.
       return null;

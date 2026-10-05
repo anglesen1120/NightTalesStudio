@@ -1,6 +1,13 @@
 <div class="new-episode-page">
   <nts-page-header titleKey="episodes.new.title" backHref="/episodes" />
-  @if (store.phase() === 'form' || store.phase() === 'submitting') {
+  @if (store.seriesFailed()) {
+    <nts-error-state
+      [bodyKey]="store.errorKey() ?? 'errors.unknown_error'"
+      [traceId]="store.traceId() ?? undefined"
+      retryLabelKey="errors.action.retry"
+      (retry)="store.reloadSeries()"
+    />
+  } @else if (store.phase() === 'form' || store.phase() === 'submitting') {
     <nts-story-brief-form
       [form]="store.form"
       [briefLength]="store.briefLength()"

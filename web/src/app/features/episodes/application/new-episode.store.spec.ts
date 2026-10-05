@@ -8,7 +8,7 @@ import { vi } from 'vitest';
 import { ZONELESS_TEST_PROVIDERS } from '../../../testing/providers';
 import { EPISODE_GATE } from './episode-gate';
 import type { GateState } from '../domain/episode-gate';
-import type { EpisodeDetail, EpisodeGeneration } from '../domain/episode.model';
+import type { EpisodeDetail, EpisodeGeneration, SeriesSummary } from '../domain/episode.model';
 import { EpisodesRepository } from '../domain/episodes.repository';
 import { SeriesOptionsRepository } from '../domain/series-options.repository';
 import { FakeEpisodeRealtime } from '../testing/fake-episode-realtime';
@@ -36,11 +36,12 @@ function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
 function run(overrides: Partial<EpisodeGeneration> = {}): EpisodeDetail {
   return episodeDetail({ generation: { kind: 'story', status: 'running', stage: 'queued', errorCode: null, startedAt: null, processingPaused: null, ...overrides } });
 }
-function setup(gate?: GateState, topic = 'ghost') {
+function setup(gate?: GateState, topic = 'ghost', id = SERIES_ID, seriesAnswer?: () => Promise<SeriesSummary>) {
   const log: string[] = [];
   const repo = new FakeEpisodesRepository(log);
   const series = new FakeSeriesOptionsRepository();
   series.summary = { ...series.summary, topic };
+  if (seriesAnswer) series.scriptGet(seriesAnswer);
   const realtime = new FakeEpisodeRealtime(log);
   const sessionGeneration = signal(0);
   const navigate = vi.fn().mockResolvedValue(true);
@@ -57,7 +58,7 @@ function setup(gate?: GateState, topic = 'ghost') {
   ] });
   const store = TestBed.inject(NewEpisodeStore);
   store.form.controls.brief.setValue('A lantern appears at midnight.');
-  store.init(SERIES_ID);
+  store.init(id);
   return { store, repo, series, realtime, sessionGeneration, navigate, log, gateState };
 }
 
@@ -422,7 +423,7 @@ describe('NewEpisodeStore', () => {
     }
   });
 
-  it('event_NewerRefetch_DiscardsOlderDetail', async () => {
+  it('event_DuringPendingRefetch_CoalescesAndDiscardsInvalidatedDetail', async () => {
     const { store, repo, realtime, navigate } = setup();
     await settle();
     await store.create();
@@ -431,6 +432,7 @@ describe('NewEpisodeStore', () => {
     realtime.emit(EPISODE_ID);
     repo.scriptGet(() => Promise.resolve(run({ stage: 'saving' })));
     realtime.emit(EPISODE_ID);
+    expect(repo.getCalls).toHaveLength(2);
     await settle();
     pending.resolve(episodeDetail({ status: 'story_review', hasCurrentStory: true }));
     await settle();
@@ -462,5 +464,207 @@ describe('NewEpisodeStore', () => {
     await settle();
     await store.create();
     expect(store.failureKey()).toBe(key);
+  });
+
+  it.each(['false', 'reject'])('handoff_EditorNavigation_%s_RetainsEpisodeAndAllowsLaterResync', async (outcome) => {
+    const { store, repo, realtime, navigate } = setup();
+    repo.scriptGet(() => Promise.resolve(episodeDetail({ status: 'story_review', hasCurrentStory: true, generation: null })));
+    if (outcome === 'false') navigate.mockResolvedValueOnce(false);
+    else navigate.mockRejectedValueOnce(new Error('Navigation cancelled'));
+    await settle();
+    await store.create();
+    expect(store.phase()).toBe('failed');
+    expect(store.errorKey()).toBe('errors.unknown_error');
+    expect(store.episodeId()).toBe(EPISODE_ID);
+    expect(store.createLost()).toBe(false);
+    expect(store.canRetry()).toBe(false);
+    expect(repo.generateCalls).toHaveLength(1);
+    repo.scriptGet(() => Promise.resolve(episodeDetail({ status: 'story_review', hasCurrentStory: true })));
+    realtime.resync();
+    await settle();
+    expect(navigate).toHaveBeenCalledTimes(2);
+    expect(store.phase()).toBe('handoff');
+    expect(store.errorKey()).toBeNull();
+  });
+
+  it.each(['false', 'reject'])('handoff_ResearchNavigation_%s_KeepsResearchActionWithoutCreateLost', async (outcome) => {
+    const { store, repo, navigate } = setup(undefined, 'true_crime');
+    if (outcome === 'false') navigate.mockResolvedValueOnce(false);
+    else navigate.mockRejectedValueOnce(new Error('Navigation cancelled'));
+    await settle();
+    await store.create();
+    expect(store.phase()).toBe('failed');
+    expect(store.episodeId()).toBe(EPISODE_ID);
+    expect(store.factSheetRequired()).toBe(true);
+    expect(store.errorKey()).toBe('errors.unknown_error');
+    expect(store.createLost()).toBe(false);
+    expect(store.canRetry()).toBe(false);
+    await store.create();
+    expect(repo.createCalls).toHaveLength(1);
+    expect(repo.generateCalls).toHaveLength(0);
+  });
+
+  it('generation_RunLimit_UsesCopyWithoutCountdownParameters', async () => {
+    const { store, repo } = setup();
+    repo.scriptGet(() => Promise.resolve(run({ status: 'failed', errorCode: 'story_generation_limit' })));
+    await settle();
+    await store.create();
+    expect(store.failureKey()).toBe('errors.story_generation_limit');
+    expect(store.retryAfterSec()).toBeNull();
+    expect(store.canRetry()).toBe(true);
+  });
+
+  it('create_503_ReportsUnknownOutcomeWithoutAutomaticReplay', async () => {
+    const { store, repo } = setup();
+    repo.scriptCreate(() => rejectAppError(error('unknown_error', 503, { kind: 'server' })));
+    await settle();
+    await store.create();
+    await settle();
+    expect(store.createLost()).toBe(true);
+    expect(store.phase()).toBe('form');
+    expect(store.canSubmit()).toBe(true);
+    expect(repo.createCalls).toHaveLength(1);
+    expect(repo.generateCalls).toHaveLength(0);
+  });
+
+  it('retry_UnknownOutcomeThenPreviousFailedRun_ReusesTheSameIntent', async () => {
+    const { store, repo, realtime } = setup();
+    repo.scriptGet(() => Promise.resolve(run({ status: 'failed', errorCode: 'story_invalid_output' })));
+    await settle();
+    await store.create();
+    repo.scriptGenerate(() => rejectAppError(error('network_error', 0)));
+    await store.retry();
+    const retryKey = repo.generateCalls[1]?.key;
+    repo.scriptGet(() => Promise.resolve(run({ status: 'failed', errorCode: 'story_invalid_output' })));
+    realtime.resync();
+    await settle();
+    expect(store.canRetry()).toBe(true);
+    expect(repo.generateCalls[1]?.intent.isSettled).toBe(false);
+    expect(store.errorKey()).toBeNull();
+    await store.retry();
+    expect(repo.generateCalls[2]?.key).toBe(retryKey);
+  });
+
+  it('retry_PendingPost_IgnoresPreviousFailureUntilTheSeedingGet', async () => {
+    const { store, repo, realtime } = setup();
+    repo.scriptGet(() => Promise.resolve(run({ status: 'failed', errorCode: 'story_invalid_output' })));
+    await settle();
+    await store.create();
+    const post = deferred<void>();
+    repo.scriptGenerate(() => post.promise);
+    const retrying = store.retry();
+    realtime.resync();
+    await settle();
+    expect(store.phase()).toBe('generating');
+    expect(store.failureKey()).toBeNull();
+    expect(store.canRetry()).toBe(false);
+    expect(repo.getCalls).toHaveLength(1);
+    post.resolve(undefined);
+    await retrying;
+    expect(repo.getCalls).toHaveLength(2);
+    expect(store.phase()).toBe('generating');
+  });
+
+  it.each(['failed', 'cancelled'])('generation_%sWithoutCode_ClearsStaleCommandErrorAndShowsFallback', async (status) => {
+    const { store, repo, realtime } = setup();
+    repo.scriptGenerate(() => rejectAppError(error('network_error', 0, { traceId: 'stale-trace' })));
+    await settle();
+    await store.create();
+    repo.scriptGet(() => Promise.resolve(run({ status, errorCode: null })));
+    realtime.resync();
+    await settle();
+    expect(store.phase()).toBe('failed');
+    expect(store.failureKey()).toBe('story.generation.error.story_generation_failed');
+    expect(store.errorKey()).toBeNull();
+    expect(store.traceId()).toBeNull();
+  });
+
+  it('series_InitFailure_DisablesFormAndExplicitReloadRecovers', async () => {
+    const { store, repo, series } = setup(undefined, 'ghost', SERIES_ID,
+      () => rejectAppError(error('unknown_error', 503, { traceId: 'series-trace' })));
+    await settle();
+    expect(store.seriesFailed()).toBe(true);
+    expect(store.canSubmit()).toBe(false);
+    expect(store.errorKey()).toBe('errors.unknown_error');
+    expect(store.traceId()).toBe('series-trace');
+    await store.create();
+    expect(repo.createCalls).toHaveLength(0);
+    await store.reloadSeries();
+    expect(series.getCalls).toEqual([SERIES_ID, SERIES_ID]);
+    expect(store.seriesFailed()).toBe(false);
+    expect(store.canSubmit()).toBe(true);
+    expect(store.errorKey()).toBeNull();
+    expect(store.traceId()).toBeNull();
+  });
+
+  it.each(['', 'not-a-uuid', `${SERIES_ID}/../other`, `${SERIES_ID} `])('series_InvalidRoute_%s_DoesNotSendAnyRequest', async (id) => {
+    const { store, repo, series } = setup(undefined, 'ghost', id);
+    await settle();
+    expect(store.seriesFailed()).toBe(true);
+    expect(store.errorKey()).toBe('errors.not_found');
+    expect(store.canSubmit()).toBe(false);
+    await store.reloadSeries();
+    await store.create();
+    expect(series.getCalls).toHaveLength(0);
+    expect(repo.createCalls).toHaveLength(0);
+  });
+
+  it.each([
+    error('story_generation_limit', 429, { retryAfterSec: 30 }),
+    error('validation_failed', 400, { fieldErrors: { brief: ['Invalid'], alien: ['Invalid'] } }),
+    error('idempotency_key_reused', 422),
+    error('fact_sheet_required', 409),
+  ])('backgroundRead_%s_OnlySetsMessageAndTrace', async (cause) => {
+    const { store, repo, realtime } = setup();
+    const diagnostic = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      await settle();
+      await store.create();
+      const phase = store.phase();
+      repo.scriptGet(() => rejectAppError({ ...cause, traceId: 'read-trace' }));
+      realtime.resync();
+      await settle();
+      expect(store.errorKey()).not.toBeNull();
+      expect(store.traceId()).toBe('read-trace');
+      expect(store.phase()).toBe(phase);
+      expect(store.retryAfterSec()).toBeNull();
+      expect(store.form.controls.brief.errors).toBeNull();
+      expect(store.unmappedFieldKeys()).toEqual([]);
+      expect(store.factSheetRequired()).toBe(false);
+      expect(diagnostic).not.toHaveBeenCalled();
+    } finally {
+      diagnostic.mockRestore();
+    }
+  });
+
+  it('form_TypingWithNoServerErrors_PreservesEmptyFieldErrorSignal', async () => {
+    const { store } = setup();
+    await settle();
+    const empty = store.unmappedFieldKeys();
+    store.form.controls.brief.setValue('A new brief');
+    store.form.controls.title.setValue('A new title');
+    expect(store.unmappedFieldKeys()).toBe(empty);
+  });
+
+  it('seedingGet_InvalidationsWhileInFlight_SchedulesOnlyOneSerialFollowup', async () => {
+    const { store, repo, realtime, navigate } = setup();
+    const seed = deferred<EpisodeDetail>();
+    repo.scriptGet(() => seed.promise);
+    repo.scriptGet(() => Promise.resolve(run({ stage: 'writing' })));
+    await settle();
+    const creating = store.create();
+    await settle();
+    expect(repo.getCalls).toHaveLength(1);
+    realtime.emit(EPISODE_ID);
+    realtime.resync();
+    realtime.emit(EPISODE_ID);
+    await settle();
+    expect(repo.getCalls).toHaveLength(1);
+    seed.resolve(episodeDetail({ status: 'story_review', hasCurrentStory: true }));
+    await creating;
+    await settle();
+    expect(repo.getCalls).toHaveLength(2);
+    expect(store.stageKey()).toBe('story.generation.stage.writing');
+    expect(navigate).not.toHaveBeenCalled();
   });
 });

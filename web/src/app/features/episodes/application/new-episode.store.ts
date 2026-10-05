@@ -11,8 +11,9 @@ import type { RealtimeSubscription } from '@core/realtime/realtime-subscriptions
 import { SessionStore } from '@core/session';
 import { EPISODE_GATE } from './episode-gate';
 import type { EpisodeDetail, EpisodeGeneration, LengthTier, SeriesSummary } from '../domain/episode.model';
+import { isUuid } from '../domain/episode.model';
 import { EpisodesRepository } from '../domain/episodes.repository';
-import { failureKey, stageKey } from '../domain/generation-state';
+import { failureKey, isTerminal, stageKey } from '../domain/generation-state';
 import { SeriesOptionsRepository } from '../domain/series-options.repository';
 
 function isAppError(value: unknown): value is AppError {
@@ -20,6 +21,24 @@ function isAppError(value: unknown): value is AppError {
   const candidate = value as Partial<Record<keyof AppError, unknown>>;
   return typeof candidate.code === 'string' && typeof candidate.status === 'number' &&
     typeof candidate.kind === 'string' && typeof candidate.fieldErrors === 'object';
+}
+
+const EMPTY_FIELD_KEYS: readonly string[] = [];
+const NON_RETRYABLE_CODES: Readonly<Record<string, true | undefined>> = {
+  fact_sheet_required: true,
+  idempotency_key_reused: true,
+  payload_too_large: true,
+  validation_failed: true,
+  story_invalid_content: true,
+  episode_invalid_state: true,
+};
+
+function hasUnknownOutcome(error: AppError): boolean {
+  return error.kind === 'network' || error.status === 0 || error.status >= 500;
+}
+
+function isNonRetryableCode(code: string): boolean {
+  return NON_RETRYABLE_CODES[code] === true;
 }
 
 @Injectable()
@@ -46,6 +65,8 @@ export class NewEpisodeStore {
   readonly briefLength = computed(() => this.briefValue().length);
   private readonly seriesState = signal<SeriesSummary | null>(null);
   readonly series = this.seriesState.asReadonly();
+  private readonly seriesFailedState = signal(false);
+  readonly seriesFailed = this.seriesFailedState.asReadonly();
   readonly isTrueCrime = computed(() => this.series()?.topic === 'true_crime');
   private readonly phaseState = signal<'form' | 'submitting' | 'generating' | 'failed' | 'paused' | 'handoff'>('form');
   readonly phase = this.phaseState.asReadonly();
@@ -55,7 +76,7 @@ export class NewEpisodeStore {
   readonly errorKey = this.errorState.asReadonly();
   private readonly traceState = signal<string | null>(null);
   readonly traceId = this.traceState.asReadonly();
-  private readonly unmappedState = signal<readonly string[]>([]);
+  private readonly unmappedState = signal<readonly string[]>(EMPTY_FIELD_KEYS);
   readonly unmappedFieldKeys = this.unmappedState.asReadonly();
   private readonly createLostState = signal(false);
   readonly createLost = this.createLostState.asReadonly();
@@ -69,9 +90,9 @@ export class NewEpisodeStore {
   readonly generation = this.generationState.asReadonly();
   readonly stageKey = computed(() => stageKey(this.generation()?.stage));
   readonly failureKey = computed(() => {
+    if (this.phase() !== 'failed' || !isTerminal(this.generation()?.status) || this.generation()?.status === 'succeeded') return null;
     const code = this.generation()?.errorCode;
-    if (this.phase() !== 'failed' || !code) return null;
-    return failureKey(code) ?? `errors.${messageCodeFor(code)}`;
+    return code ? failureKey(code) ?? `errors.${messageCodeFor(code)}` : 'story.generation.error.story_generation_failed';
   });
   readonly paused = computed(() => this.generation()?.processingPaused ?? null);
   private readonly retryAfterState = signal<number | null>(null);
@@ -80,7 +101,7 @@ export class NewEpisodeStore {
   private readonly retryAllowed = signal(false);
   readonly canRetry = computed(() => this.retryAllowed() && this.phase() === 'failed' && !this.submitting() &&
     this.retryAfterSec() === null && !this.gateBlocked() && !this.factSheetRequired() && this.session.generation() === this.ownerGeneration);
-  readonly canSubmit = computed(() => this.formStatus() === 'VALID' && this.series() !== null &&
+  readonly canSubmit = computed(() => this.formStatus() === 'VALID' && this.series() !== null && !this.seriesFailed() &&
     this.phase() === 'form' && !this.submitting() && this.retryAfterSec() === null && !this.gateBlocked() && this.session.generation() === this.ownerGeneration);
 
   private seriesId: string | null = null;
@@ -90,11 +111,15 @@ export class NewEpisodeStore {
   private commandToken = 0;
   private seriesToken = 0;
   private refetchToken = 0;
+  private generateOutcome: 'idle' | 'pending' | 'unknown' | 'known' = 'idle';
+  private refetchInFlight: { id: string; commandToken: number; promise: Promise<void> } | null = null;
+  private refetchQueued = false;
+  private seriesLoading = false;
 
   constructor() {
     this.form.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => {
       clearServerErrors(this.form);
-      this.unmappedState.set([]);
+      if (this.unmappedState().length > 0) this.unmappedState.set(EMPTY_FIELD_KEYS);
     });
     this.destroyRef.onDestroy(() => {
       this.destroyed = true;
@@ -108,13 +133,35 @@ export class NewEpisodeStore {
   init(seriesId: string): void {
     if (this.seriesId !== null || this.destroyed) return;
     this.seriesId = seriesId;
+    void this.reloadSeries();
+  }
+
+  async reloadSeries(): Promise<void> {
+    const id = this.seriesId;
+    if (id === null || this.destroyed || this.seriesLoading || this.session.generation() !== this.ownerGeneration) return;
+    if (!isUuid(id)) {
+      this.seriesFailedState.set(true);
+      this.errorState.set('errors.not_found');
+      return;
+    }
     const generation = this.session.generation();
     const token = ++this.seriesToken;
-    void this.seriesRepo.get(seriesId).then((series) => {
-      if (this.isCurrent(generation, token, this.seriesToken)) this.seriesState.set(series);
-    }).catch((cause: unknown) => {
-      if (this.isCurrent(generation, token, this.seriesToken)) this.showError(cause);
-    });
+    this.seriesLoading = true;
+    try {
+      const series = await this.seriesRepo.get(id);
+      if (!this.isCurrent(generation, token, this.seriesToken)) return;
+      this.seriesState.set(series);
+      this.seriesFailedState.set(false);
+      this.errorState.set(null);
+      this.traceState.set(null);
+    } catch (cause) {
+      if (!this.isCurrent(generation, token, this.seriesToken)) return;
+      this.seriesState.set(null);
+      this.seriesFailedState.set(true);
+      this.showReadError(cause);
+    } finally {
+      this.seriesLoading = false;
+    }
   }
 
   async create(): Promise<void> {
@@ -136,11 +183,10 @@ export class NewEpisodeStore {
       if (!this.isCurrent(generation, token, this.commandToken)) return;
       this.episodeState.set(created.id);
       this.subscription = this.realtime.subscribeEpisode(created.id, () => {
-        if (this.isCurrent(generation, token, this.commandToken)) void this.refetch(created.id);
+        if (this.isCurrent(generation, token, this.commandToken)) void this.refetch(created.id, true);
       });
       if (this.isTrueCrime()) {
-        this.phaseState.set('handoff');
-        await this.router.navigate(['/episodes', created.id, 'research']);
+        await this.handoff(created.id, generation, token, true);
       } else {
         this.intent = this.keys.begin('story.generate');
         await this.generate(created.id, generation, token);
@@ -148,7 +194,7 @@ export class NewEpisodeStore {
     } catch (cause) {
       if (!this.isCurrent(generation, token, this.commandToken)) return;
       const error = this.showError(cause);
-      this.createLostState.set(error.kind === 'network');
+      this.createLostState.set(hasUnknownOutcome(error));
       this.phaseState.set('form');
     } finally {
       if (this.isCurrent(generation, token, this.commandToken)) this.submittingState.set(false);
@@ -165,7 +211,7 @@ export class NewEpisodeStore {
     // Replace the registration's command guard for this new attempt, still before the POST.
     this.subscription?.unsubscribe();
     this.subscription = this.realtime.subscribeEpisode(id, () => {
-      if (this.isCurrent(generation, token, this.commandToken)) void this.refetch(id);
+      if (this.isCurrent(generation, token, this.commandToken)) void this.refetch(id, true);
     });
     if (this.intent === null || this.intent.isSettled) this.intent = this.keys.begin('story.generate');
     this.clearFailure();
@@ -185,16 +231,19 @@ export class NewEpisodeStore {
     const intent = this.intent;
     if (intent === null || !this.isCurrent(generation, token, this.commandToken)) return;
     this.phaseState.set('generating');
+    this.generateOutcome = 'pending';
     try {
       await this.repo.generateStory(id, intent);
       if (!this.isCurrent(generation, token, this.commandToken)) return;
+      this.generateOutcome = 'known';
       intent.settle();
-      if (this.phase() !== 'handoff') await this.refetch(id);
+      await this.refetch(id);
     } catch (cause) {
       if (!this.isCurrent(generation, token, this.commandToken)) return;
       if (this.phase() === 'handoff') return;
       const error = isAppError(cause) ? cause : this.mapper.from(cause);
-      const unknownOutcome = error.kind === 'network' || error.status === 0 || error.status >= 500;
+      const unknownOutcome = hasUnknownOutcome(error);
+      this.generateOutcome = unknownOutcome ? 'unknown' : 'known';
       if (!unknownOutcome) intent.settle();
       if (error.code === 'story_generation_in_progress') {
         this.errorState.set(null);
@@ -203,48 +252,87 @@ export class NewEpisodeStore {
       }
       this.showError(error);
       this.phaseState.set('failed');
-      this.retryAllowed.set(unknownOutcome || (error.status >= 400 && error.status < 500 &&
-        !['fact_sheet_required', 'idempotency_key_reused', 'payload_too_large', 'validation_failed', 'story_invalid_content', 'episode_invalid_state'].includes(error.code)));
+      this.retryAllowed.set(unknownOutcome || (error.status >= 400 && error.status < 500 && !isNonRetryableCode(error.code)));
       if (error.code === 'episode_invalid_state') await this.refetch(id);
     }
   }
 
-  private async refetch(id: string): Promise<void> {
-    if (this.destroyed || this.session.generation() !== this.ownerGeneration || this.episodeId() !== id || this.phase() === 'handoff') return;
+  private refetch(id: string, invalidation = false): Promise<void> {
+    if (this.destroyed || this.session.generation() !== this.ownerGeneration || this.episodeId() !== id || this.phase() === 'handoff') return Promise.resolve();
+    if (this.refetchInFlight?.id === id) {
+      if (invalidation || this.refetchInFlight.commandToken !== this.commandToken) this.refetchQueued = true;
+      return this.refetchInFlight.promise;
+    }
+    // Events during a POST are covered by its seeding read; they must not restore an older run.
+    if (this.generateOutcome === 'pending') return Promise.resolve();
+    this.refetchQueued = false;
+    const promise = this.readEpisode(id).finally(() => {
+      if (this.refetchInFlight?.promise !== promise) return;
+      this.refetchInFlight = null;
+      if (this.refetchQueued) {
+        this.refetchQueued = false;
+        void this.refetch(id);
+      }
+    });
+    this.refetchInFlight = { id, commandToken: this.commandToken, promise };
+    return promise;
+  }
+
+  private async readEpisode(id: string): Promise<void> {
     const generation = this.session.generation();
     const token = ++this.refetchToken;
     try {
       const detail = await this.repo.get(id);
-      if (!this.isCurrent(generation, token, this.refetchToken) || this.episodeId() !== id) return;
+      if (!this.isCurrent(generation, token, this.refetchToken) || this.episodeId() !== id || this.generateOutcome === 'pending' || this.refetchQueued) return;
       this.detailState.set(detail);
       this.generationState.set(detail.generation);
       const run = detail.generation;
       if (detail.status === 'story_review' || (run?.status === 'succeeded' && detail.hasCurrentStory)) {
-        this.phaseState.set('handoff');
-        this.retryAllowed.set(false);
-        await this.router.navigate(['/episodes', id]);
+        await this.handoff(id, generation, this.commandToken, false);
       } else if (run?.processingPaused) {
         this.phaseState.set('paused');
-        this.errorState.set(null);
-        this.retryAllowed.set(false);
-      } else if (run?.status === 'failed' || run?.status === 'cancelled') {
-        this.intent?.settle();
+        this.clearFailure();
+      } else if (isTerminal(run?.status) && run?.status !== 'succeeded') {
+        // A previous failed run cannot establish the outcome of an unknown POST from this intent.
+        if (this.generateOutcome === 'known') this.intent?.settle();
+        this.clearFailure();
         this.phaseState.set('failed');
         this.retryAllowed.set(true);
       } else if (run?.status === 'running' || run?.status === 'queued') {
-        // The server's run is live, so an earlier unknown-outcome command failure is no longer current (QA-1).
         this.clearFailure();
         this.phaseState.set('generating');
       }
     } catch (cause) {
-      if (this.isCurrent(generation, token, this.refetchToken)) this.showError(cause);
+      if (this.isCurrent(generation, token, this.refetchToken) && this.generateOutcome !== 'pending') this.showReadError(cause);
     }
+  }
+
+  private async handoff(id: string, generation: number, token: number, research: boolean): Promise<void> {
+    this.clearFailure();
+    this.phaseState.set('handoff');
+    let navigated = false;
+    try {
+      navigated = await this.router.navigate(research ? ['/episodes', id, 'research'] : ['/episodes', id]);
+    } catch {
+      // Navigation failure is not a create/network failure: the episode is already known to exist.
+    }
+    if (navigated || !this.isCurrent(generation, token, this.commandToken)) return;
+    this.phaseState.set('failed');
+    this.errorState.set('errors.unknown_error');
+    // True crime retains a research action; fiction retains its open-episode action and can resync again.
+    this.factSheetState.set(research);
+  }
+
+  private showReadError(cause: unknown): void {
+    const error = isAppError(cause) ? cause : this.mapper.from(cause);
+    this.errorState.set(this.mapper.messageKey(error));
+    this.traceState.set(error.traceId ?? null);
   }
 
   private clearFailure(): void {
     this.errorState.set(null);
     this.traceState.set(null);
-    this.unmappedState.set([]);
+    if (this.unmappedState().length > 0) this.unmappedState.set(EMPTY_FIELD_KEYS);
     this.createLostState.set(false);
     this.factSheetState.set(false);
     this.retryAllowed.set(false);

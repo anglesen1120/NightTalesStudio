@@ -31,10 +31,12 @@ function storeStub() {
     briefLength: signal(23), isTrueCrime: signal(false), submitting: signal(false), canSubmit: signal(true),
     retryAfterSec: signal<number | null>(null), unmappedFieldKeys: signal<readonly string[]>([]),
     errorKey: signal<string | null>(null), traceId: signal<string | null>(null), createLost: signal(false),
+    seriesFailed: signal(false),
     gateBlocked: signal(false), factSheetRequired: signal(false), episodeId: signal<string | null>('episode-1'),
     stageKey: signal<string | null>(null), failureKey: signal<string | null>(null),
     paused: signal<string | null>(null), canRetry: signal(false),
     init: vi.fn<(id: string) => void>(), create: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
+    reloadSeries: vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
     retry: vi.fn<() => Promise<void>>().mockResolvedValue(undefined), countdownElapsed: vi.fn<() => void>(),
   };
 }
@@ -65,6 +67,27 @@ describe('NewEpisodePage', () => {
     expect(store.init).toHaveBeenCalledExactlyOnceWith(SERIES_ID);
     root.querySelector('form')?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
     expect(store.create).toHaveBeenCalledTimes(1);
+  });
+
+  it('replaces the form with a retryable series-load error without moving focus', async () => {
+    const { store, fixture, root } = await setup();
+    const backLink = root.querySelector<HTMLAnchorElement>('a[href="/episodes"]')!;
+    backLink.focus();
+    const focused = document.activeElement;
+    store.errorKey.set('errors.not_found');
+    store.traceId.set('trace-series');
+    store.seriesFailed.set(true);
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    const errorState = root.querySelector<HTMLElement>('nts-error-state');
+    expect(root.querySelector('form')).toBeNull();
+    expect(errorState?.textContent).toContain(errorsVi.not_found);
+    expect(errorState?.textContent).toContain('trace-series');
+    expect(root.querySelector('a[href="/episodes"]')).not.toBeNull();
+    expect(document.activeElement).toBe(focused);
+    errorState?.querySelector<HTMLButtonElement>('button')?.click();
+    expect(store.reloadSeries).toHaveBeenCalledTimes(1);
   });
 
   it('focuses the first client-invalid control after an Enter submit, not an async alert', async () => {

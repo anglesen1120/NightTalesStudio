@@ -63,6 +63,35 @@ describe('EpisodesHttpRepository new methods', () => {
     await response;
   });
 
+  it.each([false, true])('generate_StructuralIntent_SettledInitially_%s_PreservesKeyAndLinksSettlement', async (isSettled) => {
+    const { repository, http } = setup();
+    const intent = {
+      key: '33333333-3333-4333-8333-333333333333',
+      intent: 'story.generate',
+      isSettled,
+      settle: vi.fn(function (this: { isSettled: boolean }) { this.isSettled = true; }),
+    };
+    const response = repository.generateStory(EPISODE, intent);
+    const request = http.expectOne(`/api/v1/episodes/${EPISODE}/story/generate`);
+    const contextIntent = request.request.context.get(IDEMPOTENCY_INTENT);
+    expect(request.request.method).toBe('POST');
+    expect(request.request.headers.get('Idempotency-Key')).toBe(intent.key);
+    expect(request.request.context.get(USER_ACTION)).toBe(true);
+    expect(contextIntent).toBeInstanceOf(IdempotencyIntent);
+    expect(contextIntent?.key).toBe(intent.key);
+    expect(contextIntent?.intent).toBe(intent.intent);
+    expect(contextIntent?.isSettled).toBe(isSettled);
+    expect(intent.isSettled).toBe(isSettled);
+    expect(intent.settle).not.toHaveBeenCalled();
+
+    contextIntent?.settle();
+    expect(contextIntent?.isSettled).toBe(true);
+    expect(intent.isSettled).toBe(true);
+    expect(intent.settle).toHaveBeenCalledOnce();
+    request.flush({ generationRunId: 'run', status: 'queued', stage: 'queued' }, { status: 202, statusText: 'Accepted' });
+    await response;
+  });
+
   it('get_BackgroundDefault_CarriesNoUserAction', async () => {
     const { repository, http } = setup();
     const response = repository.get(EPISODE);

@@ -1,14 +1,14 @@
 import { ChangeDetectionStrategy, Component, ElementRef, inject } from '@angular/core';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { TranslocoPipe, provideTranslocoScope } from '@jsverse/transloco';
-import { PageHeader, RetryCountdown } from '@shared/ui';
+import { ErrorState, PageHeader, RetryCountdown } from '@shared/ui';
 import { NewEpisodeStore } from '../application/new-episode.store';
 import { GenerationProgressComponent } from '../ui/generation-progress.component';
 import { StoryBriefFormComponent } from '../ui/story-brief-form.component';
 
 @Component({
   selector: 'nts-new-episode-page',
-  imports: [PageHeader, RetryCountdown, RouterLink, TranslocoPipe, StoryBriefFormComponent, GenerationProgressComponent],
+  imports: [ErrorState, PageHeader, RetryCountdown, RouterLink, TranslocoPipe, StoryBriefFormComponent, GenerationProgressComponent],
   providers: [NewEpisodeStore, provideTranslocoScope('episodes', 'story', 'errors')],
   templateUrl: './new-episode.page.html',
   styleUrl: './new-episode.page.scss',

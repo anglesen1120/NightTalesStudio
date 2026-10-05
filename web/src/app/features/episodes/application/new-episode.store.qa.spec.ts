@@ -162,4 +162,32 @@ describe('NewEpisodeStore independent QA', () => {
     expect(store.canRetry()).toBe(false);
     expect(repo.generateCalls).toHaveLength(1);
   });
+
+  it('waits for a previous in-flight read before seeding the accepted retry without applying its stale failed run', async () => {
+    const { store, repo, realtime, navigate } = setup();
+    const failed = episodeDetail({ generation: {
+      kind: 'story', status: 'failed', stage: 'done', errorCode: 'story_invalid_output', startedAt: null, processingPaused: null,
+    } });
+    repo.scriptGet(() => Promise.resolve(failed));
+    await settle();
+    await store.create();
+    const oldRead = deferred<EpisodeDetail>();
+    repo.scriptGet(() => oldRead.promise);
+    realtime.resync();
+    const oldKey = repo.generateCalls[0]?.key;
+    const retrying = store.retry();
+    await settle();
+    expect(repo.generateCalls[1]?.key).not.toBe(oldKey);
+    expect(repo.getCalls).toHaveLength(2);
+    expect(store.phase()).toBe('generating');
+    expect(store.failureKey()).toBeNull();
+    oldRead.resolve(failed);
+    await retrying;
+    await settle();
+    expect(repo.getCalls).toHaveLength(3);
+    expect(store.phase()).toBe('generating');
+    expect(store.stageKey()).toBe('episodes.generation.stage.queued');
+    expect(store.failureKey()).toBeNull();
+    expect(navigate).not.toHaveBeenCalled();
+  });
 });

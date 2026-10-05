@@ -4,6 +4,10 @@ History moved out of STATUS.md to keep the live file small. The initial archive 
 
 ## Resume-here history (Current/Previous blocks, Next actions)
 
+### Superseded Session 25 Web next part, Plan 10 hand-over lines and audit rows (2026-10-05, replaced when 10.5.2-T1 went into a PR, Session 25)
+
+Replaced text (verbatim): `→ next **10.5.2-T1** episode detail (adds `/episodes/:id`; read the 10.5.1-T1 Status line)` (Web next); hand-over line `- **`web/openapi.json` is pinned before #121:** the generated client lacks the Session 5 endpoints (e.g. `PUT /api/v1/episodes/{id}/story`). The first web task that calls a newer endpoint runs `npm run api:gen:local -- <openapi.json from the 09.1.5-T1 build>`, commits the spec, the lock and `src/app/shared/api/**`, and checks that `api:gen:check` is green.`; hand-over clause `- **10.5.1-T1 / 10.4.1-T1 lanes (from 10.4.2-T1):** `episode-filters.component.html:49` passes `seriesName` as a Transloco param (interpolation-loop bug); dashboard i18n `{{title}}` keys are unconfirmed. The episode-list and dashboard owners investigate and close their respective paths; user titles must not be Transloco params.`; Open-tasks rows `| Audit hand-over: episode-detail | **[OPEN]** owner: 10.5.2-T1 | … |`, `| Audit hand-over: episode-interpolation | **[OPEN]** owner: TL to assign (follow-up to 10.5.1-T1) | … |`, `| Audit hand-over: story-api-repin | **[OPEN]** owner: 10.5.2-T1 | … |` (full text in #158).
+
 ### Superseded Web next wording for 10.3.3-T3 (2026-10-05, replaced when #150 merged, Session 16)
 
 Replaced text (verbatim): `**10.3.3-T3** MFA step + enrolment + recovery codes + re-auth in a PR from `feature/10.3.3-T3-s16` (Session 16; T3 gates closed; real-stack enrolment/MFA sign-in blocked on the backend enrolment token, §Plan 10 hand-overs).` (Web next), `Stage B: 10.3.3-T3 MFA/enrolment/re-auth (in PR, Session 16)` (Progress row) and `in PR (`feature/10.3.3-T3-s16`, Session 16); T3 gates closed;` (Open-tasks row).

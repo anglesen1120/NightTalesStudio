@@ -10,6 +10,22 @@ import { EpisodesRepository } from '../domain/episodes.repository';
 import type { StoryGenerationIntent } from '../domain/episodes.repository';
 import { mapEpisodeDetail, mapEpisodeListItem } from './episode.mapper';
 
+/** Keeps HTTP-context settlement linked to the domain port's caller-owned intent. */
+class StoryGenerationHttpIntent extends IdempotencyIntent {
+  constructor(private readonly source: StoryGenerationIntent) {
+    super(source.key, source.intent);
+  }
+
+  override get isSettled(): boolean {
+    return super.isSettled || this.source.isSettled;
+  }
+
+  override settle(): void {
+    super.settle();
+    this.source.settle();
+  }
+}
+
 /**
  * HTTP adapter of the episodes port; the only file of `features/episodes` that imports the generated episodes client
  * (D5). Every list call is user-initiated, so it carries `USER_ACTION` (WR11). Filters and cursor are sent only when
@@ -61,7 +77,7 @@ export class EpisodesHttpRepository extends EpisodesRepository {
 
   override async generateStory(episodeId: string, intent: StoryGenerationIntent): Promise<void> {
     try {
-      const contextIntent = intent instanceof IdempotencyIntent ? intent : new IdempotencyIntent(intent.key, intent.intent);
+      const contextIntent = intent instanceof IdempotencyIntent ? intent : new StoryGenerationHttpIntent(intent);
       await firstValueFrom(this.stories.apiV1EpisodesIdStoryGeneratePost(
         { id: episodeId, 'Idempotency-Key': intent.key },
         withIdempotency(contextIntent, userAction()),
