@@ -23,7 +23,7 @@ function shellParent(): Route {
   return parent;
 }
 
-/** The real shell parent's guards around a stub component and a test-only child (the real table has no children yet). */
+/** The real shell parent's guards around a stub component and test-only children (the real children are lazy). */
 function harnessRoutes(): Routes {
   const parent = shellParent();
   return [
@@ -64,14 +64,14 @@ function onLogin(router: Router): boolean {
 }
 
 describe('AppRoutes_RouteTable', () => {
-  it('has exactly one shell parent guarded by authGuard/authChildGuard with an empty children array', () => {
+  it('has exactly one shell parent guarded by authGuard/authChildGuard whose only child so far is episodes', () => {
     const parents = routes.filter((route) => route.canActivate?.includes(authGuard) === true && typeof route.loadComponent === 'function');
     expect(parents).toHaveLength(1);
     const parent = shellParent();
     expect(parent.path).toBe('');
     expect(parent.canActivate).toEqual([authGuard]);
     expect(parent.canActivateChild).toEqual([authChildGuard]);
-    expect(parent.children).toEqual([]);
+    expect(parent.children?.map((child) => child.path)).toEqual(['episodes']);
     expect(typeof parent.loadComponent).toBe('function');
   });
 
@@ -79,7 +79,7 @@ describe('AppRoutes_RouteTable', () => {
     const paths = routes.map((route) => route.path);
     expect(paths).not.toContain('**');
     expect(paths).not.toContain('dashboard');
-    expect(shellParent().children).toHaveLength(0);
+    expect(shellParent().children).toHaveLength(1);
   });
 });
 

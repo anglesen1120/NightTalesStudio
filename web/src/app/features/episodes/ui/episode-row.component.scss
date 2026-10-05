@@ -1,0 +1,95 @@
+:host {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap; /* meta wraps under 360px instead of overflowing (D16) */
+  gap: var(--nts-space-2) var(--nts-space-4);
+  min-width: 0;
+  padding: var(--nts-space-4) 0;
+  border-bottom: 1px solid var(--nts-color-outline);
+}
+
+.episode-row__main {
+  flex: 1 1 180px;
+  min-width: 0;
+}
+
+.episode-row__title {
+  color: var(--nts-color-on-surface);
+  text-decoration: none;
+
+  &:hover {
+    text-decoration: underline;
+  }
+
+  strong {
+    font-weight: var(--nts-type-label-weight);
+    overflow-wrap: anywhere; /* long titles wrap, never overflow */
+  }
+}
+
+.episode-row__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--nts-space-2) var(--nts-space-4);
+  margin-top: var(--nts-space-1);
+  color: var(--nts-color-on-surface-muted);
+  font-size: var(--nts-type-caption-size);
+  line-height: var(--nts-type-caption-line);
+}
+
+/* Status chip: the shared chip geometry + tones, with `episodes.status.*` copy (see the component note). */
+.episode-row__status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  max-width: 100%;
+  min-height: var(--nts-control-h-sm);
+  padding: 2px 10px 2px 8px;
+  border: 1px solid currentColor;
+  border-radius: var(--nts-radius-pill);
+  font-size: var(--nts-type-caption-size);
+  line-height: var(--nts-type-caption-line);
+  font-weight: 500;
+
+  nts-icon-check,
+  nts-icon-clock,
+  nts-icon-alert,
+  nts-icon-unknown {
+    width: 14px;
+    height: 14px;
+  }
+}
+
+.episode-row__status--neutral {
+  color: var(--nts-color-on-surface-muted);
+}
+.episode-row__status--info,
+.episode-row__status--success {
+  color: var(--nts-color-primary);
+  background: var(--nts-color-primary-soft);
+}
+.episode-row__status--error {
+  color: var(--nts-color-error);
+  background: var(--nts-color-error-soft);
+}
+
+.episode-row__continue {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  min-height: var(--nts-control-h-sm); /* ≥ 24px target (D16) */
+  padding-inline: var(--nts-space-3);
+  border: 1px solid var(--nts-color-outline);
+  border-radius: var(--nts-radius-control);
+  color: var(--nts-color-primary);
+  font-size: var(--nts-type-caption-size);
+  font-weight: 500;
+  text-decoration: none;
+  white-space: nowrap;
+
+  &:hover {
+    border-color: var(--nts-color-primary);
+    background: var(--nts-color-primary-soft);
+  }
+}

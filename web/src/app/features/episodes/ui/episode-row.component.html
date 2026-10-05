@@ -1,0 +1,25 @@
+<div class="episode-row__main">
+  <a class="episode-row__title" [routerLink]="detailCommands()"
+    ><strong>{{ item().title ?? ('episodes.list.untitled' | transloco) }}</strong></a
+  >
+  <div class="episode-row__meta"><time [attr.datetime]="item().updatedAt">{{ updatedText() }}</time></div>
+</div>
+<span [class]="toneClass()" role="img" [attr.aria-label]="statusKey() | transloco"
+  >@switch (icon()) {
+    @case ('check') {
+      <nts-icon-check />
+    }
+    @case ('clock') {
+      <nts-icon-clock />
+    }
+    @case ('alert') {
+      <nts-icon-alert />
+    }
+    @default {
+      <nts-icon-unknown />
+    }
+  }<span>{{ statusKey() | transloco }}</span></span
+>
+<a class="episode-row__continue" [routerLink]="detailCommands()" (click)="open.emit(item().id)">{{
+  'episodes.list.continue' | transloco
+}}</a>
