@@ -405,7 +405,7 @@ export class SeriesEditorStore {
     }
     this.saving.set(true);
     try {
-      return this.mode() === 'create' ? await this.createSeries() : await this.saveSeries(this.storedSeries);
+      return this.mode() === 'create' ? await this.createSeries() : await this.saveSeries(this.editBaseline ?? this.storedSeries);
     } finally {
       this.saving.set(false);
     }

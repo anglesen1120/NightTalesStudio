@@ -654,6 +654,30 @@ describe('SeriesEditorStore', () => {
     expect(store.form.controls.title.value).toBe('Đổi tên');
   });
 
+  it('Edit_SaveMineRefusedAgain_CancelThenOrdinarySubmit_SendsOnlyTheUsersEdit', async () => {
+    const { store, seriesRepo } = setup();
+    await store.init('edit', 's-ghost');
+    store.form.controls.title.setValue('Đổi tên');
+    seriesRepo.willServe(CANNED_SERIES.map((row) => (row.id === 's-ghost' ? { ...row, aspect: 'portrait', etag: '"se-42"' } : row)));
+    expect(await store.submit()).toEqual({ kind: 'conflict' });
+
+    seriesRepo.defer();
+    const retry = store.resolveConflict('saveAsNew');
+    seriesRepo.resolveNext();
+    seriesRepo.advanceVersion('s-ghost');
+    await flush();
+    seriesRepo.resolveAll();
+    expect(await retry).toEqual({ kind: 'conflict' });
+
+    // Cancel keeps the typed values; the next ordinary Submit must still diff against the row the user edited,
+    // not against the fresh row the re-read stored: the unchanged `aspect` must not overwrite the other writer.
+    seriesRepo.defer(false);
+    expect(await store.resolveConflict('cancel')).toBeNull();
+    await store.submit();
+    const last = seriesRepo.patchCalls[seriesRepo.patchCalls.length - 1];
+    expect(last?.patch).toEqual({ title: 'Đổi tên' });
+  });
+
   it('Submit_SingleFlight_IssuesOneRequest', async () => {
     const { store, seriesRepo } = setup();
     await store.init('edit', 's-ghost');
