@@ -1,0 +1,48 @@
+{
+  "login": {
+    "title": "Đăng nhập",
+    "subtitle": "Vào bàn sản xuất của bạn.",
+    "email": "E-mail",
+    "password": "Mật khẩu",
+    "submit": "Đăng nhập",
+    "submitting": "Đang đăng nhập…",
+    "forgot": "Quên mật khẩu?",
+    "invalidCredentials": "E-mail hoặc mật khẩu không đúng",
+    "emailNotVerified": "Hãy xác minh địa chỉ e-mail trước khi đăng nhập.",
+    "checkAndRetry": "Kiểm tra rồi thử lại.",
+    "progress": "Tiến trình đăng nhập",
+    "passwordStep": "Mật khẩu",
+    "verificationStep": "Xác thực"
+  },
+  "rateLimited": {
+    "message": "Bạn đã thử quá nhiều lần",
+    "retryIn": "Thử lại sau {{seconds}} giây"
+  },
+  "forgot": {
+    "title": "Quên mật khẩu",
+    "hint": "Nhập e-mail của tài khoản. Chúng tôi sẽ gửi liên kết đặt lại mật khẩu.",
+    "email": "E-mail",
+    "submit": "Gửi liên kết đặt lại",
+    "submitting": "Đang gửi…",
+    "sent": "Kiểm tra hộp thư của bạn",
+    "sentHint": "Nếu địa chỉ này có tài khoản, liên kết đặt lại mật khẩu đã được gửi. Liên kết dùng được trong 60 phút.",
+    "back": "Về trang đăng nhập"
+  },
+  "reset": {
+    "title": "Đặt mật khẩu mới",
+    "intro": "Chọn mật khẩu mới cho tài khoản của bạn.",
+    "password": "Mật khẩu mới",
+    "passwordHint": "Ít nhất 12 ký tự.",
+    "passwordTooShort": "Mật khẩu cần ít nhất 12 ký tự.",
+    "confirm": "Nhập lại mật khẩu mới",
+    "submit": "Lưu mật khẩu mới",
+    "submitting": "Đang lưu…",
+    "mismatch": "Hai mật khẩu không khớp.",
+    "success": "Đã đổi mật khẩu",
+    "successHint": "Mọi thiết bị khác đã bị đăng xuất. Đăng nhập lại bằng mật khẩu mới.",
+    "goToLogin": "Đăng nhập",
+    "missingToken": "Liên kết đặt lại mật khẩu không dùng được",
+    "missingTokenHint": "Liên kết đã hết hạn hoặc đã được dùng. Yêu cầu liên kết mới để tiếp tục.",
+    "requestNew": "Yêu cầu liên kết mới"
+  }
+}

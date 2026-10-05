@@ -1,4 +1,5 @@
 import { Routes } from '@angular/router';
+import { authRoutes } from '@features/auth';
 import { authChildGuard, authGuard } from '@core/session';
 import { publicRoutes } from '@features/public';
 
@@ -7,6 +8,7 @@ import { publicRoutes } from '@features/public';
 // last) is deferred: no approved not-found design/copy yet (owner 2026-10-05).
 export const routes: Routes = [
   ...publicRoutes,
+  ...authRoutes,
   {
     path: '',
     loadComponent: () => import('./core/shell/shell.component').then((m) => m.ShellComponent),

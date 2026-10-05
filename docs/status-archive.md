@@ -10,6 +10,11 @@ Outcome: 10.3.1-T1 built (T3 gates closed; PR from `feature/10.3.1-T1-s15`): the
 
 - **10.3.1-T1:** the prerendered legal pages must add their `public` JSONs to `bundled-translations.ts`, because a prerender cannot fetch `/assets/i18n/**` (10.2.5-T1 Notes, 10.2.4 `plan.md`).
 
+### Superseded Plan 10 hand-over lines (2026-10-05, 10 CR-46 / 10 CR-47 e2e parts closed by 10.3.3-T1)
+
+- **10 CR-46 (from 10.2.2-T1):** `web/e2e/errors.spec.ts` is written by **10.3.3-T1** (needs `/login`); `errors.keywords_flagged` is a string leaf, so the row copy cannot be `errors.keywords_flagged.rules.<rule>` — **10.5.10-T1** picks a sibling key family with the TL; **10.9.3-T1** must branch on `problem.code === 'setting_change_pending'` (409, not in `ERROR_CODES`) or catalogue it. Bound controls show `errors.<code>` (wire `errors` values are English descriptions, never rendered) until per-field copy keys exist. All three are in the receiving task Notes.
+- **10 CR-47 (from 10.2.1-T1):** `web/e2e/session.spec.ts` (reload restores, one refresh per burst, server revoke → `/login?returnUrl`, `returnUrl=//evil.example` → `/dashboard`, axe on `/login`, no CSP violation) and the D16 a11y e2e (session-end banner live region, focus to the `/login` heading, 360 px) are written by **10.3.3-T1**: no `/login`/`/dashboard` route exists before 10.3.3-T1/10.2.6-T1. 10.3.3-T1 also owns any `email_not_verified` (refresh 403) UX. In the receiving task Notes.
+
 ### Superseded Web next line (2026-10-05, replaced when Session 13 opened the 10.2.6-T1 PR)
 
 Outcome: 10.2.6-T1 shell built (T3 gates closed); PR from `feature/10.2.6-T1-s13`.

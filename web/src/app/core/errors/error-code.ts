@@ -38,6 +38,9 @@ export const ERROR_CODES = {
   mfa_token_invalid: { status: 401, kind: 'auth' },
   reauth_required: { status: 401, kind: 'auth' },
   hub_ticket_invalid: { status: 401, kind: 'auth' },
+  // 400, 403 (registration / password policy codes of 09.3.1)
+  breached_password: { status: 400, kind: 'validation' },
+  registration_closed: { status: 403, kind: 'auth' },
   // 403, 404
   forbidden: { status: 403, kind: 'auth' },
   email_not_verified: { status: 403, kind: 'auth' },
