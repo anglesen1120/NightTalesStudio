@@ -1,5 +1,5 @@
 import { TestBed } from '@angular/core/testing';
-import { TranslocoTestingModule } from '@jsverse/transloco';
+import { TranslocoService, TranslocoTestingModule } from '@jsverse/transloco';
 import { afterEach, describe, expect, it } from 'vitest';
 import { onEmit } from '@shared/ui/testing/on-emit';
 import { ZONELESS_TEST_PROVIDERS } from '../../../testing/providers';
@@ -152,6 +152,18 @@ describe('EpisodeFiltersComponent', () => {
     const { root } = await setup(model({ seriesId: SERIES_B }));
     const chip = [...root.querySelectorAll('.episode-filters__chip')].at(-1);
     expect(chip?.textContent).toContain('Vụ án Cát Lái');
+    expect(chip?.tagName).toBe('BUTTON');
+    expect(chip?.getAttribute('aria-label')).toBe(`${episodesVi.list.clearSeriesFilter}: Vụ án Cát Lái`);
+  });
+
+  it('keeps Transloco-shaped user titles literal in the series-chip accessible name in both languages', async () => {
+    const title = '{{ name }} {{x}}';
+    const { fixture, root } = await setup(model({ seriesId: SERIES_A, seriesOptions: [{ id: SERIES_A, title }] }));
+    const button = root.querySelector('button.episode-filters__chip');
+    expect(button?.getAttribute('aria-label')).toBe(`${episodesVi.list.clearSeriesFilter}: ${title}`);
+    TestBed.inject(TranslocoService).setActiveLang('en');
+    await fixture.whenStable();
+    expect(button?.getAttribute('aria-label')).toBe(`${episodesEn.list.clearSeriesFilter}: ${title}`);
   });
 
   it('disables the series select with the unavailable note and keeps an unresolved id applied', async () => {

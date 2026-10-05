@@ -1,0 +1,49 @@
+<div class="new-episode-page">
+  <nts-page-header titleKey="episodes.new.title" backHref="/episodes" />
+  @if (store.phase() === 'form' || store.phase() === 'submitting') {
+    <nts-story-brief-form
+      [form]="store.form"
+      [briefLength]="store.briefLength()"
+      [isTrueCrime]="store.isTrueCrime()"
+      [submitting]="store.submitting()"
+      [canSubmit]="store.canSubmit()"
+      [retryAfterSec]="store.retryAfterSec()"
+      [unmappedFieldKeys]="store.unmappedFieldKeys()"
+      [errorKey]="store.errorKey()"
+      [traceId]="store.traceId()"
+      [createLost]="store.createLost()"
+      [gateBlocked]="store.gateBlocked() || store.factSheetRequired()"
+      [episodeId]="store.episodeId()"
+      (submitted)="create()"
+      (countdownElapsed)="store.countdownElapsed()"
+    />
+  } @else {
+    <nts-generation-progress
+      [stageKey]="store.stageKey()"
+      [failureKey]="store.failureKey() ?? (store.retryAfterSec() === null ? store.errorKey() : null)"
+      [paused]="store.paused()"
+      [canRetry]="store.canRetry() && !store.gateBlocked() && !store.factSheetRequired()"
+      [retrying]="store.submitting()"
+      [episodeId]="store.episodeId()"
+      (retry)="store.retry()"
+    />
+    @if (store.factSheetRequired() || store.gateBlocked()) {
+      <div class="new-episode-page__gate">
+        <p role="status">{{ 'episodes.research.gate.writeStoryBlocked' | transloco }}</p>
+        @if (store.episodeId(); as id) {
+          <a [routerLink]="['/episodes', id, 'research']">{{ 'episodes.new.openResearch' | transloco }}</a>
+        }
+      </div>
+    }
+    @let seconds = store.retryAfterSec();
+    @if (seconds !== null && store.paused() === null) {
+      <div class="new-episode-page__countdown">
+        <nts-retry-countdown [seconds]="seconds" messageKey="story.generation.error.story_generation_limit" (elapsed)="store.countdownElapsed()" />
+        <button type="button" disabled>{{ 'story.generation.action.retry' | transloco }}</button>
+      </div>
+    }
+    @if (store.traceId(); as trace) {
+      <p class="new-episode-page__trace">{{ 'core.ui.errorState.traceId' | transloco }}: <code>{{ trace }}</code></p>
+    }
+  }
+</div>

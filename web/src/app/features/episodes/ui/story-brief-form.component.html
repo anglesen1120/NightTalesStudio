@@ -1,0 +1,86 @@
+<form class="brief-form" [formGroup]="form()" (ngSubmit)="submit()" [attr.aria-busy]="submitting()" novalidate>
+  @if (errorKey() !== null || unmappedFieldKeys().length > 0) {
+    <div class="brief-form__alert" role="alert" aria-atomic="true" data-form-alert>
+      @if (errorKey(); as key) {
+        <p>{{ key | transloco }}</p>
+      }
+      @for (key of unmappedFieldKeys(); track $index) {
+        <p>{{ key | transloco }}</p>
+      }
+      @if (traceId(); as trace) {
+        <p class="brief-form__hint">{{ 'core.ui.errorState.traceId' | transloco }}: <code>{{ trace }}</code></p>
+      }
+    </div>
+  }
+  @if (createLost()) {
+    <p class="brief-form__notice" role="note">{{ 'episodes.new.createLost' | transloco }} <a routerLink="/episodes">{{ 'episodes.list.title' | transloco }}</a></p>
+  }
+  @if (isTrueCrime()) {
+    <p class="brief-form__notice" role="note">{{ 'episodes.new.trueCrimeNotice' | transloco }}</p>
+  }
+  @if (gateBlocked()) {
+    <p class="brief-form__notice" role="status">
+      {{ 'episodes.research.gate.writeStoryBlocked' | transloco }}
+      @if (episodeId(); as id) {
+        <a [routerLink]="['/episodes', id, 'research']">{{ 'episodes.new.openResearch' | transloco }}</a>
+      }
+    </p>
+  }
+  @let seconds = retryAfterSec();
+  @if (seconds !== null) {
+    <nts-retry-countdown [seconds]="seconds" messageKey="story.generation.error.story_generation_limit" (elapsed)="countdownElapsed.emit()" />
+  }
+
+  <fieldset class="brief-form__fields" [disabled]="submitting()">
+    <div class="brief-form__field">
+      <label [for]="id + '-title'">{{ 'episodes.new.titleOptional' | transloco }}</label>
+      <input [id]="id + '-title'" data-control="title" formControlName="title" [attr.aria-invalid]="invalid('title') ? 'true' : null" [attr.aria-describedby]="describedBy('title')" />
+      @if (invalid('title')) {
+        <div [id]="id + '-title-error'" class="brief-form__error">
+          @if (localErrorKey('title'); as key) { <p>{{ key | transloco }}</p> }
+          @for (key of serverKeys('title'); track $index) { <p>{{ key | transloco }}</p> }
+        </div>
+      }
+    </div>
+    <div class="brief-form__field">
+      <div class="brief-form__field-header">
+        <label [for]="id + '-brief'">{{ 'episodes.new.briefLabel' | transloco }}</label>
+        <nts-char-counter [id]="id + '-brief-count'" [value]="briefLength()" [max]="1000" />
+      </div>
+      <textarea [id]="id + '-brief'" data-control="brief" formControlName="brief" rows="7" required [attr.aria-invalid]="invalid('brief') ? 'true' : null" [attr.aria-describedby]="describedBy('brief')"></textarea>
+      <p [id]="id + '-brief-hint'" class="brief-form__hint">{{ 'episodes.new.briefHint' | transloco }}</p>
+      @if (invalid('brief')) {
+        <div [id]="id + '-brief-error'" class="brief-form__error">
+          @if (localErrorKey('brief'); as key) { <p>{{ key | transloco }}</p> }
+          @for (key of serverKeys('brief'); track $index) { <p>{{ key | transloco }}</p> }
+        </div>
+      }
+    </div>
+    <fieldset class="brief-form__length">
+      <legend>{{ 'episodes.new.lengthTier' | transloco }}</legend>
+      <div class="brief-form__tiers">
+        @for (tier of tiers; track tier) {
+          <label class="brief-form__tier" [for]="id + '-' + tier">
+            <input type="radio" [id]="id + '-' + tier" data-control="lengthTier" formControlName="lengthTier" [value]="tier" [attr.aria-invalid]="invalid('lengthTier') ? 'true' : null" [attr.aria-describedby]="describedBy('lengthTier')" />
+            <span>{{ 'episodes.new.tier.' + tier | transloco }}</span>
+          </label>
+        }
+      </div>
+      @if (invalid('lengthTier')) {
+        <div [id]="id + '-lengthTier-error'" class="brief-form__error">
+          @if (localErrorKey('lengthTier'); as key) { <p>{{ key | transloco }}</p> }
+          @for (key of serverKeys('lengthTier'); track $index) { <p>{{ key | transloco }}</p> }
+        </div>
+      }
+    </fieldset>
+  </fieldset>
+  @if (submitting()) {
+    <p role="status" class="brief-form__hint">{{ 'episodes.new.submitting' | transloco }}</p>
+  }
+  <div class="brief-form__cost-line"></div>
+  <div class="brief-form__actions">
+    <button type="submit" class="brief-form__submit" [disabled]="!canSubmit() || submitting() || gateBlocked() || retryAfterSec() !== null || form().invalid || invalid('brief')" [attr.aria-busy]="submitting()">
+      {{ (isTrueCrime() ? 'episodes.new.trueCrimeNext' : 'story.generation.action.generate') | transloco }}
+    </button>
+  </div>
+</form>
