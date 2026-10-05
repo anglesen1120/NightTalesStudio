@@ -10,6 +10,10 @@ History moved out of STATUS.md to keep the live file small. The initial archive 
 
 - **Next (backend, start here):** **02.5.2-T3** fetcher host merged as #136 (`d35284e`, no CI run: CI-01; local full `gate.sh` `GATE_RC=0` on the identical tip `029fb34`) → **02.5.2-T4** SSRF/abuse suite in progress (Session 12, `feature/02.5.2-T4-s12`; drives the real loop; failure behaviours handed over in the 02.5.2-T3 row) → 02.6.1-T2, 02.6.2-T1 revision (02 §10 T113(b)), 02.3.2-T1 approve (treat `moderation.stale`/`unavailable` as needs re-check; edit-path moderator wiring). First re-run CI on `develop` once GitHub Actions billing is fixed (#131 and #136 merged with no CI run). Claim the backend `gate.sh` lock in `nts-wt/SESSION-CLAIMS.md` first.
 
+### Superseded Session 17 Web next part (2026-10-05, replaced when #145 `9210327` merged)
+
+- Part of the **Web next (plan 10 Stage B)** bullet: "**10.5.1-T1** episode list in PR #145 (Session 17, `feature/10.5.1-T1-s17`; `/episodes` + the first `NAV_ITEMS` entry; T0 design owner-approved 2026-10-02) → next **10.5.2-T1** episode detail (adds `/episodes/:id`);"
+
 ### Superseded Session 17 Web next part (2026-10-05, replaced when 10.5.1-T1 opened as PR #145)
 
 - Part of the **Web next (plan 10 Stage B)** bullet: "**10.5.1-T0** design → **10.5.1-T1** episode list (first `cursorList` consumer); **10.4.1-T1** dashboard (adds `/dashboard` + the first `NAV_ITEMS` entry);"
