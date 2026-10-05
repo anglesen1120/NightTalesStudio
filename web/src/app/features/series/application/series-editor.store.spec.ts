@@ -673,9 +673,14 @@ describe('SeriesEditorStore', () => {
     // not against the fresh row the re-read stored: the unchanged `aspect` must not overwrite the other writer.
     seriesRepo.defer(false);
     expect(await store.resolveConflict('cancel')).toBeNull();
-    await store.submit();
+    const before = seriesRepo.patchCalls.length;
+    // The stored tag is the se-42 one the re-read returned while the server already sits at se-43, so this PATCH is refused
+    // again; what matters here is the body it sends.
+    expect(await store.submit()).toEqual({ kind: 'conflict' });
+    expect(seriesRepo.patchCalls.length).toBe(before + 1);
     const last = seriesRepo.patchCalls[seriesRepo.patchCalls.length - 1];
     expect(last?.patch).toEqual({ title: 'Đổi tên' });
+    expect(last?.etag).toBe('"se-42"');
   });
 
   it('Submit_SingleFlight_IssuesOneRequest', async () => {
