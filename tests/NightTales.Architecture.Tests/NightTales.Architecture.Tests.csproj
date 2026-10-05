@@ -22,15 +22,16 @@
   </ItemGroup>
 
   <!--
-    The Fetcher projects arrive with 02.5.2-T3 (09.1.1 only reserves their names in the solution
-    filter). Referencing them conditionally keeps Fetcher_ReferencesOnlyDomainAndCore from passing
-    vacuously once they exist, without breaking the build before that.
+    NightTales.Fetcher.Core is referenced so its assembly is loaded and FetcherCore_HasNoEfCoreOrOpenAiReference /
+    FetcherHost_DependsOnDomainAndCoreOnly cannot pass vacuously (02.5.2-T3 [DECISION T40]).
   -->
-  <ItemGroup Condition="Exists('..\..\src\NightTales.Fetcher.Core\NightTales.Fetcher.Core.csproj')">
+  <ItemGroup>
     <ProjectReference Include="..\..\src\NightTales.Fetcher.Core\NightTales.Fetcher.Core.csproj" />
   </ItemGroup>
 
-  <ItemGroup Condition="Exists('..\..\src\NightTales.Fetcher\NightTales.Fetcher.csproj')">
+  <!-- NightTales.Fetcher (the host): loaded so FetcherHost_DependsOnDomainAndCoreOnly cannot pass vacuously, and so
+       Fetcher_RegistersProductionAddressValidator can build its service collection (02.5.2-T3). -->
+  <ItemGroup>
     <ProjectReference Include="..\..\src\NightTales.Fetcher\NightTales.Fetcher.csproj" />
   </ItemGroup>
 

@@ -10,6 +10,11 @@ Outcome: 10.3.1-T1 built (T3 gates closed; PR from `feature/10.3.1-T1-s15`): the
 
 - **10.3.1-T1:** the prerendered legal pages must add their `public` JSONs to `bundled-translations.ts`, because a prerender cannot fetch `/assets/i18n/**` (10.2.5-T1 Notes, 10.2.4 `plan.md`).
 
+### Superseded Next line (2026-10-05, replaced when Session 12 opened the 02.5.2-T3 PR)
+
+- **Next (backend, start here):** **02.5.2-T3** fetcher host (consumes the frozen JSON hand-off in the 02.5.2-T2 task §Notes; send raw UTF-8 JSON, the body cap is 1 MiB; robots fail-closed → `source_blocked_by_robots`) → T4, 02.6.1-T2, 02.6.2-T1 revision (02 §10 T113(b)), 02.3.2-T1 approve (treat `moderation.stale`/`unavailable` as needs re-check; edit-path moderator wiring). First re-run CI on `develop` once GitHub Actions billing is fixed (#131 merged with no CI run). Claim the backend `gate.sh` lock in `nts-wt/SESSION-CLAIMS.md` first.
+- **Outcome:** 02.5.2-T3 built without a migration; T3 gates closed; PR from `feature/02.5.2-T3-s12`.
+
 ### Superseded Plan 10 hand-over lines (2026-10-05, 10 CR-46 / 10 CR-47 e2e parts closed by 10.3.3-T1)
 
 - **10 CR-46 (from 10.2.2-T1):** `web/e2e/errors.spec.ts` is written by **10.3.3-T1** (needs `/login`); `errors.keywords_flagged` is a string leaf, so the row copy cannot be `errors.keywords_flagged.rules.<rule>` — **10.5.10-T1** picks a sibling key family with the TL; **10.9.3-T1** must branch on `problem.code === 'setting_change_pending'` (409, not in `ERROR_CODES`) or catalogue it. Bound controls show `errors.<code>` (wire `errors` values are English descriptions, never rendered) until per-field copy keys exist. All three are in the receiving task Notes.

@@ -1,6 +1,6 @@
 using System.Net;
 using System.Numerics;
-using NightTales.Infrastructure.Research.Http;
+using NightTales.Fetcher.Core.Research.Http;
 using Shouldly;
 using Xunit;
 
