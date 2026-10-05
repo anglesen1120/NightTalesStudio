@@ -265,6 +265,15 @@ TestKit also applies a process-wide host default before its factories run: `Test
 appsettings reload watchers. An explicit environment value is preserved. This is a test-host default,
 not an application-required configuration key.
 
+Legal acceptance uses the existing startup-validated `LegalDocuments:Current:Tos` and `:Privacy` keys
+(`LegalDocumentVersions`), not a second options section. Both public values are `1.0.0` in the Api and
+Worker appsettings and in the configuration-cleared Worker test hosts. Versions are required,
+semver-like (`digits.digits.digits`) and at most 32 characters; a missing, oversized or malformed value
+refuses startup. Keep these values equal to `web/src/content/legal/manifest.json`; overrides must follow
+the same contract. `GET /api/v1/me/legal` reads both latest acceptance stamps in one query and
+`POST /api/v1/me/legal/accept` appends both server versions and the audit atomically. A stale rendered
+version accepts neither document and returns `409 legal_version_outdated` with sorted `errors.documents`.
+
 Rules for any change that runs at start-up:
 
 - It must succeed in every row above. Data seeding at start-up runs only in Development:

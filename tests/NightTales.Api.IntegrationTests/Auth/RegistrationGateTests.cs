@@ -142,7 +142,7 @@ public sealed class RegistrationGateTests(TestDatabase database) : IntegrationTe
                 password = Password,
                 consents = new[]
                 {
-                    new { document = "tos", version = "v1" },
+                    new { document = "tos", version = "1.0.0" },
                     new { document = "marketing", version = "v1" },
                 },
             },
@@ -173,8 +173,8 @@ public sealed class RegistrationGateTests(TestDatabase database) : IntegrationTe
                 password = Password,
                 consents = new object[]
                 {
-                    new { document = "tos", version = "v1" },
-                    new { document = "privacy", version = "v1" },
+                    new { document = "tos", version = "1.0.0" },
+                    new { document = "privacy", version = "1.0.0" },
                     new { document = 7, version = "v1" },
                 },
             },
@@ -207,7 +207,7 @@ public sealed class RegistrationGateTests(TestDatabase database) : IntegrationTe
             {
                 email = $"null-entry-{Guid.CreateVersion7():N}@nighttales.test",
                 password = Password,
-                consents = new object?[] { null, new { document = "privacy", version = "v1" } },
+                consents = new object?[] { null, new { document = "privacy", version = "1.0.0" } },
             },
             ct);
 
@@ -234,7 +234,7 @@ public sealed class RegistrationGateTests(TestDatabase database) : IntegrationTe
             {
                 email = $"missing-document-{Guid.CreateVersion7():N}@nighttales.test",
                 password = Password,
-                consents = new object[] { new { version = "v1" }, new { document = "privacy", version = "v1" } },
+                consents = new object[] { new { version = "v1" }, new { document = "privacy", version = "1.0.0" } },
             },
             ct);
 
@@ -270,8 +270,8 @@ public sealed class RegistrationGateTests(TestDatabase database) : IntegrationTe
         password = Password,
         consents = new[]
         {
-            new { document = "tos", version = "v1" },
-            new { document = "privacy", version = "v1" },
+            new { document = "tos", version = "1.0.0" },
+            new { document = "privacy", version = "1.0.0" },
         },
     };
 }

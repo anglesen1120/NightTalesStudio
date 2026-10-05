@@ -1,0 +1,20 @@
+{
+  "legal": {
+    "title": "Review legal documents",
+    "intro": "Read the current Terms of Use and Privacy Policy before continuing.",
+    "privacyLabel": "Privacy Policy",
+    "termsLabel": "Terms of Use",
+    "currentVersion": "Current version: {{version}}",
+    "acceptedOn": "Accepted on {{date}}",
+    "checkbox": "I have read and accept both documents.",
+    "accept": "Accept and continue",
+    "openPrivacy": "Open the Privacy Policy in a new tab",
+    "openTerms": "Open the Terms of Use in a new tab",
+    "signOut": "Sign out",
+    "outdated": "A newer version needs your acceptance.",
+    "required": "You need to accept this document.",
+    "error": {
+      "generic": "Your acceptance could not be saved. The dialog remains open so you can try again."
+    }
+  }
+}

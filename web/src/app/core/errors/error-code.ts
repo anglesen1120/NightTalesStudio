@@ -68,6 +68,8 @@ export const ERROR_CODES = {
   autopilot_topic_locked: { status: 409, kind: 'precondition' },
   autopilot_pause_reason_active: { status: 409, kind: 'precondition' },
   keywords_flagged: { status: 409, kind: 'precondition' },
+  legal_acceptance_required: { status: 409, kind: 'precondition' },
+  legal_version_outdated: { status: 409, kind: 'precondition' },
   // 412 (stale If-Match)
   episode_conflict: { status: 412, kind: 'conflict' },
   story_version_conflict: { status: 412, kind: 'conflict' },
