@@ -1,7 +1,7 @@
 import { ChangeDetectionStrategy, Component } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { provideRouter, Router } from '@angular/router';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { uiTestingTranslations } from '../testing/ui-testing-translations';
 import { PageHeader } from './page-header';
 
@@ -25,6 +25,23 @@ describe('PageHeader', () => {
     root.querySelector<HTMLAnchorElement>('a')?.click();
     await fixture.whenStable();
     expect(TestBed.inject(Router).url).toBe('/safe');
+  });
+
+  it('renders an authored title without passing it through Transloco', async () => {
+    const warning = vi.spyOn(console, 'warn');
+    await TestBed.configureTestingModule({
+      imports: [PageHeader, uiTestingTranslations()],
+      providers: [provideRouter([])],
+    }).compileComponents();
+    const fixture = TestBed.createComponent(PageHeader);
+    fixture.componentRef.setInput('title', 'Authored legal title');
+    await fixture.whenStable();
+
+    expect((fixture.nativeElement as HTMLElement).querySelector('h1')?.textContent).toBe(
+      'Authored legal title',
+    );
+    expect(warning).not.toHaveBeenCalled();
+    warning.mockRestore();
   });
 
   for (const hostile of ['//evil.example', 'https://evil.example', '\\evil', '//scheme-relative']) {

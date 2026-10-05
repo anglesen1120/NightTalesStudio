@@ -1,0 +1,15 @@
+{
+  "legal": {
+    "toc": "Trong tài liệu này",
+    "version": "Phiên bản {{ version }}",
+    "updated": "Cập nhật ngày {{ date }}",
+    "otherLanguage": "English",
+    "backHome": "Về trang chủ",
+    "empty": "Nội dung đang được cập nhật",
+    "emptyDescription": "Bản văn của phiên bản này chưa có trong bản dựng."
+  },
+  "nav": {
+    "privacy": "Chính sách quyền riêng tư",
+    "terms": "Điều khoản sử dụng"
+  }
+}

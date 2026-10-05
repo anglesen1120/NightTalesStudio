@@ -11,8 +11,9 @@ import { provideRouter } from '@angular/router';
 import { LocaleService, provideAppI18n } from '@core/i18n';
 import { PreferencesStore, ThemeStore } from '@core/prefs';
 import { provideRealtime } from '@core/realtime';
-import { provideSession, sessionInterceptor } from '@core/session';
+import { provideSession, provideSessionFreePaths, sessionInterceptor } from '@core/session';
 import { idempotencyInterceptor } from '@core/http';
+import { isSessionFreePublicPath } from '@features/public';
 import { routes } from './app.routes';
 
 export const appConfig: ApplicationConfig = {
@@ -26,6 +27,8 @@ export const appConfig: ApplicationConfig = {
     // so the single 401 replay keeps the Idempotency-Key header.
     provideHttpClient(withFetch(), withInterceptors([idempotencyInterceptor, sessionInterceptor])),
     provideSession(),
+    // The legal pages issue no /api request: the boot refresh is skipped when the browser lands on one.
+    provideSessionFreePaths(isSessionFreePublicPath),
     provideRealtime(),
     provideAppI18n(),
     // Read preferences once, then apply the validated theme and the initial language before the first view renders.
