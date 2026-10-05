@@ -1,0 +1,39 @@
+{
+  "generation": {
+    "stage": {
+      "writing": "Writing the script…",
+      "checking": "Checking…",
+      "reviewing": "Self-reviewing…",
+      "revising": "Applying one correction…",
+      "scoring": "Checking similarity…",
+      "saving": "Saving…"
+    },
+    "error": {
+      "story_invalid_output": "The draft did not pass validation. Try again.",
+      "story_generation_failed": "The story could not be generated. Please try again.",
+      "story_generation_limit": "This episode reached its 5 generations for today. {{seconds}}s left.",
+      "spend_cap_reached": "The spending cap was reached. Please try again later."
+    },
+    "paused": {
+      "provider_funds_exhausted": "Processing is paused. Your credits are reserved, not charged yet."
+    },
+    "moderation": {
+      "brief": "The idea is not suitable. Remove the flagged details and try again.",
+      "child_safety": "Content involving minors is not allowed.",
+      "graphic_violence": "Reduce graphic violence.",
+      "violence": "Reduce the level of violence.",
+      "sexual": "Reduce sexual content.",
+      "hate": "Reduce hateful language.",
+      "harassment": "Reduce harassing or threatening language.",
+      "self_harm": "Reduce self-harm detail.",
+      "illicit": "Reduce criminal or seriously violent detail."
+    },
+    "revised": {
+      "badge": "Automatically corrected once"
+    },
+    "action": {
+      "retry": "Try again",
+      "generate": "Write story"
+    }
+  }
+}

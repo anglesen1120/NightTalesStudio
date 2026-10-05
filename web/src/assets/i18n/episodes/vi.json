@@ -23,6 +23,7 @@
     "seriesFilterUnavailable": "Chưa tải được tên loạt bài. Bộ lọc theo mã vẫn đang áp dụng.",
     "seriesFilterBounded": "Chỉ hiển thị 100 loạt bài đầu tiên.",
     "clearFilter": "Xoá bộ lọc {{name}}",
+    "clearSeriesFilter": "Xoá bộ lọc loạt bài",
     "errorTitle": "Không tải được tập phim"
   },
   "status": {
@@ -37,5 +38,35 @@
     "published": "Đã đăng",
     "failed": "Lỗi",
     "cancelled": "Đã huỷ"
+  },
+  "new": {
+    "title": "Tập phim mới",
+    "briefLabel": "Ý tưởng",
+    "briefHint": "Tối đa 1.000 ký tự",
+    "titleOptional": "Tiêu đề (không bắt buộc)",
+    "lengthTier": "Độ dài",
+    "tier": { "short": "Ngắn", "standard": "Tiêu chuẩn", "long": "Dài" },
+    "trueCrimeNext": "Tạo tập phim và thêm nguồn",
+    "trueCrimeNotice": "Tập tội phạm thật cần nguồn và bảng dữ kiện được duyệt trước khi viết.",
+    "createLost": "Chưa xác nhận được tập đã tạo. Hãy kiểm tra danh sách tập phim trước khi tạo lại.",
+    "openEpisode": "Mở tập phim",
+    "openResearch": "Mở nghiên cứu",
+    "submitting": "Đang tạo tập phim",
+    "validation": {
+      "briefRequired": "Hãy nhập ý tưởng.",
+      "briefMax": "Ý tưởng tối đa 1.000 ký tự.",
+      "titleMax": "Tiêu đề tối đa 120 ký tự."
+    }
+  },
+  "generation": {
+    "heading": "Đang tạo kịch bản",
+    "retrying": "Đang thử lại",
+    "stage": { "queued": "Đang xếp hàng", "done": "Xong" },
+    "paused": "Tạm dừng xử lý. Hãy quay lại sau; không cần thử lại."
+  },
+  "research": {
+    "gate": {
+      "writeStoryBlocked": "Cần duyệt bảng dữ kiện với ít nhất 2 nguồn đã tải trước khi viết kịch bản."
+    }
   }
 }

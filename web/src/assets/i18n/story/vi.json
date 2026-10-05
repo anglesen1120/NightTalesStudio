@@ -1,0 +1,39 @@
+{
+  "generation": {
+    "stage": {
+      "writing": "Đang viết kịch bản…",
+      "checking": "Đang kiểm tra…",
+      "reviewing": "Đang tự đánh giá…",
+      "revising": "Đang sửa lần cuối…",
+      "scoring": "Đang kiểm tra trùng lặp…",
+      "saving": "Đang lưu…"
+    },
+    "error": {
+      "story_invalid_output": "Bản nháp không hợp lệ. Hãy thử lại.",
+      "story_generation_failed": "Không tạo được kịch bản. Vui lòng thử lại.",
+      "story_generation_limit": "Đã đạt giới hạn 5 lần tạo mỗi ngày cho tập này. Còn {{seconds}} giây.",
+      "spend_cap_reached": "Đã chạm hạn mức chi tiêu. Vui lòng thử lại sau."
+    },
+    "paused": {
+      "provider_funds_exhausted": "Tạm dừng xử lý. Tín dụng đã được giữ, chưa trừ."
+    },
+    "moderation": {
+      "brief": "Ý tưởng chưa phù hợp. Hãy bỏ các chi tiết bị đánh dấu và thử lại.",
+      "child_safety": "Không được có nội dung liên quan đến trẻ em.",
+      "graphic_violence": "Giảm mô tả bạo lực chi tiết.",
+      "violence": "Giảm mức độ bạo lực.",
+      "sexual": "Giảm mô tả tình dục.",
+      "hate": "Giảm ngôn từ thù địch.",
+      "harassment": "Giảm ngôn từ quấy rối hoặc đe doạ.",
+      "self_harm": "Giảm chi tiết tự hại.",
+      "illicit": "Giảm chi tiết phạm pháp hoặc bạo lực nghiêm trọng."
+    },
+    "revised": {
+      "badge": "Đã tự sửa một lần"
+    },
+    "action": {
+      "retry": "Thử lại",
+      "generate": "Viết kịch bản"
+    }
+  }
+}

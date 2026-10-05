@@ -19,3 +19,16 @@ export const episodesRoutes: Routes = [
     ],
   },
 ];
+
+export const newEpisodeRoutes: Routes = [
+  {
+    path: '',
+    loadComponent: () => import('./feature/new-episode.page').then((module) => module.NewEpisodePage),
+    providers: [
+      { provide: EpisodesRepository, useClass: EpisodesHttpRepository },
+      { provide: SeriesOptionsRepository, useClass: SeriesOptionsHttpRepository },
+      provideTranslocoScope('episodes'),
+      provideTranslocoScope('story'),
+    ],
+  },
+];

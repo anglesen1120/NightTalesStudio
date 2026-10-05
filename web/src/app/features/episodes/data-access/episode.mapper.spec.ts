@@ -1,6 +1,6 @@
-import type { EpisodeListItemDto } from '@shared/api';
+import type { EpisodeDetailDto, EpisodeListItemDto } from '@shared/api';
 import { EPISODE_STATUSES } from '../domain/episode.model';
-import { mapEpisodeListItem } from './episode.mapper';
+import { mapEpisodeDetail, mapEpisodeListItem } from './episode.mapper';
 
 const DTO: EpisodeListItemDto = {
   id: 'e1',
@@ -29,5 +29,44 @@ describe('mapEpisodeListItem', () => {
   it('unknownWireStatus_YieldsNullInsteadOfThrowingOrLeakingTheRawString', () => {
     const unknown = { ...DTO, status: 'archived_in_the_future' } as unknown as EpisodeListItemDto;
     expect(mapEpisodeListItem(unknown)).toBeNull();
+  });
+});
+
+const DETAIL: EpisodeDetailDto = {
+  id: DTO.id, seriesId: DTO.seriesId, title: null, brief: 'A lantern', lengthTier: 'standard',
+  status: 'story_generating', etag: DTO.etag, currentStory: null,
+  generation: { kind: 'story', status: 'running', stage: 'writing', errorCode: null, startedAt: null },
+  nextActions: ['edit_story'], finalVideo: null, publications: null, renderJob: null,
+};
+
+describe('mapEpisodeDetail', () => {
+  it('mapsGenerationAndNextActions_WithoutCopyingStoryText', () => {
+    expect(mapEpisodeDetail(DETAIL)).toEqual({
+      id: DETAIL.id, seriesId: DETAIL.seriesId, status: DETAIL.status, etag: DETAIL.etag,
+      generation: { ...DETAIL.generation, processingPaused: null },
+      hasCurrentStory: false, nextActions: ['edit_story'],
+    });
+  });
+
+  it('currentStoryPresence_IsMappedToBooleanOnly', () => {
+    const current = { ...DETAIL, currentStory: { body: 'Never copy this text' } } as unknown as EpisodeDetailDto;
+    const result = mapEpisodeDetail(current);
+    expect(result.hasCurrentStory).toBe(true);
+    expect(result).not.toHaveProperty('currentStory');
+  });
+
+  it('nullGeneration_IsPreserved', () => {
+    expect(mapEpisodeDetail({ ...DETAIL, generation: null }).generation).toBeNull();
+  });
+
+  it('processingPaused_String_IsReadDefensivelyAcrossTheDtoGap', () => {
+    const paused = { ...DETAIL, generation: { ...DETAIL.generation, processingPaused: 'provider_funds_exhausted' } } as unknown as EpisodeDetailDto;
+    expect(mapEpisodeDetail(paused).generation?.processingPaused).toBe('provider_funds_exhausted');
+  });
+
+  it.each([undefined, null, 4, true])('processingPaused_%s_NonStringIsIgnored', (processingPaused) => {
+    const generation = { kind: 'story', status: 'running', stage: 'writing', errorCode: null, startedAt: null, processingPaused };
+    const wire = { ...DETAIL, generation } as unknown as EpisodeDetailDto;
+    expect(mapEpisodeDetail(wire).generation?.processingPaused).toBeNull();
   });
 });
