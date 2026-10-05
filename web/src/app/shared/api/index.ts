@@ -7,6 +7,7 @@ export { RequestBuilder } from './request-builder';
 export type { StrictHttpResponse } from './strict-http-response';
 export { Api } from './api';
 
+export type { AcceptLegalDocumentsCommand } from './models/accept-legal-documents-command';
 export type { AddSourceRequest } from './models/add-source-request';
 export type { Aspect } from './models/aspect';
 export type { CatalogResponseOfStyleTemplateListItemDto } from './models/catalog-response-of-style-template-list-item-dto';
@@ -29,7 +30,9 @@ export type { GenerationStatusDto } from './models/generation-status-dto';
 export type { HubTicketDto } from './models/hub-ticket-dto';
 export type { JsonElement } from './models/json-element';
 export type { Language } from './models/language';
+export type { LegalAcceptanceDto } from './models/legal-acceptance-dto';
 export type { LegalDocument } from './models/legal-document';
+export type { LegalDocumentStatusDto } from './models/legal-document-status-dto';
 export type { LengthTier } from './models/length-tier';
 export type { LoginCommand } from './models/login-command';
 export type { LoginMfaRequest } from './models/login-mfa-request';

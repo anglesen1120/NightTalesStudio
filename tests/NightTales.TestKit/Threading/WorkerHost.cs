@@ -324,8 +324,8 @@ public sealed class WorkerHost(TestDatabase database, FakeClock clock) : IAsyncD
                 nameof(RegistrationMode.Closed),
             [$"{BreachedPasswordOptions.SectionName}:{nameof(BreachedPasswordOptions.Mode)}"] =
                 nameof(BreachedPasswordMode.List),
-            [$"{LegalDocumentVersions.SectionName}:{nameof(LegalDocumentVersions.Tos)}"] = "v1",
-            [$"{LegalDocumentVersions.SectionName}:{nameof(LegalDocumentVersions.Privacy)}"] = "v1",
+            [$"{LegalDocumentVersions.SectionName}:{nameof(LegalDocumentVersions.Tos)}"] = "1.0.0",
+            [$"{LegalDocumentVersions.SectionName}:{nameof(LegalDocumentVersions.Privacy)}"] = "1.0.0",
 
             // 09.9.4-T1: the Worker's composition root registers the Data Protection key ring too, so the
             // harness provides the run's throwaway KEK exactly as a deployment's secret store does.

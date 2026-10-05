@@ -11,7 +11,7 @@ namespace NightTales.Infrastructure.Identity;
 /// <c>user_consents.version</c>): a host that cannot name the current versions must not accept a
 /// registration. 09.3.1-T3 reads them through this options type when it records the consent rows.
 /// </remarks>
-public sealed class LegalDocumentVersions
+public sealed class LegalDocumentVersions : ICurrentLegalVersions
 {
     /// <summary>The configuration section this type binds to.</summary>
     public const string SectionName = "LegalDocuments:Current";
@@ -27,7 +27,7 @@ public sealed class LegalDocumentVersions
 
     /// <summary>The current version of <paramref name="document"/>.</summary>
     /// <param name="document">Which document to name.</param>
-    public string For(LegalDocument document) => document switch
+    public string GetCurrentVersion(LegalDocument document) => document switch
     {
         LegalDocument.Tos => Tos,
         LegalDocument.Privacy => Privacy,

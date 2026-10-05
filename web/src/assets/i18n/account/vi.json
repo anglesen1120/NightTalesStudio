@@ -1,0 +1,20 @@
+{
+  "legal": {
+    "title": "Xem lại văn bản pháp lý",
+    "intro": "Hãy đọc Điều khoản sử dụng và Chính sách quyền riêng tư hiện hành trước khi tiếp tục.",
+    "privacyLabel": "Chính sách quyền riêng tư",
+    "termsLabel": "Điều khoản sử dụng",
+    "currentVersion": "Phiên bản hiện hành: {{version}}",
+    "acceptedOn": "Đã chấp nhận lúc {{date}}",
+    "checkbox": "Tôi đã đọc và chấp nhận cả hai văn bản.",
+    "accept": "Chấp nhận và tiếp tục",
+    "openPrivacy": "Mở Chính sách quyền riêng tư trong thẻ mới",
+    "openTerms": "Mở Điều khoản sử dụng trong thẻ mới",
+    "signOut": "Đăng xuất",
+    "outdated": "Bạn cần chấp nhận phiên bản mới hơn.",
+    "required": "Bạn cần chấp nhận văn bản này.",
+    "error": {
+      "generic": "Không thể lưu chấp nhận. Hộp thoại vẫn mở để bạn thử lại."
+    }
+  }
+}

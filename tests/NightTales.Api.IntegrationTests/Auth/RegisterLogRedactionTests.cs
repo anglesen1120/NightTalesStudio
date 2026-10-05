@@ -37,8 +37,8 @@ public sealed class RegisterLogRedactionTests(TestDatabase database) : Integrati
                 password,
                 consents = new[]
                 {
-                    new { document = "tos", version = "v1" },
-                    new { document = "privacy", version = "v1" },
+                    new { document = "tos", version = "1.0.0" },
+                    new { document = "privacy", version = "1.0.0" },
                 },
             },
             ct);
