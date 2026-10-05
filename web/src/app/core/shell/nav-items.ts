@@ -1,5 +1,5 @@
 import { InjectionToken, type Type } from '@angular/core';
-import { IconEpisodes } from '@shared/ui';
+import { IconDashboard, IconEpisodes } from '@shared/ui';
 
 /** One side-navigation destination. `labelKey` is a Transloco key; `route` is an absolute path. */
 export interface NavItem {
@@ -16,6 +16,7 @@ export interface NavItem {
  */
 export const NAV_ITEMS: readonly NavItem[] = [
   { id: 'episodes', labelKey: 'shell.nav.episodes', route: '/episodes', icon: IconEpisodes, visible: () => true },
+  { id: 'dashboard', labelKey: 'shell.nav.dashboard', route: '/dashboard', icon: IconDashboard, visible: () => true },
 ];
 
 /** Specs provide entries through this token; production resolves `NAV_ITEMS`. */
