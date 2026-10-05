@@ -81,6 +81,7 @@ try
 
     // 02.3.4-T1 (02 README D21): the story quality checker and its required `Story:Quality` thresholds.
     builder.Services.AddStoryQuality();
+    builder.Services.AddSimilarity();
     // 02.5.1-T1 (02 README D8/D10/D11): the story-source caps, the domain blocklist and the public-suffix list
     // behind `AddSourceCommand`; a bad cap or blocklist entry fails the boot.
     builder.Services.AddSources(builder.Configuration);

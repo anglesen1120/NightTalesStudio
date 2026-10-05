@@ -35,22 +35,14 @@ public sealed class PostgresDatabaseTests : IntegrationTest
     {
         var ct = TestContextToken.Value;
 
-        // This database was created inside the module's start wave: xUnit starts one collection per core
-        // at once (and `dotnet test` starts every test module at once), and each of those class fixtures
-        // copies the same ~9 MB template, so the sample is the copy's latency under the harness's own
-        // concurrency, not its cost. Measured on this Mac (2026-10-02, 88 class databases in one gate
-        // run): the ten-way first wave took 1063-1114 ms each, every later wave 55-231 ms (median 110 ms);
-        // a single copy outside a run is 80-270 ms. The bound here therefore only has to catch the
-        // regression its message names — a fixture that migrates per class instead of copying the
-        // template (a single migrate measured 2.5 s, and the same migrate in ten parallel collections far
-        // more). The "well under a second" criterion is asserted on the next-wave copy below, where it is
-        // a measurement of the copy rather than of the wave.
+        // The class fixture starts alongside other collections and test modules. Its elapsed time
+        // includes connection acquisition, PostgreSQL work and scheduling under that shared load;
+        // it cannot distinguish a template clone from a per-class migrate. Report that latency,
+        // then prove the clone below using the copied catalog identity and migration data. The
+        // contracted < 1 s next-wave creation check remains separate and unchanged.
         Database.CreationDuration.ShouldNotBeNull();
         _output.WriteLine(
             $"class database {Database.Name} created in {Database.CreationDuration.Value.TotalMilliseconds:F0} ms");
-        Database.CreationDuration.Value.ShouldBeLessThan(
-            TimeSpan.FromSeconds(5),
-            "one class database is a CREATE DATABASE … TEMPLATE copy, not a per-class migrate, even in the start wave");
 
         var user = await new UserBuilder(Database, new TestCurrentUser()).CreateAsync(ct: ct);
 
@@ -73,6 +65,21 @@ public sealed class PostgresDatabaseTests : IntegrationTest
                 .ShouldNotBe(PostgresFixture.MaskPassword(Database.ConnectionString));
             new NpgsqlConnectionStringBuilder(other.ConnectionString).Database.ShouldBe(other.Name);
             new NpgsqlConnectionStringBuilder(Database.ConnectionString).Database.ShouldBe(Database.Name);
+
+            // CREATE DATABASE ... TEMPLATE preserves relation OIDs and migration rows. Migrating
+            // independently would allocate a different users OID, even with an identical schema.
+            // Compare only the class copies: connecting to the template would race parallel clones.
+            const string usersOidSql = "SELECT 'public.users'::regclass::oid::text";
+            var usersOid = await Database.QueryStringsAsync(usersOidSql, ct);
+            usersOid.Count.ShouldBe(1);
+            (await other.QueryStringsAsync(usersOidSql, ct)).ShouldBe(
+                usersOid, "both class databases carry the same template's users relation identity");
+            (await Fixture.AppliedMigrationsAsync(other.Name, ct)).ShouldBe(
+                await Fixture.AppliedMigrationsAsync(Database.Name, ct),
+                "template cloning copies the migration-history rows, not just the model");
+            (await Fixture.TableNamesAsync(other.Name, ct)).ShouldBe(
+                await Fixture.TableNamesAsync(Database.Name, ct),
+                "both isolated databases carry the template's schema");
 
             await using (var here = Database.CreateReadDbContext())
             {

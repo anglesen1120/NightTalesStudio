@@ -62,7 +62,7 @@ public static class StorageServiceCollectionExtensions
     public static readonly Func<IServiceProvider, IHostedService> HealthProbeFactory =
         provider => provider.GetRequiredService<StorageHealthProbe>();
 
-    /// <summary>Registers the blob store and its health prober.</summary>
+    /// <summary>Registers the blob store, extracted-text store and storage health prober for both hosts.</summary>
     /// <param name="services">The composition root's service collection.</param>
     /// <param name="configuration">The host configuration; it carries the <c>Storage</c> section.</param>
     /// <returns>The same collection, for chaining.</returns>
@@ -107,6 +107,7 @@ public static class StorageServiceCollectionExtensions
         services.AddSingleton<StorageMetrics>();
         services.AddSingleton<S3ClientFactory>();
         services.AddSingleton<IBlobStore, S3BlobStore>();
+        services.TryAddSingleton<IExtractedTextStore, ExtractedTextStore>();
         services.AddSingleton<IStorageHealthCache, StorageHealthCache>();
 
         // The prober is registered through the named factory (not AddHostedService) so the harness can
