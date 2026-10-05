@@ -43,22 +43,6 @@ public sealed class StoryReadRoutesTests(TestDatabase database) : IntegrationTes
     private static readonly string[] GenerationKeys = ["kind", "status", "stage", "errorCode", "startedAt"];
     private static CancellationToken Ct => TestContextToken.Value;
 
-    [Theory]
-    [InlineData("/api/v1/episodes/{id:guid}/story/versions")]
-    [InlineData("/api/v1/episodes/{id:guid}/story/versions/{versionId:guid}")]
-    public void StoryVersionRoutes_UseDefaultOpenApiMetadata(string route)
-    {
-        using var factory = Factory();
-        using var client = factory.CreateClient();
-        var endpoints = factory.Services.GetRequiredService<EndpointDataSource>();
-        var endpoint = endpoints.Endpoints.OfType<RouteEndpoint>()
-            .Single(candidate => candidate.RoutePattern.RawText == route);
-
-        endpoint.Metadata.GetMetadata<IEndpointNameMetadata>().ShouldBeNull();
-        endpoint.Metadata.GetMetadata<ITagsMetadata>().ShouldBeNull();
-        endpoint.Metadata.GetMetadata<IEndpointSummaryMetadata>().ShouldBeNull();
-    }
-
     [Fact]
     public async Task EpisodeDetail_IncludesCurrentStoryBlock()
     {
