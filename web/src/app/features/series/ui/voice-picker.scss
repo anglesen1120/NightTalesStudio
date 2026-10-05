@@ -1,0 +1,102 @@
+:host {
+  display: block;
+}
+
+.voice-picker {
+  min-width: 0;
+  padding: 0;
+  margin: 0;
+  border: 0;
+}
+
+.voice-picker__legend {
+  padding: 0;
+  margin: 0 0 var(--nts-space-3);
+  color: var(--nts-color-ink);
+  font-size: var(--nts-type-title-size);
+  font-weight: var(--nts-type-title-weight);
+  line-height: var(--nts-type-title-line);
+}
+
+.voice-picker__list {
+  display: grid;
+  gap: var(--nts-space-2);
+}
+
+.voice-picker__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--nts-space-3);
+  min-height: var(--nts-target-min);
+  padding: var(--nts-space-3) var(--nts-space-4);
+  background: var(--nts-color-surface);
+  border: 1px solid var(--nts-color-line);
+  border-radius: var(--nts-radius-control);
+}
+
+.voice-picker__row:has(.mat-mdc-radio-checked) {
+  border-color: var(--nts-color-primary);
+  background: var(--nts-color-primary-soft);
+}
+
+.voice-picker__row-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--nts-space-1);
+  min-width: 0;
+}
+
+.voice-picker__name {
+  overflow: hidden;
+  font-size: var(--nts-type-label-size);
+  font-weight: var(--nts-type-label-weight);
+  line-height: var(--nts-type-label-line);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.voice-picker__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--nts-space-1) var(--nts-space-3);
+  color: var(--nts-color-muted);
+  font-size: var(--nts-type-caption-size);
+  line-height: var(--nts-type-caption-line);
+}
+
+.voice-picker__meta-item {
+  white-space: nowrap;
+}
+
+.voice-picker__tag {
+  padding: 0 var(--nts-space-2);
+  border: 1px solid var(--nts-color-line);
+  border-radius: var(--nts-radius-pill);
+}
+
+.voice-picker__rate-limit {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--nts-space-3);
+  padding: var(--nts-space-3) 0;
+}
+
+.voice-picker__hint {
+  margin: var(--nts-space-3) 0 0;
+  color: var(--nts-color-muted);
+  font-size: var(--nts-type-caption-size);
+  line-height: var(--nts-type-caption-line);
+}
+
+@media (max-width: 599px) {
+  .voice-picker__row {
+    grid-template-columns: 1fr;
+    gap: var(--nts-space-2);
+  }
+
+  .voice-picker__row nts-audio-preview-button {
+    justify-self: start;
+  }
+}
