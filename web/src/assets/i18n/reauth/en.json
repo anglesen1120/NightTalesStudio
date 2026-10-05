@@ -1,0 +1,12 @@
+{
+  "title": "Confirm your password",
+  "reason": "This action needs a fresh confirmation.",
+  "password": "Password",
+  "code": "Authentication code",
+  "codeHint": "Leave empty if your account has no authenticator app.",
+  "submit": "Confirm",
+  "submitting": "Confirming…",
+  "cancel": "Cancel",
+  "retry": "Try again",
+  "failed": "Could not confirm you. Check and try again."
+}

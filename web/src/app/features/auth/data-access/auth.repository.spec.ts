@@ -117,6 +117,65 @@ describe('AuthApiRepository', () => {
     });
   });
 
+  describe('loginMfa', () => {
+    const MFA = '/api/v1/auth/login/mfa';
+    const OK_BODY = { accessToken: 'a.b.c', expiresAt: '2026-10-04T10:15:00Z', role: 'owner', amr: ['pwd', 'otp'] };
+
+    it('AuthRepository_LoginMfa_Totp_SendsCodeAndNullRecoveryCode_NoIdempotencyKey', async () => {
+      const { repository, http } = setup();
+      const result = repository.loginMfa('mfa-1', '123456', 'totp');
+      const req = http.expectOne(MFA);
+      expect(req.request.method).toBe('POST');
+      expect(req.request.body).toEqual({ mfaToken: 'mfa-1', code: '123456', recoveryCode: null });
+      expect(req.request.headers.has('Idempotency-Key')).toBe(false);
+      req.flush(OK_BODY);
+      const outcome = await result;
+      expect(outcome.ok && outcome.value.kind === 'ok' ? outcome.value.session : null).toMatchObject({
+        accessToken: 'a.b.c',
+        role: 'owner',
+        amr: ['pwd', 'otp'],
+        expiresAt: Date.parse('2026-10-04T10:15:00Z'),
+      });
+    });
+
+    it('AuthRepository_LoginMfa_Recovery_SendsRecoveryCodeAndNullCode', async () => {
+      const { repository, http } = setup();
+      const result = repository.loginMfa('mfa-1', 'abcd-efgh', 'recovery');
+      const req = http.expectOne(MFA);
+      expect(req.request.body).toEqual({ mfaToken: 'mfa-1', code: null, recoveryCode: 'abcd-efgh' });
+      req.flush(OK_BODY);
+      expect((await result).ok).toBe(true);
+    });
+
+    it.each([
+      ['invalid_mfa_code', 401, 'auth'],
+      ['mfa_token_invalid', 401, 'auth'],
+    ])('AuthRepository_LoginMfa_%s_IsErrorNotChallenge', async (code, status, kind) => {
+      const { repository, http } = setup();
+      const result = repository.loginMfa('mfa-1', '000000', 'totp');
+      http.expectOne(MFA).flush({ code }, { status, statusText: 'Unauthorized' });
+      const outcome = await result;
+      expect(outcome.ok).toBe(false);
+      expect(outcome.ok ? null : outcome.error).toMatchObject({ code, status, kind });
+    });
+
+    it('AuthRepository_LoginMfa_RateLimited_CarriesRetryAfter', async () => {
+      const { repository, http } = setup();
+      const result = repository.loginMfa('mfa-1', '000000', 'totp');
+      http.expectOne(MFA).flush({ code: 'rate_limited' }, { status: 429, statusText: 'Too Many Requests', headers: { 'Retry-After': '60' } });
+      const outcome = await result;
+      expect(outcome.ok ? null : outcome.error).toMatchObject({ code: 'rate_limited', kind: 'rate_limit', retryAfterSec: 60 });
+    });
+
+    it('AuthRepository_LoginMfa_UnknownRole_IsUnknownError', async () => {
+      const { repository, http } = setup();
+      const result = repository.loginMfa('mfa-1', '123456', 'totp');
+      http.expectOne(MFA).flush({ ...OK_BODY, role: 'root' });
+      const outcome = await result;
+      expect(outcome.ok ? '' : outcome.error.code).toBe('unknown_error');
+    });
+  });
+
   describe('forgotPassword', () => {
     it('AuthRepository_Forgot_Accepted_IsOkVoid_NoIdempotencyKey', async () => {
       const { repository, http } = setup();

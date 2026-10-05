@@ -1,0 +1,15 @@
+<nts-auth-page-shell>
+  <nts-mfa-setup-view
+    [form]="form"
+    [vm]="store.viewModel()"
+    [fieldState]="fieldState()"
+    (verifyCode)="verifyCode()"
+    (confirmSavedChange)="confirmSavedChange($event)"
+    (finish)="finish()"
+    (regenerate)="regenerate()"
+    (retry)="retry()"
+    (download)="download()"
+    (reLogin)="reLogin()"
+    (retryAfterElapsed)="store.retryAfterElapsed()"
+  />
+</nts-auth-page-shell>

@@ -68,7 +68,7 @@ describe('LoginStore', () => {
     repo.willReturn('login', { ok: true, value: { kind: 'mfa', mfaToken: 'mfa-secret' } });
     await store.submitPassword('a@b.c', 'pw');
     expect(store.mfaToken()).toBe('mfa-secret');
-    expect(store.step()).toBe('password');
+    expect(store.step()).toBe('mfa');
     expect(setItem).not.toHaveBeenCalled();
     expect(session.isAuthenticated()).toBe(false);
     expect(navigate).not.toHaveBeenCalled();
@@ -281,5 +281,251 @@ describe('LoginStore', () => {
     await store.submitPassword('a@b.c', 'pw');
     store.backToPassword();
     expect(store.mfaToken()).toBeNull();
+  });
+
+  describe('MFA step', () => {
+    async function atMfaStep(returnUrl: string | null = null) {
+      const ctx = setup(returnUrl);
+      ctx.repo.willReturn('login', { ok: true, value: { kind: 'mfa', mfaToken: 'mfa-secret' } });
+      await ctx.store.submitPassword('a@b.c', 'pw');
+      return ctx;
+    }
+
+    const lastCall = (repo: FakeAuthRepository) => repo.calls.filter((call) => call.method === 'loginMfa').at(-1);
+
+    it('LoginStore_Mfa_ShowsTheMfaStepWithoutNavigating', async () => {
+      const { store, navigate } = await atMfaStep();
+      expect(store.step()).toBe('mfa');
+      expect(store.recoveryMode()).toBe(false);
+      expect(navigate).not.toHaveBeenCalled();
+    });
+
+    it('LoginStore_SubmitMfa_TotpMode_SendsTrimmedCodeSignsInAndNavigates', async () => {
+      const { store, repo, session, navigate } = await atMfaStep('/series');
+      const signIn = vi.spyOn(session, 'signIn');
+      repo.willReturn('loginMfa', { ok: true, value: { kind: 'ok', session: { ...SESSION, amr: ['pwd', 'otp'] } } });
+      await store.submitMfa(' 123456 ');
+      expect(lastCall(repo)?.args).toEqual(['mfa-secret', '123456', 'totp']);
+      expect(signIn).toHaveBeenCalledWith({ accessToken: SESSION.accessToken, expiresAt: SESSION.expiresAt }, 'owner', ['pwd', 'otp']);
+      expect(navigate).toHaveBeenCalledTimes(1);
+      expect(navigate).toHaveBeenCalledWith('/series');
+      expect(store.mfaToken()).toBeNull();
+    });
+
+    it('LoginStore_SubmitMfa_SpacedTotp_SendsCodeWithoutWhitespace', async () => {
+      const { store, repo } = await atMfaStep();
+      repo.willReturn('loginMfa', { ok: true, value: { kind: 'ok', session: SESSION } });
+      await store.submitMfa('123 456');
+      expect(lastCall(repo)?.args).toEqual(['mfa-secret', '123456', 'totp']);
+    });
+
+    it('LoginStore_SubmitMfa_WhitespaceOnly_MakesNoRequest', async () => {
+      const { store, repo } = await atMfaStep();
+      await store.submitMfa(' \t\n ');
+      expect(repo.calls.filter((call) => call.method === 'loginMfa')).toHaveLength(0);
+      expect(store.submitting()).toBe(false);
+    });
+
+    it.each(['https://evil.example', '//evil.example'])('LoginStore_SubmitMfa_Ok_RejectsReturnUrl_%s', async (bad) => {
+      const { store, repo, navigate } = await atMfaStep(bad);
+      repo.willReturn('loginMfa', { ok: true, value: { kind: 'ok', session: SESSION } });
+      await store.submitMfa('123456');
+      expect(navigate).toHaveBeenCalledWith('/dashboard');
+    });
+
+    it('LoginStore_SubmitMfa_RecoveryMode_SendsRecoveryMode', async () => {
+      const { store, repo } = await atMfaStep();
+      repo.willReturn('loginMfa', { ok: true, value: { kind: 'ok', session: SESSION } });
+      store.toggleRecovery();
+      expect(store.recoveryMode()).toBe(true);
+      await store.submitMfa('abcd-1234');
+      expect(lastCall(repo)?.args).toEqual(['mfa-secret', 'abcd-1234', 'recovery']);
+    });
+
+    it('LoginStore_SubmitMfa_EmptyOrBlankCode_MakesNoRequest', async () => {
+      const { store, repo } = await atMfaStep();
+      await store.submitMfa('');
+      await store.submitMfa('   ');
+      expect(repo.calls.some((call) => call.method === 'loginMfa')).toBe(false);
+      expect(store.submitting()).toBe(false);
+    });
+
+    it('LoginStore_SubmitMfa_WithoutChallenge_MakesNoRequest', async () => {
+      const { store, repo } = setup();
+      await store.submitMfa('123456');
+      expect(repo.calls).toHaveLength(0);
+    });
+
+    it('LoginStore_SubmitMfa_InvalidCode_KeepsStepAndTokenWithError', async () => {
+      const { store, repo, session } = await atMfaStep();
+      const signIn = vi.spyOn(session, 'signIn');
+      repo.willFail('loginMfa', appError('invalid_mfa_code', 401, 'auth'));
+      await store.submitMfa('000000');
+      expect(store.step()).toBe('mfa');
+      expect(store.mfaToken()).toBe('mfa-secret');
+      expect(store.error()?.code).toBe('invalid_mfa_code');
+      expect(store.submitting()).toBe(false);
+      expect(signIn).not.toHaveBeenCalled();
+    });
+
+    it('LoginStore_SubmitMfa_MfaTokenInvalid_ReturnsToPasswordWithChallengeExpired', async () => {
+      const { store, repo } = await atMfaStep();
+      store.toggleRecovery();
+      repo.willFail('loginMfa', appError('mfa_token_invalid', 401, 'auth'));
+      await store.submitMfa('000000');
+      expect(store.step()).toBe('password');
+      expect(store.mfaToken()).toBeNull();
+      expect(store.recoveryMode()).toBe(false);
+      expect(store.formError()).toBe('auth.mfa.challengeExpired');
+      expect(store.error()).toBeNull();
+    });
+
+    it('LoginStore_SubmitMfa_RateLimited_SetsCountdownAndBlocksSubmit', async () => {
+      const { store, repo } = await atMfaStep();
+      repo.willFail('loginMfa', appError('rate_limited', 429, 'rate_limit', { retryAfterSec: 900 }));
+      await store.submitMfa('000000');
+      expect(store.step()).toBe('mfa');
+      expect(store.retryAfterSec()).toBe(900);
+      expect(store.canSubmit()).toBe(false);
+      await store.submitMfa('123456');
+      expect(repo.calls.filter((call) => call.method === 'loginMfa')).toHaveLength(1);
+      store.retryAfterElapsed();
+      expect(store.canSubmit()).toBe(true);
+    });
+
+    it('LoginStore_SubmitMfa_ValidationFailed_KeepsFieldErrorsAndNoFormAlert', async () => {
+      const { store, repo } = await atMfaStep();
+      const error = appError('validation_failed', 400, 'validation', { fieldErrors: { code: ['required'] } });
+      repo.willFail('loginMfa', error);
+      await store.submitMfa('1');
+      expect(store.step()).toBe('mfa');
+      expect(store.error()).toBe(error);
+      expect(store.formError()).toBeNull();
+    });
+
+    it('LoginStore_SubmitMfa_DoubleSubmit_CallsRepositoryOnce', async () => {
+      const { store, repo } = await atMfaStep();
+      repo.defer();
+      repo.willReturn('loginMfa', { ok: false, error: appError('invalid_mfa_code', 401, 'auth') });
+      const first = store.submitMfa('123456');
+      const second = store.submitMfa('123456');
+      expect(store.submitting()).toBe(true);
+      repo.resolveNext();
+      await Promise.all([first, second]);
+      expect(repo.calls.filter((call) => call.method === 'loginMfa')).toHaveLength(1);
+      expect(store.submitting()).toBe(false);
+    });
+
+    it('LoginStore_ToggleRecovery_SwapsModeAndClearsError', async () => {
+      const { store, repo } = await atMfaStep();
+      repo.willFail('loginMfa', appError('invalid_mfa_code', 401, 'auth'));
+      await store.submitMfa('000000');
+      store.toggleRecovery();
+      expect(store.recoveryMode()).toBe(true);
+      expect(store.error()).toBeNull();
+      store.toggleRecovery();
+      expect(store.recoveryMode()).toBe(false);
+    });
+
+    it('LoginStore_BackToPassword_FromMfa_ClearsTokenModeAndStep', async () => {
+      const { store } = await atMfaStep();
+      store.toggleRecovery();
+      store.backToPassword();
+      expect(store.step()).toBe('password');
+      expect(store.mfaToken()).toBeNull();
+      expect(store.recoveryMode()).toBe(false);
+    });
+
+    it('LoginStore_SessionEnd_Logout_ClearsMfaTokenAndModeAndStep', async () => {
+      const { store, session } = await atMfaStep();
+      store.toggleRecovery();
+      await session.logout();
+      TestBed.tick();
+      expect(store.mfaToken()).toBeNull();
+      expect(store.recoveryMode()).toBe(false);
+      expect(store.step()).toBe('password');
+    });
+
+    it('LoginStore_SubmitMfa_ResultAfterDestroy_IsIgnored', async () => {
+      const { repo, session, navigate } = setup();
+      const injector = createEnvironmentInjector([LoginStore], TestBed.inject(EnvironmentInjector));
+      const store = injector.get(LoginStore);
+      repo.willReturn('login', { ok: true, value: { kind: 'mfa', mfaToken: 'mfa-secret' } });
+      await store.submitPassword('a@b.c', 'pw');
+      const signIn = vi.spyOn(session, 'signIn');
+      repo.defer();
+      repo.willReturn('loginMfa', { ok: true, value: { kind: 'ok', session: SESSION } });
+      const pending = store.submitMfa('123456');
+      injector.destroy();
+      repo.resolveNext();
+      await pending;
+      expect(signIn).not.toHaveBeenCalled();
+      expect(navigate).not.toHaveBeenCalled();
+      expect(store.mfaToken()).toBeNull();
+    });
+
+    it('LoginStore_SubmitMfa_ResultAfterGenerationChange_IsIgnored', async () => {
+      const { store, repo, session, navigate } = await atMfaStep();
+      repo.defer();
+      repo.willReturn('loginMfa', { ok: true, value: { kind: 'ok', session: SESSION } });
+      const pending = store.submitMfa('123456');
+      session.reset();
+      const signIn = vi.spyOn(session, 'signIn');
+      repo.resolveNext();
+      await pending;
+      expect(signIn).not.toHaveBeenCalled();
+      expect(navigate).not.toHaveBeenCalled();
+    });
+
+    it('LoginStore_SubmitMfa_BackToPasswordMidFlight_DropsLateSuccess', async () => {
+      const { store, repo, session, navigate } = await atMfaStep();
+      repo.defer();
+      repo.willReturn('loginMfa', { ok: true, value: { kind: 'ok', session: SESSION } });
+      const pending = store.submitMfa('123456');
+      expect(store.submitting()).toBe(true);
+      store.backToPassword();
+      expect(store.step()).toBe('password');
+      expect(store.submitting()).toBe(false);
+      const signIn = vi.spyOn(session, 'signIn');
+      repo.resolveNext();
+      await pending;
+      expect(signIn).not.toHaveBeenCalled();
+      expect(navigate).not.toHaveBeenCalled();
+      expect(store.step()).toBe('password');
+      expect(store.error()).toBeNull();
+    });
+
+    it('LoginStore_SubmitMfa_BackToPasswordMidFlight_LateMfaTokenInvalidPaintsNoAlert', async () => {
+      const { store, repo, session } = await atMfaStep();
+      repo.defer();
+      repo.willFail('loginMfa', appError('mfa_token_invalid', 401, 'auth'));
+      const pending = store.submitMfa('123456');
+      store.backToPassword();
+      const signIn = vi.spyOn(session, 'signIn');
+      repo.resolveNext();
+      await pending;
+      expect(store.step()).toBe('password');
+      expect(store.formError()).toBeNull();
+      expect(store.error()).toBeNull();
+      expect(signIn).not.toHaveBeenCalled();
+    });
+
+    it('LoginStore_SubmitMfa_ToggleRecoveryMidFlight_SupersedesTheAttempt', async () => {
+      const { store, repo, session, navigate } = await atMfaStep();
+      repo.defer();
+      repo.willReturn('loginMfa', { ok: true, value: { kind: 'ok', session: SESSION } });
+      const pending = store.submitMfa('123456');
+      store.toggleRecovery();
+      expect(store.recoveryMode()).toBe(true);
+      expect(store.submitting()).toBe(false);
+      const signIn = vi.spyOn(session, 'signIn');
+      repo.resolveNext();
+      await pending;
+      expect(signIn).not.toHaveBeenCalled();
+      expect(navigate).not.toHaveBeenCalled();
+      expect(store.step()).toBe('mfa');
+      expect(store.recoveryMode()).toBe(true);
+      expect(store.error()).toBeNull();
+    });
   });
 });

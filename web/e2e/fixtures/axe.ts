@@ -60,3 +60,23 @@ export async function expectA11yHarnessDetects(page: Page): Promise<void> {
     'axe did not report the known-bad <img> without alt',
   ).toContain('image-alt');
 }
+
+/**
+ * Waits until every CDK overlay (backdrop, dialog pane/container) has finished its enter animation and is fully
+ * opaque. axe derives colour contrast from the currently rendered colours, so a scan taken mid-fade reports
+ * contrast failures against the interpolated opacity (10.3.3-T3 D7). Callers keep the contrast rule ON: this only
+ * waits for the real, settled rendering a user sees. Returns once no overlay animation is running and every
+ * overlay surface reports `opacity: 1`.
+ */
+export async function waitForOverlayAnimationEnd(page: Page): Promise<void> {
+  await page.waitForFunction(() => {
+    const root = document.querySelector('.cdk-overlay-container');
+    if (!root) return false;
+    const surfaces = Array.from(
+      root.querySelectorAll<HTMLElement>('.cdk-overlay-backdrop, .mat-mdc-dialog-container, [role="dialog"]'),
+    );
+    if (surfaces.length === 0) return false;
+    const running = root.getAnimations({ subtree: true }).some((animation) => animation.playState === 'running');
+    return !running && surfaces.every((surface) => Number(getComputedStyle(surface).opacity) === 1);
+  });
+}

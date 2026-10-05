@@ -7,6 +7,7 @@ import { SessionStore } from '@core/session';
 import { AuthEndpointsClient, type LoginResponse } from '@shared/api';
 import { AuthRepository } from '../application/auth.repository';
 import type { AuthRole, LoginOutcome, Session } from '../domain/auth.model';
+import type { MfaCodeMode } from '../domain/mfa.model';
 
 /**
  * HTTP adapter of the auth port; the only file of `features/auth` that imports the generated client (D5).
@@ -35,6 +36,18 @@ export class AuthApiRepository extends AuthRepository {
       const error = this.mapper.from(cause);
       const challenge = error.status === 401 ? this.challenge(error, cause) : null;
       return challenge === null ? { ok: false, error } : { ok: true, value: challenge };
+    }
+  }
+
+  override async loginMfa(mfaToken: string, code: string, mode: MfaCodeMode): Promise<Result<LoginOutcome>> {
+    // Exactly one of the two fields carries the value; the other is an explicit null (never both, never empty: C10).
+    const body = mode === 'recovery' ? { mfaToken, code: null, recoveryCode: code } : { mfaToken, code, recoveryCode: null };
+    try {
+      const response = await firstValueFrom(this.client.apiV1AuthLoginMfaPost({ body }, silently()));
+      const session = toSession(response);
+      return session === null ? { ok: false, error: this.mapper.from(undefined) } : { ok: true, value: { kind: 'ok', session } };
+    } catch (cause) {
+      return { ok: false, error: isAppError(cause) ? cause : this.mapper.from(cause) };
     }
   }
 

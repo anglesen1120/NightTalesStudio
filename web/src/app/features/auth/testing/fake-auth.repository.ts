@@ -1,8 +1,9 @@
 import type { AppError, Result } from '@core/errors';
 import { AuthRepository } from '../application/auth.repository';
 import type { LoginOutcome } from '../domain/auth.model';
+import type { MfaCodeMode } from '../domain/mfa.model';
 
-export type AuthMethod = 'login' | 'forgotPassword' | 'resetPassword' | 'logout';
+export type AuthMethod = 'login' | 'loginMfa' | 'forgotPassword' | 'resetPassword' | 'logout';
 
 interface Pending {
   readonly method: AuthMethod;
@@ -21,8 +22,8 @@ export class FakeAuthRepository extends AuthRepository {
   private readonly pending: Pending[] = [];
   private deferred = false;
 
-  willReturn(method: 'login', result: Result<LoginOutcome>): this;
-  willReturn(method: Exclude<AuthMethod, 'login'>, result: Result<void>): this;
+  willReturn(method: 'login' | 'loginMfa', result: Result<LoginOutcome>): this;
+  willReturn(method: Exclude<AuthMethod, 'login' | 'loginMfa'>, result: Result<void>): this;
   willReturn(method: AuthMethod, result: Result<unknown>): this {
     this.scripted.set(method, result);
     return this;
@@ -62,12 +63,16 @@ export class FakeAuthRepository extends AuthRepository {
     return this.answer('resetPassword', [token, password]) as Promise<Result<void>>;
   }
 
+  override loginMfa(mfaToken: string, code: string, mode: MfaCodeMode): Promise<Result<LoginOutcome>> {
+    return this.answer('loginMfa', [mfaToken, code, mode]) as Promise<Result<LoginOutcome>>;
+  }
+
   override logout(): Promise<Result<void>> {
     return this.answer('logout', []) as Promise<Result<void>>;
   }
 
   private fallback(method: AuthMethod): Result<unknown> {
-    if (method === 'login') throw new Error('FakeAuthRepository.login needs willReturn/willFail');
+    if (method === 'login' || method === 'loginMfa') throw new Error(`FakeAuthRepository.${method} needs willReturn/willFail`);
     return OK_VOID;
   }
 
