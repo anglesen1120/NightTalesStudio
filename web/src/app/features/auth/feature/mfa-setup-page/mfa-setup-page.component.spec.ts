@@ -120,6 +120,69 @@ describe('MfaSetupPageComponent', () => {
     expect(fixture.componentInstance.form.controls.code.errors?.['server']).toEqual({ messageKeys: ['errors.invalid_mfa_code'] });
   });
 
+  it('MfaSetupPage_WrongCodeThenUserEdit_SubmitsTheCorrectedCodeAndRevealsCodes', async () => {
+    const { fixture, repo, store, root } = await setup();
+    const wrong: AppError = { code: 'invalid_mfa_code', status: 401, kind: 'auth', fieldErrors: {} };
+    repo.willFail('verify', wrong).willReturn('verify', { ok: true, value: fakeRecoveryCodes() });
+    await settle(fixture);
+    const code = root.querySelector<HTMLInputElement>('[data-code-field]')!;
+    const form = root.querySelector('form')!;
+    code.value = '000000';
+    code.dispatchEvent(new Event('input', { bubbles: true }));
+    form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    await settle(fixture);
+    expect(fixture.componentInstance.form.controls.code.errors?.['server']).toBeDefined();
+
+    code.value = '123456';
+    code.dispatchEvent(new Event('input', { bubbles: true }));
+    // No render/effect turn between editing and submitting: server feedback is cleared synchronously.
+    expect(fixture.componentInstance.form.controls.code.errors?.['server']).toBeUndefined();
+    expect(fixture.componentInstance.form.valid).toBe(true);
+    form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    await settle(fixture);
+    expect(repo.calls.filter((call) => call.method === 'verify')).toEqual([
+      { method: 'verify', args: ['000000'] },
+      { method: 'verify', args: ['123456'] },
+    ]);
+    expect(store.step()).toBe('codes');
+    expect(store.codes()).toHaveLength(10);
+  });
+
+  it('MfaSetupPage_WrongCodeThenEmptyEdit_KeepsRequiredValidationAndDoesNotPost', async () => {
+    const { fixture, repo, page } = await setup();
+    repo.willFail('verify', { code: 'invalid_mfa_code', status: 401, kind: 'auth', fieldErrors: {} });
+    fixture.componentInstance.form.controls.code.setValue('000000');
+    page.verifyCode();
+    await settle(fixture);
+    fixture.componentInstance.form.controls.code.setValue('');
+    expect(fixture.componentInstance.form.controls.code.errors?.['server']).toBeUndefined();
+    expect(fixture.componentInstance.form.controls.code.errors?.['required']).toBe(true);
+    page.verifyCode();
+    expect(repo.callsOf('verify')).toBe(1);
+  });
+
+  it('MfaSetupPage_StepRenderWhileDialogOpen_DoesNotStealDialogFocus', async () => {
+    const dialog = document.createElement('div');
+    dialog.setAttribute('role', 'dialog');
+    const password = document.createElement('input');
+    dialog.append(password);
+    document.body.append(dialog);
+    password.focus();
+    try {
+      const { fixture, root } = await setup();
+      await settle(fixture);
+      const heading = root.querySelector<HTMLElement>('[data-page-heading]')!;
+      const focus = vi.spyOn(heading, 'focus');
+      fixture.componentInstance.form.controls.code.setValue('123456');
+      (fixture.componentInstance as unknown as { verifyCode(): void }).verifyCode();
+      await settle(fixture);
+      expect(focus).not.toHaveBeenCalled();
+      expect(document.activeElement).toBe(password);
+    } finally {
+      dialog.remove();
+    }
+  });
+
   describe('download', () => {
     it('MfaSetupPage_Download_SavesTheTenCodesAsDatedTxtThroughTheSharedPath', async () => {
       const blobs: Blob[] = [];

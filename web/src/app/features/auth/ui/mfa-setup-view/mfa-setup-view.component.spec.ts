@@ -110,6 +110,34 @@ describe('MfaSetupViewComponent', () => {
     expect(verify).toBeDefined();
   });
 
+  it.each([
+    ['placeholder', DeferBlockState.Placeholder],
+    ['loading', DeferBlockState.Loading],
+    ['error', DeferBlockState.Error],
+  ])('keeps the %s QR state in its slot beside the usable manual enrolment form', async (_name, state) => {
+    const { fixture, root } = await setupView(viewModel());
+    const [block] = await fixture.getDeferBlocks();
+    await block!.render(state);
+    const slot = root.querySelector('.enrol-layout > .enrol-qr-slot');
+    expect(slot).not.toBeNull();
+    expect(root.querySelector('.enrol-layout')?.children).toHaveLength(2);
+    if (state === DeferBlockState.Error) {
+      expect(slot?.querySelector('nts-error-state')).not.toBeNull();
+      const retry = vi.fn();
+      onEmit(fixture.componentInstance.retry, retry);
+      slot?.querySelector<HTMLButtonElement>('button')?.click();
+      expect(retry).toHaveBeenCalledTimes(1);
+    } else {
+      expect(slot?.querySelector('.enrol-qr-placeholder')).not.toBeNull();
+    }
+    expect(root.querySelector<HTMLInputElement>('#enrol-key')?.value).toBe('JBSW Y3DP EHPK 3PXP');
+    expect(root.querySelector<HTMLInputElement>('#enrol-code')?.disabled).toBe(false);
+    const verify = vi.fn();
+    onEmit(fixture.componentInstance.verifyCode, verify);
+    root.querySelector('form')?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+    expect(verify).toHaveBeenCalledTimes(1);
+  });
+
   it('QR failure keeps the image empty; the inner retry re-calls toDataURL', async () => {
     toDataURLMock.mockRejectedValue(new Error('bad'));
     const { fixture, root } = await setupView(viewModel());
@@ -120,6 +148,9 @@ describe('MfaSetupViewComponent', () => {
     await vi.waitFor(() => {
       expect(root.querySelector('nts-error-state')?.textContent).toContain(authEn.enrol.qrFailed);
     });
+    expect(root.querySelector('.enrol-qr-slot nts-mfa-qr nts-error-state')).not.toBeNull();
+    expect(root.querySelector<HTMLInputElement>('#enrol-key')?.value).toBe('JBSW Y3DP EHPK 3PXP');
+    expect(root.querySelector<HTMLInputElement>('#enrol-code')?.disabled).toBe(false);
     const retryButton = [...root.querySelectorAll<HTMLButtonElement>('nts-error-state button')].find((b) =>
       b.textContent?.includes(errorsEn.action.retry),
     );
@@ -203,6 +234,11 @@ describe('MfaSetupViewComponent', () => {
     const { fixture, root } = await setupView(viewModel({ step: 'error', reLoginRequired: true }));
     const reLogin = vi.fn();
     onEmit(fixture.componentInstance.reLogin, reLogin);
+    expect(root.querySelectorAll('h1, h2')).toHaveLength(1);
+    expect(root.querySelector('h1')?.textContent?.trim()).toBe(authEn.enrol.expiredTitle);
+    expect(root.querySelector('h1')?.hasAttribute('data-page-heading')).toBe(true);
+    expect(root.querySelector('h1')?.getAttribute('tabindex')).toBe('-1');
+    expect(root.textContent).toContain(authEn.enrol.expiredBody);
     const reLoginButton = [...root.querySelectorAll<HTMLButtonElement>('button')].find((b) =>
       b.textContent?.includes(authEn.enrol.reLogin),
     );
@@ -210,10 +246,15 @@ describe('MfaSetupViewComponent', () => {
     expect(reLogin).toHaveBeenCalledTimes(1);
   });
 
-  it('reauth banner emits retry', async () => {
-    const { fixture, root } = await setupView(viewModel({ reauthRequired: true }));
+  it('cancelled setup reauth shows the required banner instead of a generic error and emits retry', async () => {
+    const { fixture, root } = await setupView(viewModel({ reauthRequired: true, setup: null, canSubmit: false }));
     const retry = vi.fn();
     onEmit(fixture.componentInstance.retry, retry);
+    expect(root.querySelector('.enrol-banner')?.textContent).toContain(authEn.enrol.reauthTitle);
+    expect(root.querySelector('.enrol-banner')?.textContent).toContain(authEn.enrol.reauthBody);
+    expect(root.querySelector('nts-error-state')).toBeNull();
+    expect(root.textContent).not.toContain(errorsEn.unknown_error);
+    expect(root.querySelector<HTMLButtonElement>('form button[type="submit"]')?.disabled).toBe(true);
     const retryButton = [...root.querySelectorAll<HTMLButtonElement>('.enrol-banner button')].find((b) =>
       b.textContent?.includes(errorsEn.action.retry),
     );

@@ -2,6 +2,7 @@ import {
   AUTH_SPEC_USE,
   LABEL,
   STUB,
+  enrol,
   expectMfaBodyShape,
   expectNoSecretLeak,
   fulfilJson,
@@ -22,8 +23,10 @@ import type { Page } from '@playwright/test';
 // 10.3.3-T3 (README D6/D9/D15/D16, plan.md §4 U1-U3, §8). The MFA step inside `/login`.
 //  - Stubbed describe: `page.route` only (no backend, no TOTP). The `/dashboard` assertions read the URL PATH only and
 //    need the merged tree (no dashboard page until 10.4.1-T1), exactly like auth-login.spec.ts / session.spec.ts.
-//  - `describe('real stack')` runs only with NTS_E2E_STACK=1: it drives the seeded MFA owner through the UI
-//    (`loginAsOwner`) and replays the same code to prove the server-side single-use rule (AC1).
+//  - `describe('real stack')` runs only with NTS_E2E_STACK=1 (and NTS_E2E_OWNER_*): it drives the seeded owner through
+//    the UI and replays the same code to prove the server-side single-use rule (AC1). Inside the block the observed
+//    server state decides the path (unenrolled -> enrolment must succeed, enrolled -> the TOTP step must appear): the
+//    expectations are hard on both paths, never `test.skip`, so a broken flow fails (D8).
 // One login per file; never a reused storageState (F08).
 // Acceptance checks covered (task file §Acceptance): AC1 (stack: replay), AC2, AC3, AC11 (leak), AC12 (axe/CSP).
 
@@ -61,6 +64,19 @@ function pathOf(page: Page): string {
   return new URL(page.url()).pathname;
 }
 
+/**
+ * D6: `invalid_mfa_code` is a FIELD error, not a form-level alert (task Steps 5; the component binds a mat-error with
+ * `aria-invalid` + `aria-describedby` and moves focus). Asserts the wiring, not just "something is shown".
+ */
+async function expectInvalidMfaCodeOnField(page: Page): Promise<void> {
+  const input = page.locator('#mfa-code');
+  await expect(input).toHaveAttribute('aria-invalid', 'true');
+  await expect(input).toHaveAttribute('aria-describedby', /(^|\s)mfa-code-error(\s|$)/);
+  await expect(page.locator('#mfa-code-error')).toHaveText(LABEL.invalidMfaCode);
+  await expect(input).toBeFocused();
+  await expect(page.locator('#mfa-form-alert'), 'a rejected code is not a form-level alert').toHaveCount(0);
+}
+
 test.describe.serial('login MFA step, stubbed API', () => {
   test('AC1 password -> MFA step without navigation; a TOTP code posts `code` only and lands on /dashboard', async ({ page }) => {
     await stubChallenge(page, [{ status: 200, body: loginOkBody() }]);
@@ -93,7 +109,7 @@ test.describe.serial('login MFA step, stubbed API', () => {
     await page.getByLabel(LABEL.authCode).fill('111111');
     await page.getByRole('button', { name: LABEL.verify }).click();
 
-    await expect(page.getByRole('alert')).toBeVisible();
+    await expectInvalidMfaCodeOnField(page);
     await expect(page.getByLabel(LABEL.authCode)).toBeVisible();
     expect(pathOf(page)).toBe('/login');
     expect(mfa).toHaveLength(1);
@@ -133,7 +149,7 @@ test.describe.serial('login MFA step, stubbed API', () => {
     await page.getByRole('button', { name: LABEL.useRecovery }).or(page.getByRole('link', { name: LABEL.useRecovery })).click();
     await page.getByLabel(LABEL.recoveryCode).fill(STUB.recoveryCodes[0]);
     await page.getByRole('button', { name: LABEL.verify }).click();
-    await expect(page.getByRole('alert')).toBeVisible();
+    await expectInvalidMfaCodeOnField(page);
     expect(pathOf(page)).toBe('/login');
     expectMfaBodyShape(mfa[1]?.body, 'recovery');
   });
@@ -216,8 +232,22 @@ test.describe('real stack', () => {
     await page.getByLabel(LABEL.password).fill(password);
     await page.getByRole('button', { name: LABEL.signIn }).click();
     const codeField = page.getByLabel(LABEL.authCode);
-    // First run of a stack: the owner has no TOTP and is sent to enrolment; the enrolment helper owns that path.
-    test.skip(!(await codeField.isVisible({ timeout: 10_000 }).catch(() => false)), 'owner has no TOTP yet (loginAsOwner enrols it)');
+    const manualKey = page.getByLabel(LABEL.manualKey);
+    // D8: the server state decides the path, and EACH path has hard expectations -- never a skip, so a broken
+    // flow fails. Unenrolled -> the enrolment flow MUST succeed, then sign in again with a fresh code; enrolled ->
+    // the TOTP step MUST appear. `enrol()` is the same helper `loginAsOwner` uses.
+    await expect(codeField.or(manualKey), 'the owner login left neither the MFA step nor the enrolment page').toBeVisible({ timeout: 15_000 });
+    if (!(await codeField.isVisible())) {
+      const usedAt = await enrol(page);
+      await page.getByRole('link', { name: LABEL.signInAgain }).or(page.getByRole('button', { name: LABEL.signInAgain })).click();
+      await page.getByLabel(LABEL.email).fill(email);
+      await page.getByLabel(LABEL.password).fill(password);
+      await page.getByRole('button', { name: LABEL.signIn }).click();
+      await expect(codeField, 'after enrolment the owner must reach the MFA step').toBeVisible({ timeout: 10_000 });
+      if (Math.floor(Date.now() / 30_000) === Math.floor(usedAt / 30_000)) {
+        await sleep(msUntilNextStep());
+      }
+    }
     expect(new URL(page.url()).pathname).toBe('/login');
 
     const secret = loadSecret();
@@ -236,7 +266,7 @@ test.describe('real stack', () => {
     await page.getByRole('button', { name: LABEL.signIn }).click();
     await codeField.fill(code);
     await page.getByRole('button', { name: LABEL.verify }).click();
-    await expect(page.getByRole('alert')).toBeVisible();
+    await expectInvalidMfaCodeOnField(page);
     expect(new URL(page.url()).pathname).toBe('/login');
 
     await sleep(msUntilNextStep());

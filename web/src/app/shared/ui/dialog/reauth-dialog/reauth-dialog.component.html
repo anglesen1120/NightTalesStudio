@@ -1,7 +1,7 @@
 <section
   class="reauth-dialog"
   tabindex="-1"
-  cdkTrapFocus
+  [cdkTrapFocus]="!insideMatDialog"
   [cdkTrapFocusAutoCapture]="!insideMatDialog"
   [attr.role]="insideMatDialog ? null : 'dialog'"
   [attr.aria-modal]="insideMatDialog ? null : 'true'"
@@ -26,6 +26,7 @@
       <mat-label>{{ 'reauth.password' | transloco }}</mat-label>
       <input
         matInput
+        cdkFocusInitial
         id="reauth-password"
         type="password"
         autocomplete="current-password"

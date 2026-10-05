@@ -122,7 +122,8 @@ export class ReauthService implements SessionScoped {
     const ref = this.dialog.open<ReauthDialogComponent, { requireCode: boolean }, void>(ReauthDialogComponent, {
       data: { requireCode: REQUIRE_CODE },
       restoreFocus: true,
-      autoFocus: 'first-tabbable',
+      autoFocus: '#reauth-password',
+      ariaModal: true,
     });
     const flight: Flight = {
       generation,

@@ -10,7 +10,7 @@ import {
   trackConsole,
   trackPosts,
 } from './fixtures/auth';
-import { expectA11yClean } from './fixtures/axe';
+import { expectA11yClean, waitForOverlayAnimationEnd } from './fixtures/axe';
 import { expect, test } from './fixtures/csp.fixture';
 import type { Page, Route } from '@playwright/test';
 
@@ -245,15 +245,22 @@ test.describe.serial('re-auth dialog, stubbed API', () => {
   });
 
   test('AC11 the open dialog is axe-clean (default and error state) with no CSP violation', async ({ page }) => {
+    // D7: the dialog (and the CDK backdrop, 400 ms) fade in; axe computes contrast from the rendered colours, so a
+    // scan taken mid-fade reports colour-contrast failures at the interpolated opacity. The app honours
+    // `prefers-reduced-motion` (src/styles.scss), and `waitForOverlayAnimationEnd` waits for the settled, fully
+    // opaque rendering a real user sees. The contrast rule stays ON.
+    await page.emulateMedia({ reducedMotion: 'reduce' });
     await stubSession(page);
     await page.route(SETUP, queue([REAUTH_REQUIRED]));
     await page.route(REAUTH, queue([{ status: 401, body: problem(401, 'invalid_credentials') }]));
 
     await openEnrolment(page);
     await expect(page.getByRole('dialog')).toBeVisible();
+    await waitForOverlayAnimationEnd(page);
     await expectA11yClean(page);
     await fillReauth(page, 'wrong-password-1');
     await expect(page.getByRole('dialog').getByRole('alert').or(page.getByRole('dialog').locator('[aria-invalid="true"]')).first()).toBeVisible();
+    await waitForOverlayAnimationEnd(page);
     await expectA11yClean(page);
   });
 });
@@ -263,8 +270,9 @@ test.describe('real stack', () => {
   test.skip((process.env['NTS_E2E_OWNER_EMAIL'] ?? '') === '', 'NTS_E2E_OWNER_EMAIL is not set');
 
   test('AC7/AC8 a signed-in owner opening enrolment is asked to re-authenticate; Escape closes without a POST', async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: 'reduce' });
     await loginAsOwner(page);
-    const reauth = trackPosts(page, REAUTH_PATH);
+    const reauth = trackPosts(REAUTH_PATH);
     // SPA navigation keeps the in-memory session (a full reload would depend on the refresh cookie).
     await page.evaluate((target) => {
       window.history.pushState({}, '', target);
@@ -272,6 +280,7 @@ test.describe('real stack', () => {
     }, MFA_SETUP_URL);
     const dialog = page.getByRole('dialog');
     await expect(dialog).toBeVisible();
+    await waitForOverlayAnimationEnd(page);
     await expectA11yClean(page);
     await page.keyboard.press('Escape');
     await expect(dialog).toHaveCount(0);

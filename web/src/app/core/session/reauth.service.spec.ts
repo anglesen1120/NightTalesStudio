@@ -144,7 +144,7 @@ describe('ReauthService', () => {
     const { service, dialog } = setup();
     void service.ensureReauthenticated();
 
-    expect(dialog.configs).toEqual([{ data: { requireCode: true }, restoreFocus: true, autoFocus: 'first-tabbable' }]);
+    expect(dialog.configs).toEqual([{ data: { requireCode: true }, restoreFocus: true, autoFocus: '#reauth-password', ariaModal: true }]);
     expect(service.isDialogOpen()).toBe(true);
   });
 

@@ -18,12 +18,15 @@ import type { Page } from '@playwright/test';
 
 // 10.3.3-T3 (plan.md §4 U4-U6, §8). Owner enrolment at /account/security/mfa-setup, driven by the enrolment-only token
 // that `POST /auth/login` hands out as `401 mfa_enrolment_required { token }`. Everything is stubbed with `page.route`
-// (no backend, no seeded account); the real-stack block only runs with NTS_E2E_STACK=1.
+// (no backend, no seeded account); the real-stack block only runs with NTS_E2E_STACK=1 (+ NTS_E2E_OWNER_*) and
+// branches on the observed owner state with hard expectations (unenrolled -> the enrolment page MUST render,
+// enrolled -> the login MUST land on the MFA step), so a broken flow fails instead of skipping (D8).
 // Acceptance checks covered: AC4 (redirect, enrolment token, no re-auth dialog), AC5 (QR / manual key / wrong code /
 // 10 codes once), AC6 (download filename), AC10 (no secret anywhere), AC11 (axe on all three steps + CSP), failure rows
 // (token expiry 404, 409 reload, QR keeps the manual key). Regeneration behind re-auth lives in auth-reauth.spec.ts.
-// The QR options below MUST mirror `src/app/features/auth/ui/mfa-qr/mfa-qr.component.ts` (margin 2, width 208,
-// colour dark #202523ff / light #ffffffff): e2e must not import app source, so they are duplicated by hand.
+// The QR options below MUST mirror `src/app/features/auth/ui/mfa-qr/mfa-qr.component.ts` (margin 2, width 208 via
+// QR_SIZE_PX, colour dark #202523ff / light #ffffffff, the 208 also repeated in mfa-qr.component.html): e2e must not
+// import app source, so they are duplicated by hand.
 
 test.use(AUTH_SPEC_USE);
 test.use({ locale: 'vi-VN' });
@@ -80,6 +83,49 @@ function expectedQrDataUrl(uri: string): Promise<string> {
   });
 }
 
+/**
+ * Decodes both `data:` PNGs in the page and compares their pixels, returning `'identical'` or the first difference.
+ * The app renders through `qrcode`'s browser entry (canvas -> Chromium's PNG encoder) while this spec computes the
+ * reference in Node (pngjs), so the base64 of two identical QR images never matches byte for byte; the decoded pixels
+ * do. Encoder-independent, and still bound to the mirrored options (margin/width/colour change the pixels).
+ */
+async function compareQrPixels(page: Page, shown: string, reference: string): Promise<string> {
+  return page.evaluate(
+    async ([shownSrc, referenceSrc]: readonly [string, string]) => {
+      const load = (url: string): Promise<HTMLImageElement> =>
+        // The tsconfig lib predates Promise.withResolvers, so the executor form is the only typed option here.
+        new Promise((resolve, reject) => {
+          const image = new Image();
+          image.onload = () => resolve(image);
+          image.onerror = () => reject(new Error('the QR image did not decode'));
+          image.src = url;
+        });
+      const pixels = (image: HTMLImageElement): Uint8ClampedArray => {
+        const canvas = document.createElement('canvas');
+        canvas.width = image.naturalWidth;
+        canvas.height = image.naturalHeight;
+        const context = canvas.getContext('2d');
+        if (context === null) throw new Error('no 2d context');
+        context.drawImage(image, 0, 0);
+        return context.getImageData(0, 0, canvas.width, canvas.height).data;
+      };
+      const [actual, expected] = await Promise.all([load(shownSrc), load(referenceSrc)]);
+      if (actual.naturalWidth !== expected.naturalWidth || actual.naturalHeight !== expected.naturalHeight) {
+        return `size ${actual.naturalWidth}x${actual.naturalHeight} != ${expected.naturalWidth}x${expected.naturalHeight}`;
+      }
+      const actualPixels = pixels(actual);
+      const expectedPixels = pixels(expected);
+      for (let i = 0; i < actualPixels.length; i += 1) {
+        if (actualPixels[i] !== expectedPixels[i]) {
+          return `pixel byte ${i} differs (${actualPixels[i]} != ${expectedPixels[i]})`;
+        }
+      }
+      return 'identical';
+    },
+    [shown, reference] as const,
+  );
+}
+
 function pathOf(page: Page): string {
   return new URL(page.url()).pathname;
 }
@@ -101,13 +147,16 @@ test.describe.serial('owner enrolment, stubbed API', () => {
     expect(new URL(STUB.otpauthUri).searchParams.get('secret')).toBe(manual);
     await expect(page.getByRole('button', { name: LABEL.copySetupKey })).toBeVisible();
 
-    // QR: an <img> with a text alternative whose data: URL is the PNG of the stubbed otpauth URI.
+    // QR: an <img> with a text alternative whose pixels are the QR of the stubbed otpauth URI.
     const qr = page.getByRole('img', { name: LABEL.qrAlt });
     await qr.scrollIntoViewIfNeeded();
     await expect(qr).toBeVisible();
     await expect(qr).toHaveAttribute('src', /^data:image\/png;base64,/);
     const src = await qr.getAttribute('src');
-    expect(src, 'the QR encodes exactly the stubbed otpauth URI').toBe(await expectedQrDataUrl(STUB.otpauthUri));
+    expect(
+      await compareQrPixels(page, src ?? '', await expectedQrDataUrl(STUB.otpauthUri)),
+      'the QR encodes exactly the stubbed otpauth URI',
+    ).toBe('identical');
   });
 
   test('AC5 a wrong code keeps the page with a retryable error; a correct code reveals exactly 10 codes with the shown-once warning', async ({ page }) => {
@@ -121,7 +170,13 @@ test.describe.serial('owner enrolment, stubbed API', () => {
 
     await reachEnrolment(page);
     await confirmCode(page, '000000');
-    await expect(page.getByRole('alert')).toBeVisible();
+    // D6 (same contract as the MFA step): `invalid_mfa_code` is a FIELD error, so wait for the real wiring instead of
+    // a bare `role=alert`, which any alert (e.g. the QR ErrorState) satisfies before the verify response lands.
+    const codeInput = page.locator('#enrol-code');
+    await expect(codeInput).toHaveAttribute('aria-invalid', 'true');
+    await expect(codeInput).toHaveAttribute('aria-describedby', /(^|\s)enrol-code-error(\s|$)/);
+    await expect(page.locator('#enrol-code-error')).toHaveText(LABEL.invalidMfaCode);
+    await expect(codeInput).toBeFocused();
     await expect(page.getByLabel(LABEL.manualKey)).toBeVisible();
     expect(pathOf(page)).toBe('/account/security/mfa-setup');
     expect(verify).toHaveLength(1);
@@ -241,7 +296,11 @@ test.describe.serial('owner enrolment, stubbed API', () => {
     await page.getByLabel(LABEL.savedRecoveryCodes).focus();
     await page.keyboard.press('Space');
     await expect(page.getByLabel(LABEL.savedRecoveryCodes)).toBeChecked();
-    await page.getByRole('button', { name: LABEL.continue }).focus();
+    // The confirmSaved gate is applied on the next change-detection cycle, so wait for the enabled state before
+    // focusing (focus on a still-disabled button is a silent no-op and Enter would go nowhere).
+    const next = page.getByRole('button', { name: LABEL.continue });
+    await expect(next).toBeEnabled();
+    await next.focus();
     await page.keyboard.press('Enter');
     await expect(page.getByText(LABEL.enrolDone)).toBeVisible();
     await expectA11yClean(page);
@@ -266,7 +325,16 @@ test.describe('real stack', () => {
     await page.getByLabel(LABEL.password).fill(process.env['NTS_E2E_OWNER_PASSWORD'] ?? '');
     await page.getByRole('button', { name: LABEL.signIn }).click();
     const manual = page.getByLabel(LABEL.manualKey);
-    test.skip(!(await manual.isVisible({ timeout: 10_000 }).catch(() => false)), 'owner already has TOTP (enrolment ran in loginAsOwner)');
+    const codeField = page.getByLabel(LABEL.authCode);
+    // D8: branch on the observed server state with hard expectations on BOTH paths -- a `test.skip` here masked real
+    // failures (a broken enrolment page, or a broken redirect) as "owner already has TOTP".
+    await expect(manual.or(codeField), 'the owner login left neither the enrolment page nor the MFA step').toBeVisible({ timeout: 15_000 });
+    if (!(await manual.isVisible())) {
+      // Already-enrolled stack: the owner has a TOTP, so a valid credential pair MUST land on the MFA step, not on enrolment.
+      expect(pathOf(page), 'an enrolled owner must not be sent to enrol again').toBe('/login');
+      await expect(page.getByRole('img', { name: LABEL.qrAlt }), 'no QR outside the enrolment page').toHaveCount(0);
+      return;
+    }
     expect(pathOf(page)).toBe('/account/security/mfa-setup');
     await expect(page.getByRole('dialog')).toHaveCount(0);
     await expect(page.getByRole('img', { name: LABEL.qrAlt })).toHaveAttribute('src', /^data:image\/png;base64,/);

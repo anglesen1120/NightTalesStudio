@@ -8,7 +8,7 @@ import {
   inject,
   untracked,
 } from '@angular/core';
-import { toSignal } from '@angular/core/rxjs-interop';
+import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { type AbstractControl, FormControl, FormGroup, Validators } from '@angular/forms';
 import { Router } from '@angular/router';
 import { merge } from 'rxjs';
@@ -54,14 +54,13 @@ export class MfaSetupPageComponent {
 
   protected readonly fieldState = toSignal(merge(this.form.statusChanges, this.form.valueChanges), { initialValue: this.form.status });
   private lastCode = '';
-  private readonly valueState = toSignal(this.form.valueChanges, { initialValue: this.form.getRawValue() });
 
   constructor() {
     void this.store.load();
 
-    // `enable()`/`disable()` and the step reset also emit `valueChanges`: only a user edit clears a server error.
-    effect(() => {
-      const code = this.valueState().code ?? '';
+    // Clear only server feedback synchronously on a code edit, before the next submit can read form.invalid.
+    // enable()/disable() also emit: unchanged values must leave the current server error intact.
+    this.form.controls.code.valueChanges.pipe(takeUntilDestroyed()).subscribe((code) => {
       if (code === this.lastCode) return;
       this.lastCode = code;
       clearServerErrors(this.form);
@@ -80,7 +79,12 @@ export class MfaSetupPageComponent {
         this.lastCode = '';
         this.form.reset({ code: '' });
       });
-      afterNextRender(() => this.host.nativeElement.querySelector<HTMLElement>('[data-page-heading]')?.focus(), { injector: this.injector });
+      afterNextRender(() => {
+        const host = this.host.nativeElement;
+        // A setup/regeneration dialog can open before this deferred step-focus callback. The modal owns focus.
+        if (host.ownerDocument.querySelector('[role="dialog"], [role="alertdialog"]') !== null) return;
+        host.querySelector<HTMLElement>('[data-page-heading]')?.focus();
+      }, { injector: this.injector });
     });
 
     effect(() => {
@@ -143,6 +147,6 @@ export class MfaSetupPageComponent {
   }
 
   private focusCode(): void {
-    this.host.nativeElement.querySelector<HTMLElement>('nts-mfa-setup-view input')?.focus();
+    this.host.nativeElement.querySelector<HTMLElement>('[data-code-field]')?.focus();
   }
 }

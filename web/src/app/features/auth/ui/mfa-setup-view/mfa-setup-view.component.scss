@@ -6,7 +6,7 @@
    narrow sheet (520px) and the 360px viewport never scroll horizontally. */
 .enrol-layout {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-columns: 208px minmax(0, 1fr);
   gap: var(--nts-space-5);
   align-items: start;
 }
@@ -15,6 +15,12 @@
   width: 208px;
   min-height: 208px;
   max-width: 100%;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.enrol-qr-placeholder {
+  min-height: 208px;
   border: 1px dashed var(--nts-color-line);
   border-radius: var(--nts-radius-control);
 }

@@ -4,11 +4,11 @@
     <h1 class="auth-heading" tabindex="-1" data-page-heading>
       {{ (vm().reLoginRequired ? 'auth.enrol.expiredTitle' : 'auth.enrol.title') | transloco }}
     </h1>
-    <nts-error-state
-      [titleKey]="vm().reLoginRequired ? 'auth.enrol.expiredTitle' : 'core.ui.errorState.title'"
-      [bodyKey]="vm().reLoginRequired ? 'auth.enrol.expiredBody' : (vm().formError ?? 'errors.unknown_error')"
-      [traceId]="vm().traceId ?? undefined"
-    />
+    @if (vm().reLoginRequired) {
+      <p class="auth-lede">{{ 'auth.enrol.expiredBody' | transloco }}</p>
+    } @else {
+      <nts-error-state [bodyKey]="vm().formError ?? 'errors.unknown_error'" [traceId]="vm().traceId ?? undefined" />
+    }
     <div class="enrol-actions">
       @if (vm().reLoginRequired) {
         <button class="auth-primary" mat-flat-button type="button" (click)="reLogin.emit()">
@@ -126,21 +126,25 @@
         }
 
         <div class="enrol-layout">
-          @if (vm().setup; as setup) {
-            @defer (on viewport) {
-              <nts-mfa-qr [otpauthUri]="setup.otpauthUri" />
-            } @placeholder {
-              <div class="enrol-qr-slot" aria-hidden="true"></div>
-            } @error {
-              <nts-error-state
-                bodyKey="auth.enrol.qrFailed"
-                retryLabelKey="errors.action.retry"
-                (retry)="retry.emit()"
-              />
+          <div class="enrol-qr-slot">
+            @if (vm().setup; as setup) {
+              @defer (on viewport) {
+                <nts-mfa-qr [otpauthUri]="setup.otpauthUri" />
+              } @placeholder {
+                <div class="enrol-qr-placeholder" aria-hidden="true"></div>
+              } @loading {
+                <div class="enrol-qr-placeholder" aria-hidden="true"></div>
+              } @error {
+                <nts-error-state
+                  bodyKey="auth.enrol.qrFailed"
+                  retryLabelKey="errors.action.retry"
+                  (retry)="retry.emit()"
+                />
+              }
+            } @else {
+              <div class="enrol-qr-placeholder" aria-hidden="true"></div>
             }
-          } @else {
-            <div class="enrol-qr-slot" aria-hidden="true"></div>
-          }
+          </div>
 
           <div class="enrol-fields auth-stack">
             <mat-form-field appearance="outline" class="enrol-key">

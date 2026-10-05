@@ -40,7 +40,7 @@ class FakeReauthService {
     const first = await action();
     if (first.ok || first.error.code !== 'reauth_required') return first;
     const reauthenticated = await this.ensureReauthenticated();
-    return reauthenticated.ok ? action() : first;
+    return reauthenticated.ok ? action() : reauthenticated;
   }
 }
 
@@ -103,20 +103,30 @@ describe('EnrolmentStore', () => {
 
     it('EnrolmentStore_Load_ReauthCancelled_ShowsReauthRequiredWithRetry', async () => {
       const { store, repo, reauth } = setup({ enrolmentOnly: false });
+      const cancelled = appError('reauth_required', 0, 'auth');
       repo.willFail('setup', REAUTH_REQUIRED);
-      reauth.ensureResult = { ok: false, error: REAUTH_REQUIRED };
+      reauth.ensureResult = { ok: false, error: cancelled };
       await store.load();
-      expect(store.step()).toBe('error');
+      expect(store.step()).toBe('show');
+      expect(store.error()).toEqual(cancelled);
       expect(store.viewModel().reauthRequired).toBe(true);
       expect(store.viewModel().formError).toBeNull();
       expect(store.setup()).toBeNull();
+      expect(store.canSubmit()).toBe(false);
       expect(repo.callsOf('setup')).toBe(1);
-      // The retry button calls load() again: a successful re-auth now lets the second setup through.
+      await store.verify('123456');
+      expect(repo.callsOf('verify')).toBe(0);
+      expect(store.viewModel().reauthRequired).toBe(true);
+      // Retry opens re-auth again; only its successful result retries setup.
       reauth.ensureResult = OK_VOID;
-      repo.willReturn('setup', { ok: true, value: FAKE_SETUP });
+      repo.willFail('setup', REAUTH_REQUIRED).willReturn('setup', { ok: true, value: FAKE_SETUP });
       await store.load();
+      expect(reauth.ensureCalls).toBe(2);
+      expect(repo.callsOf('setup')).toBe(3);
       expect(store.step()).toBe('show');
       expect(store.viewModel().reauthRequired).toBe(false);
+      expect(store.setup()).toEqual(FAKE_SETUP);
+      expect(store.canSubmit()).toBe(true);
     });
 
     it('EnrolmentStore_Load_ConcurrencyConflict_RerunsOnceAndKeepsTheNewSecret', async () => {

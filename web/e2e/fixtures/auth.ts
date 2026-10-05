@@ -30,6 +30,8 @@ export const LABEL = {
   password: /^(Mật khẩu|Password)$/,
   signIn: /^(Đăng nhập|Sign in)$/,
   authCode: /^(Mã xác thực|Authentication code)$/,
+  /** 10.3.3-T3 D6: the FIELD error copy for `errors.invalid_mfa_code` (vi + en, from src/assets/i18n/errors). */
+  invalidMfaCode: /^(Mã xác thực không đúng hoặc đã hết hạn\.|The verification code is incorrect or has expired\.)$/,
   verify: /^(Xác nhận|Verify)$/,
   manualKey: /^(Khoá nhập tay|Manual key)$/,
   sixDigitCode: /^(Mã 6 số|6-digit code)$/,
@@ -183,7 +185,7 @@ async function submitCredentials(page: Page, email: string, password: string): P
 }
 
 /** First-run enrolment: reads the manual key, persists it, confirms a code, acknowledges the recovery codes. */
-async function enrol(page: Page): Promise<number> {
+export async function enrol(page: Page): Promise<number> {
   const secret = (await page.getByLabel(LABEL.manualKey).inputValue()).replace(/\s+/g, '');
   saveSecret(secret);
   const usedAt = await submitCode(page, {

@@ -36,7 +36,7 @@ class DialogHost {
       ReauthDialogComponent,
       ReauthDialogData,
       ReauthDialogResult | undefined
-    >(ReauthDialogComponent, { data, restoreFocus: true, autoFocus: 'first-tabbable' });
+    >(ReauthDialogComponent, { data, restoreFocus: true, autoFocus: '#reauth-password', ariaModal: true });
   }
 }
 
@@ -76,6 +76,14 @@ describe('ReauthDialogComponent', () => {
     const code = dialog.querySelector<HTMLInputElement>('#reauth-code');
     expect(code?.getAttribute('autocomplete')).toBe('one-time-code');
     expect(code?.getAttribute('inputmode')).toBe('numeric');
+  });
+
+  it('opens with the password focused inside an aria-modal container', async () => {
+    const { dialog, document } = await setup();
+    const password = dialog.querySelector<HTMLInputElement>('#reauth-password');
+    expect(password?.hasAttribute('cdkFocusInitial')).toBe(true);
+    await vi.waitFor(() => expect(document.activeElement).toBe(password));
+    expect(document.querySelector('mat-dialog-container')?.getAttribute('aria-modal')).toBe('true');
   });
 
   it('hides the code field when requireCode is false', async () => {
@@ -145,8 +153,8 @@ describe('ReauthDialogComponent', () => {
     const { fixture, ref, document, dialog } = await setup();
     const trigger = (fixture.nativeElement as HTMLElement).querySelector<HTMLButtonElement>('#trigger');
     expect(trigger).not.toBeNull();
-    // CDK focuses the first tabbable on a timer; close only once the dialog owns focus, like a real Escape.
-    await vi.waitFor(() => expect(dialog.contains(document.activeElement)).toBe(true));
+    // The explicit password selector establishes initial focus before the close restores the trigger.
+    await vi.waitFor(() => expect(document.activeElement).toBe(dialog.querySelector('#reauth-password')));
     ref.close();
     await fixture.whenStable();
     expect(document.activeElement).toBe(trigger);

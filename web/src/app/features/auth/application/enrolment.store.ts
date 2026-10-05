@@ -46,7 +46,7 @@ export class EnrolmentStore {
   readonly confirmedSaved = this.confirmedSavedState.asReadonly();
   readonly retryAfterSec = this.retryAfterState.asReadonly();
   readonly enrolmentOnly = this.enrolmentOnlyState.asReadonly();
-  readonly canSubmit = computed(() => !this.submittingState() && this.rateLimitedUntilState() === null);
+  readonly canSubmit = computed(() => this.setupState() !== null && !this.submittingState() && this.rateLimitedUntilState() === null);
 
   /** i18n key of the non-field alert; `null` for field-level errors (the container binds those to the code control). */
   readonly formError = computed(() => {
@@ -108,7 +108,7 @@ export class EnrolmentStore {
     }
     this.submittingState.set(false);
     if (!result.ok) {
-      this.stepState.set('error');
+      this.stepState.set(result.error.code === 'reauth_required' ? 'show' : 'error');
       this.fail(result.error);
       return;
     }
@@ -120,7 +120,7 @@ export class EnrolmentStore {
   async verify(rawCode: string): Promise<void> {
     const code = rawCode.trim();
     const step = this.stepState();
-    if (code === '' || (step !== 'show' && step !== 'verify') || this.submittingState() || this.rateLimitedUntilState() !== null) return;
+    if (code === '' || (step !== 'show' && step !== 'verify') || !this.canSubmit()) return;
     const generation = this.session.generation();
     this.resetFeedback();
     this.stepState.set('verify');

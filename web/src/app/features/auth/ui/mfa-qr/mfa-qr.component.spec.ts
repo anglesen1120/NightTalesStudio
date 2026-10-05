@@ -8,6 +8,7 @@ import { MfaQrComponent } from './mfa-qr.component';
 
 vi.mock('qrcode', () => ({ toDataURL: vi.fn() }));
 
+// The component reaches `qrcode` through the lazy `qr-render` seam, so the mock above intercepts that import.
 const { toDataURL } = await import('qrcode');
 // `qrcode.toDataURL` is overloaded (promise and callback); pin the promise overload the component calls.
 const toDataURLMock = vi.mocked(toDataURL) as unknown as MockInstance<
