@@ -1,6 +1,11 @@
 {
   "field": {
-    "voice": "Giọng đọc"
+    "voice": "Giọng đọc",
+    "title": "Tên series",
+    "topic": "Chủ đề",
+    "language": "Ngôn ngữ",
+    "aspect": "Khung hình",
+    "style": "Phong cách hình ảnh"
   },
   "voice": {
     "preview": "Nghe thử",
@@ -46,6 +51,42 @@
       "label": "Minh hoạ hồ sơ vụ án",
       "hint": "Tranh hồ sơ vụ án tông trầm, không có khuôn mặt"
     },
-    "trueCrimeNotice": "Vụ án có thật chỉ dùng được phong cách minh hoạ, không có khuôn mặt người thật."
+    "trueCrimeNotice": "Vụ án có thật chỉ dùng được phong cách minh hoạ, không có khuôn mặt người thật.",
+    "clearedByTopic": "Phong cách hình ảnh đã được xoá vì không khớp chủ đề",
+    "inactive": "Phong cách này không còn khả dụng",
+    "selected": "Đã chọn",
+    "empty": "Chưa có phong cách hình ảnh phù hợp"
+  },
+  "list": {
+    "title": "Series của bạn",
+    "subtitle": "Giọng kể, khung hình và lịch phát nằm cùng một hàng.",
+    "empty": "Chưa có series nào",
+    "emptyBody": "Tạo series đầu tiên để giữ giọng kể và phong cách nhất quán qua các tập.",
+    "new": "Tạo series",
+    "archived": "Đã lưu trữ",
+    "includeArchived": "Hiện cả series đã lưu trữ",
+    "loadMore": "Xem thêm"
+  },
+  "step": { "topic": "Chủ đề và ngôn ngữ", "aspect": "Khung hình", "voice": "Giọng đọc", "style": "Phong cách hình ảnh" },
+  "topic": { "ghost": "Chuyện ma", "spiritual": "Tâm linh", "trueCrime": "Vụ án có thật" },
+  "topicHint": { "ghost": "Hư cấu, bầu không khí lạnh và bí ẩn", "spiritual": "Tín ngưỡng và chuyện kể dân gian", "true_crime": "Có nguồn, không kết luận quá chứng cứ" },
+  "aspect": { "landscape": "Ngang (video dài)", "portrait": "Dọc (Shorts)" },
+  "language": { "vi": "Tiếng Việt", "en": "English", "locked": "Không đổi được ngôn ngữ sau khi tạo; hãy tạo series mới" },
+  "editor": {
+    "subtitle": "Bốn quyết định tạo nên một dây chuyền nhất quán.",
+    "editTitle": "Sửa series",
+    "editSubtitle": "Cấu hình này áp dụng cho các tập tiếp theo.",
+    "next": "Tiếp tục"
+  },
+  "validation": { "required": "Hãy điền hoặc chọn trường này.", "titleMax": "Tên series không được dài quá 120 ký tự." },
+  "save": { "saved": "Đã lưu", "conflict": "Series đã thay đổi ở nơi khác", "changes": "Lưu thay đổi", "saving": "Đang lưu…", "reloaded": "Đã tải lại phiên bản mới nhất của series." },
+  "archive": { "title": "Lưu trữ series?", "confirm": "Lưu trữ series này? Dữ liệu vẫn đọc được; bạn không thể sửa hoặc tạo tập mới.", "failed": "Không lưu trữ được series. Series đã được khôi phục trong danh sách.", "done": "Đã lưu trữ series" },
+  "row": { "open": "Mở", "archive": "Lưu trữ", "openNamed": "Mở series", "archiveNamed": "Lưu trữ series", "autopilotOn": "Tự động đang bật", "autopilotOff": "Tự động đang tắt" },
+  "detail": {
+    "title": "Series", "subtitle": "Một giọng kể và phong cách nhất quán cho cả series.",
+    "edit": "Sửa series", "tabs": "Các tab series", "overview": "Tổng quan", "autopilot": "Tự động", "summary": "Cấu hình series",
+    "storyPreset": "Mẫu truyện", "defaultPreset": "Mặc định",
+    "archivedBody": "Không thể sửa, tạo tập hoặc bật tự động trong giai đoạn này. Mọi dữ liệu vẫn đọc được.",
+    "notFound": "Không tìm thấy series", "notFoundBody": "Series không tồn tại hoặc không thuộc tài khoản này.", "backToList": "Về danh sách series"
   }
 }

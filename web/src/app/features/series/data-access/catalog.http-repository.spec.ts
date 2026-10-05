@@ -17,6 +17,10 @@ function dto(over: Record<string, unknown> = {}): Record<string, unknown> {
   return { id: 'v1', displayName: 'Minh', gender: 'male', language: 'vi', previewUrl: null, tags: ['warm'], ...over };
 }
 
+function templateDto(over: Record<string, unknown> = {}): Record<string, unknown> {
+  return { id: 't1', name: 'dark-folklore-ink', topicHint: 'ghost', previewUrl: null, ...over };
+}
+
 describe('CatalogHttpRepository', () => {
   afterEach(() => TestBed.inject(HttpTestingController).verify());
 
@@ -132,5 +136,92 @@ describe('CatalogHttpRepository', () => {
     req.flush({ items: [] });
     await result;
     http.expectNone(() => true);
+  });
+
+  it('CatalogRepository_StyleTemplates_IssuesOneRequestWithTheTopic', async () => {
+    const { repository, http } = setup();
+    const result = repository.styleTemplates('true_crime');
+    const req = http.expectOne('/api/v1/style-templates?topic=true_crime');
+    expect(req.request.method).toBe('GET');
+    req.flush({ items: [] });
+    await result;
+    http.expectNone(() => true);
+  });
+
+  it('CatalogRepository_StyleTemplates_MapsDtoToModel', async () => {
+    const { repository, http } = setup();
+    const result = repository.styleTemplates('ghost');
+    http.expectOne('/api/v1/style-templates?topic=ghost').flush({
+      items: [templateDto({ previewUrl: 'https://cdn.example.com/p/ink.png' }), templateDto({ id: 't2', name: 'foggy-cinematic', topicHint: null })],
+    });
+    expect(await result).toEqual({
+      ok: true,
+      value: {
+        kind: 'ok',
+        etag: null,
+        templates: [
+          { id: 't1', name: 'dark-folklore-ink', topicHint: 'ghost', previewUrl: 'https://cdn.example.com/p/ink.png' },
+          { id: 't2', name: 'foggy-cinematic', topicHint: null, previewUrl: null },
+        ],
+      },
+    });
+  });
+
+  it('CatalogRepository_StyleTemplates_DropsRowsThatCannotBecomeAKey', async () => {
+    const { repository, http } = setup();
+    const result = repository.styleTemplates('ghost');
+    http.expectOne('/api/v1/style-templates?topic=ghost').flush({
+      items: [
+        templateDto({ id: 'bad-name', name: '../secret' }),
+        templateDto({ id: 'bad-hint', name: 'noir-sketch', topicHint: 'aliens' }),
+        templateDto({ id: 'ok', name: 'noir-sketch', topicHint: 'true_crime' }),
+      ],
+    });
+    const outcome = await result;
+    expect(outcome.ok && outcome.value.kind === 'ok' ? outcome.value.templates.map((template) => template.id) : null).toEqual(['ok']);
+  });
+
+  it('CatalogRepository_StyleTemplates_UnsafePreviewUrl_BecomesNull', async () => {
+    const { repository, http } = setup();
+    const result = repository.styleTemplates('ghost');
+    http.expectOne('/api/v1/style-templates?topic=ghost').flush({
+      items: [
+        templateDto({ id: 'a', previewUrl: 'javascript:alert(1)' }),
+        templateDto({ id: 'b', previewUrl: '//evil.example/a.png' }),
+        templateDto({ id: 'c', previewUrl: '/media/c.png' }),
+      ],
+    });
+    const outcome = await result;
+    const templates = outcome.ok && outcome.value.kind === 'ok' ? outcome.value.templates : [];
+    expect(templates.map((template) => template.previewUrl)).toEqual([null, null, '/media/c.png']);
+  });
+
+  it('CatalogRepository_StyleTemplates_ReadsEtagFromResponse_AndHonoursNotModified', async () => {
+    const { repository, http } = setup();
+    const result = repository.styleTemplates('ghost', '"abc123"');
+    http.expectOne('/api/v1/style-templates?topic=ghost').flush({ items: [templateDto()] }, { headers: { ETag: '"abc123"' } });
+    expect(await result).toEqual({ ok: true, value: { kind: 'notModified' } });
+
+    const fresh = repository.styleTemplates('ghost');
+    http.expectOne('/api/v1/style-templates?topic=ghost').flush({ items: [templateDto()] }, { headers: { ETag: '"abc123"' } });
+    const outcome = await fresh;
+    expect(outcome.ok && outcome.value.kind === 'ok' ? outcome.value.etag : undefined).toBe('"abc123"');
+  });
+
+  it('CatalogRepository_StyleTemplates_Status304_IsNotModified', async () => {
+    const { repository, http } = setup();
+    const result = repository.styleTemplates('ghost', '"abc123"');
+    http.expectOne('/api/v1/style-templates?topic=ghost').flush(null, { status: 304, statusText: 'Not Modified' });
+    expect(await result).toEqual({ ok: true, value: { kind: 'notModified' } });
+  });
+
+  it('CatalogRepository_StyleTemplates_Error_MapsToAppError_ThroughAppErrorMapper', async () => {
+    const { repository, http } = setup();
+    const result = repository.styleTemplates('ghost');
+    http
+      .expectOne('/api/v1/style-templates?topic=ghost')
+      .flush({ code: 'validation_failed' }, { status: 400, statusText: 'Bad Request' });
+    const outcome = await result;
+    expect(!outcome.ok && outcome.error).toMatchObject({ code: 'validation_failed', status: 400, kind: 'validation' });
   });
 });

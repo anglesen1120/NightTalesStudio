@@ -61,7 +61,7 @@ let nextReauthDialogId = 0;
     CdkTrapFocus,
     RetryCountdown,
   ],
-  // 'core' is the root scope (always loaded); the dialog's own copy lives in the lazy 'reauth' scope (10 CR-51) and
+  // 'core' is the root scope (always loaded); the dialog's own copy lives in the lazy 'reauth' scope (10 CR-52) and
   // the 'errors' route scope supplies failures.
   providers: [provideTranslocoScope('reauth', 'errors')],
   templateUrl: './reauth-dialog.component.html',
