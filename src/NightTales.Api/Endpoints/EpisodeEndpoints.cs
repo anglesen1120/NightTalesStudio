@@ -10,6 +10,7 @@ using NightTales.Application.Features.Episodes.Commands.DeleteEpisode;
 using NightTales.Application.Features.Episodes.Queries.GetEpisode;
 using NightTales.Application.Features.Episodes.Queries.ListEpisodes;
 using NightTales.Domain.Episodes;
+using NightTales.Domain.Stories.Generation;
 
 namespace NightTales.Api.Endpoints;
 
@@ -157,7 +158,7 @@ public static class EpisodeEndpoints
 
     /// <summary>
     /// <c>GET /api/v1/episodes/{id}</c>: 200 with the episode page and its current <c>ETag</c>, 304 when
-    /// the client already holds that tag, or 404 for a missing, foreign or cancelled one.
+    /// the client holds that tag and generation is absent or terminal, or 404 for a missing, foreign or cancelled one.
     /// </summary>
     /// <remarks>
     /// <para>
@@ -175,9 +176,10 @@ public static class EpisodeEndpoints
     /// </para>
     /// <para>
     /// The 200 and the 304 both carry <c>Cache-Control: no-cache</c> and <c>Vary: Authorization</c>: the
-    /// resource is per-tenant (D10) and every answer must be revalidated, so a 200 a proxy cached
-    /// heuristically can never hide a later change — the new <c>xmin</c> differs and the revalidation is
-    /// a miss.
+    /// resource is per-tenant (D10) and every answer must be revalidated. The <c>ep-&lt;xmin&gt;</c> tag stays
+    /// the D15 write precondition, but generation stage changes can update only <c>generation_runs</c>, not
+    /// the episode row. A queued or running generation therefore always answers 200 with the body, even
+    /// for a matching tag; only absent or terminal generation permits a 304.
     /// </para>
     /// </remarks>
     private static async Task<IResult> GetAsync(
@@ -201,7 +203,8 @@ public static class EpisodeEndpoints
         http.Response.Headers.Vary = "Authorization";
         http.Response.Headers.CacheControl = "no-cache";
 
-        if (string.Equals(http.Request.Headers.IfNoneMatch.ToString(), dto.Etag, StringComparison.Ordinal))
+        if (dto.Generation?.Status is not (GenerationRunStatus.Queued or GenerationRunStatus.Running)
+            && string.Equals(http.Request.Headers.IfNoneMatch.ToString(), dto.Etag, StringComparison.Ordinal))
         {
             return Results.StatusCode(StatusCodes.Status304NotModified);
         }
