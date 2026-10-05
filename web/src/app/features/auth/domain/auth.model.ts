@@ -17,5 +17,5 @@ export type LoginOutcome =
   | { readonly kind: 'mfa'; readonly mfaToken: string }
   | { readonly kind: 'enrolment'; readonly token: string };
 
-/** T3 (10.3.3-T3) widens this to `'password' | 'mfa'`. */
-export type LoginStep = 'password';
+/** `'mfa'` while the `mfaToken` challenge is shown inside `/login` (10.3.3-T3). */
+export type LoginStep = 'password' | 'mfa';

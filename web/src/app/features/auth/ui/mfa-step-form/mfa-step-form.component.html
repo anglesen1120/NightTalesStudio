@@ -1,0 +1,83 @@
+<div class="auth-stack">
+  <ol class="mfa-steps" [attr.aria-label]="'auth.login.progress' | transloco">
+    <li><span>1</span><span>{{ 'auth.login.passwordStep' | transloco }}</span></li>
+    <li aria-current="step"><span>2</span><span>{{ 'auth.login.verificationStep' | transloco }}</span></li>
+  </ol>
+
+  <h1 class="auth-heading" tabindex="-1" data-page-heading>{{ 'auth.mfa.title' | transloco }}</h1>
+  <p class="auth-lede">{{ 'auth.mfa.hint' | transloco }}</p>
+
+  @if (vm().formError; as errorKey) {
+    <div id="mfa-form-alert" class="auth-alert" role="alert" tabindex="-1" aria-atomic="true" data-form-alert>
+      <strong>{{ errorKey | transloco }}</strong>
+      @if (errorKey === 'errors.network_error' || errorKey === 'errors.unknown_error') {
+        <button mat-button type="button" (click)="submitCode.emit()">{{ 'errors.action.retry' | transloco }}</button>
+      }
+      @if (vm().traceId; as id) {
+        <span>{{ 'errors.unknown.trace' | transloco: { traceId: id } }}</span>
+      }
+    </div>
+  }
+
+  @let retryIn = vm().retryAfterSec;
+  @if (retryIn !== null) {
+    <div id="mfa-retry" class="auth-status" role="status">
+      <strong>{{ 'auth.rateLimited.message' | transloco }}</strong>
+      <nts-retry-countdown
+        [seconds]="retryIn"
+        messageKey="auth.rateLimited.retryIn"
+        (elapsed)="retryAfterElapsed.emit()"
+      />
+    </div>
+  }
+
+  <form class="auth-stack" [formGroup]="form()" (ngSubmit)="submitCode.emit()" novalidate>
+    <mat-form-field appearance="outline">
+      <mat-label>{{ (vm().recoveryMode ? 'auth.mfa.recoveryCode' : 'auth.mfa.code') | transloco }}</mat-label>
+      <input
+        matInput
+        id="mfa-code"
+        type="text"
+        autocomplete="one-time-code"
+        [attr.inputmode]="vm().recoveryMode ? null : 'numeric'"
+        [attr.disabled]="locked() ? '' : null"
+        [attr.aria-invalid]="fieldErrorKey() !== null ? 'true' : null"
+        [attr.aria-describedby]="describedBy()"
+        formControlName="code"
+      />
+      @if (vm().recoveryMode) {
+        <mat-hint id="mfa-code-hint">{{ 'auth.mfa.recoveryHint' | transloco }}</mat-hint>
+      }
+      @if (fieldErrorKey(); as errorKey) {
+        <mat-error id="mfa-code-error">{{ errorKey | transloco }}</mat-error>
+      }
+    </mat-form-field>
+
+    <div class="auth-actions">
+      <button
+        class="auth-primary"
+        mat-flat-button
+        type="submit"
+        [disabled]="!vm().canSubmit || locked()"
+        [attr.aria-disabled]="!vm().canSubmit || locked()"
+        [attr.aria-describedby]="locked() ? 'mfa-retry' : null"
+      >
+        @if (vm().submitting) {
+          <mat-spinner class="auth-spinner" diameter="18" aria-hidden="true" />
+          <span>{{ 'auth.mfa.submitting' | transloco }}</span>
+        } @else {
+          <span>{{ 'auth.mfa.submit' | transloco }}</span>
+        }
+      </button>
+      @if (vm().submitting) {
+        <span class="visually-hidden" role="status">{{ 'auth.mfa.submitting' | transloco }}</span>
+      }
+      <button class="mfa-mode" mat-button type="button" (click)="toggleRecovery.emit()">
+        {{ (vm().recoveryMode ? 'auth.mfa.useTotp' : 'auth.mfa.useRecovery') | transloco }}
+      </button>
+      <button class="mfa-back" mat-button type="button" (click)="backToPassword.emit()">
+        {{ 'auth.mfa.back' | transloco }}
+      </button>
+    </div>
+  </form>
+</div>

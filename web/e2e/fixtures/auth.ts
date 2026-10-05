@@ -2,7 +2,7 @@ import { createHmac } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
-import { expect, type Locator, type Page } from '@playwright/test';
+import { expect, type Locator, type Page, type Route } from '@playwright/test';
 
 /**
  * Owner authentication helper (README D15, WR14).
@@ -24,7 +24,8 @@ const STEP_SECONDS = 30;
 
 // Copy of the approved design frames (design/ui/screens/01-shell-auth.html), vi and en, so both locales
 // work. The screens ship with 10.3.3-T1/T3; until then these selectors are bound to the approved copy.
-const LABEL = {
+// Exported for the 10.3.3-T3 specs (auth-mfa / auth-enrolment / auth-reauth) so every spec shares one binding.
+export const LABEL = {
   email: /^E-mail$/i,
   password: /^(Mật khẩu|Password)$/,
   signIn: /^(Đăng nhập|Sign in)$/,
@@ -36,6 +37,35 @@ const LABEL = {
   savedRecoveryCodes: /^(Tôi đã lưu mã khôi phục|I saved my recovery codes)$/,
   continue: /^(Tiếp tục|Continue)$/,
   signInAgain: /^(Đăng nhập lại|Sign in again)$/,
+  // 10.3.3-T3: MFA-step mode toggles (f-login-mfa, f-login-mfa-recovery).
+  useRecovery: /^(Dùng mã khôi phục|Use a recovery code)$/,
+  useTotp: /^(Dùng ứng dụng xác thực|Use authenticator app)$/,
+  back: /^(Quay lại|Back)$/,
+  recoveryCode: /^(Mã khôi phục|Recovery code)$/,
+  // 10.3.3-T3: ReauthDialog actions (f-reauth); scope to `getByRole('dialog')`.
+  confirm: /^(Xác nhận|Confirm)$/,
+  cancel: /^(Huỷ|Cancel)$/,
+  // 10.3.3-T3: enrolment page (f-enrol-show, f-enrol-codes, f-enrol-gate, f-enrol-error, f-enrol-done).
+  copySetupKey: /^(Sao chép khoá thiết lập|Copy setup key)$/,
+  copyCode: /^(Sao chép mã \d+|Copy code \d+)$/,
+  downloadRecoveryCodes: /^(Tải tệp mã khôi phục|Download recovery codes)$/,
+  newRecoveryCodes: /^(Tạo mã khôi phục mới|Create new recovery codes)$/,
+  tryAgain: /^(Thử lại|Try again)$/,
+  goToDashboard: /^(Về bảng điều khiển|Go to the dashboard)$/,
+  // 10.3.3-T3: frame headings / inline states (f-login-mfa-expired, f-login-mfa-locked, f-enrol-show, f-enrol-codes,
+  // f-enrol-reauth, f-enrol-done, f-enrol-error, f-reauth).
+  challengeExpired: /(Mã xác thực đã hết hạn|The authentication challenge expired)/,
+  mfaLocked: /(Tạm khoá xác thực trên thiết bị này|Verification is locked on this device)/,
+  enrolTitle: /^(Bật xác thực hai lớp|Turn on two-step verification)$/,
+  codesTitle: /^(Mã khôi phục|Recovery codes)$/,
+  codesShownOnce: /(Các mã này chỉ hiện một lần|These codes appear once)/,
+  enrolReauthRequired: /(Cần xác nhận lại mật khẩu|Confirm your password again)/,
+  enrolDone: /(Đã bật xác thực hai lớp|Two-step verification is on)/,
+  enrolExpired: /(Phiên ghi danh đã hết hạn|The enrolment session expired)/,
+  reauthTitle: /^(Xác nhận lại mật khẩu|Confirm your password)$/,
+  wrongCode: /(Mã không đúng|That code is not right)/,
+  qrAlt: /(Mã QR để thêm Night Tales Studio vào ứng dụng xác thực|QR code)/i,
+  countdown: /(\d+)\s*(giây|seconds?)/i,
 } as const;
 
 const BASE32_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
@@ -91,7 +121,7 @@ function saveSecret(secret: string): void {
   writeFileSync(SECRET_FILE, JSON.stringify({ secret }), { mode: 0o600 });
 }
 
-function loadSecret(): string {
+export function loadSecret(): string {
   if (!existsSync(SECRET_FILE)) {
     throw new Error(
       'the owner already has two-step verification but this run holds no secret (e2e/.auth is per run); ' +
@@ -199,4 +229,158 @@ export async function loginAsOwner(page: Page): Promise<void> {
     secret: loadSecret(),
   });
   await page.waitForURL((url) => !url.pathname.startsWith('/login'));
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// 10.3.3-T3 shared stub helpers (auth-mfa / auth-enrolment / auth-reauth). Only `page.route` / `page.clock`; no hooks.
+// ---------------------------------------------------------------------------------------------------------------
+
+/** Stubbed secrets used by the specs; never real credentials. */
+export const STUB = {
+  mfaToken: 'stub-mfa-token-7f3a91c2d4e85b60',
+  enrolmentToken: 'stub-enrol-token-1b2c3d4e5f607182',
+  secret: 'JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP',
+  otpauthUri: 'otpauth://totp/NightTales:owner@example.test?secret=JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP&issuer=NightTales',
+  recoveryCodes: [
+    '4K7P-9QX2-M3TD',
+    '7NPL-2VC8-K9FA',
+    'M8QW-5DTR-1J6H',
+    '3ZKC-8RPA-5VTX',
+    '9HME-4LQ7-2BWN',
+    '6TYF-3JXA-8CQR',
+    '2PVD-7NKM-4EGS',
+    '5RXA-1TLC-9QHU',
+    '8BWJ-6MFP-3KZD',
+    '1CGN-5VTR-7YQA',
+  ],
+  newRecoveryCodes: [
+    'AA11-BB22-CC33',
+    'DD44-EE55-FF66',
+    'GG77-HH88-JJ99',
+    'KK12-LL34-MM56',
+    'NN78-PP90-QQ12',
+    'RR34-SS56-TT78',
+    'UU90-VV12-WW34',
+    'XX56-YY78-ZZ90',
+    'AB12-CD34-EF56',
+    'GH78-JK90-LM12',
+  ],
+} as const;
+
+/** Unsigned dummy JWT: the SPA reads `role`/`amr`/`sub` from the middle segment only. */
+export function dummyJwt(amr: string[] = ['pwd', 'mfa']): string {
+  const exp = Math.floor(Date.now() / 1000) + 900;
+  const [header, payload] = [{ alg: 'none', typ: 'JWT' }, { sub: 'u-owner', role: 'owner', amr, exp }].map((part) =>
+    Buffer.from(JSON.stringify(part)).toString('base64url'),
+  );
+  return `${header}.${payload}.`;
+}
+
+export function loginOkBody(): Record<string, unknown> {
+  return {
+    accessToken: dummyJwt(),
+    expiresAt: new Date(Date.now() + 15 * 60_000).toISOString(),
+    role: 'owner',
+    amr: ['pwd', 'mfa'],
+  };
+}
+
+export function problem(status: number, code: string, extra: Record<string, unknown> = {}): Record<string, unknown> {
+  return { code, status, title: code, traceId: 'NTS-E2E', ...extra };
+}
+
+export async function fulfilJson(
+  route: Route,
+  status: number,
+  body: unknown,
+  headers: Record<string, string> = {},
+): Promise<void> {
+  await route.fulfill({ status, contentType: 'application/json', headers, body: JSON.stringify(body) });
+}
+
+/** Background calls after a stubbed sign-in must not reach a missing backend or end the session. */
+export async function quietBackground(page: Page): Promise<void> {
+  await page.route('**/api/v1/hubs/ticket', (route) => route.abort('failed'));
+  await page.route('**/api/v1/auth/refresh', (route) => fulfilJson(route, 401, problem(401, 'session_revoked')));
+}
+
+export interface CapturedPost {
+  readonly body: unknown;
+  readonly authorization: string | undefined;
+}
+
+/** Records every POST to `apiPath` (request bodies are asserted on the capture, never on the UI). */
+export function trackPosts(page: Page, apiPath: string): CapturedPost[] {
+  const calls: CapturedPost[] = [];
+  page.on('request', (request) => {
+    if (request.method() === 'POST' && new URL(request.url()).pathname === apiPath) {
+      calls.push({ body: request.postDataJSON() as unknown, authorization: request.headers()['authorization'] });
+    }
+  });
+  return calls;
+}
+
+/** Collects console text so a spec can assert a secret never reached it. */
+export function trackConsole(page: Page): string[] {
+  const lines: string[] = [];
+  page.on('console', (message) => lines.push(message.text()));
+  page.on('pageerror', (error) => lines.push(error.message));
+  return lines;
+}
+
+/** `code` XOR `recoveryCode`, never both and never empty (task AC2). `mfaToken` must be present. */
+export function expectMfaBodyShape(body: unknown, mode: 'totp' | 'recovery'): void {
+  expect(typeof body === 'object' && body !== null).toBe(true);
+  const { mfaToken, code, recoveryCode } = body as Record<string, unknown>;
+  expect(typeof mfaToken === 'string' && mfaToken !== '').toBe(true);
+  const used = mode === 'totp' ? code : recoveryCode;
+  const unused = mode === 'totp' ? recoveryCode : code;
+  expect(typeof used === 'string' && used !== '', `${mode} value is a non-empty string`).toBe(true);
+  expect(unused === null || unused === undefined, 'the other field is absent or null').toBe(true);
+}
+
+/**
+ * None of `secrets` may appear in the URL, localStorage, sessionStorage, any DOM attribute, or the console lines.
+ * (Page text is asserted separately where the value is meant to be visible and must disappear.)
+ */
+export async function expectNoSecretLeak(page: Page, secrets: readonly string[], consoleLines: readonly string[]): Promise<void> {
+  expect(secrets.length).toBeGreaterThan(0);
+  const url = page.url();
+  const snapshot = await page.evaluate(() => {
+    const attributes: string[] = [];
+    for (const element of Array.from(document.querySelectorAll('*'))) {
+      for (const attribute of Array.from(element.attributes)) {
+        attributes.push(attribute.value);
+      }
+    }
+    const dump = (storage: Storage): string[] => {
+      const out: string[] = [];
+      for (let index = 0; index < storage.length; index += 1) {
+        const key = storage.key(index) ?? '';
+        out.push(key, storage.getItem(key) ?? '');
+      }
+      return out;
+    };
+    return { attributes, local: dump(localStorage), session: dump(sessionStorage) };
+  });
+  const haystacks: Array<[string, string]> = [
+    ['url', url],
+    ['attributes', snapshot.attributes.join('\n')],
+    ['localStorage', snapshot.local.join('\n')],
+    ['sessionStorage', snapshot.session.join('\n')],
+    ['console', consoleLines.join('\n')],
+  ];
+  for (const secret of secrets) {
+    for (const [where, text] of haystacks) {
+      expect(text.includes(secret), `a secret leaked into ${where}`).toBe(false);
+    }
+  }
+}
+
+/** The visible page text must not contain any of `values` (used after a reveal is dismissed). */
+export async function expectNotInPageText(page: Page, values: readonly string[]): Promise<void> {
+  const text = await page.locator('body').innerText();
+  for (const value of values) {
+    expect(text.includes(value), 'a one-time value is still rendered').toBe(false);
+  }
 }

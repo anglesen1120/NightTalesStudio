@@ -1,0 +1,209 @@
+<div class="auth-stack">
+  @if (vm().reLoginRequired || vm().step === 'error') {
+    <!-- f-enrol-error: a spent/expired enrolment token (404) or a setup failure; focus lands on the h1. -->
+    <h1 class="auth-heading" tabindex="-1" data-page-heading>
+      {{ (vm().reLoginRequired ? 'auth.enrol.expiredTitle' : 'auth.enrol.title') | transloco }}
+    </h1>
+    <nts-error-state
+      [titleKey]="vm().reLoginRequired ? 'auth.enrol.expiredTitle' : 'core.ui.errorState.title'"
+      [bodyKey]="vm().reLoginRequired ? 'auth.enrol.expiredBody' : (vm().formError ?? 'errors.unknown_error')"
+      [traceId]="vm().traceId ?? undefined"
+    />
+    <div class="enrol-actions">
+      @if (vm().reLoginRequired) {
+        <button class="auth-primary" mat-flat-button type="button" (click)="reLogin.emit()">
+          {{ 'auth.enrol.reLogin' | transloco }}
+        </button>
+      } @else {
+        <button class="auth-primary" mat-flat-button type="button" (click)="retry.emit()">
+          {{ 'errors.action.retry' | transloco }}
+        </button>
+      }
+    </div>
+  } @else if (vm().step === 'done') {
+    <!-- f-enrol-done -->
+    <div class="enrol-done">
+      <nts-icon-check />
+      <h1 class="auth-heading" tabindex="-1" data-page-heading>{{ 'auth.enrol.done' | transloco }}</h1>
+      <p class="auth-lede">{{ 'auth.enrol.doneBody' | transloco }}</p>
+      <button class="auth-primary" mat-flat-button type="button" (click)="onDoneAction()">
+        {{ (vm().enrolmentOnly ? 'auth.enrol.reLogin' : 'auth.enrol.toDashboard') | transloco }}
+      </button>
+    </div>
+  } @else {
+    <nts-stepper [steps]="steps()" />
+
+    @if (vm().step === 'codes') {
+      <!-- f-enrol-codes / f-enrol-gate: the ten codes appear once, the warning is an alert, confirmSaved gates exit. -->
+      <h1 class="auth-heading" tabindex="-1" data-page-heading>{{ 'auth.enrol.recoveryTitle' | transloco }}</h1>
+      <div class="enrol-warning" role="alert" aria-atomic="true">
+        <strong>{{ 'auth.enrol.recoveryWarning' | transloco }}</strong>
+        <span>{{ 'auth.enrol.recoverySaveAll' | transloco }}</span>
+      </div>
+      <ol class="enrol-codes">
+        @for (code of vm().codes ?? []; track $index) {
+          <li>
+            <code #codeEl>{{ code }}</code>
+            <button
+              class="enrol-copy"
+              mat-stroked-button
+              type="button"
+              (click)="copyCode(code, codeEl)"
+              [attr.aria-label]="'auth.enrol.copyCode' | transloco: { index: $index + 1 }"
+            >
+              <nts-icon-copy />
+            </button>
+          </li>
+        }
+      </ol>
+      <div class="enrol-actions">
+        <button mat-stroked-button type="button" [disabled]="vm().codes === null" (click)="download.emit()">
+          {{ 'auth.enrol.download' | transloco }}
+        </button>
+        <button mat-stroked-button type="button" (click)="regenerate.emit()">
+          {{ 'auth.enrol.regenerate' | transloco }}
+        </button>
+      </div>
+      <label class="enrol-confirm">
+        <input type="checkbox" [checked]="vm().confirmedSaved" (change)="onConfirmSaved($event)" />
+        <span>{{ 'auth.enrol.confirmSaved' | transloco }}</span>
+      </label>
+      <button
+        class="auth-primary"
+        mat-flat-button
+        type="button"
+        [disabled]="!vm().confirmedSaved"
+        [attr.aria-disabled]="!vm().confirmedSaved"
+        (click)="finish.emit()"
+      >
+        {{ 'auth.enrol.continue' | transloco }}
+      </button>
+    } @else {
+      <h1 class="auth-heading" tabindex="-1" data-page-heading>{{ 'auth.enrol.title' | transloco }}</h1>
+      <p class="auth-lede">{{ 'auth.enrol.intro' | transloco }}</p>
+
+      @if (vm().step === 'loading') {
+        <!-- f-enrol-loading: skeletons stay silent; the heading and lede already say what the page is. -->
+        <nts-loading-state [rows]="3" />
+      } @else {
+        @if (vm().enrolmentOnly) {
+          <!-- f-enrol-banner: role=status, it informs without stealing focus. -->
+          <div class="enrol-banner auth-status" role="status" aria-atomic="true">
+            <strong>{{ 'auth.enrol.enrolmentBannerTitle' | transloco }}</strong>
+            <span>{{ 'auth.enrol.enrolmentBannerBody' | transloco }}</span>
+          </div>
+        }
+        @if (vm().reauthRequired) {
+          <!-- f-enrol-reauth: a cancelled re-auth is never silent; retry re-runs load(). -->
+          <div class="enrol-banner auth-alert" role="status" aria-atomic="true">
+            <strong>{{ 'auth.enrol.reauthTitle' | transloco }}</strong>
+            <span>{{ 'auth.enrol.reauthBody' | transloco }}</span>
+            <button mat-button type="button" (click)="retry.emit()">{{ 'errors.action.retry' | transloco }}</button>
+          </div>
+        }
+        @if (vm().formError; as errorKey) {
+          <div id="enrol-form-alert" class="auth-alert" role="alert" tabindex="-1" aria-atomic="true" data-form-alert>
+            <strong>{{ errorKey | transloco }}</strong>
+            @if (errorKey === 'errors.network_error' || errorKey === 'errors.unknown_error') {
+              <button mat-button type="button" (click)="verifyCode.emit()">{{ 'errors.action.retry' | transloco }}</button>
+            }
+            @if (vm().traceId; as id) {
+              <span>{{ 'errors.unknown.trace' | transloco: { traceId: id } }}</span>
+            }
+          </div>
+        }
+
+        @let retryIn = vm().retryAfterSec;
+        @if (retryIn !== null) {
+          <div id="enrol-retry" class="auth-status" role="status">
+            <strong>{{ 'auth.rateLimited.message' | transloco }}</strong>
+            <nts-retry-countdown
+              [seconds]="retryIn"
+              messageKey="auth.rateLimited.retryIn"
+              (elapsed)="retryAfterElapsed.emit()"
+            />
+          </div>
+        }
+
+        <div class="enrol-layout">
+          @if (vm().setup; as setup) {
+            @defer (on viewport) {
+              <nts-mfa-qr [otpauthUri]="setup.otpauthUri" />
+            } @placeholder {
+              <div class="enrol-qr-slot" aria-hidden="true"></div>
+            } @error {
+              <nts-error-state
+                bodyKey="auth.enrol.qrFailed"
+                retryLabelKey="errors.action.retry"
+                (retry)="retry.emit()"
+              />
+            }
+          } @else {
+            <div class="enrol-qr-slot" aria-hidden="true"></div>
+          }
+
+          <div class="enrol-fields auth-stack">
+            <mat-form-field appearance="outline" class="enrol-key">
+              <mat-label>{{ 'auth.enrol.manualKey' | transloco }}</mat-label>
+              <input matInput id="enrol-key" type="text" readonly #manualKeyInput [value]="manualKey()" />
+            </mat-form-field>
+            <button
+              class="enrol-copy"
+              mat-stroked-button
+              type="button"
+              (click)="copyManualKey(manualKeyInput)"
+              [attr.aria-label]="'auth.enrol.copy' | transloco"
+            >
+              <nts-icon-copy />
+              <span>{{ 'auth.enrol.copy' | transloco }}</span>
+            </button>
+
+            <form class="auth-stack" [formGroup]="form()" (ngSubmit)="verifyCode.emit()" novalidate>
+              <mat-form-field appearance="outline">
+                <mat-label>{{ 'auth.enrol.code' | transloco }}</mat-label>
+                <input
+                  matInput
+                  id="enrol-code"
+                  type="text"
+                  data-code-field
+                  autocomplete="one-time-code"
+                  inputmode="numeric"
+                  [attr.disabled]="locked() ? '' : null"
+                  [attr.aria-invalid]="fieldErrorKey() !== null ? 'true' : null"
+                  [attr.aria-describedby]="codeDescribedBy()"
+                  formControlName="code"
+                />
+                @if (fieldErrorKey(); as errorKey) {
+                  <mat-error id="enrol-code-error">{{ errorKey | transloco }}</mat-error>
+                }
+              </mat-form-field>
+              <button
+                class="auth-primary"
+                mat-flat-button
+                type="submit"
+                [disabled]="!vm().canSubmit || locked()"
+                [attr.aria-disabled]="!vm().canSubmit || locked()"
+                [attr.aria-describedby]="locked() ? 'enrol-retry' : null"
+              >
+                @if (vm().submitting) {
+                  <mat-spinner class="auth-spinner" diameter="18" aria-hidden="true" />
+                  <span>{{ 'auth.enrol.verifying' | transloco }}</span>
+                } @else {
+                  <span>{{ 'auth.enrol.verify' | transloco }}</span>
+                }
+              </button>
+              @if (vm().submitting) {
+                <span class="visually-hidden" role="status">{{ 'auth.enrol.verifying' | transloco }}</span>
+              }
+            </form>
+          </div>
+        </div>
+      }
+    }
+  }
+
+  <!-- Copy outcomes are announced here, never via a live region that only exists while a step is mounted. -->
+  <p class="enrol-copy-result" aria-live="polite" aria-atomic="true">
+    {{ copyResult() !== null ? (copyResult()! | transloco) : '' }}
+  </p>
+</div>

@@ -1,0 +1,12 @@
+{
+  "title": "Xác nhận lại mật khẩu",
+  "reason": "Thao tác này cần một lần xác nhận mới.",
+  "password": "Mật khẩu",
+  "code": "Mã xác thực",
+  "codeHint": "Để trống nếu tài khoản chưa có ứng dụng xác thực.",
+  "submit": "Xác nhận",
+  "submitting": "Đang xác nhận…",
+  "cancel": "Huỷ",
+  "retry": "Thử lại",
+  "failed": "Không xác nhận được. Hãy kiểm tra và thử lại."
+}

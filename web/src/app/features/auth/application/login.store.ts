@@ -7,6 +7,7 @@ import { formErrorKey, retryAfterOf } from './auth-failure';
 import { AuthRepository } from './auth.repository';
 
 const MFA_SETUP_URL = '/account/security/mfa-setup';
+const MFA_CHALLENGE_EXPIRED_KEY = 'auth.mfa.challengeExpired';
 
 /**
  * State of the password step of `/login` (provided by the routed container, one instance per page). One request at a
@@ -26,6 +27,7 @@ export class LoginStore {
   private readonly errorState = signal<AppError | null>(null);
   private readonly formErrorState = signal<string | null>(null);
   private readonly mfaTokenState = signal<string | null>(null);
+  private readonly recoveryModeState = signal(false);
   private readonly retryAfterState = signal<number | null>(null);
   private readonly rateLimitedUntilState = signal<number | null>(null);
   private destroyed = false;
@@ -37,6 +39,8 @@ export class LoginStore {
   /** i18n key of the non-field alert; `null` when the error is field-level or absent. */
   readonly formError = this.formErrorState.asReadonly();
   readonly mfaToken = this.mfaTokenState.asReadonly();
+  /** `true` while the MFA step takes a recovery code (`recoveryCode` body) instead of a TOTP code (`code`). */
+  readonly recoveryMode = this.recoveryModeState.asReadonly();
   readonly retryAfterSec = this.retryAfterState.asReadonly();
   /** Epoch ms until which submit is refused (429). */
   readonly rateLimitedUntil = this.rateLimitedUntilState.asReadonly();
@@ -52,6 +56,7 @@ export class LoginStore {
     inject(DestroyRef).onDestroy(() => {
       this.destroyed = true;
       this.mfaTokenState.set(null);
+      this.recoveryModeState.set(false);
     });
     // A session end (logout, interceptor sign-out) or any identity change drops the challenge and the last error.
     effect(() => {
@@ -91,6 +96,7 @@ export class LoginStore {
 
   backToPassword(): void {
     this.mfaTokenState.set(null);
+    this.recoveryModeState.set(false);
     this.stepState.set('password');
     this.clearError();
   }
@@ -102,6 +108,7 @@ export class LoginStore {
 
   private clearChallenge(): void {
     this.mfaTokenState.set(null);
+    this.recoveryModeState.set(false);
     this.stepState.set('password');
     this.clearError();
   }
@@ -115,18 +122,55 @@ export class LoginStore {
     this.rateLimitedUntilState.set(seconds === null ? null : Date.now() + seconds * 1000);
   }
 
+  /**
+   * The MFA step: one POST with `code` (TOTP) or `recoveryCode` (recovery mode), never both and never empty (C10).
+   * Single-flight; a late result after destroy or a session generation change paints nothing and signs nobody in.
+   * `invalid_mfa_code` keeps the step; `mfa_token_invalid` (challenge killed or expired) returns to the password step.
+   */
+  async submitMfa(rawCode: string): Promise<void> {
+    const mfaToken = this.mfaTokenState();
+    const code = rawCode.trim();
+    if (mfaToken === null || code === '' || this.submittingState() || this.rateLimitedUntilState() !== null) return;
+    const generation = this.session.generation();
+    const returnUrl = this.route.snapshot.queryParamMap.get('returnUrl');
+    this.submittingState.set(true);
+    this.clearError();
+    const result = await this.repository.loginMfa(mfaToken, code, this.recoveryModeState() ? 'recovery' : 'totp');
+    if (this.destroyed || generation !== this.session.generation()) return;
+    this.submittingState.set(false);
+    if (!result.ok) {
+      if (result.error.code === 'mfa_token_invalid') {
+        this.backToPassword();
+        this.formErrorState.set(MFA_CHALLENGE_EXPIRED_KEY);
+        return;
+      }
+      this.fail(result.error);
+      return;
+    }
+    await this.proceed(result.value, returnUrl);
+  }
+
+  /** Swaps TOTP and recovery-code entry; drops the previous attempt's error. */
+  toggleRecovery(): void {
+    this.recoveryModeState.update((on) => !on);
+    this.clearError();
+  }
+
   private async proceed(outcome: LoginOutcome, returnUrl: string | null): Promise<void> {
     switch (outcome.kind) {
       case 'ok': {
         const { accessToken, expiresAt, role, amr } = outcome.session;
         this.userSignedInState.set(true);
+        this.mfaTokenState.set(null);
         this.session.signIn({ accessToken, expiresAt }, role, amr);
         await this.router.navigateByUrl(sanitizeReturnUrl(returnUrl));
         return;
       }
       case 'mfa':
-        // T3 widens `LoginStep` to show the code step; T1 only holds the challenge in memory.
+        // The token stays in this signal only: never a URL, storage, the DOM or the console.
         this.mfaTokenState.set(outcome.mfaToken);
+        this.recoveryModeState.set(false);
+        this.stepState.set('mfa');
         return;
       case 'enrolment':
         this.session.beginEnrolment(outcome.token);
