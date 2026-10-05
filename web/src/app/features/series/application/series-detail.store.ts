@@ -35,6 +35,10 @@ export class SeriesDetailStore {
   async load(id: string): Promise<void> {
     const requestId = ++this.requestId;
     const sessionGeneration = this.session.generation();
+    // A different id is a different page: the previous series must not render under the new id — most importantly
+    // while a non-404 failure lands on the error state, which the page renders behind `series` (QA-3). The same-id
+    // reload keeps the row so the page does not flash empty.
+    if (this.series()?.id !== id) this.series.set(null);
     this.loading.set(true);
     this.notFound.set(false);
     this.error.set(null);

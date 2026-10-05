@@ -5,7 +5,7 @@ import { TranslocoService } from '@jsverse/transloco';
 import { debounceTime, firstValueFrom, merge, type Observable } from 'rxjs';
 import { bindFieldErrors, clearServerErrors, type AppError } from '@core/errors';
 import { SessionStore } from '@core/session';
-import type { Aspect, CreateSeriesInput, Series, Topic } from '../domain/series.model';
+import { isTrueCrime, type Aspect, type CreateSeriesInput, type Series, type Topic } from '../domain/series.model';
 import { STYLE_CLEARED_BY_TOPIC_KEY, type StyleTemplate } from '../domain/style-template.model';
 import { isTopicCompatible } from '../domain/topic-style-compatibility';
 import type { Language } from '../domain/voice.model';
@@ -102,6 +102,15 @@ export class SeriesEditorStore {
   private readonly templateCache = new Map<Topic, CachedTemplates>();
   private templateSeq = 0;
   private entityRequest = 0;
+
+  /**
+   * The `topicHint` of every template id the store has seen — remembered by id so the compatibility check works
+   * while the catalog is not loaded yet (edit before step 4) or no longer holds the old template (QA-2). The
+   * stored style is seeded in `applyEntity` from the series topic: a `true_crime` series had to pick a `true_crime`
+   * template, any other topic one that is not (`StyleTopicPolicy`). Compatibility reads this hint like a `null`
+   * hint: `null` stands in for "anything but `true_crime`" for the check.
+   */
+  private readonly styleHints = new Map<string, Topic | null>();
   private focusSeq = 0;
   private etag: string | null = null;
   private storedSeries: Series | null = null;
@@ -206,6 +215,7 @@ export class SeriesEditorStore {
     this.templatesError.set(null);
     this.inactiveTemplateId.set(null);
     this.templateCache.clear();
+    this.styleHints.clear();
     this.templateSeq += 1;
     this.etag = null;
     this.storedSeries = null;
@@ -297,8 +307,11 @@ export class SeriesEditorStore {
     this.voiceStep.select(id);
   }
 
+  /** Records the picked card in the form and remembers its `topicHint`, so a later topic change can judge it. */
   setStyleTemplate(id: string): void {
     this.form.controls.styleTemplateId.setValue(id);
+    const hint = this.templates().find((template) => template.id === id)?.topicHint;
+    if (hint !== undefined) this.styleHints.set(id, hint);
   }
 
   /**
@@ -414,6 +427,16 @@ export class SeriesEditorStore {
     if (sessionGeneration !== this.session.generation() || id !== this.seriesId()) return { kind: 'failed' };
     if (!result.ok) return this.failedOutcome(result.error);
     this.etag = result.value.etag;
+    // PATCH answers only `{ etag }`, so the baseline merges the submitted members onto the stored row and never
+    // fabricates the others (task §Design: "the store updates only fields from the submitted patch"). Without this
+    // the next save would diff against the pre-patch row: reverting to the original value sent nothing, a second
+    // save re-sent every field, and `series_topic_locked` reverted to the pre-patch topic (QA-1).
+    if (this.storedSeries !== null) {
+      const merged: Series = { ...this.storedSeries, ...patch, etag: result.value.etag };
+      this.storedSeries = merged;
+      // Reconcile the inactive-template flag when the stored style could have changed hands.
+      if (patch.styleTemplateId !== undefined || this.inactiveTemplateId() !== null) this.applyInactiveTemplate(merged.topic);
+    }
     this.markClean();
     return { kind: 'saved' };
   }
@@ -536,13 +559,24 @@ export class SeriesEditorStore {
     }
     if (result.value.kind === 'notModified') {
       if (cached !== undefined) this.templates.set(cached.templates);
-      this.applyInactiveTemplate(topic);
+      this.finishTemplateList(topic);
       return;
     }
     const templates = result.value.templates.filter((template) => isTopicCompatible(topic, template));
+    for (const template of result.value.templates) this.styleHints.set(template.id, template.topicHint);
     this.templateCache.set(topic, { etag: result.value.etag, templates });
     this.templates.set(templates);
+    this.finishTemplateList(topic);
+  }
+
+  /**
+   * The two rules every refreshed template list applies: flag the stored-but-de-activated template for its topic,
+   * then clear a selection the new list no longer shows (the stored inactive style survives only while the topic
+   * is the stored one — QA-2's hidden-selection case).
+   */
+  private finishTemplateList(topic: Topic): void {
     this.applyInactiveTemplate(topic);
+    if (this.clearStyleHiddenFromGrid()) void this.announce(STYLE_CLEARED_BY_TOPIC_KEY);
   }
 
   /**
@@ -555,7 +589,9 @@ export class SeriesEditorStore {
     const stored = this.storedSeries;
     const storedId = stored?.styleTemplateId ?? null;
     if (this.mode() !== 'edit' || stored === null || storedId === null || stored.topic !== topic) {
+      // The flag belongs to the stored topic only; a synthetic leftover of a previous list goes with it.
       this.inactiveTemplateId.set(null);
+      this.templates.update((list) => list.filter((template) => template.name !== ''));
       return;
     }
     if (this.templates().some((template) => template.id === storedId)) {
@@ -566,12 +602,33 @@ export class SeriesEditorStore {
     this.templates.update((templates) => [...templates, { id: storedId, name: '', topicHint: null, previewUrl: null }]);
   }
 
-  /** Clears a selection the current topic may not use; returns whether it cleared one (the caller announces). */
+  /**
+   * Clears a selection the current topic may not use; returns whether it cleared one (the caller announces). The
+   * hint comes from `styleHints` — remembered when the template was loaded, picked or derived from the stored
+   * series — because the catalog list is empty in edit mode before step 4 and drops the old topic's rows on a
+   * topic change (QA-2). An id with no remembered hint is treated like a `null` hint: compatible with the fiction
+   * topics, cleared under `true_crime`.
+   */
   private clearIncompatibleStyle(): boolean {
     const selected = this.form.controls.styleTemplateId.value;
     if (selected === null) return false;
-    const template = this.templates().find((candidate) => candidate.id === selected);
-    if (template === undefined || isTopicCompatible(this.form.controls.topic.value, template)) return false;
+    const hint =
+      this.styleHints.get(selected) ?? this.templates().find((candidate) => candidate.id === selected)?.topicHint ?? null;
+    if (isTopicCompatible(this.form.controls.topic.value, { topicHint: hint })) return false;
+    this.form.controls.styleTemplateId.setValue(null);
+    if (this.inactiveTemplateId() === selected) this.inactiveTemplateId.set(null);
+    return true;
+  }
+
+  /**
+   * Clears a still-selected style the freshly served list does not carry: a de-activated stored style is only
+   * shown for the topic it belongs to, so on any other topic it must not survive as a hidden form value. Returns
+   * whether it cleared one (the caller announces).
+   */
+  private clearStyleHiddenFromGrid(): boolean {
+    const selected = this.form.controls.styleTemplateId.value;
+    if (selected === null) return false;
+    if (this.templates().some((template) => template.id === selected)) return false;
     this.form.controls.styleTemplateId.setValue(null);
     if (this.inactiveTemplateId() === selected) this.inactiveTemplateId.set(null);
     return true;
@@ -591,6 +648,9 @@ export class SeriesEditorStore {
       styleTemplateId: series.styleTemplateId,
     });
     this.form.controls.language.disable();
+    // The stored style's hint is remembered before any catalog row is seen: a `true_crime` series could only have
+    // picked a `true_crime` template, any other topic one without that hint (`StyleTopicPolicy`, QA-2).
+    this.styleHints.set(series.styleTemplateId, isTrueCrime(series.topic) ? 'true_crime' : null);
     if (series.autopilotEnabled) this.form.controls.topic.disable();
     this.inactiveTemplateId.set(series.styleTemplateId);
     this.voiceStep.select(series.voiceId);
