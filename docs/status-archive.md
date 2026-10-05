@@ -10,6 +10,12 @@ Outcome: 10.3.1-T1 built (T3 gates closed; PR from `feature/10.3.1-T1-s15`): the
 
 - **10.3.1-T1:** the prerendered legal pages must add their `public` JSONs to `bundled-translations.ts`, because a prerender cannot fetch `/assets/i18n/**` (10.2.5-T1 Notes, 10.2.4 `plan.md`).
 
+### Superseded Next line (2026-10-05, replaced when 02.5.2-T3 merged as #136)
+
+- **Outcome:** 02.5.2-T3 merged as #136 (`d35284e`) without a CI run (CI-01); Session 12 continues with 02.5.2-T4.
+
+- **Next (backend, start here):** **02.5.2-T3** fetcher host is in a PR from `feature/02.5.2-T3-s12` (Session 12, T3 gates closed, no migration; §Open tasks row) waiting for the owner. After it merges: **02.5.2-T4** SSRF/abuse suite (Session 12, drives the real loop; failure behaviours handed over in the 02.5.2-T3 row) → 02.6.1-T2, 02.6.2-T1 revision (02 §10 T113(b)), 02.3.2-T1 approve (treat `moderation.stale`/`unavailable` as needs re-check; edit-path moderator wiring). First re-run CI on `develop` once GitHub Actions billing is fixed (#131 merged with no CI run). Claim the backend `gate.sh` lock in `nts-wt/SESSION-CLAIMS.md` first.
+
 ### Superseded Web next line (2026-10-05, replaced when Session 13 closed after #134 merged)
 
 Outcome: 10.2.6-T1 shell merged as #134 (`945405c`).
