@@ -2,6 +2,7 @@ using System.Text.Json.Nodes;
 using ErrorOr;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using NightTales.Application.Abstractions.Money;
 using NightTales.Application.Abstractions.Moderation;
 using NightTales.Application.Abstractions.Research;
@@ -22,14 +23,18 @@ using NightTales.Domain.Stories.Content;
 using NightTales.Domain.Stories.Generation;
 using NightTales.Domain.Stories.Quality;
 using NightTales.Domain.Stories.Review;
+using NightTales.Domain.Stories.Similarity;
 using NightTales.Domain.Usage;
 using NightTales.Infrastructure.Pricing;
+using NightTales.Infrastructure.Persistence;
+using NightTales.Infrastructure.Persistence.Queries;
 using NightTales.TestKit;
 using NightTales.TestKit.Auth;
 using NightTales.TestKit.Builders;
 using NightTales.TestKit.Database;
 using NightTales.TestKit.Moderation;
 using NightTales.TestKit.Stories;
+using NightTales.TestKit.Storage;
 using NightTales.TestKit.Time;
 using Shouldly;
 using Xunit;
@@ -80,7 +85,7 @@ public sealed class StoryGenerationPipelineTests(TestDatabase database) : Integr
         var version = await world.OnlyVersionAsync();
         version.Source.ShouldBe(StoryVersionSource.Generated);
         version.GenerationRunId.ShouldBe(world.RunId);
-        version.AuditReport.ShouldNotBeNull().ShouldContain("similarity_unavailable");
+        version.AuditReport.ShouldNotBeNull().ShouldNotContain("similarity_unavailable");
         Compact(version.AuditReport).ShouldContain("\"schema_version\":\"audit.v1\"");
         world.Moderator.Checks.Select(check => check.Stage).ShouldBe([ModerationStage.Brief, ModerationStage.Draft]);
         world.Ledger.Settled.ShouldBe([world.Reservation]);
@@ -522,25 +527,6 @@ public sealed class StoryGenerationPipelineTests(TestDatabase database) : Integr
     }
 
     [Fact]
-    public async Task Pipeline_CorpusUnavailable_StoresNullSimilarityAndAdvisory()
-    {
-        // No SimilarityScorer / ISimilarityCorpusProvider exists yet (02.5.6-T1 hand-over): the degrade is fixed
-        // as a null score plus the similarity_unavailable advisory, and the run still succeeds (failure table).
-        var world = await NewWorldAsync(reviewEnabled: true);
-        world.Writer.EnqueueOk();
-        world.Writer.EnqueueReviewOk();
-
-        await world.RunAsync();
-
-        (await world.ReadRunAsync()).Status.ShouldBe(GenerationRunStatus.Succeeded);
-        var version = await world.OnlyVersionAsync();
-        version.SimilarityScore.ShouldBeNull();
-        var audit = version.AuditReport.ShouldNotBeNull();
-        audit.ShouldContain("similarity_unavailable");
-        Compact(audit).ShouldContain("\"score\":null");
-    }
-
-    [Fact]
     public async Task Pipeline_BudgetGuardDeniesAtSecondDispatch_PausesQueued_NoRefund()
     {
         var world = await NewWorldAsync(reviewEnabled: true, budget: new StagedBudgetGuard(allow: 1));
@@ -711,7 +697,7 @@ public sealed class StoryGenerationPipelineTests(TestDatabase database) : Integr
     private sealed class World
     {
         private readonly TestDatabase _database;
-        private readonly Application.Abstractions.Persistence.IAppDbContext _db;
+        private readonly AppDbContext _db;
         private readonly StoryGenerationPipeline _pipeline;
         private readonly IBudgetGuard? _budget;
         private ScopeObservingModerator? _scopes;
@@ -754,6 +740,8 @@ public sealed class StoryGenerationPipelineTests(TestDatabase database) : Integr
                 new StoryQualityChecker(),
                 new StoryJobOptions { TimeoutSeconds = timeoutSeconds, TimeoutSecondsLong = timeoutSeconds },
                 new StoryReviewOptions { Enabled = reviewEnabled },
+                new SimilarityCorpusProvider(_db, new FakeExtractedTextStore(), Options.Create(new SimilaritySettings())),
+                new SimilaritySettings(),
                 new StoryGenerationMetrics(),
                 clock,
                 NullLogger<StoryGenerationPipeline>.Instance);

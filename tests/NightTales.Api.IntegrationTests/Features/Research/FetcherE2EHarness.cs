@@ -278,6 +278,22 @@ internal sealed class FetcherE2EHarness : IAsyncDisposable
         }
     }
 
+    /// <summary>
+    /// Waits for the answered result POST and the fetcher acknowledgement before shutdown can cancel their continuations.
+    /// A fetched database row is visible before the recorder reads the response and the fetcher logs its completion.
+    /// </summary>
+    public Task<bool> WaitForPostedResultAsync(Guid taskId, TimeSpan timeout, CancellationToken ct)
+    {
+        var taskPrefix = $"task {taskId} kind ";
+
+        return WaitAsync(
+            () => Traffic.Results.Any(result => result.TaskId == taskId)
+                && Logs.Lines.Any(line => line.Contains(taskPrefix, StringComparison.Ordinal)
+                    && line.Contains("(posted)", StringComparison.Ordinal)),
+            timeout,
+            ct);
+    }
+
     /// <summary>Polls <paramref name="condition"/> every 25 ms until it holds or <paramref name="timeout"/> passes.</summary>
     public static async Task<bool> WaitAsync(Func<bool> condition, TimeSpan timeout, CancellationToken ct)
     {
