@@ -167,5 +167,5 @@ public static class IdentityServiceCollectionExtensions
 
     private static bool IsVersion(string? value) =>
         !string.IsNullOrWhiteSpace(value) && value.Length <= LegalDocumentVersions.VersionMaxLength
-        && Regex.IsMatch(value, @"^\d+\.\d+\.\d+\z", RegexOptions.CultureInvariant, TimeSpan.FromSeconds(1));
+        && Regex.IsMatch(value, @"^[0-9]+\.[0-9]+\.[0-9]+\z", RegexOptions.CultureInvariant, TimeSpan.FromSeconds(1));
 }

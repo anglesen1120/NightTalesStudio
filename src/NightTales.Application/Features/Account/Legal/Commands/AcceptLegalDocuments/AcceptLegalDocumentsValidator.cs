@@ -8,7 +8,7 @@ public sealed class AcceptLegalDocumentsValidator : AbstractValidator<AcceptLega
     /// <summary>Defines the public version shape, without validating client equality here.</summary>
     public AcceptLegalDocumentsValidator()
     {
-        RuleFor(command => command.Tos).NotEmpty().MaximumLength(32).Matches(@"^\d+\.\d+\.\d+\z");
-        RuleFor(command => command.Privacy).NotEmpty().MaximumLength(32).Matches(@"^\d+\.\d+\.\d+\z");
+        RuleFor(command => command.Tos).NotEmpty().MaximumLength(32).Matches(@"^[0-9]+\.[0-9]+\.[0-9]+\z");
+        RuleFor(command => command.Privacy).NotEmpty().MaximumLength(32).Matches(@"^[0-9]+\.[0-9]+\.[0-9]+\z");
     }
 }

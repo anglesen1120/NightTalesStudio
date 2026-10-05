@@ -21,12 +21,14 @@ export class LegalAcceptanceStore {
   private readonly errorKeyState = signal<LegalAcceptanceErrorKey | null>(null);
 
   private request = 0;
-  private sessionGeneration = this.session.generation();
+  private readonly sessionGeneration = signal(this.session.generation());
+  private readonly belongsToSession = computed(() => this.session.generation() === this.sessionGeneration());
 
-  readonly acceptance = this.acceptanceState.asReadonly();
-  readonly pending = this.pendingState.asReadonly();
-  readonly errorKey = this.errorKeyState.asReadonly();
+  readonly acceptance = computed(() => (this.belongsToSession() ? this.acceptanceState() : null));
+  readonly pending = computed(() => this.belongsToSession() && this.pendingState());
+  readonly errorKey = computed(() => (this.belongsToSession() ? this.errorKeyState() : null));
   readonly missing = computed<readonly LegalDocumentKind[]>(() => {
+    if (!this.belongsToSession()) return [];
     const fromError = this.serverMissingState();
     if (fromError !== null) return fromError;
     const acceptance = this.acceptanceState();
@@ -41,7 +43,7 @@ export class LegalAcceptanceStore {
     this.syncSession();
     if (this.pendingState()) return false;
     const request = ++this.request;
-    const generation = this.sessionGeneration;
+    const generation = this.sessionGeneration();
     this.pendingState.set(true);
     this.errorKeyState.set(null);
     this.serverMissingState.set(null);
@@ -64,7 +66,7 @@ export class LegalAcceptanceStore {
     this.syncSession();
     if (this.pendingState()) return false;
     const request = ++this.request;
-    const generation = this.sessionGeneration;
+    const generation = this.sessionGeneration();
     this.pendingState.set(true);
     this.errorKeyState.set(null);
     this.serverMissingState.set(null);
@@ -113,8 +115,8 @@ export class LegalAcceptanceStore {
 
   private syncSession(): void {
     const generation = this.session.generation();
-    if (generation === this.sessionGeneration) return;
-    this.sessionGeneration = generation;
+    if (generation === this.sessionGeneration()) return;
+    this.sessionGeneration.set(generation);
     this.request += 1;
     this.acceptanceState.set(null);
     this.pendingState.set(false);

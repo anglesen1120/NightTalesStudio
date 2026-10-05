@@ -177,6 +177,43 @@ describe('LegalAcceptanceStore', () => {
     expect(store.errorKey()).toBe('account.legal.error.generic');
   });
 
+  it('hides cached acceptance and errors immediately on session replacement and exposes only the new refresh', async () => {
+    const { store, repository, session } = setup();
+    await store.refresh();
+    // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors -- HttpClient rejects with HttpErrorResponse, not Error
+    repository.acceptHandler = () => Promise.reject(new HttpErrorResponse({ status: 500 }));
+    await store.accept('1.0.0', '1.0.0');
+    expect(store.acceptance()).toEqual(NOT_ACCEPTED);
+    expect(store.errorKey()).toBe('account.legal.error.generic');
+    expect(store.missing()).toEqual(['privacy', 'tos']);
+
+    session.advance();
+
+    expect(store.acceptance()).toBeNull();
+    expect(store.errorKey()).toBeNull();
+    expect(store.missing()).toEqual([]);
+    repository.getHandler = () => Promise.resolve(ACCEPTED);
+    await expect(store.refresh()).resolves.toBe(true);
+    expect(store.acceptance()).toEqual(ACCEPTED);
+    expect(store.errorKey()).toBeNull();
+    expect(store.missing()).toEqual([]);
+  });
+
+  it('hides the prior session pending flag before its request settles', async () => {
+    const { store, repository, session } = setup();
+    const response = deferred<LegalAcceptance>();
+    repository.getHandler = () => response.promise;
+    const refreshing = store.refresh();
+    expect(store.pending()).toBe(true);
+
+    session.advance();
+
+    expect(store.pending()).toBe(false);
+    response.resolve(ACCEPTED);
+    await expect(refreshing).resolves.toBe(false);
+    expect(store.acceptance()).toBeNull();
+  });
+
   it('discards a late refresh after the session generation changes', async () => {
     const { store, repository, session } = setup();
     const response = deferred<LegalAcceptance>();

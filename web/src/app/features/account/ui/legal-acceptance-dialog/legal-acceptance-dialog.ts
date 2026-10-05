@@ -6,7 +6,7 @@ import {
   afterNextRender,
   computed,
   inject,
-  signal,
+  linkedSignal,
   type Signal,
 } from '@angular/core';
 import { MatButtonModule } from '@angular/material/button';
@@ -57,7 +57,24 @@ export class LegalAcceptanceDialogComponent {
   protected readonly errorKey = this.data.errorKey;
   protected readonly openedFromGate = this.data.openedFromGate;
   protected readonly canSignOut = this.data.openedFromGate && this.data.signOut !== undefined;
-  protected readonly confirmed = signal(false);
+  private readonly currentVersions = computed<{ readonly tos: string; readonly privacy: string } | null>(
+    () => {
+      const acceptance = this.acceptance();
+      if (acceptance === null) return null;
+      const tos = acceptance.documents.find((document) => document.document === 'tos');
+      const privacy = acceptance.documents.find((document) => document.document === 'privacy');
+      return tos === undefined || privacy === undefined ? null : { tos: tos.currentVersion, privacy: privacy.currentVersion };
+    },
+    {
+      equal: (previous, current) =>
+        previous === current ||
+        (previous !== null &&
+          current !== null &&
+          previous.tos === current.tos &&
+          previous.privacy === current.privacy),
+    },
+  );
+  protected readonly confirmed = linkedSignal({ source: this.currentVersions, computation: () => false });
   protected readonly titleId = `nts-legal-acceptance-title-${++nextLegalAcceptanceDialogId}`;
   protected readonly bodyId = `nts-legal-acceptance-body-${nextLegalAcceptanceDialogId}`;
   protected readonly errorId = `nts-legal-acceptance-error-${nextLegalAcceptanceDialogId}`;
@@ -78,13 +95,10 @@ export class LegalAcceptanceDialogComponent {
   }
 
   protected async submit(): Promise<void> {
-    const acceptance = this.acceptance();
-    if (this.pending() || !this.confirmed() || acceptance === null) return;
-    const tos = acceptance.documents.find((document) => document.document === 'tos');
-    const privacy = acceptance.documents.find((document) => document.document === 'privacy');
-    if (tos === undefined || privacy === undefined) return;
+    const versions = this.currentVersions();
+    if (this.pending() || !this.confirmed() || versions === null) return;
 
-    const accepted = await this.data.accept(tos.currentVersion, privacy.currentVersion);
+    const accepted = await this.data.accept(versions.tos, versions.privacy);
     const fresh = this.acceptance();
     if (accepted && fresh !== null) this.dialogRef?.close(fresh);
   }

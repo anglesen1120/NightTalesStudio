@@ -214,6 +214,12 @@ describe('LegalAcceptanceDialogComponent', () => {
     const { fixture, controller, ref, dialog } = await setup('en', (value) => {
       value.acceptHandler = () => {
         value.errorKey.set('errors.legal_version_outdated');
+        value.acceptance.set({
+          documents: [
+            { document: 'tos', currentVersion: '1.1.0', acceptedVersion: null, acceptedAt: null },
+            { document: 'privacy', currentVersion: '1.0.0', acceptedVersion: null, acceptedAt: null },
+          ],
+        });
         return Promise.resolve(false);
       };
     });
@@ -223,8 +229,47 @@ describe('LegalAcceptanceDialogComponent', () => {
 
     expect(ref.getState()).toBe(MatDialogState.OPEN);
     expect(dialog.querySelector('[role="alert"]')?.textContent).toContain(errorsEn.legal_version_outdated);
-    expect(dialog.querySelector<HTMLInputElement>('mat-checkbox input')?.checked).toBe(true);
+    expect(dialog.textContent).toContain('1.1.0');
+    expect(dialog.querySelector<HTMLInputElement>('mat-checkbox input')?.checked).toBe(false);
+    expect(dialog.querySelector<HTMLButtonElement>('.legal-dialog__accept')?.disabled).toBe(true);
     expect(controller.acceptCalls).toHaveLength(1);
+  });
+
+  it('keeps confirmation when a refreshed projection has the same current versions', async () => {
+    const { fixture, controller, dialog } = await setup('en');
+    await checkCheckbox(dialog, fixture);
+
+    controller.acceptance.set({
+      documents: [
+        { document: 'tos', currentVersion: '1.0.0', acceptedVersion: null, acceptedAt: null },
+        { document: 'privacy', currentVersion: '1.0.0', acceptedVersion: '0.9.0', acceptedAt: '2026-10-02T08:00:00Z' },
+      ],
+    });
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(dialog.querySelector<HTMLInputElement>('mat-checkbox input')?.checked).toBe(true);
+    expect(dialog.querySelector<HTMLButtonElement>('.legal-dialog__accept')?.disabled).toBe(false);
+  });
+
+  it('does not restore confirmation when changed versions later revert', async () => {
+    const { fixture, controller, dialog } = await setup('en');
+    await checkCheckbox(dialog, fixture);
+
+    controller.acceptance.set({
+      documents: [
+        { document: 'tos', currentVersion: '1.1.0', acceptedVersion: null, acceptedAt: null },
+        { document: 'privacy', currentVersion: '1.0.0', acceptedVersion: null, acceptedAt: null },
+      ],
+    });
+    fixture.detectChanges();
+    await fixture.whenStable();
+    controller.acceptance.set(ACCEPTANCE);
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(dialog.querySelector<HTMLInputElement>('mat-checkbox input')?.checked).toBe(false);
+    expect(dialog.querySelector<HTMLButtonElement>('.legal-dialog__accept')?.disabled).toBe(true);
   });
 
   it('keeps the checkbox state and shows generic copy after a 500', async () => {
