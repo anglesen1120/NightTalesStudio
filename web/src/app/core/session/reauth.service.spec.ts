@@ -467,6 +467,27 @@ describe('ReauthService', () => {
     expect(service.isDialogOpen()).toBe(false);
   });
 
+  it('ReauthService_DialogOpenThrows_ResolvesErrAndNextCallOpensAFreshFlight', async () => {
+    const { service, dialog } = setup();
+    vi.spyOn(dialog, 'open').mockImplementationOnce(() => {
+      throw new Error('dialog.open failed');
+    });
+
+    // A synchronous `open` throw must settle the registered flight — the same catalogue error a failed chunk
+    // load produces — instead of leaving every later caller joined to a promise that never resolves.
+    const first = service.ensureReauthenticated();
+    expect(errorOf(await first)).toEqual({ code: 'network_error', status: 0, kind: 'network', fieldErrors: {} });
+    expect(service.isDialogOpen()).toBe(false);
+
+    // The dead flight is gone: the next caller registers a fresh flight and a real dialog opens.
+    const second = service.ensureReauthenticated();
+    await opened(dialog);
+    expect(dialog.refs).toHaveLength(1);
+
+    dialog.at(0).submit();
+    await expect(second).resolves.toMatchObject({ ok: true });
+  });
+
   it('ReauthService_SubmitBlocksBackdropWhilePostInFlight_AndRestoresAfter', async () => {
     const { service, dialog, repo } = setup();
     let release!: (result: FakeReauthResult) => void;

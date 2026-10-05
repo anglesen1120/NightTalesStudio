@@ -174,27 +174,32 @@ export class ReauthService implements SessionScoped {
       return;
     }
 
-    const ref = dialog.open<ReauthDialogComponent, ReauthDialogData, void>(component, {
-      data: { requireCode: REQUIRE_CODE },
-      restoreFocus: true,
-      autoFocus: '#reauth-password',
-      ariaModal: true,
-    });
-    flight.ref = ref;
-    this.openState.set(true);
+    try {
+      const ref = dialog.open<ReauthDialogComponent, ReauthDialogData, void>(component, {
+        data: { requireCode: REQUIRE_CODE },
+        restoreFocus: true,
+        autoFocus: '#reauth-password',
+        ariaModal: true,
+      });
+      flight.ref = ref;
+      this.openState.set(true);
 
-    flight.subscriptions.push(
-      ref.componentInstance.submitted.subscribe((result) => {
-        void this.submit(flight, result);
-      }),
-      ref.componentInstance.retryAfterElapsed.subscribe(() => {
-        if (!flight.done) this.push(flight, REAUTH_DIALOG_IDLE);
-      }),
-      // Escape / Cancel (`mat-dialog-close`) / backdrop: closed without a success.
-      ref.afterClosed().subscribe(() => {
-        this.settle(flight, fail(CANCELLED));
-      }),
-    );
+      flight.subscriptions.push(
+        ref.componentInstance.submitted.subscribe((result) => {
+          void this.submit(flight, result);
+        }),
+        ref.componentInstance.retryAfterElapsed.subscribe(() => {
+          if (!flight.done) this.push(flight, REAUTH_DIALOG_IDLE);
+        }),
+        // Escape / Cancel (`mat-dialog-close`) / backdrop: closed without a success.
+        ref.afterClosed().subscribe(() => {
+          this.settle(flight, fail(CANCELLED));
+        }),
+      );
+    } catch {
+      // A synchronous dialog/setup failure must settle the registered flight, never leave later callers hanging.
+      this.settle(flight, fail({ code: 'network_error', status: 0, kind: 'network', fieldErrors: {} }));
+    }
   }
 
   private async submit(flight: Flight, result: ReauthDialogResult): Promise<void> {
