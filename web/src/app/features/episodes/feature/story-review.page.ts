@@ -64,7 +64,8 @@ export class StoryReviewPage {
     keywordLimitHit: this.store.keywordLimitHit(), isDirty: this.store.isDirty(), saving: this.store.saving(),
     savedAt: this.store.savedAt(), error: this.store.error() !== null, saveDisabled: this.store.saveDisabled(),
   }));
-  protected readonly loading = computed(() => this.store.loading() || this.detailStore.loading());
+  protected readonly loading = computed(() => this.store.loading() || this.store.generating() ||
+    (this.store.snapshot() === null && this.detailStore.loading()));
   protected readonly fatalError = computed(() => this.store.snapshot() === null ? this.store.error() ?? this.detailStore.error() : null);
   protected readonly errorKey = computed(() => {
     const error = this.fatalError();
@@ -90,7 +91,7 @@ export class StoryReviewPage {
       });
     });
     effect(() => {
-      if (this.store.conflict() === null || this.conflictOpen) return;
+      if (this.store.readOnly() || this.store.conflict() === null || this.conflictOpen) return;
       untracked(() => { void this.openConflict(); });
     });
     afterRenderEffect(() => {
@@ -128,10 +129,10 @@ export class StoryReviewPage {
   }
 
   private async openConflict(): Promise<void> {
-    if (this.conflictOpen || this.store.conflict() === null) return;
+    if (this.conflictOpen || this.store.readOnly() || this.store.conflict() === null) return;
     this.conflictOpen = true;
     try {
-      while (!this.destroyRef.destroyed && this.store.conflict() !== null) {
+      while (!this.destroyRef.destroyed && !this.store.readOnly() && this.store.conflict() !== null) {
         const dialog = this.conflictDialog.open({
           messageKey: 'episodes.conflict.body',
           saveAsNewLabel: 'errors.conflict.saveAsNew',

@@ -2,6 +2,8 @@ import { DestroyRef, Injectable, computed, effect, inject, isDevMode, signal } f
 import type { WritableSignal } from '@angular/core';
 import { AppErrorMapper } from '@core/errors';
 import type { AppError } from '@core/errors';
+import { IdempotencyKeys } from '@core/http';
+import type { IdempotencyIntent } from '@core/http';
 import { RealtimeService } from '@core/realtime';
 import type { RealtimeSubscription } from '@core/realtime';
 import { SessionStore } from '@core/session';
@@ -10,6 +12,7 @@ import type { SegmentAddress } from '@shared/util/segment-address';
 import { fromContent, serialize, toContent } from '../domain/story-codec';
 import type { StoryDraft, StoryMetadata, StorySegment, StorySnapshot } from '../domain/story.model';
 import { StoryRepository } from '../domain/story.repository';
+import { EpisodesRepository } from '../domain/episodes.repository';
 import { countTokens } from '../domain/token-count';
 import { EpisodeDetailStore, isAppError } from './episode-detail.store';
 
@@ -26,12 +29,18 @@ const EMPTY_META: StoryMetadata = { title: '', description: '', tags: [], conten
 @Injectable()
 export class StoryEditorStore {
   private readonly repo = inject(StoryRepository);
+  private readonly episodes = inject(EpisodesRepository);
+  private readonly keys = inject(IdempotencyKeys);
   private readonly detail = inject(EpisodeDetailStore);
   private readonly mapper = inject(AppErrorMapper);
   private readonly realtime = inject(RealtimeService);
   private readonly session = inject(SessionStore);
   private readonly ownerGeneration = this.session.generation();
   readonly loading = signal(true);
+  readonly generating = signal(false);
+  readonly generationError = signal<AppError | null>(null);
+  readonly canGenerate = computed(() => this.active() && !this.loading() && !this.generating() &&
+    this.detail.detail()?.currentStory === null && this.detail.nextActions().includes('generate_story'));
   readonly error = signal<AppError | null>(null);
   readonly snapshot = signal<StorySnapshot | null>(null);
   readonly title = signal('');
@@ -69,6 +78,7 @@ export class StoryEditorStore {
   private hookFacts: readonly unknown[] = [];
   private endingFacts: readonly unknown[] = [];
   private id: string | null = null;
+  private generateIntent: IdempotencyIntent | null = null;
   private generation = 0;
   private readGeneration = 0;
   private destroyed = false;
@@ -93,7 +103,8 @@ export class StoryEditorStore {
     if (!this.active()) return;
     this.generation++; this.readGeneration++;
     const generation = this.generation;
-    this.teardown(); this.clearDraft(); this.id = id;
+    const intent = id === this.id ? this.generateIntent : null;
+    this.teardown(); this.clearDraft(); this.id = id; this.generateIntent = intent;
     this.loading.set(true); this.saving.set(false); this.invalidState.set(false); this.clearErrors();
     this.subscription = this.realtime.subscribeEpisode(id, () => {
       if (!this.current(generation)) return;
@@ -112,6 +123,33 @@ export class StoryEditorStore {
 
   hasUnsavedChanges(): boolean {
     return this.snapshot() !== null && serialize(this.buildDraft()) !== this.baselineJson();
+  }
+
+  async generateStory(): Promise<void> {
+    if (!this.canGenerate() || this.id === null) return;
+    const generation = this.generation, id = this.id;
+    // An ambiguous outcome keeps its key for an explicit retry, never an automatic POST.
+    const intent = this.generateIntent?.isSettled === false ? this.generateIntent : this.keys.begin('story.generate');
+    this.generateIntent = intent;
+    this.generating.set(true); this.generationError.set(null);
+    try {
+      await this.episodes.generateStory(id, intent);
+      if (!this.current(generation)) return;
+      intent.settle();
+      await this.refresh(true, false);
+    } catch (cause) {
+      if (!this.current(generation)) return;
+      const error = isAppError(cause) ? cause : this.mapper.from(cause);
+      if (error.kind !== 'network' && error.status !== 0 && error.status < 500) intent.settle();
+      if (error.code === 'story_generation_in_progress') {
+        await this.refresh(true, false);
+      } else {
+        this.generationError.set(error);
+        if (error.code === 'episode_invalid_state') await this.refresh(true, false);
+      }
+    } finally {
+      if (this.current(generation)) this.generating.set(false);
+    }
   }
 
   setText(segKey: string, text: string): void {
@@ -181,7 +219,7 @@ export class StoryEditorStore {
       const fresh = await this.detail.refetch({ userAction: true });
       if (!this.current(generation)) return;
       if (fresh === null) { this.error.set(this.detail.error()); return; }
-      if (!fresh.nextActions.includes('edit_story')) { this.invalidState.set(true); this.showError(this.mapper.fromProblem({ code: 'episode_invalid_state' }, 409, null)); return; }
+      if (!fresh.nextActions.includes('edit_story')) { this.conflict.set(null); this.invalidState.set(true); this.showError(this.mapper.fromProblem({ code: 'episode_invalid_state' }, 409, null)); return; }
       await this.put(fresh.currentStory?.etag ?? '');
     } finally {
       if (this.current(generation)) this.resolving.set(false);
@@ -211,6 +249,7 @@ export class StoryEditorStore {
         const server = this.detail.episode()?.currentStory ?? this.snapshot();
         this.conflict.set({ serverEtag: server?.etag ?? etag, serverVersion: server?.version ?? 0 });
       } else if (error.status === 409 && error.code === 'episode_invalid_state') {
+        this.conflict.set(null);
         this.invalidState.set(true);
         await this.detail.refetch();
       }
@@ -320,6 +359,7 @@ export class StoryEditorStore {
     this.savedVersion.set(this.version()); this.savedAt.set(null); this.conflict.set(null); this.keywordLimitHit.set(null);
   }
   private teardown(): void {
+    this.generateIntent = null; this.generating.set(false); this.generationError.set(null);
     this.subscription?.unsubscribe(); this.subscription = null;
     window.clearTimeout(this.dirtyTimer);
     window.clearTimeout(this.invalidationTimer);

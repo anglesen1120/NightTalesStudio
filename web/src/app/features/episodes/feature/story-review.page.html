@@ -13,7 +13,15 @@
       <nts-page-header titleKey="episodes.editor.pageTitle" backHref="/episodes">
         <nts-status-chip actions [statusKey]="detail.status" appearance="neutral" />
       </nts-page-header>
-      <nts-empty-state titleKey="episodes.editor.emptyTitle" bodyKey="episodes.editor.emptyBody" />
+      @if (store.generationError(); as error) {
+        <nts-form-error-alert [error]="error" [showTrace]="true" />
+      }
+      <nts-empty-state
+        titleKey="episodes.editor.emptyTitle"
+        bodyKey="episodes.editor.emptyBody"
+        [actionLabelKey]="store.canGenerate() ? actionKey('generate_story') : undefined"
+        (action)="store.generateStory()"
+      />
     } @else {
       <nts-page-header [title]="store.title()" backHref="/episodes">
         <nts-status-chip actions [statusKey]="detail.status" [appearance]="store.readOnly() ? 'success' : 'neutral'" />
