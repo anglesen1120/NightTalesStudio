@@ -53,5 +53,7 @@ export interface SeriesOptionsPage {
 }
 
 /** The detail page owns the real actions (plan §10 O5); the list always offers "Continue" to the detail route. */
-// eslint-disable-next-line @typescript-eslint/no-unused-vars -- the contract takes the status; the detail page owns per-status actions
-export const nextActionFor = (_status: EpisodeStatus) => ({ labelKey: 'episodes.list.continue', segment: 'detail' }) as const;
+export const nextActionFor: (status: EpisodeStatus) => { readonly labelKey: string; readonly segment: 'detail' } = () => ({
+  labelKey: 'episodes.list.continue',
+  segment: 'detail',
+});

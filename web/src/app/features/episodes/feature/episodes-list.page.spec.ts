@@ -1,15 +1,17 @@
 import { ChangeDetectionStrategy, Component, signal } from '@angular/core';
 import { TestBed, type ComponentFixture } from '@angular/core/testing';
-import { Router, provideRouter } from '@angular/router';
+import { ActivatedRoute, Router, convertToParamMap, provideRouter } from '@angular/router';
 import { RouterTestingHarness } from '@angular/router/testing';
 import { TranslocoTestingModule } from '@jsverse/transloco';
+import { of } from 'rxjs';
 import { afterEach, describe, expect, it, vi, type Mock } from 'vitest';
 import { SessionStore } from '@core/session';
 import { ZONELESS_TEST_PROVIDERS } from '../../../testing/providers';
 import episodesVi from '../../../../assets/i18n/episodes/vi.json';
+import { EpisodeListStore } from '../application/episode-list.store';
 import { EpisodesRepository } from '../domain/episodes.repository';
 import { SeriesOptionsRepository } from '../domain/series-options.repository';
-import { FakeEpisodesRepository, episodeItem } from '../testing/fake-episodes.repository';
+import { FakeEpisodesRepository, episodeItem, type EpisodeListQuery } from '../testing/fake-episodes.repository';
 import { FakeSeriesOptionsRepository } from '../testing/fake-series-options.repository';
 import { EpisodesListPage } from './episodes-list.page';
 
@@ -125,7 +127,7 @@ describe('EpisodesListPage', () => {
     expect(seriesSelect?.value).toBe(SERIES_ID);
   });
 
-  it('writes filter intents to the URL with queryParamsHandling merge and replaceUrl', async () => {
+  it('writes exactly the validated filters to the URL with replaceUrl and no merge', async () => {
     const { harness, root, navigate, episodes } = await setup('/episodes');
     const statusSelect = root.querySelector<HTMLSelectElement>('select');
     statusSelect!.value = 'failed';
@@ -134,10 +136,64 @@ describe('EpisodesListPage', () => {
 
     expect(navigate).toHaveBeenCalledWith([], {
       queryParams: { status: 'failed', series: null },
-      queryParamsHandling: 'merge',
       replaceUrl: true,
     });
     expect(episodes.calls.at(-1)).toEqual({ limit: 20, status: 'failed' });
+  });
+
+  it('drops a hand-crafted ?cursor= and junk params when a filter is written', async () => {
+    const { harness, root, episodes } = await setup('/episodes?cursor=x&foo=1');
+    const statusSelect = root.querySelector<HTMLSelectElement>('select');
+    statusSelect!.value = 'failed';
+    statusSelect!.dispatchEvent(new Event('change', { bubbles: true }));
+    await flush(harness.fixture);
+
+    // Exactly the validated filter reaches the URL: the hand-crafted cursor and the junk param are gone (CR-3).
+    expect(TestBed.inject(Router).url).toBe('/episodes?status=failed');
+    expect(episodes.calls.every((call) => !('cursor' in call))).toBe(true);
+  });
+
+  it('keeps a filter intent whose store write lands before the navigation resolves', async () => {
+    // A single-emission route (read before the page's effect exists) whose first page request never answers: the only
+    // thing that can re-run the effect is a store write, which is exactly the CR-1 hazard. The store write is the half
+    // of a filter intent that the UI performs before the router echo; the URL half is covered by the no-merge tests.
+    const params = convertToParamMap({});
+    const route = { snapshot: { queryParamMap: params }, queryParamMap: of(params) };
+    const navigate = vi.fn<Router['navigate']>(() => new Promise<boolean>(() => undefined));
+    const calls: EpisodeListQuery[] = [];
+    let store: EpisodeListStore | null = null;
+    const repo = {
+      list(query: EpisodeListQuery) {
+        calls.push(query);
+        // First page still in flight: the user picks a status while the URL holds the old params.
+        if (calls.length === 1) store?.setStatus('failed');
+        return new Promise<never>(() => undefined);
+      },
+    };
+
+    await TestBed.configureTestingModule({
+      imports: [translations],
+      providers: [
+        ...ZONELESS_TEST_PROVIDERS,
+        { provide: ActivatedRoute, useValue: route },
+        { provide: Router, useValue: { navigate } },
+        { provide: EpisodesRepository, useValue: repo },
+        { provide: SeriesOptionsRepository, useValue: new FakeSeriesOptionsRepository() },
+        { provide: SessionStore, useValue: sessionStub },
+      ],
+    }).compileComponents();
+    const fixture = TestBed.createComponent(EpisodesListPage);
+    store = fixture.debugElement.injector.get(EpisodeListStore);
+    fixture.detectChanges();
+    await flush(fixture);
+    TestBed.tick();
+    await flush(fixture);
+
+    // The store write must not re-apply the not-yet-echoed URL params: one intent, one request, filter kept (CR-1).
+    expect(calls).toEqual([{ limit: 20 }, { limit: 20, status: 'failed' }]);
+    expect(store.statusFilter()).toBe('failed');
+    const statusSelect = (fixture.nativeElement as HTMLElement).querySelector<HTMLSelectElement>('select');
+    expect(statusSelect!.value).toBe('failed');
   });
 
   it('issues exactly one request for a param-only change on the reused component', async () => {

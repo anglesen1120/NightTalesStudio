@@ -96,7 +96,7 @@ export class EpisodeListStore {
     inject(DestroyRef).onDestroy(() => {
       this.destroyed = true;
       this.restartToken++;
-      this.retire();
+      this.retire(null);
     });
   }
 
@@ -154,25 +154,39 @@ export class EpisodeListStore {
     if (this.destroyed) return Promise.resolve();
     const filters: Filters = { status: this.statusState(), seriesId: this.seriesState() };
     this.applied = filters;
+    const owner: { list: CursorList<EpisodeListItem> | null } = { list: null };
     const next = cursorList<EpisodeListItem>({
       initialLimit: PAGE_SIZE,
       mapError: (caught) => (isAppError(caught) ? caught : this.mapper.from(caught)),
-      fetchPage: this.fetchPage(filters, this.session.generation()),
+      fetchPage: this.fetchPage(filters, this.session.generation(), owner),
     });
+    owner.list = next;
     this.list.set(next);
     this.started.set(true);
     return next.loadMore();
   }
 
-  private fetchPage(filters: Filters, sessionGeneration: number): (query: CursorPageQuery) => Promise<CursorPage<EpisodeListItem>> {
+  private fetchPage(
+    filters: Filters,
+    sessionGeneration: number,
+    owner: { list: CursorList<EpisodeListItem> | null },
+  ): (query: CursorPageQuery) => Promise<CursorPage<EpisodeListItem>> {
+    const stale = (): boolean => this.destroyed || this.session.generation() !== sessionGeneration;
     return async (query) => {
-      const page = await this.repo.list({
-        ...(filters.status === null ? {} : { status: filters.status }),
-        ...(filters.seriesId === null ? {} : { seriesId: filters.seriesId }),
-        ...query,
-      });
-      if (this.session.generation() !== sessionGeneration) {
-        this.retire();
+      let page: CursorPage<EpisodeListItem>;
+      try {
+        page = await this.repo.list({
+          ...(filters.status === null ? {} : { status: filters.status }),
+          ...(filters.seriesId === null ? {} : { seriesId: filters.seriesId }),
+          ...query,
+        });
+      } catch (caught) {
+        if (!stale()) throw caught;
+        this.retire(owner.list);
+        return { items: [], nextCursor: null };
+      }
+      if (stale()) {
+        this.retire(owner.list);
         return { items: [], nextCursor: null };
       }
       return page;
@@ -195,9 +209,13 @@ export class EpisodeListStore {
     }
   }
 
-  /** Freezes what is visible; later results of any in-flight instance only touch instances nobody reads. */
-  private retire(): void {
+  /**
+   * Freezes what is visible with no cursor (no dead "Load more"). With an `owner`, only retires when that instance is
+   * still the current one, so a stale instance's late result can never freeze a live replacement.
+   */
+  private retire(owner: CursorList<EpisodeListItem> | null): void {
     const current = untracked(this.list);
-    this.list.set(inertList(untracked(current.items), untracked(current.nextCursor), untracked(current.error)));
+    if (owner !== null && owner !== current) return;
+    this.list.set(inertList(untracked(current.items), null, untracked(current.error)));
   }
 }

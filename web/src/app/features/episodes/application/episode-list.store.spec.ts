@@ -277,6 +277,25 @@ describe('EpisodeListStore', () => {
       expect(store.hasMore()).toBe(false);
       expect(store.error()).toBeNull();
     });
+
+    it('sessionChangeWhileALaterPageIsInFlight_RetiresWithNoCursor', async () => {
+      const { store, repo, session } = setup();
+      repo.defer();
+      store.init(NO_FILTERS);
+      repo.resolveNext({ items: [episodeItem(1)], nextCursor: 'c1' });
+      await settle();
+      expect(store.hasMore()).toBe(true);
+
+      void store.load('more');
+      session.signIn({ accessToken: fakeJwt('user', ['pwd'], 'other-user'), expiresAt: Date.now() + 900_000 }, 'user', ['pwd']);
+      repo.resolveNext({ items: [episodeItem(9)], nextCursor: 'c9' });
+      await settle();
+
+      expect(store.items().map((i) => i.id)).toEqual(['ep-1']);
+      // The retired snapshot must not keep the previous cursor: that would leave a dead "Load more".
+      expect(store.hasMore()).toBe(false);
+      expect(store.error()).toBeNull();
+    });
   });
 
   describe('series options', () => {

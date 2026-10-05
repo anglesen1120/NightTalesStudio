@@ -1,6 +1,6 @@
 <div class="episode-row__main">
   <a class="episode-row__title" [routerLink]="detailCommands()"
-    ><strong>{{ item().title ?? ('episodes.list.untitled' | transloco) }}</strong></a
+    ><strong>{{ displayTitle() }}</strong></a
   >
   <div class="episode-row__meta"><time [attr.datetime]="item().updatedAt">{{ updatedText() }}</time></div>
 </div>
@@ -20,6 +20,6 @@
     }
   }<span>{{ statusKey() | transloco }}</span></span
 >
-<a class="episode-row__continue" [routerLink]="detailCommands()" (click)="open.emit(item().id)">{{
-  'episodes.list.continue' | transloco
+<a class="episode-row__continue" [routerLink]="nextActionCommands()" (click)="open.emit(item().id)">{{
+  nextAction().labelKey | transloco
 }}</a>

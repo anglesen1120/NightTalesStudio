@@ -58,7 +58,12 @@ export class EpisodesListPage {
   private inited = false;
 
   constructor() {
-    effect(() => this.applyParams(this.queryParams()));
+    effect(() => {
+      const params = this.queryParams();
+      // Only the router's params may re-run this: `init`/`setFilters` read and write store signals, so a tracked
+      // re-run would apply the not-yet-echoed (stale) URL params and revert the filter the user just picked (CR-1).
+      untracked(() => this.applyParams(params));
+    });
   }
 
   /**
@@ -110,10 +115,10 @@ export class EpisodesListPage {
     void this.router.navigate(['/series']);
   }
 
+  /** Writes exactly the validated filters — never `merge`, so a hand-crafted `?cursor=` or junk param cannot survive. */
   private writeFilters(status: EpisodeStatus | null, seriesId: string | null): void {
     void this.router.navigate([], {
       queryParams: { status, series: seriesId },
-      queryParamsHandling: 'merge',
       replaceUrl: true,
     });
   }
