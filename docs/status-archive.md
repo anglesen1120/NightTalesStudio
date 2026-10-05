@@ -4,6 +4,10 @@ History moved out of STATUS.md to keep the live file small. The initial archive 
 
 ## Resume-here history (Current/Previous blocks, Next actions)
 
+### Superseded Session 17 Web next part (2026-10-05, replaced when #145 `9210327` merged)
+
+- Part of the **Web next (plan 10 Stage B)** bullet: "**10.5.1-T1** episode list in PR #145 (Session 17, `feature/10.5.1-T1-s17`; `/episodes` + the first `NAV_ITEMS` entry; T0 design owner-approved 2026-10-02) → next **10.5.2-T1** episode detail (adds `/episodes/:id`);"
+
 ### Superseded Session 17 Web next part (2026-10-05, replaced when 10.5.1-T1 opened as PR #145)
 
 - Part of the **Web next (plan 10 Stage B)** bullet: "**10.5.1-T0** design → **10.5.1-T1** episode list (first `cursorList` consumer); **10.4.1-T1** dashboard (adds `/dashboard` + the first `NAV_ITEMS` entry);"
