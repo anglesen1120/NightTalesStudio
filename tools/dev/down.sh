@@ -11,7 +11,7 @@ usage() {
 Usage: tools/dev/down.sh [--services] [--volumes] [--help]
 
 Stops the processes tools/dev/up.sh started (their pid files are read from .nts/dev/pid):
-the Api, the Worker, mock-mpt, the web app, and the seaweedfs and mailpit emulators.
+the Api, the Worker, the Fetcher, mock-mpt, the web app, and the seaweedfs and mailpit emulators.
 
 Flags:
   --services   also stop the Homebrew postgresql@17 service (it is left running otherwise)
@@ -177,7 +177,7 @@ stop_service() {
 # ---------------------------------------------------------------- stop the processes
 
 stopped=0
-for name in web mock worker api seaweedfs mailpit; do
+for name in web mock fetcher worker api seaweedfs mailpit; do
   if stop_service "$name"; then stopped=$((stopped + 1)); fi
 done
 log "stopped $stopped service(s)"

@@ -1,6 +1,8 @@
 using Microsoft.Extensions.Logging.Abstractions;
 using NightTales.Application.Features.Research.Sources;
-using NightTales.Infrastructure.Research;
+using NightTales.Fetcher.Core.Fetching;
+using NightTales.Infrastructure.DependencyInjection;
+using NightTales.Fetcher.Core.Research;
 using Shouldly;
 using Xunit;
 

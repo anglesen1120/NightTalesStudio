@@ -1,7 +1,8 @@
 using Microsoft.Extensions.Options;
 using NightTales.Domain.Research;
-using NightTales.Infrastructure.Research;
-using NightTales.Infrastructure.Research.Extraction;
+using NightTales.Fetcher.Core.Fetching;
+using NightTales.Fetcher.Core.Research;
+using NightTales.Fetcher.Core.Research.Extraction;
 using Shouldly;
 using Xunit;
 

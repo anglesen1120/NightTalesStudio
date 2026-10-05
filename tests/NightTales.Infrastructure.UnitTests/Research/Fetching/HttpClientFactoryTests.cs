@@ -1,6 +1,6 @@
 using System.Net;
 using Microsoft.Extensions.Logging.Abstractions;
-using NightTales.Infrastructure.Research.Http;
+using NightTales.Fetcher.Core.Research.Http;
 using NightTales.TestKit.Fetching;
 using Shouldly;
 using Xunit;

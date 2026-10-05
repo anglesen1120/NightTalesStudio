@@ -48,7 +48,7 @@ internal static class AllowLists
             "NightTales.Infrastructure.DependencyInjection.IdentityServiceCollectionExtensions",
             "NightTales.MockMpt.Health.MockHealthCheck",
             "NightTales.MptAdapter.MptHttpClient",
-            "NightTales.Infrastructure.Research.Http.SafeHttpClientFactory",
+            "NightTales.Fetcher.Core.Research.Http.SafeHttpClientFactory",
         };
 
 
@@ -104,16 +104,38 @@ internal static class AllowLists
             "NightTales.RenderNode.Contract",
         };
 
+    /// <summary>
+    /// 02.5.2-T3 [DECISION T40]: Fetcher.Core is Domain plus what the moved extraction and HTTP code needs —
+    /// <c>ErrorOr</c> (the fetch result type) and SmartReader with its AngleSharp parser. The forbidden set
+    /// (EF Core, OpenAI, Hangfire, S3, Infrastructure, Application) is enforced separately, on the transitive closure, by
+    /// <c>FetcherCore_HasNoEfCoreOrOpenAiReference</c>.
+    /// </summary>
     internal static readonly IReadOnlySet<string> FetcherCoreAllowedReferences =
         new HashSet<string>(StringComparer.Ordinal)
         {
+            "AngleSharp",
+            "ErrorOr",
             "NightTales.Domain",
+            "SmartReader",
         };
 
+    /// <summary>The Core takes any <c>Microsoft.Extensions.*</c> package (options, logging), like the host.</summary>
+    internal static readonly IReadOnlyList<string> FetcherCoreAllowedPrefixes =
+        ["Microsoft.Extensions."];
+
+    /// <summary>
+    /// 02.5.2-T3 [DECISION T40]: the host is Fetcher.Core plus Domain and <c>ErrorOr</c> (the types its composition root
+    /// and fetch endpoint handler use) and OpenTelemetry (<c>AddOpenTelemetry().WithMetrics</c>, see
+    /// <see cref="FetcherAllowedPrefixes"/>). The forbidden set (Infrastructure, Application, EF Core, OpenAI, Hangfire, S3)
+    /// is enforced separately, on the transitive closure, by <c>FetcherHost_DependsOnDomainAndCoreOnly</c>.
+    /// </summary>
     internal static readonly IReadOnlySet<string> FetcherAllowedReferences =
         new HashSet<string>(StringComparer.Ordinal)
         {
+            "ErrorOr",
+            "NightTales.Domain",
             "NightTales.Fetcher.Core",
+            "OpenTelemetry",
         };
 
     /// <summary>
@@ -184,9 +206,12 @@ internal static class AllowLists
 
     internal static readonly IReadOnlyList<string> MockMptAllowedPrefixes = RenderNodeServerAllowedPrefixes;
 
-    /// <summary>02 CR-19 lets the Fetcher use any <c>Microsoft.Extensions.*</c> package.</summary>
+    /// <summary>
+    /// 02 CR-19 lets the Fetcher use any <c>Microsoft.Extensions.*</c> package; 02.5.2-T3 adds the
+    /// <c>OpenTelemetry.*</c> packages (<c>OpenTelemetry</c> itself is in <see cref="FetcherAllowedReferences"/>).
+    /// </summary>
     internal static readonly IReadOnlyList<string> FetcherAllowedPrefixes =
-        ["Microsoft.Extensions."];
+        ["Microsoft.Extensions.", "OpenTelemetry."];
 
     internal static readonly IReadOnlyList<string> NoExtraPrefixes = [];
 

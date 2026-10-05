@@ -9,8 +9,8 @@ using NightTales.Application.Abstractions.Fetching;
 using NightTales.Application.Common.Errors;
 using NightTales.Application.Features.Research.Fetcher;
 using NightTales.Domain.Research;
-using NightTales.Infrastructure.Research;
-using NightTales.Infrastructure.Research.Http;
+using NightTales.Fetcher.Core.Fetching;
+using NightTales.Fetcher.Core.Research.Http;
 
 namespace NightTales.Infrastructure.Persistence.Queries;
 

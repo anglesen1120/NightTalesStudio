@@ -1,6 +1,6 @@
 using System.Net;
 using NightTales.Domain.Research;
-using NightTales.Infrastructure.Research.Http;
+using NightTales.Fetcher.Core.Research.Http;
 
 namespace NightTales.TestKit.Fetching;
 

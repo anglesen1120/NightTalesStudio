@@ -201,7 +201,7 @@
 - `NightTales.Application/Features/Research/`: `AddSourceCommand`, `RemoveSourceCommand`, `GenerateFactSheetCommand`, `EditFactSheetCommand`, `ApproveFactSheetCommand`; ports `ISourceFetcher`, `IMainTextExtractor`, `IFactExtractor`.
 - `NightTales.Application/Features/SeriesBible/`: `UpdateBibleCommand`, `AcceptBibleProposalCommand`, `DismissBibleProposalCommand`, `GetBibleQuery`.
 - `NightTales.Infrastructure/OpenAI/OpenAiStoryWriter` and `OpenAiFactExtractor` using the official OpenAI .NET SDK; prompts in `prompts/story/{topic}.{language}.v{n}.md`, `prompts/review/v{n}.md`, `prompts/facts/v{n}.md`, loaded at startup; `prompts/REFERENCES.md` for idea provenance.
-- `NightTales.Infrastructure/Research/SafeHttpSourceFetcher` (rules §5.7) behind `ISourceFetcher`; hosted only in the `fetcher` container, which posts results to an internal Api endpoint.
+- `NightTales.Fetcher.Core/Research/SafeHttpSourceFetcher` (rules §5.7) behind `ISourceFetcher`; hosted only in the `fetcher` container (`NightTales.Fetcher`), which posts results to an internal Api endpoint (02 T40: the fetcher classes moved out of `NightTales.Infrastructure/Research` into the Domain-only `NightTales.Fetcher.Core` library).
 - Pricing: text rates (`gpt-6-luna`: $0.10 in / $0.50 out per 1M ✅; `gpt-6-sol`: $2 / $10 ✅) live in `price_versions.rates` (12 §5.7), seeded from config — data, not code.
 
 ### 5.2 Output schema (JSON)
