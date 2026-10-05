@@ -232,8 +232,9 @@ export class NewEpisodeStore {
         this.phaseState.set('failed');
         this.retryAllowed.set(true);
       } else if (run?.status === 'running' || run?.status === 'queued') {
+        // The server's run is live, so an earlier unknown-outcome command failure is no longer current (QA-1).
+        this.clearFailure();
         this.phaseState.set('generating');
-        this.retryAllowed.set(false);
       }
     } catch (cause) {
       if (this.isCurrent(generation, token, this.refetchToken)) this.showError(cause);
