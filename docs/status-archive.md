@@ -10,6 +10,14 @@ History moved out of STATUS.md to keep the live file small. The initial archive 
 
 - **Next (backend, start here):** **02.5.2-T3** fetcher host merged as #136 (`d35284e`, no CI run: CI-01; local full `gate.sh` `GATE_RC=0` on the identical tip `029fb34`) → **02.5.2-T4** SSRF/abuse suite in progress (Session 12, `feature/02.5.2-T4-s12`; drives the real loop; failure behaviours handed over in the 02.5.2-T3 row) → 02.6.1-T2, 02.6.2-T1 revision (02 §10 T113(b)), 02.3.2-T1 approve (treat `moderation.stale`/`unavailable` as needs re-check; edit-path moderator wiring). First re-run CI on `develop` once GitHub Actions billing is fixed (#131 and #136 merged with no CI run). Claim the backend `gate.sh` lock in `nts-wt/SESSION-CLAIMS.md` first.
 
+### Superseded Session 18 Web next part (2026-10-05, replaced when #143 `7b5a6e9` merged)
+
+- **Web next (plan 10 Stage B):** open web lanes: **10.5.1-T0** design → **10.5.1-T1** episode list (first `cursorList` consumer); **10.4.1-T1** dashboard (adds `/dashboard` + the first `NAV_ITEMS` entry); **10.3.3-T3** MFA step + enrolment + recovery codes + re-auth (deps merged). **10.4.2-T2** voice picker + `voices` scope (10 CR-50) in PR #143 (Session 18), then **10.4.2-T1** series pages (mounts the voice step, writes its e2e). Check each header's `Depends on`. **10.3.1-T2** (content-policy + sitemap) is phase S and waits for the owner/TL site-origin decision (canonical/hreflang, 10.3.1-T1 §Notes). No `**` not-found route yet (owner 2026-10-05); `/dashboard` has no route until 10.4.1-T1, so the `/dashboard`-path e2e tests (17 failed locally) stay red until then. First read §Plan 10 hand-overs and the as-built surfaces in the 10.2.6-T1, 10.3.1-T1 and 10.3.3-T1 task §Notes.
+
+### Closed Plan 10 hand-over (2026-10-05, 10.4.2-T2: owner decision `voices` scope, 10 CR-50)
+
+- **10.4.2-T1:** `voices.tag.<tag>` (04 CR-11) cannot live in the `series` scope under that exact name (the runtime key becomes `series.voices.tag.*`): add a `voices` scope or get an owner decision. Today `web/tools/web/i18n-keys.mjs` checks the pattern as written.
+
 ### Superseded Current line and Web next lines (2026-10-05, replaced after the #134/#135/#136/#139 wave merged; develop `e8d9743`)
 
 Outcome: one Current line for the 2026-10-05 wave and one merged Web next line for all open web lanes.
