@@ -4,7 +4,7 @@
 > Contract: `../README.md` (D8, D10, D11, D19, D20, D21; F02, F13, F14, F15, F29; CR-1, CR-4).
 > Template: `../../../00-overview.md` §10.1 · Layout: `00-overview.md` §5.2, §6, §8.
 > Legend: ✅ read from source/docs · ⚠️ unverified · [DECISION] · [OPEN] · [INFERENCE].
-> Status: detailed plan, 2026-09-23. Implemented: 02.5.1-T1 (#119), 02.5.2-T1 (#121), 02.5.2-T2 (#131, develop `312db85`), 02.5.2-T3 (#136, develop `d35284e`). Next: 02.5.2-T4 (Session 12).
+> Status: detailed plan, 2026-09-23. Implemented: 02.5.1-T1 (#119), 02.5.2-T1 (#121), 02.5.2-T2 (#131, develop `312db85`), 02.5.2-T3 (#136, develop `d35284e`); 02.5.2-T4 in a PR (Session 12). Next: 02.5.3-T1.
 
 ## 1. Scope
 
@@ -183,7 +183,7 @@ Migration `20261005_SourcesAndFetchTasks` (single migration, both tables + index
 | `Sources:MaxPerEpisode` | `10` | hard cap → 409 `source_limit_reached` |
 | `Sources:MaxUrlSourcesPerUserPerDay` | `30` | rolling 24 h → 429 `source_fetch_limit_reached` |
 | `Sources:MaxNoteChars` | `3000` | `user_note` limit |
-| `Fetcher:BlockedDomains` | 20 entries from D11 | data, PR-reviewed |
+| `Fetcher:BlockedDomains` | the 19 entries from D11 (02.5.2-T4 corrected the stale "20") | data, PR-reviewed |
 | `Fetcher:UserAgent` | `NightTalesStudioBot/0.1.0 (+https://{PublicHost}/bot)` | `Fetcher:PublicHost` required |
 | `Fetcher:MaxDecompressedBytes` | `2097152` | counting stream, gzip/br |
 | `Fetcher:TotalTimeoutSeconds` / `RobotsTimeoutSeconds` | `10` / `5` | per page / per robots fetch |

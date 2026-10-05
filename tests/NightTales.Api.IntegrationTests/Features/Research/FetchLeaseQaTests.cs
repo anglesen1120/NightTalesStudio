@@ -626,7 +626,11 @@ public sealed class FetchLeaseQaTests(TestDatabase database) : IntegrationTest(d
         runs.Sum(run => run.SourcesFailed).ShouldBe(fail.Count);
         seed.Count("SELECT count(*) FROM fetch_tasks WHERE status = 'queued' AND attempts = 1").ShouldBe(requeue.Count);
         seed.Count("SELECT count(*) FROM fetch_tasks WHERE status = 'failed' AND error_code = 'source_unreachable'").ShouldBe(fail.Count);
-        seed.Count("SELECT count(*) FROM story_sources WHERE status = 'failed' AND error_code = 'source_unreachable'").ShouldBe(fail.Count);
+        // ResetTasks deletes fetch_tasks only, so this class's database also carries the failed sources of the tests that
+        // ran before (the failed-result and metrics tests): the exactly-once outcome is asserted on the rows seeded here.
+        fail.ShouldAllBe(task => seed.SourceStatus(task.SourceId) == "failed");
+        fail.ShouldAllBe(task => seed.Text($"SELECT coalesce(error_code, '') FROM story_sources WHERE id = '{task.SourceId}'") == "source_unreachable");
+        requeue.ShouldAllBe(task => seed.SourceStatus(task.SourceId) == "pending");
     }
 
     [Fact]
