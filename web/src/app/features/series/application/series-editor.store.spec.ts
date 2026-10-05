@@ -622,6 +622,38 @@ describe('SeriesEditorStore', () => {
     expect(store.form.controls.title.value).toBe('Đổi tên');
   });
 
+  it('Edit_SaveMineAsNewVersion_RepeatedRefusals_BothPatchesCarryOnlyTheUsersEdits', async () => {
+    const { store, seriesRepo } = setup();
+    await store.init('edit', 's-ghost');
+    store.form.controls.title.setValue('Đổi tên');
+    seriesRepo.willServe(CANNED_SERIES.map((row) => (row.id === 's-ghost' ? { ...row, aspect: 'portrait', etag: '"se-42"' } : row)));
+    expect(await store.submit()).toEqual({ kind: 'conflict' });
+
+    seriesRepo.defer();
+    const firstRetry = store.resolveConflict('saveAsNew');
+    seriesRepo.resolveNext();
+    // Another writer changes the aspect again before the first retry PATCH is issued.
+    seriesRepo.willServe(CANNED_SERIES.map((row) => (row.id === 's-ghost' ? { ...row, aspect: 'landscape', etag: '"se-43"' } : row)));
+    await flush();
+    seriesRepo.resolveAll();
+    expect(await firstRetry).toEqual({ kind: 'conflict' });
+
+    const secondRetry = store.resolveConflict('saveAsNew');
+    seriesRepo.resolveNext();
+    seriesRepo.advanceVersion('s-ghost');
+    await flush();
+    seriesRepo.resolveAll();
+    expect(await secondRetry).toEqual({ kind: 'conflict' });
+    expect(seriesRepo.getCalls).toEqual(['s-ghost', 's-ghost', 's-ghost']);
+    expect(seriesRepo.patchCalls).toEqual([
+      { id: 's-ghost', patch: { title: 'Đổi tên' }, etag: '"se-41"' },
+      { id: 's-ghost', patch: { title: 'Đổi tên' }, etag: '"se-42"' },
+      { id: 's-ghost', patch: { title: 'Đổi tên' }, etag: '"se-43"' },
+    ]);
+    expect(store.conflict()).toBe(true);
+    expect(store.form.controls.title.value).toBe('Đổi tên');
+  });
+
   it('Submit_SingleFlight_IssuesOneRequest', async () => {
     const { store, seriesRepo } = setup();
     await store.init('edit', 's-ghost');

@@ -116,6 +116,8 @@ export class SeriesEditorStore {
   private focusSeq = 0;
   private etag: string | null = null;
   private storedSeries: Series | null = null;
+  /** The row the user edited before conflict re-reads replace the server merge target. */
+  private editBaseline: Series | null = null;
   private inFlight: Promise<SubmitOutcome> | null = null;
   private templatesInFlight: { readonly topic: Topic; readonly promise: Promise<void> } | null = null;
   /** The topic of the list `templates()` currently shows after a successful read (`null`: nothing or an error). */
@@ -229,6 +231,7 @@ export class SeriesEditorStore {
     this.templateSeq += 1;
     this.etag = null;
     this.storedSeries = null;
+    this.editBaseline = null;
     this.voiceStep.clear();
     this.restoreDefaults();
     if (mode === 'create') {
@@ -356,7 +359,7 @@ export class SeriesEditorStore {
     if (id === null) return { kind: 'failed' };
     // "Save mine" diffs the entered values against the row the user edited, never against the fresh row the
     // re-read is about to return: another writer's changes stay untouched (the patch carries only the edits).
-    const userEditsBaseline = this.storedSeries;
+    this.editBaseline ??= this.storedSeries;
     const sessionGeneration = this.session.generation();
     const result = await this.repository.get(id);
     if (sessionGeneration !== this.session.generation() || id !== this.seriesId()) return { kind: 'failed' };
@@ -372,7 +375,7 @@ export class SeriesEditorStore {
       return { kind: 'reloaded' };
     }
     // Save mine as new version: the server state becomes the row the committed patch merges onto and its fresh
-    // tag the If-Match value; the patch itself still diffs the form against `userEditsBaseline`, so the values
+    // tag the If-Match value; the patch itself still diffs the form against `editBaseline`, so the values
     // the user typed are the only members sent.
     this.etag = result.value.etag;
     this.storedSeries = { ...result.value };
@@ -381,7 +384,7 @@ export class SeriesEditorStore {
     this.conflictTraceId.set(null);
     this.saving.set(true);
     try {
-      return await this.saveSeries(userEditsBaseline);
+      return await this.saveSeries(this.editBaseline);
     } finally {
       this.saving.set(false);
     }
@@ -396,8 +399,8 @@ export class SeriesEditorStore {
       // same step-change path as Next/Back, and the page focuses the step's first control.
       form.markAllAsTouched();
       const step = this.firstInvalidStep() ?? 1;
-      await this.goToStep(step);
       this.requestFocus(STEP_CONTROLS[step][0] ?? 'title');
+      await this.goToStep(step);
       return { kind: 'invalid', step };
     }
     this.saving.set(true);
@@ -490,6 +493,7 @@ export class SeriesEditorStore {
   private async failedOutcome(error: AppError): Promise<SubmitOutcome> {
     if (error.kind === 'conflict') {
       // 412 `series_conflict` and 409 `concurrency_conflict`: the dialog decides, the entered values stay (D9).
+      this.editBaseline ??= this.storedSeries;
       this.conflict.set(true);
       this.conflictCode.set(error.code);
       this.conflictTraceId.set(error.traceId ?? null);
@@ -512,8 +516,8 @@ export class SeriesEditorStore {
         // The shown list is stale now: the mismatch is a fresh catalog problem, so the jump fetches step 3 again
         // instead of reusing the loaded language (the same rule an explicit retry follows).
         this.loadedVoicesLanguage = null;
-        await this.goToStep(3);
         this.requestFocus('voiceId');
+        await this.goToStep(3);
         this.error.set(error);
         return { kind: 'failed' };
       case 'validation_failed': {
@@ -521,8 +525,8 @@ export class SeriesEditorStore {
         const unmapped = bindFieldErrors(this.form, error, { markTouched: true });
         const step = this.stepForFieldErrors(error, unmapped);
         if (unmapped.length > 0) this.error.set(error);
-        await this.goToStep(step);
         this.requestFocus(STEP_CONTROLS[step][0] ?? 'title');
+        await this.goToStep(step);
         return { kind: 'invalid', step };
       }
       default:
@@ -581,7 +585,14 @@ export class SeriesEditorStore {
     const voicesLoaded = language === this.loadedVoicesLanguage && !this.voiceStep.loading() && this.voiceStep.error() === null;
     if (!voicesLoaded) {
       await this.voiceStep.load(language);
-      if (!this.voiceStep.loading() && this.voiceStep.error() === null) this.loadedVoicesLanguage = language;
+      if (
+        language === this.form.controls.language.value &&
+        language === this.voiceStep.language() &&
+        !this.voiceStep.loading() &&
+        this.voiceStep.error() === null
+      ) {
+        this.loadedVoicesLanguage = language;
+      }
     }
     if (language !== this.form.controls.language.value) return;
     const selected = this.form.controls.voiceId.value;
@@ -738,6 +749,7 @@ export class SeriesEditorStore {
 
   /** The server state (or the just-submitted values) become the new baseline: the dirty indicator goes quiet. */
   private markClean(): void {
+    this.editBaseline = null;
     this.error.set(null);
     this.conflict.set(false);
     this.conflictCode.set(null);
