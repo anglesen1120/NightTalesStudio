@@ -6,7 +6,7 @@ History moved out of STATUS.md to keep the live file small. The initial archive 
 
 ### Superseded Session 19 close-out wording (2026-10-05)
 
-Replaced text (verbatim): `→ next **10.4.2-T1** series pages in PR (S19, `feature/10.4.2-T1-s19`) → lane next **10.4.3-T1**.` (Resume) and `in review (PR pending, Session 19, `feature/10.4.2-T1-s19`)` (Open tasks row); `Local gate result: see PR.`
+Replaced text (verbatim): `→ next **10.4.2-T1** series pages in PR (S19, `feature/10.4.2-T1-s19`) → lane next **10.4.3-T1**.` (Resume) and `in review (PR pending, Session 19, `feature/10.4.2-T1-s19`)` (Open tasks row); `Local gate result: see PR.`; Resume clause `autopilot tab waits for 10.3.3-T3, 10.4.2-T1 and 02.8.3-T2;`; session-log row `| 2026-10-05 | Session 19 10.4.2-T1 series pages (`feature/10.4.2-T1-s19`, PR pending) | Parallel data + UI agents; gate fix and e2e. T2 gates: QA 3 defects fixed; reviews 7 valid findings fixed; delta regressions fixed. 10 CR-51 records the `autopilot` scope and dialog data additions. Additive merges of `develop`; local gate result: see PR. |`.
 
 ### Superseded Session 19 Web next part (2026-10-05, 10.4.2-T1 in review)
 
