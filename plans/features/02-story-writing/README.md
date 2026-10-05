@@ -720,7 +720,7 @@ Additional CRs from this table:
 
 | CR | To | Request |
 |---|---|---|
-| CR-12 | 00 §8 | Routes: `POST/DELETE /series/{id}/autopilot/authorization`; `GET /episodes/{id}/story/versions/{versionId}` (02.3.4-T2, if confirmed there); source-finder routes (02.7.2-T2) |
+| CR-12 | 00 §8 | Routes: `POST/DELETE /series/{id}/autopilot/authorization`; `GET /episodes/{id}/story/versions/{versionId}` (02.3.4-T2, confirmed and implemented 2026-10-05, T33); source-finder routes (02.7.2-T2) |
 | CR-13 | 09 §5.6 | Setting `youtube.audit_status` (T8) |
 | CR-14 | 06.2.4-T1, 06.2.2-T3 | T9 |
 | CR-15 | 09 §5.3 | `AutopilotPlanJob` row → "recurring 15 min (D17)" |
