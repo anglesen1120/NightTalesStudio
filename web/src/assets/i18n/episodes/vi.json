@@ -1,0 +1,41 @@
+{
+  "list": {
+    "title": "Tập phim",
+    "subtitle": "Theo dõi tập phim từ ý tưởng đến lúc đăng.",
+    "filterStatus": "Trạng thái",
+    "filterSeries": "Loạt bài",
+    "all": "Tất cả",
+    "untitled": "Chưa đặt tên",
+    "continue": "Tiếp tục",
+    "loadMore": "Tải thêm",
+    "loading": "Đang tải danh sách tập phim",
+    "loadingMore": "Đang tải thêm tập phim",
+    "rowsAppended": "Đã tải thêm {{count}} tập phim",
+    "empty": "Chưa có tập phim nào",
+    "emptyBody": "Chọn một loạt bài để bắt đầu tập đầu tiên.",
+    "emptyAction": "Chọn loạt bài",
+    "emptyFilteredTitle": "Không có tập phù hợp",
+    "emptyFilteredBody": "Bộ lọc hiện tại không có tập phim nào.",
+    "clearFilters": "Xoá bộ lọc",
+    "filterActive": "Bộ lọc đang dùng",
+    "filtersSavedInUrl": "Bộ lọc được lưu trong đường dẫn.",
+    "seriesFilter": "Loạt bài",
+    "seriesFilterUnavailable": "Chưa tải được tên loạt bài. Bộ lọc theo mã vẫn đang áp dụng.",
+    "seriesFilterBounded": "Chỉ hiển thị 100 loạt bài đầu tiên.",
+    "clearFilter": "Xoá bộ lọc {{name}}",
+    "errorTitle": "Không tải được tập phim"
+  },
+  "status": {
+    "draft": "Bản nháp",
+    "story_generating": "Đang viết",
+    "story_review": "Chờ bạn duyệt",
+    "story_approved": "Đã duyệt kịch bản",
+    "rendering": "Đang dựng video",
+    "video_review": "Chờ duyệt video",
+    "ready": "Sẵn sàng đăng",
+    "scheduled": "Đã lên lịch",
+    "published": "Đã đăng",
+    "failed": "Lỗi",
+    "cancelled": "Đã huỷ"
+  }
+}

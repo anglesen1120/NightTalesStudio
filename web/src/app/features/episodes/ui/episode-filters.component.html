@@ -1,0 +1,60 @@
+<div class="episode-filters__row">
+  <div class="episode-filters__field">
+    <label [for]="statusSelectId">{{ 'episodes.list.filterStatus' | transloco }}</label>
+    <select [id]="statusSelectId" [disabled]="filters().disabled" (change)="onStatusChange($event)">
+      <option value="" [selected]="filters().status === null">{{ 'episodes.list.all' | transloco }}</option>
+      @for (status of statusOptions; track status) {
+        <option [value]="status" [selected]="status === filters().status">{{ 'episodes.status.' + status | transloco }}</option>
+      }
+    </select>
+  </div>
+  <div class="episode-filters__field">
+    <label [for]="seriesSelectId">{{ 'episodes.list.filterSeries' | transloco }}</label>
+    <select
+      [id]="seriesSelectId"
+      [disabled]="seriesDisabled()"
+      (change)="onSeriesChange($event)"
+    >
+      @if (missingSeries()) {
+        <!-- First `option[value]`: a deep-linked id the options page lacks stays the selected, visible value. -->
+        <option [attr.value]="filters().seriesId" [selected]="true">{{ seriesTitle() }}</option>
+      }
+      <option value="" [selected]="filters().seriesId === null">{{ 'episodes.list.all' | transloco }}</option>
+
+      @for (option of filters().seriesOptions; track option.id) {
+        <option [value]="option.id" [selected]="option.id === filters().seriesId">{{ option.title }}</option>
+      }
+    </select>
+    @if (seriesHintKey(); as hintKey) {
+      <span class="episode-filters__hint">{{ hintKey | transloco }}</span>
+    }
+  </div>
+</div>
+@if (filters().status !== null || filters().seriesId !== null) {
+  <div class="episode-filters__active" role="group" [attr.aria-label]="'episodes.list.filterActive' | transloco">
+    @if (filters().status; as status) {
+      <button
+        type="button"
+        class="episode-filters__chip"
+        [attr.aria-label]="'episodes.list.clearFilter' | transloco: { name: ('episodes.list.filterStatus' | transloco) }"
+        (click)="statusChange.emit(null)"
+        ><span class="episode-filters__chip-value">{{ 'episodes.status.' + status | transloco }}</span
+        ><span aria-hidden="true">×</span></button
+      >
+    }
+    @if (seriesTitle(); as seriesName) {
+      <button
+        type="button"
+        class="episode-filters__chip"
+        [attr.aria-label]="'episodes.list.clearFilter' | transloco: { name: ('episodes.list.seriesFilter' | transloco) + ': ' + seriesName }"
+        (click)="seriesChange.emit(null)"
+        ><span class="episode-filters__chip-value"
+          >{{ 'episodes.list.seriesFilter' | transloco }}: {{ seriesName }}</span
+        ><span aria-hidden="true">×</span></button
+      >
+    }
+    <button type="button" class="episode-filters__clear-all" (click)="clearFilters.emit()">{{
+      'episodes.list.clearFilters' | transloco
+    }}</button>
+  </div>
+}

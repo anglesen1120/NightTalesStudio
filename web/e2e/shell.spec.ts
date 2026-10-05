@@ -11,8 +11,9 @@ import { expect, test } from './fixtures/csp.fixture';
 // realtime hub never connects (this spec never asserts a realtime state).
 // 10.3.3-T1 may switch this file to `loginAsOwner` once `/login` exists.
 //
-// `NAV_ITEMS` is empty right after 10.2.6-T1 (task file, failure table), so the nav has no links: the `aria-current`
-// check is skipped here and covered by `side-nav.component.spec.ts`. Likewise no route declares `data.titleKey` yet, so
+// `NAV_ITEMS` holds only the episodes entry after 10.5.1-T1, so the nav has exactly one link; its `aria-current`
+// behaviour is covered by `side-nav.component.spec.ts` and `episodes-list.spec.ts`. Likewise no route declares
+// `data.titleKey` yet, so
 // the document title stays the product name; the title is asserted to be stable and non-empty across the language
 // switch (a titleKey-driven change is `shell.store.spec.ts`'s `pageTitle_UsesShellTitleKeyAndFollowsLocaleChange`).
 
@@ -204,14 +205,14 @@ test.describe('shell (desktop)', () => {
     await expect(page.locator('#content')).toBeFocused();
   });
 
-  test('landmarks: banner, labelled navigation, main; the nav has no links while NAV_ITEMS is empty', async ({ page }) => {
+  test('landmarks: banner, labelled navigation with the episodes link, main', async ({ page }) => {
     await openShell(page);
     await expect(page.getByRole('banner')).toBeVisible();
     const navigation = page.getByRole('navigation', { name: LABELS.vi.nav });
     await expect(navigation).toBeVisible();
     await expect(page.getByRole('main')).toBeVisible();
-    await expect(navigation.getByRole('link')).toHaveCount(0);
-    // `aria-current="page"` on the active item: skipped (no item exists yet), see side-nav.component.spec.ts.
+    await expect(navigation.getByRole('link')).toHaveCount(1);
+    await expect(navigation.getByRole('link', { name: 'Tập' })).toBeVisible();
   });
 
   test('user menu: opens, Escape closes it and focus returns to the trigger', async ({ page }) => {
@@ -296,7 +297,8 @@ test.describe('shell (A14: themes, targets, focus, reduced motion)', () => {
   test('desktop: interactive targets are >= 24 px and keyboard focus shows an indicator', async ({ page }) => {
     await openShell(page);
     await expectTargetsAtLeast24(page);
-    const samples = await tabWalk(page, 3);
+    // Stops: skip link, the episodes nav link (10.5.1-T1), language select, user menu.
+    const samples = await tabWalk(page, 4);
     const labels = samples.map((sample) => sample.label);
     expect(labels[0], 'first Tab stop is the skip link').toContain(LABELS.vi.skip);
     const skipBox = await page.getByRole('link', { name: LABELS.vi.skip }).boundingBox();

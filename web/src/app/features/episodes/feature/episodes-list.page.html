@@ -1,0 +1,25 @@
+<div class="episodes-page">
+  <nts-page-header titleKey="episodes.list.title" subtitleKey="episodes.list.subtitle" />
+
+  <nts-episode-filters
+    [filters]="filtersModel()"
+    (statusChange)="onStatusChange($event)"
+    (seriesChange)="onSeriesChange($event)"
+    (clearFilters)="onClearFilters()"
+  />
+
+  <nts-episode-list
+    [items]="store.items()"
+    [loading]="store.loading()"
+    [loadingMore]="store.loadingMore()"
+    [hasMore]="store.hasMore()"
+    [error]="store.error()"
+    [isEmpty]="store.isEmpty()"
+    [filtered]="filtersActive()"
+    (loadMore)="store.load('more')"
+    (retry)="store.retry()"
+    (open)="onOpen($event)"
+    (emptyAction)="onEmptyAction()"
+    (clearFilters)="onListClearFilters()"
+  />
+</div>
