@@ -4,6 +4,10 @@ History moved out of STATUS.md to keep the live file small. The initial archive 
 
 ## Resume-here history (Current/Previous blocks, Next actions)
 
+### Superseded 10 CR-47 hand-over line (2026-10-05, Session 14 close-out: #134 shipped no `**` route)
+
+- **10 CR-47 e2e (from 10.2.1-T1, written by 10.3.3-T1):** `web/e2e/session.spec.ts` + the D16 a11y checks exist and run against `page.route` stubs (P seeds only an MFA owner; the real-backend authenticated path is 10.3.3-T3's `auth-mfa.spec.ts`). The tests that assert the URL path `/dashboard` (returnUrl fallback, sign-in) pass only once a route matches it: the `**` from **10.2.6-T1** (or the 10.4.1-T1 dashboard); verified locally with a temporary wildcard route. **11.5.1-T1** `e2e.yml` runs them; set `NTS_E2E_STACK=1` for the real-stack blocks in `auth-login.spec.ts`/`auth-reset.spec.ts`.
+
 ### Superseded Session 14 Web next line (2026-10-05, replaced when #135 `64141f1` merged)
 
 Outcome: 10.3.3-T1 merged as #135 without a CI run (CI-01); Session 14 claim released; next task in this lane 10.3.3-T3.
