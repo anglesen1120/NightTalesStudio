@@ -3,6 +3,7 @@ import { expectA11yClean } from './fixtures/axe';
 import { expect, test } from './fixtures/csp.fixture';
 import { episodeDetail, EPISODE_ID, expectNoExtraDetails, NEW_EPISODE_PATH, stubEpisodes, watchPrivacy, type EpisodeStubOptions } from './fixtures/episodes-stubs';
 import { liveRegion } from './fixtures/series-stubs';
+import { editorDetail, expectEditor } from './fixtures/story-editor-stubs';
 
 // Same stub/CSP/axe/locale footprint as episodes-list-en.spec.ts; no compose account or TOTP seed needed.
 test.use({ locale: 'en-US', timezoneId: 'UTC' });
@@ -99,13 +100,14 @@ test.describe('new episode generation (en, stubbed)', () => {
   });
 
   test('story_review hands off to the editor URL', async ({ page }) => {
-    test.fixme(true, '10.5.3-T1 owns the unmatched editor route/currentStory loading; 11.5.1-T1 owns compose/mock-mpt proof.');
-    const { stubs } = await open(page, { details: [episodeDetail(), episodeDetail('done', { status: 'story_review', generation: { kind: 'story', status: 'succeeded', stage: 'done', errorCode: null, startedAt: null } })] });
+    const { stubs, privacy } = await open(page, { details: [episodeDetail(), editorDetail({ generation: { kind: 'story', status: 'succeeded', stage: 'done', errorCode: null, startedAt: null } })] });
     await submit(page);
     await expect(liveRegion(page, L.stages[0]!)).toBeVisible();
     stubs.advance(); stubs.push();
     await expect(page).toHaveURL(new RegExp(`/episodes/${EPISODE_ID}$`));
+    await expectEditor(page, 'en');
     await expectA11yClean(page);
+    await privacy();
   });
 
   test('true crime hands off to the research URL', async ({ page }) => {

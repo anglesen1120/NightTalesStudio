@@ -1,0 +1,36 @@
+:host { display: block; min-width: 0; }
+.segment-chips { display: flex; flex-wrap: wrap; align-items: center; gap: var(--nts-space-2); min-width: 0; }
+.segment-chips__label { flex: 0 0 100%; color: var(--nts-color-on-surface-muted); font-size: var(--nts-type-caption-size); font-weight: var(--nts-type-label-weight); }
+.segment-chips__list { display: flex; flex: 1 1 auto; flex-wrap: wrap; gap: var(--nts-space-2); min-width: 0; }
+.segment-chips__item { display: inline-flex; min-width: 0; }
+.segment-chips input {
+  box-sizing: border-box;
+  width: min(18rem, 100%);
+  min-width: 0;
+  min-height: var(--nts-target-min);
+  padding: var(--nts-space-2) var(--nts-space-3);
+  border: 1px solid var(--nts-color-control-outline);
+  border-radius: var(--nts-radius-control) 0 0 var(--nts-radius-control);
+  background: var(--nts-color-surface);
+  color: var(--nts-color-on-surface);
+  font: inherit;
+}
+.segment-chips input:read-only { border-radius: var(--nts-radius-control); background: var(--nts-color-surface-variant); }
+.segment-chips__remove, .segment-chips__add {
+  min-height: var(--nts-target-min);
+  padding: var(--nts-space-2) var(--nts-space-3);
+  border: 1px solid var(--nts-color-control-outline);
+  background: var(--nts-color-surface-variant);
+  color: var(--nts-color-on-surface);
+  font: inherit;
+  font-weight: var(--nts-type-label-weight);
+}
+.segment-chips__remove { min-width: var(--nts-target-min); border-inline-start: 0; border-radius: 0 var(--nts-radius-control) var(--nts-radius-control) 0; }
+.segment-chips__add { display: inline-flex; align-items: center; gap: var(--nts-space-2); border-radius: var(--nts-radius-control); }
+.segment-chips__remove:hover, .segment-chips__add:hover { border-color: var(--nts-color-primary); }
+.segment-chips__limit { display: flex; flex: 0 0 100%; align-items: center; gap: var(--nts-space-2); margin: 0; color: var(--nts-color-on-surface); font-size: var(--nts-type-caption-size); }
+.segment-chips input:focus-visible, .segment-chips button:focus-visible { outline: 2px solid var(--nts-color-focus); outline-offset: var(--nts-space-1); }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+@media (max-width: 30rem) {
+  .segment-chips__list, .segment-chips__item, .segment-chips input { width: 100%; }
+}

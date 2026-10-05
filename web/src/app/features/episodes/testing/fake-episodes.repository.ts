@@ -145,6 +145,7 @@ export function episodeDetail(overrides: Partial<EpisodeDetail> = {}): EpisodeDe
     etag: '"ep-1"',
     generation: { kind: 'story', status: 'running', stage: 'queued', errorCode: null, startedAt: null, processingPaused: null },
     hasCurrentStory: false,
+    currentStory: null,
     nextActions: [],
     ...overrides,
   };

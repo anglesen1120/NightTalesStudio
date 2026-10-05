@@ -9,6 +9,7 @@ import type { CreatedEpisode, EpisodeDetail, EpisodeListItem, EpisodeStatus, Len
 import { EpisodesRepository } from '../domain/episodes.repository';
 import type { StoryGenerationIntent } from '../domain/episodes.repository';
 import { mapEpisodeDetail, mapEpisodeListItem } from './episode.mapper';
+import { StoryMappingError } from './story.mapper';
 
 /** Keeps HTTP-context settlement linked to the domain port's caller-owned intent. */
 class StoryGenerationHttpIntent extends IdempotencyIntent {
@@ -95,7 +96,7 @@ export class EpisodesHttpRepository extends EpisodesRepository {
       return mapEpisodeDetail(dto);
     } catch (cause) {
       // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors -- port rejects with the structured AppError contract
-      return Promise.reject(this.mapper.from(cause));
+      return Promise.reject(cause instanceof StoryMappingError ? this.mapper.fromProblem(null, 502, null) : this.mapper.from(cause));
     }
   }
 }

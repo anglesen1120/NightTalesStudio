@@ -1,5 +1,6 @@
 import type { EpisodeDetailDto, EpisodeListItemDto } from '@shared/api';
 import { EPISODE_STATUSES } from '../domain/episode.model';
+import { storySnapshot } from '../testing/fake-story.repository';
 import { mapEpisodeDetail, mapEpisodeListItem } from './episode.mapper';
 
 const DTO: EpisodeListItemDto = {
@@ -40,19 +41,25 @@ const DETAIL: EpisodeDetailDto = {
 };
 
 describe('mapEpisodeDetail', () => {
-  it('mapsGenerationAndNextActions_WithoutCopyingStoryText', () => {
+  it('mapsGenerationActionsAndNullCurrentStory', () => {
     expect(mapEpisodeDetail(DETAIL)).toEqual({
       id: DETAIL.id, seriesId: DETAIL.seriesId, status: DETAIL.status, etag: DETAIL.etag,
       generation: { ...DETAIL.generation, processingPaused: null },
-      hasCurrentStory: false, nextActions: ['edit_story'],
+      hasCurrentStory: false, currentStory: null, nextActions: ['edit_story'],
     });
   });
 
-  it('currentStoryPresence_IsMappedToBooleanOnly', () => {
-    const current = { ...DETAIL, currentStory: { body: 'Never copy this text' } } as unknown as EpisodeDetailDto;
+  it('currentStory_IsValidatedAndMappedForTheEditor', () => {
+    const snapshot = storySnapshot();
+    const current = { ...DETAIL, currentStory: snapshot } as unknown as EpisodeDetailDto;
     const result = mapEpisodeDetail(current);
     expect(result.hasCurrentStory).toBe(true);
-    expect(result).not.toHaveProperty('currentStory');
+    expect(result.currentStory).toEqual(snapshot);
+  });
+
+  it('malformedCurrentStory_NeverBecomesAnEmptyDraft', () => {
+    const current = { ...DETAIL, currentStory: { body: 'Not a story.v1 document' } } as unknown as EpisodeDetailDto;
+    expect(() => mapEpisodeDetail(current)).toThrow('Invalid story response');
   });
 
   it('nullGeneration_IsPreserved', () => {

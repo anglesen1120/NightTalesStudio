@@ -68,5 +68,66 @@
     "gate": {
       "writeStoryBlocked": "Cần duyệt bảng dữ kiện với ít nhất 2 nguồn đã tải trước khi viết kịch bản."
     }
+  },
+  "editor": {
+    "pageTitle": "Kịch bản tập phim",
+    "loading": "Đang tải kịch bản",
+    "saveVersion": "Lưu phiên bản",
+    "saving": "Đang lưu…",
+    "saved": "Đã lưu",
+    "unsaved": "Có thay đổi chưa lưu",
+    "segment": {
+      "title": "Tiêu đề",
+      "hook": "Mở đầu",
+      "paragraph": "Đoạn",
+      "ending": "Kết"
+    },
+    "beat": "Nhịp",
+    "keywords": "Cảnh",
+    "keywordLabel": "Cảnh {{index}}",
+    "addKeyword": "Thêm cảnh",
+    "removeKeyword": "Xoá cảnh",
+    "keywordLimit": "Mỗi đoạn cần 1–2 cảnh",
+    "tokens": "{{count}} từ",
+    "totalTokens": "Tổng cộng {{count}} từ",
+    "description": "Mô tả",
+    "tags": "Thẻ",
+    "contentWarnings": "Cảnh báo nội dung",
+    "metadata": "Thông tin kịch bản",
+    "none": "Không có",
+    "sceneStrip": "Dải cảnh",
+    "sceneStripHint": "Bản xem trước chỉ đọc từ các cảnh của từng đoạn.",
+    "sceneStripEmpty": "Chưa có cảnh để xem trước.",
+    "segmentNav": "Điều hướng đoạn kịch bản",
+    "chooseSegment": "Chọn đoạn",
+    "saveError": "Không thể lưu kịch bản",
+    "manuscript": "Bản thảo kịch bản",
+    "emptyTitle": "Chưa có kịch bản",
+    "emptyBody": "Hãy tạo kịch bản trước khi mở trình biên tập.",
+    "readOnlyBody": "Kịch bản đang ở trạng thái chỉ đọc. Chỉ các hành động máy chủ cho phép mới được hiển thị.",
+    "allowedActions": "Hành động được phép",
+    "action": {
+      "generate_story": "Viết kịch bản",
+      "approve_story": "Duyệt kịch bản",
+      "reopen_story": "Duyệt lại",
+      "render": "Làm video",
+      "retry_render": "Dựng lại video",
+      "cancel": "Huỷ",
+      "approve_video": "Duyệt video",
+      "reject_video": "Yêu cầu sửa video",
+      "publish": "Đăng",
+      "download": "Tải xuống",
+      "unavailable": "Hành động chưa khả dụng"
+    }
+  },
+  "conflict": {
+    "title": "Kịch bản đã thay đổi",
+    "body": "Ở tab khác hoặc người khác vừa lưu phiên bản mới. Văn bản chưa lưu của bạn vẫn được giữ.",
+    "reload": "Tải bản mới nhất",
+    "saveMine": "Lưu bản của tôi thành phiên bản mới",
+    "cancel": "Huỷ",
+    "reloadConfirmTitle": "Bỏ thay đổi chưa lưu?",
+    "reloadConfirmBody": "Tải bản mới nhất sẽ thay thế văn bản chưa lưu trên màn hình này. Không thể hoàn tác.",
+    "reloadConfirm": "Tải bản mới nhất"
   }
 }

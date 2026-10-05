@@ -17,6 +17,10 @@ export type { ApiV1EpisodesIdStoryVersionsGet$Params as ApiV1EpisodesIdStoryVers
 export { apiV1EpisodesIdStoryVersionsGet as apiV1EpisodesIdStoryVersionsGet } from './fn/story-endpoints/api-v-1-episodes-id-story-versions-get';
 export type { ApiV1EpisodesIdStoryVersionsVersionIdGet$Params as ApiV1EpisodesIdStoryVersionsVersionIdGet$Params } from './fn/story-endpoints/api-v-1-episodes-id-story-versions-version-id-get';
 export { apiV1EpisodesIdStoryVersionsVersionIdGet as apiV1EpisodesIdStoryVersionsVersionIdGet } from './fn/story-endpoints/api-v-1-episodes-id-story-versions-version-id-get';
+export type { ApiV1EpisodesIdStoryApprovePost$Params as ApiV1EpisodesIdStoryApprovePost$Params } from './fn/story-endpoints/api-v-1-episodes-id-story-approve-post';
+export { apiV1EpisodesIdStoryApprovePost as apiV1EpisodesIdStoryApprovePost } from './fn/story-endpoints/api-v-1-episodes-id-story-approve-post';
+export type { ApiV1EpisodesIdStoryReopenPost$Params as ApiV1EpisodesIdStoryReopenPost$Params } from './fn/story-endpoints/api-v-1-episodes-id-story-reopen-post';
+export { apiV1EpisodesIdStoryReopenPost as apiV1EpisodesIdStoryReopenPost } from './fn/story-endpoints/api-v-1-episodes-id-story-reopen-post';
 export type { ApiV1VoicesGet$Params as ApiV1VoicesGet$Params } from './fn/catalog-endpoints/api-v-1-voices-get';
 export { apiV1VoicesGet as apiV1VoicesGet } from './fn/catalog-endpoints/api-v-1-voices-get';
 export type { ApiV1StyleTemplatesGet$Params as ApiV1StyleTemplatesGet$Params } from './fn/catalog-endpoints/api-v-1-style-templates-get';

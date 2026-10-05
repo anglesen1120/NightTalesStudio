@@ -1,5 +1,6 @@
 import type { EpisodeDetailDto, EpisodeListItemDto } from '@shared/api';
 import { EPISODE_STATUSES, type EpisodeDetail, type EpisodeListItem } from '../domain/episode.model';
+import { mapStorySnapshot } from './story.mapper';
 
 /**
  * Maps one wire row. A status this client does not know (a newer server) yields `null`: the row cannot be given a
@@ -38,6 +39,7 @@ export function mapEpisodeDetail(dto: EpisodeDetailDto): EpisodeDetail {
       processingPaused: typeof paused === 'string' ? paused : null,
     },
     hasCurrentStory: dto.currentStory !== null,
+    currentStory: dto.currentStory === null ? null : mapStorySnapshot(dto.currentStory),
     nextActions: dto.nextActions,
   };
 }

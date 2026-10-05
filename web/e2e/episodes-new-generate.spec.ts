@@ -3,9 +3,10 @@ import { expectA11yClean } from './fixtures/axe';
 import { expect, test } from './fixtures/csp.fixture';
 import { episodeDetail, EPISODE_ID, expectNoExtraDetails, NEW_EPISODE_PATH, SERIES_ID, stubEpisodes, watchPrivacy, type EpisodeStubOptions, type EpisodeStubs } from './fixtures/episodes-stubs';
 import { liveRegion } from './fixtures/series-stubs';
+import { editorDetail, expectEditor } from './fixtures/story-editor-stubs';
 
 // 10.5.2-T1: stub-only, same session/locale/axe/CSP footprint as episodes-list.spec.ts.
-// Real compose + mock-mpt/editor loading is owned by 11.5.1-T1; editor/research URLs by 10.5.3-T1/10.5.5-T1.
+// Real compose + mock-mpt proof is owned by 11.5.1-T1; the research URL by 10.5.5-T1.
 test.use({ locale: 'vi-VN', timezoneId: 'UTC' });
 const L = {
   lang: 'vi', brief: 'Ý tưởng', title: 'Tiêu đề (không bắt buộc)', submit: 'Viết kịch bản', retry: 'Thử lại',
@@ -175,13 +176,14 @@ test.describe('new episode generation (vi, stubbed)', () => {
   });
 
   test('story_review hands off to the editor URL', async ({ page }) => {
-    test.fixme(true, '10.5.3-T1 owns the unmatched /episodes/:id editor route and currentStory loading; 11.5.1-T1 owns compose/mock-mpt proof.');
-    const { stubs } = await open(page, { details: [episodeDetail(), episodeDetail('done', { status: 'story_review', generation: { kind: 'story', status: 'succeeded', stage: 'done', errorCode: null, startedAt: null } })] });
+    const { stubs, privacy } = await open(page, { details: [episodeDetail(), editorDetail({ generation: { kind: 'story', status: 'succeeded', stage: 'done', errorCode: null, startedAt: null } })] });
     await submit(page);
     await expect(liveRegion(page, L.stages[0]!)).toBeVisible();
     stubs.advance(); stubs.push({ episodeId: EPISODE_ID, seriesId: SERIES_ID });
     await expect(page).toHaveURL(new RegExp(`/episodes/${EPISODE_ID}$`));
+    await expectEditor(page, 'vi');
     await expectA11yClean(page);
+    await privacy();
   });
 
   test('true crime hands off to the research URL', async ({ page }) => {

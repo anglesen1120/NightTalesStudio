@@ -405,6 +405,7 @@ group.MapPost("/episodes/{id:guid}/story/generate", async (Guid id, ISender send
 | `provider_funds_exhausted` | — | Not an error response: `processingPaused` reason on episodes/jobs; paid commands still return 202 and hold a reserve (12.8.3) |
 | `story_version_conflict`, `fact_sheet_conflict`, `bible_conflict`, `series_conflict` | 412 | Stale `If-Match` (02 README D9) |
 | `if_match_required` | 428 | A D9 route called without `If-Match` |
+| `payload_too_large` | 413 | Public API request body exceeds its byte limit; ProblemDetails for declared-length and streamed refusals (02.3.2-T1 follow-up, #159) |
 | `idempotency_key_required` | 400 | Paid/platform POST without `Idempotency-Key` |
 | `story_generation_in_progress`, `fact_sheet_generation_in_progress`, `find_sources_in_progress` | 409 | One active generation run per episode and kind |
 | `story_generation_limit`, `source_fetch_limit_reached` | 429 + `Retry-After` | 5 story generations / rolling 24 h per episode; 30 url sources / rolling 24 h per user |

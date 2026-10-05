@@ -251,6 +251,23 @@ public sealed class OpenApiDocumentTests
         }
     }
 
+    [Theory]
+    [InlineData("/api/v1/episodes/{id}/story/approve", "post")]
+    [InlineData("/api/v1/episodes/{id}/story/reopen", "post")]
+    [InlineData("/api/v1/episodes/{id}/story", "put")]
+    [InlineData("/api/v1/episodes/{id}/story/generate", "post")]
+    [InlineData("/api/v1/episodes/{id}/story/versions", "get")]
+    [InlineData("/api/v1/episodes/{id}/story/versions/{versionId}", "get")]
+    public void Story_routes_document_413_as_problem_details(string path, string method)
+    {
+        var response = Root.GetProperty("paths").GetProperty(path).GetProperty(method)
+            .GetProperty("responses").GetProperty("413");
+        var content = response.GetProperty("content");
+        content.EnumerateObject().ShouldHaveSingleItem().Name.ShouldBe("application/problem+json");
+        content.GetProperty("application/problem+json").GetProperty("schema").GetProperty("$ref")
+            .GetString().ShouldBe($"#/components/schemas/{ProblemDetailsSchemaTransformer.ComponentName}");
+    }
+
     [Fact]
     public void Approve_route_documents_an_optional_attestation_body_without_an_approval_source()
     {
