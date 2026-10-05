@@ -10,6 +10,10 @@ Replaced Session 24 Resume clause (verbatim): `02.5.6-T1 similarity scorer + cor
 
 The merged 02.3.2-T1 §Notes T31/R2 delegates the real similarity sub-check to 02.3.3-T1's `IStoryApprovalGate`; the interim gate performs no comparison. Session 24's current STATUS/task Notes now name that owner. Earlier backend Next lines are already preserved in the Session 21 entries below.
 
+### Superseded Session 23 backend Next sentence (2026-10-05, replaced when #163 merged as `6c17462`)
+
+Replaced text (verbatim): 13.2.1-T1 legal acceptance: PR #163 open (Session 23; `GET`/`POST /me/legal`, `ILegalAcceptance` gate, owner dialog; unblocks 06.1.2-T1, 06.5.1-T1, 10.7.1-T1, 13.2.1-T2, 10.8.2-T1, 07.1.2-T1 and the 02.8.3-T2 legal gate).
+
 ### Superseded Session 25 Web next part, 10.5.2-T1 row status and 10 CR-48 hand-over line (2026-10-05, replaced when #160 merged as `d30caaf`)
 
 Replaced text (verbatim): `→ **10.5.2-T1** new episode + generate + live state in a PR from `feature/10.5.2-T1-s25` (Session 25; `/series/:id/episodes/new`, `web/openapi.json` re-pinned to `develop` `0778953`, deliberately before #159 because of the backend approve 413 defect (§Open tasks), new `story` i18n scope)` (Web next); `in review (PR from `feature/10.5.2-T1-s25`, Session 25); T2 gates closed (QA, code review, perf+security review, delta); local `web.yml` steps + `legal:gen:check`: see the PR` (Open-tasks row status); hand-over line `- **10 CR-48 (from 10.2.4-T1):** `web/e2e/realtime.spec.ts` is written by **10.5.2-T1** (no `/login` or episode page before 10.3.3-T1/10.5.2-T1): one ticket per connect attempt in the network log, WebSockets-only with no `/negotiate`, no token/ticket in console/requests/storage after a reconnect (allow Chromium's own `WebSocket connection to … failed` line on a failed upgrade), one reconnect + one refetch per live subscription after `setOffline`, axe clean, no CSP violation (proves `connect-src 'self'` covers same-origin `wss:`); in the 10.5.2-T1 Notes. **Plan 11 deploy (no task file edited):** the production load balancer/CDN must not log the `/hubs/episodes` query string (single-use 60 s ticket; the nginx guards cover dev/compose only).`
