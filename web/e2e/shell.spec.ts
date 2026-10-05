@@ -11,8 +11,9 @@ import { expect, test } from './fixtures/csp.fixture';
 // realtime hub never connects (this spec never asserts a realtime state).
 // 10.3.3-T1 may switch this file to `loginAsOwner` once `/login` exists.
 //
-// `NAV_ITEMS` holds only the episodes entry after 10.5.1-T1, so the nav has exactly one link; its `aria-current`
-// behaviour is covered by `side-nav.component.spec.ts` and `episodes-list.spec.ts`. Likewise no route declares
+// `NAV_ITEMS` holds the episodes entry (10.5.1-T1) and the dashboard entry appended by 10.4.1-T1, so the nav has
+// exactly two links; their `aria-current` behaviour is covered by `side-nav.component.spec.ts`,
+// `episodes-list.spec.ts` and `dashboard.spec.ts`. Likewise no route declares
 // `data.titleKey` yet, so
 // the document title stays the product name; the title is asserted to be stable and non-empty across the language
 // switch (a titleKey-driven change is `shell.store.spec.ts`'s `pageTitle_UsesShellTitleKeyAndFollowsLocaleChange`).
@@ -205,14 +206,15 @@ test.describe('shell (desktop)', () => {
     await expect(page.locator('#content')).toBeFocused();
   });
 
-  test('landmarks: banner, labelled navigation with the episodes link, main', async ({ page }) => {
+  test('landmarks: banner, labelled navigation with the episodes and dashboard links, main', async ({ page }) => {
     await openShell(page);
     await expect(page.getByRole('banner')).toBeVisible();
     const navigation = page.getByRole('navigation', { name: LABELS.vi.nav });
     await expect(navigation).toBeVisible();
     await expect(page.getByRole('main')).toBeVisible();
-    await expect(navigation.getByRole('link')).toHaveCount(1);
+    await expect(navigation.getByRole('link')).toHaveCount(2);
     await expect(navigation.getByRole('link', { name: 'Tập' })).toBeVisible();
+    await expect(navigation.getByRole('link', { name: 'Bảng điều khiển' })).toBeVisible();
   });
 
   test('user menu: opens, Escape closes it and focus returns to the trigger', async ({ page }) => {
@@ -297,8 +299,9 @@ test.describe('shell (A14: themes, targets, focus, reduced motion)', () => {
   test('desktop: interactive targets are >= 24 px and keyboard focus shows an indicator', async ({ page }) => {
     await openShell(page);
     await expectTargetsAtLeast24(page);
-    // Stops: skip link, the episodes nav link (10.5.1-T1), language select, user menu.
-    const samples = await tabWalk(page, 4);
+    // Stops: skip link, the episodes nav link (10.5.1-T1), the dashboard nav link (10.4.1-T1), language select,
+    // user menu.
+    const samples = await tabWalk(page, 5);
     const labels = samples.map((sample) => sample.label);
     expect(labels[0], 'first Tab stop is the skip link').toContain(LABELS.vi.skip);
     const skipBox = await page.getByRole('link', { name: LABELS.vi.skip }).boundingBox();
@@ -307,6 +310,10 @@ test.describe('shell (A14: themes, targets, focus, reduced motion)', () => {
     expect(withoutFocusIndicator(samples), `Tab stops without a focus indicator: ${JSON.stringify(samples)}`).toEqual([]);
     expect(labels.some((label) => label.includes('combobox')), `language select is a Tab stop: ${labels.join(', ')}`).toBe(true);
     expect(labels.some((label) => label.includes(LABELS.vi.account)), `user menu is a Tab stop: ${labels.join(', ')}`).toBe(true);
+    expect(
+      labels.some((label) => label.includes('Bảng điều khiển')),
+      `dashboard nav link is a Tab stop: ${labels.join(', ')}`,
+    ).toBe(true);
   });
 
   test.describe('360 px', () => {

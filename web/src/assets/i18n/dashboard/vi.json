@@ -1,0 +1,41 @@
+{
+  "title": "Tổng quan",
+  "refresh": "Làm mới",
+  "retry": "Thử lại",
+  "loading": "Đang tải tổng quan",
+  "counts": "{{needsReview}} tập cần bạn xem, {{inProgress}} tập đang thực hiện, {{ready}} tập sẵn sàng đăng",
+  "partialRefreshFailed": "Chưa làm mới được. Đang hiển thị dữ liệu gần nhất.",
+  "updatedJustNow": "Vừa cập nhật",
+  "needsReview": {
+    "title": "Cần bạn xem",
+    "empty": "Không có gì cần bạn xem"
+  },
+  "inProgress": {
+    "title": "Đang thực hiện",
+    "empty": "Không có tập nào đang chạy"
+  },
+  "ready": {
+    "title": "Sẵn sàng đăng",
+    "empty": "Chưa có tập nào sẵn sàng"
+  },
+  "allEmpty": {
+    "title": "Chưa có tập phim nào",
+    "body": "Tạo series để bắt đầu tập phim đầu tiên.",
+    "action": "Tạo series"
+  },
+  "card": {
+    "updated": "Cập nhật {{time}}",
+    "action": {
+      "reviewStory": "Xem truyện",
+      "reviewVideo": "Xem video",
+      "open": "Mở",
+      "publish": "Đăng"
+    },
+    "actionLabel": {
+      "reviewStory": "Xem truyện {{title}}",
+      "reviewVideo": "Xem video {{title}}",
+      "open": "Mở {{title}}",
+      "publish": "Đăng {{title}}"
+    }
+  }
+}
