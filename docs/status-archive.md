@@ -4,6 +4,42 @@ History moved out of STATUS.md to keep the live file small. The initial archive 
 
 ## Resume-here history (Current/Previous blocks, Next actions)
 
+### Superseded Session 21 413 follow-up rows (2026-10-05, replaced when #167 merged as `1c5add6`)
+
+Replaced Resume clause (verbatim): `Session 21 current: **413 ProblemDetails follow-up** (`fix/413-problem-details-s21`, T2): QA PASS, CR413-1..3 fixed, delta CLEAN on `6b82c764`; full gate PASS after an isolated MPT test-fixture NEXT-key fix, independently QA PASS; PR and final gate on the merged tip in progress (§Open tasks).`
+
+Replaced Open-tasks row (verbatim):
+
+| Defect: approve body 413 without ProblemDetails | implementation + T2 gates closed; final committed-tip gate and PR pending (Session 21, `fix/413-problem-details-s21`; claim stays active until merge) | Catalogued `payload_too_large` for declared-length, approve-body and framework-binding paths; `ProducesProblem(413)` on all six public story routes. Internal fetcher unchanged. Independent QA PASS (88 public OpenAPI error schemas at QA checkpoint); CR413-1..3 fixed, delta CLEAN on `6b82c764`. Full gate initially exposed unrelated MPT NEXT-key environment leakage; explicit test-host NEXT key fixes the fixture without changing assertions or production code. Recovery full gate `TEST rc=0`; independent fixture QA filtered `TEST rc=0`. Final committed-tip gate and CI verdict pending. (from 02.3.2-T1 #159) |
+
+Replaced Session-log row (verbatim):
+
+| 2026-10-05 | Session 21 follow-up: 413 ProblemDetails (`fix/413-problem-details-s21`, T2) | `payload_too_large` catalogue, declared/approve/framework 413 problems and six story OpenAPI schemas; internal fetcher unchanged. Independent QA PASS; code/perf/security reviews, jev triage, CR413-1..3 fixed, delta CLEAN on `6b82c764`. Full gate exposed unrelated short NEXT-key env leakage in MPT host tests; explicit valid test arg follows `8d881202`, assertions unchanged. Recovery full gate `TEST rc=0`; independent fixture QA filtered `TEST rc=0`. Final committed-tip gate and PR pending; no CI verdict claimed. Lane next remains 02.5.3-T1. |
+
+### Superseded Session 21 follow-up state (2026-10-05, after full-gate fixture recovery)
+
+- **Next (backend, start here):** Session 21 current: **413 ProblemDetails follow-up** (`fix/413-problem-details-s21`, T2) implementation + separate QA/reviews fixed, CR413-1..3 fixed; filtered `TEST rc0`; delta review, final full `gate.sh` and PR pending (§Open tasks). **02.3.2-T1** merged as #159 (`5130861`; T3 gates closed). Next backend for this lane remains **02.5.3-T1** fact extractor (check header `Depends on`), then 02.6.1-T2, 02.6.2-T1 revision (02 §10 T113(b)); 02.3.3-T1 replaces the interim fail-closed `NullStoryApprovalGate`. Other backend lane: 13.2.1-T1 legal acceptance PR #163 open (Session 23). 02.3.4-T2 story read models merged as #156 (`cf4625c`, Session 22); web consumers need an `openapi.json` re-pin after the 413 fix lands. The `02-M1-research` gate still needs the 11.2.2-T2 egress test. Claim the backend `gate.sh` lock in `nts-wt/SESSION-CLAIMS.md` first.
+
+| Defect: approve body 413 without ProblemDetails | implementation + T2 gates closed; final full gate and PR pending (Session 21 follow-up lane, `fix/413-problem-details-s21`; claim stays active until this fix merges) | Catalogued `payload_too_large` ProblemDetails 413 across declared-length, approve-body and framework-binding paths; `ProducesProblem(413)` on all six public story routes. Internal fetcher unchanged. Separate QA PASS (88 public OpenAPI error schemas, none missing ProblemDetails); code and perf+security reviews completed, CR413-1..3 fixed; delta CLEAN on `6b82c764`. BUILD + FORMAT OK and filtered `TEST rc=0`; final full `gate.sh` and CI verdict not yet observed. (from 02.3.2-T1 #159) |
+
+| 2026-10-05 | Session 21 follow-up: 413 ProblemDetails (`fix/413-problem-details-s21`, T2) | Adds the `payload_too_large` 413 catalogue and ProblemDetails for declared-length, approve-body and framework-binding paths, with `ProducesProblem(413)` on all six public story routes; internal fetcher unchanged. Separate QA PASS (88 public OpenAPI error schemas); code and perf+security reviews, one jev triage, CR413-1..3 fixed; delta CLEAN on `6b82c764`. BUILD + FORMAT OK, filtered `TEST rc=0`. Final full `gate.sh` and PR pending; no CI verdict claimed. Next backend for this lane remains 02.5.3-T1. |
+
+### Superseded backend Next bullet (2026-10-05, Session 21 413 follow-up implementation and review fixes)
+
+- **Next (backend, start here):** 13.2.1-T1 legal acceptance: PR #163 open (Session 23; `GET`/`POST /me/legal`, `ILegalAcceptance` gate, owner dialog; unblocks 06.1.2-T1, 06.5.1-T1, 10.7.1-T1, 13.2.1-T2, 10.8.2-T1, 07.1.2-T1 and the 02.8.3-T2 legal gate). **02.3.2-T1** merged as #159 (`5130861`; CI-01 billing refusal, owner treats as pass; local full `gate.sh` `GATE_RC=0` on `e450682`; T3 gates closed). Next backend for this lane: **02.5.3-T1** fact extractor (check header `Depends on`), then 02.6.1-T2, 02.6.2-T1 revision (02 §10 T113(b)); 02.3.3-T1 replaces the interim fail-closed `NullStoryApprovalGate`. 02.3.4-T2 story read models merged as #156 (`cf4625c`, Session 22; CI refused for billing: CI-01, owner treats as pass; local full `gate.sh` `GATE_RC=0`; unblocks web 10.5.2-T1/10.5.3-T1/10.5.4-T1 after an `openapi.json` re-pin, and 02.8.2-T1). The `02-M1-research` gate still needs the 11.2.2-T2 egress test. Claim the backend `gate.sh` lock in `nts-wt/SESSION-CLAIMS.md` first.
+### Superseded Session 24 PR-open Resume clause (2026-10-05, replaced when #165 merged as `59b2239`)
+
+Replaced text (verbatim): `02.5.6-T1 similarity scorer + corpus provider + approval guard: PR #165 open (Session 24; generation step 6 now stores `similarity_score` + `audit_report.similarity`; `SimilarityApprovalGuard` gets its approve caller when 02.3.3-T1 replaces the interim `NullStoryApprovalGate` (order row 5, T31); edit re-score stays with 02.3.1-T1; unblocks 02.5.6-T2, 02.8.2-T1, 02.5.3-T2).`
+
+### Superseded Session 24 approval hand-over (2026-10-05, after #159 and #161)
+
+Replaced Session 24 Resume clause (verbatim): `02.5.6-T1 similarity scorer + corpus provider + approval guard: PR open (Session 24; generation step 6 now stores `similarity_score` + `audit_report.similarity`; 02.3.2-T1 wires `SimilarityApprovalGuard` for the 409, edit re-score stays with 02.3.1-T1; unblocks 02.5.6-T2, 02.8.2-T1, 02.5.3-T2).`
+
+The merged 02.3.2-T1 §Notes T31/R2 delegates the real similarity sub-check to 02.3.3-T1's `IStoryApprovalGate`; the interim gate performs no comparison. Session 24's current STATUS/task Notes now name that owner. Earlier backend Next lines are already preserved in the Session 21 entries below.
+### Superseded Session 23 backend Next sentence (2026-10-05, replaced when #163 merged as `6c17462`)
+
+Replaced text (verbatim): 13.2.1-T1 legal acceptance: PR #163 open (Session 23; `GET`/`POST /me/legal`, `ILegalAcceptance` gate, owner dialog; unblocks 06.1.2-T1, 06.5.1-T1, 10.7.1-T1, 13.2.1-T2, 10.8.2-T1, 07.1.2-T1 and the 02.8.3-T2 legal gate).
+
 ### Superseded Session 25 Web next part, 10.5.2-T1 row status and 10 CR-48 hand-over line (2026-10-05, replaced when #160 merged as `d30caaf`)
 
 Replaced text (verbatim): `→ **10.5.2-T1** new episode + generate + live state in a PR from `feature/10.5.2-T1-s25` (Session 25; `/series/:id/episodes/new`, `web/openapi.json` re-pinned to `develop` `0778953`, deliberately before #159 because of the backend approve 413 defect (§Open tasks), new `story` i18n scope)` (Web next); `in review (PR from `feature/10.5.2-T1-s25`, Session 25); T2 gates closed (QA, code review, perf+security review, delta); local `web.yml` steps + `legal:gen:check`: see the PR` (Open-tasks row status); hand-over line `- **10 CR-48 (from 10.2.4-T1):** `web/e2e/realtime.spec.ts` is written by **10.5.2-T1** (no `/login` or episode page before 10.3.3-T1/10.5.2-T1): one ticket per connect attempt in the network log, WebSockets-only with no `/negotiate`, no token/ticket in console/requests/storage after a reconnect (allow Chromium's own `WebSocket connection to … failed` line on a failed upgrade), one reconnect + one refetch per live subscription after `setOffline`, axe clean, no CSP violation (proves `connect-src 'self'` covers same-origin `wss:`); in the 10.5.2-T1 Notes. **Plan 11 deploy (no task file edited):** the production load balancer/CDN must not log the `/hubs/episodes` query string (single-use 60 s ticket; the nginx guards cover dev/compose only).`

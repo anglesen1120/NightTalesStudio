@@ -238,9 +238,11 @@ public static class SecurityHeadersExtensions
 
         if (context.Request.ContentLength is { } declared && declared > limit)
         {
-            // Refused before the handler and before any body byte is read: no ProblemDetails (the SPA maps
-            // 413 generically, 10 D9), no allocation proportional to the refused body.
-            context.Response.StatusCode = StatusCodes.Status413PayloadTooLarge;
+            // Refuse before any body byte is read, with a small catalogued problem (10 D9).
+            // Executing the result preserves the earlier CORS/hardening middleware's response headers.
+            await ProblemDetailsWriter.ToProblem(
+                [ProblemDetailsWriter.PayloadTooLargeError],
+                context).ExecuteAsync(context).ConfigureAwait(false);
 
             return;
         }

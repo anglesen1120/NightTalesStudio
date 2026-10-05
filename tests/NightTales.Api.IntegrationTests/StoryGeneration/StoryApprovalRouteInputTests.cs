@@ -131,6 +131,13 @@ public sealed class StoryApprovalRouteInputTests(TestDatabase database) : Integr
         using var response = await client.SendAsync(request, Ct);
 
         response.StatusCode.ShouldBe(HttpStatusCode.RequestEntityTooLarge, await response.Content.ReadAsStringAsync(Ct));
+        response.Content.Headers.ContentType.ShouldNotBeNull().MediaType.ShouldBe("application/problem+json");
+        await AssertProblemCodeAsync(response, "payload_too_large");
+        using var problem = JsonDocument.Parse(await response.Content.ReadAsStringAsync(Ct));
+        problem.RootElement.GetProperty("type").GetString().ShouldBe(ErrorCatalogue.ProblemType("payload_too_large"));
+        problem.RootElement.GetProperty("title").GetString().ShouldNotBeNullOrWhiteSpace();
+        problem.RootElement.GetProperty("status").GetInt32().ShouldBe(413);
+        problem.RootElement.GetProperty("traceId").GetString().ShouldNotBeNullOrWhiteSpace();
         AssertUnchanged(world);
     }
 

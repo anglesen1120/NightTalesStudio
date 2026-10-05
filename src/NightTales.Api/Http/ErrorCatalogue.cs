@@ -182,6 +182,9 @@ public static class ErrorCatalogue
             [ErrorCodes.SettingConflict] = StatusCodes.Status412PreconditionFailed,
             [ErrorCodes.PublicationConflict] = StatusCodes.Status412PreconditionFailed,
 
+            // 413
+            [ErrorCodes.PayloadTooLarge] = StatusCodes.Status413PayloadTooLarge,
+
             // 422
             [ErrorCodes.IdempotencyKeyReused] = StatusCodes.Status422UnprocessableEntity,
 

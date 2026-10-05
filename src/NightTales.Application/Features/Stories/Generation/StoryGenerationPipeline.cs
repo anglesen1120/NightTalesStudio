@@ -1,3 +1,4 @@
+using System.Data.Common;
 using System.Diagnostics;
 using System.Text.Encodings.Web;
 using System.Text.Json;
@@ -9,6 +10,7 @@ using Microsoft.Extensions.Logging;
 using NightTales.Application.Abstractions.Moderation;
 using NightTales.Application.Abstractions.Prompts;
 using NightTales.Application.Abstractions.Research;
+using NightTales.Application.Abstractions.Similarity;
 using NightTales.Application.Abstractions.Text;
 using NightTales.Application.Abstractions.Usage;
 using NightTales.Application.Abstractions.Persistence;
@@ -27,6 +29,7 @@ using NightTales.Domain.Series;
 using NightTales.Domain.Stories.Generation;
 using NightTales.Domain.Stories.Quality;
 using NightTales.Domain.Stories.Review;
+using NightTales.Domain.Stories.Similarity;
 
 namespace NightTales.Application.Features.Stories.Generation;
 
@@ -44,8 +47,7 @@ namespace NightTales.Application.Features.Stories.Generation;
 /// </para>
 /// <para>
 /// <b>Hand-overs.</b> Step 5 (revision + review #2) belongs to 02.6.2-T1: it is inserted in <c>ReviewAsync</c> where the
-/// blocking-and-objective issue count is taken (see <c>02.6.2-T1</c> marker). Step 6's scorer belongs to 02.5.6-T1: it
-/// replaces the null score in <c>BuildAudit</c> (marker <c>02.5.6-T1</c>).
+/// blocking-and-objective issue count is taken (see <c>02.6.2-T1</c> marker).
 /// </para>
 /// </remarks>
 public sealed partial class StoryGenerationPipeline(
@@ -62,6 +64,8 @@ public sealed partial class StoryGenerationPipeline(
     StoryQualityChecker checker,
     StoryJobOptions jobOptions,
     StoryReviewOptions reviewOptions,
+    ISimilarityCorpusProvider similarityCorpus,
+    SimilaritySettings similaritySettings,
     StoryGenerationMetrics metrics,
     IClock clock,
     ILogger<StoryGenerationPipeline> logger)
@@ -71,6 +75,8 @@ public sealed partial class StoryGenerationPipeline(
 
     /// <summary>The grace the sweeper adds to the deadline before it takes a running run (plan §7.3).</summary>
     public static readonly TimeSpan SweepGrace = TimeSpan.FromSeconds(60);
+
+    private static readonly TimeSpan SimilarityReadTimeout = TimeSpan.FromSeconds(10);
 
     private const string AuditSchemaVersion = "audit.v1";
     private const int MaxRuleIds = 8;
@@ -195,16 +201,18 @@ public sealed partial class StoryGenerationPipeline(
             return;
         }
 
-        // Step 6: scoring. 02.5.6-T1 replaces the null score with SimilarityScorer.Score(...) at BuildAudit.
+        // Step 6: source similarity is advisory; corpus failures do not fail generation.
         if (!await StageAsync(s, GenerationStage.Scoring, ct).ConfigureAwait(false))
         {
             return;
         }
 
+        var similarity = await ScoreSimilarityAsync(s, written, ct).ConfigureAwait(false);
+
         var hasUrlSources = await db.StorySources
             .AnyAsync(source => source.EpisodeId == s.Episode.Id && source.Kind == StorySourceKind.Url, ct)
             .ConfigureAwait(false);
-        var audit = BuildAudit(s, written, review, hasUrlSources);
+        var audit = BuildAudit(s, written, review, hasUrlSources, similarity);
 
         // Step 7: saving.
         if (!await StageAsync(s, GenerationStage.Saving, ct).ConfigureAwait(false))
@@ -232,7 +240,7 @@ public sealed partial class StoryGenerationPipeline(
             parentVersionId: null,
             s.Run.InputFactSheetId,
             audit,
-            similarityScore: null,
+            similarityScore: similarity.Score,
             clock.UtcNow);
         db.StoryVersions.Add(created);
 
@@ -583,7 +591,84 @@ public sealed partial class StoryGenerationPipeline(
         }
     }
 
-    private string BuildAudit(RunState s, Written written, ReviewOutcome review, bool hasUrlSources)
+    private async Task<SimilarityOutcome> ScoreSimilarityAsync(RunState s, Written written, CancellationToken ct)
+    {
+        var options = SimilarityOptions.For(s.Language, similaritySettings);
+        var started = Stopwatch.GetTimestamp();
+        IReadOnlyList<CorpusText> corpus;
+        using var deadline = new CancellationTokenSource(SimilarityReadTimeout);
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, deadline.Token);
+        try
+        {
+            corpus = await similarityCorpus.LoadAsync(s.Episode.Id, s.Language, linked.Token).ConfigureAwait(false);
+            linked.Token.ThrowIfCancellationRequested();
+        }
+        catch (SimilarityCorpusUnavailableException exception)
+        {
+            ct.ThrowIfCancellationRequested();
+            return Unavailable(exception.Reason);
+        }
+        catch (OperationCanceledException) when (deadline.IsCancellationRequested && !ct.IsCancellationRequested)
+        {
+            return Unavailable(SimilarityUnavailableReason.Timeout);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            ct.ThrowIfCancellationRequested();
+            var reason = HasDatabaseCause(exception)
+                ? SimilarityUnavailableReason.DbError
+                : SimilarityUnavailableReason.StorageError;
+            if (reason == SimilarityUnavailableReason.DbError)
+            {
+                LogSimilarityReadError(s.Episode.Id, s.Run.Id, reason, exception.GetType().Name);
+            }
+            else
+            {
+                LogSimilarityUnexpectedError(s.Episode.Id, s.Run.Id, reason, exception.GetType().FullName ?? exception.GetType().Name);
+            }
+
+            return Unavailable(reason);
+        }
+
+        ct.ThrowIfCancellationRequested();
+        var story = NightTales.Domain.Stories.Similarity.StoryText.From(written.Draft);
+        if (!SimilarityScorer.IsScorable(story, corpus, options))
+        {
+            return new SimilarityOutcome(null, SimilarityVerdict.Pass, null);
+        }
+
+        var result = SimilarityScorer.Score(story, corpus, options);
+        ct.ThrowIfCancellationRequested();
+        var stored = (decimal)Math.Round(result.Score, 4, MidpointRounding.AwayFromZero);
+        var duration = Stopwatch.GetElapsedTime(started);
+        metrics.SimilarityScored(result.Corpus, (double)stored, duration.TotalSeconds);
+        var segmentsOverWarn = result.Segments.Count(segment => segment.Share > options.WarnAbove);
+        LogSimilarityScored(s.Episode.Id, s.Run.Id, result.Corpus, result.N, stored, segmentsOverWarn, duration.TotalMilliseconds);
+        return new SimilarityOutcome(stored, SimilarityApprovalGuard.Classify((double)stored, options), result);
+
+        SimilarityOutcome Unavailable(string reason)
+        {
+            metrics.SimilarityUnavailable(reason);
+            LogSimilarityUnavailable(s.Episode.Id, s.Run.Id, reason);
+            s.LocalIssues.Add(IssueNode("similarity_unavailable", "advisory", "objective", SegmentAddress.Meta, string.Empty, string.Empty));
+            return new SimilarityOutcome(null, SimilarityVerdict.Pass, null);
+        }
+    }
+
+    private static bool HasDatabaseCause(Exception exception)
+    {
+        for (Exception? cause = exception; cause is not null; cause = cause.InnerException)
+        {
+            if (cause is DbException)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private string BuildAudit(RunState s, Written written, ReviewOutcome review, bool hasUrlSources, SimilarityOutcome similarity)
     {
         var report = checker.Check(
             written.Draft,
@@ -595,8 +680,8 @@ public sealed partial class StoryGenerationPipeline(
                 s.Sheet.Facts.Count,
                 [],
                 hasUrlSources,
-                null,
-                SimilarityVerdict.Pass,
+                (double?)similarity.Score,
+                similarity.Verdict,
                 s.ModerationCategories,
                 ModelReviewStale: review.Validated is null,
                 null));
@@ -607,16 +692,16 @@ public sealed partial class StoryGenerationPipeline(
             local.Add(IssueNode(issue.Rule, issue.Severity, issue.Kind, issue.Segment, issue.Evidence, issue.RepairDirection));
         }
 
-        // 02.5.6-T1: SimilarityScorer.Score(...) replaces this degrade; the score then comes from the corpus.
-        local.Add(IssueNode("similarity_unavailable", "advisory", "objective", SegmentAddress.Meta, string.Empty, string.Empty));
-
         var root = new JsonObject
         {
             ["schema_version"] = AuditSchemaVersion,
             ["local"] = new JsonObject { ["issues"] = local },
             ["moderation"] = s.ModerationNode ?? new JsonObject { ["stale"] = true, ["unavailable"] = true },
-            ["similarity"] = new JsonObject { ["score"] = null, ["n"] = 0 },
         };
+        if (similarity.Result is { } result)
+        {
+            root["similarity"] = (JsonNode)result.ToAuditSection();
+        }
 
         string json;
         if (review.Validated is { } validated)
@@ -863,6 +948,8 @@ public sealed partial class StoryGenerationPipeline(
         where TEnum : struct, Enum =>
         JsonNamingPolicy.SnakeCaseLower.ConvertName(value.ToString());
 
+    private sealed record SimilarityOutcome(decimal? Score, SimilarityVerdict Verdict, SimilarityResult? Result);
+
     private sealed record Written(StoryContentV1 Draft, string ContentJson, string Model, string PromptVersion);
 
     private sealed record ReviewOutcome(ValidatedReview? Validated, string? Model, string? PromptVersion)
@@ -958,4 +1045,16 @@ public sealed partial class StoryGenerationPipeline(
 
     [LoggerMessage(EventId = 6119, Level = LogLevel.Information, Message = "generation_revision_unavailable runId={RunId} blockingObjectiveIssues={Count}")]
     private partial void LogRevisionUnavailable(Guid runId, int count);
+
+    [LoggerMessage(EventId = 6120, Level = LogLevel.Warning, Message = "similarity_unavailable episodeId={EpisodeId} runId={RunId} reason={Reason}")]
+    private partial void LogSimilarityUnavailable(Guid episodeId, Guid runId, string reason);
+
+    [LoggerMessage(EventId = 6121, Level = LogLevel.Warning, Message = "similarity_read_error episodeId={EpisodeId} runId={RunId} reason={Reason} exceptionType={ExceptionType}")]
+    private partial void LogSimilarityReadError(Guid episodeId, Guid runId, string reason, string exceptionType);
+
+    [LoggerMessage(EventId = 6122, Level = LogLevel.Information, Message = "similarity_scored episodeId={EpisodeId} runId={RunId} corpus={Corpus} n={N} score={Score} segmentsOverWarn={SegmentsOverWarn} durationMs={DurationMs}")]
+    private partial void LogSimilarityScored(Guid episodeId, Guid runId, string corpus, int n, decimal score, int segmentsOverWarn, double durationMs);
+
+    [LoggerMessage(EventId = 6123, Level = LogLevel.Error, Message = "similarity_unexpected_error episodeId={EpisodeId} runId={RunId} reason={Reason} exceptionType={ExceptionType}")]
+    private partial void LogSimilarityUnexpectedError(Guid episodeId, Guid runId, string reason, string exceptionType);
 }

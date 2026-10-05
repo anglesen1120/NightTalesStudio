@@ -337,6 +337,11 @@ public static class ErrorCodes
     /// <summary>Stale <c>pu-</c> ETag on consent/PATCH/cancel (06 CR-9).</summary>
     public const string PublicationConflict = "publication_conflict";
 
+    // ---- 413 ----
+
+    /// <summary>The request body exceeds the public API's byte limit (02.3.2-T1 follow-up, #159).</summary>
+    public const string PayloadTooLarge = "payload_too_large";
+
     // ---- 422, 428, 429 ----
 
     /// <summary>Same <c>Idempotency-Key</c>, different body (09 README D6).</summary>
