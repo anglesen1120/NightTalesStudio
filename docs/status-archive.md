@@ -4,6 +4,10 @@ History moved out of STATUS.md to keep the live file small. The initial archive 
 
 ## Resume-here history (Current/Previous blocks, Next actions)
 
+### Superseded Session 19 close-out wording (2026-10-05)
+
+Replaced text (verbatim): `→ next **10.4.2-T1** series pages in PR (S19, `feature/10.4.2-T1-s19`) → lane next **10.4.3-T1**.` (Resume) and `in review (PR pending, Session 19, `feature/10.4.2-T1-s19`)` (Open tasks row); `Local gate result: see PR.`
+
 ### Superseded Session 19 Web next part (2026-10-05, 10.4.2-T1 in review)
 
 Replaced text (verbatim):
