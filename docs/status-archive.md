@@ -4,6 +4,10 @@ History moved out of STATUS.md to keep the live file small. The initial archive 
 
 ## Resume-here history (Current/Previous blocks, Next actions)
 
+### Superseded Web next wording for 10.3.3-T3 (2026-10-05, replaced when #150 merged, Session 16)
+
+Replaced text (verbatim): `**10.3.3-T3** MFA step + enrolment + recovery codes + re-auth in a PR from `feature/10.3.3-T3-s16` (Session 16; T3 gates closed; real-stack enrolment/MFA sign-in blocked on the backend enrolment token, §Plan 10 hand-overs).` (Web next), `Stage B: 10.3.3-T3 MFA/enrolment/re-auth (in PR, Session 16)` (Progress row) and `in PR (`feature/10.3.3-T3-s16`, Session 16); T3 gates closed;` (Open-tasks row).
+
 ### Superseded Session 19 close-out wording (2026-10-05)
 
 Replaced text (verbatim): `→ next **10.4.2-T1** series pages in PR (S19, `feature/10.4.2-T1-s19`) → lane next **10.4.3-T1**.` (Resume) and `in review (PR pending, Session 19, `feature/10.4.2-T1-s19`)` (Open tasks row); `Local gate result: see PR.`; Resume clause `autopilot tab waits for 10.3.3-T3, 10.4.2-T1 and 02.8.3-T2;`; session-log row `| 2026-10-05 | Session 19 10.4.2-T1 series pages (`feature/10.4.2-T1-s19`, PR pending) | Parallel data + UI agents; gate fix and e2e. T2 gates: QA 3 defects fixed; reviews 7 valid findings fixed; delta regressions fixed. 10 CR-51 records the `autopilot` scope and dialog data additions. Additive merges of `develop`; local gate result: see PR. |`.
