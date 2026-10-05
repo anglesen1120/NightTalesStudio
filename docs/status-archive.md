@@ -4,6 +4,18 @@ History moved out of STATUS.md to keep the live file small. The initial archive 
 
 ## Resume-here history (Current/Previous blocks, Next actions)
 
+### Superseded Session 21 413 follow-up rows (2026-10-05, replaced when #167 merged as `1c5add6`)
+
+Replaced Resume clause (verbatim): `Session 21 current: **413 ProblemDetails follow-up** (`fix/413-problem-details-s21`, T2): QA PASS, CR413-1..3 fixed, delta CLEAN on `6b82c764`; full gate PASS after an isolated MPT test-fixture NEXT-key fix, independently QA PASS; PR and final gate on the merged tip in progress (§Open tasks).`
+
+Replaced Open-tasks row (verbatim):
+
+| Defect: approve body 413 without ProblemDetails | implementation + T2 gates closed; final committed-tip gate and PR pending (Session 21, `fix/413-problem-details-s21`; claim stays active until merge) | Catalogued `payload_too_large` for declared-length, approve-body and framework-binding paths; `ProducesProblem(413)` on all six public story routes. Internal fetcher unchanged. Independent QA PASS (88 public OpenAPI error schemas at QA checkpoint); CR413-1..3 fixed, delta CLEAN on `6b82c764`. Full gate initially exposed unrelated MPT NEXT-key environment leakage; explicit test-host NEXT key fixes the fixture without changing assertions or production code. Recovery full gate `TEST rc=0`; independent fixture QA filtered `TEST rc=0`. Final committed-tip gate and CI verdict pending. (from 02.3.2-T1 #159) |
+
+Replaced Session-log row (verbatim):
+
+| 2026-10-05 | Session 21 follow-up: 413 ProblemDetails (`fix/413-problem-details-s21`, T2) | `payload_too_large` catalogue, declared/approve/framework 413 problems and six story OpenAPI schemas; internal fetcher unchanged. Independent QA PASS; code/perf/security reviews, jev triage, CR413-1..3 fixed, delta CLEAN on `6b82c764`. Full gate exposed unrelated short NEXT-key env leakage in MPT host tests; explicit valid test arg follows `8d881202`, assertions unchanged. Recovery full gate `TEST rc=0`; independent fixture QA filtered `TEST rc=0`. Final committed-tip gate and PR pending; no CI verdict claimed. Lane next remains 02.5.3-T1. |
+
 ### Superseded Session 21 follow-up state (2026-10-05, after full-gate fixture recovery)
 
 - **Next (backend, start here):** Session 21 current: **413 ProblemDetails follow-up** (`fix/413-problem-details-s21`, T2) implementation + separate QA/reviews fixed, CR413-1..3 fixed; filtered `TEST rc0`; delta review, final full `gate.sh` and PR pending (§Open tasks). **02.3.2-T1** merged as #159 (`5130861`; T3 gates closed). Next backend for this lane remains **02.5.3-T1** fact extractor (check header `Depends on`), then 02.6.1-T2, 02.6.2-T1 revision (02 §10 T113(b)); 02.3.3-T1 replaces the interim fail-closed `NullStoryApprovalGate`. Other backend lane: 13.2.1-T1 legal acceptance PR #163 open (Session 23). 02.3.4-T2 story read models merged as #156 (`cf4625c`, Session 22); web consumers need an `openapi.json` re-pin after the 413 fix lands. The `02-M1-research` gate still needs the 11.2.2-T2 egress test. Claim the backend `gate.sh` lock in `nts-wt/SESSION-CLAIMS.md` first.
