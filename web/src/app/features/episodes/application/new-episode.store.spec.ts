@@ -545,6 +545,32 @@ describe('NewEpisodeStore', () => {
     expect(repo.generateCalls[2]?.key).toBe(retryKey);
   });
 
+  it.each([
+    [0, 'running'], [0, 'queued'], [503, 'running'], [503, 'queued'],
+  ])('retry_UnknownOutcome%sThenLiveRun_%s_ThenFailureMintsOneNewIntent', async (status, liveStatus) => {
+    const { store, repo, realtime } = setup();
+    repo.scriptGet(() => Promise.resolve(run({ status: 'failed', errorCode: 'story_invalid_output' })));
+    await settle();
+    await store.create();
+    repo.scriptGenerate(() => rejectAppError(error(status === 0 ? 'network_error' : 'unknown_error', Number(status))));
+    await store.retry();
+    const unknownKey = repo.generateCalls[1]?.key;
+    expect(repo.generateCalls[1]?.intent.isSettled).toBe(false);
+    repo.scriptGet(() => Promise.resolve(run({ status: String(liveStatus) })));
+    realtime.emit(EPISODE_ID);
+    await settle();
+    expect(store.phase()).toBe('generating');
+    expect(repo.generateCalls[1]?.intent.isSettled).toBe(true);
+    repo.scriptGet(() => Promise.resolve(run({ status: 'failed', errorCode: 'story_invalid_output' })));
+    realtime.emit(EPISODE_ID);
+    await settle();
+    expect(store.canRetry()).toBe(true);
+    await Promise.all([store.retry(), store.retry(), store.retry()]);
+    expect(repo.generateCalls).toHaveLength(3);
+    expect(repo.generateCalls[2]?.key).not.toBe(unknownKey);
+    expect(repo.createCalls).toHaveLength(1);
+  });
+
   it('retry_PendingPost_IgnoresPreviousFailureUntilTheSeedingGet', async () => {
     const { store, repo, realtime } = setup();
     repo.scriptGet(() => Promise.resolve(run({ status: 'failed', errorCode: 'story_invalid_output' })));

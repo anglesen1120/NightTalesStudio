@@ -299,6 +299,11 @@ export class NewEpisodeStore {
         this.phaseState.set('failed');
         this.retryAllowed.set(true);
       } else if (run?.status === 'running' || run?.status === 'queued') {
+        // Observing a live run resolves an unknown POST; its later failure is a new-attempt boundary.
+        if (this.generateOutcome === 'unknown') {
+          this.generateOutcome = 'known';
+          this.intent?.settle();
+        }
         this.clearFailure();
         this.phaseState.set('generating');
       }
