@@ -79,9 +79,9 @@
     "next": "Continue"
   },
   "validation": { "required": "Fill in or select this field.", "titleMax": "The series title must be no longer than 120 characters." },
-  "save": { "saved": "Saved", "conflict": "The series changed elsewhere", "changes": "Save changes", "saving": "Saving…" },
-  "archive": { "title": "Archive series?", "confirm": "Archive “{{title}}”? Its data stays readable, but you cannot edit it or create new episodes.", "failed": "The series could not be archived. It has been restored to the list.", "done": "Series archived" },
-  "row": { "open": "Open", "archive": "Archive", "openNamed": "Open series {{title}}", "archiveNamed": "Archive series {{title}}", "autopilotOn": "Autopilot on", "autopilotOff": "Autopilot off" },
+  "save": { "saved": "Saved", "conflict": "The series changed elsewhere", "changes": "Save changes", "saving": "Saving…", "reloaded": "The latest server version was reloaded." },
+  "archive": { "title": "Archive series?", "confirm": "Archive this series? Its data stays readable, but you cannot edit it or create new episodes.", "failed": "The series could not be archived. It has been restored to the list.", "done": "Series archived" },
+  "row": { "open": "Open", "archive": "Archive", "openNamed": "Open series", "archiveNamed": "Archive series", "autopilotOn": "Autopilot on", "autopilotOff": "Autopilot off" },
   "detail": {
     "title": "Series", "subtitle": "One consistent narration and visual style for the whole series.",
     "edit": "Edit series", "tabs": "Series tabs", "overview": "Overview", "autopilot": "Autopilot", "summary": "Series configuration",

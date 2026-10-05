@@ -64,7 +64,9 @@ export class SeriesListPage implements OnInit {
       const ref = this.confirmDialog.confirm({
         titleKey: 'series.archive.title',
         bodyKey: 'series.archive.confirm',
-        bodyParams: { title: item.title },
+        // Plain text, never a Transloco param: Transloco re-interpolates substituted values, so a
+        // title like "{{title}}" would loop the transpiler (PS1).
+        subject: item.title,
         confirmLabelKey: 'series.row.archive',
         destructive: true,
       }, { viewContainerRef: this.viewContainerRef });

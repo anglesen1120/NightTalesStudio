@@ -27,6 +27,8 @@ export type SeriesStepControl = 'title' | 'topic' | 'language' | 'aspect' | 'voi
 export type SubmitOutcome =
   | { readonly kind: 'created'; readonly id: string }
   | { readonly kind: 'saved' }
+  /** The form adopted the server state after `reload`: the editor stays open, the values are replaced. */
+  | { readonly kind: 'reloaded' }
   | { readonly kind: 'conflict' }
   | { readonly kind: 'invalid'; readonly step: SeriesStep }
   | { readonly kind: 'failed' };
@@ -115,6 +117,11 @@ export class SeriesEditorStore {
   private etag: string | null = null;
   private storedSeries: Series | null = null;
   private inFlight: Promise<SubmitOutcome> | null = null;
+  private templatesInFlight: { readonly topic: Topic; readonly promise: Promise<void> } | null = null;
+  /** The topic of the list `templates()` currently shows after a successful read (`null`: nothing or an error). */
+  private loadedTemplatesTopic: Topic | null = null;
+  /** The language of the list `voices()` currently shows (mirrors `VoiceStepStore`'s last successful read). */
+  private loadedVoicesLanguage: Language | null = null;
 
   readonly mode = signal<SeriesMode>('create');
   readonly seriesId = signal<string | null>(null);
@@ -215,6 +222,9 @@ export class SeriesEditorStore {
     this.templatesError.set(null);
     this.inactiveTemplateId.set(null);
     this.templateCache.clear();
+    this.loadedTemplatesTopic = null;
+    this.loadedVoicesLanguage = null;
+    this.templatesInFlight = null;
     this.styleHints.clear();
     this.templateSeq += 1;
     this.etag = null;
@@ -250,19 +260,26 @@ export class SeriesEditorStore {
   async goNext(): Promise<void> {
     const step = this.step();
     if (step === 4 || !this.stepValidity()[step]) return;
-    const next = NEXT_STEP[step];
-    this.step.set(next);
-    await this.enterStep(next);
+    await this.goToStep(NEXT_STEP[step]);
   }
 
   goBack(): void {
-    this.step.set(PREVIOUS_STEP[this.step()]);
+    void this.goToStep(PREVIOUS_STEP[this.step()]);
   }
 
   /** Jumps to a step the user may already reach: never past the first invalid one. */
   async goTo(step: SeriesStep): Promise<void> {
     const firstInvalid = this.firstInvalidStep();
     if (firstInvalid !== null && step > firstInvalid) return;
+    await this.goToStep(step);
+  }
+
+  /**
+   * The one way a step changes: sets the current step, then runs that step's enter effects (its catalog read).
+   * Programmatic jumps — an invalid submit or a server `validation_failed` — take this same path, so landing on
+   * step 3 or 4 loads voices or templates exactly like a user click.
+   */
+  private async goToStep(step: SeriesStep): Promise<void> {
     this.step.set(step);
     await this.enterStep(step);
   }
@@ -337,6 +354,9 @@ export class SeriesEditorStore {
     }
     const id = this.seriesId();
     if (id === null) return { kind: 'failed' };
+    // "Save mine" diffs the entered values against the row the user edited, never against the fresh row the
+    // re-read is about to return: another writer's changes stay untouched (the patch carries only the edits).
+    const userEditsBaseline = this.storedSeries;
     const sessionGeneration = this.session.generation();
     const result = await this.repository.get(id);
     if (sessionGeneration !== this.session.generation() || id !== this.seriesId()) return { kind: 'failed' };
@@ -349,10 +369,11 @@ export class SeriesEditorStore {
       this.conflictCode.set(null);
       this.conflictTraceId.set(null);
       this.applyEntity(result.value);
-      return { kind: 'saved' };
+      return { kind: 'reloaded' };
     }
-    // Save mine as new version: the server state becomes the diff baseline, its fresh tag the If-Match value, and the
-    // values the user typed stay exactly as they are.
+    // Save mine as new version: the server state becomes the row the committed patch merges onto and its fresh
+    // tag the If-Match value; the patch itself still diffs the form against `userEditsBaseline`, so the values
+    // the user typed are the only members sent.
     this.etag = result.value.etag;
     this.storedSeries = { ...result.value };
     this.conflict.set(false);
@@ -360,7 +381,7 @@ export class SeriesEditorStore {
     this.conflictTraceId.set(null);
     this.saving.set(true);
     try {
-      return await this.saveSeries();
+      return await this.saveSeries(userEditsBaseline);
     } finally {
       this.saving.set(false);
     }
@@ -371,14 +392,17 @@ export class SeriesEditorStore {
     clearServerErrors(form);
     this.error.set(null);
     if (form.invalid) {
+      // The errors must render without waiting for a blur: every control is touched, the jump goes through the
+      // same step-change path as Next/Back, and the page focuses the step's first control.
+      form.markAllAsTouched();
       const step = this.firstInvalidStep() ?? 1;
-      this.step.set(step);
+      await this.goToStep(step);
       this.requestFocus(STEP_CONTROLS[step][0] ?? 'title');
       return { kind: 'invalid', step };
     }
     this.saving.set(true);
     try {
-      return this.mode() === 'create' ? await this.createSeries() : await this.saveSeries();
+      return this.mode() === 'create' ? await this.createSeries() : await this.saveSeries(this.storedSeries);
     } finally {
       this.saving.set(false);
     }
@@ -408,7 +432,12 @@ export class SeriesEditorStore {
     return { kind: 'created', id: result.value.id };
   }
 
-  private async saveSeries(): Promise<SubmitOutcome> {
+  /**
+   * Sends the diff of `diffBaseline` (the row the user edited: the stored entity normally, the pre-conflict row
+   * after "Save mine as new version" re-read the fresh one). `storedSeries` stays the merge target the committed
+   * patch is folded into — after a conflict that is the server row, so another writer's fields survive.
+   */
+  private async saveSeries(diffBaseline: Series | null): Promise<SubmitOutcome> {
     const id = this.seriesId();
     const etag = this.etag;
     if (id === null || etag === null) {
@@ -417,7 +446,7 @@ export class SeriesEditorStore {
       this.error.set({ code: 'if_match_required', status: 428, kind: 'client_bug', fieldErrors: {} });
       return { kind: 'failed' };
     }
-    const patch = this.buildPatch();
+    const patch = this.buildPatch(diffBaseline);
     if (Object.keys(patch).length === 0) {
       this.markClean();
       return { kind: 'saved' };
@@ -441,9 +470,8 @@ export class SeriesEditorStore {
     return { kind: 'saved' };
   }
 
-  /** Only the members that differ from the loaded entity; `language` is immutable and a preset is not editable in P. */
-  private buildPatch(): MutableSeriesPatch {
-    const stored = this.storedSeries;
+  /** Only the members that differ from `stored`; `language` is immutable and a preset is not editable in P. */
+  private buildPatch(stored: Series | null): MutableSeriesPatch {
     const patch: MutableSeriesPatch = {};
     if (stored === null) return patch;
     const current = this.form.getRawValue();
@@ -459,7 +487,7 @@ export class SeriesEditorStore {
   }
 
   /** The one place a failed response becomes an outcome and a signal (task §Failure handling). */
-  private failedOutcome(error: AppError): SubmitOutcome {
+  private async failedOutcome(error: AppError): Promise<SubmitOutcome> {
     if (error.kind === 'conflict') {
       // 412 `series_conflict` and 409 `concurrency_conflict`: the dialog decides, the entered values stay (D9).
       this.conflict.set(true);
@@ -481,17 +509,19 @@ export class SeriesEditorStore {
       case 'voice_language_mismatch':
         this.form.controls.voiceId.setValue(null);
         this.voiceStep.clear();
-        this.step.set(3);
-        // Step 3 is where the user lands, so its catalog is fetched — the same rule as entering it.
-        void this.loadVoices();
+        // The shown list is stale now: the mismatch is a fresh catalog problem, so the jump fetches step 3 again
+        // instead of reusing the loaded language (the same rule an explicit retry follows).
+        this.loadedVoicesLanguage = null;
+        await this.goToStep(3);
         this.requestFocus('voiceId');
         this.error.set(error);
         return { kind: 'failed' };
       case 'validation_failed': {
-        const unmapped = bindFieldErrors(this.form, error);
-        const step = unmapped.length > 0 ? (this.stepOfPointer(unmapped[0]) ?? this.firstInvalidStep() ?? 1) : (this.firstInvalidStep() ?? 1);
+        // markTouched: the bound control's mat-error must render without waiting for a blur.
+        const unmapped = bindFieldErrors(this.form, error, { markTouched: true });
+        const step = this.stepForFieldErrors(error, unmapped);
         if (unmapped.length > 0) this.error.set(error);
-        this.step.set(step);
+        await this.goToStep(step);
         this.requestFocus(STEP_CONTROLS[step][0] ?? 'title');
         return { kind: 'invalid', step };
       }
@@ -501,6 +531,16 @@ export class SeriesEditorStore {
         this.error.set(error);
         return { kind: 'failed' };
     }
+  }
+
+  /** The step a `validation_failed` lands on: the first pointer's own step (a mapped pointer names the control it
+   * was bound to; an unmapped one may still match a step's control name), else the first locally invalid step. */
+  private stepForFieldErrors(error: AppError, unmapped: readonly string[]): SeriesStep {
+    for (const pointer of [...Object.keys(error.fieldErrors), ...unmapped]) {
+      const step = this.stepOfPointer(pointer);
+      if (step !== null) return step;
+    }
+    return this.firstInvalidStep() ?? 1;
   }
 
   private stepOfPointer(pointer: string | undefined): SeriesStep | null {
@@ -530,18 +570,47 @@ export class SeriesEditorStore {
     if (step === 4) await this.loadTemplates();
   }
 
-  /** One voices request per language change; the picker's selection is restored if the catalog carries it. */
+  /**
+   * The step-3 catalog read: one request per language change (the picker keeps its last good list while an
+   * `en` load is in flight). A step re-entry re-uses the list already showing for the same language — a load
+   * still in flight is joined, a finished-and-shown one is not re-requested; after an error the next entry is
+   * the retry.
+   */
   private async loadVoices(): Promise<void> {
     const language = this.form.controls.language.value;
-    await this.voiceStep.load(language);
+    const voicesLoaded = language === this.loadedVoicesLanguage && !this.voiceStep.loading() && this.voiceStep.error() === null;
+    if (!voicesLoaded) {
+      await this.voiceStep.load(language);
+      if (!this.voiceStep.loading() && this.voiceStep.error() === null) this.loadedVoicesLanguage = language;
+    }
     if (language !== this.form.controls.language.value) return;
     const selected = this.form.controls.voiceId.value;
     if (selected !== null) this.voiceStep.select(selected);
   }
 
-  /** One templates request per topic change; a superseded answer is dropped and the current list stays visible. */
+  /**
+   * The step-4 catalog read: the request goes out only when the list the editor would show is not already the
+   * current topic's — an in-flight request for it is joined, a finished-and-shown one is not re-requested, and a
+   * failed read counts as not loaded so the next entry is the retry.
+   */
   private async loadTemplates(): Promise<void> {
     const topic = this.form.controls.topic.value;
+    if (topic === this.loadedTemplatesTopic && !this.loadingTemplates() && this.templatesError() === null) return;
+    if (this.templatesInFlight?.topic === topic) {
+      await this.templatesInFlight.promise;
+      return;
+    }
+    const promise = this.fetchTemplates(topic);
+    this.templatesInFlight = { topic, promise };
+    try {
+      await promise;
+    } finally {
+      if (this.templatesInFlight?.promise === promise) this.templatesInFlight = null;
+    }
+  }
+
+  /** One templates request for `topic`; a superseded answer is dropped and the current list stays visible. */
+  private async fetchTemplates(topic: Topic): Promise<void> {
     const request = ++this.templateSeq;
     const sessionGeneration = this.session.generation();
     const cached = this.templateCache.get(topic);
@@ -549,7 +618,7 @@ export class SeriesEditorStore {
     this.templatesError.set(null);
     const result = await this.catalog.styleTemplates(topic, cached?.etag ?? null);
     if (request !== this.templateSeq || topic !== this.form.controls.topic.value || sessionGeneration !== this.session.generation()) {
-      if (request === this.templateSeq && topic === this.form.controls.topic.value) this.loadingTemplates.set(false);
+      if (request === this.templateSeq) this.loadingTemplates.set(false);
       return;
     }
     this.loadingTemplates.set(false);
@@ -559,6 +628,7 @@ export class SeriesEditorStore {
     }
     if (result.value.kind === 'notModified') {
       if (cached !== undefined) this.templates.set(cached.templates);
+      this.loadedTemplatesTopic = topic;
       this.finishTemplateList(topic);
       return;
     }
@@ -566,6 +636,7 @@ export class SeriesEditorStore {
     for (const template of result.value.templates) this.styleHints.set(template.id, template.topicHint);
     this.templateCache.set(topic, { etag: result.value.etag, templates });
     this.templates.set(templates);
+    this.loadedTemplatesTopic = topic;
     this.finishTemplateList(topic);
   }
 

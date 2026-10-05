@@ -7,6 +7,7 @@ import {
   ERRORS_COPY,
   SERIES_COPY,
   VOICES_VI,
+  liveRegion,
   seriesDetail,
   stubCatalog,
   stubSeriesApi,
@@ -65,11 +66,12 @@ async function openEdit(page: Page, stored: SeriesDto, apiOptions: SeriesApiStub
 }
 
 /** Loads a stale edit session, edits the title and submits into the 412 conflict dialog. */
-async function openConflict(page: Page): Promise<EditHarness> {
+async function openConflict(page: Page, apiOptions: SeriesApiStubOptions = {}): Promise<EditHarness> {
   const harness = await openEdit(page, STORED_SERIES, {
     detailAfterConflict: FRESH_SERIES,
     patchStaleEtag: STORED_ETAG,
     patchFreshEtag: '"v3"',
+    ...apiOptions,
   });
   await titleInput(page, 'vi').fill('Bản của tôi');
   await headerSaveButton(page, 'vi').click();
@@ -119,7 +121,7 @@ test('Edit_TopicLocked_WhenAutopilotEnabled: the topic is disabled with the auto
   await expect(main(page).getByRole('link', { name: L.detail.autopilot })).toBeVisible();
 });
 
-test('StaleIfMatch_ConflictDialog_ReloadLatest: the dialog keeps the entered values, reload replaces them with the server state', async ({ page }) => {
+test('StaleIfMatch_ConflictDialog_ReloadLatest: the dialog keeps the entered values, reload replaces them with the server state and stays on /edit', async ({ page }) => {
   const { api } = await openConflict(page);
 
   // The dialog names the conflict, the entered value is not lost before the choice, and 412 is never retried.
@@ -130,10 +132,40 @@ test('StaleIfMatch_ConflictDialog_ReloadLatest: the dialog keeps the entered val
   expect(api.patches[0]?.headers()['if-match']).toBe(STORED_ETAG);
 
   await conflictDialog(page).getByRole('button', { name: ERR.conflict.reload }).click();
-  await expect(page).toHaveURL(new RegExp(`/series/${STORED_SERIES.id}$`));
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText(FRESH_TITLE);
+  // "Load latest" keeps the editor open and swaps the form to the server row — announced, not a "saved" snackbar.
+  await expect(page).toHaveURL(/\/edit$/);
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText(L.editor.editTitle);
+  await expect(titleInput(page, 'vi')).toHaveValue(FRESH_TITLE);
+  await expect(liveRegion(page, L.save.reloaded).first()).toContainText(L.save.reloaded);
+  await expect(page.getByText(L.save.saved, { exact: true })).toHaveCount(0);
   expect(api.detailGets.length, 'the initial load plus the conflict re-read').toBeGreaterThanOrEqual(2);
   expect(api.patches, 'a 412 is never auto-retried').toHaveLength(1);
+});
+
+test('StaleIfMatch_ConflictAfterConflict: save-as-new refused a second time reopens the dialog with the values kept', async ({ page }) => {
+  // Two consecutive stale etags: the first PATCH is refused, the re-read answers FRESH_ETAG, and the save-as-new
+  // PATCH carrying it is refused too — then the second re-read answers v3 and the retry succeeds.
+  const second = seriesDetail({ title: 'Series máy chủ 2', etag: '"v3"', voiceId: 'v-vi-1', styleTemplateId: 't-dark-folklore-ink' });
+  const { api } = await openConflict(page, {
+    detailAfterConflict: [FRESH_SERIES, second],
+    patchStaleEtag: [STORED_ETAG, FRESH_ETAG],
+    patchFreshEtag: '"v4"',
+  });
+
+  await conflictDialog(page).getByRole('button', { name: ERR.conflict.saveAsNew }).click();
+  // The second refusal is not dropped: the dialog reopens while the entered values stay untouched.
+  await expect(conflictDialog(page)).toBeVisible();
+  await expect(conflictDialog(page)).toContainText(ERR.conflict.title);
+  await expect(titleInput(page, 'vi')).toHaveValue('Bản của tôi');
+  await expect.poll(() => api.patches.length).toBe(2);
+  expect(api.patches[1]?.headers()['if-match']).toBe(FRESH_ETAG);
+
+  await conflictDialog(page).getByRole('button', { name: ERR.conflict.saveAsNew }).click();
+  await expect.poll(() => api.patches.length).toBe(3);
+  expect(api.patches[2]?.headers()['if-match']).toBe('"v3"');
+  expect(api.patches[2]?.postDataJSON()).toEqual({ title: 'Bản của tôi' });
+
+  await expect(page).toHaveURL(new RegExp(`/series/${STORED_SERIES.id}$`));
 });
 
 test('StaleIfMatch_SaveMineAsNewVersion: the second PATCH carries the freshly read ETag', async ({ page }) => {

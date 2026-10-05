@@ -81,7 +81,7 @@ export interface SeriesCopy {
   readonly language: { readonly vi: string; readonly en: string; readonly locked: string };
   readonly editor: { readonly subtitle: string; readonly editTitle: string; readonly editSubtitle: string; readonly next: string };
   readonly validation: { readonly required: string; readonly titleMax: string };
-  readonly save: { readonly saved: string; readonly conflict: string; readonly changes: string; readonly saving: string };
+  readonly save: { readonly saved: string; readonly reloaded: string; readonly conflict: string; readonly changes: string; readonly saving: string };
   readonly archive: { readonly title: string; readonly confirm: string; readonly failed: string; readonly done: string };
   readonly row: { readonly open: string; readonly archive: string; readonly openNamed: string; readonly archiveNamed: string; readonly autopilotOn: string; readonly autopilotOff: string };
   readonly style: Readonly<Record<string, string | { readonly label: string; readonly hint: string }>> & {
@@ -306,12 +306,16 @@ export interface SeriesApiStubOptions {
   readonly listSlowDelayMs?: number;
   /** The entity `GET /series/{id}` answers (default: `seriesDetail()`). */
   readonly detail?: SeriesDto;
-  /** The entity `GET /series/{id}` answers once a `PATCH` was refused with 412 (the conflict re-read). */
-  readonly detailAfterConflict?: SeriesDto;
-  /** An `If-Match` equal to this value is refused with 412 `series_conflict` (default: never). */
-  readonly patchStaleEtag?: string;
+  /** The entity `GET /series/{id}` answers once a `PATCH` was refused with 412 (the conflict re-read). An array
+   * serves one row per consecutive conflict: the first entry after the first refusal, the next entry after the
+   * next one, and the last entry repeats once it is exhausted (another conflict keeps serving it). */
+  readonly detailAfterConflict?: SeriesDto | readonly SeriesDto[];
+  /** An `If-Match` equal to one of these values is refused with 412 `series_conflict` (default: never). */
+  readonly patchStaleEtag?: string | readonly string[];
   /** The `ETag` a successful `PATCH` commits (default `'"v2"'`). */
   readonly patchFreshEtag?: string;
+  /** `POST /series` answers this problem instead of 201 (e.g. a 400 `validation_failed`). */
+  readonly createFailure?: { readonly status: number; readonly code: string; readonly extra?: Record<string, unknown> };
   /** `POST /series` answers 201 with this id (default `SERIES_ID_2`). */
   readonly createId?: string;
   /** `DELETE /series/{id}` status (default 204; e.g. 500 to fail the archive). */
@@ -345,15 +349,20 @@ export async function stubSeriesApi(page: Page, options: SeriesApiStubOptions = 
   const pageSize = options.listPageSize ?? SERIES_LIST_PAGE_SIZE;
   const slowCursor = options.listSlowCursor ?? 'c2';
   const slowDelayMs = options.listSlowDelayMs ?? 400;
-  const staleEtag = options.patchStaleEtag ?? null;
+  const staleEtags = new Set(options.patchStaleEtag === undefined ? [] : Array.isArray(options.patchStaleEtag) ? options.patchStaleEtag : [options.patchStaleEtag]);
   const freshEtag = options.patchFreshEtag ?? '"v2"';
+  const afterConflict = options.detailAfterConflict === undefined ? undefined : Array.isArray(options.detailAfterConflict) ? options.detailAfterConflict : [options.detailAfterConflict];
   let detail = options.detail ?? seriesDetail();
-  let conflicted = false;
+  let conflicts = 0;
 
   await page.route(/\/api\/v1\/series(\?|$)/, async (route) => {
     const request = route.request();
     if (request.method() === 'POST') {
       creates.push(request);
+      const failure = options.createFailure;
+      if (failure !== undefined) {
+        return fulfilJson(route, failure.status, problem(failure.status, failure.code, failure.extra), { 'Content-Type': 'application/problem+json' });
+      }
       const id = options.createId ?? SERIES_ID_2;
       return fulfilJson(route, 201, { id }, { ETag: '"created"' });
     }
@@ -380,14 +389,16 @@ export async function stubSeriesApi(page: Page, options: SeriesApiStubOptions = 
     const method = request.method();
     if (method === 'GET') {
       detailGets.push(request);
-      if (conflicted && options.detailAfterConflict !== undefined) detail = options.detailAfterConflict;
+      if (conflicts > 0 && afterConflict !== undefined) {
+        detail = afterConflict[Math.min(conflicts - 1, afterConflict.length - 1)]!;
+      }
       return fulfilJson(route, 200, detail, { ETag: detail.etag });
     }
     if (method === 'PATCH') {
       patches.push(request);
       const ifMatch = request.headers()['if-match'] ?? null;
-      if (staleEtag !== null && ifMatch === staleEtag) {
-        conflicted = true;
+      if (ifMatch !== null && staleEtags.has(ifMatch)) {
+        conflicts += 1;
         return fulfilJson(route, 412, problem(412, 'series_conflict'), { 'Content-Type': 'application/problem+json' });
       }
       detail = { ...detail, etag: freshEtag };

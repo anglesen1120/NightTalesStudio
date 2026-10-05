@@ -11,7 +11,7 @@ import { MatSelectModule } from '@angular/material/select';
 import { MatSnackBar } from '@angular/material/snack-bar';
 import { TranslocoPipe, TranslocoService, provideTranslocoScope } from '@jsverse/transloco';
 import { combineLatest, firstValueFrom } from 'rxjs';
-import { AppErrorMapper } from '@core/errors';
+import { AppErrorMapper, type ServerControlError } from '@core/errors';
 import { SessionStore } from '@core/session';
 import { CharCounter, ConflictDialog, EmptyState, ErrorState, FormErrorAlert, LoadingState, PageHeader, RetryCountdown, Stepper, type StepperStep } from '@shared/ui';
 import { SeriesEditorStore, type SubmitOutcome } from '../application/series-editor.store';
@@ -141,6 +141,11 @@ export class SeriesEditorPage {
     this.value();
     const control = this.store.form.controls[name];
     if (!control.invalid || (!control.touched && !control.dirty)) return null;
+    // The server-bound message wins (bindFieldErrors stores it on the control); `store.error()` still answers for
+    // a mapped pointer only when the payload carried no binding the control could take (defensive — bound
+    // pointers land in `server` first).
+    const server = control.getError('server') as ServerControlError | undefined;
+    if (server !== undefined && server.messageKeys.length > 0) return server.messageKeys[0] ?? null;
     const error = this.store.error();
     if (error !== null && (error.fieldErrors[name]?.length ?? 0) > 0) return this.mapper.fieldMessageKey(error, name);
     return name === 'title' && control.hasError('maxlength') ? 'series.validation.titleMax' : 'series.validation.required';
@@ -167,6 +172,14 @@ export class SeriesEditorPage {
     const id = this.store.seriesId();
     const mode = this.store.mode();
     if (outcome.kind === 'created') { await this.router.navigate(['/series', outcome.id]); return; }
+    if (outcome.kind === 'reloaded') {
+      // "Load latest": the editor stays on /edit with the form replaced by the server state — announced, not a
+      // "saved" snackbar, and no navigation.
+      const text = await firstValueFrom(this.transloco.selectTranslate<string>('save.reloaded', {}, 'series'));
+      if (this.destroyRef.destroyed || generation !== this.session.generation() || id !== this.store.seriesId() || mode !== this.store.mode()) return;
+      void this.announcer.announce(text, 'polite').catch(() => undefined);
+      return;
+    }
     if (outcome.kind === 'saved') {
       const text = await firstValueFrom(this.transloco.selectTranslate<string>('save.saved', {}, 'series'));
       if (this.destroyRef.destroyed || generation !== this.session.generation() || id !== this.store.seriesId() || mode !== this.store.mode()) return;
@@ -175,21 +188,27 @@ export class SeriesEditorPage {
       if (id !== null) await this.router.navigate(['/series', id]);
       return;
     }
-    if (outcome.kind !== 'conflict' || this.conflictOpen) return;
-    this.conflictOpen = true;
-    try {
-      const ref = this.conflictDialog.open({
-        messageKey: this.store.conflictCode() === 'concurrency_conflict' ? 'errors.concurrency_conflict' : 'series.save.conflict',
-        saveAsNewLabel: 'errors.conflict.saveAsNew',
-        traceId: this.store.conflictTraceId(),
-      }, { viewContainerRef: this.viewContainerRef });
-      // `afterClosed()` types `undefined` (the dialog closed without a choice); `disableClose: true` makes that
-      // unreachable, and a cancel that writes nothing is the safe reading of it.
-      const choice = (await firstValueFrom(ref.afterClosed())) ?? 'cancel';
-      if (this.destroyRef.destroyed || generation !== this.session.generation() || id !== this.store.seriesId() || mode !== this.store.mode()) return;
-      const resolved = await this.store.resolveConflict(choice);
-      if (this.destroyRef.destroyed || generation !== this.session.generation() || id !== this.store.seriesId() || mode !== this.store.mode()) return;
-      if (resolved !== null && resolved.kind !== 'conflict') await this.handleOutcome(resolved, generation);
-    } finally { this.conflictOpen = false; }
+    // A conflict after a conflict is normal (another write landed between the re-read and the retry): the dialog
+    // reopens until the resolution is not another conflict.
+    while (outcome.kind === 'conflict') {
+      if (this.conflictOpen) return;
+      this.conflictOpen = true;
+      try {
+        const ref = this.conflictDialog.open({
+          messageKey: this.store.conflictCode() === 'concurrency_conflict' ? 'errors.concurrency_conflict' : 'series.save.conflict',
+          saveAsNewLabel: 'errors.conflict.saveAsNew',
+          traceId: this.store.conflictTraceId(),
+        }, { viewContainerRef: this.viewContainerRef });
+        // `afterClosed()` types `undefined` (the dialog closed without a choice); `disableClose: true` makes that
+        // unreachable, and a cancel that writes nothing is the safe reading of it.
+        const choice = (await firstValueFrom(ref.afterClosed())) ?? 'cancel';
+        if (this.destroyRef.destroyed || generation !== this.session.generation() || id !== this.store.seriesId() || mode !== this.store.mode()) return;
+        const resolved = await this.store.resolveConflict(choice);
+        if (this.destroyRef.destroyed || generation !== this.session.generation() || id !== this.store.seriesId() || mode !== this.store.mode()) return;
+        if (resolved === null) return;
+        outcome = resolved;
+      } finally { this.conflictOpen = false; }
+      if (outcome.kind !== 'conflict') await this.handleOutcome(outcome, generation);
+    }
   }
 }

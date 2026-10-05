@@ -79,9 +79,9 @@
     "next": "Tiếp tục"
   },
   "validation": { "required": "Hãy điền hoặc chọn trường này.", "titleMax": "Tên series không được dài quá 120 ký tự." },
-  "save": { "saved": "Đã lưu", "conflict": "Series đã thay đổi ở nơi khác", "changes": "Lưu thay đổi", "saving": "Đang lưu…" },
-  "archive": { "title": "Lưu trữ series?", "confirm": "Lưu trữ series “{{title}}”? Dữ liệu vẫn đọc được; bạn không thể sửa hoặc tạo tập mới.", "failed": "Không lưu trữ được series. Series đã được khôi phục trong danh sách.", "done": "Đã lưu trữ series" },
-  "row": { "open": "Mở", "archive": "Lưu trữ", "openNamed": "Mở series {{title}}", "archiveNamed": "Lưu trữ series {{title}}", "autopilotOn": "Tự động đang bật", "autopilotOff": "Tự động đang tắt" },
+  "save": { "saved": "Đã lưu", "conflict": "Series đã thay đổi ở nơi khác", "changes": "Lưu thay đổi", "saving": "Đang lưu…", "reloaded": "Đã tải lại phiên bản mới nhất của series." },
+  "archive": { "title": "Lưu trữ series?", "confirm": "Lưu trữ series này? Dữ liệu vẫn đọc được; bạn không thể sửa hoặc tạo tập mới.", "failed": "Không lưu trữ được series. Series đã được khôi phục trong danh sách.", "done": "Đã lưu trữ series" },
+  "row": { "open": "Mở", "archive": "Lưu trữ", "openNamed": "Mở series", "archiveNamed": "Lưu trữ series", "autopilotOn": "Tự động đang bật", "autopilotOff": "Tự động đang tắt" },
   "detail": {
     "title": "Series", "subtitle": "Một giọng kể và phong cách nhất quán cho cả series.",
     "edit": "Sửa series", "tabs": "Các tab series", "overview": "Tổng quan", "autopilot": "Tự động", "summary": "Cấu hình series",

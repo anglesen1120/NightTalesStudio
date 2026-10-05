@@ -374,6 +374,45 @@ test.describe('series create (vi)', () => {
     expect(errors, `console errors: ${errors.join(' | ')}`).toEqual([]);
   });
 
+  test('Create_ServerValidationFailedOnStyle_RendersTheStep4Error_AndLinksIt', async ({ page }) => {
+    const { api } = await openEditor(page, 'vi', {
+      api: { createFailure: { status: 400, code: 'validation_failed', extra: { errors: { styleTemplateId: ['invalid'] } } } },
+    });
+    await advanceToStep(page, 'vi', 4);
+    const styleGrid = page.getByRole('radiogroup', { name: L.field.style });
+    await styleGrid.getByRole('radio', { name: styleCopy('vi', (STYLE_SEED[0] as StyleTemplateDto).name).label }).check();
+    await submitButton(page, 'vi').click();
+
+    // The create was refused with field errors for styleTemplateId: the page stays on step 4, the bound control
+    // shows the code-specific key, and the grid's radio group is linked to that error text.
+    await expect.poll(() => api.creates.length).toBe(1);
+    await expect(currentStep(page)).toContainText(L.step.style);
+    await expect(page.getByRole('alert').filter({ hasText: ERRORS_COPY.vi.validation_failed })).toBeVisible();
+    await expect(styleGrid).toHaveAttribute('aria-describedby', 'series-style-error');
+    await expect(page).toHaveURL(/\/series\/new$/);
+  });
+
+  test('Catalogs_BackNextCycle_IssuesNoExtraRequest: voices and templates are fetched once per value', async ({ page }) => {
+    const { catalog } = await openEditor(page, 'vi');
+    await advanceToStep(page, 'vi', 4);
+    await expect(page.getByRole('radiogroup', { name: L.field.style })).toBeVisible();
+    expect(catalog.voicesRequests).toHaveLength(1);
+    expect(catalog.templateRequests).toHaveLength(1);
+
+    await backButton(page, 'vi').click();
+    await backButton(page, 'vi').click();
+    await backButton(page, 'vi').click();
+    await expect(currentStep(page)).toContainText(L.step.topic);
+    await continueButton(page, 'vi').click();
+    await continueButton(page, 'vi').click();
+    await continueButton(page, 'vi').click();
+    await expect(currentStep(page)).toContainText(L.step.style);
+
+    // Walking back and re-entering steps 3 and 4 never re-asks the catalogs the wizard already loaded.
+    expect(catalog.voicesRequests).toHaveLength(1);
+    expect(catalog.templateRequests).toHaveLength(1);
+  });
+
   for (const step of [1, 2, 3, 4] as const) {
     test(`axe (WCAG 2.1 AA) on /series/new step ${step}`, async ({ page }) => {
       await openEditor(page, 'vi');

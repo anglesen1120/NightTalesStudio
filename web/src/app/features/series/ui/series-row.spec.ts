@@ -31,7 +31,7 @@ async function setup() {
       langs: { vi: {}, 'series/vi': {
         topic: { ghost: 'Chuyện ma' }, aspect: { landscape: 'Ngang (video dài)' }, language: { vi: 'Tiếng Việt' },
         list: { archived: 'Đã lưu trữ' },
-        row: { open: 'Mở', archive: 'Lưu trữ', openNamed: 'Mở series {{title}}', archiveNamed: 'Lưu trữ series {{title}}', autopilotOn: 'Tự động đang bật', autopilotOff: 'Tự động đang tắt' },
+        row: { open: 'Mở', archive: 'Lưu trữ', openNamed: 'Mở series', archiveNamed: 'Lưu trữ series', autopilotOn: 'Tự động đang bật', autopilotOff: 'Tự động đang tắt' },
       } }, translocoConfig: { availableLangs: ['vi'], defaultLang: 'vi', fallbackLang: 'vi' }, preloadLangs: true,
     })], providers: ZONELESS_TEST_PROVIDERS,
   }).compileComponents();
@@ -54,6 +54,26 @@ describe('SeriesRow', () => {
     const { root } = await setup();
     const archive = root.querySelector<HTMLButtonElement>('button[aria-label^="Lưu trữ series"]');
     expect(archive?.getAttribute('aria-label')).toBe('Lưu trữ series Chuyện ma đêm khuya');
+  });
+
+  it.each(['{{title}}', '{{ x }}'])('LiteralTitle_%s_RendersVerbatim_InTextAndAriaLabels', async (title) => {
+    // PS1 regression: a user-controlled title must never reach the Transloco transpiler as a param —
+    // it re-interpolates substituted values, so "{{title}}" used to loop it forever.
+    const { fixture, host, root } = await setup();
+    host.vm.set(toSeriesRowViewModel({ ...series, title }));
+    await fixture.whenStable();
+    expect(root.querySelector<HTMLButtonElement>('.series-row__title')?.textContent?.trim()).toBe(title);
+    expect(root.querySelector<HTMLButtonElement>('.series-row__title')?.getAttribute('aria-label')).toBe(`Mở series ${title}`);
+    expect(root.querySelector<HTMLButtonElement>('button[aria-label^="Lưu trữ series"]')?.getAttribute('aria-label')).toBe(`Lưu trữ series ${title}`);
+  });
+
+  it('OpenButtons_HaveAccessibleNames', async () => {
+    const { root } = await setup();
+    const buttons = [...root.querySelectorAll<HTMLButtonElement>('button')].filter(
+      (button) => button.getAttribute('aria-label')?.startsWith('Mở series'),
+    );
+    expect(buttons).toHaveLength(2);
+    expect(buttons.every((button) => button.getAttribute('aria-label') === 'Mở series Chuyện ma đêm khuya')).toBe(true);
   });
 
   it('Open_Emits', async () => {

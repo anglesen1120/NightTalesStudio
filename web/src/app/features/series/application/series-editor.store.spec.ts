@@ -384,7 +384,7 @@ describe('SeriesEditorStore', () => {
     seriesRepo.advanceVersion('s-ghost');
     expect(await store.submit()).toEqual({ kind: 'conflict' });
 
-    expect(await store.resolveConflict('reload')).toEqual({ kind: 'saved' });
+    expect(await store.resolveConflict('reload')).toEqual({ kind: 'reloaded' });
     expect(store.form.controls.title.value).toBe('Chuyện ma đêm khuya');
     expect(store.conflict()).toBe(false);
     expect(store.isDirty()).toBe(false);
@@ -471,7 +471,7 @@ describe('SeriesEditorStore', () => {
   });
 
   it('Submit_ValidationFailed_BindsFieldErrorsAndJumpsToTheStep', async () => {
-    const { store, seriesRepo } = setup();
+    const { store, seriesRepo, catalog } = setup();
     await store.init('edit', 's-ghost');
     store.form.controls.title.setValue('Đổi tên');
     seriesRepo.failNext(
@@ -482,8 +482,13 @@ describe('SeriesEditorStore', () => {
     expect(outcome).toEqual({ kind: 'invalid', step: 4 });
     expect(store.step()).toBe(4);
     expect(store.form.controls.styleTemplateId.hasError('server')).toBe(true);
+    // Touched is what lets the mat-error render without waiting for a blur.
+    expect(store.form.controls.styleTemplateId.touched).toBe(true);
     expect(store.focusRequest()?.control).toBe('styleTemplateId');
     expect(store.error()).toBeNull();
+    // The jump entered step 4 for real: its catalog is read (ghost templates now loaded).
+    expect(catalog.styleTemplateCalls).toEqual(['ghost']);
+    expect(store.templates().length).toBeGreaterThan(0);
   });
 
   it('Submit_ValidationFailed_UnmappedPointer_SetsFormError', async () => {
@@ -518,6 +523,103 @@ describe('SeriesEditorStore', () => {
     expect(store.step()).toBe(1);
     expect(store.focusRequest()?.control).toBe('title');
     expect(seriesRepo.createCalls).toEqual([]);
+  });
+
+  it('Submit_InvalidForm_MarksEveryControlTouched_AndLoadsTheJumpedStepsCatalog', async () => {
+    const { store, seriesRepo, catalog } = setup();
+    await store.init('create', null);
+    store.form.controls.title.setValue('Chuyện ma');
+
+    // Steps 3 and 4 are unsatisfied: the submit lands on step 3 — through the same path as Next — and its voices
+    // load, while every control is marked touched so the error text renders immediately.
+    expect(await store.submit()).toEqual({ kind: 'invalid', step: 3 });
+    expect(store.step()).toBe(3);
+    expect(catalog.voicedCalls).toEqual(['vi']);
+    expect(store.form.controls.title.touched).toBe(true);
+    expect(store.form.controls.voiceId.touched).toBe(true);
+    expect(store.form.controls.styleTemplateId.touched).toBe(true);
+    expect(seriesRepo.createCalls).toEqual([]);
+  });
+
+  it('Catalogs_AreNotReRequestedOnStepReEntry_ButErrorsAreRetried', async () => {
+    const { store, catalog } = setup();
+    await store.init('create', null);
+    fillStep1(store);
+    await store.goTo(3);
+    store.setVoice('vi-quiet');
+    await store.goTo(4);
+    expect(catalog.voicedCalls).toEqual(['vi']);
+    expect(catalog.styleTemplateCalls).toEqual(['ghost']);
+
+    // Back/Next cycles over already-loaded steps issue no further request.
+    for (let i = 0; i < 2; i++) {
+      store.goBack();
+      store.goBack();
+      expect(store.step()).toBe(2);
+      await store.goTo(4);
+    }
+    expect(catalog.voicedCalls).toEqual(['vi']);
+    expect(catalog.styleTemplateCalls).toEqual(['ghost']);
+
+    // A failed read counts as not loaded: the next entry is the retry.
+    catalog.failWith(appError('network_error', 0, 'network'));
+    await store.setTopic('spiritual');
+    expect(catalog.styleTemplateCalls).toEqual(['ghost', 'spiritual']);
+    catalog.failWith(null);
+    store.goBack();
+    await store.goTo(4);
+    expect(catalog.styleTemplateCalls).toEqual(['ghost', 'spiritual', 'spiritual']);
+    expect(store.templates().length).toBeGreaterThan(0);
+  });
+
+  it('SetTopic_AnEagerLoadCountsAsLoaded_TheStepEntryDoesNotRepeatIt', async () => {
+    const { store, catalog } = setup();
+    await store.init('create', null);
+    fillStep1(store);
+
+    // One request for the topic change; entering step 4 afterwards does not ask again for the same topic.
+    await store.setTopic('spiritual');
+    expect(catalog.styleTemplateCalls).toEqual(['spiritual']);
+    store.setVoice('vi-quiet');
+    await store.goTo(4);
+    expect(catalog.styleTemplateCalls).toEqual(['spiritual']);
+  });
+
+  it('Edit_SaveMineAsNewVersion_SendsOnlyTheUsersOwnEditsWithTheFreshEtag', async () => {
+    const { store, seriesRepo } = setup();
+    await store.init('edit', 's-ghost');
+    store.form.controls.title.setValue('Đổi tên');
+    // Another writer changed the aspect before the conflict re-read serves the fresh row.
+    seriesRepo.willServe(CANNED_SERIES.map((row) => (row.id === 's-ghost' ? { ...row, aspect: 'portrait', etag: '"se-42"' } : row)));
+
+    expect(await store.submit()).toEqual({ kind: 'conflict' });
+    expect(await store.resolveConflict('saveAsNew')).toEqual({ kind: 'saved' });
+    // The patch is the user's own edit only — never an aspect member reverting the other writer's change.
+    expect(seriesRepo.patchCalls[1]?.patch).toEqual({ title: 'Đổi tên' });
+    expect(seriesRepo.patchCalls[1]?.etag).toBe('"se-42"');
+    expect(seriesRepo.stored('s-ghost')?.aspect).toBe('portrait');
+  });
+
+  it('Edit_SaveMineAsNewVersion_ReturnsConflictAgain_WhenTheRetryIsRefused', async () => {
+    const { store, seriesRepo } = setup();
+    await store.init('edit', 's-ghost');
+    store.form.controls.title.setValue('Đổi tên');
+    seriesRepo.advanceVersion('s-ghost');
+    expect(await store.submit()).toEqual({ kind: 'conflict' });
+
+    // A third write lands between the re-read and the retry: the second PATCH is refused too, so the resolution
+    // is another conflict (the page reopens the dialog), never a dropped outcome. The fake computes every result
+    // when the call is made and only holds its delivery — the third write therefore happens between releasing
+    // the re-read and the microtask that issues the PATCH.
+    seriesRepo.defer();
+    const resolving = store.resolveConflict('saveAsNew');
+    seriesRepo.resolveNext(); // releases the re-read (its value was computed against the se-42 row)
+    seriesRepo.advanceVersion('s-ghost'); // the third write
+    await flush(); // the PATCH call is issued — stale the moment the fake computes it
+    seriesRepo.resolveAll();
+    expect(await resolving).toEqual({ kind: 'conflict' });
+    expect(store.conflict()).toBe(true);
+    expect(store.form.controls.title.value).toBe('Đổi tên');
   });
 
   it('Submit_SingleFlight_IssuesOneRequest', async () => {
