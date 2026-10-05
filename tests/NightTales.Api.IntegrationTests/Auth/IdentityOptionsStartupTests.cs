@@ -100,6 +100,23 @@ public sealed class IdentityOptionsStartupTests(TestDatabase database) : Integra
         ShouldRefuseToStart(($"{LegalDocumentVersions.SectionName}:{nameof(LegalDocumentVersions.Tos)}", string.Empty));
     }
 
+    [Theory]
+    [InlineData("Tos", "v1")]
+    [InlineData("Privacy", "1.0")]
+    [InlineData("Privacy", "1.0.0\n")]
+    public void LegalDocuments_NonSemverVersion_RefusesToStart(string document, string version)
+    {
+        ShouldRefuseToStart(($"{LegalDocumentVersions.SectionName}:{document}", version));
+    }
+
+    [Theory]
+    [InlineData("Tos")]
+    [InlineData("Privacy")]
+    public void LegalDocuments_VersionOver32Chars_RefusesToStart(string document)
+    {
+        ShouldRefuseToStart(($"{LegalDocumentVersions.SectionName}:{document}", new string('1', 29) + ".0.0"));
+    }
+
     private void ShouldRefuseToStart(params (string Key, string Value)[] settings)
     {
         using var host = ApiFactory.ProductionHost(

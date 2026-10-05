@@ -86,8 +86,8 @@ public sealed class WorkerHealthProbe : IAsyncDisposable
                 nameof(RegistrationMode.Closed),
             [$"{BreachedPasswordOptions.SectionName}:{nameof(BreachedPasswordOptions.Mode)}"] =
                 nameof(BreachedPasswordMode.List),
-            [$"{LegalDocumentVersions.SectionName}:{nameof(LegalDocumentVersions.Tos)}"] = "v1",
-            [$"{LegalDocumentVersions.SectionName}:{nameof(LegalDocumentVersions.Privacy)}"] = "v1",
+            [$"{LegalDocumentVersions.SectionName}:{nameof(LegalDocumentVersions.Tos)}"] = "1.0.0",
+            [$"{LegalDocumentVersions.SectionName}:{nameof(LegalDocumentVersions.Privacy)}"] = "1.0.0",
 
             // 09.9.4-T1: the Worker's composition root registers the Data Protection key ring too, and
             // it refuses to start without the DP_KEK, so the probe provides the run's throwaway PFX —

@@ -46,6 +46,8 @@
   "autopilot_topic_locked": "Không thể đổi chủ đề khi chế độ tự động đang bật.",
   "autopilot_pause_reason_active": "Không thể tiếp tục chế độ tự động khi lý do tạm dừng vẫn còn.",
   "keywords_flagged": "Một số từ khoá hình ảnh bị đánh dấu. Hãy sửa trước khi tiếp tục.",
+  "legal_acceptance_required": "Hãy xem và chấp nhận các văn bản pháp lý hiện hành trước khi tiếp tục.",
+  "legal_version_outdated": "Văn bản pháp lý đã thay đổi. Hãy xem phiên bản hiện hành và chấp nhận lại.",
   "episode_conflict": "Tập đã được thay đổi ở nơi khác. Hãy tải lại và thử lại.",
   "story_version_conflict": "Truyện đã được thay đổi ở nơi khác. Hãy tải bản mới nhất hoặc lưu bản của bạn thành bản mới.",
   "fact_sheet_conflict": "Bảng dữ kiện đã được thay đổi ở nơi khác. Hãy tải bản mới nhất hoặc lưu bản của bạn thành bản mới.",

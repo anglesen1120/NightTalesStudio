@@ -1,4 +1,5 @@
 using System.Net.Http;
+using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -121,10 +122,10 @@ public static class IdentityServiceCollectionExtensions
             .BindConfiguration(LegalDocumentVersions.SectionName)
             .Validate(
                 options => IsVersion(options.Tos),
-                $"'{LegalDocumentVersions.SectionName}:{nameof(LegalDocumentVersions.Tos)}' is required and at most {LegalDocumentVersions.VersionMaxLength} characters.")
+                $"'{LegalDocumentVersions.SectionName}:{nameof(LegalDocumentVersions.Tos)}' is required, semver-like (1.0.0), and at most {LegalDocumentVersions.VersionMaxLength} characters.")
             .Validate(
                 options => IsVersion(options.Privacy),
-                $"'{LegalDocumentVersions.SectionName}:{nameof(LegalDocumentVersions.Privacy)}' is required and at most {LegalDocumentVersions.VersionMaxLength} characters.")
+                $"'{LegalDocumentVersions.SectionName}:{nameof(LegalDocumentVersions.Privacy)}' is required, semver-like (1.0.0), and at most {LegalDocumentVersions.VersionMaxLength} characters.")
             .ValidateOnStart();
     }
 
@@ -139,6 +140,8 @@ public static class IdentityServiceCollectionExtensions
         // Credentials and consents touch the scoped Identity store / write model.
         services.AddScoped<ICredentialVerifier, IdentityCredentialVerifier>();
         services.AddScoped<IConsentWriter, ConsentWriter>();
+        services.AddScoped<IConsentReader, ConsentReader>();
+        services.AddSingleton<ICurrentLegalVersions>(provider => provider.GetRequiredService<IOptions<LegalDocumentVersions>>().Value);
         services.AddScoped<IUserProfileReader, UserProfileReader>();
         services.AddScoped<IUserProfileWriter, UserProfileWriter>();
 
@@ -163,5 +166,6 @@ public static class IdentityServiceCollectionExtensions
     }
 
     private static bool IsVersion(string? value) =>
-        !string.IsNullOrWhiteSpace(value) && value.Length <= LegalDocumentVersions.VersionMaxLength;
+        !string.IsNullOrWhiteSpace(value) && value.Length <= LegalDocumentVersions.VersionMaxLength
+        && Regex.IsMatch(value, @"^[0-9]+\.[0-9]+\.[0-9]+\z", RegexOptions.CultureInvariant, TimeSpan.FromSeconds(1));
 }

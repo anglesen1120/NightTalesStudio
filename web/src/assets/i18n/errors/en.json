@@ -46,6 +46,8 @@
   "autopilot_topic_locked": "The topic cannot be changed while autopilot is on.",
   "autopilot_pause_reason_active": "Autopilot cannot resume while a pause reason is still active.",
   "keywords_flagged": "Some image keywords are flagged. Fix them before continuing.",
+  "legal_acceptance_required": "Review and accept the current legal documents before continuing.",
+  "legal_version_outdated": "The legal documents changed. Review the current versions and accept them again.",
   "episode_conflict": "The episode was changed elsewhere. Reload and try again.",
   "story_version_conflict": "The story was changed elsewhere. Reload the latest version or save yours as a new one.",
   "fact_sheet_conflict": "The fact sheet was changed elsewhere. Reload the latest version or save yours as a new one.",

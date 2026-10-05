@@ -913,6 +913,104 @@
         }
       }
     },
+    "/api/v1/me/legal": {
+      "get": {
+        "tags": [
+          "NightTales.Api"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LegalAcceptanceDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/me/legal/accept": {
+      "post": {
+        "tags": [
+          "NightTales.Api"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AcceptLegalDocumentsCommand"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LegalAcceptanceDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too Many Requests",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/me/mfa/setup": {
       "post": {
         "tags": [
@@ -1779,6 +1877,21 @@
   },
   "components": {
     "schemas": {
+      "AcceptLegalDocumentsCommand": {
+        "required": [
+          "tos",
+          "privacy"
+        ],
+        "type": "object",
+        "properties": {
+          "tos": {
+            "type": "string"
+          },
+          "privacy": {
+            "type": "string"
+          }
+        }
+      },
       "AddSourceRequest": {
         "required": [
           "url",
@@ -2372,11 +2485,55 @@
           "en"
         ]
       },
+      "LegalAcceptanceDto": {
+        "required": [
+          "documents"
+        ],
+        "type": "object",
+        "properties": {
+          "documents": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LegalDocumentStatusDto"
+            }
+          }
+        }
+      },
       "LegalDocument": {
         "enum": [
           "tos",
           "privacy"
         ]
+      },
+      "LegalDocumentStatusDto": {
+        "required": [
+          "document",
+          "currentVersion",
+          "acceptedVersion",
+          "acceptedAt"
+        ],
+        "type": "object",
+        "properties": {
+          "document": {
+            "type": "string"
+          },
+          "currentVersion": {
+            "type": "string"
+          },
+          "acceptedVersion": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "acceptedAt": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          }
+        }
       },
       "LengthTier": {
         "enum": [
