@@ -33,6 +33,17 @@ const MAX_HINT_EVIDENCE = 200;
 const MAX_QUALITY_HINTS = 200;
 
 /**
+ * Cut at the cap on a code-point boundary: an astral character is one UTF-16 *pair*, so a plain `slice` can end on a
+ * lone high surrogate and the rendered evidence becomes an unpaired replacement glyph. When the pair straddles the
+ * cap, the high surrogate at `cap - 1` is dropped with it (199 chars, never 200 with half a character).
+ */
+function truncateEvidence(evidence: string): string {
+  if (evidence.length <= MAX_HINT_EVIDENCE) return evidence;
+  const last = evidence.charCodeAt(MAX_HINT_EVIDENCE - 1);
+  return evidence.slice(0, last >= 0xd800 && last <= 0xdbff ? MAX_HINT_EVIDENCE - 1 : MAX_HINT_EVIDENCE);
+}
+
+/**
  * One hint row → `QualityHint`, or `null` when the row is malformed and must be dropped. A bad row never throws
  * (STATUS 'Hint mapper strictness C7'): throwing here would turn the whole episode detail into a 502. An unknown
  * `severity`/`kind` is neutralised (`advisory`/`taste`) so the hint is still shown, and an unparseable segment keeps
@@ -57,7 +68,7 @@ function mapHint(dto: unknown): QualityHint | null {
     kind: source['kind'] === 'objective' ? 'objective' : 'taste',
     segment: address === null ? null : formatAddress(address.kind, address.index ?? undefined),
     messageKey,
-    evidence: evidence.length > MAX_HINT_EVIDENCE ? evidence.slice(0, MAX_HINT_EVIDENCE) : evidence,
+    evidence: truncateEvidence(evidence),
     repairDirection: typeof repairDirection === 'string' ? repairDirection : null,
   };
 }

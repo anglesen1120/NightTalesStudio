@@ -81,21 +81,54 @@ export function sortAnnotations(items: readonly SegmentAnnotation[]): readonly S
     (left.ruleId < right.ruleId ? -1 : left.ruleId > right.ruleId ? 1 : 0)));
 }
 
+/** `blocking` before `advisory`, then `objective` before `taste`; the kind only breaks a severity tie. */
+function isStronger(candidate: SegmentAnnotation, current: SegmentAnnotation): boolean {
+  if (SEVERITY_ORDER[candidate.severity] !== SEVERITY_ORDER[current.severity]) return SEVERITY_ORDER[candidate.severity] < SEVERITY_ORDER[current.severity];
+  return KIND_ORDER[candidate.kind] < KIND_ORDER[current.kind];
+}
+
+/**
+ * One id per annotation: the panel and the inline note both use it as a DOM id (the `aria-describedby` target and the
+ * `@for` track key), so two survivors must never share one. Two distinct ruleIds can sanitise to the same `idPart`
+ * text (`a.b` and `a-b`), which is exactly that case; the later one in sorted output order takes a `-2`, `-3`, … suffix.
+ */
+function withUniqueIds(items: readonly SegmentAnnotation[]): readonly SegmentAnnotation[] {
+  const used = new Set<string>();
+  return items.map((item) => {
+    if (!used.has(item.id)) {
+      used.add(item.id);
+      return item;
+    }
+    let suffix = 2;
+    while (used.has(`${item.id}-${String(suffix)}`)) suffix += 1;
+    const id = `${item.id}-${String(suffix)}`;
+    used.add(id);
+    return { ...item, id };
+  });
+}
+
 /**
  * Merge saved hints and keyword flags into one sorted list. Duplicates collapse on
- * `(source, address, ruleId, keywordIndex)` and the **first** input wins, before sorting.
+ * `(source, address, ruleId, keywordIndex)`: the **stronger** of the two wins (blocking over advisory, then objective
+ * over taste), and an exact rank tie keeps the first input. Sorting happens before the ids are made unique, so a
+ * collision is resolved on the list the reader actually sees.
  */
 export function mergeAnnotations(hints: readonly QualityHint[], keywordFlags: readonly KeywordFlag[]): readonly SegmentAnnotation[] {
   const merged: SegmentAnnotation[] = [];
-  const seen = new Set<string>();
+  const at = new Map<string, number>();
   const add = (annotation: SegmentAnnotation, identity: string): void => {
-    if (seen.has(identity)) return;
-    seen.add(identity);
-    merged.push(annotation);
+    const index = at.get(identity);
+    if (index === undefined) {
+      at.set(identity, merged.length);
+      merged.push(annotation);
+      return;
+    }
+    const current = merged[index];
+    if (current !== undefined && isStronger(annotation, current)) merged[index] = annotation;
   };
   for (const hint of hints) add(hintAnnotation(hint), `hint|${hint.segment ?? ''}|${hint.ruleId}|null`);
   for (const flag of keywordFlags) add(keywordAnnotation(flag), `keyword|${flag.address}|${flag.rule}|${String(flag.index)}`);
-  return sortAnnotations(merged);
+  return Object.freeze(withUniqueIds(sortAnnotations(merged)));
 }
 
 function sameStrings(left: readonly string[], right: readonly string[]): boolean {

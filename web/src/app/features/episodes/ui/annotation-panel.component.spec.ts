@@ -7,8 +7,10 @@ import { ZONELESS_TEST_PROVIDERS } from '../../../testing/providers';
 import episodesVi from '../../../../assets/i18n/episodes/vi.json';
 import qualityVi from '../../../../assets/i18n/quality/vi.json';
 import errorsVi from '../../../../assets/i18n/errors/vi.json';
+import type { SegmentAnnotation } from '../domain/annotation.model';
 import { AnnotationPanelComponent } from './annotation-panel.component';
 import type { AnnotationPanelViewModel } from './annotation.view-model';
+import { buildAnnotationViews } from './annotation.view-model';
 
 const translations = TranslocoTestingModule.forRoot({
   langs: { vi: episodesVi, 'episodes/vi': episodesVi, 'quality/vi': qualityVi, 'errors/vi': errorsVi },
@@ -57,6 +59,28 @@ describe('AnnotationPanelComponent', () => {
     fixture.detectChanges(); await fixture.whenStable();
     expect(root.querySelector('.annotation-panel__empty')?.textContent).toContain(episodesVi.annotations.none);
     expect(root.querySelectorAll('[role="note"]')).toHaveLength(0);
+  });
+
+  it('renders an advisory scenes_sparse hint in the panel only, with the verbatim quality copy', async () => {
+    // The row `annotation-merge` produces for a `scenes_sparse` `qualityHints[]` entry (`segment: "meta"`): a meta hint
+    // has no inline slot, so the panel is the only place it can appear.
+    const annotation: SegmentAnnotation = {
+      id: 'ann-meta-scenes_sparse', source: 'hint', address: 'meta', ruleId: 'scenes_sparse', severity: 'advisory',
+      kind: 'taste', messageKey: 'quality.scenes_sparse', evidence: '', repairDirection: null, keywordIndex: null,
+      placement: 'panel',
+    };
+    const views = buildAnnotationViews([annotation], { hasKey: () => true });
+    expect(views.inline.size, 'a meta hint is never rendered inline').toBe(0);
+    expect(views.panel.count).toBe(1);
+
+    const { fixture, root } = await setup(views.panel);
+    const blocks = await fixture.getDeferBlocks();
+    await blocks[0]!.render(DeferBlockState.Complete);
+    fixture.detectChanges(); await fixture.whenStable();
+    const rendered = root.querySelector('[role="note"]');
+    expect(rendered?.textContent).toContain(qualityVi.scenes_sparse);
+    expect(rendered?.textContent).toContain(episodesVi.annotations.meta);
+    expect(root.textContent, 'the raw key is never the copy').not.toContain('quality.scenes_sparse');
   });
 
   it('forwards go-to only for an address with a segment control', async () => {

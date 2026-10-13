@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import type { InlineAnnotationViewModel } from '@shared/ui';
 import type { SegmentAnnotation } from '../domain/annotation.model';
 import { buildAnnotationViews, EMPTY_ANNOTATION_VIEWS } from './annotation.view-model';
 
@@ -20,17 +21,34 @@ describe('buildAnnotationViews', () => {
     expect(changed.flaggedChips.get('hook')).toBe(next.flaggedChips.get('hook'));
   });
 
-  it('falls back on a missing/unsafe message key without displaying it and warns once per distinct key', () => {
+  it('unknownMessageKey_FallsBackWithoutMirroringKeys', () => {
     const warnUnknown = vi.fn();
     const options = { hasKey: () => false, warnUnknown };
     const missing = { ...hint, messageKey: 'quality.sliceC_unknown_key' };
     const unsafe = { ...hint, id: 'ann-hook-unsafe', address: 'hook' as const, messageKey: '<script>raw</script>' };
-    const first = buildAnnotationViews([missing, unsafe], options);
-    const next = buildAnnotationViews([missing, unsafe], options, first);
-    expect(warnUnknown).toHaveBeenCalledTimes(2);
+    // Two annotations carry the *same* unknown key: the warning is per distinct key, never per annotation.
+    const sharedA = { ...hint, id: 'ann-p-0-shared-a', ruleId: 'R-A', messageKey: 'quality.sliceC_shared_key' };
+    const sharedB = { ...hint, id: 'ann-p-0-shared-b', ruleId: 'R-B', messageKey: 'quality.sliceC_shared_key' };
+    const input = [missing, unsafe, sharedA, sharedB];
+    const first = buildAnnotationViews(input, options);
+    const next = buildAnnotationViews(input, options, first);
+    expect(warnUnknown).toHaveBeenCalledTimes(3);
+    expect(warnUnknown).toHaveBeenNthCalledWith(1, 'quality.sliceC_unknown_key');
+    expect(warnUnknown).toHaveBeenNthCalledWith(2, '<script>raw</script>');
+    expect(warnUnknown).toHaveBeenNthCalledWith(3, 'quality.sliceC_shared_key');
     expect(next.inline.get('p:0')?.[0]?.messageKey).toBe('episodes.annotations.unknown');
     expect(next.inline.get('hook')?.[0]?.messageKey).toBe('episodes.annotations.unknown');
     expect(next.inline.get('p:0')).toBe(first.inline.get('p:0'));
+    // Nothing the view model hands a template carries the server's raw key: not the copy, not the id, not a label.
+    const fields = (item: InlineAnnotationViewModel): string =>
+      [item.id, item.ruleId, item.messageKey, item.evidence, item.repairDirection ?? '', item.addressLabelKey, item.address ?? ''].join('|');
+    const rendered = [
+      ...[...next.inline.values()].flat().map(fields),
+      ...next.panel.groups.flatMap((group) => group.items).map(fields),
+      ...[...next.flaggedChips.values()].flatMap((chips) => [...chips.values()].map((chip) => `${chip.annotationId}|${chip.messageKey}`)),
+    ].join('|');
+    for (const key of ['quality.sliceC_unknown_key', '<script>raw</script>', 'quality.sliceC_shared_key']) expect(rendered).not.toContain(key);
+    expect(rendered).toContain('episodes.annotations.unknown');
   });
 
   it('keeps meta and unresolved feedback in the panel and keyword flags on the exact chip', () => {

@@ -409,14 +409,16 @@ export class StoryEditorStore {
       if (!this.current(generation)) return;
       const error = this.showError(cause);
       if (error.status === 412) {
-        this.conflict.set(true);
         if (options.retry === true) {
           // The single user-authorised re-attempt also lost the race: keep the dialog, flag the busy variant, stop here.
-          this.conflictBusy.set(true);
-        } else {
-          this.conflictBusy.set(false);
+          this.conflict.set(true); this.conflictBusy.set(true);
+        } else if (this.conflict() === null) {
+          this.conflict.set(true); this.conflictBusy.set(false);
           await this.loadConflictDiff(generation);
         }
+        // Row 124: a 412 that arrives while the dialog is already open is coalesced. Its diff and the draft are
+        // unchanged, so nothing is re-read and no second dialog is raised - the error copy above is the only visible
+        // effect, and the dialog keeps the diff it was opened with.
       } else {
         this.conflict.set(null);
         if (error.status === 409 && error.code === 'episode_invalid_state') {

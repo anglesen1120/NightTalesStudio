@@ -10,19 +10,26 @@ import {
 import coreVi from '../src/assets/i18n/core/vi.json' with { type: 'json' };
 import episodesVi from '../src/assets/i18n/episodes/vi.json' with { type: 'json' };
 import errorsVi from '../src/assets/i18n/errors/vi.json' with { type: 'json' };
+import episodesEn from '../src/assets/i18n/episodes/en.json' with { type: 'json' };
+import errorsEn from '../src/assets/i18n/errors/en.json' with { type: 'json' };
 
 // 10.5.10-T1 conflict flow (vi, stubbed): TWO real browser contexts write the same episode through one scripted
 // server, so a stale `If-Match` is a genuine race rather than a canned reply. Covers the 412 conflict dialog (role,
 // focus trap, focus return to Save after Cancel, the differing-segment list, WCAG 2.1 AA), the single user-authorised
 // "save mine as new" attempt (GET fresh etag then PUT with it), the destructive confirm on the reload path, the busy
 // variant after a second 412, byte-identical typed text throughout, and the non-modal "changed elsewhere" notice a
-// real hub invalidation raises while the draft is dirty. Real compose acceptance stays with 11.5.1-T1.
+// real hub invalidation raises while the draft is dirty. The English describe at the end repeats the stale-save →
+// dialog → Cancel path with the en bundles. Real compose acceptance stays with 11.5.1-T1.
 test.use({ locale: 'vi-VN', timezoneId: 'UTC' });
 const L = EDITOR_COPY.vi;
-/** The conflict dialog renders its own `errors.conflict.*` chrome; the page only passes body/detail keys into it. */
-const D = errorsVi.conflict;
-const C = episodesVi.conflict;
-const DIALOG_NAME = D.title;
+/**
+ * The conflict dialog renders its own `errors.conflict.*` chrome; the page only passes body/detail keys into it. Both
+ * languages are mapped here so a scenario can pick its own copy; the existing ones keep the vi default.
+ */
+const DIALOG_COPY = { vi: errorsVi.conflict, en: errorsEn.conflict };
+const PAGE_CONFLICT_COPY = { vi: episodesVi.conflict, en: episodesEn.conflict };
+const D = DIALOG_COPY.vi;
+const C = PAGE_CONFLICT_COPY.vi;
 const CONFIRM_CANCEL = coreVi.core.ui.confirm.cancel;
 /** Typed by hand, not filled: every step below re-reads it to prove the draft survived byte for byte. */
 const TYPED_TITLE = 'Bản nháp chưa lưu của B ✓';
@@ -72,8 +79,8 @@ interface PageStub {
  * the real endpoint) and the fixture's session + SignalR transport. Both contexts register it over the SAME server
  * object, which is what makes context B's stale etag a real conflict.
  */
-async function stubSharedStory(page: Page, server: StoryServer): Promise<PageStub> {
-  const transport = await stubEpisodes(page, { lang: 'vi' });
+async function stubSharedStory(page: Page, server: StoryServer, lang: 'vi' | 'en' = 'vi'): Promise<PageStub> {
+  const transport = await stubEpisodes(page, { lang });
   const puts: Request[] = [];
   const detailGets: Request[] = [];
   const order: ('get' | 'put')[] = [];
@@ -109,12 +116,12 @@ async function stubSharedStory(page: Page, server: StoryServer): Promise<PageStu
   return { transport, puts, detailGets, order };
 }
 
-const conflictDialog = (page: Page) => page.getByRole('dialog', { name: DIALOG_NAME, exact: true });
-const confirmDialog = (page: Page) => page.getByRole('dialog', { name: C.reloadConfirmTitle, exact: true });
-const notice = (page: Page) => page.getByRole('status').filter({ hasText: C.elsewhereTitle });
+const conflictDialog = (page: Page, lang: 'vi' | 'en' = 'vi') => page.getByRole('dialog', { name: DIALOG_COPY[lang].title, exact: true });
+const confirmDialog = (page: Page, lang: 'vi' | 'en' = 'vi') => page.getByRole('dialog', { name: PAGE_CONFLICT_COPY[lang].reloadConfirmTitle, exact: true });
+const notice = (page: Page, lang: 'vi' | 'en' = 'vi') => page.getByRole('status').filter({ hasText: PAGE_CONFLICT_COPY[lang].elsewhereTitle });
 /** Types the draft title by hand (never `fill`), so the value can be re-read byte for byte after every step. */
-async function typeTitle(page: Page, text: string): Promise<void> {
-  const title = segment(page, L.title);
+async function typeTitle(page: Page, text: string, lang: 'vi' | 'en' = 'vi'): Promise<void> {
+  const title = segment(page, EDITOR_COPY[lang].title);
   await title.click();
   await page.keyboard.press('ControlOrMeta+A');
   await page.keyboard.type(text, { delay: 5 });
@@ -292,5 +299,42 @@ test.describe('story conflict (vi, stubbed, shared server)', () => {
     await changed.getByRole('button', { name: C.dismiss, exact: true }).click();
     await expect(changed).toHaveCount(0);
     await expect(segment(page, L.title)).toHaveValue(TYPED_TITLE);
+  });
+});
+
+test.describe('story conflict in English (stubbed, one context)', () => {
+  test.use({ locale: 'en-US' });
+  const EN = EDITOR_COPY.en;
+  const END = DIALOG_COPY.en;
+  const ENC = PAGE_CONFLICT_COPY.en;
+
+  test('StaleSave_OpensTheEnglishDialog_CancelKeepsTheTypedText_AxeClean', async ({ page }) => {
+    const server: StoryServer = { version: 1, versionId: STORED_VERSION_ID, content: STORY_CONTENT, forced412: 0 };
+    const stub = await stubSharedStory(page, server, 'en');
+    await page.goto(EDITOR_PATH);
+    await expectEditor(page, 'en');
+    await typeTitle(page, TYPED_TITLE, 'en');
+
+    // Another writer saved a different title while this draft was dirty: the next save sends a stale `If-Match`.
+    bump(server, SERVER_CONTENT);
+    await saveButton(page, 'en').click();
+
+    const dialog = conflictDialog(page, 'en');
+    await expect(dialog).toBeVisible();
+    await expect(dialog).toHaveAttribute('aria-modal', 'true');
+    await expect(dialog).toContainText(END.title);
+    await expect(dialog).toContainText(ENC.diffHeading);
+    await expect(dialog).toContainText(EN.title);
+    expect(stub.puts, 'a stale save is one request').toHaveLength(1);
+    await waitForOverlayAnimationEnd(page);
+    await expectA11yClean(page);
+
+    // Cancel is a decision about the dialog only: the typed text survives byte for byte and focus goes back to Save.
+    await dialog.getByRole('button', { name: END.cancel, exact: true }).click();
+    await expect(dialog).toHaveCount(0);
+    await expect(segment(page, EN.title)).toHaveValue(TYPED_TITLE);
+    await expect(saveButton(page, 'en')).toBeFocused();
+    await page.waitForTimeout(650);
+    expect(stub.puts, 'a 412 must never be retried automatically').toHaveLength(1);
   });
 });

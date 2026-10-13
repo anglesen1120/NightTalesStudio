@@ -8,6 +8,7 @@ import { SessionStore } from '@core/session';
 import { vi } from 'vitest';
 import { ZONELESS_TEST_PROVIDERS } from '../../../testing/providers';
 import type { KeywordFlag } from '../domain/annotation.model';
+import type { EpisodeStatus } from '../domain/episode.model';
 import { EpisodesRepository } from '../domain/episodes.repository';
 import type { QualityHint, StorySnapshot } from '../domain/story.model';
 import { StoryRepository } from '../domain/story.repository';
@@ -47,9 +48,9 @@ function hint(overrides: Partial<QualityHint> = {}): QualityHint {
 function flag(overrides: Partial<KeywordFlag> = {}): KeywordFlag {
   return { address: 'hook', index: 0, rule: 'keyword_invalid', ...overrides };
 }
-function setup(snapshot: StorySnapshot | null = storySnapshot(), actions: readonly string[] = ['edit_story']): EditorState {
+function setup(snapshot: StorySnapshot | null = storySnapshot(), actions: readonly string[] = ['edit_story'], status: EpisodeStatus = 'story_review'): EditorState {
   const episodes = new FakeEpisodesRepository();
-  episodes.scriptGet(() => Promise.resolve(episodeDetail({ currentStory: snapshot, hasCurrentStory: snapshot !== null, nextActions: actions, status: 'story_review' })));
+  episodes.scriptGet(() => Promise.resolve(episodeDetail({ currentStory: snapshot, hasCurrentStory: snapshot !== null, nextActions: actions, status })));
   const stories = new FakeStoryRepository();
   const realtime = new FakeEpisodeRealtime();
   const sessionGeneration = signal(0);
@@ -294,5 +295,66 @@ describe('StoryEditorStore annotations and conflict', () => {
     expect(state.store.title()).toBe('mine'); expect(state.store.hasUnsavedChanges()).toBe(true);
     expect(state.store.error()?.status).toBe(0);
     expect(state.store.saving()).toBe(false);
+  });
+
+  it('annotations_still_render_on_a_read_only_story_approved_episode', async () => {
+    // Failure row 123: hints are informational, so a read-only episode shows them; only the save control is off.
+    const snapshot = storySnapshot({ qualityHints: [hint({ ruleId: 'r1', segment: 'hook' }), hint({ ruleId: 'r2', segment: 'p:1' })] });
+    const state = setup(snapshot, [], 'story_approved');
+    await state.store.load(EPISODE_ID);
+    expect(state.store.readOnly()).toBe(true);
+    expect(state.store.snapshot()?.qualityHints).toHaveLength(2);
+    expect(state.store.annotations().map((item) => item.ruleId)).toEqual(['r1', 'r2']);
+    expect(state.store.annotationCount()).toBe(2);
+    expect(state.store.saveDisabled()).toBe(true);
+  });
+
+  it('removeParagraph_reanchors_a_later_hint_and_never_drops_an_unresolvable_one', async () => {
+    // Failure row 119. The store's remap is the designed behaviour: a hint whose segment is unresolvable (`null`) or
+    // malformed stays in the panel for good, a later hint follows the paragraph index it moved to, and the removed
+    // paragraph's own hint is hidden while it sits in the undo buffer (see `remapAddresses`).
+    const state = await loaded(storySnapshot({ qualityHints: [
+      hint({ ruleId: 'stale', segment: null }),
+      hint({ ruleId: 'first', segment: 'p:0' }),
+      hint({ ruleId: 'removed', segment: 'p:1' }),
+      hint({ ruleId: 'third', segment: 'p:2' }),
+    ] }));
+    expect(state.store.annotations().map((item) => item.ruleId)).toEqual(['first', 'removed', 'third', 'stale']);
+    expect(state.store.annotations().find((item) => item.ruleId === 'stale')).toMatchObject({ address: null, placement: 'panel' });
+
+    expect(state.store.removeParagraph(1)).toBe(true);
+    expect(state.store.hints().map((entry) => [entry.ruleId, entry.segment])).toEqual([['stale', null], ['first', 'p:0'], ['third', 'p:1']]);
+    expect(state.store.annotations().map((item) => item.ruleId)).toEqual(['first', 'third', 'stale']);
+    expect(state.store.annotations().find((item) => item.ruleId === 'stale')).toMatchObject({ address: null, placement: 'panel' });
+
+    // The undo returns the paragraph and its hint, keyed to the index it came back at: the hint was never lost.
+    expect(state.store.undoRemove()).toBe(1);
+    expect(state.store.hints().map((entry) => [entry.ruleId, entry.segment])).toEqual([['stale', null], ['first', 'p:0'], ['third', 'p:2'], ['removed', 'p:1']]);
+    expect(state.store.annotations().map((item) => item.ruleId)).toEqual(['first', 'removed', 'third', 'stale']);
+  });
+
+  it('conflict_second412_while_the_dialog_is_open_is_coalesced', async () => {
+    // Failure row 124: the dialog already carries the diff of this draft, so a repeat 412 re-reads nothing and leaves
+    // the conflict state alone (only the error copy is refreshed).
+    const state = await loaded();
+    const paragraph = state.store.paragraphs()[0]; if (!paragraph) throw new Error('Missing fixture paragraph');
+    state.store.setText(paragraph.segKey, 'Mine');
+    scriptFresh(state, contentWithParagraph(0, 'Theirs'));
+    await conflict412(state);
+    expect(state.store.conflict()).toBe(true);
+    const diff = state.store.conflictDiff();
+    expect(diff).toEqual(['p:0']);
+    const reads = state.episodes.getCalls.length;
+
+    state.store.setText(paragraph.segKey, 'Mine again');
+    state.stories.scriptSave(() => rejected(appError('story_version_conflict', 412)));
+    await state.store.saveVersion();
+    expect(state.episodes.getCalls, 'a coalesced 412 must not read the server story again').toHaveLength(reads);
+    expect(state.store.conflict()).toBe(true);
+    expect(state.store.conflictBusy()).toBe(false);
+    expect(state.store.conflictDiff()).toBe(diff);
+    expect(state.store.paragraphs()[0]?.text()).toBe('Mine again');
+    expect(state.store.snapshot()?.etag).toBe(storySnapshot().etag);
+    expect(state.store.hasUnsavedChanges()).toBe(true);
   });
 });
