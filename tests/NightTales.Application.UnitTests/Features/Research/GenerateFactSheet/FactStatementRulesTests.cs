@@ -16,7 +16,9 @@ public sealed class FactStatementRulesTests
     [Fact]
     public void TryNormalize_ComposesNfcAndCollapsesWhitespace()
     {
-        var reason = FactStatementRules.TryNormalize("  Tie\u0301ng   Viet\n\t hops  ", out var normalized);
+        // The input is the decomposed form, written with escapes so no editor or paste can compose it early:
+        // e + combining circumflex (U+0302) + combining acute (U+0301), which NFC composes into U+1EBF.
+        var reason = FactStatementRules.TryNormalize("  Tie\u0302\u0301ng   Viet\n\t hops  ", out var normalized);
 
         reason.ShouldBeNull();
         normalized.ShouldBe("Tiếng Viet hops", "NFC composes the marks, then every whitespace run collapses");
@@ -115,10 +117,21 @@ public sealed class FactStatementRulesTests
         normalized.ShouldBe("a\u200Db\u200Cc");
     }
 
+    /// <summary>
+    /// The lone-surrogate shapes, built at run time. A lone surrogate written in an <c>[InlineData]</c> string never
+    /// reaches the test body — the runner's theory data hands the test U+FFFD instead — so the shapes are data, the
+    /// same workaround <c>LeaseFetchTasksValidatorTests.LoneSurrogateIds</c> uses.
+    /// </summary>
+    public static TheoryData<string> LoneSurrogates()
+    {
+        var high = new string('\uD800', 1);
+        var low = new string('\uDC00', 1);
+
+        return new TheoryData<string> { "a" + high + "b", "a" + low + "b", high };
+    }
+
     [Theory]
-    [InlineData("a\uD800b")]
-    [InlineData("a\uDC00b")]
-    [InlineData("\uD800")]
+    [MemberData(nameof(LoneSurrogates))]
     public void TryNormalize_LoneSurrogate_ReturnsStatementInvalid(string statement)
     {
         FactStatementRules.TryNormalize(statement, out _).ShouldBe(FactDropReasons.StatementInvalid);

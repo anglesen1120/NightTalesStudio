@@ -1,6 +1,5 @@
 using System.Globalization;
 using System.Net;
-using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
 using NightTales.Api.IntegrationTests.Harness;
@@ -267,12 +266,16 @@ internal static class FactSheetHarness
 
     /// <summary>The response body as a detached <see cref="JsonElement"/>.</summary>
     internal static async Task<JsonElement> JsonAsync(HttpResponseMessage response) =>
-        (await response.Content.ReadFromJsonAsync<JsonElement>(Ct)).Clone();
+        JsonSerializer.Deserialize<JsonElement>(await response.Content.ReadAsStringAsync(Ct));
 
     /// <summary>The problem body of an error response.</summary>
     internal static async Task<ProblemResponse> ProblemAsync(HttpResponseMessage response)
     {
-        var problem = await response.Content.ReadFromJsonAsync<ProblemResponse>(ProblemResponse.Options, Ct);
+        // Read as text, never as a stream: a stream read of the content is single-use, and a test reads the
+        // problem twice (the status and code first, then the field errors it names).
+        var problem = JsonSerializer.Deserialize<ProblemResponse>(
+            await response.Content.ReadAsStringAsync(Ct),
+            ProblemResponse.Options);
         problem.ShouldNotBeNull();
 
         return problem;

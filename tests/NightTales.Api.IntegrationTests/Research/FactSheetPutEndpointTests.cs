@@ -310,7 +310,10 @@ public sealed class FactSheetPutEndpointTests(TestDatabase database) : Integrati
         // The episode has no sheet yet, so the first row cannot be created by an edit: PUT needs the seed row.
         await FactSheetHarness.AssertProblemAsync(response, 404, "fact_sheet_not_found");
 
-        var seeded = await FactSheetHarness.SeedSheetAsync(Database, world, 1, [FactSheetHarness.Seed("f1", "One fact.", [])]);
+        // The seeded draft carries one cited fact: the domain refuses to store a fact that cites no source, so the
+        // version the edit empties has to start from a citation that exists.
+        var source = await FactSheetHarness.AddFetchedUrlAsync(Database, world);
+        var seeded = await FactSheetHarness.SeedSheetAsync(Database, world, 1, [FactSheetHarness.Seed("f1", "One fact.", [source])]);
         using var second = await FactSheetHarness.PutAsync(
             client,
             world.EpisodeId,

@@ -209,9 +209,11 @@ public sealed class FactSheetPutValidationTests(TestDatabase database) : Integra
     {
         var (world, _, sheet) = await SeedOneFactAsync();
         var sourceIds = new List<Guid>();
+        // MarkFetched only stores a 64-character lowercase hex content hash, so a fresh source takes a hex letter.
+        const string HexDigits = "0123456789abcdef";
         for (var index = 0; index < 11; index++)
         {
-            sourceIds.Add(await FactSheetHarness.AddFetchedUrlAsync(Database, world, FactSheetHarness.Sha((char)('a' + index))));
+            sourceIds.Add(await FactSheetHarness.AddFetchedUrlAsync(Database, world, FactSheetHarness.Sha(HexDigits[index])));
         }
 
         using var factory = FactSheetHarness.Factory(Database);
@@ -255,7 +257,6 @@ public sealed class FactSheetPutValidationTests(TestDatabase database) : Integra
     [InlineData("del")]
     [InlineData("bidi-override")]
     [InlineData("bidi-isolate")]
-    [InlineData("lone-surrogate")]
     public async Task PutFactSheet_RejectedStatement_Returns400WithFieldError(string kind)
     {
         var (world, source, sheet) = await SeedOneFactAsync();
@@ -360,7 +361,14 @@ public sealed class FactSheetPutValidationTests(TestDatabase database) : Integra
         invalidProblem.Title.ShouldNotBeNullOrWhiteSpace();
     }
 
-    /// <summary>The statement shape one rejected case sends.</summary>
+    /// <summary>
+    /// The statement shape one rejected case sends. A lone surrogate has no case here: the wire cannot carry one.
+    /// <c>System.Text.Json</c> substitutes U+FFFD when it writes a lone surrogate, and it refuses an unpaired
+    /// <c>\ud800</c> escape when it reads one, so no client can make the edit path see the character at all (a
+    /// raw escape is a body-level 400 before the statement rules run). The rule itself is pinned where it is
+    /// reachable — <c>FactStatementRulesTests.TryNormalize_LoneSurrogate_ReturnsStatementInvalid</c> and
+    /// <c>FactSheetValidatorTests.FactSheetValidator_DropsLoneSurrogate</c>.
+    /// </summary>
     private static string RejectedStatement(string kind) => kind switch
     {
         "empty" => string.Empty,
@@ -372,7 +380,6 @@ public sealed class FactSheetPutValidationTests(TestDatabase database) : Integra
         "del" => "A fact with a DEL\u007F in it.",
         "bidi-override" => "A fact with a bidi override\u202E in it.",
         "bidi-isolate" => "A fact with a bidi isolate\u2066 in it.",
-        "lone-surrogate" => "A fact with a lone surrogate\uD800 in it.",
         _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, "Unknown rejected statement kind."),
     };
 
