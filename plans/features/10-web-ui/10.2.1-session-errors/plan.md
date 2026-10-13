@@ -430,7 +430,7 @@ Integration points published for others:
   from another origin (D3, `09.3-auth/plan.md:72`).
 - **XSS.** Error text is interpolated (`{{ }}`) only; `detail` and any server-supplied HTML are never bound with
   `[innerHTML]`, and `bypassSecurityTrust*` remains lint-forbidden (D2, D4). `errors[]` from `keywords_flagged` is
-  rendered as structured rows `{segment, index, rule}` mapped through `errors.keywords_flagged.rules.<rule>`, never
+  rendered as structured rows `{segment, index, rule}` mapped through `errors.keywords_flagged.rules.<rule>` (key family superseded by 10 CR-54: `errors.keywordsFlaggedRule.<rule>`, PR #181), never
   as markup.
 - **Idempotency.** A UUID per user intent, 36 chars (within the API's 1–128 printable-ASCII rule), regenerated only
   when a new intent starts; it is not a capability and is safe to send (no secret in it), but it is still never
