@@ -69,6 +69,22 @@
       "writeStoryBlocked": "Approve the fact sheet with at least 2 fetched sources before writing the story."
     }
   },
+  "annotations": {
+    "heading": "Suggestions",
+    "objective": "Objective",
+    "taste": "Taste",
+    "blocking": "Must fix",
+    "advisory": "Worth a look",
+    "evidence": "Evidence",
+    "repair": "How to fix",
+    "goTo": "Go to",
+    "none": "No suggestions",
+    "unknown": "A suggestion is not translated yet",
+    "meta": "Whole episode",
+    "unresolved": "This part is no longer in your draft",
+    "announce": "{{count}} suggestions",
+    "announceNone": "No suggestions"
+  },
   "editor": {
     "pageTitle": "Episode story",
     "loading": "Loading story",
@@ -99,6 +115,8 @@
     "addKeyword": "Add scene",
     "removeKeyword": "Remove scene",
     "keywordLimit": "Each paragraph needs 1–2 scenes",
+    "keywordFlagged": "Flagged scene",
+    "keywordFlaggedHint": "This scene needs a change before you continue.",
     "tokens": "{{count}} words",
     "totalTokens": "{{count}} words total",
     "description": "Description",
@@ -193,6 +211,14 @@
     "cancel": "Cancel",
     "reloadConfirmTitle": "Discard unsaved changes?",
     "reloadConfirmBody": "Reloading the latest version replaces the unsaved text on this screen. This cannot be undone.",
-    "reloadConfirm": "Reload latest"
+    "reloadConfirm": "Reload latest",
+    "diffHeading": "Parts that differ",
+    "diffNone": "No differing parts found.",
+    "busyBody": "Someone saved again just now. Reload the latest version to continue.",
+    "elsewhereTitle": "The story changed elsewhere",
+    "elsewhereBody": "Another tab or person saved a newer version. Your draft is left untouched.",
+    "dismiss": "Dismiss",
+    "reloadFailed": "The latest version could not be loaded. Try again.",
+    "retry": "Try again"
   }
 }

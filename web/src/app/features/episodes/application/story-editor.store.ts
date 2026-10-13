@@ -11,7 +11,10 @@ import { addressForParagraph, parseAddress, parsePointerAddress, remapAfterInser
 import type { SegmentAddress } from '@shared/util/segment-address';
 import { fromContent, serialize, toContent } from '../domain/story-codec';
 import type { QualityHint, StoryDraft, StoryMetadata, StorySegment, StorySnapshot } from '../domain/story.model';
+import type { KeywordFlag, SegmentAnnotation } from '../domain/annotation.model';
+import { diffSegmentAddresses, mergeAnnotations } from './annotation-merge';
 import { applyMove, applyRemove, insertAt } from './paragraph-structure';
+import { mapKeywordsFlagged } from '../data-access/keyword-flags.mapper';
 import { StoryRepository } from '../domain/story.repository';
 import { EpisodesRepository } from '../domain/episodes.repository';
 import { countTokens } from '../domain/token-count';
@@ -75,6 +78,12 @@ export class StoryEditorStore {
   private readonly resolving = signal(false);
   readonly savedAt = signal<number | null>(null);
   readonly conflict = signal<true | null>(null);
+  /** Segments that differ between my draft and the server's story; `[]` when the server content is unknown. */
+  readonly conflictDiff = signal<readonly SegmentAddress[]>([]);
+  /** The single user-authorised "save mine as new" attempt itself came back 412: the dialog shows its busy variant. */
+  readonly conflictBusy = signal(false);
+  /** Non-modal "changed elsewhere" notice: a background read found a different ETag while the draft is dirty. */
+  readonly remoteChange = signal<{ readonly etag: string; readonly diff: readonly SegmentAddress[] } | null>(null);
   readonly fieldErrors = signal<Readonly<Partial<Record<SegmentAddress, readonly string[]>>>>({});
   readonly formErrors = signal<readonly string[]>([]);
   readonly keywordLimitHit = signal<string | null>(null);
@@ -88,6 +97,17 @@ export class StoryEditorStore {
   /** `snapshot().qualityHints` re-keyed to the local paragraph order after a move/delete/undo; `null` at the baseline. */
   private readonly hintOverrides = signal<readonly QualityHint[] | null>(null);
   readonly hints = computed<readonly QualityHint[]>(() => this.hintOverrides() ?? this.snapshot()?.qualityHints ?? EMPTY_HINTS);
+  /** `409 keywords_flagged` chips; cleared only by a successful save/load/adopt, never by a local edit (WR6). */
+  readonly keywordFlags = signal<readonly KeywordFlag[]>([]);
+  readonly videoBlocked = computed(() => this.keywordFlags().length > 0);
+  /**
+   * Server hints merged with the keyword flags (pure, deterministic): the saved hint set, never the draft text, so an
+   * edit cannot re-key or re-sort the annotations under the user's cursor.
+   */
+  readonly annotations = computed<readonly SegmentAnnotation[]>(() => mergeAnnotations(this.hints(), this.keywordFlags()));
+  readonly annotationCount = computed(() => this.annotations().length);
+  /** Set once per successful save response (after the response snapshot is applied); `null` on load/adopt/clear. */
+  readonly annotationAnnouncement = signal<{ readonly count: number; readonly sequence: number } | null>(null);
   /** Advisory only (D9/D18): the client never blocks a save the server's validator would report. */
   readonly structureWarning = computed(() => {
     if (this.snapshot() === null) return false;
@@ -126,6 +146,10 @@ export class StoryEditorStore {
   private baselineKeys: readonly string[] = [];
   /** `p:<i>`-keyed hints of the paragraph that sits in the undo buffer, hidden until it comes back. */
   private bufferedHints: readonly QualityHint[] = [];
+  /** Monotonic counter so a live region re-announces even when the count is unchanged across saves. */
+  private announcementSequence = 0;
+  /** The ETag already surfaced (or dismissed) as a remote change: a repeat never re-raises the same one. */
+  private announcedEtag: string | null = null;
 
   constructor() {
     inject(DestroyRef).onDestroy(() => {
@@ -232,6 +256,27 @@ export class StoryEditorStore {
     keywords.update((values) => values.filter((_, i) => i !== index)); this.trackChange(`${segKey}:keywords`, keywords()); this.edited();
   }
 
+  /**
+   * The ONE write path for `409 keywords_flagged` flags (WR6): replaces the set, ignores calls with no snapshot or
+   * after destroy/session change, caps the list, and never rolls back a local edit.
+   */
+  setKeywordFlags(flags: readonly KeywordFlag[]): void {
+    if (!this.active() || this.snapshot() === null) return;
+    this.keywordFlags.set(flags.slice(0, 100));
+  }
+
+  /**
+   * `409 keywords_flagged` handling shared with the approve/render flow (10.5.6-T1): maps the problem's `errors[]` rows
+   * (validated in `mapKeywordsFlagged`, malformed rows dropped) onto the exact flagged chips. Returns `true` when the
+   * error is that problem and a live draft took the flags, so the caller adds no generic toast of its own; the draft and
+   * its ETag are never touched (WR6).
+   */
+  applyKeywordsFlaggedProblem(error: AppError): boolean {
+    if (error.status !== 409 || error.code !== 'keywords_flagged' || !this.active() || this.snapshot() === null) return false;
+    this.setKeywordFlags(mapKeywordsFlagged(error.problem?.errors));
+    return true;
+  }
+
   setMeta(patch: Partial<StoryMetadata>): void {
     if (!this.canEdit()) return;
     // structure is opaque/read-only and cannot be changed by presentation.
@@ -313,25 +358,30 @@ export class StoryEditorStore {
   }
 
   async resolveConflict(choice: 'reload' | 'saveAsNew' | 'cancel'): Promise<void> {
-    if (!this.active() || this.conflict() === null || this.saving() || this.resolving()) return;
-    if (choice === 'cancel') { this.conflict.set(null); return; }
+    if (!this.active() || (this.conflict() === null && this.remoteChange() === null) || this.saving() || this.resolving()) return;
+    if (choice === 'cancel') {
+      // Dismissing the notice remembers its ETag, so the same one never re-opens; a newer one will.
+      this.conflict.set(null); this.conflictDiff.set([]); this.conflictBusy.set(false); this.remoteChange.set(null);
+      return;
+    }
     const generation = this.generation;
     this.resolving.set(true);
     try {
       if (choice === 'reload') { await this.refresh(true, true); return; }
-      // Keep every live signal while the user-authorized read obtains the latest story ETag.
+      // Keep every live signal while the user-authorized read obtains the latest story ETag (one read, one PUT, no loop).
       const fresh = await this.detail.refetch({ userAction: true });
       if (!this.current(generation)) return;
-      if (fresh === null) { this.conflict.set(null); this.error.set(this.detail.error()); return; }
-      if (!fresh.nextActions.includes('edit_story')) { this.conflict.set(null); this.invalidState.set(true); this.showError(this.mapper.fromProblem({ code: 'episode_invalid_state' }, 409, null)); return; }
+      if (fresh === null) { this.conflict.set(null); this.remoteChange.set(null); this.error.set(this.detail.error()); return; }
+      if (!fresh.nextActions.includes('edit_story')) { this.conflict.set(null); this.remoteChange.set(null); this.invalidState.set(true); this.showError(this.mapper.fromProblem({ code: 'episode_invalid_state' }, 409, null)); return; }
       this.invalidState.set(false);
-      await this.put(fresh.currentStory?.etag ?? '');
+      this.conflictDiff.set(this.diffAgainst(fresh.currentStory));
+      await this.put(fresh.currentStory?.etag ?? '', { retry: true });
     } finally {
       if (this.current(generation)) this.resolving.set(false);
     }
   }
 
-  private async put(etag: string): Promise<void> {
+  private async put(etag: string, options: { readonly retry?: boolean } = {}): Promise<void> {
     if (!this.active() || this.id === null || this.saving()) return;
     if (!etag || !/^"sv-[^"]+"$/.test(etag)) {
       this.conflict.set(null); this.showError(this.mapper.fromProblem({ code: 'if_match_required' }, 428, null)); return;
@@ -348,18 +398,35 @@ export class StoryEditorStore {
       this.recordBaseline(draft);
       for (const [key, value] of this.draftValues(this.buildDraft())) this.trackChange(key, value);
       if (this.version() === sent) this.dirtyJson.set(sentJson);
-      this.savedAt.set(Date.now()); this.conflict.set(null);
+      this.savedAt.set(Date.now()); this.conflict.set(null); this.conflictDiff.set([]); this.conflictBusy.set(false);
+      this.remoteChange.set(null); this.announcedEtag = null;
+      // The server recomputed the feedback for the content it just acknowledged: the hints arrive in the response and
+      // the keyword flags are no longer in play, so a local edit never has to clear them itself.
+      this.keywordFlags.set([]);
+      this.announcementSequence++;
+      this.annotationAnnouncement.set({ count: this.annotations().length, sequence: this.announcementSequence });
     } catch (cause) {
       if (!this.current(generation)) return;
       const error = this.showError(cause);
       if (error.status === 412) {
         this.conflict.set(true);
+        if (options.retry === true) {
+          // The single user-authorised re-attempt also lost the race: keep the dialog, flag the busy variant, stop here.
+          this.conflictBusy.set(true);
+        } else {
+          this.conflictBusy.set(false);
+          await this.loadConflictDiff(generation);
+        }
       } else {
         this.conflict.set(null);
         if (error.status === 409 && error.code === 'episode_invalid_state') {
           this.invalidState.set(true);
           const fresh = await this.detail.refetch();
           if (this.current(generation) && fresh?.nextActions.includes('edit_story')) this.invalidState.set(false);
+        } else {
+          // `409 keywords_flagged`: the flagged chips and the annotation panel are the feedback (the existing
+          // `showError` copy `errors.keywords_flagged` stays as the form error); the draft and ETag are untouched.
+          this.applyKeywordsFlaggedProblem(error);
         }
       }
     } finally {
@@ -374,12 +441,42 @@ export class StoryEditorStore {
     if (!this.current(generation) || read !== this.readGeneration) return;
     if (fresh === null) { this.readError = this.detail.error(); this.error.set(this.readError); return; }
     if (fresh.nextActions.includes('edit_story')) this.invalidState.set(false);
-    if (this.saving() || (!replaceDraft && (this.hasUnsavedChanges() || this.conflict() !== null))) return;
-    if (!replaceDraft && fresh.currentStory?.etag === this.snapshot()?.etag) {
-      if (this.readError !== null && this.error() === this.readError) { this.error.set(null); this.readError = null; }
-      return;
+    // A reload is user-authorised; every other read must not adopt while a write or a resolve is in flight.
+    if (this.saving() || (this.resolving() && !replaceDraft)) return;
+    if (!replaceDraft) {
+      // The dialog owns the flow: an invalidation never replaces the draft, clears the conflict or re-raises a notice.
+      if (this.conflict() !== null) return;
+      if (this.hasUnsavedChanges()) {
+        // Dirty draft: never adopt. If the server moved on, surface the non-modal notice once per new ETag.
+        this.raiseRemoteChange(fresh.currentStory);
+        return;
+      }
+      if (fresh.currentStory?.etag === this.snapshot()?.etag) {
+        if (this.readError !== null && this.error() === this.readError) { this.error.set(null); this.readError = null; }
+        return;
+      }
     }
     this.adopt(fresh.currentStory); this.clearErrors();
+  }
+
+  /** One user-authorised read to describe the conflict (never adopts): the segments my draft and the server disagree on. */
+  private async loadConflictDiff(generation: number): Promise<void> {
+    const read = ++this.readGeneration;
+    const fresh = await this.detail.refetch({ userAction: true });
+    if (!this.current(generation) || read !== this.readGeneration) return;
+    this.conflictDiff.set(this.diffAgainst(fresh?.currentStory ?? null));
+  }
+
+  /** Segments whose text/keywords differ between the live draft and a server story; `[]` when the story is unknown. */
+  private diffAgainst(snapshot: StorySnapshot | null): readonly SegmentAddress[] {
+    return snapshot === null ? [] : diffSegmentAddresses(this.buildDraft(), fromContent(snapshot.content));
+  }
+
+  /** Raise the "changed elsewhere" notice once per distinct ETag; a dismissed (or already shown) ETag never re-raises. */
+  private raiseRemoteChange(story: StorySnapshot | null): void {
+    if (story === null || story.etag === this.snapshot()?.etag || story.etag === this.announcedEtag) return;
+    this.announcedEtag = story.etag;
+    this.remoteChange.set({ etag: story.etag, diff: this.diffAgainst(story) });
   }
 
   private adopt(snapshot: StorySnapshot | null): void {
@@ -400,6 +497,9 @@ export class StoryEditorStore {
     const baseline = serialize(draft);
     this.baselineJson.set(baseline); this.dirtyJson.set(baseline); this.savedVersion.set(this.version()); this.recordBaseline(draft);
     this.conflict.set(null); this.savedAt.set(null);
+    // An adopt replaces the draft with server content: the old flags, notice and announcement no longer describe it.
+    this.keywordFlags.set([]); this.conflictDiff.set([]); this.conflictBusy.set(false);
+    this.remoteChange.set(null); this.announcedEtag = null; this.annotationAnnouncement.set(null);
     window.clearTimeout(this.dirtyTimer);
     this.dirtyTimer = undefined;
   }
@@ -554,6 +654,8 @@ export class StoryEditorStore {
     this.hookFacts = []; this.endingFacts = []; this.baselineJson.set(''); this.dirtyJson.set('');
     this.baselineValues.clear(); this.changedFields.clear(); this.changedCount.set(0);
     this.savedVersion.set(this.version()); this.savedAt.set(null); this.conflict.set(null); this.keywordLimitHit.set(null);
+    this.keywordFlags.set([]); this.conflictDiff.set([]); this.conflictBusy.set(false);
+    this.remoteChange.set(null); this.announcedEtag = null; this.annotationAnnouncement.set(null);
     this.clearRemoved(); this.hintOverrides.set(null); this.baselineKeys = []; this.structuralChanged.set(false);
   }
   private teardown(): void {

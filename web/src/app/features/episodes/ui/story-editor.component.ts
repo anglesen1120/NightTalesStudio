@@ -1,6 +1,11 @@
 import { ChangeDetectionStrategy, Component, ElementRef, computed, inject, input, output } from '@angular/core';
 import { TranslocoPipe, provideTranslocoScope } from '@jsverse/transloco';
+import { parseAddress } from '@shared/util/segment-address';
 import type { SegmentAddress } from '@shared/util/segment-address';
+import type { InlineAnnotationViewModel } from '@shared/ui';
+import { AnnotationPanelComponent } from './annotation-panel.component';
+import { EMPTY_ANNOTATION_VIEWS } from './annotation.view-model';
+import type { AnnotationViews } from './annotation.view-model';
 import { ParagraphListComponent } from './paragraph-list.component';
 import { SceneStripComponent } from './scene-strip.component';
 import { SegmentEditorComponent } from './segment-editor.component';
@@ -12,7 +17,7 @@ import type { SceneSegmentViewModel, SegmentNavViewModel, SegmentTexts, StoryEdi
 
 @Component({
   selector: 'nts-story-editor',
-  imports: [TranslocoPipe, ParagraphListComponent, SceneStripComponent, SegmentEditorComponent, SegmentNavComponent, StoryMetaEditorComponent, StorySaveBarComponent],
+  imports: [TranslocoPipe, AnnotationPanelComponent, ParagraphListComponent, SceneStripComponent, SegmentEditorComponent, SegmentNavComponent, StoryMetaEditorComponent, StorySaveBarComponent],
   providers: [provideTranslocoScope('episodes', 'errors')],
   templateUrl: './story-editor.component.html',
   styleUrl: './story-editor.component.scss',
@@ -21,6 +26,10 @@ import type { SceneSegmentViewModel, SegmentNavViewModel, SegmentTexts, StoryEdi
 export class StoryEditorComponent {
   readonly viewModel = input.required<StoryEditorViewModel>();
   readonly segmentTexts = input.required<SegmentTexts>();
+  readonly annotationViews = input<AnnotationViews>(EMPTY_ANNOTATION_VIEWS);
+  readonly announcement = input<string | null>(null);
+  protected readonly emptyAnnotations: readonly InlineAnnotationViewModel[] = [];
+  protected readonly emptyFlags: ReadonlyMap<number, { readonly annotationId: string; readonly messageKey: string }> = new Map();
   readonly intent = output<StoryEditorIntent>();
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
 
@@ -44,6 +53,10 @@ export class StoryEditorComponent {
 
   protected forward(intent: StoryEditorIntent): void {
     this.intent.emit(intent);
+  }
+
+  protected openAnnotation(annotation: InlineAnnotationViewModel): void {
+    if (annotation.canGoTo && annotation.address !== null && parseAddress(annotation.address) !== null) this.open(annotation.address as SegmentAddress);
   }
 
   protected open(address: SegmentAddress): void {

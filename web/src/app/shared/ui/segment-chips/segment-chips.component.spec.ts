@@ -73,4 +73,45 @@ describe('SegmentChipsComponent', () => {
     expect(status.textContent).toContain('!');
     expect(status.textContent).toContain('Mỗi đoạn cần 1–2 cảnh');
   });
+
+  it('marks the exact flagged chip with icon, visible text and an accessible description without blocking edits', async () => {
+    const { fixture, root, component } = await setup(['Mưa', 'Ngõ tối']);
+    const flags = new Map([[1, { annotationId: 'ann-p-3-keyword_invalid-k1', messageKey: 'episodes.editor.keywordFlaggedHint' }]]);
+    fixture.componentRef.setInput('flagged', flags);
+    fixture.detectChanges(); await fixture.whenStable();
+    const inputs = root.querySelectorAll<HTMLInputElement>('input');
+    expect(inputs[0]!.getAttribute('aria-invalid')).toBeNull();
+    expect(inputs[1]!.getAttribute('aria-invalid')).toBe('true');
+    expect(inputs[1]!.getAttribute('aria-label')).toContain(episodesVi.editor.keywordFlagged);
+    expect(inputs[1]!.getAttribute('aria-describedby')).toBe('ann-p-3-keyword_invalid-k1');
+    expect(root.querySelector('#ann-p-3-keyword_invalid-k1')?.textContent).toContain(episodesVi.editor.keywordFlaggedHint);
+    expect(root.querySelector('.segment-chips__item--flagged .segment-chips__flag svg')).not.toBeNull();
+    expect(root.querySelector('.segment-chips__item--flagged .segment-chips__flag')?.textContent).toContain(episodesVi.editor.keywordFlagged);
+    const edits: unknown[] = [], removals: number[] = [];
+    onEmit(component.editKeyword, (event) => edits.push(event));
+    onEmit(component.removeKeyword, (index) => removals.push(index));
+    inputs[1]!.value = 'Updated';
+    inputs[1]!.dispatchEvent(new Event('input', { bubbles: true }));
+    root.querySelector<HTMLButtonElement>('.segment-chips__item--flagged button')!.click();
+    fixture.detectChanges();
+    expect(edits).toEqual([{ index: 1, value: 'Updated' }]);
+    expect(removals).toEqual([1]);
+    expect(component.flagged()).toBe(flags);
+    expect(inputs[1]!.getAttribute('aria-invalid')).toBe('true');
+  });
+
+  it('keeps the warning available in read-only mode and clears only when the owner replaces the flag input', async () => {
+    const { fixture, root } = await setup();
+    fixture.componentRef.setInput('flagged', new Map([[0, { annotationId: 'ann-hook-invalid-k0', messageKey: 'episodes.editor.keywordFlaggedHint' }]]));
+    fixture.componentRef.setInput('readOnly', true);
+    fixture.detectChanges(); await fixture.whenStable();
+    expect(root.querySelector<HTMLInputElement>('input')?.readOnly).toBe(true);
+    expect(root.querySelector('.segment-chips__flag')).not.toBeNull();
+    expect(root.querySelector('.segment-chips__remove')).toBeNull();
+    fixture.componentRef.setInput('flagged', new Map());
+    fixture.detectChanges();
+    expect(root.querySelector('input')?.getAttribute('aria-invalid')).toBeNull();
+    expect(root.querySelector('.segment-chips__flag')).toBeNull();
+  });
+
 });

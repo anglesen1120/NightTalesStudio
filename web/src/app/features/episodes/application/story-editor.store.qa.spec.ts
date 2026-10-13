@@ -205,15 +205,22 @@ describe('StoryEditorStore QA', () => {
   describe('412 conflict boundaries', () => {
     it('a second plain save after Cancel gets 412 again: no automatic retry, draft and ETag untouched', async () => {
       const h = await loaded(); h.store.setSegmentText('title', 'mine');
+      // The store reads the server story once per 412 (user-authorised diff), and that read keeps the episode editable.
+      nextDetail(h, { currentStory: storySnapshot({ etag: '"sv-theirs"' }) });
       failWith(h, appError('story_version_conflict', 412)); await h.store.saveVersion();
       await h.store.resolveConflict('cancel');
+      nextDetail(h, { currentStory: storySnapshot({ etag: '"sv-theirs"' }) });
       failWith(h, appError('story_version_conflict', 412)); await h.store.saveVersion(); vi.advanceTimersByTime(5000); await settle();
       expect(h.stories.calls).toHaveLength(2); expect(h.stories.calls.every((call) => call.etag === storySnapshot().etag)).toBe(true);
+      // Two reads and no more: the load plus one user-authorised diff read per 412 — never a retry with a fresh ETag.
+      expect(h.episodes.getCalls).toHaveLength(3); expect(h.episodes.getCalls.slice(1).every((call) => call.userAction)).toBe(true);
       expect(h.store.conflict()).not.toBeNull(); expect(h.store.title()).toBe('mine'); expect(h.store.snapshot()?.etag).toBe(storySnapshot().etag);
     });
 
     it('text typed while the conflict dialog is open is what "Save mine as new" sends', async () => {
       const h = await loaded(); h.store.setSegmentText('title', 'before');
+      // The 412 diff read answers with an editable server copy, so the draft stays editable while the dialog is open.
+      nextDetail(h, { currentStory: storySnapshot({ etag: '"sv-theirs"' }) });
       failWith(h, appError('story_version_conflict', 412)); await h.store.saveVersion();
       h.store.setSegmentText('title', 'typed behind the dialog'); nextDetail(h, { currentStory: storySnapshot({ etag: '"sv-fresh"' }) });
       await h.store.resolveConflict('saveAsNew');
@@ -250,10 +257,12 @@ describe('StoryEditorStore QA', () => {
       expect(h.stories.calls).toHaveLength(1); expect(h.store.snapshot()).toBeNull();
     });
 
-    it('the 412 handler never calls the repository twice without a user decision', async () => {
+    it('the 412 handler issues one user-authorised diff read and never a second PUT without a user decision', async () => {
       const h = await loaded(); h.store.setSegmentText('title', 'mine');
       failWith(h, appError('story_version_conflict', 412)); await h.store.saveVersion(); vi.advanceTimersByTime(10_000); await settle();
-      expect(h.stories.calls).toHaveLength(1); expect(h.episodes.getCalls).toHaveLength(1);
+      expect(h.stories.calls).toHaveLength(1);
+      expect(h.episodes.getCalls).toHaveLength(2); expect(h.episodes.getCalls[1]).toEqual({ episodeId: EPISODE_ID, userAction: true });
+      expect(h.store.conflict()).not.toBeNull(); expect(h.store.saving()).toBe(false); expect(h.store.conflictDiff()).toEqual([]);
     });
   });
 
@@ -557,15 +566,20 @@ describe('StoryReviewPage QA (real stores)', () => {
     expect(page.root.querySelector('.story-save-bar')).toBeNull();
   });
 
-  it('Reload latest + confirm CANCEL keeps the dirty draft, closes the conflict and issues no re-read', async () => {
+  it('Reload latest + confirm CANCEL keeps the dirty draft, closes the conflict and issues no reload re-read', async () => {
     const page = await mountPage(storySnapshot(), ['edit_story']);
     await page.type('#seg-title', 'my words');
     page.stories.scriptSave(() => rejected(appError('story_version_conflict', 412))); page.script.conflict.push('reload'); page.script.confirm.push(false);
+    // The 412 diff read answers with the server copy: the dialog opens on a real diff and the episode stays editable.
+    page.episodes.scriptGet(() => Promise.resolve(episodeDetail({ nextActions: ['edit_story'], status: 'story_review', currentStory: storySnapshot({ etag: '"sv-server"', content: storyContent({ title: 'Server copy' }) }) })));
     const gets = page.episodes.getCalls.length;
     await page.clickSave(); await flush(page.fixture);
-    expect(page.script.conflictOpened).toBe(1); expect(page.script.confirmOpened).toBe(1);
+    // Declining the confirm is not a decision about the conflict, so the dialog comes back — one confirm, one diff read.
+    expect(page.script.conflictOpened).toBe(2); expect(page.script.confirmOpened).toBe(1);
     expect(page.store.title()).toBe('my words'); expect(page.store.hasUnsavedChanges()).toBe(true); expect(page.store.conflict()).toBeNull();
-    expect(page.episodes.getCalls.length).toBe(gets);
+    // Only the 412 diff read happens (user-authorised); declining the reload confirm adds no further re-read.
+    expect(page.episodes.getCalls.length).toBe(gets + 1);
+    expect(page.episodes.getCalls.at(-1)?.userAction).toBe(true);
     expect((page.root.querySelector('#seg-title') as HTMLTextAreaElement).value).toBe('my words');
   });
 
@@ -573,6 +587,8 @@ describe('StoryReviewPage QA (real stores)', () => {
     const page = await mountPage(storySnapshot(), ['edit_story']);
     await page.type('#seg-title', 'my words');
     page.stories.scriptSave(() => rejected(appError('story_version_conflict', 412))); page.script.conflict.push('reload'); page.script.confirm.push(true);
+    // First the 412 diff read, then the user-authorised reload: both answer with the server copy.
+    page.episodes.scriptGet(() => Promise.resolve(episodeDetail({ nextActions: ['edit_story'], status: 'story_review', currentStory: storySnapshot({ etag: '"sv-server"', content: storyContent({ title: 'Server copy' }) }) })));
     page.episodes.scriptGet(() => Promise.resolve(episodeDetail({ nextActions: ['edit_story'], status: 'story_review', currentStory: storySnapshot({ etag: '"sv-server"', content: storyContent({ title: 'Server copy' }) }) })));
     await page.clickSave(); await flush(page.fixture);
     expect(page.store.title()).toBe('Server copy'); expect(page.store.hasUnsavedChanges()).toBe(false); expect(page.store.snapshot()?.etag).toBe('"sv-server"');
@@ -585,6 +601,8 @@ describe('StoryReviewPage QA (real stores)', () => {
     await page.type('#seg-title', 'my words');
     page.stories.scriptSave(() => rejected(appError('story_version_conflict', 412))); page.stories.scriptSave(() => rejected(appError('story_version_conflict', 412)));
     page.script.conflict.push('saveAsNew', 'cancel');
+    // First the 412 diff read, then the Save-as-new fresh-etag read: both answer with the fresh ETag.
+    page.episodes.scriptGet(() => Promise.resolve(episodeDetail({ nextActions: ['edit_story'], status: 'story_review', currentStory: storySnapshot({ etag: '"sv-fresh"' }) })));
     page.episodes.scriptGet(() => Promise.resolve(episodeDetail({ nextActions: ['edit_story'], status: 'story_review', currentStory: storySnapshot({ etag: '"sv-fresh"' }) })));
     await page.clickSave(); await flush(page.fixture);
     expect(page.script.conflictOpened).toBe(2); expect(page.stories.calls).toHaveLength(2); expect(page.stories.calls[1]?.etag).toBe('"sv-fresh"');
@@ -595,6 +613,9 @@ describe('StoryReviewPage QA (real stores)', () => {
     const page = await mountPage(storySnapshot(), ['edit_story']);
     await page.type('#seg-title', 'my words');
     page.stories.scriptSave(() => rejected(appError('story_version_conflict', 412))); page.script.conflict.push('saveAsNew', 'cancel');
+    // The 412 diff read still finds the episode editable, so the dialog opens and the user's own Save as new is what
+    // discovers the change: the second read reports the episode as no longer editable.
+    page.episodes.scriptGet(() => Promise.resolve(episodeDetail({ nextActions: ['edit_story'], status: 'story_review', currentStory: storySnapshot({ etag: '"sv-theirs"' }) })));
     page.episodes.scriptGet(() => Promise.resolve(episodeDetail({ nextActions: ['reopen_story'], status: 'story_approved', currentStory: storySnapshot({ etag: '"sv-fresh"' }) })));
     await page.clickSave(); await flush(page.fixture);
     expect(page.store.readOnly()).toBe(true);

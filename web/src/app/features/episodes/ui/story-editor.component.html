@@ -1,4 +1,5 @@
 <div class="story-editor">
+  <div class="story-editor__annotation-announcement" aria-live="polite" aria-atomic="true">{{ announcement() }}</div>
   <nts-segment-nav [segments]="textSegments()" (openSegment)="open($event)" />
   @if (viewModel().structureWarning) {
     <p class="story-editor__structure-warning" role="status">{{ 'episodes.editor.structureWarning' | transloco }}</p>
@@ -16,22 +17,29 @@
   <section class="story-editor__sheet" [attr.aria-label]="'episodes.editor.manuscript' | transloco">
     <nts-segment-editor
       [viewModel]="viewModel().title"
+      [annotations]="annotationViews().inline.get('title') ?? emptyAnnotations"
+      [flaggedChips]="annotationViews().flaggedChips.get('title') ?? emptyFlags"
       [limitHit]="viewModel().keywordLimitHit === viewModel().title.segKey"
       (intent)="forward($event)"
     />
     <nts-segment-editor
       [viewModel]="viewModel().hook"
+      [annotations]="annotationViews().inline.get('hook') ?? emptyAnnotations"
+      [flaggedChips]="annotationViews().flaggedChips.get('hook') ?? emptyFlags"
       [limitHit]="viewModel().keywordLimitHit === viewModel().hook.segKey"
       (intent)="forward($event)"
     />
     <nts-paragraph-list
       [paragraphs]="viewModel().paragraphs"
+      [annotationViews]="annotationViews()"
       [readOnly]="viewModel().readOnly"
       [keywordLimitHit]="viewModel().keywordLimitHit"
       (intent)="forward($event)"
     />
     <nts-segment-editor
       [viewModel]="viewModel().ending"
+      [annotations]="annotationViews().inline.get('ending') ?? emptyAnnotations"
+      [flaggedChips]="annotationViews().flaggedChips.get('ending') ?? emptyFlags"
       [limitHit]="viewModel().keywordLimitHit === viewModel().ending.segKey"
       (intent)="forward($event)"
     />
@@ -50,4 +58,5 @@
       (intent)="forward($event)"
     />
   </section>
+  <nts-annotation-panel [viewModel]="annotationViews().panel" (focusRequested)="openAnnotation($event)" />
 </div>

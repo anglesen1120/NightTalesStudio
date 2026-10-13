@@ -1,0 +1,21 @@
+<section class="annotation-panel" [class.annotation-panel--empty]="viewModel().count === 0" [attr.aria-label]="'episodes.annotations.heading' | transloco">
+  <h2>{{ 'episodes.annotations.heading' | transloco }} <span class="annotation-panel__count">{{ viewModel().count }}</span></h2>
+  @defer (on viewport) {
+    <div class="annotation-panel__body" tabindex="0" [attr.aria-label]="'episodes.annotations.heading' | transloco">
+      @if (viewModel().count === 0) {
+        <p class="annotation-panel__empty">{{ 'episodes.annotations.none' | transloco }}</p>
+      } @else {
+        @for (group of viewModel().groups; track group.kind) {
+          <section class="annotation-panel__group" [attr.aria-label]="('episodes.annotations.' + group.kind) | transloco">
+            <h3>{{ ('episodes.annotations.' + group.kind) | transloco }}</h3>
+            @for (item of group.items; track item.id) {
+              <nts-inline-annotation [annotation]="item" [compact]="true" [noteId]="item.id + '-panel'" (focusRequested)="focusRequested.emit($event)" />
+            }
+          </section>
+        }
+      }
+    </div>
+  } @placeholder {
+    <div class="annotation-panel__body annotation-panel__placeholder" aria-hidden="true"></div>
+  }
+</section>

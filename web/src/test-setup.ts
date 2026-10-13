@@ -8,4 +8,24 @@
 // lives in core/prefs because that is the only place D2/D6 allows browser storage access.
 import { clearBrowserStorage } from './app/core/prefs/clear-browser-storage';
 
+/**
+ * jsdom implements no `IntersectionObserver`, and an `@defer (on viewport)` block (the annotation panel, 10.5.10-T1)
+ * starts one over its host as soon as the block renders, inside the after-render phase — without the global that
+ * trigger throws. The stub only exists so the trigger can be set up: it never reports an intersection, because a
+ * deferred block is rendered eagerly in tests (`DeferBlockBehavior.Playthrough`), never on a viewport event.
+ */
+class NoopIntersectionObserver implements IntersectionObserver {
+  readonly root: Element | Document | null = null;
+  readonly rootMargin: string = '';
+  readonly scrollMargin: string = '';
+  readonly thresholds: readonly number[] = [];
+  observe(): void {}
+  unobserve(): void {}
+  disconnect(): void {}
+  takeRecords(): IntersectionObserverEntry[] { return []; }
+}
+if (typeof globalThis.IntersectionObserver === 'undefined') {
+  globalThis.IntersectionObserver = NoopIntersectionObserver;
+}
+
 afterEach(clearBrowserStorage);

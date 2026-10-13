@@ -1,11 +1,14 @@
 import { ChangeDetectionStrategy, Component, computed, input, output } from '@angular/core';
 import { TranslocoPipe, provideTranslocoScope } from '@jsverse/transloco';
-import { SegmentChipsComponent } from '@shared/ui';
+import { InlineAnnotationComponent, SegmentChipsComponent } from '@shared/ui';
+import type { InlineAnnotationViewModel } from '@shared/ui';
+import { parseAddress } from '@shared/util/segment-address';
+import type { SegmentAddress } from '@shared/util/segment-address';
 import type { StoryEditorIntent, SegmentEditorViewModel } from './story-editor.view-model';
 
 @Component({
   selector: 'nts-segment-editor',
-  imports: [TranslocoPipe, SegmentChipsComponent],
+  imports: [TranslocoPipe, SegmentChipsComponent, InlineAnnotationComponent],
   providers: [provideTranslocoScope('episodes', 'errors')],
   templateUrl: './segment-editor.component.html',
   styleUrl: './segment-editor.component.scss',
@@ -14,6 +17,8 @@ import type { StoryEditorIntent, SegmentEditorViewModel } from './story-editor.v
 export class SegmentEditorComponent {
   readonly viewModel = input.required<SegmentEditorViewModel>();
   readonly limitHit = input(false);
+  readonly annotations = input<readonly InlineAnnotationViewModel[]>([]);
+  readonly flaggedChips = input<ReadonlyMap<number, { readonly annotationId: string; readonly messageKey: string }>>(new Map());
   readonly intent = output<StoryEditorIntent>();
 
   protected readonly controlId = computed(() => `seg-${this.viewModel().address.replace(':', '-')}`);
@@ -23,6 +28,7 @@ export class SegmentEditorComponent {
   protected readonly describedBy = computed(() => [
     this.counterId(),
     ...(this.viewModel().errorKeys.length > 0 ? [this.errorId()] : []),
+    ...this.annotations().map((annotation) => annotation.id),
   ].join(' '));
   protected readonly editableKey = computed(() => {
     const vm = this.viewModel();
@@ -33,6 +39,12 @@ export class SegmentEditorComponent {
   protected editText(event: Event): void {
     if (this.viewModel().readOnly || !(event.target instanceof HTMLTextAreaElement)) return;
     this.intent.emit({ kind: 'editText', segKey: this.editableKey(), text: event.target.value });
+  }
+
+  protected openAnnotation(annotation: InlineAnnotationViewModel): void {
+    if (annotation.canGoTo && annotation.address !== null && parseAddress(annotation.address) !== null) {
+      this.intent.emit({ kind: 'openSegment', address: annotation.address as SegmentAddress });
+    }
   }
 
   protected addKeyword(): void {

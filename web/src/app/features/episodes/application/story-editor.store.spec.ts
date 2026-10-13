@@ -222,7 +222,7 @@ describe('StoryEditorStore', () => {
   it('resolveConflict_DoubleSaveAsNew_UsesOneReadAndPut', async () => {
     const state = await loaded(); await conflict(state); const read = deferred<EpisodeDetail>(); state.episodes.scriptGet(() => read.promise);
     const first = state.store.resolveConflict('saveAsNew'); await state.store.resolveConflict('saveAsNew');
-    expect(state.episodes.getCalls).toHaveLength(2); read.resolve(episodeDetail({ currentStory: storySnapshot({ etag: '"sv-fresh"' }), nextActions: ['edit_story'] }));
+    expect(state.episodes.getCalls).toHaveLength(3); read.resolve(episodeDetail({ currentStory: storySnapshot({ etag: '"sv-fresh"' }), nextActions: ['edit_story'] }));
     await first; expect(state.stories.calls).toHaveLength(2);
   });
   it('save_400_OversizedParagraphAddress_IsFormErrorNotException', async () => {

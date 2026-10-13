@@ -10,12 +10,15 @@ import { AppErrorMapper } from '@core/errors';
 import { SessionApi, SessionStore } from '@core/session';
 import { FakeSessionApi } from '@core/session/testing/fake-session.api';
 import { ConfirmDialog, ConflictDialog } from '@shared/ui';
+import type { ConflictDialogData, ConflictDialogOutcome } from '@shared/ui';
 import { ZONELESS_TEST_PROVIDERS } from '../../../testing/providers';
 import coreVi from '../../../../assets/i18n/core/vi.json';
 import episodesVi from '../../../../assets/i18n/episodes/vi.json';
 import errorsVi from '../../../../assets/i18n/errors/vi.json';
+import qualityVi from '../../../../assets/i18n/quality/vi.json';
 import { EpisodeDetailStore } from '../application/episode-detail.store';
 import { StoryEditorStore } from '../application/story-editor.store';
+import type { SegmentAnnotation } from '../domain/annotation.model';
 import type { EpisodeDetail } from '../domain/episode.model';
 import type { StorySnapshot } from '../domain/story.model';
 import { StoryReviewPage } from './story-review.page';
@@ -34,7 +37,7 @@ class VersionsPanelProbe {
 }
 
 const translations = TranslocoTestingModule.forRoot({
-  langs: { vi: coreVi, 'core/vi': coreVi, 'episodes/vi': episodesVi, 'errors/vi': errorsVi },
+  langs: { vi: coreVi, 'core/vi': coreVi, 'episodes/vi': episodesVi, 'errors/vi': errorsVi, 'quality/vi': qualityVi },
   translocoConfig: { availableLangs: ['vi'], defaultLang: 'vi', fallbackLang: 'vi', reRenderOnLangChange: true },
   preloadLangs: true,
 });
@@ -68,17 +71,31 @@ function fakeStoryStore() {
   const paragraphs = signal(snapshot.content.paragraphs.map((paragraph, index) => ({
     segKey: `paragraph-${index}`, beat: paragraph.beat, text: signal(paragraph.text), keywords: signal(paragraph.keywords), factRefs: [],
   })));
+  // The choices the page asked the store to resolve, in order: the assertion surface for every conflict flow.
+  const conflictChoices: string[] = [];
+  const conflict = signal<true | null>(null);
   return {
     loading: signal(false), generating: signal(false), generationError: signal(null), canGenerate: signal(false), error: signal<{ readonly status: number } | null>(null), snapshot: signal(snapshot), title: signal(snapshot.content.title), hook: signal(snapshot.content.hook.text),
     ending: signal(snapshot.content.ending.text), meta: signal({ title: snapshot.content.title, description: snapshot.content.description, tags: snapshot.content.tags, contentWarnings: snapshot.content.content_warnings, structure: null }),
     paragraphs, hookKeywords: signal(snapshot.content.hook.keywords), endingKeywords: signal(snapshot.content.ending.keywords), hookKey: signal('hook-key'), endingKey: signal('ending-key'),
     segmentTokens: signal(new Map([['title', 3], ['hook', 2], ['p:0', 2], ['p:1', 2], ['p:2', 2], ['p:3', 2], ['ending', 1], ['meta', 5]])),
-    metaTokens: signal(5), totalTokens: signal(19), isDirty: signal(false), saving: signal(false), savedAt: signal<number | null>(null), saveDisabled: signal(true), conflict: signal(null),
+    metaTokens: signal(5), totalTokens: signal(19), isDirty: signal(false), saving: signal(false), savedAt: signal<number | null>(null), saveDisabled: signal(true), conflict,
+    conflictDiff: signal<readonly string[]>([]), conflictBusy: signal(false),
+    remoteChange: signal<{ readonly etag: string; readonly diff: readonly string[] } | null>(null),
+    annotations: signal<readonly SegmentAnnotation[]>([]), keywordFlags: signal<readonly unknown[]>([]), videoBlocked: signal(false),
+    annotationAnnouncement: signal<{ readonly count: number; readonly sequence: number } | null>(null),
     fieldErrors: signal({}), formErrors: signal<readonly string[]>([]), keywordLimitHit: signal<string | null>(null), readOnly: signal(false), invalidState: signal(false),
     removed: signal<unknown>(null), dirty: signal(false), structureWarning: signal(false),
     moveTo: vi.fn(() => true), removeParagraph: vi.fn(() => true), undoRemove: vi.fn((): number | null => 1), discardDraft: vi.fn(),
     load: vi.fn(() => Promise.resolve()), setText: vi.fn(), setSegmentText: vi.fn(), addKeyword: vi.fn(), updateKeyword: vi.fn(), removeKeyword: vi.fn(), setMeta: vi.fn(),
-    saveVersion: vi.fn(() => Promise.resolve()), resolveConflict: vi.fn(() => Promise.resolve()), hasUnsavedChanges: vi.fn(() => false),
+    saveVersion: vi.fn(() => Promise.resolve()), hasUnsavedChanges: vi.fn(() => false),
+    // Cancel is the "leave it for now" answer, so the store drops its marker — the next conflict is a fresh one.
+    resolveConflict: vi.fn((choice: string): Promise<void> => {
+      conflictChoices.push(choice);
+      if (choice === 'cancel') conflict.set(null);
+      return Promise.resolve();
+    }),
+    conflictChoices,
   };
 }
 
@@ -127,12 +144,42 @@ function fakeSnackBar() {
   return { open, opened };
 }
 
+/**
+ * Stand-in for the `ConflictDialog` service: every `open` records the data it was handed and hands back an
+ * `afterClosed` the test drives, so a flow can be stepped one user action at a time — including the second 412 after
+ * Save as new and a declined reload confirm, neither of which a real dialog could be asked for in one go.
+ */
+function fakeConflictDialogs() {
+  const opened: ConflictDialogData[] = [];
+  const outcomes: Subject<ConflictDialogOutcome>[] = [];
+  const open = vi.fn((data: ConflictDialogData) => {
+    opened.push(data);
+    const closed = new Subject<ConflictDialogOutcome>();
+    outcomes.push(closed);
+    return { afterClosed: () => closed.asObservable() };
+  });
+  const choose = (index: number, outcome: ConflictDialogOutcome): void => {
+    const closed = outcomes[index];
+    if (closed === undefined) throw new Error(`dialog ${index} was never opened`);
+    closed.next(outcome);
+    closed.complete();
+  };
+  return { open, opened, choose };
+}
+
+/** The page settles every dialog on a promise continuation, so a macrotask — not just a microtask — has to pass. */
+// The tsconfig lib predates Promise.withResolvers, so the executor form is the only typed option here.
+const tick = (): Promise<void> => new Promise((resolve) => { setTimeout(resolve, 0); });
+
 async function createPage() {
   const detailStore = fakeDetailStore();
   const storyStore = fakeStoryStore();
   const params = convertToParamMap({ id: 'episode-1' });
   const query = convertToParamMap({});
   const snack = fakeSnackBar();
+  const dialogs = fakeConflictDialogs();
+  // The single confirm the page owns: leaving a dirty draft and reloading after a conflict both go through it.
+  const confirm = vi.fn(() => ({ afterClosed: () => of(true) }));
   await TestBed.configureTestingModule({
     imports: [StoryReviewPage, translations],
     providers: [
@@ -141,8 +188,8 @@ async function createPage() {
       { provide: ActivatedRoute, useValue: { paramMap: of(params), queryParamMap: of(query), snapshot: { paramMap: params, queryParamMap: query } } },
       { provide: AppErrorMapper, useValue: { messageKey: () => 'errors.story_invalid_content' } },
       { provide: SessionApi, useValue: new FakeSessionApi() },
-      { provide: ConflictDialog, useValue: { open: vi.fn() } },
-      { provide: ConfirmDialog, useValue: { confirm: vi.fn(() => ({ afterClosed: () => of(true) })) } },
+      { provide: ConflictDialog, useValue: dialogs },
+      { provide: ConfirmDialog, useValue: { confirm } },
       { provide: MatSnackBar, useValue: { open: snack.open } },
     ],
   }).overrideComponent(StoryReviewPage, {
@@ -154,7 +201,7 @@ async function createPage() {
   const fixture = TestBed.createComponent(StoryReviewPage);
   fixture.detectChanges();
   await fixture.whenStable();
-  return { fixture, storyStore, snack, transloco: TestBed.inject(TranslocoService) };
+  return { fixture, storyStore, snack, dialogs, confirm, transloco: TestBed.inject(TranslocoService) };
 }
 
 afterEach(() => TestBed.resetTestingModule());
@@ -209,12 +256,14 @@ describe('StoryReviewPage', () => {
     fixture.detectChanges();
     await fixture.whenStable();
     expect(root.querySelectorAll('[role="alert"]')).toHaveLength(1);
-    expect(root.querySelector('[role="status"]')?.textContent).toContain(errorsVi.story_invalid_content);
+    // Several regions are live on this page (the alert, the editor's annotation region, the save bar), so the text is
+    // looked for across all of them rather than in whichever one the DOM happens to put first.
+    expect([...root.querySelectorAll('[role="status"]')].map((node) => node.textContent ?? '').join(' ')).toContain(errorsVi.story_invalid_content);
     // The store retains the 412 error after Cancel but clears its conflict marker.
     storyStore.error.set({ status: 412 });
     fixture.detectChanges();
     await fixture.whenStable();
-    expect(root.querySelector('[role="status"]')?.textContent).toContain(episodesVi.editor.unsaved);
+    expect([...root.querySelectorAll('[role="status"]')].map((node) => node.textContent ?? '').join(' ')).toContain(episodesVi.editor.unsaved);
   });
 
   it('beforeunload_IsRegisteredOnlyWhileDirty_AndRemovedWhenClean', async () => {
@@ -403,6 +452,263 @@ describe('StoryReviewPage', () => {
     query.next(convertToParamMap({ segment: 'p:3', panel: 'versions' }));
     fixture.detectChanges(); await fixture.whenStable();
     expect(document.activeElement).toBe(root.querySelector('#versions-heading'));
+  });
+
+  it('opensTheConflictDialogWithTheTranslatedDiff', async () => {
+    const { fixture, storyStore, dialogs } = await createPage();
+    storyStore.conflictDiff.set(['title', 'p:2']);
+    storyStore.conflict.set(true);
+    fixture.detectChanges();
+    await tick();
+    expect(dialogs.opened).toHaveLength(1);
+    expect(dialogs.opened[0]!.messageKey).toBe('episodes.conflict.body');
+    expect(dialogs.opened[0]!.detailHeadingKey).toBe('episodes.conflict.diffHeading');
+    // Segment labels read like the editor's own navigation; the server's addresses never reach the copy.
+    expect(dialogs.opened[0]!.detailTexts).toEqual([
+      episodesVi.editor.segment.title,
+      `${episodesVi.editor.segment.paragraph} 3`,
+    ]);
+    dialogs.choose(0, 'cancel');
+    await tick();
+    expect(storyStore.conflictChoices).toEqual(['cancel']);
+  });
+
+  it('waitsForTheConflictingWriteToSettleBeforeItShowsTheDiff', async () => {
+    const { fixture, storyStore, dialogs } = await createPage();
+    // The 412 lands while its own request is still running; the store reads the incoming story right after it.
+    storyStore.saving.set(true);
+    storyStore.conflict.set(true);
+    fixture.detectChanges();
+    await tick();
+    expect(dialogs.opened).toHaveLength(0);
+    storyStore.conflictDiff.set(['hook']);
+    storyStore.saving.set(false);
+    fixture.detectChanges();
+    await tick();
+    expect(dialogs.opened).toHaveLength(1);
+    expect(dialogs.opened[0]!.detailTexts).toEqual([episodesVi.editor.segment.hook]);
+    dialogs.choose(0, 'cancel');
+    await tick();
+    expect(storyStore.conflictChoices).toEqual(['cancel']);
+  });
+
+  it('namesWholeEpisodeChangesAndSaysSoWhenNothingDiffers', async () => {
+    const { fixture, storyStore, dialogs } = await createPage();
+    storyStore.conflictDiff.set(['meta']);
+    storyStore.conflict.set(true);
+    fixture.detectChanges();
+    await tick();
+    expect(dialogs.opened[0]!.detailTexts).toEqual([episodesVi.annotations.meta]);
+    dialogs.choose(0, 'cancel');
+    await tick();
+    storyStore.conflictDiff.set([]);
+    storyStore.conflict.set(true);
+    fixture.detectChanges();
+    await tick();
+    expect(dialogs.opened[1]!.detailTexts).toEqual([episodesVi.conflict.diffNone]);
+    dialogs.choose(1, 'cancel');
+    await tick();
+  });
+
+  it('reopensTheDialogInTheBusyVariantWhenSaveAsNewLosesTheRaceAgain', async () => {
+    const { fixture, storyStore, dialogs } = await createPage();
+    // The second 412 is what the store records; the page must show it and stop, waiting for the user's next click.
+    storyStore.resolveConflict.mockImplementation((choice: string) => {
+      storyStore.conflictChoices.push(choice);
+      if (choice === 'saveAsNew') storyStore.conflictBusy.set(true);
+      return Promise.resolve();
+    });
+    storyStore.conflict.set(true);
+    fixture.detectChanges();
+    await tick();
+    expect(dialogs.opened[0]!.messageKey).toBe('episodes.conflict.body');
+    dialogs.choose(0, 'saveAsNew');
+    await tick();
+    expect(storyStore.conflictChoices).toEqual(['saveAsNew']);
+    expect(dialogs.opened).toHaveLength(2);
+    expect(dialogs.opened[1]!.messageKey).toBe('episodes.conflict.busyBody');
+    // No automatic retry: the second dialog waits for the user, so the store is asked nothing more.
+    await tick();
+    expect(storyStore.conflictChoices).toEqual(['saveAsNew']);
+    dialogs.choose(1, 'cancel');
+    await tick();
+    expect(storyStore.conflictChoices).toEqual(['saveAsNew', 'cancel']);
+  });
+
+  it('reloadRequiresTheConfirm_AndDecliningReturnsToTheDialogWithTheDraftIntact', async () => {
+    const { fixture, storyStore, dialogs, confirm } = await createPage();
+    storyStore.dirty.set(true);
+    storyStore.hasUnsavedChanges.mockReturnValue(true);
+    storyStore.conflict.set(true);
+    fixture.detectChanges();
+    await tick();
+    confirm.mockReturnValue({ afterClosed: () => of(false) });
+    dialogs.choose(0, 'reload');
+    await tick();
+    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(storyStore.conflictChoices).toEqual([]);
+    expect(storyStore.discardDraft).not.toHaveBeenCalled();
+    expect(storyStore.dirty()).toBe(true);
+    // Declining is not a decision about the conflict: the dialog is where the user came back to.
+    expect(dialogs.opened).toHaveLength(2);
+    expect((fixture.nativeElement as HTMLElement).querySelector<HTMLTextAreaElement>('textarea[data-segment="p:0"]')?.value)
+      .toBe('Đoạn 1');
+    dialogs.choose(1, 'cancel');
+    await tick();
+    expect(storyStore.conflictChoices).toEqual(['cancel']);
+  });
+
+  it('reloadFailure_OffersTheSameActionsUnderTheRetryCopy', async () => {
+    const { fixture, storyStore, dialogs } = await createPage();
+    storyStore.resolveConflict.mockImplementation((choice: string) => {
+      storyStore.conflictChoices.push(choice);
+      // The reload was attempted and came back with an error while the conflict still stands.
+      if (choice === 'reload') storyStore.error.set({ status: 500 });
+      return Promise.resolve();
+    });
+    storyStore.conflict.set(true);
+    fixture.detectChanges();
+    await tick();
+    dialogs.choose(0, 'reload');
+    await tick();
+    expect(storyStore.conflictChoices).toEqual(['reload']);
+    expect(dialogs.opened[1]!.messageKey).toBe('episodes.conflict.reloadFailed');
+    expect(dialogs.opened[1]!.saveAsNewLabel).toBe('errors.conflict.saveAsNew');
+    dialogs.choose(1, 'cancel');
+    await tick();
+  });
+
+  it('cancellingKeepsTheDraftDirty_AndHandsFocusBackToSave', async () => {
+    const { fixture, storyStore, dialogs } = await createPage();
+    storyStore.saveDisabled.set(false);
+    storyStore.dirty.set(true);
+    storyStore.hasUnsavedChanges.mockReturnValue(true);
+    storyStore.conflict.set(true);
+    fixture.detectChanges();
+    await tick();
+    dialogs.choose(0, 'cancel');
+    await tick();
+    const root = fixture.nativeElement as HTMLElement;
+    expect(storyStore.conflictChoices).toEqual(['cancel']);
+    expect(storyStore.discardDraft).not.toHaveBeenCalled();
+    expect(storyStore.dirty()).toBe(true);
+    const save = root.querySelector<HTMLButtonElement>('.story-save-bar button');
+    expect(save).not.toBeNull();
+    await vi.waitFor(() => expect(document.activeElement).toBe(save));
+  });
+
+  it('aConflictAfterDestroy_OpensNoDialog_AndALateChoiceResolvesNothing', async () => {
+    const { fixture, storyStore, dialogs, confirm } = await createPage();
+    storyStore.conflict.set(true);
+    fixture.detectChanges();
+    await tick();
+    expect(dialogs.opened).toHaveLength(1);
+    fixture.destroy();
+    dialogs.choose(0, 'reload');
+    await tick();
+    expect(confirm).not.toHaveBeenCalled();
+    expect(storyStore.conflictChoices).toEqual([]);
+    // A conflict that arrives after the route died never reaches a dialog either.
+    storyStore.conflict.set(true);
+    await tick();
+    expect(dialogs.opened).toHaveLength(1);
+  });
+
+  it('rendersTheChangedElsewhereNotice_WithoutTouchingTheDraft', async () => {
+    const { fixture, storyStore, dialogs, confirm } = await createPage();
+    const root = fixture.nativeElement as HTMLElement;
+    const before = [...root.querySelectorAll<HTMLTextAreaElement>('textarea[data-segment]')].map((area) => area.value);
+    storyStore.remoteChange.set({ etag: '"sv-2"', diff: ['p:1', 'meta'] });
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const notice = root.querySelector<HTMLElement>('.story-review-page__notice--remote');
+    expect(notice?.getAttribute('role')).toBe('status');
+    expect(notice?.textContent).toContain(episodesVi.conflict.elsewhereTitle);
+    expect(notice?.textContent).toContain(episodesVi.conflict.elsewhereBody);
+    expect([...notice!.querySelectorAll('li')].map((item) => item.textContent))
+      .toEqual([`${episodesVi.editor.segment.paragraph} 2`, episodesVi.annotations.meta]);
+    // The notice is informational: it never rewrites or scrolls the draft, and it asks nothing of the store on render.
+    expect([...root.querySelectorAll<HTMLTextAreaElement>('textarea[data-segment]')].map((area) => area.value)).toEqual(before);
+    expect(storyStore.conflictChoices).toEqual([]);
+    expect(notice!.querySelectorAll('button')).toHaveLength(3);
+    notice!.querySelectorAll<HTMLButtonElement>('button')[1]!.click();
+    await tick();
+    expect(storyStore.conflictChoices).toEqual(['saveAsNew']);
+    storyStore.remoteChange.set({ etag: '"sv-3"', diff: [] });
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect([...root.querySelectorAll('.story-review-page__notice--remote li')].map((item) => item.textContent))
+      .toEqual([episodesVi.conflict.diffNone]);
+    root.querySelectorAll<HTMLButtonElement>('.story-review-page__notice--remote button')[0]!.click();
+    await tick();
+    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(storyStore.conflictChoices).toEqual(['saveAsNew', 'reload']);
+    root.querySelectorAll<HTMLButtonElement>('.story-review-page__notice--remote button')[2]!.click();
+    await tick();
+    expect(storyStore.conflictChoices).toEqual(['saveAsNew', 'reload', 'cancel']);
+    // The dialog owns the screen: while it is up the notice stands down.
+    storyStore.conflict.set(true);
+    fixture.detectChanges();
+    await tick();
+    expect(dialogs.opened).toHaveLength(1);
+    fixture.detectChanges();
+    expect(root.querySelector('.story-review-page__notice--remote')).toBeNull();
+    dialogs.choose(0, 'cancel');
+    await tick();
+  });
+
+  it('annotationViews_PassHintKeysThrough_AndFallBackOnUnknownKeys', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    try {
+      const { fixture, storyStore } = await createPage();
+      const annotations: readonly SegmentAnnotation[] = [
+        { id: 'ann-p-0-hook_missing', source: 'hint', address: 'p:0', ruleId: 'hook_missing', severity: 'advisory', kind: 'objective', messageKey: 'quality.hook_missing', evidence: 'Hook is short', repairDirection: null, keywordIndex: null, placement: 'inline' },
+        { id: 'ann-p-1-not_a_rule', source: 'hint', address: 'p:1', ruleId: 'not_a_rule', severity: 'blocking', kind: 'objective', messageKey: 'quality.not_a_rule', evidence: 'Unknown rule', repairDirection: null, keywordIndex: null, placement: 'inline' },
+        { id: 'ann-meta-scenes_sparse', source: 'hint', address: 'meta', ruleId: 'scenes_sparse', severity: 'advisory', kind: 'taste', messageKey: 'quality.hook_too_long', evidence: '', repairDirection: null, keywordIndex: null, placement: 'panel' },
+      ];
+      storyStore.annotations.set(annotations);
+      fixture.detectChanges();
+      await fixture.whenStable();
+      const editor = fixture.debugElement.query(By.directive(StoryEditorComponent)).componentInstance as StoryEditorComponent;
+      const views = editor.annotationViews();
+      expect(views.inline.get('p:0')?.map((item) => item.messageKey)).toEqual(['quality.hook_missing']);
+      expect(views.inline.get('p:1')?.map((item) => item.messageKey)).toEqual(['episodes.annotations.unknown']);
+      expect(views.panel.count).toBe(3);
+      expect(views.panel.groups.map((group) => group.kind)).toEqual(['objective', 'taste']);
+      // D19: the key alone — never a hint's evidence or any story text.
+      expect(warn.mock.calls).toContainEqual(['unknown annotation key', 'quality.not_a_rule']);
+      expect(warn.mock.calls.filter((call) => call[0] === 'unknown annotation key').every((call) => call.length === 2)).toBe(true);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it('announcement_TranslatesTheSavedSuggestionCount_OncePerSave', async () => {
+    const { fixture, storyStore, transloco } = await createPage();
+    const editor = fixture.debugElement.query(By.directive(StoryEditorComponent)).componentInstance as StoryEditorComponent;
+    expect(editor.announcement()).toBeNull();
+    storyStore.annotationAnnouncement.set({ count: 2, sequence: 1 });
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const announced = transloco.translate('annotations.announce', { count: 2 }, 'episodes');
+    const first = editor.announcement();
+    expect(first?.trim()).toBe(announced);
+    // One save, one message: the count the server returned appears exactly once in the page.
+    expect((fixture.nativeElement as HTMLElement).textContent?.split(announced)).toHaveLength(2);
+    // A second save with the same count keeps the copy but must still mutate the live region, or it would not speak.
+    storyStore.annotationAnnouncement.set({ count: 2, sequence: 2 });
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(editor.announcement()?.trim()).toBe(announced);
+    expect(editor.announcement()).not.toBe(first);
+    storyStore.annotationAnnouncement.set({ count: 0, sequence: 3 });
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(editor.announcement()?.trim()).toBe(transloco.translate('annotations.announceNone', {}, 'episodes'));
+    storyStore.annotationAnnouncement.set(null);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(editor.announcement()).toBeNull();
   });
 
 });
