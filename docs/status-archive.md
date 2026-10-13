@@ -4,6 +4,11 @@ History moved out of STATUS.md to keep the live file small. The initial archive 
 
 ## Resume-here history (Current/Previous blocks, Next actions)
 
+### Superseded backend Next and Session 30 Resume bullets (2026-10-15, replaced when Session 31 opened the 02.5.3-T2 PR)
+
+- **Next (backend, start here):** Session 27: **02.5.3-T1** fact prompt + `facts.v1` + `FactInputBudget` + `OpenAiFactExtractor` merged as #175 (`89e5736`, tip `c031ae8`; no migration; CI refused: CI-01, owner treats as pass; local full `gate.sh` `GATE_RC=0` on `d370ba3`, the tip adds docs only; T3 gates closed; hand-overs are in the 02.5.3-T2 task §Notes). Lane next: **02.5.3-T2** fact-sheet generation job (consumes `FactInputPlan`; PF-1 index), then 02.6.1-T2 (02.6.2-T1 merged as #180, next bullet); 02.3.3-T1 replaces `NullStoryApprovalGate` (order row 5, T31; also gives `SimilarityApprovalGuard` its approve caller; edit re-score stays with 02.3.1-T1). Merged earlier: #167 413 ProblemDetails (`1c5add6`), #159 02.3.2-T1 (`5130861`), #165 02.5.6-T1 similarity (`59b2239`; unblocks 02.5.6-T2, 02.8.2-T1), #163 13.2.1-T1 legal acceptance (`6c17462`), #156 read models (`cf4625c`); all CI refused (CI-01, owner treats as pass) with local full `gate.sh` `GATE_RC=0`. Web may re-pin OpenAPI (413 fix merged). `02-M1-research` still needs 11.2.2-T2 egress proof. Shared test lock is managed by `gate.sh`; never remove it, and never wrap `gate.sh` in `locked-run.sh` (same lock directory, self-deadlock).
+- **Backend lane (Session 30 closed):** **02.6.2-T1** single revision pass merged as #180 (`280d74b`; no migration; CI refused: CI-01, owner treats as pass; local full `gate.sh` `GATE_RC=0` on `97cc0a9`; T3 gates closed). Open items are separate rows in §Open tasks. Next backend: **02.5.3-T2** (Session 31, migration lane) or 02.6.1-T2.
+
 ### Superseded Session 30 PR-open Resume bullet and 02.6.2-T1 row (2026-10-14, replaced when #180 merged as `280d74b`)
 
 - **Backend lane (Session 30):** **02.6.2-T1** single revision pass (PR open, T3 gates closed, no migration; `Story:Revision` section, `prompts/revise/v1.md`, `IStoryWriter.ReviseAsync`, drift detector, `hasDrift` + review #2 in the read model). Owner decisions needed and open items are in §Open tasks (row 02.6.2-T1) and the PR FINAL-REPORT. Next backend after merge: **02.5.3-T2** (Session 31, migration lane) or 02.6.1-T2.

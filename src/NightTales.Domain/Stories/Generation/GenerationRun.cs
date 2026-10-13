@@ -112,8 +112,9 @@ public sealed class GenerationRun : Entity, IUserOwned, IAuditable
 
     /// <summary>
     /// Queues a run in <see cref="GenerationRunStatus.Queued"/> / <see cref="GenerationStage.Queued"/> with
-    /// <see cref="CountsTowardLimit"/> true; the caller lowers it through <see cref="Fail"/> or
-    /// <see cref="MarkPaused"/> when the outcome says so.
+    /// <see cref="CountsTowardLimit"/> at <paramref name="countsTowardLimit"/> (true unless the kind never
+    /// counts, 02.5.3-T2); the caller also lowers it through <see cref="Fail"/> or <see cref="MarkPaused"/>
+    /// when the outcome says so.
     /// </summary>
     /// <param name="userId">The owner, taken from the loaded episode/series.</param>
     /// <param name="seriesId">The series; required for every kind.</param>
@@ -126,6 +127,11 @@ public sealed class GenerationRun : Entity, IUserOwned, IAuditable
     /// <param name="reservationId">The credit reservation, when one was made.</param>
     /// <param name="worstCaseUsd">The non-negative worst-case cost in USD.</param>
     /// <param name="now">The command's clock reading.</param>
+    /// <param name="countsTowardLimit">
+    /// Whether a run of this kind counts toward FR-02-7. <see langword="true"/> for every run the user's own
+    /// request is served by; a <c>fact_sheet</c> run is created <see langword="false"/>, because D2 counts
+    /// <c>kind = story</c> only (02.5.3-T2).
+    /// </param>
     /// <returns>The new run, or a validation error when the scope, the return target or the cost is invalid.</returns>
     public static ErrorOr<GenerationRun> Queue(
         Guid userId,
@@ -138,7 +144,8 @@ public sealed class GenerationRun : Entity, IUserOwned, IAuditable
         Guid? inputFactSheetId,
         Guid? reservationId,
         decimal worstCaseUsd,
-        DateTimeOffset now)
+        DateTimeOffset now,
+        bool countsTowardLimit = true)
     {
         if (userId == Guid.Empty || seriesId == Guid.Empty)
         {
@@ -179,7 +186,7 @@ public sealed class GenerationRun : Entity, IUserOwned, IAuditable
             PreviousEpisodeStatus = previousEpisodeStatus,
             InputFactSheetId = inputFactSheetId,
             ReservationId = reservationId,
-            CountsTowardLimit = true,
+            CountsTowardLimit = countsTowardLimit,
             WorstCaseUsd = worstCaseUsd,
             QueuedAt = now,
             CreatedAt = now,

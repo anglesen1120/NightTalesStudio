@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore.Storage;
 using Npgsql;
 using NightTales.Application.Abstractions.Persistence;
 using NightTales.Application.Common.Errors;
+using NightTales.Domain.Stories.Generation;
 
 namespace NightTales.Infrastructure.Persistence.UnitOfWork;
 
@@ -56,6 +57,30 @@ public sealed class EfUnitOfWork(AppDbContext database) : IUnitOfWork
     /// </summary>
     private const string AuditRefusalDescription =
         "The change could not be recorded with its audit row, so nothing was saved; retry.";
+
+    /// <summary>PostgreSQL's SQLSTATE for a unique-constraint violation.</summary>
+    private const string UniqueViolation = "23505";
+
+    /// <summary>
+    /// The D2 partial unique index that allows one queued or running run per episode
+    /// (<c>episode_id IS NOT NULL AND status IN ('queued','running')</c>).
+    /// </summary>
+    private const string ActiveEpisodeRunIndex = "ux_generation_runs_active_episode";
+
+    /// <summary>
+    /// The stable description of a refused active run; the command already answers this situation with the
+    /// 409 the caller is expecting, so the race must not surface as a 500 (02 README D2).
+    /// </summary>
+    private const string StoryInProgressDescription =
+        "A story generation is already queued or running for this episode.";
+
+    private const string FactSheetInProgressDescription =
+        "A fact-sheet generation is already queued or running for this episode.";
+
+    private const string FindSourcesInProgressDescription =
+        "A source search is already queued or running for this episode.";
+
+    private const string ActiveRunDescription = "A generation is already queued or running for this episode.";
 
     private IDbContextTransaction? _transaction;
 
@@ -110,12 +135,65 @@ public sealed class EfUnitOfWork(AppDbContext database) : IUnitOfWork
 
             return Error.Failure(code: ErrorCodes.ServiceUnavailable, description: AuditRefusalDescription);
         }
+        catch (DbUpdateException exception) when (IsActiveEpisodeRunViolation(exception))
+        {
+            await TryRollbackAsync(cancellationToken).ConfigureAwait(false);
+
+            return ActiveRunConflict(exception);
+        }
         catch (Exception exception) when (IsTransient(exception))
         {
             await TryRollbackAsync(cancellationToken).ConfigureAwait(false);
 
             return Error.Failure(code: ErrorCodes.ServiceUnavailable, description: TransientDescription);
         }
+    }
+
+    /// <summary>
+    /// Whether the save was refused by the D2 active-run index. The request already answers an active run with a
+    /// 409 — this is the same situation, caught at the insert that lost the race, so it keeps that status instead
+    /// of becoming a raw 500 (02.2.2-T2 implementation, 02.5.3-T2). The index is per <c>(episode, kind)</c>, so
+    /// the mapping covers every kind whose pre-check lost the race, not only a fact-sheet run.
+    /// </summary>
+    private static bool IsActiveEpisodeRunViolation(Exception exception) =>
+        ProviderError(exception) is { SqlState: UniqueViolation, ConstraintName: ActiveEpisodeRunIndex };
+
+    /// <summary>
+    /// The 409 of a refused active run, named for the kind of run the request was queueing: the index is
+    /// per-episode-and-kind, so the refusal is per kind too. The kind is read from the entries the failed save
+    /// reports and, when the provider reported none of them, from this unit of work's own context — the context
+    /// that failed is the one that was inserting the run, so a tracked <c>Added</c> run names the kind. Only when
+    /// no run is visible anywhere does the mapping state the kind-agnostic truth ("a generation is already
+    /// queued or running for this episode", 409 <c>episode_invalid_state</c>): naming a kind it cannot see would
+    /// be a guess.
+    /// </summary>
+    private Error ActiveRunConflict(DbUpdateException exception)
+    {
+        var kind = exception.Entries
+            .Select(entry => entry.Entity)
+            .OfType<GenerationRun>()
+            .Select(run => (GenerationKind?)run.Kind)
+            .FirstOrDefault()
+            ?? database.ChangeTracker.Entries<GenerationRun>()
+                .Where(entry => entry.State == EntityState.Added)
+                .Select(entry => (GenerationKind?)entry.Entity.Kind)
+                .FirstOrDefault();
+
+        return kind switch
+        {
+            GenerationKind.Story => Error.Conflict(
+                ErrorCodes.StoryGenerationInProgress,
+                StoryInProgressDescription),
+            GenerationKind.FactSheet => Error.Conflict(
+                ErrorCodes.FactSheetGenerationInProgress,
+                FactSheetInProgressDescription),
+            GenerationKind.FindSources => Error.Conflict(
+                ErrorCodes.FindSourcesInProgress,
+                FindSourcesInProgressDescription),
+            // Kind-agnostic on purpose (see the remarks): the index guarantees the episode has one active run,
+            // so a conflict stating exactly that is always true, whatever kind it was.
+            _ => Error.Conflict(ErrorCodes.EpisodeInvalidState, ActiveRunDescription),
+        };
     }
 
     /// <inheritdoc />

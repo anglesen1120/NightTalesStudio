@@ -9,6 +9,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using NightTales.Api.Http;
 using NightTales.Application.Abstractions.Moderation;
+using NightTales.Application.Abstractions.Research;
 using NightTales.Application.Abstractions.Storage;
 using NightTales.Domain.Common;
 using NightTales.Infrastructure.OpenAI;
@@ -16,6 +17,7 @@ using NightTales.Infrastructure.Persistence;
 using NightTales.TestKit.Database;
 using NightTales.TestKit.Email;
 using NightTales.TestKit.Moderation;
+using NightTales.TestKit.Research;
 using NightTales.TestKit.Security;
 using NightTales.TestKit.Time;
 
@@ -47,6 +49,13 @@ public sealed class ApiFactory(TestDatabase database, FakeClock clock) : WebAppl
 
     /// <summary>The default draft moderator; tests may script its verdicts before the host starts.</summary>
     public FakeContentModerator Moderator { get; } = new();
+
+    /// <summary>
+    /// The default fact extractor (02.5.3-T2); tests may script its outcomes before the host starts. A fact-sheet run
+    /// inside a test host must never reach a provider, so this replaces the real adapter exactly as
+    /// <see cref="Moderator"/> replaces the moderator.
+    /// </summary>
+    public FakeFactExtractor Extractor { get; } = new();
 
     /// <summary>
     /// Registers routes that only exist in the test host (the probe endpoints of
@@ -250,8 +259,8 @@ public sealed class ApiFactory(TestDatabase database, FakeClock clock) : WebAppl
     /// <summary>
     /// The host of <c>Program</c> with the settings a real deployment always has — the connection
     /// string, required start-up configuration and the run's Data Protection KEK — and no
-    /// <see cref="TestAuthHandler"/> scheme or <see cref="FakeClock"/>. Moderation alone is deterministic
-    /// so authentication and start-up probes cannot contact a provider.
+    /// <see cref="TestAuthHandler"/> scheme or <see cref="FakeClock"/>. Moderation and the fact
+    /// extraction alone are deterministic so authentication and start-up probes cannot contact a provider.
     /// <paramref name="configure"/> adds whatever the test itself needs on top, and can override any of
     /// the settings above. <paramref name="withKeyRing"/> false leaves
     /// <c>DataProtection:KekPfxPath</c> unset, which is how 09.9.4-T1's start-up validation is tested.
@@ -276,6 +285,10 @@ public sealed class ApiFactory(TestDatabase database, FakeClock clock) : WebAppl
             {
                 services.RemoveAll<IContentModerator>();
                 services.AddSingleton<IContentModerator>(new FakeContentModerator());
+
+                // 02.5.3-T2: the same replacement, so no path of this host can reach a provider for facts either.
+                services.RemoveAll<IFactExtractor>();
+                services.AddSingleton<IFactExtractor>(new FakeFactExtractor());
             });
 
             builder.UseSetting(
@@ -368,6 +381,11 @@ public sealed class ApiFactory(TestDatabase database, FakeClock clock) : WebAppl
             // Edits and approval checks must never reach a provider from an ordinary integration-test host.
             services.RemoveAll<IContentModerator>();
             services.AddSingleton<IContentModerator>(Moderator);
+
+            // 02.5.3-T2: the same rule for the fact extraction. The Api's production graph has no extractor (it never
+            // runs a generation job), so this is a test-only port a fact-sheet test may drive in this host.
+            services.RemoveAll<IFactExtractor>();
+            services.AddSingleton<IFactExtractor>(Extractor);
 
             foreach (var override1 in _serviceOverrides)
             {

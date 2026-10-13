@@ -1,4 +1,7 @@
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
+using NightTales.Domain.Research;
 
 namespace NightTales.Infrastructure.Persistence.Conventions;
 
@@ -23,4 +26,44 @@ public static class ModelConfigurationBuilderExtensions
 
         return configurationBuilder;
     }
+}
+
+/// <summary>
+/// Writes and reads <c>fact_sheets.facts</c> as the canonical JSON array of
+/// <see cref="FactSheetJson.SerializeFacts"/> (02.5.3-T2), the exact string the content hash is taken over.
+/// Applied per property by <c>FactSheetConfiguration</c> (CODE-9), never model-wide.
+/// </summary>
+public sealed class FactSheetFactsJsonConverter : ValueConverter<IReadOnlyList<FactItem>, string>
+{
+    /// <summary>Creates the converter with the canonical <see cref="FactSheetJson"/> settings.</summary>
+    public FactSheetFactsJsonConverter()
+        : base(
+            facts => FactSheetJson.SerializeFacts(facts),
+            json => ParseFacts(json))
+    {
+    }
+
+    private static IReadOnlyList<FactItem> ParseFacts(string json) =>
+        JsonSerializer.Deserialize<IReadOnlyList<FactItem>>(json, FactSheetJson.Options)
+        ?? throw new InvalidOperationException("A persisted facts document is never null: the column is NOT NULL.");
+}
+
+/// <summary>
+/// Writes and reads <c>fact_sheets.source_aliases</c> as the canonical JSON object of
+/// <see cref="FactSheetJson.SerializeAliases"/> (02.5.3-T2, CR-4/D21). Applied per property by
+/// <c>FactSheetConfiguration</c> (CODE-9), never model-wide.
+/// </summary>
+public sealed class FactSheetAliasesJsonConverter : ValueConverter<IReadOnlyDictionary<string, Guid>, string>
+{
+    /// <summary>Creates the converter with the canonical <see cref="FactSheetJson"/> settings.</summary>
+    public FactSheetAliasesJsonConverter()
+        : base(
+            aliases => FactSheetJson.SerializeAliases(aliases),
+            json => ParseAliases(json))
+    {
+    }
+
+    private static Dictionary<string, Guid> ParseAliases(string json) =>
+        JsonSerializer.Deserialize<Dictionary<string, Guid>>(json, FactSheetJson.Options)
+        ?? throw new InvalidOperationException("A persisted alias document is never null: the column is NOT NULL.");
 }
