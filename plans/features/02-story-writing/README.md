@@ -266,13 +266,13 @@ prompts/
 | `story_generation_limit` | 429 + `Retry-After` | FR-02-7 |
 | `spend_cap_reached` (12) | 429 | `IBudgetGuard` (D1) |
 | `fact_sheet_required` | 409 | True-crime generate without an approved sheet |
-| `story_sources_required` | 409 | Fact-sheet approve citing fewer than 2 distinct `fetched` url sources with distinct `content_sha256` (F13, `F13SourceDiversityCheck`); also a true-crime story approve (02.3.3-T1) |
+| `story_sources_required` | 409 | Fact-sheet approve citing fewer than 2 distinct `fetched` url sources with distinct `content_sha256` (F13, `F13SourceDiversityCheck`); the true-crime story-approve use of the same code is planned in 02.3.3-T1 `[OPEN]` |
 | `story_fact_sheet_outdated` | 409 | Approve when the story's `fact_sheet_id` ≠ the currently approved sheet |
 | `story_attestation_required` | 400 | True-crime approve without `attestation.accepted = true` and the current text version |
 | `story_too_similar_to_source` | 409 | Approve with `similarity_score` > block threshold |
 | `story_moderated` | 409 | Approve while the current version has a blocking D12 moderation category (the same code is also a job outcome) |
 | `story_invalid_content` | 400 | Edit body fails `StoryDraftValidator` (field errors in `errors`) |
-| `fact_sheet_invalid_content` | 400 | Fact-sheet PUT body fails validation (unknown/duplicate id, unknown source, empty statement) |
+| `fact_sheet_invalid_content` | 400 | Fact-sheet PUT body fails validation (no `facts` list, unknown/duplicate id, unknown source, empty statement, more than 10 distinct cited sources) |
 | `fact_sheet_not_found` | 404 | Fact-sheet GET/PUT/approve when the episode has no sheet yet (02.5.4-T1; 02 CR-33) |
 | `fact_sheet_conflict` | 412 | Fact-sheet edit/approve with a stale ETag |
 | `fact_sheet_generation_in_progress` | 409 | Generate while a fact-sheet run is active |

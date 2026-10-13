@@ -1,7 +1,7 @@
 using System.Data.Common;
 using Microsoft.EntityFrameworkCore;
 
-namespace NightTales.Application.Features.Research.Commands;
+namespace NightTales.Application.Features.Research;
 
 /// <summary>
 /// The one place the fact-sheet edit and approve paths recognise the provider refusing a write race (02.5.4-T1,
