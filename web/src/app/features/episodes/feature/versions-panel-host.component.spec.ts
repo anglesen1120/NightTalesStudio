@@ -5,9 +5,11 @@ import { TranslocoService, TranslocoTestingModule } from '@jsverse/transloco';
 import { firstValueFrom, of, Subject } from 'rxjs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AppErrorMapper, type AppError } from '@core/errors';
+import { RealtimeService } from '@core/realtime';
 import { ConfirmDialog, ConflictDialog, type ConflictDialogOutcome } from '@shared/ui';
 import { onEmit } from '@shared/ui/testing/on-emit';
 import { ZONELESS_TEST_PROVIDERS } from '../../../testing/providers';
+import { FakeEpisodeRealtime } from '../testing/fake-episode-realtime';
 import coreVi from '../../../../assets/i18n/core/vi.json';
 import episodesVi from '../../../../assets/i18n/episodes/vi.json';
 import errorsVi from '../../../../assets/i18n/errors/vi.json';
@@ -35,6 +37,7 @@ function fakeStore(outcome: RestoreOutcome) {
     consumeRestored: vi.fn(() => { const version = restoredVersion(); restoredVersion.set(null); return version; }),
     open: vi.fn(() => { loaded.set(true); return Promise.resolve(); }),
     select: vi.fn(() => Promise.resolve()), retryList: vi.fn(() => Promise.resolve()), retrySide: vi.fn(() => Promise.resolve()), reset: vi.fn(),
+    resync: vi.fn(() => Promise.resolve()),
     restoreAsNewVersion: vi.fn((): Promise<RestoreOutcome> => {
       if (outcome === 'conflict') pendingConflict.set(true);
       if (outcome === 'needs_reopen') needsReopen.set(true);
@@ -50,8 +53,15 @@ function fakeStore(outcome: RestoreOutcome) {
   };
 }
 
+/** Waits out the host's 250 ms hub-coalescing window on real timers. */
+// The tsconfig lib predates Promise.withResolvers, so the executor form is the only typed option here.
+function settle(ms: number): Promise<void> {
+  return new Promise((resolve) => { setTimeout(resolve, ms); });
+}
+
 async function setup(outcome: RestoreOutcome = 'restored', accepted = true, conflictChoice: ConflictDialogOutcome = 'cancel', deepLinked = true) {
   const store = fakeStore(outcome);
+  const realtime = new FakeEpisodeRealtime();
   const confirm = vi.fn(() => ({ afterClosed: () => of(accepted) }));
   const conflict = vi.fn(() => ({ afterClosed: () => of(conflictChoice) }));
   const snack = vi.fn();
@@ -62,6 +72,7 @@ async function setup(outcome: RestoreOutcome = 'restored', accepted = true, conf
     })],
     providers: [...ZONELESS_TEST_PROVIDERS,
       { provide: VersionsStore, useValue: store },
+      { provide: RealtimeService, useValue: realtime },
       { provide: ConfirmDialog, useValue: { confirm } },
       { provide: ConflictDialog, useValue: { open: conflict } },
       { provide: MatSnackBar, useValue: { open: snack } },
@@ -75,7 +86,7 @@ async function setup(outcome: RestoreOutcome = 'restored', accepted = true, conf
     fixture.componentRef.setInput('initialRight', 'current');
   }
   fixture.detectChanges(); await fixture.whenStable(); fixture.detectChanges(); await fixture.whenStable();
-  return { fixture, root: fixture.nativeElement as HTMLElement, store, confirm, conflict, snack };
+  return { fixture, root: fixture.nativeElement as HTMLElement, store, realtime, confirm, conflict, snack };
 }
 
 afterEach(() => TestBed.resetTestingModule());
@@ -183,6 +194,22 @@ describe('VersionsPanelHostComponent', () => {
     reopened.detectChanges(); await reopened.whenStable();
     expect(snack).toHaveBeenCalledTimes(1);
     expect(store.reset).not.toHaveBeenCalled();
+  });
+
+  it('refreshes the list once per coalesced hub burst and stops listening on destroy', async () => {
+    const { fixture, store, realtime } = await setup();
+    expect(realtime.subscriptions).toHaveLength(1);
+
+    realtime.emit('episode-1');
+    realtime.emit('episode-1');
+    await settle(320);
+    expect(store.resync).toHaveBeenCalledTimes(1);
+
+    fixture.destroy();
+    expect(realtime.subscriptions[0]?.unsubscribed).toBe(true);
+    realtime.emit('episode-1');
+    await settle(320);
+    expect(store.resync).toHaveBeenCalledTimes(1);
   });
 
 });

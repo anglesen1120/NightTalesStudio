@@ -91,7 +91,12 @@ export class VersionsStore {
   /** Opens the panel for an episode: fetches the list, then the two requested sides (or previous vs current). */
   async open(episodeId: string, ids?: VersionSelection): Promise<void> {
     if (!this.active()) return;
-    if (episodeId === this.episodeId && this.loadedState()) return;
+    if (episodeId === this.episodeId && this.loadedState()) {
+      // A panel that reopens over an already-loaded store re-reads the LIST only: the selection and the loaded details
+      // stay, and a store busy restoring is left alone (the restore reloads the list itself). README D17: no polling.
+      if (!this.restoring()) await this.resync();
+      return;
+    }
     this.episodeId = episodeId;
     this.restoredVersionState.set(null);
     this.versionList.set([]);
@@ -105,6 +110,18 @@ export class VersionsStore {
     if (!this.active() || this.episodeId !== episodeId || !this.loadedState()) return;
     const selection = ids ?? this.defaultSelection();
     await Promise.all([this.applySide(selection.left, 'left'), this.applySide(selection.right, 'right')]);
+  }
+
+  /**
+   * Re-reads the LIST only — no detail GETs — and refreshes the selected rows' `approved`/`isCurrent` from it. Used by
+   * a reopening panel and by the hub-resync of a mounted panel (README D17): the selection and the loaded bodies survive.
+   */
+  async resync(): Promise<void> {
+    if (!this.active() || this.episodeId === null || this.restoring()) return;
+    await this.fetchList();
+    if (!this.active() || !this.loadedState()) return;
+    this.refreshSelectedFlags('left');
+    this.refreshSelectedFlags('right');
   }
 
   /** Re-fetches ONE side, keeping the other; a stale response is dropped by the per-side generation fence. */
@@ -207,6 +224,7 @@ export class VersionsStore {
         return 'needs_reopen';
       }
       if (error.status === 428) { this.warnMissingEtag(error.traceId); return 'failed'; }
+      this.warnRestoreFailure(error);
       this.restoreError.set(error);
       return 'failed';
     } finally {
@@ -254,10 +272,28 @@ export class VersionsStore {
       this.setSideDetail(side, this.withListFlags(detail));
     } catch (cause) {
       if (this.stale(episodeId, side, generation, versionId)) return;
-      this.sideError.set({ side, error: isAppError(cause) ? cause : this.mapper.from(cause) });
+      const error = isAppError(cause) ? cause : this.mapper.from(cause);
+      if (error.status === 404) {
+        // The row is gone: drop it, forget the selection and re-read the authoritative list. An episode-wide 404 makes
+        // that reload fail too, which paints the list ErrorState; every other failure keeps the per-side retry.
+        this.versionList.update((list) => list.filter((version) => version.versionId !== versionId));
+        this.clearSide(side);
+        await this.fetchList();
+        return;
+      }
+      this.sideError.set({ side, error });
     } finally {
-      if (!this.stale(episodeId, side, generation, versionId) && this.loadingSide() === side) this.loadingSide.set(null);
+      if (this.sideGeneration[side] === generation && this.loadingSide() === side) this.loadingSide.set(null);
     }
+  }
+
+  /** Re-applies the list row's flags to a loaded side without touching the detail (no request). */
+  private refreshSelectedFlags(side: VersionSide): void {
+    const current = side === 'left' ? this.leftState() : this.rightState();
+    if (current === null) return;
+    const next = this.withListFlags(current);
+    if (next.approved === current.approved && next.isCurrent === current.isCurrent) return;
+    this.setSideDetail(side, next);
   }
 
   /** `approved`/`isCurrent` are only on the list route: the list row is authoritative for the badges and `canRestore`. */
@@ -324,6 +360,13 @@ export class VersionsStore {
 
   private warnMissingEtag(traceId?: string): void {
     if (isDevMode()) console.warn('if_match_required', traceId ?? '-');
+  }
+
+  /** Dev-only breadcrumb for a restore failure the user cannot act on: the mapped code and trace id, never story text. */
+  private warnRestoreFailure(error: AppError): void {
+    if (!isDevMode()) return;
+    if (error.traceId === undefined) console.warn('story_restore_failed', error.code);
+    else console.warn('story_restore_failed', error.code, error.traceId);
   }
 
   private active(): boolean { return !this.destroyed; }

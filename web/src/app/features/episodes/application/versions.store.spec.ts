@@ -28,6 +28,7 @@ function rejected<T>(error: AppError): Promise<T> {
   // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors -- structured domain-port failure
   return Promise.reject(error);
 }
+// The tsconfig lib predates Promise.withResolvers, so the executor form is the only typed option here.
 function deferred<T>() {
   let resolve!: (value: T) => void;
   const promise = new Promise<T>((done) => { resolve = done; });
@@ -116,12 +117,42 @@ describe('VersionsStore', () => {
     expect(state.store.right()?.versionId).toBe('v2');
   });
 
-  it('open_SameEpisodeTwice_IsIdempotent', async () => {
+  it('open_SameEpisodeTwice_RefetchesOnlyTheList', async () => {
     const state = await editorLoaded();
     seedPair(state);
     await state.store.open(EPISODE_ID);
     await state.store.open(EPISODE_ID);
+    expect(state.versions.listCalls).toHaveLength(2);
+    expect(state.versions.detailCalls).toHaveLength(2);
+  });
+
+  it('open_AfterThePanelReopens_KeepsTheSelectionAndRefreshesTheFlags', async () => {
+    const state = await editorLoaded();
+    seedPair(state);
+    await state.store.open(EPISODE_ID, { left: 'v1', right: 'v2' });
+    expect(state.versions.detailCalls).toHaveLength(2);
+    state.versions.scriptList(() => Promise.resolve([versionSummary(2, { isCurrent: true, approved: true }), versionSummary(1)]));
+    await state.store.open(EPISODE_ID);
+    expect(state.versions.listCalls).toHaveLength(2);
+    expect(state.versions.detailCalls).toHaveLength(2);
+    expect(state.store.leftId()).toBe('v1');
+    expect(state.store.rightId()).toBe('v2');
+    expect(state.store.right()?.approved).toBe(true);
+    expect(state.store.right()?.isCurrent).toBe(true);
+    expect(state.store.left()?.isCurrent).toBe(false);
+  });
+
+  it('open_WhileRestoring_DoesNotRefetchAnything', async () => {
+    const state = await editorLoaded();
+    seedPair(state);
+    await state.store.open(EPISODE_ID);
+    state.stories.scriptSave(() => rejected(appError('story_version_conflict', 412)));
+    await state.store.restoreAsNewVersion();
+    state.stories.scriptSave(() => rejected(appError('internal_error', 500)));
+    const restoring = state.store.restoreAsNewVersion();
+    await state.store.open(EPISODE_ID);
     expect(state.versions.listCalls).toHaveLength(1);
+    expect(await restoring).toBe('failed');
   });
 
   it('open_NoVersions_ShowsEmptyNotAnError', async () => {
@@ -214,6 +245,53 @@ describe('VersionsStore', () => {
     expect(state.versions.detailCalls).toHaveLength(3);
   });
 
+  it('select_404_RemovesTheRowAndReloadsTheList', async () => {
+    const state = await editorLoaded();
+    state.versions.scriptList(() => Promise.resolve([versionSummary(2, { isCurrent: true }), versionSummary(1)]));
+    state.versions.scriptList(() => Promise.resolve([versionSummary(2, { isCurrent: true })]));
+    state.versions.details.set('v2', versionDetail(2, { isCurrent: true }));
+    state.versions.willFailDetail('v1', appError('version_not_found', 404));
+    await state.store.open(EPISODE_ID, { left: 'v1', right: 'v2' });
+    expect(state.store.versions().map((version) => version.versionId)).toEqual(['v2']);
+    expect(state.store.leftId()).toBeNull();
+    expect(state.store.left()).toBeNull();
+    expect(state.store.sideError()).toBeNull();
+    expect(state.store.rightId()).toBe('v2');
+    expect(state.store.right()?.versionId).toBe('v2');
+    expect(state.versions.listCalls).toHaveLength(2);
+    expect(state.versions.detailCalls).toHaveLength(2);
+  });
+
+  it('select_404_WhenTheEpisodeIsGone_LeavesTheListErrorState', async () => {
+    const state = await editorLoaded();
+    state.versions.scriptList(() => Promise.resolve([versionSummary(2, { isCurrent: true }), versionSummary(1)]));
+    state.versions.willFailList(appError('not_found', 404));
+    state.versions.willFailDetail('v1', appError('not_found', 404));
+    state.versions.details.set('v2', versionDetail(2, { isCurrent: true }));
+    await state.store.open(EPISODE_ID, { left: 'v1', right: 'v2' });
+    expect(state.store.error()?.status).toBe(404);
+    expect(state.store.versions().map((version) => version.versionId)).toEqual(['v2']);
+    expect(state.store.sideError()).toBeNull();
+  });
+
+  it('restore_400_LogsTheMappedCodeAndTraceIdInDev', async () => {
+    const state = await editorLoaded();
+    seedPair(state);
+    await state.store.open(EPISODE_ID);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    try {
+      state.stories.scriptSave(() => rejected(appError('story_invalid_content', 400, { traceId: 'trace-42' })));
+      expect(await state.store.restoreAsNewVersion()).toBe('failed');
+      expect(state.store.restoreError()?.code).toBe('story_invalid_content');
+      expect(warn).toHaveBeenCalledWith('story_restore_failed', 'story_invalid_content', 'trace-42');
+      state.stories.scriptSave(() => rejected(appError('internal_error', 500)));
+      expect(await state.store.restoreAsNewVersion()).toBe('failed');
+      expect(warn).toHaveBeenCalledWith('story_restore_failed', 'internal_error');
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
   it('restore_SendsTheOldContentWithTheCurrentEtag_ReloadsAndClearsDirty', async () => {
     const state = await editorLoaded();
     state.editor.setSegmentText('title', 'Dirty title');
@@ -262,10 +340,13 @@ describe('VersionsStore', () => {
     expect(state.store.restoredVersion()).toBe(3);
     expect(state.store.leftId()).toBe('v1');
     expect(state.store.rightId()).toBe('v3');
+    state.versions.scriptList(() => Promise.resolve([versionSummary(3, { isCurrent: true }), versionSummary(2), versionSummary(1)]));
     await state.store.open(EPISODE_ID, { left: 'v1', right: 'v2' });
-    expect(state.versions.listCalls).toHaveLength(2);
+    // An idle reopen re-reads the LIST only: the restore's selection and its already-loaded details survive.
+    expect(state.versions.listCalls).toHaveLength(3);
     expect(state.versions.detailCalls).toHaveLength(3);
     expect(state.store.rightId()).toBe('v3');
+    expect(state.store.versions()).toHaveLength(3);
     expect(state.store.consumeRestored()).toBe(3);
     expect(state.store.consumeRestored()).toBeNull();
     expect(state.store.restoredVersion()).toBeNull();

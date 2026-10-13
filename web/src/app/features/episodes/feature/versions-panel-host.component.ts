@@ -2,6 +2,8 @@ import { ChangeDetectionStrategy, Component, DestroyRef, ViewContainerRef, effec
 import { MatSnackBar } from '@angular/material/snack-bar';
 import { TranslocoService } from '@jsverse/transloco';
 import { firstValueFrom } from 'rxjs';
+import { RealtimeService } from '@core/realtime';
+import type { RealtimeSubscription } from '@core/realtime';
 import { ConfirmDialog, ConflictDialog } from '@shared/ui';
 import { VersionsStore } from '../application/versions.store';
 import { VersionsPanelComponent } from '../ui/versions-panel/versions-panel.component';
@@ -38,6 +40,9 @@ export class VersionsPanelHostComponent {
   private readonly transloco = inject(TranslocoService);
   private readonly viewContainerRef = inject(ViewContainerRef);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly realtime = inject(RealtimeService);
+  private subscription: RealtimeSubscription | null = null;
+  private invalidationTimer: number | undefined;
 
   constructor() {
     effect(() => {
@@ -58,6 +63,32 @@ export class VersionsPanelHostComponent {
       const episodeId = this.episodeId();
       untracked(() => { void this.announceRestored(episodeId); });
     });
+    // A hub event invalidates the open list only (README D17: no polling); the subscription lives with this host.
+    effect(() => {
+      const episodeId = this.episodeId();
+      untracked(() => this.listenForChanges(episodeId));
+    });
+    this.destroyRef.onDestroy(() => this.stopListening());
+  }
+
+  /** Coalesces a burst of hub events into one list re-read 250 ms after the last one (mirrors `StoryEditorStore`). */
+  private listenForChanges(episodeId: string): void {
+    this.stopListening();
+    this.subscription = this.realtime.subscribeEpisode(episodeId, () => {
+      if (this.destroyRef.destroyed) return;
+      window.clearTimeout(this.invalidationTimer);
+      this.invalidationTimer = window.setTimeout(() => {
+        this.invalidationTimer = undefined;
+        if (!this.destroyRef.destroyed) void this.store.resync();
+      }, 250);
+    });
+  }
+
+  private stopListening(): void {
+    this.subscription?.unsubscribe();
+    this.subscription = null;
+    window.clearTimeout(this.invalidationTimer);
+    this.invalidationTimer = undefined;
   }
 
   protected select(selection: { versionId: string; side: 'left' | 'right' }): void {

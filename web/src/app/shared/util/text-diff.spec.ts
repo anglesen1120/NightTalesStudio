@@ -1,4 +1,4 @@
-import { MAX_DIFF_TOKENS, diffWords } from './text-diff';
+import { MAX_DIFF_SEGMENTS, MAX_DIFF_TOKENS, diffWords } from './text-diff';
 import type { WordDiff } from './text-diff';
 
 /** Word tokens of the joined non-delete side — the diff must still reproduce the right text. */
@@ -97,5 +97,23 @@ describe('diffWords', () => {
     expect(elapsed).toBeLessThan(250);
     expect(diff.truncated).toBe(false);
     expect(diff.added).toBeGreaterThan(0);
+  });
+
+  it('a full 8000-token rewrite stays bounded in time and answer size', () => {
+    const left = Array.from({ length: 8_000 }, (_, index) => `l${String(index)}`).join(' ');
+    const right = Array.from({ length: 8_000 }, (_, index) => `r${String(index)}`).join(' ');
+    const started = performance.now();
+    const diff = diffWords(left, right);
+    const elapsed = performance.now() - started;
+    expect(elapsed).toBeLessThan(2_000);
+    expect(diff.truncated || diff.segments.length <= MAX_DIFF_SEGMENTS).toBe(true);
+    expect(diff.segments.length).toBeLessThanOrEqual(MAX_DIFF_SEGMENTS);
+  });
+
+  it('memoises only the last compared pair', () => {
+    const first = diffWords('alpha beta', 'alpha gamma');
+    expect(diffWords('alpha beta', 'alpha gamma')).toBe(first);
+    expect(diffWords('alpha gamma', 'alpha beta')).not.toBe(first);
+    expect(diffWords('alpha beta', 'alpha gamma')).not.toBe(first);
   });
 });

@@ -19,8 +19,9 @@ import { StoryReviewPage } from './story-review.page';
 import { SegmentEditorComponent } from '../ui/segment-editor.component';
 import { StoryEditorComponent } from '../ui/story-editor.component';
 import { VersionsPanelHostComponent } from './versions-panel-host.component';
+import { VersionsPanelComponent } from '../ui/versions-panel/versions-panel.component';
 
-@Component({ selector: 'nts-versions-panel-host', template: '', changeDetection: ChangeDetectionStrategy.OnPush })
+@Component({ selector: 'nts-versions-panel-host', imports: [VersionsPanelComponent], template: '<nts-versions-panel (closed)="closed.emit()" />', changeDetection: ChangeDetectionStrategy.OnPush })
 class VersionsPanelProbe {
   readonly episodeId = input.required<string>();
   readonly initialLeft = input<string | null>(null);
@@ -180,6 +181,45 @@ describe('StoryReviewPage', () => {
     fixture.detectChanges(); await fixture.whenStable();
     expect(root.querySelector('nts-versions-panel-host')).toBeNull();
     expect(storyStore.load).toHaveBeenCalledTimes(1);
+  });
+  it.each(['close button', 'Escape'] as const)('returns focus to Versions after %s removes the panel, and focuses the heading when reopened', async (gesture) => {
+    const detailStore = fakeDetailStore(), storyStore = fakeStoryStore();
+    const params = convertToParamMap({ id: 'episode-1' });
+    const query = new BehaviorSubject(convertToParamMap({ segment: 'p:3' }));
+    await TestBed.configureTestingModule({
+      imports: [StoryReviewPage, translations],
+      providers: [...ZONELESS_TEST_PROVIDERS, provideRouter([]),
+        { provide: ActivatedRoute, useValue: { paramMap: of(params), queryParamMap: query, snapshot: { paramMap: params, queryParamMap: query.value } } },
+        { provide: AppErrorMapper, useValue: { messageKey: () => 'errors.story_invalid_content' } },
+        { provide: ConflictDialog, useValue: { open: vi.fn() } },
+        { provide: ConfirmDialog, useValue: { confirm: vi.fn() } },
+      ],
+    }).overrideComponent(StoryReviewPage, {
+      remove: { imports: [VersionsPanelHostComponent] }, add: { imports: [VersionsPanelProbe] },
+    }).overrideComponent(StoryReviewPage, {
+      set: { providers: [{ provide: EpisodeDetailStore, useValue: detailStore }, { provide: StoryEditorStore, useValue: storyStore }] },
+    }).compileComponents();
+    const fixture = TestBed.createComponent(StoryReviewPage);
+    vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+    fixture.detectChanges(); await fixture.whenStable();
+    const root = fixture.nativeElement as HTMLElement;
+    const toggle = root.querySelector<HTMLButtonElement>('.story-review-page__versions-toggle')!;
+    toggle.click();
+    query.next(convertToParamMap({ segment: 'p:3', panel: 'versions' }));
+    fixture.detectChanges(); await fixture.whenStable();
+    expect(document.activeElement).toBe(root.querySelector('#versions-heading'));
+    if (gesture === 'close button') root.querySelector<HTMLButtonElement>('.versions__close')!.click();
+    else root.querySelector<HTMLElement>('.versions')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    await fixture.whenStable();
+    expect(document.activeElement).not.toBe(toggle);
+    query.next(convertToParamMap({ segment: 'p:3' }));
+    fixture.detectChanges(); await fixture.whenStable();
+    expect(root.querySelector('nts-versions-panel-host')).toBeNull();
+    expect(document.activeElement).toBe(toggle);
+    toggle.click();
+    query.next(convertToParamMap({ segment: 'p:3', panel: 'versions' }));
+    fixture.detectChanges(); await fixture.whenStable();
+    expect(document.activeElement).toBe(root.querySelector('#versions-heading'));
   });
 
 });

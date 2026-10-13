@@ -25,7 +25,7 @@
     } @else {
       <nts-page-header [title]="store.title()" backHref="/episodes">
         <nts-status-chip actions [statusKey]="detail.status" [appearance]="store.readOnly() ? 'success' : 'neutral'" />
-        <button actions type="button" class="story-review-page__versions-toggle" [attr.aria-expanded]="versionsOpen()" (click)="toggleVersions()">
+        <button #versionsToggle actions type="button" class="story-review-page__versions-toggle" [attr.aria-expanded]="versionsOpen()" (click)="toggleVersions()">
           {{ 'episodes.versions.open' | transloco }}@if (versionCount(); as count) { ({{ count }})}
         </button>
       </nts-page-header>

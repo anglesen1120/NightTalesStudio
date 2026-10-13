@@ -1,5 +1,5 @@
 import { ChangeDetectionStrategy, Component, DestroyRef, ViewContainerRef, afterRenderEffect, computed, effect, inject, signal, untracked, viewChild } from '@angular/core';
-import type { Signal } from '@angular/core';
+import type { ElementRef, Signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
 import { TranslocoPipe, provideTranslocoScope } from '@jsverse/transloco';
@@ -49,6 +49,8 @@ export class StoryReviewPage {
   private readonly viewContainerRef = inject(ViewContainerRef);
   private readonly destroyRef = inject(DestroyRef);
   private readonly editor = viewChild(StoryEditorComponent);
+  private readonly versionsToggle = viewChild<ElementRef<HTMLButtonElement>>('versionsToggle');
+  private readonly restoreVersionsFocus = signal(false);
   private readonly routeState = toSignal(combineLatest([this.route.paramMap, this.route.queryParamMap]), {
     initialValue: [this.route.snapshot.paramMap, this.route.snapshot.queryParamMap] as const,
   });
@@ -110,7 +112,9 @@ export class StoryReviewPage {
   }
 
   protected closeVersions(): void {
-    void this.router.navigate([], { relativeTo: this.route, queryParams: { panel: null, left: null, right: null }, queryParamsHandling: 'merge', replaceUrl: true });
+    void this.router.navigate([], { relativeTo: this.route, queryParams: { panel: null, left: null, right: null }, queryParamsHandling: 'merge', replaceUrl: true }).then((navigated) => {
+      if (navigated && !this.destroyRef.destroyed) this.restoreVersionsFocus.set(true);
+    });
   }
 
   protected changeVersions(ids: { left: string | null; right: string | null }): void {
@@ -146,6 +150,13 @@ export class StoryReviewPage {
       const editor = this.editor();
       if (request === null || editor === undefined || this.loading() || request.sequence === this.lastFocusSequence) return;
       if (editor.focusSegment(request.address)) this.lastFocusSequence = request.sequence;
+    });
+    afterRenderEffect(() => {
+      if (!this.restoreVersionsFocus() || this.versionsOpen()) return;
+      const toggle = this.versionsToggle();
+      if (toggle === undefined) return;
+      toggle.nativeElement.focus();
+      this.restoreVersionsFocus.set(false);
     });
   }
 
