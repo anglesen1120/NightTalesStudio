@@ -120,6 +120,54 @@
       "unavailable": "Action unavailable"
     }
   },
+  "versions": {
+    "title": "Version history",
+    "open": "Versions",
+    "close": "Close versions",
+    "empty": "No story versions yet",
+    "loading": "Loading versions",
+    "loadingSide": "Loading selected version",
+    "selection": "Version comparison slots",
+    "left": "Left · restore from",
+    "right": "Right · compare to",
+    "pickHint": "Choose a slot, then choose a version from the list.",
+    "version": "Version {{version}}",
+    "wordCount": "{{count}} words",
+    "similarity": "Similarity: {{value}}",
+    "current": "Current",
+    "approved": "Approved",
+    "selectTwo": "Select two different versions to compare.",
+    "restore": "Restore as new version",
+    "restoring": "Creating new version…",
+    "restored": "Restored as a new version.",
+    "needsReopen": "This episode must be reopened before a version can be restored.",
+    "truncated": "This story is too long for a complete comparison. No partial diff is shown.",
+    "noDifferences": "No differences between these versions.",
+    "retryList": "Retry version list",
+    "retrySide": "Retry selected version",
+    "conflictBody": "A newer story version was saved elsewhere. The selected version and your unsaved edits are kept until you choose.",
+    "source": {
+      "generated": "Generated",
+      "revised": "Revised",
+      "edited": "Edited",
+      "other": "Other"
+    },
+    "diff": {
+      "summary": "{{added}} words added, {{removed}} words removed.",
+      "added": "Added",
+      "removed": "Removed",
+      "label": "Story word differences",
+      "show": "Show word differences",
+      "loading": "Loading comparison",
+      "loadError": "The comparison could not be loaded. Close and reopen versions to try again."
+    },
+    "restoreConfirm": {
+      "title": "Restore as a new version?",
+      "body": "The selected version becomes a new version. The original and current versions are both kept in history.",
+      "dirtyBody": "The selected version becomes a new version and replaces your unsaved editor changes. The original and current saved versions are both kept in history.",
+      "confirm": "Create new version"
+    }
+  },
   "conflict": {
     "title": "The story changed",
     "body": "Another tab or person saved a newer version. Your unsaved text is still kept.",
