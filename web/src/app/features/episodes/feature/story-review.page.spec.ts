@@ -682,12 +682,9 @@ describe('StoryReviewPage', () => {
     expect([...root.querySelectorAll<HTMLTextAreaElement>('textarea[data-segment]')].map((area) => area.value)).toEqual(before);
     expect(storyStore.conflictChoices).toEqual([]);
     expect(notice!.querySelectorAll('button')).toHaveLength(3);
-    storyStore.saveDisabled.set(false);
     notice!.querySelectorAll<HTMLButtonElement>('button')[1]!.click();
     await tick();
     expect(storyStore.conflictChoices).toEqual(['saveAsNew']);
-    // Acting on the notice takes its buttons away (or saves the draft); focus lands on the Save control, not the body.
-    await vi.waitFor(() => expect(document.activeElement).toBe(root.querySelector('.story-save-bar button')));
     storyStore.remoteChange.set({ etag: '"sv-3"', diff: [] });
     fixture.detectChanges();
     await fixture.whenStable();
@@ -711,6 +708,54 @@ describe('StoryReviewPage', () => {
     await tick();
   });
 
+  it('noticeActions_MoveFocusOnlyWhenTheyResolveTheNotice', async () => {
+    const { fixture, storyStore, confirm } = await createPage();
+    const root = fixture.nativeElement as HTMLElement;
+    // A resolved notice leaves a clean draft, so Save is natively disabled and cannot take focus — the assertion below
+    // runs on the real `saveDisabled` (nothing here sets it false).
+    storyStore.remoteChange.set({ etag: '"sv-2"', diff: [] });
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const reload = root.querySelectorAll<HTMLButtonElement>('.story-review-page__notice--remote button')[0]!;
+    // Declining the reload confirm resolves nothing: the notice stays and the pressed button keeps the focus.
+    confirm.mockReturnValue({ afterClosed: () => of(false) });
+    reload.focus();
+    reload.click();
+    await tick();
+    expect(storyStore.conflictChoices).toEqual([]);
+    expect(document.activeElement).toBe(reload);
+    // An accepted reload replaces the draft: the notice goes and the first editor field takes the focus instead of it
+    // falling to the document body.
+    confirm.mockReturnValue({ afterClosed: () => of(true) });
+    storyStore.resolveConflict.mockImplementation((choice: string) => {
+      storyStore.conflictChoices.push(choice);
+      if (choice === 'reload') storyStore.remoteChange.set(null);
+      return Promise.resolve();
+    });
+    const field = root.querySelector<HTMLTextAreaElement>('textarea[data-segment]');
+    expect(field).not.toBeNull();
+    expect(root.querySelector<HTMLButtonElement>('.story-save-bar button')?.disabled).toBe(true);
+    reload.focus();
+    reload.click();
+    await tick();
+    expect(storyStore.conflictChoices).toEqual(['reload']);
+    await vi.waitFor(() => expect(document.activeElement).toBe(field));
+    // Dismiss resolves the notice by definition, and it leaves the draft in place and dirty (`saveDisabled` false, as the
+    // real store reports it), so the Save control itself takes the focus back.
+    storyStore.saveDisabled.set(false);
+    storyStore.remoteChange.set({ etag: '"sv-4"', diff: [] });
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const dismiss = root.querySelectorAll<HTMLButtonElement>('.story-review-page__notice--remote button')[2]!;
+    const save = root.querySelector<HTMLButtonElement>('.story-save-bar button');
+    expect(save?.disabled).toBe(false);
+    dismiss.focus();
+    dismiss.click();
+    await tick();
+    expect(storyStore.conflictChoices).toEqual(['reload', 'cancel']);
+    await vi.waitFor(() => expect(document.activeElement).toBe(save));
+  });
+
   it('annotationViews_PassHintKeysThrough_AndFallBackOnUnknownKeys', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     try {
@@ -732,6 +777,32 @@ describe('StoryReviewPage', () => {
       // D19: the key alone — never a hint's evidence or any story text.
       expect(warn.mock.calls).toContainEqual(['unknown annotation key', 'quality.not_a_rule']);
       expect(warn.mock.calls.filter((call) => call[0] === 'unknown annotation key').every((call) => call.length === 2)).toBe(true);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it('annotationViews_RebuildOnALanguageSwitch_BecauseHasKeyResolvesPerLanguage', async () => {
+    // The hint key exists in `vi` but not in `en`, so only a rebuilt view can tell: the fallback key proves `hasKey`
+    // ran again against the new language, which is what the tile's message needs.
+    const enQuality: Record<string, string> = { ...qualityEn };
+    delete enQuality['hook_missing'];
+    const langs: Record<string, Translation> = { ...BILINGUAL, 'quality/en': enQuality };
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    try {
+      const { fixture, storyStore, transloco } = await createPage({ langs });
+      const annotations: readonly SegmentAnnotation[] = [
+        { id: 'ann-p-0-hook_missing', source: 'hint', address: 'p:0', ruleId: 'hook_missing', severity: 'advisory', kind: 'objective', messageKey: 'quality.hook_missing', evidence: 'Hook is short', repairDirection: null, keywordIndex: null, placement: 'inline' },
+      ];
+      storyStore.annotations.set(annotations);
+      fixture.detectChanges();
+      await fixture.whenStable();
+      const editor = fixture.debugElement.query(By.directive(StoryEditorComponent)).componentInstance as StoryEditorComponent;
+      expect(editor.annotationViews().inline.get('p:0')?.map((item) => item.messageKey)).toEqual(['quality.hook_missing']);
+      transloco.setActiveLang('en');
+      fixture.detectChanges();
+      await fixture.whenStable();
+      expect(editor.annotationViews().inline.get('p:0')?.map((item) => item.messageKey)).toEqual(['episodes.annotations.unknown']);
     } finally {
       warn.mockRestore();
     }
@@ -763,16 +834,22 @@ describe('StoryReviewPage', () => {
     expect(root.querySelector('#ann-p-0-hook_missing')).toBeNull();
   });
 
-  it('announcement_IsSilentWhileTheEpisodesScopeHasNotLoaded', async () => {
-    // The `episodes` scope is absent from the loader: its key cannot resolve, so nothing — and never a raw key — is
-    // announced.
-    const noEpisodes = { vi: coreVi, 'core/vi': coreVi, 'errors/vi': errorsVi, 'quality/vi': qualityVi };
-    const { fixture, storyStore } = await createPage({ langs: noEpisodes });
+  it('announcement_StaysSilentUntilTheEpisodesScopeLands_ThenFillsInWithoutARawKey', async () => {
+    // The `episodes` scope is missing for the default language but present for en: the save resolves no copy (never a
+    // raw key), and the scope that arrives with the language switch fills the same sequence in.
+    const langs: Record<string, Translation> = { ...BILINGUAL };
+    delete langs['episodes/vi'];
+    const { fixture, storyStore, transloco } = await createPage({ langs });
     const root = fixture.nativeElement as HTMLElement;
     storyStore.annotationAnnouncement.set({ count: 2, sequence: 1 });
     fixture.detectChanges();
     await fixture.whenStable();
     expect(root.querySelector('.story-editor__annotation-announcement span')).toBeNull();
+    transloco.setActiveLang('en');
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(root.querySelector('.story-editor__annotation-announcement span')?.textContent)
+      .toBe(transloco.translate('annotations.announce', { count: 2 }, 'episodes'));
   });
 
   it('announcement_FreezesTheCopyPerSaveAndReCreatesTheAnnouncedNode', async () => {

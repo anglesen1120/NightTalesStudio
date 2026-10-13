@@ -143,24 +143,41 @@ export class StoryReviewPage {
    * carry `errors.*`/`episodes.*` keys, so a failed (or still pending) quality load must never hide them.
    */
   protected readonly annotationViews = computed<AnnotationViews>(() => {
+    // `hasKey` resolves against the active language, so a language switch must rebuild the views; the announcement copy
+    // is the one thing that does not follow the language (it stays frozen per sequence — see `announcement`).
+    this.language();
     const annotations = this.store.annotations();
     const visible = this.qualityLoaded() ? annotations : annotations.filter((annotation) => annotation.source !== 'hint');
     const next = buildAnnotationViews(visible, this.annotationOptions, this.previousAnnotationViews);
     this.previousAnnotationViews = next;
     return next;
   });
+  /** The frozen announcement copy and the sequence it belongs to, so a language switch cannot rewrite what was read. */
+  private announcedSequence: number | null = null;
+  private announcedText: string | null = null;
   /**
    * Already-translated text for the editor's single polite live region; `null` renders nothing at all. The copy is
    * resolved once, when the announcement sequence changes, and is frozen there: a live region announces a *change*, and
-   * a later language switch must not rewrite text a screen reader has already read. It deliberately reads no language
-   * signal. A new sequence re-creates the announced node (see the editor), so two saves that report the same count still
-   * announce — no trailing-space trick, no timer.
+   * a later language switch must not rewrite text a screen reader has already read. It never reads a language signal.
+   * `episodesLoaded` is read only so that a scope which lands after the save fills the copy in (never a raw key) — and
+   * only while the sequence has no frozen text yet. A new sequence re-creates the announced node (see the editor), so
+   * two saves that report the same count still announce — no trailing-space trick, no timer.
    */
   protected readonly announcement = computed<StoryEditorAnnouncement | null>(() => {
     const announcement = this.store.annotationAnnouncement();
-    if (announcement === null) return null;
-    const text = this.announcementText(announcement.count);
-    return text === null ? null : { text, sequence: announcement.sequence };
+    const ready = this.episodesLoaded();
+    if (announcement === null) {
+      this.announcedSequence = null;
+      this.announcedText = null;
+      return null;
+    }
+    if (announcement.sequence !== this.announcedSequence) {
+      this.announcedSequence = announcement.sequence;
+      this.announcedText = ready ? this.announcementText(announcement.count) : null;
+    } else if (this.announcedText === null && ready) {
+      this.announcedText = this.announcementText(announcement.count);
+    }
+    return this.announcedText === null ? null : { text: this.announcedText, sequence: announcement.sequence };
   });
   protected readonly remoteNoticeLabels = computed<readonly string[]>(() => {
     this.language();
@@ -301,14 +318,18 @@ export class StoryReviewPage {
       toggle.nativeElement.focus();
       this.restoreVersionsFocus.set(false);
     });
-    // Cancelling a conflict leaves the user mid-draft, so the save control takes focus back (the dialog restores focus
-    // to whatever held it before, which is not necessarily where the draft is saved from).
+    // Cancelling a conflict, or acting on the changed-elsewhere notice, leaves the user in the editor: the save control
+    // takes focus back (the dialog restores focus to whatever held it before, which is not necessarily where the draft
+    // is saved from). A resolved notice leaves a clean draft, so Save is disabled — and `focus()` on a disabled control
+    // does nothing — hence the first editor field as the fallback so focus never falls to the document body.
     afterRenderEffect(() => {
       if (!this.restoreSaveFocus()) return;
       const host = this.editorHost();
       if (host === undefined) return;
       this.restoreSaveFocus.set(false);
-      host.nativeElement.querySelector<HTMLButtonElement>('.story-save-bar button')?.focus();
+      const save = host.nativeElement.querySelector<HTMLButtonElement>('.story-save-bar button');
+      if (save !== null && !save.disabled) { save.focus(); return; }
+      host.nativeElement.querySelector<HTMLTextAreaElement>('textarea[data-segment]')?.focus();
     });
   }
 
@@ -382,22 +403,27 @@ export class StoryReviewPage {
 
   /** The changed-elsewhere notice is not a dialog: reload still confirms (it discards the draft), the others act at once. */
   protected reloadRemoteNotice(): void {
-    void this.reloadAfterConfirm().then(this.restoreSaveFocusAfterNotice);
+    // A declined confirm leaves the notice up, so the button the user pressed keeps the focus; only an accepted reload,
+    // which replaces the draft and takes the notice away, hands it to the editor.
+    void this.reloadAfterConfirm().then((accepted) => {
+      if (accepted) this.restoreFocusAfterNoticeAction();
+    });
   }
 
   protected saveMineRemoteNotice(): void {
-    void this.store.resolveConflict('saveAsNew').then(this.restoreSaveFocusAfterNotice);
+    // The store clears the notice only when the save-as-new actually went through; a second 412 keeps it and opens the
+    // conflict dialog, which owns the focus from there.
+    void this.store.resolveConflict('saveAsNew').then(() => {
+      if (this.store.remoteChange() === null) this.restoreFocusAfterNoticeAction();
+    });
   }
 
   protected dismissRemoteNotice(): void {
-    void this.store.resolveConflict('cancel').then(this.restoreSaveFocusAfterNotice);
+    void this.store.resolveConflict('cancel').then(this.restoreFocusAfterNoticeAction);
   }
 
-  /**
-   * The three notice buttons either disappear (their action resolved the change) or drop focus with them, so the Save
-   * control takes it back. An arrow property: the promise continuation calls it unbound.
-   */
-  private readonly restoreSaveFocusAfterNotice = (): void => {
+  /** Focus returns to the editor once the notice is gone, so the button that was pressed cannot take it with it. */
+  private readonly restoreFocusAfterNoticeAction = (): void => {
     if (!this.destroyRef.destroyed) this.restoreSaveFocus.set(true);
   };
 
