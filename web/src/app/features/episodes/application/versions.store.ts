@@ -331,8 +331,8 @@ export class VersionsStore {
       if (this.stale(episodeId, side, generation, versionId)) return;
       const error = isAppError(cause) ? cause : this.mapper.from(cause);
       if (error.status === 404) {
-        // The row is gone: drop it, forget the selection and re-read the authoritative list. An episode-wide 404 makes
-        // that reload fail too, which paints the list ErrorState; every other failure keeps the per-side retry.
+        // The row is gone: drop it, forget the selection and re-read the authoritative list in the background. A failed
+        // reload is silent (the stale list stays rendered); every other failure keeps the per-side retry.
         this.versionList.update((list) => list.filter((version) => version.versionId !== versionId));
         this.clearSide(side);
         await this.fetchList(false);
