@@ -1,4 +1,4 @@
-import { addressForParagraph, compareAddresses, formatAddress, parseAddress, parsePointerAddress, remapAfterReorder } from './segment-address';
+import { addressForParagraph, compareAddresses, formatAddress, parseAddress, parsePointerAddress, remapAfterInsert, remapAfterRemove, remapAfterReorder } from './segment-address';
 import type { SegmentAddress } from './segment-address';
 
 describe('segment-address', () => {
@@ -32,4 +32,26 @@ describe('segment-address', () => {
     expect(remapAfterReorder(values, 2, 2)).toEqual(values);
   });
   it.each([-1, 0.5, Infinity, Number.MAX_SAFE_INTEGER + 1])('invalidParagraphIndex_Throws_%s', (index) => expect(() => addressForParagraph(index)).toThrow(RangeError));
+  it('remapAfterRemove_ShiftsLaterParagraphs_AndDropsTheRemovedOne', () => {
+    expect(remapAfterRemove('p:1', 2)).toBe('p:1');
+    expect(remapAfterRemove('p:2', 2)).toBeNull();
+    expect(remapAfterRemove('p:3', 2)).toBe('p:2');
+    expect(remapAfterRemove('hook', 2)).toBe('hook');
+    expect(remapAfterRemove('meta', 0)).toBe('meta');
+  });
+  it('remapAfterRemove_InvalidIndex_Throws', () => {
+    expect(() => remapAfterRemove('p:0', -1)).toThrow(RangeError);
+  });
+  it('remapAfterInsert_ShiftsFromTheInsertedIndexOnwards', () => {
+    expect(remapAfterInsert('p:1', 2)).toBe('p:1');
+    expect(remapAfterInsert('p:2', 2)).toBe('p:3');
+    expect(remapAfterInsert('p:5', 2)).toBe('p:6');
+    expect(remapAfterInsert('ending', 2)).toBe('ending');
+  });
+  it('remapAfterInsert_ThenRemapAfterRemove_IsTheIdentity', () => {
+    for (const address of ['title', 'hook', 'p:0', 'p:2', 'p:5', 'ending', 'meta'] as const) {
+      const shifted = remapAfterInsert(address, 2);
+      expect(remapAfterRemove(shifted, 2)).toBe(address);
+    }
+  });
 });

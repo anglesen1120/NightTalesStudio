@@ -870,6 +870,10 @@ Earlier live rows for Plan13, hosting, skeleton, wave2 and wave3 already exist i
 
 | 10.5.3-T1 Story editor (segments, scene chips, Save version) | PR #169 open (Session 26, `feature/10.5.3-T1-s26`; CI per PR comment; local `web.yml` steps + `legal:gen:check` exit 0 on the tip, `test:ci` 2338 tests, stubbed e2e 46 passed / 2 research `test.fixme`, `budget:gzip` 149 979 B); T3 gates: QA (2 defects fixed), code + perf + security reviews (15 findings, jev triage, 2 fix groups + R02, delta closed) | `/episodes/:id` lazy `StoryReviewPage` (`EpisodeDetailStore` + `StoryEditorStore`), `currentStory` mapped from the pinned client, raw story.v1 PUT with the exact `sv-` If-Match, 412 keep-draft + three conflict actions, `?segment=` focus via `segment-address`, `SegmentChips`, read-only without `edit_story`, empty-story generate action; no autosave, no browser storage. Approve/reopen (10.5.6-T1), reorder/dirty guard (10.5.9-T1), hints UI (10.5.3-T2/10.5.10-T1) are separate tasks. |
 
+## Replaced by Session 28 (10.5.9-T1), archived 2026-10-13
+
+- **Web next (plan 10 Stage B), replaced fragment (10.5.9-T1 lane):** → lane next **10.5.9-T1** reorder/delete/undo/dirty guard (depends on 10.5.3-T1 only; read the 10.5.3-T1 §Notes "As built"), or **10.5.6-T1** approve/reopen once 02.3.3-T1 merges;
+
 ## Replaced by Session 29 close-out, archived 2026-10-14
 
 - **Web next (Session 29):** **10.5.4-T1** versions panel + word diff + restore as new version is in PR `feature/10.5.4-T1-s29` (§Open tasks row; `shared/util/text-diff.ts` + `shared/ui/diff-view` are the shared D11 pieces reused by 10.5.7-T1 and 10.5.3-T2) → 10.5.7-T1 unblocked once it merges; 10.5.6-T1 wires the reopen action behind the `needsReopen` message and 10.5.9-T1 adds the dirty guard the restore flow already warns about.

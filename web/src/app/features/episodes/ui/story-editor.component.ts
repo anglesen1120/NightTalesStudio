@@ -1,6 +1,7 @@
 import { ChangeDetectionStrategy, Component, ElementRef, computed, inject, input, output } from '@angular/core';
 import { TranslocoPipe, provideTranslocoScope } from '@jsverse/transloco';
 import type { SegmentAddress } from '@shared/util/segment-address';
+import { ParagraphListComponent } from './paragraph-list.component';
 import { SceneStripComponent } from './scene-strip.component';
 import { SegmentEditorComponent } from './segment-editor.component';
 import { SegmentNavComponent } from './segment-nav.component';
@@ -11,7 +12,7 @@ import type { SceneSegmentViewModel, SegmentNavViewModel, SegmentTexts, StoryEdi
 
 @Component({
   selector: 'nts-story-editor',
-  imports: [TranslocoPipe, SceneStripComponent, SegmentEditorComponent, SegmentNavComponent, StoryMetaEditorComponent, StorySaveBarComponent],
+  imports: [TranslocoPipe, ParagraphListComponent, SceneStripComponent, SegmentEditorComponent, SegmentNavComponent, StoryMetaEditorComponent, StorySaveBarComponent],
   providers: [provideTranslocoScope('episodes', 'errors')],
   templateUrl: './story-editor.component.html',
   styleUrl: './story-editor.component.scss',

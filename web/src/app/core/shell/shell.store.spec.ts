@@ -14,6 +14,7 @@ import { FakeSessionApi, fakeJwt } from '../session/testing/fake-session.api';
 import { ZONELESS_TEST_PROVIDERS } from '../../testing/providers';
 import { NAV_ITEMS_TOKEN, type NavItem } from './nav-items';
 import { ShellStore } from './shell.store';
+import { UnsavedWorkRegistry } from './unsaved-work';
 
 @Component({ template: '', changeDetection: ChangeDetectionStrategy.OnPush })
 class Page {}
@@ -74,6 +75,7 @@ async function setup(options: { signedIn?: boolean; mode?: 'full' | 'enrolment';
   return {
     store: TestBed.inject(ShellStore),
     session,
+    registry: TestBed.inject(UnsavedWorkRegistry),
     repo: TestBed.inject(MeRepository) as FakeMeRepository,
     locale,
     realtime,
@@ -199,6 +201,67 @@ describe('ShellStore', () => {
     store.logOut();
     store.logOut();
     expect(logout).toHaveBeenCalledTimes(1);
+  });
+
+  it('logOut_Stay_AbortsTheLogout_AndAsksAgainNextTime', async () => {
+    const { store, session, registry } = await setup();
+    const logout = vi.spyOn(session, 'logout');
+    const ask = vi.fn(() => Promise.resolve(false));
+    registry.register({ hasUnsaved: () => true, discard: () => undefined, confirmLeave: ask });
+    store.logOut();
+    await tick();
+    expect(ask).toHaveBeenCalledTimes(1);
+    expect(logout).not.toHaveBeenCalled();
+    expect(session.status()).toBe('authenticated');
+    store.logOut();
+    await tick();
+    expect(ask).toHaveBeenCalledTimes(2);
+    expect(logout).not.toHaveBeenCalled();
+  });
+
+  it('logOut_RejectedPrompt_KeepsTheSessionAndAllowsAnotherTry', async () => {
+    const { store, session, registry } = await setup();
+    const logout = vi.spyOn(session, 'logout');
+    const ask = vi.fn((): Promise<boolean> => Promise.reject(new Error('prompt failed')));
+    registry.register({ hasUnsaved: () => true, discard: () => undefined, confirmLeave: ask });
+    store.logOut();
+    await tick();
+    expect(ask).toHaveBeenCalledTimes(1);
+    // A rejected prompt is not a "leave" answer: the session survives and the in-flight flag is cleared.
+    expect(logout).not.toHaveBeenCalled();
+    expect(session.status()).toBe('authenticated');
+    ask.mockImplementation(() => Promise.resolve(true));
+    store.logOut();
+    await tick();
+    expect(ask).toHaveBeenCalledTimes(2);
+    expect(logout).toHaveBeenCalledTimes(1);
+    expect(session.status()).toBe('ended');
+  });
+
+  it('logOut_Leave_EndsTheSessionAfterThePrompt', async () => {
+    const { store, session, registry } = await setup();
+    const logout = vi.spyOn(session, 'logout');
+    const ask = vi.fn(() => Promise.resolve(true));
+    registry.register({ hasUnsaved: () => true, discard: () => undefined, confirmLeave: ask });
+    store.logOut();
+    await tick();
+    expect(ask).toHaveBeenCalledTimes(1);
+    expect(logout).toHaveBeenCalledTimes(1);
+    expect(session.status()).toBe('ended');
+  });
+
+  it('terminalSessionEnd_NeverPrompts_ButDiscardsUnsavedWork', async () => {
+    const { session, registry } = await setup();
+    const check = vi.fn(() => true);
+    const ask = vi.fn(() => Promise.resolve(false));
+    const discard = vi.fn();
+    registry.register({ hasUnsaved: check, discard, confirmLeave: ask });
+    session.signOut('revoked');
+    expect(session.status()).toBe('ended');
+    expect(session.endReason()).toBe('revoked');
+    expect(check).not.toHaveBeenCalled();
+    expect(ask).not.toHaveBeenCalled();
+    expect(discard).toHaveBeenCalledTimes(1);
   });
 
   it('resumeRealtime_DelegatesToRealtimeService', async () => {

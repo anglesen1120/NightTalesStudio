@@ -10,6 +10,7 @@ import { LocaleService, type AppLocale } from '@core/i18n';
 import { RealtimeService, type RealtimeState } from '@core/realtime';
 import { MeRepository, SessionStore, type MeSummary } from '@core/session';
 import { NAV_ITEMS_TOKEN, type NavItem } from './nav-items';
+import { UnsavedWorkRegistry } from './unsaved-work';
 
 const SNACKBAR_DURATION_MS = 6_000;
 
@@ -54,6 +55,7 @@ export class ShellStore {
   private readonly mapper = inject(AppErrorMapper);
   private readonly injector = inject(Injector);
   private readonly navItemsSource = inject(NAV_ITEMS_TOKEN);
+  private readonly unsavedWork = inject(UnsavedWorkRegistry);
 
   readonly summary: Signal<MeSummary | null> = computed(() => this.session.me());
   readonly navItems: Signal<readonly NavItem[]> = computed(() => this.navItemsSource.filter((item) => item.visible()));
@@ -187,16 +189,36 @@ export class ShellStore {
     }
   }
 
-  /** `SessionStore.logout()` ends the session locally first; a server-side failure leaves nothing to restore. */
+  /**
+   * `SessionStore.logout()` ends the session locally first; a server-side failure leaves nothing to restore.
+   *
+   * A dirty page is asked first (10.5.9-T1, README D18): the registry shares the page's in-flight confirm prompt, and
+   * a "Stay" answer aborts the logout. Clean sessions keep the previous synchronous path. A terminal `SessionEnded`
+   * never comes through here (`SessionStore` calls `signOut()` itself), so it is never deferred by this prompt.
+   */
   logOut(): void {
     if (this.loggingOut) return;
     this.loggingOut = true;
-    this.session
-      .logout()
-      .catch(() => undefined)
-      .finally(() => {
-        this.loggingOut = false;
-      });
+    if (!this.unsavedWork.hasUnsaved()) { void this.finishLogout(); return; }
+    void this.unsavedWork.confirmLeave().then(
+      async (leave) => {
+        if (leave) await this.finishLogout();
+        else this.loggingOut = false;
+      },
+      // A rejected prompt is not a decision: keep the session (`finishLogout` is never reached) and clear the flag so
+      // a later `logOut()` asks again instead of being swallowed by the in-flight guard.
+      () => { this.loggingOut = false; },
+    );
+  }
+
+  private async finishLogout(): Promise<void> {
+    try {
+      await this.session.logout();
+    } catch {
+      // The session is already gone locally (SessionStore.signOut); a server failure has nothing left to restore.
+    } finally {
+      this.loggingOut = false;
+    }
   }
 
   resumeRealtime(): void {

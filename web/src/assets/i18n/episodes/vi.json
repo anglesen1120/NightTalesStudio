@@ -76,6 +76,17 @@
     "saving": "Đang lưu…",
     "saved": "Đã lưu",
     "unsaved": "Có thay đổi chưa lưu",
+    "moveUp": "Lên",
+    "moveDown": "Xuống",
+    "moveHandle": "Kéo để di chuyển",
+    "delete": "Xoá đoạn",
+    "deletePosition": "Xoá đoạn {{position}}",
+    "deleted": "Đã xoá một đoạn",
+    "undo": "Hoàn tác",
+    "reorderAnnounce": "Đã chuyển đoạn {{n}} tới vị trí {{m}}",
+    "structureWarning": "Cấu trúc có thể không còn đúng hạng độ dài",
+    "moveUpPosition": "Lên: đoạn {{position}}",
+    "moveDownPosition": "Xuống: đoạn {{position}}",
     "segment": {
       "title": "Tiêu đề",
       "hook": "Mở đầu",
@@ -119,6 +130,12 @@
       "download": "Tải xuống",
       "unavailable": "Hành động chưa khả dụng"
     }
+  },
+  "dirty": {
+    "title": "Bạn có thay đổi chưa lưu",
+    "body": "Rời trang sẽ mất các thay đổi này",
+    "stay": "Ở lại",
+    "leave": "Rời trang"
   },
   "versions": {
     "title": "Lịch sử phiên bản",

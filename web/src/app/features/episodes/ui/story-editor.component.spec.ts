@@ -4,6 +4,7 @@ import { TranslocoTestingModule } from '@jsverse/transloco';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { By } from '@angular/platform-browser';
 import type { SegmentAddress } from '@shared/util/segment-address';
+import { onEmit } from '@shared/ui/testing/on-emit';
 import { ZONELESS_TEST_PROVIDERS } from '../../../testing/providers';
 import episodesVi from '../../../../assets/i18n/episodes/vi.json';
 import errorsVi from '../../../../assets/i18n/errors/vi.json';
@@ -33,7 +34,7 @@ function viewModel(paragraphs = 2): StoryEditorViewModel {
     readOnly: false,
     fieldErrors: {},
     formErrors: [],
-    keywordLimitHit: null,
+    keywordLimitHit: null, structureWarning: false,
     saveBar: { state: 'dirty', disabled: false, errorKey: null },
   };
 }
@@ -57,6 +58,25 @@ describe('StoryEditorComponent', () => {
     expect(root.textContent).toContain('Nhịp: Gieo chuyện');
     expect(root.querySelectorAll('textarea[data-segment^="p:"]')).toHaveLength(2);
     expect(root.querySelectorAll('input[value="Gieo chuyện"]')).toHaveLength(0);
+  });
+
+  it('shows the structure advisory without blocking Save and keeps every paragraph reachable', async () => {
+    const { root } = await setup({ ...viewModel(4), structureWarning: true });
+    expect(root.querySelector('.story-editor__structure-warning')?.textContent).toContain(episodesVi.editor.structureWarning);
+    expect(root.querySelector<HTMLButtonElement>('.story-save-bar button')?.disabled).toBe(false);
+    const areas = [...root.querySelectorAll<HTMLTextAreaElement>('textarea[data-segment^="p:"]')];
+    expect(areas).toHaveLength(4);
+    expect(areas.every((area) => area.tabIndex === 0 && !area.hidden)).toBe(true);
+    expect(root.querySelector('nts-segment-nav select')).not.toBeNull();
+  });
+
+  it('forwards structural actions from the composed cards', async () => {
+    const { root, component } = await setup();
+    const intents: unknown[] = [];
+    onEmit(component.intent, (intent) => intents.push(intent));
+    root.querySelector<HTMLButtonElement>('[data-action="move-down"]')!.click();
+    root.querySelector<HTMLButtonElement>('[data-action="delete"]')!.click();
+    expect(intents).toEqual([{ kind: 'moveParagraph', from: 0, to: 1 }, { kind: 'removeParagraph', index: 0 }]);
   });
 
   it('tracks paragraphs by segKey so appending does not recreate existing textareas', async () => {

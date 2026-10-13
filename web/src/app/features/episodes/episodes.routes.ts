@@ -4,6 +4,7 @@ import { EpisodesHttpRepository } from './data-access/episodes-http.repository';
 import { StoryHttpRepository } from './data-access/story-http.repository';
 import { HttpStoryVersionRepository } from './data-access/http-story-version.repository';
 import { SeriesOptionsHttpRepository } from './data-access/series-options-http.repository';
+import { dirtyStoryGuard } from './guards/dirty-story.guard';
 import { EpisodesRepository } from './domain/episodes.repository';
 import { StoryRepository } from './domain/story.repository';
 import { StoryVersionRepository } from './domain/story-version.repository';
@@ -25,6 +26,7 @@ export const episodesRoutes: Routes = [
   {
     path: ':id',
     loadComponent: () => import('./feature/story-review.page').then((module) => module.StoryReviewPage),
+    canDeactivate: [dirtyStoryGuard],
     providers: [
       { provide: EpisodesRepository, useClass: EpisodesHttpRepository },
       { provide: StoryRepository, useClass: StoryHttpRepository },
