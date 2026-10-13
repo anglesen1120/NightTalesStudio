@@ -13,11 +13,16 @@ namespace NightTales.Domain.Episodes;
 /// <c>EpisodeUpdated</c>.
 /// </summary>
 /// <remarks>
+/// The two announcements 02.5.4-T1 adds (<c>fact_sheet_saved.v1</c>, <c>fact_sheet_approved.v1</c>) add no
+/// precondition of their own: the command has already applied the F26 state gate and stored the row, and these
+/// methods exist to raise the invalidation, exactly as <see cref="RaiseFactSheetGenerated"/> does for the run.
+/// <para>
 /// The fact sheet itself is a separate aggregate (<c>NightTales.Domain.Research.FactSheet</c>): the job inserts
 /// it and this aggregate announces it, exactly as a fetched source is announced by
 /// <see cref="RaiseSourceFetched"/>. A repeat with the same run is idempotent within one aggregate's lifetime;
 /// across transactions the run's terminal status, checked by the job before it calls this aggregate, is the
 /// authority.
+/// </para>
 /// </remarks>
 public sealed partial class Episode
 {
@@ -86,14 +91,9 @@ public sealed partial class Episode
             return RunIdRequired();
         }
 
-        if (factSheetId == Guid.Empty)
+        if (InvalidAnnouncement(factSheetId, version) is { } invalid)
         {
-            return Error.Validation("fact_sheet_id_required", "A saved fact sheet needs its id.");
-        }
-
-        if (version < 1)
-        {
-            return Error.Validation("fact_sheet_version_invalid", "A fact-sheet version is 1-based.");
+            return invalid;
         }
 
         Raise(new FactSheetGenerated(factSheetId, version, Id, SeriesId, UserId, generationRunId, trigger, now));
@@ -126,5 +126,81 @@ public sealed partial class Episode
         Raise(new FactSheetGenerationFailed(Id, SeriesId, UserId, generationRunId, code.Value, trigger, now));
 
         return Result.Success;
+    }
+
+    /// <summary>
+    /// Announces the draft version a hand edit saved (02.5.4-T1, plan §5): <see cref="FactSheetSaved"/> is
+    /// raised for the UI's <c>EpisodeUpdated</c>. The status does not change.
+    /// </summary>
+    /// <remarks>
+    /// No state is required, exactly as for the version a run saved: the row is already stored, and an episode
+    /// that moved on must not turn a saved draft into a failed command. The F26 state gate belongs to the
+    /// command, which checked it before it wrote the row.
+    /// </remarks>
+    /// <param name="factSheetId">The saved version: the episode's <c>fs-&lt;id&gt;</c> ETag (D9).</param>
+    /// <param name="version">The saved version number, <c>max(version) + 1</c> at creation.</param>
+    /// <param name="now">The command's clock reading.</param>
+    /// <returns>
+    /// <c>Success</c>; a validation error when the version id is empty or <paramref name="version"/> is below 1.
+    /// </returns>
+    public ErrorOr<Success> RaiseFactSheetSaved(Guid factSheetId, int version, DateTimeOffset now)
+    {
+        if (InvalidAnnouncement(factSheetId, version) is { } invalid)
+        {
+            return invalid;
+        }
+
+        Raise(new FactSheetSaved(factSheetId, version, Id, SeriesId, UserId, now));
+
+        return Result.Success;
+    }
+
+    /// <summary>
+    /// Announces that a version was approved (02.5.4-T1, plan §5): <see cref="FactSheetApproved"/> is raised for
+    /// the UI's <c>EpisodeUpdated</c>. The status does not change.
+    /// </summary>
+    /// <remarks>
+    /// No state is required, for the same reason as <see cref="RaiseFactSheetSaved"/>, and the approve does not
+    /// touch the story: staleness is detected at story approve through <c>story.fact_sheet_id</c> (F12,
+    /// 02.5.5-T1).
+    /// </remarks>
+    /// <param name="factSheetId">The approved version: the episode's <c>fs-&lt;id&gt;</c> ETag (D9).</param>
+    /// <param name="version">The approved version number.</param>
+    /// <param name="now">The command's clock reading.</param>
+    /// <returns>
+    /// <c>Success</c>; a validation error when the version id is empty or <paramref name="version"/> is below 1.
+    /// </returns>
+    public ErrorOr<Success> RaiseFactSheetApproved(Guid factSheetId, int version, DateTimeOffset now)
+    {
+        if (InvalidAnnouncement(factSheetId, version) is { } invalid)
+        {
+            return invalid;
+        }
+
+        Raise(new FactSheetApproved(factSheetId, version, Id, SeriesId, UserId, now));
+
+        return Result.Success;
+    }
+
+    /// <summary>
+    /// The validation every fact-sheet announcement shares: a version id that is empty or a version below 1 is
+    /// a caller bug, not an episode state, so it is a validation error rather than a 409.
+    /// </summary>
+    /// <param name="factSheetId">The announced version.</param>
+    /// <param name="version">The announced version number.</param>
+    /// <returns>The validation error, or <c>null</c> when the announcement is well formed.</returns>
+    private static Error? InvalidAnnouncement(Guid factSheetId, int version)
+    {
+        if (factSheetId == Guid.Empty)
+        {
+            return Error.Validation("fact_sheet_id_required", "A saved fact sheet needs its id.");
+        }
+
+        if (version < 1)
+        {
+            return Error.Validation("fact_sheet_version_invalid", "A fact-sheet version is 1-based.");
+        }
+
+        return null;
     }
 }

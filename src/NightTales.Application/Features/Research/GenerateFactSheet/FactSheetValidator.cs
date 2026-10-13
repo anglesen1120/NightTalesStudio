@@ -1,5 +1,4 @@
 using System.Globalization;
-using System.Text;
 using NightTales.Application.Features.Research.Facts;
 using NightTales.Domain.Research;
 
@@ -8,8 +7,10 @@ namespace NightTales.Application.Features.Research.GenerateFactSheet;
 /// <summary>
 /// The deterministic filter between the raw <c>facts.v1</c> model output and what a fact sheet may store
 /// (02.5.3-T2, F12/F18, T1 hand-over 5). The C# <c>FactsV1</c> accepts any string and any array the strict
-/// schema lets through, so this validator — not the schema — owns alias resolution, statement shape, control
-/// characters, deduplication, the verbatim-copy block, the fact cap and id assignment.
+/// schema lets through, so this validator — not the schema — owns alias resolution, deduplication, the
+/// verbatim-copy block, the fact cap and id assignment. The statement's own shape rules are the shared
+/// <see cref="FactStatementRules"/> (02.5.4-T1 decision 12), so an extraction and the owner's edit accept
+/// exactly the same statements.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -36,7 +37,7 @@ namespace NightTales.Application.Features.Research.GenerateFactSheet;
 public static class FactSheetValidator
 {
     /// <summary>The longest statement the validator keeps, after normalisation (rule 2).</summary>
-    public const int StatementMaxChars = 600;
+    public const int StatementMaxChars = FactStatementRules.StatementMaxChars;
 
     /// <summary>
     /// The longest raw statement the validator scans (rule 2, P6): four times <see cref="StatementMaxChars"/>,
@@ -44,20 +45,7 @@ public static class FactSheetValidator
     /// and before NFC — whose canonical reordering a hostile run of combining marks could otherwise drive
     /// quadratic on the raw text.
     /// </summary>
-    public const int RawStatementMaxChars = StatementMaxChars * 4;
-
-    /// <summary>The DEL control character, rejected alongside the C0 controls (rule 2).</summary>
-    private const char Delete = '\u007F';
-
-    /// <summary>
-    /// The bidi formatting controls the statement may not carry (rule 2, SEC-6): the embedding/override set
-    /// <c>U+202A..U+202E</c>, the isolate set <c>U+2066..U+2069</c>, the marks <c>U+200E</c>/<c>U+200F</c> and
-    /// the Arabic letter mark <c>U+061C</c>. They reorder how the stored fact renders for a reader while the
-    /// bytes stay attacker-chosen, and a stored fact is later fed to the writer. The zero-width joiner and
-    /// non-joiner (<c>U+200D</c>/<c>U+200C</c>) stay allowed: emoji sequences and Indic and Arabic scripts
-    /// need them.
-    /// </summary>
-    private const string BidiControls = "\u061C\u200E\u200F\u202A\u202B\u202C\u202D\u202E\u2066\u2067\u2068\u2069";
+    public const int RawStatementMaxChars = FactStatementRules.RawStatementMaxChars;
 
     /// <summary>
     /// Validates one extraction output against the run's context (see the class remarks for the ordered
@@ -117,38 +105,12 @@ public static class FactSheetValidator
 
             var rawStatement = draft.Statement;
 
-            // Rule 2 (P6): a raw statement that could never normalise into a kept one is rejected before the
-            // scans and before NFC, whose canonical reordering hostile combining marks can make quadratic.
-            if (rawStatement is { Length: > RawStatementMaxChars })
+            // Rule 2: the statement's shape rules live in FactStatementRules (02.5.4-T1 decision 12), so the
+            // extraction and the owner's edit accept exactly the same statements. The returned reason is the
+            // ordered rule that removed the fact, and it is counted, never thrown.
+            if (FactStatementRules.TryNormalize(rawStatement, out var statement) is { } reason)
             {
-                drops.Add(new FactDrop(FactDropReasons.StatementInvalid, index));
-                continue;
-            }
-
-            // Rule 2: the control-character scan runs on the raw statement, before whitespace collapse.
-            if (HasForbiddenControlCharacter(rawStatement))
-            {
-                drops.Add(new FactDrop(FactDropReasons.ControlCharactersInvalid, index));
-                continue;
-            }
-
-            // Rule 2 (SEC-6): a bidi override or isolate control is dropped as an unusable statement.
-            if (HasBidiControl(rawStatement))
-            {
-                drops.Add(new FactDrop(FactDropReasons.StatementInvalid, index));
-                continue;
-            }
-
-            if (HasLoneSurrogate(rawStatement))
-            {
-                drops.Add(new FactDrop(FactDropReasons.StatementInvalid, index));
-                continue;
-            }
-
-            var statement = CollapseWhitespace(NormalizeStatement(rawStatement));
-            if (statement.Length == 0 || statement.Length > StatementMaxChars)
-            {
-                drops.Add(new FactDrop(FactDropReasons.StatementInvalid, index));
+                drops.Add(new FactDrop(reason, index));
                 continue;
             }
 
@@ -301,110 +263,4 @@ public static class FactSheetValidator
     /// <summary>The bounded scan window: <c>MaxFacts × 4</c>, or zero when the cap is not positive.</summary>
     private static int ScanLimit(int maxFacts) =>
         maxFacts <= 0 ? 0 : (int)Math.Min((long)maxFacts * 4L, int.MaxValue);
-
-    /// <summary>NFC-normalises the statement; safe because lone surrogates are rejected first.</summary>
-    private static string NormalizeStatement(string? statement) =>
-        string.IsNullOrEmpty(statement) ? string.Empty : statement.Normalize(NormalizationForm.FormC);
-
-    /// <summary>Collapses every run of whitespace to a single space and trims the ends.</summary>
-    private static string CollapseWhitespace(string statement)
-    {
-        if (statement.Length == 0)
-        {
-            return string.Empty;
-        }
-
-        var builder = new StringBuilder(statement.Length);
-        var pendingSpace = false;
-        foreach (var character in statement)
-        {
-            if (char.IsWhiteSpace(character))
-            {
-                pendingSpace = builder.Length > 0;
-                continue;
-            }
-
-            if (pendingSpace)
-            {
-                builder.Append(' ');
-                pendingSpace = false;
-            }
-
-            builder.Append(character);
-        }
-
-        return builder.ToString();
-    }
-
-    /// <summary>Whether the raw statement carries NUL, DEL or another C0 control character that is not whitespace.</summary>
-    private static bool HasForbiddenControlCharacter(string? statement)
-    {
-        if (string.IsNullOrEmpty(statement))
-        {
-            return false;
-        }
-
-        foreach (var character in statement)
-        {
-            if (character == Delete || (character < ' ' && !char.IsWhiteSpace(character)))
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    /// <summary>
-    /// Whether the raw statement carries a bidi override or isolate control (<see cref="BidiControls"/>): it
-    /// would reorder the stored fact for a reader while the bytes stay attacker-chosen (SEC-6). ZWJ/ZWNJ pass.
-    /// </summary>
-    private static bool HasBidiControl(string? statement)
-    {
-        if (string.IsNullOrEmpty(statement))
-        {
-            return false;
-        }
-
-        foreach (var character in statement)
-        {
-            if (BidiControls.Contains(character))
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    /// <summary>Whether the statement holds a UTF-16 surrogate that is not part of a valid pair.</summary>
-    private static bool HasLoneSurrogate(string? statement)
-    {
-        if (string.IsNullOrEmpty(statement))
-        {
-            return false;
-        }
-
-        for (var index = 0; index < statement.Length; index++)
-        {
-            var character = statement[index];
-            if (char.IsHighSurrogate(character))
-            {
-                if (index + 1 < statement.Length && char.IsLowSurrogate(statement[index + 1]))
-                {
-                    index++;
-                    continue;
-                }
-
-                return true;
-            }
-
-            if (char.IsLowSurrogate(character))
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
 }

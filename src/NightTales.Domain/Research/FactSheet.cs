@@ -1,6 +1,6 @@
-using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
+using ErrorOr;
 using NightTales.Domain.Common;
 
 namespace NightTales.Domain.Research;
@@ -15,6 +15,17 @@ namespace NightTales.Domain.Research;
 /// </summary>
 public sealed class FactSheet : Entity, IUserOwned, IAuditable
 {
+    /// <summary>
+    /// The catalogued code of "the edit or the approve does not address the current version" (412, 02 README
+    /// D8/D9). The Domain may not reference <c>NightTales.Application.Common.Errors.ErrorCodes</c> (ErrorOr is
+    /// its only package), so it spells the code itself; the unit test
+    /// <c>FactSheet_Codes_MatchTheErrorCatalogue</c> keeps the two equal.
+    /// </summary>
+    public const string ConflictCode = "fact_sheet_conflict";
+
+    /// <summary>The <see cref="PromptVersion"/> a hand-edited version writes: a person, not a D5 prompt bundle.</summary>
+    public const string UserPromptVersion = "user";
+
     private FactSheet()
     {
     }
@@ -100,14 +111,89 @@ public sealed class FactSheet : Entity, IUserOwned, IAuditable
         int maxFactId,
         Guid generationRunId,
         string promptVersion,
+        DateTimeOffset createdAt) =>
+        CreateVersion(
+            ownerUserId: userId,
+            createdBy: userId,
+            episodeId: episodeId,
+            version: version,
+            facts: facts,
+            sourceAliases: sourceAliases,
+            inputTruncated: inputTruncated,
+            maxFactId: maxFactId,
+            generationRunId: generationRunId,
+            promptVersion: promptVersion,
+            createdAt: createdAt);
+
+    /// <summary>
+    /// Creates the next version of an episode from a hand edit (02.5.4-T1): <c>previous.Version + 1</c>, a draft,
+    /// no generation run and the <c>"user"</c> prompt version, because a person wrote this body rather than the
+    /// model. Every <see cref="CreateDraft"/> invariant still holds — the facts carry backend ids, cite sources
+    /// the alias map names and stay within the watermark — so an invalid body cannot reach the database through
+    /// this path either; the overlap and confidence semantics of the edit belong to the caller (T53).
+    /// </summary>
+    /// <remarks>
+    /// The previous version is only read: it supplies the episode, the owner, the version counter and the
+    /// truncation flag, and the transaction that stores the result leaves its row untouched (D9 — the ETag is
+    /// the row id, so an edit always adds a row). Its status does not matter: editing an approved version is
+    /// how the next draft begins (02 §4).
+    /// </remarks>
+    /// <param name="previous">The episode's current version, whatever its status.</param>
+    /// <param name="facts">The new version's facts, in output order.</param>
+    /// <param name="sourceAliases">The alias map the new version stores (CR-4/D21).</param>
+    /// <param name="maxFactId">The episode's watermark, which <see cref="FactIdAllocator"/> allocated the new ids from.</param>
+    /// <param name="userId">The user the edit belongs to; recorded as <see cref="CreatedBy"/>.</param>
+    /// <param name="now">The command's clock reading.</param>
+    /// <returns>The new draft version, with <see cref="ContentSha256"/> computed.</returns>
+    /// <exception cref="ArgumentException">A required owner, episode or prompt version is empty, or a fact breaks an invariant of <see cref="CreateDraft"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">The watermark is negative or below the highest fact id.</exception>
+    public static FactSheet CreateUserDraft(
+        FactSheet previous,
+        IReadOnlyList<FactItem> facts,
+        IReadOnlyDictionary<string, Guid> sourceAliases,
+        int maxFactId,
+        Guid userId,
+        DateTimeOffset now)
+    {
+        ArgumentNullException.ThrowIfNull(previous);
+
+        return CreateVersion(
+            ownerUserId: previous.UserId,
+            createdBy: userId,
+            episodeId: previous.EpisodeId,
+            version: previous.Version + 1,
+            facts: facts,
+            sourceAliases: sourceAliases,
+            inputTruncated: previous.InputTruncated,
+            maxFactId: maxFactId,
+            generationRunId: Guid.Empty,
+            promptVersion: UserPromptVersion,
+            createdAt: now);
+    }
+
+    /// <summary>
+    /// The one draft factory: the run path and the hand-edit path differ only in who is recorded as the creator,
+    /// so the invariants a stored version must satisfy are checked in a single place.
+    /// </summary>
+    private static FactSheet CreateVersion(
+        Guid ownerUserId,
+        Guid createdBy,
+        Guid episodeId,
+        int version,
+        IReadOnlyList<FactItem> facts,
+        IReadOnlyDictionary<string, Guid> sourceAliases,
+        bool inputTruncated,
+        int maxFactId,
+        Guid generationRunId,
+        string promptVersion,
         DateTimeOffset createdAt)
     {
         ArgumentNullException.ThrowIfNull(facts);
         ArgumentNullException.ThrowIfNull(sourceAliases);
 
-        if (userId == Guid.Empty)
+        if (ownerUserId == Guid.Empty)
         {
-            throw new ArgumentException("A fact sheet needs an owner.", nameof(userId));
+            throw new ArgumentException("A fact sheet needs an owner.", nameof(ownerUserId));
         }
 
         if (episodeId == Guid.Empty)
@@ -168,7 +254,7 @@ public sealed class FactSheet : Entity, IUserOwned, IAuditable
                 }
             }
 
-            if (!TryFactIdNumber(fact.Id, out var number))
+            if (!FactIdAllocator.TryParseNumber(fact.Id, out var number))
             {
                 throw new ArgumentException($"Fact id '{fact.Id}' must be 'f' followed by its 1-based number.", nameof(facts));
             }
@@ -192,7 +278,7 @@ public sealed class FactSheet : Entity, IUserOwned, IAuditable
         return new FactSheet
         {
             Id = Guid.CreateVersion7(),
-            UserId = userId,
+            UserId = ownerUserId,
             EpisodeId = episodeId,
             Version = version,
             Status = FactSheetStatus.Draft,
@@ -203,20 +289,58 @@ public sealed class FactSheet : Entity, IUserOwned, IAuditable
             ContentSha256 = ComputeContentSha256(facts),
             GenerationRunId = generationRunId == Guid.Empty ? null : generationRunId,
             PromptVersion = promptVersion,
-            CreatedBy = userId,
+            CreatedBy = createdBy,
             CreatedAt = createdAt,
             UpdatedAt = createdAt,
         };
     }
 
     /// <summary>
-    /// Demotes a version to <see cref="FactSheetStatus.Superseded"/> in the same transaction that approves a
+    /// Demotes the version to <see cref="FactSheetStatus.Superseded"/> in the same transaction that approves a
     /// newer one (T54), so at most one row per episode stays approved — 02.5.4-T1 is the only caller and it
-    /// calls this on the episode's previously approved row. The flip is idempotent (re-demoting an already
-    /// superseded version is a no-op) and never throws: invariant 4 itself is enforced by the partial unique
-    /// index <c>ux_fact_sheets_episode_approved</c> plus that transaction, not by this method.
+    /// calls this on the episode's previously approved row.
     /// </summary>
-    public void Supersede() => Status = FactSheetStatus.Superseded;
+    /// <remarks>
+    /// Only an <see cref="FactSheetStatus.Approved"/> row moves: a draft is the row an edit just created and a
+    /// superseded row is already there, so both are left exactly as they are, and no other property is touched
+    /// (invariant 4 itself is enforced by the partial unique index <c>ux_fact_sheets_episode_approved</c> plus
+    /// that transaction, not by this method).
+    /// </remarks>
+    public void Supersede()
+    {
+        if (Status == FactSheetStatus.Approved)
+        {
+            Status = FactSheetStatus.Superseded;
+        }
+    }
+
+    /// <summary>
+    /// Approves the version (02.5.4-T1): only a draft can be approved, so a repeated approve — or one that
+    /// addresses a row that has since been superseded — is a 412 <see cref="ConflictCode"/> rather than a
+    /// second approval.
+    /// </summary>
+    /// <remarks>
+    /// The caller owns the ETag check, the episode state gate and the F13 source-diversity gate (D9/F13), and
+    /// it must demote the episode's previously approved row in the same transaction before this runs, because
+    /// the partial unique index allows one approved row per episode.
+    /// </remarks>
+    /// <param name="approvedBy">The approving user.</param>
+    /// <param name="now">The command's clock reading.</param>
+    /// <returns><c>Success</c>, or the 412 conflict when the version is not a draft.</returns>
+    public ErrorOr<Success> Approve(Guid approvedBy, DateTimeOffset now)
+    {
+        if (Status != FactSheetStatus.Draft)
+        {
+            return Error.Conflict(ConflictCode, "Only the current draft of a fact sheet can be approved.");
+        }
+
+        Status = FactSheetStatus.Approved;
+        ApprovedBy = approvedBy;
+        ApprovedAt = now;
+        UpdatedAt = now;
+
+        return Result.Success;
+    }
 
     /// <summary>
     /// The SHA-256 (64 lowercase hex) over the canonical JSON of the facts (plan §3 invariant 3,
@@ -231,16 +355,5 @@ public sealed class FactSheet : Entity, IUserOwned, IAuditable
 
         var json = FactSheetJson.SerializeFacts(facts);
         return Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(json)));
-    }
-
-    /// <summary>Parses a backend fact id (<c>f</c> plus a 1-based number, no leading zero).</summary>
-    private static bool TryFactIdNumber(string? id, out int number)
-    {
-        number = 0;
-        return id is { Length: >= 2 }
-            && id[0] == 'f'
-            && id[1] != '0'
-            && int.TryParse(id.AsSpan(1), NumberStyles.None, CultureInfo.InvariantCulture, out number)
-            && number >= 1;
     }
 }

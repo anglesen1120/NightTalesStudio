@@ -238,6 +238,8 @@ public static class WorkerServiceCollectionExtensions
         services.AddOutboxHandler<FactSheetGenerationRequested, GenerateFactSheetJobHandler>();
         services.AddOutboxHandler<FactSheetGenerated, FactSheetGeneratedRealtimeHandler>();
         services.AddOutboxHandler<FactSheetGenerationFailed, FactSheetGenerationFailedRealtimeHandler>();
+        services.AddOutboxHandler<FactSheetSaved, FactSheetSavedRealtimeHandler>();
+        services.AddOutboxHandler<FactSheetApproved, FactSheetApprovedRealtimeHandler>();
 
         // 11.3.3-T1 (11 README D13/F09–F13): the render-node registry, the pinned-TLS connection factory,
         // the health cache, the drift/up instruments and the config seeder. The optional `RenderNodes`

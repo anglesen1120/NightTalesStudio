@@ -1,3 +1,5 @@
+using System.Globalization;
+
 namespace NightTales.Application.Common;
 
 /// <summary>
@@ -20,6 +22,19 @@ public static class ETags
 
     /// <summary>Publication ETag: <c>"pu-&lt;publications.xmin&gt;"</c> (06.2.1-T1).</summary>
     public static string Publication(uint xmin) => $"\"pu-{xmin}\"";
+
+    /// <summary>
+    /// Fact-sheet ETag: <c>"fs-&lt;fact_sheets.id&gt;"</c> (02 README D9, 02.5.4-T1).
+    /// </summary>
+    /// <remarks>
+    /// Unlike the aggregate ETags above it is derived from the version row's own id, not from
+    /// <c>xmin</c>: a fact sheet is immutable — an edit creates the next version — so a fresh id is
+    /// exactly what makes the tag change on every write, with no <c>xmin</c> read to race.
+    /// </remarks>
+    /// <param name="factSheetId">The version id the tag names.</param>
+    /// <returns>The strong ETag, quotes included.</returns>
+    public static string FactSheet(Guid factSheetId) =>
+        $"\"fs-{factSheetId.ToString("D", CultureInfo.InvariantCulture)}\"";
 
     /// <summary>
     /// A strong, exact comparison of an <c>If-Match</c> header against <paramref name="current"/>:

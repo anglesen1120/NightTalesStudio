@@ -24,6 +24,7 @@
   "breached_password": "This password appeared in a data breach. Choose another.",
   "registration_closed": "New registrations are not available right now.",
   "not_found": "We could not find what you were looking for.",
+  "fact_sheet_not_found": "This episode has no fact sheet yet. Generate one first.",
   "feature_disabled": "This feature is not available right now.",
   "episode_invalid_state": "The episode changed and this action is no longer possible. Reload to see its current state.",
   "concurrency_conflict": "Someone else changed this at the same time. Reload and try again.",
