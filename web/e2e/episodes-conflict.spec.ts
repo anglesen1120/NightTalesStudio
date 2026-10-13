@@ -1,4 +1,4 @@
-import type { Page, Request } from '@playwright/test';
+import type { Browser, Locator, Page, Request } from '@playwright/test';
 import { expectA11yClean, waitForOverlayAnimationEnd } from './fixtures/axe';
 import { describeCsp, expect, installCspDetector, test } from './fixtures/csp.fixture';
 import { EPISODE_ID, stubEpisodes, type EpisodeStubs } from './fixtures/episodes-stubs';
@@ -7,6 +7,7 @@ import {
   EDITED, EDITOR_COPY, EDITOR_PATH, STORED_STORY_ETAG, STORED_VERSION_ID, STORY_CONTENT, editorDetail,
   expectEditor, expectSaved, expectStoryPut, saveButton, segment, storySnapshot, type StoryWire,
 } from './fixtures/story-editor-stubs';
+import coreEn from '../src/assets/i18n/core/en.json' with { type: 'json' };
 import coreVi from '../src/assets/i18n/core/vi.json' with { type: 'json' };
 import episodesVi from '../src/assets/i18n/episodes/vi.json' with { type: 'json' };
 import errorsVi from '../src/assets/i18n/errors/vi.json' with { type: 'json' };
@@ -18,8 +19,9 @@ import errorsEn from '../src/assets/i18n/errors/en.json' with { type: 'json' };
 // focus trap, focus return to Save after Cancel, the differing-segment list, WCAG 2.1 AA), the single user-authorised
 // "save mine as new" attempt (GET fresh etag then PUT with it), the destructive confirm on the reload path, the busy
 // variant after a second 412, byte-identical typed text throughout, and the non-modal "changed elsewhere" notice a
-// real hub invalidation raises while the draft is dirty. The English describe at the end repeats the stale-save →
-// dialog → Cancel path with the en bundles. Real compose acceptance stays with 11.5.1-T1.
+// real hub invalidation raises while the draft is dirty. The English describe at the end repeats the full two-context
+// flow with the en bundles and walks BOTH dialog actions, so neither language can drift. Real compose acceptance
+// stays with 11.5.1-T1.
 test.use({ locale: 'vi-VN', timezoneId: 'UTC' });
 const L = EDITOR_COPY.vi;
 /**
@@ -30,12 +32,21 @@ const DIALOG_COPY = { vi: errorsVi.conflict, en: errorsEn.conflict };
 const PAGE_CONFLICT_COPY = { vi: episodesVi.conflict, en: episodesEn.conflict };
 const D = DIALOG_COPY.vi;
 const C = PAGE_CONFLICT_COPY.vi;
-const CONFIRM_CANCEL = coreVi.core.ui.confirm.cancel;
+/** The shared confirm dialog's own chrome comes from the `core` scope, per language. */
+const CONFIRM_CANCEL: Readonly<Record<'vi' | 'en', string>> = {
+  vi: coreVi.core.ui.confirm.cancel,
+  en: coreEn.core.ui.confirm.cancel,
+};
 /** Typed by hand, not filled: every step below re-reads it to prove the draft survived byte for byte. */
 const TYPED_TITLE = 'Bản nháp chưa lưu của B ✓';
 /** What context A saved: a different title, so B's draft differs from the server on title/hook/paragraph 1. */
 const SERVER_TITLE = 'Bản của A đã lưu trên máy chủ';
 const SERVER_CONTENT: StoryWire = { ...STORY_CONTENT, title: SERVER_TITLE };
+/** A later writer's content for the reload path: only the title differs, so the adopted draft is unambiguous. */
+const RELOADED_TITLE = 'Bản mới nhất từ máy chủ';
+const RELOADED_CONTENT: StoryWire = { ...STORY_CONTENT, title: RELOADED_TITLE };
+/** The losing page's second dirty edit, which the reload path must keep until the confirm is accepted. */
+const REDRAFTED_TITLE = 'Bản nháp thứ hai chưa lưu';
 /** B's draft: the typed title plus the shared `EDITED` hook and first paragraph. */
 const B_CONTENT: StoryWire = {
   ...STORY_CONTENT,
@@ -128,84 +139,127 @@ async function typeTitle(page: Page, text: string, lang: 'vi' | 'en' = 'vi'): Pr
   await expect(title).toHaveValue(text);
 }
 
+/**
+ * The shared stale-save scenario (AC #10). Two real browser contexts load the same episode, A saves and moves the
+ * etag, and B's own save then carries a stale `If-Match`: the dialog opens over B's dirty draft. Walks focus trap →
+ * Cancel (focus back on Save, draft byte-identical) → a second stale save → "save mine as new" (exactly one fresh
+ * read, one PUT with that etag). Both languages call it, so their copy cannot drift. Returns the losing page's stub
+ * and the shared server, so a caller can carry on into the next conflict.
+ */
+async function twoContextStaleSave(page: Page, browser: Browser, lang: 'vi' | 'en'): Promise<{ stub: PageStub; server: StoryServer }> {
+  const copy = EDITOR_COPY[lang], dialogCopy = DIALOG_COPY[lang], pageCopy = PAGE_CONFLICT_COPY[lang];
+  const server: StoryServer = { version: 1, versionId: STORED_VERSION_ID, content: STORY_CONTENT, forced412: 0 };
+  const stub = await stubSharedStory(page, server, lang);
+  const contextA = await browser.newContext({ locale: lang === 'vi' ? 'vi-VN' : 'en-US', timezoneId: 'UTC' });
+  const cspA = await installCspDetector(contextA);
+  try {
+    const pageA = await contextA.newPage();
+    const stubA = await stubSharedStory(pageA, server, lang);
+    await page.goto(EDITOR_PATH);
+    await expectEditor(page, lang);
+    await pageA.goto(EDITOR_PATH);
+    await expectEditor(pageA, lang);
+    await expect.poll(stubA.transport.connected).toBe(1);
+    await expect.poll(stub.transport.connected).toBe(1);
+
+    // Context A saves a version of its own: the shared server moves to a new etag.
+    await segment(pageA, copy.title).fill(SERVER_TITLE);
+    await saveButton(pageA, lang).click();
+    await expectSaved(pageA, lang);
+    expect(stubA.puts).toHaveLength(1);
+    expectStoryPut(stubA.puts[0]!, STORED_STORY_ETAG, SERVER_CONTENT);
+    const freshEtag = etagFor(server.versionId);
+
+    // Context B still holds the etag it loaded with and a dirty draft of its own.
+    await typeTitle(page, TYPED_TITLE, lang);
+    await segment(page, copy.hook).fill(EDITED.hook);
+    await segment(page, copy.paragraph(1)).fill(EDITED.paragraph);
+    await saveButton(page, lang).click();
+
+    const dialog = conflictDialog(page, lang);
+    await expect(dialog).toBeVisible();
+    await expect(dialog).toHaveAttribute('aria-modal', 'true');
+    await expect(dialog).toContainText(pageCopy.diffHeading);
+    for (const label of [copy.title, copy.hook, copy.paragraph(1)]) await expect(dialog).toContainText(label);
+    expect(stub.puts).toHaveLength(1);
+    expectStoryPut(stub.puts[0]!, STORED_STORY_ETAG, B_CONTENT);
+    // Focus is trapped inside the dialog (the Cancel action carries cdkFocusInitial).
+    await expect(dialog.getByRole('button', { name: dialogCopy.cancel, exact: true })).toBeFocused();
+    for (let step = 0; step < 5; step += 1) {
+      await page.keyboard.press('Tab');
+      expect(await dialog.evaluate((element) => element.contains(document.activeElement))).toBe(true);
+    }
+    await waitForOverlayAnimationEnd(page);
+    await expectA11yClean(page);
+
+    // Cancel keeps every byte of the draft and hands focus back to the Save control.
+    await dialog.getByRole('button', { name: dialogCopy.cancel, exact: true }).click();
+    await expect(dialog).toHaveCount(0);
+    await expect(saveButton(page, lang)).toBeFocused();
+    await expect(segment(page, copy.title)).toHaveValue(TYPED_TITLE);
+    await expect(segment(page, copy.hook)).toHaveValue(EDITED.hook);
+    await expect(segment(page, copy.paragraph(1))).toHaveValue(EDITED.paragraph);
+    await page.waitForTimeout(650);
+    expect(stub.puts, 'a 412 must never be retried automatically').toHaveLength(1);
+
+    // Save again, then the one user-authorised attempt: a fresh read followed by exactly one PUT with that etag.
+    await saveButton(page, lang).click();
+    await expect(dialog).toBeVisible();
+    expect(stub.puts, 'the second manual save is its own request').toHaveLength(2);
+    const getsBefore = stub.detailGets.length;
+    const orderBefore = stub.order.length;
+    await dialog.getByRole('button', { name: dialogCopy.saveAsNew, exact: true }).click();
+    await expectSaved(page, lang);
+    await expect(dialog).toHaveCount(0);
+    expect(stub.detailGets.length).toBe(getsBefore + 1);
+    expect(stub.order.slice(orderBefore)).toEqual(['get', 'put']);
+    expect(stub.puts).toHaveLength(3);
+    expectStoryPut(stub.puts[2]!, freshEtag, B_CONTENT);
+    await expect(segment(page, copy.title)).toHaveValue(TYPED_TITLE);
+    await page.waitForTimeout(650);
+    expect(stub.puts).toHaveLength(3);
+
+    // The other context must be free of CSP / Trusted Types violations too.
+    await pageA.evaluate(() => new Promise<void>((resolve) => setTimeout(resolve, 100)));
+    expect(cspA, `CSP / Trusted Types violation(s) in context A:\n${describeCsp(cspA)}`).toEqual([]);
+  } finally {
+    await contextA.close();
+  }
+  return { stub, server };
+}
+
+/**
+ * Walks "Reload latest" from an open conflict dialog: the destructive confirm is declined once (the dialog returns
+ * with the draft untouched) and accepted once, after which the server story replaces it. The caller asserts the
+ * adopted content, which only it knows.
+ */
+async function reloadLatestFromDialog(page: Page, dialog: Locator, lang: 'vi' | 'en', draftTitle: string): Promise<void> {
+  const copy = EDITOR_COPY[lang], dialogCopy = DIALOG_COPY[lang], pageCopy = PAGE_CONFLICT_COPY[lang];
+  await dialog.getByRole('button', { name: dialogCopy.reload, exact: true }).click();
+  const confirm = confirmDialog(page, lang);
+  await expect(confirm).toBeVisible();
+  await expect(confirm).toContainText(pageCopy.reloadConfirmBody);
+  // Destructive: the confirm action is the danger style, the safe action holds initial focus.
+  await expect(confirm.getByRole('button', { name: pageCopy.reload, exact: true })).toHaveClass(/confirm-dialog__danger/);
+  await waitForOverlayAnimationEnd(page);
+  await expectA11yClean(page);
+
+  // Declining is not a decision about the conflict: the dialog comes back with the draft untouched.
+  await confirm.getByRole('button', { name: CONFIRM_CANCEL[lang], exact: true }).click();
+  await expect(confirm).toHaveCount(0);
+  await expect(dialog).toBeVisible();
+  await expect(segment(page, copy.title)).toHaveValue(draftTitle);
+
+  await dialog.getByRole('button', { name: dialogCopy.reload, exact: true }).click();
+  await expect(confirm).toBeVisible();
+  await confirm.getByRole('button', { name: pageCopy.reload, exact: true }).click();
+  await expect(confirm).toHaveCount(0);
+  await expect(dialog).toHaveCount(0);
+}
+
 test.describe('story conflict (vi, stubbed, shared server)', () => {
   test('TwoContexts_StaleSave_OpensConflictDialog_FocusTrappedAndReturned_DraftKept_SaveMineUsesFreshEtag', async ({ page, browser }) => {
-    const server: StoryServer = { version: 1, versionId: STORED_VERSION_ID, content: STORY_CONTENT, forced412: 0 };
-    const stubB = await stubSharedStory(page, server);
-    const contextA = await browser.newContext({ locale: 'vi-VN', timezoneId: 'UTC' });
-    const cspA = await installCspDetector(contextA);
-    try {
-      const pageA = await contextA.newPage();
-      const stubA = await stubSharedStory(pageA, server);
-      await page.goto(EDITOR_PATH);
-      await expectEditor(page, 'vi');
-      await pageA.goto(EDITOR_PATH);
-      await expectEditor(pageA, 'vi');
-      await expect.poll(stubA.transport.connected).toBe(1);
-      await expect.poll(stubB.transport.connected).toBe(1);
-
-      // Context A saves a version of its own: the shared server moves to a new etag.
-      await segment(pageA, L.title).fill(SERVER_TITLE);
-      await saveButton(pageA, 'vi').click();
-      await expectSaved(pageA, 'vi');
-      expect(stubA.puts).toHaveLength(1);
-      expectStoryPut(stubA.puts[0]!, STORED_STORY_ETAG, SERVER_CONTENT);
-      const freshEtag = etagFor(server.versionId);
-
-      // Context B still holds the etag it loaded with and a dirty draft of its own.
-      await typeTitle(page, TYPED_TITLE);
-      await segment(page, L.hook).fill(EDITED.hook);
-      await segment(page, L.paragraph(1)).fill(EDITED.paragraph);
-      await saveButton(page, 'vi').click();
-
-      const dialog = conflictDialog(page);
-      await expect(dialog).toBeVisible();
-      await expect(dialog).toHaveAttribute('aria-modal', 'true');
-      await expect(dialog).toContainText(C.diffHeading);
-      for (const label of [L.title, L.hook, L.paragraph(1)]) await expect(dialog).toContainText(label);
-      expect(stubB.puts).toHaveLength(1);
-      expectStoryPut(stubB.puts[0]!, STORED_STORY_ETAG, B_CONTENT);
-      // Focus is trapped inside the dialog (the Cancel action carries cdkFocusInitial).
-      await expect(dialog.getByRole('button', { name: D.cancel, exact: true })).toBeFocused();
-      for (let step = 0; step < 5; step += 1) {
-        await page.keyboard.press('Tab');
-        expect(await dialog.evaluate((element) => element.contains(document.activeElement))).toBe(true);
-      }
-      await waitForOverlayAnimationEnd(page);
-      await expectA11yClean(page);
-
-      // Cancel keeps every byte of the draft and hands focus back to the Save control.
-      await dialog.getByRole('button', { name: D.cancel, exact: true }).click();
-      await expect(dialog).toHaveCount(0);
-      await expect(saveButton(page, 'vi')).toBeFocused();
-      await expect(segment(page, L.title)).toHaveValue(TYPED_TITLE);
-      await expect(segment(page, L.hook)).toHaveValue(EDITED.hook);
-      await expect(segment(page, L.paragraph(1))).toHaveValue(EDITED.paragraph);
-      await page.waitForTimeout(650);
-      expect(stubB.puts, 'a 412 must never be retried automatically').toHaveLength(1);
-
-      // Save again, then the one user-authorised attempt: a fresh read followed by exactly one PUT with that etag.
-      await saveButton(page, 'vi').click();
-      await expect(dialog).toBeVisible();
-      expect(stubB.puts, 'the second manual save is its own request').toHaveLength(2);
-      const getsBefore = stubB.detailGets.length;
-      const orderBefore = stubB.order.length;
-      await dialog.getByRole('button', { name: D.saveAsNew, exact: true }).click();
-      await expectSaved(page, 'vi');
-      await expect(dialog).toHaveCount(0);
-      expect(stubB.detailGets.length).toBe(getsBefore + 1);
-      expect(stubB.order.slice(orderBefore)).toEqual(['get', 'put']);
-      expect(stubB.puts).toHaveLength(3);
-      expectStoryPut(stubB.puts[2]!, freshEtag, B_CONTENT);
-      await expect(segment(page, L.title)).toHaveValue(TYPED_TITLE);
-      await page.waitForTimeout(650);
-      expect(stubB.puts).toHaveLength(3);
-
-      await pageA.evaluate(() => new Promise<void>((resolve) => setTimeout(resolve, 100)));
-      expect(cspA, `CSP / Trusted Types violation(s) in context A:\n${describeCsp(cspA)}`).toEqual([]);
-    } finally {
-      await contextA.close();
-    }
+    await twoContextStaleSave(page, browser, 'vi');
   });
 
   test('ReloadPath_AsksTheDestructiveConfirm_DecliningReturnsToTheDialog_AcceptingReplacesTheDraft', async ({ page }) => {
@@ -223,28 +277,10 @@ test.describe('story conflict (vi, stubbed, shared server)', () => {
     await expect(dialog).toContainText(L.title);
     await expect(segment(page, L.title)).toHaveValue(TYPED_TITLE);
 
-    await dialog.getByRole('button', { name: D.reload, exact: true }).click();
-    const confirm = confirmDialog(page);
-    await expect(confirm).toBeVisible();
-    await expect(confirm).toContainText(C.reloadConfirmBody);
-    // Destructive: the confirm action is the danger style, the safe action holds initial focus.
-    await expect(confirm.getByRole('button', { name: C.reload, exact: true })).toHaveClass(/confirm-dialog__danger/);
-    await waitForOverlayAnimationEnd(page);
-    await expectA11yClean(page);
-
-    // Declining is not a decision about the conflict: the dialog comes back with the draft untouched.
-    await confirm.getByRole('button', { name: CONFIRM_CANCEL, exact: true }).click();
-    await expect(confirm).toHaveCount(0);
-    await expect(dialog).toBeVisible();
-    await expect(segment(page, L.title)).toHaveValue(TYPED_TITLE);
+    await reloadLatestFromDialog(page, dialog, 'vi', TYPED_TITLE);
 
     // Accepting reloads the server story over the unsaved text.
-    await dialog.getByRole('button', { name: D.reload, exact: true }).click();
-    await expect(confirmDialog(page)).toBeVisible();
-    await confirmDialog(page).getByRole('button', { name: C.reload, exact: true }).click();
     await expect(segment(page, L.title)).toHaveValue(SERVER_TITLE);
-    await expect(confirmDialog(page)).toHaveCount(0);
-    await expect(dialog).toHaveCount(0);
     expect(stub.puts).toHaveLength(1);
     await expectA11yClean(page);
   });
@@ -302,7 +338,7 @@ test.describe('story conflict (vi, stubbed, shared server)', () => {
   });
 });
 
-test.describe('story conflict in English (stubbed, one context)', () => {
+test.describe('story conflict in English (stubbed)', () => {
   test.use({ locale: 'en-US' });
   const EN = EDITOR_COPY.en;
   const END = DIALOG_COPY.en;
@@ -336,5 +372,25 @@ test.describe('story conflict in English (stubbed, one context)', () => {
     await expect(saveButton(page, 'en')).toBeFocused();
     await page.waitForTimeout(650);
     expect(stub.puts, 'a 412 must never be retried automatically').toHaveLength(1);
+  });
+
+  test('TwoContexts_EnglishDialog_FocusTrappedAndReturned_SaveMineAsNew_ThenReloadLatestThroughItsConfirm', async ({ page, browser }) => {
+    // Same two-context race as the vi describe, with the en bundles: the loser sees the English dialog and walks both
+    // actions (save mine as new, then reload latest through its destructive confirm).
+    const { stub, server } = await twoContextStaleSave(page, browser, 'en');
+
+    // A later writer moved on again after the successful save-as-new, so the reload path gets a real conflict of its own.
+    bump(server, RELOADED_CONTENT);
+    await segment(page, EN.title).fill(REDRAFTED_TITLE);
+    await saveButton(page, 'en').click();
+    const dialog = conflictDialog(page, 'en');
+    await expect(dialog).toBeVisible();
+    await expect(dialog).toContainText(EN.title);
+
+    await reloadLatestFromDialog(page, dialog, 'en', REDRAFTED_TITLE);
+
+    await expect(segment(page, EN.title)).toHaveValue(RELOADED_TITLE);
+    expect(stub.puts, 'three stale saves and one save-as-new, nothing else').toHaveLength(4);
+    await expectA11yClean(page);
   });
 });

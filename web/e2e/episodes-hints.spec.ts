@@ -16,7 +16,31 @@ declare global {
   interface Window {
     /** Text of the editor's annotation live region, recorded by the observer this spec installs. */
     __ntsAnnounce?: string[];
+    /** Cumulative layout shift this spec records: only entries after `startedAt` count, split by the panel region. */
+    __ntsCls?: {
+      startedAt: number;
+      total: number;
+      panel: number;
+      entries: number;
+      attributed: number;
+      settled: boolean;
+    };
   }
+}
+
+/** Structural view of a `layout-shift` entry: `value` is its score, `sources` the nodes that moved (Chromium). */
+interface LayoutShiftEntry extends PerformanceEntry {
+  readonly value: number;
+  readonly hadRecentInput: boolean;
+  readonly sources?: readonly { readonly node: Node | null }[];
+}
+/** What `readLayoutShift` hands back to the test. */
+interface LayoutShiftReading {
+  readonly total: number;
+  readonly panel: number;
+  readonly entries: number;
+  readonly attributed: number;
+  readonly settled: boolean;
 }
 
 // 10.5.10-T1 quality hints + inline annotations (en): the saved `qualityHints[]` set renders inline under the segment
@@ -124,6 +148,79 @@ async function stubSaveResponse(page: Page, hints: readonly HintRow[]): Promise<
     }, { ETag: etag });
   });
   return puts;
+}
+
+/**
+ * Runs in the page as an init script, before any app code: every non-input `layout-shift` entry whose `startTime` is
+ * at or after the trigger counts, and the entries whose sources moved inside `nts-annotation-panel` are scored
+ * separately. Buffered entries from the page load are delivered while `startedAt` is still 0 and are ignored.
+ */
+function watchLayoutShift(): void {
+  const state = { startedAt: 0, total: 0, panel: 0, entries: 0, attributed: 0, settled: false };
+  window.__ntsCls = state;
+  const inPanel = (node: Node | null): boolean =>
+    node instanceof Element && node.closest('nts-annotation-panel') !== null;
+  new PerformanceObserver((list) => {
+    for (const raw of list.getEntries()) {
+      const entry = raw as LayoutShiftEntry;
+      if (state.startedAt === 0 || entry.startTime < state.startedAt || entry.hadRecentInput) continue;
+      const sources = entry.sources ?? [];
+      state.entries += 1;
+      state.total += entry.value;
+      if (sources.length > 0) state.attributed += 1;
+      if (sources.some((source) => inPanel(source.node))) state.panel += entry.value;
+    }
+  }).observe({ type: 'layout-shift', buffered: true });
+}
+
+/** Runs in the page: starts counting. Everything rendered before the trigger (load, editor paint) is out of scope. */
+function startLayoutShiftWatch(): void {
+  const state = window.__ntsCls;
+  if (state === undefined) return;
+  state.startedAt = performance.now();
+  state.total = 0;
+  state.panel = 0;
+  state.entries = 0;
+  state.attributed = 0;
+  state.settled = false;
+}
+
+/**
+ * Runs in the page: flips `settled` once three consecutive animation frames report no new entry. A frame's
+ * layout-shift entries are delivered before the next frame's callbacks, so three quiet frames mean the trigger's
+ * shifts have all been recorded — no timer, no fixed sleep.
+ */
+function armLayoutShiftSettle(): void {
+  const state = window.__ntsCls;
+  if (state === undefined) return;
+  let quiet = 0;
+  let last = state.entries;
+  const step = (): void => {
+    if (state.entries === last) quiet += 1;
+    else { last = state.entries; quiet = 0; }
+    if (quiet >= 3) { state.settled = true; return; }
+    requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+}
+
+/** Runs in the page: the current reading, safe to call before the init script installed anything. */
+function readLayoutShift(): LayoutShiftReading {
+  const state = window.__ntsCls;
+  return state === undefined
+    ? { total: 0, panel: 0, entries: 0, attributed: 0, settled: false }
+    : { total: state.total, panel: state.panel, entries: state.entries, attributed: state.attributed, settled: state.settled };
+}
+
+/** Runs in the page: the positive control. A 200 px block above the manuscript must register as a non-input shift. */
+function injectLayoutShift(): boolean {
+  const sheet = document.querySelector('.story-editor__sheet');
+  if (sheet === null) return false;
+  const spacer = document.createElement('div');
+  spacer.setAttribute('aria-hidden', 'true');
+  spacer.style.height = '200px';
+  sheet.prepend(spacer);
+  return true;
 }
 
 test.describe('quality hints and inline annotations (en, stubbed)', () => {
@@ -265,5 +362,39 @@ test.describe('quality hints and inline annotations (en, stubbed)', () => {
       await expectA11yClean(page);
       await page.unrouteAll({ behavior: 'ignoreErrors' });
     }
+  });
+
+  test('Narrow360_DeferredPanelLoad_AddsNoLayoutShift', async ({ page }) => {
+    // CLS budget 0.01: the web-vitals "good" bound. The panel's placeholder and its deferred body share one fixed
+    // height (annotation-panel.component.scss), so the @defer (on viewport) swap must move nothing at all.
+    const CLS_THRESHOLD = 0.01;
+    await page.setViewportSize({ width: 360, height: 800 });
+    await page.addInitScript(watchLayoutShift);
+    await openEditor(page, 'en', { detail: HINT_DETAIL });
+
+    const panel = page.locator('nts-annotation-panel');
+    const body = panel.locator('.annotation-panel__body:not(.annotation-panel__placeholder)');
+    // Precondition: the block really is deferred until it is scrolled into view, so the swap below is what is measured.
+    await expect(panel.locator('.annotation-panel__placeholder')).toBeVisible();
+    await expect(body).toHaveCount(0);
+
+    await page.evaluate(startLayoutShiftWatch);
+    await panel.scrollIntoViewIfNeeded();
+    await expect(body).toBeVisible();
+    await page.evaluate(armLayoutShiftSettle);
+    await expect.poll(() => page.evaluate(readLayoutShift), { message: 'the deferred body must render and its shifts settle' })
+      .toMatchObject({ settled: true });
+
+    const cls = await page.evaluate(readLayoutShift);
+    // The whole window since the trigger counts: the node that moves is usually a sibling after the panel, not the panel.
+    expect(cls.total, `layout shift after the defer trigger: total=${cls.total} panel=${cls.panel} entries=${cls.entries}`)
+      .toBeLessThan(CLS_THRESHOLD);
+    expect(await noHorizontalOverflow(page)).toBe(true);
+    await expectA11yClean(page);
+
+    // Positive control: the same observer must record a deliberate shift, so a measured 0 is a real 0 and not a dead
+    // observer. The spacer goes above the manuscript, outside the panel region, after every assertion above.
+    expect(await page.evaluate(injectLayoutShift), 'the positive control needs the manuscript sheet').toBe(true);
+    await expect.poll(() => page.evaluate(readLayoutShift).then((reading) => reading.entries)).toBeGreaterThan(cls.entries);
   });
 });
