@@ -180,7 +180,7 @@ export class StoryReviewPage {
     effect((onCleanup) => {
       const removed = this.store.removed();
       if (removed === null) return;
-      const ref = this.snack.open(this.transloco.translate('episodes.editor.deleted'), this.transloco.translate('episodes.editor.undo'), { duration: UNDO_WINDOW_MS });
+      const ref = this.snack.open(this.transloco.translate('editor.deleted', {}, 'episodes'), this.transloco.translate('editor.undo', {}, 'episodes'), { duration: UNDO_WINDOW_MS });
       // `onAction`, not `afterDismissed`: the action click emits synchronously, while `afterDismissed` waits for the
       // exit animation — a click in the last frames of the 10 s window would otherwise race the store timer that
       // clears the buffer. `MatSnackBarRef` completes `onAction` without emitting on every other dismissal (the

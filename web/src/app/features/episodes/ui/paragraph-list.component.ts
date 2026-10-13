@@ -47,7 +47,7 @@ export class ParagraphListComponent {
       if (target === null) return;
       target.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
       target.focus();
-      void this.announcer.announce(this.transloco.translate('episodes.editor.reorderAnnounce', { n: from + 1, m: to + 1 }), 'polite');
+      void this.announcer.announce(this.transloco.translate('editor.reorderAnnounce', { n: from + 1, m: to + 1 }, 'episodes'), 'polite');
     }, { injector: this.injector });
   }
 }

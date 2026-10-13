@@ -239,7 +239,7 @@ describe('StoryReviewPage', () => {
     storyStore.removed.set({ paragraph: {}, index: 1 });
     fixture.detectChanges();
     await fixture.whenStable();
-    expect(snack.open).toHaveBeenCalledWith(transloco.translate('episodes.editor.deleted'), transloco.translate('episodes.editor.undo'), { duration: 10_000 });
+    expect(snack.open).toHaveBeenCalledWith(transloco.translate('editor.deleted', {}, 'episodes'), transloco.translate('editor.undo', {}, 'episodes'), { duration: 10_000 });
     snack.opened[0]!.click();
     await fixture.whenStable();
     expect(storyStore.undoRemove).toHaveBeenCalledTimes(1);
