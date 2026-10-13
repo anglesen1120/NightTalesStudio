@@ -4,13 +4,18 @@ History moved out of STATUS.md to keep the live file small. The initial archive 
 
 ## Resume-here history (Current/Previous blocks, Next actions)
 
-### Superseded Session 34 start Next line (2026-10-14)
+### Superseded Session 31 closed Next line (2026-10-15, replaced when Session 34 opened the 02.3.3-T1 PR)
 
 Replaced backend Next line (verbatim):
 
-- **Next (backend, start here):** Session 31: **02.5.3-T2** `fact_sheets` + `GenerateFactSheetCommand` + `GenerateFactSheetJob` + `FactSheetValidator` + migration `AddFactSheets` (PR open, T3 gates closed; local full `gate.sh` `GATE_RC=0` on `a2d4ad2`, 6845 tests / 0 failed / 17 skipped; PF-1 index `ix_generation_runs_episode_created` and the four composite FKs of 02 CR-29 included; deviations and open items in the task §Notes and §Open tasks). Lane next: **02.5.4-T1** (fact-sheet edit/approve, needs T2), 02.6.1-T2, **02.3.3-T1** (replaces `NullStoryApprovalGate`; gives `SimilarityApprovalGuard` its approve caller). Merged earlier: #180 02.6.2-T1 (`280d74b`), #175 02.5.3-T1 (`89e5736`); older merged items are in `docs/status-archive.md`.
+- **Next (backend, start here):** Session 31 closed: **02.5.3-T2** `fact_sheets` + `GenerateFactSheetCommand` + job + `FactSheetValidator` + migration `AddFactSheets` merged as #184 (`88137a1`; CI refused: CI-01, owner treats as pass; local full `gate.sh` `GATE_RC=0` on `a2d4ad2`, 6845 tests / 0 failed / 17 skipped; T3 gates closed). The migration lane is free. Lane next: **02.5.4-T1** (fact-sheet edit/approve; reads the 02.5.3-T2 §Notes hand-overs), 02.6.1-T2, **02.3.3-T1** (replaces `NullStoryApprovalGate`; gives `SimilarityApprovalGuard` its approve caller). Merged earlier: #180 02.6.2-T1 (`280d74b`), #175 02.5.3-T1 (`89e5736`); older merged items are in `docs/status-archive.md`.
 
-Outcome: Session 34 opened the 02.3.3-T1 true-crime guard + attestation `ta.v1` PR and replaced this line; 02.5.3-T2 is merged as #184 (`88137a1`), which the new line records.
+Outcome: Session 34 opened the 02.3.3-T1 true-crime guard + attestation `ta.v1` PR and replaced this line.
+
+### Superseded Session 31 PR-open Resume bullets (2026-10-15, replaced when #184 merged as `88137a1`)
+
+- **Next (backend, start here):** Session 31: **02.5.3-T2** `fact_sheets` + `GenerateFactSheetCommand` + `GenerateFactSheetJob` + `FactSheetValidator` + migration `AddFactSheets` (PR open, T3 gates closed; local full `gate.sh` `GATE_RC=0` on `a2d4ad2`, 6845 tests / 0 failed / 17 skipped; PF-1 index `ix_generation_runs_episode_created` and the four composite FKs of 02 CR-29 included; deviations and open items in the task §Notes and §Open tasks). Lane next: **02.5.4-T1** (fact-sheet edit/approve, needs T2), 02.6.1-T2, **02.3.3-T1** (replaces `NullStoryApprovalGate`; gives `SimilarityApprovalGuard` its approve caller). Merged earlier: #180 02.6.2-T1 (`280d74b`), #175 02.5.3-T1 (`89e5736`); older merged items are in `docs/status-archive.md`.
+- **Migration lane:** 02.5.3-T2 is the only open migration; if `develop` gains another migration before it merges, delete `20261013183400_02_AddFactSheets` and regenerate with `dotnet ef migrations add` on the latest snapshot (never hand-merge `AppDbContextModelSnapshot`).
 
 ### Superseded backend Next and Session 30 Resume bullets (2026-10-15, replaced when Session 31 opened the 02.5.3-T2 PR)
 
