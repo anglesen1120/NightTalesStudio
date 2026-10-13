@@ -99,4 +99,209 @@ public sealed class AuditReportBuilderTests
 
         AuditReportBuilder.MergeModelReview(Existing, repaired, "gpt-6-luna", "rel=1").ShouldContain("model_review");
     }
+
+    // ---- 02.6.2-T1 MergeRevision ----
+
+    private static readonly Guid Parent = Guid.Parse("11111111-1111-1111-1111-111111111111");
+
+    private static ValidatedReview ReviewAfter(params ReviewIssueV1[] issues) =>
+        new(
+            new StoryReviewV1(
+                new ReviewScores(4, 3, 4, 4, 3, null, 4),
+                issues,
+                [],
+                null,
+                [],
+                "summary after the revision"),
+            []);
+
+    private static JsonObject MergeRevision(string existing, RevisionDrift drift, params ReviewIssueV1[] issues) =>
+        JsonNode.Parse(AuditReportBuilder.MergeRevision(existing, Parent, ["r1", "r2"], ReviewAfter(issues), drift))!.AsObject();
+
+    [Fact]
+    public void AuditReportBuilder_MergeRevision_SetsParentAndFixedIssueIds()
+    {
+        var root = MergeRevision(Existing, RevisionDrift.None, new ReviewIssueV1("r3", "missing_setup_before_twist", "blocking", "p:3", "e", "i", "r"));
+
+        var revision = root["revision"]!.AsObject();
+        revision.Select(pair => pair.Key).ShouldBe(["applied", "fixed_issue_ids", "parent_version_id", "drift", "review_after"], ignoreOrder: true);
+        revision["applied"]!.GetValue<bool>().ShouldBeTrue();
+        revision["fixed_issue_ids"]!.AsArray().Select(node => node!.GetValue<string>()).ShouldBe(["r1", "r2"]);
+        revision["parent_version_id"]!.GetValue<string>().ShouldBe(Parent.ToString("D"));
+        revision["review_after"]!["scores"]!.AsObject().Select(pair => pair.Key).ShouldBe(ReviewScores.Dimensions, ignoreOrder: true);
+
+        // Every other key of the stored document is carried over untouched.
+        root["local"]!.ToJsonString().ShouldBe("""{"issues":[]}""");
+        root["moderation"]!.ToJsonString().ShouldBe("""{"flagged":false,"categories":[]}""");
+        root["model_review"]!.ToJsonString().ShouldBe("""{"stale":true,"old":1}""");
+    }
+
+    [Fact]
+    public void AuditReportBuilder_MergeRevision_DriftIsAdvisoryOnly()
+    {
+        var drift = new RevisionDrift(SegmentCountChanged: false, ChangedSegments: ["p:3", "ending"], AddedFindings: ["hook_missing"]);
+
+        var root = MergeRevision(Existing, drift, new ReviewIssueV1("r9", "weak_hook", "advisory", "hook", "e", "i", "r"));
+
+        var issue = root["revision"]!["review_after"]!["issues"]!.AsArray()
+            .Single(node => node!["type"] is { } type && type.GetValue<string>() == AuditReportBuilder.RevisionDriftType)!.AsObject();
+
+        issue["severity"]!.GetValue<string>().ShouldBe("advisory");
+        issue["kind"]!.GetValue<string>().ShouldBe("objective");
+        issue["segment"]!.GetValue<string>().ShouldBe("p:3");
+        issue.ContainsKey("type").ShouldBeTrue();
+
+        // Advisory only: the drift never presents as blocking.
+        root["revision"]!["review_after"]!["issues"]!.AsArray()
+            .Select(node => node!["severity"]!.GetValue<string>()).ShouldNotContain("blocking");
+
+        var detail = root["revision"]!["drift"]!.AsObject();
+        detail["segment_count_changed"]!.GetValue<bool>().ShouldBeFalse();
+        detail["changed_segments"]!.AsArray().Select(node => node!.GetValue<string>()).ShouldBe(["p:3", "ending"]);
+        detail["added_findings"]!.AsArray().Select(node => node!.GetValue<string>()).ShouldBe(["hook_missing"]);
+    }
+
+    [Fact]
+    public void AuditReportBuilder_MergeRevision_NoDrift_WritesEmptyDetailAndNoDriftIssue()
+    {
+        var root = MergeRevision(Existing, RevisionDrift.None, new ReviewIssueV1("r9", "weak_hook", "advisory", "hook", "e", "i", "r"));
+
+        root["revision"]!["drift"]!.ToJsonString()
+            .ShouldBe("""{"segment_count_changed":false,"changed_segments":[],"added_findings":[]}""");
+        root["revision"]!["review_after"]!["issues"]!.AsArray().ShouldHaveSingleItem();
+    }
+
+    [Fact]
+    public void AuditReportBuilder_MergeRevision_CleansAndCapsModelStrings()
+    {
+        var hostile = new ReviewIssueV1(
+            "r1\u0000x",
+            "weak_hook",
+            "advisory",
+            "hook",
+            "a\u0000b\u0001c",
+            new string('x', 500),
+            "ok");
+        var drift = new RevisionDrift(SegmentCountChanged: false, ChangedSegments: [new string('s', 200)], AddedFindings: [new string('f', 200)]);
+
+        var root = MergeRevision(Existing, drift, hostile);
+
+        var issue = root["revision"]!["review_after"]!["issues"]![0]!;
+        issue["evidence"]!.GetValue<string>().ShouldBe("a b c");
+        issue["impact"]!.GetValue<string>().Length.ShouldBe(ReviewResultValidator.MaxFieldChars);
+        root["revision"]!["drift"]!["changed_segments"]![0]!.GetValue<string>().Length.ShouldBe(AuditReportBuilder.RevisionIdMaxChars);
+        root["revision"]!["drift"]!["added_findings"]![0]!.GetValue<string>().Length.ShouldBe(AuditReportBuilder.RevisionIdMaxChars);
+    }
+
+    /// <summary>
+    /// <c>fixed_issue_ids</c> carries ids, not free text: an entry outside <see cref="ReviewResultValidator"/>'s
+    /// id contract is dropped, so the block never claims an id no issue can hold (cleaning "r1&lt;NUL&gt;x" would
+    /// write the different id "r1 x", and a too-long one a prefix that matches no issue either).
+    /// </summary>
+    [Fact]
+    public void AuditReportBuilder_MergeRevision_FixedIssueIdsOutsideTheIdContract_AreDropped()
+    {
+        var root = JsonNode.Parse(AuditReportBuilder.MergeRevision(
+            Existing,
+            Parent,
+            ["r1\u0000x", "r2", "i-9", new string('r', 33), "  "],
+            ReviewAfter(),
+            RevisionDrift.None))!.AsObject();
+
+        root["revision"]!["fixed_issue_ids"]!.AsArray().Select(node => node!.GetValue<string>()).ShouldBe(["r2"]);
+    }
+
+    [Fact]
+    public void AuditReportBuilder_MergeRevision_DriftIssueEvidenceIsCleanedAndCapped()
+    {
+        var huge = Enumerable.Range(0, 40).Select(index => $"p:{index}").ToArray();
+        var drift = new RevisionDrift(SegmentCountChanged: true, ChangedSegments: huge, AddedFindings: []);
+
+        var root = MergeRevision(Existing, drift, new ReviewIssueV1("r9", "weak_hook", "advisory", "hook", "e", "i", "r"));
+        var issue = root["revision"]!["review_after"]!["issues"]!.AsArray()
+            .Single(node => node!["type"] is { } type && type.GetValue<string>() == AuditReportBuilder.RevisionDriftType)!.AsObject();
+
+        issue["evidence"]!.GetValue<string>().Length.ShouldBeLessThanOrEqualTo(200);
+    }
+
+    [Fact]
+    public void AuditReportBuilder_MergeRevision_IsIdempotent()
+    {
+        var drift = new RevisionDrift(SegmentCountChanged: false, ChangedSegments: ["p:1"], AddedFindings: []);
+        var review = ReviewAfter(new ReviewIssueV1("r3", "weak_hook", "advisory", "hook", "e", "i", "r")).Review;
+
+        var once = AuditReportBuilder.MergeRevision(Existing, Parent, ["r1"], new ValidatedReview(review, []), drift);
+        var twice = AuditReportBuilder.MergeRevision(once, Parent, ["r1"], new ValidatedReview(review, []), drift);
+
+        twice.ShouldBe(once);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void AuditReportBuilder_MergeRevision_NoStoredDocument_CreatesAnAuditV1WithOnlyRevision(string stored)
+    {
+        var root = JsonNode.Parse(AuditReportBuilder.MergeRevision(stored, Parent, [], ReviewAfter(), RevisionDrift.None))!.AsObject();
+
+        root.Select(pair => pair.Key).ShouldBe(["schema_version", "revision"], ignoreOrder: true);
+        root["schema_version"]!.GetValue<string>().ShouldBe("audit.v1");
+    }
+
+    [Theory]
+    [InlineData("{not json")]
+    [InlineData("[]")]
+    [InlineData("\"text\"")]
+    [InlineData("null")]
+    public void AuditReportBuilder_MergeRevision_StoredDocumentNotAnObject_Throws(string stored)
+    {
+        Should.Throw<System.Text.Json.JsonException>(() => AuditReportBuilder.MergeRevision(stored, Parent, [], ReviewAfter(), RevisionDrift.None));
+    }
+
+    [Fact]
+    public void AuditReportBuilder_MergeRevision_RejectedReviewAfter_Throws()
+    {
+        var rejected = new ValidatedReview(ReviewAfter().Review, [new ReviewViolation(ReviewResultValidator.BadSegment, "issues[0].segment", Repaired: false)]);
+
+        var error = Should.Throw<InvalidOperationException>(() => AuditReportBuilder.MergeRevision(Existing, Parent, [], rejected, RevisionDrift.None));
+        error.Message.ShouldContain(ReviewResultValidator.BadSegment);
+    }
+
+    [Fact]
+    public void AuditReportBuilder_MergeRevision_NullArguments_Throw()
+    {
+        Should.Throw<ArgumentNullException>(() => AuditReportBuilder.MergeRevision(Existing, Parent, null!, ReviewAfter(), RevisionDrift.None));
+        Should.Throw<ArgumentNullException>(() => AuditReportBuilder.MergeRevision(Existing, Parent, [], null!, RevisionDrift.None));
+        Should.Throw<ArgumentNullException>(() => AuditReportBuilder.MergeRevision(Existing, Parent, [], ReviewAfter(), null!));
+    }
+
+    [Fact]
+    public void AuditReportBuilder_MergeRevisionNotApplied_WritesAppliedFalseAndReason()
+    {
+        var root = JsonNode.Parse(AuditReportBuilder.MergeRevisionNotApplied(Existing, AuditReportBuilder.RevisionReasonSpendCapReached))!.AsObject();
+
+        root["revision"]!.ToJsonString().ShouldBe("""{"applied":false,"reason":"spend_cap_reached"}""");
+        root["model_review"]!.ToJsonString().ShouldBe("""{"stale":true,"old":1}""");
+
+        var invalid = JsonNode.Parse(AuditReportBuilder.MergeRevisionNotApplied(Existing, AuditReportBuilder.RevisionReasonInvalidOutput))!.AsObject();
+        invalid["revision"]!["applied"]!.GetValue<bool>().ShouldBeFalse();
+        invalid["revision"]!["reason"]!.GetValue<string>().ShouldBe("revision_invalid_output");
+    }
+
+    [Theory]
+    [InlineData("free text")]
+    [InlineData("spend cap reached")]
+    [InlineData(" ")]
+    public void AuditReportBuilder_MergeRevisionNotApplied_ReasonOutsideTheStableCodeSet_Throws(string reason)
+    {
+        Should.Throw<ArgumentException>(() => AuditReportBuilder.MergeRevisionNotApplied(Existing, reason));
+    }
+
+    [Fact]
+    public void AuditReportBuilder_MergeRevisionNotApplied_IsIdempotent()
+    {
+        var once = AuditReportBuilder.MergeRevisionNotApplied(Existing, AuditReportBuilder.RevisionReasonInvalidOutput);
+        var twice = AuditReportBuilder.MergeRevisionNotApplied(once, AuditReportBuilder.RevisionReasonInvalidOutput);
+
+        twice.ShouldBe(once);
+    }
 }

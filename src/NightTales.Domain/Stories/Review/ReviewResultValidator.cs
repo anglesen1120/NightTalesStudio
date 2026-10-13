@@ -91,6 +91,16 @@ public static partial class ReviewResultValidator
     /// <summary>Rule id (repaired): a failed naturalness answer without an <c>ear_rule_violation</c> issue; the issue is added.</summary>
     public const string EarRuleFailureWithoutIssue = "review_ear_rule_failure_without_issue";
 
+    /// <summary>
+    /// Whether <paramref name="id"/> has the shape of a review issue id (<c>^[a-z][a-z0-9_]{0,31}$</c>), the
+    /// character contract every id of a review satisfies. The reserved <c>ear_</c> prefix is the collision rule
+    /// between the model's ids and the synthesised ones, not a shape rule, so it is not part of this test.
+    /// </summary>
+    /// <param name="id">The candidate id.</param>
+    /// <returns><see langword="true"/> when the id has the contract's shape.</returns>
+    public static bool IsIssueId(string? id) =>
+        !string.IsNullOrWhiteSpace(id) && IdPattern().IsMatch(id);
+
     private const string Blocking = "blocking";
     private const string Advisory = "advisory";
     private const string ReservedIdPrefix = "ear_";
@@ -186,7 +196,7 @@ public static partial class ReviewResultValidator
         {
             found.Add(new ReviewViolation(DuplicateIssueId, path + ".id", Repaired: false));
         }
-        else if (!IdPattern().IsMatch(issue.Id) || issue.Id.StartsWith(ReservedIdPrefix, StringComparison.Ordinal))
+        else if (!IsIssueId(issue.Id) || issue.Id.StartsWith(ReservedIdPrefix, StringComparison.Ordinal))
         {
             // CR-4/S2: the ear_ prefix is reserved for the issues the validator synthesises, so a model id can never collide with one.
             found.Add(new ReviewViolation(BadIssueId, path + ".id", Repaired: false));

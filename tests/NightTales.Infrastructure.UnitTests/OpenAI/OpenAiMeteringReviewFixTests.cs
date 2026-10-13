@@ -10,7 +10,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 using NightTales.Application.Abstractions.Money;
 using NightTales.Application.Abstractions.Text;
 using NightTales.Application.Abstractions.Usage;
-using NightTales.Application.Common.Errors;
 using NightTales.Application.Features.Stories.Writing;
 using NightTales.Domain.Common;
 using NightTales.Domain.Episodes;
@@ -41,16 +40,20 @@ public sealed class OpenAiMeteringReviewFixTests
     [Fact]
     public async Task Writer_MissingUsage_WithTheRealCatalogComposition_WritesAnEstimatedRowAndReturnsTheOutcome()
     {
-        // CR-1: the embedded catalog ships no review/revision prompt, so the whole-pipeline bound fails with
-        // prompt_not_shipped; the writer bound measures the writer prompt only.
+        // CR-1: the writer bound prices the call from the writer prompt alone, so a response that reports no usage
+        // still meters an estimated row. The whole-pipeline bound needs every step prompt, and since 02.6.2-T1 ships
+        // revise/v1.md the embedded catalog serves it as well; the prompt_not_shipped path itself is pinned by
+        // StoryCostEstimatorTests over a tree with the step removed.
         using var host = new OpenAiTestHost();
         var catalog = new PromptCatalog(new EmbeddedPromptResourceSource());
         var meter = new RecordingMeter();
         var writer = Writer(host, catalog, meter, new StoryCostEstimator(new LunaPriceCatalog(), catalog, new ConfigurationBuilder().Build(), new FakeClock()));
         host.Handler.Reply(HttpStatusCode.OK, OpenAiTestHost.Completed(StoryJson, usage: string.Empty));
 
-        (await new StoryCostEstimator(new LunaPriceCatalog(), catalog, new ConfigurationBuilder().Build(), new FakeClock())
-            .WorstCaseAsync(LengthTier.Standard, Language.Vi, Ct)).FirstError.Code.ShouldBe(ErrorCodes.PromptNotShipped);
+        var wholePipeline = await new StoryCostEstimator(new LunaPriceCatalog(), catalog, new ConfigurationBuilder().Build(), new FakeClock())
+            .WorstCaseAsync(LengthTier.Standard, Language.Vi, Ct);
+        wholePipeline.IsError.ShouldBeFalse();
+        wholePipeline.Value.WorstCaseUsd.ShouldBeGreaterThan(0m);
 
         var result = await writer.WriteAsync(Request(), Ct);
 
@@ -319,6 +322,9 @@ public sealed class OpenAiMeteringReviewFixTests
 
         public Task<ErrorOr<UsageBound>> WriterWorstCaseAsync(LengthTier tier, Language language, CancellationToken ct) =>
             Task.FromResult<ErrorOr<UsageBound>>(new UsageBound(Bound, 1, 1));
+
+        public Task<ErrorOr<UsageBound>> RevisionWorstCaseAsync(LengthTier tier, Language language, CancellationToken ct) =>
+            WriterWorstCaseAsync(tier, language, ct);
     }
 
     private sealed class LunaPriceCatalog : IPriceCatalog

@@ -278,6 +278,171 @@ public sealed class StoryReadModelTests
     }
 
     [Fact]
+    public async Task StoryRead_RevisionDriftIssue_ExposesHasDrift()
+    {
+        var rig = new Rig();
+        var row = rig.AddVersion(1, audit: """
+            {"model_review":{"stale":false,"issues":[]},
+             "revision":{"applied":true,"review_after":{"issues":[
+               {"type":"revision_drift","severity":"advisory","kind":"objective","segment":"p:3"}]}}}
+            """);
+        rig.Pointers(row.Id, null);
+        var result = await rig.Current.Handle(new(rig.Episode.Id), CancellationToken.None);
+        result.Value!.Review!.HasDrift.ShouldBeTrue();
+        result.Value.Review.IssueCounts.Advisory.ShouldBe(0);
+    }
+
+    [Fact]
+    public async Task StoryRead_RevisionDriftDetailWithAnyFlag_ExposesHasDrift()
+    {
+        var rig = new Rig();
+        var row = rig.AddVersion(1, audit: """
+            {"model_review":{"stale":false},
+             "revision":{"applied":true,"drift":{"segment_count_changed":false,"changed_segments":["p:3"],"added_findings":[]}}}
+            """);
+        rig.Pointers(row.Id, null);
+        var result = await rig.Current.Handle(new(rig.Episode.Id), CancellationToken.None);
+        result.Value!.Review!.HasDrift.ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task StoryRead_RevisionWithoutDrift_ExposesNoDrift()
+    {
+        var rig = new Rig();
+        var row = rig.AddVersion(1, audit: """
+            {"model_review":{"stale":false},
+             "revision":{"applied":true,"drift":{"segment_count_changed":false,"changed_segments":[],"added_findings":[]}}}
+            """);
+        rig.Pointers(row.Id, null);
+        var result = await rig.Current.Handle(new(rig.Episode.Id), CancellationToken.None);
+        result.Value!.Review!.HasDrift.ShouldBeFalse();
+    }
+
+    [Theory]
+    [InlineData("{\"model_review\":{\"stale\":false},\"revision\":5}")]
+    [InlineData("{\"model_review\":{\"stale\":false},\"revision\":{\"review_after\":{\"issues\":\"nope\"},\"drift\":{\"changed_segments\":7}}}")]
+    [InlineData("{\"model_review\":{\"stale\":false}}")]
+    public async Task StoryRead_MissingOrMalformedRevision_FailsSafeToNoDrift(string audit)
+    {
+        var rig = new Rig();
+        var row = rig.AddVersion(1, audit: audit);
+        rig.Pointers(row.Id, null);
+        var result = await rig.Current.Handle(new(rig.Episode.Id), CancellationToken.None);
+        result.Value!.Review!.HasDrift.ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task StoryRead_AppliedRevision_ReviewReadsReviewAfterScoresAndIssues()
+    {
+        var rig = new Rig();
+        var row = rig.AddVersion(1, audit: """
+            {"model_review":{"stale":false,"scores":{"hook":2,"factual_care":null},
+               "issues":[{"id":"r1","severity":"blocking"},{"id":"r2","severity":"advisory"}]},
+             "revision":{"applied":true,"fixed_issue_ids":["r1"],
+               "parent_version_id":"11111111-1111-1111-1111-111111111111",
+               "review_after":{
+                 "scores":{"hook":5,"pacing":4,"atmosphere":4,"natural_language":4,"originality":3,"factual_care":null,"length_fit":4},
+                 "issues":[{"id":"r3","severity":"advisory","kind":"taste"}]}}}
+            """);
+        rig.Pointers(row.Id, null);
+        var result = await rig.Current.Handle(new(rig.Episode.Id), CancellationToken.None);
+        var review = result.Value!.Review!;
+        review.Scores!.Value.GetRawText().ShouldBe(
+            "{\"hook\":5,\"pacing\":4,\"atmosphere\":4,\"natural_language\":4,\"originality\":3,\"factual_care\":null,\"length_fit\":4}");
+        review.IssueCounts.Blocking.ShouldBe(0, "review #1's fixed blocking issue must not resurface");
+        review.IssueCounts.Advisory.ShouldBe(1);
+        review.Stale.ShouldBeFalse("the stale flag still comes from model_review");
+        review.HasDrift.ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task StoryRead_AppliedRevisionWithDriftMarker_CountsReviewAfterIssuesAndFlagsDrift()
+    {
+        var rig = new Rig();
+        var row = rig.AddVersion(1, audit: """
+            {"model_review":{"stale":false,"scores":{"hook":2},
+               "issues":[{"id":"r1","severity":"blocking"}]},
+             "revision":{"applied":true,"fixed_issue_ids":["r1"],
+               "drift":{"segment_count_changed":false,"changed_segments":["p:3"],"added_findings":[]},
+               "review_after":{
+                 "scores":{"hook":5,"pacing":4,"atmosphere":4,"natural_language":4,"originality":3,"factual_care":null,"length_fit":4},
+                 "issues":[{"id":"r3","severity":"advisory","kind":"taste"},
+                           {"type":"revision_drift","severity":"advisory","kind":"objective","segment":"p:3"}]}}}
+            """);
+        rig.Pointers(row.Id, null);
+        var result = await rig.Current.Handle(new(rig.Episode.Id), CancellationToken.None);
+        var review = result.Value!.Review!;
+        review.IssueCounts.Blocking.ShouldBe(0);
+        review.IssueCounts.Advisory.ShouldBe(2, "the review #2 hint and the drift marker both sit in review_after.issues");
+        review.HasDrift.ShouldBeTrue();
+        review.Scores!.Value.GetProperty("hook").GetInt32().ShouldBe(5);
+    }
+
+    [Fact]
+    public async Task StoryRead_RevisionNotApplied_ReviewReadsModelReview()
+    {
+        var rig = new Rig();
+        var row = rig.AddVersion(1, audit: """
+            {"model_review":{"stale":true,"scores":{"hook":2},
+               "issues":[{"id":"r1","severity":"blocking"}]},
+             "revision":{"applied":false,"reason":"invalid_output",
+               "review_after":{"scores":{"hook":5},"issues":[{"id":"r3","severity":"advisory"}]}}}
+            """);
+        rig.Pointers(row.Id, null);
+        var result = await rig.Current.Handle(new(rig.Episode.Id), CancellationToken.None);
+        var review = result.Value!.Review!;
+        review.Scores!.Value.GetRawText().ShouldBe("{\"hook\":2}");
+        review.IssueCounts.Blocking.ShouldBe(1, "a revision that was not applied leaves review #1 current");
+        review.IssueCounts.Advisory.ShouldBe(0);
+        review.Stale.ShouldBeTrue();
+    }
+
+    [Theory]
+    [InlineData("{\"applied\":true,\"review_after\":\"nope\"}")]
+    [InlineData("{\"applied\":true,\"review_after\":{\"issues\":[{\"id\":\"r3\",\"severity\":\"advisory\"}]}}")]
+    [InlineData("{\"applied\":true,\"review_after\":{\"scores\":{\"hook\":5},\"issues\":\"nope\"}}")]
+    [InlineData("{\"applied\":true,\"review_after\":{\"scores\":5,\"issues\":[]}}")]
+    [InlineData("{\"applied\":true,\"review_after\":{\"scores\":null,\"issues\":[]}}")]
+    [InlineData("{\"applied\":true,\"review_after\":null}")]
+    [InlineData("{\"applied\":true}")]
+    [InlineData("{\"applied\":false,\"review_after\":{\"scores\":{\"hook\":5},\"issues\":[]}}")]
+    [InlineData("{\"applied\":\"true\",\"review_after\":{\"scores\":{\"hook\":5},\"issues\":[]}}")]
+    [InlineData("{\"review_after\":{\"scores\":{\"hook\":5},\"issues\":[]}}")]
+    [InlineData("5")]
+    public async Task StoryRead_MissingOrMalformedRevisionBlock_FailsBackToModelReview(string revision)
+    {
+        var rig = new Rig();
+        var row = rig.AddVersion(1, audit:
+            "{\"model_review\":{\"stale\":false,\"scores\":{\"hook\":2},\"issues\":[{\"id\":\"r1\",\"severity\":\"blocking\"}]},"
+            + "\"revision\":" + revision + "}");
+        rig.Pointers(row.Id, null);
+        var result = await rig.Current.Handle(new(rig.Episode.Id), CancellationToken.None);
+        var review = result.Value!.Review!;
+        review.Scores!.Value.GetRawText().ShouldBe("{\"hook\":2}");
+        review.IssueCounts.Blocking.ShouldBe(1);
+        review.IssueCounts.Advisory.ShouldBe(0);
+        review.HasDrift.ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task StoryRead_TasteOnlyRowWithoutRevision_ReviewStaysOnModelReview()
+    {
+        var rig = new Rig();
+        var row = rig.AddVersion(1, audit: """
+            {"model_review":{"stale":false,"scores":{"hook":4,"pacing":3},
+               "issues":[{"id":"i2","severity":"advisory","kind":"taste"},{"id":"i3","severity":"advisory","kind":"taste"}]}}
+            """);
+        rig.Pointers(row.Id, null);
+        var result = await rig.Current.Handle(new(rig.Episode.Id), CancellationToken.None);
+        var review = result.Value!.Review!;
+        review.Scores!.Value.GetRawText().ShouldBe("{\"hook\":4,\"pacing\":3}");
+        review.IssueCounts.Blocking.ShouldBe(0);
+        review.IssueCounts.Advisory.ShouldBe(2);
+        review.Stale.ShouldBeFalse();
+        review.HasDrift.ShouldBeFalse();
+    }
+
+    [Fact]
     public async Task StoryRead_UnknownLocalRuleWithoutKey_DoesNotInventMessageKey()
     {
         var rig = new Rig();
