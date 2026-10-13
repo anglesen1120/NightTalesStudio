@@ -224,14 +224,16 @@ public sealed partial class StoryGenerationPipeline(
             .AnyAsync(source => source.EpisodeId == s.Episode.Id && source.Kind == StorySourceKind.Url, ct)
             .ConfigureAwait(false);
 
-        var similarity = await ScoreSimilarityAsync(s, written.Draft, s.LocalIssues, ct).ConfigureAwait(false);
+        var similarity = await ScoreSimilarityAsync(s, written.Draft, ct).ConfigureAwait(false);
+        AppendSimilarityIssue(s.LocalIssues, similarity);
 
         // The local checker runs once per saved row, on that row's own draft and similarity (02.6.2-T1 step 6).
         var originalReport = CheckDraft(s, written.Draft, similarity, hasUrlSources, s.ModerationCategories, review.Validated is null);
         RevisionAudit? revised = null;
         if (revision.Applied is { } applied)
         {
-            var scored = await ScoreSimilarityAsync(s, applied.Draft, applied.LocalIssues, ct).ConfigureAwait(false);
+            var scored = await ScoreSimilarityAsync(s, applied.Draft, ct).ConfigureAwait(false);
+            AppendSimilarityIssue(applied.LocalIssues, scored);
             var report = CheckDraft(s, applied.Draft, scored, hasUrlSources, applied.ModerationCategories, review.Validated is null);
 
             // Drift is advisory only: it never fails the run and never blocks story_review (02.6.2-T1 step 5).
@@ -704,7 +706,9 @@ public sealed partial class StoryGenerationPipeline(
         switch (await GateOptionalAsync(s, TextStep.Revision, ct).ConfigureAwait(false))
         {
             case GateOutcome.BoundUnavailable:
-                return null;
+                // The estimator could not produce the revision bound: the revision is not attempted, the generated row
+                // is saved, the revision is recorded as not applied, and the episode still reaches story_review.
+                return NotApplied(s, AuditReportBuilder.RevisionReasonUnavailable);
             case GateOutcome.SpendCap:
                 // The spend cap between the review and the revision degrades: the generated row is saved, the
                 // revision is recorded as not applied, and the episode still reaches story_review.
@@ -768,12 +772,15 @@ public sealed partial class StoryGenerationPipeline(
         s.RevisionModel = TextSafety.CleanModelName(ok.Model);
 
         // Step 2: the persistence rule and the validator of the written draft. A revised draft that adds a blocking
-        // finding the original did not have (a dropped or invented fact_ref, a malformed field) is a regression and is
-        // never applied; the revision call itself is not retried (Goal: exactly one revision call).
+        // finding the original did not have (an invented fact_ref, a malformed field), or that silently drops a
+        // fact_ref the original cited (02.6.2-T1 failure handling), is a regression and is never applied; the revision
+        // call itself is not retried (Goal: exactly one revision call).
         var unsafeRules = PersistenceRules(s, ok.Draft, out var contentJson);
         var validation = StoryDraftValidator.Validate(ok.Draft, s.Rules);
         var originalBlocking = StoryDraftValidator.Validate(written.Draft, s.Rules).BlockingRuleIds.ToHashSet(StringComparer.Ordinal);
-        if (unsafeRules.Count > 0 || validation.BlockingRuleIds.Any(rule => !originalBlocking.Contains(rule)))
+        if (unsafeRules.Count > 0
+            || validation.BlockingRuleIds.Any(rule => !originalBlocking.Contains(rule))
+            || DropsAnApprovedFactRef(s, written.Draft, ok.Draft))
         {
             return InvalidRevision(s, reviseVersion);
         }
@@ -846,14 +853,15 @@ public sealed partial class StoryGenerationPipeline(
     }
 
     // Review #2 of the revised draft: the same gate, validator and sanitiser as review #1, but exactly one call — a
-    // single unusable review makes the revision unusable, and it never triggers another revision (D21). Only an
-    // exhausted provider account (and a cost bound the estimator cannot produce) ends the run.
+    // single unusable review makes the revision unusable, and it never triggers another revision (D21). A spend cap, or
+    // a bound the estimator cannot produce, degrades the revision the same way; only an exhausted provider account ends
+    // the run.
     private async Task<ReviewAfterOutcome> ReviewRevisionAsync(RunState s, StoryContentV1 draft, CancellationToken ct)
     {
         switch (await GateOptionalAsync(s, TextStep.Review, ct).ConfigureAwait(false))
         {
             case GateOutcome.BoundUnavailable:
-                return ReviewAfterOutcome.RunEnded;
+                return ReviewAfterOutcome.BoundUnavailable;
             case GateOutcome.SpendCap:
                 return ReviewAfterOutcome.Unusable;
         }
@@ -922,11 +930,62 @@ public sealed partial class StoryGenerationPipeline(
     private static IReadOnlyCollection<string> AddressedSegments(IReadOnlyCollection<string> segments) =>
         [.. segments.Where(segment => !string.IsNullOrWhiteSpace(segment))];
 
+    // 02.6.2-T1 failure handling row "Revision drops a fact_ref or invents a fact": on a non-fiction story the revised
+    // draft must still cite every fact id the original cited and cite nothing outside the approved sheet. The two
+    // stories are compared as a whole (the set of ids cited anywhere), so a citation may move between segments but may
+    // never disappear; fail closed — a dropped or unapproved citation makes the revision invalid output (D21: the
+    // revised draft is untrusted like a fresh draft).
+    private static bool DropsAnApprovedFactRef(RunState s, StoryContentV1 original, StoryContentV1 revised)
+    {
+        if (s.Topic.IsFiction())
+        {
+            return false;
+        }
+
+        var revisedRefs = CitedFactRefs(revised);
+
+        return !revisedRefs.IsSubsetOf(s.Rules.AllowedFactRefs) || !CitedFactRefs(original).IsSubsetOf(revisedRefs);
+    }
+
+    // Every fact id the draft cites, across the hook, the paragraphs and the ending; a null segment list cites none.
+    private static HashSet<string> CitedFactRefs(StoryContentV1 content)
+    {
+        var refs = new HashSet<string>(StringComparer.Ordinal);
+
+        Collect(content.Hook);
+        foreach (var paragraph in content.Paragraphs ?? [])
+        {
+            Collect(paragraph);
+        }
+
+        Collect(content.Ending);
+
+        return refs;
+
+        void Collect(StorySegmentV1? segment)
+        {
+            foreach (var factRef in segment?.FactRefs ?? [])
+            {
+                refs.Add(factRef);
+            }
+        }
+    }
+
     // The local checker's blocking findings of one draft: the drift check compares them across the two drafts.
     private static IReadOnlyCollection<string> BlockingRules(QualityReport report) =>
         [.. report.Issues.Where(issue => issue.Severity == QualitySeverity.Blocking).Select(issue => issue.RuleId)];
 
-    private async Task<SimilarityOutcome> ScoreSimilarityAsync(RunState s, StoryContentV1 draft, List<JsonNode> localIssues, CancellationToken ct)
+    // D2 (QA): a corpus failure describes the draft it scored, so its advisory issue lands on that draft's own row —
+    // the written draft's on the generated row, the revised draft's on the revised row — never on both.
+    private static void AppendSimilarityIssue(List<JsonNode> localIssues, SimilarityOutcome similarity)
+    {
+        if (similarity.UnavailableIssue is { } issue)
+        {
+            localIssues.Add(issue);
+        }
+    }
+
+    private async Task<SimilarityOutcome> ScoreSimilarityAsync(RunState s, StoryContentV1 draft, CancellationToken ct)
     {
         var options = SimilarityOptions.For(s.Language, similaritySettings);
         var started = Stopwatch.GetTimestamp();
@@ -985,8 +1044,13 @@ public sealed partial class StoryGenerationPipeline(
         {
             metrics.SimilarityUnavailable(reason);
             LogSimilarityUnavailable(s.Episode.Id, s.Run.Id, reason);
-            s.LocalIssues.Add(IssueNode("similarity_unavailable", "advisory", "objective", SegmentAddress.Meta, string.Empty, string.Empty));
-            return new SimilarityOutcome(null, SimilarityVerdict.Pass, null);
+
+            // D2 (QA): the issue is returned, not added to the run's list, so the caller records it on the row it
+            // describes (the generated row or the revised row) instead of always on the generated row.
+            return new SimilarityOutcome(null, SimilarityVerdict.Pass, null)
+            {
+                UnavailableIssue = IssueNode("similarity_unavailable", "advisory", "objective", SegmentAddress.Meta, string.Empty, string.Empty),
+            };
         }
     }
 
@@ -1212,8 +1276,9 @@ public sealed partial class StoryGenerationPipeline(
     }
 
     // The gate for the optional revision steps (02.6.2-T1, D21 step 5): the revision bound for the revision call and
-    // the review bound for review #2. Unlike GateAsync it never pauses — a spend cap here degrades, so the generated
-    // row is still saved, the reason is recorded and the episode still reaches story_review.
+    // the review bound for review #2. Unlike GateAsync it never fails or pauses the run — a spend cap here, or a bound
+    // the estimator cannot produce, degrades: the generated row is still saved, the reason is recorded and the episode
+    // still reaches story_review.
     private async Task<GateOutcome> GateOptionalAsync(RunState s, TextStep step, CancellationToken ct)
     {
         var bound = step == TextStep.Review
@@ -1221,7 +1286,6 @@ public sealed partial class StoryGenerationPipeline(
             : await estimator.RevisionWorstCaseAsync(s.Episode.LengthTier, s.Language, ct).ConfigureAwait(false);
         if (bound.IsError)
         {
-            await FailAsync(s, ErrorCodes.StoryGenerationFailed, "cost_bound_unavailable", false, RefundFailed).ConfigureAwait(false);
             return GateOutcome.BoundUnavailable;
         }
 
@@ -1325,7 +1389,11 @@ public sealed partial class StoryGenerationPipeline(
         where TEnum : struct, Enum =>
         JsonNamingPolicy.SnakeCaseLower.ConvertName(value.ToString());
 
-    private sealed record SimilarityOutcome(decimal? Score, SimilarityVerdict Verdict, SimilarityResult? Result);
+    private sealed record SimilarityOutcome(decimal? Score, SimilarityVerdict Verdict, SimilarityResult? Result)
+    {
+        /// <summary>The advisory <c>similarity_unavailable</c> issue of a corpus failure; the caller records it on the row it describes.</summary>
+        public JsonNode? UnavailableIssue { get; init; }
+    }
 
     private sealed record Written(StoryContentV1 Draft, string ContentJson, string Model, string PromptVersion);
 
@@ -1363,6 +1431,9 @@ public sealed partial class StoryGenerationPipeline(
         public static ReviewAfterOutcome RunEnded { get; } = new(null, null);
 
         public static ReviewAfterOutcome Unusable { get; } = new(null, AuditReportBuilder.RevisionReasonReviewUnavailable);
+
+        /// <summary>Review #2 never ran because the estimator could not produce its cost bound: the same degradation as a spend cap.</summary>
+        public static ReviewAfterOutcome BoundUnavailable { get; } = new(null, AuditReportBuilder.RevisionReasonUnavailable);
 
         public static ReviewAfterOutcome Usable(ValidatedReview validated) => new(validated, null);
     }

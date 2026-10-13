@@ -9,6 +9,7 @@ using NightTales.Application.Abstractions.Research;
 using NightTales.Application.Abstractions.Storage;
 using NightTales.Application.Abstractions.Text;
 using NightTales.Application.Abstractions.Usage;
+using NightTales.Application.Common.Errors;
 using NightTales.Application.Features.Stories.Generation;
 using NightTales.Application.Features.Stories.Jobs;
 using NightTales.Application.Features.Stories.Quality;
@@ -108,7 +109,8 @@ internal sealed class RevisionWorld
         double minTextSimilarity = 0.6,
         IBudgetGuard? budget = null,
         Topic topic = Topic.Ghost,
-        ApprovedFactSheet? approvedSheet = null)
+        ApprovedFactSheet? approvedSheet = null,
+        IStoryCostEstimator? estimator = null)
     {
         var setup = new TestCurrentUser();
         var user = await new UserBuilder(database, setup).CreateAsync(ct: ct);
@@ -174,7 +176,7 @@ internal sealed class RevisionWorld
             writer: writer,
             assembler: new StubRevisionAssembler(),
             budgetGuard: budget ?? new FakeBudgetGuard(),
-            estimator: new FixedRevisionEstimator(),
+            estimator: estimator ?? new FixedRevisionEstimator(),
             checker: new StoryQualityChecker(),
             jobOptions: new StoryJobOptions(),
             reviewOptions: new StoryReviewOptions { Enabled = reviewEnabled },
@@ -395,4 +397,31 @@ internal sealed class FixedRevisionEstimator : IStoryCostEstimator
 
     public Task<ErrorOr<UsageBound>> RevisionWorstCaseAsync(LengthTier tier, Language language, CancellationToken ct) =>
         WorstCaseAsync(tier, language, ct);
+}
+
+/// <summary>
+/// The estimator whose optional-step bounds can fail on demand: the writer's bound and review #1's bound always
+/// succeed, while the revision bound or review #2's bound returns a typed error (the D3 degradation probes — the run
+/// must not fail when the estimator cannot produce a bound for an optional step).
+/// </summary>
+internal sealed class DegradingRevisionEstimator(bool failRevisionBound = false, bool failReviewAfterBound = false) : IStoryCostEstimator
+{
+    private int _reviewCalls;
+
+    public Task<ErrorOr<UsageBound>> WorstCaseAsync(LengthTier tier, Language language, CancellationToken ct) => Bound();
+
+    public Task<ErrorOr<UsageBound>> WriterWorstCaseAsync(LengthTier tier, Language language, CancellationToken ct) => Bound();
+
+    public Task<ErrorOr<UsageBound>> RevisionWorstCaseAsync(LengthTier tier, Language language, CancellationToken ct) =>
+        failRevisionBound ? Failed() : Bound();
+
+    /// <summary>Review #1's bound must succeed; only review #2's bound (the second call) may fail.</summary>
+    public Task<ErrorOr<UsageBound>> ReviewWorstCaseAsync(LengthTier tier, Language language, CancellationToken ct) =>
+        failReviewAfterBound && ++_reviewCalls > 1 ? Failed() : Bound();
+
+    private static Task<ErrorOr<UsageBound>> Bound() =>
+        Task.FromResult<ErrorOr<UsageBound>>(new UsageBound(0.5m, 1000, 500));
+
+    private static Task<ErrorOr<UsageBound>> Failed() =>
+        Task.FromResult<ErrorOr<UsageBound>>(Error.Failure(ErrorCodes.PriceCatalogEmpty, "no bound"));
 }

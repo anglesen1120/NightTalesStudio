@@ -84,6 +84,51 @@ public sealed class RevisionPipelineTests(TestDatabase database) : IntegrationTe
     }
 
     [Fact]
+    public async Task RevisionBoundUnavailable_DegradesWithTheUnavailableReason()
+    {
+        // D3: the estimator cannot produce the revision bound. The run must not fail and the completed generated row
+        // must not be discarded: the revision is recorded as not applied and the episode still reaches story_review.
+        var world = await RevisionWorld.CreateAsync(Database, Ct, estimator: new DegradingRevisionEstimator(failRevisionBound: true));
+        world.Writer.EnqueueWrite(WriteOk());
+        world.Writer.EnqueueReview(ReviewOk(BlockingHook()));
+
+        await world.RunAsync(Ct);
+
+        (await world.ReadRunAsync()).Status.ShouldBe(GenerationRunStatus.Succeeded, "an unavailable bound degrades, it never fails the run");
+        world.Writer.RevisionRequests.ShouldBeEmpty("no paid call without a bound");
+        var version = (await world.VersionsAsync()).ShouldHaveSingleItem();
+        version.Source.ShouldBe(StoryVersionSource.Generated);
+        var block = RevisionBlock(version);
+        block["applied"]!.GetValue<bool>().ShouldBeFalse();
+        block["reason"]!.GetValue<string>().ShouldBe(AuditReportBuilder.RevisionReasonUnavailable);
+        (await world.EpisodeStatusAsync()).ShouldBe(EpisodeStatus.StoryReview, "the episode still reaches story_review");
+        world.Progress.StageCalls.ShouldBe(AttemptedNotAppliedStages);
+    }
+
+    [Fact]
+    public async Task ReviewTwoBoundUnavailable_KeepsGeneratedRowWithTheUnavailableReason()
+    {
+        // D3: the estimator cannot produce review #2's bound. The revision itself runs, but an unreviewed revision
+        // never becomes current, so the generated row is kept with the same additive reason the revision gate records
+        // when the estimator cannot produce a bound (the single reason the task names for both optional gates).
+        var world = await RevisionWorld.CreateAsync(Database, Ct, estimator: new DegradingRevisionEstimator(failReviewAfterBound: true));
+        world.Writer.EnqueueWrite(WriteOk());
+        world.Writer.EnqueueReview(ReviewOk(BlockingHook()));
+        world.Writer.EnqueueRevision(RevisionOk(RevisedDraft()));
+
+        await world.RunAsync(Ct);
+
+        (await world.ReadRunAsync()).Status.ShouldBe(GenerationRunStatus.Succeeded, "an unavailable review #2 bound degrades, it never fails the run");
+        world.Writer.RevisionRequests.Count.ShouldBe(1, "the revision runs; only review #2's bound is unavailable");
+        world.Writer.ReviewRequests.Count.ShouldBe(1, "review #2 is never called without a bound");
+        var version = (await world.VersionsAsync()).ShouldHaveSingleItem();
+        version.Source.ShouldBe(StoryVersionSource.Generated);
+        var block = RevisionBlock(version);
+        block["applied"]!.GetValue<bool>().ShouldBeFalse();
+        block["reason"]!.GetValue<string>().ShouldBe(AuditReportBuilder.RevisionReasonUnavailable);
+    }
+
+    [Fact]
     public async Task RevisedTextWithControlCharacter_KeepsOriginalDraft()
     {
         var world = await RevisionWorld.CreateAsync(Database, Ct);
@@ -134,6 +179,53 @@ public sealed class RevisionPipelineTests(TestDatabase database) : IntegrationTe
         await world.RunAsync(Ct);
 
         await AssertKeptOriginalAsync(world);
+    }
+
+    [Fact]
+    public async Task RevisionKeepingEveryFactRefReordered_IsApplied()
+    {
+        // The dropped-ref guard is set-based on the story as a whole: here the two approved ids swap order in the hook,
+        // so nothing is lost and the revision is applied.
+        var sheet = new ApprovedFactSheet(
+            Guid.CreateVersion7(),
+            1,
+            [
+                new FactForWriter("f1", "Nguon mot da duoc kiem chung.", ["s1"]),
+                new FactForWriter("f2", "Nguon hai da duoc kiem chung.", ["s2"]),
+            ],
+            new Dictionary<string, Guid>(StringComparer.Ordinal));
+        var world = await RevisionWorld.CreateAsync(Database, Ct, topic: Topic.TrueCrime, approvedSheet: sheet);
+        world.Writer.EnqueueWrite(WriteOk(CitedAll("f1", "f2")));
+        world.Writer.EnqueueReview(ReviewOk(BlockingHook()));
+        world.Writer.EnqueueRevision(RevisionOk(CitedAll("f2", "f1")));
+        world.Writer.EnqueueReview(ReviewOk());
+
+        await world.RunAsync(Ct);
+
+        (await world.ReadRunAsync()).Status.ShouldBe(GenerationRunStatus.Succeeded);
+        var versions = await world.VersionsAsync();
+        versions.Count.ShouldBe(2, "a re-ordered citation keeps every approved ref, so the revision is applied");
+        versions[1].Source.ShouldBe(StoryVersionSource.Revised);
+        RevisionBlock(versions[1])["applied"]!.GetValue<bool>().ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task FictionRevision_IsExemptFromTheFactRefGuard()
+    {
+        // A fiction story has no approved fact sheet, so the guard short-circuits: a revision that changes a fiction
+        // draft's refs is never refused as invalid output on that account (only the D3 validator's own rules apply).
+        var world = await RevisionWorld.CreateAsync(Database, Ct);
+        world.Writer.EnqueueWrite(WriteOk(Cited("f1")));
+        world.Writer.EnqueueReview(ReviewOk(BlockingHook()));
+        world.Writer.EnqueueRevision(RevisionOk(Draft()));
+        world.Writer.EnqueueReview(ReviewOk());
+
+        await world.RunAsync(Ct);
+
+        (await world.ReadRunAsync()).Status.ShouldBe(GenerationRunStatus.Succeeded);
+        var versions = await world.VersionsAsync();
+        versions.Count.ShouldBe(2, "the fact-ref guard never applies to fiction");
+        versions[1].Source.ShouldBe(StoryVersionSource.Revised);
     }
 
     [Fact]
@@ -329,6 +421,12 @@ public sealed class RevisionPipelineTests(TestDatabase database) : IntegrationTe
     private static StoryContentV1 Cited(string factRef) => Draft() with
     {
         Hook = new StorySegmentV1($"Mo dau {factRef}.", ["k1"], [factRef]),
+    };
+
+    /// <summary>A draft whose hook cites every id in <paramref name="factRefs"/>, in the given order.</summary>
+    private static StoryContentV1 CitedAll(params string[] factRefs) => Draft() with
+    {
+        Hook = new StorySegmentV1("Mo dau hai nguon da duoc kiem chung.", ["k1"], [.. factRefs]),
     };
 
     private static StoryContentV1 RevisedDraft() => Draft() with
