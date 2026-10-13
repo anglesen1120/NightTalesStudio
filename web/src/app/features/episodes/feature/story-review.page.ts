@@ -10,6 +10,7 @@ import { ConfirmDialog, ConflictDialog, EmptyState, ErrorState, FormErrorAlert, 
 import { addressForParagraph, formatAddress, parseAddress } from '@shared/util/segment-address';
 import type { ParsedAddress, SegmentAddress } from '@shared/util/segment-address';
 import { catchError, combineLatest, firstValueFrom, map, of, switchMap } from 'rxjs';
+import type { Observable } from 'rxjs';
 import { EpisodeDetailStore } from '../application/episode-detail.store';
 import { StoryEditorStore, UNDO_WINDOW_MS } from '../application/story-editor.store';
 import { VersionsStore } from '../application/versions.store';
@@ -47,6 +48,21 @@ const CONFLICT_MESSAGE_KEYS: Readonly<Record<ConflictVariant, string>> = {
   reloadFailed: 'episodes.conflict.reloadFailed',
 };
 
+/** One scope subtree tagged with the language it was loaded for, so readiness never answers from a previous language. */
+interface LoadedScope {
+  readonly lang: string;
+  readonly scope: unknown;
+}
+
+/**
+ * A scope is usable only when its subtree carries entries AND it was loaded for the language now active: a subscription
+ * restarted by a language switch keeps serving the previous language's object until the new file lands, and resolving a
+ * key against that object answers with the key itself, which reads as a missing rule rather than as "not loaded yet".
+ */
+function isScopeLoaded(loaded: LoadedScope, language: string): boolean {
+  return loaded.lang === language && typeof loaded.scope === 'object' && loaded.scope !== null && Object.keys(loaded.scope).length > 0;
+}
+
 @Component({
   selector: 'nts-story-review-page',
   imports: [TranslocoPipe, EmptyState, ErrorState, FormErrorAlert, LoadingState, PageHeader, StatusChip, StoryEditorComponent, VersionsPanelHostComponent],
@@ -82,36 +98,34 @@ export class StoryReviewPage {
   /** Annotation copy is translated in the active language, so views rebuild on a language switch. */
   private readonly language = toSignal(this.transloco.langChanges$, { initialValue: this.transloco.getActiveLang() });
   /**
-   * Subscribing to the quality scope is both the load trigger and the readiness signal: until it lands a hint's
-   * `quality.<ruleId>` key cannot resolve, so hints are withheld (keyword flags are not — see `annotationViews`). The
-   * catch sits inside the per-language switch, so a failed load leaves the signal `null` for that language only and
-   * the next language change retries it, instead of completing the stream and withholding hints for the page's life.
+   * Subscribing to the quality scope is both the load trigger and the readiness signal: until the *active language's*
+   * file lands a hint's `quality.<ruleId>` key cannot resolve, so hints are withheld (keyword flags are not — see
+   * `annotationViews`). The path pins the language the emission belongs to, and the catch sits inside the per-language
+   * switch, so a failed load leaves that language unready while the next language change retries it — the stream is never
+   * completed for the page's life.
    */
   private readonly qualityScope = toSignal(
-    this.transloco.langChanges$.pipe(switchMap(() => this.transloco.selectTranslation('quality').pipe(catchError(() => of(null))))),
-    { initialValue: null },
+    this.transloco.langChanges$.pipe(switchMap((lang) => this.loadScope('quality', lang))),
+    { initialValue: { lang: this.transloco.getActiveLang(), scope: null } },
   );
   /**
-   * The `episodes` scope is loaded lazily by the router-scoped provider; until it lands, an imperative
-   * `translate('…', {}, 'episodes')` echoes the key back. The few labels the page builds in TypeScript (the diff lists,
-   * the dialog's detail texts) wait for `episodesLoaded`, so a raw key never reaches the DOM.
+   * The `episodes` scope is loaded lazily by the router-scoped provider; until the active language's file lands, an
+   * imperative `translate('…', {}, 'episodes')` echoes the key back. The labels the page builds in TypeScript (the diff
+   * lists, the dialog's detail texts) and the announcement wait for `episodesLoaded`, so a raw key never reaches the DOM.
    */
   private readonly episodesScope = toSignal(
-    this.transloco.langChanges$.pipe(switchMap(() => this.transloco.selectTranslation('episodes').pipe(catchError(() => of(null))))),
-    { initialValue: null },
+    this.transloco.langChanges$.pipe(switchMap((lang) => this.loadScope('episodes', lang))),
+    { initialValue: { lang: this.transloco.getActiveLang(), scope: null } },
   );
-  /**
-   * A scope is usable only once its translation object carries entries: one that has not loaded (or whose load failed)
-   * emits `undefined` or `{}`, which an imperative `translate('…', {}, scope)` answers with the key itself.
-   */
-  private readonly qualityLoaded = computed(() => {
-    const scope: unknown = this.qualityScope();
-    return typeof scope === 'object' && scope !== null && Object.keys(scope).length > 0;
-  });
-  private readonly episodesLoaded = computed(() => {
-    const scope: unknown = this.episodesScope();
-    return typeof scope === 'object' && scope !== null && Object.keys(scope).length > 0;
-  });
+  private readonly qualityLoaded = computed(() => isScopeLoaded(this.qualityScope(), this.language()));
+  private readonly episodesLoaded = computed(() => isScopeLoaded(this.episodesScope(), this.language()));
+  /** One language's scope file, tagged with that language (a failed load leaves it unready rather than guessing). */
+  private loadScope(scope: string, lang: string): Observable<LoadedScope> {
+    return this.transloco.selectTranslation(`${scope}/${lang}`).pipe(
+      map((translation): LoadedScope => ({ lang, scope: translation })),
+      catchError(() => of<LoadedScope>({ lang, scope: null })),
+    );
+  }
   private readonly focusRequest = signal<{ readonly address: SegmentAddress; readonly sequence: number } | null>(null);
   private lastEpisodeId: string | null = null;
   private lastFocusSequence = -1;
@@ -403,28 +417,25 @@ export class StoryReviewPage {
 
   /** The changed-elsewhere notice is not a dialog: reload still confirms (it discards the draft), the others act at once. */
   protected reloadRemoteNotice(): void {
-    // A declined confirm leaves the notice up, so the button the user pressed keeps the focus; only an accepted reload,
-    // which replaces the draft and takes the notice away, hands it to the editor.
-    void this.reloadAfterConfirm().then((accepted) => {
-      if (accepted) this.restoreFocusAfterNoticeAction();
-    });
+    void this.reloadAfterConfirm().then(this.restoreFocusIfNoticeResolved);
   }
 
   protected saveMineRemoteNotice(): void {
-    // The store clears the notice only when the save-as-new actually went through; a second 412 keeps it and opens the
-    // conflict dialog, which owns the focus from there.
-    void this.store.resolveConflict('saveAsNew').then(() => {
-      if (this.store.remoteChange() === null) this.restoreFocusAfterNoticeAction();
-    });
+    void this.store.resolveConflict('saveAsNew').then(this.restoreFocusIfNoticeResolved);
   }
 
   protected dismissRemoteNotice(): void {
-    void this.store.resolveConflict('cancel').then(this.restoreFocusAfterNoticeAction);
+    void this.store.resolveConflict('cancel').then(this.restoreFocusIfNoticeResolved);
   }
 
-  /** Focus returns to the editor once the notice is gone, so the button that was pressed cannot take it with it. */
-  private readonly restoreFocusAfterNoticeAction = (): void => {
-    if (!this.destroyRef.destroyed) this.restoreSaveFocus.set(true);
+  /**
+   * Focus returns to the editor only once the notice is actually gone, so a button that is about to be removed cannot
+   * take it along. Every action can leave the notice standing: an accepted reload can return early (a save in flight) or
+   * the refetch can fail, and a save-as-new second 412 opens the conflict dialog, which owns the focus from there.
+   */
+  private readonly restoreFocusIfNoticeResolved = (): void => {
+    if (this.destroyRef.destroyed || this.store.remoteChange() !== null) return;
+    this.restoreSaveFocus.set(true);
   };
 
   /**

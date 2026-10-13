@@ -2,8 +2,8 @@ import { ChangeDetectionStrategy, Component, input, output, signal } from '@angu
 import { TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { ActivatedRoute, Router, convertToParamMap, provideRouter } from '@angular/router';
-import { TranslocoService, TranslocoTestingModule } from '@jsverse/transloco';
-import type { Translation } from '@jsverse/transloco';
+import { TRANSLOCO_LOADER, TranslocoService, TranslocoTestingModule } from '@jsverse/transloco';
+import type { TranslocoLoader, Translation } from '@jsverse/transloco';
 import { MatSnackBar, type MatSnackBarDismiss } from '@angular/material/snack-bar';
 import { BehaviorSubject, of, Subject, type Observable } from 'rxjs';
 import { afterEach, describe, expect, it, vi, type MockInstance } from 'vitest';
@@ -55,6 +55,24 @@ function translationsModule(langs: Record<string, Translation>) {
     translocoConfig: { availableLangs: Object.keys(langs).filter((key) => !key.includes('/')), defaultLang: 'vi', fallbackLang: 'vi', reRenderOnLangChange: true },
     preloadLangs: true,
   });
+}
+
+/**
+ * A loader that holds chosen scope files back until the spec releases them, so a language switch can be watched while the
+ * new language's file is still in flight (the test loader otherwise resolves every path at once).
+ */
+class GatedScopeLoader implements TranslocoLoader {
+  private readonly gates = new Map<string, Subject<Translation>>();
+  constructor(private readonly langs: Record<string, Translation>) {}
+  /** Registers the gate for one path; that file is served only once the returned subject emits. */
+  gate(path: string): Subject<Translation> {
+    const gate = new Subject<Translation>();
+    this.gates.set(path, gate);
+    return gate;
+  }
+  getTranslation(path: string): Observable<Translation> {
+    return this.gates.get(path)?.asObservable() ?? of(this.langs[path] ?? {});
+  }
 }
 
 const translations = translationsModule(TRANSLATIONS);
@@ -189,7 +207,7 @@ function fakeConflictDialogs() {
 const tick = (): Promise<void> => new Promise((resolve) => { setTimeout(resolve, 0); });
 
 /** `langs` overrides the loaded scopes, so a spec can leave one out and exercise its failed/absent load. */
-async function createPage(options: { readonly langs?: Record<string, Translation> } = {}) {
+async function createPage(options: { readonly langs?: Record<string, Translation>; readonly loader?: TranslocoLoader } = {}) {
   const detailStore = fakeDetailStore();
   const storyStore = fakeStoryStore();
   const params = convertToParamMap({ id: 'episode-1' });
@@ -198,7 +216,7 @@ async function createPage(options: { readonly langs?: Record<string, Translation
   const dialogs = fakeConflictDialogs();
   // The single confirm the page owns: leaving a dirty draft and reloading after a conflict both go through it.
   const confirm = vi.fn(() => ({ afterClosed: () => of(true) }));
-  await TestBed.configureTestingModule({
+  const testbed = TestBed.configureTestingModule({
     imports: [StoryReviewPage, translationsModule(options.langs ?? TRANSLATIONS)],
     providers: [
       ...ZONELESS_TEST_PROVIDERS,
@@ -210,7 +228,10 @@ async function createPage(options: { readonly langs?: Record<string, Translation
       { provide: ConfirmDialog, useValue: { confirm } },
       { provide: MatSnackBar, useValue: { open: snack.open } },
     ],
-  }).overrideComponent(StoryReviewPage, {
+  });
+  // A spec that needs a scope file still in flight supplies its own loader, which then serves every other path itself.
+  const withLoader = options.loader === undefined ? testbed : testbed.overrideProvider(TRANSLOCO_LOADER, { useValue: options.loader });
+  await withLoader.overrideComponent(StoryReviewPage, {
     set: { providers: [
       { provide: EpisodeDetailStore, useValue: detailStore },
       { provide: StoryEditorStore, useValue: storyStore },
@@ -716,43 +737,61 @@ describe('StoryReviewPage', () => {
     storyStore.remoteChange.set({ etag: '"sv-2"', diff: [] });
     fixture.detectChanges();
     await fixture.whenStable();
-    const reload = root.querySelectorAll<HTMLButtonElement>('.story-review-page__notice--remote button')[0]!;
-    // Declining the reload confirm resolves nothing: the notice stays and the pressed button keeps the focus.
-    confirm.mockReturnValue({ afterClosed: () => of(false) });
-    reload.focus();
-    reload.click();
-    await tick();
-    expect(storyStore.conflictChoices).toEqual([]);
-    expect(document.activeElement).toBe(reload);
-    // An accepted reload replaces the draft: the notice goes and the first editor field takes the focus instead of it
-    // falling to the document body.
-    confirm.mockReturnValue({ afterClosed: () => of(true) });
+    // The store carries the notice out only when the action really resolves it (a reload can return early, a refetch can
+    // fail, a cancel can arrive while a save is in flight): the flag below models both outcomes by hand.
+    let resolvesNotice = false;
     storyStore.resolveConflict.mockImplementation((choice: string) => {
       storyStore.conflictChoices.push(choice);
-      if (choice === 'reload') storyStore.remoteChange.set(null);
+      if (resolvesNotice) storyStore.remoteChange.set(null);
       return Promise.resolve();
     });
+    const noticeButtons = () => root.querySelectorAll<HTMLButtonElement>('.story-review-page__notice--remote button');
+    // Declining the reload confirm resolves nothing: the notice stays and the pressed button keeps the focus.
+    confirm.mockReturnValue({ afterClosed: () => of(false) });
+    noticeButtons()[0]!.focus();
+    noticeButtons()[0]!.click();
+    await tick();
+    expect(storyStore.conflictChoices).toEqual([]);
+    expect(document.activeElement).toBe(noticeButtons()[0]);
+    // An accepted reload that leaves the notice standing (it returned early, or the refetch failed) keeps the focus too.
+    confirm.mockReturnValue({ afterClosed: () => of(true) });
+    noticeButtons()[0]!.focus();
+    noticeButtons()[0]!.click();
+    await tick();
+    expect(storyStore.conflictChoices).toEqual(['reload']);
+    expect(document.activeElement).toBe(noticeButtons()[0]);
+    // Only a reload that takes the notice away hands focus on: the draft is clean, so the first editor field takes it
+    // instead of the disabled Save control.
+    resolvesNotice = true;
     const field = root.querySelector<HTMLTextAreaElement>('textarea[data-segment]');
     expect(field).not.toBeNull();
     expect(root.querySelector<HTMLButtonElement>('.story-save-bar button')?.disabled).toBe(true);
-    reload.focus();
-    reload.click();
+    noticeButtons()[0]!.focus();
+    noticeButtons()[0]!.click();
     await tick();
-    expect(storyStore.conflictChoices).toEqual(['reload']);
+    expect(storyStore.conflictChoices).toEqual(['reload', 'reload']);
     await vi.waitFor(() => expect(document.activeElement).toBe(field));
-    // Dismiss resolves the notice by definition, and it leaves the draft in place and dirty (`saveDisabled` false, as the
-    // real store reports it), so the Save control itself takes the focus back.
-    storyStore.saveDisabled.set(false);
+    // Dismiss has the same rule: a cancel that returns early while a save is in flight leaves the notice up, and the
+    // button the user pressed keeps the focus.
+    resolvesNotice = false;
     storyStore.remoteChange.set({ etag: '"sv-4"', diff: [] });
     fixture.detectChanges();
     await fixture.whenStable();
-    const dismiss = root.querySelectorAll<HTMLButtonElement>('.story-review-page__notice--remote button')[2]!;
+    noticeButtons()[2]!.focus();
+    noticeButtons()[2]!.click();
+    await tick();
+    expect(storyStore.conflictChoices).toEqual(['reload', 'reload', 'cancel']);
+    expect(document.activeElement).toBe(noticeButtons()[2]);
+    // A dismiss that does resolve it leaves the draft in place and dirty (`saveDisabled` false, as the real store reports
+    // it), so the Save control itself takes the focus back.
+    resolvesNotice = true;
+    storyStore.saveDisabled.set(false);
+    noticeButtons()[2]!.focus();
+    noticeButtons()[2]!.click();
+    await tick();
+    expect(storyStore.conflictChoices).toEqual(['reload', 'reload', 'cancel', 'cancel']);
     const save = root.querySelector<HTMLButtonElement>('.story-save-bar button');
     expect(save?.disabled).toBe(false);
-    dismiss.focus();
-    dismiss.click();
-    await tick();
-    expect(storyStore.conflictChoices).toEqual(['reload', 'cancel']);
     await vi.waitFor(() => expect(document.activeElement).toBe(save));
   });
 
@@ -850,6 +889,69 @@ describe('StoryReviewPage', () => {
     await fixture.whenStable();
     expect(root.querySelector('.story-editor__annotation-announcement span')?.textContent)
       .toBe(transloco.translate('annotations.announce', { count: 2 }, 'episodes'));
+  });
+
+  it('annotationViews_WithholdHintsUntilTheNewLanguagesScopeArrives', async () => {
+    // The new language's quality file is held back, so for a while there is no scope to resolve a hint against: the tile
+    // must wait for it instead of resolving against the previous language's file and reading as an unknown rule.
+    const loader = new GatedScopeLoader(BILINGUAL);
+    const gate = loader.gate('quality/en');
+    const langs: Record<string, Translation> = { ...BILINGUAL };
+    delete langs['quality/en'];
+    const enQuality: Record<string, string> = { ...qualityEn, hook_missing: 'Hook is missing (gated en)' };
+    const { fixture, storyStore, transloco } = await createPage({ langs, loader });
+    const root = fixture.nativeElement as HTMLElement;
+    const annotations: readonly SegmentAnnotation[] = [
+      { id: 'ann-p-0-hook_missing', source: 'hint', address: 'p:0', ruleId: 'hook_missing', severity: 'advisory', kind: 'objective', messageKey: 'quality.hook_missing', evidence: 'Hook is short', repairDirection: null, keywordIndex: null, placement: 'inline' },
+      { id: 'ann-p-1-keyword_name_detected-k0', source: 'keyword', address: 'p:1', ruleId: 'keyword_name_detected', severity: 'blocking', kind: 'objective', messageKey: 'errors.keywordsFlaggedRule.keyword_name_detected', evidence: '', repairDirection: null, keywordIndex: 0, placement: 'inline' },
+    ];
+    storyStore.annotations.set(annotations);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(root.querySelector('.inline-annotation__message')?.textContent).toBe(qualityVi.hook_missing);
+    transloco.setActiveLang('en');
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const editor = fixture.debugElement.query(By.directive(StoryEditorComponent)).componentInstance as StoryEditorComponent;
+    // Nothing resolves yet for `en`: the hint is withheld (never rendered as an unknown rule) while the flag stays visible.
+    expect(editor.annotationViews().inline.get('p:0')).toBeUndefined();
+    expect(editor.annotationViews().flaggedChips.get('p:1')?.get(0)?.messageKey).toBe('errors.keywordsFlaggedRule.keyword_name_detected');
+    expect(root.querySelector('#ann-p-0-hook_missing')).toBeNull();
+    gate.next(enQuality);
+    gate.complete();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(editor.annotationViews().inline.get('p:0')?.map((item) => item.messageKey)).toEqual(['quality.hook_missing']);
+    expect(root.querySelector('.inline-annotation__message')?.textContent).toBe(enQuality['hook_missing']);
+  });
+
+  it('announcement_FillsInWhenTheNewLanguagesEpisodesScopeArrives', async () => {
+    // The same rule for the announcement: the `episodes` file of the new language is in flight, so a save made while it
+    // is missing announces nothing (never a raw key) and the copy lands, frozen, once the file arrives.
+    const loader = new GatedScopeLoader(BILINGUAL);
+    const gate = loader.gate('episodes/en');
+    const langs: Record<string, Translation> = { ...BILINGUAL };
+    delete langs['episodes/en'];
+    const { fixture, storyStore, transloco } = await createPage({ langs, loader });
+    const root = fixture.nativeElement as HTMLElement;
+    transloco.setActiveLang('en');
+    fixture.detectChanges();
+    await fixture.whenStable();
+    storyStore.annotationAnnouncement.set({ count: 2, sequence: 1 });
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(root.querySelector('.story-editor__annotation-announcement span')).toBeNull();
+    gate.next(episodesEn);
+    gate.complete();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const announcedEn = transloco.translate('annotations.announce', { count: 2 }, 'episodes');
+    expect(root.querySelector('.story-editor__annotation-announcement span')?.textContent).toBe(announcedEn);
+    // Frozen: going back to `vi` cannot rewrite what was read out.
+    transloco.setActiveLang('vi');
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(root.querySelector('.story-editor__annotation-announcement span')?.textContent).toBe(announcedEn);
   });
 
   it('announcement_FreezesTheCopyPerSaveAndReCreatesTheAnnouncedNode', async () => {
