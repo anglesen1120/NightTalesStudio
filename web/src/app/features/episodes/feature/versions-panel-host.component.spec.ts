@@ -27,14 +27,16 @@ function fakeStore(outcome: RestoreOutcome) {
   const right = signal<StoryVersionDetail | null>(current);
   const loaded = signal(false);
   const restoredVersion = signal<number | null>(null);
+  const restoring = signal(false);
   return {
     versions: signal([current, previous]), loaded, empty: signal(false),
     leftId: signal<string | null>('older'), rightId: signal<string | null>('current'),
     left: signal<StoryVersionDetail | null>(previous), right,
     diff: signal({ segments: [], added: 1, removed: 1, truncated: false }), sameSelected: signal(false),
     loading: signal(false), loadingSide: signal(null), sideError: signal(null), error: signal(null),
-    restoring: signal(false), canRestore: signal(true), editorDirty: signal(false), pendingConflict, needsReopen, restoreError, restoredVersion,
+    restoring, canRestore: signal(true), editorDirty: signal(false), pendingConflict, needsReopen, restoreError, restoredVersion,
     consumeRestored: vi.fn(() => { const version = restoredVersion(); restoredVersion.set(null); return version; }),
+    discardRestoredNotice: vi.fn(() => { if (!restoring()) restoredVersion.set(null); }),
     open: vi.fn(() => { loaded.set(true); return Promise.resolve(); }),
     select: vi.fn(() => Promise.resolve()), retryList: vi.fn(() => Promise.resolve()), retrySide: vi.fn(() => Promise.resolve()), reset: vi.fn(),
     resync: vi.fn(() => Promise.resolve()),
@@ -92,9 +94,10 @@ async function setup(outcome: RestoreOutcome = 'restored', accepted = true, conf
 afterEach(() => TestBed.resetTestingModule());
 
 describe('VersionsPanelHostComponent', () => {
-  it('opens once with deep-link ids, emits selection ids, and preserves page state when unmounted', async () => {
+  it('opens once with deep-link ids, re-opens on a changed deep link, emits selection ids, and preserves page state when unmounted', async () => {
     const { fixture, store } = await setup();
     expect(store.open).toHaveBeenCalledExactlyOnceWith('episode-1', { left: 'older', right: 'current' });
+    expect(store.discardRestoredNotice).toHaveBeenCalledTimes(1); // mount: no stale notice survives into this open
     const ids: { left: string | null; right: string | null }[] = [];
     onEmit(fixture.componentInstance.selectionChange, (value) => ids.push(value));
     store.leftId.set('another');
@@ -102,8 +105,24 @@ describe('VersionsPanelHostComponent', () => {
     expect(ids).toEqual([{ left: 'another', right: 'current' }]);
     fixture.componentRef.setInput('initialLeft', 'another');
     fixture.detectChanges(); await fixture.whenStable();
-    expect(store.open).toHaveBeenCalledTimes(1);
-    fixture.destroy(); expect(store.reset).not.toHaveBeenCalled();
+    // The deep link is tracked: the store applies only the changed side, without a list reload.
+    expect(store.open).toHaveBeenCalledTimes(2);
+    expect(store.open).toHaveBeenLastCalledWith('episode-1', { left: 'another', right: 'current' });
+    fixture.destroy();
+    expect(store.reset).not.toHaveBeenCalled();
+    expect(store.discardRestoredNotice).toHaveBeenCalledTimes(2); // destroy: no host left to announce it
+  });
+
+  it('drops a restore notice no host consumed instead of announcing it on the next mount', async () => {
+    const { fixture, store, snack } = await setup();
+    fixture.destroy();
+    store.restoredVersion.set(3); // a restore that finished while the panel was closed
+    const reopened = TestBed.createComponent(VersionsPanelHostComponent);
+    reopened.componentRef.setInput('episodeId', 'episode-1');
+    reopened.detectChanges(); await reopened.whenStable(); reopened.detectChanges(); await reopened.whenStable();
+    expect(store.discardRestoredNotice).toHaveBeenCalledTimes(3); // mount + destroy of the first host, mount of this one
+    expect(store.restoredVersion()).toBeNull();
+    expect(snack).not.toHaveBeenCalled();
   });
 
   it('confirms the source version and preservation of history, using dirty-specific copy', async () => {

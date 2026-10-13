@@ -1,6 +1,6 @@
 import { ChangeDetectionStrategy, Component, DestroyRef, ViewContainerRef, effect, inject, input, output, signal, untracked } from '@angular/core';
 import { MatSnackBar } from '@angular/material/snack-bar';
-import { TranslocoService } from '@jsverse/transloco';
+import { TranslocoService, provideTranslocoScope } from '@jsverse/transloco';
 import { firstValueFrom } from 'rxjs';
 import { RealtimeService } from '@core/realtime';
 import type { RealtimeSubscription } from '@core/realtime';
@@ -25,6 +25,7 @@ import { VersionsPanelComponent } from '../ui/versions-panel/versions-panel.comp
     />
   `,
   changeDetection: ChangeDetectionStrategy.OnPush,
+  providers: [provideTranslocoScope('episodes', 'errors')],
 })
 export class VersionsPanelHostComponent {
   readonly episodeId = input.required<string>();
@@ -45,12 +46,15 @@ export class VersionsPanelHostComponent {
   private invalidationTimer: number | undefined;
 
   constructor() {
+    // A notice from a restore that finished with no host mounted must not resurface here (F4); an in-flight restore
+    // keeps its notice for the host that remounts with it.
+    this.store.discardRestoredNotice();
     effect(() => {
       const episodeId = this.episodeId();
-      untracked(() => {
-        const left = this.initialLeft(), right = this.initialRight();
-        void this.store.open(episodeId, left === null && right === null ? undefined : { left, right });
-      });
+      // Deep-link ids are tracked too: a changed `?left=&right=` re-opens the pair without a list reload.
+      const left = this.initialLeft();
+      const right = this.initialRight();
+      untracked(() => { void this.store.open(episodeId, left === null && right === null ? undefined : { left, right }); });
     });
     effect(() => {
       if (!this.store.loaded()) return;
@@ -68,7 +72,11 @@ export class VersionsPanelHostComponent {
       const episodeId = this.episodeId();
       untracked(() => this.listenForChanges(episodeId));
     });
-    this.destroyRef.onDestroy(() => this.stopListening());
+    this.destroyRef.onDestroy(() => {
+      this.stopListening();
+      // No host is left to show a notice: drop it unless a restore is still in flight (F4).
+      this.store.discardRestoredNotice();
+    });
   }
 
   /** Coalesces a burst of hub events into one list re-read 250 ms after the last one (mirrors `StoryEditorStore`). */
@@ -101,10 +109,14 @@ export class VersionsPanelHostComponent {
     const episodeId = this.episodeId();
     this.confirming.set(true);
     try {
+      // Scoped lookup (`selectTranslate(key, params, scope)`) keeps the runtime key `episodes.versions.version` while
+      // telling keys-manager which scope owns it; resolved before the dialog so its config stays synchronous.
+      const subject = await firstValueFrom(this.transloco.selectTranslate<string>('versions.version', { version: source.version }, 'episodes'));
+      if (!this.isCurrent(episodeId) || this.store.left()?.versionId !== source.versionId) return;
       const confirmation = this.confirmDialog.confirm({
         titleKey: 'episodes.versions.restoreConfirm.title',
         bodyKey: this.store.editorDirty() ? 'episodes.versions.restoreConfirm.dirtyBody' : 'episodes.versions.restoreConfirm.body',
-        subject: this.transloco.translate('episodes.versions.version', { version: source.version }),
+        subject,
         confirmLabelKey: 'episodes.versions.restoreConfirm.confirm',
         destructive: this.store.editorDirty(),
         pending: this.store.restoring,

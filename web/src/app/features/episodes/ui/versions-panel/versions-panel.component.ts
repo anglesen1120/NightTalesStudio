@@ -50,7 +50,10 @@ export class VersionsPanelComponent {
   protected readonly summary = computed(() => {
     const rendered = this.renderedPair();
     if (this.sameSelected() || this.diff()?.truncated) return null;
-    return rendered !== null && rendered.left === this.left() && rendered.right === this.right() ? rendered.diff : null;
+    const left = this.left(), right = this.right();
+    return rendered !== null && left !== null && right !== null &&
+      rendered.left.versionId === left.versionId && rendered.left.body === left.body &&
+      rendered.right.versionId === right.versionId && rendered.right.body === right.body ? rendered.diff : null;
   });
   protected readonly errorKey = computed(() => {
     const error = this.error();
@@ -83,10 +86,14 @@ export class VersionsPanelComponent {
     if (left !== null && right !== null) this.renderedPair.set({ left, right, diff });
   }
 
+  protected close(): void {
+    if (!this.restoring()) this.closed.emit();
+  }
+
   protected onEscape(event: Event): void {
     event.stopPropagation();
     event.preventDefault();
-    this.closed.emit();
+    this.close();
   }
 
   // ReopenActionSeam (10.5.6-T1): needsReopen is message-only until that owner's real action lands.

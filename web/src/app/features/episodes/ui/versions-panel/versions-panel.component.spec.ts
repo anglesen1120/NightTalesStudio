@@ -100,6 +100,52 @@ describe('VersionsPanelComponent', () => {
     expect(summary.textContent?.trim()).toBe(TestBed.inject(TranslocoService).translate('episodes.versions.noDifferences'));
     expect(root.querySelector('.diff')?.getAttribute('aria-live')).toBe('off');
   });
+  it('keeps the loaded list, diff and summary mounted during refresh and flag-only detail updates', async () => {
+    const { fixture, root } = await setup();
+    const blocks = await fixture.getDeferBlocks();
+    await blocks[0]!.render(DeferBlockState.Complete);
+    fixture.detectChanges(); await fixture.whenStable();
+    const list = root.querySelector('.versions__list');
+    const diffNode = root.querySelector('nts-diff-view');
+    const summary = root.querySelector('.versions__summary')!;
+    const text = summary.textContent?.trim();
+    expect(text).toBe(TestBed.inject(TranslocoService).translate('episodes.versions.diff.summary', { added: 1, removed: 1 }));
+    const diff = fixture.debugElement.query(By.directive(DiffViewComponent)).componentInstance as DiffViewComponent;
+    const emissions: unknown[] = [];
+    onEmit(diff.rendered, (value) => emissions.push(value));
+    fixture.componentRef.setInput('loading', true);
+    fixture.componentRef.setInput('error', failure);
+    fixture.componentRef.setInput('left', { ...left, approved: true });
+    fixture.componentRef.setInput('right', { ...right, approved: false, isCurrent: false });
+    fixture.detectChanges(); await fixture.whenStable();
+    expect(root.querySelector('.versions__list')).toBe(list);
+    expect(root.querySelector('nts-diff-view')).toBe(diffNode);
+    expect(root.querySelector('nts-loading-state')).toBeNull();
+    expect(root.querySelector('nts-error-state')).toBeNull();
+    expect(summary.textContent?.trim()).toBe(text);
+    expect(emissions).toHaveLength(0);
+    fixture.componentRef.setInput('loading', false);
+    fixture.componentRef.setInput('error', null);
+    fixture.detectChanges(); await fixture.whenStable();
+    expect(root.querySelector('nts-diff-view')).toBe(diffNode);
+    expect(summary.textContent?.trim()).toBe(text);
+  });
+
+  it('shows foreground loading and list errors only before a list has loaded', async () => {
+    const { fixture, root } = await setup();
+    fixture.componentRef.setInput('loaded', false);
+    fixture.componentRef.setInput('loading', true);
+    fixture.detectChanges(); await fixture.whenStable();
+    expect(root.querySelector('nts-loading-state')).not.toBeNull();
+    expect(root.querySelector('.versions__list')).toBeNull();
+    fixture.componentRef.setInput('loading', false);
+    fixture.componentRef.setInput('error', failure);
+    fixture.detectChanges(); await fixture.whenStable();
+    expect(root.querySelector('nts-loading-state')).toBeNull();
+    expect(root.querySelector('nts-error-state')).not.toBeNull();
+    expect(root.querySelector('.versions__list')).toBeNull();
+  });
+
 
   it('shows empty, same-selection and truncated states without a misleading comparison', async () => {
     const { fixture, root } = await setup();
@@ -131,6 +177,7 @@ describe('VersionsPanelComponent', () => {
     expect(root.querySelector('.versions__alert')?.getAttribute('role')).toBe('alert');
     expect(root.querySelector('.versions__alert button')).toBeNull();
     expect(root.querySelector('nts-form-error-alert')).not.toBeNull();
+    fixture.componentRef.setInput('loaded', false);
     fixture.componentRef.setInput('error', failure);
     fixture.detectChanges(); await fixture.whenStable();
     root.querySelector<HTMLButtonElement>('nts-error-state button')!.click();
@@ -146,6 +193,18 @@ describe('VersionsPanelComponent', () => {
     root.querySelector<HTMLButtonElement>('.versions__close')!.click();
     root.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     expect(closes).toBe(2);
+    fixture.componentRef.setInput('restoring', true);
+    fixture.detectChanges(); await fixture.whenStable();
+    const close = root.querySelector<HTMLButtonElement>('.versions__close')!;
+    expect(close.disabled).toBe(true);
+    close.click(); close.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    root.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    expect(closes).toBe(2);
+    fixture.componentRef.setInput('restoring', false);
+    fixture.detectChanges(); await fixture.whenStable();
+    expect(close.disabled).toBe(false);
+    close.click(); root.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    expect(closes).toBe(4);
     fixture.destroy(); root.remove();
   });
 });

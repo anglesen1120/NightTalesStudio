@@ -1,11 +1,11 @@
 <section class="versions" aria-labelledby="versions-heading">
   <header class="versions__header">
     <h2 #heading id="versions-heading" tabindex="-1">{{ 'episodes.versions.title' | transloco }}</h2>
-    <button type="button" class="versions__close" (click)="closed.emit()">{{ 'episodes.versions.close' | transloco }}</button>
+    <button type="button" class="versions__close" [disabled]="restoring()" (click)="close()">{{ 'episodes.versions.close' | transloco }}</button>
   </header>
-  @if (loading()) {
+  @if (loading() && !loaded()) {
     <nts-loading-state labelKey="episodes.versions.loading" />
-  } @else if (error(); as listError) {
+  } @else if (!loaded() && error(); as listError) {
     <nts-error-state [bodyKey]="errorKey()" [traceId]="listError.traceId" retryLabelKey="episodes.versions.retryList" (retry)="retryList.emit()" />
   } @else if (empty()) {
     <nts-empty-state titleKey="episodes.versions.empty" />

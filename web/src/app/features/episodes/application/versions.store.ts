@@ -1,7 +1,8 @@
-import { DestroyRef, Injectable, computed, inject, isDevMode, signal } from '@angular/core';
+import { DestroyRef, Injectable, computed, effect, inject, isDevMode, signal } from '@angular/core';
 import type { Signal } from '@angular/core';
 import { AppErrorMapper } from '@core/errors';
 import type { AppError } from '@core/errors';
+import { SessionStore } from '@core/session';
 import { diffWords } from '@shared/util/text-diff';
 import type { WordDiff } from '@shared/util/text-diff';
 import type { StoryDraftWire } from '../domain/story.model';
@@ -31,6 +32,7 @@ export class VersionsStore {
   private readonly editor = inject(StoryEditorStore);
   private readonly detail = inject(EpisodeDetailStore);
   private readonly mapper = inject(AppErrorMapper);
+  private readonly session = inject(SessionStore);
 
   private readonly versionList = signal<readonly StoryVersionSummary[]>([]);
   readonly versions: Signal<readonly StoryVersionSummary[]> = this.versionList.asReadonly();
@@ -70,12 +72,13 @@ export class VersionsStore {
   readonly canRestore = computed(() => {
     const left = this.leftState();
     return left !== null && left.content !== null && this.leftIdState() !== this.rightIdState() &&
-      !left.isCurrent && !this.restoring() && !this.editor.readOnly();
+      !left.isCurrent && !this.restoring() && !this.editor.readOnly() && !this.editor.saving();
   });
   readonly editorDirty: Signal<boolean> = computed(() => this.editor.isDirty());
 
   private episodeId: string | null = null;
   private destroyed = false;
+  private ownerGeneration = this.session.generation();
   private listGeneration = 0;
   private readonly sideGeneration: Record<VersionSide, number> = { left: 0, right: 0 };
 
@@ -86,6 +89,10 @@ export class VersionsStore {
       this.sideGeneration.left++;
       this.sideGeneration.right++;
     });
+    // A new session owns no version data (README D6): the store outlives the panel inside the page injector.
+    effect(() => {
+      if (this.session.generation() !== this.ownerGeneration) this.reset();
+    });
   }
 
   /** Opens the panel for an episode: fetches the list, then the two requested sides (or previous vs current). */
@@ -94,7 +101,16 @@ export class VersionsStore {
     if (episodeId === this.episodeId && this.loadedState()) {
       // A panel that reopens over an already-loaded store re-reads the LIST only: the selection and the loaded details
       // stay, and a store busy restoring is left alone (the restore reloads the list itself). README D17: no polling.
-      if (!this.restoring()) await this.resync();
+      if (this.restoring()) return;
+      if (ids !== undefined) {
+        const changed = this.changedSides(ids);
+        if (changed.length > 0) {
+          // Explicit ids win over the loaded selection without a list reload: only the differing sides are fetched.
+          await Promise.all(changed.map((side) => this.applySide(side === 'left' ? ids.left : ids.right, side)));
+          return;
+        }
+      }
+      await this.resync();
       return;
     }
     this.episodeId = episodeId;
@@ -102,11 +118,13 @@ export class VersionsStore {
     this.versionList.set([]);
     this.loadedState.set(false);
     this.error.set(null);
+    // A restore belongs to the episode that started it: a switch mid-flight must not leave the panel stuck restoring.
+    this.restoring.set(false);
     this.clearSelection();
     this.listGeneration++;
     this.sideGeneration.left++;
     this.sideGeneration.right++;
-    await this.fetchList();
+    await this.fetchList(true);
     if (!this.active() || this.episodeId !== episodeId || !this.loadedState()) return;
     const selection = ids ?? this.defaultSelection();
     await Promise.all([this.applySide(selection.left, 'left'), this.applySide(selection.right, 'right')]);
@@ -118,7 +136,7 @@ export class VersionsStore {
    */
   async resync(): Promise<void> {
     if (!this.active() || this.episodeId === null || this.restoring()) return;
-    await this.fetchList();
+    await this.fetchList(false);
     if (!this.active() || !this.loadedState()) return;
     this.refreshSelectedFlags('left');
     this.refreshSelectedFlags('right');
@@ -138,7 +156,7 @@ export class VersionsStore {
 
   async retryList(): Promise<void> {
     if (!this.active() || this.episodeId === null) return;
-    await this.fetchList();
+    await this.fetchList(true);
     if (!this.active() || !this.loadedState()) return;
     if (this.leftIdState() === null && this.rightIdState() === null) {
       const selection = this.defaultSelection();
@@ -146,12 +164,21 @@ export class VersionsStore {
     }
   }
 
+  /**
+   * Drops a restore notice no mounted host consumed (the panel closed while the restore finished), so the next open
+   * does not announce a stale restore. The host calls it on mount and on destroy; a restore still in flight keeps its
+   * notice for the host that remounts with it.
+   */
+  discardRestoredNotice(): void {
+    if (!this.restoring()) this.restoredVersionState.set(null);
+  }
+
   /** Restores the LEFT version as a new version. The caller confirms first; unsaved editor text is discarded. */
   async restoreAsNewVersion(): Promise<RestoreOutcome> {
     const episodeId = this.episodeId;
     const left = this.leftState();
     if (!this.active() || this.restoring() || episodeId === null || left === null || left.content === null ||
-        this.leftIdState() === this.rightIdState() || left.isCurrent || this.editor.readOnly()) return 'unavailable';
+        this.leftIdState() === this.rightIdState() || left.isCurrent || this.editor.readOnly() || this.editor.saving()) return 'unavailable';
     const etag = this.editor.snapshot()?.etag ?? '';
     if (!ETAG_PATTERN.test(etag)) { this.warnMissingEtag(); return 'unavailable'; }
     this.prepareRestore();
@@ -176,9 +203,18 @@ export class VersionsStore {
     const fresh = await this.detail.refetch({ userAction: true });
     if (!this.current(episodeId)) return;
     const etag = fresh?.currentStory?.etag ?? '';
-    if (!ETAG_PATTERN.test(etag)) { this.warnMissingEtag(); return; }
+    // Either way the dialog loop stops here: a refetch failure (or a response without a usable ETag) is surfaced as a
+    // restore error instead of reopening the dialog on an unresolved conflict.
     this.pendingConflict.set(false);
     this.restoreError.set(null);
+    if (!ETAG_PATTERN.test(etag)) {
+      const refetchError = this.detail.error();
+      if (refetchError === null) this.warnMissingEtag();
+      const error = refetchError ?? this.mapper.fromProblem(null, 502, null);
+      this.warnRestoreFailure(error);
+      this.restoreError.set(error);
+      return;
+    }
     await this.performRestore(episodeId, etag, content);
   }
   /** Consumed by the currently mounted host only, after its localized snackbar message is ready. */
@@ -233,26 +269,38 @@ export class VersionsStore {
   }
 
   private async refreshListAndSelectCurrent(episodeId: string): Promise<void> {
-    await this.fetchList();
+    await this.fetchList(false);
     if (!this.current(episodeId) || !this.loadedState()) return;
     const current = this.versionList().find((version) => version.isCurrent);
     if (current !== undefined) await this.loadSide(current.versionId, 'right');
   }
 
-  private async fetchList(): Promise<void> {
+  /**
+   * Reads the list. `foreground` marks a user-visible load (opening an episode, an explicit list retry): only those
+   * may raise `loading` and paint `error`. A background refresh (reopening panel, hub resync, 404 reload, post-restore
+   * refresh) leaves the rendered list and its diff in place, and stays quiet when it fails — a stale list beats an
+   * error page for a read the user did not ask for (README D17).
+   */
+  private async fetchList(foreground: boolean): Promise<void> {
     const episodeId = this.episodeId;
     if (!this.active() || episodeId === null) return;
     const generation = ++this.listGeneration;
-    this.loading.set(true);
-    this.error.set(null);
+    const visible = foreground || !this.loadedState();
+    if (visible) {
+      this.loading.set(true);
+      this.error.set(null);
+    }
     try {
       const list = await this.versionRepo.list(episodeId, { userAction: true });
-      if (!this.active() || this.episodeId !== episodeId || this.listGeneration !== generation) return;
+      if (this.staleList(episodeId, generation)) return;
       this.versionList.set(list);
       this.loadedState.set(true);
+      this.error.set(null);
     } catch (cause) {
-      if (!this.active() || this.episodeId !== episodeId || this.listGeneration !== generation) return;
-      this.error.set(isAppError(cause) ? cause : this.mapper.from(cause));
+      if (this.staleList(episodeId, generation)) return;
+      const error = isAppError(cause) ? cause : this.mapper.from(cause);
+      if (!visible) { this.warnRefreshFailure(error); return; }
+      this.error.set(error);
     } finally {
       if (this.active() && this.episodeId === episodeId && this.listGeneration === generation) this.loading.set(false);
     }
@@ -278,7 +326,7 @@ export class VersionsStore {
         // that reload fail too, which paints the list ErrorState; every other failure keeps the per-side retry.
         this.versionList.update((list) => list.filter((version) => version.versionId !== versionId));
         this.clearSide(side);
-        await this.fetchList();
+        await this.fetchList(false);
         return;
       }
       this.sideError.set({ side, error });
@@ -305,6 +353,19 @@ export class VersionsStore {
   private async applySide(versionId: string | null, side: VersionSide): Promise<void> {
     if (versionId === null) { this.clearSide(side); return; }
     await this.loadSide(versionId, side);
+  }
+
+  /** Sides whose requested id differs from the loaded selection; used to fetch only what a deep link actually changed. */
+  private changedSides(ids: VersionSelection): VersionSide[] {
+    const sides: VersionSide[] = [];
+    if (ids.left !== this.leftIdState()) sides.push('left');
+    if (ids.right !== this.rightIdState()) sides.push('right');
+    return sides;
+  }
+
+  /** Latest list response wins: a dropped id, remounted episode or newer read invalidates this call. */
+  private staleList(episodeId: string, generation: number): boolean {
+    return !this.active() || this.episodeId !== episodeId || this.listGeneration !== generation;
   }
 
   /** Latest response wins per side: a dropped id, remounted episode or newer selection invalidates this call. */
@@ -363,10 +424,15 @@ export class VersionsStore {
   }
 
   /** Dev-only breadcrumb for a restore failure the user cannot act on: the mapped code and trace id, never story text. */
-  private warnRestoreFailure(error: AppError): void {
+  private warnRestoreFailure(error: AppError): void { this.warnFailure('story_restore_failed', error); }
+
+  /** Dev-only breadcrumb for a failed background refresh: the panel keeps the stale list, so nobody sees the code. */
+  private warnRefreshFailure(error: AppError): void { this.warnFailure('versions_refresh_failed', error); }
+
+  private warnFailure(label: string, error: AppError): void {
     if (!isDevMode()) return;
-    if (error.traceId === undefined) console.warn('story_restore_failed', error.code);
-    else console.warn('story_restore_failed', error.code, error.traceId);
+    if (error.traceId === undefined) console.warn(label, error.code);
+    else console.warn(label, error.code, error.traceId);
   }
 
   private active(): boolean { return !this.destroyed; }

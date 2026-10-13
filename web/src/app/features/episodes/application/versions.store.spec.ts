@@ -8,7 +8,7 @@ import { SessionStore } from '@core/session';
 import { vi } from 'vitest';
 import { ZONELESS_TEST_PROVIDERS } from '../../../testing/providers';
 import type { StorySnapshot } from '../domain/story.model';
-import type { StoryVersionDetail } from '../domain/story-version.model';
+import type { StoryVersionDetail, StoryVersionSummary } from '../domain/story-version.model';
 import { EpisodesRepository } from '../domain/episodes.repository';
 import { StoryRepository } from '../domain/story.repository';
 import { StoryVersionRepository } from '../domain/story-version.repository';
@@ -31,8 +31,9 @@ function rejected<T>(error: AppError): Promise<T> {
 // The tsconfig lib predates Promise.withResolvers, so the executor form is the only typed option here.
 function deferred<T>() {
   let resolve!: (value: T) => void;
-  const promise = new Promise<T>((done) => { resolve = done; });
-  return { promise, resolve };
+  let reject!: (reason: unknown) => void;
+  const promise = new Promise<T>((done, fail) => { resolve = done; reject = fail; });
+  return { promise, resolve, reject };
 }
 
 interface StoreState {
@@ -155,6 +156,44 @@ describe('VersionsStore', () => {
     expect(await restoring).toBe('failed');
   });
 
+  it('open_WithDifferentIds_FetchesOnlyTheChangedSide', async () => {
+    const state = await editorLoaded();
+    state.versions.seed(
+      [versionSummary(3), versionSummary(2, { isCurrent: true }), versionSummary(1)],
+      [versionDetail(1), versionDetail(2, { isCurrent: true }), versionDetail(3)],
+    );
+    await state.store.open(EPISODE_ID, { left: 'v1', right: 'v2' });
+    expect(state.versions.detailCalls).toHaveLength(2);
+    await state.store.open(EPISODE_ID, { left: 'v1', right: 'v3' });
+    // Explicit ids that differ from the loaded selection are applied without a list reload, one side at a time.
+    expect(state.versions.listCalls).toHaveLength(1);
+    expect(state.versions.detailCalls).toHaveLength(3);
+    expect(state.versions.detailCalls[2]).toEqual({ episodeId: EPISODE_ID, versionId: 'v3', userAction: true });
+    expect(state.store.leftId()).toBe('v1');
+    expect(state.store.rightId()).toBe('v3');
+    expect(state.store.right()?.versionId).toBe('v3');
+  });
+
+  it('resync_KeepsLoadingFalseAndKeepsTheStaleListOnFailure', async () => {
+    const state = await editorLoaded();
+    seedPair(state);
+    await state.store.open(EPISODE_ID);
+    expect(state.store.loading()).toBe(false);
+    const reload = deferred<readonly StoryVersionSummary[]>();
+    state.versions.scriptList(() => reload.promise);
+    const resync = state.store.resync();
+    // A background read never swaps the panel for a spinner: the list, the bodies and the diff stay rendered.
+    expect(state.store.loading()).toBe(false);
+    expect(state.store.left()).not.toBeNull();
+    reload.reject(appError('network_error', 0));
+    await resync;
+    expect(state.store.loading()).toBe(false);
+    expect(state.store.error()).toBeNull();
+    expect(state.store.versions()).toHaveLength(2);
+    expect(state.store.left()).not.toBeNull();
+    expect(state.store.diff()).not.toBeNull();
+  });
+
   it('open_NoVersions_ShowsEmptyNotAnError', async () => {
     const state = await editorLoaded();
     state.versions.seed([]);
@@ -262,16 +301,21 @@ describe('VersionsStore', () => {
     expect(state.versions.detailCalls).toHaveLength(2);
   });
 
-  it('select_404_WhenTheEpisodeIsGone_LeavesTheListErrorState', async () => {
+  it('select_404_WithAFailedBackgroundReload_KeepsTheStaleListAndStaysQuiet', async () => {
     const state = await editorLoaded();
     state.versions.scriptList(() => Promise.resolve([versionSummary(2, { isCurrent: true }), versionSummary(1)]));
     state.versions.willFailList(appError('not_found', 404));
     state.versions.willFailDetail('v1', appError('not_found', 404));
     state.versions.details.set('v2', versionDetail(2, { isCurrent: true }));
     await state.store.open(EPISODE_ID, { left: 'v1', right: 'v2' });
-    expect(state.store.error()?.status).toBe(404);
+    // The reload after a vanished row is a background read: the panel keeps what it has and shows no error page.
+    expect(state.store.error()).toBeNull();
+    expect(state.store.loading()).toBe(false);
     expect(state.store.versions().map((version) => version.versionId)).toEqual(['v2']);
     expect(state.store.sideError()).toBeNull();
+    // An explicit retry IS a foreground read, so that one paints the list error.
+    await state.store.retryList();
+    expect(state.store.error()?.status).toBe(404);
   });
 
   it('restore_400_LogsTheMappedCodeAndTraceIdInDev', async () => {
@@ -341,8 +385,9 @@ describe('VersionsStore', () => {
     expect(state.store.leftId()).toBe('v1');
     expect(state.store.rightId()).toBe('v3');
     state.versions.scriptList(() => Promise.resolve([versionSummary(3, { isCurrent: true }), versionSummary(2), versionSummary(1)]));
-    await state.store.open(EPISODE_ID, { left: 'v1', right: 'v2' });
-    // An idle reopen re-reads the LIST only: the restore's selection and its already-loaded details survive.
+    await state.store.open(EPISODE_ID, { left: 'v1', right: 'v3' });
+    // The page's deep link now names the restored pair, so the reopen re-reads the LIST only: the restore's selection and
+    // its already-loaded details survive (a differing id would instead fetch just that side — see the deep-link spec).
     expect(state.versions.listCalls).toHaveLength(3);
     expect(state.versions.detailCalls).toHaveLength(3);
     expect(state.store.rightId()).toBe('v3');
@@ -467,6 +512,89 @@ describe('VersionsStore', () => {
     await state.store.resolveConflict('cancel');
     expect(state.store.pendingConflict()).toBe(false);
     expect(state.stories.calls).toHaveLength(1);
+  });
+
+  it('session_Bump_ClearsThePanelLikeReset', async () => {
+    const state = await editorLoaded();
+    seedPair(state);
+    await state.store.open(EPISODE_ID);
+    expect(state.store.loaded()).toBe(true);
+    state.sessionGeneration.update((value) => value + 1);
+    TestBed.tick();
+    expect(state.store.loaded()).toBe(false);
+    expect(state.store.versions()).toEqual([]);
+    expect(state.store.leftId()).toBeNull();
+    expect(state.store.rightId()).toBeNull();
+    expect(state.store.loading()).toBe(false);
+    expect(state.store.restoring()).toBe(false);
+  });
+
+  it('restore_WhileTheEditorSaves_IsUnavailableAndCanRestoreIsFalse', async () => {
+    const state = await editorLoaded();
+    seedPair(state);
+    await state.store.open(EPISODE_ID);
+    expect(state.store.canRestore()).toBe(true);
+    state.editor.saving.set(true);
+    expect(state.store.canRestore()).toBe(false);
+    expect(await state.store.restoreAsNewVersion()).toBe('unavailable');
+    expect(state.stories.calls).toHaveLength(0);
+  });
+
+  it('resolveConflict_SaveAsNew_WhenTheRefetchFails_SurfacesTheErrorAndStopsTheLoop', async () => {
+    const state = await editorLoaded();
+    seedPair(state);
+    await state.store.open(EPISODE_ID);
+    state.stories.scriptSave(() => rejected(appError('story_version_conflict', 412)));
+    await state.store.restoreAsNewVersion();
+    expect(state.store.pendingConflict()).toBe(true);
+    state.episodes.scriptGet(() => rejected(appError('network_error', 0)));
+    await state.store.resolveConflict('saveAsNew');
+    // The dialog loop stops on a failed refetch instead of reopening on an unresolved conflict.
+    expect(state.store.pendingConflict()).toBe(false);
+    expect(state.store.restoreError()?.kind).toBe('network');
+    expect(state.stories.calls).toHaveLength(1);
+  });
+
+  it('resolveConflict_SaveAsNew_WhenTheFreshEtagIsUnusable_SurfacesAMappedError', async () => {
+    const state = await editorLoaded();
+    seedPair(state);
+    await state.store.open(EPISODE_ID);
+    state.stories.scriptSave(() => rejected(appError('story_version_conflict', 412)));
+    await state.store.restoreAsNewVersion();
+    expect(state.store.pendingConflict()).toBe(true);
+    state.episodes.scriptGet(() => Promise.resolve(episodeDetail({ currentStory: storySnapshot({ etag: '' }), hasCurrentStory: true, nextActions: ['edit_story'], status: 'story_review' })));
+    await state.store.resolveConflict('saveAsNew');
+    expect(state.store.pendingConflict()).toBe(false);
+    expect(state.store.restoreError()).not.toBeNull();
+    expect(state.stories.calls).toHaveLength(1);
+  });
+
+  it('discardRestoredNotice_KeepsTheNoticeWhileARestoreIsInFlightThenDropsItWhenIdle', async () => {
+    const state = await editorLoaded();
+    state.versions.seed(
+      [versionSummary(2, { isCurrent: true }), versionSummary(1)],
+      [versionDetail(1, { content: storyContent({ title: 'Old title' }) }), versionDetail(2, { isCurrent: true })],
+    );
+    await state.store.open(EPISODE_ID);
+    state.stories.scriptSave(() => Promise.resolve(storySnapshot({ version: 3, etag: '"sv-new"' })));
+    state.episodes.scriptGet(() => Promise.resolve(episodeDetail({ currentStory: storySnapshot({ version: 3, etag: '"sv-new"' }), hasCurrentStory: true, nextActions: ['edit_story'], status: 'story_review' })));
+    state.versions.scriptList(() => Promise.resolve([versionSummary(3, { isCurrent: true }), versionSummary(2), versionSummary(1)]));
+    state.versions.scriptDetail(() => Promise.resolve(versionDetail(3, { isCurrent: true })));
+    expect(await state.store.restoreAsNewVersion()).toBe('restored');
+    expect(state.store.restoredVersion()).toBe(3);
+    // In flight: the running restore keeps its notice for the host that remounts with it.
+    const slow = deferred<StorySnapshot>();
+    state.stories.scriptSave(() => slow.promise);
+    const restoring = state.store.restoreAsNewVersion();
+    await Promise.resolve();
+    expect(state.store.restoring()).toBe(true);
+    state.store.discardRestoredNotice();
+    expect(state.store.restoredVersion()).toBe(3);
+    slow.reject(appError('internal_error', 500));
+    expect(await restoring).toBe('failed');
+    // Idle: a notice no host consumed is dropped, so the next open does not announce a stale restore.
+    state.store.discardRestoredNotice();
+    expect(state.store.restoredVersion()).toBeNull();
   });
 
   it('reset_ClearsEverySignal', async () => {

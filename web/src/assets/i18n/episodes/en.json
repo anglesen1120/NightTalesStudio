@@ -141,7 +141,7 @@
     "restoring": "Creating new version…",
     "restored": "Restored as a new version.",
     "needsReopen": "This episode must be reopened before a version can be restored.",
-    "truncated": "This story is too long for a complete comparison. No partial diff is shown.",
+    "truncated": "This story is too long or has too many changes for a complete comparison. No partial diff is shown.",
     "noDifferences": "No differences between these versions.",
     "retryList": "Retry version list",
     "retrySide": "Retry selected version",

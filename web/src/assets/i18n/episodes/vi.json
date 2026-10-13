@@ -141,7 +141,7 @@
     "restoring": "Đang tạo phiên bản mới…",
     "restored": "Đã khôi phục thành phiên bản mới.",
     "needsReopen": "Cần mở lại tập này trước khi khôi phục phiên bản.",
-    "truncated": "Kịch bản quá dài để đối chiếu đầy đủ. Không hiển thị phần đối chiếu thiếu.",
+    "truncated": "Kịch bản quá dài hoặc có quá nhiều thay đổi để đối chiếu đầy đủ. Không hiển thị phần đối chiếu thiếu.",
     "noDifferences": "Hai phiên bản không có khác biệt.",
     "retryList": "Tải lại danh sách phiên bản",
     "retrySide": "Tải lại phiên bản đã chọn",
