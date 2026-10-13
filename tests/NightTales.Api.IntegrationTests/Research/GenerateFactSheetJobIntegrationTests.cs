@@ -174,6 +174,50 @@ public sealed class GenerateFactSheetJobIntegrationTests(TestDatabase database) 
     }
 
     /// <summary>
+    /// The F12 watermark race on the real chain: a competing version hands out fact ids 1..7 for the same episode
+    /// between this run's validation (which read <c>max(max_fact_id) = 0</c>) and its save, so the ids this draft
+    /// numbered are already taken. The save's own re-read under the episode's row lock must fail the run typed
+    /// (<c>version_conflict</c>) instead of writing a second sheet that reuses them, and refund the reservation.
+    /// </summary>
+    [Fact]
+    public async Task GenerateFactSheetJob_WatermarkMovedBeforeSave_FailsTypedVersionConflict()
+    {
+        var world = await SeedAsync();
+        var ledger = new RecordingLedger();
+        var competing = new CompetingWatermarkInterceptor(Database, world, new FakeClock(Start));
+        var extractor = new FakeFactExtractor().EnqueueOk(new FactsV1(
+        [
+            new FactDraftV1("Người gác bến giữ ngọn đèn dầu bên cổng.", ["s1"], FactConfidence.High),
+        ]));
+        await using var worker = await StartWorkerAsync(extractor, new FakeContentModerator(), new RecordingNotifier(), services =>
+        {
+            services.RemoveAll<ICreditLedger>();
+            services.AddSingleton<ICreditLedger>(ledger);
+            services.AddDbContext<AppDbContext>((_, options) => options.AddInterceptors(competing));
+        });
+
+        var runId = await GenerateAsync(world);
+        await DeliverAndRunAsync(worker);
+
+        competing.RowsInserted.ShouldBe(1, "the competing version must land between the validation and the save");
+
+        SqlProbe.ScalarText(
+                Database,
+                $"SELECT status || '/' || error_code || '/' || error_detail || '/' || (result_fact_sheet_id IS NULL)::text "
+                + $"FROM generation_runs WHERE id = '{runId}'")
+            .ShouldBe($"failed/{ErrorCodes.FactSheetGenerationFailed}/version_conflict/true");
+
+        var reservation = new ReservationId(Guid.Parse(
+            SqlProbe.ScalarText(Database, $"SELECT reservation_id::text FROM generation_runs WHERE id = '{runId}'")));
+        ledger.Refunds.ShouldBe(new[] { (RefundFailed, reservation) });
+        ledger.Settled.ShouldBeEmpty();
+
+        // Only the competitor's row survives: this run wrote nothing that could reuse the handed-out ids.
+        SqlProbe.Count(Database, $"SELECT count(*) FROM fact_sheets WHERE episode_id = '{world.EpisodeId}'").ShouldBe(1);
+        SqlProbe.Count(Database, $"SELECT count(*) FROM fact_sheets WHERE generation_run_id = '{runId}'").ShouldBe(0);
+    }
+
+    /// <summary>
     /// The episode is deleted while its run is in flight (task failure handling: "Episode deleted mid-run -> job
     /// no-ops (FK cascade), run failed, no orphan sheet"). The delete lands inside the extraction call, so the run's
     /// own saving batch meets a foreign key whose episode no longer exists. Nothing escapes the job: the pipeline
@@ -314,7 +358,7 @@ public sealed class GenerateFactSheetJobIntegrationTests(TestDatabase database) 
     }
 
     /// <summary>The version-1 draft the competing run claims for the episode (the winner of the D9 race).</summary>
-    private static FactSheet CompetingDraft(World world, Guid competingRunId) =>
+    private static FactSheet CompetingDraft(World world, Guid competingRunId, int maxFactId = 0) =>
         FactSheet.CreateDraft(
             world.UserId,
             world.EpisodeId,
@@ -322,7 +366,7 @@ public sealed class GenerateFactSheetJobIntegrationTests(TestDatabase database) 
             [],
             new Dictionary<string, Guid>(StringComparer.Ordinal),
             inputTruncated: false,
-            maxFactId: 0,
+            maxFactId: maxFactId,
             generationRunId: competingRunId,
             promptVersion: "pv-competing",
             createdAt: Start);
@@ -387,6 +431,65 @@ public sealed class GenerateFactSheetJobIntegrationTests(TestDatabase database) 
 
             competing.GenerationRuns.Add(run);
             competing.FactSheets.Add(CompetingDraft(world, run.Id));
+            await competing.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+
+            return result;
+        }
+    }
+
+    /// <summary>
+    /// The deterministic seam of the F12 watermark race. The pipeline reads the episode's <c>max(max_fact_id)</c>
+    /// during its validation; this hook writes a competing version for the same episode when the run enters its
+    /// <c>saving</c> stage — after that read, before the save's own reads. The competitor has handed out fact ids
+    /// 1..7, so the draft the pipeline numbered would reuse them.
+    /// </summary>
+    private sealed class CompetingWatermarkInterceptor(
+        TestDatabase database,
+        World world,
+        FakeClock clock) : SaveChangesInterceptor
+    {
+        /// <summary>How many competing rows the hook wrote; exactly one per test.</summary>
+        public int RowsInserted { get; private set; }
+
+        /// <inheritdoc />
+        public override async ValueTask<InterceptionResult<int>> SavingChangesAsync(
+            DbContextEventData eventData,
+            InterceptionResult<int> result,
+            CancellationToken cancellationToken = default)
+        {
+            ArgumentNullException.ThrowIfNull(eventData);
+
+            var enteringSave = eventData.Context?.ChangeTracker
+                .Entries<GenerationRun>()
+                .Any(entry => entry.State == EntityState.Modified
+                    && entry.Entity.EpisodeId == world.EpisodeId
+                    && entry.Entity.Stage == GenerationStage.Saving) == true;
+
+            if (RowsInserted > 0 || !enteringSave)
+            {
+                return result;
+            }
+
+            RowsInserted++;
+
+            await using var competing = database.CreateAppDbContext(new TestCurrentUser { Id = world.UserId }, clock);
+            var run = GenerationRun.Queue(
+                    world.UserId,
+                    world.SeriesId,
+                    world.EpisodeId,
+                    GenerationKind.FactSheet,
+                    GenerationTrigger.User,
+                    null,
+                    EpisodeStatus.Draft,
+                    null,
+                    Guid.CreateVersion7(),
+                    0.5m,
+                    Start)
+                .Value;
+            run.Fail(ErrorCodes.FactSheetGenerationFailed, "version_conflict", countsTowardLimit: false, Start.AddSeconds(1));
+
+            competing.GenerationRuns.Add(run);
+            competing.FactSheets.Add(CompetingDraft(world, run.Id, maxFactId: 7));
             await competing.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
 
             return result;

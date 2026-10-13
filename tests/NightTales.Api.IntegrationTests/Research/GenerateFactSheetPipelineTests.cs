@@ -1,6 +1,9 @@
+using System.Diagnostics;
 using ErrorOr;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using NightTales.Application.Abstractions.Money;
 using NightTales.Application.Abstractions.Moderation;
 using NightTales.Application.Abstractions.Prompts;
@@ -20,6 +23,7 @@ using NightTales.Domain.Stories.Generation;
 using NightTales.Domain.Stories.Prompts;
 using NightTales.Domain.Stories.Similarity;
 using NightTales.Domain.Usage;
+using NightTales.Infrastructure.OpenAI;
 using NightTales.Infrastructure.Persistence;
 using NightTales.TestKit;
 using NightTales.TestKit.Auth;
@@ -494,11 +498,13 @@ public sealed class GenerateFactSheetPipelineTests(TestDatabase database) : Inte
     }
 
     [Fact]
-    public async Task Pipeline_CancelledJobToken_LeavesTheRunForTheSweeper()
+    public async Task Pipeline_CancelledJobTokenAfterDispatch_LeavesTheRunForTheSweeper_AndRecordsTheBound()
     {
-        var world = await NewWorldAsync();
+        // Hangfire's shutdown token cancels the call after the request was dispatched: the paid call is recorded at
+        // the D1 bound (the provider can still bill it), and the run is left `running` for StaleGenerationSweeperJob,
+        // which owns the outcome and the refund (SEC-2).
         using var jobToken = new CancellationTokenSource();
-        world.Extractor.BeforeCall = jobToken.Cancel;
+        var world = await NewWorldAsync(textClient: new HangingTextClient(dispatch: true, onCall: jobToken.Cancel));
 
         await Should.NotThrowAsync(() => world.RunAsync(jobToken.Token));
 
@@ -506,6 +512,113 @@ public sealed class GenerateFactSheetPipelineTests(TestDatabase database) : Inte
         run.Status.ShouldBe(GenerationRunStatus.Running, "a shutdown leaves the run for StaleGenerationSweeperJob");
         world.Ledger.Refunds.ShouldBeEmpty("the sweeper owns the refund of a cancelled run");
         (await world.FactSheetCountAsync()).ShouldBe(0);
+
+        var item = world.Meter.Items.ShouldHaveSingleItem("a dispatched call is metered even when its host shuts down");
+        item.Estimated.ShouldBeTrue();
+        item.CostUsd.ShouldBe(FixedFactSheetEstimator.Bound);
+        item.Operation.ShouldBe(GenerateFactSheetPipeline.Operation);
+    }
+
+    [Fact]
+    public async Task Pipeline_CancelledBeforeDispatch_RecordsNoUsage()
+    {
+        // The same shutdown, but the request never left this process: nothing can have been billed, so nothing is
+        // metered, and the run is still left to the sweeper (SEC-2).
+        using var jobToken = new CancellationTokenSource();
+        var world = await NewWorldAsync(textClient: new HangingTextClient(dispatch: false, onCall: jobToken.Cancel));
+
+        await Should.NotThrowAsync(() => world.RunAsync(jobToken.Token));
+
+        world.Meter.Items.ShouldBeEmpty();
+        (await world.ReadRunAsync()).Status.ShouldBe(GenerationRunStatus.Running);
+    }
+
+    [Fact]
+    public async Task Pipeline_DeadlineCancelledAfterDispatch_MetersTheBound_AndFailsDeadlineExceeded()
+    {
+        // This run's own deadline fires while the request is in flight, so the failure is this run's (a typed
+        // `deadline_exceeded` with its reservation released), and the dispatched call is still metered (SEC-2).
+        var world = await NewWorldAsync(
+            textClient: new HangingTextClient(dispatch: true),
+            job: new FactSheetJobOptions { TimeoutSeconds = 1 });
+
+        await Should.NotThrowAsync(() => world.RunAsync(Ct));
+
+        var run = await world.ReadRunAsync();
+        run.Status.ShouldBe(GenerationRunStatus.Failed);
+        run.ErrorCode.ShouldBe(ErrorCodes.FactSheetGenerationFailed);
+        run.ErrorDetail.ShouldBe("deadline_exceeded");
+        world.Ledger.Refunds.ShouldBe(new[] { ("fact_sheet_generation_failed", world.Reservation) });
+        world.Ledger.Settled.ShouldBeEmpty();
+
+        var item = world.Meter.Items.ShouldHaveSingleItem("the deadline cancelled a request that was already sent");
+        item.Estimated.ShouldBeTrue();
+        item.CostUsd.ShouldBe(FixedFactSheetEstimator.Bound);
+        (await world.FactSheetCountAsync()).ShouldBe(0);
+    }
+
+    [Fact]
+    public async Task Pipeline_TwoDeliveriesOfOneQueuedRun_OneExtraction_OneSheet_OneCharge()
+    {
+        // At-least-once delivery: a second job starts for the same queued run while the first is working it. The
+        // claim is one conditional UPDATE, so exactly one delivery works the run — the loser stops quietly, with no
+        // failure write, no refund and no second paid call (CODE-1/SEC-1).
+        var world = await NewWorldAsync();
+        world.Extractor.EnqueueOk(Facts(("s1", "Người gác bến giữ ngọn đèn dầu bên cổng.", FactConfidence.High)));
+        var second = world.SecondPipeline();
+
+        await Task.WhenAll(world.RunAsync(Ct), second.RunAsync(world.RunId, Ct));
+
+        world.Extractor.Calls.ShouldBe(1, "only the delivery that won the claim may reach the paid extractor");
+        world.Extractor.Requests.ShouldHaveSingleItem();
+        (await world.FactSheetCountAsync()).ShouldBe(1);
+        (await world.ReadRunAsync()).Status.ShouldBe(GenerationRunStatus.Succeeded);
+        (await world.ReadRunAsync()).ErrorCode.ShouldBeNull("the delivery that lost the claim must not fail the run");
+        world.Meter.Items.Count.ShouldBe(1);
+        world.Ledger.Settled.ShouldBe(new[] { world.Reservation });
+        world.Ledger.Refunds.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task Pipeline_UnusableVersionWatermark_FailsTheRunTyped_WithoutLimbo()
+    {
+        // An internal error of the saving stage (here a version counter a corrupt row pushed past int.MaxValue)
+        // must end the run typed and release the reservation, never leave it `running` until the sweeper.
+        var world = await NewWorldAsync(corruptVersion: true);
+        world.Extractor.EnqueueOk(Facts(("s1", "Người gác bến giữ ngọn đèn dầu bên cổng.", FactConfidence.High)));
+
+        await Should.NotThrowAsync(() => world.RunAsync(Ct));
+
+        var run = await world.ReadRunAsync();
+        run.Status.ShouldBe(GenerationRunStatus.Failed);
+        run.ErrorCode.ShouldBe(ErrorCodes.FactSheetGenerationFailed);
+        run.ErrorDetail.ShouldBe("unexpected_error");
+        run.ResultFactSheetId.ShouldBeNull();
+        world.Ledger.Refunds.ShouldBe(new[] { ("fact_sheet_generation_failed", world.Reservation) });
+        world.Ledger.Settled.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task Pipeline_MeterUnavailable_LogsAnError_AndStillFinishesTheRun()
+    {
+        // A lost usage row is an Error, not a Warning (SEC-4): the platform spend cap is read from usage_records,
+        // so an operator must see it. Metering is evidence, not control flow, so the run still succeeds and
+        // settles — the outcome the invoice, not the meter, will settle.
+        var logger = new RecordingLogger();
+        var world = await NewWorldAsync(logger: logger);
+        world.Extractor.EnqueueOk(Facts(("s1", "Người gác bến giữ ngọn đèn dầu bên cổng.", FactConfidence.High)));
+        world.Meter.ThrowOnRecord = true;
+
+        await Should.NotThrowAsync(() => world.RunAsync(Ct));
+
+        var run = await world.ReadRunAsync();
+        run.Status.ShouldBe(GenerationRunStatus.Succeeded);
+        world.Ledger.Settled.ShouldBe(new[] { world.Reservation });
+        world.Meter.Items.ShouldBeEmpty("the meter failed before it stored anything");
+
+        var entry = logger.Entries.Where(logged => logged.Level == LogLevel.Error).ShouldHaveSingleItem(
+            "a lost usage row is the only error of a successful run");
+        entry.Event.ShouldBe(new EventId(6179));
     }
 
     private async Task<World> NewWorldAsync(
@@ -514,7 +627,11 @@ public sealed class GenerateFactSheetPipelineTests(TestDatabase database) : Inte
         string? sourceTitle = null,
         IReadOnlyList<string>? urlSources = null,
         FactSheetExtractionOptions? extraction = null,
-        bool removeSourcesBeforePlan = false)
+        bool removeSourcesBeforePlan = false,
+        FactSheetJobOptions? job = null,
+        ITextClient? textClient = null,
+        bool corruptVersion = false,
+        ILogger<GenerateFactSheetPipeline>? logger = null)
     {
         var setup = new TestCurrentUser();
         var user = await new UserBuilder(Database, setup).CreateAsync(ct: Ct);
@@ -574,6 +691,24 @@ public sealed class GenerateFactSheetPipelineTests(TestDatabase database) : Inte
 
             await seed.SaveChangesAsync(Ct);
 
+            if (corruptVersion)
+            {
+                // A version counter one above int.MaxValue, so the saving stage's `max(version) + 1` cannot be a
+                // valid version: the reachable internal error of the save path.
+                seed.FactSheets.Add(FactSheet.CreateDraft(
+                    user.Id,
+                    episode.Id,
+                    int.MaxValue,
+                    [],
+                    new Dictionary<string, Guid>(StringComparer.Ordinal),
+                    inputTruncated: false,
+                    maxFactId: 0,
+                    generationRunId: run.Id,
+                    promptVersion: "pv-corrupt",
+                    createdAt: Now));
+                await seed.SaveChangesAsync(Ct);
+            }
+
             if (removeSourcesBeforePlan)
             {
                 SqlProbe.Execute(Database, $"DELETE FROM story_sources WHERE episode_id = '{episode.Id}'");
@@ -589,7 +724,10 @@ public sealed class GenerateFactSheetPipelineTests(TestDatabase database) : Inte
                 texts,
                 extraction,
                 noteId,
-                urlIds.Count > 0 ? urlIds[0] : null);
+                urlIds.Count > 0 ? urlIds[0] : null,
+                job,
+                textClient,
+                logger);
         }
     }
 
@@ -627,6 +765,9 @@ public sealed class GenerateFactSheetPipelineTests(TestDatabase database) : Inte
     {
         private readonly TestDatabase _database;
         private readonly FactSheetExtractionOptions _extraction;
+        private readonly FactSheetJobOptions _job;
+        private readonly FakeExtractedTextStore _texts;
+        private readonly ILogger<GenerateFactSheetPipeline> _logger;
 
         public World(
             TestDatabase database,
@@ -638,7 +779,10 @@ public sealed class GenerateFactSheetPipelineTests(TestDatabase database) : Inte
             FakeExtractedTextStore texts,
             FactSheetExtractionOptions? extraction,
             Guid noteSourceId,
-            Guid? urlSourceId)
+            Guid? urlSourceId,
+            FactSheetJobOptions? job = null,
+            ITextClient? textClient = null,
+            ILogger<GenerateFactSheetPipeline>? logger = null)
         {
             _database = database;
             UserId = userId;
@@ -649,25 +793,46 @@ public sealed class GenerateFactSheetPipelineTests(TestDatabase database) : Inte
             NoteSourceId = noteSourceId;
             UrlSourceId = urlSourceId;
             _extraction = extraction ?? new FactSheetExtractionOptions();
+            _texts = texts;
+            _job = job ?? new FactSheetJobOptions { TimeoutSeconds = 360 };
+            _logger = logger ?? NullLogger<GenerateFactSheetPipeline>.Instance;
 
             var clock = new FakeClock(Now);
             var db = database.CreateAppDbContext(new TestCurrentUser { Id = userId }, clock);
-            Pipeline = new GenerateFactSheetPipeline(
+
+            // The cancellation cases drive the production extractor over a scripted client, so the SEC-2 row it
+            // writes for a dispatched call is asserted on this world's meter; every other case scripts the fake.
+            IFactExtractor extractor = textClient is null
+                ? Extractor
+                : new OpenAiFactExtractor(textClient, new FixedPromptCatalog(), Options.Create(new FactsOptions()), Meter, Estimator);
+
+            Pipeline = Build(db, clock, extractor);
+        }
+
+        private GenerateFactSheetPipeline Build(AppDbContext db, IClock clock, IFactExtractor extractor) =>
+            new(
                 db,
                 clock,
                 Ledger,
                 Meter,
-                Extractor,
+                extractor,
                 Moderator,
                 Events,
-                texts,
+                _texts,
                 new FixedPriceCatalog(),
                 new FixedPromptCatalog(),
-                new FactSheetJobOptions { TimeoutSeconds = 360 },
+                _job,
                 _extraction,
                 new SimilaritySettings(),
-                NullLogger<GenerateFactSheetPipeline>.Instance);
-        }
+                _logger);
+
+        /// <summary>
+        /// A second pipeline over the same run, the same collaborators and its own write context: the delivery
+        /// seam of the claim race, where two jobs work one run at once.
+        /// </summary>
+        /// <returns>The second pipeline.</returns>
+        public GenerateFactSheetPipeline SecondPipeline() =>
+            Build(_database.CreateAppDbContext(new TestCurrentUser { Id = UserId }, new FakeClock(Now)), new FakeClock(Now), Extractor);
 
         public Guid UserId { get; }
 
@@ -694,6 +859,9 @@ public sealed class GenerateFactSheetPipelineTests(TestDatabase database) : Inte
         public RecordingLedger Ledger { get; } = new();
 
         public RecordingMeter Meter { get; } = new();
+
+        /// <summary>The D1 bound the production extractor writes for a dispatched call its caller cancelled.</summary>
+        public IFactSheetCostEstimator Estimator { get; } = new FixedFactSheetEstimator();
 
         public Task RunAsync(CancellationToken ct = default) => Pipeline.RunAsync(RunId, ct == default ? Ct : ct);
 
@@ -732,7 +900,8 @@ public sealed class GenerateFactSheetPipelineTests(TestDatabase database) : Inte
                 new FakeExtractedTextStore(),
                 _extraction,
                 NoteSourceId,
-                UrlSourceId);
+                UrlSourceId,
+                _job);
         }
 
         public async Task<GenerationRun> ReadRunAsync()
@@ -866,12 +1035,39 @@ public sealed class GenerateFactSheetPipelineTests(TestDatabase database) : Inte
     {
         public List<UsageItem> Items { get; } = [];
 
+        /// <summary>Makes every write fail, the way an unavailable meter does.</summary>
+        public bool ThrowOnRecord { get; set; }
+
         public Task RecordAsync(UsageItem item, CancellationToken ct)
         {
+            if (ThrowOnRecord)
+            {
+                throw new InvalidOperationException("The usage meter is unavailable.");
+            }
+
             Items.Add(item);
 
             return Task.CompletedTask;
         }
+    }
+
+    /// <summary>Records the level and the event id of every entry the pipeline writes, and nothing else.</summary>
+    private sealed class RecordingLogger : ILogger<GenerateFactSheetPipeline>
+    {
+        public List<(LogLevel Level, EventId Event)> Entries { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state)
+            where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel,
+            EventId eventId,
+            TState state,
+            Exception? exception,
+            Func<TState, Exception?, string> formatter) =>
+            Entries.Add((logLevel, eventId));
     }
 
     private sealed class FixedPriceCatalog : IPriceCatalog
@@ -904,5 +1100,38 @@ public sealed class GenerateFactSheetPipelineTests(TestDatabase database) : Inte
         public string GetStepPrompt(PromptStep promptStep) => string.Empty;
 
         public ReadOnlyMemory<byte> GetSchema(string name) => ReadOnlyMemory<byte>.Empty;
+    }
+
+    /// <summary>
+    /// A text client whose call never comes back: it optionally marks the request dispatched (the transport's own
+    /// act, <see cref="TextCallScope"/>), runs the hook, then hangs until the caller's token cancels it. The
+    /// before-dispatch case models a request cancelled before it ever left this process (SEC-2).
+    /// </summary>
+    private sealed class HangingTextClient(bool dispatch, Action? onCall = null) : ITextClient
+    {
+        public async ValueTask<TextCallResult<T>> CallAsync<T>(TextCallRequest req, CancellationToken ct)
+            where T : class
+        {
+            if (dispatch)
+            {
+                req.MarkDispatched("gpt-6-luna");
+            }
+
+            onCall?.Invoke();
+
+            await Task.Delay(Timeout.InfiniteTimeSpan, ct).ConfigureAwait(false);
+
+            throw new UnreachableException("The hanging client only leaves through its token.");
+        }
+    }
+
+    /// <summary>The D1 bound the SEC-2 row is written at, the same value the world's run reserved.</summary>
+    private sealed class FixedFactSheetEstimator : IFactSheetCostEstimator
+    {
+        /// <summary>The worst-case cost every test run reserves and the estimator reports.</summary>
+        public const decimal Bound = 0.25m;
+
+        public Task<ErrorOr<UsageBound>> WorstCaseAsync(CancellationToken ct) =>
+            Task.FromResult<ErrorOr<UsageBound>>(new UsageBound(Bound, 60_000, 4_000));
     }
 }

@@ -81,6 +81,16 @@ public sealed class FactSheetTests
         Should.Throw<ArgumentException>(() => Create(stranger));
     }
 
+    [Fact]
+    public void CreateDraft_SourceAliasOutsideTheAliasMap_Throws()
+    {
+        // The stored citation is the (alias, id) pair: an alias the map does not name is as unusable as an id
+        // it does not carry, because a reader resolves the alias through this map (CODE-11b).
+        var strangerAlias = new FactItem("f1", "A fact.", [SourceId], ["n1"], null, FactConfidence.High, FactOrigin.Model);
+
+        Should.Throw<ArgumentException>(() => Create(strangerAlias));
+    }
+
     [Theory]
     [InlineData("f0")]
     [InlineData("f")]

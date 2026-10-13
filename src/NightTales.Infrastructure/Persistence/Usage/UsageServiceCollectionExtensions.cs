@@ -56,6 +56,7 @@ public static class UsageServiceCollectionExtensions
                 }
             })
             .ValidateOnStart();
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IValidateOptions<FactSheetCostOptions>, FactSheetCostOptionsValidator>());
         services.TryAddSingleton(provider => provider.GetRequiredService<IOptions<FactSheetCostOptions>>().Value);
         services.TryAddSingleton<IFactSheetCostEstimator, FactSheetCostEstimator>();
 

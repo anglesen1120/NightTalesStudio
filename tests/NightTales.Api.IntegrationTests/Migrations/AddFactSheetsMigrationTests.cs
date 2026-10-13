@@ -258,7 +258,8 @@ public sealed class AddFactSheetsMigrationTests(TestDatabase database) : Integra
         // small here, so the plan is forced off the sequential scan, as the retention-sweep test does.
         await using var connection = new NpgsqlConnection(Database.ConnectionString);
         await connection.OpenAsync(Ct);
-        await using (var off = new NpgsqlCommand("SET enable_seqscan = off; SET enable_bitmapscan = off", connection))
+        // ANALYZE first: without statistics the planner's choice among the episode indexes is not stable.
+        await using (var off = new NpgsqlCommand("ANALYZE generation_runs; SET enable_seqscan = off; SET enable_bitmapscan = off", connection))
         {
             await off.ExecuteNonQueryAsync(Ct);
         }

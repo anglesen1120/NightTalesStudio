@@ -7,23 +7,38 @@ namespace NightTales.Application.Features.Research.Jobs;
 /// <c>FactSheet:Job</c>. The key has an in-code default, so it is not a required start-up key; a value outside
 /// the bounds fails the Worker's start-up.
 /// </summary>
+/// <remarks>
+/// The deadline covers everything one run does around the paid call: the claim and the plan, the free D12
+/// source pre-check (<c>OpenAi:Moderation:TimeoutSeconds</c>, 15 s, likewise one timeout per attempt plus its
+/// retry wait), and the extraction itself, which the adapter bounds at <c>OpenAi:RequestTimeout:Facts</c> (60 s)
+/// per attempt with one retry. A deadline shorter than that cannot cover even one call, so a run would be
+/// cancelled mid-flight with the request already sent and billed, and the invalid-output retry could never fit:
+/// a shorter deadline can only lose money. The floor is therefore moderation plus two adapter timeouts
+/// (<see cref="MinTimeoutSeconds"/>) and the default adds the plan, the save and shutdown headroom.
+/// </remarks>
 public sealed class FactSheetJobOptions
 {
     /// <summary>The configuration section name.</summary>
     public const string SectionName = "FactSheet:Job";
 
     /// <summary>
-    /// The smallest accepted timeout. Below it the one paid call cannot fit: the OpenAI adapter's own
-    /// <c>OpenAi:RequestTimeout:Facts</c> of 60 s would be cancelled mid-flight, with the request already sent
-    /// and billed, so a shorter run deadline can only lose money.
+    /// The smallest accepted timeout: the free moderation call (15 s) plus the two adapter timeouts one run can
+    /// need (the extraction and its single invalid-output retry, 60 s each) and the headroom of one retry wait.
+    /// Below it the paid call is cancelled mid-flight, with the request already sent and billed, so the run
+    /// deadline can only lose money.
     /// </summary>
-    public const int MinTimeoutSeconds = 60;
+    public const int MinTimeoutSeconds = 150;
 
-    /// <summary>The largest accepted timeout.</summary>
-    public const int MaxTimeoutSeconds = 3_600;
+    /// <summary>
+    /// The largest accepted timeout: the story sweeper's own window (the <c>Story:Job:TimeoutSeconds</c> of 360 s
+    /// plus its grace — the point at which that sweeper fails a <c>running</c> run). A longer fact deadline would
+    /// let the sweeper fail a healthy run this job still believes is inside its own budget, so the ceiling is
+    /// that window, not an arbitrary operational value.
+    /// </summary>
+    public const int MaxTimeoutSeconds = 360;
 
     /// <summary>The run deadline, counted from <c>started_at</c>.</summary>
-    public int TimeoutSeconds { get; set; } = 60;
+    public int TimeoutSeconds { get; set; } = 240;
 
     /// <summary>The deadline as a <see cref="TimeSpan"/>.</summary>
     public TimeSpan Timeout => TimeSpan.FromSeconds(TimeoutSeconds);

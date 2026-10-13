@@ -226,6 +226,23 @@ public sealed class GenerateFactSheetCommandHandlerTests(TestDatabase database) 
         (await world.RunCountAsync()).ShouldBe(1, "the refused insert rolled back");
     }
 
+    [Fact]
+    public async Task GenerateFactSheetCommand_ArchivedSeries_ReturnsSeriesArchived()
+    {
+        // SEC-3: archiving a series must stop new paid runs for its episodes, exactly as the story command
+        // refuses to generate a story for one.
+        var world = await NewWorldAsync(sources: Sources.FetchedNote);
+        await Database.ExecuteAsync($"UPDATE series SET archived_at = now() WHERE id = '{world.SeriesId}'", Ct);
+
+        var result = await world.SendAsync(new GenerateFactSheetCommand(world.EpisodeId, "k1"));
+
+        result.IsError.ShouldBeTrue();
+        result.FirstError.Code.ShouldBe(ErrorCodes.SeriesArchived);
+        await world.ShouldHaveNoRunAsync();
+        world.Budget.Checked.ShouldBeEmpty("the archived series is refused before the cost is estimated");
+        world.Ledger.Reservations.ShouldBeEmpty();
+    }
+
     /// <summary>Which sources the episode already has; a note is born <c>fetched</c>, a url source starts <c>pending</c>.</summary>
     private enum Sources
     {
@@ -256,6 +273,8 @@ public sealed class GenerateFactSheetCommandHandlerTests(TestDatabase database) 
     private sealed class World(TestDatabase database, Guid userId, Guid seriesId, Guid episodeId)
     {
         public Guid UserId => userId;
+
+        public Guid SeriesId => seriesId;
 
         public Guid EpisodeId => episodeId;
 

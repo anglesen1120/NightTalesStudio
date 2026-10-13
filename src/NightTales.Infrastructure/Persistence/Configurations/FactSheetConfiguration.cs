@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using NightTales.Domain.Episodes;
 using NightTales.Domain.Research;
 using NightTales.Domain.Stories.Generation;
+using NightTales.Infrastructure.Persistence.Conventions;
 
 namespace NightTales.Infrastructure.Persistence.Configurations;
 
@@ -28,10 +29,10 @@ namespace NightTales.Infrastructure.Persistence.Configurations;
 /// </para>
 /// <para>
 /// <c>facts</c> and <c>source_aliases</c> are the canonical JSON documents of
-/// <see cref="FactSheetJson"/>: their conversions are registered pre-convention
-/// (<see cref="Conventions.ModelConfigurationBuilderExtensions"/>) so EF discovers both as converted scalars
-/// instead of navigations, and the stored bytes are exactly the bytes <c>content_sha256</c> hashes. This
-/// configuration only fixes their column type.
+/// <see cref="FactSheetJson"/>: each property carries its own
+/// <see cref="FactSheetFactsJsonConverter"/>/<see cref="FactSheetAliasesJsonConverter"/> conversion, so the
+/// stored bytes are exactly the bytes <c>content_sha256</c> hashes and no model-wide convention has to know
+/// these two document shapes.
 /// </para>
 /// <para>
 /// The id is <c>Guid.CreateVersion7()</c> and every other value is supplied by
@@ -65,10 +66,17 @@ internal sealed class FactSheetConfiguration : IEntityTypeConfiguration<FactShee
         builder.Property(sheet => sheet.UpdatedAt).HasColumnType("timestamptz");
         builder.Property(sheet => sheet.ApprovedAt).HasColumnType("timestamptz");
 
-        // The canonical documents (see the class remarks): the conversion is pre-convention, only the
-        // column type is fixed here.
-        builder.Property(sheet => sheet.Facts).HasColumnType("jsonb").IsRequired();
-        builder.Property(sheet => sheet.SourceAliases).HasColumnType("jsonb").IsRequired();
+        // The canonical documents (see the class remarks): each conversion is declared on its own property, so
+        // the shared conventions stay free of the two document types (CODE-9: a model-wide conversion for
+        // `IReadOnlyList<FactItem>` would silently capture any future entity with that shape).
+        builder.Property(sheet => sheet.Facts)
+            .HasConversion(new FactSheetFactsJsonConverter())
+            .HasColumnType("jsonb")
+            .IsRequired();
+        builder.Property(sheet => sheet.SourceAliases)
+            .HasConversion(new FactSheetAliasesJsonConverter())
+            .HasColumnType("jsonb")
+            .IsRequired();
 
         // NTS-922-SEC-001 (09 W3 CR-46): the alternate key (id, user_id) the three CR-29 fact-sheet FKs
         // target, and the same-owner FK of this table (see SeriesConfiguration).

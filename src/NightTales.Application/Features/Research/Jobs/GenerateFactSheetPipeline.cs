@@ -37,8 +37,9 @@ namespace NightTales.Application.Features.Research.Jobs;
 /// <para>
 /// Stages on <c>generation_runs.stage</c>: <c>running → writing</c> (the plan, the source pre-check and the
 /// call) <c>→ checking</c> (the validator) <c>→ saving</c> (the draft, the run outcome
-/// and the settlement). The claim is a conditional <c>UPDATE … WHERE id AND status IN (queued, running)</c>
-/// inside a transaction, so two deliveries of the same run cannot both work it and a run the sweeper already
+/// and the settlement). The claim is a conditional <c>UPDATE … WHERE id AND status = queued</c> (or
+/// <c>running</c> past the run deadline plus the sweep grace) inside a transaction, so two deliveries of the
+/// same run cannot both work it, a run another worker holds is left alone, and a run the sweeper already
 /// ended is rejected.
 /// </para>
 /// <para>
@@ -294,14 +295,29 @@ public sealed partial class GenerateFactSheetPipeline(
     {
         var now = clock.UtcNow;
 
+        // Only a queued run, or a running one its worker stopped reporting on (older than the run deadline plus
+        // the sweep grace), is claimable: the whole decision is one UPDATE under the row lock, so two deliveries
+        // of the same run cannot both pass it. The earlier load's `held` guard is the fast path; this is the
+        // authority, because a run still `running` when this delivery loaded it can be claimed by another.
+        var staleBefore = now - s.Timeout - SweepGrace;
+
         await using var write = await BeginAsync(ct).ConfigureAwait(false);
 
         // Held under the row lock: a concurrent delivery, the sweeper or an admin ending the run waits for this
         // write and then fails its own claim on the committed state.
         var claimed = await db.GenerationRuns
             .Where(candidate => candidate.Id == s.Run.Id
-                && (candidate.Status == GenerationRunStatus.Queued || candidate.Status == GenerationRunStatus.Running))
-            .ExecuteUpdateAsync(set => set.SetProperty(candidate => candidate.UpdatedAt, now), ct)
+                && (candidate.Status == GenerationRunStatus.Queued
+                    || (candidate.Status == GenerationRunStatus.Running
+                        && (candidate.StartedAt ?? candidate.QueuedAt) < staleBefore)))
+            .ExecuteUpdateAsync(
+                set => set
+                    .SetProperty(candidate => candidate.UpdatedAt, now)
+                    // The claim stamps the takeover instant, so a stale run this delivery just took over is no
+                    // longer stale for the next delivery: without it the same stale window would admit a second
+                    // claim and a second paid call. A queued run gets the same value `Start` writes below.
+                    .SetProperty(candidate => candidate.StartedAt, now),
+                ct)
             .ConfigureAwait(false);
         if (claimed == 0)
         {
@@ -335,7 +351,10 @@ public sealed partial class GenerateFactSheetPipeline(
         return true;
     }
 
-    // Step 0b: reload the episode state and the fetched sources, then plan the call's input.
+    // Step 0b: the run's own re-check of what it is about to work on, then the input plan. The episode is
+    // re-checked by its topic and its editability, and the source set by its fetched rows: the episode's
+    // `previous_episode_status` recorded when the run was queued is never compared, so an episode that moved on
+    // (or lost its sources) while the run waited fails here as `sources_changed` rather than by a status diff.
     private async Task<bool> PlanAsync(RunState s, CancellationToken ct)
     {
         if (s.Series.Topic != Topic.TrueCrime || !s.Episode.CanEditStory)
@@ -554,14 +573,20 @@ public sealed partial class GenerateFactSheetPipeline(
         var validated = FactSheetValidator.Validate(draft, context, request => ScoreFact(s.Series.Language, request));
         s.Validation = validated;
 
+        // The save re-reads this watermark under the episode's row lock: a version saved in between must fail the
+        // run (F12) instead of letting this one reuse the fact ids it numbered.
+        s.ValidatedMaxFactId = existingMaxFactId;
+
         return await RecordProvenanceAsync(s, validated, ct).ConfigureAwait(false);
     }
 
-    // The 02.5.6 adapter: the statement's overlap against the cited sources, fail-closed on a broken double.
+    // The 02.5.6 adapter: the statement's overlap against the plan's url-source corpus, fail-closed on a broken
+    // double. The validator passes the whole corpus (SEC-5), so a statement copied from any source is scored even
+    // when the model cited a different one.
     private decimal ScoreFact(Language language, ScoreFactRequest request)
     {
-        var cited = request.CitedSources.Select(source => new CorpusText(source.SourceId, source.Text)).ToArray();
-        var score = SimilarityScorer.ScoreFact(request.Statement, cited, SimilarityOptions.For(language, similaritySettings));
+        var corpus = request.Corpus.Select(source => new CorpusText(source.SourceId, source.Text)).ToArray();
+        var score = SimilarityScorer.ScoreFact(request.Statement, corpus, SimilarityOptions.For(language, similaritySettings));
 
         // A NaN, an infinity or a value outside [0,1] is not a score. Treat it as a verbatim copy so the fact is
         // dropped, rather than letting a cast throw and failing the whole run on an unrelated path.
@@ -589,64 +614,106 @@ public sealed partial class GenerateFactSheetPipeline(
         };
     }
 
-    // Step 4 (the `saving` stage): one transaction for the draft, the run outcome and the episode's event.
+    // Step 4 (the `saving` stage): one transaction for the draft, the run outcome and the episode's event. The
+    // version and the id watermark are read inside that transaction, under the episode's row lock: a version
+    // saved between the validation and this write must not let this run reuse fact ids (F12) or take a version
+    // the other writer already took.
     private async Task SaveAsync(RunState s, CancellationToken ct)
     {
         var now = clock.UtcNow;
         var validation = s.Validation!;
 
-        var lastVersion = await db.FactSheets
-            .Where(sheet => sheet.EpisodeId == s.Episode.Id)
-            .MaxAsync(sheet => (int?)sheet.Version, ct)
-            .ConfigureAwait(false);
-
-        var sheet = FactSheet.CreateDraft(
-            s.Run.UserId,
-            s.Episode.Id,
-            (lastVersion ?? 0) + 1,
-            validation.Facts,
-            s.Plan!.Sources.ToDictionary(source => source.Alias, source => source.SourceId, StringComparer.Ordinal),
-            s.Plan.InputTruncated,
-            validation.NewMaxFactId,
-            s.Run.Id,
-            s.PromptVersion,
-            now);
-
-        db.FactSheets.Add(sheet);
-
-        var cost = s.Run.ReservationId is { } reservation
-            ? await db.UsageRecords
-                .Where(record => record.ReservationId == reservation)
-                .SumAsync(record => record.CostUsd, ct)
-                .ConfigureAwait(false)
-            : 0m;
-
-        s.Run.Succeed(cost, null, sheet.Id, now);
-
-        var raised = s.Episode.RaiseFactSheetGenerated(s.Run.Id, sheet.Id, sheet.Version, s.Run.Trigger, now);
-        if (raised.IsError)
-        {
-            LogStopped(s.Run.Id, raised.FirstError.Code);
-            DiscardPendingChanges();
-            return;
-        }
+        var outcome = SaveOutcome.Saved;
+        FactSheet? sheet = null;
 
         try
         {
             await using var write = await BeginAsync(ct).ConfigureAwait(false);
-            await db.SaveChangesAsync(ct).ConfigureAwait(false);
-            await write.CommitAsync(ct).ConfigureAwait(false);
+
+            // The row lock first, then the reads (the command handler's order): the episode serialises the
+            // version counter and the id watermark of every fact sheet written for it.
+            await db.LockEpisodeForUpdateAsync(s.Episode.Id, ct).ConfigureAwait(false);
+
+            var lastVersion = await db.FactSheets
+                .Where(candidate => candidate.EpisodeId == s.Episode.Id)
+                .MaxAsync(candidate => (int?)candidate.Version, ct)
+                .ConfigureAwait(false);
+
+            var storedMaxFactId = await db.FactSheets
+                .Where(candidate => candidate.EpisodeId == s.Episode.Id)
+                .MaxAsync(candidate => (int?)candidate.MaxFactId, ct)
+                .ConfigureAwait(false) ?? 0;
+
+            if (storedMaxFactId != s.ValidatedMaxFactId)
+            {
+                // A version landed between the validation and this write: its ids are already handed out, so this
+                // draft would reuse them (F12). The same typed failure as the version collision below.
+                outcome = SaveOutcome.VersionConflict;
+            }
+            else
+            {
+                sheet = FactSheet.CreateDraft(
+                    s.Run.UserId,
+                    s.Episode.Id,
+                    (lastVersion ?? 0) + 1,
+                    validation.Facts,
+                    s.Plan!.Sources.ToDictionary(source => source.Alias, source => source.SourceId, StringComparer.Ordinal),
+                    s.Plan.InputTruncated,
+                    validation.NewMaxFactId,
+                    s.Run.Id,
+                    s.PromptVersion,
+                    now);
+
+                db.FactSheets.Add(sheet);
+
+                var cost = s.Run.ReservationId is { } reservation
+                    ? await db.UsageRecords
+                        .Where(record => record.ReservationId == reservation)
+                        .SumAsync(record => record.CostUsd, ct)
+                        .ConfigureAwait(false)
+                    : 0m;
+
+                s.Run.Succeed(cost, null, sheet.Id, now);
+
+                var raised = s.Episode.RaiseFactSheetGenerated(s.Run.Id, sheet.Id, sheet.Version, s.Run.Trigger, now);
+                if (raised.IsError)
+                {
+                    // A saved draft always carries a 1-based version and non-empty ids, so this is a programming
+                    // error: the run is failed typed below instead of staying running with its reservation held.
+                    LogStopped(s.Run.Id, raised.FirstError.Code);
+                    outcome = SaveOutcome.Unhandled;
+                }
+                else
+                {
+                    await db.SaveChangesAsync(ct).ConfigureAwait(false);
+                    await write.CommitAsync(ct).ConfigureAwait(false);
+                }
+            }
         }
         catch (DbUpdateException exception) when (IsUniqueViolation(exception))
         {
             // Another run already claimed this (episode_id, version): the D9 version scheme is beaten by a race,
             // which is a typed failure, never a 500 at the job's log.
-            DiscardPendingChanges();
-            await FailAsync(s, ErrorCodes.FactSheetGenerationFailed, DetailVersionConflict, RefundFailed).ConfigureAwait(false);
-            return;
+            outcome = SaveOutcome.VersionConflict;
         }
 
-        LogSucceeded(s.Run.Id, sheet.Id, sheet.Version, validation.Facts.Count, validation.ModelFactCount);
+        switch (outcome)
+        {
+            case SaveOutcome.VersionConflict:
+                DiscardPendingChanges();
+                await FailAsync(s, ErrorCodes.FactSheetGenerationFailed, DetailVersionConflict, RefundFailed).ConfigureAwait(false);
+                return;
+
+            case SaveOutcome.Unhandled:
+                DiscardPendingChanges();
+                await FailAsync(s, ErrorCodes.FactSheetGenerationFailed, DetailUnexpected, RefundFailed).ConfigureAwait(false);
+                return;
+
+            default:
+                break;
+        }
+
+        LogSucceeded(s.Run.Id, sheet!.Id, sheet.Version, validation.Facts.Count, validation.ModelFactCount);
         await SettleAsync(s.Run).ConfigureAwait(false);
     }
 
@@ -736,8 +803,10 @@ public sealed partial class GenerateFactSheetPipeline(
         }
         catch (Exception exception)
         {
-            // Type only. Metering is evidence, not control flow: the run's own outcome must still be written.
-            LogMeterFailed(s.Run.Id, exception.GetType().Name);
+            // Ids and the exception type only: a provider or database message can echo content (D19). Metering is
+            // evidence, not control flow, so the run's own outcome is still written — but a lost row is an error,
+            // because the platform spend cap is read from usage_records.
+            LogMeterFailed(s.Run.Id, s.Run.ReservationId, result.RequestId, exception.GetType().Name);
         }
     }
 
@@ -956,6 +1025,19 @@ public sealed partial class GenerateFactSheetPipeline(
     private DbContext Context =>
         db as DbContext ?? throw new InvalidOperationException("The fact-sheet pipeline needs the EF Core context behind IAppDbContext.");
 
+    /// <summary>How the saving stage ended: one clean save, or one of the two ways it cannot take the version.</summary>
+    private enum SaveOutcome
+    {
+        /// <summary>The draft, the run outcome and the episode's event are committed.</summary>
+        Saved,
+
+        /// <summary>The version or the id watermark moved since the validation, or the insert met <c>23505</c>.</summary>
+        VersionConflict,
+
+        /// <summary>An internal invariant failed (an unreachable domain guard), so the run is failed typed.</summary>
+        Unhandled,
+    }
+
     // The write transaction of one call; disposing it without a commit rolls every pending write back.
     private sealed class WriteScope(IDbContextTransaction? transaction) : IAsyncDisposable
     {
@@ -982,6 +1064,9 @@ public sealed partial class GenerateFactSheetPipeline(
         public RunContext? Context { get; set; }
 
         public FactInputPlan? Plan { get; set; }
+
+        /// <summary>The episode's fact-id watermark as the validation read it (the save re-checks it under the row lock).</summary>
+        public int ValidatedMaxFactId { get; set; }
 
         public FactSheetValidationResult? Validation { get; set; }
 
@@ -1048,9 +1133,9 @@ public sealed partial class GenerateFactSheetPipeline(
 
     [LoggerMessage(
         EventId = 6179,
-        Level = LogLevel.Warning,
-        Message = "generate_fact_sheet_job_meter_failed runId={RunId} error={Error}")]
-    private partial void LogMeterFailed(Guid runId, string error);
+        Level = LogLevel.Error,
+        Message = "generate_fact_sheet_job_meter_failed runId={RunId} reservationId={ReservationId} requestId={RequestId} error={Error}")]
+    private partial void LogMeterFailed(Guid runId, Guid? reservationId, string? requestId, string error);
 
     [LoggerMessage(
         EventId = 6180,

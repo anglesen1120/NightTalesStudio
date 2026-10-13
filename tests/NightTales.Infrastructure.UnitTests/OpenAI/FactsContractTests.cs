@@ -87,6 +87,8 @@ public sealed class FactsContractTests
     [InlineData(nameof(FactsOptions.MaxSources), 11)]
     [InlineData(nameof(FactsOptions.PerSourceCharCap), 0)]
     [InlineData(nameof(FactsOptions.MaxInputTokens), 0)]
+    [InlineData(nameof(FactsOptions.MaxInputTokens), FactInputLimits.MaxMaxInputTokens + 1)]
+    [InlineData(nameof(FactsOptions.MaxInputTokens), int.MaxValue)]
     [InlineData(nameof(FactsOptions.MaxFacts), 4)]
     [InlineData(nameof(FactsOptions.MaxFacts), 41)]
     public void FactsOptions_OutOfRangeValues_FailStartupValidation(string key, int value)

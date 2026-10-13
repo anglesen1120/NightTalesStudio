@@ -66,6 +66,13 @@ public sealed class FactSheetCostEstimator(
             rates.SurchargeThresholdTokens)
             ?? throw new InvalidOperationException("The calculator returned no cost for a bounded call.");
 
-        return new UsageBound(cost, checked((int)inputBound), MaxOutputTokens);
+        return new UsageBound(cost, BoundTokens(inputBound), MaxOutputTokens);
     }
+
+    /// <summary>
+    /// The bound's token count, saturated to <see cref="int.MaxValue"/>: a ceiling that reached the estimator
+    /// without the start-up bounds of <c>FactSheetCostOptionsValidator</c> (P7) must still not turn a request
+    /// into an overflow — the cost above prices the whole bound either way.
+    /// </summary>
+    private static int BoundTokens(long inputBound) => (int)Math.Min(inputBound, int.MaxValue);
 }

@@ -2,6 +2,8 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using ErrorOr;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using NightTales.Api.IntegrationTests.Harness;
@@ -11,6 +13,8 @@ using NightTales.Application.Abstractions.Usage;
 using NightTales.Domain.Episodes;
 using NightTales.Domain.Research;
 using NightTales.Domain.Series;
+using NightTales.Domain.Stories.Generation;
+using NightTales.Infrastructure.Persistence;
 using NightTales.TestKit;
 using NightTales.TestKit.Api;
 using NightTales.TestKit.Auth;
@@ -248,7 +252,44 @@ public sealed class FactSheetGenerateEndpointTests(TestDatabase database) : Inte
             .ShouldBe(0, "a refused command rolls its idempotency claim back");
     }
 
-    private ApiFactory Factory(string dailyCap = "1000") =>
+    [Fact]
+    public async Task PostFactSheetGenerate_RunCommittedAfterThePreCheck_Returns409FactSheetGenerationInProgress()
+    {
+        // CODE-10: the pre-check inside the command runs under the episode's row lock (FOR NO KEY UPDATE, which
+        // does not exclude a foreign-key read), so a second writer can commit an active fact-sheet run for the
+        // same episode between that check and this handler's insert. The insert then loses on
+        // `ux_generation_runs_active_episode` (23505) and the unit of work must answer with the same 409 the
+        // pre-check would have returned - the run row must never surface as a 500.
+        var world = await SeedAsync();
+        var competing = new CompetingRunInterceptor(Database, world);
+        using var factory = Factory(configure: services =>
+            services.AddDbContext<AppDbContext>((_, options) => options.AddInterceptors(competing)));
+        using var client = factory.ClientFor(world.UserId);
+
+        using var response = await PostAsync(client, world.EpisodeId, "k1");
+
+        competing.RowsInserted.ShouldBe(1, "the competing run must claim the episode before this handler's insert");
+        response.StatusCode.ShouldBe(HttpStatusCode.Conflict, await response.Content.ReadAsStringAsync(Ct));
+        (await ReadProblemAsync(response)).Code.ShouldBe("fact_sheet_generation_in_progress");
+        SqlProbe.Count(Database, $"SELECT count(*) FROM generation_runs WHERE episode_id = '{world.EpisodeId}'")
+            .ShouldBe(1, "only the competing row survives; the refused insert rolled back");
+        SqlProbe.Count(Database, $"SELECT count(*) FROM outbox_messages WHERE type = 'fact_sheet_generation_requested.v1' AND user_id = '{world.UserId}'")
+            .ShouldBe(0, "the refused command commits no outbox row");
+        SqlProbe.Count(Database, $"SELECT count(*) FROM idempotency_keys WHERE user_id = '{world.UserId}'")
+            .ShouldBe(0, "a refused command rolls its idempotency claim back");
+
+        // The competing row is this test's only trace, and an active run row left behind in a database another
+        // test also queries can move that test's query plan: remove it again. The delete names the whole episode
+        // as well as the id, so it cannot miss the row that was just asserted. (The refused insert left nothing.)
+        SqlProbe.Execute(
+            Database,
+            $"DELETE FROM generation_runs WHERE id = '{competing.InsertedRunId}' "
+            + $"OR episode_id = '{world.EpisodeId}'");
+        SqlProbe.Count(Database, $"SELECT count(*) FROM generation_runs WHERE episode_id = '{world.EpisodeId}'")
+            .ShouldBe(0);
+    }
+
+    private ApiFactory Factory(string dailyCap = "1000", Action<IServiceCollection>? configure = null) =>
         new ApiFactory(Database, new FakeClock(Start))
             .WithSetting("Budget:MaxPlatformCostUsdPerDay", dailyCap)
             .WithSetting("Budget:MaxPlatformCostUsdPerMonth", "100000")
@@ -256,6 +297,7 @@ public sealed class FactSheetGenerateEndpointTests(TestDatabase database) : Inte
             {
                 services.RemoveAll<IFactSheetCostEstimator>();
                 services.AddSingleton<IFactSheetCostEstimator, FixedEstimator>();
+                configure?.Invoke(services);
             });
 
     private static Task<HttpResponseMessage> PostAsync(HttpClient client, Guid episodeId, string key)
@@ -314,5 +356,63 @@ public sealed class FactSheetGenerateEndpointTests(TestDatabase database) : Inte
     {
         public Task<ErrorOr<UsageBound>> WorstCaseAsync(CancellationToken ct) =>
             Task.FromResult<ErrorOr<UsageBound>>(new UsageBound(0.5m, 1000, 500));
+    }
+
+    /// <summary>
+    /// The deterministic seam of the (episode, kind) race of CODE-10: when this handler's own run insert is being
+    /// saved, the hook commits a competing active fact-sheet run for the same episode from a second connection -
+    /// the state a request that shared the episode's row lock just before this one would have left behind. The
+    /// partial unique index then refuses this handler's insert, and the unit of work has to map the 23505 to the
+    /// same 409 the pre-check returns.
+    /// </summary>
+    private sealed class CompetingRunInterceptor(TestDatabase database, World world) : SaveChangesInterceptor
+    {
+        /// <summary>How many competing rows the hook wrote; exactly one per test.</summary>
+        public int RowsInserted { get; private set; }
+
+        /// <summary>The id of the competing row, so the test can take it away again.</summary>
+        public Guid InsertedRunId { get; private set; }
+
+        /// <inheritdoc />
+        public override async ValueTask<InterceptionResult<int>> SavingChangesAsync(
+            DbContextEventData eventData,
+            InterceptionResult<int> result,
+            CancellationToken cancellationToken = default)
+        {
+            ArgumentNullException.ThrowIfNull(eventData);
+
+            var queuesItsRun = eventData.Context?.ChangeTracker
+                .Entries<GenerationRun>()
+                .Any(entry => entry.State == EntityState.Added && entry.Entity.EpisodeId == world.EpisodeId) == true;
+
+            if (RowsInserted > 0 || !queuesItsRun)
+            {
+                return result;
+            }
+
+            RowsInserted++;
+
+            await using var competing = database.CreateAppDbContext(
+                new TestCurrentUser { Id = world.UserId },
+                new FakeClock(Start));
+            var run = GenerationRun.Queue(
+                world.UserId,
+                world.SeriesId,
+                world.EpisodeId,
+                GenerationKind.FactSheet,
+                GenerationTrigger.User,
+                idempotencyKey: null,
+                previousEpisodeStatus: EpisodeStatus.Draft,
+                inputFactSheetId: null,
+                reservationId: Guid.CreateVersion7(),
+                worstCaseUsd: 0.5m,
+                Start,
+                countsTowardLimit: false).Value;
+            competing.GenerationRuns.Add(run);
+            await competing.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            InsertedRunId = run.Id;
+
+            return result;
+        }
     }
 }

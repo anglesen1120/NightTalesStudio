@@ -47,6 +47,14 @@ public sealed record FactInputLimits(int MaxSources, int PerSourceCharCap, int M
     /// <summary>The default total input budget in estimated tokens (<c>Facts:MaxInputTokens</c>).</summary>
     public const int DefaultMaxInputTokens = 60_000;
 
+    /// <summary>
+    /// The largest accepted <c>Facts:MaxInputTokens</c> (02.5.3-T2, P7). The ceiling is bound-checked at
+    /// start-up by <c>FactsOptionsValidator</c> and <c>FactSheetCostOptionsValidator</c> because the cost
+    /// estimator books four times this ceiling as input bytes: a larger value would put one run's worst-case
+    /// bound far above any real request, and the bound's token count is an <see cref="int"/>.
+    /// </summary>
+    public const int MaxMaxInputTokens = 100_000;
+
     /// <summary>The floor a per-source cap is halved to before the total-budget loop gives up.</summary>
     public const int MinimumPerSourceCharCap = 1_000;
 }

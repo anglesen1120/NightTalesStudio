@@ -88,7 +88,7 @@ public sealed class FactSheet : Entity, IUserOwned, IAuditable
     /// <param name="promptVersion">The D5 prompt version of the run.</param>
     /// <param name="createdAt">The job's clock reading.</param>
     /// <returns>The new draft version, with <see cref="ContentSha256"/> computed.</returns>
-    /// <exception cref="ArgumentException">A fact cites no source, cites a source missing from the alias map, carries a malformed or repeated id, or a required owner/episode/prompt version is empty.</exception>
+    /// <exception cref="ArgumentException">A fact cites no source, cites a source missing from the alias map, names a source alias the map does not carry, carries a malformed or repeated id, or a required owner/episode/prompt version is empty.</exception>
     /// <exception cref="ArgumentOutOfRangeException">The version is below 1, <paramref name="maxFactId"/> is negative or below the highest fact id.</exception>
     public static FactSheet CreateDraft(
         Guid userId,
@@ -152,6 +152,18 @@ public sealed class FactSheet : Entity, IUserOwned, IAuditable
                 {
                     throw new ArgumentException(
                         $"Fact source '{sourceId}' is not in the fact sheet's source_aliases.",
+                        nameof(facts));
+                }
+            }
+
+            // The citation a stored fact carries is the pair (alias, id): an alias the map does not name is as
+            // unusable as an id it does not carry, because a later reader resolves the alias through this map.
+            foreach (var alias in fact.SourceAliases)
+            {
+                if (!sourceAliases.ContainsKey(alias))
+                {
+                    throw new ArgumentException(
+                        $"Fact source alias '{alias}' is not a key of the fact sheet's source_aliases.",
                         nameof(facts));
                 }
             }

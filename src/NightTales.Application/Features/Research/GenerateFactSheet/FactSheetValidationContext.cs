@@ -9,7 +9,12 @@ namespace NightTales.Application.Features.Research.GenerateFactSheet;
 /// <param name="MaxFactId">The highest fact id already assigned in the episode; ids continue from here (F12).</param>
 /// <param name="OverlapBlockThreshold">The 02.5.6 <c>Similarity:FactOverlapBlock</c> threshold above which a fact is a verbatim copy.</param>
 /// <param name="MaxFacts">The fact cap of one version (40); survivors beyond it are dropped as <c>over_cap</c>.</param>
-/// <param name="SourceTexts">The text of every source that may be cited, by id; a cited id absent here is scored with no text.</param>
+/// <param name="SourceTexts">
+/// The text of every url source of the run's plan, by id — the corpus a statement is scored against. The user
+/// note is deliberately not one of them (F18), so a cited id the map does not carry is the note and is kept;
+/// a cited id the map carries with a blank text is a url source without text and fails the copy check
+/// (SEC-5).
+/// </param>
 public sealed record FactSheetValidationContext(
     IReadOnlyDictionary<string, Guid> AliasToSourceId,
     int MaxFactId,

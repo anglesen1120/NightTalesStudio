@@ -20,10 +20,21 @@ namespace NightTales.Application.Features.Research.Commands.GenerateFactSheet;
 /// granted and there is no insufficient-credit path (the story handler has none either).
 /// </summary>
 /// <remarks>
+/// <para>
 /// The episode's status is <em>not</em> changed: a fact sheet has no episode state of its own (02.5.3 plan §4.1),
-/// so the run carries the episode's current status as <c>previous_episode_status</c> and the job compares it at
-/// start (<c>sources_changed</c>). The <c>EpisodeUpdated</c> NOTIFY comes from the
-/// <c>FactSheetGenerationRequested</c> outbox row the domain event writes, never from this handler.
+/// so the run carries the episode's current status as <c>previous_episode_status</c> only. Nothing compares that
+/// value later: the job re-checks the episode's topic and editability and the fetched source set itself
+/// (GenerateFactSheetPipeline step 0b, which fails the run as <c>sources_changed</c>).
+/// </para>
+/// <para>
+/// No realtime event is sent when the run is queued. The only consumer of the
+/// <c>FactSheetGenerationRequested</c> outbox row is <c>GenerateFactSheetJobHandler</c>, which just enqueues
+/// the job (the Worker's registry, one handler per event type); the <c>EpisodeUpdated</c> NOTIFYs of this
+/// feature come from the run's terminal events instead — <c>FactSheetGenerated</c> on success and
+/// <c>FactSheetGenerationFailed</c> on a failure the pipeline itself records. A client therefore sees no
+/// "generating" signal for this feature, which is a known contract gap (02.5.3-T2 CODE-6), not intended
+/// behaviour of this handler.
+/// </para>
 /// </remarks>
 /// <param name="db">The tracked write model; the pipeline saves and commits it.</param>
 /// <param name="costEstimator">The worst-case cost of one facts call.</param>
@@ -64,6 +75,15 @@ public sealed class GenerateFactSheetCommandHandler(
         if (series is null)
         {
             return Errors.NotFound();
+        }
+
+        // SEC-3: no new run for an archived series (the same refusal as adding an episode to it, and as
+        // GenerateStoryCommandHandler returns for a story).
+        if (series.ArchivedAt is not null)
+        {
+            return Error.Conflict(
+                ErrorCodes.SeriesArchived,
+                "The series is archived; a fact sheet cannot be built for it.");
         }
 
         // A fact sheet is the true-crime path only (02.5.3 plan §4.1); there is no dedicated wrong-topic code in the
@@ -155,7 +175,8 @@ public sealed class GenerateFactSheetCommandHandler(
         db.GenerationRuns.Add(run);
 
         // The transition raises FactSheetGenerationRequested; the pipeline commits it with the run, and the
-        // Worker's consumer enqueues GenerateFactSheetJob(runId) and sends the EpisodeUpdated NOTIFY.
+        // Worker's consumer enqueues GenerateFactSheetJob(runId) — and nothing else. No EpisodeUpdated NOTIFY
+        // leaves this path: the feature's NOTIFYs are raised by the run's terminal events instead.
         var requested = episode.RequestFactSheetGeneration(run.Id, GenerationTrigger.User, now);
         if (requested.IsError)
         {

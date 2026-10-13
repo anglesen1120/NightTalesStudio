@@ -3,6 +3,7 @@ using Microsoft.Extensions.Options;
 using NightTales.Application.Abstractions.Prompts;
 using NightTales.Application.Abstractions.Research;
 using NightTales.Application.Abstractions.Text;
+using NightTales.Application.Abstractions.Usage;
 using NightTales.Application.Features.Research.Facts;
 using NightTales.Domain.Stories.Prompts;
 
@@ -21,10 +22,11 @@ namespace NightTales.Infrastructure.OpenAI;
 /// backend-side (D6/F12).
 /// </para>
 /// <para>
-/// Nothing here catches: every provider outcome is a <see cref="TextCallResult{T}"/> value returned
-/// untouched (D7), and an <see cref="OperationCanceledException"/> from the caller's own deadline is left to
-/// escape — the caller (the fact-sheet job) knows the request may have been billed and settles it (SEC-2).
-/// Metering is the job's, not this step's (D14).
+/// Nothing here catches a provider outcome: every one is a <see cref="TextCallResult{T}"/> value returned
+/// untouched (D7). The one exception is a cancellation: an <see cref="OperationCanceledException"/> raised after
+/// the request was dispatched is metered first — the provider can still bill a request that was sent — and then
+/// rethrown, exactly as <c>OpenAiStoryWriter</c> does (SEC-2). A cancellation before the request left this
+/// process records nothing. Every other outcome is the job's to meter (D14), not this step's.
 /// </para>
 /// <para>
 /// The request is a programming-error boundary: empty sources, an alias outside <c>s1…s10</c>, a duplicate
@@ -38,8 +40,21 @@ namespace NightTales.Infrastructure.OpenAI;
 /// <param name="client">Makes the structured-output call.</param>
 /// <param name="catalog">Supplies the <c>facts/v1</c> step prompt and the <c>facts.v1</c> schema.</param>
 /// <param name="options">The <c>Facts</c> input budget this call is checked against before the client is touched.</param>
-public sealed partial class OpenAiFactExtractor(ITextClient client, IPromptCatalog catalog, IOptions<FactsOptions> options) : IFactExtractor
+/// <param name="meter">Records the estimated row of a dispatched call its caller cancelled (SEC-2).</param>
+/// <param name="estimator">The D1 bound that estimated row is written at.</param>
+public sealed partial class OpenAiFactExtractor(
+    ITextClient client,
+    IPromptCatalog catalog,
+    IOptions<FactsOptions> options,
+    IUsageMeter meter,
+    IFactSheetCostEstimator estimator) : IFactExtractor
 {
+    /// <summary>
+    /// The D14 operation of the one paid call of a run, the same value
+    /// <c>GenerateFactSheetPipeline.Operation</c> meters every returned outcome under.
+    /// </summary>
+    public const string Operation = "fact_sheet";
+
     private const string SchemaName = "facts.v1";
     private const string SchemaFile = "facts.v1.json";
     private const string PromptKey = "facts/v1.md";
@@ -84,7 +99,33 @@ public sealed partial class OpenAiFactExtractor(ITextClient client, IPromptCatal
             // component is what distinguishes it.
             catalog.BuildPromptVersion(new PromptVersionParts(PromptKey, PromptKey, SchemaKey)));
 
-        return await client.CallAsync<FactsV1>(call, ct).ConfigureAwait(false);
+        try
+        {
+            return await client.CallAsync<FactsV1>(call, ct).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (call.DispatchedModel is { } dispatchedModel)
+        {
+            // SEC-2: the caller gave up after the request may have been sent, and the provider can still bill it.
+            // Record one estimated row at the D1 bound — on the meter's own token, so the settlement survives the
+            // caller's cancellation and a shutdown — then let the cancellation through: the job still decides the
+            // run's outcome (a deadline fails the run, a shutdown leaves it to the sweeper).
+            var bound = await estimator.WorstCaseAsync(CancellationToken.None).ConfigureAwait(false);
+            if (!bound.IsError)
+            {
+                await meter
+                    .RecordAsync(
+                        TextCallResultUsageExtensions.CancelledCallUsageItem(
+                            req.Run,
+                            Operation,
+                            req.Run.EpisodeId,
+                            dispatchedModel,
+                            bound.Value.WorstCaseUsd),
+                        CancellationToken.None)
+                    .ConfigureAwait(false);
+            }
+
+            throw;
+        }
     }
 
     private static void Guard(FactExtractionRequest req, FactsOptions options)

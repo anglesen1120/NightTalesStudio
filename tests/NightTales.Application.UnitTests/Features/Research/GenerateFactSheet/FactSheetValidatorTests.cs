@@ -286,7 +286,32 @@ public sealed class FactSheetValidatorTests
         result.ModelFactCount.ShouldBe(10_000);
         result.Facts.Count.ShouldBe(10);
         result.Drops.Count.ShouldBe(10_000 - 10);
-        scoreCalls.ShouldBe(40, "only the MaxFacts x 4 scan window is scored");
+        scoreCalls.ShouldBe(10, "a fact beyond the cap is dropped as over_cap before it is scored");
+    }
+
+    [Fact]
+    public void FactSheetValidator_DoesNotScoreFactsBeyondTheCap()
+    {
+        var scoreCalls = 0;
+
+        var result = FactSheetValidator.Validate(
+            Output(
+                Draft("Kept one.", ["s1"]),
+                Draft("Kept two.", ["s1"]),
+                Draft("Over the cap, a copy.", ["s1"]),
+                Draft("Over the cap, also a copy.", ["s1"])),
+            Context(maxFacts: 2, sourceIds: [Source1]),
+            request =>
+            {
+                scoreCalls++;
+                return request.Statement.StartsWith("Over the cap", StringComparison.Ordinal) ? 0.9m : 0m;
+            });
+
+        result.Facts.Select(fact => fact.Id).ShouldBe(["f1", "f2"]);
+        scoreCalls.ShouldBe(2, "only the facts the cap can still keep are scored");
+        result.Drops.Select(drop => drop.Reason).ShouldBe(
+            [FactDropReasons.OverCap, FactDropReasons.OverCap],
+            "an over-cap fact is over_cap even when its score would have been a verbatim copy");
     }
 
     [Fact]
@@ -407,5 +432,125 @@ public sealed class FactSheetValidatorTests
             FactDropReasons.ControlCharactersInvalid,
             FactDropReasons.StatementInvalid,
         ]);
+    }
+
+    [Fact]
+    public void FactSheetValidator_ScoresAgainstTheWholeUrlCorpus_NotOnlyTheCitedSources()
+    {
+        // SEC-5/CODE-8: the model can cite the user's own note (or a second, unrelated source) while copying a
+        // sentence from a fetched page, so the score must see every url source of the run, never just the cited
+        // ones. A note-only fact is still scored — nothing is scored against note text (F18).
+        var noteId = Guid.Parse("0197a000-0000-7000-8000-0000000000b7");
+        var context = new FactSheetValidationContext(
+            new Dictionary<string, Guid>(StringComparer.Ordinal) { ["s1"] = Source1, ["n1"] = noteId },
+            0,
+            0.35m,
+            40,
+            new Dictionary<Guid, SourceText>
+            {
+                [Source1] = new SourceText(Source1, "The harbour keeper burned the shipping ledger that night."),
+            });
+        var corpora = new List<IReadOnlyList<SourceText>>();
+
+        var result = FactSheetValidator.Validate(
+            Output(
+                Draft("The harbour keeper burned the shipping ledger that night.", ["n1"]),
+                Draft("A paraphrase of the night's events, in our own words.", ["n1"])),
+            context,
+            request =>
+            {
+                corpora.Add(request.Corpus);
+                return request.Statement.StartsWith("The harbour keeper", StringComparison.Ordinal) ? 0.9m : 0.1m;
+            });
+
+        var kept = result.Facts.ShouldHaveSingleItem();
+        kept.Statement.ShouldBe("A paraphrase of the night's events, in our own words.");
+        kept.SourceAliases.ShouldBe(["n1"], "the citation is still recorded, it just no longer decides the corpus");
+        kept.SourceOverlap.ShouldBe(0.1m);
+        result.Drops.ShouldHaveSingleItem().Reason.ShouldBe(FactDropReasons.VerbatimCopy);
+        corpora.Count.ShouldBe(2);
+        corpora.ShouldAllBe(
+            corpus => corpus.Count == 1 && corpus[0].SourceId == Source1,
+            "every score runs against the union of the url sources, never the cited note id");
+    }
+
+    [Fact]
+    public void FactSheetValidator_DropsFactCitingAUrlSourceWithoutText()
+    {
+        // SEC-5/CODE-8: a cited url source whose text is missing or blank gives the scorer nothing to compare
+        // against, so the fact fails closed instead of being stored on a score that proves nothing.
+        var context = new FactSheetValidationContext(
+            new Dictionary<string, Guid>(StringComparer.Ordinal) { ["s1"] = Source1, ["s2"] = Source2 },
+            0,
+            0.35m,
+            40,
+            new Dictionary<Guid, SourceText>
+            {
+                [Source1] = new SourceText(Source1, "A fetched article with text."),
+                [Source2] = new SourceText(Source2, "   "),
+            });
+        var scoreCalls = 0;
+
+        var result = FactSheetValidator.Validate(
+            Output(Draft("A statement citing the textless source.", ["s2", "s1"])),
+            context,
+            _ =>
+            {
+                scoreCalls++;
+                return 0m;
+            });
+
+        result.Facts.ShouldBeEmpty();
+        result.Drops.ShouldHaveSingleItem().Reason.ShouldBe(FactDropReasons.VerbatimCopy);
+        scoreCalls.ShouldBe(0, "an unverifiable citation is dropped without a score");
+    }
+
+    [Fact]
+    public void FactSheetValidator_DropsRawStatementOverFourTimesTheCap_BeforeTheControlScanAndNfc()
+    {
+        var overRawCap = new string('x', FactSheetValidator.RawStatementMaxChars + 1);
+        var overRawCapWithNul = new string('y', FactSheetValidator.RawStatementMaxChars) + "\0";
+        var atRawCap = new string('z', FactSheetValidator.RawStatementMaxChars);
+
+        var result = FactSheetValidator.Validate(
+            Output(Draft(overRawCap, ["s1"]), Draft(overRawCapWithNul, ["s1"]), Draft(atRawCap, ["s1"])),
+            Context(sourceIds: [Source1]),
+            Score(0m));
+
+        result.Facts.ShouldBeEmpty();
+        result.Drops.Select(drop => drop.Reason).ShouldBe(
+            [
+                FactDropReasons.StatementInvalid,
+                // The NUL is never seen as a control character: the raw-length rule fires first (P6).
+                FactDropReasons.StatementInvalid,
+                FactDropReasons.StatementInvalid,
+            ]);
+        result.Drops.Select(drop => drop.OutputIndex).ShouldBe([0, 1, 2]);
+    }
+
+    [Fact]
+    public void FactSheetValidator_DropsBidiControls_AndKeepsZwjAndZwnj()
+    {
+        var result = FactSheetValidator.Validate(
+            Output(
+                Draft("Right \u202Eto left.", ["s1"]),
+                Draft("Isolate \u2066 inside.", ["s1"]),
+                Draft("Mark \u200F after.", ["s1"]),
+                Draft("Arabic \u061C mark.", ["s1"]),
+                Draft("Family \uD83D\uDC68\u200D\uD83D\uDC69\u200D\uD83D\uDC67 here.", ["s1"]),
+                Draft("Zwnj \u200C kept.", ["s1"])),
+            Context(sourceIds: [Source1]),
+            Score(0m));
+
+        result.Facts.Select(fact => fact.Statement).ShouldBe(
+            ["Family \uD83D\uDC68\u200D\uD83D\uDC69\u200D\uD83D\uDC67 here.", "Zwnj \u200C kept."]);
+        result.Drops.Select(drop => drop.Reason).ShouldBe(
+            [
+                FactDropReasons.StatementInvalid,
+                FactDropReasons.StatementInvalid,
+                FactDropReasons.StatementInvalid,
+                FactDropReasons.StatementInvalid,
+            ]);
+        result.Drops.Select(drop => drop.OutputIndex).ShouldBe([0, 1, 2, 3]);
     }
 }

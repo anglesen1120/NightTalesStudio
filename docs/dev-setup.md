@@ -318,7 +318,13 @@ Rules for any change that runs at start-up:
   bounds on start (including finite thresholds and `BlockAbove > WarnAbove`). Omitted `N:vi` / `N:en` keys keep
   the Domain defaults (vi 10 / en 8), and extra language keys bind normally. The missing-language warning
   (EventId 2600) covers programmatically built settings without those keys; scoring then falls back to the English N.
-  Both appsettings files also carry `Research:FactSheet:CopiedFactThreshold` (0.5).
+  The fact-sheet keys of 02.5.3-T2 continue the same list: both appsettings files carry
+  `Similarity:FactOverlapBlock` (the threshold above which a fact whose statement matches the text of the
+  sources it cites is dropped as a verbatim copy; it repeats the Domain default, so it is optional), and the
+  Worker binds `FactSheet:Job:TimeoutSeconds` (the per-run deadline of `GenerateFactSheetJob`, optional with an
+  in-code default, bounded 150–3600 — the floor is the free D12 moderation call plus the two adapter timeouts
+  one run can need) as well as the `Facts:*` section (`Facts:MaxSources`, `Facts:PerSourceCharCap`,
+  `Facts:MaxInputTokens`, `Facts:MaxFacts`) for the job's own input plan.
   The generator reports a missing key as `MSB3073` from `dotnet-getdocument` with a long hosting stack
   (see the build-time block), so check this list before hunting.
 - A new way of starting a host adds a row to this table.

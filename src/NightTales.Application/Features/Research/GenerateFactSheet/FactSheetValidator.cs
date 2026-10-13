@@ -15,14 +15,18 @@ namespace NightTales.Application.Features.Research.GenerateFactSheet;
 /// <para>
 /// The rules run in the order of plan §3, each drop counted (never thrown): (1) resolve aliases to source
 /// ids, dropping a fact with no known alias and keeping the known aliases of a partially-known one; (2)
-/// normalise the statement (NFC + collapsed whitespace) and reject an empty or over-long one, a lone
-/// surrogate and any NUL/DEL/other C0 control character that is not whitespace; (3) deduplicate on the
-/// normalised statement plus the sorted resolved ids, first wins; (4) drop a verbatim copy (a score above the
-/// overlap threshold, or a score outside [0,1] — fail closed); (5) keep the first <c>MaxFacts</c>.
+/// reject a raw statement longer than four times the stored cap, then one carrying a NUL/DEL/other C0 control
+/// character that is not whitespace, one carrying a bidi override or isolate control, or one carrying a lone
+/// surrogate, then normalise (NFC + collapsed whitespace) and reject an empty or over-long one; (3)
+/// deduplicate on the normalised statement plus the sorted resolved ids, first wins; (4) keep the first
+/// <c>MaxFacts</c> survivors and drop a verbatim copy — the statement is scored against the whole
+/// url-source corpus of the run, and a score above the overlap threshold, a score outside [0,1] or a cited
+/// url source with no text is dropped (fail closed, P4/SEC-5).
 /// </para>
 /// <para>
-/// Cost is bounded: only the first <c>MaxFacts × 4</c> inputs are examined, so a hostile or runaway output
-/// cannot drive a scoring call per fact — the tail is counted as <c>over_cap</c> without scoring.
+/// Cost is bounded: at most <c>MaxFacts</c> statements are ever scored, and only the first
+/// <c>MaxFacts × 4</c> inputs are examined, so a hostile or runaway output cannot drive a scoring call per
+/// fact — the tail is counted as <c>over_cap</c> without scoring.
 /// </para>
 /// <para>
 /// A null output or a null fact is not an error: it yields no facts. Zero surviving facts is a valid result
@@ -34,8 +38,26 @@ public static class FactSheetValidator
     /// <summary>The longest statement the validator keeps, after normalisation (rule 2).</summary>
     public const int StatementMaxChars = 600;
 
+    /// <summary>
+    /// The longest raw statement the validator scans (rule 2, P6): four times <see cref="StatementMaxChars"/>,
+    /// so a statement that could never normalise into a kept one is rejected before the control-character scan
+    /// and before NFC — whose canonical reordering a hostile run of combining marks could otherwise drive
+    /// quadratic on the raw text.
+    /// </summary>
+    public const int RawStatementMaxChars = StatementMaxChars * 4;
+
     /// <summary>The DEL control character, rejected alongside the C0 controls (rule 2).</summary>
     private const char Delete = '\u007F';
+
+    /// <summary>
+    /// The bidi formatting controls the statement may not carry (rule 2, SEC-6): the embedding/override set
+    /// <c>U+202A..U+202E</c>, the isolate set <c>U+2066..U+2069</c>, the marks <c>U+200E</c>/<c>U+200F</c> and
+    /// the Arabic letter mark <c>U+061C</c>. They reorder how the stored fact renders for a reader while the
+    /// bytes stay attacker-chosen, and a stored fact is later fed to the writer. The zero-width joiner and
+    /// non-joiner (<c>U+200D</c>/<c>U+200C</c>) stay allowed: emoji sequences and Indic and Arabic scripts
+    /// need them.
+    /// </summary>
+    private const string BidiControls = "\u061C\u200E\u200F\u202A\u202B\u202C\u202D\u202E\u2066\u2067\u2068\u2069";
 
     /// <summary>
     /// Validates one extraction output against the run's context (see the class remarks for the ordered
@@ -67,6 +89,7 @@ public static class FactSheetValidator
         var kept = new List<FactItem>(Math.Min(modelFactCount, maxFacts));
         var drops = new List<FactDrop>();
         var seenStatements = new HashSet<string>(StringComparer.Ordinal);
+        var corpus = Corpus(ctx.SourceTexts);
         var nextId = ctx.MaxFactId;
 
         for (var index = 0; index < modelFactCount; index++)
@@ -92,20 +115,37 @@ public static class FactSheetValidator
                 continue;
             }
 
-            // Rule 2: the control-character scan runs on the raw statement, before whitespace collapse.
-            if (HasForbiddenControlCharacter(draft.Statement))
-            {
-                drops.Add(new FactDrop(FactDropReasons.ControlCharactersInvalid, index));
-                continue;
-            }
+            var rawStatement = draft.Statement;
 
-            if (HasLoneSurrogate(draft.Statement))
+            // Rule 2 (P6): a raw statement that could never normalise into a kept one is rejected before the
+            // scans and before NFC, whose canonical reordering hostile combining marks can make quadratic.
+            if (rawStatement is { Length: > RawStatementMaxChars })
             {
                 drops.Add(new FactDrop(FactDropReasons.StatementInvalid, index));
                 continue;
             }
 
-            var statement = CollapseWhitespace(NormalizeStatement(draft.Statement));
+            // Rule 2: the control-character scan runs on the raw statement, before whitespace collapse.
+            if (HasForbiddenControlCharacter(rawStatement))
+            {
+                drops.Add(new FactDrop(FactDropReasons.ControlCharactersInvalid, index));
+                continue;
+            }
+
+            // Rule 2 (SEC-6): a bidi override or isolate control is dropped as an unusable statement.
+            if (HasBidiControl(rawStatement))
+            {
+                drops.Add(new FactDrop(FactDropReasons.StatementInvalid, index));
+                continue;
+            }
+
+            if (HasLoneSurrogate(rawStatement))
+            {
+                drops.Add(new FactDrop(FactDropReasons.StatementInvalid, index));
+                continue;
+            }
+
+            var statement = CollapseWhitespace(NormalizeStatement(rawStatement));
             if (statement.Length == 0 || statement.Length > StatementMaxChars)
             {
                 drops.Add(new FactDrop(FactDropReasons.StatementInvalid, index));
@@ -120,22 +160,33 @@ public static class FactSheetValidator
                 continue;
             }
 
-            // Rule 4: a verbatim copy (or a score outside [0,1]) is dropped, fail closed.
-            var overlap = scoreFact(new ScoreFactRequest(statement, Cite(ctx.SourceTexts, sourceIds)));
-            if (IsVerbatimCopy(overlap, ctx.OverlapBlockThreshold))
-            {
-                drops.Add(new FactDrop(FactDropReasons.VerbatimCopy, index));
-                continue;
-            }
-
-            // Rule 5: only the first MaxFacts survivors are kept.
+            // Rule 4 (P4): the cap is tested before the score, so a fact that would be dropped as over_cap
+            // never pays for a scoring pass.
             if (kept.Count >= maxFacts)
             {
                 drops.Add(new FactDrop(FactDropReasons.OverCap, index));
                 continue;
             }
 
-            // Rule 6: ids continue from the episode's watermark, in output order, and are never reused.
+            // Rule 4 (SEC-5): a cited url source without text leaves nothing to score against, so the fact is
+            // dropped fail closed instead of being stored on a score that proves nothing.
+            if (!HasTextForEveryCitation(ctx.SourceTexts, sourceIds))
+            {
+                drops.Add(new FactDrop(FactDropReasons.VerbatimCopy, index));
+                continue;
+            }
+
+            // Rule 4 (SEC-5/F18): the score is taken against the whole url-source corpus of the run, never
+            // only the sources this fact cites, so a copy that cites a note alias or another source cannot
+            // score zero and slip through. A score above the threshold — or outside [0,1] — fails closed.
+            var overlap = scoreFact(new ScoreFactRequest(statement, corpus));
+            if (IsVerbatimCopy(overlap, ctx.OverlapBlockThreshold))
+            {
+                drops.Add(new FactDrop(FactDropReasons.VerbatimCopy, index));
+                continue;
+            }
+
+            // Rule 5: ids continue from the episode's watermark, in output order, and are never reused.
             nextId++;
             kept.Add(new FactItem(
                 string.Concat("f", nextId.ToString(CultureInfo.InvariantCulture)),
@@ -184,26 +235,56 @@ public static class FactSheetValidator
         return aliases.Count > 0;
     }
 
-    /// <summary>Collects the text of the cited sources; an id without text is scored against nothing.</summary>
-    private static List<SourceText> Cite(
+    /// <summary>
+    /// Rule 4's corpus: the text of every url source of the run's plan, in id order, so one statement's score
+    /// never depends on which source the model chose to cite (SEC-5). The user note is not part of the plan
+    /// this map is built from and a blank text contributes nothing (F18).
+    /// </summary>
+    private static List<SourceText> Corpus(IReadOnlyDictionary<Guid, SourceText>? sourceTexts)
+    {
+        var corpus = new List<SourceText>(sourceTexts?.Count ?? 0);
+        if (sourceTexts is null)
+        {
+            return corpus;
+        }
+
+        foreach (var source in sourceTexts.Values)
+        {
+            if (!string.IsNullOrWhiteSpace(source.Text))
+            {
+                corpus.Add(source);
+            }
+        }
+
+        // A dictionary does not promise an order; the score must not depend on one.
+        corpus.Sort(static (left, right) => left.SourceId.CompareTo(right.SourceId));
+
+        return corpus;
+    }
+
+    /// <summary>
+    /// Whether every cited source can be checked: a cited id the run's plan carries no text for is the user
+    /// note, which is kept on purpose (F18), while a cited url source whose text is missing or blank gives the
+    /// scorer nothing to compare against, so the fact is dropped fail closed (SEC-5).
+    /// </summary>
+    private static bool HasTextForEveryCitation(
         IReadOnlyDictionary<Guid, SourceText>? sourceTexts,
         List<Guid> sourceIds)
     {
-        var cited = new List<SourceText>(sourceIds.Count);
         if (sourceTexts is null)
         {
-            return cited;
+            return true;
         }
 
         foreach (var sourceId in sourceIds)
         {
-            if (sourceTexts.TryGetValue(sourceId, out var source))
+            if (sourceTexts.TryGetValue(sourceId, out var source) && string.IsNullOrWhiteSpace(source.Text))
             {
-                cited.Add(source);
+                return false;
             }
         }
 
-        return cited;
+        return true;
     }
 
     /// <summary>The dedupe key: the normalised statement plus the sorted resolved ids (statement cannot hold NUL).</summary>
@@ -266,6 +347,28 @@ public static class FactSheetValidator
         foreach (var character in statement)
         {
             if (character == Delete || (character < ' ' && !char.IsWhiteSpace(character)))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Whether the raw statement carries a bidi override or isolate control (<see cref="BidiControls"/>): it
+    /// would reorder the stored fact for a reader while the bytes stay attacker-chosen (SEC-6). ZWJ/ZWNJ pass.
+    /// </summary>
+    private static bool HasBidiControl(string? statement)
+    {
+        if (string.IsNullOrEmpty(statement))
+        {
+            return false;
+        }
+
+        foreach (var character in statement)
+        {
+            if (BidiControls.Contains(character))
             {
                 return true;
             }

@@ -152,22 +152,32 @@ public sealed class EfUnitOfWork(AppDbContext database) : IUnitOfWork
     /// <summary>
     /// Whether the save was refused by the D2 active-run index. The request already answers an active run with a
     /// 409 — this is the same situation, caught at the insert that lost the race, so it keeps that status instead
-    /// of becoming a raw 500 (02.2.2-T2 implementation, 02.5.3-T2).
+    /// of becoming a raw 500 (02.2.2-T2 implementation, 02.5.3-T2). The index is per <c>(episode, kind)</c>, so
+    /// the mapping covers every kind whose pre-check lost the race, not only a fact-sheet run.
     /// </summary>
     private static bool IsActiveEpisodeRunViolation(Exception exception) =>
         ProviderError(exception) is { SqlState: UniqueViolation, ConstraintName: ActiveEpisodeRunIndex };
 
     /// <summary>
     /// The 409 of a refused active run, named for the kind of run the request was queueing: the index is
-    /// per-episode, so the run that was already active may belong to another kind.
+    /// per-episode-and-kind, so the refusal is per kind too. The kind is read from the entries the failed save
+    /// reports and, when the provider reported none of them, from this unit of work's own context — the context
+    /// that failed is the one that was inserting the run, so a tracked <c>Added</c> run names the kind. Only when
+    /// no run is visible anywhere does the mapping state the kind-agnostic truth ("a generation is already
+    /// queued or running for this episode", 409 <c>episode_invalid_state</c>): naming a kind it cannot see would
+    /// be a guess.
     /// </summary>
-    private static Error ActiveRunConflict(DbUpdateException exception)
+    private Error ActiveRunConflict(DbUpdateException exception)
     {
         var kind = exception.Entries
             .Select(entry => entry.Entity)
             .OfType<GenerationRun>()
             .Select(run => (GenerationKind?)run.Kind)
-            .FirstOrDefault();
+            .FirstOrDefault()
+            ?? database.ChangeTracker.Entries<GenerationRun>()
+                .Where(entry => entry.State == EntityState.Added)
+                .Select(entry => (GenerationKind?)entry.Entity.Kind)
+                .FirstOrDefault();
 
         return kind switch
         {
@@ -180,6 +190,8 @@ public sealed class EfUnitOfWork(AppDbContext database) : IUnitOfWork
             GenerationKind.FindSources => Error.Conflict(
                 ErrorCodes.FindSourcesInProgress,
                 FindSourcesInProgressDescription),
+            // Kind-agnostic on purpose (see the remarks): the index guarantees the episode has one active run,
+            // so a conflict stating exactly that is always true, whatever kind it was.
             _ => Error.Conflict(ErrorCodes.EpisodeInvalidState, ActiveRunDescription),
         };
     }
