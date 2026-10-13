@@ -6,6 +6,7 @@ using NightTales.Application.Abstractions.Money;
 using NightTales.Application.Abstractions.Moderation;
 using NightTales.Application.Abstractions.Prompts;
 using NightTales.Application.Abstractions.Research;
+using NightTales.Application.Abstractions.Similarity;
 using NightTales.Application.Abstractions.Storage;
 using NightTales.Application.Abstractions.Text;
 using NightTales.Application.Abstractions.Usage;
@@ -64,7 +65,8 @@ internal sealed class RevisionWorld
         RecordingRevisionEvents events,
         RecordingLedger ledger,
         StoryGenerationProgress progress,
-        StoryWriteRequestFactory factory)
+        StoryWriteRequestFactory factory,
+        CountingCorpusProvider corpus)
     {
         _database = database;
         _pipeline = pipeline;
@@ -78,6 +80,7 @@ internal sealed class RevisionWorld
         Ledger = ledger;
         Progress = progress;
         Factory = factory;
+        Corpus = corpus;
     }
 
     public TestCurrentUser Current { get; }
@@ -100,6 +103,9 @@ internal sealed class RevisionWorld
 
     public StoryWriteRequestFactory Factory { get; }
 
+    /// <summary>The similarity corpus port, counting its reads (A4: one read per run).</summary>
+    public CountingCorpusProvider Corpus { get; }
+
     public static async Task<RevisionWorld> CreateAsync(
         TestDatabase database,
         CancellationToken ct,
@@ -110,7 +116,8 @@ internal sealed class RevisionWorld
         IBudgetGuard? budget = null,
         Topic topic = Topic.Ghost,
         ApprovedFactSheet? approvedSheet = null,
-        IStoryCostEstimator? estimator = null)
+        IStoryCostEstimator? estimator = null,
+        StoryJobOptions? jobOptions = null)
     {
         var setup = new TestCurrentUser();
         var user = await new UserBuilder(database, setup).CreateAsync(ct: ct);
@@ -165,6 +172,8 @@ internal sealed class RevisionWorld
             NullLogger<StoryGenerationProgress>.Instance);
         var factory = new StoryWriteRequestFactory(new FixedRevisionCatalog());
         var moderator = new FakeContentModerator();
+        var corpus = new CountingCorpusProvider(
+            new SimilarityCorpusProvider(db, new FakeExtractedTextStore(), Options.Create(new SimilaritySettings())));
 
         var pipeline = new StoryGenerationPipeline(
             db: db,
@@ -178,7 +187,7 @@ internal sealed class RevisionWorld
             budgetGuard: budget ?? new FakeBudgetGuard(),
             estimator: estimator ?? new FixedRevisionEstimator(),
             checker: new StoryQualityChecker(),
-            jobOptions: new StoryJobOptions(),
+            jobOptions: jobOptions ?? new StoryJobOptions(),
             reviewOptions: new StoryReviewOptions { Enabled = reviewEnabled },
             revisionOptions: new StoryRevisionOptions
             {
@@ -186,7 +195,7 @@ internal sealed class RevisionWorld
                 MaxRevisions = maxRevisions,
                 MinTextSimilarity = minTextSimilarity,
             },
-            similarityCorpus: new SimilarityCorpusProvider(db, new FakeExtractedTextStore(), Options.Create(new SimilaritySettings())),
+            similarityCorpus: corpus,
             similaritySettings: new SimilaritySettings(),
             metrics: new StoryGenerationMetrics(),
             clock: clock,
@@ -204,7 +213,8 @@ internal sealed class RevisionWorld
             events,
             ledger,
             progress,
-            factory);
+            factory,
+            corpus);
     }
 
     public Task RunAsync() => _pipeline.RunAsync(RunId, Ct);
@@ -273,6 +283,26 @@ internal sealed class ScriptedRevisionWriter : IStoryWriter
             throw new InvalidOperationException("unreachable");
         });
 
+    /// <summary>Queues a revision that never returns before its token is cancelled (A2's revision window).</summary>
+    public void EnqueueRevisionBlocking() =>
+        _revisions.Enqueue(async ct =>
+        {
+            await Task.Delay(Timeout.Infinite, ct);
+
+            throw new InvalidOperationException("unreachable");
+        });
+
+    /// <summary>Queues a revision that takes <paramref name="delay"/> before returning (A2's second milestone).</summary>
+    /// <param name="delay">The delay the scripted call spends before it answers.</param>
+    /// <param name="result">The outcome it answers with.</param>
+    public void EnqueueRevisionDelayed(TimeSpan delay, TextCallResult<StoryContentV1> result) =>
+        _revisions.Enqueue(async ct =>
+        {
+            await Task.Delay(delay, ct);
+
+            return result;
+        });
+
     public List<StoryWriteRequest> WriteRequests { get; } = [];
 
     public List<StoryReviewRequest> ReviewRequests { get; } = [];
@@ -305,6 +335,26 @@ internal sealed class ScriptedRevisionWriter : IStoryWriter
             ? throw new InvalidOperationException("The revision script is empty.")
             : _revisions.Dequeue()(ct);
     }
+}
+
+/// <summary>
+/// Counts the corpus reads of a run (A4): the pipeline loads the episode's corpus once and scores both saved rows
+/// against that one read.
+/// </summary>
+internal sealed class CountingCorpusProvider(ISimilarityCorpusProvider inner) : ISimilarityCorpusProvider
+{
+    /// <summary>The number of attempted loads.</summary>
+    public int Loads { get; private set; }
+
+    public async ValueTask<IReadOnlyList<CorpusText>> LoadAsync(Guid episodeId, Language lang, CancellationToken ct)
+    {
+        Loads++;
+
+        return await inner.LoadAsync(episodeId, lang, ct).ConfigureAwait(false);
+    }
+
+    public ValueTask<IReadOnlyList<CorpusText>> GetPastEpisodesAsync(Guid seriesId, Guid excludeEpisodeId, int max, CancellationToken ct) =>
+        inner.GetPastEpisodesAsync(seriesId, excludeEpisodeId, max, ct);
 }
 
 /// <summary>Records the moderation events the pipeline writes, without a database.</summary>

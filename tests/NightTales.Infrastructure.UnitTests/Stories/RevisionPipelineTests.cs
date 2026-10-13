@@ -5,6 +5,7 @@ using NightTales.Application.Abstractions.Research;
 using NightTales.Application.Abstractions.Text;
 using NightTales.Application.Abstractions.Usage;
 using NightTales.Application.Common.Errors;
+using NightTales.Application.Features.Stories.Jobs;
 using NightTales.Application.Features.Stories.Review;
 using NightTales.Domain.Common;
 using NightTales.Domain.Episodes;
@@ -264,13 +265,40 @@ public sealed class RevisionPipelineTests(TestDatabase database) : IntegrationTe
     }
 
     [Fact]
-    public async Task LocallyFlaggedRevisedDraft_IsStillAppliedWithTheModerationBlock()
+    public async Task CleanOriginalFlaggedRevision_KeepsTheOriginalDraft()
     {
-        // D12: a local moderation flag blocks approval, not the run — the revision still becomes current and the
-        // revised row carries the moderation block. Only the provider's own verdict fails the run.
+        // A1: a revision the local moderator flags must not replace a CLEAN original — the revised text is never
+        // stored, so the run keeps the generated row and records the moderation-flagged reason. No moderation event is
+        // written for text that is not stored (the table points at the episode, not at a story version).
         var world = await RevisionWorld.CreateAsync(Database, Ct);
         world.Moderator.EnqueueClean(ModerationStage.Draft);
         world.Moderator.EnqueueFlagged(ModerationStage.Draft, "hate/threatening");
+        world.Writer.EnqueueWrite(WriteOk());
+        world.Writer.EnqueueReview(ReviewOk(BlockingHook()));
+        world.Writer.EnqueueRevision(RevisionOk(RevisedDraft()));
+
+        await world.RunAsync(Ct);
+
+        (await world.ReadRunAsync()).Status.ShouldBe(GenerationRunStatus.Succeeded, "a flagged revision degrades, it never fails the run");
+        var version = (await world.VersionsAsync()).ShouldHaveSingleItem();
+        version.Source.ShouldBe(StoryVersionSource.Generated, "a flagged revision of a clean original never becomes current");
+        var block = RevisionBlock(version);
+        block["applied"]!.GetValue<bool>().ShouldBeFalse();
+        block["reason"]!.GetValue<string>().ShouldBe(AuditReportBuilder.RevisionReasonModerationFlagged);
+        world.Events.Stages.ShouldBeEmpty("the revised text is not stored, so no moderation event is written for it");
+        world.Writer.ReviewRequests.Count.ShouldBe(1, "review #2 never runs for a revision that was not applied");
+        world.Moderator.Checks.Count(check => check.Stage == ModerationStage.Draft)
+            .ShouldBe(2, "the original draft and the revised draft are both checked");
+    }
+
+    [Fact]
+    public async Task FlaggedOriginalFlaggedRevision_IsStillAppliedWithTheModerationBlock()
+    {
+        // A1, unchanged behaviour: when the original draft was itself flagged, the revision is recorded like the first
+        // draft (D12) — both decisions write a moderation event and the flagged revised row can still become current.
+        var world = await RevisionWorld.CreateAsync(Database, Ct);
+        world.Moderator.EnqueueFlagged(ModerationStage.Draft, "hate/threatening");
+        world.Moderator.EnqueueFlagged(ModerationStage.Draft, "violence");
         world.Writer.EnqueueWrite(WriteOk());
         world.Writer.EnqueueReview(ReviewOk(BlockingHook()));
         world.Writer.EnqueueRevision(RevisionOk(RevisedDraft()));
@@ -280,18 +308,126 @@ public sealed class RevisionPipelineTests(TestDatabase database) : IntegrationTe
 
         (await world.ReadRunAsync()).Status.ShouldBe(GenerationRunStatus.Succeeded);
         var versions = await world.VersionsAsync();
-        versions.Count.ShouldBe(2, "a local flag never stops the revision from becoming current");
+        versions.Count.ShouldBe(2, "a flagged revision of an already-flagged draft still becomes current");
         var block = RevisionBlock(versions[1]);
         block["applied"]!.GetValue<bool>().ShouldBeTrue();
         var audit = JsonNode.Parse(versions[1].AuditReport!)!;
         audit["moderation"]!["flagged"]!.GetValue<bool>().ShouldBeTrue();
         audit["moderation"]!["categories"]!.AsArray().Select(node => node!.GetValue<string>())
-            .ShouldContain("hate/threatening");
-        audit["moderation"]!["blocking"]!.AsArray().Select(node => node!.GetValue<string>())
-            .ShouldContain("hate/threatening", "a D12 blocking category rides into the revised row");
-        world.Events.Stages.ShouldBe([ModerationStage.Draft], "only the flagged revised draft writes an event");
+            .ShouldContain("violence");
+        world.Events.Stages.ShouldBe([ModerationStage.Draft, ModerationStage.Draft], "the original and the revised draft each record their flag");
         world.Moderator.Checks.Count(check => check.Stage == ModerationStage.Draft)
             .ShouldBe(2, "the original draft and the revised draft are both checked");
+    }
+
+    [Fact]
+    public async Task DeadlineTooShortForTheRevisionStage_DegradesWithTheUnavailableReason()
+    {
+        // A2: the run deadline cannot fit the revise call, review #2 and the save margin (the defaults need 165 s), so
+        // the stage degrades like a refused gate: no revise call, the generated row saved, the episode still reaches
+        // story_review — never a deadline failure.
+        var world = await RevisionWorld.CreateAsync(
+            Database,
+            Ct,
+            jobOptions: new StoryJobOptions { TimeoutSeconds = 60, TimeoutSecondsLong = 60 });
+        world.Writer.EnqueueWrite(WriteOk());
+        world.Writer.EnqueueReview(ReviewOk(BlockingHook()));
+
+        await world.RunAsync(Ct);
+
+        (await world.ReadRunAsync()).Status.ShouldBe(GenerationRunStatus.Succeeded, "an unfittable revision degrades, it never fails the run");
+        world.Writer.RevisionRequests.ShouldBeEmpty("no revision call without the time to finish it");
+        var version = (await world.VersionsAsync()).ShouldHaveSingleItem();
+        version.Source.ShouldBe(StoryVersionSource.Generated);
+        var block = RevisionBlock(version);
+        block["applied"]!.GetValue<bool>().ShouldBeFalse();
+        block["reason"]!.GetValue<string>().ShouldBe(AuditReportBuilder.RevisionReasonUnavailable);
+        (await world.EpisodeStatusAsync()).ShouldBe(EpisodeStatus.StoryReview, "the episode still reaches story_review");
+        world.Progress.StageCalls.ShouldBe(AttemptedNotAppliedStages);
+    }
+
+    [Fact]
+    public async Task RevisionWindowClosingBeforeTheDeadline_DegradesWithTheUnavailableReason()
+    {
+        // A2: the revise call, the revised draft's moderation and review #2 run under a window that closes the save
+        // margin before the run deadline. A call that never returns inside it degrades the revision instead of the
+        // deadline failing the run. The headroom keys are shrunk so the window closes in seconds instead of minutes.
+        var world = await RevisionWorld.CreateAsync(
+            Database,
+            Ct,
+            jobOptions: new StoryJobOptions
+            {
+                TimeoutSeconds = 120,
+                TimeoutSecondsLong = 120,
+                RevisionRequestTimeoutSeconds = 1,
+                ReviewRequestTimeoutSeconds = 1,
+                SaveMarginSeconds = 112,
+            });
+        world.Writer.EnqueueWrite(WriteOk());
+        world.Writer.EnqueueReview(ReviewOk(BlockingHook()));
+        world.Writer.EnqueueRevisionBlocking();
+
+        await world.RunAsync(Ct);
+
+        (await world.ReadRunAsync()).Status.ShouldBe(GenerationRunStatus.Succeeded, "the window degrades the revision, it never fails the run");
+        world.Writer.RevisionRequests.Count.ShouldBe(1);
+        world.Writer.ReviewRequests.Count.ShouldBe(1, "review #2 never runs for a revision that was not applied");
+        var version = (await world.VersionsAsync()).ShouldHaveSingleItem();
+        version.Source.ShouldBe(StoryVersionSource.Generated);
+        var block = RevisionBlock(version);
+        block["applied"]!.GetValue<bool>().ShouldBeFalse();
+        block["reason"]!.GetValue<string>().ShouldBe(AuditReportBuilder.RevisionReasonUnavailable);
+        (await world.EpisodeStatusAsync()).ShouldBe(EpisodeStatus.StoryReview);
+    }
+
+    [Fact]
+    public async Task RevisionFinishingTooLateForReviewTwo_DegradesWithTheUnavailableReason()
+    {
+        // A2's second milestone: the revise call returned inside the window, but what is left of the deadline no longer
+        // fits review #2 and the save margin (ReviewAfterHeadroom), so the revision is not applied and review #2 is
+        // never paid for. The headroom keys are shrunk so the milestone is reached in seconds instead of minutes.
+        var world = await RevisionWorld.CreateAsync(
+            Database,
+            Ct,
+            jobOptions: new StoryJobOptions
+            {
+                TimeoutSeconds = 60,
+                TimeoutSecondsLong = 60,
+                RevisionRequestTimeoutSeconds = 1,
+                ReviewRequestTimeoutSeconds = 53,
+                SaveMarginSeconds = 1,
+            });
+        world.Writer.EnqueueWrite(WriteOk());
+        world.Writer.EnqueueReview(ReviewOk(BlockingHook()));
+        world.Writer.EnqueueRevisionDelayed(TimeSpan.FromSeconds(8), RevisionOk(RevisedDraft()));
+
+        await world.RunAsync(Ct);
+
+        (await world.ReadRunAsync()).Status.ShouldBe(GenerationRunStatus.Succeeded, "an unfinished revision degrades, it never fails the run");
+        world.Writer.RevisionRequests.Count.ShouldBe(1);
+        world.Writer.ReviewRequests.Count.ShouldBe(1, "review #2 is not paid for once the deadline no longer fits it");
+        var version = (await world.VersionsAsync()).ShouldHaveSingleItem();
+        version.Source.ShouldBe(StoryVersionSource.Generated);
+        var block = RevisionBlock(version);
+        block["applied"]!.GetValue<bool>().ShouldBeFalse();
+        block["reason"]!.GetValue<string>().ShouldBe(AuditReportBuilder.RevisionReasonUnavailable);
+    }
+
+    [Fact]
+    public async Task AppliedRevision_ReadsTheSimilarityCorpusOnce()
+    {
+        // A4: both saved rows are scored against the same corpus read of the episode.
+        var world = await RevisionWorld.CreateAsync(Database, Ct);
+        world.Writer.EnqueueWrite(WriteOk());
+        world.Writer.EnqueueReview(ReviewOk(BlockingHook()));
+        world.Writer.EnqueueRevision(RevisionOk(RevisedDraft()));
+        world.Writer.EnqueueReview(ReviewOk());
+
+        await world.RunAsync(Ct);
+
+        (await world.ReadRunAsync()).Status.ShouldBe(GenerationRunStatus.Succeeded);
+        (await world.VersionsAsync()).Count.ShouldBe(2, "the revision was applied, so both rows were scored");
+        world.Corpus.Loads.ShouldBe(1, "the corpus is loaded once per run, not once per scored row");
     }
 
     [Fact]

@@ -1,3 +1,4 @@
+using System.Globalization;
 using NightTales.Domain.Common;
 using NightTales.Domain.Stories.Content;
 using NightTales.Domain.Stories.Similarity;
@@ -26,7 +27,7 @@ public static class SegmentDriftDetector
     /// </remarks>
     /// <param name="original">The draft the revision was asked to change.</param>
     /// <param name="revised">The revision output.</param>
-    /// <param name="addressedSegments">The D22 addresses the review asked to change; those may change freely.</param>
+    /// <param name="addressedSegments">The D22 addresses the review asked to change; those may change freely. A paragraph address is compared canonically, so <c>p:01</c> and <c>p:1</c> name the same segment.</param>
     /// <param name="minSimilarity">The token-set similarity an untouched segment keeps; a value outside <c>(0, 1]</c> is clamped to <c>1</c> so an invalid threshold fails closed (D-config bounds it to <c>(0, 1]</c>).</param>
     /// <param name="originalBlockingRules">The local checker's blocking rule ids of the original draft.</param>
     /// <param name="revisedBlockingRules">The local checker's blocking rule ids of the revised draft.</param>
@@ -49,7 +50,13 @@ public static class SegmentDriftDetector
 
         var threshold = double.IsFinite(minSimilarity) && minSimilarity is > 0d and <= 1d ? minSimilarity : 1d;
 
-        var addressed = addressedSegments as ISet<string> ?? new HashSet<string>(addressedSegments, StringComparer.Ordinal);
+        // The review's addresses are compared in canonical form: ReviewResultValidator accepts `p:01` while this
+        // detector's own addresses are `p:1`, so a padded index would otherwise read as an untouched segment.
+        var addressed = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var address in addressedSegments)
+        {
+            addressed.Add(CanonicalAddress(address));
+        }
 
         var before = Segments(original);
         var after = Segments(revised);
@@ -122,6 +129,20 @@ public static class SegmentDriftDetector
 
         return segments;
     }
+
+    /// <summary>
+    /// The D22 paragraph address of <paramref name="address"/> with a canonical index: the review validator accepts
+    /// <c>p:01</c> while <see cref="SegmentAddress.Paragraph"/> emits <c>p:1</c>, and a padded index would otherwise be
+    /// compared against the canonical one and read as a segment the revision was not asked to change. Every other
+    /// address — and a zero-padded index that is not a plain non-negative integer — is returned unchanged.
+    /// </summary>
+    /// <param name="address">An address a review issue declared.</param>
+    /// <returns>The canonical D22 address.</returns>
+    private static string CanonicalAddress(string address) =>
+        address.StartsWith("p:", StringComparison.Ordinal)
+        && int.TryParse(address.AsSpan(2), NumberStyles.None, CultureInfo.InvariantCulture, out var index)
+            ? SegmentAddress.Paragraph(index)
+            : address;
 
     private static SegmentView View(string address, StorySegmentV1? segment) =>
         segment is null

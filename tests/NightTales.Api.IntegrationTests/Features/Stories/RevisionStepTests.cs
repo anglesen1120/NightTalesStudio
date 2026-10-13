@@ -205,6 +205,34 @@ public sealed class RevisionStepTests(TestDatabase database) : IntegrationTest(d
     }
 
     [Fact]
+    public async Task GenerateStory_RevisionFlaggedLocally_KeepsTheCleanOriginalDraft()
+    {
+        // 02.6.2-T1 A1: the local D12 moderator flags the revised draft while the draft it revises was clean, so the
+        // revision never becomes a row; its text is never stored, so no moderation event is written for it either.
+        var world = await SeedAsync();
+        var moderator = new FakeContentModerator()
+            .EnqueueClean(ModerationStage.Draft)
+            .EnqueueFlagged(ModerationStage.Draft, "hate/threatening");
+        var text = Script(
+            WriterOk(),
+            ReviewOk(BlockingHook()),
+            RevisionOk(RevisedDraft()));
+
+        await using var worker = await StartWorkerAsync(text, moderator: moderator);
+        var runId = await GenerateAsync(world);
+        await DeliverAndRunAsync(worker);
+
+        SqlProbe.ScalarText(Database, $"SELECT status FROM generation_runs WHERE id = '{runId}'").ShouldBe("succeeded");
+        VersionRows(world.EpisodeId).ShouldBe("generated|null", "a flagged revision never replaces a clean original");
+        RevisionValue(world.EpisodeId, "->>'applied'").ShouldBe("false");
+        RevisionValue(world.EpisodeId, "->>'reason'").ShouldBe(AuditReportBuilder.RevisionReasonModerationFlagged);
+        RevisionCalls(text).ShouldBe(1);
+        ReviewCalls(text).ShouldBe(1, "review #2 never runs for a revision that was not applied");
+        SqlProbe.Count(Database, $"SELECT count(*) FROM moderation_events WHERE episode_id = '{world.EpisodeId}'")
+            .ShouldBe(0, "the flagged text is not stored, so no moderation event is written for it");
+    }
+
+    [Fact]
     public async Task GenerateStory_DriftDetected_AuditAdvisoryOnly()
     {
         var world = await SeedAsync();
@@ -338,7 +366,10 @@ public sealed class RevisionStepTests(TestDatabase database) : IntegrationTest(d
         return new World(user.Id, series.Id, episode.Id);
     }
 
-    private async Task<WorkerHost> StartWorkerAsync(FakeTextClient text, TestLogSink? sink = null)
+    private async Task<WorkerHost> StartWorkerAsync(
+        FakeTextClient text,
+        TestLogSink? sink = null,
+        FakeContentModerator? moderator = null)
     {
         // The harness owns the Worker configuration (WorkerHost clears the sources, so the Worker's own Budget
         // section never applies), which leaves the guard on the $3/day default. Every scripted outcome carries no
@@ -355,7 +386,7 @@ public sealed class RevisionStepTests(TestDatabase database) : IntegrationTest(d
                 services.RemoveAll<ITextClient>();
                 services.AddSingleton<ITextClient>(text);
                 services.RemoveAll<IContentModerator>();
-                services.AddSingleton<IContentModerator>(new FakeContentModerator());
+                services.AddSingleton<IContentModerator>(moderator ?? new FakeContentModerator());
                 services.RemoveAll<IRealtimeNotifier>();
                 services.AddSingleton<IRealtimeNotifier, NullNotifier>();
                 services.RemoveAll<IStoryCostEstimator>();

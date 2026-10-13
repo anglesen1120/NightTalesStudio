@@ -36,11 +36,19 @@ public static class AuditReportBuilder
     public const string RevisionReasonSpendCapReached = "spend_cap_reached";
 
     /// <summary>
-    /// <c>revision.reason</c> when the revision could not run or its result could not be trusted without failing the run:
-    /// the provider was unavailable or timed out, the outcome was unknown, or the revised draft could not be moderated
-    /// (a revision that is not moderation-clean never becomes current).
+    /// <c>revision.reason</c> when the revision could not run or its result could not be trusted without failing the
+    /// run: the provider was unavailable or timed out, the outcome was unknown, the revised draft could not be
+    /// moderated, or the run deadline no longer fits the stage (a revision that is unmoderated or unfinished never
+    /// becomes current).
     /// </summary>
     public const string RevisionReasonUnavailable = "revision_unavailable";
+
+    /// <summary>
+    /// <c>revision.reason</c> when the local moderator flagged the revised draft while the draft it revises was clean
+    /// (02.6.2-T1 A1): a flagged revision never replaces a clean original, and its text is not stored, so no
+    /// moderation event is written for it either.
+    /// </summary>
+    public const string RevisionReasonModerationFlagged = "revision_moderation_flagged";
 
     /// <summary>
     /// <c>revision.reason</c> when review #2 of the revised draft was unusable (invalid, unavailable, spend cap or
@@ -54,6 +62,7 @@ public static class AuditReportBuilder
         RevisionReasonInvalidOutput,
         RevisionReasonSpendCapReached,
         RevisionReasonUnavailable,
+        RevisionReasonModerationFlagged,
         RevisionReasonReviewUnavailable,
     };
 

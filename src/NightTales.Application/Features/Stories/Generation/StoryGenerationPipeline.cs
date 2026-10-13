@@ -49,9 +49,10 @@ namespace NightTales.Application.Features.Stories.Generation;
 /// <para>
 /// <b>Revision (02.6.2-T1, D21 step 5).</b> When review #1 holds a blocking objective issue, <see cref="RevisionPolicy"/>
 /// approves exactly one pass: the revise call is validated, moderated and reviewed again (review #2) before its output can
-/// become current. A spend cap at the revision gate, an invalid revise output or an unusable review #2 degrades — the
-/// generated row is kept with <c>revision.applied=false</c> — rather than failing the run; only a moderated revision or an
-/// exhausted provider account ends it. Review #2 never triggers a second revision.
+/// become current. A spend cap at the revision gate, an invalid, unchanged or flagged revise output, a run deadline too
+/// short for the stage, or an unusable review #2 degrades — the generated row is kept with <c>revision.applied=false</c> —
+/// rather than failing the run; only a moderated revision or an exhausted provider account ends it. Review #2 never
+/// triggers a second revision.
 /// </para>
 /// </remarks>
 public sealed partial class StoryGenerationPipeline(
@@ -549,6 +550,7 @@ public sealed partial class StoryGenerationPipeline(
                 var flagged = Moderation(verdict.Categories, flagged: true);
                 s.ModerationCategories = flagged.Categories;
                 s.ModerationNode = flagged.Node;
+                s.ModerationFlagged = true;
                 return true;
             default:
                 var clean = Moderation([], flagged: false);
@@ -703,6 +705,14 @@ public sealed partial class StoryGenerationPipeline(
             return null;
         }
 
+        // A2: the revise call, review #2 and the save would not fit into what is left of the run deadline, so the
+        // stage degrades exactly like a refused gate — the generated row is saved and the episode still reaches
+        // story_review — instead of running into the deadline, which would fail and refund the whole run.
+        if (s.Remaining < jobOptions.RevisionHeadroom)
+        {
+            return NotApplied(s, AuditReportBuilder.RevisionReasonUnavailable);
+        }
+
         switch (await GateOptionalAsync(s, TextStep.Revision, ct).ConfigureAwait(false))
         {
             case GateOutcome.BoundUnavailable:
@@ -737,24 +747,49 @@ public sealed partial class StoryGenerationPipeline(
 
         var reviseVersion = assembled.Value.PromptVersion;
 
-        switch (await writer.ReviseAsync(request, ct).ConfigureAwait(false))
+        // A2: the revise call, the revised draft's moderation and review #2 run under a window that closes the save
+        // margin before the run deadline, so an oversized stage degrades here instead of the deadline failing the run
+        // at step 7. The window is linked to the caller's token, so the job token and the run deadline keep their own
+        // paths; only the window's own cancellation is caught.
+        using var window = RevisionWindow(s, ct);
+
+        try
         {
-            case TextCallOk<StoryContentV1> ok:
-                return await AcceptRevisionAsync(s, written, review, ok, issues, reviseVersion, ct).ConfigureAwait(false);
-            case TextCallInvalidOutput<StoryContentV1>:
-                return InvalidRevision(s, reviseVersion);
-            case TextCallModerated<StoryContentV1> moderated:
-                await WriteModerationEventAsync(s, ModerationStage.Draft, moderated.Categories, null).ConfigureAwait(false);
-                await FailAsync(s, ErrorCodes.StoryModerated, "revision_refused", true, RefundModerated).ConfigureAwait(false);
-                return null;
-            case TextCallFundsExhausted<StoryContentV1>:
-                await PauseAsync(s, GenerationPauseReason.ProviderFundsExhausted).ConfigureAwait(false);
-                return null;
-            default:
-                // A provider error and any outcome this code does not know: the revision is optional, so the original
-                // is kept (fail closed: an unknown output never becomes current).
-                return NotApplied(s, AuditReportBuilder.RevisionReasonUnavailable, reviseVersion);
+            switch (await writer.ReviseAsync(request, window.Token).ConfigureAwait(false))
+            {
+                case TextCallOk<StoryContentV1> ok:
+                    return await AcceptRevisionAsync(s, written, ok, issues, reviseVersion, window.Token).ConfigureAwait(false);
+                case TextCallInvalidOutput<StoryContentV1>:
+                    return InvalidRevision(s, reviseVersion);
+                case TextCallModerated<StoryContentV1> moderated:
+                    await WriteModerationEventAsync(s, ModerationStage.Draft, moderated.Categories, null).ConfigureAwait(false);
+                    await FailAsync(s, ErrorCodes.StoryModerated, "revision_refused", true, RefundModerated).ConfigureAwait(false);
+                    return null;
+                case TextCallFundsExhausted<StoryContentV1>:
+                    await PauseAsync(s, GenerationPauseReason.ProviderFundsExhausted).ConfigureAwait(false);
+                    return null;
+                default:
+                    // A provider error and any outcome this code does not know: the revision is optional, so the original
+                    // is kept (fail closed: an unknown output never becomes current).
+                    return NotApplied(s, AuditReportBuilder.RevisionReasonUnavailable, reviseVersion);
+            }
         }
+        catch (OperationCanceledException) when (window.IsCancellationRequested && !ct.IsCancellationRequested)
+        {
+            // The window closed (the deadline minus the save margin), not the run deadline and not the job token: the
+            // optional stage gives up and the generated row is saved.
+            return NotApplied(s, AuditReportBuilder.RevisionReasonUnavailable, reviseVersion);
+        }
+    }
+
+    // A2: the cancellation window of the optional revision stage. It closes <see cref="StoryJobOptions.SaveMargin"/>
+    // before the run deadline, on the same stopwatch the deadline itself runs on.
+    private CancellationTokenSource RevisionWindow(RunState s, CancellationToken ct)
+    {
+        var window = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        window.CancelAfter(s.Remaining - jobOptions.SaveMargin);
+
+        return window;
     }
 
     // Steps 2–4 for the revised draft: validate, moderate and review it again, in that order, before it can become the
@@ -763,7 +798,6 @@ public sealed partial class StoryGenerationPipeline(
     private async Task<RevisionOutcome?> AcceptRevisionAsync(
         RunState s,
         Written written,
-        ReviewOutcome review,
         TextCallOk<StoryContentV1> ok,
         IReadOnlyList<ReviewIssueV1> issues,
         string reviseVersion,
@@ -772,15 +806,17 @@ public sealed partial class StoryGenerationPipeline(
         s.RevisionModel = TextSafety.CleanModelName(ok.Model);
 
         // Step 2: the persistence rule and the validator of the written draft. A revised draft that adds a blocking
-        // finding the original did not have (an invented fact_ref, a malformed field), or that silently drops a
-        // fact_ref the original cited (02.6.2-T1 failure handling), is a regression and is never applied; the revision
-        // call itself is not retried (Goal: exactly one revision call).
+        // finding the original did not have (an invented fact_ref, a malformed field), that silently drops a
+        // fact_ref the original cited (02.6.2-T1 failure handling), or that returns the draft unchanged (A3: it fixes
+        // nothing, so no second row is written for the same content), is a regression and is never applied; the
+        // revision call itself is not retried (Goal: exactly one revision call).
         var unsafeRules = PersistenceRules(s, ok.Draft, out var contentJson);
         var validation = StoryDraftValidator.Validate(ok.Draft, s.Rules);
         var originalBlocking = StoryDraftValidator.Validate(written.Draft, s.Rules).BlockingRuleIds.ToHashSet(StringComparer.Ordinal);
         if (unsafeRules.Count > 0
             || validation.BlockingRuleIds.Any(rule => !originalBlocking.Contains(rule))
-            || DropsAnApprovedFactRef(s, written.Draft, ok.Draft))
+            || DropsAnApprovedFactRef(s, written.Draft, ok.Draft)
+            || string.Equals(contentJson, written.ContentJson, StringComparison.Ordinal))
         {
             return InvalidRevision(s, reviseVersion);
         }
@@ -802,11 +838,6 @@ public sealed partial class StoryGenerationPipeline(
                 issue.RepairDirection));
         }
 
-        if (!await StageAsync(s, GenerationStage.Checking, ct).ConfigureAwait(false))
-        {
-            return null;
-        }
-
         // Step 3: the revised draft is untrusted — the same moderator, over the same text set as the written draft (D9).
         var derived = StoryVersion.Derive(ok.Draft);
         var texts = NonBlank([ok.Draft.Title, derived.Body, ok.Draft.Description, .. ok.Draft.Tags ?? []]);
@@ -819,14 +850,26 @@ public sealed partial class StoryGenerationPipeline(
             case VerdictKind.Unavailable:
                 // Fail closed: a revision that cannot be moderated never becomes current.
                 return NotApplied(s, AuditReportBuilder.RevisionReasonUnavailable, reviseVersion);
+            case VerdictKind.Flagged when !s.ModerationFlagged:
+                // A1: a revision the local moderator flags must not replace a CLEAN original. The revised text is
+                // never stored, so no moderation event is written for it either (moderation_events points at the
+                // episode, not at a story version, so skipping it loses no referential link).
+                return NotApplied(s, AuditReportBuilder.RevisionReasonModerationFlagged, reviseVersion);
             case VerdictKind.Flagged:
-                // D12: a blocking category is recorded and blocks approval downstream; it does not fail the run.
+                // D12: the original draft was flagged too and stays stored, so the revision's flag is recorded the
+                // same way and the revised row can still become current.
                 await WriteModerationEventAsync(s, ModerationStage.Draft, verdict.Categories, null).ConfigureAwait(false);
                 (moderationNode, moderationCategories) = Moderation(verdict.Categories, flagged: true);
                 break;
             default:
                 (moderationNode, moderationCategories) = Moderation([], flagged: false);
                 break;
+        }
+
+        // A2 again, at the second milestone: what is left of the deadline must still fit review #2 and the save.
+        if (s.Remaining < jobOptions.ReviewAfterHeadroom)
+        {
+            return NotApplied(s, AuditReportBuilder.RevisionReasonUnavailable, reviseVersion);
         }
 
         // Review #2: the same review step over the revision, one call, metered as story_review, never a revision trigger.
@@ -926,7 +969,8 @@ public sealed partial class StoryGenerationPipeline(
     }
 
     // The D22 addresses the revision was asked to change: the segments of the blocking objective issues. A blank one is
-    // dropped (fail closed: it must not widen the addressed set and thereby hide drift).
+    // dropped (fail closed: it must not widen the addressed set and thereby hide drift). The drift check compares them
+    // canonically, so a review's `p:01` and the detector's `p:1` name the same segment.
     private static IReadOnlyCollection<string> AddressedSegments(IReadOnlyCollection<string> segments) =>
         [.. segments.Where(segment => !string.IsNullOrWhiteSpace(segment))];
 
@@ -989,40 +1033,13 @@ public sealed partial class StoryGenerationPipeline(
     {
         var options = SimilarityOptions.For(s.Language, similaritySettings);
         var started = Stopwatch.GetTimestamp();
-        IReadOnlyList<CorpusText> corpus;
-        using var deadline = new CancellationTokenSource(SimilarityReadTimeout);
-        using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, deadline.Token);
-        try
+        var load = await LoadCorpusAsync(s, ct).ConfigureAwait(false);
+        if (load.UnavailableReason is { } unavailable)
         {
-            corpus = await similarityCorpus.LoadAsync(s.Episode.Id, s.Language, linked.Token).ConfigureAwait(false);
-            linked.Token.ThrowIfCancellationRequested();
+            return Unavailable(unavailable);
         }
-        catch (SimilarityCorpusUnavailableException exception)
-        {
-            ct.ThrowIfCancellationRequested();
-            return Unavailable(exception.Reason);
-        }
-        catch (OperationCanceledException) when (deadline.IsCancellationRequested && !ct.IsCancellationRequested)
-        {
-            return Unavailable(SimilarityUnavailableReason.Timeout);
-        }
-        catch (Exception exception) when (exception is not OperationCanceledException)
-        {
-            ct.ThrowIfCancellationRequested();
-            var reason = HasDatabaseCause(exception)
-                ? SimilarityUnavailableReason.DbError
-                : SimilarityUnavailableReason.StorageError;
-            if (reason == SimilarityUnavailableReason.DbError)
-            {
-                LogSimilarityReadError(s.Episode.Id, s.Run.Id, reason, exception.GetType().Name);
-            }
-            else
-            {
-                LogSimilarityUnexpectedError(s.Episode.Id, s.Run.Id, reason, exception.GetType().FullName ?? exception.GetType().Name);
-            }
 
-            return Unavailable(reason);
-        }
+        var corpus = load.Corpus!;
 
         ct.ThrowIfCancellationRequested();
         var story = NightTales.Domain.Stories.Similarity.StoryText.From(draft);
@@ -1046,12 +1063,64 @@ public sealed partial class StoryGenerationPipeline(
             LogSimilarityUnavailable(s.Episode.Id, s.Run.Id, reason);
 
             // D2 (QA): the issue is returned, not added to the run's list, so the caller records it on the row it
-            // describes (the generated row or the revised row) instead of always on the generated row.
+            // describes (the generated row or the revised row) instead of always on the generated row. A fresh node
+            // per call: a JsonNode has one parent, so the two rows never share one instance.
             return new SimilarityOutcome(null, SimilarityVerdict.Pass, null)
             {
                 UnavailableIssue = IssueNode("similarity_unavailable", "advisory", "objective", SegmentAddress.Meta, string.Empty, string.Empty),
             };
         }
+    }
+
+    // A4: the corpus of the episode is read once per run and reused by every scored row (the written draft and the
+    // revision look at the same series and language). The 10 s read timeout and the failure classification stay with
+    // that single read; each caller still routes its own advisory issue onto the row it describes.
+    private async Task<CorpusLoad> LoadCorpusAsync(RunState s, CancellationToken ct)
+    {
+        if (s.Corpus is { } cached)
+        {
+            return cached;
+        }
+
+        CorpusLoad load;
+        using var deadline = new CancellationTokenSource(SimilarityReadTimeout);
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, deadline.Token);
+        try
+        {
+            var corpus = await similarityCorpus.LoadAsync(s.Episode.Id, s.Language, linked.Token).ConfigureAwait(false);
+            linked.Token.ThrowIfCancellationRequested();
+            load = new CorpusLoad(corpus, null);
+        }
+        catch (SimilarityCorpusUnavailableException exception)
+        {
+            ct.ThrowIfCancellationRequested();
+            load = new CorpusLoad(null, exception.Reason);
+        }
+        catch (OperationCanceledException) when (deadline.IsCancellationRequested && !ct.IsCancellationRequested)
+        {
+            load = new CorpusLoad(null, SimilarityUnavailableReason.Timeout);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            ct.ThrowIfCancellationRequested();
+            var reason = HasDatabaseCause(exception)
+                ? SimilarityUnavailableReason.DbError
+                : SimilarityUnavailableReason.StorageError;
+            if (reason == SimilarityUnavailableReason.DbError)
+            {
+                LogSimilarityReadError(s.Episode.Id, s.Run.Id, reason, exception.GetType().Name);
+            }
+            else
+            {
+                LogSimilarityUnexpectedError(s.Episode.Id, s.Run.Id, reason, exception.GetType().FullName ?? exception.GetType().Name);
+            }
+
+            load = new CorpusLoad(null, reason);
+        }
+
+        s.Corpus = load;
+
+        return load;
     }
 
     private static bool HasDatabaseCause(Exception exception)
@@ -1395,6 +1464,14 @@ public sealed partial class StoryGenerationPipeline(
         public JsonNode? UnavailableIssue { get; init; }
     }
 
+    /// <summary>
+    /// The one corpus read of a run (A4): the loaded corpus, or the reason the read failed. Held on
+    /// <see cref="RunState"/> so the written draft and the revision are scored against the same read.
+    /// </summary>
+    /// <param name="Corpus">The corpus the scorer uses; <see langword="null"/> when the read failed.</param>
+    /// <param name="UnavailableReason">The failure reason of <see cref="SimilarityUnavailableReason"/>; <see langword="null"/> when the read succeeded.</param>
+    private sealed record CorpusLoad(IReadOnlyList<CorpusText>? Corpus, string? UnavailableReason);
+
     private sealed record Written(StoryContentV1 Draft, string ContentJson, string Model, string PromptVersion);
 
     private sealed record ReviewOutcome(ValidatedReview? Validated, string? Model, string? PromptVersion)
@@ -1491,7 +1568,16 @@ public sealed partial class StoryGenerationPipeline(
 
         public IReadOnlyList<string>? ModerationCategories { get; set; }
 
+        /// <summary>Whether the written draft's own moderation verdict was a flag (D12); A1 keeps a revision from replacing a clean original.</summary>
+        public bool ModerationFlagged { get; set; }
+
+        /// <summary>The one corpus read of the run (A4), shared by both scored rows.</summary>
+        public CorpusLoad? Corpus { get; set; }
+
         public long StartedAt { get; } = Stopwatch.GetTimestamp();
+
+        /// <summary>What is left of the run deadline, on the same stopwatch the deadline <see cref="CancellationTokenSource"/> runs on (A2).</summary>
+        public TimeSpan Remaining => Timeout - Stopwatch.GetElapsedTime(StartedAt);
 
         public bool SoftWarned { get; set; }
 

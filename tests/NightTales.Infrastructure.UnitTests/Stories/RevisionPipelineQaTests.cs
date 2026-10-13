@@ -18,7 +18,7 @@ namespace NightTales.Infrastructure.UnitTests.Stories;
 /// Independent QA probes for 02.6.2-T1 (the single revision pass). These were written by an agent that did not
 /// write the production code, from the task file's Acceptance checks and Failure-handling table, and they target
 /// the rows a green suite can still hide: a revision that silently drops an approved citation, a structurally
-/// broken revision output, and the "applied but unfixed" revision. The harness is
+/// broken revision output, and the unchanged "fix" a model can return. The harness is
 /// <see cref="RevisionWorld"/>'s (same assembly).
 /// </summary>
 [Trait("Category", "Integration")]
@@ -85,33 +85,29 @@ public sealed class RevisionPipelineQaTests(TestDatabase database) : Integration
     }
 
     /// <summary>
-    /// Characterises the "applied but unfixed" revision: a model that returns the draft unchanged still produces a
-    /// <c>revised</c> row that becomes current, and review #2's still-blocking issue must then be visible as a hint
-    /// in <c>revision.review_after.issues</c>, never as a silent success.
+    /// A3: a model that returns the draft unchanged fixes nothing. The revision is invalid output — no second row is
+    /// written for content the generated row already holds, and review #2 is never paid for.
     /// </summary>
     [Fact]
-    public async Task QA_UnchangedRevisionOutput_IsAppliedAndReviewTwosHintStaysVisible()
+    public async Task QA_UnchangedRevisionOutput_KeepsTheOriginalDraft()
     {
         var world = await RevisionWorld.CreateAsync(Database, Ct);
         var draft = Draft();
         world.Writer.EnqueueWrite(WriteOk(draft));
         world.Writer.EnqueueReview(ReviewOk(BlockingHook()));
         world.Writer.EnqueueRevision(RevisionOk(draft));
-        world.Writer.EnqueueReview(ReviewOk(BlockingHook()));
 
         await world.RunAsync(Ct);
 
         (await world.ReadRunAsync()).Status.ShouldBe(GenerationRunStatus.Succeeded);
-        var versions = await world.VersionsAsync();
-        versions.Count.ShouldBe(2, "the revision output becomes a row even when it changes nothing");
-        versions[1].ParentVersionId.ShouldBe(versions[0].Id);
+        var version = (await world.VersionsAsync()).ShouldHaveSingleItem();
+        version.Source.ShouldBe(StoryVersionSource.Generated, "an unchanged revision never becomes a row of its own");
 
-        var block = System.Text.Json.Nodes.JsonNode.Parse(versions[1].AuditReport!)!["revision"]!;
-        block["applied"]!.GetValue<bool>().ShouldBeTrue();
-        block["review_after"]!["issues"]!.AsArray()
-            .ShouldContain(issue => issue!["id"]!.GetValue<string>() == "i1",
-                "the unfixed blocking issue from review #2 must remain visible as a hint");
+        var block = System.Text.Json.Nodes.JsonNode.Parse(version.AuditReport!)!["revision"]!;
+        block["applied"]!.GetValue<bool>().ShouldBeFalse();
+        block["reason"]!.GetValue<string>().ShouldBe(AuditReportBuilder.RevisionReasonInvalidOutput);
         world.Writer.RevisionRequests.Count.ShouldBe(1, "never a second revision");
+        world.Writer.ReviewRequests.Count.ShouldBe(1, "review #2 is not paid for a revision that fixes nothing");
     }
 
     /// <summary>

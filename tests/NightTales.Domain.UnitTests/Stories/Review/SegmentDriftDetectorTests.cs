@@ -42,6 +42,21 @@ public sealed class SegmentDriftDetectorTests
     }
 
     [Fact]
+    public void SegmentDriftDetector_AddressedSegmentWithPaddedIndex_NoDrift()
+    {
+        // A6: ReviewResultValidator accepts `p:01` while the detector's own addresses are `p:1`, so an addressed
+        // paragraph must be recognised whatever index form the review used.
+        var original = Story("the opening line", ["first body", "the quiet house on the hill"], "the closing line");
+        var revised = Story("the opening line", ["first body", "completely different words now here"], "the closing line");
+
+        var drift = SegmentDriftDetector.Detect(original, revised, ["p:01"], Similarity, [], [], Language.Vi);
+
+        drift.HasDrift.ShouldBeFalse();
+        drift.ChangedSegments.ShouldBeEmpty();
+        drift.SegmentCountChanged.ShouldBeFalse();
+    }
+
+    [Fact]
     public void SegmentDriftDetector_UntouchedSegmentLowSimilarity_ReportsDrift()
     {
         var original = Story("the opening line", ["first body", "the quiet house on the hill"], "the closing line");
