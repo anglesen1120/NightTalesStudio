@@ -332,7 +332,7 @@ public sealed class StoryGenerationPipelineTests(TestDatabase database) : Integr
     [Fact]
     public async Task Pipeline_FactSheetChangedBetweenRequestAndDispatch_FailsOutdated()
     {
-        var world = await NewWorldAsync(inputFactSheetId: Guid.CreateVersion7());
+        var world = await NewWorldAsync(pinFactSheet: true);
 
         await world.RunAsync();
 
@@ -622,7 +622,7 @@ public sealed class StoryGenerationPipelineTests(TestDatabase database) : Integr
 
     private async Task<World> NewWorldAsync(
         int timeoutSeconds = 360,
-        Guid? inputFactSheetId = null,
+        bool pinFactSheet = false,
         Action<GenerationRun>? seed = null,
         int priceVersion = 1,
         bool reviewEnabled = false,
@@ -637,6 +637,12 @@ public sealed class StoryGenerationPipelineTests(TestDatabase database) : Integr
         var reservation = Guid.CreateVersion7();
         var current = new TestCurrentUser { Id = user.Id };
 
+        // The run's input_fact_sheet_id is a same-owner FK to fact_sheets (02 CR-29), so a pinned run names a
+        // real draft row of this episode.
+        var sheet = pinFactSheet
+            ? await new FactSheetBuilder(Database, current, new FakeClock(Now)).CreateAsync(user.Id, episode.Id, Ct)
+            : null;
+
         Guid runId;
         await using (var seedDb = Database.CreateAppDbContext(current, new FakeClock(Now)))
         {
@@ -648,7 +654,7 @@ public sealed class StoryGenerationPipelineTests(TestDatabase database) : Integr
                     GenerationTrigger.User,
                     null,
                     EpisodeStatus.Draft,
-                    inputFactSheetId,
+                    sheet?.Id,
                     reservation,
                     0.5m,
                     Now)

@@ -6,6 +6,17 @@ public sealed class SimilaritySettings
     public double WarnAbove { get; set; } = 0.05;
     public double BlockAbove { get; set; } = 0.15;
     public int MinTokens { get; set; } = 50;
+
+    /// <summary>
+    /// The <c>Similarity:FactOverlapBlock</c> threshold of the fact-sheet verbatim-copy rule (02.5.3-T2 rule 4,
+    /// F18): a fact whose statement scores above it against its cited sources is dropped. It defaults to the
+    /// 02.5.6 <see cref="BlockAbove"/> default (<c>0.15</c>), because the two thresholds answer the same
+    /// question at different granularities (a story, a fact statement).
+    /// </summary>
+    public double FactOverlapBlock { get; set; } = DefaultFactOverlapBlock;
+
+    /// <summary>The frozen default of <see cref="FactOverlapBlock"/>: the 02.5.6 <c>BlockAbove</c> default.</summary>
+    public const double DefaultFactOverlapBlock = 0.15;
     public Dictionary<string, int> N { get; set; } = new(StringComparer.OrdinalIgnoreCase)
     {
         ["vi"] = 10,

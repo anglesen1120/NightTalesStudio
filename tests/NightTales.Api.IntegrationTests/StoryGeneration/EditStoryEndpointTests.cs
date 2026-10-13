@@ -506,8 +506,7 @@ public sealed class EditStoryEndpointTests(TestDatabase database) : IntegrationT
     [Fact]
     public async Task EditStory_TrueCrime_KeepsFactSheetIdFromPreviousVersion()
     {
-        var factSheetId = Guid.CreateVersion7();
-        var world = await SeedAsync(factSheetId: factSheetId);
+        var world = await SeedAsync(withFactSheet: true);
         using var factory = Factory();
         using var client = factory.ClientFor(world.UserId);
 
@@ -515,11 +514,11 @@ public sealed class EditStoryEndpointTests(TestDatabase database) : IntegrationT
 
         response.StatusCode.ShouldBe(HttpStatusCode.OK, await response.Content.ReadAsStringAsync(Ct));
         var body = await ReadBodyAsync(response);
-        body.GetProperty("factSheetId").GetGuid().ShouldBe(factSheetId);
+        body.GetProperty("factSheetId").GetGuid().ShouldBe(world.FactSheetId!.Value);
         SqlProbe.ScalarText(
                 Database,
                 $"SELECT fact_sheet_id::text FROM story_versions WHERE id = '{body.GetProperty("versionId").GetGuid()}'")
-            .ShouldBe(factSheetId.ToString());
+            .ShouldBe(world.FactSheetId!.Value.ToString());
     }
 
     [Fact]
@@ -710,13 +709,19 @@ public sealed class EditStoryEndpointTests(TestDatabase database) : IntegrationT
         return problem;
     }
 
-    private async Task<World> SeedAsync(EpisodeStatus status = EpisodeStatus.StoryReview, string? audit = null, Guid? factSheetId = null)
+    private async Task<World> SeedAsync(EpisodeStatus status = EpisodeStatus.StoryReview, string? audit = null, bool withFactSheet = false)
     {
         var actor = new TestCurrentUser();
         var user = await new UserBuilder(Database, actor).CreateAsync(ct: Ct);
         var series = await new SeriesBuilder(Database, actor).CreateAsync(user.Id, ct: Ct);
         var episode = await new EpisodeBuilder(Database, actor)
             .CreateAsync(user.Id, series.Id, lengthTier: LengthTier.Short, status: status, ct: Ct);
+
+        // story_versions.fact_sheet_id is a same-owner FK to fact_sheets (02 CR-29), so a seeded version that
+        // carries one names a real draft row of this episode.
+        var sheet = withFactSheet
+            ? await new FactSheetBuilder(Database, actor).CreateAsync(user.Id, episode.Id, Ct)
+            : null;
 
         var draft = ValidDraft();
         var version = StoryVersion.Create(
@@ -730,7 +735,7 @@ public sealed class EditStoryEndpointTests(TestDatabase database) : IntegrationT
             "rel=1",
             null,
             null,
-            factSheetId,
+            sheet?.Id,
             audit ?? AuditJson(),
             null,
             Start);
@@ -743,7 +748,7 @@ public sealed class EditStoryEndpointTests(TestDatabase database) : IntegrationT
 
         SqlProbe.Execute(Database, $"UPDATE episodes SET current_story_version_id = '{version.Id}' WHERE id = '{episode.Id}'");
 
-        return new World(user.Id, series.Id, episode.Id, version.Id);
+        return new World(user.Id, series.Id, episode.Id, version.Id, sheet?.Id);
     }
 
     private static JsonArray FactSources() =>
@@ -804,5 +809,5 @@ public sealed class EditStoryEndpointTests(TestDatabase database) : IntegrationT
 
     private static int Words(string text) => text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries).Length;
 
-    private sealed record World(Guid UserId, Guid SeriesId, Guid EpisodeId, Guid VersionId);
+    private sealed record World(Guid UserId, Guid SeriesId, Guid EpisodeId, Guid VersionId, Guid? FactSheetId = null);
 }

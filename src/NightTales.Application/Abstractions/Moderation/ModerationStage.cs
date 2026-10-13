@@ -26,6 +26,12 @@ public enum ModerationStage
 
     /// <summary>A find-sources run (02.7).</summary>
     FindSources,
+
+    /// <summary>
+    /// The source pre-check of a fact-sheet run (02.5.3-T2, plan §7): the plain source texts the extraction call
+    /// is about to read, before the paid call. A flag fails the run <c>fact_sheet_moderated</c>.
+    /// </summary>
+    FactSheet,
 }
 
 /// <summary>The stored name of a <see cref="ModerationStage"/>.</summary>

@@ -76,6 +76,9 @@ public sealed class AppDbContext : IdentityDbContext<AppUser, AppRole, Guid>, IA
     /// <summary>The append-only url-source creation ledger the 24 h cap counts (02.5.1-T1, table <c>source_creations</c>, CR-31); <c>IUserOwned</c>, so the D10 tenant filter applies.</summary>
     public DbSet<SourceCreation> SourceCreations => Set<SourceCreation>();
 
+    /// <summary>The versioned fact sheets of one episode (02.5.3-T2, table <c>fact_sheets</c>); <c>IUserOwned</c>, so the D10 tenant filter applies.</summary>
+    public DbSet<FactSheet> FactSheets => Set<FactSheet>();
+
     /// <summary>The legal deletion duties of 13.3.1-T1 (table <c>data_deletion_requests</c>); <c>IUserOwned</c>, so the D10 tenant filter applies.</summary>
     public DbSet<DeletionRequest> DeletionRequests => Set<DeletionRequest>();
 

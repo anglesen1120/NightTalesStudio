@@ -132,6 +132,16 @@ internal sealed class RevisionWorld
         var current = new TestCurrentUser { Id = user.Id };
         var reservation = Guid.CreateVersion7();
 
+        // generation_runs.input_fact_sheet_id and story_versions.fact_sheet_id are same-owner FKs to
+        // fact_sheets (id, user_id) (02 CR-29), so the pinned approved sheet must name a real draft row of
+        // this episode and owner. Materialize the row and re-pin the guard's sheet onto its id, keeping the
+        // sheet's facts and version (and the id the assertions compare against) unchanged.
+        if (approvedSheet?.FactSheetId is not null)
+        {
+            var sheet = await new FactSheetBuilder(database, current, clock).CreateAsync(user.Id, episode.Id, ct);
+            approvedSheet = approvedSheet with { FactSheetId = sheet.Id };
+        }
+
         Guid runId;
         await using (var seed = database.CreateAppDbContext(current, clock))
         {

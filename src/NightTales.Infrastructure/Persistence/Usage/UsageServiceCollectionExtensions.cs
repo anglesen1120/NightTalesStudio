@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
@@ -6,6 +7,7 @@ using NightTales.Application.Abstractions.Money;
 using NightTales.Application.Abstractions.Rendering;
 using NightTales.Application.Abstractions.Usage;
 using NightTales.Application.Features.Rendering;
+using NightTales.Application.Features.Research.GenerateFactSheet;
 using NightTales.Infrastructure.Money;
 using NightTales.Infrastructure.Persistence.Queries;
 using NightTales.Infrastructure.Persistence.Seeding;
@@ -19,8 +21,9 @@ public static class UsageServiceCollectionExtensions
     /// <summary>
     /// Registers <see cref="PricingOptions"/> (<c>OpenAi:Pricing</c>), the <see cref="PriceVersionSeeder"/>
     /// (an <c>ISeeder</c>, run by the 09.2.5-T1 <c>SeedRunner</c>: Development auto-seed and <c>nts-seed</c>),
-    /// <see cref="IPriceCatalog"/>, <see cref="IUsageMeter"/> and
-    /// <see cref="IStoryCostEstimator"/>. Needs <c>AddPersistence</c> and <c>AddPromptCatalog</c> in the same host.
+    /// <see cref="IPriceCatalog"/>, <see cref="IUsageMeter"/>,
+    /// <see cref="IStoryCostEstimator"/> and the fact-sheet run's <see cref="IFactSheetCostEstimator"/> over the
+    /// <c>Facts</c> section (02.5.3-T2). Needs <c>AddPersistence</c> and <c>AddPromptCatalog</c> in the same host.
     /// </summary>
     /// <param name="services">The service collection.</param>
     /// <returns>The same collection.</returns>
@@ -37,6 +40,25 @@ public static class UsageServiceCollectionExtensions
         services.TryAddSingleton<IPriceCatalog, PriceCatalog>();
         services.TryAddSingleton<IUsageMeter, UsageMeter>();
         services.TryAddSingleton<IStoryCostEstimator, StoryCostEstimator>();
+
+        // 02.5.3-T2 (02 README D14/T56): the worst-case bound of one fact-sheet run, read by the command that
+        // reserves it and by the job that settles it. Both hosts compose this method, exactly as they do for
+        // IStoryCostEstimator, so the Api needs no fact-sheet-specific registration. The input ceiling comes from the
+        // `Facts` section (the same key FactsOptions binds) and the model follows OpenAi:Models:Facts, as the story
+        // steps follow theirs; the section's own Model is only the absent-key default.
+        services.AddOptions<FactSheetCostOptions>()
+            .BindConfiguration(FactSheetCostOptions.SectionName)
+            .PostConfigure<IConfiguration>((options, configuration) =>
+            {
+                if (configuration["OpenAi:Models:Facts"] is { Length: > 0 } model)
+                {
+                    options.Model = model;
+                }
+            })
+            .ValidateOnStart();
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IValidateOptions<FactSheetCostOptions>, FactSheetCostOptionsValidator>());
+        services.TryAddSingleton(provider => provider.GetRequiredService<IOptions<FactSheetCostOptions>>().Value);
+        services.TryAddSingleton<IFactSheetCostEstimator, FactSheetCostEstimator>();
 
         // 03.2.1-T1: the Images section (scene budget, D3) and the worst-case image bound (D8).
         services.AddOptions<ImagesOptions>()

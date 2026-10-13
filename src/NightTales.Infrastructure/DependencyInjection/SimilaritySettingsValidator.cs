@@ -28,6 +28,12 @@ public sealed partial class SimilaritySettingsValidator(ILogger<SimilaritySettin
             failures.Add("Similarity:BlockAbove must be greater than Similarity:WarnAbove.");
         }
 
+        // 02.5.3-T2 rule 4: the fact-sheet verbatim-copy threshold, a ratio like BlockAbove.
+        if (!double.IsFinite(options.FactOverlapBlock) || options.FactOverlapBlock is < 0 or > 1)
+        {
+            failures.Add("Similarity:FactOverlapBlock must be a finite number between 0 and 1.");
+        }
+
         foreach (var (language, n) in options.N)
         {
             if (n < 2)
