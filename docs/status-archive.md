@@ -8,6 +8,12 @@ History moved out of STATUS.md to keep the live file small. The initial archive 
 
 - **Backend lane (Session 30):** **02.6.2-T1** single revision pass (PR open, T3 gates closed, no migration; `Story:Revision` section, `prompts/revise/v1.md`, `IStoryWriter.ReviseAsync`, drift detector, `hasDrift` + review #2 in the read model). Owner decisions needed and open items are in §Open tasks (row 02.6.2-T1) and the PR FINAL-REPORT. Next backend after merge: **02.5.3-T2** (Session 31, migration lane) or 02.6.1-T2.
 
+Superseded §Open tasks row (verbatim):
+
+| 02.6.2-T1 Single revision pass | in PR #180 (`feature/02.6.2-T1-s30`, Session 30; no migration) | Code tip `97cc0a9`: local full `gate.sh` `GATE_RC=0`; CI refused (CI-01, owner treats as pass); T3 gates closed (QA, code, perf, security, delta). R3 `hasDrift` hand-over closed. Owner decisions 2026-10-14 (approved): Revision timeout 90 s (README D7 amended), exactly one logical revision call with no business-level retry (Failure-table wording fixed), review #2 unusable or too little run time keeps the original. Remaining open items are the rows below. |
+
+Superseded clause of the backend Next bullet (verbatim): "Lane next: **02.5.3-T2** fact-sheet generation job (consumes `FactInputPlan`; PF-1 index), then 02.6.1-T2 and 02.6.2-T1 (02 §10 T113(b));" (now: "then 02.6.1-T2 (02.6.2-T1 merged as #180, next bullet);").
+
 Outcome: #180 merged (`280d74b`); the 02.6.2-T1 row now says merged and its open items are separate rows.
 
 ### Superseded Session 21 413 follow-up rows (2026-10-05, replaced when #167 merged as `1c5add6`)
