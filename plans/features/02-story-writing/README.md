@@ -238,7 +238,7 @@ prompts/
   - `max_output_tokens` from D4 / `price_versions.limits`
   - `store = false` (O5)
   - `safety_identifier = sha256(user_id)` (hex)
-  - `prompt_cache_key = "<step>:<preset>"`
+  - `prompt_cache_key = "<step>:<preset>"`; a step without a preset (facts, bible, ideas, novelty, finder) uses `"<step>:<language>"` (owner decision 2026-10-14, 02.5.3-T1 `facts:{language}`)
   - client header `X-Client-Request-Id = generation_run_id:step:attempt`
 - The SDK's own retry is **disabled** (`ClientRetryPolicy` with 0 retries ⚠️ confirm option name in 2.14.0).
 - One `Microsoft.Extensions.Http.Resilience` pipeline per call: timeout (writer 90 s, review 45 s, facts 60 s, others 30 s), 2 attempts on 429/5xx/timeout with jittered backoff, honouring `Retry-After`.
