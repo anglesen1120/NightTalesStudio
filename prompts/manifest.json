@@ -1,9 +1,17 @@
 {
   "release": "2026.10.1",
   "files": {
+    "facts/v1.md": {
+      "version": "v1",
+      "sha256": "c1eb8022676fabbced995616ef0c853bed46bcc052d77288d5450f5856de328c"
+    },
     "review/v1.md": {
       "version": "v1",
       "sha256": "68b5c06c071c0d6153943876bc6c64bf542bac39507a01dc7d260698e4ac4bea"
+    },
+    "schemas/facts.v1.json": {
+      "version": "v1",
+      "sha256": "814e68e2a5c4a593b4a53e2b2eb5074330a62b058a9cf3413fbaac910e529345"
     },
     "schemas/review.v1.json": {
       "version": "v1",

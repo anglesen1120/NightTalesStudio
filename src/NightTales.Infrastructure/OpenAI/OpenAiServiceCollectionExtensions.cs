@@ -9,6 +9,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NightTales.Application.Abstractions.Moderation;
+using NightTales.Application.Abstractions.Research;
 using NightTales.Application.Abstractions.Text;
 using NightTales.Application.Abstractions.Usage;
 using NightTales.Application.Features.Stories.Writing;
@@ -76,9 +77,25 @@ public static class OpenAiServiceCollectionExtensions
         services.TryAddSingleton<ITextClient, OpenAiTextClient>();
         services.TryAddSingleton<IStoryWriter, OpenAiStoryWriter>();
 
+        AddFactsExtractor(services);
         AddContentModerator(services);
 
         return services;
+    }
+
+    /// <summary>
+    /// 02.5.3-T1 (02 README D21): <see cref="FactsOptions"/> bound from <c>Facts</c> and validated on start,
+    /// and the <see cref="IFactExtractor"/> over the same <see cref="ITextClient"/> and the prompt catalog.
+    /// </summary>
+    /// <param name="services">The service collection.</param>
+    private static void AddFactsExtractor(IServiceCollection services)
+    {
+        services.AddOptions<FactsOptions>()
+            .BindConfiguration(FactsOptions.SectionName)
+            .ValidateOnStart();
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IValidateOptions<FactsOptions>, FactsOptionsValidator>());
+
+        services.TryAddSingleton<IFactExtractor, OpenAiFactExtractor>();
     }
 
     /// <summary>
