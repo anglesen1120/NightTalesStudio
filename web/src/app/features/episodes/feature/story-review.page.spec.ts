@@ -1,9 +1,9 @@
-import { signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, input, output, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
-import { ActivatedRoute, convertToParamMap, provideRouter } from '@angular/router';
+import { ActivatedRoute, Router, convertToParamMap, provideRouter } from '@angular/router';
 import { TranslocoTestingModule } from '@jsverse/transloco';
-import { of } from 'rxjs';
+import { BehaviorSubject, of } from 'rxjs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AppErrorMapper } from '@core/errors';
 import { ConfirmDialog, ConflictDialog } from '@shared/ui';
@@ -17,6 +17,18 @@ import type { EpisodeDetail } from '../domain/episode.model';
 import type { StorySnapshot } from '../domain/story.model';
 import { StoryReviewPage } from './story-review.page';
 import { SegmentEditorComponent } from '../ui/segment-editor.component';
+import { StoryEditorComponent } from '../ui/story-editor.component';
+import { VersionsPanelHostComponent } from './versions-panel-host.component';
+import { VersionsPanelComponent } from '../ui/versions-panel/versions-panel.component';
+
+@Component({ selector: 'nts-versions-panel-host', imports: [VersionsPanelComponent], template: '<nts-versions-panel (closed)="closed.emit()" />', changeDetection: ChangeDetectionStrategy.OnPush })
+class VersionsPanelProbe {
+  readonly episodeId = input.required<string>();
+  readonly initialLeft = input<string | null>(null);
+  readonly initialRight = input<string | null>(null);
+  readonly closed = output<void>();
+  readonly selectionChange = output<{ left: string | null; right: string | null }>();
+}
 
 const translations = TranslocoTestingModule.forRoot({
   langs: { vi: coreVi, 'core/vi': coreVi, 'episodes/vi': episodesVi, 'errors/vi': errorsVi },
@@ -124,4 +136,90 @@ describe('StoryReviewPage', () => {
     await fixture.whenStable();
     expect(root.querySelector('[role="status"]')?.textContent).toContain(episodesVi.editor.unsaved);
   });
+
+  it('mounts versions only for the query flag, merges ids safely and preserves the segment query focus', async () => {
+    const detailStore = fakeDetailStore(), storyStore = fakeStoryStore();
+    const params = convertToParamMap({ id: 'episode-1' });
+    const query = new BehaviorSubject(convertToParamMap({ segment: 'p:3' }));
+    await TestBed.configureTestingModule({
+      imports: [StoryReviewPage, translations],
+      providers: [...ZONELESS_TEST_PROVIDERS, provideRouter([]),
+        { provide: ActivatedRoute, useValue: { paramMap: of(params), queryParamMap: query, snapshot: { paramMap: params, queryParamMap: query.value } } },
+        { provide: AppErrorMapper, useValue: { messageKey: () => 'errors.story_invalid_content' } },
+        { provide: ConflictDialog, useValue: { open: vi.fn() } },
+        { provide: ConfirmDialog, useValue: { confirm: vi.fn() } },
+      ],
+    }).overrideComponent(StoryReviewPage, {
+      remove: { imports: [VersionsPanelHostComponent] },
+      add: { imports: [VersionsPanelProbe] },
+    }).overrideComponent(StoryReviewPage, {
+      set: { providers: [{ provide: EpisodeDetailStore, useValue: detailStore }, { provide: StoryEditorStore, useValue: storyStore }] },
+    }).compileComponents();
+    const fixture = TestBed.createComponent(StoryReviewPage);
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+    fixture.detectChanges(); await fixture.whenStable(); fixture.detectChanges(); await fixture.whenStable();
+    const root = fixture.nativeElement as HTMLElement;
+    expect(root.querySelector('nts-versions-panel-host')).toBeNull();
+    root.querySelector<HTMLButtonElement>('.story-review-page__versions-toggle')!.click();
+    expect(navigate).toHaveBeenLastCalledWith([], expect.objectContaining({ queryParams: { panel: 'versions' }, queryParamsHandling: 'merge', replaceUrl: true }));
+    const left = '00000000-0000-7000-8000-000000000001';
+    query.next(convertToParamMap({ segment: 'p:3', panel: 'versions', left, right: '<script>content</script>' }));
+    fixture.detectChanges(); await fixture.whenStable();
+    const probe = fixture.debugElement.query(By.directive(VersionsPanelProbe)).componentInstance as VersionsPanelProbe;
+    expect(probe.episodeId()).toBe('episode-1');
+    expect(probe.initialLeft()).toBe(left); expect(probe.initialRight()).toBeNull();
+    const editor = fixture.debugElement.query(By.directive(StoryEditorComponent)).componentInstance as StoryEditorComponent;
+    const focus = vi.spyOn(editor, 'focusSegment');
+    probe.selectionChange.emit({ left, right: left });
+    expect(navigate).toHaveBeenLastCalledWith([], expect.objectContaining({ queryParams: { left, right: left }, queryParamsHandling: 'merge', replaceUrl: true }));
+    query.next(convertToParamMap({ segment: 'p:3', panel: 'versions', left, right: left }));
+    fixture.detectChanges(); await fixture.whenStable();
+    expect(focus).not.toHaveBeenCalled();
+    probe.closed.emit();
+    expect(navigate).toHaveBeenLastCalledWith([], expect.objectContaining({ queryParams: { panel: null, left: null, right: null }, queryParamsHandling: 'merge', replaceUrl: true }));
+    query.next(convertToParamMap({ segment: 'p:3' }));
+    fixture.detectChanges(); await fixture.whenStable();
+    expect(root.querySelector('nts-versions-panel-host')).toBeNull();
+    expect(storyStore.load).toHaveBeenCalledTimes(1);
+  });
+  it.each(['close button', 'Escape'] as const)('returns focus to Versions after %s removes the panel, and focuses the heading when reopened', async (gesture) => {
+    const detailStore = fakeDetailStore(), storyStore = fakeStoryStore();
+    const params = convertToParamMap({ id: 'episode-1' });
+    const query = new BehaviorSubject(convertToParamMap({ segment: 'p:3' }));
+    await TestBed.configureTestingModule({
+      imports: [StoryReviewPage, translations],
+      providers: [...ZONELESS_TEST_PROVIDERS, provideRouter([]),
+        { provide: ActivatedRoute, useValue: { paramMap: of(params), queryParamMap: query, snapshot: { paramMap: params, queryParamMap: query.value } } },
+        { provide: AppErrorMapper, useValue: { messageKey: () => 'errors.story_invalid_content' } },
+        { provide: ConflictDialog, useValue: { open: vi.fn() } },
+        { provide: ConfirmDialog, useValue: { confirm: vi.fn() } },
+      ],
+    }).overrideComponent(StoryReviewPage, {
+      remove: { imports: [VersionsPanelHostComponent] }, add: { imports: [VersionsPanelProbe] },
+    }).overrideComponent(StoryReviewPage, {
+      set: { providers: [{ provide: EpisodeDetailStore, useValue: detailStore }, { provide: StoryEditorStore, useValue: storyStore }] },
+    }).compileComponents();
+    const fixture = TestBed.createComponent(StoryReviewPage);
+    vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+    fixture.detectChanges(); await fixture.whenStable();
+    const root = fixture.nativeElement as HTMLElement;
+    const toggle = root.querySelector<HTMLButtonElement>('.story-review-page__versions-toggle')!;
+    toggle.click();
+    query.next(convertToParamMap({ segment: 'p:3', panel: 'versions' }));
+    fixture.detectChanges(); await fixture.whenStable();
+    expect(document.activeElement).toBe(root.querySelector('#versions-heading'));
+    if (gesture === 'close button') root.querySelector<HTMLButtonElement>('.versions__close')!.click();
+    else root.querySelector<HTMLElement>('.versions')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    await fixture.whenStable();
+    expect(document.activeElement).not.toBe(toggle);
+    query.next(convertToParamMap({ segment: 'p:3' }));
+    fixture.detectChanges(); await fixture.whenStable();
+    expect(root.querySelector('nts-versions-panel-host')).toBeNull();
+    expect(document.activeElement).toBe(toggle);
+    toggle.click();
+    query.next(convertToParamMap({ segment: 'p:3', panel: 'versions' }));
+    fixture.detectChanges(); await fixture.whenStable();
+    expect(document.activeElement).toBe(root.querySelector('#versions-heading'));
+  });
+
 });

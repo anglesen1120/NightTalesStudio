@@ -1,0 +1,76 @@
+<section class="versions" aria-labelledby="versions-heading">
+  <header class="versions__header">
+    <h2 #heading id="versions-heading" tabindex="-1">{{ 'episodes.versions.title' | transloco }}</h2>
+    <button type="button" class="versions__close" [disabled]="restoring()" (click)="close()">{{ 'episodes.versions.close' | transloco }}</button>
+  </header>
+  @if (loading() && !loaded()) {
+    <nts-loading-state labelKey="episodes.versions.loading" />
+  } @else if (!loaded() && error(); as listError) {
+    <nts-error-state [bodyKey]="errorKey()" [traceId]="listError.traceId" retryLabelKey="episodes.versions.retryList" (retry)="retryList.emit()" />
+  } @else if (empty()) {
+    <nts-empty-state titleKey="episodes.versions.empty" />
+  } @else if (loaded()) {
+    <div class="versions__slots" role="group" [attr.aria-label]="'episodes.versions.selection' | transloco">
+      <button type="button" [disabled]="restoring()" [attr.aria-pressed]="activeSide() === 'left'" (click)="activeSide.set('left')">
+        {{ 'episodes.versions.left' | transloco }}
+        @if (left(); as selected) {<strong>{{ 'episodes.versions.version' | transloco: { version: selected.version } }}</strong>}
+      </button>
+      <button type="button" [disabled]="restoring()" [attr.aria-pressed]="activeSide() === 'right'" (click)="activeSide.set('right')">
+        {{ 'episodes.versions.right' | transloco }}
+        @if (right(); as selected) {<strong>{{ 'episodes.versions.version' | transloco: { version: selected.version } }}</strong>}
+      </button>
+    </div>
+    <p class="versions__hint">{{ 'episodes.versions.pickHint' | transloco }}</p>
+    <div role="list" class="versions__list">
+      @for (row of rows(); track row.version.versionId) {
+        <div role="listitem">
+          <button type="button" class="versions__row" [disabled]="restoring()" [attr.data-version-id]="row.version.versionId" [attr.aria-pressed]="(activeSide() === 'left' ? leftId() : rightId()) === row.version.versionId" (click)="choose(row.version.versionId)">
+            <strong>{{ 'episodes.versions.version' | transloco: { version: row.version.version } }}</strong>
+            <time [attr.datetime]="row.version.createdAt">{{ row.date }}</time>
+            <span>{{ 'episodes.versions.wordCount' | transloco: { count: row.words } }}</span>
+            <span>{{ 'episodes.versions.similarity' | transloco: { value: row.similarity } }}</span>
+            <span>{{ ('episodes.versions.source.' + row.version.source) | transloco }}</span>
+            @if (row.version.isCurrent) {<span class="versions__badge"><nts-icon-clock />{{ 'episodes.versions.current' | transloco }}</span>}
+            @if (row.version.approved) {<span class="versions__badge"><nts-icon-check />{{ 'episodes.versions.approved' | transloco }}</span>}
+          </button>
+        </div>
+      }
+    </div>
+    @if (loadingSide()) {<nts-loading-state labelKey="episodes.versions.loadingSide" />}
+    @if (sideError(); as failure) {
+      <div class="versions__side-error">
+        <p>{{ (failure.side === 'left' ? 'episodes.versions.left' : 'episodes.versions.right') | transloco }}</p>
+        <nts-error-state [bodyKey]="sideErrorKey()" retryLabelKey="episodes.versions.retrySide" (retry)="retrySide.emit(failure.side)" />
+      </div>
+    }
+    @if (sameSelected() || left() === null || right() === null) {
+      <p class="versions__hint" role="status">{{ 'episodes.versions.selectTwo' | transloco }}</p>
+    } @else if (diff()?.truncated) {
+      <p class="versions__hint" role="status">{{ 'episodes.versions.truncated' | transloco }}</p>
+    } @else if (left(); as selectedLeft) {
+      @if (right(); as selectedRight) {
+        <div class="versions__comparison">
+          @defer (on interaction) {
+            <nts-diff-view [left]="selectedLeft.body" [right]="selectedRight.body" [label]="'episodes.versions.diff.label' | transloco" [addedLabel]="'episodes.versions.diff.added' | transloco" [removedLabel]="'episodes.versions.diff.removed' | transloco" [truncatedNotice]="'episodes.versions.truncated' | transloco" (rendered)="onRendered($event)" />
+          } @placeholder {
+            <button type="button" class="versions__compare">{{ 'episodes.versions.diff.show' | transloco }}</button>
+          } @loading {
+            <nts-loading-state labelKey="episodes.versions.diff.loading" />
+          } @error {
+            <nts-error-state bodyKey="episodes.versions.diff.loadError" />
+          }
+        </div>
+      }
+    }
+    <p class="versions__summary" role="status" aria-live="polite" aria-atomic="true">
+      @if (summary(); as result) {
+        @if (result.truncated) { {{ 'episodes.versions.truncated' | transloco }} }
+        @else if (result.added === 0 && result.removed === 0) { {{ 'episodes.versions.noDifferences' | transloco }} }
+        @else { {{ 'episodes.versions.diff.summary' | transloco: { added: result.added, removed: result.removed } }} }
+      }
+    </p>
+    <button type="button" class="versions__restore" [disabled]="!canRestore() || restoring()" [attr.aria-busy]="restoring()" (click)="restore.emit()">{{ (restoring() ? 'episodes.versions.restoring' : 'episodes.versions.restore') | transloco }}</button>
+  }
+  @if (needsReopen()) {<p class="versions__alert" role="alert">{{ 'episodes.versions.needsReopen' | transloco }}</p>}
+  @if (restoreError(); as failure) {<nts-form-error-alert [error]="failure" />}
+</section>

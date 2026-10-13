@@ -25,6 +25,9 @@
     } @else {
       <nts-page-header [title]="store.title()" backHref="/episodes">
         <nts-status-chip actions [statusKey]="detail.status" [appearance]="store.readOnly() ? 'success' : 'neutral'" />
+        <button #versionsToggle actions type="button" class="story-review-page__versions-toggle" [attr.aria-expanded]="versionsOpen()" (click)="toggleVersions()">
+          {{ 'episodes.versions.open' | transloco }}@if (versionCount(); as count) { ({{ count }})}
+        </button>
       </nts-page-header>
 
       @if (store.invalidState() || store.readOnly()) {
@@ -41,7 +44,12 @@
         </section>
       }
 
-      <nts-story-editor [viewModel]="viewModel()" [segmentTexts]="segmentTexts()" (intent)="handleIntent($event)" />
+      <div class="story-review-page__workspace" [class.story-review-page__workspace--versions]="versionsOpen()">
+        <nts-story-editor [viewModel]="viewModel()" [segmentTexts]="segmentTexts()" (intent)="handleIntent($event)" />
+        @if (versionsOpen()) {
+          <nts-versions-panel-host [episodeId]="detail.id" [initialLeft]="versionIds().left" [initialRight]="versionIds().right" (selectionChange)="changeVersions($event)" (closed)="closeVersions()" />
+        }
+      </div>
     }
   }
 </div>
