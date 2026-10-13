@@ -4,6 +4,12 @@ History moved out of STATUS.md to keep the live file small. The initial archive 
 
 ## Resume-here history (Current/Previous blocks, Next actions)
 
+### Superseded Session 30 PR-open Resume bullet and 02.6.2-T1 row (2026-10-14, replaced when #180 merged as `280d74b`)
+
+- **Backend lane (Session 30):** **02.6.2-T1** single revision pass (PR open, T3 gates closed, no migration; `Story:Revision` section, `prompts/revise/v1.md`, `IStoryWriter.ReviseAsync`, drift detector, `hasDrift` + review #2 in the read model). Owner decisions needed and open items are in §Open tasks (row 02.6.2-T1) and the PR FINAL-REPORT. Next backend after merge: **02.5.3-T2** (Session 31, migration lane) or 02.6.1-T2.
+
+Outcome: #180 merged (`280d74b`); the 02.6.2-T1 row now says merged and its open items are separate rows.
+
 ### Superseded Session 21 413 follow-up rows (2026-10-05, replaced when #167 merged as `1c5add6`)
 
 Replaced Resume clause (verbatim): `Session 21 current: **413 ProblemDetails follow-up** (`fix/413-problem-details-s21`, T2): QA PASS, CR413-1..3 fixed, delta CLEAN on `6b82c764`; full gate PASS after an isolated MPT test-fixture NEXT-key fix, independently QA PASS; PR and final gate on the merged tip in progress (§Open tasks).`
