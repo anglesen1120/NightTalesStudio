@@ -208,6 +208,9 @@ public sealed class SeededDefectRun
 
     private async Task<AcceptanceModelRun> RunCoreAsync(string model, CancellationToken ct)
     {
+        // Reject a path-unsafe model name before any paid call; the report name is built from it after the run.
+        _ = GuardedModel(model);
+
         var cap = _capUsd ??= Cap();
         var drafts = SeededDraft.LoadAll();
         var lines = new List<string>();

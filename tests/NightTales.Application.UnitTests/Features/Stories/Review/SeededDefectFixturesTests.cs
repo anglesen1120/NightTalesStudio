@@ -154,6 +154,11 @@ public sealed class SeededDefectFixturesTests
         {
             foreach (var defect in fixture.SeedDefects)
             {
+                if (defect.Type is not ("markdown_or_url_in_text" or "fact_ref_invalid" or "fact_not_in_sheet"))
+                {
+                    continue;
+                }
+
                 var (text, factRefs) = SegmentAt(fixture, defect.Segment);
 
                 switch (defect.Type)

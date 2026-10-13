@@ -188,6 +188,8 @@ public sealed class SeededDefectAcceptanceTests(SeededDefectRun run) : IClassFix
     {
         var samples = new List<string> { draft.Draft.Title, draft.Brief };
         samples.AddRange(draft.Draft.Paragraphs.Select(paragraph => paragraph.Text));
+        samples.Add(draft.Draft.Hook.Text);
+        samples.Add(draft.Draft.Ending.Text);
         samples.AddRange(draft.SeedDefects.Select(defect => defect.Note));
 
         return samples.Where(sample => !string.IsNullOrWhiteSpace(sample));
