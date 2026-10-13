@@ -107,22 +107,22 @@ public sealed class PromptCatalogTests
     public void PromptCatalog_ManifestListsUnknownFile_ThrowsAtStartup()
     {
         var tree = PromptsTree.Read();
-        PromptsTree.AddManifestEntry(tree, "revise/v1.md", "v1", new string('a', 64));
+        PromptsTree.AddManifestEntry(tree, "finder/v1.md", "v1", new string('a', 64));
 
         var failure = PromptsTree.Failure(tree);
 
-        failure.Message.ShouldContain("manifest file 'revise/v1.md' is not an embedded resource (not found)");
+        failure.Message.ShouldContain("manifest file 'finder/v1.md' is not an embedded resource (not found)");
     }
 
     [Fact]
     public void PromptCatalog_RuntimeFileMissingFromManifest_ThrowsAtStartup()
     {
         var tree = PromptsTree.Read();
-        tree["revise/v1.md"] = Encoding.UTF8.GetBytes("# revise\n\nA step prompt no manifest entry tracks.\n");
+        tree["finder/v1.md"] = Encoding.UTF8.GetBytes("# finder\n\nA step prompt no manifest entry tracks.\n");
 
         var failure = PromptsTree.Failure(tree);
 
-        failure.Message.ShouldContain("embedded runtime file 'revise.v1.md' is not tracked by the manifest");
+        failure.Message.ShouldContain("embedded runtime file 'finder.v1.md' is not tracked by the manifest");
     }
 
     [Fact]
@@ -275,9 +275,10 @@ public sealed class PromptCatalogTests
         var catalog = PromptsTree.Load(PromptsTree.Read());
 
         var failure = Should.Throw<PromptCatalogException>(
-            () => catalog.BuildPromptVersion(new PromptVersionParts(WriterSystemPrompt, GhostViPreset, "revise/v1.md")));
+            () => catalog.BuildPromptVersion(new PromptVersionParts(
+                WriterSystemPrompt, GhostViPreset, StorySchema, RevisionKey: "revise/v2.md")));
 
-        failure.Message.ShouldContain("prompt version key 'revise/v1.md' is not tracked by the manifest");
+        failure.Message.ShouldContain("prompt version key 'revise/v2.md' is not tracked by the manifest");
     }
 
     /// <summary>
@@ -289,9 +290,9 @@ public sealed class PromptCatalogTests
     {
         var catalog = PromptsTree.Load(PromptsTree.Read());
 
-        var failure = Should.Throw<PromptCatalogException>(() => catalog.GetStepPrompt(PromptStep.Revision));
+        var failure = Should.Throw<PromptCatalogException>(() => catalog.GetStepPrompt(PromptStep.Finder));
 
-        failure.Message.ShouldContain("the manifest does not track 'revise/v1.md'");
+        failure.Message.ShouldContain("the manifest does not track 'finder/v1.md'");
         catalog.GetStepPrompt(PromptStep.Writer).ShouldNotBeNullOrWhiteSpace();
     }
 

@@ -441,5 +441,8 @@ public sealed class GenerateStoryQaRollbackAndLimitTests(TestDatabase database) 
 
         public Task<ErrorOr<UsageBound>> WriterWorstCaseAsync(LengthTier tier, Language language, CancellationToken ct) =>
             Task.FromResult<ErrorOr<UsageBound>>(new UsageBound(0.5m, 1000, 500));
+
+        public Task<ErrorOr<UsageBound>> RevisionWorstCaseAsync(LengthTier tier, Language language, CancellationToken ct) =>
+            WriterWorstCaseAsync(tier, language, ct);
     }
 }

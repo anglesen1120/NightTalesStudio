@@ -32,7 +32,9 @@ public sealed record StaleClaim(GenerationRunStatus Status, DateTimeOffset Stale
 /// <summary>
 /// The only writer of run and episode state during a story generation (02.2.2-T3, plan §3.4), so both aggregates change
 /// together: <c>StartAsync</c>, <c>RecordStageAsync</c>, <c>PauseAsync</c>, <c>CompleteAsync</c>, <c>FailAsync</c> and
-/// <c>CancelAsync</c>. Stage events are emitted on transition only (the episode drops a repeat), at most seven per run.
+/// <c>CancelAsync</c>. Stage events are emitted on transition only (the episode drops a repeat): at most seven per run,
+/// and the optional single revision pass adds its own <c>revising</c> → <c>checking</c> → <c>reviewing</c> walk
+/// (02.6.2-T1).
 /// </summary>
 /// <remarks>
 /// Every call first checks that the run is not terminal and, for a story run, that it is the episode's active run

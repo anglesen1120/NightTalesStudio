@@ -2,9 +2,11 @@ using System.Net;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Options;
 using NightTales.Application.Abstractions;
 using NightTales.Application.Abstractions.Moderation;
 using NightTales.Application.Abstractions.Text;
+using NightTales.Application.Features.Stories.Review;
 using NightTales.Application.Features.Stories.Writing;
 using NightTales.Infrastructure.OpenAI;
 using NightTales.Infrastructure.Persistence;
@@ -111,6 +113,19 @@ public sealed class WorkerCompositionTests
         // 02.4.1-T1 (D12): the moderation port and its event writer resolve from the same composition.
         app.Services.GetRequiredService<IContentModerator>().ShouldBeOfType<OpenAiContentModerator>();
         app.Services.GetRequiredService<IModerationEventWriter>().ShouldNotBeNull();
+    }
+
+    /// <summary>
+    /// 02.6.2-T1 (02 README D21): the revision switch is validated on start-up, so a run count other than 0 or 1
+    /// fails the Worker's boot instead of reaching the pipeline.
+    /// </summary>
+    [Fact]
+    public void WorkerHost_InvalidRevisionOptions_FailTheBoot()
+    {
+        using var app = WorkerApplication.Build(BuildArgs("--Story:Revision:MaxRevisions", "2"));
+
+        Should.Throw<OptionsValidationException>(
+            () => app.Services.GetRequiredService<IOptions<StoryRevisionOptions>>().Value);
     }
 
     private static string[] BuildArgs(params string[] extra)

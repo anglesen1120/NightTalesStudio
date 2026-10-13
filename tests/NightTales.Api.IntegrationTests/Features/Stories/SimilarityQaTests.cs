@@ -384,6 +384,9 @@ public sealed class SimilarityQaTests(TestDatabase database) : IntegrationTest(d
 
         public ValueTask<TextCallResult<StoryReviewV1>> ReviewAsync(StoryReviewRequest req, CancellationToken ct) =>
             throw new InvalidOperationException("Review is disabled for these generation tests.");
+
+        public ValueTask<TextCallResult<StoryContentV1>> ReviseAsync(StoryRevisionRequest req, CancellationToken ct) =>
+            throw new InvalidOperationException("Revision is disabled for these generation tests.");
     }
 
     private sealed class NullNotifier : IRealtimeNotifier
@@ -395,6 +398,8 @@ public sealed class SimilarityQaTests(TestDatabase database) : IntegrationTest(d
     {
         public AssembledPrompt Assemble(StoryWriteRequest req, AssemblerContext ctx) => new("system", "{}", "pv-similarity", "cache");
         public ErrorOr<AssembledPrompt> Review(StoryReviewRequest req) => new AssembledPrompt("system", "{}", "pv-review", "cache");
+
+        public ErrorOr<AssembledPrompt> Revise(StoryRevisionRequest req) => new AssembledPrompt("system", "{}", "pv-revise", "cache");
     }
 
     private sealed class FixedEstimator : IStoryCostEstimator
@@ -404,6 +409,9 @@ public sealed class SimilarityQaTests(TestDatabase database) : IntegrationTest(d
         public Task<ErrorOr<UsageBound>> ReviewWorstCaseAsync(LengthTier tier, Language language, CancellationToken ct) =>
             WorstCaseAsync(tier, language, ct);
         public Task<ErrorOr<UsageBound>> WriterWorstCaseAsync(LengthTier tier, Language language, CancellationToken ct) =>
+            WorstCaseAsync(tier, language, ct);
+
+        public Task<ErrorOr<UsageBound>> RevisionWorstCaseAsync(LengthTier tier, Language language, CancellationToken ct) =>
             WorstCaseAsync(tier, language, ct);
     }
 }

@@ -21,4 +21,13 @@ public interface IPromptAssembler
     /// <param name="req">The review request.</param>
     /// <returns>The two strings, the composite prompt version and the prompt-cache key; or <c>prompt_too_large</c> when the data object exceeds twice <c>Story:Prompt:MaxDataObjectBytes</c>.</returns>
     ErrorOr<AssembledPrompt> Review(Review.StoryReviewRequest req);
+
+    /// <summary>
+    /// Assembles the revision call (02.6.2-T1): the static revision system prompt for <c>(language, tier)</c> and the one JSON
+    /// data object that carries the draft, the blocking objective issues, the facts and the bible. A taste or advisory issue is
+    /// dropped, and every model string in an issue is cleaned and clamped.
+    /// </summary>
+    /// <param name="req">The revision request.</param>
+    /// <returns>The two strings, the composite prompt version and the prompt-cache key; or <c>prompt_too_large</c> when the data object exceeds three times <c>Story:Prompt:MaxDataObjectBytes</c>.</returns>
+    ErrorOr<AssembledPrompt> Revise(Review.StoryRevisionRequest req);
 }

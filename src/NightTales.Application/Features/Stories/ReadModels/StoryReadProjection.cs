@@ -132,10 +132,16 @@ internal static partial class StoryReadProjection
             return null;
         }
 
-        JsonElement? scores = Object(review, "scores", out var scoreObject) ? scoreObject : null;
+        // 02.6.2-T1 (D22): an applied revision's review #2 is the current state and lives in
+        // revision.review_after; model_review still holds review #1, i.e. the blocking issues the revision fixed.
+        // Scores and issue counts therefore read review_after when it is present and well formed, and fall back
+        // to model_review otherwise (fail closed). The stale flag and the drift advisory are unchanged.
+        var source = RevisionReviewAfter(root, out var reviewAfter) ? reviewAfter : review;
+
+        JsonElement? scores = Object(source, "scores", out var scoreObject) ? scoreObject : null;
         var blocking = 0;
         var advisory = 0;
-        if (Array(review, "issues", out var issues))
+        if (Array(source, "issues", out var issues))
         {
             foreach (var issue in issues.EnumerateArray())
             {
@@ -148,8 +154,69 @@ internal static partial class StoryReadProjection
         }
 
         var stale = !review.TryGetProperty("stale", out var flag) || flag.ValueKind != JsonValueKind.False;
-        return new StoryReviewSummaryDto(scores, new StoryIssueCountsDto(blocking, advisory), stale);
+        return new StoryReviewSummaryDto(scores, new StoryIssueCountsDto(blocking, advisory), Drift(root), stale);
     }
+
+    /// <summary>
+    /// The accepted review #2 of an applied revision (02.6.2-T1, D22), or <c>false</c> when the block is missing or
+    /// malformed: <c>revision.applied</c> must be the boolean <c>true</c> and <c>revision.review_after</c> an object
+    /// carrying both the <c>scores</c> object and the <c>issues</c> array of the <c>audit.v1</c> layout. A
+    /// <c>false</c> result makes the caller read <c>model_review</c> instead; nothing here throws.
+    /// </summary>
+    private static bool RevisionReviewAfter(JsonElement root, out JsonElement review)
+    {
+        review = default;
+        if (!Object(root, "revision", out var revision)
+            || !Property(revision, "applied", out var applied) || applied.ValueKind != JsonValueKind.True
+            || !Object(revision, "review_after", out var after)
+            || !Object(after, "scores", out _) || !Array(after, "issues", out _))
+        {
+            return false;
+        }
+
+        review = after;
+        return true;
+    }
+
+    /// <summary>
+    /// Whether the audit carries a revision-drift advisory (02.6.2-T1, D22): the <c>revision_drift</c> issue inside
+    /// <c>revision.review_after.issues</c>, or any set flag of the additive <c>revision.drift</c> detail. A missing or
+    /// malformed block reads as no drift, and nothing here throws (fail-closed to false).
+    /// </summary>
+    private static bool Drift(JsonElement audit)
+    {
+        if (!Object(audit, "revision", out var revision))
+        {
+            return false;
+        }
+
+        if (Object(revision, "review_after", out var after) && Array(after, "issues", out var issues))
+        {
+            foreach (var issue in issues.EnumerateArray())
+            {
+                if (string.Equals(Text(issue, "type"), "revision_drift", StringComparison.Ordinal))
+                {
+                    return true;
+                }
+            }
+        }
+
+        if (!Object(revision, "drift", out var drift))
+        {
+            return false;
+        }
+
+        return DriftFlag(drift, "segment_count_changed")
+            || DriftItems(drift, "changed_segments")
+            || DriftItems(drift, "unflagged_changed")
+            || DriftItems(drift, "added_findings");
+    }
+
+    private static bool DriftFlag(JsonElement drift, string name) =>
+        Property(drift, name, out var flag) && flag.ValueKind == JsonValueKind.True;
+
+    private static bool DriftItems(JsonElement drift, string name) =>
+        Array(drift, name, out var items) && items.GetArrayLength() > 0;
 
     private static bool Object(JsonElement root, string name, out JsonElement value) =>
         Property(root, name, out value) && value.ValueKind == JsonValueKind.Object;

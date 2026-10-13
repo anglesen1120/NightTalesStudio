@@ -9,6 +9,10 @@
       "version": "v1",
       "sha256": "68b5c06c071c0d6153943876bc6c64bf542bac39507a01dc7d260698e4ac4bea"
     },
+    "revise/v1.md": {
+      "version": "v1",
+      "sha256": "d75afac14ed82e2a00a082d82fd3fac700b74174ac0d9eacf6c079690d7ed202"
+    },
     "schemas/facts.v1.json": {
       "version": "v1",
       "sha256": "814e68e2a5c4a593b4a53e2b2eb5074330a62b058a9cf3413fbaac910e529345"
