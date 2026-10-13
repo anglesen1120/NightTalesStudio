@@ -2,9 +2,11 @@ import type { Routes } from '@angular/router';
 import { provideTranslocoScope } from '@jsverse/transloco';
 import { EpisodesHttpRepository } from './data-access/episodes-http.repository';
 import { StoryHttpRepository } from './data-access/story-http.repository';
+import { HttpStoryVersionRepository } from './data-access/http-story-version.repository';
 import { SeriesOptionsHttpRepository } from './data-access/series-options-http.repository';
 import { EpisodesRepository } from './domain/episodes.repository';
 import { StoryRepository } from './domain/story.repository';
+import { StoryVersionRepository } from './domain/story-version.repository';
 import { SeriesOptionsRepository } from './domain/series-options.repository';
 
 // The repository bindings and the `episodes` scope live on the route (lazy chunk). The page-scoped EpisodeListStore is
@@ -26,6 +28,7 @@ export const episodesRoutes: Routes = [
     providers: [
       { provide: EpisodesRepository, useClass: EpisodesHttpRepository },
       { provide: StoryRepository, useClass: StoryHttpRepository },
+      { provide: StoryVersionRepository, useClass: HttpStoryVersionRepository },
       provideTranslocoScope('episodes'),
       provideTranslocoScope('story'),
     ],
