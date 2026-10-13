@@ -142,6 +142,7 @@ export function episodeDetail(overrides: Partial<EpisodeDetail> = {}): EpisodeDe
     id: EPISODE_ID,
     seriesId: '11111111-1111-4111-8111-111111111111',
     status: 'story_generating',
+    lengthTier: 'standard',
     etag: '"ep-1"',
     generation: { kind: 'story', status: 'running', stage: 'queued', errorCode: null, startedAt: null, processingPaused: null },
     hasCurrentStory: false,

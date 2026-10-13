@@ -1,0 +1,6 @@
+:host, .paragraph-list { display: block; min-width: 0; max-width: 100%; }
+.cdk-drag-placeholder { opacity: 0; }
+.cdk-drag-animating, .cdk-drop-list-dragging nts-paragraph-card:not(.cdk-drag-placeholder) { transition: transform var(--nts-motion-base) var(--nts-ease); }
+@media (prefers-reduced-motion: reduce) {
+  .cdk-drag-animating, .cdk-drag-placeholder, .cdk-drop-list-dragging nts-paragraph-card:not(.cdk-drag-placeholder) { transition: none; animation: none; }
+}

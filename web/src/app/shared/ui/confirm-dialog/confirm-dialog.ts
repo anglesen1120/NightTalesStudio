@@ -23,6 +23,12 @@ export interface ConfirmDialogData {
    */
   readonly subject?: string;
   readonly confirmLabelKey: string;
+  /**
+   * Optional label for the cancel button, resolved as `cancelLabelKey ?? the static input` and defaulting to
+   * `core.ui.confirm.cancel`, so a caller that needs a domain label (e.g. `episodes.dirty.stay`) does not
+   * depend on the shared key while every existing caller renders exactly as before.
+   */
+  readonly cancelLabelKey?: string;
   readonly destructive?: boolean;
   /** A `Signal` lets the opener flip pending after the dialog is open; a plain boolean is fixed at open. */
   readonly pending?: boolean | Signal<boolean>;
@@ -51,6 +57,8 @@ export class ConfirmDialogComponent {
   readonly titleKey = input.required<string>();
   readonly bodyKey = input.required<string>();
   readonly confirmLabelKey = input.required<string>();
+  /** Static (`<nts-confirm-dialog>`) usages keep the shared label unless they set this. */
+  readonly cancelLabelKey = input('core.ui.confirm.cancel');
   readonly destructive = input(false);
   readonly pending = input(false);
   readonly confirmed = output<void>();
@@ -66,6 +74,7 @@ export class ConfirmDialogComponent {
   protected readonly resolvedBodyKey = computed(() => this.data?.bodyKey ?? this.bodyKey());
   protected readonly subject = this.data?.subject;
   protected readonly resolvedConfirmLabelKey = computed(() => this.data?.confirmLabelKey ?? this.confirmLabelKey());
+  protected readonly resolvedCancelLabelKey = computed(() => this.data?.cancelLabelKey ?? this.cancelLabelKey());
   protected readonly isDestructive = computed(() => this.data?.destructive ?? this.destructive());
   protected readonly isPending = computed(() => {
     const fromData = this.data?.pending;

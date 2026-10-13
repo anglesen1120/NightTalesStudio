@@ -66,3 +66,24 @@ export function remapAfterReorder(addresses: readonly SegmentAddress[], movedFro
     return address;
   });
 }
+
+/**
+ * One address after the paragraph at `removed` leaves the draft (10.5.9-T1). Addresses of later paragraphs shift down;
+ * the removed paragraph's own address yields `null`, so its `p:<i>`-keyed state is hidden while it sits in the undo
+ * buffer. Non-paragraph addresses are unaffected. An invalid index throws, like `remapAfterReorder`.
+ */
+export function remapAfterRemove(address: SegmentAddress, removed: number): SegmentAddress | null {
+  addressForParagraph(removed);
+  const parsed = parseAddress(address);
+  if (parsed?.kind !== 'paragraph' || parsed.index === null) return address;
+  if (parsed.index === removed) return null;
+  return parsed.index > removed ? addressForParagraph(parsed.index - 1) : address;
+}
+
+/** One address after a paragraph is inserted at `index` (undo): the inverse of `remapAfterRemove` for every survivor. */
+export function remapAfterInsert(address: SegmentAddress, index: number): SegmentAddress {
+  addressForParagraph(index);
+  const parsed = parseAddress(address);
+  if (parsed?.kind !== 'paragraph' || parsed.index === null) return address;
+  return parsed.index >= index ? addressForParagraph(parsed.index + 1) : address;
+}

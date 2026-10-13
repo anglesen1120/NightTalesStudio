@@ -79,6 +79,8 @@ export interface EpisodeDetail {
   readonly seriesId: string;
   /** Forward-compatible wire value; consumers compare only recognised episode statuses. */
   readonly status: string;
+  /** The story-length tier the server owns (C9 bands); the editor's structure advisory reads it. */
+  readonly lengthTier: string;
   readonly etag: string;
   readonly generation: EpisodeGeneration | null;
   readonly hasCurrentStory: boolean;

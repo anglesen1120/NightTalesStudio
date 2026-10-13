@@ -1,5 +1,8 @@
 <div class="story-editor">
   <nts-segment-nav [segments]="textSegments()" (openSegment)="open($event)" />
+  @if (viewModel().structureWarning) {
+    <p class="story-editor__structure-warning" role="status">{{ 'episodes.editor.structureWarning' | transloco }}</p>
+  }
 
   @if (viewModel().formErrors.length > 0) {
     <div class="story-editor__form-errors" role="alert">
@@ -21,13 +24,12 @@
       [limitHit]="viewModel().keywordLimitHit === viewModel().hook.segKey"
       (intent)="forward($event)"
     />
-    @for (paragraph of viewModel().paragraphs; track paragraph.segKey) {
-      <nts-segment-editor
-        [viewModel]="paragraph"
-        [limitHit]="viewModel().keywordLimitHit === paragraph.segKey"
-        (intent)="forward($event)"
-      />
-    }
+    <nts-paragraph-list
+      [paragraphs]="viewModel().paragraphs"
+      [readOnly]="viewModel().readOnly"
+      [keywordLimitHit]="viewModel().keywordLimitHit"
+      (intent)="forward($event)"
+    />
     <nts-segment-editor
       [viewModel]="viewModel().ending"
       [limitHit]="viewModel().keywordLimitHit === viewModel().ending.segKey"

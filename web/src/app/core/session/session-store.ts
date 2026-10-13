@@ -1,6 +1,7 @@
 import { Injectable, Injector, computed, inject, isDevMode, signal } from '@angular/core';
 import { Router } from '@angular/router';
 import { AppErrorMapper, type AppError } from '@core/errors';
+import { UnsavedWorkRegistry } from '@core/shell/unsaved-work';
 import { ActivityTracker } from './activity';
 import type { MeSummary } from './me-summary';
 import { RefreshLock } from './refresh-lock';
@@ -220,6 +221,10 @@ export class SessionStore {
     this.endReasonState.set(reason);
     this.resetScopes();
     if (!navigate) return;
+    // A terminal end is not the user's decision: drop page-level unsaved work before the navigation, so the route's
+    // dirty guard runs against a clean draft and never opens its dialog (10.5.9-T1, README D18). The user's own logout
+    // keeps its draft here: `ShellStore.logOut()` already asked through the same registry before reaching this.
+    if (reason !== 'logout') this.injector.get(UnsavedWorkRegistry).discardAll();
     // Resolved here, never with `inject()`: signOut runs from async callbacks (NG0203).
     const router = this.injector.get(Router);
     const path = router.url.split(/[?#]/)[0];
