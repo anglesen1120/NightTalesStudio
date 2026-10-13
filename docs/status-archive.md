@@ -873,3 +873,7 @@ Earlier live rows for Plan13, hosting, skeleton, wave2 and wave3 already exist i
 ## Replaced by Session 28 (10.5.9-T1), archived 2026-10-13
 
 - **Web next (plan 10 Stage B), replaced fragment (10.5.9-T1 lane):** → lane next **10.5.9-T1** reorder/delete/undo/dirty guard (depends on 10.5.3-T1 only; read the 10.5.3-T1 §Notes "As built"), or **10.5.6-T1** approve/reopen once 02.3.3-T1 merges;
+
+## Replaced by Session 29 close-out, archived 2026-10-14
+
+- **Web next (Session 29):** **10.5.4-T1** versions panel + word diff + restore as new version is in PR `feature/10.5.4-T1-s29` (§Open tasks row; `shared/util/text-diff.ts` + `shared/ui/diff-view` are the shared D11 pieces reused by 10.5.7-T1 and 10.5.3-T2) → 10.5.7-T1 unblocked once it merges; 10.5.6-T1 wires the reopen action behind the `needsReopen` message and 10.5.9-T1 adds the dirty guard the restore flow already warns about.
