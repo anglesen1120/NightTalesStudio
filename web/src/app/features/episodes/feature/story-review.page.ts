@@ -1,7 +1,7 @@
 import { ChangeDetectionStrategy, Component, DestroyRef, ViewContainerRef, afterRenderEffect, computed, effect, inject, signal, untracked, viewChild } from '@angular/core';
-import type { Signal } from '@angular/core';
+import type { ElementRef, Signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
-import { ActivatedRoute } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
 import { MatSnackBar } from '@angular/material/snack-bar';
 import { TranslocoPipe, TranslocoService, provideTranslocoScope } from '@jsverse/transloco';
 import { AppErrorMapper } from '@core/errors';
@@ -12,6 +12,8 @@ import type { SegmentAddress } from '@shared/util/segment-address';
 import { combineLatest, firstValueFrom, map } from 'rxjs';
 import { EpisodeDetailStore } from '../application/episode-detail.store';
 import { StoryEditorStore, UNDO_WINDOW_MS } from '../application/story-editor.store';
+import { VersionsStore } from '../application/versions.store';
+import { VersionsPanelHostComponent } from './versions-panel-host.component';
 import { StoryEditorComponent } from '../ui/story-editor.component';
 import { buildStoryEditorViewModel } from '../ui/story-editor.view-model';
 import type { SegmentTexts, StoryEditorIntent, StoryEditorViewModel } from '../ui/story-editor.view-model';
@@ -31,8 +33,8 @@ const ACTION_KEYS: Readonly<Record<string, string>> = {
 
 @Component({
   selector: 'nts-story-review-page',
-  imports: [TranslocoPipe, EmptyState, ErrorState, FormErrorAlert, LoadingState, PageHeader, StatusChip, StoryEditorComponent],
-  providers: [EpisodeDetailStore, StoryEditorStore, provideTranslocoScope('episodes', 'errors')],
+  imports: [TranslocoPipe, EmptyState, ErrorState, FormErrorAlert, LoadingState, PageHeader, StatusChip, StoryEditorComponent, VersionsPanelHostComponent],
+  providers: [EpisodeDetailStore, StoryEditorStore, VersionsStore, provideTranslocoScope('episodes', 'errors')],
   templateUrl: './story-review.page.html',
   styleUrl: './story-review.page.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -41,6 +43,7 @@ export class StoryReviewPage {
   protected readonly detailStore = inject(EpisodeDetailStore);
   protected readonly store = inject(StoryEditorStore);
   private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
   private readonly mapper = inject(AppErrorMapper);
   private readonly conflictDialog = inject(ConflictDialog);
   private readonly confirmDialog = inject(ConfirmDialog);
@@ -50,12 +53,15 @@ export class StoryReviewPage {
   private readonly viewContainerRef = inject(ViewContainerRef);
   private readonly destroyRef = inject(DestroyRef);
   private readonly editor = viewChild(StoryEditorComponent);
+  private readonly versionsToggle = viewChild<ElementRef<HTMLButtonElement>>('versionsToggle');
+  private readonly restoreVersionsFocus = signal(false);
   private readonly routeState = toSignal(combineLatest([this.route.paramMap, this.route.queryParamMap]), {
     initialValue: [this.route.snapshot.paramMap, this.route.snapshot.queryParamMap] as const,
   });
   private readonly focusRequest = signal<{ readonly address: SegmentAddress; readonly sequence: number } | null>(null);
   private lastEpisodeId: string | null = null;
   private lastFocusSequence = -1;
+  private lastSegmentFocusKey: string | null = null;
   private focusSequence = 0;
   private conflictOpen = false;
   private leavePrompt: Promise<boolean> | null = null;
@@ -97,6 +103,31 @@ export class StoryReviewPage {
   protected readonly traceId = computed(() => this.fatalError()?.traceId);
   protected readonly episode = this.detailStore.detail;
   protected readonly allowedActions = computed(() => this.detailStore.nextActions().filter((action) => action !== 'edit_story' && Object.hasOwn(ACTION_KEYS, action)));
+  protected readonly versionsOpen = computed(() => this.routeState()[1].get('panel') === 'versions');
+  protected readonly versionCount = computed(() => this.store.snapshot()?.version ?? null);
+  protected readonly versionIds = computed(() => {
+    const query = this.routeState()[1];
+    const left = query.get('left'), right = query.get('right');
+    const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    return { left: left !== null && uuid.test(left) ? left : null, right: right !== null && uuid.test(right) ? right : null };
+  });
+
+  protected toggleVersions(): void {
+    if (this.versionsOpen()) this.closeVersions();
+    else void this.router.navigate([], { relativeTo: this.route, queryParams: { panel: 'versions' }, queryParamsHandling: 'merge', replaceUrl: true });
+  }
+
+  protected closeVersions(): void {
+    void this.router.navigate([], { relativeTo: this.route, queryParams: { panel: null, left: null, right: null }, queryParamsHandling: 'merge', replaceUrl: true }).then((navigated) => {
+      if (navigated && !this.destroyRef.destroyed) this.restoreVersionsFocus.set(true);
+    });
+  }
+
+  protected changeVersions(ids: { left: string | null; right: string | null }): void {
+    const query = this.routeState()[1];
+    if (query.get('left') === ids.left && query.get('right') === ids.right) return;
+    void this.router.navigate([], { relativeTo: this.route, queryParams: ids, queryParamsHandling: 'merge', replaceUrl: true });
+  }
 
   constructor() {
     effect(() => {
@@ -107,6 +138,9 @@ export class StoryReviewPage {
         untracked(() => { void this.store.load(id); });
       }
       const rawAddress = query.get('segment');
+      const focusKey = id + ':' + (rawAddress ?? '');
+      if (focusKey === this.lastSegmentFocusKey) return;
+      this.lastSegmentFocusKey = focusKey;
       const parsed = rawAddress === null ? null : parseAddress(rawAddress);
       this.focusRequest.set(parsed === null ? null : {
         address: formatAddress(parsed.kind, parsed.index ?? undefined),
@@ -158,6 +192,13 @@ export class StoryReviewPage {
         if (clicked && this.store.removed() === removed) this.undoRemove();
       });
       onCleanup(() => ref.dismiss());
+    });
+    afterRenderEffect(() => {
+      if (!this.restoreVersionsFocus() || this.versionsOpen()) return;
+      const toggle = this.versionsToggle();
+      if (toggle === undefined) return;
+      toggle.nativeElement.focus();
+      this.restoreVersionsFocus.set(false);
     });
   }
 

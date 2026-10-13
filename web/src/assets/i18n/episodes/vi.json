@@ -137,6 +137,54 @@
     "stay": "Ở lại",
     "leave": "Rời trang"
   },
+  "versions": {
+    "title": "Lịch sử phiên bản",
+    "open": "Phiên bản",
+    "close": "Đóng phiên bản",
+    "empty": "Chưa có phiên bản kịch bản",
+    "loading": "Đang tải phiên bản",
+    "loadingSide": "Đang tải phiên bản đã chọn",
+    "selection": "Vị trí chọn phiên bản đối chiếu",
+    "left": "Trái · bản khôi phục",
+    "right": "Phải · bản đối chiếu",
+    "pickHint": "Chọn vị trí trái hoặc phải, rồi chọn một phiên bản trong danh sách.",
+    "version": "Phiên bản {{version}}",
+    "wordCount": "{{count}} từ",
+    "similarity": "Độ tương đồng: {{value}}",
+    "current": "Đang dùng",
+    "approved": "Đã duyệt",
+    "selectTwo": "Chọn hai phiên bản khác nhau để đối chiếu.",
+    "restore": "Khôi phục thành phiên bản mới",
+    "restoring": "Đang tạo phiên bản mới…",
+    "restored": "Đã khôi phục thành phiên bản mới.",
+    "needsReopen": "Cần mở lại tập này trước khi khôi phục phiên bản.",
+    "truncated": "Kịch bản quá dài hoặc có quá nhiều thay đổi để đối chiếu đầy đủ. Không hiển thị phần đối chiếu thiếu.",
+    "noDifferences": "Hai phiên bản không có khác biệt.",
+    "retryList": "Tải lại danh sách phiên bản",
+    "retrySide": "Tải lại phiên bản đã chọn",
+    "conflictBody": "Kịch bản mới hơn vừa được lưu ở nơi khác. Phiên bản đã chọn và thay đổi chưa lưu vẫn được giữ cho đến khi bạn quyết định.",
+    "source": {
+      "generated": "Được tạo",
+      "revised": "Được chỉnh lại",
+      "edited": "Đã biên tập",
+      "other": "Khác"
+    },
+    "diff": {
+      "summary": "Thêm {{added}} từ, bớt {{removed}} từ.",
+      "added": "Thêm",
+      "removed": "Bớt",
+      "label": "Khác biệt từng từ của kịch bản",
+      "show": "Hiện khác biệt từng từ",
+      "loading": "Đang tải phần đối chiếu",
+      "loadError": "Không tải được phần đối chiếu. Đóng rồi mở lại phiên bản để thử lại."
+    },
+    "restoreConfirm": {
+      "title": "Khôi phục thành phiên bản mới?",
+      "body": "Phiên bản đã chọn sẽ trở thành một phiên bản mới. Bản gốc và bản đang dùng đều được giữ trong lịch sử.",
+      "dirtyBody": "Phiên bản đã chọn sẽ trở thành bản mới và thay thế các thay đổi chưa lưu trong trình biên tập. Bản gốc và bản đang dùng đã lưu đều được giữ trong lịch sử.",
+      "confirm": "Tạo phiên bản mới"
+    }
+  },
   "conflict": {
     "title": "Kịch bản đã thay đổi",
     "body": "Ở tab khác hoặc người khác vừa lưu phiên bản mới. Văn bản chưa lưu của bạn vẫn được giữ.",
