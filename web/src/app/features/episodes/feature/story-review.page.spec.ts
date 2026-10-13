@@ -78,27 +78,30 @@ function dispatchBeforeUnload(): boolean {
 }
 
 /**
- * Stand-in for `MatSnackBarRef` (node_modules/@angular/material/fesm2022/snack-bar.mjs): every dismissal — the action
- * click, `dismiss()` (the duration timeout or the page's effect cleanup) — completes `onAction` and emits
- * `afterDismissed` once, with `dismissedByAction` true only for the click.
+ * Stand-in for `MatSnackBarRef` (node_modules/@angular/material/fesm2022/snack-bar.mjs): `dismissWithAction` (a click)
+ * emits `onAction` synchronously and completes it, but `afterDismissed` only fires once the exit animation ends — which
+ * is why the page must resolve on `onAction`. A non-click dismissal (`dismiss()` from the duration timeout or the page's
+ * effect cleanup) completes `onAction` without emitting; `afterDismissed` then carries `dismissedByAction: false`.
  */
 class FakeSnackBarRef {
   private readonly actionSource = new Subject<void>();
   private readonly dismissedSource = new Subject<MatSnackBarDismiss>();
-  readonly dismiss = vi.fn((): void => this.finish(false));
+  private clicked = false;
+  readonly dismiss = vi.fn((): void => this.endExit());
   onAction(): Observable<void> { return this.actionSource.asObservable(); }
   afterDismissed(): Observable<MatSnackBarDismiss> { return this.dismissedSource.asObservable(); }
-  /** The action click (`MatSnackBarRef.dismissWithAction`), which settles with `dismissedByAction: true`. */
+  /** The action click (`MatSnackBarRef.dismissWithAction`): `onAction` emits and completes at once, the exit follows. */
   click(): void {
     if (this.actionSource.closed) return;
+    this.clicked = true;
     this.actionSource.next();
     this.actionSource.complete();
-    this.finish(true);
   }
-  private finish(dismissedByAction: boolean): void {
+  /** The exit animation ends (`_finishDismiss`): `afterDismissed` emits once with the click flag and each subject completes. */
+  endExit(): void {
     if (this.dismissedSource.closed) return;
     if (!this.actionSource.closed) this.actionSource.complete();
-    this.dismissedSource.next({ dismissedByAction });
+    this.dismissedSource.next({ dismissedByAction: this.clicked });
     this.dismissedSource.complete();
   }
 }
@@ -263,6 +266,23 @@ describe('StoryReviewPage', () => {
     await fixture.whenStable();
     expect(storyStore.undoRemove).not.toHaveBeenCalled();
     expect(storyStore.removed()).toBe(buffered);
+  });
+
+  it('deleteUndoSnackbar_ActionClickBeforeTheExitAnimation_UndoesImmediately', async () => {
+    const { fixture, storyStore, snack } = await createPage();
+    const buffered = { paragraph: {}, index: 1 };
+    storyStore.removed.set(buffered);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    // The click lands while the snackbar is still on screen: the exit animation has not run, so `afterDismissed` has
+    // not fired, yet the buffer is untouched. The page must resolve on the synchronous `onAction` to undo here.
+    snack.opened[0]!.click();
+    await fixture.whenStable();
+    expect(storyStore.undoRemove).toHaveBeenCalledTimes(1);
+    // `dismissWithAction` dismisses right after emitting: the later exit must not undo a second time.
+    snack.opened[0]!.endExit();
+    await fixture.whenStable();
+    expect(storyStore.undoRemove).toHaveBeenCalledTimes(1);
   });
 
   it('moveAndDeleteIntents_ReachTheStore', async () => {

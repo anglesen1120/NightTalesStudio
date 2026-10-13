@@ -80,6 +80,7 @@
     "moveDown": "Xuống",
     "moveHandle": "Kéo để di chuyển",
     "delete": "Xoá đoạn",
+    "deletePosition": "Xoá đoạn {{position}}",
     "deleted": "Đã xoá một đoạn",
     "undo": "Hoàn tác",
     "reorderAnnounce": "Đã chuyển đoạn {{n}} tới vị trí {{m}}",

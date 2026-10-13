@@ -33,11 +33,20 @@ async function setup(index = 2, count = 4, readOnly = false, lang: 'vi' | 'en' =
 afterEach(() => TestBed.resetTestingModule());
 
 describe('ParagraphCardComponent', () => {
-  for (const [lang, up, down, handle] of [['vi', 'Lên: đoạn 3', 'Xuống: đoạn 3', 'Kéo để di chuyển'], ['en', 'Move up: paragraph 3', 'Move down: paragraph 3', 'Drag to move']] as const) {
+  for (const [lang, up, down, handle, del, delAt] of [
+    ['vi', 'Lên: đoạn 3', 'Xuống: đoạn 3', 'Kéo để di chuyển', 'Xoá đoạn', 'Xoá đoạn 3'],
+    ['en', 'Move up: paragraph 3', 'Move down: paragraph 3', 'Drag to move', 'Delete paragraph', 'Delete paragraph 3'],
+  ] as const) {
     it(`labels pointer and keyboard controls with safe positions in ${lang}`, async () => {
       const { root } = await setup(2, 4, false, lang);
       expect(root.querySelector('[data-action="move-up"]')?.getAttribute('aria-label')).toBe(up);
       expect(root.querySelector('[data-action="move-down"]')?.getAttribute('aria-label')).toBe(down);
+      // The visible label leads the accessible name, so the position is announced without hiding the visible text
+      // from speech input (WCAG 2.5.3 label-in-name).
+      const remove = root.querySelector<HTMLButtonElement>('[data-action="delete"]')!;
+      expect(remove.textContent?.trim()).toBe(del);
+      expect(remove.getAttribute('aria-label')).toBe(delAt);
+      expect(remove.getAttribute('aria-label')?.startsWith(del)).toBe(true);
       expect(root.querySelector('.paragraph-card__handle')?.getAttribute('aria-label')).toBe(handle);
       expect(root.querySelector('.paragraph-card__handle')?.hasAttribute('aria-hidden')).toBe(false);
       expect(root.querySelector<HTMLTextAreaElement>('textarea')?.value).toBe('<script>not markup</script>');

@@ -16,7 +16,9 @@
         [attr.aria-disabled]="index() === count() - 1 ? 'true' : 'false'" (click)="move(1)">
         <span aria-hidden="true">↓</span> {{ 'episodes.editor.moveDown' | transloco }}
       </button>
-      <button type="button" class="paragraph-card__delete" data-action="delete" (click)="remove()">{{ 'episodes.editor.delete' | transloco }}</button>
+      <button type="button" class="paragraph-card__delete" data-action="delete"
+        [attr.aria-label]="'episodes.editor.deletePosition' | transloco: { position: index() + 1 }"
+        (click)="remove()">{{ 'episodes.editor.delete' | transloco }}</button>
     }
   </div>
 </nts-segment-editor>

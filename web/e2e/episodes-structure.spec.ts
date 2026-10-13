@@ -1,7 +1,7 @@
 import { test } from './fixtures/csp.fixture';
 import {
-  beforeUnloadCleanFlow, beforeUnloadDirtyFlow, deleteUndoFlow, dirtyGuardFlow, keyboardReorderFlow,
-  logoutDirtyFlow, mobileReorderFlow, reducedMotionFlow, saveAfterMoveFlow, structureAdvisoryFlow,
+  beforeUnloadCleanFlow, beforeUnloadDirtyFlow, deleteUndoFlow, dirtyGuardFlow, keyboardReorderFlow, logoutDirtyFlow,
+  mobileReorderFlow, mouseDragFlow, reducedMotionFlow, saveAfterMoveFlow, structureAdvisoryFlow,
 } from './fixtures/story-editor-stubs';
 
 // 10.5.9-T1 (README D16/D18; task file §Acceptance checks and §Tests "E2E"): backend-free structure proof sharing
@@ -17,6 +17,10 @@ test.describe('story structure (vi, stubbed)', () => {
 
   test('SaveAfterMove_PutBodyCarriesNewParagraphOrderWithIfMatchAndNoContentWrapper_ReloadReflectsIt', async ({ page }) => {
     await saveAfterMoveFlow(page, 'vi');
+  });
+
+  test('MouseDrag_HandleReordersParagraph_SaveSendsNewOrder', async ({ page }) => {
+    await mouseDragFlow(page, 'vi');
   });
 
   test('DeleteUndo_SnackbarShowsDeletedCopyAndUndo_RestoresPositionKeywordsBeatAndFocus_ThenExpiryClearsTheUndoAction', async ({ page }) => {

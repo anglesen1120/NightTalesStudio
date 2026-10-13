@@ -200,10 +200,15 @@ export class ShellStore {
     if (this.loggingOut) return;
     this.loggingOut = true;
     if (!this.unsavedWork.hasUnsaved()) { void this.finishLogout(); return; }
-    void this.unsavedWork.confirmLeave().then(async (leave) => {
-      if (leave) await this.finishLogout();
-      else this.loggingOut = false;
-    });
+    void this.unsavedWork.confirmLeave().then(
+      async (leave) => {
+        if (leave) await this.finishLogout();
+        else this.loggingOut = false;
+      },
+      // A rejected prompt is not a decision: keep the session (`finishLogout` is never reached) and clear the flag so
+      // a later `logOut()` asks again instead of being swallowed by the in-flight guard.
+      () => { this.loggingOut = false; },
+    );
   }
 
   private async finishLogout(): Promise<void> {

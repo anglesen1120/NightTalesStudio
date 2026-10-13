@@ -219,6 +219,25 @@ describe('ShellStore', () => {
     expect(logout).not.toHaveBeenCalled();
   });
 
+  it('logOut_RejectedPrompt_KeepsTheSessionAndAllowsAnotherTry', async () => {
+    const { store, session, registry } = await setup();
+    const logout = vi.spyOn(session, 'logout');
+    const ask = vi.fn((): Promise<boolean> => Promise.reject(new Error('prompt failed')));
+    registry.register({ hasUnsaved: () => true, discard: () => undefined, confirmLeave: ask });
+    store.logOut();
+    await tick();
+    expect(ask).toHaveBeenCalledTimes(1);
+    // A rejected prompt is not a "leave" answer: the session survives and the in-flight flag is cleared.
+    expect(logout).not.toHaveBeenCalled();
+    expect(session.status()).toBe('authenticated');
+    ask.mockImplementation(() => Promise.resolve(true));
+    store.logOut();
+    await tick();
+    expect(ask).toHaveBeenCalledTimes(2);
+    expect(logout).toHaveBeenCalledTimes(1);
+    expect(session.status()).toBe('ended');
+  });
+
   it('logOut_Leave_EndsTheSessionAfterThePrompt', async () => {
     const { store, session, registry } = await setup();
     const logout = vi.spyOn(session, 'logout');

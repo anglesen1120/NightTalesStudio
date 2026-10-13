@@ -9,8 +9,7 @@ import { UnsavedWorkRegistry } from '@core/shell/unsaved-work';
 import { ConfirmDialog, ConflictDialog, EmptyState, ErrorState, FormErrorAlert, LoadingState, PageHeader, StatusChip } from '@shared/ui';
 import { addressForParagraph, formatAddress, parseAddress } from '@shared/util/segment-address';
 import type { SegmentAddress } from '@shared/util/segment-address';
-import { firstValueFrom } from 'rxjs';
-import { combineLatest } from 'rxjs';
+import { combineLatest, firstValueFrom, map } from 'rxjs';
 import { EpisodeDetailStore } from '../application/episode-detail.store';
 import { StoryEditorStore, UNDO_WINDOW_MS } from '../application/story-editor.store';
 import { StoryEditorComponent } from '../ui/story-editor.component';
@@ -148,13 +147,15 @@ export class StoryReviewPage {
       const removed = this.store.removed();
       if (removed === null) return;
       const ref = this.snack.open(this.transloco.translate('episodes.editor.deleted'), this.transloco.translate('episodes.editor.undo'), { duration: UNDO_WINDOW_MS });
-      // `afterDismissed`, not `onAction`: MatSnackBarRef completes `onAction` on every dismissal — the action click,
-      // the duration timeout, and this effect's cleanup when a second delete replaces the buffer — so resolving on it
-      // would undo without a click. `dismissedByAction` is true only for the click, and the identity check keeps a
-      // superseded snackbar (its exit animation can outlive the buffer) from undoing a paragraph a later delete holds.
-      // `firstValueFrom` rather than a hand-rolled subscription: a component never subscribes by hand (D2/D13).
-      void firstValueFrom(ref.afterDismissed()).then((dismissed) => {
-        if (dismissed.dismissedByAction && this.store.removed() === removed) this.undoRemove();
+      // `onAction`, not `afterDismissed`: the action click emits synchronously, while `afterDismissed` waits for the
+      // exit animation — a click in the last frames of the 10 s window would otherwise race the store timer that
+      // clears the buffer. `MatSnackBarRef` completes `onAction` without emitting on every other dismissal (the
+      // duration timeout, `dismiss()` from this cleanup), so `defaultValue: false` is the "no click" answer; the
+      // identity check keeps a superseded snackbar (its animation can outlive the buffer) from undoing a paragraph a
+      // later delete holds. `firstValueFrom` rather than a hand-rolled subscription: a component never subscribes by
+      // hand (D2/D13).
+      void firstValueFrom(ref.onAction().pipe(map(() => true)), { defaultValue: false }).then((clicked) => {
+        if (clicked && this.store.removed() === removed) this.undoRemove();
       });
       onCleanup(() => ref.dismiss());
     });

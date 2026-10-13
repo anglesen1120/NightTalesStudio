@@ -1,7 +1,7 @@
 import { test } from './fixtures/csp.fixture';
 import {
-  beforeUnloadCleanFlow, beforeUnloadDirtyFlow, deleteUndoFlow, dirtyGuardFlow, keyboardReorderFlow,
-  logoutDirtyFlow, mobileReorderFlow, reducedMotionFlow, saveAfterMoveFlow, structureAdvisoryFlow,
+  beforeUnloadCleanFlow, beforeUnloadDirtyFlow, deleteUndoFlow, dirtyGuardFlow, keyboardReorderFlow, logoutDirtyFlow,
+  mobileReorderFlow, mouseDragFlow, reducedMotionFlow, saveAfterMoveFlow, structureAdvisoryFlow,
 } from './fixtures/story-editor-stubs';
 
 // English parity for 10.5.9-T1: the same scenarios as `episodes-structure.spec.ts` (vi) run through the shared flows.
@@ -16,6 +16,10 @@ test.describe('story structure (en, stubbed)', () => {
 
   test('SaveAfterMove_PutBodyCarriesNewParagraphOrderWithIfMatchAndNoContentWrapper_ReloadReflectsIt', async ({ page }) => {
     await saveAfterMoveFlow(page, 'en');
+  });
+
+  test('MouseDrag_HandleReordersParagraph_SaveSendsNewOrder', async ({ page }) => {
+    await mouseDragFlow(page, 'en');
   });
 
   test('DeleteUndo_SnackbarShowsDeletedCopyAndUndo_RestoresPositionKeywordsBeatAndFocus', async ({ page }) => {

@@ -271,10 +271,11 @@ export async function mobileSegmentsFlow(page: Page, lang: E2eLang): Promise<voi
  */
 export const EDITOR_STRUCTURE_COPY = {
   vi: {
+    moveHandle: episodesVi.editor.moveHandle,
     moveUpAt: (position: number): string => episodesVi.editor.moveUpPosition.replace('{{position}}', String(position)),
     moveDownAt: (position: number): string => episodesVi.editor.moveDownPosition.replace('{{position}}', String(position)),
     reorderAt: (from: number, to: number): string => episodesVi.editor.reorderAnnounce.replace('{{n}}', String(from)).replace('{{m}}', String(to)),
-    remove: episodesVi.editor.delete,
+    deleteAt: (position: number): string => episodesVi.editor.deletePosition.replace('{{position}}', String(position)),
     deleted: episodesVi.editor.deleted,
     undo: episodesVi.editor.undo,
     structureWarning: episodesVi.editor.structureWarning,
@@ -287,10 +288,11 @@ export const EDITOR_STRUCTURE_COPY = {
     menuLogOut: coreVi.shell.menu.logOut,
   },
   en: {
+    moveHandle: episodesEn.editor.moveHandle,
     moveUpAt: (position: number): string => episodesEn.editor.moveUpPosition.replace('{{position}}', String(position)),
     moveDownAt: (position: number): string => episodesEn.editor.moveDownPosition.replace('{{position}}', String(position)),
     reorderAt: (from: number, to: number): string => episodesEn.editor.reorderAnnounce.replace('{{n}}', String(from)).replace('{{m}}', String(to)),
-    remove: episodesEn.editor.delete,
+    deleteAt: (position: number): string => episodesEn.editor.deletePosition.replace('{{position}}', String(position)),
     deleted: episodesEn.editor.deleted,
     undo: episodesEn.editor.undo,
     structureWarning: episodesEn.editor.structureWarning,
@@ -422,6 +424,58 @@ export async function saveAfterMoveFlow(page: Page, lang: E2eLang): Promise<void
 }
 
 /**
+ * Bullet 2 (pointer): dragging paragraph 3's handle above paragraph 1 reorders the list with the mouse, announces
+ * the new position and saves the new order. The drag handle is declared inside `ParagraphCardComponent`'s own
+ * template, so this flow guards that card's self-registration as the drop list's drag handle. CDK caches each item's
+ * rect at drag start and reads only the pointer's Y for a vertical list, so the pointer ends inside paragraph 1's box
+ * (above its midpoint, but still within its rect) and the result is polled instead of slept on.
+ */
+export async function mouseDragFlow(page: Page, lang: E2eLang): Promise<void> {
+  const C = EDITOR_STRUCTURE_COPY[lang];
+  // Pointer events are only delivered inside the viewport: keep paragraphs 1 and 3 both on screen.
+  await page.setViewportSize({ width: 1280, height: 2400 });
+  const api = await openEditor(page, lang);
+  const paragraphs = STORY_CONTENT.paragraphs;
+  const movedContent: StoryWire = { ...STORY_CONTENT, paragraphs: [paragraphs[2]!, paragraphs[0]!, paragraphs[1]!, paragraphs[3]!] };
+
+  const handle = page.locator('nts-paragraph-card').nth(2).getByRole('img', { name: C.moveHandle, exact: true });
+  const target = page.locator('nts-paragraph-card').nth(0);
+  await expect(handle).toBeVisible();
+  const from = await handle.boundingBox();
+  const box = await target.boundingBox();
+  if (from === null || box === null) throw new Error('paragraph drag handles must be laid out');
+
+  const startX = from.x + from.width / 2;
+  const startY = from.y + from.height / 2;
+  const endX = box.x + box.width / 2;
+  // Upper quarter of paragraph 1: past its midpoint yet inside its rect (a vertical list reads the pointer's Y only).
+  const endY = box.y + box.height / 4;
+  const steps = 20;
+
+  await page.mouse.move(startX, startY);
+  await page.mouse.down();
+  for (let step = 1; step <= steps; step += 1) {
+    await page.mouse.move(startX + ((endX - startX) * step) / steps, startY + ((endY - startY) * step) / steps);
+  }
+  await page.mouse.up();
+
+  await expect.poll(() => paragraphValues(page)).toEqual(movedContent.paragraphs.map((paragraph) => paragraph.text));
+  await expect(liveAnnouncer(page)).toHaveText(C.reorderAt(3, 1));
+  await expect(paragraphTextarea(page, 0)).toBeFocused();
+
+  // The save-after-move contract: Save sends the RAW story.v1 body in the new order, and a reload keeps that order.
+  await expect(saveButton(page, lang)).toBeEnabled();
+  await saveButton(page, lang).click();
+  await expectSaved(page, lang);
+  expect(api.puts).toHaveLength(1);
+  expectStoryPut(api.puts[0]!, STORED_STORY_ETAG, movedContent);
+  await page.reload();
+  await expectEditor(page, lang);
+  await expect.poll(() => paragraphValues(page)).toEqual(movedContent.paragraphs.map((paragraph) => paragraph.text));
+  await expectA11yClean(page);
+}
+
+/**
  * Bullet 3: delete shows the snackbar (`deleted` + Undo); Undo restores the paragraph at its original position with
  * its keywords and beat and returns focus. With `waitForExpiry` the second deletion is left to expire (the real 10 s
  * window, exercised by the vi spec only) and the Undo action is gone while the deletion stands.
@@ -433,7 +487,7 @@ export async function deleteUndoFlow(page: Page, lang: E2eLang, options: { reado
   const before = STORY_CONTENT.paragraphs;
   const values = before.map((paragraph) => paragraph.text);
 
-  await paragraphDelete(page, L.paragraph(2), C.remove).click();
+  await paragraphDelete(page, L.paragraph(2), C.deleteAt(2)).click();
   await expect(snackbar(page)).toContainText(C.deleted);
   await expect(snackbarAction(page, C.undo)).toBeVisible();
   // Focus hands to the paragraph that takes the deleted one's place, and the order is reduced.
@@ -458,7 +512,7 @@ export async function deleteUndoFlow(page: Page, lang: E2eLang, options: { reado
   await expectA11yClean(page);
 
   if (options.waitForExpiry) {
-    await paragraphDelete(page, L.paragraph(2), C.remove).click();
+    await paragraphDelete(page, L.paragraph(2), C.deleteAt(2)).click();
     await expect(snackbarAction(page, C.undo)).toBeVisible();
     await expect(page.getByRole('button', { name: C.undo, exact: true })).toHaveCount(0, { timeout: 15_000 });
     await expect(snackbar(page)).toHaveCount(0, { timeout: 15_000 });
@@ -588,7 +642,7 @@ export async function structureAdvisoryFlow(page: Page, lang: E2eLang): Promise<
   await expect(warning).toHaveCount(0);
   await expectA11yClean(page);
 
-  await paragraphDelete(page, L.paragraph(1), C.remove).click();
+  await paragraphDelete(page, L.paragraph(1), C.deleteAt(1)).click();
   await expect(warning).toBeVisible();
   await expect(saveButton(page, lang)).toBeEnabled();
   await snackbarSettled(page);
@@ -617,7 +671,7 @@ export async function mobileReorderFlow(page: Page, lang: E2eLang): Promise<void
   const targets = STORY_CONTENT.paragraphs.flatMap((_paragraph, index) => [
     page.getByRole('button', { name: C.moveUpAt(index + 1), exact: true }),
     page.getByRole('button', { name: C.moveDownAt(index + 1), exact: true }),
-    paragraphDelete(page, L.paragraph(index + 1), C.remove),
+    paragraphDelete(page, L.paragraph(index + 1), C.deleteAt(index + 1)),
   ]);
   const reached = new Set<number>();
   await paragraphTextarea(page, 0).focus();
@@ -646,7 +700,7 @@ export async function reducedMotionFlow(page: Page, lang: E2eLang): Promise<void
   expect(await motionToken(page, '--nts-motion-fast')).toBe('160ms');
   expect(await motionToken(page, '--nts-motion-base')).toBe('240ms');
   expect(await cardButtonTransition(page)).toBe('0.16s');
-  await paragraphDelete(page, L.paragraph(2), C.remove).click();
+  await paragraphDelete(page, L.paragraph(2), C.deleteAt(2)).click();
   await expect(snackbar(page)).toBeVisible();
   // Material keeps `mat-snack-bar-container-enter` for as long as the snackbar is visible, so its 150 ms enter
   // animation is a stable non-zero duration here (the class it replaces is never dropped under reduced motion).
@@ -659,7 +713,7 @@ export async function reducedMotionFlow(page: Page, lang: E2eLang): Promise<void
   expect(await motionToken(page, '--nts-motion-fast')).toBe('0ms');
   expect(await motionToken(page, '--nts-motion-base')).toBe('0ms');
   expect(await cardButtonTransition(page)).toBe('0s');
-  await paragraphDelete(page, L.paragraph(2), C.remove).click();
+  await paragraphDelete(page, L.paragraph(2), C.deleteAt(2)).click();
   await expect(snackbar(page)).toBeVisible();
   const reduced = await snackbarMotionSeconds(snackbar(page));
   expect(reduced.container, 'the snackbar container motion is disabled under reduced motion').toBeLessThanOrEqual(0.00001);

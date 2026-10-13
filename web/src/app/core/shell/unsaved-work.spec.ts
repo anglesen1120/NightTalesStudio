@@ -19,6 +19,21 @@ describe('UnsavedWorkRegistry', () => {
     expect(clean).toHaveBeenCalledTimes(1);
   });
 
+  it('discardAll_ThrowingHandler_StillDiscardsTheRest', () => {
+    const registry = new UnsavedWorkRegistry();
+    const before = vi.fn();
+    const throwing = vi.fn(() => { throw new Error('discard failed'); });
+    const after = vi.fn();
+    registry.register({ hasUnsaved: () => true, discard: before, confirmLeave: () => Promise.resolve(true) });
+    registry.register({ hasUnsaved: () => true, discard: throwing, confirmLeave: () => Promise.resolve(true) });
+    registry.register({ hasUnsaved: () => true, discard: after, confirmLeave: () => Promise.resolve(true) });
+    // A handler whose teardown throws must not abort the terminal-session discard (SessionStore navigates right after).
+    expect(() => registry.discardAll()).not.toThrow();
+    expect(before).toHaveBeenCalledTimes(1);
+    expect(throwing).toHaveBeenCalledTimes(1);
+    expect(after).toHaveBeenCalledTimes(1);
+  });
+
   it('cleanHandler_IsNotAsked', async () => {
     const registry = new UnsavedWorkRegistry();
     const ask = vi.fn(() => Promise.resolve(true));

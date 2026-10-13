@@ -431,15 +431,6 @@ export class StoryEditorStore {
     if (kind === 'remove') this.bufferedHints = dropped;
     if (kind === 'insert') { hints.push(...this.bufferedHints); this.bufferedHints = []; }
     this.hintOverrides.set(hints);
-    // A structural change is an edit, and an edit clears the server field errors; rebuilding their addresses here
-    // keeps the same-window keys canonical for a caller that reads them before the next save response lands.
-    const errors: Partial<Record<SegmentAddress, readonly string[]>> = {};
-    for (const [address, keys] of Object.entries(this.fieldErrors())) {
-      if (keys === undefined) continue;
-      const target = map(address as SegmentAddress);
-      if (target !== null) errors[target] = keys;
-    }
-    this.fieldErrors.set(errors);
   }
 
   /** The order moved away from (or back to) the baseline order: re-derive the flag and commit the change as an edit. */

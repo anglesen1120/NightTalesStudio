@@ -40,7 +40,12 @@ export class UnsavedWorkRegistry {
    * no-ops.
    */
   discardAll(): void {
-    for (const handler of this.handlers) handler.discard();
+    for (const handler of this.handlers) {
+      // A handler's `discard()` is its own teardown and may throw (a draft whose teardown failed). The caller is
+      // `SessionStore.endSession`, which navigates to `/login` right after; a throw here must not abort that redirect,
+      // so the remaining handlers are still dropped.
+      try { handler.discard(); } catch { /* keep discarding the rest */ }
+    }
   }
 
   confirmLeave(): Promise<boolean> {

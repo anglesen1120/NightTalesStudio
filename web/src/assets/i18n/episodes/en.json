@@ -80,6 +80,7 @@
     "moveDown": "Move down",
     "moveHandle": "Drag to move",
     "delete": "Delete paragraph",
+    "deletePosition": "Delete paragraph {{position}}",
     "deleted": "Paragraph deleted",
     "undo": "Undo",
     "reorderAnnounce": "Moved paragraph {{n}} to position {{m}}",
