@@ -222,6 +222,9 @@ public sealed class StoryReadRoutesTests(TestDatabase database) : IntegrationTes
         interceptor.Count.ShouldBe(expectedCommands, string.Join(" | ", interceptor.Texts));
         interceptor.ObservedConcurrentExecution.ShouldBeFalse();
         interceptor.Commands.ShouldAllBe(command => command.ActiveWhenStarted == 0);
+        // 02.3.3-T1: the episode read joins `series` for its topic and language, so the attestation
+        // member costs no extra command for a fiction episode; the table names below are unchanged and
+        // the join is asserted with the episode command.
         string[] expectedTables = withVideo
             ? ["episodes", "assets", "story_versions", "generation_runs"]
             : ["episodes", "story_versions", "generation_runs"];

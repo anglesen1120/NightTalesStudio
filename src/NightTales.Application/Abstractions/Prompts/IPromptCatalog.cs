@@ -54,6 +54,15 @@ public interface IPromptCatalog
     /// <returns>The step prompt's text.</returns>
     string GetStepPrompt(PromptStep promptStep);
 
+    /// <summary>
+    /// The true-crime attestation clause text of one content language (02.3.3-T1, 02 README T29),
+    /// <c>shared/attestation.ta.v1.{vi|en}.md</c>, with the version marker the manifest declares for it.
+    /// </summary>
+    /// <param name="language">The content language of the episode's series.</param>
+    /// <returns>The clause text and the manifest version, for example <c>ta.v1</c>.</returns>
+    /// <exception cref="PromptCatalogException">The manifest does not track the file.</exception>
+    AttestationText GetAttestation(Language language);
+
     /// <summary>The strict output schema of one file under <c>prompts/schemas/</c>.</summary>
     /// <param name="name">The schema's file name, for example <c>story.v1.json</c>.</param>
     /// <returns>The schema's raw bytes; the OpenAI adapter wraps them in the SDK's schema type.</returns>

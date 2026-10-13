@@ -4,6 +4,14 @@ History moved out of STATUS.md to keep the live file small. The initial archive 
 
 ## Resume-here history (Current/Previous blocks, Next actions)
 
+### Superseded Session 34 start Next line (2026-10-14)
+
+Replaced backend Next line (verbatim):
+
+- **Next (backend, start here):** Session 31: **02.5.3-T2** `fact_sheets` + `GenerateFactSheetCommand` + `GenerateFactSheetJob` + `FactSheetValidator` + migration `AddFactSheets` (PR open, T3 gates closed; local full `gate.sh` `GATE_RC=0` on `a2d4ad2`, 6845 tests / 0 failed / 17 skipped; PF-1 index `ix_generation_runs_episode_created` and the four composite FKs of 02 CR-29 included; deviations and open items in the task §Notes and §Open tasks). Lane next: **02.5.4-T1** (fact-sheet edit/approve, needs T2), 02.6.1-T2, **02.3.3-T1** (replaces `NullStoryApprovalGate`; gives `SimilarityApprovalGuard` its approve caller). Merged earlier: #180 02.6.2-T1 (`280d74b`), #175 02.5.3-T1 (`89e5736`); older merged items are in `docs/status-archive.md`.
+
+Outcome: Session 34 opened the 02.3.3-T1 true-crime guard + attestation `ta.v1` PR and replaced this line; 02.5.3-T2 is merged as #184 (`88137a1`), which the new line records.
+
 ### Superseded backend Next and Session 30 Resume bullets (2026-10-15, replaced when Session 31 opened the 02.5.3-T2 PR)
 
 - **Next (backend, start here):** Session 27: **02.5.3-T1** fact prompt + `facts.v1` + `FactInputBudget` + `OpenAiFactExtractor` merged as #175 (`89e5736`, tip `c031ae8`; no migration; CI refused: CI-01, owner treats as pass; local full `gate.sh` `GATE_RC=0` on `d370ba3`, the tip adds docs only; T3 gates closed; hand-overs are in the 02.5.3-T2 task §Notes). Lane next: **02.5.3-T2** fact-sheet generation job (consumes `FactInputPlan`; PF-1 index), then 02.6.1-T2 (02.6.2-T1 merged as #180, next bullet); 02.3.3-T1 replaces `NullStoryApprovalGate` (order row 5, T31; also gives `SimilarityApprovalGuard` its approve caller; edit re-score stays with 02.3.1-T1). Merged earlier: #167 413 ProblemDetails (`1c5add6`), #159 02.3.2-T1 (`5130861`), #165 02.5.6-T1 similarity (`59b2239`; unblocks 02.5.6-T2, 02.8.2-T1), #163 13.2.1-T1 legal acceptance (`6c17462`), #156 read models (`cf4625c`); all CI refused (CI-01, owner treats as pass) with local full `gate.sh` `GATE_RC=0`. Web may re-pin OpenAPI (413 fix merged). `02-M1-research` still needs 11.2.2-T2 egress proof. Shared test lock is managed by `gate.sh`; never remove it, and never wrap `gate.sh` in `locked-run.sh` (same lock directory, self-deadlock).

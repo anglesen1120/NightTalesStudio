@@ -274,7 +274,7 @@ prompts/
 | `fact_sheet_invalid_content` | 400 | Fact-sheet PUT body fails validation (unknown/duplicate id, unknown source, empty statement) |
 | `fact_sheet_conflict` | 412 | Fact-sheet edit/approve with a stale ETag |
 | `fact_sheet_generation_in_progress` | 409 | Generate while a fact-sheet run is active |
-| `fact_sheet_sources_insufficient` | 409 | Fact-sheet generate with 0 fetched sources; true-crime approve with < 2 cited fetched sources |
+| `fact_sheet_sources_insufficient` | 409 | Fact-sheet generate with 0 fetched sources (a true-crime approve with < 2 cited fetched sources is `story_sources_required`, D8 above; 02.3.3-T1 QA F1) |
 | `source_url_invalid` | 400 | Not http(s), IP literal, credentials, port ∉ {80, 443}, > 2,048 chars, unparsable |
 | `source_domain_not_allowed` | 400 | Blocked domain (D11) |
 | `source_duplicate` | 409 | Same normalised URL already on the episode |

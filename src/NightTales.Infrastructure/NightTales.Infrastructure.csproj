@@ -75,8 +75,10 @@
     The tree is outside this project directory, and the SDK's default `None`/`Compile`/`EmbeddedResource`
     globs are project-relative, so nothing is added twice — there is no `None Remove` to write here.
     `prompts/manifest.json` hashes the raw bytes, which is why `.gitattributes` pins the tree to LF.
+    02.3.3-T1: `WithCulture="false"` stops MSBuild reading the `.vi`/`.en` before the extension of
+    `shared/attestation.ta.v1.{vi,en}.md` as a culture and moving the file into a satellite assembly.
   -->
   <ItemGroup>
-    <EmbeddedResource Include="../../prompts/**" LinkBase="Prompts" />
+    <EmbeddedResource Include="../../prompts/**" LinkBase="Prompts" WithCulture="false" />
   </ItemGroup>
 </Project>

@@ -453,6 +453,8 @@ public sealed class StoryCostEstimatorTests
             _ => string.Empty,
         };
 
+        public AttestationText GetAttestation(Language language) => new(string.Empty, string.Empty);
+
         public ReadOnlyMemory<byte> GetSchema(string name) => ReadOnlyMemory<byte>.Empty;
 
         public string BuildPromptVersion(PromptVersionParts parts) => Release;

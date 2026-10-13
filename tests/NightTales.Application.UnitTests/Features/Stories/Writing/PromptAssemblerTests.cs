@@ -661,6 +661,8 @@ public sealed class PromptAssemblerTests
 
         public string GetStepPrompt(PromptStep promptStep) => throw new NotSupportedException();
 
+        public AttestationText GetAttestation(Language language) => new(string.Empty, string.Empty);
+
         public ReadOnlyMemory<byte> GetSchema(string name) => throw new NotSupportedException();
 
         public string BuildPromptVersion(PromptVersionParts parts)
