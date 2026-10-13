@@ -44,8 +44,34 @@
         </section>
       }
 
+      @if (store.remoteChange() !== null && !conflictDialogOpen()) {
+        <section class="story-review-page__notice story-review-page__notice--remote" aria-labelledby="story-remote-heading">
+          <h2 id="story-remote-heading">{{ 'episodes.conflict.elsewhereTitle' | transloco }}</h2>
+          <p role="status">{{ 'episodes.conflict.elsewhereBody' | transloco }}</p>
+          @if (remoteNoticeLabels().length > 0) {
+            <ul class="story-review-page__diff">
+              @for (label of remoteNoticeLabels(); track $index) {
+                <li>{{ label }}</li>
+              }
+            </ul>
+          }
+          <div class="story-review-page__actions">
+            <button type="button" (click)="reloadRemoteNotice()">{{ 'episodes.conflict.reload' | transloco }}</button>
+            <button type="button" (click)="saveMineRemoteNotice()">{{ 'episodes.conflict.saveMine' | transloco }}</button>
+            <button type="button" (click)="dismissRemoteNotice()">{{ 'episodes.conflict.dismiss' | transloco }}</button>
+          </div>
+        </section>
+      }
+
       <div class="story-review-page__workspace" [class.story-review-page__workspace--versions]="versionsOpen()">
-        <nts-story-editor [viewModel]="viewModel()" [segmentTexts]="segmentTexts()" (intent)="handleIntent($event)" />
+        <nts-story-editor
+          #editorHost
+          [viewModel]="viewModel()"
+          [segmentTexts]="segmentTexts()"
+          [annotationViews]="annotationViews()"
+          [announcement]="announcement()"
+          (intent)="handleIntent($event)"
+        />
         @if (versionsOpen()) {
           <nts-versions-panel-host [episodeId]="detail.id" [initialLeft]="versionIds().left" [initialRight]="versionIds().right" (selectionChange)="changeVersions($event)" (closed)="closeVersions()" />
         }

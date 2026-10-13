@@ -897,3 +897,8 @@ Earlier live rows for Plan13, hosting, skeleton, wave2 and wave3 already exist i
 ## Replaced by Session 28 close-out, archived 2026-10-14
 
 - **Web next (Session 29), replaced fragment:** → lane next **10.5.7-T1** (check its header `Depends on`) or **10.5.9-T1** if Session 28 is not merged yet; 10.5.6-T1 wires the reopen action behind the `needsReopen` message and 10.5.9-T1 adds the dirty guard the restore flow already warns about.
+
+## Replaced by Session 32 (10.5.10-T1), archived 2026-10-14
+
+- **Web next (plan 10 Stage B), replaced fragment:** then **10.5.10-T1**, or **10.5.6-T1** approve/reopen once 02.3.3-T1 merges;
+- **Web next (Session 29), replaced fragment:** → lane next **10.5.10-T1** (hint UI; check its header `Depends on`) or **10.5.7-T1**;

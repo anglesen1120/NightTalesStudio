@@ -2,12 +2,15 @@
   <span class="segment-chips__label">{{ 'episodes.editor.keywords' | transloco }}</span>
   <div class="segment-chips__list" role="list" [attr.aria-label]="'episodes.editor.keywords' | transloco">
     @for (keyword of keywords(); track $index) {
-      <div class="segment-chips__item" role="listitem">
+      <div class="segment-chips__item" role="listitem" [class.segment-chips__item--flagged]="flagged().has($index)">
+        <div class="segment-chips__control">
         <input
           type="text"
           [value]="keyword"
           [readOnly]="readOnly()"
-          [attr.aria-label]="'episodes.editor.keywordLabel' | transloco: { index: $index + 1 }"
+          [attr.aria-label]="('episodes.editor.keywordLabel' | transloco: { index: $index + 1 }) + (flagged().has($index) ? ' — ' + ('episodes.editor.keywordFlagged' | transloco) : '')"
+          [attr.aria-invalid]="flagged().has($index) ? 'true' : null"
+          [attr.aria-describedby]="flagged().get($index)?.annotationId ?? null"
           (input)="edit($index, $event)"
         />
         @if (!readOnly()) {
@@ -15,6 +18,11 @@
             <span aria-hidden="true">×</span>
             <span class="sr-only">{{ 'episodes.editor.removeKeyword' | transloco }} {{ keyword }}</span>
           </button>
+        }
+        </div>
+        @if (flagged().get($index); as flag) {
+          <span class="segment-chips__flag"><nts-icon-alert /> {{ 'episodes.editor.keywordFlagged' | transloco }}</span>
+          <span class="sr-only" role="note" [id]="flag.annotationId">{{ flag.messageKey | transloco }}</span>
         }
       </div>
     }

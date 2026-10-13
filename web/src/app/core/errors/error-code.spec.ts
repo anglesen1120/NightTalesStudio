@@ -11,7 +11,8 @@ import {
 } from './error-code';
 
 const SCOPES = { vi: errorsVi, en: errorsEn } as const;
-const UI_GROUPS = ['form', 'unknown', 'action', 'conflict'];
+/** Top-level nested families of the scope: groups of UI copy (never error codes), checked leaf by leaf below. */
+const UI_GROUPS = ['form', 'unknown', 'action', 'conflict', 'keywordsFlaggedRule'];
 /** Top-level UI string leaves of the contract (not catalogue codes). */
 const UI_STRING_LEAVES = ['retryIn', 'retryNow'];
 

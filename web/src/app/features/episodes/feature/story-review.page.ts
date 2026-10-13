@@ -1,5 +1,5 @@
-import { ChangeDetectionStrategy, Component, DestroyRef, ViewContainerRef, afterRenderEffect, computed, effect, inject, signal, untracked, viewChild } from '@angular/core';
-import type { ElementRef, Signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, ViewContainerRef, afterRenderEffect, computed, effect, inject, isDevMode, signal, untracked, viewChild } from '@angular/core';
+import type { Signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
 import { MatSnackBar } from '@angular/material/snack-bar';
@@ -8,15 +8,19 @@ import { AppErrorMapper } from '@core/errors';
 import { UnsavedWorkRegistry } from '@core/shell/unsaved-work';
 import { ConfirmDialog, ConflictDialog, EmptyState, ErrorState, FormErrorAlert, LoadingState, PageHeader, StatusChip } from '@shared/ui';
 import { addressForParagraph, formatAddress, parseAddress } from '@shared/util/segment-address';
-import type { SegmentAddress } from '@shared/util/segment-address';
-import { combineLatest, firstValueFrom, map } from 'rxjs';
+import type { ParsedAddress, SegmentAddress } from '@shared/util/segment-address';
+import { catchError, combineLatest, firstValueFrom, map, of, switchMap } from 'rxjs';
+import type { Observable } from 'rxjs';
 import { EpisodeDetailStore } from '../application/episode-detail.store';
 import { StoryEditorStore, UNDO_WINDOW_MS } from '../application/story-editor.store';
 import { VersionsStore } from '../application/versions.store';
 import { VersionsPanelHostComponent } from './versions-panel-host.component';
 import { StoryEditorComponent } from '../ui/story-editor.component';
+import type { StoryEditorAnnouncement } from '../ui/story-editor.component';
 import { buildStoryEditorViewModel } from '../ui/story-editor.view-model';
 import type { SegmentTexts, StoryEditorIntent, StoryEditorViewModel } from '../ui/story-editor.view-model';
+import { buildAnnotationViews } from '../ui/annotation.view-model';
+import type { AnnotationViewOptions, AnnotationViews } from '../ui/annotation.view-model';
 
 const ACTION_KEYS: Readonly<Record<string, string>> = {
   generate_story: 'episodes.editor.action.generate_story',
@@ -31,10 +35,38 @@ const ACTION_KEYS: Readonly<Record<string, string>> = {
   download: 'episodes.editor.action.download',
 };
 
+/**
+ * Which body copy the conflict dialog opens with. `busy` is the second consecutive 412 (the save-as-new attempt itself
+ * lost the race again) and `reloadFailed` a reload that errored with the conflict still standing; both keep the three
+ * actions, so the recovered state is one more user click away.
+ */
+type ConflictVariant = 'body' | 'busy' | 'reloadFailed';
+
+const CONFLICT_MESSAGE_KEYS: Readonly<Record<ConflictVariant, string>> = {
+  body: 'episodes.conflict.body',
+  busy: 'episodes.conflict.busyBody',
+  reloadFailed: 'episodes.conflict.reloadFailed',
+};
+
+/** One scope subtree tagged with the language it was loaded for, so readiness never answers from a previous language. */
+interface LoadedScope {
+  readonly lang: string;
+  readonly scope: unknown;
+}
+
+/**
+ * A scope is usable only when its subtree carries entries AND it was loaded for the language now active: a subscription
+ * restarted by a language switch keeps serving the previous language's object until the new file lands, and resolving a
+ * key against that object answers with the key itself, which reads as a missing rule rather than as "not loaded yet".
+ */
+function isScopeLoaded(loaded: LoadedScope, language: string): boolean {
+  return loaded.lang === language && typeof loaded.scope === 'object' && loaded.scope !== null && Object.keys(loaded.scope).length > 0;
+}
+
 @Component({
   selector: 'nts-story-review-page',
   imports: [TranslocoPipe, EmptyState, ErrorState, FormErrorAlert, LoadingState, PageHeader, StatusChip, StoryEditorComponent, VersionsPanelHostComponent],
-  providers: [EpisodeDetailStore, StoryEditorStore, VersionsStore, provideTranslocoScope('episodes', 'errors')],
+  providers: [EpisodeDetailStore, StoryEditorStore, VersionsStore, provideTranslocoScope('episodes', 'errors', 'quality')],
   templateUrl: './story-review.page.html',
   styleUrl: './story-review.page.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -53,17 +85,52 @@ export class StoryReviewPage {
   private readonly viewContainerRef = inject(ViewContainerRef);
   private readonly destroyRef = inject(DestroyRef);
   private readonly editor = viewChild(StoryEditorComponent);
+  // `read: ElementRef`: `#editorHost` sits on a component element, so a bare string query would resolve to the
+  // component instance and the focus restore below needs the host DOM node.
+  private readonly editorHost = viewChild<HTMLElement, ElementRef<HTMLElement>>('editorHost', { read: ElementRef });
   private readonly versionsToggle = viewChild<ElementRef<HTMLButtonElement>>('versionsToggle');
   private readonly restoreVersionsFocus = signal(false);
+  private readonly restoreSaveFocus = signal(false);
+  protected readonly conflictDialogOpen = signal(false);
   private readonly routeState = toSignal(combineLatest([this.route.paramMap, this.route.queryParamMap]), {
     initialValue: [this.route.snapshot.paramMap, this.route.snapshot.queryParamMap] as const,
   });
+  /** Annotation copy is translated in the active language, so views rebuild on a language switch. */
+  private readonly language = toSignal(this.transloco.langChanges$, { initialValue: this.transloco.getActiveLang() });
+  /**
+   * Subscribing to the quality scope is both the load trigger and the readiness signal: until the *active language's*
+   * file lands a hint's `quality.<ruleId>` key cannot resolve, so hints are withheld (keyword flags are not — see
+   * `annotationViews`). The path pins the language the emission belongs to, and the catch sits inside the per-language
+   * switch, so a failed load leaves that language unready while the next language change retries it — the stream is never
+   * completed for the page's life.
+   */
+  private readonly qualityScope = toSignal(
+    this.transloco.langChanges$.pipe(switchMap((lang) => this.loadScope('quality', lang))),
+    { initialValue: { lang: this.transloco.getActiveLang(), scope: null } },
+  );
+  /**
+   * The `episodes` scope is loaded lazily by the router-scoped provider; until the active language's file lands, an
+   * imperative `translate('…', {}, 'episodes')` echoes the key back. The labels the page builds in TypeScript (the diff
+   * lists, the dialog's detail texts) and the announcement wait for `episodesLoaded`, so a raw key never reaches the DOM.
+   */
+  private readonly episodesScope = toSignal(
+    this.transloco.langChanges$.pipe(switchMap((lang) => this.loadScope('episodes', lang))),
+    { initialValue: { lang: this.transloco.getActiveLang(), scope: null } },
+  );
+  private readonly qualityLoaded = computed(() => isScopeLoaded(this.qualityScope(), this.language()));
+  private readonly episodesLoaded = computed(() => isScopeLoaded(this.episodesScope(), this.language()));
+  /** One language's scope file, tagged with that language (a failed load leaves it unready rather than guessing). */
+  private loadScope(scope: string, lang: string): Observable<LoadedScope> {
+    return this.transloco.selectTranslation(`${scope}/${lang}`).pipe(
+      map((translation): LoadedScope => ({ lang, scope: translation })),
+      catchError(() => of<LoadedScope>({ lang, scope: null })),
+    );
+  }
   private readonly focusRequest = signal<{ readonly address: SegmentAddress; readonly sequence: number } | null>(null);
   private lastEpisodeId: string | null = null;
   private lastFocusSequence = -1;
   private lastSegmentFocusKey: string | null = null;
   private focusSequence = 0;
-  private conflictOpen = false;
   private leavePrompt: Promise<boolean> | null = null;
 
   private previousViewModel: StoryEditorViewModel | undefined;
@@ -72,6 +139,66 @@ export class StoryReviewPage {
     ...this.store.paragraphs().map((paragraph, index) => [addressForParagraph(index), paragraph.text] as const),
     ['ending', this.store.ending],
   ]));
+  /**
+   * One options object for the builder. `hasKey` asks the live service: `translate` hands a key back when the active
+   * language cannot resolve it — a scope that has not loaded, or an entry the language lacks — so an unknown rule id
+   * never reaches the UI as if it were copy. `warnUnknown` logs the key alone (D19), once per distinct key.
+   */
+  private readonly annotationOptions: AnnotationViewOptions = {
+    hasKey: (key) => this.transloco.translate(key) !== key,
+    warnUnknown: (key) => this.warnUnknownAnnotationKey(key),
+  };
+  private readonly warnedAnnotationKeys = new Set<string>();
+  private previousAnnotationViews: AnnotationViews | undefined;
+  /**
+   * Annotations depend on the saved hint set and the keyword flags, never on draft text, so a keystroke cannot rebuild
+   * them. A hint's `quality.<ruleId>` key cannot resolve until the quality scope has loaded, so hints are withheld
+   * then: rendering them would show the "not translated" fallback for feedback that is perfectly valid. Keyword flags
+   * carry `errors.*`/`episodes.*` keys, so a failed (or still pending) quality load must never hide them.
+   */
+  protected readonly annotationViews = computed<AnnotationViews>(() => {
+    // `hasKey` resolves against the active language, so a language switch must rebuild the views; the announcement copy
+    // is the one thing that does not follow the language (it stays frozen per sequence — see `announcement`).
+    this.language();
+    const annotations = this.store.annotations();
+    const visible = this.qualityLoaded() ? annotations : annotations.filter((annotation) => annotation.source !== 'hint');
+    const next = buildAnnotationViews(visible, this.annotationOptions, this.previousAnnotationViews);
+    this.previousAnnotationViews = next;
+    return next;
+  });
+  /** The frozen announcement copy and the sequence it belongs to, so a language switch cannot rewrite what was read. */
+  private announcedSequence: number | null = null;
+  private announcedText: string | null = null;
+  /**
+   * Already-translated text for the editor's single polite live region; `null` renders nothing at all. The copy is
+   * resolved once, when the announcement sequence changes, and is frozen there: a live region announces a *change*, and
+   * a later language switch must not rewrite text a screen reader has already read. It never reads a language signal.
+   * `episodesLoaded` is read only so that a scope which lands after the save fills the copy in (never a raw key) — and
+   * only while the sequence has no frozen text yet. A new sequence re-creates the announced node (see the editor), so
+   * two saves that report the same count still announce — no trailing-space trick, no timer.
+   */
+  protected readonly announcement = computed<StoryEditorAnnouncement | null>(() => {
+    const announcement = this.store.annotationAnnouncement();
+    const ready = this.episodesLoaded();
+    if (announcement === null) {
+      this.announcedSequence = null;
+      this.announcedText = null;
+      return null;
+    }
+    if (announcement.sequence !== this.announcedSequence) {
+      this.announcedSequence = announcement.sequence;
+      this.announcedText = ready ? this.announcementText(announcement.count) : null;
+    } else if (this.announcedText === null && ready) {
+      this.announcedText = this.announcementText(announcement.count);
+    }
+    return this.announcedText === null ? null : { text: this.announcedText, sequence: announcement.sequence };
+  });
+  protected readonly remoteNoticeLabels = computed<readonly string[]>(() => {
+    this.language();
+    if (!this.episodesLoaded()) return [];
+    const remote = this.store.remoteChange();
+    return remote === null ? [] : this.diffLabels(remote.diff);
+  });
   private readonly saveErrorKey = computed(() => {
     const error = this.store.error();
     // A cancelled conflict keeps the draft, not an active save failure announcement.
@@ -148,7 +275,12 @@ export class StoryReviewPage {
       });
     });
     effect(() => {
-      if (this.store.readOnly() || this.store.conflict() === null || this.conflictOpen) return;
+      if (this.store.readOnly() || this.store.conflict() === null) return;
+      // A 412 is recorded while its own request is still finishing: the store reads the conflicting diff right after.
+      // Opening now would show the "nothing differs" copy for a genuine diff, so the dialog waits for the write to end.
+      if (this.store.saving()) return;
+      // Read untracked: the loop writes this flag, and a tracked read would make the effect depend on its own state.
+      if (untracked(() => this.conflictDialogOpen())) return;
       untracked(() => { void this.openConflict(); });
     });
     afterRenderEffect(() => {
@@ -199,6 +331,19 @@ export class StoryReviewPage {
       if (toggle === undefined) return;
       toggle.nativeElement.focus();
       this.restoreVersionsFocus.set(false);
+    });
+    // Cancelling a conflict, or acting on the changed-elsewhere notice, leaves the user in the editor: the save control
+    // takes focus back (the dialog restores focus to whatever held it before, which is not necessarily where the draft
+    // is saved from). A resolved notice leaves a clean draft, so Save is disabled — and `focus()` on a disabled control
+    // does nothing — hence the first editor field as the fallback so focus never falls to the document body.
+    afterRenderEffect(() => {
+      if (!this.restoreSaveFocus()) return;
+      const host = this.editorHost();
+      if (host === undefined) return;
+      this.restoreSaveFocus.set(false);
+      const save = host.nativeElement.querySelector<HTMLButtonElement>('.story-save-bar button');
+      if (save !== null && !save.disabled) { save.focus(); return; }
+      host.nativeElement.querySelector<HTMLTextAreaElement>('textarea[data-segment]')?.focus();
     });
   }
 
@@ -270,36 +415,137 @@ export class StoryReviewPage {
     this.focusRequest.set({ address: addressForParagraph(index), sequence: ++this.focusSequence });
   }
 
+  /** The changed-elsewhere notice is not a dialog: reload still confirms (it discards the draft), the others act at once. */
+  protected reloadRemoteNotice(): void {
+    void this.reloadAfterConfirm().then(this.restoreFocusIfNoticeResolved);
+  }
+
+  protected saveMineRemoteNotice(): void {
+    void this.store.resolveConflict('saveAsNew').then(this.restoreFocusIfNoticeResolved);
+  }
+
+  protected dismissRemoteNotice(): void {
+    void this.store.resolveConflict('cancel').then(this.restoreFocusIfNoticeResolved);
+  }
+
+  /**
+   * Focus returns to the editor only once the notice is actually gone, so a button that is about to be removed cannot
+   * take it along. Every action can leave the notice standing: an accepted reload can return early (a save in flight) or
+   * the refetch can fail, and a save-as-new second 412 opens the conflict dialog, which owns the focus from there.
+   */
+  private readonly restoreFocusIfNoticeResolved = (): void => {
+    if (this.destroyRef.destroyed || this.store.remoteChange() !== null) return;
+    this.restoreSaveFocus.set(true);
+  };
+
+  /**
+   * The conflict dialog (10.5.10-T1). One dialog at a time, and after every awaited step the page re-checks that it is
+   * still alive: a route change during any of them must not open a dialog or touch the store.
+   *
+   * The loop exists so the dialog can come back carrying the outcome of the user's own last action — a declined
+   * confirm returns to it with the draft untouched, a second 412 shows the busy body, a failed reload its retry body.
+   * It never re-opens on its own: every iteration is entered only after the user closed the previous dialog.
+   */
   private async openConflict(): Promise<void> {
-    if (this.conflictOpen || this.store.readOnly() || this.store.conflict() === null) return;
-    this.conflictOpen = true;
+    if (this.conflictDialogOpen() || this.store.readOnly() || this.store.conflict() === null) return;
+    this.conflictDialogOpen.set(true);
+    // The retry copy belongs only to a reload the user just attempted here and that failed; every other iteration
+    // derives its variant fresh from the store, so a stale error can never pick the dialog's copy.
+    let reloadFailed = false;
     try {
       while (!this.destroyRef.destroyed && !this.store.readOnly() && this.store.conflict() !== null) {
+        const variant: ConflictVariant = reloadFailed ? 'reloadFailed' : this.store.conflictBusy() ? 'busy' : 'body';
+        reloadFailed = false;
+        // The diff arrives from an async read: after a read that failed or was fenced nothing is known about the
+        // differences, so the detail block is omitted entirely rather than claiming "no differing parts".
+        const diffKnown = this.store.conflictDiffKnown() && this.episodesLoaded();
         const dialog = this.conflictDialog.open({
-          messageKey: 'episodes.conflict.body',
+          messageKey: CONFLICT_MESSAGE_KEYS[variant],
+          ...(diffKnown ? { detailHeadingKey: 'episodes.conflict.diffHeading', detailTexts: this.diffLabels(this.store.conflictDiff()) } : {}),
           saveAsNewLabel: 'errors.conflict.saveAsNew',
           traceId: this.store.error()?.traceId,
         }, { viewContainerRef: this.viewContainerRef });
         const choice = (await firstValueFrom(dialog.afterClosed())) ?? 'cancel';
         if (this.destroyRef.destroyed) return;
-        if (choice === 'reload') {
-          const confirm = this.confirmDialog.confirm({
-            titleKey: 'episodes.conflict.reloadConfirmTitle',
-            bodyKey: 'episodes.conflict.reloadConfirmBody',
-            confirmLabelKey: 'episodes.conflict.reload',
-            destructive: true,
-          }, { viewContainerRef: this.viewContainerRef });
-          const accepted = (await firstValueFrom(confirm.afterClosed())) ?? false;
+        if (choice === 'cancel') {
+          await this.store.resolveConflict('cancel');
           if (this.destroyRef.destroyed) return;
-          await this.store.resolveConflict(accepted ? 'reload' : 'cancel');
-          if (!accepted) return;
-        } else {
-          await this.store.resolveConflict(choice);
-          if (choice === 'cancel') return;
+          this.restoreSaveFocus.set(true);
+          return;
         }
+        if (choice === 'reload') {
+          const errorBefore = this.store.error();
+          // Declining the confirm is not a decision about the conflict: the dialog is the state the user came back to.
+          if (!await this.reloadAfterConfirm()) continue;
+          if (this.destroyRef.destroyed) return;
+          if (this.store.conflict() === null) return;
+          // Only a reload that came back with a fresh error keeps the conflict standing *and* earned the retry copy.
+          reloadFailed = this.store.error() !== null && this.store.error() !== errorBefore;
+          continue;
+        }
+        // Save as new: exactly one attempt. A second 412 is not retried from here — the dialog re-opens in the busy
+        // variant and waits for the next explicit click, which is where the user decides what to do with the race.
+        await this.store.resolveConflict('saveAsNew');
+        if (this.destroyRef.destroyed) return;
+        if (this.store.conflict() === null) return;
       }
     } finally {
-      this.conflictOpen = false;
+      this.conflictDialogOpen.set(false);
     }
+  }
+
+  /** Reload replaces the unsaved text, so it always goes through the destructive confirm — from the dialog and the notice alike. */
+  private async reloadAfterConfirm(): Promise<boolean> {
+    const confirm = this.confirmDialog.confirm({
+      titleKey: 'episodes.conflict.reloadConfirmTitle',
+      bodyKey: 'episodes.conflict.reloadConfirmBody',
+      confirmLabelKey: 'episodes.conflict.reload',
+      destructive: true,
+    }, { viewContainerRef: this.viewContainerRef });
+    const accepted = (await firstValueFrom(confirm.afterClosed())) ?? false;
+    if (this.destroyRef.destroyed) return false;
+    if (accepted) await this.store.resolveConflict('reload');
+    return accepted;
+  }
+
+  /**
+   * The announcement copy is resolved once, at the moment of the save that produced it, and frozen with its sequence.
+   * A key the `episodes` scope cannot resolve (the scope has not loaded, or the language lacks the entry) yields `null`
+   * so a raw key is never announced.
+   */
+  private announcementText(count: number): string | null {
+    if (count === 1) return this.resolveEpisodesKey('annotations.announceOne');
+    if (count > 0) return this.resolveEpisodesKey('annotations.announce', { count });
+    return this.resolveEpisodesKey('annotations.announceNone');
+  }
+
+  /** `translate` echoes the scope-prefixed key back when the scope has not loaded; the caller treats that as "no copy". */
+  private resolveEpisodesKey(key: string, params: Record<string, unknown> = {}): string | null {
+    const text = this.transloco.translate(key, params, 'episodes');
+    return text === key || text === `episodes.${key}` ? null : text;
+  }
+
+  /** The diff and the changed-elsewhere notice name segments exactly like the editor does; an empty diff still says so. */
+  private diffLabels(addresses: readonly SegmentAddress[]): readonly string[] {
+    if (addresses.length === 0) return [this.transloco.translate('conflict.diffNone', {}, 'episodes')];
+    return addresses.map((address) => this.addressLabel(parseAddress(address)));
+  }
+
+  private addressLabel(address: ParsedAddress | null): string {
+    if (address === null) return this.transloco.translate('annotations.meta', {}, 'episodes');
+    switch (address.kind) {
+      case 'title': return this.transloco.translate('editor.segment.title', {}, 'episodes');
+      case 'hook': return this.transloco.translate('editor.segment.hook', {}, 'episodes');
+      case 'paragraph': return `${this.transloco.translate('editor.segment.paragraph', {}, 'episodes')} ${(address.index ?? 0) + 1}`;
+      case 'ending': return this.transloco.translate('editor.segment.ending', {}, 'episodes');
+      case 'meta': return this.transloco.translate('annotations.meta', {}, 'episodes');
+    }
+  }
+
+  private warnUnknownAnnotationKey(key: string): void {
+    if (!isDevMode() || this.warnedAnnotationKeys.has(key)) return;
+    this.warnedAnnotationKeys.add(key);
+    // D19: the key alone — never a hint's evidence, never story text.
+    console.warn('unknown annotation key', key);
   }
 }

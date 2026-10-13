@@ -1,4 +1,5 @@
 :host { display: block; min-width: 0; }
+.story-editor__annotation-announcement { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 .story-editor { display: flex; flex-direction: column; gap: var(--nts-space-4); min-width: 0; }
 .story-editor__sheet { display: block; min-width: 0; overflow: clip; border: 1px solid var(--nts-color-outline); border-radius: var(--nts-radius-sheet); background: var(--nts-color-surface); color: var(--nts-color-on-surface); box-shadow: var(--nts-elevation-1); }
 .story-editor__form-errors { padding: var(--nts-space-4); border-inline-start: var(--nts-space-1) solid var(--nts-color-error); background: var(--nts-color-error-soft); color: var(--nts-color-on-surface); }
