@@ -39,7 +39,7 @@ public sealed class AttestationReadModelTests(TestDatabase database) : Integrati
     /// <summary>
     /// Acceptance check 2: a true-crime episode reports <c>required</c>, the configured
     /// <c>textVersion</c> and the clause text of its language with <c>acceptedAt</c> null, and a
-    /// non-null instant once the version carries an attested audit row.
+    /// non-null instant once the approved version carries an attested audit row.
     /// </summary>
     [Theory]
     [InlineData(Language.Vi)]
@@ -106,15 +106,18 @@ public sealed class AttestationReadModelTests(TestDatabase database) : Integrati
     }
 
     /// <summary>
-    /// A release whose configured version is not the one the catalog ships (a <c>ta.v2</c> config before
-    /// the text lands) still reads as governed and names the configured version, but shows no wording and
-    /// never fails the read: the gate is what refuses the tick, the dialog just cannot offer one.
+    /// CR-1: the tick names the wording it was made against, and a wording change ships a new
+    /// <c>AttestationVersion</c> — so a tick of an older text version must read as no tick, while the
+    /// member keeps naming the configured version and still shows its wording. A configured version the
+    /// catalog does not serve cannot reach a read at all: the host refuses to start (covered by
+    /// <c>StoryTrueCrimeRegistrationTests</c>), so this is the reachable half of the rule.
     /// </summary>
     [Fact]
-    public async Task GetCurrentStory_AttestationTextOfAnotherVersion_ReadsAsRequiredWithoutText()
+    public async Task GetCurrentStory_TickOfStaleTextVersion_ReadsAsNotAccepted()
     {
-        var world = await SeedAsync(Topic.TrueCrime, Language.Vi, withFactSheet: true);
-        using var factory = Factory().WithSetting("Story:TrueCrime:AttestationVersion", "ta.v2");
+        var world = await SeedAsync(Topic.TrueCrime, Language.Vi, withFactSheet: true, approved: true);
+        await AttestAsync(world, textVersion: "ta.v0");
+        using var factory = Factory();
         using var client = factory.ClientFor(world.UserId);
 
         using var response = await client.GetAsync(EpisodeRoute(world.EpisodeId), Ct);
@@ -122,8 +125,40 @@ public sealed class AttestationReadModelTests(TestDatabase database) : Integrati
             .GetProperty("currentStory").GetProperty("attestation");
 
         attestation.GetProperty("required").GetBoolean().ShouldBeTrue();
-        attestation.GetProperty("textVersion").GetString().ShouldBe("ta.v2");
-        attestation.GetProperty("text").ValueKind.ShouldBe(JsonValueKind.Null);
+        attestation.GetProperty("textVersion").GetString().ShouldBe("ta.v1");
+        attestation.GetProperty("text").GetString().ShouldNotBeNullOrWhiteSpace();
+        attestation.GetProperty("acceptedAt").ValueKind.ShouldBe(JsonValueKind.Null);
+    }
+
+    /// <summary>
+    /// CR-2/S4: reopening clears <c>episodes.approved_story_version_id</c> but keeps the current version,
+    /// and the gate demands a fresh tick on re-approval — so the tick of the reopened version must read as
+    /// no tick, not as the acceptance of the version that is still current.
+    /// </summary>
+    [Fact]
+    public async Task GetCurrentStory_ReopenedStory_ReadsTheStoredTickAsNotAccepted()
+    {
+        var world = await SeedAsync(Topic.TrueCrime, Language.Vi, withFactSheet: true, approved: true);
+        await AttestAsync(world);
+        using var factory = Factory();
+        using var client = factory.ClientFor(world.UserId);
+
+        using (var approved = await client.GetAsync(EpisodeRoute(world.EpisodeId), Ct))
+        {
+            (await ReadOkAsync(approved))
+                .GetProperty("currentStory").GetProperty("attestation").GetProperty("acceptedAt")
+                .GetDateTimeOffset().ShouldBe(AcceptedAt);
+        }
+
+        // ReopenStory: the approval pointer goes away, the current version and its audit rows stay.
+        SetPointers(world.EpisodeId, world.VersionId, approvedVersionId: null);
+
+        using var reopened = await client.GetAsync(EpisodeRoute(world.EpisodeId), Ct);
+        var attestation = (await ReadOkAsync(reopened))
+            .GetProperty("currentStory").GetProperty("attestation");
+
+        attestation.GetProperty("required").GetBoolean().ShouldBeTrue();
+        attestation.GetProperty("textVersion").GetString().ShouldBe("ta.v1");
         attestation.GetProperty("acceptedAt").ValueKind.ShouldBe(JsonValueKind.Null);
     }
 
@@ -135,7 +170,7 @@ public sealed class AttestationReadModelTests(TestDatabase database) : Integrati
                 services.AddSingleton<ITextClient>(new FakeTextClient());
             });
 
-    private async Task<World> SeedAsync(Topic topic, Language language, bool withFactSheet)
+    private async Task<World> SeedAsync(Topic topic, Language language, bool withFactSheet, bool approved = true)
     {
         var actor = new TestCurrentUser();
         var user = await new UserBuilder(Database, actor).CreateAsync(ct: Ct);
@@ -157,20 +192,28 @@ public sealed class AttestationReadModelTests(TestDatabase database) : Integrati
             await db.SaveChangesAsync(Ct);
         }
 
-        SqlProbe.Execute(Database,
-            $"UPDATE episodes SET current_story_version_id = '{version.Id}' WHERE id = '{episode.Id}'");
+        // A real approve points episodes.approved_story_version_id at the version it approved; the
+        // attestation member counts a tick only while that pointer names the current version.
+        SetPointers(episode.Id, version.Id, approved ? version.Id : null);
 
         return new World(user.Id, episode.Id, version.Id);
     }
+
+    private void SetPointers(Guid episodeId, Guid currentVersionId, Guid? approvedVersionId) =>
+        SqlProbe.Execute(Database,
+            "UPDATE episodes SET current_story_version_id = "
+            + $"'{currentVersionId}', approved_story_version_id = "
+            + (approvedVersionId is { } approved ? $"'{approved}'" : "NULL")
+            + $" WHERE id = '{episodeId}'");
 
     /// <summary>
     /// The audit row the approval handler writes (D13): the action, the entity the tick belongs to
     /// (<c>episode</c> + the episode id, which is what the read model filters on) and the version, with
     /// the owner as actor and subject. Written in SQL because the row is append-only production data.
     /// </summary>
-    private async Task AttestAsync(World world)
+    private async Task AttestAsync(World world, string textVersion = "ta.v1")
     {
-        var data = $$"""{"story_version_id":"{{world.VersionId}}","text_version":"ta.v1"}""";
+        var data = $$"""{"story_version_id":"{{world.VersionId}}","text_version":"{{textVersion}}"}""";
 
         await Database.ExecuteAsync(
             "INSERT INTO audit_logs (id, actor_user_id, actor_type, subject_user_id, action, category, "

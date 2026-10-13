@@ -20,8 +20,10 @@ namespace NightTales.Application.Features.Stories.ReadModels;
 /// wording would invite a tick the gate then rejects.
 /// </param>
 /// <param name="AcceptedAt">
-/// When the current version was attested, or <see langword="null"/> before approval; read from the
-/// <c>episode.true_crime_attested</c> audit row of this version, never from a story column.
+/// When the current version was attested, or <see langword="null"/> when it was not or no longer is: a
+/// tick counts only for the version that is approved right now — re-opening clears that pointer — and
+/// only when it names the configured text version. Read from the <c>episode.true_crime_attested</c>
+/// audit row of this version, never from a story column.
 /// </param>
 public sealed record AttestationViewDto(
     bool Required,

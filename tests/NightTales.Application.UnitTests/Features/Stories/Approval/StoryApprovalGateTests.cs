@@ -477,7 +477,20 @@ public sealed class StoryApprovalGateTests
 
         public TResult Execute<TResult>(Expression expression) => query.Provider.Execute<TResult>(expression);
 
-        public TResult ExecuteAsync<TResult>(Expression expression, CancellationToken cancellationToken = default) =>
-            throw new NotSupportedException("The gate only enumerates its source query.");
+        // EF's AnyAsync goes through IAsyncQueryProvider; ToListAsync enumerates the async enumerable
+        // instead, which is why the gate's reads needed only the enumeration path before.
+        public TResult ExecuteAsync<TResult>(Expression expression, CancellationToken cancellationToken = default)
+        {
+            var resultType = typeof(TResult).GetGenericArguments()[0];
+            var result = typeof(IQueryProvider)
+                .GetMethod(nameof(IQueryProvider.Execute), 1, [typeof(Expression)])!
+                .MakeGenericMethod(resultType)
+                .Invoke(this, [expression]);
+
+            return (TResult)typeof(Task)
+                .GetMethod(nameof(Task.FromResult))!
+                .MakeGenericMethod(resultType)
+                .Invoke(null, [result])!;
+        }
     }
 }

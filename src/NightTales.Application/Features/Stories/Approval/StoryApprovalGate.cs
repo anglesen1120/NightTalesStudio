@@ -57,7 +57,7 @@ public sealed class StoryApprovalGate(
 
         // 3a: the topic, plus the SEC-1 pinned-data rule documented on the class.
         var trueCrimeTopic = series.Topic == Topic.TrueCrime || version.FactSheetId is not null;
-        IReadOnlyList<StorySource>? urlSources = null;
+        var hasUrlSources = false;
 
         if (trueCrimeTopic)
         {
@@ -75,12 +75,17 @@ public sealed class StoryApprovalGate(
                 return Outdated();
             }
 
-            // 3c (F13): at least MinCitedSources distinct qualifying sources, cited by a kept fact.
-            urlSources = await LoadUrlSourcesAsync(episode.Id, ct).ConfigureAwait(false);
-            var qualifying = TrueCrimeSourceRule.QualifyingDistinctHashCount(
-                [.. urlSources.Select(source => new TrueCrimeSourceRule.Candidate(
-                    source.Id, source.Kind, source.Status, source.ContentSha256))],
-                CitedSourceIds(sheet.Value));
+            // 3c (F13): at least MinCitedSources distinct qualifying sources, cited by a kept fact. Only the
+            // four fields the rule reads are projected; no other part of a source row is materialised.
+            var candidates = await readDb.Query<StorySource>()
+                .Where(source => source.EpisodeId == episode.Id && source.Kind == StorySourceKind.Url)
+                .Select(source => new TrueCrimeSourceRule.Candidate(
+                    source.Id, source.Kind, source.Status, source.ContentSha256))
+                .ToListAsync(ct)
+                .ConfigureAwait(false);
+
+            hasUrlSources = candidates.Count > 0;
+            var qualifying = TrueCrimeSourceRule.QualifyingDistinctHashCount(candidates, CitedSourceIds(sheet.Value));
 
             if (qualifying < trueCrime.MinCitedSources)
             {
@@ -95,8 +100,17 @@ public sealed class StoryApprovalGate(
         var score = version.SimilarityScore;
         if (score is null)
         {
-            urlSources ??= await LoadUrlSourcesAsync(episode.Id, ct).ConfigureAwait(false);
-            if (urlSources.Count > 0)
+            // True crime already knows this from 3c; otherwise one existence probe answers it (no rows read).
+            if (!trueCrimeTopic)
+            {
+                hasUrlSources = await readDb.Query<StorySource>()
+                    .AnyAsync(
+                        source => source.EpisodeId == episode.Id && source.Kind == StorySourceKind.Url,
+                        ct)
+                    .ConfigureAwait(false);
+            }
+
+            if (hasUrlSources)
             {
                 var recomputed = await RecomputeScoreAsync(episode, series.Language, version, options, ct)
                     .ConfigureAwait(false);
@@ -133,17 +147,6 @@ public sealed class StoryApprovalGate(
         return new StoryApprovalGateResult(trueCrime.AttestationVersion);
     }
 
-    // The episode's url sources, read once through the tenant-filtered read model (09 README D8/D10).
-    private async ValueTask<IReadOnlyList<StorySource>> LoadUrlSourcesAsync(Guid episodeId, CancellationToken ct)
-    {
-        var sources = await readDb.Query<StorySource>()
-            .Where(source => source.EpisodeId == episodeId && source.Kind == StorySourceKind.Url)
-            .ToListAsync(ct)
-            .ConfigureAwait(false);
-
-        return sources;
-    }
-
     // F13: the sources cited by the approved sheet's kept facts, with each fact's aliases resolved to ids.
     // Dropped facts never reach the approved sheet, so they contribute nothing.
     private static HashSet<Guid> CitedSourceIds(ApprovedFactSheet sheet)
@@ -163,8 +166,9 @@ public sealed class StoryApprovalGate(
         return cited;
     }
 
-    // 3d: recomputes a missing score from the stored draft exactly as the generation pipeline does. An
-    // unreadable or unscorable draft yields no score (Pass); an unreadable corpus fails closed.
+    // 3d: recomputes a missing score from the stored draft exactly as the generation pipeline does. Only an
+    // unscorable (too short) draft yields no score: an unreadable draft, like an unreadable corpus, fails
+    // closed, because the caller recomputes only when the episode has url sources.
     private async ValueTask<ErrorOr<decimal?>> RecomputeScoreAsync(
         Episode episode,
         Language language,
@@ -174,7 +178,9 @@ public sealed class StoryApprovalGate(
     {
         if (!StoryContentJson.TryReadStored(version.Content, out var content))
         {
-            return (decimal?)null;
+            // Fail closed: the overlap guard cannot be evaluated over a draft it cannot read, so the
+            // approval is retryable rather than silently passing. The draft text never leaks.
+            return SourceOverlapUnavailable();
         }
 
         IReadOnlyList<CorpusText> corpus;
@@ -188,9 +194,7 @@ public sealed class StoryApprovalGate(
 
             // Fail closed: the similarity verdict cannot be decided while the corpus is unreadable, so the
             // approval is retryable rather than silently passing the source-overlap guard.
-            return Error.Failure(
-                ErrorCodes.ServiceUnavailable,
-                "The source corpus could not be read; retry the approval.");
+            return SourceOverlapUnavailable();
         }
 
         var story = NightTales.Domain.Stories.Similarity.StoryText.From(content);
@@ -198,6 +202,12 @@ public sealed class StoryApprovalGate(
             ? (decimal)Math.Round(SimilarityScorer.Score(story, corpus, options).Score, 4, MidpointRounding.AwayFromZero)
             : (decimal?)null;
     }
+
+    // Fail closed when the source-overlap check cannot be decided. The message is static: neither the draft
+    // text, the attestation text nor a source URL may leak through an error.
+    private static Error SourceOverlapUnavailable() => Error.Failure(
+        ErrorCodes.ServiceUnavailable,
+        "The source-overlap check could not be completed; retry the approval.");
 
     private static Error Outdated() => Error.Conflict(
         ErrorCodes.StoryFactSheetOutdated,

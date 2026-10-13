@@ -51,10 +51,12 @@ internal static partial class StoryReadProjection
             Attestation: null);
 
         // The attestation member is the only part of this read that needs a second table (02.3.3-T1):
-        // it is read after the story row so the version and its fact-sheet pin are already known.
+        // it is read after the story row so the version, its fact-sheet pin and the approval pointer are
+        // already known. The approval pointer comes from this same read — no caller signature changes.
         return current with
         {
-            Attestation = await AttestationAsync(readDb, attestation, versionId, row.FactSheetId, logger, cancellationToken)
+            Attestation = await AttestationAsync(
+                readDb, attestation, versionId, approvedVersionId, row.FactSheetId, logger, cancellationToken)
                 .ConfigureAwait(false),
         };
     }
@@ -78,15 +80,15 @@ internal static partial class StoryReadProjection
     /// is not true-crime-governed.
     /// </summary>
     /// <remarks>
-    /// Goal of the two reads: one series row decides governance and the content language, and one bounded
-    /// <c>audit_logs</c> read finds the tick of this very version — the member is never a story column,
-    /// because an attestation is an event with a time. Nothing here throws: a text the release no longer
-    /// ships and a malformed audit payload both read as "no text" and "no tick", because the approval
-    /// gate is what enforces them, never the read model.
+    /// Goal of the two reads: the episode read that produced this projection decides governance and the
+    /// content language, and one bounded <c>audit_logs</c> read finds the live tick of this very version —
+    /// the member is never a story column, because an attestation is an event with a time. Nothing here
+    /// throws: a text the release no longer ships and a malformed audit payload both read as "no text"
+    /// and "no tick", because the approval gate is what enforces them, never the read model.
     /// </remarks>
     private static async Task<AttestationViewDto?> AttestationAsync(
-        IReadDb readDb, AttestationRequest request, Guid versionId, Guid? factSheetId, ILogger logger,
-        CancellationToken cancellationToken)
+        IReadDb readDb, AttestationRequest request, Guid versionId, Guid? approvedVersionId, Guid? factSheetId,
+        ILogger logger, CancellationToken cancellationToken)
     {
         // The gate's pinned-data rule (SEC-1): a true-crime topic governs now, and a version that
         // carries a fact sheet id stays governed even if the series topic was patched afterwards. The
@@ -122,14 +124,16 @@ internal static partial class StoryReadProjection
             WarnTextUnavailableOnce(logger, request.EpisodeId, configured, MissingManifestVersion);
         }
 
-        var acceptedAt = await AcceptedAtAsync(readDb, request, versionId, cancellationToken).ConfigureAwait(false);
+        var acceptedAt = await AcceptedAtAsync(readDb, request, versionId, approvedVersionId, cancellationToken)
+            .ConfigureAwait(false);
 
         return new AttestationViewDto(true, configured, text, acceptedAt);
     }
 
     /// <summary>
-    /// When <paramref name="versionId"/> was attested, or <see langword="null"/> before approval
-    /// (02.3.3-T1): the newest attestation rows of the episode, then the one naming this version.
+    /// When <paramref name="versionId"/> was attested under the configured text version, or
+    /// <see langword="null"/> when it was not (02.3.3-T1): the newest attestation rows of the episode,
+    /// then the pair of the row that is the live tick of this very version.
     /// </summary>
     /// <remarks>
     /// <c>audit_logs</c> is not <see cref="IUserOwned"/> and therefore carries no tenant filter, so the
@@ -137,10 +141,24 @@ internal static partial class StoryReadProjection
     /// users. The window bounds what is loaded: an approval writes one row per accepted version.
     /// </remarks>
     private static async Task<DateTimeOffset?> AcceptedAtAsync(
-        IReadDb readDb, AttestationRequest request, Guid versionId, CancellationToken cancellationToken)
+        IReadDb readDb, AttestationRequest request, Guid versionId, Guid? approvedVersionId,
+        CancellationToken cancellationToken)
     {
+        // A tick is live only for the version that is approved right now (02.3.3-T1, CR-2/S4): reopening
+        // clears `approved_story_version_id` but keeps the current version, and the gate demands a fresh
+        // tick on re-approval, so the stored rows of a reopened version must not read as accepted. One
+        // comparison saves the whole audit read in that case, and it cannot hide a tick: a re-approval
+        // writes a new row against the version it approves, which is the pointer this reads.
+        if (approvedVersionId != versionId)
+        {
+            return null;
+        }
+
+        var configured = request.Options.AttestationVersion;
+
         var rows = await readDb.Query<AuditLog>().AsNoTracking()
-            .Where(row => row.EntityId == request.EpisodeId
+            .Where(row => row.EntityType == EpisodeEntityType
+                && row.EntityId == request.EpisodeId
                 && row.Action == TrueCrimeAttestedAction
                 && row.SubjectUserId == request.UserId)
             .OrderByDescending(row => row.CreatedAt)
@@ -152,7 +170,12 @@ internal static partial class StoryReadProjection
 
         foreach (var row in rows)
         {
-            if (AttestedVersionId(row.DataJson) == versionId)
+            var tick = AttestedTick(row.DataJson);
+
+            // The version must match and so must the wording it was ticked against: a wording change
+            // ships a new AttestationVersion, and every stored tick of the old text stops counting
+            // (02.3.3-T1, CR-1). Both keys are matched in memory over the bounded window.
+            if (tick.VersionId == versionId && string.Equals(tick.TextVersion, configured, StringComparison.Ordinal))
             {
                 return row.CreatedAt;
             }
@@ -161,27 +184,42 @@ internal static partial class StoryReadProjection
         return null;
     }
 
-    /// <summary>The <c>story_version_id</c> of an attestation row's <c>data</c>, or null when unreadable.</summary>
-    private static Guid? AttestedVersionId(string dataJson)
+    /// <summary>
+    /// The (version id, text version) pair of an attestation row's <c>data</c>, both null when the payload
+    /// is unreadable or carries no such member (02.3.3-T1, D13).
+    /// </summary>
+    private static (Guid? VersionId, string? TextVersion) AttestedTick(string dataJson)
     {
         try
         {
             using var document = JsonDocument.Parse(dataJson);
-            if (document.RootElement.ValueKind == JsonValueKind.Object
-                && document.RootElement.TryGetProperty("story_version_id", out var value)
-                && value.ValueKind == JsonValueKind.String
-                && Guid.TryParse(value.GetString(), out var id))
+            if (document.RootElement.ValueKind == JsonValueKind.Object)
             {
-                return id;
+                var payload = document.RootElement;
+                return (ReadGuid(payload, StoryVersionIdMember), ReadText(payload, TextVersionMember));
             }
         }
         catch (JsonException)
         {
-            // A payload this read cannot parse carries no id; the next row may still be the tick.
+            // A payload this read cannot parse carries no tick; the next row may still be the live one.
         }
 
-        return null;
+        return (null, null);
     }
+
+    /// <summary>A GUID member of an audit payload, or null when it is absent or not a GUID string.</summary>
+    private static Guid? ReadGuid(JsonElement payload, string member) =>
+        payload.TryGetProperty(member, out var value)
+            && value.ValueKind == JsonValueKind.String
+            && Guid.TryParse(value.GetString(), out var id)
+                ? id
+                : null;
+
+    /// <summary>A string member of an audit payload, or null when it is absent or not a string.</summary>
+    private static string? ReadText(JsonElement payload, string member) =>
+        payload.TryGetProperty(member, out var value) && value.ValueKind == JsonValueKind.String
+            ? value.GetString()
+            : null;
 
     /// <summary>
     /// Warns once per process when the shipped attestation text is not the configured version
@@ -199,6 +237,18 @@ internal static partial class StoryReadProjection
     /// <summary>The action of the approval-time attestation row (02.3.3-T1, D13).</summary>
     private const string TrueCrimeAttestedAction = "episode.true_crime_attested";
 
+    /// <summary>
+    /// The entity an attestation row names (02.3.3-T1, D13; the approval handler writes the same value, so
+    /// the predicate matches <c>ix_audit_logs_entity (entity_type, entity_id)</c> instead of scanning).
+    /// </summary>
+    private const string EpisodeEntityType = "episode";
+
+    /// <summary>The <c>data</c> member naming the story version the tick belongs to.</summary>
+    private const string StoryVersionIdMember = "story_version_id";
+
+    /// <summary>The <c>data</c> member naming the attestation text version the tick was made against.</summary>
+    private const string TextVersionMember = "text_version";
+
     /// <summary>How many attestation rows of one episode are examined for the current version's tick.</summary>
     private const int AttestationRowWindow = 20;
 
@@ -208,7 +258,7 @@ internal static partial class StoryReadProjection
     /// <summary>Whether the "attestation text is not the configured version" warning has been logged.</summary>
     private static int _attestationTextWarningLogged;
 
-    /// <summary>One bounded attestation row: when it happened and the payload naming the version.</summary>
+    /// <summary>One bounded attestation row: when it happened and the payload naming its version and wording.</summary>
     private sealed record AttestationRow(DateTimeOffset CreatedAt, string DataJson);
 
     /// <summary>

@@ -46,8 +46,12 @@ public sealed class AttestationTextProviderTests
 
     /// <summary>
     /// The declared version is what a stored tick is compared against, so the provider reports the
-    /// manifest's value: a release that relabels the file without rehashing is caught by rule 5, and one
-    /// that declares <c>ta.v2</c> stops matching every stored <c>ta.v1</c> tick.
+    /// manifest's value: a release that relabels the file but keeps its bytes is not a rule 5 violation —
+    /// that digest covers the file's bytes only — so nothing in the catalog itself notices the change.
+    /// What makes the relabel safe is the start-up check that compares this value with
+    /// <c>Story:TrueCrime:AttestationVersion</c> for every language: a manifest that declares
+    /// <c>ta.v2</c> stops matching every stored <c>ta.v1</c> tick, and a host whose configuration was not
+    /// moved with it never starts.
     /// </summary>
     [Fact]
     public async Task AttestationTextProvider_ReportsTheManifestVersion_NotTheFileNameMarker()

@@ -2,10 +2,14 @@ using System.Net;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using NightTales.Api.IntegrationTests.Persistence;
+using NightTales.Application.Abstractions.Prompts;
 using NightTales.Application.Abstractions.Research;
 using NightTales.Application.Features.Stories.Approval;
+using NightTales.Domain.Common;
 using NightTales.Domain.Research;
 using NightTales.Domain.Series;
+using NightTales.Domain.Stories.Prompts;
+using NightTales.Infrastructure.Prompts;
 using NightTales.TestKit.Api;
 using NightTales.TestKit.Auth;
 using NightTales.TestKit.Builders;
@@ -62,12 +66,23 @@ public sealed partial class ApproveStoryEndpointTests
     /// The host's real gate (02.3.3-T1, sub-checks 3a-3e). The shared factory injects a recording fake by
     /// default, so a test that must exercise the production implementation re-registers it behind its real
     /// dependencies (read model, similarity settings, bound options) and, when given one, the fact-sheet guard.
+    /// A test that configures <c>Story:TrueCrime:AttestationVersion</c> away from the shipped marker must
+    /// pass it as <paramref name="attestationVersion"/> too: the host refuses to start when the version the
+    /// catalog ships for any language is not the configured one (S1), so the catalog has to serve it.
     /// </summary>
-    private ApiFactory RealGateFactory(ApprovedFactSheet? approvedSheet = null) =>
+    private ApiFactory RealGateFactory(ApprovedFactSheet? approvedSheet = null, string? attestationVersion = null) =>
         Factory().WithServices(services =>
         {
             services.RemoveAll<IStoryApprovalGate>();
             services.AddScoped<IStoryApprovalGate, StoryApprovalGate>();
+            if (attestationVersion is { } version)
+            {
+                services.RemoveAll<IPromptCatalog>();
+                services.AddSingleton<IPromptCatalog>(provider => new RelabelledCatalog(
+                    new PromptCatalog(provider.GetRequiredService<IPromptResourceSource>()),
+                    version));
+            }
+
             if (approvedSheet is { } sheet)
             {
                 services.RemoveAll<IFactSheetGuard>();
@@ -116,4 +131,33 @@ public sealed partial class ApproveStoryEndpointTests
 
     private string AuditDataValues(World world) => SqlProbe.ScalarText(Database,
         $"SELECT data->>'story_version_id' || '|' || (data->>'text_version') FROM audit_logs WHERE action='episode.true_crime_attested' AND subject_user_id='{world.UserId}'");
+
+    /// <summary>
+    /// The shipped catalog with its attestation clause relabelled to <paramref name="version"/> (02.3.3-T1
+    /// S1): the file bytes and every other lookup stay the released ones, so only the version the start-up
+    /// check and the read model compare is moved. Without it, configuring another version would fail the boot.
+    /// </summary>
+    /// <param name="inner">The real catalog over the host's embedded resource source.</param>
+    /// <param name="version">The version to report for every language.</param>
+    private sealed class RelabelledCatalog(IPromptCatalog inner, string version) : IPromptCatalog
+    {
+        public string Release => inner.Release;
+
+        public IReadOnlyDictionary<string, PromptFileInfo> Files => inner.Files;
+
+        public string GetSystemPrompt() => inner.GetSystemPrompt();
+
+        public string GetPreset(Topic topic, Language language) => inner.GetPreset(topic, language);
+
+        public string GetShared(PromptFile file, Language language) => inner.GetShared(file, language);
+
+        public string GetStepPrompt(PromptStep promptStep) => inner.GetStepPrompt(promptStep);
+
+        public AttestationText GetAttestation(Language language) =>
+            new(version, inner.GetAttestation(language).Text);
+
+        public ReadOnlyMemory<byte> GetSchema(string name) => inner.GetSchema(name);
+
+        public string BuildPromptVersion(PromptVersionParts parts) => inner.BuildPromptVersion(parts);
+    }
 }

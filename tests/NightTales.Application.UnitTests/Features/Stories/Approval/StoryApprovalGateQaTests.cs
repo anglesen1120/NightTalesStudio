@@ -157,7 +157,7 @@ public sealed class StoryApprovalGateQaTests
     }
 
     [Fact]
-    public async Task QaTests_UnreadableStoredDraftWithUrlSources_ApprovesWithoutAScore()
+    public async Task QaTests_UnreadableStoredDraftWithUrlSources_FailsClosed()
     {
         var rig = new Rig(Topic.Ghost);
         rig.ReadDb.Sources.Add(rig.Fetched(Guid.CreateVersion7(), Rig.HashA));
@@ -165,8 +165,26 @@ public sealed class StoryApprovalGateQaTests
         var result = await rig.Gate.ValidateAsync(
             rig.Episode, rig.Series, rig.Version(rawContent: "{ this is not a story document"), null, Ct);
 
-        result.IsError.ShouldBeFalse("an unreadable draft yields no score and a null score never blocks");
+        result.FirstError.Code.ShouldBe(
+            ErrorCodes.ServiceUnavailable,
+            "an unreadable draft with url sources must not pass the overlap guard");
+        result.FirstError.Description.ShouldNotContain(
+            "is not a story document",
+            Case.Sensitive,
+            "no draft text may leak through the error");
         rig.Corpus.Calls.ShouldBe(0, "an unreadable draft is decided before the corpus is ever read");
+    }
+
+    [Fact]
+    public async Task QaTests_UnreadableStoredDraftWithoutUrlSources_StillApproves()
+    {
+        var rig = new Rig(Topic.Ghost);
+
+        var result = await rig.Gate.ValidateAsync(
+            rig.Episode, rig.Series, rig.Version(rawContent: "{ this is not a story document"), null, Ct);
+
+        result.IsError.ShouldBeFalse("without url sources there is no overlap to guard, so the score stays null");
+        rig.Corpus.Calls.ShouldBe(0);
     }
 
     [Fact]
@@ -439,7 +457,20 @@ public sealed class StoryApprovalGateQaTests
 
         public TResult Execute<TResult>(Expression expression) => query.Provider.Execute<TResult>(expression);
 
-        public TResult ExecuteAsync<TResult>(Expression expression, CancellationToken cancellationToken = default) =>
-            throw new NotSupportedException("The gate only enumerates its source query.");
+        // EF's AnyAsync goes through IAsyncQueryProvider; ToListAsync enumerates the async enumerable
+        // instead, which is why the gate's reads needed only the enumeration path before.
+        public TResult ExecuteAsync<TResult>(Expression expression, CancellationToken cancellationToken = default)
+        {
+            var resultType = typeof(TResult).GetGenericArguments()[0];
+            var result = typeof(IQueryProvider)
+                .GetMethod(nameof(IQueryProvider.Execute), 1, [typeof(Expression)])!
+                .MakeGenericMethod(resultType)
+                .Invoke(this, [expression]);
+
+            return (TResult)typeof(Task)
+                .GetMethod(nameof(Task.FromResult))!
+                .MakeGenericMethod(resultType)
+                .Invoke(null, [result])!;
+        }
     }
 }

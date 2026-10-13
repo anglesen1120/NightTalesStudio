@@ -85,15 +85,17 @@ public sealed partial class ApproveStoryEndpointTests
 
     /// <summary>
     /// Acceptance: <c>Story:TrueCrime:AttestationVersion</c> is the single accepted value. With
-    /// <c>ta.v2</c> configured, an approval carrying <c>ta.v1</c> is refused and one carrying
-    /// <c>ta.v2</c> succeeds and is audited with the version the gate accepted.
+    /// <c>ta.v2</c> configured — and a catalog that declares <c>ta.v2</c>, because the host refuses to
+    /// start on a version it does not ship (S1) — an approval carrying <c>ta.v1</c> is refused and one
+    /// carrying <c>ta.v2</c> succeeds and is audited with the version the gate accepted.
     /// </summary>
     [Fact]
     public async Task ApproveStory_AttestationVersionConfigOverride_AcceptsOnlyTheConfiguredVersion()
     {
         var world = await SeedAsync(topic: Topic.TrueCrime);
         var sheet = await SeedTrueCrimeApprovalAsync(world);
-        using var factory = RealGateFactory(sheet).WithSetting("Story:TrueCrime:AttestationVersion", "ta.v2");
+        using var factory = RealGateFactory(sheet, attestationVersion: "ta.v2")
+            .WithSetting("Story:TrueCrime:AttestationVersion", "ta.v2");
         using var client = factory.ClientFor(world.UserId);
 
         using var stale = await ApproveAsync(client, world, """{"attestation":{"accepted":true,"textVersion":"ta.v1"}}""");

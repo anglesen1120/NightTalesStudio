@@ -521,6 +521,32 @@ public sealed class StoryReadModelTests
             await rig.Current.Handle(new(rig.Episode.Id), cancellation.Token));
     }
 
+    /// <summary>
+    /// Defence in depth for a release whose configured version is not the one the catalog serves
+    /// (02.3.3-T1): the member still reads as governed and names the configured version, but shows no
+    /// wording — the text of another version would invite a tick the gate then refuses, so the dialog must
+    /// not offer one. A host refuses to start in this state (<c>StoryTrueCrimeRegistrationTests</c>), and
+    /// the read must still never throw.
+    /// </summary>
+    [Fact]
+    public async Task StoryRead_ConfiguredVersionNotServed_ReadsAsGovernedWithoutText()
+    {
+        var rig = new Rig(Topic.TrueCrime, new StoryTrueCrimeOptions { AttestationVersion = "ta.v2" });
+        var row = rig.AddVersion(1);
+        rig.Pointers(row.Id, approved: null);
+
+        var result = await rig.Current.Handle(new(rig.Episode.Id), CancellationToken.None);
+        var attestation = result.Value!.Attestation;
+
+        attestation.ShouldNotBeNull();
+        attestation!.Required.ShouldBeTrue();
+        attestation.TextVersion.ShouldBe("ta.v2");
+        attestation.Text.ShouldBeNull();
+        attestation.AcceptedAt.ShouldBeNull();
+        rig.Log.Messages.ShouldContain(message => message.Contains("ta.v2", StringComparison.Ordinal));
+        rig.Log.Messages.ShouldNotContain(message => message.Contains("clause text of", StringComparison.Ordinal));
+    }
+
     private sealed class Rig
     {
         private static readonly DateTimeOffset Now = DateTimeOffset.Parse("2026-10-05T00:00:00Z", System.Globalization.CultureInfo.InvariantCulture);
@@ -532,19 +558,19 @@ public sealed class StoryReadModelTests
         internal GetStoryVersionHandler Detail { get; }
         internal GetCurrentStoryHandler Current { get; }
 
-        internal Rig()
+        internal Rig(Topic topic = Topic.Ghost, StoryTrueCrimeOptions? options = null)
         {
             // 02.3.3-T1: the episode read joins the series for its topic and language. A ghost series
             // pins no fact sheet, so the attestation member stays null and the clause text is never read.
             Series = SeriesAggregate.Create(
                 Guid.NewGuid(),
-                new SeriesDraft("Rig series", Topic.Ghost, Language.Vi, default, "voice-vi", Guid.CreateVersion7(), null),
+                new SeriesDraft("Rig series", topic, Language.Vi, default, "voice-vi", Guid.CreateVersion7(), null),
                 Now);
             Episode = Episode.Create(Series.UserId, Series.Id, "title", "brief", LengthTier.Standard, Now);
             Db = new FakeReadDb(Series, Episode);
             History = new GetStoryVersionsHandler(Db);
             Detail = new GetStoryVersionHandler(Db, NullLogger<GetStoryVersionHandler>.Instance);
-            Current = new GetCurrentStoryHandler(Db, new StoryTrueCrimeOptions(), new StubAttestationText(), Log);
+            Current = new GetCurrentStoryHandler(Db, options ?? new StoryTrueCrimeOptions(), new StubAttestationText(), Log);
         }
 
         internal StoryVersion AddVersion(int version, string content = "{\"title\":\"stored\"}", string? audit = null, Guid? episodeId = null)
@@ -619,8 +645,9 @@ public sealed class StoryReadModelTests
 
     /// <summary>
     /// The attestation text of the rig (02.3.3-T1). A ghost series with no pinned fact sheet never asks
-    /// for it — the member is null — so the stub is here to satisfy the handler's constructor and would
-    /// fail loudly if a test ever made the rig true-crime without asserting the member.
+    /// for it — the member is null — so the stub is here to satisfy the handler's constructor. It serves
+    /// version <c>ta.v1</c>, the rig's configured version unless a test demands another: a rig configured
+    /// with a version the stub does not serve must then read as governed without any wording.
     /// </summary>
     private sealed class StubAttestationText : IAttestationTextProvider
     {
