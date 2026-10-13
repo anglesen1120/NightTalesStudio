@@ -4,6 +4,9 @@ import type { CdkDragDrop } from '@angular/cdk/drag-drop';
 import { ChangeDetectionStrategy, Component, ElementRef, Injector, afterNextRender, inject, input, output } from '@angular/core';
 import { TranslocoService, provideTranslocoScope } from '@jsverse/transloco';
 import { ParagraphCardComponent } from './paragraph-card.component';
+import { EMPTY_ANNOTATION_VIEWS } from './annotation.view-model';
+import type { AnnotationViews } from './annotation.view-model';
+import type { InlineAnnotationViewModel } from '@shared/ui';
 import type { SegmentEditorViewModel, StoryEditorIntent } from './story-editor.view-model';
 
 @Component({
@@ -18,6 +21,9 @@ export class ParagraphListComponent {
   readonly paragraphs = input.required<readonly SegmentEditorViewModel[]>();
   readonly readOnly = input(false);
   readonly keywordLimitHit = input<string | null>(null);
+  readonly annotationViews = input<AnnotationViews>(EMPTY_ANNOTATION_VIEWS);
+  protected readonly emptyAnnotations: readonly InlineAnnotationViewModel[] = [];
+  protected readonly emptyFlags: ReadonlyMap<number, { readonly annotationId: string; readonly messageKey: string }> = new Map();
   // Buttons use the same path when the optional pointer enhancement is absent.
   readonly pointerReorder = input(true);
   readonly intent = output<StoryEditorIntent>();

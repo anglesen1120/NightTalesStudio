@@ -1,12 +1,16 @@
 using System.Text;
 using System.Text.Json;
+using ErrorOr;
 using Microsoft.Extensions.Options;
 using NightTales.Application.Abstractions.Money;
 using NightTales.Application.Abstractions.Prompts;
 using NightTales.Application.Abstractions.Research;
 using NightTales.Application.Abstractions.Text;
+using NightTales.Application.Abstractions.Usage;
 using NightTales.Application.Features.Research.Facts;
+using NightTales.Application.Features.Research.Jobs;
 using NightTales.Domain.Common;
+using NightTales.Domain.Research;
 using NightTales.Domain.Series;
 using NightTales.Domain.Stories.Generation;
 using NightTales.Domain.Stories.Prompts;
@@ -37,7 +41,7 @@ public sealed class FactExtractorTests
         var catalog = new StubCatalog();
         var draft = Draft();
         var client = new FakeTextClient().EnqueueOk(TextStep.Facts, draft);
-        var extractor = new OpenAiFactExtractor(client, catalog, FactsOptionsFor());
+        var extractor = Extractor(client, catalog, FactsOptionsFor());
 
         var result = await extractor.ExtractAsync(Request(Source()), Ct);
 
@@ -62,7 +66,7 @@ public sealed class FactExtractorTests
     {
         var client = new FakeTextClient().EnqueueOk(TextStep.Facts, Draft());
 
-        await new OpenAiFactExtractor(client, new StubCatalog(), FactsOptionsFor())
+        await Extractor(client, new StubCatalog(), FactsOptionsFor())
             .ExtractAsync(Request(Source()) with { Language = language }, Ct);
 
         client.Requests.Single().PromptCacheKey.ShouldBe(expected);
@@ -74,7 +78,7 @@ public sealed class FactExtractorTests
     public async Task OpenAiFactExtractor_NeverSerialisesSourceId_OrUrl()
     {
         var client = new FakeTextClient().EnqueueOk(TextStep.Facts, Draft());
-        var extractor = new OpenAiFactExtractor(client, new StubCatalog(), FactsOptionsFor());
+        var extractor = Extractor(client, new StubCatalog(), FactsOptionsFor());
 
         await extractor.ExtractAsync(Request(Source()), Ct);
 
@@ -104,7 +108,7 @@ public sealed class FactExtractorTests
     {
         var outcome = TextCallResult<FactsV1>.InvalidOutput("gpt-6-luna", null, "r1", [TextCallInvalidOutput<FactsV1>.SchemaInvalid]);
 
-        var result = await new OpenAiFactExtractor(new FakeTextClient().Enqueue(TextStep.Facts, outcome), new StubCatalog(), FactsOptionsFor())
+        var result = await Extractor(new FakeTextClient().Enqueue(TextStep.Facts, outcome), new StubCatalog(), FactsOptionsFor())
             .ExtractAsync(Request(Source()), Ct);
 
         result.ShouldBeSameAs(outcome);
@@ -115,7 +119,7 @@ public sealed class FactExtractorTests
     {
         var outcome = TextCallResult<FactsV1>.Moderated("gpt-6-luna", null, "r2", ["violence"]);
 
-        var result = await new OpenAiFactExtractor(new FakeTextClient().Enqueue(TextStep.Facts, outcome), new StubCatalog(), FactsOptionsFor())
+        var result = await Extractor(new FakeTextClient().Enqueue(TextStep.Facts, outcome), new StubCatalog(), FactsOptionsFor())
             .ExtractAsync(Request(Source()), Ct);
 
         result.ShouldBeSameAs(outcome);
@@ -128,7 +132,7 @@ public sealed class FactExtractorTests
         await cts.CancelAsync();
 
         await Should.ThrowAsync<OperationCanceledException>(
-            async () => await new OpenAiFactExtractor(new CancellingTextClient(), new StubCatalog(), FactsOptionsFor())
+            async () => await Extractor(new CancellingTextClient(), new StubCatalog(), FactsOptionsFor())
                 .ExtractAsync(Request(Source()), cts.Token));
     }
 
@@ -136,7 +140,7 @@ public sealed class FactExtractorTests
     public async Task OpenAiFactExtractor_EmptySources_Throws()
     {
         await Should.ThrowAsync<ArgumentOutOfRangeException>(
-            async () => await new OpenAiFactExtractor(new FakeTextClient(), new StubCatalog(), FactsOptionsFor())
+            async () => await Extractor(new FakeTextClient(), new StubCatalog(), FactsOptionsFor())
                 .ExtractAsync(Request(), Ct));
     }
 
@@ -144,7 +148,7 @@ public sealed class FactExtractorTests
     public async Task OpenAiFactExtractor_DuplicateAlias_Throws()
     {
         await Should.ThrowAsync<ArgumentException>(
-            async () => await new OpenAiFactExtractor(new FakeTextClient(), new StubCatalog(), FactsOptionsFor())
+            async () => await Extractor(new FakeTextClient(), new StubCatalog(), FactsOptionsFor())
                 .ExtractAsync(Request(Source(), Source() with { Alias = "s1" }), Ct));
     }
 
@@ -156,7 +160,7 @@ public sealed class FactExtractorTests
     public async Task OpenAiFactExtractor_AliasOutsideS1ToS10_Throws(string alias)
     {
         await Should.ThrowAsync<ArgumentException>(
-            async () => await new OpenAiFactExtractor(new FakeTextClient(), new StubCatalog(), FactsOptionsFor())
+            async () => await Extractor(new FakeTextClient(), new StubCatalog(), FactsOptionsFor())
                 .ExtractAsync(Request(Source() with { Alias = alias }), Ct));
     }
 
@@ -168,7 +172,7 @@ public sealed class FactExtractorTests
             .ToArray();
 
         await Should.ThrowAsync<ArgumentOutOfRangeException>(
-            async () => await new OpenAiFactExtractor(new FakeTextClient(), new StubCatalog(), FactsOptionsFor())
+            async () => await Extractor(new FakeTextClient(), new StubCatalog(), FactsOptionsFor())
                 .ExtractAsync(Request(sources), Ct));
     }
 
@@ -178,7 +182,7 @@ public sealed class FactExtractorTests
     public async Task OpenAiFactExtractor_NonPositiveMaxOutputTokens_Throws(int maxOutputTokens)
     {
         await Should.ThrowAsync<ArgumentOutOfRangeException>(
-            async () => await new OpenAiFactExtractor(new FakeTextClient(), new StubCatalog(), FactsOptionsFor())
+            async () => await Extractor(new FakeTextClient(), new StubCatalog(), FactsOptionsFor())
                 .ExtractAsync(Request(Source()) with { MaxOutputTokens = maxOutputTokens }, Ct));
     }
 
@@ -197,7 +201,7 @@ public sealed class FactExtractorTests
         foreach (var fixture in fixtures)
         {
             var client = new FakeTextClient().EnqueueOk(TextStep.Facts, Draft());
-            var extractor = new OpenAiFactExtractor(client, new StubCatalog(), FactsOptionsFor());
+            var extractor = Extractor(client, new StubCatalog(), FactsOptionsFor());
             var source = new FactSourceInput("s1", SourceId, "Title", fixture.Value, false);
 
             await extractor.ExtractAsync(Request(source), Ct);
@@ -227,7 +231,7 @@ public sealed class FactExtractorTests
         var client = new FakeTextClient().EnqueueOk(TextStep.Facts, Draft());
         var source = Source();
         var estimate = FactInputBudget.EstimateTokens(FactDataObjectJson.Serialize(Language.Vi, [source]));
-        var extractor = new OpenAiFactExtractor(
+        var extractor = Extractor(
             client,
             new StubCatalog(),
             FactsOptionsFor(new FactsOptions { MaxInputTokens = estimate - 1 }));
@@ -245,7 +249,7 @@ public sealed class FactExtractorTests
         var client = new FakeTextClient().EnqueueOk(TextStep.Facts, Draft());
         var source = Source();
         var estimate = FactInputBudget.EstimateTokens(FactDataObjectJson.Serialize(Language.Vi, [source]));
-        var extractor = new OpenAiFactExtractor(
+        var extractor = Extractor(
             client,
             new StubCatalog(),
             FactsOptionsFor(new FactsOptions { MaxInputTokens = estimate }));
@@ -267,16 +271,61 @@ public sealed class FactExtractorTests
 
         var rejected = new FakeTextClient();
         await Should.ThrowAsync<ArgumentOutOfRangeException>(
-            async () => await new OpenAiFactExtractor(rejected, new StubCatalog(), FactsOptionsFor(new FactsOptions { MaxSources = 2 }))
+            async () => await Extractor(rejected, new StubCatalog(), FactsOptionsFor(new FactsOptions { MaxSources = 2 }))
                 .ExtractAsync(Request(sources), Ct));
         rejected.Requests.ShouldBeEmpty();
 
         // Exactly MaxSources is still accepted: the bound tightens the s1..s10 ceiling, it does not ban calls.
         var accepted = new FakeTextClient().EnqueueOk(TextStep.Facts, Draft());
-        await new OpenAiFactExtractor(accepted, new StubCatalog(), FactsOptionsFor(new FactsOptions { MaxSources = 2 }))
+        await Extractor(accepted, new StubCatalog(), FactsOptionsFor(new FactsOptions { MaxSources = 2 }))
             .ExtractAsync(Request(sources[..2]), Ct);
         accepted.Requests.ShouldHaveSingleItem();
     }
+
+    [Fact]
+    public async Task OpenAiFactExtractor_CancelledAfterDispatch_RecordsTheBound_ThenRethrows()
+    {
+        var meter = new RecordingMeter();
+        var estimator = new StubEstimator(3m);
+        var extractor = new OpenAiFactExtractor(new CancellingTextClient(dispatch: true), new StubCatalog(), FactsOptionsFor(), meter, estimator);
+        var request = Request(Source());
+
+        await Should.ThrowAsync<OperationCanceledException>(async () => await extractor.ExtractAsync(request, Ct));
+
+        var item = meter.Items.ShouldHaveSingleItem();
+        item.ShouldSatisfyAllConditions(
+            i => i.Estimated.ShouldBeTrue("the response never arrived, so the row carries the D1 bound"),
+            i => i.CostUsd.ShouldBe(3m),
+            i => i.Model.ShouldBe("gpt-6-luna"),
+            i => i.Operation.ShouldBe(OpenAiFactExtractor.Operation),
+            i => i.UserId.ShouldBe(request.Run.UserId),
+            i => i.ReservationId.ShouldBe(request.Run.Reservation.Value),
+            i => i.EpisodeId.ShouldBe(request.Run.EpisodeId),
+            i => i.GenerationRunId.ShouldBe(request.Run.GenerationRunId),
+            i => i.InputTokens.ShouldBeNull());
+        meter.Tokens.ShouldHaveSingleItem().CanBeCanceled.ShouldBeFalse("the settlement must survive the caller's cancellation");
+    }
+
+    [Fact]
+    public async Task OpenAiFactExtractor_CancelledBeforeDispatch_RecordsNothing()
+    {
+        // Nothing was sent, so nothing can have been billed: no meter call and no bound lookup (SEC-2).
+        var meter = new RecordingMeter();
+        var estimator = new StubEstimator(3m);
+        var extractor = new OpenAiFactExtractor(new CancellingTextClient(dispatch: false), new StubCatalog(), FactsOptionsFor(), meter, estimator);
+
+        await Should.ThrowAsync<OperationCanceledException>(async () => await extractor.ExtractAsync(Request(Source()), Ct));
+
+        meter.Items.ShouldBeEmpty();
+        estimator.Calls.ShouldBe(0);
+    }
+
+    [Fact]
+    public void Operation_IsTheOneThePipelineMetersEveryOtherOutcomeUnder() =>
+        OpenAiFactExtractor.Operation.ShouldBe(GenerateFactSheetPipeline.Operation);
+
+    private static OpenAiFactExtractor Extractor(ITextClient client, IPromptCatalog catalog, IOptions<FactsOptions> options) =>
+        new(client, catalog, options, new RecordingMeter(), new StubEstimator(3m));
 
     private static IOptions<FactsOptions> FactsOptionsFor(FactsOptions? options = null) =>
         Microsoft.Extensions.Options.Options.Create(options ?? new FactsOptions());
@@ -330,10 +379,46 @@ public sealed class FactExtractorTests
         }
     }
 
-    private sealed class CancellingTextClient : ITextClient
+    /// <summary>A client whose call is cancelled by its caller, dispatched or not (the SEC-2 seam).</summary>
+    private sealed class CancellingTextClient(bool dispatch = false) : ITextClient
     {
         public ValueTask<TextCallResult<T>> CallAsync<T>(TextCallRequest req, CancellationToken ct)
-            where T : class =>
-            ValueTask.FromException<TextCallResult<T>>(new OperationCanceledException(ct));
+            where T : class
+        {
+            if (dispatch)
+            {
+                req.MarkDispatched("gpt-6-luna");
+            }
+
+            return ValueTask.FromException<TextCallResult<T>>(new OperationCanceledException(ct));
+        }
+    }
+
+    /// <summary>The meter port of the SEC-2 cases: what was written, and on which token.</summary>
+    private sealed class RecordingMeter : IUsageMeter
+    {
+        internal List<UsageItem> Items { get; } = [];
+
+        internal List<CancellationToken> Tokens { get; } = [];
+
+        public Task RecordAsync(UsageItem item, CancellationToken ct)
+        {
+            Items.Add(item);
+            Tokens.Add(ct);
+
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class StubEstimator(decimal bound) : IFactSheetCostEstimator
+    {
+        internal int Calls { get; private set; }
+
+        public Task<ErrorOr<UsageBound>> WorstCaseAsync(CancellationToken ct)
+        {
+            Calls++;
+
+            return Task.FromResult<ErrorOr<UsageBound>>(new UsageBound(bound, 1_000, 500));
+        }
     }
 }

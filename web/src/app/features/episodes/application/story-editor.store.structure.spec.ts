@@ -5,6 +5,7 @@ import { RealtimeService } from '@core/realtime';
 import { SessionStore } from '@core/session';
 import { vi } from 'vitest';
 import { ZONELESS_TEST_PROVIDERS } from '../../../testing/providers';
+import type { KeywordFlag } from '../domain/annotation.model';
 import type { EpisodeDetail } from '../domain/episode.model';
 import type { QualityHint, StorySnapshot } from '../domain/story.model';
 import { EpisodesRepository } from '../domain/episodes.repository';
@@ -51,6 +52,11 @@ async function loaded(snapshot: StorySnapshot = storySnapshot(), actions: readon
 
 function hintKeys(store: StoryEditorStore): readonly string[] {
   return store.hints().map((hint) => `${hint.messageKey}@${hint.segment ?? 'none'}`);
+}
+
+/** A `409 keywords_flagged` chip; the default `index: 1` (the second chip) proves the chip index is never rewritten. */
+function flag(overrides: Partial<KeywordFlag> = {}): KeywordFlag {
+  return { address: 'p:1', index: 1, rule: 'keyword_name_detected', ...overrides };
 }
 
 describe('StoryEditorStore structure (10.5.9-T1)', () => {
@@ -346,5 +352,84 @@ describe('StoryEditorStore structure (10.5.9-T1)', () => {
     expect(store.paragraphs().map((item) => item.text())).toEqual([paragraph(snapshot, 1), paragraph(snapshot, 2), paragraph(snapshot, 3)]);
     expect(store.removed()).toBeNull();
     expect(store.hasUnsavedChanges()).toBe(true);
+  });
+
+  it('keywordFlag_followsItsParagraphThroughAMove', async () => {
+    const { store } = await loaded();
+    store.setKeywordFlags([flag({ address: 'p:3' })]);
+    expect(store.moveUp(3)).toBe(true);
+    expect(store.keywordFlags()).toEqual([flag({ address: 'p:2' })]);
+    expect(store.moveDown(2)).toBe(true);
+    expect(store.keywordFlags()).toEqual([flag({ address: 'p:3' })]);
+    expect(store.moveTo(3, 0)).toBe(true);
+    // The chip `index` is the server's own and never rewritten by the remap.
+    expect(store.keywordFlags()).toEqual([flag({ address: 'p:0' })]);
+    expect(store.annotations()).toEqual([expect.objectContaining({ source: 'keyword', address: 'p:0', keywordIndex: 1 })]);
+  });
+
+  it('deleteAboveAFlaggedParagraph_ShiftsTheFlagDown', async () => {
+    const { store } = await loaded();
+    store.setKeywordFlags([flag({ address: 'p:2' }), flag({ address: 'p:3', index: 0, rule: 'no_scenes' })]);
+    expect(store.removeParagraph(0)).toBe(true);
+    expect(store.keywordFlags()).toEqual([flag({ address: 'p:1' }), flag({ address: 'p:2', index: 0, rule: 'no_scenes' })]);
+    expect(store.annotations().map((item) => [item.address, item.keywordIndex])).toEqual([['p:1', 1], ['p:2', 0]]);
+    expect(store.videoBlocked()).toBe(true);
+  });
+
+  it('deleteBelowAFlaggedParagraph_LeavesTheFlagWhereItIs', async () => {
+    const { store } = await loaded();
+    store.setKeywordFlags([flag({ address: 'p:0' })]);
+    expect(store.removeParagraph(2)).toBe(true);
+    expect(store.keywordFlags()).toEqual([flag({ address: 'p:0' })]);
+    expect(store.annotations()).toEqual([expect.objectContaining({ address: 'p:0', keywordIndex: 1 })]);
+  });
+
+  it('deleteTheFlaggedParagraph_HidesTheFlagAndUnblocksTheVideoUntilItComesBack', async () => {
+    const { store } = await loaded();
+    expect(store.setKeywordFlags([flag({ address: 'p:1' })])).toBe(true);
+    expect(store.videoBlocked()).toBe(true); expect(store.annotationCount()).toBe(1);
+    expect(store.removeParagraph(1)).toBe(true);
+    expect(store.removed()).not.toBeNull();
+    // The flag is buffered with its paragraph: no chip, no annotation and no video block while the text is away.
+    expect(store.keywordFlags()).toEqual([]);
+    expect(store.videoBlocked()).toBe(false); expect(store.annotationCount()).toBe(0);
+    expect(store.undoRemove()).toBe(1);
+    expect(store.keywordFlags()).toEqual([flag({ address: 'p:1' })]);
+    expect(store.annotations()).toEqual([expect.objectContaining({ source: 'keyword', address: 'p:1', keywordIndex: 1 })]);
+  });
+
+  it('undoRemove_RestoresTheBufferedFlagWithItsChipIndexAfterAMoveWhileBuffered', async () => {
+    const { store } = await loaded();
+    store.setKeywordFlags([flag({ address: 'p:1' }), flag({ address: 'p:2', index: 0, rule: 'keyword_invalid' })]);
+    expect(store.removeParagraph(1)).toBe(true); // the p:1 flag waits in the buffer with its paragraph
+    expect(store.moveTo(0, 2)).toBe(true); // a move reorders the live paragraphs only, never the buffer
+    expect(store.keywordFlags()).toEqual([flag({ address: 'p:0', index: 0, rule: 'keyword_invalid' })]);
+    expect(store.undoRemove()).toBe(1);
+    expect(store.keywordFlags()).toEqual([flag({ address: 'p:0', index: 0, rule: 'keyword_invalid' }), flag({ address: 'p:1' })]);
+    expect(store.annotations().map((item) => [item.address, item.keywordIndex, item.ruleId]))
+      .toEqual([['p:0', 0, 'keyword_invalid'], ['p:1', 1, 'keyword_name_detected']]);
+  });
+
+  it('theUndoWindowClosing_DropsTheBufferedFlagForGood', async () => {
+    const { store } = await loaded();
+    store.setKeywordFlags([flag({ address: 'p:1' })]);
+    store.removeParagraph(1);
+    vi.advanceTimersByTime(10_000);
+    expect(store.removed()).toBeNull();
+    expect(store.undoRemove()).toBeNull();
+    expect(store.keywordFlags()).toEqual([]); // nothing holds it any more: the buffer did
+    expect(store.videoBlocked()).toBe(false);
+  });
+
+  it('discardDraft_DropsTheBufferedFlagAndKeepsANonParagraphOne', async () => {
+    const { store } = await loaded();
+    store.setKeywordFlags([flag({ address: 'p:1' }), flag({ address: 'hook', index: 0, rule: 'keyword_invalid' })]);
+    expect(store.removeParagraph(1)).toBe(true);
+    // A hook chip is not `p:<i>`-keyed, so the delete leaves it exactly where it was.
+    expect(store.keywordFlags()).toEqual([flag({ address: 'hook', index: 0, rule: 'keyword_invalid' })]);
+    store.discardDraft();
+    expect(store.removed()).toBeNull(); expect(store.keywordFlags()).toEqual([]);
+    expect(store.annotations()).toEqual([]);
+    expect(store.hasUnsavedChanges()).toBe(false);
   });
 });

@@ -2,7 +2,10 @@
 .segment-chips { display: flex; flex-wrap: wrap; align-items: center; gap: var(--nts-space-2); min-width: 0; }
 .segment-chips__label { flex: 0 0 100%; color: var(--nts-color-on-surface-muted); font-size: var(--nts-type-caption-size); font-weight: var(--nts-type-label-weight); }
 .segment-chips__list { display: flex; flex: 1 1 auto; flex-wrap: wrap; gap: var(--nts-space-2); min-width: 0; }
-.segment-chips__item { display: inline-flex; min-width: 0; }
+.segment-chips__item { display: inline-flex; flex-direction: column; gap: var(--nts-space-2); min-width: 0; max-width: 100%; }
+.segment-chips__control { display: flex; min-width: 0; }
+.segment-chips__item--flagged input { border-color: var(--nts-color-error); background: var(--nts-color-error-soft); }
+.segment-chips__flag { display: flex; align-items: center; gap: var(--nts-space-2); color: var(--nts-color-on-surface); overflow-wrap: anywhere; }
 .segment-chips input {
   box-sizing: border-box;
   width: min(18rem, 100%);

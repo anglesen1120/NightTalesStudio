@@ -1024,6 +1024,119 @@ namespace NightTales.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("NightTales.Domain.Research.FactSheet", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset?>("ApprovedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("approved_at");
+
+                    b.Property<Guid?>("ApprovedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("approved_by");
+
+                    b.Property<string>("ContentSha256")
+                        .IsRequired()
+                        .HasColumnType("char(64)")
+                        .HasColumnName("content_sha256");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid>("CreatedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("created_by");
+
+                    b.Property<Guid>("EpisodeId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("episode_id");
+
+                    b.Property<string>("Facts")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("facts");
+
+                    b.Property<Guid?>("GenerationRunId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("generation_run_id");
+
+                    b.Property<bool>("InputTruncated")
+                        .HasColumnType("boolean")
+                        .HasColumnName("input_truncated");
+
+                    b.Property<int>("MaxFactId")
+                        .HasColumnType("integer")
+                        .HasColumnName("max_fact_id");
+
+                    b.Property<string>("PromptVersion")
+                        .IsRequired()
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)")
+                        .HasColumnName("prompt_version");
+
+                    b.Property<string>("SourceAliases")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("source_aliases");
+
+                    b.Property<short>("Status")
+                        .HasColumnType("smallint")
+                        .HasColumnName("status");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.Property<int>("Version")
+                        .HasColumnType("integer")
+                        .HasColumnName("version");
+
+                    b.HasKey("Id")
+                        .HasName("pk_fact_sheets");
+
+                    b.HasAlternateKey("Id", "UserId")
+                        .HasName("ak_fact_sheets_id_user_id");
+
+                    b.HasIndex("CreatedBy")
+                        .HasDatabaseName("ix_fact_sheets_created_by");
+
+                    b.HasIndex("EpisodeId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_fact_sheets_episode_approved")
+                        .HasFilter("\"status\" = 1");
+
+                    b.HasIndex("GenerationRunId")
+                        .HasDatabaseName("ix_fact_sheets_generation_run_id");
+
+                    b.HasIndex("UserId")
+                        .HasDatabaseName("ix_fact_sheets_user_id");
+
+                    b.HasIndex("EpisodeId", "UserId")
+                        .HasDatabaseName("ix_fact_sheets_episode_id_user_id");
+
+                    b.HasIndex("EpisodeId", "Version")
+                        .IsUnique()
+                        .HasDatabaseName("ux_fact_sheets_episode_version");
+
+                    b.HasIndex("GenerationRunId", "UserId")
+                        .HasDatabaseName("ix_fact_sheets_generation_run_id_user_id");
+
+                    b.ToTable("fact_sheets", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_fact_sheets_sha256", "\"content_sha256\" ~ '^[0-9a-f]{64}$'");
+
+                            t.HasCheckConstraint("ck_fact_sheets_status", "\"status\" IN (0, 1, 2)");
+                        });
+                });
+
             modelBuilder.Entity("NightTales.Domain.Research.FetchTask", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1719,6 +1832,12 @@ namespace NightTales.Infrastructure.Persistence.Migrations
                     b.HasIndex("EpisodeId", "UserId")
                         .HasDatabaseName("ix_generation_runs_episode_id_user_id");
 
+                    b.HasIndex("InputFactSheetId", "UserId")
+                        .HasDatabaseName("ix_generation_runs_input_fact_sheet_id_user_id");
+
+                    b.HasIndex("ResultFactSheetId", "UserId")
+                        .HasDatabaseName("ix_generation_runs_result_fact_sheet_id_user_id");
+
                     b.HasIndex("ResultStoryVersionId", "UserId")
                         .HasDatabaseName("ix_generation_runs_result_story_version_id_user_id");
 
@@ -1729,6 +1848,10 @@ namespace NightTales.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("SeriesId", "UserId")
                         .HasDatabaseName("ix_generation_runs_series_id_user_id");
+
+                    b.HasIndex("EpisodeId", "CreatedAt", "Id")
+                        .IsDescending(false, true, true)
+                        .HasDatabaseName("ix_generation_runs_episode_created");
 
                     b.HasIndex("EpisodeId", "Kind", "QueuedAt")
                         .IsDescending(false, false, true)
@@ -1865,6 +1988,9 @@ namespace NightTales.Infrastructure.Persistence.Migrations
                     b.HasIndex("EpisodeId", "Version")
                         .IsUnique()
                         .HasDatabaseName("ux_story_versions_episode_version");
+
+                    b.HasIndex("FactSheetId", "UserId")
+                        .HasDatabaseName("ix_story_versions_fact_sheet_id_user_id");
 
                     b.HasIndex("GenerationRunId", "UserId")
                         .HasDatabaseName("ix_story_versions_generation_run_id_user_id");
@@ -2762,6 +2888,38 @@ namespace NightTales.Infrastructure.Persistence.Migrations
                         .HasConstraintName("fk_episodes_series_series_id_user_id");
                 });
 
+            modelBuilder.Entity("NightTales.Domain.Research.FactSheet", b =>
+                {
+                    b.HasOne("NightTales.Infrastructure.Persistence.AppUser", null)
+                        .WithMany()
+                        .HasForeignKey("CreatedBy")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_fact_sheets_asp_net_users_created_by");
+
+                    b.HasOne("NightTales.Infrastructure.Persistence.AppUser", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_fact_sheets_asp_net_users_user_id");
+
+                    b.HasOne("NightTales.Domain.Episodes.Episode", null)
+                        .WithMany()
+                        .HasForeignKey("EpisodeId", "UserId")
+                        .HasPrincipalKey("Id", "UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_fact_sheets_episodes_episode_id_user_id");
+
+                    b.HasOne("NightTales.Domain.Stories.Generation.GenerationRun", null)
+                        .WithMany()
+                        .HasForeignKey("GenerationRunId", "UserId")
+                        .HasPrincipalKey("Id", "UserId")
+                        .OnDelete(DeleteBehavior.SetNull)
+                        .HasConstraintName("fk_fact_sheets_generation_runs_generation_run_id_user_id");
+                });
+
             modelBuilder.Entity("NightTales.Domain.Research.FetchTask", b =>
                 {
                     b.HasOne("NightTales.Infrastructure.Persistence.AppUser", null)
@@ -2905,6 +3063,20 @@ namespace NightTales.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .HasConstraintName("fk_generation_runs_episodes_episode_id_user_id");
 
+                    b.HasOne("NightTales.Domain.Research.FactSheet", null)
+                        .WithMany()
+                        .HasForeignKey("InputFactSheetId", "UserId")
+                        .HasPrincipalKey("Id", "UserId")
+                        .OnDelete(DeleteBehavior.SetNull)
+                        .HasConstraintName("fk_generation_runs_fact_sheets_input_fact_sheet_id_user_id");
+
+                    b.HasOne("NightTales.Domain.Research.FactSheet", null)
+                        .WithMany()
+                        .HasForeignKey("ResultFactSheetId", "UserId")
+                        .HasPrincipalKey("Id", "UserId")
+                        .OnDelete(DeleteBehavior.SetNull)
+                        .HasConstraintName("fk_generation_runs_fact_sheets_result_fact_sheet_id_user_id");
+
                     b.HasOne("NightTales.Domain.Stories.StoryVersion", null)
                         .WithMany()
                         .HasForeignKey("ResultStoryVersionId", "UserId")
@@ -2937,6 +3109,13 @@ namespace NightTales.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
                         .HasConstraintName("fk_story_versions_episodes_episode_id_user_id");
+
+                    b.HasOne("NightTales.Domain.Research.FactSheet", null)
+                        .WithMany()
+                        .HasForeignKey("FactSheetId", "UserId")
+                        .HasPrincipalKey("Id", "UserId")
+                        .OnDelete(DeleteBehavior.SetNull)
+                        .HasConstraintName("fk_story_versions_fact_sheets_fact_sheet_id_user_id");
 
                     b.HasOne("NightTales.Domain.Stories.Generation.GenerationRun", null)
                         .WithMany()

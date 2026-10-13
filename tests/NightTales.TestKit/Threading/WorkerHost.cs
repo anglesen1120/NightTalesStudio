@@ -9,6 +9,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using NightTales.Application.Abstractions.Identity;
 using NightTales.Application.Abstractions.Jobs;
+using NightTales.Application.Abstractions.Research;
 using NightTales.Application.Abstractions.Storage;
 using NightTales.Domain.Common;
 using NightTales.Infrastructure.Identity;
@@ -20,6 +21,7 @@ using NightTales.Infrastructure.Telemetry;
 using NightTales.TestKit.Database;
 using NightTales.TestKit.Email;
 using NightTales.TestKit.OpenAI;
+using NightTales.TestKit.Research;
 using NightTales.TestKit.Security;
 using NightTales.TestKit.Storage;
 using NightTales.TestKit.Stories;
@@ -71,6 +73,13 @@ public sealed class WorkerHost(TestDatabase database, FakeClock clock) : IAsyncD
 
     /// <summary>Observes the Hangfire state machine of this host's jobs, so a test never sleeps.</summary>
     public JobStateObserver Observer { get; } = new();
+
+    /// <summary>
+    /// The fact-sheet job's scripted provider edge (02.5.3-T2): this host registers it in place of the real
+    /// <c>IFactExtractor</c>, so a test drives the production pipeline without reaching a provider. A test scripts the
+    /// outcomes before <see cref="StartAsync"/>; a call with nothing queued fails loudly.
+    /// </summary>
+    public FakeFactExtractor Extractor { get; } = new();
 
     /// <summary>Whether this host adds the real Hangfire server.</summary>
     public bool UsesHangfireServer => _withHangfireServer;
@@ -246,6 +255,13 @@ public sealed class WorkerHost(TestDatabase database, FakeClock clock) : IAsyncD
         builder.Services.RemoveAll<IClock>();
         builder.Services.AddSingleton<IClock>(clock);
         builder.Services.AddWorkerServices(builder.Configuration, [.. _jobAssemblies]);
+
+        // 02.5.3-T2: the fact-sheet job's provider edge is scripted like the clock, so a fact-sheet test drives the
+        // production pipeline, outbox and persistence without reaching a provider. The production Worker resolves the
+        // real IFactExtractor its OpenAI text client registers; a test may replace this instance through
+        // ConfigureServices, which runs last.
+        builder.Services.RemoveAll<IFactExtractor>();
+        builder.Services.AddSingleton<IFactExtractor>(Extractor);
 
         // 09.8.1-T2: the production Worker calls AddRealtime too (its outbox handlers are producers and
         // the hub-ticket sweep reads the `Realtime` section from here), so the harness composes the same

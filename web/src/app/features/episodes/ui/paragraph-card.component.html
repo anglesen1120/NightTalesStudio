@@ -1,4 +1,4 @@
-<nts-segment-editor [viewModel]="viewModel()" [limitHit]="limitHit()" (intent)="forward($event)">
+<nts-segment-editor [viewModel]="viewModel()" [limitHit]="limitHit()" [annotations]="annotations()" [flaggedChips]="flaggedChips()" (intent)="forward($event)">
   <div segmentActions class="paragraph-card__actions" [hidden]="locked()">
     @if (!locked()) {
       @if (pointerReorder()) {

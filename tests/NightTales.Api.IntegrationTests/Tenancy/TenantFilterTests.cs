@@ -126,6 +126,8 @@ public sealed class TenantFilterTests(TestDatabase database) : IntegrationTest(d
         owned.ShouldNotBeEmpty("the check is vacuous without user-owned entities");
         owned.Select(entityType => entityType.ClrType.Name)
             .ShouldContain("GenerationRun", "the new D2 table is user-owned");
+        owned.Select(entityType => entityType.ClrType.Name)
+            .ShouldContain("FactSheet", "the 02.5.3 fact_sheets table is user-owned");
 
         var unfiltered = owned
             .Where(entityType => entityType.GetDeclaredQueryFilters().All(filter => filter.Key != "tenant"))

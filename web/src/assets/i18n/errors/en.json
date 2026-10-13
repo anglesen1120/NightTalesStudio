@@ -46,6 +46,11 @@
   "autopilot_topic_locked": "The topic cannot be changed while autopilot is on.",
   "autopilot_pause_reason_active": "Autopilot cannot resume while a pause reason is still active.",
   "keywords_flagged": "Some image keywords are flagged. Fix them before continuing.",
+  "keywordsFlaggedRule": {
+    "keyword_name_detected": "The scene contains a person's name. Rewrite it without a real name.",
+    "keyword_invalid": "The scene is not valid. Use English, 3–12 words.",
+    "no_scenes": "This episode has no scenes to render."
+  },
   "legal_acceptance_required": "Review and accept the current legal documents before continuing.",
   "legal_version_outdated": "The legal documents changed. Review the current versions and accept them again.",
   "episode_conflict": "The episode was changed elsewhere. Reload and try again.",

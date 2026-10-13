@@ -46,8 +46,7 @@ public sealed class StoryReadRoutesTests(TestDatabase database) : IntegrationTes
     [Fact]
     public async Task EpisodeDetail_IncludesCurrentStoryBlock()
     {
-        var factSheetId = Guid.CreateVersion7();
-        var world = await SeedAsync(factSheetId: factSheetId);
+        var world = await SeedAsync(withFactSheet: true);
         using var factory = Factory();
         using var client = factory.ClientFor(world.UserId);
         using var response = await client.GetAsync(EpisodeRoute(world.EpisodeId), Ct);
@@ -66,7 +65,7 @@ public sealed class StoryReadRoutesTests(TestDatabase database) : IntegrationTes
         story.GetProperty("keywords").EnumerateArray().Select(item => item.GetString())
             .ShouldBe(StoryVersion.Derive(Draft()).Keywords);
         story.GetProperty("similarityScore").GetDecimal().ShouldBe(0.021m);
-        story.GetProperty("factSheetId").GetGuid().ShouldBe(factSheetId);
+        story.GetProperty("factSheetId").GetGuid().ShouldBe(world.FactSheetId!.Value);
         story.GetProperty("approvedStoryVersionId").ValueKind.ShouldBe(JsonValueKind.Null);
         story.GetProperty("content").GetProperty("title").GetString().ShouldBe(Draft().Title);
         story.GetProperty("auditReport").GetProperty("schema_version").GetString().ShouldBe("audit.v1");
@@ -446,7 +445,7 @@ public sealed class StoryReadRoutesTests(TestDatabase database) : IntegrationTes
         EpisodeStatus status = EpisodeStatus.StoryReview,
         World? owner = null,
         string? title = null,
-        Guid? factSheetId = null)
+        bool withFactSheet = false)
     {
         var actor = new TestCurrentUser();
         Guid userId;
@@ -466,9 +465,14 @@ public sealed class StoryReadRoutesTests(TestDatabase database) : IntegrationTes
         }
         var episode = await new EpisodeBuilder(Database, actor)
             .CreateAsync(userId, seriesId, lengthTier: LengthTier.Short, status: status, ct: Ct);
+        // story_versions.fact_sheet_id is a same-owner FK to fact_sheets (02 CR-29), so a seeded version that
+        // carries one names a real draft row of this episode.
+        var sheet = withFactSheet
+            ? await new FactSheetBuilder(Database, actor).CreateAsync(userId, episode.Id, Ct)
+            : null;
         if (!withStory)
         {
-            return new World(userId, seriesId, episode.Id, null);
+            return new World(userId, seriesId, episode.Id, null, sheet?.Id);
         }
 
         var draft = Draft(title);
@@ -479,14 +483,14 @@ public sealed class StoryReadRoutesTests(TestDatabase database) : IntegrationTes
             ["url"] = SourceUrl,
         });
         var version = StoryVersion.Create(userId, episode.Id, 1, StoryVersionSource.Generated, draft,
-            StoryContentJson.Write(draft, sources), "model-x", "rel=1", null, null, factSheetId, AuditJson(), 0.021m, Start);
+            StoryContentJson.Write(draft, sources), "model-x", "rel=1", null, null, sheet?.Id, AuditJson(), 0.021m, Start);
         await using (var db = Database.CreateAppDbContext(new TestCurrentUser { Id = userId }))
         {
             db.StoryVersions.Add(version);
             await db.SaveChangesAsync(Ct);
         }
         SqlProbe.Execute(Database, $"UPDATE episodes SET current_story_version_id = '{version.Id}' WHERE id = '{episode.Id}'");
-        return new World(userId, seriesId, episode.Id, version.Id);
+        return new World(userId, seriesId, episode.Id, version.Id, sheet?.Id);
     }
 
     private async Task<GenerationRun> SeedRunAsync(World world, DateTimeOffset createdAt, bool terminal, bool queued = false)
@@ -608,5 +612,5 @@ public sealed class StoryReadRoutesTests(TestDatabase database) : IntegrationTes
     }
 
     private static int Words(string text) => text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries).Length;
-    private sealed record World(Guid UserId, Guid SeriesId, Guid EpisodeId, Guid? VersionId);
+    private sealed record World(Guid UserId, Guid SeriesId, Guid EpisodeId, Guid? VersionId, Guid? FactSheetId = null);
 }

@@ -5,7 +5,8 @@ namespace NightTales.Infrastructure.OpenAI;
 
 /// <summary>
 /// Fails the start-up on an unusable <c>Facts</c> section (02.5.3-T1): a source ceiling the alias scheme
-/// cannot express, a fact ceiling outside the schema's bounds, or a non-positive cap.
+/// cannot express, a fact ceiling outside the schema's bounds, or an input ceiling outside the bound the cost
+/// estimator can price (02.5.3-T2, P7).
 /// </summary>
 public sealed class FactsOptionsValidator : IValidateOptions<FactsOptions>
 {
@@ -24,9 +25,10 @@ public sealed class FactsOptionsValidator : IValidateOptions<FactsOptions>
             problems.Add($"'{FactsOptions.SectionName}:{nameof(FactsOptions.PerSourceCharCap)}' must be positive.");
         }
 
-        if (options.MaxInputTokens <= 0)
+        if (options.MaxInputTokens <= 0 || options.MaxInputTokens > FactInputLimits.MaxMaxInputTokens)
         {
-            problems.Add($"'{FactsOptions.SectionName}:{nameof(FactsOptions.MaxInputTokens)}' must be positive.");
+            problems.Add(
+                $"'{FactsOptions.SectionName}:{nameof(FactsOptions.MaxInputTokens)}' must be 1..{FactInputLimits.MaxMaxInputTokens}.");
         }
 
         if (options.MaxFacts < FactsOptions.MinMaxFacts || options.MaxFacts > FactsOptions.MaxMaxFacts)

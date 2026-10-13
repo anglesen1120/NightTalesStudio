@@ -309,6 +309,9 @@ try
     app.MapStoryEndpoints();
     // 02.5.1-T1 (02 README D8, 02.5.1 plan §5.1): the episode's story-source routes.
     app.MapSourceEndpoints();
+    // 02.5.3-T2 (02 README D1/D2/D6, 02.5.3 plan §5):
+    // POST /api/v1/episodes/{id}/fact-sheet/generate.
+    app.MapFactSheetEndpoints();
 
     // 09.4.2-T1 (09 README D14, 09 §4 09.4.2): the catalog routes — the voices and the style templates the
     // picker and the style grid read.

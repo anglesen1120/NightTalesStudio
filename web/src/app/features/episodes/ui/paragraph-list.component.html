@@ -3,6 +3,7 @@
     @for (p of paragraphs(); track p.segKey) {
       <nts-paragraph-card cdkDrag [cdkDragData]="p.segKey" [cdkDragDisabled]="readOnly() || p.readOnly"
         [viewModel]="p" [index]="$index" [count]="paragraphs().length" [readOnly]="readOnly()"
+        [annotations]="annotationViews().inline.get(p.address) ?? emptyAnnotations" [flaggedChips]="annotationViews().flaggedChips.get(p.address) ?? emptyFlags"
         [limitHit]="keywordLimitHit() === p.segKey" (intent)="forward($event)" />
     }
   </div>
@@ -10,6 +11,7 @@
   <div class="paragraph-list">
     @for (p of paragraphs(); track p.segKey) {
       <nts-paragraph-card [viewModel]="p" [index]="$index" [count]="paragraphs().length" [readOnly]="readOnly()"
+        [annotations]="annotationViews().inline.get(p.address) ?? emptyAnnotations" [flaggedChips]="annotationViews().flaggedChips.get(p.address) ?? emptyFlags"
         [pointerReorder]="false" [limitHit]="keywordLimitHit() === p.segKey" (intent)="forward($event)" />
     }
   </div>

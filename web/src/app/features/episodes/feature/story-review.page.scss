@@ -3,6 +3,9 @@
 .story-review-page__notice { display: flex; flex-direction: column; gap: var(--nts-space-3); padding: var(--nts-space-4); border-inline-start: var(--nts-space-1) solid var(--nts-color-primary); background: var(--nts-color-primary-soft); }
 .story-review-page__notice h2, .story-review-page__notice p { margin: 0; }
 .story-review-page__notice h2 { font-size: var(--nts-type-title-size); line-height: var(--nts-type-title-line); }
+/* Informational, not blocking: the changed-elsewhere notice keeps the plain surface and never takes focus. */
+.story-review-page__notice--remote { border-inline-start-color: var(--nts-color-outline); background: var(--nts-color-surface-variant); }
+.story-review-page__diff { margin: 0; padding-inline-start: var(--nts-space-5); }
 .story-review-page__actions { display: flex; flex-wrap: wrap; gap: var(--nts-space-3); }
 .story-review-page__actions button { min-height: var(--nts-target-min); padding: var(--nts-space-2) var(--nts-space-4); border: 1px solid var(--nts-color-control-outline); border-radius: var(--nts-radius-control); background: var(--nts-color-surface-variant); color: var(--nts-color-on-surface-muted); font: inherit; }
 .story-review-page__workspace { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--nts-space-5); min-width: 0; }

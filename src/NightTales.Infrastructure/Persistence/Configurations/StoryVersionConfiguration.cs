@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using NightTales.Domain.Episodes;
+using NightTales.Domain.Research;
 using NightTales.Domain.Stories;
 using NightTales.Domain.Stories.Generation;
 using NightTales.Infrastructure.Persistence.Conventions;
@@ -16,9 +17,9 @@ namespace NightTales.Infrastructure.Persistence.Configurations;
 /// <remarks>
 /// Append-only story content (02.2.2 plan §3.2, FR-02-3): every property is <c>ValueGeneratedNever</c>.
 /// Only <c>audit_report</c> may be refreshed during approval (02.3.2); all other properties map
-/// <c>AfterSaveBehavior.Throw</c>. <c>fact_sheet_id</c> is a plain column until 02.5.3-T2 adds its
-/// <c>ON DELETE SET NULL</c> constraint. The two new FKs are same-owner composites like the rest (CR-46); their
-/// <c>SET NULL</c> nulls only the parent column, which the migration writes with raw SQL.
+/// <c>AfterSaveBehavior.Throw</c>. <c>fact_sheet_id</c> became a same-owner FK to <c>fact_sheets</c> in
+/// 02.5.3-T2 (the deferred half of 02 CR-29). The three same-owner FKs are composites like the rest (CR-46);
+/// their <c>SET NULL</c> nulls only the parent column, which the migration writes with raw SQL.
 /// </remarks>
 internal sealed class StoryVersionConfiguration : IEntityTypeConfiguration<StoryVersion>
 {
@@ -57,6 +58,11 @@ internal sealed class StoryVersionConfiguration : IEntityTypeConfiguration<Story
         builder.HasOne<GenerationRun>().WithMany()
             .HasForeignKey(version => new { version.GenerationRunId, version.UserId })
             .HasPrincipalKey(run => new { run.Id, run.UserId })
+            .OnDelete(DeleteBehavior.SetNull);
+        // 02 CR-29, added by 02.5.3-T2: fact_sheet_id becomes a same-owner FK to fact_sheets(id, user_id).
+        builder.HasOne<FactSheet>().WithMany()
+            .HasForeignKey(version => new { version.FactSheetId, version.UserId })
+            .HasPrincipalKey(sheet => new { sheet.Id, sheet.UserId })
             .OnDelete(DeleteBehavior.SetNull);
         builder.HasOne<AppUser>().WithMany().HasForeignKey(version => version.UserId).OnDelete(DeleteBehavior.Restrict);
 

@@ -25,3 +25,5 @@ export * from './icons/icon-episodes/icon-episodes';
 export * from './icons/icon-dashboard/icon-dashboard';
 export * from './icons/icon-series/icon-series';
 export * from './segment-chips/segment-chips.component';
+export * from './inline-annotation/inline-annotation.component';
+export * from './inline-annotation/inline-annotation.model';

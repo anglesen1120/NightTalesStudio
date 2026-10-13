@@ -12,6 +12,10 @@ import { StoryEditorComponent } from './story-editor.component';
 import type { SegmentEditorViewModel, StoryEditorViewModel } from './story-editor.view-model';
 import { SceneStripComponent } from './scene-strip.component';
 import { SegmentNavComponent } from './segment-nav.component';
+import { AnnotationPanelComponent } from './annotation-panel.component';
+import { SegmentEditorComponent } from './segment-editor.component';
+import { buildAnnotationViews } from './annotation.view-model';
+import type { SegmentAnnotation } from '../domain/annotation.model';
 
 const translations = TranslocoTestingModule.forRoot({
   langs: { vi: episodesVi, 'episodes/vi': episodesVi, 'errors/vi': errorsVi },
@@ -166,4 +170,48 @@ describe('StoryEditorComponent', () => {
       error.mockRestore();
     }
   });
+
+  it('passes annotation slices through paragraph cards, links the controls, and keeps the sole annotation live region outside the deferred panel', async () => {
+    const { fixture, root, component } = await setup();
+    const annotation: SegmentAnnotation = {
+      id: 'ann-p-0-Q-LEN-01', source: 'hint', address: 'p:0', ruleId: 'Q-LEN-01', severity: 'blocking', kind: 'objective',
+      messageKey: 'episodes.editor.structureWarning', evidence: 'Saved text', repairDirection: null, keywordIndex: null, placement: 'inline',
+    };
+    const keyword: SegmentAnnotation = { ...annotation, id: 'ann-p-1-invalid-k0', address: 'p:1', source: 'keyword', keywordIndex: 0, messageKey: 'episodes.editor.keywordFlaggedHint' };
+    const meta: SegmentAnnotation = { ...annotation, id: 'ann-meta-sparse', address: 'meta', placement: 'panel' };
+    const views = buildAnnotationViews([annotation, keyword, meta], { hasKey: () => true });
+    fixture.componentRef.setInput('annotationViews', views);
+    fixture.componentRef.setInput('announcement', { text: '3 suggestions', sequence: 1 });
+    fixture.detectChanges(); await fixture.whenStable();
+    const textarea = root.querySelector<HTMLTextAreaElement>('textarea[data-segment="p:0"]')!;
+    expect(textarea.getAttribute('aria-describedby')).toContain(annotation.id);
+    expect(textarea.nextElementSibling?.tagName).toBe('NTS-INLINE-ANNOTATION');
+    const flagged = root.querySelector<HTMLInputElement>('textarea[data-segment="p:1"]')!.closest('section')!.querySelector<HTMLInputElement>('input')!;
+    expect(flagged.getAttribute('aria-invalid')).toBe('true');
+    expect(flagged.getAttribute('aria-describedby')).toBe(keyword.id);
+    expect(root.querySelector('.story-editor__sheet #ann-meta-sparse')).toBeNull();
+    expect(root.querySelectorAll('.story-editor__annotation-announcement[aria-live="polite"]')).toHaveLength(1);
+    expect(root.querySelector('.story-editor__annotation-announcement')?.textContent).toBe('3 suggestions');
+    expect(root.querySelector('nts-annotation-panel [aria-live]')).toBeNull();
+    // A new sequence re-creates the announced node, so a repeated count still mutates the live region.
+    const announced = root.querySelector('.story-editor__annotation-announcement span');
+    fixture.componentRef.setInput('announcement', { text: '3 suggestions', sequence: 2 });
+    fixture.detectChanges(); await fixture.whenStable();
+    expect(root.querySelector('.story-editor__annotation-announcement span')).not.toBe(announced);
+    const emitted: unknown[] = [];
+    onEmit(component.intent, (intent) => emitted.push(intent));
+    // The inline note sits at the segment it is about and offers no navigation button; the panel item is the way back.
+    expect(root.querySelector('#ann-p-0-Q-LEN-01 button')).toBeNull();
+    const panel = fixture.debugElement.query(By.directive(AnnotationPanelComponent)).componentInstance as AnnotationPanelComponent;
+    expect(panel.viewModel()).toBe(views.panel);
+    panel.focusRequested.emit(views.panel.groups[0]!.items[0]!);
+    expect(emitted).toEqual([{ kind: 'openSegment', address: 'p:0' }]);
+    const segment = fixture.debugElement.queryAll(By.directive(SegmentEditorComponent)).map((element) => element.componentInstance as SegmentEditorComponent).find((item) => item.viewModel().address === 'p:0')!;
+    expect(segment.annotations()).toBe(views.inline.get('p:0'));
+    const initialText = viewModel();
+    fixture.componentRef.setInput('viewModel', { ...initialText, paragraphs: [{ ...initialText.paragraphs[0]!, text: 'Typing' }, initialText.paragraphs[1]!] });
+    fixture.detectChanges();
+    expect(segment.annotations()).toBe(views.inline.get('p:0'));
+  });
+
 });
