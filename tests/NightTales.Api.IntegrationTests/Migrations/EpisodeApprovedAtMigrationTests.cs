@@ -12,7 +12,7 @@ using Xunit;
 
 namespace NightTales.Api.IntegrationTests.Migrations;
 
-/// <summary>The nullable approval timestamp expansion; this class owns the last-migration check.</summary>
+/// <summary>The nullable approval timestamp expansion.</summary>
 [Trait("Category", "Integration")]
 [Trait("Category", "Migration")]
 public sealed class EpisodeApprovedAtMigrationTests(TestDatabase database) : IntegrationTest(database)
@@ -22,11 +22,13 @@ public sealed class EpisodeApprovedAtMigrationTests(TestDatabase database) : Int
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
     [Fact]
-    public async Task Migration_IsTheLastOne_AndModelHasNoPendingChange()
+    public async Task Migration_IsApplied_AndModelHasNoPendingChange()
     {
         await using var context = Database.CreateAppDbContext();
         var migrations = context.Database.GetMigrations().Order(StringComparer.Ordinal).ToList();
-        migrations[^1].ShouldEndWith("_" + MigrationName, customMessage: "this test owns the last migration");
+        // 02.5.3-T2 appended a migration after this one, so this class no longer owns the last-migration
+        // check (the new migration's own test does); it still proves its own migration is compiled in.
+        migrations.ShouldContain(name => name.EndsWith("_" + MigrationName, StringComparison.Ordinal));
         context.Database.HasPendingModelChanges().ShouldBeFalse();
 
         var property = context.Model.FindEntityType(typeof(Episode))!.FindProperty(nameof(Episode.ApprovedAt))!;
@@ -54,13 +56,13 @@ public sealed class EpisodeApprovedAtMigrationTests(TestDatabase database) : Int
         var episodeId = Guid.NewGuid();
         await using var context = Database.CreateAppDbContext();
         var migrations = context.Database.GetMigrations().Order(StringComparer.Ordinal).ToList();
-        migrations[^1].ShouldEndWith("_" + MigrationName, customMessage: "this test owns the last migration");
-        migrations.Count.ShouldBeGreaterThan(1);
+        var own = migrations.FindIndex(name => name.EndsWith("_" + MigrationName, StringComparison.Ordinal));
+        own.ShouldBeGreaterThan(0, "the migration must exist and have a previous one to revert to");
         var migrator = context.Database.GetService<IMigrator>();
 
         try
         {
-            await migrator.MigrateAsync(migrations[^2], Ct);
+            await migrator.MigrateAsync(migrations[own - 1], Ct);
             SqlProbe.Execute(
                 Database,
                 "INSERT INTO episodes (id, user_id, series_id, brief, length_tier, status, created_at, updated_at) "
@@ -68,7 +70,7 @@ public sealed class EpisodeApprovedAtMigrationTests(TestDatabase database) : Int
             var before = await EpisodeDataAsync(episodeId);
             before.ShouldHaveSingleItem();
 
-            await migrator.MigrateAsync(migrations[^1], Ct);
+            await migrator.MigrateAsync(migrations[own], Ct);
 
             (await Database.QueryStringsAsync(
                 $"SELECT (approved_at IS NULL)::text FROM episodes WHERE id = '{episodeId}'", Ct)).ShouldBe(["true"]);
@@ -76,7 +78,7 @@ public sealed class EpisodeApprovedAtMigrationTests(TestDatabase database) : Int
         }
         finally
         {
-            await migrator.MigrateAsync(migrations[^1], CancellationToken.None);
+            await context.Database.MigrateAsync(CancellationToken.None);
         }
     }
 
@@ -100,20 +102,27 @@ public sealed class EpisodeApprovedAtMigrationTests(TestDatabase database) : Int
             "SELECT tablename FROM pg_tables WHERE schemaname = 'public' ORDER BY tablename", Ct);
         await using var context = Database.CreateAppDbContext();
         var migrations = context.Database.GetMigrations().Order(StringComparer.Ordinal).ToList();
-        migrations[^1].ShouldEndWith("_" + MigrationName, customMessage: "this test owns the last migration");
-        migrations.Count.ShouldBeGreaterThan(1);
+        var own = migrations.FindIndex(name => name.EndsWith("_" + MigrationName, StringComparison.Ordinal));
+        own.ShouldBeGreaterThan(0, "the migration must exist and have a previous one to revert to");
         var migrator = context.Database.GetService<IMigrator>();
 
         try
         {
-            await migrator.MigrateAsync(migrations[^2], Ct);
+            // The migrator is linear: reverting to the migration before this one also reverts every later
+            // one, so a table a later migration adds is gone with it. Every table that existed before this
+            // migration must survive its Down.
+            await migrator.MigrateAsync(migrations[own - 1], Ct);
 
             (await EpisodeColumnsAsync()).ShouldBe(columnsBefore.Where(column => column != "approved_at").ToList());
             (await EpisodeDataAsync(episode.Id)).ShouldBe(before);
-            (await Database.QueryStringsAsync(
-                "SELECT tablename FROM pg_tables WHERE schemaname = 'public' ORDER BY tablename", Ct)).ShouldBe(tablesBefore);
+            var tablesAfter = await Database.QueryStringsAsync(
+                "SELECT tablename FROM pg_tables WHERE schemaname = 'public' ORDER BY tablename", Ct);
+            foreach (var table in tablesBefore.Where(table => table != "fact_sheets"))
+            {
+                tablesAfter.ShouldContain(table, "Down removes only approved_at; it must not drop a table");
+            }
 
-            await migrator.MigrateAsync(migrations[^1], Ct);
+            await migrator.MigrateAsync(migrations[own], Ct);
 
             (await EpisodeColumnsAsync()).ShouldBe(columnsBefore);
             (await EpisodeDataAsync(episode.Id)).ShouldBe(before);
@@ -122,7 +131,7 @@ public sealed class EpisodeApprovedAtMigrationTests(TestDatabase database) : Int
         }
         finally
         {
-            await migrator.MigrateAsync(migrations[^1], CancellationToken.None);
+            await context.Database.MigrateAsync(CancellationToken.None);
         }
     }
 

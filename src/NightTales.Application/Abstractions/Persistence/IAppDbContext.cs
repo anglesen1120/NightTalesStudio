@@ -55,6 +55,9 @@ public interface IAppDbContext
     /// <summary>The append-only url-source creation ledger the 24 h cap counts (02.5.1-T1, <c>source_creations</c>, CR-31); <c>IUserOwned</c>, so the D10 tenant filter applies.</summary>
     DbSet<SourceCreation> SourceCreations { get; }
 
+    /// <summary>The versioned fact sheets of one episode (02.5.3-T2, <c>fact_sheets</c>); <c>IUserOwned</c>, so the D10 tenant filter applies.</summary>
+    DbSet<FactSheet> FactSheets { get; }
+
     /// <summary>The legal deletion duties of 13.3.1-T1 (<c>data_deletion_requests</c>); <c>IUserOwned</c>, so the D10 tenant filter applies.</summary>
     DbSet<DeletionRequest> DeletionRequests { get; }
 

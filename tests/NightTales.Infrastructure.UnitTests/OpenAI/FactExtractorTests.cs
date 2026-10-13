@@ -7,6 +7,7 @@ using NightTales.Application.Abstractions.Research;
 using NightTales.Application.Abstractions.Text;
 using NightTales.Application.Features.Research.Facts;
 using NightTales.Domain.Common;
+using NightTales.Domain.Research;
 using NightTales.Domain.Series;
 using NightTales.Domain.Stories.Generation;
 using NightTales.Domain.Stories.Prompts;

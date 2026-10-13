@@ -5,6 +5,7 @@ using NightTales.Application.Abstractions.Compliance;
 using NightTales.Application.Abstractions.Research;
 using NightTales.Application.Abstractions.Stories;
 using NightTales.Application.Features.Account.Legal;
+using NightTales.Application.Features.Research.Jobs;
 using NightTales.Application.Features.Stories.Approval;
 using NightTales.Application.Features.Stories.Generation;
 using NightTales.Application.Features.Stories.Moderation;
@@ -75,6 +76,24 @@ public static class ApplicationServiceCollectionExtensions
         services.TryAddScoped<StoryWriteRequestFactory>();
         services.TryAddScoped<StoryGenerationProgress>();
         services.TryAddScoped<StoryGenerationPipeline>();
+
+        return services;
+    }
+
+    /// <summary>
+    /// Registers the fact-sheet generation job's services (02.5.3-T2, plan §7): the pipeline that claims a queued
+    /// <c>fact_sheet</c> run, extracts and validates its facts and saves the draft version. The Worker calls it; its
+    /// options (<c>FactSheet:Job</c>, and the job's own copy of the <c>Facts</c> budget) are bound in the Worker's
+    /// composition root, and the run's cost estimator (<c>IFactSheetCostEstimator</c>, the command's too) lives with
+    /// the usage metering both hosts compose, next to <c>IStoryCostEstimator</c>.
+    /// </summary>
+    /// <param name="services">The composition root's service collection.</param>
+    /// <returns>The same collection, for chaining.</returns>
+    public static IServiceCollection AddFactSheetGeneration(this IServiceCollection services)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+
+        services.TryAddScoped<GenerateFactSheetPipeline>();
 
         return services;
     }

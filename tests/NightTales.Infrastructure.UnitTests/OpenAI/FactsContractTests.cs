@@ -1,5 +1,6 @@
 using System.Text.Json;
 using NightTales.Application.Features.Research.Facts;
+using NightTales.Domain.Research;
 using NightTales.Infrastructure.OpenAI;
 using Shouldly;
 using Xunit;

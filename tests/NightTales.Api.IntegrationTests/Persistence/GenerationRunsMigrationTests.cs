@@ -87,13 +87,22 @@ public sealed class GenerationRunsMigrationTests(TestDatabase database) : Integr
                 + "ORDER BY conname")
             .ShouldBe(ExpectedChecks);
 
-        // "episode_id -> CASCADE" (acceptance check 3); the run table never holds a fact_sheets FK yet.
+        // "episode_id -> CASCADE" (acceptance check 3); the two fact-sheet columns became same-owner FKs in
+        // 02.5.3-T2 (02 CR-29) and are the nullable SET NULL pair next to result_story_version_id.
         SqlProbe.QueryStrings(
                 Database,
                 "SELECT a.attname || '|' || c.confdeltype::text FROM pg_constraint c "
                 + "JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = c.conkey[1] "
                 + "WHERE c.conrelid = 'generation_runs'::regclass AND c.contype = 'f' ORDER BY 1")
-            .ShouldBe(["episode_id|c", "result_story_version_id|n", "series_id|r", "user_id|r"]);
+            .ShouldBe(
+            [
+                "episode_id|c",
+                "input_fact_sheet_id|n",
+                "result_fact_sheet_id|n",
+                "result_story_version_id|n",
+                "series_id|r",
+                "user_id|r",
+            ]);
 
         var indexes = SqlProbe.QueryStrings(
             Database,
@@ -115,6 +124,9 @@ public sealed class GenerationRunsMigrationTests(TestDatabase database) : Integr
         indexes.ShouldContain(index => index.StartsWith("ix_generation_runs_sweep|", StringComparison.Ordinal)
             && index.Contains("COALESCE(started_at, queued_at)", StringComparison.Ordinal));
         indexes.ShouldContain(index => index.StartsWith("ix_generation_runs_user_id|", StringComparison.Ordinal));
+        // PF-1 (02.3.4-T2 hand-over, added by 02.5.3-T2): the latest run of an episode, newest first.
+        indexes.ShouldContain(index => index.StartsWith("ix_generation_runs_episode_created|", StringComparison.Ordinal)
+            && index.Contains("(episode_id, created_at DESC, id DESC)", StringComparison.Ordinal));
 
         context.Database.HasPendingModelChanges().ShouldBeFalse(
             "an entity change without a migration must fail here (run `dotnet ef migrations add`)");

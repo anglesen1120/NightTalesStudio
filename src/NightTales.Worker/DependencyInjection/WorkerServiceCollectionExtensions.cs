@@ -13,6 +13,7 @@ using NightTales.Application.Features.Assets.Jobs;
 using NightTales.Application.Features.Episodes.Outbox;
 using NightTales.Application.Features.Research.Fetcher;
 using NightTales.Application.Features.Research.Jobs;
+using NightTales.Application.Features.Research.Outbox;
 using NightTales.Application.Features.Research.Sources.Outbox;
 using NightTales.Application.Features.Stories.Jobs;
 using NightTales.Application.Features.Stories.Outbox;
@@ -194,6 +195,36 @@ public static class WorkerServiceCollectionExtensions
         services.AddOutboxHandler<StoryGenerationStageChanged, StoryGenerationStageChangedRealtimeHandler>();
         services.AddOutboxHandler<StoryGenerated, StoryGeneratedRealtimeHandler>();
         services.AddOutboxHandler<StoryGenerationFailed, StoryGenerationFailedRealtimeHandler>();
+
+        // 02.5.3-T2 (02 README D21, 02.5.3 plan §7): the fact-sheet generation job, the consumer of the
+        // `fact_sheet_generation_requested.v1` row the Api writes, and the two realtime consumers of its outcome. Every
+        // key of `FactSheet:Job` has a default, so none is a required start-up key; a value out of range fails the boot.
+        // The `Facts` budget is bound here for the pipeline and again by the OpenAI text client this root composes above
+        // (the adapter validates its own copy), and `IFactSheetCostEstimator` comes from the usage metering both hosts
+        // compose.
+        services.AddFactSheetGeneration();
+        services.AddOptions<FactSheetJobOptions>()
+            .BindConfiguration(FactSheetJobOptions.SectionName)
+            .Validate(
+                options => FactSheetJobOptions.Validate(options).Count == 0,
+                $"'{FactSheetJobOptions.SectionName}:{nameof(FactSheetJobOptions.TimeoutSeconds)}' must be between {FactSheetJobOptions.MinTimeoutSeconds} and {FactSheetJobOptions.MaxTimeoutSeconds} seconds.")
+            .ValidateOnStart();
+        services.AddSingleton(provider => provider.GetRequiredService<IOptions<FactSheetJobOptions>>().Value);
+
+        // The pipeline reads the same input budget the OpenAI extractor validates its request against, through its own
+        // options class because the Application layer cannot reference the Infrastructure one that binds the section for
+        // the adapter. Both are validated on start and read the same keys.
+        services.AddOptions<FactSheetExtractionOptions>()
+            .BindConfiguration(FactSheetExtractionOptions.SectionName)
+            .Validate(
+                options => FactSheetExtractionOptions.Validate(options).Count == 0,
+                $"'{FactSheetExtractionOptions.SectionName}' must hold the fact-extraction budget keys with values in range.")
+            .ValidateOnStart();
+        services.AddSingleton(provider => provider.GetRequiredService<IOptions<FactSheetExtractionOptions>>().Value);
+
+        services.AddOutboxHandler<FactSheetGenerationRequested, GenerateFactSheetJobHandler>();
+        services.AddOutboxHandler<FactSheetGenerated, FactSheetGeneratedRealtimeHandler>();
+        services.AddOutboxHandler<FactSheetGenerationFailed, FactSheetGenerationFailedRealtimeHandler>();
 
         // 11.3.3-T1 (11 README D13/F09–F13): the render-node registry, the pinned-TLS connection factory,
         // the health cache, the drift/up instruments and the config seeder. The optional `RenderNodes`

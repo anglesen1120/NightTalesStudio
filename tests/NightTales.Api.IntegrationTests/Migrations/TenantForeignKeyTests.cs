@@ -39,9 +39,13 @@ public sealed class TenantForeignKeyTests(TestDatabase database) : IntegrationTe
         "episodes.current_story_version_id,user_id->story_versions(id,user_id)",
         "episodes.final_video_asset_id,user_id->assets(id,user_id)",
         "episodes.series_id,user_id->series(id,user_id)",
+        "fact_sheets.episode_id,user_id->episodes(id,user_id)",
+        "fact_sheets.generation_run_id,user_id->generation_runs(id,user_id)",
         "fetch_tasks.episode_id,user_id->episodes(id,user_id)",
         "fetch_tasks.source_id,user_id->story_sources(id,user_id)",
         "generation_runs.episode_id,user_id->episodes(id,user_id)",
+        "generation_runs.input_fact_sheet_id,user_id->fact_sheets(id,user_id)",
+        "generation_runs.result_fact_sheet_id,user_id->fact_sheets(id,user_id)",
         "generation_runs.result_story_version_id,user_id->story_versions(id,user_id)",
         "generation_runs.series_id,user_id->series(id,user_id)",
         "moderation_events.episode_id,user_id->episodes(id,user_id)",
@@ -49,6 +53,7 @@ public sealed class TenantForeignKeyTests(TestDatabase database) : IntegrationTe
         "series_autopilot_authorizations.series_id,user_id->series(id,user_id)",
         "story_sources.episode_id,user_id->episodes(id,user_id)",
         "story_versions.episode_id,user_id->episodes(id,user_id)",
+        "story_versions.fact_sheet_id,user_id->fact_sheets(id,user_id)",
         "story_versions.generation_run_id,user_id->generation_runs(id,user_id)",
         "story_versions.parent_version_id,user_id->story_versions(id,user_id)",
         "usage_records.episode_id,user_id->episodes(id,user_id)",
@@ -68,6 +73,12 @@ public sealed class TenantForeignKeyTests(TestDatabase database) : IntegrationTe
         + "REFERENCES episodes(id, user_id) ON DELETE SET NULL (episode_id)",
         "fk_episodes_assets_final_video_asset_id_user_id|FOREIGN KEY (final_video_asset_id, user_id) "
         + "REFERENCES assets(id, user_id) ON DELETE SET NULL (final_video_asset_id)",
+        "fk_fact_sheets_generation_runs_generation_run_id_user_id|FOREIGN KEY (generation_run_id, user_id) "
+        + "REFERENCES generation_runs(id, user_id) ON DELETE SET NULL (generation_run_id)",
+        "fk_generation_runs_fact_sheets_input_fact_sheet_id_user_id|FOREIGN KEY (input_fact_sheet_id, user_id) "
+        + "REFERENCES fact_sheets(id, user_id) ON DELETE SET NULL (input_fact_sheet_id)",
+        "fk_generation_runs_fact_sheets_result_fact_sheet_id_user_id|FOREIGN KEY (result_fact_sheet_id, user_id) "
+        + "REFERENCES fact_sheets(id, user_id) ON DELETE SET NULL (result_fact_sheet_id)",
         "fk_generation_runs_story_versions_result_story_version_id_user|FOREIGN KEY (result_story_version_id, "
         + "user_id) REFERENCES story_versions(id, user_id) ON DELETE SET NULL (result_story_version_id)",
         "fk_refresh_tokens_refresh_tokens_replaced_by_id|FOREIGN KEY (replaced_by_id) "
@@ -75,6 +86,8 @@ public sealed class TenantForeignKeyTests(TestDatabase database) : IntegrationTe
         "fk_series_series_autopilot_authorizations_current_autopilot_au|FOREIGN KEY "
         + "(current_autopilot_authorization_id, user_id) REFERENCES series_autopilot_authorizations(id, user_id) "
         + "ON DELETE SET NULL (current_autopilot_authorization_id)",
+        "fk_story_versions_fact_sheets_fact_sheet_id_user_id|FOREIGN KEY (fact_sheet_id, user_id) "
+        + "REFERENCES fact_sheets(id, user_id) ON DELETE SET NULL (fact_sheet_id)",
         "fk_story_versions_generation_runs_generation_run_id_user_id|FOREIGN KEY (generation_run_id, user_id) "
         + "REFERENCES generation_runs(id, user_id) ON DELETE SET NULL (generation_run_id)",
         "fk_story_versions_story_versions_parent_version_id_user_id|FOREIGN KEY (parent_version_id, user_id) "
@@ -88,8 +101,9 @@ public sealed class TenantForeignKeyTests(TestDatabase database) : IntegrationTe
     /// <summary>
     /// One cross-tenant write: the label and an insert whose <c>user_id</c> belongs to user B while the
     /// parent reference belongs to user A. <c>{a}</c>, <c>{b}</c>, <c>{s_a}</c>, <c>{s_b}</c>,
-    /// <c>{ep_a}</c>, <c>{asset_a}</c>, <c>{version_a}</c>, <c>{auth_a}</c>, <c>{version_a}</c>,
-    /// <c>{template}</c>, <c>{voice}</c> and <c>{uid}</c> (a fresh unique token) are filled by the test.
+    /// <c>{ep_a}</c>, <c>{ep_b}</c>, <c>{asset_a}</c>, <c>{version_a}</c>, <c>{run_a}</c>, <c>{fs_a}</c>,
+    /// <c>{auth_a}</c>, <c>{template}</c>, <c>{voice}</c> and <c>{uid}</c> (a fresh unique token) are
+    /// filled by the test.
     /// </summary>
     public static TheoryData<string, string> CrossTenantWrites => new()
     {
@@ -186,10 +200,28 @@ public sealed class TenantForeignKeyTests(TestDatabase database) : IntegrationTe
             + "'{s_b}', 'ideas', 'user', 'queued', 'queued', 0, '{version_a}', now(), now(), now())"
         },
         {
+            "generation_runs.input_fact_sheet_id",
+            "INSERT INTO generation_runs (id, user_id, series_id, kind, \"trigger\", status, stage, worst_case_usd, "
+            + "input_fact_sheet_id, queued_at, created_at, updated_at) VALUES (gen_random_uuid(), '{b}', "
+            + "'{s_b}', 'ideas', 'user', 'queued', 'queued', 0, '{fs_a}', now(), now(), now())"
+        },
+        {
+            "generation_runs.result_fact_sheet_id",
+            "INSERT INTO generation_runs (id, user_id, series_id, kind, \"trigger\", status, stage, worst_case_usd, "
+            + "result_fact_sheet_id, queued_at, created_at, updated_at) VALUES (gen_random_uuid(), '{b}', "
+            + "'{s_b}', 'ideas', 'user', 'queued', 'queued', 0, '{fs_a}', now(), now(), now())"
+        },
+        {
             "story_versions.generation_run_id",
             "INSERT INTO story_versions (id, user_id, episode_id, version, source, title, body, keywords, "
             + "word_count, content, generation_run_id, created_at) VALUES (gen_random_uuid(), '{b}', '{ep_b}', 1, "
             + "'generated', 't', 'b', '{}', 1, '{}'::jsonb, '{run_a}', now())"
+        },
+        {
+            "story_versions.fact_sheet_id",
+            "INSERT INTO story_versions (id, user_id, episode_id, version, source, title, body, keywords, "
+            + "word_count, content, fact_sheet_id, created_at) VALUES (gen_random_uuid(), '{b}', '{ep_b}', 1, "
+            + "'generated', 't', 'b', '{}', 1, '{}'::jsonb, '{fs_a}', now())"
         },
         {
             "story_versions.parent_version_id",
@@ -220,6 +252,20 @@ public sealed class TenantForeignKeyTests(TestDatabase database) : IntegrationTe
             + "INSERT INTO fetch_tasks (id, user_id, episode_id, source_id, kind, url, registrable_domain, status, "
             + "attempts, not_before, created_at) SELECT gen_random_uuid(), '{b}', '{ep_b}', s.id, 'fetch_source', "
             + "'https://a.example/y', 'a.example', 'queued', 0, now(), now() FROM s"
+        },
+        {
+            "fact_sheets.episode_id",
+            "INSERT INTO fact_sheets (id, user_id, episode_id, version, status, facts, source_aliases, "
+            + "input_truncated, max_fact_id, content_sha256, prompt_version, created_by, created_at, updated_at) "
+            + "VALUES (gen_random_uuid(), '{b}', '{ep_a}', 2, 0, '[]'::jsonb, '{}'::jsonb, false, 0, "
+            + "repeat('a', 64), 'user', '{b}', now(), now())"
+        },
+        {
+            "fact_sheets.generation_run_id",
+            "INSERT INTO fact_sheets (id, user_id, episode_id, version, status, facts, source_aliases, "
+            + "input_truncated, max_fact_id, content_sha256, generation_run_id, prompt_version, created_by, "
+            + "created_at, updated_at) VALUES (gen_random_uuid(), '{b}', '{ep_b}', 1, 0, '[]'::jsonb, "
+            + "'{}'::jsonb, false, 0, repeat('a', 64), '{run_a}', 'user', '{b}', now(), now())"
         },
     };
 
@@ -303,7 +349,7 @@ public sealed class TenantForeignKeyTests(TestDatabase database) : IntegrationTe
                       AND c.connamespace = 'public'::regnamespace
                       AND array_length(c.conkey, 1) = 1
                       AND pl.relname IN ('series', 'episodes', 'assets', 'story_versions',
-                                         'series_autopilot_authorizations', 'story_sources')
+                                         'series_autopilot_authorizations', 'story_sources', 'fact_sheets')
                 ORDER BY 1
                 """)
             .ShouldBeEmpty();
@@ -400,6 +446,15 @@ public sealed class TenantForeignKeyTests(TestDatabase database) : IntegrationTe
             + $"('{authorizationA}', '{owner.Id}', '{seriesA.Id}', 1, 'v1', repeat('a', 64), 'ghost', 'weekly', "
             + $"'private', now(), now(), now())");
 
+        // 02.5.3-T2: the fact sheet of user A that the three CR-29 cross-tenant cases point at.
+        var factSheetA = Guid.CreateVersion7();
+        SqlProbe.Execute(
+            Database,
+            $"INSERT INTO fact_sheets (id, user_id, episode_id, version, status, facts, source_aliases, "
+            + $"input_truncated, max_fact_id, content_sha256, prompt_version, created_by, created_at, updated_at) "
+            + $"VALUES ('{factSheetA}', '{owner.Id}', '{episodeA.Id}', 1, 0, '[]'::jsonb, '{{}}'::jsonb, false, 0, "
+            + $"repeat('a', 64), 'user', '{owner.Id}', now(), now())");
+
         var template = await seriesBuilder.EnsureStyleTemplateAsync(ct: ct);
 
         return new Fixtures(
@@ -413,6 +468,7 @@ public sealed class TenantForeignKeyTests(TestDatabase database) : IntegrationTe
             versionA,
             runA,
             authorizationA,
+            factSheetA,
             template.Id);
     }
 
@@ -424,6 +480,7 @@ public sealed class TenantForeignKeyTests(TestDatabase database) : IntegrationTe
         .Replace("{ep_a}", fixtures.EpisodeA.ToString(), StringComparison.Ordinal)
         .Replace("{ep_b}", fixtures.EpisodeB.ToString(), StringComparison.Ordinal)
         .Replace("{run_a}", fixtures.GenerationRunA.ToString(), StringComparison.Ordinal)
+        .Replace("{fs_a}", fixtures.FactSheetA.ToString(), StringComparison.Ordinal)
         .Replace("{asset_a}", fixtures.AssetA.ToString(), StringComparison.Ordinal)
         .Replace("{version_a}", fixtures.StoryVersionA.ToString(), StringComparison.Ordinal)
         .Replace("{auth_a}", fixtures.AuthorizationA.ToString(), StringComparison.Ordinal)
@@ -443,5 +500,6 @@ public sealed class TenantForeignKeyTests(TestDatabase database) : IntegrationTe
         Guid StoryVersionA,
         Guid GenerationRunA,
         Guid AuthorizationA,
+        Guid FactSheetA,
         Guid StyleTemplate);
 }

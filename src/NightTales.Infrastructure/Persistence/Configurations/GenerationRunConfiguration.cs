@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using NightTales.Domain.Episodes;
+using NightTales.Domain.Research;
 using NightTales.Domain.Series;
 using NightTales.Domain.Stories;
 using NightTales.Domain.Stories.Generation;
@@ -24,10 +25,14 @@ namespace NightTales.Infrastructure.Persistence.Configurations;
 /// <para>
 /// Every same-owner foreign key is composite <c>(parent_id, user_id)</c> (09 W3 CR-46, see
 /// <see cref="SeriesConfiguration"/>), so a run can never point at another user's episode or version. The
-/// nullable <c>SET NULL</c> one (<c>result_story_version_id</c>) nulls only its parent column — the migration
-/// spells that with raw SQL, as <c>InitialCore</c> does. <c>input_fact_sheet_id</c> and
-/// <c>result_fact_sheet_id</c> are plain columns until 02.5.3-T2 creates <c>fact_sheets</c> and adds the two
-/// <c>ON DELETE SET NULL</c> constraints.
+/// nullable <c>SET NULL</c> ones (<c>result_story_version_id</c>, and 02.5.3-T2's <c>input_fact_sheet_id</c> and
+/// <c>result_fact_sheet_id</c>) null only their parent column — the migration spells that with raw SQL, as
+/// <c>InitialCore</c> does. The two fact-sheet constraints are the deferred half of 02 CR-29: the columns have
+/// existed since <c>02_GenerationRuns</c>, and 02.5.3-T2 is what gives them a parent.
+/// </para>
+/// <para>
+/// PF-1 (02.3.4-T2 hand-over) is <c>ix_generation_runs_episode_created</c>: the episode-detail query reads the
+/// latest run of an episode ordered <c>created_at DESC, id DESC</c>, so the index carries that exact order.
 /// </para>
 /// <para>
 /// The partial unique indexes are the second backstop of "one active run per (episode, kind)" behind the episode
@@ -85,6 +90,15 @@ internal sealed class GenerationRunConfiguration : IEntityTypeConfiguration<Gene
             .HasForeignKey(run => new { run.ResultStoryVersionId, run.UserId })
             .HasPrincipalKey(version => new { version.Id, version.UserId })
             .OnDelete(DeleteBehavior.SetNull);
+        // 02 CR-29, added by 02.5.3-T2: the fact-sheet columns become same-owner FKs to fact_sheets(id, user_id).
+        builder.HasOne<FactSheet>().WithMany()
+            .HasForeignKey(run => new { run.InputFactSheetId, run.UserId })
+            .HasPrincipalKey(sheet => new { sheet.Id, sheet.UserId })
+            .OnDelete(DeleteBehavior.SetNull);
+        builder.HasOne<FactSheet>().WithMany()
+            .HasForeignKey(run => new { run.ResultFactSheetId, run.UserId })
+            .HasPrincipalKey(sheet => new { sheet.Id, sheet.UserId })
+            .OnDelete(DeleteBehavior.SetNull);
         builder.HasOne<AppUser>().WithMany().HasForeignKey(run => run.UserId).OnDelete(DeleteBehavior.Restrict);
 
         // At most one active run per episode and kind (409 story_generation_in_progress, …) ...
@@ -103,6 +117,12 @@ internal sealed class GenerationRunConfiguration : IEntityTypeConfiguration<Gene
         builder.HasIndex(run => new { run.EpisodeId, run.Kind, run.QueuedAt })
             .HasDatabaseName("ix_generation_runs_episode_kind_queued")
             .IsDescending(false, false, true);
+
+        // PF-1 (02.3.4-T2 hand-over): "the latest run of this episode", read as
+        // ORDER BY created_at DESC, id DESC LIMIT 1 (episode detail, run status).
+        builder.HasIndex(run => new { run.EpisodeId, run.CreatedAt, run.Id })
+            .HasDatabaseName("ix_generation_runs_episode_created")
+            .IsDescending(false, true, true);
 
         // IBudgetGuard's open bounds: only the queued and running rows, covering worst_case_usd.
         builder.HasIndex(run => run.Status)
