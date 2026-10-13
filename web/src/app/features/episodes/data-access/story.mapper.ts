@@ -37,10 +37,10 @@ const MAX_QUALITY_HINTS = 200;
  * lone high surrogate and the rendered evidence becomes an unpaired replacement glyph. When the pair straddles the
  * cap, the high surrogate at `cap - 1` is dropped with it (199 chars, never 200 with half a character).
  */
-function truncateEvidence(evidence: string): string {
-  if (evidence.length <= MAX_HINT_EVIDENCE) return evidence;
-  const last = evidence.charCodeAt(MAX_HINT_EVIDENCE - 1);
-  return evidence.slice(0, last >= 0xd800 && last <= 0xdbff ? MAX_HINT_EVIDENCE - 1 : MAX_HINT_EVIDENCE);
+function truncateEvidence(evidence: string, cap = MAX_HINT_EVIDENCE): string {
+  if (evidence.length <= cap) return evidence;
+  const last = evidence.charCodeAt(cap - 1);
+  return evidence.slice(0, last >= 0xd800 && last <= 0xdbff ? cap - 1 : cap);
 }
 
 /**
@@ -57,8 +57,8 @@ function mapHint(dto: unknown): QualityHint | null {
   const evidence = source['evidence'];
   const repairDirection = source['repairDirection'];
   const segment = source['segment'];
-  if (typeof ruleId !== 'string' || !MESSAGE_KEY_PATTERN.test(ruleId)) return null;
-  if (typeof messageKey !== 'string' || !MESSAGE_KEY_PATTERN.test(messageKey)) return null;
+  if (typeof ruleId !== 'string' || ruleId.length > 64 || !MESSAGE_KEY_PATTERN.test(ruleId)) return null;
+  if (typeof messageKey !== 'string' || messageKey.length > 128 || !MESSAGE_KEY_PATTERN.test(messageKey)) return null;
   if (typeof evidence !== 'string') return null;
   if (repairDirection !== null && repairDirection !== undefined && typeof repairDirection !== 'string') return null;
   const address = typeof segment === 'string' ? parseAddress(segment) : null;
@@ -69,7 +69,7 @@ function mapHint(dto: unknown): QualityHint | null {
     segment: address === null ? null : formatAddress(address.kind, address.index ?? undefined),
     messageKey,
     evidence: truncateEvidence(evidence),
-    repairDirection: typeof repairDirection === 'string' ? repairDirection : null,
+    repairDirection: typeof repairDirection === 'string' ? truncateEvidence(repairDirection, 300) : null,
   };
 }
 

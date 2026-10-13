@@ -83,6 +83,7 @@
     "meta": "Whole episode",
     "unresolved": "This part is no longer in your draft",
     "announce": "{{count}} suggestions",
+    "announceOne": "1 suggestion",
     "announceNone": "No suggestions"
   },
   "editor": {
@@ -115,8 +116,8 @@
     "addKeyword": "Add scene",
     "removeKeyword": "Remove scene",
     "keywordLimit": "Each paragraph needs 1–2 scenes",
-    "keywordFlagged": "Flagged scene",
-    "keywordFlaggedHint": "This scene needs a change before you continue.",
+    "keywordFlagged": "Scene needs a change",
+    "keywordFlaggedHint": "Fix this scene before making the video",
     "tokens": "{{count}} words",
     "totalTokens": "{{count}} words total",
     "description": "Description",
@@ -218,7 +219,6 @@
     "elsewhereTitle": "The story changed elsewhere",
     "elsewhereBody": "Another tab or person saved a newer version. Your draft is left untouched.",
     "dismiss": "Dismiss",
-    "reloadFailed": "The latest version could not be loaded. Try again.",
-    "retry": "Try again"
+    "reloadFailed": "The latest version could not be loaded. Your text is untouched. Choose Reload latest to try again."
   }
 }

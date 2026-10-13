@@ -202,6 +202,28 @@ describe('StoryEditorStore QA', () => {
     });
   });
 
+  describe('409 keywords_flagged boundaries', () => {
+    it('a refusal with no usable row points at no chip: the flags already on screen stay and the copy is the error copy', async () => {
+      const h = await loaded(); h.store.setSegmentText('title', 'mine');
+      expect(h.store.setKeywordFlags([{ address: 'p:0', index: 0, rule: 'no_scenes' }])).toBe(true);
+      failWith(h, appError('keywords_flagged', 409, { problem: { errors: [{ segment: 7, index: 1, rule: 'keyword_invalid' }] } }));
+      await h.store.saveVersion();
+      // `applyKeywordsFlaggedProblem` reports false for a row set it cannot use, so the caller keeps its own error copy
+      // and nothing on screen is replaced by an empty flag set.
+      expect(h.store.keywordFlags()).toEqual([{ address: 'p:0', index: 0, rule: 'no_scenes' }]);
+      expect(h.store.formErrors()).toEqual(['errors.keywords_flagged']);
+      expect(h.store.hasUnsavedChanges()).toBe(true); expect(h.store.saving()).toBe(false);
+    });
+
+    it('a flag list for another episode is refused and leaves the current chips alone', async () => {
+      const h = await loaded();
+      expect(h.store.setKeywordFlags([{ address: 'p:1', index: 1, rule: 'keyword_name_detected' }], 'episode-b')).toBe(false);
+      expect(h.store.keywordFlags()).toEqual([]); expect(h.store.videoBlocked()).toBe(false);
+      expect(h.store.setKeywordFlags([{ address: 'p:1', index: 1, rule: 'keyword_name_detected' }], EPISODE_ID)).toBe(true);
+      expect(h.store.keywordFlags()).toHaveLength(1); expect(h.store.videoBlocked()).toBe(true);
+    });
+  });
+
   describe('412 conflict boundaries', () => {
     it('a second plain save after Cancel gets 412 again: no automatic retry, draft and ETag untouched', async () => {
       const h = await loaded(); h.store.setSegmentText('title', 'mine');
@@ -263,6 +285,8 @@ describe('StoryEditorStore QA', () => {
       expect(h.stories.calls).toHaveLength(1);
       expect(h.episodes.getCalls).toHaveLength(2); expect(h.episodes.getCalls[1]).toEqual({ episodeId: EPISODE_ID, userAction: true });
       expect(h.store.conflict()).not.toBeNull(); expect(h.store.saving()).toBe(false); expect(h.store.conflictDiff()).toEqual([]);
+      // That one read answered without a server story, so the empty list is an unknown diff, never "nothing differs".
+      expect(h.store.conflictDiffKnown()).toBe(false);
     });
   });
 

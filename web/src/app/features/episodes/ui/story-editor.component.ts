@@ -15,6 +15,16 @@ import { EMPTY_ERRORS, equalStrings } from './story-editor.view-model';
 import { StorySaveBarComponent } from './story-save-bar.component';
 import type { SceneSegmentViewModel, SegmentNavViewModel, SegmentTexts, StoryEditorIntent, StoryEditorViewModel } from './story-editor.view-model';
 
+/**
+ * One polite announcement for the editor's live region (10.5.10-T1). `text` is already translated and frozen for
+ * `sequence`; the sequence is the track key, so a new one re-creates the announced node even when two saves report the
+ * same count — the region mutates and speaks again, with no trailing-space trick and no timer.
+ */
+export interface StoryEditorAnnouncement {
+  readonly text: string;
+  readonly sequence: number;
+}
+
 @Component({
   selector: 'nts-story-editor',
   imports: [TranslocoPipe, AnnotationPanelComponent, ParagraphListComponent, SceneStripComponent, SegmentEditorComponent, SegmentNavComponent, StoryMetaEditorComponent, StorySaveBarComponent],
@@ -27,7 +37,12 @@ export class StoryEditorComponent {
   readonly viewModel = input.required<StoryEditorViewModel>();
   readonly segmentTexts = input.required<SegmentTexts>();
   readonly annotationViews = input<AnnotationViews>(EMPTY_ANNOTATION_VIEWS);
-  readonly announcement = input<string | null>(null);
+  readonly announcement = input<StoryEditorAnnouncement | null>(null);
+  /** `@for` source: an empty list renders nothing, a new `sequence` re-creates the announced node. */
+  protected readonly announcementQueue = computed<readonly StoryEditorAnnouncement[]>(() => {
+    const announcement = this.announcement();
+    return announcement === null ? [] : [announcement];
+  });
   protected readonly emptyAnnotations: readonly InlineAnnotationViewModel[] = [];
   protected readonly emptyFlags: ReadonlyMap<number, { readonly annotationId: string; readonly messageKey: string }> = new Map();
   readonly intent = output<StoryEditorIntent>();

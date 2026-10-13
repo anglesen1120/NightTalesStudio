@@ -41,14 +41,22 @@ describe('AnnotationPanelComponent', () => {
     expect(root.querySelector('.annotation-panel__count')?.textContent).toContain('3');
     expect(root.querySelector('.annotation-panel__placeholder.annotation-panel__body')).not.toBeNull();
     expect(root.querySelector('[role="note"]')).toBeNull();
+    const placeholder = root.querySelector<HTMLElement>('.annotation-panel__placeholder')!;
+    expect(placeholder.getAttribute('aria-hidden')).toBeNull();
+    expect(placeholder.getAttribute('role')).toBe('group');
+    expect(placeholder.getAttribute('aria-label')).toBe(episodesVi.annotations.heading);
+    expect(root.querySelector('.annotation-panel')?.getAttribute('aria-label')).toBeNull();
+    expect([...placeholder.querySelectorAll('h3')].map((heading) => heading.textContent?.replace(/\s+/g, ' ').trim()))
+      .toEqual([episodesVi.annotations.objective + ' 2', episodesVi.annotations.taste + ' 1']);
     const blocks = await fixture.getDeferBlocks();
     await blocks[0]!.render(DeferBlockState.Complete);
     fixture.detectChanges(); await fixture.whenStable();
-    expect([...root.querySelectorAll('h3')].map((heading) => heading.textContent?.trim())).toEqual([episodesVi.annotations.objective, episodesVi.annotations.taste]);
-    expect([...root.querySelectorAll('[role="note"]')].map((element) => element.id)).toEqual(['ann-hook-first-panel', 'ann-meta-second-panel', 'ann-unresolved-third-panel']);
+    expect([...root.querySelectorAll('h3')].map((heading) => heading.textContent?.replace(/\s+/g, ' ').trim())).toEqual([episodesVi.annotations.objective + ' 2', episodesVi.annotations.taste + ' 1']);
+    expect([...root.querySelectorAll('[role="note"]')].map((element) => element.id)).toEqual(['ann-hook-first__panel', 'ann-meta-second__panel', 'ann-unresolved-third__panel']);
     expect(root.textContent).toContain(episodesVi.annotations.meta);
     expect(root.textContent).toContain(episodesVi.annotations.unresolved);
     expect(root.querySelector('.annotation-panel__body')).not.toBeNull();
+    expect(root.querySelector('.annotation-panel__body')?.getAttribute('role')).toBe('group');
     expect(root.querySelector('[aria-live]')).toBeNull();
   });
 
@@ -81,6 +89,23 @@ describe('AnnotationPanelComponent', () => {
     expect(rendered?.textContent).toContain(qualityVi.scenes_sparse);
     expect(rendered?.textContent).toContain(episodesVi.annotations.meta);
     expect(root.textContent, 'the raw key is never the copy').not.toContain('quality.scenes_sparse');
+  });
+
+  it('does not collide panel-copy ids with inline ids from x-panel or double-underscore rules', async () => {
+    const rows: readonly SegmentAnnotation[] = ['x', 'x-panel', 'x__panel', 'x_panel'].map((ruleId, index) => ({
+      id: ['ann-hook-x', 'ann-hook-x-panel', 'ann-hook-x_panel', 'ann-hook-x_panel-2'][index]!,
+      ruleId, severity: 'advisory', kind: 'objective', address: 'hook', placement: 'inline', source: 'hint', keywordIndex: null,
+      messageKey: 'episodes.annotations.unknown', evidence: '', repairDirection: null,
+    }));
+    const views = buildAnnotationViews(rows, { hasKey: () => true });
+    const { fixture, root } = await setup(views.panel);
+    const blocks = await fixture.getDeferBlocks();
+    await blocks[0]!.render(DeferBlockState.Complete);
+    fixture.detectChanges(); await fixture.whenStable();
+    const panelIds = [...root.querySelectorAll('[role="note"]')].map((element) => element.id);
+    const inlineIds = rows.map((row) => row.id);
+    expect(new Set([...inlineIds, ...panelIds]).size).toBe(rows.length * 2);
+    expect(root.querySelectorAll('button')).toHaveLength(rows.length);
   });
 
   it('forwards go-to only for an address with a segment control', async () => {

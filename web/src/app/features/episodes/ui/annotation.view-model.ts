@@ -19,7 +19,6 @@ export interface AnnotationViewOptions {
   readonly hasKey: (key: string) => boolean;
   readonly warnUnknown?: (key: string) => void;
 }
-const warnedKeys = new Set<string>();
 
 function equalItem(left: InlineAnnotationViewModel, right: InlineAnnotationViewModel): boolean {
   return left.id === right.id && left.address === right.address && left.ruleId === right.ruleId &&
@@ -37,6 +36,7 @@ export function buildAnnotationViews(annotations: readonly SegmentAnnotation[], 
   const inline = new Map<SegmentAddress, InlineAnnotationViewModel[]>();
   const flags = new Map<SegmentAddress, Map<number, { readonly annotationId: string; readonly messageKey: string }>>();
   const objective: InlineAnnotationViewModel[] = [], taste: InlineAnnotationViewModel[] = [];
+  const warnedKeys = new Set<string>();
   for (const annotation of annotations) {
     const parsed = annotation.address === null ? null : parseAddress(annotation.address);
     const address = parsed === null ? null : annotation.address;
@@ -64,7 +64,7 @@ export function buildAnnotationViews(annotations: readonly SegmentAnnotation[], 
     } else {
       let items = inline.get(address);
       if (items === undefined) { items = []; inline.set(address, items); }
-      items.push(item);
+      items.push({ ...item, canGoTo: false });
     }
   }
   const stableInline = new Map<SegmentAddress, readonly InlineAnnotationViewModel[]>();

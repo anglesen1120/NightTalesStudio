@@ -1,5 +1,5 @@
 <div class="story-editor">
-  <div class="story-editor__annotation-announcement" aria-live="polite" aria-atomic="true">{{ announcement() }}</div>
+  <div class="story-editor__annotation-announcement" aria-live="polite" aria-atomic="true">@for (announcement of announcementQueue(); track announcement.sequence) {<span>{{ announcement.text }}</span>}</div>
   <nts-segment-nav [segments]="textSegments()" (openSegment)="open($event)" />
   @if (viewModel().structureWarning) {
     <p class="story-editor__structure-warning" role="status">{{ 'episodes.editor.structureWarning' | transloco }}</p>

@@ -181,7 +181,7 @@ describe('StoryEditorComponent', () => {
     const meta: SegmentAnnotation = { ...annotation, id: 'ann-meta-sparse', address: 'meta', placement: 'panel' };
     const views = buildAnnotationViews([annotation, keyword, meta], { hasKey: () => true });
     fixture.componentRef.setInput('annotationViews', views);
-    fixture.componentRef.setInput('announcement', '3 suggestions');
+    fixture.componentRef.setInput('announcement', { text: '3 suggestions', sequence: 1 });
     fixture.detectChanges(); await fixture.whenStable();
     const textarea = root.querySelector<HTMLTextAreaElement>('textarea[data-segment="p:0"]')!;
     expect(textarea.getAttribute('aria-describedby')).toContain(annotation.id);
@@ -193,12 +193,19 @@ describe('StoryEditorComponent', () => {
     expect(root.querySelectorAll('.story-editor__annotation-announcement[aria-live="polite"]')).toHaveLength(1);
     expect(root.querySelector('.story-editor__annotation-announcement')?.textContent).toBe('3 suggestions');
     expect(root.querySelector('nts-annotation-panel [aria-live]')).toBeNull();
+    // A new sequence re-creates the announced node, so a repeated count still mutates the live region.
+    const announced = root.querySelector('.story-editor__annotation-announcement span');
+    fixture.componentRef.setInput('announcement', { text: '3 suggestions', sequence: 2 });
+    fixture.detectChanges(); await fixture.whenStable();
+    expect(root.querySelector('.story-editor__annotation-announcement span')).not.toBe(announced);
     const emitted: unknown[] = [];
     onEmit(component.intent, (intent) => emitted.push(intent));
-    root.querySelector<HTMLButtonElement>('#ann-p-0-Q-LEN-01 button')!.click();
-    expect(emitted).toEqual([{ kind: 'openSegment', address: 'p:0' }]);
+    // The inline note sits at the segment it is about and offers no navigation button; the panel item is the way back.
+    expect(root.querySelector('#ann-p-0-Q-LEN-01 button')).toBeNull();
     const panel = fixture.debugElement.query(By.directive(AnnotationPanelComponent)).componentInstance as AnnotationPanelComponent;
     expect(panel.viewModel()).toBe(views.panel);
+    panel.focusRequested.emit(views.panel.groups[0]!.items[0]!);
+    expect(emitted).toEqual([{ kind: 'openSegment', address: 'p:0' }]);
     const segment = fixture.debugElement.queryAll(By.directive(SegmentEditorComponent)).map((element) => element.componentInstance as SegmentEditorComponent).find((item) => item.viewModel().address === 'p:0')!;
     expect(segment.annotations()).toBe(views.inline.get('p:0'));
     const initialText = viewModel();

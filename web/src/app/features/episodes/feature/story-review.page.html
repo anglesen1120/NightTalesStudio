@@ -45,9 +45,9 @@
       }
 
       @if (store.remoteChange() !== null && !conflictDialogOpen()) {
-        <section class="story-review-page__notice story-review-page__notice--remote" role="status" aria-labelledby="story-remote-heading">
+        <section class="story-review-page__notice story-review-page__notice--remote" aria-labelledby="story-remote-heading">
           <h2 id="story-remote-heading">{{ 'episodes.conflict.elsewhereTitle' | transloco }}</h2>
-          <p>{{ 'episodes.conflict.elsewhereBody' | transloco }}</p>
+          <p role="status">{{ 'episodes.conflict.elsewhereBody' | transloco }}</p>
           @if (remoteNoticeLabels().length > 0) {
             <ul class="story-review-page__diff">
               @for (label of remoteNoticeLabels(); track $index) {

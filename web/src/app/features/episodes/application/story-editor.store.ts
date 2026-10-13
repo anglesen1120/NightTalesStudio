@@ -34,6 +34,8 @@ const EMPTY_HINTS: readonly QualityHint[] = Object.freeze([]);
 const TIER_SEGMENTS: Readonly<Record<string, readonly [number, number]>> = Object.freeze({ short: [4, 5], standard: [20, 32], long: [40, 60] });
 /** The undo buffer holds one paragraph for this long; the snackbar action shares the window. */
 export const UNDO_WINDOW_MS = 10_000;
+/** Same ceiling as `keyword-flags.mapper`: a remapped set is a subset of the accepted one, and never grows past it. */
+const MAX_KEYWORD_FLAGS = 100;
 
 /** A deleted paragraph and where it goes back. `text` is kept as removed: an edit made after the delete is not re-applied. */
 export interface RemovedParagraph { readonly paragraph: ParagraphState; readonly index: number }
@@ -80,6 +82,8 @@ export class StoryEditorStore {
   readonly conflict = signal<true | null>(null);
   /** Segments that differ between my draft and the server's story; `[]` when the server content is unknown. */
   readonly conflictDiff = signal<readonly SegmentAddress[]>([]);
+  /** True only after a diff read for the current conflict completed; `false` means `conflictDiff()` says nothing yet. */
+  readonly conflictDiffKnown = signal(false);
   /** The single user-authorised "save mine as new" attempt itself came back 412: the dialog shows its busy variant. */
   readonly conflictBusy = signal(false);
   /** Non-modal "changed elsewhere" notice: a background read found a different ETag while the draft is dirty. */
@@ -97,7 +101,11 @@ export class StoryEditorStore {
   /** `snapshot().qualityHints` re-keyed to the local paragraph order after a move/delete/undo; `null` at the baseline. */
   private readonly hintOverrides = signal<readonly QualityHint[] | null>(null);
   readonly hints = computed<readonly QualityHint[]>(() => this.hintOverrides() ?? this.snapshot()?.qualityHints ?? EMPTY_HINTS);
-  /** `409 keywords_flagged` chips; cleared only by a successful save/load/adopt, never by a local edit (WR6). */
+  /**
+   * `409 keywords_flagged` chips; cleared only by a successful save/load/adopt, never by a local text edit (WR6).
+   * A structural change re-keys their `address` (`remapAddresses`): a flag on the paragraph sitting in the undo buffer
+   * leaves this set until that paragraph comes back, so no chip, no annotation and no video block outlives its text.
+   */
   readonly keywordFlags = signal<readonly KeywordFlag[]>([]);
   readonly videoBlocked = computed(() => this.keywordFlags().length > 0);
   /**
@@ -146,6 +154,8 @@ export class StoryEditorStore {
   private baselineKeys: readonly string[] = [];
   /** `p:<i>`-keyed hints of the paragraph that sits in the undo buffer, hidden until it comes back. */
   private bufferedHints: readonly QualityHint[] = [];
+  /** Keyword flags of that same paragraph: they leave `keywordFlags` with their text and share the buffer's lifetime. */
+  private bufferedFlags: readonly KeywordFlag[] = [];
   /** Monotonic counter so a live region re-announces even when the count is unchanged across saves. */
   private announcementSequence = 0;
   /** The ETag already surfaced (or dismissed) as a remote change: a repeat never re-raises the same one. */
@@ -257,24 +267,28 @@ export class StoryEditorStore {
   }
 
   /**
-   * The ONE write path for `409 keywords_flagged` flags (WR6): replaces the set, ignores calls with no snapshot or
-   * after destroy/session change, caps the list, and never rolls back a local edit.
+   * The ONE write path for `409 keywords_flagged` flags (WR6): replaces the set, caps the list, and never rolls back a
+   * local edit. Ignored - `false`, nothing written - without a live snapshot, after destroy/session change, or when
+   * `forEpisodeId` names an episode other than the one on screen (a response that outlived its episode).
    */
-  setKeywordFlags(flags: readonly KeywordFlag[]): void {
-    if (!this.active() || this.snapshot() === null) return;
-    this.keywordFlags.set(flags.slice(0, 100));
+  setKeywordFlags(flags: readonly KeywordFlag[], forEpisodeId?: string): boolean {
+    if (!this.active() || this.snapshot() === null) return false;
+    if (forEpisodeId !== undefined && forEpisodeId !== this.id) return false;
+    this.keywordFlags.set(flags.slice(0, MAX_KEYWORD_FLAGS));
+    return true;
   }
 
   /**
    * `409 keywords_flagged` handling shared with the approve/render flow (10.5.6-T1): maps the problem's `errors[]` rows
-   * (validated in `mapKeywordsFlagged`, malformed rows dropped) onto the exact flagged chips. Returns `true` when the
-   * error is that problem and a live draft took the flags, so the caller adds no generic toast of its own; the draft and
-   * its ETag are never touched (WR6).
+   * (validated in `mapKeywordsFlagged`, malformed rows dropped) onto the exact flagged chips, behind the same
+   * `forEpisodeId` fence as `setKeywordFlags`. Returns `true` only when this refusal really carried at least one valid
+   * row and a live draft took it, so a caller that sees `false` shows its own error copy instead. The draft and its
+   * ETag are never touched (WR6).
    */
-  applyKeywordsFlaggedProblem(error: AppError): boolean {
+  applyKeywordsFlaggedProblem(error: AppError, forEpisodeId?: string): boolean {
     if (error.status !== 409 || error.code !== 'keywords_flagged' || !this.active() || this.snapshot() === null) return false;
-    this.setKeywordFlags(mapKeywordsFlagged(error.problem?.errors));
-    return true;
+    const flags = mapKeywordsFlagged(error.problem?.errors);
+    return flags.length > 0 && this.setKeywordFlags(flags, forEpisodeId);
   }
 
   setMeta(patch: Partial<StoryMetadata>): void {
@@ -361,7 +375,7 @@ export class StoryEditorStore {
     if (!this.active() || (this.conflict() === null && this.remoteChange() === null) || this.saving() || this.resolving()) return;
     if (choice === 'cancel') {
       // Dismissing the notice remembers its ETag, so the same one never re-opens; a newer one will.
-      this.conflict.set(null); this.conflictDiff.set([]); this.conflictBusy.set(false); this.remoteChange.set(null);
+      this.conflict.set(null); this.setConflictDiff(null); this.conflictBusy.set(false); this.remoteChange.set(null);
       return;
     }
     const generation = this.generation;
@@ -374,7 +388,7 @@ export class StoryEditorStore {
       if (fresh === null) { this.conflict.set(null); this.remoteChange.set(null); this.error.set(this.detail.error()); return; }
       if (!fresh.nextActions.includes('edit_story')) { this.conflict.set(null); this.remoteChange.set(null); this.invalidState.set(true); this.showError(this.mapper.fromProblem({ code: 'episode_invalid_state' }, 409, null)); return; }
       this.invalidState.set(false);
-      this.conflictDiff.set(this.diffAgainst(fresh.currentStory));
+      this.setConflictDiff(fresh.currentStory);
       await this.put(fresh.currentStory?.etag ?? '', { retry: true });
     } finally {
       if (this.current(generation)) this.resolving.set(false);
@@ -398,7 +412,7 @@ export class StoryEditorStore {
       this.recordBaseline(draft);
       for (const [key, value] of this.draftValues(this.buildDraft())) this.trackChange(key, value);
       if (this.version() === sent) this.dirtyJson.set(sentJson);
-      this.savedAt.set(Date.now()); this.conflict.set(null); this.conflictDiff.set([]); this.conflictBusy.set(false);
+      this.savedAt.set(Date.now()); this.conflict.set(null); this.setConflictDiff(null); this.conflictBusy.set(false);
       this.remoteChange.set(null); this.announcedEtag = null;
       // The server recomputed the feedback for the content it just acknowledged: the hints arrive in the response and
       // the keyword flags are no longer in play, so a local edit never has to clear them itself.
@@ -464,9 +478,21 @@ export class StoryEditorStore {
   /** One user-authorised read to describe the conflict (never adopts): the segments my draft and the server disagree on. */
   private async loadConflictDiff(generation: number): Promise<void> {
     const read = ++this.readGeneration;
+    // The dialog opens on an unknown diff: neither the segments nor "nothing differs" is known until the read lands.
+    this.setConflictDiff(null);
     const fresh = await this.detail.refetch({ userAction: true });
     if (!this.current(generation) || read !== this.readGeneration) return;
-    this.conflictDiff.set(this.diffAgainst(fresh?.currentStory ?? null));
+    this.setConflictDiff(fresh?.currentStory ?? null);
+  }
+
+  /**
+   * The conflict diff and its "known" flag move together: `null` (a read that failed, was fenced, or found no story)
+   * leaves `conflictDiff()` empty and `conflictDiffKnown()` false, so the dialog never reads "no difference" out of a
+   * read that told us nothing.
+   */
+  private setConflictDiff(story: StorySnapshot | null): void {
+    this.conflictDiff.set(story === null ? [] : this.diffAgainst(story));
+    this.conflictDiffKnown.set(story !== null);
   }
 
   /** Segments whose text/keywords differ between the live draft and a server story; `[]` when the story is unknown. */
@@ -500,16 +526,16 @@ export class StoryEditorStore {
     this.baselineJson.set(baseline); this.dirtyJson.set(baseline); this.savedVersion.set(this.version()); this.recordBaseline(draft);
     this.conflict.set(null); this.savedAt.set(null);
     // An adopt replaces the draft with server content: the old flags, notice and announcement no longer describe it.
-    this.keywordFlags.set([]); this.conflictDiff.set([]); this.conflictBusy.set(false);
+    this.keywordFlags.set([]); this.setConflictDiff(null); this.conflictBusy.set(false);
     this.remoteChange.set(null); this.announcedEtag = null; this.annotationAnnouncement.set(null);
     window.clearTimeout(this.dirtyTimer);
     this.dirtyTimer = undefined;
   }
 
   /**
-   * Rebuild every `p:<i>`-keyed address after a structural change: a hint follows the same text through a move, a
-   * delete and an undo, and the removed paragraph's own hints stay hidden while it sits in the buffer. Runs once per
-   * structural change, never per keystroke.
+   * Rebuild every `p:<i>`-keyed address after a structural change: a hint or a keyword flag follows the same text
+   * through a move, a delete and an undo, and the removed paragraph's own feedback stays hidden while it sits in the
+   * buffer. Runs once per structural change, never per keystroke.
    */
   private remapAddresses(kind: 'move' | 'remove' | 'insert', from: number, to: number): void {
     const map = (address: SegmentAddress): SegmentAddress | null => {
@@ -528,11 +554,23 @@ export class StoryEditorStore {
       const mapped = remapHint(hint);
       if (mapped === null) dropped.push(hint); else hints.push(mapped);
     }
+    // The flags ride the same map: only the `address` moves (the chip `index` stays the server's), and a flag on the
+    // removed paragraph is buffered with its text, so it is not rendered - and does not block video - while it is away.
+    const flags: KeywordFlag[] = [];
+    const buffered: KeywordFlag[] = [];
+    for (const flag of this.keywordFlags()) {
+      const target = map(flag.address);
+      if (target === null) buffered.push(flag); else flags.push(target === flag.address ? flag : { ...flag, address: target });
+    }
     // A buffered paragraph comes back at its own removed index (`undoRemove`), so its hints stay keyed to that index:
     // a move reorders the live paragraphs only and never re-keys the buffer; `insert` (undo) returns them untouched.
-    if (kind === 'remove') this.bufferedHints = dropped;
-    if (kind === 'insert') { hints.push(...this.bufferedHints); this.bufferedHints = []; }
+    if (kind === 'remove') { this.bufferedHints = dropped; this.bufferedFlags = buffered; }
+    if (kind === 'insert') {
+      hints.push(...this.bufferedHints); this.bufferedHints = [];
+      flags.push(...this.bufferedFlags); this.bufferedFlags = [];
+    }
     this.hintOverrides.set(hints);
+    this.keywordFlags.set(flags.slice(0, MAX_KEYWORD_FLAGS));
   }
 
   /** The order moved away from (or back to) the baseline order: re-derive the flag and commit the change as an edit. */
@@ -562,6 +600,7 @@ export class StoryEditorStore {
     this.removedTimer = undefined;
     this.removedState.set(null);
     this.bufferedHints = [];
+    this.bufferedFlags = [];
   }
 
   private buildDraft(): StoryDraft {
@@ -656,7 +695,7 @@ export class StoryEditorStore {
     this.hookFacts = []; this.endingFacts = []; this.baselineJson.set(''); this.dirtyJson.set('');
     this.baselineValues.clear(); this.changedFields.clear(); this.changedCount.set(0);
     this.savedVersion.set(this.version()); this.savedAt.set(null); this.conflict.set(null); this.keywordLimitHit.set(null);
-    this.keywordFlags.set([]); this.conflictDiff.set([]); this.conflictBusy.set(false);
+    this.keywordFlags.set([]); this.setConflictDiff(null); this.conflictBusy.set(false);
     this.remoteChange.set(null); this.announcedEtag = null; this.annotationAnnouncement.set(null);
     this.clearRemoved(); this.hintOverrides.set(null); this.baselineKeys = []; this.structuralChanged.set(false);
   }

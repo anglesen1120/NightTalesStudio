@@ -24,9 +24,9 @@ const KEYWORD_RULE_MESSAGE_KEYS: Readonly<Record<string, string>> = {
 const KIND_ORDER: Readonly<Record<SegmentAnnotation['kind'], number>> = { objective: 0, taste: 1 };
 const SEVERITY_ORDER: Readonly<Record<SegmentAnnotation['severity'], number>> = { blocking: 0, advisory: 1 };
 
-/** Keeps a DOM id inside `[A-Za-z0-9_-]` (a `p:0` address becomes `p-0`); runs of other characters collapse to one `-`. */
+/** Keeps ids inside [A-Za-z0-9_-] and reserves double underscores for the panel-copy suffix. */
 function idPart(value: string): string {
-  return value.replace(/[^A-Za-z0-9_-]+/g, '-');
+  return value.replace(/[^A-Za-z0-9_-]+/g, '-').replace(/_{2,}/g, '_');
 }
 
 function hintAnnotation(hint: QualityHint): SegmentAnnotation {

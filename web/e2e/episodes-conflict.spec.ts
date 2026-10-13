@@ -118,7 +118,7 @@ async function stubSharedStory(page: Page, server: StoryServer, lang: 'vi' | 'en
 
 const conflictDialog = (page: Page, lang: 'vi' | 'en' = 'vi') => page.getByRole('dialog', { name: DIALOG_COPY[lang].title, exact: true });
 const confirmDialog = (page: Page, lang: 'vi' | 'en' = 'vi') => page.getByRole('dialog', { name: PAGE_CONFLICT_COPY[lang].reloadConfirmTitle, exact: true });
-const notice = (page: Page, lang: 'vi' | 'en' = 'vi') => page.getByRole('status').filter({ hasText: PAGE_CONFLICT_COPY[lang].elsewhereTitle });
+const notice = (page: Page, lang: 'vi' | 'en' = 'vi') => page.getByRole('region', { name: PAGE_CONFLICT_COPY[lang].elsewhereTitle });
 /** Types the draft title by hand (never `fill`), so the value can be re-read byte for byte after every step. */
 async function typeTitle(page: Page, text: string, lang: 'vi' | 'en' = 'vi'): Promise<void> {
   const title = segment(page, EDITOR_COPY[lang].title);
@@ -288,7 +288,7 @@ test.describe('story conflict (vi, stubbed, shared server)', () => {
 
     const changed = notice(page);
     await expect(changed).toBeVisible();
-    await expect(changed).toHaveAttribute('role', 'status');
+    await expect(changed.getByRole('status')).toContainText(C.elsewhereBody);
     await expect(changed).toContainText(C.elsewhereBody);
     await expect(changed).toContainText(L.title);
     await expect(segment(page, L.title)).toHaveValue(TYPED_TITLE);

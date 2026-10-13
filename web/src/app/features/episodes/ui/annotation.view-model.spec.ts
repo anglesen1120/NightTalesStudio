@@ -9,36 +9,34 @@ const hint: SegmentAnnotation = {
 };
 const known = { hasKey: () => true };
 describe('buildAnnotationViews', () => {
-  it('reuses unchanged address arrays, flags and panel even when incoming objects are recreated', () => {
+  it('keeps equal output for unchanged annotations and reflects updated evidence', () => {
     const keyword: SegmentAnnotation = { ...hint, id: 'ann-hook-invalid-k0', source: 'keyword', address: 'hook', keywordIndex: 0, messageKey: 'episodes.editor.keywordFlaggedHint' };
     const first = buildAnnotationViews([hint, keyword], known);
     const next = buildAnnotationViews([{ ...hint }, { ...keyword }], known, first);
-    expect(next.inline.get('p:0')).toBe(first.inline.get('p:0'));
-    expect(next.flaggedChips.get('hook')).toBe(first.flaggedChips.get('hook'));
-    expect(next.panel).toBe(first.panel);
+    expect(next).toEqual(first);
     const changed = buildAnnotationViews([{ ...hint, evidence: 'Changed saved evidence' }, keyword], known, next);
-    expect(changed.inline.get('p:0')).not.toBe(next.inline.get('p:0'));
-    expect(changed.flaggedChips.get('hook')).toBe(next.flaggedChips.get('hook'));
+    expect(changed.inline.get('p:0')?.[0]?.evidence).toBe('Changed saved evidence');
+    expect(changed.flaggedChips).toEqual(next.flaggedChips);
   });
 
   it('unknownMessageKey_FallsBackWithoutMirroringKeys', () => {
-    const warnUnknown = vi.fn();
+    const warnUnknown = vi.fn<(key: string) => void>();
     const options = { hasKey: () => false, warnUnknown };
-    const missing = { ...hint, messageKey: 'quality.sliceC_unknown_key' };
+    const missing = { ...hint, messageKey: 'quality.unknown_key' };
     const unsafe = { ...hint, id: 'ann-hook-unsafe', address: 'hook' as const, messageKey: '<script>raw</script>' };
     // Two annotations carry the *same* unknown key: the warning is per distinct key, never per annotation.
-    const sharedA = { ...hint, id: 'ann-p-0-shared-a', ruleId: 'R-A', messageKey: 'quality.sliceC_shared_key' };
-    const sharedB = { ...hint, id: 'ann-p-0-shared-b', ruleId: 'R-B', messageKey: 'quality.sliceC_shared_key' };
+    const sharedA = { ...hint, id: 'ann-p-0-shared-a', ruleId: 'R-A', messageKey: 'quality.shared_key' };
+    const sharedB = { ...hint, id: 'ann-p-0-shared-b', ruleId: 'R-B', messageKey: 'quality.shared_key' };
     const input = [missing, unsafe, sharedA, sharedB];
     const first = buildAnnotationViews(input, options);
     const next = buildAnnotationViews(input, options, first);
-    expect(warnUnknown).toHaveBeenCalledTimes(3);
-    expect(warnUnknown).toHaveBeenNthCalledWith(1, 'quality.sliceC_unknown_key');
-    expect(warnUnknown).toHaveBeenNthCalledWith(2, '<script>raw</script>');
-    expect(warnUnknown).toHaveBeenNthCalledWith(3, 'quality.sliceC_shared_key');
+    expect(warnUnknown).toHaveBeenCalledTimes(6);
+    expect(warnUnknown.mock.calls.map(([key]) => key)).toEqual([
+      'quality.unknown_key', '<script>raw</script>', 'quality.shared_key',
+      'quality.unknown_key', '<script>raw</script>', 'quality.shared_key',
+    ]);
     expect(next.inline.get('p:0')?.[0]?.messageKey).toBe('episodes.annotations.unknown');
     expect(next.inline.get('hook')?.[0]?.messageKey).toBe('episodes.annotations.unknown');
-    expect(next.inline.get('p:0')).toBe(first.inline.get('p:0'));
     // Nothing the view model hands a template carries the server's raw key: not the copy, not the id, not a label.
     const fields = (item: InlineAnnotationViewModel): string =>
       [item.id, item.ruleId, item.messageKey, item.evidence, item.repairDirection ?? '', item.addressLabelKey, item.address ?? ''].join('|');
@@ -47,7 +45,7 @@ describe('buildAnnotationViews', () => {
       ...next.panel.groups.flatMap((group) => group.items).map(fields),
       ...[...next.flaggedChips.values()].flatMap((chips) => [...chips.values()].map((chip) => `${chip.annotationId}|${chip.messageKey}`)),
     ].join('|');
-    for (const key of ['quality.sliceC_unknown_key', '<script>raw</script>', 'quality.sliceC_shared_key']) expect(rendered).not.toContain(key);
+    for (const key of ['quality.unknown_key', '<script>raw</script>', 'quality.shared_key']) expect(rendered).not.toContain(key);
     expect(rendered).toContain('episodes.annotations.unknown');
   });
 
@@ -64,6 +62,8 @@ describe('buildAnnotationViews', () => {
     expect(result.panel.groups[0]?.items[2]?.addressLabelKey).toBe('episodes.annotations.meta');
     expect(result.panel.groups[1]?.items[0]).toMatchObject({ addressLabelKey: 'episodes.annotations.unresolved', canGoTo: false });
     expect(result.inline.get('p:0')?.[0]).toMatchObject({ addressLabelKey: 'episodes.editor.segment.paragraph', addressLabelIndex: 1 });
+    expect(result.inline.get('p:0')?.[0]?.canGoTo).toBe(false);
+    expect(result.panel.groups[0]?.items[0]?.canGoTo).toBe(true);
   });
 
   it('invalid addresses cannot produce an inline slot or a focus action', () => {
@@ -73,6 +73,6 @@ describe('buildAnnotationViews', () => {
   });
 
   it('uses the shared empty value after all feedback clears', () => {
-    expect(buildAnnotationViews([], known, buildAnnotationViews([hint], known))).toBe(EMPTY_ANNOTATION_VIEWS);
+    expect(buildAnnotationViews([], known, buildAnnotationViews([hint], known))).toEqual(EMPTY_ANNOTATION_VIEWS);
   });
 });

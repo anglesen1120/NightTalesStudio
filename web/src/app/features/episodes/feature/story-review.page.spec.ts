@@ -3,6 +3,7 @@ import { TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { ActivatedRoute, Router, convertToParamMap, provideRouter } from '@angular/router';
 import { TranslocoService, TranslocoTestingModule } from '@jsverse/transloco';
+import type { Translation } from '@jsverse/transloco';
 import { MatSnackBar, type MatSnackBarDismiss } from '@angular/material/snack-bar';
 import { BehaviorSubject, of, Subject, type Observable } from 'rxjs';
 import { afterEach, describe, expect, it, vi, type MockInstance } from 'vitest';
@@ -16,6 +17,10 @@ import coreVi from '../../../../assets/i18n/core/vi.json';
 import episodesVi from '../../../../assets/i18n/episodes/vi.json';
 import errorsVi from '../../../../assets/i18n/errors/vi.json';
 import qualityVi from '../../../../assets/i18n/quality/vi.json';
+import coreEn from '../../../../assets/i18n/core/en.json';
+import episodesEn from '../../../../assets/i18n/episodes/en.json';
+import errorsEn from '../../../../assets/i18n/errors/en.json';
+import qualityEn from '../../../../assets/i18n/quality/en.json';
 import { EpisodeDetailStore } from '../application/episode-detail.store';
 import { StoryEditorStore } from '../application/story-editor.store';
 import type { SegmentAnnotation } from '../domain/annotation.model';
@@ -36,11 +41,23 @@ class VersionsPanelProbe {
   readonly selectionChange = output<{ left: string | null; right: string | null }>();
 }
 
-const translations = TranslocoTestingModule.forRoot({
-  langs: { vi: coreVi, 'core/vi': coreVi, 'episodes/vi': episodesVi, 'errors/vi': errorsVi, 'quality/vi': qualityVi },
-  translocoConfig: { availableLangs: ['vi'], defaultLang: 'vi', fallbackLang: 'vi', reRenderOnLangChange: true },
-  preloadLangs: true,
-});
+/** The scopes the default test module loads: omitting one (see `createPage`) is how a spec exercises its failed load. */
+const TRANSLATIONS: Record<string, Translation> = { vi: coreVi, 'core/vi': coreVi, 'episodes/vi': episodesVi, 'errors/vi': errorsVi, 'quality/vi': qualityVi };
+/** Both languages, so a spec can switch the active language and prove which copy is frozen and which re-renders. */
+const BILINGUAL: Record<string, Translation> = {
+  ...TRANSLATIONS, en: coreEn, 'core/en': coreEn, 'episodes/en': episodesEn, 'errors/en': errorsEn, 'quality/en': qualityEn,
+};
+
+/** Builds the testing module for a given set of loaded scopes; `langs` is exactly what the loader can resolve. */
+function translationsModule(langs: Record<string, Translation>) {
+  return TranslocoTestingModule.forRoot({
+    langs,
+    translocoConfig: { availableLangs: Object.keys(langs).filter((key) => !key.includes('/')), defaultLang: 'vi', fallbackLang: 'vi', reRenderOnLangChange: true },
+    preloadLangs: true,
+  });
+}
+
+const translations = translationsModule(TRANSLATIONS);
 
 const snapshot: StorySnapshot = {
   versionId: 'version-1', version: 1, etag: '"sv-version-1"', source: 'edited', wordCount: 18, qualityHints: [],
@@ -80,7 +97,7 @@ function fakeStoryStore() {
     paragraphs, hookKeywords: signal(snapshot.content.hook.keywords), endingKeywords: signal(snapshot.content.ending.keywords), hookKey: signal('hook-key'), endingKey: signal('ending-key'),
     segmentTokens: signal(new Map([['title', 3], ['hook', 2], ['p:0', 2], ['p:1', 2], ['p:2', 2], ['p:3', 2], ['ending', 1], ['meta', 5]])),
     metaTokens: signal(5), totalTokens: signal(19), isDirty: signal(false), saving: signal(false), savedAt: signal<number | null>(null), saveDisabled: signal(true), conflict,
-    conflictDiff: signal<readonly string[]>([]), conflictBusy: signal(false),
+    conflictDiff: signal<readonly string[]>([]), conflictBusy: signal(false), conflictDiffKnown: signal(true),
     remoteChange: signal<{ readonly etag: string; readonly diff: readonly string[] } | null>(null),
     annotations: signal<readonly SegmentAnnotation[]>([]), keywordFlags: signal<readonly unknown[]>([]), videoBlocked: signal(false),
     annotationAnnouncement: signal<{ readonly count: number; readonly sequence: number } | null>(null),
@@ -171,7 +188,8 @@ function fakeConflictDialogs() {
 // The tsconfig lib predates Promise.withResolvers, so the executor form is the only typed option here.
 const tick = (): Promise<void> => new Promise((resolve) => { setTimeout(resolve, 0); });
 
-async function createPage() {
+/** `langs` overrides the loaded scopes, so a spec can leave one out and exercise its failed/absent load. */
+async function createPage(options: { readonly langs?: Record<string, Translation> } = {}) {
   const detailStore = fakeDetailStore();
   const storyStore = fakeStoryStore();
   const params = convertToParamMap({ id: 'episode-1' });
@@ -181,7 +199,7 @@ async function createPage() {
   // The single confirm the page owns: leaving a dirty draft and reloading after a conflict both go through it.
   const confirm = vi.fn(() => ({ afterClosed: () => of(true) }));
   await TestBed.configureTestingModule({
-    imports: [StoryReviewPage, translations],
+    imports: [StoryReviewPage, translationsModule(options.langs ?? TRANSLATIONS)],
     providers: [
       ...ZONELESS_TEST_PROVIDERS,
       provideRouter([{ path: 'login', children: [] }]),
@@ -558,6 +576,37 @@ describe('StoryReviewPage', () => {
     expect(storyStore.conflictChoices).toEqual(['cancel']);
   });
 
+  it('omitsTheDiffBlockWhileTheDiffReadHasNotSaidAnything', async () => {
+    const { fixture, storyStore, dialogs } = await createPage();
+    storyStore.conflictDiffKnown.set(false);
+    storyStore.conflict.set(true);
+    fixture.detectChanges();
+    await tick();
+    expect(dialogs.opened).toHaveLength(1);
+    // The read told us nothing about the segments: the dialog makes no claim at all, not even "no differing parts".
+    expect(dialogs.opened[0]!.detailHeadingKey).toBeUndefined();
+    expect(dialogs.opened[0]!.detailTexts).toBeUndefined();
+    dialogs.choose(0, 'cancel');
+    await tick();
+    expect(storyStore.conflictChoices).toEqual(['cancel']);
+  });
+
+  it('doesNotShowTheRetryCopyForAnErrorThatPredatesTheReloadAttempt', async () => {
+    const { fixture, storyStore, dialogs } = await createPage();
+    // An error left over from an earlier action is not a failed reload: each iteration derives its variant fresh.
+    storyStore.error.set({ status: 400 });
+    storyStore.conflict.set(true);
+    fixture.detectChanges();
+    await tick();
+    expect(dialogs.opened[0]!.messageKey).toBe('episodes.conflict.body');
+    dialogs.choose(0, 'reload');
+    await tick();
+    expect(storyStore.conflictChoices).toEqual(['reload']);
+    expect(dialogs.opened[1]!.messageKey).toBe('episodes.conflict.body');
+    dialogs.choose(1, 'cancel');
+    await tick();
+  });
+
   it('reloadFailure_OffersTheSameActionsUnderTheRetryCopy', async () => {
     const { fixture, storyStore, dialogs } = await createPage();
     storyStore.resolveConflict.mockImplementation((choice: string) => {
@@ -622,18 +671,23 @@ describe('StoryReviewPage', () => {
     fixture.detectChanges();
     await fixture.whenStable();
     const notice = root.querySelector<HTMLElement>('.story-review-page__notice--remote');
-    expect(notice?.getAttribute('role')).toBe('status');
+    // The buttoned block is NOT a live region: only its one short copy line is, so a screen reader never reads the
+    // controls out as an announcement.
+    expect(notice?.getAttribute('role')).toBeNull();
+    expect(notice?.querySelector('p[role="status"]')?.textContent).toContain(episodesVi.conflict.elsewhereBody);
     expect(notice?.textContent).toContain(episodesVi.conflict.elsewhereTitle);
-    expect(notice?.textContent).toContain(episodesVi.conflict.elsewhereBody);
     expect([...notice!.querySelectorAll('li')].map((item) => item.textContent))
       .toEqual([`${episodesVi.editor.segment.paragraph} 2`, episodesVi.annotations.meta]);
     // The notice is informational: it never rewrites or scrolls the draft, and it asks nothing of the store on render.
     expect([...root.querySelectorAll<HTMLTextAreaElement>('textarea[data-segment]')].map((area) => area.value)).toEqual(before);
     expect(storyStore.conflictChoices).toEqual([]);
     expect(notice!.querySelectorAll('button')).toHaveLength(3);
+    storyStore.saveDisabled.set(false);
     notice!.querySelectorAll<HTMLButtonElement>('button')[1]!.click();
     await tick();
     expect(storyStore.conflictChoices).toEqual(['saveAsNew']);
+    // Acting on the notice takes its buttons away (or saves the draft); focus lands on the Save control, not the body.
+    await vi.waitFor(() => expect(document.activeElement).toBe(root.querySelector('.story-save-bar button')));
     storyStore.remoteChange.set({ etag: '"sv-3"', diff: [] });
     fixture.detectChanges();
     await fixture.whenStable();
@@ -683,32 +737,100 @@ describe('StoryReviewPage', () => {
     }
   });
 
-  it('announcement_TranslatesTheSavedSuggestionCount_OncePerSave', async () => {
+  it('keepsKeywordFlagsAndTheirPanelEntriesWhileTheQualityScopeIsNotLoaded', async () => {
+    // The quality scope file is absent, so no `quality.<ruleId>` key can resolve; the flags carry `errors.*`/`episodes.*`
+    // keys and must stay visible instead of being hidden with the hints.
+    const noQuality = { vi: coreVi, 'core/vi': coreVi, 'episodes/vi': episodesVi, 'errors/vi': errorsVi };
+    const { fixture, storyStore } = await createPage({ langs: noQuality });
+    const annotations: readonly SegmentAnnotation[] = [
+      { id: 'ann-p-0-hook_missing', source: 'hint', address: 'p:0', ruleId: 'hook_missing', severity: 'advisory', kind: 'objective', messageKey: 'quality.hook_missing', evidence: 'Hook is short', repairDirection: null, keywordIndex: null, placement: 'inline' },
+      { id: 'ann-p-1-keyword_name_detected-k0', source: 'keyword', address: 'p:1', ruleId: 'keyword_name_detected', severity: 'blocking', kind: 'objective', messageKey: 'errors.keywordsFlaggedRule.keyword_name_detected', evidence: '', repairDirection: null, keywordIndex: 0, placement: 'inline' },
+    ];
+    storyStore.annotations.set(annotations);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const editor = fixture.debugElement.query(By.directive(StoryEditorComponent)).componentInstance as StoryEditorComponent;
+    const views = editor.annotationViews();
+    // The hint is withheld (its key cannot resolve), the flagged chip is not.
+    expect(views.inline.get('p:0')).toBeUndefined();
+    expect(views.flaggedChips.get('p:1')?.get(0)?.messageKey).toBe('errors.keywordsFlaggedRule.keyword_name_detected');
+    expect(views.panel.count).toBe(1);
+    expect(views.panel.groups.map((group) => group.kind)).toEqual(['objective']);
+    expect(views.panel.groups[0]?.items.map((item) => item.id)).toEqual(['ann-p-1-keyword_name_detected-k0']);
+    const root = fixture.nativeElement as HTMLElement;
+    const flagged = root.querySelector<HTMLInputElement>('input[aria-invalid="true"]');
+    expect(flagged).not.toBeNull();
+    expect(root.querySelector('#ann-p-0-hook_missing')).toBeNull();
+  });
+
+  it('announcement_IsSilentWhileTheEpisodesScopeHasNotLoaded', async () => {
+    // The `episodes` scope is absent from the loader: its key cannot resolve, so nothing — and never a raw key — is
+    // announced.
+    const noEpisodes = { vi: coreVi, 'core/vi': coreVi, 'errors/vi': errorsVi, 'quality/vi': qualityVi };
+    const { fixture, storyStore } = await createPage({ langs: noEpisodes });
+    const root = fixture.nativeElement as HTMLElement;
+    storyStore.annotationAnnouncement.set({ count: 2, sequence: 1 });
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(root.querySelector('.story-editor__annotation-announcement span')).toBeNull();
+  });
+
+  it('announcement_FreezesTheCopyPerSaveAndReCreatesTheAnnouncedNode', async () => {
     const { fixture, storyStore, transloco } = await createPage();
+    const root = fixture.nativeElement as HTMLElement;
     const editor = fixture.debugElement.query(By.directive(StoryEditorComponent)).componentInstance as StoryEditorComponent;
     expect(editor.announcement()).toBeNull();
+    expect(root.querySelector('.story-editor__annotation-announcement span')).toBeNull();
     storyStore.annotationAnnouncement.set({ count: 2, sequence: 1 });
     fixture.detectChanges();
     await fixture.whenStable();
     const announced = transloco.translate('annotations.announce', { count: 2 }, 'episodes');
-    const first = editor.announcement();
-    expect(first?.trim()).toBe(announced);
+    const node = root.querySelector('.story-editor__annotation-announcement span');
+    expect(node?.textContent).toBe(announced);
+    expect(editor.announcement()).toEqual({ text: announced, sequence: 1 });
     // One save, one message: the count the server returned appears exactly once in the page.
-    expect((fixture.nativeElement as HTMLElement).textContent?.split(announced)).toHaveLength(2);
-    // A second save with the same count keeps the copy but must still mutate the live region, or it would not speak.
+    expect(root.textContent?.split(announced)).toHaveLength(2);
+    // A second save with the same count keeps the copy but must still re-create the announced node, or the region would
+    // stay mute (the assertion that used to pin a trailing space is gone).
     storyStore.annotationAnnouncement.set({ count: 2, sequence: 2 });
     fixture.detectChanges();
     await fixture.whenStable();
-    expect(editor.announcement()?.trim()).toBe(announced);
-    expect(editor.announcement()).not.toBe(first);
-    storyStore.annotationAnnouncement.set({ count: 0, sequence: 3 });
+    const recreated = root.querySelector('.story-editor__annotation-announcement span');
+    expect(recreated?.textContent).toBe(announced);
+    expect(recreated).not.toBe(node);
+    expect(editor.announcement()?.sequence).toBe(2);
+    // A single suggestion reads as one, not "1 suggestions".
+    storyStore.annotationAnnouncement.set({ count: 1, sequence: 3 });
     fixture.detectChanges();
     await fixture.whenStable();
-    expect(editor.announcement()?.trim()).toBe(transloco.translate('annotations.announceNone', {}, 'episodes'));
+    expect(root.querySelector('.story-editor__annotation-announcement span')?.textContent)
+      .toBe(transloco.translate('annotations.announceOne', {}, 'episodes'));
+    storyStore.annotationAnnouncement.set({ count: 0, sequence: 4 });
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(root.querySelector('.story-editor__annotation-announcement span')?.textContent)
+      .toBe(transloco.translate('annotations.announceNone', {}, 'episodes'));
     storyStore.annotationAnnouncement.set(null);
     fixture.detectChanges();
     await fixture.whenStable();
     expect(editor.announcement()).toBeNull();
+    expect(root.querySelector('.story-editor__annotation-announcement span')).toBeNull();
+  });
+
+  it('announcement_KeepsTheCopyReadAtSaveTimeWhenTheLanguageChanges', async () => {
+    const { fixture, storyStore, transloco } = await createPage({ langs: BILINGUAL });
+    const root = fixture.nativeElement as HTMLElement;
+    storyStore.annotationAnnouncement.set({ count: 2, sequence: 1 });
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const announcedVi = transloco.translate('annotations.announce', { count: 2 }, 'episodes');
+    expect(root.querySelector('.story-editor__annotation-announcement span')?.textContent).toBe(announcedVi);
+    // The rest of the page follows the language; the announcement is frozen, so what a screen reader already read stands.
+    transloco.setActiveLang('en');
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(root.querySelector('.story-editor__annotation-announcement span')?.textContent).toBe(announcedVi);
+    expect(root.querySelector('.story-save-bar button')?.textContent).toContain(episodesEn.editor.saveVersion);
   });
 
 });

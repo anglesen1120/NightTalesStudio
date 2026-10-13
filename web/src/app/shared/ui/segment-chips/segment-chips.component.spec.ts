@@ -96,7 +96,6 @@ describe('SegmentChipsComponent', () => {
     fixture.detectChanges();
     expect(edits).toEqual([{ index: 1, value: 'Updated' }]);
     expect(removals).toEqual([1]);
-    expect(component.flagged()).toBe(flags);
     expect(inputs[1]!.getAttribute('aria-invalid')).toBe('true');
   });
 

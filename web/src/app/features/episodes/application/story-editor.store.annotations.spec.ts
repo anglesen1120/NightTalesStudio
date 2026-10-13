@@ -8,7 +8,7 @@ import { SessionStore } from '@core/session';
 import { vi } from 'vitest';
 import { ZONELESS_TEST_PROVIDERS } from '../../../testing/providers';
 import type { KeywordFlag } from '../domain/annotation.model';
-import type { EpisodeStatus } from '../domain/episode.model';
+import type { EpisodeDetail, EpisodeStatus } from '../domain/episode.model';
 import { EpisodesRepository } from '../domain/episodes.repository';
 import type { QualityHint, StorySnapshot } from '../domain/story.model';
 import { StoryRepository } from '../domain/story.repository';
@@ -109,7 +109,7 @@ describe('StoryEditorStore annotations and conflict', () => {
   it('setKeywordFlags_disables_videoBlocked_and_edit_does_not_clear', async () => {
     const { store } = await loaded();
     expect(store.videoBlocked()).toBe(false); expect(store.keywordFlags()).toEqual([]);
-    store.setKeywordFlags([flag()]);
+    expect(store.setKeywordFlags([flag()])).toBe(true);
     expect(store.videoBlocked()).toBe(true); expect(store.keywordFlags()).toHaveLength(1);
     // The set replaces and caps at 100 (WR6).
     store.setKeywordFlags(Array.from({ length: 150 }, (_, index): KeywordFlag => ({ address: 'p:0', index: index % 10, rule: 'no_scenes' })));
@@ -121,7 +121,7 @@ describe('StoryEditorStore annotations and conflict', () => {
 
   it('setKeywordFlags_ignored_without_a_snapshot', async () => {
     const { store } = await loaded(null, ['generate_story']);
-    store.setKeywordFlags([flag()]);
+    expect(store.setKeywordFlags([flag()])).toBe(false);
     expect(store.keywordFlags()).toEqual([]); expect(store.videoBlocked()).toBe(false);
   });
 
@@ -158,6 +158,34 @@ describe('StoryEditorStore annotations and conflict', () => {
     expect(state.store.keywordFlags()).toHaveLength(1);
   });
 
+  it('applyKeywordsFlaggedProblem_reports_false_when_the_refusal_has_no_valid_row', async () => {
+    const state = await loaded();
+    const rows = [{ segment: 'p:1', index: 1, rule: 'keyword_name_detected' }];
+    expect(state.store.applyKeywordsFlaggedProblem(appError('keywords_flagged', 409, { problem: { errors: rows } }))).toBe(true);
+    // Malformed-only, empty, and a missing `errors[]`: there is nothing to point at, so the caller shows its own error
+    // copy and the flags already on screen stay exactly as they are.
+    expect(state.store.applyKeywordsFlaggedProblem(appError('keywords_flagged', 409, { problem: { errors: [{ segment: 'nope', index: 1, rule: 'keyword_invalid' }] } }))).toBe(false);
+    expect(state.store.applyKeywordsFlaggedProblem(appError('keywords_flagged', 409, { problem: { errors: [] } }))).toBe(false);
+    expect(state.store.applyKeywordsFlaggedProblem(appError('keywords_flagged', 409))).toBe(false);
+    expect(state.store.keywordFlags()).toEqual([flag({ address: 'p:1', index: 1, rule: 'keyword_name_detected' })]);
+    expect(state.store.videoBlocked()).toBe(true);
+  });
+
+  it('keyword_flags_are_ignored_for_another_episode', async () => {
+    const state = await loaded();
+    expect(state.store.setKeywordFlags([flag()])).toBe(true);
+    expect(state.store.setKeywordFlags([flag({ address: 'p:2' })], 'episode-b')).toBe(false);
+    expect(state.store.keywordFlags()).toEqual([flag()]);
+    expect(state.store.setKeywordFlags([flag({ address: 'p:2' })], EPISODE_ID)).toBe(true);
+    expect(state.store.keywordFlags()).toEqual([flag({ address: 'p:2' })]);
+    // The shared entry point (10.5.6-T1) takes the same fence, so a response for the previous episode changes nothing.
+    const problem = appError('keywords_flagged', 409, { problem: { errors: [{ segment: 'p:1', index: 1, rule: 'keyword_name_detected' }] } });
+    expect(state.store.applyKeywordsFlaggedProblem(problem, 'episode-b')).toBe(false);
+    expect(state.store.keywordFlags()).toEqual([flag({ address: 'p:2' })]);
+    expect(state.store.applyKeywordsFlaggedProblem(problem, EPISODE_ID)).toBe(true);
+    expect(state.store.keywordFlags()).toEqual([flag({ address: 'p:1', index: 1, rule: 'keyword_name_detected' })]);
+  });
+
   it('annotationAnnouncement_once_per_save', async () => {
     const state = await loaded();
     expect(state.store.annotationAnnouncement()).toBeNull();
@@ -188,9 +216,51 @@ describe('StoryEditorStore annotations and conflict', () => {
     expect(state.store.paragraphs()[1]?.text()).toBe('My own second paragraph');
     expect(state.store.hasUnsavedChanges()).toBe(true);
     expect(state.store.conflictDiff()).toEqual(['p:1']);
+    expect(state.store.conflictDiffKnown()).toBe(true);
     expect(state.episodes.getCalls).toHaveLength(2);
     expect(state.episodes.getCalls[1]).toEqual({ episodeId: EPISODE_ID, userAction: true });
     expect(state.stories.calls).toHaveLength(1);
+  });
+
+  it('conflictDiffKnown_stays_false_until_the_diff_read_lands', async () => {
+    const state = await loaded();
+    const paragraph = state.store.paragraphs()[1]; if (!paragraph) throw new Error('Missing fixture paragraph');
+    state.store.setText(paragraph.segKey, 'My own second paragraph');
+    const read = deferred<EpisodeDetail>();
+    state.episodes.scriptGet(() => read.promise);
+    state.stories.scriptSave(() => rejected(appError('story_version_conflict', 412)));
+    const save = state.store.saveVersion();
+    await settle();
+    // The dialog is open on a diff nobody has read yet: an empty list must not read as "nothing differs".
+    expect(state.store.conflict()).toBe(true);
+    expect(state.store.conflictDiff()).toEqual([]); expect(state.store.conflictDiffKnown()).toBe(false);
+
+    read.resolve(episodeDetail({ nextActions: ['edit_story'], status: 'story_review', currentStory: contentWithParagraph(1, 'Their second paragraph') }));
+    await save;
+    expect(state.store.conflictDiff()).toEqual(['p:1']); expect(state.store.conflictDiffKnown()).toBe(true);
+
+    // Save mine as new settles the conflict: the diff and its known flag are reset together.
+    scriptFresh(state, storySnapshot({ etag: '"sv-fresh"' }));
+    state.stories.scriptSave(() => Promise.resolve(storySnapshot({ etag: '"sv-new"' })));
+    await state.store.resolveConflict('saveAsNew');
+    expect(state.store.conflict()).toBeNull();
+    expect(state.store.conflictDiff()).toEqual([]); expect(state.store.conflictDiffKnown()).toBe(false);
+    expect(state.store.snapshot()?.etag).toBe('"sv-new"');
+  });
+
+  it('conflictDiffKnown_stays_false_when_the_diff_read_fails', async () => {
+    const state = await loaded();
+    state.store.setSegmentText('title', 'mine');
+    state.episodes.scriptGet(() => rejected(appError('network_error', 0, { kind: 'network' })));
+    await conflict412(state);
+    expect(state.store.conflict()).toBe(true);
+    expect(state.store.conflictDiff()).toEqual([]); expect(state.store.conflictDiffKnown()).toBe(false);
+    expect(state.store.title()).toBe('mine'); expect(state.store.saving()).toBe(false);
+    // Dismissing that dialog resets the pair (false stays false) and leaves the draft alone.
+    await state.store.resolveConflict('cancel');
+    expect(state.store.conflict()).toBeNull();
+    expect(state.store.conflictDiff()).toEqual([]); expect(state.store.conflictDiffKnown()).toBe(false);
+    expect(state.store.hasUnsavedChanges()).toBe(true);
   });
 
   it('conflict_RefetchWithTheSameEtag_IsANoOp', async () => {
@@ -279,6 +349,7 @@ describe('StoryEditorStore annotations and conflict', () => {
     TestBed.resetTestingModule();
     late.reject(appError('story_version_conflict', 412)); await save; await settle();
     expect(state.store.conflict()).toBeNull(); expect(state.store.conflictDiff()).toEqual([]);
+    expect(state.store.conflictDiffKnown()).toBe(false);
     expect(state.store.conflictBusy()).toBe(false); expect(state.store.remoteChange()).toBeNull();
     expect(state.episodes.getCalls).toHaveLength(reads);
     expect(state.store.snapshot()).toBeNull();
@@ -344,6 +415,7 @@ describe('StoryEditorStore annotations and conflict', () => {
     expect(state.store.conflict()).toBe(true);
     const diff = state.store.conflictDiff();
     expect(diff).toEqual(['p:0']);
+    expect(state.store.conflictDiffKnown()).toBe(true);
     const reads = state.episodes.getCalls.length;
 
     state.store.setText(paragraph.segKey, 'Mine again');

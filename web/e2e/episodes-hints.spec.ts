@@ -149,18 +149,18 @@ test.describe('quality hints and inline annotations (en, stubbed)', () => {
 
     // (3) The panel (deferred until it is scrolled into view) lists every hint, grouped by kind.
     const panel = page.locator('nts-annotation-panel');
-    await expect(panel.locator('.annotation-panel__count')).toHaveText(String(HINTS.length));
+    await expect(panel.locator('h2 .annotation-panel__count')).toHaveText(String(HINTS.length));
     await panel.scrollIntoViewIfNeeded();
     await expect(panel.locator('.annotation-panel__body')).toBeVisible();
     for (const id of [BLOCKING_ID, TASTE_ID, META_ID, UNKNOWN_ID]) {
-      await expect(panel.locator(`#${id}-panel`)).toHaveCount(1);
+      await expect(panel.locator(`#${id}__panel`)).toHaveCount(1);
     }
-    await expect(panel.getByRole('heading', { name: episodesEn.annotations.objective, exact: true })).toBeVisible();
-    await expect(panel.getByRole('heading', { name: episodesEn.annotations.taste, exact: true })).toBeVisible();
+    await expect(panel.getByRole('heading', { name: new RegExp(`^${episodesEn.annotations.objective}\\b`) })).toBeVisible();
+    await expect(panel.getByRole('heading', { name: new RegExp(`^${episodesEn.annotations.taste}\\b`) })).toBeVisible();
 
     // (4) The `meta` hint is in the panel only: the description textarea points at nothing but its own counter.
-    await expect(panel.locator(`#${META_ID}-panel`)).toContainText(qualityEn.scenes_sparse);
-    await expect(panel.locator(`#${META_ID}-panel`)).toContainText(episodesEn.annotations.meta);
+    await expect(panel.locator(`#${META_ID}__panel`)).toContainText(qualityEn.scenes_sparse);
+    await expect(panel.locator(`#${META_ID}__panel`)).toContainText(episodesEn.annotations.meta);
     await expect(page.locator('textarea[data-segment="meta"]')).toHaveAttribute('aria-describedby', 'seg-meta-counter');
     await expect(page.locator('nts-story-meta-editor nts-inline-annotation')).toHaveCount(0);
 
