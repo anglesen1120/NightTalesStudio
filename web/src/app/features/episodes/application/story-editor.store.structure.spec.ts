@@ -20,6 +20,10 @@ const HINTS: readonly QualityHint[] = [
   { ruleId: 'hook-short', ...ADVISORY, segment: 'p:2', messageKey: 'quality.hook_short' },
   { ruleId: 'length-band', ...ADVISORY, segment: 'p:3', messageKey: 'quality.length_out_of_range' },
 ];
+/** One hint on paragraph 2 (`p:1`): the paragraph the move-while-buffered undo test deletes. */
+const HINT_ON_P1: readonly QualityHint[] = [
+  { ruleId: 'hook-short', ...ADVISORY, segment: 'p:1', messageKey: 'quality.hook_short' },
+];
 
 function paragraph(snapshot: StorySnapshot, index: number): string {
   return snapshot.content.paragraphs[index]?.text ?? '';
@@ -258,5 +262,89 @@ describe('StoryEditorStore structure (10.5.9-T1)', () => {
     TestBed.resetTestingModule();
     const unknown = await loaded(storySnapshot(), ['edit_story'], { lengthTier: 'epic' });
     expect(unknown.store.structureWarning()).toBe(false);
+  });
+
+  it('moveWhileBuffered_UndoRestoresTheHintOnTheRestoredParagraph', async () => {
+    const snapshot = storySnapshot({ qualityHints: HINT_ON_P1 });
+    const { store } = await loaded(snapshot);
+    expect(store.removeParagraph(1)).toBe(true); // [P1, P3, P4]: the p:1 hint waits in the buffer with its paragraph
+    expect(store.moveTo(0, 2)).toBe(true); // [P3, P4, P1]: a move reorders the live paragraphs only
+    expect(store.undoRemove()).toBe(1); // the buffered paragraph returns at its own index, hint and all
+    expect(store.paragraphs().map((item) => item.text())).toEqual([
+      paragraph(snapshot, 2), paragraph(snapshot, 1), paragraph(snapshot, 3), paragraph(snapshot, 0),
+    ]);
+    expect(hintKeys(store)).toEqual(['quality.hook_short@p:1']);
+  });
+
+  it('deleteFirstParagraph_UndoRestoresItAtIndexZero', async () => {
+    const snapshot = storySnapshot();
+    const { store } = await loaded(snapshot);
+    store.removeParagraph(0);
+    expect(store.paragraphs().map((item) => item.text())).toEqual([paragraph(snapshot, 1), paragraph(snapshot, 2), paragraph(snapshot, 3)]);
+    expect(store.undoRemove()).toBe(0);
+    expect(store.paragraphs().map((item) => item.text())).toEqual([paragraph(snapshot, 0), paragraph(snapshot, 1), paragraph(snapshot, 2), paragraph(snapshot, 3)]);
+    expect(store.hasUnsavedChanges()).toBe(false);
+  });
+
+  it('deleteLastParagraph_UndoRestoresItAtTheEnd', async () => {
+    const snapshot = storySnapshot();
+    const { store } = await loaded(snapshot);
+    store.removeParagraph(3);
+    expect(store.paragraphs()).toHaveLength(3);
+    expect(store.undoRemove()).toBe(3);
+    expect(store.paragraphs().map((item) => item.text())).toEqual([paragraph(snapshot, 0), paragraph(snapshot, 1), paragraph(snapshot, 2), paragraph(snapshot, 3)]);
+    expect(store.hasUnsavedChanges()).toBe(false);
+  });
+
+  it('deleteEveryParagraph_UndoRestoresOnlyTheLastRemovedOne', async () => {
+    const snapshot = storySnapshot();
+    const { store } = await loaded(snapshot);
+    store.removeParagraph(0);
+    store.removeParagraph(0);
+    store.removeParagraph(0);
+    store.removeParagraph(0);
+    expect(store.paragraphs()).toHaveLength(0);
+    expect(store.removed()?.index).toBe(0);
+    expect(store.undoRemove()).toBe(0);
+    expect(store.paragraphs().map((item) => item.text())).toEqual([paragraph(snapshot, 3)]);
+  });
+
+  it('deleteThenSaveInsideTheWindow_UndoStillRestoresTheText', async () => {
+    const snapshot = storySnapshot();
+    const { store, stories } = await loaded(snapshot);
+    store.removeParagraph(1);
+    await store.saveVersion();
+    expect(stories.calls[0]?.content.paragraphs.map((item) => item.text)).toEqual([paragraph(snapshot, 0), paragraph(snapshot, 2), paragraph(snapshot, 3)]);
+    expect(store.hasUnsavedChanges()).toBe(false);
+    // The buffer survives the save; undoing it restores the text, so the draft is dirty again against the new baseline.
+    expect(store.removed()).not.toBeNull();
+    expect(store.undoRemove()).toBe(1);
+    expect(store.paragraphs().map((item) => item.text())).toEqual([paragraph(snapshot, 0), paragraph(snapshot, 1), paragraph(snapshot, 2), paragraph(snapshot, 3)]);
+    expect(store.hasUnsavedChanges()).toBe(true);
+  });
+
+  it('saveFailureAfterReorder_KeepsTheMovedOrderAndStaysDirty', async () => {
+    const snapshot = storySnapshot();
+    const { store, stories } = await loaded(snapshot);
+    stories.scriptSave(() => Promise.reject(new Error('server 500')));
+    store.moveTo(0, 3);
+    await store.saveVersion();
+    expect(store.paragraphs().map((item) => item.text())).toEqual([paragraph(snapshot, 1), paragraph(snapshot, 2), paragraph(snapshot, 3), paragraph(snapshot, 0)]);
+    expect(store.hasUnsavedChanges()).toBe(true);
+    expect(store.saveDisabled()).toBe(false);
+  });
+
+  it('twoDeletesAtTheSameIndex_UndoRestoresOnlyTheLastRemovedParagraph', async () => {
+    const snapshot = storySnapshot();
+    const { store } = await loaded(snapshot);
+    store.removeParagraph(0); // removes "Paragraph 1 waits."
+    store.removeParagraph(0); // removes "Paragraph 2 waits." and replaces the buffer
+    expect(store.paragraphs().map((item) => item.text())).toEqual([paragraph(snapshot, 2), paragraph(snapshot, 3)]);
+    expect(store.removed()?.index).toBe(0);
+    expect(store.undoRemove()).toBe(0);
+    // Only the last deletion is restored; the earlier one stays gone.
+    expect(store.paragraphs().map((item) => item.text())).toEqual([paragraph(snapshot, 1), paragraph(snapshot, 2), paragraph(snapshot, 3)]);
+    expect(store.removed()).toBeNull();
+    expect(store.hasUnsavedChanges()).toBe(true);
   });
 });

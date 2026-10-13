@@ -3,6 +3,8 @@ import { Injectable } from '@angular/core';
 /** One page-scoped unsaved-work source; the page registers itself and unregisters with its `DestroyRef`. */
 export interface UnsavedWorkHandler {
   hasUnsaved(): boolean;
+  /** Drop the draft without asking (a terminal `SessionEnded`); a no-op when there is nothing left to lose. */
+  discard(): void;
   /** Resolves `true` when the user accepts losing the work (or when there is nothing left to lose). */
   confirmLeave(): Promise<boolean>;
 }
@@ -10,8 +12,9 @@ export interface UnsavedWorkHandler {
 /**
  * The shell-wide "you have unsaved work" port (10.5.9-T1). `ShellStore.logOut()` consults it before ending a
  * session, so a logout with a dirty draft asks exactly like a route change does. A terminal `SessionEnded`
- * (`session_revoked`, `refresh_token_reused`, an expired restore) bypasses it: it ends the session directly through
- * `SessionStore.signOut()`, so no prompt can keep an invalid session or its draft alive.
+ * (`session_revoked`, `refresh_token_reused`, an expired restore) is not the user's decision: `SessionStore.endSession`
+ * discards every draft through `discardAll()` before its navigation, so the route's dirty guard runs against a clean
+ * draft and never opens the prompt.
  *
  * Concurrent calls share one in-flight prompt, and each handler is asked once per flight.
  */
@@ -29,6 +32,15 @@ export class UnsavedWorkRegistry {
   hasUnsaved(): boolean {
     for (const handler of this.handlers) if (handler.hasUnsaved()) return true;
     return false;
+  }
+
+  /**
+   * Drop every source's draft without asking: `SessionStore.endSession` calls this for a terminal `SessionEnded`
+   * before navigating to `/login`, so the dirty guard runs against a clean draft. A handler with nothing to lose
+   * no-ops.
+   */
+  discardAll(): void {
+    for (const handler of this.handlers) handler.discard();
   }
 
   confirmLeave(): Promise<boolean> {

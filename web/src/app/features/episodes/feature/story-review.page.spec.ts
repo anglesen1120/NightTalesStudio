@@ -5,8 +5,10 @@ import { ActivatedRoute, convertToParamMap, provideRouter } from '@angular/route
 import { TranslocoService, TranslocoTestingModule } from '@jsverse/transloco';
 import { MatSnackBar, type MatSnackBarDismiss } from '@angular/material/snack-bar';
 import { of, Subject, type Observable } from 'rxjs';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 import { AppErrorMapper } from '@core/errors';
+import { SessionApi, SessionStore } from '@core/session';
+import { FakeSessionApi } from '@core/session/testing/fake-session.api';
 import { ConfirmDialog, ConflictDialog } from '@shared/ui';
 import { ZONELESS_TEST_PROVIDERS } from '../../../testing/providers';
 import coreVi from '../../../../assets/i18n/core/vi.json';
@@ -121,9 +123,10 @@ async function createPage() {
     imports: [StoryReviewPage, translations],
     providers: [
       ...ZONELESS_TEST_PROVIDERS,
-      provideRouter([]),
+      provideRouter([{ path: 'login', children: [] }]),
       { provide: ActivatedRoute, useValue: { paramMap: of(params), queryParamMap: of(query), snapshot: { paramMap: params, queryParamMap: query } } },
       { provide: AppErrorMapper, useValue: { messageKey: () => 'errors.story_invalid_content' } },
+      { provide: SessionApi, useValue: new FakeSessionApi() },
       { provide: ConflictDialog, useValue: { open: vi.fn() } },
       { provide: ConfirmDialog, useValue: { confirm: vi.fn(() => ({ afterClosed: () => of(true) })) } },
       { provide: MatSnackBar, useValue: { open: snack.open } },
@@ -269,5 +272,20 @@ describe('StoryReviewPage', () => {
     expect(storyStore.moveTo).toHaveBeenCalledWith(0, 2);
     editor.intent.emit({ kind: 'removeParagraph', index: 1 });
     expect(storyStore.removeParagraph).toHaveBeenCalledWith(1);
+  });
+
+  it('terminalSessionEnd_WhileDirty_DiscardsTheDraft_AndOpensNoDialog', async () => {
+    const { fixture, storyStore } = await createPage();
+    // The stubbed `ConfirmDialog.confirm` is a vi.fn: reading it unbound is the point of the assertion below.
+    // eslint-disable-next-line @typescript-eslint/unbound-method
+    const confirm = TestBed.inject(ConfirmDialog).confirm as unknown as MockInstance;
+    storyStore.hasUnsavedChanges.mockReturnValue(true);
+    // A terminal `SessionEnded` discards through the registry the page registered with, before the guard runs, so the
+    // leave prompt is never opened for it.
+    TestBed.inject(SessionStore).signOut('revoked');
+    expect(storyStore.discardDraft).toHaveBeenCalledTimes(1);
+    storyStore.hasUnsavedChanges.mockReturnValue(false);
+    await expect(fixture.componentInstance.confirmLeave()).resolves.toBe(true);
+    expect(confirm).not.toHaveBeenCalled();
   });
 });

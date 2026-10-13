@@ -207,7 +207,7 @@ describe('ShellStore', () => {
     const { store, session, registry } = await setup();
     const logout = vi.spyOn(session, 'logout');
     const ask = vi.fn(() => Promise.resolve(false));
-    registry.register({ hasUnsaved: () => true, confirmLeave: ask });
+    registry.register({ hasUnsaved: () => true, discard: () => undefined, confirmLeave: ask });
     store.logOut();
     await tick();
     expect(ask).toHaveBeenCalledTimes(1);
@@ -223,7 +223,7 @@ describe('ShellStore', () => {
     const { store, session, registry } = await setup();
     const logout = vi.spyOn(session, 'logout');
     const ask = vi.fn(() => Promise.resolve(true));
-    registry.register({ hasUnsaved: () => true, confirmLeave: ask });
+    registry.register({ hasUnsaved: () => true, discard: () => undefined, confirmLeave: ask });
     store.logOut();
     await tick();
     expect(ask).toHaveBeenCalledTimes(1);
@@ -231,16 +231,18 @@ describe('ShellStore', () => {
     expect(session.status()).toBe('ended');
   });
 
-  it('terminalSessionEnd_NeverConsultsTheRegistry', async () => {
+  it('terminalSessionEnd_NeverPrompts_ButDiscardsUnsavedWork', async () => {
     const { session, registry } = await setup();
     const check = vi.fn(() => true);
     const ask = vi.fn(() => Promise.resolve(false));
-    registry.register({ hasUnsaved: check, confirmLeave: ask });
+    const discard = vi.fn();
+    registry.register({ hasUnsaved: check, discard, confirmLeave: ask });
     session.signOut('revoked');
     expect(session.status()).toBe('ended');
     expect(session.endReason()).toBe('revoked');
     expect(check).not.toHaveBeenCalled();
     expect(ask).not.toHaveBeenCalled();
+    expect(discard).toHaveBeenCalledTimes(1);
   });
 
   it('resumeRealtime_DelegatesToRealtimeService', async () => {

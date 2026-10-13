@@ -128,6 +128,8 @@ export class StoryReviewPage {
     // already asking a question is never asked again by the route deactivation that follows it.
     this.destroyRef.onDestroy(this.unsavedWork.register({
       hasUnsaved: () => this.store.hasUnsavedChanges(),
+      // A terminal `SessionEnded` discards through this handler before its navigation, so the guard never prompts.
+      discard: () => { if (this.store.hasUnsavedChanges()) this.store.discardDraft(); },
       confirmLeave: () => this.confirmLeave(),
     }));
     // The listener is registered while the draft is dirty (a cheap flag, never a serialisation per keystroke) and the

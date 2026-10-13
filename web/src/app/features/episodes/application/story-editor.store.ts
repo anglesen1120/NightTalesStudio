@@ -426,9 +426,9 @@ export class StoryEditorStore {
       const mapped = remapHint(hint);
       if (mapped === null) dropped.push(hint); else hints.push(mapped);
     }
-    // The removed paragraph's own hints wait in the buffer and come back with it; a move shifts them with the rest.
+    // A buffered paragraph comes back at its own removed index (`undoRemove`), so its hints stay keyed to that index:
+    // a move reorders the live paragraphs only and never re-keys the buffer; `insert` (undo) returns them untouched.
     if (kind === 'remove') this.bufferedHints = dropped;
-    if (kind === 'move') this.bufferedHints = this.bufferedHints.map(remapHint).filter((hint): hint is QualityHint => hint !== null);
     if (kind === 'insert') { hints.push(...this.bufferedHints); this.bufferedHints = []; }
     this.hintOverrides.set(hints);
     // A structural change is an edit, and an edit clears the server field errors; rebuilding their addresses here
