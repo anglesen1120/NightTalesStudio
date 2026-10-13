@@ -1,7 +1,8 @@
 import { test } from './fixtures/csp.fixture';
 import {
-  beforeUnloadCleanFlow, beforeUnloadDirtyFlow, deleteUndoFlow, dirtyGuardFlow, keyboardReorderFlow, logoutDirtyFlow,
-  mobileReorderFlow, mouseDragFlow, reducedMotionFlow, saveAfterMoveFlow, structureAdvisoryFlow,
+  beforeUnloadCleanFlow, beforeUnloadDirtyFlow, deleteUndoFlow, deleteWithoutSavingReloadFlow, dirtyGuardFlow,
+  keyboardReorderFlow, logoutDirtyFlow, mobileReorderFlow, mouseDragFlow, narrow360ActionWrapFlow, reducedMotionFlow,
+  saveAfterMoveFlow, structureAdvisoryFlow,
 } from './fixtures/story-editor-stubs';
 
 // 10.5.9-T1 (README D16/D18; task file §Acceptance checks and §Tests "E2E"): backend-free structure proof sharing
@@ -54,5 +55,13 @@ test.describe('story structure (vi, stubbed)', () => {
 
   test('ReducedMotion_DisablesDropListAndSnackbarMotionCSS', async ({ page }) => {
     await reducedMotionFlow(page, 'vi');
+  });
+
+  test('DeleteWithoutSaving_Reload_RestoresTheSavedVersion', async ({ page }) => {
+    await deleteWithoutSavingReloadFlow(page, 'vi');
+  });
+
+  test('Narrow360_ActionButtonsWrapUnderTheTextarea', async ({ page }) => {
+    await narrow360ActionWrapFlow(page, 'vi');
   });
 });

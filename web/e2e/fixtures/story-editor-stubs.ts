@@ -313,6 +313,12 @@ const paragraphValues = (page: Page): Promise<string[]> => paragraphTextareas(pa
 const liveAnnouncer = (page: Page): Locator => page.locator('.cdk-live-announcer-element');
 const noHorizontalOverflow = (page: Page): Promise<boolean> => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth);
 const paragraphDelete = (page: Page, label: string, name: string): Locator => segmentGroup(page, label).getByRole('button', { name, exact: true });
+/** A control the browser does not lay out has no box at all, so a missing control fails loudly instead of as `NaN`. */
+const paragraphBox = async (locator: Locator, what: string): Promise<{ readonly x: number; readonly y: number; readonly width: number; readonly height: number }> => {
+  const box = await locator.boundingBox();
+  expect(box, `${what} must be laid out`).not.toBeNull();
+  return box!;
+};
 const snackbar = (page: Page): Locator => page.locator('.mat-mdc-snack-bar-container').last();
 const snackbarAction = (page: Page, name: string): Locator => snackbar(page).getByRole('button', { name, exact: true }).first();
 /**
@@ -720,4 +726,64 @@ export async function reducedMotionFlow(page: Page, lang: E2eLang): Promise<void
   expect(reduced.surface, 'the snackbar surface motion is disabled under reduced motion').toBeLessThanOrEqual(0.00001);
   await snackbarSettled(page);
   await expectA11yClean(page);
+}
+
+/**
+ * Bullet 4/5 (task file acceptance 6): a deletion that was never saved is a client-side draft only. The paragraph is
+ * gone from the list and nothing was written, and a reload of the editor serves the stored version again — every
+ * original paragraph back in its original order, a clean save button and no unsaved indicator. The draft is dirty, so
+ * the reload raises the browser `beforeunload` dialog: the listener is registered for this page only and accepts it,
+ * which is what keeps the reload from being blocked (Playwright leaves an unhandled `beforeunload` raised).
+ */
+export async function deleteWithoutSavingReloadFlow(page: Page, lang: E2eLang): Promise<void> {
+  const C = EDITOR_STRUCTURE_COPY[lang];
+  const L = EDITOR_COPY[lang];
+  page.on('dialog', (dialog) => { void dialog.accept(); });
+  const api = await openEditor(page, lang);
+  const saved = STORY_CONTENT.paragraphs.map((paragraph) => paragraph.text);
+
+  await paragraphDelete(page, L.paragraph(2), C.deleteAt(2)).click();
+  await expect(snackbar(page)).toContainText(C.deleted);
+  await expect.poll(() => paragraphValues(page)).toEqual([saved[0]!, saved[2]!, saved[3]!]);
+  expect(api.puts, 'deleting without saving must not reach the API').toHaveLength(0);
+
+  await page.reload();
+  // The reload re-reads the episode detail and re-renders the stored draft, so what comes back is the server state.
+  await expect.poll(() => api.detailGets.length).toBeGreaterThan(1);
+  await expect.poll(() => paragraphValues(page)).toEqual(saved);
+  for (let index = 0; index < saved.length; index += 1) {
+    await expect(segment(page, L.paragraph(index + 1))).toHaveValue(saved[index]!);
+  }
+  await expect(saveButton(page, lang)).toBeDisabled();
+  await expect(page.getByRole('status').filter({ hasText: L.dirty })).toHaveCount(0);
+  expect(api.puts, 'a reload must not reach the API either').toHaveLength(0);
+}
+
+/**
+ * Bullet 8 (task file acceptance 13): at 360 px the paragraph card's action row wraps under its own textarea instead
+ * of squeezing the field, so the field keeps the full card width and the move/delete buttons still fit the viewport
+ * with no horizontal scroll. The card's `.paragraph-card__actions` is a wrapping flex row that goes `width: 100%`
+ * under the 30 rem breakpoint and the segment editor stacks it after the textarea, hence the strict `y` order.
+ */
+export async function narrow360ActionWrapFlow(page: Page, lang: E2eLang): Promise<void> {
+  const C = EDITOR_STRUCTURE_COPY[lang];
+  const L = EDITOR_COPY[lang];
+  await page.setViewportSize({ width: 360, height: 800 });
+  await openEditor(page, lang);
+  expect(await noHorizontalOverflow(page)).toBe(true);
+
+  const card = segmentGroup(page, L.paragraph(2));
+  const textarea = await paragraphBox(paragraphTextarea(page, 1), 'paragraph 2 textarea');
+  const controls: readonly (readonly [string, Locator])[] = [
+    ['move up', card.getByRole('button', { name: C.moveUpAt(2), exact: true })],
+    ['move down', card.getByRole('button', { name: C.moveDownAt(2), exact: true })],
+    ['delete', paragraphDelete(page, L.paragraph(2), C.deleteAt(2))],
+  ];
+  for (const [what, control] of controls) {
+    const box = await paragraphBox(control, `paragraph 2 ${what} button`);
+    expect(box.y, `the ${what} button must wrap below the paragraph 2 textarea at 360 px`).toBeGreaterThanOrEqual(textarea.y + textarea.height - 1);
+    expect(box.x, `the ${what} button must not be clipped past the left edge at 360 px`).toBeGreaterThanOrEqual(0);
+    expect(box.x + box.width, `the ${what} button must stay inside the 360 px viewport`).toBeLessThanOrEqual(360);
+  }
+  expect(await noHorizontalOverflow(page)).toBe(true);
 }

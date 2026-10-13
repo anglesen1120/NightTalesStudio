@@ -1,7 +1,8 @@
 import { test } from './fixtures/csp.fixture';
 import {
-  beforeUnloadCleanFlow, beforeUnloadDirtyFlow, deleteUndoFlow, dirtyGuardFlow, keyboardReorderFlow, logoutDirtyFlow,
-  mobileReorderFlow, mouseDragFlow, reducedMotionFlow, saveAfterMoveFlow, structureAdvisoryFlow,
+  beforeUnloadCleanFlow, beforeUnloadDirtyFlow, deleteUndoFlow, deleteWithoutSavingReloadFlow, dirtyGuardFlow,
+  keyboardReorderFlow, logoutDirtyFlow, mobileReorderFlow, mouseDragFlow, narrow360ActionWrapFlow, reducedMotionFlow,
+  saveAfterMoveFlow, structureAdvisoryFlow,
 } from './fixtures/story-editor-stubs';
 
 // English parity for 10.5.9-T1: the same scenarios as `episodes-structure.spec.ts` (vi) run through the shared flows.
@@ -52,5 +53,13 @@ test.describe('story structure (en, stubbed)', () => {
 
   test('ReducedMotion_DisablesDropListAndSnackbarMotionCSS', async ({ page }) => {
     await reducedMotionFlow(page, 'en');
+  });
+
+  test('DeleteWithoutSaving_Reload_RestoresTheSavedVersion', async ({ page }) => {
+    await deleteWithoutSavingReloadFlow(page, 'en');
+  });
+
+  test('Narrow360_ActionButtonsWrapUnderTheTextarea', async ({ page }) => {
+    await narrow360ActionWrapFlow(page, 'en');
   });
 });
