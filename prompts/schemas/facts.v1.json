@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "facts.v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["facts"],
+  "properties": {
+    "facts": {
+      "type": "array",
+      "minItems": 0,
+      "maxItems": 40,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["statement", "source_aliases", "confidence"],
+        "properties": {
+          "statement": { "type": "string" },
+          "source_aliases": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "type": "string", "pattern": "^s([1-9]|10)$" }
+          },
+          "confidence": { "enum": ["high", "medium", "low"] }
+        }
+      }
+    }
+  }
+}
