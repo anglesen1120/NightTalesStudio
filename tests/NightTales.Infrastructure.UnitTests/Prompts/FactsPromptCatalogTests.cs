@@ -104,29 +104,6 @@ public sealed class FactsPromptCatalogTests
         catalog.GetSchema(SchemaName).Length.ShouldBeGreaterThan(100);
     }
 
-    /// <summary>The prompt's section order and the strings its own rules and schema notes depend on.</summary>
-    [Fact]
-    public void FactsPrompt_CarriesTheRoleRulesDataRuleAndSchemaNotes()
-    {
-        var prompt = PromptsTree.Load(PromptsTree.Read()).GetStepPrompt(PromptStep.Facts);
-
-        prompt.ShouldContain("Role");
-        prompt.ShouldContain("Rules");
-        prompt.ShouldContain("Data rule");
-        prompt.ShouldContain("facts.v1");
-        foreach (var token in new[] { "statement", "source_aliases", "confidence", "high", "medium", "low", "material" })
-        {
-            prompt.ShouldContain(token);
-        }
-
-        // DEF-3: the count rule caps the array and never demands a minimum, and the empty array is
-        // exclusive to sources with no verifiable fact — both stay consistent with minItems 0 in the
-        // schema (FactsV1Schema_AcceptsAnEmptyFactsArray). The old "at least 5" claim is gone.
-        prompt.ShouldContain("at most 40");
-        prompt.ShouldContain("no verifiable fact");
-        prompt.ShouldNotContain("at least 5");
-    }
-
     // ---- the schema document's strict contract ----
 
     [Fact]

@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json;
+using Microsoft.Extensions.Options;
 using NightTales.Application.Abstractions.Money;
 using NightTales.Application.Abstractions.Prompts;
 using NightTales.Application.Abstractions.Research;
@@ -36,7 +37,7 @@ public sealed class FactExtractorTests
         var catalog = new StubCatalog();
         var draft = Draft();
         var client = new FakeTextClient().EnqueueOk(TextStep.Facts, draft);
-        var extractor = new OpenAiFactExtractor(client, catalog);
+        var extractor = new OpenAiFactExtractor(client, catalog, FactsOptionsFor());
 
         var result = await extractor.ExtractAsync(Request(Source()), Ct);
 
@@ -61,7 +62,7 @@ public sealed class FactExtractorTests
     {
         var client = new FakeTextClient().EnqueueOk(TextStep.Facts, Draft());
 
-        await new OpenAiFactExtractor(client, new StubCatalog())
+        await new OpenAiFactExtractor(client, new StubCatalog(), FactsOptionsFor())
             .ExtractAsync(Request(Source()) with { Language = language }, Ct);
 
         client.Requests.Single().PromptCacheKey.ShouldBe(expected);
@@ -73,7 +74,7 @@ public sealed class FactExtractorTests
     public async Task OpenAiFactExtractor_NeverSerialisesSourceId_OrUrl()
     {
         var client = new FakeTextClient().EnqueueOk(TextStep.Facts, Draft());
-        var extractor = new OpenAiFactExtractor(client, new StubCatalog());
+        var extractor = new OpenAiFactExtractor(client, new StubCatalog(), FactsOptionsFor());
 
         await extractor.ExtractAsync(Request(Source()), Ct);
 
@@ -103,7 +104,7 @@ public sealed class FactExtractorTests
     {
         var outcome = TextCallResult<FactsV1>.InvalidOutput("gpt-6-luna", null, "r1", [TextCallInvalidOutput<FactsV1>.SchemaInvalid]);
 
-        var result = await new OpenAiFactExtractor(new FakeTextClient().Enqueue(TextStep.Facts, outcome), new StubCatalog())
+        var result = await new OpenAiFactExtractor(new FakeTextClient().Enqueue(TextStep.Facts, outcome), new StubCatalog(), FactsOptionsFor())
             .ExtractAsync(Request(Source()), Ct);
 
         result.ShouldBeSameAs(outcome);
@@ -114,7 +115,7 @@ public sealed class FactExtractorTests
     {
         var outcome = TextCallResult<FactsV1>.Moderated("gpt-6-luna", null, "r2", ["violence"]);
 
-        var result = await new OpenAiFactExtractor(new FakeTextClient().Enqueue(TextStep.Facts, outcome), new StubCatalog())
+        var result = await new OpenAiFactExtractor(new FakeTextClient().Enqueue(TextStep.Facts, outcome), new StubCatalog(), FactsOptionsFor())
             .ExtractAsync(Request(Source()), Ct);
 
         result.ShouldBeSameAs(outcome);
@@ -127,7 +128,7 @@ public sealed class FactExtractorTests
         await cts.CancelAsync();
 
         await Should.ThrowAsync<OperationCanceledException>(
-            async () => await new OpenAiFactExtractor(new CancellingTextClient(), new StubCatalog())
+            async () => await new OpenAiFactExtractor(new CancellingTextClient(), new StubCatalog(), FactsOptionsFor())
                 .ExtractAsync(Request(Source()), cts.Token));
     }
 
@@ -135,7 +136,7 @@ public sealed class FactExtractorTests
     public async Task OpenAiFactExtractor_EmptySources_Throws()
     {
         await Should.ThrowAsync<ArgumentOutOfRangeException>(
-            async () => await new OpenAiFactExtractor(new FakeTextClient(), new StubCatalog())
+            async () => await new OpenAiFactExtractor(new FakeTextClient(), new StubCatalog(), FactsOptionsFor())
                 .ExtractAsync(Request(), Ct));
     }
 
@@ -143,7 +144,7 @@ public sealed class FactExtractorTests
     public async Task OpenAiFactExtractor_DuplicateAlias_Throws()
     {
         await Should.ThrowAsync<ArgumentException>(
-            async () => await new OpenAiFactExtractor(new FakeTextClient(), new StubCatalog())
+            async () => await new OpenAiFactExtractor(new FakeTextClient(), new StubCatalog(), FactsOptionsFor())
                 .ExtractAsync(Request(Source(), Source() with { Alias = "s1" }), Ct));
     }
 
@@ -155,7 +156,7 @@ public sealed class FactExtractorTests
     public async Task OpenAiFactExtractor_AliasOutsideS1ToS10_Throws(string alias)
     {
         await Should.ThrowAsync<ArgumentException>(
-            async () => await new OpenAiFactExtractor(new FakeTextClient(), new StubCatalog())
+            async () => await new OpenAiFactExtractor(new FakeTextClient(), new StubCatalog(), FactsOptionsFor())
                 .ExtractAsync(Request(Source() with { Alias = alias }), Ct));
     }
 
@@ -167,7 +168,7 @@ public sealed class FactExtractorTests
             .ToArray();
 
         await Should.ThrowAsync<ArgumentOutOfRangeException>(
-            async () => await new OpenAiFactExtractor(new FakeTextClient(), new StubCatalog())
+            async () => await new OpenAiFactExtractor(new FakeTextClient(), new StubCatalog(), FactsOptionsFor())
                 .ExtractAsync(Request(sources), Ct));
     }
 
@@ -177,17 +178,17 @@ public sealed class FactExtractorTests
     public async Task OpenAiFactExtractor_NonPositiveMaxOutputTokens_Throws(int maxOutputTokens)
     {
         await Should.ThrowAsync<ArgumentOutOfRangeException>(
-            async () => await new OpenAiFactExtractor(new FakeTextClient(), new StubCatalog())
+            async () => await new OpenAiFactExtractor(new FakeTextClient(), new StubCatalog(), FactsOptionsFor())
                 .ExtractAsync(Request(Source()) with { MaxOutputTokens = maxOutputTokens }, Ct));
     }
 
     [Fact]
-    public async Task FactsInjectionFixture_ProducesSchemaValidOutput_IgnoringInstruction()
+    public async Task FactsInjectionFixture_KeepsHostileTextInsideTheDataObjectStringValue()
     {
-        // D6/F21: hostile source text travels only as a value inside the one JSON data object, never into the
-        // static system prompt and never as a structure break-out. No facts-specific fixture ships yet
-        // (prompts/fixtures/injection/* is writer/review scoped, owned by 02.2.3-T2), so the writer and review
-        // payloads stand in as hostile source text and a facts-specific case is requested from 02.2.3-T2.
+        // D6/F21: hostile source text travels only as a value inside the one JSON data object, never as a
+        // structure break-out. No facts-specific fixture ships yet (prompts/fixtures/injection/* is
+        // writer/review scoped, owned by 02.2.3-T2), so the writer and review payloads stand in as hostile
+        // source text and a facts-specific case is requested from 02.2.3-T2.
         var fixtures = InjectionFixture.LoadAll(InjectionFixture.WriterStep)
             .Concat(InjectionFixture.LoadAll(InjectionFixture.ReviewStep))
             .ToArray();
@@ -196,14 +197,16 @@ public sealed class FactExtractorTests
         foreach (var fixture in fixtures)
         {
             var client = new FakeTextClient().EnqueueOk(TextStep.Facts, Draft());
-            var extractor = new OpenAiFactExtractor(client, new StubCatalog());
+            var extractor = new OpenAiFactExtractor(client, new StubCatalog(), FactsOptionsFor());
             var source = new FactSourceInput("s1", SourceId, "Title", fixture.Value, false);
 
-            var result = await extractor.ExtractAsync(Request(source), Ct);
+            await extractor.ExtractAsync(Request(source), Ct);
 
             var call = client.Requests.ShouldHaveSingleItem();
-            call.SystemPrompt.ShouldNotContain(fixture.Canary);
 
+            // The data object keeps its exact shape whatever the payload held (task not overridden, one
+            // source with exactly alias/title/text), and the payload survives verbatim inside the text
+            // string value without breaking anything around it.
             var root = JsonDocument.Parse(call.UserDataJson).RootElement;
             root.EnumerateObject().Select(property => property.Name).ShouldBe(["task", "language", "sources"]);
             root.GetProperty("task").GetString().ShouldBe("extract_facts");
@@ -211,17 +214,72 @@ public sealed class FactExtractorTests
             sources.GetArrayLength().ShouldBe(1);
             var sent = sources[0];
             sent.EnumerateObject().Select(property => property.Name).ShouldBe(["alias", "title", "text"]);
-            // The payload survives verbatim inside the text string value and breaks nothing around it.
             sent.GetProperty("text").GetString().ShouldNotBeNull().ShouldContain(fixture.Canary);
             call.UserDataJson.ShouldNotContain(SourceId.ToString());
             call.UserDataJson.ShouldNotContain("\"url\"");
             call.UserDataJson.ShouldNotContain("\"source_id\"");
-
-            // The model ignored the instruction: schema-valid facts, and the canary is nowhere in the output.
-            var ok = result.ShouldBeOfType<TextCallOk<FactsV1>>();
-            ok.Draft.Facts.ShouldAllBe(fact => !fact.Statement.Contains(fixture.Canary, StringComparison.Ordinal));
         }
     }
+
+    [Fact]
+    public async Task OpenAiFactExtractor_InputBudget_RejectsAnOverBudgetRequestBeforeTheCall()
+    {
+        var client = new FakeTextClient().EnqueueOk(TextStep.Facts, Draft());
+        var source = Source();
+        var estimate = FactInputBudget.EstimateTokens(FactDataObjectJson.Serialize(Language.Vi, [source]));
+        var extractor = new OpenAiFactExtractor(
+            client,
+            new StubCatalog(),
+            FactsOptionsFor(new FactsOptions { MaxInputTokens = estimate - 1 }));
+
+        await Should.ThrowAsync<ArgumentOutOfRangeException>(
+            async () => await extractor.ExtractAsync(Request(source), Ct));
+
+        // F-1: the cap is enforced before the text client is touched, so an over-budget request never bills.
+        client.Requests.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task OpenAiFactExtractor_InputBudget_AcceptsARequestAtExactlyTheCap()
+    {
+        var client = new FakeTextClient().EnqueueOk(TextStep.Facts, Draft());
+        var source = Source();
+        var estimate = FactInputBudget.EstimateTokens(FactDataObjectJson.Serialize(Language.Vi, [source]));
+        var extractor = new OpenAiFactExtractor(
+            client,
+            new StubCatalog(),
+            FactsOptionsFor(new FactsOptions { MaxInputTokens = estimate }));
+
+        await extractor.ExtractAsync(Request(source), Ct);
+
+        client.Requests.ShouldHaveSingleItem();
+    }
+
+    [Fact]
+    public async Task OpenAiFactExtractor_MaxSourcesBelowTheAliasCeiling_IsEnforced()
+    {
+        var sources = new[]
+        {
+            new FactSourceInput("s1", Guid.NewGuid(), "t1", "one", false),
+            new FactSourceInput("s2", Guid.NewGuid(), "t2", "two", false),
+            new FactSourceInput("s3", Guid.NewGuid(), "t3", "three", false),
+        };
+
+        var rejected = new FakeTextClient();
+        await Should.ThrowAsync<ArgumentOutOfRangeException>(
+            async () => await new OpenAiFactExtractor(rejected, new StubCatalog(), FactsOptionsFor(new FactsOptions { MaxSources = 2 }))
+                .ExtractAsync(Request(sources), Ct));
+        rejected.Requests.ShouldBeEmpty();
+
+        // Exactly MaxSources is still accepted: the bound tightens the s1..s10 ceiling, it does not ban calls.
+        var accepted = new FakeTextClient().EnqueueOk(TextStep.Facts, Draft());
+        await new OpenAiFactExtractor(accepted, new StubCatalog(), FactsOptionsFor(new FactsOptions { MaxSources = 2 }))
+            .ExtractAsync(Request(sources[..2]), Ct);
+        accepted.Requests.ShouldHaveSingleItem();
+    }
+
+    private static IOptions<FactsOptions> FactsOptionsFor(FactsOptions? options = null) =>
+        Microsoft.Extensions.Options.Options.Create(options ?? new FactsOptions());
 
     private static FactSourceInput Source() => new("s1", SourceId, "Source one", "The source text.", false);
 

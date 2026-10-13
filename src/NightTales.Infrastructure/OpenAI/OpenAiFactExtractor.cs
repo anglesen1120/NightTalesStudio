@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using Microsoft.Extensions.Options;
 using NightTales.Application.Abstractions.Prompts;
 using NightTales.Application.Abstractions.Research;
 using NightTales.Application.Abstractions.Text;
@@ -27,13 +28,17 @@ namespace NightTales.Infrastructure.OpenAI;
 /// </para>
 /// <para>
 /// The request is a programming-error boundary: empty sources, an alias outside <c>s1…s10</c>, a duplicate
-/// alias, more than ten sources or a non-positive <c>max_output_tokens</c> throw, because the caller builds
-/// the request from the plan and must never hand a malformed call to the provider.
+/// alias, more sources than <c>Facts:MaxSources</c>, a serialised data object above <c>Facts:MaxInputTokens</c>
+/// or a non-positive <c>max_output_tokens</c> throw, because the caller builds the request from the plan and
+/// must never hand a malformed or over-budget call to the provider. The budget check repeats what
+/// <see cref="FactInputBudget.Plan"/> already reports, so a caller that ignores
+/// <see cref="FactInputBudgetStatus.OverBudget"/> or hand-builds the sources still cannot exceed the cap.
 /// </para>
 /// </remarks>
 /// <param name="client">Makes the structured-output call.</param>
 /// <param name="catalog">Supplies the <c>facts/v1</c> step prompt and the <c>facts.v1</c> schema.</param>
-public sealed partial class OpenAiFactExtractor(ITextClient client, IPromptCatalog catalog) : IFactExtractor
+/// <param name="options">The <c>Facts</c> input budget this call is checked against before the client is touched.</param>
+public sealed partial class OpenAiFactExtractor(ITextClient client, IPromptCatalog catalog, IOptions<FactsOptions> options) : IFactExtractor
 {
     private const string SchemaName = "facts.v1";
     private const string SchemaFile = "facts.v1.json";
@@ -45,15 +50,31 @@ public sealed partial class OpenAiFactExtractor(ITextClient client, IPromptCatal
     public async ValueTask<TextCallResult<FactsV1>> ExtractAsync(FactExtractionRequest req, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(req);
-        Guard(req);
+        var settings = options.Value;
+        Guard(req, settings);
 
         var language = FactDataObjectJson.LanguageSpelling(req.Language);
+
+        // F-1: the cap is enforced here, not only reported by FactInputBudget.Plan. The data object is
+        // serialised once, so the bytes the estimate is taken from are exactly the bytes the client sends, and
+        // the check runs before the text client is touched: an over-budget request never reaches (and never
+        // bills) the provider.
+        var userDataJson = FactDataObjectJson.Serialize(req.Language, req.Sources);
+        var estimatedTokens = FactInputBudget.EstimateTokens(userDataJson);
+
+        if (estimatedTokens > settings.MaxInputTokens)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(req),
+                estimatedTokens,
+                $"The serialised data object is an estimated {estimatedTokens} tokens, above Facts:MaxInputTokens ({settings.MaxInputTokens}).");
+        }
 
         var call = new TextCallRequest(
             req.Run,
             TextStep.Facts,
             catalog.GetStepPrompt(PromptStep.Facts),
-            FactDataObjectJson.Serialize(req.Language, req.Sources),
+            userDataJson,
             SchemaName,
             catalog.GetSchema(SchemaFile),
             req.MaxOutputTokens,
@@ -66,16 +87,18 @@ public sealed partial class OpenAiFactExtractor(ITextClient client, IPromptCatal
         return await client.CallAsync<FactsV1>(call, ct).ConfigureAwait(false);
     }
 
-    private static void Guard(FactExtractionRequest req)
+    private static void Guard(FactExtractionRequest req, FactsOptions options)
     {
         if (req.Sources.Count == 0)
         {
             throw new ArgumentOutOfRangeException(nameof(req), "A fact-extraction call needs at least one source.");
         }
 
-        if (req.Sources.Count > FactInputLimits.MaxSourcesCeiling)
+        // The alias scheme's own ceiling is s1…s10; a lower Facts:MaxSources tightens the call further.
+        var maxSources = Math.Min(options.MaxSources, FactInputLimits.MaxSourcesCeiling);
+        if (req.Sources.Count > maxSources)
         {
-            throw new ArgumentOutOfRangeException(nameof(req), req.Sources.Count, $"A fact-extraction call carries at most {FactInputLimits.MaxSourcesCeiling} sources (aliases s1..s10).");
+            throw new ArgumentOutOfRangeException(nameof(req), req.Sources.Count, $"A fact-extraction call carries at most {maxSources} sources (aliases s1..s{maxSources}).");
         }
 
         if (req.MaxOutputTokens <= 0)

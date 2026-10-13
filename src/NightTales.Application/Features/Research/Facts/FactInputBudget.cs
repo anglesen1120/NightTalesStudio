@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text;
 using NightTales.Domain.Common;
+using NightTales.Domain.Research;
 
 namespace NightTales.Application.Features.Research.Facts;
 
@@ -57,9 +58,11 @@ public enum FactInputBudgetStatus
     WithinBudget = 0,
 
     /// <summary>
-    /// Even at the minimum per-source floor the estimated input is over the budget (only user notes or
-    /// floor-truncated sources remain). The plan MUST NOT be sent: the caller fails the run instead of
-    /// silently exceeding the cap (02.5.3-T1 failure handling).
+    /// The plan cannot fit, or cannot be trusted to: either the estimated input is over the budget even at the
+    /// minimum per-source floor (only user notes or floor-truncated sources remain), or a <c>user_note</c> is
+    /// beyond its own <see cref="StorySource.NoteMaxChars"/> contract and is never truncated or scanned. The
+    /// plan MUST NOT be sent: the caller fails the run instead of silently exceeding the cap (02.5.3-T1
+    /// failure handling).
     /// </summary>
     OverBudget = 1,
 }
@@ -71,8 +74,8 @@ public enum FactInputBudgetStatus
 /// <param name="Sources">The sources, alias-assigned <c>s1…sN</c>, in creation order; never empty.</param>
 /// <param name="ExcludedSourceIds">The ids of the sources the plan dropped, whether for empty text, for the <c>MaxSources</c> ceiling or as a surplus of user notes; reported, not an error.</param>
 /// <param name="TruncatedAliases">The aliases whose text was cut; the <c>input_truncated</c> signal of README CR-4 for 02.5.3-T2 and the UI.</param>
-/// <param name="EstimatedTokens">The estimated token count of the serialised data object of <paramref name="Sources"/>.</param>
-/// <param name="Status">Whether the estimate fits <c>Facts:MaxInputTokens</c>.</param>
+/// <param name="EstimatedTokens">The estimated token count of the serialised data object of <paramref name="Sources"/>, or <see cref="int.MaxValue"/> when the plan is returned <see cref="FactInputBudgetStatus.OverBudget"/> because a <c>user_note</c> is beyond <see cref="StorySource.NoteMaxChars"/>: such a plan is never sent, so the oversized note text is deliberately never scanned or serialised.</param>
+/// <param name="Status">Whether the estimate fits <c>Facts:MaxInputTokens</c> and the plan may be sent.</param>
 public sealed record FactInputPlan(
     IReadOnlyList<FactSourceInput> Sources,
     IReadOnlyList<Guid> ExcludedSourceIds,
@@ -102,9 +105,28 @@ public sealed record FactInputPlan(
 /// <para>
 /// Truncation keeps the head 60 % and the tail 40 % of a cut source around a
 /// <c>\n[…truncated…]\n</c> marker, cut on text elements so a surrogate pair or a combining sequence is
-/// never split. A <c>user_note</c> source is never truncated. When only such sources (or floor-truncated
-/// ones) are left and the budget still does not fit, the plan is returned with
+/// never split; the marker is reserved <em>inside</em> <c>Facts:PerSourceCharCap</c>, so a cut source is never
+/// longer than the cap (a text at or under the cap is returned untouched). A text-element boundary that lies
+/// further than <see cref="MaxClusterWindowChars"/> past a cut target — or a text that is one huge grapheme
+/// cluster — falls back to a surrogate-safe index cut, so the walk stays bounded and the result is always
+/// well-formed. A cut is a real cut: a source is reported in <see cref="FactInputPlan.TruncatedAliases"/>
+/// only when its text actually shrank. A <c>user_note</c> source is never truncated. When only such sources
+/// (or floor-truncated ones) are left and the budget still does not fit, the plan is returned with
 /// <see cref="FactInputBudgetStatus.OverBudget"/> rather than silently exceeding the cap.
+/// </para>
+/// <para>
+/// Three ceilings bound the work before it starts. A url text above <see cref="HardTextCeiling"/> — sixteen
+/// times <c>Facts:PerSourceCharCap</c> — is first reduced by a cheap, deterministic, surrogate-safe head 60 % /
+/// tail 40 % index cut (<see cref="CeilingCut"/>), so the sanitise, the normalise, the element walk and the
+/// estimate of a hostile input are all bounded; the source is still truncated by the normal cut below, which is
+/// what reports it. A title longer than <see cref="MaxTitleChars"/> is cut to that length before the estimate
+/// and the serialisation (a title is a label, not fact content), which closes the one uncapped string of the
+/// data object. A <c>user_note</c> is capped by contract at <see cref="StorySource.NoteMaxChars"/> (3,000) and
+/// is never truncated, so a note beyond that contract cannot be brought under the budget: the plan is returned
+/// as <see cref="FactInputBudgetStatus.OverBudget"/> with
+/// <see cref="FactInputPlan.EstimatedTokens"/> at its sentinel, its texts left exactly as the caller supplied
+/// them, and no scan, sanitise or serialisation of the oversized text — it never throws. Such a plan is never
+/// sent (the run fails on the status), and the extractor re-checks the budget over the bytes it serialises.
 /// </para>
 /// <para>
 /// The <c>MaxSources</c> ceiling is filled in two passes, so a late user note is never pushed out by a url
@@ -121,6 +143,36 @@ public static class FactInputBudget
 {
     /// <summary>The marker inserted where a source text was cut.</summary>
     private const string TruncationMarker = "\n[…truncated…]\n";
+
+    /// <summary>
+    /// The longest title carried into the data object. A title is a label, never fact material, so an
+    /// over-long one is cut on a surrogate-pair boundary instead of being serialised whole — the title was
+    /// the one string of the data object with no ceiling at all.
+    /// </summary>
+    private const int MaxTitleChars = 200;
+
+    /// <summary>
+    /// The multiple of <c>Facts:PerSourceCharCap</c> above which a url text is reduced before any other work:
+    /// the hard ceiling is <see cref="HardTextCeiling"/>, so sanitising, normalising and cutting stay bounded
+    /// even for a text a hundred times the cap.
+    /// </summary>
+    private const int HardTextCeilingMultiplier = 16;
+
+    /// <summary>
+    /// How far past a cut target a text-element boundary may lie before the cut falls back to a surrogate-safe
+    /// UTF-16 index. A text that is one huge grapheme cluster — one base character with hundreds of thousands
+    /// of combining marks or ZWJ extenders — has no boundary anywhere near the target, and neither walking to
+    /// one nor cutting on one is affordable.
+    /// </summary>
+    private const int MaxClusterWindowChars = 32;
+
+    /// <summary>
+    /// The smallest cap a truncation may be asked for: a head and a tail of at least one character each have
+    /// to fit beside the marker, so a cut below this keeps the head alone and still removes at least one
+    /// character. The total-budget loop never reduces a source below
+    /// <see cref="FactInputLimits.MinimumPerSourceCharCap"/> or this bound, whichever is larger.
+    /// </summary>
+    private static readonly int MinimumTruncationLength = TruncationMarker.Length + 2;
 
     /// <summary>The estimated token count of a serialised data object: its UTF-8 byte count divided by four, rounded up.</summary>
     /// <param name="utf8Json">The serialised data object.</param>
@@ -212,50 +264,94 @@ public static class FactInputBudget
             throw new ArgumentOutOfRangeException(nameof(candidates), candidates, "Every source carries no text.");
         }
 
-        var floor = Math.Min(FactInputLimits.MinimumPerSourceCharCap, limits.PerSourceCharCap);
+        var ceiling = HardTextCeiling(limits.PerSourceCharCap);
+        var floor = Math.Max(MinimumTruncationLength, Math.Min(FactInputLimits.MinimumPerSourceCharCap, limits.PerSourceCharCap));
         var count = kept.Count;
+        var titles = new string[count];
         var full = new string[count];
         var texts = new string[count];
-        var caps = new int[count];
+
         for (var i = 0; i < count; i++)
         {
+            // A title is a label, never fact material, and it was the one string of the data object with no
+            // ceiling at all: it is cut to MaxTitleChars on a surrogate-pair boundary, then sanitised, so an
+            // over-long or hostile title is never copied whole.
+            titles[i] = FactDataObjectJson.Sanitize(CapTitle(kept[i].Title));
+        }
+
+        // A user_note is never truncated (README CR-4) and the store caps it at StorySource.NoteMaxChars
+        // (3,000), so a note beyond that contract — or beyond the hard ceiling — could never be brought under
+        // the budget. The plan reports OverBudget without scanning, sanitising or serialising the oversized
+        // text and never throws: its texts stay exactly as the caller supplied them and EstimatedTokens is the
+        // sentinel no ceiling accepts, so such a plan is never sent.
+        foreach (var candidate in kept)
+        {
+            if (candidate.Kind != FactSourceKind.UserNote)
+            {
+                continue;
+            }
+
+            var noteText = candidate.Text!;
+            if (noteText.Length > StorySource.NoteMaxChars || noteText.Length > ceiling)
+            {
+                return new FactInputPlan(
+                    BuildInputs(kept, titles, [.. kept.Select(item => item.Text!)]),
+                    excluded,
+                    [],
+                    int.MaxValue,
+                    FactInputBudgetStatus.OverBudget);
+            }
+        }
+
+        for (var i = 0; i < count; i++)
+        {
+            var raw = kept[i].Text!;
+
+            // The hard ceiling comes before every other step: a url text beyond it is reduced by a cheap,
+            // deterministic, surrogate-safe head 60 % / tail 40 % index cut, so the sanitise, the normalise,
+            // the element walk and the estimate stay bounded. The cut below still truncates the source, which
+            // is what reports it in TruncatedAliases — the ceiling cut carries no marker of its own.
+            if (kept[i].Kind == FactSourceKind.Url && raw.Length > ceiling)
+            {
+                raw = CeilingCut(raw, ceiling);
+            }
+
             // NFC, so the cap decision, the cut and the estimate all read the same text; and sanitised, so no
-            // unpaired surrogate or C0 control character reaches the object or the estimate.
-            full[i] = FactDataObjectJson.Sanitize(kept[i].Text!).Normalize(NormalizationForm.FormC);
+            // unpaired surrogate or C0 control character reaches the object or the estimate. The plan's own
+            // sources are therefore already sanitised, which is what lets the estimate serialise them without
+            // sanitising them again (SerializeSanitised) and still take the exact bytes the extractor sends.
+            full[i] = FactDataObjectJson.Sanitize(raw).Normalize(NormalizationForm.FormC);
 
             if (kept[i].Kind == FactSourceKind.UserNote)
             {
-                caps[i] = int.MaxValue;
                 texts[i] = full[i];
                 continue;
             }
 
-            caps[i] = limits.PerSourceCharCap;
-            texts[i] = Truncate(full[i], caps[i]);
+            texts[i] = Truncate(full[i], limits.PerSourceCharCap);
         }
 
-        var json = Serialize(language, kept, texts);
+        var json = Serialize(language, kept, titles, texts);
         var tokens = EstimateTokens(json);
 
         while (tokens > limits.MaxInputTokens)
         {
-            var index = LargestTruncatable(kept, full, caps, floor);
+            var index = LargestTruncatable(kept, texts, floor);
             if (index < 0)
             {
                 break;
             }
 
-            // Halve the largest truncatable source's effective size; each pass strictly reduces the picked
-            // source's budget down to the floor, so the loop terminates.
-            var current = Math.Min(caps[index], full[index].Length);
-            caps[index] = Math.Max(floor, current / 2);
-            texts[index] = Truncate(full[index], caps[index]);
+            // Halve the picked source's own truncated length: it is longer than the floor, so the new cap is
+            // strictly smaller than the length that source just produced, and a source whose text did not
+            // shrink is never picked again. Every pass therefore makes progress and the loop stops at the floor.
+            texts[index] = Truncate(full[index], Math.Max(floor, texts[index].Length / 2));
 
-            json = Serialize(language, kept, texts);
+            json = Serialize(language, kept, titles, texts);
             tokens = EstimateTokens(json);
         }
 
-        var sources = BuildInputs(kept, texts);
+        var sources = BuildInputs(kept, titles, texts);
         var truncated = new List<string>();
         for (var i = 0; i < count; i++)
         {
@@ -273,8 +369,12 @@ public static class FactInputBudget
             tokens <= limits.MaxInputTokens ? FactInputBudgetStatus.WithinBudget : FactInputBudgetStatus.OverBudget);
     }
 
-    /// <summary>The index of the truncatable source with the largest effective size, or <c>-1</c> when none can shrink further.</summary>
-    private static int LargestTruncatable(List<FactSourceCandidate> kept, string[] full, int[] caps, int floor)
+    /// <summary>
+    /// The index of the truncatable source whose truncated text is the longest, or <c>-1</c> when none can
+    /// shrink further. The size is the length the source's text <em>actually</em> has after its cut — never a
+    /// cap it did not reach — so a source whose text did not shrink is not picked over and over.
+    /// </summary>
+    private static int LargestTruncatable(List<FactSourceCandidate> kept, string[] texts, int floor)
     {
         var best = -1;
         var bestSize = 0;
@@ -285,7 +385,7 @@ public static class FactInputBudget
                 continue;
             }
 
-            var size = Math.Min(caps[i], full[i].Length);
+            var size = texts[i].Length;
             if (size <= floor || size <= bestSize)
             {
                 continue;
@@ -298,10 +398,20 @@ public static class FactInputBudget
         return best;
     }
 
-    private static string Serialize(Language language, List<FactSourceCandidate> kept, string[] texts) =>
-        FactDataObjectJson.Serialize(language, BuildInputs(kept, texts));
+    /// <summary>
+    /// Serialises the object the estimate is taken from. The plan's sources are already sanitised — the titles
+    /// by <see cref="CapTitle"/> then <see cref="FactDataObjectJson.Sanitize"/>, the texts by the sanitise in
+    /// <see cref="Plan"/> and by cuts that only ever remove whole text elements or surrogate pairs, so no
+    /// control character and no lone surrogate can appear in them — so sanitising them again on every pass of
+    /// the total-budget loop would only repeat work over the same characters.
+    /// <see cref="FactDataObjectJson.SerializeSanitised"/> writes the same bytes
+    /// <see cref="FactDataObjectJson.Serialize"/> writes for the returned sources, because sanitising an
+    /// already-sanitised string changes nothing.
+    /// </summary>
+    private static string Serialize(Language language, List<FactSourceCandidate> kept, string[] titles, string[] texts) =>
+        FactDataObjectJson.SerializeSanitised(language, BuildInputs(kept, titles, texts));
 
-    private static FactSourceInput[] BuildInputs(List<FactSourceCandidate> kept, string[] texts)
+    private static FactSourceInput[] BuildInputs(List<FactSourceCandidate> kept, string[] titles, string[] texts)
     {
         var inputs = new FactSourceInput[kept.Count];
         for (var i = 0; i < kept.Count; i++)
@@ -309,7 +419,7 @@ public static class FactInputBudget
             inputs[i] = new FactSourceInput(
                 string.Create(CultureInfo.InvariantCulture, $"s{i + 1}"),
                 kept[i].SourceId,
-                kept[i].Title,
+                titles[i],
                 texts[i],
                 kept[i].Kind == FactSourceKind.UserNote);
         }
@@ -318,9 +428,20 @@ public static class FactInputBudget
     }
 
     /// <summary>
-    /// Cuts <paramref name="text"/> to <paramref name="cap"/> characters as head 60 % + marker + tail 40 %,
-    /// on text-element boundaries so a surrogate pair or a combining sequence is never split
-    /// (02.5.3-T1). Deterministic: the same text and cap always yield the same cut.
+    /// Cuts <paramref name="text"/> to at most <paramref name="cap"/> characters as head 60 % + marker + tail
+    /// 40 % <em>of the characters the marker leaves</em>, on text-element boundaries so a surrogate pair or a
+    /// combining sequence is never split (02.5.3-T1). The marker is reserved inside the cap, so a cut source is
+    /// never longer than <paramref name="cap"/> — without that, a source a few characters over the cap would
+    /// come back longer than it went in. A text at or under the cap is returned untouched, and a text over it
+    /// always loses characters, so a reported truncation is always a real cut.
+    /// <para>
+    /// The walk is bounded: it stops at the head target, and the tail boundary is found on the same pass, which
+    /// never reaches the end of a long text. When the boundary at or after a target is further than
+    /// <see cref="MaxClusterWindowChars"/> past it — a text that is one huge grapheme cluster, a base character
+    /// with hundreds of thousands of combining marks or ZWJ extenders — the cut falls back to a surrogate-safe
+    /// UTF-16 index at the target, so neither the walk nor the scan is unbounded and the result is always
+    /// well-formed. Deterministic: the same text and cap always yield the same cut.
+    /// </para>
     /// </summary>
     private static string Truncate(string text, int cap)
     {
@@ -329,37 +450,112 @@ public static class FactInputBudget
             return text;
         }
 
-        var headTarget = cap * 6 / 10;
-        var tailTarget = cap - headTarget;
-        var lastTailBoundary = text.Length - tailTarget;
         var span = text.AsSpan();
 
-        var headEnd = text.Length;
-        var tailStart = 0;
-        var headFound = false;
-        var position = 0;
-        while (position < span.Length)
+        // Below the marker plus a character of head and tail there is no room for a marked cut: the head alone
+        // is kept, which is still a real cut and still never longer than the cap.
+        if (cap < MinimumTruncationLength)
         {
-            if (!headFound && position >= headTarget)
-            {
-                headEnd = position;
-                headFound = true;
-            }
+            return text[..SafeHeadIndex(span, cap)];
+        }
 
-            if (position <= lastTailBoundary)
+        var kept = cap - TruncationMarker.Length;
+        var headTarget = (int)(kept * 6L / 10);
+
+        // Pass one: the head boundary, walking no further than the window past the target.
+        var position = 0;
+        while (position < headTarget)
+        {
+            position += StringInfo.GetNextTextElementLength(span[position..]);
+        }
+
+        var headEnd = position - headTarget <= MaxClusterWindowChars ? position : headTarget;
+        if (headEnd > kept)
+        {
+            headEnd = kept;
+        }
+
+        headEnd = SafeHeadIndex(span, headEnd);
+
+        var tailBudget = kept - headEnd;
+        if (tailBudget == 0)
+        {
+            return string.Concat(span[..headEnd], TruncationMarker.AsSpan());
+        }
+
+        // Pass two: the tail boundary. It continues the same walk, so every position it visits is a real
+        // boundary and no text before the head target is examined twice.
+        var tailIndex = Math.Max(headEnd, text.Length - tailBudget);
+        var tailStart = text.Length;
+        while (position < text.Length)
+        {
+            if (position >= tailIndex)
             {
-                tailStart = position;
+                tailStart = position - tailIndex <= MaxClusterWindowChars ? position : tailIndex;
+                break;
             }
 
             position += StringInfo.GetNextTextElementLength(span[position..]);
         }
 
-        if (tailStart < headEnd)
+        tailStart = Math.Max(headEnd, SafeTailIndex(span, tailStart));
+
+        return string.Concat(span[..headEnd], TruncationMarker.AsSpan(), span[tailStart..]);
+    }
+
+    /// <summary>
+    /// The cheap, deterministic reduction of a url text above the hard ceiling: the head 60 % and the tail 40 %
+    /// of the ceiling, cut on surrogate-pair boundaries. It carries no marker — the cut in
+    /// <see cref="Truncate"/> is what marks and reports the truncation — and its result is never longer than
+    /// the ceiling.
+    /// </summary>
+    private static string CeilingCut(string text, int ceiling)
+    {
+        var head = (int)(ceiling * 6L / 10);
+        var span = text.AsSpan();
+        var headEnd = SafeHeadIndex(span, head);
+        var tailStart = Math.Max(headEnd, text.Length - (ceiling - head));
+
+        return string.Concat(span[..headEnd], span[SafeTailIndex(span, tailStart)..]);
+    }
+
+    /// <summary>The hard ceiling of a url text: a multiple of the per-source cap, never overflowing.</summary>
+    private static int HardTextCeiling(int perSourceCharCap) =>
+        perSourceCharCap > int.MaxValue / HardTextCeilingMultiplier
+            ? int.MaxValue
+            : perSourceCharCap * HardTextCeilingMultiplier;
+
+    /// <summary>Cuts a title to <see cref="MaxTitleChars"/>, on a surrogate-pair boundary; shorter titles are returned as they are.</summary>
+    private static string CapTitle(string title) =>
+        title.Length <= MaxTitleChars ? title : title[..SafeHeadIndex(title.AsSpan(), MaxTitleChars)];
+
+    /// <summary>The largest index at or before <paramref name="index"/> that does not sit between a surrogate pair.</summary>
+    private static int SafeHeadIndex(ReadOnlySpan<char> span, int index)
+    {
+        if (index >= span.Length)
         {
-            tailStart = headEnd;
+            index = span.Length;
         }
 
-        return string.Concat(text[..headEnd], TruncationMarker, text[tailStart..]);
+        return index > 0 && index < span.Length && char.IsHighSurrogate(span[index - 1]) && char.IsLowSurrogate(span[index])
+            ? index - 1
+            : Math.Max(index, 0);
+    }
+
+    /// <summary>The smallest index at or after <paramref name="index"/> that does not start on an unpaired low surrogate.</summary>
+    private static int SafeTailIndex(ReadOnlySpan<char> span, int index)
+    {
+        if (index <= 0)
+        {
+            return 0;
+        }
+
+        if (index >= span.Length)
+        {
+            return span.Length;
+        }
+
+        return char.IsLowSurrogate(span[index]) && char.IsHighSurrogate(span[index - 1]) ? index + 1 : index;
     }
 
     private static void GuardLimits(FactInputLimits limits)

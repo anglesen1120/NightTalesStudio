@@ -100,10 +100,44 @@ public sealed class FactInputBudgetTests
         text.ShouldContain(Marker);
         text.ShouldStartWith("H");
         text.ShouldEndWith("T");
-        text.Split(Marker)[0].ShouldBe(new string('H', 60));
-        text.Split(Marker)[1].ShouldBe(new string('T', 40));
+        // The marker is reserved inside the cap: 100 - 15 characters are shared 60 % head / 40 % tail.
+        text.Split(Marker)[0].ShouldBe(new string('H', 51));
+        text.Split(Marker)[1].ShouldBe(new string('T', 34));
+        text.Length.ShouldBe(100);
         plan.TruncatedAliases.ShouldBe(["s1"]);
         plan.InputTruncated.ShouldBeTrue();
+    }
+
+    [Fact]
+    public void FactInputBudget_CutSource_IsNeverLongerThanTheCharCap()
+    {
+        // A source a few characters over the cap must come back shorter, not longer: the marker sits inside
+        // the cap, never on top of it.
+        var text = new string('a', 20_010);
+
+        var plan = FactInputBudget.Plan(Language.En, [Url(1, text)], Limits());
+
+        var cut = plan.Sources.Single().Text;
+        plan.TruncatedAliases.ShouldBe(["s1"]);
+        cut.ShouldContain(Marker);
+        cut.Length.ShouldBeLessThanOrEqualTo(20_000);
+        cut.Length.ShouldBeLessThan(text.Length);
+    }
+
+    [Fact]
+    public void FactInputBudget_ClusterFlood_IsCutToTheCap_AndFlaggedOnlyWhenActuallyCut()
+    {
+        // One base character with 100,000 combining marks is a single text element: there is no boundary near
+        // either cut target, so the cut falls back to a surrogate-safe index — and it must still be a real cut.
+        var text = "a" + new string('\u0301', 100_000);
+
+        var plan = FactInputBudget.Plan(Language.En, [Url(1, text)], Limits());
+
+        var cut = plan.Sources.Single().Text;
+        plan.TruncatedAliases.ShouldBe(["s1"]);
+        cut.Length.ShouldBeLessThanOrEqualTo(20_000);
+        cut.Length.ShouldBeLessThan(text.Length);
+        IsWellFormedUtf16(cut).ShouldBeTrue();
     }
 
     [Fact]
@@ -311,10 +345,11 @@ public sealed class FactInputBudgetTests
         cut.ShouldContain(Marker);
         IsWellFormedUtf16(cut).ShouldBeTrue();
         cut.ShouldNotContain("\uFFFD");
-        // The head holds only whole astral pairs: 120 chars, sixty glyphs.
+        cut.Length.ShouldBeLessThanOrEqualTo(201);
+        // The head holds only whole astral pairs: 112 characters, fifty-six glyphs.
         var head = cut.Split(Marker)[0];
-        head.Length.ShouldBe(120);
-        head.ShouldBe(string.Concat(Enumerable.Repeat("\U0001F600", 60)));
+        head.Length.ShouldBe(112);
+        head.ShouldBe(string.Concat(Enumerable.Repeat("\U0001F600", 56)));
     }
 
     [Fact]
@@ -329,9 +364,10 @@ public sealed class FactInputBudgetTests
 
         var cut = plan.Sources.Single().Text;
         var parts = cut.Split(Marker);
-        parts[0].ShouldBe(string.Concat(Enumerable.Repeat("x\u0301", 30)));
+        parts[0].ShouldBe(string.Concat(Enumerable.Repeat("x\u0301", 26)));
         parts[0].ShouldNotEndWith("x");
-        parts[1].ShouldBe(string.Concat(Enumerable.Repeat("x\u0301", 21)));
+        parts[1].ShouldBe(string.Concat(Enumerable.Repeat("x\u0301", 17)));
+        cut.Length.ShouldBeLessThanOrEqualTo(101);
         IsWellFormedUtf16(cut).ShouldBeTrue();
     }
 

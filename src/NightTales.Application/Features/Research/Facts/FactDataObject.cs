@@ -63,13 +63,30 @@ public static class FactDataObjectJson
     {
         ArgumentNullException.ThrowIfNull(sources);
 
-        var data = new FactDataObject(
-            ExtractFactsTask,
-            LanguageSpelling(language),
+        return SerializeData(
+            language,
             [.. sources.Select(source => new FactDataSource(source.Alias, Sanitize(source.Title), Sanitize(source.Text)))]);
-
-        return JsonSerializer.Serialize(data, Options);
     }
+
+    /// <summary>
+    /// Serialises the one data object without sanitising: the caller states that every string is already
+    /// sanitised, which is what lets <see cref="FactInputBudget"/> estimate a plan without re-walking its
+    /// characters on every pass of the total-budget loop. The bytes are identical to what
+    /// <see cref="Serialize"/> writes for the same sources, because sanitising an already-sanitised string
+    /// changes nothing — so the estimate still equals the bytes the extractor sends.
+    /// </summary>
+    /// <param name="language">The run's language.</param>
+    /// <param name="sources">The sources to send; every title and text must already be sanitised.</param>
+    /// <returns>The data object as JSON.</returns>
+    internal static string SerializeSanitised(Language language, IReadOnlyList<FactSourceInput> sources)
+    {
+        ArgumentNullException.ThrowIfNull(sources);
+
+        return SerializeData(language, [.. sources.Select(source => new FactDataSource(source.Alias, source.Title, source.Text))]);
+    }
+
+    private static string SerializeData(Language language, FactDataSource[] sources) =>
+        JsonSerializer.Serialize(new FactDataObject(ExtractFactsTask, LanguageSpelling(language), sources), Options);
 
     /// <summary>
     /// Neutralises the two ways a source string could break the one data object or the store it later feeds
