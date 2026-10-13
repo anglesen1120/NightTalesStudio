@@ -14,33 +14,27 @@ namespace NightTales.AcceptanceTests.Review;
 /// <remarks>
 /// <para>
 /// Gated by <c>OPENAI_LIVE_TESTS=1</c> (D20): without it each test is skipped before any client, configuration or
-/// keychain access, so the suite is safe to run on a machine with no provider key. A missing key or a provider error
-/// aborts before any report is written, with the failure table naming the case.
+/// keychain access, so the suite is safe to run on a machine with no provider key.
 /// </para>
 /// <para>
-/// The cost cap (default USD 5 per pass, <c>NTS_ACCEPTANCE_MAX_USD</c> to override) is checked before every paid call
-/// and before the second model; when it is reached the pass is marked <c>partial</c> and no threshold decides
-/// anything. The planned call count is exactly <see cref="SeededDefectRun.CallsPerModel"/> per model — no retries
-/// beyond the client's own — and it is printed before the first call.
+/// The cost cap (default USD 5, <c>NTS_ACCEPTANCE_MAX_USD</c> to override) is <b>one cumulative cap for both
+/// models</b>: it is checked before every paid call and before the second model, against the shared meter plus the
+/// next call's worst-case bound. A pass the cap stops is <c>partial</c> and the test fails — a partial pass records
+/// no decision, so it must not look green. A provider error aborts before any report with the spent USD and call
+/// count in the message.
 /// </para>
 /// <para>
 /// <b>Cross-check that needs a DB-backed run.</b> <see cref="SeededDefectRun"/> meters in memory (real
 /// <c>TextCostCalculator</c>, shipped rates, no database write), so the acceptance row "one <c>usage_records</c> row
 /// per provider call with the measured cost" is not decided here. The orchestrator runs that row against a real
 /// database (Worker's <c>UsageMeter</c> + <c>ConnectionStrings__Postgres</c>) and compares the summed cost with the
-/// report's <c>cost_usd</c>.
+/// report's <c>pass_cost_usd</c>.
 /// </para>
 /// </remarks>
 /// <param name="run">The per-process pass cache: each model is called at most once.</param>
 [Trait("Category", "Acceptance")]
 public sealed class SeededDefectAcceptanceTests(SeededDefectRun run) : IClassFixture<SeededDefectRun>
 {
-    /// <summary>The D15 recall gate.</summary>
-    public const double RecallThreshold = 0.80;
-
-    /// <summary>The D15 false-block gate.</summary>
-    public const double FalseBlockThreshold = 0.10;
-
     [Fact]
     public async Task SeededDefectSet_Luna_MeetsRecallAndFalseBlockThresholds()
     {
@@ -72,23 +66,47 @@ public sealed class SeededDefectAcceptanceTests(SeededDefectRun run) : IClassFix
 
         foreach (var pass in new[] { luna, sol })
         {
-            pass.ReportPath.ShouldNotBeNull($"{pass.Model}: the pass wrote no report.");
-            File.Exists(pass.ReportPath).ShouldBeTrue($"{pass.Model}: the report file is missing.");
+            File.Exists(pass.ReportPath).ShouldBeTrue($"{pass.Model}: the report file is missing at '{pass.ReportPath}'.");
             pass.ReportPath.ShouldContain(Path.Combine("trial", "review"));
 
-            var json = File.ReadAllText(pass.ReportPath!);
+            var json = File.ReadAllText(pass.ReportPath);
 
-            // D19: the report carries ids, wire names, counts, numbers, the model and timestamps — never story text.
-            var sample = SeededDraft.Load(SeededDraft.Ids()[0]);
-            json.ShouldNotContain(sample.Brief);
-            json.ShouldNotContain(sample.Draft.Title);
-            json.ShouldNotContain(sample.Draft.Paragraphs[0].Text);
+            // D19: no fixture's story text — title, brief, every paragraph and every defect note — may appear in the
+            // report or in any console line the pass printed. Checked over the whole set, not a sample.
+            foreach (var draft in SeededDraft.LoadAll())
+            {
+                foreach (var storyText in StoryTexts(draft))
+                {
+                    json.ShouldNotContain(storyText, customMessage: $"{pass.Model}: the report leaked story text from fixture '{draft.Id}'.");
+                    foreach (var line in pass.ConsoleLines)
+                    {
+                        line.ShouldNotContain(storyText, customMessage: $"{pass.Model}: the console leaked story text from fixture '{draft.Id}'.");
+                    }
+                }
+            }
 
             using var document = JsonDocument.Parse(json);
             var root = document.RootElement;
             root.GetProperty("model").GetString().ShouldBe(pass.Model);
             root.GetProperty("partial").GetBoolean().ShouldBe(pass.Partial);
             root.GetProperty("drafts").GetArrayLength().ShouldBe(pass.Drafts.Count);
+            root.GetProperty("pass_cost_usd").GetDecimal().ShouldBe(pass.PassCostUsd);
+            root.GetProperty("recall_threshold").GetDouble().ShouldBe(SeededModelDecision.RecallThreshold);
+            root.GetProperty("false_block_threshold").GetDouble().ShouldBe(SeededModelDecision.FalseBlockThreshold);
+            root.GetProperty("eligible").GetBoolean().ShouldBe(SeededModelDecision.IsEligible(Pass(pass)));
+
+            // The name's stamp and the file's generated_at are one timestamp.
+            Path.GetFileNameWithoutExtension(pass.ReportPath)
+                .ShouldStartWith($"acceptance-{pass.Model}-{Stamp(pass)}");
+            StampOf(root).ShouldBe(pass.GeneratedAt);
+
+            var statusRoot = root.GetProperty("status_counts");
+            statusRoot.EnumerateObject().Count().ShouldBe(pass.StatusCounts.Count);
+            foreach (var pair in pass.StatusCounts)
+            {
+                statusRoot.GetProperty(pair.Key).GetInt32().ShouldBe(pair.Value);
+            }
+
             if (pass.Report is { } measured)
             {
                 var report = root.GetProperty("report");
@@ -106,7 +124,10 @@ public sealed class SeededDefectAcceptanceTests(SeededDefectRun run) : IClassFix
     {
         if (pass.Partial)
         {
-            Console.WriteLine($"{pass.Model}: pass is partial (USD cap reached); no threshold is asserted.");
+            Console.WriteLine(FormattableString.Invariant(
+                $"{pass.Model}: pass is partial (spent {pass.SpentUsd:0.0000} of the {pass.CapUsd:0.00} USD cap over {pass.Drafts.Count} reviewed drafts); no decision is recorded."));
+            false.ShouldBeTrue(FormattableString.Invariant(
+                $"{pass.Model}: the pass is partial — the USD cap stopped it at {pass.SpentUsd:0.0000} of {pass.CapUsd:0.00} after {pass.Drafts.Count} of {SeededDefectRun.CallsPerModel} drafts — and no decision is recorded; a partial pass must fail, not pass green."));
             return;
         }
 
@@ -114,28 +135,38 @@ public sealed class SeededDefectAcceptanceTests(SeededDefectRun run) : IClassFix
         var report = pass.Report!;
 
         report.Recall.ShouldBeGreaterThanOrEqualTo(
-            RecallThreshold,
+            SeededModelDecision.RecallThreshold,
             FormattableString.Invariant(
-                $"{pass.Model}: recall {report.Recall:0.0000} is below the D15 threshold {RecallThreshold:0.00} ({report.DetectedDefects}/{report.SeededDefects} planted defects detected)."));
+                $"{pass.Model}: recall {report.Recall:0.0000} is below the D15 threshold {SeededModelDecision.RecallThreshold:0.00} ({report.DetectedDefects}/{report.SeededDefects} planted defects detected)."));
 
         report.FalseBlockRate.ShouldBeLessThanOrEqualTo(
-            FalseBlockThreshold,
+            SeededModelDecision.FalseBlockThreshold,
             FormattableString.Invariant(
-                $"{pass.Model}: false-block rate {report.FalseBlockRate:0.0000} is above the D15 threshold {FalseBlockThreshold:0.00} ({report.CleanDraftsWithBlocking}/{report.CleanDrafts} clean drafts blocked)."));
+                $"{pass.Model}: false-block rate {report.FalseBlockRate:0.0000} is above the D15 threshold {SeededModelDecision.FalseBlockThreshold:0.00} ({report.CleanDraftsWithBlocking}/{report.CleanDrafts} clean drafts blocked)."));
+
+        SeededModelDecision.IsEligible(Pass(pass)).ShouldBeTrue($"{pass.Model}: the pass is not eligible for the D15 decision.");
     }
 
     private static void PrintComparison(params AcceptanceModelRun[] passes)
     {
+        var luna = passes.FirstOrDefault(pass => pass.Model == SeededDefectRun.LunaModel);
+        var sol = passes.FirstOrDefault(pass => pass.Model == SeededDefectRun.SolModel);
+        var decision = luna is not null && sol is not null ? SeededModelDecision.Decide(Pass(luna), Pass(sol)) : null;
+
         Console.WriteLine();
-        Console.WriteLine("| model | recall | false-block | cost usd | drafts | partial |");
-        Console.WriteLine("|---|---|---|---|---|---|");
+        Console.WriteLine("| model | recall | false-block | pass cost usd | drafts | partial | eligible | pinned |");
+        Console.WriteLine("|---|---|---|---|---|---|---|---|");
         foreach (var pass in passes)
         {
+            var pinned = decision is not null && Pinned(decision.Choice) == pass.Model;
             Console.WriteLine(
                 FormattableString.Invariant(
-                    $"| {pass.Model} | {Number(pass.Report?.Recall)} | {Number(pass.Report?.FalseBlockRate)} | {pass.Report?.CostUsd ?? 0m:0.0000} | {pass.Drafts.Count} | {pass.Partial} |"));
+                    $"| {pass.Model} | {Number(pass.Report?.Recall)} | {Number(pass.Report?.FalseBlockRate)} | {pass.PassCostUsd:0.0000} | {pass.Drafts.Count} | {pass.Partial} | {SeededModelDecision.IsEligible(Pass(pass))} | {pinned} |"));
         }
 
+        Console.WriteLine();
+        Console.WriteLine("| model | issue type | recall |");
+        Console.WriteLine("|---|---|---|");
         foreach (var pass in passes.Where(pass => pass.Report is not null))
         {
             foreach (var pair in pass.Report!.RecallByType.OrderBy(pair => pair.Key, StringComparer.Ordinal))
@@ -145,7 +176,37 @@ public sealed class SeededDefectAcceptanceTests(SeededDefectRun run) : IClassFix
         }
 
         Console.WriteLine();
+        Console.WriteLine(
+            decision is null
+                ? "D15 decision: n/a (a pass is missing)."
+                : FormattableString.Invariant($"D15 decision: {decision.Choice.ToString().ToLowerInvariant()}; pinned model: {Pinned(decision.Choice) ?? "none"}."));
+        Console.WriteLine();
     }
+
+    /// <summary>Every story-text sample D19 must keep out of the report and the console (empty samples are skipped).</summary>
+    private static IEnumerable<string> StoryTexts(SeededDraft draft)
+    {
+        var samples = new List<string> { draft.Draft.Title, draft.Brief };
+        samples.AddRange(draft.Draft.Paragraphs.Select(paragraph => paragraph.Text));
+        samples.AddRange(draft.SeedDefects.Select(defect => defect.Note));
+
+        return samples.Where(sample => !string.IsNullOrWhiteSpace(sample));
+    }
+
+    private static SeededModelPass Pass(AcceptanceModelRun run) => new(run.Report, run.Partial);
+
+    private static string? Pinned(SeededModelChoice choice) => choice switch
+    {
+        SeededModelChoice.Luna => SeededDefectRun.LunaModel,
+        SeededModelChoice.Sol => SeededDefectRun.SolModel,
+        _ => null,
+    };
+
+    private static string Stamp(AcceptanceModelRun run) =>
+        run.GeneratedAt.ToString("yyyyMMdd-HHmmss", CultureInfo.InvariantCulture);
+
+    private static DateTimeOffset StampOf(JsonElement root) =>
+        DateTimeOffset.Parse(root.GetProperty("generated_at").GetString()!, CultureInfo.InvariantCulture);
 
     private static string Number(double? value) =>
         value is { } measured ? measured.ToString("0.0000", CultureInfo.InvariantCulture) : "n/a";

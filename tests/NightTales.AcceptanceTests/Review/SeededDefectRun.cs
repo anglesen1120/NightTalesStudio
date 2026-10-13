@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Text.Encodings.Web;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using System.Text.Unicode;
 using ErrorOr;
 using Microsoft.Extensions.Configuration;
@@ -36,29 +37,41 @@ public sealed record DefectRef(string Type, string Segment);
 
 /// <summary>What one model reported for one draft: the planted defects and the ones it matched (D19: no text).</summary>
 /// <param name="Id">The fixture id.</param>
+/// <param name="Status">The scored outcome of the call: <c>ok</c>, a rejected review, or the non-Ok model outcome.</param>
 /// <param name="Seeded">The planted defects.</param>
 /// <param name="Detected">The planted defects an issue matched.</param>
 /// <param name="BlockingOnClean">The blocking issue types on a clean draft, ordinal order; empty for a seeded draft.</param>
 public sealed record AcceptanceDraftOutcome(
     string Id,
+    string Status,
     IReadOnlyList<DefectRef> Seeded,
     IReadOnlyList<DefectRef> Detected,
     IReadOnlyList<string> BlockingOnClean);
 
 /// <summary>The outcome of one model's pass over the frozen set (02.6.1-T2).</summary>
 /// <param name="Model">The model under test.</param>
-/// <param name="GeneratedAt">When the pass finished.</param>
+/// <param name="GeneratedAt">When the pass finished; the report name and its <c>generated_at</c> carry this one stamp.</param>
 /// <param name="Partial"><see langword="true"/> when the USD cap stopped the pass before every draft was reviewed.</param>
-/// <param name="ReportPath">The written report, or <see langword="null"/> when nothing was scored.</param>
+/// <param name="ReportPath">The written report; every pass writes one, a partial pass with <c>partial: true</c>.</param>
+/// <param name="PassCostUsd">This pass's own spend: the cumulative meter at the pass end minus its value at the pass start.</param>
+/// <param name="SpentUsd">The cumulative meter at the pass end, across every pass in the process.</param>
+/// <param name="CapUsd">The one cumulative USD cap that bounds all passes of the process.</param>
+/// <param name="StatusCounts">The per-status draft counts of this pass.</param>
 /// <param name="Drafts">Per-draft outcomes; only the drafts actually reviewed.</param>
-/// <param name="Report">The measured report, or <see langword="null"/> when the partial pass was not scorable.</param>
+/// <param name="Report">The measured report, or <see langword="null"/> when the reviewed prefix could not be scored.</param>
+/// <param name="ConsoleLines">Every console line this pass printed, so D19 can be checked over the whole output.</param>
 public sealed record AcceptanceModelRun(
     string Model,
     DateTimeOffset GeneratedAt,
     bool Partial,
-    string? ReportPath,
+    string ReportPath,
+    decimal PassCostUsd,
+    decimal SpentUsd,
+    decimal CapUsd,
+    IReadOnlyDictionary<string, int> StatusCounts,
     List<AcceptanceDraftOutcome> Drafts,
-    SeededDefectReport? Report);
+    SeededDefectReport? Report,
+    IReadOnlyList<string> ConsoleLines);
 
 /// <summary>
 /// The live engine of the seeded-defect acceptance set (02.6.1-T2 §Design, D15/D19/D20/T25): it composes the real
@@ -72,6 +85,30 @@ public sealed record AcceptanceModelRun(
 /// touch the environment, the keychain, the filesystem or the network, and xunit builds the class fixture before the
 /// skip is evaluated. The environment and the key are therefore read on the first <see cref="RunAsync"/>, which no
 /// skipped test reaches.
+/// </para>
+/// <para>
+/// <b>Key.</b> The only key source is the macOS keychain item the repository already uses for the story key
+/// (<c>nts.openai.story</c>), read with <c>security find-generic-password -a "$USER" -s … -w</c> under a 10 s
+/// timeout; the value is handed to the client and never logged, printed or written to a report. There is no
+/// environment-variable source.
+/// </para>
+/// <para>
+/// <b>Cap.</b> The USD cap is <b>one cumulative cap for both models</b>, not a per-pass budget: it is checked against
+/// the shared meter's cumulative spend plus the worst-case bound of the next call, so a single call can never push
+/// the run past the cap. A pass the cap stops is <c>partial</c> and decides nothing. Residual: the client may issue
+/// up to <c>MaxAttempts = 2</c> HTTP requests per fixture and a billed first attempt is not metered before the
+/// retry, so a pass can exceed the cap by at most the bound of one call; the cap itself cannot be exceeded by a
+/// single call.
+/// </para>
+/// <para>
+/// <b>Scoring.</b> After every Ok call the review is checked with the Domain <see cref="ReviewResultValidator"/>
+/// exactly as <c>StoryGenerationPipeline</c> does, and the validated review is scored, so a taste issue is
+/// downgraded and a missing ear-rule answer becomes an issue before recall is measured. There is no retry: the paid
+/// bound stays one <c>ReviewAsync</c> call per fixture per model. A review the validator rejects is recorded as
+/// <c>invalid_review</c> and scored as no issues (a miss for a seeded defect, no block on a clean draft); a
+/// <c>InvalidOutput</c> or <c>Moderated</c> outcome is recorded as <c>invalid_output</c>/<c>moderated</c> and scored
+/// the same way, so an earlier paid review is never discarded. Only a provider, transport, key or alias failure
+/// aborts, before any report, with the spent USD and call count in the message.
 /// </para>
 /// <para>
 /// <b>Metering.</b> The cheapest faithful meter is used: <see cref="InMemoryUsageMeter"/> prices each call with the
@@ -91,13 +128,10 @@ public sealed class SeededDefectRun
     /// <summary>The environment variable that gates every live test (02 README D20).</summary>
     public const string LiveEnvVar = "OPENAI_LIVE_TESTS";
 
-    /// <summary>The environment variable holding the provider key.</summary>
-    public const string ApiKeyEnvVar = "OPENAI_API_KEY";
-
     /// <summary>The environment variable overriding the USD cap (T25).</summary>
     public const string MaxUsdEnvVar = "NTS_ACCEPTANCE_MAX_USD";
 
-    /// <summary>The default hard stop for one model pass, in USD (T25).</summary>
+    /// <summary>The default hard stop for the whole run, in USD (T25).</summary>
     public const decimal DefaultMaxUsd = 5m;
 
     /// <summary>The cheapest candidate model (the shipped <c>OpenAi:Models:Review</c>).</summary>
@@ -106,7 +140,29 @@ public sealed class SeededDefectRun
     /// <summary>The stronger candidate model.</summary>
     public const string SolModel = "gpt-6-sol";
 
-    private const string KeychainService = "nts.openai.story";
+    /// <summary>The macOS keychain item the story key lives in (same service the worker scripts use).</summary>
+    public const string KeychainService = "nts.openai.story";
+
+    /// <summary>How long the keychain read may take before the pass aborts.</summary>
+    public static readonly TimeSpan KeychainTimeout = TimeSpan.FromSeconds(10);
+
+    /// <summary>The scored status of an Ok review the validator accepted.</summary>
+    public const string StatusOk = "ok";
+
+    /// <summary>The scored status of a review the <see cref="ReviewResultValidator"/> rejected.</summary>
+    public const string StatusInvalidReview = "invalid_review";
+
+    /// <summary>The scored status of a <c>TextCallInvalidOutput</c> outcome.</summary>
+    public const string StatusInvalidOutput = "invalid_output";
+
+    /// <summary>The scored status of a <c>TextCallModerated</c> outcome.</summary>
+    public const string StatusModerated = "moderated";
+
+    /// <summary>A review that carries no issue, so a draft with a non-Ok outcome scores as a miss and never blocks a clean draft.</summary>
+    private static readonly StoryReviewV1 EmptyReview =
+        new(new ReviewScores(3, 3, 3, 3, 3, null, 3), [], [], null, [], string.Empty);
+
+    private static readonly Regex ModelNamePattern = new("^[A-Za-z0-9._-]+$", RegexOptions.CultureInvariant);
 
     private static readonly JsonSerializerOptions ReportOptions = new()
     {
@@ -146,7 +202,7 @@ public sealed class SeededDefectRun
         }
     }
 
-    /// <summary>Wraps the pass so a synchronous failure surfaces as a faulted task, not as a throw from the caller.</summary>
+    /// <summary>Wraps the pass so an asynchronous failure surfaces as a faulted task, not as a throw from the caller.</summary>
     private async Task<AcceptanceModelRun> Guard(string model, CancellationToken ct) =>
         await RunCoreAsync(model, ct).ConfigureAwait(false);
 
@@ -154,19 +210,25 @@ public sealed class SeededDefectRun
     {
         var cap = _capUsd ??= Cap();
         var drafts = SeededDraft.LoadAll();
+        var lines = new List<string>();
+        IStoryCostEstimator estimator = new ApproximateCostEstimator(model);
 
-        Console.WriteLine(
-            FormattableString.Invariant(
-                $"seeded-defect acceptance: model {model}, {CallsPerModel} paid review calls planned, USD cap {cap:0.00}."));
+        Log(lines, FormattableString.Invariant(
+            $"seeded-defect acceptance: model {model}, {CallsPerModel} paid review calls planned, USD cap {cap:0.00} (one cumulative cap for both models)."));
 
-        // The cap is checked before the second model as well as before every call (T25).
-        if (_meter.TotalUsd >= cap)
+        // Frozen-set guard (T27): the loaded fixtures must be exactly the frozen manifest, or a paid run would
+        // score a set nobody froze. Checked before the first paid call, and before the key is read.
+        GuardFrozenSet(drafts);
+
+        var firstBound = await estimator.ReviewWorstCaseAsync(drafts[0].Tier, drafts[0].Language, ct).ConfigureAwait(false);
+        if (OverCap(_meter.TotalUsd, cap, firstBound))
         {
-            Console.WriteLine(FormattableString.Invariant($"USD cap reached before {model} ({_meter.TotalUsd:0.0000} >= {cap:0.00}); pass skipped."));
-            return new AcceptanceModelRun(model, DateTimeOffset.Now, Partial: true, ReportPath: null, [], null);
+            Log(lines, FormattableString.Invariant(
+                $"USD cap reached before {model} (spent {_meter.TotalUsd:0.0000} + worst case {Bound(firstBound):0.0000} >= {cap:0.00}); pass skipped, no decision is recorded."));
+            return Skipped(model, cap, _meter.TotalUsd, lines);
         }
 
-        using var provider = Compose(model, ApiKey());
+        using var provider = Compose(model, ApiKey(), estimator);
         var catalog = provider.GetRequiredService<IPromptCatalog>();
         if (string.IsNullOrWhiteSpace(catalog.Release))
         {
@@ -185,18 +247,24 @@ public sealed class SeededDefectRun
             Attempt: 1,
             PriceVersion: "acceptance");
 
-        var reviews = new List<StoryReviewV1>(drafts.Count);
+        var startUsd = _meter.TotalUsd;
+        var effective = new List<StoryReviewV1>(drafts.Count);
+        var statuses = new List<string>(drafts.Count);
         var partial = false;
 
         foreach (var draft in drafts)
         {
-            if (_meter.TotalUsd >= cap)
+            var bound = await estimator.ReviewWorstCaseAsync(draft.Tier, draft.Language, ct).ConfigureAwait(false);
+            if (OverCap(_meter.TotalUsd, cap, bound))
             {
                 partial = true;
+                Log(lines, FormattableString.Invariant(
+                    $"USD cap reached at {_meter.TotalUsd:0.0000} of {cap:0.00} after {effective.Count} of {CallsPerModel} drafts; the pass is partial and no decision is recorded."));
                 break;
             }
 
             var input = draft.ToReviewInput();
+            var questions = EarRuleQuestions.For(input.Language);
             var request = new StoryReviewRequest(
                 run,
                 input.Draft,
@@ -206,55 +274,98 @@ public sealed class SeededDefectRun
                 input.Topic,
                 input.Facts,
                 input.Bible,
-                EarRuleQuestions.For(input.Language),
+                questions,
                 StoryPresetKeys.For(input.Topic, input.Language));
 
             var result = await writer.ReviewAsync(request, ct).ConfigureAwait(false);
-            if (result is not TextCallOk<StoryReviewV1> ok)
+            switch (result)
             {
-                // A provider error (or a missing/invalid key) aborts before any report is written (§Failure handling).
-                throw new InvalidOperationException(
-                    $"The review call for fixture '{draft.Id}' with model '{model}' failed with {result.GetType().Name}.");
-            }
+                case TextCallOk<StoryReviewV1> ok:
+                    // Exactly as StoryGenerationPipeline: validate the review before scoring it, so a taste issue is
+                    // downgraded and a missing ear-rule answer becomes an issue. No retry: one paid call per fixture.
+                    var questionIds = questions.Select(question => question.QuestionId).ToArray();
+                    var validated = ReviewResultValidator.Validate(ok.Draft, input.Topic, input.Draft.Paragraphs.Count, questionIds);
+                    if (validated.IsAccepted)
+                    {
+                        effective.Add(validated.Review);
+                        statuses.Add(StatusOk);
+                    }
+                    else
+                    {
+                        // A rejected review scores as no issues: a miss for a seeded defect, no block on a clean draft.
+                        effective.Add(EmptyReview);
+                        statuses.Add(StatusInvalidReview);
+                    }
 
-            reviews.Add(ok.Draft);
+                    break;
+
+                case TextCallInvalidOutput<StoryReviewV1>:
+                    // Billed, non-Ok: never throw, never discard an earlier review; score it as no issues and go on.
+                    effective.Add(EmptyReview);
+                    statuses.Add(StatusInvalidOutput);
+                    break;
+
+                case TextCallModerated<StoryReviewV1>:
+                    effective.Add(EmptyReview);
+                    statuses.Add(StatusModerated);
+                    break;
+
+                default:
+                    // Provider, transport, key or alias failure (also funds-exhausted): abort before any report,
+                    // naming the spent USD and call count so a failed pass never hides what it already cost.
+                    throw Abort(model, draft.Id, result, _meter);
+            }
         }
 
-        var outcomes = Outcomes(drafts, reviews);
-        var report = reviews.Count == 0 ? null : Measure(outcomes, drafts, reviews);
-        var reportPath = report is null ? null : WriteReport(model, partial, outcomes, report);
-        PrintRow(model, partial, outcomes.Count, report);
+        var passCostUsd = _meter.TotalUsd - startUsd;
+        var statusCounts = Counts(statuses);
+        var outcomes = Outcomes(drafts, effective, statuses);
+        var report = Measure(outcomes, drafts, effective, passCostUsd);
+        var stamp = DateTimeOffset.Now;
+        var reportPath = WriteReport(model, stamp, partial, passCostUsd, cap, outcomes, statusCounts, report);
+        PrintRow(lines, model, partial, outcomes.Count, passCostUsd, statusCounts, report);
 
-        return new AcceptanceModelRun(model, DateTimeOffset.Now, partial, reportPath, outcomes, report);
+        return new AcceptanceModelRun(
+            model,
+            stamp,
+            partial,
+            reportPath,
+            passCostUsd,
+            _meter.TotalUsd,
+            cap,
+            statusCounts,
+            outcomes,
+            report,
+            lines);
+    }
+
+    /// <summary>A pass that never ran a call: it writes an empty report with <c>partial: true</c> and decides nothing.</summary>
+    private static AcceptanceModelRun Skipped(string model, decimal cap, decimal spentUsd, List<string> lines)
+    {
+        var counts = new Dictionary<string, int>(StringComparer.Ordinal);
+        var stamp = DateTimeOffset.Now;
+        var path = WriteReport(model, stamp, true, 0m, cap, [], counts, null);
+
+        return new AcceptanceModelRun(model, stamp, true, path, 0m, spentUsd, cap, counts, [], null, lines);
     }
 
     /// <summary>Scores the reviewed prefix of the set; <see langword="null"/> when the prefix cannot be scored (no clean draft or no seeded defect yet).</summary>
-    private SeededDefectReport? Measure(
+    private static SeededDefectReport? Measure(
         List<AcceptanceDraftOutcome> outcomes,
         IReadOnlyList<SeededDraft> drafts,
-        List<StoryReviewV1> reviews)
+        List<StoryReviewV1> reviews,
+        decimal passCostUsd)
     {
         var scored = drafts.Take(outcomes.Count).ToArray();
         return outcomes.Count >= 2 && scored.Any(draft => draft.Clean) && scored.Any(draft => draft.SeedDefects.Count > 0)
-            ? SeededDefectScorer.Score(scored, reviews, _meter.TotalUsd)
+            ? SeededDefectScorer.Score(scored, reviews, passCostUsd)
             : null;
     }
 
-    private static string WriteReport(
-        string model,
-        bool partial,
-        List<AcceptanceDraftOutcome> outcomes,
-        SeededDefectReport report)
-    {
-        var directory = Directory.CreateDirectory(Path.Combine(RepoRoot(), "trial", "review"));
-        var path = Path.Combine(directory.FullName, $"acceptance-{model}-{DateTimeOffset.Now:yyyyMMdd-HHmm}.json");
-        var document = new AcceptanceReportFile(model, DateTimeOffset.Now, partial, CallsPerModel, Cap(), outcomes, report);
-        File.WriteAllText(path, JsonSerializer.Serialize(document, ReportOptions));
-
-        return path;
-    }
-
-    private static List<AcceptanceDraftOutcome> Outcomes(IReadOnlyList<SeededDraft> drafts, List<StoryReviewV1> reviews)
+    private static List<AcceptanceDraftOutcome> Outcomes(
+        IReadOnlyList<SeededDraft> drafts,
+        List<StoryReviewV1> reviews,
+        List<string> statuses)
     {
         var outcomes = new List<AcceptanceDraftOutcome>(reviews.Count);
         for (var i = 0; i < reviews.Count; i++)
@@ -267,7 +378,7 @@ public sealed class SeededDefectRun
                 .ToArray();
             var blocking = draft.Clean
                 ? review.Issues
-                    .Where(issue => issue.Severity == "blocking")
+                    .Where(issue => issue.Severity == SeededDefectScorer.Blocking)
                     .Select(issue => issue.Type)
                     .Distinct(StringComparer.Ordinal)
                     .OrderBy(type => type, StringComparer.Ordinal)
@@ -276,6 +387,7 @@ public sealed class SeededDefectRun
 
             outcomes.Add(new AcceptanceDraftOutcome(
                 draft.Id,
+                statuses[i],
                 [.. draft.SeedDefects.Select(defect => new DefectRef(defect.Type, defect.Segment))],
                 detected,
                 blocking));
@@ -284,33 +396,54 @@ public sealed class SeededDefectRun
         return outcomes;
     }
 
-    private void PrintRow(string model, bool partial, int drafts, SeededDefectReport? report)
+    private static void PrintRow(
+        List<string> lines,
+        string model,
+        bool partial,
+        int drafts,
+        decimal passCostUsd,
+        IReadOnlyDictionary<string, int> statusCounts,
+        SeededDefectReport? report)
     {
-        Console.WriteLine();
-        Console.WriteLine("| model | recall | false-block | cost usd | drafts reviewed | partial |");
-        Console.WriteLine("|---|---|---|---|---|---|");
-        Console.WriteLine(
-            FormattableString.Invariant(
-                $"| {model} | {Number(report?.Recall)} | {Number(report?.FalseBlockRate)} | {_meter.TotalUsd:0.0000} | {drafts} | {partial} |"));
+        Log(lines, string.Empty);
+        Log(lines, "| model | recall | false-block | pass cost usd | drafts reviewed | partial |");
+        Log(lines, "|---|---|---|---|---|---|");
+        Log(lines, FormattableString.Invariant(
+            $"| {model} | {Number(report?.Recall)} | {Number(report?.FalseBlockRate)} | {passCostUsd:0.0000} | {drafts} | {partial} |"));
 
         if (report is { } measured)
         {
-            Console.WriteLine();
-            Console.WriteLine("| issue type | recall |");
-            Console.WriteLine("|---|---|");
+            Log(lines, string.Empty);
+            Log(lines, "| issue type | recall |");
+            Log(lines, "|---|---|");
             foreach (var pair in measured.RecallByType.OrderBy(pair => pair.Key, StringComparer.Ordinal))
             {
-                Console.WriteLine(FormattableString.Invariant($"| {pair.Key} | {Number(pair.Value)} |"));
+                Log(lines, FormattableString.Invariant($"| {pair.Key} | {Number(pair.Value)} |"));
             }
         }
 
-        Console.WriteLine();
+        Log(lines, string.Empty);
+        Log(lines, "| status | count |");
+        Log(lines, "|---|---|");
+        foreach (var pair in statusCounts.OrderBy(pair => pair.Key, StringComparer.Ordinal))
+        {
+            Log(lines, FormattableString.Invariant($"| {pair.Key} | {pair.Value} |"));
+        }
+
+        Log(lines, string.Empty);
     }
 
     private static string Number(double? value) =>
         value is { } measured ? measured.ToString("0.0000", CultureInfo.InvariantCulture) : "n/a";
 
-    private ServiceProvider Compose(string model, string apiKey)
+    /// <summary>Writes one console line and keeps it, so a test can check D19 over the whole captured output.</summary>
+    private static void Log(List<string> lines, string text)
+    {
+        Console.WriteLine(text);
+        lines.Add(text);
+    }
+
+    private ServiceProvider Compose(string model, string apiKey, IStoryCostEstimator estimator)
     {
         var configuration = new ConfigurationBuilder().AddInMemoryCollection().Build();
 
@@ -318,7 +451,7 @@ public sealed class SeededDefectRun
         services.AddSingleton<IConfiguration>(configuration);
         services.AddLogging();
         services.AddSingleton<IUsageMeter>(_meter);
-        services.AddSingleton<IStoryCostEstimator>(new ApproximateCostEstimator(model));
+        services.AddSingleton(estimator);
         services.AddSingleton<IFeatureFlags>(new AlwaysOnFeatureFlags());
         services.AddNightTalesApplication();
         services.AddOpenAiTextClient();
@@ -356,14 +489,55 @@ public sealed class SeededDefectRun
             : throw new InvalidOperationException(FormattableString.Invariant($"{MaxUsdEnvVar} must be a positive USD amount; read '{raw}'."));
     }
 
-    private static string ApiKey()
+    /// <summary>The keychain read, with a hard timeout; returns the raw value or an empty string, never throws for a missing item.</summary>
+    /// <exception cref="InvalidOperationException">The <c>security</c> tool cannot run or the read times out.</exception>
+    private static string Keychain()
     {
-        var fromEnvironment = Environment.GetEnvironmentVariable(ApiKeyEnvVar);
-        if (!string.IsNullOrWhiteSpace(fromEnvironment))
+        using var process = new Process
         {
-            return fromEnvironment;
+            StartInfo = new ProcessStartInfo("security", ["find-generic-password", "-a", Environment.UserName, "-s", KeychainService, "-w"])
+            {
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+            },
+        };
+
+        try
+        {
+            if (!process.Start())
+            {
+                throw new InvalidOperationException("The macOS 'security' tool reported no process.");
+            }
+        }
+        catch (Exception exception) when (exception is System.ComponentModel.Win32Exception or InvalidOperationException)
+        {
+            throw new InvalidOperationException(
+                $"The macOS 'security' tool is unavailable ({exception.GetType().Name}); the acceptance run needs the story key in the '{KeychainService}' keychain item.",
+                exception);
         }
 
+        var output = process.StandardOutput.ReadToEndAsync();
+        if (!process.WaitForExit(KeychainTimeout))
+        {
+            try
+            {
+                process.Kill(entireProcessTree: true);
+            }
+            catch (Exception exception) when (exception is InvalidOperationException or System.ComponentModel.Win32Exception)
+            {
+                // The process already exited between the timeout and the kill; nothing to clean up.
+            }
+
+            throw new InvalidOperationException(
+                FormattableString.Invariant($"Reading the '{KeychainService}' keychain item timed out after {KeychainTimeout.TotalSeconds:0} s; the acceptance run needs that key."));
+        }
+
+        return process.ExitCode == 0 ? output.GetAwaiter().GetResult() : string.Empty;
+    }
+
+    private static string ApiKey()
+    {
         var fromKeychain = Keychain().Trim();
         if (!string.IsNullOrWhiteSpace(fromKeychain))
         {
@@ -371,34 +545,113 @@ public sealed class SeededDefectRun
         }
 
         throw new InvalidOperationException(
-            $"No provider key: set {ApiKeyEnvVar}, or store the story key in the '{KeychainService}' keychain item.");
+            $"No provider key: store the story key in the '{KeychainService}' keychain item (security find-generic-password -a \"$USER\" -s {KeychainService} -w).");
     }
 
-    private static string Keychain()
+    /// <summary>Proves the loaded fixtures are exactly the frozen manifest before the first paid call (T27).</summary>
+    /// <exception cref="InvalidOperationException">A draft was added, removed or renamed since the set was frozen.</exception>
+    private static void GuardFrozenSet(IReadOnlyList<SeededDraft> drafts)
     {
-        try
-        {
-            using var process = Process.Start(new ProcessStartInfo("security", ["find-generic-password", "-s", KeychainService, "-w"])
-            {
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false,
-            });
+        var loaded = drafts.Select(draft => draft.Id).ToHashSet(StringComparer.Ordinal);
+        var frozen = SeededDefectManifest.Load().Ids.ToHashSet(StringComparer.Ordinal);
 
-            if (process is null)
+        var extra = loaded.Except(frozen).Order(StringComparer.Ordinal).ToArray();
+        var missing = frozen.Except(loaded).Order(StringComparer.Ordinal).ToArray();
+        if (extra.Length == 0 && missing.Length == 0)
+        {
+            return;
+        }
+
+        throw new InvalidOperationException(
+            $"The seeded-defect set drifted from the frozen manifest: extra ids [{string.Join(", ", extra)}], missing ids [{string.Join(", ", missing)}]; re-freeze the manifest before a paid run.");
+    }
+
+    /// <summary>Whether the next call could push the cumulative spend past the cap: spent + the call's worst case.</summary>
+    private static bool OverCap(decimal spentUsd, decimal capUsd, ErrorOr<UsageBound> bound) =>
+        spentUsd + Bound(bound) >= capUsd;
+
+    private static decimal Bound(ErrorOr<UsageBound> bound) =>
+        bound.IsError ? 0m : bound.Value.WorstCaseUsd;
+
+    private static Dictionary<string, int> Counts(List<string> statuses)
+    {
+        var counts = new Dictionary<string, int>(StringComparer.Ordinal);
+        foreach (var status in statuses)
+        {
+            counts[status] = counts.GetValueOrDefault(status) + 1;
+        }
+
+        return counts;
+    }
+
+    private static string WriteReport(
+        string model,
+        DateTimeOffset stamp,
+        bool partial,
+        decimal passCostUsd,
+        decimal capUsd,
+        List<AcceptanceDraftOutcome> outcomes,
+        IReadOnlyDictionary<string, int> statusCounts,
+        SeededDefectReport? report)
+    {
+        var eligible = SeededModelDecision.IsEligible(new SeededModelPass(report, partial));
+        var document = new AcceptanceReportFile(
+            model,
+            stamp,
+            partial,
+            CallsPerModel,
+            capUsd,
+            passCostUsd,
+            SeededModelDecision.RecallThreshold,
+            SeededModelDecision.FalseBlockThreshold,
+            eligible,
+            statusCounts,
+            outcomes,
+            report);
+
+        var directory = Directory.CreateDirectory(Path.Combine(RepoRoot(), "trial", "review"));
+        var baseName = $"acceptance-{GuardedModel(model)}-{stamp.ToString("yyyyMMdd-HHmmss", CultureInfo.InvariantCulture)}";
+
+        return CreateNewFile(directory.FullName, baseName, JsonSerializer.Serialize(document, ReportOptions));
+    }
+
+    /// <summary>Rejects a model name that is not a safe report-file segment (no path separators, no <c>..</c>).</summary>
+    private static string GuardedModel(string model)
+    {
+        if (!ModelNamePattern.IsMatch(model) || model.Contains("..", StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException(
+                $"The model name '{model}' is not a safe report file segment (must match ^[A-Za-z0-9._-]+$ and contain no '..').");
+        }
+
+        return model;
+    }
+
+    /// <summary>Creates the report with <c>FileMode.CreateNew</c>; a same-second collision gets a numeric suffix and never overwrites a paid report.</summary>
+    private static string CreateNewFile(string directory, string baseName, string contents)
+    {
+        for (var suffix = 0; ; suffix++)
+        {
+            var path = Path.Combine(directory, suffix == 0 ? baseName + ".json" : FormattableString.Invariant($"{baseName}-{suffix}.json"));
+            try
             {
-                return string.Empty;
+                using var stream = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None);
+                using var writer = new StreamWriter(stream);
+                writer.Write(contents);
+                return path;
             }
-
-            var value = process.StandardOutput.ReadToEnd();
-            process.WaitForExit();
-
-            return process.ExitCode == 0 ? value : string.Empty;
+            catch (IOException) when (File.Exists(path))
+            {
+                // A same-second collision: try the next suffix.
+            }
         }
-        catch (Exception exception) when (exception is System.ComponentModel.Win32Exception or InvalidOperationException)
-        {
-            return string.Empty;
-        }
+    }
+
+    private static InvalidOperationException Abort(string model, string fixtureId, TextCallResult<StoryReviewV1> result, InMemoryUsageMeter meter)
+    {
+        var outcome = result.GetType().Name.Split('`')[0];
+        return new InvalidOperationException(FormattableString.Invariant(
+            $"The review call for fixture '{fixtureId}' with model '{model}' failed with {outcome}; the pass aborted after USD {meter.TotalUsd:0.0000} across {meter.Items.Count} recorded call(s); no report was written and no decision is recorded."));
     }
 
     private sealed record AcceptanceReportFile(
@@ -407,6 +660,11 @@ public sealed class SeededDefectRun
         bool Partial,
         int CallsPlanned,
         decimal MaxUsd,
+        decimal PassCostUsd,
+        double RecallThreshold,
+        double FalseBlockThreshold,
+        bool Eligible,
+        IReadOnlyDictionary<string, int> StatusCounts,
         List<AcceptanceDraftOutcome> Drafts,
         SeededDefectReport? Report);
 
@@ -427,23 +685,44 @@ public sealed class SeededDefectRun
 
         public decimal TotalUsd { get; private set; }
 
-        public IReadOnlyList<UsageItem> Items => _items;
+        public List<UsageItem> Items => _items;
 
         public Task RecordAsync(UsageItem item, CancellationToken ct)
         {
             ArgumentNullException.ThrowIfNull(item);
             _items.Add(item);
 
-            var cost = TextCostCalculator.Compute(
+            TotalUsd += Cost(item);
+            return Task.CompletedTask;
+        }
+
+        /// <summary>
+        /// Mirrors <c>UsageMeter.CostOfAsync</c>: a call with no reported usage, or a provider miscount
+        /// (<c>cached &gt; input</c>), or an unpriced model is settled at the caller's bound instead of throwing, so a
+        /// paid call never looks free and the run never dies on a mispriced model.
+        /// </summary>
+        private decimal Cost(UsageItem item)
+        {
+            if (item.InputTokens is null || item.Estimated)
+            {
+                return item.CostUsd ?? 0m;
+            }
+
+            var miscounted = (item.CachedInputTokens ?? 0) > item.InputTokens;
+            if (miscounted || !rates.Text.ContainsKey(item.Model))
+            {
+                return item.CostUsd ?? 0m;
+            }
+
+            return TextCostCalculator.Compute(
                 rates.RatesFor(item.Model),
                 item.InputTokens,
                 item.CachedInputTokens,
                 item.CacheWriteTokens,
                 item.OutputTokens,
-                rates.SurchargeThresholdTokens);
-
-            TotalUsd += cost ?? item.CostUsd ?? 0m;
-            return Task.CompletedTask;
+                rates.SurchargeThresholdTokens)
+                ?? item.CostUsd
+                ?? 0m;
         }
     }
 
@@ -451,7 +730,7 @@ public sealed class SeededDefectRun
     /// Upper-bound stand-in for the pipeline's estimator: only reached when the provider reports no usage, because the
     /// real one needs the active price version and the persistence graph. It charges an assumed review input bound and
     /// the tier's <c>max_output_tokens</c> at the shipped rates of the model under test, so such a call is never priced
-    /// at zero.
+    /// at zero, and the harness reuses the same bound as the unmetered-retry margin of the cap.
     /// </summary>
     private sealed class ApproximateCostEstimator(string model) : IStoryCostEstimator
     {

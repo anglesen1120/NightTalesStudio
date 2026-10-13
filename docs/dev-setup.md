@@ -219,6 +219,27 @@ dotnet run --project src/NightTales.Api
 curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:5000/health/live   # 200
 ```
 
+### Live acceptance set (02.6.1-T2)
+
+`tests/NightTales.AcceptanceTests` is the 02.6.1-T2 live harness (02 README D15/D19/D20/T25): it reviews the 22 frozen
+drafts in `prompts/fixtures/seeded-defects/` once per candidate model and scores recall / false-blocking. It is outside
+`NightTales.ci.slnf`, so `gate.sh`, the unit/integration jobs and `backend.yml` never build or run it.
+
+- Build it first with the block above: the harness references `NightTales.TestKit`, so it needs the same gate-style
+  build-time values (the generator boots the Api).
+- Gate: `OPENAI_LIVE_TESTS=1` (D20). Without it every test skips before any client, configuration, Keychain or network access.
+- Key: macOS Keychain item `nts.openai.story`, account `$USER` — the same item the worker reads; never in a file or argv.
+- Cost: `NTS_ACCEPTANCE_MAX_USD` (default `5`) caps one cumulative pass over both models; the pass is marked `partial` at the cap.
+- Output: `trial/review/acceptance-<model>-<stamp>.json` (git-ignored). Numbers, ids and wire names only — never story text (D19).
+- Paid-call bound: 22 fixtures × 2 models = 44 review calls, plus the client's own retries.
+
+```bash
+OPENAI_LIVE_TESTS=1 dotnet test --project tests/NightTales.AcceptanceTests -c Release
+```
+
+The tests carry trait `Category=Acceptance`, but `--filter "Category=Acceptance"` does not select tests under this
+xunit.v3/MTP runner; run the project as above, or `--filter-trait "Category=Acceptance"`.
+
 ## Host boot contexts
 
 The Api and the Worker have several boot contexts beyond `dotnet run`. A host that is started runs its

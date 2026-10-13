@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using NightTales.Domain.Common;
 using NightTales.Domain.Series;
@@ -86,7 +87,9 @@ public sealed class SeededDefectFixturesTests
             covered.ShouldContain(ReviewIssueTypes.Wire(type), $"no fixture seeds an objective defect of type '{ReviewIssueTypes.Wire(type)}'");
         }
 
-        // The eight other members of the closed list are taste or platform-emitted and must never be seeded.
+        // The closed list has seventeen members: thirteen objective and four taste. The two names below are
+        // never seeded — factual_care_missing is a separate server const the model cannot return, and
+        // revision_drift is platform-emitted when a revision drifts from the approved draft.
         covered.ShouldNotContain(ReviewIssueTypes.FactualCareMissing);
         covered.ShouldNotContain("revision_drift");
     }
@@ -139,6 +142,68 @@ public sealed class SeededDefectFixturesTests
             Defects(draft).ShouldBe(FrozenDefects(frozenDraft), $"fixture '{draft.Id}' defects drifted from the frozen manifest; re-freeze it if the edit is intended");
         }
     }
+
+    [Fact]
+    public void SeededDefectFixtures_PlantedMarkupDefectIsPresent()
+    {
+        var drafts = SeededDraft.LoadAll();
+        var checkedMarkup = 0;
+        var checkedRefs = 0;
+
+        foreach (var fixture in drafts)
+        {
+            foreach (var defect in fixture.SeedDefects)
+            {
+                var (text, factRefs) = SegmentAt(fixture, defect.Segment);
+
+                switch (defect.Type)
+                {
+                    case "markdown_or_url_in_text":
+                        // The same detector the D3 validator runs over segment text, never a second regex.
+                        StoryText.FindMarkup(text).ShouldNotBeNull(
+                            $"fixture '{fixture.Id}' plants a markup defect at '{defect.Segment}', but the segment text carries no URL or markdown marker");
+                        checkedMarkup++;
+                        break;
+
+                    case "fact_ref_invalid":
+                        factRefs.ShouldNotBeEmpty(
+                            $"fixture '{fixture.Id}' plants 'fact_ref_invalid' at '{defect.Segment}', so the segment must cite a fact ref");
+                        factRefs.ShouldContain(
+                            id => !fixture.ApprovedFacts.Any(fact => string.Equals(fact.Id, id, StringComparison.Ordinal)),
+                            $"fixture '{fixture.Id}' plants 'fact_ref_invalid' at '{defect.Segment}', but every cited id is in the sheet");
+                        checkedRefs++;
+                        break;
+
+                    case "fact_not_in_sheet":
+                        factRefs.ShouldBeEmpty(
+                            $"fixture '{fixture.Id}' plants 'fact_not_in_sheet' at '{defect.Segment}', so the segment must cite no fact_ref");
+                        checkedRefs++;
+                        break;
+                }
+            }
+        }
+
+        // Guard against a vacuous pass if the three planted shapes are removed from the frozen set.
+        checkedMarkup.ShouldBeGreaterThan(0, "no fixture plants a markdown_or_url_in_text defect");
+        checkedRefs.ShouldBeGreaterThan(0, "no fixture plants a fact defect");
+    }
+
+    /// <summary>
+    /// The text and fact refs of a defect's D22 segment address (<c>title</c>, <c>hook</c>, <c>ending</c> or
+    /// <c>p:N</c>). The three planted shapes above sit on narration segments; a defect at <c>meta</c> is not
+    /// addressed here and would fail loudly rather than be silently skipped.
+    /// </summary>
+    private static (string Text, IReadOnlyList<string> FactRefs) SegmentAt(SeededDraft fixture, string segment) => segment switch
+    {
+        "title" => (fixture.Draft.Title, []),
+        "hook" => (fixture.Draft.Hook.Text, fixture.Draft.Hook.FactRefs),
+        "ending" => (fixture.Draft.Ending.Text, fixture.Draft.Ending.FactRefs),
+        _ when segment.StartsWith("p:", StringComparison.Ordinal) =>
+            (fixture.Draft.Paragraphs[int.Parse(segment[2..], CultureInfo.InvariantCulture)].Text,
+                fixture.Draft.Paragraphs[int.Parse(segment[2..], CultureInfo.InvariantCulture)].FactRefs),
+        _ => throw new InvalidOperationException(
+            $"fixture '{fixture.Id}' plants a defect at '{segment}', which SeededDefectFixtures_PlantedMarkupDefectIsPresent does not address."),
+    };
 
     /// <summary>The distinct fixture defects ordered by type then segment, so the two sides compare without depending on file order.</summary>
     private static (string Type, string Segment)[] Defects(SeededDraft draft) =>
