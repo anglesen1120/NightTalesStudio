@@ -1,0 +1,149 @@
+{
+  "id": "en-ghost-clean-01",
+  "language": "en",
+  "topic": "ghost",
+  "tier": "standard",
+  "clean": true,
+  "brief": "A tenant moves into the top flat of an old building and hears a chair dragged across the floor above him every night at the same hour, though the floor above is an empty roof terrace. The mover's list left in the kitchen names one metal chair that was never carried down. Atmosphere: close, warm, the smell of old paint, a stairwell that carries every sound.",
+  "draft": {
+    "title": "The Chair Above My Flat",
+    "hook": {
+      "text": "Every night at the same hour, a chair scrapes across the floor above my flat. My flat is the top one. Above me there is nothing but a roof terrace and the open sky.",
+      "keywords": ["narrow stairwell to a top floor flat at dusk"],
+      "fact_refs": []
+    },
+    "paragraphs": [
+      {
+        "beat": "setup",
+        "text": "I moved into the top flat in September, on a street where the buildings stand shoulder to shoulder. The flat has one bedroom, one kitchen, and a narrow stair that ends at a locked door. Behind that door is the roof terrace. My window looks up at its railing and, most nights, at nothing else.",
+        "keywords": ["dark bedroom ceiling above a quiet apartment"],
+        "fact_refs": []
+      },
+      {
+        "beat": "setup",
+        "text": "The first night, I heard a chair dragged across a floor. The sound came from above me, slow and even, like someone standing up after a long wait. Then it stopped. I lay still and listened for a second one. There was none. I slept with the lamp on.",
+        "keywords": ["empty roof terrace under a grey evening sky"],
+        "fact_refs": []
+      },
+      {
+        "beat": "setup",
+        "text": "The building is old and quiet. An old woman lives on the floor below me. The floors under her hold offices that close in the evening. After that, I am alone in the stairwell. I liked that at first. I liked the thought of a house with nobody awake in it but me.",
+        "keywords": ["stairwell with a single lit bulb at night"],
+        "fact_refs": []
+      },
+      {
+        "beat": "build_up",
+        "text": "On a Thursday I asked the caretaker about the terrace. He keeps the keys in a tin box in the lobby and comes twice a week to sweep the yard. He said the terrace holds a water tank, a railing and a drain, and nothing else. No chairs, no tables, no plants. Nobody sits up there.",
+        "keywords": ["water tank on a concrete roof in the rain"],
+        "fact_refs": []
+      },
+      {
+        "beat": "build_up",
+        "text": "He told me the flat stood empty for two years before me. The man before me left in a hurry, he said, and did not take much. He said that man waited every night for his brother for a whole year. The caretaker laughed a little when he said it, then stopped laughing.",
+        "keywords": ["half unpacked cardboard boxes in an empty kitchen"],
+        "fact_refs": []
+      },
+      {
+        "beat": "build_up",
+        "text": "The sound came back every night. It began at the same hour, and it moved in three parts. The chair scraped back across the floor. It rested. Then it scraped forward again. Three parts, every night, and then quiet until morning. I began to count them without meaning to.",
+        "keywords": ["metal chair legs on a tiled floor at night"],
+        "fact_refs": []
+      },
+      {
+        "beat": "build_up",
+        "text": "I started to climb the stairs whenever I heard it. I would stand at the locked door with my hand on the handle. The drag went on above my head, unhurried, close enough to touch. The door never opened. The handle was always cold. I always went back down again.",
+        "keywords": ["closed terrace door under a dim hallway light"],
+        "fact_refs": []
+      },
+      {
+        "beat": "clue",
+        "text": "One morning I found the mover's list in a drawer by the kitchen sink. The man before me had left it behind with two old receipts and a spare key. The list names one metal chair, one table and one bed. In the margin, in pencil, someone wrote that the chair was never carried down.",
+        "keywords": ["folded paper and a pencil on a kitchen table"],
+        "fact_refs": []
+      },
+      {
+        "beat": "clue",
+        "text": "After that I noticed my own kitchen chair. Some mornings it stood against the wall beside the terrace door, though I always leave it at the table. Once I found it turned to face the door, as if someone had sat down there to wait. I blamed my own sleeping self and moved it back.",
+        "keywords": ["kitchen chair against a white wall at dawn"],
+        "fact_refs": []
+      },
+      {
+        "beat": "clue",
+        "text": "One dry Sunday the caretaker lent me his keys and I went up. The terrace was clean and bare. The cement base of the water tank had a single groove worn into it. It ran straight and shallow, from the door to the tank and back. It was the path of a chair, walked out by years.",
+        "keywords": ["shallow groove worn into grey concrete"],
+        "fact_refs": []
+      },
+      {
+        "beat": "clue",
+        "text": "The old woman below stopped me in the stairwell that week. She asked if I had heard the chair yet. She said she has heard it for eleven years, and that the tenants before me heard it too. Then she said the chair does not like to be answered, and went inside.",
+        "keywords": ["open doorway with a cup of tea on the step"],
+        "fact_refs": []
+      },
+      {
+        "beat": "twist",
+        "text": "On the last night of October I sat in my kitchen and held my chair. Both hands on the back, both feet on the floor, and no window open anywhere in the flat. I held it still and I waited, and the drag began above me anyway. Slow, even, three parts. It had never been my chair.",
+        "keywords": ["two hands resting on a wooden chair back"],
+        "fact_refs": []
+      },
+      {
+        "beat": "twist",
+        "text": "I went up the stairs with the key in my fist. The terrace door stood open from the inside. The air on the roof was warm, like a room someone had just left. The groove in the cement was wet, though it had not rained for days. Nobody was standing out there.",
+        "keywords": ["open terrace door with warm air at night"],
+        "fact_refs": []
+      },
+      {
+        "beat": "reveal",
+        "text": "The caretaker found the old file for me the next morning. The man before me had waited for his brother every night. He carried the metal chair to the terrace door and sat there until the sky turned grey. The brother never came. The man died in a hospital two winters ago, alone.",
+        "keywords": ["single chair beside a hospital window at night"],
+        "fact_refs": []
+      },
+      {
+        "beat": "reveal",
+        "text": "The flat stood empty for two years after that. The caretaker said the dragging was heard in that time too, every night, in a building with nobody in it. He wrote each night down in his book because he did not know what else to do. He has a whole page of it.",
+        "keywords": ["empty flat with sunlight on a bare floor"],
+        "fact_refs": []
+      },
+      {
+        "beat": "reveal",
+        "text": "Now I know the three parts of that sound. A man stands up from his chair. He stands still and listens for a step on the stairs. Then he sits down again and keeps waiting. He has done it every night for a long time, at the same hour, in the same place.",
+        "keywords": ["single chair facing a closed door at night"],
+        "fact_refs": []
+      },
+      {
+        "beat": "aftermath",
+        "text": "I sleep badly on that side of the flat now, but I sleep. I moved the kitchen chair across the room and left it there. I keep the lamp on until midnight and the window shut. The drag still comes, and I let it come. It is not mine to answer.",
+        "keywords": ["bedroom lamp on a nightstand in the dark"],
+        "fact_refs": []
+      },
+      {
+        "beat": "aftermath",
+        "text": "Some nights I answer it anyway. I pull my own chair back once and push it forward once, out loud, so he can hear the floor. The house goes quiet after that, quicker than it used to. I think he only wanted someone else awake in the room.",
+        "keywords": ["chair pushed back from a kitchen table at night"],
+        "fact_refs": []
+      },
+      {
+        "beat": "aftermath",
+        "text": "In the morning I find my chair against the wall again. I put it back at the table and start the kettle. The flat is warm and ordinary. The terrace door is locked from my side. The railing up there shines with rain, and nothing on the roof has moved.",
+        "keywords": ["morning light on a tiled kitchen floor"],
+        "fact_refs": []
+      }
+    ],
+    "ending": {
+      "text": "I keep the metal chair from the list where the man before me kept it. It stands beside the door to the stairs. Some nights, when the drag comes, I sit in it myself and wait with him. Then I lock the door and go back to bed. Have you ever heard a chair move in a room that is empty?",
+      "keywords": ["rooftop railing above the city lights at dawn"],
+      "fact_refs": []
+    },
+    "description": "A tenant moves into a top-floor flat and hears a chair dragged across the floor above him every night, though the only thing above him is an empty roof terrace. A quiet haunting about waiting, told the way a neighbour would tell it.",
+    "tags": ["ghost story", "quiet haunting", "urban ghost", "night narration", "sleep story"],
+    "content_warnings": ["supernatural", "death"],
+    "structure": {
+      "sub_genre": "quiet haunting",
+      "setting": "rented apartment",
+      "opening": "moving into a new place",
+      "twist_type": "the dead is still alive",
+      "narrator_mode": "first_person"
+    }
+  },
+  "facts": [],
+  "defects": []
+}

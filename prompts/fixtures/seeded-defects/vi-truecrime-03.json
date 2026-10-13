@@ -1,0 +1,168 @@
+{
+  "id": "vi-truecrime-03",
+  "language": "vi",
+  "topic": "true_crime",
+  "tier": "standard",
+  "clean": false,
+  "brief": "Hai vụ tai nạn chết người xảy ra trên cùng một khúc đường ven biển, cách nhau đúng mười năm. Mỗi vụ được điều tra riêng và khép lại như một tai nạn đơn lẻ. Một điều tra viên mới đọc lại cả hai tập hồ sơ trong cùng một ngày và đặt chúng cạnh nhau, rồi nhận ra cả hai người lái đều nhận một cuộc gọi đến không lâu trước khi xe gặp chuyện.",
+  "draft": {
+    "title": "Hai vụ tai nạn cách nhau mười năm trên cùng một khúc đường",
+    "hook": {
+      "text": "Trong hồ sơ có hai vụ tai nạn trên cùng một khúc đường ven biển. Hai vụ ấy xảy ra vào hai đêm khác nhau và cách nhau đúng mười năm. Cả hai đêm trời khô và mặt đường không có vết phanh nào.",
+      "keywords": ["coastal road at night under a single streetlight"],
+      "fact_refs": ["f1", "f2", "f3"]
+    },
+    "paragraphs": [
+      {
+        "beat": "setup",
+        "text": "Tôi đọc hồ sơ ấy vào một buổi chiều. Căn phòng vắng, chỉ có tiếng quạt trần. Trên bàn có hai tập giấy mỏng đặt cạnh nhau. Hai tập giấy ấy ghi lại hai vụ tai nạn cũ. Vụ đầu xảy ra trước vụ sau đúng mười năm. Đêm nào trời cũng khô và tầm nhìn tốt. Người lái trong mỗi vụ đều không qua khỏi. Tôi không phải điều tra viên của vụ này.",
+        "keywords": ["empty office with a ceiling fan in afternoon light"],
+        "fact_refs": ["f1", "f2", "f4"]
+      },
+      {
+        "beat": "build_up",
+        "text": "Vụ đầu tiên chỉ được ghi lại bằng vài dòng ngắn. Biên bản ghi rõ đêm ấy trời khô và không có mưa. Tầm nhìn trên khúc đường ven biển đêm ấy rất tốt. Hiện trường nằm ở đoạn đường ven biển sát mép nước. Đến gần sáng, người ta mới nhìn thấy dấu vết trên cỏ. Người lái trong vụ ấy không qua khỏi. Biên bản dừng lại ngay ở chỗ ấy. Tôi đọc lại lần thứ hai rồi mới sang tập kia.",
+        "keywords": ["car headlights on a dry coastal road at night"],
+        "fact_refs": ["f1", "f2", "f4"]
+      },
+      {
+        "beat": "build_up",
+        "text": "Tập thứ nhất được đóng lại rồi cất vào kho. Không ai mở lại nó trong suốt mười năm sau đó. Người đi đường vẫn nhắc tới khúc cua ấy vài lần. Mỗi lần nhắc, họ chỉ bảo nhau đi chậm lại ở đoạn ấy. Rồi câu chuyện cũng nguội đi như mọi chuyện khác. Giấy ở mép tập vàng dần, nhưng chữ vẫn còn rõ. Mùa mưa kéo cỏ mọc kín cả vệ đường. Mười năm trôi qua như thế, yên ắng và đều đặn.",
+        "keywords": ["empty metal shelf in a dim storage room"],
+        "fact_refs": ["f1"]
+      },
+      {
+        "beat": "build_up",
+        "text": "Vụ thứ hai xảy ra đúng mười năm sau đó. Lần này cũng vào ban đêm, trên chính khúc đường ấy. Trời vẫn khô và tầm nhìn vẫn tốt như lần trước. Người ta tìm thấy hiện trường vào sáng hôm sau. Người lái trong vụ này cũng không qua khỏi. Biên bản thứ hai ngắn chẳng kém biên bản thứ nhất. Cũng vài dòng, cũng vài mốc thời gian. Không có gì trong đó khiến người đọc phải dừng lại.",
+        "keywords": ["long coastal road at dusk with the sea on one side"],
+        "fact_refs": ["f1", "f2", "f4"]
+      },
+      {
+        "beat": "build_up",
+        "text": "Hai biên bản ấy nằm ở hai nơi khác nhau. Mỗi nơi giữ một tập giấy mỏng trong ngăn tủ. Suốt mười năm, không ai đặt chúng cạnh nhau. Mỗi vụ được xử lý như một câu chuyện riêng. Khúc đường vẫn nằm đó, bên mép biển. Mỗi mùa mưa, cỏ lại mọc kín vệ đường. Cỏ phủ dần những gì còn sót lại bên lề. Tôi đọc hai tập ấy trong cùng một buổi.",
+        "keywords": ["two wooden cabinets in separate dim rooms"],
+        "fact_refs": ["f1"]
+      },
+      {
+        "beat": "build_up",
+        "text": "Tôi đọc kỹ phần ghi về thời tiết trong cả hai tập. Đêm nào trời cũng khô ráo và không có mưa. Tầm nhìn đêm nào cũng được ghi là tốt. Không có sương mù và không có gió lớn. Mặt đường phẳng, khô, và không gồ ghề. Với một người cầm lái, đó là điều kiện bình thường. Vậy mà cả hai lần đều có người chết trên đường. Cả hai lần, người ta đều phải dừng lại ở khúc cua ấy.",
+        "keywords": ["clear night sky above a flat coastal road"],
+        "fact_refs": ["f2", "f4"]
+      },
+      {
+        "beat": "build_up",
+        "text": "Khúc đường ấy chạy sát theo mép nước. Một bên là biển, một bên là sườn đồi thấp. Ban đêm, đèn đường trên đoạn ấy rất thưa. Ánh đèn pha chỉ soi được một quãng ngắn. Ngoài quãng ấy, mặt đường chìm vào bóng tối. Người lái nào đi đêm cũng chỉ thấy vệt sáng trước mũi xe. Hai bên đường, tiếng sóng nghe đều đều. Tôi ngồi đọc mà hình dung ra hai đêm ấy.",
+        "keywords": ["dark sea horizon beyond a low guardrail at night"],
+        "fact_refs": ["f2"]
+      },
+      {
+        "beat": "build_up",
+        "text": "Trong cả hai tập, phần ghi về người nhà rất mỏng. Người nhà chỉ hỏi đúng một điều, hỏi mãi. Họ hỏi vì sao chiếc xe lại nằm ở khúc đường ấy. Câu hỏi ấy vẫn nằm lại trong tập giấy. Người nhà đợi qua mùa này rồi tới mùa khác. Ngoài hiên, chiếc ghế cũ vẫn để nguyên chỗ ấy. Không ai dịch nó đi, cũng không ai ngồi lên. Tôi đọc tới đó rồi gấp tập giấy lại.",
+        "keywords": ["empty chair on a porch facing the sea at dusk"],
+        "fact_refs": ["f1"]
+      },
+      {
+        "beat": "build_up",
+        "text": "Một điều tra viên mới nhận hai tập giấy ấy. Buổi sáng, ông đọc hết tập thứ nhất. Buổi chiều, ông mở tiếp tập thứ hai. Ông đặt hai tập giấy cạnh nhau trên bàn. Đến trang cuối, ông ghi lại vài dòng so sánh. Từ hôm ấy, hai vụ tai nạn được nhìn cùng một lúc. Ông đọc chậm, như để không bỏ sót một chữ nào. Tôi cũng đọc chậm như ông ấy.",
+        "keywords": ["lamp over a wide desk in a dim office at night"],
+        "fact_refs": ["f6"]
+      },
+      {
+        "beat": "clue",
+        "text": "Điều đầu tiên ông để ý nằm ở phần hiện trường. Biên bản ghi rõ mặt đường không có vết phanh. Vụ thứ nhất không có một vết phanh nào. Vụ thứ hai, mười năm sau, cũng vậy. Hai hiện trường giống nhau ở đúng một chỗ. Người cầm lái gặp chuyện thường đạp phanh theo phản xạ. Ở hai chỗ ấy, mặt đường không giữ lại dấu nào. Ông đọc câu ấy rồi đọc lại lần nữa.",
+        "keywords": ["straight stretch of coastal asphalt in morning light"],
+        "fact_refs": ["f1", "f3"]
+      },
+      {
+        "beat": "clue",
+        "text": "Vết phanh là thứ đầu tiên người ta tìm ở hiện trường. Ở cả hai vụ, thứ ấy hoàn toàn vắng mặt. Mặt nhựa còn nguyên, không bị cày xước. Một dòng trong tập giấy dẫn tới địa chỉ https://vidu.vn/ho-so-vu-an. Dòng ấy nằm lẫn giữa mấy câu tả mặt đường. Tôi đọc qua rồi đọc lại phần mặt đường. Không có lấy một vệt phanh nào trên đó. Ông đánh dấu cả hai dòng ấy bằng bút chì.",
+        "keywords": ["smooth dry asphalt curve beside the sea at dusk"],
+        "fact_refs": ["f1", "f3"]
+      },
+      {
+        "beat": "clue",
+        "text": "Điều thứ hai nằm ở phần ghi về người lái. Biên bản nêu cả hai người lái đều đi một mình. Không có ai ngồi bên cạnh họ trên xe. Cả hai đều không thể được hỏi lại sau đó. Điều tra viên đọc hai câu ấy liền nhau. Ông dừng lại khá lâu ở câu thứ hai. Trong cả hai tập, không có lời khai nào của người lái. Hai người ấy không còn nói được gì nữa.",
+        "keywords": ["empty driver seat seen through a car window at night"],
+        "fact_refs": ["f4"]
+      },
+      {
+        "beat": "clue",
+        "text": "Điều thứ ba là chuyện hai người ấy không hề quen nhau. Biên bản nêu rõ điều đó bằng một câu ngắn. Hai người sống ở hai tỉnh khác nhau. Một người ở tỉnh này, một người ở tỉnh kia. Giữa hai người không có một mối quen biết nào. Không ai nối hai người ấy với nhau từ trước. Vậy mà cả hai lại chết trên cùng một đoạn đường. Điều tra viên gạch chân câu ấy bằng bút chì.",
+        "keywords": ["two small houses far apart under the same night sky"],
+        "fact_refs": ["f5"]
+      },
+      {
+        "beat": "clue",
+        "text": "Điều thứ tư nằm ở phần cuối của mỗi tập. Mỗi tập ghi lại một cuộc gọi đến. Cả hai cuộc gọi đều đến không lâu trước vụ tai nạn. Giờ của cuộc gọi được ghi ngay bên cạnh. Điều tra viên đọc dòng ấy hai lần. Rồi ông lật lại tập thứ nhất để so. Hai dòng chữ nằm ở hai trang khác nhau. Ông đặt hai tập giấy sát lại bên nhau.",
+        "keywords": ["old telephone on a wooden table in dim lamplight"],
+        "fact_refs": ["f6"]
+      },
+      {
+        "beat": "clue",
+        "text": "Hai cuộc gọi ấy cách nhau đúng mười năm. Một cuộc đến trong đêm của vụ thứ nhất. Cuộc còn lại đến trong đêm của vụ thứ hai. Cả hai đều đến trước khi xe gặp chuyện. Khoảng cách giữa cuộc gọi và vụ tai nạn không dài. Điều tra viên ghi chú điều ấy vào sổ. Ông để hai tờ giấy cạnh nhau trên bàn. Ngoài cửa sổ, trời đã tối từ lúc nào.",
+        "keywords": ["coiled telephone cord beside a wall in dim light"],
+        "fact_refs": ["f6"]
+      },
+      {
+        "beat": "clue",
+        "text": "Ông đọc lại phần ghi số gọi đến. Tập thứ nhất ghi một dãy số dài. Tập thứ hai cũng ghi một dãy số như thế. Ông đặt hai dòng ấy thẳng hàng với nhau. Ngón tay ông đưa chậm qua từng chữ một. Đến nhóm chữ đầu tiên, ngón tay ông dừng lại. Ông ngồi im khá lâu trước hai tờ giấy. Ngoài kia, đèn đường đã bật từ lúc nào.",
+        "keywords": ["two small desk lamps lit side by side at midnight"],
+        "fact_refs": ["f6"]
+      },
+      {
+        "beat": "twist",
+        "text": "Hai cuộc gọi ấy đến từ cùng một số. Đó là điều hai tập giấy thật ra cho thấy. Cùng một số ấy đã gọi cho người lái thứ nhất. Mười năm sau, số ấy gọi cho người lái thứ hai. Cả hai cuộc gọi đều đến không lâu trước vụ tai nạn. Hai vụ tai nạn ấy không rời nhau như người ta tưởng. Chúng nối với nhau bằng đúng một cuộc gọi.",
+        "keywords": ["single streetlight above an empty coastal road at midnight"],
+        "fact_refs": ["f6"]
+      },
+      {
+        "beat": "reveal",
+        "text": "Điều còn lại chưa rõ là ai đã gọi. Hai tập giấy đều không nêu tên người gọi. Số ấy chưa từng được xác định là của ai. Cuộc gọi kéo dài bao lâu cũng không được ghi. Không có tên nào được nhắc tới trong hai tập ấy. Sau mười năm, đầu dây bên kia vẫn là khoảng trống. Tôi khép tập giấy lại và để nguyên như thế.",
+        "keywords": ["silent telephone on a dark windowsill before dawn"],
+        "fact_refs": ["f6"]
+      },
+      {
+        "beat": "aftermath",
+        "text": "Giữa hai vụ, khúc đường ấy được trải nhựa lại một lần. Lớp nhựa cũ đã bị bóc đi từ lâu. Người đọc hồ sơ bây giờ không còn thấy mặt đường ấy. Hai tập giấy vẫn nằm cách nhau suốt mười năm. Không ai ghép chúng lại với nhau cho tới hôm ấy. Ở ven đường, cỏ vẫn mọc như cũ. Người qua lại chỉ thấy một khúc đường bình thường. Chỉ có hai tập giấy là còn nhớ chuyện cũ.",
+        "keywords": ["fresh asphalt strip along a coastal road in grey daylight"],
+        "fact_refs": ["f1"]
+      },
+      {
+        "beat": "aftermath",
+        "text": "Đến nay, việc so sánh hai vụ vẫn đang được làm. Không có kết luận nào được công bố thêm. Người nhà của hai người lái vẫn còn chờ. Họ chờ một câu trả lời cho câu hỏi cũ. Ngoài hiên, chiếc ghế vẫn để nguyên chỗ ấy. Không ai ngồi lên, cũng không ai cất nó đi. Mỗi năm, người ta lại hỏi thăm một lần. Câu trả lời vẫn nằm ở đâu đó trong hai tập giấy.",
+        "keywords": ["empty bench facing the sea under a grey sky"],
+        "fact_refs": ["f6"]
+      }
+    ],
+    "ending": {
+      "text": "Hai người lái ấy chết trên cùng một khúc đường ven biển. Hai tập giấy nằm cách nhau mười năm mới được đặt cạnh nhau. Một cuộc gọi đã nối hai vụ tai nạn ấy lại. Còn ai đã gọi thì đến nay vẫn chưa rõ. Hai người lái ấy không quen nhau và ở hai tỉnh khác nhau. Vậy mà một cuộc gọi đã đến với cả hai người. Bạn nghĩ ai đã gọi cho họ đêm ấy?",
+      "keywords": ["long empty coastal road at dawn with no traffic"],
+      "fact_refs": ["f1", "f5", "f6"]
+    },
+    "description": "Hai vụ tai nạn trên cùng một khúc đường ven biển, cách nhau đúng mười năm. Một chi tiết nhỏ trong hồ sơ cho thấy chúng không hề rời nhau như người ta tưởng.",
+    "tags": ["án chưa phá", "tai nạn", "đường ven biển", "hồ sơ cũ", "mười năm"],
+    "content_warnings": ["crime", "death", "disturbing"],
+    "structure": {
+      "sub_genre": "án chưa phá",
+      "setting": "tuyến đường ven biển",
+      "opening": "ngày vật chứng được tìm thấy",
+      "twist_type": "hai vụ án liên quan",
+      "narrator_mode": "first_person"
+    }
+  },
+  "facts": [
+    { "id": "f1", "statement": "Hai vụ tai nạn xảy ra trên cùng một khúc đường ven biển, cách nhau mười năm, và giữa hai vụ khúc đường ấy được trải nhựa lại một lần sau khi lớp nhựa cũ đã bị bóc đi.", "source_aliases": ["s1"] },
+    { "id": "f2", "statement": "Cả hai vụ đều xảy ra ban đêm, trời khô và tầm nhìn tốt, trên đúng khúc đường đó.", "source_aliases": ["s3"] },
+    { "id": "f3", "statement": "Cả hai hiện trường đều không có vết phanh trên mặt đường.", "source_aliases": ["s3"] },
+    { "id": "f4", "statement": "Cả hai người lái đều đi một mình và đều không thể được hỏi lại sau đó.", "source_aliases": ["s1", "s3"] },
+    { "id": "f5", "statement": "Hai người lái không quen nhau và sống ở hai tỉnh khác nhau.", "source_aliases": ["s2"] },
+    { "id": "f6", "statement": "Một điều tra viên mới mở lại việc so sánh sau khi nhận ra cả hai người đều nghe cùng một số điện thoại gọi đến không lâu trước vụ tai nạn.", "source_aliases": ["s2"] }
+  ],
+  "defects": [
+    {
+      "type": "markdown_or_url_in_text",
+      "segment": "p:10",
+      "note": "The narration text of this segment carries a URL, which must never appear in spoken narration; a link, domain or web address in a segment text is a blocking markup defect."
+    }
+  ]
+}

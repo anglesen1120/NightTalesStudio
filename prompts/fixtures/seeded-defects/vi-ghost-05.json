@@ -1,0 +1,203 @@
+{
+  "id": "vi-ghost-05",
+  "language": "vi",
+  "topic": "ghost",
+  "tier": "standard",
+  "clean": false,
+  "brief": "Người đàn ông về ở ngôi nhà cũ cuối ngõ và mỗi đêm cánh cổng mở ra rồi khép lại, dù ông đã cài then từ bên trong. Premise tổng hợp, chỉ để tạo ngữ cảnh.",
+  "draft": {
+    "title": "Cánh cổng mở ban đêm",
+    "hook": {
+      "text": "Cánh cổng sắt cuối ngõ mở ra một đoạn rồi khép lại. Tôi đã cài then cổng từ bên trong.",
+      "keywords": [
+        "iron gate of an old house at night"
+      ],
+      "fact_refs": []
+    },
+    "paragraphs": [
+      {
+        "beat": "setup",
+        "text": "Tôi về ở ngôi nhà cũ cuối ngõ sau nhiều năm đi làm xa. Nhà chỉ còn một mình tôi. Cổng nhà làm bằng sắt, đã lên màu gỉ. Then cổng nặng, phải đẩy mạnh mới vào. Tôi dọn dẹp gian nhà chính và kê lại bàn thờ. Đêm đầu tiên, tôi ngủ rất sớm. Tôi để cửa buồng hé mở cho thoáng. Tôi quét sân và chặt bớt mấy cành tre.",
+        "keywords": [
+          "old iron gate in front of a small house"
+        ],
+        "fact_refs": []
+      },
+      {
+        "beat": "build_up",
+        "text": "Đêm thứ hai, tôi nghe tiếng sắt kéo trên nền sân. Tôi ngồi dậy và nhìn ra cửa sổ. Cánh cổng đang mở ra từ từ. Rồi nó khép lại và yên. Tôi cầm đèn pin đi ra sân. Then cổng vẫn đóng đúng như tôi cài. Không có ai ngoài ngõ. Tôi không bật đèn trong nhà, chỉ đứng nghe một lúc. Rồi tôi vào nhà. Tôi để nguyên cửa sổ mở cho dễ nghe.",
+        "keywords": [
+          "courtyard seen from a dark doorway at night"
+        ],
+        "fact_refs": []
+      },
+      {
+        "beat": "build_up",
+        "text": "Đêm sau tôi ngồi ở hiên để đợi. Cánh cổng mở ra rồi khép lại đúng như tối trước. Tôi bật đèn pin và soi ra ngõ. Ngõ vắng, chỉ có bóng cây. Tôi đi ra chạm tay vào then cổng. Then vẫn còn chặt. Tôi thử mở cổng và đóng lại nhiều lần. Cổng kêu đúng cái tiếng tôi nghe mỗi đêm. Tôi soi đèn vào hai bên ngõ. Tôi đứng ở sân cho tới khi trời lạnh. Tôi ngồi ở hiên cho tới gần sáng.",
+        "keywords": [
+          "empty village path under a single lamp"
+        ],
+        "fact_refs": []
+      },
+      {
+        "beat": "build_up",
+        "text": "Tôi hỏi mấy người trong xóm về ngôi nhà. Họ nói nhà này bỏ trống đã lâu. Không ai nhớ chủ cũ đi đâu. Một bà nói trước đây nhà có hai anh em. Người anh đi làm xa rồi mất tích. Người em ở lại thêm vài năm rồi cũng đi. Bà ấy không nhớ tên hai người. Tôi không nói gì về tiếng cổng. Tôi ghi lại giờ cổng mở vào cuốn sổ.",
+        "keywords": [
+          "neighbours talking on a village path"
+        ],
+        "fact_refs": []
+      },
+      {
+        "beat": "build_up",
+        "text": "Tôi tìm được vài thứ trong buồng cũ. Một chiếc va li gỗ và một đôi giày. Giày còn bùn khô ở đế. Va li có khoá nhưng không cài. Trong va li có mấy áo sơ mi cũ. Trên nắp va li có ghi một chữ cái. Chữ đã mờ nhưng tôi đọc được. Tôi đặt va li lại chỗ cũ. Tôi lau giày rồi đặt lại vào va li.",
+        "keywords": [
+          "old suitcase on the floor of a small room"
+        ],
+        "fact_refs": []
+      },
+      {
+        "beat": "build_up",
+        "text": "Mỗi đêm tôi thử một cách khác nhau. Tôi buộc dây thừng vào tay nắm cổng. Dây vẫn nguyên vào buổi sáng. Tôi rắc cát trước cổng để xem dấu chân. Sáng ra, cát phẳng và không có dấu nào. Tôi kê một hòn đá chèn sau cánh cổng. Sáng ra, hòn đá nằm cách cổng một đoạn. Tôi nhặt hòn đá và đặt lại. Tôi kê lại hòn đá sát chân cổng. Tôi buộc thêm một vòng dây quanh tay nắm.",
+        "keywords": [
+          "sandy ground in front of a wooden door"
+        ],
+        "fact_refs": []
+      },
+      {
+        "beat": "build_up",
+        "text": "Tôi bắt đầu ngủ ở hiên để nghe cho rõ. Tôi trải chiếu và mang theo chăn. Đêm đó tôi nghe tiếng cổng trước khi nghe gió. Tiếng then sắt va rất khẽ. Tôi mở mắt nhưng không ngồi dậy. Tôi thấy cánh cổng mở ra một đoạn ngắn. Rồi có một bóng người đứng ở đầu ngõ. Bóng đó đứng im rất lâu. Tôi nghe tiếng thở rất khẽ ở ngoài ngõ.",
+        "keywords": [
+          "straw mat on a porch at night"
+        ],
+        "fact_refs": []
+      },
+      {
+        "beat": "build_up",
+        "text": "Sáng ra tôi ra ngõ tìm dấu vết. Có mấy vết dép trên đất ẩm. Vết dép đi từ cổng ra tới đầu ngõ. Rồi vết dép quay lại và mất ở bụi tre. Tôi đo chiều dài vết dép. Vết đó ngắn hơn chân tôi một chút. Tôi không đem chuyện này kể cho ai. Tôi giữ một mẩu dây thừng trong túi áo. Tôi kéo một cành tre che bớt lối vào.",
+        "keywords": [
+          "footprints on a wet dirt path at dawn"
+        ],
+        "fact_refs": []
+      },
+      {
+        "beat": "build_up",
+        "text": "Tôi kê lại cái bàn ở hiên và ngồi đó mỗi tối. Tôi nghe tiếng tre lay ở đầu ngõ. Đêm nào cũng có một quãng im rất dài. Quãng im đó kéo dài trước khi cổng mở. Tôi đếm nhịp của quãng im đó. Đêm thứ ba, quãng im ngắn hơn. Tôi đứng dậy và đi ra sân. Cánh cổng đã mở sẵn từ lúc nào. Tôi chép lại giờ mở cổng của từng đêm.",
+        "keywords": [
+          "wooden table on a porch at night"
+        ],
+        "fact_refs": []
+      },
+      {
+        "beat": "clue",
+        "text": "Tôi mở chiếc va li gỗ trong buồng ra lần nữa. Dưới lớp áo có một cuốn sổ nhỏ. Sổ ghi việc làm hằng ngày của một người thợ. Người đó ghi giờ mở cổng mỗi sáng. Những dòng cuối viết khác nét hơn. Dòng cuối nói người viết sẽ về muộn. Tôi đọc dòng đó vài lần. Tôi cất cuốn sổ lại vào trong va li.",
+        "keywords": [
+          "small notebook open on a wooden table"
+        ],
+        "fact_refs": []
+      },
+      {
+        "beat": "clue",
+        "text": "Tôi để ý đến cây tre ở đầu ngõ. Bụi tre mọc sát lối vào nhà. Dưới gốc tre có một vết lõm trên đất. Vết lõm vừa bằng một bàn chân đứng lâu. Tôi đứng vào vết đó thử một lần. Từ đó tôi nhìn thấy rõ cổng nhà mình. Tôi đứng im và nhìn cánh cổng rất lâu. Tôi đóng cánh cổng rồi đi vào nhà.",
+        "keywords": [
+          "bamboo clump at the end of a small path"
+        ],
+        "fact_refs": []
+      },
+      {
+        "beat": "clue",
+        "text": "Tôi thử nói to ra ngoài ngõ một đêm. Tôi gọi hai tiếng rồi đứng đợi. Cánh cổng khép lại ngay sau đó. Tôi gọi thêm một tiếng nữa. Không có gì đáp lại. Tôi ngồi ở bậc thềm và đợi thêm một lúc. Trong nhà chỉ có tiếng đồng hồ treo tường. Tôi vào nhà và đóng cửa buồng. Tôi nhìn lại căn nhà từ ngoài ngõ.",
+        "keywords": [
+          "man standing alone in a dark courtyard"
+        ],
+        "fact_refs": []
+      },
+      {
+        "beat": "clue",
+        "text": "Tôi tìm thấy một tấm ảnh trong ngăn kéo. Ảnh chụp hai người đàn ông đứng trước cổng nhà. Một người cao và một người thấp hơn. Người thấp đứng gần cánh cổng. Mặt ảnh đã bạc, không rõ nét. Sau ảnh có ghi một câu ngắn. Câu đó nói người thấp chưa đi đâu cả. Tôi cất tấm ảnh vào ngăn kéo.",
+        "keywords": [
+          "faded photograph of two men in a drawer"
+        ],
+        "fact_refs": []
+      },
+      {
+        "beat": "clue",
+        "text": "Tôi để đèn hiên sáng suốt đêm trong ba đêm. Cả ba đêm, cánh cổng không mở. Đêm thứ tư tôi tắt đèn hiên. Cánh cổng lại mở ra rồi khép lại. Tôi ngồi trong bóng tối và đếm. Tiếng cổng khép lại đúng ba lần liền nhau. Sau đó ngõ im hoàn toàn. Tôi ngồi thêm một lúc rồi mới vào nhà. Tôi đóng cửa hiên rồi đi ngủ.",
+        "keywords": [
+          "unlit porch of a wooden house at night"
+        ],
+        "fact_refs": []
+      },
+      {
+        "beat": "clue",
+        "text": "Tôi đếm số bậc từ cổng vào tới hiên nhà. Có chín bậc gạch đã mòn. Mỗi lần cổng mở, tôi nghe tiếng bước chân trên bậc. Tiếng bước dừng ở bậc thứ chín. Tôi thử đứng ở bậc thứ chín và nhìn vào nhà. Từ đó tôi thấy rõ cửa buồng của mình. Tôi đứng đó cho tới khi trời sáng. Sáng ra tôi gạch một vạch lên bậc đá. Tôi không gạch thêm vạch nào nữa.",
+        "keywords": [
+          "wooden steps at the gate of the old house",
+          "photo of Mrs Hoa in the yard, 7 lane, 1998"
+        ],
+        "fact_refs": []
+      },
+      {
+        "beat": "clue",
+        "text": "Tôi hỏi bà hàng xóm về chiếc va li gỗ. Bà ấy nhìn tôi rồi im một lúc. Bà nói chiếc va li đó của người em trong nhà. Người em dọn đi trong một đêm mưa. Không ai thấy người đó lên xe. Bà ấy còn nói tôi nên cẩn thận. Tôi cảm ơn bà và đi về. Tối đó tôi để cửa buồng mở như thường. Tôi đóng cửa buồng rồi mở ra lần nữa.",
+        "keywords": [
+          "two women talking at a village gate"
+        ],
+        "fact_refs": []
+      },
+      {
+        "beat": "twist",
+        "text": "Đêm đó tôi ngồi ở bậc thứ chín và đợi. Cánh cổng mở ra rồi khép lại như mọi đêm. Rồi tôi nghe tiếng bước chân trên gạch. Tiếng bước dừng ngay sau lưng tôi. Tôi quay lại và thấy một người đàn ông thấp. Áo người đó ướt và dính bùn. Người đó đi qua tôi và mở cửa buồng. Người em của nhà này chưa hề đi đâu.",
+        "keywords": [
+          "man standing still on worn brick steps at night"
+        ],
+        "fact_refs": []
+      },
+      {
+        "beat": "reveal",
+        "text": "Người em trong nhà vẫn ở đó. Người anh mất tích còn người em thì về nhà mỗi đêm. Tôi không kể chuyện này cho ai trong xóm.",
+        "keywords": [
+          "door to a small room left ajar at night"
+        ],
+        "fact_refs": []
+      }
+    ],
+    "ending": {
+      "text": "Cánh cổng sắt vẫn còn then cũ và gian buồng vẫn mở. Bạn đã từng nghe điều gì như vậy chưa?",
+      "keywords": [
+        "iron gate closed at dusk in a village yard"
+      ],
+      "fact_refs": []
+    },
+    "description": "Người đàn ông về ở ngôi nhà cũ cuối ngõ và phát hiện cánh cổng mở ra mỗi đêm, dù then đã được cài từ bên trong.",
+    "tags": [
+      "truyện ma",
+      "ngôi nhà cũ",
+      "cánh cổng",
+      "ngõ vắng"
+    ],
+    "content_warnings": [
+      "supernatural",
+      "death",
+      "disturbing"
+    ],
+    "structure": {
+      "sub_genre": "ma trong gia đình",
+      "setting": "ngôi nhà cũ",
+      "opening": "chuyển đến nơi ở mới",
+      "twist_type": "người đã chết vẫn còn sống",
+      "narrator_mode": "first_person"
+    }
+  },
+  "defects": [
+    {
+      "type": "beat_missing",
+      "segment": "meta",
+      "note": "The body beats run setup, build_up, clue, twist, reveal and stop there: the sixth mandatory beat, aftermath, is absent, so the listener gets no consequence after the reveal."
+    },
+    {
+      "type": "keyword_rule_violation",
+      "segment": "p:14",
+      "note": "The second keyword of p:14 is not a usable image keyword: it carries a person title and name, a house number with a street word, a year and commas, against the keyword rules."
+    }
+  ]
+}

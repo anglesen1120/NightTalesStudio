@@ -1,0 +1,191 @@
+{
+  "id": "vi-ghost-clean-01",
+  "language": "vi",
+  "topic": "ghost",
+  "tier": "standard",
+  "clean": true,
+  "brief": "Người cháu về ngôi nhà ven sông của dì một tuần để dọn đồ, và mỗi đêm chiếc điện thoại bàn cũ đổ chuông đúng một giờ, đầu dây bên kia chỉ có tiếng nước. Premise tổng hợp, chỉ để tạo ngữ cảnh.",
+  "draft": {
+    "title": "Chuông điện thoại nhà ven sông",
+    "hook": {
+      "text": "Chiếc điện thoại bàn trong nhà ven sông đổ chuông lúc nửa đêm. Nhấc máy lên, tôi chỉ nghe tiếng nước chảy.",
+      "keywords": [
+        "old telephone on a wooden table at night"
+      ],
+      "fact_refs": []
+    },
+    "paragraphs": [
+      {
+        "beat": "setup",
+        "text": "Tôi về ngôi nhà ven sông của dì một tuần để dọn đồ. Dì tôi mất mùa đông trước và để lại căn nhà này. Nhà nhỏ, nằm cách bờ sông vài chục bước. Trong nhà có một chiếc điện thoại bàn cũ. Dây điện thoại chạy dọc theo chân tường gỗ. Tôi ngủ ở buồng ngoài, cạnh cửa sổ nhìn ra bến. Đêm đầu tiên, tôi nghe tiếng nước chảy dưới chân nhà. Tôi mở hết cửa cho nhà bớt mùi ẩm.",
+        "keywords": [
+          "small riverside house with a wooden porch"
+        ],
+        "fact_refs": []
+      },
+      {
+        "beat": "build_up",
+        "text": "Đêm thứ hai, chiếc điện thoại đổ chuông lúc nửa đêm. Chuông kêu đúng ba tiếng rồi im. Tôi với tay nhấc máy. Đầu dây bên kia chỉ có tiếng nước. Tôi hỏi hai lần nhưng không ai trả lời. Tôi để máy xuống và nằm lại. Tiếng nước vẫn còn trong tai tôi. Sáng ra tôi kiểm tra chiếc điện thoại. Tôi ngồi dậy và nhìn ra cửa sổ. Tôi nằm nghe tiếng nước cho tới gần sáng.",
+        "keywords": [
+          "telephone handset on a wooden nightstand"
+        ],
+        "fact_refs": []
+      },
+      {
+        "beat": "build_up",
+        "text": "Chiếc điện thoại bàn đã cũ và bụi. Tôi lau mặt số và nhấc thử máy. Trong máy không có tiếng tổng đài. Tôi đi theo dây điện thoại tới chân tường. Dây bị cắt ở một đoạn gần cửa sổ. Đầu dây còn lại khô và đã gỉ. Tôi cuộn đoạn dây đó lại và buộc gọn. Đêm đó chuông vẫn kêu đúng nửa đêm. Tôi ghi lại giờ chuông kêu vào cuốn sổ của mình. Tôi đứng ở chân tường và nghe thử một lúc.",
+        "keywords": [
+          "cut telephone wire along a wooden skirting board"
+        ],
+        "fact_refs": []
+      },
+      {
+        "beat": "build_up",
+        "text": "Tôi hỏi bà hàng xóm về chiếc điện thoại. Bà nói chiếc máy đó của dì tôi từ lâu. Dì tôi gọi nó là chiếc máy bến sông. Mỗi đêm dì tôi gọi một cuộc đúng giờ. Bà ấy không nhớ dì tôi gọi cho ai. Bà ấy nói dì tôi làm vậy nhiều năm. Tôi hỏi bà ấy có nghe chuông đêm nào không. Bà ấy nói bà ấy ngủ rất say. Tôi hỏi thêm về giờ dì tôi gọi nhưng bà ấy không nhớ.",
+        "keywords": [
+          "two old women talking on a riverside path"
+        ],
+        "fact_refs": []
+      },
+      {
+        "beat": "build_up",
+        "text": "Tôi tìm thấy cuốn sổ của dì trong ngăn kéo. Sổ ghi mực nước sông từng ngày. Mỗi trang có một giờ ghi ở góc. Giờ đó là giờ dì tôi gọi điện. Có trang ghi thêm một chữ rất nhỏ. Chữ đó viết là bến. Tôi lật hết cuốn sổ trong một buổi chiều. Tôi chép lại mấy con số mực nước trong trang đầu.",
+        "keywords": [
+          "open notebook with handwritten daily notes"
+        ],
+        "fact_refs": []
+      },
+      {
+        "beat": "build_up",
+        "text": "Tôi thử rút phích điện thoại ra khỏi tường. Đêm đó chuông vẫn kêu đúng giờ. Tôi tháo cả dây và để máy trên bàn. Chuông vẫn đến từ chiếc máy đó. Tôi ngồi cạnh bàn và đợi tiếng chuông. Chuông kêu đúng ba tiếng rồi tắt. Tôi đưa ống nghe lên tai. Tôi để chiếc máy nằm giữa bàn và ngồi nhìn nó. Tôi ngồi đó cho tới khi trời sáng.",
+        "keywords": [
+          "unplugged telephone sitting on a table"
+        ],
+        "fact_refs": []
+      },
+      {
+        "beat": "build_up",
+        "text": "Đầu dây vẫn chỉ có tiếng nước. Lần này tiếng nước nghe gần hơn. Tôi nghe cả tiếng mái chèo khẽ chạm vào mạn thuyền. Tôi nói tên dì tôi ra thành tiếng. Bên kia im một lúc rồi cúp máy. Tôi ngồi lại bên bàn rất lâu. Sáng ra, tôi thấy sàn nhà ướt ở chỗ cửa ra bến. Tôi lau khô chỗ đó rồi mở cửa cho thoáng.",
+        "keywords": [
+          "wet floorboards near a door to a river bank"
+        ],
+        "fact_refs": []
+      },
+      {
+        "beat": "build_up",
+        "text": "Tôi đi ra bến sông vào buổi sáng. Bến nhỏ, chỉ có vài chiếc thuyền gỗ buộc vào cọc. Tôi hỏi người trông bến về cuộc gọi đêm. Ông ấy nói bến này không có điện thoại. Ông ấy còn nói đêm nào cũng có một chiếc thuyền đi qua. Thuyền đi qua bến vào lúc nửa đêm. Ông ấy không biết ai chèo chiếc thuyền đó. Tôi đứng ở bến cho tới khi sương xuống.",
+        "keywords": [
+          "small wooden jetty with moored boats"
+        ],
+        "fact_refs": []
+      },
+      {
+        "beat": "clue",
+        "text": "Tôi so giờ trên cuốn sổ với giờ chuông reo. Hai giờ giống nhau trong cả sáu đêm. Trang sổ nào cũng ghi mực nước trước, giờ sau. Tôi đọc lại mấy chục trang liền nhau. Từ trang cũ nhất, giờ ghi không đổi. Tôi đem cuốn sổ ra bến và hỏi ông trông bến. Ông ấy nhìn giờ đó và gật đầu. Tôi ngồi xuống bậc thềm và nhìn mặt sông.",
+        "keywords": [
+          "handwritten tide notebook on a kitchen table"
+        ],
+        "fact_refs": []
+      },
+      {
+        "beat": "clue",
+        "text": "Ông trông bến kể tôi nghe về dì tôi. Dì tôi gọi điện cho bến mỗi đêm để hỏi mực nước. Bến không có máy, nên cuộc gọi đi vào nhà ông ấy. Ông ấy nghe máy và đọc con số cho dì tôi. Việc đó kéo dài nhiều năm. Sau khi dì tôi mất, ông ấy không còn nhận cuộc gọi nào. Nhưng ông ấy vẫn ghi mực nước mỗi đêm. Ông ấy lật lại cuốn sổ của mình và đối chiếu. Ông ấy nói giọng rất chậm và rõ.",
+        "keywords": [
+          "ferry keeper standing on a river jetty"
+        ],
+        "fact_refs": []
+      },
+      {
+        "beat": "clue",
+        "text": "Tôi tìm thấy một chiếc hộp gỗ sau tủ. Trong hộp có một cuộn băng nhỏ và một mẩu giấy. Mẩu giấy ghi số điện thoại của bến. Số đó viết bằng nét chữ của dì tôi. Tôi đem cuộn băng ra hỏi hàng xóm. Không ai còn máy để nghe cuộn băng đó. Tôi cất cuộn băng và mẩu giấy vào hộp gỗ.",
+        "keywords": [
+          "small tape reel and a paper note in a box"
+        ],
+        "fact_refs": []
+      },
+      {
+        "beat": "clue",
+        "text": "Tôi ngủ lại ở buồng ngoài thêm ba đêm. Mỗi đêm chuông đều kêu đúng giờ. Tôi để một chiếc cốc nước bên cạnh máy. Mặt nước trong cốc rung nhẹ khi chuông kêu. Tôi ghi lại từng tiếng chuông vào sổ của mình. Sáng ra, tôi đối chiếu với cuốn sổ của dì. Không đêm nào lệch quá một khắc. Tôi để chiếc cốc lại trên bàn.",
+        "keywords": [
+          "glass of water on a table beside a telephone"
+        ],
+        "fact_refs": []
+      },
+      {
+        "beat": "clue",
+        "text": "Tôi đi dọc bờ sông vào một đêm không trăng. Nước sông lên cao hơn mọi hôm. Tôi đứng ở bến và nghe tiếng mái chèo. Một chiếc thuyền nhỏ đi qua rất chậm. Trên thuyền không có ai chèo. Tôi đi theo chiếc thuyền một đoạn. Thuyền tấp vào bến rồi trôi tiếp. Tôi đi theo chiếc thuyền tới khúc sông rộng. Rồi tôi quay về nhà và khoá cửa buồng.",
+        "keywords": [
+          "empty wooden boat drifting on a dark river"
+        ],
+        "fact_refs": []
+      },
+      {
+        "beat": "clue",
+        "text": "Sáng hôm sau tôi mở cuốn sổ của dì ở trang cuối. Trang đó ghi mực nước của một ngày mùa đông. Bên cạnh con số có một dòng chữ ngắn. Dòng chữ nói dì tôi sẽ gọi đúng giờ như thường. Tôi đọc dòng đó và ngồi im một lúc. Đêm đó tôi không ngủ ở buồng ngoài. Tôi ngủ ngay cạnh chiếc điện thoại. Tôi để đèn nhỏ sáng ở góc phòng. Tôi gấp cuốn sổ lại và để trên bàn.",
+        "keywords": [
+          "last page of a handwritten notebook"
+        ],
+        "fact_refs": []
+      },
+      {
+        "beat": "twist",
+        "text": "Đêm đó tôi ngồi cạnh chiếc điện thoại và đợi. Chuông kêu đúng giờ như mọi đêm. Tôi nhấc máy và nghe tiếng nước. Rồi tôi nghe một giọng nói rất khẽ. Giọng đó hỏi mực nước hôm nay thế nào. Đó là câu hỏi dì tôi vẫn hỏi mỗi đêm. Cuộc gọi ấy vẫn đi, dù dây đã bị cắt từ lâu. Người gọi vẫn giữ đúng giờ của mình.",
+        "keywords": [
+          "telephone receiver lifted from its cradle at night"
+        ],
+        "fact_refs": []
+      },
+      {
+        "beat": "reveal",
+        "text": "Người gọi đêm nào cũng là dì tôi. Dì vẫn hỏi mực nước sông đúng giờ như những năm trước. Tôi để máy xuống và ngồi im một lúc.",
+        "keywords": [
+          "old telephone on a table in dim lamplight"
+        ],
+        "fact_refs": []
+      },
+      {
+        "beat": "aftermath",
+        "text": "Tôi trả lời câu hỏi của dì bằng một con số. Bên kia im rồi cúp máy. Tôi ngồi lại bên bàn tới sáng. Tôi ghi con số đó vào cuốn sổ của dì. Đêm sau chuông vẫn kêu đúng giờ. Tôi nhấc máy và trả lời như đêm trước. Tôi không nói chuyện này với ai ngoài ông trông bến.",
+        "keywords": [
+          "hand writing a number in a notebook by lamplight"
+        ],
+        "fact_refs": []
+      },
+      {
+        "beat": "aftermath",
+        "text": "Tôi ở lại nhà thêm một tuần nữa. Tôi sửa lại bậc thềm ra bến. Tôi để chiếc điện thoại nguyên chỗ cũ. Tôi nhờ ông trông bến ghi mực nước mỗi đêm. Trước khi về thành phố, tôi khoá cửa nhà cẩn thận. Tôi cất cuốn sổ của dì vào va li. Tôi để lại một lá thư ngắn cho hàng xóm.",
+        "keywords": [
+          "riverside house in morning mist"
+        ],
+        "fact_refs": []
+      }
+    ],
+    "ending": {
+      "text": "Chiếc điện thoại bàn vẫn nằm trên bàn gỗ. Mỗi đêm nó vẫn kêu đúng một giờ. Bạn đã từng nghe điều gì như vậy chưa?",
+      "keywords": [
+        "quiet riverside house in evening light"
+      ],
+      "fact_refs": []
+    },
+    "description": "Người cháu về dọn ngôi nhà ven sông của dì và nghe chiếc điện thoại bàn cũ đổ chuông mỗi đêm, dù dây đã bị cắt. Cuộc gọi nào cũng chỉ có tiếng nước và một câu hỏi quen.",
+    "tags": [
+      "truyện ma",
+      "nhà ven sông",
+      "điện thoại cũ",
+      "mực nước"
+    ],
+    "content_warnings": [
+      "supernatural",
+      "death",
+      "disturbing"
+    ],
+    "structure": {
+      "sub_genre": "ma trong gia đình",
+      "setting": "ngôi nhà cũ",
+      "opening": "một cuộc điện thoại lúc nửa đêm",
+      "twist_type": "người đã chết vẫn còn sống",
+      "narrator_mode": "first_person"
+    }
+  },
+  "defects": []
+}

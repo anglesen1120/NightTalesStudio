@@ -1,0 +1,233 @@
+{
+  "id": "en-truecrime-01",
+  "language": "en",
+  "topic": "true_crime",
+  "tier": "standard",
+  "clean": false,
+  "brief": "A synthetic reopened-file case: a man was last seen near a harbour market on a wet Tuesday evening and never came home. Nineteen years later the file is reopened, a second unsigned witness statement turns up, and a statement given four years after the report moves the last sighting back to the market square. No real person, place or incident is used.",
+  "draft": {
+    "title": "The Coastal Road and the Statement That Came Four Years Late",
+    "hook": {
+      "text": "The file on this case was reopened nineteen years after the first report, and its first page still carries no name. What it does carry is a coastal road, a harbour market and one evening nobody can place.",
+      "keywords": ["coastal road at night under a single streetlight"],
+      "fact_refs": ["f6"]
+    },
+    "paragraphs": [
+      {
+        "beat": "setup",
+        "text": "A family member reported the disappearance on a Tuesday morning, two days after the man was last seen near the harbour market. The morning was grey, and the harbour road was still wet from the night before. By the time the report was taken, the market had opened and the boats were already out on the water.",
+        "keywords": ["empty harbour market before dawn in winter fog"],
+        "fact_refs": ["f1"]
+      },
+      {
+        "beat": "setup",
+        "text": "The reopened file records that the last person known to have seen him was a neighbour who was leaving for work. The lane runs downhill to the water, and at that hour it is empty. The doors on both sides are still shut.",
+        "keywords": ["narrow lane between stone houses at first light"],
+        "fact_refs": ["f3"]
+      },
+      {
+        "beat": "setup",
+        "text": "The case was reopened nineteen years after the first report. Rain on this part of the coast comes in off the sea and stays for days, and the road holds the water in its ruts long after the rain has stopped.",
+        "keywords": ["cardboard archive boxes stacked on a metal shelf"],
+        "fact_refs": ["f6"]
+      },
+      {
+        "beat": "setup",
+        "text": "By the nineteenth year the report was no longer recent news. The coast had not changed much in all that time, and neither had the weather that comes down the river valley in the mornings.",
+        "keywords": ["overcast coastline seen from a hill above a town"],
+        "fact_refs": ["f6"]
+      },
+      {
+        "beat": "setup",
+        "text": "The market keeps to the same hour in every season. The traders arrive before the light and the square is busy by seven, and the road south of it is empty by eight.",
+        "keywords": ["market traders setting up stalls before sunrise"],
+        "fact_refs": []
+      },
+      {
+        "beat": "build_up",
+        "text": "A woman passing on a bicycle reported seeing a man on the road that evening. The road is straight there, and a bicycle would have been easy to hear from the open fields on both sides of it.",
+        "keywords": ["bicycle leaning against a low stone wall at dusk"],
+        "fact_refs": []
+      },
+      {
+        "beat": "build_up",
+        "text": "The first search covered the coastal road only as far as the old ferry landing. It stopped there, with the water on one side and the fields on the other. The landing is a short slipway with wooden posts, and the road bends inland just past it.",
+        "keywords": ["police tape along a coastal road in morning fog"],
+        "fact_refs": ["f4"]
+      },
+      {
+        "beat": "build_up",
+        "text": "The search worked from the town and along the water. The old ferry landing was the far end of it, where the road turns away from the shore and heads inland between the fields.",
+        "keywords": ["wooden jetty posts standing in grey water at dawn"],
+        "fact_refs": ["f4"]
+      },
+      {
+        "beat": "build_up",
+        "text": "The coast here is flat, and the water stays close to the road for miles. In winter the light goes early, and the drivers put their headlights on before the bend. There are few houses along that stretch, and none of them looks out over the landing. At night the only sound is the water working at the slipway. Nothing on that road changes between one year and the next.",
+        "keywords": ["flat coastline with grey water beside a low road"],
+        "fact_refs": []
+      },
+      {
+        "beat": "build_up",
+        "text": "Above the square the gulls work the roofs, and below it the water slaps at the steps all day. The market packs up in the same order every evening, first the fish and then the vegetables. By dark the square is empty, and the lamps along the quay come on one after another. On a wet evening they make a line of small yellow circles on the water.",
+        "keywords": ["gulls over wet roofs above a harbour square"],
+        "fact_refs": []
+      },
+      {
+        "beat": "build_up",
+        "text": "In the morning the square is loud with trade, and by the afternoon it is quiet. The last of the traders walks home along the quay with the empty crates stacked on a barrow, and the gulls come down to the ground behind him. The market opens in the dark and closes in the dark for half the year. The barrow wheels rattle on the stone, and the sound carries along the water. In summer the square stays busy until the light goes, and the crates are stacked against the wall.",
+        "keywords": ["empty market crates stacked against a harbour wall"],
+        "fact_refs": []
+      },
+      {
+        "beat": "build_up",
+        "text": "The report and the reopening sit nineteen years apart. Between them the town went back to its routine, and the market opened at the same hour every morning without fail. By the afternoon the crates are all stacked and the square is swept.",
+        "keywords": ["fishing boats moored along a stone quay in early morning"],
+        "fact_refs": ["f1", "f6"]
+      },
+      {
+        "beat": "clue",
+        "text": "A second version of the last witness statement appears in the reopened file, and this one carries no signature.",
+        "keywords": ["interview room with a metal table and two chairs"],
+        "fact_refs": ["f2"]
+      },
+      {
+        "beat": "clue",
+        "text": "The first search ended at the old ferry landing, where the road bends inland and leaves the water behind. That landing is the last point on the road the searchers reached, and nothing beyond it was covered.",
+        "keywords": ["dark country road curving between open fields at night"],
+        "fact_refs": ["f4", "f9"]
+      },
+      {
+        "beat": "clue",
+        "text": "The road bends inland at the landing, and after the bend there are only fields. Nothing along that stretch is lit at night, and the gates are all open to the road. A car coming down from the north would be heard a long way before it was seen. The hedge on the inland side is cut back once a year and grows out again by the spring.",
+        "keywords": ["long empty road between dark fields after sunset"],
+        "fact_refs": []
+      },
+      {
+        "beat": "clue",
+        "text": "Fog comes in off the water on some mornings and lifts by nine. On the mornings it does not lift, the far end of the road is invisible from the square and the gulls stay on the roofs.",
+        "keywords": ["morning fog over a harbour town seen from a rooftop"],
+        "fact_refs": []
+      },
+      {
+        "beat": "clue",
+        "text": "The square is a short walk from where the road meets the water. Between the two there is only the quay and the harbour wall, and the wall is where the market keeps its empty crates.",
+        "keywords": ["stone harbour wall with empty crates beside water"],
+        "fact_refs": []
+      },
+      {
+        "beat": "twist",
+        "text": "A statement taken four years later places the man back at the harbour market on the evening he disappeared. It is short, and it is dated four years after the first report.",
+        "keywords": ["market square with closed stalls under street lamps at night"],
+        "fact_refs": ["f5"]
+      },
+      {
+        "beat": "twist",
+        "text": "The first report had left him on the road. The late statement moves the last sighting back to the square, and the four years between the two accounts stay unexplained.",
+        "keywords": ["empty market square with a single lamp still on"],
+        "fact_refs": ["f5"]
+      },
+      {
+        "beat": "twist",
+        "text": "Both accounts describe one evening in the same small town. One puts that evening on the road, and the other puts it in the square, among the stalls.",
+        "keywords": ["two empty stalls under lamps in a town square"],
+        "fact_refs": ["f5"]
+      },
+      {
+        "beat": "reveal",
+        "text": "Nobody has explained the four years between the two accounts. Which of the two evenings holds the truth is still open, and both are written down as they were given.",
+        "keywords": ["single street lamp above an empty crossroads at night"],
+        "fact_refs": []
+      },
+      {
+        "beat": "reveal",
+        "text": "Two evenings, one on the road and one in the square, and a gap of four years between them.",
+        "keywords": ["overcast sky above a coastal road with no traffic"],
+        "fact_refs": []
+      },
+      {
+        "beat": "reveal",
+        "text": "The town is small enough that the two places are minutes apart on foot, and both of them are on the same stretch of coast.",
+        "keywords": ["quiet town street seen from a rooftop at night"],
+        "fact_refs": []
+      },
+      {
+        "beat": "aftermath",
+        "text": "The report came from the family on a Tuesday morning. Nineteen years on, the market square is still the last place he is known to have been.",
+        "keywords": ["closed market stalls in the rain at dusk"],
+        "fact_refs": ["f1", "f6"]
+      },
+      {
+        "beat": "aftermath",
+        "text": "The road is still there, and cars still come down it at night with their lights on the wet stone. Nobody stops at the bend, and the landing is used only by the birds and the weather.",
+        "keywords": ["car headlights on a wet coastal road at night"],
+        "fact_refs": []
+      },
+      {
+        "beat": "aftermath",
+        "text": "Nothing about that evening has been settled. The two statements still stand beside each other.",
+        "keywords": ["empty bench facing the water at grey dawn"],
+        "fact_refs": ["f2", "f5"]
+      }
+    ],
+    "ending": {
+      "text": "Nineteen years have not moved the road or the square, and both accounts still stand as they were written down. What do you think happened in the four years between them?",
+      "keywords": ["quiet harbour street at sunrise with no one in frame"],
+      "fact_refs": ["f6"]
+    },
+    "description": "A reopened file on a coastal disappearance. A man was last seen near a harbour market, the first search stopped at the old ferry landing, and a statement given four years later moves the last sighting back to the square.",
+    "tags": ["unsolved case", "coastal road", "reopened file", "late statement", "true crime"],
+    "content_warnings": ["crime", "disturbing"],
+    "structure": {
+      "sub_genre": "unsolved case",
+      "setting": "coastal road",
+      "opening": "the file reopened",
+      "twist_type": "a late statement",
+      "narrator_mode": "third_person"
+    }
+  },
+  "facts": [
+    {
+      "id": "f1",
+      "statement": "A family member reported the disappearance on a Tuesday morning, two days after the man was last seen near the harbour market.",
+      "source_aliases": ["s1"]
+    },
+    {
+      "id": "f2",
+      "statement": "A second, unsigned version of the last witness statement appears in the reopened case file.",
+      "source_aliases": ["s1", "s2"]
+    },
+    {
+      "id": "f3",
+      "statement": "The reopened file records that the last person known to have seen him was a neighbour who was leaving for work.",
+      "source_aliases": ["s2"]
+    },
+    {
+      "id": "f4",
+      "statement": "The first search covered the coastal road only as far as the old ferry landing.",
+      "source_aliases": ["s1"]
+    },
+    {
+      "id": "f5",
+      "statement": "A statement taken four years later places the man at the harbour market on the evening he disappeared.",
+      "source_aliases": ["s2", "s3"]
+    },
+    {
+      "id": "f6",
+      "statement": "The case file was reopened nineteen years after the first report.",
+      "source_aliases": ["s1", "s2"]
+    }
+  ],
+  "defects": [
+    {
+      "type": "fact_ref_invalid",
+      "segment": "p:13",
+      "note": "The segment's fact_refs cite f9, which is not one of the supplied fact ids f1 to f6."
+    },
+    {
+      "type": "fact_not_in_sheet",
+      "segment": "p:5",
+      "note": "The segment states that a woman passing on a bicycle reported seeing a man on the road that evening; no supplied fact mentions any such witness, and the segment cites no fact."
+    }
+  ]
+}

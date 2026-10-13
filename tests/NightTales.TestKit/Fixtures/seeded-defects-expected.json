@@ -1,0 +1,254 @@
+{
+  "drafts": 22,
+  "clean_drafts": 5,
+  "seeded_drafts": 17,
+  "seeded_defects": 26,
+  "defects_by_type": {
+    "beat_missing": 2,
+    "bible_contradiction": 1,
+    "content_warning_missing": 3,
+    "ear_rule_violation": 2,
+    "ending_missing": 2,
+    "fact_not_in_sheet": 2,
+    "fact_ref_invalid": 2,
+    "hook_missing": 2,
+    "keyword_rule_violation": 2,
+    "length_out_of_range": 1,
+    "markdown_or_url_in_text": 2,
+    "missing_setup_before_twist": 3,
+    "tone_violation": 2
+  },
+  "per_draft": [
+    {
+      "id": "en-ghost-01",
+      "clean": false,
+      "defects": [
+        [
+          "length_out_of_range",
+          "meta"
+        ]
+      ]
+    },
+    {
+      "id": "en-ghost-02",
+      "clean": false,
+      "defects": [
+        [
+          "missing_setup_before_twist",
+          "p:11"
+        ],
+        [
+          "ear_rule_violation",
+          "p:5"
+        ]
+      ]
+    },
+    {
+      "id": "en-ghost-03",
+      "clean": false,
+      "defects": [
+        [
+          "markdown_or_url_in_text",
+          "p:9"
+        ],
+        [
+          "keyword_rule_violation",
+          "p:13"
+        ]
+      ]
+    },
+    {
+      "id": "en-ghost-clean-01",
+      "clean": true,
+      "defects": []
+    },
+    {
+      "id": "en-spiritual-01",
+      "clean": false,
+      "defects": [
+        [
+          "hook_missing",
+          "hook"
+        ],
+        [
+          "beat_missing",
+          "meta"
+        ]
+      ]
+    },
+    {
+      "id": "en-spiritual-clean-01",
+      "clean": true,
+      "defects": []
+    },
+    {
+      "id": "en-truecrime-01",
+      "clean": false,
+      "defects": [
+        [
+          "fact_ref_invalid",
+          "p:13"
+        ],
+        [
+          "fact_not_in_sheet",
+          "p:5"
+        ]
+      ]
+    },
+    {
+      "id": "en-truecrime-02",
+      "clean": false,
+      "defects": [
+        [
+          "tone_violation",
+          "p:12"
+        ],
+        [
+          "content_warning_missing",
+          "meta"
+        ]
+      ]
+    },
+    {
+      "id": "en-truecrime-03",
+      "clean": false,
+      "defects": [
+        [
+          "ending_missing",
+          "ending"
+        ]
+      ]
+    },
+    {
+      "id": "en-truecrime-clean-01",
+      "clean": true,
+      "defects": []
+    },
+    {
+      "id": "vi-ghost-01",
+      "clean": false,
+      "defects": [
+        [
+          "hook_missing",
+          "hook"
+        ]
+      ]
+    },
+    {
+      "id": "vi-ghost-02",
+      "clean": false,
+      "defects": [
+        [
+          "ending_missing",
+          "ending"
+        ]
+      ]
+    },
+    {
+      "id": "vi-ghost-03",
+      "clean": false,
+      "defects": [
+        [
+          "missing_setup_before_twist",
+          "p:14"
+        ],
+        [
+          "content_warning_missing",
+          "meta"
+        ]
+      ]
+    },
+    {
+      "id": "vi-ghost-04",
+      "clean": false,
+      "defects": [
+        [
+          "ear_rule_violation",
+          "p:4"
+        ]
+      ]
+    },
+    {
+      "id": "vi-ghost-05",
+      "clean": false,
+      "defects": [
+        [
+          "beat_missing",
+          "meta"
+        ],
+        [
+          "keyword_rule_violation",
+          "p:14"
+        ]
+      ]
+    },
+    {
+      "id": "vi-ghost-clean-01",
+      "clean": true,
+      "defects": []
+    },
+    {
+      "id": "vi-spiritual-01",
+      "clean": false,
+      "defects": [
+        [
+          "tone_violation",
+          "p:5"
+        ],
+        [
+          "missing_setup_before_twist",
+          "p:15"
+        ]
+      ]
+    },
+    {
+      "id": "vi-spiritual-02",
+      "clean": false,
+      "defects": [
+        [
+          "bible_contradiction",
+          "p:3"
+        ]
+      ]
+    },
+    {
+      "id": "vi-spiritual-clean-01",
+      "clean": true,
+      "defects": []
+    },
+    {
+      "id": "vi-truecrime-01",
+      "clean": false,
+      "defects": [
+        [
+          "fact_ref_invalid",
+          "p:6"
+        ],
+        [
+          "content_warning_missing",
+          "meta"
+        ]
+      ]
+    },
+    {
+      "id": "vi-truecrime-02",
+      "clean": false,
+      "defects": [
+        [
+          "fact_not_in_sheet",
+          "p:4"
+        ]
+      ]
+    },
+    {
+      "id": "vi-truecrime-03",
+      "clean": false,
+      "defects": [
+        [
+          "markdown_or_url_in_text",
+          "p:10"
+        ]
+      ]
+    }
+  ]
+}
