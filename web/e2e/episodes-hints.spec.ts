@@ -16,13 +16,14 @@ declare global {
   interface Window {
     /** Text of the editor's annotation live region, recorded by the observer this spec installs. */
     __ntsAnnounce?: string[];
-    /** Cumulative layout shift this spec records: only entries after `startedAt` count, split by the panel region. */
+    /** Pulls records the observer has not delivered yet into `__ntsCls`. */
+    __ntsClsDrain?: () => void;
+    /** Cumulative layout shift this spec records: only entries after `startedAt` count, `panel` is the part that moved inside the panel. */
     __ntsCls?: {
       startedAt: number;
       total: number;
       panel: number;
       entries: number;
-      attributed: number;
       settled: boolean;
     };
   }
@@ -39,7 +40,6 @@ interface LayoutShiftReading {
   readonly total: number;
   readonly panel: number;
   readonly entries: number;
-  readonly attributed: number;
   readonly settled: boolean;
 }
 
@@ -156,21 +156,22 @@ async function stubSaveResponse(page: Page, hints: readonly HintRow[]): Promise<
  * separately. Buffered entries from the page load are delivered while `startedAt` is still 0 and are ignored.
  */
 function watchLayoutShift(): void {
-  const state = { startedAt: 0, total: 0, panel: 0, entries: 0, attributed: 0, settled: false };
+  const state = { startedAt: 0, total: 0, panel: 0, entries: 0, settled: false };
   window.__ntsCls = state;
   const inPanel = (node: Node | null): boolean =>
     node instanceof Element && node.closest('nts-annotation-panel') !== null;
-  new PerformanceObserver((list) => {
-    for (const raw of list.getEntries()) {
+  const count = (entries: PerformanceEntryList): void => {
+    for (const raw of entries) {
       const entry = raw as LayoutShiftEntry;
       if (state.startedAt === 0 || entry.startTime < state.startedAt || entry.hadRecentInput) continue;
-      const sources = entry.sources ?? [];
       state.entries += 1;
       state.total += entry.value;
-      if (sources.length > 0) state.attributed += 1;
-      if (sources.some((source) => inPanel(source.node))) state.panel += entry.value;
+      if ((entry.sources ?? []).some((source) => inPanel(source.node))) state.panel += entry.value;
     }
-  }).observe({ type: 'layout-shift', buffered: true });
+  };
+  const observer = new PerformanceObserver((list) => count(list.getEntries()));
+  observer.observe({ type: 'layout-shift', buffered: true });
+  window.__ntsClsDrain = (): void => count(observer.takeRecords());
 }
 
 /** Runs in the page: starts counting. Everything rendered before the trigger (load, editor paint) is out of scope. */
@@ -181,7 +182,6 @@ function startLayoutShiftWatch(): void {
   state.total = 0;
   state.panel = 0;
   state.entries = 0;
-  state.attributed = 0;
   state.settled = false;
 }
 
@@ -204,12 +204,12 @@ function armLayoutShiftSettle(): void {
   requestAnimationFrame(step);
 }
 
-/** Runs in the page: the current reading, safe to call before the init script installed anything. */
+/** Runs in the page: the current reading (pending observer records are drained first), safe before the init script ran. */
 function readLayoutShift(): LayoutShiftReading {
   const state = window.__ntsCls;
-  return state === undefined
-    ? { total: 0, panel: 0, entries: 0, attributed: 0, settled: false }
-    : { total: state.total, panel: state.panel, entries: state.entries, attributed: state.attributed, settled: state.settled };
+  if (state === undefined) return { total: 0, panel: 0, entries: 0, settled: false };
+  window.__ntsClsDrain?.();
+  return { total: state.total, panel: state.panel, entries: state.entries, settled: state.settled };
 }
 
 /** Runs in the page: the positive control. A 200 px block above the manuscript must register as a non-input shift. */
