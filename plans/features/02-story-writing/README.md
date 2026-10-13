@@ -241,7 +241,7 @@ prompts/
   - `prompt_cache_key = "<step>:<preset>"`; exception: the facts step has no preset and uses `"facts:<language>"` (owner decision 2026-10-14, 02.5.3-T1). Other steps whose plans pin their own key (e.g. `bible:propose`, `ideas:generate`, `ideas:novelty`) keep it.
   - client header `X-Client-Request-Id = generation_run_id:step:attempt`
 - The SDK's own retry is **disabled** (`ClientRetryPolicy` with 0 retries ⚠️ confirm option name in 2.14.0).
-- One `Microsoft.Extensions.Http.Resilience` pipeline per call: timeout (writer 90 s, review 45 s, facts 60 s, others 30 s), 2 attempts on 429/5xx/timeout with jittered backoff, honouring `Retry-After`.
+- One `Microsoft.Extensions.Http.Resilience` pipeline per call: timeout (writer 90 s, revision 90 s, review 45 s, facts 60 s, others 30 s), 2 attempts on 429/5xx/timeout with jittered backoff, honouring `Retry-After`.
 - Outcome mapping (returned as `TextCallResult`, never an exception for control flow):
 
 | Response | Result |
