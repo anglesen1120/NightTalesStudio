@@ -90,7 +90,7 @@ public sealed class RevisionStepTests(TestDatabase database) : IntegrationTest(d
                 Database,
                 "SELECT (audit_report->'revision'->'fixed_issue_ids' ? 'i1')::text FROM story_versions "
                 + $"WHERE episode_id = '{world.EpisodeId}' AND source = 'revised'")
-            .ShouldBe("True");
+            .ShouldBe("true");
         SqlProbe.ScalarText(
                 Database,
                 "SELECT (SELECT count(*) FROM jsonb_object_keys(audit_report->'revision'->'review_after'->'scores'))::text "
@@ -124,7 +124,7 @@ public sealed class RevisionStepTests(TestDatabase database) : IntegrationTest(d
         SqlProbe.ScalarText(
                 Database,
                 $"SELECT (audit_report ? 'revision')::text FROM story_versions WHERE episode_id = '{world.EpisodeId}'")
-            .ShouldBe("False");
+            .ShouldBe("false");
         SqlProbe.ScalarText(
                 Database,
                 $"SELECT audit_report->'model_review'->'issues'->0->>'id' FROM story_versions WHERE episode_id = '{world.EpisodeId}'")
@@ -234,11 +234,11 @@ public sealed class RevisionStepTests(TestDatabase database) : IntegrationTest(d
         SqlProbe.ScalarText(
                 Database,
                 $"SELECT (audit_report->'revision'->'drift'->'changed_segments' ? 'p:0')::text FROM story_versions WHERE episode_id = '{world.EpisodeId}' AND source = 'revised'")
-            .ShouldBe("True", "the untouched paragraph the revision rewrote is reported");
+            .ShouldBe("true", "the untouched paragraph the revision rewrote is reported");
         SqlProbe.ScalarText(
                 Database,
                 $"SELECT (audit_report->'revision'->'drift'->>'segment_count_changed') FROM story_versions WHERE episode_id = '{world.EpisodeId}' AND source = 'revised'")
-            .ShouldBe("False");
+            .ShouldBe("false");
     }
 
     [Fact]
@@ -263,16 +263,21 @@ public sealed class RevisionStepTests(TestDatabase database) : IntegrationTest(d
                 + $"(SELECT operation, count(*) AS calls FROM usage_records WHERE generation_run_id = '{runId}' GROUP BY operation) usage")
             .ShouldBe("story=1,story_review=2,story_revision=1");
 
+        // The run is costed with the price version the catalogue makes active at its queued_at (02 README D14); the
+        // class database's boot-time seeder inserts a row of its own, so the fixture's version 1 is not the active one.
         SqlProbe.ScalarText(
                 Database,
-                $"SELECT bool_and(reservation_id = '{reservation}' AND price_version = 1)::text FROM usage_records WHERE generation_run_id = '{runId}'")
-            .ShouldBe("True", "both extra calls carry the run's reservation id and the run's price version");
+                $"SELECT bool_and(reservation_id = '{reservation}' AND price_version = (SELECT version FROM price_versions "
+                + $"WHERE active_from <= (SELECT queued_at FROM generation_runs WHERE id = '{runId}') "
+                + "ORDER BY active_from DESC, version DESC LIMIT 1))::text "
+                + $"FROM usage_records WHERE generation_run_id = '{runId}'")
+            .ShouldBe("true", "both extra calls carry the run's reservation id and the run's price version");
 
         SqlProbe.ScalarText(
                 Database,
                 "SELECT (cost_usd > 0 AND cost_usd = (SELECT sum(cost_usd) FROM usage_records "
                 + $"WHERE generation_run_id = '{runId}'))::text FROM generation_runs WHERE id = '{runId}'")
-            .ShouldBe("True", "generation_runs.cost_usd includes the review #2 and the revision");
+            .ShouldBe("true", "generation_runs.cost_usd includes the review #2 and the revision");
 
         SqlProbe.ScalarText(Database, $"SELECT counts_toward_limit FROM generation_runs WHERE id = '{runId}'")
             .ShouldBe("True", "D2: review and revision never change the counting flag");
@@ -335,9 +340,16 @@ public sealed class RevisionStepTests(TestDatabase database) : IntegrationTest(d
 
     private async Task<WorkerHost> StartWorkerAsync(FakeTextClient text, TestLogSink? sink = null)
     {
+        // The harness owns the Worker configuration (WorkerHost clears the sources, so the Worker's own Budget
+        // section never applies), which leaves the guard on the $3/day default. Every scripted outcome carries no
+        // usage, so each call is metered at the estimator's D1 bound (0.5), and the class's shared database
+        // accumulates ~2 USD per test: without these two settings the cap is exhausted mid-class and the second
+        // half of the tests pauses or degrades at the revision gate.
         var host = new WorkerHost(Database, new FakeClock(Start))
             .WithSetting("Story:Review:Enabled", "true")
             .WithSetting("Story:Revision:Enabled", "true")
+            .WithSetting("Budget:MaxPlatformCostUsdPerDay", "1000")
+            .WithSetting("Budget:MaxPlatformCostUsdPerMonth", "100000")
             .ConfigureServices(services =>
             {
                 services.RemoveAll<ITextClient>();

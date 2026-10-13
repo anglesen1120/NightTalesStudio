@@ -120,7 +120,9 @@ public static class AuditReportBuilder
     /// D22) and appends the drift finding to <c>review_after.issues</c> as an <c>advisory</c> <c>objective</c>
     /// <c>revision_drift</c> issue. Every other key of the document is carried over untouched; the
     /// <c>revision</c> block is rebuilt, so merging twice is idempotent. The drift is advisory only: it never
-    /// blocks and never changes the episode state. Every model string written here is cleaned and length-capped.
+    /// blocks and never changes the episode state. Every model string written here is cleaned and length-capped;
+    /// <c>fixed_issue_ids</c> is the exception, because an id is not free text — an entry outside
+    /// <see cref="ReviewResultValidator"/>'s id contract is dropped, never rewritten into a different id.
     /// </summary>
     /// <param name="auditReportJson">The current <c>audit_report</c>; empty or blank starts a new document.</param>
     /// <param name="parentVersionId">The id of the generated <c>story_versions</c> row the revision descends from.</param>
@@ -160,7 +162,7 @@ public static class AuditReportBuilder
         root[RevisionKey] = new JsonObject
         {
             ["applied"] = true,
-            ["fixed_issue_ids"] = Ids(fixedIssueIds),
+            ["fixed_issue_ids"] = FixedIssueIds(fixedIssueIds),
             ["parent_version_id"] = parentVersionId.ToString("D"),
             ["drift"] = new JsonObject
             {
@@ -239,6 +241,16 @@ public static class AuditReportBuilder
 
     private static JsonArray Ids(IReadOnlyList<string> values) =>
         new([.. values.Select(value => (JsonNode)JsonValue.Create(Cap(Clean(value), RevisionIdMaxChars))!)]);
+
+    /// <summary>
+    /// <c>fixed_issue_ids</c> carries ids, not free text, so an entry outside
+    /// <see cref="ReviewResultValidator"/>'s id contract (the shape of every review issue id) is dropped:
+    /// cleaning it would produce a different id that matches no issue and reads as a fabricated one.
+    /// </summary>
+    /// <param name="ids">The ids of the issues the revision was asked to fix.</param>
+    /// <returns>The array of the ids the contract accepts.</returns>
+    private static JsonArray FixedIssueIds(IReadOnlyList<string> ids) =>
+        new([.. ids.Where(ReviewResultValidator.IsIssueId).Select(value => (JsonNode)JsonValue.Create(value)!)]);
 
     private static StoryReviewV1 CleanReview(StoryReviewV1 review) =>
         review with { Issues = [.. review.Issues.Select(CleanIssue)] };

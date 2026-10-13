@@ -1,5 +1,6 @@
 using System.Text.Json.Nodes;
 using ErrorOr;
+using NightTales.Application.Abstractions.Moderation;
 using NightTales.Application.Abstractions.Research;
 using NightTales.Application.Abstractions.Text;
 using NightTales.Application.Abstractions.Usage;
@@ -168,6 +169,37 @@ public sealed class RevisionPipelineTests(TestDatabase database) : IntegrationTe
         var driftIssue = issues.Single(issue => issue!["type"]!.GetValue<string>() == AuditReportBuilder.RevisionDriftType);
         driftIssue!["severity"]!.GetValue<string>().ShouldBe("advisory");
         driftIssue!["kind"]!.GetValue<string>().ShouldBe("objective");
+    }
+
+    [Fact]
+    public async Task LocallyFlaggedRevisedDraft_IsStillAppliedWithTheModerationBlock()
+    {
+        // D12: a local moderation flag blocks approval, not the run — the revision still becomes current and the
+        // revised row carries the moderation block. Only the provider's own verdict fails the run.
+        var world = await RevisionWorld.CreateAsync(Database, Ct);
+        world.Moderator.EnqueueClean(ModerationStage.Draft);
+        world.Moderator.EnqueueFlagged(ModerationStage.Draft, "hate/threatening");
+        world.Writer.EnqueueWrite(WriteOk());
+        world.Writer.EnqueueReview(ReviewOk(BlockingHook()));
+        world.Writer.EnqueueRevision(RevisionOk(RevisedDraft()));
+        world.Writer.EnqueueReview(ReviewOk());
+
+        await world.RunAsync(Ct);
+
+        (await world.ReadRunAsync()).Status.ShouldBe(GenerationRunStatus.Succeeded);
+        var versions = await world.VersionsAsync();
+        versions.Count.ShouldBe(2, "a local flag never stops the revision from becoming current");
+        var block = RevisionBlock(versions[1]);
+        block["applied"]!.GetValue<bool>().ShouldBeTrue();
+        var audit = JsonNode.Parse(versions[1].AuditReport!)!;
+        audit["moderation"]!["flagged"]!.GetValue<bool>().ShouldBeTrue();
+        audit["moderation"]!["categories"]!.AsArray().Select(node => node!.GetValue<string>())
+            .ShouldContain("hate/threatening");
+        audit["moderation"]!["blocking"]!.AsArray().Select(node => node!.GetValue<string>())
+            .ShouldContain("hate/threatening", "a D12 blocking category rides into the revised row");
+        world.Events.Stages.ShouldBe([ModerationStage.Draft], "only the flagged revised draft writes an event");
+        world.Moderator.Checks.Count(check => check.Stage == ModerationStage.Draft)
+            .ShouldBe(2, "the original draft and the revised draft are both checked");
     }
 
     [Fact]

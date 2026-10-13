@@ -189,9 +189,26 @@ public sealed class AuditReportBuilderTests
         var issue = root["revision"]!["review_after"]!["issues"]![0]!;
         issue["evidence"]!.GetValue<string>().ShouldBe("a b c");
         issue["impact"]!.GetValue<string>().Length.ShouldBe(ReviewResultValidator.MaxFieldChars);
-        root["revision"]!["fixed_issue_ids"]![0]!.GetValue<string>().ShouldBe("r1 x");
         root["revision"]!["drift"]!["changed_segments"]![0]!.GetValue<string>().Length.ShouldBe(AuditReportBuilder.RevisionIdMaxChars);
         root["revision"]!["drift"]!["added_findings"]![0]!.GetValue<string>().Length.ShouldBe(AuditReportBuilder.RevisionIdMaxChars);
+    }
+
+    /// <summary>
+    /// <c>fixed_issue_ids</c> carries ids, not free text: an entry outside <see cref="ReviewResultValidator"/>'s
+    /// id contract is dropped, so the block never claims an id no issue can hold (cleaning "r1&lt;NUL&gt;x" would
+    /// write the different id "r1 x", and a too-long one a prefix that matches no issue either).
+    /// </summary>
+    [Fact]
+    public void AuditReportBuilder_MergeRevision_FixedIssueIdsOutsideTheIdContract_AreDropped()
+    {
+        var root = JsonNode.Parse(AuditReportBuilder.MergeRevision(
+            Existing,
+            Parent,
+            ["r1\u0000x", "r2", "i-9", new string('r', 33), "  "],
+            ReviewAfter(),
+            RevisionDrift.None))!.AsObject();
+
+        root["revision"]!["fixed_issue_ids"]!.AsArray().Select(node => node!.GetValue<string>()).ShouldBe(["r2"]);
     }
 
     [Fact]
