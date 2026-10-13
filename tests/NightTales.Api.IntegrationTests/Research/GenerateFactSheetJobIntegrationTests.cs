@@ -2,20 +2,27 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using ErrorOr;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using NightTales.Api.IntegrationTests.Harness;
 using NightTales.Api.IntegrationTests.Persistence;
 using NightTales.Application.Abstractions.Moderation;
+using NightTales.Application.Abstractions.Money;
 using NightTales.Application.Abstractions.Realtime;
 using NightTales.Application.Abstractions.Research;
+using NightTales.Application.Abstractions.Text;
 using NightTales.Application.Abstractions.Usage;
+using NightTales.Application.Common.Errors;
 using NightTales.Application.Features.Research.Facts;
 using NightTales.Domain.Common;
 using NightTales.Domain.Episodes;
 using NightTales.Domain.Research;
 using NightTales.Domain.Series;
+using NightTales.Domain.Stories.Generation;
 using NightTales.Domain.Usage;
+using NightTales.Infrastructure.Persistence;
 using NightTales.TestKit;
 using NightTales.TestKit.Api;
 using NightTales.TestKit.Auth;
@@ -46,6 +53,9 @@ public sealed class GenerateFactSheetJobIntegrationTests(TestDatabase database) 
         "Người gác bến kể rằng đêm ấy mưa rất to và không ai trong xóm ra ngoài.";
 
     private static readonly DateTimeOffset Start = new(2026, 10, 14, 9, 0, 0, TimeSpan.Zero);
+
+    /// <summary>The D1 refund reason of a failed fact-sheet run (<c>GenerateFactSheetPipeline.RefundFailed</c>).</summary>
+    private const string RefundFailed = "fact_sheet_generation_failed";
 
     private static CancellationToken Ct => TestContextToken.Value;
 
@@ -115,25 +125,95 @@ public sealed class GenerateFactSheetJobIntegrationTests(TestDatabase database) 
         SqlProbe.Count(Database, $"SELECT count(*) FROM fact_sheets WHERE episode_id = '{world.EpisodeId}'").ShouldBe(1);
     }
 
-    [Fact(Skip = "A deterministic (episode_id, version) collision is not reachable in one process: SaveAsync computes max(version)+1 from the same transaction it inserts in, so a pre-inserted row only shifts the computed value, never collides with it. The DbUpdateException -> version_conflict -> failed-run mapping is unit-covered by the pipeline's unique-violation catch and cannot be scheduled without interleaving two live runs.")]
+    /// <summary>
+    /// The D9 version race on the real chain: while this run sits between the <c>max(version) + 1</c> read and
+    /// its own insert, a competing run claims version 1 for the same episode, so the insert meets
+    /// <c>ux_fact_sheets_episode_version</c> (PostgreSQL <c>23505</c>). The pipeline maps that to a typed
+    /// failure — never a 500 at the job's log — refunds the reservation, and leaves exactly the competitor's row.
+    /// </summary>
+    [Fact]
     public async Task GenerateFactSheetJob_VersionConflict_MapsToFailedRun()
     {
         var world = await SeedAsync();
-        await using var db = Database.CreateAppDbContext(new TestCurrentUser { Id = world.UserId }, new FakeClock(Start));
-        db.FactSheets.Add(NewDraft(world, version: 2));
-        await db.SaveChangesAsync(Ct);
-
+        var ledger = new RecordingLedger();
+        var competing = new CompetingVersionInterceptor(Database, world, new FakeClock(Start));
         var extractor = new FakeFactExtractor().EnqueueOk(new FactsV1(
         [
             new FactDraftV1("Người gác bến giữ ngọn đèn dầu bên cổng.", ["s1"], FactConfidence.High),
         ]));
-        await using var worker = await StartWorkerAsync(extractor, new FakeContentModerator(), new RecordingNotifier());
+        await using var worker = await StartWorkerAsync(extractor, new FakeContentModerator(), new RecordingNotifier(), services =>
+        {
+            services.RemoveAll<ICreditLedger>();
+            services.AddSingleton<ICreditLedger>(ledger);
+            // One more options configuration on the production registration (the AppDbContext precedent of the
+            // episode-detail tests): the host keeps its connection string, its naming convention and its auditable
+            // and outbox interceptors, and gains the competing write of the race.
+            services.AddDbContext<AppDbContext>((_, options) => options.AddInterceptors(competing));
+        });
 
         var runId = await GenerateAsync(world);
         await DeliverAndRunAsync(worker);
 
-        SqlProbe.ScalarText(Database, $"SELECT status || '/' || error_code || '/' || error_detail FROM generation_runs WHERE id = '{runId}'")
-            .ShouldBe($"failed/{NightTales.Application.Common.Errors.ErrorCodes.FactSheetGenerationFailed}/version_conflict");
+        competing.RowsInserted.ShouldBe(1, "the competing run must claim version 1 before the pipeline's own insert");
+
+        SqlProbe.ScalarText(
+                Database,
+                $"SELECT status || '/' || error_code || '/' || error_detail || '/' || (result_fact_sheet_id IS NULL)::text "
+                + $"FROM generation_runs WHERE id = '{runId}'")
+            .ShouldBe($"failed/{ErrorCodes.FactSheetGenerationFailed}/version_conflict/true");
+
+        // The reservation of this run was released with the D1 reason of a failed fact-sheet run, and nothing settled.
+        var reservation = new ReservationId(Guid.Parse(
+            SqlProbe.ScalarText(Database, $"SELECT reservation_id::text FROM generation_runs WHERE id = '{runId}'")));
+        ledger.Refunds.ShouldBe(new[] { (RefundFailed, reservation) });
+        ledger.Settled.ShouldBeEmpty();
+
+        // Exactly one sheet row survives: the competitor's version 1, not a draft of this run.
+        SqlProbe.Count(Database, $"SELECT count(*) FROM fact_sheets WHERE episode_id = '{world.EpisodeId}'").ShouldBe(1);
+        SqlProbe.Count(Database, $"SELECT count(*) FROM fact_sheets WHERE generation_run_id = '{runId}'").ShouldBe(0);
+    }
+
+    /// <summary>
+    /// The episode is deleted while its run is in flight (task failure handling: "Episode deleted mid-run -> job
+    /// no-ops (FK cascade), run failed, no orphan sheet"). The delete lands inside the extraction call, so the run's
+    /// own saving batch meets a foreign key whose episode no longer exists. Nothing escapes the job: the pipeline
+    /// maps the lost row to its terminal path, which finds no run left to fail.
+    /// </summary>
+    [Fact]
+    public async Task Pipeline_EpisodeDeletedMidRun_NoOrphanSheet_AndTheJobDoesNotThrow()
+    {
+        var world = await SeedAsync();
+        var ledger = new RecordingLedger();
+        var extractor = new EpisodeDeletingExtractor(
+            Database,
+            world,
+            new FakeFactExtractor().EnqueueOk(new FactsV1(
+            [
+                new FactDraftV1("Người gác bến giữ ngọn đèn dầu bên cổng.", ["s1"], FactConfidence.High),
+            ])));
+        await using var worker = await StartWorkerAsync(extractor, new FakeContentModerator(), new RecordingNotifier(), services =>
+        {
+            services.RemoveAll<ICreditLedger>();
+            services.AddSingleton<ICreditLedger>(ledger);
+        });
+
+        var runId = await GenerateAsync(world);
+
+        // DeliverAndRunAsync asserts `Jobs.Failures` is empty: no exception leaves the pipeline.
+        await DeliverAndRunAsync(worker);
+
+        SqlProbe.Count(Database, $"SELECT count(*) FROM episodes WHERE id = '{world.EpisodeId}'").ShouldBe(0);
+        SqlProbe.Count(Database, $"SELECT count(*) FROM fact_sheets WHERE episode_id = '{world.EpisodeId}'").ShouldBe(
+            0,
+            "the cascade takes the drafts and the pipeline's own insert rolls back");
+        SqlProbe.Count(Database, $"SELECT count(*) FROM generation_runs WHERE id = '{runId}'").ShouldBe(
+            0,
+            "the run row cascades away with its episode (GenerationRunConfiguration: DeleteBehavior.Cascade)");
+
+        // The real behaviour of the cascade: with no run row left there is nothing for the terminal write to fail,
+        // so this path never reaches the refund (see the yield's finding — the reservation is stranded).
+        ledger.Refunds.ShouldBeEmpty();
+        ledger.Settled.ShouldBeEmpty();
     }
 
     /// <summary>Seeds a user, a true-crime <c>vi</c> draft episode, one fetched note source and the active price version.</summary>
@@ -207,40 +287,173 @@ public sealed class GenerateFactSheetJobIntegrationTests(TestDatabase database) 
     }
 
     private async Task<WorkerHost> StartWorkerAsync(
-        FakeFactExtractor extractor,
+        IFactExtractor extractor,
         FakeContentModerator moderator,
-        RecordingNotifier notifier)
+        RecordingNotifier notifier,
+        Action<IServiceCollection>? configure = null)
     {
         var host = new WorkerHost(Database, new FakeClock(Start))
             .ConfigureServices(services =>
             {
                 services.RemoveAll<IFactExtractor>();
-                services.AddSingleton<IFactExtractor>(extractor);
+                services.AddSingleton(extractor);
                 services.RemoveAll<IContentModerator>();
                 services.AddSingleton<IContentModerator>(moderator);
                 services.RemoveAll<IRealtimeNotifier>();
                 services.AddSingleton<IRealtimeNotifier>(notifier);
             });
 
+        if (configure is not null)
+        {
+            host.ConfigureServices(configure);
+        }
+
         await host.StartAsync(Ct);
 
         return host;
     }
 
-    private static FactSheet NewDraft(World world, int version) =>
+    /// <summary>The version-1 draft the competing run claims for the episode (the winner of the D9 race).</summary>
+    private static FactSheet CompetingDraft(World world, Guid competingRunId) =>
         FactSheet.CreateDraft(
             world.UserId,
             world.EpisodeId,
-            version,
+            1,
             [],
             new Dictionary<string, Guid>(StringComparer.Ordinal),
             inputTruncated: false,
             maxFactId: 0,
-            generationRunId: Guid.CreateVersion7(),
-            promptVersion: "pv-test",
+            generationRunId: competingRunId,
+            promptVersion: "pv-competing",
             createdAt: Start);
 
     private sealed record World(Guid UserId, Guid SeriesId, Guid EpisodeId);
+
+    /// <summary>
+    /// The deterministic seam of the D9 version race. EF calls <see cref="SavingChangesAsync"/> after the pipeline
+    /// read <c>max(version) + 1</c> and built its own draft, and before the batch reaches PostgreSQL: the hook
+    /// writes another run's version-1 row for the same episode on a second connection, so the pipeline's own insert
+    /// meets <c>ux_fact_sheets_episode_version</c> (<c>23505</c>).
+    /// </summary>
+    /// <remarks>
+    /// An insert made from inside the extractor cannot collide: it lands before <c>SaveAsync</c> reads the version
+    /// watermark, so the pipeline would simply take the next version. The competing run is stored <c>failed</c>
+    /// because <c>ux_generation_runs_active_episode</c> admits only one <c>queued</c>/<c>running</c> fact-sheet run
+    /// per episode — the status is set before the row is added, because a queued insert followed by an update would
+    /// trip that same index first.
+    /// </remarks>
+    private sealed class CompetingVersionInterceptor(
+        TestDatabase database,
+        World world,
+        FakeClock clock) : SaveChangesInterceptor
+    {
+        /// <summary>How many competing rows the hook wrote; exactly one per test.</summary>
+        public int RowsInserted { get; private set; }
+
+        /// <inheritdoc />
+        public override async ValueTask<InterceptionResult<int>> SavingChangesAsync(
+            DbContextEventData eventData,
+            InterceptionResult<int> result,
+            CancellationToken cancellationToken = default)
+        {
+            ArgumentNullException.ThrowIfNull(eventData);
+
+            var claimsTheVersion = eventData.Context?.ChangeTracker
+                .Entries<FactSheet>()
+                .Any(entry => entry.State == EntityState.Added && entry.Entity.EpisodeId == world.EpisodeId) == true;
+
+            if (RowsInserted > 0 || !claimsTheVersion)
+            {
+                return result;
+            }
+
+            RowsInserted++;
+
+            await using var competing = database.CreateAppDbContext(new TestCurrentUser { Id = world.UserId }, clock);
+            var run = GenerationRun.Queue(
+                    world.UserId,
+                    world.SeriesId,
+                    world.EpisodeId,
+                    GenerationKind.FactSheet,
+                    GenerationTrigger.User,
+                    null,
+                    EpisodeStatus.Draft,
+                    null,
+                    Guid.CreateVersion7(),
+                    0.5m,
+                    Start)
+                .Value;
+            run.Fail(ErrorCodes.FactSheetGenerationFailed, "version_conflict", countsTowardLimit: false, Start.AddSeconds(1));
+
+            competing.GenerationRuns.Add(run);
+            competing.FactSheets.Add(CompetingDraft(world, run.Id));
+            await competing.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+
+            return result;
+        }
+    }
+
+    /// <summary>
+    /// Deletes the episode and its cascade just before the scripted extraction outcome is returned, so the rest of
+    /// the run executes against a world the episode no longer exists in.
+    /// </summary>
+    private sealed class EpisodeDeletingExtractor(
+        TestDatabase database,
+        World world,
+        IFactExtractor inner) : IFactExtractor
+    {
+        /// <inheritdoc />
+        public async ValueTask<TextCallResult<FactsV1>> ExtractAsync(FactExtractionRequest request, CancellationToken ct)
+        {
+            await using var admin = database.CreateAppDbContext(new TestCurrentUser { Id = world.UserId }, new FakeClock(Start));
+
+            var deleted = await admin.Episodes
+                .Where(episode => episode.Id == world.EpisodeId)
+                .ExecuteDeleteAsync(ct)
+                .ConfigureAwait(false);
+            deleted.ShouldBe(1, "the episode of the in-flight run is the one this test deletes");
+
+            return await inner.ExtractAsync(request, ct).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// The ledger port of the two race cases: the P implementation is a no-op, so the refund contract is proven by
+    /// capturing the call the pipeline makes.
+    /// </summary>
+    private sealed class RecordingLedger : ICreditLedger
+    {
+        /// <summary>Every refund, in order: the D1 reason and the reservation it released.</summary>
+        public List<(string Reason, ReservationId Reservation)> Refunds { get; } = [];
+
+        /// <summary>Every settle; a failed run never settles.</summary>
+        public List<ReservationId> Settled { get; } = [];
+
+        /// <inheritdoc />
+        public ValueTask<ErrorOr<ReservationId>> ReserveAsync(
+            Guid userId,
+            CreditOperation op,
+            Guid referenceId,
+            UsageBound bound,
+            CancellationToken ct) =>
+            throw new NotSupportedException("These runs are queued by the Api host; the job never reserves.");
+
+        /// <inheritdoc />
+        public ValueTask<ErrorOr<Success>> SettleAsync(ReservationId reservationId, CancellationToken ct)
+        {
+            Settled.Add(reservationId);
+
+            return ValueTask.FromResult<ErrorOr<Success>>(Result.Success);
+        }
+
+        /// <inheritdoc />
+        public ValueTask<ErrorOr<Success>> RefundAsync(ReservationId reservationId, string reason, CancellationToken ct)
+        {
+            Refunds.Add((reason, reservationId));
+
+            return ValueTask.FromResult<ErrorOr<Success>>(Result.Success);
+        }
+    }
 
     private sealed class RecordingNotifier : IRealtimeNotifier
     {
