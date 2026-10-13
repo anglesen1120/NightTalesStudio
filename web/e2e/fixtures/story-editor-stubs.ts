@@ -3,9 +3,13 @@ import type { CurrentStoryDto } from '../../src/app/shared/api/models/current-st
 import type { EpisodeDetailDto } from '../../src/app/shared/api/models/episode-detail-dto';
 import type { EpisodeListItemDto } from '../../src/app/shared/api/models/episode-list-item-dto';
 import type { StoryVersionDto } from '../../src/app/shared/api/models/story-version-dto';
+import coreEn from '../../src/assets/i18n/core/en.json' with { type: 'json' };
+import coreVi from '../../src/assets/i18n/core/vi.json' with { type: 'json' };
+import episodesEn from '../../src/assets/i18n/episodes/en.json' with { type: 'json' };
+import episodesVi from '../../src/assets/i18n/episodes/vi.json' with { type: 'json' };
 import errorsEn from '../../src/assets/i18n/errors/en.json' with { type: 'json' };
 import errorsVi from '../../src/assets/i18n/errors/vi.json' with { type: 'json' };
-import { expectA11yClean } from './axe';
+import { expectA11yClean, waitForOverlayAnimationEnd } from './axe';
 import { expect } from './csp.fixture';
 import { episodeDetail, EPISODE_ID, SERIES_ID, stubEpisodes, watchPrivacy } from './episodes-stubs';
 import { fulfilJson, problem, type E2eLang } from './series-stubs';
@@ -250,5 +254,416 @@ export async function mobileSegmentsFlow(page: Page, lang: E2eLang): Promise<voi
     await expect(textarea).toBeInViewport();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `360 px overflow at ${address}`).toBe(true);
   }
+  await expectA11yClean(page);
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// 10.5.9-T1 structure flows (paragraph reorder, delete + undo, dirty guard, logout, beforeunload, a11y, 360 px).
+// `episodes-structure.spec.ts` (vi) and `episodes-structure-en.spec.ts` (en) run the same scenarios through these
+// helpers, so both locales share one implementation of each acceptance bullet. Only the one long real wait (the 10 s
+// undo window) is kept to the vi spec.
+// ---------------------------------------------------------------------------------------------------------------
+
+/**
+ * Copy for the structure controls, read from the shipped `episodes` bundle plus the shared `core` dialog copy so a
+ * label change fails these specs instead of drifting. Position placeholders are formatted here with the same values
+ * the components interpolate.
+ */
+export const EDITOR_STRUCTURE_COPY = {
+  vi: {
+    moveUpAt: (position: number): string => episodesVi.editor.moveUpPosition.replace('{{position}}', String(position)),
+    moveDownAt: (position: number): string => episodesVi.editor.moveDownPosition.replace('{{position}}', String(position)),
+    reorderAt: (from: number, to: number): string => episodesVi.editor.reorderAnnounce.replace('{{n}}', String(from)).replace('{{m}}', String(to)),
+    remove: episodesVi.editor.delete,
+    deleted: episodesVi.editor.deleted,
+    undo: episodesVi.editor.undo,
+    structureWarning: episodesVi.editor.structureWarning,
+    dirtyTitle: episodesVi.dirty.title,
+    dirtyBody: episodesVi.dirty.body,
+    dirtyLeave: episodesVi.dirty.leave,
+    dirtyStay: episodesVi.dirty.stay,
+    back: coreVi.core.ui.pageHeader.back,
+    menuTrigger: coreVi.shell.menu.triggerLabel,
+    menuLogOut: coreVi.shell.menu.logOut,
+  },
+  en: {
+    moveUpAt: (position: number): string => episodesEn.editor.moveUpPosition.replace('{{position}}', String(position)),
+    moveDownAt: (position: number): string => episodesEn.editor.moveDownPosition.replace('{{position}}', String(position)),
+    reorderAt: (from: number, to: number): string => episodesEn.editor.reorderAnnounce.replace('{{n}}', String(from)).replace('{{m}}', String(to)),
+    remove: episodesEn.editor.delete,
+    deleted: episodesEn.editor.deleted,
+    undo: episodesEn.editor.undo,
+    structureWarning: episodesEn.editor.structureWarning,
+    dirtyTitle: episodesEn.dirty.title,
+    dirtyBody: episodesEn.dirty.body,
+    dirtyLeave: episodesEn.dirty.leave,
+    dirtyStay: episodesEn.dirty.stay,
+    back: coreEn.core.ui.pageHeader.back,
+    menuTrigger: coreEn.shell.menu.triggerLabel,
+    menuLogOut: coreEn.shell.menu.logOut,
+  },
+} as const;
+
+const paragraphTextareas = (page: Page): Locator => page.locator('textarea[data-segment^="p:"]');
+const paragraphTextarea = (page: Page, index: number): Locator => page.locator(`textarea[data-segment="p:${index}"]`);
+const paragraphValues = (page: Page): Promise<string[]> => paragraphTextareas(page).evaluateAll((nodes) => nodes.map((node) => (node as HTMLTextAreaElement).value));
+// The LiveAnnouncer element carries no role (aria-live only), so its CDK class is the stable handle.
+const liveAnnouncer = (page: Page): Locator => page.locator('.cdk-live-announcer-element');
+const noHorizontalOverflow = (page: Page): Promise<boolean> => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth);
+const paragraphDelete = (page: Page, label: string, name: string): Locator => segmentGroup(page, label).getByRole('button', { name, exact: true });
+const snackbar = (page: Page): Locator => page.locator('.mat-mdc-snack-bar-container').last();
+const snackbarAction = (page: Page, name: string): Locator => snackbar(page).getByRole('button', { name, exact: true }).first();
+/**
+ * Waits for an open snackbar to settle before an axe scan. Material moves the content out of a transient
+ * `aria-hidden` wrapper into the live region 150 ms after the enter animation starts, and that enter animation fades
+ * the container in over 150 ms; a scan inside either window reports `aria-hidden-focus` or contrast failures against
+ * interpolated opacity, so callers wait for the settled structure and the finished animation.
+ */
+async function snackbarSettled(page: Page): Promise<void> {
+  await expect(page.locator('mat-snack-bar-container [aria-hidden]')).toHaveCount(0);
+  await page.waitForFunction(() => {
+    const container = document.querySelector('mat-snack-bar-container');
+    return container === null || container.getAnimations().every((animation) => animation.playState !== 'running');
+  });
+}
+const motionToken = (page: Page, token: string): Promise<string> => page.evaluate((name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim(), token);
+const cardButtonTransition = (page: Page): Promise<string | null> => page.evaluate(() => {
+  const button = document.querySelector<HTMLElement>('nts-paragraph-card [data-action="move-up"]');
+  return button === null ? null : getComputedStyle(button).transitionDuration;
+});
+/**
+ * The longest `animation-duration`/`transition-duration` (seconds) computed for the snackbar container and its inner
+ * `.mdc-snackbar__surface`. Material decides `mat-snack-bar-container-animations-enabled` in JS
+ * (`MatSnackBarContainer._animationsDisabled`), never from `prefers-reduced-motion`, so the disabled motion is proven
+ * on the computed styles the global rule in `web/src/styles.scss` applies (`0.01ms`/`0ms` with `!important`).
+ */
+const snackbarMotionSeconds = (container: Locator): Promise<{ readonly container: number; readonly surface: number }> =>
+  container.evaluate((node) => {
+    const longest = (target: Element | null): number => {
+      if (target === null) return 0;
+      const style = getComputedStyle(target);
+      return [style.animationDuration, style.transitionDuration]
+        .flatMap((value) => value.split(','))
+        .map((value) => Number.parseFloat(value) || 0)
+        .reduce((maximum, seconds) => Math.max(maximum, seconds), 0);
+    };
+    return { container: longest(node), surface: longest(node.querySelector('.mdc-snackbar__surface')) };
+  });
+
+/** Bullet 1: keyboard-only reorder (Enter + Space), the live announcement, focus return and the aria-disabled ends. */
+export async function keyboardReorderFlow(page: Page, lang: E2eLang): Promise<void> {
+  const C = EDITOR_STRUCTURE_COPY[lang];
+  const api = await openEditor(page, lang);
+  const before = STORY_CONTENT.paragraphs.map((paragraph) => paragraph.text);
+  expect(await paragraphValues(page)).toEqual(before);
+  await expectA11yClean(page);
+
+  // Paragraph 2's "Move up", activated with Enter: [P2, P1, P3, P4].
+  const up2 = page.getByRole('button', { name: C.moveUpAt(2), exact: true });
+  await up2.focus();
+  await expect(up2).toBeFocused();
+  await page.keyboard.press('Enter');
+  const moved = [before[1]!, before[0]!, before[2]!, before[3]!];
+  await expect.poll(() => paragraphValues(page)).toEqual(moved);
+  await expect(liveAnnouncer(page)).toHaveText(C.reorderAt(2, 1));
+  await expect(paragraphTextarea(page, 0)).toBeFocused();
+  await expectA11yClean(page);
+
+  // The moved paragraph is now position 1; Space moves it back down: [P1, P2, P3, P4].
+  const down1 = page.getByRole('button', { name: C.moveDownAt(1), exact: true });
+  await down1.focus();
+  await page.keyboard.press('Space');
+  await expect.poll(() => paragraphValues(page)).toEqual(before);
+  await expect(liveAnnouncer(page)).toHaveText(C.reorderAt(1, 2));
+  await expect(paragraphTextarea(page, 1)).toBeFocused();
+
+  // The ends are aria-disabled yet keep their place in the tab order and stay focusable.
+  const up1 = page.getByRole('button', { name: C.moveUpAt(1), exact: true });
+  const down4 = page.getByRole('button', { name: C.moveDownAt(4), exact: true });
+  await expect(up1).toHaveAttribute('aria-disabled', 'true');
+  await expect(down4).toHaveAttribute('aria-disabled', 'true');
+  await up1.focus();
+  await expect(up1).toBeFocused();
+  await down4.focus();
+  await expect(down4).toBeFocused();
+
+  // A keyboard press on an end is a no-op: no reorder, no request. The bounded wait gives a wrongly-applied reorder
+  // (and its render) time to appear, so a broken guard cannot pass by racing the assertion.
+  await up1.focus();
+  await page.keyboard.press('Enter');
+  await page.waitForTimeout(200);
+  expect(await paragraphValues(page)).toEqual(before);
+  expect(api.puts).toHaveLength(0);
+}
+
+/** Bullet 2: saving after a move sends the RAW story.v1 body in the new order + If-Match; the editor reflects it. */
+export async function saveAfterMoveFlow(page: Page, lang: E2eLang): Promise<void> {
+  const C = EDITOR_STRUCTURE_COPY[lang];
+  const api = await openEditor(page, lang);
+  const paragraphs = STORY_CONTENT.paragraphs;
+  const movedContent: StoryWire = { ...STORY_CONTENT, paragraphs: [paragraphs[1]!, paragraphs[0]!, paragraphs[2]!, paragraphs[3]!] };
+  await page.getByRole('button', { name: C.moveUpAt(2), exact: true }).click();
+  await expect.poll(() => paragraphValues(page)).toEqual(movedContent.paragraphs.map((paragraph) => paragraph.text));
+  await expect(saveButton(page, lang)).toBeEnabled();
+  await saveButton(page, lang).click();
+  await expectSaved(page, lang);
+  expect(api.puts).toHaveLength(1);
+  // expectStoryPut proves the If-Match header and the exact story.v1 key shape; the body is the object itself,
+  // never wrapped in `{ content }` (10.5.3-T1 Notes).
+  expectStoryPut(api.puts[0]!, STORED_STORY_ETAG, movedContent);
+  const body = api.puts[0]!.postDataJSON() as Record<string, unknown>;
+  expect(body['content']).toBeUndefined();
+  expect(Array.isArray(body['paragraphs'])).toBe(true);
+  // The editor reflects the saved response: a reload keeps the new order.
+  await page.reload();
+  await expectEditor(page, lang);
+  await expect.poll(() => paragraphValues(page)).toEqual(movedContent.paragraphs.map((paragraph) => paragraph.text));
+  await expectA11yClean(page);
+}
+
+/**
+ * Bullet 3: delete shows the snackbar (`deleted` + Undo); Undo restores the paragraph at its original position with
+ * its keywords and beat and returns focus. With `waitForExpiry` the second deletion is left to expire (the real 10 s
+ * window, exercised by the vi spec only) and the Undo action is gone while the deletion stands.
+ */
+export async function deleteUndoFlow(page: Page, lang: E2eLang, options: { readonly waitForExpiry: boolean }): Promise<void> {
+  const C = EDITOR_STRUCTURE_COPY[lang];
+  const L = EDITOR_COPY[lang];
+  const api = await openEditor(page, lang);
+  const before = STORY_CONTENT.paragraphs;
+  const values = before.map((paragraph) => paragraph.text);
+
+  await paragraphDelete(page, L.paragraph(2), C.remove).click();
+  await expect(snackbar(page)).toContainText(C.deleted);
+  await expect(snackbarAction(page, C.undo)).toBeVisible();
+  // Focus hands to the paragraph that takes the deleted one's place, and the order is reduced.
+  await expect.poll(() => paragraphValues(page)).toEqual([values[0]!, values[2]!, values[3]!]);
+  await expect(paragraphTextarea(page, 1)).toBeFocused();
+  await expect(paragraphTextarea(page, 1)).toHaveValue(values[2]!);
+  await snackbarSettled(page);
+  await expectA11yClean(page);
+
+  // Undo restores the paragraph at its original position with its keywords and beat, focus returns.
+  await snackbarAction(page, C.undo).click();
+  await expect.poll(() => paragraphValues(page)).toEqual(values);
+  await expect(paragraphTextarea(page, 1)).toBeFocused();
+  const restored = segmentGroup(page, L.paragraph(2));
+  const scenes = restored.getByRole('list', { name: L.scenes, exact: true });
+  await expect(scenes.getByRole('textbox', { name: L.scene(1), exact: true })).toHaveValue(before[1]!.keywords[0]!);
+  await expect(scenes.getByRole('textbox', { name: L.scene(2), exact: true })).toHaveValue(before[1]!.keywords[1]!);
+  await expect(restored).toContainText(before[1]!.beat);
+  await expect(page.getByRole('button', { name: C.undo, exact: true })).toHaveCount(0);
+  // The dismissed snackbar keeps a fading container for ~75 ms; the scan waits for it to be removed.
+  await expect(snackbar(page)).toHaveCount(0);
+  await expectA11yClean(page);
+
+  if (options.waitForExpiry) {
+    await paragraphDelete(page, L.paragraph(2), C.remove).click();
+    await expect(snackbarAction(page, C.undo)).toBeVisible();
+    await expect(page.getByRole('button', { name: C.undo, exact: true })).toHaveCount(0, { timeout: 15_000 });
+    await expect(snackbar(page)).toHaveCount(0, { timeout: 15_000 });
+    await expect.poll(() => paragraphValues(page)).toEqual([values[0]!, values[2]!, values[3]!]);
+    await expectA11yClean(page);
+  }
+  expect(api.puts).toHaveLength(0);
+}
+
+/** Bullet 4: the dirty guard asks on in-app navigation only when dirty; Stay keeps, Leave discards. */
+export async function dirtyGuardFlow(page: Page, lang: E2eLang): Promise<void> {
+  const C = EDITOR_STRUCTURE_COPY[lang];
+  const L = EDITOR_COPY[lang];
+
+  // A clean draft navigates without a dialog.
+  const api = await openEditor(page, lang);
+  await page.getByRole('link', { name: C.back, exact: true }).click();
+  await expect(page).toHaveURL((url) => url.pathname === '/episodes');
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  expect(api.puts).toHaveLength(0);
+
+  // A dirty draft: the list row opens the editor in-app (no reload, same stubbed routes), and the back link now asks.
+  await page.getByRole('main').getByRole('link', { name: STORY_CONTENT.title, exact: true }).click();
+  await expectEditor(page, lang);
+  await segment(page, L.title).fill(EDITED.title);
+  await page.getByRole('link', { name: C.back, exact: true }).click();
+  const dialog = page.getByRole('dialog');
+  await expect(dialog).toBeVisible();
+  await expect(dialog).toContainText(C.dirtyTitle);
+  await expect(dialog).toContainText(C.dirtyBody);
+  // The MatDialog entrance fade blends the dialog's own colours toward the scrim; axe samples rendered colours, so
+  // the scan waits for the overlay's animations to end and every surface to be fully opaque (10.3.3-T3 D7).
+  await waitForOverlayAnimationEnd(page);
+  await expectA11yClean(page);
+
+  // Stay keeps the route and the draft.
+  await dialog.getByRole('button', { name: C.dirtyStay, exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(page).toHaveURL(new RegExp(`/episodes/${EPISODE_ID}$`));
+  await expect(segment(page, L.title)).toHaveValue(EDITED.title);
+
+  // Leave navigates away and discards the draft.
+  await page.getByRole('link', { name: C.back, exact: true }).click();
+  await expect(page.getByRole('dialog')).toBeVisible();
+  await page.getByRole('dialog').getByRole('button', { name: C.dirtyLeave, exact: true }).click();
+  await expect(page).toHaveURL((url) => url.pathname === '/episodes');
+  expect(api.puts).toHaveLength(0);
+}
+
+/** Bullet 5 (dirty): closing the tab with unsaved changes raises the browser `beforeunload` dialog. */
+export async function beforeUnloadDirtyFlow(page: Page, lang: E2eLang): Promise<void> {
+  const L = EDITOR_COPY[lang];
+  const dialogs: string[] = [];
+  page.on('dialog', (dialog) => { dialogs.push(dialog.type()); void dialog.accept(); });
+  await openEditor(page, lang);
+  await segment(page, L.title).click();
+  await segment(page, L.title).fill(EDITED.title);
+  await expect(page.getByRole('status').filter({ hasText: L.dirty })).toContainText(L.dirty);
+  const closed = page.waitForEvent('close');
+  await page.close({ runBeforeUnload: true });
+  await expect.poll(() => dialogs).toContain('beforeunload');
+  await closed;
+}
+
+/** Bullet 5 (clean): after an explicit save the listener is gone, so closing the tab prompts nothing. */
+export async function beforeUnloadCleanFlow(page: Page, lang: E2eLang): Promise<void> {
+  const L = EDITOR_COPY[lang];
+  const dialogs: string[] = [];
+  page.on('dialog', (dialog) => { dialogs.push(dialog.type()); void dialog.accept(); });
+  const api = await openEditor(page, lang);
+  await segment(page, L.title).click();
+  await segment(page, L.title).fill(EDITED.title);
+  await saveButton(page, lang).click();
+  await expectSaved(page, lang);
+  expect(api.puts).toHaveLength(1);
+  // `page.close({ runBeforeUnload: true })` returns before the page finishes closing; the `close` event marks that the
+  // browser ran (or skipped) the unload, so the dialog list is complete when it fires.
+  const closed = page.waitForEvent('close');
+  await page.close({ runBeforeUnload: true });
+  await closed;
+  expect(dialogs).toHaveLength(0);
+}
+
+/** Bullet 6: logging out with unsaved changes asks first; Stay keeps the session, Leave signs out to /login. */
+export async function logoutDirtyFlow(page: Page, lang: E2eLang): Promise<void> {
+  const C = EDITOR_STRUCTURE_COPY[lang];
+  const L = EDITOR_COPY[lang];
+  await page.route('**/api/v1/auth/logout', (route) => route.fulfill({ status: 204, body: '' }));
+  const api = await openEditor(page, lang);
+  await segment(page, L.title).fill(EDITED.title);
+
+  const signOut = async (): Promise<void> => {
+    await page.getByRole('button', { name: C.menuTrigger, exact: true }).click();
+    await page.getByRole('menuitem', { name: C.menuLogOut, exact: true }).click();
+  };
+
+  // Stay: the logout is aborted; the session and the draft survive.
+  await signOut();
+  const dialog = page.getByRole('dialog');
+  await expect(dialog).toBeVisible();
+  await expect(dialog).toContainText(C.dirtyTitle);
+  await waitForOverlayAnimationEnd(page);
+  await expectA11yClean(page);
+  await dialog.getByRole('button', { name: C.dirtyStay, exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(page).toHaveURL(new RegExp(`/episodes/${EPISODE_ID}$`));
+  await expect(segment(page, L.title)).toHaveValue(EDITED.title);
+
+  // Leave: the logout proceeds to the signed-out route.
+  await signOut();
+  await expect(page.getByRole('dialog')).toBeVisible();
+  await page.getByRole('dialog').getByRole('button', { name: C.dirtyLeave, exact: true }).click();
+  await expect(page).toHaveURL((url) => url.pathname === '/login');
+  expect(api.puts).toHaveLength(0);
+}
+
+/** Bullet 7: the structure advisory (out of the tier band) is rendered and axe-clean and never gates Save. */
+export async function structureAdvisoryFlow(page: Page, lang: E2eLang): Promise<void> {
+  const C = EDITOR_STRUCTURE_COPY[lang];
+  const L = EDITOR_COPY[lang];
+  // `short` is the [4, 5]-segment band and a segment is a paragraph plus the hook and the ending, so a two-paragraph
+  // draft sits inside the band (no advisory) while deleting one drops it below the minimum (advisory on). This is the
+  // `Delete while only one paragraph remains` row of the task's failure-handling table.
+  const twoParagraphs: StoryWire = { ...STORY_CONTENT, paragraphs: STORY_CONTENT.paragraphs.slice(0, 2) };
+  const api = await openEditor(page, lang, { detail: editorDetail({ lengthTier: 'short', currentStory: storySnapshot(twoParagraphs) }) });
+  const warning = page.getByRole('status').filter({ hasText: C.structureWarning });
+  await expect(warning).toHaveCount(0);
+  await expectA11yClean(page);
+
+  await paragraphDelete(page, L.paragraph(1), C.remove).click();
+  await expect(warning).toBeVisible();
+  await expect(saveButton(page, lang)).toBeEnabled();
+  await snackbarSettled(page);
+  await expectA11yClean(page);
+  expect(api.puts).toHaveLength(0);
+}
+
+/** Bullet 8: at 360 px there is no horizontal scroll and every paragraph and control is keyboard reachable. */
+export async function mobileReorderFlow(page: Page, lang: E2eLang): Promise<void> {
+  const C = EDITOR_STRUCTURE_COPY[lang];
+  const L = EDITOR_COPY[lang];
+  await page.setViewportSize({ width: 360, height: 800 });
+  await openEditor(page, lang);
+  expect(await noHorizontalOverflow(page)).toBe(true);
+
+  // Every paragraph is reachable through the segment navigator, focused and on screen.
+  const selector = page.getByRole('combobox', { name: L.choose, exact: true });
+  for (let index = 0; index < STORY_CONTENT.paragraphs.length; index += 1) {
+    await selector.selectOption(`p:${index}`);
+    await expect(paragraphTextarea(page, index)).toBeFocused();
+    await expect(paragraphTextarea(page, index)).toBeInViewport();
+    expect(await noHorizontalOverflow(page), `360 px overflow at p:${index}`).toBe(true);
+  }
+
+  // Every paragraph's move/delete controls are reachable with the Tab key alone.
+  const targets = STORY_CONTENT.paragraphs.flatMap((_paragraph, index) => [
+    page.getByRole('button', { name: C.moveUpAt(index + 1), exact: true }),
+    page.getByRole('button', { name: C.moveDownAt(index + 1), exact: true }),
+    paragraphDelete(page, L.paragraph(index + 1), C.remove),
+  ]);
+  const reached = new Set<number>();
+  await paragraphTextarea(page, 0).focus();
+  for (let step = 0; step < 120 && reached.size < targets.length; step += 1) {
+    await page.keyboard.press('Tab');
+    for (let index = 0; index < targets.length; index += 1) {
+      if (!reached.has(index) && (await targets[index]!.evaluate((node) => node === document.activeElement))) reached.add(index);
+    }
+  }
+  expect(reached.size, 'Tab must reach every paragraph move/delete control at 360 px').toBe(targets.length);
+  await expectA11yClean(page);
+  expect(await noHorizontalOverflow(page)).toBe(true);
+}
+
+/**
+ * Bullet 8 (`prefers-reduced-motion`): the drop-list/card transition and the snackbar slide are disabled by the
+ * global rule in `web/src/styles.scss` — the motion tokens resolve to 0, the paragraph-card button has no transition
+ * duration, and the snackbar's Material enter animation (which Material keeps enabled in JS under every media query)
+ * computes to the zeroed `0.01ms`/`0ms` durations. `0.01ms` is 1e-5 s, so the reduce side asserts `<= 0.00001 s`.
+ */
+export async function reducedMotionFlow(page: Page, lang: E2eLang): Promise<void> {
+  const C = EDITOR_STRUCTURE_COPY[lang];
+  const L = EDITOR_COPY[lang];
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  await openEditor(page, lang);
+  expect(await motionToken(page, '--nts-motion-fast')).toBe('160ms');
+  expect(await motionToken(page, '--nts-motion-base')).toBe('240ms');
+  expect(await cardButtonTransition(page)).toBe('0.16s');
+  await paragraphDelete(page, L.paragraph(2), C.remove).click();
+  await expect(snackbar(page)).toBeVisible();
+  // Material keeps `mat-snack-bar-container-enter` for as long as the snackbar is visible, so its 150 ms enter
+  // animation is a stable non-zero duration here (the class it replaces is never dropped under reduced motion).
+  await expect.poll(async () => (await snackbarMotionSeconds(snackbar(page))).container, {
+    message: 'the snackbar motion is present without reduced motion',
+  }).toBeGreaterThan(0);
+  await snackbarAction(page, C.undo).click();
+
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  expect(await motionToken(page, '--nts-motion-fast')).toBe('0ms');
+  expect(await motionToken(page, '--nts-motion-base')).toBe('0ms');
+  expect(await cardButtonTransition(page)).toBe('0s');
+  await paragraphDelete(page, L.paragraph(2), C.remove).click();
+  await expect(snackbar(page)).toBeVisible();
+  const reduced = await snackbarMotionSeconds(snackbar(page));
+  expect(reduced.container, 'the snackbar container motion is disabled under reduced motion').toBeLessThanOrEqual(0.00001);
+  expect(reduced.surface, 'the snackbar surface motion is disabled under reduced motion').toBeLessThanOrEqual(0.00001);
+  await snackbarSettled(page);
   await expectA11yClean(page);
 }

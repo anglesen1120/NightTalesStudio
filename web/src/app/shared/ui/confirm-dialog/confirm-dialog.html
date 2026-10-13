@@ -10,7 +10,7 @@
   }
   <p class="confirm-dialog__pending" aria-live="polite">{{ isPending() ? ('core.ui.confirm.pending' | transloco) : '' }}</p>
   <div class="confirm-dialog__actions">
-    <button type="button" [attr.cdkFocusInitial]="isDestructive() ? '' : null" (click)="cancel()" [attr.aria-disabled]="isPending() ? 'true' : null">{{ 'core.ui.confirm.cancel' | transloco }}</button>
+    <button type="button" [attr.cdkFocusInitial]="isDestructive() ? '' : null" (click)="cancel()" [attr.aria-disabled]="isPending() ? 'true' : null">{{ resolvedCancelLabelKey() | transloco }}</button>
     <button type="button" [class.confirm-dialog__danger]="isDestructive()" (click)="confirm()" [attr.aria-disabled]="isPending() ? 'true' : null">{{ resolvedConfirmLabelKey() | transloco }}</button>
   </div>
 </section>

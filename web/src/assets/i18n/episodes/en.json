@@ -76,6 +76,16 @@
     "saving": "Saving…",
     "saved": "Saved",
     "unsaved": "Unsaved changes",
+    "moveUp": "Move up",
+    "moveDown": "Move down",
+    "moveHandle": "Drag to move",
+    "delete": "Delete paragraph",
+    "deleted": "Paragraph deleted",
+    "undo": "Undo",
+    "reorderAnnounce": "Moved paragraph {{n}} to position {{m}}",
+    "structureWarning": "The structure may no longer fit this tier",
+    "moveUpPosition": "Move up: paragraph {{position}}",
+    "moveDownPosition": "Move down: paragraph {{position}}",
     "segment": {
       "title": "Title",
       "hook": "Hook",
@@ -119,6 +129,12 @@
       "download": "Download",
       "unavailable": "Action unavailable"
     }
+  },
+  "dirty": {
+    "title": "You have unsaved changes",
+    "body": "Leaving will discard them",
+    "stay": "Stay",
+    "leave": "Leave"
   },
   "conflict": {
     "title": "The story changed",

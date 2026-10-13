@@ -7,10 +7,11 @@ import type { IdempotencyIntent } from '@core/http';
 import { RealtimeService } from '@core/realtime';
 import type { RealtimeSubscription } from '@core/realtime';
 import { SessionStore } from '@core/session';
-import { addressForParagraph, parseAddress, parsePointerAddress } from '@shared/util/segment-address';
+import { addressForParagraph, parseAddress, parsePointerAddress, remapAfterInsert, remapAfterRemove, remapAfterReorder } from '@shared/util/segment-address';
 import type { SegmentAddress } from '@shared/util/segment-address';
 import { fromContent, serialize, toContent } from '../domain/story-codec';
-import type { StoryDraft, StoryMetadata, StorySegment, StorySnapshot } from '../domain/story.model';
+import type { QualityHint, StoryDraft, StoryMetadata, StorySegment, StorySnapshot } from '../domain/story.model';
+import { applyMove, applyRemove, insertAt } from './paragraph-structure';
 import { StoryRepository } from '../domain/story.repository';
 import { EpisodesRepository } from '../domain/episodes.repository';
 import { countTokens } from '../domain/token-count';
@@ -25,6 +26,14 @@ export interface ParagraphState {
   readonly factRefs: readonly unknown[];
 }
 const EMPTY_META: StoryMetadata = { title: '', description: '', tags: [], contentWarnings: [], structure: null };
+const EMPTY_HINTS: readonly QualityHint[] = Object.freeze([]);
+/** README C9 length bands, counted in segments (hook + paragraphs + ending) exactly as the backend validator counts. */
+const TIER_SEGMENTS: Readonly<Record<string, readonly [number, number]>> = Object.freeze({ short: [4, 5], standard: [20, 32], long: [40, 60] });
+/** The undo buffer holds one paragraph for this long; the snackbar action shares the window. */
+export const UNDO_WINDOW_MS = 10_000;
+
+/** A deleted paragraph and where it goes back. `text` is kept as removed: an edit made after the delete is not re-applied. */
+export interface RemovedParagraph { readonly paragraph: ParagraphState; readonly index: number }
 
 /** Single page-scoped writer. ETags belong to the last adopted/saved story, not a dirty background read. */
 @Injectable()
@@ -70,8 +79,25 @@ export class StoryEditorStore {
   readonly formErrors = signal<readonly string[]>([]);
   readonly keywordLimitHit = signal<string | null>(null);
   readonly invalidState = signal(false);
+  /** The undo buffer (one paragraph) and its 10 s window; `removed()` never survives a load, an adopt or a destroy. */
+  private readonly removedState = signal<RemovedParagraph | null>(null);
+  readonly removed = this.removedState.asReadonly();
+  /** A reorder or a delete is an edit `changedCount` cannot see (values did not change): drives Save and the guard. */
+  private readonly structuralChanged = signal(false);
+  readonly dirty = computed(() => this.snapshot() !== null && (this.changedCount() > 0 || this.structuralChanged()));
+  /** `snapshot().qualityHints` re-keyed to the local paragraph order after a move/delete/undo; `null` at the baseline. */
+  private readonly hintOverrides = signal<readonly QualityHint[] | null>(null);
+  readonly hints = computed<readonly QualityHint[]>(() => this.hintOverrides() ?? this.snapshot()?.qualityHints ?? EMPTY_HINTS);
+  /** Advisory only (D9/D18): the client never blocks a save the server's validator would report. */
+  readonly structureWarning = computed(() => {
+    if (this.snapshot() === null) return false;
+    const band = TIER_SEGMENTS[this.detail.detail()?.lengthTier ?? ''];
+    if (band === undefined) return false;
+    const segments = this.paragraphs().length + 2;
+    return segments < band[0] || segments > band[1];
+  });
   readonly readOnly = computed(() => !this.detail.nextActions().includes('edit_story'));
-  readonly saveDisabled = computed(() => !this.active() || this.loading() || this.saving() || this.resolving() || this.readOnly() || this.invalidState() || this.changedCount() === 0);
+  readonly saveDisabled = computed(() => !this.active() || this.loading() || this.saving() || this.resolving() || this.readOnly() || this.invalidState() || (this.changedCount() === 0 && !this.structuralChanged()));
   readonly titleTokens = computed(() => countTokens(this.title()));
   readonly hookTokens = computed(() => countTokens(this.hook()));
   readonly endingTokens = computed(() => countTokens(this.ending()));
@@ -95,6 +121,11 @@ export class StoryEditorStore {
   private subscription: RealtimeSubscription | null = null;
   private dirtyTimer: number | undefined;
   private invalidationTimer: number | undefined;
+  private removedTimer: number | undefined;
+  /** segKeys of the last adopted/saved paragraph order: the baseline a structural change is compared with. */
+  private baselineKeys: readonly string[] = [];
+  /** `p:<i>`-keyed hints of the paragraph that sits in the undo buffer, hidden until it comes back. */
+  private bufferedHints: readonly QualityHint[] = [];
 
   constructor() {
     inject(DestroyRef).onDestroy(() => {
@@ -217,6 +248,65 @@ export class StoryEditorStore {
     this.edited();
   }
 
+  /** Template helpers (aria-disabled at the ends, never `disabled`, so the buttons keep their place in the tab order). */
+  readonly canMoveUp = (index: number): boolean => this.canEdit() && index > 0 && index < this.paragraphs().length;
+  readonly canMoveDown = (index: number): boolean => this.canEdit() && index >= 0 && index < this.paragraphs().length - 1;
+
+  moveUp(index: number): boolean {
+    return this.moveTo(index, index - 1);
+  }
+
+  moveDown(index: number): boolean {
+    return this.moveTo(index, index + 1);
+  }
+
+  /** True only when the order changed; a drop on itself is not dirty (the value signals stay untouched). */
+  moveTo(from: number, to: number): boolean {
+    if (!this.canEdit() || !Number.isInteger(from) || !Number.isInteger(to)) return false;
+    const count = this.paragraphs().length;
+    if (from < 0 || from >= count) return false;
+    const target = to < 0 ? 0 : to > count - 1 ? count - 1 : to;
+    if (target === from) return false;
+    this.paragraphs.set(applyMove(this.paragraphs(), from, target));
+    this.remapAddresses('move', from, target);
+    this.markStructural();
+    return true;
+  }
+
+  /** Buffer one paragraph for 10 s; a second delete replaces the buffer (the first deletion is committed from then on). */
+  removeParagraph(index: number): boolean {
+    if (!this.canEdit()) return false;
+    const paragraphs = this.paragraphs();
+    const paragraph = paragraphs[index];
+    if (!Number.isInteger(index) || index < 0 || index >= paragraphs.length || paragraph === undefined) return false;
+    this.removedState.set({ paragraph, index });
+    this.paragraphs.set(applyRemove(paragraphs, index));
+    this.remapAddresses('remove', index, index);
+    this.markStructural();
+    this.startUndoTimer();
+    return true;
+  }
+
+  /** Re-insert the buffered paragraph at its original index (clamped) with its text as removed; `null` when nothing is buffered. */
+  undoRemove(): number | null {
+    const removed = this.removedState();
+    if (removed === null || !this.canEdit()) return null;
+    const index = Math.min(removed.index, this.paragraphs().length);
+    this.paragraphs.set(insertAt(this.paragraphs(), index, removed.paragraph));
+    this.remapAddresses('insert', index, index);
+    this.clearRemoved();
+    this.markStructural();
+    return index;
+  }
+
+  /** Synchronously back to the last adopted/saved baseline, so `hasUnsavedChanges()` is false (the user chose Leave). */
+  discardDraft(): void {
+    this.clearRemoved();
+    const snapshot = this.snapshot();
+    if (snapshot === null) { this.clearDraft(); return; }
+    this.adopt(snapshot);
+  }
+
   async saveVersion(): Promise<void> {
     if (!this.canEdit() || this.saving() || this.resolving() || !this.hasUnsavedChanges()) return;
     await this.put(this.snapshot()?.etag ?? '');
@@ -294,6 +384,7 @@ export class StoryEditorStore {
 
   private adopt(snapshot: StorySnapshot | null): void {
     this.snapshot.set(snapshot);
+    this.clearRemoved();
     if (snapshot === null) { this.clearDraft(); return; }
     const draft = fromContent(snapshot.content);
     this.title.set(draft.title); this.hook.set(draft.hook.text); this.ending.set(draft.ending.text);
@@ -311,6 +402,73 @@ export class StoryEditorStore {
     this.conflict.set(null); this.savedAt.set(null);
     window.clearTimeout(this.dirtyTimer);
     this.dirtyTimer = undefined;
+  }
+
+  /**
+   * Rebuild every `p:<i>`-keyed address after a structural change: a hint follows the same text through a move, a
+   * delete and an undo, and the removed paragraph's own hints stay hidden while it sits in the buffer. Runs once per
+   * structural change, never per keystroke.
+   */
+  private remapAddresses(kind: 'move' | 'remove' | 'insert', from: number, to: number): void {
+    const map = (address: SegmentAddress): SegmentAddress | null => {
+      if (kind === 'move') return remapAfterReorder([address], from, to)[0] ?? address;
+      return kind === 'remove' ? remapAfterRemove(address, from) : remapAfterInsert(address, from);
+    };
+    const remapHint = (hint: QualityHint): QualityHint | null => {
+      const segment = hint.segment;
+      if (segment === null) return hint;
+      const target = map(segment);
+      return target === null ? null : target === segment ? hint : { ...hint, segment: target };
+    };
+    const hints: QualityHint[] = [];
+    const dropped: QualityHint[] = [];
+    for (const hint of this.hints()) {
+      const mapped = remapHint(hint);
+      if (mapped === null) dropped.push(hint); else hints.push(mapped);
+    }
+    // The removed paragraph's own hints wait in the buffer and come back with it; a move shifts them with the rest.
+    if (kind === 'remove') this.bufferedHints = dropped;
+    if (kind === 'move') this.bufferedHints = this.bufferedHints.map(remapHint).filter((hint): hint is QualityHint => hint !== null);
+    if (kind === 'insert') { hints.push(...this.bufferedHints); this.bufferedHints = []; }
+    this.hintOverrides.set(hints);
+    // A structural change is an edit, and an edit clears the server field errors; rebuilding their addresses here
+    // keeps the same-window keys canonical for a caller that reads them before the next save response lands.
+    const errors: Partial<Record<SegmentAddress, readonly string[]>> = {};
+    for (const [address, keys] of Object.entries(this.fieldErrors())) {
+      if (keys === undefined) continue;
+      const target = map(address as SegmentAddress);
+      if (target !== null) errors[target] = keys;
+    }
+    this.fieldErrors.set(errors);
+  }
+
+  /** The order moved away from (or back to) the baseline order: re-derive the flag and commit the change as an edit. */
+  private markStructural(): void {
+    this.recomputeStructural();
+    this.edited();
+  }
+
+  /** True when the current paragraph keys differ from the baseline order (a reorder or a delete). */
+  private recomputeStructural(): void {
+    const keys = this.paragraphs().map((paragraph) => paragraph.segKey);
+    this.structuralChanged.set(keys.length !== this.baselineKeys.length || keys.some((key, index) => key !== this.baselineKeys[index]));
+  }
+
+  private startUndoTimer(): void {
+    window.clearTimeout(this.removedTimer);
+    const generation = this.generation;
+    this.removedTimer = window.setTimeout(() => {
+      this.removedTimer = undefined;
+      if (this.current(generation)) this.clearRemoved();
+    }, UNDO_WINDOW_MS);
+  }
+
+  /** Drop the undo buffer and its timer (destroy, load, adopt, session change, `discardDraft` or the window closing). */
+  private clearRemoved(): void {
+    window.clearTimeout(this.removedTimer);
+    this.removedTimer = undefined;
+    this.removedState.set(null);
+    this.bufferedHints = [];
   }
 
   private buildDraft(): StoryDraft {
@@ -346,6 +504,10 @@ export class StoryEditorStore {
     this.baselineValues.clear();
     for (const [key, value] of this.draftValues(draft)) this.baselineValues.set(key, value);
     this.changedFields.clear(); this.changedCount.set(0);
+    this.baselineKeys = draft.paragraphs.map((paragraph) => paragraph.segKey);
+    // The server's hints describe the order it just acknowledged: the local remap starts over from them.
+    this.hintOverrides.set(null);
+    this.recomputeStructural();
   }
 
   private trackChange(key: string, value: string | readonly string[]): void {
@@ -401,6 +563,7 @@ export class StoryEditorStore {
     this.hookFacts = []; this.endingFacts = []; this.baselineJson.set(''); this.dirtyJson.set('');
     this.baselineValues.clear(); this.changedFields.clear(); this.changedCount.set(0);
     this.savedVersion.set(this.version()); this.savedAt.set(null); this.conflict.set(null); this.keywordLimitHit.set(null);
+    this.clearRemoved(); this.hintOverrides.set(null); this.baselineKeys = []; this.structuralChanged.set(false);
   }
   private teardown(): void {
     this.generateIntent = null; this.generating.set(false); this.generationError.set(null);
@@ -408,6 +571,7 @@ export class StoryEditorStore {
     window.clearTimeout(this.dirtyTimer);
     window.clearTimeout(this.invalidationTimer);
     this.dirtyTimer = undefined; this.invalidationTimer = undefined; this.resolving.set(false);
+    this.clearRemoved();
   }
   private active(): boolean { return !this.destroyed && this.session.generation() === this.ownerGeneration; }
   private current(generation: number): boolean { return this.active() && this.generation === generation; }

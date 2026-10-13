@@ -12,12 +12,23 @@ function state(): StoryEditorPresentationState {
     ],
     meta: { title: 'Title', description: 'Description', tags: [], contentWarnings: [], structure: null },
     metaTokens: 1, segmentTokens: new Map([['title', 1], ['hook', 1], ['p:0', 2], ['p:1', 2], ['ending', 1], ['meta', 1]]), totalTokens: 8,
-    fieldErrors: {}, formErrors: [], readOnly: false, keywordLimitHit: null,
+    fieldErrors: {}, formErrors: [], readOnly: false, keywordLimitHit: null, structureWarning: false,
     isDirty: false, saving: false, savedAt: null, errorKey: null, saveDisabled: true,
   };
 }
 
 describe('buildStoryEditorViewModel', () => {
+  it('threads the non-blocking structure warning without recreating unchanged paragraph models', () => {
+    const initial = state();
+    const before = buildStoryEditorViewModel(initial);
+    const after = buildStoryEditorViewModel({ ...initial, structureWarning: true, saveDisabled: false }, before);
+    expect(before.structureWarning).toBe(false);
+    expect(after.structureWarning).toBe(true);
+    expect(after.saveBar.disabled).toBe(false);
+    expect(after.paragraphs[0]).toBe(before.paragraphs[0]);
+    expect(after.paragraphs[1]).toBe(before.paragraphs[1]);
+  });
+
   it('allocates only the edited segment model for a one-character edit', () => {
     const initial = state();
     const before = buildStoryEditorViewModel(initial);

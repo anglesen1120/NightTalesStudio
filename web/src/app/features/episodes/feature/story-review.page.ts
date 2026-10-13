@@ -2,15 +2,17 @@ import { ChangeDetectionStrategy, Component, DestroyRef, ViewContainerRef, after
 import type { Signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute } from '@angular/router';
-import { TranslocoPipe, provideTranslocoScope } from '@jsverse/transloco';
+import { MatSnackBar } from '@angular/material/snack-bar';
+import { TranslocoPipe, TranslocoService, provideTranslocoScope } from '@jsverse/transloco';
 import { AppErrorMapper } from '@core/errors';
+import { UnsavedWorkRegistry } from '@core/shell/unsaved-work';
 import { ConfirmDialog, ConflictDialog, EmptyState, ErrorState, FormErrorAlert, LoadingState, PageHeader, StatusChip } from '@shared/ui';
 import { addressForParagraph, formatAddress, parseAddress } from '@shared/util/segment-address';
 import type { SegmentAddress } from '@shared/util/segment-address';
 import { firstValueFrom } from 'rxjs';
 import { combineLatest } from 'rxjs';
 import { EpisodeDetailStore } from '../application/episode-detail.store';
-import { StoryEditorStore } from '../application/story-editor.store';
+import { StoryEditorStore, UNDO_WINDOW_MS } from '../application/story-editor.store';
 import { StoryEditorComponent } from '../ui/story-editor.component';
 import { buildStoryEditorViewModel } from '../ui/story-editor.view-model';
 import type { SegmentTexts, StoryEditorIntent, StoryEditorViewModel } from '../ui/story-editor.view-model';
@@ -43,6 +45,9 @@ export class StoryReviewPage {
   private readonly mapper = inject(AppErrorMapper);
   private readonly conflictDialog = inject(ConflictDialog);
   private readonly confirmDialog = inject(ConfirmDialog);
+  private readonly snack = inject(MatSnackBar);
+  private readonly transloco = inject(TranslocoService);
+  private readonly unsavedWork = inject(UnsavedWorkRegistry);
   private readonly viewContainerRef = inject(ViewContainerRef);
   private readonly destroyRef = inject(DestroyRef);
   private readonly editor = viewChild(StoryEditorComponent);
@@ -54,6 +59,7 @@ export class StoryReviewPage {
   private lastFocusSequence = -1;
   private focusSequence = 0;
   private conflictOpen = false;
+  private leavePrompt: Promise<boolean> | null = null;
 
   private previousViewModel: StoryEditorViewModel | undefined;
   protected readonly segmentTexts = computed<SegmentTexts>(() => new Map<SegmentAddress, Signal<string>>([
@@ -77,6 +83,7 @@ export class StoryReviewPage {
       fieldErrors: this.store.fieldErrors(), formErrors: this.store.formErrors(), readOnly: this.store.readOnly(),
       keywordLimitHit: this.store.keywordLimitHit(), isDirty: this.store.isDirty(), saving: this.store.saving(),
       savedAt: this.store.savedAt(), errorKey: this.saveErrorKey(), saveDisabled: this.store.saveDisabled(),
+      structureWarning: this.store.structureWarning(),
     }, this.previousViewModel);
     this.previousViewModel = next;
     return next;
@@ -117,6 +124,38 @@ export class StoryReviewPage {
       if (request === null || editor === undefined || this.loading() || request.sequence === this.lastFocusSequence) return;
       if (editor.focusSegment(request.address)) this.lastFocusSequence = request.sequence;
     });
+    // One handler for both the route guard and the shell logout: both go through `confirmLeave()`, so a logout that is
+    // already asking a question is never asked again by the route deactivation that follows it.
+    this.destroyRef.onDestroy(this.unsavedWork.register({
+      hasUnsaved: () => this.store.hasUnsavedChanges(),
+      confirmLeave: () => this.confirmLeave(),
+    }));
+    // The listener is registered while the draft is dirty (a cheap flag, never a serialisation per keystroke) and the
+    // check inside it is the synchronous one, so a keystroke inside the 150 ms dirty debounce still prompts.
+    effect((onCleanup) => {
+      if (!this.store.dirty()) return;
+      const listener = (event: BeforeUnloadEvent): void => {
+        if (!this.store.hasUnsavedChanges()) return;
+        event.preventDefault();
+        event.returnValue = '';
+      };
+      window.addEventListener('beforeunload', listener);
+      onCleanup(() => window.removeEventListener('beforeunload', listener));
+    });
+    effect((onCleanup) => {
+      const removed = this.store.removed();
+      if (removed === null) return;
+      const ref = this.snack.open(this.transloco.translate('episodes.editor.deleted'), this.transloco.translate('episodes.editor.undo'), { duration: UNDO_WINDOW_MS });
+      // `afterDismissed`, not `onAction`: MatSnackBarRef completes `onAction` on every dismissal — the action click,
+      // the duration timeout, and this effect's cleanup when a second delete replaces the buffer — so resolving on it
+      // would undo without a click. `dismissedByAction` is true only for the click, and the identity check keeps a
+      // superseded snackbar (its exit animation can outlive the buffer) from undoing a paragraph a later delete holds.
+      // `firstValueFrom` rather than a hand-rolled subscription: a component never subscribes by hand (D2/D13).
+      void firstValueFrom(ref.afterDismissed()).then((dismissed) => {
+        if (dismissed.dismissedByAction && this.store.removed() === removed) this.undoRemove();
+      });
+      onCleanup(() => ref.dismiss());
+    });
   }
 
   protected actionKey(action: string): string {
@@ -142,7 +181,49 @@ export class StoryReviewPage {
       case 'save': void this.store.saveVersion(); break;
       case 'openSegment': this.editor()?.focusSegment(intent.address); break;
       case 'resolveConflict': void this.store.resolveConflict(intent.choice); break;
+      case 'moveParagraph': this.store.moveTo(intent.from, intent.to); break;
+      case 'removeParagraph': this.removeParagraph(intent.index); break;
     }
+  }
+
+  /**
+   * The one prompt for leaving a dirty draft (10.5.9-T1). The route guard, the unsaved-work registry and the logout
+   * flow all call this, so one in-flight question is shared and the route deactivation that follows a logout never
+   * asks a second time. `discardDraft()` runs here — never in the guard — so a cancelled navigation cannot leak an
+   * intermediate order into a later save.
+   */
+  confirmLeave(): Promise<boolean> {
+    if (!this.store.hasUnsavedChanges()) return Promise.resolve(true);
+    this.leavePrompt ??= this.askToLeave().finally(() => { this.leavePrompt = null; });
+    return this.leavePrompt;
+  }
+
+  private async askToLeave(): Promise<boolean> {
+    const dialog = this.confirmDialog.confirm({
+      titleKey: 'episodes.dirty.title',
+      bodyKey: 'episodes.dirty.body',
+      confirmLabelKey: 'episodes.dirty.leave',
+      cancelLabelKey: 'episodes.dirty.stay',
+      destructive: true,
+    }, { viewContainerRef: this.viewContainerRef });
+    const leave = (await firstValueFrom(dialog.afterClosed())) ?? false;
+    if (leave && !this.destroyRef.destroyed) this.store.discardDraft();
+    return leave;
+  }
+
+  /** Delete, then hand focus to the paragraph that takes its place (else the previous one) after the next render. */
+  private removeParagraph(index: number): void {
+    if (!this.store.removeParagraph(index)) return;
+    const remaining = this.store.paragraphs().length;
+    if (remaining === 0) { this.focusRequest.set(null); return; }
+    this.focusRequest.set({ address: addressForParagraph(Math.min(index, remaining - 1)), sequence: ++this.focusSequence });
+  }
+
+  /** Undo: the restored paragraph takes focus after the next render. */
+  private undoRemove(): void {
+    const index = this.store.undoRemove();
+    if (index === null) return;
+    this.focusRequest.set({ address: addressForParagraph(index), sequence: ++this.focusSequence });
   }
 
   private async openConflict(): Promise<void> {

@@ -27,6 +27,13 @@ class DynamicHost {
   }
 }
 
+@Component({
+  imports: [ConfirmDialogComponent],
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  template: `<nts-confirm-dialog titleKey="core.ui.confirm.title" bodyKey="core.ui.errorState.body" confirmLabelKey="core.ui.confirm.confirm" cancelLabelKey="core.ui.pageHeader.back" />`,
+})
+class StaticCancelHost {}
+
 describe('ConfirmDialog', () => {
   it('renders static cost content and marks every action aria-disabled while pending', async () => {
     await TestBed.configureTestingModule({ imports: [StaticHost, MatDialogModule, NoopAnimationsModule, uiTestingTranslations()] }).compileComponents();
@@ -38,6 +45,30 @@ describe('ConfirmDialog', () => {
     expect(root.textContent).toContain('cost line');
     expect(Array.from(root.querySelectorAll<HTMLButtonElement>('button')).every((button) => button.getAttribute('aria-disabled') === 'true' && !button.disabled)).toBe(true);
     expect(root.querySelector('[aria-modal="true"]')).not.toBeNull();
+  });
+
+  it('renders a custom cancel label from the static input or from the dialog data, and the shared default when neither sets one', async () => {
+    await TestBed.configureTestingModule({ imports: [StaticHost, StaticCancelHost, DynamicHost, MatDialogModule, NoopAnimationsModule, uiTestingTranslations()] }).compileComponents();
+    const cancelLabelOf = (container: ParentNode): string | null => container.querySelector('.confirm-dialog__actions button')?.textContent?.trim() ?? null;
+
+    const customStatic = TestBed.createComponent(StaticCancelHost);
+    customStatic.detectChanges();
+    await customStatic.whenStable();
+    expect(cancelLabelOf(customStatic.nativeElement as HTMLElement)).toBe('Quay lại');
+
+    const defaultStatic = TestBed.createComponent(StaticHost);
+    defaultStatic.detectChanges();
+    await defaultStatic.whenStable();
+    expect(cancelLabelOf(defaultStatic.nativeElement as HTMLElement)).toBe('Huỷ');
+
+    const fixture = TestBed.createComponent(DynamicHost);
+    fixture.detectChanges();
+    const dialogs = TestBed.inject(ConfirmDialog);
+    const ref = dialogs.confirm({ titleKey: 'core.ui.confirm.title', bodyKey: 'core.ui.errorState.body', confirmLabelKey: 'core.ui.confirm.confirm', cancelLabelKey: 'core.ui.pageHeader.back' });
+    await fixture.whenStable();
+    expect(cancelLabelOf(document.querySelector('.cdk-overlay-pane') as HTMLElement)).toBe('Quay lại');
+    ref.close();
+    await fixture.whenStable();
   });
 
   it('traps focus, renders typed dynamic cost, cancels on Escape, destroys content and restores focus', async () => {

@@ -2,8 +2,9 @@ import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { ActivatedRoute, convertToParamMap, provideRouter } from '@angular/router';
-import { TranslocoTestingModule } from '@jsverse/transloco';
-import { of } from 'rxjs';
+import { TranslocoService, TranslocoTestingModule } from '@jsverse/transloco';
+import { MatSnackBar, type MatSnackBarDismiss } from '@angular/material/snack-bar';
+import { of, Subject, type Observable } from 'rxjs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AppErrorMapper } from '@core/errors';
 import { ConfirmDialog, ConflictDialog } from '@shared/ui';
@@ -17,6 +18,7 @@ import type { EpisodeDetail } from '../domain/episode.model';
 import type { StorySnapshot } from '../domain/story.model';
 import { StoryReviewPage } from './story-review.page';
 import { SegmentEditorComponent } from '../ui/segment-editor.component';
+import { StoryEditorComponent } from '../ui/story-editor.component';
 
 const translations = TranslocoTestingModule.forRoot({
   langs: { vi: coreVi, 'core/vi': coreVi, 'episodes/vi': episodesVi, 'errors/vi': errorsVi },
@@ -36,7 +38,7 @@ const snapshot: StorySnapshot = {
 };
 
 const detail: EpisodeDetail = {
-  id: 'episode-1', seriesId: 'series-1', status: 'story_review', etag: '"ep-1"', generation: null,
+  id: 'episode-1', seriesId: 'series-1', status: 'story_review', lengthTier: 'standard', etag: '"ep-1"', generation: null,
   hasCurrentStory: true, currentStory: snapshot, nextActions: ['edit_story'],
 };
 
@@ -60,9 +62,82 @@ function fakeStoryStore() {
     segmentTokens: signal(new Map([['title', 3], ['hook', 2], ['p:0', 2], ['p:1', 2], ['p:2', 2], ['p:3', 2], ['ending', 1], ['meta', 5]])),
     metaTokens: signal(5), totalTokens: signal(19), isDirty: signal(false), saving: signal(false), savedAt: signal<number | null>(null), saveDisabled: signal(true), conflict: signal(null),
     fieldErrors: signal({}), formErrors: signal<readonly string[]>([]), keywordLimitHit: signal<string | null>(null), readOnly: signal(false), invalidState: signal(false),
+    removed: signal<unknown>(null), dirty: signal(false), structureWarning: signal(false),
+    moveTo: vi.fn(() => true), removeParagraph: vi.fn(() => true), undoRemove: vi.fn((): number | null => 1), discardDraft: vi.fn(),
     load: vi.fn(() => Promise.resolve()), setText: vi.fn(), setSegmentText: vi.fn(), addKeyword: vi.fn(), updateKeyword: vi.fn(), removeKeyword: vi.fn(), setMeta: vi.fn(),
     saveVersion: vi.fn(() => Promise.resolve()), resolveConflict: vi.fn(() => Promise.resolve()), hasUnsavedChanges: vi.fn(() => false),
   };
+}
+
+function dispatchBeforeUnload(): boolean {
+  const event = new Event('beforeunload', { cancelable: true });
+  window.dispatchEvent(event);
+  return event.defaultPrevented;
+}
+
+/**
+ * Stand-in for `MatSnackBarRef` (node_modules/@angular/material/fesm2022/snack-bar.mjs): every dismissal — the action
+ * click, `dismiss()` (the duration timeout or the page's effect cleanup) — completes `onAction` and emits
+ * `afterDismissed` once, with `dismissedByAction` true only for the click.
+ */
+class FakeSnackBarRef {
+  private readonly actionSource = new Subject<void>();
+  private readonly dismissedSource = new Subject<MatSnackBarDismiss>();
+  readonly dismiss = vi.fn((): void => this.finish(false));
+  onAction(): Observable<void> { return this.actionSource.asObservable(); }
+  afterDismissed(): Observable<MatSnackBarDismiss> { return this.dismissedSource.asObservable(); }
+  /** The action click (`MatSnackBarRef.dismissWithAction`), which settles with `dismissedByAction: true`. */
+  click(): void {
+    if (this.actionSource.closed) return;
+    this.actionSource.next();
+    this.actionSource.complete();
+    this.finish(true);
+  }
+  private finish(dismissedByAction: boolean): void {
+    if (this.dismissedSource.closed) return;
+    if (!this.actionSource.closed) this.actionSource.complete();
+    this.dismissedSource.next({ dismissedByAction });
+    this.dismissedSource.complete();
+  }
+}
+
+function fakeSnackBar() {
+  const opened: FakeSnackBarRef[] = [];
+  const open = vi.fn((): FakeSnackBarRef => {
+    const ref = new FakeSnackBarRef();
+    opened.push(ref);
+    return ref;
+  });
+  return { open, opened };
+}
+
+async function createPage() {
+  const detailStore = fakeDetailStore();
+  const storyStore = fakeStoryStore();
+  const params = convertToParamMap({ id: 'episode-1' });
+  const query = convertToParamMap({});
+  const snack = fakeSnackBar();
+  await TestBed.configureTestingModule({
+    imports: [StoryReviewPage, translations],
+    providers: [
+      ...ZONELESS_TEST_PROVIDERS,
+      provideRouter([]),
+      { provide: ActivatedRoute, useValue: { paramMap: of(params), queryParamMap: of(query), snapshot: { paramMap: params, queryParamMap: query } } },
+      { provide: AppErrorMapper, useValue: { messageKey: () => 'errors.story_invalid_content' } },
+      { provide: ConflictDialog, useValue: { open: vi.fn() } },
+      { provide: ConfirmDialog, useValue: { confirm: vi.fn(() => ({ afterClosed: () => of(true) })) } },
+      { provide: MatSnackBar, useValue: { open: snack.open } },
+    ],
+  }).overrideComponent(StoryReviewPage, {
+    set: { providers: [
+      { provide: EpisodeDetailStore, useValue: detailStore },
+      { provide: StoryEditorStore, useValue: storyStore },
+    ] },
+  }).compileComponents();
+  const fixture = TestBed.createComponent(StoryReviewPage);
+  fixture.detectChanges();
+  await fixture.whenStable();
+  return { fixture, storyStore, snack, transloco: TestBed.inject(TranslocoService) };
 }
 
 afterEach(() => TestBed.resetTestingModule());
@@ -123,5 +198,76 @@ describe('StoryReviewPage', () => {
     fixture.detectChanges();
     await fixture.whenStable();
     expect(root.querySelector('[role="status"]')?.textContent).toContain(episodesVi.editor.unsaved);
+  });
+
+  it('beforeunload_IsRegisteredOnlyWhileDirty_AndRemovedWhenClean', async () => {
+    const { fixture, storyStore } = await createPage();
+    expect(dispatchBeforeUnload()).toBe(false);
+    storyStore.dirty.set(true);
+    storyStore.hasUnsavedChanges.mockReturnValue(true);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(dispatchBeforeUnload()).toBe(true);
+    // Clean again, even before the debounced dirty indicator catches up: the listener is gone and cannot prompt.
+    storyStore.hasUnsavedChanges.mockReturnValue(false);
+    expect(dispatchBeforeUnload()).toBe(false);
+    storyStore.dirty.set(false);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(dispatchBeforeUnload()).toBe(false);
+  });
+
+  it('deleteUndoSnackbar_ActionClick_RestoresTheBufferedParagraph', async () => {
+    const { fixture, storyStore, snack, transloco } = await createPage();
+    storyStore.removed.set({ paragraph: {}, index: 1 });
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(snack.open).toHaveBeenCalledWith(transloco.translate('episodes.editor.deleted'), transloco.translate('episodes.editor.undo'), { duration: 10_000 });
+    snack.opened[0]!.click();
+    await fixture.whenStable();
+    expect(storyStore.undoRemove).toHaveBeenCalledTimes(1);
+    storyStore.removed.set(null);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(snack.opened[0]!.dismiss).toHaveBeenCalled();
+  });
+
+  it('deleteUndoSnackbar_SecondDelete_DoesNotUndoTheNewerBuffer', async () => {
+    const { fixture, storyStore, snack } = await createPage();
+    storyStore.removed.set({ paragraph: {}, index: 1 });
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const second = { paragraph: {}, index: 2 };
+    // The second delete replaces the buffer: the effect cleanup dismisses snackbar 1 without any action click, so
+    // snackbar 1's dismissal must never undo the paragraph the later delete buffered.
+    storyStore.removed.set(second);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(snack.opened).toHaveLength(2);
+    expect(snack.opened[0]!.dismiss).toHaveBeenCalled();
+    expect(storyStore.undoRemove).not.toHaveBeenCalled();
+    expect(storyStore.removed()).toBe(second);
+  });
+
+  it('deleteUndoSnackbar_AutoDismissWithoutClick_LeavesTheParagraphRemoved', async () => {
+    const { fixture, storyStore, snack } = await createPage();
+    const buffered = { paragraph: {}, index: 1 };
+    storyStore.removed.set(buffered);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    // The 10 s duration elapses (or the snackbar is dismissed by hand) with no action click.
+    snack.opened[0]!.dismiss();
+    await fixture.whenStable();
+    expect(storyStore.undoRemove).not.toHaveBeenCalled();
+    expect(storyStore.removed()).toBe(buffered);
+  });
+
+  it('moveAndDeleteIntents_ReachTheStore', async () => {
+    const { fixture, storyStore } = await createPage();
+    const editor = fixture.debugElement.query(By.directive(StoryEditorComponent)).componentInstance as StoryEditorComponent;
+    editor.intent.emit({ kind: 'moveParagraph', from: 0, to: 2 });
+    expect(storyStore.moveTo).toHaveBeenCalledWith(0, 2);
+    editor.intent.emit({ kind: 'removeParagraph', index: 1 });
+    expect(storyStore.removeParagraph).toHaveBeenCalledWith(1);
   });
 });

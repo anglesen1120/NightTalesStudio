@@ -29,6 +29,7 @@ export function mapEpisodeDetail(dto: EpisodeDetailDto): EpisodeDetail {
     id: dto.id,
     seriesId: dto.seriesId,
     status: dto.status,
+    lengthTier: dto.lengthTier,
     etag: dto.etag,
     generation: generation === null ? null : {
       kind: generation.kind,

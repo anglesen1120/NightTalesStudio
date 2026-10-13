@@ -17,6 +17,7 @@
     [attr.aria-describedby]="describedBy()"
     (input)="editText($event)"
   ></textarea>
+  <ng-content select="[segmentActions]" />
 
   <p class="segment-editor__counter" [id]="counterId()">{{ 'episodes.editor.tokens' | transloco: { count: viewModel().tokens } }}</p>
 
