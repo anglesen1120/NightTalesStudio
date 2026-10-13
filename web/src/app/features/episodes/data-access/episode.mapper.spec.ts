@@ -45,7 +45,7 @@ describe('mapEpisodeDetail', () => {
     expect(mapEpisodeDetail(DETAIL)).toEqual({
       id: DETAIL.id, seriesId: DETAIL.seriesId, status: DETAIL.status, etag: DETAIL.etag,
       generation: { ...DETAIL.generation, processingPaused: null },
-      hasCurrentStory: false, currentStory: null, nextActions: ['edit_story'],
+      hasCurrentStory: false, currentStory: null, nextActions: ['edit_story'], lengthTier: DETAIL.lengthTier,
     });
   });
 

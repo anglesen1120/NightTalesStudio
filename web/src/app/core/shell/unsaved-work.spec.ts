@@ -1,0 +1,99 @@
+import { vi } from 'vitest';
+import { UnsavedWorkRegistry } from './unsaved-work';
+
+describe('UnsavedWorkRegistry', () => {
+  it('nothingRegistered_ConfirmLeaveResolvesTrue', async () => {
+    const registry = new UnsavedWorkRegistry();
+    expect(registry.hasUnsaved()).toBe(false);
+    await expect(registry.confirmLeave()).resolves.toBe(true);
+  });
+
+  it('discardAll_DropsEveryHandlersWorkWithoutAsking', () => {
+    const registry = new UnsavedWorkRegistry();
+    const dirty = vi.fn();
+    const clean = vi.fn();
+    registry.register({ hasUnsaved: () => true, discard: dirty, confirmLeave: () => Promise.resolve(true) });
+    registry.register({ hasUnsaved: () => false, discard: clean, confirmLeave: () => Promise.resolve(true) });
+    registry.discardAll();
+    expect(dirty).toHaveBeenCalledTimes(1);
+    expect(clean).toHaveBeenCalledTimes(1);
+  });
+
+  it('discardAll_ThrowingHandler_StillDiscardsTheRest', () => {
+    const registry = new UnsavedWorkRegistry();
+    const before = vi.fn();
+    const throwing = vi.fn(() => { throw new Error('discard failed'); });
+    const after = vi.fn();
+    registry.register({ hasUnsaved: () => true, discard: before, confirmLeave: () => Promise.resolve(true) });
+    registry.register({ hasUnsaved: () => true, discard: throwing, confirmLeave: () => Promise.resolve(true) });
+    registry.register({ hasUnsaved: () => true, discard: after, confirmLeave: () => Promise.resolve(true) });
+    // A handler whose teardown throws must not abort the terminal-session discard (SessionStore navigates right after).
+    expect(() => registry.discardAll()).not.toThrow();
+    expect(before).toHaveBeenCalledTimes(1);
+    expect(throwing).toHaveBeenCalledTimes(1);
+    expect(after).toHaveBeenCalledTimes(1);
+  });
+
+  it('cleanHandler_IsNotAsked', async () => {
+    const registry = new UnsavedWorkRegistry();
+    const ask = vi.fn(() => Promise.resolve(true));
+    registry.register({ hasUnsaved: () => false, discard: () => undefined, confirmLeave: ask });
+    expect(registry.hasUnsaved()).toBe(false);
+    await expect(registry.confirmLeave()).resolves.toBe(true);
+    expect(ask).not.toHaveBeenCalled();
+  });
+
+  it('dirtyHandlerLeave_ResolvesTrue', async () => {
+    const registry = new UnsavedWorkRegistry();
+    const ask = vi.fn(() => Promise.resolve(true));
+    registry.register({ hasUnsaved: () => true, discard: () => undefined, confirmLeave: ask });
+    expect(registry.hasUnsaved()).toBe(true);
+    await expect(registry.confirmLeave()).resolves.toBe(true);
+    expect(ask).toHaveBeenCalledTimes(1);
+  });
+
+  it('dirtyHandlerStay_ResolvesFalse', async () => {
+    const registry = new UnsavedWorkRegistry();
+    registry.register({ hasUnsaved: () => true, discard: () => undefined, confirmLeave: () => Promise.resolve(false) });
+    await expect(registry.confirmLeave()).resolves.toBe(false);
+  });
+
+  it('concurrentCalls_ShareOneFlight', async () => {
+    const registry = new UnsavedWorkRegistry();
+    let release: ((answer: boolean) => void) | undefined;
+    const ask = vi.fn(() => new Promise<boolean>((resolve) => { release = resolve; }));
+    registry.register({ hasUnsaved: () => true, discard: () => undefined, confirmLeave: ask });
+    const first = registry.confirmLeave();
+    const second = registry.confirmLeave();
+    expect(ask).toHaveBeenCalledTimes(1);
+    release?.(true);
+    await expect(first).resolves.toBe(true);
+    await expect(second).resolves.toBe(true);
+    // The flight is over: the next call asks again.
+    void registry.confirmLeave();
+    expect(ask).toHaveBeenCalledTimes(2);
+    release?.(false);
+  });
+
+  it('twoDirtyHandlers_StopAtTheFirstStay', async () => {
+    const registry = new UnsavedWorkRegistry();
+    const first = vi.fn(() => Promise.resolve(false));
+    const second = vi.fn(() => Promise.resolve(true));
+    registry.register({ hasUnsaved: () => true, discard: () => undefined, confirmLeave: first });
+    registry.register({ hasUnsaved: () => true, discard: () => undefined, confirmLeave: second });
+    await expect(registry.confirmLeave()).resolves.toBe(false);
+    expect(first).toHaveBeenCalledTimes(1);
+    expect(second).not.toHaveBeenCalled();
+  });
+
+  it('unregister_RemovesTheHandler', async () => {
+    const registry = new UnsavedWorkRegistry();
+    const ask = vi.fn(() => Promise.resolve(false));
+    const unregister = registry.register({ hasUnsaved: () => true, discard: () => undefined, confirmLeave: ask });
+    expect(registry.hasUnsaved()).toBe(true);
+    unregister();
+    expect(registry.hasUnsaved()).toBe(false);
+    await expect(registry.confirmLeave()).resolves.toBe(true);
+    expect(ask).not.toHaveBeenCalled();
+  });
+});

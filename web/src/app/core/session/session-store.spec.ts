@@ -1,7 +1,8 @@
 import { ApplicationRef, type Provider } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { Router, provideRouter } from '@angular/router';
+import { Router, provideRouter, type CanDeactivateFn } from '@angular/router';
 import type { AppError } from '@core/errors';
+import { UnsavedWorkRegistry } from '@core/shell/unsaved-work';
 import type { MockInstance } from 'vitest';
 import { ZONELESS_TEST_PROVIDERS } from '../../testing/providers';
 import { ActivityTracker } from './activity';
@@ -1054,6 +1055,60 @@ describe('SessionStore', () => {
         expect(store.endReason()).toBe('restore_failed');
         expect(scope.resets).toBe(1);
       });
+    });
+  });
+
+  describe('QA: a terminal session end with a dirty draft (10.5.9-T1)', () => {
+    // The story draft lives in a page-level `StoryEditorStore` that `SESSION_SCOPED` cannot reach; the page registers
+    // its discard with the shell-wide `UnsavedWorkRegistry`, and `endSession` discards through it before navigating.
+    // These tests model the route's `dirtyStoryGuard`, which reads the draft at deactivation time.
+    function dirtyGuardSetup(seen: boolean[], draft: { dirty: boolean }): { store: SessionStore; router: Router } {
+      const dirtyStoryGuard: CanDeactivateFn<unknown> = () => {
+        seen.push(draft.dirty);
+        return true;
+      };
+      TestBed.configureTestingModule({
+        providers: [
+          ...ZONELESS_TEST_PROVIDERS,
+          provideRouter([
+            { path: 'login', children: [] },
+            { path: 'episodes/:id', children: [], canDeactivate: [dirtyStoryGuard] },
+            { path: '**', children: [] },
+          ]),
+          { provide: SessionApi, useValue: new FakeSessionApi() },
+        ],
+      });
+      TestBed.inject(UnsavedWorkRegistry).register({
+        hasUnsaved: () => draft.dirty,
+        discard: () => { draft.dirty = false; },
+        confirmLeave: () => Promise.resolve(true),
+      });
+      return { store: TestBed.inject(SessionStore), router: TestBed.inject(Router) };
+    }
+
+    async function settled(): Promise<void> {
+      await TestBed.inject(ApplicationRef).whenStable();
+    }
+
+    it('userLogout_WhileDirty_KeepsTheDraft_SoTheGuardIsAskedWithIt', async () => {
+      const seen: boolean[] = [];
+      const { store, router } = dirtyGuardSetup(seen, { dirty: true });
+      store.signIn(pair('user', FRESH), 'user', []);
+      await router.navigateByUrl('/episodes/1');
+      store.signOut('logout');
+      await settled();
+      // A user-initiated end is never deferred: the shell asks before signing out, so the guard still sees the draft.
+      expect(seen).toEqual([true]);
+    });
+
+    it('terminalRevocation_WhileDirty_DiscardsTheDraftBeforeTheGuard_SoItSeesACleanDraft', async () => {
+      const seen: boolean[] = [];
+      const { store, router } = dirtyGuardSetup(seen, { dirty: true });
+      store.signIn(pair('user', FRESH), 'user', []);
+      await router.navigateByUrl('/episodes/1');
+      store.signOut('revoked');
+      await settled();
+      expect(seen).toEqual([false]);
     });
   });
 });
