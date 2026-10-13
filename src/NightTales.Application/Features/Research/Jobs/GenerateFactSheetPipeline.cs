@@ -133,12 +133,6 @@ public sealed partial class GenerateFactSheetPipeline(
     /// <summary>The ledger call budget, mirroring <c>StoryGenerationProgress</c>.</summary>
     private static readonly TimeSpan LedgerTimeout = TimeSpan.FromSeconds(10);
 
-    /// <summary>
-    /// How long past the deadline a <c>running</c> run still counts as another worker's business. The stale-run
-    /// sweeper uses the same grace, so a redelivery and the sweeper never race for the same run.
-    /// </summary>
-    private static readonly TimeSpan SweepGrace = TimeSpan.FromSeconds(60);
-
     /// <summary>The prompt files one extraction call uses; the extractor composes the same parts.</summary>
     private static readonly PromptVersionParts PromptParts = new(FactsPromptKey, FactsPromptKey, FactsSchemaKey);
 
@@ -187,7 +181,7 @@ public sealed partial class GenerateFactSheetPipeline(
     /// <param name="run">The run as loaded.</param>
     /// <returns><see langword="true"/> when the run counts as stale.</returns>
     private bool IsStale(GenerationRun run) =>
-        (run.StartedAt ?? run.QueuedAt) + jobOptions.Timeout + SweepGrace <= clock.UtcNow;
+        (run.StartedAt ?? run.QueuedAt) + jobOptions.Timeout + StoryGenerationPipeline.SweepGrace <= clock.UtcNow;
 
     // Loads the run, its episode and its series, and holds every case in which this delivery must do nothing.
     private async Task<RunState?> LoadAsync(Guid runId, CancellationToken ct)
@@ -299,7 +293,7 @@ public sealed partial class GenerateFactSheetPipeline(
         // the sweep grace), is claimable: the whole decision is one UPDATE under the row lock, so two deliveries
         // of the same run cannot both pass it. The earlier load's `held` guard is the fast path; this is the
         // authority, because a run still `running` when this delivery loaded it can be claimed by another.
-        var staleBefore = now - s.Timeout - SweepGrace;
+        var staleBefore = now - s.Timeout - StoryGenerationPipeline.SweepGrace;
 
         await using var write = await BeginAsync(ct).ConfigureAwait(false);
 

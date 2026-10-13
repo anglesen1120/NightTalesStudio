@@ -13,6 +13,7 @@ using NightTales.Application.Abstractions.Usage;
 using NightTales.Application.Common.Errors;
 using NightTales.Application.Features.Research.Facts;
 using NightTales.Application.Features.Research.Jobs;
+using NightTales.Application.Features.Stories.Generation;
 using NightTales.Api.IntegrationTests.Persistence;
 using NightTales.Domain.Common;
 using NightTales.Domain.Compliance;
@@ -580,6 +581,53 @@ public sealed class GenerateFactSheetPipelineTests(TestDatabase database) : Inte
     }
 
     [Fact]
+    public async Task Pipeline_StaleRunningRun_IsTakenOverByExactlyOneDelivery()
+    {
+        // A `running` run its worker stopped reporting on — older than the run deadline plus the sweep grace — is
+        // claimable again (the claim's stale branch), and the claim stamps the takeover instant so a second
+        // delivery of the same run loses it: at most one paid call, one draft and one charge (CODE-1/SEC-1, N3).
+        var job = new FactSheetJobOptions { TimeoutSeconds = FactSheetJobOptions.MinTimeoutSeconds };
+        var staleBy = job.Timeout + StoryGenerationPipeline.SweepGrace + TimeSpan.FromSeconds(1);
+        var world = await NewWorldAsync(job: job, runningSince: staleBy);
+        world.Extractor.EnqueueOk(Facts(("s1", "Người gác bến giữ ngọn đèn dầu bên cổng.", FactConfidence.High)));
+        var second = world.SecondPipeline();
+
+        await Task.WhenAll(world.RunAsync(Ct), second.RunAsync(world.RunId, Ct));
+
+        world.Extractor.Calls.ShouldBe(1, "only the delivery that won the stale claim may reach the paid extractor");
+        world.Extractor.Requests.ShouldHaveSingleItem();
+        (await world.FactSheetCountAsync()).ShouldBe(1);
+        (await world.ReadRunAsync()).Status.ShouldBe(GenerationRunStatus.Succeeded);
+        (await world.ReadRunAsync()).ErrorCode.ShouldBeNull("the delivery that lost the stale claim must not fail the run");
+        world.Meter.Items.Count.ShouldBe(1);
+        world.Ledger.Settled.ShouldBe(new[] { world.Reservation });
+        world.Ledger.Refunds.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task Pipeline_NonStaleRunningRun_StaysHeld_NoExtraction_NoFailure_NoRefund()
+    {
+        // A `running` run still inside its deadline plus the sweep grace is another worker's business: this
+        // delivery neither fails it nor refunds it nor buys a call. It is the fast-path hold over a non-stale run,
+        // which the claim would reject anyway (N3).
+        var job = new FactSheetJobOptions { TimeoutSeconds = FactSheetJobOptions.MinTimeoutSeconds };
+        var world = await NewWorldAsync(job: job, runningSince: TimeSpan.FromSeconds(1));
+        world.Extractor.EnqueueOk(Facts(("s1", "Người gác bến giữ ngọn đèn dầu bên cổng.", FactConfidence.High)));
+
+        await world.RunAsync(Ct);
+
+        world.Extractor.Calls.ShouldBe(0, "a held run buys no extraction");
+        (await world.FactSheetCountAsync()).ShouldBe(0);
+        world.Meter.Items.ShouldBeEmpty();
+        world.Ledger.Settled.ShouldBeEmpty();
+        world.Ledger.Refunds.ShouldBeEmpty("the sweeper, not this delivery, owns a stuck run");
+
+        var run = await world.ReadRunAsync();
+        run.Status.ShouldBe(GenerationRunStatus.Running, "a held run is left exactly as it was");
+        run.ErrorCode.ShouldBeNull();
+    }
+
+    [Fact]
     public async Task Pipeline_UnusableVersionWatermark_FailsTheRunTyped_WithoutLimbo()
     {
         // An internal error of the saving stage (here a version counter a corrupt row pushed past int.MaxValue)
@@ -631,7 +679,8 @@ public sealed class GenerateFactSheetPipelineTests(TestDatabase database) : Inte
         FactSheetJobOptions? job = null,
         ITextClient? textClient = null,
         bool corruptVersion = false,
-        ILogger<GenerateFactSheetPipeline>? logger = null)
+        ILogger<GenerateFactSheetPipeline>? logger = null,
+        TimeSpan? runningSince = null)
     {
         var setup = new TestCurrentUser();
         var user = await new UserBuilder(Database, setup).CreateAsync(ct: Ct);
@@ -677,6 +726,15 @@ public sealed class GenerateFactSheetPipelineTests(TestDatabase database) : Inte
                     Now,
                     countsTowardLimit: false)
                 .Value;
+
+            if (runningSince is { } since)
+            {
+                // A run its worker started and then stopped reporting on: `running` with a `StartedAt` in the
+                // past. Older than the run deadline plus the sweep grace it is stale enough for a takeover; a
+                // recent one is still another worker's business.
+                run.Start(Now - since);
+            }
+
             seed.GenerationRuns.Add(run);
             seed.UsageRecords.Add(UsageRecord.Record(
                 user.Id,

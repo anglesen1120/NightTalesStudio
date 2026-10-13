@@ -322,7 +322,7 @@ Rules for any change that runs at start-up:
   `Similarity:FactOverlapBlock` (the threshold above which a fact whose statement matches the text of the
   sources it cites is dropped as a verbatim copy; it repeats the Domain default, so it is optional), and the
   Worker binds `FactSheet:Job:TimeoutSeconds` (the per-run deadline of `GenerateFactSheetJob`, optional with an
-  in-code default, bounded 150–3600 — the floor is the free D12 moderation call plus the two adapter timeouts
+  in-code default, bounded 150–360 — the ceiling is the story stale-run sweeper window (`Story:Job:TimeoutSeconds` + grace), the floor is the free D12 moderation call plus the two adapter timeouts
   one run can need) as well as the `Facts:*` section (`Facts:MaxSources`, `Facts:PerSourceCharCap`,
   `Facts:MaxInputTokens`, `Facts:MaxFacts`) for the job's own input plan.
   The generator reports a missing key as `MSB3073` from `dotnet-getdocument` with a long hosting stack

@@ -124,9 +124,9 @@ public sealed class FactSheetExtractionOptions
             problems.Add($"'{SectionName}:{nameof(PerSourceCharCap)}' must be at least {FactInputLimits.MinimumPerSourceCharCap}.");
         }
 
-        if (options.MaxInputTokens <= 0)
+        if (options.MaxInputTokens < 1 || options.MaxInputTokens > FactInputLimits.MaxMaxInputTokens)
         {
-            problems.Add($"'{SectionName}:{nameof(MaxInputTokens)}' must be positive.");
+            problems.Add($"'{SectionName}:{nameof(MaxInputTokens)}' must be 1..{FactInputLimits.MaxMaxInputTokens}.");
         }
 
         if (options.MaxFacts < MinMaxFacts || options.MaxFacts > MaxMaxFacts)
