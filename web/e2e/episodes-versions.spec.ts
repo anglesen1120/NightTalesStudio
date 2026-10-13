@@ -16,9 +16,6 @@ import { diffWords } from '../src/app/shared/util/text-diff';
 // diff (including injection safety), same-version selection, restore-as-new-version (PUT + If-Match), the 412
 // conflict dialog, the 409 needs-reopen state and the WCAG 2.1 AA scan — in vi and en. Real compose/mock-mpt
 // acceptance stays with 11.5.1-T1.
-//
-// One test is marked `test.fail` on purpose: it pins a production defect this spec must not hide (see the test's
-// annotation in the vi block). Every other test asserts only behaviour the app actually has.
 
 interface VersionsCopy {
   readonly versions: {
@@ -200,17 +197,12 @@ async function panelToggleFlow(page: Page, lang: E2eLang): Promise<void> {
   await expect(older.locator('.versions__badge')).toHaveCount(1);
   await expect(older.locator('.versions__badge')).toHaveText(copy.approved);
 
-  // Deliberately not asserted here: the store's default (previous vs current) selection never runs in the app —
-  // see `toggleDefaultSelectionFlow`, which records that production defect.
+  // The default (previous vs current) selection is asserted in `toggleDefaultSelectionFlow`.
 }
 
 /**
- * The contract for a panel opened from the header (no ids in the query): the store itself picks previous vs current
- * — `versions.store.ts:88` documents it and `versions.store.ts:102` runs `defaultSelection()` — but the host never
- * reaches that branch because `versions-panel-host.component.ts:45` always passes `{ left, right }`, both `null`
- * without query ids, which `open()` reads as an explicit "no selection". The panel then opens with no comparison.
- * The assertions below are the intended behaviour; the test that calls this flow is marked `test.fail` until the
- * wiring passes `undefined` (or the store treats an all-null selection as "no selection").
+ * A panel opened from the header (no ids in the query) selects previous vs current by itself and writes both ids
+ * to the URL.
  */
 async function toggleDefaultSelectionFlow(page: Page, lang: E2eLang): Promise<void> {
   const { versions } = await openEditor(page, lang);
