@@ -278,6 +278,60 @@ public sealed class StoryReadModelTests
     }
 
     [Fact]
+    public async Task StoryRead_RevisionDriftIssue_ExposesHasDrift()
+    {
+        var rig = new Rig();
+        var row = rig.AddVersion(1, audit: """
+            {"model_review":{"stale":false,"issues":[]},
+             "revision":{"applied":true,"review_after":{"issues":[
+               {"type":"revision_drift","severity":"advisory","kind":"objective","segment":"p:3"}]}}}
+            """);
+        rig.Pointers(row.Id, null);
+        var result = await rig.Current.Handle(new(rig.Episode.Id), CancellationToken.None);
+        result.Value!.Review!.HasDrift.ShouldBeTrue();
+        result.Value.Review.IssueCounts.Advisory.ShouldBe(0);
+    }
+
+    [Fact]
+    public async Task StoryRead_RevisionDriftDetailWithAnyFlag_ExposesHasDrift()
+    {
+        var rig = new Rig();
+        var row = rig.AddVersion(1, audit: """
+            {"model_review":{"stale":false},
+             "revision":{"applied":true,"drift":{"segment_count_changed":false,"changed_segments":["p:3"],"added_findings":[]}}}
+            """);
+        rig.Pointers(row.Id, null);
+        var result = await rig.Current.Handle(new(rig.Episode.Id), CancellationToken.None);
+        result.Value!.Review!.HasDrift.ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task StoryRead_RevisionWithoutDrift_ExposesNoDrift()
+    {
+        var rig = new Rig();
+        var row = rig.AddVersion(1, audit: """
+            {"model_review":{"stale":false},
+             "revision":{"applied":true,"drift":{"segment_count_changed":false,"changed_segments":[],"added_findings":[]}}}
+            """);
+        rig.Pointers(row.Id, null);
+        var result = await rig.Current.Handle(new(rig.Episode.Id), CancellationToken.None);
+        result.Value!.Review!.HasDrift.ShouldBeFalse();
+    }
+
+    [Theory]
+    [InlineData("{\"model_review\":{\"stale\":false},\"revision\":5}")]
+    [InlineData("{\"model_review\":{\"stale\":false},\"revision\":{\"review_after\":{\"issues\":\"nope\"},\"drift\":{\"changed_segments\":7}}}")]
+    [InlineData("{\"model_review\":{\"stale\":false}}")]
+    public async Task StoryRead_MissingOrMalformedRevision_FailsSafeToNoDrift(string audit)
+    {
+        var rig = new Rig();
+        var row = rig.AddVersion(1, audit: audit);
+        rig.Pointers(row.Id, null);
+        var result = await rig.Current.Handle(new(rig.Episode.Id), CancellationToken.None);
+        result.Value!.Review!.HasDrift.ShouldBeFalse();
+    }
+
+    [Fact]
     public async Task StoryRead_UnknownLocalRuleWithoutKey_DoesNotInventMessageKey()
     {
         var rig = new Rig();

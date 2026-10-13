@@ -56,6 +56,7 @@ public sealed class StoryGenerationPipelineTests(TestDatabase database) : Integr
     private const string WriterVersion = "rel=2026.10.1;sys=writer.v1;preset=ghost.vi.v1;schema=story.v1";
     private const string ReviewedVersion = "rel=2026.10.1;sys=writer.v1;preset=ghost.vi.v1;review=v1;schema=story.v1";
     private const string ReviewOwnVersion = "rel=2026.10.1;sys=writer.v1;preset=ghost.vi.v1;review=v1;schema=review.v1";
+    private const string RevisionOwnVersion = "rel=2026.10.1;sys=writer.v1;preset=ghost.vi.v1;revise=v1;schema=story.v1";
 
     [Fact]
     public async Task Pipeline_HappyPath_StagesInD21Order_AndSavesOneGeneratedVersion()
@@ -855,6 +856,9 @@ public sealed class StoryGenerationPipelineTests(TestDatabase database) : Integr
                 ? throw new InvalidOperationException("The review script is empty.")
                 : ValueTask.FromResult(_reviews.Dequeue());
         }
+
+        public ValueTask<TextCallResult<StoryContentV1>> ReviseAsync(StoryRevisionRequest req, CancellationToken ct) =>
+            throw new InvalidOperationException("The revision stage is disabled in these tests.");
     }
 
     private sealed class ScopeObservingModerator(IContentModerator inner) : IContentModerator
@@ -883,6 +887,8 @@ public sealed class StoryGenerationPipelineTests(TestDatabase database) : Integr
         public AssembledPrompt Assemble(StoryWriteRequest req, AssemblerContext ctx) => new("system", "{}", WriterVersion, "cache");
 
         public ErrorOr<AssembledPrompt> Review(StoryReviewRequest req) => new AssembledPrompt("system", "{}", ReviewOwnVersion, "cache");
+
+        public ErrorOr<AssembledPrompt> Revise(StoryRevisionRequest req) => new AssembledPrompt("system", "{}", RevisionOwnVersion, "cache");
     }
 
     private sealed class FixedCatalog(int version) : IPriceCatalog
@@ -911,6 +917,9 @@ public sealed class StoryGenerationPipelineTests(TestDatabase database) : Integr
             WorstCaseAsync(tier, language, ct);
 
         public Task<ErrorOr<UsageBound>> WriterWorstCaseAsync(LengthTier tier, Language language, CancellationToken ct) =>
+            WorstCaseAsync(tier, language, ct);
+
+        public Task<ErrorOr<UsageBound>> RevisionWorstCaseAsync(LengthTier tier, Language language, CancellationToken ct) =>
             WorstCaseAsync(tier, language, ct);
     }
 

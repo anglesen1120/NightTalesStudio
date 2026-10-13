@@ -5,6 +5,10 @@
       "version": "v1",
       "sha256": "68b5c06c071c0d6153943876bc6c64bf542bac39507a01dc7d260698e4ac4bea"
     },
+    "revise/v1.md": {
+      "version": "v1",
+      "sha256": "d75afac14ed82e2a00a082d82fd3fac700b74174ac0d9eacf6c079690d7ed202"
+    },
     "schemas/review.v1.json": {
       "version": "v1",
       "sha256": "e4790f0c29f315e882c99bff3a813df36d0fb0fb2843d1deadf60943004b0ab4"

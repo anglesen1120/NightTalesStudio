@@ -16,6 +16,7 @@ using NightTales.Application.Features.Research.Jobs;
 using NightTales.Application.Features.Research.Sources.Outbox;
 using NightTales.Application.Features.Stories.Jobs;
 using NightTales.Application.Features.Stories.Outbox;
+using NightTales.Application.Features.Stories.Review;
 using NightTales.Application.Telemetry;
 using NightTales.Domain.Episodes.Events;
 using NightTales.Domain.Platform.Events;
@@ -190,6 +191,18 @@ public static class WorkerServiceCollectionExtensions
         services.AddSingleton(provider => provider.GetRequiredService<IOptions<StorySweeperOptions>>().Value);
         services.AddOptions<StoryReviewOptions>().BindConfiguration(StoryReviewOptions.SectionName).ValidateOnStart();
         services.AddSingleton(provider => provider.GetRequiredService<IOptions<StoryReviewOptions>>().Value);
+
+        // 02.6.2-T1 (02 README D21): the single-revision switch. Every key has a default; a MaxRevisions other
+        // than 0 or 1, or a MinTextSimilarity outside (0, 1], fails the boot. Bound as the value object so the
+        // pipeline injects it the same way it injects StoryReviewOptions.
+        services.AddOptions<StoryRevisionOptions>()
+            .BindConfiguration(StoryRevisionOptions.SectionName)
+            .Validate(
+                options => StoryRevisionOptions.Validate(options).Count == 0,
+                $"'{StoryRevisionOptions.SectionName}:{nameof(StoryRevisionOptions.MaxRevisions)}' must be 0 or {StoryRevisionOptions.MaxRevisionsCeiling}, and '{nameof(StoryRevisionOptions.MinTextSimilarity)}' must be greater than 0 and at most 1.")
+            .ValidateOnStart();
+        services.AddSingleton(provider => provider.GetRequiredService<IOptions<StoryRevisionOptions>>().Value);
+
         services.AddOutboxHandler<StoryGenerationRequested, GenerateStoryJobHandler>();
         services.AddOutboxHandler<StoryGenerationStageChanged, StoryGenerationStageChangedRealtimeHandler>();
         services.AddOutboxHandler<StoryGenerated, StoryGeneratedRealtimeHandler>();

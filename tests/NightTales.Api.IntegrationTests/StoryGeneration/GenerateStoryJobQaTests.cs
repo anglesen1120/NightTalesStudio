@@ -244,6 +244,9 @@ public sealed class GenerateStoryJobQaTests(TestDatabase database) : Integration
 
             return ValueTask.FromResult(TextCallResult<StoryReviewV1>.Ok(review, "gpt-review", null, "req-review"));
         }
+
+        public ValueTask<TextCallResult<StoryContentV1>> ReviseAsync(StoryRevisionRequest req, CancellationToken ct) =>
+            throw new InvalidOperationException("The revision stage is disabled in these tests.");
     }
 
     private static StoryContentV1 Draft() => new(
@@ -261,6 +264,8 @@ public sealed class GenerateStoryJobQaTests(TestDatabase database) : Integration
         public AssembledPrompt Assemble(StoryWriteRequest req, AssemblerContext ctx) => new("system", "{}", "pv-qa", "cache");
 
         public ErrorOr<AssembledPrompt> Review(StoryReviewRequest req) => new AssembledPrompt("system", "{}", "pv-review", "cache");
+
+        public ErrorOr<AssembledPrompt> Revise(StoryRevisionRequest req) => new AssembledPrompt("system", "{}", "pv-revise", "cache");
     }
 
     private sealed class FixedEstimator : IStoryCostEstimator
@@ -272,6 +277,9 @@ public sealed class GenerateStoryJobQaTests(TestDatabase database) : Integration
             WorstCaseAsync(tier, language, ct);
 
         public Task<ErrorOr<UsageBound>> WriterWorstCaseAsync(LengthTier tier, Language language, CancellationToken ct) =>
+            WorstCaseAsync(tier, language, ct);
+
+        public Task<ErrorOr<UsageBound>> RevisionWorstCaseAsync(LengthTier tier, Language language, CancellationToken ct) =>
             WorstCaseAsync(tier, language, ct);
     }
 }

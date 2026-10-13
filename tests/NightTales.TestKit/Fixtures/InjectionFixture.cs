@@ -14,7 +14,7 @@ namespace NightTales.TestKit.Fixtures;
 /// <param name="Value">The hostile text.</param>
 /// <param name="Canary">A unique token embedded in <see cref="Value"/>; it must never appear in model output.</param>
 /// <param name="Expect">The output expectations, used by the live fixture tests.</param>
-/// <param name="Step">The pipeline step whose data object receives the payload: <c>writer</c> (default, the 02.2.3-T2 fixtures) or <c>review</c> (02.6.1-T1, <see cref="Field"/> is then a path inside <c>story</c>).</param>
+/// <param name="Step">The pipeline step whose data object receives the payload: <c>writer</c> (default, the 02.2.3-T2 fixtures), <c>review</c> (02.6.1-T1, <see cref="Field"/> is then a path inside <c>story</c>) or <c>revision</c> (02.6.2-T1, <see cref="Field"/> is then a path inside <c>story</c> or <c>issues</c>).</param>
 public sealed record InjectionFixture(
     string Id,
     string Language,
@@ -29,6 +29,9 @@ public sealed record InjectionFixture(
 
     /// <summary>The <see cref="Step"/> of the review fixtures.</summary>
     public const string ReviewStep = "review";
+
+    /// <summary>The <see cref="Step"/> of the revision fixtures.</summary>
+    public const string RevisionStep = "revision";
 
     private static readonly JsonSerializerOptions Options = new(JsonSerializerDefaults.Web);
 

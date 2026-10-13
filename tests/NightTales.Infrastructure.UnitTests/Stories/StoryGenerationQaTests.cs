@@ -867,6 +867,9 @@ public sealed class StoryGenerationQaTests(TestDatabase database) : IntegrationT
 
             return _reviews.Count == 0 ? throw new InvalidOperationException("The review script is empty.") : _reviews.Dequeue();
         }
+
+        public ValueTask<TextCallResult<StoryContentV1>> ReviseAsync(StoryRevisionRequest req, CancellationToken ct) =>
+            throw new InvalidOperationException("The revision stage is disabled in these tests.");
     }
 
     private sealed class StubAssembler : IPromptAssembler
@@ -874,6 +877,8 @@ public sealed class StoryGenerationQaTests(TestDatabase database) : IntegrationT
         public AssembledPrompt Assemble(StoryWriteRequest req, AssemblerContext ctx) => new("system", "{}", "pv-1", "cache");
 
         public ErrorOr<AssembledPrompt> Review(StoryReviewRequest req) => new AssembledPrompt("system", "{}", "pv-review", "cache");
+
+        public ErrorOr<AssembledPrompt> Revise(StoryRevisionRequest req) => new AssembledPrompt("system", "{}", "pv-revise", "cache");
     }
 
     private sealed class FixedCatalog : IPriceCatalog
@@ -896,6 +901,9 @@ public sealed class StoryGenerationQaTests(TestDatabase database) : IntegrationT
             WorstCaseAsync(tier, language, ct);
 
         public Task<ErrorOr<UsageBound>> WriterWorstCaseAsync(LengthTier tier, Language language, CancellationToken ct) =>
+            WorstCaseAsync(tier, language, ct);
+
+        public Task<ErrorOr<UsageBound>> RevisionWorstCaseAsync(LengthTier tier, Language language, CancellationToken ct) =>
             WorstCaseAsync(tier, language, ct);
     }
 

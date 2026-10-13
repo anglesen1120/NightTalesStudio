@@ -52,7 +52,7 @@ public sealed class OpenAiOptions
             step => step,
             step => TimeSpan.FromSeconds(step switch
             {
-                TextStep.Writer => 90,
+                TextStep.Writer or TextStep.Revision => 90,
                 TextStep.Review => 45,
                 TextStep.Facts => 60,
                 _ => 30,

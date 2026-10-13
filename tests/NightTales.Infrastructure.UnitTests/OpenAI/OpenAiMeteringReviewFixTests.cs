@@ -319,6 +319,9 @@ public sealed class OpenAiMeteringReviewFixTests
 
         public Task<ErrorOr<UsageBound>> WriterWorstCaseAsync(LengthTier tier, Language language, CancellationToken ct) =>
             Task.FromResult<ErrorOr<UsageBound>>(new UsageBound(Bound, 1, 1));
+
+        public Task<ErrorOr<UsageBound>> RevisionWorstCaseAsync(LengthTier tier, Language language, CancellationToken ct) =>
+            WriterWorstCaseAsync(tier, language, ct);
     }
 
     private sealed class LunaPriceCatalog : IPriceCatalog

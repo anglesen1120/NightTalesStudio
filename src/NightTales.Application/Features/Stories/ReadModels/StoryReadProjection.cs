@@ -148,8 +148,48 @@ internal static partial class StoryReadProjection
         }
 
         var stale = !review.TryGetProperty("stale", out var flag) || flag.ValueKind != JsonValueKind.False;
-        return new StoryReviewSummaryDto(scores, new StoryIssueCountsDto(blocking, advisory), stale);
+        return new StoryReviewSummaryDto(scores, new StoryIssueCountsDto(blocking, advisory), Drift(root), stale);
     }
+
+    /// <summary>
+    /// Whether the audit carries a revision-drift advisory (02.6.2-T1, D22): the <c>revision_drift</c> issue inside
+    /// <c>revision.review_after.issues</c>, or any set flag of the additive <c>revision.drift</c> detail. A missing or
+    /// malformed block reads as no drift, and nothing here throws (fail-closed to false).
+    /// </summary>
+    private static bool Drift(JsonElement audit)
+    {
+        if (!Object(audit, "revision", out var revision))
+        {
+            return false;
+        }
+
+        if (Object(revision, "review_after", out var after) && Array(after, "issues", out var issues))
+        {
+            foreach (var issue in issues.EnumerateArray())
+            {
+                if (string.Equals(Text(issue, "type"), "revision_drift", StringComparison.Ordinal))
+                {
+                    return true;
+                }
+            }
+        }
+
+        if (!Object(revision, "drift", out var drift))
+        {
+            return false;
+        }
+
+        return DriftFlag(drift, "segment_count_changed")
+            || DriftItems(drift, "changed_segments")
+            || DriftItems(drift, "unflagged_changed")
+            || DriftItems(drift, "added_findings");
+    }
+
+    private static bool DriftFlag(JsonElement drift, string name) =>
+        Property(drift, name, out var flag) && flag.ValueKind == JsonValueKind.True;
+
+    private static bool DriftItems(JsonElement drift, string name) =>
+        Array(drift, name, out var items) && items.GetArrayLength() > 0;
 
     private static bool Object(JsonElement root, string name, out JsonElement value) =>
         Property(root, name, out value) && value.ValueKind == JsonValueKind.Object;

@@ -478,5 +478,8 @@ public sealed class ReviewQaTests
 
         public Task<ErrorOr<UsageBound>> ReviewWorstCaseAsync(LengthTier tier, Language language, CancellationToken ct) =>
             Task.FromResult<ErrorOr<UsageBound>>(new UsageBound(0.25m, 1, 1));
+
+        public Task<ErrorOr<UsageBound>> RevisionWorstCaseAsync(LengthTier tier, Language language, CancellationToken ct) =>
+            Task.FromResult<ErrorOr<UsageBound>>(new UsageBound(0.25m, 1, 1));
     }
 }

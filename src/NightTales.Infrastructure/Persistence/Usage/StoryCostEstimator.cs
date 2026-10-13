@@ -2,9 +2,10 @@ using System.Collections.Concurrent;
 using System.Text;
 using ErrorOr;
 using Microsoft.Extensions.Configuration;
-using NightTales.Application.Common.Errors;
 using NightTales.Application.Abstractions.Prompts;
 using NightTales.Application.Abstractions.Usage;
+using NightTales.Application.Common.Errors;
+using NightTales.Application.Features.Stories.Review;
 using NightTales.Domain.Common;
 using NightTales.Domain.Episodes;
 using NightTales.Domain.Series;
@@ -15,9 +16,10 @@ using NightTales.Domain.Usage;
 namespace NightTales.Infrastructure.Persistence.Usage;
 
 /// <summary>
-/// The worst-case price of one story run (02 README D14, CR-6/T46): four paid calls — writer, review,
-/// revision, review #2 — each at its own <c>max_output_tokens</c> from the active price version, at the
-/// version's rates with the long-context surcharge, plus two moderation calls priced at 0 (O7).
+/// The worst-case price of one story run (02 README D14, CR-6/T46): the paid calls of the pipeline — writer,
+/// review and, while the revision stage is on (D21), the revision and its review #2 — each at its own
+/// <c>max_output_tokens</c> from the active price version, at the version's rates with the long-context
+/// surcharge, plus two moderation calls priced at 0 (O7).
 /// </summary>
 /// <remarks>
 /// Deliberately an upper bound: input tokens are bounded by UTF-8 <em>bytes</em> (P6), output by the cap,
@@ -39,7 +41,7 @@ public sealed class StoryCostEstimator(
     /// <summary>The default of <c>Story:Prompt:MaxDataObjectBytes</c> (02.6.3-T3, D6).</summary>
     public const int DefaultMaxDataObjectBytes = NightTales.Application.Features.Stories.Writing.PromptDataBudget.DefaultMaxDataObjectBytes;
 
-    private readonly ConcurrentDictionary<(LengthTier Tier, Language Language, string Release, int DataBudget), StepInputs> _inputs = new();
+    private readonly ConcurrentDictionary<(LengthTier Tier, Language Language, string Release, int DataBudget, bool Revise), StepInputs> _inputs = new();
 
     /// <inheritdoc />
     public async Task<ErrorOr<UsageBound>> WorstCaseAsync(LengthTier tier, Language language, CancellationToken ct)
@@ -55,10 +57,11 @@ public sealed class StoryCostEstimator(
         var target = LengthTargetResolver.Resolve(tier, language, version.ParseLimits());
 
         var dataBudget = configuration.GetValue("Story:Prompt:MaxDataObjectBytes", DefaultMaxDataObjectBytes);
-        var key = (tier, language, prompts.Release, dataBudget);
+        var revise = RevisionEnabled();
+        var key = (tier, language, prompts.Release, dataBudget, revise);
         if (!_inputs.TryGetValue(key, out var inputs))
         {
-            var measured = MeasureInputs(language, dataBudget);
+            var measured = MeasureInputs(language, dataBudget, revise);
             if (measured.IsError)
             {
                 return measured.Errors;
@@ -78,11 +81,15 @@ public sealed class StoryCostEstimator(
 
         // The two moderation calls (O7) are free: counted so the call count is explicit, adding 0.
         const decimal ModerationCost = 0m;
+
+        // The revision and its review #2 are reserved only while the revision stage is on (D21): a disabled
+        // stage is never reserved for, so the bound tracks the calls the pipeline can actually issue.
         var worst =
             Cost("Writer", inputs.Writer, target.WriterMaxOutput)
             + Cost("Review", inputs.Review, target.ReviewMaxOutput)
-            + Cost("Revision", inputs.Revision, target.RevisionMaxOutput)
-            + Cost("Review", inputs.Review, target.ReviewMaxOutput)
+            + (revise
+                ? Cost("Revision", inputs.Revision, target.RevisionMaxOutput) + Cost("Review", inputs.Review, target.ReviewMaxOutput)
+                : 0m)
             + (2 * ModerationCost);
 
         return new UsageBound(worst, Math.Max(inputs.Writer, Math.Max(inputs.Review, inputs.Revision)), target.WriterMaxOutput);
@@ -147,9 +154,51 @@ public sealed class StoryCostEstimator(
         return new UsageBound(cost, review, target.ReviewMaxOutput);
     }
 
+    /// <inheritdoc />
+    public async Task<ErrorOr<UsageBound>> RevisionWorstCaseAsync(LengthTier tier, Language language, CancellationToken ct)
+    {
+        var active = await catalog.GetActiveAsync(clock.UtcNow, ct).ConfigureAwait(false);
+        if (active.IsError)
+        {
+            return active.Errors;
+        }
+
+        var version = active.Value;
+        var rates = version.ParseRates();
+        var target = LengthTargetResolver.Resolve(tier, language, version.ParseLimits());
+
+        var dataBudget = configuration.GetValue("Story:Prompt:MaxDataObjectBytes", DefaultMaxDataObjectBytes);
+        int revision;
+        try
+        {
+            // Same measure as the revision term of MeasureInputs: the revision prompt plus the story, the review
+            // findings and the context it carries.
+            revision = Bytes(prompts.GetStepPrompt(PromptStep.Revision)) + (3 * dataBudget);
+        }
+        catch (PromptCatalogException exception)
+        {
+            return Error.Failure(ErrorCodes.PromptNotShipped, exception.Message);
+        }
+
+        // Same charge as the revision term of WorstCaseAsync: every input token also written to the cache.
+        var cost = TextCostCalculator.Compute(rates.RatesFor(ModelOf("Revision")), revision, 0, revision, target.RevisionMaxOutput, rates.SurchargeThresholdTokens)
+            ?? throw new InvalidOperationException("The calculator returned no cost for a bounded call.");
+
+        return new UsageBound(cost, revision, target.RevisionMaxOutput);
+    }
+
     private string ModelOf(string step) => configuration[$"OpenAi:Models:{step}"] is { Length: > 0 } model ? model : DefaultModel;
 
-    private ErrorOr<StepInputs> MeasureInputs(Language language, int dataBudget)
+    /// <summary>
+    /// Whether a new run can issue a revision (and therefore its review #2), read straight from configuration so the
+    /// reserve never depends on the options host being up (02.6.2-T1, D21). A disabled stage or a zero count
+    /// reserves nothing for it; the pipeline reads the same section through <see cref="StoryRevisionOptions"/>.
+    /// </summary>
+    private bool RevisionEnabled() =>
+        configuration.GetValue($"{StoryRevisionOptions.SectionName}:{nameof(StoryRevisionOptions.Enabled)}", StoryRevisionOptions.DefaultEnabled)
+        && configuration.GetValue($"{StoryRevisionOptions.SectionName}:{nameof(StoryRevisionOptions.MaxRevisions)}", StoryRevisionOptions.DefaultMaxRevisions) > 0;
+
+    private ErrorOr<StepInputs> MeasureInputs(Language language, int dataBudget, bool revise)
     {
         var writer = MeasureWriterInput(language, dataBudget);
         if (writer.IsError)
@@ -160,9 +209,10 @@ public sealed class StoryCostEstimator(
         try
         {
             // Review and revision carry the story (bounded by the data budget) next to their own prompt;
-            // revision also carries the review findings.
+            // revision also carries the review findings. A disabled revision stage measures nothing for its
+            // prompt, so a missing revision prompt cannot fail a reserve the pipeline will never spend.
             var review = Bytes(prompts.GetStepPrompt(PromptStep.Review)) + (2 * dataBudget);
-            var revision = Bytes(prompts.GetStepPrompt(PromptStep.Revision)) + (3 * dataBudget);
+            var revision = revise ? Bytes(prompts.GetStepPrompt(PromptStep.Revision)) + (3 * dataBudget) : 0;
 
             return new StepInputs(writer.Value, review, revision);
         }
