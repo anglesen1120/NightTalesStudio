@@ -278,6 +278,22 @@ internal static class SeedPrevious
             INSERT INTO source_creations (id, user_id, created_at)
             VALUES ('01920000-0000-7000-8000-000000000014', '01920000-0000-7000-8000-000000000001', now())
             """),
+        (
+            // 02.5.3-T2: the table the `_02_AddFactSheets` migration creates. Same rule as above: skipped while
+            // that migration is the last one, then every later migration is exercised over a draft fact sheet of
+            // the seed episode that points at the seed run (the CR-29 composite run key sees a live row). The
+            // hash is the SHA-256 of the empty fact list, so `ck_fact_sheets_sha256` sees a real value.
+            "fact_sheets",
+            """
+            INSERT INTO fact_sheets (id, user_id, episode_id, version, status, facts, source_aliases,
+                                     input_truncated, max_fact_id, content_sha256, generation_run_id, prompt_version,
+                                     created_by, created_at, updated_at)
+            VALUES ('01920000-0000-7000-8000-000000000015', '01920000-0000-7000-8000-000000000001',
+                    '01920000-0000-7000-8000-000000000004', 1, 0, '[]'::jsonb, '{}'::jsonb, false, 0,
+                    'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+                    '01920000-0000-7000-8000-00000000000f', 'facts.v1',
+                    '01920000-0000-7000-8000-000000000001', now(), now())
+            """),
     ];
 
     /// <summary>The tables the dataset covers, in insert order — the contract a feature migration extends.</summary>
