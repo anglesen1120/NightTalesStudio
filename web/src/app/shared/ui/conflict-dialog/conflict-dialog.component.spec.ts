@@ -178,4 +178,48 @@ describe('ConflictDialog', () => {
     expect(savedAsNew).toHaveBeenCalledTimes(1);
     expect(closed).toHaveBeenCalledExactlyOnceWith('saveAsNew');
   });
+
+  it('renders exactly the previous DOM when no pre-translated details are passed', async () => {
+    await TestBed.configureTestingModule({
+      imports: [DialogHost, MatDialogModule, NoopAnimationsModule, translations],
+    }).compileComponents();
+    const fixture = TestBed.createComponent(DialogHost);
+    fixture.detectChanges();
+    const ref = TestBed.inject(ConflictDialog).open({
+      messageKey: 'errors.concurrency_conflict',
+      detailKeys: ['errors.validation_failed'],
+      saveAsNewLabel: 'errors.conflict.saveAsNew',
+    });
+    await fixture.whenStable();
+    const body = document.querySelector<HTMLElement>('.cdk-overlay-pane .conflict-dialog__body');
+    if (body === null) throw new Error('missing dialog body');
+    // The additive fields add nodes only when they are supplied: one `ul` (the detailKeys list) and no heading.
+    expect(body.querySelectorAll('ul')).toHaveLength(1);
+    expect(body.querySelector('.conflict-dialog__detail-heading')).toBeNull();
+    expect(body.querySelector('.conflict-dialog__detail-texts')).toBeNull();
+    expect([...body.querySelectorAll('li')].map((item) => item.textContent?.trim())).toEqual([errorsEn.validation_failed]);
+    ref.close('cancel');
+    await fixture.whenStable();
+  });
+
+  it('interpolates detailTexts as text, never as markup', async () => {
+    await TestBed.configureTestingModule({
+      imports: [DialogHost, MatDialogModule, NoopAnimationsModule, translations],
+    }).compileComponents();
+    const fixture = TestBed.createComponent(DialogHost);
+    fixture.detectChanges();
+    const ref = TestBed.inject(ConflictDialog).open({
+      messageKey: 'errors.concurrency_conflict',
+      detailHeadingKey: 'errors.conflict.title',
+      detailTexts: ['Paragraph 2', '<b>x</b>'],
+    });
+    await fixture.whenStable();
+    const heading = document.querySelector<HTMLElement>('.cdk-overlay-pane .conflict-dialog__detail-heading');
+    const items = document.querySelectorAll<HTMLElement>('.cdk-overlay-pane .conflict-dialog__detail-texts li');
+    expect(heading?.textContent?.trim()).toBe(errorsEn.conflict.title);
+    expect([...items].map((item) => item.textContent)).toEqual(['Paragraph 2', '<b>x</b>']);
+    expect(items[1]!.querySelector('b')).toBeNull();
+    ref.close('cancel');
+    await fixture.whenStable();
+  });
 });

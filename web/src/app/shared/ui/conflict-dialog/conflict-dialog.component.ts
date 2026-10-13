@@ -10,6 +10,14 @@ export type ConflictDialogOutcome = 'reload' | 'saveAsNew' | 'cancel';
 export interface ConflictDialogData {
   readonly messageKey: string;
   readonly detailKeys?: readonly string[];
+  /**
+   * Additive (10 CR-53; owner-approved extension of the frozen 10.2.2-T1 contract, 2026-10-14): pre-translated plain
+   * text, interpolated only. Rendered as its own list after `detailKeys`, so callers that pass neither field render
+   * exactly the DOM they rendered before.
+   */
+  readonly detailTexts?: readonly string[];
+  /** Additive (same extension): heading translation key for `detailTexts`, rendered only when the list has entries. */
+  readonly detailHeadingKey?: string;
   /** Translation key; its presence enables Save as new (normally `errors.conflict.saveAsNew`). */
   readonly saveAsNewLabel?: string;
   /** Server trace id of the conflicting response; shown as `errors.unknown.trace` in the details (text only). */

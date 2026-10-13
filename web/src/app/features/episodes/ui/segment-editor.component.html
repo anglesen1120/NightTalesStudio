@@ -17,6 +17,9 @@
     [attr.aria-describedby]="describedBy()"
     (input)="editText($event)"
   ></textarea>
+  @for (annotation of annotations(); track annotation.id) {
+    <nts-inline-annotation [annotation]="annotation" (focusRequested)="openAnnotation($event)" />
+  }
   <ng-content select="[segmentActions]" />
 
   <p class="segment-editor__counter" [id]="counterId()">{{ 'episodes.editor.tokens' | transloco: { count: viewModel().tokens } }}</p>
@@ -32,6 +35,7 @@
       [keywords]="viewModel().keywords"
       [readOnly]="viewModel().readOnly"
       [limitHit]="limitHit()"
+      [flagged]="flaggedChips()"
       (addKeyword)="addKeyword()"
       (editKeyword)="updateKeyword($event)"
       (removeKeyword)="removeKeyword($event)"

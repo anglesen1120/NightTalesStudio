@@ -2,6 +2,7 @@ import { CdkDragHandle } from '@angular/cdk/drag-drop';
 import { ChangeDetectionStrategy, Component, computed, input, output } from '@angular/core';
 import { TranslocoPipe, provideTranslocoScope } from '@jsverse/transloco';
 import { SegmentEditorComponent } from './segment-editor.component';
+import type { InlineAnnotationViewModel } from '@shared/ui';
 import type { SegmentEditorViewModel, StoryEditorIntent } from './story-editor.view-model';
 
 @Component({
@@ -19,6 +20,8 @@ export class ParagraphCardComponent {
   readonly readOnly = input(false);
   readonly pointerReorder = input(true);
   readonly limitHit = input(false);
+  readonly annotations = input<readonly InlineAnnotationViewModel[]>([]);
+  readonly flaggedChips = input<ReadonlyMap<number, { readonly annotationId: string; readonly messageKey: string }>>(new Map());
   readonly intent = output<StoryEditorIntent>();
   protected readonly locked = computed(() => this.readOnly() || this.viewModel().readOnly);
 

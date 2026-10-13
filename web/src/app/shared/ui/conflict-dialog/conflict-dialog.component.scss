@@ -37,6 +37,13 @@ ul {
   padding-inline-start: var(--nts-space-5);
 }
 
+/* The heading is a label for its own list, so it stays in the muted body colour and only groups the items below. */
+.conflict-dialog__detail-heading {
+  margin: var(--nts-space-3) 0 0;
+  font-size: inherit;
+  font-weight: var(--nts-type-label-weight);
+}
+
 li + li {
   margin-top: var(--nts-space-1);
 }

@@ -46,6 +46,11 @@
   "autopilot_topic_locked": "Không thể đổi chủ đề khi chế độ tự động đang bật.",
   "autopilot_pause_reason_active": "Không thể tiếp tục chế độ tự động khi lý do tạm dừng vẫn còn.",
   "keywords_flagged": "Một số từ khoá hình ảnh bị đánh dấu. Hãy sửa trước khi tiếp tục.",
+  "keywordsFlaggedRule": {
+    "keyword_name_detected": "Cảnh chứa tên người. Hãy viết lại mà không dùng tên thật.",
+    "keyword_invalid": "Cảnh không hợp lệ. Hãy dùng tiếng Anh, 3–12 từ.",
+    "no_scenes": "Tập này chưa có cảnh nào để dựng video."
+  },
   "legal_acceptance_required": "Hãy xem và chấp nhận các văn bản pháp lý hiện hành trước khi tiếp tục.",
   "legal_version_outdated": "Văn bản pháp lý đã thay đổi. Hãy xem phiên bản hiện hành và chấp nhận lại.",
   "episode_conflict": "Tập đã được thay đổi ở nơi khác. Hãy tải lại và thử lại.",

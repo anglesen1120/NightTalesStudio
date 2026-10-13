@@ -69,6 +69,23 @@
       "writeStoryBlocked": "Cần duyệt bảng dữ kiện với ít nhất 2 nguồn đã tải trước khi viết kịch bản."
     }
   },
+  "annotations": {
+    "heading": "Gợi ý cải thiện",
+    "objective": "Khách quan",
+    "taste": "Cảm nhận",
+    "blocking": "Cần sửa",
+    "advisory": "Nên xem",
+    "evidence": "Bằng chứng",
+    "repair": "Cách sửa",
+    "goTo": "Tới đoạn",
+    "none": "Không có gợi ý",
+    "unknown": "Có một gợi ý chưa dịch",
+    "meta": "Toàn bộ tập",
+    "unresolved": "Đoạn này không còn trong bản thảo",
+    "announce": "{{count}} gợi ý",
+    "announceOne": "Một gợi ý",
+    "announceNone": "Không có gợi ý"
+  },
   "editor": {
     "pageTitle": "Kịch bản tập phim",
     "loading": "Đang tải kịch bản",
@@ -99,6 +116,8 @@
     "addKeyword": "Thêm cảnh",
     "removeKeyword": "Xoá cảnh",
     "keywordLimit": "Mỗi đoạn cần 1–2 cảnh",
+    "keywordFlagged": "Cảnh cần sửa",
+    "keywordFlaggedHint": "Sửa cảnh này trước khi làm video",
     "tokens": "{{count}} từ",
     "totalTokens": "Tổng cộng {{count}} từ",
     "description": "Mô tả",
@@ -193,6 +212,13 @@
     "cancel": "Huỷ",
     "reloadConfirmTitle": "Bỏ thay đổi chưa lưu?",
     "reloadConfirmBody": "Tải bản mới nhất sẽ thay thế văn bản chưa lưu trên màn hình này. Không thể hoàn tác.",
-    "reloadConfirm": "Tải bản mới nhất"
+    "reloadConfirm": "Tải bản mới nhất",
+    "diffHeading": "Các phần khác nhau",
+    "diffNone": "Không tìm thấy phần khác nhau.",
+    "busyBody": "Người khác vừa lưu tiếp bản mới. Hãy tải bản mới nhất để tiếp tục.",
+    "elsewhereTitle": "Kịch bản vừa thay đổi ở nơi khác",
+    "elsewhereBody": "Ở tab khác hoặc người khác vừa lưu phiên bản mới. Bản nháp của bạn vẫn được giữ nguyên.",
+    "dismiss": "Bỏ qua",
+    "reloadFailed": "Không tải được bản mới nhất. Nội dung bạn đang viết vẫn được giữ nguyên. Chọn Tải bản mới nhất để thử lại."
   }
 }
