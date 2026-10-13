@@ -49,12 +49,24 @@ export class VersionsPanelHostComponent {
     // A notice from a restore that finished with no host mounted must not resurface here (F4); an in-flight restore
     // keeps its notice for the host that remounts with it.
     this.store.discardRestoredNotice();
+    let openedEpisode: string | null = null;
     effect(() => {
       const episodeId = this.episodeId();
-      // Deep-link ids are tracked too: a changed `?left=&right=` re-opens the pair without a list reload.
+      // Deep-link ids are tracked: a changed `?left=&right=` moves the pair without re-reading the list.
       const left = this.initialLeft();
       const right = this.initialRight();
-      untracked(() => { void this.store.open(episodeId, left === null && right === null ? undefined : { left, right }); });
+      const ids = left === null && right === null ? undefined : { left, right };
+      untracked(() => {
+        if (openedEpisode !== episodeId) {
+          // The mount open owns the first list read; a store the page already loaded re-reads the list (README D6).
+          openedEpisode = episodeId;
+          void this.store.open(episodeId, ids);
+          return;
+        }
+        // Later changes only move the pair: the page echoes the store's own selection back through the query params,
+        // which must be a no-op rather than another list read.
+        if (ids !== undefined) void this.store.applySelection(ids);
+      });
     });
     effect(() => {
       if (!this.store.loaded()) return;

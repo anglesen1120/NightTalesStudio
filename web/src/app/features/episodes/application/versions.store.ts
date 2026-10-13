@@ -102,13 +102,10 @@ export class VersionsStore {
       // A panel that reopens over an already-loaded store re-reads the LIST only: the selection and the loaded details
       // stay, and a store busy restoring is left alone (the restore reloads the list itself). README D17: no polling.
       if (this.restoring()) return;
-      if (ids !== undefined) {
-        const changed = this.changedSides(ids);
-        if (changed.length > 0) {
-          // Explicit ids win over the loaded selection without a list reload: only the differing sides are fetched.
-          await Promise.all(changed.map((side) => this.applySide(side === 'left' ? ids.left : ids.right, side)));
-          return;
-        }
+      if (ids !== undefined && this.changedSides(ids).length > 0) {
+        // Explicit ids win over the loaded selection without a list reload: only the differing sides are fetched.
+        await this.applySelection(ids);
+        return;
       }
       await this.resync();
       return;
@@ -128,6 +125,18 @@ export class VersionsStore {
     if (!this.active() || this.episodeId !== episodeId || !this.loadedState()) return;
     const selection = ids ?? this.defaultSelection();
     await Promise.all([this.applySide(selection.left, 'left'), this.applySide(selection.right, 'right')]);
+  }
+
+  /**
+   * Moves the selection to `ids` without touching the list (README D6): a deep link that changes under a mounted panel
+   * only moves the pair, and the page writing the store's own selection back is a no-op. A null side clears that side.
+   * Before the first list load the mount `open()` owns the selection, so this is a no-op there.
+   */
+  async applySelection(ids: VersionSelection): Promise<void> {
+    if (!this.active() || !this.loadedState() || this.restoring()) return;
+    const changed = this.changedSides(ids);
+    if (changed.length === 0) return;
+    await Promise.all(changed.map((side) => this.applySide(side === 'left' ? ids.left : ids.right, side)));
   }
 
   /**

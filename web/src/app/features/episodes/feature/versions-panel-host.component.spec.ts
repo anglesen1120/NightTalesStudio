@@ -38,6 +38,7 @@ function fakeStore(outcome: RestoreOutcome) {
     consumeRestored: vi.fn(() => { const version = restoredVersion(); restoredVersion.set(null); return version; }),
     discardRestoredNotice: vi.fn(() => { if (!restoring()) restoredVersion.set(null); }),
     open: vi.fn(() => { loaded.set(true); return Promise.resolve(); }),
+    applySelection: vi.fn(() => Promise.resolve()),
     select: vi.fn(() => Promise.resolve()), retryList: vi.fn(() => Promise.resolve()), retrySide: vi.fn(() => Promise.resolve()), reset: vi.fn(),
     resync: vi.fn(() => Promise.resolve()),
     restoreAsNewVersion: vi.fn((): Promise<RestoreOutcome> => {
@@ -105,9 +106,9 @@ describe('VersionsPanelHostComponent', () => {
     expect(ids).toEqual([{ left: 'another', right: 'current' }]);
     fixture.componentRef.setInput('initialLeft', 'another');
     fixture.detectChanges(); await fixture.whenStable();
-    // The deep link is tracked: the store applies only the changed side, without a list reload.
-    expect(store.open).toHaveBeenCalledTimes(2);
-    expect(store.open).toHaveBeenLastCalledWith('episode-1', { left: 'another', right: 'current' });
+    // A later deep link only moves the pair: no second open (and no list read), which the page's own echo relies on.
+    expect(store.open).toHaveBeenCalledTimes(1);
+    expect(store.applySelection).toHaveBeenCalledExactlyOnceWith({ left: 'another', right: 'current' });
     fixture.destroy();
     expect(store.reset).not.toHaveBeenCalled();
     expect(store.discardRestoredNotice).toHaveBeenCalledTimes(2); // destroy: no host left to announce it

@@ -174,6 +174,32 @@ describe('VersionsStore', () => {
     expect(state.store.right()?.versionId).toBe('v3');
   });
 
+  it('applySelection_OnTheStoresOwnSelection_ReadsNothing', async () => {
+    const state = await editorLoaded();
+    seedPair(state);
+    await state.store.open(EPISODE_ID);
+    expect(state.versions.listCalls).toHaveLength(1);
+    expect(state.versions.detailCalls).toHaveLength(2);
+    // The page echoes the selection the store just made back through the query params: nothing to read.
+    await state.store.applySelection({ left: state.store.leftId(), right: state.store.rightId() });
+    expect(state.versions.listCalls).toHaveLength(1);
+    expect(state.versions.detailCalls).toHaveLength(2);
+  });
+
+  it('applySelection_ChangedSide_FetchesOnlyThatSideWithoutTheList', async () => {
+    const state = await editorLoaded();
+    state.versions.seed(
+      [versionSummary(3), versionSummary(2, { isCurrent: true }), versionSummary(1)],
+      [versionDetail(1), versionDetail(2, { isCurrent: true }), versionDetail(3)],
+    );
+    await state.store.open(EPISODE_ID, { left: 'v1', right: 'v2' });
+    await state.store.applySelection({ left: 'v1', right: 'v3' });
+    expect(state.versions.listCalls).toHaveLength(1);
+    expect(state.versions.detailCalls).toHaveLength(3);
+    expect(state.versions.detailCalls[2]).toEqual({ episodeId: EPISODE_ID, versionId: 'v3', userAction: true });
+    expect(state.store.rightId()).toBe('v3');
+  });
+
   it('resync_KeepsLoadingFalseAndKeepsTheStaleListOnFailure', async () => {
     const state = await editorLoaded();
     seedPair(state);
