@@ -1,6 +1,6 @@
 using FluentValidation;
 
-namespace NightTales.Application.Features.Research.GenerateFactSheet;
+namespace NightTales.Application.Features.Research.Commands.GenerateFactSheet;
 
 /// <summary>
 /// Shape validation of <c>POST /episodes/{id}/fact-sheet/generate</c> (02.5.3 plan §4.1): the

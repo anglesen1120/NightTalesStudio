@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
 using NightTales.Application.Abstractions;
 using NightTales.Domain.Episodes;
@@ -21,8 +22,6 @@ namespace NightTales.Infrastructure.UnitTests.Persistence;
 /// </summary>
 public sealed class FactSheetModelTests
 {
-    private const string FactsColumn = "facts";
-    private const string SourceAliasesColumn = "source_aliases";
     private const string ApprovedIndex = "ux_fact_sheets_episode_approved";
     private const string VersionIndex = "ux_fact_sheets_episode_version";
 
@@ -56,21 +55,22 @@ public sealed class FactSheetModelTests
     [Fact]
     public void FactSheet_DocumentsAreCanonicalJsonScalars()
     {
-        var facts = Property(FactsColumn);
+        var facts = Property(nameof(FactSheet.Facts));
         facts.ClrType.ShouldBe(typeof(IReadOnlyList<FactItem>));
         facts.GetColumnType().ShouldBe("jsonb");
         facts.IsNullable.ShouldBeFalse();
         // The conversion is what keeps the stored bytes equal to FactSheetJson's canonical document, which
-        // is the string content_sha256 hashes (plan §3 invariant 3).
+        // is the string content_sha256 hashes (plan §3 invariant 3). The property's provider type is the
+        // jsonb type mapping's, so the converter is the one that carries the string provider type.
         facts.GetValueConverter().ShouldNotBeNull();
-        facts.GetProviderClrType().ShouldBe(typeof(string));
+        facts.GetValueConverter()!.ProviderClrType.ShouldBe(typeof(string));
 
-        var aliases = Property(SourceAliasesColumn);
+        var aliases = Property(nameof(FactSheet.SourceAliases));
         aliases.ClrType.ShouldBe(typeof(IReadOnlyDictionary<string, Guid>));
         aliases.GetColumnType().ShouldBe("jsonb");
         aliases.IsNullable.ShouldBeFalse();
         aliases.GetValueConverter().ShouldNotBeNull();
-        aliases.GetProviderClrType().ShouldBe(typeof(string));
+        aliases.GetValueConverter()!.ProviderClrType.ShouldBe(typeof(string));
     }
 
     [Fact]
@@ -80,12 +80,14 @@ public sealed class FactSheetModelTests
 
         status.ClrType.ShouldBe(typeof(FactSheetStatus));
         status.GetColumnType().ShouldBe("smallint");
-        status.GetValueConverter().ShouldNotBeNull();
+        // EF Core 10 folds HasConversion<short>() into the type mapping, so the enum→short storage is the
+        // property's provider type, not a separate value converter.
+        status.GetProviderClrType().ShouldBe(typeof(short));
 
-        FactSheetEntity().GetCheckConstraints()
+        FactSheetDesignEntity().GetCheckConstraints()
             .ShouldContain(constraint => constraint.Name == "ck_fact_sheets_status"
                 && constraint.Sql.Contains("IN (0, 1, 2)", StringComparison.Ordinal));
-        FactSheetEntity().GetCheckConstraints()
+        FactSheetDesignEntity().GetCheckConstraints()
             .ShouldContain(constraint => constraint.Name == "ck_fact_sheets_sha256"
                 && constraint.Sql.Contains("^[0-9a-f]{64}$", StringComparison.Ordinal));
     }
@@ -148,7 +150,8 @@ public sealed class FactSheetModelTests
     [Fact]
     public void GenerationRuns_Pf1Index_IsEpisodeCreatedDescending()
     {
-        var run = Model().FindEntityType(typeof(GenerationRun))!;
+        // Sort directions live in the design-time model only: the runtime (read-optimized) model drops them.
+        var run = DesignModel().FindEntityType(typeof(GenerationRun))!;
         var pf1 = run.GetIndexes().Single(index => index.GetDatabaseName() == "ix_generation_runs_episode_created");
 
         pf1.IsUnique.ShouldBeFalse();
@@ -169,6 +172,12 @@ public sealed class FactSheetModelTests
     private static IReadOnlyEntityType FactSheetEntity() => Model().FindEntityType(typeof(FactSheet))!;
 
     /// <summary>
+    /// The fact-sheet entity from the design-time model: CHECK constraints are DDL, so the runtime
+    /// (read-optimized) model drops them, exactly as it drops an index's sort directions.
+    /// </summary>
+    private static IReadOnlyEntityType FactSheetDesignEntity() => DesignModel().FindEntityType(typeof(FactSheet))!;
+
+    /// <summary>
     /// The production write model: the same provider options <c>AddPersistence</c> uses minus the probe
     /// customizer and the interceptors, which change no mapping. Nothing here connects to a database.
     /// </summary>
@@ -181,5 +190,19 @@ public sealed class FactSheetModelTests
 
         using var context = new AppDbContext(options, new AnonymousCurrentUser());
         return context.Model;
+    }
+
+    /// <summary>
+    /// The same model with the configuration the runtime model drops, such as an index's sort directions.
+    /// </summary>
+    private static IModel DesignModel()
+    {
+        var options = new DbContextOptionsBuilder<AppDbContext>()
+            .UseNpgsql(ProbeContexts.UnusedConnectionString)
+            .UseSnakeCaseNamingConvention()
+            .Options;
+
+        using var context = new AppDbContext(options, new AnonymousCurrentUser());
+        return context.GetService<IDesignTimeModel>().Model;
     }
 }

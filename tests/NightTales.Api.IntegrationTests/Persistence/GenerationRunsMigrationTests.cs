@@ -557,6 +557,10 @@ public sealed class GenerationRunsMigrationTests(TestDatabase database) : Integr
     {
         var parents = await ParentsAsync();
         var run = InsertRun(parents, "story", "succeeded");
+        // story_versions.fact_sheet_id is a same-owner FK to fact_sheets (02 CR-29): the provenance row names
+        // a real draft sheet of this episode.
+        var sheet = await new FactSheetBuilder(Database, new TestCurrentUser { Id = parents.UserId })
+            .CreateAsync(parents.UserId, parents.EpisodeId, Ct);
         var version = StoryVersion.Create(
             parents.UserId,
             parents.EpisodeId,
@@ -568,7 +572,7 @@ public sealed class GenerationRunsMigrationTests(TestDatabase database) : Integr
             "rel=1",
             run,
             null,
-            Guid.CreateVersion7(),
+            sheet.Id,
             "{\"v\":\"audit.v1\"}",
             0.5m,
             DateTimeOffset.UtcNow);

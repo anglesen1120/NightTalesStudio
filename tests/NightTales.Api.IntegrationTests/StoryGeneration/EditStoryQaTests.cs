@@ -685,8 +685,7 @@ public sealed class EditStoryQaTests(TestDatabase database) : IntegrationTest(da
     [Fact]
     public async Task QA10_ClientSentIdsVersionSourceScoresModerationFactFieldsAndTimestamps_AreIgnored()
     {
-        var factSheetId = Guid.CreateVersion7();
-        var world = await SeedAsync(factSheetId: factSheetId);
+        var world = await SeedAsync(withFactSheet: true);
         var stranger = await SeedAsync();
         using var factory = Factory();
         using var client = factory.ClientFor(world.UserId);
@@ -723,7 +722,7 @@ public sealed class EditStoryQaTests(TestDatabase database) : IntegrationTest(da
         body.GetProperty("version").GetInt32().ShouldBe(2);
         body.GetProperty("source").GetString().ShouldBe("edited");
         body.GetProperty("parentVersionId").GetGuid().ShouldBe(world.VersionId);
-        body.GetProperty("factSheetId").GetGuid().ShouldBe(factSheetId);
+        body.GetProperty("factSheetId").GetGuid().ShouldBe(world.FactSheetId!.Value);
         body.GetProperty("createdAt").GetDateTimeOffset().ShouldBe(Start);
         body.GetProperty("wordCount").GetInt32().ShouldBeGreaterThan(100, "word_count is derived from the text");
 
@@ -732,7 +731,7 @@ public sealed class EditStoryQaTests(TestDatabase database) : IntegrationTest(da
                 Database,
                 $"SELECT episode_id::text || '|' || user_id::text || '|' || version::text || '|' || source || '|' "
                 + $"|| parent_version_id::text || '|' || fact_sheet_id::text FROM story_versions WHERE id = '{newId}'")
-            .ShouldBe($"{world.EpisodeId}|{world.UserId}|2|edited||{world.VersionId}|{factSheetId}".Replace("||", "|", StringComparison.Ordinal));
+            .ShouldBe($"{world.EpisodeId}|{world.UserId}|2|edited||{world.VersionId}|{world.FactSheetId}".Replace("||", "|", StringComparison.Ordinal));
         SqlProbe.ScalarText(Database, $"SELECT coalesce(similarity_score::text, 'null') FROM story_versions WHERE id = '{newId}'").ShouldBe("null");
         SqlProbe.ScalarText(Database, $"SELECT content->>'schema_version' FROM story_versions WHERE id = '{newId}'").ShouldBe(previousSchema);
         var stored = SqlProbe.ScalarText(Database, $"SELECT content::text FROM story_versions WHERE id = '{newId}'");
@@ -940,24 +939,30 @@ public sealed class EditStoryQaTests(TestDatabase database) : IntegrationTest(da
         return problem;
     }
 
-    private async Task<World> SeedAsync(EpisodeStatus status = EpisodeStatus.StoryReview, string? audit = null, Guid? factSheetId = null)
+    private async Task<World> SeedAsync(EpisodeStatus status = EpisodeStatus.StoryReview, string? audit = null, bool withFactSheet = false)
     {
         var actor = new TestCurrentUser();
         var user = await new UserBuilder(Database, actor).CreateAsync(ct: Ct);
 
-        return await SeedForUserAsync(user.Id, status, audit, factSheetId);
+        return await SeedForUserAsync(user.Id, status, audit, withFactSheet);
     }
 
     private async Task<World> SeedForUserAsync(
         Guid userId,
         EpisodeStatus status = EpisodeStatus.StoryReview,
         string? audit = null,
-        Guid? factSheetId = null)
+        bool withFactSheet = false)
     {
         var actor = new TestCurrentUser();
         var series = await new SeriesBuilder(Database, actor).CreateAsync(userId, ct: Ct);
         var episode = await new EpisodeBuilder(Database, actor)
             .CreateAsync(userId, series.Id, lengthTier: LengthTier.Short, status: status, ct: Ct);
+
+        // story_versions.fact_sheet_id is a same-owner FK to fact_sheets (02 CR-29), so a seeded version that
+        // carries one names a real draft row of this episode.
+        var sheet = withFactSheet
+            ? await new FactSheetBuilder(Database, actor).CreateAsync(userId, episode.Id, Ct)
+            : null;
 
         var draft = ValidDraft();
         var version = StoryVersion.Create(
@@ -971,7 +976,7 @@ public sealed class EditStoryQaTests(TestDatabase database) : IntegrationTest(da
             "rel=1",
             null,
             null,
-            factSheetId,
+            sheet?.Id,
             audit ?? AuditJson(),
             null,
             Start);
@@ -984,7 +989,7 @@ public sealed class EditStoryQaTests(TestDatabase database) : IntegrationTest(da
 
         SqlProbe.Execute(Database, $"UPDATE episodes SET current_story_version_id = '{version.Id}' WHERE id = '{episode.Id}'");
 
-        return new World(userId, series.Id, episode.Id, version.Id);
+        return new World(userId, series.Id, episode.Id, version.Id, sheet?.Id);
     }
 
     private static JsonArray FactSources() =>
@@ -1041,5 +1046,5 @@ public sealed class EditStoryQaTests(TestDatabase database) : IntegrationTest(da
 
     private static int Words(string text) => text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries).Length;
 
-    private sealed record World(Guid UserId, Guid SeriesId, Guid EpisodeId, Guid VersionId);
+    private sealed record World(Guid UserId, Guid SeriesId, Guid EpisodeId, Guid VersionId, Guid? FactSheetId = null);
 }

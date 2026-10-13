@@ -11,7 +11,7 @@ using NightTales.Domain.Research;
 using NightTales.Domain.Series;
 using NightTales.Domain.Stories.Generation;
 
-namespace NightTales.Application.Features.Research.GenerateFactSheet;
+namespace NightTales.Application.Features.Research.Commands.GenerateFactSheet;
 
 /// <summary>
 /// Queues a fact-sheet extraction (02.5.3 plan §4.1 U4.1), in the transaction the D5 pipeline opened and

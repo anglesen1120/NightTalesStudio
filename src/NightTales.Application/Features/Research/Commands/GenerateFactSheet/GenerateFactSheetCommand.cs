@@ -6,7 +6,7 @@ using NightTales.Application.Abstractions.Audit;
 using NightTales.Application.Abstractions.Messaging;
 using NightTales.Domain.Audit;
 
-namespace NightTales.Application.Features.Research.GenerateFactSheet;
+namespace NightTales.Application.Features.Research.Commands.GenerateFactSheet;
 
 /// <summary>
 /// <c>POST /api/v1/episodes/{id}/fact-sheet/generate</c> (02.5.3 plan §4.1 U4.1): queue one fact-sheet

@@ -227,9 +227,9 @@ public sealed class GenerateFactSheetPipelineTests(TestDatabase database) : Inte
         var run = await world.ReadRunAsync();
         run.Status.ShouldBe(GenerationRunStatus.Succeeded);
         var models = run.Models.ShouldNotBeNull();
-        models.ShouldContain("\"input_truncated\":true");
-        models.ShouldContain("\"excluded_sources\":0");
-        models.ShouldContain("\"truncated_aliases\":1");
+        models.ShouldContain("\"input_truncated\": true");
+        models.ShouldContain("\"excluded_sources\": 0");
+        models.ShouldContain("\"truncated_aliases\": 1");
         models.ShouldNotContain(new string('a', 200), Case.Sensitive, "the plan detail carries counts, never content");
 
         var sheet = await world.FactSheetAsync();
@@ -327,9 +327,9 @@ public sealed class GenerateFactSheetPipelineTests(TestDatabase database) : Inte
         sheet.Facts[1].Confidence.ShouldBe(FactConfidence.Low, "a low-confidence fact is kept, never dropped (T53)");
 
         var models = (await world.ReadRunAsync()).Models.ShouldNotBeNull();
-        models.ShouldContain("\"model_facts\":3");
-        models.ShouldContain("\"kept_facts\":2");
-        models.ShouldContain("\"verbatim_copy\":1");
+        models.ShouldContain("\"model_facts\": 3");
+        models.ShouldContain("\"kept_facts\": 2");
+        models.ShouldContain("\"verbatim_copy\": 1");
     }
 
     [Fact]
@@ -488,16 +488,20 @@ public sealed class GenerateFactSheetPipelineTests(TestDatabase database) : Inte
         {
             seed.StorySources.Add(StorySource.CreateNote(noteId, user.Id, episode.Id, noteText, Now).Value);
 
+            // Each url source is stamped one second after the previous one (and after the note at `Now`), so the
+            // plan's `created_at then id` order — and with it the s1…sN alias assignment — is deterministic.
+            // Relying on the random tail of two Guid.CreateVersion7 ids created in the same millisecond would
+            // make the alias a coin flip.
             if (urlSources is not null)
             {
                 foreach (var text in urlSources)
                 {
-                    await SeedUrlAsync(seed, texts, urlIds, user.Id, episode.Id, text, "Bài báo");
+                    await SeedUrlAsync(seed, texts, urlIds, user.Id, episode.Id, text, "Bài báo", Now.AddSeconds(urlIds.Count + 1));
                 }
             }
             else if (urlText is not null)
             {
-                await SeedUrlAsync(seed, texts, urlIds, user.Id, episode.Id, urlText, sourceTitle ?? "Bài báo gốc");
+                await SeedUrlAsync(seed, texts, urlIds, user.Id, episode.Id, urlText, sourceTitle ?? "Bài báo gốc", Now.AddSeconds(1));
             }
 
             var run = GenerationRun.Queue(
@@ -554,10 +558,11 @@ public sealed class GenerateFactSheetPipelineTests(TestDatabase database) : Inte
         Guid userId,
         Guid episodeId,
         string text,
-        string title)
+        string title,
+        DateTimeOffset createdAt)
     {
         var parsed = SourceUrl.Parse($"https://example.com/article-{Guid.NewGuid():N}", new FakePublicSuffixList()).Value;
-        var url = StorySource.CreateUrl(Guid.CreateVersion7(), userId, episodeId, parsed, Now).Value;
+        var url = StorySource.CreateUrl(Guid.CreateVersion7(), userId, episodeId, parsed, createdAt).Value;
         url.MarkFetched(
             parsed.Value,
             title,
@@ -565,7 +570,7 @@ public sealed class GenerateFactSheetPipelineTests(TestDatabase database) : Inte
             new string('a', 64),
             $"sources/{url.Id}.txt",
             text.Length,
-            Now);
+            createdAt);
         texts.Add($"sources/{url.Id}.txt", text);
         urlIds.Add(url.Id);
         seed.StorySources.Add(url);

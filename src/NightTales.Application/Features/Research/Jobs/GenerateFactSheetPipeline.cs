@@ -30,13 +30,13 @@ namespace NightTales.Application.Features.Research.Jobs;
 
 /// <summary>
 /// Executes one queued <c>fact_sheet</c> run end to end (02.5.3 plan §7, D21): re-check the sources, plan the
-/// input budget, make one paid extraction call (with the single invalid-output retry), moderate the sources,
-/// validate the facts, then save one draft version and settle the reservation.
+/// input budget, run the free D12 source pre-check, make one paid extraction call (with the single
+/// invalid-output retry), validate the facts, then save one draft version and settle the reservation.
 /// </summary>
 /// <remarks>
 /// <para>
-/// Stages on <c>generation_runs.stage</c>: <c>running → writing</c> (the plan and the call)
-/// <c>→ checking</c> (the D12 source moderation and the validator) <c>→ saving</c> (the draft, the run outcome
+/// Stages on <c>generation_runs.stage</c>: <c>running → writing</c> (the plan, the source pre-check and the
+/// call) <c>→ checking</c> (the validator) <c>→ saving</c> (the draft, the run outcome
 /// and the settlement). The claim is a conditional <c>UPDATE … WHERE id AND status IN (queued, running)</c>
 /// inside a transaction, so two deliveries of the same run cannot both work it and a run the sweeper already
 /// ended is rejected.
@@ -162,13 +162,15 @@ public sealed partial class GenerateFactSheetPipeline(
         {
             await ExecuteAsync(state, deadline.Token).ConfigureAwait(false);
         }
-        catch (OperationCanceledException) when (jobToken.IsCancellationRequested)
+        catch (Exception) when (jobToken.IsCancellationRequested)
         {
-            // Class 3: the host is shutting down. The run stays running and the sweeper reclaims it, so no write is attempted.
+            // Class 3: the host is shutting down. Whatever the stage threw, the run stays running and the
+            // sweeper reclaims it, so no write is attempted — the shutdown owns the outcome, not the failure.
             LogCancelled(state.Run.Id);
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException) when (deadline.IsCancellationRequested)
         {
+            // Only this run's own deadline maps here: an OCE from another token is not a deadline (see below).
             DiscardPendingChanges();
             await FailAsync(state, ErrorCodes.FactSheetGenerationFailed, DetailDeadlineExceeded, RefundFailed).ConfigureAwait(false);
         }
@@ -256,6 +258,13 @@ public sealed partial class GenerateFactSheetPipeline(
             return;
         }
 
+        // Plan §7 and README D12: the free source pre-check runs before the paid call, so a flagged source
+        // never buys an extraction.
+        if (!await ModerateSourcesAsync(s, ct).ConfigureAwait(false))
+        {
+            return;
+        }
+
         var draft = await ExtractAsync(s, ct).ConfigureAwait(false);
         if (draft is null)
         {
@@ -263,11 +272,6 @@ public sealed partial class GenerateFactSheetPipeline(
         }
 
         if (!await StageAsync(s, GenerationStage.Checking, ct).ConfigureAwait(false))
-        {
-            return;
-        }
-
-        if (!await ModerateSourcesAsync(s, ct).ConfigureAwait(false))
         {
             return;
         }

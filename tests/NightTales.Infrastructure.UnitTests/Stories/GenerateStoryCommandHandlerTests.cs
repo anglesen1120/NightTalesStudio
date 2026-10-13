@@ -113,17 +113,20 @@ public sealed class GenerateStoryCommandHandlerTests(TestDatabase database) : In
     public async Task GenerateStoryCommand_TrueCrimeWithApprovedSheet_PinsTheSheetOnTheRun()
     {
         var world = await NewWorldAsync(topic: Topic.TrueCrime);
-        var sheetId = Guid.CreateVersion7();
+        // The run pins the approved sheet on generation_runs.input_fact_sheet_id, a same-owner FK to
+        // fact_sheets (02 CR-29), so the approved id must name a real draft row of this episode.
+        var sheet = await new FactSheetBuilder(Database, new TestCurrentUser { Id = world.UserId })
+            .CreateAsync(world.UserId, world.EpisodeId, Ct);
         world.FactSheets.ApprovedSheet = new Application.Abstractions.Research.ApprovedFactSheet(
-            sheetId,
-            1,
+            sheet.Id,
+            sheet.Version,
             [],
             new Dictionary<string, Guid>());
 
         var result = await world.SendAsync(new GenerateStoryCommand(world.EpisodeId, GenerationTrigger.User, "k1"));
 
         result.IsError.ShouldBeFalse();
-        (await world.OnlyRunAsync()).InputFactSheetId.ShouldBe(sheetId);
+        (await world.OnlyRunAsync()).InputFactSheetId.ShouldBe(sheet.Id);
     }
 
     [Fact]
@@ -261,6 +264,9 @@ public sealed class GenerateStoryCommandHandlerTests(TestDatabase database) : In
         private readonly TestCurrentUser _current = new() { Id = userId, Actor = actor };
 
         public Guid EpisodeId => episodeId;
+
+        /// <summary>The owner of the episode; a fact sheet row must carry it (the FK is same-owner).</summary>
+        public Guid UserId => userId;
 
         public FakeBudgetGuard Budget { get; } = new();
 

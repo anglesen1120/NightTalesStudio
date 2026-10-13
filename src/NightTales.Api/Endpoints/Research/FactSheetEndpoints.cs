@@ -4,7 +4,7 @@ using Microsoft.AspNetCore.Mvc;
 using NightTales.Api.Http;
 using NightTales.Api.Http.Filters;
 using NightTales.Api.RateLimiting;
-using NightTales.Application.Features.Research.GenerateFactSheet;
+using NightTales.Application.Features.Research.Commands.GenerateFactSheet;
 
 namespace NightTales.Api.Endpoints.Research;
 

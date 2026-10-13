@@ -1,4 +1,4 @@
-namespace NightTales.Application.Features.Research.GenerateFactSheet;
+namespace NightTales.Application.Features.Research.Commands.GenerateFactSheet;
 
 /// <summary>
 /// The 202 body of <c>POST /api/v1/episodes/{id}/fact-sheet/generate</c> (02.5.3 plan §4.1); stored and

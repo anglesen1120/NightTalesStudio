@@ -3,7 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using NightTales.Application.Abstractions.Money;
 using NightTales.Application.Abstractions.Usage;
 using NightTales.Application.Common.Errors;
-using NightTales.Application.Features.Research.GenerateFactSheet;
+using NightTales.Application.Features.Research.Commands.GenerateFactSheet;
 using NightTales.Domain.Common;
 using NightTales.Domain.Episodes;
 using NightTales.Domain.Research;
