@@ -741,6 +741,7 @@ public sealed class StoryGenerationPipelineTests(TestDatabase database) : Integr
                 new StoryQualityChecker(),
                 new StoryJobOptions { TimeoutSeconds = timeoutSeconds, TimeoutSecondsLong = timeoutSeconds },
                 new StoryReviewOptions { Enabled = reviewEnabled },
+                new StoryRevisionOptions { Enabled = false },
                 new SimilarityCorpusProvider(_db, new FakeExtractedTextStore(), Options.Create(new SimilaritySettings())),
                 new SimilaritySettings(),
                 new StoryGenerationMetrics(),

@@ -35,11 +35,26 @@ public static class AuditReportBuilder
     /// <summary><c>revision.reason</c> when the spend cap was reached between the review and the revision.</summary>
     public const string RevisionReasonSpendCapReached = "spend_cap_reached";
 
+    /// <summary>
+    /// <c>revision.reason</c> when the revision could not run or its result could not be trusted without failing the run:
+    /// the provider was unavailable or timed out, the outcome was unknown, or the revised draft could not be moderated
+    /// (a revision that is not moderation-clean never becomes current).
+    /// </summary>
+    public const string RevisionReasonUnavailable = "revision_unavailable";
+
+    /// <summary>
+    /// <c>revision.reason</c> when review #2 of the revised draft was unusable (invalid, unavailable, spend cap or
+    /// moderated): an unreviewed revision never becomes current, so the generated row is kept.
+    /// </summary>
+    public const string RevisionReasonReviewUnavailable = "revision_review_unavailable";
+
     /// <summary>The closed set of stable <c>revision.reason</c> codes (charset <c>[a-z0-9_]</c>); a value outside it is rejected.</summary>
     public static IReadOnlySet<string> RevisionReasons { get; } = new HashSet<string>(StringComparer.Ordinal)
     {
         RevisionReasonInvalidOutput,
         RevisionReasonSpendCapReached,
+        RevisionReasonUnavailable,
+        RevisionReasonReviewUnavailable,
     };
 
     private const string DriftImpact = "The revision changed parts of the story the review did not ask it to change.";
