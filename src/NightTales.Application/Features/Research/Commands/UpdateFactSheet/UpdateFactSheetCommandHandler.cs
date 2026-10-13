@@ -1,4 +1,3 @@
-using System.Data.Common;
 using ErrorOr;
 using Mediator;
 using Microsoft.EntityFrameworkCore;
@@ -49,8 +48,12 @@ public sealed class UpdateFactSheetCommandHandler(IAppDbContext db, IClock clock
     /// <summary>The most sources one fact may cite; the alias scheme allows <c>s1…s10</c>.</summary>
     private const int MaxSourceIdsPerFact = FactInputLimits.MaxSourcesCeiling;
 
-    /// <summary>PostgreSQL's SQLSTATE for a unique-constraint violation.</summary>
-    private const string UniqueViolation = "23505";
+    /// <summary>
+    /// The most distinct sources one version may cite, taken from the alias scheme itself
+    /// (<see cref="FactSheetSourceAliases.MaxAliasNumber"/>): the model reads <c>s1…s10</c>, so an eleventh source
+    /// has no alias to be cited under.
+    /// </summary>
+    private const int MaxDistinctSources = FactSheetSourceAliases.MaxAliasNumber;
 
     /// <inheritdoc />
     public async ValueTask<ErrorOr<FactSheetSummaryDto>> Handle(
@@ -96,14 +99,23 @@ public sealed class UpdateFactSheetCommandHandler(IAppDbContext db, IClock clock
         }
 
         // Step 4: the body. Every failure is one 400 fact_sheet_invalid_content with the failing field path and
-        // never the input itself (D17/T51); an empty list is a valid body (it saves an empty draft).
+        // never the input itself (D17/T51); an explicit empty list is a valid body (it saves an empty draft),
+        // while a document that names no facts at all (`{}`, `{"facts":null}` or a misspelt member) is not an
+        // empty edit — it is refused rather than silently writing a version with zero facts.
         var content = command.Content;
         if (content is null)
         {
             return InvalidContent("body", "The body is not a fact-sheet document.");
         }
 
-        var inputs = content.Facts ?? [];
+        if (content.Facts is null)
+        {
+            return InvalidContent(
+                "facts",
+                "The body must list the sheet's facts; send an empty list to save an empty draft.");
+        }
+
+        var inputs = content.Facts;
         if (inputs.Count > MaxFacts)
         {
             return Error.Validation(
@@ -209,7 +221,17 @@ public sealed class UpdateFactSheetCommandHandler(IAppDbContext db, IClock clock
             return violations;
         }
 
-        // Step 5: the ids. A kept id must name a fact of the current version and appear once; a new fact gets the
+        // Step 5: the alias scheme's own ceiling (README F12). The model reads the aliases s1…s10, so one version
+        // may cite at most ten distinct sources; an eleventh cannot be named, and FactSheetSourceAliases.Reconcile
+        // refuses it by throwing. The body is refused here instead, in the same 400 shape as its other failures.
+        if (citedInFirstCitationOrder.Count > MaxDistinctSources)
+        {
+            return InvalidContent(
+                "facts",
+                $"A fact sheet may cite at most {MaxDistinctSources} distinct sources.");
+        }
+
+        // Step 6: the ids. A kept id must name a fact of the current version and appear once; a new fact gets the
         // next id after the watermark, so an id a deletion retired is never handed out again (F12).
         var allocated = FactIdAllocator.Allocate(
             [.. current.Facts.Select(fact => fact.Id)],
@@ -220,7 +242,7 @@ public sealed class UpdateFactSheetCommandHandler(IAppDbContext db, IClock clock
             return allocated.Errors;
         }
 
-        // Step 6: the version's alias map and the facts. A fact that keeps its statement and its sources is copied
+        // Step 7: the version's alias map and the facts. A fact that keeps its statement and its sources is copied
         // verbatim (Origin and the overlap score survive); any other change makes it the user's own (decision 11),
         // and confidence is preserved unless the body overrides it (T53).
         var sourceAliases = FactSheetSourceAliases.Reconcile(current.SourceAliases, citedInFirstCitationOrder);
@@ -267,7 +289,7 @@ public sealed class UpdateFactSheetCommandHandler(IAppDbContext db, IClock clock
                     FactOrigin.User));
         }
 
-        // Step 7: the new row and the event. The previous version is never mutated (D9): the ETag names the row.
+        // Step 8: the new row and the event. The previous version is never mutated (D9): the ETag names the row.
         var now = clock.UtcNow;
         var created = FactSheet.CreateUserDraft(current, facts, sourceAliases, allocated.Value.MaxFactId, episode.UserId, now);
         db.FactSheets.Add(created);
@@ -280,7 +302,8 @@ public sealed class UpdateFactSheetCommandHandler(IAppDbContext db, IClock clock
 
         // The flush is the only place this layer can see a lost race: the two unique indexes of the table and the
         // partial one of the approved row are refused inside the open transaction, and the Application layer cannot
-        // name the provider exception, so a unique violation here is the 412 the ETag contract expects (decision 6).
+        // name the provider exception, so a refusal on one of those two indexes is the 412 the ETag contract
+        // expects (decision 6, FactSheetFlushConflict).
         var conflict = await FlushAsync(cancellationToken).ConfigureAwait(false);
         if (conflict is not null)
         {
@@ -291,9 +314,14 @@ public sealed class UpdateFactSheetCommandHandler(IAppDbContext db, IClock clock
         return Summary(created);
     }
 
-    /// <summary>The episode's current version: the row with the highest version, whatever its status (decision 3).</summary>
+    /// <summary>
+    /// The episode's current version: the row with the highest version, whatever its status (decision 3). It is
+    /// read only — <see cref="FactSheet.CreateUserDraft"/> is a static factory over it and the previous version is
+    /// never mutated (D9) — so the query tracks nothing.
+    /// </summary>
     private async Task<FactSheet?> CurrentSheetAsync(Guid episodeId, CancellationToken cancellationToken) =>
         await db.FactSheets
+            .AsNoTracking()
             .Where(sheet => sheet.EpisodeId == episodeId)
             .OrderByDescending(sheet => sheet.Version)
             .FirstOrDefaultAsync(cancellationToken)
@@ -307,24 +335,10 @@ public sealed class UpdateFactSheetCommandHandler(IAppDbContext db, IClock clock
             await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
             return null;
         }
-        catch (DbUpdateException exception) when (IsUniqueViolation(exception))
+        catch (DbUpdateException exception) when (FactSheetFlushConflict.IsFactSheetUniqueViolation(exception))
         {
             return StaleTag();
         }
-    }
-
-    /// <summary>Whether the provider refused a unique constraint (SQLSTATE 23505) anywhere in the chain.</summary>
-    private static bool IsUniqueViolation(DbUpdateException exception)
-    {
-        for (Exception? current = exception; current is not null; current = current.InnerException)
-        {
-            if (current is DbException database && database.SqlState == UniqueViolation)
-            {
-                return true;
-            }
-        }
-
-        return false;
     }
 
     private static FactSheetSummaryDto Summary(FactSheet sheet) =>

@@ -54,8 +54,9 @@ internal sealed class FactSheetConfiguration : IEntityTypeConfiguration<FactShee
 
     /// <summary>
     /// The element-wise comparer of the <c>facts</c> document: EF's default comparer for the list is reference
-    /// equality, so without this a replaced document would look unchanged. Change-tracking state only — it
-    /// changes no column, no index and no snapshot entry.
+    /// equality, so without this a replaced document would look unchanged. The comparison walks every member of
+    /// each <see cref="FactItem"/> by value, because the record's own equality compares its two list members by
+    /// reference. Change-tracking state only — it changes no column, no index and no snapshot entry.
     /// </summary>
     private static readonly ValueComparer<IReadOnlyList<FactItem>> FactsComparer =
         new ValueComparer<IReadOnlyList<FactItem>>(
@@ -154,12 +155,83 @@ internal sealed class FactSheetConfiguration : IEntityTypeConfiguration<FactShee
         }
     }
 
-    /// <summary>Compares two facts documents element by element, in output order.</summary>
-    private static bool FactsEqual(IReadOnlyList<FactItem>? left, IReadOnlyList<FactItem>? right) =>
-        ReferenceEquals(left, right)
-        || (left is not null && right is not null && left.SequenceEqual(right));
+    /// <summary>
+    /// Compares two facts documents element by element, in output order. <see cref="FactItem"/> is a record whose
+    /// <c>SourceIds</c> and <c>SourceAliases</c> are lists, and a record's generated equality compares those
+    /// members by reference, so <c>SequenceEqual</c> over the records would call a reloaded document different
+    /// from the snapshot EF took of it and every save would rewrite the column (D9 forbids that: the stored bytes
+    /// are what <c>content_sha256</c> hashes). Every member is therefore compared by value.
+    /// </summary>
+    private static bool FactsEqual(IReadOnlyList<FactItem>? left, IReadOnlyList<FactItem>? right)
+    {
+        if (ReferenceEquals(left, right))
+        {
+            return true;
+        }
 
-    /// <summary>Hashes a facts document in the same order <see cref="FactsEqual"/> compares it.</summary>
+        if (left is null || right is null || left.Count != right.Count)
+        {
+            return false;
+        }
+
+        for (var index = 0; index < left.Count; index++)
+        {
+            if (!FactEqual(left[index], right[index]))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /// <summary>Compares two facts member by member, both inner lists included.</summary>
+    private static bool FactEqual(FactItem? left, FactItem? right)
+    {
+        if (ReferenceEquals(left, right))
+        {
+            return true;
+        }
+
+        return left is not null
+            && right is not null
+            && string.Equals(left.Id, right.Id, StringComparison.Ordinal)
+            && string.Equals(left.Statement, right.Statement, StringComparison.Ordinal)
+            && ListEqual(left.SourceIds, right.SourceIds)
+            && ListEqual(left.SourceAliases, right.SourceAliases)
+            && left.SourceOverlap == right.SourceOverlap
+            && left.Confidence == right.Confidence
+            && left.Origin == right.Origin;
+    }
+
+    /// <summary>Element-wise list equality with the element type's default comparer.</summary>
+    private static bool ListEqual<T>(IReadOnlyList<T>? left, IReadOnlyList<T>? right)
+    {
+        if (ReferenceEquals(left, right))
+        {
+            return true;
+        }
+
+        if (left is null || right is null || left.Count != right.Count)
+        {
+            return false;
+        }
+
+        for (var index = 0; index < left.Count; index++)
+        {
+            if (!EqualityComparer<T>.Default.Equals(left[index], right[index]))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Hashes a facts document over the very members <see cref="FactsEqual"/> compares, in the same order, so two
+    /// facts that compare equal also hash equal.
+    /// </summary>
     private static int FactsHash(IReadOnlyList<FactItem>? facts)
     {
         if (facts is null)
@@ -170,10 +242,37 @@ internal sealed class FactSheetConfiguration : IEntityTypeConfiguration<FactShee
         var hash = new HashCode();
         foreach (var fact in facts)
         {
-            hash.Add(fact);
+            if (fact is null)
+            {
+                hash.Add(0);
+                continue;
+            }
+
+            hash.Add(fact.Id, StringComparer.Ordinal);
+            hash.Add(fact.Statement, StringComparer.Ordinal);
+            ListHash(ref hash, fact.SourceIds);
+            ListHash(ref hash, fact.SourceAliases);
+            hash.Add(fact.SourceOverlap);
+            hash.Add(fact.Confidence);
+            hash.Add(fact.Origin);
         }
 
         return hash.ToHashCode();
+    }
+
+    /// <summary>Feeds <paramref name="values"/> into <paramref name="hash"/> in order.</summary>
+    private static void ListHash<T>(ref HashCode hash, IReadOnlyList<T>? values)
+    {
+        if (values is null)
+        {
+            hash.Add(0);
+            return;
+        }
+
+        foreach (var value in values)
+        {
+            hash.Add(value);
+        }
     }
 
     /// <summary>

@@ -1,4 +1,3 @@
-using System.Data.Common;
 using ErrorOr;
 using Mediator;
 using Microsoft.EntityFrameworkCore;
@@ -19,9 +18,9 @@ namespace NightTales.Application.Features.Research.Commands.ApproveFactSheet;
 /// <remarks>
 /// <para>
 /// The check order is the contract's: the tenant-filtered loads (404 <c>fact_sheet_not_found</c>, never 403, for
-/// a foreign episode, an unknown id and an episode without a sheet), the ETag (428/412), the target's own status
-/// — only a <c>draft</c> is approvable, a re-approve is 412 <c>fact_sheet_conflict</c> because the tag names the
-/// draft — the F26 state gate (409 <c>episode_invalid_state</c>), and then <c>F13SourceDiversityCheck</c> (409
+/// a foreign episode, an unknown id and an episode without a sheet), the ETag (428/412), the F26 state gate (409
+/// <c>episode_invalid_state</c>), the target's own status — only a <c>draft</c> is approvable, a re-approve is 412
+/// <c>fact_sheet_conflict</c> because the tag names the draft — and then <c>F13SourceDiversityCheck</c> (409
 /// <c>fact_sheet_sources_insufficient</c> or 409 <c>story_sources_required</c>).
 /// </para>
 /// <para>
@@ -37,9 +36,6 @@ namespace NightTales.Application.Features.Research.Commands.ApproveFactSheet;
 public sealed class ApproveFactSheetCommandHandler(IAppDbContext db, ICurrentUser currentUser, IClock clock)
     : ICommandHandler<ApproveFactSheetCommand, ErrorOr<FactSheetSummaryDto>>
 {
-    /// <summary>PostgreSQL's SQLSTATE for a unique-constraint violation.</summary>
-    private const string UniqueViolation = "23505";
-
     /// <inheritdoc />
     public async ValueTask<ErrorOr<FactSheetSummaryDto>> Handle(
         ApproveFactSheetCommand command,
@@ -70,7 +66,7 @@ public sealed class ApproveFactSheetCommandHandler(IAppDbContext db, ICurrentUse
         }
 
         // Step 2: 428 without the header, 412 for a stale, malformed or foreign tag. Only the current version is
-        // addressable, and it must still be the draft the client read (decision 5).
+        // addressable (decision 4).
         if (string.IsNullOrWhiteSpace(command.IfMatch))
         {
             return IfMatchRequired();
@@ -81,18 +77,22 @@ public sealed class ApproveFactSheetCommandHandler(IAppDbContext db, ICurrentUse
             return StaleTag();
         }
 
-        if (current.Status != FactSheetStatus.Draft)
-        {
-            return StaleTag();
-        }
-
-        // Step 3: draft and story_review only (F26); every other state gets the same code.
+        // Step 3: draft and story_review only (F26); every other state gets the same code. The state gate is
+        // answered before the addressed row's own status (task Notes decision 2): when no approval can happen in
+        // the episode's state, that is the reason the client is told, whatever the row's status would have said.
         if (!episode.CanEditStory)
         {
             return InvalidState();
         }
 
-        // Step 4: the source-diversity gate, over the episode's own sources (a cited source that no longer exists
+        // Step 4: only a draft is approvable — a re-approve names the row the tag addresses, so it is a conflict
+        // (decision 5).
+        if (current.Status != FactSheetStatus.Draft)
+        {
+            return StaleTag();
+        }
+
+        // Step 5: the source-diversity gate, over the episode's own sources (a cited source that no longer exists
         // counts as ineligible, exactly like a deleted one — F13).
         var rows = await db.StorySources
             .Where(source => source.EpisodeId == command.EpisodeId)
@@ -115,7 +115,7 @@ public sealed class ApproveFactSheetCommandHandler(IAppDbContext db, ICurrentUse
             return gate.Errors;
         }
 
-        // Step 5: within one transaction, demote the episode's previous approved row first — and flush it — so the
+        // Step 6: within one transaction, demote the episode's previous approved row first — and flush it — so the
         // partial unique index sees at most one approved row at any statement (decision 5).
         var previouslyApproved = await db.FactSheets
             .SingleOrDefaultAsync(
@@ -133,7 +133,7 @@ public sealed class ApproveFactSheetCommandHandler(IAppDbContext db, ICurrentUse
             }
         }
 
-        // Step 6: the approval itself and the event the outbox turns into the UI's EpisodeUpdated.
+        // Step 7: the approval itself and the event the outbox turns into the UI's EpisodeUpdated.
         var now = clock.UtcNow;
         var approved = current.Approve(currentUser.Id ?? episode.UserId, now);
         if (approved.IsError)
@@ -165,24 +165,10 @@ public sealed class ApproveFactSheetCommandHandler(IAppDbContext db, ICurrentUse
             await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
             return null;
         }
-        catch (DbUpdateException exception) when (IsUniqueViolation(exception))
+        catch (DbUpdateException exception) when (FactSheetFlushConflict.IsFactSheetUniqueViolation(exception))
         {
             return StaleTag();
         }
-    }
-
-    /// <summary>Whether the provider refused a unique constraint (SQLSTATE 23505) anywhere in the chain.</summary>
-    private static bool IsUniqueViolation(DbUpdateException exception)
-    {
-        for (Exception? current = exception; current is not null; current = current.InnerException)
-        {
-            if (current is DbException database && database.SqlState == UniqueViolation)
-            {
-                return true;
-            }
-        }
-
-        return false;
     }
 
     private static FactSheetSummaryDto Summary(FactSheet sheet) =>

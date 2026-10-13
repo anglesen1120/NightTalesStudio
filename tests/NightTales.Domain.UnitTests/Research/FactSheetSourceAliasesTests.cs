@@ -6,8 +6,9 @@ namespace NightTales.Domain.UnitTests.Research;
 
 /// <summary>
 /// The alias reconciliation of one edited fact-sheet version (02.5.4-T1, CR-4/D21): an alias a previous version
-/// gave a source is kept, a source cited for the first time takes the smallest free <c>s&lt;N&gt;</c> in first
-/// citation order, and the result carries exactly the cited sources.
+/// gave a still-cited source is kept, an alias of a source this body dropped is free again, a source cited for
+/// the first time takes the smallest free <c>s&lt;N&gt;</c> in first citation order, the scheme never issues
+/// above <c>s10</c>, and the result carries exactly the cited sources.
 /// </summary>
 /// <remarks>
 /// Pure unit tests: both inputs are arguments. The map is what keeps a stored citation readable after the
@@ -57,30 +58,69 @@ public sealed class FactSheetSourceAliasesTests
     [Fact]
     public void Reconcile_NewSource_TakesTheSmallestUnusedAlias()
     {
-        // s1, s2 and s4 are spent by names the previous version used, so the new source fills the s3 gap
-        // instead of taking s5.
+        // s1, s2 and s4 all belong to sources this body still cites, so the new source fills the s3 gap instead
+        // of taking s5.
         var previous = Map(("s1", Source1), ("s2", Source2), ("s4", Source3));
         var newSource = Guid.Parse("0197b000-0000-7000-8000-0000000000d4");
 
-        var reconciled = FactSheetSourceAliases.Reconcile(previous, [Source1, Source3, newSource]);
+        var reconciled = FactSheetSourceAliases.Reconcile(previous, [Source1, Source2, Source3, newSource]);
 
-        reconciled.Keys.ShouldBe(["s1", "s4", "s3"]);
+        reconciled.Keys.ShouldBe(["s1", "s2", "s4", "s3"]);
         reconciled["s3"].ShouldBe(newSource);
     }
 
     [Fact]
-    public void Reconcile_AnAliasThePreviousVersionUsed_IsNotRecycled()
+    public void Reconcile_AliasOfADroppedSource_IsReusedByTheNextNewSource()
     {
-        // s2 belonged to a source this body no longer cites. It stays spent: the alias is the stable half of a
-        // stored citation, so handing it to another source would make the two versions read differently.
+        // s2 belonged to a source this body no longer cites, so it is free again: the model only ever reads
+        // s1..s10 (README F12), so a dropped source must not shrink that space.
         var previous = Map(("s1", Source1), ("s2", Source2));
         var newSource = Guid.Parse("0197b000-0000-7000-8000-0000000000d4");
 
         var reconciled = FactSheetSourceAliases.Reconcile(previous, [Source1, newSource]);
 
-        reconciled.Keys.ShouldBe(["s1", "s3"]);
-        reconciled["s3"].ShouldBe(newSource);
-        reconciled.ShouldNotContainKey("s2");
+        reconciled.Keys.ShouldBe(["s1", "s2"]);
+        reconciled["s1"].ShouldBe(Source1, "a still-cited source keeps its alias");
+        reconciled["s2"].ShouldBe(newSource, "the alias of the dropped source is free again");
+    }
+
+    [Fact]
+    public void Reconcile_DeleteFirstSource_ThenAdd_ReusesS1()
+    {
+        // Deleting the source that held s1 frees that number for the source added right after, so the ten-alias
+        // space cannot run out while at most ten distinct sources are cited.
+        var previous = Map(("s1", Source1), ("s2", Source2));
+        var newSource = Guid.Parse("0197b000-0000-7000-8000-0000000000d4");
+
+        var reconciled = FactSheetSourceAliases.Reconcile(previous, [Source2, newSource]);
+
+        reconciled.Keys.ShouldBe(["s2", "s1"]);
+        reconciled["s2"].ShouldBe(Source2);
+        reconciled["s1"].ShouldBe(newSource);
+    }
+
+    [Fact]
+    public void Reconcile_TenDistinctSources_FillS1ToS10()
+    {
+        var sources = NewSources(FactSheetSourceAliases.MaxAliasNumber);
+
+        var reconciled = FactSheetSourceAliases.Reconcile(Empty(), sources);
+
+        reconciled.Count.ShouldBe(FactSheetSourceAliases.MaxAliasNumber);
+        for (var index = 0; index < sources.Count; index++)
+        {
+            reconciled[$"s{index + 1}"].ShouldBe(sources[index]);
+        }
+    }
+
+    [Fact]
+    public void Reconcile_MoreThanTenDistinctSources_Throws()
+    {
+        // An eleventh distinct source cannot be named: the scheme refuses instead of issuing s11, which the model
+        // must never see (README F12).
+        var sources = NewSources(FactSheetSourceAliases.MaxAliasNumber + 1);
+
+        Should.Throw<ArgumentOutOfRangeException>(() => FactSheetSourceAliases.Reconcile(Empty(), sources));
     }
 
     [Fact]
@@ -171,6 +211,12 @@ public sealed class FactSheetSourceAliasesTests
     }
 
     private static Dictionary<string, Guid> Empty() => new(StringComparer.Ordinal);
+
+    /// <summary><paramref name="count"/> distinct source ids, never equal to the three pinned ones.</summary>
+    private static IReadOnlyList<Guid> NewSources(int count) =>
+    [
+        .. Enumerable.Range(1, count).Select(number => Guid.Parse($"0197b000-0000-7000-8000-{number:d12}")),
+    ];
 
     private static Dictionary<string, Guid> Map(params (string Alias, Guid SourceId)[] entries)
     {

@@ -129,11 +129,10 @@ public sealed class FactSheetQaEdgeTests(TestDatabase database) : IntegrationTes
     [Fact]
     public async Task ApproveFactSheet_ApprovedCurrentRowWhenTheEpisodeIsStoryApproved_AnswersEpisodeInvalidState()
     {
-        // DEFECT-PROVING (see the QA report): the task file's Notes (decision 2) and the session contract
-        // (decision 8) fix the approve order as ETag → F26 episode-state gate (409) → target-is-draft (412) →
-        // F13. ApproveFactSheetCommandHandler.cs:88-99 checks the row's status (412) *before* `CanEditStory`
-        // (409), so a re-approval of an approved sheet in a `story_approved` episode answers the conflict code
-        // instead of the state code the F26 decision names. This test pins the documented order.
+        // The order the task file's Notes (decision 2) and the session contract (decision 8) fix for approve is
+        // ETag → F26 episode-state gate (409) → target-is-draft (412) → F13. A re-approval of an approved sheet in
+        // a `story_approved` episode therefore answers the state code, not the conflict code the row's status
+        // alone would give: no approval can happen in this state, and that is what the client is told.
         var world = await FactSheetHarness.SeedAsync(Database, EpisodeStatus.StoryApproved);
         var first = await FactSheetHarness.AddFetchedUrlAsync(Database, world, FactSheetHarness.Sha('a'));
         var second = await FactSheetHarness.AddFetchedUrlAsync(Database, world, FactSheetHarness.Sha('b'));

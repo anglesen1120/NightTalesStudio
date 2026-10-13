@@ -65,6 +65,32 @@ public sealed class FactSheetPutValidationTests(TestDatabase database) : Integra
         FactSheetHarness.SheetRows(Database, world).Count.ShouldBe(1);
     }
 
+    [Theory]
+    [InlineData("""{"facts":null}""")]
+    [InlineData("""{}""")]
+    [InlineData("""{"fascts":[]}""")]
+    public async Task PutFactSheet_BodyWithoutAFactsList_Returns400WithTheFactsField(string body)
+    {
+        // An explicit empty list is a valid body (contract §13) but a document that names no facts at all — the
+        // member is null, absent or misspelt — is not an empty edit: it must not silently save a version with
+        // zero facts, so it is the same 400 shape as the other body failures, with the facts field.
+        var (world, _, sheet) = await SeedOneFactAsync();
+
+        using var factory = FactSheetHarness.Factory(Database);
+        using var client = factory.ClientFor(world.UserId);
+
+        using var response = await FactSheetHarness.PutAsync(
+            client,
+            world.EpisodeId,
+            FactSheetHarness.Etag(sheet.Id),
+            body);
+
+        await FactSheetHarness.AssertProblemAsync(response, 400, "fact_sheet_invalid_content");
+        FactSheetHarness.FieldKeys(await FactSheetHarness.ProblemAsync(response))
+            .ShouldContain("facts", "a body that lists no facts names the facts member");
+        FactSheetHarness.SheetRows(Database, world).Count.ShouldBe(1, "a rejected body writes no version");
+    }
+
     [Fact]
     public async Task UpdateFactSheet_UnknownFactId_Returns400()
     {
@@ -227,6 +253,63 @@ public sealed class FactSheetPutValidationTests(TestDatabase database) : Integra
 
         await FactSheetHarness.AssertProblemAsync(response, 400, "fact_sheet_invalid_content");
         FactSheetHarness.SheetRows(Database, world).Count.ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task PutFactSheet_ElevenDistinctCitedSources_Returns400WithTheFactsField()
+    {
+        // README F12: the model reads the aliases s1…s10, so one version may cite at most ten distinct sources.
+        // Eleven (each fact citing its own) cannot be named at all — FactSheetSourceAliases.Reconcile refuses an
+        // eleventh — so the body is refused before the version is built, and nothing is written.
+        var (world, _, sheet) = await SeedOneFactAsync();
+        const string HexDigits = "0123456789abcdef";
+        var facts = new List<FactInput>(11);
+        for (var index = 0; index < 11; index++)
+        {
+            var source = await FactSheetHarness.AddFetchedUrlAsync(Database, world, FactSheetHarness.Sha(HexDigits[index]));
+            facts.Add(FactSheetHarness.Fact(null, $"Statement number {index}.", [source]));
+        }
+
+        using var factory = FactSheetHarness.Factory(Database);
+        using var client = factory.ClientFor(world.UserId);
+
+        using var response = await FactSheetHarness.PutAsync(
+            client,
+            world.EpisodeId,
+            FactSheetHarness.Etag(sheet.Id),
+            FactSheetHarness.Body([.. facts]));
+
+        await FactSheetHarness.AssertProblemAsync(response, 400, "fact_sheet_invalid_content");
+        FactSheetHarness.FieldKeys(await FactSheetHarness.ProblemAsync(response))
+            .ShouldContain("facts", "a body citing more sources than the alias scheme names names the facts member");
+        FactSheetHarness.SheetRows(Database, world).Count.ShouldBe(1, "a rejected body writes no version");
+    }
+
+    [Fact]
+    public async Task PutFactSheet_TenDistinctCitedSources_SavesTheVersion()
+    {
+        // The ceiling itself: ten distinct sources are exactly what s1…s10 names, so they are legal.
+        var (world, _, sheet) = await SeedOneFactAsync();
+        const string HexDigits = "0123456789abcdef";
+        var facts = new List<FactInput>(10);
+        for (var index = 0; index < 10; index++)
+        {
+            var source = await FactSheetHarness.AddFetchedUrlAsync(Database, world, FactSheetHarness.Sha(HexDigits[index]));
+            facts.Add(FactSheetHarness.Fact(null, $"Statement number {index}.", [source]));
+        }
+
+        using var factory = FactSheetHarness.Factory(Database);
+        using var client = factory.ClientFor(world.UserId);
+
+        using var response = await FactSheetHarness.PutAsync(
+            client,
+            world.EpisodeId,
+            FactSheetHarness.Etag(sheet.Id),
+            FactSheetHarness.Body([.. facts]));
+
+        response.StatusCode.ShouldBe(HttpStatusCode.OK, await response.Content.ReadAsStringAsync(FactSheetHarness.Ct));
+        FactSheetHarness.SheetRows(Database, world).Count.ShouldBe(2, "the body saves one new version");
+        FactSheetHarness.StoredFactIds(Database, world, 2).Count.ShouldBe(10);
     }
 
     [Fact]
