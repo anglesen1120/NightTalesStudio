@@ -187,6 +187,25 @@ public sealed class FactSheetGenerateEndpointTests(TestDatabase database) : Inte
     }
 
     [Fact]
+    public async Task PostFactSheetGenerate_TwoConcurrentPosts_OneAcceptedOneConflicts_AndOneRunIsCommitted()
+    {
+        var world = await SeedAsync();
+        using var factory = Factory();
+        using var client = factory.ClientFor(world.UserId);
+
+        var responses = await Task.WhenAll(
+            PostAsync(client, world.EpisodeId, "k1"),
+            PostAsync(client, world.EpisodeId, "k2"));
+        using var first = responses[0];
+        using var second = responses[1];
+
+        new[] { first.StatusCode, second.StatusCode }.Count(code => code == HttpStatusCode.Accepted).ShouldBe(1);
+        new[] { first.StatusCode, second.StatusCode }.Count(code => code == HttpStatusCode.Conflict).ShouldBe(1);
+        SqlProbe.Count(Database, $"SELECT count(*) FROM generation_runs WHERE episode_id = '{world.EpisodeId}'")
+            .ShouldBe(1);
+    }
+
+    [Fact]
     public async Task PostFactSheetGenerate_GhostSeries_Returns409EpisodeInvalidState()
     {
         var world = await SeedAsync(topic: Topic.Ghost);

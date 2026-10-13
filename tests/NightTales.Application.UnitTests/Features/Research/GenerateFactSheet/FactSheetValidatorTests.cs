@@ -306,4 +306,106 @@ public sealed class FactSheetValidatorTests
         nullOutput.Facts.ShouldBeEmpty();
         nullOutput.ModelFactCount.ShouldBe(0);
     }
+
+    [Fact]
+    public void FactSheetValidator_KeepsExactlyMaxFacts_AndDropsTheFortyFirstAsOverCap()
+    {
+        var facts = Enumerable.Range(0, 41).Select(index => Draft($"Distinct fact {index}.", ["s1"])).ToArray();
+
+        var result = FactSheetValidator.Validate(Output(facts), Context(sourceIds: [Source1]), Score(0m));
+
+        result.Facts.Count.ShouldBe(40);
+        result.Facts[39].Statement.ShouldBe("Distinct fact 39.");
+        result.Drops.ShouldHaveSingleItem().Reason.ShouldBe(FactDropReasons.OverCap);
+        result.Drops[0].OutputIndex.ShouldBe(40);
+        result.NewMaxFactId.ShouldBe(40);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(4)]
+    [InlineData(5)]
+    public void FactSheetValidator_KeepsAnyCountBelowTheCap_WithoutDropping(int count)
+    {
+        var facts = Enumerable.Range(0, count).Select(index => Draft($"Distinct fact {index}.", ["s1"])).ToArray();
+
+        var result = FactSheetValidator.Validate(Output(facts), Context(sourceIds: [Source1]), Score(0m));
+
+        result.Facts.Count.ShouldBe(count);
+        result.Drops.ShouldBeEmpty();
+        result.ModelFactCount.ShouldBe(count);
+    }
+
+    [Fact]
+    public void FactSheetValidator_KeepsScoreExactlyAtThreshold_AndDropsJustAbove()
+    {
+        var result = FactSheetValidator.Validate(
+            Output(Draft("At threshold.", ["s1"]), Draft("Just above.", ["s1"])),
+            Context(threshold: 0.15m, sourceIds: [Source1]),
+            request => request.Statement == "At threshold." ? 0.15m : 0.1501m);
+
+        result.Facts.ShouldHaveSingleItem().Statement.ShouldBe("At threshold.");
+        result.Drops.ShouldHaveSingleItem().Reason.ShouldBe(FactDropReasons.VerbatimCopy);
+    }
+
+    [Fact]
+    public void FactSheetValidator_KeepsZeroScore_AndDropsOneAndValuesOutsideTheUnitRange()
+    {
+        var result = FactSheetValidator.Validate(
+            Output(
+                Draft("Zero.", ["s1"]),
+                Draft("One.", ["s1"]),
+                Draft("Below.", ["s1"]),
+                Draft("Above one.", ["s1"])),
+            Context(sourceIds: [Source1]),
+            request => request.Statement switch
+            {
+                "Zero." => 0m,
+                "One." => 1m,
+                "Below." => -0.0001m,
+                _ => 1.0001m,
+            });
+
+        result.Facts.ShouldHaveSingleItem().Statement.ShouldBe("Zero.");
+        result.Drops.Select(drop => drop.Reason).ShouldBe(
+        [
+            FactDropReasons.VerbatimCopy,
+            FactDropReasons.VerbatimCopy,
+            FactDropReasons.VerbatimCopy,
+        ]);
+    }
+
+    [Fact]
+    public void FactSheetValidator_KeepsStatementAt600Chars_AndDropsAt601()
+    {
+        var atLimit = new string('a', FactSheetValidator.StatementMaxChars);
+        var overLimit = new string('a', FactSheetValidator.StatementMaxChars + 1);
+
+        var result = FactSheetValidator.Validate(
+            Output(Draft(atLimit, ["s1"]), Draft(overLimit, ["s1"])),
+            Context(sourceIds: [Source1]),
+            Score(0m));
+
+        result.Facts.ShouldHaveSingleItem().Statement.Length.ShouldBe(FactSheetValidator.StatementMaxChars);
+        result.Drops.ShouldHaveSingleItem().Reason.ShouldBe(FactDropReasons.StatementInvalid);
+    }
+
+    [Fact]
+    public void FactSheetValidator_DropsUnitSeparatorAndLoneLowSurrogate_KeepsValidSurrogatePair()
+    {
+        var result = FactSheetValidator.Validate(
+            Output(
+                Draft("Unit\u001Fsep.", ["s1"]),
+                Draft("Low \uDC00 fact.", ["s1"]),
+                Draft("Emoji \uD83D\uDE00 fact.", ["s1"])),
+            Context(sourceIds: [Source1]),
+            Score(0m));
+
+        result.Facts.ShouldHaveSingleItem().Statement.ShouldBe("Emoji \uD83D\uDE00 fact.");
+        result.Drops.Select(drop => drop.Reason).ShouldBe(
+        [
+            FactDropReasons.ControlCharactersInvalid,
+            FactDropReasons.StatementInvalid,
+        ]);
+    }
 }

@@ -101,6 +101,41 @@ public sealed class GenerateFactSheetPipelineTests(TestDatabase database) : Inte
     }
 
     [Fact]
+    public async Task Pipeline_RedeliveredAfterSuccess_IsANoOp_NoSecondSheet_NoSecondCharge_NoSecondEvent()
+    {
+        var world = await NewWorldAsync();
+        world.Extractor.EnqueueOk(Facts(("s1", "Người gác bến giữ ngọn đèn dầu bên cổng.", FactConfidence.High)));
+        await world.RunAsync(Ct);
+        var generatedEventsAfterFirst = (await world.OutboxTypesAsync()).Count(type => type == "fact_sheet_generated.v1");
+
+        await world.RunAsync(Ct);
+
+        world.Extractor.Requests.Count.ShouldBe(1, "the paid extraction is not repeated");
+        (await world.FactSheetCountAsync()).ShouldBe(1);
+        world.Ledger.Settled.Count.ShouldBe(1);
+        world.Ledger.Refunds.ShouldBeEmpty();
+        world.Meter.Items.Count.ShouldBe(1);
+        (await world.OutboxTypesAsync()).Count(type => type == "fact_sheet_generated.v1").ShouldBe(generatedEventsAfterFirst);
+    }
+
+    [Fact]
+    public async Task Pipeline_RedeliveredAfterFailure_StaysFailed_WithoutACallOrASecondRefund()
+    {
+        var world = await NewWorldAsync();
+        world.Extractor.EnqueueFundsExhausted();
+        await world.RunAsync(Ct);
+        var callsAfterFirst = world.Extractor.Requests.Count;
+        var refundsAfterFirst = world.Ledger.Refunds.Count;
+
+        await world.RunAsync(Ct);
+
+        (await world.ReadRunAsync()).Status.ShouldBe(GenerationRunStatus.Failed);
+        world.Extractor.Requests.Count.ShouldBe(callsAfterFirst);
+        world.Ledger.Refunds.Count.ShouldBe(refundsAfterFirst);
+        (await world.FactSheetCountAsync()).ShouldBe(0);
+    }
+
+    [Fact]
     public async Task GenerateFactSheetJob_InvalidOutputAfterRetry_FailsRun_FactSheetInvalidOutput_AndRefunds()
     {
         var world = await NewWorldAsync();
@@ -351,16 +386,23 @@ public sealed class GenerateFactSheetPipelineTests(TestDatabase database) : Inte
     }
 
     [Fact]
-    public async Task Pipeline_NulInSourceTitle_DoesNotBreakTheRunDetailWrite()
+    public async Task Pipeline_ControlCharacterInSourceTitle_IsStrippedBeforeThePrompt_AndTheRunSucceeds()
     {
-        var world = await NewWorldAsync(sourceTitle: "Nhân chứng\0biên bản");
-
-        world.Extractor.EnqueueOk(Facts(("s2", "Nhân chứng kể lại buổi sáng hôm ấy.", FactConfidence.High)));
+        // Postgres rejects NUL in text at insert, so the title carries U+001F (a C0 control it does store).
+        var world = await NewWorldAsync(urlText: "Bài báo về vụ án năm ấy.", sourceTitle: "Nhân chứng\u001Fbiên bản");
+        world.Extractor.EnqueueOk(new FactsV1(
+        [
+            new FactDraftV1("Nhân chứng kể lại buổi sáng hôm ấy.", ["s2"], FactConfidence.High),
+        ]));
 
         await world.RunAsync(Ct);
 
+        var request = world.Extractor.Requests.Single();
+        request.Sources.Any(source => source.Title.Any(char.IsControl)).ShouldBeFalse("the control character never reaches the prompt");
+        request.Sources.Any(source => source.Title.Contains("Nhân chứng")).ShouldBeTrue("the title text survives");
+
         var run = await world.ReadRunAsync();
-        run.Status.ShouldBe(GenerationRunStatus.Succeeded, "the run detail is C0-stripped, never a failed write");
+        run.Status.ShouldBe(GenerationRunStatus.Succeeded);
         (await world.FactSheetCountAsync()).ShouldBe(1);
     }
 
