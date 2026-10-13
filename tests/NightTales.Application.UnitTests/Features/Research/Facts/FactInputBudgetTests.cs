@@ -160,6 +160,63 @@ public sealed class FactInputBudgetTests
     }
 
     [Fact]
+    public void FactInputBudget_KeepsLateUserNote_WhenOlderUrlsReachMaxSources()
+    {
+        // DEF-1: two older urls must not crowd out the later user note. The note takes a slot first, so the
+        // newest url (Id 2) is the one the ceiling excludes.
+        var candidates = new[] { Url(1, "a", 3), Url(2, "b", 2), Note(3, "my own note", 1) };
+
+        var plan = FactInputBudget.Plan(Language.En, candidates, Limits(maxSources: 2));
+
+        plan.Sources.Count.ShouldBe(2);
+        plan.Sources.Any(source => source.IsUserNote).ShouldBeTrue();
+        plan.Sources.Single(source => source.SourceId == Id(3)).Text.ShouldBe("my own note");
+        plan.ExcludedSourceIds.ShouldBe([Id(2)]);
+    }
+
+    [Fact]
+    public void FactInputBudget_NotesTakeSlotsFirst_ButAliasesFollowCreationOrder()
+    {
+        // The oldest note (Id 2) fills a slot in the first pass and the oldest url (Id 3) in the second, yet the
+        // kept set is re-ordered by creation, so the note is s1 and the url s2 — the newest url (Id 1) is out.
+        var candidates = new[] { Url(1, "u", 1), Note(2, "n", 5), Url(3, "v", 3) };
+
+        var plan = FactInputBudget.Plan(Language.En, candidates, Limits(maxSources: 2));
+
+        plan.Sources.Select(source => (source.Alias, source.SourceId))
+            .ShouldBe([("s1", Id(2)), ("s2", Id(3))]);
+        plan.Sources[0].IsUserNote.ShouldBeTrue();
+        plan.ExcludedSourceIds.ShouldBe([Id(1)]);
+    }
+
+    [Fact]
+    public void FactInputBudget_ExcludesSurplusNotes_OldestWin_AndStillReportsThem()
+    {
+        // Three notes and one older url with MaxSources 2: the two oldest notes take both slots, so the url and
+        // the newest note are excluded and reported.
+        var candidates = new[] { Url(4, "u", 4), Note(1, "n1", 3), Note(2, "n2", 2), Note(3, "n3", 1) };
+
+        var plan = FactInputBudget.Plan(Language.En, candidates, Limits(maxSources: 2));
+
+        plan.Sources.Select(source => source.SourceId).ShouldBe([Id(1), Id(2)]);
+        plan.Sources.ShouldAllBe(source => source.IsUserNote);
+        plan.ExcludedSourceIds.ShouldBe([Id(3), Id(4)], ignoreOrder: true);
+    }
+
+    [Fact]
+    public void FactInputBudget_MaxSourcesOneWithOneUrlAndOneNote_KeepsTheNote()
+    {
+        var candidates = new[] { Url(1, "u", 2), Note(2, "n", 1) };
+
+        var plan = FactInputBudget.Plan(Language.En, candidates, Limits(maxSources: 1));
+
+        plan.Sources.ShouldHaveSingleItem();
+        plan.Sources[0].SourceId.ShouldBe(Id(2));
+        plan.Sources[0].IsUserNote.ShouldBeTrue();
+        plan.ExcludedSourceIds.ShouldBe([Id(1)]);
+    }
+
+    [Fact]
     public void FactInputBudget_EstimatesTokens_FromUtf8Bytes()
     {
         FactInputBudget.EstimateTokens("").ShouldBe(0);

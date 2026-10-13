@@ -69,7 +69,7 @@ public enum FactInputBudgetStatus
 /// dropped, what was truncated and the estimated input size.
 /// </summary>
 /// <param name="Sources">The sources, alias-assigned <c>s1…sN</c>, in creation order; never empty.</param>
-/// <param name="ExcludedSourceIds">The ids of the sources the plan dropped, whether for empty text or for the <c>MaxSources</c> ceiling; reported, not an error.</param>
+/// <param name="ExcludedSourceIds">The ids of the sources the plan dropped, whether for empty text, for the <c>MaxSources</c> ceiling or as a surplus of user notes; reported, not an error.</param>
 /// <param name="TruncatedAliases">The aliases whose text was cut; the <c>input_truncated</c> signal of README CR-4 for 02.5.3-T2 and the UI.</param>
 /// <param name="EstimatedTokens">The estimated token count of the serialised data object of <paramref name="Sources"/>.</param>
 /// <param name="Status">Whether the estimate fits <c>Facts:MaxInputTokens</c>.</param>
@@ -102,9 +102,19 @@ public sealed record FactInputPlan(
 /// <para>
 /// Truncation keeps the head 60 % and the tail 40 % of a cut source around a
 /// <c>\n[…truncated…]\n</c> marker, cut on text elements so a surrogate pair or a combining sequence is
-/// never split. A <c>user_note</c> source is never truncated and always included; when only such sources (or
-/// floor-truncated ones) are left and the budget still does not fit, the plan is returned with
+/// never split. A <c>user_note</c> source is never truncated. When only such sources (or floor-truncated
+/// ones) are left and the budget still does not fit, the plan is returned with
 /// <see cref="FactInputBudgetStatus.OverBudget"/> rather than silently exceeding the cap.
+/// </para>
+/// <para>
+/// The <c>MaxSources</c> ceiling is filled in two passes, so a late user note is never pushed out by a url
+/// that merely came first: the eligible <c>user_note</c> sources take slots first, ordered
+/// <c>created_at</c> ascending then id, at most <c>MaxSources</c> of them — a surplus of notes above
+/// <c>MaxSources</c> is excluded and reported, oldest notes winning. The remaining slots then go to the
+/// eligible url sources, <c>created_at</c> ascending then id, so the newest urls are the ones the ceiling
+/// excludes. The kept set is then re-ordered by <c>created_at</c> ascending then id and assigned the aliases
+/// <c>s1…sN</c> in that creation order. Every source left out — empty text, the ceiling, or a surplus of
+/// notes — is listed in <see cref="FactInputPlan.ExcludedSourceIds"/>.
 /// </para>
 /// </remarks>
 public static class FactInputBudget
@@ -142,28 +152,59 @@ public static class FactInputBudget
             throw new ArgumentOutOfRangeException(nameof(candidates), candidates, "A fact-extraction call needs at least one source.");
         }
 
-        var excluded = new List<Guid>();
-        var kept = new List<FactSourceCandidate>(Math.Min(candidates.Count, limits.MaxSources));
-        foreach (var candidate in candidates.OrderBy(item => item.CreatedAt).ThenBy(item => item.SourceId))
+        // Creation order is the one order the whole method reads: the two-pass slot selection, the alias
+        // assignment and the exclusion report all walk it ascending, tie-broken by id.
+        var ordered = candidates.OrderBy(item => item.CreatedAt).ThenBy(item => item.SourceId).ToList();
+
+        // A user_note is never truncated and never left out while a url holds a slot (F18, task Design), so the
+        // MaxSources ceiling is filled in two passes. Pass one: the eligible notes take slots first, oldest
+        // first, up to MaxSources; a surplus of notes above MaxSources is reported and the oldest notes win.
+        // Pass two: the remaining slots go to the eligible urls, oldest first, so the NEWEST urls are the ones
+        // the ceiling excludes. A url with no extracted_text, or a user note with no note_text, carries nothing
+        // and takes no slot: it is dropped before alias assignment and reported, never an error. A user note is
+        // never dropped merely for having no extracted_text — it has none by design (README CR-4).
+        var notes = new List<FactSourceCandidate>();
+        var urls = new List<FactSourceCandidate>();
+        foreach (var candidate in ordered)
         {
-            // A url with no extracted_text, or a user note with no note_text, carries nothing: it is dropped
-            // before alias assignment and reported, never an error. A user note is never dropped merely for
-            // having no extracted_text — it has none by design (README CR-4).
             if (string.IsNullOrWhiteSpace(candidate.Text))
             {
-                excluded.Add(candidate.SourceId);
                 continue;
             }
 
-            // More than MaxSources sources is a caller-side selection, never alias s11: the excess is
-            // reported, not an error.
-            if (kept.Count == limits.MaxSources)
+            (candidate.Kind == FactSourceKind.UserNote ? notes : urls).Add(candidate);
+        }
+
+        var keptNoteCount = Math.Min(notes.Count, limits.MaxSources);
+        var keptUrlCount = Math.Min(urls.Count, limits.MaxSources - keptNoteCount);
+
+        var keptIds = new HashSet<Guid>(keptNoteCount + keptUrlCount);
+        for (var i = 0; i < keptNoteCount; i++)
+        {
+            keptIds.Add(notes[i].SourceId);
+        }
+
+        for (var i = 0; i < keptUrlCount; i++)
+        {
+            keptIds.Add(urls[i].SourceId);
+        }
+
+        // Aliases follow creation order rather than the order the two passes filled the slots: the kept set is
+        // re-read from the creation-ordered list, so s1…sN stays the order the model sees. A source missing from
+        // it was dropped for empty text or lost the ceiling — both are reported, neither is an error, and the
+        // excess is never alias s11.
+        var kept = new List<FactSourceCandidate>(keptIds.Count);
+        var excluded = new List<Guid>();
+        foreach (var candidate in ordered)
+        {
+            if (keptIds.Contains(candidate.SourceId))
+            {
+                kept.Add(candidate);
+            }
+            else
             {
                 excluded.Add(candidate.SourceId);
-                continue;
             }
-
-            kept.Add(candidate);
         }
 
         if (kept.Count == 0)

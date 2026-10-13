@@ -118,6 +118,13 @@ public sealed class FactsPromptCatalogTests
         {
             prompt.ShouldContain(token);
         }
+
+        // DEF-3: the count rule caps the array and never demands a minimum, and the empty array is
+        // exclusive to sources with no verifiable fact — both stay consistent with minItems 0 in the
+        // schema (FactsV1Schema_AcceptsAnEmptyFactsArray). The old "at least 5" claim is gone.
+        prompt.ShouldContain("at most 40");
+        prompt.ShouldContain("no verifiable fact");
+        prompt.ShouldNotContain("at least 5");
     }
 
     // ---- the schema document's strict contract ----
