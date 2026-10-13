@@ -14,7 +14,7 @@ public sealed class StoryGenerationMetrics : IDisposable
     /// <summary>Seconds spent in one stage, by tier and stage.</summary>
     public const string DurationHistogramName = "story_generation_duration_seconds";
 
-    /// <summary>Writer or review outputs that were invalid.</summary>
+    /// <summary>Writer, review or revision outputs that were invalid.</summary>
     public const string InvalidOutputCounterName = "story_invalid_output_total";
 
     /// <summary>Runs that left a running or queued state, by kind, status and trigger.</summary>
@@ -45,7 +45,7 @@ public sealed class StoryGenerationMetrics : IDisposable
     public StoryGenerationMetrics()
     {
         _duration = _meter.CreateHistogram<double>(DurationHistogramName, "s", "Time spent in one generation stage.");
-        _invalidOutput = _meter.CreateCounter<long>(InvalidOutputCounterName, "1", "Invalid writer or review outputs.");
+        _invalidOutput = _meter.CreateCounter<long>(InvalidOutputCounterName, "1", "Invalid writer, review or revision outputs.");
         _runs = _meter.CreateCounter<long>(RunsCounterName, "1", "Generation runs that reached a status.");
         _softTimeout = _meter.CreateCounter<long>(SoftTimeoutCounterName, "1", "Runs that passed 80 % of their deadline.");
         _similarityScore = _meter.CreateHistogram<double>(SimilarityScoreHistogramName, "1", "Generation similarity score.");

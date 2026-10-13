@@ -140,6 +140,9 @@ public sealed class OpenAiStoryWriterTests
         public Task<ErrorOr<UsageBound>> ReviewWorstCaseAsync(LengthTier tier, Language language, CancellationToken ct) =>
             WriterWorstCaseAsync(tier, language, ct);
 
+        public Task<ErrorOr<UsageBound>> RevisionWorstCaseAsync(LengthTier tier, Language language, CancellationToken ct) =>
+            WriterWorstCaseAsync(tier, language, ct);
+
         public async Task<ErrorOr<UsageBound>> WriterWorstCaseAsync(LengthTier tier, Language language, CancellationToken ct)
         {
             await source.CancelAsync();
@@ -314,6 +317,9 @@ public sealed class OpenAiStoryWriterTests
 
         public ErrorOr.ErrorOr<AssembledPrompt> Review(StoryReviewRequest req) =>
             new AssembledPrompt("REVIEW-SYSTEM", "{\"data\":2}", "rel=test;review=v1", "review:ghost.vi.v1");
+
+        public ErrorOr.ErrorOr<AssembledPrompt> Revise(StoryRevisionRequest req) =>
+            new AssembledPrompt("REVISE-SYSTEM", "{\"data\":3}", "rel=test;revise=v1", "revision:ghost.vi.v1");
     }
 
     private sealed class RecordingMeter : IUsageMeter
@@ -337,6 +343,9 @@ public sealed class OpenAiStoryWriterTests
             throw new InvalidOperationException("The writer must not depend on the whole-pipeline bound (CR-1).");
 
         public Task<ErrorOr<UsageBound>> ReviewWorstCaseAsync(LengthTier tier, Language language, CancellationToken ct) =>
+            WriterWorstCaseAsync(tier, language, ct);
+
+        public Task<ErrorOr<UsageBound>> RevisionWorstCaseAsync(LengthTier tier, Language language, CancellationToken ct) =>
             WriterWorstCaseAsync(tier, language, ct);
 
         public Task<ErrorOr<UsageBound>> WriterWorstCaseAsync(LengthTier tier, Language language, CancellationToken ct) =>

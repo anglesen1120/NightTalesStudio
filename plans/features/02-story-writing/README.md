@@ -241,7 +241,7 @@ prompts/
   - `prompt_cache_key = "<step>:<preset>"`; exception: the facts step has no preset and uses `"facts:<language>"` (owner decision 2026-10-14, 02.5.3-T1). Other steps whose plans pin their own key (e.g. `bible:propose`, `ideas:generate`, `ideas:novelty`) keep it.
   - client header `X-Client-Request-Id = generation_run_id:step:attempt`
 - The SDK's own retry is **disabled** (`ClientRetryPolicy` with 0 retries ⚠️ confirm option name in 2.14.0).
-- One `Microsoft.Extensions.Http.Resilience` pipeline per call: timeout (writer 90 s, review 45 s, facts 60 s, others 30 s), 2 attempts on 429/5xx/timeout with jittered backoff, honouring `Retry-After`.
+- One `Microsoft.Extensions.Http.Resilience` pipeline per call: timeout (writer 90 s, revision 90 s, review 45 s, facts 60 s, others 30 s), 2 attempts on 429/5xx/timeout with jittered backoff, honouring `Retry-After`.
 - Outcome mapping (returned as `TextCallResult`, never an exception for control flow):
 
 | Response | Result |
@@ -621,7 +621,7 @@ Open items raised in the feature plans' §10. Each is decided here. Feature file
 | T18 | 02.2.2 | Missing `Idempotency-Key` | New D8 code `idempotency_key_required` (400) |
 | T19 | 02.2.2 | Pause reason storage | D2 gains `pause_reason` (check constraint); `error_detail` is not overloaded |
 | T20 | 02.2.2 | Cancel outcome code | D8 gains `story_generation_cancelled`. There is no user cancel route in P ([OPEN] for 10.5.2) |
-| T21 | 02.2.2 | Job timeout below the worst case | [DECISION] `Story:Job:TimeoutSeconds` default **360** (Short/Standard); `Story:Job:TimeoutSecondsLong` **480**; moderation call timeout 15 s |
+| T21 | 02.2.2 | Job timeout below the worst case | [DECISION] `Story:Job:TimeoutSeconds` default **360** (Short/Standard); `Story:Job:TimeoutSecondsLong` **480**; moderation call timeout 15 s. One pass of the paid steps without a revision needs 300 s of that budget. The single revision pass (02.6.2-T1) needs more than the deadline leaves, so the pipeline enters it only while the remaining deadline fits the revise call, review #2 and the save margin (`Story:Job:{RevisionRequestTimeoutSeconds,ReviewRequestTimeoutSeconds,SaveMarginSeconds}`, defaults 90 / 45 / 30 s) and review #2 only while it fits its own call plus the margin; otherwise the revision degrades to `revision_unavailable` and the generated row is kept |
 | T22 | 02.2.2 | 09 §5.1 / §5.3 stale `GenerateStory` example and job row | CR-16 |
 | T23 | 02.1.3 | `gpt-6-sol` is not on the trial allow-list (01 D7) | CR-17: the owner adds `gpt-6-sol` to `nts-trial-story` for the 02.1.3-T1 window only, then removes it; the project hard limit stays $5. 01.2.4-T3 check C7 then uses `gpt-6-astra` as the "not allowed" model |
 | T24 | 02.1.3 | A/B length tier | [DECISION] **`standard`** for all 36 (≈ $1.4 worst case, O3). Pacing and length fit cannot be judged on 1-minute stories |

@@ -10,8 +10,9 @@ namespace NightTales.Application.Features.Stories.Writing;
 /// validate, retry or persist — <c>GenerateStoryJob</c> owns those.
 /// </summary>
 /// <remarks>
-/// <c>ReviewAsync</c> and <c>ReviseAsync</c> (D21 rows 4–5) are added by 02.6.1 / 02.6.2 together with their
-/// request and result types, which do not exist yet.
+/// <c>ReviewAsync</c> (02.6.1-T1) and <c>ReviseAsync</c> (02.6.2-T1) are the D21 rows 4–5. Each method
+/// assembles, calls and meters one step; validation, the single invalid-output retry and persistence stay
+/// with <c>GenerateStoryJob</c>.
 /// </remarks>
 public interface IStoryWriter
 {
@@ -26,4 +27,10 @@ public interface IStoryWriter
     /// <param name="ct">Cancels the call.</param>
     /// <returns>The mapped outcome of the call; its usage has already been recorded. The document is not validated.</returns>
     ValueTask<TextCallResult<StoryReviewV1>> ReviewAsync(StoryReviewRequest req, CancellationToken ct);
+
+    /// <summary>Revises one reviewed draft (02.6.2-T1): one model call that returns a corrected <c>story.v1</c> document.</summary>
+    /// <param name="req">The revision request; its issues are the blocking objective ones, but the assembler drops any other.</param>
+    /// <param name="ct">Cancels the call.</param>
+    /// <returns>The mapped outcome of the call; its usage has already been recorded. The document is not validated and not retried.</returns>
+    ValueTask<TextCallResult<StoryContentV1>> ReviseAsync(StoryRevisionRequest req, CancellationToken ct);
 }

@@ -10,7 +10,6 @@ using NightTales.Domain.Series;
 using NightTales.Domain.Stories.Prompts;
 using NightTales.Domain.Usage;
 using NightTales.Infrastructure.Persistence.Usage;
-using NightTales.Infrastructure.Prompts;
 using NightTales.Infrastructure.UnitTests.Prompts;
 using NightTales.TestKit.Time;
 using Shouldly;
@@ -196,9 +195,11 @@ public sealed class StoryCostEstimatorTests
     [Fact]
     public async Task StoryCostEstimator_StepPromptNotShipped_ReturnsTheTypedError()
     {
-        // The real embedded catalog ships no review/revision step prompt yet: the estimator must fail closed.
-        var prompts = new PromptCatalog(new EmbeddedPromptResourceSource());
-        var sut = Estimator(prompts, out _);
+        // Every step prompt is required: without the revision prompt the whole-pipeline bound fails closed.
+        var tree = PromptsTree.Read();
+        PromptsTree.RemoveManifestEntry(tree, "revise/v1.md");
+        tree.Remove("revise/v1.md");
+        var sut = Estimator(PromptsTree.Load(tree), out _);
 
         var result = await sut.WorstCaseAsync(LengthTier.Short, Language.En, TestContext.Current.CancellationToken);
 
@@ -244,9 +245,12 @@ public sealed class StoryCostEstimatorTests
     [Fact]
     public async Task StoryCostEstimator_ReviewWorstCase_DoesNotNeedTheRevisionPrompt()
     {
-        // The embedded release ships the review prompt but no revision prompt (02.6.2-T1): the review bound must still work
-        // while the whole-pipeline bound keeps failing closed.
-        var sut = Estimator(new PromptCatalog(new EmbeddedPromptResourceSource()), out _);
+        // A tree without the revision prompt: the review bound must still work while the whole-pipeline bound
+        // keeps failing closed on the missing step prompt.
+        var tree = PromptsTree.Read();
+        PromptsTree.RemoveManifestEntry(tree, "revise/v1.md");
+        tree.Remove("revise/v1.md");
+        var sut = Estimator(PromptsTree.Load(tree), out _);
         var ct = TestContext.Current.CancellationToken;
 
         var review = await sut.ReviewWorstCaseAsync(LengthTier.Short, Language.En, ct);
@@ -270,20 +274,124 @@ public sealed class StoryCostEstimatorTests
         result.FirstError.Code.ShouldBe(ErrorCodes.PromptNotShipped);
     }
 
+    // 02.6.2-T1: the revision bound and the Story:Revision gate on the whole-pipeline reserve.
+    [Fact]
+    public async Task StoryCostEstimator_RevisionWorstCase_PricesExactlyOneRevisionCallAtItsCap()
+    {
+        var prompts = new FakePrompts();
+        var sut = Estimator(prompts, out _);
+        var ct = TestContext.Current.CancellationToken;
+
+        foreach (var tier in Enum.GetValues<LengthTier>())
+        {
+            var bound = (await sut.RevisionWorstCaseAsync(tier, Language.En, ct)).Value;
+            var limit = PriceLimits.D4Defaults.Story[tier][Language.En];
+
+            bound.MaxInputTokens.ShouldBe(prompts.RevisionBytes);
+            bound.MaxOutputTokens.ShouldBe(limit.RevisionMaxOutput);
+            bound.WorstCaseUsd.ShouldBe(Cost(prompts.RevisionBytes, limit.RevisionMaxOutput));
+        }
+    }
+
+    [Fact]
+    public async Task StoryCostEstimator_RevisionWorstCase_EmptyCatalog_ReturnsTheTypedError()
+    {
+        var sut = Estimator(new FakePrompts(), out var catalog);
+        catalog.Empty = true;
+
+        var result = await sut.RevisionWorstCaseAsync(LengthTier.Short, Language.En, TestContext.Current.CancellationToken);
+
+        result.IsError.ShouldBeTrue();
+        result.FirstError.Code.ShouldBe(ErrorCodes.PriceCatalogEmpty);
+    }
+
+    [Fact]
+    public async Task StoryCostEstimator_RevisionWorstCase_RevisionPromptNotShipped_ReturnsTheTypedError()
+    {
+        var tree = PromptsTree.Read();
+        PromptsTree.RemoveManifestEntry(tree, "revise/v1.md");
+        tree.Remove("revise/v1.md");
+        var sut = Estimator(PromptsTree.Load(tree), out _);
+
+        var result = await sut.RevisionWorstCaseAsync(LengthTier.Short, Language.En, TestContext.Current.CancellationToken);
+
+        result.IsError.ShouldBeTrue();
+        result.FirstError.Code.ShouldBe(ErrorCodes.PromptNotShipped);
+    }
+
+    [Fact]
+    public async Task StoryCostEstimator_WorstCase_RevisionOn_ReservesTheRevisionAndItsReview2()
+    {
+        var prompts = new FakePrompts();
+        var sut = Estimator(prompts, out _);
+        var limit = PriceLimits.D4Defaults.Story[LengthTier.Short][Language.En];
+
+        var bound = (await sut.WorstCaseAsync(LengthTier.Short, Language.En, TestContext.Current.CancellationToken)).Value;
+
+        bound.WorstCaseUsd.ShouldBe(
+            Cost(prompts.WriterBytes, limit.WriterMaxOutput)
+            + (Cost(prompts.ReviewBytes, limit.ReviewMaxOutput) * 2)
+            + Cost(prompts.RevisionBytes, limit.RevisionMaxOutput));
+    }
+
+    [Theory]
+    [InlineData("false", "1")]
+    [InlineData("true", "0")]
+    public async Task StoryCostEstimator_WorstCase_RevisionOff_ReservesOnlyTheWriterAndOneReview(
+        string enabled, string maxRevisions)
+    {
+        var prompts = new FakePrompts();
+        var sut = Estimator(prompts, out _, RevisionConfig(enabled, maxRevisions));
+        var limit = PriceLimits.D4Defaults.Story[LengthTier.Short][Language.En];
+
+        var bound = (await sut.WorstCaseAsync(LengthTier.Short, Language.En, TestContext.Current.CancellationToken)).Value;
+
+        bound.WorstCaseUsd.ShouldBe(
+            Cost(prompts.WriterBytes, limit.WriterMaxOutput) + Cost(prompts.ReviewBytes, limit.ReviewMaxOutput),
+            "a disabled revision (and its review #2) is never reserved for");
+        bound.MaxInputTokens.ShouldBe(Math.Max(prompts.WriterBytes, prompts.ReviewBytes));
+    }
+
+    [Fact]
+    public async Task StoryCostEstimator_WorstCase_RevisionOff_DoesNotNeedTheRevisionPrompt()
+    {
+        // A reserve that still counted the revision would fail closed without its prompt; with the revision off it
+        // must compute from the writer and review prompts alone.
+        var tree = PromptsTree.Read();
+        PromptsTree.RemoveManifestEntry(tree, "revise/v1.md");
+        tree.Remove("revise/v1.md");
+        var sut = Estimator(PromptsTree.Load(tree), out _, RevisionConfig("false", "1"));
+
+        var result = await sut.WorstCaseAsync(LengthTier.Short, Language.En, TestContext.Current.CancellationToken);
+
+        result.IsError.ShouldBeFalse();
+        result.Value.WorstCaseUsd.ShouldBeGreaterThan(0m);
+    }
+
     // The bound charges a cache write of the whole input on top of the plain input (D14 example C).
     private static decimal Cost(int input, int output, int threshold = TextCostCalculator.DefaultSurchargeThresholdTokens) =>
         TextCostCalculator.Compute(Luna, input, 0, input, output, threshold).ShouldNotBeNull();
 
-    private static StoryCostEstimator Estimator(IPromptCatalog prompts, out FakeCatalog catalog)
+    private static StoryCostEstimator Estimator(
+        IPromptCatalog prompts, out FakeCatalog catalog, IConfiguration? configuration = null)
     {
         catalog = new FakeCatalog();
 
         return new StoryCostEstimator(
             catalog,
             prompts,
-            new ConfigurationBuilder().Build(),
+            configuration ?? new ConfigurationBuilder().Build(),
             new FakeClock());
     }
+
+    private static IConfiguration RevisionConfig(string enabled, string maxRevisions) =>
+        new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Story:Revision:Enabled"] = enabled,
+                ["Story:Revision:MaxRevisions"] = maxRevisions,
+            })
+            .Build();
 
     private sealed class FakeCatalog : IPriceCatalog
     {
