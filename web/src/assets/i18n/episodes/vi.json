@@ -65,9 +65,91 @@
     "paused": "Tạm dừng xử lý. Hãy quay lại sau; không cần thử lại."
   },
   "research": {
+    "title": "Nguồn và dữ kiện",
+    "subtitle": "Nối từng dữ kiện với nguồn trước khi viết kịch bản.",
+    "loading": "Đang tải nguồn và dữ kiện",
+    "backToStory": "Về kịch bản",
+    "sources": {
+      "title": "Nguồn",
+      "kind": "Loại nguồn",
+      "urlLabel": "Liên kết nguồn",
+      "noteLabel": "Ghi chú của bạn",
+      "add": "Thêm nguồn",
+      "urlPlaceholder": "Dán liên kết…",
+      "notePlaceholder": "Ghi chú của bạn…",
+      "addNote": "Thêm ghi chú",
+      "remove": "Xoá",
+      "retry": "Thử lại",
+      "refresh": "Cập nhật trạng thái",
+      "count": "{{used}}/{{max}} nguồn",
+      "cited": "Đang được dùng",
+      "characters": "{{count}} ký tự",
+      "truncated": "Nguồn đã được rút gọn",
+      "empty": "Chưa có nguồn. Thêm liên kết hoặc ghi chú để bắt đầu.",
+      "deleteCitedConfirm": "Nguồn này đang được dẫn trong bảng dữ kiện. Xoá nguồn? Các dữ kiện liên quan sẽ cần nguồn khác.",
+      "capReached": "Đã đạt giới hạn nguồn của tập. Xoá một nguồn trước khi thêm nguồn khác.",
+      "dailyCap": "Đã đạt giới hạn liên kết trong ngày. Bạn vẫn có thể thêm ghi chú.",
+      "noteTooLong": "Ghi chú tối đa 3.000 ký tự.",
+      "showDuplicate": "Đến nguồn đã có"
+    },
+    "status": { "pending": "Đang tải", "fetched": "Đã tải", "failed": "Lỗi", "rejected": "Bị chặn" },
+    "confidence": { "high": "Chắc chắn", "medium": "Vừa", "low": "Cần kiểm chứng" },
+    "facts": {
+      "empty": "Chưa có dữ kiện. Thêm dữ kiện và dẫn ít nhất một nguồn.",
+      "add": "Thêm dữ kiện",
+      "delete": "Xoá dữ kiện",
+      "deleteLabel": "Xoá dữ kiện {{index}}",
+      "statement": "Dữ kiện {{index}}",
+      "sources": "Nguồn được dẫn",
+      "confidence": "Độ chắc chắn",
+      "requiresSource": "Cần ít nhất một nguồn đã tải để thêm dữ kiện.",
+      "dropSource": "Bỏ nguồn khỏi dữ kiện này"
+    },
     "gate": {
+      "open": "Cổng viết truyện đã mở.",
+      "closed": "Cổng viết truyện đang đóng.",
+      "sheetNotApproved": "Bảng dữ kiện chưa được duyệt.",
+      "sourcesInsufficient": "Cần hai nguồn URL khác nhau đã tải, mỗi nguồn được dẫn ở ít nhất một dữ kiện.",
       "writeStoryBlocked": "Cần duyệt bảng dữ kiện với ít nhất 2 nguồn đã tải trước khi viết kịch bản."
     }
+  },
+  "sources": {
+    "error": {
+      "source_url_invalid": "Nhập liên kết HTTP hoặc HTTPS hợp lệ.",
+      "source_domain_not_allowed": "Tên miền này không được phép.",
+      "source_unreachable": "Không thể truy cập nguồn này.",
+      "source_too_large": "Nguồn vượt quá kích thước được hỗ trợ.",
+      "source_blocked_by_robots": "Trang này không cho phép truy cập tự động.",
+      "source_unsupported_type": "Định dạng nguồn này chưa được hỗ trợ.",
+      "source_no_text": "Không tìm thấy văn bản có thể sử dụng trong nguồn.",
+      "unknown": "Không thể tải nguồn này."
+    }
+  },
+  "factSheet": {
+    "title": "Bảng dữ kiện",
+    "empty": "Chưa có bảng dữ kiện — thêm nguồn rồi tạo bảng.",
+    "generate": "Tạo bảng dữ kiện",
+    "generating": "Đang tạo…",
+    "approve": "Duyệt bảng dữ kiện",
+    "approving": "Đang duyệt…",
+    "edit": "Sửa",
+    "save": "Lưu bản nháp",
+    "saving": "Đang lưu…",
+    "saved": "Đã lưu",
+    "unsaved": "Có thay đổi chưa lưu",
+    "approved": "Đã duyệt v{{version}}",
+    "draft": "Bản nháp v{{version}}",
+    "userNoteLabel": "ghi chú của bạn",
+    "overlapWarning": "Dữ kiện này gần như chép nguyên văn nguồn.",
+    "reopenStoryHint": "Sửa bảng dữ kiện sau khi duyệt sẽ cần mở lại kịch bản.",
+    "requiresFetched": "Ít nhất một nguồn phải tải xong trước khi tạo bảng.",
+    "runActive": "Đang có lượt xử lý. Cập nhật để xem trạng thái.",
+    "needsSheet": "Tạo bảng dữ kiện trước.",
+    "noChanges": "Không có thay đổi cần lưu.",
+    "invalidDraft": "Kiểm tra từng dữ kiện và nguồn được dẫn trước khi lưu.",
+    "saveFirst": "Lưu các thay đổi trước khi duyệt.",
+    "waitForRetry": "Chờ hết thời gian đếm ngược để thử lại.",
+    "waitForWrite": "Chờ thao tác hiện tại hoàn tất."
   },
   "annotations": {
     "heading": "Gợi ý cải thiện",
@@ -87,6 +169,7 @@
     "announceNone": "Không có gợi ý"
   },
   "editor": {
+    "research": { "link": "Nghiên cứu" },
     "pageTitle": "Kịch bản tập phim",
     "loading": "Đang tải kịch bản",
     "saveVersion": "Lưu phiên bản",

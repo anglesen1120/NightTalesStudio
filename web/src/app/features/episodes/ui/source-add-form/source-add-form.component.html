@@ -1,0 +1,22 @@
+<div class="source-tabs" role="group" [attr.aria-label]="'episodes.research.sources.kind' | transloco">
+  <button type="button" [attr.aria-pressed]="mode() === 'url'" [disabled]="busy()" (click)="choose('url')">{{ 'episodes.research.sources.urlLabel' | transloco }}</button>
+  <button type="button" [attr.aria-pressed]="mode() === 'note'" [disabled]="busy()" (click)="choose('note')">{{ 'episodes.research.sources.noteLabel' | transloco }}</button>
+</div>
+<form novalidate (submit)="$event.preventDefault(); submit()" class="source-entry">
+  <div class="field">
+    <label [for]="fieldId">{{ (mode() === 'url' ? 'episodes.research.sources.urlLabel' : 'episodes.research.sources.noteLabel') | transloco }}</label>
+    @if (mode() === 'url') {
+      <input #field [id]="fieldId" type="url" autocomplete="off" [formControl]="form.controls.url" [placeholder]="'episodes.research.sources.urlPlaceholder' | transloco" [attr.aria-invalid]="!!(localError() || errorKey())" [attr.aria-describedby]="fieldId + '-error ' + fieldId + '-reason'" (input)="changeEvent($event)">
+    } @else {
+      <textarea #field [id]="fieldId" rows="4" [formControl]="form.controls.noteText" [placeholder]="'episodes.research.sources.notePlaceholder' | transloco" [attr.aria-invalid]="!!(localError() || errorKey())" [attr.aria-describedby]="fieldId + '-counter ' + fieldId + '-error ' + fieldId + '-reason'" (input)="changeEvent($event)"></textarea>
+      <nts-char-counter [id]="fieldId + '-counter'" [value]="value().length" [max]="max" />
+    }
+    <div [id]="fieldId + '-error'" class="field-error" aria-live="polite">
+      @if (localError() || errorKey(); as error) { <p>{{ error | transloco }}</p> }
+      @if (duplicateSourceId(); as id) { <a [href]="'#research-source-' + id">{{ 'episodes.research.sources.showDuplicate' | transloco }}</a> }
+    </div>
+    <p [id]="fieldId + '-reason'" class="hint">@if (disabledReason(); as reason) { {{ reason | transloco }} }</p>
+    @if (retryWait() !== null) { <nts-retry-countdown [seconds]="retryWait() ?? 0" (elapsed)="finishRetry()" /> }
+  </div>
+  <button class="primary" type="submit" [disabled]="busy() || !!disabledReason() || !value().trim() || !!localError() || retryBlocked()" [attr.aria-describedby]="fieldId + '-reason'">{{ (mode() === 'url' ? 'episodes.research.sources.add' : 'episodes.research.sources.addNote') | transloco }}</button>
+</form>

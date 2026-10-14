@@ -26,6 +26,7 @@ import { StoryEditorStore } from '../application/story-editor.store';
 import { ApprovalStore } from '../application/approval.store';
 import { VersionsStore } from '../application/versions.store';
 import { fakeVersionsStore } from '../testing/fake-versions.store';
+import { fakeResearchStore, fakeResearchStoreProviders } from '../testing/fake-research.store';
 import { StoryRepository } from '../domain/story.repository';
 import { FakeStoryRepository, attestation } from '../testing/fake-story.repository';
 import { ApproveDialogComponent } from '../ui/approve-dialog/approve-dialog.component';
@@ -261,6 +262,7 @@ async function createPage(options: { readonly langs?: Record<string, Translation
       { provide: EpisodeDetailStore, useValue: detailStore },
       { provide: StoryEditorStore, useValue: storyStore },
       { provide: VersionsStore, useValue: versions },
+      ...fakeResearchStoreProviders(fakeResearchStore()),
       ApprovalStore,
     ] },
   }).compileComponents();
@@ -295,6 +297,7 @@ describe('StoryReviewPage', () => {
         { provide: StoryEditorStore, useValue: storyStore },
         { provide: VersionsStore, useValue: fakeVersionsStore() },
         { provide: ApprovalStore, useValue: fakeApprovalStore() },
+        ...fakeResearchStoreProviders(fakeResearchStore()),
       ] },
     }).compileComponents();
 
@@ -453,7 +456,7 @@ describe('StoryReviewPage', () => {
       remove: { imports: [VersionsPanelHostComponent] },
       add: { imports: [VersionsPanelProbe] },
     }).overrideComponent(StoryReviewPage, {
-      set: { providers: [{ provide: EpisodeDetailStore, useValue: detailStore }, { provide: StoryEditorStore, useValue: storyStore }, { provide: VersionsStore, useValue: fakeVersionsStore() }, { provide: ApprovalStore, useValue: fakeApprovalStore() }] },
+      set: { providers: [{ provide: EpisodeDetailStore, useValue: detailStore }, { provide: StoryEditorStore, useValue: storyStore }, { provide: VersionsStore, useValue: fakeVersionsStore() }, { provide: ApprovalStore, useValue: fakeApprovalStore() }, ...fakeResearchStoreProviders(fakeResearchStore())] },
     }).compileComponents();
     const fixture = TestBed.createComponent(StoryReviewPage);
     const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
@@ -497,7 +500,7 @@ describe('StoryReviewPage', () => {
     }).overrideComponent(StoryReviewPage, {
       remove: { imports: [VersionsPanelHostComponent] }, add: { imports: [VersionsPanelProbe] },
     }).overrideComponent(StoryReviewPage, {
-      set: { providers: [{ provide: EpisodeDetailStore, useValue: detailStore }, { provide: StoryEditorStore, useValue: storyStore }, { provide: VersionsStore, useValue: fakeVersionsStore() }, { provide: ApprovalStore, useValue: fakeApprovalStore() }] },
+      set: { providers: [{ provide: EpisodeDetailStore, useValue: detailStore }, { provide: StoryEditorStore, useValue: storyStore }, { provide: VersionsStore, useValue: fakeVersionsStore() }, { provide: ApprovalStore, useValue: fakeApprovalStore() }, ...fakeResearchStoreProviders(fakeResearchStore())] },
     }).compileComponents();
     const fixture = TestBed.createComponent(StoryReviewPage);
     vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);

@@ -4,6 +4,8 @@ import { expect, test } from './fixtures/csp.fixture';
 import { episodeDetail, EPISODE_ID, expectNoExtraDetails, NEW_EPISODE_PATH, SERIES_ID, stubEpisodes, watchPrivacy, type EpisodeStubOptions, type EpisodeStubs } from './fixtures/episodes-stubs';
 import { liveRegion } from './fixtures/series-stubs';
 import { editorDetail, expectEditor } from './fixtures/story-editor-stubs';
+import { stubResearch } from './fixtures/research-stubs';
+import episodesVi from '../src/assets/i18n/episodes/vi.json' with {type:'json'};
 
 // 10.5.2-T1: stub-only, same session/locale/axe/CSP footprint as episodes-list.spec.ts.
 // Real compose + mock-mpt proof is owned by 11.5.1-T1; the research URL by 10.5.5-T1.
@@ -144,13 +146,18 @@ test.describe('new episode generation (vi, stubbed)', () => {
 
   test('true crime: read topic once, create once, never generate without research', async ({ page }) => {
     const { stubs, privacy } = await open(page, { topic: 'true_crime' });
+    const research = await stubResearch(page);
     await expect(page.getByText(L.trueCrimeNotice, { exact: true })).toBeVisible();
     await page.getByRole('textbox', { name: L.brief, exact: true }).fill(BRIEF);
     await expectA11yClean(page);
     await page.getByRole('button', { name: L.trueCrimeNext, exact: true }).click();
     await expect.poll(() => stubs.entries('create').length).toBe(1);
-    await page.waitForTimeout(650);
-    expect(stubs.entries('series')).toHaveLength(1);
+    await expect(page.getByRole('heading', { name: episodesVi.research.title, exact: true })).toBeVisible();
+    await expect.poll(() => stubs.entries('series').length).toBe(2);
+    const creation = stubs.entries('create')[0]!;
+    expect(stubs.entries('series').filter(request => request.order < creation.order)).toHaveLength(1);
+    expect(stubs.entries('series').filter(request => request.order > creation.order)).toHaveLength(1);
+    expect(research.requests.filter(request => new URL(request.url()).pathname === `/api/v1/episodes/${EPISODE_ID}`)).toHaveLength(1);
     expect(stubs.entries('create')[0]!.idempotencyKey).toBeNull();
     expect(stubs.entries('generate')).toHaveLength(0);
     expect(stubs.entries('detail')).toHaveLength(0);
@@ -187,11 +194,12 @@ test.describe('new episode generation (vi, stubbed)', () => {
   });
 
   test('true crime hands off to the research URL', async ({ page }) => {
-    test.fixme(true, '10.5.5-T1 owns the unmatched /episodes/:id/research route; active test above proves create-only branching.');
     await open(page, { topic: 'true_crime' });
+    await stubResearch(page);
     await page.getByRole('textbox', { name: L.brief, exact: true }).fill(BRIEF);
     await page.getByRole('button', { name: L.trueCrimeNext, exact: true }).click();
     await expect(page).toHaveURL(new RegExp(`/episodes/${EPISODE_ID}/research$`));
+    await expect(page.getByRole('heading', { name: episodesVi.research.title, exact: true })).toBeVisible();
     await expectA11yClean(page);
   });
 });

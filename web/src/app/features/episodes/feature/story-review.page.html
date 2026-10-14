@@ -19,11 +19,19 @@
       <nts-empty-state
         titleKey="episodes.editor.emptyTitle"
         bodyKey="episodes.editor.emptyBody"
-        [actionLabelKey]="store.canGenerate() ? actionKey('generate_story') : undefined"
+        [actionLabelKey]="store.canGenerate() && !storyGateBlocked() ? actionKey('generate_story') : undefined"
         (action)="store.generateStory()"
       />
+      @if (storyGateBlocked()) {
+        <div class="story-review-page__gate" role="status">
+          <p class="story-review-page__gate-copy">{{ 'episodes.research.gate.writeStoryBlocked' | transloco }}</p>
+          <p class="story-review-page__gate-reason">{{ gateHintKey() | transloco }}</p>
+          <a class="story-review-page__gate-link" [routerLink]="['/episodes', detail.id, 'research']">{{ 'episodes.editor.research.link' | transloco }}</a>
+        </div>
+      }
     } @else {
       <nts-page-header [title]="store.title()" backHref="/episodes">
+        <a actions class="story-review-page__research-link" [routerLink]="['/episodes', detail.id, 'research']">{{ 'episodes.editor.research.link' | transloco }}</a>
         <nts-status-chip actions [statusKey]="detail.status" [appearance]="store.readOnly() ? 'success' : 'neutral'" />
         <button #versionsToggle actions type="button" class="story-review-page__versions-toggle" [attr.aria-expanded]="versionsOpen()" (click)="toggleVersions()">
           {{ 'episodes.versions.open' | transloco }}@if (versionCount(); as count) { ({{ count }})}

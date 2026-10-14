@@ -11,7 +11,12 @@
       }
     }
     @if (blocked() && blocked()?.code !== 'story_attestation_required') {
-      <div class="approval-blocked" role="alert"><p>{{ blockedKey() | transloco }}</p></div>
+      <div class="approval-blocked" role="alert">
+        <p>{{ blockedKey() | transloco }}</p>
+        @if (researchHref(); as href) {
+          <a class="approval-blocked__research" [routerLink]="href">{{ 'episodes.approve.blocked.researchLink' | transloco }}</a>
+        }
+      </div>
     }
     @if (retryAfterSec(); as seconds) {
       <nts-retry-countdown [seconds]="seconds" messageKey="episodes.approve.retry" />

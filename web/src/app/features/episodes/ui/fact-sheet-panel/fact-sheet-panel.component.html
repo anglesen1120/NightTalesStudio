@@ -1,0 +1,43 @@
+<section class="fact-panel" aria-labelledby="research-sheet-heading">
+  <header class="panel-header">
+    <div><h2 id="research-sheet-heading">{{ 'episodes.factSheet.title' | transloco }}</h2>
+      @if (sheet(); as current) { <p>{{ (approved() ? 'episodes.factSheet.approved' : 'episodes.factSheet.draft') | transloco: {version: current.version} }}</p> }
+    </div>
+    <div class="panel-actions">
+      @if (approved()) { <button class="primary" type="button" [disabled]="busy() || retryBlocked()" [attr.aria-describedby]="retryBlocked() ? 'research-retry-reason' : null" (click)="edit.emit()">{{ 'episodes.factSheet.edit' | transloco }}</button> }
+      @else {
+        <button type="button" [disabled]="!canSave() || busy() || retryBlocked()" aria-describedby="research-save-reason" (click)="save.emit()">{{ (saving() ? 'episodes.factSheet.saving' : 'episodes.factSheet.save') | transloco }}</button>
+        <button class="primary" type="button" [disabled]="!canApprove() || busy() || retryBlocked()" aria-describedby="research-approve-reason" (click)="approve.emit()">{{ (approving() ? 'episodes.factSheet.approving' : 'episodes.factSheet.approve') | transloco }}</button>
+      }
+    </div>
+  </header>
+  @if (errorKey(); as error) { <p class="error" role="alert">{{ error | transloco }}</p> }
+  @if (retryBlocked()) { <p id="research-retry-reason" role="status">{{ 'episodes.factSheet.waitForRetry' | transloco }}</p> }
+  @if (!approved()) {
+    <div class="disabled-reasons">
+      <p id="research-save-reason">@if (!canSave() || busy() || retryBlocked()) { {{ saveReason() | transloco }} }</p>
+      <p id="research-approve-reason">@if (!canApprove() || busy() || retryBlocked()) { {{ approveReason() | transloco }} }</p>
+    </div>
+  }
+  @if (buildingSheet()) { <nts-loading-state labelKey="episodes.factSheet.generating" /> }
+  @if (!sheet() && !buildingSheet()) { <nts-empty-state titleKey="episodes.factSheet.empty" /> }
+  @if (sheet()) {
+    @defer (on idle) {
+      <div class="fact-ledger">
+        @for (fact of facts(); track fact.clientKey; let i = $index) {
+          <nts-fact-row [fact]="fact" [index]="i + 1" [sources]="sources()" [readonly]="approved()" [busy]="busy()" [invalid]="invalidFactIndexes().includes(i)" [fieldError]="fieldError()" (patch)="patchFact.emit({id: identity(fact), patch: $event})" (deleteFact)="deleteFact.emit(identity(fact))" (dropSource)="dropSource.emit({id: identity(fact), sourceId: $event})" />
+        } @empty { <nts-empty-state titleKey="episodes.research.facts.empty" /> }
+      </div>
+    } @placeholder { <div class="fact-placeholder"><nts-loading-state labelKey="episodes.research.loading" /></div> }
+    @if (!approved()) {
+      <button type="button" [disabled]="!fetchedSource() || busy()" aria-describedby="research-add-fact-reason" (click)="add()">{{ 'episodes.research.facts.add' | transloco }}</button>
+      <p id="research-add-fact-reason">@if (!fetchedSource()) { {{ 'episodes.research.facts.requiresSource' | transloco }} }</p>
+    }
+    <p role="status">{{ (dirty() ? 'episodes.factSheet.unsaved' : 'episodes.factSheet.saved') | transloco }}</p>
+    @if (running() && sheet()?.status === 'draft') { <p class="hint">{{ 'episodes.factSheet.reopenStoryHint' | transloco }}</p> }
+  }
+  @if (!approved() || dirty()) {
+    <button type="button" [disabled]="!canGenerate() || generating() || running() || busy() || retryBlocked()" aria-describedby="research-generate-reason" (click)="generate.emit()">{{ (generating() || buildingSheet() ? 'episodes.factSheet.generating' : 'episodes.factSheet.generate') | transloco }}</button>
+    <p id="research-generate-reason">@if (!canGenerate() || busy() || retryBlocked()) { {{ (retryBlocked() ? 'episodes.factSheet.waitForRetry' : busy() ? 'episodes.factSheet.waitForWrite' : running() ? 'episodes.factSheet.runActive' : 'episodes.factSheet.requiresFetched') | transloco }} }</p>
+  }
+</section>

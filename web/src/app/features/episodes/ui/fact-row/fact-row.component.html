@@ -1,0 +1,50 @@
+<article class="fact-row" [class.fact-row--invalid]="invalid()">
+  <div class="statement">
+    @if (readonly()) { <p>{{ fact().statement }}</p> }
+    @else {
+      <label [for]="fieldId">{{ 'episodes.research.facts.statement' | transloco: {index: index()} }}</label>
+      <textarea [id]="fieldId" rows="3" [formControl]="form.controls.statement" [attr.aria-invalid]="invalid() || !fact().statement.trim() || fact().statement.length > max" [attr.aria-describedby]="fieldId + '-counter ' + fieldId + '-error'" (input)="changeStatement($event)"></textarea>
+      <nts-char-counter [id]="fieldId + '-counter'" [value]="fact().statement.length" [max]="max" />
+    }
+    <div [id]="fieldId + '-error'" aria-live="polite" class="error">
+      @if (invalid()) { <p>{{ 'errors.fact_sheet_invalid_content' | transloco }}</p> }
+      @if (!readonly() && fact().sourceIds.length === 0) { <p>{{ 'episodes.research.facts.requiresSource' | transloco }}</p> }
+    </div>
+  </div>
+  <div class="fact-meta">
+    <div class="source-chips">
+      @for (ref of refs(); track ref.sourceId) {
+        <span class="source-chip" [class.source-chip--missing]="ref.missing" [matTooltip]="ref.url ?? ''">
+          <span>{{ ref.alias }}</span>
+          @if (ref.isUserNote) { <span>{{ 'episodes.factSheet.userNoteLabel' | transloco }}</span> }
+          @else if (isSafeUrl(ref.url)) { <a [href]="ref.url" target="_blank" rel="noopener noreferrer">{{ ref.title }}</a> }
+          @else { <span>{{ ref.title }}</span> }
+          @if (!readonly()) { <button type="button" [disabled]="busy()" [attr.aria-label]="('episodes.research.facts.dropSource' | transloco) + ': ' + ref.alias" (click)="dropSource.emit(ref.sourceId)">×</button> }
+        </span>
+      }
+      @if (!readonly()) {
+        <mat-form-field appearance="outline">
+          <mat-label>{{ 'episodes.research.facts.sources' | transloco }}</mat-label>
+          <mat-select multiple [formControl]="form.controls.sourceIds" (selectionChange)="changeSources($event.value)">
+          @for (source of selectableSources(); track source.id) {
+            <mat-option [value]="source.id">@if (source.kind === 'user_note') { {{ 'episodes.factSheet.userNoteLabel' | transloco }} } @else { {{ source.title || source.registrableDomain }} }</mat-option>
+          }
+        </mat-select>
+        </mat-form-field>
+      }
+    </div>
+    <div class="confidence">
+      @if (!readonly()) {
+        <mat-form-field appearance="outline">
+          <mat-label>{{ 'episodes.research.facts.confidence' | transloco }}</mat-label>
+          <mat-select [formControl]="form.controls.confidence" (selectionChange)="changeConfidence($event.value)">
+          @for (value of ['high', 'medium', 'low']; track value) { <mat-option [value]="value">{{ ('episodes.research.confidence.' + value) | transloco }}</mat-option> }
+        </mat-select>
+        </mat-form-field>
+      }
+      @if (readonly() || fact().confidence === 'low') { <span class="badge" [class.advisory]="fact().confidence === 'low'"><span aria-hidden="true">{{ fact().confidence === 'low' ? '!' : '✓' }}</span>{{ ('episodes.research.confidence.' + fact().confidence) | transloco }}</span> }
+      @if (fact().sourceOverlap !== null) { <span class="badge advisory" [matTooltip]="overlapPercent()"><nts-icon-alert aria-hidden="true" />{{ 'episodes.factSheet.overlapWarning' | transloco }}</span> }
+    </div>
+    @if (!readonly()) { <button class="delete" type="button" [disabled]="busy()" [attr.aria-label]="'episodes.research.facts.deleteLabel' | transloco: {index: index()}" (click)="deleteFact.emit()">{{ 'episodes.research.facts.delete' | transloco }}</button> }
+  </div>
+</article>

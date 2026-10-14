@@ -65,9 +65,91 @@
     "paused": "Processing is paused. Come back later; there is nothing to retry."
   },
   "research": {
+    "title": "Sources and facts",
+    "subtitle": "Connect each claim to its source before writing the story.",
+    "loading": "Loading sources and facts",
+    "backToStory": "Back to story",
+    "sources": {
+      "title": "Sources",
+      "kind": "Source type",
+      "urlLabel": "Source link",
+      "noteLabel": "Your note",
+      "add": "Add source",
+      "urlPlaceholder": "Paste a link…",
+      "notePlaceholder": "Your note…",
+      "addNote": "Add note",
+      "remove": "Remove",
+      "retry": "Retry",
+      "refresh": "Refresh status",
+      "count": "{{used}}/{{max}} sources",
+      "cited": "Cited",
+      "characters": "{{count}} characters",
+      "truncated": "Source shortened",
+      "empty": "No sources yet. Add a link or your note to begin.",
+      "deleteCitedConfirm": "This source is cited in the fact sheet. Remove it? The affected facts will need another source.",
+      "capReached": "The episode source limit has been reached. Remove a source before adding another.",
+      "dailyCap": "The daily link limit has been reached. Notes are still available.",
+      "noteTooLong": "Your note is limited to 3,000 characters.",
+      "showDuplicate": "Go to the existing source"
+    },
+    "status": { "pending": "Pending", "fetched": "Fetched", "failed": "Failed", "rejected": "Blocked" },
+    "confidence": { "high": "High", "medium": "Medium", "low": "Needs checking" },
+    "facts": {
+      "empty": "No facts yet. Add a fact and cite at least one source.",
+      "add": "Add fact",
+      "delete": "Delete fact",
+      "deleteLabel": "Delete fact {{index}}",
+      "statement": "Fact {{index}}",
+      "sources": "Cited sources",
+      "confidence": "Confidence",
+      "requiresSource": "At least one fetched source is required to add a fact.",
+      "dropSource": "Remove source from this fact"
+    },
     "gate": {
+      "open": "The story gate is open.",
+      "closed": "The story gate is closed.",
+      "sheetNotApproved": "The fact sheet has not been approved.",
+      "sourcesInsufficient": "Two distinct fetched URL sources must each be cited by at least one fact.",
       "writeStoryBlocked": "Approve the fact sheet with at least 2 fetched sources before writing the story."
     }
+  },
+  "sources": {
+    "error": {
+      "source_url_invalid": "Enter a valid HTTP or HTTPS link.",
+      "source_domain_not_allowed": "This domain is not allowed.",
+      "source_unreachable": "The source could not be reached.",
+      "source_too_large": "The source exceeds the supported size.",
+      "source_blocked_by_robots": "This site does not allow automated access.",
+      "source_unsupported_type": "This source format is not supported.",
+      "source_no_text": "No usable text was found in this source.",
+      "unknown": "This source could not be fetched."
+    }
+  },
+  "factSheet": {
+    "title": "Fact sheet",
+    "empty": "No fact sheet yet — add sources, then build the sheet.",
+    "generate": "Build fact sheet",
+    "generating": "Building…",
+    "approve": "Approve fact sheet",
+    "approving": "Approving…",
+    "edit": "Edit",
+    "save": "Save draft",
+    "saving": "Saving…",
+    "saved": "Saved",
+    "unsaved": "Unsaved changes",
+    "approved": "Approved v{{version}}",
+    "draft": "Draft v{{version}}",
+    "userNoteLabel": "your note",
+    "overlapWarning": "This fact is nearly verbatim from the source.",
+    "reopenStoryHint": "Editing the sheet after approval needs reopening the script.",
+    "requiresFetched": "At least one source must finish loading before you build the sheet.",
+    "runActive": "A run is active. Refresh to update its status.",
+    "needsSheet": "Build the fact sheet first.",
+    "noChanges": "There are no changes to save.",
+    "invalidDraft": "Check each fact and its cited sources before saving.",
+    "saveFirst": "Save your changes before approving.",
+    "waitForRetry": "Wait for the retry countdown to finish.",
+    "waitForWrite": "Wait for the current action to finish."
   },
   "annotations": {
     "heading": "Suggestions",
@@ -87,6 +169,7 @@
     "announceNone": "No suggestions"
   },
   "editor": {
+    "research": { "link": "Research" },
     "pageTitle": "Episode story",
     "loading": "Loading story",
     "saveVersion": "Save version",

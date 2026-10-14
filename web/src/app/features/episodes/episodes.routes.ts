@@ -3,11 +3,14 @@ import { provideTranslocoScope } from '@jsverse/transloco';
 import { EpisodesHttpRepository } from './data-access/episodes-http.repository';
 import { StoryHttpRepository } from './data-access/story-http.repository';
 import { HttpStoryVersionRepository } from './data-access/http-story-version.repository';
+import { HttpResearchRepository } from './data-access/http-research.repository';
 import { SeriesOptionsHttpRepository } from './data-access/series-options-http.repository';
 import { dirtyStoryGuard } from './guards/dirty-story.guard';
+import { dirtyResearchGuard } from './guards/dirty-research.guard';
 import { EpisodesRepository } from './domain/episodes.repository';
 import { StoryRepository } from './domain/story.repository';
 import { StoryVersionRepository } from './domain/story-version.repository';
+import { ResearchRepository } from './domain/research.repository';
 import { SeriesOptionsRepository } from './domain/series-options.repository';
 
 // The repository bindings and the `episodes` scope live on the route (lazy chunk). The page-scoped EpisodeListStore is
@@ -24,6 +27,19 @@ export const episodesRoutes: Routes = [
     ],
   },
   {
+    // A complete sibling path; Angular backtracks when `:id` cannot consume the remaining segment.
+    path: ':id/research',
+    loadComponent: () => import('./feature/research-page/research-page.component').then((module) => module.ResearchPageComponent),
+    canDeactivate: [dirtyResearchGuard],
+    providers: [
+      { provide: EpisodesRepository, useClass: EpisodesHttpRepository },
+      { provide: SeriesOptionsRepository, useClass: SeriesOptionsHttpRepository },
+      { provide: ResearchRepository, useClass: HttpResearchRepository },
+      provideTranslocoScope('episodes'),
+      provideTranslocoScope('story'),
+    ],
+  },
+  {
     path: ':id',
     loadComponent: () => import('./feature/story-review.page').then((module) => module.StoryReviewPage),
     canDeactivate: [dirtyStoryGuard],
@@ -31,6 +47,8 @@ export const episodesRoutes: Routes = [
       { provide: EpisodesRepository, useClass: EpisodesHttpRepository },
       { provide: StoryRepository, useClass: StoryHttpRepository },
       { provide: StoryVersionRepository, useClass: HttpStoryVersionRepository },
+      { provide: SeriesOptionsRepository, useClass: SeriesOptionsHttpRepository },
+      { provide: ResearchRepository, useClass: HttpResearchRepository },
       provideTranslocoScope('episodes'),
       provideTranslocoScope('story'),
     ],
