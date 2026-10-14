@@ -93,6 +93,7 @@
     "saving": "Đang lưu…",
     "saved": "Đã lưu",
     "unsaved": "Có thay đổi chưa lưu",
+    "approvalSaveHint": "Lưu các thay đổi và chờ lưu xong trước khi duyệt.",
     "moveUp": "Lên",
     "moveDown": "Xuống",
     "moveHandle": "Kéo để di chuyển",
@@ -139,7 +140,7 @@
     "action": {
       "generate_story": "Viết kịch bản",
       "approve_story": "Duyệt kịch bản",
-      "reopen_story": "Duyệt lại",
+      "reopen_story": "Mở lại để sửa",
       "render": "Làm video",
       "retry_render": "Dựng lại video",
       "cancel": "Huỷ",
@@ -220,5 +221,27 @@
     "elsewhereBody": "Ở tab khác hoặc người khác vừa lưu phiên bản mới. Bản nháp của bạn vẫn được giữ nguyên.",
     "dismiss": "Bỏ qua",
     "reloadFailed": "Không tải được bản mới nhất. Nội dung bạn đang viết vẫn được giữ nguyên. Chọn Tải bản mới nhất để thử lại."
+  },
+  "approve": {
+    "title": "Duyệt kịch bản này?",
+    "body": "Duyệt phiên bản đã lưu hiện tại để dùng cho bước làm video.",
+    "note": "Muốn chỉnh sửa sau khi duyệt, bạn cần mở lại kịch bản trước.",
+    "hint": "Còn {{count}} gợi ý chất lượng. Đây là gợi ý tham khảo, không ngăn bạn duyệt kịch bản.",
+    "confirm": "Duyệt kịch bản",
+    "done": "Đã duyệt kịch bản",
+    "attestation": {
+      "accept": "Tôi đã đọc và xác nhận nội dung trên.",
+      "legend": "Nội dung bạn xác nhận"
+    },
+    "blocked": {
+      "researchLink": "Mở phần nghiên cứu"
+    },
+    "retry": "Bạn có thể thử lại sau {{seconds}} giây."
+  },
+  "reopen": {
+    "title": "Mở lại kịch bản?",
+    "body": "Kịch bản quay về bước duyệt để bạn có thể chỉnh sửa. Các phiên bản đã lưu vẫn được giữ trong lịch sử.",
+    "confirm": "Mở lại để sửa",
+    "done": "Đã mở lại kịch bản để chỉnh sửa"
   }
 }

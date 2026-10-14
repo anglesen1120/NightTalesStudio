@@ -3,6 +3,7 @@
 
 export { EpisodeEndpointsClient } from './services/episode-endpoints-client';
 export { StoryEndpointsClient } from './services/story-endpoints-client';
+export { FactSheetEndpointsClient } from './services/fact-sheet-endpoints-client';
 export { CatalogEndpointsClient } from './services/catalog-endpoints-client';
 export { EpisodeVideoEndpointsClient } from './services/episode-video-endpoints-client';
 export { AuthEndpointsClient } from './services/auth-endpoints-client';

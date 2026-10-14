@@ -71,6 +71,11 @@
     </p>
     <button type="button" class="versions__restore" [disabled]="!canRestore() || restoring()" [attr.aria-busy]="restoring()" (click)="restore.emit()">{{ (restoring() ? 'episodes.versions.restoring' : 'episodes.versions.restore') | transloco }}</button>
   }
-  @if (needsReopen()) {<p class="versions__alert" role="alert">{{ 'episodes.versions.needsReopen' | transloco }}</p>}
+  @if (needsReopen()) {
+    <div class="versions__needs-reopen">
+      <p class="versions__alert" role="alert">{{ 'episodes.versions.needsReopen' | transloco }}</p>
+      <button type="button" class="versions__reopen" [disabled]="restoring()" (click)="reopenRequested.emit()">{{ 'episodes.editor.action.reopen_story' | transloco }}</button>
+    </div>
+  }
   @if (restoreError(); as failure) {<nts-form-error-alert [error]="failure" />}
 </section>

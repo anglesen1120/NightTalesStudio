@@ -103,7 +103,7 @@ for (const lang of ['vi', 'en'] as const) {
     test('generated story text remains private while an unknown outcome recovers to live progress', async ({ page }) => {
       const secret = 'QA generated story body must never reach console, storage or URL';
       const currentStory = {
-        approvedStoryVersionId: null, auditReport: null, body: secret, content: null, etag: '"story-qa"',
+        approvedStoryVersionId: null, auditReport: null, attestation: null, body: secret, content: null, etag: '"story-qa"',
         factSheetId: null, keywords: [], qualityHints: [], review: null, similarityScore: null,
         source: 'generated', status: 'story_generating' as const, version: 1,
         versionId: '55555555-5555-4555-8555-555555555555', wordCount: 12,
