@@ -13,6 +13,7 @@ using NightTales.Domain.Rendering.Music;
 using NightTales.Domain.Research;
 using NightTales.Domain.Series;
 using NightTales.Domain.Series.Autopilot;
+using NightTales.Domain.Series.Bible;
 using NightTales.Domain.Stories;
 using NightTales.Domain.Stories.Generation;
 using NightTales.Domain.Usage;
@@ -91,6 +92,13 @@ public interface IAppDbContext
     DbSet<MusicTrack> MusicTracks { get; }
 
     /// <summary>
+    /// The one bible row of a series (02.6.3-T1, <c>series_bibles</c>): created with its series by
+    /// <c>CreateSeriesHandler</c>, replaced in place by <c>PUT /api/v1/series/{id}/bible</c>.
+    /// <c>IUserOwned</c>, so the D10 tenant filter applies.
+    /// </summary>
+    DbSet<SeriesBible> SeriesBibles { get; }
+
+    /// <summary>
     /// Takes the row lock of the current user's episode (<c>SELECT … FOR NO KEY UPDATE</c>, 02.2.2 plan §4 U6) as the
     /// first statement of a command's transaction, so the status read, the daily count and the run insert of two
     /// concurrent generate calls serialise on the episode. The lock is held until the surrounding transaction
@@ -114,6 +122,19 @@ public interface IAppDbContext
     /// <param name="seriesId">The series to lock.</param>
     /// <param name="cancellationToken">Cancels the statement.</param>
     Task LockSeriesForShareAsync(Guid seriesId, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Takes the row lock of the current user's series bible (<c>SELECT … FOR NO KEY UPDATE</c>, 02.6.3-T1,
+    /// plan §4 U2) as the first statement of a bible save, so two saves that read the same
+    /// <c>version</c> serialise: the second one reads the first one's version, its <c>If-Match</c> no
+    /// longer names it and it answers 412 instead of writing a lost update. Like
+    /// <see cref="LockEpisodeForUpdateAsync"/> it matches only rows owned by the scope's user, so another
+    /// user's series, an unknown id and an anonymous scope lock nothing; the tenant-filtered load that
+    /// follows is what answers 404.
+    /// </summary>
+    /// <param name="seriesId">The series whose bible row is locked.</param>
+    /// <param name="cancellationToken">Cancels the statement.</param>
+    Task LockSeriesBibleForUpdateAsync(Guid seriesId, CancellationToken cancellationToken);
 
     /// <summary>
     /// Takes the transaction-scoped advisory lock that serialises the 24 h url-source cap of one user across <em>all</em>

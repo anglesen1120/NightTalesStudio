@@ -18,8 +18,9 @@ namespace NightTales.Api.IntegrationTests.Migrations;
 /// status CHECK and the partial unique index behind "at most one approved sheet per episode", the three
 /// deferred 02 CR-29 fact-sheet foreign keys plus the sheet's own run key — all four composite
 /// <c>(column, user_id)</c> with the column-list <c>ON DELETE SET NULL</c> that keeps <c>user_id</c> — and
-/// PF-1's covering index for the newest run of an episode. This class owns the last-migration check
-/// (<c>migrations[^1]</c>) and finds its own migration by name everywhere else.
+/// PF-1's covering index for the newest run of an episode. 02.6.3-T1 appended a migration after this one, so
+/// this class no longer owns the last-migration check (<c>AddSeriesBibleMigrationTests</c> does) and finds its
+/// own migration by name everywhere.
 /// </summary>
 [Trait("Category", "Integration")]
 [Trait("Category", "Migration")]
@@ -69,11 +70,13 @@ public sealed class AddFactSheetsMigrationTests(TestDatabase database) : Integra
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
     [Fact]
-    public async Task Migration_IsTheLastOne_AndModelHasNoPendingChange()
+    public async Task Migration_IsPresent_AndModelHasNoPendingChange()
     {
         await using var context = Database.CreateAppDbContext();
         var migrations = context.Database.GetMigrations().Order(StringComparer.Ordinal).ToList();
-        migrations[^1].ShouldEndWith("_" + MigrationName);
+        // 02.6.3-T1 appended a migration after this one, so this class no longer owns the last-migration
+        // check (the newest migration's own test does); it still proves its own migration is compiled in.
+        migrations.ShouldContain(name => name.EndsWith("_" + MigrationName, StringComparison.Ordinal));
 
         context.Database.HasPendingModelChanges().ShouldBeFalse(
             "an entity change without a migration must fail here (run `dotnet ef migrations add`)");

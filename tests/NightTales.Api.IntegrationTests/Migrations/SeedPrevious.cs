@@ -294,6 +294,22 @@ internal static class SeedPrevious
                     '01920000-0000-7000-8000-00000000000f', 'facts.v1',
                     '01920000-0000-7000-8000-000000000001', now(), now())
             """),
+        (
+            // 02.6.3-T1: the table the `_02_AddSeriesBible` migration creates. Same rule as above: skipped while
+            // that migration is the last one, then every later migration is exercised over the bible of the seed
+            // series, its row as the create path writes it — version 1 and the canonical empty `bible.v1`
+            // document the backfill of that migration writes too.
+            "series_bibles",
+            """
+            INSERT INTO series_bibles (id, user_id, series_id, version, content, created_at, updated_at)
+            VALUES ('01920000-0000-7000-8000-000000000016', '01920000-0000-7000-8000-000000000001',
+                    '01920000-0000-7000-8000-000000000002', 1,
+                    jsonb_build_object('schema_version','bible.v1','narrator',
+                      jsonb_build_object('name', NULL, 'persona', '', 'voice_notes', ''),
+                      'recurring_characters','[]'::jsonb,'places','[]'::jsonb,'rules','[]'::jsonb,
+                      'episode_summaries','[]'::jsonb),
+                    now(), now())
+            """),
     ];
 
     /// <summary>The tables the dataset covers, in insert order — the contract a feature migration extends.</summary>
