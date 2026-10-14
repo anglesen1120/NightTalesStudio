@@ -99,26 +99,40 @@ public sealed class UpdateBibleCommandHandler(
 
         // Step 4: the approved episodes of this series — the set a summary's episode_id may name, and the
         // source of the structure and the approval time of a summary the client newly adds (§3.2, §4 U2).
-        var approved = await db.Episodes
-            .AsNoTracking()
-            .Where(episode => episode.SeriesId == command.SeriesId && episode.ApprovedStoryVersionId != null)
-            .Select(episode => new ApprovedEpisode(
-                episode.Id,
-                episode.ApprovedStoryVersionId!.Value,
-                episode.ApprovedAt))
-            .ToListAsync(cancellationToken)
-            .ConfigureAwait(false);
-
-        var approvedEpisodeIds = new HashSet<Guid>(approved.Count);
-        foreach (var episode in approved)
+        // A save that carries no summary and stores none can use neither: the episode rule only fires on a
+        // summary that exists and the derivation only resolves one that is new, so the query is skipped instead of
+        // running on every save to answer a question nothing asks.
+        var requestedSummaries = command.Content.EpisodeSummaries;
+        var storedSummaries = bible.Content.EpisodeSummaries;
+        List<ApprovedEpisode> approved;
+        HashSet<Guid> approvedEpisodeIds;
+        if (requestedSummaries.Count == 0 && storedSummaries.Count == 0)
         {
-            approvedEpisodeIds.Add(episode.Id);
+            approved = [];
+            approvedEpisodeIds = [];
+        }
+        else
+        {
+            approved = await db.Episodes
+                .AsNoTracking()
+                .Where(episode => episode.SeriesId == command.SeriesId && episode.ApprovedStoryVersionId != null)
+                .Select(episode => new ApprovedEpisode(
+                    episode.Id,
+                    episode.ApprovedStoryVersionId!.Value,
+                    episode.ApprovedAt))
+                .ToListAsync(cancellationToken)
+                .ConfigureAwait(false);
+
+            approvedEpisodeIds = new HashSet<Guid>(approved.Count);
+            foreach (var episode in approved)
+            {
+                approvedEpisodeIds.Add(episode.Id);
+            }
         }
 
-        var storedSummaries = bible.Content.EpisodeSummaries;
         var derivation = await DeriveSummaryValuesAsync(
             approved,
-            command.Content.EpisodeSummaries,
+            requestedSummaries,
             storedSummaries,
             cancellationToken).ConfigureAwait(false);
         if (derivation.IsError)
@@ -131,7 +145,7 @@ public sealed class UpdateBibleCommandHandler(
         var requested = command.Content with
         {
             EpisodeSummaries = BibleSummaryDerivation.Merge(
-                command.Content.EpisodeSummaries,
+                requestedSummaries,
                 storedSummaries,
                 derived),
         };

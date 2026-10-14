@@ -95,6 +95,78 @@ public sealed class BibleContentValidatorTests
     }
 
     [Fact]
+    public void BibleContentValidator_ArraysOverTheirLimit_ReportOneTooManyEachAndNoEntryError()
+    {
+        // F1(a): the count is what is wrong, so an over-limit array is refused as a whole and none of its entries
+        // is walked. Every entry here is itself invalid — a bad id and an angle-bracket name — so walking them
+        // would cost more than MaxFieldErrors violations for three wrong counts.
+        var characters = Enumerable.Range(0, Limits.MaxCharacters + 1)
+            .Select(index => new BibleCharacter($"bad{index}", new string('<', Limits.NameChars), string.Empty, null))
+            .ToList();
+        var places = Enumerable.Range(0, Limits.MaxPlaces + 1)
+            .Select(index => new BiblePlace($"bad{index}", new string('<', Limits.NameChars), string.Empty))
+            .ToList();
+        var rules = Enumerable.Range(0, Limits.MaxRules + 1)
+            .Select(index => new BibleRule($"bad{index}", "Luật"))
+            .ToList();
+
+        var errors = BibleContentValidator.Validate(
+            Content(characters: characters, places: places, rules: rules),
+            Limits);
+
+        errors.Select(error => error.Field).ShouldBe(["recurring_characters", "places", "rules"]);
+        errors.ShouldAllBe(error => error.Code == "too_many");
+        errors.Select(error => error.Detail).ShouldBe([
+            Limits.MaxCharacters.ToString(CultureInfo.InvariantCulture),
+            Limits.MaxPlaces.ToString(CultureInfo.InvariantCulture),
+            Limits.MaxRules.ToString(CultureInfo.InvariantCulture),
+        ]);
+    }
+
+    [Fact]
+    public void BibleContentValidator_MoreFieldErrorsThanTheCap_ReturnsTheFirstOnesInFieldOrder()
+    {
+        // F1(b): episode_summaries is the one array without a count cap, so it is what can exceed the cap. Each
+        // entry names an unapproved episode, one error each; the walk stops at the cap, and what comes back is the
+        // front of the uncapped list, so the result is still the deterministic field order.
+        var approved = new HashSet<Guid>();
+        var summaries = Enumerable.Range(1, 1000)
+            .Select(index => Summary(Guid.Parse($"0197a000-0000-7000-8000-{index:D12}")))
+            .ToList();
+        var content = Content(summaries: summaries);
+        var expectedFields = Enumerable.Range(0, BibleContentValidator.MaxFieldErrors)
+            .Select(index => $"episode_summaries[{index}].episode_id")
+            .ToList();
+
+        var errors = BibleContentValidator.Validate(content, Limits, approved);
+
+        errors.Count.ShouldBe(BibleContentValidator.MaxFieldErrors);
+        errors.Select(error => error.Field).ShouldBe(expectedFields);
+        errors.ShouldAllBe(error => error.Code == "not_approved_episode");
+
+        // The document is also over the byte budget, but the cap is full: the field errors win, and repeating the
+        // call returns the same list in the same order.
+        BibleJson.Utf8ByteCount(content).ShouldBeGreaterThan(Limits.MaxContentBytes);
+        errors.ShouldNotContain(error => error.Code == "too_long");
+        BibleContentValidator.Validate(content, Limits, approved).ShouldBe(errors, ignoreOrder: false);
+    }
+
+    [Fact]
+    public void BibleContentValidator_ByteBudget_IsReportedAlongsideTheFieldErrorsUnderTheCap()
+    {
+        // F1(b): the cap must not swallow the whole-document budget. While the list has room, an over-budget
+        // document reports the root path after the field errors (ordering is field order, budget last).
+        var content = Content(characters: [new BibleCharacter("ch1", "<b>Bà Tư</b>", string.Empty, null)]);
+        var size = BibleJson.Utf8ByteCount(content);
+
+        var errors = BibleContentValidator.Validate(content, Limits with { MaxContentBytes = size - 1 });
+
+        errors.Select(error => error.Field).ShouldBe(["recurring_characters[0].name", "body"]);
+        errors[0].Code.ShouldBe("invalid_structure");
+        errors[1].ShouldBe(new BibleFieldError("body", "too_long", (size - 1).ToString(CultureInfo.InvariantCulture)));
+    }
+
+    [Fact]
     public void BibleContentValidator_SummaryOver200_ReturnsTooLongError()
     {
         var summary = Summary(EpisodeOne, summary: new string('a', Limits.SummaryChars + 1));
@@ -325,6 +397,10 @@ public sealed class BibleContentValidatorTests
     [InlineData("\u200b")]
     [InlineData("\u202e")]
     [InlineData("\ufeff")]
+    // ZWJ/ZWNJ sit inside the refused zero-width band and stay refused (F2 leaves the band as it was), so an emoji
+    // ZWJ sequence is still not storable.
+    [InlineData("\u200c")]
+    [InlineData("\u200d")]
     public void BibleContentValidator_ControlOrFormatCharacterInText_ReturnsInvalidStructure(string injected)
     {
         var content = Content(characters: [new BibleCharacter("ch1", "Bà Tư" + injected, string.Empty, null)]);
@@ -334,6 +410,53 @@ public sealed class BibleContentValidatorTests
         errors.Count.ShouldBe(1);
         errors[0].Field.ShouldBe("recurring_characters[0].name");
         errors[0].Code.ShouldBe("invalid_structure");
+    }
+
+    [Theory]
+    // F2: characters a stored document cannot show the way the author typed them. The soft hyphen, the combining
+    // grapheme joiner, the Arabic letter mark and the Mongolian vowel separator are invisible; U+2028/U+2029 are
+    // line terminators; U+FFF9–U+FFFB are the interlinear annotation controls; U+FFFE/U+FFFF are not characters
+    // at all; and the variation selector supplement U+E0100–U+E01EF (a surrogate pair) is refused without touching
+    // the emoji presentation selector U+FE0F.
+    [InlineData("\u00ad")]
+    [InlineData("\u034f")]
+    [InlineData("\u061c")]
+    [InlineData("\u180e")]
+    [InlineData("\u2028")]
+    [InlineData("\u2029")]
+    // ...the BMP variation selectors up to U+FE0E (U+FE0F, the emoji presentation selector, stays legal)...
+    [InlineData("\ufe00")]
+    [InlineData("\ufe0e")]
+    [InlineData("\ufff9")]
+    [InlineData("\ufffa")]
+    [InlineData("\ufffb")]
+    [InlineData("\ufffe")]
+    [InlineData("\uffff")]
+    [InlineData("\udb40\udd00")]
+    [InlineData("\udb40\uddef")]
+    public void BibleContentValidator_InvisibleFormatCharacterInText_ReturnsInvalidStructure(string injected)
+    {
+        var content = Content(characters: [new BibleCharacter("ch1", "Bà Tư" + injected, string.Empty, null)]);
+
+        var errors = BibleContentValidator.Validate(content, Limits);
+
+        errors.Count.ShouldBe(1);
+        errors[0].Field.ShouldBe("recurring_characters[0].name");
+        errors[0].Code.ShouldBe("invalid_structure");
+    }
+
+    [Fact]
+    public void BibleContentValidator_VietnameseCombiningMarksAndEmojiPresentationSelector_AreAccepted()
+    {
+        // F2 keeps the combining diacritics Vietnamese text is written with (U+0300–U+036F, minus the invisible
+        // U+034F) and the emoji presentation selector U+FE0F, so a decomposed name and an emoji sequence both stay
+        // storable.
+        var content = Content(characters: [
+            new BibleCharacter("ch1", "Ba\u0300 Tu\u031b \u0111u\u031b\u0300ng \u01a1\u0309 c\u01b0\u0309a", string.Empty, null),
+            new BibleCharacter("ch2", "C\u0103n nha\u0300 \U0001F3AC\uFE0F", "Tan\u0323i \u0111a\u0302y.", null),
+        ]);
+
+        BibleContentValidator.Validate(content, Limits).ShouldBeEmpty();
     }
 
     [Fact]

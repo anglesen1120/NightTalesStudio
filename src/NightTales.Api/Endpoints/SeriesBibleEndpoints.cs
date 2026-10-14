@@ -1,9 +1,7 @@
-using ErrorOr;
 using Mediator;
 using Microsoft.AspNetCore.Mvc;
 using NightTales.Api.Http;
 using NightTales.Api.Http.Filters;
-using NightTales.Application.Common.Errors;
 using NightTales.Application.Features.SeriesBible;
 using NightTales.Application.Features.SeriesBible.Commands.UpdateBible;
 using NightTales.Application.Features.SeriesBible.Queries.GetBible;
@@ -29,7 +27,7 @@ namespace NightTales.Api.Endpoints;
 /// </para>
 /// <para>
 /// The read publishes the tag from the success value itself (<c>BibleDto.ETag</c>, <see cref="IHasETag"/>), so
-/// <see cref="ResultExtensions.ToHttpResult{T}(ErrorOr{T}, HttpContext)"/> sets the <c>ETag</c> header and the body
+/// <see cref="ResultExtensions.ToHttpResult{T}(ErrorOr.ErrorOr{T}, HttpContext)"/> sets the <c>ETag</c> header and the body
 /// carries the identical quoted value the client sends back as its next <c>If-Match</c>. The write does the same:
 /// its success body names the version and the tag byte-identical to the header
 /// (<see cref="BibleUpdateResponse"/>), so either body and header is the exact <c>If-Match</c> the next save needs.
@@ -111,10 +109,12 @@ public static class SeriesBibleEndpoints
     /// documented 400 <c>bible_invalid_content</c> / 404 / 412 <c>bible_conflict</c> / 428 <c>if_match_required</c>.
     /// </summary>
     /// <remarks>
-    /// The body is the full <c>bible.v1</c> document under <c>content</c>. A missing or unreadable body gets the same
-    /// 400 <c>bible_invalid_content</c> shape as a body that fails the §3.2 limits; the limits themselves are the
-    /// Domain validator's, run by the handler so the per-field list survives into the problem's <c>errors</c> group.
-    /// Server-derived summary fields (<c>structure</c>, <c>approved_at</c>) are never read from the request.
+    /// The body is the full <c>bible.v1</c> document under <c>content</c>, or a body that carries no document at all:
+    /// a missing <c>content</c> is passed through to the handler, which owns that 400 <c>bible_invalid_content</c> in
+    /// its own order, so a foreign series is still 404 and a stale tag still 412 even without a document. Only an
+    /// unreadable body is refused earlier, by the binder as 400 <c>validation_failed</c>. The limits themselves are
+    /// the Domain validator's, run by the handler so the per-field list survives into the problem's <c>errors</c>
+    /// group. Server-derived summary fields (<c>structure</c>, <c>approved_at</c>) are never read from the request.
     /// </remarks>
     private static async Task<IResult> UpdateAsync(
         Guid id,
@@ -124,18 +124,12 @@ public static class SeriesBibleEndpoints
         HttpContext http,
         CancellationToken ct)
     {
-        if (request?.Content is null)
-        {
-            return ProblemDetailsWriter.ToProblem(
-                [Error.Validation(
-                    ErrorCodes.BibleInvalidContent,
-                    "The body is not a bible.v1 document.",
-                    new Dictionary<string, object> { [ErrorMetadata.Field] = "body" })],
-                http);
-        }
-
+        // A body that carries no document is not refused here: the handler owns that 400 (bible_invalid_content),
+        // so it runs after the series is known to be the caller's own (404) and after the tag is the current version
+        // (428/412) — a missing document never hides the real reason a save is impossible. An unreadable body is
+        // still the binder's 400 validation_failed, refused before any handler.
         var result = await sender
-            .Send(new UpdateBibleCommand(id, request.Content.ToDomain(), ifMatch), ct)
+            .Send(new UpdateBibleCommand(id, request?.Content?.ToDomain(), ifMatch), ct)
             .ConfigureAwait(false);
         if (result.IsError)
         {

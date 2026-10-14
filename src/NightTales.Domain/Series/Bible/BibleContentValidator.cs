@@ -42,6 +42,13 @@ public sealed record BibleFieldError(string Field, string Code, string? Detail);
 /// (<see cref="SeriesBible.AssignMissingIds"/>), so a client can add an entry without knowing its id; a blank
 /// reaching this validator is a caller that skipped that step.
 /// </para>
+/// <para>
+/// The returned list is bounded (review F1: the error list was unbounded): an array that exceeds its own count
+/// limit is refused with one <c>too_many</c> entry and none of its entries is walked, and a walk stops once
+/// <see cref="MaxFieldErrors"/> violations are collected. What comes back is always the first violations in
+/// field order, so the list stays deterministic, and the whole-document byte budget is still reported as long
+/// as the cap has room for it.
+/// </para>
 /// </remarks>
 public static class BibleContentValidator
 {
@@ -80,6 +87,17 @@ public static class BibleContentValidator
     private const string PlaceIdPrefix = "pl";
     private const string RuleIdPrefix = "rl";
 
+    /// <summary>The largest number an item id may carry: nine digits, so <c>rl999999999</c> is the highest id.</summary>
+    public const int MaxSuffix = 999_999_999;
+
+    /// <summary>
+    /// The most violations one validation returns. A 1 MiB body holds tens of thousands of entries, and one
+    /// error per field would turn a single 400 into megabytes of JSON (review F1: the error list was unbounded),
+    /// so a walker stops as soon as this many violations are collected: what is returned is the first ones in
+    /// field order, never more than this.
+    /// </summary>
+    internal const int MaxFieldErrors = 100;
+
     /// <summary>
     /// Validates one bible document against <paramref name="limits"/>, without the approved-episode rule
     /// (02.6.3 plan §3.2). This is the overload an aggregate re-checks defensively, because it holds no
@@ -87,7 +105,7 @@ public static class BibleContentValidator
     /// </summary>
     /// <param name="content">The document to validate.</param>
     /// <param name="limits">The configured limits.</param>
-    /// <returns>Every violation, in field order; empty when the document is valid.</returns>
+    /// <returns>Up to <see cref="MaxFieldErrors"/> violations, in field order; empty when the document is valid.</returns>
     /// <exception cref="ArgumentNullException">A parameter is <see langword="null"/>.</exception>
     public static IReadOnlyList<BibleFieldError> Validate(SeriesBibleContent content, BibleLimits limits) =>
         Validate(content, limits, null);
@@ -100,7 +118,7 @@ public static class BibleContentValidator
     /// <param name="content">The document to validate.</param>
     /// <param name="limits">The configured limits.</param>
     /// <param name="approvedEpisodeIds">The ids of the series' episodes with an approved story version.</param>
-    /// <returns>Every violation, in field order; empty when the document is valid.</returns>
+    /// <returns>Up to <see cref="MaxFieldErrors"/> violations, in field order; empty when the document is valid.</returns>
     /// <exception cref="ArgumentNullException">A parameter is <see langword="null"/>.</exception>
     public static IReadOnlyList<BibleFieldError> Validate(
         SeriesBibleContent content,
@@ -110,7 +128,7 @@ public static class BibleContentValidator
         ArgumentNullException.ThrowIfNull(content);
         ArgumentNullException.ThrowIfNull(limits);
 
-        var errors = new List<BibleFieldError>();
+        var errors = new FieldErrorSink();
 
         ValidateNarrator(errors, content, limits);
         ValidateCharacters(errors, content, limits);
@@ -118,17 +136,19 @@ public static class BibleContentValidator
         ValidateRules(errors, content, limits);
         ValidateSummaries(errors, content, limits, approvedEpisodeIds);
 
-        // The D6 data-object budget: the canonical document, in UTF-8 bytes, exactly as it will be stored.
+        // The D6 data-object budget: the canonical document, in UTF-8 bytes, exactly as it will be stored. It is
+        // checked after the field rules and is only dropped when they already filled the cap (review F1), so a
+        // document that violates nothing else still fails it.
         if (BibleJson.Utf8ByteCount(content) > limits.MaxContentBytes)
         {
             errors.Add(new BibleFieldError(RootField, TooLong, Limit(limits.MaxContentBytes)));
         }
 
-        return errors;
+        return errors.Errors;
     }
 
     /// <summary>Validates <c>narrator</c>: the persona is required and non-empty, the two other texts are capped.</summary>
-    private static void ValidateNarrator(List<BibleFieldError> errors, SeriesBibleContent content, BibleLimits limits)
+    private static void ValidateNarrator(FieldErrorSink errors, SeriesBibleContent content, BibleLimits limits)
     {
         var narrator = content.Narrator;
         if (narrator is null)
@@ -148,7 +168,7 @@ public static class BibleContentValidator
     }
 
     /// <summary>Validates <c>recurring_characters</c>: the count, each name/description, and unique normalised names.</summary>
-    private static void ValidateCharacters(List<BibleFieldError> errors, SeriesBibleContent content, BibleLimits limits)
+    private static void ValidateCharacters(FieldErrorSink errors, SeriesBibleContent content, BibleLimits limits)
     {
         IReadOnlyList<BibleCharacter>? characters = content.RecurringCharacters;
         if (characters is null)
@@ -156,11 +176,14 @@ public static class BibleContentValidator
             return;
         }
 
-        AddCount(errors, "recurring_characters", characters.Count, limits.MaxCharacters);
+        if (AddCount(errors, "recurring_characters", characters.Count, limits.MaxCharacters))
+        {
+            return;
+        }
 
         var seenIds = new Dictionary<string, int>(StringComparer.Ordinal);
         var seen = new Dictionary<string, int>(StringComparer.Ordinal);
-        for (var index = 0; index < characters.Count; index++)
+        for (var index = 0; index < characters.Count && !errors.IsFull; index++)
         {
             var field = Field("recurring_characters", index);
             var character = characters[index];
@@ -178,7 +201,7 @@ public static class BibleContentValidator
     }
 
     /// <summary>Validates <c>places</c>: the count, each name/description, and unique normalised names.</summary>
-    private static void ValidatePlaces(List<BibleFieldError> errors, SeriesBibleContent content, BibleLimits limits)
+    private static void ValidatePlaces(FieldErrorSink errors, SeriesBibleContent content, BibleLimits limits)
     {
         IReadOnlyList<BiblePlace>? places = content.Places;
         if (places is null)
@@ -186,11 +209,14 @@ public static class BibleContentValidator
             return;
         }
 
-        AddCount(errors, "places", places.Count, limits.MaxPlaces);
+        if (AddCount(errors, "places", places.Count, limits.MaxPlaces))
+        {
+            return;
+        }
 
         var seenIds = new Dictionary<string, int>(StringComparer.Ordinal);
         var seen = new Dictionary<string, int>(StringComparer.Ordinal);
-        for (var index = 0; index < places.Count; index++)
+        for (var index = 0; index < places.Count && !errors.IsFull; index++)
         {
             var field = Field("places", index);
             var place = places[index];
@@ -208,7 +234,7 @@ public static class BibleContentValidator
     }
 
     /// <summary>Validates <c>rules</c>: the count, each text, and unique normalised texts.</summary>
-    private static void ValidateRules(List<BibleFieldError> errors, SeriesBibleContent content, BibleLimits limits)
+    private static void ValidateRules(FieldErrorSink errors, SeriesBibleContent content, BibleLimits limits)
     {
         IReadOnlyList<BibleRule>? rules = content.Rules;
         if (rules is null)
@@ -216,11 +242,14 @@ public static class BibleContentValidator
             return;
         }
 
-        AddCount(errors, "rules", rules.Count, limits.MaxRules);
+        if (AddCount(errors, "rules", rules.Count, limits.MaxRules))
+        {
+            return;
+        }
 
         var seenIds = new Dictionary<string, int>(StringComparer.Ordinal);
         var seen = new Dictionary<string, int>(StringComparer.Ordinal);
-        for (var index = 0; index < rules.Count; index++)
+        for (var index = 0; index < rules.Count && !errors.IsFull; index++)
         {
             var field = Field("rules", index);
             var rule = rules[index];
@@ -241,7 +270,7 @@ public static class BibleContentValidator
     /// texts. The derived <c>structure</c> and <c>approved_at</c> are not validated (plan §4 U2).
     /// </summary>
     private static void ValidateSummaries(
-        List<BibleFieldError> errors,
+        FieldErrorSink errors,
         SeriesBibleContent content,
         BibleLimits limits,
         IReadOnlySet<Guid>? approvedEpisodeIds)
@@ -253,7 +282,7 @@ public static class BibleContentValidator
         }
 
         var seen = new Dictionary<Guid, int>();
-        for (var index = 0; index < summaries.Count; index++)
+        for (var index = 0; index < summaries.Count && !errors.IsFull; index++)
         {
             var field = Field("episode_summaries", index);
             var summary = summaries[index];
@@ -290,18 +319,29 @@ public static class BibleContentValidator
         }
     }
 
-    /// <summary>Adds <c>too_many</c> when the array holds more entries than its limit.</summary>
-    private static void AddCount(List<BibleFieldError> errors, string field, int count, int max)
+    /// <summary>
+    /// Adds <c>too_many</c> when the array holds more entries than its limit, and reports whether it did.
+    /// </summary>
+    /// <remarks>
+    /// A true answer is what makes the caller skip the array: the count is what is wrong, not any entry, so
+    /// walking tens of thousands of entries would only manufacture megabytes of field errors for one wrong
+    /// count, and would cost the walk too (review F1: the unbounded error list).
+    /// </remarks>
+    /// <returns>Whether <c>too_many</c> was reported.</returns>
+    private static bool AddCount(FieldErrorSink errors, string field, int count, int max)
     {
-        if (count > max)
+        if (count <= max)
         {
-            errors.Add(new BibleFieldError(field, TooMany, Limit(max)));
+            return false;
         }
+
+        errors.Add(new BibleFieldError(field, TooMany, Limit(max)));
+        return true;
     }
 
     /// <summary>Appends <c>duplicate</c> when the normalised value already occurred in the array.</summary>
     private static void AddDuplicate(
-        List<BibleFieldError> errors,
+        FieldErrorSink errors,
         string field,
         string? value,
         Dictionary<string, int> seen,
@@ -342,7 +382,7 @@ public static class BibleContentValidator
     /// <param name="arrayField">The array's JSON path, for the detail of a duplicate.</param>
     /// <param name="index">The index of this entry.</param>
     private static void AddId(
-        List<BibleFieldError> errors,
+        FieldErrorSink errors,
         string field,
         string? id,
         string prefix,
@@ -379,9 +419,28 @@ public static class BibleContentValidator
     /// <param name="id">The id to check.</param>
     /// <param name="prefix">The prefix the array owns.</param>
     /// <returns>Whether the id has the shape of its array.</returns>
-    private static bool IsIdOfPrefix(string id, string prefix)
+    private static bool IsIdOfPrefix(string id, string prefix) => TryReadSuffix(id, prefix, out _);
+
+    /// <summary>
+    /// Reads the number of an item id shaped <c>&lt;prefix&gt;&lt;n&gt;</c>, the one id-shape rule of this file:
+    /// <paramref name="prefix"/> followed by one to nine digits with no leading zero.
+    /// </summary>
+    /// <remarks>
+    /// The allocation of the next id (<see cref="SeriesBible.AssignMissingIds"/>) must parse an id exactly as
+    /// this rule checks it — the same prefix, the same digits, the same ceiling —
+    /// so the rule is exposed here rather than duplicated there.
+    /// </remarks>
+    /// <param name="id">The id to read.</param>
+    /// <param name="prefix">The prefix the array owns (<c>ch</c>, <c>pl</c> or <c>rl</c>).</param>
+    /// <param name="number">The number the id carries, when it has the shape; otherwise zero.</param>
+    /// <returns>Whether the id has the shape of <paramref name="prefix"/>.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="prefix"/> is <see langword="null"/>.</exception>
+    public static bool TryReadSuffix(string? id, string prefix, out int number)
     {
-        if (!id.StartsWith(prefix, StringComparison.Ordinal))
+        number = 0;
+        ArgumentNullException.ThrowIfNull(prefix);
+
+        if (id is null || !id.StartsWith(prefix, StringComparison.Ordinal))
         {
             return false;
         }
@@ -392,19 +451,23 @@ public static class BibleContentValidator
             return false;
         }
 
+        var value = 0;
         foreach (var character in digits)
         {
             if (character is < '0' or > '9')
             {
                 return false;
             }
+
+            value = (value * 10) + (character - '0');
         }
 
+        number = value;
         return true;
     }
 
     /// <summary>Appends the character-class, markup and length violations of one optional text, at most one per field.</summary>
-    private static void AddText(List<BibleFieldError> errors, string field, string? value, int maxChars)
+    private static void AddText(FieldErrorSink errors, string field, string? value, int maxChars)
     {
         if (value is null)
         {
@@ -440,10 +503,44 @@ public static class BibleContentValidator
     private static string Limit(int max) => max.ToString(CultureInfo.InvariantCulture);
 
     /// <summary>
+    /// The violations of one validation, capped at <see cref="MaxFieldErrors"/> (review F1: the error list was
+    /// unbounded): a body can carry far more bad entries than any client can render, and one error per field
+    /// would turn one 400 into megabytes.
+    /// </summary>
+    /// <remarks>
+    /// The cap bounds the list and the work: a walker checks <see cref="IsFull"/> in its loop condition and stops
+    /// there, so the entries past the cap are never inspected. What is collected is the first violations in field
+    /// order — the same list the uncapped walk would have produced, cut short — so the result stays deterministic.
+    /// </remarks>
+    private sealed class FieldErrorSink
+    {
+        private readonly List<BibleFieldError> _errors = [];
+
+        /// <summary>Whether the cap is reached and a walker must stop walking.</summary>
+        public bool IsFull => _errors.Count >= MaxFieldErrors;
+
+        /// <summary>The violations collected so far, in field order.</summary>
+        public IReadOnlyList<BibleFieldError> Errors => _errors;
+
+        /// <summary>Appends one violation unless the cap is already reached.</summary>
+        /// <param name="error">The violation to append.</param>
+        public void Add(BibleFieldError error)
+        {
+            if (_errors.Count < MaxFieldErrors)
+            {
+                _errors.Add(error);
+            }
+        }
+    }
+
+    /// <summary>
     /// The first character that cannot be stored or displayed faithfully, or <see langword="null"/>: any C0
     /// control (including a line feed, a tab and NUL, which Postgres refuses), DEL and the C1 range, the
-    /// zero-width and bidirectional format characters, the BOM/zero-width space, the tag-plane characters
-    /// (U+E0000–U+E007F) and an unpaired surrogate.
+    /// zero-width and bidirectional format characters, the soft hyphen, the combining grapheme joiner, the
+    /// Arabic letter mark, the Mongolian vowel separator, the line and paragraph separators, the BMP variation
+    /// selectors except the emoji presentation selector U+FE0F, the interlinear annotation characters, the
+    /// BOM/zero-width space and the non-characters U+FFFE/U+FFFF, the tag-plane characters (U+E0000–U+E007F),
+    /// the variation selector supplement (U+E0100–U+E01EF) and an unpaired surrogate.
     /// </summary>
     /// <param name="text">The text to scan; null and empty carry none.</param>
     /// <returns>The offending <see cref="char"/>, or <see langword="null"/>.</returns>
@@ -466,7 +563,7 @@ public static class BibleContentValidator
                 }
 
                 var codePoint = char.ConvertToUtf32(character, text[index + 1]);
-                if (codePoint is >= 0xE0000 and <= 0xE007F)
+                if (codePoint is (>= 0xE0000 and <= 0xE007F) or (>= 0xE0100 and <= 0xE01EF))
                 {
                     return character;
                 }
@@ -485,12 +582,29 @@ public static class BibleContentValidator
     }
 
     /// <summary>The unsafe characters of the basic multilingual plane.</summary>
+    /// <remarks>
+    /// The bands are: the C0 controls and DEL, the C1 range, the soft hyphen U+00AD (invisible in a name), the
+    /// combining grapheme joiner U+034F (the one invisible member of U+0300–U+036F, whose other marks Vietnamese
+    /// text is written with and which therefore stay legal), the Arabic letter mark U+061C, the Mongolian
+    /// vowel separator U+180E, the zero-width and bidi format characters U+200B–U+200F and U+202A–U+202E and
+    /// U+2060–U+206F (which keep ZWJ/ZWNJ refused, as this rule always has), the line and paragraph separators
+    /// U+2028/U+2029, the BMP variation selectors U+FE00–U+FE0E — U+FE0F is the emoji presentation selector and
+    /// stays legal, so an emoji sequence is storable —, the interlinear annotation characters U+FFF9–U+FFFB,
+    /// the BOM U+FEFF and the non-characters U+FFFE/U+FFFF (review F2: the unsafe-character set).
+    /// </remarks>
     private static bool IsUnsafeBmpCharacter(char character) =>
         character < ' '
         || character is '\u007F'
         || (character >= '\u0080' && character <= '\u009F')
+        || character is '\u00AD'
+        || character is '\u034F'
+        || character is '\u061C'
+        || character is '\u180E'
         || (character >= '\u200B' && character <= '\u200F')
+        || (character >= '\u2028' && character <= '\u2029')
         || (character >= '\u202A' && character <= '\u202E')
         || (character >= '\u2060' && character <= '\u206F')
-        || character is '\uFEFF';
+        || (character >= '\uFE00' && character <= '\uFE0E')
+        || (character >= '\uFFF9' && character <= '\uFFFB')
+        || character is '\uFEFF' or '\uFFFE' or '\uFFFF';
 }

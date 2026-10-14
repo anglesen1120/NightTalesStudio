@@ -1,3 +1,4 @@
+using System.Globalization;
 using NightTales.Domain.Series.Bible;
 using NightTales.Infrastructure.Bible;
 using Shouldly;
@@ -129,4 +130,72 @@ public sealed class BibleOptionsTests
         result.Failed.ShouldBeTrue();
         result.FailureMessage.ShouldContain("Bible:Proposal:MaxRuleOps", Case.Sensitive);
     }
+
+    /// <summary>
+    /// Every hard ceiling of the section (G3): the config key the failure names, and its highest accepted value.
+    /// A host may configure any of these; one above its ceiling fails the boot.
+    /// </summary>
+    public static TheoryData<string, int> Ceilings => new()
+    {
+        { "Limits:NarratorNameChars", BibleOptionsValidator.MaxTextChars },
+        { "Limits:NarratorPersonaChars", BibleOptionsValidator.MaxTextChars },
+        { "Limits:VoiceNotesChars", BibleOptionsValidator.MaxTextChars },
+        { "Limits:NameChars", BibleOptionsValidator.MaxTextChars },
+        { "Limits:DescriptionChars", BibleOptionsValidator.MaxTextChars },
+        { "Limits:RuleChars", BibleOptionsValidator.MaxTextChars },
+        { "Limits:SummaryTitleChars", BibleOptionsValidator.MaxTextChars },
+        { "Limits:SummaryChars", BibleOptionsValidator.MaxTextChars },
+        { "Limits:MaxContentBytes", BibleOptionsValidator.MaxContentBytesCeiling },
+        { "Limits:MaxCharacters", BibleOptionsValidator.MaxArrayEntries },
+        { "Limits:MaxPlaces", BibleOptionsValidator.MaxArrayEntries },
+        { "Limits:MaxRules", BibleOptionsValidator.MaxArrayEntries },
+        { "Proposal:MaxOps", BibleOptionsValidator.MaxProposalOps },
+        { "Proposal:MaxCharacterOps", BibleOptionsValidator.MaxProposalOps },
+        { "Proposal:MaxPlaceOps", BibleOptionsValidator.MaxProposalOps },
+        { "Proposal:MaxRuleOps", BibleOptionsValidator.MaxProposalOps },
+        { "Proposal:MaxStoryChars", BibleOptionsValidator.MaxTextChars },
+        { "Prompt:MaxSummaries", BibleOptionsValidator.MaxPromptSummaries },
+        { "Prompt:MaxChars", BibleOptionsValidator.MaxPromptChars },
+    };
+
+    [Theory]
+    [MemberData(nameof(Ceilings))]
+    public void BibleOptions_AtACeiling_Passes(string key, int ceiling) =>
+        Validator.Validate(null, WithCeiling(key, ceiling)).Succeeded.ShouldBeTrue(key);
+
+    [Theory]
+    [MemberData(nameof(Ceilings))]
+    public void BibleOptions_OneAboveACeiling_FailsAndNamesTheCeiling(string key, int ceiling)
+    {
+        var result = Validator.Validate(null, WithCeiling(key, ceiling + 1));
+
+        result.Failed.ShouldBeTrue(key);
+        result.FailureMessage.ShouldContain($"Bible:{key}", Case.Sensitive);
+        result.FailureMessage.ShouldContain(ceiling.ToString(CultureInfo.InvariantCulture), Case.Sensitive);
+    }
+
+    /// <summary>One section with the single key <paramref name="key"/> raised to <paramref name="value"/>.</summary>
+    private static BibleOptions WithCeiling(string key, int value) => key switch
+    {
+        "Limits:NarratorNameChars" => new BibleOptions { Limits = new BibleLimits { NarratorNameChars = value } },
+        "Limits:NarratorPersonaChars" => new BibleOptions { Limits = new BibleLimits { NarratorPersonaChars = value } },
+        "Limits:VoiceNotesChars" => new BibleOptions { Limits = new BibleLimits { VoiceNotesChars = value } },
+        "Limits:NameChars" => new BibleOptions { Limits = new BibleLimits { NameChars = value } },
+        "Limits:DescriptionChars" => new BibleOptions { Limits = new BibleLimits { DescriptionChars = value } },
+        "Limits:RuleChars" => new BibleOptions { Limits = new BibleLimits { RuleChars = value } },
+        "Limits:SummaryTitleChars" => new BibleOptions { Limits = new BibleLimits { SummaryTitleChars = value } },
+        "Limits:SummaryChars" => new BibleOptions { Limits = new BibleLimits { SummaryChars = value } },
+        "Limits:MaxContentBytes" => new BibleOptions { Limits = new BibleLimits { MaxContentBytes = value } },
+        "Limits:MaxCharacters" => new BibleOptions { Limits = new BibleLimits { MaxCharacters = value } },
+        "Limits:MaxPlaces" => new BibleOptions { Limits = new BibleLimits { MaxPlaces = value } },
+        "Limits:MaxRules" => new BibleOptions { Limits = new BibleLimits { MaxRules = value } },
+        "Proposal:MaxOps" => new BibleOptions { Proposal = new BibleProposalOptions { MaxOps = value } },
+        "Proposal:MaxCharacterOps" => new BibleOptions { Proposal = new BibleProposalOptions { MaxCharacterOps = value } },
+        "Proposal:MaxPlaceOps" => new BibleOptions { Proposal = new BibleProposalOptions { MaxPlaceOps = value } },
+        "Proposal:MaxRuleOps" => new BibleOptions { Proposal = new BibleProposalOptions { MaxRuleOps = value } },
+        "Proposal:MaxStoryChars" => new BibleOptions { Proposal = new BibleProposalOptions { MaxStoryChars = value } },
+        "Prompt:MaxSummaries" => new BibleOptions { Prompt = new BiblePromptOptions { MaxSummaries = value } },
+        "Prompt:MaxChars" => new BibleOptions { Prompt = new BiblePromptOptions { MaxChars = value } },
+        _ => throw new ArgumentOutOfRangeException(nameof(key), key, "No ceiling is declared for this key."),
+    };
 }

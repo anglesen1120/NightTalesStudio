@@ -1,3 +1,4 @@
+using System.Globalization;
 using Microsoft.Extensions.Options;
 using NightTales.Domain.Series.Bible;
 
@@ -77,14 +78,43 @@ public sealed class BiblePromptOptions
 /// <summary>
 /// Validates the <c>Bible</c> section at start-up (02.6.3-T1 task Design; the same shape as
 /// <c>SourcesOptionsValidator</c>). Every limit must be positive: a zero limit would make every save a 400, and a
-/// negative count cap can never be satisfied.
+/// negative count cap can never be satisfied. Every limit also has a hard ceiling, because a number a host can
+/// raise without bound is a number a request can use to make one row, one prompt or one 400 grow without bound.
 /// </summary>
 /// <remarks>
+/// <para>
 /// Public, like <c>SourcesOptionsValidator</c>, because this solution has no <c>InternalsVisibleTo</c> and the
-/// start-up contract is asserted by a unit test.
+/// start-up contract is asserted by a unit test — the ceiling constants included, so the test and the validator
+/// can never disagree about the number a configuration must stay under.
+/// </para>
+/// <para>
+/// <see cref="MaxContentBytesCeiling"/> is the host's own whole-request cap (BD12, 1 MiB): a bible larger than the
+/// body that carries it could never be written by the route that owns it.
+/// </para>
 /// </remarks>
 public sealed class BibleOptionsValidator : IValidateOptions<BibleOptions>
 {
+    /// <summary>The largest <c>Limits:MaxContentBytes</c> a host may configure: the 1 MiB request-body cap.</summary>
+    public const int MaxContentBytesCeiling = 1_048_576;
+
+    /// <summary>The largest <c>Limits:MaxCharacters</c>, <c>MaxPlaces</c> and <c>MaxRules</c>.</summary>
+    public const int MaxArrayEntries = 1000;
+
+    /// <summary>
+    /// The largest value of any <c>*Chars</c> limit a host may configure (the per-field text limits and
+    /// <c>Proposal:MaxStoryChars</c>). <c>Prompt:MaxChars</c> has its own, larger budget below.
+    /// </summary>
+    public const int MaxTextChars = 100_000;
+
+    /// <summary>The largest value of any of the proposal's op caps.</summary>
+    public const int MaxProposalOps = 1000;
+
+    /// <summary>The largest <c>Prompt:MaxSummaries</c> a host may configure.</summary>
+    public const int MaxPromptSummaries = 10_000;
+
+    /// <summary>The largest <c>Prompt:MaxChars</c> a host may configure: the proposal prompt's whole budget.</summary>
+    public const int MaxPromptChars = 1_000_000;
+
     /// <inheritdoc />
     public ValidateOptionsResult Validate(string? name, BibleOptions options)
     {
@@ -115,6 +145,26 @@ public sealed class BibleOptionsValidator : IValidateOptions<BibleOptions>
         RequireNotNegative(failures, proposal.MaxPlaceOps, "Proposal:MaxPlaceOps");
         RequireNotNegative(failures, proposal.MaxRuleOps, "Proposal:MaxRuleOps");
 
+        RequireAtMost(failures, limits.NarratorNameChars, "Limits:NarratorNameChars", MaxTextChars);
+        RequireAtMost(failures, limits.NarratorPersonaChars, "Limits:NarratorPersonaChars", MaxTextChars);
+        RequireAtMost(failures, limits.VoiceNotesChars, "Limits:VoiceNotesChars", MaxTextChars);
+        RequireAtMost(failures, limits.NameChars, "Limits:NameChars", MaxTextChars);
+        RequireAtMost(failures, limits.DescriptionChars, "Limits:DescriptionChars", MaxTextChars);
+        RequireAtMost(failures, limits.RuleChars, "Limits:RuleChars", MaxTextChars);
+        RequireAtMost(failures, limits.SummaryTitleChars, "Limits:SummaryTitleChars", MaxTextChars);
+        RequireAtMost(failures, limits.SummaryChars, "Limits:SummaryChars", MaxTextChars);
+        RequireAtMost(failures, limits.MaxContentBytes, "Limits:MaxContentBytes", MaxContentBytesCeiling);
+        RequireAtMost(failures, limits.MaxCharacters, "Limits:MaxCharacters", MaxArrayEntries);
+        RequireAtMost(failures, limits.MaxPlaces, "Limits:MaxPlaces", MaxArrayEntries);
+        RequireAtMost(failures, limits.MaxRules, "Limits:MaxRules", MaxArrayEntries);
+        RequireAtMost(failures, proposal.MaxOps, "Proposal:MaxOps", MaxProposalOps);
+        RequireAtMost(failures, proposal.MaxCharacterOps, "Proposal:MaxCharacterOps", MaxProposalOps);
+        RequireAtMost(failures, proposal.MaxPlaceOps, "Proposal:MaxPlaceOps", MaxProposalOps);
+        RequireAtMost(failures, proposal.MaxRuleOps, "Proposal:MaxRuleOps", MaxProposalOps);
+        RequireAtMost(failures, proposal.MaxStoryChars, "Proposal:MaxStoryChars", MaxTextChars);
+        RequireAtMost(failures, prompt.MaxSummaries, "Prompt:MaxSummaries", MaxPromptSummaries);
+        RequireAtMost(failures, prompt.MaxChars, "Prompt:MaxChars", MaxPromptChars);
+
         return failures.Count == 0
             ? ValidateOptionsResult.Success
             : ValidateOptionsResult.Fail(failures);
@@ -135,6 +185,20 @@ public sealed class BibleOptionsValidator : IValidateOptions<BibleOptions>
         if (value < 0)
         {
             failures.Add($"'{BibleOptions.SectionName}:{key}' cannot be negative.");
+        }
+    }
+
+    /// <summary>
+    /// Records a failure when a limit is above its hard ceiling, naming the key and the ceiling: a host that
+    /// raised it has to be told which number it must come back under (no value of a secret is involved).
+    /// </summary>
+    private static void RequireAtMost(List<string> failures, int value, string key, int ceiling)
+    {
+        if (value > ceiling)
+        {
+            failures.Add(string.Create(
+                CultureInfo.InvariantCulture,
+                $"'{BibleOptions.SectionName}:{key}' must be at most {ceiling}."));
         }
     }
 }

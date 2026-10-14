@@ -36,10 +36,12 @@ namespace NightTales.Application.Features.SeriesBible.Commands.UpdateBible;
 /// </para>
 /// </remarks>
 /// <param name="SeriesId">The series, from the route.</param>
-/// <param name="Content">The <c>bible.v1</c> content to store; the server re-derives the summary members it owns.</param>
+/// <param name="Content">The <c>bible.v1</c> content to store; the server re-derives the summary members it owns.
+/// <see langword="null"/> when the request carried no <c>content</c> object at all, which the handler answers as
+/// 400 <c>bible_invalid_content</c> after the 404/428/412 order — the endpoint passes it through untouched.</param>
 /// <param name="IfMatch">The <c>If-Match</c> header value: the <c>"sb-&lt;version&gt;"</c> ETag the client read, or <c>*</c>.</param>
 [Audited("series.bible_updated", Category.Episodes, Visibility.User)]
-public sealed record UpdateBibleCommand(Guid SeriesId, SeriesBibleContent Content, string? IfMatch)
+public sealed record UpdateBibleCommand(Guid SeriesId, SeriesBibleContent? Content, string? IfMatch)
     : ICommand<ErrorOr<UpdateBibleResult>>, IAuditData
 {
     /// <summary>The version the handler saved; stays <see langword="null"/> for a failure.</summary>

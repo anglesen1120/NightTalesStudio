@@ -367,6 +367,80 @@ public sealed class SeriesBibleTests
     }
 
     [Fact]
+    public void AssignMissingIds_IdTheValidatorRefuses_DoesNotMoveTheNextNumber()
+    {
+        // A kept id of the wrong shape is the validator's to refuse, and it must not steer the allocation either:
+        // `ch01` has a leading zero and `ch1234567890` is ten digits, so neither is the number the next id comes
+        // after. The blank entry still goes to `ch1`, and the client is told about the ids it sent — under the old
+        // `int.TryParse` both of these moved the counter (G1).
+        var requested = Content(characters: [
+            new BibleCharacter("ch01", "Không", string.Empty, null),
+            new BibleCharacter("ch1234567890", "Cũng không", string.Empty, null),
+            new BibleCharacter(string.Empty, "Mới", string.Empty, null),
+        ]);
+
+        var assigned = SeriesBible.AssignMissingIds(requested, SeriesBibleContent.Empty);
+
+        assigned.RecurringCharacters.Select(character => character.Id).ShouldBe(["ch01", "ch1234567890", "ch1"]);
+    }
+
+    [Fact]
+    public void AssignMissingIds_OneBelowTheCeiling_TakesTheLastFreeNumber()
+    {
+        // The rule is unchanged until the space is full: `ch999999998` still hands out `ch999999999`.
+        var requested = Content(characters: [
+            new BibleCharacter("ch999999998", "Gần cuối", string.Empty, null),
+            new BibleCharacter(string.Empty, "Mới", string.Empty, null),
+        ]);
+
+        var assigned = SeriesBible.AssignMissingIds(requested, SeriesBibleContent.Empty);
+
+        assigned.RecurringCharacters.Select(character => character.Id).ShouldBe(["ch999999998", "ch999999999"]);
+        BibleContentValidator.Validate(assigned, Limits).ShouldBeEmpty();
+    }
+
+    [Fact]
+    public void AssignMissingIds_NumberSpaceExhausted_LeavesTheBlankIdForTheValidator()
+    {
+        // `ch999999999` is the highest suffix an id may carry (the validator's own nine-digit rule), so a blank
+        // entry has no next number: the id stays blank rather than becoming `ch1000000000`, which the validator
+        // would refuse as `invalid_structure` on an id the client never sent. `empty` on that entry is what the
+        // PUT answers 400 for, and no id ever wraps around or grows past nine digits (G1).
+        var requested = Content(characters: [
+            new BibleCharacter("ch999999999", "Cuối", string.Empty, null),
+            new BibleCharacter(string.Empty, "Mới", string.Empty, null),
+        ]);
+
+        var assigned = SeriesBible.AssignMissingIds(requested, SeriesBibleContent.Empty);
+
+        assigned.RecurringCharacters.Select(character => character.Id).ShouldBe(["ch999999999", string.Empty]);
+
+        var errors = BibleContentValidator.Validate(assigned, Limits);
+        errors.Count.ShouldBe(1);
+        errors[0].ShouldBe(new BibleFieldError("recurring_characters[1].id", "empty", null));
+    }
+
+    [Fact]
+    public void AssignMissingIds_NumberSpaceExhaustedByTheStoredContent_LeavesTheBlankId()
+    {
+        // The highest suffix is taken over the stored content as well, so a stored `pl999999999` the request
+        // dropped exhausts the space for a blank request entry just the same.
+        var stored = Content(places: [new BiblePlace("pl999999999", "Cuối", string.Empty)]);
+        var requested = Content(places: [
+            new BiblePlace("pl999999999", "Cuối", string.Empty),
+            new BiblePlace(string.Empty, "Mới", string.Empty),
+        ]);
+
+        var assigned = SeriesBible.AssignMissingIds(requested, stored);
+
+        assigned.Places.Select(place => place.Id).ShouldBe(["pl999999999", string.Empty]);
+
+        var errors = BibleContentValidator.Validate(assigned, Limits);
+        errors.Count.ShouldBe(1);
+        errors[0].ShouldBe(new BibleFieldError("places[1].id", "empty", null));
+    }
+
+    [Fact]
     public void ApplyProposal_HighestIdRemovedByAManualSave_IsAssignedAgain()
     {
         // The behaviour of the plan §4 U4 rule `max(existing numeric suffix) + 1`: an id that was the highest one
@@ -388,6 +462,28 @@ public sealed class SeriesBibleTests
         bible.ApplyProposal(Limits, Source(), clock);
 
         bible.Content.RecurringCharacters.Select(character => character.Id).ShouldBe(["ch1", "ch2"]);
+    }
+
+    [Fact]
+    public void ApplyProposal_FullNumberSpace_SkipsTheOpAndStoresNoTenDigitId()
+    {
+        // The same ceiling as the manual save: with `ch999999999` stored, a character op has no next number, so it
+        // is skipped like any other op that adds nothing. Storing `ch1000000000` would leave the row breaking the
+        // id rule the validator enforces, which is the one thing an accept may never do (G1).
+        var clock = new FakeClock(Now);
+        var bible = New();
+        bible.ReplaceContent(
+            Content(characters: [new BibleCharacter("ch999999999", "Cuối", string.Empty, null)]),
+            Limits,
+            clock);
+        bible.SetProposal(Proposal(AddCharacter(name: "Mới")), EpisodeId, clock);
+
+        var result = bible.ApplyProposal(Limits, Source(), clock);
+
+        result.Applied.ShouldBeEmpty();
+        result.Skipped.ShouldBe(1);
+        bible.Content.RecurringCharacters.Select(character => character.Id).ShouldBe(["ch999999999"]);
+        BibleContentValidator.Validate(bible.Content, Limits).ShouldBeEmpty();
     }
 
     [Fact]

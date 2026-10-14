@@ -1,5 +1,8 @@
 using System.Net;
 using System.Text.Json.Nodes;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+using NightTales.Infrastructure.Persistence;
 using NightTales.TestKit;
 using NightTales.TestKit.Database;
 using Shouldly;
@@ -332,5 +335,84 @@ public sealed class SeriesBiblePutEndpointTests(TestDatabase database) : Integra
                 response.Dispose();
             }
         }
+    }
+
+    [Fact]
+    public async Task PutBible_ApprovedEpisodeQuery_RunsOnlyWhenASummaryExists()
+    {
+        var world = await SeriesBibleHarness.SeedAsync(Database);
+
+        // The series has an approved episode, so the query has a row to return: the trace proves the skip of a
+        // save that carries no summary and stores none, not an empty table (G2). The approved-episode set can only
+        // change the answer for a summary that exists or is new, and this body has neither.
+        var approved = await SeriesBibleHarness.SeedApprovedEpisodeAsync(Database, world);
+
+        var interceptor = new CountingDbCommandInterceptor();
+        using var factory = SeriesBibleHarness.Factory(Database).WithServices(services =>
+            services.AddDbContext<AppDbContext>((_, options) => options.AddInterceptors(interceptor)));
+        using var client = factory.ClientFor(world.UserId);
+
+        interceptor.Reset();
+        using var withoutSummary = await SeriesBibleHarness.PutAsync(
+            client,
+            world.SeriesId,
+            SeriesBibleHarness.Etag(1),
+            SeriesBibleHarness.Content(characters: new JsonArray(SeriesBibleHarness.Character(1, "Bà Tư"))));
+
+        withoutSummary.StatusCode.ShouldBe(
+            HttpStatusCode.OK,
+            await withoutSummary.Content.ReadAsStringAsync(SeriesBibleHarness.Ct));
+        interceptor.Texts.ShouldNotContain(
+            text => text.Contains("from episodes", StringComparison.OrdinalIgnoreCase),
+            $"a save with no summary can use no approved-episode set: {string.Join(" | ", interceptor.Texts)}");
+
+        // The next save carries one: the same set is read again, so the skip is the empty case and nothing else.
+        interceptor.Reset();
+        using var withSummary = await SeriesBibleHarness.PutAsync(
+            client,
+            world.SeriesId,
+            SeriesBibleHarness.Etag(2),
+            SeriesBibleHarness.Content(
+                characters: new JsonArray(SeriesBibleHarness.Character(1, "Bà Tư")),
+                summaries: new JsonArray(SeriesBibleHarness.Summary(approved, "Tập một", "Tóm tắt."))));
+
+        withSummary.StatusCode.ShouldBe(
+            HttpStatusCode.OK,
+            await withSummary.Content.ReadAsStringAsync(SeriesBibleHarness.Ct));
+        interceptor.Texts.ShouldContain(
+            text => text.Contains("from episodes", StringComparison.OrdinalIgnoreCase),
+            $"a save that carries a summary validates it against the approved episodes: {string.Join(" | ", interceptor.Texts)}");
+    }
+
+    [Fact]
+    public async Task PutBible_FullIdSpace_Answers400OnTheNewEntryAndKeepsTheStoredVersion()
+    {
+        var world = await SeriesBibleHarness.SeedAsync(Database);
+        using var factory = SeriesBibleHarness.Factory(Database);
+        using var client = factory.ClientFor(world.UserId);
+
+        // `ch999999999` is the highest number an id may carry, so the blank entry has no next one: the server
+        // neither wraps the number around nor assigns `ch1000000000`, which the client would have to read as a
+        // misleading `invalid_structure` on an id it never sent. The 400 names that entry's own id instead (G1).
+        using var response = await SeriesBibleHarness.PutAsync(
+            client,
+            world.SeriesId,
+            SeriesBibleHarness.Etag(1),
+            SeriesBibleHarness.Content(characters: new JsonArray(
+                SeriesBibleHarness.Character(999_999_999, "Cuối"),
+                new JsonObject
+                {
+                    ["id"] = string.Empty,
+                    ["name"] = "Mới",
+                    ["description"] = "Mô tả mới.",
+                    ["first_episode_id"] = null,
+                })));
+
+        await SeriesBibleHarness.AssertProblemAsync(response, 400, "bible_invalid_content");
+        var problem = await SeriesBibleHarness.ProblemAsync(response);
+        problem.Errors.ShouldNotBeNull();
+        problem.Errors!.Count.ShouldBe(1, "the refusal is the new entry's id and nothing else");
+        problem.Errors["recurring_characters[1].id"].ShouldBe(["empty"]);
+        SeriesBibleHarness.Row(Database, world.SeriesId).Version.ShouldBe(1, "a refused save changes nothing");
     }
 }

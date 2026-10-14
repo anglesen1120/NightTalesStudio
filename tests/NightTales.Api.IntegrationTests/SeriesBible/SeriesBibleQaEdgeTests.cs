@@ -28,19 +28,45 @@ public sealed class SeriesBibleQaEdgeTests(TestDatabase database) : IntegrationT
     private const string Sentinel = "QA-SENTINEL-BIBLE-BODY";
 
     [Fact]
-    public async Task PutBible_BodyWithoutContent_Returns400WithTheBodyField()
+    public async Task PutBible_BodyWithoutContent_FollowsThe404Then428Then412Then400Order()
     {
         var world = await SeriesBibleHarness.SeedAsync(Database);
         using var factory = SeriesBibleHarness.Factory(Database);
         using var client = factory.ClientFor(world.UserId);
 
-        using var response = await PutRawAsync(client, world.SeriesId, SeriesBibleHarness.Etag(1), "{\"content\":null}");
+        // A content-less document is the handler's last check, never the endpoint's first: the route answers the
+        // tenant, the precondition and the concurrency token before it, so the missing content never hides the real
+        // reason a save is impossible. Every step below sends the same `{"content":null}` body.
 
-        await SeriesBibleHarness.AssertProblemAsync(response, 400, "bible_invalid_content");
-        var problem = await SeriesBibleHarness.ProblemAsync(response);
+        // 404 first: an unknown series under a syntactically valid If-Match is not found, never a 400.
+        using var unknown = await PutRawAsync(
+            client, Guid.CreateVersion7(), SeriesBibleHarness.Etag(1), "{\"content\":null}");
+        await SeriesBibleHarness.AssertProblemAsync(unknown, 404, "not_found");
+
+        // 428 next: the route's RequireIfMatch filter answers a missing header before any handler runs.
+        using var missingHeader = await PutRawAsync(client, world.SeriesId, string.Empty, "{\"content\":null}");
+        await SeriesBibleHarness.AssertProblemAsync(missingHeader, 428, "if_match_required");
+
+        // 412 before 400: bump the row to version 2, then send a tag that no longer names the current version.
+        using (var bump = await SeriesBibleHarness.PutAsync(
+            client, world.SeriesId, SeriesBibleHarness.Etag(1), SeriesBibleHarness.Content()))
+        {
+            bump.StatusCode.ShouldBe(HttpStatusCode.OK, await bump.Content.ReadAsStringAsync(SeriesBibleHarness.Ct));
+        }
+
+        using var stale = await PutRawAsync(client, world.SeriesId, SeriesBibleHarness.Etag(1), "{\"content\":null}");
+        await SeriesBibleHarness.AssertProblemAsync(stale, 412, "bible_conflict");
+
+        // Only then 400: the caller's own series under the current tag reaches the handler's content check, whose
+        // per-field list names the content member the client left out.
+        using var noContent = await PutRawAsync(client, world.SeriesId, SeriesBibleHarness.Etag(2), "{\"content\":null}");
+        await SeriesBibleHarness.AssertProblemAsync(noContent, 400, "bible_invalid_content");
+        var problem = await SeriesBibleHarness.ProblemAsync(noContent);
         problem.Errors.ShouldNotBeNull();
-        problem.Errors!.ShouldContainKey("body", "a body that carries no document is the root 'body' field");
-        SeriesBibleHarness.Row(Database, world.SeriesId).Version.ShouldBe(1);
+        problem.Errors!.ShouldContainKey("content", "the handler's content check names the content member");
+        problem.Errors["content"].ShouldBe(["empty"]);
+
+        SeriesBibleHarness.Row(Database, world.SeriesId).Version.ShouldBe(2, "no refused attempt wrote");
     }
 
     [Fact]

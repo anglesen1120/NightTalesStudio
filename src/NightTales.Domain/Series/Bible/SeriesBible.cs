@@ -277,7 +277,12 @@ public sealed class SeriesBible : Entity, IUserOwned, IAuditable
 
             case BibleOpKind.AddCharacter:
                 {
-                    if (string.IsNullOrWhiteSpace(op.Name) || content.RecurringCharacters.Count >= limits.MaxCharacters)
+                    // The id is read first: a full `ch` number space (`ch999999999` is the ceiling) is one more
+                    // way an op adds nothing, and it must be skipped rather than stored as a ten-digit id.
+                    var characterId = NextId("ch", content.RecurringCharacters, static character => character.Id);
+                    if (characterId is null
+                        || string.IsNullOrWhiteSpace(op.Name)
+                        || content.RecurringCharacters.Count >= limits.MaxCharacters)
                     {
                         return null;
                     }
@@ -293,7 +298,7 @@ public sealed class SeriesBible : Entity, IUserOwned, IAuditable
                         [
                             .. content.RecurringCharacters,
                         new BibleCharacter(
-                            NextId("ch", content.RecurringCharacters, static character => character.Id),
+                            characterId,
                             BibleOpNormalizer.Truncate(op.Name, limits.NameChars),
                             BibleOpNormalizer.Truncate(op.Description, limits.DescriptionChars),
                             // The op carries no episode, so the first appearance stays unknown rather than wrong.
@@ -304,7 +309,12 @@ public sealed class SeriesBible : Entity, IUserOwned, IAuditable
 
             case BibleOpKind.AddPlace:
                 {
-                    if (string.IsNullOrWhiteSpace(op.Name) || content.Places.Count >= limits.MaxPlaces)
+                    // Same as the character op: a full `pl` number space skips the op instead of minting a
+                    // ten-digit id (`pl999999999` is the ceiling).
+                    var placeId = NextId("pl", content.Places, static place => place.Id);
+                    if (placeId is null
+                        || string.IsNullOrWhiteSpace(op.Name)
+                        || content.Places.Count >= limits.MaxPlaces)
                     {
                         return null;
                     }
@@ -320,7 +330,7 @@ public sealed class SeriesBible : Entity, IUserOwned, IAuditable
                         [
                             .. content.Places,
                         new BiblePlace(
-                            NextId("pl", content.Places, static place => place.Id),
+                            placeId,
                             BibleOpNormalizer.Truncate(op.Name, limits.NameChars),
                             BibleOpNormalizer.Truncate(op.Description, limits.DescriptionChars)),
                     ],
@@ -329,7 +339,12 @@ public sealed class SeriesBible : Entity, IUserOwned, IAuditable
 
             case BibleOpKind.AddRule:
                 {
-                    if (string.IsNullOrWhiteSpace(op.Text) || content.Rules.Count >= limits.MaxRules)
+                    // Same as the character op: a full `rl` number space skips the op instead of minting a
+                    // ten-digit id (`rl999999999` is the ceiling).
+                    var ruleId = NextId("rl", content.Rules, static rule => rule.Id);
+                    if (ruleId is null
+                        || string.IsNullOrWhiteSpace(op.Text)
+                        || content.Rules.Count >= limits.MaxRules)
                     {
                         return null;
                     }
@@ -345,7 +360,7 @@ public sealed class SeriesBible : Entity, IUserOwned, IAuditable
                         [
                             .. content.Rules,
                         new BibleRule(
-                            NextId("rl", content.Rules, static rule => rule.Id),
+                            ruleId,
                             BibleOpNormalizer.Truncate(op.Text, limits.RuleChars)),
                     ],
                     };
@@ -389,6 +404,8 @@ public sealed class SeriesBible : Entity, IUserOwned, IAuditable
     /// client id is never handed out again, an id of the stored content is never reused, and two blank ids of one
     /// request get two different ones. An entry that carries an id is kept verbatim — the validator decides
     /// whether the shape is acceptable — and the arrays the client did not touch are returned as they arrived.
+    /// When the number space of a prefix is already full a blank id stays blank, so the validator refuses that
+    /// entry by its own path instead of the allocator wrapping around or growing past nine digits.
     /// </remarks>
     /// <param name="requested">The content of the request, with the server-derived summary members already filled.</param>
     /// <param name="stored">The content as it stands, whose ids the new ones must not reuse.</param>
@@ -426,6 +443,13 @@ public sealed class SeriesBible : Entity, IUserOwned, IAuditable
     /// One array with an id for every entry that arrived without one: the first blank takes one past the highest
     /// suffix of the stored ids and the request's own ids, and every further blank the next number.
     /// </summary>
+    /// <remarks>
+    /// A blank stays blank once the number space of the prefix is full
+    /// (<see cref="BibleContentValidator.MaxSuffix"/>, <c>ch999999999</c>): the validator then reports
+    /// <c>empty</c> on that entry's own id and the PUT answers 400 <c>bible_invalid_content</c>. It is the one
+    /// outcome that neither wraps the number around nor invents a ten-digit id, which the same validator would
+    /// refuse as <c>invalid_structure</c> on an id the client never sent.
+    /// </remarks>
     /// <typeparam name="T">The entry type (a character, a place or a rule).</typeparam>
     /// <param name="prefix">The prefix the array owns (<c>ch</c>, <c>pl</c> or <c>rl</c>).</param>
     /// <param name="requested">The entries of the request, in body order.</param>
@@ -440,6 +464,7 @@ public sealed class SeriesBible : Entity, IUserOwned, IAuditable
         Func<T, string?> id,
         Func<T, string, T> withId)
     {
+        // The highest suffix is at most MaxSuffix, so `+ 1` never overflows an int.
         var next = Math.Max(HighestSuffix(prefix, stored, id), HighestSuffix(prefix, requested, id)) + 1;
 
         List<T>? assigned = null;
@@ -448,6 +473,14 @@ public sealed class SeriesBible : Entity, IUserOwned, IAuditable
             var entry = requested[index];
             if (!string.IsNullOrWhiteSpace(id(entry)))
             {
+                assigned?.Add(entry);
+                continue;
+            }
+
+            if (next > BibleContentValidator.MaxSuffix)
+            {
+                // The prefix' number space is full: the id stays blank for the validator to report, and the
+                // number is neither wrapped around nor grown past nine digits.
                 assigned?.Add(entry);
                 continue;
             }
@@ -466,16 +499,33 @@ public sealed class SeriesBible : Entity, IUserOwned, IAuditable
     /// one and was removed by a manual edit is indistinguishable from one that was never assigned, which is what
     /// makes max+1 the rule (<c>ch1</c>, <c>ch3</c> → <c>ch4</c>).
     /// </summary>
-    private static string NextId<T>(string prefix, IReadOnlyList<T> entries, Func<T, string?> id) =>
-        string.Create(
-            CultureInfo.InvariantCulture,
-            $"{prefix}{HighestSuffix(prefix, entries, id) + 1}");
+    /// <param name="prefix">The prefix the array owns (<c>ch</c>, <c>pl</c> or <c>rl</c>).</param>
+    /// <param name="entries">The entries to scan.</param>
+    /// <param name="id">How to read one entry's id.</param>
+    /// <returns>
+    /// The next id, or <see langword="null"/> when the number space of the prefix is full
+    /// (<see cref="BibleContentValidator.MaxSuffix"/> is its highest id): the caller skips the entry it would add
+    /// rather than storing a ten-digit id the validator refuses.
+    /// </returns>
+    private static string? NextId<T>(string prefix, IReadOnlyList<T> entries, Func<T, string?> id)
+    {
+        var highest = HighestSuffix(prefix, entries, id);
+
+        return highest < BibleContentValidator.MaxSuffix
+            ? string.Create(CultureInfo.InvariantCulture, $"{prefix}{highest + 1}")
+            : null;
+    }
 
     /// <summary>
     /// The highest numeric suffix the ids of one array carry for <paramref name="prefix"/>, or zero. The one
     /// allocation rule of the feature: <see cref="NextId{T}"/> and <see cref="AssignMissingIds"/> both take their
     /// next id from it.
     /// </summary>
+    /// <remarks>
+    /// The suffix is read with the validator's own id shape (<see cref="BibleContentValidator.TryReadSuffix"/>),
+    /// so an id the validator refuses — ten digits, a leading zero — cannot inflate the counter and move every
+    /// later id out of the range the same validation accepts.
+    /// </remarks>
     /// <param name="prefix">The prefix the array owns (<c>ch</c>, <c>pl</c> or <c>rl</c>).</param>
     /// <param name="entries">The entries to scan.</param>
     /// <param name="id">How to read one entry's id.</param>
@@ -485,11 +535,7 @@ public sealed class SeriesBible : Entity, IUserOwned, IAuditable
         var highest = 0;
         foreach (var entry in entries)
         {
-            var existing = id(entry);
-            if (existing is not null
-                && existing.StartsWith(prefix, StringComparison.Ordinal)
-                && int.TryParse(existing.AsSpan(prefix.Length), NumberStyles.None, CultureInfo.InvariantCulture, out var number)
-                && number > highest)
+            if (BibleContentValidator.TryReadSuffix(id(entry), prefix, out var number) && number > highest)
             {
                 highest = number;
             }
