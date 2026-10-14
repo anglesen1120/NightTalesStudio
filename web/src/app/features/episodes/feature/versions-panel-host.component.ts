@@ -21,7 +21,7 @@ import { VersionsPanelComponent } from '../ui/versions-panel/versions-panel.comp
       [canRestore]="store.canRestore()" [restoring]="store.restoring()"
       [needsReopen]="store.needsReopen()" [restoreError]="store.restoreError()"
       (selectVersion)="select($event)" (retryList)="store.retryList()" (retrySide)="store.retrySide($event)"
-      (restore)="restore()" (closed)="closed.emit()"
+      (restore)="restore()" (closed)="closed.emit()" (reopenRequested)="reopenRequested.emit()"
     />
   `,
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -32,6 +32,7 @@ export class VersionsPanelHostComponent {
   readonly initialLeft = input<string | null>(null);
   readonly initialRight = input<string | null>(null);
   readonly closed = output<void>();
+  readonly reopenRequested = output<void>();
   readonly selectionChange = output<{ left: string | null; right: string | null }>();
   protected readonly store = inject(VersionsStore);
   protected readonly confirming = signal(false);

@@ -12,6 +12,10 @@ import type { ParsedAddress, SegmentAddress } from '@shared/util/segment-address
 import { catchError, combineLatest, firstValueFrom, map, of, switchMap } from 'rxjs';
 import type { Observable } from 'rxjs';
 import { EpisodeDetailStore } from '../application/episode-detail.store';
+import { ApprovalStore } from '../application/approval.store';
+import type { EpisodeDetail } from '../domain/episode.model';
+import { ApproveDialogComponent } from '../ui/approve-dialog/approve-dialog.component';
+import { ReopenDialogComponent } from '../ui/reopen-dialog/reopen-dialog.component';
 import { StoryEditorStore, UNDO_WINDOW_MS } from '../application/story-editor.store';
 import { VersionsStore } from '../application/versions.store';
 import { VersionsPanelHostComponent } from './versions-panel-host.component';
@@ -65,8 +69,8 @@ function isScopeLoaded(loaded: LoadedScope, language: string): boolean {
 
 @Component({
   selector: 'nts-story-review-page',
-  imports: [TranslocoPipe, EmptyState, ErrorState, FormErrorAlert, LoadingState, PageHeader, StatusChip, StoryEditorComponent, VersionsPanelHostComponent],
-  providers: [EpisodeDetailStore, StoryEditorStore, VersionsStore, provideTranslocoScope('episodes', 'errors', 'quality')],
+  imports: [TranslocoPipe, EmptyState, ErrorState, FormErrorAlert, LoadingState, PageHeader, StatusChip, StoryEditorComponent, VersionsPanelHostComponent, ApproveDialogComponent, ReopenDialogComponent],
+  providers: [EpisodeDetailStore, StoryEditorStore, ApprovalStore, VersionsStore, provideTranslocoScope('episodes', 'errors', 'quality')],
   templateUrl: './story-review.page.html',
   styleUrl: './story-review.page.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -74,6 +78,8 @@ function isScopeLoaded(loaded: LoadedScope, language: string): boolean {
 export class StoryReviewPage {
   protected readonly detailStore = inject(EpisodeDetailStore);
   protected readonly store = inject(StoryEditorStore);
+  protected readonly approval = inject(ApprovalStore);
+  private readonly versions = inject(VersionsStore);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly mapper = inject(AppErrorMapper);
@@ -89,6 +95,18 @@ export class StoryReviewPage {
   // component instance and the focus restore below needs the host DOM node.
   private readonly editorHost = viewChild<HTMLElement, ElementRef<HTMLElement>>('editorHost', { read: ElementRef });
   private readonly versionsToggle = viewChild<ElementRef<HTMLButtonElement>>('versionsToggle');
+  private readonly pageHeader = viewChild<PageHeader, ElementRef<HTMLElement>>(PageHeader, { read: ElementRef });
+  private readonly reopenTrigger = viewChild<ElementRef<HTMLButtonElement>>('reopenTrigger');
+  private approvalTrigger: HTMLElement | null = null;
+  private closeApprovalConflict: (() => void) | null = null;
+  private savedDetailRefresh: Promise<EpisodeDetail | null> | null = null;
+  private readonly restoreApprovalFocus = signal(false);
+  protected readonly approveOpen = signal(false);
+  protected readonly reopenOpen = signal(false);
+  protected readonly approvalSaveHint = computed(() => this.store.dirty() || this.store.saving());
+  private readonly pendingApprovalAnnouncement = signal<'approved' | 'reopened' | null>(null);
+  protected readonly approvalAnnouncement = signal<StoryEditorAnnouncement | null>(null);
+  private approvalAnnouncementSequence = 0;
   private readonly restoreVersionsFocus = signal(false);
   private readonly restoreSaveFocus = signal(false);
   protected readonly conflictDialogOpen = signal(false);
@@ -229,7 +247,7 @@ export class StoryReviewPage {
   });
   protected readonly traceId = computed(() => this.fatalError()?.traceId);
   protected readonly episode = this.detailStore.detail;
-  protected readonly allowedActions = computed(() => this.detailStore.nextActions().filter((action) => action !== 'edit_story' && Object.hasOwn(ACTION_KEYS, action)));
+  protected readonly allowedActions = computed(() => this.detailStore.nextActions().filter((action) => action !== 'edit_story' && action !== 'reopen_story' && Object.hasOwn(ACTION_KEYS, action)));
   protected readonly versionsOpen = computed(() => this.routeState()[1].get('panel') === 'versions');
   protected readonly versionCount = computed(() => this.store.snapshot()?.version ?? null);
   protected readonly versionIds = computed(() => {
@@ -256,13 +274,51 @@ export class StoryReviewPage {
     void this.router.navigate([], { relativeTo: this.route, queryParams: ids, queryParamsHandling: 'merge', replaceUrl: true });
   }
 
+  protected openApprove(trigger: HTMLElement): void {
+    if (!this.approval.canOpenApprove()) return;
+    this.approvalTrigger = trigger;
+    this.approveOpen.set(true);
+  }
+
+  protected openReopen(trigger?: HTMLElement): void {
+    if (!this.approval.canReopen()) return;
+    this.approvalTrigger = trigger ?? (document.activeElement instanceof HTMLElement ? document.activeElement : null);
+    this.reopenOpen.set(true);
+  }
+
+  protected closeApprovalDialogs(): void {
+    this.approveOpen.set(false);
+    this.reopenOpen.set(false);
+    this.approval.clearBlocked();
+    this.approval.setAccepted(false);
+    this.restoreApprovalFocus.set(true);
+  }
+
+  protected async confirmApproval(intent: 'approve' | 'reopen', episodeId: string): Promise<void> {
+    if (this.savedDetailRefresh !== null) await this.savedDetailRefresh;
+    if (this.destroyRef.destroyed || this.lastEpisodeId !== episodeId || this.episode()?.id !== episodeId) return;
+    if (intent === 'approve' ? !this.approveOpen() : !this.reopenOpen()) return;
+    if (intent === 'approve') await this.approval.approve(episodeId);
+    else await this.approval.reopen(episodeId);
+  }
   constructor() {
     effect(() => {
       const [params, query] = this.routeState();
       const id = params.get('id') ?? '';
       if (id !== this.lastEpisodeId) {
         this.lastEpisodeId = id;
-        untracked(() => { void this.store.load(id); });
+        untracked(() => {
+          this.closeApprovalConflict?.();
+          this.closeApprovalConflict = null;
+          this.approveOpen.set(false);
+          this.reopenOpen.set(false);
+          this.approvalTrigger = null;
+          this.restoreApprovalFocus.set(false);
+          this.pendingApprovalAnnouncement.set(null);
+          this.approvalAnnouncement.set(null);
+          this.approval.reset();
+          void this.store.load(id);
+        });
       }
       const rawAddress = query.get('segment');
       const focusKey = id + ':' + (rawAddress ?? '');
@@ -273,6 +329,82 @@ export class StoryReviewPage {
         address: formatAddress(parsed.kind, parsed.index ?? undefined),
         sequence: ++this.focusSequence,
       });
+    });
+    this.destroyRef.onDestroy(() => {
+      this.closeApprovalConflict?.();
+      this.closeApprovalConflict = null;
+      this.approveOpen.set(false);
+      this.reopenOpen.set(false);
+      this.approval.reset();
+    });
+    let savedEpisodeId: string | null = null;
+    let observedSavedAt: number | null = null;
+    effect(() => {
+      const episodeId = this.routeState()[0].get('id');
+      const savedAt = this.store.savedAt();
+      const decisionPending = this.approval.approving() || this.approval.reopening();
+      // A mount/entity change establishes the baseline; it is not evidence of a save performed on this page.
+      if (episodeId !== savedEpisodeId) {
+        savedEpisodeId = episodeId;
+        observedSavedAt = savedAt;
+        this.savedDetailRefresh = null;
+        return;
+      }
+      if (savedAt === observedSavedAt) return;
+      observedSavedAt = savedAt;
+      if (savedAt === null || decisionPending) return;
+      // Refetch updates detail only, so the savedAt edge cannot be retriggered by its own answer.
+      untracked(() => { this.savedDetailRefresh = this.detailStore.refetch(); });
+    });
+    effect(() => {
+      const outcome = this.approval.outcome();
+      if (outcome === null) return;
+      untracked(() => {
+        // The page consumes `outcome` in this effect, before any child (the versions panel host) can read it, so the
+        // panel's now-stale needs-reopen notice is cleared here: a successful reopen is the one thing that makes both
+        // the notice and the reopen action it offers obsolete (`VersionsStore.prepareRestore`/`clearSelection` own the
+        // other two seams). Doing it in an effect would need the approval store to publish the outcome twice.
+        if (outcome === 'reopened') this.versions.needsReopen.set(false);
+        this.closeApprovalDialogs();
+        this.pendingApprovalAnnouncement.set(outcome);
+        this.approval.clearOutcome();
+      });
+    });
+    effect(() => {
+      const outcome = this.pendingApprovalAnnouncement();
+      if (outcome === null || !this.episodesLoaded()) return;
+      const text = this.resolveEpisodesKey(outcome === 'approved' ? 'approve.done' : 'reopen.done');
+      if (text === null) return;
+      untracked(() => {
+        this.approvalAnnouncement.set({ text, sequence: ++this.approvalAnnouncementSequence });
+        this.snack.open(text, undefined, { duration: 5000, politeness: 'off' });
+        this.pendingApprovalAnnouncement.set(null);
+      });
+    });
+    effect(() => {
+      if (!this.approval.conflict()) return;
+      untracked(() => {
+        this.approval.conflict.set(false);
+        const intent = this.reopenOpen() ? 'reopen' : 'approve';
+        this.approveOpen.set(false);
+        this.reopenOpen.set(false);
+        // Reuse the editor's conflict resolutions; no cached ETag or second write path.
+        this.store.conflictDiffKnown.set(false);
+        this.store.conflict.set(true);
+        void this.openConflict(intent);
+      });
+    });
+    afterRenderEffect(() => {
+      if (!this.restoreApprovalFocus() || this.approveOpen() || this.reopenOpen() || this.conflictDialogOpen()) return;
+      this.restoreApprovalFocus.set(false);
+      if (this.approvalTrigger?.isConnected && !(this.approvalTrigger instanceof HTMLButtonElement && this.approvalTrigger.disabled)) {
+        this.approvalTrigger.focus();
+        return;
+      }
+      const reopen = this.reopenTrigger()?.nativeElement;
+      if (reopen !== undefined && !reopen.disabled) { reopen.focus(); return; }
+      const heading = this.pageHeader()?.nativeElement.querySelector<HTMLHeadingElement>('h1');
+      if (heading !== null && heading !== undefined) { heading.tabIndex = -1; heading.focus(); }
     });
     effect(() => {
       if (this.store.readOnly() || this.store.conflict() === null) return;
@@ -446,14 +578,15 @@ export class StoryReviewPage {
    * confirm returns to it with the draft untouched, a second 412 shows the busy body, a failed reload its retry body.
    * It never re-opens on its own: every iteration is entered only after the user closed the previous dialog.
    */
-  private async openConflict(): Promise<void> {
-    if (this.conflictDialogOpen() || this.store.readOnly() || this.store.conflict() === null) return;
+  private async openConflict(approvalIntent?: 'approve' | 'reopen'): Promise<void> {
+    if (this.conflictDialogOpen() || (approvalIntent === undefined && this.store.readOnly()) || this.store.conflict() === null) return;
+    const episodeId = this.lastEpisodeId;
     this.conflictDialogOpen.set(true);
     // The retry copy belongs only to a reload the user just attempted here and that failed; every other iteration
     // derives its variant fresh from the store, so a stale error can never pick the dialog's copy.
     let reloadFailed = false;
     try {
-      while (!this.destroyRef.destroyed && !this.store.readOnly() && this.store.conflict() !== null) {
+      while (!this.destroyRef.destroyed && this.lastEpisodeId === episodeId && (approvalIntent !== undefined || !this.store.readOnly()) && this.store.conflict() !== null) {
         const variant: ConflictVariant = reloadFailed ? 'reloadFailed' : this.store.conflictBusy() ? 'busy' : 'body';
         reloadFailed = false;
         // The diff arrives from an async read: after a read that failed or was fenced nothing is known about the
@@ -462,22 +595,23 @@ export class StoryReviewPage {
         const dialog = this.conflictDialog.open({
           messageKey: CONFLICT_MESSAGE_KEYS[variant],
           ...(diffKnown ? { detailHeadingKey: 'episodes.conflict.diffHeading', detailTexts: this.diffLabels(this.store.conflictDiff()) } : {}),
-          saveAsNewLabel: 'errors.conflict.saveAsNew',
+          ...(approvalIntent === 'reopen' ? {} : { saveAsNewLabel: 'errors.conflict.saveAsNew' }),
           traceId: this.store.error()?.traceId,
         }, { viewContainerRef: this.viewContainerRef });
+        if (approvalIntent !== undefined) this.closeApprovalConflict = () => dialog.close?.('cancel');
         const choice = (await firstValueFrom(dialog.afterClosed())) ?? 'cancel';
-        if (this.destroyRef.destroyed) return;
+        if (this.destroyRef.destroyed || this.lastEpisodeId !== episodeId) return;
         if (choice === 'cancel') {
           await this.store.resolveConflict('cancel');
-          if (this.destroyRef.destroyed) return;
-          this.restoreSaveFocus.set(true);
+          if (this.destroyRef.destroyed || this.lastEpisodeId !== episodeId) return;
+          if (approvalIntent === undefined) this.restoreSaveFocus.set(true);
           return;
         }
         if (choice === 'reload') {
           const errorBefore = this.store.error();
           // Declining the confirm is not a decision about the conflict: the dialog is the state the user came back to.
-          if (!await this.reloadAfterConfirm()) continue;
-          if (this.destroyRef.destroyed) return;
+          if (!await this.reloadAfterConfirm(approvalIntent !== undefined)) continue;
+          if (this.destroyRef.destroyed || this.lastEpisodeId !== episodeId) return;
           if (this.store.conflict() === null) return;
           // Only a reload that came back with a fresh error keeps the conflict standing *and* earned the retry copy.
           reloadFailed = this.store.error() !== null && this.store.error() !== errorBefore;
@@ -486,24 +620,33 @@ export class StoryReviewPage {
         // Save as new: exactly one attempt. A second 412 is not retried from here — the dialog re-opens in the busy
         // variant and waits for the next explicit click, which is where the user decides what to do with the race.
         await this.store.resolveConflict('saveAsNew');
-        if (this.destroyRef.destroyed) return;
+        if (this.destroyRef.destroyed || this.lastEpisodeId !== episodeId) return;
         if (this.store.conflict() === null) return;
       }
     } finally {
+      if (approvalIntent !== undefined) this.closeApprovalConflict = null;
       this.conflictDialogOpen.set(false);
+      if (approvalIntent !== undefined && !this.destroyRef.destroyed && this.lastEpisodeId === episodeId) {
+        if (approvalIntent === 'approve' && this.approval.status() === 'story_review') this.approveOpen.set(true);
+        else if (approvalIntent === 'reopen' && this.approval.canReopen()) this.reopenOpen.set(true);
+        else this.restoreApprovalFocus.set(true);
+      }
     }
   }
 
   /** Reload replaces the unsaved text, so it always goes through the destructive confirm — from the dialog and the notice alike. */
-  private async reloadAfterConfirm(): Promise<boolean> {
+  private async reloadAfterConfirm(approvalFlow = false): Promise<boolean> {
+    const episodeId = this.lastEpisodeId;
     const confirm = this.confirmDialog.confirm({
       titleKey: 'episodes.conflict.reloadConfirmTitle',
       bodyKey: 'episodes.conflict.reloadConfirmBody',
       confirmLabelKey: 'episodes.conflict.reload',
       destructive: true,
     }, { viewContainerRef: this.viewContainerRef });
+    if (approvalFlow) this.closeApprovalConflict = () => confirm.close?.(false);
     const accepted = (await firstValueFrom(confirm.afterClosed())) ?? false;
-    if (this.destroyRef.destroyed) return false;
+    if (approvalFlow) this.closeApprovalConflict = null;
+    if (this.destroyRef.destroyed || this.lastEpisodeId !== episodeId) return false;
     if (accepted) await this.store.resolveConflict('reload');
     return accepted;
   }

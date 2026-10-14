@@ -160,14 +160,35 @@ describe('VersionsPanelHostComponent', () => {
     expect(snack).toHaveBeenCalledTimes(choice === 'saveAsNew' ? 1 : 0);
   });
 
-  it.each(['needs_reopen', 'failed'] as const)('renders %s as an inline state and never creates a dead reopen action', async (outcome) => {
+  it.each(['needs_reopen', 'failed'] as const)('renders %s inline and forwards the real reopen intent', async (outcome) => {
     const { fixture, root, snack } = await setup(outcome);
     root.querySelector<HTMLButtonElement>('.versions__restore')!.click(); await fixture.whenStable(); fixture.detectChanges();
     expect(snack).not.toHaveBeenCalled();
     if (outcome === 'needs_reopen') {
       expect(root.querySelector('.versions__alert')).not.toBeNull();
-      expect(root.querySelector('.versions__alert button')).toBeNull();
+      let requests = 0;
+      onEmit(fixture.componentInstance.reopenRequested, () => requests++);
+      root.querySelector<HTMLButtonElement>('.versions__reopen')!.click();
+      expect(requests).toBe(1);
     } else expect(root.querySelector('nts-form-error-alert')).not.toBeNull();
+  });
+
+  it('keeps the reopen notice through a background resync and never clears it from the panel itself', async () => {
+    const { fixture, root, store, realtime } = await setup('needs_reopen');
+    root.querySelector<HTMLButtonElement>('.versions__restore')!.click();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(store.needsReopen()).toBe(true);
+    realtime.emit('episode-1');
+    await settle(320);
+    fixture.detectChanges(); await fixture.whenStable();
+    // (10.5.6-T1) The page clears this notice when a reopen succeeds; no panel state change may drop it, and the
+    // message is what the e2e flow (and the develop panel) shows after a refused restore.
+    expect(store.needsReopen()).toBe(true);
+    expect(root.querySelector('.versions__alert')!.textContent).toContain(TestBed.inject(TranslocoService).translate('episodes.versions.needsReopen'));
+    expect(store.reset).not.toHaveBeenCalled();
+    expect(store.leftId()).toBe('older');
+    expect(store.rightId()).toBe('current');
   });
 
   it('ignores a late confirmation after the host closes', async () => {

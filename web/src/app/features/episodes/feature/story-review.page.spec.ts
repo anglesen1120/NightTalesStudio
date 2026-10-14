@@ -5,7 +5,7 @@ import { ActivatedRoute, Router, convertToParamMap, provideRouter } from '@angul
 import { TRANSLOCO_LOADER, TranslocoService, TranslocoTestingModule } from '@jsverse/transloco';
 import type { TranslocoLoader, Translation } from '@jsverse/transloco';
 import { MatSnackBar, type MatSnackBarDismiss } from '@angular/material/snack-bar';
-import { BehaviorSubject, of, Subject, type Observable } from 'rxjs';
+import { BehaviorSubject, firstValueFrom, of, Subject, type Observable } from 'rxjs';
 import { afterEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 import { AppErrorMapper } from '@core/errors';
 import { SessionApi, SessionStore } from '@core/session';
@@ -23,6 +23,13 @@ import errorsEn from '../../../../assets/i18n/errors/en.json';
 import qualityEn from '../../../../assets/i18n/quality/en.json';
 import { EpisodeDetailStore } from '../application/episode-detail.store';
 import { StoryEditorStore } from '../application/story-editor.store';
+import { ApprovalStore } from '../application/approval.store';
+import { VersionsStore } from '../application/versions.store';
+import { fakeVersionsStore } from '../testing/fake-versions.store';
+import { StoryRepository } from '../domain/story.repository';
+import { FakeStoryRepository, attestation } from '../testing/fake-story.repository';
+import { ApproveDialogComponent } from '../ui/approve-dialog/approve-dialog.component';
+import { ReopenDialogComponent } from '../ui/reopen-dialog/reopen-dialog.component';
 import type { SegmentAnnotation } from '../domain/annotation.model';
 import type { EpisodeDetail } from '../domain/episode.model';
 import type { StorySnapshot } from '../domain/story.model';
@@ -32,12 +39,13 @@ import { StoryEditorComponent } from '../ui/story-editor.component';
 import { VersionsPanelHostComponent } from './versions-panel-host.component';
 import { VersionsPanelComponent } from '../ui/versions-panel/versions-panel.component';
 
-@Component({ selector: 'nts-versions-panel-host', imports: [VersionsPanelComponent], template: '<nts-versions-panel (closed)="closed.emit()" />', changeDetection: ChangeDetectionStrategy.OnPush })
+@Component({ selector: 'nts-versions-panel-host', imports: [VersionsPanelComponent], template: '<nts-versions-panel [needsReopen]="true" (closed)="closed.emit()" (reopenRequested)="reopenRequested.emit()" />', changeDetection: ChangeDetectionStrategy.OnPush })
 class VersionsPanelProbe {
   readonly episodeId = input.required<string>();
   readonly initialLeft = input<string | null>(null);
   readonly initialRight = input<string | null>(null);
   readonly closed = output<void>();
+  readonly reopenRequested = output<void>();
   readonly selectionChange = output<{ left: string | null; right: string | null }>();
 }
 
@@ -78,7 +86,7 @@ class GatedScopeLoader implements TranslocoLoader {
 const translations = translationsModule(TRANSLATIONS);
 
 const snapshot: StorySnapshot = {
-  versionId: 'version-1', version: 1, etag: '"sv-version-1"', source: 'edited', wordCount: 18, qualityHints: [],
+  versionId: 'version-1', version: 1, etag: '"sv-version-1"', source: 'edited', wordCount: 18, qualityHints: [], attestation: null,
   content: {
     title: 'Chuyến xe cuối',
     hook: { text: 'Mở đầu', keywords: ['Mưa'], fact_refs: [] },
@@ -96,7 +104,7 @@ const detail: EpisodeDetail = {
 function fakeDetailStore() {
   const value = signal<EpisodeDetail | null>(detail);
   return {
-    detail: value.asReadonly(), episode: value.asReadonly(), loading: signal(false), error: signal(null),
+    value, detail: value.asReadonly(), episode: value.asReadonly(), loading: signal(false), error: signal(null),
     nextActions: signal<readonly string[]>(['edit_story']).asReadonly(),
     load: vi.fn(() => Promise.resolve(detail)), refetch: vi.fn(() => Promise.resolve(detail)),
   };
@@ -121,6 +129,7 @@ function fakeStoryStore() {
     annotationAnnouncement: signal<{ readonly count: number; readonly sequence: number } | null>(null),
     fieldErrors: signal({}), formErrors: signal<readonly string[]>([]), keywordLimitHit: signal<string | null>(null), readOnly: signal(false), invalidState: signal(false),
     removed: signal<unknown>(null), dirty: signal(false), structureWarning: signal(false),
+    version: signal(1), applyKeywordsFlaggedProblem: vi.fn(),
     moveTo: vi.fn(() => true), removeParagraph: vi.fn(() => true), undoRemove: vi.fn((): number | null => 1), discardDraft: vi.fn(),
     load: vi.fn(() => Promise.resolve()), setText: vi.fn(), setSegmentText: vi.fn(), addKeyword: vi.fn(), updateKeyword: vi.fn(), removeKeyword: vi.fn(), setMeta: vi.fn(),
     saveVersion: vi.fn(() => Promise.resolve()), hasUnsavedChanges: vi.fn(() => false),
@@ -131,6 +140,17 @@ function fakeStoryStore() {
       return Promise.resolve();
     }),
     conflictChoices,
+  };
+}
+
+/** Non-approval specs replace the whole page provider list; keep their unrelated orchestration inert. */
+function fakeApprovalStore() {
+  return {
+    status: signal('story_review'), canOpenApprove: signal(true), canApprove: signal(true), canReopen: signal(false),
+    attestation: signal(null), attestationAccepted: signal(false), approving: signal(false), reopening: signal(false),
+    error: signal(null), blocked: signal(null), checkboxInvalid: signal(false), retryAfterSec: signal(null),
+    conflict: signal(false), outcome: signal(null), hintCount: signal(0),
+    approve: vi.fn(), reopen: vi.fn(), reset: vi.fn(), clearBlocked: vi.fn(), clearOutcome: vi.fn(), setAccepted: vi.fn(),
   };
 }
 
@@ -207,11 +227,13 @@ function fakeConflictDialogs() {
 const tick = (): Promise<void> => new Promise((resolve) => { setTimeout(resolve, 0); });
 
 /** `langs` overrides the loaded scopes, so a spec can leave one out and exercise its failed/absent load. */
-async function createPage(options: { readonly langs?: Record<string, Translation>; readonly loader?: TranslocoLoader } = {}) {
+async function createPage(options: { readonly langs?: Record<string, Translation>; readonly loader?: TranslocoLoader; readonly panel?: boolean } = {}) {
   const detailStore = fakeDetailStore();
   const storyStore = fakeStoryStore();
-  const params = convertToParamMap({ id: 'episode-1' });
-  const query = convertToParamMap({});
+  const versions = fakeVersionsStore();
+  const repo = new FakeStoryRepository();
+  const params = new BehaviorSubject(convertToParamMap({ id: 'episode-1' }));
+  const query = convertToParamMap(options.panel ? { panel: 'versions' } : {});
   const snack = fakeSnackBar();
   const dialogs = fakeConflictDialogs();
   // The single confirm the page owns: leaving a dirty draft and reloading after a conflict both go through it.
@@ -221,9 +243,10 @@ async function createPage(options: { readonly langs?: Record<string, Translation
     providers: [
       ...ZONELESS_TEST_PROVIDERS,
       provideRouter([{ path: 'login', children: [] }]),
-      { provide: ActivatedRoute, useValue: { paramMap: of(params), queryParamMap: of(query), snapshot: { paramMap: params, queryParamMap: query } } },
+      { provide: ActivatedRoute, useValue: { paramMap: params, queryParamMap: of(query), snapshot: { paramMap: params.value, queryParamMap: query } } },
       { provide: AppErrorMapper, useValue: { messageKey: () => 'errors.story_invalid_content' } },
       { provide: SessionApi, useValue: new FakeSessionApi() },
+      { provide: StoryRepository, useValue: repo },
       { provide: ConflictDialog, useValue: dialogs },
       { provide: ConfirmDialog, useValue: { confirm } },
       { provide: MatSnackBar, useValue: { open: snack.open } },
@@ -232,15 +255,19 @@ async function createPage(options: { readonly langs?: Record<string, Translation
   // A spec that needs a scope file still in flight supplies its own loader, which then serves every other path itself.
   const withLoader = options.loader === undefined ? testbed : testbed.overrideProvider(TRANSLOCO_LOADER, { useValue: options.loader });
   await withLoader.overrideComponent(StoryReviewPage, {
+    remove: { imports: [VersionsPanelHostComponent] }, add: { imports: [VersionsPanelProbe] },
+  }).overrideComponent(StoryReviewPage, {
     set: { providers: [
       { provide: EpisodeDetailStore, useValue: detailStore },
       { provide: StoryEditorStore, useValue: storyStore },
+      { provide: VersionsStore, useValue: versions },
+      ApprovalStore,
     ] },
   }).compileComponents();
   const fixture = TestBed.createComponent(StoryReviewPage);
   fixture.detectChanges();
   await fixture.whenStable();
-  return { fixture, storyStore, snack, dialogs, confirm, transloco: TestBed.inject(TranslocoService) };
+  return { fixture, storyStore, detailStore, repo, params, approval: fixture.debugElement.injector.get(ApprovalStore), versions, snack, dialogs, confirm, transloco: TestBed.inject(TranslocoService) };
 }
 
 afterEach(() => TestBed.resetTestingModule());
@@ -266,6 +293,8 @@ describe('StoryReviewPage', () => {
       set: { providers: [
         { provide: EpisodeDetailStore, useValue: detailStore },
         { provide: StoryEditorStore, useValue: storyStore },
+        { provide: VersionsStore, useValue: fakeVersionsStore() },
+        { provide: ApprovalStore, useValue: fakeApprovalStore() },
       ] },
     }).compileComponents();
 
@@ -424,7 +453,7 @@ describe('StoryReviewPage', () => {
       remove: { imports: [VersionsPanelHostComponent] },
       add: { imports: [VersionsPanelProbe] },
     }).overrideComponent(StoryReviewPage, {
-      set: { providers: [{ provide: EpisodeDetailStore, useValue: detailStore }, { provide: StoryEditorStore, useValue: storyStore }] },
+      set: { providers: [{ provide: EpisodeDetailStore, useValue: detailStore }, { provide: StoryEditorStore, useValue: storyStore }, { provide: VersionsStore, useValue: fakeVersionsStore() }, { provide: ApprovalStore, useValue: fakeApprovalStore() }] },
     }).compileComponents();
     const fixture = TestBed.createComponent(StoryReviewPage);
     const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
@@ -468,7 +497,7 @@ describe('StoryReviewPage', () => {
     }).overrideComponent(StoryReviewPage, {
       remove: { imports: [VersionsPanelHostComponent] }, add: { imports: [VersionsPanelProbe] },
     }).overrideComponent(StoryReviewPage, {
-      set: { providers: [{ provide: EpisodeDetailStore, useValue: detailStore }, { provide: StoryEditorStore, useValue: storyStore }] },
+      set: { providers: [{ provide: EpisodeDetailStore, useValue: detailStore }, { provide: StoryEditorStore, useValue: storyStore }, { provide: VersionsStore, useValue: fakeVersionsStore() }, { provide: ApprovalStore, useValue: fakeApprovalStore() }] },
     }).compileComponents();
     const fixture = TestBed.createComponent(StoryReviewPage);
     vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
@@ -1010,6 +1039,329 @@ describe('StoryReviewPage', () => {
     await fixture.whenStable();
     expect(root.querySelector('.story-editor__annotation-announcement span')?.textContent).toBe(announcedVi);
     expect(root.querySelector('.story-save-bar button')?.textContent).toContain(episodesEn.editor.saveVersion);
+  });
+
+  it.each(['story_review', 'story_approved', 'draft', 'rendering'] as const)('shows only the decision appropriate to %s and never offers approve without a story', async (status) => {
+    const { fixture, detailStore } = await createPage();
+    const root = fixture.nativeElement as HTMLElement;
+    detailStore.value.set({ ...detail, status });
+    fixture.detectChanges(); await fixture.whenStable();
+    expect(root.querySelector('.story-review-page__approve') !== null).toBe(status === 'story_review');
+    expect(root.querySelector('.story-review-page__reopen') !== null).toBe(status === 'story_approved');
+    detailStore.value.set({ ...detail, status, currentStory: null, hasCurrentStory: false });
+    fixture.detectChanges(); await fixture.whenStable();
+    expect(root.querySelector('.story-review-page__approve')).toBeNull();
+    expect(root.querySelector('.story-review-page__reopen')).toBeNull();
+  });
+
+  it.each(['dirty', 'saving', 'keywords', 'moderation'] as const)('disables the launcher for the WR6 %s blocker but not for quality hints', async (condition) => {
+    const { fixture, detailStore, storyStore, repo } = await createPage();
+    const root = fixture.nativeElement as HTMLElement;
+    detailStore.value.set({ ...detail, currentStory: { ...snapshot, qualityHints: [{ ruleId: 'hint', severity: 'blocking', kind: 'objective', segment: 'hook', messageKey: 'quality.hint', evidence: '', repairDirection: null }] } });
+    fixture.detectChanges(); await fixture.whenStable();
+    const button = root.querySelector<HTMLButtonElement>('.story-review-page__approve')!;
+    expect(button.disabled).toBe(false);
+    if (condition === 'dirty') storyStore.dirty.set(true);
+    if (condition === 'saving') storyStore.saving.set(true);
+    if (condition === 'keywords') storyStore.videoBlocked.set(true);
+    if (condition === 'moderation') {
+      // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors -- the port's structured AppError contract
+      repo.scriptApprove(() => Promise.reject({ code: 'story_moderated', kind: 'conflict', status: 409, fieldErrors: {} }));
+      button.click();
+      fixture.detectChanges(); await fixture.whenStable();
+      root.querySelector<HTMLButtonElement>('nts-approve-dialog .confirm-dialog__actions button:last-child')!.click();
+      await fixture.whenStable();
+    }
+    fixture.detectChanges(); await fixture.whenStable();
+    expect(button.disabled).toBe(true);
+    expect(button.getAttribute('aria-disabled')).toBe('true');
+    if (condition === 'dirty' || condition === 'saving') {
+      expect(button.getAttribute('aria-describedby')).toBe('approval-save-hint');
+      expect(root.querySelector('#approval-save-hint')).not.toBeNull();
+    }
+    if (condition === 'moderation') {
+      storyStore.version.update((version) => version + 1);
+      fixture.detectChanges(); await fixture.whenStable();
+      expect(button.disabled).toBe(false);
+    }
+  });
+
+  it('opens with hints, confirms once with the freshest ETag and no non-true-crime attestation, announces and focuses Reopen', async () => {
+    const { fixture, detailStore, repo, snack, transloco, approval } = await createPage();
+    const root = fixture.nativeElement as HTMLElement;
+    document.body.appendChild(root);
+    root.querySelector<HTMLButtonElement>('.story-review-page__approve')!.click();
+    fixture.detectChanges(); await fixture.whenStable();
+    const dialog = fixture.debugElement.query(By.directive(ApproveDialogComponent)).componentInstance as ApproveDialogComponent;
+    expect(dialog.episodeId()).toBe(detail.id);
+    expect(dialog.confirmDisabled()).toBe(false);
+    detailStore.value.set({ ...detail, currentStory: { ...snapshot, etag: '"sv-freshest"' } });
+    detailStore.refetch.mockImplementation(() => {
+      const approved = { ...detail, status: 'story_approved', nextActions: ['reopen_story'] };
+      detailStore.value.set(approved);
+      return Promise.resolve(approved);
+    });
+    const confirm = root.querySelector<HTMLButtonElement>('nts-approve-dialog .confirm-dialog__actions button:last-child')!;
+    confirm.click(); confirm.click();
+    await fixture.whenStable(); fixture.detectChanges(); await fixture.whenStable();
+    expect(repo.approveCalls).toEqual([{ episodeId: detail.id, etag: '"sv-freshest"', attestation: undefined }]);
+    expect(root.querySelector('nts-approve-dialog')).toBeNull();
+    expect(root.querySelector('.story-review-page__approve')).toBeNull();
+    expect(approval.outcome()).toBeNull();
+    const text = transloco.translate('approve.done', {}, 'episodes');
+    expect(snack.open).toHaveBeenCalledWith(text, undefined, { duration: 5000, politeness: 'off' });
+    expect(root.querySelector('.story-review-page__announcement')?.getAttribute('aria-live')).toBe('polite');
+    expect(root.querySelector('.story-review-page__announcement')?.textContent).toContain(text);
+    expect(document.activeElement).toBe(root.querySelector('.story-review-page__reopen'));
+    fixture.destroy(); root.remove();
+  });
+
+  it('allows opening true-crime attestation but requires the tick before sending its current server text version', async () => {
+    const { fixture, detailStore, repo, approval } = await createPage();
+    const root = fixture.nativeElement as HTMLElement;
+    const statement = attestation({ text: '<b>Server statement</b>\n\nRead this literally.', textVersion: 'server-v2' });
+    detailStore.value.set({ ...detail, currentStory: { ...snapshot, attestation: statement } });
+    fixture.detectChanges(); await fixture.whenStable();
+    expect(root.querySelector<HTMLButtonElement>('.story-review-page__approve')!.disabled).toBe(false);
+    root.querySelector<HTMLButtonElement>('.story-review-page__approve')!.click();
+    fixture.detectChanges(); await fixture.whenStable();
+    const confirm = root.querySelector<HTMLButtonElement>('nts-approve-dialog .confirm-dialog__actions button:last-child')!;
+    expect(confirm.disabled).toBe(true);
+    confirm.click(); expect(repo.approveCalls).toEqual([]);
+    expect(root.querySelector('.attestation__text')?.textContent).toBe('<b>Server statement</b>');
+    expect(root.querySelector('.attestation b')).toBeNull();
+    root.querySelector<HTMLInputElement>('mat-checkbox input[type="checkbox"]')!.click();
+    fixture.detectChanges(); await fixture.whenStable();
+    expect(approval.attestationAccepted()).toBe(true);
+    expect(confirm.disabled).toBe(false);
+    confirm.click(); await fixture.whenStable();
+    expect(repo.approveCalls).toEqual([{ episodeId: detail.id, etag: snapshot.etag, attestation: { accepted: true, textVersion: 'server-v2' } }]);
+  });
+
+  it('consumes 412 once, uses the existing Reload flow and retries only on a new confirm with its fresh ETag', async () => {
+    const { fixture, detailStore, storyStore, repo, approval, dialogs, confirm } = await createPage();
+    const root = fixture.nativeElement as HTMLElement;
+    // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors -- the port's structured AppError contract
+    repo.scriptApprove(() => Promise.reject({ code: 'precondition_failed', kind: 'conflict', status: 412, fieldErrors: {} }));
+    root.querySelector<HTMLButtonElement>('.story-review-page__approve')!.click();
+    fixture.detectChanges(); await fixture.whenStable();
+    root.querySelector<HTMLButtonElement>('nts-approve-dialog .confirm-dialog__actions button:last-child')!.click();
+    await fixture.whenStable(); fixture.detectChanges(); await fixture.whenStable();
+    expect(dialogs.open).toHaveBeenCalledTimes(1);
+    expect(approval.conflict()).toBe(false);
+    expect(root.querySelector('nts-approve-dialog')).toBeNull();
+    expect(dialogs.opened[0]?.saveAsNewLabel).toBe('errors.conflict.saveAsNew');
+    storyStore.resolveConflict.mockImplementation((choice) => {
+      storyStore.conflictChoices.push(choice);
+      if (choice === 'reload') detailStore.value.set({ ...detail, currentStory: { ...snapshot, etag: '"sv-after-reload"' } });
+      storyStore.conflict.set(null);
+      return Promise.resolve();
+    });
+    dialogs.choose(0, 'reload');
+    await tick(); fixture.detectChanges(); await fixture.whenStable();
+    expect(confirm).toHaveBeenCalledWith(expect.objectContaining({ titleKey: 'episodes.conflict.reloadConfirmTitle' }), expect.anything());
+    expect(storyStore.resolveConflict).toHaveBeenCalledExactlyOnceWith('reload');
+    expect(root.querySelector('nts-approve-dialog')).not.toBeNull();
+    expect(repo.approveCalls).toHaveLength(1);
+    root.querySelector<HTMLButtonElement>('nts-approve-dialog .confirm-dialog__actions button:last-child')!.click();
+    await fixture.whenStable();
+    expect(repo.approveCalls.map((call) => call.etag)).toEqual([snapshot.etag, '"sv-after-reload"']);
+    expect(dialogs.open).toHaveBeenCalledTimes(1);
+  });
+
+  it('opens the same reopen dialog from the versions hand-over, then announces the success and restores trigger focus', async () => {
+    const { fixture, detailStore, storyStore, repo, versions, transloco, snack } = await createPage({ panel: true });
+    const root = fixture.nativeElement as HTMLElement;
+    document.body.appendChild(root);
+    detailStore.value.set({ ...detail, status: 'story_approved', nextActions: ['reopen_story', 'render'] });
+    storyStore.readOnly.set(true);
+    versions.needsReopen.set(true);
+    fixture.detectChanges(); await fixture.whenStable();
+    const reopen = root.querySelector<HTMLButtonElement>('.story-review-page__reopen')!;
+    expect(reopen.disabled).toBe(false);
+    expect(root.querySelectorAll('.story-review-page__reopen')).toHaveLength(1);
+    const panelReopen = root.querySelector<HTMLButtonElement>('.versions__reopen')!;
+    panelReopen.focus();
+    panelReopen.click();
+    fixture.detectChanges(); await fixture.whenStable();
+    expect(fixture.debugElement.query(By.directive(ReopenDialogComponent))).not.toBeNull();
+    detailStore.refetch.mockImplementation(() => {
+      detailStore.value.set(detail);
+      storyStore.readOnly.set(false);
+      return Promise.resolve(detail);
+    });
+    root.querySelector<HTMLButtonElement>('nts-reopen-dialog .confirm-dialog__actions button:last-child')!.click();
+    await fixture.whenStable(); fixture.detectChanges(); await fixture.whenStable();
+    expect(repo.reopenCalls).toEqual([{ episodeId: detail.id, etag: snapshot.etag }]);
+    expect(root.querySelector('nts-reopen-dialog')).toBeNull();
+    expect(root.querySelector<HTMLTextAreaElement>('textarea[data-segment]')!.readOnly).toBe(false);
+    const text = transloco.translate('reopen.done', {}, 'episodes');
+    expect(snack.open).toHaveBeenCalledWith(text, undefined, { duration: 5000, politeness: 'off' });
+    expect(root.querySelector('.story-review-page__announcement')?.textContent).toContain(text);
+    // The reopen succeeded, so the versions panel's stale needs-reopen notice (and the action it offers) is gone.
+    expect(versions.needsReopen()).toBe(false);
+    // The panel's trigger survives in this probe, so focus returns there.
+    expect(document.activeElement).toBe(root.querySelector('.versions__reopen'));
+    fixture.destroy(); root.remove();
+  });
+
+  it('clears the versions needs-reopen notice on a reopen outcome only, and consumes the outcome', async () => {
+    const { fixture, approval, versions } = await createPage();
+    versions.needsReopen.set(true);
+    approval.outcome.set('approved');
+    fixture.detectChanges(); await fixture.whenStable();
+    // Approving is not what the notice was waiting for: a stale notice keeps demanding a reopen it does not need.
+    expect(versions.needsReopen()).toBe(true);
+    approval.outcome.set('reopened');
+    fixture.detectChanges(); await fixture.whenStable();
+    expect(versions.needsReopen()).toBe(false);
+    expect(approval.outcome()).toBeNull();
+  });
+
+  it('returns focus to the trigger on Cancel, clears refusal state and resets dialogs on episode change and destroy', async () => {
+    const { fixture, detailStore, params, approval } = await createPage();
+    const root = fixture.nativeElement as HTMLElement;
+    document.body.appendChild(root);
+    const trigger = root.querySelector<HTMLButtonElement>('.story-review-page__approve')!;
+    trigger.focus(); trigger.click();
+    fixture.detectChanges(); await fixture.whenStable();
+    approval.blocked.set({ code: 'story_sources_required', kind: 'conflict', status: 409, fieldErrors: {} });
+    root.querySelector<HTMLButtonElement>('nts-approve-dialog .confirm-dialog__actions button:first-child')!.click();
+    fixture.detectChanges(); await fixture.whenStable();
+    expect(root.querySelector('nts-approve-dialog')).toBeNull();
+    expect(approval.blocked()).toBeNull();
+    expect(document.activeElement).toBe(trigger);
+    trigger.click(); fixture.detectChanges(); await fixture.whenStable();
+    approval.setAccepted(true);
+    detailStore.value.set({ ...detail, id: 'episode-2' });
+    params.next(convertToParamMap({ id: 'episode-2' }));
+    fixture.detectChanges(); await fixture.whenStable();
+    expect(root.querySelector('nts-approve-dialog')).toBeNull();
+    expect(approval.attestationAccepted()).toBe(false);
+    expect(approval.blocked()).toBeNull();
+    const reset = vi.spyOn(approval, 'reset');
+    fixture.destroy();
+    expect(reset).toHaveBeenCalledTimes(1);
+    root.remove();
+  });
+
+  it('keeps reopen open after a 429 with the server countdown and disables confirmation during the wait', async () => {
+    const { fixture, detailStore, repo, approval } = await createPage();
+    const root = fixture.nativeElement as HTMLElement;
+    detailStore.value.set({ ...detail, status: 'story_approved', nextActions: ['reopen_story'] });
+    // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors -- the port's structured AppError contract
+    repo.scriptReopen(() => Promise.reject({ code: 'rate_limited', kind: 'rate_limit', status: 429, fieldErrors: {}, retryAfterSec: 30 }));
+    fixture.detectChanges(); await fixture.whenStable();
+    root.querySelector<HTMLButtonElement>('.story-review-page__reopen')!.click();
+    fixture.detectChanges(); await fixture.whenStable();
+    root.querySelector<HTMLButtonElement>('nts-reopen-dialog .confirm-dialog__actions button:last-child')!.click();
+    await fixture.whenStable(); fixture.detectChanges(); await fixture.whenStable();
+    expect(approval.retryAfterSec()).toBe(30);
+    expect(approval.canReopen()).toBe(false);
+    expect(root.querySelector('nts-reopen-dialog')).not.toBeNull();
+    const dialog = fixture.debugElement.query(By.directive(ReopenDialogComponent)).componentInstance as ReopenDialogComponent;
+    expect(dialog.retryAfterSec()).toBe(30);
+    expect(root.querySelector('nts-reopen-dialog nts-retry-countdown')).not.toBeNull();
+    const confirm = root.querySelector<HTMLButtonElement>('nts-reopen-dialog .confirm-dialog__actions button:last-child')!;
+    expect(confirm.getAttribute('aria-disabled')).toBe('true');
+    confirm.click();
+    expect(repo.reopenCalls).toHaveLength(1);
+    fixture.destroy();
+  });
+
+  it('requires a fresh attestation tick after cancelling and reopening the approve dialog', async () => {
+    const { fixture, detailStore, approval } = await createPage();
+    const root = fixture.nativeElement as HTMLElement;
+    detailStore.value.set({ ...detail, currentStory: { ...snapshot, attestation: attestation() } });
+    fixture.detectChanges(); await fixture.whenStable();
+    root.querySelector<HTMLButtonElement>('.story-review-page__approve')!.click();
+    fixture.detectChanges(); await fixture.whenStable();
+    root.querySelector<HTMLInputElement>('mat-checkbox input[type="checkbox"]')!.click();
+    fixture.detectChanges(); await fixture.whenStable();
+    expect(approval.attestationAccepted()).toBe(true);
+    root.querySelector<HTMLButtonElement>('nts-approve-dialog .confirm-dialog__actions button:first-child')!.click();
+    fixture.detectChanges(); await fixture.whenStable();
+    expect(approval.attestationAccepted()).toBe(false);
+    root.querySelector<HTMLButtonElement>('.story-review-page__approve')!.click();
+    fixture.detectChanges(); await fixture.whenStable();
+    expect(root.querySelector<HTMLInputElement>('mat-checkbox input[type="checkbox"]')!.checked).toBe(false);
+    expect(root.querySelector<HTMLButtonElement>('nts-approve-dialog .confirm-dialog__actions button:last-child')!.disabled).toBe(true);
+  });
+
+  it('omits Save mine as new version for a reopen conflict on an approved read-only story', async () => {
+    const { fixture, detailStore, storyStore, repo, dialogs } = await createPage();
+    const root = fixture.nativeElement as HTMLElement;
+    detailStore.value.set({ ...detail, status: 'story_approved', nextActions: ['reopen_story'] });
+    storyStore.readOnly.set(true);
+    // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors -- the port's structured AppError contract
+    repo.scriptReopen(() => Promise.reject({ code: 'story_version_conflict', kind: 'conflict', status: 412, fieldErrors: {} }));
+    fixture.detectChanges(); await fixture.whenStable();
+    root.querySelector<HTMLButtonElement>('.story-review-page__reopen')!.click();
+    fixture.detectChanges(); await fixture.whenStable();
+    root.querySelector<HTMLButtonElement>('nts-reopen-dialog .confirm-dialog__actions button:last-child')!.click();
+    await fixture.whenStable(); fixture.detectChanges(); await fixture.whenStable();
+    expect(dialogs.open).toHaveBeenCalledTimes(1);
+    expect(dialogs.opened[0]).not.toHaveProperty('saveAsNewLabel');
+    dialogs.choose(0, 'cancel');
+    await tick(); fixture.detectChanges(); await fixture.whenStable();
+    expect(storyStore.resolveConflict).toHaveBeenCalledExactlyOnceWith('cancel');
+    expect(root.querySelector('nts-reopen-dialog')).not.toBeNull();
+  });
+
+  it('refetches detail once for a new save timestamp without looping when the detail answers', async () => {
+    const { fixture, storyStore, detailStore } = await createPage();
+    expect(detailStore.refetch).not.toHaveBeenCalled();
+    storyStore.savedAt.set(1000);
+    fixture.detectChanges(); await fixture.whenStable();
+    expect(detailStore.refetch).toHaveBeenCalledTimes(1);
+    detailStore.value.set({ ...detail, currentStory: { ...snapshot, etag: '"sv-after-save"' } });
+    fixture.detectChanges(); await fixture.whenStable();
+    expect(detailStore.refetch).toHaveBeenCalledTimes(1);
+    storyStore.savedAt.set(1000);
+    fixture.detectChanges(); await fixture.whenStable();
+    expect(detailStore.refetch).toHaveBeenCalledTimes(1);
+    storyStore.savedAt.set(2000);
+    fixture.detectChanges(); await fixture.whenStable();
+    expect(detailStore.refetch).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not refetch for a savedAt change while an approval command is pending', async () => {
+    const { fixture, storyStore, detailStore, approval } = await createPage();
+    approval.approving.set(true);
+    storyStore.savedAt.set(1000);
+    fixture.detectChanges(); await fixture.whenStable();
+    expect(detailStore.refetch).not.toHaveBeenCalled();
+    approval.approving.set(false);
+    fixture.detectChanges(); await fixture.whenStable();
+    expect(detailStore.refetch).not.toHaveBeenCalled();
+  });
+
+  it.each(['approve', 'reopen'] as const)('awaits the post-save detail refetch before %s sends the current ETag', async (intent) => {
+    const { fixture, detailStore, storyStore, repo } = await createPage();
+    const root = fixture.nativeElement as HTMLElement;
+    const current = intent === 'approve' ? detail : { ...detail, status: 'story_approved', nextActions: ['reopen_story'] };
+    detailStore.value.set(current);
+    fixture.detectChanges(); await fixture.whenStable();
+    const refreshed = new Subject<EpisodeDetail>();
+    detailStore.refetch.mockImplementationOnce(() => firstValueFrom(refreshed).then((fresh) => {
+      detailStore.value.set(fresh);
+      return fresh;
+    }));
+    storyStore.savedAt.set(1000);
+    fixture.detectChanges(); await fixture.whenStable();
+    expect(detailStore.refetch).toHaveBeenCalledTimes(1);
+    root.querySelector<HTMLButtonElement>(intent === 'approve' ? '.story-review-page__approve' : '.story-review-page__reopen')!.click();
+    fixture.detectChanges(); await fixture.whenStable();
+    root.querySelector<HTMLButtonElement>(`nts-${intent}-dialog .confirm-dialog__actions button:last-child`)!.click();
+    await Promise.resolve();
+    expect(repo.approveCalls).toHaveLength(0);
+    expect(repo.reopenCalls).toHaveLength(0);
+    const fresh = { ...current, currentStory: { ...snapshot, etag: '"sv-post-save-detail"' } };
+    refreshed.next(fresh); refreshed.complete();
+    await fixture.whenStable(); fixture.detectChanges(); await fixture.whenStable();
+    const calls = intent === 'approve' ? repo.approveCalls : repo.reopenCalls;
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.etag).toBe('"sv-post-save-detail"');
   });
 
 });

@@ -61,6 +61,12 @@ export class ConfirmDialogComponent {
   readonly cancelLabelKey = input('core.ui.confirm.cancel');
   readonly destructive = input(false);
   readonly pending = input(false);
+  /** Static forms can block confirmation independently of pending without blocking cancellation. */
+  readonly confirmDisabled = input(false);
+  /** Temporarily hold confirmation without removing the focused button from the tab order. */
+  readonly confirmHeld = input(false);
+  /** Opt-in scroll region for static [dialog-body] content; existing callers retain their layout. */
+  readonly scrollableBody = input(false);
   readonly confirmed = output<void>();
   readonly cancelled = output<void>();
 
@@ -110,7 +116,7 @@ export class ConfirmDialogComponent {
   }
 
   protected confirm(): void {
-    if (this.isPending()) return;
+    if (this.isPending() || this.confirmDisabled() || this.confirmHeld()) return;
     this.confirmed.emit();
     this.dialogRef?.close(true);
   }

@@ -21,6 +21,14 @@ export type { ApiV1EpisodesIdStoryApprovePost$Params as ApiV1EpisodesIdStoryAppr
 export { apiV1EpisodesIdStoryApprovePost as apiV1EpisodesIdStoryApprovePost } from './fn/story-endpoints/api-v-1-episodes-id-story-approve-post';
 export type { ApiV1EpisodesIdStoryReopenPost$Params as ApiV1EpisodesIdStoryReopenPost$Params } from './fn/story-endpoints/api-v-1-episodes-id-story-reopen-post';
 export { apiV1EpisodesIdStoryReopenPost as apiV1EpisodesIdStoryReopenPost } from './fn/story-endpoints/api-v-1-episodes-id-story-reopen-post';
+export type { ApiV1EpisodesIdFactSheetGeneratePost$Params as ApiV1EpisodesIdFactSheetGeneratePost$Params } from './fn/fact-sheet-endpoints/api-v-1-episodes-id-fact-sheet-generate-post';
+export { apiV1EpisodesIdFactSheetGeneratePost as apiV1EpisodesIdFactSheetGeneratePost } from './fn/fact-sheet-endpoints/api-v-1-episodes-id-fact-sheet-generate-post';
+export type { ApiV1EpisodesIdFactSheetGet$Params as ApiV1EpisodesIdFactSheetGet$Params } from './fn/fact-sheet-endpoints/api-v-1-episodes-id-fact-sheet-get';
+export { apiV1EpisodesIdFactSheetGet as apiV1EpisodesIdFactSheetGet } from './fn/fact-sheet-endpoints/api-v-1-episodes-id-fact-sheet-get';
+export type { ApiV1EpisodesIdFactSheetPut$Params as ApiV1EpisodesIdFactSheetPut$Params } from './fn/fact-sheet-endpoints/api-v-1-episodes-id-fact-sheet-put';
+export { apiV1EpisodesIdFactSheetPut as apiV1EpisodesIdFactSheetPut } from './fn/fact-sheet-endpoints/api-v-1-episodes-id-fact-sheet-put';
+export type { ApiV1EpisodesIdFactSheetApprovePost$Params as ApiV1EpisodesIdFactSheetApprovePost$Params } from './fn/fact-sheet-endpoints/api-v-1-episodes-id-fact-sheet-approve-post';
+export { apiV1EpisodesIdFactSheetApprovePost as apiV1EpisodesIdFactSheetApprovePost } from './fn/fact-sheet-endpoints/api-v-1-episodes-id-fact-sheet-approve-post';
 export type { ApiV1VoicesGet$Params as ApiV1VoicesGet$Params } from './fn/catalog-endpoints/api-v-1-voices-get';
 export { apiV1VoicesGet as apiV1VoicesGet } from './fn/catalog-endpoints/api-v-1-voices-get';
 export type { ApiV1StyleTemplatesGet$Params as ApiV1StyleTemplatesGet$Params } from './fn/catalog-endpoints/api-v-1-style-templates-get';

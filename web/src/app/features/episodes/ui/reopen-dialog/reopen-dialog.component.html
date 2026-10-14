@@ -1,0 +1,11 @@
+<button class="approval-backdrop" type="button" tabindex="-1" [disabled]="busy()" [attr.aria-label]="'core.ui.dialog.close' | transloco" (mousedown)="$event.preventDefault()" (click)="cancel()"></button>
+<nts-confirm-dialog titleKey="episodes.reopen.title" bodyKey="episodes.reopen.body" confirmLabelKey="episodes.reopen.confirm" [pending]="busy()" [confirmHeld]="busy() || retryAfterSec() !== null" [scrollableBody]="true" (confirmed)="reopened.emit()" (cancelled)="cancel()">
+  <div dialog-body class="approval-body">
+    @if (blocked()) {
+      <div class="approval-blocked" role="alert"><p>{{ blockedKey() | transloco }}</p></div>
+    }
+    @if (retryAfterSec(); as seconds) {
+      <nts-retry-countdown [seconds]="seconds" messageKey="episodes.approve.retry" />
+    }
+  </div>
+</nts-confirm-dialog>

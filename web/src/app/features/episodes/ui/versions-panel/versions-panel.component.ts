@@ -39,6 +39,7 @@ export class VersionsPanelComponent {
   readonly retryList = output<void>();
   readonly retrySide = output<'left' | 'right'>();
   readonly restore = output<void>();
+  readonly reopenRequested = output<void>();
   readonly closed = output<void>();
 
   protected readonly activeSide = signal<'left' | 'right'>('left');
@@ -96,6 +97,4 @@ export class VersionsPanelComponent {
     this.close();
   }
 
-  // ReopenActionSeam (10.5.6-T1): needsReopen is message-only until that owner's real action lands.
-  // This presentational component deliberately exposes no reopen output and no inert button.
 }
