@@ -4,6 +4,18 @@ History moved out of STATUS.md to keep the live file small. The initial archive 
 
 ## Resume-here history (Current/Previous blocks, Next actions)
 
+### Superseded web Next (Session 40) line and the backend Next web-lane clause (2026-10-15, closed Session 40: #201 merged as `c275b0bb`)
+
+Replaced text (verbatim):
+
+- **Web next (Session 40):** **10.5.5-T1** research page (`/episodes/:id/research`: sources, fetch status, fact-sheet editor, approve) delivered in PR #201 (Session 40, `feature/10.5.5-T1-s40`, from `develop` `fe319b42`, code tip `32b26e35`; lazy `:id/research` child before `:id`; no migration; local web gate — all 9 `web.yml` steps (lint, `i18n:check`, `api:gen:check`, `test:ci`, `test:tools`, `legal:gen:check`, `build`, `budget:gzip`, `csp:gen`) — exit 0 on the code tip (`test:ci` 185 files / 2942 tests at the gate, +1 regression spec in the final commit; `budget:gzip` 151 996 B of 256 000 B; the `build` step warns only that `story-review.page.scss` is 4.36 kB against the 4 kB `anyComponentStyle` warning); the stubbed 15-file `web/e2e/episodes-*.spec.ts` run: 179 passed / 3 failed, all 3 pre-existing red (§Open findings); T3 gates closed: QA agent (4 defects), code review 13 / perf 6 / security 6 findings, one `judge_batch` triage (`typesafe/jev-1.13.0` 19/19, $0.00036), fix groups, delta (1 defect), plus a full-e2e regression (a session-generation effect looped after logout — fixed with `untracked`, spec added); closes the 10.5.6-T1 approve-dialog research deep link and the 10.5.2-T1 `/episodes/:id/research` + `EPISODE_GATE` provider hand-over) → lane next **10.5.7-T1** (series bible panel + proposal diff; waits on 02.6.3-T2), then **10.5.8-T1** (find-sources; carries the research-page contract/perf follow-ups in §Open tasks) and **10.10.2-T1** render / "Make video" (bind to `videoBlocked()` + `ApprovalStore`, never `keywordFlags().length`).
+
+Replaced clause of the backend Next bullet (verbatim):
+
+Web lane: **10.5.6-T1** merged as #195 (`489d26a4`); **10.5.5-T1** research page delivered in PR #201 (Session 40).
+
+Outcome: 10.5.5-T1 merged as #201 (`c275b0bb`, tip `0c923711`, Session 40) by the coordinator; `git merge-base --is-ancestor 0c923711 origin/develop` true; CI refused (billing, CI-01, owner treats as pass); local web gate exit 0 on the code tip `32b26e35` (the tip `0c923711` adds docs only). The Resume web-next line now shows the merge and its lane pointer (10.5.7-T1 / 10.5.8-T1, both waiting on the backend lane). Both hand-overs the old line named are **closed**: (a) the 10.5.6-T1 approve dialog renders `episodes.approve.blocked.researchLink` → `/episodes/:id/research`, so the archived note that the key was unused no longer describes the code; (b) the 10.5.2-T1 `/episodes/:id/research` + `EPISODE_GATE` provider hand-over is done, with the token provided on `ResearchPageComponent` / `StoryReviewPage`.
+
 ### Superseded web Next (Session 38) line and the backend Next web-lane clause (2026-10-15, replaced when Session 40 opened the 10.5.5-T1 PR)
 
 Replaced text (verbatim):
