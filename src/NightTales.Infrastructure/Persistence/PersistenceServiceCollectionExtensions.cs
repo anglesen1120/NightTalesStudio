@@ -16,6 +16,7 @@ using NightTales.Application.Audit;
 using NightTales.Application.Features.Platform.Retention;
 using NightTales.Application.Features.Research.Jobs;
 using NightTales.Domain.Common;
+using NightTales.Domain.Series.Bible;
 using NightTales.Infrastructure.DependencyInjection;
 using NightTales.Infrastructure.Persistence.Audit;
 using NightTales.Infrastructure.Persistence.Idempotency;
@@ -26,6 +27,7 @@ using NightTales.Infrastructure.Persistence.Queries;
 using NightTales.Infrastructure.Persistence.Seeding;
 using NightTales.Infrastructure.Persistence.UnitOfWork;
 using NightTales.Infrastructure.Realtime;
+using NightTales.Infrastructure.Bible;
 using NightTales.Infrastructure.Time;
 
 namespace NightTales.Infrastructure.Persistence;
@@ -88,6 +90,16 @@ public static class PersistenceServiceCollectionExtensions
                 options => options.CommandTimeoutSeconds > 0,
                 $"'{PersistenceOptions.SectionName}:{nameof(PersistenceOptions.CommandTimeoutSeconds)}' must be greater than zero.")
             .ValidateOnStart();
+
+        // 02.6.3-T1: the series bible's content limits and the proposal job's caps (plan §3.2, §7.1). Bound and
+        // validated on start — a zero limit would answer every save with 400 — and exposed as the plain
+        // BibleLimits singleton the Application handlers take, because the Application may not reference
+        // Infrastructure. Both hosts and the test harness compose persistence, so all three get it from here.
+        services.AddOptions<BibleOptions>()
+            .BindConfiguration(BibleOptions.SectionName)
+            .ValidateOnStart();
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IValidateOptions<BibleOptions>, BibleOptionsValidator>());
+        services.TryAddSingleton(provider => provider.GetRequiredService<IOptions<BibleOptions>>().Value.Limits);
 
         // The default actor is anonymous, so a host that registers none sees no user-owned row — deny
         // by default (09 README D10). The Api replaces it with HttpCurrentUser and the Worker with

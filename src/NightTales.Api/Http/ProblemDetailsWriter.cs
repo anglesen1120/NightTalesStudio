@@ -9,6 +9,7 @@ using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using NightTales.Application.Common.Errors;
+using NightTales.Domain.Series.Bible;
 using Npgsql;
 
 namespace NightTales.Api.Http;
@@ -101,7 +102,9 @@ public static partial class ProblemDetailsWriter
     /// The catalogued 400 codes that keep their own code <em>and</em> carry the grouped <c>errors</c> object, because
     /// the client needs the per-field list as well as the reason (02.3.1-T1: <c>story_invalid_content</c> lists the
     /// segment addresses and rules that failed; 02.5.4-T1: <c>fact_sheet_invalid_content</c> names
-    /// <c>facts[i].statement</c> / <c>facts[i].sourceIds</c> / <c>body</c>). Every error of the list must be a
+    /// <c>facts[i].statement</c> / <c>facts[i].sourceIds</c> / <c>body</c>; 02.6.3-T1: <c>bible_invalid_content</c>
+    /// names the bible field path — <c>recurring_characters</c>, <c>episode_summaries[0].episode_id</c> — against
+    /// the rule code of plan §3.2, built from <see cref="BibleErrors"/>). Every error of the list must be a
     /// validation error of that code.
     /// </summary>
     private static readonly FrozenSet<string> FieldErrorCodes =
@@ -109,6 +112,7 @@ public static partial class ProblemDetailsWriter
         {
             ErrorCodes.StoryInvalidContent,
             ErrorCodes.FactSheetInvalidContent,
+            ErrorCodes.BibleInvalidContent,
         }.ToFrozenSet(StringComparer.Ordinal);
 
     /// <summary>
@@ -211,7 +215,9 @@ public static partial class ProblemDetailsWriter
             status = StatusCodes.Status400BadRequest;
             code = ownValidationCode ? driving.Code : ErrorCodes.ValidationFailed;
             title = ownValidationCode && !groupsFieldErrors ? TitleFor(driving, status) : ValidationFailedTitle;
-            fieldErrors = !ownValidationCode || groupsFieldErrors ? GroupByField(errors) : null;
+            fieldErrors = !ownValidationCode || groupsFieldErrors
+                ? BibleFieldErrors(errors) ?? GroupByField(errors)
+                : null;
             metadataSource = ownValidationCode ? driving : FirstValidationError(errors);
             LogSuppressedNonValidationErrors(http, errors);
         }
@@ -401,6 +407,39 @@ public static partial class ProblemDetailsWriter
         }
 
         return messages;
+    }
+
+    /// <summary>
+    /// The <c>errors</c> group of a <c>bible_invalid_content</c> response (02.6.3-T1 plan §3.2, §5): every failed
+    /// field path against the rule code that failed it, read back through <see cref="BibleErrors"/> because the
+    /// validator reports several paths — <c>recurring_characters</c>, <c>episode_summaries[0].episode_id</c> — and a
+    /// single <see cref="Error"/> cannot carry them as metadata. Null when no error of the list carries the structured
+    /// detail, so the generic <see cref="GroupByField"/> grouping runs instead.
+    /// </summary>
+    private static Dictionary<string, List<string>>? BibleFieldErrors(List<Error> errors)
+    {
+        Dictionary<string, List<string>>? fields = null;
+        foreach (var error in errors)
+        {
+            if (!BibleErrors.TryGetFieldErrors(error, out var fieldErrors))
+            {
+                continue;
+            }
+
+            fields ??= new Dictionary<string, List<string>>(StringComparer.Ordinal);
+            foreach (var fieldError in fieldErrors)
+            {
+                if (!fields.TryGetValue(fieldError.Field, out var codes))
+                {
+                    codes = [];
+                    fields[fieldError.Field] = codes;
+                }
+
+                codes.Add(fieldError.Code);
+            }
+        }
+
+        return fields;
     }
 
     /// <summary>The first validation error; the caller has already proven one exists.</summary>

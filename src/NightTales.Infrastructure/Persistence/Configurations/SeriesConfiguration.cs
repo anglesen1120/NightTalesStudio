@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using NightTales.Domain.Catalog;
 using NightTales.Domain.Series;
 using NightTales.Domain.Series.Autopilot;
+using NightTales.Domain.Series.Bible;
 using NightTales.Infrastructure.Persistence.Conventions;
 
 namespace NightTales.Infrastructure.Persistence.Configurations;
@@ -37,6 +38,17 @@ internal sealed class SeriesConfiguration : IEntityTypeConfiguration<Series>
             .HasPrincipalKey(authorization => new { authorization.Id, authorization.UserId })
             .OnDelete(DeleteBehavior.SetNull);
         builder.HasOne<AppUser>().WithMany().HasForeignKey(series => series.UserId).OnDelete(DeleteBehavior.Restrict);
+
+        // 02.6.3-T1: a series owns exactly one bible row. The FK is the same-owner composite
+        // (series_id, user_id) every child table reaches a series through (NTS-922-SEC-001), and the one-to-one
+        // cardinality is stated from this side because `series_bibles` carries no navigation property; the
+        // dependent half (SeriesBibleConfiguration) owns the columns, the indexes and the episode FK.
+        builder.HasOne<SeriesBible>()
+            .WithOne()
+            .HasForeignKey<SeriesBible>(bible => new { bible.SeriesId, bible.UserId })
+            // A one-to-one builder has no inferable principal type: the key expression must name it.
+            .HasPrincipalKey<Series>(series => new { series.Id, series.UserId })
+            .OnDelete(DeleteBehavior.Cascade);
 
         builder.HasIndex(series => new { series.UserId, series.CreatedAt, series.Id }).IsDescending(false, true, true);
         builder.HasIndex(series => series.UserId).HasFilter("archived_at IS NULL");

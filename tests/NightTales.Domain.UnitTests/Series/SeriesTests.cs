@@ -157,6 +157,64 @@ public sealed class SeriesTests
         SeriesAggregate.TopicLockedCode.ShouldBe(ErrorCodes.SeriesTopicLocked);
     }
 
+    /// <summary>
+    /// The announcement of a bible save (02.6.3 plan §5): the series raises it, so the outbox stores
+    /// <c>series_bible_updated.v1</c> in the save's own transaction, and the aggregate state never moves.
+    /// </summary>
+    [Fact]
+    public void Series_RaiseSeriesBibleUpdated_RaisesTheAnnouncementWithTheOwner()
+    {
+        var series = Create();
+        var changedBy = Guid.NewGuid();
+        series.ClearDomainEvents();
+
+        var result = series.RaiseSeriesBibleUpdated(2, changedBy, FixedNow);
+
+        result.IsError.ShouldBeFalse();
+
+        var raised = series.DomainEvents.OfType<SeriesBibleUpdated>().ShouldHaveSingleItem();
+        raised.SeriesId.ShouldBe(series.Id);
+        raised.UserId.ShouldBe(series.UserId);
+        raised.Version.ShouldBe(2);
+        raised.ChangedBy.ShouldBe(changedBy);
+        raised.OccurredAt.ShouldBe(FixedNow);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void Series_RaiseSeriesBibleUpdated_VersionBelowOne_IsAValidationError(int version)
+    {
+        var series = Create();
+        series.ClearDomainEvents();
+
+        var result = series.RaiseSeriesBibleUpdated(version, Guid.NewGuid(), FixedNow);
+
+        result.IsError.ShouldBeTrue();
+        result.FirstError.Code.ShouldBe("series_bible_version_invalid");
+        result.FirstError.Type.ShouldBe(ErrorOr.ErrorType.Validation);
+        series.DomainEvents.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public void Series_RaiseSeriesBibleUpdated_EmptyActor_IsAValidationError()
+    {
+        var series = Create();
+        series.ClearDomainEvents();
+
+        var result = series.RaiseSeriesBibleUpdated(2, Guid.Empty, FixedNow);
+
+        result.IsError.ShouldBeTrue();
+        result.FirstError.Code.ShouldBe("series_bible_changed_by_required");
+        result.FirstError.Type.ShouldBe(ErrorOr.ErrorType.Validation);
+        series.DomainEvents.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public void SeriesBibleUpdated_HasItsOutboxName() =>
+        typeof(SeriesBibleUpdated).GetCustomAttributes(typeof(OutboxEventAttribute), inherit: false)
+            .Cast<OutboxEventAttribute>().Single().Name.ShouldBe("series_bible_updated.v1");
+
     private static SeriesAggregate Create() => SeriesAggregate.Create(
         Guid.NewGuid(),
         new SeriesDraft(

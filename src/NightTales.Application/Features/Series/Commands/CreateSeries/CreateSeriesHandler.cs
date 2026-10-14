@@ -13,12 +13,16 @@ using NightTales.Domain.Series;
 // entity is aliased (09.4.1-T1).
 using SeriesAggregate = NightTales.Domain.Series.Series;
 
+// 02.6.3-T1: the feature namespace `…Features.SeriesBible` shadows the bible entity's name here too
+// (a member of the enclosing `…Features` namespace wins over an imported type), so it is aliased as well.
+using SeriesBibleEntity = NightTales.Domain.Series.Bible.SeriesBible;
+
 namespace NightTales.Application.Features.Series.Commands.CreateSeries;
 
 /// <summary>
 /// <c>POST /api/v1/series</c> (09.4.1 plan §4 U1, Design): it checks the two catalog rows the series
 /// points at, builds the aggregate and lets the D4 pipeline commit it together with its
-/// <c>series_created.v1</c> outbox row.
+/// <c>series_created.v1</c> outbox row and its <c>series_bibles</c> row (02.6.3-T1).
 /// </summary>
 /// <remarks>
 /// <para>
@@ -108,6 +112,11 @@ public sealed class CreateSeriesHandler(
             clock.UtcNow);
 
         db.Series.Add(series);
+
+        // 02.6.3-T1 (plan §3.3, 09 W2 CR-9): the series' one bible row is created with it, in the same unit
+        // of work, so a series and its bible are committed or rolled back together and no read ever has to
+        // create the row it did not find. Its owner is the authenticated user, never a value from the body.
+        db.SeriesBibles.Add(SeriesBibleEntity.CreateDefault(series.Id, currentUser.Id!.Value, clock));
 
         return new SeriesCreated(series.Id);
     }

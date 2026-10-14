@@ -203,6 +203,64 @@ public sealed class Series : AggregateRoot, IUserOwned, IAuditable
 
         return Result.Success;
     }
+
+    /// <summary>
+    /// Announces the content version a manual save wrote (02.6.3 plan §5): <see cref="SeriesBibleUpdated"/> is
+    /// raised so <c>series_bible_updated.v1</c> lands in the outbox of the save's own transaction, exactly as
+    /// <see cref="SeriesCreated"/> does for a new series. No state of the aggregate changes.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The save is announced by this aggregate rather than by the bible row: <c>SeriesBible</c> is an
+    /// <see cref="Entity"/> and the outbox interceptor collects the events of an <see cref="AggregateRoot"/>
+    /// only. The bible row is already stored when the caller announces it, so no precondition of the save's
+    /// own — the ETag, the limits, the approved episodes — is re-checked here.
+    /// </para>
+    /// <para>
+    /// The two refusals are caller bugs, not states: the version of a saved bible is 1-based, and a save
+    /// always has the user who made it.
+    /// </para>
+    /// </remarks>
+    /// <param name="version">The version the save produced (<c>series_bibles.version</c>).</param>
+    /// <param name="changedBy">The user who performed the save; the owner in phase P.</param>
+    /// <param name="now">The command's clock reading.</param>
+    /// <returns>
+    /// <c>Success</c>; a validation error when <paramref name="version"/> is below 1 or
+    /// <paramref name="changedBy"/> is empty.
+    /// </returns>
+    public ErrorOr<Success> RaiseSeriesBibleUpdated(int version, Guid changedBy, DateTimeOffset now)
+    {
+        if (InvalidBibleAnnouncement(version, changedBy) is { } invalid)
+        {
+            return invalid;
+        }
+
+        Raise(new SeriesBibleUpdated(Id, UserId, version, changedBy, now));
+
+        return Result.Success;
+    }
+
+    /// <summary>
+    /// The validation every bible announcement shares: a version below 1 or an empty actor is a caller bug,
+    /// not a series state, so it is a validation error rather than a conflict.
+    /// </summary>
+    /// <param name="version">The announced version.</param>
+    /// <param name="changedBy">The announced actor.</param>
+    /// <returns>The validation error, or <c>null</c> when the announcement is well formed.</returns>
+    private static Error? InvalidBibleAnnouncement(int version, Guid changedBy)
+    {
+        if (version < 1)
+        {
+            return Error.Validation("series_bible_version_invalid", "A series-bible version is 1-based.");
+        }
+
+        if (changedBy == Guid.Empty)
+        {
+            return Error.Validation("series_bible_changed_by_required", "A bible save needs the user who made it.");
+        }
+
+        return null;
+    }
 }
 
 /// <summary>

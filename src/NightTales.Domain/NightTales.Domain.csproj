@@ -4,4 +4,16 @@
     <PackageReference Include="ErrorOr" />
     <InternalsVisibleTo Include="NightTales.Domain.UnitTests" />
   </ItemGroup>
+
+  <!--
+    05.1.2-T1 (05 README D6): the tracked subtitle preset catalog, revision 1. Embedded (not copied into the
+    output) so a deployment cannot start without it, and `SubtitlePresetCatalog` addresses it by this exact
+    logical name, the same mechanism as the fetcher's `public_suffix_list.dat`. A value change means
+    `revision + 1` in the file and a release note (D6) — replace the file in a PR, never per environment.
+    The file sits outside this project directory (the sibling `seed/` catalogs are `Content` of
+    NightTales.Infrastructure) and the SDK's default globs are project-relative, so nothing is added twice.
+  -->
+  <ItemGroup>
+    <EmbeddedResource Include="../../seed/subtitle-presets.v1.json" LogicalName="NightTales.Domain.Rendering.Subtitles.subtitle-presets.v1.json" />
+  </ItemGroup>
 </Project>

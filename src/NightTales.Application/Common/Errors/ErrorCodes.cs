@@ -385,6 +385,9 @@ public static class ErrorCodes
     /// <summary>The response of a bug: an unknown code, or a handler that cannot describe its failure. Not a §5.4 row, but the code the mapper writes (09 README D7).</summary>
     public const string InternalError = "internal_error";
 
+    /// <summary>An existing series has no <c>series_bibles</c> row (data-integrity drift: the create hook never ran, or a row was deleted). <c>GET /series/{id}/bible</c> answers 500 and raises the <c>bible_missing_total</c> alert; the query never auto-creates the row (02.6.3-T1 plan §4 U1, §5).</summary>
+    public const string SeriesBibleMissing = "series_bible_missing";
+
     /// <summary><c>POST /admin/settings/{integration}/test</c> reached the host but the harmless call failed (09.10.2).</summary>
     public const string SettingTestFailed = "setting_test_failed";
 

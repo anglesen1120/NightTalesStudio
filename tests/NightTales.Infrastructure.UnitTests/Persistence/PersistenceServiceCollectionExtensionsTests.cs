@@ -4,6 +4,7 @@ using Npgsql.EntityFrameworkCore.PostgreSQL;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using NightTales.Application.Abstractions.Persistence;
+using NightTales.Domain.Series.Bible;
 using NightTales.Infrastructure.Persistence;
 using Shouldly;
 
@@ -57,6 +58,35 @@ public sealed class PersistenceServiceCollectionExtensionsTests
         first.ServiceProvider.GetRequiredService<AppDbContext>().ShouldNotBeSameAs(second.ServiceProvider.GetRequiredService<AppDbContext>());
         first.ServiceProvider.GetRequiredService<IAppDbContext>().ShouldBeSameAs(first.ServiceProvider.GetRequiredService<AppDbContext>());
         first.ServiceProvider.GetRequiredService<IReadDb>().ShouldBeSameAs(first.ServiceProvider.GetRequiredService<ReadDbContext>());
+    }
+
+    [Fact]
+    public void AddPersistence_RegistersTheBibleLimitsTheConfigurationBinds()
+    {
+        using var provider = BuildProvider(
+            ("ConnectionStrings:Postgres", ConnectionString),
+            ("Bible:Limits:MaxRules", "7"),
+            ("Bible:Limits:MaxContentBytes", "4096"));
+
+        // 02.6.3-T1: the Application takes the plain BibleLimits singleton, because it may not reference
+        // Infrastructure and must not see IOptions<BibleOptions>.
+        var limits = provider.GetRequiredService<BibleLimits>();
+
+        limits.MaxRules.ShouldBe(7);
+        limits.MaxContentBytes.ShouldBe(4096);
+        limits.MaxCharacters.ShouldBe(new BibleLimits().MaxCharacters, "a key the host does not set keeps the plan's value");
+    }
+
+    [Fact]
+    public void AddPersistence_ZeroBibleLimit_FailsWhenTheBibleIsResolved()
+    {
+        using var provider = BuildProvider(
+            ("ConnectionStrings:Postgres", ConnectionString),
+            ("Bible:Limits:MaxCharacters", "0"));
+
+        var exception = Should.Throw<OptionsValidationException>(() => provider.GetRequiredService<BibleLimits>());
+
+        exception.Failures.ShouldContain(failure => failure.Contains("Bible:Limits:MaxCharacters", StringComparison.Ordinal));
     }
 
     private static ServiceProvider BuildProvider(params (string Key, string Value)[] values)
