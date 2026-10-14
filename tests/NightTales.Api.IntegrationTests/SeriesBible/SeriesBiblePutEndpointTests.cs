@@ -12,10 +12,10 @@ namespace NightTales.Api.IntegrationTests.SeriesBible;
 
 /// <summary>
 /// <c>PUT /api/v1/series/{id}/bible</c> against the real host and a real PostgreSQL 17 (02.6.3-T1): the
-/// <c>If-Match</c> contract of D9 (428 without a tag, 412 <c>bible_conflict</c> for a stale, weak or starred
-/// one), one new version per accepted write with the <c>"sb-&lt;version&gt;"</c> tag moving with it, the §3.2
-/// limits answered as 400 <c>bible_invalid_content</c> with the offending field paths, the tenant rule, and the
-/// lost-update race two tabs run.
+/// <c>If-Match</c> contract of D9 (428 without a tag, 412 <c>bible_conflict</c> for a stale, weak, starred
+/// or malformed one), one new version per accepted write with the <c>"sb-&lt;version&gt;"</c> tag moving with
+/// it, the §3.2 limits answered as 400 <c>bible_invalid_content</c> with the offending field paths, the tenant
+/// rule, and the lost-update race two tabs run.
 /// </summary>
 [Trait("Category", "Integration")]
 public sealed class SeriesBiblePutEndpointTests(TestDatabase database) : IntegrationTest(database)
@@ -82,24 +82,25 @@ public sealed class SeriesBiblePutEndpointTests(TestDatabase database) : Integra
     }
 
     [Fact]
-    public async Task PutBible_IfMatchStar_Succeeds()
+    public async Task PutBible_IfMatchStar_Returns412()
     {
         var world = await SeriesBibleHarness.SeedAsync(Database);
         using var factory = SeriesBibleHarness.Factory(Database);
         using var client = factory.ClientFor(world.UserId);
 
-        // RFC 9110: `*` matches any existing version, so this is an ordinary replace and the tag moves with it
-        // (02.6.3-T1 failure handling). The bible route accepts it through its own BibleEtags.Matches, which layers
-        // this rule over the shared ETags.Matches — that helper alone rejects `*` (Application/Common/ETags.cs).
+        // `*` is refused by the shared ETags.Matches (Application/Common/ETags.cs), exactly as the fact-sheet
+        // edit refuses it (UpdateFactSheetCommandHandler step 2, line 90): a save must name the tag the client
+        // read, so the precondition fails with the route's own conflict code and nothing is written.
         using var response = await SeriesBibleHarness.PutAsync(
             client,
             world.SeriesId,
             ifMatch: "*",
             SeriesBibleHarness.Content());
 
-        response.StatusCode.ShouldBe(HttpStatusCode.OK, await response.Content.ReadAsStringAsync(SeriesBibleHarness.Ct));
-        SeriesBibleHarness.ResponseEtag(response).ShouldBe(SeriesBibleHarness.Etag(2));
-        SeriesBibleHarness.Row(Database, world.SeriesId).Version.ShouldBe(2);
+        await SeriesBibleHarness.AssertProblemAsync(response, 412, "bible_conflict");
+        SeriesBibleHarness.Row(Database, world.SeriesId).Version.ShouldBe(1, "a refused write changes nothing");
+        SeriesBibleHarness.OutboxCount(Database, world.UserId, SeriesBibleHarness.BibleUpdatedEvent)
+            .ShouldBe(0, "a refused write announces nothing");
     }
 
     [Fact]

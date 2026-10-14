@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net;
 using System.Text.Json;
 using NightTales.TestKit;
@@ -9,9 +10,10 @@ namespace NightTales.Api.IntegrationTests.SeriesBible;
 
 /// <summary>
 /// <c>GET /api/v1/series/{id}/bible</c> against the real host and a real PostgreSQL 17 (02.6.3-T1): the
-/// <c>"sb-&lt;version&gt;"</c> ETag (D9), the empty <c>bible.v1</c> document of a fresh series, the pending
-/// proposal slot T2 fills, and the tenant rule — an unknown id, another user's series and a drifted series
-/// without its row (500 <c>series_bible_missing</c>, plan §4 U1).
+/// <c>"sb-&lt;version&gt;"</c> ETag (D9), the empty <c>bible.v1</c> document of a fresh series, the derived
+/// <c>structure</c> and <c>approved_at</c> of a stored summary (plan §3.1), the pending proposal slot T2
+/// fills, and the tenant rule — an unknown id, another user's series and a drifted series without its row
+/// (500 <c>series_bible_missing</c>, plan §4 U1).
 /// </summary>
 [Trait("Category", "Integration")]
 public sealed class SeriesBibleGetEndpointTests(TestDatabase database) : IntegrationTest(database)
@@ -86,5 +88,49 @@ public sealed class SeriesBibleGetEndpointTests(TestDatabase database) : Integra
         // Data drift (the hook did not land, or a row was removed): the query never auto-creates it (plan §4 U1).
         await SeriesBibleHarness.AssertProblemAsync(response, 500, "series_bible_missing");
         SeriesBibleHarness.RowCount(Database, world.SeriesId).ShouldBe(0, "a read must not write the missing row");
+    }
+
+    [Fact]
+    public async Task GetBible_AfterPutWithSummary_ReturnsStructureAndApprovedAt()
+    {
+        var world = await SeriesBibleHarness.SeedAsync(Database);
+        var approved = await SeriesBibleHarness.SeedApprovedEpisodeAsync(Database, world);
+        using var factory = SeriesBibleHarness.Factory(Database);
+        using var client = factory.ClientFor(world.UserId);
+
+        using var put = await SeriesBibleHarness.PutAsync(
+            client,
+            world.SeriesId,
+            SeriesBibleHarness.Etag(1),
+            SeriesBibleHarness.Content(
+                summaries: new JsonArray(SeriesBibleHarness.Summary(approved, "Tập một", "Tóm tắt."))));
+        put.StatusCode.ShouldBe(HttpStatusCode.OK, await put.Content.ReadAsStringAsync(SeriesBibleHarness.Ct));
+
+        using var read = await SeriesBibleHarness.GetAsync(client, world.SeriesId);
+        read.StatusCode.ShouldBe(HttpStatusCode.OK, await read.Content.ReadAsStringAsync(SeriesBibleHarness.Ct));
+
+        // The read is the stored document plus the two members of a summary the client never sends: the structure
+        // the server derived from the approved story version and the approval instant (plan §3.1, §4 U1/U2).
+        var summary = (await SeriesBibleHarness.JsonAsync(read))
+            .GetProperty("content").GetProperty("episode_summaries")[0];
+        var stored = SeriesBibleHarness.Row(Database, world.SeriesId).Content["episode_summaries"]![0]!;
+
+        var structure = summary.GetProperty("structure");
+        var storedStructure = stored["structure"]!;
+        structure.EnumerateObject().Select(member => member.Name)
+            .ShouldBe(["sub_genre", "opening", "twist_type", "setting", "narrator_mode", "beats"]);
+
+        foreach (var member in new[] { "sub_genre", "opening", "twist_type", "setting", "narrator_mode" })
+        {
+            structure.GetProperty(member).GetString().ShouldBe(storedStructure[member]!.GetValue<string>(), member);
+        }
+
+        structure.GetProperty("beats").EnumerateArray().Select(beat => beat.GetString())
+            .ShouldBe(["setup", "twist", "reveal"], "the beats of the approved version, in paragraph order");
+
+        DateTimeOffset.Parse(summary.GetProperty("approved_at").GetString()!, CultureInfo.InvariantCulture)
+            .ShouldBe(
+                DateTimeOffset.Parse(stored["approved_at"]!.GetValue<string>(), CultureInfo.InvariantCulture),
+                "the read answers the instant the stored summary was approved at");
     }
 }

@@ -7,8 +7,8 @@ namespace NightTales.Api.IntegrationTests.SeriesBible;
 /// <summary>
 /// The published OpenAPI document must describe both bible routes (02.6.3-T1 acceptance): the required
 /// <c>If-Match</c> header on <c>PUT</c>, the <c>SeriesBible</c> tag, the documented error statuses, and the
-/// <c>BibleContentV1</c> component both the request and the read reference — the schema the SPA is generated
-/// from, so a rename here breaks the web build rather than a runtime parse.
+/// two content components — the write shape a request sends and the read shape a response answers — the
+/// schemas the SPA is generated from, so a rename here breaks the web build rather than a runtime parse.
 /// </summary>
 /// <remarks>
 /// Like <c>OpenApiDocumentTests</c> this reads the document the Api build writes rather than booting a host, so
@@ -75,28 +75,68 @@ public sealed class SeriesBibleOpenApiTests
     }
 
     [Fact]
-    public void BibleContentV1_is_published_and_referenced_by_both_routes()
+    public void Bible_content_is_published_per_direction()
     {
-        Schemas.TryGetProperty("BibleContentV1", out var schema).ShouldBeTrue(
-            "the acceptance names the component schema BibleContentV1 for the content of both routes");
+        // The write shape: the document a client sends, whose summaries carry only what the client owns, so the
+        // request schema can never advertise the server-derived members as writable (02.6.3-T1, plan §4 U2).
+        Schemas.TryGetProperty("BibleContentV1", out var request).ShouldBeTrue(
+            "the acceptance names the component schema BibleContentV1 for the write");
 
-        var members = schema.GetProperty("properties");
         foreach (var member in new[] { "narrator", "recurring_characters", "places", "rules", "episode_summaries" })
         {
-            members.TryGetProperty(member, out _).ShouldBeTrue($"BibleContentV1 documents {member}");
+            request.GetProperty("properties").TryGetProperty(member, out _).ShouldBeTrue($"BibleContentV1 documents {member}");
         }
 
-        // The write body wraps it under `content`...
-        var request = ResolveSchema(Operation("put").GetProperty("requestBody")
+        SummaryMembers(request).ShouldBe(
+            ["episode_id", "title", "summary"],
+            "a request summary has no structure/approved_at member to advertise");
+
+        // The read shape: the stored document plus the two members the server derives (plan §3.1, §4 U1).
+        Schemas.TryGetProperty("BibleContentResponseV1", out var response).ShouldBeTrue(
+            "the read answers its own component, so the derived members never reach the write schema");
+
+        SummaryMembers(response).ShouldBe(
+            ["episode_id", "title", "summary", "structure", "approved_at"],
+            "the read publishes both server-derived members");
+
+        StructureMembers(response).ShouldBe(
+            ["sub_genre", "opening", "twist_type", "setting", "narrator_mode", "beats"],
+            "the structure block is the snake_case case of plan §3.1");
+
+        // The write body wraps the write shape...
+        var body = ResolveSchema(Operation("put").GetProperty("requestBody")
             .GetProperty("content").GetProperty("application/json").GetProperty("schema"));
-        request.GetProperty("properties").GetProperty("content").GetProperty("$ref").GetString()
+        body.GetProperty("properties").GetProperty("content").GetProperty("$ref").GetString()
             .ShouldBe("#/components/schemas/BibleContentV1");
 
-        // ...and so does the read.
+        // ...and the read answers the read shape.
         var read = ResolveSchema(Operation("get").GetProperty("responses").GetProperty("200")
             .GetProperty("content").GetProperty("application/json").GetProperty("schema"));
         read.GetProperty("properties").GetProperty("content").GetProperty("$ref").GetString()
-            .ShouldBe("#/components/schemas/BibleContentV1");
+            .ShouldBe("#/components/schemas/BibleContentResponseV1");
+    }
+
+    /// <summary>The members of the <c>episode_summaries</c> item of a content component, in schema order.</summary>
+    private static IReadOnlyList<string> SummaryMembers(JsonElement content) =>
+        [.. SummaryItem(content).EnumerateObject().Select(member => member.Name)];
+
+    /// <summary>
+    /// The <c>structure</c> block of a read summary: the members of the component its item references.
+    /// </summary>
+    private static IReadOnlyList<string> StructureMembers(JsonElement content)
+    {
+        var structure = SummaryItem(content).GetProperty("structure");
+        var resolved = ResolveSchema(structure);
+
+        return [.. resolved.GetProperty("properties").EnumerateObject().Select(member => member.Name)];
+    }
+
+    /// <summary>The properties of the item schema of a content component's <c>episode_summaries</c> array.</summary>
+    private static JsonElement SummaryItem(JsonElement content)
+    {
+        var items = content.GetProperty("properties").GetProperty("episode_summaries").GetProperty("items");
+
+        return ResolveSchema(items).GetProperty("properties");
     }
 
     private static IReadOnlyList<string> OperationNames() =>

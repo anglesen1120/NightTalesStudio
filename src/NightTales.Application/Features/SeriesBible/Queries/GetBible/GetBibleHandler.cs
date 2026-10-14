@@ -64,7 +64,7 @@ public sealed class GetBibleHandler(IReadDb readDb, SeriesBibleMetrics metrics)
             query.SeriesId,
             row.Version,
             BibleEtags.For(row.Version),
-            BibleContentV1.FromDomain(row.Content),
+            BibleContentResponseV1.FromDomain(row.Content),
             row.ProposedContent is null
                 ? null
                 : BibleProposalDto.FromDomain(row.ProposedContent, row.ProposedFromEpisodeId));

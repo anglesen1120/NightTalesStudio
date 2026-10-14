@@ -214,6 +214,27 @@ internal static class SeriesBibleHarness
                  AND actor_user_id = '{userId.ToString("D", CultureInfo.InvariantCulture)}'
              """);
 
+    /// <summary>The outbox type of the announcement an accepted save writes (plan §5, 02.6.3-T1).</summary>
+    internal const string BibleUpdatedEvent = "series_bible_updated.v1";
+
+    /// <summary>How many <c>outbox_messages</c> rows of one type the actor owns.</summary>
+    internal static long OutboxCount(TestDatabase database, Guid userId, string type) =>
+        SqlProbe.Count(
+            database,
+            $"""
+             SELECT count(*) FROM outbox_messages
+             WHERE user_id = '{userId.ToString("D", CultureInfo.InvariantCulture)}' AND type = '{type}'
+             """);
+
+    /// <summary>The payload documents of the actor's rows of one type, joined with <c> | </c>.</summary>
+    internal static string OutboxPayload(TestDatabase database, Guid userId, string type) =>
+        SqlProbe.ScalarText(
+            database,
+            $"""
+             SELECT coalesce(string_agg(payload::text, ' | '), '') FROM outbox_messages
+             WHERE user_id = '{userId.ToString("D", CultureInfo.InvariantCulture)}' AND type = '{type}'
+             """);
+
     /// <summary><c>GET /api/v1/series/{id}/bible</c>, optionally with the SPA's language.</summary>
     internal static Task<HttpResponseMessage> GetAsync(HttpClient client, Guid seriesId, string? acceptLanguage = null) =>
         SendAsync(client, HttpMethod.Get, Url(seriesId), null, null, acceptLanguage);

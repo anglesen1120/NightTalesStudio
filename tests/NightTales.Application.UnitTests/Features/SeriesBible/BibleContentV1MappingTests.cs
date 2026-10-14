@@ -8,8 +8,10 @@ using Xunit;
 namespace NightTales.Application.UnitTests.Features.SeriesBible;
 
 /// <summary>
-/// The <c>bible.v1</c> document of 02.6.3-T1 (plan §3.1, §4 U2): the one type a PUT body and a GET response
-/// share, the names the contract fixes, and the two server-derived summary members it never carries.
+/// The <c>bible.v1</c> wire shapes of 02.6.3-T1 (plan §3.1, §4 U1/U2): the write document
+/// <see cref="BibleContentV1"/> a PUT body carries — which never advertises the two server-derived summary
+/// members — and the read document <see cref="BibleContentResponseV1"/> that answers the same document with
+/// <c>structure</c> and <c>approved_at</c> filled in.
 /// </summary>
 public sealed class BibleContentV1MappingTests
 {
@@ -112,28 +114,65 @@ public sealed class BibleContentV1MappingTests
     }
 
     [Fact]
-    public void FromDomain_StoredContent_RoundTripsWhatTheWriterSent()
+    public void FromDomain_StoredContent_CarriesTheDerivedSummaryMembers()
     {
+        var structure = new StoryStructureTags(
+            "haunted_house",
+            "rural_house",
+            "night",
+            "revenant",
+            "first_person",
+            ["setup", "twist"]);
+        var approvedAt = new DateTimeOffset(2026, 10, 4, 21, 3, 11, TimeSpan.Zero);
         var stored = new SeriesBibleContent(
             SeriesBibleContent.V1,
             new BibleNarrator("Narrator", "Persona", "Notes"),
             [new BibleCharacter("ch1", "Name", "Description", EpisodeId)],
             [new BiblePlace("pl1", "Place", "Description")],
             [new BibleRule("rl1", "Rule")],
-            [new BibleEpisodeSummary(EpisodeId, "Title", "Text", StoryStructureTags.Empty, default)]);
+            [new BibleEpisodeSummary(EpisodeId, "Title", "Text", structure, approvedAt)]);
 
-        var wire = BibleContentV1.FromDomain(stored);
+        var wire = BibleContentResponseV1.FromDomain(stored);
 
         wire.SchemaVersion.ShouldBe(SeriesBibleContent.V1);
-        wire.Narrator!.Persona.ShouldBe("Persona");
-        wire.RecurringCharacters!.ShouldHaveSingleItem().Id.ShouldBe("ch1");
-        wire.Places!.ShouldHaveSingleItem().Id.ShouldBe("pl1");
-        wire.Rules!.ShouldHaveSingleItem().Text.ShouldBe("Rule");
-        wire.EpisodeSummaries!.ShouldHaveSingleItem().Title.ShouldBe("Title");
+        wire.Narrator.Persona.ShouldBe("Persona");
+        wire.RecurringCharacters.ShouldHaveSingleItem().Id.ShouldBe("ch1");
+        wire.Places.ShouldHaveSingleItem().Id.ShouldBe("pl1");
+        wire.Rules.ShouldHaveSingleItem().Text.ShouldBe("Rule");
 
-        var reparsed = wire.ToDomain();
-        reparsed.Narrator.ShouldBe(stored.Narrator);
-        reparsed.Places.ShouldHaveSingleItem().ShouldBe(stored.Places[0]);
-        reparsed.Rules.ShouldHaveSingleItem().ShouldBe(stored.Rules[0]);
+        var summary = wire.EpisodeSummaries.ShouldHaveSingleItem();
+        summary.EpisodeId.ShouldBe(EpisodeId);
+        summary.Title.ShouldBe("Title");
+        summary.Summary.ShouldBe("Text");
+        summary.ApprovedAt.ShouldBe(approvedAt);
+        summary.Structure.SubGenre.ShouldBe("haunted_house");
+        summary.Structure.Setting.ShouldBe("rural_house");
+        summary.Structure.Opening.ShouldBe("night");
+        summary.Structure.TwistType.ShouldBe("revenant");
+        summary.Structure.NarratorMode.ShouldBe("first_person");
+        summary.Structure.Beats.ShouldBe(["setup", "twist"]);
+    }
+
+    [Fact]
+    public void ResponseJson_CarriesTheReadDocumentNames()
+    {
+        var stored = new SeriesBibleContent(
+            SeriesBibleContent.V1,
+            new BibleNarrator("Narrator", "Persona", "Notes"),
+            [],
+            [],
+            [],
+            [new BibleEpisodeSummary(EpisodeId, "Title", "Text", StoryStructureTags.Empty, default)]);
+
+        var json = JsonSerializer.Serialize(BibleContentResponseV1.FromDomain(stored), JsonSerializerOptions.Web);
+
+        json.ShouldContain("\"schema_version\":\"bible.v1\"");
+        json.ShouldContain("\"episode_summaries\":[");
+        json.ShouldContain("\"episode_id\":");
+        json.ShouldContain("\"approved_at\":");
+        json.ShouldContain("\"structure\":{");
+        json.ShouldContain("\"sub_genre\":");
+        json.ShouldContain("\"narrator_mode\":");
+        json.ShouldContain("\"beats\":[");
     }
 }

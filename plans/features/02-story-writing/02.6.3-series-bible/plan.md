@@ -86,6 +86,8 @@ Stored in `series_bibles.content`; `schema_version` is written by the backend, n
 
 Validation rules in `BibleContentValidator.Validate(SeriesBibleContent, BibleLimits) → IReadOnlyList<BibleFieldError>`: `BibleFieldError(string Field, string Code, string? Detail)` with `Field` = a JSON path (`episode_summaries[3].summary`) so the API can fill ProblemDetails `errors[]`. Codes: `too_long`, `too_many`, `empty`, `duplicate`, `unknown_episode`, `not_approved_episode`, `invalid_structure`, `read_only`. Also: no `<`/`>` in any string (the metadata rule of D3/F36 is applied for consistency), and `episode_id` must be a UUID of an **approved** episode of the same series.
 
+Owner-approved rules (2026-10-15, 02.6.3-T1): (1) item ids match `^(ch|pl|rl)[1-9][0-9]{0,8}$`, are unique within their array, and a blank/absent id on a PUT is a new entry numbered `max suffix + 1` over the request and the stored content (no high-water mark is stored, see STATUS BIBLE-2); (2) an array over its limit reports one `too_many` and its entries are not walked; (3) the returned field-error list is capped at 100 entries (the whole-content byte-budget error `too_long` is dropped only when the cap is full).
+
 ### 3.3 Table and EF mapping (CR-4 owns the table; this task owns the migration)
 
 `series_bibles` — 00 §6 plus `created_at`/`updated_at`:
@@ -137,7 +139,7 @@ WHERE NOT EXISTS (SELECT 1 FROM series_bibles b WHERE b.series_id = s.id);
   `{ seriesId, version, etag, content, proposal }` where `proposal` is `null` or
   `{ basedOnVersion, proposedFromEpisodeId, proposedAt, ops: [ { kind, summary?, name?, description?, text?, reason? } ], preview: { characters: n, places: n, rules: n, summaryForEpisodeId } }`.
   `preview` is computed server-side so the UI can render the diff banner without resolving op semantics (10.5.7).
-- `ETag` header = `"sb-<version>"` and the same value in `etag`.
+- `ETag` header = `"sb-<version>"` and the same value in `etag` (quoted, also in the PUT 200 body; owner decision 2026-10-15). `If-Match: *` is refused on PUT like on the fact-sheet route (412 `bible_conflict`).
 - Unknown series, another tenant's series, or a series of another user → **404** (09.2.3, no 403).
 - No state change (CQRS rule): a missing row is a data-integrity error → 500 `series_bible_missing` and an alert; it is **not** auto-created by the query.
 

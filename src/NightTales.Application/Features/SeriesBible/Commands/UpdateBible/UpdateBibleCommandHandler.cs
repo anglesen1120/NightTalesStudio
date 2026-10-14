@@ -1,6 +1,7 @@
 using ErrorOr;
 using Mediator;
 using Microsoft.EntityFrameworkCore;
+using NightTales.Application.Abstractions;
 using NightTales.Application.Abstractions.Persistence;
 using NightTales.Application.Common.Errors;
 using NightTales.Application.Features.Stories;
@@ -18,8 +19,9 @@ namespace NightTales.Application.Features.SeriesBible.Commands.UpdateBible;
 /// <para>
 /// The check order is the contract's: the tenant-filtered load (an unknown series and another user's are
 /// both 404), the required <c>If-Match</c> (428 <c>if_match_required</c> without it, 412
-/// <c>bible_conflict</c> for a stale, foreign or malformed tag — <c>W/…</c> included, and <c>*</c> matching
-/// the current version), the server-derived summary members, then the body (400
+/// <c>bible_conflict</c> for a stale, foreign or malformed tag — <c>W/…</c> included, and <c>*</c> refused
+/// by the shared <see cref="ETags.Matches"/> like anything else that is not the tag the client read), the
+/// server-derived summary members, then the body (400
 /// <c>bible_invalid_content</c>), so an invalid body never hides the reason a save is impossible.
 /// </para>
 /// <para>
@@ -42,14 +44,21 @@ namespace NightTales.Application.Features.SeriesBible.Commands.UpdateBible;
 /// episode rules are the Domain validator's, so its field list survives into the ProblemDetails
 /// <c>errors</c> map.
 /// </para>
+/// <para>
+/// An accepted save announces itself (<c>series_bible_updated.v1</c>, plan §5): the series aggregate raises
+/// the event after the content is replaced, so the outbox row is written by the same <c>SaveChanges</c> and
+/// the same transaction as the new version. Nothing consumes it in phase P.
+/// </para>
 /// </remarks>
 /// <param name="db">The tracked write model; the pipeline saves and commits it.</param>
 /// <param name="limits">The configured content limits (plan §3.2), from the <c>Bible:Limits</c> section.</param>
+/// <param name="currentUser">The authenticated actor: the <c>changed_by</c> of the announced save.</param>
 /// <param name="clock">The command's clock reading; the version timestamp is never read from the host clock.</param>
 /// <param name="metrics">The feature's instruments, counted when the row is missing.</param>
 public sealed class UpdateBibleCommandHandler(
     IAppDbContext db,
     BibleLimits limits,
+    ICurrentUser currentUser,
     IClock clock,
     SeriesBibleMetrics metrics) : ICommandHandler<UpdateBibleCommand, ErrorOr<UpdateBibleResult>>
 {
@@ -60,24 +69,26 @@ public sealed class UpdateBibleCommandHandler(
     {
         ArgumentNullException.ThrowIfNull(command);
 
-        // Step 1: the row lock first, then the tenant-filtered load.
+        // Step 1: the row lock first, then the tenant-filtered loads. The series is loaded tracked, and only
+        // once: it is the aggregate that announces the save (a bible row is an Entity and raises nothing), and
+        // an unknown series or another user's is the 404, before any other check.
         await db.LockSeriesBibleForUpdateAsync(command.SeriesId, cancellationToken).ConfigureAwait(false);
+
+        var series = await db.Series
+            .SingleOrDefaultAsync(candidate => candidate.Id == command.SeriesId, cancellationToken)
+            .ConfigureAwait(false);
+        if (series is null)
+        {
+            return Errors.NotFound();
+        }
 
         var bible = await db.SeriesBibles
             .SingleOrDefaultAsync(candidate => candidate.SeriesId == command.SeriesId, cancellationToken)
             .ConfigureAwait(false);
         if (bible is null)
         {
-            // The row is created with its series (§3.3): absent means an unknown or another user's series
-            // (404), or data drift on one of the caller's own series (500 + alert, never an implicit create).
-            var known = await db.Series
-                .AnyAsync(series => series.Id == command.SeriesId, cancellationToken)
-                .ConfigureAwait(false);
-            if (!known)
-            {
-                return Errors.NotFound();
-            }
-
+            // The row is created with its series (§3.3), so the caller's own series without one is data drift
+            // (500 + alert, never an implicit create).
             metrics.Missing();
             return BibleErrors.Missing();
         }
@@ -165,6 +176,14 @@ public sealed class UpdateBibleCommandHandler(
         // Step 6: the write. ReplaceContent bumps the version (D9) and keeps a pending proposal: its ops
         // stay append-only, so a manual edit can never be undone by accepting one (§4 U2, U4).
         bible.ReplaceContent(content, limits, clock);
+
+        // Step 7: the announcement. The save is observable as series_bible_updated.v1 in the outbox of this
+        // same transaction; the series aggregate raises it, because a bible row is an Entity and raises nothing.
+        var raised = series.RaiseSeriesBibleUpdated(bible.Version, currentUser.Id!.Value, clock.UtcNow);
+        if (raised.IsError)
+        {
+            return raised.Errors;
+        }
 
         var conflict = await FlushAsync(cancellationToken).ConfigureAwait(false);
         if (conflict is not null)

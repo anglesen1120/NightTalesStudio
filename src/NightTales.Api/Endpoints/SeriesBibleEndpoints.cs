@@ -151,7 +151,9 @@ public static class SeriesBibleEndpoints
 
 /// <summary>
 /// The <c>PUT /api/v1/series/{id}/bible</c> body (02.6.3 plan §5): the <c>bible.v1</c> document under
-/// <c>content</c>, so the request component references the same <c>BibleContentV1</c> schema the read answers.
+/// <c>content</c>, so the request component references the write schema <c>BibleContentV1</c>, which never
+/// advertises the summary members the server owns. The read answers <c>BibleContentResponseV1</c>, the same
+/// document with <c>structure</c> and <c>approved_at</c> filled in.
 /// </summary>
 /// <param name="Content">The replacement document; <c>schema_version</c> is written by the backend, never read.</param>
 public sealed record UpdateBibleRequest(BibleContentV1 Content);

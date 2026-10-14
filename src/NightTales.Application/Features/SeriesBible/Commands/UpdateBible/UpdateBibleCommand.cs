@@ -39,7 +39,7 @@ namespace NightTales.Application.Features.SeriesBible.Commands.UpdateBible;
 /// <param name="Content">The <c>bible.v1</c> content to store; the server re-derives the summary members it owns.
 /// <see langword="null"/> when the request carried no <c>content</c> object at all, which the handler answers as
 /// 400 <c>bible_invalid_content</c> after the 404/428/412 order — the endpoint passes it through untouched.</param>
-/// <param name="IfMatch">The <c>If-Match</c> header value: the <c>"sb-&lt;version&gt;"</c> ETag the client read, or <c>*</c>.</param>
+/// <param name="IfMatch">The <c>If-Match</c> header value: the <c>"sb-&lt;version&gt;"</c> ETag the client read. A <c>*</c>, a weak tag or any other value is not that ETag and answers 412 <c>bible_conflict</c>.</param>
 [Audited("series.bible_updated", Category.Episodes, Visibility.User)]
 public sealed record UpdateBibleCommand(Guid SeriesId, SeriesBibleContent? Content, string? IfMatch)
     : ICommand<ErrorOr<UpdateBibleResult>>, IAuditData

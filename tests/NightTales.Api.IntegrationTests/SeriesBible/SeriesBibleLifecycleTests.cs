@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json.Nodes;
@@ -14,9 +15,11 @@ using Xunit;
 namespace NightTales.Api.IntegrationTests.SeriesBible;
 
 /// <summary>
-/// The two lifecycle facts of 02.6.3-T1 that are not an HTTP shape: the create-series transaction writes the
-/// series' one <c>series_bibles</c> row (<c>CreateDefault</c>, plan §3.3), and an accepted save leaves exactly
-/// one <c>series.bible_updated</c> audit row whose data carries ids and counts only (D13, D19).
+/// The lifecycle facts of 02.6.3-T1 that are not an HTTP shape: the create-series transaction writes the
+/// series' one <c>series_bibles</c> row (<c>CreateDefault</c>, plan §3.3); an accepted save leaves exactly
+/// one <c>series.bible_updated</c> audit row whose data carries ids and counts only (D13, D19); and the same
+/// save announces itself once as <c>series_bible_updated.v1</c> in the outbox of its own transaction
+/// (plan §5).
 /// </summary>
 [Trait("Category", "Integration")]
 public sealed class SeriesBibleLifecycleTests(TestDatabase database) : IntegrationTest(database)
@@ -116,5 +119,73 @@ public sealed class SeriesBibleLifecycleTests(TestDatabase database) : Integrati
 
         await SeriesBibleHarness.AssertProblemAsync(response, 412, "bible_conflict");
         SeriesBibleHarness.AuditCount(Database, world.UserId).ShouldBe(0, "the refused write rolls back, audit row included");
+    }
+
+    [Fact]
+    public async Task PutBible_WritesOneOutboxRowOfTheAnnouncement()
+    {
+        var world = await SeriesBibleHarness.SeedAsync(Database);
+        using var factory = SeriesBibleHarness.Factory(Database);
+        using var client = factory.ClientFor(world.UserId);
+
+        using var response = await SeriesBibleHarness.PutAsync(
+            client,
+            world.SeriesId,
+            SeriesBibleHarness.Etag(1),
+            SeriesBibleHarness.Content(characters: new JsonArray(SeriesBibleHarness.Character(1, "Bà Tư"))));
+
+        response.StatusCode.ShouldBe(HttpStatusCode.OK, await response.Content.ReadAsStringAsync(SeriesBibleHarness.Ct));
+
+        // The series aggregate raises the announcement after the content is replaced, so the interceptor writes
+        // the row with the new version in the save's own SaveChanges — one row, ids and the version only (plan §5).
+        SeriesBibleHarness.OutboxCount(Database, world.UserId, SeriesBibleHarness.BibleUpdatedEvent)
+            .ShouldBe(1, "an accepted save announces itself exactly once");
+
+        var payload = JsonNode.Parse(
+            SeriesBibleHarness.OutboxPayload(Database, world.UserId, SeriesBibleHarness.BibleUpdatedEvent))!;
+        payload["seriesId"]!.GetValue<string>().ShouldBe(world.SeriesId.ToString("D", CultureInfo.InvariantCulture));
+        payload["userId"]!.GetValue<string>().ShouldBe(world.UserId.ToString("D", CultureInfo.InvariantCulture));
+        payload["version"]!.GetValue<int>().ShouldBe(2, "the version the save produced");
+        payload["changedBy"]!.GetValue<string>().ShouldBe(
+            world.UserId.ToString("D", CultureInfo.InvariantCulture),
+            "the actor of the save is the owner in phase P");
+        DateTimeOffset.Parse(payload["occurredAt"]!.GetValue<string>(), CultureInfo.InvariantCulture)
+            .ShouldBe(SeriesBibleHarness.Start);
+
+        // The payload is an ids-and-metadata document (02 D19): no title, name or rule text travels with it.
+        SeriesBibleHarness.OutboxPayload(Database, world.UserId, SeriesBibleHarness.BibleUpdatedEvent)
+            .ShouldNotContain("Bà Tư");
+    }
+
+    [Fact]
+    public async Task PutBible_RefusedWrite_WritesNoOutboxRow()
+    {
+        var world = await SeriesBibleHarness.SeedAsync(Database);
+        using var factory = SeriesBibleHarness.Factory(Database);
+        using var client = factory.ClientFor(world.UserId);
+
+        using var stale = await SeriesBibleHarness.PutAsync(
+            client,
+            world.SeriesId,
+            SeriesBibleHarness.Etag(9),
+            SeriesBibleHarness.Content());
+        await SeriesBibleHarness.AssertProblemAsync(stale, 412, "bible_conflict");
+
+        var characters = new JsonArray();
+        for (var index = 1; index <= 31; index++)
+        {
+            characters.Add(SeriesBibleHarness.Character(index));
+        }
+
+        using var invalid = await SeriesBibleHarness.PutAsync(
+            client,
+            world.SeriesId,
+            SeriesBibleHarness.Etag(1),
+            SeriesBibleHarness.Content(characters: characters));
+        await SeriesBibleHarness.AssertProblemAsync(invalid, 400, "bible_invalid_content");
+
+        SeriesBibleHarness.Row(Database, world.SeriesId).Version.ShouldBe(1, "a refused write changes nothing");
+        SeriesBibleHarness.OutboxCount(Database, world.UserId, SeriesBibleHarness.BibleUpdatedEvent)
+            .ShouldBe(0, "the announcement is written by the save's own transaction, so a refusal leaves none");
     }
 }

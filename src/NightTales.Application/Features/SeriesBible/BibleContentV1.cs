@@ -5,10 +5,10 @@ using NightTales.Domain.Stories.Structure;
 namespace NightTales.Application.Features.SeriesBible;
 
 /// <summary>
-/// The <c>bible.v1</c> document of a series bible as it travels between the client and
-/// <c>GET</c>/<c>PUT /api/v1/series/{id}/bible</c> (02.6.3-T1, plan §3.1, §4 U1/U2): one type for the
-/// response content and for the request body, so the OpenAPI document carries a single
-/// <c>BibleContentV1</c> schema and a writer cannot drift from a reader.
+/// The <c>bible.v1</c> document of a <c>PUT /api/v1/series/{id}/bible</c> body (02.6.3-T1, plan §3.1, §4
+/// U2): the content the client sends, with the two server-derived members of a summary
+/// (<c>structure</c>, <c>approved_at</c>) deliberately absent. The shape a read answers is
+/// <see cref="BibleContentResponseV1"/>, which is the same document plus those two members.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -18,8 +18,9 @@ namespace NightTales.Application.Features.SeriesBible;
 /// </para>
 /// <para>
 /// <c>schema_version</c> is accepted and ignored: the backend always writes <c>bible.v1</c> (plan §4 U2).
-/// A summary's <c>structure</c> and <c>approved_at</c> are server-derived and have no member here; the
-/// handler fills both from the episode's approved story version.
+/// A summary's <c>structure</c> and <c>approved_at</c> are server-derived and have no member here, so the
+/// published request schema never advertises them as writable; the handler fills both on the stored content
+/// from the episode's approved story version.
 /// </para>
 /// <para>
 /// Every member is nullable, so a partial body binds and reaches the Domain validator, which reports the
@@ -60,25 +61,6 @@ public sealed record BibleContentV1(
         Map(Places, static item => (item ?? BiblePlaceV1.Empty).ToDomain()),
         Map(Rules, static item => (item ?? BibleRuleV1.Empty).ToDomain()),
         Map(EpisodeSummaries, static item => (item ?? BibleEpisodeSummaryV1.Empty).ToDomain()));
-
-    /// <summary>
-    /// The wire document of a stored content: a reader gets back what a writer sent. A summary serialises
-    /// its id, title and summary only — structure and approved_at stay server-side.
-    /// </summary>
-    /// <param name="content">The stored <c>bible.v1</c> content.</param>
-    /// <returns>The wire document.</returns>
-    public static BibleContentV1 FromDomain(SeriesBibleContent content)
-    {
-        ArgumentNullException.ThrowIfNull(content);
-
-        return new BibleContentV1(
-            content.SchemaVersion,
-            BibleNarratorV1.FromDomain(content.Narrator),
-            Map(content.RecurringCharacters, BibleCharacterV1.FromDomain),
-            Map(content.Places, BiblePlaceV1.FromDomain),
-            Map(content.Rules, BibleRuleV1.FromDomain),
-            Map(content.EpisodeSummaries, BibleEpisodeSummaryV1.FromDomain));
-    }
 
     /// <summary>
     /// Maps a list one item at a time, keeping the index of every item so a field path
@@ -245,14 +227,4 @@ public sealed record BibleEpisodeSummaryV1(
     /// <returns>The summary the handler completes.</returns>
     public BibleEpisodeSummary ToDomain() =>
         new(EpisodeId ?? Guid.Empty, Title ?? string.Empty, Summary ?? string.Empty, StoryStructureTags.Empty, default);
-
-    /// <summary>The wire summary of a stored one; the two server-derived members are intentionally dropped.</summary>
-    /// <param name="summary">The stored summary.</param>
-    /// <returns>The wire value.</returns>
-    public static BibleEpisodeSummaryV1 FromDomain(BibleEpisodeSummary summary)
-    {
-        ArgumentNullException.ThrowIfNull(summary);
-
-        return new BibleEpisodeSummaryV1(summary.EpisodeId, summary.Title, summary.Summary);
-    }
 }

@@ -17,13 +17,13 @@ namespace NightTales.Application.Features.SeriesBible.Queries.GetBible;
 /// <param name="SeriesId">The series whose bible is read; another user's id answers 404, like a missing one.</param>
 /// <param name="Version">The <c>series_bibles.version</c> the content was read at; the ETag names it.</param>
 /// <param name="ETag">The strong ETag of that version, quotes included (<c>"sb-2"</c>): what the client sends as <c>If-Match</c>. Wire name <c>etag</c> (the camel-case policy would spell the member <c>eTag</c>).</param>
-/// <param name="Content">The stored <c>bible.v1</c> document.</param>
+/// <param name="Content">The stored <c>bible.v1</c> document, with each summary's derived <c>structure</c> and <c>approved_at</c>.</param>
 /// <param name="Proposal">The pending proposal, or <see langword="null"/> when none is pending.</param>
 public sealed record BibleDto(
     Guid SeriesId,
     int Version,
     [property: JsonPropertyName("etag")] string ETag,
-    BibleContentV1 Content,
+    BibleContentResponseV1 Content,
     BibleProposalDto? Proposal) : IHasETag
 {
     /// <inheritdoc />
