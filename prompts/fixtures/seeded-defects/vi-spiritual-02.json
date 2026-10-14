@@ -1,0 +1,163 @@
+{
+  "id": "vi-spiritual-02",
+  "language": "vi",
+  "topic": "spiritual",
+  "tier": "standard",
+  "clean": false,
+  "brief": "Người con út trở về căn nhà cũ ở một làng ven sông sau đám tang mẹ. Mẹ anh khi còn sống đã hứa thay một người ở bến đò cũ giữ hương trong hai mươi năm, và lời hứa ấy năm nay vừa hết hạn. Câu chuyện xoay quanh món nợ ấy: người sống phải trả tiếp cho người đã khuất.",
+  "draft": {
+    "title": "Món Nợ Ở Bến Đò Cũ",
+    "hook": {
+      "text": "Đám tang mẹ tôi xong thì tôi ở lại căn nhà cũ bên sông một mình. Đêm đầu tiên, tôi nghe tiếng cửa sau mở rồi khép, dù nhà chỉ có tôi. Trong ngăn kéo bàn thờ, tôi tìm thấy một tờ giấy viết tay của mẹ.",
+      "keywords": ["small riverside house at night with one lamp lit"],
+      "fact_refs": []
+    },
+    "paragraphs": [
+      {
+        "beat": "setup",
+        "text": "Tôi là con út, sinh ra khi mẹ đã ngoài bốn mươi. Cả làng ven sông này tôi thuộc từng ngõ. Tôi đi làm ăn xa, chỉ về khi mẹ ốm nặng. Lần này tôi về để lo đám tang. Nhà cũ không đổi, chỉ có người nằm trong quan tài là khác. Trong đám tang, bà con nhắc nhiều đến một lời hứa. Không ai nói rõ, chỉ bảo mẹ tôi còn nợ. Tôi ngồi bên mâm cơm còn khói, nghe mà chưa hiểu gì.",
+        "keywords": ["wooden house by a river at dusk"],
+        "fact_refs": []
+      },
+      {
+        "beat": "build_up",
+        "text": "Căn nhà thờ họ nằm sát bờ sông, mái ngói đã ngả màu. Tôi ngủ ở gian giữa, cạnh chiếc phản gỗ của mẹ. Đêm đầu, tôi nghe nước sông chảy rất to. Tiếng nước ấy không giống mọi đêm trong ký ức tôi. Tôi thắp một nén nhang rồi ngồi nhìn bàn thờ. Ảnh mẹ đặt cạnh ảnh ông nội, khung gỗ đã sờn. Đến khuya, tôi mới chợp mắt được một lúc. Trong nhà chỉ còn mùi nhang và mùi ẩm của gỗ.",
+        "keywords": ["candle smoke curling in a dim empty room"],
+        "fact_refs": []
+      },
+      {
+        "beat": "build_up",
+        "text": "Sáng hôm sau, ông Ba hàng xóm sang thắp nhang cho mẹ. Ông ngồi xuống chiếc ghế tre, rót chén nước rồi nói. Mẹ tôi có một lời hứa với người ở bến đò cũ. Lời hứa ấy có từ năm trận lũ lớn. Ông bảo mẹ tôi chưa trả xong thì đã mất. Tôi hỏi người ở bến đò là ai. Ông không trả lời. Trước khi về, ông dặn tôi nên xuống bến một lần.",
+        "keywords": ["two teacups on a low wooden table at dawn"],
+        "fact_refs": []
+      },
+      {
+        "beat": "build_up",
+        "text": "Chị Hai tôi vẫn sống ở làng, nhà chị cách bến đò vài bước. Năm nay chị bốn mươi hai tuổi, khỏe mạnh và làm ruộng. Sáng nào chị cũng gánh rau ra chợ. Tôi ghé nhà chị uống chén trà rồi mới về nhà mẹ. Chị hỏi tôi có nghe gì về lời hứa của mẹ không. Tôi nói chưa, chị chỉ thở dài rồi quay vào bếp. Chị bảo chuyện cũ thì để yên cho người mất. Tôi ngồi thêm một lúc rồi đội mưa đi về.",
+        "keywords": ["flower garden in front of a village house at noon"],
+        "fact_refs": []
+      },
+      {
+        "beat": "build_up",
+        "text": "Mẹ tôi có một thói quen mà hồi nhỏ tôi không hiểu. Đêm rằm nào mẹ cũng ra bến đò cũ một mình. Mẹ mang theo một bát cơm và một nén nhang. Đến gần sáng mẹ mới trở về, tay áo ướt sương. Tôi từng hỏi mẹ đi đâu, mẹ bảo đi trả nợ. Trả nợ cho ai thì mẹ không nói. Tôi còn nhớ mẹ bảo sẽ trả đủ trong hai mươi năm. Năm nay là năm thứ hai mươi, mẹ thì đã mất.",
+        "keywords": ["rice bowl and incense stick on a stone ledge at night"],
+        "fact_refs": []
+      },
+      {
+        "beat": "build_up",
+        "text": "Bến đò cũ nằm ở đầu làng, từ sau trận lũ thì bỏ không. Cầu gỗ mục, chỉ còn mấy cọc đóng xuống bùn. Tôi xuống đó vào một buổi chiều, trời còn mưa. Nước sông đục, chảy xiết hơn tôi nhớ. Trên bờ có một miếu nhỏ, hương còn cháy dở. Trước miếu đặt một bát cơm đã nguội từ lâu. Tôi đứng nhìn mà nghĩ đến những đêm mẹ ra đây. Gió dưới bến lạnh hơn trên làng nhiều.",
+        "keywords": ["broken wooden jetty over muddy river water at dusk"],
+        "fact_refs": []
+      },
+      {
+        "beat": "build_up",
+        "text": "Trong ngăn kéo bàn thờ, tờ giấy của mẹ vẫn còn đó. Giấy đã ố vàng, chữ viết bằng mực xanh. Trên giấy có một cái tên và một ngày tháng. Ngày tháng ấy rơi đúng vào năm trận lũ lớn. Dưới cùng, mẹ viết một câu ngắn. Mẹ xin lỗi vì chưa trả hết món nợ này. Mẹ nhờ người còn sống trả thay cho mẹ. Tôi đọc câu đó ba lần mà tay vẫn lạnh.",
+        "keywords": ["folded paper on a wooden tray under a lamp"],
+        "fact_refs": []
+      },
+      {
+        "beat": "build_up",
+        "text": "Tôi đem lời hứa ấy hỏi bà Tư, người bán nước ở chợ. Bà Tư nhớ chuyện này, bà kể chậm rãi. Mẹ tôi hứa thắp hương cho một người ở bến. Hứa trong hai mươi năm, mỗi đêm rằm một lần. Đổi lại, người ấy sẽ giữ cho nhà tôi yên. Bà Tư bảo lời hứa đó mẹ tôi đã giữ gần đủ. Chỉ còn mấy tháng cuối thì mẹ mất. Bà Tư nhìn tôi rồi hỏi tôi có định trả thay không.",
+        "keywords": ["market stall with steaming pots at midday"],
+        "fact_refs": []
+      },
+      {
+        "beat": "build_up",
+        "text": "Đêm rằm tháng ấy, tôi ra bến đò cũ thắp nhang. Tôi bắt chước mẹ, đặt bát cơm trước miếu. Trăng lên muộn, bờ sông tối om. Tôi ngồi trên cọc gỗ, nghe nước chảy dưới chân. Đến nửa đêm, tôi nghe tiếng bước chân trên sỏi. Tôi quay lại, chỉ thấy con đường làng vắng. Tôi ngồi lại đến khi nhang tàn hết. Trên đường về, tôi thấy nhà mình sáng đèn.",
+        "keywords": ["empty riverside path under a low moon"],
+        "fact_refs": []
+      },
+      {
+        "beat": "clue",
+        "text": "Tờ giấy ghi tên một người phụ nữ tên là bà Bảy. Tôi đem cái tên đó hỏi ông Ba hàng xóm. Ông Ba ngồi im rất lâu rồi mới nói. Bà Bảy mất trong trận lũ năm đó, không có chồng con. Nhà bà ở sát bến đò, giờ chỉ còn nền đất. Ông bảo mẹ tôi là người duy nhất nhớ bà Bảy. Đám giỗ bà Bảy, mẹ tôi không bỏ năm nào. Tôi hỏi vì sao mẹ lại nhớ một người xa lạ.",
+        "keywords": ["abandoned house foundation beside a river bank"],
+        "fact_refs": []
+      },
+      {
+        "beat": "clue",
+        "text": "Tôi lên xã hỏi lại chuyện trận lũ năm ấy. Danh sách người mất được ghi trong một cuốn sổ. Tên bà Bảy nằm ở dòng thứ chín. Hôm đó, tôi đọc hết cả trang giấy. Ngoài bà Bảy, còn mấy người nữa cùng mất đêm ấy. Con đê vỡ ở khúc sông gần bến đò cũ. Làng mất mùa, nhà nào cũng khổ mấy năm liền. Tôi lại đọc câu mẹ viết trong tờ giấy.",
+        "keywords": ["dusty ledger book open on a wooden desk"],
+        "fact_refs": []
+      },
+      {
+        "beat": "clue",
+        "text": "Câu mẹ viết nói mẹ nhờ người sống trả thay. Tôi đọc lại và hiểu mẹ đã hứa điều gì. Mẹ hứa với bà Bảy sẽ thay bà giữ hương ở miếu. Đổi lại, bà Bảy giữ cho nhà tôi được yên. Hai mươi năm ấy là thời hạn của lời hứa. Tôi đếm lại thì năm nay vừa hết hạn. Nhưng bát cơm ở miếu đã nguội từ hôm mẹ mất. Đêm nào tôi cũng nghe cửa sau nhà mở rồi khép.",
+        "keywords": ["night river seen through a doorway with no light"],
+        "fact_refs": []
+      },
+      {
+        "beat": "clue",
+        "text": "Tôi hỏi ông Ba vì sao mẹ lại hứa như vậy. Ông bảo năm lũ, nhà tôi được bà Bảy cứu. Bà Bảy đẩy thuyền nhà tôi vào bờ trước khi nước cuốn. Còn bà thì ở lại trong đêm ấy. Mẹ tôi khóc suốt đám tang bà Bảy. Từ đó mẹ tự nhận mình còn nợ bà. Lời hứa ấy mẹ giữ kín, không kể cho ai. Chỉ đến khi mất, mẹ mới để lại tờ giấy.",
+        "keywords": ["small boat pushed against a muddy bank in flood water"],
+        "fact_refs": []
+      },
+      {
+        "beat": "clue",
+        "text": "Tôi ra miếu thắp nhang và quét lại khoảng sân. Tro trong lư hương đã đầy, đông cứng lại. Tôi nhấc lư lên thì thấy một vật nhỏ bên dưới. Đó là một chiếc vòng bạc cũ, khắc tên bà Bảy. Mẹ tôi chưa từng nói chiếc vòng này là của ai. Tôi cầm chiếc vòng, thấy nó còn ấm. Tôi bỏ chiếc vòng vào túi áo rồi về. Đêm đó nước sông lên cao hơn mọi đêm.",
+        "keywords": ["silver bracelet resting on incense ash in a small shrine"],
+        "fact_refs": []
+      },
+      {
+        "beat": "clue",
+        "text": "Đêm ấy tôi nằm nghe tiếng nước ngoài bờ. Tiếng nước không to, nhưng suốt đêm không hề dứt. Khoảng ba giờ sáng, cửa sau nhà mở ra. Tôi nằm yên, mắt nhìn lên xà nhà. Có tiếng chân bước trên nền gạch, rất nhẹ. Người ấy đi thẳng đến bàn thờ rồi dừng lại. Tôi nghe tiếng bát cơm được đặt xuống. Rồi cửa khép lại, nhà im như trước.",
+        "keywords": ["open back door of a dark house at three in the morning"],
+        "fact_refs": []
+      },
+      {
+        "beat": "twist",
+        "text": "Sáng ra, bát cơm trên bàn thờ đầy, còn nóng. Tôi đứng nhìn rất lâu, không nói được gì. Người đến đêm qua không phải người sống trong làng. Bà Bảy mất đã hai mươi năm, tôi biết rõ. Mẹ tôi đã hứa trả nợ cho một người đã khuất. Giờ mẹ mất, món nợ ấy chuyển sang tôi. Người sống phải trả tiếp cho người đã khuất. Chiếc vòng bạc trong túi áo tôi vẫn còn ấm.",
+        "keywords": ["filled rice bowl glowing on an altar at sunrise"],
+        "fact_refs": []
+      },
+      {
+        "beat": "reveal",
+        "text": "Trong nhà chỉ còn chiếc vòng bạc và tờ giấy cũ. Bàn thờ vẫn sáng đèn, không ai ngồi trước. Miếu nhỏ ở bến đò vẫn còn tro và bát cơm. Mẹ tôi nằm ở nghĩa địa đầu làng. Bà Bảy thì chưa ai tìm thấy mộ. Nhà tôi giờ chỉ còn tôi với căn nhà trống. Đêm nào tôi cũng để cửa sau mở. Để nếu có ai về thì không phải đứng ngoài.",
+        "keywords": ["empty altar with one lamp burning at night"],
+        "fact_refs": []
+      },
+      {
+        "beat": "aftermath",
+        "text": "Món nợ không lấy đi gì to tát, chỉ lấy thời gian. Mỗi đêm rằm, tôi lại ra bến đò thắp nhang. Tôi đặt bát cơm nóng rồi quét sân miếu. Mùa này nước lên, tôi phải chèo thuyền qua. Công việc ở phố tôi đành gác lại. Tháng trước tôi xin nghỉ, chưa biết khi nào về. Mỗi lần soi gương, tôi thấy mắt mình giống mẹ. Tóc tôi cũng bắt đầu có sợi bạc như tóc mẹ năm nào.",
+        "keywords": ["moonlit river bank with a single burning incense stick"],
+        "fact_refs": []
+      },
+      {
+        "beat": "aftermath",
+        "text": "Người trong làng bảo tôi chăm chỉ như mẹ. Họ không biết vì sao tôi lại làm những việc ấy. Đến hẹn, tôi vẫn phải có mặt ở bến. Tôi không dám đi đâu xa quá vài ngày. Ngôi nhà cũ giờ tôi giữ, không bán. Vì bán rồi thì món nợ biết trả ở đâu. Đêm rằm tới, tôi lại chuẩn bị bát cơm và nén nhang. Tôi chỉ mong đêm ấy trời đừng mưa.",
+        "keywords": ["old wooden house with its back door left open at night"],
+        "fact_refs": []
+      }
+    ],
+    "ending": {
+      "text": "Bát cơm trên bàn thờ vẫn còn ấm mỗi sáng, và tôi biết mình phải trả tiếp món nợ ấy. Mẹ giữ lời hứa suốt hai mươi năm, còn tôi thì mới bắt đầu. Tôi không biết mình sẽ phải trả trong bao lâu. Nếu là bạn, bạn có trả thay không?",
+      "keywords": ["quiet village riverside at sunrise with nobody around"],
+      "fact_refs": []
+    },
+    "description": "Sau đám tang mẹ, người con út ở lại căn nhà cũ bên sông và tìm ra một lời hứa mẹ chưa trả. Món nợ ấy không phải nợ người sống.",
+    "tags": ["nhân quả", "làng ven sông", "lời hứa", "bến đò", "gia đình", "tâm linh"],
+    "content_warnings": ["death", "supernatural"],
+    "structure": {
+      "sub_genre": "nhân quả",
+      "setting": "làng ven sông",
+      "opening": "một lời hứa chưa trả",
+      "twist_type": "người sống đang trả nợ cho người chết",
+      "narrator_mode": "first_person"
+    }
+  },
+  "bible": {
+    "version": 7,
+    "narrator": { "name": null, "persona": "Người kể là con út trong nhà, kể chuyện của chính mình ở một làng ven sông.", "voice_notes": "giọng đều, chậm" },
+    "recurring_characters": [ { "name": "chị Hai", "description": "chị gái của người kể; chết đuối năm mười bảy tuổi trong trận lũ năm đó; từ đó cả nhà không ai nhắc tên chị" } ],
+    "places": [ { "name": "bến đò cũ", "description": "bến sông trước làng, bỏ không từ sau trận lũ" } ],
+    "rules": [ "Trong loạt truyện này, người kể chỉ kể điều mình đã thấy hoặc đã nghe kể lại." ],
+    "episode_summaries": [ { "title": "Mâm cơm còn khói", "summary": "Người kể trở về làng sau đám tang mẹ." } ],
+    "truncated": false
+  },
+  "defects": [
+    {
+      "type": "bible_contradiction",
+      "segment": "p:3",
+      "note": "Đoạn p:3 nói chị Hai của người kể vẫn còn sống ở làng và năm nay bốn mươi hai tuổi, trong khi bible của loạt truyện ghi chị Hai đã chết đuối năm mười bảy tuổi trong trận lũ năm đó; draft mâu thuẫn trực tiếp với bible."
+    }
+  ]
+}

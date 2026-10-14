@@ -1,0 +1,197 @@
+{
+  "id": "vi-ghost-01",
+  "language": "vi",
+  "topic": "ghost",
+  "tier": "standard",
+  "clean": false,
+  "brief": "Một người làm ca đêm thuê căn hộ cuối hành lang tầng bốn và nghe tiếng kéo ghế trên trần mỗi đêm, dù trên căn hộ chỉ là sân thượng bỏ trống. Premise tổng hợp, chỉ để tạo ngữ cảnh.",
+  "draft": {
+    "title": "Tiếng kéo trên sân thượng",
+    "hook": {
+      "text": "",
+      "keywords": [
+        "empty corridor under a dim bulb"
+      ],
+      "fact_refs": []
+    },
+    "paragraphs": [
+      {
+        "beat": "setup",
+        "text": "Tôi thuê căn hộ cuối hành lang tầng bốn. Toà nhà chỉ có bốn tầng. Trên cùng là sân thượng bỏ trống. Chủ nhà đưa chìa khoá và dặn tôi đừng lên đó. Tôi làm ca đêm ở một kho lạnh. Ngày nào tôi cũng về nhà lúc trời gần sáng. Căn hộ có một phòng ngủ và một cửa sổ nhìn ra giếng trời. Tôi nhận nhà hôm mùng một, trời mưa. Tôi mang theo một cái va li và hai thùng sách.",
+        "keywords": [
+          "narrow apartment corridor in cold light"
+        ],
+        "fact_refs": []
+      },
+      {
+        "beat": "build_up",
+        "text": "Đêm đầu tiên, tôi nghe một tiếng động ngay trên đầu. Nghe như có ai kéo một chiếc ghế gỗ trên sàn. Tôi nằm im và đếm. Tiếng kéo dài khoảng ba giây, rồi im. Tôi nhìn đồng hồ. Ba giờ sáng. Trên đầu tôi là sân thượng, không có phòng nào. Tôi nghĩ đến mèo hoang. Tôi nằm nhìn trần nhà một lúc. Âm thanh đó không giống tiếng chân người. Sáng hôm sau tôi quên chuyện đó.",
+        "keywords": [
+          "empty rooftop terrace at night"
+        ],
+        "fact_refs": []
+      },
+      {
+        "beat": "build_up",
+        "text": "Đêm thứ hai tiếng kéo lại đến. Lần này tôi đứng dậy và bật đèn. Trần nhà trắng, không một vết nứt. Tôi mở cửa sổ và nghe tiếng xe ngoài đường. Không có gì trên mái. Tôi lấy cán chổi gõ lên trần ba cái. Hành lang im như tờ. Rồi tôi nằm xuống, để đèn sáng. Đêm đó tiếng kéo không quay lại. Đêm hôm đó tôi ngủ trên ghế bành. Tôi để đèn hành lang sáng suốt đêm.",
+        "keywords": [
+          "plaster ceiling with a hairline crack"
+        ],
+        "fact_refs": []
+      },
+      {
+        "beat": "build_up",
+        "text": "Đêm thứ ba, tôi để sẵn một cuốn sổ trên bàn. Mỗi lần nghe tiếng động, tôi ghi lại giờ. Ba giờ mười, tiếng kéo thứ nhất. Ba giờ mười lăm, tiếng thứ hai. Tôi bắt đầu để ý khoảng cách. Tiếng kéo luôn bắt đầu ở giữa phòng. Rồi nó trôi dần về phía cửa. Rồi dừng lại ngay trên đầu giường tôi. Tôi ngồi dậy và nhìn lên trần. Tôi ghi cả hướng của tiếng kéo. Tôi ghi cả số lần trong một đêm.",
+        "keywords": [
+          "notebook and pen on a nightstand"
+        ],
+        "fact_refs": []
+      },
+      {
+        "beat": "build_up",
+        "text": "Tôi hỏi bà bán nước dưới nhà về tầng trên. Bà nói sân thượng có một cái chòi cũ. Chòi đó khoá từ lâu, không ai lên. Bà còn nói thêm một câu. Căn hộ của tôi trước đây có người ở. Người đó chuyển đi trong một đêm. Bà không nhớ tên, chỉ nhớ dáng người gầy. Tôi hỏi bà có nghe tiếng kéo bao giờ chưa. Bà cười và bảo tôi hỏi lắm. Bà bảo tôi đừng hỏi nhiều về người cũ. Tôi gật đầu rồi đi lên.",
+        "keywords": [
+          "night market stall with plastic stools"
+        ],
+        "fact_refs": []
+      },
+      {
+        "beat": "build_up",
+        "text": "Trong căn hộ có một chiếc ghế gỗ cũ. Chủ nhà để lại cùng cái bàn và cái tủ. Tôi kê ghế sát tường, cạnh ổ điện. Mỗi sáng tôi thấy nó nhích ra một chút. Tôi đẩy nó về chỗ cũ. Sáng hôm sau nó lại nhích. Vết xước trên sàn nhà chạy thành một đường. Đường đó đi từ giữa phòng tới cửa. Tôi lấy thước đo chiều dài vết xước. Tôi lật úp chiếc ghế xuống sàn. Sáng hôm sau nó lại đứng thẳng.",
+        "keywords": [
+          "old wooden chair against a bare wall"
+        ],
+        "fact_refs": []
+      },
+      {
+        "beat": "build_up",
+        "text": "Đêm thứ năm, tôi ngồi dậy trước khi tiếng kéo đến. Tôi ngồi ở mép giường, hai tay để trên đùi. Ba giờ sáng, tiếng kéo bắt đầu. Lần này tôi không bật đèn. Tôi nhìn cái ghế trước mặt. Ghế đứng yên. Tiếng kéo vẫn kêu trên trần. Tôi đếm từ một đến mười. Tiếng kéo đi hết một vòng phòng rồi tắt. Sáng ra, ghế của tôi nằm quay mặt ra cửa. Tôi bật đèn bàn và nhìn cái ghế. Tay tôi nắm chặt mép chăn.",
+        "keywords": [
+          "silhouette of a chair in a dark room"
+        ],
+        "fact_refs": []
+      },
+      {
+        "beat": "build_up",
+        "text": "Tôi bắt đầu ghi lại giấc ngủ của mình. Tôi đặt điện thoại quay phòng qua đêm. Sáng nào tôi cũng xem lại đoạn quay. Ba đêm đầu, hình ảnh yên. Đêm thứ tư, tôi thấy mình ngồi dậy. Tôi bước ra khỏi giường mà mắt vẫn nhắm. Rồi tôi đi lại trong phòng. Tôi đứng trước cửa rất lâu. Rồi tôi quay lại giường. Tôi tua lại đoạn quay vài lần. Tôi không nhớ mình đã dậy.",
+        "keywords": [
+          "phone propped on a shelf recording at night"
+        ],
+        "fact_refs": []
+      },
+      {
+        "beat": "clue",
+        "text": "Tôi rải bột mì lên sàn trước khi ngủ. Sáng ra, dấu chân in rõ trên lớp bột. Dấu chân đi từ giường tới cửa. Rồi từ cửa quay lại giường. Dấu chân đó là cỡ chân tôi. Tôi so với dép của mình, đúng bằng nhau. Tôi ngồi xuống và nhìn rất lâu. Không có dấu chân nào khác trên sàn. Không ai từ ngoài bước vào phòng. Tôi lấy một tờ giấy và vẽ lại hướng dấu chân.",
+        "keywords": [
+          "bare floor dusted with white flour"
+        ],
+        "fact_refs": []
+      },
+      {
+        "beat": "clue",
+        "text": "Tôi hỏi bác bảo vệ về đoạn quay hành lang. Bác nói camera hành lang đã hỏng từ lâu. Bác còn nói không ai lên sân thượng ban đêm. Cửa sân thượng khoá bằng một ổ khoá gỉ. Chìa khoá nằm trong ngăn kéo nhà tôi. Bác đưa tôi xem ổ khoá đó. Bụi phủ dày trên tay nắm cửa. Không có vết tay nào trên bụi. Tôi thử mở cửa sân thượng. Tay nắm cửa không hề nhúc nhích.",
+        "keywords": [
+          "rusty padlock on a rooftop door"
+        ],
+        "fact_refs": []
+      },
+      {
+        "beat": "clue",
+        "text": "Tôi mua một chiếc máy ghi âm nhỏ. Tôi để nó trên nóc tủ, gần trần nhà. Đêm đó tôi ngủ một mạch. Sáng ra tôi mở đoạn ghi. Trong đoạn ghi có tiếng kéo. Tiếng kéo nghe rất gần. Rồi có tiếng thở dài. Tiếng thở đó là tiếng tôi. Tôi nghe lại ba lần. Lần nào giọng cũng giống hệt. Tôi ngồi nghe lại tới khi trời sáng.",
+        "keywords": [
+          "small voice recorder on top of a wardrobe"
+        ],
+        "fact_refs": []
+      },
+      {
+        "beat": "clue",
+        "text": "Tôi bắt đầu chú ý đến bàn tay phải. Mỗi sáng nó mỏi như vừa làm việc nặng. Ngón tay giữa có một vết chai mới. Vết chai nằm đúng chỗ tay nắm ghế. Tôi thử nắm lấy thành ghế. Vết chai khớp với cạnh gỗ. Tôi ngồi im rất lâu. Tôi không kể chuyện này cho ai. Tôi để câu hỏi đó lại trong lòng.",
+        "keywords": [
+          "right hand resting on a wooden chair edge"
+        ],
+        "fact_refs": []
+      },
+      {
+        "beat": "clue",
+        "text": "Tôi tìm được một cuốn lịch cũ trong ngăn kéo. Lịch còn ghi vài dòng chữ nhỏ. Dòng chữ nói về một người khó ngủ. Người đó đếm tiếng động mỗi đêm. Trang cuối có một câu ngắn. Câu đó nói rằng tiếng động là của chính mình. Tôi đọc lại câu đó vài lần. Tôi không nhớ mình đã viết nó. Tôi cất cuốn lịch vào ngăn kéo và đóng lại.",
+        "keywords": [
+          "old paper calendar on a wooden desk"
+        ],
+        "fact_refs": []
+      },
+      {
+        "beat": "clue",
+        "text": "Tôi nhờ bác sĩ kiểm tra giấc ngủ. Bác sĩ gắn lên đầu tôi vài sợi dây. Đêm đó tôi ngủ trong phòng khám. Sáng ra bác sĩ đưa tôi một tờ kết quả. Bác sĩ nói tôi đi lại trong lúc ngủ. Tôi kéo ghế và nói chuyện một mình. Bác sĩ nói chuyện đó không lạ. Tôi hỏi bác sĩ có phải lúc nào cũng vậy không. Bác sĩ nói chưa gặp trường hợp nào giống tôi. Bác sĩ nói tôi nên đi khám lại sau vài tuần.",
+        "keywords": [
+          "sleep clinic bed under soft light"
+        ],
+        "fact_refs": []
+      },
+      {
+        "beat": "twist",
+        "text": "Đêm đó tôi ngồi dậy lúc ba giờ. Tôi kéo chiếc ghế ra giữa phòng. Tôi kéo nó về phía cửa. Tay tôi nắm chặt lấy thành ghế. Tôi ngồi xuống và nghe hành lang. Tiếng kéo tôi nghe bao nhiêu đêm là của tôi. Người kéo ghế trên đầu tôi chính là tôi. Không có ai trên sân thượng, chưa từng có. Tôi là người ngồi đó, đêm nào cũng vậy.",
+        "keywords": [
+          "empty chair facing a closed apartment door"
+        ],
+        "fact_refs": []
+      },
+      {
+        "beat": "reveal",
+        "text": "Đêm nào tôi cũng dậy lúc ba giờ và kéo ghế ra cửa. Tôi ngồi đó đến gần sáng rồi tự quay về giường.",
+        "keywords": [
+          "chair dragged across a bare floor at night"
+        ],
+        "fact_refs": []
+      },
+      {
+        "beat": "aftermath",
+        "text": "Tôi buộc chân ghế vào chân tủ bằng dây thừng. Ba đêm sau, dây thừng bị kéo căng. Tôi chuyển chiếc ghế xuống nhà bác bảo vệ. Đêm đó tôi ngủ ngon. Sáng ra, tôi thấy vết chai trên tay vẫn còn. Tôi vẫn dậy lúc ba giờ và đứng ở giữa phòng. Tôi đứng đó cho tới khi trời sáng. Không có gì để kéo nữa. Tôi không để chiếc ghế nào trong phòng nữa.",
+        "keywords": [
+          "wooden chair leg tied with a thin cord"
+        ],
+        "fact_refs": []
+      },
+      {
+        "beat": "aftermath",
+        "text": "Tôi trả nhà sau hai tháng. Chủ nhà hỏi tôi có nghe gì lạ không. Tôi nói không. Tôi dọn hết đồ đạc của mình. Bây giờ tôi ở một căn hộ khác, tầng trệt. Đêm nào tôi cũng dậy lúc ba giờ. Tôi nằm im và nghe. Trên đầu tôi có ai đó đang kéo ghế. Tôi vẫn giữ chìa khoá căn hộ cũ trong túi áo.",
+        "keywords": [
+          "empty flat with keys on a bare counter"
+        ],
+        "fact_refs": []
+      }
+    ],
+    "ending": {
+      "text": "Chiếc ghế cũ vẫn nằm trong căn hộ kia. Nó đứng cạnh cửa sổ nhìn ra giếng trời. Tôi không quay lại xem. Căn hộ đó bây giờ có người khác thuê. Bạn đã từng nghe điều gì như vậy chưa?",
+      "keywords": [
+        "old chair by a window at dusk"
+      ],
+      "fact_refs": []
+    },
+    "description": "Một người thuê căn hộ tầng trên cùng và ghi lại tiếng kéo ghế vang trên trần mỗi đêm. Căn hộ trên đầu anh không có phòng nào, chỉ có một sân thượng khoá kín.",
+    "tags": [
+      "truyện ma",
+      "căn hộ",
+      "mất ngủ",
+      "tiếng động ban đêm"
+    ],
+    "content_warnings": [
+      "supernatural",
+      "death",
+      "disturbing"
+    ],
+    "structure": {
+      "sub_genre": "ma trong gia đình",
+      "setting": "căn hộ thuê",
+      "opening": "chuyển đến nơi ở mới",
+      "twist_type": "người kể là nguyên nhân",
+      "narrator_mode": "first_person"
+    }
+  },
+  "defects": [
+    {
+      "type": "hook_missing",
+      "segment": "hook",
+      "note": "The hook segment carries no text at all, so the story opens with no scene, no person and nothing to wonder about; the first body paragraph has to do the hook's work."
+    }
+  ]
+}

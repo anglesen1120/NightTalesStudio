@@ -1,0 +1,198 @@
+{
+  "id": "vi-ghost-03",
+  "language": "vi",
+  "topic": "ghost",
+  "tier": "standard",
+  "clean": false,
+  "brief": "Người cháu về nhận ngôi nhà cũ của bà và mỗi đêm nghe tiếng gõ trong bức vách phía sau nhà. Premise tổng hợp, chỉ để tạo ngữ cảnh.",
+  "draft": {
+    "title": "Tiếng gõ trong vách",
+    "hook": {
+      "text": "Tôi nghe tiếng gõ ba lần trong bức vách sau nhà. Đó là đêm đầu tiên tôi ngủ lại.",
+      "keywords": [
+        "wooden wall in an old house at night"
+      ],
+      "fact_refs": []
+    },
+    "paragraphs": [
+      {
+        "beat": "setup",
+        "text": "Bà tôi mất mùa đông năm ngoái và để lại ngôi nhà cũ. Tôi về nhận nhà vào đầu tháng. Nhà chỉ có một tầng và ba gian. Vách sau nhà làm bằng gỗ, đã xuống màu. Tôi dọn dẹp và kê lại cái giường. Đêm đầu tiên, tôi ngủ ở gian giữa. Tôi để cửa sổ mở cho thoáng. Đêm đó trời lạnh và không có trăng. Tôi mở hết cửa cho nhà bớt mùi ẩm. Tôi tìm được một cái chổi cũ trong buồng.",
+        "keywords": [
+          "old wooden house among trees at dusk"
+        ],
+        "fact_refs": []
+      },
+      {
+        "beat": "build_up",
+        "text": "Tiếng gõ đến lúc tôi vừa chợp mắt. Ba tiếng, cách nhau đều nhau. Nghe như có người gõ bằng đốt ngón tay. Tôi mở mắt và nằm im. Tiếng gõ đi từ trên xuống dưới vách. Rồi im hẳn. Tôi bật đèn và đi ra sau nhà. Sau nhà là một khoảng sân cỏ. Không có ai ở đó. Tôi ngồi dậy và rót một cốc nước. Ngoài sân chỉ có tiếng côn trùng. Tôi nghe tiếng mưa nhỏ trên mái ngói.",
+        "keywords": [
+          "bare wooden wall seen by lamp light"
+        ],
+        "fact_refs": []
+      },
+      {
+        "beat": "build_up",
+        "text": "Đêm sau tôi ngồi dậy và đợi. Tiếng gõ đến đúng lúc như đêm trước. Tôi thử gõ lại hai tiếng lên vách. Bên kia im. Tôi gõ thêm một tiếng nữa. Một tiếng đáp lại, rất nhẹ. Tôi lùi lại vài bước. Căn nhà cũ có mùi gỗ ẩm. Tôi thấy lạnh ở sau gáy. Tôi không kể chuyện này cho ai trong xóm.",
+        "keywords": [
+          "hand knocking on a wooden wall"
+        ],
+        "fact_refs": []
+      },
+      {
+        "beat": "build_up",
+        "text": "Ban ngày tôi kiểm tra bức vách. Gỗ còn tốt, không mối mọt. Sau vách là sân cỏ và một bụi chuối. Không có đường hầm hay khoảng trống nào. Tôi hỏi bà con trong xóm. Họ nói nhà bà tôi ở đã mấy đời. Không ai nhớ có chuyện gì lạ. Một bà còn nói tiếng gõ đó là mọt gỗ. Tôi nghe và không nói gì thêm. Tôi lấy thước đo chiều cao của bức vách. Vách cao hơn đầu tôi một đoạn.",
+        "keywords": [
+          "old wooden wall with a growing bush behind"
+        ],
+        "fact_refs": []
+      },
+      {
+        "beat": "build_up",
+        "text": "Tôi tìm thấy một hộp gỗ trong buồng của bà. Trong hộp có vài lá thư và một tấm ảnh cũ. Thư viết tay bằng mực xanh đã phai. Một lá thư nhắc tới vách sau nhà. Tôi đọc lá thư đó rất chậm. Người viết nói rằng mình sẽ về. Tôi không hiểu người đó là ai. Tôi đọc từng lá thư và xếp lại theo thứ tự. Lá nhắc tới vách là lá cuối cùng. Tấm ảnh trong hộp đã mờ hết mặt người.",
+        "keywords": [
+          "old letters and a photograph in a wooden box"
+        ],
+        "fact_refs": []
+      },
+      {
+        "beat": "build_up",
+        "text": "Tôi bắt đầu ghi lại tiếng gõ vào một cuốn sổ. Mỗi đêm, tôi ghi giờ và số tiếng. Tiếng gõ luôn đến sau nửa đêm. Tiếng gõ đều như tiếng gõ của ngón tay. Có đêm tôi nghe thêm một tiếng thứ tư rất nhẹ. Tôi đánh dấu đêm đó bằng mực đỏ. Sáng ra tôi đọc lại và thấy chúng không giống nhau. Đêm nào tiếng gõ cũng ngắn hơn đêm trước một chút. Tôi kê lại giường sát cửa sổ gian giữa.",
+        "keywords": [
+          "bed in a middle room of an old house"
+        ],
+        "fact_refs": []
+      },
+      {
+        "beat": "build_up",
+        "text": "Tôi thử thức trắng một đêm để chờ. Tôi ngồi ở gian giữa với một cuốn sách. Ngoài ngõ không có tiếng người. Sau nửa đêm, tiếng gõ đến. Tôi đi theo nó dọc theo bức vách. Tiếng gõ đi từ trên xuống dưới rồi dừng. Tôi áp bàn tay lên chỗ dừng lại. Gỗ lạnh như vừa rời khỏi nước. Tôi rút tay lại và ngồi xuống sàn. Tôi ngồi đó cho tới khi trời sáng.",
+        "keywords": [
+          "two cups of tea on a low wooden table"
+        ],
+        "fact_refs": []
+      },
+      {
+        "beat": "build_up",
+        "text": "Tôi đi hỏi người giữ đất ở đầu xóm. Ông ấy nói khu vườn sau nhà trước đây có một cây đa. Cây đa bị chặt từ lâu, chỉ còn gốc. Tôi ra sau nhà tìm gốc cây. Cỏ mọc kín, tôi không tìm được. Ông ấy còn nói bà tôi hay ra đó ngồi. Bà ngồi đó mỗi chiều trong nhiều năm. Ông ấy không nói vì sao. Tôi hỏi thêm về cây đa nhưng ông ấy không nhớ gì nữa.",
+        "keywords": [
+          "overgrown garden behind an old house"
+        ],
+        "fact_refs": []
+      },
+      {
+        "beat": "clue",
+        "text": "Tôi mở tấm ván sau cùng của bức vách. Trong khe gỗ có một mẩu giấy gấp tư. Giấy đã ố và giòn. Trên giấy có ba chấm mực xếp thành hàng. Tôi không đọc được gì khác. Tôi gấp lại mẩu giấy và cất vào túi. Đêm đó tiếng gõ đến sớm hơn mọi đêm. Tôi nằm im và đếm cho tới khi hết. Tôi đem mẩu giấy cất vào ngăn kéo bàn.",
+        "keywords": [
+          "folded paper hidden in a wooden wall gap"
+        ],
+        "fact_refs": []
+      },
+      {
+        "beat": "clue",
+        "text": "Tôi nhớ lại những đêm bà tôi còn sống. Bà hay ngồi ở gian giữa đến khuya. Bà gõ tay lên vách mấy lần trước khi đi ngủ. Tôi từng hỏi bà gõ cho ai. Bà chỉ nói gõ cho vui. Tôi lúc đó còn nhỏ nên không hỏi thêm. Bây giờ tôi mới nghĩ về chuyện đó. Tôi nhìn bức vách rất lâu. Tôi nhớ bà gõ vách bằng hai đốt ngón tay. Tiếng gõ rất khẽ.",
+        "keywords": [
+          "elderly woman sitting by a wooden wall at dusk"
+        ],
+        "fact_refs": []
+      },
+      {
+        "beat": "clue",
+        "text": "Một hôm tôi gặp người đưa thư cũ của xóm. Ông ấy nói nhà bà tôi từng nhận thư từ nước ngoài. Thư đến đều đặn trong nhiều năm. Sau đó thư thưa dần rồi hết hẳn. Ông ấy không nhớ tên người gửi. Tôi đưa ông ấy xem lá thư trong hộp gỗ. Ông ấy lắc đầu và nói chữ này lạ. Ông ấy nói chữ trong thư không giống chữ của xóm này.",
+        "keywords": [
+          "old postman bag strapped to a bicycle"
+        ],
+        "fact_refs": []
+      },
+      {
+        "beat": "clue",
+        "text": "Tôi ngồi ở gian giữa và gõ thử lên vách. Tôi gõ ba tiếng, chậm và đều. Bên kia đáp lại đúng ba tiếng. Tôi gõ hai tiếng. Bên kia cũng đáp hai tiếng. Tôi hỏi to một câu. Không có tiếng người trả lời. Tôi ngồi xuống và áp tai vào vách. Trong vách chỉ có tiếng gỗ kêu khe khẽ.",
+        "keywords": [
+          "ear pressed against an old wooden plank wall"
+        ],
+        "fact_refs": []
+      },
+      {
+        "beat": "clue",
+        "text": "Tôi đem mẩu giấy trong khe gỗ ra ánh sáng. Ba chấm mực giống ba nốt nhạc hơn là ba chữ. Tôi thử đếm nhịp gõ của tiếng gõ trong vách. Ba tiếng, nghỉ một quãng, rồi ba tiếng nữa. Nhịp đó hợp với ba chấm trên giấy. Tôi không biết nhịp đó nghĩa là gì. Tôi chỉ biết nó lặp lại mỗi đêm. Tôi để mẩu giấy trên bàn và đi ngủ. ",
+        "keywords": [
+          "small paper with three ink marks on a table"
+        ],
+        "fact_refs": []
+      },
+      {
+        "beat": "clue",
+        "text": "Tôi lấy một que tre gõ dọc theo bức vách. Vách kêu đặc ở đoạn giữa. Hai đầu vách kêu rỗng. Tôi đánh dấu chỗ kêu rỗng bằng phấn. Đêm đó tiếng gõ đến đúng chỗ tôi đánh dấu. Tôi ngồi dậy và soi đèn vào vách. Ván gỗ phẳng, không có khe hở nào. Tôi để đèn sáng tới sáng.",
+        "keywords": [
+          "chalk mark on an old wooden wall"
+        ],
+        "fact_refs": []
+      },
+      {
+        "beat": "twist",
+        "text": "Một đêm có người bạn đến ngủ nhờ ở gian ngoài. Đêm đó bức vách sau nhà im hoàn toàn. Bạn tôi ngủ ngon và sáng ra không nhắc gì. Tôi ngồi đợi suốt đêm mà không nghe một tiếng nào. Tiếng gõ trong vách chỉ đến với người trong nhà. Khách ở lại một đêm thì bức vách im như gỗ khô. Đó là một quy tắc của căn nhà này. Tôi ngồi im và nghĩ về đêm đó.",
+        "keywords": [
+          "quiet guest room in an old wooden house"
+        ],
+        "fact_refs": []
+      },
+      {
+        "beat": "reveal",
+        "text": "Đêm đó bạn tôi ngủ ở gian ngoài. Bức vách im suốt đêm. Từ hôm đó tôi không gõ lại lên vách nữa.",
+        "keywords": [
+          "wooden wall with a faint hand mark"
+        ],
+        "fact_refs": []
+      },
+      {
+        "beat": "aftermath",
+        "text": "Bạn tôi về sáng hôm sau và không hề biết gì. Tôi vẫn ngủ ở gian giữa mỗi đêm. Tiếng gõ đến đều ba lần rồi nghỉ. Tôi không gõ lại nữa. Tôi để bức vách yên như bà để lại. Tôi chỉ nghe và đếm cho hết. Tôi ngủ được vài tiếng mỗi đêm. Tôi để đèn nhỏ ở góc phòng. Tôi uống một cốc nước nóng rồi mới đi ngủ.",
+        "keywords": [
+          "middle room of an old house with a made bed"
+        ],
+        "fact_refs": []
+      },
+      {
+        "beat": "aftermath",
+        "text": "Tôi sửa lại mái nhà và quét sạch sân sau. Tôi không chặt bụi chuối cạnh vách. Tôi để nguyên hộp gỗ trong buồng của bà. Mỗi chiều tôi ra sân sau ngồi một lúc. Tôi không còn thấy lạnh sau gáy. Nhưng tôi vẫn để đèn gian giữa sáng tới khuya.",
+        "keywords": [
+          "garden chair beside an old garden wall"
+        ],
+        "fact_refs": []
+      }
+    ],
+    "ending": {
+      "text": "Bức vách gỗ vẫn còn đấy. Mùa đông này tôi vẫn nghe đủ ba tiếng mỗi đêm. Bạn đã từng nghe điều gì như vậy chưa?",
+      "keywords": [
+        "old wooden wall in dim evening light"
+      ],
+      "fact_refs": []
+    },
+    "description": "Người cháu về nhận ngôi nhà gỗ của bà và nghe tiếng gõ ba tiếng trong bức vách sau nhà mỗi đêm. Càng tìm hiểu, cô càng thấy căn nhà giữ một thói quen rất cũ.",
+    "tags": [
+      "truyện ma",
+      "ngôi nhà cũ",
+      "bức vách gỗ",
+      "tiếng gõ"
+    ],
+    "content_warnings": [],
+    "structure": {
+      "sub_genre": "ma trong gia đình",
+      "setting": "ngôi nhà cũ",
+      "opening": "chuyển đến nơi ở mới",
+      "twist_type": "lời nguyền có thật",
+      "narrator_mode": "first_person"
+    }
+  },
+  "defects": [
+    {
+      "type": "missing_setup_before_twist",
+      "segment": "p:14",
+      "note": "Cú lật dựa vào quy tắc 'chỉ người trong nhà nghe được tiếng gõ', nhưng quy tắc đó chỉ xuất hiện lần đầu ngay trong đoạn twist; không đoạn setup, build_up hay clue nào trước đó gợi tới nó."
+    },
+    {
+      "type": "content_warning_missing",
+      "segment": "meta",
+      "note": "Truyện có nội dung siêu nhiên và có nhắc tới cái chết của bà, nhưng content_warnings để trống."
+    }
+  ]
+}

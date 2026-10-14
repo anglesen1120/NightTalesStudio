@@ -1,0 +1,192 @@
+{
+  "id": "vi-truecrime-02",
+  "language": "vi",
+  "topic": "true_crime",
+  "tier": "standard",
+  "clean": false,
+  "brief": "Hồ sơ của một vụ án ở thành phố nhỏ được mở lại: một người đàn ông bị kết án từ lâu, và bản án về sau được xác định là oan. Câu chuyện xoay quanh lời khai đầu tiên lấy tại đồn và bản đọc trước toà, cùng cuốn sổ tay riêng của người ghi biên bản. Không dùng người thật, việc thật hay địa danh thật.",
+  "draft": {
+    "title": "Lời khai đầu tiên",
+    "hook": {
+      "text": "Trong kho lưu trữ của một thành phố nhỏ có một hồ sơ đã ố vàng. Trang đầu tiên là lời khai đầu tiên của người về sau bị kết án. Tôi đọc nó nhiều lần, rồi đọc tiếp phần còn lại.",
+      "keywords": ["open case file folder on wooden desk in afternoon light"],
+      "fact_refs": ["f2"]
+    },
+    "paragraphs": [
+      {
+        "beat": "setup",
+        "text": "Tôi ngồi trong phòng lưu trữ và mở tập hồ sơ cũ. Ngoài cửa sổ, thành phố nhỏ im dưới nắng muộn. Người giữ kho đặt tập giấy lên bàn rồi bước ra. Tôi lật trang đầu và đọc chậm từng dòng một. Đó là lời khai đầu tiên của một người đàn ông. Hồ sơ ghi người này bị kết án trong một vụ án. Tôi chỉ ghi lại những gì mình đọc được.",
+        "keywords": ["dusty archive room with tall shelves in warm lamplight"],
+        "fact_refs": ["f1", "f2"]
+      },
+      {
+        "beat": "build_up",
+        "text": "Thành phố nhỏ ấy có vài con đường và một cái chợ. Tập hồ sơ dày, bìa ngoài đã bạc màu. Bên trong là các tờ khai và biên bản. Tôi đọc theo thứ tự, không bỏ trang nào. Người bị kết án trong hồ sơ là một người đàn ông. Ông khai bằng lời lẽ rất đơn giản. Gia đình ông ở lại thành phố sau phiên toà. Họ không chuyển đi, cũng không nói gì thêm.",
+        "keywords": ["quiet small town square with closed shop shutters at dusk"],
+        "fact_refs": ["f1"]
+      },
+      {
+        "beat": "build_up",
+        "text": "Tôi đọc phần đầu của tập hồ sơ trong buổi chiều hôm ấy. Trang nào cũng có chữ ký của người lập biên bản. Có tờ đánh máy, có tờ viết tay rất rõ. Mực trên vài tờ giấy đã phai gần hết. Tôi ghi lại thứ tự các tờ rồi đọc tiếp. Không tờ nào ghi rõ giờ bắt đầu lấy lời khai. Tôi để riêng những tờ nói về lời khai.",
+        "keywords": ["stack of yellowed typed pages on a metal table"],
+        "fact_refs": ["f3"]
+      },
+      {
+        "beat": "build_up",
+        "text": "Buổi chiều ấy tôi đọc đến phần lời khai. Đó là phần dài nhất trong cả tập hồ sơ. Người lập biên bản ghi lại từng câu trả lời. Ông ấy hỏi và người đàn ông trả lời. Có chỗ người lập ghi lại nguyên văn. Có chỗ chỉ ghi ý chính rồi bỏ qua. Tôi đọc chậm để không bỏ sót chữ nào. Phần này nằm ở giữa tập giấy.",
+        "keywords": ["open notebook beside a pen under a desk lamp"],
+        "fact_refs": ["f2"]
+      },
+      {
+        "beat": "build_up",
+        "text": "Tôi đọc lại buổi lấy lời khai đầu tiên ở đồn. Theo hồ sơ, buổi ấy bắt đầu từ lúc chạng vạng. Buổi lấy lời khai kéo dài khoảng bốn tiếng. Người đàn ông ngồi xuống và trả lời rất chậm. Đèn trong phòng sáng vàng, ngoài hành lang vắng. Người lập biên bản viết liên tục mấy trang giấy. Đến khi tan buổi thì trời đã tối hẳn. Tôi chép lại những dòng ấy vào sổ tay của mình.",
+        "keywords": ["empty interview room with a single chair at dusk"],
+        "fact_refs": []
+      },
+      {
+        "beat": "build_up",
+        "text": "Ngoài hành lang, quạt trần quay chậm trên trần gỗ. Tôi đọc tiếp những trang sau của tập hồ sơ. Có tờ giấy mỏng, chữ đánh máy mờ dần. Có tờ viết tay, nét chữ nghiêng và nhỏ. Tôi đặt các tờ cạnh nhau để so từng đoạn. Những lời khai khác nhau được xếp cùng một chỗ. Tôi đọc phần ghi lời khai ở đồn trước. Rồi tôi đọc phần lời khai đọc trước toà.",
+        "keywords": ["two handwritten statements side by side on a table"],
+        "fact_refs": ["f2"]
+      },
+      {
+        "beat": "build_up",
+        "text": "Trong hồ sơ có phần của người ghi biên bản. Về sau tôi được nghe kể một chuyện khác. Người ấy có một cuốn sổ tay riêng. Cuốn sổ ấy không nằm trong tập hồ sơ. Đó là điều tôi biết được sau khi đọc xong. Tôi ghi lại câu ấy rồi đọc tiếp. Buổi chiều trong phòng lưu trữ trôi chậm. Tôi đọc mãi đến khi phải bật chiếc đèn bàn nhỏ.",
+        "keywords": ["worn leather notebook on a shelf in dim light"],
+        "fact_refs": ["f3"]
+      },
+      {
+        "beat": "build_up",
+        "text": "Tôi đọc phần cuối của tập hồ sơ trước. Đó là phần ghi ngày tuyên án. Bản án buộc tội người đàn ông ấy. Ông ấy đứng nghe bản án rồi im lặng. Người nhà ngồi phía sau, không ai nói với ai câu nào. Sau phiên toà, hồ sơ được đóng lại. Tôi đọc dòng cuối rồi ngồi yên một lúc. Đèn trong phòng đã sáng từ lúc nào.",
+        "keywords": ["empty courtroom benches in late afternoon light"],
+        "fact_refs": ["f1"]
+      },
+      {
+        "beat": "build_up",
+        "text": "Mấy hôm sau tôi quay lại phòng lưu trữ. Người giữ kho đã để sẵn tập hồ sơ trên bàn cho tôi. Tôi bắt đầu đọc lại từ trang đầu. Lần này tôi đọc chậm hơn lần trước. Tôi để ý những chỗ có ghi chú bên lề. Bên lề có vài dòng chữ nhỏ bằng bút chì. Những dòng ấy chỉ ghi số trang và ngày. Tôi chép lại rồi đọc tiếp phần sau.",
+        "keywords": ["archive window with dust in a beam of light"],
+        "fact_refs": []
+      },
+      {
+        "beat": "clue",
+        "text": "Lời khai ở đồn được ghi thành mấy trang. Người đàn ông kể theo lời của mình. Câu nào cũng ngắn và đứt quãng. Người ghi biên bản ghi lại gần như đủ. Lời lẽ trong bản ấy rất mộc. Tôi đọc đến đâu thì đánh dấu đến đó. Đó chính là bản đầu tiên được lấy ngay tại đồn. Phần này nằm ở ngay đầu của tập hồ sơ.",
+        "keywords": ["short handwritten statement pages on a desk"],
+        "fact_refs": ["f2"]
+      },
+      {
+        "beat": "clue",
+        "text": "Rồi tôi đọc bản được đọc trước toà. Bản ấy dài hơn hẳn bản ở đồn. Câu chữ trong bản này trôi chảy và rất gọn gàng. Người đàn ông trong bản ấy nói như đọc. Tôi so hai bản cạnh nhau trên bàn. Hai bản khác nhau về lời lẽ và độ dài. Tôi đọc lại cả hai bản thêm một lần. Tôi đánh dấu những chỗ khác nhau.",
+        "keywords": ["typed statement pages with a neat font under lamp"],
+        "fact_refs": ["f2"]
+      },
+      {
+        "beat": "clue",
+        "text": "Về sau tôi được xem cuốn sổ tay ấy. Đó là sổ của người ghi biên bản năm đó. Trong sổ có ghi lại buổi lấy lời khai. Những dòng trong sổ giống bản ở đồn. Cách dùng chữ và độ dài đều khớp nhau. Tôi đọc từng dòng rồi so với bản kia. Sổ khớp với bản ở đồn, không khớp với bản ở toà. Điều ấy khiến tôi ngồi lại rất lâu.",
+        "keywords": ["small notebook open beside an old case file"],
+        "fact_refs": ["f3"]
+      },
+      {
+        "beat": "clue",
+        "text": "Cuốn sổ ấy được chép liền mạch. Không thiếu trang nào trong cả cuốn. Ngày tháng trong sổ đi theo thứ tự. Trang nào cũng có chữ, không có trang trắng. Cuốn sổ ấy chưa từng được đưa vào hồ sơ. Nó không hề nằm trong danh mục vật chứng của hồ sơ. Tôi hỏi người giữ kho về điều đó. Ông ấy nói mình chỉ giữ những gì nhận được.",
+        "keywords": ["continuous notebook pages without any gaps on a desk"],
+        "fact_refs": ["f4"]
+      },
+      {
+        "beat": "clue",
+        "text": "Tôi đọc lại phần lời khai đọc trước toà. Bản ấy được đọc lên trong phiên xử. Toà dựa vào bản ấy để tuyên án. Hồ sơ ghi bản ấy là lời khai của bị cáo. Nhưng trong hồ sơ còn một bản khác. Bản ấy được lấy ở đồn trước đó. Hai bản nằm cách nhau chỉ vài trang giấy mỏng. Tôi đọc đi đọc lại cả hai bản.",
+        "keywords": ["court podium in an empty room under cold light"],
+        "fact_refs": ["f1", "f2"]
+      },
+      {
+        "beat": "clue",
+        "text": "Tôi tìm xem bản nào được lấy trước. Ngày trên bản ở đồn sớm hơn. Bản ở toà được ghi sau đó ít lâu. Vậy bản đầu tiên là bản ở đồn. Bản ấy do người đàn ông tự kể. Còn bản kia thì khác hẳn về lời lẽ. Tôi ngồi yên rất lâu và nhìn hai tờ giấy ấy. Phòng lưu trữ yên đến mức nghe được tiếng quạt.",
+        "keywords": ["two aged documents dated differently on a table"],
+        "fact_refs": ["f2", "f5"]
+      },
+      {
+        "beat": "clue",
+        "text": "Tôi đọc phần ghi chú ở cuối tập hồ sơ. Ở đó có nhắc đến việc rút lời khai. Người đàn ông đã rút lại lời khai đầu. Ông nói bản ấy không đọc đúng lời ông. Việc ấy xảy ra trước khi xét xử. Hồ sơ ghi việc rút lời khai rất ngắn. Không ai trong hồ sơ giải thích thêm. Tôi đọc lại dòng ấy thêm vài lần nữa.",
+        "keywords": ["short note on a file page under a desk lamp"],
+        "fact_refs": ["f5"]
+      },
+      {
+        "beat": "twist",
+        "text": "Bản mà toà dựa vào không phải bản đầu tiên. Bản đầu tiên đã được lấy ở đồn. Bản đọc trước toà được ghi lại sau đó. Bị cáo đã rút lại lời khai đầu tiên. Ông nói bản kia không đúng lời ông. Vậy bản toà nghe không phải bản đầu. Tôi đọc câu ấy rồi đọc lại lần nữa. Trong hồ sơ, việc rút lời khai nằm ở cuối.",
+        "keywords": ["two versions of one page lying on a table"],
+        "fact_refs": ["f2", "f5"]
+      },
+      {
+        "beat": "reveal",
+        "text": "Đến nay vẫn chưa rõ vì sao bản ấy khác bản kia. Cũng chưa rõ ai là người đánh máy bản ở toà. Hồ sơ không ghi tên người ấy. Trang giấy trong tập vẫn nằm nguyên chỗ cũ. Tôi đọc lại lần cuối trước khi rời phòng. Ánh đèn bàn hắt xuống hai tờ khai. Tôi không biết ai đã sửa lại lời của ông. Tôi gấp hai tờ khai lại cạnh nhau.",
+        "keywords": ["unmarked typed page with no signature under lamp"],
+        "fact_refs": ["f2"]
+      },
+      {
+        "beat": "aftermath",
+        "text": "Gia đình ông vẫn ở lại thành phố nhỏ ấy. Họ vẫn chờ một câu trả lời rõ ràng. Con cháu trong nhà lớn lên cùng câu chuyện ấy. Không ai trong họ nói lời oán trách. Mỗi lần nhắc đến, họ chỉ hỏi lại chuyện cũ. Tôi đến thăm nhà họ vào một buổi chiều. Trên bàn thờ có một tấm ảnh đã cũ. Bên ngoài, con đường nhỏ vẫn đầy bóng cây.",
+        "keywords": ["old photograph on a family altar in dim room"],
+        "fact_refs": ["f1"]
+      },
+      {
+        "beat": "aftermath",
+        "text": "Nhiều chục năm sau, hồ sơ được rà soát lại. Đó là một lần rà soát hành chính. Người ta đọc lại các lời khai trong hồ sơ. Bản án về sau được xác định là oan. Việc xác định ấy dựa vào lời khai đọc trước toà. Tôi đọc kết luận ấy ở trang cuối. Dòng chữ được đánh máy, không có chữ ký. Tôi ngồi im một lúc rồi gấp tập hồ sơ.",
+        "keywords": ["stack of review papers on a metal desk at night"],
+        "fact_refs": ["f6", "f1"]
+      }
+    ],
+    "ending": {
+      "text": "Tập hồ sơ đã được đóng lại từ lâu. Những trang giấy vẫn nằm trong kho lưu trữ. Người đàn ông ấy không còn nghe được kết luận. Gia đình ông vẫn chờ một lời giải thích. Còn tôi, tôi chỉ đọc lại những gì hồ sơ ghi. Bản đầu tiên vẫn nằm nguyên trong tập giấy. Còn bạn, bạn sẽ tin bản nào?",
+      "keywords": ["closed case file folder on a shelf in shadow"],
+      "fact_refs": ["f1"]
+    },
+    "description": "Một bản án ở thành phố nhỏ về sau được xác định là oan, dựa trên một lời khai được đọc trước toà. Lời khai đầu tiên lấy tại đồn lại khác bản ấy, và cuốn sổ tay của người ghi biên bản chỉ khớp với bản ở đồn.",
+    "tags": ["án oan", "lời khai", "hồ sơ", "điều tra", "công lý", "gia đình"],
+    "content_warnings": ["crime", "death", "disturbing"],
+    "structure": {
+      "sub_genre": "án oan",
+      "setting": "thành phố nhỏ",
+      "opening": "lời khai đầu tiên",
+      "twist_type": "sai sót trong điều tra ban đầu",
+      "narrator_mode": "first_person"
+    }
+  },
+  "facts": [
+    {
+      "id": "f1",
+      "statement": "Bản án về sau được xác định là oan dựa trên một lời khai được đọc trước toà.",
+      "source_aliases": ["s1"]
+    },
+    {
+      "id": "f2",
+      "statement": "Lời khai đầu tiên lấy tại đồn khác với bản đọc trước toà cả về lời lẽ lẫn độ dài.",
+      "source_aliases": ["s2"]
+    },
+    {
+      "id": "f3",
+      "statement": "Cuốn sổ tay riêng của người ghi biên bản năm đó khớp với bản ở đồn, không khớp với bản ở toà.",
+      "source_aliases": ["s2"]
+    },
+    {
+      "id": "f4",
+      "statement": "Cuốn sổ chép liền mạch không thiếu trang và chưa từng được đưa vào hồ sơ làm vật chứng.",
+      "source_aliases": ["s2"]
+    },
+    {
+      "id": "f5",
+      "statement": "Bị cáo đã rút lại lời khai đầu tiên trước khi xét xử, nói rằng bản đó không đọc đúng như lời ông đã nói.",
+      "source_aliases": ["s1"]
+    },
+    {
+      "id": "f6",
+      "statement": "Việc xác định án oan đến nhiều chục năm sau phiên toà, trong một lần rà soát hành chính.",
+      "source_aliases": ["s1"]
+    }
+  ],
+  "defects": [
+    {
+      "type": "fact_not_in_sheet",
+      "segment": "p:4",
+      "note": "The paragraph states a checkable fact about the case that no supplied fact supports: the first interview at the station lasted about four hours and began at dusk. The segment cites no fact (fact_refs is empty)."
+    }
+  ]
+}

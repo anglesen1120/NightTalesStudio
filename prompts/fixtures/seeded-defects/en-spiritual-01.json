@@ -1,0 +1,154 @@
+{
+  "id": "en-spiritual-01",
+  "language": "en",
+  "topic": "spiritual",
+  "tier": "standard",
+  "clean": false,
+  "brief": "A man promised his mother he would drive her back to the river village house she grew up in, and then let ten years go by in the city. Every night he dreams of that house with a lamp on in the front room, though the key has been on his key ring the whole time. Atmosphere: heavy, warm, the smell of burnt incense.",
+  "draft": {
+    "title": "The Light In The Front Room",
+    "hook": {
+      "text": "",
+      "keywords": ["closed door of an empty village house at night"],
+      "fact_refs": []
+    },
+    "paragraphs": [
+      {
+        "beat": "setup",
+        "text": "My mother asked me one thing in a hospital corridor, and I said yes without thinking about it. She wanted to stand in the yard of the house she grew up in, one more time, with me there. I told her we would drive up in the spring, when work was quieter.",
+        "keywords": ["hospital corridor with chairs along the wall"],
+        "fact_refs": []
+      },
+      {
+        "beat": "setup",
+        "text": "The house came to her that same year, with two keys, a red door and a yard of cracked concrete. I had not been inside it since I was a boy. I put the key on my key ring and told myself it was for convenience. It was not because of a promise made in a corridor.",
+        "keywords": ["old village house with a red wooden door"],
+        "fact_refs": []
+      },
+      {
+        "beat": "setup",
+        "text": "I live in the city now, on the eighth floor of a block where the lift smells of cooking. My work keeps me there from dark to dark. The drive to the village takes three hours in good weather. I did not make that drive once that year, or the next, or the one after.",
+        "keywords": ["city balcony above a street at night"],
+        "fact_refs": []
+      },
+      {
+        "beat": "setup",
+        "text": "She stopped asking me after the second spring. She would look at the road while we talked. She would say the house was probably damp by now anyway, and then she would ask about my work instead. I noticed that. I noticed it every Sunday and I let her change the subject.",
+        "keywords": ["kitchen telephone on a wall beside a window"],
+        "fact_refs": []
+      },
+      {
+        "beat": "build_up",
+        "text": "Then the dream started. Every night I am standing at the bottom of a lane with the house in front of me. There is a light on in the front room. It is the old yellow kind of light. I can see it through the curtain from the end of the lane, and I never get any closer.",
+        "keywords": ["dirt lane leading to a lit village house"],
+        "fact_refs": []
+      },
+      {
+        "beat": "build_up",
+        "text": "I wake at the same hour every time, just before the alarm, with the smell of burnt incense in the room. There is no incense in my flat. I have looked in every drawer and cupboard, and I have never found a stick of it anywhere in that building.",
+        "keywords": ["empty bedroom before dawn with a closed window"],
+        "fact_refs": []
+      },
+      {
+        "beat": "build_up",
+        "text": "The dream is always the same, and the room is always furnished the same way. There is a wooden table with a bowl on it. A bench stands against the wall, and a lamp sits on the shelf where my grandmother kept hers. I could name every object in that room from the dream alone.",
+        "keywords": ["wooden table with an empty bowl in lamplight"],
+        "fact_refs": []
+      },
+      {
+        "beat": "build_up",
+        "text": "In the dream the front door stands open about the width of a hand, and the yard light is on above it. Nobody comes out. I have stood in that lane for hundreds of nights and watched one yellow window and waited for a shadow to cross it. No shadow ever has.",
+        "keywords": ["yard light above an open door at night"],
+        "fact_refs": []
+      },
+      {
+        "beat": "build_up",
+        "text": "I told my doctor about the sleeping and he asked about my mother, so I changed the subject. I told a colleague at work and he said it was guilt with an address, and he said it gently. I laughed at that, and then I did not sleep at all that night.",
+        "keywords": ["office desk with a cold cup of coffee"],
+        "fact_refs": []
+      },
+      {
+        "beat": "build_up",
+        "text": "The key started to go warm in my pocket. Not hot, only warm, like something held in a hand. And only at the hour of the dream. I put it in a drawer by the door one evening. In the morning it was back on the ring in my coat, where it belongs.",
+        "keywords": ["single key on a wooden hall table"],
+        "fact_refs": []
+      },
+      {
+        "beat": "clue",
+        "text": "My aunt called in the autumn to say a neighbour had seen smoke from our chimney on three mornings that month. Nobody has lit a fire in that house since the year my grandmother died. My aunt was certain about the smoke and vague about the days.",
+        "keywords": ["thin smoke rising from a chimney at dawn"],
+        "fact_refs": []
+      },
+      {
+        "beat": "clue",
+        "text": "I drove up on a Sunday without telling anyone, at midday, with the key on the ring in my hand. The lane was exactly the length of the lane in my dream. The curtain in the front room was closed. The yard light above the door was off, though the frame around it was clean.",
+        "keywords": ["quiet village lane at midday"],
+        "fact_refs": []
+      },
+      {
+        "beat": "clue",
+        "text": "The door was locked, and the key turned as if the lock had been oiled that week. Inside, the air was warm. There was no fire in the grate and no ash in it either. On the table stood a bowl, and in the bowl there was fruit, and the fruit was fresh.",
+        "keywords": ["bowl of fruit on a wooden table"],
+        "fact_refs": []
+      },
+      {
+        "beat": "twist",
+        "text": "The lamp on the shelf was lit, and the wick was new. Beside it a stick of incense was burning down to nothing in the holder. The bench was drawn out from the wall the way you draw it out to sit down. My mother's sandals stood on the step inside the door, with wet heels.",
+        "keywords": ["lit oil lamp on a wooden shelf"],
+        "fact_refs": []
+      },
+      {
+        "beat": "twist",
+        "text": "She has been coming here alone, every week, for years. Not in a dream: on the road, in her own car, while I told my colleagues I could not get away from the office. The promise I made in that corridor was never mine to stop keeping. It was a door she was holding open.",
+        "keywords": ["car parked at the end of a village lane"],
+        "fact_refs": []
+      },
+      {
+        "beat": "reveal",
+        "text": "The neighbour told me the rest over tea in her own kitchen. My mother drives up every Sunday and stays until dark. The fruit on the table is hers and the oil for the lamp is hers. She has never once mentioned any of it in all the years of our phone calls.",
+        "keywords": ["two cups of tea on a small kitchen table"],
+        "fact_refs": []
+      },
+      {
+        "beat": "reveal",
+        "text": "The incense is for my grandmother. The lamp is an old habit of this village, and a light is left on for whoever is still on the road. My mother was the one on the road the whole time. I was the one who stayed behind, with the key in my pocket for ten years.",
+        "keywords": ["kitchen window looking out at a dark yard"],
+        "fact_refs": []
+      },
+      {
+        "beat": "reveal",
+        "text": "I sat on the concrete step in the yard until the light went orange. I did not go through the house properly. I did not open the cupboards, and I did not stand in the room I have dreamed about for years. She was coming back, and I did not want to see how she would look at me.",
+        "keywords": ["concrete step in a yard at dusk"],
+        "fact_refs": []
+      }
+    ],
+    "ending": {
+      "text": "She came in through the yard gate at dusk with a bag of greens and stopped when she saw me sitting on the step. Then she put the bag down and asked if I had eaten. I said no. She said there was rice. What do you say to someone who kept your promise for ten years?",
+      "keywords": ["bag of greens on a step at dusk"],
+      "fact_refs": []
+    },
+    "description": "A man in the city dreams every night of his mother's village house with a lamp on in the front room, while the key sits on his key ring unused. A warm story of a promise kept by someone else.",
+    "tags": ["spiritual story", "family story", "unpaid promise", "night narration", "village story"],
+    "content_warnings": ["supernatural"],
+    "structure": {
+      "sub_genre": "debt repaid",
+      "setting": "riverside village",
+      "opening": "a promise unpaid",
+      "twist_type": "the living pays the dead's debt",
+      "narrator_mode": "first_person"
+    }
+  },
+  "facts": [],
+  "defects": [
+    {
+      "type": "hook_missing",
+      "segment": "hook",
+      "note": "The hook segment carries no text at all, so there is no opening to wonder about: the story starts at the first paragraph."
+    },
+    {
+      "type": "beat_missing",
+      "segment": "meta",
+      "note": "The body beats run setup, build_up, clue, twist, reveal and stop there: the sixth mandatory beat, aftermath, is absent, so the reveal runs straight into the ending. This is a document-wide fault of the beat map."
+    }
+  ]
+}
