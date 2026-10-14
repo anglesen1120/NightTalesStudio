@@ -213,7 +213,7 @@ ProblemDetails body for 400:
 Events:
 
 - **No new SignalR event in P** [DECISION]. `00 §8` fixes the event list (`EpisodeUpdated`, `RenderProgress`, `PublicationUpdated`, `CreditBalanceChanged`). A pending bible proposal appears in `GET /series/{id}/bible`; the UI refreshes that route when the user opens/navigates to the bible panel and after an approve action on the episode page (the user is already there when a proposal is created). A `SeriesBibleUpdated` event is a §10 open item if 10.5.7 wants live banners.
-- Outbox: `SeriesBibleProposalCreated` (internal, new, consumed by nothing in P; written so the fact is observable and a future `SeriesBibleUpdated` notification is a one-line handler). Payload `{ SeriesId, UserId, Version, ProposedFromEpisodeId, OpCount }`. Also `SeriesBibleUpdated { SeriesId, UserId, Version, ChangedBy }` on PUT and on accept. `D13` keys are the audit keys, not these event names — no conflict.
+- Outbox: `SeriesBibleProposalCreated` (internal, new, consumed by nothing in P; written so the fact is observable and a future `SeriesBibleUpdated` notification is a one-line handler). Payload `{ SeriesId, UserId, Version, ProposedFromEpisodeId, OpCount }`. Also `SeriesBibleUpdated { SeriesId, UserId, Version, ChangedBy, OccurredAt }` (outbox type `series_bible_updated.v1`) on PUT and on accept. `D13` keys are the audit keys, not these event names — no conflict.
 - `StoryApproved` (consumed): `{ EpisodeId, SeriesId, UserId, StoryVersionId, ApprovalSource (user|autopilot), OccurredAt }` — owner: 02.3.2-T1 (CheckpointSimilarityPlan, confirmed by the TL ruling of 2026-09-24).
 
 ## 6. UI
