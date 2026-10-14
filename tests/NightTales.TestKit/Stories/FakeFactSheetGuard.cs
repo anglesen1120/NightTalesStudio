@@ -6,9 +6,10 @@ using NightTales.Domain.Series;
 namespace NightTales.TestKit.Stories;
 
 /// <summary>
-/// A scriptable <see cref="IFactSheetGuard"/> (02 CR-24; 02.5.5-T1 owns the real one): a true-crime episode is refused
-/// with <c>fact_sheet_required</c> unless <see cref="ApprovedSheet"/> is set; any other topic gets
-/// <see cref="ApprovedFactSheet.None"/>.
+/// A scriptable <see cref="IFactSheetGuard"/> (02 CR-24): 02.5.5-T1 registers the real <c>FactSheetGuard</c>,
+/// and a story test scripts this fake when it needs one exact sheet shape instead of the rows the real guard
+/// reads. A true-crime episode is refused with <c>fact_sheet_required</c> unless <see cref="ApprovedSheet"/> is
+/// set; any other topic gets <see cref="ApprovedFactSheet.None"/>.
 /// </summary>
 public sealed class FakeFactSheetGuard : IFactSheetGuard
 {

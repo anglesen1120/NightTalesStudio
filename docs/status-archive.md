@@ -4,6 +4,14 @@ History moved out of STATUS.md to keep the live file small. The initial archive 
 
 ## Resume-here history (Current/Previous blocks, Next actions)
 
+### Superseded backend Next lane-next clause (2026-10-15, replaced when Session 36 opened the 02.5.5-T1 PR)
+
+Replaced text (verbatim):
+
+Lane next: **02.5.5-T1** (real `FactSheetGuard`; 02.3.3-T1 consumes `IFactSheetGuard`), then **10.5.6-T1** (web approve/reopen + attestation UI, now unblocked: 02.3.3-T1 is merged and the `web/openapi.json` re-pin is owner-approved 2026-10-14).
+
+Outcome: 02.5.5-T1 is implemented on `feature/02.5.5-T1-s36` from `develop` `87a18ab0` (PR #193); the line now shows it as PR open and names the backend lane next as to be set by the coordinator (no `Depends on` cell names 02.5.5-T1; the 02.2.2-T2 soft CR-24 port binding is merged). The 10.5.6-T1 web mention is kept.
+
 ### Superseded line (2026-10-15, replaced by Session 35 close-out)
 
 - **Next (backend, start here):** Session 35: **02.5.4-T1** fact-sheet GET/PUT/POST approve (ETag `fs-<fact_sheet id>` per 02 README D9, F12 fact-id stability, F13 source diversity + min 5 facts at approve, F26 episode-state gate, 412 on stale ETag or lost race, Superseded demotion in one transaction; no migration) implemented on `feature/02.5.4-T1-s35` from `develop` `0f0dc4a`; T3 gates closed (QA, code/perf/security reviews, one jev triage, delta 10/10); **PR #187 open** (local full `gate.sh` `GATE_RC=0` on merged tip `73dbc1e`: 7091 tests, 0 failed, 17 skipped; earlier run `GATE_RC=2` on `32b7992`: 7056 passed, 1 failed (pre-existing `FetcherHostEndToEndTests.EndToEnd_SourceDeletedMidFetch_ResultIs404AndLoopContinues` failure on clean `develop` `0f0dc4a`, §Open findings), 17 skipped). Session 33 closed: **02.6.1-T2** seeded-defect acceptance set (22 fixtures = 17 seeded + 5 clean, `SeededDefectScorer`, live harness `tests/NightTales.AcceptanceTests`, D15 `SeededModelDecision`) merged as #186 (`103702a`; CI refused: CI-01, owner treats as pass; local full `gate.sh` `GATE_RC=0` on `8b95b1c`, 6862 tests / 0 failed / 17 skipped). The paid luna/sol run, the model pin and the `usage_records` cross-check are deferred by the owner (2026-10-14, §Open tasks); a build-only step for `NightTales.AcceptanceTests` in `gate.sh`/CI is approved as a separate later task (TL). Session 31 closed: **02.5.3-T2** `fact_sheets` + `GenerateFactSheetCommand` + job + `FactSheetValidator` + migration `AddFactSheets` merged as #184 (`88137a1`; CI refused: CI-01, owner treats as pass; local full `gate.sh` `GATE_RC=0` on `a2d4ad2`, 6845 tests / 0 failed / 17 skipped; T3 gates closed). The migration lane is free. Lane next: **02.3.3-T1** (replaces `NullStoryApprovalGate`; gives `SimilarityApprovalGuard` its approve caller), **02.5.5-T1** (real `FactSheetGuard`; depends on this task merging; 02.3.3-T1 consumes `IFactSheetGuard`). Merged earlier: #186 02.6.1-T2 (`103702a`), #180 02.6.2-T1 (`280d74b`), #175 02.5.3-T1 (`89e5736`); older merged items are in `docs/status-archive.md`.
@@ -991,3 +999,15 @@ Earlier live rows for Plan13, hosting, skeleton, wave2 and wave3 already exist i
 - **STATUS line 89, replaced (verbatim):** | Open item: `usage_records` cross-check of the live run (from 02.6.1-T2 #186) | **[OPEN]** owner: TL, after the paid run | The harness meters in memory (no DB), so the Acceptance row "report cost equals the `usage_records` sum" needs a DB-backed run (or an owner waiver); recorded in task §Notes. |
 
 - **STATUS line 90, replaced (verbatim):** | Open item: build-only step for `NightTales.AcceptanceTests` in `gate.sh` / `backend.yml` (from 02.6.1-T2 #186) | **[OPEN]** owner: owner (gate/CI edit needs approval) | The project is outside `NightTales.ci.slnf` like `Performance.Tests`, so no gate builds it; a signature change in `Application` / `Domain` can break it unseen. Same owner decision covers the other out-of-gate suites. |
+
+## Replaced by Session 36 (02.5.5-T1), archived 2026-10-15
+
+- **STATUS §Open tasks row `02.5.5-T1: real FactSheetGuard e2e`, replaced (verbatim):** | 02.5.5-T1: real `FactSheetGuard` e2e of `fact_sheet_required` / `story_fact_sheet_outdated` (hand-over from 02.3.3-T1) | **[OPEN]** owner: 02.5.5-T1 | 02.3.3-T1 proves both paths against the TestKit `FakeFactSheetGuard` only; `develop` still wires `NullFactSheetGuard`. When the real guard lands, re-run the generate 409 `fact_sheet_required` and the approve 409 `story_fact_sheet_outdated` end to end. The e2e must also cover a dropped fact citing a distinct fetched source (not counted by F13) and assert every alias → source id is episode/tenant scoped, because the gate treats every fact of `ApprovedFactSheet.Facts` as kept. (from 02.3.3-T1, Session 34) |
+
+- **STATUS Resume line 16 lane-next clause, replaced:** see the Session 36 entry in §Resume-here history above.
+
+## Replaced by Session 36 close-out (02.5.5-T1, #193 merged), archived 2026-10-15
+
+- **STATUS Resume line 16 lane clause, replaced (verbatim):** Lane: **02.5.5-T1** real `FactSheetGuard` + `FactSourcesBuilder` PR open (**#193**; §Session log).
+
+- **STATUS §Open tasks row `fact_sources` user-note title, replaced (verbatim):** | `fact_sources` user-note title: label vs GET fact-sheet wire `note` | **[OPEN]** owner: TL | Contract wording gap: the task file says the user-note `Title` in `fact_sources` is the label `your note` / `ghi chú của bạn`, but `FactSheetWire.UserNoteTitle` on the GET fact-sheet wire is `note`; decide which wins. (from 02.5.5-T1, Session 36) |
