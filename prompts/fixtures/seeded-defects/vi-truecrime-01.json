@@ -1,0 +1,300 @@
+{
+  "id": "vi-truecrime-01",
+  "language": "vi",
+  "topic": "true_crime",
+  "tier": "standard",
+  "clean": false,
+  "brief": "Người kể đọc lại hồ sơ vụ mất tích của một người đàn ông ở thị trấn ven sông. Hồ sơ được mở lại sau hai mươi năm, khi một lá thư nặc danh đến toà soạn báo địa phương. Trong hồ sơ, trang lời khai của người chứng kiến cuối cùng là một trang thay thế, và toà soạn không ghi lại ai đã mang lá thư đến.",
+  "draft": {
+    "title": "Trang lời khai bị thay",
+    "hook": {
+      "text": "Tôi đọc lại một hồ sơ cũ về người đàn ông mất tích ở một thị trấn ven sông. Hồ sơ nằm im hai mươi năm rồi mới được mở ra. Trong đó có một trang giấy không giống những trang còn lại.",
+      "keywords": [
+        "quiet riverside town under low mist at dawn"
+      ],
+      "fact_refs": [
+        "f3",
+        "f2"
+      ]
+    },
+    "paragraphs": [
+      {
+        "beat": "setup",
+        "text": "Hồ sơ này được mở lại sau hai mươi năm. Người ta mở lại khi một lá thư nặc danh đến toà soạn báo địa phương. Không ai ký tên trong lá thư. Tôi đọc bản sao mà toà soạn còn giữ. Trang đầu chỉ ghi tên thị trấn và một ngày tháng. Mọi thứ khác nằm ở những trang sau. Bìa hồ sơ đã ngả màu và có một vết gấp ở góc.",
+        "keywords": [
+          "empty wooden desk in a quiet newsroom at dawn"
+        ],
+        "fact_refs": [
+          "f3"
+        ]
+      },
+      {
+        "beat": "build_up",
+        "text": "Người đàn ông ấy được trình báo mất tích vào một buổi sáng thứ ba. Người ta chỉ trình báo sau khi ông vắng mặt hai ngày. Lần cuối người ta thấy ông là ở chợ ven sông. Hôm ấy trời còn sớm và chợ chưa đông. Ông đứng cạnh một sạp hàng nhỏ ven sông. Không ai thấy ông rời khỏi chợ. Trong hồ sơ, đó là dòng đầu tiên.",
+        "keywords": [
+          "empty riverside market street at grey dawn"
+        ],
+        "fact_refs": [
+          "f1"
+        ]
+      },
+      {
+        "beat": "build_up",
+        "text": "Theo hồ sơ, ông sống ở thị trấn ven sông đã ba năm. Hồ sơ ghi ông ở một căn phòng nhỏ ở cuối con dốc. Người trong thị trấn nhớ ông là người ít nói. Không ai nhớ ông có mâu thuẫn với ai. Cũng không ai nhớ ông nợ nần ai. Hồ sơ ghi đúng như vậy, ngắn và khô. Tôi đọc mấy dòng ấy và ghi lại. Phần ấy chỉ chiếm nửa trang giấy.",
+        "keywords": [
+          "small rented room with one window at dusk"
+        ],
+        "fact_refs": [
+          "f5"
+        ]
+      },
+      {
+        "beat": "build_up",
+        "text": "Tôi đọc hồ sơ trong nhiều buổi tối. Ngoài cửa sổ, thành phố vẫn ồn như mọi khi. Những trang giấy cũ nằm trong một tập bìa cứng. Có trang đã ố vàng ở mép. Có trang vẫn còn trắng. Tôi lật từng trang và ghi chú ra một tờ giấy riêng. Mùi giấy cũ bám vào tay tôi rất lâu. Tôi đọc chậm, vì chữ máy đánh ngày xưa không đều.",
+        "keywords": [
+          "wooden desk with a single lamp in a dim room"
+        ],
+        "fact_refs": []
+      },
+      {
+        "beat": "build_up",
+        "text": "Tập hồ sơ không dày, chỉ có mấy chục trang. Phần lớn là biên bản ghi lời khai. Mỗi trang đều có số ở góc. Tôi đọc theo thứ tự mà hồ sơ sắp sẵn. Đến gần cuối thì tôi dừng lại. Có một trang khiến tôi phải đọc lại. Trang ấy nằm lệch khỏi xấp giấy, tôi kéo nó ra đặt riêng. Đêm ấy tôi đọc đến đó rồi gấp hồ sơ lại.",
+        "keywords": [
+          "loose sheets of paper on a desk under a cold lamp"
+        ],
+        "fact_refs": []
+      },
+      {
+        "beat": "build_up",
+        "text": "Thị trấn ven sông giờ khác nhiều so với ngày ấy. Bến chợ cũ đã được xây lại. Con đường men theo bờ sông giờ có đèn. Trong hồ sơ, nét vẽ sơ đồ chợ run và mờ. Tôi nhìn sơ đồ ấy một lúc lâu. Tôi cố hình dung buổi sáng hôm đó. Mực trên sơ đồ đã ngả sang màu nâu. Chỉ có một chiếc thuyền nhỏ được đánh dấu.",
+        "keywords": [
+          "empty riverside market at dawn under thin mist"
+        ],
+        "fact_refs": []
+      },
+      {
+        "beat": "build_up",
+        "text": "Hồ sơ ghi rõ trang lời khai của người chứng kiến cuối cùng. Trang ấy được đánh máy bằng một bộ chữ khác. Loại giấy của trang ấy cũng khác mấy trang còn lại. Tôi giữ trang ấy dưới ngọn đèn bàn. Chữ trên đó hơi mờ ở mép phải. Tôi đọc từng dòng một, chậm và kỹ. Người chứng kiến kể lại buổi sáng ở chợ. Lời kể ngắn, chỉ vài câu.",
+        "keywords": [
+          "two sheets of paper side by side under a desk lamp"
+        ],
+        "fact_refs": [
+          "f2",
+          "f9"
+        ]
+      },
+      {
+        "beat": "build_up",
+        "text": "Tôi đọc phần còn lại của tập hồ sơ. Biên bản ghi ngày giờ và tên người ghi. Có mấy chữ ký nhỏ và gọn ở cuối mỗi trang. Tôi không biết những người ấy bây giờ ra sao. Hồ sơ cũng không ghi gì thêm về họ. Mỗi trang đều có một dấu mộc mờ. Tôi đọc hết rồi quay lại trang ấy. Tôi vẫn chưa rõ vì sao nó nằm ở đó.",
+        "keywords": [
+          "wooden desk with scattered sheets under a warm lamp"
+        ],
+        "fact_refs": []
+      },
+      {
+        "beat": "build_up",
+        "text": "Buổi tối hôm sau, tôi đọc lại hồ sơ từ đầu. Tôi đọc chậm hơn lần trước. Tôi để một tờ giấy trắng bên cạnh. Mỗi khi gặp điều gì lạ, tôi ghi lại. Đến trang giấy kia, tôi dừng bút và ngồi im. Rồi tôi đọc tiếp cho đến hết. Mưa nhỏ rơi trên mái tôn, tiếng nước chảy dọc máng đều. Tôi gấp sổ tay lại và tắt đèn bàn.",
+        "keywords": [
+          "rain on a corrugated roof at night"
+        ],
+        "fact_refs": []
+      },
+      {
+        "beat": "clue",
+        "text": "Trang ấy không cùng loại giấy với phần còn lại của hồ sơ. Đó là điều đầu tiên tôi để ý khi lật lại. Tôi đặt hai trang cạnh nhau dưới ngọn đèn. Sự khác nhau hiện ra ngay, hai trang không cùng một màu giấy. Tôi soi nghiêng tờ giấy dưới ánh đèn. Tôi đọc lại trang ấy ba lần. Mỗi lần đọc, tôi lại thấy một chi tiết khác. Tôi ghi chi tiết ấy vào sổ tay.",
+        "keywords": [
+          "two blank sheets of paper under a desk lamp"
+        ],
+        "fact_refs": [
+          "f2"
+        ]
+      },
+      {
+        "beat": "clue",
+        "text": "Trang ấy được đánh máy bằng một bộ chữ khác. Tôi đọc chậm để chắc mình không nhầm. Tôi so trang ấy với mấy trang gần đó. Chữ trên các trang kia đều đặn và thẳng hàng. Còn trang này thì khác hẳn về nét chữ. Tôi đọc lại nội dung ngắn gọn trên trang ấy. Tôi chép lại từng chữ vào sổ tay. Chép xong, tôi ngồi nhìn hai bản chữ.",
+        "keywords": [
+          "plain paper on a wooden desk in dim lamplight"
+        ],
+        "fact_refs": [
+          "f2"
+        ]
+      },
+      {
+        "beat": "clue",
+        "text": "Không ai nhớ ông có mâu thuẫn với một ai. Hồ sơ chỉ ghi ông là người ở trọ. Sáng ông ra chợ, chiều ông về phòng. Không ai nhớ ông to tiếng với ai bao giờ. Tôi đọc lại mấy dòng ấy mấy lần. Dòng nào cũng ngắn và lạnh lùng. Hồ sơ không ghi một lời than nào của gia đình. Tôi tự hỏi lúc ấy người ta có hỏi kỹ không.",
+        "keywords": [
+          "narrow lane in a small town at dusk"
+        ],
+        "fact_refs": [
+          "f5"
+        ]
+      },
+      {
+        "beat": "clue",
+        "text": "Hồ sơ ghi việc trình báo diễn ra vào buổi sáng thứ ba. Lúc ấy ông đã vắng mặt hai ngày. Người ta mới bắt đầu đi tìm. Lần cuối cùng thấy ông là ở chợ ven sông. Không ai thấy ông rời chợ hôm ấy. Hồ sơ ghi hai ngày ấy bằng hai dòng ngắn. Tôi đọc lại hai dòng ấy, một khoảng trống không ai lấp. Tôi đoán người ta chỉ chờ cho ông về.",
+        "keywords": [
+          "empty market stall by a river in morning mist"
+        ],
+        "fact_refs": [
+          "f1"
+        ]
+      },
+      {
+        "beat": "clue",
+        "text": "Toà soạn giữ lại lá thư nặc danh ấy. Chiếc phong bì không có tem, cũng không có dấu bưu điện. Nghĩa là lá thư không đi qua bưu điện. Ai đó đã mang nó đến tận nơi. Toà soạn không ghi lại người mang thư. Trong hồ sơ chỉ có bản sao của lá thư. Tôi đọc bản sao ấy nhiều lần. Nội dung thư ngắn, không ký tên.",
+        "keywords": [
+          "plain envelope on a wooden desk under a cold lamp"
+        ],
+        "fact_refs": [
+          "f4",
+          "f3"
+        ]
+      },
+      {
+        "beat": "clue",
+        "text": "Hồ sơ nằm im suốt hai mươi năm. Mãi đến khi lá thư ấy đến, người ta mới mở lại. Người ta mở lại hồ sơ để đọc kỹ lần nữa. Khoảng thời gian ấy dài hơn một đời người. Có người đã mất, có người đã già. Trong hồ sơ, mọi thứ vẫn nằm nguyên chỗ cũ. Chỉ có một trang là không còn nguyên. Tôi đọc lại trang ấy lần cuối trong đêm.",
+        "keywords": [
+          "dusty shelf of old boxes in a dim room"
+        ],
+        "fact_refs": [
+          "f3",
+          "f2"
+        ]
+      },
+      {
+        "beat": "clue",
+        "text": "Trang bị thay là trang lời khai của người chứng kiến cuối cùng. Đó là trang nằm gần cuối tập hồ sơ. Tôi đọc nó trước cả phần kết luận. Lời khai trong đó kể lại việc nhìn thấy ông ở chợ. Đó cũng là lần cuối người ta thấy ông. Tôi đặt trang ấy xuống và nhìn ra cửa sổ. Ngoài kia, trời vẫn chưa sáng hẳn. Tôi đọc lại dòng cuối một lần nữa.",
+        "keywords": [
+          "single sheet of paper under a desk lamp at night"
+        ],
+        "fact_refs": [
+          "f2",
+          "f1"
+        ]
+      },
+      {
+        "beat": "twist",
+        "text": "Trang ấy là một trang thay thế. Đó là lời khai của người chứng kiến cuối cùng. Người ta đã đánh máy lại nó trên một tờ giấy khác. Vậy bản mọi người tin không phải bản gốc. Suốt hai mươi năm, không ai để ý. Tôi ngồi yên rất lâu và nhìn trang giấy. Nó nằm đó, bình thường như mọi trang khác. Chỉ có điều, nó không thuộc về tập hồ sơ này.",
+        "keywords": [
+          "empty chair by a wooden desk in a dim room"
+        ],
+        "fact_refs": [
+          "f2",
+          "f3"
+        ]
+      },
+      {
+        "beat": "reveal",
+        "text": "Ai mang lá thư đến, hồ sơ không ghi. Không ai ở toà soạn nhớ người ấy. Người ghi hồ sơ ban đầu thì đã nghỉ việc từ lâu. Ông ấy đã nghỉ nhiều năm trước khi lá thư đến. Không ai hỏi ông về trang lời khai bị thay. Ông có biết chuyện gì không, hồ sơ không nói. Vậy là còn hai câu hỏi không lời đáp. Tôi đọc lại hai dòng ấy rồi gấp tập hồ sơ.",
+        "keywords": [
+          "empty chair at a family table in warm lamplight"
+        ],
+        "fact_refs": [
+          "f2",
+          "f4",
+          "f6"
+        ]
+      },
+      {
+        "beat": "aftermath",
+        "text": "Hồ sơ ghi gia đình ông vẫn chưa nhận được câu trả lời nào. Hồ sơ vẫn nằm ở đó, chưa khép lại. Không có trang nào ghi việc ai đó nhận tội. Cũng không có trang nào ghi một người bị bắt. Tên người mất tích vẫn nằm ở đầu tập hồ sơ. Phía dưới là khoảng trắng. Tôi đọc đến đó thì dừng lại. Tôi gấp hồ sơ và trả lại chỗ cũ.",
+        "keywords": [
+          "river bank with a small boat at dawn"
+        ],
+        "fact_refs": ["f3"]
+      },
+      {
+        "beat": "aftermath",
+        "text": "Mùa mưa năm ấy, con sông lại dâng lên. Chợ ven sông vẫn họp mỗi sáng. Người ta bán cá, bán rau như thường. Không ai nhắc đến chuyện cũ nữa. Còn tôi, tôi vẫn giữ lại bản chép của mình. Thỉnh thoảng tôi mở ra đọc, trang giấy khác vẫn nằm đó. Có lẽ nó đã nằm ở đó từ rất lâu. Không ai chạm vào nó, cũng không ai hỏi.",
+        "keywords": [
+          "wet asphalt lane in a small town at night"
+        ],
+        "fact_refs": []
+      }
+    ],
+    "ending": {
+      "text": "Vậy là trong tập hồ sơ ấy, chỉ có một trang là không phải bản gốc. Người ta vẫn tin vào bản ấy suốt hai mươi năm. Gia đình người mất tích vẫn chưa có câu trả lời. Kết luận của hồ sơ vẫn để ngỏ. Bản gốc nằm ở đâu, không ai biết. Bạn nghĩ ai đã thay trang lời khai đó?",
+      "keywords": [
+        "wooden desk with a single lamp in a quiet room at night"
+      ],
+      "fact_refs": [
+        "f3"
+      ]
+    },
+    "description": "Một người đàn ông mất tích ở một thị trấn ven sông. Hai mươi năm sau, hồ sơ được mở lại và một trang lời khai không phải bản gốc.",
+    "tags": [
+      "true crime",
+      "mất tích",
+      "hồ sơ cũ",
+      "điều tra",
+      "thị trấn ven sông",
+      "bí ẩn"
+    ],
+    "content_warnings": [],
+    "structure": {
+      "sub_genre": "mất tích bí ẩn",
+      "setting": "thị trấn ven sông",
+      "opening": "hồ sơ được mở lại",
+      "twist_type": "sai sót trong điều tra ban đầu",
+      "narrator_mode": "first_person"
+    }
+  },
+  "facts": [
+    {
+      "id": "f1",
+      "statement": "Vụ mất tích được trình báo vào một buổi sáng thứ ba, hai ngày sau khi người đàn ông được nhìn thấy lần cuối ở chợ ven sông.",
+      "source_aliases": [
+        "s1"
+      ]
+    },
+    {
+      "id": "f2",
+      "statement": "Trong hồ sơ được mở lại, trang lời khai của người chứng kiến cuối cùng là một trang thay thế, giấy khác và đánh máy bằng bộ chữ khác.",
+      "source_aliases": [
+        "s1",
+        "s2"
+      ]
+    },
+    {
+      "id": "f3",
+      "statement": "Hồ sơ chỉ được mở lại sau hai mươi năm, khi một lá thư nặc danh đến toà soạn báo địa phương, và gia đình người mất tích vẫn chưa nhận được câu trả lời nào.",
+      "source_aliases": [
+        "s2"
+      ]
+    },
+    {
+      "id": "f4",
+      "statement": "Toà soạn không ghi lại ai mang lá thư đến, và phong bì không có tem cũng không có dấu bưu điện.",
+      "source_aliases": [
+        "s2"
+      ]
+    },
+    {
+      "id": "f5",
+      "statement": "Người mất tích đã sống ở thị trấn ven sông ba năm, không ai biết ông có mâu thuẫn hay nợ nần gì.",
+      "source_aliases": [
+        "s1"
+      ]
+    },
+    {
+      "id": "f6",
+      "statement": "Người ghi hồ sơ ban đầu đã nghỉ việc nhiều năm trước khi lá thư đến và chưa từng được hỏi về việc trang lời khai bị thay.",
+      "source_aliases": [
+        "s1",
+        "s2"
+      ]
+    }
+  ],
+  "defects": [
+    {
+      "type": "fact_ref_invalid",
+      "segment": "p:6",
+      "note": "Paragraph p:6 cites the fact id f9, which is not one of the six supplied facts; the sentence's own claim is supported by f2, so the invalid id is the only fault."
+    },
+    {
+      "type": "content_warning_missing",
+      "segment": "meta",
+      "note": "The story is a true-crime narration (topic true_crime, a disappearance case) but content_warnings is empty, so the crime content warning the story needs is not declared."
+    }
+  ]
+}

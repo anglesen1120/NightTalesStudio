@@ -1,0 +1,197 @@
+{
+  "id": "vi-ghost-02",
+  "language": "vi",
+  "topic": "ghost",
+  "tier": "standard",
+  "clean": false,
+  "brief": "Người bảo vệ ca đêm ở một ngôi trường đã đóng cửa thấy tên viết bằng phấn ướt trên bảng lớp số bảy sau mỗi lần lau bảng. Premise tổng hợp, chỉ để tạo ngữ cảnh.",
+  "draft": {
+    "title": "Lớp học số bảy",
+    "hook": {
+      "text": "Chiếc bảng đen trong lớp số bảy vẫn còn ướt phấn. Trường đã đóng cửa từ lâu, nhưng vệt phấn thì mới.",
+      "keywords": [
+        "old blackboard in a closed classroom"
+      ],
+      "fact_refs": []
+    },
+    "paragraphs": [
+      {
+        "beat": "setup",
+        "text": "Tôi nhận việc bảo vệ cho ngôi trường cũ ở cuối phố. Trường đóng cửa đã lâu, không còn học sinh. Mỗi đêm tôi đi một vòng qua hai dãy nhà. Tôi khoá cổng lúc chín giờ tối. Sau đó tôi ngồi ở phòng trực cạnh cổng. Phòng trực có một cái bàn và một chiếc ghế nhựa. Tôi mang theo một bình trà và một cuốn sổ. Đêm đầu tiên, mọi thứ đều im. Tôi giữ chìa khoá cổng và chìa khoá phòng trực.",
+        "keywords": [
+          "empty school yard at dusk"
+        ],
+        "fact_refs": []
+      },
+      {
+        "beat": "build_up",
+        "text": "Đêm thứ ba, tôi đi qua dãy lớp học phía sau. Lớp số bảy nằm ở cuối dãy. Cửa lớp khoá, then cài từ ngoài. Tôi soi đèn qua ô cửa sổ. Chiếc bảng đen vẫn treo trên tường. Trên bảng có một vệt trắng. Nhìn kỹ, đó là nét chữ. Nét chữ viết bằng phấn còn ướt.",
+        "keywords": [
+          "classroom doorway seen through a window at night"
+        ],
+        "fact_refs": []
+      },
+      {
+        "beat": "build_up",
+        "text": "Tôi mở cửa lớp và bật đèn. Bảng đen sạch, chỉ có một hàng chữ. Hàng chữ ngắn, giống một cái tên. Chữ viết thẳng, nét đều như người quen viết. Tôi lấy giẻ lau bảng. Tôi lau cho tới khi bảng trắng trở lại. Tôi tắt đèn và khoá cửa. Sáng hôm sau, tôi kể cho bác tổ trưởng. Bác bảo tôi đừng bận tâm. Tôi quay lại lớp vào tối đó. Bảng lại sạch như tôi đã lau.",
+        "keywords": [
+          "wet chalk marks on a blackboard"
+        ],
+        "fact_refs": []
+      },
+      {
+        "beat": "build_up",
+        "text": "Đêm sau, tôi ghé lớp số bảy trước khi hết ca. Bảng lại có chữ. Lần này nét chữ rõ hơn. Tôi để nguyên và đứng nhìn. Tôi ngửi thấy mùi phấn mới. Không ai vào trường từ lúc tôi khoá cổng. Cổng có một ổ khoá lớn, chìa khoá trong túi tôi. Tôi đi kiểm tra cả hai dãy nhà. Không có cửa nào bị cạy.",
+        "keywords": [
+          "school gate with a heavy padlock at night"
+        ],
+        "fact_refs": []
+      },
+      {
+        "beat": "build_up",
+        "text": "Tôi bắt đầu để ý đến cái tên. Tôi không đọc thành tiếng. Tôi chỉ nhìn và ghi nhớ hình dáng nét chữ. Nét chữ có một chỗ gãy ở giữa. Tôi tìm trong phòng hồ sơ cũ. Trong tủ có vài tập giấy đã ố. Một tập ghi danh sách giáo viên dạy ca tối. Một cái tên bị gạch ngang bằng bút chì. Tên đó trùng với chữ trên bảng. Tôi ghi lại hình dáng nét chữ vào sổ. Tôi vẽ cả chỗ gãy ở giữa nét.",
+        "keywords": [
+          "faded paper files in a metal cabinet"
+        ],
+        "fact_refs": []
+      },
+      {
+        "beat": "build_up",
+        "text": "Bác tổ trưởng kể tôi nghe một chuyện. Ngày trường còn dạy, lớp số bảy học ca tối. Cô giáo dạy lớp đó về nhà một đêm rồi không quay lại. Người ta nói cô đi đâu đó rất xa. Bảng lớp đó vẫn còn tên cô trong sổ. Sau đó trường chuyển sang ca ngày. Rồi trường đóng cửa hẳn. Tôi hỏi bác có tin chuyện đó không. Bác chỉ cười. Tôi hỏi bác về ngôi nhà ở của giáo viên. Bác nói khu đó đã bỏ trống.",
+        "keywords": [
+          "empty staff room with chairs pushed in"
+        ],
+        "fact_refs": []
+      },
+      {
+        "beat": "build_up",
+        "text": "Tôi xin một chìa khoá dãy nhà sau. Tôi muốn tự kiểm tra mỗi đêm. Cửa sổ các lớp đều đóng, chốt bên trong. Muỗi bay nhiều ở hành lang dãy sau. Đèn hành lang chỉ còn hai bóng sáng. Tôi đi hết dãy rồi quay lại lớp số bảy. Lần nào bảng cũng có chữ mới. Tôi lau bảng rồi ngồi lại một lúc. Tôi nghe tiếng nước chảy ở đâu đó. Tôi để đèn hành lang sáng khi đi tuần. Tôi nghe tiếng cửa lay ở dãy sau.",
+        "keywords": [
+          "long school corridor with dim lamps"
+        ],
+        "fact_refs": []
+      },
+      {
+        "beat": "build_up",
+        "text": "Tôi thử để lại dấu trên sàn lớp số bảy. Tôi rắc một ít bụi phấn gần cửa. Sáng ra, bụi phấn vẫn nguyên. Tôi thử cài thêm một sợi chỉ ở khe cửa. Sợi chỉ không đứt và cũng không lệch. Không ai bước qua cửa lớp. Nhưng trên bảng lại có chữ. Tôi ngồi xuống ghế giáo viên. Tay tôi lạnh và ướt như vừa rửa. Tôi thử đứng ngoài cửa lớp và nhìn qua khe. Bên trong tối và im.",
+        "keywords": [
+          "chalk dust on a classroom floor"
+        ],
+        "fact_refs": []
+      },
+      {
+        "beat": "clue",
+        "text": "Đêm đó tôi ngồi lại trong lớp số bảy. Tôi tắt đèn và ngồi ở ghế cuối. Ngoài cửa sổ chỉ có bóng cây. Tôi nghe tiếng phấn kéo trên bảng. Tiếng rất nhỏ, như có người viết chậm. Tôi không dám bật đèn. Tôi ngồi im cho tới khi tiếng đó tắt. Rồi tôi bật đèn và nhìn lên bảng. Trên bảng có thêm một dòng chữ mới.",
+        "keywords": [
+          "chalk writing on a blackboard in dim light"
+        ],
+        "fact_refs": []
+      },
+      {
+        "beat": "clue",
+        "text": "Tôi kiểm tra phòng trực và các lớp khác. Chỉ lớp số bảy có chữ trên bảng. Tôi đem chuyện này hỏi bác tổ trưởng lần nữa. Bác nói trong trường không còn ai ở lại qua đêm. Bác còn nói tôi là người thứ năm nhận việc này. Bốn người trước đều xin nghỉ sớm. Tôi hỏi lý do, bác không trả lời. Bác bảo tôi cứ đi kiểm tra đều đặn. Tôi đem chuyện này ghi vào cuốn sổ của mình.",
+        "keywords": [
+          "night guard office with a single desk lamp"
+        ],
+        "fact_refs": []
+      },
+      {
+        "beat": "clue",
+        "text": "Tôi tìm thấy một phòng nhỏ trong dãy sau. Phòng đó khoá bằng then cài, không có ổ khoá. Trong phòng có một giường sắt và một giá sách. Trên giá có vài quyển sách giáo khoa cũ. Một chiếc khăn mặt sạch treo ở móc cửa. Khăn vẫn còn ẩm. Tôi lùi ra và đóng cửa lại. Tôi đứng rất lâu ngoài hành lang.",
+        "keywords": [
+          "small dormitory room with an iron bed"
+        ],
+        "fact_refs": []
+      },
+      {
+        "beat": "clue",
+        "text": "Tôi để ý thấy có nước ở hành lang dãy sau. Nước chảy từ phía phòng nhỏ đó ra. Tôi theo vết nước đi vào trong trường. Vết nước đi tới cầu thang lên tầng hai. Tầng hai treo một tấm biển cũ. Biển ghi tên khu nhà ở của giáo viên. Tôi mở cửa cầu thang và bước lên. Tay tôi nắm chặt lan can gỗ. Tôi thử gõ cửa phòng đó. Không có tiếng trả lời.",
+        "keywords": [
+          "wet trail on a tiled corridor floor"
+        ],
+        "fact_refs": []
+      },
+      {
+        "beat": "clue",
+        "text": "Trên tầng hai có một hành lang dài. Nhiều cửa phòng đóng, nhưng một cửa hé mở. Trong phòng có ánh sáng rất yếu. Tôi nghe tiếng nước rơi vào chậu. Tôi đứng ngoài cửa và gọi hai tiếng. Không có ai trả lời. Tôi đẩy cửa bước vào và đứng sững. Trên bàn có một cái cốc và một hộp phấn mới. Tôi lau khô chân rồi đi tiếp lên cầu thang.",
+        "keywords": [
+          "half open door in a long dormitory corridor"
+        ],
+        "fact_refs": []
+      },
+      {
+        "beat": "clue",
+        "text": "Tôi lấy một viên phấn và thử viết thử lên bảng. Nét phấn của tôi thô và lệch. Trên bảng, nét chữ kia mảnh và đều hơn nhiều. Tôi đứng so hai nét chữ cạnh nhau. Nét chữ ấy được viết từ trái sang phải rất chậm. Tôi còn thấy một vết tay áo quệt ngang góc bảng. Tôi không lau bảng đêm đó. Tôi để nguyên hàng chữ rồi đi ra.",
+        "keywords": [
+          "two kinds of chalk writing on a board"
+        ],
+        "fact_refs": []
+      },
+      {
+        "beat": "twist",
+        "text": "Tôi bật đèn pin và soi khắp phòng. Ở góc phòng có một người phụ nữ đang ngồi. Bà mặc áo sơ mi cũ, tay dính đầy phấn. Bà nhìn tôi rồi cúi xuống. Bà nói bà vẫn ở đây từ ngày trường đóng. Bà không đi đâu cả và không mất tích. Bà chính là cô giáo dạy ca tối của lớp số bảy. Mỗi đêm bà xuống lớp viết tên mình lên bảng. Đó là cách bà giữ giờ dạy của mình. Tôi soi đèn xuống sàn và thấy vài hạt phấn.",
+        "keywords": [
+          "woman sitting on an iron bed in a dorm room"
+        ],
+        "fact_refs": []
+      },
+      {
+        "beat": "reveal",
+        "text": "Cô giáo lớp số bảy vẫn còn sống. Cô ở ngay trong khu nhà của trường. Cô không đi đâu xa, cô chỉ không có nhà để về.",
+        "keywords": [
+          "school dormitory window with a weak light"
+        ],
+        "fact_refs": []
+      },
+      {
+        "beat": "aftermath",
+        "text": "Tôi không gọi công an và cũng không kể cho bác tổ trưởng. Tôi mua cho bà một ấm nước nóng. Bà kể tôi nghe về những năm dạy ca tối. Bà nói bà viết tên mình để nhớ mình là ai. Sáng ra, bà lại lên tầng hai và đóng cửa. Tôi giữ chuyện này trong lòng rất lâu. Tôi đưa bà một chiếc áo khoác cũ của mình.",
+        "keywords": [
+          "thermos flask and a cup on a wooden table"
+        ],
+        "fact_refs": []
+      },
+      {
+        "beat": "aftermath",
+        "text": "Mỗi đêm tôi lau bảng lớp số bảy trước khi đi tuần. Rồi tôi để nguyên một viên phấn trên mép bảng. Sáng ra, chữ lại hiện trên bảng. Tôi không còn tránh dãy nhà sau nữa. Mỗi lần đi qua đó, tôi đi chậm hơn một chút. Tôi vẫn làm ở đó cho tới hết hợp đồng. Tôi không nói với ai về căn phòng nhỏ đó.",
+        "keywords": [
+          "chalk left on the edge of a blackboard"
+        ],
+        "fact_refs": []
+      }
+    ],
+    "ending": {
+      "text": "Hết.",
+      "keywords": [
+        "dark empty classroom with chairs stacked"
+      ],
+      "fact_refs": []
+    },
+    "description": "Người bảo vệ ca đêm ở một ngôi trường đã đóng cửa lau sạch bảng lớp số bảy mỗi đêm, và mỗi sáng bảng lại có tên viết bằng phấn ướt.",
+    "tags": [
+      "truyện ma",
+      "trường học cũ",
+      "ca đêm",
+      "phấn ướt"
+    ],
+    "content_warnings": [
+      "supernatural",
+      "death",
+      "disturbing"
+    ],
+    "structure": {
+      "sub_genre": "ma học đường",
+      "setting": "trường học cũ",
+      "opening": "tìm lại đồ vật cũ",
+      "twist_type": "người đã chết vẫn còn sống",
+      "narrator_mode": "first_person"
+    }
+  },
+  "defects": [
+    {
+      "type": "ending_missing",
+      "segment": "ending",
+      "note": "Phần ending chỉ có một tiếng, không khép lại hình ảnh nào và không có câu mời gọi; truyện dừng đột ngột nên người nghe không có phần kết."
+    }
+  ]
+}

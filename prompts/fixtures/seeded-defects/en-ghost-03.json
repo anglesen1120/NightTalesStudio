@@ -1,0 +1,154 @@
+{
+  "id": "en-ghost-03",
+  "language": "en",
+  "topic": "ghost",
+  "tier": "standard",
+  "clean": false,
+  "brief": "A printer works late in a converted canal warehouse whose old lift sometimes stops between floors, on a corridor that is not on the panel. The floor below held paper stock in the years before the conversion, and the lift was never told that the floor was sealed. Atmosphere: cold metal, machine oil, low humming lights.",
+  "draft": {
+    "title": "The Floor Between Two And Three",
+    "hook": {
+      "text": "The old lift in my building sometimes stops between floors. It stops at a corridor that is not on the panel and stands there with the gate open. I have learned to take the stairs.",
+      "keywords": ["warehouse lift with a folding gate at night"],
+      "fact_refs": []
+    },
+    "paragraphs": [
+      {
+        "beat": "setup",
+        "text": "The warehouse on the canal was cut into studios twelve years ago, and I took the top one because of the windows. The lift is the original, a cage with a folding gate and a brass panel with five buttons. It is slow, loud and honest about where it is going.",
+        "keywords": ["brick warehouse wall above a canal at dusk"],
+        "fact_refs": []
+      },
+      {
+        "beat": "setup",
+        "text": "I print plates for other people's books, so I work late most nights. My studio is on the fifth floor, at the end of a corridor of identical doors. When I lock up, the building is empty. Only the night watchman is still there, in the lobby, with a radio and a flask of tea.",
+        "keywords": ["printing plates stacked on a steel workbench"],
+        "fact_refs": []
+      },
+      {
+        "beat": "setup",
+        "text": "The panel has five buttons and a fifth one is patched over with a disc of brass, level with the others. Somebody took a button out years ago and filled the hole so neatly that a stranger would walk past it. I saw the disc on my first day here and thought nothing at all of it.",
+        "keywords": ["brass lift panel with five round buttons"],
+        "fact_refs": []
+      },
+      {
+        "beat": "build_up",
+        "text": "In November the lift began to stop between floors, and I do not mean that it stopped badly. It opened on a corridor that is not on the panel, with a low ceiling and lights that hum. I would pull the gate shut and ride up to my own floor, and my hands would be cold.",
+        "keywords": ["lift cage door half open in a dark shaft"],
+        "fact_refs": []
+      },
+      {
+        "beat": "build_up",
+        "text": "The first time I stepped out, the corridor ran the length of the building with doors on both sides, all of them shut. The air smelled of paper and machine oil. The windows at the far end looked onto the wall of the next building, close enough to touch. I did not go far that night.",
+        "keywords": ["long corridor with closed doors on both sides"],
+        "fact_refs": []
+      },
+      {
+        "beat": "build_up",
+        "text": "The gate closed behind me that night, which it had never done before, and the cage went up without me. I climbed the stairs from the fourth floor and found my own door, and my hands shook when I put the key in it. After that I took the stairs when the lift stopped.",
+        "keywords": ["concrete stairwell with a painted handrail"],
+        "fact_refs": []
+      },
+      {
+        "beat": "build_up",
+        "text": "The watchman told me nobody has used the lower floors since the fire. He said the old stock floor was closed, and the lift was fitted with a new panel to keep people off it. He said it twice, the way a man does when he wants to believe his own story.",
+        "keywords": ["night watchman sitting in a lobby with a radio"],
+        "fact_refs": []
+      },
+      {
+        "beat": "build_up",
+        "text": "I asked him what fire, and he went quiet and turned the radio up. The building is dry and clean now. There has been no fire in my time here and no water damage either. But the stairwell below the fourth floor smells of smoke on wet days, and nobody has explained that to me.",
+        "keywords": ["wet stairwell window with dark stains"],
+        "fact_refs": []
+      },
+      {
+        "beat": "clue",
+        "text": "The brass disc is warm when the lift stops, warmer than the other buttons, and it never pushes in. I put my thumb on it one morning and the cage started down on its own, with the gate standing open. I pulled the gate across and got out on the fourth floor.",
+        "keywords": ["single warm brass button on a metal panel"],
+        "fact_refs": []
+      },
+      {
+        "beat": "clue",
+        "text": "That night I looked for the building plan online, at https://example.com/warehouse-floors, and the plan shows four studio floors and a basement. There is no stock floor in it. The lift shaft on the drawing runs straight from the basement to the roof with nothing between.",
+        "keywords": ["desk lamp and a mug on a dark wooden desk"],
+        "fact_refs": []
+      },
+      {
+        "beat": "clue",
+        "text": "The print of the drawing is too small to read. I printed it out bigger at the studio and pinned it to my wall. The shaft is drawn with a break line through the middle, exactly where the stock floor used to be. Somebody measured that break to the millimetre.",
+        "keywords": ["bare studio wall under a single lamp"],
+        "fact_refs": []
+      },
+      {
+        "beat": "twist",
+        "text": "In January I stepped out again, and this time I walked the corridor to the end. Every door carried my own number, five, and every one of them was shut. The last door on the right was not shut. Beyond it my studio stood exactly as I had left it that evening.",
+        "keywords": ["narrow studio corridor with numbered doors"],
+        "fact_refs": []
+      },
+      {
+        "beat": "twist",
+        "text": "The stack of plates on my press was the stack I had printed that day, damp at the edges. My coat hung on the hook by the window. I stood in the doorway and looked at my own room from the wrong side of the glass. Then I heard the gate of the lift close behind me.",
+        "keywords": ["printing press with a damp stack of plates"],
+        "fact_refs": []
+      },
+      {
+        "beat": "reveal",
+        "text": "The fire happened before the conversion, when the floor below held paper stock for a printer. The caretaker's file says the blaze was out within the hour and that nobody was inside the building at the time. It also says the stock floor was sealed and the panel replaced in the same week.",
+        "keywords": ["portrait of Mr Haversham, 1893, in the stockroom", "burnt paper bales in a storeroom"],
+        "fact_refs": []
+      },
+      {
+        "beat": "reveal",
+        "text": "What I know now is smaller than a ghost and worse than a filing error. The lift was never told that the floor had gone. It still counts the stop and opens on the corridor. It waits there with the gate ajar, the way a machine waits for a passenger who is a minute late.",
+        "keywords": ["open lift gate on a dark landing"],
+        "fact_refs": []
+      },
+      {
+        "beat": "aftermath",
+        "text": "I take the stairs, so I am fitter than I have been in years and slower to get to my desk. I have stopped riding the lift down at night, when the gate sticks. It still stops between floors sometimes, with me standing in the hall, listening to it breathe.",
+        "keywords": ["empty concrete stairwell at midnight"],
+        "fact_refs": []
+      },
+      {
+        "beat": "aftermath",
+        "text": "One evening I pressed the brass disc with my whole hand and let it go without waiting for an answer. The cage came up and stood open in front of me with the light on inside. I did not get in. I said good night to it, which I know is foolish, and went up the stairs.",
+        "keywords": ["lift standing open with the light on"],
+        "fact_refs": []
+      },
+      {
+        "beat": "aftermath",
+        "text": "The plates I print are ordinary again. I check the studio each morning the way I check my pockets: press, stack, coat, window. Everything is where I left it, in this building, on this floor. There is only one fifth floor on the plan.",
+        "keywords": ["printing studio with a window on a canal"],
+        "fact_refs": []
+      }
+    ],
+    "ending": {
+      "text": "I still work late, and the windows still look over the canal. When the lift stops between floors, I stand in the hall. I listen to a corridor standing open for me, one floor down from nowhere. Would you have stepped out a second time?",
+      "keywords": ["canal water under a night sky with lights"],
+      "fact_refs": []
+    },
+    "description": "A printer who works late in a converted canal warehouse notices that the old lift sometimes stops between floors, on a corridor that is not on the panel. A quiet haunting of a machine that was never told the floor was gone.",
+    "tags": ["ghost story", "workplace haunting", "quiet haunting", "night narration", "urban legend"],
+    "content_warnings": ["supernatural"],
+    "structure": {
+      "sub_genre": "workplace haunting",
+      "setting": "converted warehouse studio",
+      "opening": "finding an old object",
+      "twist_type": "the curse is real",
+      "narrator_mode": "first_person"
+    }
+  },
+  "facts": [],
+  "defects": [
+    {
+      "type": "markdown_or_url_in_text",
+      "segment": "p:9",
+      "note": "A web address is written inside the narration text instead of being spoken or left out."
+    },
+    {
+      "type": "keyword_rule_violation",
+      "segment": "p:13",
+      "note": "One keyword of this segment is an unusable search phrase: it names a person, carries a title, a comma and a year written in digits."
+    }
+  ]
+}

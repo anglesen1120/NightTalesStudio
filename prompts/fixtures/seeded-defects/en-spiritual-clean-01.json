@@ -1,0 +1,143 @@
+{
+  "id": "en-spiritual-clean-01",
+  "language": "en",
+  "topic": "spiritual",
+  "tier": "standard",
+  "clean": true,
+  "brief": "A long-haul driver starts leaving a bottle of water at a small shrine on the pass, the way the drivers before him did. Every bottle he leaves comes back full, and the dust around the shelf carries small prints. Atmosphere: empty, cool, crickets close by, a lamp that is never out.",
+  "draft": {
+    "title": "The Bottles At The Top Of The Pass",
+    "hook": {
+      "text": "I drive the same route four nights a week, up over the pass and down to the coast. There is a shrine at the top, on the left, where the road bends around the rock. It has a tin roof, a lamp in a glass box, and a row of bottles nobody ever takes away.",
+      "keywords": ["small roadside shrine above a mountain pass"],
+      "fact_refs": []
+    },
+    "paragraphs": [
+      {
+        "beat": "setup",
+        "text": "Drivers stop there. I learned that in my first month. I was sitting behind a truck whose driver had pulled in to leave something on the shelf. He stood for a moment with his hands at his sides, and then he drove on. I asked him about it at the next stop and he only shrugged.",
+        "keywords": ["parked truck on a mountain road at dusk"],
+        "fact_refs": []
+      },
+      {
+        "beat": "setup",
+        "text": "So I started doing it too. I leave a bottle of water, sometimes a packet of biscuits, on the stone shelf. Then comes the long climb down to the coast. It costs almost nothing and it takes a minute of my night. After a while I stopped asking myself why I did it.",
+        "keywords": ["water bottle on a stone shelf"],
+        "fact_refs": []
+      },
+      {
+        "beat": "setup",
+        "text": "The part I could not explain is the bottles. Mine is never there when I come back the other way. Instead the shelf holds a row of full bottles, upright and sealed. The dust around them is marked with small prints, like bare heels, going down the slope.",
+        "keywords": ["dusty stone shelf with rows of bottles"],
+        "fact_refs": []
+      },
+      {
+        "beat": "build_up",
+        "text": "In the third week I brought a bottle with a scuffed cap. The next night that same bottle stood on the shelf, full. The cap was on the same way and my scuff was still on it. Somebody had taken my water, or poured it away, and put my bottle back in a row.",
+        "keywords": ["bottle cap with a scuffed edge on a shelf"],
+        "fact_refs": []
+      },
+      {
+        "beat": "build_up",
+        "text": "The lamp in the glass box is always lit. It is lit in rain and in wind, at two in the morning and at noon. There is no house within a mile of the pass and no wire up there at all. Somebody walks this road, and I have never once seen them do it.",
+        "keywords": ["lit lamp in a glass box at night"],
+        "fact_refs": []
+      },
+      {
+        "beat": "build_up",
+        "text": "I began to stop on both legs of the trip, which is greedy, and to look closely at the dust. The prints go away from the shrine and down an old village path. They are deeper going up than coming down, which means a load being carried. They end where the path meets the tarmac.",
+        "keywords": ["narrow path leaving a mountain road"],
+        "fact_refs": []
+      },
+      {
+        "beat": "build_up",
+        "text": "There are flowers in a jam jar in summer. In winter a folded mat waits under the shelf, kept dry inside a plastic bag. Somebody tends that shrine the way other people tend a garden. It happens in every kind of weather, and nobody is ever seen doing the work.",
+        "keywords": ["wildflowers in a jam jar on a stone ledge"],
+        "fact_refs": []
+      },
+      {
+        "beat": "build_up",
+        "text": "The other drivers treat it as ordinary. They do not slow down to look and they do not talk about it on the radio. A man I run with twice a week has left water up there for eleven years. He has never asked a single question about it, and he does not intend to start.",
+        "keywords": ["two trucks parked at a night layby"],
+        "fact_refs": []
+      },
+      {
+        "beat": "clue",
+        "text": "In the spring I came up early in the evening. I saw a woman on the path, with a bucket and a bundle for the lamp. I did not call out. She was old, and she walked the slope without resting. I watched her trim the wick and set the whole row of bottles straight.",
+        "keywords": ["old woman walking down a slope at dusk"],
+        "fact_refs": []
+      },
+      {
+        "beat": "clue",
+        "text": "The next night I left a bottle with no cap on it, out of pure nosiness. In the morning it stood on the shelf with a cap on it and water to the neck. The water was sweet and tasted of rain. It was better water than anything I have ever bought at a fuel stop.",
+        "keywords": ["bottle of water standing in morning light"],
+        "fact_refs": []
+      },
+      {
+        "beat": "clue",
+        "text": "I asked at the village garage what the shrine was. The man there said it has stood on that bend since before he was born. He said the drivers keep it, and that the lamp is never out. He said his own mother leaves fruit there, and he did not think any of it was strange.",
+        "keywords": ["small garage forecourt in a mountain village"],
+        "fact_refs": []
+      },
+      {
+        "beat": "twist",
+        "text": "I stopped at dusk one Friday and waited in the cab with the lights off. She came down at eight with the bucket. She filled every bottle from a can and set them upright in their row. Then she sat on the folded mat under the shelf and stayed there for a while, doing nothing at all.",
+        "keywords": ["truck cab parked beside a dark road"],
+        "fact_refs": []
+      },
+      {
+        "beat": "twist",
+        "text": "The lamp is lit for her husband. He drove this pass for thirty years. He went off the bend one winter night in fog, before the barrier was built. He used to leave water on that shelf for the trucks behind him. She has been keeping his habit going ever since, every week of the year.",
+        "keywords": ["steel barrier at the edge of a mountain road"],
+        "fact_refs": []
+      },
+      {
+        "beat": "reveal",
+        "text": "She told me all of it the following week, when I finally got down from the cab and said hello. The bottles are for the drivers, she said, and she refills every one of them. She likes the shelf to look like a place where somebody is expected. She said it in one breath.",
+        "keywords": ["two people talking beside a stone shrine"],
+        "fact_refs": []
+      },
+      {
+        "beat": "reveal",
+        "text": "I asked whether the water was safe to drink. She laughed at me, kindly, the way you laugh at a child. The can comes from the stream behind her house. The water is for the drivers who come over the pass at night. Her husband was once one of them.",
+        "keywords": ["stream running behind a small house"],
+        "fact_refs": []
+      },
+      {
+        "beat": "aftermath",
+        "text": "I leave two bottles now and take one away with me. I told her about it, and she said that is the arrangement. I drink it on the climb down with the vents open. It is better than the water I pay for, and I have stopped pretending that it is not.",
+        "keywords": ["open truck window at night on a coast road"],
+        "fact_refs": []
+      },
+      {
+        "beat": "aftermath",
+        "text": "The row of bottles holds two with my handwriting on them, which nobody else can read. The prints in the dust are the same prints every week. I no longer look for anything stranger up there. There is only an old woman with a bucket and a long walk up a steep path.",
+        "keywords": ["row of full bottles on a stone shelf"],
+        "fact_refs": []
+      },
+      {
+        "beat": "aftermath",
+        "text": "In winter I keep a spare bottle in the door pocket. I keep it for the nights when the road closes and the trucks wait on the shoulder. I carry one across to a driver I have never met and set it down where he can see it. Then I go back to my own cab.",
+        "keywords": ["trucks waiting on a snowy road shoulder"],
+        "fact_refs": []
+      }
+    ],
+    "ending": {
+      "text": "The lamp is always lit when I come over the top, and the bottles stand in their row. The woman I never see comes down for them before morning. I take one bottle with me and drink it on the way home. Would you have drunk the water, once you knew who left it there?",
+      "keywords": ["mountain pass under a clear night sky"],
+      "fact_refs": []
+    },
+    "description": "A long-haul driver begins leaving water at a small shrine on the pass, as the drivers before him did, and finds that every bottle comes back full and the lamp above it is never out. A warm story about a habit kept for someone who is gone.",
+    "tags": ["spiritual story", "roadside shrine", "mountain pass", "night narration", "quiet story"],
+    "content_warnings": ["supernatural", "death"],
+    "structure": {
+      "sub_genre": "debt repaid",
+      "setting": "roadside shrine",
+      "opening": "a moved offering",
+      "twist_type": "the living pays the dead's debt",
+      "narrator_mode": "first_person"
+    }
+  },
+  "facts": [],
+  "defects": []
+}

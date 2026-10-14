@@ -1,0 +1,154 @@
+{
+  "id": "en-ghost-02",
+  "language": "en",
+  "topic": "ghost",
+  "tier": "standard",
+  "clean": false,
+  "brief": "The caretaker of a school that closed years ago keeps the keys. In room seven the blackboard keeps showing the name of the evening-shift teacher who vanished that winter, and the chalk is still wet after he wipes it. Atmosphere: still, dusty, a corridor light that flickers.",
+  "draft": {
+    "title": "The Name On The Board In Room Seven",
+    "hook": {
+      "text": "The school on the hill closed in the spring nobody wanted it, and the town left everything inside. I kept the keys. Twice a week I walk the corridors and listen to a building that has nothing to say.",
+      "keywords": ["empty school corridor in morning light"],
+      "fact_refs": []
+    },
+    "paragraphs": [
+      {
+        "beat": "setup",
+        "text": "The building has eleven rooms and one long hall with a stage at the end. Room seven sits on the evening side, where the light goes first. It holds thirty desks, a piano with no strings, and a board still bolted to the wall. I unlock it first when I come up the hill.",
+        "keywords": ["closed school building on a hill in winter"],
+        "fact_refs": []
+      },
+      {
+        "beat": "setup",
+        "text": "Evening classes ran there until the year the school shut. Adults came up the hill after work for English, for arithmetic, for a certificate nobody needed. The register for those classes is still in the office, in a cardboard box, with the ink gone pale to nothing.",
+        "keywords": ["dusty office with stacked cardboard boxes"],
+        "fact_refs": []
+      },
+      {
+        "beat": "setup",
+        "text": "I know the building better than I know my own kitchen. I know which floorboard answers, which window sticks, which tap runs brown in the morning. I swept these corridors for nine years before the closure and I have swept them for six years since. The job did not end when the classes did.",
+        "keywords": ["narrow corridor with a mop and a metal bucket"],
+        "fact_refs": []
+      },
+      {
+        "beat": "build_up",
+        "text": "In the first winter after the closure I found writing on the board in room seven. One name, in white chalk, written large in the middle and left there for me. I wiped it off with the cloth and locked the room behind me. I did not think about it again for a week.",
+        "keywords": ["chalk dust on a dark wooden floor"],
+        "fact_refs": []
+      },
+      {
+        "beat": "build_up",
+        "text": "It came back the following week, in the same place, in the same hand. The chalk was still wet on the board when I arrived, and the cloth in the tray was dry as a bone. I stood with my hand on the door and listened to the pipes creak in the wall.",
+        "keywords": ["single desk under a cold ceiling light"],
+        "fact_refs": []
+      },
+      {
+        "beat": "build_up",
+        "text": "I walked the corridor at 3 a.m. that night and I checked every door twice because the light in room seven had come on again, though the switch in that wing had been dead since the school shut, and the chalk on the board was wet once more, and the name was still standing there in the middle of it, written fresh.",
+        "keywords": ["long empty corridor under white ceiling lights"],
+        "fact_refs": []
+      },
+      {
+        "beat": "build_up",
+        "text": "The boiler in the basement runs when it likes, and the pipes knock in the walls at night. I know which noises belong to the building. This one did not belong to it. I went home and left the corridor light on behind me for the first time in years.",
+        "keywords": ["basement boiler room with rusted pipes"],
+        "fact_refs": []
+      },
+      {
+        "beat": "build_up",
+        "text": "I looked at the board in daylight after that. The name is short and ordinary, five letters, the sort I would not look at twice on a list. I cleaned the board with soap and water until it was grey. The next morning the name stood there again with the chalk still wet.",
+        "keywords": ["chalk and a cloth on a wooden tray"],
+        "fact_refs": []
+      },
+      {
+        "beat": "clue",
+        "text": "The register in the office was written by the evening teacher herself, a woman who came up the hill three nights a week. Her entries stop in the middle of a page, in the middle of a word, in the week before the snow came. The page after it is blank and has been blank for years.",
+        "keywords": ["empty office with an open filing drawer"],
+        "fact_refs": []
+      },
+      {
+        "beat": "clue",
+        "text": "The chalk in the tray is a brand the school stopped buying long ago. It comes wrapped in grey paper with a shop name printed on it, and the shop has been shut for eleven years. The tray is never empty. I have never once bought chalk for that room.",
+        "keywords": ["stack of chalk boxes on a metal shelf"],
+        "fact_refs": []
+      },
+      {
+        "beat": "clue",
+        "text": "The lights in room seven come on at odd hours, always the row over the middle desks. I have changed the bulb twice. The second time I carried the old bulb down to the office. I tried it in my own lamp and it lit without a complaint. I sat there looking at it for a while.",
+        "keywords": ["lights on above empty classroom desks"],
+        "fact_refs": []
+      },
+      {
+        "beat": "twist",
+        "text": "On the last night I stayed, I stood in front of the board and read the name in the wet chalk. It was my sister's name. She sat in that room for one year of evening classes. In the winter of that year she walked down the hill and was never seen again. Nobody in my family has said her name since.",
+        "keywords": ["old school corridor at night with one light on"],
+        "fact_refs": []
+      },
+      {
+        "beat": "reveal",
+        "text": "The file in the office holds her entry. She paid for the course in October and attended until the snow. The teacher wrote her name in the register week after week. Then the writing stops, in the same week as everything else on that page. The school closed that spring without her certificate.",
+        "keywords": ["dusty piano with the lid closed"],
+        "fact_refs": []
+      },
+      {
+        "beat": "reveal",
+        "text": "The board keeps her name because she never finished the course. I can see the shape of it now. Three evenings a week for one winter, and a walk down the hill. The building has kept the hour open for her, the way a room is kept for someone who just stepped out.",
+        "keywords": ["single chair at a desk under a dim lamp"],
+        "fact_refs": []
+      },
+      {
+        "beat": "reveal",
+        "text": "I wrote my own name under hers that night, in the same white chalk, and I put the chalk back in the box. The lights over the middle desks went out one after another, from the front of the room to the back. That is not the order the building uses. I said her name out loud once and locked the door.",
+        "keywords": ["white chalk resting on a wooden ledge"],
+        "fact_refs": []
+      },
+      {
+        "beat": "aftermath",
+        "text": "I come up on Saturdays now, and I unlock room seven first. I open the windows and wipe the board clean. Then I write the name there myself, in my own hand, before I lock up. The chalk is never where I left it. I have stopped minding that.",
+        "keywords": ["classroom window open on a winter morning"],
+        "fact_refs": []
+      },
+      {
+        "beat": "aftermath",
+        "text": "My mother does not know about the room or the board, and I have not told her. Some things are not said in our family. A name spoken out loud after that long is almost a new person, and I am not ready to introduce her to anyone else.",
+        "keywords": ["family kitchen table with an empty chair"],
+        "fact_refs": []
+      },
+      {
+        "beat": "aftermath",
+        "text": "In the spring the lights came on one last time while I was in the hall, and I did not go in. I stood outside the door with the keys in my hand and waited until they went off by themselves. It took about the length of a class, and then the corridor was ordinary again.",
+        "keywords": ["dark school hallway with closed doors"],
+        "fact_refs": []
+      }
+    ],
+    "ending": {
+      "text": "The school is still closed, and the town still has no use for it. I keep the keys. Every Saturday I write a name on that board for a girl who never got her certificate. Then I close the door behind me. Have you ever written down a name you were afraid to say out loud?",
+      "keywords": ["school gate closed under falling snow"],
+      "fact_refs": []
+    },
+    "description": "The caretaker of a closed village school keeps finding the same name written on the board in room seven, in chalk that is still wet. A quiet haunting about a course that never finished and a family that never says a name.",
+    "tags": ["ghost story", "school haunting", "quiet haunting", "night narration", "disappearance"],
+    "content_warnings": ["supernatural", "death", "disturbing"],
+    "structure": {
+      "sub_genre": "school haunting",
+      "setting": "old school",
+      "opening": "finding an old object",
+      "twist_type": "the dead is still alive",
+      "narrator_mode": "first_person"
+    }
+  },
+  "facts": [],
+  "defects": [
+    {
+      "type": "missing_setup_before_twist",
+      "segment": "p:11",
+      "note": "The twist is that the name on the board belongs to the narrator's sister. No earlier paragraph mentions a sister, a family member or the narrator's own connection to the school, so the twist arrives with nothing set up for it."
+    },
+    {
+      "type": "ear_rule_violation",
+      "segment": "p:5",
+      "note": "One sentence runs to about fifty-five words with four clauses joined by commas, against the short-sentence rule, and the hour is written as 3 a.m. instead of being said aloud."
+    }
+  ]
+}
