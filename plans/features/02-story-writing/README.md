@@ -266,16 +266,17 @@ prompts/
 | `story_generation_limit` | 429 + `Retry-After` | FR-02-7 |
 | `spend_cap_reached` (12) | 429 | `IBudgetGuard` (D1) |
 | `fact_sheet_required` | 409 | True-crime generate without an approved sheet |
-| `story_sources_required` | 409 | True-crime approve without ≥ 2 cited fetched sources (F13) |
+| `story_sources_required` | 409 | Fact-sheet approve citing fewer than 2 distinct `fetched` url sources with distinct `content_sha256` (F13, `F13SourceDiversityCheck`); the true-crime story-approve use of the same code is planned in 02.3.3-T1 `[OPEN]` |
 | `story_fact_sheet_outdated` | 409 | Approve when the story's `fact_sheet_id` ≠ the currently approved sheet |
 | `story_attestation_required` | 400 | True-crime approve without `attestation.accepted = true` and the current text version |
 | `story_too_similar_to_source` | 409 | Approve with `similarity_score` > block threshold |
 | `story_moderated` | 409 | Approve while the current version has a blocking D12 moderation category (the same code is also a job outcome) |
 | `story_invalid_content` | 400 | Edit body fails `StoryDraftValidator` (field errors in `errors`) |
-| `fact_sheet_invalid_content` | 400 | Fact-sheet PUT body fails validation (unknown/duplicate id, unknown source, empty statement) |
+| `fact_sheet_invalid_content` | 400 | Fact-sheet PUT body fails validation (no `facts` list, unknown/duplicate id, unknown source, empty statement, more than 10 distinct cited sources) |
+| `fact_sheet_not_found` | 404 | Fact-sheet GET/PUT/approve when the episode has no sheet yet (02.5.4-T1; 02 CR-33) |
 | `fact_sheet_conflict` | 412 | Fact-sheet edit/approve with a stale ETag |
 | `fact_sheet_generation_in_progress` | 409 | Generate while a fact-sheet run is active |
-| `fact_sheet_sources_insufficient` | 409 | Fact-sheet generate with 0 fetched sources (a true-crime approve with < 2 cited fetched sources is `story_sources_required`, D8 above; 02.3.3-T1 QA F1) |
+| `fact_sheet_sources_insufficient` | 409 | Fact-sheet generate with 0 `fetched` sources; fact-sheet approve with fewer than 5 facts (F13, `F13SourceDiversityCheck.MinFacts`). A true-crime story approve with < 2 cited fetched sources is `story_sources_required`, D8 above (02.3.3-T1 QA F1) |
 | `source_url_invalid` | 400 | Not http(s), IP literal, credentials, port ∉ {80, 443}, > 2,048 chars, unparsable |
 | `source_domain_not_allowed` | 400 | Blocked domain (D11) |
 | `source_duplicate` | 409 | Same normalised URL already on the episode |
@@ -464,6 +465,7 @@ A is chosen if its success rate on the 10 cases is ≥ B − 10 points and its c
 | CR-27 | 01.3.1-T1 (`trial/prices.json`) | Add the O3 rows needed before 02.1.3-T1: a `gpt-6-sol` row (input 2.0 / cached_input 0.20 / cache_write 2.50 / output 10.0 USD per 1M) and the `gpt-6-luna` `cache_write` rate **0.125**. Without them `--matrix` exits 2 at the rates pre-flight (QA-02D-18) and `gpt-6-sol` cells cannot be priced. ✅ **Resolved 2026-09-28:** both rates confirmed on the official page (`developers.openai.com/api/docs/pricing`, standard tier; sol long-context 4/0.40/5/15 exists but is unused) and applied to `trial/prices.json` (owner-approved). `gpt-image-2` added the same day at 184 VND/image (owner-checked relay price; `fx_vnd_per_usd` converts to USD) |
 | CR-28 | 02 `plans/02-story-writing.md` §4 | T73 wording: "no minors in danger details" (paragraph 02.1.1, and the review checks of 02.6.1) becomes "no detail of minors in danger: nobody under eighteen is shown in a scene of harm or threat, only a brief aftermath the narrator did not see". Applied 2026-09-26; the edited lines carry `(02 CR-28; 02 T73)` |
 | CR-32 | 00 §6 (`episodes`), 02.3.2-T1 | **Owner-authorized 2026-10-05:** add `episodes.approved_at timestamptz NULL` for the story approval timestamp. Approval sets it to the command clock; reopen clears it together with `approved_story_version_id`. Applied to 00 §6 first (02 CR-32); 02.3.2-T1 owns the generated EF migration. No other domain contract changes. |
+| CR-33 | 09 §5.4 (via CR-8), 02 §5.8 | **D8 gains `fact_sheet_not_found` (404)**: a fact-sheet GET/PUT/approve for an episode with no sheet answers 404 (02.5.4-T1, decision 9 — the tenant-filtered sheet lookup answers the unknown, the foreign and the sheet-less episode alike, so no request can tell them apart). D8's `story_sources_required` and `fact_sheet_sources_insufficient` rows reworded to the shipped F13 gate: fewer than 5 facts → 409 `fact_sheet_sources_insufficient`; fewer than 2 distinct `fetched` url sources with distinct `content_sha256` → 409 `story_sources_required` |
 
 ## 5. Sequencing
 

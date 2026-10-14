@@ -100,12 +100,15 @@ public static partial class ProblemDetailsWriter
     /// <summary>
     /// The catalogued 400 codes that keep their own code <em>and</em> carry the grouped <c>errors</c> object, because
     /// the client needs the per-field list as well as the reason (02.3.1-T1: <c>story_invalid_content</c> lists the
-    /// segment addresses and rules that failed). Every error of the list must be a validation error of that code.
+    /// segment addresses and rules that failed; 02.5.4-T1: <c>fact_sheet_invalid_content</c> names
+    /// <c>facts[i].statement</c> / <c>facts[i].sourceIds</c> / <c>body</c>). Every error of the list must be a
+    /// validation error of that code.
     /// </summary>
     private static readonly FrozenSet<string> FieldErrorCodes =
         new HashSet<string>(StringComparer.Ordinal)
         {
             ErrorCodes.StoryInvalidContent,
+            ErrorCodes.FactSheetInvalidContent,
         }.ToFrozenSet(StringComparer.Ordinal);
 
     /// <summary>

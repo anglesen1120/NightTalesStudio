@@ -168,6 +168,12 @@ public static class ErrorCodes
     /// <summary>Unknown credit package (12 §5.3).</summary>
     public const string PackageNotFound = "package_not_found";
 
+    /// <summary>
+    /// No fact sheet exists for the episode: the unknown, the foreign and the sheet-less episode all answer this
+    /// same 404 (02 D8, 02.5.4-T1 decision 9).
+    /// </summary>
+    public const string FactSheetNotFound = "fact_sheet_not_found";
+
     // ---- 409 ----
 
     /// <summary>Transition not allowed (02 D8; replaces the retired <c>story_not_in_review</c>).</summary>
