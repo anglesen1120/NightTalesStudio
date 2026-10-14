@@ -63,7 +63,7 @@ export const EDITED_CONTENT: StoryWire = {
 };
 
 export const EDITOR_COPY = {
-  vi: { title: 'Tiêu đề', hook: 'Mở đầu', paragraph: (n: number) => `Đoạn ${n}`, ending: 'Kết', description: 'Mô tả', scenes: 'Cảnh', scene: (n: number) => `Cảnh ${n}`, add: 'Thêm cảnh', remove: 'Xoá cảnh', choose: 'Chọn đoạn', save: 'Lưu phiên bản', saved: 'Đã lưu', dirty: 'Có thay đổi chưa lưu', limit: 'Mỗi đoạn cần 1–2 cảnh', reopen: 'Duyệt lại', approve: 'Duyệt kịch bản', invalid: errorsVi.episode_invalid_state },
+  vi: { title: 'Tiêu đề', hook: 'Mở đầu', paragraph: (n: number) => `Đoạn ${n}`, ending: 'Kết', description: 'Mô tả', scenes: 'Cảnh', scene: (n: number) => `Cảnh ${n}`, add: 'Thêm cảnh', remove: 'Xoá cảnh', choose: 'Chọn đoạn', save: 'Lưu phiên bản', saved: 'Đã lưu', dirty: 'Có thay đổi chưa lưu', limit: 'Mỗi đoạn cần 1–2 cảnh', reopen: 'Mở lại để sửa', approve: 'Duyệt kịch bản', invalid: errorsVi.episode_invalid_state },
   en: { title: 'Title', hook: 'Hook', paragraph: (n: number) => `Paragraph ${n}`, ending: 'Ending', description: 'Description', scenes: 'Scenes', scene: (n: number) => `Scene ${n}`, add: 'Add scene', remove: 'Remove scene', choose: 'Choose segment', save: 'Save version', saved: 'Saved', dirty: 'Unsaved changes', limit: 'Each paragraph needs 1–2 scenes', reopen: 'Reopen story', approve: 'Approve story', invalid: errorsEn.episode_invalid_state },
 } as const;
 

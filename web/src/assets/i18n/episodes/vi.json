@@ -140,7 +140,7 @@
     "action": {
       "generate_story": "Viết kịch bản",
       "approve_story": "Duyệt kịch bản",
-      "reopen_story": "Duyệt lại",
+      "reopen_story": "Mở lại để sửa",
       "render": "Làm video",
       "retry_render": "Dựng lại video",
       "cancel": "Huỷ",
