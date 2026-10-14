@@ -202,6 +202,89 @@ public sealed class BibleContentValidatorTests
         errors[0].ShouldBe(new BibleFieldError("recurring_characters[1].name", "duplicate", "recurring_characters[0]"));
     }
 
+    [Theory]
+    [InlineData("zzz")]
+    [InlineData("pl1")]
+    [InlineData("ch0")]
+    [InlineData("ch01")]
+    [InlineData("ch")]
+    [InlineData("ch1a")]
+    [InlineData("ch1234567890")]
+    [InlineData("CH1")]
+    [InlineData("ch 1")]
+    public void BibleContentValidator_CharacterIdWithoutItsShape_ReturnsInvalidStructure(string id)
+    {
+        // The id names an entry of its own array and is placed in the writer's data object, so it is not stored
+        // verbatim: the prefix pins it to `recurring_characters` and the number has no leading zero and at most
+        // nine digits (plan §3.1).
+        var content = Content(characters: [new BibleCharacter(id, "Bà Tư", string.Empty, null)]);
+
+        var errors = BibleContentValidator.Validate(content, Limits);
+
+        errors.Count.ShouldBe(1);
+        errors[0].ShouldBe(new BibleFieldError("recurring_characters[0].id", "invalid_structure", null));
+    }
+
+    [Fact]
+    public void BibleContentValidator_BlankCharacterId_ReturnsEmpty()
+    {
+        // A blank id is the "new entry" the PUT handler fills before validation; a blank reaching the validator
+        // means a caller skipped that step, and `empty` is what it reports.
+        var content = Content(characters: [new BibleCharacter("   ", "Bà Tư", string.Empty, null)]);
+
+        var errors = BibleContentValidator.Validate(content, Limits);
+
+        errors.Count.ShouldBe(1);
+        errors[0].ShouldBe(new BibleFieldError("recurring_characters[0].id", "empty", null));
+    }
+
+    [Fact]
+    public void BibleContentValidator_DuplicateCharacterId_ReturnsDuplicateOnTheSecondId()
+    {
+        var content = Content(characters: [
+            new BibleCharacter("ch1", "Một", string.Empty, null),
+            new BibleCharacter("ch2", "Hai", string.Empty, null),
+            new BibleCharacter("ch1", "Ba", string.Empty, null),
+        ]);
+
+        var errors = BibleContentValidator.Validate(content, Limits);
+
+        errors.Count.ShouldBe(1);
+        errors[0].ShouldBe(new BibleFieldError(
+            "recurring_characters[2].id",
+            "duplicate",
+            "recurring_characters[0].id"));
+    }
+
+    [Fact]
+    public void BibleContentValidator_IdRules_AreCheckedPerArrayWithItsOwnPrefix()
+    {
+        var content = Content(
+            places: [new BiblePlace("ch1", "Sai tiền tố", string.Empty)],
+            rules: [
+                new BibleRule("rl1", "Luật một"),
+                new BibleRule("rl1", "Luật hai"),
+            ]);
+
+        var errors = BibleContentValidator.Validate(content, Limits);
+
+        errors.Select(error => error.Field).ShouldBe(["places[0].id", "rules[1].id"]);
+        errors[0].Code.ShouldBe("invalid_structure");
+        errors[1].Code.ShouldBe("duplicate");
+    }
+
+    [Fact]
+    public void BibleContentValidator_IdPrefixIsNotCrossedBetweenArrays()
+    {
+        // The same number in two arrays is not a collision: the prefix is what makes an id unique.
+        var content = Content(
+            characters: [new BibleCharacter("ch9", "Một", string.Empty, null)],
+            places: [new BiblePlace("pl9", "Hai", string.Empty)],
+            rules: [new BibleRule("rl9", "Luật")]);
+
+        BibleContentValidator.Validate(content, Limits).ShouldBeEmpty();
+    }
+
     [Fact]
     public void BibleContentValidator_TwoSummariesForOneEpisode_ReturnsDuplicate()
     {
@@ -254,23 +337,53 @@ public sealed class BibleContentValidatorTests
     }
 
     [Fact]
-    public void BibleContentValidator_LoneSurrogateInText_ThrowsBeforeItCanReportInvalidStructure()
+    public void BibleContentValidator_LoneSurrogateInText_ReportsInvalidStructure()
     {
-        // RECORDED (02.6.3-T1 QA, defect reported): ICU normalisation throws ArgumentException for a lone
-        // surrogate, so Validate throws instead of reporting `invalid_structure` — the one input of this file that
-        // does not come back as an error list. The case is unreachable over HTTP, because System.Text.Json refuses
-        // the escape while it reads the string and the route answers the malformed-body 400 (see the QA
-        // integration test PutBible_LoneSurrogateInAName_IsRefusedAsAMalformedBody), so this is a robustness gap in
-        // the Domain rather than a wire bug.
+        // A lone surrogate is not a Unicode scalar value, so the NFC step of the normaliser would throw on it
+        // (02.6.3-T1 QA defect D2). The character-class rule refuses the field before any comparison runs, and
+        // the normaliser drops the unpaired unit instead of feeding it to ICU, so Validate reports the field
+        // instead of throwing.
         //
-        // A lone surrogate cannot be written as a source literal — the compiler replaces it with U+FFFD, which is a
-        // valid character — so the one string-shaped case the theory above cannot reach is built at run time.
+        // A lone surrogate cannot be written as a source literal — the compiler replaces it with U+FFFD, which is
+        // a valid character — so the one string-shaped case the theory above cannot reach is built at run time.
         var injected = new string((char)0xD800, 1);
         var content = Content(characters: [new BibleCharacter("ch1", "Bà Tư" + injected, string.Empty, null)]);
 
-        var thrown = Should.Throw<ArgumentException>(() => BibleContentValidator.Validate(content, Limits));
+        var errors = BibleContentValidator.Validate(content, Limits);
 
-        thrown.Message.ShouldContain("invalid Unicode code points");
+        errors.Count.ShouldBe(1);
+        errors[0].ShouldBe(new BibleFieldError("recurring_characters[0].name", "invalid_structure", "U+D800"));
+    }
+
+    [Fact]
+    public void BibleContentValidator_LoneSurrogateInEveryTextField_ReportsWithoutThrowing()
+    {
+        // Validate is total: no string can make it throw, whatever field carries the unpaired unit. One error
+        // per field, in field order, and never a second one from the duplicate rule that also normalises.
+        var injected = new string((char)0xD800, 1);
+        var content = new SeriesBibleContent(
+            SeriesBibleContent.V1,
+            new BibleNarrator("Bà Tư" + injected, "Kể chuyện" + injected, "Giọng" + injected),
+            [new BibleCharacter("ch1", "Một" + injected, "Mô tả" + injected, null)],
+            [new BiblePlace("pl1", "Hai" + injected, "Mô tả" + injected)],
+            [new BibleRule("rl1", "Luật" + injected)],
+            [new BibleEpisodeSummary(EpisodeOne, "Tập" + injected, "Nội dung" + injected, StoryStructureTags.Empty, Now)]);
+
+        var errors = BibleContentValidator.Validate(content, Limits, Approved(EpisodeOne));
+
+        errors.Select(error => error.Field).ShouldBe([
+            "narrator.name",
+            "narrator.persona",
+            "narrator.voice_notes",
+            "recurring_characters[0].name",
+            "recurring_characters[0].description",
+            "places[0].name",
+            "places[0].description",
+            "rules[0].text",
+            "episode_summaries[0].title",
+            "episode_summaries[0].summary",
+        ]);
+        errors.ShouldAllBe(error => error.Code == "invalid_structure");
     }
 
     [Fact]

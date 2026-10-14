@@ -133,7 +133,10 @@ public sealed record BibleNarratorV1(
 }
 
 /// <summary>A recurring character of a bible (<c>bible.v1</c> <c>recurring_characters[]</c>).</summary>
-/// <param name="Id">The server-assigned id (<c>ch1</c>, …); a client value is validated as the stored id.</param>
+/// <param name="Id">
+/// The server-assigned id (<c>ch1</c>, …). A blank or absent value means a new entry: the handler assigns the
+/// next free id. A value that is present must be <c>ch&lt;n&gt;</c> and unique within the array.
+/// </param>
 /// <param name="Name">The name, ≤ <c>Bible:Limits:NameChars</c> characters.</param>
 /// <param name="Description">The description, ≤ <c>Bible:Limits:DescriptionChars</c>.</param>
 /// <param name="FirstEpisodeId">The episode the character first appeared in, or <see langword="null"/>.</param>
@@ -163,7 +166,10 @@ public sealed record BibleCharacterV1(
 }
 
 /// <summary>A recurring place of a bible (<c>bible.v1</c> <c>places[]</c>).</summary>
-/// <param name="Id">The server-assigned id (<c>pl1</c>, …).</param>
+/// <param name="Id">
+/// The server-assigned id (<c>pl1</c>, …). A blank or absent value means a new entry and the handler assigns the
+/// next free id; a value that is present must be <c>pl&lt;n&gt;</c> and unique within the array.
+/// </param>
 /// <param name="Name">The name, ≤ <c>Bible:Limits:NameChars</c> characters.</param>
 /// <param name="Description">The description, ≤ <c>Bible:Limits:DescriptionChars</c>.</param>
 public sealed record BiblePlaceV1(string? Id, string? Name, string? Description)
@@ -187,8 +193,11 @@ public sealed record BiblePlaceV1(string? Id, string? Name, string? Description)
 }
 
 /// <summary>A standing rule of a bible (<c>bible.v1</c> <c>rules[]</c>).</summary>
-/// <param name="Id">The server-assigned id (<c>rl1</c>, …).</param>
-/// <param name="Text">The rule, ≤ <c>Bible:Limits:RuleChars</c> characters.</param>
+/// <param name="Id">
+/// The server-assigned id (<c>rl1</c>, …). A blank or absent value means a new entry and the handler assigns the
+/// next free id; a value that is present must be <c>rl&lt;n&gt;</c> and unique within the array.
+/// </param>
+/// <param name="Text">The rule, ≤ <c>Bible:Limits:RuleChars</c>.</param>
 public sealed record BibleRuleV1(string? Id, string? Text)
 {
     /// <summary>The empty rule a <c>null</c> JSON element maps to, so the field index survives.</summary>

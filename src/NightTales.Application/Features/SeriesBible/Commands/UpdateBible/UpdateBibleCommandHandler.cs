@@ -19,8 +19,15 @@ namespace NightTales.Application.Features.SeriesBible.Commands.UpdateBible;
 /// The check order is the contract's: the tenant-filtered load (an unknown series and another user's are
 /// both 404), the required <c>If-Match</c> (428 <c>if_match_required</c> without it, 412
 /// <c>bible_conflict</c> for a stale, foreign or malformed tag — <c>W/…</c> included, and <c>*</c> matching
-/// the current version), and only then the body (400 <c>bible_invalid_content</c>), so an invalid body
-/// never hides the reason a save is impossible.
+/// the current version), the server-derived summary members, then the body (400
+/// <c>bible_invalid_content</c>), so an invalid body never hides the reason a save is impossible.
+/// </para>
+/// <para>
+/// A <c>recurring_characters</c>/<c>places</c>/<c>rules</c> entry the client sends with a blank or absent
+/// <c>id</c> is a new entry: its id is allocated by <see cref="SeriesBible.AssignMissingIds"/> (the feature's
+/// one <c>max + 1</c> rule, over the request's ids and the stored content's) <em>before</em> the validator
+/// runs, so a client can add an entry without knowing the next id and the validator only ever checks the
+/// shape, the prefix and the uniqueness of an id that exists.
 /// </para>
 /// <para>
 /// The row lock is the first statement, as the fact-sheet edit of 02.5.4-T1 takes it: two saves that read
@@ -121,7 +128,7 @@ public sealed class UpdateBibleCommandHandler(
 
         var derived = derivation.Value;
 
-        var content = command.Content with
+        var requested = command.Content with
         {
             EpisodeSummaries = BibleSummaryDerivation.Merge(
                 command.Content.EpisodeSummaries,
@@ -129,13 +136,19 @@ public sealed class UpdateBibleCommandHandler(
                 derived),
         };
 
+        // Step 5: the ids. A blank or absent id means the client is adding an entry and does not know its id, so
+        // it is allocated here — before validation — by the feature's one rule, over the request's own ids and the
+        // stored content's (plan §4 U2, U4). An id the client did send stays verbatim: it is the validator that
+        // refuses one that does not name an entry of its array or repeats another.
+        var content = SeriesBible.AssignMissingIds(requested, bible.Content);
+
         var fieldErrors = BibleContentValidator.Validate(content, limits, approvedEpisodeIds);
         if (fieldErrors.Count > 0)
         {
             return BibleErrors.InvalidContent(fieldErrors);
         }
 
-        // Step 5: the write. ReplaceContent bumps the version (D9) and keeps a pending proposal: its ops
+        // Step 6: the write. ReplaceContent bumps the version (D9) and keeps a pending proposal: its ops
         // stay append-only, so a manual edit can never be undone by accepting one (§4 U2, U4).
         bible.ReplaceContent(content, limits, clock);
 

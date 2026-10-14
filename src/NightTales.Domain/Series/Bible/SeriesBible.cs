@@ -378,12 +378,109 @@ public sealed class SeriesBible : Entity, IUserOwned, IAuditable
     }
 
     /// <summary>
+    /// The content of a manual save with an id for every entry that arrived without one (02.6.3 plan §4 U2): a
+    /// blank or absent <c>id</c> means the client is adding the entry and does not know its id yet, so the same
+    /// <c>max(existing numeric suffix) + 1</c> rule the append-only ops use supplies it. This is the one place an
+    /// id is allocated, and it runs before <see cref="BibleContentValidator"/> checks the shape, the prefix and
+    /// the uniqueness of every id.
+    /// </summary>
+    /// <remarks>
+    /// The highest suffix is taken over the request's own ids <em>and</em> the stored content's, so a kept
+    /// client id is never handed out again, an id of the stored content is never reused, and two blank ids of one
+    /// request get two different ones. An entry that carries an id is kept verbatim — the validator decides
+    /// whether the shape is acceptable — and the arrays the client did not touch are returned as they arrived.
+    /// </remarks>
+    /// <param name="requested">The content of the request, with the server-derived summary members already filled.</param>
+    /// <param name="stored">The content as it stands, whose ids the new ones must not reuse.</param>
+    /// <returns>The content with every blank id replaced; entries with an id are unchanged.</returns>
+    /// <exception cref="ArgumentNullException">A parameter is <see langword="null"/>.</exception>
+    public static SeriesBibleContent AssignMissingIds(SeriesBibleContent requested, SeriesBibleContent stored)
+    {
+        ArgumentNullException.ThrowIfNull(requested);
+        ArgumentNullException.ThrowIfNull(stored);
+
+        return requested with
+        {
+            RecurringCharacters = AssignIds(
+                "ch",
+                requested.RecurringCharacters,
+                stored.RecurringCharacters,
+                static character => character.Id,
+                static (character, id) => character with { Id = id }),
+            Places = AssignIds(
+                "pl",
+                requested.Places,
+                stored.Places,
+                static place => place.Id,
+                static (place, id) => place with { Id = id }),
+            Rules = AssignIds(
+                "rl",
+                requested.Rules,
+                stored.Rules,
+                static rule => rule.Id,
+                static (rule, id) => rule with { Id = id }),
+        };
+    }
+
+    /// <summary>
+    /// One array with an id for every entry that arrived without one: the first blank takes one past the highest
+    /// suffix of the stored ids and the request's own ids, and every further blank the next number.
+    /// </summary>
+    /// <typeparam name="T">The entry type (a character, a place or a rule).</typeparam>
+    /// <param name="prefix">The prefix the array owns (<c>ch</c>, <c>pl</c> or <c>rl</c>).</param>
+    /// <param name="requested">The entries of the request, in body order.</param>
+    /// <param name="stored">The entries the content currently holds.</param>
+    /// <param name="id">How to read one entry's id.</param>
+    /// <param name="withId">How to copy one entry with a new id.</param>
+    /// <returns>The entries, or <paramref name="requested"/> itself when every entry already carries an id.</returns>
+    private static IReadOnlyList<T> AssignIds<T>(
+        string prefix,
+        IReadOnlyList<T> requested,
+        IReadOnlyList<T> stored,
+        Func<T, string?> id,
+        Func<T, string, T> withId)
+    {
+        var next = Math.Max(HighestSuffix(prefix, stored, id), HighestSuffix(prefix, requested, id)) + 1;
+
+        List<T>? assigned = null;
+        for (var index = 0; index < requested.Count; index++)
+        {
+            var entry = requested[index];
+            if (!string.IsNullOrWhiteSpace(id(entry)))
+            {
+                assigned?.Add(entry);
+                continue;
+            }
+
+            assigned ??= new List<T>(requested.Take(index));
+            assigned.Add(withId(entry, string.Create(CultureInfo.InvariantCulture, $"{prefix}{next}")));
+            next++;
+        }
+
+        return assigned ?? requested;
+    }
+
+    /// <summary>
     /// The next free id of one prefix: <c>max(existing numeric suffix) + 1</c> over the content as it stands
     /// (plan §3.1, §4 U4), so ids are never renumbered and a prefix is never crossed. An id that is the highest
     /// one and was removed by a manual edit is indistinguishable from one that was never assigned, which is what
     /// makes max+1 the rule (<c>ch1</c>, <c>ch3</c> → <c>ch4</c>).
     /// </summary>
-    private static string NextId<T>(string prefix, IReadOnlyList<T> entries, Func<T, string?> id)
+    private static string NextId<T>(string prefix, IReadOnlyList<T> entries, Func<T, string?> id) =>
+        string.Create(
+            CultureInfo.InvariantCulture,
+            $"{prefix}{HighestSuffix(prefix, entries, id) + 1}");
+
+    /// <summary>
+    /// The highest numeric suffix the ids of one array carry for <paramref name="prefix"/>, or zero. The one
+    /// allocation rule of the feature: <see cref="NextId{T}"/> and <see cref="AssignMissingIds"/> both take their
+    /// next id from it.
+    /// </summary>
+    /// <param name="prefix">The prefix the array owns (<c>ch</c>, <c>pl</c> or <c>rl</c>).</param>
+    /// <param name="entries">The entries to scan.</param>
+    /// <param name="id">How to read one entry's id.</param>
+    /// <returns>The highest suffix found; zero when none is parseable.</returns>
+    private static int HighestSuffix<T>(string prefix, IReadOnlyList<T> entries, Func<T, string?> id)
     {
         var highest = 0;
         foreach (var entry in entries)
@@ -398,6 +495,6 @@ public sealed class SeriesBible : Entity, IUserOwned, IAuditable
             }
         }
 
-        return string.Create(CultureInfo.InvariantCulture, $"{prefix}{highest + 1}");
+        return highest;
     }
 }

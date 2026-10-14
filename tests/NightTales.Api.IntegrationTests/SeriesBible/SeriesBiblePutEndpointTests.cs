@@ -134,12 +134,12 @@ public sealed class SeriesBiblePutEndpointTests(TestDatabase database) : Integra
         response.StatusCode.ShouldBe(HttpStatusCode.OK, await response.Content.ReadAsStringAsync(SeriesBibleHarness.Ct));
         SeriesBibleHarness.ResponseEtag(response).ShouldBe(SeriesBibleHarness.Etag(2));
 
-        // The frozen success body is { version, etag }: the version moves and the body names the same version
-        // as the header, without the quotes the header carries (02.6.3-T1 acceptance).
+        // The frozen success body is { version, etag }: the version moves and the body carries the same tag as the
+        // header, quotes included, so the body value is itself a valid next If-Match (02.6.3-T1 acceptance, D9).
         var body = await SeriesBibleHarness.JsonAsync(response);
         body.EnumerateObject().Select(member => member.Name).ShouldBe(["version", "etag"]);
         body.GetProperty("version").GetInt32().ShouldBe(2);
-        body.GetProperty("etag").GetString().ShouldBe("sb-2");
+        body.GetProperty("etag").GetString().ShouldBe(SeriesBibleHarness.Etag(2), "the body tag is quoted, byte-identical to the header");
 
         SeriesBibleHarness.Row(Database, world.SeriesId).Version.ShouldBe(2);
         SeriesBibleHarness.RowCount(Database, world.SeriesId).ShouldBe(1, "a series owns exactly one bible row");

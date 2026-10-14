@@ -301,6 +301,72 @@ public sealed class SeriesBibleTests
     }
 
     [Fact]
+    public void AssignMissingIds_BlankAndAbsentIdsTakeTheNextFreeNumberPerPrefix()
+    {
+        // The PUT contract (02.6.3-T1): a blank or absent `id` is a new entry, and its id comes from the same
+        // `max + 1` rule the append-only ops use — over the request's own ids and the stored content's together,
+        // so a kept client id is never handed out again and an id of the stored content is never reused.
+        var stored = Content(
+            characters: [new BibleCharacter("ch2", "Hai", string.Empty, null)],
+            places: [new BiblePlace("pl4", "Bốn", string.Empty)],
+            rules: [new BibleRule("rl9", "Chín")]);
+        var requested = Content(
+            characters: [
+                new BibleCharacter("ch7", "Bảy", string.Empty, null),
+                new BibleCharacter(string.Empty, "Mới", "Mô tả mới.", null),
+                new BibleCharacter("   ", "Mới hơn", string.Empty, null),
+            ],
+            places: [new BiblePlace(null!, "Nơi mới", string.Empty)],
+            rules: [new BibleRule(string.Empty, "Luật mới")]);
+
+        var assigned = SeriesBible.AssignMissingIds(requested, stored);
+
+        assigned.RecurringCharacters.Select(character => character.Id).ShouldBe(["ch7", "ch8", "ch9"]);
+        assigned.Places.Select(place => place.Id).ShouldBe(["pl5"]);
+        assigned.Rules.Select(rule => rule.Id).ShouldBe(["rl10"]);
+
+        // Only the id moved: the new entry's name and description arrive as the client sent them.
+        assigned.RecurringCharacters[1].Name.ShouldBe("Mới");
+        assigned.RecurringCharacters[1].Description.ShouldBe("Mô tả mới.");
+    }
+
+    [Fact]
+    public void AssignMissingIds_NeverReusesAStoredIdTheRequestDropped()
+    {
+        // ch3 is stored and the request no longer carries it: the blank entry still goes past it, because the
+        // highest suffix is taken over the stored content as well (plan §4 U4).
+        var stored = Content(characters: [
+            new BibleCharacter("ch1", "Một", string.Empty, null),
+            new BibleCharacter("ch3", "Ba", string.Empty, null),
+        ]);
+        var requested = Content(characters: [
+            new BibleCharacter("ch1", "Một", string.Empty, null),
+            new BibleCharacter(string.Empty, "Mới", string.Empty, null),
+        ]);
+
+        var assigned = SeriesBible.AssignMissingIds(requested, stored);
+
+        assigned.RecurringCharacters.Select(character => character.Id).ShouldBe(["ch1", "ch4"]);
+    }
+
+    [Fact]
+    public void AssignMissingIds_EveryEntryWithAnId_ReturnsTheArraysAsTheyArrived()
+    {
+        var stored = Content(characters: [new BibleCharacter("ch1", "Một", string.Empty, null)]);
+        var requested = Content(
+            characters: [new BibleCharacter("ch9", "Chín", string.Empty, null)],
+            rules: [new BibleRule("rl1", "Luật")]);
+
+        var assigned = SeriesBible.AssignMissingIds(requested, stored);
+
+        // A kept client id stays verbatim (the validator is what refuses a bad shape), and an untouched array is
+        // not copied.
+        assigned.RecurringCharacters.ShouldBeSameAs(requested.RecurringCharacters);
+        assigned.Places.ShouldBeSameAs(requested.Places);
+        assigned.Rules.ShouldBeSameAs(requested.Rules);
+    }
+
+    [Fact]
     public void ApplyProposal_HighestIdRemovedByAManualSave_IsAssignedAgain()
     {
         // The behaviour of the plan §4 U4 rule `max(existing numeric suffix) + 1`: an id that was the highest one

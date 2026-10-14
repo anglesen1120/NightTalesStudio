@@ -30,9 +30,9 @@ namespace NightTales.Api.Endpoints;
 /// <para>
 /// The read publishes the tag from the success value itself (<c>BibleDto.ETag</c>, <see cref="IHasETag"/>), so
 /// <see cref="ResultExtensions.ToHttpResult{T}(ErrorOr{T}, HttpContext)"/> sets the <c>ETag</c> header and the body
-/// carries the identical quoted value the client sends back as its next <c>If-Match</c>. The write does not: its
-/// frozen success body names the version <em>without</em> the quotes (<see cref="BibleUpdateResponse"/>), so the
-/// header is set here and the body is built from the same value (02.6.3-T1 acceptance).
+/// carries the identical quoted value the client sends back as its next <c>If-Match</c>. The write does the same:
+/// its success body names the version and the tag byte-identical to the header
+/// (<see cref="BibleUpdateResponse"/>), so either body and header is the exact <c>If-Match</c> the next save needs.
 /// </para>
 /// </remarks>
 public static class SeriesBibleEndpoints
@@ -142,14 +142,15 @@ public static class SeriesBibleEndpoints
             return ProblemDetailsWriter.ToProblem(result.Errors, http);
         }
 
-        // The handler's tag is the strong quoted one (IHasETag); the header publishes it unchanged while the body
-        // names the same version without quotes, the success shape the task's acceptance fixes (02.6.3-T1:121).
+        // The handler's tag is the strong quoted one (IHasETag); the header publishes it and the body carries the
+        // byte-identical value, so a client that reads only the body learns the exact tag it must send back as its
+        // next If-Match (02.6.3-T1 acceptance, README D9, the FactSheetDtos IHasETag precedent).
         var value = result.Value;
         var quoted = value.ETag.StartsWith('"') ? value.ETag : $"\"{value.ETag}\"";
         http.Response.Headers.ETag = quoted;
 
         return Results.Json(
-            new BibleUpdateResponse(value.Version, quoted.Trim('"')),
+            new BibleUpdateResponse(value.Version, quoted),
             statusCode: StatusCodes.Status200OK);
     }
 }
@@ -163,9 +164,9 @@ public sealed record UpdateBibleRequest(BibleContentV1 Content);
 
 /// <summary>
 /// The frozen <c>PUT /api/v1/series/{id}/bible</c> success body (02.6.3-T1 acceptance): <c>{ version, etag }</c> —
-/// the version the write produced and the tag <em>without</em> the quotes the <c>ETag</c> header carries, so a
-/// client that reads only bodies still learns which version it now holds and may send either form back.
+/// the version the write produced and the tag byte-identical to the <c>ETag</c> header, quotes included, so a
+/// client that reads only bodies still learns the exact tag it must send back as its next <c>If-Match</c>.
 /// </summary>
 /// <param name="Version">The <c>series_bibles.version</c> after the replace.</param>
-/// <param name="Etag">The new tag without quotes (<c>sb-2</c>), while the header says <c>"sb-2"</c>.</param>
+/// <param name="Etag">The new tag with quotes (<c>"sb-2"</c>), the same value the header carries.</param>
 public sealed record BibleUpdateResponse(int Version, string Etag);

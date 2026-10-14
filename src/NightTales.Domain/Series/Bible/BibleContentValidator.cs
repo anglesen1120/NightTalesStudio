@@ -34,6 +34,14 @@ public sealed record BibleFieldError(string Field, string Code, string? Detail);
 /// structure block and the approval instant of a summary are server-derived (plan §4 U2), so no rule here
 /// constrains them and a placeholder value can never add a second error.
 /// </para>
+/// <para>
+/// The <c>id</c> of a character, place or rule is checked too, because it travels into the writer's data object:
+/// it must be <c>ch</c>/<c>pl</c>/<c>rl</c> followed by a number with no leading zero and at most nine digits
+/// and it must be unique within its array (<c>invalid_structure</c> and <c>duplicate</c> respectively), while a
+/// blank one is <c>empty</c>. The PUT handler fills a blank id before validation
+/// (<see cref="SeriesBible.AssignMissingIds"/>), so a client can add an entry without knowing its id; a blank
+/// reaching this validator is a caller that skipped that step.
+/// </para>
 /// </remarks>
 public static class BibleContentValidator
 {
@@ -67,6 +75,10 @@ public static class BibleContentValidator
 
     /// <summary>The field path of a violation of the document as a whole (the size budget).</summary>
     public const string RootField = "body";
+
+    private const string CharacterIdPrefix = "ch";
+    private const string PlaceIdPrefix = "pl";
+    private const string RuleIdPrefix = "rl";
 
     /// <summary>
     /// Validates one bible document against <paramref name="limits"/>, without the approved-episode rule
@@ -146,6 +158,7 @@ public static class BibleContentValidator
 
         AddCount(errors, "recurring_characters", characters.Count, limits.MaxCharacters);
 
+        var seenIds = new Dictionary<string, int>(StringComparer.Ordinal);
         var seen = new Dictionary<string, int>(StringComparer.Ordinal);
         for (var index = 0; index < characters.Count; index++)
         {
@@ -157,6 +170,7 @@ public static class BibleContentValidator
                 continue;
             }
 
+            AddId(errors, field, character.Id, CharacterIdPrefix, seenIds, "recurring_characters", index);
             AddText(errors, string.Concat(field, ".name"), character.Name, limits.NameChars);
             AddText(errors, string.Concat(field, ".description"), character.Description, limits.DescriptionChars);
             AddDuplicate(errors, string.Concat(field, ".name"), character.Name, seen, "recurring_characters", index);
@@ -174,6 +188,7 @@ public static class BibleContentValidator
 
         AddCount(errors, "places", places.Count, limits.MaxPlaces);
 
+        var seenIds = new Dictionary<string, int>(StringComparer.Ordinal);
         var seen = new Dictionary<string, int>(StringComparer.Ordinal);
         for (var index = 0; index < places.Count; index++)
         {
@@ -185,6 +200,7 @@ public static class BibleContentValidator
                 continue;
             }
 
+            AddId(errors, field, place.Id, PlaceIdPrefix, seenIds, "places", index);
             AddText(errors, string.Concat(field, ".name"), place.Name, limits.NameChars);
             AddText(errors, string.Concat(field, ".description"), place.Description, limits.DescriptionChars);
             AddDuplicate(errors, string.Concat(field, ".name"), place.Name, seen, "places", index);
@@ -202,6 +218,7 @@ public static class BibleContentValidator
 
         AddCount(errors, "rules", rules.Count, limits.MaxRules);
 
+        var seenIds = new Dictionary<string, int>(StringComparer.Ordinal);
         var seen = new Dictionary<string, int>(StringComparer.Ordinal);
         for (var index = 0; index < rules.Count; index++)
         {
@@ -213,6 +230,7 @@ public static class BibleContentValidator
                 continue;
             }
 
+            AddId(errors, field, rule.Id, RuleIdPrefix, seenIds, "rules", index);
             AddText(errors, string.Concat(field, ".text"), rule.Text, limits.RuleChars);
             AddDuplicate(errors, string.Concat(field, ".text"), rule.Text, seen, "rules", index);
         }
@@ -303,6 +321,86 @@ public static class BibleContentValidator
         }
 
         seen[normalised] = index;
+    }
+
+    /// <summary>
+    /// Appends the id violations of one entry: <c>empty</c> for an absent or blank id, <c>invalid_structure</c>
+    /// when it is not <c>&lt;prefix&gt;&lt;n&gt;</c>, and <c>duplicate</c> when the same id already occurred in
+    /// the array. At most one per field.
+    /// </summary>
+    /// <remarks>
+    /// A bible id is placed in the writer's data object, so a client-sent id is checked like a stored one: the
+    /// prefix pins it to its own array, and the array must not carry the same id twice. A blank id is refused
+    /// rather than repaired here — the PUT handler fills it before validation
+    /// (<see cref="SeriesBible.AssignMissingIds"/>), so this layer stays a pure rule.
+    /// </remarks>
+    /// <param name="errors">The error list to append to.</param>
+    /// <param name="field">The JSON path of the entry, e.g. <c>recurring_characters[1]</c>.</param>
+    /// <param name="id">The id as it arrived or was stored.</param>
+    /// <param name="prefix">The prefix the entry's array owns (<c>ch</c>, <c>pl</c> or <c>rl</c>).</param>
+    /// <param name="seen">The ids seen so far in this array, with the index of the first entry that carried one.</param>
+    /// <param name="arrayField">The array's JSON path, for the detail of a duplicate.</param>
+    /// <param name="index">The index of this entry.</param>
+    private static void AddId(
+        List<BibleFieldError> errors,
+        string field,
+        string? id,
+        string prefix,
+        Dictionary<string, int> seen,
+        string arrayField,
+        int index)
+    {
+        var idField = string.Concat(field, ".id");
+        if (string.IsNullOrWhiteSpace(id))
+        {
+            errors.Add(new BibleFieldError(idField, Empty, null));
+            return;
+        }
+
+        if (!IsIdOfPrefix(id, prefix))
+        {
+            errors.Add(new BibleFieldError(idField, InvalidStructure, null));
+            return;
+        }
+
+        if (seen.TryGetValue(id, out var first))
+        {
+            errors.Add(new BibleFieldError(idField, Duplicate, string.Concat(Field(arrayField, first), ".id")));
+            return;
+        }
+
+        seen[id] = index;
+    }
+
+    /// <summary>
+    /// Whether <paramref name="id"/> is <paramref name="prefix"/> followed by a number of one to nine digits
+    /// whose first digit is not zero (<c>ch1</c>, <c>pl12</c>, <c>rl999999999</c>).
+    /// </summary>
+    /// <param name="id">The id to check.</param>
+    /// <param name="prefix">The prefix the array owns.</param>
+    /// <returns>Whether the id has the shape of its array.</returns>
+    private static bool IsIdOfPrefix(string id, string prefix)
+    {
+        if (!id.StartsWith(prefix, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        var digits = id.AsSpan(prefix.Length);
+        if (digits.Length is 0 or > 9 || digits[0] == '0')
+        {
+            return false;
+        }
+
+        foreach (var character in digits)
+        {
+            if (character is < '0' or > '9')
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /// <summary>Appends the character-class, markup and length violations of one optional text, at most one per field.</summary>

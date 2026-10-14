@@ -264,10 +264,11 @@ public sealed class SeriesBibleQaEdgeTests(TestDatabase database) : IntegrationT
         using var client = factory.ClientFor(world.UserId);
 
         // The escape for an unpaired surrogate travels, but System.Text.Json refuses to read it as UTF-16 ("Cannot
-        // read incomplete UTF-16 JSON text as string with missing low surrogate"), so the validator never sees the
-        // string its ICU normaliser throws on. This route is the boundary that keeps that Domain-side throw
-        // (recorded in BibleContentValidatorTests) off the wire: the answer is the malformed-body 400, and nothing
-        // is written.
+        // read incomplete UTF-16 JSON text as string with missing low surrogate"), so the malformed-body 400 is the
+        // boundary this wire case meets. The Domain no longer depends on that boundary: the validator reports the
+        // field as `invalid_structure` and the normaliser drops the unpaired unit instead of letting ICU throw
+        // (02.6.3-T1 QA defect D2, pinned by BibleContentValidatorTests and BibleOpNormalizerTests), so nothing is
+        // written either way.
         var body = "{\"content\":{\"narrator\":{\"persona\":\"kể chuyện đêm\"},\"recurring_characters\":"
             + "[{\"id\":\"ch1\",\"name\":\"Bà Tư\\ud800\",\"description\":\"Mô tả.\",\"first_episode_id\":null}],"
             + "\"places\":[],\"rules\":[],\"episode_summaries\":[]}}";
@@ -279,16 +280,16 @@ public sealed class SeriesBibleQaEdgeTests(TestDatabase database) : IntegrationT
     }
 
     [Fact]
-    public async Task PutBible_ClientSentCharacterIds_AreStoredVerbatim()
+    public async Task PutBible_ClientSentCharacterIds_AreCheckedForShapeAndUniqueness()
     {
         var world = await SeriesBibleHarness.SeedAsync(Database);
         using var factory = SeriesBibleHarness.Factory(Database);
         using var client = factory.ClientFor(world.UserId);
 
-        // RECORDED CONTRACT (02.6.3-T1): the PUT replaces the whole document, so the ids the client echoes are
-        // stored exactly as sent. Nothing validates their prefix or their uniqueness — only the name decides the
-        // duplicate rule — so a client can save two characters that share `ch1`, and the ids `ApplyProposal`
-        // assigns later start from the highest numeric suffix present (plan §4 U4). T2/T3 own the checking.
+        // CONTRACT (02.6.3-T1, QA fix): a bible id travels into the writer's data object, so a client-sent id is
+        // no longer stored verbatim. It must match its array's prefix (`ch<n>`, `pl<n>`, `rl<n>`) and be unique
+        // within the array; only a blank one is filled by the handler. Here the first id has no prefix and the
+        // third repeats the second.
         using var response = await SeriesBibleHarness.PutAsync(
             client,
             world.SeriesId,
@@ -299,10 +300,72 @@ public sealed class SeriesBibleQaEdgeTests(TestDatabase database) : IntegrationT
                     Character("ch1", "Nhân vật B"),
                     Character("ch1", "Nhân vật C"))));
 
-        response.StatusCode.ShouldBe(HttpStatusCode.OK, await response.Content.ReadAsStringAsync(SeriesBibleHarness.Ct));
+        await SeriesBibleHarness.AssertProblemAsync(response, 400, "bible_invalid_content");
+        var problem = await SeriesBibleHarness.ProblemAsync(response);
+        problem.Errors!["recurring_characters[0].id"].ShouldBe(["invalid_structure"]);
+        problem.Errors!["recurring_characters[2].id"].ShouldBe(["duplicate"]);
+        SeriesBibleHarness.Row(Database, world.SeriesId).Version.ShouldBe(1, "a refused document writes nothing");
+    }
 
-        var stored = SeriesBibleHarness.Row(Database, world.SeriesId).Content!["recurring_characters"]!.AsArray();
-        stored.Select(item => item!["id"]!.GetValue<string>()).ShouldBe(["zzz", "ch1", "ch1"]);
+    [Fact]
+    public async Task PutBible_RepeatedClientSentCharacterId_Returns400DuplicateOnTheSecondEntry()
+    {
+        var world = await SeriesBibleHarness.SeedAsync(Database);
+        using var factory = SeriesBibleHarness.Factory(Database);
+        using var client = factory.ClientFor(world.UserId);
+
+        // The shape of the duplicate the id rule (2) refuses: the same conforming id twice. The field path names
+        // the second entry, and the first one keeps the id the client sent.
+        using var response = await SeriesBibleHarness.PutAsync(
+            client,
+            world.SeriesId,
+            SeriesBibleHarness.Etag(1),
+            SeriesBibleHarness.Content(
+                characters: new JsonArray(
+                    Character("ch1", "Nhân vật A"),
+                    Character("ch1", "Nhân vật B"))));
+
+        await SeriesBibleHarness.AssertProblemAsync(response, 400, "bible_invalid_content");
+        (await SeriesBibleHarness.ProblemAsync(response)).Errors!["recurring_characters[1].id"].ShouldBe(["duplicate"]);
+        SeriesBibleHarness.Row(Database, world.SeriesId).Version.ShouldBe(1, "a refused document writes nothing");
+    }
+
+    [Fact]
+    public async Task PutBible_BlankOrAbsentCharacterId_IsAssignedTheNextFreeOne()
+    {
+        var world = await SeriesBibleHarness.SeedAsync(Database);
+        using var factory = SeriesBibleHarness.Factory(Database);
+        using var client = factory.ClientFor(world.UserId);
+
+        using (var first = await SeriesBibleHarness.PutAsync(
+                   client,
+                   world.SeriesId,
+                   SeriesBibleHarness.Etag(1),
+                   SeriesBibleHarness.Content(characters: new JsonArray(Character("ch1", "Nhân vật A")))))
+        {
+            first.StatusCode.ShouldBe(HttpStatusCode.OK, await first.Content.ReadAsStringAsync(SeriesBibleHarness.Ct));
+        }
+
+        // The UI adds two entries without knowing their ids: one sends a blank `id`, the other omits the member
+        // entirely. The handler assigns max(request ids, stored ids) + 1 per prefix before validation, so the
+        // client never has to allocate an id itself.
+        var withoutId = new JsonObject
+        {
+            ["name"] = "Nhân vật C",
+            ["description"] = "Mô tả.",
+            ["first_episode_id"] = null,
+        };
+
+        using var second = await SeriesBibleHarness.PutAsync(
+            client,
+            world.SeriesId,
+            SeriesBibleHarness.Etag(2),
+            SeriesBibleHarness.Content(
+                characters: new JsonArray(Character("ch1", "Nhân vật A"), Character(string.Empty, "Nhân vật B"), withoutId)));
+
+        second.StatusCode.ShouldBe(HttpStatusCode.OK, await second.Content.ReadAsStringAsync(SeriesBibleHarness.Ct));
+        SeriesBibleHarness.Row(Database, world.SeriesId).Content!["recurring_characters"]!
+            .AsArray().Select(item => item!["id"]!.GetValue<string>()).ShouldBe(["ch1", "ch2", "ch3"]);
     }
 
     [Fact]
@@ -535,13 +598,12 @@ public sealed class SeriesBibleQaEdgeTests(TestDatabase database) : IntegrationT
     }
 
     /// <summary>
-    /// CHARACTERISATION (02.6.3-T1, QA): the success body carries the new tag WITHOUT the quotes while the
-    /// <c>ETag</c> header, the read DTO's <c>etag</c> and <c>If-Match</c> all carry the quoted form, so a client that
-    /// stores the body value and echoes it as <c>If-Match</c> is refused. Recorded here so a fix that quotes the
-    /// body (the accepted ETag decision) updates this test; it is a defect report, not the intended contract.
+    /// 02.6.3-T1 (D9, QA): the tag is the quoted <c>"sb-n"</c> in every direction — the <c>ETag</c> header, the write
+    /// body, the read DTO and <c>If-Match</c> — so the body value echoed back as the next <c>If-Match</c> succeeds,
+    /// while the bare <c>sb-n</c> never matches (the comparison is exact and quotes are part of the tag).
     /// </summary>
     [Fact]
-    public async Task PutBible_EtagForms_AreQuotedInTheHeaderAndReadBody_AndBareInTheWriteBody()
+    public async Task PutBible_EtagForms_AreQuotedEverywhere_AndTheBareFormIsRefused()
     {
         var world = await SeriesBibleHarness.SeedAsync(Database);
         using var factory = SeriesBibleHarness.Factory(Database);
@@ -553,16 +615,25 @@ public sealed class SeriesBibleQaEdgeTests(TestDatabase database) : IntegrationT
 
         using var put = await SeriesBibleHarness.PutAsync(client, world.SeriesId, SeriesBibleHarness.Etag(1), SeriesBibleHarness.Content());
         put.StatusCode.ShouldBe(HttpStatusCode.OK, await put.Content.ReadAsStringAsync(SeriesBibleHarness.Ct));
-        SeriesBibleHarness.ResponseEtag(put).ShouldBe("\"sb-2\"");
+        var headerTag = SeriesBibleHarness.ResponseEtag(put);
+        headerTag.ShouldBe("\"sb-2\"");
         var bodyTag = (await SeriesBibleHarness.JsonAsync(put)).GetProperty("etag").GetString();
-        bodyTag.ShouldBe("sb-2", "the write body drops the quotes the header carries");
+        bodyTag.ShouldBe(headerTag, "the write body carries the same quoted tag the header does");
 
-        using var bare = await SeriesBibleHarness.PutAsync(client, world.SeriesId, bodyTag!, SeriesBibleHarness.Content(narratorName: "Người kể thứ ba"));
-        bare.StatusCode.ShouldBe(HttpStatusCode.PreconditionFailed, "the write body's own tag is refused by the version it names");
+        using var readBack = await SeriesBibleHarness.GetAsync(client, world.SeriesId);
+        (await SeriesBibleHarness.JsonAsync(readBack)).GetProperty("etag").GetString()
+            .ShouldBe(headerTag, "the read body agrees with the write body and the header");
 
-        using var quoted = await SeriesBibleHarness.PutAsync(client, world.SeriesId, SeriesBibleHarness.Etag(2), SeriesBibleHarness.Content(narratorName: "Người kể khác"));
-        quoted.StatusCode.ShouldBe(HttpStatusCode.OK, "the quoted form of the same version is accepted");
+        // The body value is itself the exact If-Match the next save needs.
+        using var echoed = await SeriesBibleHarness.PutAsync(client, world.SeriesId, bodyTag!, SeriesBibleHarness.Content(narratorName: "Người kể thứ ba"));
+        echoed.StatusCode.ShouldBe(HttpStatusCode.OK, "the write body's own tag is accepted as the next If-Match");
+        SeriesBibleHarness.ResponseEtag(echoed).ShouldBe(SeriesBibleHarness.Etag(3));
         SeriesBibleHarness.Row(Database, world.SeriesId).Version.ShouldBe(3);
+
+        // The bare form names the same version but is still refused: the tag is quoted, and the match is exact.
+        using var bare = await SeriesBibleHarness.PutAsync(client, world.SeriesId, "sb-3", SeriesBibleHarness.Content(narratorName: "Người kể thứ tư"));
+        await SeriesBibleHarness.AssertProblemAsync(bare, 412, "bible_conflict");
+        SeriesBibleHarness.Row(Database, world.SeriesId).Version.ShouldBe(3, "the refused write changed nothing");
     }
 
     /// <summary>One recurring character with an explicit id, for the id cases the harness's numbered helper cannot express.</summary>
