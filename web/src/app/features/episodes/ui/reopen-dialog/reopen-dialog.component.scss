@@ -1,0 +1,6 @@
+:host { position: fixed; inset: 0; z-index: 1000; display: grid; place-items: center; padding: var(--nts-space-4); }
+.approval-backdrop { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; background: var(--nts-color-scrim); }
+nts-confirm-dialog { position: relative; min-width: 0; max-width: 100%; }
+.approval-body { display: grid; gap: var(--nts-space-4); }
+p { margin: 0; max-width: var(--nts-measure); overflow-wrap: anywhere; }
+.approval-blocked { padding: var(--nts-space-3); border-inline-start: var(--nts-space-1) solid var(--nts-color-error); border-radius: var(--nts-radius-control); background: var(--nts-color-error-soft); color: var(--nts-color-on-surface); }

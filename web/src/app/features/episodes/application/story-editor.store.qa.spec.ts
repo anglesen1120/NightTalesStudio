@@ -19,10 +19,12 @@ import type { EpisodeDetail } from '../domain/episode.model';
 import { EpisodesRepository } from '../domain/episodes.repository';
 import type { StoryDraftWire, StorySnapshot } from '../domain/story.model';
 import { StoryRepository } from '../domain/story.repository';
+import { StoryVersionRepository } from '../domain/story-version.repository';
 import { StoryReviewPage } from '../feature/story-review.page';
 import { FakeEpisodeRealtime } from '../testing/fake-episode-realtime';
 import { EPISODE_ID, FakeEpisodesRepository, episodeDetail } from '../testing/fake-episodes.repository';
 import { FakeStoryRepository, storyContent, storySnapshot } from '../testing/fake-story.repository';
+import { FakeStoryVersionRepository } from '../testing/fake-story-version.repository';
 import { EpisodeDetailStore } from './episode-detail.store';
 import { StoryEditorStore } from './story-editor.store';
 
@@ -57,6 +59,9 @@ function providers(h: Harness) {
   return [
     ...ZONELESS_TEST_PROVIDERS,
     { provide: EpisodesRepository, useValue: h.episodes }, { provide: StoryRepository, useValue: h.stories },
+    // The page provides the real VersionsStore (it clears the panel's needs-reopen notice), so its own repository
+    // port needs a fake here even though these specs never open the panel.
+    { provide: StoryVersionRepository, useValue: new FakeStoryVersionRepository() },
     { provide: RealtimeService, useValue: h.realtime }, { provide: SessionStore, useValue: { generation: h.sessionGeneration } },
     { provide: APP_ERROR_DEV_MODE, useValue: false },
   ];

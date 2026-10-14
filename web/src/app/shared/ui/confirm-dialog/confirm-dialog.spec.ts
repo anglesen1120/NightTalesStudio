@@ -34,7 +34,64 @@ class DynamicHost {
 })
 class StaticCancelHost {}
 
+@Component({
+  imports: [ConfirmDialogComponent],
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  template: `<nts-confirm-dialog titleKey="core.ui.confirm.title" bodyKey="core.ui.errorState.body" confirmLabelKey="core.ui.confirm.confirm" [confirmDisabled]="disabled()" [confirmHeld]="held()" [scrollableBody]="true" (confirmed)="confirmed()" (cancelled)="cancelled()"><fieldset dialog-body><legend>Statement</legend><input type="checkbox" aria-label="Accept statement"></fieldset></nts-confirm-dialog>`,
+})
+class StaticFormHost {
+  readonly disabled = signal(true);
+  readonly held = signal(false);
+  readonly confirmed = vi.fn();
+  readonly cancelled = vi.fn();
+}
+
 describe('ConfirmDialog', () => {
+  it('projects a static fieldset into the scroll body and blocks only confirm while disabled', async () => {
+    await TestBed.configureTestingModule({ imports: [StaticFormHost, uiTestingTranslations()] }).compileComponents();
+    const fixture = TestBed.createComponent(StaticFormHost);
+    await fixture.whenStable();
+    const root = fixture.nativeElement as HTMLElement;
+    expect(root.querySelector('.confirm-dialog__body fieldset input[type="checkbox"]')).not.toBeNull();
+    const confirm = root.querySelector<HTMLButtonElement>('.confirm-dialog__actions button:last-child')!;
+    const cancel = root.querySelector<HTMLButtonElement>('.confirm-dialog__actions button:first-child')!;
+    expect(confirm.disabled).toBe(true);
+    confirm.click();
+    expect(fixture.componentInstance.confirmed).not.toHaveBeenCalled();
+    cancel.click();
+    expect(fixture.componentInstance.cancelled).toHaveBeenCalledOnce();
+    fixture.componentInstance.disabled.set(false);
+    await fixture.whenStable();
+    expect(confirm.disabled).toBe(false);
+    confirm.click();
+    expect(fixture.componentInstance.confirmed).toHaveBeenCalledOnce();
+    expect(root.querySelectorAll('.cdk-focus-trap-anchor')).toHaveLength(2);
+  });
+
+  it('holds a focused confirm with aria-disabled without preventing cancellation', async () => {
+    await TestBed.configureTestingModule({ imports: [StaticFormHost, uiTestingTranslations()] }).compileComponents();
+    const fixture = TestBed.createComponent(StaticFormHost);
+    fixture.componentInstance.disabled.set(false);
+    await fixture.whenStable();
+    const root = fixture.nativeElement as HTMLElement;
+    const confirm = root.querySelector<HTMLButtonElement>('.confirm-dialog__actions button:last-child')!;
+    confirm.focus();
+    fixture.componentInstance.held.set(true);
+    await fixture.whenStable();
+    expect(confirm.disabled).toBe(false);
+    expect(confirm.getAttribute('aria-disabled')).toBe('true');
+    expect(document.activeElement).toBe(confirm);
+    confirm.click();
+    expect(fixture.componentInstance.confirmed).not.toHaveBeenCalled();
+    root.querySelector<HTMLButtonElement>('.confirm-dialog__actions button:first-child')!.click();
+    expect(fixture.componentInstance.cancelled).toHaveBeenCalledOnce();
+    fixture.componentInstance.held.set(false);
+    await fixture.whenStable();
+    expect(confirm.getAttribute('aria-disabled')).toBeNull();
+    confirm.click();
+    expect(fixture.componentInstance.confirmed).toHaveBeenCalledOnce();
+  });
+
   it('renders static cost content and marks every action aria-disabled while pending', async () => {
     await TestBed.configureTestingModule({ imports: [StaticHost, MatDialogModule, NoopAnimationsModule, uiTestingTranslations()] }).compileComponents();
     const fixture = TestBed.createComponent(StaticHost);

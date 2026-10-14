@@ -1,9 +1,12 @@
-<section class="confirm-dialog" tabindex="-1" [attr.role]="insideMatDialog ? null : 'dialog'" [attr.aria-modal]="insideMatDialog ? null : 'true'" [attr.aria-labelledby]="insideMatDialog ? null : titleId" [attr.aria-describedby]="insideMatDialog ? null : bodyId" cdkTrapFocus [cdkTrapFocusAutoCapture]="true" (keydown.escape)="onEscape()">
+<section class="confirm-dialog" [class.confirm-dialog--scrollable]="scrollableBody()" tabindex="-1" [attr.role]="insideMatDialog ? null : 'dialog'" [attr.aria-modal]="insideMatDialog ? null : 'true'" [attr.aria-labelledby]="insideMatDialog ? null : titleId" [attr.aria-describedby]="insideMatDialog ? null : bodyId" cdkTrapFocus [cdkTrapFocusAutoCapture]="true" (keydown.escape)="onEscape()">
   <div class="confirm-dialog__heading">
     <h2 [id]="titleId">{{ resolvedTitleKey() | transloco }}</h2>
     <button class="confirm-dialog__close" type="button" (click)="cancel()" [attr.aria-disabled]="isPending() ? 'true' : null" [attr.aria-label]="'core.ui.dialog.close' | transloco">×</button>
   </div>
   <p [id]="bodyId">{{ resolvedBodyKey() | transloco }}@if (subject; as subjectText) { <span class="confirm-dialog__subject">{{ subjectText }}</span> }</p>
+  @if (scrollableBody()) {
+    <div class="confirm-dialog__body"><ng-content select="[dialog-body]" /></div>
+  }
   <ng-content select="[cost-line]" />
   @if (costTemplate; as template) {
     <ng-container [ngTemplateOutlet]="template" [ngTemplateOutletContext]="templateContext()" />
@@ -11,6 +14,6 @@
   <p class="confirm-dialog__pending" aria-live="polite">{{ isPending() ? ('core.ui.confirm.pending' | transloco) : '' }}</p>
   <div class="confirm-dialog__actions">
     <button type="button" [attr.cdkFocusInitial]="isDestructive() ? '' : null" (click)="cancel()" [attr.aria-disabled]="isPending() ? 'true' : null">{{ resolvedCancelLabelKey() | transloco }}</button>
-    <button type="button" [class.confirm-dialog__danger]="isDestructive()" (click)="confirm()" [attr.aria-disabled]="isPending() ? 'true' : null">{{ resolvedConfirmLabelKey() | transloco }}</button>
+    <button type="button" [class.confirm-dialog__danger]="isDestructive()" (click)="confirm()" [disabled]="confirmDisabled()" [attr.aria-disabled]="isPending() || confirmDisabled() || confirmHeld() ? 'true' : null">{{ resolvedConfirmLabelKey() | transloco }}</button>
   </div>
 </section>

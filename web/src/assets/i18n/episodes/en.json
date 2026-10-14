@@ -93,6 +93,7 @@
     "saving": "Saving…",
     "saved": "Saved",
     "unsaved": "Unsaved changes",
+    "approvalSaveHint": "Save your changes and wait for saving to finish before approving.",
     "moveUp": "Move up",
     "moveDown": "Move down",
     "moveHandle": "Drag to move",
@@ -220,5 +221,27 @@
     "elsewhereBody": "Another tab or person saved a newer version. Your draft is left untouched.",
     "dismiss": "Dismiss",
     "reloadFailed": "The latest version could not be loaded. Your text is untouched. Choose Reload latest to try again."
+  },
+  "approve": {
+    "title": "Approve this script?",
+    "body": "Approve the current saved version for video production.",
+    "note": "To edit after approval, reopen the script first.",
+    "hint": "{{count}} quality hints remain. They are suggestions and do not prevent approval.",
+    "confirm": "Approve script",
+    "done": "Script approved",
+    "attestation": {
+      "accept": "I have read and confirm the statement above.",
+      "legend": "What you confirm"
+    },
+    "blocked": {
+      "researchLink": "Open research"
+    },
+    "retry": "You can try again in {{seconds}} seconds."
+  },
+  "reopen": {
+    "title": "Reopen the script?",
+    "body": "The script returns to review so you can edit it. Saved versions remain in history.",
+    "confirm": "Reopen to edit",
+    "done": "Script reopened for editing"
   }
 }

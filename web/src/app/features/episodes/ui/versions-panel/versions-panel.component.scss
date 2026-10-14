@@ -19,6 +19,8 @@ button:disabled { color: var(--nts-color-on-surface-muted); background: var(--nt
 .versions__summary { min-block-size: var(--nts-space-5); }
 .versions__restore { background: var(--nts-color-primary); color: var(--nts-color-on-primary); }
 .versions__restore:hover:not(:disabled) { background: var(--nts-color-primary); text-decoration: underline; }
-.versions__alert { padding: var(--nts-space-3); background: var(--nts-color-error-soft); border-inline-start: var(--nts-space-1) solid var(--nts-color-error); }
+/* The alert box wraps the message and its reopen action; `.versions__alert` itself stays the message (develop markup). */
+.versions__needs-reopen { display: flex; flex-wrap: wrap; align-items: center; gap: var(--nts-space-3); padding: var(--nts-space-3); background: var(--nts-color-error-soft); border-inline-start: var(--nts-space-1) solid var(--nts-color-error); }
+.versions__needs-reopen p { margin: 0; }
 @media (min-width: 48rem) { .versions { padding: var(--nts-space-5); } }
 @media (min-width: 80rem) { .versions { border-block-start: 0; border-inline-start: 1px solid var(--nts-color-outline); } }

@@ -1,6 +1,6 @@
 import type { CurrentStoryDto, StoryVersionDto } from '@shared/api';
 import { formatAddress, parseAddress } from '@shared/util/segment-address';
-import type { QualityHint, StoryDraftWire, StorySnapshot } from '../domain/story.model';
+import type { Attestation, QualityHint, StoryDraftWire, StorySnapshot } from '../domain/story.model';
 
 /** Mapping failure contains no payload; repositories convert it to the shared AppError. */
 export class StoryMappingError extends Error {
@@ -82,13 +82,34 @@ function mapHints(hints: readonly unknown[]): readonly QualityHint[] {
   return mapped;
 }
 
+/**
+ * The true-crime attestation of the response, or `null` when the wire carries none (`StoryVersionDto` never has one, a
+ * plain `null` is a story without a block). Fail closed like the content: a half-readable attestation is the gate for
+ * approve, so a malformed one is a 502 rather than a silently missing precondition.
+ */
+function mapAttestation(dto: CurrentStoryDto | StoryVersionDto): Attestation | null {
+  if (!('attestation' in dto)) return null;
+  const raw: unknown = dto.attestation;
+  if (raw === null || raw === undefined) return null;
+  if (typeof raw !== 'object' || Array.isArray(raw)) throw new StoryMappingError();
+  const required: unknown = 'required' in raw ? raw.required : undefined;
+  const textVersion: unknown = 'textVersion' in raw ? raw.textVersion : undefined;
+  const text: unknown = 'text' in raw ? raw.text : undefined;
+  const acceptedAt: unknown = 'acceptedAt' in raw ? raw.acceptedAt : undefined;
+  if (typeof required !== 'boolean' || typeof textVersion !== 'string') throw new StoryMappingError();
+  if (text !== null && text !== undefined && typeof text !== 'string') throw new StoryMappingError();
+  if (acceptedAt !== null && acceptedAt !== undefined && typeof acceptedAt !== 'string') throw new StoryMappingError();
+  return { required, textVersion, text: text ?? null, acceptedAt: acceptedAt ?? null };
+}
+
 export function mapStorySnapshot(dto: CurrentStoryDto | StoryVersionDto, responseEtag?: string | null): StorySnapshot {
   const content: unknown = dto.content;
   const version = Number(dto.version), wordCount = Number(dto.wordCount);
+  const attestation = mapAttestation(dto);
   if (!isStoryContent(content) || !Number.isSafeInteger(version) || version < 1 || !Number.isSafeInteger(wordCount) || wordCount < 0 ||
       typeof dto.versionId !== 'string' || typeof dto.etag !== 'string' || typeof dto.source !== 'string' || !Array.isArray(dto.qualityHints)) throw new StoryMappingError();
   return {
     versionId: dto.versionId, version, etag: responseEtag ?? dto.etag, source: dto.source, wordCount,
-    content, qualityHints: mapHints(dto.qualityHints),
+    content, qualityHints: mapHints(dto.qualityHints), attestation,
   };
 }

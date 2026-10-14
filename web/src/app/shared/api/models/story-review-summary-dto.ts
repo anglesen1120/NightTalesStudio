@@ -4,6 +4,7 @@
 import { JsonElement } from '../models/json-element';
 import { StoryIssueCountsDto } from '../models/story-issue-counts-dto';
 export interface StoryReviewSummaryDto {
+  hasDrift: boolean;
   issueCounts: StoryIssueCountsDto;
   scores: (null | JsonElement);
   stale: boolean;
