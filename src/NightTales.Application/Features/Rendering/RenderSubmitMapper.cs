@@ -138,7 +138,8 @@ public static class RenderSubmitMapper
         }
 
         // 3. NFC first, the Rune count second (04 V1, CR-3), and the normalised text is what is sent.
-        // An unpaired surrogate survives Normalize and counts as one Rune (U+FFFD) in the count.
+        // An unpaired surrogate is not valid UTF-16: Normalize throws ArgumentException (a programming error, not a
+        // validation result). It cannot arrive from PostgreSQL text or a UTF-8 JSON body, so no error code is added.
         var script = story.Body.Normalize(NormalizationForm.FormC);
         if (CountRunes(script) is < 1 or > MaxScriptRunes)
         {

@@ -38,7 +38,7 @@
 | D3 | The complete `mpt-submit.v1` body; `render-submit.v1.mpt` holds exactly those keys except `n_threads` | README §3 [DECISION] |
 | D6 | `subtitle-presets.v1` revision 1; `landscape` 84 px, `portrait` 64 px / `custom` 62.0 | README §3 [DECISION] |
 | D8 | `MusicSelector.Pick` → `MusicChoice(TrackId, File, BgmVolume)?`; `null` → no music; `bgmVolume` stored in the catalog | README §3 [DECISION] |
-| D11 | `render-params.v1`: `mapper_version 1`, `aspect`, `language`, `voice_id`, `style_template_id`, `style_prompt_version`, `image_plan` (counts + hashes), `subtitles {enabled, preset}`, `music {track_id, bgm_volume}?`, `clip_seconds` | README §3 [DECISION] |
+| D11 | `render-params.v1`: `mapper_version 1`, `aspect`, `language`, `voice_id`, `style_template_id`, `style_prompt_version`, `image_plan` (counts, hint codes, slot segments; no hashes, 05 CR-14), `subtitles {enabled, preset}`, `music {track_id, bgm_volume, attribution}?` (05 CR-14), `clip_seconds` | README §3 [DECISION] |
 | D14 | Fixtures `render-submit.v1.{landscape-vi,portrait-en,no-music}.json`; no JSON-Schema files; `JsonUnmappedMemberHandling.Disallow` in C# DTO tests; stdlib tools via `uv run --no-project --python 3.12` | README §3 [DECISION] |
 | CR-3 | 09.6.1-T1 stores `BuildParams` output in `render_jobs.params` and rejects a script > 20,000 code points; 09.6.2-T1 calls `BuildSubmit` | README §4 (proposed) |
 
@@ -164,7 +164,7 @@ flowchart LR
 - **Golden tests** (05.1.2-T1): the three D14 fixtures are byte-equal to the canonical serialization of `BuildSubmit` output, and each deserializes with `JsonUnmappedMemberHandling.Disallow` (D14) — a new or renamed field on either side fails the test.
 - **`RenderSubmitMapperTests`**: `Landscape_vi_matches_golden_fixture`, `Portrait_en_matches_golden_fixture`, `No_music_matches_golden_fixture`, `Portrait_uses_custom_position`, `Script_over_20k_runes_returns_script_too_long`, `Video_terms_follow_prompt_order`, `Mpt_fields_exclude_n_threads`, `Camel_case_preset_maps_to_snake_case_fields`, `BuildParams_preset_is_aspect_at_revision`.
 - **`SubtitlePresetCatalogTests`**: `Landscape_preset_values`, `Portrait_preset_values`, `Rejects_revision_zero`, `Rejects_bad_font_name`, `Rejects_font_size_out_of_range`, `Rejects_bad_color`, `Rejects_custom_position_out_of_range`, `Rejects_missing_aspect`.
-- **No JSON-Schema files** (D14): the C# DTO tests are the schema check; the Python side compares against the pinned snapshots. xUnit + FluentAssertions; the node tools are stdlib only (no pytest).
+- **No JSON-Schema files** (D14): the C# DTO tests are the schema check; the Python side compares against the pinned snapshots. xUnit.v3 + Shouldly (repo rule, 05 CR-14); the node tools are stdlib only (no pytest).
 
 ## 10. Tasks and re-estimate
 
