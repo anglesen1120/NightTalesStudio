@@ -24,7 +24,7 @@ namespace NightTales.Application.Features.SeriesBible.Commands.UpdateBible;
 /// </para>
 /// <para>
 /// A <c>recurring_characters</c>/<c>places</c>/<c>rules</c> entry the client sends with a blank or absent
-/// <c>id</c> is a new entry: its id is allocated by <see cref="SeriesBible.AssignMissingIds"/> (the feature's
+/// <c>id</c> is a new entry: its id is allocated by <see cref="Domain.Series.Bible.SeriesBible.AssignMissingIds"/> (the feature's
 /// one <c>max + 1</c> rule, over the request's ids and the stored content's) <em>before</em> the validator
 /// runs, so a client can add an entry without knowing the next id and the validator only ever checks the
 /// shape, the prefix and the uniqueness of an id that exists.
@@ -140,7 +140,7 @@ public sealed class UpdateBibleCommandHandler(
         // it is allocated here — before validation — by the feature's one rule, over the request's own ids and the
         // stored content's (plan §4 U2, U4). An id the client did send stays verbatim: it is the validator that
         // refuses one that does not name an entry of its array or repeats another.
-        var content = SeriesBible.AssignMissingIds(requested, bible.Content);
+        var content = Domain.Series.Bible.SeriesBible.AssignMissingIds(requested, bible.Content);
 
         var fieldErrors = BibleContentValidator.Validate(content, limits, approvedEpisodeIds);
         if (fieldErrors.Count > 0)
