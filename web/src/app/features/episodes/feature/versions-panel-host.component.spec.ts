@@ -14,7 +14,6 @@ import coreVi from '../../../../assets/i18n/core/vi.json';
 import episodesVi from '../../../../assets/i18n/episodes/vi.json';
 import errorsVi from '../../../../assets/i18n/errors/vi.json';
 import { VersionsStore, type RestoreOutcome } from '../application/versions.store';
-import { EpisodeDetailStore } from '../application/episode-detail.store';
 import type { StoryVersionDetail } from '../domain/story-version.model';
 import { VersionsPanelHostComponent } from './versions-panel-host.component';
 
@@ -66,8 +65,6 @@ function settle(ms: number): Promise<void> {
 async function setup(outcome: RestoreOutcome = 'restored', accepted = true, conflictChoice: ConflictDialogOutcome = 'cancel', deepLinked = true) {
   const store = fakeStore(outcome);
   const realtime = new FakeEpisodeRealtime();
-  const episode = signal({ id: 'episode-1', status: 'story_approved' });
-  const detailLoading = signal(false);
   const confirm = vi.fn(() => ({ afterClosed: () => of(accepted) }));
   const conflict = vi.fn(() => ({ afterClosed: () => of(conflictChoice) }));
   const snack = vi.fn();
@@ -78,7 +75,6 @@ async function setup(outcome: RestoreOutcome = 'restored', accepted = true, conf
     })],
     providers: [...ZONELESS_TEST_PROVIDERS,
       { provide: VersionsStore, useValue: store },
-      { provide: EpisodeDetailStore, useValue: { episode: episode.asReadonly(), loading: detailLoading.asReadonly() } },
       { provide: RealtimeService, useValue: realtime },
       { provide: ConfirmDialog, useValue: { confirm } },
       { provide: ConflictDialog, useValue: { open: conflict } },
@@ -93,7 +89,7 @@ async function setup(outcome: RestoreOutcome = 'restored', accepted = true, conf
     fixture.componentRef.setInput('initialRight', 'current');
   }
   fixture.detectChanges(); await fixture.whenStable(); fixture.detectChanges(); await fixture.whenStable();
-  return { fixture, root: fixture.nativeElement as HTMLElement, store, episode, detailLoading, realtime, confirm, conflict, snack };
+  return { fixture, root: fixture.nativeElement as HTMLElement, store, realtime, confirm, conflict, snack };
 }
 
 afterEach(() => TestBed.resetTestingModule());
@@ -177,27 +173,19 @@ describe('VersionsPanelHostComponent', () => {
     } else expect(root.querySelector('nts-form-error-alert')).not.toBeNull();
   });
 
-  it('clears the reopen notice when the same episode leaves approved without discarding comparison state', async () => {
-    const { fixture, root, store, episode, detailLoading } = await setup('needs_reopen');
+  it('keeps the reopen notice through a background resync and never clears it from the panel itself', async () => {
+    const { fixture, root, store, realtime } = await setup('needs_reopen');
     root.querySelector<HTMLButtonElement>('.versions__restore')!.click();
     await fixture.whenStable();
     fixture.detectChanges();
     expect(store.needsReopen()).toBe(true);
-    detailLoading.set(true);
-    episode.set({ id: 'episode-1', status: 'story_review' });
+    realtime.emit('episode-1');
+    await settle(320);
     fixture.detectChanges(); await fixture.whenStable();
+    // (10.5.6-T1) The page clears this notice when a reopen succeeds; no panel state change may drop it, and the
+    // message is what the e2e flow (and the develop panel) shows after a refused restore.
     expect(store.needsReopen()).toBe(true);
-    episode.set({ id: 'episode-1', status: 'story_approved' });
-    detailLoading.set(false);
-    fixture.detectChanges(); await fixture.whenStable();
-    expect(store.needsReopen()).toBe(true);
-    episode.set({ id: 'other-episode', status: 'story_review' });
-    fixture.detectChanges(); await fixture.whenStable();
-    expect(store.needsReopen()).toBe(true);
-    episode.set({ id: 'episode-1', status: 'story_review' });
-    fixture.detectChanges(); await fixture.whenStable();
-    expect(store.needsReopen()).toBe(false);
-    expect(root.querySelector('.versions__alert')).toBeNull();
+    expect(root.querySelector('.versions__alert')!.textContent).toContain(TestBed.inject(TranslocoService).translate('episodes.versions.needsReopen'));
     expect(store.reset).not.toHaveBeenCalled();
     expect(store.leftId()).toBe('older');
     expect(store.rightId()).toBe('current');

@@ -72,8 +72,8 @@
     <button type="button" class="versions__restore" [disabled]="!canRestore() || restoring()" [attr.aria-busy]="restoring()" (click)="restore.emit()">{{ (restoring() ? 'episodes.versions.restoring' : 'episodes.versions.restore') | transloco }}</button>
   }
   @if (needsReopen()) {
-    <div class="versions__alert" role="alert">
-      <p>{{ 'episodes.versions.needsReopen' | transloco }}</p>
+    <div class="versions__needs-reopen">
+      <p class="versions__alert" role="alert">{{ 'episodes.versions.needsReopen' | transloco }}</p>
       <button type="button" class="versions__reopen" [disabled]="restoring()" (click)="reopenRequested.emit()">{{ 'episodes.editor.action.reopen_story' | transloco }}</button>
     </div>
   }

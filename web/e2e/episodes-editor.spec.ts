@@ -91,8 +91,9 @@ test.describe('story editor (vi, stubbed)', () => {
     await dialog.getByRole('button', { name: CONFLICT.saveAsNew, exact: true }).click();
     await expectSaved(page, 'vi');
     await expect(dialog).toHaveCount(0);
-    expect(api.detailGets.length).toBe(getsBeforeChoice + 1);
-    expect(api.order.slice(orderBeforeChoice)).toEqual(['get', 'put']);
+    // (10.5.6-T1) the page refetches the detail once after a successful save so approve sends a fresh If-Match.
+    await expect.poll(() => api.detailGets.length).toBe(getsBeforeChoice + 2);
+    expect(api.order.slice(orderBeforeChoice)).toEqual(['get', 'put', 'get']);
     expect(api.puts).toHaveLength(3);
     expectStoryPut(api.puts[1]!, STORED_STORY_ETAG);
     expectStoryPut(api.puts[2]!, FRESH_STORY_ETAG, EDITED_CONTENT);

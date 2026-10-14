@@ -211,8 +211,9 @@ async function twoContextStaleSave(page: Page, browser: Browser, lang: 'vi' | 'e
     await dialog.getByRole('button', { name: dialogCopy.saveAsNew, exact: true }).click();
     await expectSaved(page, lang);
     await expect(dialog).toHaveCount(0);
-    expect(stub.detailGets.length).toBe(getsBefore + 1);
-    expect(stub.order.slice(orderBefore)).toEqual(['get', 'put']);
+    // (10.5.6-T1) the page refetches the detail once after a successful save so approve sends a fresh If-Match.
+    await expect.poll(() => stub.detailGets.length).toBe(getsBefore + 2);
+    expect(stub.order.slice(orderBefore)).toEqual(['get', 'put', 'get']);
     expect(stub.puts).toHaveLength(3);
     expectStoryPut(stub.puts[2]!, freshEtag, B_CONTENT);
     await expect(segment(page, copy.title)).toHaveValue(TYPED_TITLE);

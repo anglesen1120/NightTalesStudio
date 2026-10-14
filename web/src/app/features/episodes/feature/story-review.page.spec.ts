@@ -24,6 +24,8 @@ import qualityEn from '../../../../assets/i18n/quality/en.json';
 import { EpisodeDetailStore } from '../application/episode-detail.store';
 import { StoryEditorStore } from '../application/story-editor.store';
 import { ApprovalStore } from '../application/approval.store';
+import { VersionsStore } from '../application/versions.store';
+import { fakeVersionsStore } from '../testing/fake-versions.store';
 import { StoryRepository } from '../domain/story.repository';
 import { FakeStoryRepository, attestation } from '../testing/fake-story.repository';
 import { ApproveDialogComponent } from '../ui/approve-dialog/approve-dialog.component';
@@ -228,6 +230,7 @@ const tick = (): Promise<void> => new Promise((resolve) => { setTimeout(resolve,
 async function createPage(options: { readonly langs?: Record<string, Translation>; readonly loader?: TranslocoLoader; readonly panel?: boolean } = {}) {
   const detailStore = fakeDetailStore();
   const storyStore = fakeStoryStore();
+  const versions = fakeVersionsStore();
   const repo = new FakeStoryRepository();
   const params = new BehaviorSubject(convertToParamMap({ id: 'episode-1' }));
   const query = convertToParamMap(options.panel ? { panel: 'versions' } : {});
@@ -257,13 +260,14 @@ async function createPage(options: { readonly langs?: Record<string, Translation
     set: { providers: [
       { provide: EpisodeDetailStore, useValue: detailStore },
       { provide: StoryEditorStore, useValue: storyStore },
+      { provide: VersionsStore, useValue: versions },
       ApprovalStore,
     ] },
   }).compileComponents();
   const fixture = TestBed.createComponent(StoryReviewPage);
   fixture.detectChanges();
   await fixture.whenStable();
-  return { fixture, storyStore, detailStore, repo, params, approval: fixture.debugElement.injector.get(ApprovalStore), snack, dialogs, confirm, transloco: TestBed.inject(TranslocoService) };
+  return { fixture, storyStore, detailStore, repo, params, approval: fixture.debugElement.injector.get(ApprovalStore), versions, snack, dialogs, confirm, transloco: TestBed.inject(TranslocoService) };
 }
 
 afterEach(() => TestBed.resetTestingModule());
@@ -289,6 +293,7 @@ describe('StoryReviewPage', () => {
       set: { providers: [
         { provide: EpisodeDetailStore, useValue: detailStore },
         { provide: StoryEditorStore, useValue: storyStore },
+        { provide: VersionsStore, useValue: fakeVersionsStore() },
         { provide: ApprovalStore, useValue: fakeApprovalStore() },
       ] },
     }).compileComponents();
@@ -448,7 +453,7 @@ describe('StoryReviewPage', () => {
       remove: { imports: [VersionsPanelHostComponent] },
       add: { imports: [VersionsPanelProbe] },
     }).overrideComponent(StoryReviewPage, {
-      set: { providers: [{ provide: EpisodeDetailStore, useValue: detailStore }, { provide: StoryEditorStore, useValue: storyStore }, { provide: ApprovalStore, useValue: fakeApprovalStore() }] },
+      set: { providers: [{ provide: EpisodeDetailStore, useValue: detailStore }, { provide: StoryEditorStore, useValue: storyStore }, { provide: VersionsStore, useValue: fakeVersionsStore() }, { provide: ApprovalStore, useValue: fakeApprovalStore() }] },
     }).compileComponents();
     const fixture = TestBed.createComponent(StoryReviewPage);
     const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
@@ -492,7 +497,7 @@ describe('StoryReviewPage', () => {
     }).overrideComponent(StoryReviewPage, {
       remove: { imports: [VersionsPanelHostComponent] }, add: { imports: [VersionsPanelProbe] },
     }).overrideComponent(StoryReviewPage, {
-      set: { providers: [{ provide: EpisodeDetailStore, useValue: detailStore }, { provide: StoryEditorStore, useValue: storyStore }, { provide: ApprovalStore, useValue: fakeApprovalStore() }] },
+      set: { providers: [{ provide: EpisodeDetailStore, useValue: detailStore }, { provide: StoryEditorStore, useValue: storyStore }, { provide: VersionsStore, useValue: fakeVersionsStore() }, { provide: ApprovalStore, useValue: fakeApprovalStore() }] },
     }).compileComponents();
     const fixture = TestBed.createComponent(StoryReviewPage);
     vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
@@ -1165,11 +1170,12 @@ describe('StoryReviewPage', () => {
   });
 
   it('opens the same reopen dialog from the versions hand-over, then announces the success and restores trigger focus', async () => {
-    const { fixture, detailStore, storyStore, repo, transloco, snack } = await createPage({ panel: true });
+    const { fixture, detailStore, storyStore, repo, versions, transloco, snack } = await createPage({ panel: true });
     const root = fixture.nativeElement as HTMLElement;
     document.body.appendChild(root);
     detailStore.value.set({ ...detail, status: 'story_approved', nextActions: ['reopen_story', 'render'] });
     storyStore.readOnly.set(true);
+    versions.needsReopen.set(true);
     fixture.detectChanges(); await fixture.whenStable();
     const reopen = root.querySelector<HTMLButtonElement>('.story-review-page__reopen')!;
     expect(reopen.disabled).toBe(false);
@@ -1192,9 +1198,24 @@ describe('StoryReviewPage', () => {
     const text = transloco.translate('reopen.done', {}, 'episodes');
     expect(snack.open).toHaveBeenCalledWith(text, undefined, { duration: 5000, politeness: 'off' });
     expect(root.querySelector('.story-review-page__announcement')?.textContent).toContain(text);
-    // The panel's trigger survives in this probe, so focus returns there (the real host clears its needsReopen notice).
+    // The reopen succeeded, so the versions panel's stale needs-reopen notice (and the action it offers) is gone.
+    expect(versions.needsReopen()).toBe(false);
+    // The panel's trigger survives in this probe, so focus returns there.
     expect(document.activeElement).toBe(root.querySelector('.versions__reopen'));
     fixture.destroy(); root.remove();
+  });
+
+  it('clears the versions needs-reopen notice on a reopen outcome only, and consumes the outcome', async () => {
+    const { fixture, approval, versions } = await createPage();
+    versions.needsReopen.set(true);
+    approval.outcome.set('approved');
+    fixture.detectChanges(); await fixture.whenStable();
+    // Approving is not what the notice was waiting for: a stale notice keeps demanding a reopen it does not need.
+    expect(versions.needsReopen()).toBe(true);
+    approval.outcome.set('reopened');
+    fixture.detectChanges(); await fixture.whenStable();
+    expect(versions.needsReopen()).toBe(false);
+    expect(approval.outcome()).toBeNull();
   });
 
   it('returns focus to the trigger on Cancel, clears refusal state and resets dialogs on episode change and destroy', async () => {

@@ -79,6 +79,7 @@ export class StoryReviewPage {
   protected readonly detailStore = inject(EpisodeDetailStore);
   protected readonly store = inject(StoryEditorStore);
   protected readonly approval = inject(ApprovalStore);
+  private readonly versions = inject(VersionsStore);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly mapper = inject(AppErrorMapper);
@@ -246,7 +247,7 @@ export class StoryReviewPage {
   });
   protected readonly traceId = computed(() => this.fatalError()?.traceId);
   protected readonly episode = this.detailStore.detail;
-  protected readonly allowedActions = computed(() => this.detailStore.nextActions().filter((action) => action !== 'edit_story' && Object.hasOwn(ACTION_KEYS, action)));
+  protected readonly allowedActions = computed(() => this.detailStore.nextActions().filter((action) => action !== 'edit_story' && action !== 'reopen_story' && Object.hasOwn(ACTION_KEYS, action)));
   protected readonly versionsOpen = computed(() => this.routeState()[1].get('panel') === 'versions');
   protected readonly versionCount = computed(() => this.store.snapshot()?.version ?? null);
   protected readonly versionIds = computed(() => {
@@ -359,6 +360,11 @@ export class StoryReviewPage {
       const outcome = this.approval.outcome();
       if (outcome === null) return;
       untracked(() => {
+        // The page consumes `outcome` in this effect, before any child (the versions panel host) can read it, so the
+        // panel's now-stale needs-reopen notice is cleared here: a successful reopen is the one thing that makes both
+        // the notice and the reopen action it offers obsolete (`VersionsStore.prepareRestore`/`clearSelection` own the
+        // other two seams). Doing it in an effect would need the approval store to publish the outcome twice.
+        if (outcome === 'reopened') this.versions.needsReopen.set(false);
         this.closeApprovalDialogs();
         this.pendingApprovalAnnouncement.set(outcome);
         this.approval.clearOutcome();

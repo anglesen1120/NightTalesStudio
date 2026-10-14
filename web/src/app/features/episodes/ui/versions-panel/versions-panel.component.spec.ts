@@ -176,6 +176,9 @@ describe('VersionsPanelComponent', () => {
     root.querySelector<HTMLButtonElement>('.versions__side-error button')!.click();
     expect(sides).toEqual(['right']); expect(lists).toBe(0);
     expect(root.querySelector('.versions__alert')?.getAttribute('role')).toBe('alert');
+    // (10.5.6-T1) The alert is the message itself (develop markup); the reopen action is its sibling in the wrapper.
+    expect(root.querySelector('.versions__alert button')).toBeNull();
+    expect(root.querySelector('.versions__needs-reopen button.versions__reopen')).not.toBeNull();
     root.querySelector<HTMLButtonElement>('.versions__reopen')!.click();
     expect(reopens).toBe(1);
     fixture.componentRef.setInput('restoring', true);

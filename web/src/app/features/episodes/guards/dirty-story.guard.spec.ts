@@ -15,6 +15,8 @@ import errorsVi from '../../../../assets/i18n/errors/vi.json';
 import { EpisodeDetailStore } from '../application/episode-detail.store';
 import { StoryEditorStore } from '../application/story-editor.store';
 import { ApprovalStore } from '../application/approval.store';
+import { VersionsStore } from '../application/versions.store';
+import { fakeVersionsStore } from '../testing/fake-versions.store';
 import type { EpisodeDetail } from '../domain/episode.model';
 import type { StorySnapshot } from '../domain/story.model';
 import { StoryReviewPage } from '../feature/story-review.page';
@@ -105,6 +107,7 @@ async function setup(dirty: boolean, answer: boolean | null) {
     set: { providers: [
       { provide: EpisodeDetailStore, useValue: detailStore },
       { provide: StoryEditorStore, useValue: storyStore },
+      { provide: VersionsStore, useValue: fakeVersionsStore() },
       { provide: ApprovalStore, useValue: fakeApprovalStore() },
     ] },
   }).compileComponents();

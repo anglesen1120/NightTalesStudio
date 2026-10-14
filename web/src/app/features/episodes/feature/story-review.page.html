@@ -49,7 +49,7 @@
           @if (allowedActions().length > 0) {
             <div class="story-review-page__actions" [attr.aria-label]="'episodes.editor.allowedActions' | transloco">
               @for (action of allowedActions(); track action) {
-                @if (action !== 'reopen_story') { <button type="button" disabled>{{ actionKey(action) | transloco }}</button> }
+                <button type="button" disabled>{{ actionKey(action) | transloco }}</button>
               }
             </div>
           }

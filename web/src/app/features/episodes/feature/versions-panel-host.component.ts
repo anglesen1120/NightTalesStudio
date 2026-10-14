@@ -6,7 +6,6 @@ import { RealtimeService } from '@core/realtime';
 import type { RealtimeSubscription } from '@core/realtime';
 import { ConfirmDialog, ConflictDialog } from '@shared/ui';
 import { VersionsStore } from '../application/versions.store';
-import { EpisodeDetailStore } from '../application/episode-detail.store';
 import { VersionsPanelComponent } from '../ui/versions-panel/versions-panel.component';
 
 /** Feature-layer composition root: the panel itself has no store or repository dependency (D2). */
@@ -36,7 +35,6 @@ export class VersionsPanelHostComponent {
   readonly reopenRequested = output<void>();
   readonly selectionChange = output<{ left: string | null; right: string | null }>();
   protected readonly store = inject(VersionsStore);
-  private readonly detail = inject(EpisodeDetailStore);
   protected readonly confirming = signal(false);
   private readonly confirmDialog = inject(ConfirmDialog);
   private readonly conflictDialog = inject(ConflictDialog);
@@ -75,12 +73,6 @@ export class VersionsPanelHostComponent {
       if (!this.store.loaded()) return;
       const ids = { left: this.store.leftId(), right: this.store.rightId() };
       untracked(() => this.selectionChange.emit(ids));
-    });
-    effect(() => {
-      const episode = this.detail.episode();
-      if (episode?.id !== this.episodeId() || this.detail.loading() || this.store.restoring() || episode.status === 'story_approved' || !this.store.needsReopen()) return;
-      // This public signal is the notice's existing reset seam; preserve the loaded comparison and selection.
-      untracked(() => this.store.needsReopen.set(false));
     });
     // The store belongs to the page, not this transient panel: editor reload can remount the host mid-restore.
     effect(() => {
