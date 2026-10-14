@@ -12,10 +12,11 @@
   <!--
     05.5.1-T2 (05 README D14) plus 11.3.3-T1: the render contract fixtures are the artefacts the adapter
     serves (11.3.5-T1) and mock-mpt replays (11.1.2-T1), so the DTO round-trips, the verdict assertions and
-    the health-snapshot replay read the very bytes every other implementation uses.
+    the health-snapshot replay read the very bytes every other implementation uses. 05.1.2-T1 adds the
+    render-submit.v1 fixtures: RenderSubmitMapperTests compares the mapper's body against those bytes.
   -->
   <ItemGroup>
-    <None Include="..\..\worker-node\contract\fixtures\render-check.v1.*.json;..\..\worker-node\contract\fixtures\render-quality.v1.*.json;..\..\worker-node\contract\fixtures\render-node-health.v1.*.json"
+    <None Include="..\..\worker-node\contract\fixtures\render-check.v1.*.json;..\..\worker-node\contract\fixtures\render-quality.v1.*.json;..\..\worker-node\contract\fixtures\render-node-health.v1.*.json;..\..\worker-node\contract\fixtures\render-submit.v1.*.json"
           Link="fixtures\%(Filename)%(Extension)"
           CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
