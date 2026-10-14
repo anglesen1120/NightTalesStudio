@@ -479,6 +479,8 @@ public sealed class PromptAssemblerQaTests
 
         public string GetStepPrompt(PromptStep promptStep) => throw new NotSupportedException();
 
+        public AttestationText GetAttestation(Language language) => throw new NotSupportedException();
+
         public ReadOnlyMemory<byte> GetSchema(string name) => throw new NotSupportedException();
 
         public string BuildPromptVersion(PromptVersionParts parts) => $"version({parts.SystemKey}|{parts.PresetKey}|{parts.SchemaKey})";

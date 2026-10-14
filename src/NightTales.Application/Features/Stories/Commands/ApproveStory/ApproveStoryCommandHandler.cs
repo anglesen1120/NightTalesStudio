@@ -92,9 +92,12 @@ public sealed partial class ApproveStoryCommandHandler(
             return Errors.NotFound();
         }
 
-        // Stages 3–6 are owned by the injected gate; fiction never forwards human attestation input.
+        // Stages 3–6 are owned by the injected gate. SEC-1 pinned data (02.3.2-T1 hand-over): a story that
+        // carries a fact sheet stays true-crime for the gate even after a topic patch to fiction, so the
+        // attestation is forwarded under the same predicate the gate and the audit row below use.
+        var trueCrime = series.Topic == Topic.TrueCrime || version.FactSheetId is not null;
         var gated = await gate.ValidateAsync(episode, series, version,
-            series.Topic == Topic.TrueCrime ? command.Attestation : null, cancellationToken).ConfigureAwait(false);
+            trueCrime ? command.Attestation : null, cancellationToken).ConfigureAwait(false);
         if (gated.IsError)
         {
             return gated.Errors;
@@ -159,7 +162,7 @@ public sealed partial class ApproveStoryCommandHandler(
             return approved.Errors;
         }
 
-        if (series.Topic == Topic.TrueCrime && gated.Value.AcceptedTextVersion is { } acceptedTextVersion)
+        if (trueCrime && gated.Value.AcceptedTextVersion is { } acceptedTextVersion)
         {
             // The gate is the sole attestation authority; never audit the unvalidated request text.
             if (string.IsNullOrWhiteSpace(acceptedTextVersion)

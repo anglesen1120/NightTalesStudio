@@ -52,9 +52,11 @@ public static class ApplicationServiceCollectionExtensions
         services.TryAddScoped<LegalAcceptanceReader>();
         services.TryAddScoped<ILegalAcceptance, LegalAcceptanceService>();
 
-        // 02.3.2-T1: shared edit/approve moderation and approved-version rendering inputs.
-        // The null gate is explicitly permitted until 02.3.3-T1 supplies the real approval checks.
-        services.TryAddScoped<IStoryApprovalGate, NullStoryApprovalGate>();
+        // 02.3.3-T1: the real approval gate (sub-checks 3a-3e) plus the ta.v1 attestation text reader. The
+        // gate reads the read model, the fact-sheet guard, the corpus provider and the bound options; the
+        // provider resolves the ta.v1 text through the D5 prompt catalog both hosts register.
+        services.TryAddScoped<IStoryApprovalGate, StoryApprovalGate>();
+        services.TryAddSingleton<IAttestationTextProvider, AttestationTextProvider>();
         services.TryAddScoped<IStoryRenderInputProvider, StoryRenderInputProvider>();
         services.TryAddScoped<StoryDraftModeration>();
 

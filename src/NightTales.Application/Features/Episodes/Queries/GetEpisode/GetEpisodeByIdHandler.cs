@@ -5,14 +5,20 @@ using Microsoft.Extensions.Logging;
 using NightTales.Application.Abstractions.Persistence;
 using NightTales.Application.Common;
 using NightTales.Application.Common.Errors;
+using NightTales.Application.Features.Stories.Approval;
 using NightTales.Application.Features.Stories.ReadModels;
 using NightTales.Domain.Assets;
+using NightTales.Domain.Common;
 using NightTales.Domain.Episodes;
 using NightTales.Domain.Stories.Generation;
 
 // The feature namespace `…Features.Episodes` contains the aggregate's namespace segment, so the entity
 // is aliased the way the series handlers alias theirs (09.4.1-T1).
 using EpisodeAggregate = NightTales.Domain.Episodes.Episode;
+
+// 02.3.3-T1: the series' topic and language ride on the episode read (the attestation member).
+using SeriesAggregate = NightTales.Domain.Series.Series;
+using Topic = NightTales.Domain.Series.Topic;
 
 namespace NightTales.Application.Features.Episodes.Queries.GetEpisode;
 
@@ -45,8 +51,14 @@ namespace NightTales.Application.Features.Episodes.Queries.GetEpisode;
 /// </para>
 /// </remarks>
 /// <param name="readDb">The no-tracking read model; the D10 tenant filter applies to it.</param>
+/// <param name="trueCrime">The validated <c>Story:TrueCrime</c> options: the attestation version a tick must name.</param>
+/// <param name="attestation">The attestation clause text of the release, for the story block's attestation member.</param>
 /// <param name="logger">Reports the data-drift case, where the pointer outlives the asset row.</param>
-public sealed partial class GetEpisodeByIdHandler(IReadDb readDb, ILogger<GetEpisodeByIdHandler> logger)
+public sealed partial class GetEpisodeByIdHandler(
+    IReadDb readDb,
+    StoryTrueCrimeOptions trueCrime,
+    IAttestationTextProvider attestation,
+    ILogger<GetEpisodeByIdHandler> logger)
     : IQueryHandler<GetEpisodeByIdQuery, ErrorOr<EpisodeDetailDto>>
 {
     /// <inheritdoc />
@@ -54,19 +66,29 @@ public sealed partial class GetEpisodeByIdHandler(IReadDb readDb, ILogger<GetEpi
         GetEpisodeByIdQuery query,
         CancellationToken cancellationToken)
     {
+        // The series' topic and language decide the story block's attestation member, so they ride on
+        // this read (one command, one round trip) instead of a second query per episode. `series` carries
+        // the same D10 tenant filter, and `episodes.series_id` is a required FK.
         var episode = await readDb.Query<EpisodeAggregate>()
             .Where(row => row.Id == query.Id && row.Status != EpisodeStatus.Cancelled)
-            .Select(row => new EpisodeRow(
-                row.Id,
-                row.SeriesId,
-                row.Title,
-                row.Brief,
-                row.LengthTier,
-                row.Status,
-                row.FinalVideoAssetId,
-                row.Version,
-                row.CurrentStoryVersionId,
-                row.ApprovedStoryVersionId))
+            .Join(
+                readDb.Query<SeriesAggregate>(),
+                row => row.SeriesId,
+                series => series.Id,
+                (row, series) => new EpisodeRow(
+                    row.Id,
+                    row.UserId,
+                    row.SeriesId,
+                    series.Topic,
+                    series.Language,
+                    row.Title,
+                    row.Brief,
+                    row.LengthTier,
+                    row.Status,
+                    row.FinalVideoAssetId,
+                    row.Version,
+                    row.CurrentStoryVersionId,
+                    row.ApprovedStoryVersionId))
             .SingleOrDefaultAsync(cancellationToken)
             .ConfigureAwait(false);
 
@@ -117,9 +139,11 @@ public sealed partial class GetEpisodeByIdHandler(IReadDb readDb, ILogger<GetEpi
             }
         }
 
+        var request = new StoryReadProjection.AttestationRequest(
+            episode.Id, episode.UserId, episode.Topic, episode.Language, trueCrime, attestation);
         var currentStory = await StoryReadProjection.CurrentAsync(
             readDb, episode.Id, episode.CurrentStoryVersionId, episode.Status,
-            episode.ApprovedStoryVersionId, logger, cancellationToken).ConfigureAwait(false);
+            episode.ApprovedStoryVersionId, request, logger, cancellationToken).ConfigureAwait(false);
 
         // CreatedAt identifies the latest attempt, including queued runs whose StartedAt is null.
         // Id DESC is the deterministic tie-breaker for equal timestamps.
@@ -147,10 +171,16 @@ public sealed partial class GetEpisodeByIdHandler(IReadDb readDb, ILogger<GetEpi
             CurrentStory: currentStory);
     }
 
-    /// <summary>The episode's own columns, including the concurrency token the ETag is built from.</summary>
+    /// <summary>
+    /// The episode's own columns, the series' governance pair, and the concurrency token the ETag is
+    /// built from.
+    /// </summary>
     private sealed record EpisodeRow(
         Guid Id,
+        Guid UserId,
         Guid SeriesId,
+        Topic Topic,
+        Language Language,
         string? Title,
         string Brief,
         LengthTier LengthTier,

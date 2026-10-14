@@ -25,6 +25,7 @@ public sealed class PromptCatalogTests
     private const string GhostEnPreset = "story/ghost.en.v1.md";
     private const string SpiritualViPreset = "story/spiritual.vi.v1.md";
     private const string TrueCrimeEnPreset = "story/true_crime.en.v1.md";
+    private const string AttestationVi = "shared/attestation.ta.v1.vi.md";
     private const string StorySchema = "schemas/story.v1.json";
     private const string WriterSystemPrompt = "system/writer.v1.md";
 
@@ -52,6 +53,13 @@ public sealed class PromptCatalogTests
         catalog.GetShared(PromptFile.Overused, Language.En).ShouldNotBeNullOrWhiteSpace();
         catalog.GetShared(PromptFile.KeywordRules, Language.Vi).ShouldNotBeNullOrWhiteSpace();
         catalog.GetShared(PromptFile.StructureVocab, Language.Vi).ShouldContain("schema_version");
+        // 02.3.3-T1: both attestation clause texts ship with the manifest version the gate compares a
+        // tick against, and the two languages carry different wording of the same version.
+        catalog.GetAttestation(Language.Vi).Version.ShouldBe("ta.v1");
+        catalog.GetAttestation(Language.En).Version.ShouldBe("ta.v1");
+        catalog.GetAttestation(Language.Vi).Text.ShouldContain("Nạn nhân");
+        catalog.GetAttestation(Language.En).Text.ShouldContain("Victims");
+        catalog.GetAttestation(Language.Vi).Text.ShouldNotBe(catalog.GetAttestation(Language.En).Text);
         Encoding.UTF8.GetString(catalog.GetSchema("story.v1.json").Span).ShouldContain("\"$schema\"");
 
         catalog.BuildPromptVersion(Parts())
@@ -78,6 +86,55 @@ public sealed class PromptCatalogTests
         var failure = PromptsTree.Failure(tree);
 
         failure.Message.ShouldContain("missing preset true_crime.en.v1");
+    }
+
+    /// <summary>
+    /// Acceptance check 1 (02.3.3-T1): a release that drops the vi attestation clause fails the boot by
+    /// name — both as a required file and as a manifest entry that resolves to nothing — so the approval
+    /// dialog can never render an empty text a user would tick against.
+    /// </summary>
+    [Fact]
+    public void PromptCatalog_AttestationClauseMissing_ThrowsAtStartup()
+    {
+        var tree = PromptsTree.Read();
+        tree.Remove(AttestationVi);
+
+        var failure = PromptsTree.Failure(tree);
+
+        failure.Message.ShouldContain($"missing required file '{AttestationVi}'");
+        failure.Message.ShouldContain($"manifest file '{AttestationVi}' is not an embedded resource (not found)");
+    }
+
+    /// <summary>
+    /// The other half: the file ships but no manifest entry tracks it, so nothing has hashed the bytes the
+    /// provider would serve. That is the same refusal, not a silent untracked read.
+    /// </summary>
+    [Fact]
+    public void PromptCatalog_AttestationClauseUntracked_ThrowsAtStartup()
+    {
+        var tree = PromptsTree.Read();
+        PromptsTree.RemoveManifestEntry(tree, AttestationVi);
+
+        var failure = PromptsTree.Failure(tree);
+
+        failure.Message.ShouldContain($"missing required file '{AttestationVi}'");
+        failure.Message.ShouldContain(
+            "embedded runtime file 'shared.attestation.ta.v1.vi.md' is not tracked by the manifest");
+    }
+
+    /// <summary>
+    /// Acceptance check 1: edited clause text without a new manifest digest fails the boot, which is what
+    /// keeps <c>ta.v1</c> meaning one exact wording. A wording change ships as <c>ta.v2</c>.
+    /// </summary>
+    [Fact]
+    public void PromptCatalog_AttestationClauseSha256Mismatch_ThrowsAtStartup()
+    {
+        var tree = PromptsTree.Read();
+        PromptsTree.Corrupt(tree, AttestationVi);
+
+        var failure = PromptsTree.Failure(tree);
+
+        failure.Message.ShouldContain($"sha256 mismatch for {AttestationVi}");
     }
 
     [Fact]

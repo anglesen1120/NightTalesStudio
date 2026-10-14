@@ -369,6 +369,8 @@ public sealed class FactExtractorTests
 
         public string GetStepPrompt(PromptStep promptStep) => Prompt;
 
+        public AttestationText GetAttestation(Language language) => new(string.Empty, string.Empty);
+
         public ReadOnlyMemory<byte> GetSchema(string name) => SchemaBytes;
 
         public string BuildPromptVersion(PromptVersionParts parts)

@@ -82,6 +82,10 @@ try
     // 02.3.4-T1 (02 README D21): the story quality checker and its required `Story:Quality` thresholds.
     builder.Services.AddStoryQuality();
     builder.Services.AddSimilarity();
+    // 02.3.3-T1 (02 README T29, D8): the true-crime approval gate's attestation version and cited-source
+    // floor. The gate runs here, and this host serves `currentStory.attestation`; every key has a default,
+    // so the block stays optional (the Worker binds neither the gate nor the story read model).
+    builder.Services.AddStoryTrueCrime();
     // 02.5.1-T1 (02 README D8/D10/D11): the story-source caps, the domain blocklist and the public-suffix list
     // behind `AddSourceCommand`; a bad cap or blocklist entry fails the boot.
     builder.Services.AddSources(builder.Configuration);

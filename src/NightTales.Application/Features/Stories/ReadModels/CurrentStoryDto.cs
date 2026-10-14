@@ -20,6 +20,10 @@ namespace NightTales.Application.Features.Stories.ReadModels;
 /// <param name="FactSheetId">The source fact sheet id, if any.</param>
 /// <param name="ApprovedStoryVersionId">The episode approval pointer; null when reopened.</param>
 /// <param name="Review">The stored model review summary, if present.</param>
+/// <param name="Attestation">
+/// The true-crime attestation state of this version (02.3.3-T1), or null when the episode is not
+/// true-crime-governed: a series whose topic is true crime, or a version that carries a fact sheet id.
+/// </param>
 public sealed record CurrentStoryDto(
     Guid VersionId,
     int Version,
@@ -35,4 +39,5 @@ public sealed record CurrentStoryDto(
     decimal? SimilarityScore,
     Guid? FactSheetId,
     Guid? ApprovedStoryVersionId,
-    StoryReviewSummaryDto? Review);
+    StoryReviewSummaryDto? Review,
+    AttestationViewDto? Attestation);
