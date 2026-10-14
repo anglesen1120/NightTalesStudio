@@ -26,13 +26,21 @@ function requiredInt(value: number | string, minimum: number): number {
   return parsed;
 }
 
+/** A plain decimal number as text (`0.5`, `1`, `1e-2`). Anything else — `0x10`, `Infinity`, `1px` — is not a score. */
+const DECIMAL = /^-?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?$/;
+
 /**
  * `sourceOverlap` is a score in 0…1 (02 F2), rendered only when present: anything unusable is `null`, never a lie.
  * Unlike the counters it is not an integer.
  */
 function scoreOrNull(value: number | string | null): number | null {
   if (value === null) return null;
-  const parsed = typeof value === 'number' ? value : Number(value);
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+  // A blank string is not "0" (`Number('')` is 0) and `Number('0x10')` is 16: neither is a score the wire sent, so a
+  // malformed value is dropped rather than turned into a plausible-looking number. A numeric string is still read.
+  const text = value.trim();
+  if (!DECIMAL.test(text)) return null;
+  const parsed = Number(text);
   return Number.isFinite(parsed) ? parsed : null;
 }
 

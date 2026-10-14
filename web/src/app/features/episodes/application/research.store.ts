@@ -192,6 +192,12 @@ export class ResearchStore {
     this.formErrorState.set(null);
     this.conflictState.set(null);
     this.adoptSheet(null);
+    // A pending write/read of the episode we are leaving is stale from here on, so its flags come down with it.
+    this.refreshingState.set(false);
+    this.generatingState.set(false);
+    this.savingState.set(false);
+    this.approvingState.set(false);
+    this.rowsInFlight.clear();
     const ok = await this.readResearch(episodeId, generation, { userAction: true, series: true, silent: false });
     if (!this.current(generation)) return;
     this.loadingState.set(false);
@@ -241,13 +247,16 @@ export class ResearchStore {
     // One intent per submit: a retry after a network failure reuses the key, any other answer settles it.
     this.addIntent ??= this.keys.begin('source.add');
     const intent = this.addIntent;
+    const generation = this.requestGeneration;
     try {
       await this.repo.addSource(episodeId, input, intent);
+      // The intent is bookkeeping rather than page state: it settles even when the answer arrives after a navigation.
       intent.settle();
       this.addIntent = null;
       this.submitted = null;
+      if (!this.current(generation) || this.id !== episodeId) return this.refused();
       // The rows and the 24 h counters are the server's: the write is followed by one list read, never by a local guess.
-      await this.readSources(episodeId, this.requestGeneration, false, false);
+      await this.readSources(episodeId, generation, false, false);
       return { ok: true, value: undefined };
     } catch (cause) {
       const error = this.toError(cause);
@@ -256,8 +265,11 @@ export class ResearchStore {
         intent.settle();
         this.addIntent = null;
       }
-      this.formErrorState.set(error);
-      this.captureRateLimit(error);
+      // A late failure of another episode's submit is not this page's error: it never reaches a surface.
+      if (this.current(generation) && this.id === episodeId) {
+        this.formErrorState.set(error);
+        this.captureRateLimit(error);
+      }
       return { ok: false, error };
     } finally {
       this.adding = false;
@@ -268,12 +280,13 @@ export class ResearchStore {
     if (this.rowsInFlight.has(sourceId) || this.destroyed || this.rateLimitState() !== null) return this.refused();
     this.rowsInFlight.add(sourceId);
     this.panelErrorState.set(null);
+    const generation = this.requestGeneration;
     try {
       await this.repo.removeSource(episodeId, sourceId);
-      await this.readSources(episodeId, this.requestGeneration, false, false);
+      await this.readSources(episodeId, generation, false, false);
       return { ok: true, value: undefined };
     } catch (cause) {
-      return { ok: false, error: this.failRow(cause) };
+      return { ok: false, error: this.failRow(cause, episodeId, generation) };
     } finally {
       this.rowsInFlight.delete(sourceId);
     }
@@ -283,12 +296,13 @@ export class ResearchStore {
     if (this.rowsInFlight.has(sourceId) || this.destroyed || this.rateLimitState() !== null) return this.refused();
     this.rowsInFlight.add(sourceId);
     this.panelErrorState.set(null);
+    const generation = this.requestGeneration;
     try {
       await this.repo.retrySource(episodeId, sourceId);
-      await this.readSources(episodeId, this.requestGeneration, false, false);
+      await this.readSources(episodeId, generation, false, false);
       return { ok: true, value: undefined };
     } catch (cause) {
-      return { ok: false, error: this.failRow(cause) };
+      return { ok: false, error: this.failRow(cause, episodeId, generation) };
     } finally {
       this.rowsInFlight.delete(sourceId);
     }
@@ -299,12 +313,15 @@ export class ResearchStore {
     if (!this.canGenerate() || this.destroyed) return this.refused();
     this.generateIntent ??= this.keys.begin('fact_sheet.generate');
     const intent = this.generateIntent;
+    const generation = this.requestGeneration;
     this.generatingState.set(true);
     this.panelErrorState.set(null);
     try {
       await this.repo.generateFactSheet(episodeId, intent);
+      // Bookkeeping first: the key settles even when the answer arrives after the page moved to another episode.
       intent.settle();
       this.generateIntent = null;
+      if (!this.current(generation) || this.id !== episodeId) return this.refused();
       return { ok: true, value: undefined };
     } catch (cause) {
       const error = this.toError(cause);
@@ -314,9 +331,9 @@ export class ResearchStore {
         intent.settle();
         this.generateIntent = null;
       }
-      return { ok: false, error: this.failPanel(error) };
+      return { ok: false, error: this.failPanel(error, episodeId, generation) };
     } finally {
-      this.generatingState.set(false);
+      if (this.current(generation)) this.generatingState.set(false);
     }
   }
 
@@ -381,7 +398,7 @@ export class ResearchStore {
   async approve(episodeId: string): Promise<Result<void>> {
     const sheet = this.sheetState();
     if (!this.canApprove() || sheet === null || this.destroyed) return this.refused();
-    return this.write(episodeId, sheet.etag, () => this.repo.approveFactSheet(episodeId, sheet.etag));
+    return this.write(episodeId, sheet.etag, () => this.repo.approveFactSheet(episodeId, sheet.etag), 'approving');
   }
 
   /** Conflict dialog, "Reload latest": the server's version wins and the local draft is dropped. */
@@ -395,7 +412,7 @@ export class ResearchStore {
       this.panelErrorState.set(null);
       return { ok: true, value: undefined };
     } catch (cause) {
-      return { ok: false, error: this.failPanel(this.toError(cause)) };
+      return { ok: false, error: this.failPanel(this.toError(cause), episodeId, generation) };
     }
   }
 
@@ -408,10 +425,10 @@ export class ResearchStore {
     try {
       const latest = await this.repo.getFactSheet(episodeId, { userAction: true });
       if (!this.current(generation) || this.id !== episodeId) return this.refused();
-      if (latest === null) return { ok: false, error: this.failPanel(this.mapper.fromProblem(null, 404, null)) };
+      if (latest === null) return { ok: false, error: this.failPanel(this.mapper.fromProblem(null, 404, null), episodeId, generation) };
       etag = latest.etag;
     } catch (cause) {
-      return { ok: false, error: this.failPanel(this.toError(cause)) };
+      return { ok: false, error: this.failPanel(this.toError(cause), episodeId, generation) };
     }
     // The local draft stays exactly as the user left it: only the concurrency token is refreshed.
     return this.write(episodeId, etag, () => this.repo.saveFactSheet(episodeId, etag, this.buildInputs()));
@@ -519,22 +536,31 @@ export class ResearchStore {
     }
   }
 
-  /** One write path for save/approve/start-edit: send with `If-Match`, adopt the answer, then re-read the document. */
-  private async write(episodeId: string, etag: string, call: () => Promise<FactSheetWrite>): Promise<Result<void>> {
-    this.savingState.set(true);
+  /**
+   * One write path for save/approve/start-edit: send with `If-Match`, adopt the answer, then re-read the document.
+   * The phase picks the in-flight flag the surfaces read (`savingFactSheet` / `approvingFactSheet`), so an approve
+   * that is mid-request is visible to the panel's busy state and to the page's conflict guard alike.
+   */
+  private async write(episodeId: string, etag: string, call: () => Promise<FactSheetWrite>, phase: 'saving' | 'approving' = 'saving'): Promise<Result<void>> {
+    const inFlight = phase === 'approving' ? this.approvingState : this.savingState;
+    const generation = this.requestGeneration;
+    inFlight.set(true);
     this.panelErrorState.set(null);
     this.conflictState.set(null);
     try {
       const write = await call();
+      // A stale answer is dropped whole: no adopted version, ETag or cleared rate limit lands on the episode the page
+      // shows now — the same rule the two reads follow.
+      if (!this.current(generation) || this.id !== episodeId) return this.refused();
       this.adoptWrite(write);
       this.captureRateLimit(null);
       // The summary answer carries no facts: a re-read is what learns the ids the server assigned (and its order).
       await this.reloadAfterWrite(episodeId);
       return { ok: true, value: undefined };
     } catch (cause) {
-      return { ok: false, error: this.failWrite(cause, etag) };
+      return { ok: false, error: this.failWrite(cause, etag, episodeId, generation) };
     } finally {
-      this.savingState.set(false);
+      if (this.current(generation)) inFlight.set(false);
     }
   }
 
@@ -619,22 +645,29 @@ export class ResearchStore {
     }, DIRTY_DEBOUNCE_MS);
   }
 
-  private failRow(cause: unknown): AppError {
+  /**
+   * A failure writes state only while its answer still belongs to the episode this instance shows: a late answer from
+   * another episode (or one that arrives after a reset) is returned to its caller without touching any surface.
+   */
+  private failRow(cause: unknown, episodeId: string, generation: number): AppError {
     const error = this.toError(cause);
+    if (!this.current(generation) || this.id !== episodeId) return error;
     // Row actions have no inline field: the banner is the one place that can explain a refused remove/retry.
     this.panelErrorState.set(error);
     this.captureRateLimit(error);
     return error;
   }
 
-  private failPanel(error: AppError): AppError {
+  private failPanel(error: AppError, episodeId: string, generation: number): AppError {
+    if (!this.current(generation) || this.id !== episodeId) return error;
     this.panelErrorState.set(error);
     this.captureRateLimit(error);
     return error;
   }
 
-  private failWrite(cause: unknown, etag: string): AppError {
+  private failWrite(cause: unknown, etag: string, episodeId: string, generation: number): AppError {
     const error = this.toError(cause);
+    if (!this.current(generation) || this.id !== episodeId) return error;
     // 412 and 428 are concurrency answers, not banners: the ConflictDialog offers Reload latest / Save mine as new
     // version, and only its "Save mine" re-PUTs (the ETag it was refused with is the one to report).
     if (error.status === 412 || error.status === 428) {
@@ -642,7 +675,7 @@ export class ResearchStore {
       if (error.status === 428) this.panelErrorState.set(error);
       return error;
     }
-    return this.failPanel(error);
+    return this.failPanel(error, episodeId, generation);
   }
 
   private captureRateLimit(error: AppError | null): void {

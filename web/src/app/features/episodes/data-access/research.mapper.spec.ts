@@ -189,6 +189,18 @@ describe('mapFactSheet', () => {
     expect(mapped?.facts[0]!.sourceOverlap).toBeNull();
   });
 
+  it('nulls a blank overlap instead of reading it as the score zero', () => {
+    const facts = mapFactSheet(sheetDto({ facts: [factDto({ sourceOverlap: '' }), factDto({ id: 'f2', sourceOverlap: '   ' })] }))?.facts ?? [];
+    expect(facts[0]?.sourceOverlap).toBeNull();
+    expect(facts[1]?.sourceOverlap).toBeNull();
+  });
+
+  it('reads a numeric string as a score but refuses a non-decimal one', () => {
+    const facts = mapFactSheet(sheetDto({ facts: [factDto({ sourceOverlap: '1' }), factDto({ id: 'f2', sourceOverlap: '0x10' })] }))?.facts ?? [];
+    expect(facts[0]?.sourceOverlap).toBe(1);
+    expect(facts[1]?.sourceOverlap).toBeNull();
+  });
+
   it('de-duplicates the citation ids the wire repeats', () => {
     const ref = { sourceId: SOURCE_ID, alias: 'S1', title: 'An article', url: null, isUserNote: true };
     const facts = mapFactSheet(sheetDto({ facts: [factDto({ sources: [ref, { ...ref, alias: 'S2' }] })] }))?.facts ?? [];
