@@ -52,3 +52,51 @@ public sealed class FactSheetGenerationFailedRealtimeHandler(IRealtimeNotifier n
             .ConfigureAwait(false);
     }
 }
+
+/// <summary>
+/// The <c>fact_sheet_saved.v1</c> consumer (02.5.4-T1, plan §4.2): the owner's edit stored a new draft version,
+/// so the open research tabs refetch it. Ids only, with <see cref="RealtimeEventName.EpisodeUpdated"/> — the
+/// version, the sheet id and the fact list travel in the DTO the client refetches (09 README BD11/WT54).
+/// </summary>
+/// <param name="notifier">The realtime notifier.</param>
+public sealed class FactSheetSavedRealtimeHandler(IRealtimeNotifier notifier) : IOutboxHandler<FactSheetSaved>
+{
+    /// <inheritdoc />
+    public async ValueTask HandleAsync(FactSheetSaved domainEvent, OutboxContext context, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(domainEvent);
+
+        await notifier
+            .NotifyAsync(
+                domainEvent.UserId,
+                new RealtimeEvent(
+                    RealtimeEventName.EpisodeUpdated,
+                    new RealtimeIds(EpisodeId: domainEvent.EpisodeId, SeriesId: domainEvent.SeriesId)),
+                cancellationToken)
+            .ConfigureAwait(false);
+    }
+}
+
+/// <summary>
+/// The <c>fact_sheet_approved.v1</c> consumer (02.5.4-T1, plan §4.3): a version became the episode's approved
+/// sheet, which changes what the story gates accept, so the open pages refetch. Ids only, same shape as the
+/// other fact-sheet events (09 README BD11/WT54).
+/// </summary>
+/// <param name="notifier">The realtime notifier.</param>
+public sealed class FactSheetApprovedRealtimeHandler(IRealtimeNotifier notifier) : IOutboxHandler<FactSheetApproved>
+{
+    /// <inheritdoc />
+    public async ValueTask HandleAsync(FactSheetApproved domainEvent, OutboxContext context, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(domainEvent);
+
+        await notifier
+            .NotifyAsync(
+                domainEvent.UserId,
+                new RealtimeEvent(
+                    RealtimeEventName.EpisodeUpdated,
+                    new RealtimeIds(EpisodeId: domainEvent.EpisodeId, SeriesId: domainEvent.SeriesId)),
+                cancellationToken)
+            .ConfigureAwait(false);
+    }
+}

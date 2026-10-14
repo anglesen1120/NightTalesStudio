@@ -121,6 +121,7 @@ public static class ErrorCatalogue
             [ErrorCodes.FeatureDisabled] = StatusCodes.Status404NotFound,
             [ErrorCodes.PackageNotFound] = StatusCodes.Status404NotFound,
             [ErrorCodes.FetchTaskNotFound] = StatusCodes.Status404NotFound,
+            [ErrorCodes.FactSheetNotFound] = StatusCodes.Status404NotFound,
 
             // 409
             [ErrorCodes.EpisodeInvalidState] = StatusCodes.Status409Conflict,
