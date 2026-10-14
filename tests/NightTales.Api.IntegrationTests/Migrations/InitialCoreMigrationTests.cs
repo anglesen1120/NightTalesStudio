@@ -59,6 +59,7 @@ public sealed class InitialCoreMigrationTests(TestDatabase database) : Integrati
         "roles",
         "series",
         "series_autopilot_authorizations",
+        "series_bibles",
         "source_creations",
         "story_sources",
         "story_versions",

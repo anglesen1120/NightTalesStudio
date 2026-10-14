@@ -91,12 +91,17 @@ internal sealed class SeriesBibleConfiguration : IEntityTypeConfiguration<Series
             .HasColumnType("jsonb")
             .Metadata.SetValueComparer(ProposalComparer);
 
-        // The episode whose approval produced the proposal. It is the one FK of this table that is not a
-        // same-owner composite: ON DELETE SET NULL must be able to clear it when the episode goes, and a
-        // composite (proposed_from_episode_id, user_id) could not, because user_id is NOT NULL. The column is
-        // written only by the proposal job, which loads the episode under the tenant filter.
+        // The episode whose approval produced the proposal. It is the same-owner composite FK every other
+        // child table reaches a user-owned parent through (NTS-922-SEC-001) — a bible of user B can never
+        // point at an episode of user A — and it is nullable. EF can only spell a nullable FK's delete
+        // action as a plain `ON DELETE SET NULL`, which nulls *both* columns and would fail on the first
+        // deleted episode, because `user_id` is NOT NULL; PostgreSQL 15+'s column-list form
+        // (`ON DELETE SET NULL (proposed_from_episode_id)`) is written by the migration's SQL step, as
+        // InitialCore and 02_AddFactSheets do for the schema's other four. The convention's index on the
+        // pair serves that cascade scan.
         builder.HasOne<Episode>().WithMany()
-            .HasForeignKey(bible => bible.ProposedFromEpisodeId)
+            .HasForeignKey(bible => new { bible.ProposedFromEpisodeId, bible.UserId })
+            .HasPrincipalKey(episode => new { episode.Id, episode.UserId })
             .OnDelete(DeleteBehavior.SetNull);
 
         builder.HasOne<AppUser>().WithMany().HasForeignKey(bible => bible.UserId).OnDelete(DeleteBehavior.Restrict);

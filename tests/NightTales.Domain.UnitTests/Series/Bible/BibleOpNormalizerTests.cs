@@ -29,6 +29,23 @@ public sealed class BibleOpNormalizerTests
         BibleOpNormalizer.Normalize(high).ShouldBeEmpty("a lone surrogate carries no letter to compare");
     }
 
+    [Theory]
+    // The Unicode noncharacters are the other code points ICU refuses to normalise (the Linux backend throws
+    // ArgumentException for them), so the key drops them the same way it drops an unpaired surrogate. U+1FFFE
+    // and U+10FFFF are supplementary: they are written as the surrogate pair UTF-16 carries them in.
+    [InlineData("\ufdd0")]
+    [InlineData("\ufdef")]
+    [InlineData("\ufffe")]
+    [InlineData("\uffff")]
+    [InlineData("\ud83f\udffe")] // U+1FFFE
+    [InlineData("\udbff\udfff")] // U+10FFFF
+    public void Normalize_DropsNoncharactersWithoutThrowing(string injected)
+    {
+        BibleOpNormalizer.Normalize("Bà Tư" + injected).ShouldBe("bà tư");
+        BibleOpNormalizer.Normalize(injected + "Không nói tên").ShouldBe("không nói tên");
+        BibleOpNormalizer.Normalize(injected).ShouldBeEmpty("a noncharacter carries no letter to compare");
+    }
+
     [Fact]
     public void Normalize_KeepsAWellFormedSurrogatePair()
     {

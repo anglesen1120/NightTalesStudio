@@ -21,10 +21,10 @@ namespace NightTales.Api.IntegrationTests.Migrations;
 
 /// <summary>
 /// The <c>_02_AddSeriesBible</c> migration (02.6.3-T1, plan §3.3): the <c>series_bibles</c> table with its
-/// unique <c>series_id</c> index and its two jsonb documents, the same-owner composite key to <c>series</c>,
-/// and the backfill that gives every series which predates the migration its one empty <c>bible.v1</c> row.
-/// This class owns the last-migration check (<c>migrations[^1]</c>) and finds its own migration by name
-/// everywhere else.
+/// unique <c>series_id</c> index and its two jsonb documents, the same-owner composite keys to <c>series</c>
+/// and to the episode a proposal came from, and the backfill that gives every series which predates the
+/// migration its one empty <c>bible.v1</c> row. This class owns the last-migration check (<c>migrations[^1]</c>)
+/// and finds its own migration by name everywhere else.
 /// </summary>
 [Trait("Category", "Integration")]
 [Trait("Category", "Migration")]
@@ -63,21 +63,23 @@ public sealed class AddSeriesBibleMigrationTests(TestDatabase database) : Integr
     [
         "IX_series_bibles_user_id",
         "UX_series_bibles_series_id",
-        "ix_series_bibles_proposed_from_episode_id",
+        "ix_series_bibles_proposed_from_episode_id_user_id",
         "ix_series_bibles_series_id_user_id",
         "pk_series_bibles",
     ];
 
     /// <summary>
-    /// The three foreign keys of the table as PostgreSQL renders them: the composite same-owner key to
-    /// <c>series(id, user_id)</c> (NTS-922-SEC-001), the episode a proposal came from (cleared, never cascaded)
-    /// and the owner.
+    /// The three foreign keys of the table as PostgreSQL renders them: the two composite same-owner keys
+    /// (NTS-922-SEC-001) — to <c>series(id, user_id)</c> and to the episode a proposal came from — and the owner.
+    /// The episode key carries the column-list form of <c>SET NULL</c> the migration's raw SQL writes, because
+    /// EF can only emit the plain one, which would null the NOT NULL <c>user_id</c> too.
     /// </summary>
     private static readonly string[] ExpectedKeys =
     [
         "fk_series_bibles_asp_net_users_user_id|FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE RESTRICT",
-        "fk_series_bibles_episodes_proposed_from_episode_id|FOREIGN KEY (proposed_from_episode_id) "
-        + "REFERENCES episodes(id) ON DELETE SET NULL",
+        "fk_series_bibles_episodes_proposed_from_episode_id_user_id|FOREIGN KEY "
+        + "(proposed_from_episode_id, user_id) REFERENCES episodes(id, user_id) "
+        + "ON DELETE SET NULL (proposed_from_episode_id)",
         "fk_series_bibles_series_series_id_user_id|FOREIGN KEY (series_id, user_id) "
         + "REFERENCES series(id, user_id) ON DELETE CASCADE",
     ];
@@ -157,6 +159,39 @@ public sealed class AddSeriesBibleMigrationTests(TestDatabase database) : Integr
     }
 
     /// <summary>
+    /// The episode key's delete action, which only the migration's raw SQL can express: deleting the episode a
+    /// proposal came from clears <c>proposed_from_episode_id</c> and leaves the NOT NULL <c>user_id</c> — and the
+    /// row — alone. With EF's plain <c>SET NULL</c> the same delete would fail on the not-null violation.
+    /// </summary>
+    [Fact]
+    public async Task DeletingTheEpisodeAContentProposalCameFrom_NullsOnlyThatColumn()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var actor = new TestCurrentUser();
+        var user = await new UserBuilder(Database, actor).CreateAsync(ct: ct);
+        var series = await new SeriesBuilder(Database, actor).CreateAsync(user.Id, ct: ct);
+        var episode = await new EpisodeBuilder(Database, actor).CreateAsync(user.Id, series.Id, ct: ct);
+
+        await using (var write = Database.CreateAppDbContext(actor, new FakeClock(Start)))
+        {
+            write.SeriesBibles.Add(SeriesBibleEntity.CreateDefault(series.Id, user.Id, new FakeClock(Start)));
+            await write.SaveChangesAsync(ct);
+        }
+
+        SqlProbe.Execute(
+            Database,
+            $"UPDATE series_bibles SET proposed_from_episode_id = '{episode.Id}' WHERE series_id = '{series.Id}'");
+
+        SqlProbe.Execute(Database, $"DELETE FROM episodes WHERE id = '{episode.Id}'");
+
+        SqlProbe.ScalarText(
+                Database,
+                $"SELECT (proposed_from_episode_id IS NULL)::text || '|' || user_id::text "
+                + $"FROM series_bibles WHERE series_id = '{series.Id}'")
+            .ShouldBe($"true|{user.Id}", "the delete clears its own column and leaves the owner's row intact");
+    }
+
+    /// <summary>
     /// The backfill: a series that existed before the migration comes out of it with exactly one row, and
     /// running the migration's own statement again changes nothing (the <c>WHERE NOT EXISTS</c> guard; without
     /// it the unique <c>series_id</c> index would raise 23505 on the second run).
@@ -205,7 +240,7 @@ public sealed class AddSeriesBibleMigrationTests(TestDatabase database) : Integr
                     + $"FROM series_bibles WHERE series_id = '{first.Id}'")
                 .ShouldBe($"1|true|true|true|{user.Id}");
 
-            RunBackfillStatementAgain();
+            RunRawSqlStepsAgain();
 
             SqlProbe.Count(Database, "SELECT count(*) FROM series_bibles")
                 .ShouldBe(seriesCount, "the second run inserts nothing: every series already has its row");
@@ -270,13 +305,16 @@ public sealed class AddSeriesBibleMigrationTests(TestDatabase database) : Integr
     }
 
     /// <summary>
-    /// Runs the migration's own raw-SQL step a second time. <c>UpOperations</c> is the generated <c>Up</c>, so
-    /// this is the very statement the migration ran, not a copy of it.
+    /// Runs the migration's own raw-SQL steps a second time. <c>UpOperations</c> is the generated <c>Up</c>, so
+    /// this is the very SQL the migration ran, not a copy of it — and every step must be repeatable: the
+    /// backfill because it guards with <c>WHERE NOT EXISTS</c>, the episode constraint's replacement because it
+    /// drops and re-adds its own constraint.
     /// </summary>
-    private void RunBackfillStatementAgain()
+    private void RunRawSqlStepsAgain()
     {
         var statements = new _02_AddSeriesBible().UpOperations.OfType<SqlOperation>().ToList();
-        statements.ShouldNotBeEmpty("the plan's backfill is the migration's raw SQL step");
+        statements.ShouldNotBeEmpty(
+            "the plan's backfill and the episode constraint's column list are the migration's raw SQL steps");
 
         foreach (var statement in statements)
         {

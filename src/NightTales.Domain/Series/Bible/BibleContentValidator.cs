@@ -539,8 +539,9 @@ public static class BibleContentValidator
     /// zero-width and bidirectional format characters, the soft hyphen, the combining grapheme joiner, the
     /// Arabic letter mark, the Mongolian vowel separator, the line and paragraph separators, the BMP variation
     /// selectors except the emoji presentation selector U+FE0F, the interlinear annotation characters, the
-    /// BOM/zero-width space and the non-characters U+FFFE/U+FFFF, the tag-plane characters (U+E0000–U+E007F),
-    /// the variation selector supplement (U+E0100–U+E01EF) and an unpaired surrogate.
+    /// BOM/zero-width space and the noncharacters U+FDD0–U+FDEF and U+xFFFE/U+xFFFF of every plane, the
+    /// tag-plane characters (U+E0000–U+E007F), the variation selector supplement (U+E0100–U+E01EF) and an
+    /// unpaired surrogate.
     /// </summary>
     /// <param name="text">The text to scan; null and empty carry none.</param>
     /// <returns>The offending <see cref="char"/>, or <see langword="null"/>.</returns>
@@ -563,7 +564,8 @@ public static class BibleContentValidator
                 }
 
                 var codePoint = char.ConvertToUtf32(character, text[index + 1]);
-                if (codePoint is (>= 0xE0000 and <= 0xE007F) or (>= 0xE0100 and <= 0xE01EF))
+                if (codePoint is (>= 0xE0000 and <= 0xE007F) or (>= 0xE0100 and <= 0xE01EF)
+                    || BibleOpNormalizer.IsNoncharacter(codePoint))
                 {
                     return character;
                 }
@@ -590,7 +592,8 @@ public static class BibleContentValidator
     /// U+2060–U+206F (which keep ZWJ/ZWNJ refused, as this rule always has), the line and paragraph separators
     /// U+2028/U+2029, the BMP variation selectors U+FE00–U+FE0E — U+FE0F is the emoji presentation selector and
     /// stays legal, so an emoji sequence is storable —, the interlinear annotation characters U+FFF9–U+FFFB,
-    /// the BOM U+FEFF and the non-characters U+FFFE/U+FFFF (review F2: the unsafe-character set).
+    /// the BOM U+FEFF and the noncharacters <c>U+FDD0–U+FDEF</c>/<c>U+FFFE</c>/<c>U+FFFF</c> (review F2: the
+    /// unsafe-character set; the supplementary noncharacters are caught in <see cref="FindUnsafeCharacter"/>).
     /// </remarks>
     private static bool IsUnsafeBmpCharacter(char character) =>
         character < ' '
@@ -606,5 +609,6 @@ public static class BibleContentValidator
         || (character >= '\u2060' && character <= '\u206F')
         || (character >= '\uFE00' && character <= '\uFE0E')
         || (character >= '\uFFF9' && character <= '\uFFFB')
-        || character is '\uFEFF' or '\uFFFE' or '\uFFFF';
+        || character is '\uFEFF'
+        || BibleOpNormalizer.IsNoncharacter(character);
 }

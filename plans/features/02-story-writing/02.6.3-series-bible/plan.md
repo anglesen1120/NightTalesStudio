@@ -94,14 +94,14 @@ Validation rules in `BibleContentValidator.Validate(SeriesBibleContent, BibleLim
 |---|---|---|
 | `id` | `uuid` PK | UUIDv7 in .NET |
 | `user_id` | `uuid` NOT NULL | denormalised from `series` at insert, never from the request (09.2.3); `IUserOwned` |
-| `series_id` | `uuid` NOT NULL | FK → `series.id`, **unique** |
+| `series_id` | `uuid` NOT NULL | same-owner composite FK with `user_id` → `series(id, user_id)` CASCADE (NTS-922-SEC-001), **unique** per series |
 | `version` | `int` NOT NULL default 1 | bumped by PUT and by accept; the ETag source (D9) |
 | `content` | `jsonb` NOT NULL | `bible.v1` |
 | `proposed_content` | `jsonb` NULL | `BibleProposal` (`{ops:[…], based_on_version, proposed_at}`) |
-| `proposed_from_episode_id` | `uuid` NULL | FK → `episodes.id`; the episode whose approval created/merged the proposal |
+| `proposed_from_episode_id` | `uuid` NULL | same-owner composite FK with `user_id` → `episodes(id, user_id)`; the episode whose approval created/merged the proposal. EF can only emit a plain `ON DELETE SET NULL`, which would null the NOT NULL `user_id`, so the migration replaces the constraint with PostgreSQL 15's column-list form `ON DELETE SET NULL (proposed_from_episode_id)` (the InitialCore/02_AddFactSheets precedent) |
 | `created_at`, `updated_at` | `timestamptz` NOT NULL | |
 
-Indexes: `UX_series_bibles_series_id (series_id)`, `IX_series_bibles_user_id (user_id)` (tenant filter). Concurrency is the `version` column, not `xmin` (the ETag is `sb-<version>`, D9).
+Indexes: `UX_series_bibles_series_id (series_id)` unique, `ix_series_bibles_series_id_user_id (series_id, user_id)` unique (the one-to-one builder's key index), `IX_series_bibles_user_id (user_id)` (tenant filter) and the foreign-key convention's `ix_series_bibles_proposed_from_episode_id_user_id (proposed_from_episode_id, user_id)`, whose leading column serves the episode key's delete scan. Concurrency is the `version` column, not `xmin` (the ETag is `sb-<version>`, D9).
 
 Files:
 

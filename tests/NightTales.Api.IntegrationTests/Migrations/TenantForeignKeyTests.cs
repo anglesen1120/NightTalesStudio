@@ -51,6 +51,8 @@ public sealed class TenantForeignKeyTests(TestDatabase database) : IntegrationTe
         "moderation_events.episode_id,user_id->episodes(id,user_id)",
         "series.current_autopilot_authorization_id,user_id->series_autopilot_authorizations(id,user_id)",
         "series_autopilot_authorizations.series_id,user_id->series(id,user_id)",
+        "series_bibles.proposed_from_episode_id,user_id->episodes(id,user_id)",
+        "series_bibles.series_id,user_id->series(id,user_id)",
         "story_sources.episode_id,user_id->episodes(id,user_id)",
         "story_versions.episode_id,user_id->episodes(id,user_id)",
         "story_versions.fact_sheet_id,user_id->fact_sheets(id,user_id)",
@@ -83,6 +85,9 @@ public sealed class TenantForeignKeyTests(TestDatabase database) : IntegrationTe
         + "user_id) REFERENCES story_versions(id, user_id) ON DELETE SET NULL (result_story_version_id)",
         "fk_refresh_tokens_refresh_tokens_replaced_by_id|FOREIGN KEY (replaced_by_id) "
         + "REFERENCES refresh_tokens(id) ON DELETE SET NULL",
+        "fk_series_bibles_episodes_proposed_from_episode_id_user_id|FOREIGN KEY "
+        + "(proposed_from_episode_id, user_id) REFERENCES episodes(id, user_id) "
+        + "ON DELETE SET NULL (proposed_from_episode_id)",
         "fk_series_series_autopilot_authorizations_current_autopilot_au|FOREIGN KEY "
         + "(current_autopilot_authorization_id, user_id) REFERENCES series_autopilot_authorizations(id, user_id) "
         + "ON DELETE SET NULL (current_autopilot_authorization_id)",

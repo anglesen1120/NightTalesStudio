@@ -445,6 +445,28 @@ public sealed class BibleContentValidatorTests
         errors[0].Code.ShouldBe("invalid_structure");
     }
 
+    [Theory]
+    // The whole noncharacter set, BMP and supplementary: U+FDD0–U+FDEF and U+xFFFE/U+xFFFF of every plane. A
+    // noncharacter is permanently reserved, so the character rule refuses it as invalid_structure — and the
+    // normaliser that the duplicate rule runs afterwards must not be reached with one, because ICU's NFC throws
+    // on them (02.6.3-T1 QA defect D2).
+    [InlineData("\ufdd0")]
+    [InlineData("\ufdef")]
+    [InlineData("\ufffe")]
+    [InlineData("\uffff")]
+    [InlineData("\ud83f\udffe")] // U+1FFFE
+    [InlineData("\udbff\udfff")] // U+10FFFF
+    public void BibleContentValidator_NoncharacterInText_ReturnsInvalidStructure(string injected)
+    {
+        var content = Content(characters: [new BibleCharacter("ch1", "Bà Tư" + injected, string.Empty, null)]);
+
+        var errors = BibleContentValidator.Validate(content, Limits);
+
+        errors.Count.ShouldBe(1);
+        errors[0].Field.ShouldBe("recurring_characters[0].name");
+        errors[0].Code.ShouldBe("invalid_structure");
+    }
+
     [Fact]
     public void BibleContentValidator_VietnameseCombiningMarksAndEmojiPresentationSelector_AreAccepted()
     {

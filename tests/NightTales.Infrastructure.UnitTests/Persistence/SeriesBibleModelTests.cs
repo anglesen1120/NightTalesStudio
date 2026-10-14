@@ -99,10 +99,14 @@ public sealed class SeriesBibleModelTests
     {
         var episode = Bible().GetForeignKeys().Single(fk => fk.PrincipalEntityType.ClrType == typeof(Episode));
 
-        episode.Properties.Select(property => property.Name).ShouldBe(["ProposedFromEpisodeId"]);
-        episode.PrincipalKey.Properties.Select(property => property.Name).ShouldBe(["Id"]);
-        // The one FK of this table that is not a same-owner composite: the column is nullable and a composite
-        // could not be SET NULL when the episode goes, because user_id is not nullable.
+        // A same-owner composite like every other child of a user-owned parent (NTS-922-SEC-001), so a bible of
+        // user B can never point at an episode of user A. The model keeps the delete action as SetNull, the way
+        // InitialCore's four nullable same-owner keys do; the column list EF cannot emit — a plain SET NULL would
+        // also try to null the NOT NULL `user_id` — is written by the migration's SQL
+        // (`ALTER TABLE ... ON DELETE SET NULL (proposed_from_episode_id)`), and TenantForeignKeyTests and
+        // AddSeriesBibleMigrationTests assert the result.
+        episode.Properties.Select(property => property.Name).ShouldBe(["ProposedFromEpisodeId", "UserId"]);
+        episode.PrincipalKey.Properties.Select(property => property.Name).ShouldBe(["Id", "UserId"]);
         episode.DeleteBehavior.ShouldBe(DeleteBehavior.SetNull);
         Property(nameof(SeriesBible.ProposedFromEpisodeId)).IsNullable.ShouldBeTrue();
     }

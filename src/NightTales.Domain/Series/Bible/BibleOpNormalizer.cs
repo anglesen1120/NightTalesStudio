@@ -22,10 +22,12 @@ public static class BibleOpNormalizer
     /// <param name="value">The value to normalise.</param>
     /// <returns>The comparison key; empty when there is nothing to compare.</returns>
     /// <remarks>
-    /// An unpaired UTF-16 surrogate is dropped before the NFC step: it is not a Unicode scalar value, so ICU
-    /// throws on it, and this method must never be the thing that refuses a value the validator only reports
-    /// (D2). The unit carrying it is dropped, not replaced, because it is not a letter or a digit and the
-    /// per-rune filter below would drop it anyway — so the key of a well-formed value is unchanged.
+    /// An unpaired UTF-16 surrogate and every noncharacter (<see cref="IsNoncharacter"/>) are dropped before the
+    /// NFC step: neither is a scalar value ICU will normalise — the Linux ICU backend throws
+    /// <see cref="ArgumentException"/> on them (verified with the 02.6.3 gate) — and this method must never be the
+    /// thing that refuses a value the validator only reports (D2). The unit carrying it is dropped, not replaced,
+    /// because it is not a letter or a digit and the per-rune filter below would drop it anyway — so the key of a
+    /// well-formed value is unchanged.
     /// </remarks>
     public static string Normalize(string? value)
     {
@@ -34,7 +36,7 @@ public static class BibleOpNormalizer
             return string.Empty;
         }
 
-        var text = RemoveUnpairedSurrogates(value.Trim()).Normalize(NormalizationForm.FormC);
+        var text = RemoveRefusedCodePoints(value.Trim()).Normalize(NormalizationForm.FormC);
         var builder = new StringBuilder(text.Length);
         var pendingSpace = false;
 
@@ -102,41 +104,66 @@ public static class BibleOpNormalizer
     }
 
     /// <summary>
-    /// <paramref name="text"/> with every unpaired UTF-16 surrogate unit removed, so the result is well-formed and
-    /// <see cref="string.Normalize(NormalizationForm)"/> can normalise it. Returns the input itself when it is
-    /// already well-formed, so the common path allocates nothing.
+    /// Whether <paramref name="codePoint"/> is a Unicode noncharacter: U+FDD0–U+FDEF and U+xFFFE/U+xFFFF of every
+    /// plane, i.e. every code point whose low 16 bits are 0xFFFE or 0xFFFF.
     /// </summary>
-    /// <param name="text">The trimmed value to make well-formed.</param>
-    /// <returns>The well-formed text.</returns>
-    private static string RemoveUnpairedSurrogates(string text)
+    /// <remarks>
+    /// A noncharacter is permanently reserved and cannot be stored or displayed faithfully, and ICU refuses to
+    /// normalise one. The comparison key drops them (<see cref="Normalize"/>) and the validator's character rule
+    /// refuses them as <c>invalid_structure</c>; both read this one set so the two cannot drift apart.
+    /// </remarks>
+    /// <param name="codePoint">The code point to test.</param>
+    /// <returns>Whether it is a noncharacter.</returns>
+    public static bool IsNoncharacter(int codePoint) =>
+        (codePoint >= 0xFDD0 && codePoint <= 0xFDEF) || (codePoint & 0xFFFE) == 0xFFFE;
+
+    /// <summary>
+    /// <paramref name="text"/> with every unpaired UTF-16 surrogate unit and every noncharacter
+    /// (<see cref="IsNoncharacter"/>) removed, so the result is well-formed and
+    /// <see cref="string.Normalize(NormalizationForm)"/> can normalise it. Returns the input itself when there is
+    /// nothing to remove, so the common path allocates nothing.
+    /// </summary>
+    /// <param name="text">The trimmed value to make normalisable.</param>
+    /// <returns>The text without the code points ICU refuses.</returns>
+    private static string RemoveRefusedCodePoints(string text)
     {
         for (var index = 0; index < text.Length; index++)
         {
             var character = text[index];
-            if (!char.IsSurrogate(character))
-            {
-                continue;
-            }
 
-            if (char.IsHighSurrogate(character) && index + 1 < text.Length && char.IsLowSurrogate(text[index + 1]))
+            if (char.IsHighSurrogate(character))
             {
+                if (index + 1 >= text.Length || !char.IsLowSurrogate(text[index + 1]))
+                {
+                    return Strip(text, index);
+                }
+
+                if (IsNoncharacter(char.ConvertToUtf32(character, text[index + 1])))
+                {
+                    return Strip(text, index);
+                }
+
                 index++;
                 continue;
             }
 
-            return Strip(text, index);
+            if (char.IsLowSurrogate(character) || IsNoncharacter(character))
+            {
+                return Strip(text, index);
+            }
         }
 
         return text;
     }
 
     /// <summary>
-    /// <paramref name="text"/> with every unpaired surrogate removed, keeping the well-formed prefix and every
-    /// well-formed pair. Only reached when <see cref="RemoveUnpairedSurrogates"/> found an unpaired unit.
+    /// <paramref name="text"/> with every unpaired surrogate and every noncharacter removed, keeping the
+    /// well-formed prefix and every well-formed, graphable pair. Only reached when
+    /// <see cref="RemoveRefusedCodePoints"/> found a refused unit.
     /// </summary>
-    /// <param name="text">The text to make well-formed.</param>
-    /// <param name="start">The index of the first unpaired surrogate.</param>
-    /// <returns>The text without unpaired surrogates.</returns>
+    /// <param name="text">The text to strip.</param>
+    /// <param name="start">The index of the first refused unit.</param>
+    /// <returns>The text without unpaired surrogates or noncharacters.</returns>
     private static string Strip(string text, int start)
     {
         var builder = new StringBuilder(text.Length);
@@ -145,12 +172,17 @@ public static class BibleOpNormalizer
         for (var index = start; index < text.Length; index++)
         {
             var character = text[index];
+
             if (char.IsHighSurrogate(character) && index + 1 < text.Length && char.IsLowSurrogate(text[index + 1]))
             {
-                builder.Append(character).Append(text[index + 1]);
+                if (!IsNoncharacter(char.ConvertToUtf32(character, text[index + 1])))
+                {
+                    builder.Append(character).Append(text[index + 1]);
+                }
+
                 index++;
             }
-            else if (!char.IsSurrogate(character))
+            else if (!char.IsSurrogate(character) && !IsNoncharacter(character))
             {
                 builder.Append(character);
             }

@@ -35,10 +35,10 @@ namespace NightTales.Infrastructure.Persistence.Migrations
                         principalColumn: "id",
                         onDelete: ReferentialAction.Restrict);
                     table.ForeignKey(
-                        name: "fk_series_bibles_episodes_proposed_from_episode_id",
-                        column: x => x.proposed_from_episode_id,
+                        name: "fk_series_bibles_episodes_proposed_from_episode_id_user_id",
+                        columns: x => new { x.proposed_from_episode_id, x.user_id },
                         principalTable: "episodes",
-                        principalColumn: "id",
+                        principalColumns: new[] { "id", "user_id" },
                         onDelete: ReferentialAction.SetNull);
                     table.ForeignKey(
                         name: "fk_series_bibles_series_series_id_user_id",
@@ -49,9 +49,9 @@ namespace NightTales.Infrastructure.Persistence.Migrations
                 });
 
             migrationBuilder.CreateIndex(
-                name: "ix_series_bibles_proposed_from_episode_id",
+                name: "ix_series_bibles_proposed_from_episode_id_user_id",
                 table: "series_bibles",
-                column: "proposed_from_episode_id");
+                columns: new[] { "proposed_from_episode_id", "user_id" });
 
             migrationBuilder.CreateIndex(
                 name: "ix_series_bibles_series_id_user_id",
@@ -69,6 +69,25 @@ namespace NightTales.Infrastructure.Persistence.Migrations
                 table: "series_bibles",
                 column: "series_id",
                 unique: true);
+
+            // NTS-922-SEC-001 (09 W3 CR-46): the nullable same-owner foreign key above is created with EF's
+            // plain `ON DELETE SET NULL`, which nulls *both* key columns; `user_id` is NOT NULL, so the first
+            // deleted episode would fail with a not-null violation instead of clearing the reference.
+            // PostgreSQL 15+ spells the rule as a column list, which EF cannot emit (see InitialCore and
+            // 02_AddFactSheets), so the constraint is replaced with the same definition plus that list. The
+            // model snapshot still describes the relationship as SetNull; only the delete action's column list
+            // lives here. This block is repeatable (it drops and re-adds its own constraint).
+            // Regression: TenantForeignKeyTests, AddSeriesBibleMigrationTests.
+            migrationBuilder.Sql(
+                """
+                ALTER TABLE series_bibles
+                    DROP CONSTRAINT fk_series_bibles_episodes_proposed_from_episode_id_user_id;
+
+                ALTER TABLE series_bibles
+                    ADD CONSTRAINT fk_series_bibles_episodes_proposed_from_episode_id_user_id
+                        FOREIGN KEY (proposed_from_episode_id, user_id) REFERENCES episodes (id, user_id)
+                        ON DELETE SET NULL (proposed_from_episode_id);
+                """);
 
             // 02.6.3 plan §3.3: every series that already exists gets its one empty `bible.v1` row, so the row
             // the create path now writes is also there for the series that predate this migration. The document

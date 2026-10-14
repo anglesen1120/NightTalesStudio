@@ -14,7 +14,7 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace NightTales.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    [Migration("20261014081258_02_AddSeriesBible")]
+    [Migration("20261014094406_02_AddSeriesBible")]
     partial class _02_AddSeriesBible
     {
         /// <inheritdoc />
@@ -1613,15 +1613,15 @@ namespace NightTales.Infrastructure.Persistence.Migrations
                     b.HasKey("Id")
                         .HasName("pk_series_bibles");
 
-                    b.HasIndex("ProposedFromEpisodeId")
-                        .HasDatabaseName("ix_series_bibles_proposed_from_episode_id");
-
                     b.HasIndex("SeriesId")
                         .IsUnique()
                         .HasDatabaseName("UX_series_bibles_series_id");
 
                     b.HasIndex("UserId")
                         .HasDatabaseName("IX_series_bibles_user_id");
+
+                    b.HasIndex("ProposedFromEpisodeId", "UserId")
+                        .HasDatabaseName("ix_series_bibles_proposed_from_episode_id_user_id");
 
                     b.HasIndex("SeriesId", "UserId")
                         .IsUnique()
@@ -3082,18 +3082,19 @@ namespace NightTales.Infrastructure.Persistence.Migrations
 
             modelBuilder.Entity("NightTales.Domain.Series.Bible.SeriesBible", b =>
                 {
-                    b.HasOne("NightTales.Domain.Episodes.Episode", null)
-                        .WithMany()
-                        .HasForeignKey("ProposedFromEpisodeId")
-                        .OnDelete(DeleteBehavior.SetNull)
-                        .HasConstraintName("fk_series_bibles_episodes_proposed_from_episode_id");
-
                     b.HasOne("NightTales.Infrastructure.Persistence.AppUser", null)
                         .WithMany()
                         .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_series_bibles_asp_net_users_user_id");
+
+                    b.HasOne("NightTales.Domain.Episodes.Episode", null)
+                        .WithMany()
+                        .HasForeignKey("ProposedFromEpisodeId", "UserId")
+                        .HasPrincipalKey("Id", "UserId")
+                        .OnDelete(DeleteBehavior.SetNull)
+                        .HasConstraintName("fk_series_bibles_episodes_proposed_from_episode_id_user_id");
 
                     b.HasOne("NightTales.Domain.Series.Series", null)
                         .WithOne()
