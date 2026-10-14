@@ -16,7 +16,7 @@
       @if (duplicateSourceId(); as id) { <a [href]="'#research-source-' + id">{{ 'episodes.research.sources.showDuplicate' | transloco }}</a> }
     </div>
     <p [id]="fieldId + '-reason'" class="hint">@if (disabledReason(); as reason) { {{ reason | transloco }} }</p>
-    @if (retryWait(); as seconds) { <nts-retry-countdown [seconds]="seconds" (elapsed)="finishRetry()" /> }
+    @if (retryWait() !== null) { <nts-retry-countdown [seconds]="retryWait() ?? 0" (elapsed)="finishRetry()" /> }
   </div>
   <button class="primary" type="submit" [disabled]="busy() || !!disabledReason() || !value().trim() || !!localError() || retryBlocked()" [attr.aria-describedby]="fieldId + '-reason'">{{ (mode() === 'url' ? 'episodes.research.sources.add' : 'episodes.research.sources.addNote') | transloco }}</button>
 </form>

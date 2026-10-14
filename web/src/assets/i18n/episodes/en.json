@@ -102,7 +102,7 @@
       "statement": "Fact {{index}}",
       "sources": "Cited sources",
       "confidence": "Confidence",
-      "requiresSource": "Choose at least one source for this fact.",
+      "requiresSource": "At least one fetched source is required to add a fact.",
       "dropSource": "Remove source from this fact"
     },
     "gate": {

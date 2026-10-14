@@ -18,6 +18,7 @@ export interface ResearchSource {
   readonly noteText: string | null;
   readonly status: SourceStatus;
   readonly errorCode: string | null;
+  /** Untrusted server string; never use as a translation key. */
   readonly errorMessageKey: string | null;
   readonly httpStatus: number | null;
   /** Untrusted fetched page title. Interpolation only. */
@@ -97,12 +98,17 @@ export const NOTE_MAX_CHARS = 3000;
 export const FACT_STATEMENT_MAX_CHARS = 600;
 export const SOURCE_DEFAULT_MAX_PER_EPISODE = 10;
 
-/** True only for an absolute http(s) URL; every other scheme (javascript:, data:, vbscript:, file:, ...) is refused for `href`. */
+/**
+ * True only for an absolute http(s) URL without credentials; every other scheme (javascript:, data:, vbscript:, file:,
+ * ...) and any `user@host` form are refused for `href`. A userinfo part is how a link dresses itself as one host while
+ * pointing at another (`https://vnexpress.net@evil.example/`), and the page never needs to send credentials.
+ */
 export function isSafeHttpUrl(value: string | null | undefined): value is string {
   if (!value) return false;
   try {
     const parsed = new URL(value);
-    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return false;
+    return parsed.username === '' && parsed.password === '';
   } catch {
     return false;
   }

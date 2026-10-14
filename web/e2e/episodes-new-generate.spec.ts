@@ -5,6 +5,7 @@ import { episodeDetail, EPISODE_ID, expectNoExtraDetails, NEW_EPISODE_PATH, SERI
 import { liveRegion } from './fixtures/series-stubs';
 import { editorDetail, expectEditor } from './fixtures/story-editor-stubs';
 import { stubResearch } from './fixtures/research-stubs';
+import episodesVi from '../src/assets/i18n/episodes/vi.json' with {type:'json'};
 
 // 10.5.2-T1: stub-only, same session/locale/axe/CSP footprint as episodes-list.spec.ts.
 // Real compose + mock-mpt proof is owned by 11.5.1-T1; the research URL by 10.5.5-T1.
@@ -151,7 +152,7 @@ test.describe('new episode generation (vi, stubbed)', () => {
     await expectA11yClean(page);
     await page.getByRole('button', { name: L.trueCrimeNext, exact: true }).click();
     await expect.poll(() => stubs.entries('create').length).toBe(1);
-    await expect(page.getByRole('heading', { name: 'Nguồn và dữ kiện', exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: episodesVi.research.title, exact: true })).toBeVisible();
     await expect.poll(() => stubs.entries('series').length).toBe(2);
     const creation = stubs.entries('create')[0]!;
     expect(stubs.entries('series').filter(request => request.order < creation.order)).toHaveLength(1);
@@ -198,7 +199,7 @@ test.describe('new episode generation (vi, stubbed)', () => {
     await page.getByRole('textbox', { name: L.brief, exact: true }).fill(BRIEF);
     await page.getByRole('button', { name: L.trueCrimeNext, exact: true }).click();
     await expect(page).toHaveURL(new RegExp(`/episodes/${EPISODE_ID}/research$`));
-    await expect(page.getByRole('heading', { name: 'Nguồn và dữ kiện', exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: episodesVi.research.title, exact: true })).toBeVisible();
     await expectA11yClean(page);
   });
 });

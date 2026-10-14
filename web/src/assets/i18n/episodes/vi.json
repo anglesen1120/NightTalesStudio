@@ -102,7 +102,7 @@
       "statement": "Dữ kiện {{index}}",
       "sources": "Nguồn được dẫn",
       "confidence": "Độ chắc chắn",
-      "requiresSource": "Chọn ít nhất một nguồn cho dữ kiện này.",
+      "requiresSource": "Cần ít nhất một nguồn đã tải để thêm dữ kiện.",
       "dropSource": "Bỏ nguồn khỏi dữ kiện này"
     },
     "gate": {

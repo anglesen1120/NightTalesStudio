@@ -1,3 +1,4 @@
+import episodesEn from '../src/assets/i18n/episodes/en.json' with {type:'json'};
 import type { Page } from '@playwright/test';
 import { expectA11yClean } from './fixtures/axe';
 import { expect, test } from './fixtures/csp.fixture';
@@ -93,7 +94,7 @@ test.describe('new episode generation (en, stubbed)', () => {
     await expectA11yClean(page);
     await page.getByRole('button', { name: L.trueCrimeNext, exact: true }).click();
     await expect.poll(() => stubs.entries('create').length).toBe(1);
-    await expect(page.getByRole('heading', { name: 'Sources and facts', exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: episodesEn.research.title, exact: true })).toBeVisible();
     await expect.poll(() => stubs.entries('series').length).toBe(2);
     const creation = stubs.entries('create')[0]!;
     expect(stubs.entries('series').filter(request => request.order < creation.order)).toHaveLength(1);
@@ -122,7 +123,7 @@ test.describe('new episode generation (en, stubbed)', () => {
     await page.getByRole('textbox', { name: L.brief, exact: true }).fill(BRIEF);
     await page.getByRole('button', { name: L.trueCrimeNext, exact: true }).click();
     await expect(page).toHaveURL(new RegExp(`/episodes/${EPISODE_ID}/research$`));
-    await expect(page.getByRole('heading', { name: 'Sources and facts', exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: episodesEn.research.title, exact: true })).toBeVisible();
     await expectA11yClean(page);
   });
 });

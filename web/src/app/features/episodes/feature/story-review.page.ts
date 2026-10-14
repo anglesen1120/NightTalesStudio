@@ -73,7 +73,7 @@ function isScopeLoaded(loaded: LoadedScope, language: string): boolean {
 @Component({
   selector: 'nts-story-review-page',
   imports: [TranslocoPipe, RouterLink, EmptyState, ErrorState, FormErrorAlert, LoadingState, PageHeader, StatusChip, StoryEditorComponent, VersionsPanelHostComponent, ApproveDialogComponent, ReopenDialogComponent],
-  providers: [EpisodeDetailStore, StoryEditorStore, ApprovalStore, VersionsStore, provideTranslocoScope('episodes', 'errors', 'quality')],
+  providers: [EpisodeDetailStore, StoryEditorStore, ApprovalStore, VersionsStore, ResearchStore, { provide: EPISODE_GATE, useFactory: () => inject(ResearchStore).gate }, provideTranslocoScope('episodes', 'errors', 'quality')],
   templateUrl: './story-review.page.html',
   styleUrl: './story-review.page.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -82,13 +82,9 @@ export class StoryReviewPage {
   private readonly detailStore = inject(EpisodeDetailStore);
   protected readonly store = inject(StoryEditorStore);
   protected readonly approval = inject(ApprovalStore);
-  /**
-   * The research gate is optional here: the editor route provides it, and a mount without one (a unit test, an embed)
-   * reads as `open`, so a missing provider never blocks the editor.
-   */
-  private readonly researchGate = inject(EPISODE_GATE, { optional: true });
-  /** Read-only gate owner for the disabled "Write story" state; the editor never writes research state. */
-  private readonly research = inject(ResearchStore, { optional: true });
+  /** Component-owned so the gate and its reads are discarded when this editor is destroyed. */
+  private readonly researchGate = inject(EPISODE_GATE);
+  private readonly research = inject(ResearchStore);
   private readonly versions = inject(VersionsStore);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
@@ -258,7 +254,7 @@ export class StoryReviewPage {
   protected readonly traceId = computed(() => this.fatalError()?.traceId);
   protected readonly episode = this.detailStore.detail;
   /** The read-only research gate (02 F13): `not_applicable` and an unloaded gate are `open`. */
-  protected readonly researchGateState = computed<GateState>(() => this.researchGate?.() ?? 'open');
+  protected readonly researchGateState = computed<GateState>(() => this.researchGate());
   /** Only the two blocking states disable "Write story"; the server stays the ultimate authority (a 409 on generate). */
   protected readonly storyGateBlocked = computed(() => {
     const state = this.researchGateState();
@@ -339,8 +335,8 @@ export class StoryReviewPage {
           this.approvalAnnouncement.set(null);
           this.approval.reset();
           void this.store.load(id);
-          // One gate load for the editor: the store is route-provided and reads the same episode the page shows.
-          void this.research?.load(id);
+          // One component-owned gate load; a return to this editor gets a fresh instance and fresh metadata.
+          void this.research.load(id);
         });
       }
       const rawAddress = query.get('segment');

@@ -1,5 +1,4 @@
 import type { Routes } from '@angular/router';
-import { inject } from '@angular/core';
 import { provideTranslocoScope } from '@jsverse/transloco';
 import { EpisodesHttpRepository } from './data-access/episodes-http.repository';
 import { StoryHttpRepository } from './data-access/story-http.repository';
@@ -8,8 +7,6 @@ import { HttpResearchRepository } from './data-access/http-research.repository';
 import { SeriesOptionsHttpRepository } from './data-access/series-options-http.repository';
 import { dirtyStoryGuard } from './guards/dirty-story.guard';
 import { dirtyResearchGuard } from './guards/dirty-research.guard';
-import { EPISODE_GATE } from './application/episode-gate';
-import { ResearchStore } from './application/research.store';
 import { EpisodesRepository } from './domain/episodes.repository';
 import { StoryRepository } from './domain/story.repository';
 import { StoryVersionRepository } from './domain/story-version.repository';
@@ -30,7 +27,7 @@ export const episodesRoutes: Routes = [
     ],
   },
   {
-    // Before `:id`, which would otherwise shadow the deeper path (both are lazy siblings of the same prefix).
+    // A complete sibling path; Angular backtracks when `:id` cannot consume the remaining segment.
     path: ':id/research',
     loadComponent: () => import('./feature/research-page/research-page.component').then((module) => module.ResearchPageComponent),
     canDeactivate: [dirtyResearchGuard],
@@ -38,8 +35,6 @@ export const episodesRoutes: Routes = [
       { provide: EpisodesRepository, useClass: EpisodesHttpRepository },
       { provide: SeriesOptionsRepository, useClass: SeriesOptionsHttpRepository },
       { provide: ResearchRepository, useClass: HttpResearchRepository },
-      ResearchStore,
-      { provide: EPISODE_GATE, useFactory: () => inject(ResearchStore).gate },
       provideTranslocoScope('episodes'),
       provideTranslocoScope('story'),
     ],
@@ -54,8 +49,6 @@ export const episodesRoutes: Routes = [
       { provide: StoryVersionRepository, useClass: HttpStoryVersionRepository },
       { provide: SeriesOptionsRepository, useClass: SeriesOptionsHttpRepository },
       { provide: ResearchRepository, useClass: HttpResearchRepository },
-      ResearchStore,
-      { provide: EPISODE_GATE, useFactory: () => inject(ResearchStore).gate },
       provideTranslocoScope('episodes'),
       provideTranslocoScope('story'),
     ],

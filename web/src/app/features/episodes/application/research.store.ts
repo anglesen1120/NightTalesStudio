@@ -11,13 +11,16 @@ import type { GateState } from '../domain/episode-gate';
 import { EpisodesRepository } from '../domain/episodes.repository';
 import { SeriesOptionsRepository } from '../domain/series-options.repository';
 import { FACT_STATEMENT_MAX_CHARS, SOURCE_DEFAULT_MAX_PER_EPISODE } from '../domain/research.model';
-import type { Fact, FactConfidence, FactInput, FactSheet, FactSourceRef, ResearchSource, SourceLimits } from '../domain/research.model';
+import type { Fact, FactConfidence, FactInput, FactSheet, FactSheetRun, FactSourceRef, ResearchSource, SourceLimits } from '../domain/research.model';
 import { ResearchRepository } from '../domain/research.repository';
 import type { FactSheetWrite, SourceInput } from '../domain/research.repository';
 import { isAppError } from './episode-detail.store';
 
 /** A fact in the local draft: `id` is empty until the server has stored it, so the row is tracked by `clientKey`. */
 export type DraftFact = Fact & { readonly clientKey: string };
+
+/** The write that an open 412 came from (F5): the conflict dialog needs it to decide what "save mine" may do. */
+export type ConflictSource = 'save' | 'approve' | 'edit';
 
 /** README D18: the dirty flag of an unsaved draft trails an edit by this much, so the tab guard never fires per keystroke. */
 export const DIRTY_DEBOUNCE_MS = 150;
@@ -34,6 +37,21 @@ function newClientKey(): string {
 /** The facts as the dirty comparison sees them: id, text, confidence and citations, in list order. */
 function serializeFacts(facts: readonly Fact[]): string {
   return JSON.stringify(facts.map((fact) => [fact.id, fact.statement, fact.confidence, [...fact.sourceIds]]));
+}
+
+/** Every field a row renders, in a fixed order: two lists that differ in nothing the user sees are the same list. */
+function sourceSignature(source: ResearchSource): string {
+  return [
+    source.id, source.kind, source.url, source.finalUrl, source.registrableDomain, source.noteText, source.status,
+    source.errorCode, source.errorMessageKey, source.httpStatus, source.title, source.contentType, source.textChars,
+    source.isCited, source.createdAt, source.fetchedAt,
+  ].join('\u0000');
+}
+
+/** Structural comparison of two source lists (perf: a no-op refetch must not re-render every row). */
+function sameSources(next: readonly ResearchSource[], current: readonly ResearchSource[]): boolean {
+  return next.length === current.length &&
+    next.every((source, index) => sourceSignature(source) === sourceSignature(current[index] as ResearchSource));
 }
 
 /**
@@ -71,7 +89,9 @@ export class ResearchStore {
   private readonly formErrorState = signal<AppError | null>(null);
   private readonly panelErrorState = signal<AppError | null>(null);
   private readonly conflictState = signal<{ etag: string } | null>(null);
+  private readonly conflictSourceState = signal<ConflictSource | null>(null);
   private readonly rateLimitState = signal<number | null>(null);
+  private readonly formRateLimitState = signal<number | null>(null);
   private readonly episodeState = signal<EpisodeDetail | null>(null);
   private readonly seriesState = signal<SeriesSummary | null>(null);
   private readonly baselineJson = signal('[]');
@@ -91,7 +111,12 @@ export class ResearchStore {
   readonly formError = this.formErrorState.asReadonly();
   readonly panelError = this.panelErrorState.asReadonly();
   readonly conflict = this.conflictState.asReadonly();
+  /** Which write the open 412 came from: `edit` = "Edit" on an approved sheet, `save` = save/save-mine, `approve`. */
+  readonly conflictSource = this.conflictSourceState.asReadonly();
+  /** A page-wide wait (F2): a 429 of generate/save/approve/remove/retry holds every write of the page. */
   readonly rateLimitSeconds = this.rateLimitState.asReadonly();
+  /** The add form's own wait: a 429 of one submit holds that form only, so a url wait never locks the sheet path. */
+  readonly formRateLimitSeconds = this.formRateLimitState.asReadonly();
 
   private id: string | null = null;
   private requestGeneration = 0;
@@ -133,10 +158,10 @@ export class ResearchStore {
 
   readonly canGenerate = computed(() =>
     this.rateLimitState() === null && this.sourcesState().some((source) => source.status === 'fetched') && !this.running() &&
-    !this.generatingState() && !(this.isApproved() && !this.dirty()) && !this.savingState() && !this.approvingState());
-  readonly canSave = computed(() => this.rateLimitState() === null && this.sheetState() !== null && this.dirty() &&
+    !this.generatingState() && !(this.isApproved() && !this.dirtyNow()) && !this.savingState() && !this.approvingState());
+  readonly canSave = computed(() => this.rateLimitState() === null && this.sheetState() !== null && this.dirtyNow() &&
     !this.savingState() && !this.approvingState() && this.invalidFacts().length === 0);
-  readonly canApprove = computed(() => this.rateLimitState() === null && this.sheetState()?.status === 'draft' && !this.dirty() &&
+  readonly canApprove = computed(() => this.rateLimitState() === null && this.sheetState()?.status === 'draft' && !this.dirtyNow() &&
     !this.savingState() && !this.approvingState());
 
   /**
@@ -147,6 +172,8 @@ export class ResearchStore {
   readonly gate = computed<GateState>(() => {
     if (!this.loadedState()) return 'open';
     const sheet = this.sheetState();
+    // The topic is the series' answer (P2): until it arrives the gate stays open, so a slow read never blocks the editor.
+    if (this.seriesState() === null) return 'open';
     if (!this.isTrueCrime()) return 'not_applicable';
     if (sheet === null || sheet.status !== 'approved') return 'sheet_not_approved';
     const cited = new Set(sheet.facts.flatMap((fact) => [...fact.sourceIds]));
@@ -184,13 +211,20 @@ export class ResearchStore {
     if (episodeId === this.id && this.loadedState()) return;
     this.requestGeneration += 1;
     const generation = this.requestGeneration;
+    // F4: the open intents and the pending submit belong to the episode we are leaving (reset() drops them the same way).
+    if (episodeId !== this.id) {
+      this.addIntent = null;
+      this.generateIntent = null;
+      this.submitted = null;
+      this.formRateLimitState.set(null);
+    }
     this.id = episodeId;
     this.loadedState.set(false);
     this.loadingState.set(true);
     this.errorState.set(null);
     this.panelErrorState.set(null);
     this.formErrorState.set(null);
-    this.conflictState.set(null);
+    this.clearConflict();
     this.adoptSheet(null);
     // A pending write/read of the episode we are leaving is stale from here on, so its flags come down with it.
     this.refreshingState.set(false);
@@ -255,6 +289,8 @@ export class ResearchStore {
       this.addIntent = null;
       this.submitted = null;
       if (!this.current(generation) || this.id !== episodeId) return this.refused();
+      // A landed submit is the end of the wait the previous 429 announced.
+      this.captureRateLimit(null, 'form');
       // The rows and the 24 h counters are the server's: the write is followed by one list read, never by a local guess.
       await this.readSources(episodeId, generation, false, false);
       return { ok: true, value: undefined };
@@ -268,7 +304,8 @@ export class ResearchStore {
       // A late failure of another episode's submit is not this page's error: it never reaches a surface.
       if (this.current(generation) && this.id === episodeId) {
         this.formErrorState.set(error);
-        this.captureRateLimit(error);
+        // F2: the wait of one refused submit holds the add form only — generate/save/approve/remove/retry stay live.
+        this.captureRateLimit(error, 'form');
       }
       return { ok: false, error };
     } finally {
@@ -317,11 +354,13 @@ export class ResearchStore {
     this.generatingState.set(true);
     this.panelErrorState.set(null);
     try {
-      await this.repo.generateFactSheet(episodeId, intent);
+      const run = await this.repo.generateFactSheet(episodeId, intent);
       // Bookkeeping first: the key settles even when the answer arrives after the page moved to another episode.
       intent.settle();
       this.generateIntent = null;
       if (!this.current(generation) || this.id !== episodeId) return this.refused();
+      // F3: the 202 is the truth about the run until the next read — the build button must hold from this answer on.
+      this.applyRun(episodeId, run);
       return { ok: true, value: undefined };
     } catch (cause) {
       const error = this.toError(cause);
@@ -344,8 +383,6 @@ export class ResearchStore {
       ...(patch.statement === undefined ? {} : { statement: patch.statement }),
       ...(patch.confidence === undefined ? {} : { confidence: patch.confidence }),
       ...(patch.sourceIds === undefined ? {} : { sourceIds: [...new Set(patch.sourceIds)], sources: this.refsFor([...new Set(patch.sourceIds)]) }),
-      // A fact the owner touched is theirs from here on; the server keeps the origin of the row it already has.
-      origin: fact.origin,
     }));
   }
 
@@ -365,12 +402,15 @@ export class ResearchStore {
       origin: 'user',
       clientKey: newClientKey(),
     }]);
+    this.retireInvalidContentError();
     this.markEdited();
   }
 
   removeFact(factId: string): void {
     if (this.sheetState()?.status !== 'draft' || this.destroyed) return;
     this.draftState.update((facts) => facts.filter((fact) => !this.isFact(fact, factId)));
+    // The fact the refusal named is gone: the pointers that indexed it are gone with it.
+    this.retireInvalidContentError();
     this.markEdited();
   }
 
@@ -386,7 +426,7 @@ export class ResearchStore {
   async startEdit(episodeId: string): Promise<Result<void>> {
     const sheet = this.sheetState();
     if (sheet === null || sheet.status !== 'approved' || this.savingState() || this.approvingState() || this.destroyed) return this.refused();
-    return this.write(episodeId, sheet.etag, () => this.repo.saveFactSheet(episodeId, sheet.etag, this.buildInputs()));
+    return this.write(episodeId, sheet.etag, () => this.repo.saveFactSheet(episodeId, sheet.etag, this.buildInputs()), 'saving', 'edit');
   }
 
   async save(episodeId: string): Promise<Result<void>> {
@@ -398,7 +438,7 @@ export class ResearchStore {
   async approve(episodeId: string): Promise<Result<void>> {
     const sheet = this.sheetState();
     if (!this.canApprove() || sheet === null || this.destroyed) return this.refused();
-    return this.write(episodeId, sheet.etag, () => this.repo.approveFactSheet(episodeId, sheet.etag), 'approving');
+    return this.write(episodeId, sheet.etag, () => this.repo.approveFactSheet(episodeId, sheet.etag), 'approving', 'approve');
   }
 
   /** Conflict dialog, "Reload latest": the server's version wins and the local draft is dropped. */
@@ -408,7 +448,7 @@ export class ResearchStore {
       const sheet = await this.repo.getFactSheet(episodeId, { userAction: true });
       if (!this.current(generation) || this.id !== episodeId) return this.refused();
       this.adoptSheet(sheet);
-      this.conflictState.set(null);
+      this.clearConflict();
       this.panelErrorState.set(null);
       return { ok: true, value: undefined };
     } catch (cause) {
@@ -419,7 +459,9 @@ export class ResearchStore {
   /** Conflict dialog, "Save mine as new version": the local draft is re-sent against the fresh ETag, so the server's
    * semantics create the next draft version instead of overwriting the other tab's write (02.5.4-T1:26). */
   async saveMineAsNewVersion(episodeId: string): Promise<Result<void>> {
-    if (this.destroyed) return this.refused();
+    // F5: an approve/edit conflict means the local document *is* the server's — there is nothing of mine to re-send, so
+    // this is refused unless the owner has since edited the draft (the dialog's other button, Reload latest, fits).
+    if (this.destroyed || !this.dirtyNow()) return this.refused();
     const generation = this.requestGeneration;
     let etag: string;
     try {
@@ -466,23 +508,27 @@ export class ResearchStore {
     this.errorState.set(null);
     this.formErrorState.set(null);
     this.panelErrorState.set(null);
-    this.conflictState.set(null);
+    this.clearConflict();
     this.rateLimitState.set(null);
+    this.formRateLimitState.set(null);
     this.addIntent = null;
     this.generateIntent = null;
     this.rowsInFlight.clear();
     this.submitted = null;
   }
 
-  /** Sources + fact sheet (parallel), then the episode and series context of the gate. `true` when both reads answered. */
+  /** Sources + fact sheet + the episode detail (all three in parallel), then the series context of the gate. */
   private async readResearch(episodeId: string, generation: number, opts: { userAction: boolean; series: boolean; silent: boolean }): Promise<boolean> {
-    // Cleared once, before the pair: the two reads answer in parallel, so a success must never erase the other's failure.
+    // Cleared once, before the trio: the reads answer in parallel, so a success must never erase the other's failure.
     if (!opts.silent) this.errorState.set(null);
-    const [sourcesOk, sheetOk] = await Promise.all([
+    // P2: the episode GET joins the pair, so the gate's own read costs no extra round trip; only the series chains after
+    // it (its id comes from the detail).
+    const [sourcesOk, sheetOk, detail] = await Promise.all([
       this.readSources(episodeId, generation, opts.userAction, opts.silent),
       this.readSheet(episodeId, generation, opts.userAction, opts.silent),
+      this.readEpisodeDetail(episodeId, generation),
     ]);
-    await this.readEpisode(episodeId, generation, opts.series);
+    if (detail !== null && opts.series && detail.seriesId !== '') await this.readSeries(detail.seriesId, episodeId, generation);
     return sourcesOk && sheetOk;
   }
 
@@ -490,7 +536,8 @@ export class ResearchStore {
     try {
       const list = await this.repo.listSources(episodeId, { userAction });
       if (!this.current(generation) || this.id !== episodeId) return false;
-      this.sourcesState.set(list.items);
+      // P1: `[sources]` keeps its identity when the list is the same, so a no-op refetch re-renders no row.
+      if (!sameSources(list.items, this.sourcesState())) this.sourcesState.set(list.items);
       this.limitsState.set(list.limits);
       return true;
     } catch (cause) {
@@ -505,8 +552,11 @@ export class ResearchStore {
       const sheet = await this.repo.getFactSheet(episodeId, { userAction });
       if (!this.current(generation) || this.id !== episodeId) return false;
       // A read never replaces an edited draft: the local facts (and the ETag that describes them) stay until the write
-      // path resolves the divergence through the 412 conflict dialog.
-      if (this.dirty()) return true;
+      // path resolves the divergence through the 412 conflict dialog. F7: an edit inside the 150 ms debounce window is
+      // an edit — the comparison that decides here never waits for the trailing flag.
+      if (this.dirtyNow()) return true;
+      // P1: the same document under the same ETag is not a change; adopting it would re-key every row for nothing.
+      if (this.sameSheet(sheet)) return true;
       this.adoptSheet(sheet);
       return true;
     } catch (cause) {
@@ -516,19 +566,21 @@ export class ResearchStore {
     }
   }
 
-  private async readEpisode(episodeId: string, generation: number, series: boolean): Promise<void> {
-    let detail: EpisodeDetail;
+  /** The episode detail carries the live run state the panel reads; a failure leaves the gate `open` (never a block). */
+  private async readEpisodeDetail(episodeId: string, generation: number): Promise<EpisodeDetail | null> {
     try {
-      detail = await this.episodes.get(episodeId, { userAction: false });
+      const detail = await this.episodes.get(episodeId, { userAction: false });
+      if (!this.current(generation) || this.id !== episodeId) return null;
+      this.episodeState.set(detail);
+      return detail;
     } catch {
-      // The gate then reads as `open` (never a false block) and the server's 409 stays the authority (10.5.2-T1).
-      return;
+      return null;
     }
-    if (!this.current(generation) || this.id !== episodeId) return;
-    this.episodeState.set(detail);
-    if (!series || detail.seriesId === '') return;
+  }
+
+  private async readSeries(seriesId: string, episodeId: string, generation: number): Promise<void> {
     try {
-      const summary = await this.seriesRepo.get(detail.seriesId);
+      const summary = await this.seriesRepo.get(seriesId);
       if (!this.current(generation) || this.id !== episodeId) return;
       this.seriesState.set(summary);
     } catch {
@@ -536,17 +588,51 @@ export class ResearchStore {
     }
   }
 
+  /** F3: the run a 202 named, until the next detail read replaces it (the episode's generation signal is that state). */
+  private applyRun(episodeId: string, run: FactSheetRun): void {
+    const detail = this.episodeState();
+    if (detail === null) {
+      // No detail to update (its read failed): one read is what tells the panel a run exists — never a local guess.
+      void this.readEpisodeDetail(episodeId, this.requestGeneration);
+      return;
+    }
+    // The generate run is `generation_runs.kind = fact_sheet` (02.5.3:34). The fields the 202 does not carry are the
+    // ones a freshly queued run has (the next detail read replaces them with the server's own values).
+    this.episodeState.set({
+      ...detail,
+      generation: {
+        kind: 'fact_sheet',
+        status: run.status === '' ? 'queued' : run.status,
+        stage: 'queued',
+        errorCode: null,
+        startedAt: null,
+        processingPaused: null,
+      },
+    });
+  }
+
+  /** The same document, fact for fact: the ETag is the version identity, the facts are what the page renders. */
+  private sameSheet(sheet: FactSheet | null): boolean {
+    const current = this.sheetState();
+    if (current === null || sheet === null) return current === sheet;
+    return sheet.etag === current.etag && sheet.status === current.status && sheet.version === current.version &&
+      serializeFacts(sheet.facts) === serializeFacts(current.facts);
+  }
+
   /**
    * One write path for save/approve/start-edit: send with `If-Match`, adopt the answer, then re-read the document.
    * The phase picks the in-flight flag the surfaces read (`savingFactSheet` / `approvingFactSheet`), so an approve
    * that is mid-request is visible to the panel's busy state and to the page's conflict guard alike.
    */
-  private async write(episodeId: string, etag: string, call: () => Promise<FactSheetWrite>, phase: 'saving' | 'approving' = 'saving'): Promise<Result<void>> {
+  private async write(
+    episodeId: string, etag: string, call: () => Promise<FactSheetWrite>,
+    phase: 'saving' | 'approving' = 'saving', source: ConflictSource = 'save',
+  ): Promise<Result<void>> {
     const inFlight = phase === 'approving' ? this.approvingState : this.savingState;
     const generation = this.requestGeneration;
     inFlight.set(true);
     this.panelErrorState.set(null);
-    this.conflictState.set(null);
+    this.clearConflict();
     try {
       const write = await call();
       // A stale answer is dropped whole: no adopted version, ETag or cleared rate limit lands on the episode the page
@@ -558,7 +644,7 @@ export class ResearchStore {
       await this.reloadAfterWrite(episodeId);
       return { ok: true, value: undefined };
     } catch (cause) {
-      return { ok: false, error: this.failWrite(cause, etag, episodeId, generation) };
+      return { ok: false, error: this.failWrite(cause, etag, episodeId, generation, source) };
     } finally {
       if (this.current(generation)) inFlight.set(false);
     }
@@ -582,8 +668,11 @@ export class ResearchStore {
     window.clearTimeout(this.dirtyTimer);
     this.dirtyTimer = undefined;
     this.sheetState.set(sheet);
+    // P1: a stored fact keeps the row key it already had, so a read that brings the same facts back neither re-keys the
+    // list nor recreates its rows; a fact this page added keeps its own key until the server names it.
+    const previous = new Map(this.draftState().filter((fact) => fact.id !== '').map((fact) => [fact.id, fact.clientKey]));
     const facts = sheet?.facts ?? [];
-    this.draftState.set(facts.map((fact) => ({ ...fact, clientKey: newClientKey() })));
+    this.draftState.set(facts.map((fact) => ({ ...fact, clientKey: previous.get(fact.id) ?? newClientKey() })));
     const json = serializeFacts(facts);
     this.baselineJson.set(json);
     this.draftJson.set(json);
@@ -616,6 +705,8 @@ export class ResearchStore {
     const sheet = this.sheetState();
     if (sheet === null || sheet.status !== 'draft') return;
     this.draftState.update((facts) => facts.map((fact) => (this.isFact(fact, factId) ? patch(fact) : fact)));
+    // F8: the edit is what fixes the field the refused save named, so that pointer (and its banner) retires here.
+    this.retireInvalidContentError();
     this.markEdited();
   }
 
@@ -665,25 +756,53 @@ export class ResearchStore {
     return error;
   }
 
-  private failWrite(cause: unknown, etag: string, episodeId: string, generation: number): AppError {
+  private failWrite(cause: unknown, etag: string, episodeId: string, generation: number, source: ConflictSource): AppError {
     const error = this.toError(cause);
     if (!this.current(generation) || this.id !== episodeId) return error;
-    // 412 and 428 are concurrency answers, not banners: the ConflictDialog offers Reload latest / Save mine as new
-    // version, and only its "Save mine" re-PUTs (the ETag it was refused with is the one to report).
-    if (error.status === 412 || error.status === 428) {
+    // 412 is the divergence the ConflictDialog resolves: it offers Reload latest / Save mine as new version, and only its
+    // second button re-PUTs. The refused ETag and the write that earned it are what the dialog needs (F5).
+    if (error.status === 412) {
       this.conflictState.set({ etag });
-      if (error.status === 428) this.panelErrorState.set(error);
+      this.conflictSourceState.set(source);
+      return error;
+    }
+    // 428 says this client sent no If-Match at all: a bug of ours, not a divergence, and there is nothing for the user to
+    // choose between — so it is the banner's business (`if_match_required`, the catalogue's own code), never the dialog.
+    if (error.status === 428) {
+      this.panelErrorState.set(error);
       return error;
     }
     return this.failPanel(error, episodeId, generation);
   }
 
-  private captureRateLimit(error: AppError | null): void {
-    if (error === null) {
-      this.rateLimitState.set(null);
-      return;
-    }
-    if (error.retryAfterSec !== undefined) this.rateLimitState.set(error.retryAfterSec);
+  private clearConflict(): void {
+    this.conflictState.set(null);
+    this.conflictSourceState.set(null);
+  }
+
+  /**
+   * A 429 is a wait the server imposed. `page` holds every write (generate/save/approve/remove/retry); `form` holds the
+   * add form alone, so a url the server refuses for the day never locks the sheet path. `Retry-After: 0` and a missing
+   * header are not waits: the state stays `null` rather than holding a control for zero seconds (README D9).
+   */
+  private captureRateLimit(error: AppError | null, scope: 'page' | 'form' = 'page'): void {
+    const state = scope === 'form' ? this.formRateLimitState : this.rateLimitState;
+    const seconds = error?.retryAfterSec;
+    state.set(seconds !== undefined && seconds > 0 ? seconds : null);
+  }
+
+  /** The dirty comparison without the 150 ms trailing window: a decision never waits for the debounced flag (F7). */
+  private dirtyNow(): boolean {
+    return serializeFacts(this.draftState()) !== this.baselineJson();
+  }
+
+  /**
+   * F8: a refusal that names a fact's field (`fact_sheet_invalid_content`) is retired by the edit that fixes it — the
+   * draft the pointers described is not the draft on screen any more, so the banner (and with it every per-fact pointer
+   * it carried, the panel reads them from this one error) goes; the next save reports afresh what is still wrong.
+   */
+  private retireInvalidContentError(): void {
+    if (this.panelErrorState()?.code === 'fact_sheet_invalid_content') this.panelErrorState.set(null);
   }
 
   /** A refused call is a no-op: it reports the live error of its own surface, or the mapper's plain `unknown_error`

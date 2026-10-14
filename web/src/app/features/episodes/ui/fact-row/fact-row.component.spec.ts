@@ -2,7 +2,7 @@ import { TestBed } from '@angular/core/testing';
 import { afterEach, describe, expect, it } from 'vitest';
 import { onEmit } from '@shared/ui/testing/on-emit';
 import { ZONELESS_TEST_PROVIDERS } from '../../../../testing/providers';
-import { researchTranslations, source, fact } from '../../testing/research-ui.testing';
+import { researchCopy, researchTranslations, source, fact } from '../../testing/research-ui.testing';
 import { FactRowComponent } from './fact-row.component';
 afterEach(() => TestBed.resetTestingModule());
 async function setup() {
@@ -13,13 +13,13 @@ async function setup() {
 describe('FactRowComponent', () => {
   it('shows source aliases, safe links, note labels and indexed delete names', async () => {
     const { fixture, root } = await setup(); expect(root.querySelector('.source-chip')?.textContent).toContain('S1'); expect(root.querySelector('a')?.getAttribute('rel')).toBe('noopener noreferrer');
-    expect(root.querySelector('button.delete')?.getAttribute('aria-label')).toBe('Delete fact 3');
+    expect(root.querySelector('button.delete')?.getAttribute('aria-label')).toBe(researchCopy.research.facts.deleteLabel.replace('{{index}}', '3'));
     fixture.componentRef.setInput('fact', fact({ sources: [{sourceId:'source-a',alias:'N1',title:'Secret note',url:null,isUserNote:true}] })); await fixture.whenStable();
-    expect(root.querySelector('.source-chip')?.textContent).toContain('your note'); expect(root.querySelector('.source-chip')?.textContent).not.toContain('Secret note');
+    expect(root.querySelector('.source-chip')?.textContent).toContain(researchCopy.factSheet.userNoteLabel); expect(root.querySelector('.source-chip')?.textContent).not.toContain('Secret note');
   });
   it('keeps low confidence visible and every non-null overlap advisory visible', async () => {
     const { fixture, root } = await setup(); fixture.componentRef.setInput('fact', fact({confidence:'low', sourceOverlap:0})); await fixture.whenStable();
-    expect(root.textContent).toContain('Needs checking'); expect(root.textContent).toContain('nearly verbatim');
+    expect(root.textContent).toContain(researchCopy.research.confidence.low); expect(root.textContent).toContain(researchCopy.factSheet.overlapWarning);
   });
   it('renders approved statements as text and blocks all edit outputs', async () => {
     const { fixture, root, component } = await setup(); let edits = 0; onEmit(component.patch, () => edits++);
@@ -37,5 +37,10 @@ describe('FactRowComponent', () => {
     await fixture.whenStable();
     expect(component.form.controls.statement.hasError('maxlength')).toBe(true);
     expect(Object.keys(component.form.controls.statement.errors ?? {})).toHaveLength(2);
+  });
+  it('offers fetched sources and keeps already-cited failed sources selectable', async () => {
+    const {fixture,component}=await setup();
+    fixture.componentRef.setInput('sources',[source({status:'failed'}),source({id:'pending',status:'pending'}),source({id:'fetched',status:'fetched'})]);
+    await fixture.whenStable();expect(component.selectableSources().map(item=>item.id)).toEqual(['source-a','fetched']);
   });
 });

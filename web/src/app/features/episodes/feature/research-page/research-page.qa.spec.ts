@@ -7,6 +7,7 @@ import type { AppError } from '@core/errors';
 import { ConfirmDialog } from '@shared/ui';
 import { ZONELESS_TEST_PROVIDERS } from '../../../../testing/providers';
 import { ResearchStore } from '../../application/research.store';
+import { EPISODE_GATE } from '../../application/episode-gate';
 import type { Fact, FactSheet, ResearchSource, SourceLimits } from '../../domain/research.model';
 import { researchTranslations } from '../../testing/research-ui.testing';
 import { source } from '../../testing/fake-research.repository';
@@ -43,6 +44,8 @@ class FakeResearchStore {
   readonly panelError = signal<AppError | null>(null);
   readonly conflict = signal(null);
   readonly rateLimitSeconds = signal<number | null>(null);
+  readonly formRateLimitSeconds = signal<number | null>(null);
+  readonly conflictSource = signal<'save' | 'approve' | 'edit' | null>(null);
   readonly addCalls: { episodeId: string; url: string }[] = [];
   readonly removeCalls: { episodeId: string; sourceId: string }[] = [];
   readonly generateCalls: string[] = [];
@@ -83,12 +86,11 @@ async function setup(store: FakeResearchStore, dialog = confirmStub(true)) {
     providers: [
       ...ZONELESS_TEST_PROVIDERS,
       provideRouter([]),
-      { provide: ResearchStore, useValue: store },
       { provide: ConfirmDialog, useValue: dialog },
       { provide: ActivatedRoute, useValue: { paramMap: of(params), snapshot: { paramMap: params }, parent: null } },
     ],
     deferBlockBehavior: DeferBlockBehavior.Manual,
-  }).compileComponents();
+  }).overrideComponent(ResearchPageComponent,{add:{providers:[{provide:ResearchStore,useValue:store},{provide:EPISODE_GATE,useValue:store.gate}]}}).compileComponents();
   const fixture = TestBed.createComponent(ResearchPageComponent);
   await fixture.whenStable();
   for (const block of await fixture.getDeferBlocks()) await block.render(DeferBlockState.Complete);

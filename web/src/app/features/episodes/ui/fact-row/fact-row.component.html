@@ -26,7 +26,7 @@
         <mat-form-field appearance="outline">
           <mat-label>{{ 'episodes.research.facts.sources' | transloco }}</mat-label>
           <mat-select multiple [formControl]="form.controls.sourceIds" (selectionChange)="changeSources($event.value)">
-          @for (source of sources(); track source.id) {
+          @for (source of selectableSources(); track source.id) {
             <mat-option [value]="source.id">@if (source.kind === 'user_note') { {{ 'episodes.factSheet.userNoteLabel' | transloco }} } @else { {{ source.title || source.registrableDomain }} }</mat-option>
           }
         </mat-select>

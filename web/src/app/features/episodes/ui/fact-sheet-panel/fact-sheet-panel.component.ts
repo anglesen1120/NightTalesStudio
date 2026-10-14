@@ -32,9 +32,10 @@ export class FactSheetPanelComponent {
   readonly deleteFact = output<string>();
   readonly dropSource = output<{ id: string; sourceId: string }>();
   readonly approved = computed(() => this.sheet()?.status === 'approved');
+  readonly fetchedSource = computed(() => this.sources().find(source => source.status === 'fetched') ?? null);
   readonly busy = computed(() => this.saving() || this.approving() || this.editing());
   readonly saveReason = computed(() => this.retryBlocked() ? 'episodes.factSheet.waitForRetry' : !this.sheet() ? 'episodes.factSheet.needsSheet' : !this.dirty() ? 'episodes.factSheet.noChanges' : this.busy() ? 'episodes.factSheet.waitForWrite' : 'episodes.factSheet.invalidDraft');
   readonly approveReason = computed(() => this.retryBlocked() ? 'episodes.factSheet.waitForRetry' : !this.sheet() ? 'episodes.factSheet.needsSheet' : this.dirty() ? 'episodes.factSheet.saveFirst' : 'episodes.factSheet.waitForWrite');
   identity(fact: Fact & {readonly clientKey: string}): string { return fact.id || fact.clientKey; }
-  add(): void { const source = this.sources()[0]; if (source && !this.busy()) this.addFact.emit([source.id]); }
+  add(): void { const source = this.fetchedSource(); if (source && !this.busy()) this.addFact.emit([source.id]); }
 }

@@ -8,6 +8,7 @@ let nextFormId = 0;
 @Component({ selector: 'nts-source-add-form', imports: [ReactiveFormsModule, TranslocoPipe, CharCounter, RetryCountdown], templateUrl: './source-add-form.component.html', styleUrl: './source-add-form.component.scss', changeDetection: ChangeDetectionStrategy.OnPush })
 export class SourceAddFormComponent implements OnChanges {
   readonly busy = input(false);
+  readonly writeBlocked = input(false);
   readonly canAdd = input(true);
   readonly canAddUrl = input(true);
   readonly errorKey = input<string | null>(null);
@@ -32,7 +33,7 @@ export class SourceAddFormComponent implements OnChanges {
   });
   readonly fieldId = 'research-source-field-' + ++nextFormId;
   readonly localError = computed(() => this.mode() === 'note' && this.value().length > this.max ? 'episodes.research.sources.noteTooLong' : this.submitted() && this.mode() === 'url' && !isSafeHttpUrl(this.value().trim()) ? 'errors.source_url_invalid' : null);
-  readonly disabledReason = computed(() => !this.canAdd() ? 'episodes.research.sources.capReached' : this.mode() === 'url' && !this.canAddUrl() ? 'episodes.research.sources.dailyCap' : null);
+  readonly disabledReason = computed(() => this.writeBlocked() ? 'episodes.factSheet.waitForRetry' : !this.canAdd() ? 'episodes.research.sources.capReached' : this.mode() === 'url' && !this.canAddUrl() ? 'episodes.research.sources.dailyCap' : null);
   private readonly field = viewChild<ElementRef<HTMLInputElement | HTMLTextAreaElement>>('field');
   constructor() { this.syncForm(); afterNextRender(() => { if (this.focusOnEntry()) this.focus(); }); }
   focus(): void { this.field()?.nativeElement.focus(); }
@@ -48,12 +49,12 @@ export class SourceAddFormComponent implements OnChanges {
     const error = this.formError();
     if (error) bindFieldErrors(this.form, error); else clearServerErrors(this.form);
     const seconds = this.retryAfterSec();
-    if (seconds !== null && seconds > 0) {
+    if (seconds !== null) {
       this.retryWait.set(seconds);
-      this.urlOnlyWait.set(error?.code === 'source_fetch_limit_reached');
+      if (error) this.urlOnlyWait.set(error.code === 'source_fetch_limit_reached');
     }
   }
-  finishRetry(): void { this.retryWait.set(null); this.retryElapsed.emit(); }
+  finishRetry(): void { this.retryWait.set(null); this.urlOnlyWait.set(false); this.retryElapsed.emit(); }
   private syncForm(): void {
     this.form.disable({ emitEvent: false });
     if (!this.busy()) this.activeControl().enable({ emitEvent: false });

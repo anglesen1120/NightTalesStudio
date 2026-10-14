@@ -25,6 +25,7 @@ import { FakeEpisodeRealtime } from '../testing/fake-episode-realtime';
 import { EPISODE_ID, FakeEpisodesRepository, episodeDetail } from '../testing/fake-episodes.repository';
 import { FakeStoryRepository, storyContent, storySnapshot } from '../testing/fake-story.repository';
 import { FakeStoryVersionRepository } from '../testing/fake-story-version.repository';
+import { fakeResearchStore, fakeResearchStoreProviders } from '../testing/fake-research.store';
 import { EpisodeDetailStore } from './episode-detail.store';
 import { StoryEditorStore } from './story-editor.store';
 
@@ -522,7 +523,7 @@ async function mountPage(snapshot: StorySnapshot | null, actions: readonly strin
       { provide: ActivatedRoute, useValue: { paramMap: params, queryParamMap: query, snapshot: { paramMap: params.value, queryParamMap: query.value } } },
       { provide: ConflictDialog, useValue: conflictDialog }, { provide: ConfirmDialog, useValue: confirmDialog },
     ],
-  }).compileComponents();
+  }).overrideComponent(StoryReviewPage,{add:{providers:[...fakeResearchStoreProviders(fakeResearchStore())]}}).compileComponents();
   const fixture = TestBed.createComponent(StoryReviewPage);
   await flush(fixture);
   const root = fixture.nativeElement as HTMLElement;

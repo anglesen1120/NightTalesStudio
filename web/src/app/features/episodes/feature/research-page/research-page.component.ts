@@ -7,11 +7,12 @@ import { AppErrorMapper, type Result } from '@core/errors';
 import { UnsavedWorkRegistry } from '@core/shell/unsaved-work';
 import { ConfirmDialog, ConflictDialog, EmptyState, ErrorState, LoadingState, PageHeader, RetryCountdown } from '@shared/ui';
 import { ResearchStore } from '../../application/research.store';
+import { EPISODE_GATE } from '../../application/episode-gate';
 import type { ResearchSource } from '../../domain/research.model';
 import { SourceAddFormComponent } from '../../ui/source-add-form/source-add-form.component';
 import { SourceRowComponent } from '../../ui/source-row/source-row.component';
 import { FactSheetPanelComponent } from '../../ui/fact-sheet-panel/fact-sheet-panel.component';
-@Component({ selector: 'nts-research-page', imports: [TranslocoPipe, RouterLink, PageHeader, LoadingState, ErrorState, EmptyState, RetryCountdown, SourceAddFormComponent, SourceRowComponent, FactSheetPanelComponent], providers: [provideTranslocoScope('episodes', 'errors')], templateUrl: './research-page.component.html', styleUrl: './research-page.component.scss', changeDetection: ChangeDetectionStrategy.OnPush, host: { '(window:beforeunload)': 'beforeUnload($event)' } })
+@Component({ selector: 'nts-research-page', imports: [TranslocoPipe, RouterLink, PageHeader, LoadingState, ErrorState, EmptyState, RetryCountdown, SourceAddFormComponent, SourceRowComponent, FactSheetPanelComponent], providers: [ResearchStore, { provide: EPISODE_GATE, useFactory: () => inject(ResearchStore).gate }, provideTranslocoScope('episodes', 'errors')], templateUrl: './research-page.component.html', styleUrl: './research-page.component.scss', changeDetection: ChangeDetectionStrategy.OnPush, host: { '(window:beforeunload)': 'beforeUnload($event)' } })
 export class ResearchPageComponent {
   readonly store = inject(ResearchStore);
   private readonly route = inject(ActivatedRoute);
@@ -27,7 +28,7 @@ export class ResearchPageComponent {
   readonly adding = signal(false);
   readonly rowPending = signal<ReadonlySet<string>>(new Set());
   readonly editing = signal(false);
-  readonly retryBlocked = computed(() => (this.store.rateLimitSeconds() ?? 0) > 0);
+  readonly retryBlocked = computed(() => this.store.rateLimitSeconds() !== null);
   readonly canAddUrl = computed(() => { const limits = this.store.limits(); return this.store.canAddUrl() && (limits === null || limits.urlSourcesLast24h < limits.maxUrlSourcesPerDay); });
   readonly loadErrorKey = computed(() => { const error = this.store.error(); return error ? this.mapper.messageKey(error) : 'errors.unknown_error'; });
   readonly formErrorKey = computed(() => { const error = this.store.formError(); return error ? this.mapper.messageKey(error) : null; });
@@ -79,7 +80,7 @@ export class ResearchPageComponent {
     return leave;
   }
   async add(kind: 'url' | 'note', value: string): Promise<void> {
-    if (this.adding()) return;
+    if (this.adding() || this.retryBlocked()) return;
     const id = this.episodeId();
     this.adding.set(true);
     try {
@@ -89,7 +90,7 @@ export class ResearchPageComponent {
     finally { if (!this.destroy.destroyed) this.adding.set(false); }
   }
   async sourceAction(source: ResearchSource, intent: 'remove' | 'retry'): Promise<void> {
-    if (this.rowPending().has(source.id) || (intent === 'retry' && this.retryBlocked())) return;
+    if (this.rowPending().has(source.id) || this.retryBlocked()) return;
     const id = this.episodeId();
     this.rowPending.update(current => new Set([...current, source.id]));
     try {
@@ -103,11 +104,12 @@ export class ResearchPageComponent {
   async startEdit(): Promise<void> { if (this.editing() || this.retryBlocked()) return; this.editing.set(true); try { await this.store.startEdit(this.episodeId()); } finally { if (!this.destroy.destroyed) this.editing.set(false); } }
   private async resolveConflict(): Promise<void> {
     const id = this.episodeId();
-    const ref = this.conflictDialog.open({ messageKey: 'errors.fact_sheet_conflict', saveAsNewLabel: 'errors.conflict.saveAsNew' }, { viewContainerRef: this.viewContainerRef });
+    const source = this.store.conflictSource();
+    const ref = this.conflictDialog.open({ messageKey: 'errors.fact_sheet_conflict', ...(source === 'save' ? { saveAsNewLabel: 'errors.conflict.saveAsNew' } : {}) }, { viewContainerRef: this.viewContainerRef });
     const outcome = await firstValueFrom(ref.afterClosed());
     if (this.destroy.destroyed || id !== this.episodeId()) return;
     if (outcome === 'reload') await this.store.reloadLatest(id);
-    if (outcome === 'saveAsNew') await this.store.saveMineAsNewVersion(id);
+    if (outcome === 'saveAsNew' && source === 'save') await this.store.saveMineAsNewVersion(id);
   }
   run(action: 'generate' | 'save' | 'approve' | 'refresh'): void { if (action !== 'refresh' && this.retryBlocked()) return; const promise: Promise<Result<void>> = this.store[action](this.episodeId()); void promise; }
 }

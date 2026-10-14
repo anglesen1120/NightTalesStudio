@@ -25,9 +25,9 @@ class ResearchCommandHttpIntent extends IdempotencyIntent {
 
 /**
  * HTTP adapter of the research port; the only file of `features/episodes` that imports the generated sources and
- * fact-sheet clients (D5). Reads carry `USER_ACTION` only when the caller started them (a click, WR11); the paid
- * generate POST is the one request that carries an `Idempotency-Key`. No response body is ever logged: sources and
- * facts are untrusted user content (10.5.5-T1 security rules).
+ * fact-sheet clients (D5). Reads carry `USER_ACTION` only when the caller started them (a click, WR11); the two paid
+ * POSTs (add source, generate) carry an `Idempotency-Key`, the fact-sheet writes do not (a replay is a 412). No
+ * response body is ever logged: sources and facts are untrusted user content (10.5.5-T1 security rules).
  */
 @Injectable()
 export class HttpResearchRepository extends ResearchRepository {

@@ -18,6 +18,6 @@
   </span>
   <div class="source-actions">
     @if (source().status === 'failed') { <button type="button" [disabled]="busy() || retryBlocked()" (click)="retrySource.emit()">{{ 'episodes.research.sources.retry' | transloco }}</button> }
-    <button type="button" [disabled]="busy()" [attr.aria-label]="('episodes.research.sources.remove' | transloco) + ': ' + (source().kind === 'user_note' ? ('episodes.factSheet.userNoteLabel' | transloco) : title())" (click)="removeSource.emit()">{{ 'episodes.research.sources.remove' | transloco }}</button>
+    <button type="button" [disabled]="busy() || retryBlocked()" [attr.aria-label]="('episodes.research.sources.remove' | transloco) + ': ' + (source().kind === 'user_note' ? ('episodes.factSheet.userNoteLabel' | transloco) : title())" (click)="removeSource.emit()">{{ 'episodes.research.sources.remove' | transloco }}</button>
   </div>
 </article>

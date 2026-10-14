@@ -22,7 +22,7 @@
   @if (buildingSheet()) { <nts-loading-state labelKey="episodes.factSheet.generating" /> }
   @if (!sheet() && !buildingSheet()) { <nts-empty-state titleKey="episodes.factSheet.empty" /> }
   @if (sheet()) {
-    @defer (on viewport) {
+    @defer (on idle) {
       <div class="fact-ledger">
         @for (fact of facts(); track fact.clientKey; let i = $index) {
           <nts-fact-row [fact]="fact" [index]="i + 1" [sources]="sources()" [readonly]="approved()" [busy]="busy()" [invalid]="invalidFactIndexes().includes(i)" [fieldError]="fieldError()" (patch)="patchFact.emit({id: identity(fact), patch: $event})" (deleteFact)="deleteFact.emit(identity(fact))" (dropSource)="dropSource.emit({id: identity(fact), sourceId: $event})" />
@@ -30,11 +30,11 @@
       </div>
     } @placeholder { <div class="fact-placeholder"><nts-loading-state labelKey="episodes.research.loading" /></div> }
     @if (!approved()) {
-      <button type="button" [disabled]="sources().length === 0 || busy()" aria-describedby="research-add-fact-reason" (click)="add()">{{ 'episodes.research.facts.add' | transloco }}</button>
-      <p id="research-add-fact-reason">@if (sources().length === 0) { {{ 'episodes.research.facts.requiresSource' | transloco }} }</p>
+      <button type="button" [disabled]="!fetchedSource() || busy()" aria-describedby="research-add-fact-reason" (click)="add()">{{ 'episodes.research.facts.add' | transloco }}</button>
+      <p id="research-add-fact-reason">@if (!fetchedSource()) { {{ 'episodes.research.facts.requiresSource' | transloco }} }</p>
     }
     <p role="status">{{ (dirty() ? 'episodes.factSheet.unsaved' : 'episodes.factSheet.saved') | transloco }}</p>
-    <p class="hint">{{ 'episodes.factSheet.reopenStoryHint' | transloco }}</p>
+    @if (running() && sheet()?.status === 'draft') { <p class="hint">{{ 'episodes.factSheet.reopenStoryHint' | transloco }}</p> }
   }
   @if (!approved() || dirty()) {
     <button type="button" [disabled]="!canGenerate() || generating() || running() || busy() || retryBlocked()" aria-describedby="research-generate-reason" (click)="generate.emit()">{{ (generating() || buildingSheet() ? 'episodes.factSheet.generating' : 'episodes.factSheet.generate') | transloco }}</button>

@@ -27,4 +27,13 @@ describe('isSafeHttpUrl (QA)', () => {
   it('accepts an upper-case scheme because the URL parser lower-cases it', () => {
     expect(isSafeHttpUrl('HTTP://NEWS.EXAMPLE/A')).toBe(true);
   });
+
+  it('refuses a link that carries credentials, however the host is dressed', () => {
+    // A userinfo part is how a link pretends to point at one host while it points at another, and the page never needs
+    // to send credentials — so `user@host` is refused whichever part of it is present.
+    expect(isSafeHttpUrl('https://vnexpress.net@evil.example/story')).toBe(false);
+    expect(isSafeHttpUrl('https://user:secret@news.example/a')).toBe(false);
+    expect(isSafeHttpUrl('http://user@news.example/a')).toBe(false);
+    expect(isSafeHttpUrl('https://news.example@/a')).toBe(false);
+  });
 });

@@ -14,7 +14,7 @@ import { ResearchRepository } from '../domain/research.repository';
 import { SeriesOptionsRepository } from '../domain/series-options.repository';
 import { FakeEpisodeRealtime } from '../testing/fake-episode-realtime';
 import { episodeDetail, FakeEpisodesRepository } from '../testing/fake-episodes.repository';
-import { FakeResearchRepository, fact, factSheet, source, sourceList } from '../testing/fake-research.repository';
+import { FakeResearchRepository, fact, factSheet, INVALID_CONTENT_FIELDS, source, sourceList } from '../testing/fake-research.repository';
 import { FakeSeriesOptionsRepository } from '../testing/fake-series-options.repository';
 import { DIRTY_DEBOUNCE_MS, ResearchStore } from './research.store';
 
@@ -43,6 +43,15 @@ function flush(ms = 0): Promise<void> {
 /** README D18: an edit turns the draft dirty only after the debounce, and every write needs a dirty draft. */
 function edited(): Promise<void> {
   return flush(DIRTY_DEBOUNCE_MS + 5);
+}
+
+/**
+ * The page's own "the run is over" path: an accepted generate holds the build button until a read says otherwise (F3),
+ * so a spec that generates twice has to let the episode report the run finished in between.
+ */
+async function settleRun(store: ResearchStore, episodes: FakeEpisodesRepository): Promise<void> {
+  episodes.scriptGet(() => Promise.resolve(episodeDetail({ id: EPISODE_ID, seriesId: SERIES_ID, generation: null })));
+  await store.refresh(EPISODE_ID);
 }
 
 interface Harness {
@@ -391,7 +400,7 @@ describe('ResearchStore sources', () => {
 
 describe('ResearchStore generation', () => {
   it('generates once per click: the same key after a network error, a new one after a 409 or a 422', async () => {
-    const { store, repo } = setup();
+    const { store, repo, episodes } = setup();
     repo.seed(sourceList([source(1)]), draftSheet());
     await store.load(EPISODE_ID);
     repo.scriptGenerate(() => rejected(appError('network_error', 0)));
@@ -404,10 +413,16 @@ describe('ResearchStore generation', () => {
     expect(repo.generateCalls[1]!.key).toBe(repo.generateCalls[0]!.key);
     expect(repo.generateCalls[0]!.intent).toBe('fact_sheet.generate');
 
+    // That replay was accepted, so a run is live now (F3): the next clicks wait for the episode to report it finished.
+    await settleRun(store, episodes);
+
     repo.scriptGenerate(() => rejected(appError('fact_sheet_generation_in_progress', 409)));
     await store.generate(EPISODE_ID);
     await store.generate(EPISODE_ID);
     expect(repo.generateCalls[3]!.key).not.toBe(repo.generateCalls[0]!.key);
+
+    // The second click of that phase was accepted too, so its run settles before the last phase as well.
+    await settleRun(store, episodes);
 
     // A 422 (the key was already used) settles the intent too, so the next click mints a fresh key (Acceptance).
     repo.scriptGenerate(() => rejected(appError('idempotency_key_reused', 422)));
@@ -543,12 +558,14 @@ describe('ResearchStore draft and writes', () => {
 
     expect(result.ok).toBe(false);
     expect(store.conflict()).toEqual({ etag: SHEET_ETAG });
+    // F5: the dialog can tell which write lost the race — a save here.
+    expect(store.conflictSource()).toBe('save');
     expect(store.panelError()).toBeNull();
     expect(store.draft()[0]!.statement).toBe('Edited 1');
     expect(store.savingFactSheet()).toBe(false);
   });
 
-  it('treats a 428 as a conflict and as the banner of a client bug', async () => {
+  it('treats a 428 as the banner of a client bug and never opens the conflict dialog', async () => {
     const { store, repo } = setup();
     repo.seed(sourceList([source(1)]), draftSheet());
     await store.load(EPISODE_ID);
@@ -558,7 +575,9 @@ describe('ResearchStore draft and writes', () => {
 
     await store.save(EPISODE_ID);
 
-    expect(store.conflict()).toEqual({ etag: SHEET_ETAG });
+    // 428 is our own bug (no If-Match went out): there is nothing for the user to choose between, so it is a banner.
+    expect(store.conflict()).toBeNull();
+    expect(store.conflictSource()).toBeNull();
     expect(store.panelError()?.code).toBe('if_match_required');
   });
 
@@ -577,6 +596,7 @@ describe('ResearchStore draft and writes', () => {
 
     expect(result.ok).toBe(true);
     expect(store.conflict()).toBeNull();
+    expect(store.conflictSource()).toBeNull();
     expect(store.factSheet()?.version).toBe(2);
     expect(store.draft()[0]!.statement).toBe('Theirs');
     expect(store.dirty()).toBe(false);
@@ -725,5 +745,216 @@ describe('ResearchStore realtime', () => {
     TestBed.resetTestingModule();
 
     expect(realtime.subscriptions[0]!.unsubscribed).toBe(true);
+  });
+});
+
+describe('ResearchStore review fixes', () => {
+  it('scopes a 429 of the add form to that form and reads Retry-After: 0 as no wait', async () => {
+    const { store, repo } = setup();
+    repo.seed(sourceList([source(1)]), draftSheet());
+    await store.load(EPISODE_ID);
+    store.editFact('f1', { statement: 'Changed' });
+    repo.scriptAdd(() => rejected(appError('rate_limited', 429, { retryAfterSec: 30 })));
+
+    await store.addUrl(EPISODE_ID, 'https://example9.com/article');
+
+    expect(store.formError()?.code).toBe('rate_limited');
+    expect(store.formRateLimitSeconds()).toBe(30);
+    // F2: the refused submit holds its own form only — the sheet path and the rows stay live.
+    expect(store.rateLimitSeconds()).toBeNull();
+    expect(store.canSave()).toBe(true);
+    expect(store.canGenerate()).toBe(true);
+    await store.remove(EPISODE_ID, 'source-1');
+    expect(repo.removeCalls).toHaveLength(1);
+
+    repo.scriptAdd(() => rejected(appError('rate_limited', 429, { retryAfterSec: 0 })));
+    await store.addNote(EPISODE_ID, 'A note');
+
+    // `Retry-After: 0` is not a wait: neither state may hold a control for zero seconds.
+    expect(store.formRateLimitSeconds()).toBeNull();
+    expect(store.rateLimitSeconds()).toBeNull();
+  });
+
+  it('reads the run a 202 named without waiting for an event', async () => {
+    const { store, repo, episodes } = setup();
+    repo.seed(sourceList([source(1)]), draftSheet());
+    await store.load(EPISODE_ID);
+    expect(store.running()).toBe(false);
+    repo.generateResult = { runId: 'run-9', factSheetId: null, status: 'queued' };
+
+    const result = await store.generate(EPISODE_ID);
+
+    expect(result.ok).toBe(true);
+    // F3: the answer is the truth about the run until the next read, so the build button holds from here on.
+    expect(store.running()).toBe(true);
+    expect(store.kind()).toBe('fact_sheet');
+    expect(store.generating()).toBe(false);
+    expect(store.canGenerate()).toBe(false);
+
+    // The next detail read replaces the local run state (a finished run releases the button).
+    episodes.scriptGet(() => Promise.resolve(episodeDetail({
+      id: EPISODE_ID,
+      seriesId: SERIES_ID,
+      generation: { kind: 'fact_sheet', status: 'succeeded', stage: 'done', errorCode: null, startedAt: null, processingPaused: null },
+    })));
+    await store.refresh(EPISODE_ID);
+
+    expect(store.running()).toBe(false);
+    expect(store.canGenerate()).toBe(true);
+  });
+
+  it('clears the open intents when the page moves to another episode', async () => {
+    const { store, repo, episodes } = setup();
+    repo.seed(sourceList([source(1)]), draftSheet());
+    await store.load(EPISODE_ID);
+    // A network failure is the one answer that keeps its key open (a retry replays it).
+    repo.scriptAdd(() => rejected(appError('network_error', 0)));
+    repo.scriptGenerate(() => rejected(appError('network_error', 0)));
+    await store.addUrl(EPISODE_ID, 'https://example9.com/article');
+    await store.generate(EPISODE_ID);
+    const addKey = repo.addCalls[0]!.key;
+    const generateKey = repo.generateCalls[0]!.key;
+
+    episodes.scriptGet(() => Promise.resolve(episodeDetail({ id: OTHER_EPISODE_ID, seriesId: SERIES_ID, generation: null })));
+    await store.load(OTHER_EPISODE_ID);
+    repo.scriptAdd(() => Promise.resolve(source(2)));
+    repo.generateResult = { runId: 'run-2', factSheetId: null, status: 'queued' };
+    await store.addUrl(OTHER_EPISODE_ID, 'https://example10.com/article');
+    await store.generate(OTHER_EPISODE_ID);
+
+    // F4: the failed submit of the episode we left is never replayed for the new one (that would be a duplicate write).
+    expect(repo.addCalls[1]!.key).not.toBe(addKey);
+    expect(repo.generateCalls[1]!.key).not.toBe(generateKey);
+  });
+
+  it('names an approve conflict and refuses save-mine while the draft is clean', async () => {
+    const { store, repo } = setup();
+    repo.seed(sourceList([source(1), source(2)]), factSheet(1, { etag: SHEET_ETAG, facts: [fact(1), fact(2)] }));
+    await store.load(EPISODE_ID);
+    repo.scriptApprove(() => rejected(appError('fact_sheet_conflict', 412)));
+
+    await store.approve(EPISODE_ID);
+
+    expect(store.conflict()).toEqual({ etag: SHEET_ETAG });
+    expect(store.conflictSource()).toBe('approve');
+    // F5: nothing was edited, so the local document *is* the server's — there is nothing of mine to re-send.
+    const refused = await store.saveMineAsNewVersion(EPISODE_ID);
+    expect(refused.ok).toBe(false);
+    expect(repo.saveCalls).toHaveLength(0);
+
+    // After an edit it is a real divergence, and the dialog's second button sends it against the fresh ETag.
+    repo.scriptSheet(() => Promise.resolve(factSheet(2, { etag: '"fs-2"', facts: [fact(1), fact(2)] })));
+    store.editFact('f1', { statement: 'Mine' });
+
+    const saved = await store.saveMineAsNewVersion(EPISODE_ID);
+
+    expect(saved.ok).toBe(true);
+    expect(repo.saveCalls[0]!.etag).toBe('"fs-2"');
+  });
+
+  it('reports "Edit" on an approved sheet as the source of its conflict', async () => {
+    const { store, repo } = setup();
+    repo.seed(sourceList([source(1)]), factSheet(3, { status: 'approved', facts: [fact(1)] }));
+    await store.load(EPISODE_ID);
+    repo.scriptSave(() => rejected(appError('fact_sheet_conflict', 412)));
+
+    await store.startEdit(EPISODE_ID);
+
+    expect(store.conflictSource()).toBe('edit');
+  });
+
+  it('decides save, approve and a refetch without waiting for the 150 ms debounce', async () => {
+    vi.useFakeTimers();
+    const { store, repo } = setup();
+    repo.seed(sourceList([source(1)]), draftSheet());
+    await store.load(EPISODE_ID);
+
+    store.editFact('f1', { statement: 'Changed' });
+
+    // D18 keeps the tab guard trailing the edit; the decisions never wait for it (F7).
+    expect(store.dirty()).toBe(false);
+    expect(store.canSave()).toBe(true);
+    expect(store.canApprove()).toBe(false);
+
+    // A read inside the window must not overwrite the draft with the version it fetched.
+    repo.scriptSheet(() => Promise.resolve(factSheet(2, { etag: '"fs-2"', facts: [fact(1, { statement: 'Theirs' })] })));
+    await store.refresh(EPISODE_ID);
+
+    expect(store.draft()[0]!.statement).toBe('Changed');
+    expect(store.factSheet()?.version).toBe(1);
+    vi.useRealTimers();
+  });
+
+  it('retires the invalid-content banner when the owner edits the facts it named', async () => {
+    const { store, repo } = setup();
+    repo.seed(sourceList([source(1)]), draftSheet());
+    await store.load(EPISODE_ID);
+    store.addFact(['source-1']);
+    store.editFact(store.draft()[1]!.clientKey, { statement: 'New fact' });
+    // The refusal names the second row with the fake's own pointer (`content.facts[1].sourceIds`).
+    repo.scriptSave(() => rejected(appError('fact_sheet_invalid_content', 400, { fieldErrors: INVALID_CONTENT_FIELDS })));
+    await store.save(EPISODE_ID);
+    expect(store.panelError()?.code).toBe('fact_sheet_invalid_content');
+    expect(store.panelError()?.fieldErrors['content.facts[1].sourceIds']).toBeDefined();
+
+    // F8: the edit is what fixes the named field, so the banner (and its per-fact pointer) retires with it.
+    store.editFact(store.draft()[1]!.clientKey, { statement: 'Now it has text' });
+
+    expect(store.panelError()).toBeNull();
+    expect(store.canSave()).toBe(true);
+  });
+
+  it('keeps the row keys and the source list identity across refetches', async () => {
+    const { store, repo } = setup();
+    repo.seed(sourceList([source(1), source(2)]), draftSheet());
+    await store.load(EPISODE_ID);
+    const sources = store.sources();
+    const keys = store.draft().map((fact) => fact.clientKey);
+
+    // P1: a no-op refetch is not a change, so `[sources]` is the very same array and no row is re-keyed.
+    await store.refresh(EPISODE_ID);
+    expect(store.sources()).toBe(sources);
+
+    // A new document under a new ETag is adopted, and a stored fact keeps the row key it already had.
+    repo.scriptSheet(() => Promise.resolve(factSheet(2, { etag: '"fs-2"', facts: [fact(1, { statement: 'Theirs' })] })));
+    await store.refresh(EPISODE_ID);
+
+    expect(store.factSheet()?.version).toBe(2);
+    expect(store.draft()[0]!.statement).toBe('Theirs');
+    expect(store.draft()[0]!.clientKey).toBe(keys[0]);
+
+    // A real change of the rows still lands.
+    repo.listResult = sourceList([source(1), source(2, { status: 'failed' })]);
+    await store.refresh(EPISODE_ID);
+
+    expect(store.sources()).not.toBe(sources);
+    expect(store.sources()[1]!.status).toBe('failed');
+  });
+
+  it('starts the episode read with the two research reads in the same tick', async () => {
+    const { store, repo, episodes } = setup();
+    repo.seed(sourceList([source(1)]), draftSheet());
+
+    const pending = store.load(EPISODE_ID);
+
+    // P2: all three requests go out before any of them answers (the old chain waited for the pair first).
+    expect(repo.listCalls).toHaveLength(1);
+    expect(repo.sheetCalls).toHaveLength(1);
+    expect(episodes.getCalls).toHaveLength(1);
+    await pending;
+    expect(store.loaded()).toBe(true);
+  });
+
+  it('keeps the gate open when the series topic could not be read', async () => {
+    const { store, repo, series } = setup();
+    repo.seed(sourceList([source(1)]), factSheet(1, { status: 'approved' }));
+    series.scriptGet(() => rejected(appError('internal_error', 500)));
+
+    await store.load(EPISODE_ID);
+
+    // P2: an unknown topic is never read as "not applicable": the editor must not be told anything about a topic
+    // the page does not know yet, and the server's own 409 stays the authority.
+    expect(store.loaded()).toBe(true);
+    expect(store.gate()).toBe('open');
   });
 });

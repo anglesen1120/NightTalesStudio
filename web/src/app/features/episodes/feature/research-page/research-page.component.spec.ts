@@ -4,44 +4,54 @@ import { ActivatedRoute, convertToParamMap, provideRouter } from '@angular/route
 import { of } from 'rxjs';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { AppError } from '@core/errors';
+import { ConflictDialog, type ConflictDialogData } from '@shared/ui';
+import { EPISODE_GATE } from '../../application/episode-gate';
 import { ZONELESS_TEST_PROVIDERS } from '../../../../testing/providers';
 import { ResearchStore } from '../../application/research.store';
-import { researchTranslations, source, fact, sheet } from '../../testing/research-ui.testing';
+import { researchCopy, researchCopies, researchTranslations, source, fact, sheet } from '../../testing/research-ui.testing';
 import type { Fact, FactSheet, ResearchSource, SourceLimits } from '../../domain/research.model';
 import { ResearchPageComponent } from './research-page.component';
 class FakeResearchStore {
   readonly sources=signal<readonly ResearchSource[]>([]); readonly limits=signal<SourceLimits|null>(null); readonly factSheet=signal<FactSheet|null>(null); readonly draft=signal<readonly (Fact & {readonly clientKey:string})[]>([]);
   readonly loaded=signal(true); readonly loading=signal(false); readonly refreshing=signal(false); readonly generation=signal(null); readonly running=signal(false); readonly pendingCount=signal(0); readonly urlCount=signal(0); readonly canAddUrl=signal(true); readonly usedCount=signal(0); readonly maxCount=signal(10); readonly canGenerate=signal(false); readonly canSave=signal(false); readonly canApprove=signal(false); readonly dirty=signal(false); readonly isApproved=signal(false); readonly gate=signal('sheet_not_approved'); readonly isTrueCrime=signal(true); readonly savingFactSheet=signal(false); readonly approvingFactSheet=signal(false); readonly generating=signal(false);
-  readonly error=signal<AppError|null>(null); readonly formError=signal<AppError|null>(null); readonly panelError=signal<AppError|null>(null); readonly conflict=signal(null); readonly rateLimitSeconds=signal(null);
+  readonly error=signal<AppError|null>(null); readonly formError=signal<AppError|null>(null); readonly panelError=signal<AppError|null>(null); readonly conflict=signal<{etag:string}|null>(null); readonly rateLimitSeconds=signal<number|null>(null);
+  readonly formRateLimitSeconds=signal<number|null>(null); readonly conflictSource=signal<'save'|'approve'|'edit'|null>(null);
   loads:string[]=[]; watches:string[]=[]; refreshes=0;
   load(id:string) {this.loads.push(id); return Promise.resolve({ok:true as const,value:undefined});} watch(id:string){this.watches.push(id);}
   refresh(){this.refreshes++;return Promise.resolve({ok:true as const,value:undefined});}
-  clearFormError(){this.formError.set(null);} clearPanelError(){this.panelError.set(null);} reset(){this.dirty.set(false);this.draft.set([]);this.factSheet.set(null);}
+  clearFormError(){this.formError.set(null);this.formRateLimitSeconds.set(null);} clearPanelError(){this.panelError.set(null);this.rateLimitSeconds.set(null);} reset(){this.dirty.set(false);this.draft.set([]);this.factSheet.set(null);}
 }
 afterEach(() => TestBed.resetTestingModule());
 async function setup(lang:'vi'|'en'='en', store=new FakeResearchStore()) {
   const params=convertToParamMap({id:'episode-a'});
-  await TestBed.configureTestingModule({imports:[ResearchPageComponent,researchTranslations(lang)],providers:[...ZONELESS_TEST_PROVIDERS,provideRouter([]),{provide:ResearchStore,useValue:store},{provide:ActivatedRoute,useValue:{paramMap:of(params),snapshot:{paramMap:params},parent:null}}],deferBlockBehavior:DeferBlockBehavior.Manual}).compileComponents();
+  const dialogs:ConflictDialogData[]=[];
+  await TestBed.configureTestingModule({imports:[ResearchPageComponent,researchTranslations(lang)],providers:[...ZONELESS_TEST_PROVIDERS,provideRouter([]),{provide:ConflictDialog,useValue:{open:(data:ConflictDialogData)=>{dialogs.push(data);return {afterClosed:()=>of('cancel' as const)};}}},{provide:ActivatedRoute,useValue:{paramMap:of(params),snapshot:{paramMap:params},parent:null}}],deferBlockBehavior:DeferBlockBehavior.Manual})
+    .overrideComponent(ResearchPageComponent,{set:{providers:[{provide:ResearchStore,useValue:store},{provide:EPISODE_GATE,useValue:store.gate}]}}).compileComponents();
   const fixture=TestBed.createComponent(ResearchPageComponent);
   await fixture.whenStable();
   for (const block of await fixture.getDeferBlocks()) await block.render(DeferBlockState.Complete);
   await fixture.whenStable();
-  return {fixture,store,component:fixture.componentInstance,root:fixture.nativeElement as HTMLElement};
+  return {fixture,store,dialogs,component:fixture.componentInstance,root:fixture.nativeElement as HTMLElement};
 }
 describe('ResearchPageComponent',()=>{
   it.each(['vi','en'] as const)('loads and watches once and announces the closed gate in %s',async lang=>{
     const {store,root}=await setup(lang);expect(store.loads).toEqual(['episode-a']);expect(store.watches).toEqual(['episode-a']);
-    expect(root.querySelector('.gate[role=status]')?.textContent).toContain(lang==='en'?'Approve the fact sheet':'Cần duyệt bảng dữ kiện');
+    expect(root.querySelector('.gate[role=status]')?.textContent).toContain(researchCopies[lang].research.gate.writeStoryBlocked);
     expect(root.textContent).not.toMatch(/\b(credits?|cost|price|balance)\b|tín dụng|chi phí|số dư/i);
   });
   it('renders 200 null as empty, focuses add form and refreshes manually',async()=>{
-    const {root,store}=await setup();expect(root.querySelector('nts-error-state')).toBeNull();expect(root.textContent).toContain('No fact sheet yet');
+    const {root,store}=await setup();expect(root.querySelector('nts-error-state')).toBeNull();expect(root.textContent).toContain(researchCopy.factSheet.empty);
     expect(document.activeElement?.id).toContain('research-source-field');
-    [...root.querySelectorAll<HTMLButtonElement>('button')].find(button=>button.textContent?.trim()==='Refresh status')!.click();expect(store.refreshes).toBe(1);
+    [...root.querySelectorAll<HTMLButtonElement>('button')].find(button=>button.textContent?.trim()===researchCopy.research.sources.refresh)!.click();expect(store.refreshes).toBe(1);
   });
-  it('renders ErrorState only for 403 and displays source-load network errors inline',async()=>{
+  it('renders access errors as fatal and keeps loaded data on a refresh network error',async()=>{
     const {fixture,root,store}=await setup();store.error.set({code:'forbidden',status:403,kind:'auth',fieldErrors:{}});await fixture.whenStable();expect(root.querySelector('nts-error-state')).not.toBeNull();
     store.error.set({code:'network_error',status:0,kind:'network',fieldErrors:{}});await fixture.whenStable();expect(root.querySelector('nts-error-state')).toBeNull();expect(root.querySelector('nts-source-add-form')).not.toBeNull();
+  });
+  it('treats a failed initial source load as unavailable and retries load rather than refresh',async()=>{
+    const store=new FakeResearchStore();store.loaded.set(false);store.error.set({code:'network_error',status:0,kind:'network',fieldErrors:{}});
+    const {root}=await setup('en',store);expect(root.querySelector('nts-error-state')).not.toBeNull();expect(root.querySelector('nts-source-add-form, nts-fact-sheet-panel')).toBeNull();
+    root.querySelector<HTMLButtonElement>('nts-error-state button')!.click();expect(store.loads).toEqual(['episode-a','episode-a']);expect(store.refreshes).toBe(0);
   });
   it('uses wire source limits and protects tab navigation even before debounced dirty flips',async()=>{
     const store=new FakeResearchStore();store.sources.set([source()]);store.usedCount.set(1);store.maxCount.set(7);store.factSheet.set(sheet());store.draft.set([fact({statement:'Unsaved'})]);
@@ -55,5 +65,13 @@ describe('ResearchPageComponent',()=>{
   it('disables URL additions at the daily limit but still permits notes',async()=>{
     const store=new FakeResearchStore();store.limits.set({maxPerEpisode:10,urlSourcesLast24h:20,maxUrlSourcesPerDay:20});
     const {component}=await setup('en',store);expect(component.canAddUrl()).toBe(false);
+  });
+  it.each(['save','approve','edit'] as const)('offers save-as-new only for a save conflict, not %s',async source=>{
+    const store=new FakeResearchStore();store.conflictSource.set(source);store.conflict.set({etag:'fresh'});
+    const {dialogs}=await setup('en',store);expect(dialogs).toHaveLength(1);expect(dialogs[0]?.saveAsNewLabel).toBe(source==='save'?'errors.conflict.saveAsNew':undefined);
+  });
+  it('renders zero Retry-After and clears both independent waits on elapsed',async()=>{
+    const store=new FakeResearchStore();store.rateLimitSeconds.set(0);store.formRateLimitSeconds.set(0);
+    await setup('en',store);expect(store.rateLimitSeconds()).toBeNull();expect(store.formRateLimitSeconds()).toBeNull();
   });
 });

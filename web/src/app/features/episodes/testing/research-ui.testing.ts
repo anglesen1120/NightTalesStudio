@@ -6,6 +6,8 @@ import coreVi from '../../../../assets/i18n/core/vi.json';
 import episodesVi from '../../../../assets/i18n/episodes/vi.json';
 import errorsVi from '../../../../assets/i18n/errors/vi.json';
 import type { Fact, FactSheet, ResearchSource } from '../domain/research.model';
+export const researchCopies = { en: episodesEn, vi: episodesVi };
+export const researchCopy = episodesEn;
 export const researchTranslations = (lang: 'vi' | 'en' = 'en') => TranslocoTestingModule.forRoot({
   langs: { en: { ...coreEn, episodes: episodesEn, errors: errorsEn }, vi: { ...coreVi, episodes: episodesVi, errors: errorsVi }, 'episodes/en': episodesEn, 'episodes/vi': episodesVi, 'errors/en': errorsEn, 'errors/vi': errorsVi },
   translocoConfig: { availableLangs: ['vi', 'en'], defaultLang: lang, fallbackLang: lang, reRenderOnLangChange: true }, preloadLangs: true,

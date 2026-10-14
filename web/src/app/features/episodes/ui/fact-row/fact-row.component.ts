@@ -30,6 +30,7 @@ export class FactRowComponent implements OnChanges {
   readonly max = FACT_STATEMENT_MAX_CHARS;
   readonly isSafeUrl = isSafeHttpUrl;
   readonly overlapPercent = computed(() => Math.round((this.fact().sourceOverlap ?? 0) * 100) + '%');
+  readonly selectableSources = computed(() => this.sources().filter(source => source.status === 'fetched' || this.fact().sourceIds.includes(source.id)));
   readonly refs = computed(() => this.fact().sourceIds.map((id, index) => {
     const ref = this.fact().sources.find(item => item.sourceId === id);
     const source = this.sources().find(item => item.id === id);

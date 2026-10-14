@@ -5,12 +5,15 @@ import type { GateState } from '../domain/episode-gate';
 import { ResearchStore } from '../application/research.store';
 
 /**
- * The editor-side stand-in for the route-provided research store: the story page injects it optionally and reads only
- * the gate and one `load()`. Every spec that mounts `StoryReviewPage` over a provider override can hand this in, so the
- * page never reaches a real `ResearchStore` (and never an HTTP client) in a unit test.
+ * The editor-side stand-in for the component-owned research store: the story page reads its gate and one `load()`.
+ * Every spec that replaces `StoryReviewPage.providers` adds this pair, so it never reaches a real research store
+ * or HTTP client in a unit test.
  */
 export interface FakeResearchStore {
   readonly gate: Signal<GateState>;
+  readonly formRateLimitSeconds: Signal<number | null>;
+  readonly rateLimitSeconds: Signal<number | null>;
+  readonly conflictSource: Signal<'save' | 'approve' | 'edit' | null>;
   readonly loadedEpisodeIds: string[];
   load: (episodeId: string) => Promise<{ ok: true; value: undefined }>;
   watch: () => void;
@@ -22,6 +25,9 @@ export function fakeResearchStore(initial: GateState = 'open'): FakeResearchStor
   const loadedEpisodeIds: string[] = [];
   return {
     gate: computed(() => gate()),
+    formRateLimitSeconds: signal<number | null>(null).asReadonly(),
+    rateLimitSeconds: signal<number | null>(null).asReadonly(),
+    conflictSource: signal<'save' | 'approve' | 'edit' | null>(null).asReadonly(),
     loadedEpisodeIds,
     load: (episodeId: string) => {
       loadedEpisodeIds.push(episodeId);

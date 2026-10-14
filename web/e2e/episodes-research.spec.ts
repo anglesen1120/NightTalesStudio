@@ -9,10 +9,16 @@ import errorsEn from '../src/assets/i18n/errors/en.json' with {type:'json'};
 import errorsVi from '../src/assets/i18n/errors/vi.json' with {type:'json'};
 import type { E2eLang } from './fixtures/series-stubs';
 const copy={en:episodesEn,vi:episodesVi};
-async function open(page:Page,lang:E2eLang,server?:ResearchServer){
+async function open(page:Page,lang:E2eLang,server?:ResearchServer,fromEditor=false){
   await stubEpisodes(page,{lang,topic:'true_crime'});
   const state=await stubResearch(page,server);
-  await page.goto(RESEARCH_PATH);
+  await page.goto(fromEditor ? '/episodes/'+EPISODE_ID : RESEARCH_PATH);
+  if(fromEditor){
+    await expect(page.locator('.story-review-page__gate[role=status]')).toContainText(copy[lang].research.gate.writeStoryBlocked);
+    await expect(page.getByRole('button',{name:copy[lang].editor.action.generate_story,exact:true})).toHaveCount(0);
+    await expectA11yClean(page);
+    await page.getByRole('link',{name:copy[lang].editor.research.link,exact:true}).click();
+  }
   await expect(page.getByRole('heading',{name:copy[lang].research.title,exact:true})).toBeVisible();
   await page.locator('.fact-sheet-slot').scrollIntoViewIfNeeded();
   await expect(page.locator('nts-fact-sheet-panel')).toBeVisible();
@@ -33,7 +39,7 @@ for(const lang of ['vi','en'] as const){
    await expect(page.getByRole('button',{name:c.factSheet.generate,exact:true})).toBeEnabled();await expectA11yClean(page);expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)).toBe(true);
   });
   test('build, edit/add/delete, save If-Match, approve and unlock editor',async({page})=>{
-   const c=copy[lang];const server=seeded();server.sheet=null;await open(page,lang,server);await page.getByRole('button',{name:c.factSheet.generate,exact:true}).click();
+   const c=copy[lang];const server=seeded();server.sheet=null;await open(page,lang,server,true);await page.getByRole('button',{name:c.factSheet.generate,exact:true}).click();
    await expect.poll(()=>server.requests.filter(request=>request.url().endsWith('/fact-sheet/generate')).length).toBe(1);expect(server.requests.find(request=>request.url().endsWith('/fact-sheet/generate'))?.headers()['idempotency-key']).toBeTruthy();
    server.generating=false;server.sheet=researchSheet(server.sources);await page.getByRole('button',{name:c.research.sources.refresh,exact:true}).click();const panel=page.locator('nts-fact-sheet-panel');await panel.scrollIntoViewIfNeeded();await expect(panel.locator('textarea')).toHaveCount(1);
    await panel.locator('textarea').first().fill('Edited verified fact.');await page.getByRole('button',{name:c.research.facts.add,exact:true}).click();await expect(panel.locator('textarea')).toHaveCount(2);await panel.locator('textarea').nth(1).fill('Temporary fact');await page.getByRole('button',{name:c.research.facts.deleteLabel.replace('{{index}}','2'),exact:true}).click();await expect(panel.locator('textarea')).toHaveCount(1);
@@ -61,5 +67,32 @@ for(const lang of ['vi','en'] as const){
    const server=seeded();server.sources=[researchSource(1,{title:'<img src=x onerror=alert(1)>{{title}}',url:'javascript:alert(1)',registrableDomain:'javascript:alert(1)'})];server.sheet=researchSheet(server.sources);await open(page,lang,server);
    await expect(page.locator('nts-source-row')).toContainText('<img src=x onerror=alert(1)>{{title}}');await expect(page.locator('nts-source-row img, nts-source-row a')).toHaveCount(0);await page.locator('nts-fact-sheet-panel').scrollIntoViewIfNeeded();await expect(page.locator('nts-fact-row')).toBeVisible();await expect(page.locator('nts-fact-row a')).toHaveCount(0);await expectA11yClean(page);
   });
+  test('initial source-load failure is unavailable, then Retry loads the real empty state',async({page})=>{
+    await stubEpisodes(page,{lang,topic:'true_crime'});await stubResearch(page);let fail=true;
+    await page.route(url=>url.pathname==='/api/v1/episodes/'+EPISODE_ID+'/sources',async route=>{
+      if(fail){fail=false;return route.fulfill({status:503,contentType:'application/problem+json',body:JSON.stringify({status:503,title:'Unavailable',code:'unknown_error'})});}
+      return route.fallback();
+    });
+    await page.goto(RESEARCH_PATH);await expect(page.locator('nts-error-state')).toBeVisible();
+    await expect(page.locator('nts-source-add-form,nts-fact-sheet-panel')).toHaveCount(0);await expectA11yClean(page);
+    await page.locator('nts-error-state').getByRole('button',{name:(lang==='vi'?errorsVi:errorsEn).action.retry,exact:true}).click();
+    await expect(page.locator('nts-source-add-form')).toBeVisible();await expect(page.getByText(copy[lang].factSheet.empty,{exact:true})).toBeVisible();await expectA11yClean(page);
+  });
+  for(const command of ['approve','edit'] as const){
+    test(command+' conflict offers only Reload latest, never a draft-producing save-as-new',async({page})=>{
+      const c=copy[lang],server=seeded();
+      if(command==='edit'&&server.sheet)server.sheet={...server.sheet,status:'approved'};
+      await open(page,lang,server);
+      server.sheet={...researchSheet(server.sources,2),status:command==='edit'?'approved':'draft'};
+      server.sheet.facts[0]!.statement='Latest verified fact.';
+      await page.getByRole('button',{name:command==='edit'?c.factSheet.edit:c.factSheet.approve,exact:true}).click();
+      const dialog=page.getByRole('dialog');await expect(dialog).toBeVisible();await waitForOverlayAnimationEnd(page);
+      await expect(dialog.getByRole('button',{name:(lang==='vi'?errorsVi:errorsEn).conflict.saveAsNew,exact:true})).toHaveCount(0);await expectA11yClean(page);
+      await dialog.getByRole('button',{name:(lang==='vi'?errorsVi:errorsEn).conflict.reload,exact:true}).click();await expect(dialog).toHaveCount(0);
+      if(command==='edit'){await expect(page.locator('nts-fact-row')).toContainText('Latest verified fact.');await expect(page.locator('nts-fact-row textarea')).toHaveCount(0);}
+      else await expect(page.locator('nts-fact-row textarea')).toHaveValue('Latest verified fact.');
+      await expectA11yClean(page);
+    });
+  }
  });
 }
