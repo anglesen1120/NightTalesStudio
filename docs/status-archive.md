@@ -4,6 +4,14 @@ History moved out of STATUS.md to keep the live file small. The initial archive 
 
 ## Resume-here history (Current/Previous blocks, Next actions)
 
+### Superseded backend Next Session 39 PR-open clause (2026-10-15, replaced when #197 merged as `a96592ff`)
+
+Replaced clause of the backend Next bullet (verbatim):
+
+Session 39: **05.1.2-T1** `render-params.v1` + `RenderSubmitMapper` + `SubtitlePresetCatalog` PR open (`feature/05.1.2-T1-s39`, from `develop` `04b06b20`, merged develop through #195 `489d26a4`; no migration; T2 gates closed; owner-approved 05 CR-14: `ImagePlanSummary` is the 03.2 counts shape, `BuildSubmit` takes prepared `ScenePrompt`s from `BuildPrompts`); unblocks 09.6.1-T1 and 09.6.2-T1 (hand-overs in the task Notes and §Open findings).
+
+Also replaced (STATUS line 52, same close-out), verbatim: `09.6.2-T1 still needs 05.1.2-T1.`
+
 ### Superseded web Next (Session 38) line (2026-10-15, replaced when #195 merged as `489d26a4`)
 
 Replaced text (verbatim):
