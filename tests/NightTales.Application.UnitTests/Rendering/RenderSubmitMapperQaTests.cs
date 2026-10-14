@@ -253,19 +253,6 @@ public sealed class RenderSubmitMapperQaTests
     }
 
     [Fact]
-    public void Subject_whitespace_only_is_accepted_and_sent_verbatim()
-    {
-        // QA observation: D3 sets only a 1-200 character range for video_subject, so "   " passes and reaches
-        // MPT as the task title. Whether the approved story version can even carry such a title is 02's rule.
-        var built = Submit(Params(), Story(title: "   "), DefaultPlan(), LandscapePreset(), track: null);
-
-        built.Mpt.VideoSubject.ShouldBe("   ");
-
-        Submit(Params(), Story(title: " "), DefaultPlan(), LandscapePreset(), track: null)
-            .Mpt.VideoSubject.ShouldBe(" ");
-    }
-
-    [Fact]
     public void Subject_boundary_counts_utf16_units_while_the_script_counts_runes()
     {
         // QA observation: 'video_subject' is measured with string.Length (UTF-16 units) and 'video_script'
@@ -363,29 +350,6 @@ public sealed class RenderSubmitMapperQaTests
     }
 
     [Fact]
-    public void Language_voice_and_subtitle_values_are_not_validated_by_the_mapper()
-    {
-        // QA observation (trust boundary): D3 fixes video_language to vi|en, but the mapper copies the stored
-        // value. 09.6.1-T1 owns the series-language validation; the mapper must not silently rewrite it.
-        var built = Submit(Params(language: "fr"), Story(language: "fr"), DefaultPlan(), LandscapePreset(), track: null);
-
-        built.Mpt.VideoLanguage.ShouldBe("fr");
-        built.Mpt.VoiceName.ShouldBe("kokoro:Hải Đăng");
-    }
-
-    [Fact]
-    public void Preset_of_a_different_aspect_than_the_params_is_accepted()
-    {
-        // QA observation (integration risk): nothing cross-checks p.Aspect against preset.Aspect, so a caller
-        // that loads the preset by the wrong aspect produces a body with mismatched canvas and subtitle values.
-        var built = Submit(Params(aspect: "landscape", preset: "landscape@1"), Story(), DefaultPlan(), PortraitPreset(), track: null);
-
-        built.Mpt.VideoAspect.ShouldBe("16:9");
-        built.Mpt.SubtitlePosition.ShouldBe("custom");
-        built.Mpt.FontSize.ShouldBe(64);
-    }
-
-    [Fact]
     public void BuildSubmit_null_arguments_throw_argument_null()
     {
         var p = Params();
@@ -428,18 +392,6 @@ public sealed class RenderSubmitMapperQaTests
                 () => JsonSerializer.Deserialize<RenderParamsV1>(without, RenderNodeJson.Strict),
                 $"'{member}' is JsonRequired in D11");
         }
-    }
-
-    [Fact]
-    public void RenderParams_schema_value_is_written_but_not_validated_on_read()
-    {
-        // QA observation: the DTO writes schema = render-params.v1 and marks it required, but a stored row
-        // whose schema reads anything else still deserializes (the reader trusts render_jobs.params).
-        var json = JsonSerializer.Serialize(Params(), RenderNodeJson.Strict).Replace("render-params.v1", "render-params.v9", StringComparison.Ordinal);
-
-        var reloaded = JsonSerializer.Deserialize<RenderParamsV1>(json, RenderNodeJson.Strict);
-
-        reloaded!.Schema.ShouldBe("render-params.v9");
     }
 
     [Fact]

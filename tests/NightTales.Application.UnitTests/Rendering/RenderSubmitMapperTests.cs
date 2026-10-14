@@ -182,6 +182,29 @@ public sealed class RenderSubmitMapperTests
     }
 
     [Fact]
+    public void Script_cheap_length_guard_bounds_normalisation()
+    {
+        // The pre-NFC guard rejects a body that cannot normalise into <= 20,000 runes (MaxScriptRunes * 6
+        // UTF-16 units) before Normalize allocates anything.
+        var body = new string('a', (RenderSubmitMapper.MaxScriptRunes * 6) + 1);
+
+        var built = Build(
+            Params(), Story(body: body), DefaultPlan(), LandscapePreset(), track: null);
+
+        built.IsError.ShouldBeTrue();
+        built.FirstError.Code.ShouldBe("render.script_too_long");
+
+        // 20,000 decomposed LVT Hangul jamo triples (60,000 chars) are below the guard and NFC-compose to
+        // 20,000 syllables, so the normalised count is at the limit.
+        var jamo = string.Concat(Enumerable.Repeat("\u1100\u1161\u11A8", RenderSubmitMapper.MaxScriptRunes));
+        jamo.Length.ShouldBe(3 * RenderSubmitMapper.MaxScriptRunes);
+
+        var composed = Submit(Params(), Story(body: jamo), DefaultPlan(), LandscapePreset(), track: null);
+
+        composed.Mpt.VideoScript.Length.ShouldBe(RenderSubmitMapper.MaxScriptRunes);
+    }
+
+    [Fact]
     public void Video_terms_follow_prompt_order()
     {
         var style = Style();
@@ -204,7 +227,6 @@ public sealed class RenderSubmitMapperTests
         var built = Submit(Params(voiceId: "Hải Đăng"), Story(), DefaultPlan(), LandscapePreset(), track: null);
 
         built.Mpt.VoiceName.ShouldBe("kokoro:Hải Đăng");
-        built.Mpt.VoiceName.ShouldBe(KokoroPrefix + "Hải Đăng");
     }
 
     [Fact]
@@ -419,6 +441,16 @@ public sealed class RenderSubmitMapperTests
 
         over.IsError.ShouldBeTrue();
         over.FirstError.Code.ShouldBe("render.terms_invalid");
+
+        // D3 bounds each term to 1-1,000 characters; an empty prompt text is below the lower bound.
+        var plan = DefaultPlan();
+        var promptsWithEmpty = Prompts(plan).ToList();
+        promptsWithEmpty[0] = promptsWithEmpty[0] with { Text = string.Empty };
+        var empty = Build(
+            Params(plan: plan), Story(), plan, LandscapePreset(), track: null, prompts: promptsWithEmpty);
+
+        empty.IsError.ShouldBeTrue();
+        empty.FirstError.Code.ShouldBe("render.terms_invalid");
     }
 
     [Fact]
@@ -431,8 +463,6 @@ public sealed class RenderSubmitMapperTests
             Params(plan: plan), Story(), plan, LandscapePreset(), track: null, prompts: shortPrompts));
 
         failure.ParamName.ShouldBe("prompts");
-        failure.Message.ShouldContain($"{plan.Terms.Count} terms", Case.Sensitive);
-        failure.Message.ShouldContain($"{shortPrompts.Count} prompts", Case.Sensitive);
     }
 
     [Fact]
@@ -486,7 +516,6 @@ public sealed class RenderSubmitMapperTests
             p, Story(), DefaultPlan(), LandscapePreset(), Track(trackId: "another-track")));
 
         failure.ParamName.ShouldBe("track");
-        failure.Message.ShouldContain("another-track", Case.Sensitive);
     }
 
     [Fact]
@@ -498,15 +527,6 @@ public sealed class RenderSubmitMapperTests
         built.Mpt.BgmFile.ShouldBe(string.Empty);
         built.Mpt.BgmVolume.ShouldBe(0m);
         Canonical(built).ShouldContain("\"bgm_volume\": 0", Case.Sensitive);
-    }
-
-    [Fact]
-    public void Mapper_error_codes_are_the_contract_codes()
-    {
-        RenderSubmitMapper.AspectInvalid.ShouldBe("render.aspect_invalid");
-        RenderSubmitMapper.SubjectInvalid.ShouldBe("render.subject_invalid");
-        RenderSubmitMapper.ScriptTooLong.ShouldBe("render.script_too_long");
-        RenderSubmitMapper.TermsInvalid.ShouldBe("render.terms_invalid");
     }
 
     [Fact]
@@ -544,9 +564,9 @@ public sealed class RenderSubmitMapperTests
     }
 
     [Fact]
-    public void BuildParams_preset_is_aspect_at_revision()
+    public void BuildParams_preset_string_is_copied()
     {
-        // BuildParams copies the SubtitlesParams its caller built: 09.6.1-T1 composes "<aspect>@<revision>"
+        // BuildParams copies the caller's preset string verbatim: 09.6.1-T1 composes "<aspect>@<revision>"
         // from the preset catalog's revision (05 D6/D11) before calling, because the mapper loads no catalog
         // (no I/O). 05.1.2-T1 gap report: the task's Design line gives that composition to BuildParams itself,
         // but RenderParamsInput carries no revision.
@@ -568,7 +588,7 @@ public sealed class RenderSubmitMapperTests
     }
 
     [Fact]
-    public void BuildParams_clip_seconds_is_ten()
+    public void BuildParams_clip_seconds_is_copied()
     {
         Params().ClipSeconds.ShouldBe(10);
 

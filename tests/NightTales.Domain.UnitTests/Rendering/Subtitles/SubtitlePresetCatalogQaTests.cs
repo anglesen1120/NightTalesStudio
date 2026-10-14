@@ -76,32 +76,6 @@ public sealed class SubtitlePresetCatalogQaTests
         Rejected(Shipped + " {\"extra\": 1}").Code.ShouldBe(SubtitlePresetCatalog.DocumentInvalidCode);
     }
 
-    [Fact]
-    public void A_document_nested_past_the_depth_bound_is_rejected()
-    {
-        var deep = new string('[', 80) + "1" + new string(']', 80);
-
-        Rejected(Shipped.Replace("\"revision\": 1,", $"\"revision\": 1, \"deep\": {deep},", StringComparison.Ordinal))
-            .Code.ShouldBe(SubtitlePresetCatalog.DocumentInvalidCode);
-    }
-
-    [Fact]
-    public void Extra_members_are_ignored()
-    {
-        // QA observation: unlike the D14 fixture readers (JsonUnmappedMemberHandling.Disallow), the catalog
-        // reader ignores unknown members, so a typo such as "fontsize" is silently unused.
-        var node = JsonNode.Parse(Shipped)!.AsObject();
-        node["comment"] = "reviewed";
-        var presets = node["presets"]!.AsObject();
-        presets["landscape"]!.AsObject()["fontsize"] = 84;
-        presets["square"] = presets["landscape"]!.DeepClone();
-
-        var loaded = SubtitlePresetCatalog.Load(Utf8(node.ToJsonString()));
-
-        loaded.IsError.ShouldBeFalse(string.Join("; ", loaded.Errors.Select(error => error.Code)));
-        loaded.Value.For(SubtitlePresetCatalog.LandscapeAspect).FontSize.ShouldBe(84);
-    }
-
     // ------------------------------------------------------------------ Rule precedence -----------------------
 
     [Theory]

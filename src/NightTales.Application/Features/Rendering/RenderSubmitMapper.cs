@@ -35,7 +35,7 @@ public static class RenderSubmitMapper
     public const string ScriptTooLong = "render.script_too_long";
 
     /// <summary>The submit carries no prompt or more than <see cref="MaxTerms"/> of them, or one prompt text
-    /// exceeds <see cref="MaxTermLength"/> characters (05 D3, 03 D4).</summary>
+    /// is shorter than 1 or longer than <see cref="MaxTermLength"/> characters (05 D3, 03 D4).</summary>
     public const string TermsInvalid = "render.terms_invalid";
 
     /// <summary>The longest <c>video_subject</c> (05 D3).</summary>
@@ -140,12 +140,21 @@ public static class RenderSubmitMapper
         // 3. NFC first, the Rune count second (04 V1, CR-3), and the normalised text is what is sent.
         // An unpaired surrogate is not valid UTF-16: Normalize throws ArgumentException (a programming error, not a
         // validation result). It cannot arrive from PostgreSQL text or a UTF-8 JSON body, so no error code is added.
+        static Error ScriptTooLongError() => Error.Validation(
+            ScriptTooLong,
+            $"The story body must be 1-{MaxScriptRunes} code points after NFC normalisation.");
+
+        // NFC composes at most 3 code points into one rune, each at most 2 UTF-16 units, so a body longer than
+        // MaxScriptRunes * 6 UTF-16 units cannot normalise to <= MaxScriptRunes runes; this bounds the allocation.
+        if (story.Body.Length > MaxScriptRunes * 6)
+        {
+            return ScriptTooLongError();
+        }
+
         var script = story.Body.Normalize(NormalizationForm.FormC);
         if (CountRunes(script) is < 1 or > MaxScriptRunes)
         {
-            return Error.Validation(
-                ScriptTooLong,
-                $"The story body must be 1-{MaxScriptRunes} code points after NFC normalisation.");
+            return ScriptTooLongError();
         }
 
         // 4. The terms are the prepared scene prompts, in slot order (03 D4). The caller builds them from this
@@ -165,11 +174,11 @@ public static class RenderSubmitMapper
 
         foreach (var prompt in prompts)
         {
-            if (prompt.Text.Length > MaxTermLength)
+            if (prompt.Text.Length is < 1 or > MaxTermLength)
             {
                 return Error.Validation(
                     TermsInvalid,
-                    $"A scene prompt must be at most {MaxTermLength} characters.");
+                    $"A scene prompt must be 1-{MaxTermLength} characters.");
             }
         }
 

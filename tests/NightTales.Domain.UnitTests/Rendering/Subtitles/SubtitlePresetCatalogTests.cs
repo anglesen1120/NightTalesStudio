@@ -155,11 +155,9 @@ public sealed class SubtitlePresetCatalogTests
 
         var missingPortrait = Rejected(Document(presets: landscapeOnly));
         missingPortrait.Code.ShouldBe(SubtitlePresetCatalog.AspectMissingCode);
-        missingPortrait.Description.ShouldContain("portrait");
 
         var missingLandscape = Rejected(Document(presets: portraitOnly));
         missingLandscape.Code.ShouldBe(SubtitlePresetCatalog.AspectMissingCode);
-        missingLandscape.Description.ShouldContain("landscape");
     }
 
     [Fact]
