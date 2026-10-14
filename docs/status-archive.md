@@ -948,4 +948,3 @@ Earlier live rows for Plan13, hosting, skeleton, wave2 and wave3 already exist i
 - **STATUS line 89, replaced (verbatim):** | Open item: `usage_records` cross-check of the live run (from 02.6.1-T2 #186) | **[OPEN]** owner: TL, after the paid run | The harness meters in memory (no DB), so the Acceptance row "report cost equals the `usage_records` sum" needs a DB-backed run (or an owner waiver); recorded in task §Notes. |
 
 - **STATUS line 90, replaced (verbatim):** | Open item: build-only step for `NightTales.AcceptanceTests` in `gate.sh` / `backend.yml` (from 02.6.1-T2 #186) | **[OPEN]** owner: owner (gate/CI edit needs approval) | The project is outside `NightTales.ci.slnf` like `Performance.Tests`, so no gate builds it; a signature change in `Application` / `Domain` can break it unseen. Same owner decision covers the other out-of-gate suites. |
-
