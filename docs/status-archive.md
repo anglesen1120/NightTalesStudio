@@ -1017,3 +1017,9 @@ Earlier live rows for Plan13, hosting, skeleton, wave2 and wave3 already exist i
 - **STATUS §Open tasks row `02.5.5-T1: real FactSheetGuard e2e`, replaced (verbatim):** | 02.5.5-T1: real `FactSheetGuard` e2e of `fact_sheet_required` / `story_fact_sheet_outdated` (hand-over from 02.3.3-T1) | **[OPEN]** owner: 02.5.5-T1 | 02.3.3-T1 proves both paths against the TestKit `FakeFactSheetGuard` only; `develop` still wires `NullFactSheetGuard`. When the real guard lands, re-run the generate 409 `fact_sheet_required` and the approve 409 `story_fact_sheet_outdated` end to end. The e2e must also cover a dropped fact citing a distinct fetched source (not counted by F13) and assert every alias → source id is episode/tenant scoped, because the gate treats every fact of `ApprovedFactSheet.Facts` as kept. (from 02.3.3-T1, Session 34) |
 
 - **STATUS Resume line 16 lane-next clause, replaced:** see the Session 36 entry in §Resume-here history above.
+
+## Replaced by Session 36 close-out (02.5.5-T1, #193 merged), archived 2026-10-15
+
+- **STATUS Resume line 16 lane clause, replaced (verbatim):** Lane: **02.5.5-T1** real `FactSheetGuard` + `FactSourcesBuilder` PR open (**#193**; §Session log).
+
+- **STATUS §Open tasks row `fact_sources` user-note title, replaced (verbatim):** | `fact_sources` user-note title: label vs GET fact-sheet wire `note` | **[OPEN]** owner: TL | Contract wording gap: the task file says the user-note `Title` in `fact_sources` is the label `your note` / `ghi chú của bạn`, but `FactSheetWire.UserNoteTitle` on the GET fact-sheet wire is `note`; decide which wins. (from 02.5.5-T1, Session 36) |
