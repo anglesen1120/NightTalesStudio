@@ -4,6 +4,18 @@ History moved out of STATUS.md to keep the live file small. The initial archive 
 
 ## Resume-here history (Current/Previous blocks, Next actions)
 
+### Superseded web Next (Session 38) line and the backend Next web-lane clause (2026-10-15, replaced when Session 40 opened the 10.5.5-T1 PR)
+
+Replaced text (verbatim):
+
+- **Web next (Session 38):** **10.5.6-T1** approve/reopen dialogs + true-crime attestation merged as #195 (`489d26a4`, tip `f7b67d41`; Session 38, `feature/10.5.6-T1-s38`, from `develop` `87a18ab0`; no migration; CI refused: CI-01, owner treats as pass; local web gate — all 9 `web.yml` steps (lint, `i18n:check`, `api:gen:check`, `test:ci`, `test:tools`, `legal:gen:check`, `build`, `budget:gzip`, `csp:gen`) — exit 0 on `e1849c55` (`test:ci` 171 files / 2775 tests), tip adds only docs; owner decisions 2026-10-15 recorded (`ConfirmDialog` add-only inputs, `ERROR_CODES` `fact_sheet_not_found`, vi `episodes.editor.action.reopen_story` "Mở lại để sửa"); `web/openapi.json` re-pinned to `sourceCommit 87a18ab0`, owner-approved; closes the 10.5.4-T1 AC7 `needsReopen` seam, the `keywords_flagged` producer and the approve half of the waived 10.5.10-T1 AC #4/#7) → lane next **10.5.7-T1**, then **10.5.5-T1** research page (owns the omitted approve blocked-region research deep link; `episodes.approve.blocked.researchLink` is still unused) and **10.10.2-T1** render / "Make video", which depends on this task (bind to `videoBlocked()` + `ApprovalStore`, never `keywordFlags().length`; open items in §Open tasks).
+
+Replaced clause of the backend Next bullet (verbatim):
+
+Web lane: **10.5.6-T1** merged as #195 (`489d26a4`).
+
+Outcome: 10.5.5-T1 (research page: sources, fetch status, fact-sheet editor, approve) is delivered on `feature/10.5.5-T1-s40` (Session 40, PR #TBD), so the two web-next clauses are replaced by one Session 40 line. Both hand-overs this line named are now **closed**: (a) the 10.5.6-T1 approve blocked-region research deep link is delivered — `ApproveDialog` renders `episodes.approve.blocked.researchLink` → `/episodes/:id/research` for the two fixable approval 409s, so the archived note that the key was unused no longer describes the code; (b) the 10.5.2-T1 `/episodes/:id/research` + `EPISODE_GATE` provider hand-over is done, with the token provided on `ResearchPageComponent`/`StoryReviewPage` rather than on the routes (a route injector is never destroyed). Lane next is **10.5.7-T1** (series bible panel + proposal diff; waits on 02.6.3-T2), then **10.5.8-T1** (find-sources; carries the research-page contract/perf follow-ups) and **10.10.2-T1** render / "Make video".
+
 ### Superseded backend Next Session 39 PR-open clause (2026-10-15, replaced when #197 merged as `a96592ff`)
 
 Replaced clause of the backend Next bullet (verbatim):
