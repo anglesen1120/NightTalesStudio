@@ -1,4 +1,4 @@
-import { DestroyRef, Injectable, computed, effect, inject, signal } from '@angular/core';
+import { DestroyRef, Injectable, computed, effect, inject, signal, untracked } from '@angular/core';
 import { AppErrorMapper } from '@core/errors';
 import type { AppError, Result } from '@core/errors';
 import { IdempotencyKeys } from '@core/http';
@@ -201,7 +201,8 @@ export class ResearchStore {
       this.rowsInFlight.clear();
     });
     effect(() => {
-      if (this.session.generation() !== this.ownerGeneration) this.reset();
+      // Untracked: reset() reads and rewrites the draft, so tracking it would re-run this effect forever (a hung page).
+      if (this.session.generation() !== this.ownerGeneration) untracked(() => this.reset());
     });
   }
 

@@ -972,4 +972,17 @@ describe('ResearchStore review fixes', () => {
     expect(store.loaded()).toBe(true);
     expect(store.gate()).toBe('open');
   });
+  it('drops the loaded episode once when the session ends and settles (the reset must not feed its own effect)', async () => {
+    const { store, repo, sessionGeneration } = setup();
+    repo.seed(sourceList([source(1)]), draftSheet());
+    await store.load(EPISODE_ID);
+    expect(store.draft()).toHaveLength(1);
+
+    sessionGeneration.set(1);
+    TestBed.tick();
+
+    expect(store.loaded()).toBe(false);
+    expect(store.draft()).toHaveLength(0);
+    expect(store.sources()).toHaveLength(0);
+  });
 });
