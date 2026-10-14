@@ -19,6 +19,7 @@ using NightTales.Application.Features.Stories.Writing;
 using NightTales.Domain.Common;
 using NightTales.Domain.Compliance;
 using NightTales.Domain.Episodes;
+using NightTales.Domain.Research;
 using NightTales.Domain.Series;
 using NightTales.Domain.Stories;
 using NightTales.Domain.Stories.Content;
@@ -117,7 +118,8 @@ internal sealed class RevisionWorld
         Topic topic = Topic.Ghost,
         ApprovedFactSheet? approvedSheet = null,
         IStoryCostEstimator? estimator = null,
-        StoryJobOptions? jobOptions = null)
+        StoryJobOptions? jobOptions = null,
+        Func<Guid, Guid, IReadOnlyList<StorySource>>? sources = null)
     {
         var setup = new TestCurrentUser();
         var user = await new UserBuilder(database, setup).CreateAsync(ct: ct);
@@ -145,6 +147,11 @@ internal sealed class RevisionWorld
         Guid runId;
         await using (var seed = database.CreateAppDbContext(current, clock))
         {
+            if (sources is not null)
+            {
+                seed.StorySources.AddRange(sources(user.Id, episode.Id));
+            }
+
             var run = GenerationRun.Queue(
                     user.Id,
                     series.Id,

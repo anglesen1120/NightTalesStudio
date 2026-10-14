@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using ErrorOr;
 using Microsoft.EntityFrameworkCore;
@@ -17,6 +18,7 @@ using NightTales.Application.Features.Stories.Writing;
 using NightTales.Domain.Common;
 using NightTales.Domain.Compliance;
 using NightTales.Domain.Episodes;
+using NightTales.Domain.Research;
 using NightTales.Domain.Series;
 using NightTales.Domain.Stories;
 using NightTales.Domain.Stories.Content;
@@ -28,11 +30,13 @@ using NightTales.Domain.Usage;
 using NightTales.Infrastructure.Pricing;
 using NightTales.Infrastructure.Persistence;
 using NightTales.Infrastructure.Persistence.Queries;
+using NightTales.Infrastructure.Prompts;
 using NightTales.TestKit;
 using NightTales.TestKit.Auth;
 using NightTales.TestKit.Builders;
 using NightTales.TestKit.Database;
 using NightTales.TestKit.Moderation;
+using NightTales.TestKit.Research;
 using NightTales.TestKit.Stories;
 using NightTales.TestKit.Storage;
 using NightTales.TestKit.Time;
@@ -344,6 +348,167 @@ public sealed class StoryGenerationPipelineTests(TestDatabase database) : Integr
     }
 
     [Fact]
+    public async Task Pipeline_TrueCrime_StoresFactSourcesOfTheCitedSources_NotAForeignRow()
+    {
+        // 02.5.5-T1 (D2): the stored content carries the backend-built fact_sources of the draft's fact refs, resolved
+        // through the approved sheet's aliases to THIS episode's and owner's story_sources. A row of another episode
+        // that happens to carry a cited id must never back this story's fact_sources, and the writer receives facts
+        // only, never raw source text.
+        var cited = Guid.CreateVersion7();
+        var noteId = Guid.CreateVersion7();
+        var foreignId = Guid.CreateVersion7();
+        var sheet = new ApprovedFactSheet(
+            Guid.CreateVersion7(),
+            1,
+            [
+                new FactForWriter("f1", "Nguon A da duoc kiem chung.", ["s1"]),
+                new FactForWriter("f2", "Ghi chu cua nguoi dung.", ["s2"]),
+                new FactForWriter("f3", "Nguon la.", ["s3"]),
+            ],
+            new Dictionary<string, Guid>(StringComparer.Ordinal)
+            {
+                ["s1"] = cited,
+                ["s2"] = noteId,
+                ["s3"] = foreignId,
+            });
+        var world = await NewWorldAsync(
+            topic: Topic.TrueCrime,
+            approvedSheet: sheet,
+            sources: async (userId, episodeId) =>
+            {
+                var actor = new TestCurrentUser { Id = userId };
+                var otherSeries = await new SeriesBuilder(Database, actor).CreateAsync(userId, topic: Topic.TrueCrime, ct: Ct);
+                var otherEpisode = await new EpisodeBuilder(Database, actor).CreateAsync(userId, otherSeries.Id, ct: Ct);
+
+                return
+                [
+                    UrlSource(userId, episodeId, cited, "Nguon A", "https://example.com/source-a", "Doan trich nguyen van cua bai bao A."),
+                    NoteSource(userId, episodeId, noteId, "Ghi chu rieng cua nguoi dung."),
+                    UrlSource(userId, otherEpisode.Id, foreignId, "Nguon la", "https://example.com/foreign-leak", "Noi dung cua tap khac."),
+                ];
+            });
+        world.Writer.EnqueueOk(Draft() with { Hook = new StorySegmentV1("Mo dau f1.", ["k1"], ["f1", "f2", "f3"]) });
+
+        await world.RunAsync();
+
+        var run = await world.ReadRunAsync();
+        run.Status.ShouldBe(GenerationRunStatus.Succeeded);
+        run.ErrorDetail.ShouldBeNull();
+
+        // The writer got the facts, not the sources: the request's serialised form carries the fact statements and
+        // their aliases and none of the seeded source prose, note text or the foreign episode's text.
+        var facts = world.Writer.Requests.ShouldHaveSingleItem().Facts.ShouldNotBeNull();
+        facts.Select(fact => fact.Id).ShouldBe(["f1", "f2", "f3"]);
+        facts.SelectMany(fact => fact.SourceAliases).ShouldBe(["s1", "s2", "s3"]);
+
+        var serialised = JsonSerializer.Serialize(world.Writer.Requests[0]);
+        serialised.ShouldContain("Nguon A da duoc kiem chung.", Case.Sensitive, "non-vacuity: the fact statements are in the request");
+        serialised.ShouldNotContain("Doan trich nguyen van cua bai bao A.", Case.Sensitive, "the fetched source's extracted text never reaches the request");
+        serialised.ShouldNotContain("Ghi chu rieng cua nguoi dung.", Case.Sensitive, "the owner's note text never reaches the request");
+        serialised.ShouldNotContain("Noi dung cua tap khac.", Case.Sensitive, "another episode's source text never reaches the request");
+
+        var sources = StoryContentJson.ReadFactSources((await world.OnlyVersionAsync()).Content);
+        sources.Count.ShouldBe(2, "the cited url source and the note, never the foreign episode's row");
+        var url = sources[0]!.AsObject();
+        url["source_id"]!.GetValue<string>().ShouldBe(cited.ToString());
+        url["title"]!.GetValue<string>().ShouldBe("Nguon A");
+        url["url"]!.GetValue<string>().ShouldBe("https://example.com/source-a");
+        var note = sources[1]!.AsObject();
+        note["source_id"]!.GetValue<string>().ShouldBe(noteId.ToString());
+        note["title"]!.GetValue<string>().ShouldBe("ghi chú của bạn", "a user note is listed under the label, never its text");
+        note["url"].ShouldBeNull();
+        sources.ToJsonString().ShouldNotContain(foreignId.ToString());
+        sources.ToJsonString().ShouldNotContain("Nguon la");
+        sources.ToJsonString().ShouldNotContain("Ghi chu rieng cua nguoi dung.");
+    }
+
+    [Fact]
+    public async Task GenerateStoryJob_TrueCrime_PassesFactsToWriter_NotRawSourceText()
+    {
+        // 02.5.5-T1 (02 §7, D6/F12): the writer sees the approved facts and their aliases only — never the sources'
+        // text, urls, titles or ids. The captured request is then assembled by the REAL prompt assembler over the
+        // embedded prompt tree, so the assertion covers the shipped prompt path and not just the request record.
+        var cited = Guid.CreateVersion7();
+        var noteId = Guid.CreateVersion7();
+        var sheet = new ApprovedFactSheet(
+            Guid.CreateVersion7(),
+            1,
+            [
+                new FactForWriter("f1", "Bang chung thu nhat da duoc kiem chung.", ["s1"]),
+                new FactForWriter("f2", "Bang chung thu hai da duoc kiem chung.", ["s2"]),
+            ],
+            new Dictionary<string, Guid>(StringComparer.Ordinal)
+            {
+                ["s1"] = cited,
+                ["s2"] = noteId,
+            });
+        var world = await NewWorldAsync(
+            topic: Topic.TrueCrime,
+            approvedSheet: sheet,
+            sources: (userId, episodeId) =>
+            {
+                IReadOnlyList<StorySource> rows =
+                [
+                    UrlSource(userId, episodeId, cited, "Bai bao goc", "https://example.com/source-a", "DOAN TRICH NGUYEN VAN CUA BAI BAO GOC."),
+                    NoteSource(userId, episodeId, noteId, "GHI CHU RIENG CUA NGUOI DUNG."),
+                ];
+
+                return Task.FromResult(rows);
+            });
+        world.Writer.EnqueueOk(Draft() with { Hook = new StorySegmentV1("Mo dau f1 va f2.", ["k1"], ["f1", "f2"]) });
+
+        await world.RunAsync();
+
+        (await world.ReadRunAsync()).Status.ShouldBe(GenerationRunStatus.Succeeded);
+
+        var request = world.Writer.Requests.ShouldHaveSingleItem();
+        var facts = request.Facts.ShouldNotBeNull();
+        facts.Count.ShouldBe(2, "the sheet's facts, compared field-wise: record equality compares the lists by reference");
+        facts[0].Id.ShouldBe("f1");
+        facts[0].Statement.ShouldBe("Bang chung thu nhat da duoc kiem chung.");
+        facts[0].SourceAliases.ShouldBe(["s1"]);
+        facts[1].Id.ShouldBe("f2");
+        facts[1].Statement.ShouldBe("Bang chung thu hai da duoc kiem chung.");
+        facts[1].SourceAliases.ShouldBe(["s2"]);
+
+        var prompt = new PromptAssembler(
+                new PromptCatalog(new EmbeddedPromptResourceSource()),
+                NullLogger<PromptAssembler>.Instance)
+            .Assemble(
+                request,
+                new AssemblerContext(
+                    request.Series.Topic,
+                    request.Series.Language,
+                    $"story/true_crime.{(request.Series.Language == Language.Vi ? "vi" : "en")}.v1.md",
+                    6000));
+        var data = prompt.UserDataJson;
+        data.ShouldContain("Bang chung thu nhat da duoc kiem chung.", Case.Sensitive, "non-vacuity: the fact statements really are in the data object");
+        data.ShouldContain("Bang chung thu hai da duoc kiem chung.");
+        data.ShouldContain("\"s1\"");
+        data.ShouldContain("\"s2\"");
+        data.ShouldNotContain("DOAN TRICH NGUYEN VAN CUA BAI BAO GOC.", Case.Sensitive, "the fetched source's extracted text never reaches the prompt");
+        data.ShouldNotContain("GHI CHU RIENG CUA NGUOI DUNG.", Case.Sensitive, "the owner's note text never reaches the prompt");
+        data.ShouldNotContain("https://example.com/source-a", Case.Sensitive, "no source url reaches the prompt");
+        data.ShouldNotContain("Bai bao goc", Case.Sensitive, "no source title reaches the prompt");
+        data.ShouldNotContain(cited.ToString(), Case.Sensitive, "no source id reaches the prompt");
+        data.ShouldNotContain(noteId.ToString(), Case.Sensitive, "no source id reaches the prompt");
+    }
+
+    /// <summary>A fetched URL source of the episode, with the title a real fetch stores.</summary>
+    private static StorySource UrlSource(Guid userId, Guid episodeId, Guid id, string title, string url, string extractedText)
+    {
+        var parsed = SourceUrl.Parse(url, new FakePublicSuffixList());
+        parsed.IsError.ShouldBeFalse();
+        var source = StorySource.CreateUrl(id, userId, episodeId, parsed.Value, Now).Value;
+        source.MarkFetched(url, title, "text/html", new string('a', 64), $"sources/{id:N}", extractedText.Length, Now);
+
+        return source;
+    }
+
+    private static StorySource NoteSource(Guid userId, Guid episodeId, Guid id, string noteText) =>
+        StorySource.CreateNote(id, userId, episodeId, noteText, Now).Value;
+
+    [Fact]
     public async Task Job_AlreadySucceeded_ReturnsWithoutTouchingAnything()
     {
         var world = await NewWorldAsync(succeeded: true);
@@ -627,11 +792,14 @@ public sealed class StoryGenerationPipelineTests(TestDatabase database) : Integr
         int priceVersion = 1,
         bool reviewEnabled = false,
         bool succeeded = false,
-        IBudgetGuard? budget = null)
+        IBudgetGuard? budget = null,
+        Topic topic = Topic.Ghost,
+        ApprovedFactSheet? approvedSheet = null,
+        Func<Guid, Guid, Task<IReadOnlyList<StorySource>>>? sources = null)
     {
         var setup = new TestCurrentUser();
         var user = await new UserBuilder(Database, setup).CreateAsync(ct: Ct);
-        var series = await new SeriesBuilder(Database, setup).CreateAsync(user.Id, topic: Topic.Ghost, ct: Ct);
+        var series = await new SeriesBuilder(Database, setup).CreateAsync(user.Id, topic: topic, ct: Ct);
         var episode = await new EpisodeBuilder(Database, setup)
             .CreateAsync(user.Id, series.Id, status: EpisodeStatus.StoryGenerating, ct: Ct);
         var reservation = Guid.CreateVersion7();
@@ -643,9 +811,22 @@ public sealed class StoryGenerationPipelineTests(TestDatabase database) : Integr
             ? await new FactSheetBuilder(Database, current, new FakeClock(Now)).CreateAsync(user.Id, episode.Id, Ct)
             : null;
 
+        // 02.5.5-T1: a true-crime run pins the approved sheet the guard serves, so its row must exist; the guard's
+        // facts and alias map are kept as the test scripted them, only the id is re-pinned onto the real row.
+        if (approvedSheet?.FactSheetId is not null)
+        {
+            sheet = await new FactSheetBuilder(Database, current, new FakeClock(Now)).CreateAsync(user.Id, episode.Id, Ct);
+            approvedSheet = approvedSheet with { FactSheetId = sheet.Id };
+        }
+
         Guid runId;
         await using (var seedDb = Database.CreateAppDbContext(current, new FakeClock(Now)))
         {
+            if (sources is not null)
+            {
+                seedDb.StorySources.AddRange(await sources(user.Id, episode.Id));
+            }
+
             var run = GenerationRun.Queue(
                     user.Id,
                     series.Id,
@@ -698,7 +879,7 @@ public sealed class StoryGenerationPipelineTests(TestDatabase database) : Integr
             runId = run.Id;
         }
 
-        return new World(Database, current, runId, episode.Id, new ReservationId(reservation), timeoutSeconds, priceVersion, reviewEnabled, budget);
+        return new World(Database, current, runId, episode.Id, new ReservationId(reservation), timeoutSeconds, priceVersion, reviewEnabled, budget, approvedSheet);
     }
 
     private sealed class World
@@ -718,7 +899,8 @@ public sealed class StoryGenerationPipelineTests(TestDatabase database) : Integr
             int timeoutSeconds,
             int priceVersion,
             bool reviewEnabled,
-            IBudgetGuard? budget)
+            IBudgetGuard? budget,
+            ApprovedFactSheet? approvedSheet)
         {
             _database = database;
             Current = current;
@@ -737,7 +919,7 @@ public sealed class StoryGenerationPipelineTests(TestDatabase database) : Integr
                 _db,
                 Progress,
                 Factory,
-                new FakeFactSheetGuard(),
+                new FakeFactSheetGuard { ApprovedSheet = approvedSheet },
                 Scopes,
                 Events,
                 Writer,

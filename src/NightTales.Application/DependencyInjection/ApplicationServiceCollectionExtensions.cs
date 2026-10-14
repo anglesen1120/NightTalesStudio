@@ -5,6 +5,7 @@ using NightTales.Application.Abstractions.Compliance;
 using NightTales.Application.Abstractions.Research;
 using NightTales.Application.Abstractions.Stories;
 using NightTales.Application.Features.Account.Legal;
+using NightTales.Application.Features.Research;
 using NightTales.Application.Features.Research.Jobs;
 using NightTales.Application.Features.Stories.Approval;
 using NightTales.Application.Features.Stories.Generation;
@@ -46,8 +47,10 @@ public static class ApplicationServiceCollectionExtensions
         // 02.2.3-T2: stateless and pure; needs the IPromptCatalog singleton that both hosts register through AddPromptCatalog.
         services.TryAddSingleton<IPromptAssembler, PromptAssembler>();
 
-        // 02.2.2-T2 (02 CR-24): the fail-closed default until 02.5.5-T1 registers the real guard.
-        services.TryAddSingleton<IFactSheetGuard, NullFactSheetGuard>();
+        // 02.5.5-T1 (02 CR-24): the real guard, in place of 02.2.2-T2's fail-closed default. Scoped, like both
+        // consumers (the generation pipeline and the approval gate) and like the IReadDb it reads through, whose
+        // tenant filter is then the caller's: a job reads exactly what its user's request would have read.
+        services.TryAddScoped<IFactSheetGuard, FactSheetGuard>();
 
         services.TryAddScoped<LegalAcceptanceReader>();
         services.TryAddScoped<ILegalAcceptance, LegalAcceptanceService>();

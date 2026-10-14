@@ -15,6 +15,7 @@ using NightTales.Application.Abstractions.Text;
 using NightTales.Application.Abstractions.Usage;
 using NightTales.Application.Abstractions.Persistence;
 using NightTales.Application.Common.Errors;
+using NightTales.Application.Features.Stories.Facts;
 using NightTales.Application.Features.Stories.Jobs;
 using NightTales.Application.Features.Stories.Quality;
 using NightTales.Application.Features.Stories.Review;
@@ -83,6 +84,10 @@ public sealed partial class StoryGenerationPipeline(
     public static readonly TimeSpan SweepGrace = TimeSpan.FromSeconds(60);
 
     private static readonly TimeSpan SimilarityReadTimeout = TimeSpan.FromSeconds(10);
+
+    /// <summary>The one metadata read of a run with no cited sources (a fiction run, or a sheet with no aliases).</summary>
+    private static readonly IReadOnlyDictionary<Guid, FactSourceMetadata> NoFactSources =
+        new Dictionary<Guid, FactSourceMetadata>();
 
     private const string AuditSchemaVersion = "audit.v1";
     private const int MaxRuleIds = 8;
@@ -359,6 +364,10 @@ public sealed partial class StoryGenerationPipeline(
 
         s.Sheet = sheet.Value;
 
+        // 02.5.5-T1 (D2): the one story_sources read of the run, filtered to this episode AND this owner, projected to
+        // the display metadata the builder needs. The fetched text and the note text are never read (D19, F12).
+        s.SourceMetadata = await LoadFactSourceMetadataAsync(s, ct).ConfigureAwait(false);
+
         var built = await requests
             .BuildAsync(s.Run, s.Episode, s.Topic, s.Language, s.Facts, attempt: 0, violatedRules: null, ct)
             .ConfigureAwait(false);
@@ -385,6 +394,29 @@ public sealed partial class StoryGenerationPipeline(
 
         s.Track(GenerationStage.Writing);
         return true;
+    }
+
+    // 02.5.5-T1 (D2, F12, D19): the story_sources rows the approved sheet's aliases point at, read once per run and
+    // filtered by episode AND owner. The Worker pins the tenant filter to the run's owner and the Api runs under the
+    // user's own scope, so the explicit owner predicate is belt-and-braces; only the id, the kind and the display
+    // metadata are projected — never extracted_text and never note_text.
+    private async Task<IReadOnlyDictionary<Guid, FactSourceMetadata>> LoadFactSourceMetadataAsync(RunState s, CancellationToken ct)
+    {
+        var ids = s.Sheet.AliasToSourceId.Values.Distinct().ToArray();
+        if (ids.Length == 0)
+        {
+            return NoFactSources;
+        }
+
+        var rows = await db.StorySources
+            .Where(source => source.EpisodeId == s.Episode.Id && source.UserId == s.Run.UserId && ids.Contains(source.Id))
+            .Select(source => new { source.Id, source.Kind, source.Title, source.FinalUrl, source.Url })
+            .ToListAsync(ct)
+            .ConfigureAwait(false);
+
+        return rows.ToDictionary(
+            row => row.Id,
+            row => new FactSourceMetadata(row.Id, row.Kind, row.Title ?? row.FinalUrl, row.Url));
     }
 
     // Step 0b: the brief, before any paid call.
@@ -1238,19 +1270,40 @@ public sealed partial class StoryGenerationPipeline(
         };
 
     // Rule ids that make a draft unstorable (NUL, lone surrogate); everything else is a local issue, not a failure.
-    private static List<string> PersistenceRules(RunState s, StoryContentV1 draft, out string contentJson)
+    // 02.5.5-T1 (D2): the stored content also carries the backend-built fact_sources of the draft's fact refs; the
+    // approved sheet and the episode's sources resolve them, so the model's own text never selects a source (F12).
+    private List<string> PersistenceRules(RunState s, StoryContentV1 draft, out string contentJson)
     {
         var rules = new List<string>();
 
+        // 02.5.5-T1 (D2, F12): built OUTSIDE the unstorable-draft try below, so a builder fault is never misreported
+        // as `control_characters_invalid`; it reaches the run-level unexpected-error handler instead.
+        var sources = FactSourcesBuilder.Build(
+            draft,
+            s.Sheet,
+            s.SourceMetadata,
+            FactSourcesBuilder.UserNoteTitle(s.Language));
+
         try
         {
-            contentJson = StoryContentJson.Write(draft, Array.Empty<FactSourceRef>());
+            contentJson = StoryContentJson.Write(draft, sources.Sources);
         }
         catch (Exception exception) when (exception is InvalidOperationException or ArgumentException or JsonException)
         {
             contentJson = string.Empty;
             rules.Add(StoryDraftValidator.ControlCharactersInvalid);
             return rules;
+        }
+
+        // D19: counts only, never a ref, a title or any source text.
+        if (sources.UnknownRefs.Count > 0)
+        {
+            LogFactRefUnknown(s.Run.Id, sources.UnknownRefs.Count);
+        }
+
+        if (sources.SkippedSourceIds.Count > 0)
+        {
+            LogFactSourceMissing(s.Run.Id, sources.SkippedSourceIds.Count);
         }
 
         if (!TextSafety.IsPersistableJson(contentJson)
@@ -1550,6 +1603,9 @@ public sealed partial class StoryGenerationPipeline(
 
         public ApprovedFactSheet Sheet { get; set; } = ApprovedFactSheet.None;
 
+        /// <summary>The episode's cited sources' display metadata, loaded once per run (02.5.5-T1, D2).</summary>
+        public IReadOnlyDictionary<Guid, FactSourceMetadata> SourceMetadata { get; set; } = NoFactSources;
+
         public IReadOnlyList<FactForWriter>? Facts => Topic.IsFiction() ? null : Sheet.Facts;
 
         public BuiltWriteRequest Built { get; set; } = null!;
@@ -1627,6 +1683,12 @@ public sealed partial class StoryGenerationPipeline(
 
     [LoggerMessage(EventId = 6124, Level = LogLevel.Information, Message = "generation_revision_not_applied runId={RunId} reason={Reason}")]
     private partial void LogRevisionNotApplied(Guid runId, string reason);
+
+    [LoggerMessage(EventId = 6125, Level = LogLevel.Warning, Message = "generation_fact_ref_unknown runId={RunId} count={Count}")]
+    private partial void LogFactRefUnknown(Guid runId, int count);
+
+    [LoggerMessage(EventId = 6126, Level = LogLevel.Warning, Message = "generation_fact_source_missing runId={RunId} count={Count}")]
+    private partial void LogFactSourceMissing(Guid runId, int count);
 
     [LoggerMessage(EventId = 6120, Level = LogLevel.Warning, Message = "similarity_unavailable episodeId={EpisodeId} runId={RunId} reason={Reason}")]
     private partial void LogSimilarityUnavailable(Guid episodeId, Guid runId, string reason);
