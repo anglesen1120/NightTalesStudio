@@ -15,7 +15,7 @@ Replaced clause of the backend Next bullet (verbatim):
 
 Web lane: **10.5.6-T1** (approve/reopen + attestation UI, now unblocked: 02.3.3-T1 is merged and the `web/openapi.json` re-pin is owner-approved 2026-10-14).
 
-Outcome: 10.5.6-T1 (approve/reopen dialogs + true-crime attestation) is delivered on `feature/10.5.6-T1-s38` (Session 38, PR #TBD) and replaces both web-next lines with one; lane next is 10.5.7-T1, then 10.5.5-T1 (research page) and 10.10.2-T1 (render / "Make video").
+Outcome: 10.5.6-T1 (approve/reopen dialogs + true-crime attestation) is delivered on `feature/10.5.6-T1-s38` (Session 38, #195) and replaces both web-next lines with one; lane next is 10.5.7-T1, then 10.5.5-T1 (research page) and 10.10.2-T1 (render / "Make video").
 ### Superseded backend Next lane-next clause (2026-10-15, replaced when Session 36 opened the 02.5.5-T1 PR)
 
 Replaced text (verbatim):
