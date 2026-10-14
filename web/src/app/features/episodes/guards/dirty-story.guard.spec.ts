@@ -14,6 +14,7 @@ import episodesVi from '../../../../assets/i18n/episodes/vi.json';
 import errorsVi from '../../../../assets/i18n/errors/vi.json';
 import { EpisodeDetailStore } from '../application/episode-detail.store';
 import { StoryEditorStore } from '../application/story-editor.store';
+import { ApprovalStore } from '../application/approval.store';
 import type { EpisodeDetail } from '../domain/episode.model';
 import type { StorySnapshot } from '../domain/story.model';
 import { StoryReviewPage } from '../feature/story-review.page';
@@ -26,7 +27,7 @@ const translations = TranslocoTestingModule.forRoot({
 });
 
 const snapshot: StorySnapshot = {
-  versionId: 'version-1', version: 1, etag: '"sv-version-1"', source: 'edited', wordCount: 18, qualityHints: [],
+  versionId: 'version-1', version: 1, etag: '"sv-version-1"', source: 'edited', wordCount: 18, qualityHints: [], attestation: null,
   content: {
     title: 'Chuyến xe cuối',
     hook: { text: 'Mở đầu', keywords: ['Mưa'], fact_refs: [] },
@@ -70,6 +71,16 @@ function fakeStoryStore(dirty: boolean) {
   };
 }
 
+function fakeApprovalStore() {
+  return {
+    status: signal('story_review'), canOpenApprove: signal(false), canApprove: signal(false), canReopen: signal(false),
+    attestation: signal(null), attestationAccepted: signal(false), approving: signal(false), reopening: signal(false),
+    blocked: signal(null), error: signal(null), checkboxInvalid: signal(false), retryAfterSec: signal(null), hintCount: signal(0),
+    outcome: signal(null), conflict: signal(false),
+    approve: vi.fn(), reopen: vi.fn(), reset: vi.fn(), clearOutcome: vi.fn(), clearBlocked: vi.fn(), setAccepted: vi.fn(),
+  };
+}
+
 const route = {} as ActivatedRouteSnapshot;
 const state = {} as RouterStateSnapshot;
 
@@ -94,6 +105,7 @@ async function setup(dirty: boolean, answer: boolean | null) {
     set: { providers: [
       { provide: EpisodeDetailStore, useValue: detailStore },
       { provide: StoryEditorStore, useValue: storyStore },
+      { provide: ApprovalStore, useValue: fakeApprovalStore() },
     ] },
   }).compileComponents();
   const fixture = TestBed.createComponent(StoryReviewPage);

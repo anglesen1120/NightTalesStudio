@@ -163,9 +163,10 @@ describe('VersionsPanelComponent', () => {
     expect(root.querySelector('nts-error-state')).toBeNull();
   });
 
-  it('retries only the failing side or list and exposes message-only reopen plus restore errors', async () => {
+  it('retries only the failing side or list and exposes a reopen intent plus restore errors', async () => {
     const { fixture, root, component } = await setup();
-    const sides: string[] = []; let lists = 0;
+    const sides: string[] = []; let lists = 0; let reopens = 0;
+    onEmit(component.reopenRequested, () => reopens++);
     onEmit(component.retrySide, (side) => sides.push(side));
     onEmit(component.retryList, () => lists++);
     fixture.componentRef.setInput('sideError', { side: 'right', error: failure });
@@ -175,7 +176,14 @@ describe('VersionsPanelComponent', () => {
     root.querySelector<HTMLButtonElement>('.versions__side-error button')!.click();
     expect(sides).toEqual(['right']); expect(lists).toBe(0);
     expect(root.querySelector('.versions__alert')?.getAttribute('role')).toBe('alert');
-    expect(root.querySelector('.versions__alert button')).toBeNull();
+    root.querySelector<HTMLButtonElement>('.versions__reopen')!.click();
+    expect(reopens).toBe(1);
+    fixture.componentRef.setInput('restoring', true);
+    fixture.detectChanges(); await fixture.whenStable();
+    expect(root.querySelector<HTMLButtonElement>('.versions__reopen')!.disabled).toBe(true);
+    root.querySelector<HTMLButtonElement>('.versions__reopen')!.click();
+    expect(reopens).toBe(1);
+    fixture.componentRef.setInput('restoring', false);
     expect(root.querySelector('nts-form-error-alert')).not.toBeNull();
     fixture.componentRef.setInput('loaded', false);
     fixture.componentRef.setInput('error', failure);

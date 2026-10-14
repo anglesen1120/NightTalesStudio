@@ -1,0 +1,12 @@
+<fieldset class="attestation">
+  <legend>{{ 'episodes.approve.attestation.legend' | transloco }}</legend>
+  @for (paragraph of paragraphs(); track $index) {
+    <p class="attestation__text">{{ paragraph }}</p>
+  }
+  <mat-checkbox #checkbox class="attestation__checkbox" [checked]="accepted()" [disabled]="attestation().text === null" [aria-describedby]="invalid() ? errorId : ''" (change)="acceptedChange.emit($event.checked)">
+    {{ 'episodes.approve.attestation.accept' | transloco }}
+  </mat-checkbox>
+  @if (invalid()) {
+    <p class="attestation__error" [id]="errorId">{{ 'errors.story_attestation_required' | transloco }}</p>
+  }
+</fieldset>

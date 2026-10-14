@@ -45,6 +45,7 @@ export const ERROR_CODES = {
   forbidden: { status: 403, kind: 'auth' },
   email_not_verified: { status: 403, kind: 'auth' },
   not_found: { status: 404, kind: 'not_found' },
+  fact_sheet_not_found: { status: 404, kind: 'not_found' },
   feature_disabled: { status: 404, kind: 'feature_disabled' },
   // 409
   episode_invalid_state: { status: 409, kind: 'precondition' },

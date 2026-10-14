@@ -72,7 +72,7 @@ export function storySnapshot(content: StoryWire = STORY_CONTENT, versionId = ST
     versionId, version, etag: `"sv-${versionId}"`, source: 'manual', wordCount: 123,
     content, body: [content.hook.text, ...content.paragraphs.map((paragraph) => paragraph.text), content.ending.text].join('\n'),
     keywords: [...content.hook.keywords, ...content.paragraphs.flatMap((paragraph) => paragraph.keywords), ...content.ending.keywords],
-    approvedStoryVersionId: null, auditReport: null, factSheetId: null, qualityHints: [], review: null, similarityScore: null, status: 'story_review',
+    approvedStoryVersionId: null, auditReport: null, attestation: null, factSheetId: null, qualityHints: [], review: null, similarityScore: null, status: 'story_review',
   };
 }
 

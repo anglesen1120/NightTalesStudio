@@ -28,6 +28,18 @@
         <button #versionsToggle actions type="button" class="story-review-page__versions-toggle" [attr.aria-expanded]="versionsOpen()" (click)="toggleVersions()">
           {{ 'episodes.versions.open' | transloco }}@if (versionCount(); as count) { ({{ count }})}
         </button>
+        @if (approval.status() === 'story_review') {
+          <div actions class="story-review-page__approval-action">
+            <button #approveTrigger type="button" class="story-review-page__approve" [disabled]="!approval.canOpenApprove()" [attr.aria-disabled]="!approval.canOpenApprove()" [attr.aria-describedby]="approvalSaveHint() ? 'approval-save-hint' : null" (click)="openApprove(approveTrigger)">
+              {{ 'episodes.editor.action.approve_story' | transloco }}
+            </button>
+            @if (approvalSaveHint()) { <p id="approval-save-hint">{{ 'episodes.editor.approvalSaveHint' | transloco }}</p> }
+          </div>
+        } @else if (approval.status() === 'story_approved') {
+          <button #reopenTrigger actions type="button" class="story-review-page__reopen" [disabled]="!approval.canReopen()" [attr.aria-disabled]="!approval.canReopen()" (click)="openReopen(reopenTrigger)">
+            {{ 'episodes.editor.action.reopen_story' | transloco }}
+          </button>
+        }
       </nts-page-header>
 
       @if (store.invalidState() || store.readOnly()) {
@@ -37,7 +49,7 @@
           @if (allowedActions().length > 0) {
             <div class="story-review-page__actions" [attr.aria-label]="'episodes.editor.allowedActions' | transloco">
               @for (action of allowedActions(); track action) {
-                <button type="button" disabled>{{ actionKey(action) | transloco }}</button>
+                @if (action !== 'reopen_story') { <button type="button" disabled>{{ actionKey(action) | transloco }}</button> }
               }
             </div>
           }
@@ -73,9 +85,20 @@
           (intent)="handleIntent($event)"
         />
         @if (versionsOpen()) {
-          <nts-versions-panel-host [episodeId]="detail.id" [initialLeft]="versionIds().left" [initialRight]="versionIds().right" (selectionChange)="changeVersions($event)" (closed)="closeVersions()" />
+          <nts-versions-panel-host [episodeId]="detail.id" [initialLeft]="versionIds().left" [initialRight]="versionIds().right" (selectionChange)="changeVersions($event)" (closed)="closeVersions()" (reopenRequested)="openReopen()" />
         }
       </div>
+      @if (approveOpen()) {
+        <nts-approve-dialog [episodeId]="detail.id" [attestation]="approval.attestation()" [hintCount]="approval.hintCount()" [busy]="approval.approving()" [blocked]="approval.blocked() ?? approval.error()" [accepted]="approval.attestationAccepted()" [checkboxInvalid]="approval.checkboxInvalid()" [retryAfterSec]="approval.retryAfterSec()" [confirmDisabled]="!approval.canApprove()" (acceptedChange)="approval.setAccepted($event)" (approved)="confirmApproval('approve', detail.id)" (cancelled)="closeApprovalDialogs()" />
+      }
+      @if (reopenOpen()) {
+        <nts-reopen-dialog [busy]="approval.reopening()" [blocked]="approval.blocked() ?? approval.error()" [retryAfterSec]="approval.retryAfterSec()" (reopened)="confirmApproval('reopen', detail.id)" (cancelled)="closeApprovalDialogs()" />
+      }
     }
   }
+  <div class="story-review-page__announcement" role="status" aria-live="polite" aria-atomic="true">
+    @if (approvalAnnouncement(); as announcement) {
+      @for (message of [announcement]; track message.sequence) { <span>{{ message.text }}</span> }
+    }
+  </div>
 </div>

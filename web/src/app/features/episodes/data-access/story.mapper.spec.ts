@@ -1,4 +1,4 @@
-import type { QualityHintDto, StoryVersionDto } from '@shared/api';
+import type { CurrentStoryDto, QualityHintDto, StoryVersionDto } from '@shared/api';
 import { storyContent } from '../testing/fake-story.repository';
 import { StoryMappingError, isStoryContent, mapStorySnapshot } from './story.mapper';
 
@@ -7,6 +7,11 @@ export const STORY_DTO: StoryVersionDto = {
   content: storyContent(), qualityHints: [], createdAt: '2026-10-05T00:00:00Z', factSheetId: null,
   keywords: ['lantern'], parentVersionId: null, title: 'The lantern',
 };
+/**
+ * `attestation` exists only on `CurrentStoryDto`, and a spec passes opaque rows through it: the same widening the
+ * neighbouring mapper specs use, so a malformed row can be exercised without a type error.
+ */
+const wire = (extra: Readonly<Record<string, unknown>>): CurrentStoryDto => ({ ...STORY_DTO, ...extra }) as unknown as CurrentStoryDto;
 const hintRow = (overrides: Readonly<Record<string, unknown>> = {}): Readonly<Record<string, unknown>> => ({
   ruleId: 'rule_short', severity: 'advisory', kind: 'objective', segment: 'p:0',
   messageKey: 'quality.hook_short', evidence: 'hint', repairDirection: null, ...overrides,
@@ -90,5 +95,27 @@ describe('story mapper', () => {
   it('caps the raw list before validation, ignoring a valid row after 200 malformed rows', () => {
     const badRows = Array.from({ length: 200 }, () => hintRow({ ruleId: '<bad>' }));
     expect(mapStorySnapshot(withHints(...badRows, hintRow({ ruleId: 'late_valid' }))).qualityHints).toEqual([]);
+  });
+  it('mapsTheServerAttestationVerbatim_AndNullWhenAbsent', () => {
+    const text = '<b>Not markup</b>\n\nSecond paragraph';
+    expect(mapStorySnapshot(wire({ attestation: { required: true, textVersion: '2026-10-01.1', text, acceptedAt: null } })).attestation)
+      .toEqual({ required: true, textVersion: '2026-10-01.1', text, acceptedAt: null });
+    // A story-version DTO carries no attestation field at all: the snapshot of a save has none.
+    expect(mapStorySnapshot(STORY_DTO).attestation).toBeNull();
+    expect(mapStorySnapshot(wire({ attestation: null })).attestation).toBeNull();
+  });
+  it('keepsTheAcceptedAtOfTheCurrentTextVersion', () => {
+    const mapped = mapStorySnapshot(wire({ attestation: { required: true, textVersion: 'v2', text: 'Copy', acceptedAt: '2026-10-14T10:00:00Z' } }));
+    expect(mapped.attestation?.acceptedAt).toBe('2026-10-14T10:00:00Z');
+    expect(mapped.attestation?.textVersion).toBe('v2');
+  });
+  it.each([
+    [42], [[]], [{ required: 'yes', textVersion: 'v1' }], [{ required: true }], [{ required: true, textVersion: 'v1', text: 7 }],
+    [{ required: true, textVersion: 'v1', acceptedAt: 7 }],
+  ])('malformedAttestation_FailsClosed_%j', (attestation) => {
+    expect(() => mapStorySnapshot(wire({ attestation }))).toThrow(StoryMappingError);
+  });
+  it('aMissingTextAndAcceptedAtReadAsNull', () => {
+    expect(mapStorySnapshot(wire({ attestation: { required: false, textVersion: 'v1' } })).attestation).toEqual({ required: false, textVersion: 'v1', text: null, acceptedAt: null });
   });
 });
