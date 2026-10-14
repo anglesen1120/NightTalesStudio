@@ -25,6 +25,14 @@
       "version": "v1",
       "sha256": "a32d53ccbad6c777e12a7efb84c65cef5bf577836b498a2d91c93e9dd0582d96"
     },
+    "shared/attestation.ta.v1.en.md": {
+      "version": "ta.v1",
+      "sha256": "cc8ab8ca8364f3152cb2056ec99b203d08abc5c60a245c9ab900a3d5b09600fa"
+    },
+    "shared/attestation.ta.v1.vi.md": {
+      "version": "ta.v1",
+      "sha256": "27d11664bf0fc48293a673deefc2cae7b0bf2b3600e233cea84bb85083bf17e5"
+    },
     "shared/ear-rules.en.v1.md": {
       "version": "v1",
       "sha256": "44d5de72da46dc346be9e546a58cd0ef2838ca409849de423e42dda2090b6beb"

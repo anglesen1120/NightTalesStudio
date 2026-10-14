@@ -1157,6 +1157,8 @@ public sealed class GenerateFactSheetPipelineTests(TestDatabase database) : Inte
 
         public string GetStepPrompt(PromptStep promptStep) => string.Empty;
 
+        public AttestationText GetAttestation(Language language) => new(string.Empty, string.Empty);
+
         public ReadOnlyMemory<byte> GetSchema(string name) => ReadOnlyMemory<byte>.Empty;
     }
 

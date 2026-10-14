@@ -7,6 +7,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using NightTales.Application.Abstractions.Persistence;
 using NightTales.Application.Common;
 using NightTales.Application.Features.Stories;
+using NightTales.Application.Features.Stories.Approval;
 using NightTales.Application.Features.Stories.Queries.GetCurrentStory;
 using NightTales.Application.Features.Stories.Queries.GetStoryVersion;
 using NightTales.Application.Features.Stories.Queries.GetStoryVersions;
@@ -17,6 +18,11 @@ using NightTales.Domain.Stories.Content;
 using NightTales.Domain.Stories.Quality;
 using Shouldly;
 using Xunit;
+
+// 02.3.3-T1: the episode read joins the series, so the rig owns a series row too.
+using SeriesAggregate = NightTales.Domain.Series.Series;
+using SeriesDraft = NightTales.Domain.Series.SeriesDraft;
+using Topic = NightTales.Domain.Series.Topic;
 
 namespace NightTales.Application.UnitTests.Features.Stories.Queries;
 
@@ -515,22 +521,56 @@ public sealed class StoryReadModelTests
             await rig.Current.Handle(new(rig.Episode.Id), cancellation.Token));
     }
 
+    /// <summary>
+    /// Defence in depth for a release whose configured version is not the one the catalog serves
+    /// (02.3.3-T1): the member still reads as governed and names the configured version, but shows no
+    /// wording — the text of another version would invite a tick the gate then refuses, so the dialog must
+    /// not offer one. A host refuses to start in this state (<c>StoryTrueCrimeRegistrationTests</c>), and
+    /// the read must still never throw.
+    /// </summary>
+    [Fact]
+    public async Task StoryRead_ConfiguredVersionNotServed_ReadsAsGovernedWithoutText()
+    {
+        var rig = new Rig(Topic.TrueCrime, new StoryTrueCrimeOptions { AttestationVersion = "ta.v2" });
+        var row = rig.AddVersion(1);
+        rig.Pointers(row.Id, approved: null);
+
+        var result = await rig.Current.Handle(new(rig.Episode.Id), CancellationToken.None);
+        var attestation = result.Value!.Attestation;
+
+        attestation.ShouldNotBeNull();
+        attestation!.Required.ShouldBeTrue();
+        attestation.TextVersion.ShouldBe("ta.v2");
+        attestation.Text.ShouldBeNull();
+        attestation.AcceptedAt.ShouldBeNull();
+        rig.Log.Messages.ShouldContain(message => message.Contains("ta.v2", StringComparison.Ordinal));
+        rig.Log.Messages.ShouldNotContain(message => message.Contains("clause text of", StringComparison.Ordinal));
+    }
+
     private sealed class Rig
     {
         private static readonly DateTimeOffset Now = DateTimeOffset.Parse("2026-10-05T00:00:00Z", System.Globalization.CultureInfo.InvariantCulture);
-        internal Episode Episode { get; } = Episode.Create(Guid.NewGuid(), Guid.NewGuid(), "title", "brief", LengthTier.Standard, Now);
+        internal SeriesAggregate Series { get; }
+        internal Episode Episode { get; }
         internal FakeReadDb Db { get; }
         internal CapturingLogger<GetCurrentStoryHandler> Log { get; } = new();
         internal GetStoryVersionsHandler History { get; }
         internal GetStoryVersionHandler Detail { get; }
         internal GetCurrentStoryHandler Current { get; }
 
-        internal Rig()
+        internal Rig(Topic topic = Topic.Ghost, StoryTrueCrimeOptions? options = null)
         {
-            Db = new FakeReadDb(Episode);
+            // 02.3.3-T1: the episode read joins the series for its topic and language. A ghost series
+            // pins no fact sheet, so the attestation member stays null and the clause text is never read.
+            Series = SeriesAggregate.Create(
+                Guid.NewGuid(),
+                new SeriesDraft("Rig series", topic, Language.Vi, default, "voice-vi", Guid.CreateVersion7(), null),
+                Now);
+            Episode = Episode.Create(Series.UserId, Series.Id, "title", "brief", LengthTier.Standard, Now);
+            Db = new FakeReadDb(Series, Episode);
             History = new GetStoryVersionsHandler(Db);
             Detail = new GetStoryVersionHandler(Db, NullLogger<GetStoryVersionHandler>.Instance);
-            Current = new GetCurrentStoryHandler(Db, Log);
+            Current = new GetCurrentStoryHandler(Db, options ?? new StoryTrueCrimeOptions(), new StubAttestationText(), Log);
         }
 
         internal StoryVersion AddVersion(int version, string content = "{\"title\":\"stored\"}", string? audit = null, Guid? episodeId = null)
@@ -550,7 +590,7 @@ public sealed class StoryReadModelTests
         }
     }
 
-    private sealed class FakeReadDb(Episode episode) : IReadDb
+    private sealed class FakeReadDb(SeriesAggregate series, Episode episode) : IReadDb
     {
         internal Guid TenantId { get; set; } = episode.UserId;
         internal List<StoryVersion> Versions { get; } = [];
@@ -564,6 +604,10 @@ public sealed class StoryReadModelTests
             if (typeof(TEntity) == typeof(Episode))
             {
                 rows = (IEnumerable<TEntity>)(object)new[] { episode };
+            }
+            else if (typeof(TEntity) == typeof(SeriesAggregate))
+            {
+                rows = (IEnumerable<TEntity>)(object)new[] { series };
             }
             else if (typeof(TEntity) == typeof(StoryVersion))
             {
@@ -597,6 +641,24 @@ public sealed class StoryReadModelTests
         public bool IsEnabled(LogLevel logLevel) => true;
         public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter) =>
             Messages.Add(formatter(state, exception));
+    }
+
+    /// <summary>
+    /// The attestation text of the rig (02.3.3-T1). A ghost series with no pinned fact sheet never asks
+    /// for it — the member is null — so the stub is here to satisfy the handler's constructor. It serves
+    /// version <c>ta.v1</c>, the rig's configured version unless a test demands another: a rig configured
+    /// with a version the stub does not serve must then read as governed without any wording.
+    /// </summary>
+    private sealed class StubAttestationText : IAttestationTextProvider
+    {
+        internal int Calls { get; private set; }
+
+        public ValueTask<(string Version, string Text)> GetAsync(Language language, CancellationToken ct)
+        {
+            ct.ThrowIfCancellationRequested();
+            Calls++;
+            return ValueTask.FromResult(("ta.v1", $"clause text of {language}"));
+        }
     }
 
     // Same minimal IAsyncQueryProvider pattern as NodeSelectorTests; capture projected member expressions.

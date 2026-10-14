@@ -80,6 +80,14 @@ public sealed class PromptCatalog : IPromptCatalog
     public string GetStepPrompt(PromptStep promptStep) => Text(PromptKeys.Step(promptStep));
 
     /// <inheritdoc />
+    public AttestationText GetAttestation(Language language)
+    {
+        var key = PromptKeys.Attestation(language);
+
+        return new AttestationText(Info(key).Version, Text(key));
+    }
+
+    /// <inheritdoc />
     public ReadOnlyMemory<byte> GetSchema(string name)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
@@ -133,6 +141,10 @@ public sealed class PromptCatalog : IPromptCatalog
     /// <summary>The text of a tracked file, or the violation a lookup of an untracked key is.</summary>
     private string Text(string key) =>
         _texts.TryGetValue(key, out var text) ? text : throw NotTracked(key);
+
+    /// <summary>The manifest entry of a tracked key, or the violation a lookup of an untracked key is.</summary>
+    private PromptFileInfo Info(string key) =>
+        Files.TryGetValue(key, out var info) ? info : throw NotTracked(key);
 
     /// <summary>
     /// A key's file stem: the file name without its directory or extension, so

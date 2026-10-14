@@ -369,6 +369,8 @@ public sealed class OpenAiStoryWriterTests
 
         public string GetStepPrompt(PromptStep promptStep) => throw new NotSupportedException();
 
+        public AttestationText GetAttestation(Language language) => throw new NotSupportedException();
+
         public string BuildPromptVersion(PromptVersionParts parts) => throw new NotSupportedException();
     }
 }

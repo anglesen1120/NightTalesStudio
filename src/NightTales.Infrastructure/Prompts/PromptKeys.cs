@@ -27,6 +27,15 @@ internal static class PromptKeys
     /// <summary>The structure vocabulary, the one shared block whose file is JSON.</summary>
     internal const string StructureVocab = "shared/structure-vocab.v1.json";
 
+    /// <summary>
+    /// The true-crime attestation clause text (02.3.3-T1, 02 README T29). Its key carries the version
+    /// marker as a word (<c>ta.v1</c>) and puts it before the language, unlike the two rule blocks whose
+    /// marker follows the language; a wording change ships as a new key and a new <c>ta.vN</c>.
+    /// </summary>
+    /// <param name="language">The content language.</param>
+    /// <returns>For example <c>shared/attestation.ta.v1.vi.md</c>.</returns>
+    internal static string Attestation(Language language) => $"shared/attestation.ta.v1.{Spelling(language)}.md";
+
     private const string SchemaDirectory = "schemas/";
 
     /// <summary>The snake_case spelling of a topic, the form its preset's file name uses.</summary>

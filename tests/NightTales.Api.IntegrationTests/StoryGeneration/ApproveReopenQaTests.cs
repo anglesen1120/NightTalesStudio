@@ -565,12 +565,12 @@ public sealed class ApproveReopenQaTests(TestDatabase database) : IntegrationTes
     }
 
     [Fact]
-    public async Task TrueCrimeWithTheDefaultNullGate_FailsClosedWithoutAttestationOrFactSheet()
+    public async Task TrueCrimeWithTheRealGate_FailsClosedWithoutAttestationOrFactSheet()
     {
         var world = await SeedAsync(topic: Topic.TrueCrime);
         using var factory = Factory();
         using var scope = factory.Services.CreateScope();
-        scope.ServiceProvider.GetRequiredService<IStoryApprovalGate>().ShouldBeOfType<NullStoryApprovalGate>();
+        scope.ServiceProvider.GetRequiredService<IStoryApprovalGate>().ShouldBeOfType<StoryApprovalGate>();
         using var client = factory.ClientFor(world.UserId);
 
         using var response = await SendAsync(client, world.EpisodeId, "approve", Tag(world));

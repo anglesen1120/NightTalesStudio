@@ -6,7 +6,6 @@ using ErrorOr;
 using Microsoft.EntityFrameworkCore;
 using NightTales.Api.IntegrationTests.Persistence;
 using NightTales.Application.Abstractions.Moderation;
-using NightTales.Application.Common.Errors;
 using NightTales.Application.Features.Stories;
 using NightTales.Application.Features.Stories.Approval;
 using NightTales.Application.Features.Stories.Commands.ApproveStory;
@@ -29,30 +28,26 @@ public sealed partial class ApproveStoryEndpointTests
     [Theory]
     [InlineData(Topic.Ghost)]
     [InlineData(Topic.TrueCrime)]
-    public async Task NullStoryApprovalGate_FictionSucceedsButTrueCrimeFailsClosed(Topic topic)
+    public async Task StoryApprovalGate_FictionApprovesAndTrueCrimeFailsClosedWithoutApprovedSheet(Topic topic)
     {
-        // Exercise the gate directly, without a host, persistence or the HTTP pipeline.
-        var userId = Guid.CreateVersion7();
-        var series = StorySeries.Create(userId,
-            new SeriesDraft("Approval gate", topic, default, default, "voice", Guid.CreateVersion7(), null), Start);
-        var episode = Episode.Create(userId, series.Id, "Story", "A story for review", LengthTier.Short, Start);
-        var draft = Draft();
-        var version = StoryVersion.Create(userId, episode.Id, 1, StoryVersionSource.Generated, draft,
-            StoryContentJson.Write(draft, new JsonArray()), "model-x", "rel=1", null, null, null, Audit(Clean), null, Start);
+        // 02.3.3-T1: the real gate runs in the host (the test factory's default gate is a fake), so this
+        // asserts the topic branch end to end: fiction approves, true crime without an approved sheet is
+        // refused with the D8 code and writes nothing.
+        var world = await SeedAsync(topic: topic);
+        using var factory = RealGateFactory();
+        using var client = factory.ClientFor(world.UserId);
 
-        var result = await new NullStoryApprovalGate().ValidateAsync(episode, series, version,
-            new AttestationInput(true, "ta.v1"), Ct);
+        using var response = await ApproveAsync(client, world);
 
         if (topic.IsFiction())
         {
-            result.IsError.ShouldBeFalse();
-            result.Value.AcceptedTextVersion.ShouldBeNull();
+            response.StatusCode.ShouldBe(HttpStatusCode.OK, await response.Content.ReadAsStringAsync(Ct));
+            AssertApproved(world);
         }
         else
         {
-            result.IsError.ShouldBeTrue();
-            result.FirstError.Type.ShouldBe(ErrorType.Conflict);
-            result.FirstError.Code.ShouldBe(ErrorCodes.StoryFactSheetOutdated);
+            await AssertProblemAsync(response, 409, "story_fact_sheet_outdated");
+            AssertNothingApproved(world);
         }
     }
 
@@ -61,7 +56,7 @@ public sealed partial class ApproveStoryEndpointTests
     {
         var world = await SeedAsync();
         var before = StoredAudit(world).ToJsonString();
-        using var factory = Factory(gate: new NullStoryApprovalGate());
+        using var factory = RealGateFactory();
         using var client = factory.ClientFor(world.UserId);
         using var series = await client.GetAsync($"/api/v1/series/{world.SeriesId}", Ct);
         series.StatusCode.ShouldBe(HttpStatusCode.OK, await series.Content.ReadAsStringAsync(Ct));
@@ -128,7 +123,7 @@ public sealed partial class ApproveStoryEndpointTests
         // The outage retains the prior blocking verdict, so the edit persists a genuine Q-MOD-01 issue.
         var world = await SeedAsync(audit: Audit("""{"flagged":true,"categories":["sexual/minors"],"blocking":["sexual/minors"],"stale":false,"unavailable":false}"""));
         var moderator = new FakeContentModerator().EnqueueUnavailable(ModerationStage.Draft).EnqueueClean(ModerationStage.Draft);
-        using var factory = Factory(moderator, new NullStoryApprovalGate());
+        using var factory = Factory(moderator);
         using var client = factory.ClientFor(world.UserId);
         using var edit = new HttpRequestMessage(HttpMethod.Put, $"/api/v1/episodes/{world.EpisodeId}/story")
         {
