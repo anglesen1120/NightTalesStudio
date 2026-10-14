@@ -483,6 +483,12 @@ export class ResearchStore {
     this.addIntent = null;
   }
 
+  /** The add form's countdown elapsed: the wait is over, so the form accepts input again. */
+  clearFormRateLimit(): void {
+    this.formRateLimitState.set(null);
+    this.clearFormError();
+  }
+
   clearPanelError(): void {
     this.panelErrorState.set(null);
     this.rateLimitState.set(null);

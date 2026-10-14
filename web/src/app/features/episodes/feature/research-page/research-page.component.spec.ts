@@ -19,7 +19,7 @@ class FakeResearchStore {
   loads:string[]=[]; watches:string[]=[]; refreshes=0;
   load(id:string) {this.loads.push(id); return Promise.resolve({ok:true as const,value:undefined});} watch(id:string){this.watches.push(id);}
   refresh(){this.refreshes++;return Promise.resolve({ok:true as const,value:undefined});}
-  clearFormError(){this.formError.set(null);this.formRateLimitSeconds.set(null);} clearPanelError(){this.panelError.set(null);this.rateLimitSeconds.set(null);} reset(){this.dirty.set(false);this.draft.set([]);this.factSheet.set(null);}
+  clearFormError(){this.formError.set(null);this.formRateLimitSeconds.set(null);} clearFormRateLimit(){this.formError.set(null);this.formRateLimitSeconds.set(null);} clearPanelError(){this.panelError.set(null);this.rateLimitSeconds.set(null);} reset(){this.dirty.set(false);this.draft.set([]);this.factSheet.set(null);}
 }
 afterEach(() => TestBed.resetTestingModule());
 async function setup(lang:'vi'|'en'='en', store=new FakeResearchStore()) {

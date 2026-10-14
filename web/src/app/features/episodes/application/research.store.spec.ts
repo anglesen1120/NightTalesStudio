@@ -775,6 +775,21 @@ describe('ResearchStore review fixes', () => {
     expect(store.rateLimitSeconds()).toBeNull();
   });
 
+  it('releases the add form wait once its countdown elapses, and an edit alone does not cancel it', async () => {
+    const { store, repo } = setup();
+    repo.seed(sourceList([source(1)]), draftSheet());
+    await store.load(EPISODE_ID);
+    repo.scriptAdd(() => rejected(appError('rate_limited', 429, { retryAfterSec: 30 })));
+    await store.addUrl(EPISODE_ID, 'https://example9.com/article');
+
+    store.clearFormError();
+    expect(store.formRateLimitSeconds()).toBe(30);
+
+    store.clearFormRateLimit();
+    expect(store.formRateLimitSeconds()).toBeNull();
+    expect(store.formError()).toBeNull();
+  });
+
   it('reads the run a 202 named without waiting for an event', async () => {
     const { store, repo, episodes } = setup();
     repo.seed(sourceList([source(1)]), draftSheet());

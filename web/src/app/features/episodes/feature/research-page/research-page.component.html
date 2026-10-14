@@ -8,7 +8,7 @@
   <div class="research-sheet">
     <section aria-labelledby="research-sources-heading" class="source-section">
       <header><h2 id="research-sources-heading">{{ 'episodes.research.sources.title' | transloco }}</h2><p class="counter">{{ 'episodes.research.sources.count' | transloco: {used: store.usedCount(), max: store.maxCount()} }}</p></header>
-      <nts-source-add-form [busy]="adding()" [writeBlocked]="retryBlocked()" [canAdd]="store.usedCount() < store.maxCount()" [canAddUrl]="canAddUrl()" [focusOnEntry]="store.sources().length === 0" [errorKey]="formErrorKey()" [formError]="store.formError()" [duplicateSourceId]="duplicateSource()" [retryAfterSec]="store.formRateLimitSeconds()" (addUrl)="add('url', $event)" (addNote)="add('note', $event)" (edited)="store.clearFormError()" (retryElapsed)="store.clearFormError()" />
+      <nts-source-add-form [busy]="adding()" [writeBlocked]="retryBlocked()" [canAdd]="store.usedCount() < store.maxCount()" [canAddUrl]="canAddUrl()" [focusOnEntry]="store.sources().length === 0" [errorKey]="formErrorKey()" [formError]="store.formError()" [duplicateSourceId]="duplicateSource()" [retryAfterSec]="store.formRateLimitSeconds()" (addUrl)="add('url', $event)" (addNote)="add('note', $event)" (edited)="store.clearFormError()" (retryElapsed)="store.clearFormRateLimit()" />
       <ul class="source-list">
         @for (source of store.sources(); track source.id) { <li><nts-source-row [source]="source" [busy]="rowPending().has(source.id)" [retryBlocked]="retryBlocked()" [duplicate]="duplicateSource() === source.id" (retrySource)="sourceAction(source, 'retry')" (removeSource)="sourceAction(source, 'remove')" /></li> }
       </ul>

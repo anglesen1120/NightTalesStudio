@@ -68,6 +68,7 @@ class FakeResearchStore {
     return Promise.resolve({ ok: true as const, value: undefined });
   }
   clearFormError(): void { this.formError.set(null); }
+  clearFormRateLimit(): void { this.formError.set(null); }
   clearPanelError(): void { this.panelError.set(null); }
 }
 
