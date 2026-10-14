@@ -10,7 +10,7 @@ Replaced text (verbatim):
 
 Lane next: **02.5.5-T1** (real `FactSheetGuard`; 02.3.3-T1 consumes `IFactSheetGuard`), then **10.5.6-T1** (web approve/reopen + attestation UI, now unblocked: 02.3.3-T1 is merged and the `web/openapi.json` re-pin is owner-approved 2026-10-14).
 
-Outcome: 02.5.5-T1 is implemented on `feature/02.5.5-T1-s36` from `develop` `87a18ab0` (PR #TBD); the line now shows it as PR open and names the backend lane next as to be set by the coordinator (no `Depends on` cell names 02.5.5-T1; the 02.2.2-T2 soft CR-24 port binding is merged). The 10.5.6-T1 web mention is kept.
+Outcome: 02.5.5-T1 is implemented on `feature/02.5.5-T1-s36` from `develop` `87a18ab0` (PR #193); the line now shows it as PR open and names the backend lane next as to be set by the coordinator (no `Depends on` cell names 02.5.5-T1; the 02.2.2-T2 soft CR-24 port binding is merged). The 10.5.6-T1 web mention is kept.
 
 ### Superseded line (2026-10-15, replaced by Session 35 close-out)
 
