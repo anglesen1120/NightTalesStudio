@@ -36,6 +36,7 @@ export const episodesRoutes: Routes = [
     canDeactivate: [dirtyResearchGuard],
     providers: [
       { provide: EpisodesRepository, useClass: EpisodesHttpRepository },
+      { provide: SeriesOptionsRepository, useClass: SeriesOptionsHttpRepository },
       { provide: ResearchRepository, useClass: HttpResearchRepository },
       ResearchStore,
       { provide: EPISODE_GATE, useFactory: () => inject(ResearchStore).gate },
@@ -51,6 +52,7 @@ export const episodesRoutes: Routes = [
       { provide: EpisodesRepository, useClass: EpisodesHttpRepository },
       { provide: StoryRepository, useClass: StoryHttpRepository },
       { provide: StoryVersionRepository, useClass: HttpStoryVersionRepository },
+      { provide: SeriesOptionsRepository, useClass: SeriesOptionsHttpRepository },
       { provide: ResearchRepository, useClass: HttpResearchRepository },
       ResearchStore,
       { provide: EPISODE_GATE, useFactory: () => inject(ResearchStore).gate },

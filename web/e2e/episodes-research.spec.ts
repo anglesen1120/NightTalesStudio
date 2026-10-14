@@ -3,7 +3,6 @@ import { expect, test } from './fixtures/csp.fixture';
 import { expectA11yClean, waitForOverlayAnimationEnd } from './fixtures/axe';
 import { EPISODE_ID, stubEpisodes } from './fixtures/episodes-stubs';
 import { RESEARCH_PATH, researchSheet, researchSource, stubResearch, type ResearchServer } from './fixtures/research-stubs';
-import { stubStoryEditor } from './fixtures/story-editor-stubs';
 import episodesEn from '../src/assets/i18n/episodes/en.json' with {type:'json'};
 import episodesVi from '../src/assets/i18n/episodes/vi.json' with {type:'json'};
 import errorsEn from '../src/assets/i18n/errors/en.json' with {type:'json'};
@@ -39,7 +38,7 @@ for(const lang of ['vi','en'] as const){
    server.generating=false;server.sheet=researchSheet(server.sources);await page.getByRole('button',{name:c.research.sources.refresh,exact:true}).click();const panel=page.locator('nts-fact-sheet-panel');await panel.scrollIntoViewIfNeeded();await expect(panel.locator('textarea')).toHaveCount(1);
    await panel.locator('textarea').first().fill('Edited verified fact.');await page.getByRole('button',{name:c.research.facts.add,exact:true}).click();await expect(panel.locator('textarea')).toHaveCount(2);await panel.locator('textarea').nth(1).fill('Temporary fact');await page.getByRole('button',{name:c.research.facts.deleteLabel.replace('{{index}}','2'),exact:true}).click();await expect(panel.locator('textarea')).toHaveCount(1);
    await page.getByRole('button',{name:c.factSheet.save,exact:true}).click();await expect(page.getByRole('button',{name:c.factSheet.approve,exact:true})).toBeEnabled();await page.getByRole('button',{name:c.factSheet.approve,exact:true}).click();await expect(page.locator('.gate')).toContainText(c.research.gate.open);await expect(panel.locator('textarea')).toHaveCount(0);await expectA11yClean(page);
-   await stubStoryEditor(page,lang);await stubResearch(page,server);await page.getByRole('link',{name:c.research.backToStory,exact:true}).click();await expect(page).toHaveURL(new RegExp('/episodes/'+EPISODE_ID+'$'));await expect(page.getByRole('button',{name:c.editor.action.generate_story,exact:true})).toBeEnabled();await expectA11yClean(page);
+   await page.getByRole('link',{name:c.research.backToStory,exact:true}).click();await expect(page).toHaveURL(new RegExp('/episodes/'+EPISODE_ID+'$'));await expect(page.getByRole('button',{name:c.editor.action.generate_story,exact:true})).toBeEnabled();await expectA11yClean(page);
   });
   test('second tab stale save preserves draft and resolves via save as new',async({page,context})=>{
    const c=copy[lang];const server=seeded();await open(page,lang,server);await page.locator('nts-fact-sheet-panel').scrollIntoViewIfNeeded();await expect(page.locator('nts-fact-row textarea')).toHaveCount(1);

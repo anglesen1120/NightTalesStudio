@@ -145,13 +145,18 @@ test.describe('new episode generation (vi, stubbed)', () => {
 
   test('true crime: read topic once, create once, never generate without research', async ({ page }) => {
     const { stubs, privacy } = await open(page, { topic: 'true_crime' });
+    const research = await stubResearch(page);
     await expect(page.getByText(L.trueCrimeNotice, { exact: true })).toBeVisible();
     await page.getByRole('textbox', { name: L.brief, exact: true }).fill(BRIEF);
     await expectA11yClean(page);
     await page.getByRole('button', { name: L.trueCrimeNext, exact: true }).click();
     await expect.poll(() => stubs.entries('create').length).toBe(1);
-    await page.waitForTimeout(650);
-    expect(stubs.entries('series')).toHaveLength(1);
+    await expect(page.getByRole('heading', { name: 'Nguồn và dữ kiện', exact: true })).toBeVisible();
+    await expect.poll(() => stubs.entries('series').length).toBe(2);
+    const creation = stubs.entries('create')[0]!;
+    expect(stubs.entries('series').filter(request => request.order < creation.order)).toHaveLength(1);
+    expect(stubs.entries('series').filter(request => request.order > creation.order)).toHaveLength(1);
+    expect(research.requests.filter(request => new URL(request.url()).pathname === `/api/v1/episodes/${EPISODE_ID}`)).toHaveLength(1);
     expect(stubs.entries('create')[0]!.idempotencyKey).toBeNull();
     expect(stubs.entries('generate')).toHaveLength(0);
     expect(stubs.entries('detail')).toHaveLength(0);
