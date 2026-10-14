@@ -66,6 +66,7 @@
   "rate_limited": "Bạn thao tác quá nhanh. Hãy chờ một lát rồi thử lại.",
   "story_generation_limit": "Bạn đã đạt giới hạn số lần viết truyện trong ngày cho tập này.",
   "source_fetch_limit_reached": "Bạn đã đạt giới hạn số lần tải nguồn trong ngày.",
+  "spend_cap_reached": "Tập này đã đạt giới hạn tạo nội dung. Hãy kiểm tra thiết lập tự động hoặc liên hệ hỗ trợ rồi thử lại.",
   "mfa_locked_untrusted": "Nhập sai mã quá nhiều lần. Hãy thử lại sau hoặc đặt lại mật khẩu.",
   "internal_error": "Đã xảy ra lỗi phía máy chủ. Hãy thử lại sau ít phút.",
   "service_unavailable": "Dịch vụ tạm thời không khả dụng. Hãy thử lại sau ít phút.",

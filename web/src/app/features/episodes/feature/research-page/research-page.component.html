@@ -1,0 +1,32 @@
+<nts-page-header titleKey="episodes.research.title" subtitleKey="episodes.research.subtitle" [backHref]="'/episodes/' + episodeId()">
+  <div actions><a class="editor-link" [routerLink]="['/episodes', episodeId()]">{{ 'episodes.research.backToStory' | transloco }}</a><button type="button" [disabled]="store.refreshing() || store.loading()" [attr.aria-label]="'episodes.research.sources.refresh' | transloco" (click)="run('refresh')">{{ 'episodes.research.sources.refresh' | transloco }}</button></div>
+</nts-page-header>
+@if (store.loading() && !store.loaded()) { <nts-loading-state labelKey="episodes.research.loading" /> }
+@else if (store.error()?.status === 403) { <nts-error-state [bodyKey]="loadErrorKey()" /> }
+@else {
+  @if (store.error()) { <p role="alert" class="error">{{ loadErrorKey() | transloco }}</p> }
+  <div class="research-sheet">
+    <section aria-labelledby="research-sources-heading" class="source-section">
+      <header><h2 id="research-sources-heading">{{ 'episodes.research.sources.title' | transloco }}</h2><p class="counter">{{ 'episodes.research.sources.count' | transloco: {used: store.usedCount(), max: store.maxCount()} }}</p></header>
+      <nts-source-add-form [busy]="adding()" [canAdd]="store.usedCount() < store.maxCount()" [canAddUrl]="canAddUrl()" [focusOnEntry]="store.sources().length === 0" [errorKey]="formErrorKey()" [formError]="store.formError()" [duplicateSourceId]="duplicateSource()" [retryAfterSec]="store.formError()?.retryAfterSec ?? null" (addUrl)="add('url', $event)" (addNote)="add('note', $event)" (edited)="store.clearFormError()" (retryElapsed)="store.clearFormError()" />
+      <ul class="source-list">
+        @for (source of store.sources(); track source.id) { <li><nts-source-row [source]="source" [busy]="rowPending().has(source.id)" [retryBlocked]="retryBlocked()" [duplicate]="duplicateSource() === source.id" (retrySource)="sourceAction(source, 'retry')" (removeSource)="sourceAction(source, 'remove')" /></li> }
+      </ul>
+      @if (store.sources().length === 0) { <nts-empty-state titleKey="episodes.research.sources.empty" /> }
+    </section>
+    @if (store.loaded() && store.isTrueCrime()) {
+      <div class="gate" role="status" [class.gate--open]="store.gate() === 'open'">
+        <span aria-hidden="true">{{ store.gate() === 'open' ? '✓' : '!' }}</span>
+        <div><strong>{{ (store.gate() === 'open' ? 'episodes.research.gate.open' : 'episodes.research.gate.closed') | transloco }}</strong>
+          @if (store.gate() !== 'open') { <p>{{ 'episodes.research.gate.writeStoryBlocked' | transloco }}</p><p>{{ (store.gate() === 'sources_insufficient' ? 'episodes.research.gate.sourcesInsufficient' : 'episodes.research.gate.sheetNotApproved') | transloco }}</p> }
+        </div>
+      </div>
+    }
+    @if (store.rateLimitSeconds(); as seconds) { <nts-retry-countdown [seconds]="seconds" (elapsed)="store.clearPanelError()" /> }
+    <div class="fact-sheet-slot">
+    @defer (on viewport) {
+    <nts-fact-sheet-panel [sheet]="store.factSheet()" [facts]="store.draft()" [sources]="store.sources()" [generating]="store.generating()" [running]="store.running()" [buildingSheet]="store.generation()?.kind === 'fact_sheet' && store.running()" [saving]="store.savingFactSheet()" [approving]="store.approvingFactSheet()" [editing]="editing()" [retryBlocked]="retryBlocked()" [dirty]="store.dirty()" [canGenerate]="store.canGenerate()" [canSave]="store.canSave()" [canApprove]="store.canApprove()" [errorKey]="panelErrorKey()" [fieldError]="store.panelError()" [invalidFactIndexes]="invalidFactIndexes()" (generate)="run('generate')" (save)="run('save')" (approve)="run('approve')" (edit)="startEdit()" (addFact)="store.addFact($event)" (patchFact)="store.editFact($event.id, $event.patch)" (deleteFact)="store.removeFact($event)" (dropSource)="store.dropSourceFromFact($event.id, $event.sourceId)" />
+    } @placeholder { <nts-loading-state labelKey="episodes.research.loading" /> }
+    </div>
+  </div>
+}

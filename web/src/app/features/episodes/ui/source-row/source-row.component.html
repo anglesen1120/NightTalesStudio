@@ -1,0 +1,23 @@
+<article class="source-row" [class.source-row--duplicate]="duplicate()" [id]="'research-source-' + source().id" tabindex="-1">
+  <div class="source-main">
+    @if (source().kind === 'user_note') { <strong>{{ 'episodes.factSheet.userNoteLabel' | transloco }}</strong> }
+    @else if (safeUrl(); as url) { <a [href]="url" target="_blank" rel="noopener noreferrer"><strong>{{ title() }}</strong></a> }
+    @else { <strong>{{ title() }}</strong> }
+    <div class="source-meta">
+      @if (source().kind === 'url') { <span>{{ source().registrableDomain }}</span> }
+      @if (source().textChars !== null) { <span>{{ 'episodes.research.sources.characters' | transloco: {count: source().textChars} }}</span> }
+      @if (source().isCited) { <span>{{ 'episodes.research.sources.cited' | transloco }}</span> }
+    </div>
+    @if (source().status === 'failed' || source().status === 'rejected') { <p class="failure">{{ failureKey() | transloco }}</p> }
+  </div>
+  <span class="source-status" [class.source-status--error]="source().status === 'failed' || source().status === 'rejected'">
+    @if (source().status === 'pending') { <mat-spinner diameter="20" aria-hidden="true" /> }
+    @else if (source().status === 'fetched') { <nts-icon-check aria-hidden="true" /> }
+    @else { <nts-icon-alert aria-hidden="true" /> }
+    {{ ('episodes.research.status.' + source().status) | transloco }}
+  </span>
+  <div class="source-actions">
+    @if (source().status === 'failed') { <button type="button" [disabled]="busy() || retryBlocked()" (click)="retrySource.emit()">{{ 'episodes.research.sources.retry' | transloco }}</button> }
+    <button type="button" [disabled]="busy()" [attr.aria-label]="('episodes.research.sources.remove' | transloco) + ': ' + (source().kind === 'user_note' ? ('episodes.factSheet.userNoteLabel' | transloco) : title())" (click)="removeSource.emit()">{{ 'episodes.research.sources.remove' | transloco }}</button>
+  </div>
+</article>

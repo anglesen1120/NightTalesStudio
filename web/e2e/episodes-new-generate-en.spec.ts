@@ -4,6 +4,7 @@ import { expect, test } from './fixtures/csp.fixture';
 import { episodeDetail, EPISODE_ID, expectNoExtraDetails, NEW_EPISODE_PATH, stubEpisodes, watchPrivacy, type EpisodeStubOptions } from './fixtures/episodes-stubs';
 import { liveRegion } from './fixtures/series-stubs';
 import { editorDetail, expectEditor } from './fixtures/story-editor-stubs';
+import { stubResearch } from './fixtures/research-stubs';
 
 // Same stub/CSP/axe/locale footprint as episodes-list-en.spec.ts; no compose account or TOTP seed needed.
 test.use({ locale: 'en-US', timezoneId: 'UTC' });
@@ -111,11 +112,12 @@ test.describe('new episode generation (en, stubbed)', () => {
   });
 
   test('true crime hands off to the research URL', async ({ page }) => {
-    test.fixme(true, '10.5.5-T1 owns the unmatched research route; active test above proves the create-only branch.');
     await open(page, { topic: 'true_crime' });
+    await stubResearch(page);
     await page.getByRole('textbox', { name: L.brief, exact: true }).fill(BRIEF);
     await page.getByRole('button', { name: L.trueCrimeNext, exact: true }).click();
     await expect(page).toHaveURL(new RegExp(`/episodes/${EPISODE_ID}/research$`));
+    await expect(page.getByRole('heading', { name: 'Sources and facts', exact: true })).toBeVisible();
     await expectA11yClean(page);
   });
 });

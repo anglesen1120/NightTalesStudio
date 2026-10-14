@@ -1,7 +1,7 @@
 import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, ViewContainerRef, afterRenderEffect, computed, effect, inject, isDevMode, signal, untracked, viewChild } from '@angular/core';
 import type { Signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
-import { ActivatedRoute, Router } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { MatSnackBar } from '@angular/material/snack-bar';
 import { TranslocoPipe, TranslocoService, provideTranslocoScope } from '@jsverse/transloco';
 import { AppErrorMapper } from '@core/errors';
@@ -13,6 +13,9 @@ import { catchError, combineLatest, firstValueFrom, map, of, switchMap } from 'r
 import type { Observable } from 'rxjs';
 import { EpisodeDetailStore } from '../application/episode-detail.store';
 import { ApprovalStore } from '../application/approval.store';
+import { EPISODE_GATE } from '../application/episode-gate';
+import type { GateState } from '../domain/episode-gate';
+import { ResearchStore } from '../application/research.store';
 import type { EpisodeDetail } from '../domain/episode.model';
 import { ApproveDialogComponent } from '../ui/approve-dialog/approve-dialog.component';
 import { ReopenDialogComponent } from '../ui/reopen-dialog/reopen-dialog.component';
@@ -69,16 +72,23 @@ function isScopeLoaded(loaded: LoadedScope, language: string): boolean {
 
 @Component({
   selector: 'nts-story-review-page',
-  imports: [TranslocoPipe, EmptyState, ErrorState, FormErrorAlert, LoadingState, PageHeader, StatusChip, StoryEditorComponent, VersionsPanelHostComponent, ApproveDialogComponent, ReopenDialogComponent],
+  imports: [TranslocoPipe, RouterLink, EmptyState, ErrorState, FormErrorAlert, LoadingState, PageHeader, StatusChip, StoryEditorComponent, VersionsPanelHostComponent, ApproveDialogComponent, ReopenDialogComponent],
   providers: [EpisodeDetailStore, StoryEditorStore, ApprovalStore, VersionsStore, provideTranslocoScope('episodes', 'errors', 'quality')],
   templateUrl: './story-review.page.html',
   styleUrl: './story-review.page.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class StoryReviewPage {
-  protected readonly detailStore = inject(EpisodeDetailStore);
+  private readonly detailStore = inject(EpisodeDetailStore);
   protected readonly store = inject(StoryEditorStore);
   protected readonly approval = inject(ApprovalStore);
+  /**
+   * The research gate is optional here: the editor route provides it, and a mount without one (a unit test, an embed)
+   * reads as `open`, so a missing provider never blocks the editor.
+   */
+  private readonly researchGate = inject(EPISODE_GATE, { optional: true });
+  /** Read-only gate owner for the disabled "Write story" state; the editor never writes research state. */
+  private readonly research = inject(ResearchStore, { optional: true });
   private readonly versions = inject(VersionsStore);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
@@ -247,6 +257,17 @@ export class StoryReviewPage {
   });
   protected readonly traceId = computed(() => this.fatalError()?.traceId);
   protected readonly episode = this.detailStore.detail;
+  /** The read-only research gate (02 F13): `not_applicable` and an unloaded gate are `open`. */
+  protected readonly researchGateState = computed<GateState>(() => this.researchGate?.() ?? 'open');
+  /** Only the two blocking states disable "Write story"; the server stays the ultimate authority (a 409 on generate). */
+  protected readonly storyGateBlocked = computed(() => {
+    const state = this.researchGateState();
+    return state === 'sheet_not_approved' || state === 'sources_insufficient';
+  });
+  /** Which half of the blocked copy the hint shows; the link itself opens the research page. */
+  protected readonly gateHintKey = computed(() => this.researchGateState() === 'sources_insufficient'
+    ? 'episodes.research.gate.sourcesInsufficient'
+    : 'episodes.research.gate.sheetNotApproved');
   protected readonly allowedActions = computed(() => this.detailStore.nextActions().filter((action) => action !== 'edit_story' && action !== 'reopen_story' && Object.hasOwn(ACTION_KEYS, action)));
   protected readonly versionsOpen = computed(() => this.routeState()[1].get('panel') === 'versions');
   protected readonly versionCount = computed(() => this.store.snapshot()?.version ?? null);
@@ -318,6 +339,8 @@ export class StoryReviewPage {
           this.approvalAnnouncement.set(null);
           this.approval.reset();
           void this.store.load(id);
+          // One gate load for the editor: the store is route-provided and reads the same episode the page shows.
+          void this.research?.load(id);
         });
       }
       const rawAddress = query.get('segment');

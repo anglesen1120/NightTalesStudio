@@ -1,4 +1,5 @@
 import { TestBed } from '@angular/core/testing';
+import { provideRouter } from '@angular/router';
 import { TranslocoService, TranslocoTestingModule } from '@jsverse/transloco';
 import { afterEach, describe, expect, it } from 'vitest';
 import { onEmit } from '@shared/ui/testing/on-emit';
@@ -23,7 +24,7 @@ async function setup(lang: 'vi' | 'en' = 'vi') {
       translocoConfig: { availableLangs: ['vi', 'en'], defaultLang: lang, fallbackLang: lang, reRenderOnLangChange: true },
       preloadLangs: true,
     })],
-    providers: [...ZONELESS_TEST_PROVIDERS],
+    providers: [...ZONELESS_TEST_PROVIDERS, provideRouter([])],
   }).compileComponents();
   const fixture = TestBed.createComponent(ApproveDialogComponent);
   fixture.componentRef.setInput('episodeId', 'episode-a');
@@ -74,14 +75,24 @@ describe('ApproveDialogComponent', () => {
     expect(root.textContent).not.toMatch(/\b(credit|credits|cost|price|balance)\b|tín dụng|chi phí|số dư/i);
   });
 
-  it.each(['episode_invalid_state', 'story_fact_sheet_outdated', 'story_sources_required', 'story_too_similar_to_source', 'story_moderated', 'keywords_flagged'])('maps %s to its frozen error key without exposing problem details', async (code) => {
+  it.each(['episode_invalid_state', 'story_too_similar_to_source', 'story_moderated', 'keywords_flagged'])('maps %s to its frozen error key without exposing problem details', async (code) => {
     const { fixture, root } = await setup();
     fixture.componentRef.setInput('blocked', failure(code));
     await fixture.whenStable();
-    expect(root.querySelector('[role="alert"]')?.textContent?.trim()).toBe(TestBed.inject(TranslocoService).translate(`errors.${code}`));
+    expect(root.querySelector('[role="alert"] p')?.textContent?.trim()).toBe(TestBed.inject(TranslocoService).translate(`errors.${code}`));
     expect(root.textContent).not.toContain('DO-NOT-RENDER');
-    // The research route is not mounted yet: never send the user to an unimplemented route.
+    // Only the two fixable research blocks carry a route: no other block ships a half-built link.
     expect(root.querySelector('a')).toBeNull();
+  });
+
+  it.each(['story_fact_sheet_outdated', 'story_sources_required'])('links %s to the episode research page (10.5.6-T1 hand-over)', async (code) => {
+    const { fixture, root } = await setup();
+    fixture.componentRef.setInput('blocked', failure(code));
+    await fixture.whenStable();
+    expect(root.querySelector('[role="alert"] p')?.textContent?.trim()).toBe(TestBed.inject(TranslocoService).translate(`errors.${code}`));
+    const link = root.querySelector<HTMLAnchorElement>('[role="alert"] a');
+    expect(link?.textContent?.trim()).toBe(TestBed.inject(TranslocoService).translate('episodes.approve.blocked.researchLink'));
+    expect(link?.getAttribute('href')).toBe('/episodes/episode-a/research');
   });
 
   it.each([

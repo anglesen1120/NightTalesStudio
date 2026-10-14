@@ -1,13 +1,19 @@
 import type { Routes } from '@angular/router';
+import { inject } from '@angular/core';
 import { provideTranslocoScope } from '@jsverse/transloco';
 import { EpisodesHttpRepository } from './data-access/episodes-http.repository';
 import { StoryHttpRepository } from './data-access/story-http.repository';
 import { HttpStoryVersionRepository } from './data-access/http-story-version.repository';
+import { HttpResearchRepository } from './data-access/http-research.repository';
 import { SeriesOptionsHttpRepository } from './data-access/series-options-http.repository';
 import { dirtyStoryGuard } from './guards/dirty-story.guard';
+import { dirtyResearchGuard } from './guards/dirty-research.guard';
+import { EPISODE_GATE } from './application/episode-gate';
+import { ResearchStore } from './application/research.store';
 import { EpisodesRepository } from './domain/episodes.repository';
 import { StoryRepository } from './domain/story.repository';
 import { StoryVersionRepository } from './domain/story-version.repository';
+import { ResearchRepository } from './domain/research.repository';
 import { SeriesOptionsRepository } from './domain/series-options.repository';
 
 // The repository bindings and the `episodes` scope live on the route (lazy chunk). The page-scoped EpisodeListStore is
@@ -24,6 +30,20 @@ export const episodesRoutes: Routes = [
     ],
   },
   {
+    // Before `:id`, which would otherwise shadow the deeper path (both are lazy siblings of the same prefix).
+    path: ':id/research',
+    loadComponent: () => import('./feature/research-page/research-page.component').then((module) => module.ResearchPageComponent),
+    canDeactivate: [dirtyResearchGuard],
+    providers: [
+      { provide: EpisodesRepository, useClass: EpisodesHttpRepository },
+      { provide: ResearchRepository, useClass: HttpResearchRepository },
+      ResearchStore,
+      { provide: EPISODE_GATE, useFactory: () => inject(ResearchStore).gate },
+      provideTranslocoScope('episodes'),
+      provideTranslocoScope('story'),
+    ],
+  },
+  {
     path: ':id',
     loadComponent: () => import('./feature/story-review.page').then((module) => module.StoryReviewPage),
     canDeactivate: [dirtyStoryGuard],
@@ -31,6 +51,9 @@ export const episodesRoutes: Routes = [
       { provide: EpisodesRepository, useClass: EpisodesHttpRepository },
       { provide: StoryRepository, useClass: StoryHttpRepository },
       { provide: StoryVersionRepository, useClass: HttpStoryVersionRepository },
+      { provide: ResearchRepository, useClass: HttpResearchRepository },
+      ResearchStore,
+      { provide: EPISODE_GATE, useFactory: () => inject(ResearchStore).gate },
       provideTranslocoScope('episodes'),
       provideTranslocoScope('story'),
     ],

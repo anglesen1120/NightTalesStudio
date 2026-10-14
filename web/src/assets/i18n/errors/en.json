@@ -66,6 +66,7 @@
   "rate_limited": "Too many requests. Wait a moment and try again.",
   "story_generation_limit": "You have reached the daily limit of story generations for this episode.",
   "source_fetch_limit_reached": "You have reached the daily limit of source fetches.",
+  "spend_cap_reached": "This episode has reached its generation limit for now. Check the autopilot settings or contact support, then try again.",
   "mfa_locked_untrusted": "Too many wrong codes. Try again later or reset your password.",
   "internal_error": "Something went wrong on our side. Try again in a moment.",
   "service_unavailable": "The service is temporarily unavailable. Try again in a moment.",

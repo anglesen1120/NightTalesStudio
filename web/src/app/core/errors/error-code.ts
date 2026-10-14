@@ -86,6 +86,7 @@ export const ERROR_CODES = {
   rate_limited: { status: 429, kind: 'rate_limit' },
   story_generation_limit: { status: 429, kind: 'rate_limit' },
   source_fetch_limit_reached: { status: 429, kind: 'rate_limit' },
+  spend_cap_reached: { status: 429, kind: 'rate_limit' },
   mfa_locked_untrusted: { status: 429, kind: 'rate_limit' },
   // 5xx and client-side
   internal_error: { status: 500, kind: 'server' },
