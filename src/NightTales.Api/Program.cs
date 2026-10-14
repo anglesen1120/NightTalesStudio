@@ -317,6 +317,10 @@ try
     // POST /api/v1/episodes/{id}/fact-sheet/generate.
     app.MapFactSheetEndpoints();
 
+    // 02.6.3-T1 (02 README D9, 02.6.3 plan §4 U1/U2): GET/PUT /api/v1/series/{id}/bible, the bible.v1 document
+    // behind a required If-Match ("sb-<version>"). Accept/dismiss of a pending proposal is 02.6.3-T2.
+    app.MapSeriesBibleEndpoints();
+
     // 09.4.2-T1 (09 README D14, 09 §4 09.4.2): the catalog routes — the voices and the style templates the
     // picker and the style grid read.
     app.MapCatalogEndpoints();

@@ -17,6 +17,7 @@ using NightTales.Domain.Rendering.Music;
 using NightTales.Domain.Research;
 using NightTales.Domain.Series;
 using NightTales.Domain.Series.Autopilot;
+using NightTales.Domain.Series.Bible;
 using NightTales.Domain.Stories;
 using NightTales.Domain.Stories.Generation;
 using NightTales.Domain.Usage;
@@ -78,6 +79,13 @@ public sealed class AppDbContext : IdentityDbContext<AppUser, AppRole, Guid>, IA
 
     /// <summary>The versioned fact sheets of one episode (02.5.3-T2, table <c>fact_sheets</c>); <c>IUserOwned</c>, so the D10 tenant filter applies.</summary>
     public DbSet<FactSheet> FactSheets => Set<FactSheet>();
+
+    /// <summary>
+    /// The one bible row of a series (02.6.3-T1, table <c>series_bibles</c>): created with its series by
+    /// <c>CreateSeriesHandler</c> in the same transaction, replaced in place by
+    /// <c>PUT /api/v1/series/{id}/bible</c>. <c>IUserOwned</c>, so the D10 tenant filter applies.
+    /// </summary>
+    public DbSet<SeriesBible> SeriesBibles => Set<SeriesBible>();
 
     /// <summary>The legal deletion duties of 13.3.1-T1 (table <c>data_deletion_requests</c>); <c>IUserOwned</c>, so the D10 tenant filter applies.</summary>
     public DbSet<DeletionRequest> DeletionRequests => Set<DeletionRequest>();
@@ -190,6 +198,20 @@ public sealed class AppDbContext : IdentityDbContext<AppUser, AppRole, Guid>, IA
         CurrentUserId is { } userId
             ? Database.ExecuteSqlInterpolatedAsync(
                 $"SELECT id FROM series WHERE id = {seriesId} AND user_id = {userId} FOR SHARE",
+                cancellationToken)
+            : Task.CompletedTask;
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// The row is addressed by <c>series_id</c> — the column that is unique per series — rather than by the row's
+    /// own <c>id</c>, because a caller knows the series, not the bible row: two saves of one series therefore
+    /// serialise on the same row. The tenant clause is the one the episode lock uses, so another user's series, an
+    /// unknown id and an anonymous scope lock nothing.
+    /// </remarks>
+    public Task LockSeriesBibleForUpdateAsync(Guid seriesId, CancellationToken cancellationToken) =>
+        CurrentUserId is { } userId
+            ? Database.ExecuteSqlInterpolatedAsync(
+                $"SELECT id FROM series_bibles WHERE series_id = {seriesId} AND user_id = {userId} FOR NO KEY UPDATE",
                 cancellationToken)
             : Task.CompletedTask;
 

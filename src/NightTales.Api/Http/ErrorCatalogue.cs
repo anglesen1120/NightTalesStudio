@@ -204,6 +204,7 @@ public static class ErrorCatalogue
 
             // 500, 502, 503
             [ErrorCodes.InternalError] = StatusCodes.Status500InternalServerError,
+            [ErrorCodes.SeriesBibleMissing] = StatusCodes.Status500InternalServerError,
             [ErrorCodes.SettingTestFailed] = StatusCodes.Status502BadGateway,
             [ErrorCodes.PaymentProviderError] = StatusCodes.Status502BadGateway,
             [ErrorCodes.YoutubeUploadFailed] = StatusCodes.Status502BadGateway,

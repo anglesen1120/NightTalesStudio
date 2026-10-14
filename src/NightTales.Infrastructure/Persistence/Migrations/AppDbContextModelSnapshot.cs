@@ -1566,6 +1566,67 @@ namespace NightTales.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("NightTales.Domain.Series.Bible.SeriesBible", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("Content")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("content");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("ProposedContent")
+                        .HasColumnType("jsonb")
+                        .HasColumnName("proposed_content");
+
+                    b.Property<Guid?>("ProposedFromEpisodeId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("proposed_from_episode_id");
+
+                    b.Property<Guid>("SeriesId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("series_id");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.Property<int>("Version")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(1)
+                        .HasColumnName("version");
+
+                    b.HasKey("Id")
+                        .HasName("pk_series_bibles");
+
+                    b.HasIndex("ProposedFromEpisodeId")
+                        .HasDatabaseName("ix_series_bibles_proposed_from_episode_id");
+
+                    b.HasIndex("SeriesId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_series_bibles_series_id");
+
+                    b.HasIndex("UserId")
+                        .HasDatabaseName("IX_series_bibles_user_id");
+
+                    b.HasIndex("SeriesId", "UserId")
+                        .IsUnique()
+                        .HasDatabaseName("ix_series_bibles_series_id_user_id");
+
+                    b.ToTable("series_bibles", (string)null);
+                });
+
             modelBuilder.Entity("NightTales.Domain.Series.Series", b =>
                 {
                     b.Property<Guid>("Id")
@@ -3014,6 +3075,30 @@ namespace NightTales.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_series_autopilot_authorizations_series_series_id_user_id");
+                });
+
+            modelBuilder.Entity("NightTales.Domain.Series.Bible.SeriesBible", b =>
+                {
+                    b.HasOne("NightTales.Domain.Episodes.Episode", null)
+                        .WithMany()
+                        .HasForeignKey("ProposedFromEpisodeId")
+                        .OnDelete(DeleteBehavior.SetNull)
+                        .HasConstraintName("fk_series_bibles_episodes_proposed_from_episode_id");
+
+                    b.HasOne("NightTales.Infrastructure.Persistence.AppUser", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_series_bibles_asp_net_users_user_id");
+
+                    b.HasOne("NightTales.Domain.Series.Series", null)
+                        .WithOne()
+                        .HasForeignKey("NightTales.Domain.Series.Bible.SeriesBible", "SeriesId", "UserId")
+                        .HasPrincipalKey("NightTales.Domain.Series.Series", "Id", "UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_series_bibles_series_series_id_user_id");
                 });
 
             modelBuilder.Entity("NightTales.Domain.Series.Series", b =>

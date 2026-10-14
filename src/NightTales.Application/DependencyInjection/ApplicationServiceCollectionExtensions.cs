@@ -6,6 +6,7 @@ using NightTales.Application.Abstractions.Research;
 using NightTales.Application.Abstractions.Stories;
 using NightTales.Application.Features.Account.Legal;
 using NightTales.Application.Features.Research.Jobs;
+using NightTales.Application.Features.SeriesBible;
 using NightTales.Application.Features.Stories.Approval;
 using NightTales.Application.Features.Stories.Generation;
 using NightTales.Application.Features.Stories.Moderation;
@@ -59,6 +60,9 @@ public static class ApplicationServiceCollectionExtensions
         services.TryAddSingleton<IAttestationTextProvider, AttestationTextProvider>();
         services.TryAddScoped<IStoryRenderInputProvider, StoryRenderInputProvider>();
         services.TryAddScoped<StoryDraftModeration>();
+
+        // 02.6.3-T1: the series bible's instruments; its two handlers inject them in both hosts.
+        services.TryAddSingleton<SeriesBibleMetrics>();
 
         return services;
     }
