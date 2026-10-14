@@ -1,0 +1,233 @@
+{
+  "id": "en-truecrime-02",
+  "language": "en",
+  "topic": "true_crime",
+  "tier": "standard",
+  "clean": false,
+  "brief": "A synthetic wrongful-conviction case: a man was found dead in an old industrial yard, the first investigation fixed the time of death from a single early account, and a conviction rested on that hour. A review of the same records four years later moved the time of death after midnight. No real person, place or incident is used.",
+  "draft": {
+    "title": "The Hour That Was Never Checked Again",
+    "hook": {
+      "text": "The file on this case turns on a single hour, and that hour came from one early account. Four years later the same records give a different one, and the difference changes where the case stands.",
+      "keywords": ["quiet industrial yard at night under one working lamp"],
+      "fact_refs": ["f3", "f6"]
+    },
+    "paragraphs": [
+      {
+        "beat": "setup",
+        "text": "The man was found in the old industrial zone on a Sunday morning, and the case was recorded as a killing. The yard was quiet, the gates were open, and the sheds behind them stood empty. By the time the sun was up the light was clear and the ground had dried.",
+        "keywords": ["rusted gate of an abandoned factory under an overcast sky"],
+        "fact_refs": ["f1"]
+      },
+      {
+        "beat": "setup",
+        "text": "The first investigation recorded the time of death as before midnight, from a single witness account. That hour was written down early, in the first week of the case, and it was written down plainly. Nothing else in the file gave a time at all.",
+        "keywords": ["cold morning light on a concrete yard beside a factory wall"],
+        "fact_refs": ["f3"]
+      },
+      {
+        "beat": "setup",
+        "text": "The conviction rested on that hour, because it matched the only free hour the accused man had that night. That is where the case stood from that point on.",
+        "keywords": ["empty courtroom corridor with wooden benches at dawn"],
+        "fact_refs": ["f5"]
+      },
+      {
+        "beat": "setup",
+        "text": "The industrial zone is a short walk from the town and a long one from anywhere else. It holds a row of brick sheds, a weighbridge and a wide gate that no longer closes properly. At the weekend it is empty, and on a Sunday morning it is entirely still. On a Sunday morning the gate stands open onto a road that runs straight for a mile before it bends. The sheds are long and low, and their roofs have gone the colour of the weather. From the gate the whole yard can be taken in at a glance.",
+        "keywords": ["wide industrial gate standing open on an empty lot"],
+        "fact_refs": ["f1"]
+      },
+      {
+        "beat": "setup",
+        "text": "The review of the case was written four years after the conviction. It went back over the same pages, and it read them a second time without adding anything to them.",
+        "keywords": ["stack of closed archive boxes against a white wall"],
+        "fact_refs": ["f6"]
+      },
+      {
+        "beat": "build_up",
+        "text": "The wind gets between the sheds and moves the loose plastic on the fence all day. In winter the yard is cold in the morning and colder at night, and the corner by the gate is the only part of it with a light. That light stays on whether anyone is there or not. The ground between the sheds stays wet for days after rain, and the puddles hold the light. The fence leans here and there, and in places it has been pushed back up by hand. In summer the weeds come through the concrete in the same places every year.",
+        "keywords": ["narrow alley between brick factory buildings in grey light"],
+        "fact_refs": []
+      },
+      {
+        "beat": "build_up",
+        "text": "The witness account was given early, before the week was out. From that point the hour was fixed, and the statements that came afterwards were read against it and made to fit it.",
+        "keywords": ["cold cup on a metal table in an empty room"],
+        "fact_refs": ["f3"]
+      },
+      {
+        "beat": "build_up",
+        "text": "The account came from one person who had been near the yard that night. It was taken once, and the file keeps it as the only account of that hour.",
+        "keywords": ["two chairs and a small table in an empty office"],
+        "fact_refs": ["f3"]
+      },
+      {
+        "beat": "build_up",
+        "text": "The accused man had one free hour that night, and the first hour of death fell inside it. That was the whole of the link between the man and the yard, and it was enough for a jury to rest on.",
+        "keywords": ["single chair facing a long table under a bare lamp"],
+        "fact_refs": ["f5"]
+      },
+      {
+        "beat": "build_up",
+        "text": "The road past the yard carries little traffic after dark. The nearest houses are behind the sheds, set back from the road with their windows turned away from it. From the road the yard looks like part of the fields. At night the only light is the one in the yard, and it reaches no further than the gate. The road itself is dark from the bend to the edge of the town.",
+        "keywords": ["wide empty road beside factory sheds at night"],
+        "fact_refs": []
+      },
+      {
+        "beat": "build_up",
+        "text": "A later review of the same records placed the time of death after midnight. The review went back to the same account and read it a second time, slowly, with the first report open beside it.",
+        "keywords": ["empty meeting room with chairs around a long table"],
+        "fact_refs": ["f4"]
+      },
+      {
+        "beat": "build_up",
+        "text": "The hour did not survive that second reading. The records behind it did not change, and the words in them were the same words, but they no longer pointed at midnight.",
+        "keywords": ["long corridor with a row of doors under dim light"],
+        "fact_refs": ["f4"]
+      },
+      {
+        "beat": "clue",
+        "text": "The pathologist's summary goes further than the first report. It records a single deep wound to the side of the neck, heavy blood loss, and blood pooled on the concrete of the yard.",
+        "keywords": ["concrete yard with a single crate beside a wall"],
+        "fact_refs": ["f2"]
+      },
+      {
+        "beat": "clue",
+        "text": "The hour the first account gave was midnight. The hour the review gave was after midnight, and both hours come from the same pages and the same account.",
+        "keywords": ["single bulb above an empty concrete room"],
+        "fact_refs": ["f3", "f4"]
+      },
+      {
+        "beat": "clue",
+        "text": "The review was written four years after the conviction. It changed the hour, and it left the rest of the case standing exactly where it had been all along.",
+        "keywords": ["bare concrete floor under a single lamp at night"],
+        "fact_refs": ["f4", "f6"]
+      },
+      {
+        "beat": "clue",
+        "text": "The yard is on the edge of the industrial zone, where the sheds give way to open ground. From the gate the road is visible for a quarter of a mile in both directions. At night the light in the corner makes a small yellow pool on the concrete and leaves the rest of the yard dark. The fence around the yard is chain link, with the top of it bent back in one place. The open ground beyond it is level and bare, and nothing grows on it but grass that is cut once a year. In wet weather the ground at the gate holds the water.",
+        "keywords": ["empty factory yard at night with one working light"],
+        "fact_refs": []
+      },
+      {
+        "beat": "clue",
+        "text": "The weighbridge is still in the yard, and the metal plate still rings when it is walked across. The sheds behind it are locked now, and the doors are chained at the handles. Nothing else in the yard has changed since the morning the man was found. The padlocks on the doors are new, and the hinges on them are not.",
+        "keywords": ["weighbridge plate on an empty industrial lot at dawn"],
+        "fact_refs": []
+      },
+      {
+        "beat": "twist",
+        "text": "The file's own records place the death after midnight. The first investigation had the hour wrong, and the conviction was built on the wrong hour, from the first day to the last.",
+        "keywords": ["closed courtroom doors seen from the end of a corridor"],
+        "fact_refs": ["f4", "f5"]
+      },
+      {
+        "beat": "twist",
+        "text": "The man had one free hour, and the corrected hour falls outside it. That is the whole of what the correction does to the case, and it is enough to matter.",
+        "keywords": ["empty wooden bench outside a courthouse at dusk"],
+        "fact_refs": ["f5"]
+      },
+      {
+        "beat": "twist",
+        "text": "The correction arrived four years late, and by then the case had been decided. A corrected hour does not reopen a closed case by itself.",
+        "keywords": ["long empty corridor in a public building at night"],
+        "fact_refs": ["f6"]
+      },
+      {
+        "beat": "reveal",
+        "text": "The hour moved, and the case stayed where it was. Who was in the yard after midnight has not been established.",
+        "keywords": ["single street lamp above an empty industrial road"],
+        "fact_refs": ["f4"]
+      },
+      {
+        "beat": "reveal",
+        "text": "Two hours, one early account and one correction, and no one has joined them. The yard keeps its own counsel the way empty buildings do, and the road past it stays quiet.",
+        "keywords": ["dark yard seen through a chain link fence"],
+        "fact_refs": []
+      },
+      {
+        "beat": "reveal",
+        "text": "The same pages give both hours, and the same single account stands behind both of them. Only the reading of it changed.",
+        "keywords": ["single lamp above an empty metal table"],
+        "fact_refs": ["f3", "f4"]
+      },
+      {
+        "beat": "aftermath",
+        "text": "The correction was written four years after the conviction. The case had been decided long before it.",
+        "keywords": ["grey courthouse steps in morning light with no people"],
+        "fact_refs": ["f6"]
+      },
+      {
+        "beat": "aftermath",
+        "text": "The yard is the same yard. The gate is chained now, and the road past it is still quiet after dark. On a Sunday morning the place looks like any other empty industrial lot. In winter the puddles in it freeze overnight and thaw in the middle of the day.",
+        "keywords": ["abandoned industrial sheds under a low grey sky"],
+        "fact_refs": []
+      },
+      {
+        "beat": "aftermath",
+        "text": "A man was found in that yard on a Sunday morning, and the case began with the hour someone gave that week. That much has not changed.",
+        "keywords": ["quiet industrial yard at grey sunrise"],
+        "fact_refs": ["f1", "f3"]
+      }
+    ],
+    "ending": {
+      "text": "The hour was corrected and the rest of the case was left as it stood. What do you think the first investigation should have checked again?",
+      "keywords": ["empty industrial yard at grey sunrise"],
+      "fact_refs": ["f4"]
+    },
+    "description": "A death in an old industrial yard and an hour that decided everything. The first account fixed the time of death before midnight, a conviction followed, and a review of the same records moved the hour four years later.",
+    "tags": ["wrongful conviction", "industrial zone", "time of death", "case review", "true crime"],
+    "content_warnings": [],
+    "structure": {
+      "sub_genre": "wrongful conviction",
+      "setting": "old industrial zone",
+      "opening": "the day the evidence was found",
+      "twist_type": "an error in the first investigation",
+      "narrator_mode": "third_person"
+    }
+  },
+  "facts": [
+    {
+      "id": "f1",
+      "statement": "A man was found dead in the old industrial zone on a Sunday morning, and the case was recorded as a killing.",
+      "source_aliases": ["s1"]
+    },
+    {
+      "id": "f2",
+      "statement": "The pathologist's summary records a single deep wound to the side of the neck, heavy blood loss, and blood pooled on the concrete of the yard.",
+      "source_aliases": ["s1"]
+    },
+    {
+      "id": "f3",
+      "statement": "The first investigation recorded the time of death as before midnight, from a single witness account given early in the week.",
+      "source_aliases": ["s1", "s2"]
+    },
+    {
+      "id": "f4",
+      "statement": "A later review of the same records placed the time of death after midnight.",
+      "source_aliases": ["s2"]
+    },
+    {
+      "id": "f5",
+      "statement": "The conviction rested on the first time of death, because it matched the only free hour the accused man had that night.",
+      "source_aliases": ["s3"]
+    },
+    {
+      "id": "f6",
+      "statement": "The review that corrected the time was written four years after the conviction.",
+      "source_aliases": ["s2", "s3"]
+    }
+  ],
+  "defects": [
+    {
+      "type": "tone_violation",
+      "segment": "p:12",
+      "note": "The segment describes the wound and the blood in explicit detail, which the channel's tone rules forbid."
+    },
+    {
+      "type": "content_warning_missing",
+      "segment": "meta",
+      "note": "content_warnings is empty for a true-crime story that records a killing, so the required crime warning, and the death warning the stated facts need, are not declared."
+    }
+  ]
+}

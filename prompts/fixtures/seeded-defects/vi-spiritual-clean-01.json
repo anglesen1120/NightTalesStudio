@@ -1,0 +1,218 @@
+{
+  "id": "vi-spiritual-clean-01",
+  "language": "vi",
+  "topic": "spiritual",
+  "tier": "standard",
+  "clean": true,
+  "brief": "Một người cháu gái nhớ lời dặn của bà nội lúc hấp hối: phải đem chiếc đấu tre bà từng mượn ở miếu nhỏ ven đường trả về chốn cũ. Cô đem chiếc đấu về miếu, gặp người giữ miếu và dần hiểu ra món nợ thật không phải chiếc đấu mà là một lễ vật bà đã cầm đi ngày trước. Cái giá của lời hứa ấy cô phải tự trả, bằng một việc rất đời thường.",
+  "draft": {
+    "title": "Chiếc đấu của bà",
+    "hook": {
+      "text": "Chiếc đấu tre ấy bà tôi mượn một lần, rồi giữ nó suốt bốn mươi năm. Ngày bà mất, tôi mới biết mình phải trả nó về đâu. Đêm đầu ngủ lại nhà bà, tôi nghe tiếng gõ nhẹ trên nóc buồng.",
+      "keywords": [
+        "old bamboo rice measure on a wooden shelf in dim lamplight"
+      ],
+      "fact_refs": []
+    },
+    "paragraphs": [
+      {
+        "beat": "setup",
+        "text": "Bà tôi sống một mình ở cuối xóm, sát bờ sông. Bà nấu cơm bằng bếp củi, đong gạo bằng chiếc đấu tre. Chiếc đấu ấy cũ kỹ, vành nứt một đường. Bà nói nó không phải của bà. Bà mượn nó ở miếu nhỏ ven đường, lúc bà còn trẻ. Rồi bà giữ luôn, cho đến cuối đời. Mỗi bận đong gạo, bà lau vành đấu bằng vạt áo. Tôi từng hỏi sao bà không trả, bà chỉ cười.",
+        "keywords": [
+          "worn bamboo rice measure on a kitchen table at dusk",
+          "muddy riverbank behind a small village house"
+        ],
+        "fact_refs": []
+      },
+      {
+        "beat": "build_up",
+        "text": "Bà mất vào một đêm mùa nước lên. Trước khi đi, bà nắm tay tôi rất chặt. Bà bảo tôi phải trả chiếc đấu về miếu. Trả rồi thì thắp một nén hương, đừng xin gì thêm. Tôi gật đầu, nhưng tôi chưa hiểu. Đám tang qua, tôi cất chiếc đấu vào ngăn tủ. Ba năm đó tôi đi làm xa, ít khi về quê. Mỗi lần về, tôi lại thấy chiếc đấu nằm trong tủ.",
+        "keywords": [
+          "empty chair beside a village bed in lamplight",
+          "sealed bamboo rice measure inside a dark wooden cupboard"
+        ],
+        "fact_refs": []
+      },
+      {
+        "beat": "build_up",
+        "text": "Đêm đầu tiên ngủ lại nhà bà, tôi nghe tiếng gõ trên nóc buồng. Tôi nằm im, đếm từng tiếng một. Tiếng gõ đều, như có người gõ bằng đốt tay. Sáng ra, tôi lên kiểm tra mái nhà. Mái ngói còn nguyên, không có gì lạ. Tôi tự nhủ mình mệt, nghe nhầm. Nhưng đêm sau, tiếng gõ lại đến, đúng canh ba. Tôi thắp đèn ngồi dậy, nghe cho rõ.",
+        "keywords": [
+          "wooden roof beam in a dark bedroom at midnight",
+          "small oil lamp glowing on a village floor"
+        ],
+        "fact_refs": []
+      },
+      {
+        "beat": "build_up",
+        "text": "Đêm thứ ba, tôi mơ thấy bà. Bà đứng ở sân, mặc bộ đồ bà hay mặc ngày lễ. Bà không nói gì, chỉ giơ tay chỉ ra phía đường. Tôi nhìn theo, thấy một cái miếu nhỏ ven đường. Bà gật đầu, rồi quay lưng đi. Tôi gọi bà, cổ họng không ra tiếng. Tỉnh dậy, tôi thấy chiếc đấu tre nằm dưới sàn. Đêm qua tôi đã cất nó trong tủ.",
+        "keywords": [
+          "old woman standing in a village yard at night",
+          "small roadside shrine seen from a dark doorway"
+        ],
+        "fact_refs": []
+      },
+      {
+        "beat": "build_up",
+        "text": "Tôi vốn không tin mấy chuyện ấy lắm. Nhưng chiếc đấu cứ rời khỏi tủ mỗi đêm. Tôi cất nó ba lần, ba lần nó lại về dưới sàn. Lần thứ tư, tôi để nguyên nó nằm đó. Tôi ngồi nhìn chiếc đấu rất lâu. Vành tre đã nứt, mép bị mòn nhẵn. Tôi nhớ bà, nhớ bàn tay bà lau vành đấu tre. Tôi quyết định sẽ trả nó về miếu.",
+        "keywords": [
+          "cracked bamboo rice measure lying on a bare floor",
+          "pair of worn hands resting on a wooden table"
+        ],
+        "fact_refs": []
+      },
+      {
+        "beat": "build_up",
+        "text": "Sáng hôm sau, tôi sang nhà ông Tư. Ông Tư là hàng xóm lâu năm của bà tôi. Tôi hỏi ông chuyện cái miếu nhỏ ven đường. Ông Tư nghe xong thì im một lúc. Ông rót trà mời tôi, tay ông hơi run. Ông bảo miếu ấy còn, người giữ vẫn ở đó. Ông bảo tôi đừng mượn gì ở miếu. Tôi hỏi vì sao, ông chỉ lắc đầu.",
+        "keywords": [
+          "steaming tea cup on a low wooden table",
+          "two neighbours talking in a dim village kitchen"
+        ],
+        "fact_refs": []
+      },
+      {
+        "beat": "build_up",
+        "text": "Chiều hôm ấy, tôi gói chiếc đấu vào một tấm vải. Tôi đi theo con đường đất men bờ sông. Trời chạng vạng, đom đóm bay lập lòe. Ruộng lúa hai bên đã gặt xong, còn trơ gốc rạ. Tôi đi một mình, không nói với ai. Con đường vắng, chỉ nghe tiếng chân mình. Gió từ sông thổi lên, mang theo mùi bùn. Xa xa, tôi thấy ngọn đèn nhỏ trước miếu.",
+        "keywords": [
+          "narrow dirt path along a muddy river at dusk",
+          "small oil lamp glowing at a roadside shrine"
+        ],
+        "fact_refs": []
+      },
+      {
+        "beat": "build_up",
+        "text": "Miếu nhỏ nằm dưới gốc cây đa già. Mái miếu lợp ngói cũ, rêu phủ xanh. Trước cửa có một bát hương đầy chân nhang. Một ông cụ đang ngồi quét lá trước sân miếu. Ông ấy mặc áo nâu, mái tóc bạc trắng như cước. Tôi chào, ông ngẩng lên nhìn tôi. Ông hỏi tôi đến đây làm gì. Tôi nói tôi đến trả một món đồ mượn.",
+        "keywords": [
+          "chipped stone step in front of a small shrine",
+          "shrine keeper sweeping dry leaves at dusk"
+        ],
+        "fact_refs": []
+      },
+      {
+        "beat": "build_up",
+        "text": "Ông cụ bảo tôi ngồi xuống bậc đá. Ông rót cho tôi chén nước ấm, mời tôi uống. Ông nói ông đã giữ ngôi miếu này rất lâu. Ông nói người trong xóm ít khi ghé đây. Tôi kể chuyện bà tôi và chiếc đấu tre. Ông nghe, mắt nhìn ra phía sông. Ông bảo nhiều người mượn đồ ở miếu lắm. Người trả thì ít, người quên thì nhiều.",
+        "keywords": [
+          "chipped stone step in front of a small shrine",
+          "elderly man sitting by a small village shrine"
+        ],
+        "fact_refs": []
+      },
+      {
+        "beat": "build_up",
+        "text": "Tôi mở tấm vải ra, hai tay đưa chiếc đấu cho ông. Ông cầm lấy, xoay nó trong tay thật chậm. Ông nhìn kỹ đường nứt dài trên vành đấu. Ông bảo đúng là chiếc đấu này rồi. Ông đứng dậy, đi vào trong ngôi miếu nhỏ. Tôi ngồi chờ ngoài sân, nghe tiếng nhang cháy. Lát sau, ông bước ra, hai tay không. Ông bảo tôi theo ông vào trong.",
+        "keywords": [
+          "worn bamboo rice measure held in old hands",
+          "smoke curling from an incense bowl in a shrine"
+        ],
+        "fact_refs": []
+      },
+      {
+        "beat": "clue",
+        "text": "Trong miếu, trên một cái kệ gỗ, tôi thấy nhiều thứ cũ. Có chén, có đũa, có nắp nồi bằng đồng. Một chiếc bát sứ nằm nghiêng, vành bị nứt. Đường nứt ấy giống hệt đường nứt trên đấu của bà. Tôi đưa tay ra chạm thử chiếc bát. Ông cụ bảo tôi đừng động vào. Ông bảo chiếc bát ấy ở đây lâu lắm rồi. Tôi nhìn chiếc bát, trong lòng thấy nặng.",
+        "keywords": [
+          "cracked porcelain bowl on a dusty wooden shelf",
+          "old clay bowls stacked in a dim shrine corner"
+        ],
+        "fact_refs": []
+      },
+      {
+        "beat": "clue",
+        "text": "Ông cụ lấy ra một mảnh giấy vàng, đưa cho tôi. Trên mảnh giấy có mấy dòng chữ nguệch ngoạc. Nét chữ ấy là nét chữ của bà tôi. Bà viết tên mình và tên cái xóm. Bà hứa sẽ trả lại món đồ đã mượn. Cuối mảnh giấy, bà ghi một chữ ký nhòe. Ông bảo mảnh giấy này cất ở đây mấy chục năm. Tôi cầm mảnh giấy, tay hơi run.",
+        "keywords": [
+          "yellowed paper slip resting on a wooden shelf",
+          "faded ink marks on a small paper slip"
+        ],
+        "fact_refs": []
+      },
+      {
+        "beat": "clue",
+        "text": "Tôi nhớ chuyện ông Tư kể hôm trước. Ông Tư từng mượn của bà một cái nia. Ông mượn rồi quên, không trả lại. Từ đó, ruộng nhà ông mất mùa liên tiếp. Mãi sau ông mới đem trả, nhưng đã muộn. Ông bảo cái nợ ấy theo ông mấy năm. Tôi ngồi nghe, hai bàn tay nắm vào nhau. Thì ra bà tôi cũng để lại một món nợ như thế.",
+        "keywords": [
+          "old winnowing basket leaning against a village wall",
+          "two hands folded quietly in a lap"
+        ],
+        "fact_refs": []
+      },
+      {
+        "beat": "clue",
+        "text": "Tôi nhìn lại cái kệ gỗ trong miếu. Trên kệ có một khoảng trống nhỏ bằng bàn tay. Khoảng trống ấy vừa đúng chiều dài chiếc đấu. Bụi trên kệ còn in hình một vành tròn. Tôi đặt chiếc đấu vào chỗ trống ấy. Nó vừa khít, như chưa từng rời đi. Ông cụ nhìn tôi, không nói một lời nào. Ông chỉ tay vào chiếc bát sứ nằm nghiêng.",
+        "keywords": [
+          "bare patch on a dusty wooden shelf",
+          "empty space on a shelf in a small shrine"
+        ],
+        "fact_refs": []
+      },
+      {
+        "beat": "clue",
+        "text": "Tôi nhìn chiếc bát, rồi nhìn chiếc đấu. Vết nứt trên hai thứ nằm cùng một phía. Như thể chúng từng là một đôi đã tách ra. Ông cụ bảo hai thứ ấy về cùng một nhà. Tôi hỏi nhà nào, ông không đáp. Ông chỉ nói người trả phải trả cho đủ. Tôi ngồi im, nghe nhang cháy trong miếu. Ngoài sân, trời đã tối hẳn từ lúc nào.",
+        "keywords": [
+          "cracked bowl and bamboo measure on a shrine shelf",
+          "dusty shrine shelf under a dim oil lamp"
+        ],
+        "fact_refs": []
+      },
+      {
+        "beat": "twist",
+        "text": "Ông cụ đặt chiếc đấu lên kệ gỗ. Ông bảo chiếc đấu không phải món nợ. Miếu đã giữ nó cho nhà tôi từ rất lâu. Món còn thiếu lại là một thứ khác. Hôm bà tôi mượn đấu, bà lấy thêm một nắm gạo. Nắm gạo ấy bà lấy ở trên bàn thờ. Bà tưởng thế là đã trả đủ tiền. Món nợ thật chính là nắm gạo ấy.",
+        "keywords": [
+          "handful of rice grains on a wooden altar",
+          "old bamboo measure resting on a dusty shelf"
+        ],
+        "fact_refs": []
+      },
+      {
+        "beat": "reveal",
+        "text": "Người phải trả món nợ không còn là bà tôi, vì bà đã đi rồi. Người phải trả chính là tôi, đứa cháu còn lại.",
+        "keywords": [
+          "lone woman standing before a village shrine at night",
+          "empty wooden shelf in a dim shrine interior"
+        ],
+        "fact_refs": []
+      },
+      {
+        "beat": "aftermath",
+        "text": "Tôi trở về nhà khi trời đã khuya. Tôi mở ngăn tủ, chỗ tôi cất chiếc đấu. Trong tủ giờ chỉ còn một khoảng trống. Tôi đứng nhìn khoảng trống ấy một lúc. Cái kệ trong miếu cũng có một khoảng trống như thế. Tôi lấy nắm gạo cuối cùng trong lu, gói vào túi vải. Sáng mai tôi sẽ mang nắm gạo ấy trả về miếu. Đêm ấy tôi ngủ yên, không nghe tiếng gõ nào.",
+        "keywords": [
+          "empty square space inside a dark wooden cupboard",
+          "cloth bag of rice on a kitchen bench"
+        ],
+        "fact_refs": []
+      },
+      {
+        "beat": "aftermath",
+        "text": "Ở nhà, cái chén của bà vẫn để trên chạn. Chén sứ cũ, lớp men đã bạc màu. Không ai dùng cái chén ấy nữa. Mẹ tôi bảo để đó cho bà. Mỗi bận dọn cơm, tôi lại đụng vào chén. Tôi nhấc nó ra, lau rồi đặt lại chỗ cũ. Cái chén ấy nhẹ, nhưng tay tôi thấy nặng. Chị tôi bảo tôi bỏ nó đi, tôi không nổi. Tôi đã trả nắm gạo về miếu vào sáng hôm sau. Ông cụ nhận, không nói nhiều. Ông chỉ bảo từ nay đừng mượn gì nữa. Tôi đi bộ về, qua con đường ven sông. Ruộng lúa đã lên mạ mới, xanh non. Tôi về đến nhà, ngồi xuống bậc thềm. Trong nhà im, chỉ có tiếng đồng hồ treo tường. Mọi thứ vẫn thế, chỉ thiếu một người và một khoảng trống.",
+        "keywords": [
+          "old porcelain bowl on a kitchen shelf",
+          "worn bowl resting alone in dim kitchen light"
+        ],
+        "fact_refs": []
+      }
+    ],
+    "ending": {
+      "text": "Bà tôi mượn một chiếc đấu, rồi giữ nó suốt đời. Món nợ ấy bà để lại cho tôi. Tôi trả bằng một nắm gạo, không phải bằng tiền. Trả xong, trong nhà vẫn còn một khoảng trống. Cái đấu tre đã về chỗ cũ, còn tôi thì khác. Nếu là bạn, bạn sẽ trả món nợ ấy, hay để nó lại cho đời sau?",
+      "keywords": [
+        "bamboo rice measure back on a shrine shelf in morning light"
+      ],
+      "fact_refs": []
+    },
+    "description": "Một người cháu trả món nợ bà để lại, không bằng tiền mà bằng một nắm gạo. Chiếc đấu tre trở về chỗ cũ, nhưng trong nhà vẫn còn một khoảng trống.",
+    "tags": [
+      "tâm linh",
+      "miếu ven đường",
+      "lời hứa",
+      "món nợ",
+      "gia đình"
+    ],
+    "content_warnings": [
+      "death",
+      "supernatural"
+    ],
+    "structure": {
+      "sub_genre": "luật âm dương",
+      "setting": "miếu nhỏ ven đường",
+      "opening": "một lời hứa chưa trả",
+      "twist_type": "điều ước có giá của nó",
+      "narrator_mode": "first_person"
+    }
+  },
+  "defects": []
+}

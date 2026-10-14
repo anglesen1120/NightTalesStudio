@@ -1,0 +1,83 @@
+{
+  "id": "en-ghost-01",
+  "language": "en",
+  "topic": "ghost",
+  "tier": "standard",
+  "clean": false,
+  "brief": "A lighthouse keeper writes down the nights the lamp turned itself on even though he had pulled the fuse the week before. The last page of the log is not in his handwriting, and it is dated ahead of the day he is living. Atmosphere: cold, damp, the sound of waves fading.",
+  "draft": {
+    "title": "The Keeper's Last Page",
+    "hook": {
+      "text": "In October the keeper pulled the fuse and wrote the date in the log. That night the lamp turned anyway. In the morning he found the night written in his own hand, and he had not written it.",
+      "keywords": ["lighthouse lamp turning in the dark"],
+      "fact_refs": []
+    },
+    "paragraphs": [
+      {
+        "beat": "setup",
+        "text": "He had kept the lamp on the north point for nine years, alone in the stone house. There was a stove, a bed and a shelf of log books. Every evening he wrote the weather, the hour the lamp went on and the ships that passed. The books were his only company, and he wrote in them carefully.",
+        "keywords": ["stone lighthouse tower on a grey coastline"],
+        "fact_refs": []
+      },
+      {
+        "beat": "build_up",
+        "text": "The fuse was the old kind, a strip of wire in a china holder. He pulled it out on a Tuesday and put it in the drawer. The lamp turned that night for four hours. He stood in the glass room and watched the beam swing out over the water, and he could not find one thing wrong.",
+        "keywords": ["glass lamp room above dark water at night"],
+        "fact_refs": []
+      },
+      {
+        "beat": "build_up",
+        "text": "He checked the wiring, the brass gears and the spare parts in the store below. The fuse lay in the drawer where he had left it, cold and dry. He wrote the night down in the log because a keeper writes the truth. Then he wrote that the fuse was out, twice, and underlined it once.",
+        "keywords": ["wire fuse in a china holder on a workbench"],
+        "fact_refs": []
+      },
+      {
+        "beat": "clue",
+        "text": "The next entry was in his hand and in his ink. It described a night he had slept through. He had slept with his boots off and the stove out. The page says he walked the stairs four times and spoke to someone at the door. The words were short. The letters sloped the way his letters slope.",
+        "keywords": ["open log book on a wooden desk at night"],
+        "fact_refs": []
+      },
+      {
+        "beat": "twist",
+        "text": "The last page carried the date of the coming Saturday, three days ahead of him, and it was written to the end. It says the lamp went dark at midnight and the keeper rowed out to the point with a lantern. It says the water was calm. It says nobody came back up the hill that night.",
+        "keywords": ["small wooden boat on black water at night"],
+        "fact_refs": []
+      },
+      {
+        "beat": "reveal",
+        "text": "He held the page to the stove light. The ink was dry and brown, older than the book it was written in. The paper smelled of salt and of a fire long out. He turned the book over and the binding opened at the same page every time, as if a thumb had rested there for years.",
+        "keywords": ["brown ink on an old ruled page"],
+        "fact_refs": []
+      },
+      {
+        "beat": "aftermath",
+        "text": "He stopped pulling fuses. He left the lamp to itself and kept the stove going. He slept in the chair in the glass room, where he could see the beam. On the Friday he packed his bag. He left the log open on the desk, on the page that had been waiting for him. He did not close it.",
+        "keywords": ["empty chair in a glass lamp room at dawn"],
+        "fact_refs": []
+      }
+    ],
+    "ending": {
+      "text": "At midnight the lamp went dark and the keeper rowed out to the point with a lantern, exactly as the page said. The water was calm the whole way. Nobody came back up the hill that night. Would you have rowed out, knowing the page already said you would?",
+      "keywords": ["lantern light on calm water at midnight"],
+      "fact_refs": []
+    },
+    "description": "A lighthouse keeper writes the nights the lamp lit without power, until the log book carries a page dated ahead of his own life. A short quiet haunting of a stone house on the north point.",
+    "tags": ["ghost story", "lighthouse ghost", "quiet haunting", "night narration"],
+    "content_warnings": ["supernatural", "death"],
+    "structure": {
+      "sub_genre": "quiet haunting",
+      "setting": "old house",
+      "opening": "finding an old object",
+      "twist_type": "the dead is still alive",
+      "narrator_mode": "third_person"
+    }
+  },
+  "facts": [],
+  "defects": [
+    {
+      "type": "length_out_of_range",
+      "segment": "meta",
+      "note": "The draft is about 490 words with 9 segments for a standard tier whose band is 1,000-1,600 tokens and 20-32 segments: far more than 15 percent under both bounds."
+    }
+  ]
+}

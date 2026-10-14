@@ -1,0 +1,159 @@
+{
+  "id": "vi-spiritual-01",
+  "language": "vi",
+  "topic": "spiritual",
+  "tier": "standard",
+  "clean": false,
+  "brief": "Sau khi mẹ mất, người kể chuyện trở về căn nhà cũ ở làng ven sông để thu xếp mọi việc. Hàng xóm sang giúp, trong đó có một người đàn bà đặc biệt tốt bụng, ngày nào cũng sang dọn dẹp cùng anh. Trong lúc dọn nhà, anh lần lượt gặp những dấu vết cũ của mẹ: một hộp thư đã ố vàng, một chén hương bị xê dịch khỏi vạch cũ, một chiếc khuy áo gói trong tờ giấy đã phai. Người đàn bà ấy làm mọi việc trong nhà, trừ việc bước vào căn buồng có bàn thờ. Đây là một câu chuyện hư cấu, không dùng người thật, việc thật hay địa danh thật.",
+  "draft": {
+    "title": "Căn nhà bên sông của mẹ",
+    "hook": {
+      "text": "Mẹ tôi mất vào một đêm mưa, và tôi trở về làng ven sông để dọn căn nhà cũ. Người trong xóm thay nhau sang giúp, và một người đàn bà lạ thường đứng lại lâu nhất. Phải hai mươi năm rồi tôi mới ngủ lại trong căn nhà này.",
+      "keywords": ["old wooden house by a river at dusk"],
+      "fact_refs": []
+    },
+    "paragraphs": [
+      {
+        "beat": "setup",
+        "text": "Tôi về làng vào buổi chiều, khi con nước đã rút. Căn nhà của mẹ nằm cuối con đường đất, bên bờ sông. Cửa gỗ đã mục, và mùi ẩm bốc lên từ nền đất. Chiếc ghế mây của mẹ vẫn đặt cạnh cửa sổ nhìn ra sông. Trong nhà chỉ còn lại đồ đạc cũ và bàn thờ của bà nội. Buổi tối, mấy người trong xóm sang thắp hương cho mẹ tôi. Họ nói chuyện nhỏ, rồi lần lượt ra về khi trời khuya.",
+        "keywords": ["empty rattan chair near a window at dusk"],
+        "fact_refs": []
+      },
+      {
+        "beat": "build_up",
+        "text": "Sáng hôm sau, một người đàn bà trong xóm sang sớm nhất. Bà ấy cầm chổi, quét sân rồi quét cả thềm nhà. Bà biết chỗ để chén bát và chỗ phơi chiếu. Tôi hỏi bà quen mẹ tôi từ bao giờ. Bà nói hai người gặp nhau ở chợ, đã lâu rồi. Bà làm việc nhanh, ít nói, chỉ đôi lần nhìn lên bàn thờ. Đến cửa buồng có bàn thờ thì bà đứng lại, đưa đồ cho tôi.",
+        "keywords": ["broom leaning on a porch step in grey morning light"],
+        "fact_refs": []
+      },
+      {
+        "beat": "build_up",
+        "text": "Những ngày sau, hàng xóm kể cho tôi nghe về mẹ. Mẹ tôi sống một mình ở đây gần hai mươi năm. Bà ít đi đâu, chỉ mỗi sáng ra bờ sông rửa tay. Bà ngồi trên hòn đá, nhìn nước chảy rất lâu. Có hôm bà đứng dậy, cúi đầu như chào ai đó. Người ta hỏi bà chào ai, bà chỉ cười rồi đi về. Tôi nghe vậy thì thấy lạ, nhưng không hỏi thêm.",
+        "keywords": ["flat stone at a river edge in early light"],
+        "fact_refs": []
+      },
+      {
+        "beat": "build_up",
+        "text": "Buổi sáng thứ ba, tôi bắt đầu dọn đồ trong nhà. Tủ gỗ có mấy bộ quần áo cũ và một tấm ảnh. Ngoài sân, người đàn bà ấy giặt giũ và phơi chăn. Bà không hỏi tôi điều gì về chuyện của mẹ. Chiều xuống, mấy người đàn ông trong xóm kéo nhau ra bến. Tôi nghe tiếng họ gọi nhau ngoài bờ nước. Đến tối, cả xóm im, chỉ còn tiếng chó sủa xa.",
+        "keywords": ["wooden wardrobe with old clothes under a bare bulb"],
+        "fact_refs": []
+      },
+      {
+        "beat": "build_up",
+        "text": "Sáng hôm sau, ngoài bến có tiếng người lao xao. Người ta nói nước đẩy vào một cái xác đàn ông. Không ai biết đó là ai, chỉ đoán là người đi thuyền. Người trong xóm kéo ra bờ, đứng cách một quãng. Tôi đứng phía sau, nghe mùi sông nồng lên. Người ta bảo nhau chờ người trên huyện xuống. Bà ấy kéo tay tôi về, nói đừng đứng đó lâu.",
+        "keywords": ["crowd standing far back on a river bank at dusk"],
+        "fact_refs": []
+      },
+      {
+        "beat": "build_up",
+        "text": "Tôi vẫn còn nhớ rõ cái xác khi người ta kéo lên bờ. Da người ấy trắng bệch, căng phồng vì nước. Mặt sưng lên, môi tím, hai mắt đã mờ đục. Trên vai có một vết rách dài, rỉ nước vàng ra. Máu loang theo nước sông, đỏ sẫm trên cát. Ruồi bu kín quanh miệng và vết thương ở cổ. Người ta lấy dây thừng buộc vào cọc gỗ để giữ lại.",
+        "keywords": ["wooden post on a river bank in grey morning light", "muddy river bank under a low grey sky"],
+        "fact_refs": []
+      },
+      {
+        "beat": "build_up",
+        "text": "Hôm ấy người trên huyện xuống, đưa xác đi trước trời tối. Xóm lại yên, như chưa có chuyện gì. Tôi ở lại dọn tiếp, mở từng ngăn tủ một. Đồ của mẹ ít lắm, chỉ vài manh áo và một nắm hương. Buổi chiều, tôi ra bờ sông ngồi chỗ mẹ vẫn ngồi. Nước chảy chậm, mang theo cành cây và rác từ trên nguồn. Tôi ngồi đến khi trời tối mới đứng dậy về nhà.",
+        "keywords": ["narrow river path with drifting branches at midday"],
+        "fact_refs": []
+      },
+      {
+        "beat": "build_up",
+        "text": "Người đàn bà ấy sang nhà tôi mỗi ngày. Bà nấu cơm, dọn bếp, vá lại tấm màn cửa. Có bữa bà mang sang một nồi cháo cá. Tôi hỏi bà ở xóm này đã bao lâu. Bà nói bà về đây ở từ hồi còn trẻ. Nhà bà ở đầu làng, cách bờ sông mấy bước. Bà nói mẹ tôi là người tốt, rồi im lặng nhìn ra sân. Tôi thấy bà ấy thở dài, rồi lại cúi xuống rửa chén.",
+        "keywords": ["small kitchen pot on a wood stove in warm lamplight"],
+        "fact_refs": []
+      },
+      {
+        "beat": "build_up",
+        "text": "Đêm thứ năm, tôi nằm ở phòng ngoài, nghe sông chảy. Tiếng nước gần lắm, như chảy ngay dưới sàn. Tôi nhớ mẹ, nhớ giọng bà gọi tôi lúc chiều. Bà mất đã hai tuần, mà nhà vẫn như có người. Trên bàn thờ, chén nước vẫn còn đầy. Tôi thắp một nén hương rồi ngồi yên rất lâu. Ngoài kia, con nước vẫn chảy về phía biển. Sáng ra, tôi quyết định dọn hết đồ trong buồng.",
+        "keywords": ["incense stick on a family altar in dim room light"],
+        "fact_refs": []
+      },
+      {
+        "beat": "clue",
+        "text": "Ngăn dưới cùng của tủ, tôi tìm thấy một cái hộp gỗ. Trong hộp là một chồng thư cũ, giấy đã ố vàng. Thư không ghi ngày, chỉ có vài dòng ngắn. Nét chữ đàn bà, mực đã phai gần hết. Có lá thư nhắc đến chuyện mùa nước lên. Có lá chỉ viết một câu xin lỗi, không ký tên. Tôi đọc hết, rồi buộc lại và để vào chỗ cũ.",
+        "keywords": ["wooden box of old letters in dusty attic light"],
+        "fact_refs": []
+      },
+      {
+        "beat": "clue",
+        "text": "Buổi chiều, tôi lau dọn bàn thờ của bà nội và mẹ. Chén hương đặt lệch khỏi vạch cũ trên gỗ. Vạch gỗ vẫn còn, một vòng tròn mờ đã bạc màu. Ai đó đã xê dịch chén hương rồi đặt lại. Tôi nhấc chén lên, dưới đáy có một mảnh giấy nhỏ. Mảnh giấy trống, không chữ, chỉ gấp làm tư. Tôi đặt mọi thứ về đúng vạch cũ, rồi đứng nhìn.",
+        "keywords": ["offering bowl moved off its mark on a dark altar"],
+        "fact_refs": []
+      },
+      {
+        "beat": "clue",
+        "text": "Hôm sau, tôi mở chiếc rương nhỏ đựng đồ lặt vặt. Trong rương có kim, chỉ, và một gói giấy nhỏ. Tôi mở gói giấy, bên trong là một chiếc khuy áo bằng xà cừ. Chiếc khuy đã sứt một góc, mặt còn in một hình rất mờ. Giấy gói có mấy nét chì, gần như đã phai. Tôi xem mãi mà không đọc được nét nào. Tôi gói lại như cũ và cất vào rương.",
+        "keywords": ["old shell button wrapped in paper on a wooden chest"],
+        "fact_refs": []
+      },
+      {
+        "beat": "clue",
+        "text": "Tôi để ý một chuyện về người đàn bà ấy. Bà làm mọi việc trong nhà, trừ căn buồng có bàn thờ. Mỗi lần tới cửa buồng, bà đứng lại ngoài ngưỡng. Bà gọi tôi ra, đưa khăn cho tôi lau bàn thờ. Tôi hỏi bà có phải bà sợ không. Bà nói không sợ, chỉ là bà không quen. Rồi bà quay đi, rót nước, không nói thêm gì.",
+        "keywords": ["figure pausing at a doorway threshold in dim light"],
+        "fact_refs": []
+      },
+      {
+        "beat": "clue",
+        "text": "Tôi hỏi mấy người trong xóm về bà ấy. Họ nói bà ấy sống một mình, không chồng không con. Bà ở đầu làng đã lâu, nhưng ít ai biết rõ. Mỗi chiều bà ra bờ sông đứng một mình. Bà nhìn mặt nước, rồi nhìn về phía nhà tôi. Có người nói bà với mẹ tôi từng thân nhau. Nhưng chẳng ai nhớ hai người gặp nhau khi nào.",
+        "keywords": ["empty riverbank at evening under flat grey sky"],
+        "fact_refs": []
+      },
+      {
+        "beat": "clue",
+        "text": "Buổi sáng cuối tuần, tôi mang hộp thư ra ngoài sân. Bà ấy nhìn thấy, thì dừng tay quét sân. Bà hỏi tôi có định giữ chồng thư ấy không. Tôi ngạc nhiên, vì tôi chưa từng nhắc đến nó. Bà nói ngày trước bà có thấy mẹ tôi đọc thư. Bà đọc ở đâu, tôi hỏi, bà chỉ nói ngoài hiên. Rồi bà quay lại quét sân, không nói thêm.",
+        "keywords": ["open letter on a porch bench in morning light"],
+        "fact_refs": []
+      },
+      {
+        "beat": "twist",
+        "text": "Đến ngày thứ mười, bà ấy ngồi xuống cạnh tôi. Bà nói mẹ tôi đã vay của bà một khoản tiền. Khoản tiền ấy cách đây hai mươi năm, chưa trả. Bà không đòi, nhưng bà nói nợ vẫn còn. Mẹ tôi mượn để lo một việc trong nhà. Bà giữ một tờ giấy, chữ của mẹ tôi ký. Bà đặt tờ giấy xuống bàn, rồi ngồi yên chờ tôi. Ngoài sân, con nước vẫn chảy, nghe rất chậm.",
+        "keywords": ["sheet of paper on a wooden table under a lamp"],
+        "fact_refs": []
+      },
+      {
+        "beat": "reveal",
+        "text": "Tờ giấy nằm trên bàn, chữ mẹ tôi đã mờ từ lâu. Bà ấy không giục, chỉ ngồi đợi tôi nói. Ngoài hiên, hộp thư cũ vẫn nằm chỗ cũ. Chén hương trên bàn thờ đã được đặt lại đúng vạch. Con nước ngoài sông vẫn chảy như mọi chiều. Tôi rót một chén nước, đặt trước bàn thờ mẹ. Căn nhà đứng đó, chờ tôi quyết định. Ngoài sân, tiếng chổi của bà ấy đã ngừng từ lúc nào.",
+        "keywords": ["water bowl placed before a family altar in dim light"],
+        "fact_refs": []
+      },
+      {
+        "beat": "aftermath",
+        "text": "Ba tháng sau, tôi vẫn còn ở lại làng. Tôi xin nghỉ việc ở thành phố, không nói lý do. Buổi sáng, tôi ra bến đò phụ người ta chở hàng. Buổi chiều, tôi trồng lại mấy luống rau sau nhà. Bà ấy vẫn sang, ngồi ngoài hiên, không vào buồng. Mỗi tháng tôi đưa bà một phần, đúng như đã hứa. Bà nhận, ghi vào một quyển sổ nhỏ, rồi cất đi.",
+        "keywords": ["small notebook on a wooden table in warm lamplight"],
+        "fact_refs": []
+      },
+      {
+        "beat": "aftermath",
+        "text": "Đến nay, tôi đã trả được hơn nửa. Căn nhà cũ tôi không bán, cũng không sửa. Chiếc ghế mây của mẹ vẫn để cạnh cửa sổ. Bàn thờ thì tôi lau mỗi ngày, không để bụi. Có đêm tôi ngồi ngoài hiên, nghe nước chảy. Tôi nghĩ đến mẹ, và nghĩ đến người đàn bà ấy. Tôi tự hỏi mình đã trả nợ hay trả ơn. Đến giờ tôi vẫn chưa trả lời được.",
+        "keywords": ["empty porch facing a river at night"],
+        "fact_refs": []
+      }
+    ],
+    "ending": {
+      "text": "Giờ tôi mới biết vì sao mẹ ra bờ sông mỗi sáng. Mẹ đứng đó nhìn nước, có lẽ để nhớ một điều đã hứa. Một lời hứa nhỏ cũng có thể theo người ta suốt đời. Người đàn bà ấy không đòi, nhưng bà vẫn đợi. Tôi trả dần, trả bằng những ngày ở lại làng. Căn nhà cũ vẫn sáng đèn mỗi tối. Bạn sẽ chọn thế nào?",
+      "keywords": ["house light on a riverbank at night"],
+      "fact_refs": []
+    },
+    "description": "Sau khi mẹ mất, tôi về làng ven sông để dọn lại căn nhà cũ. Một người đàn bà trong xóm sang giúp tôi mỗi ngày, nhưng bà ấy không bao giờ bước vào căn buồng có bàn thờ.",
+    "tags": ["spiritual", "family", "river village", "vietnamese", "first person", "folk", "slow"],
+    "content_warnings": ["supernatural", "death", "violence", "disturbing"],
+    "structure": {
+      "sub_genre": "nhân quả",
+      "setting": "làng ven sông",
+      "opening": "một lời hứa chưa trả",
+      "twist_type": "người sống đang trả nợ cho người chết",
+      "narrator_mode": "first_person"
+    }
+  },
+  "defects": [
+    {
+      "type": "tone_violation",
+      "segment": "p:5",
+      "note": "Đoạn p:5 tả cái xác người chết đuối bằng chi tiết gớm ghiếc: da trắng bệch căng phồng, mặt sưng, môi tím, mắt mờ đục, vết rách rỉ nước vàng, máu loang trên cát, ruồi bu quanh miệng và vết thương. Kênh truyện cấm tả máu thịt và tử thi ở mức chi tiết như vậy, nên đây là lỗi giọng điệu, không phải lỗi nội dung."
+    },
+    {
+      "type": "missing_setup_before_twist",
+      "segment": "p:15",
+      "note": "Món nợ mà cú twist dựa vào chỉ được nêu tên lần đầu ngay trong đoạn twist p:15. Không đoạn nào trước đó, kể cả các đoạn clue p:9 tới p:14, nhắc tới một khoản vay, một lời hứa trả nợ hay tiền của người hàng xóm, nên cú twist không được cài trước và đến bất ngờ một cách vô cớ."
+    }
+  ]
+}

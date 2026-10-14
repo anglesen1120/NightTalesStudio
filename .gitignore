@@ -72,6 +72,8 @@ trial/runs/no-run/
 trial/runs/*/media/
 # M0 story harness raw cells (02.1.3-T0, plan §3.6 / QA-02D-6): provider output, regenerable, untracked
 trial/stories/
+# 02.6.1-T2 live review reports: acceptance-<model>-<stamp>.json carries numbers and ids only (D19/T25), regenerable, untracked
+trial/review/
 # 02.5.2-T0 research corpus: the fetched third-party HTML is a regenerable cache (7.8 MiB, over the
 # task file's 5 MiB snapshot budget), so only the manifest, sha256 and derived metrics are committed.
 # Rebuild: see plans/features/02-story-writing/02.5.1-sources-fetcher/spike-report.md §4.
