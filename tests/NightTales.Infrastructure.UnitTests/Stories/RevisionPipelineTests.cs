@@ -5,10 +5,12 @@ using NightTales.Application.Abstractions.Research;
 using NightTales.Application.Abstractions.Text;
 using NightTales.Application.Abstractions.Usage;
 using NightTales.Application.Common.Errors;
+using NightTales.Application.Features.Stories;
 using NightTales.Application.Features.Stories.Jobs;
 using NightTales.Application.Features.Stories.Review;
 using NightTales.Domain.Common;
 using NightTales.Domain.Episodes;
+using NightTales.Domain.Research;
 using NightTales.Domain.Series;
 using NightTales.Domain.Stories;
 using NightTales.Domain.Stories.Content;
@@ -16,6 +18,7 @@ using NightTales.Domain.Stories.Generation;
 using NightTales.Domain.Stories.Review;
 using NightTales.TestKit;
 using NightTales.TestKit.Database;
+using NightTales.TestKit.Research;
 using Shouldly;
 using Xunit;
 
@@ -208,6 +211,57 @@ public sealed class RevisionPipelineTests(TestDatabase database) : IntegrationTe
         versions.Count.ShouldBe(2, "a re-ordered citation keeps every approved ref, so the revision is applied");
         versions[1].Source.ShouldBe(StoryVersionSource.Revised);
         RevisionBlock(versions[1])["applied"]!.GetValue<bool>().ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task BothSavedRows_CarryBuilderBuiltFactSources_FromTheEpisodesSources()
+    {
+        // 02.5.5-T1: both rows the run stores (the generated one and the applied revision) carry the fact_sources the
+        // backend built from the episode's story_sources, resolved through the sheet's aliases — never from the draft.
+        var sourceId = Guid.CreateVersion7();
+        var sheet = new ApprovedFactSheet(
+            Guid.CreateVersion7(),
+            1,
+            [new FactForWriter("f1", "Nguon da duoc kiem chung.", ["s1"])],
+            new Dictionary<string, Guid>(StringComparer.Ordinal) { ["s1"] = sourceId });
+        var world = await RevisionWorld.CreateAsync(
+            Database,
+            Ct,
+            topic: Topic.TrueCrime,
+            approvedSheet: sheet,
+            sources: (userId, episodeId) => [UrlSource(userId, episodeId, sourceId, "Nguon A", "https://example.com/source-a")]);
+
+        var original = Draft() with { Hook = new StorySegmentV1("Mo dau f1.", ["k1"], ["f1"]) };
+        var revised = Draft() with { Hook = new StorySegmentV1("Mo dau ro rang hon f1.", ["k1"], ["f1"]) };
+        world.Writer.EnqueueWrite(WriteOk(original));
+        world.Writer.EnqueueReview(ReviewOk(BlockingHook()));
+        world.Writer.EnqueueRevision(RevisionOk(revised));
+        world.Writer.EnqueueReview(ReviewOk());
+
+        await world.RunAsync(Ct);
+
+        var versions = await world.VersionsAsync();
+        versions.Count.ShouldBe(2);
+        versions[1].Source.ShouldBe(StoryVersionSource.Revised);
+        foreach (var version in versions)
+        {
+            var sources = StoryContentJson.ReadFactSources(version.Content);
+            var entry = sources.ShouldHaveSingleItem()!.AsObject();
+            entry["source_id"]!.GetValue<string>().ShouldBe(sourceId.ToString());
+            entry["title"]!.GetValue<string>().ShouldBe("Nguon A");
+            entry["url"]!.GetValue<string>().ShouldBe("https://example.com/source-a");
+        }
+    }
+
+    /// <summary>An episode source with a title, as a fetch leaves it: the row the builder reads the display metadata from.</summary>
+    private static StorySource UrlSource(Guid userId, Guid episodeId, Guid id, string title, string url)
+    {
+        var parsed = SourceUrl.Parse(url, new FakePublicSuffixList());
+        parsed.IsError.ShouldBeFalse();
+        var source = StorySource.CreateUrl(id, userId, episodeId, parsed.Value, RevisionWorld.Now).Value;
+        source.MarkFetched(url, title, "text/html", new string('a', 64), $"sources/{id:N}", 64, RevisionWorld.Now);
+
+        return source;
     }
 
     [Fact]

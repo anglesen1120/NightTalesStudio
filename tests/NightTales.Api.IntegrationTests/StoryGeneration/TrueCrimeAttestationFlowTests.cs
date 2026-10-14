@@ -20,8 +20,10 @@ namespace NightTales.Api.IntegrationTests.StoryGeneration;
 /// <c>StoryApprovalGate</c> in the host: the true-crime chain end to end, the attestation-version rule
 /// including the <c>Story:TrueCrime:AttestationVersion</c> override, the two F13 source refusals, a story
 /// pinned to a superseded sheet, the non-topic-scoped similarity block, and the fact-sheet-pinned fiction
-/// topic that must still demand the sheet and the tick. The 02.5.5-T1 <c>IFactSheetGuard</c> is not merged,
-/// so the approved sheet is scripted through the hand-written <c>FakeFactSheetGuard</c>.
+/// topic that must still demand the sheet and the tick. The registered guard is 02.5.5-T1's real
+/// <c>FactSheetGuard</c>; these cases still script the sheet through the hand-written
+/// <c>FakeFactSheetGuard</c>, because each one pins the exact sheet shape the gate must read, and the real
+/// guard's own end-to-end paths are covered by the <c>RealGuard...</c> suites.
 /// </summary>
 public sealed partial class ApproveStoryEndpointTests
 {

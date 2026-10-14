@@ -111,8 +111,8 @@ public sealed class GenerateStoryQaTests(TestDatabase database) : IntegrationTes
     [Fact]
     public async Task Generate_TrueCrimeWithoutApprovedSheet_Returns409FactSheetRequired()
     {
-        // The registered default is NullFactSheetGuard (02 CR-24): until 02.5.5-T1 lands it fails
-        // closed, so a true-crime episode refuses with fact_sheet_required.
+        // The registered guard is the real FactSheetGuard (02.5.5-T1): a true-crime episode with no
+        // approved sheet row refuses with fact_sheet_required before any spend.
         var world = await SeedAsync(topic: Topic.TrueCrime);
         using var factory = Factory();
         using var client = factory.ClientFor(world.UserId);
