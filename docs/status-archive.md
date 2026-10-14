@@ -4,6 +4,18 @@ History moved out of STATUS.md to keep the live file small. The initial archive 
 
 ## Resume-here history (Current/Previous blocks, Next actions)
 
+### Superseded web Next (Session 38) line (2026-10-15, replaced when #195 merged as `489d26a4`)
+
+Replaced text (verbatim):
+
+- **Web next (Session 38):** **10.5.6-T1** approve/reopen dialogs + true-crime attestation in PR #195 (Session 38, `feature/10.5.6-T1-s38`, from `develop` `87a18ab0`, merged `develop` `3d991845`; no migration; CI refused: CI-01, owner treats as pass; local web gate — all 9 `web.yml` steps (lint, `i18n:check`, `api:gen:check`, `test:ci`, `test:tools`, `legal:gen:check`, `build`, `budget:gzip`, `csp:gen`) — exit 0 on `e1849c55`; `web/openapi.json` re-pinned to `sourceCommit 87a18ab0`, owner-approved; closes the 10.5.4-T1 AC7 `needsReopen` seam, the `keywords_flagged` producer and the approve half of the waived 10.5.10-T1 AC #4/#7) → lane next **10.5.7-T1**, then **10.5.5-T1** research page (owns the omitted approve blocked-region research deep link; `episodes.approve.blocked.researchLink` is still unused) and **10.10.2-T1** render / "Make video", which depends on this task (bind to `videoBlocked()` + `ApprovalStore`, never `keywordFlags().length`; open items in §Open tasks).
+
+Replaced clause of the backend Next bullet (verbatim):
+
+Web lane: **10.5.6-T1** approve/reopen + attestation UI delivered in Session 38 (#195); the lane pointer is the web-next line above.
+
+Outcome: 10.5.6-T1 merged as #195 (`489d26a4`, tip `f7b67d41`, gated code `e1849c55`); the Resume line now shows the merge and its lane pointer (10.5.7-T1, then 10.5.5-T1 / 10.10.2-T1) is unchanged.
+
 ### Superseded web Next lines and the backend Next web-lane clause (2026-10-15, replaced when Session 38 opened the 10.5.6-T1 PR)
 
 Replaced text (verbatim):
