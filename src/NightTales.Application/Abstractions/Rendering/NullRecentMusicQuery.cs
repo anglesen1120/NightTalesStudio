@@ -1,8 +1,8 @@
 namespace NightTales.Application.Abstractions.Rendering;
 
 /// <summary>
-/// The <see cref="IRecentMusicQuery"/> until 09.6.1-T1 creates <c>render_jobs</c>: no series has a recent
-/// pick, so the selector's choice depends on the episode id alone.
+/// The test-only fake of <see cref="IRecentMusicQuery"/>: no series has a recent pick, so the selector's choice
+/// depends on the episode id alone. It is not registered in any composition root; <c>RecentMusicQuery</c> is.
 /// </summary>
 public sealed class NullRecentMusicQuery : IRecentMusicQuery
 {

@@ -135,6 +135,7 @@ public sealed class RenderEpisodeCommandHandler(
         // filtered like the episode read; no LockSeriesForShareAsync is needed, because nothing on this path
         // gates on Topic the way the fact-sheet command's true-crime gate does.
         var series = await db.Series
+            .AsNoTracking()
             .SingleOrDefaultAsync(candidate => candidate.Id == episode.SeriesId, cancellationToken)
             .ConfigureAwait(false);
         if (series is null)
@@ -150,8 +151,10 @@ public sealed class RenderEpisodeCommandHandler(
         }
 
         // Step 3. The D3 script bound, in code points after NFC normalisation (04 V1, CR-3). The lower bound
-        // belongs to the 02 approval gate, which only approves a body of 1-20000 code points.
-        if (CountScriptCodePoints(story.Value.Body) > MaxScriptCodePoints)
+        // belongs to the 02 approval gate, which only approves a body of 1-20000 code points. Noncharacters are
+        // replaced first: ICU throws on one, and the token count of Step 5 normalises the same text (SEC2).
+        var body = ReplaceNoncharacters(story.Value.Body ?? string.Empty);
+        if (CountScriptCodePoints(body) > MaxScriptCodePoints)
         {
             return Errors.ValidationFailed(
                 ScriptField,
@@ -161,7 +164,8 @@ public sealed class RenderEpisodeCommandHandler(
         // Step 4. The corpus read happens only now that the episode is loaded and authorised in this scope; an
         // empty corpus is not evidence of a clean episode (03 D11). Every issue Lint returns is blocking.
         var corpus = await nameCorpus.LoadAsync(episode.Id, cancellationToken).ConfigureAwait(false);
-        var issues = RenderKeywordLinter.Lint(story.Value.Segments, corpus);
+        var segments = SanitiseKeywords(story.Value.Segments);
+        var issues = RenderKeywordLinter.Lint(segments, corpus);
         if (issues.Count > 0)
         {
             return Errors.KeywordsFlagged(ToFlags(issues));
@@ -171,8 +175,8 @@ public sealed class RenderEpisodeCommandHandler(
         // Story:Length:Rate:{language} is not bound to configuration anywhere (03 D3/D8); ImagesOptions owns
         // the clip length and the shares but not those two rates, so the plan takes the D3 defaults as a whole.
         var plan = RenderImagePlanner.Plan(new RenderImagePlanInput(
-            story.Value.Segments,
-            StoryText.CountTokens(story.Value.Body),
+            segments,
+            StoryText.CountTokens(body),
             series.Language,
             episode.LengthTier,
             ImagePlanOptions.Defaults));
@@ -226,10 +230,12 @@ public sealed class RenderEpisodeCommandHandler(
             .AsNoTracking()
             .SingleOrDefaultAsync(candidate => candidate.Id == series.StyleTemplateId, cancellationToken)
             .ConfigureAwait(false);
-        if (template is null || !template.Active)
+        if (template is null)
         {
-            // Fail closed: the series points at a template the catalog no longer offers, so no prompt and no
+            // Fail closed: the series points at a template that no longer exists, so no prompt and no
             // render-params can be built. The series owner fixes it; a retry of this request cannot.
+            // An inactive template still renders: its prompt version and render settings are stored, and
+            // Active only gates new selection.
             return Error.Conflict(
                 ErrorCodes.EpisodeInvalidState,
                 "The series' style template is unavailable; the render cannot be prepared.");
@@ -354,6 +360,50 @@ public sealed class RenderEpisodeCommandHandler(
         }
 
         return count;
+    }
+
+    /// <summary>
+    /// The segments with every noncharacter replaced by a space in each keyword, so the linter and the planner never
+    /// normalise one; ICU throws on a noncharacter (SEC2).
+    /// </summary>
+    /// <param name="segments">The approved version's ordered scene keywords.</param>
+    /// <returns>The same segments with each keyword sanitised.</returns>
+    private static IReadOnlyList<SegmentKeywords> SanitiseKeywords(IReadOnlyList<SegmentKeywords> segments) =>
+        segments.Select(segment => segment with
+        {
+            Keywords = segment.Keywords?.Select(ReplaceNoncharacters).ToList(),
+        }).ToList();
+
+    /// <summary>
+    /// <paramref name="text"/> with every noncharacter replaced by a space. Unpaired surrogates stay: the Domain
+    /// normaliser already replaces them, and a space there would split a token that counts as one today (SEC2).
+    /// Returns the input itself when there is no noncharacter.
+    /// </summary>
+    /// <param name="text">The text to sanitise.</param>
+    /// <returns>The text without a noncharacter.</returns>
+    private static string ReplaceNoncharacters(string text)
+    {
+        StringBuilder? builder = null;
+        for (var index = 0; index < text.Length; index++)
+        {
+            var width = char.IsHighSurrogate(text[index]) && index + 1 < text.Length && char.IsLowSurrogate(text[index + 1])
+                ? 2
+                : 1;
+            var codePoint = width == 2 ? char.ConvertToUtf32(text[index], text[index + 1]) : text[index];
+            if (BibleOpNormalizer.IsNoncharacter(codePoint))
+            {
+                builder ??= new StringBuilder(text.Length).Append(text, 0, index);
+                builder.Append(' ');
+            }
+            else
+            {
+                builder?.Append(text, index, width);
+            }
+
+            index += width - 1;
+        }
+
+        return builder?.ToString() ?? text;
     }
 
     /// <summary>

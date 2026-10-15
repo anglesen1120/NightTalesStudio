@@ -69,9 +69,10 @@ public static class ApplicationServiceCollectionExtensions
         services.TryAddSingleton<SeriesBibleMetrics>();
 
         // 05.1.2-T1 / 09.6.1-T1 (05 D6/D7): the subtitle-presets catalog embedded in the Domain assembly,
-        // read once. It is loaded eagerly by the factory so a build missing the resource or carrying an
-        // invalid document fails the composition root with a descriptive exception instead of each render
-        // (the catalog is a deployment precondition, never a per-request null).
+        // read once. The factory is lazy: it runs on the first resolution (the first RenderEpisode handler
+        // construction), not at composition-root build time. A throwing factory caches nothing, so the next
+        // resolution runs it again. A build missing the resource or carrying an invalid document fails there with
+        // a descriptive exception (the catalog is a deployment precondition, never a per-request null).
         services.TryAddSingleton(provider =>
             SubtitlePresetCatalog.LoadEmbedded().Match(
                 catalog => catalog,
