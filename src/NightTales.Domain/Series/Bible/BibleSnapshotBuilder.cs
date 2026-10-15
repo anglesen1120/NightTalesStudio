@@ -120,7 +120,7 @@ public static class BibleSnapshotBuilder
     public static int MeasureUtf8Bytes(BibleSnapshot snapshot)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
-        return Encoding.UTF8.GetByteCount(JsonSerializer.Serialize(snapshot, MeasureOptions));
+        return JsonSerializer.SerializeToUtf8Bytes(snapshot, MeasureOptions).Length;
     }
 
     /// <summary>S1: cuts the narrator's voice notes to <paramref name="maxChars"/>.</summary>
