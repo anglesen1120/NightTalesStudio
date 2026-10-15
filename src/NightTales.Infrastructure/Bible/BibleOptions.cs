@@ -34,6 +34,9 @@ public sealed class BibleOptions
 
     /// <summary>The proposal prompt's budget (<c>Bible:Prompt</c>, 02.6.3-T2).</summary>
     public BiblePromptOptions Prompt { get; init; } = new();
+
+    /// <summary>The avoid-plots list the writer receives (<c>Bible:AvoidPlots</c>, 02.6.3-T3).</summary>
+    public BibleAvoidPlotsOptions AvoidPlots { get; init; } = new();
 }
 
 /// <summary>
@@ -71,8 +74,36 @@ public sealed class BiblePromptOptions
     /// <summary>The newest episode summaries the payload carries.</summary>
     public int MaxSummaries { get; init; } = 50;
 
-    /// <summary>The most characters the bible part of a prompt may use.</summary>
-    public int MaxChars { get; init; } = 24000;
+    /// <summary>
+    /// The most UTF-8 bytes the serialised writer <c>bible</c> object may use (02.6.3-T3). 36,000, not the task's
+    /// 24,000: the task's convergence proof counts characters, and Vietnamese text is 1.5 to 3 bytes per character.
+    /// </summary>
+    public int MaxChars { get; init; } = 36000;
+
+    /// <summary>The most characters of one voice-notes text the writer snapshot keeps (02.6.3-T3 step S1).</summary>
+    public int MaxVoiceNotesChars { get; init; } = 500;
+
+    /// <summary>The most characters of one character or place description the writer snapshot keeps (02.6.3-T3 step S2).</summary>
+    public int MaxDescriptionChars { get; init; } = 150;
+
+    /// <summary>The newest episode summaries whose full text the writer snapshot keeps; older ones keep only their title (02.6.3-T3 step S3).</summary>
+    public int KeepFullSummaryCount { get; init; } = 25;
+
+    /// <summary>The most entries of each array (rules, places, characters) the writer snapshot keeps (02.6.3-T3 steps S4-S6).</summary>
+    public int MaxArrayEntries { get; init; } = 15;
+}
+
+/// <summary>
+/// The writer's avoid-plots list (02.6.3-T3): the first sentence of each recent episode summary, trimmed and
+/// deduplicated, so the writer does not repeat a plot the series already used.
+/// </summary>
+public sealed class BibleAvoidPlotsOptions
+{
+    /// <summary>The most entries the list carries.</summary>
+    public int Max { get; init; } = 25;
+
+    /// <summary>The most characters one entry keeps.</summary>
+    public int MaxCharsPerEntry { get; init; } = 120;
 }
 
 /// <summary>
@@ -141,6 +172,12 @@ public sealed class BibleOptionsValidator : IValidateOptions<BibleOptions>
         RequirePositive(failures, proposal.MaxStoryChars, "Proposal:MaxStoryChars");
         RequirePositive(failures, prompt.MaxSummaries, "Prompt:MaxSummaries");
         RequirePositive(failures, prompt.MaxChars, "Prompt:MaxChars");
+        RequirePositive(failures, prompt.MaxVoiceNotesChars, "Prompt:MaxVoiceNotesChars");
+        RequirePositive(failures, prompt.MaxDescriptionChars, "Prompt:MaxDescriptionChars");
+        RequirePositive(failures, prompt.KeepFullSummaryCount, "Prompt:KeepFullSummaryCount");
+        RequirePositive(failures, prompt.MaxArrayEntries, "Prompt:MaxArrayEntries");
+        RequirePositive(failures, options.AvoidPlots.Max, "AvoidPlots:Max");
+        RequirePositive(failures, options.AvoidPlots.MaxCharsPerEntry, "AvoidPlots:MaxCharsPerEntry");
         RequireNotNegative(failures, proposal.MaxCharacterOps, "Proposal:MaxCharacterOps");
         RequireNotNegative(failures, proposal.MaxPlaceOps, "Proposal:MaxPlaceOps");
         RequireNotNegative(failures, proposal.MaxRuleOps, "Proposal:MaxRuleOps");
@@ -164,6 +201,12 @@ public sealed class BibleOptionsValidator : IValidateOptions<BibleOptions>
         RequireAtMost(failures, proposal.MaxStoryChars, "Proposal:MaxStoryChars", MaxTextChars);
         RequireAtMost(failures, prompt.MaxSummaries, "Prompt:MaxSummaries", MaxPromptSummaries);
         RequireAtMost(failures, prompt.MaxChars, "Prompt:MaxChars", MaxPromptChars);
+        RequireAtMost(failures, prompt.MaxVoiceNotesChars, "Prompt:MaxVoiceNotesChars", MaxTextChars);
+        RequireAtMost(failures, prompt.MaxDescriptionChars, "Prompt:MaxDescriptionChars", MaxTextChars);
+        RequireAtMost(failures, prompt.KeepFullSummaryCount, "Prompt:KeepFullSummaryCount", MaxPromptSummaries);
+        RequireAtMost(failures, prompt.MaxArrayEntries, "Prompt:MaxArrayEntries", MaxArrayEntries);
+        RequireAtMost(failures, options.AvoidPlots.Max, "AvoidPlots:Max", MaxPromptSummaries);
+        RequireAtMost(failures, options.AvoidPlots.MaxCharsPerEntry, "AvoidPlots:MaxCharsPerEntry", MaxTextChars);
 
         return failures.Count == 0
             ? ValidateOptionsResult.Success

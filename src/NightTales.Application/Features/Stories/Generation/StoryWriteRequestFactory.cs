@@ -4,6 +4,7 @@ using NightTales.Application.Abstractions.Money;
 using NightTales.Application.Abstractions.Research;
 using NightTales.Application.Abstractions.Text;
 using NightTales.Application.Abstractions.Usage;
+using NightTales.Application.Features.SeriesBible.Abstractions;
 using NightTales.Application.Features.Stories.Writing;
 using NightTales.Domain.Common;
 using NightTales.Domain.Episodes;
@@ -25,11 +26,9 @@ public sealed record BuiltWriteRequest(StoryWriteRequest Request, PriceVersion P
 /// version, so a price change after queueing never reprices a queued run.
 /// </summary>
 /// <remarks>
-/// <b>Hand-over (02.6.3 series bible, 02.5.2 structure plan):</b> <c>IBibleSnapshotProvider</c> and
-/// <c>IStructurePlanProvider</c> do not exist yet. <see cref="StoryWriteRequest.Bible"/> and
-/// <see cref="EpisodeSnapshot.Structure"/> are therefore <see langword="null"/> (the data object omits both keys) and
-/// <see cref="StoryWriteRequest.AvoidPlots"/> is empty. The owning tasks inject their provider here and fill the three
-/// values at the marked line in <see cref="BuildAsync"/>; no other file builds a writer request.
+/// <b>Hand-over (02.6.3-T3):</b> the caller reads the run's bible once and passes it as <paramref name="bible"/>. Its
+/// snapshot becomes <see cref="StoryWriteRequest.Bible"/> and its avoid-plots list becomes
+/// <see cref="StoryWriteRequest.AvoidPlots"/>. The structure plan (02.5.2) is still <see langword="null"/>.
 /// </remarks>
 /// <param name="prices">The price catalog.</param>
 public sealed class StoryWriteRequestFactory(IPriceCatalog prices)
@@ -45,6 +44,7 @@ public sealed class StoryWriteRequestFactory(IPriceCatalog prices)
     /// <param name="facts">The approved facts (true-crime), or <see langword="null"/> for fiction.</param>
     /// <param name="attempt">0 for the first attempt, 1 for the invalid-output retry.</param>
     /// <param name="violatedRules">The rule ids of the previous invalid output (never its text), or <see langword="null"/>.</param>
+    /// <param name="bible">The series bible read once for this run; carries the writer snapshot and the avoid-plots list.</param>
     /// <param name="ct">Cancels the lookup.</param>
     /// <returns>The request, or the price-catalog / reservation error.</returns>
     public async ValueTask<ErrorOr<BuiltWriteRequest>> BuildAsync(
@@ -55,6 +55,7 @@ public sealed class StoryWriteRequestFactory(IPriceCatalog prices)
         IReadOnlyList<FactForWriter>? facts,
         int attempt,
         IReadOnlyList<string>? violatedRules,
+        BibleForWriter bible,
         CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(run);
@@ -83,15 +84,15 @@ public sealed class StoryWriteRequestFactory(IPriceCatalog prices)
 
         var length = LengthTargetResolver.Resolve(episode.LengthTier, language, price.Value.ParseLimits());
 
-        // Hand-over point: the bible snapshot, the structure plan and the avoid-plots list are supplied here (see the remarks).
+        // Hand-over point: the structure plan (02.5.2) and the bible snapshot (02.6.3-T3) are supplied here; see the remarks.
         var request = new StoryWriteRequest(
             context,
             new SeriesSnapshot(run.SeriesId, topic, language),
             new EpisodeSnapshot(episode.Id, episode.Brief, episode.LengthTier, Structure: null),
             length,
-            Bible: null,
+            Bible: bible.Bible,
             facts,
-            AvoidPlots: [],
+            AvoidPlots: bible.AvoidPlots,
             violatedRules);
 
         return new BuiltWriteRequest(request, price.Value);
