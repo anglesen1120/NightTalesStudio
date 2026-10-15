@@ -53,6 +53,7 @@ public sealed class InitialCoreMigrationTests(TestDatabase database) : Integrati
         "moderation_events",
         "music_tracks",
         "outbox_messages",
+        "platform_quota_usage",
         "price_versions",
         "refresh_tokens",
         "render_jobs",

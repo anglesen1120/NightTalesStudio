@@ -8,6 +8,7 @@ using NightTales.Domain.Compliance;
 using NightTales.Domain.Compliance.Deletion;
 using NightTales.Domain.Episodes;
 using NightTales.Domain.Platform;
+using NightTales.Domain.Publishing;
 using NightTales.Domain.Rendering;
 using NightTales.Domain.Rendering.Music;
 using NightTales.Domain.Research;
@@ -104,6 +105,13 @@ public interface IAppDbContext
     /// filter applies, and <c>params</c> is content-free by construction.
     /// </summary>
     DbSet<RenderJob> RenderJobs { get; }
+
+    /// <summary>
+    /// The YouTube upload quota counter of 06.3.1-T1 (<c>platform_quota_usage</c>): one row per platform and Pacific day,
+    /// keyed by <c>(platform, quota_day)</c>. A platform counter, so it is not <c>IUserOwned</c> and has no tenant filter;
+    /// <c>IQuotaLedger</c> is the only writer.
+    /// </summary>
+    DbSet<PlatformQuotaUsage> PlatformQuotaUsage { get; }
 
     /// <summary>
     /// Takes the row lock of the current user's episode (<c>SELECT … FOR NO KEY UPDATE</c>, 02.2.2 plan §4 U6) as the

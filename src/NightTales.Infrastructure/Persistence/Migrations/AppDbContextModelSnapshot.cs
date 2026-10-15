@@ -826,6 +826,47 @@ namespace NightTales.Infrastructure.Persistence.Migrations
                     b.ToTable("feature_flags", (string)null);
                 });
 
+            modelBuilder.Entity("NightTales.Domain.Publishing.PlatformQuotaUsage", b =>
+                {
+                    b.Property<string>("Platform")
+                        .HasColumnType("text")
+                        .HasColumnName("platform");
+
+                    b.Property<DateOnly>("QuotaDay")
+                        .HasColumnType("date")
+                        .HasColumnName("quota_day");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("created_at");
+
+                    b.Property<int>("UnitsLimit")
+                        .HasColumnType("integer")
+                        .HasColumnName("units_limit");
+
+                    b.Property<int>("UnitsUsed")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0)
+                        .HasColumnName("units_used");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("Platform", "QuotaDay")
+                        .HasName("pk_platform_quota_usage");
+
+                    b.ToTable("platform_quota_usage", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_platform_quota_usage_platform", "platform IN ('youtube')");
+
+                            t.HasCheckConstraint("ck_platform_quota_usage_units_limit", "units_limit > 0");
+
+                            t.HasCheckConstraint("ck_platform_quota_usage_units_used", "units_used >= 0");
+                        });
+                });
+
             modelBuilder.Entity("NightTales.Domain.Rendering.Music.MusicTrack", b =>
                 {
                     b.Property<Guid>("Id")
