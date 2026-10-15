@@ -4,6 +4,12 @@ History moved out of STATUS.md to keep the live file small. The initial archive 
 
 ## Resume-here history (Current/Previous blocks, Next actions)
 
+### Superseded backend Next Session 37 line (2026-10-16, replaced when Session 45 opened the 02.6.3-T3 PR)
+
+Replaced text (verbatim):
+
+- **Next (backend, start here):** Session 37 closed: **02.6.3-T1** series bible entity + `GET/PUT /api/v1/series/{id}/bible` merged as #198 (`1fb6ac16`, tip `b8c00733`; migration `20261014094406_02_AddSeriesBible` + backfill; CI refused: CI-01, owner treats as pass; final full gate on the remote VM (Ubuntu arm64) `GATE_RC=0` on `b2d68d07`, tip adds docs only; owner decisions 2026-10-15 recorded in BIBLE-1; open items BIBLE-2…5 and the hand-overs below). Backend lane next: **02.6.3-T2** (proposal job + accept/dismiss; read its Notes: `ApplyProposal` signature, id rule, take `LockSeriesBibleForUpdateAsync`) and **02.6.3-T3**; web **10.5.7-T1** consumes the GET/PUT wire. Web lane: **10.5.6-T1** merged as #195 (`489d26a4`); **10.5.5-T1** research page merged as #201 (`c275b0bb`, Session 40). **Migration lane is free**: the next migration follows `20261014094406_02_AddSeriesBible` (owner of `migrations[^1]` guard: `AddSeriesBibleMigrationTests`, the next migration moves it). Session 36 closed: **02.5.5-T1** #193 merged (`3d991845`); older merged items are in `docs/status-archive.md`.
+
 ### Superseded web Next (Session 40) line and the backend Next web-lane clause (2026-10-15, closed Session 40: #201 merged as `c275b0bb`)
 
 Replaced text (verbatim):
