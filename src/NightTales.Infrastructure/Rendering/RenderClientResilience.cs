@@ -1,9 +1,11 @@
+using System.Security.Authentication;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NightTales.Application.Abstractions.Rendering;
+using NightTales.Application.Rendering;
 using Polly;
 using Polly.CircuitBreaker;
 using Polly.Retry;
@@ -38,10 +40,19 @@ public static class RenderClientResilience
     /// </summary>
     internal static readonly TimeSpan RetryBaseDelay = TimeSpan.FromMilliseconds(200);
 
-    /// <summary>The one status 5xx-or-below that is a transient node fault rather than a caller fault (05 D4).</summary>
+    /// <summary>
+    /// The one 4xx status that is a transient node fault rather than a caller fault: 408 is the adapter's own
+    /// request timeout (05 D4), the 5xx class covering the rest.
+    /// </summary>
     private const int RequestTimeoutStatus = 408;
 
     /// <summary>Registers the <c>Render</c> section, both pipelines, the named download client and the clients.</summary>
+    /// <remarks>
+    /// The <c>RenderNodes</c> section <see cref="MptRenderClient"/> reads its health-poll interval from must be
+    /// registered by the same composition root, and <c>AddRenderNodes</c> is what binds and validates it; this
+    /// method registers the options as well, so a root that composes the render clients alone still resolves
+    /// them with the section's defaults instead of failing to build the client at all.
+    /// </remarks>
     /// <param name="services">The composition root's service collection.</param>
     /// <param name="configuration">The host configuration: the <c>Render</c> section.</param>
     /// <returns>The same collection, for chaining.</returns>
@@ -49,6 +60,8 @@ public static class RenderClientResilience
     {
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(configuration);
+
+        services.AddOptions<RenderNodesOptions>();
 
         services.AddOptions<RenderClientOptions>()
             .BindConfiguration(RenderClientOptions.SectionName)
@@ -155,9 +168,9 @@ public static class RenderClientResilience
 
     /// <summary>
     /// Whether one outcome may be retried, and whether it opens the breaker with the retryable verdict it also
-    /// hands the breaker: a non-cancellation fault, or a 408/503/5xx answer. A 429 is deliberately neither —
-    /// <c>adapter_capacity_full</c> is a <see cref="RenderClientFailureKind.Deferred"/> carrying the adapter's
-    /// <c>Retry-After</c>, which would outlive the 30 s total timeout anyway (BD6, 11 T6).
+    /// hands the breaker: a non-cancellation fault that is not a TLS failure, or a 408/5xx answer. A 429 is
+    /// deliberately neither — <c>adapter_capacity_full</c> is a <see cref="RenderClientFailureKind.Deferred"/>
+    /// carrying the adapter's <c>Retry-After</c>, which would outlive the 30 s total timeout anyway (BD6, 11 T6).
     /// </summary>
     /// <param name="outcome">What one attempt produced.</param>
     /// <returns><c>true</c> when the call may be repeated and counts against the breaker.</returns>
@@ -178,12 +191,41 @@ public static class RenderClientResilience
             return false;
         }
 
+        // A refused pinned handshake is the node's configuration, not its availability: every attempt would be
+        // refused identically, so the retry budget is not spent on it and the breaker does not count it. The
+        // caller gets the terminal, alerting tls failure instead (task §Failure handling, D13/S3).
+        if (IsTlsFailure(outcome.Exception))
+        {
+            return false;
+        }
+
         if (outcome.Exception is not null)
         {
             return true;
         }
 
-        return outcome.Result is { } result && (result.Status == RequestTimeoutStatus || result.Status == 503 || result.Status >= 500);
+        return outcome.Result is { } result && result.Status is RequestTimeoutStatus or >= 500;
+    }
+
+    /// <summary>
+    /// Whether an exception is the pinned TLS handshake failing rather than the network: the certificate was
+    /// refused (a pin mismatch, an expired certificate) or the handshake's authentication failed. The check
+    /// walks the whole inner-exception chain, because the platform wraps the handshake's
+    /// <see cref="AuthenticationException"/> differently per transport.
+    /// </summary>
+    /// <param name="exception">The outcome's exception, or <c>null</c>.</param>
+    /// <returns><c>true</c> when the chain carries an <see cref="AuthenticationException"/>.</returns>
+    internal static bool IsTlsFailure(Exception? exception)
+    {
+        for (var current = exception; current is not null; current = current.InnerException)
+        {
+            if (current is AuthenticationException)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /// <summary>

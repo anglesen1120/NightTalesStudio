@@ -37,6 +37,15 @@ public sealed class AdapterErrorMapperTests
     [InlineData(302, null, false, RenderClientFailureKind.TerminalFailure, RenderOutcomeCodes.RenderNodeError, true, -1)]
     [InlineData(429, null, false, RenderClientFailureKind.Deferred, null, false, 30)]
     [InlineData(200, null, false, RenderClientFailureKind.TerminalFailure, RenderOutcomeCodes.RenderNodeError, true, -1)]
+    // Status class decides first: a 408 or a 5xx is transient whatever the code, a 3xx is terminal whatever
+    // the code, and a code the table does not document for that status falls back to the status class.
+    [InlineData(408, null, false, RenderClientFailureKind.TransientFailure, RenderOutcomeCodes.RenderNodeError, false, -1)]
+    [InlineData(408, "adapter_surprise", false, RenderClientFailureKind.TransientFailure, RenderOutcomeCodes.RenderNodeError, false, -1)]
+    [InlineData(500, AdapterErrorCodes.OutputAbsent, false, RenderClientFailureKind.TransientFailure, RenderOutcomeCodes.RenderNodeError, false, -1)]
+    [InlineData(500, AdapterErrorCodes.TaskUnknown, true, RenderClientFailureKind.TransientFailure, RenderOutcomeCodes.RenderNodeError, false, -1)]
+    [InlineData(503, AdapterErrorCodes.OutputNotReady, false, RenderClientFailureKind.TransientFailure, RenderOutcomeCodes.RenderNodeError, false, -1)]
+    [InlineData(302, AdapterErrorCodes.OutputAbsent, false, RenderClientFailureKind.TerminalFailure, RenderOutcomeCodes.RenderNodeError, true, -1)]
+    [InlineData(429, AdapterErrorCodes.TaskBusy, false, RenderClientFailureKind.Deferred, null, false, 30)]
     public void Map_FullAdapterCodeTable(
         int status,
         string? code,
@@ -189,15 +198,152 @@ public sealed class AdapterErrorMapperTests
             .ShouldBe(TimeSpan.FromSeconds(300));
     }
 
+    [Theory]
+    // A Retry-After below one second — an explicit 0 included — is raised to the one-second floor, a usable
+    // value passes through, an absurd one is clamped to 300 s and a missing header keeps the 30 s default.
+    [InlineData(0, 1)]
+    [InlineData(1, 1)]
+    [InlineData(30, 30)]
+    [InlineData(300, 300)]
+    [InlineData(99999, 300)]
+    public void Map_CapacityFull_RetryAfterIsFlooredAtOneSecondAndClamped(int headerSeconds, int expectedSeconds)
+    {
+        AdapterErrorMapper
+            .Map(
+                RenderClientError.Status(429, AdapterErrorCodes.CapacityFull, retryAfter: TimeSpan.FromSeconds(headerSeconds)),
+                taskSubmitted: false)
+            .RetryAfter
+            .ShouldBe(TimeSpan.FromSeconds(expectedSeconds));
+    }
+
     [Fact]
-    public void Map_CapacityFull_WithNegativeHeader_IsClampedToZero()
+    public void Map_CapacityFull_WithSubSecondHeader_IsRaisedToTheFloor()
+    {
+        AdapterErrorMapper
+            .Map(
+                RenderClientError.Status(429, AdapterErrorCodes.CapacityFull, retryAfter: TimeSpan.FromMilliseconds(500)),
+                taskSubmitted: false)
+            .RetryAfter
+            .ShouldBe(AdapterErrorMapper.MinRetryAfter);
+    }
+
+    [Fact]
+    public void Map_CapacityFull_WithNegativeHeader_IsRaisedToTheFloor()
     {
         AdapterErrorMapper
             .Map(
                 RenderClientError.Status(429, AdapterErrorCodes.CapacityFull, retryAfter: TimeSpan.FromSeconds(-5)),
                 taskSubmitted: false)
             .RetryAfter
-            .ShouldBe(TimeSpan.Zero);
+            .ShouldBe(AdapterErrorMapper.MinRetryAfter);
+    }
+
+    [Fact]
+    public void Map_CapacityFull_WithoutUsableHeader_KeepsTheDefault()
+    {
+        AdapterErrorMapper
+            .Map(RenderClientError.Status(429, AdapterErrorCodes.CapacityFull, retryAfter: null), taskSubmitted: false)
+            .RetryAfter
+            .ShouldBe(AdapterErrorMapper.DefaultRetryAfter);
+    }
+
+    [Fact]
+    public void Map_KnownCodeOnWrongStatus_FallsBackToTheStatusClass()
+    {
+        // adapter_output_absent is documented on 404 only: on a 400 the status class decides, so the answer
+        // fails closed with the code as its detail (never as an output kind).
+        var onClientError = AdapterErrorMapper.Map(
+            RenderClientError.Status(400, AdapterErrorCodes.OutputAbsent),
+            taskSubmitted: false);
+
+        onClientError.Kind.ShouldBe(RenderClientFailureKind.TerminalFailure);
+        onClientError.OutcomeCode.ShouldBe(RenderOutcomeCodes.RenderNodeError);
+        onClientError.Detail.ShouldBe(AdapterErrorCodes.OutputAbsent);
+        onClientError.Alert.ShouldBeTrue();
+
+        // The same code on a 5xx is transient: a 5xx may never become an output kind.
+        var onServerError = AdapterErrorMapper.Map(
+            RenderClientError.Status(500, AdapterErrorCodes.OutputAbsent),
+            taskSubmitted: false);
+
+        onServerError.Kind.ShouldBe(RenderClientFailureKind.TransientFailure);
+        onServerError.OutcomeCode.ShouldBe(RenderOutcomeCodes.RenderNodeError);
+        onServerError.Detail.ShouldBeNull();
+        onServerError.Alert.ShouldBeFalse();
+    }
+
+    [Fact]
+    public void Map_408_IsTransientWhateverTheCode()
+    {
+        // A 408 that survives the pipeline is a transient node fault, not a terminal alert (09.6.2-T1
+        // §Failure handling: status class before code).
+        AdapterErrorMapper
+            .Map(RenderClientError.Status(408, AdapterErrorCodes.TaskBusy), taskSubmitted: true)
+            .ShouldBe(new RenderClientFailure(
+                RenderClientFailureKind.TransientFailure, RenderOutcomeCodes.RenderNodeError, Detail: null, Alert: false, RetryAfter: null));
+    }
+
+    [Theory]
+    [InlineData("Bad Code!")]
+    [InlineData("http://node.internal/x")]
+    [InlineData("adapter_bad\r\nInjected")]
+    [InlineData("Sentence with spaces")]
+    [InlineData("UPPER")]
+    public void Map_UnknownCodeWithUnsafeText_IsTerminalAlertWithoutDetail(string code)
+    {
+        var failure = AdapterErrorMapper.Map(RenderClientError.Status(400, code), taskSubmitted: false);
+
+        failure.Kind.ShouldBe(RenderClientFailureKind.TerminalFailure);
+        failure.OutcomeCode.ShouldBe(RenderOutcomeCodes.RenderNodeError);
+        failure.Detail.ShouldBeNull();
+        failure.Alert.ShouldBeTrue();
+    }
+
+    [Theory]
+    [InlineData("adapter_capacity_full", true)]
+    [InlineData("a", true)]
+    [InlineData("a_b_c_1", false)]
+    [InlineData("Adapter", false)]
+    [InlineData("_leading", false)]
+    [InlineData("adapter-node", false)]
+    [InlineData("adapter1", false)]
+    [InlineData("", false)]
+    [InlineData(null, false)]
+    public void IsSafeCode_AcceptsOnlyTheAdapterCodeShape(string? code, bool expected)
+    {
+        AdapterErrorMapper.IsSafeCode(code).ShouldBe(expected);
+    }
+
+    [Fact]
+    public void IsSafeCode_RejectsATooLongCode()
+    {
+        var tooLong = new string('a', 64);
+        AdapterErrorMapper.IsSafeCode(tooLong).ShouldBeTrue();
+        AdapterErrorMapper.IsSafeCode(tooLong + "a").ShouldBeFalse();
+    }
+
+    [Fact]
+    public void Misconfigured_IsTerminalNodeErrorWithAlert()
+    {
+        var failure = AdapterErrorMapper.Misconfigured();
+
+        failure.Kind.ShouldBe(RenderClientFailureKind.TerminalFailure);
+        failure.OutcomeCode.ShouldBe(RenderOutcomeCodes.RenderNodeError);
+        failure.Detail.ShouldBe(AdapterErrorMapper.MisconfiguredDetail);
+        failure.Alert.ShouldBeTrue();
+        failure.RetryAfter.ShouldBeNull();
+    }
+
+    [Fact]
+    public void TlsFailure_IsTerminalNodeErrorWithAlert()
+    {
+        var failure = AdapterErrorMapper.TlsFailure();
+
+        failure.Kind.ShouldBe(RenderClientFailureKind.TerminalFailure);
+        failure.OutcomeCode.ShouldBe(RenderOutcomeCodes.RenderNodeError);
+        failure.Detail.ShouldBe(AdapterErrorMapper.TlsFailureDetail);
+        failure.Alert.ShouldBeTrue();
+        failure.RetryAfter.ShouldBeNull();
     }
 
     [Fact]

@@ -1,4 +1,5 @@
 using System.Buffers;
+using System.Security.Authentication;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -6,6 +7,7 @@ using ErrorOr;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using NightTales.Application.Abstractions.Rendering;
+using NightTales.Application.Rendering;
 using NightTales.Domain.Rendering;
 using NightTales.RenderNode.Contract;
 
@@ -46,14 +48,24 @@ namespace NightTales.Infrastructure.Rendering;
 /// <paramref name="destination"/> itself is the caller's own stream failing and is never reported as a node
 /// fault.
 /// </para>
+/// <para>
+/// The write phase is bounded by the caller's token alone: the idle timer is disarmed around
+/// <c>destination.WriteAsync</c> and re-armed once the write returns, because the caller's own stream may
+/// legitimately take longer than <c>Render:Download.IdleSeconds</c> to accept a chunk and that wait is not the
+/// node stalling (D6). An exception the destination raises — an <see cref="System.IO.IOException"/>, or an
+/// <see cref="OperationCanceledException"/> the caller's token did not cause — is rethrown exactly as it came
+/// in, never mapped to a node fault (D8).
+/// </para>
 /// </remarks>
 /// <param name="connectionFactory">The only producer of node clients (11 README F13).</param>
 /// <param name="options">The <c>Render</c> section: the idle timer, the total budget and the two byte caps.</param>
+/// <param name="renderNodes">The <c>RenderNodes</c> section: the health-poll interval an unhealthy node is deferred by (D4).</param>
 /// <param name="timeProvider">The clock the idle timer and the total budget run on (09 README D3).</param>
 /// <param name="logger">The client's log; it carries no node secret and no URL.</param>
 public sealed partial class RenderDownloadClient(
     IRenderNodeConnectionFactory connectionFactory,
     IOptions<RenderClientOptions> options,
+    IOptions<RenderNodesOptions> renderNodes,
     TimeProvider timeProvider,
     ILogger<RenderDownloadClient> logger) : IRenderDownloadClient
 {
@@ -64,8 +76,11 @@ public sealed partial class RenderDownloadClient(
     /// </summary>
     public const string HttpClientName = "render-node-download";
 
-    /// <summary>The copy chunk: 80 KiB, hashed and written as it arrives, so the file is never materialised.</summary>
-    private const int ChunkBytes = 80 * 1024;
+    /// <summary>
+    /// The copy chunk: 64 KiB, one exact <see cref="ArrayPool{T}"/> bucket, hashed and written as it arrives, so
+    /// the file is never materialised and the rented array has no wasted tail (D5).
+    /// </summary>
+    private const int ChunkBytes = 64 * 1024;
 
     /// <summary>The most of an error body that is ever read to find the adapter's <c>error.code</c>.</summary>
     private const int ErrorBodyMaxBytes = 64 * 1024;
@@ -91,6 +106,12 @@ public sealed partial class RenderDownloadClient(
     private const string TooLargeDetail = "render_output_too_large";
 
     private const string HashMismatchDetail = "render_output_sha256_mismatch";
+
+    /// <summary>
+    /// The fixed reason a TLS failure is logged with: never the exception's own message, which can carry the
+    /// node's base URL and its key (BD16, D2).
+    /// </summary>
+    private const string TlsFailureReason = "tls_authentication_failed";
 
     /// <summary>
     /// The download client's named-client configuration, so the host's registration of
@@ -130,6 +151,10 @@ public sealed partial class RenderDownloadClient(
         ArgumentNullException.ThrowIfNull(node);
         ArgumentNullException.ThrowIfNull(destination);
 
+        // A call that arrives already cancelled never touches the node: no client is built and no request is
+        // sent (D7).
+        ct.ThrowIfCancellationRequested();
+
         // The task id becomes a path segment, so it is validated and escaped before any URL is built: an id
         // that is not a plain adapter id never reaches the node as a path (S8/A03).
         if (!IsSafeTaskId(taskId))
@@ -145,7 +170,21 @@ public sealed partial class RenderDownloadClient(
                 node.Name, taskId, kind, null, 0, AdapterErrorMapper.OutputInvalid(InvalidCapDetail));
         }
 
-        using var client = connectionFactory.Create(node);
+        // A node whose pin, key or scheme is missing cannot be dialled at all: the factory refuses to build a
+        // client. That is the node's configuration and only an operator can fix it, so it is terminal and
+        // alerting, never a transient transport fault (D1). Only the exception's type is logged — its message
+        // can carry the base URL and the key.
+        HttpClient built;
+        try
+        {
+            built = connectionFactory.Create(node);
+        }
+        catch (InvalidOperationException exception)
+        {
+            return Failed(node.Name, taskId, kind, null, 0, AdapterErrorMapper.Misconfigured(), exception.GetType().Name);
+        }
+
+        using var client = built;
         client.Timeout = Timeout.InfiniteTimeSpan;
 
         using var request = new HttpRequestMessage(HttpMethod.Get, RouteFor(taskId, kind));
@@ -178,6 +217,13 @@ public sealed partial class RenderDownloadClient(
         }
         catch (HttpRequestException exception)
         {
+            // A handshake that failed against the pinned certificate is a rotation or a man in the middle:
+            // terminal and alerting, never a transient retry (D2).
+            if (IsTlsFailure(exception))
+            {
+                return Failed(node.Name, taskId, kind, null, 0, AdapterErrorMapper.TlsFailure(), TlsFailureReason);
+            }
+
             return Failed(node.Name, taskId, kind, null, 0, Transport(), exception.GetType().Name);
         }
 
@@ -189,7 +235,7 @@ public sealed partial class RenderDownloadClient(
             {
                 var error = await ReadErrorAsync(response, abort.Token, ct).ConfigureAwait(false);
 
-                return Failed(node.Name, taskId, kind, status, 0, AdapterErrorMapper.Map(error, taskSubmitted: true));
+                return Failed(node.Name, taskId, kind, status, 0, AdapterErrorMapper.Map(error, taskSubmitted: true, HealthPoll()));
             }
 
             var contentType = response.Content.Headers.ContentType?.MediaType;
@@ -232,6 +278,11 @@ public sealed partial class RenderDownloadClient(
     /// Copies the response body into <paramref name="destination"/> in <see cref="ChunkBytes"/> chunks, hashing
     /// each chunk as it is written, and verifies the declared SHA-256 before answering.
     /// </summary>
+    /// <remarks>
+    /// The idle timer is disarmed around <c>destination.WriteAsync</c> and re-armed once the write returns: the
+    /// caller's own stream may take longer than the idle window to accept a chunk without the node stalling, so
+    /// the write phase is bounded by the caller's token <paramref name="ct"/> alone (D6).
+    /// </remarks>
     private async Task<ErrorOr<DownloadResult>> StreamAsync(
         WorkerNode node,
         string taskId,
@@ -260,7 +311,7 @@ public sealed partial class RenderDownloadClient(
                 idleTimer.Change(idle, Timeout.InfiniteTimeSpan);
 
                 var read = await body
-                    .ReadAsync(buffer.AsMemory(0, ChunkBytes), abort.Token)
+                    .ReadAsync(buffer.AsMemory(0, buffer.Length), abort.Token)
                     .ConfigureAwait(false);
 
                 if (read == 0)
@@ -277,8 +328,13 @@ public sealed partial class RenderDownloadClient(
 
                 hasher.AppendData(buffer, 0, read);
 
+                // The caller's own stream is not the node: a destination that takes longer than the idle window
+                // to accept a chunk is not a stalled transfer, so the idle timer is disarmed for the write and
+                // re-armed once it returns. The write itself runs on the caller's token alone (D6).
                 writingToDestination = true;
+                idleTimer.Change(Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
                 await destination.WriteAsync(buffer.AsMemory(0, read), ct).ConfigureAwait(false);
+                idleTimer.Change(idle, Timeout.InfiniteTimeSpan);
                 writingToDestination = false;
 
                 total += read;
@@ -300,6 +356,14 @@ public sealed partial class RenderDownloadClient(
         }
         catch (OperationCanceledException)
         {
+            // A cancellation raised while the caller's own destination is writing is the destination's, not the
+            // node's: it leaves exactly as it came in and is never mapped to a node timeout (D8). The caller's
+            // own cancellation still propagates from here either way.
+            if (writingToDestination)
+            {
+                throw;
+            }
+
             ct.ThrowIfCancellationRequested();
 
             return Failed(node.Name, taskId, kind, status, total, TimeoutFailure());
@@ -312,6 +376,13 @@ public sealed partial class RenderDownloadClient(
             if (writingToDestination)
             {
                 throw;
+            }
+
+            // A handshake that failed against the pinned certificate is a rotation or a man in the middle:
+            // terminal and alerting, never a transient retry (D2).
+            if (exception is HttpRequestException && IsTlsFailure(exception))
+            {
+                return Failed(node.Name, taskId, kind, status, total, AdapterErrorMapper.TlsFailure(), TlsFailureReason);
             }
 
             return Failed(node.Name, taskId, kind, status, total, Transport(), exception.GetType().Name);
@@ -337,10 +408,15 @@ public sealed partial class RenderDownloadClient(
         try
         {
             var body = await ReadBoundedAsync(response.Content, abort).ConfigureAwait(false);
+            var envelope = JsonSerializer.Deserialize<AdapterErrorV1>(body, RenderNodeJson.Tolerant);
 
-            return JsonSerializer.Deserialize<AdapterErrorV1>(body, RenderNodeJson.Tolerant) is { Error.Code: { Length: > 0 } adapterCode }
-                ? RenderClientError.Status(status, adapterCode, response.Headers.RetryAfter?.Delta)
-                : RenderClientError.Status(status, null, response.Headers.RetryAfter?.Delta);
+            // Only a code of the adapter's own shape survives: raw text — an over-long string, an upper-case
+            // word, an embedded CR/LF, a URL — is dropped here, so it can never become a failure's Detail or a
+            // log field (BD16, D3).
+            var adapterCode = envelope?.Error?.Code;
+            var code = AdapterErrorMapper.IsSafeCode(adapterCode) ? adapterCode : null;
+
+            return RenderClientError.Status(status, code, response.Headers.RetryAfter?.Delta);
         }
         catch (Exception exception) when (exception is JsonException or HttpRequestException or IOException or OperationCanceledException)
         {
@@ -460,6 +536,26 @@ public sealed partial class RenderDownloadClient(
 
     /// <summary>A transport that broke before or during the body is a transient node failure (05 D5).</summary>
     private static RenderClientFailure Transport() => AdapterErrorMapper.Map(RenderClientError.Transport(), taskSubmitted: true);
+
+    /// <summary>The configured <c>RenderNodes:HealthPollSeconds</c> the mapper defers an unhealthy node by (D4).</summary>
+    private TimeSpan HealthPoll() => TimeSpan.FromSeconds(renderNodes.Value.HealthPollSeconds);
+
+    /// <summary>
+    /// Whether a transport exception is a TLS failure: the handshake failed against the pinned certificate, so
+    /// an <see cref="AuthenticationException"/> sits anywhere in its inner chain (D2).
+    /// </summary>
+    private static bool IsTlsFailure(Exception exception)
+    {
+        for (Exception? current = exception; current is not null; current = current.InnerException)
+        {
+            if (current is AuthenticationException)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
 
     /// <summary>
     /// Logs what was attempted — node, task id, kind, status, byte count, outcome — and hands the failure on.

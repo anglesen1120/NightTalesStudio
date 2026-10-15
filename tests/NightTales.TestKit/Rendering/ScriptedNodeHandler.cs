@@ -1,10 +1,13 @@
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Net;
+using System.Security.Authentication;
 using System.Text;
 using System.Text.Json;
 using NightTales.Application.Abstractions.Rendering;
 using NightTales.Domain.Rendering;
 using NightTales.RenderNode.Contract;
+using NightTales.TestKit.Time;
 
 namespace NightTales.TestKit.Rendering;
 
@@ -48,6 +51,33 @@ public sealed record NodeHttpStep(int Status, string Body, Func<CancellationToke
     public static NodeHttpStep Transport(Uri? uri = null) =>
         Fails(_ => new HttpRequestException(
             $"No connection could be made because the target machine actively refused it: {uri?.ToString() ?? "the node"}"));
+
+    /// <summary>
+    /// A refused pinned handshake: the platform wraps the handshake's <c>AuthenticationException</c> in the
+    /// transport exception, exactly as a real pin mismatch does.
+    /// </summary>
+    /// <param name="uri">The URI the message names, when a test wants to prove that the URI never travels.</param>
+    /// <returns>The step.</returns>
+    public static NodeHttpStep TlsFailure(Uri? uri = null) =>
+        Fails(_ => new HttpRequestException(
+            $"The SSL connection could not be established: {uri?.ToString() ?? "the node"}",
+            new AuthenticationException("The remote certificate is invalid according to the validation procedure.")));
+
+    /// <summary>
+    /// An answer whose body is a content the test owns, built fresh for every call: a counting content, a body
+    /// that resets mid-read, or a length the node declares and never serves.
+    /// </summary>
+    /// <param name="status">The status to answer with.</param>
+    /// <param name="content">Builds the content, once per call, so a retry never reads a consumed one.</param>
+    /// <returns>The step.</returns>
+    public static NodeHttpStep Content(int status, Func<HttpContent> content) =>
+        new(status, string.Empty, Failure: null) { BodyFactory = content };
+
+    /// <summary>
+    /// The body one call is answered with, when the step carries one; a step without it answers the
+    /// <see cref="Body"/> string, as a fresh <see cref="StringContent"/>.
+    /// </summary>
+    public Func<HttpContent>? BodyFactory { get; init; }
 }
 
 /// <summary>One call a fake node received.</summary>
@@ -131,7 +161,8 @@ public sealed class ScriptedNodeHandler : HttpMessageHandler
 
         return new HttpResponseMessage((HttpStatusCode)step.Status)
         {
-            Content = new StringContent(step.Body, Encoding.UTF8, "application/json"),
+            Content = step.BodyFactory?.Invoke()
+                ?? new StringContent(step.Body, Encoding.UTF8, "application/json"),
         };
     }
 }
@@ -187,18 +218,26 @@ public static class ContractFixtures
 /// <param name="handler">The handler every client sends through.</param>
 /// <param name="apiKey">The <c>x-api-key</c> default header, when the test proves one never leaks.</param>
 /// <param name="baseAddress">The base address to hand out instead of the node's own, for the sentinel case.</param>
+/// <param name="createFailure">Refuses to build a client when it answers an exception, standing in for a node
+/// row without a pin, without a key or with an http URL outside Development.</param>
 public sealed class ScriptedNodeConnectionFactory(
     HttpMessageHandler handler,
     string? apiKey = null,
-    Uri? baseAddress = null) : IRenderNodeConnectionFactory
+    Uri? baseAddress = null,
+    Func<WorkerNode, Exception?>? createFailure = null) : IRenderNodeConnectionFactory
 {
-    /// <summary>How many clients this factory built; a client is built per call and disposed by the caller.</summary>
+    /// <summary>How many clients this factory built; one is built per logical call and disposed by the caller.</summary>
     public int Clients { get; private set; }
 
     /// <inheritdoc />
     public HttpClient Create(WorkerNode node)
     {
         ArgumentNullException.ThrowIfNull(node);
+
+        if (createFailure?.Invoke(node) is { } refusal)
+        {
+            throw refusal;
+        }
 
         var client = new HttpClient(handler, disposeHandler: false)
         {
@@ -213,5 +252,184 @@ public sealed class ScriptedNodeConnectionFactory(
 
         Clients++;
         return client;
+    }
+}
+
+/// <summary>
+/// Drives the render clients' manual clock (D3): the retry backoff, the attempt timeout and the total timeout
+/// are all timers on <see cref="ManualTimeProvider"/>, so a call settles in virtual milliseconds while the test
+/// itself waits in bounded real time and never hangs the run.
+/// </summary>
+public static class ManualClockDrive
+{
+    /// <summary>The real time one driven call gets before the test fails instead of waiting forever.</summary>
+    public static readonly TimeSpan RealTimeBudget = TimeSpan.FromSeconds(30);
+
+    /// <summary>
+    /// Settles <paramref name="call"/> by advancing <paramref name="time"/> in steps. After every advance the
+    /// drive yields real time — never the manual clock — so the pipeline has registered the timer the next
+    /// advance is meant to fire; without it a single-threaded pipeline could be driven past a wait nothing was
+    /// observing yet. Once the real-time budget is spent the call is reported as unsettled instead of hanging.
+    /// </summary>
+    /// <typeparam name="T">The call's success type.</typeparam>
+    /// <param name="call">The call to settle.</param>
+    /// <param name="time">The clock to advance.</param>
+    /// <param name="step">The virtual span of one advance; 250 ms by default.</param>
+    /// <returns>The call's result.</returns>
+    public static async Task<T> DriveAsync<T>(Task<T> call, ManualTimeProvider time, TimeSpan? step = null)
+    {
+        ArgumentNullException.ThrowIfNull(call);
+        ArgumentNullException.ThrowIfNull(time);
+
+        var advance = step ?? TimeSpan.FromMilliseconds(250);
+        var started = Stopwatch.GetTimestamp();
+        var iterations = 0;
+
+        while (!call.IsCompleted)
+        {
+            if (iterations > 0 && Stopwatch.GetElapsedTime(started) > RealTimeBudget)
+            {
+                throw new TimeoutException(
+                    $"The call did not settle within {RealTimeBudget} of real time ({iterations} clock advances of {advance}).");
+            }
+
+            time.Advance(advance);
+            iterations++;
+
+            await Task.Delay(1);
+        }
+
+        return await call;
+    }
+
+    /// <summary>Waits in bounded real time for a condition a driven client is expected to reach.</summary>
+    /// <param name="condition">The condition to wait for.</param>
+    /// <param name="because">What the test expects to happen, for the failure message.</param>
+    /// <returns>A task that completes once the condition holds.</returns>
+    public static async Task WaitUntilAsync(Func<bool> condition, string because)
+    {
+        ArgumentNullException.ThrowIfNull(condition);
+
+        var started = Stopwatch.GetTimestamp();
+
+        while (!condition())
+        {
+            if (Stopwatch.GetElapsedTime(started) > RealTimeBudget)
+            {
+                throw new TimeoutException($"Waited {RealTimeBudget} of real time for: {because}");
+            }
+
+            await Task.Delay(1);
+        }
+    }
+}
+
+/// <summary>
+/// A scripted body that counts how often its bytes are actually pulled, so a test can prove that a body was
+/// never read — a declared length over the client's answer cap, or a 2xx whose body the client has no use for.
+/// </summary>
+/// <param name="declaredLength">The length the node declares and serves.</param>
+/// <param name="declareLength">Whether the content declares that length at all: <c>false</c> stands in for a
+/// chunked answer the client can only bound by counting the bytes it reads.</param>
+public sealed class ProbeContent(long declaredLength, bool declareLength = true) : HttpContent
+{
+    /// <summary>How many times the bytes of this content were requested.</summary>
+    public int Reads { get; private set; }
+
+    /// <inheritdoc />
+    protected override Task SerializeToStreamAsync(Stream stream, TransportContext? context)
+    {
+        ArgumentNullException.ThrowIfNull(stream);
+
+        Reads++;
+        stream.Write(new byte[declaredLength]);
+
+        return Task.CompletedTask;
+    }
+
+    /// <inheritdoc />
+    protected override bool TryComputeLength(out long length)
+    {
+        length = declaredLength;
+
+        return declareLength;
+    }
+}
+
+/// <summary>
+/// A scripted body that serves a few bytes and then throws <see cref="IOException"/>, standing in for the
+/// connection reset or truncation a node can produce in the middle of its answer. The content declares no
+/// length, so the client can only notice it by reading.
+/// </summary>
+/// <param name="healthyBytes">How many bytes are served before the reset.</param>
+public sealed class ResettingBodyContent(int healthyBytes) : HttpContent
+{
+    /// <inheritdoc />
+    protected override Task<Stream> CreateContentReadStreamAsync() =>
+        Task.FromResult<Stream>(new ResettingStream(healthyBytes));
+
+    /// <inheritdoc />
+    protected override Task SerializeToStreamAsync(Stream stream, TransportContext? context) =>
+        throw new IOException("The node's answer was truncated mid-body (scripted reset).");
+
+    /// <inheritdoc />
+    protected override bool TryComputeLength(out long length)
+    {
+        length = 0;
+
+        return false;
+    }
+
+    private sealed class ResettingStream(int healthyBytes) : Stream
+    {
+        private int _remaining = healthyBytes;
+
+        public override bool CanRead => true;
+
+        public override bool CanSeek => false;
+
+        public override bool CanWrite => false;
+
+        public override long Length => throw new NotSupportedException();
+
+        public override long Position
+        {
+            get => throw new NotSupportedException();
+            set => throw new NotSupportedException();
+        }
+
+        public override int Read(byte[] buffer, int offset, int count)
+        {
+            ArgumentNullException.ThrowIfNull(buffer);
+
+            return ReadCore(buffer.AsSpan(offset, count));
+        }
+
+        public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult(ReadCore(buffer.Span));
+
+        public override void Flush()
+        {
+        }
+
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+
+        public override void SetLength(long value) => throw new NotSupportedException();
+
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+
+        private int ReadCore(Span<byte> destination)
+        {
+            if (_remaining <= 0)
+            {
+                throw new IOException("The node's answer ended before its body was complete (scripted reset).");
+            }
+
+            var served = Math.Min(_remaining, destination.Length);
+            _remaining -= served;
+            destination[..served].Clear();
+
+            return served;
+        }
     }
 }

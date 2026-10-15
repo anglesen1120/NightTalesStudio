@@ -1,12 +1,15 @@
 using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
+using System.Security.Authentication;
 using System.Text;
+using System.Text.Json;
 using ErrorOr;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NightTales.Application.Abstractions.Rendering;
+using NightTales.Application.Rendering;
 using NightTales.Domain.Rendering;
 using NightTales.Infrastructure.Rendering;
 using NightTales.RenderNode.Contract;
@@ -40,6 +43,12 @@ public sealed class RenderDownloadClientTests
     private const string SubRipType = "application/x-subrip; charset=utf-8";
     private const string Sha256Header = "X-Content-SHA256";
 
+    /// <summary>
+    /// The bound on every await of a task a stuck client would leave pending forever: a regression that hangs
+    /// fails the test with a <see cref="TimeoutException"/> instead of wedging the run (D9).
+    /// </summary>
+    private static readonly TimeSpan Bounded = TimeSpan.FromSeconds(30);
+
     /// <summary>The video ceiling of every test unless it says otherwise (150 KiB).</summary>
     private const long VideoCap = 153_600L;
 
@@ -63,7 +72,7 @@ public sealed class RenderDownloadClientTests
         var before = GC.GetTotalAllocatedBytes();
 
         var result = await rig.Client.DownloadAsync(
-            Node(), TaskId, RenderOutputKind.Video, destination, 512L * 1024 * 1024, Ct);
+            Node(), TaskId, RenderOutputKind.Video, destination, 512L * 1024 * 1024, Ct).WaitAsync(Bounded, Ct);
 
         var allocated = GC.GetTotalAllocatedBytes() - before;
 
@@ -103,7 +112,7 @@ public sealed class RenderDownloadClientTests
         using var rig = CreateRig(_ => Accepted(content, SyntheticDownloadContent.ExpectedSha256(bodyBytes)));
         using var destination = new CountingWriteStream();
 
-        var result = await rig.Client.DownloadAsync(Node(), TaskId, kind, destination, maxBytes, Ct);
+        var result = await rig.Client.DownloadAsync(Node(), TaskId, kind, destination, maxBytes, Ct).WaitAsync(Bounded, Ct);
 
         var cap = Math.Min(maxBytes, kind == RenderOutputKind.Video ? VideoCap : SubtitleCap);
 
@@ -145,7 +154,7 @@ public sealed class RenderDownloadClientTests
         });
 
         using var destination = new CountingWriteStream();
-        var result = await rig.Client.DownloadAsync(Node(), TaskId, RenderOutputKind.Video, destination, VideoCap, Ct);
+        var result = await rig.Client.DownloadAsync(Node(), TaskId, RenderOutputKind.Video, destination, VideoCap, Ct).WaitAsync(Bounded, Ct);
 
         var failure = FailureOf(result);
         failure.Kind.ShouldBe(RenderClientFailureKind.TerminalFailure);
@@ -166,10 +175,10 @@ public sealed class RenderDownloadClientTests
         using var destination = new CountingWriteStream();
         var download = rig.Client.DownloadAsync(Node(), TaskId, RenderOutputKind.Video, destination, VideoCap, Ct);
 
-        await content.Stalled;
+        await content.Stalled.WaitAsync(Bounded, Ct);
         rig.Time.Advance(TimeSpan.FromSeconds(5));
 
-        var failure = FailureOf(await download);
+        var failure = FailureOf(await download.WaitAsync(Bounded, Ct));
 
         failure.Kind.ShouldBe(RenderClientFailureKind.TransientFailure);
         failure.OutcomeCode.ShouldBe(RenderOutcomeCodes.RenderNodeError);
@@ -188,10 +197,10 @@ public sealed class RenderDownloadClientTests
         using var destination = new CountingWriteStream();
         var download = rig.Client.DownloadAsync(Node(), TaskId, RenderOutputKind.Video, destination, VideoCap, Ct);
 
-        await content.Stalled;
+        await content.Stalled.WaitAsync(Bounded, Ct);
         rig.Time.Advance(TimeSpan.FromMinutes(1));
 
-        var failure = FailureOf(await download);
+        var failure = FailureOf(await download.WaitAsync(Bounded, Ct));
 
         failure.Kind.ShouldBe(RenderClientFailureKind.TransientFailure);
         failure.OutcomeCode.ShouldBe(RenderOutcomeCodes.RenderNodeError);
@@ -204,7 +213,7 @@ public sealed class RenderDownloadClientTests
         using var rig = CreateRig(_ => Accepted(content));
 
         using var destination = new CountingWriteStream();
-        var result = await rig.Client.DownloadAsync(Node(), TaskId, RenderOutputKind.Video, destination, VideoCap, Ct);
+        var result = await rig.Client.DownloadAsync(Node(), TaskId, RenderOutputKind.Video, destination, VideoCap, Ct).WaitAsync(Bounded, Ct);
 
         var failure = FailureOf(result);
         failure.OutcomeCode.ShouldBe(RenderOutcomeCodes.RenderOutputInvalid);
@@ -221,7 +230,7 @@ public sealed class RenderDownloadClientTests
         using var rig = CreateRig(_ => Accepted(body, SyntheticDownloadContent.ExpectedSha256(Size)));
 
         using var destination = new CountingWriteStream();
-        var result = await rig.Client.DownloadAsync(Node(), TaskId, RenderOutputKind.Subtitles, destination, SubtitleCap, Ct);
+        var result = await rig.Client.DownloadAsync(Node(), TaskId, RenderOutputKind.Subtitles, destination, SubtitleCap, Ct).WaitAsync(Bounded, Ct);
 
         result.IsError.ShouldBeFalse(result.FirstError.Description);
         result.Value.ContentType.ShouldBe(
@@ -237,7 +246,7 @@ public sealed class RenderDownloadClientTests
         using var rig = CreateRig(_ => Failed(HttpStatusCode.Conflict, AdapterErrorCodes.OutputNotReady));
 
         using var destination = new CountingWriteStream();
-        var result = await rig.Client.DownloadAsync(Node(), TaskId, RenderOutputKind.Video, destination, VideoCap, Ct);
+        var result = await rig.Client.DownloadAsync(Node(), TaskId, RenderOutputKind.Video, destination, VideoCap, Ct).WaitAsync(Bounded, Ct);
 
         FailureOf(result).Kind.ShouldBe(RenderClientFailureKind.OutputNotReady);
     }
@@ -248,7 +257,7 @@ public sealed class RenderDownloadClientTests
         using var rig = CreateRig(_ => Failed(HttpStatusCode.NotFound, AdapterErrorCodes.OutputAbsent));
 
         using var destination = new CountingWriteStream();
-        var result = await rig.Client.DownloadAsync(Node(), TaskId, RenderOutputKind.Subtitles, destination, SubtitleCap, Ct);
+        var result = await rig.Client.DownloadAsync(Node(), TaskId, RenderOutputKind.Subtitles, destination, SubtitleCap, Ct).WaitAsync(Bounded, Ct);
 
         FailureOf(result).Kind.ShouldBe(RenderClientFailureKind.OutputAbsent);
         destination.Bytes.ShouldBe(0L);
@@ -260,7 +269,7 @@ public sealed class RenderDownloadClientTests
         using var rig = CreateRig(_ => Failed(HttpStatusCode.NotFound, AdapterErrorCodes.TaskUnknown));
 
         using var destination = new CountingWriteStream();
-        var result = await rig.Client.DownloadAsync(Node(), TaskId, RenderOutputKind.Video, destination, VideoCap, Ct);
+        var result = await rig.Client.DownloadAsync(Node(), TaskId, RenderOutputKind.Video, destination, VideoCap, Ct).WaitAsync(Bounded, Ct);
 
         var failure = FailureOf(result);
         failure.Kind.ShouldBe(RenderClientFailureKind.TerminalFailure);
@@ -274,7 +283,7 @@ public sealed class RenderDownloadClientTests
         using var rig = CreateRig(_ => Failed(HttpStatusCode.TooManyRequests, AdapterErrorCodes.CapacityFull, retryAfterSeconds: 30));
 
         using var destination = new CountingWriteStream();
-        var result = await rig.Client.DownloadAsync(Node(), TaskId, RenderOutputKind.Video, destination, VideoCap, Ct);
+        var result = await rig.Client.DownloadAsync(Node(), TaskId, RenderOutputKind.Video, destination, VideoCap, Ct).WaitAsync(Bounded, Ct);
 
         var failure = FailureOf(result);
         failure.Kind.ShouldBe(RenderClientFailureKind.Deferred);
@@ -289,7 +298,7 @@ public sealed class RenderDownloadClientTests
         using var rig = CreateRig(_ => Accepted(content, new string('0', 64)));
 
         using var destination = new CountingWriteStream();
-        var result = await rig.Client.DownloadAsync(Node(), TaskId, RenderOutputKind.Video, destination, VideoCap, Ct);
+        var result = await rig.Client.DownloadAsync(Node(), TaskId, RenderOutputKind.Video, destination, VideoCap, Ct).WaitAsync(Bounded, Ct);
 
         var failure = FailureOf(result);
         failure.OutcomeCode.ShouldBe(RenderOutcomeCodes.RenderOutputInvalid);
@@ -305,7 +314,7 @@ public sealed class RenderDownloadClientTests
         using var rig = CreateRig(_ => Accepted(content));
 
         using var destination = new CountingWriteStream();
-        var result = await rig.Client.DownloadAsync(Node(), TaskId, RenderOutputKind.Video, destination, VideoCap, Ct);
+        var result = await rig.Client.DownloadAsync(Node(), TaskId, RenderOutputKind.Video, destination, VideoCap, Ct).WaitAsync(Bounded, Ct);
 
         var failure = FailureOf(result);
         failure.Kind.ShouldBe(RenderClientFailureKind.TransientFailure);
@@ -327,10 +336,10 @@ public sealed class RenderDownloadClientTests
         var download = rig.Client.DownloadAsync(
             Node(), TaskId, RenderOutputKind.Video, destination, VideoCap, cancellation.Token);
 
-        await content.Stalled;
+        await content.Stalled.WaitAsync(Bounded, Ct);
         await cancellation.CancelAsync();
 
-        await Should.ThrowAsync<OperationCanceledException>(async () => await download);
+        await Should.ThrowAsync<OperationCanceledException>(async () => await download.WaitAsync(Bounded, Ct));
     }
 
     [Fact]
@@ -342,7 +351,7 @@ public sealed class RenderDownloadClientTests
         using var rig = CreateRig(_ => new HttpResponseMessage(HttpStatusCode.InternalServerError) { Content = content });
 
         using var destination = new CountingWriteStream();
-        var result = await rig.Client.DownloadAsync(Node(), TaskId, RenderOutputKind.Video, destination, VideoCap, Ct);
+        var result = await rig.Client.DownloadAsync(Node(), TaskId, RenderOutputKind.Video, destination, VideoCap, Ct).WaitAsync(Bounded, Ct);
 
         var failure = FailureOf(result);
         failure.Kind.ShouldBe(RenderClientFailureKind.TransientFailure);
@@ -356,7 +365,7 @@ public sealed class RenderDownloadClientTests
         using var rig = CreateRig(_ => throw new InvalidOperationException("no request may be sent"));
 
         using var destination = new CountingWriteStream();
-        var result = await rig.Client.DownloadAsync(Node(), "../etc/passwd", RenderOutputKind.Video, destination, VideoCap, Ct);
+        var result = await rig.Client.DownloadAsync(Node(), "../etc/passwd", RenderOutputKind.Video, destination, VideoCap, Ct).WaitAsync(Bounded, Ct);
 
         var failure = FailureOf(result);
         failure.OutcomeCode.ShouldBe(RenderOutcomeCodes.RenderOutputInvalid);
@@ -370,7 +379,7 @@ public sealed class RenderDownloadClientTests
         using var rig = CreateRig(_ => throw new InvalidOperationException("no request may be sent"));
 
         using var destination = new CountingWriteStream();
-        var result = await rig.Client.DownloadAsync(Node(), TaskId, RenderOutputKind.Video, destination, 0L, Ct);
+        var result = await rig.Client.DownloadAsync(Node(), TaskId, RenderOutputKind.Video, destination, 0L, Ct).WaitAsync(Bounded, Ct);
 
         var failure = FailureOf(result);
         failure.OutcomeCode.ShouldBe(RenderOutcomeCodes.RenderOutputInvalid);
@@ -387,7 +396,7 @@ public sealed class RenderDownloadClientTests
             captureLogs: true);
 
         using var destination = new CountingWriteStream();
-        var result = await rig.Client.DownloadAsync(Node(), TaskId, RenderOutputKind.Video, destination, VideoCap, Ct);
+        var result = await rig.Client.DownloadAsync(Node(), TaskId, RenderOutputKind.Video, destination, VideoCap, Ct).WaitAsync(Bounded, Ct);
 
         var failure = FailureOf(result);
         failure.Kind.ShouldBe(RenderClientFailureKind.TransientFailure);
@@ -402,6 +411,236 @@ public sealed class RenderDownloadClientTests
         result.FirstError.Code.ShouldBe(RenderOutcomeCodes.RenderNodeError);
         result.FirstError.Description.ShouldNotContain(ApiKeyValue, Case.Sensitive);
         result.FirstError.Description.ShouldNotContain("alpha.example", Case.Sensitive);
+    }
+
+    /// <summary>
+    /// A node whose pin, key or scheme is missing cannot be dialled at all: the connection factory refuses to
+    /// build a client, and the download answers the fixed terminal misconfiguration failure instead of letting
+    /// the <see cref="InvalidOperationException"/> escape (D1). Only the exception's type reaches the log.
+    /// </summary>
+    [Fact]
+    public async Task Download_UnbuildableNodeClient_IsTerminalMisconfigured()
+    {
+        using var rig = CreateRig(
+            _ => throw new InvalidOperationException("no request may be sent"),
+            captureLogs: true,
+            factory: new UnbuildableNodeFactory(
+                $"node alpha has no certificate pin ({NodeUrl}, x-api-key {ApiKeyValue})"));
+
+        using var destination = new CountingWriteStream();
+        var result = await rig.Client.DownloadAsync(Node(), TaskId, RenderOutputKind.Video, destination, VideoCap, Ct).WaitAsync(Bounded, Ct);
+
+        var failure = FailureOf(result);
+        failure.Kind.ShouldBe(RenderClientFailureKind.TerminalFailure);
+        failure.OutcomeCode.ShouldBe(RenderOutcomeCodes.RenderNodeError);
+        failure.Detail.ShouldBe("render_node_misconfigured");
+        failure.Alert.ShouldBeTrue("only an operator can fix a node row (D1)");
+        destination.Bytes.ShouldBe(0L);
+        rig.Handler.Requests.ShouldBeEmpty();
+
+        rig.LogText.ShouldContain("render-node.download.failed");
+        rig.LogText.ShouldContain(nameof(InvalidOperationException), Case.Sensitive);
+        rig.LogText.ShouldNotContain(ApiKeyValue, Case.Sensitive);
+        rig.LogText.ShouldNotContain("alpha.example", Case.Sensitive);
+    }
+
+    /// <summary>
+    /// A handshake that failed against the pinned certificate is terminal and alerting — a rotated certificate or
+    /// a man in the middle is an operator decision, never a retry (D2, 05 D4/D15 S1). The log carries the fixed
+    /// reason and never the exception's message, which names the base URL.
+    /// </summary>
+    [Fact]
+    public async Task Download_TlsAuthenticationFailure_IsTerminalAndAlerting()
+    {
+        using var rig = CreateRig(
+            _ => throw new HttpRequestException(
+                $"The SSL connection could not be established ({NodeUrl}).",
+                new AuthenticationException(
+                    $"The remote certificate is invalid for {NodeUrl} (x-api-key {ApiKeyValue}).")),
+            captureLogs: true);
+
+        using var destination = new CountingWriteStream();
+        var result = await rig.Client.DownloadAsync(Node(), TaskId, RenderOutputKind.Video, destination, VideoCap, Ct).WaitAsync(Bounded, Ct);
+
+        var failure = FailureOf(result);
+        failure.Kind.ShouldBe(RenderClientFailureKind.TerminalFailure);
+        failure.OutcomeCode.ShouldBe(RenderOutcomeCodes.RenderNodeError);
+        failure.Detail.ShouldBe("render_node_tls_failure");
+        failure.Alert.ShouldBeTrue("a pin mismatch is an operator decision (05 D4, D15 S1)");
+        destination.Bytes.ShouldBe(0L);
+
+        rig.LogText.ShouldContain("tls_authentication_failed");
+        rig.LogText.ShouldNotContain(ApiKeyValue, Case.Sensitive);
+        rig.LogText.ShouldNotContain("alpha.example", Case.Sensitive);
+        result.FirstError.Description.ShouldNotContain("alpha.example", Case.Sensitive);
+    }
+
+    /// <summary>
+    /// An adapter code that is not of the adapter's own shape — over-long, upper case, an embedded CR/LF — is
+    /// dropped before the <c>RenderClientError</c> is built, so raw adapter text never becomes a failure's
+    /// <c>Detail</c> or a log field (BD16, D3).
+    /// </summary>
+    [Theory]
+    [MemberData(nameof(UnsafeAdapterCodes))]
+    public async Task Download_UnsafeAdapterCode_IsDroppedBeforeMapping(string unsafeCode)
+    {
+        using var rig = CreateRig(_ => ErrorBody(HttpStatusCode.BadRequest, unsafeCode), captureLogs: true);
+
+        using var destination = new CountingWriteStream();
+        var result = await rig.Client.DownloadAsync(Node(), TaskId, RenderOutputKind.Video, destination, VideoCap, Ct).WaitAsync(Bounded, Ct);
+
+        var failure = FailureOf(result);
+        failure.Kind.ShouldBe(RenderClientFailureKind.TerminalFailure);
+        failure.OutcomeCode.ShouldBe(RenderOutcomeCodes.RenderNodeError);
+        failure.Alert.ShouldBeTrue("a 400 with no usable code is contract drift the operator must see");
+        failure.Detail.ShouldBeNull("raw adapter text is never kept as a detail (BD16)");
+        rig.LogText.ShouldNotContain(unsafeCode, Case.Sensitive);
+    }
+
+    /// <summary>Codes of every shape <c>AdapterErrorMapper.IsSafeCode</c> refuses: too long, a CR/LF, upper case.</summary>
+    public static TheoryData<string> UnsafeAdapterCodes => new()
+    {
+        new string('a', 100),
+        "bad\r\ncode",
+        "UPPER_case",
+    };
+
+    /// <summary>
+    /// <c>adapter_node_unhealthy</c> (503) defers by the configured <c>RenderNodes:HealthPollSeconds</c>, the same
+    /// interval <c>MptRenderClient</c> passes, and not by the mapper's 30 s default (D4).
+    /// </summary>
+    [Fact]
+    public async Task Download_NodeUnhealthy503_DefersByTheConfiguredHealthPoll()
+    {
+        using var rig = CreateRig(
+            _ => Failed(HttpStatusCode.ServiceUnavailable, AdapterErrorCodes.NodeUnhealthy),
+            healthPollSeconds: 12);
+
+        using var destination = new CountingWriteStream();
+        var result = await rig.Client.DownloadAsync(Node(), TaskId, RenderOutputKind.Video, destination, VideoCap, Ct).WaitAsync(Bounded, Ct);
+
+        var failure = FailureOf(result);
+        failure.Kind.ShouldBe(RenderClientFailureKind.Deferred);
+        failure.RetryAfter.ShouldBe(TimeSpan.FromSeconds(12), "the configured HealthPollSeconds, not the 30 s default");
+        rig.Handler.Requests.ShouldHaveSingleItem("the download client never retries: one request, one answer");
+    }
+
+    /// <summary>
+    /// The client copies in 64 KiB chunks — one exact pool bucket, read to its end, so no rented tail is wasted —
+    /// and hands the caller's stream exactly the bytes of the body (D5).
+    /// </summary>
+    [Fact]
+    public async Task Download_ReadsThePoolBucket_As64KiBChunks()
+    {
+        const long Size = 200L * 1024L;
+        const long Cap = 512L * 1024L;
+        var writes = new List<int>();
+        using var destination = new ScriptedWriteStream((buffer, _) =>
+        {
+            writes.Add(buffer.Length);
+
+            return Task.CompletedTask;
+        });
+
+        using var rig = CreateRig(
+            _ => Accepted(new SyntheticDownloadContent(Size, VideoType), SyntheticDownloadContent.ExpectedSha256(Size)),
+            Settings(videoBytes: Cap));
+
+        var result = await rig.Client.DownloadAsync(Node(), TaskId, RenderOutputKind.Video, destination, Cap, Ct).WaitAsync(Bounded, Ct);
+
+        result.IsError.ShouldBeFalse(result.FirstError.Description);
+        writes.Sum().ShouldBe((int)Size);
+        writes.ShouldAllBe(size => size <= 64 * 1024);
+        writes.ShouldContain(64 * 1024, "a chunk is the pool bucket the client rents and reads to its end");
+    }
+
+    /// <summary>
+    /// The idle timer never counts the time the caller's own destination spends writing: the timer is disarmed
+    /// for the whole write (only the total budget stays armed) and re-armed from the write's end, so a write that
+    /// outlasts <c>Render:Download.IdleSeconds</c> is not a node stall (D6).
+    /// </summary>
+    [Fact]
+    public async Task Download_SlowDestinationWrite_IsNotAnIdleStall()
+    {
+        const int IdleSeconds = 5;
+        const long Served = 4_096L;
+        var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var content = new SyntheticDownloadContent(100_000L, VideoType, declareLength: false, stallAfterBytes: Served);
+
+        using var destination = new ScriptedWriteStream((_, _) => gate.Task);
+        using var rig = CreateRig(_ => Accepted(content), Settings(idleSeconds: IdleSeconds));
+
+        var download = rig.Client.DownloadAsync(Node(), TaskId, RenderOutputKind.Video, destination, VideoCap, Ct);
+
+        await destination.Writing.WaitAsync(Bounded, Ct);
+        rig.Time.PendingTimers.ShouldBe(
+            1,
+            "only the total budget is armed while the caller's stream is writing: the idle timer is disarmed");
+
+        // The write outlasts the idle window: an armed idle timer would fire here and end the transfer.
+        rig.Time.Advance(TimeSpan.FromSeconds(IdleSeconds + 1));
+        download.IsCompleted.ShouldBeFalse("a slow destination write is not the node stalling");
+
+        gate.SetResult();
+        await content.Stalled.WaitAsync(Bounded, Ct);
+        download.IsCompleted.ShouldBeFalse("the body stalls only now, so the idle window starts at the write's end");
+
+        // The timer re-armed from the write's end is what ends the stall, one idle window later.
+        rig.Time.Advance(TimeSpan.FromSeconds(IdleSeconds));
+
+        var failure = FailureOf(await download.WaitAsync(Bounded, Ct));
+        failure.Kind.ShouldBe(RenderClientFailureKind.TransientFailure);
+        failure.OutcomeCode.ShouldBe(RenderOutcomeCodes.RenderNodeError);
+        destination.Bytes.ShouldBe(Served, "the first chunk reached the caller's stream before the stall");
+    }
+
+    /// <summary>
+    /// A call that arrives already cancelled throws the caller's own cancellation and never touches the node: no
+    /// client is built and no request is sent (D7).
+    /// </summary>
+    [Fact]
+    public async Task Download_AlreadyCancelled_ThrowsWithoutTouchingTheNode()
+    {
+        using var rig = CreateRig(
+            _ => throw new InvalidOperationException("no request may be sent"),
+            factory: new UnbuildableNodeFactory("the node cannot be dialled"));
+
+        using var cancellation = new CancellationTokenSource();
+        await cancellation.CancelAsync();
+        using var destination = new CountingWriteStream();
+
+        await Should.ThrowAsync<OperationCanceledException>(async () =>
+            await rig.Client.DownloadAsync(
+                Node(), TaskId, RenderOutputKind.Video, destination, VideoCap, cancellation.Token).WaitAsync(Bounded, Ct));
+
+        rig.Handler.Requests.ShouldBeEmpty();
+        destination.Bytes.ShouldBe(0L);
+    }
+
+    /// <summary>
+    /// A cancellation the caller's own destination raises leaves exactly as it came in: the write phase is the
+    /// caller's, not the node's, so it is never mapped to a node timeout (D8).
+    /// </summary>
+    [Fact]
+    public async Task Download_DestinationCancellation_IsRethrown()
+    {
+        var raised = new OperationCanceledException(
+            "the caller's temp file was closed",
+            new CancellationToken(canceled: true));
+
+        using var destination = new ScriptedWriteStream((_, _) => Task.FromException(raised));
+        using var rig = CreateRig(_ => Accepted(new SyntheticDownloadContent(4_096L, VideoType)));
+
+        var download = rig.Client.DownloadAsync(Node(), TaskId, RenderOutputKind.Video, destination, VideoCap, Ct);
+
+        await Task.WhenAny(download, Task.Delay(Bounded, Ct));
+        download.IsCompleted.ShouldBeTrue("the download settles within the bound");
+
+        // Awaiting the Task yields a TaskCanceledException, not the destination's own instance (observed), so
+        // reference identity cannot be asserted across this boundary. What is asserted: the write-phase
+        // cancellation is thrown, never returned as a mapped node failure (ErrorOr would be a return value).
+        await Should.ThrowAsync<OperationCanceledException>(async () => await download);
+        rig.Handler.Requests.ShouldHaveSingleItem();
     }
 
     private static WorkerNode Node(string name = "alpha") =>
@@ -449,6 +688,21 @@ public sealed class RenderDownloadClientTests
         return response;
     }
 
+    /// <summary>
+    /// A failed answer whose envelope carries <paramref name="code"/> verbatim — escaped by the serializer, so a
+    /// CR/LF really arrives inside the code (D3).
+    /// </summary>
+    private static HttpResponseMessage ErrorBody(HttpStatusCode status, string code) =>
+        new(status)
+        {
+            Content = new StringContent(
+                JsonSerializer.Serialize(
+                    new AdapterErrorV1(
+                        new AdapterErrorBody(code, "The adapter refused the download (05 D4 S4).", Errors: null))),
+                Encoding.UTF8,
+                "application/json"),
+        };
+
     private static RenderClientFailure FailureOf(ErrorOr<DownloadResult> result)
     {
         result.IsError.ShouldBeTrue("the call was expected to fail");
@@ -461,10 +715,12 @@ public sealed class RenderDownloadClientTests
     private static Rig CreateRig(
         Func<HttpRequestMessage, HttpResponseMessage> answer,
         RenderClientOptions? options = null,
-        bool captureLogs = false)
+        bool captureLogs = false,
+        int healthPollSeconds = 30,
+        IRenderNodeConnectionFactory? factory = null)
     {
         var handler = new SyntheticDownloadHandler(answer);
-        var factory = new SyntheticDownloadNodeFactory(handler, ApiKeyValue);
+        var nodeFactory = factory ?? new SyntheticDownloadNodeFactory(handler, ApiKeyValue);
         var time = new ManualTimeProvider();
 
         CapturingLoggerProvider? sink = null;
@@ -478,9 +734,14 @@ public sealed class RenderDownloadClientTests
             logger = loggers.CreateLogger<RenderDownloadClient>();
         }
 
-        var client = new RenderDownloadClient(factory, Options.Create(options ?? Settings()), time, logger);
+        var client = new RenderDownloadClient(
+            nodeFactory,
+            Options.Create(options ?? Settings()),
+            Options.Create(new RenderNodesOptions { HealthPollSeconds = healthPollSeconds }),
+            time,
+            logger);
 
-        return new Rig(client, handler, time, sink, loggers, factory);
+        return new Rig(client, handler, time, sink, loggers, nodeFactory as IDisposable);
     }
 
     /// <summary>One test's node, clock, logger capture and the client under test; disposing releases them all.</summary>
@@ -490,7 +751,7 @@ public sealed class RenderDownloadClientTests
         ManualTimeProvider Time,
         CapturingLoggerProvider? Sink,
         ILoggerFactory? Loggers,
-        SyntheticDownloadNodeFactory Factory) : IDisposable
+        IDisposable? NodeFactory) : IDisposable
     {
         /// <summary>Every captured line, or an empty list when the test does not capture logs.</summary>
         public IReadOnlyList<string> Logs => Sink?.Messages ?? [];
@@ -501,7 +762,7 @@ public sealed class RenderDownloadClientTests
         public void Dispose()
         {
             Loggers?.Dispose();
-            Factory.Dispose();
+            NodeFactory?.Dispose();
         }
     }
 
@@ -561,5 +822,16 @@ public sealed class RenderDownloadClientTests
                 }
             }
         }
+    }
+
+    /// <summary>
+    /// A connection factory that cannot build a client at all: it stands in for a node whose certificate pin, key
+    /// or scheme is missing, which production's <c>RenderNodeConnectionFactory</c> refuses with an
+    /// <see cref="InvalidOperationException"/> (11 README F13, D1).
+    /// </summary>
+    /// <param name="message">The message the refusal carries; a test puts the node's URL and key in it.</param>
+    private sealed class UnbuildableNodeFactory(string message) : IRenderNodeConnectionFactory
+    {
+        public HttpClient Create(WorkerNode node) => throw new InvalidOperationException(message);
     }
 }

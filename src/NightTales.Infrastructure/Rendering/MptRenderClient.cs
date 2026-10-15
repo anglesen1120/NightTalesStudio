@@ -66,8 +66,11 @@ public sealed partial class MptRenderClient(
     /// <summary>The header a deferred answer carries its wait in (05 D4).</summary>
     private const string RetryAfterHeaderName = "Retry-After";
 
-    /// <summary>The most of an answer that is ever buffered; an answer past it is read as no body at all.</summary>
-    private const int MaxBodyBytes = 1024 * 1024;
+    /// <summary>
+    /// The most of an answer that is ever buffered: a status or an accepted reply is a few KiB, so 64 KiB is
+    /// already generous, and an answer whose declared or observed size is past it is read as no body at all.
+    /// </summary>
+    private const int MaxBodyBytes = 64 * 1024;
 
     /// <summary>The read chunk of one answer body.</summary>
     private const int ChunkBytes = 16 * 1024;
@@ -77,6 +80,18 @@ public sealed partial class MptRenderClient(
 
     /// <summary>The reason a refused task id carries; a code, never adapter text.</summary>
     private const string TaskIdInvalidDetail = "render_task_id_invalid";
+
+    /// <summary>The length of the longest adapter state a debug line may carry.</summary>
+    private const int StateMaxLength = 32;
+
+    /// <summary>The literal a state outside the adapter's <c>^[a-z_]{1,32}$</c> shape is logged as.</summary>
+    private const string InvalidState = "invalid";
+
+    /// <summary>The reason a TLS failure carries in the log: the exception's own text names the node's URL.</summary>
+    private const string TlsFailureReason = "tls_failure";
+
+    /// <summary>The detail a status that names another task carries.</summary>
+    private const string TaskMismatchDetail = "render_task_mismatch";
 
     /// <inheritdoc />
     public async Task<ErrorOr<AdapterAcceptedV1>> SubmitAsync(
@@ -98,6 +113,7 @@ public sealed partial class MptRenderClient(
             payload,
             taskSubmitted: false,
             noRetry: false,
+            readsBody: true,
             ct);
 
         if (call.IsError)
@@ -110,7 +126,15 @@ public sealed partial class MptRenderClient(
             return Unreadable(node, call.Value.Status, taskSubmitted: false);
         }
 
-        LogAccepted(node.Name, accepted.TaskId, accepted.State);
+        // The guard is what keeps a node-supplied state from costing anything when the debug line is disabled:
+        // the sanitiser is a call, so an unguarded log call would run it on every answer.
+#pragma warning disable CA1873 // LoggerMessage partial methods are not recognized as guarded by IsEnabled (SeedRunner precedent).
+        if (logger.IsEnabled(LogLevel.Debug))
+        {
+            LogAccepted(node.Name, accepted.TaskId, LoggableState(accepted.State));
+        }
+#pragma warning restore CA1873
+
         return accepted;
     }
 
@@ -132,6 +156,7 @@ public sealed partial class MptRenderClient(
             payload: null,
             taskSubmitted: true,
             noRetry: false,
+            readsBody: true,
             ct);
 
         if (call.IsError)
@@ -144,7 +169,29 @@ public sealed partial class MptRenderClient(
             return Unreadable(node, call.Value.Status, taskSubmitted: true);
         }
 
-        LogStatus(node.Name, taskId, status.State, status.Percent);
+        // A status that names another task is a node answering a question nobody asked: reading it would let a
+        // buggy or compromised node hand the job another task's outcome, so it fails closed and alerts instead
+        // (task §Failure handling).
+        if (!NamesRequestedTask(status.TaskId, taskId))
+        {
+            LogFailed(node.Name, HttpMethod.Get.Method, call.Value.Status, TaskMismatchDetail);
+            return RenderClientErrors.ToError(
+                new RenderClientFailure(
+                    RenderClientFailureKind.TerminalFailure,
+                    RenderOutcomeCodes.RenderNodeError,
+                    TaskMismatchDetail,
+                    Alert: true,
+                    RetryAfter: null));
+        }
+
+        // Same guard as the accepted line: the sanitiser is a call the debug line may not need.
+#pragma warning disable CA1873 // LoggerMessage partial methods are not recognized as guarded by IsEnabled (SeedRunner precedent).
+        if (logger.IsEnabled(LogLevel.Debug))
+        {
+            LogStatus(node.Name, taskId, LoggableState(status.State), status.Percent);
+        }
+#pragma warning restore CA1873
+
         return status;
     }
 
@@ -167,6 +214,7 @@ public sealed partial class MptRenderClient(
             payload: null,
             taskSubmitted: true,
             noRetry: false,
+            readsBody: false,
             ct);
 
         if (call.IsError)
@@ -198,6 +246,7 @@ public sealed partial class MptRenderClient(
             payload: null,
             taskSubmitted: true,
             noRetry: true,
+            readsBody: false,
             ct);
 
         if (call.IsError)
@@ -211,7 +260,7 @@ public sealed partial class MptRenderClient(
 
     /// <summary>
     /// Runs one node call inside its pipeline and maps everything the HTTP layer produces: the answer of a 2xx
-    /// (the caller decodes its body), the adapter's envelope of anything else, and the three faults that never
+    /// (the caller decodes its body), the adapter's envelope of anything else, and the faults that never
     /// produce a response. The caller's cancellation is not a failure and leaves as
     /// <see cref="OperationCanceledException"/>.
     /// </summary>
@@ -221,6 +270,8 @@ public sealed partial class MptRenderClient(
     /// <param name="payload">The serialised body, or <c>null</c> for the three body-less calls.</param>
     /// <param name="taskSubmitted">Whether the call concerns a task the node accepted (05 D5's 404 rule).</param>
     /// <param name="noRetry">Whether the call must use the no-retry pipeline (the DELETE).</param>
+    /// <param name="readsBody">Whether a 2xx answer's body is worth reading: the cancel and the delete answer
+    /// with nothing this client uses, so their body is never pulled off the wire.</param>
     /// <param name="ct">The caller's cancellation.</param>
     /// <returns>The answer's status and body, or the mapped failure.</returns>
     private async Task<ErrorOr<AdapterCallResult>> CallAsync(
@@ -230,26 +281,41 @@ public sealed partial class MptRenderClient(
         byte[]? payload,
         bool taskSubmitted,
         bool noRetry,
+        bool readsBody,
         CancellationToken ct)
     {
         var pipeline = pipelines.GetPipeline<AdapterCallResult>(noRetry ? NoRetryClientName : RetryingClientName);
-        var healthPoll = TimeSpan.FromSeconds(renderNodes.Value.HealthPollSeconds);
+        var healthPoll = HealthPoll();
+
+        // The node's client is built once per logical call and reused by every attempt of the pipeline: the
+        // factory decides the base address, the x-api-key header and the pinned certificate (11 README F13),
+        // and a client per attempt would open a fresh connection for every retry of one call.
+        HttpClient client;
+        try
+        {
+            client = connectionFactory.Create(node);
+        }
+        catch (InvalidOperationException exception)
+        {
+            // The node cannot be called at all: no pinned certificate, no key or an http base URL outside
+            // Development. Nothing is attempted and the breaker counts nothing, because this is the node's
+            // row and not the node failing (task §Failure handling). The exception's own text names the node
+            // and its configuration entry, so only its type travels into the log (BD16/S4).
+            LogUnusableNode(method.Method, exception.GetType().Name);
+            return RenderClientErrors.ToError(AdapterErrorMapper.Misconfigured());
+        }
 
         AdapterCallResult call;
 
         try
         {
+            // The pipeline's attempt (10 s) and total (30 s) timeouts are the only bounds of a node call
+            // (WF08): an HttpClient timeout of its own would cut across them and across a retry.
+            client.Timeout = Timeout.InfiniteTimeSpan;
+
             call = await pipeline.ExecuteAsync(
                 async token =>
                 {
-                    // The factory decides the base address, the x-api-key header and the pinned certificate
-                    // (11 README F13); this class never builds a transport of its own.
-                    using var client = connectionFactory.Create(node);
-
-                    // The pipeline's attempt (10 s) and total (30 s) timeouts are the only bounds of a node
-                    // call (WF08): an HttpClient timeout of its own would cut across them and across a retry.
-                    client.Timeout = Timeout.InfiniteTimeSpan;
-
                     using var request = new HttpRequestMessage(method, route);
                     if (payload is not null)
                     {
@@ -260,7 +326,11 @@ public sealed partial class MptRenderClient(
                     using var response = await client.SendAsync(
                         request, HttpCompletionOption.ResponseHeadersRead, token);
 
-                    var body = await ReadBodyAsync(response, token);
+                    // A 2xx of a call whose answer carries nothing to read (cancel, delete) is not buffered at
+                    // all; a failure answer always is, because its envelope carries the adapter's code.
+                    var body = readsBody || !response.IsSuccessStatusCode
+                        ? await ReadBodyAsync(response, token)
+                        : [];
 
                     return new AdapterCallResult((int)response.StatusCode, body, RetryAfterOf(response));
                 },
@@ -284,10 +354,26 @@ public sealed partial class MptRenderClient(
             LogFailed(node.Name, method.Method, null, "circuit_open");
             return RenderClientErrors.ToError(TransientNodeFailure());
         }
+        catch (HttpRequestException exception) when (RenderClientResilience.IsTlsFailure(exception))
+        {
+            // The pinned handshake was refused — a pin mismatch or an expired certificate — so no attempt can
+            // succeed until the node row is fixed: the pipeline never retried it and the job ends here. The
+            // exception's message carries the node's base URL, so nothing of it is logged (BD16/S4).
+            LogFailed(node.Name, method.Method, null, TlsFailureReason);
+            return RenderClientErrors.ToError(AdapterErrorMapper.TlsFailure());
+        }
         catch (HttpRequestException)
         {
             // The message of a transport failure carries the request URI, so it is deliberately dropped here
             // and never logged (BD16/S4).
+            LogFailed(node.Name, method.Method, null, "transport");
+            return RenderClientErrors.ToError(
+                AdapterErrorMapper.Map(RenderClientError.Transport(), taskSubmitted, healthPoll));
+        }
+        catch (IOException)
+        {
+            // A body that reset or truncated mid-read is the transport failing, exactly like a refused
+            // connection: the pipeline retried it, so the caller is told to retry the call.
             LogFailed(node.Name, method.Method, null, "transport");
             return RenderClientErrors.ToError(
                 AdapterErrorMapper.Map(RenderClientError.Transport(), taskSubmitted, healthPoll));
@@ -298,6 +384,10 @@ public sealed partial class MptRenderClient(
             LogFailed(node.Name, method.Method, null, "timeout");
             return RenderClientErrors.ToError(
                 AdapterErrorMapper.Map(RenderClientError.Timeout(), taskSubmitted, healthPoll));
+        }
+        finally
+        {
+            client.Dispose();
         }
 
         if (call.Status is >= 200 and < 300)
@@ -313,16 +403,22 @@ public sealed partial class MptRenderClient(
     }
 
     /// <summary>
-    /// Reads an answer body up to <see cref="MaxBodyBytes"/>. Past the cap nothing is buffered at all: the
-    /// answer then parses as no body, which the mapper turns into the fail-closed terminal failure of an
-    /// unreadable answer, so a node cannot make the Worker hold an unbounded amount of memory for a status
-    /// (BD16).
+    /// Reads an answer body up to <see cref="MaxBodyBytes"/>. A declared length over the cap is refused before
+    /// a single byte is read, and an answer that grows past the cap while it is read is dropped as well: either
+    /// way nothing is buffered, the answer parses as no body, and the mapper turns it into the fail-closed
+    /// terminal failure of an unreadable answer, so a node cannot make the Worker hold an unbounded amount of
+    /// memory — or pull an unbounded amount of traffic — for a status (BD16).
     /// </summary>
     /// <param name="response">The answer whose body is being read.</param>
     /// <param name="ct">The pipeline's token: the attempt and total timeouts both end this read.</param>
     /// <returns>The body, or an empty array when there was none or it was over the cap.</returns>
     private static async Task<byte[]> ReadBodyAsync(HttpResponseMessage response, CancellationToken ct)
     {
+        if (response.Content.Headers.ContentLength is { } declared && declared > MaxBodyBytes)
+        {
+            return [];
+        }
+
         using var stream = await response.Content.ReadAsStreamAsync(ct);
         using var buffer = new MemoryStream();
 
@@ -361,11 +457,18 @@ public sealed partial class MptRenderClient(
 
     /// <summary>
     /// The adapter's own error code of an unreadable answer, or <c>null</c> when the body is not an envelope
-    /// at all. Only the code travels: the envelope's <c>message</c> is never read, logged or copied (BD16/S4).
+    /// at all or its code is not a code the adapter may send. Only the code travels, and only through
+    /// <see cref="AdapterErrorMapper.IsSafeCode"/>: the envelope's <c>message</c> is never read, logged or
+    /// copied, and a code that is not <c>^[a-z][a-z_]{0,63}$</c> becomes no code at all (BD16/S4).
     /// </summary>
     /// <param name="body">The answer body, already capped.</param>
     /// <returns>The code, or <c>null</c>.</returns>
-    private static string? CodeOf(byte[] body) => Parse<AdapterErrorV1>(body)?.Error.Code;
+    private static string? CodeOf(byte[] body)
+    {
+        var code = Parse<AdapterErrorV1>(body)?.Error.Code;
+
+        return AdapterErrorMapper.IsSafeCode(code) ? code : null;
+    }
 
     /// <summary>Decodes one wire body with the tolerant profile, which ignores what a newer adapter adds.</summary>
     /// <typeparam name="T">The contract type the caller expects.</typeparam>
@@ -426,6 +529,44 @@ public sealed partial class MptRenderClient(
 
         return true;
     }
+
+    /// <summary>
+    /// The state a debug line may carry: an adapter state is <c>^[a-z_]{1,32}$</c>, and anything else — a
+    /// node echoing a payload, a state a newer adapter renamed, an empty string — is logged as
+    /// <see cref="InvalidState"/>, so a log line can never carry node-supplied text (BD16/S4).
+    /// </summary>
+    /// <param name="state">The state the adapter sent.</param>
+    /// <returns>The state, or <see cref="InvalidState"/>.</returns>
+    private static string LoggableState(string? state)
+    {
+        if (string.IsNullOrEmpty(state) || state.Length > StateMaxLength)
+        {
+            return InvalidState;
+        }
+
+        foreach (var character in state)
+        {
+            if (!char.IsAsciiLetterLower(character) && character != '_')
+            {
+                return InvalidState;
+            }
+        }
+
+        return state;
+    }
+
+    /// <summary>
+    /// Whether the served status names the task the caller asked for. The adapter's task id is a UUID, so the
+    /// requested id is compared as one when it parses as a <see cref="Guid"/>, and as its text form otherwise
+    /// (case-insensitively, because the two sides only agree on the digits).
+    /// </summary>
+    /// <param name="served">The task id of the status body.</param>
+    /// <param name="requested">The task id the caller asked for.</param>
+    /// <returns><c>true</c> when the status is the requested task's.</returns>
+    private static bool NamesRequestedTask(Guid served, string requested) =>
+        Guid.TryParse(requested, out var parsed)
+            ? served == parsed
+            : string.Equals(served.ToString("D"), requested, StringComparison.OrdinalIgnoreCase);
 
     /// <summary>A transient node failure, for the fault that has no status to map (an open breaker).</summary>
     /// <returns>The failure the caller switches on.</returns>
@@ -515,4 +656,10 @@ public sealed partial class MptRenderClient(
         Level = LogLevel.Warning,
         Message = "A render task id was refused for node {Node} before any URL was built.")]
     private partial void LogRefusedTaskId(string node);
+
+    [LoggerMessage(
+        EventId = 4137,
+        Level = LogLevel.Warning,
+        Message = "A render node client could not be built for {Method}: {Reason}.")]
+    private partial void LogUnusableNode(string method, string reason);
 }

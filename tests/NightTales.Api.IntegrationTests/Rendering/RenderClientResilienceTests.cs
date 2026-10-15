@@ -11,6 +11,7 @@ using NightTales.TestKit.Rendering;
 using NightTales.TestKit.Time;
 using Shouldly;
 using Xunit;
+using static NightTales.TestKit.Rendering.ManualClockDrive;
 
 namespace NightTales.Api.IntegrationTests.Rendering;
 
@@ -24,6 +25,8 @@ public sealed class RenderClientResilienceTests
     private const string TaskId = "3f7b9c2e-1a44-4d0f-9e21-6c5b8a7d0e11";
 
     private const string SubmitFixture = "render-submit.v1.landscape-vi.json";
+
+    private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
     [Fact]
     public async Task DeleteIsNotRetried()
@@ -79,7 +82,14 @@ public sealed class RenderClientResilienceTests
     {
         var handler = new ScriptedNodeHandler(NodeHttpStep.Answer(500, Envelope(AdapterErrorCodes.InternalError)));
         var time = new ManualTimeProvider();
-        using var provider = Provider(handler, time);
+
+        // The breaker's minimum throughput is raised out of reach for this test: the fifth failure of a window
+        // (the cancel's first attempt here) legitimately opens it and would leave the cancel with one request
+        // and no retry, which is what CircuitBreaker_OpensAfterFiveFailures asserts and this test is not about.
+        using var provider = Provider(handler, time, settings: new Dictionary<string, string?>
+        {
+            ["Render:Client:CircuitBreaker:MinimumThroughput"] = "50",
+        });
         var client = provider.GetRequiredService<IRenderClient>();
 
         var submitted = await DriveAsync(client.SubmitAsync(Node(), SubmitBody(), CancellationToken.None), time);
@@ -171,7 +181,7 @@ public sealed class RenderClientResilienceTests
         var client = provider.GetRequiredService<IRenderClient>();
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(
-            () => client.GetStatusAsync(Node(), TaskId, cancellation.Token));
+            () => client.GetStatusAsync(Node(), TaskId, cancellation.Token).WaitAsync(RealTimeBudget, Ct));
 
         handler.Requests.Count.ShouldBe(1);
     }
@@ -191,11 +201,17 @@ public sealed class RenderClientResilienceTests
         JsonSerializer.Deserialize<AdapterSubmitRequestV1>(
             ContractFixtures.Read(SubmitFixture), RenderNodeJson.Tolerant)!;
 
-    /// <summary>A status body the client can read, from the fixtures.</summary>
+    /// <summary>
+    /// A status body the client can read for <see cref="TaskId"/>, from the fixtures: the frozen fixture's own
+    /// <c>task_id</c> is replaced in memory, because the client refuses a status that names another task and
+    /// the fixture is never edited.
+    /// </summary>
     /// <returns>The status.</returns>
     private static RenderStatusV1 StatusBody() =>
         JsonSerializer.Deserialize<RenderStatusV1>(
-            ContractFixtures.Read("render-status.v1.succeeded.json"), RenderNodeJson.Tolerant)!;
+            ContractFixtures.Read("render-status.v1.succeeded.json"), RenderNodeJson.Tolerant)!
+        with
+        { TaskId = Guid.Parse(TaskId) };
 
     /// <summary>The one error envelope of the contract, built from its own types.</summary>
     /// <param name="code">The adapter code.</param>
@@ -212,13 +228,18 @@ public sealed class RenderClientResilienceTests
     /// <param name="handler">The scripted node the factory hands out.</param>
     /// <param name="time">The clock the pipelines and the client run on.</param>
     /// <param name="logs">A capturing logger provider, when the test asserts on log lines.</param>
+    /// <param name="settings">Extra configuration for the <c>Render</c> section, when a test must move the
+    /// breaker or the retry budget away from its default.</param>
     /// <returns>The provider to resolve the client from.</returns>
     private static ServiceProvider Provider(
         ScriptedNodeHandler handler,
         TimeProvider time,
-        ILoggerProvider? logs = null)
+        ILoggerProvider? logs = null,
+        IReadOnlyDictionary<string, string?>? settings = null)
     {
-        var configuration = new ConfigurationBuilder().AddInMemoryCollection([]).Build();
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(settings ?? new Dictionary<string, string?>())
+            .Build();
 
         var services = new ServiceCollection();
         services.AddLogging();
@@ -234,25 +255,5 @@ public sealed class RenderClientResilienceTests
         services.AddRenderClients(configuration);
 
         return services.BuildServiceProvider();
-    }
-
-    /// <summary>
-    /// Settles one call by advancing the manual clock: the retry backoff, the attempt timeout and the total
-    /// timeout are all timers on it, so the call completes in virtual milliseconds.
-    /// </summary>
-    /// <typeparam name="T">The call's success type.</typeparam>
-    /// <param name="call">The call to settle.</param>
-    /// <param name="time">The clock to advance.</param>
-    /// <returns>The call's result.</returns>
-    private static async Task<T> DriveAsync<T>(Task<T> call, ManualTimeProvider time)
-    {
-        for (var step = 0; step < 400 && !call.IsCompleted; step++)
-        {
-            time.Advance(TimeSpan.FromMilliseconds(250));
-            await Task.Yield();
-        }
-
-        call.IsCompleted.ShouldBeTrue("the call must finish within the advanced virtual time");
-        return await call;
     }
 }

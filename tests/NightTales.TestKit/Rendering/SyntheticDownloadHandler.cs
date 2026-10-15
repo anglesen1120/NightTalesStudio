@@ -382,6 +382,66 @@ public sealed class CountingWriteStream : Stream
 }
 
 /// <summary>
+/// The destination of a download test whose write is scripted (D5, D6, D8): the callback decides whether a write
+/// returns at once, records the chunk size, waits on the manual clock or throws, so a test can prove what the
+/// client does while the caller's own stream is writing. Nothing of the chunk is kept — the byte count is the
+/// only thing this stream remembers.
+/// </summary>
+/// <remarks>
+/// A write that waits is the case the client's idle timer must not count (D6); a write that throws is the case
+/// the client must rethrow instead of mapping to a node fault (D8).
+/// </remarks>
+/// <param name="write">The write itself, handed the chunk and the caller's token.</param>
+public sealed class ScriptedWriteStream(Func<ReadOnlyMemory<byte>, CancellationToken, Task> write) : Stream
+{
+    private readonly TaskCompletionSource _writing = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private long _bytes;
+
+    /// <summary>How many bytes the client handed this stream.</summary>
+    public long Bytes => Interlocked.Read(ref _bytes);
+
+    /// <summary>Completed once the client is inside a write, i.e. while it is blocked on the destination.</summary>
+    public Task Writing => _writing.Task;
+
+    public override bool CanRead => false;
+
+    public override bool CanSeek => false;
+
+    public override bool CanWrite => true;
+
+    public override long Length => throw new NotSupportedException();
+
+    public override long Position
+    {
+        get => throw new NotSupportedException();
+        set => throw new NotSupportedException();
+    }
+
+    public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+
+    public override async ValueTask WriteAsync(ReadOnlyMemory<byte> buffer, CancellationToken cancellationToken = default)
+    {
+        _writing.TrySetResult();
+
+        await write(buffer, cancellationToken).ConfigureAwait(false);
+
+        Interlocked.Add(ref _bytes, buffer.Length);
+    }
+
+    public override void Flush()
+    {
+    }
+
+    public override Task FlushAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+    public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+
+    public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+
+    public override void SetLength(long value) => throw new NotSupportedException();
+}
+
+/// <summary>
 /// A hand-written <see cref="IRenderNodeConnectionFactory"/> for the download tests: it hands the client an
 /// <see cref="HttpClient"/> over the scripted <see cref="SyntheticDownloadHandler"/> and sets the node's base
 /// URL and <c>x-api-key</c> exactly as <c>RenderNodeConnectionFactory</c> does, so the client under test is

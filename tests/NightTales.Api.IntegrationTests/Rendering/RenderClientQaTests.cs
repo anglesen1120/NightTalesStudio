@@ -23,6 +23,7 @@ using NightTales.TestKit.Threading;
 using NightTales.TestKit.Time;
 using Shouldly;
 using Xunit;
+using static NightTales.TestKit.Rendering.ManualClockDrive;
 
 namespace NightTales.Api.IntegrationTests.Rendering;
 
@@ -39,6 +40,8 @@ public sealed class RenderClientQaTests
     private const string TaskId = "3f7b9c2e-1a44-4d0f-9e21-6c5b8a7d0e11";
 
     private const string SubmitFixture = "render-submit.v1.landscape-vi.json";
+
+    private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
     /// <summary>A 200 whose body is not the contract type: contract drift, never a retry (task §Failure handling).</summary>
     [Fact]
@@ -98,13 +101,46 @@ public sealed class RenderClientQaTests
     }
 
     /// <summary>
+    /// The read cap of a status answer is 64 KiB and inclusive: a body of exactly that size is read and parsed,
+    /// and one byte more is refused as an unreadable answer — terminal, alerting and never retried.
+    /// </summary>
+    /// <param name="bytes">The body size under test.</param>
+    /// <param name="accepted">Whether the client must read it.</param>
+    [Theory]
+    [InlineData(64 * 1024, true)]
+    [InlineData((64 * 1024) + 1, false)]
+    public async Task GetStatus_AnswerAtTheReadCap_IsRead_OneByteOverIsRefused(int bytes, bool accepted)
+    {
+        var handler = new HeaderNodeHandler(ScriptedAnswer.Ok(200, StatusBodyOfSize(bytes)));
+        var time = new ManualTimeProvider();
+        using var provider = Provider(handler, time);
+        var client = provider.GetRequiredService<IRenderClient>();
+
+        var status = await client.GetStatusAsync(Node(), TaskId, CancellationToken.None).WaitAsync(RealTimeBudget, Ct);
+
+        if (accepted)
+        {
+            status.IsError.ShouldBeFalse(status.FirstError.Description);
+            status.Value.State.ShouldBe("succeeded");
+        }
+        else
+        {
+            var failure = FailureOf(status);
+            failure.Kind.ShouldBe(RenderClientFailureKind.TerminalFailure);
+            failure.OutcomeCode.ShouldBe(RenderOutcomeCodes.RenderNodeError);
+            failure.Alert.ShouldBeTrue();
+            handler.Requests.ShouldHaveSingleItem("an unreadable 2xx is contract drift, never a retry");
+        }
+    }
+
+    /// <summary>
     /// A field a newer adapter adds must not break a running Worker (11 README D4, 05 CR-3): the production
     /// profile is the tolerant one, so both a status and an accepted reply with an unknown member are read.
     /// </summary>
     [Fact]
     public async Task Replies_WithAnUnknownField_AreTolerated()
     {
-        var status = ContractFixtures.Read("render-status.v1.succeeded.json");
+        var status = StatusFixture();
         var patched = JsonNode.Parse(status)!.AsObject();
         patched["added_by_a_newer_adapter"] = 17;
         patched["another"] = new JsonArray("a", "b");
@@ -122,11 +158,11 @@ public sealed class RenderClientQaTests
         using var provider = Provider(handler, time);
         var client = provider.GetRequiredService<IRenderClient>();
 
-        var read = await client.GetStatusAsync(Node(), TaskId, CancellationToken.None);
+        var read = await client.GetStatusAsync(Node(), TaskId, CancellationToken.None).WaitAsync(RealTimeBudget, Ct);
         read.IsError.ShouldBeFalse(read.FirstError.Description);
         read.Value.State.ShouldBe("succeeded");
 
-        var submitted = await client.SubmitAsync(Node(), SubmitBody(), CancellationToken.None);
+        var submitted = await client.SubmitAsync(Node(), SubmitBody(), CancellationToken.None).WaitAsync(RealTimeBudget, Ct);
         submitted.IsError.ShouldBeFalse(submitted.FirstError.Description);
         submitted.Value.TaskId.ShouldBe(Guid.Parse(TaskId));
     }
@@ -178,9 +214,9 @@ public sealed class RenderClientQaTests
         using var provider = Provider(handler, time);
         var client = provider.GetRequiredService<IRenderClient>();
 
-        var status = await client.GetStatusAsync(Node(), taskId, CancellationToken.None);
-        var cancelled = await client.CancelAsync(Node(), taskId, CancellationToken.None);
-        var deleted = await client.DeleteAsync(Node(), taskId, CancellationToken.None);
+        var status = await client.GetStatusAsync(Node(), taskId, CancellationToken.None).WaitAsync(RealTimeBudget, Ct);
+        var cancelled = await client.CancelAsync(Node(), taskId, CancellationToken.None).WaitAsync(RealTimeBudget, Ct);
+        var deleted = await client.DeleteAsync(Node(), taskId, CancellationToken.None).WaitAsync(RealTimeBudget, Ct);
 
         foreach (var failure in new[] { FailureOf(status), FailureOf(cancelled), FailureOf(deleted) })
         {
@@ -193,9 +229,14 @@ public sealed class RenderClientQaTests
         handler.Requests.ShouldBeEmpty("no URL is built for a refused id");
     }
 
-    /// <summary>The positive control: a 64-character unreserved id is a legal adapter id and does travel.</summary>
+    /// <summary>
+    /// The bound is inclusive: a 64-character unreserved id is a legal adapter id and travels on the route
+    /// unescaped. The answer the node then sends names a different task — the fixture's task id is a UUID and
+    /// this id is not one — so the client refuses it as a node fault, which is the same fail-closed rule the
+    /// mismatch case pins.
+    /// </summary>
     [Fact]
-    public async Task MaxLengthUnreservedTaskId_IsAccepted()
+    public async Task MaxLengthUnreservedTaskId_TravelsOnTheRoute_AndAForeignStatusIsRefused()
     {
         var id = new string('a', 64);
         var handler = new HeaderNodeHandler(ScriptedAnswer.Ok(200, ContractFixtures.Read("render-status.v1.running-voice.json")));
@@ -203,10 +244,14 @@ public sealed class RenderClientQaTests
         using var provider = Provider(handler, time);
         var client = provider.GetRequiredService<IRenderClient>();
 
-        var status = await client.GetStatusAsync(Node(), id, CancellationToken.None);
+        var status = await client.GetStatusAsync(Node(), id, CancellationToken.None).WaitAsync(RealTimeBudget, Ct);
 
-        status.IsError.ShouldBeFalse(status.FirstError.Description);
         handler.Requests.ShouldHaveSingleItem().Path.ShouldBe($"/v1/renders/{id}");
+        var failure = FailureOf(status);
+        failure.Kind.ShouldBe(RenderClientFailureKind.TerminalFailure);
+        failure.OutcomeCode.ShouldBe(RenderOutcomeCodes.RenderNodeError);
+        failure.Detail.ShouldBe("render_task_mismatch");
+        failure.Alert.ShouldBeTrue();
     }
 
     /// <summary>
@@ -218,7 +263,8 @@ public sealed class RenderClientQaTests
     /// <param name="expectedSeconds">The wait the caller must receive.</param>
     [Theory]
     [InlineData("30", 30)]
-    [InlineData("0", 0)]
+    [InlineData("0", 1)]
+    [InlineData("1", 1)]
     [InlineData("-5", 30)]
     [InlineData("99999", 300)]
     [InlineData("abc", 30)]
@@ -373,7 +419,7 @@ public sealed class RenderClientQaTests
         FailureOf(failing).Kind.ShouldBe(RenderClientFailureKind.TransientFailure);
         handler.Requests.Count.ShouldBe(4, "four failures of one call");
 
-        handler.Rescript(ScriptedAnswer.Ok(200, ContractFixtures.Read("render-status.v1.succeeded.json")));
+        handler.Rescript(ScriptedAnswer.Ok(200, StatusFixture()));
         var ok = await DriveAsync(client.GetStatusAsync(Node(), TaskId, CancellationToken.None), time);
         ok.IsError.ShouldBeFalse(ok.FirstError.Description);
 
@@ -423,15 +469,13 @@ public sealed class RenderClientQaTests
 
         var call = client.GetStatusAsync(Node(), TaskId, cancellation.Token);
 
-        for (var spin = 0; spin < 20_000 && handler.Requests.Count == 0; spin++)
-        {
-            await Task.Yield();
-        }
+        // Real time and bounded: a spin on Task.Yield can be starved on a loaded box, and the test would then
+        // cancel a call that never reached the node at all.
+        await WaitUntilAsync(() => handler.Requests.Count == 1, "the first attempt reached the node");
 
-        handler.Requests.Count.ShouldBe(1, "the first attempt must have reached the node");
         await cancellation.CancelAsync();
 
-        await Should.ThrowAsync<OperationCanceledException>(async () => await call);
+        await Should.ThrowAsync<OperationCanceledException>(async () => await call.WaitAsync(RealTimeBudget, Ct));
         handler.Requests.Count.ShouldBe(1, "the backoff wait is abandoned, never a second attempt");
     }
 
@@ -449,7 +493,7 @@ public sealed class RenderClientQaTests
 
         var handler = new HeaderNodeHandler(
             ScriptedAnswer.Ok(202, accepted),
-            ScriptedAnswer.Ok(200, ContractFixtures.Read("render-status.v1.succeeded.json")),
+            ScriptedAnswer.Ok(200, StatusFixture()),
             ScriptedAnswer.Ok(202, string.Empty),
             ScriptedAnswer.Ok(204, string.Empty));
 
@@ -459,10 +503,10 @@ public sealed class RenderClientQaTests
         var client = provider.GetRequiredService<IRenderClient>();
         var node = Node("sentinel");
 
-        (await client.SubmitAsync(node, SubmitBody(), CancellationToken.None)).IsError.ShouldBeFalse();
-        (await client.GetStatusAsync(node, TaskId, CancellationToken.None)).IsError.ShouldBeFalse();
-        (await client.CancelAsync(node, TaskId, CancellationToken.None)).IsError.ShouldBeFalse();
-        (await client.DeleteAsync(node, TaskId, CancellationToken.None)).IsError.ShouldBeFalse();
+        (await client.SubmitAsync(node, SubmitBody(), CancellationToken.None).WaitAsync(RealTimeBudget, Ct)).IsError.ShouldBeFalse();
+        (await client.GetStatusAsync(node, TaskId, CancellationToken.None).WaitAsync(RealTimeBudget, Ct)).IsError.ShouldBeFalse();
+        (await client.CancelAsync(node, TaskId, CancellationToken.None).WaitAsync(RealTimeBudget, Ct)).IsError.ShouldBeFalse();
+        (await client.DeleteAsync(node, TaskId, CancellationToken.None).WaitAsync(RealTimeBudget, Ct)).IsError.ShouldBeFalse();
 
         handler.Requests.Count.ShouldBe(4);
         foreach (var request in handler.Requests)
@@ -577,21 +621,35 @@ public sealed class RenderClientQaTests
         return services.BuildServiceProvider();
     }
 
-    /// <summary>Settles one call by advancing the manual clock, so a retry budget costs no wall time.</summary>
-    /// <typeparam name="T">The call's success type.</typeparam>
-    /// <param name="call">The call to settle.</param>
-    /// <param name="time">The clock to advance.</param>
-    /// <returns>The call's result.</returns>
-    private static async Task<T> DriveAsync<T>(Task<T> call, ManualTimeProvider time)
+    /// <summary>
+    /// A frozen status fixture whose <c>task_id</c> is the requested one, patched in memory: the fixture is
+    /// never edited, and the client refuses a status that names another task (M6).
+    /// </summary>
+    /// <returns>The status body as JSON.</returns>
+    private static string StatusFixture()
     {
-        for (var step = 0; step < 400 && !call.IsCompleted; step++)
-        {
-            time.Advance(TimeSpan.FromMilliseconds(250));
-            await Task.Yield();
-        }
+        var status = JsonNode.Parse(ContractFixtures.Read("render-status.v1.succeeded.json"))!.AsObject();
+        status["task_id"] = TaskId;
 
-        call.IsCompleted.ShouldBeTrue("the call must finish within the advanced virtual time");
-        return await call;
+        return status.ToJsonString();
+    }
+
+    /// <summary>
+    /// A readable status body of exactly <paramref name="bytes"/> bytes: the fixture plus a padding member a
+    /// tolerant reader ignores, so a test can sit on the client's read cap instead of around it.
+    /// </summary>
+    /// <param name="bytes">The exact body size in bytes.</param>
+    /// <returns>The status body as JSON.</returns>
+    private static string StatusBodyOfSize(int bytes)
+    {
+        var status = JsonNode.Parse(StatusFixture())!.AsObject();
+        status["pad"] = string.Empty;
+        status["pad"] = new string('a', bytes - Encoding.UTF8.GetByteCount(status.ToJsonString()));
+
+        var body = status.ToJsonString();
+        Encoding.UTF8.GetByteCount(body).ShouldBe(bytes, "the padded status must sit exactly on the size under test");
+
+        return body;
     }
 
     /// <summary>Captures every log line of the host, exception text included, so a leak cannot hide in one.</summary>
@@ -790,7 +848,7 @@ public sealed class RenderDownloadQaTests
         using var rig = CreateRig(_ => Accepted(content, SyntheticDownloadContent.ExpectedSha256(bodyBytes)));
         using var destination = new CountingWriteStream();
 
-        var result = await rig.Client.DownloadAsync(Node(), TaskId, kind, destination, 1_024L, Ct);
+        var result = await rig.Client.DownloadAsync(Node(), TaskId, kind, destination, 1_024L, Ct).WaitAsync(RealTimeBudget, Ct);
 
         if (accepted)
         {
@@ -816,7 +874,7 @@ public sealed class RenderDownloadQaTests
         using var rig = CreateRig(_ => Accepted(Lying(declared: 512L, actualBytes: 4_096)));
         using var destination = new CountingWriteStream();
 
-        var result = await rig.Client.DownloadAsync(Node(), TaskId, RenderOutputKind.Video, destination, 1_024L, Ct);
+        var result = await rig.Client.DownloadAsync(Node(), TaskId, RenderOutputKind.Video, destination, 1_024L, Ct).WaitAsync(RealTimeBudget, Ct);
 
         var failure = FailureOf(result);
         failure.OutcomeCode.ShouldBe(RenderOutcomeCodes.RenderOutputInvalid);
@@ -837,7 +895,7 @@ public sealed class RenderDownloadQaTests
             new RenderClientOptions { MaxVideoBytes = 64L * 1_024L * 1_024L });
 
         using var destination = new CountingWriteStream();
-        var result = await rig.Client.DownloadAsync(Node(), TaskId, RenderOutputKind.Video, destination, 8_192L, Ct);
+        var result = await rig.Client.DownloadAsync(Node(), TaskId, RenderOutputKind.Video, destination, 8_192L, Ct).WaitAsync(RealTimeBudget, Ct);
 
         result.IsError.ShouldBeFalse(result.FirstError.Description);
         result.Value.Bytes.ShouldBe(512L);
@@ -852,7 +910,7 @@ public sealed class RenderDownloadQaTests
         using var rig = CreateRig(_ => Accepted(content, SyntheticDownloadContent.ExpectedSha256(0L)));
         using var destination = new CountingWriteStream();
 
-        var result = await rig.Client.DownloadAsync(Node(), TaskId, RenderOutputKind.Video, destination, 1_024L, Ct);
+        var result = await rig.Client.DownloadAsync(Node(), TaskId, RenderOutputKind.Video, destination, 1_024L, Ct).WaitAsync(RealTimeBudget, Ct);
 
         result.IsError.ShouldBeFalse(result.FirstError.Description);
         result.Value.Bytes.ShouldBe(0L);
@@ -872,7 +930,7 @@ public sealed class RenderDownloadQaTests
         using var destination = new CountingWriteStream();
 
         var result = await rig.Client.DownloadAsync(
-            Node(), TaskId, RenderOutputKind.Subtitles, destination, long.MaxValue, Ct);
+            Node(), TaskId, RenderOutputKind.Subtitles, destination, long.MaxValue, Ct).WaitAsync(RealTimeBudget, Ct);
 
         if (accepted)
         {
@@ -898,7 +956,7 @@ public sealed class RenderDownloadQaTests
         using var rig = CreateRig(_ => Accepted(content, SyntheticDownloadContent.ExpectedSha256(Size)));
 
         using var destination = new CountingWriteStream();
-        var result = await rig.Client.DownloadAsync(Node(), TaskId, RenderOutputKind.Video, destination, 1_024L, Ct);
+        var result = await rig.Client.DownloadAsync(Node(), TaskId, RenderOutputKind.Video, destination, 1_024L, Ct).WaitAsync(RealTimeBudget, Ct);
 
         result.IsError.ShouldBeFalse(result.FirstError.Description);
         result.Value.Bytes.ShouldBe(Size);
@@ -917,7 +975,7 @@ public sealed class RenderDownloadQaTests
         });
 
         using var destination = new CountingWriteStream();
-        var result = await rig.Client.DownloadAsync(Node(), TaskId, RenderOutputKind.Video, destination, 1_024L, Ct);
+        var result = await rig.Client.DownloadAsync(Node(), TaskId, RenderOutputKind.Video, destination, 1_024L, Ct).WaitAsync(RealTimeBudget, Ct);
 
         var failure = FailureOf(result);
         failure.OutcomeCode.ShouldBe(RenderOutcomeCodes.RenderOutputInvalid);
@@ -951,7 +1009,7 @@ public sealed class RenderDownloadQaTests
             new RenderClientOptions { MaxVideoBytes = 64L * 1_024L * 1_024L });
         using var destination = new CountingWriteStream();
 
-        var result = await rig.Client.DownloadAsync(Node(), TaskId, RenderOutputKind.Video, destination, 1_024L * 64, Ct);
+        var result = await rig.Client.DownloadAsync(Node(), TaskId, RenderOutputKind.Video, destination, 1_024L * 64, Ct).WaitAsync(RealTimeBudget, Ct);
 
         if (matches)
         {
@@ -984,7 +1042,7 @@ public sealed class RenderDownloadQaTests
         try
         {
             var result = await rig.Client.DownloadAsync(
-                Node(), TaskId, RenderOutputKind.Video, destination, 1_024L * 64, Ct);
+                Node(), TaskId, RenderOutputKind.Video, destination, 1_024L * 64, Ct).WaitAsync(RealTimeBudget, Ct);
 
             outcome = result.IsError
                 ? $"the call answered '{result.FirstError.Description}'"
@@ -1008,14 +1066,13 @@ public sealed class RenderDownloadQaTests
 
     /// <summary>
     /// An already-cancelled caller token ends the call with the caller's own <see cref="OperationCanceledException"/>
-    /// and no byte of the node's body is read. The fake handler is still invoked — in the real stack, refusing to
-    /// dispatch a cancelled call is the transport's job — so what this proves is that the body is never touched.
+    /// before the node is touched at all: no request is sent and no byte of the node's body is read (D7).
     /// </summary>
     [Fact]
     public async Task Download_AlreadyCancelledToken_ThrowsAndReadsNothing()
     {
-        // A body that stalls on its very first read: the fixture's stream observes the caller's token exactly as a
-        // socket does, so a token that arrives already cancelled ends the call instead of being served bytes.
+        // A body that stalls on its very first read: if the call ever reached the body, the fixture's stream
+        // would observe that read (Stalled) before the token ended it.
         var content = new SyntheticDownloadContent(1_024L, VideoType, declareLength: false, stallAfterBytes: 0);
         using var rig = CreateRig(_ => Accepted(content));
         using var cancellation = new CancellationTokenSource();
@@ -1024,9 +1081,10 @@ public sealed class RenderDownloadQaTests
 
         await Should.ThrowAsync<OperationCanceledException>(async () =>
             await rig.Client.DownloadAsync(
-                Node(), TaskId, RenderOutputKind.Video, destination, 1_024L, cancellation.Token));
+                Node(), TaskId, RenderOutputKind.Video, destination, 1_024L, cancellation.Token).WaitAsync(RealTimeBudget, Ct));
 
-        content.Stalled.IsCompleted.ShouldBeTrue("the cancelled call reached the body, not just the headers");
+        rig.Handler.Requests.ShouldBeEmpty("a call that arrives already cancelled never touches the node (D7)");
+        content.Stalled.IsCompleted.ShouldBeFalse("the body of a cancelled call is never opened");
         content.BytesServed.ShouldBe(0L, "a cancelled call never reads the node's body");
         destination.Bytes.ShouldBe(0L);
     }
@@ -1056,7 +1114,7 @@ public sealed class RenderDownloadQaTests
         });
 
         using var destination = new CountingWriteStream();
-        var result = await rig.Client.DownloadAsync(Node(), TaskId, RenderOutputKind.Video, destination, 1_024L, Ct);
+        var result = await rig.Client.DownloadAsync(Node(), TaskId, RenderOutputKind.Video, destination, 1_024L, Ct).WaitAsync(RealTimeBudget, Ct);
 
         var failure = FailureOf(result);
         failure.Kind.ShouldBe(RenderClientFailureKind.TerminalFailure);
@@ -1078,7 +1136,7 @@ public sealed class RenderDownloadQaTests
         });
 
         using var destination = new CountingWriteStream();
-        var result = await rig.Client.DownloadAsync(Node(), TaskId, RenderOutputKind.Video, destination, 1_024L, Ct);
+        var result = await rig.Client.DownloadAsync(Node(), TaskId, RenderOutputKind.Video, destination, 1_024L, Ct).WaitAsync(RealTimeBudget, Ct);
 
         result.IsError.ShouldBeFalse(result.FirstError.Description);
         result.Value.Bytes.ShouldBe(Size);
@@ -1095,7 +1153,7 @@ public sealed class RenderDownloadQaTests
         using var rig = CreateRig(_ => Failed((HttpStatusCode)status, code));
 
         using var destination = new CountingWriteStream();
-        var result = await rig.Client.DownloadAsync(Node(), TaskId, RenderOutputKind.Video, destination, 1_024L, Ct);
+        var result = await rig.Client.DownloadAsync(Node(), TaskId, RenderOutputKind.Video, destination, 1_024L, Ct).WaitAsync(RealTimeBudget, Ct);
 
         var failure = FailureOf(result);
         failure.Kind.ShouldBe(RenderClientFailureKind.TerminalFailure);
@@ -1117,7 +1175,7 @@ public sealed class RenderDownloadQaTests
             captureLogs: true);
 
         using var destination = new CountingWriteStream();
-        var result = await rig.Client.DownloadAsync(Node(), TaskId, RenderOutputKind.Video, destination, 1_024L, Ct);
+        var result = await rig.Client.DownloadAsync(Node(), TaskId, RenderOutputKind.Video, destination, 1_024L, Ct).WaitAsync(RealTimeBudget, Ct);
 
         result.IsError.ShouldBeFalse(result.FirstError.Description);
         rig.Handler.Requests.ShouldHaveSingleItem().ApiKey.ShouldBe(ApiKeyValue);
@@ -1211,6 +1269,7 @@ public sealed class RenderDownloadQaTests
         var client = new RenderDownloadClient(
             factory,
             Options.Create(options ?? new RenderClientOptions { MaxVideoBytes = 1_024L, MaxSubtitleBytes = 1_024L }),
+            Options.Create(new RenderNodesOptions()),
             time,
             logger);
 
@@ -1328,6 +1387,8 @@ public sealed class RenderDownloadQaTests
 /// </summary>
 public sealed class RenderClientCompositionQaTests : IntegrationTest
 {
+    private static CancellationToken Ct => TestContext.Current.CancellationToken;
+
     public RenderClientCompositionQaTests(TestDatabase database)
         : base(database)
     {
@@ -1401,7 +1462,7 @@ public sealed class RenderClientCompositionQaTests : IntegrationTest
     public async Task WorkerCompositionRoot_ResolvesBothClients_WithTheDefaultOptions()
     {
         await using var host = new WorkerHost(Database, new FakeClock());
-        await host.StartAsync(TestContext.Current.CancellationToken);
+        await host.StartAsync(TestContext.Current.CancellationToken).WaitAsync(RealTimeBudget, Ct);
 
         var client = host.Services.GetRequiredService<IRenderClient>();
         var download = host.Services.GetRequiredService<IRenderDownloadClient>();
