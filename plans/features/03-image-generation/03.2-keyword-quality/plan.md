@@ -124,7 +124,7 @@ No job or external call. `INameCorpusProvider` reads `story_sources` and the app
 | Task | Title | Area | Size | Depends on | Blocks |
 |---|---|---|---|---|---|
 | 03.2.1-T1 | `RenderImagePlanner` + `IImageCostEstimator` | BE | **S (0.5)** | 03.1.1-T2, 02.2.1-T1, 02.2.4-T1 | 03.2.2-T2, 03.4.2-T1, 09.6.1-T1, 09.6.2-T1 |
-| 03.2.2-T1 | `RenderKeywordLinter` + `NameCorpus` + `INameCorpusProvider` | BE | **S (0.5)** | 02.2.1-T1, 02.5.3-T2 (fact sheets) | 03.2.2-T2 |
+| 03.2.2-T1 | `RenderKeywordLinter` + `NameCorpus` + `INameCorpusProvider` | BE | **S (0.5)** | 02.2.1-T1, 02.5.3-T2 (fact sheets) | 03.2.2-T2, 09.6.1-T1 (03 CR-17) |
 | 03.2.2-T2 | Wiring: quality checker, approve, render → `keywords_flagged` | BE | **XS (0.25)** | 03.2.1-T1, 03.2.2-T1, 02.3.2-T1, 02.3.4-T1, 09.6.1-T1 | 10.5 |
 
 Total **1.25 d** (high-level 1.5 d; README §9).

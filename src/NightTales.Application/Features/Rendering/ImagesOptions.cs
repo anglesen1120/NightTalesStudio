@@ -47,4 +47,17 @@ public sealed class ImagesOptions
 
     /// <summary><see cref="Quality"/> or <see cref="AutoQuality"/> when unset.</summary>
     public string QualityOrAuto => string.IsNullOrWhiteSpace(Quality) ? AutoQuality : Quality;
+
+    /// <summary>The render keyword linter's switches (03 README D11, 03.2.2-T1); never null once bound.</summary>
+    public ImagesLinterOptions Linter { get; set; } = new();
+}
+
+/// <summary>The <c>Images:Linter</c> sub-section of the <c>Images</c> section (03 README D11, 03.2.2-T1).</summary>
+public sealed class ImagesLinterOptions
+{
+    /// <summary>
+    /// Whether the episode's own research names are checked (<c>Images:Linter:NameCorpusEnabled</c>, D11).
+    /// <c>false</c> is D11's rollback: the name rule stops, the 02 <c>KeywordRules</c> stay on.
+    /// </summary>
+    public bool NameCorpusEnabled { get; set; } = true;
 }
