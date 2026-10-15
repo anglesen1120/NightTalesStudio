@@ -949,6 +949,131 @@ namespace NightTales.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("NightTales.Domain.Rendering.RenderJob", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("AdapterTaskId")
+                        .HasColumnType("text")
+                        .HasColumnName("adapter_task_id");
+
+                    b.Property<int>("Attempt")
+                        .HasColumnType("integer")
+                        .HasColumnName("attempt");
+
+                    b.Property<DateTimeOffset?>("CancelRequestedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("cancel_requested_at");
+
+                    b.Property<Guid>("EpisodeId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("episode_id");
+
+                    b.Property<string>("ErrorCode")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("error_code");
+
+                    b.Property<string>("ErrorMessage")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)")
+                        .HasColumnName("error_message");
+
+                    b.Property<DateTimeOffset?>("FinishedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("finished_at");
+
+                    b.Property<int?>("ImagesNeeded")
+                        .HasColumnType("integer")
+                        .HasColumnName("images_needed");
+
+                    b.Property<DateTimeOffset?>("NextPollAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("next_poll_at");
+
+                    b.Property<string>("Params")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("params");
+
+                    b.Property<short>("Percent")
+                        .HasColumnType("smallint")
+                        .HasColumnName("percent");
+
+                    b.Property<string>("QualityReport")
+                        .HasColumnType("jsonb")
+                        .HasColumnName("quality_report");
+
+                    b.Property<Guid>("ReservationId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("reservation_id");
+
+                    b.Property<string>("Stage")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("stage");
+
+                    b.Property<DateTimeOffset?>("StartedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("started_at");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("status");
+
+                    b.Property<Guid>("StoryVersionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("story_version_id");
+
+                    b.Property<DateTimeOffset?>("SubmittedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("submitted_at");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.Property<uint>("Version")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
+                    b.Property<Guid?>("WorkerNodeId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("worker_node_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_render_jobs");
+
+                    b.HasIndex("EpisodeId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_render_jobs_active_episode")
+                        .HasFilter("\"status\" IN ('queued', 'submitted', 'running', 'ingesting')");
+
+                    b.HasIndex("EpisodeId", "UserId")
+                        .HasDatabaseName("ix_render_jobs_episode_id_user_id");
+
+                    b.HasIndex("Status", "NextPollAt")
+                        .HasDatabaseName("ix_render_jobs_status_next_poll_at")
+                        .HasFilter("\"status\" IN ('submitted', 'running')");
+
+                    b.HasIndex("StoryVersionId", "UserId")
+                        .HasDatabaseName("ix_render_jobs_story_version_id_user_id");
+
+                    b.HasIndex("UserId", "EpisodeId")
+                        .HasDatabaseName("ix_render_jobs_user_id_episode_id");
+
+                    b.ToTable("render_jobs", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_render_jobs_status", "\"status\" IN ('cancelled', 'failed', 'ingesting', 'queued', 'running', 'submitted', 'succeeded')");
+                        });
+                });
+
             modelBuilder.Entity("NightTales.Domain.Rendering.WorkerNode", b =>
                 {
                     b.Property<Guid>("Id")
@@ -2947,6 +3072,32 @@ namespace NightTales.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_episodes_series_series_id_user_id");
+                });
+
+            modelBuilder.Entity("NightTales.Domain.Rendering.RenderJob", b =>
+                {
+                    b.HasOne("NightTales.Infrastructure.Persistence.AppUser", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_render_jobs_asp_net_users_user_id");
+
+                    b.HasOne("NightTales.Domain.Episodes.Episode", null)
+                        .WithMany()
+                        .HasForeignKey("EpisodeId", "UserId")
+                        .HasPrincipalKey("Id", "UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_render_jobs_episodes_episode_id_user_id");
+
+                    b.HasOne("NightTales.Domain.Stories.StoryVersion", null)
+                        .WithMany()
+                        .HasForeignKey("StoryVersionId", "UserId")
+                        .HasPrincipalKey("Id", "UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_render_jobs_story_versions_story_version_id_user_id");
                 });
 
             modelBuilder.Entity("NightTales.Domain.Research.FactSheet", b =>
