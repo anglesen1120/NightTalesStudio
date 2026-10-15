@@ -1,6 +1,5 @@
 using NightTales.Domain.Common;
 using NightTales.Domain.Series.Bible;
-using NightTales.Domain.Stories.Structure;
 
 // The feature namespace `…Features.SeriesBible` shadows the Domain entity's name inside this folder (the trap
 // 09.4.1-T1 documents for the series aggregate), and `…Features.Series` shadows the aggregate's, so both are
@@ -41,11 +40,12 @@ public sealed class BibleProposalApplier(BibleLimits limits, IClock clock) : Abs
     public BibleApplyResult Apply(
         SeriesAggregate series,
         SeriesBibleEntity bible,
-        BibleSummarySource? source,
+        IReadOnlyList<BibleSummarySource> summarySources,
         Guid changedBy)
     {
         ArgumentNullException.ThrowIfNull(series);
         ArgumentNullException.ThrowIfNull(bible);
+        ArgumentNullException.ThrowIfNull(summarySources);
 
         if (changedBy == Guid.Empty)
         {
@@ -55,10 +55,9 @@ public sealed class BibleProposalApplier(BibleLimits limits, IClock clock) : Abs
         var stored = bible.ProposedContent
             ?? throw new InvalidOperationException("There is no pending proposal to apply.");
 
-        // The episode the ops were computed from: the source a summary op is bound to, and the row's own record
-        // of it. A proposal without one (its record was lost) cannot be applied — the summary rule needs it, and
-        // a rewrite of the proposal would have nothing to keep in that column.
-        var episodeId = source?.EpisodeId ?? bible.ProposedFromEpisodeId;
+        // The episode the proposal was last built from, which the row keeps. A legacy summary op (stored before each
+        // summary carried its own episode) binds to it; a proposal without one cannot be applied.
+        var episodeId = bible.ProposedFromEpisodeId;
         if (episodeId is null || episodeId.Value == Guid.Empty)
         {
             throw new InvalidOperationException("A pending proposal must record the episode it came from.");
@@ -66,26 +65,6 @@ public sealed class BibleProposalApplier(BibleLimits limits, IClock clock) : Abs
 
         var sanitised = BibleProposalValidator.SanitizeStored(stored);
         var removed = stored.Ops.Count - sanitised.Ops.Count;
-
-        // A summary may only be stored for an approved episode of the series (BibleContentValidator's
-        // not_approved_episode rule), so ops of that kind whose episode is no longer approved add nothing and are
-        // dropped here rather than stored as content a later PUT would refuse.
-        if (source is null)
-        {
-            var bound = new List<BibleOp>(sanitised.Ops.Count);
-            foreach (var op in sanitised.Ops)
-            {
-                if (op.Kind == BibleOpKind.AddSummary)
-                {
-                    removed++;
-                    continue;
-                }
-
-                bound.Add(op);
-            }
-
-            sanitised = sanitised with { Ops = bound };
-        }
 
         if (!ReferenceEquals(stored, sanitised))
         {
@@ -95,7 +74,9 @@ public sealed class BibleProposalApplier(BibleLimits limits, IClock clock) : Abs
             bible.SetProposal(sanitised, episodeId.Value, clock);
         }
 
-        var applied = bible.ApplyProposal(limits, source ?? Unbound(episodeId.Value), clock);
+        // Each summary op binds to the source of its own episode. One whose episode has no source adds nothing, and the
+        // Domain method counts it as skipped; the proposal is cleared with the rest of the apply.
+        var applied = bible.ApplyProposal(limits, summarySources, clock);
 
         // The announcement of the new version (plan §5). It is raised after the write, so the outbox row joins
         // the accept's own transaction; its two refusals are caller bugs, not states (a version below 1 cannot
@@ -112,14 +93,4 @@ public sealed class BibleProposalApplier(BibleLimits limits, IClock clock) : Abs
             ? applied
             : new BibleApplyResult(applied.Applied, applied.Skipped + removed);
     }
-
-    /// <summary>
-    /// The source an apply runs with when the proposal's episode is no longer approved: every
-    /// <c>add_summary</c> op was dropped before this call, so the Domain method reads neither of the two derived
-    /// members. The episode id is the real one, so the call still says which episode the ops came from.
-    /// </summary>
-    /// <param name="episodeId">The episode the proposal came from; never empty.</param>
-    /// <returns>The source that is never read.</returns>
-    private BibleSummarySource Unbound(Guid episodeId) =>
-        new(episodeId, StoryStructureTags.Empty, clock.UtcNow);
 }

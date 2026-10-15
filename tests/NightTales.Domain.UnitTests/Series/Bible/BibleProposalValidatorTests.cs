@@ -370,4 +370,81 @@ public sealed class BibleProposalValidatorTests
                 BibleOpKind.AddSummary,
             });
     }
+
+    [Fact]
+    public void BibleProposalValidator_Merge_KeepsEverySummaryEvenWhenTheCapIsFull()
+    {
+        var first = Guid.NewGuid();
+        var second = Guid.NewGuid();
+        var stored = new List<BibleOp>();
+        for (var i = 1; i <= 9; i++)
+        {
+            stored.Add(new BibleOp(BibleOpKind.AddCharacter, null, $"Nhân vật {i}", "Mô tả.", null, null));
+        }
+
+        stored.Add(new BibleOp(BibleOpKind.AddSummary, "Tập một.", "Tập một", null, null, null, first));
+        var existing = Proposal(stored.ToArray());
+
+        var merged = BibleProposalValidator.Merge(
+            existing,
+            [
+                new BibleOp(BibleOpKind.AddSummary, "Tập hai.", "Tập hai", null, null, null, second),
+                new BibleOp(BibleOpKind.AddPlace, null, "Ngôi nhà cuối ngõ", "Nhà gỗ hai tầng.", null, null),
+            ],
+            Caps.MaxOps);
+
+        merged.Count.ShouldBe(Caps.MaxOps, "the cap still holds");
+        merged.Where(op => op.Kind == BibleOpKind.AddSummary).Select(op => op.EpisodeId)
+            .ShouldBe([first, second], "an episode's summary is never cut by the cap, so each episode keeps its own");
+    }
+
+    [Fact]
+    public void BibleProposalValidator_Merge_ReplacesTheSummaryOfTheSameEpisodeOnly()
+    {
+        var episode = Guid.NewGuid();
+        var existing = Proposal(new BibleOp(BibleOpKind.AddSummary, "Bản cũ.", "Tập một", null, null, null, episode));
+
+        var merged = BibleProposalValidator.Merge(
+            existing,
+            [new BibleOp(BibleOpKind.AddSummary, "Bản mới.", "Tập một", null, null, null, episode)],
+            Caps.MaxOps);
+
+        merged.ShouldHaveSingleItem().Summary.ShouldBe("Bản mới.", "one summary per episode, the newer text wins");
+    }
+
+    [Fact]
+    public void BibleProposalValidator_SanitizeStored_NullsTheMembersThatTheKindDoesNotUse()
+    {
+        var proposal = Proposal(
+            new BibleOp(BibleOpKind.AddSummary, "Một câu.", "Tập một", "thừa", "thừa", null),
+            new BibleOp(BibleOpKind.AddCharacter, "thừa", "Bà Tư", "Người giữ nhà.", "thừa", null),
+            new BibleOp(BibleOpKind.AddRule, "thừa", "thừa", "thừa", "Không nói tên thật.", "vì sao"));
+
+        var sanitised = BibleProposalValidator.SanitizeStored(proposal);
+
+        sanitised.Ops[0].ShouldBe(new BibleOp(BibleOpKind.AddSummary, "Một câu.", "Tập một", null, null, null));
+        sanitised.Ops[1].ShouldBe(new BibleOp(BibleOpKind.AddCharacter, null, "Bà Tư", "Người giữ nhà.", null, null));
+        sanitised.Ops[2].ShouldBe(new BibleOp(BibleOpKind.AddRule, null, null, null, "Không nói tên thật.", "vì sao"));
+    }
+
+    [Fact]
+    public void BibleProposalValidator_SanitizeStored_CapsTheReasonWithoutSplittingASurrogatePair()
+    {
+        var proposal = Proposal(
+            new BibleOp(BibleOpKind.AddRule, null, null, null, "Không nói tên thật.", new string('a', 400)),
+            new BibleOp(BibleOpKind.AddRule, null, null, null, "Không nói tên thật.", new string('a', 299) + "😀"));
+
+        var sanitised = BibleProposalValidator.SanitizeStored(proposal);
+
+        sanitised.Ops[0].Reason.ShouldBe(new string('a', BibleProposalValidator.MaxReasonLength));
+        sanitised.Ops[1].Reason.ShouldBe(new string('a', 299), "a cut at 300 would split the emoji, so the cap steps back one");
+    }
+
+    [Fact]
+    public void BibleProposalValidator_IsStorable_RefusesAnOpTheStoreWouldRefuse()
+    {
+        BibleProposalValidator.IsStorable(new BibleOp(BibleOpKind.AddSummary, "Tóm tắt.", "Ngôi <nhà>", null, null, null)).ShouldBeFalse();
+        BibleProposalValidator.IsStorable(new BibleOp(BibleOpKind.AddRule, null, null, null, "  ", null)).ShouldBeFalse();
+        BibleProposalValidator.IsStorable(new BibleOp(BibleOpKind.AddSummary, "Tóm tắt.", "Tập một", null, null, null)).ShouldBeTrue();
+    }
 }

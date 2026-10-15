@@ -444,9 +444,9 @@ internal static class BibleProposalJobHarness
             $"""
              SELECT action || '|' || actor_type || '|' || (actor_user_id = '{Pg(userId)}')::text
                  || '|' || entity_type || '|' || (entity_id = '{Pg(seriesId)}')::text
-                 || '|' || coalesce(data ->> 'from_version', '-') || '|' || coalesce(data ->> 'to_version', '-')
+                 || '|' || coalesce(data ->> 'fromVersion', '-') || '|' || coalesce(data ->> 'toVersion', '-')
                  || '|' || coalesce(data ->> 'applied', '-') || '|' || coalesce(data ->> 'skipped', '-')
-                 || '|' || coalesce(data ->> 'proposed_from_episode_id', '-')
+                 || '|' || coalesce(data ->> 'proposedFromEpisodeId', '-')
              FROM audit_logs
              WHERE action = 'series.bible_proposal_accepted' AND subject_user_id = '{Pg(userId)}'
              """);

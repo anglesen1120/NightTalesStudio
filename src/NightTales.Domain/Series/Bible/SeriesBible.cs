@@ -187,18 +187,28 @@ public sealed class SeriesBible : Entity, IUserOwned, IAuditable
     /// </para>
     /// </remarks>
     /// <param name="limits">The configured limits.</param>
-    /// <param name="summarySource">The episode the summary ops belong to, with its structure and approval instant.</param>
+    /// <param name="summarySources">
+    /// The episodes the proposal's summary ops may belong to, each with its structure and approval instant. A summary op
+    /// whose episode is not in the list adds nothing.
+    /// </param>
     /// <param name="clock">The command's clock reading.</param>
     /// <returns>The ops that changed the content and how many were skipped; ids and counts only (D13/D19).</returns>
     /// <exception cref="InvalidOperationException">There is no pending proposal.</exception>
-    public BibleApplyResult ApplyProposal(BibleLimits limits, BibleSummarySource summarySource, IClock clock)
+    public BibleApplyResult ApplyProposal(BibleLimits limits, IReadOnlyList<BibleSummarySource> summarySources, IClock clock)
     {
         ArgumentNullException.ThrowIfNull(limits);
-        ArgumentNullException.ThrowIfNull(summarySource);
+        ArgumentNullException.ThrowIfNull(summarySources);
         ArgumentNullException.ThrowIfNull(clock);
 
         var proposal = ProposedContent
             ?? throw new InvalidOperationException("There is no pending proposal to apply.");
+
+        var sourcesByEpisode = new Dictionary<Guid, BibleSummarySource>(summarySources.Count);
+        foreach (var source in summarySources)
+        {
+            ArgumentNullException.ThrowIfNull(source);
+            sourcesByEpisode.TryAdd(source.EpisodeId, source);
+        }
 
         var content = Content;
         var applied = new List<BibleOp>(proposal.Ops.Count);
@@ -208,7 +218,7 @@ public sealed class SeriesBible : Entity, IUserOwned, IAuditable
         {
             ArgumentNullException.ThrowIfNull(op);
 
-            var candidate = Apply(content, op, limits, summarySource);
+            var candidate = Apply(content, op, limits, sourcesByEpisode, ProposedFromEpisodeId);
             if (candidate is null || BibleJson.Utf8ByteCount(candidate) > limits.MaxContentBytes)
             {
                 skipped++;
@@ -235,19 +245,27 @@ public sealed class SeriesBible : Entity, IUserOwned, IAuditable
     /// <param name="content">The content as it stands, including the ops applied before this one.</param>
     /// <param name="op">The op to apply.</param>
     /// <param name="limits">The configured limits.</param>
-    /// <param name="summarySource">The episode a summary op belongs to.</param>
+    /// <param name="sourcesByEpisode">The summary sources, keyed by the episode each summary belongs to.</param>
+    /// <param name="proposedFromEpisodeId">The episode a summary op without its own stamp belongs to (a legacy op).</param>
     /// <returns>The content with the op applied, or <see langword="null"/>.</returns>
     private static SeriesBibleContent? Apply(
         SeriesBibleContent content,
         BibleOp op,
         BibleLimits limits,
-        BibleSummarySource summarySource)
+        Dictionary<Guid, BibleSummarySource> sourcesByEpisode,
+        Guid? proposedFromEpisodeId)
     {
         switch (op.Kind)
         {
             case BibleOpKind.AddSummary:
                 {
-                    if (string.IsNullOrWhiteSpace(op.Summary) || string.IsNullOrWhiteSpace(op.Name))
+                    // Each summary binds to its own episode: the op's stamp, or the proposal's episode for a legacy op.
+                    // An episode with no source adds nothing, because its summary could not be dated or tagged (plan §4 U2).
+                    var episodeId = op.EpisodeId ?? proposedFromEpisodeId;
+                    if (episodeId is null
+                        || !sourcesByEpisode.TryGetValue(episodeId.Value, out var summarySource)
+                        || string.IsNullOrWhiteSpace(op.Summary)
+                        || string.IsNullOrWhiteSpace(op.Name))
                     {
                         return null;
                     }

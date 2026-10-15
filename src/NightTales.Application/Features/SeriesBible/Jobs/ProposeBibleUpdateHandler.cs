@@ -69,6 +69,7 @@ namespace NightTales.Application.Features.SeriesBible.Jobs;
 /// <param name="budgetGuard">The platform spend cap, re-checked before the paid call (D1: checked before every dispatch).</param>
 /// <param name="generator">The one text call of the run; it meters its own usage row (D14).</param>
 /// <param name="applier">The single write path of an autopilot auto-accept, shared with the manual accept command.</param>
+/// <param name="proposalSwitch">The <c>Bible:Proposal:Enabled</c> switch, read per delivery (S7): off closes a queued run with no paid call.</param>
 /// <param name="moderationEvents">The one writer of <c>moderation_events</c> (D12): a refusal on this run writes one row.</param>
 /// <param name="audit">The audit writer: the autopilot auto-accept writes its row by hand (09.3.6 covers commands only).</param>
 /// <param name="prices">The price catalog: the run's <c>queued_at</c> picks the version it is costed with.</param>
@@ -84,6 +85,7 @@ public sealed partial class ProposeBibleUpdateHandler(
     IBudgetGuard budgetGuard,
     IBibleProposalGenerator generator,
     IBibleProposalApplier applier,
+    IBibleProposalSwitch proposalSwitch,
     IModerationEventWriter moderationEvents,
     IAuditWriter audit,
     IPriceCatalog prices,
@@ -111,7 +113,18 @@ public sealed partial class ProposeBibleUpdateHandler(
     private const string DetailProviderError = "provider_error";
     private const string DetailFundsExhausted = "funds_exhausted";
     private const string DetailInvalidOutputTwice = "invalid_output_twice";
+    private const string DetailInvalidOutputMaxTokens = "invalid_output_max_tokens";
     private const string DetailUnexpected = "unexpected_error";
+
+    /// <summary>The closed scope-drift reasons a queued run is refused for (C4); the same text is the failure detail.</summary>
+    private const string ScopeEpisodeNotNull = "episode_not_null";
+    private const string ScopeSeriesMismatch = "series_mismatch";
+    private const string ScopeEpisodeSeriesMismatch = "episode_series_mismatch";
+    private const string ScopeTrueCrimeAutopilot = "true_crime_autopilot";
+    private const string DetailFeatureDisabled = "feature_disabled";
+    private const string DetailSeriesMissing = "series_missing";
+    private const string DetailSeriesArchived = "series_archived";
+    private const string DetailEpisodeMissing = "episode_missing";
 
     /// <summary>The ledger reason of each refund, the D1 vocabulary of a released reservation.</summary>
     private const string RefundInvalidOutput = "bible_proposal_invalid_output";
@@ -121,6 +134,9 @@ public sealed partial class ProposeBibleUpdateHandler(
     private const string RefundUnavailable = "provider_unavailable";
     private const string RefundFundsExhausted = "provider_funds_exhausted";
     private const string RefundSpendCap = "spend_cap_reached";
+
+    /// <summary>The ledger reason of a run the switch closed (S7): the feature was off when this delivery ran.</summary>
+    private const string RefundFeatureDisabled = "feature_disabled";
 
     /// <summary>The Postgres <c>unique_violation</c> SQLSTATE.</summary>
     private const string UniqueViolation = "23505";
@@ -201,9 +217,10 @@ public sealed partial class ProposeBibleUpdateHandler(
     /// </summary>
     /// <remarks>
     /// A terminal run is a replay of a delivery that already finished, and a <c>running</c> run belongs to the
-    /// worker that claimed it (a crashed one is the sweeper's, not this delivery's). The archived series and the
-    /// defensive true-crime autopilot case are the plan's own skips (plan §7.1 step 2): the run row stays behind
-    /// and the sweeper closes it, because a proposal is a nice-to-have.
+    /// worker that claimed it (a crashed one is the sweeper's, not this delivery's). A queued run that this delivery
+    /// cannot run (the switch is off, the series is gone or archived, or the run's scope has drifted) is closed here
+    /// as <c>failed</c> with its reservation refunded and no paid call, so it never sits queued with its reservation
+    /// open (02.6.3-T2 C4, S7). Such a run never counts toward the limit (<c>counts_toward_limit = false</c>).
     /// </remarks>
     private async Task<State?> LoadAsync(Guid seriesId, Guid episodeId, Guid runId, CancellationToken ct)
     {
@@ -222,19 +239,6 @@ public sealed partial class ProposeBibleUpdateHandler(
             return null;
         }
 
-        if (run.EpisodeId is not null)
-        {
-            // `bible_proposal` is a series-level kind: a row that names an episode is drift, not work (D2/T17).
-            LogRunScopeInvalid(runId, "episode_not_null");
-            return null;
-        }
-
-        if (run.SeriesId != seriesId)
-        {
-            LogRunScopeInvalid(runId, "series_mismatch");
-            return null;
-        }
-
         if (run.Status is GenerationRunStatus.Succeeded or GenerationRunStatus.Failed or GenerationRunStatus.Cancelled)
         {
             LogRunTerminal(runId, run.Status);
@@ -247,18 +251,45 @@ public sealed partial class ProposeBibleUpdateHandler(
             return null;
         }
 
+        if (!proposalSwitch.Enabled)
+        {
+            // S7: the switch is read on every delivery, so a run queued before it went off closes here, with no paid call.
+            await FailRunAsync(run, run.SeriesId, ErrorCodes.FeatureDisabled, DetailFeatureDisabled, RefundFeatureDisabled)
+                .ConfigureAwait(false);
+            return null;
+        }
+
+        if (run.EpisodeId is not null)
+        {
+            // `bible_proposal` is a series-level kind: a row that names an episode is drift, not work (D2/T17).
+            LogRunScopeInvalid(runId, ScopeEpisodeNotNull);
+            await FailRunAsync(run, run.SeriesId, ErrorCodes.BibleProposalGenerationFailed, ScopeEpisodeNotNull, RefundFailed)
+                .ConfigureAwait(false);
+            return null;
+        }
+
+        if (run.SeriesId != seriesId)
+        {
+            LogRunScopeInvalid(runId, ScopeSeriesMismatch);
+            await FailRunAsync(run, run.SeriesId, ErrorCodes.BibleProposalGenerationFailed, ScopeSeriesMismatch, RefundFailed)
+                .ConfigureAwait(false);
+            return null;
+        }
+
         var series = await db.Series
             .SingleOrDefaultAsync(candidate => candidate.Id == run.SeriesId, ct)
             .ConfigureAwait(false);
         if (series is null)
         {
             LogSeriesMissing(runId, run.SeriesId);
+            await FailRunAsync(run, run.SeriesId, ErrorCodes.NotFound, DetailSeriesMissing, RefundFailed).ConfigureAwait(false);
             return null;
         }
 
         if (series.ArchivedAt is not null)
         {
             LogSeriesArchived(runId, series.Id);
+            await FailRunAsync(run, series.Id, ErrorCodes.SeriesArchived, DetailSeriesArchived, RefundFailed).ConfigureAwait(false);
             return null;
         }
 
@@ -267,6 +298,8 @@ public sealed partial class ProposeBibleUpdateHandler(
         if (run.Trigger == GenerationTrigger.Autopilot && series.Topic == NightTales.Domain.Series.Topic.TrueCrime)
         {
             LogTrueCrimeAutopilot(runId, series.Id);
+            await FailRunAsync(run, series.Id, ErrorCodes.BibleProposalGenerationFailed, ScopeTrueCrimeAutopilot, RefundFailed)
+                .ConfigureAwait(false);
             return null;
         }
 
@@ -276,12 +309,15 @@ public sealed partial class ProposeBibleUpdateHandler(
         if (episode is null)
         {
             LogEpisodeMissing(runId, episodeId);
+            await FailRunAsync(run, series.Id, ErrorCodes.NotFound, DetailEpisodeMissing, RefundFailed).ConfigureAwait(false);
             return null;
         }
 
         if (episode.SeriesId != series.Id)
         {
-            LogRunScopeInvalid(runId, "episode_series_mismatch");
+            LogRunScopeInvalid(runId, ScopeEpisodeSeriesMismatch);
+            await FailRunAsync(run, series.Id, ErrorCodes.BibleProposalGenerationFailed, ScopeEpisodeSeriesMismatch, RefundFailed)
+                .ConfigureAwait(false);
             return null;
         }
 
@@ -357,12 +393,38 @@ public sealed partial class ProposeBibleUpdateHandler(
         return true;
     }
 
+    /// <summary>
+    /// Whether this delivery repeats a run that already succeeded (C7): another bible-proposal run of the same series,
+    /// created by the same idempotency key, has the <c>succeeded</c> status. A run whose key is null is never a replay.
+    /// </summary>
+    /// <param name="s">The run's state.</param>
+    /// <param name="ct">Cancels the query.</param>
+    /// <returns>True when an earlier run with the same key already succeeded.</returns>
+    private async Task<bool> ExactReplayAsync(State s, CancellationToken ct)
+    {
+        if (s.Run.IdempotencyKey is not { } key)
+        {
+            return false;
+        }
+
+        return await db.GenerationRuns
+            .AnyAsync(
+                candidate => candidate.SeriesId == s.Series.Id
+                    && candidate.Kind == GenerationKind.BibleProposal
+                    && candidate.IdempotencyKey == key
+                    && candidate.Status == GenerationRunStatus.Succeeded
+                    && candidate.Id != s.Run.Id,
+                ct)
+            .ConfigureAwait(false);
+    }
+
     // Steps 2 and 3: the guards the run re-checks for itself, then the inputs of the prompt.
     private async Task<bool> PlanAsync(State s, CancellationToken ct)
     {
-        // The merge guard (plan §7.1 step 2): the proposal this run would write is already the one the episode
-        // staged, so the delivery is a replay and the run settles with what it cost (usually nothing).
-        if (s.Bible.ProposedContent is not null && s.Bible.ProposedFromEpisodeId == s.Episode.Id)
+        // The replay guard (plan §7.1 step 2, C7): a delivery is a replay only when another run of this series with the
+        // same idempotency key already succeeded. The key is per (episode, story version), so a new story version of
+        // an episode that already has a pending proposal is a new run and is not skipped.
+        if (await ExactReplayAsync(s, ct).ConfigureAwait(false))
         {
             LogStopped(s.Run.Id, DetailAlreadyProposed);
             await SettleAsync(s, ct).ConfigureAwait(false);
@@ -389,7 +451,10 @@ public sealed partial class ProposeBibleUpdateHandler(
         }
 
         var version = await db.StoryVersions
-            .SingleOrDefaultAsync(candidate => candidate.Id == versionId, ct)
+            .AsNoTracking()
+            .Where(candidate => candidate.Id == versionId)
+            .Select(candidate => new { candidate.Content, candidate.CreatedAt })
+            .SingleOrDefaultAsync(ct)
             .ConfigureAwait(false);
         if (version is null || !StoryContentJson.TryReadStored(version.Content, out var story))
         {
@@ -459,9 +524,10 @@ public sealed partial class ProposeBibleUpdateHandler(
                     s.Model = TextSafety.CleanModelName(ok.Model);
                     return ok.Draft;
 
-                case TextCallInvalidOutput<BibleProposalV1>:
+                case TextCallInvalidOutput<BibleProposalV1> invalid:
                     LogInvalidOutput(s.Run.Id, attempt);
-                    if (attempt == 1)
+                    // P2: a stop at max_output_tokens would repeat the same truncation, so it fails on the first call.
+                    if (attempt == 1 && !invalid.RuleIds.Contains(TextCallInvalidOutput<BibleProposalV1>.MaxOutputTokensExceeded))
                     {
                         if (!await RecordAttemptAsync(s, ct).ConfigureAwait(false))
                         {
@@ -471,7 +537,13 @@ public sealed partial class ProposeBibleUpdateHandler(
                         continue;
                     }
 
-                    await FailAsync(s, ErrorCodes.BibleProposalInvalidOutput, DetailInvalidOutputTwice, RefundInvalidOutput).ConfigureAwait(false);
+                    await FailAsync(
+                        s,
+                        ErrorCodes.BibleProposalInvalidOutput,
+                        invalid.RuleIds.Contains(TextCallInvalidOutput<BibleProposalV1>.MaxOutputTokensExceeded)
+                            ? DetailInvalidOutputMaxTokens
+                            : DetailInvalidOutputTwice,
+                        RefundInvalidOutput).ConfigureAwait(false);
                     return null;
 
                 case TextCallModerated<BibleProposalV1> moderated:
@@ -514,7 +586,11 @@ public sealed partial class ProposeBibleUpdateHandler(
             metrics.OpsDropped(group.Key.Kind, group.Key.Reason, group.Count());
         }
 
-        var ops = new List<BibleOp>(validation.Ops);
+        // Every summary op this run builds summarises the approved episode, so it is stamped with that episode (C1):
+        // a merge of two episodes then keeps each summary on its own episode.
+        var ops = validation.Ops
+            .Select(op => op.Kind == BibleOpKind.AddSummary ? op with { EpisodeId = s.Episode.Id } : op)
+            .ToList();
         if (!ops.Any(op => op.Kind == BibleOpKind.AddSummary))
         {
             var fallback = SummaryFallback(s);
@@ -552,13 +628,19 @@ public sealed partial class ProposeBibleUpdateHandler(
             return null;
         }
 
-        return new BibleOp(
+        // The fallback is a summary like any model op, so it is stamped with the episode and checked the same way the
+        // accept path checks it (S4): a story text with a refused character leaves the approval without a summary,
+        // which is logged, instead of storing an op the accept would drop.
+        var fallback = new BibleOp(
             BibleOpKind.AddSummary,
             text,
             BibleOpNormalizer.Truncate(s.StoryTitle, limits.SummaryTitleChars),
             Description: null,
             Text: null,
-            Reason: null);
+            Reason: null,
+            EpisodeId: s.Episode.Id);
+
+        return BibleProposalValidator.IsStorable(fallback) ? fallback : null;
     }
 
     // Steps 7 and 8 (the `saving` stage): one transaction for the proposal, the autopilot audit row and the run
@@ -597,28 +679,35 @@ public sealed partial class ProposeBibleUpdateHandler(
                 applied = result.Applied.Count;
                 skipped = result.Skipped;
 
-                await audit.WriteAsync(
-                    new AuditEntry(
-                        ActorUserId: run.UserId,
-                        // The job runs under SystemContext: the row says the platform applied the ops, on the
-                        // owner's behalf (the ApproveStoryCommandHandler shape for a system-context write).
-                        ActorType: ActorType.System,
-                        SubjectUserId: run.UserId,
-                        Action: AutoAcceptedAction,
-                        Category: Category.Episodes,
-                        Visibility: Visibility.User,
-                        EntityType: "series",
-                        EntityId: s.Series.Id,
-                        DataJson: AuditData(s, bible, applied, skipped, fromVersion),
-                        Ip: null,
-                        UserAgent: null,
-                        ActorLabel: null,
-                        OccurredAt: now),
-                    ct).ConfigureAwait(false);
+                // C6: an apply that moved no version (no ops, or every op skipped) has no accepted proposal to audit.
+                if (bible.Version > fromVersion)
+                {
+                    await audit.WriteAsync(
+                        new AuditEntry(
+                            ActorUserId: run.UserId,
+                            // The job runs under SystemContext: the row says the platform applied the ops, on the
+                            // owner's behalf (the ApproveStoryCommandHandler shape for a system-context write).
+                            ActorType: ActorType.System,
+                            SubjectUserId: run.UserId,
+                            Action: AutoAcceptedAction,
+                            Category: Category.Episodes,
+                            Visibility: Visibility.User,
+                            EntityType: "series",
+                            EntityId: s.Series.Id,
+                            DataJson: AuditData(s, bible, applied, skipped, fromVersion),
+                            Ip: null,
+                            UserAgent: null,
+                            ActorLabel: null,
+                            OccurredAt: now),
+                        ct).ConfigureAwait(false);
+                }
             }
             else
             {
-                var merged = BibleProposalValidator.Merge(bible.ProposedContent, s.Ops, caps.MaxOps);
+                // The pending proposal's legacy summaries are bound to the episode it was made from first, so the merge
+                // keeps each summary on its own episode (C1).
+                var existing = StampLegacySummaries(bible.ProposedContent, bible.ProposedFromEpisodeId);
+                var merged = BibleProposalValidator.Merge(existing, s.Ops, caps.MaxOps);
                 if (merged.Count == 0)
                 {
                     // Nothing survived post-processing and the series has no pending proposal: the run is a
@@ -627,7 +716,12 @@ public sealed partial class ProposeBibleUpdateHandler(
                 }
                 else
                 {
-                    bible.SetProposal(new BibleProposal(merged, bible.Version, now), s.Episode.Id, clock);
+                    // A merge keeps the pending proposal's BasedOnVersion and ProposedAt (C5, plan §7.1): the ops were
+                    // computed against that version, and a version bump between two approvals does not re-stamp them.
+                    // Only the episode the proposal is pending for moves to this run's episode.
+                    var basedOn = existing?.BasedOnVersion ?? bible.Version;
+                    var proposedAt = existing?.ProposedAt ?? now;
+                    bible.SetProposal(new BibleProposal(merged, basedOn, proposedAt), s.Episode.Id, clock);
                     staged = true;
                 }
             }
@@ -670,14 +764,42 @@ public sealed partial class ProposeBibleUpdateHandler(
     }
 
     /// <summary>
+    /// The summary ops of a pending proposal that predates the episode stamp (C1) bound to the episode that proposal
+    /// was made from, so a merge keeps them on that episode. Nothing else changes; a proposal with no unstamped summary
+    /// is returned as it is.
+    /// </summary>
+    /// <param name="proposal">The pending proposal, when the series has one.</param>
+    /// <param name="proposedFromEpisodeId">The episode the pending proposal was made from.</param>
+    /// <returns>The proposal with its legacy summaries stamped, or the proposal itself.</returns>
+    private static BibleProposal? StampLegacySummaries(BibleProposal? proposal, Guid? proposedFromEpisodeId)
+    {
+        if (proposal is null || proposedFromEpisodeId is not { } episodeId)
+        {
+            return proposal;
+        }
+
+        if (!proposal.Ops.Any(op => op.Kind == BibleOpKind.AddSummary && op.EpisodeId is null))
+        {
+            return proposal;
+        }
+
+        return proposal with
+        {
+            Ops = proposal.Ops
+                .Select(op => op.Kind == BibleOpKind.AddSummary && op.EpisodeId is null ? op with { EpisodeId = episodeId } : op)
+                .ToList(),
+        };
+    }
+
+    /// <summary>
     /// Applies this run's ops immediately, the autopilot way (plan §7.1 step 7, F27): the ops are staged on the
     /// row the applier reads, applied onto the current content, and a proposal that was already pending — another
     /// episode's, waiting for the owner — is put back untouched.
     /// </summary>
     /// <remarks>
-    /// The applier applies under one <c>BibleSummarySource</c>, so a merged batch would record the other
-    /// episode's summary text under this episode's id: the autopilot path therefore applies only its own ops and
-    /// leaves the pending proposal to the accept/dismiss it belongs to.
+    /// This run's ops all summarise the approved episode, so its summary source is the only one passed: the applier
+    /// binds each summary to its own episode id. A merged pending proposal of another episode is left untouched
+    /// here; it belongs to the accept or dismiss it waits for.
     /// </remarks>
     /// <param name="s">The run's state.</param>
     /// <param name="bible">The tracked bible row, freshly read under its lock.</param>
@@ -693,8 +815,13 @@ public sealed partial class ProposeBibleUpdateHandler(
         var pending = bible.ProposedContent;
         var pendingFrom = bible.ProposedFromEpisodeId;
 
+        if (s.SummarySource is not { } source)
+        {
+            throw new InvalidOperationException("The autopilot needs the run's summary source: PlanAsync sets it before any write.");
+        }
+
         bible.SetProposal(new BibleProposal(s.Ops, bible.Version, now), s.Episode.Id, clock);
-        var applied = applier.Apply(s.Series, bible, s.SummarySource, s.Run.UserId);
+        var applied = applier.Apply(s.Series, bible, [source], s.Run.UserId);
 
         if (pending is not null && pendingFrom is { } from)
         {
@@ -742,7 +869,20 @@ public sealed partial class ProposeBibleUpdateHandler(
     /// <param name="detail">Safe text about the outcome, never content (D19).</param>
     /// <param name="refundReason">The D1 refund reason.</param>
     /// <returns>A task that completes when the outcome is committed and the reservation released.</returns>
-    private async Task FailAsync(State s, string code, string detail, string refundReason)
+    private Task FailAsync(State s, string code, string detail, string refundReason) =>
+        FailRunAsync(s.Run, s.Series.Id, code, detail, refundReason);
+
+    /// <summary>
+    /// Ends a run as failed and releases its reservation, both exactly once (D1). Used by the states that hold a
+    /// <see cref="State"/> and by the LoadAsync skips, which hold only the run row (C4).
+    /// </summary>
+    /// <param name="loaded">The run row as the delivery loaded it; the terminal write reads it afresh.</param>
+    /// <param name="seriesId">The series the run belongs to, for the outcome log.</param>
+    /// <param name="code">The D8 outcome code.</param>
+    /// <param name="detail">Safe text about the outcome, never content (D19).</param>
+    /// <param name="refundReason">The D1 refund reason.</param>
+    /// <returns>A task that completes when the outcome is committed and the reservation released.</returns>
+    private async Task FailRunAsync(GenerationRun loaded, Guid seriesId, string code, string detail, string refundReason)
     {
         // A fresh token: the job token is not the terminal write's to cancel (class 3), and the deadline the
         // shutdown leaves behind must not turn a typed failure into an open run.
@@ -753,12 +893,12 @@ public sealed partial class ProposeBibleUpdateHandler(
         {
             await using (var write = await BeginAsync(terminal.Token).ConfigureAwait(false))
             {
-                var run = await FreshAsync(db.GenerationRuns, s.Run.Id, terminal.Token).ConfigureAwait(false);
+                var run = await FreshAsync(db.GenerationRuns, loaded.Id, terminal.Token).ConfigureAwait(false);
                 if (run is null
                     || run.Status is GenerationRunStatus.Succeeded or GenerationRunStatus.Failed or GenerationRunStatus.Cancelled)
                 {
                     // Another actor already ended it: the run is never overwritten, and the refund is its own call's.
-                    LogStopped(s.Run.Id, "already_ended");
+                    LogStopped(loaded.Id, "already_ended");
                     return;
                 }
 
@@ -773,7 +913,7 @@ public sealed partial class ProposeBibleUpdateHandler(
         catch (Exception exception)
         {
             // Type only: a provider or database message can echo content (D19).
-            LogStopped(s.Run.Id, exception.GetType().Name);
+            LogStopped(loaded.Id, exception.GetType().Name);
         }
 
         if (!written)
@@ -782,8 +922,8 @@ public sealed partial class ProposeBibleUpdateHandler(
             return;
         }
 
-        LogRunFailed(s.Run.Id, s.Series.Id, code, detail);
-        await RefundAsync(s.Run, refundReason).ConfigureAwait(false);
+        LogRunFailed(loaded.Id, seriesId, code, detail);
+        await RefundAsync(loaded, refundReason).ConfigureAwait(false);
     }
 
     /// <summary>Counts one invalid-output retry (<c>attempt = 2</c>), the one retry D7 allows this run.</summary>
@@ -890,12 +1030,12 @@ public sealed partial class ProposeBibleUpdateHandler(
     private static string AuditData(State s, SeriesBibleEntity bible, int applied, int skipped, int fromVersion) =>
         new JsonObject
         {
-            ["series_id"] = s.Series.Id.ToString("D", CultureInfo.InvariantCulture),
-            ["from_version"] = fromVersion,
-            ["to_version"] = bible.Version,
+            ["seriesId"] = s.Series.Id.ToString("D", CultureInfo.InvariantCulture),
+            ["fromVersion"] = fromVersion,
+            ["toVersion"] = bible.Version,
             ["applied"] = applied,
             ["skipped"] = skipped,
-            ["proposed_from_episode_id"] = s.Episode.Id.ToString("D", CultureInfo.InvariantCulture),
+            ["proposedFromEpisodeId"] = s.Episode.Id.ToString("D", CultureInfo.InvariantCulture),
         }.ToJsonString();
 
     // The run's provenance: the prompt version plus the safe run facts, never content (D19).

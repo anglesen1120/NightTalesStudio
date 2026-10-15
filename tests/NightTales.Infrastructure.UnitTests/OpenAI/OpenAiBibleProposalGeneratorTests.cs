@@ -19,6 +19,7 @@ using NightTales.Domain.Stories.Structure;
 using NightTales.Domain.Usage;
 using NightTales.Infrastructure.Bible;
 using NightTales.Infrastructure.OpenAI;
+using NightTales.Infrastructure.Prompts;
 using NightTales.TestKit.Text;
 using Shouldly;
 using Xunit;
@@ -250,6 +251,47 @@ public sealed class OpenAiBibleProposalGeneratorTests
 
     private static readonly Guid NewerEpisodeId = Guid.Parse("0197a000-0000-7000-8000-0000000000a2");
 
+    [Theory]
+    [InlineData("vi", "Vietnamese")]
+    [InlineData("en", "English")]
+    public async Task GenerateAsync_TheSystemPrompt_NamesTheSeriesLanguage_AndLeavesNoPlaceholder(string language, string languageName)
+    {
+        var client = new FakeTextClient().EnqueueOk(TextStep.Bible, Draft());
+        var generator = Generator(
+            client,
+            new OpenAiBibleProposalMetrics(),
+            catalog: new PromptCatalog(new EmbeddedPromptResourceSource()));
+
+        await generator.GenerateAsync(Request(Body(), language), Ct);
+
+        var system = client.Requests.ShouldHaveSingleItem().SystemPrompt;
+        system.ShouldContain($"Write in {languageName}.");
+        system.ShouldNotContain("{{");
+    }
+
+    [Fact]
+    public async Task GenerateAsync_AnUnfilledPlaceholder_ThrowsBeforeTheCall()
+    {
+        var client = new FakeTextClient();
+        var generator = Generator(
+            client,
+            new OpenAiBibleProposalMetrics(),
+            catalog: new StubCatalog("Write in {{language_name}}, and {{unknown_placeholder}}."));
+
+        await Should.ThrowAsync<InvalidOperationException>(async () => await generator.GenerateAsync(Request(Body()), Ct));
+
+        client.Requests.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public void Build_AnOverlongBody_IsCutToTheCeiling_AndReportsIt()
+    {
+        var payload = BibleProposalDataObjectJson.Build(Request(new string('q', 500)), 2, 100);
+
+        payload.BodyTruncated.ShouldBeTrue();
+        payload.Json.Count(character => character == 'q').ShouldBe(100);
+    }
+
     private static OpenAiBibleProposalGenerator Generator(
         ITextClient client,
         OpenAiBibleProposalMetrics metrics,
@@ -257,7 +299,7 @@ public sealed class OpenAiBibleProposalGeneratorTests
         StubEstimator? estimator = null,
         int maxSummaries = 2,
         int maxStoryChars = 24_000,
-        StubCatalog? catalog = null) =>
+        IPromptCatalog? catalog = null) =>
         new(
             client,
             catalog ?? new StubCatalog(),
@@ -270,7 +312,7 @@ public sealed class OpenAiBibleProposalGeneratorTests
             estimator ?? new StubEstimator(bound: 3m),
             metrics);
 
-    private static BibleProposalRequest Request(string body) =>
+    private static BibleProposalRequest Request(string body, string language = "vi") =>
         new(
             new RunContext(
                 Guid.Parse("0197a000-0000-7000-8000-000000000001"),
@@ -281,7 +323,7 @@ public sealed class OpenAiBibleProposalGeneratorTests
                 GenerationTrigger.System,
                 1,
                 "1"),
-            "vi",
+            language,
             "ghost",
             Content(),
             Structure(),
@@ -311,6 +353,9 @@ public sealed class OpenAiBibleProposalGeneratorTests
     private sealed class StubCatalog : IPromptCatalog
     {
         internal const string Prompt = "BIBLE-PROPOSAL-SYSTEM-PROMPT";
+        private readonly string _stepPrompt;
+
+        public StubCatalog(string stepPrompt = Prompt) => _stepPrompt = stepPrompt;
 
         internal static readonly byte[] SchemaBytes = Encoding.UTF8.GetBytes("""{"type":"object","additionalProperties":false,"required":["ops"]}""");
 
@@ -326,7 +371,7 @@ public sealed class OpenAiBibleProposalGeneratorTests
 
         public string GetShared(PromptFile file, Language language) => Prompt;
 
-        public string GetStepPrompt(PromptStep promptStep) => Prompt;
+        public string GetStepPrompt(PromptStep promptStep) => _stepPrompt;
 
         public AttestationText GetAttestation(Language language) => new(string.Empty, string.Empty);
 

@@ -163,7 +163,7 @@ public static class BibleProposalValidator
                     continue;
                 }
 
-                ops.Add(Truncate(op, limits));
+                ops.Add(ShapeStored(Truncate(op, limits)));
                 summaryOps++;
                 continue;
             }
@@ -202,7 +202,7 @@ public static class BibleProposalValidator
                 continue;
             }
 
-            ops.Add(Truncate(op, limits));
+            ops.Add(ShapeStored(Truncate(op, limits)));
 
             switch (kind.Value)
             {
@@ -232,10 +232,14 @@ public static class BibleProposalValidator
     /// approval can never stack the same character twice.
     /// </para>
     /// <para>
-    /// Summary ops are never deduped here and are always kept, both of them: an op carries no episode id, so two
-    /// summary ops may legitimately describe two different episodes, and replacing one with the other would
-    /// silently lose an episode's summary. The one-summary-per-episode rule of
-    /// <see cref="SeriesBible.ApplyProposal"/> is what protects the content when the ops are applied.
+    /// Summary ops are kept per episode: a summary whose episode id is stamped replaces the older summary of that
+    /// same episode, and summaries of different episodes all stay (plan §7.1: a replace would lose the first
+    /// episode's summary). A legacy summary without an episode id is kept as it is. The one-summary-per-episode
+    /// rule of <see cref="SeriesBible.ApplyProposal"/> then binds each one to its own episode.
+    /// </para>
+    /// <para>
+    /// When the cap is reached, the content ops (character, place, rule) are trimmed from the end first, so a full
+    /// proposal keeps its summaries. Only summaries that alone exceed the cap are dropped, the oldest first.
     /// </para>
     /// <para>
     /// The op order is preserved, because the accept applies the ops in exactly this order.
@@ -255,13 +259,41 @@ public static class BibleProposalValidator
             return [];
         }
 
-        var merged = new List<BibleOp>(Math.Min(maxOps, (existing?.Ops.Count ?? 0) + newOps.Count));
+        // Every kept op in merge order. A newer summary of an episode replaces the older one of that episode.
+        var ordered = new List<BibleOp>((existing?.Ops.Count ?? 0) + newOps.Count);
         var seen = new HashSet<string>(StringComparer.Ordinal);
 
         Append(existing?.Ops);
         Append(newOps);
 
-        return merged;
+        // The cap trims the content ops first, from the end, so one summary per episode survives a full proposal.
+        // Only summaries that alone exceed the cap are dropped, the oldest first.
+        var summaryCount = ordered.Count(op => op.Kind == BibleOpKind.AddSummary);
+        var summaryBudget = Math.Min(summaryCount, maxOps);
+        var summariesToSkip = summaryCount - summaryBudget;
+        var contentBudget = maxOps - summaryBudget;
+
+        var capped = new List<BibleOp>(Math.Min(maxOps, ordered.Count));
+        foreach (var op in ordered)
+        {
+            if (op.Kind == BibleOpKind.AddSummary)
+            {
+                if (summariesToSkip > 0)
+                {
+                    summariesToSkip--;
+                    continue;
+                }
+
+                capped.Add(op);
+            }
+            else if (contentBudget > 0)
+            {
+                capped.Add(op);
+                contentBudget--;
+            }
+        }
+
+        return capped;
 
         void Append(IReadOnlyList<BibleOp>? ops)
         {
@@ -272,16 +304,17 @@ public static class BibleProposalValidator
 
             foreach (var op in ops)
             {
-                if (merged.Count >= maxOps)
-                {
-                    return;
-                }
-
                 ArgumentNullException.ThrowIfNull(op);
 
                 if (op.Kind == BibleOpKind.AddSummary)
                 {
-                    merged.Add(op);
+                    // An op without an episode (a legacy op) is kept as it is; only a stamped episode is replaced.
+                    if (op.EpisodeId is { } episodeId)
+                    {
+                        ordered.RemoveAll(kept => kept.Kind == BibleOpKind.AddSummary && kept.EpisodeId == episodeId);
+                    }
+
+                    ordered.Add(op);
                     continue;
                 }
 
@@ -291,7 +324,7 @@ public static class BibleProposalValidator
                     continue;
                 }
 
-                merged.Add(op);
+                ordered.Add(op);
             }
         }
     }
@@ -316,17 +349,70 @@ public static class BibleProposalValidator
         ArgumentNullException.ThrowIfNull(proposal);
 
         var kept = new List<BibleOp>(proposal.Ops.Count);
+        var changed = false;
         foreach (var op in proposal.Ops)
         {
             ArgumentNullException.ThrowIfNull(op);
 
-            if (HasRequiredField(op) && !HasUnstorableCharacter(op))
+            if (!IsStorable(op))
             {
-                kept.Add(op);
+                changed = true;
+                continue;
             }
+
+            var shaped = ShapeStored(op);
+            changed |= !shaped.Equals(op);
+            kept.Add(shaped);
         }
 
-        return kept.Count == proposal.Ops.Count ? proposal : proposal with { Ops = kept };
+        return changed ? proposal with { Ops = kept } : proposal;
+    }
+
+    /// <summary>The longest reason a stored op keeps (02.6.3-T2 S5): the diff banner shows it, and a model can run long.</summary>
+    public const int MaxReasonLength = 300;
+
+    /// <summary>
+    /// Whether an op may be stored: it carries the field its kind needs, and none of its text holds a refused
+    /// character (02.6.3-T2 S4). The summary fallback is checked with this too, so a stored summary is never one the
+    /// accept path would drop.
+    /// </summary>
+    /// <param name="op">The op to check.</param>
+    /// <returns><see langword="true"/> when the op may be stored.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="op"/> is <see langword="null"/>.</exception>
+    public static bool IsStorable(BibleOp op)
+    {
+        ArgumentNullException.ThrowIfNull(op);
+        return HasRequiredField(op) && !HasUnstorableCharacter(op);
+    }
+
+    /// <summary>
+    /// Nulls the members the op's kind does not use and caps the reason (02.6.3-T2 S5). A summary keeps
+    /// <c>summary</c> and <c>name</c>; a character or place keeps <c>name</c> and <c>description</c>; a rule keeps
+    /// <c>text</c>. The keys stay in the stored JSON, with null values.
+    /// </summary>
+    private static BibleOp ShapeStored(BibleOp op)
+    {
+        var shaped = op.Kind switch
+        {
+            BibleOpKind.AddSummary => op with { Description = null, Text = null },
+            BibleOpKind.AddCharacter or BibleOpKind.AddPlace => op with { Summary = null, Text = null },
+            BibleOpKind.AddRule => op with { Summary = null, Name = null, Description = null },
+            _ => op,
+        };
+
+        return shaped.Reason is { Length: > MaxReasonLength } ? shaped with { Reason = CapReason(shaped.Reason) } : shaped;
+    }
+
+    /// <summary>Cuts a reason to <see cref="MaxReasonLength"/> without splitting a surrogate pair.</summary>
+    private static string CapReason(string reason)
+    {
+        var length = MaxReasonLength;
+        if (char.IsHighSurrogate(reason[length - 1]))
+        {
+            length--;
+        }
+
+        return reason[..length];
     }
 
     /// <summary>The closed kind of a raw candidate, and the snake_case name a drop reports.</summary>

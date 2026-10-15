@@ -144,6 +144,19 @@ public sealed partial class StoryApprovedBibleProposalHandler(
     }
 
     /// <summary>
+    /// Re-schedules a handoff whose delivery threw before it finished (P6), through the same bounded path as a busy
+    /// series: at most <see cref="MaxHandoffTries"/> deliveries in all, then the drop is logged. A committed run is
+    /// found by the replay guard, so a re-delivery never queues a second run.
+    /// </summary>
+    /// <param name="handoff">The failed work, with the number of deliveries it already spent.</param>
+    public void DeferAfterFailure(BibleProposalHandoff handoff)
+    {
+        ArgumentNullException.ThrowIfNull(handoff);
+
+        Defer(handoff.SeriesId, handoff.EpisodeId, handoff.StoryVersionId, handoff.ApprovalSource, handoff.Tries);
+    }
+
+    /// <summary>
     /// The guards, the admission and the queueing of one approval's proposal run — the body shared by the outbox
     /// delivery and a deferred handoff.
     /// </summary>
@@ -172,7 +185,16 @@ public sealed partial class StoryApprovedBibleProposalHandler(
             return;
         }
 
-        // 2. The replay guard: delivery is at-least-once, and the key names both the episode and the version, so a
+        // 2. The kill switch (plan §11): off means no run row at all, so a host that is rolled back spends
+        //    nothing and stores nothing. It is read before the replay guard, so a disabled host re-enqueues nothing
+        //    for a run that is already queued (S7).
+        if (!proposalSwitch.Enabled)
+        {
+            LogDisabled(seriesId, episodeId);
+            return;
+        }
+
+        // 3. The replay guard: delivery is at-least-once, and the key names both the episode and the version, so a
         //    genuine re-approval of a new version is a different key and still queues its own run.
         var idempotencyKey = IdempotencyKey(episodeId, storyVersionId);
         var existing = await db.GenerationRuns
@@ -192,14 +214,6 @@ public sealed partial class StoryApprovedBibleProposalHandler(
                 EnqueueProposalJob(seriesId, episodeId, existing.Id);
             }
 
-            return;
-        }
-
-        // 3. The kill switch (plan §11): off means no run row at all, so a host that is rolled back spends
-        //    nothing and stores nothing.
-        if (!proposalSwitch.Enabled)
-        {
-            LogDisabled(seriesId, episodeId);
             return;
         }
 
@@ -223,12 +237,17 @@ public sealed partial class StoryApprovedBibleProposalHandler(
 
         await unitOfWork.BeginAsync(cancellationToken).ConfigureAwait(false);
 
+        // 5b. The run reserves, guards and stores two D7 attempts' worth of cost (ruling R3): the estimator prices
+        //     one call, and the proposal's retry (ProposeBibleUpdateHandler) makes a second call under the same run.
+        const int proposalAttempts = 2;
+        var reserved = bound.Value with { WorstCaseUsd = bound.Value.WorstCaseUsd * proposalAttempts };
+
         var budget = await budgetGuard
-            .CheckAsync(new CostBound(bound.Value.WorstCaseUsd), cancellationToken)
+            .CheckAsync(new CostBound(reserved.WorstCaseUsd), cancellationToken)
             .ConfigureAwait(false);
         if (budget.IsError)
         {
-            await RecordBudgetDenialAsync(series, episodeId, storyVersionId, approvalSource, idempotencyKey, bound.Value, cancellationToken)
+            await RecordBudgetDenialAsync(series, episodeId, storyVersionId, approvalSource, idempotencyKey, reserved, cancellationToken)
                 .ConfigureAwait(false);
             return;
         }
@@ -236,7 +255,7 @@ public sealed partial class StoryApprovedBibleProposalHandler(
         // 6. The reservation before the row, because the row records it: the reservation names the series (the
         //    run id does not exist yet), and the run row is what makes it visible to the guard.
         var reservation = await creditLedger
-            .ReserveAsync(series.UserId, CreditOperation.BibleProposal, series.Id, bound.Value, cancellationToken)
+            .ReserveAsync(series.UserId, CreditOperation.BibleProposal, series.Id, reserved, cancellationToken)
             .ConfigureAwait(false);
         if (reservation.IsError)
         {
@@ -246,7 +265,7 @@ public sealed partial class StoryApprovedBibleProposalHandler(
         }
 
         var reservationId = reservation.Value;
-        var queued = Queue(series, approvalSource, idempotencyKey, reservationId.Value, bound.Value);
+        var queued = Queue(series, approvalSource, idempotencyKey, reservationId.Value, reserved);
         if (queued.IsError)
         {
             await unitOfWork.RollbackAsync(cancellationToken).ConfigureAwait(false);
@@ -263,10 +282,8 @@ public sealed partial class StoryApprovedBibleProposalHandler(
             var committed = await unitOfWork.CommitAsync(cancellationToken).ConfigureAwait(false);
             if (committed.IsError)
             {
-                // A mapped refusal already rolled the transaction back; the run row did not land, so the
-                // reservation is released and the message is left due for the dispatcher to deliver again.
-                await RefundAsync(reservationId, NotQueuedReason, cancellationToken).ConfigureAwait(false);
-
+                // A mapped refusal already rolled the transaction back; the run row did not land, so the reservation
+                // is released by the catch below and the message is left due for the dispatcher to deliver again.
                 throw new InvalidOperationException(
                     $"The bible proposal run of series {seriesId} could not be queued: {Describe(committed.Errors)}");
             }
@@ -281,8 +298,16 @@ public sealed partial class StoryApprovedBibleProposalHandler(
 
             return;
         }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            // C8: any other failure of the commit releases the reservation before it propagates, so no reserved
+            // budget is left without a run row to settle it.
+            await RefundAsync(reservationId, NotQueuedReason, cancellationToken).ConfigureAwait(false);
 
-        LogQueued(seriesId, episodeId, run.Id, bound.Value.WorstCaseUsd);
+            throw;
+        }
+
+        LogQueued(seriesId, episodeId, run.Id, reserved.WorstCaseUsd);
 
         EnqueueProposalJob(seriesId, episodeId, run.Id);
     }

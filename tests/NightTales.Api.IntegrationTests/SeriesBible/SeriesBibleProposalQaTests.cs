@@ -10,11 +10,13 @@ using NightTales.Application.Abstractions.Text;
 using NightTales.Application.Common.Errors;
 using NightTales.Application.Features.SeriesBible;
 using NightTales.Application.Features.SeriesBible.Abstractions;
+using NightTales.Application.Features.SeriesBible.Jobs;
 using NightTales.Domain.Stories;
 using NightTales.Domain.Stories.Events;
 using NightTales.Infrastructure.Persistence.Outbox;
 using NightTales.TestKit;
 using NightTales.TestKit.Database;
+using NightTales.TestKit.Telemetry;
 using NightTales.TestKit.Text;
 using Shouldly;
 using Xunit;
@@ -472,12 +474,12 @@ public sealed class SeriesBibleProposalQaTests(TestDatabase database) : Integrat
     }
 
     /// <summary>
-    /// The episode is deleted between the queueing and the run: the job skips every guard before the paid call and
-    /// leaves the run <c>queued</c> — the <c>StaleGenerationSweeperJob</c> owns it (plan §7.1 retries) — with no
-    /// provider call, no proposal and no ledger move.
+    /// The episode is deleted between the queueing and the run: the job closes the run terminally (<c>failed</c>,
+    /// <c>not_found</c>) and refunds the reservation, instead of leaving it <c>queued</c> for 12 hours where it would
+    /// block every later approval of the series (C4). No provider call, no proposal and no settlement.
     /// </summary>
     [Fact]
-    public async Task ProposeBibleUpdate_EpisodeDeletedAfterQueueing_LeavesTheRunForTheSweeper()
+    public async Task ProposeBibleUpdate_EpisodeDeletedAfterQueueing_FailsTheRunAndRefunds()
     {
         var world = await BibleProposalJobHarness.SeedAsync(Database);
         var episode = await BibleProposalJobHarness.ApproveEpisodeAsync(Database, world);
@@ -495,12 +497,154 @@ public sealed class SeriesBibleProposalQaTests(TestDatabase database) : Integrat
         await BibleProposalJobHarness.RunJobsUntilQuietAsync(worker);
 
         text.Requests.ShouldBeEmpty("an episode that is gone buys no call");
-        RunStatus(world.SeriesId).ShouldBe(
-            "queued",
-            "the run is left open for the sweeper rather than failed by a guard that saw no work");
+        RunStatus(world.SeriesId).ShouldBe("failed", "a terminal guard frees the series' single active-run slot");
+        SqlProbe.ScalarText(
+            Database,
+            $"SELECT error_code FROM generation_runs WHERE series_id = '{BibleProposalJobHarness.Pg(world.SeriesId)}'")
+            .ShouldBe("not_found");
         BibleProposalJobHarness.BibleColumns(Database, world.SeriesId).ShouldBe("1|true|-");
         ledger.Settled.ShouldBeEmpty();
-        ledger.Refunds.ShouldBeEmpty();
+        ledger.Refunds.Count.ShouldBe(1, "the reservation is released exactly once");
+        ledger.Refunds[0].Item1.ShouldBe("bible_proposal_generation_failed");
+    }
+
+    /// <summary>
+    /// The commit of the queued run fails with a non-conflict error after the reservation was made. The reservation
+    /// is released as <c>bible_proposal_generation_failed</c> before the failure propagates (C8), so no budget is left
+    /// reserved without a run row to settle it.
+    /// </summary>
+    [Fact]
+    public async Task ProposeBibleUpdate_CommitFailsAfterReservation_RefundsTheReservation()
+    {
+        var world = await BibleProposalJobHarness.SeedAsync(Database);
+        var episode = await BibleProposalJobHarness.ApproveEpisodeAsync(Database, world);
+        await BibleProposalJobHarness.InsertStoryApprovedAsync(Database, world, episode, ApprovalSource.User);
+
+        var text = new FakeTextClient();
+        var ledger = new BibleProposalJobHarness.RecordingLedger();
+        await using var worker = await BibleProposalJobHarness.StartWorkerAsync(Database, text, ledger: ledger);
+
+        InstallRunInsertFailure();
+        try
+        {
+            // The dispatcher may surface the failure or record it; either way the reservation must be released.
+            await Record.ExceptionAsync(() => worker.RunOutboxOnceAsync(SeriesBibleHarness.Ct));
+        }
+        finally
+        {
+            RemoveRunInsertFailure();
+        }
+
+        BibleProposalJobHarness.RunCount(Database, world.SeriesId).ShouldBe(0, "the failed commit left no run row");
+        ledger.Reserved.Count.ShouldBe(1, "the reservation was made before the commit failed");
+        ledger.Refunds.ShouldBe([("bible_proposal_generation_failed", ledger.Reserved[0])]);
+        ledger.Settled.ShouldBeEmpty();
+        text.Requests.ShouldBeEmpty();
+    }
+
+    /// <summary>
+    /// A second approval arrives while the first run of the series is still queued. The series-level index refuses
+    /// it, so its reservation is released as <c>bible_proposal_deferred</c> and the delivery is re-scheduled rather
+    /// than failed (G4). Only the first run exists, and nothing is settled or called.
+    /// </summary>
+    [Fact]
+    public async Task ProposeBibleUpdate_SecondApprovalWhileFirstQueued_RefundsTheSecondAsDeferred()
+    {
+        var world = await BibleProposalJobHarness.SeedAsync(Database);
+        var first = await BibleProposalJobHarness.ApproveEpisodeAsync(Database, world);
+        await BibleProposalJobHarness.InsertStoryApprovedAsync(Database, world, first, ApprovalSource.User);
+
+        var text = new FakeTextClient();
+        var ledger = new BibleProposalJobHarness.RecordingLedger();
+        await using var worker = await BibleProposalJobHarness.StartWorkerAsync(Database, text, ledger: ledger);
+
+        await BibleProposalJobHarness.DeliverAsync(worker);
+
+        var second = await BibleProposalJobHarness.ApproveEpisodeAsync(Database, world);
+        await BibleProposalJobHarness.InsertStoryApprovedAsync(Database, world, second, ApprovalSource.User);
+        await BibleProposalJobHarness.DeliverAsync(worker);
+
+        BibleProposalJobHarness.RunCount(Database, world.SeriesId).ShouldBe(1, "only the first approval queued a run");
+        ledger.Reserved.Count.ShouldBe(2, "both deliveries reserved budget before the index was consulted");
+        ledger.Refunds.ShouldBe([("bible_proposal_deferred", ledger.Reserved[1])]);
+        ledger.Settled.ShouldBeEmpty();
+        text.Requests.ShouldBeEmpty("nothing runs while the first run is queued");
+        worker.Jobs.Enqueued.Count(enqueue => enqueue.JobType == "ProposeBibleUpdateJob")
+            .ShouldBe(1, "only the first run is enqueued");
+        worker.Jobs.Enqueued.Single(enqueue => enqueue.JobType == "BibleProposalHandoffJob")
+            .Delay.ShouldBe(TimeSpan.FromMinutes(2), "the deferred delivery waits one run out");
+    }
+
+    /// <summary>
+    /// A handoff delivery throws after it reserved budget. The job has no retries of its own, so it must not lose the
+    /// work: it re-schedules one try later through the bounded path (P6), refunds the reservation as
+    /// <c>bible_proposal_generation_failed</c>, logs only the exception type and does not rethrow.
+    /// </summary>
+    [Fact]
+    public async Task BibleProposalHandoffJob_DeliveryThrows_ReschedulesOneTryLaterWithoutRethrowing()
+    {
+        var world = await BibleProposalJobHarness.SeedAsync(Database);
+        var episode = await BibleProposalJobHarness.ApproveEpisodeAsync(Database, world);
+
+        var text = new FakeTextClient();
+        var ledger = new BibleProposalJobHarness.RecordingLedger();
+        var sink = new TestLogSink();
+        await using var worker = await BibleProposalJobHarness.StartWorkerAsync(
+            Database,
+            text,
+            ledger: ledger,
+            sink: sink);
+
+        using var scope = worker.CreateScope();
+        await RunHandoffWithInjectedCommitFailureAsync(scope, world.SeriesId, episode.Id, episode.VersionId, tries: 0);
+
+        BibleProposalJobHarness.RunCount(Database, world.SeriesId).ShouldBe(0, "the failed commit left no run row");
+        ledger.Refunds.ShouldBe([("bible_proposal_generation_failed", ledger.Reserved[0])]);
+        worker.Jobs.Enqueued.Count(enqueue => enqueue.JobType == "BibleProposalHandoffJob").ShouldBe(1);
+        worker.Jobs.Enqueued.Single(enqueue => enqueue.JobType == "BibleProposalHandoffJob")
+            .Delay.ShouldBe(TimeSpan.FromMinutes(2), "the failed delivery is re-scheduled one try later");
+        sink.AllText().ShouldContain("bible_proposal_handoff_job_failed");
+        text.Requests.ShouldBeEmpty();
+    }
+
+    /// <summary>
+    /// A handoff that keeps failing is re-scheduled while it has deliveries left and dropped at the limit (G2). The
+    /// limit is <c>MaxHandoffTries</c> (10) in the handler, which is private and mirrored here: with 9 spent the
+    /// job re-schedules once more, and with 10 spent the drop is logged and nothing is enqueued.
+    /// </summary>
+    [Theory]
+    [InlineData(9, true)]
+    [InlineData(10, false)]
+    public async Task BibleProposalHandoffJob_RetriesStopAtTheDeliveryLimit(int tries, bool rescheduled)
+    {
+        var world = await BibleProposalJobHarness.SeedAsync(Database);
+        var episode = await BibleProposalJobHarness.ApproveEpisodeAsync(Database, world);
+
+        var text = new FakeTextClient();
+        var ledger = new BibleProposalJobHarness.RecordingLedger();
+        var sink = new TestLogSink();
+        await using var worker = await BibleProposalJobHarness.StartWorkerAsync(
+            Database,
+            text,
+            ledger: ledger,
+            sink: sink);
+
+        using var scope = worker.CreateScope();
+        await RunHandoffWithInjectedCommitFailureAsync(scope, world.SeriesId, episode.Id, episode.VersionId, tries);
+
+        worker.Jobs.Enqueued.Count(enqueue => enqueue.JobType == "BibleProposalHandoffJob")
+            .ShouldBe(rescheduled ? 1 : 0, $"a delivery that already spent {tries} tries is re-scheduled only below the limit");
+        if (rescheduled)
+        {
+            sink.AllText().ShouldNotContain("bible_proposal_dropped");
+        }
+        else
+        {
+            sink.AllText().ShouldContain("bible_proposal_dropped");
+        }
+
+        ledger.Refunds.ShouldBe([("bible_proposal_generation_failed", ledger.Reserved[0])]);
+        text.Requests.ShouldBeEmpty();
     }
 
     /// <summary>
@@ -689,6 +833,57 @@ public sealed class SeriesBibleProposalQaTests(TestDatabase database) : Integrat
 
     /// <summary>A Postgres uuid literal for the raw-SQL probes.</summary>
     private static string Pg(Guid id) => id.ToString("D", CultureInfo.InvariantCulture);
+
+    /// <summary>
+    /// Makes every insert into <c>generation_runs</c> fail with a non-conflict error, so a commit throws after the
+    /// reservation was made. The error is not the series-level index, so the handler takes its generic path.
+    /// </summary>
+    private void InstallRunInsertFailure() =>
+        SqlProbe.Execute(
+            Database,
+            """
+            DROP TRIGGER IF EXISTS nt_test_fail_run_insert ON generation_runs;
+            DROP FUNCTION IF EXISTS nt_test_fail_run_insert();
+            CREATE FUNCTION nt_test_fail_run_insert() RETURNS trigger LANGUAGE plpgsql AS $$
+            BEGIN
+                RAISE EXCEPTION 'injected commit failure' USING ERRCODE = 'XX000';
+            END;
+            $$;
+            CREATE TRIGGER nt_test_fail_run_insert BEFORE INSERT ON generation_runs
+                FOR EACH ROW EXECUTE FUNCTION nt_test_fail_run_insert();
+            """);
+
+    /// <summary>Removes the failure injected by <see cref="InstallRunInsertFailure"/>.</summary>
+    private void RemoveRunInsertFailure() =>
+        SqlProbe.Execute(
+            Database,
+            """
+            DROP TRIGGER IF EXISTS nt_test_fail_run_insert ON generation_runs;
+            DROP FUNCTION IF EXISTS nt_test_fail_run_insert();
+            """);
+
+    /// <summary>
+    /// Runs one handoff job in its own scope, the way Hangfire resolves it, with the commit made to fail.
+    /// </summary>
+    private async Task RunHandoffWithInjectedCommitFailureAsync(
+        IServiceScope scope,
+        Guid seriesId,
+        Guid episodeId,
+        Guid storyVersionId,
+        int tries)
+    {
+        var job = ActivatorUtilities.CreateInstance<BibleProposalHandoffJob>(scope.ServiceProvider);
+
+        InstallRunInsertFailure();
+        try
+        {
+            await job.RunAsync(seriesId, episodeId, storyVersionId, ApprovalSource.User, tries, SeriesBibleHarness.Ct);
+        }
+        finally
+        {
+            RemoveRunInsertFailure();
+        }
+    }
 
     /// <summary>
     /// A hand-driven <see cref="IOptionsMonitor{T}"/> over one mutable options instance, so a test can flip

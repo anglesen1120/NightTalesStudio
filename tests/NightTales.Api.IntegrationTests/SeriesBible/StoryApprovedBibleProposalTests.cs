@@ -237,6 +237,52 @@ public sealed class StoryApprovedBibleProposalTests(TestDatabase database) : Int
             .ShouldBe(2);
     }
 
+    [Fact]
+    public async Task StoryApproved_RedeliveredAfterTheKillSwitchIsOff_EnqueuesNothingForTheOpenRun()
+    {
+        // S7: the switch is read before the replay guard, so a switched-off host never re-enqueues the job of a run
+        // that is already queued for the same approval.
+        var world = await SeriesBibleHarness.SeedAsync(Database);
+        var episode = await SeedApprovedEpisodeAsync(world);
+        await InsertStoryApprovedAsync(world, episode, ApprovalSource.User);
+
+        {
+            await using var enabled = await StartWorkerAsync();
+            (await enabled.RunOutboxOnceAsync(Ct)).ShouldBe(1);
+        }
+        RunCount(world.SeriesId).ShouldBe(1);
+
+        await InsertStoryApprovedAsync(world, episode, ApprovalSource.User);
+        await using var disabled = await StartWorkerAsync(bibleEnabled: false);
+        (await disabled.RunOutboxOnceAsync(Ct)).ShouldBe(1);
+
+        disabled.Jobs.Enqueued.ShouldNotContain(
+            enqueue => enqueue.JobType == "ProposeBibleUpdateJob",
+            "a switched-off proposal must not re-enqueue the job of the open run");
+        RunCount(world.SeriesId).ShouldBe(1, "no second run is queued");
+    }
+
+    [Fact]
+    public async Task StoryApproved_ReservesTheWorstCaseOfBothD7Attempts()
+    {
+        // P1 + Sec3 (ruling R3): the run reserves, guards and stores the bound of both D7 attempts, not of one call.
+        var world = await SeriesBibleHarness.SeedAsync(Database);
+        var episode = await SeedApprovedEpisodeAsync(world);
+        await InsertStoryApprovedAsync(world, episode, ApprovalSource.User);
+
+        await using var worker = await StartWorkerAsync();
+        (await worker.RunOutboxOnceAsync(Ct)).ShouldBe(1);
+
+        RunCount(world.SeriesId).ShouldBe(1);
+        SqlProbe.ScalarText(
+                Database,
+                $"""
+                 SELECT (worst_case_usd = 0.004)::text FROM generation_runs
+                 WHERE series_id = '{world.SeriesId.ToString("D", CultureInfo.InvariantCulture)}'
+                 """)
+            .ShouldBe("true", "FixedEstimator prices one call at 0.002; two attempts reserve 0.004");
+    }
+
     /// <summary>The idempotency key of one approval: the episode's approved version, never the run's episode column.</summary>
     private static string Key(ApprovedEpisode episode) => $"bible:{episode.Id}:{episode.VersionId}";
 

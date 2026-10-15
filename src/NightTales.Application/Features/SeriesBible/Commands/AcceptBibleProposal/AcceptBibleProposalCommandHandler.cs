@@ -92,15 +92,30 @@ public sealed class AcceptBibleProposalCommandHandler(
             return BibleErrors.ProposalNotPending();
         }
 
-        // Step 3: the summary source, read from the row's own record of the episode the ops came from.
+        // Step 3: the summary sources, one per episode a summary op of the proposal belongs to. An op carries its own
+        // episode; a legacy op (stored before that) belongs to the episode the row records. An episode that cannot be
+        // resolved is left out, and the Domain method skips its summary; the rest of the proposal still applies.
         var proposedFromEpisodeId = bible.ProposedFromEpisodeId.Value;
-        var source = await ResolveSummarySourceAsync(
-            command.SeriesId,
-            proposedFromEpisodeId,
-            cancellationToken).ConfigureAwait(false);
+        var summaryEpisodeIds = bible.ProposedContent.Ops
+            .Where(static op => op.Kind == BibleOpKind.AddSummary)
+            .Select(op => op.EpisodeId ?? proposedFromEpisodeId)
+            .Distinct();
+
+        var summarySources = new List<BibleSummarySource>();
+        foreach (var summaryEpisodeId in summaryEpisodeIds)
+        {
+            var source = await ResolveSummarySourceAsync(
+                command.SeriesId,
+                summaryEpisodeId,
+                cancellationToken).ConfigureAwait(false);
+            if (source is not null)
+            {
+                summarySources.Add(source);
+            }
+        }
 
         var fromVersion = bible.Version;
-        var result = applier.Apply(series, bible, source, currentUser.Id!.Value);
+        var result = applier.Apply(series, bible, summarySources, currentUser.Id!.Value);
 
         command.Outcome = new AcceptBibleProposalOutcome(
             fromVersion,

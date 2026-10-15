@@ -144,7 +144,7 @@ public sealed class BibleProposalApplierTests
         // The episode the ops came from was reopened after the proposal was staged: there is no approval left to
         // derive a summary's structure and approved_at from, and a summary bound to an unapproved episode would be
         // refused by the next PUT (not_approved_episode), so the accept applies what it can.
-        var result = Applier(clock).Apply(series, bible, source: null, UserId);
+        var result = Applier(clock).Apply(series, bible, summarySources: [], UserId);
 
         result.Applied.Count.ShouldBe(1);
         result.Skipped.ShouldBe(1);
@@ -193,7 +193,8 @@ public sealed class BibleProposalApplierTests
 
     private static BibleProposal Proposal(params BibleOp[] ops) => new(ops, SeriesBibleEntity.InitialVersion, Now);
 
-    private static BibleSummarySource Source() => new(EpisodeId, Structure, Now.AddDays(-1));
+    /// <summary>The summary sources a single-episode proposal is applied with.</summary>
+    private static IReadOnlyList<BibleSummarySource> Source() => [new(EpisodeId, Structure, Now.AddDays(-1))];
 
     private static BibleOp Character(string name) =>
         new(BibleOpKind.AddCharacter, null, name, "Người phụ nữ bên sông", null, "xuất hiện ở tập này");

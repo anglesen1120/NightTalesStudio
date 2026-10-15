@@ -62,12 +62,20 @@ public sealed partial class BibleProposalHandoffJob(
         using var pinned = scope.ServiceProvider.GetRequiredService<ISystemContext>().For(ownerId);
 
         var handler = scope.ServiceProvider.GetRequiredService<StoryApprovedBibleProposalHandler>();
+        var handoff = new BibleProposalHandoff(seriesId, episodeId, storyVersionId, approvalSource, tries);
 
-        await handler
-            .HandleHandoffAsync(
-                new BibleProposalHandoff(seriesId, episodeId, storyVersionId, approvalSource, tries),
-                cancellationToken)
-            .ConfigureAwait(false);
+        try
+        {
+            await handler.HandleHandoffAsync(handoff, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            // P6: retries are 0, so a delivery that threw would otherwise be lost with the job. It is re-scheduled
+            // through the bounded handoff path instead: it succeeds later or is dropped at the delivery limit. Only
+            // the exception type is logged, because its message can carry the owner's data.
+            LogHandoffFailed(episodeId, tries, exception.GetType().FullName ?? "unknown");
+            handler.DeferAfterFailure(handoff);
+        }
     }
 
     [LoggerMessage(
@@ -75,4 +83,10 @@ public sealed partial class BibleProposalHandoffJob(
         Level = LogLevel.Warning,
         Message = "bible_proposal_handoff_job_episode_missing episodeId={EpisodeId}")]
     private partial void LogEpisodeMissing(Guid episodeId);
+
+    [LoggerMessage(
+        EventId = 6312,
+        Level = LogLevel.Warning,
+        Message = "bible_proposal_handoff_job_failed episodeId={EpisodeId} tries={Tries} exceptionType={ExceptionType}")]
+    private partial void LogHandoffFailed(Guid episodeId, int tries, string exceptionType);
 }

@@ -44,11 +44,10 @@ public interface IBibleProposalApplier
     /// </remarks>
     /// <param name="series">The aggregate that announces the write; tracked.</param>
     /// <param name="bible">The bible row that carries the proposal; tracked.</param>
-    /// <param name="source">
-    /// The episode an <c>add_summary</c> op belongs to, with its derived structure and approval instant, or
-    /// <see langword="null"/> when that episode is no longer approved (or is gone): a summary may only be stored
-    /// for an approved episode of the series, so the pending <c>add_summary</c> ops are then skipped and the rest
-    /// of the proposal applies.
+    /// <param name="summarySources">
+    /// The episodes the pending <c>add_summary</c> ops may belong to, each with its derived structure and approval
+    /// instant. Each summary op binds to the source of its own episode. One whose episode is not in the list (no
+    /// longer approved, or gone) adds nothing and is counted as skipped, so the rest of the proposal still applies.
     /// </param>
     /// <param name="changedBy">The actor of the write: the accepting user, or the owner for an autopilot auto-accept.</param>
     /// <returns>The ops that changed the content and how many were skipped, sanitisation included; ids and counts only (D13/D19).</returns>
@@ -57,6 +56,6 @@ public interface IBibleProposalApplier
     BibleApplyResult Apply(
         SeriesAggregate series,
         SeriesBibleEntity bible,
-        BibleSummarySource? source,
+        IReadOnlyList<BibleSummarySource> summarySources,
         Guid changedBy);
 }

@@ -79,7 +79,7 @@ public sealed class OpenAiBibleProposalGenerator(
         var call = new TextCallRequest(
             request.Run,
             TextStep.Bible,
-            catalog.GetStepPrompt(PromptStep.Bible),
+            Localise(catalog.GetStepPrompt(PromptStep.Bible), LanguageName(request.Language)),
             payload.Json,
             BibleProposalPrompts.SchemaName,
             catalog.GetSchema(BibleProposalPrompts.SchemaFile),
@@ -136,5 +136,31 @@ public sealed class OpenAiBibleProposalGenerator(
             .ConfigureAwait(false);
 
         return result;
+    }
+
+    /// <summary>
+    /// The series' language as the prompt names it (<c>{{language_name}}</c>, same spelling as
+    /// <c>PromptAssembler</c>). The request carries the snake_case control value, which is always <c>vi</c> or <c>en</c>.
+    /// </summary>
+    private static string LanguageName(string language) => language switch
+    {
+        "vi" => "Vietnamese",
+        "en" => "English",
+        _ => throw new ArgumentOutOfRangeException(nameof(language), language, "Unknown content language."),
+    };
+
+    /// <summary>
+    /// Fills the one placeholder the proposal prompt carries. Any other <c>{{…}}</c> left behind is a
+    /// programming error (02 README D5: the placeholder set is closed), so it throws instead of reaching the model.
+    /// </summary>
+    private static string Localise(string template, string languageName)
+    {
+        var text = template.Replace("{{language_name}}", languageName, StringComparison.Ordinal);
+        if (text.Contains("{{", StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("The bible proposal prompt carries a placeholder outside the closed list (02 README D5).");
+        }
+
+        return text;
     }
 }
