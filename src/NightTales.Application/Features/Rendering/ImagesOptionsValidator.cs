@@ -5,8 +5,10 @@ public static class ImagesOptionsValidator
 {
     /// <summary>
     /// <c>ClipSeconds</c> 5..20, <c>SpareShare</c> 0..0.5, <c>SparseShare</c> 0.3..1, <c>MaxSkippedShare</c> 0..1,
-    /// a non-empty <c>Model</c>, <c>Quality</c> unset or one of <c>low|medium|high|auto</c>, and a placeholder of at
-    /// least 6,000 tokens at rates no lower than the O8 plan placeholder (30 USD/1M image out, 5 USD/1M text in).
+    /// a non-empty <c>Model</c>, <c>Quality</c> unset or one of <c>low|medium|high|auto</c>, a placeholder of at
+    /// least 6,000 tokens at rates no lower than the O8 plan placeholder (30 USD/1M image out, 5 USD/1M text in),
+    /// and a non-null <c>Linter</c> sub-section (03.2.2-T1: a section that binds to null must fail the boot here,
+    /// never crash the reader of <c>Images:Linter:NameCorpusEnabled</c>).
     /// </summary>
     /// <param name="options">The bound section.</param>
     /// <returns>One message per problem; empty when valid.</returns>
@@ -60,6 +62,13 @@ public static class ImagesOptionsValidator
         if (options.PlaceholderTextInPer1MUsd < 5m)
         {
             problems.Add($"{nameof(options.PlaceholderTextInPer1MUsd)} must be at least 5.");
+        }
+
+        // 03.2.2-T1: the sub-section is a nested object, so configuration can leave it null; the name-rule
+        // reader below must never dereference null, and a null switch fails the boot instead.
+        if (options.Linter is null)
+        {
+            problems.Add($"{nameof(options.Linter)} must not be null.");
         }
 
         return problems;

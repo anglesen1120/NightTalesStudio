@@ -12,6 +12,7 @@ using NightTales.Infrastructure.Money;
 using NightTales.Infrastructure.Persistence.Queries;
 using NightTales.Infrastructure.Persistence.Seeding;
 using NightTales.Infrastructure.Pricing;
+using NightTales.Infrastructure.Rendering;
 
 namespace NightTales.Infrastructure.Persistence.Usage;
 
@@ -74,6 +75,10 @@ public static class UsageServiceCollectionExtensions
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IValidateOptions<ImagesOptions>, ImagesOptionsValidation>());
         services.TryAddSingleton(provider => provider.GetRequiredService<IOptions<ImagesOptions>>().Value);
         services.TryAddSingleton<IImageCostEstimator, ImageCostEstimator>();
+
+        // 03.2.2-T1: the name corpus of one episode (D11), read through the scope's tenant-filtered read
+        // model, so it is scoped exactly as the other read services over IReadDb are.
+        services.TryAddScoped<INameCorpusProvider, NameCorpusProvider>();
 
         // 02.2.2-T2: the platform spend cap (Budget section, all keys default) and the phase-P metering-only ledger
         // that 12.1.2 replaces at M2. The guard is scoped: it takes the advisory lock on the command's own AppDbContext.
