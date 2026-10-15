@@ -206,24 +206,7 @@ public sealed class QuotaLedgerTests(TestDatabase database) : IntegrationTest(da
         var options = new MutableYouTubeOptions(4);
         var metrics = new NightTalesMetrics();
         var observed = new List<double>();
-        using var listener = new MeterListener
-        {
-            InstrumentPublished = (instrument, meterListener) =>
-            {
-                if (instrument.Name == GaugeName)
-                {
-                    meterListener.EnableMeasurementEvents(instrument);
-                }
-            },
-        };
-        listener.SetMeasurementEventCallback<double>((instrument, measurement, _, _) =>
-        {
-            if (instrument.Name == GaugeName)
-            {
-                observed.Add(measurement);
-            }
-        });
-        listener.Start();
+        using var listener = ListenForGauge(observed);
         await using var db = Database.CreateAppDbContext(clock: _clock);
         var ledger = Ledger(db, options, metrics);
 
@@ -238,6 +221,66 @@ public sealed class QuotaLedgerTests(TestDatabase database) : IntegrationTest(da
         listener.RecordObservableInstruments();
         observed.ShouldContain(0.25);
     }
+
+    [Fact]
+    public async Task QuotaLedger_Release_StampsUpdatedAtFromClock()
+    {
+        var platform = await FreshPlatformAsync();
+        var options = new MutableYouTubeOptions(2);
+        await using var db = Database.CreateAppDbContext(clock: _clock);
+        var ledger = Ledger(db, options);
+        var reservation = (await ledger.TryReserveAsync(platform, Midday, Ct)).Value;
+        var releasedAt = new DateTimeOffset(2026, 1, 15, 13, 30, 0, TimeSpan.Zero);
+        _clock.Set(releasedAt);
+
+        (await ledger.ReleaseAsync(reservation, Ct)).IsError.ShouldBeFalse();
+
+        (await ReadRowAsync(platform, JanuaryFifteenth)).UpdatedAt.ShouldBe(releasedAt);
+    }
+
+    [Fact]
+    public async Task QuotaLedger_Reserve_NonUtcOffset_WritesSameInstantAndPacificDay()
+    {
+        var platform = await FreshPlatformAsync();
+        var options = new MutableYouTubeOptions(2);
+        // 12:00 at UTC-08:00 is 20:00Z, and the Pacific quota day is still 2026-01-15.
+        var local = new DateTimeOffset(2026, 1, 15, 12, 0, 0, TimeSpan.FromHours(-8));
+        var utc = new DateTimeOffset(2026, 1, 15, 20, 0, 0, TimeSpan.Zero);
+        await using var db = Database.CreateAppDbContext(clock: _clock);
+
+        var result = await Ledger(db, options).TryReserveAsync(platform, local, Ct);
+
+        result.IsError.ShouldBeFalse();
+        var row = await ReadRowAsync(platform, JanuaryFifteenth);
+        row.UnitsUsed.ShouldBe(1);
+        row.UpdatedAt.ShouldBe(utc);
+    }
+
+    [Fact]
+    public async Task QuotaLedger_Release_OfPreviousDay_GaugeShowsCurrentDay()
+    {
+        var platform = await FreshPlatformAsync();
+        var options = new MutableYouTubeOptions(4);
+        var observed = new List<double>();
+        using var listener = ListenForGauge(observed);
+        await using var db = Database.CreateAppDbContext(clock: _clock);
+        var ledger = Ledger(db, options);
+        var yesterday = (await ledger.TryReserveAsync(platform, Midday, Ct)).Value;
+
+        // 20:00Z on the 16th is 12:00 PST on the 16th: a new Pacific quota day with one unit used.
+        var nextDay = new DateTimeOffset(2026, 1, 16, 20, 0, 0, TimeSpan.Zero);
+        _clock.Set(nextDay);
+        (await ledger.TryReserveAsync(platform, nextDay, Ct)).IsError.ShouldBeFalse();
+        observed.Clear();
+
+        (await ledger.ReleaseAsync(yesterday, Ct)).IsError.ShouldBeFalse();
+
+        listener.RecordObservableInstruments();
+        observed.ShouldContain(0.25, "the gauge reports the current day's 1/4, not the released day's 0/4");
+        observed.ShouldNotContain(0d);
+        (await ReadRowAsync(platform, JanuaryFifteenth)).UnitsUsed.ShouldBe(0);
+    }
+
 
     [Fact]
     public async Task QuotaLedger_Exhaustion_LogsOnlyPlatformAndQuotaDay()
@@ -262,12 +305,36 @@ public sealed class QuotaLedgerTests(TestDatabase database) : IntegrationTest(da
         return "youtube";
     }
 
-    private static YouTubeQuotaLedger Ledger(
+    private YouTubeQuotaLedger Ledger(
         AppDbContext db,
         MutableYouTubeOptions options,
         NightTalesMetrics? metrics = null,
         ILogger<YouTubeQuotaLedger>? logger = null) =>
-        new(db, options, metrics ?? new NightTalesMetrics(), logger ?? NullLogger<YouTubeQuotaLedger>.Instance);
+        new(db, options, metrics ?? new NightTalesMetrics(), _clock, logger ?? NullLogger<YouTubeQuotaLedger>.Instance);
+
+    /// <summary>Listens to the quota gauge: every value it records is appended to <paramref name="observed"/>.</summary>
+    private static MeterListener ListenForGauge(List<double> observed)
+    {
+        var listener = new MeterListener
+        {
+            InstrumentPublished = (instrument, meterListener) =>
+            {
+                if (instrument.Name == GaugeName)
+                {
+                    meterListener.EnableMeasurementEvents(instrument);
+                }
+            },
+        };
+        listener.SetMeasurementEventCallback<double>((instrument, measurement, _, _) =>
+        {
+            if (instrument.Name == GaugeName)
+            {
+                observed.Add(measurement);
+            }
+        });
+        listener.Start();
+        return listener;
+    }
 
     private async Task<PlatformQuotaUsage> ReadRowAsync(string platform, DateOnly day)
     {

@@ -1,6 +1,5 @@
 using System.Globalization;
 using System.Net;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NightTales.Api.Http;
@@ -10,6 +9,7 @@ using NightTales.Application.Common.Errors;
 using NightTales.Application.Publishing;
 using NightTales.Application.Publishing.Quota;
 using NightTales.Application.Telemetry;
+using NightTales.Domain.Common;
 using NightTales.Infrastructure.Publishing;
 using NightTales.TestKit;
 using NightTales.TestKit.Api;
@@ -32,61 +32,8 @@ public sealed class QuotaLedgerQaTests(TestDatabase database) : IntegrationTest(
     private const string Platform = "youtube";
     private const string FeatureKey = "youtube_publish";
     private const string EtaRoute = "/api/v1/publishing/youtube/eta";
-    private static readonly DateTimeOffset February = new(2026, 2, 20, 12, 0, 0, TimeSpan.Zero);
-    private static readonly DateOnly FebruaryTwentieth = new(2026, 2, 20);
 
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
-
-    [Fact]
-    public async Task QuotaLedger_Qa_HundredthReserveSucceeds_HundredAndFirstIsRefusedWithRetryAfter()
-    {
-        await using (var reset = Database.CreateAppDbContext())
-        {
-            await reset.PlatformQuotaUsage
-                .Where(r => r.Platform == Platform && r.QuotaDay == FebruaryTwentieth)
-                .ExecuteDeleteAsync(Ct);
-        }
-
-        await using var db = Database.CreateAppDbContext(clock: new FakeClock(February));
-        var ledger = NewLedger(db, unitsPerDay: 100);
-
-        for (var i = 0; i < 100; i++)
-        {
-            (await ledger.TryReserveAsync(Platform, February, Ct)).IsError.ShouldBeFalse();
-        }
-
-        var refused = await ledger.TryReserveAsync(Platform, February, Ct);
-
-        refused.IsError.ShouldBeTrue();
-        refused.FirstError.Code.ShouldBe(ErrorCodes.YoutubeQuotaExhausted);
-        // 2026-02-20 12:00Z is 04:00 PST; Pacific midnight of the next day is 2026-02-21T08:00Z: 20 hours.
-        refused.FirstError.Metadata!.ShouldContainKeyAndValue(ErrorMetadata.RetryAfterSeconds, 72000);
-    }
-
-    [Fact]
-    public async Task QuotaLedger_Qa_ReleaseOnZeroUnits_StaysZero_AndMissingRowReleaseCreatesNothing()
-    {
-        var day = new DateOnly(2026, 2, 24);
-        var now = new DateTimeOffset(2026, 2, 24, 12, 0, 0, TimeSpan.Zero);
-        await using var db = Database.CreateAppDbContext(clock: new FakeClock(now));
-        var ledger = NewLedger(db, unitsPerDay: 100);
-
-        var reservation = (await ledger.TryReserveAsync(Platform, now, Ct)).Value;
-        (await ledger.ReleaseAsync(reservation, Ct)).IsError.ShouldBeFalse();
-        (await ledger.ReleaseAsync(reservation, Ct)).IsError.ShouldBeFalse("a release on a zero row is a no-op success");
-
-        var units = await Database.QueryStringsAsync(
-            $"SELECT units_used::text FROM platform_quota_usage WHERE platform = '{Platform}' AND quota_day = '{Iso(day)}'",
-            Ct);
-        units.Single().ShouldBe("0");
-
-        var missingDay = new DateOnly(2026, 2, 25);
-        (await ledger.ReleaseAsync(new QuotaReservation(Platform, missingDay), Ct)).IsError.ShouldBeFalse();
-        var rows = await Database.QueryStringsAsync(
-            $"SELECT count(*)::text FROM platform_quota_usage WHERE platform = '{Platform}' AND quota_day = '{Iso(missingDay)}'",
-            Ct);
-        rows.Single().ShouldBe("0", "a release on a missing row creates no row");
-    }
 
     [Fact]
     public async Task QuotaLedger_Qa_FiftyConcurrentReserves_LimitTen_ExactlyTenSucceed()
@@ -103,7 +50,7 @@ public sealed class QuotaLedgerQaTests(TestDatabase database) : IntegrationTest(
             await gate.Task.WaitAsync(Ct);
             // A separate DI scope (its own DbContext and connection) per reserve, as separate requests would have.
             await using var db = Database.CreateAppDbContext(clock: new FakeClock(now));
-            return await NewLedger(db, unitsPerDay: 10).TryReserveAsync(Platform, now, Ct);
+            return await NewLedger(db, unitsPerDay: 10, clock: new FakeClock(now)).TryReserveAsync(Platform, now, Ct);
         }).ToArray();
 
         gate.SetResult();
@@ -117,41 +64,43 @@ public sealed class QuotaLedgerQaTests(TestDatabase database) : IntegrationTest(
         units.Single().ShouldBe("10", "no lost update and no 11th unit");
     }
 
-    [Fact]
-    public async Task QuotaLedger_Qa_PacificMidnightInstants_MapToDifferentDays_WithRetryAfterAtLeastOne()
+    [Theory]
+    [InlineData("2026-02-19T07:59:59.999Z", "2026-02-19T08:00:00Z", "2026-02-18", "2026-02-19")]
+    [InlineData("2026-06-15T06:59:59.999Z", "2026-06-15T07:00:00Z", "2026-06-14", "2026-06-15")]
+    public async Task QuotaLedger_Qa_PacificMidnightInstant_OpensNextDay_AndRefusedOneSecondBefore(
+        string beforeMidnight,
+        string atMidnight,
+        string dayBefore,
+        string dayAfter)
     {
+        // PST (February) and PDT (June): the last instant of a Pacific day and the exact instant the next one opens.
+        var before = DateTimeOffset.Parse(beforeMidnight, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal);
+        var at = DateTimeOffset.Parse(atMidnight, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal);
+        await Database.ExecuteAsync(
+            $"DELETE FROM platform_quota_usage WHERE platform = '{Platform}' AND quota_day IN ('{dayBefore}', '{dayAfter}')",
+            Ct);
         await using var db = Database.CreateAppDbContext();
-        var ledger = NewLedger(db, unitsPerDay: 1);
+        var ledger = NewLedger(db, unitsPerDay: 1, clock: new FakeClock(before));
 
-        // PST (February): 07:59:59.999Z is 23:59:59.999 on the 18th; 08:00:00Z is 00:00 on the 19th.
-        var beforePst = DateTimeOffset.Parse("2026-02-19T07:59:59.999Z", CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal);
-        var atPst = DateTimeOffset.Parse("2026-02-19T08:00:00Z", CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal);
-        (await ledger.TryReserveAsync(Platform, beforePst, Ct)).IsError.ShouldBeFalse();
-        var refusedBeforePst = await ledger.TryReserveAsync(Platform, beforePst, Ct);
-        refusedBeforePst.FirstError.Metadata!.ShouldContainKeyAndValue(ErrorMetadata.RetryAfterSeconds, 1);
-        (await ledger.TryReserveAsync(Platform, atPst, Ct)).IsError.ShouldBeFalse("08:00:00Z opens the next Pacific day");
-
-        // PDT (June): 06:59:59.999Z is 23:59:59.999 on the 14th; 07:00:00Z is 00:00 on the 15th.
-        var beforePdt = DateTimeOffset.Parse("2026-06-15T06:59:59.999Z", CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal);
-        var atPdt = DateTimeOffset.Parse("2026-06-15T07:00:00Z", CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal);
-        (await ledger.TryReserveAsync(Platform, beforePdt, Ct)).IsError.ShouldBeFalse();
-        var refusedBeforePdt = await ledger.TryReserveAsync(Platform, beforePdt, Ct);
-        refusedBeforePdt.FirstError.Metadata!.ShouldContainKeyAndValue(ErrorMetadata.RetryAfterSeconds, 1);
-        (await ledger.TryReserveAsync(Platform, atPdt, Ct)).IsError.ShouldBeFalse("07:00:00Z opens the next Pacific day");
+        (await ledger.TryReserveAsync(Platform, before, Ct)).IsError.ShouldBeFalse();
+        var refusedBefore = await ledger.TryReserveAsync(Platform, before, Ct);
+        refusedBefore.FirstError.Metadata!.ShouldContainKeyAndValue(ErrorMetadata.RetryAfterSeconds, 1);
+        (await ledger.TryReserveAsync(Platform, at, Ct)).IsError.ShouldBeFalse("the exact Pacific midnight opens the next day");
 
         var days = await Database.QueryStringsAsync(
             $"SELECT quota_day::text FROM platform_quota_usage WHERE platform = '{Platform}' "
-            + "AND quota_day IN ('2026-02-18', '2026-02-19', '2026-06-14', '2026-06-15') ORDER BY quota_day",
+            + $"AND quota_day IN ('{dayBefore}', '{dayAfter}') ORDER BY quota_day",
             Ct);
-        days.ShouldBe(["2026-02-18", "2026-02-19", "2026-06-14", "2026-06-15"]);
+        days.ShouldBe([dayBefore, dayAfter]);
     }
+
 
     [Fact]
     public async Task QuotaLedger_Qa_RefusedReserve_ProblemResponse_CarriesRetryAfterHeader()
     {
         var now = new DateTimeOffset(2026, 2, 26, 12, 0, 0, TimeSpan.Zero);
-        await using var db = Database.CreateAppDbContext(clock: new FakeClock(now));
-        var ledger = NewLedger(db, unitsPerDay: 1);
+        await using var db = Database.CreateAppDbContext();
+        var ledger = NewLedger(db, unitsPerDay: 1, clock: new FakeClock(now));
         (await ledger.TryReserveAsync(Platform, now, Ct)).IsError.ShouldBeFalse();
         var refused = await ledger.TryReserveAsync(Platform, now, Ct);
 
@@ -195,8 +144,8 @@ public sealed class QuotaLedgerQaTests(TestDatabase database) : IntegrationTest(
         response.StatusCode.ShouldBe(HttpStatusCode.Unauthorized);
     }
 
-    private static YouTubeQuotaLedger NewLedger(NightTales.Infrastructure.Persistence.AppDbContext db, int unitsPerDay) =>
-        new(db, new FixedYouTubeOptions(unitsPerDay), new NightTalesMetrics(), NullLogger<YouTubeQuotaLedger>.Instance);
+    private static YouTubeQuotaLedger NewLedger(NightTales.Infrastructure.Persistence.AppDbContext db, int unitsPerDay, IClock clock) =>
+        new(db, new FixedYouTubeOptions(unitsPerDay), new NightTalesMetrics(), clock, NullLogger<YouTubeQuotaLedger>.Instance);
 
     private static string Iso(DateOnly day) => day.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
 

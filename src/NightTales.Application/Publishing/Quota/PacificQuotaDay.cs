@@ -18,12 +18,12 @@ public static class PacificQuotaDay
     /// <summary>
     /// The first instant of the Pacific day after the one containing <paramref name="utc"/>: local midnight of the next
     /// Pacific date, converted with the offset that applies at that local time. Always strictly after
-    /// <paramref name="utc"/>.
+    /// <paramref name="utc"/>. The result is a UTC instant (offset zero), the form the ETA contract requires.
     /// </summary>
     public static DateTimeOffset NextResetAt(DateTimeOffset utc)
     {
         var localMidnight = Day(utc).AddDays(1).ToDateTime(TimeOnly.MinValue);
-        return new DateTimeOffset(localMidnight, ResolveOffset(localMidnight));
+        return new DateTimeOffset(localMidnight, ResolveOffset(localMidnight)).ToUniversalTime();
     }
 
     private static TimeSpan ResolveOffset(DateTime localMidnight)

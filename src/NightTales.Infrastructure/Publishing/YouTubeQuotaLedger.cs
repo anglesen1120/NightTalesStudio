@@ -8,6 +8,7 @@ using NightTales.Application.Common.Errors;
 using NightTales.Application.Publishing;
 using NightTales.Application.Publishing.Quota;
 using NightTales.Application.Telemetry;
+using NightTales.Domain.Common;
 
 namespace NightTales.Infrastructure.Publishing;
 
@@ -31,11 +32,13 @@ public sealed partial class YouTubeQuotaLedger(
     IAppDbContext db,
     IOptionsMonitor<YouTubeOptions> options,
     NightTalesMetrics metrics,
+    IClock clock,
     ILogger<YouTubeQuotaLedger> logger) : IQuotaLedger
 {
     /// <inheritdoc />
     public async Task<ErrorOr<QuotaReservation>> TryReserveAsync(string platform, DateTimeOffset now, CancellationToken ct = default)
     {
+        now = now.ToUniversalTime();
         var day = PacificQuotaDay.Day(now);
         var limit = options.CurrentValue.Quota.UnitsPerDay;
 
@@ -79,6 +82,8 @@ public sealed partial class YouTubeQuotaLedger(
     /// <inheritdoc />
     public async Task<ErrorOr<Success>> ReleaseAsync(QuotaReservation reservation, CancellationToken ct = default)
     {
+        var nowUtc = clock.UtcNow;
+
         // A release of a unit that is no longer counted (missing row, or already at zero) is a no-op success: the
         // caller is undoing a publish that never happened, so it must not fail on the bookkeeping.
         await db.PlatformQuotaUsage
@@ -86,11 +91,11 @@ public sealed partial class YouTubeQuotaLedger(
             .ExecuteUpdateAsync(
                 setters => setters
                     .SetProperty(row => row.UnitsUsed, row => row.UnitsUsed - 1)
-                    .SetProperty(row => row.UpdatedAt, _ => DateTimeOffset.UtcNow),
+                    .SetProperty(row => row.UpdatedAt, nowUtc),
                 ct)
             .ConfigureAwait(false);
 
-        await PublishGaugeAsync(reservation.Platform, reservation.Day, ct).ConfigureAwait(false);
+        await PublishGaugeAsync(reservation.Platform, PacificQuotaDay.Day(nowUtc), ct).ConfigureAwait(false);
 
         return Result.Success;
     }

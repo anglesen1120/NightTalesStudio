@@ -70,7 +70,12 @@ public sealed class YouTubeEtaEndpointsTests(TestDatabase database) : Integratio
         using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync(Ct));
         json.RootElement.GetProperty("available").GetInt32().ShouldBe(0);
 
+        var rawNextSlot = json.RootElement.GetProperty("nextSlotAt").GetString();
+        rawNextSlot.ShouldNotBeNull();
+        rawNextSlot.ShouldMatch(@"(Z|\+00:00)$", "the ETA contract is a UTC ISO-8601 instant, not a Pacific offset");
+
         var nextSlot = json.RootElement.GetProperty("nextSlotAt").GetDateTimeOffset();
+        nextSlot.Offset.ShouldBe(TimeSpan.Zero);
         nextSlot.ShouldBe(PacificQuotaDay.NextResetAt(clock.UtcNow));
         nextSlot.ShouldBeGreaterThan(clock.UtcNow);
         TimeZoneInfo.ConvertTime(nextSlot, Pacific).TimeOfDay.ShouldBe(TimeSpan.Zero, "the reset is a Pacific midnight");
