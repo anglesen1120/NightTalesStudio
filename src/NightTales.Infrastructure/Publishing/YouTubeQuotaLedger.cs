@@ -35,6 +35,8 @@ public sealed partial class YouTubeQuotaLedger(
     IClock clock,
     ILogger<YouTubeQuotaLedger> logger) : IQuotaLedger
 {
+    private const string GaugeSavepoint = "youtube_quota_gauge";
+
     /// <inheritdoc />
     public async Task<ErrorOr<QuotaReservation>> TryReserveAsync(string platform, DateTimeOffset now, CancellationToken ct = default)
     {
@@ -101,30 +103,58 @@ public sealed partial class YouTubeQuotaLedger(
     }
 
     /// <summary>
-    /// Publishes the day's used/limit ratio on <c>youtube_quota_used</c>. The read happens outside the metric call so a
-    /// database failure still reaches the caller; only the recorder is guarded, because a throwing metric must never
-    /// fail a reservation or a release.
+    /// Publishes the day's used/limit ratio on <c>youtube_quota_used</c>. The gauge is best effort and the whole step
+    /// (read-back and recorder) is guarded: a failure is logged and never reaches the caller, because the reservation
+    /// or release it follows has already succeeded. Only cancellation propagates.
     /// </summary>
     private async Task PublishGaugeAsync(string platform, DateOnly day, CancellationToken ct)
     {
-        var row = await db.PlatformQuotaUsage
-            .AsNoTracking()
-            .Where(usage => usage.Platform == platform && usage.QuotaDay == day)
-            .Select(usage => new { usage.UnitsUsed, usage.UnitsLimit })
-            .SingleOrDefaultAsync(ct)
-            .ConfigureAwait(false);
+        try
+        {
+            var (used, limit) = await ReadUsageAsync(platform, day, ct).ConfigureAwait(false);
+            metrics.SetYoutubeQuotaUsed(limit == 0 ? 0d : (double)used / limit);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            LogGaugeFailed(logger, exception, platform, day);
+        }
+    }
 
-        var used = row?.UnitsUsed ?? 0;
-        var limit = row?.UnitsLimit ?? 0;
-        var ratio = limit == 0 ? 0d : (double)used / limit;
+    /// <summary>
+    /// Reads the day's counters. PostgreSQL aborts a whole transaction on one failed statement, and the ledger joins
+    /// the caller's ambient transaction, so under one the read runs inside a savepoint that is rolled back on failure:
+    /// a failed read-back cannot poison the unit of work that holds the reservation. Without an ambient transaction
+    /// the read is a plain autocommit statement.
+    /// </summary>
+    private async Task<(int Used, int Limit)> ReadUsageAsync(string platform, DateOnly day, CancellationToken ct)
+    {
+        var transaction = db.Database.CurrentTransaction;
+        var guarded = transaction is { SupportsSavepoints: true };
+        if (guarded)
+        {
+            await transaction!.CreateSavepointAsync(GaugeSavepoint, ct).ConfigureAwait(false);
+        }
 
         try
         {
-            metrics.SetYoutubeQuotaUsed(ratio);
+            var row = await db.PlatformQuotaUsage
+                .AsNoTracking()
+                .Where(usage => usage.Platform == platform && usage.QuotaDay == day)
+                .Select(usage => new { usage.UnitsUsed, usage.UnitsLimit })
+                .SingleOrDefaultAsync(ct)
+                .ConfigureAwait(false);
+
+            if (guarded)
+            {
+                await transaction!.ReleaseSavepointAsync(GaugeSavepoint, ct).ConfigureAwait(false);
+            }
+
+            return (row?.UnitsUsed ?? 0, row?.UnitsLimit ?? 0);
         }
-        catch (Exception exception)
+        catch when (guarded)
         {
-            LogGaugeFailed(logger, exception, platform, day, used, limit);
+            await transaction!.RollbackToSavepointAsync(GaugeSavepoint, CancellationToken.None).ConfigureAwait(false);
+            throw;
         }
     }
 
@@ -142,6 +172,6 @@ public sealed partial class YouTubeQuotaLedger(
     [LoggerMessage(EventId = 2370, Level = LogLevel.Information, Message = "publishing.quota.exhausted platform={Platform} quota_day={QuotaDay:yyyy-MM-dd}")]
     private static partial void LogExhausted(ILogger logger, string platform, DateOnly quotaDay);
 
-    [LoggerMessage(EventId = 2371, Level = LogLevel.Warning, Message = "publishing.quota.gauge-failed platform={Platform} quota_day={QuotaDay:yyyy-MM-dd} units_used={UnitsUsed} units_limit={UnitsLimit}")]
-    private static partial void LogGaugeFailed(ILogger logger, Exception exception, string platform, DateOnly quotaDay, int unitsUsed, int unitsLimit);
+    [LoggerMessage(EventId = 2371, Level = LogLevel.Warning, Message = "publishing.quota.gauge-failed platform={Platform} quota_day={QuotaDay:yyyy-MM-dd}")]
+    private static partial void LogGaugeFailed(ILogger logger, Exception exception, string platform, DateOnly quotaDay);
 }

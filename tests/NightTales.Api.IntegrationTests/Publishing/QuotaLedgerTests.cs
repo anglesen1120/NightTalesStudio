@@ -1,5 +1,7 @@
+using System.Data.Common;
 using System.Diagnostics.Metrics;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -11,6 +13,7 @@ using NightTales.Domain.Publishing;
 using NightTales.Infrastructure.Persistence;
 using NightTales.Infrastructure.Publishing;
 using NightTales.TestKit;
+using NightTales.TestKit.Auth;
 using NightTales.TestKit.Database;
 using NightTales.TestKit.Time;
 using Shouldly;
@@ -297,6 +300,80 @@ public sealed class QuotaLedgerTests(TestDatabase database) : IntegrationTest(da
         (await ledger.TryReserveAsync(platform, Midday, Ct)).IsError.ShouldBeTrue();
 
         lines.ShouldHaveSingleItem().ShouldBe("publishing.quota.exhausted platform=youtube quota_day=2026-01-15");
+    }
+
+    [Fact]
+    public async Task QuotaLedger_GaugeReadBackFails_ReserveAndReleaseStillSucceedAndAreLogged()
+    {
+        var platform = await FreshPlatformAsync();
+        var options = new MutableYouTubeOptions(5);
+        var lines = new List<string>();
+        using var factory = new LoggerFactory([new CapturingLoggerProvider(lines)]);
+        await using var db = FailingReadContext();
+        var ledger = Ledger(db, options, logger: factory.CreateLogger<YouTubeQuotaLedger>());
+
+        var first = await ledger.TryReserveAsync(platform, Midday, Ct);
+        var second = await ledger.TryReserveAsync(platform, Midday, Ct);
+        var released = await ledger.ReleaseAsync(first.Value, Ct);
+
+        first.IsError.ShouldBeFalse();
+        second.IsError.ShouldBeFalse();
+        released.IsError.ShouldBeFalse();
+        (await ReadRowAsync(platform, JanuaryFifteenth)).UnitsUsed.ShouldBe(1);
+        lines.Count.ShouldBe(3);
+        lines.ShouldAllBe(line => line == "publishing.quota.gauge-failed platform=youtube quota_day=2026-01-15");
+    }
+
+    [Fact]
+    public async Task QuotaLedger_GaugeReadBackFailsInsideAmbientTransaction_DoesNotPoisonTheUnitOfWork()
+    {
+        var platform = await FreshPlatformAsync();
+        var options = new MutableYouTubeOptions(5);
+        await using var db = FailingReadContext();
+        var ledger = Ledger(db, options);
+        await using var transaction = await db.Database.BeginTransactionAsync(Ct);
+
+        // The failed read-back is a real PostgreSQL error (division by zero), which aborts a plain transaction: the
+        // second reserve and the commit below only work because the read ran inside a rolled-back savepoint.
+        (await ledger.TryReserveAsync(platform, Midday, Ct)).IsError.ShouldBeFalse();
+        (await ledger.TryReserveAsync(platform, Midday, Ct)).IsError.ShouldBeFalse();
+        await transaction.CommitAsync(Ct);
+
+        (await ReadRowAsync(platform, JanuaryFifteenth)).UnitsUsed.ShouldBe(2);
+    }
+
+    /// <summary>A write context whose read-backs of <c>platform_quota_usage</c> fail inside PostgreSQL.</summary>
+    private AppDbContext FailingReadContext()
+    {
+        var options = new DbContextOptionsBuilder<AppDbContext>()
+            .UseNpgsql(Database.ConnectionString)
+            .UseSnakeCaseNamingConvention()
+            .AddInterceptors(new FailingQuotaReadInterceptor())
+            .Options;
+
+        return new AppDbContext(options, new TestCurrentUser());
+    }
+
+    /// <summary>
+    /// Rewrites every <c>SELECT</c> over <c>platform_quota_usage</c> into <c>SELECT 1/0</c>, so the server, not the
+    /// test, raises the error and a surrounding transaction is aborted exactly as a real read failure would abort it.
+    /// </summary>
+    private sealed class FailingQuotaReadInterceptor : DbCommandInterceptor
+    {
+        public override ValueTask<InterceptionResult<DbDataReader>> ReaderExecutingAsync(
+            DbCommand command,
+            CommandEventData eventData,
+            InterceptionResult<DbDataReader> result,
+            CancellationToken cancellationToken = default)
+        {
+            if (command.CommandText.Contains("platform_quota_usage", StringComparison.Ordinal))
+            {
+                command.Parameters.Clear();
+                command.CommandText = "SELECT 1/0";
+            }
+
+            return base.ReaderExecutingAsync(command, eventData, result, cancellationToken);
+        }
     }
 
     private async Task<string> FreshPlatformAsync()
