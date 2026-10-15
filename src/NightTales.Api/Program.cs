@@ -19,6 +19,7 @@ using NightTales.Infrastructure.Persistence;
 using NightTales.Infrastructure.Persistence.Flags;
 using NightTales.Infrastructure.Persistence.Seeding;
 using NightTales.Infrastructure.Persistence.Usage;
+using NightTales.Infrastructure.Rendering;
 using NightTales.Infrastructure.Storage;
 using NightTales.Infrastructure.Telemetry;
 using Serilog;
@@ -126,6 +127,12 @@ try
     // 09.7.2-T1 (09 README BD10/BD12): the blob store, its client factory, the health cache and the
     // prober. The Api presigns the video URL; the Worker sweeps the same buckets.
     builder.Services.AddStorage(builder.Configuration);
+
+    // 09.6.2-T1 (09 README BD6, 11 README D13): the node transport and the two render clients, so the Api
+    // resolves IRenderClient/IRenderDownloadClient exactly as the Worker does. Node health polling stays a
+    // Worker BackgroundService; what the Api composes here is the pinned-TLS transport and the two clients.
+    builder.Services.AddRenderNodes(builder.Configuration);
+    builder.Services.AddRenderClients(builder.Configuration);
 
     // 09.3.2-T1 step 6: the bearer scheme over the same key.
     builder.Services.AddNightTalesJwtBearer();
