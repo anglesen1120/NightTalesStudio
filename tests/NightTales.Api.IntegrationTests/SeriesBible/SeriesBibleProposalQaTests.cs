@@ -372,7 +372,9 @@ public sealed class SeriesBibleProposalQaTests(TestDatabase database) : Integrat
         var world = await BibleProposalJobHarness.SeedAsync(Database);
         var approval = await BibleProposalJobHarness.ApproveEpisodeAsync(Database, world);
         var unknownSeries = Guid.CreateVersion7();
-
+        // The class shares one database and other tests leave a failed or deferred delivery pending on purpose;
+        // the count below must see only this test's message.
+        SqlProbe.Execute(Database, "DELETE FROM outbox_messages WHERE processed_at IS NULL");
         await InsertApprovalAsync(world.UserId, unknownSeries, approval.Id, approval.VersionId);
 
         var text = new FakeTextClient();
