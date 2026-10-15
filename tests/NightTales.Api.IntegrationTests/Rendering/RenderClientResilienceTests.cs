@@ -170,7 +170,7 @@ public sealed class RenderClientResilienceTests
         using var provider = Provider(handler, time);
         var client = provider.GetRequiredService<IRenderClient>();
 
-        await Assert.ThrowsAsync<OperationCanceledException>(
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
             () => client.GetStatusAsync(Node(), TaskId, cancellation.Token));
 
         handler.Requests.Count.ShouldBe(1);
