@@ -235,6 +235,64 @@ public sealed class ReviewStepTests
         verdict.Review.Scores.FactualCare.ShouldBe(3);
     }
 
+    [Fact]
+    public void Review_RequestContainsBible_NotAvoidPlots()
+    {
+        // 02.6.3 Acceptance 10: the review data object carries the series bible under "bible" and never "avoid_plots".
+        var catalog = new PromptCatalog(new EmbeddedPromptResourceSource());
+        var assembler = new PromptAssembler(catalog, NullLogger<PromptAssembler>.Instance);
+        var bible = new BibleSnapshot(
+            1,
+            new BibleNarratorSnapshot("Mai", "A quiet lighthouse keeper.", null),
+            [],
+            [],
+            ["The lighthouse is never named."],
+            [],
+            false);
+        var req = Request(Topic.Ghost) with { Bible = bible };
+
+        var data = JsonDocument.Parse(assembler.Review(req).Value.UserDataJson).RootElement;
+
+        JsonSerializer.Serialize(data.GetProperty("bible")).ShouldContain("The lighthouse is never named.");
+        data.TryGetProperty("avoid_plots", out _).ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task Review_BibleContradictionIssue_CarriesRuleAndSegment()
+    {
+        // 02.6.3 Acceptance 10 (D22 shape): a scripted bible_contradiction issue survives the validator and lands in
+        // model_review.issues[] with its id, kind, segment and severity. AuditReportBuilder.Issue projects no rule or type
+        // key, so the closed-list name is not asserted here; see the 02.6.3 yield.
+        using var host = new OpenAiTestHost();
+        var meter = new RecordingMeter();
+        host.Handler.Reply(HttpStatusCode.OK, OpenAiTestHost.Completed(BibleContradictionJson), ("x-request-id", "req_bible"));
+        var req = Request(Topic.Ghost);
+
+        var result = await Writer(host, meter).ReviewAsync(req, Ct);
+
+        var ok = result.ShouldBeOfType<TextCallOk<StoryReviewV1>>();
+        var verdict = ReviewResultValidator.Validate(ok.Draft, req.Topic, req.Draft.Paragraphs.Count, [.. req.EarRuleQuestions.Select(q => q.QuestionId)]);
+        verdict.IsAccepted.ShouldBeTrue();
+
+        var merged = AuditReportBuilder.MergeModelReview(string.Empty, verdict, "gpt-6-luna", "rel=test");
+        var issue = JsonDocument.Parse(merged).RootElement.GetProperty("model_review").GetProperty("issues")[0];
+        issue.GetProperty("id").GetString().ShouldBe("b1");
+        issue.GetProperty("kind").GetString().ShouldBe("objective");
+        issue.GetProperty("segment").GetString().ShouldBe("p:1");
+        issue.GetProperty("severity").GetString().ShouldBe("advisory");
+    }
+
+    private const string BibleContradictionJson = """
+        {"scores":{"hook":4,"pacing":3,"atmosphere":4,"natural_language":4,"originality":3,"factual_care":null,"length_fit":4},
+         "issues":[{"id":"b1","type":"bible_contradiction","severity":"advisory","segment":"p:1","evidence":"The corridor was quiet.","impact":"contradicts a standing rule","repair_direction":"match the rule"}],
+         "ear_rule_answers":[{"question_id":"Q1","passed":true,"segment":"p:0","evidence":"moves the fear"},
+           {"question_id":"Q2","passed":true,"segment":"meta","evidence":""},{"question_id":"Q3","passed":true,"segment":"meta","evidence":""},
+           {"question_id":"Q4","passed":true,"segment":"meta","evidence":""},{"question_id":"Q5","passed":true,"segment":"meta","evidence":""}],
+         "factual_care":null,
+         "real_world_claims":[],
+         "summary":"one standing rule broken"}
+        """;
+
     private static OpenAiStoryWriter Writer(OpenAiTestHost host, RecordingMeter meter)
     {
         var catalog = new PromptCatalog(new EmbeddedPromptResourceSource());
