@@ -540,6 +540,12 @@ public sealed class SeriesBibleProposalQaTests(TestDatabase database) : Integrat
         ledger.Refunds.ShouldBe([("bible_proposal_generation_failed", ledger.Reserved[0])]);
         ledger.Settled.ShouldBeEmpty();
         text.Requests.ShouldBeEmpty();
+
+        // The class shares one database: the failed delivery stays pending for a later redelivery, which would be
+        // counted by the next test's RunOutboxOnceAsync. Remove it.
+        SqlProbe.Execute(
+            Database,
+            $"DELETE FROM outbox_messages WHERE user_id = '{BibleProposalJobHarness.Pg(world.UserId)}'");
     }
 
     /// <summary>
