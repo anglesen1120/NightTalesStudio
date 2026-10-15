@@ -303,10 +303,10 @@ public sealed class PromptAssemblerTests
     }
 
     [Fact]
-    public void PromptAssembler_InjectionFixtures_AllElevenShipped()
+    public void PromptAssembler_InjectionFixtures_AllThirteenShipped()
     {
-        InjectionFixture.Ids().Count.ShouldBe(11);
-        InjectionFixture.LoadAll().Select(f => f.Canary).Distinct().Count().ShouldBe(11);
+        InjectionFixture.Ids().Count.ShouldBe(13);
+        InjectionFixture.LoadAll().Select(f => f.Canary).Distinct().Count().ShouldBe(13);
     }
 
     [Theory]
@@ -344,6 +344,25 @@ public sealed class PromptAssemblerTests
         // Nothing of the payload reaches the static system prompt.
         attacked.SystemPrompt.ShouldNotContain(fixture.Canary);
         attacked.SystemPrompt.ShouldBe(baseline.SystemPrompt);
+    }
+
+    /// <summary>02.6.3 Acceptance 9: an instruction inside a bible rule is carried as data at <c>bible.summary</c>; it cannot move the control keys or the system prompt.</summary>
+    [Fact]
+    public void InjectionFixture_BibleRuleWithInstructions_Ignored()
+    {
+        var fixture = InjectionFixture.Load("bible-rule-instructions");
+        var context = new AssemblerContext(Topic.Ghost, Language.En, PresetKey, 6000);
+        var baseline = Assemble(FixtureRequest(fixture with { Value = "benign text" }), context);
+        var attacked = Assemble(FixtureRequest(fixture), context);
+
+        using var baselineDoc = JsonDocument.Parse(baseline.UserDataJson);
+        using var doc = JsonDocument.Parse(attacked.UserDataJson);
+        Pointer(doc.RootElement, fixture.Field).GetString().ShouldBe(fixture.Value);
+        doc.RootElement.GetProperty("task").GetString().ShouldBe("write_story");
+        doc.RootElement.GetProperty("length").GetRawText().ShouldBe(baselineDoc.RootElement.GetProperty("length").GetRawText());
+        Paths(doc.RootElement).ShouldBe(Paths(baselineDoc.RootElement));
+        attacked.SystemPrompt.ShouldBe(baseline.SystemPrompt);
+        attacked.SystemPrompt.ShouldNotContain(fixture.Canary);
     }
 
     /// <summary>Fixture #11 (02 T69): a brief that orders a control-key override cannot change <c>length</c> or <c>structure_plan</c>.</summary>

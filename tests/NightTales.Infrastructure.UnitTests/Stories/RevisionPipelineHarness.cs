@@ -11,6 +11,7 @@ using NightTales.Application.Abstractions.Storage;
 using NightTales.Application.Abstractions.Text;
 using NightTales.Application.Abstractions.Usage;
 using NightTales.Application.Common.Errors;
+using NightTales.Application.Features.SeriesBible.Abstractions;
 using NightTales.Application.Features.Stories.Generation;
 using NightTales.Application.Features.Stories.Jobs;
 using NightTales.Application.Features.Stories.Quality;
@@ -119,7 +120,8 @@ internal sealed class RevisionWorld
         ApprovedFactSheet? approvedSheet = null,
         IStoryCostEstimator? estimator = null,
         StoryJobOptions? jobOptions = null,
-        Func<Guid, Guid, IReadOnlyList<StorySource>>? sources = null)
+        Func<Guid, Guid, IReadOnlyList<StorySource>>? sources = null,
+        IBibleSnapshotProvider? bibles = null)
     {
         var setup = new TestCurrentUser();
         var user = await new UserBuilder(database, setup).CreateAsync(ct: ct);
@@ -196,6 +198,7 @@ internal sealed class RevisionWorld
             db: db,
             progress: progress,
             requests: factory,
+            bibles: bibles ?? new NoBibleSnapshotProvider(),
             factSheetGuard: new FakeFactSheetGuard { ApprovedSheet = approvedSheet },
             moderator: moderator,
             moderationEvents: events,

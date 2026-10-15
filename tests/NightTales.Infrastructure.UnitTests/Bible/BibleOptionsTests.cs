@@ -49,7 +49,14 @@ public sealed class BibleOptionsTests
         options.Proposal.MaxStoryChars.ShouldBe(24_000);
 
         options.Prompt.MaxSummaries.ShouldBe(50);
-        options.Prompt.MaxChars.ShouldBe(24_000);
+        options.Prompt.MaxChars.ShouldBe(36_000);
+        options.Prompt.MaxVoiceNotesChars.ShouldBe(500);
+        options.Prompt.MaxDescriptionChars.ShouldBe(150);
+        options.Prompt.KeepFullSummaryCount.ShouldBe(25);
+        options.Prompt.MaxArrayEntries.ShouldBe(15);
+
+        options.AvoidPlots.Max.ShouldBe(25);
+        options.AvoidPlots.MaxCharsPerEntry.ShouldBe(120);
     }
 
     [Fact]
@@ -63,6 +70,23 @@ public sealed class BibleOptionsTests
 
         result.Failed.ShouldBeTrue();
         result.FailureMessage.ShouldContain("Bible:Limits:MaxContentBytes", Case.Sensitive);
+    }
+
+    [Fact]
+    public void BibleOptions_ZeroWriterBudgetKeys_NameEachKey()
+    {
+        var result = Validator.Validate(
+            null,
+            new BibleOptions
+            {
+                Prompt = new BiblePromptOptions { MaxVoiceNotesChars = 0, MaxDescriptionChars = 0, KeepFullSummaryCount = 0, MaxArrayEntries = 0 },
+                AvoidPlots = new BibleAvoidPlotsOptions { Max = 0, MaxCharsPerEntry = 0 },
+            });
+
+        result.Failed.ShouldBeTrue();
+        result.FailureMessage.ShouldContain("Bible:Prompt:MaxVoiceNotesChars", Case.Sensitive);
+        result.FailureMessage.ShouldContain("Bible:AvoidPlots:MaxCharsPerEntry", Case.Sensitive);
+        result.Failures!.Count().ShouldBe(6);
     }
 
     [Fact]

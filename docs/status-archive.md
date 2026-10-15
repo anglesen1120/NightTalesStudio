@@ -4,6 +4,18 @@ History moved out of STATUS.md to keep the live file small. The initial archive 
 
 ## Resume-here history (Current/Previous blocks, Next actions)
 
+### Superseded backend Next Session 45 PR-open line (2026-10-16, replaced when #209 merged as `20be3f76`)
+
+Replaced text (verbatim):
+
+- **Next (backend, Session 45, PR open):** **02.6.3-T3** bible in the writer input + continuity in the review request on `feature/02.6.3-T3-s45` (from `develop` `2e705533`, merged develop `e785e0e4`; no migration; `BibleSnapshotBuilder` S1–S7 truncation, `AvoidPlotsBuilder`, tenant-filtered `BibleSnapshotProvider`, bible read once per run and shared by writer/review/revise, `bible_too_large` failure not counted; T3 gates closed; deviations G1–G7 in the task Delivery notes and §Open findings BIBLE-T3-1…8). Owner decisions needed: `Bible:Prompt:MaxChars` 36,000 bytes (task said 24,000 chars), a maximal bible cannot be stored through PUT (BIBLE-T3-6), Acceptance 136 vs Notes (BIBLE-T3-3). Backend lane next: **02.8.1-T1** and **02.8.2-T1** (T3 is their dependency; read the BIBLE-T3-2/-7 hand-overs); **02.6.3-T2** is Session 42's; web **10.5.7-T1** waits on it. The migration lane is Session 46's (06.3.1-T1).
+
+### Superseded backend Next Session 37 line (2026-10-16, replaced when Session 45 opened the 02.6.3-T3 PR)
+
+Replaced text (verbatim):
+
+- **Next (backend, start here):** Session 37 closed: **02.6.3-T1** series bible entity + `GET/PUT /api/v1/series/{id}/bible` merged as #198 (`1fb6ac16`, tip `b8c00733`; migration `20261014094406_02_AddSeriesBible` + backfill; CI refused: CI-01, owner treats as pass; final full gate on the remote VM (Ubuntu arm64) `GATE_RC=0` on `b2d68d07`, tip adds docs only; owner decisions 2026-10-15 recorded in BIBLE-1; open items BIBLE-2…5 and the hand-overs below). Backend lane next: **02.6.3-T2** (proposal job + accept/dismiss; read its Notes: `ApplyProposal` signature, id rule, take `LockSeriesBibleForUpdateAsync`) and **02.6.3-T3**; web **10.5.7-T1** consumes the GET/PUT wire. Web lane: **10.5.6-T1** merged as #195 (`489d26a4`); **10.5.5-T1** research page merged as #201 (`c275b0bb`, Session 40). **Migration lane is free**: the next migration follows `20261014094406_02_AddSeriesBible` (owner of `migrations[^1]` guard: `AddSeriesBibleMigrationTests`, the next migration moves it). Session 36 closed: **02.5.5-T1** #193 merged (`3d991845`); older merged items are in `docs/status-archive.md`.
+
 ### Superseded web Next (Session 40) line and the backend Next web-lane clause (2026-10-15, closed Session 40: #201 merged as `c275b0bb`)
 
 Replaced text (verbatim):

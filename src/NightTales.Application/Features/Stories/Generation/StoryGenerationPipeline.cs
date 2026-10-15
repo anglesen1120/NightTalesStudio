@@ -15,6 +15,7 @@ using NightTales.Application.Abstractions.Text;
 using NightTales.Application.Abstractions.Usage;
 using NightTales.Application.Abstractions.Persistence;
 using NightTales.Application.Common.Errors;
+using NightTales.Application.Features.SeriesBible.Abstractions;
 using NightTales.Application.Features.Stories.Facts;
 using NightTales.Application.Features.Stories.Jobs;
 using NightTales.Application.Features.Stories.Quality;
@@ -27,6 +28,7 @@ using NightTales.Domain.Research;
 using NightTales.Domain.Stories;
 using NightTales.Domain.Stories.Content;
 using NightTales.Domain.Series;
+using NightTales.Domain.Series.Bible;
 using NightTales.Domain.Stories.Generation;
 using NightTales.Domain.Stories.Quality;
 using NightTales.Domain.Stories.Review;
@@ -60,6 +62,7 @@ public sealed partial class StoryGenerationPipeline(
     IAppDbContext db,
     StoryGenerationProgress progress,
     StoryWriteRequestFactory requests,
+    IBibleSnapshotProvider bibles,
     IFactSheetGuard factSheetGuard,
     IContentModerator moderator,
     IModerationEventWriter moderationEvents,
@@ -368,8 +371,26 @@ public sealed partial class StoryGenerationPipeline(
         // the display metadata the builder needs. The fetched text and the note text are never read (D19, F12).
         s.SourceMetadata = await LoadFactSourceMetadataAsync(s, ct).ConfigureAwait(false);
 
+        // 02.6.3-T3: the series bible is read once per run, so the writer, the review and any revision share one snapshot.
+        // The budget breach is a failed run, not a retry: nothing the model returns can shrink the bible.
+        try
+        {
+            s.Bible = await bibles.GetForWriterAsync(s.Episode.SeriesId, ct).ConfigureAwait(false);
+        }
+        catch (BibleSnapshotTooLargeException)
+        {
+            await FailAsync(s, ErrorCodes.StoryGenerationFailed, "bible_too_large", false, RefundFailed).ConfigureAwait(false);
+            return false;
+        }
+
+        if (s.Bible.Bible is { Truncated: true })
+        {
+            metrics.BibleSnapshotTruncated();
+            LogBibleTruncated(s.Run.Id);
+        }
+
         var built = await requests
-            .BuildAsync(s.Run, s.Episode, s.Topic, s.Language, s.Facts, attempt: 0, violatedRules: null, ct)
+            .BuildAsync(s.Run, s.Episode, s.Topic, s.Language, s.Facts, attempt: 0, violatedRules: null, bible: s.Bible, ct)
             .ConfigureAwait(false);
         if (built.IsError)
         {
@@ -457,7 +478,7 @@ public sealed partial class StoryGenerationPipeline(
             }
 
             var built = await requests
-                .BuildAsync(s.Run, s.Episode, s.Topic, s.Language, s.Facts, attempt, correction, ct)
+                .BuildAsync(s.Run, s.Episode, s.Topic, s.Language, s.Facts, attempt, correction, s.Bible, ct)
                 .ConfigureAwait(false);
             if (built.IsError)
             {
@@ -645,7 +666,7 @@ public sealed partial class StoryGenerationPipeline(
                 s.Built.Request.Length,
                 s.Topic,
                 s.Sheet.Facts,
-                Bible: null,
+                Bible: s.Bible.Bible,
                 questions,
                 StoryPresetKeys.For(s.Topic, s.Language));
 
@@ -767,7 +788,7 @@ public sealed partial class StoryGenerationPipeline(
             s.Built.Request.Length,
             s.Topic,
             s.Sheet.Facts,
-            Bible: null,
+            Bible: s.Bible.Bible,
             StoryPresetKeys.For(s.Topic, s.Language));
 
         var assembled = assembler.Revise(request);
@@ -956,7 +977,7 @@ public sealed partial class StoryGenerationPipeline(
             s.Built.Request.Length,
             s.Topic,
             s.Sheet.Facts,
-            Bible: null,
+            Bible: s.Bible.Bible,
             questions,
             StoryPresetKeys.For(s.Topic, s.Language));
 
@@ -1606,6 +1627,9 @@ public sealed partial class StoryGenerationPipeline(
         /// <summary>The episode's cited sources' display metadata, loaded once per run (02.5.5-T1, D2).</summary>
         public IReadOnlyDictionary<Guid, FactSourceMetadata> SourceMetadata { get; set; } = NoFactSources;
 
+        /// <summary>The series bible read once per run (02.6.3-T3); the writer, the review and any revision share this snapshot.</summary>
+        public BibleForWriter Bible { get; set; } = new(null, [], 0);
+
         public IReadOnlyList<FactForWriter>? Facts => Topic.IsFiction() ? null : Sheet.Facts;
 
         public BuiltWriteRequest Built { get; set; } = null!;
@@ -1689,6 +1713,9 @@ public sealed partial class StoryGenerationPipeline(
 
     [LoggerMessage(EventId = 6126, Level = LogLevel.Warning, Message = "generation_fact_source_missing runId={RunId} count={Count}")]
     private partial void LogFactSourceMissing(Guid runId, int count);
+
+    [LoggerMessage(EventId = 6127, Level = LogLevel.Information, Message = "generation_bible_truncated runId={RunId}")]
+    private partial void LogBibleTruncated(Guid runId);
 
     [LoggerMessage(EventId = 6120, Level = LogLevel.Warning, Message = "similarity_unavailable episodeId={EpisodeId} runId={RunId} reason={Reason}")]
     private partial void LogSimilarityUnavailable(Guid episodeId, Guid runId, string reason);
