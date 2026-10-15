@@ -310,6 +310,36 @@ internal static class SeedPrevious
                       'episode_summaries','[]'::jsonb),
                     now(), now())
             """),
+        (
+            // 09.6.1-T1: the table the `_09_RenderJobs` migration creates. Same rule as above: skipped while that
+            // migration is the last one, then every later migration is exercised over the queued job of the seed
+            // story version — the row the render command writes, carrying the `render-params.v1` document of that
+            // version (05 D11) and the reservation id the ledger returned (NOT NULL, W2 CR-14/WT50).
+            "render_jobs",
+            """
+            INSERT INTO render_jobs (id, user_id, episode_id, story_version_id, reservation_id, status, stage,
+                                     percent, params, attempt)
+            VALUES ('01920000-0000-7000-8000-000000000017', '01920000-0000-7000-8000-000000000001',
+                    '01920000-0000-7000-8000-000000000004', '01920000-0000-7000-8000-000000000006',
+                    '01920000-0000-7000-8000-000000000018', 'queued', 'queued', 0,
+                    jsonb_build_object(
+                      'schema', 'render-params.v1',
+                      'mapper_version', 1,
+                      'story_version_id', '01920000-0000-7000-8000-000000000006',
+                      'aspect', 'landscape',
+                      'language', 'vi',
+                      'voice_id', 'seed-voice',
+                      'style_template_id', '01920000-0000-7000-8000-000000000003',
+                      'style_prompt_version', 'style=seed@00000000;neg=v1',
+                      'image_plan', jsonb_build_object(
+                        'clip_seconds', 5, 'needed', 0, 'max_terms', 0, 'planned', 0, 'trimmed', 0,
+                        'hints', '[]'::jsonb, 'slot_segments', '[]'::jsonb,
+                        'style_prompt_version', 'style=seed@00000000;neg=v1'),
+                      'subtitles', jsonb_build_object('enabled', true, 'preset', 'landscape@1'),
+                      'music', NULL::text,
+                      'clip_seconds', 5),
+                    1)
+            """),
     ];
 
     /// <summary>The tables the dataset covers, in insert order — the contract a feature migration extends.</summary>

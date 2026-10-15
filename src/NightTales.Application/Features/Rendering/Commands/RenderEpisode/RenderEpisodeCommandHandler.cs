@@ -176,7 +176,7 @@ public sealed class RenderEpisodeCommandHandler(
             series.Language,
             episode.LengthTier,
             ImagePlanOptions.Defaults));
-        if (plan.MaxTerms == 0)
+        if (plan.Terms.Count == 0)
         {
             // No keyword survived, so no image can be rendered: 409 keywords_flagged with the single
             // no_scenes row (03.2.2-T2, D10).

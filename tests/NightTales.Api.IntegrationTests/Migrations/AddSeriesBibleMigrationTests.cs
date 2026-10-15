@@ -23,8 +23,9 @@ namespace NightTales.Api.IntegrationTests.Migrations;
 /// The <c>_02_AddSeriesBible</c> migration (02.6.3-T1, plan §3.3): the <c>series_bibles</c> table with its
 /// unique <c>series_id</c> index and its two jsonb documents, the same-owner composite keys to <c>series</c>
 /// and to the episode a proposal came from, and the backfill that gives every series which predates the
-/// migration its one empty <c>bible.v1</c> row. This class owns the last-migration check (<c>migrations[^1]</c>)
-/// and finds its own migration by name everywhere else.
+/// migration its one empty <c>bible.v1</c> row. 09.6.1-T1 appended a migration after this one, so this class
+/// no longer owns the last-migration check (<c>AddRenderJobsMigrationTests</c> does) and finds its own
+/// migration by name everywhere.
 /// </summary>
 [Trait("Category", "Integration")]
 [Trait("Category", "Migration")]
@@ -90,11 +91,13 @@ public sealed class AddSeriesBibleMigrationTests(TestDatabase database) : Integr
     private static readonly DateTimeOffset Start = new(2026, 10, 14, 9, 0, 0, TimeSpan.Zero);
 
     [Fact]
-    public async Task Migration_IsTheLastOne_AndModelHasNoPendingChange()
+    public async Task Migration_IsPresent_AndModelHasNoPendingChange()
     {
         await using var context = Database.CreateAppDbContext();
         var migrations = context.Database.GetMigrations().Order(StringComparer.Ordinal).ToList();
-        migrations[^1].ShouldEndWith("_" + MigrationName);
+        // 09.6.1-T1 appended a migration after this one, so this class no longer owns the last-migration
+        // check (the newest migration's own test does); it still proves its own migration is compiled in.
+        migrations.ShouldContain(name => name.EndsWith("_" + MigrationName, StringComparison.Ordinal));
 
         context.Database.HasPendingModelChanges().ShouldBeFalse(
             "an entity change without a migration must fail here (run `dotnet ef migrations add`)");
@@ -218,7 +221,9 @@ public sealed class AddSeriesBibleMigrationTests(TestDatabase database) : Integr
             var first = await new SeriesBuilder(Database, actor).CreateAsync(user.Id, ct: Ct);
             var second = await new SeriesBuilder(Database, actor).CreateAsync(user.Id, "Second series", ct: Ct);
 
-            await migrator.MigrateAsync(migrations[^1], Ct);
+            // This migration, not the newest one: the backfill runs when `series_bibles` is created, and the
+            // migrations after it only see the rows it wrote.
+            await migrator.MigrateAsync(migrations[own], Ct);
 
             var seriesCount = SqlProbe.Count(Database, "SELECT count(*) FROM series");
             seriesCount.ShouldBeGreaterThanOrEqualTo(2);
