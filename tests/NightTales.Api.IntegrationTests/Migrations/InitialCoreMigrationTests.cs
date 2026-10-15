@@ -30,7 +30,7 @@ public sealed class InitialCoreMigrationTests(TestDatabase database) : Integrati
     /// 09.8.1-T2 <c>hub_tickets</c>, 09.2.6-T3 <c>email_messages</c>, 09.3.2-T3 <c>auth_challenges</c>,
     /// 11.3.3-T1 <c>worker_nodes</c>, 02.2.2-T1 <c>generation_runs</c>, 02.2.4-T1 <c>price_versions</c>, 05.3.2-T3
     /// <c>music_tracks</c>, 02.5.1-T1 <c>story_sources</c>, <c>fetch_tasks</c> and <c>source_creations</c>,
-    /// 02.5.3-T2 <c>fact_sheets</c>), ordinal-sorted like
+    /// 02.5.3-T2 <c>fact_sheets</c>, 09.6.1-T1 <c>render_jobs</c>), ordinal-sorted like
     /// <c>PostgresFixture.TableNamesAsync</c> returns them.
     /// </summary>
     private static readonly string[] ExpectedTables =
@@ -55,6 +55,7 @@ public sealed class InitialCoreMigrationTests(TestDatabase database) : Integrati
         "outbox_messages",
         "price_versions",
         "refresh_tokens",
+        "render_jobs",
         "role_claims",
         "roles",
         "series",

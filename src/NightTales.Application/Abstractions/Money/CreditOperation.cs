@@ -17,4 +17,12 @@ public enum CreditOperation
 
     /// <summary><c>source_find</c>: one source-finder run.</summary>
     SourceFind,
+
+    /// <summary>
+    /// <c>render</c>: one render job (09.6.1-T1, W2 CR-2). The whole job is reserved once, at the
+    /// <c>POST /episodes/{id}/render</c> command (BD5 step 10), against the worst-case image cost of
+    /// <c>IImageCostEstimator</c> (03 D8), and settled by the 09.6.3-T2 ingest against the usage rows of the
+    /// same reservation.
+    /// </summary>
+    Render,
 }
