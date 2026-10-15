@@ -324,10 +324,16 @@ public sealed class GenerationRun : Entity, IUserOwned, IAuditable
     /// kinds name none.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// The served run counts toward FR-02-7 when it belongs to an episode, which is the run the user's own request
-    /// was served by (plan §3.6: a saved version counts); a series-level run (<c>ideas</c>, <c>bible_proposal</c>)
-    /// never does — the allowance is per episode, and every <c>bible_proposal</c> run is created and settled
-    /// <c>counts_toward_limit = false</c> (02.6.3-T2).
+    /// was served by (plan §3.6: a saved version counts).
+    /// </para>
+    /// <para>
+    /// A <c>bible_proposal</c> run is the exception (02.6.3-T2, task AC and README D2: only <c>kind = story</c>
+    /// counts): it is a nice-to-have the approval bought, not the user's own generation request, so it is created
+    /// <c>counts_toward_limit = false</c> and stays that way however it ends — succeeded included. Its
+    /// <c>episode_id</c> is NULL (a series-level kind), so no allowance is attributed to it either way.
+    /// </para>
     /// </remarks>
     /// <param name="costUsd">The non-negative settled cost in USD.</param>
     /// <param name="resultStoryVersionId">The story version the run saved (required for <c>story</c>).</param>
@@ -372,7 +378,7 @@ public sealed class GenerationRun : Entity, IUserOwned, IAuditable
         CostUsd = costUsd;
         ResultStoryVersionId = resultStoryVersionId;
         ResultFactSheetId = resultFactSheetId;
-        CountsTowardLimit = EpisodeId is not null;
+        CountsTowardLimit = Kind != GenerationKind.BibleProposal;
         FinishedAt = now;
         UpdatedAt = now;
     }

@@ -1,13 +1,13 @@
 using ErrorOr;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 using NightTales.Application.Abstractions.Jobs;
 using NightTales.Application.Abstractions.Money;
 using NightTales.Application.Abstractions.Outbox;
 using NightTales.Application.Abstractions.Persistence;
 using NightTales.Application.Abstractions.Usage;
 using NightTales.Application.Common.Errors;
+using NightTales.Application.Features.SeriesBible.Abstractions;
 using NightTales.Application.Features.SeriesBible.Jobs;
 using NightTales.Domain.Common;
 using NightTales.Domain.Series;
@@ -65,7 +65,7 @@ namespace NightTales.Application.Features.SeriesBible.Events;
 /// <param name="budgetGuard">The platform spend cap (D1: checked before every paid dispatch).</param>
 /// <param name="creditLedger">The credit reservation (metering-only in phase P).</param>
 /// <param name="scheduler">The job port: the proposal job, or this work again after the two-minute delay.</param>
-/// <param name="proposalOptions">The kill switch and op caps of the feature, observed so a change applies without a restart.</param>
+/// <param name="proposalSwitch">The kill switch of the feature, read per delivery so a change applies without a restart.</param>
 /// <param name="clock">The clock every stamp of this delivery is taken from.</param>
 /// <param name="logger">The outcome log of this delivery.</param>
 public sealed partial class StoryApprovedBibleProposalHandler(
@@ -75,7 +75,7 @@ public sealed partial class StoryApprovedBibleProposalHandler(
     IBudgetGuard budgetGuard,
     ICreditLedger creditLedger,
     IJobScheduler scheduler,
-    IOptionsMonitor<BibleProposalJobOptions> proposalOptions,
+    IBibleProposalSwitch proposalSwitch,
     IClock clock,
     ILogger<StoryApprovedBibleProposalHandler> logger) : IOutboxHandler<StoryApproved>
 {
@@ -197,7 +197,7 @@ public sealed partial class StoryApprovedBibleProposalHandler(
 
         // 3. The kill switch (plan §11): off means no run row at all, so a host that is rolled back spends
         //    nothing and stores nothing.
-        if (!proposalOptions.CurrentValue.Enabled)
+        if (!proposalSwitch.Enabled)
         {
             LogDisabled(seriesId, episodeId);
             return;

@@ -15,8 +15,9 @@ namespace NightTales.Application.Features.SeriesBible;
 /// </para>
 /// <para>
 /// <see cref="Enabled"/> is the rollback switch of the feature (plan §11, 09.10.3): with it off an approval
-/// queues no run at all — no row, no paid call — and it is read per delivery through an
-/// <c>IOptionsMonitor</c>, so turning it off needs no restart.
+/// queues no run at all — no row, no paid call — and the handler reads it per delivery through
+/// <c>IBibleProposalSwitch</c>, the port the host implements over this section, so turning it off needs no
+/// restart.
 /// </para>
 /// <para>
 /// The members are mutable (<c>get; set;</c>) because the options binder fills them; nothing else writes them.

@@ -2,12 +2,14 @@ using System.Text;
 using ErrorOr;
 using Microsoft.Extensions.Configuration;
 using NightTales.Application.Abstractions.Prompts;
+using NightTales.Application.Abstractions.Text;
 using NightTales.Application.Abstractions.Usage;
 using NightTales.Application.Common.Errors;
 using NightTales.Domain.Common;
 using NightTales.Domain.Series;
 using NightTales.Domain.Stories.Prompts;
 using NightTales.Domain.Usage;
+using NightTales.Infrastructure.OpenAI;
 using NightTales.Infrastructure.Persistence.Usage;
 using NightTales.Infrastructure.UnitTests.Prompts;
 using NightTales.TestKit.Time;
@@ -102,15 +104,26 @@ public sealed class BibleProposalCostEstimatorTests
     public async Task WorstCase_DefaultModel_IsTheAdapters()
     {
         var catalog = new FakeCatalog();
-        catalog.Active = Version(1, luna: Sol, model: "gpt-6-sol");
+
+        // Both models are priced, at different rates: the default is the cheap one and `gpt-6-sol` the expensive
+        // one, so a run priced at the version's other model instead of the adapter's default shows up as the
+        // wrong cost here.
+        catalog.Active = Version(
+            1,
+            luna: Luna,
+            model: BibleProposalCostEstimator.DefaultModel,
+            other: Sol,
+            otherModel: "gpt-6-sol");
         var sut = Estimator(new StubCatalog(), catalog, Configuration(model: null));
 
         var result = await sut.WorstCaseAsync(Ct);
 
-        // gpt-6-luna is not in this version's rates and the default model is: a silent fallback would throw here.
+        // The default is the adapter's own: the value `OpenAiOptions` carries when `OpenAi:Models:Bible` is absent.
+        BibleProposalCostEstimator.DefaultModel.ShouldBe(new OpenAiOptions().Models[TextStep.Bible]);
         result.IsError.ShouldBeFalse();
-        result.Value.WorstCaseUsd.ShouldBeGreaterThan(0m);
-        BibleProposalCostEstimator.DefaultModel.ShouldBe("gpt-6-luna");
+        result.Value.WorstCaseUsd.ShouldBe(
+            TextCostCalculator.Compute(Luna, result.Value.MaxInputTokens, 0, result.Value.MaxInputTokens, 1_200, TextCostCalculator.DefaultSurchargeThresholdTokens).ShouldNotBeNull(),
+            "an absent OpenAi:Models:Bible is priced at the adapter's default, never at the version's other model");
     }
 
     [Fact]
@@ -182,11 +195,20 @@ public sealed class BibleProposalCostEstimatorTests
         int number,
         int bibleProposalMaxOutput = 1_200,
         PriceRates? luna = null,
-        string model = "gpt-6-luna")
+        string model = "gpt-6-luna",
+        PriceRates? other = null,
+        string otherModel = "gpt-6-sol")
     {
         var activeFrom = new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
+        var table = new Dictionary<string, PriceRates>(StringComparer.Ordinal) { [model] = luna ?? Luna };
+        if (other is not null)
+        {
+            // A second priced model: what lets a test prove the estimator never prices its default with it.
+            table[otherModel] = other;
+        }
+
         var rates = new PriceVersionRates(
-            new Dictionary<string, PriceRates> { [model] = luna ?? Luna },
+            table,
             new Dictionary<string, ImagePriceRate>(),
             null).ToJson();
         var limits = PriceVersionJson.WriteLimits(PriceLimits.D4Defaults with { BibleProposalMaxOutput = bibleProposalMaxOutput });

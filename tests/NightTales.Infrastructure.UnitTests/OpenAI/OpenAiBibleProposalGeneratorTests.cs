@@ -40,7 +40,7 @@ public sealed class OpenAiBibleProposalGeneratorTests
         var catalog = new StubCatalog();
         var draft = Draft();
         var client = new FakeTextClient().EnqueueOk(TextStep.Bible, draft);
-        var generator = Generator(client, new OpenAiBibleProposalMetrics());
+        var generator = Generator(client, new OpenAiBibleProposalMetrics(), catalog: catalog);
 
         var result = await generator.GenerateAsync(Request(Body()), Ct);
 
@@ -160,7 +160,8 @@ public sealed class OpenAiBibleProposalGeneratorTests
     public async Task GenerateAsync_MetersOneUsageRow_UnderTheBibleProposalOperation()
     {
         var meter = new RecordingMeter();
-        var client = new FakeTextClient().EnqueueOk(TextStep.Bible, Draft());
+        var usage = new TokenUsage(1_000, 200, 300, 120, 40);
+        var client = new FakeTextClient().EnqueueOk(TextStep.Bible, Draft(), usage);
         var generator = Generator(client, new OpenAiBibleProposalMetrics(), meter);
         var request = Request(Body());
 
@@ -176,6 +177,10 @@ public sealed class OpenAiBibleProposalGeneratorTests
             i => i.GenerationRunId.ShouldBe(request.Run.GenerationRunId),
             i => i.EpisodeId.ShouldBe(request.Run.EpisodeId),
             i => i.ReservationId.ShouldBe(request.Run.Reservation.Value),
+            // The provider reported usage, so the row carries it and is not an estimate; the settled cost is
+            // still the D1 bound the run was admitted with (what the ledger settles the reservation against).
+            i => i.InputTokens.ShouldBe(usage.InputTokens),
+            i => i.OutputTokens.ShouldBe(usage.OutputTokens),
             i => i.Estimated.ShouldBeFalse(),
             i => i.CostUsd.ShouldBe(3m));
     }
@@ -251,10 +256,11 @@ public sealed class OpenAiBibleProposalGeneratorTests
         IUsageMeter? meter = null,
         StubEstimator? estimator = null,
         int maxSummaries = 2,
-        int maxStoryChars = 24_000) =>
+        int maxStoryChars = 24_000,
+        StubCatalog? catalog = null) =>
         new(
             client,
-            new StubCatalog(),
+            catalog ?? new StubCatalog(),
             Microsoft.Extensions.Options.Options.Create(new BibleOptions
             {
                 Proposal = new BibleProposalOptions { MaxStoryChars = maxStoryChars },

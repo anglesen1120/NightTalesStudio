@@ -285,9 +285,10 @@ public sealed class BibleProposalValidatorTests
 
         merged.Count.ShouldBe(3, "the order is the stored ops first, then the new ones");
         merged[0].Name.ShouldBe("Bà Tư");
-        merged[2].Text.ShouldBe("Không nói tên thật.");
-        merged[1].Kind.ShouldBe(BibleOpKind.AddPlace);
-        merged[2].Kind.ShouldBe(BibleOpKind.AddRule);
+        merged[1].Text.ShouldBe("Không nói tên thật.");
+        merged[1].Kind.ShouldBe(BibleOpKind.AddRule);
+        merged[2].Name.ShouldBe("Ngôi nhà cuối ngõ");
+        merged[2].Kind.ShouldBe(BibleOpKind.AddPlace);
     }
 
     [Fact]

@@ -16,6 +16,7 @@ using NightTales.Application.Features.Research.Jobs;
 using NightTales.Application.Features.Research.Outbox;
 using NightTales.Application.Features.Research.Sources.Outbox;
 using NightTales.Application.Features.SeriesBible;
+using NightTales.Application.Features.SeriesBible.Abstractions;
 using NightTales.Application.Features.SeriesBible.Events;
 using NightTales.Application.Features.Stories.Jobs;
 using NightTales.Application.Features.Stories.Outbox;
@@ -258,11 +259,13 @@ public static class WorkerServiceCollectionExtensions
         // `AddNightTalesApplication`), and the caps the handler takes are the `BibleProposalJobOptions` bound below.
         services.AddBibleProposalGeneration();
 
-        // `Bible:Proposal` is read by both halves of this feature: the handler holds `IOptionsMonitor` so the kill
-        // switch takes effect without a restart, and the job takes the four batch caps. This root binds the
-        // Application options class, because the Application layer cannot reference the Infrastructure class that
-        // binds the same section for the text adapter. Every key has a default, so none is a required start-up
-        // key; a negative cap fails the boot.
+        // `Bible:Proposal` is read by both halves of this feature: the handler reads the kill switch through
+        // `IBibleProposalSwitch`, whose Worker implementation holds the `IOptionsMonitor` so the switch takes
+        // effect without a restart, and the job takes the four batch caps. This root binds the Application
+        // options class, because the Application layer cannot reference the Infrastructure class that binds the
+        // same section for the text adapter (nor `Microsoft.Extensions.Options` itself, which the architecture
+        // rule keeps out of that assembly). Every key has a default, so none is a required start-up key; a
+        // negative cap fails the boot.
         services.AddOptions<BibleProposalJobOptions>()
             .BindConfiguration(BibleProposalJobOptions.SectionName)
             .Validate(
@@ -273,6 +276,10 @@ public static class WorkerServiceCollectionExtensions
                 $"'{BibleProposalJobOptions.SectionName}' must hold non-negative op caps.")
             .ValidateOnStart();
         services.TryAddSingleton(provider => provider.GetRequiredService<IOptions<BibleProposalJobOptions>>().Value);
+
+        // The handler's view of that section: the switch is read live, so the rollback in the plan's §11 needs no
+        // restart, while the four caps below are the snapshot the job takes once.
+        services.TryAddSingleton<IBibleProposalSwitch, BibleProposalSwitch>();
 
         // `BibleProposalCaps` is that value's four caps as the Domain record the post-filter and the merge guard
         // take, so the Application layer never references the Infrastructure options class that binds the section.
