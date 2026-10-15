@@ -73,6 +73,27 @@ public sealed class RenderEpisodeCommandHandlerQaTests(TestDatabase database) : 
         result.Value.Status.ShouldBe(RenderJob.QueuedStage);
     }
 
+    [Theory]
+    [InlineData("\uFFFE")]
+    [InlineData("\U0001FFFE")]
+    public async Task Keyword_WithNoncharacter_DoesNotThrow_AndKeepsTheFlagIndex(string refused)
+    {
+        var seed = await SeedAsync();
+        var ports = PortsFor(
+            seed,
+            StoryInput(
+                seed.StoryVersionId,
+                [new SegmentKeywords("hook", ["quiet street" + refused + "at night", "two" + refused + "words"])]));
+        await using var db = Open(seed.UserId);
+        var handler = Handler(db, ports);
+
+        var result = await handler.Handle(Command(seed, ETags.Episode(seed.EpisodeVersion)), Ct);
+
+        result.FirstError.Code.ShouldBe(ErrorCodes.KeywordsFlagged);
+        var flags = result.FirstError.Metadata![ErrorMetadata.Flags].ShouldBeAssignableTo<IReadOnlyList<KeywordFlag>>();
+        flags.ShouldBe([new KeywordFlag("hook", 1, StoryDraftValidator.KeywordInvalid)]);
+    }
+
     [Fact]
     public async Task Script_NoncharacterAtTheLimit_Passes_AfterReplacement()
     {

@@ -196,7 +196,7 @@ public static class PersistenceServiceCollectionExtensions
         services.AddScoped<ISystemWorkQuery, SystemWorkQuery>();
 
         // 05.3.2-T3: the avoid-recent port of the music selector. 09.6.1-T1 lands the real read over
-        // render_jobs.params; NullRecentMusicQuery stays as the hand-written fake of the unit tests.
+        // render_jobs.params.
         services.AddScoped<IRecentMusicQuery, RecentMusicQuery>();
 
         // 09.3.1-T1: Identity (BD2) + the registration, password-policy and consent services. Every

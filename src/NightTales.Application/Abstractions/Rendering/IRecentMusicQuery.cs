@@ -13,8 +13,8 @@ namespace NightTales.Application.Abstractions.Rendering;
 /// order by created_at desc limit @take;
 /// </code>
 /// <c>render_jobs</c> is created by 09.6.1. The registered implementation is <c>RecentMusicQuery</c> (Infrastructure,
-/// 09.6.1-T1; the raw <c>SqlQuery&lt;string&gt;</c> shape is its call), registered by <c>AddPersistence</c>; it replaces
-/// the <see cref="NullRecentMusicQuery"/> that was registered before 09.6.1-T1.
+/// 09.6.1-T1; the raw <c>SqlQuery&lt;string&gt;</c> shape is its call), registered by <c>AddPersistence</c>. The
+/// M1 null implementation that returned an empty list was removed when it landed.
 /// <para>
 /// Tenant isolation (05.3.2-T3 gate SEC-5): <c>render_jobs</c> is tenant-owned while <c>music_tracks</c> is not,
 /// so the implementation MUST read through the tenant-filtered <c>RenderJobs</c> set, or a raw query MUST add a
