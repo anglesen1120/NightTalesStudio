@@ -1,7 +1,6 @@
 using ErrorOr;
 using Mediator;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Options;
 using NightTales.Application.Abstractions.Persistence;
 using NightTales.Application.Publishing;
 using NightTales.Application.Publishing.Quota;
@@ -17,7 +16,7 @@ namespace NightTales.Application.Features.Publishing.Queries.GetYouTubeEta;
 public sealed class GetYouTubeEtaHandler(
     IReadDb readDb,
     IClock clock,
-    IOptionsMonitor<YouTubeOptions> options) : IQueryHandler<GetYouTubeEtaQuery, ErrorOr<YouTubeEtaDto>>
+    YouTubeOptions options) : IQueryHandler<GetYouTubeEtaQuery, ErrorOr<YouTubeEtaDto>>
 {
     private const string YouTubePlatform = "youtube";
 
@@ -34,7 +33,7 @@ public sealed class GetYouTubeEtaHandler(
 
         if (row is null)
         {
-            return new YouTubeEtaDto(options.CurrentValue.Quota.UnitsPerDay, null);
+            return new YouTubeEtaDto(options.Quota.UnitsPerDay, null);
         }
 
         var available = Math.Max(0, row.UnitsLimit - row.UnitsUsed);

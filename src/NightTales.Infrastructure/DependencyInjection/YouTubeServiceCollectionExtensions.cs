@@ -31,6 +31,9 @@ public static class YouTubeServiceCollectionExtensions
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IValidateOptions<YouTubeOptions>, YouTubeOptionsValidator>());
 
         services.TryAddScoped<IQuotaLedger, YouTubeQuotaLedger>();
+        // Application cannot reference Microsoft.Extensions.Options, so the ETA handler takes the plain value; the scoped
+        // lifetime re-reads the monitor per request, so a configuration reload is seen on the next call.
+        services.TryAddScoped(provider => provider.GetRequiredService<IOptionsMonitor<YouTubeOptions>>().CurrentValue);
 
         return services;
     }
