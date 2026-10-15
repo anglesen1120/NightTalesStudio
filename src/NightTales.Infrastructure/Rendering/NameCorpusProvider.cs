@@ -27,7 +27,7 @@ namespace NightTales.Infrastructure.Rendering;
 /// no logger, so no name can reach the log (02 README D19). The three reads are one query each, never a
 /// per-row query. The title count is one per fetched url source of the episode, bounded by the episode's source
 /// cap (<c>Sources:MaxPerEpisode</c>, default 10); the fact count is bounded by
-/// <see cref="FactSheetJobOptions.MaxMaxFacts"/> (the <c>facts.v1</c> ceiling of one approved version, 40); and
+/// <see cref="FactSheetExtractionOptions.MaxMaxFacts"/> (the <c>facts.v1</c> ceiling of one approved version, 40); and
 /// the corpus reads at most <see cref="NameCorpus.MaxTexts"/> texts in total, so no read here is bounded by a
 /// Take.
 /// </para>

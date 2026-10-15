@@ -20,8 +20,10 @@ namespace NightTales.Domain.Stories.Keywords;
 /// <para>
 /// The corpus check runs for a keyword that passes the rules and for every <see cref="KeywordRules"/> violation
 /// except R2 (<see cref="KeywordRules.NotEnglish"/>): a keyword whose only violation is the non-ASCII alphabet
-/// rule must be rewritten anyway, so the check is deferred to the next lint. That keeps the R2 path linear and
-/// never hands a non-ASCII flood to the corpus.
+/// rule must be rewritten anyway, so the name check is deferred to the re-lint of the rewritten keyword — it is
+/// not a guard against a hostile keyword. <see cref="KeywordRules.Check"/> NFC-normalises the keyword before the
+/// R2 test, and R2 is the last rule of <see cref="KeywordRules.Check"/>, so a keyword that fails any earlier rule
+/// still reaches <see cref="NameCorpus.Matches"/> with its full length.
 /// </para>
 /// <para>
 /// Issues never carry the keyword, the matched name or any source text — only the rule id, the D22 address, the
@@ -114,10 +116,11 @@ public static class RenderKeywordLinter
                         KeywordRepairDirection));
                 }
 
-                // S4 (skip the corpus check when R2 already rejected the keyword): a keyword that fails the
-                // non-ASCII alphabet rule must be rewritten anyway and the check re-runs on the next lint.
-                // It also keeps a hostile combining-mark flood out of NameCorpus.Matches' NFD canonical
-                // reordering, which is quadratic in the number of combining marks of one word. Any other
+                // S4 (skip the corpus check when R2 already rejected the keyword): a keyword whose only
+                // violation is the non-ASCII alphabet rule must be rewritten anyway, so the name check is
+                // deferred to the re-lint of the rewritten keyword — it is not a DoS guard. Check
+                // NFC-normalises the keyword before the R2 test, and R2 is the last rule, so a keyword that
+                // fails an earlier rule still reaches NameCorpus.Matches with its full length. Any other
                 // violation, and a valid keyword (RuleId stays empty), still get the corpus check.
                 if (violation.RuleId != KeywordRules.NotEnglish
                     && names.Matches(keyword, out var runTokens))

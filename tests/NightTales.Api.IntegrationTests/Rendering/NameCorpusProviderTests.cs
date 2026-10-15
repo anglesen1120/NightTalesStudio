@@ -49,6 +49,14 @@ public sealed class NameCorpusProviderTests(TestDatabase database) : Integration
     /// <summary>A statement with no run of two capitalised tokens: it can never contribute a name.</summary>
     private const string HarmlessStatement = "The victim lived in a small coastal town.";
 
+    /// <summary>
+    /// A mostly-capitalised fact statement — 6 of its 7 long tokens are capitalised (≈ 86 %) — the shape D11's
+    /// Title Case guard would skip as a headline. Its runs are <c>Nguyen Thi Lan</c> and <c>Tran Van Hung</c>.
+    /// The provider must keep it, because a statement is fed through the statements side of the two-argument
+    /// <see cref="NameCorpus.From(IEnumerable{string}, IEnumerable{string})"/> overload (CR-18d).
+    /// </summary>
+    private const string HeadlineShapedStatement = "Nạn nhân là Nguyễn Thị Lan và Trần Văn Hùng";
+
     /// <summary>A source title with no run of two capitalised tokens.</summary>
     private const string HarmlessTitle = "Local report on the incident";
 
@@ -71,6 +79,25 @@ public sealed class NameCorpusProviderTests(TestDatabase database) : Integration
         corpus.Matches("a close up of dang thi hong").ShouldBeTrue("the approved fact names Đặng Thị Hồng");
         corpus.Matches("a pine forest in da lat").ShouldBeTrue("a place name of the title is caught too (G4 [DECISION])");
         corpus.Matches("mountain town at night").ShouldBeFalse("no run of the corpus appears in that keyword");
+    }
+
+    [Fact]
+    public async Task Provider_MostlyCapitalisedFactStatement_NotSkippedAsHeadline()
+    {
+        var (userId, episodeId) = await SeedEpisodeAsync(Topic.TrueCrime);
+        var sourceId = await AddFetchedUrlAsync(userId, episodeId, HarmlessTitle);
+        await SeedSheetAsync(userId, episodeId, version: 1, HeadlineShapedStatement, sourceId, FactSheetStatus.Approved);
+
+        using var host = BuildHost();
+        var corpus = await LoadAsync(host, userId, episodeId);
+
+        // S1 (CR-18d): the statement is guarded as a headline by a one-list fold — 6 of its 7 long tokens are
+        // capitalised, the Title Case shape — so the provider must keep it, because only the titles go through the
+        // guard. Reverting the provider to NameCorpus.From(statements) drops both names and this test fails.
+        corpus.Matches("portrait of nguyen thi lan at dawn")
+            .ShouldBeTrue("an approved statement is never skipped as a headline, so its names stay in the corpus");
+        corpus.Matches("a close up of tran van hung by the river")
+            .ShouldBeTrue("both people named by the statement are corpus names");
     }
 
     [Fact]
