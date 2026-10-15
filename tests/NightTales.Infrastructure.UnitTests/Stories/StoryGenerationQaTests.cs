@@ -654,6 +654,7 @@ public sealed class StoryGenerationQaTests(TestDatabase database) : IntegrationT
                 _db,
                 Progress,
                 new StoryWriteRequestFactory(new FixedCatalog()),
+                new NoBibleSnapshotProvider(),
                 new FakeFactSheetGuard(),
                 Moderator,
                 new NullEvents(),

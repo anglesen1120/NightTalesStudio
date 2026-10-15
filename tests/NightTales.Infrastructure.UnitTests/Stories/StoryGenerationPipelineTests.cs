@@ -10,6 +10,7 @@ using NightTales.Application.Abstractions.Research;
 using NightTales.Application.Abstractions.Text;
 using NightTales.Application.Abstractions.Usage;
 using NightTales.Application.Common.Errors;
+using NightTales.Application.Features.SeriesBible.Abstractions;
 using NightTales.Application.Features.Stories;
 using NightTales.Application.Features.Stories.Generation;
 using NightTales.Application.Features.Stories.Jobs;
@@ -542,7 +543,7 @@ public sealed class StoryGenerationPipelineTests(TestDatabase database) : Integr
         var run = await db.GenerationRuns.SingleAsync(candidate => candidate.Id == world.RunId, Ct);
         var episode = await db.Episodes.SingleAsync(candidate => candidate.Id == world.EpisodeId, Ct);
 
-        var built = await world.Factory.BuildAsync(run, episode, Topic.Ghost, Language.Vi, null, 0, null, Ct);
+        var built = await world.Factory.BuildAsync(run, episode, Topic.Ghost, Language.Vi, null, 0, null, new BibleForWriter(null, [], 0), Ct);
 
         built.IsError.ShouldBeFalse();
         built.Value.Request.Run.PriceVersion.ShouldBe("7");
@@ -919,6 +920,7 @@ public sealed class StoryGenerationPipelineTests(TestDatabase database) : Integr
                 _db,
                 Progress,
                 Factory,
+                new NoBibleSnapshotProvider(),
                 new FakeFactSheetGuard { ApprovedSheet = approvedSheet },
                 Scopes,
                 Events,

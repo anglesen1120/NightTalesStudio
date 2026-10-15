@@ -15,6 +15,7 @@ using NightTales.Application.Abstractions.Rendering;
 using NightTales.Application.Audit;
 using NightTales.Application.Features.Platform.Retention;
 using NightTales.Application.Features.Research.Jobs;
+using NightTales.Application.Features.SeriesBible.Abstractions;
 using NightTales.Domain.Common;
 using NightTales.Domain.Series.Bible;
 using NightTales.Infrastructure.DependencyInjection;
@@ -100,6 +101,7 @@ public static class PersistenceServiceCollectionExtensions
             .ValidateOnStart();
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IValidateOptions<BibleOptions>, BibleOptionsValidator>());
         services.TryAddSingleton(provider => provider.GetRequiredService<IOptions<BibleOptions>>().Value.Limits);
+        services.TryAddScoped<IBibleSnapshotProvider, NightTales.Infrastructure.Bible.BibleSnapshotProvider>();
 
         // The default actor is anonymous, so a host that registers none sees no user-owned row — deny
         // by default (09 README D10). The Api replaces it with HttpCurrentUser and the Worker with

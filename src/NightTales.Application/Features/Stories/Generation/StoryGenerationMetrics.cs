@@ -32,6 +32,9 @@ public sealed class StoryGenerationMetrics : IDisposable
     /// <summary>Corpus failures, by bounded reason.</summary>
     public const string SimilarityUnavailableCounterName = "similarity_unavailable_total";
 
+    /// <summary>Runs whose series bible snapshot had to be truncated to fit the writer budget (02.6.3-T3).</summary>
+    public const string BibleSnapshotTruncatedCounterName = "bible_snapshot_truncated_total";
+
     private readonly Meter _meter = new(MeterName);
     private readonly Histogram<double> _duration;
     private readonly Counter<long> _invalidOutput;
@@ -40,6 +43,7 @@ public sealed class StoryGenerationMetrics : IDisposable
     private readonly Histogram<double> _similarityScore;
     private readonly Histogram<double> _similarityDuration;
     private readonly Counter<long> _similarityUnavailable;
+    private readonly Counter<long> _bibleSnapshotTruncated;
 
     /// <summary>Creates the instruments.</summary>
     public StoryGenerationMetrics()
@@ -51,6 +55,7 @@ public sealed class StoryGenerationMetrics : IDisposable
         _similarityScore = _meter.CreateHistogram<double>(SimilarityScoreHistogramName, "1", "Generation similarity score.");
         _similarityDuration = _meter.CreateHistogram<double>(SimilarityDurationHistogramName, "s", "Time spent loading and scoring similarity.");
         _similarityUnavailable = _meter.CreateCounter<long>(SimilarityUnavailableCounterName, "1", "Similarity corpus failures.");
+        _bibleSnapshotTruncated = _meter.CreateCounter<long>(BibleSnapshotTruncatedCounterName, "1", "Runs whose bible snapshot was truncated.");
     }
 
     /// <summary>Records the time one stage took.</summary>
@@ -79,6 +84,9 @@ public sealed class StoryGenerationMetrics : IDisposable
 
     /// <summary>Counts one run that passed 80 % of its deadline.</summary>
     public void SoftTimeout() => _softTimeout.Add(1);
+
+    /// <summary>Counts one run whose bible snapshot was truncated.</summary>
+    public void BibleSnapshotTruncated() => _bibleSnapshotTruncated.Add(1);
 
     /// <summary>Records a completed score and its duration.</summary>
     public void SimilarityScored(string corpus, double score, double seconds)

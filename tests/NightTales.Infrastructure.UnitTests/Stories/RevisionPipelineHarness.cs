@@ -196,6 +196,7 @@ internal sealed class RevisionWorld
             db: db,
             progress: progress,
             requests: factory,
+            bibles: new NoBibleSnapshotProvider(),
             factSheetGuard: new FakeFactSheetGuard { ApprovedSheet = approvedSheet },
             moderator: moderator,
             moderationEvents: events,
