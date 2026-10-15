@@ -28,7 +28,6 @@ public sealed class BibleProposalApplierTests
 {
     private static readonly DateTimeOffset Now = new(2026, 10, 15, 9, 0, 0, TimeSpan.Zero);
 
-    private static readonly Guid SeriesId = Guid.Parse("0197b000-0000-7000-8000-000000000001");
     private static readonly Guid UserId = Guid.Parse("0197b000-0000-7000-8000-000000000002");
     private static readonly Guid EpisodeId = Guid.Parse("0197b000-0000-7000-8000-0000000000a1");
 
@@ -41,8 +40,7 @@ public sealed class BibleProposalApplierTests
     public void Apply_AppliesTheOps_BumpsTheVersion_ClearsTheProposalAndAnnouncesIt()
     {
         var clock = new FakeClock(Now);
-        var series = Series();
-        var bible = Bible(clock);
+        var (series, bible) = World(clock);
         bible.SetProposal(
             Proposal(
                 Character("Bà Tư"),
@@ -66,7 +64,7 @@ public sealed class BibleProposalApplierTests
         // The announcement an accept shares with a manual save (plan §5): the series aggregate raises it, so the
         // outbox row joins the accept's own transaction.
         var raised = series.DomainEvents.OfType<SeriesBibleUpdated>().Single();
-        raised.SeriesId.ShouldBe(SeriesId);
+        raised.SeriesId.ShouldBe(series.Id, "the announcement names the series whose bible moved");
         raised.UserId.ShouldBe(UserId);
         raised.Version.ShouldBe(2);
         raised.ChangedBy.ShouldBe(UserId, "the accepting user is the actor of a manual accept");
@@ -77,8 +75,7 @@ public sealed class BibleProposalApplierTests
     public void Apply_AnnouncesTheActorTheCallerNames()
     {
         var clock = new FakeClock(Now);
-        var series = Series();
-        var bible = Bible(clock);
+        var (series, bible) = World(clock);
         bible.SetProposal(Proposal(Character("Bà Tư")), EpisodeId, clock);
         var owner = Guid.Parse("0197b000-0000-7000-8000-0000000000ff");
 
@@ -92,13 +89,13 @@ public sealed class BibleProposalApplierTests
     public void Apply_SummaryOp_IsBoundToTheSourceEpisode()
     {
         var clock = new FakeClock(Now);
-        var bible = Bible(clock);
+        var (series, bible) = World(clock);
         bible.SetProposal(
             Proposal(new BibleOp(BibleOpKind.AddSummary, "Một chuyện ma nhẹ nhàng.", "Căn nhà cuối hành lang", null, null, null)),
             EpisodeId,
             clock);
 
-        var result = Applier(clock).Apply(Series(), bible, Source(), UserId);
+        var result = Applier(clock).Apply(series, bible, Source(), UserId);
 
         result.Applied.Count.ShouldBe(1);
         var summary = bible.Content.EpisodeSummaries.Single();
@@ -113,7 +110,7 @@ public sealed class BibleProposalApplierTests
     public void Apply_ForbiddenCharacterInAnOp_DropsTheOpInsteadOfStoringIt()
     {
         var clock = new FakeClock(Now);
-        var bible = Bible(clock);
+        var (series, bible) = World(clock);
         bible.SetProposal(
             Proposal(
                 Character("Bà <script> Tư"),
@@ -121,7 +118,7 @@ public sealed class BibleProposalApplierTests
             EpisodeId,
             clock);
 
-        var result = Applier(clock).Apply(Series(), bible, Source(), UserId);
+        var result = Applier(clock).Apply(series, bible, Source(), UserId);
 
         // A stored name carrying `<` would make the very next PUT refuse the document the client holds, so the op
         // is dropped and counted instead of being written (02.6.3-T1 note, plan §4 U4).
@@ -136,7 +133,7 @@ public sealed class BibleProposalApplierTests
     public void Apply_WithoutASource_SkipsTheSummaryOpsAndAppliesTheRest()
     {
         var clock = new FakeClock(Now);
-        var bible = Bible(clock);
+        var (series, bible) = World(clock);
         bible.SetProposal(
             Proposal(
                 Character("Bà Tư"),
@@ -147,7 +144,7 @@ public sealed class BibleProposalApplierTests
         // The episode the ops came from was reopened after the proposal was staged: there is no approval left to
         // derive a summary's structure and approved_at from, and a summary bound to an unapproved episode would be
         // refused by the next PUT (not_approved_episode), so the accept applies what it can.
-        var result = Applier(clock).Apply(Series(), bible, source: null, UserId);
+        var result = Applier(clock).Apply(series, bible, source: null, UserId);
 
         result.Applied.Count.ShouldBe(1);
         result.Skipped.ShouldBe(1);
@@ -160,10 +157,10 @@ public sealed class BibleProposalApplierTests
     public void Apply_WithoutAPendingProposal_Throws()
     {
         var clock = new FakeClock(Now);
-        var bible = Bible(clock);
+        var (series, bible) = World(clock);
 
         var exception = Should.Throw<InvalidOperationException>(() =>
-            Applier(clock).Apply(Series(), bible, Source(), UserId));
+            Applier(clock).Apply(series, bible, Source(), UserId));
 
         exception.Message.ShouldContain("no pending proposal");
         bible.Version.ShouldBe(1, "nothing was written");
@@ -173,17 +170,26 @@ public sealed class BibleProposalApplierTests
     public void Apply_WithoutAnActor_Throws()
     {
         var clock = new FakeClock(Now);
-        var bible = Bible(clock);
+        var (series, bible) = World(clock);
         bible.SetProposal(Proposal(Character("Bà Tư")), EpisodeId, clock);
 
-        Should.Throw<ArgumentException>(() => Applier(clock).Apply(Series(), bible, Source(), Guid.Empty))
+        Should.Throw<ArgumentException>(() => Applier(clock).Apply(series, bible, Source(), Guid.Empty))
             .ParamName.ShouldBe("changedBy");
         bible.Version.ShouldBe(1, "nothing was written");
     }
 
     private static BibleProposalApplier Applier(IClock clock) => new(Limits, clock);
 
-    private static SeriesBibleEntity Bible(IClock clock) => SeriesBibleEntity.CreateDefault(SeriesId, UserId, clock);
+    /// <summary>
+    /// The one series and the one bible row an apply moves: the row belongs to the aggregate, so the announcement
+    /// the apply raises names the series the caller passed.
+    /// </summary>
+    private static (SeriesAggregate Series, SeriesBibleEntity Bible) World(IClock clock)
+    {
+        var series = Series();
+
+        return (series, SeriesBibleEntity.CreateDefault(series.Id, UserId, clock));
+    }
 
     private static BibleProposal Proposal(params BibleOp[] ops) => new(ops, SeriesBibleEntity.InitialVersion, Now);
 

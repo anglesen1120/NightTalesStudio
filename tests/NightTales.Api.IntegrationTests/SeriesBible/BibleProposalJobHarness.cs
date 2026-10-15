@@ -378,6 +378,22 @@ internal static class BibleProposalJobHarness
              FROM usage_records WHERE user_id = '{Pg(userId)}'
              """);
 
+    /// <summary>
+    /// The price version a run queued at <see cref="Start"/> is costed with, by the catalog's own rule: the newest
+    /// row whose <c>active_from</c> is not after the run's <c>queued_at</c>. The fixture seeds version 1, but the
+    /// host's start-up seeder row can be newer and win, so the expected number is read instead of assumed.
+    /// </summary>
+    /// <param name="database">The class database.</param>
+    /// <returns>The version number, as the <c>usage_records</c> column stores it.</returns>
+    internal static string ActivePriceVersion(TestDatabase database) =>
+        SqlProbe.ScalarText(
+            database,
+            $"""
+             SELECT version::text FROM price_versions
+             WHERE active_from <= '{Start.ToString("O", CultureInfo.InvariantCulture)}'
+             ORDER BY version DESC LIMIT 1
+             """);
+
     /// <summary>How many <c>moderation_events</c> rows the owner has.</summary>
     /// <param name="database">The class database.</param>
     /// <param name="userId">The owner.</param>

@@ -56,7 +56,7 @@ public sealed class StoryApprovedBibleProposalTests(TestDatabase database) : Int
         worker.Jobs.Enqueued.Select(enqueue => enqueue.JobType).ShouldBe(["ProposeBibleUpdateJob"]);
         worker.Jobs.Enqueued[0].Delay.ShouldBeNull("the first delivery enqueues immediately");
         worker.Jobs.Failures.ShouldBeEmpty();
-        Deliveries(processed: true).ShouldBe(1, "the delivery succeeded, so the message is not redelivered");
+        Deliveries(world).ShouldBe(1, "the delivery succeeded, so the message is not redelivered");
     }
 
     [Fact]
@@ -75,7 +75,7 @@ public sealed class StoryApprovedBibleProposalTests(TestDatabase database) : Int
         RunCount(world.SeriesId).ShouldBe(1);
         RunRow(world.SeriesId).ShouldBe($"true|false|system|queued|{Key(episode)}|true|true");
         worker.Jobs.Failures.ShouldBeEmpty();
-        Deliveries(processed: true).ShouldBe(2);
+        Deliveries(world).ShouldBe(2);
 
         // The second delivery re-enqueues the run it found still queued: a commit whose enqueue died would
         // otherwise leave a run nobody runs. The job itself is idempotent on the run, so the repeat is harmless.
@@ -134,7 +134,7 @@ public sealed class StoryApprovedBibleProposalTests(TestDatabase database) : Int
             .ShouldBe("failed|spend_cap_reached|false|true", "a nice-to-have never breaks the budget (plan §7.1 step 3)");
 
         // The event was delivered (not dead-lettered): the refusal is an outcome, not a handler failure.
-        Deliveries(processed: true).ShouldBe(1);
+        Deliveries(world).ShouldBe(1);
         worker.Jobs.Enqueued.ShouldBeEmpty();
         worker.Jobs.Failures.ShouldBeEmpty();
     }
@@ -230,7 +230,7 @@ public sealed class StoryApprovedBibleProposalTests(TestDatabase database) : Int
             .ShouldBe(TimeSpan.FromMinutes(2), "the deferred delivery waits one run out");
         worker.Jobs.Enqueued.ShouldNotContain(enqueue => enqueue.JobType == "ProposeBibleUpdateJob");
         worker.Jobs.Failures.ShouldBeEmpty();
-        Deliveries(processed: true).ShouldBe(1, "the refusal is handled, so the message is neither redelivered nor dead-lettered by this delivery");
+        Deliveries(world).ShouldBe(1, "the refusal is handled, so the message is neither redelivered nor dead-lettered by this delivery");
 
         // Both episodes exist, so the deferral is about the index and nothing else.
         SqlProbe.Count(Database, $"SELECT count(*) FROM episodes WHERE series_id = '{world.SeriesId.ToString("D", CultureInfo.InvariantCulture)}'")
@@ -326,13 +326,20 @@ public sealed class StoryApprovedBibleProposalTests(TestDatabase database) : Int
             Database,
             $"SELECT count(*) FROM generation_runs WHERE series_id = '{seriesId.ToString("D", CultureInfo.InvariantCulture)}'");
 
-    /// <summary>How many outbox messages of this feature's type are processed (or not) yet.</summary>
-    private long Deliveries(bool processed) =>
+    /// <summary>
+    /// How many <c>story_approved.v1</c> rows this test's own owner had processed. Scoped to the owner: the class
+    /// shares one database and every test of it seeds its own approvals, so an unscoped count would also see the
+    /// rows of whatever else ran first and depend on the order.
+    /// </summary>
+    private long Deliveries(World world) =>
         SqlProbe.Count(
             Database,
-            processed
-                ? "SELECT count(*) FROM outbox_messages WHERE type = 'story_approved.v1' AND processed_at IS NOT NULL"
-                : "SELECT count(*) FROM outbox_messages WHERE type = 'story_approved.v1' AND processed_at IS NULL");
+            $"""
+             SELECT count(*) FROM outbox_messages
+             WHERE type = 'story_approved.v1'
+                 AND user_id = '{world.UserId.ToString("D", CultureInfo.InvariantCulture)}'
+                 AND processed_at IS NOT NULL
+             """);
 
     /// <summary>
     /// The Worker host of these tests: the production graph with the priced catalogue replaced by a fixed bound and

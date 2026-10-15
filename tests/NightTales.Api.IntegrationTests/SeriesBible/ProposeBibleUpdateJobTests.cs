@@ -233,8 +233,10 @@ public sealed class ProposeBibleUpdateJobTests(TestDatabase database) : Integrat
     // ------------------------------------------------------------- the outcomes of the paid call
 
     /// <summary>
-    /// D7's single invalid-output retry: the first answer is retried once (attempt = 2) and the second ends the run
-    /// typed, with the reservation released exactly once.
+    /// D7's single invalid-output retry: the first answer is retried once and the second ends the run typed, with
+    /// the reservation released exactly once. The retry travels as the second attempt of the request context, and
+    /// <c>generation_runs.attempt</c> is the retry counter the retry writes (plan §3.1: 0 is the first attempt), so
+    /// the row shows one.
     /// </summary>
     [Fact]
     public async Task ProposeBibleUpdate_ModelInvalidOutput_RetriesOnceThenFails()
@@ -252,7 +254,7 @@ public sealed class ProposeBibleUpdateJobTests(TestDatabase database) : Integrat
         await BibleProposalJobHarness.DeliverAndRunAsync(worker);
 
         BibleProposalJobHarness.RunRows(Database, world.SeriesId).ShouldBe(
-            $"true|bible_proposal|system|failed|writing|{ErrorCodes.BibleProposalInvalidOutput}|invalid_output_twice|2|false|false|true");
+            $"true|bible_proposal|system|failed|writing|{ErrorCodes.BibleProposalInvalidOutput}|invalid_output_twice|1|false|false|true");
         text.Requests.Count.ShouldBe(2, "one retry, never a third call");
         text.Requests.Select(request => request.Run.Attempt).ShouldBe([1, 2], "the retry travels as attempt 2");
 
@@ -457,7 +459,12 @@ public sealed class ProposeBibleUpdateJobTests(TestDatabase database) : Integrat
         text.Requests[0].UserDataJson.ShouldContain(InjectionText);
 
         var bible = await BibleProposalJobHarness.BibleAsync(Database, world.UserId, world.SeriesId);
-        BibleProposalJobHarness.ProposalKinds(bible).ShouldBe(["add_rule", "add_character"]);
+        BibleProposalJobHarness.ProposalKinds(bible).ShouldBe(
+            ["add_rule", "add_character", "add_summary"],
+            "the model's own two ops, plus the deterministic summary fallback the answer did not carry");
+        BibleProposalJobHarness.ProposalSummaries(bible).ShouldBe(
+            [BibleProposalJobHarness.StoryDescription],
+            "the summary is the story's own description, never the injection text");
         BibleProposalJobHarness.BibleColumns(Database, world.SeriesId).ShouldBe($"2|false|{BibleProposalJobHarness.Pg(episode.Id)}");
 
         // The stored content is the write the PUT made: the proposal never touches it.
@@ -490,7 +497,7 @@ public sealed class ProposeBibleUpdateJobTests(TestDatabase database) : Integrat
 
         BibleProposalJobHarness.UsageCount(Database, world.UserId).ShouldBe(1);
         BibleProposalJobHarness.UsageRow(Database, world.UserId, episode.Id, world.SeriesId)
-            .ShouldBe($"bible_proposal|1|true|true|true|false");
+            .ShouldBe($"bible_proposal|{BibleProposalJobHarness.ActivePriceVersion(Database)}|true|true|true|false");
     }
 
     /// <summary>

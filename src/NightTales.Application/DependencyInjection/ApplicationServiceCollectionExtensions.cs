@@ -9,6 +9,7 @@ using NightTales.Application.Features.Research;
 using NightTales.Application.Features.Research.Jobs;
 using NightTales.Application.Features.SeriesBible;
 using NightTales.Application.Features.SeriesBible.Abstractions;
+using NightTales.Application.Features.SeriesBible.Jobs;
 using NightTales.Application.Features.Stories.Approval;
 using NightTales.Application.Features.Stories.Generation;
 using NightTales.Application.Features.Stories.Moderation;
@@ -109,6 +110,29 @@ public static class ApplicationServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(services);
 
         services.TryAddScoped<GenerateFactSheetPipeline>();
+
+        return services;
+    }
+
+    /// <summary>
+    /// Registers the series-bible proposal job's pipeline (02.6.3-T2, plan §7.1): the handler
+    /// <see cref="ProposeBibleUpdateHandler"/> resolves in its own scope, once the job has pinned the run's owner.
+    /// The Worker calls it, next to the outbox consumer that queues the run.
+    /// </summary>
+    /// <remarks>
+    /// Only the handler is registered here: every collaborator is owned by the layer that owns it — the generator
+    /// with the text client, the applier with the rest of this layer (the Api's accept route resolves it too, and
+    /// this method is Worker-only because the caps below are bound there), <c>Bible:Limits</c> and the audit,
+    /// ledger, price, prompt and moderation ports by persistence or the usage metering both hosts compose, and the
+    /// four op caps (<c>BibleProposalCaps</c>, bound from <c>Bible:Proposal</c>) by this root.
+    /// </remarks>
+    /// <param name="services">The composition root's service collection.</param>
+    /// <returns>The same collection, for chaining.</returns>
+    public static IServiceCollection AddBibleProposalGeneration(this IServiceCollection services)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+
+        services.TryAddScoped<ProposeBibleUpdateHandler>();
 
         return services;
     }

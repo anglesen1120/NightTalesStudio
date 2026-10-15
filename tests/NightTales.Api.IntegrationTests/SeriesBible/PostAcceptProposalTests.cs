@@ -164,6 +164,23 @@ public sealed class PostAcceptProposalTests(TestDatabase database) : Integration
     {
         var world = await SeriesBibleHarness.SeedAsync(Database);
         var approved = await SeriesBibleHarness.SeedApprovedEpisodeAsync(Database, world);
+
+        using var factory = SeriesBibleHarness.Factory(Database);
+        using var client = factory.ClientFor(world.UserId);
+
+        // The document the accept must leave savable is the client's own save, not the create-path row: a fresh
+        // row's persona is empty by design (02.6.3-T1 open item), so a GET-then-PUT of it is refused with
+        // `narrator.persona: empty` before any proposal exists. Saving a valid document first is what makes the
+        // last assertion of this test about the accept's own output.
+        using var initial = await SeriesBibleHarness.PutAsync(
+            client,
+            world.SeriesId,
+            SeriesBibleHarness.Etag(1),
+            SeriesBibleHarness.Content());
+        initial.StatusCode.ShouldBe(
+            HttpStatusCode.OK,
+            await initial.Content.ReadAsStringAsync(SeriesBibleHarness.Ct));
+
         await BibleProposalCommandHarness.SeedProposalAsync(
             Database,
             world,
@@ -173,9 +190,6 @@ public sealed class PostAcceptProposalTests(TestDatabase database) : Integration
                 BibleProposalCommandHarness.RuleOp("Không nhắc tên người thật."),
             ]);
 
-        using var factory = SeriesBibleHarness.Factory(Database);
-        using var client = factory.ClientFor(world.UserId);
-
         using var response = await BibleProposalCommandHarness.AcceptAsync(client, world.SeriesId);
         response.StatusCode.ShouldBe(
             HttpStatusCode.OK,
@@ -184,7 +198,7 @@ public sealed class PostAcceptProposalTests(TestDatabase database) : Integration
         // The refused op is gone (a stored document a later PUT would refuse is never written) and the valid op
         // still applied; the two counts reconcile with what the proposal carried.
         var row = SeriesBibleHarness.Row(Database, world.SeriesId);
-        row.Version.ShouldBe(2);
+        row.Version.ShouldBe(3, "the first save is version 2 and the accepted proposal is one more");
         row.Content.ToJsonString().ShouldNotContain("<");
         row.Content["recurring_characters"]!.AsArray().ShouldBeEmpty();
         row.Content["rules"]![0]!["text"]!.GetValue<string>().ShouldBe("Không nhắc tên người thật.");
@@ -198,7 +212,7 @@ public sealed class PostAcceptProposalTests(TestDatabase database) : Integration
         using var save = await SeriesBibleHarness.PutAsync(
             client,
             world.SeriesId,
-            SeriesBibleHarness.Etag(2),
+            SeriesBibleHarness.Etag(3),
             content);
         save.StatusCode.ShouldBe(
             HttpStatusCode.OK,

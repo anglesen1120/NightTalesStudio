@@ -252,6 +252,12 @@ public static class WorkerServiceCollectionExtensions
         // schedules when another proposal of the same series is still open (one paid call per series at a time).
         services.AddOutboxHandler<StoryApproved, StoryApprovedBibleProposalHandler>();
 
+        // The job's pipeline: `ProposeBibleUpdateJob` resolves the handler in its own scope, after it has pinned the
+        // run's owner — so the Application layer registers it beside the outbox consumer that queues the run. The
+        // Api never resolves it (its accept route takes the applier, which both roots get from
+        // `AddNightTalesApplication`), and the caps the handler takes are the `BibleProposalJobOptions` bound below.
+        services.AddBibleProposalGeneration();
+
         // `Bible:Proposal` is read by both halves of this feature: the handler holds `IOptionsMonitor` so the kill
         // switch takes effect without a restart, and the job takes the four batch caps. This root binds the
         // Application options class, because the Application layer cannot reference the Infrastructure class that
