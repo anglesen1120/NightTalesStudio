@@ -21,6 +21,7 @@ using NightTales.Infrastructure.DependencyInjection;
 using NightTales.Infrastructure.Persistence.Audit;
 using NightTales.Infrastructure.Persistence.Idempotency;
 using NightTales.Infrastructure.Persistence.Outbox;
+using NightTales.Infrastructure.Rendering;
 using NightTales.Infrastructure.Compliance.Deletion;
 using NightTales.Infrastructure.Compliance;
 using NightTales.Infrastructure.Persistence.Queries;
@@ -194,9 +195,9 @@ public static class PersistenceServiceCollectionExtensions
         // it from here, because the sweeps that need it run in the Worker.
         services.AddScoped<ISystemWorkQuery, SystemWorkQuery>();
 
-        // 05.3.2-T3: the avoid-recent port of the music selector. render_jobs does not exist until 09.6.1,
-        // so the empty-list implementation stands until 09.6.1-T1 replaces this registration.
-        services.AddScoped<IRecentMusicQuery, NullRecentMusicQuery>();
+        // 05.3.2-T3: the avoid-recent port of the music selector. 09.6.1-T1 lands the real read over
+        // render_jobs.params; NullRecentMusicQuery stays as the hand-written fake of the unit tests.
+        services.AddScoped<IRecentMusicQuery, RecentMusicQuery>();
 
         // 09.3.1-T1: Identity (BD2) + the registration, password-policy and consent services. Every
         // host that reads the write model also authenticates or verifies a caller, so the registration

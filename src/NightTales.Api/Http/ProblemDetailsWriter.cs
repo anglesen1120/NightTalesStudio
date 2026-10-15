@@ -116,6 +116,18 @@ public static partial class ProblemDetailsWriter
         }.ToFrozenSet(StringComparer.Ordinal);
 
     /// <summary>
+    /// The codes whose <c>errors</c> member is a defect list rather than the <c>field → messages</c> object:
+    /// <c>keywords_flagged</c> carries the <c>{ segment, index, rule }</c> rows the web
+    /// <c>keyword-flags.mapper</c> reads (03 D10, 09.6.1-T1). Their flags arrive under
+    /// <see cref="ErrorMetadata.Flags"/> from <c>Errors.KeywordsFlagged</c>.
+    /// </summary>
+    private static readonly FrozenSet<string> ArrayErrorCodes =
+        new HashSet<string>(StringComparer.Ordinal)
+        {
+            ErrorCodes.KeywordsFlagged,
+        }.ToFrozenSet(StringComparer.Ordinal);
+
+    /// <summary>
     /// camelCase naming on the wire (<c>traceId</c>), which is also the policy the default problem
     /// details writer of <c>AddProblemDetails()</c> uses.
     /// </summary>
@@ -194,7 +206,7 @@ public static partial class ProblemDetailsWriter
         int status;
         string code;
         string title;
-        Dictionary<string, List<string>>? fieldErrors = null;
+        JsonElement? errorsElement = null;
 
         // The error the top-level metadata comes from. In a validation response it is the first
         // validation error: a non-validation error that the 400 hides must not contribute metadata.
@@ -215,9 +227,12 @@ public static partial class ProblemDetailsWriter
             status = StatusCodes.Status400BadRequest;
             code = ownValidationCode ? driving.Code : ErrorCodes.ValidationFailed;
             title = ownValidationCode && !groupsFieldErrors ? TitleFor(driving, status) : ValidationFailedTitle;
-            fieldErrors = !ownValidationCode || groupsFieldErrors
+            var fieldErrorGroups = !ownValidationCode || groupsFieldErrors
                 ? BibleFieldErrors(errors) ?? GroupByField(errors)
                 : null;
+            errorsElement = fieldErrorGroups is null
+                ? null
+                : JsonSerializer.SerializeToElement(fieldErrorGroups, SerializerOptions);
             metadataSource = ownValidationCode ? driving : FirstValidationError(errors);
             LogSuppressedNonValidationErrors(http, errors);
         }
@@ -226,6 +241,13 @@ public static partial class ProblemDetailsWriter
             status = mapped;
             code = driving.Code;
             title = TitleFor(driving, mapped);
+
+            // keywords_flagged is the one catalogued code whose errors member is an object array rather than
+            // a field group: the rows are KeywordFlags, so the field-groups shape cannot carry them (03 D10).
+            if (ArrayErrorCodes.Contains(code) && FlagsOf(metadataSource) is { Count: > 0 } flags)
+            {
+                errorsElement = JsonSerializer.SerializeToElement(flags, SerializerOptions);
+            }
         }
         else
         {
@@ -240,18 +262,22 @@ public static partial class ProblemDetailsWriter
             ApplyRetryAfter(http, driving);
         }
 
-        // Legal conflicts carry only a bounded list of public document names, never arbitrary metadata.
+        // Legal conflicts carry only a bounded list of public document names, never arbitrary metadata. The
+        // `errorsElement is null` guard keeps this from ever clobbering the array an ArrayErrorCodes code set.
         if (status == StatusCodes.Status409Conflict
+            && errorsElement is null
             && code is ErrorCodes.LegalAcceptanceRequired or ErrorCodes.LegalVersionOutdated
             && driving.Metadata is not null
             && driving.Metadata.TryGetValue("documents", out var documentValue)
             && documentValue is string[] { Length: > 0 and <= 2 } documents
             && documents.All(document => document is "privacy" or "tos"))
         {
-            fieldErrors = new(StringComparer.Ordinal)
-            {
-                ["documents"] = documents.Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToList(),
-            };
+            errorsElement = JsonSerializer.SerializeToElement(
+                new Dictionary<string, List<string>>(StringComparer.Ordinal)
+                {
+                    ["documents"] = documents.Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToList(),
+                },
+                SerializerOptions);
         }
 
         var body = new ProblemBody
@@ -261,7 +287,7 @@ public static partial class ProblemDetailsWriter
             Status = status,
             Code = code,
             TraceId = TraceId(http),
-            Errors = fieldErrors,
+            Errors = errorsElement,
             Metadata = AllowedMetadata(
                 metadataSource,
                 includeField: !isValidation || (ownValidationCode && !groupsFieldErrors),
@@ -457,6 +483,17 @@ public static partial class ProblemDetailsWriter
     }
 
     /// <summary>
+    /// The typed keyword flags of a <c>keywords_flagged</c> error, from <see cref="ErrorMetadata.Flags"/>
+    /// (03 CR-18b). Null when the error carries none.
+    /// </summary>
+    private static IReadOnlyList<KeywordFlag>? FlagsOf(Error error) =>
+        error.Metadata is not null
+        && error.Metadata.TryGetValue(ErrorMetadata.Flags, out var value)
+        && value is IReadOnlyList<KeywordFlag> flags
+            ? flags
+            : null;
+
+    /// <summary>
     /// Whether an error's own code answers 400 in the catalogue (and is not the generic
     /// <c>validation_failed</c>): such a code is a client-visible reason of its own, so a lone error
     /// carrying it is not collapsed (09.3.1-T1's <c>breached_password</c>).
@@ -529,6 +566,13 @@ public static partial class ProblemDetailsWriter
         Dictionary<string, object?>? metadata = null;
         foreach (var (key, value) in error.Metadata)
         {
+            if (string.Equals(key, ErrorMetadata.Flags, StringComparison.Ordinal))
+            {
+                // Consumed into the errors[] array of a keywords_flagged body (see FlagsOf), so it is neither
+                // flattened here nor a dropped value worth a log line.
+                continue;
+            }
+
             if (!AllowedMetadataKeys.Contains(key)
                 || (!includeField && string.Equals(key, ErrorMetadata.Field, StringComparison.Ordinal)))
             {
@@ -686,7 +730,12 @@ public static partial class ProblemDetailsWriter
 
         public required string TraceId { get; init; }
 
-        public IReadOnlyDictionary<string, List<string>>? Errors { get; init; }
+        /// <summary>
+        /// The <c>errors</c> member: a camelCase <c>field → messages</c> object for the validation codes, or
+        /// the <c>{ segment, index, rule }</c> object array of a <c>keywords_flagged</c> answer. Absent when
+        /// the code carries neither shape.
+        /// </summary>
+        public JsonElement? Errors { get; init; }
 
         [JsonExtensionData]
         public Dictionary<string, object?>? Metadata { get; init; }

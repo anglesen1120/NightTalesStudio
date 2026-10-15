@@ -49,6 +49,8 @@ public sealed class TenantForeignKeyTests(TestDatabase database) : IntegrationTe
         "generation_runs.result_story_version_id,user_id->story_versions(id,user_id)",
         "generation_runs.series_id,user_id->series(id,user_id)",
         "moderation_events.episode_id,user_id->episodes(id,user_id)",
+        "render_jobs.episode_id,user_id->episodes(id,user_id)",
+        "render_jobs.story_version_id,user_id->story_versions(id,user_id)",
         "series.current_autopilot_authorization_id,user_id->series_autopilot_authorizations(id,user_id)",
         "series_autopilot_authorizations.series_id,user_id->series(id,user_id)",
         "series_bibles.proposed_from_episode_id,user_id->episodes(id,user_id)",
@@ -106,7 +108,7 @@ public sealed class TenantForeignKeyTests(TestDatabase database) : IntegrationTe
     /// <summary>
     /// One cross-tenant write: the label and an insert whose <c>user_id</c> belongs to user B while the
     /// parent reference belongs to user A. <c>{a}</c>, <c>{b}</c>, <c>{s_a}</c>, <c>{s_b}</c>,
-    /// <c>{ep_a}</c>, <c>{ep_b}</c>, <c>{asset_a}</c>, <c>{version_a}</c>, <c>{run_a}</c>, <c>{fs_a}</c>,
+    /// <c>{ep_a}</c>, <c>{ep_b}</c>, <c>{asset_a}</c>, <c>{version_a}</c>, <c>{version_b}</c>, <c>{run_a}</c>, <c>{fs_a}</c>,
     /// <c>{auth_a}</c>, <c>{template}</c>, <c>{voice}</c> and <c>{uid}</c> (a fresh unique token) are
     /// filled by the test.
     /// </summary>
@@ -272,6 +274,18 @@ public sealed class TenantForeignKeyTests(TestDatabase database) : IntegrationTe
             + "created_at, updated_at) VALUES (gen_random_uuid(), '{b}', '{ep_b}', 1, 0, '[]'::jsonb, "
             + "'{}'::jsonb, false, 0, repeat('a', 64), '{run_a}', 'user', '{b}', now(), now())"
         },
+        {
+            "render_jobs.episode_id",
+            "INSERT INTO render_jobs (id, user_id, episode_id, story_version_id, reservation_id, status, stage, "
+            + "percent, params, attempt) VALUES (gen_random_uuid(), '{b}', '{ep_a}', '{version_b}', "
+            + "gen_random_uuid(), 'succeeded', 'done', 100, '{}'::jsonb, 1)"
+        },
+        {
+            "render_jobs.story_version_id",
+            "INSERT INTO render_jobs (id, user_id, episode_id, story_version_id, reservation_id, status, stage, "
+            + "percent, params, attempt) VALUES (gen_random_uuid(), '{b}', '{ep_b}', '{version_a}', "
+            + "gen_random_uuid(), 'succeeded', 'done', 100, '{}'::jsonb, 1)"
+        },
     };
 
     [Theory]
@@ -436,6 +450,13 @@ public sealed class TenantForeignKeyTests(TestDatabase database) : IntegrationTe
             + $"word_count, content, created_at) VALUES ('{versionA}', '{owner.Id}', '{episodeA.Id}', 1, "
             + $"'generated', 'Seed story', 'Seed body', '{{}}', 2, '{{}}'::jsonb, now())");
 
+        var versionB = Guid.CreateVersion7();
+        SqlProbe.Execute(
+            Database,
+            $"INSERT INTO story_versions (id, user_id, episode_id, version, source, title, body, keywords, "
+            + $"word_count, content, created_at) VALUES ('{versionB}', '{intruder.Id}', '{episodeB.Id}', 1, "
+            + $"'generated', 'Seed story', 'Seed body', '{{}}', 2, '{{}}'::jsonb, now())");
+
         var runA = Guid.CreateVersion7();
         SqlProbe.Execute(
             Database,
@@ -471,6 +492,7 @@ public sealed class TenantForeignKeyTests(TestDatabase database) : IntegrationTe
             episodeB.Id,
             assetA,
             versionA,
+            versionB,
             runA,
             authorizationA,
             factSheetA,
@@ -488,6 +510,7 @@ public sealed class TenantForeignKeyTests(TestDatabase database) : IntegrationTe
         .Replace("{fs_a}", fixtures.FactSheetA.ToString(), StringComparison.Ordinal)
         .Replace("{asset_a}", fixtures.AssetA.ToString(), StringComparison.Ordinal)
         .Replace("{version_a}", fixtures.StoryVersionA.ToString(), StringComparison.Ordinal)
+        .Replace("{version_b}", fixtures.StoryVersionB.ToString(), StringComparison.Ordinal)
         .Replace("{auth_a}", fixtures.AuthorizationA.ToString(), StringComparison.Ordinal)
         .Replace("{template}", fixtures.StyleTemplate.ToString(), StringComparison.Ordinal)
         .Replace("{voice}", SeriesBuilder.DefaultVoiceId, StringComparison.Ordinal)
@@ -503,6 +526,7 @@ public sealed class TenantForeignKeyTests(TestDatabase database) : IntegrationTe
         Guid EpisodeB,
         Guid AssetA,
         Guid StoryVersionA,
+        Guid StoryVersionB,
         Guid GenerationRunA,
         Guid AuthorizationA,
         Guid FactSheetA,

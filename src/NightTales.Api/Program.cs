@@ -338,6 +338,10 @@ try
     // rule) opens its own transaction around the audit row.
     app.MapEpisodeVideoEndpoints();
 
+    // 09.6.1-T1 (09 README BD5): POST /api/v1/episodes/{id}/render queues one render job for one approved
+    // story. The route requires If-Match and Idempotency-Key and carries the paid policy.
+    app.MapRenderingEndpoints();
+
     app.Run();
 }
 catch (Exception exception) when (exception is not HostAbortedException)

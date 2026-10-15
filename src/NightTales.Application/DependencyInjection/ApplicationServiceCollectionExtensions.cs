@@ -13,6 +13,7 @@ using NightTales.Application.Features.Stories.Generation;
 using NightTales.Application.Features.Stories.Moderation;
 using NightTales.Application.Features.Stories.Render;
 using NightTales.Application.Features.Stories.Writing;
+using NightTales.Domain.Rendering.Subtitles;
 
 namespace NightTales.Application.DependencyInjection;
 
@@ -66,6 +67,17 @@ public static class ApplicationServiceCollectionExtensions
 
         // 02.6.3-T1: the series bible's instruments; its two handlers inject them in both hosts.
         services.TryAddSingleton<SeriesBibleMetrics>();
+
+        // 05.1.2-T1 / 09.6.1-T1 (05 D6/D7): the subtitle-presets catalog embedded in the Domain assembly,
+        // read once. It is loaded eagerly by the factory so a build missing the resource or carrying an
+        // invalid document fails the composition root with a descriptive exception instead of each render
+        // (the catalog is a deployment precondition, never a per-request null).
+        services.TryAddSingleton(provider =>
+            SubtitlePresetCatalog.LoadEmbedded().Match(
+                catalog => catalog,
+                errors => throw new InvalidOperationException(
+                    $"The embedded subtitle-presets catalog '{SubtitlePresetCatalog.ResourceName}' is invalid: "
+                    + string.Join("; ", errors.Select(error => $"{error.Code}: {error.Description}")))));
 
         return services;
     }

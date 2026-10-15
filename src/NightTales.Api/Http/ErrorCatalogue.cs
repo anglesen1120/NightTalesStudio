@@ -92,6 +92,14 @@ public static class ErrorCatalogue
             [ErrorCodes.TiktokVideoTooLong] = StatusCodes.Status400BadRequest,
             [ErrorCodes.OauthStateInvalid] = StatusCodes.Status400BadRequest,
 
+            // 05.1.2-T1's RenderSubmitMapper codes (09.6.1-T1): the submit runs in the Worker, so these are
+            // internal; catalogued as 400 so a future submit surface (or the render command, which answers
+            // render_script_too_long as validation_failed field `script`) maps them consistently.
+            [ErrorCodes.RenderAspectInvalid] = StatusCodes.Status400BadRequest,
+            [ErrorCodes.RenderSubjectInvalid] = StatusCodes.Status400BadRequest,
+            [ErrorCodes.RenderScriptTooLong] = StatusCodes.Status400BadRequest,
+            [ErrorCodes.RenderTermsInvalid] = StatusCodes.Status400BadRequest,
+
             // 401
             [ErrorCodes.Unauthorized] = StatusCodes.Status401Unauthorized,
             [ErrorCodes.InvalidCredentials] = StatusCodes.Status401Unauthorized,
@@ -279,6 +287,22 @@ public static class ErrorCatalogue
             ErrorCodes.PriceCatalogEmpty,
             ErrorCodes.PromptNotShipped,
             ErrorCodes.PromptTooLarge,
+
+            // 05.1.2-T1's embedded subtitle-presets.v1 catalog (09.6.1-T1): server-side config faults — the
+            // composition root fails fast on a bad file — so they never become an HTTP response body.
+            ErrorCodes.SubtitlePresetsResourceMissing,
+            ErrorCodes.SubtitlePresetsInvalid,
+            ErrorCodes.SchemaInvalid,
+            ErrorCodes.RevisionNotPositive,
+            ErrorCodes.AspectMissing,
+            ErrorCodes.FontNameInvalid,
+            ErrorCodes.FontSizeOutOfRange,
+            ErrorCodes.StrokeWidthOutOfRange,
+            ErrorCodes.ColorInvalid,
+            ErrorCodes.SubtitlePositionUnknown,
+            ErrorCodes.CustomPositionOutOfRange,
+            ErrorCodes.MaxCharsPerLineInvalid,
+            ErrorCodes.MaxLinesInvalid,
         }.ToFrozenSet(StringComparer.Ordinal);
 
     /// <summary>The problem-details <c>type</c> URI of <paramref name="code"/>.</summary>
