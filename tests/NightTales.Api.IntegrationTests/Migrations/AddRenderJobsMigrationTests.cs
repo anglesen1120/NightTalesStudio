@@ -17,8 +17,8 @@ namespace NightTales.Api.IntegrationTests.Migrations;
 /// The <c>_09_RenderJobs</c> migration (09.6.1-T1, BD5): the <c>render_jobs</c> table with its index set — the
 /// poller's due-job scan, the tenant lookups and the two same-owner key indexes — the partial unique index behind
 /// "one active render per episode", the closed status CHECK, and the composite keys to <c>episodes</c> and
-/// <c>story_versions</c> beside the owner key. This class owns the last-migration check (<c>migrations[^1]</c>) and
-/// finds its own migration by name everywhere else.
+/// <c>story_versions</c> beside the owner key. The <c>_06_PlatformQuotaUsage</c> migration owns the
+/// last-migration check now; this class finds its own migration by name, like every other migration test.
 /// </summary>
 [Trait("Category", "Integration")]
 [Trait("Category", "Migration")]
@@ -102,11 +102,11 @@ public sealed class AddRenderJobsMigrationTests(TestDatabase database) : Integra
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
     [Fact]
-    public async Task Migration_IsTheLastOne_AndModelHasNoPendingChange()
+    public async Task Migration_IsPresent_AndModelHasNoPendingChange()
     {
         await using var context = Database.CreateAppDbContext();
         var migrations = context.Database.GetMigrations().Order(StringComparer.Ordinal).ToList();
-        migrations[^1].ShouldEndWith("_" + MigrationName);
+        migrations.Any(name => name.EndsWith("_" + MigrationName, StringComparison.Ordinal)).ShouldBeTrue();
 
         context.Database.HasPendingModelChanges().ShouldBeFalse(
             "an entity change without a migration must fail here (run `dotnet ef migrations add`)");

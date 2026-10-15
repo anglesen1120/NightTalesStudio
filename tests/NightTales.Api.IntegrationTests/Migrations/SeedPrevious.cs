@@ -340,6 +340,14 @@ internal static class SeedPrevious
                       'clip_seconds', 5),
                     1)
             """),
+        (
+            // 06.3.1-T1: the table the `_06_PlatformQuotaUsage` migration creates. Same rule as above: skipped while
+            // the previous schema lacks it, so the row lands only on a schema that has the table.
+            "platform_quota_usage",
+            """
+            INSERT INTO platform_quota_usage (platform, quota_day, units_used, units_limit, created_at, updated_at)
+            VALUES ('youtube', DATE '2026-10-15', 0, 10000, now(), now())
+            """),
     ];
 
     /// <summary>The tables the dataset covers, in insert order — the contract a feature migration extends.</summary>
