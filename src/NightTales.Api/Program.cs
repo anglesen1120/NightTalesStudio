@@ -91,6 +91,9 @@ try
     // 02.5.1-T1 (02 README D8/D10/D11): the story-source caps, the domain blocklist and the public-suffix list
     // behind `AddSourceCommand`; a bad cap or blocklist entry fails the boot.
     builder.Services.AddSources(builder.Configuration);
+    // 02.7.2-T1 (02 README D11, F14): the reviewed research-site allow-list, loaded from the embedded file after
+    // `AddSources` supplies the public-suffix list and blocklist it checks; a broken file fails the boot.
+    builder.Services.AddResearchAllowList();
 
     // 09.4.1-T1 (09 §4 09.4.1): the series routes need the Application defaults — the 02 story-preset
     // port, whose wave-1 null catalog knows no key — and the post-commit ETag read of 09 README D15.
