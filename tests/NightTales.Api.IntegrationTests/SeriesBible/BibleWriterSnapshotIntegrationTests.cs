@@ -2,6 +2,7 @@ using System.Net;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using NightTales.Application.Abstractions;
 using NightTales.Application.Abstractions.Money;
@@ -14,11 +15,18 @@ using NightTales.Domain.Episodes;
 using NightTales.Domain.Series;
 using NightTales.Domain.Stories.Generation;
 using NightTales.Domain.Stories.Length;
+using NightTales.Domain.Stories.Structure;
 using NightTales.TestKit;
 using NightTales.TestKit.Api;
+using NightTales.TestKit.Auth;
 using NightTales.TestKit.Database;
+using NightTales.TestKit.Time;
 using Shouldly;
 using Xunit;
+
+// Aliased: the enclosing namespace is `…Api.IntegrationTests.SeriesBible`, so `SeriesBible` resolves to that
+// namespace; the Domain bible lives under this alias.
+using DomainBible = NightTales.Domain.Series.Bible;
 
 namespace NightTales.Api.IntegrationTests.SeriesBible;
 
@@ -87,7 +95,12 @@ public sealed class BibleWriterSnapshotIntegrationTests(TestDatabase database) :
         bible.GetRawText().ShouldContain(FirstPersona);
         document.RootElement.TryGetProperty("avoid_plots", out _).ShouldBeTrue();
 
-        // The bible travels in the user message, never in the shared system text.
+        // In-object order: bible precedes avoid_plots (StoryDataObject.cs:22-30). The row name says "Last"; the code does not put it last.
+        view.Prompt.UserDataJson.IndexOf("\"bible\"", StringComparison.Ordinal)
+            .ShouldBeLessThan(view.Prompt.UserDataJson.IndexOf("\"avoid_plots\"", StringComparison.Ordinal));
+
+        // The bible travels in the user message, never in the shared system text; the system text is the preset.
+        view.Prompt.SystemPrompt.ShouldNotBeNullOrWhiteSpace();
         view.Prompt.SystemPrompt.ShouldNotContain(FirstPersona);
         view.Prompt.PromptCacheKey.ShouldBe("writer:ghost.vi.v1");
     }
@@ -123,9 +136,11 @@ public sealed class BibleWriterSnapshotIntegrationTests(TestDatabase database) :
             episodeIds.Add(await SeriesBibleHarness.SeedApprovedEpisodeAsync(Database, world));
         }
 
+        // The maximal bible is written straight to the row: a PUT cannot store it, because the server derives
+        // the structure of each summary, which pushes the document past the 65,536-byte cap.
+        await SeedMaximalBibleAsync(Database, world.UserId, world.SeriesId, episodeIds);
+
         using var factory = SeriesBibleHarness.Factory(Database);
-        using var client = factory.ClientFor(world.UserId);
-        await PutOkAsync(client, world.SeriesId, SeriesBibleHarness.Etag(1), MaximalContent(episodeIds));
 
         var view = await AssembleAsync(factory, world.UserId, world.SeriesId);
 
@@ -138,50 +153,77 @@ public sealed class BibleWriterSnapshotIntegrationTests(TestDatabase database) :
             .ShouldBeLessThanOrEqualTo(PromptDataBudget.DefaultMaxDataObjectBytes);
     }
 
-    /// <summary>Every list at its cap (30/30/30 and 50 summaries), each text at its cap, ASCII so bytes equal chars.</summary>
-    private static JsonObject MaximalContent(IReadOnlyList<Guid> episodeIds)
+    /// <summary>
+    /// Every list at its cap (30/30/30 and 50 summaries), each text at its cap, ASCII so bytes equal chars. It is
+    /// built as domain objects and written straight to the row: a PUT cannot store it, because the server derives
+    /// the structure of each summary, which pushes the document past the 65,536-byte cap, so the row is seeded directly.
+    /// </summary>
+    private static DomainBible.SeriesBibleContent MaximalContent(List<Guid> episodeIds)
     {
-        var characters = new JsonArray();
+        var characters = new List<DomainBible.BibleCharacter>();
         for (var i = 1; i <= 30; i++)
         {
-            characters.Add(SeriesBibleHarness.Character(i, Sized($"Character {i:D2} ", 60), Sized($"Description {i:D2} ", 300)));
+            characters.Add(new DomainBible.BibleCharacter(
+                $"ch{i}",
+                Sized($"Character {i:D2} ", 60),
+                Sized($"Description {i:D2} ", 300),
+                null));
         }
 
-        var places = new JsonArray();
+        var places = new List<DomainBible.BiblePlace>();
         for (var i = 1; i <= 30; i++)
         {
-            places.Add(new JsonObject
-            {
-                ["id"] = $"pl{i}",
-                ["name"] = Sized($"Place {i:D2} ", 60),
-                ["description"] = Sized($"Place description {i:D2} ", 300),
-            });
+            places.Add(new DomainBible.BiblePlace(
+                $"pl{i}",
+                Sized($"Place {i:D2} ", 60),
+                Sized($"Place description {i:D2} ", 300)));
         }
 
-        var rules = new JsonArray();
+        var rules = new List<DomainBible.BibleRule>();
         for (var i = 1; i <= 30; i++)
         {
-            rules.Add(new JsonObject
-            {
-                ["id"] = $"rl{i}",
-                ["text"] = Sized($"Rule {i:D2} ", 300),
-            });
+            rules.Add(new DomainBible.BibleRule($"rl{i}", Sized($"Rule {i:D2} ", 300)));
         }
 
-        var summaries = new JsonArray();
+        var summaries = new List<DomainBible.BibleEpisodeSummary>();
         for (var i = 0; i < episodeIds.Count; i++)
         {
-            summaries.Add(SeriesBibleHarness.Summary(
+            summaries.Add(new DomainBible.BibleEpisodeSummary(
                 episodeIds[i],
                 Sized($"Episode {i:D2} ", 100),
-                Sized($"Summary {i:D2} ", 200)));
+                Sized($"Summary {i:D2} ", 200),
+                StoryStructureTags.Empty,
+                SeriesBibleHarness.Start));
         }
 
-        return SeriesBibleHarness.Content(
-            characters: characters,
-            places: places,
-            rules: rules,
-            summaries: summaries);
+        var narrator = new DomainBible.BibleNarrator(
+            Sized("Narrator ", 80),
+            Sized("Persona ", 1000),
+            Sized("Voice notes ", 1000));
+
+        return new DomainBible.SeriesBibleContent(
+            DomainBible.SeriesBibleContent.V1,
+            narrator,
+            characters,
+            places,
+            rules,
+            summaries);
+    }
+
+    /// <summary>Writes the maximal content straight to the series' bible row, the way the writer reads it.</summary>
+    private static async Task SeedMaximalBibleAsync(
+        TestDatabase database,
+        Guid userId,
+        Guid seriesId,
+        List<Guid> episodeIds)
+    {
+        await using var context = database.CreateAppDbContext(
+            new TestCurrentUser { Id = userId },
+            new FakeClock(SeriesBibleHarness.Start));
+        var bible = await context.SeriesBibles
+            .SingleAsync(candidate => candidate.SeriesId == seriesId, SeriesBibleHarness.Ct);
+        context.Entry(bible).Property(candidate => candidate.Content).CurrentValue = MaximalContent(episodeIds);
+        await context.SaveChangesAsync(SeriesBibleHarness.Ct);
     }
 
     private static string Sized(string prefix, int length) => prefix.PadRight(length, 'x');

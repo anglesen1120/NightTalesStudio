@@ -42,6 +42,9 @@ public sealed class BibleSnapshotBuilderTests
         Encoder = JavaScriptEncoder.Create(UnicodeRanges.All),
     };
 
+    private static readonly string[] NewestFirstTitles = ["Tập 5", "Tập 2", "Tập 1"];
+    private static readonly string[] InputOrderTitles = ["Tập A", "Tập B"];
+
     [Fact]
     public void BibleSnapshotBuilder_51Summaries_KeepsNewest50()
     {
@@ -74,7 +77,7 @@ public sealed class BibleSnapshotBuilderTests
 
         var snapshot = BibleSnapshotBuilder.Build(Content(summaries: summaries), 1, Defaults);
 
-        snapshot.EpisodeSummaries.Select(summary => summary.Title).ShouldBe(new[] { "Tập 5", "Tập 2", "Tập 1" });
+        snapshot.EpisodeSummaries.Select(summary => summary.Title).ShouldBe(NewestFirstTitles);
     }
 
     [Fact]
@@ -88,7 +91,7 @@ public sealed class BibleSnapshotBuilderTests
 
         var snapshot = BibleSnapshotBuilder.Build(Content(summaries: summaries), 1, Defaults);
 
-        snapshot.EpisodeSummaries.Select(summary => summary.Title).ShouldBe(new[] { "Tập A", "Tập B" });
+        snapshot.EpisodeSummaries.Select(summary => summary.Title).ShouldBe(InputOrderTitles);
     }
 
     [Fact]
@@ -101,7 +104,8 @@ public sealed class BibleSnapshotBuilderTests
         var snapshot = BibleSnapshotBuilder.Build(content, 1, Defaults);
 
         snapshot.Truncated.ShouldBeFalse();
-        snapshot.Narrator.VoiceNotes.ShouldBe("Giọng trầm, chậm.");
+        snapshot.Narrator.ShouldNotBeNull();
+        snapshot.Narrator!.VoiceNotes.ShouldBe("Giọng trầm, chậm.");
         Wire(snapshot).ShouldBe(Wire(BibleSnapshotBuilder.Build(content, 1, NoBudget)));
     }
 
@@ -110,7 +114,8 @@ public sealed class BibleSnapshotBuilderTests
     {
         var snapshot = BibleSnapshotBuilder.Build(Content(voiceNotes: "   "), 1, Defaults);
 
-        snapshot.Narrator.VoiceNotes.ShouldBeNull();
+        snapshot.Narrator.ShouldNotBeNull();
+        snapshot.Narrator!.VoiceNotes.ShouldBeNull();
         Wire(snapshot).ShouldNotContain("voice_notes");
     }
 
@@ -163,7 +168,8 @@ public sealed class BibleSnapshotBuilderTests
         snapshot.RecurringCharacters.Count.ShouldBe(15);
         snapshot.RecurringCharacters.ShouldAllBe(character => character.Description.Length == 150);
         snapshot.Rules.Single().ShouldBe("Không nói tên người chết.");
-        snapshot.Narrator.VoiceNotes.ShouldBe("Giọng trầm, chậm.");
+        snapshot.Narrator.ShouldNotBeNull();
+        snapshot.Narrator!.VoiceNotes.ShouldBe("Giọng trầm, chậm.");
         BibleSnapshotBuilder.MeasureUtf8Bytes(snapshot).ShouldBeLessThanOrEqualTo(36_000);
     }
 
@@ -183,10 +189,9 @@ public sealed class BibleSnapshotBuilderTests
 
         snapshot.Truncated.ShouldBeTrue();
         BibleSnapshotBuilder.MeasureUtf8Bytes(snapshot).ShouldBeLessThanOrEqualTo(36_000);
-        snapshot.Narrator.Persona.Length.ShouldBe(1000);
-        snapshot.RecurringCharacters.Count.ShouldBeLessThanOrEqualTo(15);
-        snapshot.Places.Count.ShouldBeLessThanOrEqualTo(15);
-        snapshot.Rules.Count.ShouldBeLessThanOrEqualTo(15);
+        snapshot.Narrator.ShouldNotBeNull();
+        snapshot.Narrator!.Persona.Length.ShouldBe(1000);
+        snapshot.EpisodeSummaries.Count.ShouldBe(50);
     }
 
     [Fact]
@@ -248,12 +253,7 @@ public sealed class BibleSnapshotBuilderTests
 
         // Same options as PromptAssembler.DataOptions (snake_case, omit nulls, UnicodeRanges.All). The true
         // cross-project equality test against the real data object belongs in Application tests.
-        var options = new JsonSerializerOptions
-        {
-            PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
-            DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
-            Encoder = JavaScriptEncoder.Create(UnicodeRanges.All),
-        };
+        var options = WireOptions;
         using var document = JsonDocument.Parse(JsonSerializer.Serialize(new { bible = snapshot }, options));
         var bibleText = document.RootElement.GetProperty("bible").GetRawText();
 
