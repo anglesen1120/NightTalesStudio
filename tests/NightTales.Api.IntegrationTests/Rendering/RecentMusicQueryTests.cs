@@ -33,6 +33,8 @@ public sealed class RecentMusicQueryTests(TestDatabase database) : IntegrationTe
         var ct = TestContext.Current.CancellationToken;
         var userId = Guid.CreateVersion7();
         var actor = new TestCurrentUser { Id = userId };
+        // fk_series_asp_net_users_user_id: the user row must exist before the series points at it.
+        await Database.CreateUserBuilder(actor).CreateAsync(userId, ct: ct);
         var series = await new SeriesBuilder(Database, actor).CreateAsync(userId, ct: ct);
         var otherSeries = await new SeriesBuilder(Database, actor).CreateAsync(userId, title: "Another series", ct: ct);
 
@@ -62,19 +64,22 @@ public sealed class RecentMusicQueryTests(TestDatabase database) : IntegrationTe
         var ct = TestContext.Current.CancellationToken;
         var userId = Guid.CreateVersion7();
         var actor = new TestCurrentUser { Id = userId };
+        // fk_series_asp_net_users_user_id: the user row must exist before the series points at it.
+        await Database.CreateUserBuilder(actor).CreateAsync(userId, ct: ct);
         var series = await new SeriesBuilder(Database, actor).CreateAsync(userId, ct: ct);
         var episode = await new EpisodeBuilder(Database, actor).CreateAsync(userId, series.Id, ct: ct);
         var version = SeedStoryVersion(userId, episode.Id);
 
-        SeedRenderJob(OrderedId(1), userId, episode.Id, version, "track-mine");
-        SeedRenderJob(OrderedId(2), userId, episode.Id, version, trackId: null);
+        SeedRenderJob(OrderedId(5), userId, episode.Id, version, "track-mine");
+        SeedRenderJob(OrderedId(6), userId, episode.Id, version, trackId: null);
 
         var otherUserId = Guid.CreateVersion7();
         var otherActor = new TestCurrentUser { Id = otherUserId };
+        await Database.CreateUserBuilder(otherActor).CreateAsync(otherUserId, ct: ct);
         var otherSeries = await new SeriesBuilder(Database, otherActor).CreateAsync(otherUserId, ct: ct);
         var otherEpisode = await new EpisodeBuilder(Database, otherActor).CreateAsync(otherUserId, otherSeries.Id, ct: ct);
         SeedRenderJob(
-            OrderedId(3),
+            OrderedId(7),
             otherUserId,
             otherEpisode.Id,
             SeedStoryVersion(otherUserId, otherEpisode.Id),

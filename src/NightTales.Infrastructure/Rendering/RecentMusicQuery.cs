@@ -25,6 +25,11 @@ namespace NightTales.Infrastructure.Rendering;
 /// (WT10); the order is <c>render_jobs.id DESC</c> because the ids are UUIDv7 (D8) — which is creation order — and the
 /// table has no <c>created_at</c> column (WT49).
 /// </para>
+/// <para>
+/// <c>params-&gt;'music' IS NOT NULL</c> (05.3.2-T3) does not drop a job whose music is the JSON literal
+/// <c>null</c> (05 D11 stores a render without music that way): jsonb <c>'null'</c> is not SQL NULL. The extra
+/// <c>-&gt;&gt;'track_id' IS NOT NULL</c> predicate makes the documented intent true.
+/// </para>
 /// </remarks>
 /// <param name="database">The scope's read model; the statement runs on its connection.</param>
 /// <param name="currentUser">The scope's actor: the tenant the statement is restricted to.</param>
@@ -49,6 +54,7 @@ public sealed class RecentMusicQuery(ReadDbContext database, ICurrentUser curren
                 WHERE r.user_id = {userId}
                   AND e.series_id = {seriesId}
                   AND r.params->'music' IS NOT NULL
+                  AND r.params->'music'->>'track_id' IS NOT NULL
                 ORDER BY r.id DESC
                 LIMIT {take}
                 """)

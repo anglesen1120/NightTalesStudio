@@ -454,7 +454,7 @@ public sealed class TenantForeignKeyTests(TestDatabase database) : IntegrationTe
         SqlProbe.Execute(
             Database,
             $"INSERT INTO story_versions (id, user_id, episode_id, version, source, title, body, keywords, "
-            + $"word_count, content, created_at) VALUES ('{versionB}', '{intruder.Id}', '{episodeB.Id}', 1, "
+            + $"word_count, content, created_at) VALUES ('{versionB}', '{intruder.Id}', '{episodeB.Id}', 2, "
             + $"'generated', 'Seed story', 'Seed body', '{{}}', 2, '{{}}'::jsonb, now())");
 
         var runA = Guid.CreateVersion7();
