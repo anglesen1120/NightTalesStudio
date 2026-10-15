@@ -201,6 +201,10 @@ public static class PersistenceServiceCollectionExtensions
         // render_jobs.params.
         services.AddScoped<IRecentMusicQuery, RecentMusicQuery>();
 
+        // 06.3.1-T1: the YouTube upload quota ledger. It joins the caller's AppDbContext, so it belongs with the
+        // stores, and the Api (publish path and ETA) and the Worker (publisher) both need it.
+        services.AddYouTubePublishing();
+
         // 09.3.1-T1: Identity (BD2) + the registration, password-policy and consent services. Every
         // host that reads the write model also authenticates or verifies a caller, so the registration
         // belongs to the same composition root.
