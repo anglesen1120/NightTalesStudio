@@ -1,3 +1,5 @@
+using NightTales.Domain.Rendering.Subtitles;
+
 namespace NightTales.Application.Common.Errors;
 
 /// <summary>
@@ -238,6 +240,23 @@ public static class ErrorCodes
 
     /// <summary>Render keyword linter at approve and render; the body carries <c>errors[] { segment, index, rule }</c> (03 D10).</summary>
     public const string KeywordsFlagged = "keywords_flagged";
+
+    // 05.1.2-T1's RenderSubmitMapper refuses a submit with an internal <c>render.*</c> code. The submit runs
+    // in the Worker (09.6.3-T1), so these are not on the request wire; they are the mapper's own identifiers
+    // and 09.6.1-T1 catalogues them next to the render command so a future submit surface maps the same code.
+    // The wire form is the snake_case name of the dotted identifier.
+
+    /// <summary>The series aspect is neither <c>landscape</c> nor <c>portrait</c>; <c>RenderSubmitMapper.AspectInvalid</c> (<c>render.aspect_invalid</c>, 05 D3).</summary>
+    public const string RenderAspectInvalid = "render_aspect_invalid";
+
+    /// <summary>The story title is empty or too long; <c>RenderSubmitMapper.SubjectInvalid</c> (<c>render.subject_invalid</c>, 05 D3).</summary>
+    public const string RenderSubjectInvalid = "render_subject_invalid";
+
+    /// <summary>The NFC-normalised story body is empty or over 20,000 code points; <c>RenderSubmitMapper.ScriptTooLong</c> (<c>render.script_too_long</c>). The render command answers it as <c>validation_failed</c> field <c>script</c>.</summary>
+    public const string RenderScriptTooLong = "render_script_too_long";
+
+    /// <summary>The submit carries no prompt, too many, or one of an invalid length; <c>RenderSubmitMapper.TermsInvalid</c> (<c>render.terms_invalid</c>, 05 D3).</summary>
+    public const string RenderTermsInvalid = "render_terms_invalid";
 
     /// <summary>Channel connect: the platform account is already connected (06/07).</summary>
     public const string ChannelAlreadyConnected = "channel_already_connected";
@@ -568,4 +587,49 @@ public static class ErrorCodes
 
     /// <summary>Internal fetcher API only (02.5.2-T2): the task kind has no consumer yet (<c>find_sources</c> candidates arrive with 02.7.2-T3); never shown to a user.</summary>
     public const string FetchTaskKindUnsupported = "fetch_task_kind_unsupported";
+
+    // 05.1.2-T1's embedded subtitle-presets.v1 catalog (SubtitlePresetCatalog): the D6 validation outcomes of
+    // Load/LoadEmbedded. They are server-side config faults — the composition root fails fast on a bad file —
+    // so they never become an HTTP response and live in ErrorCatalogue.NonHttpCodes (like the source-outcome
+    // codes whose Domain SourceErrors counterparts are mirrored here). The values reference the Domain
+    // constants directly, so the two can never drift.
+
+    /// <summary>The assembly carries no embedded <c>subtitle-presets.v1.json</c>; <c>SubtitlePresetCatalog.ResourceMissingCode</c> (05 D6).</summary>
+    public const string SubtitlePresetsResourceMissing = SubtitlePresetCatalog.ResourceMissingCode;
+
+    /// <summary>The file is not a readable <c>subtitle-presets.v1</c> document; <c>SubtitlePresetCatalog.DocumentInvalidCode</c> (05 D6).</summary>
+    public const string SubtitlePresetsInvalid = SubtitlePresetCatalog.DocumentInvalidCode;
+
+    /// <summary>The <c>schema</c> is not <c>subtitle-presets.v1</c>; <c>SubtitlePresetCatalog.SchemaInvalidCode</c> (05 D6).</summary>
+    public const string SchemaInvalid = SubtitlePresetCatalog.SchemaInvalidCode;
+
+    /// <summary>The <c>revision</c> is below 1; <c>SubtitlePresetCatalog.RevisionNotPositiveCode</c> (05 D6).</summary>
+    public const string RevisionNotPositive = SubtitlePresetCatalog.RevisionNotPositiveCode;
+
+    /// <summary><c>presets.landscape</c> or <c>presets.portrait</c> is absent; <c>SubtitlePresetCatalog.AspectMissingCode</c> (05 D6).</summary>
+    public const string AspectMissing = SubtitlePresetCatalog.AspectMissingCode;
+
+    /// <summary>The <c>fontName</c> is not <c>BeVietnamPro-Bold.ttf</c>; <c>SubtitlePresetCatalog.FontNameInvalidCode</c> (05 D6/D7).</summary>
+    public const string FontNameInvalid = SubtitlePresetCatalog.FontNameInvalidCode;
+
+    /// <summary>The <c>fontSize</c> is out of range; <c>SubtitlePresetCatalog.FontSizeOutOfRangeCode</c> (05 D6).</summary>
+    public const string FontSizeOutOfRange = SubtitlePresetCatalog.FontSizeOutOfRangeCode;
+
+    /// <summary>The <c>strokeWidth</c> is out of range; <c>SubtitlePresetCatalog.StrokeWidthOutOfRangeCode</c> (05 D6).</summary>
+    public const string StrokeWidthOutOfRange = SubtitlePresetCatalog.StrokeWidthOutOfRangeCode;
+
+    /// <summary>A colour is not <c>#RRGGBB</c> upper-case; <c>SubtitlePresetCatalog.ColorInvalidCode</c> (05 D6/D3).</summary>
+    public const string ColorInvalid = SubtitlePresetCatalog.ColorInvalidCode;
+
+    /// <summary>The <c>subtitlePosition</c> is outside the C16 set; <c>SubtitlePresetCatalog.PositionUnknownCode</c> (05 D6).</summary>
+    public const string SubtitlePositionUnknown = SubtitlePresetCatalog.PositionUnknownCode;
+
+    /// <summary>The <c>customPosition</c> is out of range; <c>SubtitlePresetCatalog.CustomPositionOutOfRangeCode</c> (05 D6).</summary>
+    public const string CustomPositionOutOfRange = SubtitlePresetCatalog.CustomPositionOutOfRangeCode;
+
+    /// <summary>The <c>maxCharsPerLine</c> is below 1; <c>SubtitlePresetCatalog.MaxCharsPerLineInvalidCode</c> (05 D6).</summary>
+    public const string MaxCharsPerLineInvalid = SubtitlePresetCatalog.MaxCharsPerLineInvalidCode;
+
+    /// <summary>The <c>maxLines</c> is below 1; <c>SubtitlePresetCatalog.MaxLinesInvalidCode</c> (05 D6).</summary>
+    public const string MaxLinesInvalid = SubtitlePresetCatalog.MaxLinesInvalidCode;
 }

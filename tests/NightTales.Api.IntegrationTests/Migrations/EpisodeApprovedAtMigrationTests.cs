@@ -110,15 +110,16 @@ public sealed class EpisodeApprovedAtMigrationTests(TestDatabase database) : Int
         {
             // The migrator is linear: reverting to the migration before this one also reverts every later
             // one, so a table a later migration adds is gone with it — `fact_sheets` and `series_bibles` are
-            // exactly the two later migrations' tables, and the loop skips them. Every table that existed
-            // before this migration must survive its Down.
+            // the two later migrations' tables (02_AddFactSheets, 02_AddSeriesBible) and `render_jobs` is
+            // 09_RenderJobs, all applied after 02_EpisodeApprovedAt, and the loop skips them. Every table
+            // that existed before this migration must survive its Down.
             await migrator.MigrateAsync(migrations[own - 1], Ct);
 
             (await EpisodeColumnsAsync()).ShouldBe(columnsBefore.Where(column => column != "approved_at").ToList());
             (await EpisodeDataAsync(episode.Id)).ShouldBe(before);
             var tablesAfter = await Database.QueryStringsAsync(
                 "SELECT tablename FROM pg_tables WHERE schemaname = 'public' ORDER BY tablename", Ct);
-            foreach (var table in tablesBefore.Where(table => table is not ("fact_sheets" or "series_bibles")))
+            foreach (var table in tablesBefore.Where(table => table is not ("fact_sheets" or "series_bibles" or "render_jobs")))
             {
                 tablesAfter.ShouldContain(table, "Down removes only approved_at; it must not drop a table");
             }

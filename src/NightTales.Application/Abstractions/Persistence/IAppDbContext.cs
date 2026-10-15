@@ -99,6 +99,13 @@ public interface IAppDbContext
     DbSet<SeriesBible> SeriesBibles { get; }
 
     /// <summary>
+    /// The render attempts of an episode (09.6.1-T1, <c>render_jobs</c>, BD5/WF13): one row per attempt, with BD5's
+    /// partial unique index keeping exactly one <em>active</em> row per episode. <c>IUserOwned</c>, so the D10 tenant
+    /// filter applies, and <c>params</c> is content-free by construction.
+    /// </summary>
+    DbSet<RenderJob> RenderJobs { get; }
+
+    /// <summary>
     /// Takes the row lock of the current user's episode (<c>SELECT … FOR NO KEY UPDATE</c>, 02.2.2 plan §4 U6) as the
     /// first statement of a command's transaction, so the status read, the daily count and the run insert of two
     /// concurrent generate calls serialise on the episode. The lock is held until the surrounding transaction

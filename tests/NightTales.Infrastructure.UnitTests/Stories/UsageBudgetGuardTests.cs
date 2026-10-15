@@ -60,6 +60,47 @@ public sealed class UsageBudgetGuardTests(TestDatabase database) : IntegrationTe
     }
 
     [Fact]
+    public async Task UsageBudgetGuard_OverDailyCap_RetryAfterIsSecondsToNextUtcMidnight()
+    {
+        var baseline = await BaselineAsync();
+
+        var result = await CheckAsync(Options(baseline, day: 0.4m, month: 10m), 0.5m);
+
+        RetryAfterSecondsOf(result).ShouldBe(54000, "09:00 to the next UTC midnight is 15 hours");
+    }
+
+    [Fact]
+    public async Task UsageBudgetGuard_OverMonthlyCap_RetryAfterIsSecondsToNextUtcMonth()
+    {
+        var baseline = await BaselineAsync();
+
+        var result = await CheckAsync(Options(baseline, day: 10m, month: 0.4m), 0.5m);
+
+        RetryAfterSecondsOf(result).ShouldBe(1436400, "2036-05-15 09:00 to 2036-06-01 00:00 is 16 days 15 hours");
+    }
+
+    [Fact]
+    public async Task UsageBudgetGuard_OverBothCaps_RetryAfterWaitsForTheMonthlyReset()
+    {
+        var baseline = await BaselineAsync();
+
+        var result = await CheckAsync(Options(baseline, day: 0.4m, month: 0.4m), 0.5m);
+
+        RetryAfterSecondsOf(result).ShouldBe(1436400, "one retry only clears both windows at the monthly reset");
+    }
+
+    [Fact]
+    public async Task UsageBudgetGuard_OverDailyCapJustBeforeMidnight_RetryAfterIsAtLeastOneSecond()
+    {
+        var baseline = await BaselineAsync();
+        var justBeforeMidnight = new DateTimeOffset(2036, 5, 15, 23, 59, 59, TimeSpan.Zero).AddMilliseconds(500);
+
+        var result = await CheckAtAsync(Options(baseline, day: 0.4m, month: 10m), 0.5m, justBeforeMidnight);
+
+        RetryAfterSecondsOf(result).ShouldBe(1, "a sub-second remainder rounds up and never reaches zero");
+    }
+
+    [Fact]
     public async Task UsageBudgetGuard_ExactlyAtTheCap_IsAllowed()
     {
         var baseline = await BaselineAsync();
@@ -210,6 +251,18 @@ public sealed class UsageBudgetGuardTests(TestDatabase database) : IntegrationTe
 
         return await GuardOver(db, read, options).CheckAsync(new CostBound(worstCase), Ct, excludingRunId);
     }
+
+    private async Task<ErrorOr.ErrorOr<ErrorOr.Success>> CheckAtAsync(BudgetOptions options, decimal worstCase, DateTimeOffset at)
+    {
+        await using var db = Database.CreateAppDbContext(new TestCurrentUser { Id = Guid.CreateVersion7() });
+        await using var read = Database.CreateReadDbContext();
+        var guard = new UsageBudgetGuard(read, new GenerationRunOpenBoundsReader(read), db, options, new FakeClock(at));
+
+        return await guard.CheckAsync(new CostBound(worstCase), Ct);
+    }
+
+    private static int RetryAfterSecondsOf(ErrorOr.ErrorOr<ErrorOr.Success> result) =>
+        (int)result.FirstError.Metadata![ErrorMetadata.RetryAfterSeconds];
 
     /// <summary>The platform's spent-today, spent-this-month and open totals as the guard will read them at <see cref="Now"/>.</summary>
     private async Task<(decimal Day, decimal Month, decimal Open)> BaselineAsync()

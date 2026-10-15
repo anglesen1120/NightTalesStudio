@@ -299,6 +299,11 @@ public static class WorkerServiceCollectionExtensions
         // section is validated on start, so an impossible cadence or hysteresis fails the boot.
         services.AddRenderNodes(configuration);
 
+        // 09.6.2-T1 (09 README BD6, WF08/W9): the two render-node pipelines and the clients over the same
+        // connection factory. Submit/status/cancel run on the retrying pipeline, the DELETE on the no-retry
+        // one, and the `Render` section is optional: every key carries the BD6 default.
+        services.AddRenderClients(configuration);
+
         // The poller is a BackgroundService, not a Hangfire recurring job: a sub-minute cron is not
         // reliable (F10/P9, 09 README D11). It is registered as a singleton and hosted through that
         // instance, so a host and the harness resolve the very poller the loop owns.

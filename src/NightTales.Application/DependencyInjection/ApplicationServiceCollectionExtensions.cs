@@ -15,6 +15,7 @@ using NightTales.Application.Features.Stories.Generation;
 using NightTales.Application.Features.Stories.Moderation;
 using NightTales.Application.Features.Stories.Render;
 using NightTales.Application.Features.Stories.Writing;
+using NightTales.Domain.Rendering.Subtitles;
 
 namespace NightTales.Application.DependencyInjection;
 
@@ -73,6 +74,18 @@ public static class ApplicationServiceCollectionExtensions
         // job's autopilot auto-accept both go through it, so neither can grow a second way of applying ops.
         // Scoped: it writes through the caller's tracked context, inside the caller's row lock and transaction.
         services.TryAddScoped<IBibleProposalApplier, BibleProposalApplier>();
+
+        // 05.1.2-T1 / 09.6.1-T1 (05 D6/D7): the subtitle-presets catalog embedded in the Domain assembly,
+        // read once. The factory is lazy: it runs on the first resolution (the first RenderEpisode handler
+        // construction), not at composition-root build time. A throwing factory caches nothing, so the next
+        // resolution runs it again. A build missing the resource or carrying an invalid document fails there with
+        // a descriptive exception (the catalog is a deployment precondition, never a per-request null).
+        services.TryAddSingleton(provider =>
+            SubtitlePresetCatalog.LoadEmbedded().Match(
+                catalog => catalog,
+                errors => throw new InvalidOperationException(
+                    $"The embedded subtitle-presets catalog '{SubtitlePresetCatalog.ResourceName}' is invalid: "
+                    + string.Join("; ", errors.Select(error => $"{error.Code}: {error.Description}")))));
 
         return services;
     }
