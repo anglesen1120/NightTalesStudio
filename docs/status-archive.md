@@ -4,6 +4,12 @@ History moved out of STATUS.md to keep the live file small. The initial archive 
 
 ## Resume-here history (Current/Previous blocks, Next actions)
 
+### Superseded backend Next Session 47 PR-open line (2026-10-16, replaced when #215 merged as 81b87a78)
+
+Replaced text (verbatim):
+
+- **Next (backend, Session 47 PR open):** **02.7.2-T1** allow-list governance on `feature/02.7.2-T1-s47` (PR #215, PR open; no migration, no route). `config/source-finder/allowed-sites.v1.json` is embedded (18 entries: 6 approved, 1 rejected, 11 candidate); AL1–AL6 at start-up; approvals per COORDINATOR-DECISION S47 (2026-10-16). Lane next: **02.7.2-T2** (find-sources command, candidates, endpoints; zero approved gives 404 `feature_disabled`, AL-S47-1), then **02.7.2-T3** (runner; Worker blocklist wiring, AL-S47-2). Open items: §Open tasks AL-S47-1 to AL-S47-7.
+
 ### Superseded backend Next Session 39 line (2026-10-16, replaced by the 02.7.2-T1 PR-open line)
 
 Replaced text (verbatim):
