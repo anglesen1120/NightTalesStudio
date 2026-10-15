@@ -8,6 +8,7 @@ using NightTales.Application.Features.Account.Legal;
 using NightTales.Application.Features.Research;
 using NightTales.Application.Features.Research.Jobs;
 using NightTales.Application.Features.SeriesBible;
+using NightTales.Application.Features.SeriesBible.Abstractions;
 using NightTales.Application.Features.Stories.Approval;
 using NightTales.Application.Features.Stories.Generation;
 using NightTales.Application.Features.Stories.Moderation;
@@ -66,6 +67,11 @@ public static class ApplicationServiceCollectionExtensions
 
         // 02.6.3-T1: the series bible's instruments; its two handlers inject them in both hosts.
         services.TryAddSingleton<SeriesBibleMetrics>();
+
+        // 02.6.3-T2: the one write path an accepted proposal takes — the manual accept command and the proposal
+        // job's autopilot auto-accept both go through it, so neither can grow a second way of applying ops.
+        // Scoped: it writes through the caller's tracked context, inside the caller's row lock and transaction.
+        services.TryAddScoped<IBibleProposalApplier, BibleProposalApplier>();
 
         return services;
     }

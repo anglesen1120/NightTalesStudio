@@ -1,6 +1,10 @@
 {
   "release": "2026.10.1",
   "files": {
+    "bible/propose.v1.md": {
+      "version": "v1",
+      "sha256": "3e2912d313ba7125d211014ea8effa957d50b395c8d9aadf28f4b1b7e0288139"
+    },
     "facts/v1.md": {
       "version": "v1",
       "sha256": "c1eb8022676fabbced995616ef0c853bed46bcc052d77288d5450f5856de328c"
@@ -12,6 +16,10 @@
     "revise/v1.md": {
       "version": "v1",
       "sha256": "d75afac14ed82e2a00a082d82fd3fac700b74174ac0d9eacf6c079690d7ed202"
+    },
+    "schemas/bible-proposal.v1.json": {
+      "version": "v1",
+      "sha256": "12d3e47a8951554edf595ad59bba3290d1d4a92400cf7ae36465b8714305cf85"
     },
     "schemas/facts.v1.json": {
       "version": "v1",
