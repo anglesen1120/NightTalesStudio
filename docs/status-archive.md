@@ -1075,3 +1075,7 @@ Earlier live rows for Plan13, hosting, skeleton, wave2 and wave3 already exist i
 ## Replaced by Session 41 close-out, archived 2026-10-16
 
 - **STATUS Resume line `Backend in flight (Session 41)`, replaced (verbatim):** **03.2.2-T1** `RenderKeywordLinter` + `NameCorpus` + `INameCorpusProvider` (`feature/03.2.2-T1-s41`, from `develop` `4aecc374`, PR #203, no migration; 03 CR-17/CR-18). Next in lane: **03.2.2-T2** (consumes `RenderKeywordLinter.TryGetKeywordIndex`, README D10 `errors[].index`) and **09.6.1-T1** (step 4 calls `INameCorpusProvider.LoadAsync` after authorising the episode; its `Depends on` now lists 03.2.2-T1).
+
+## Replaced by Session 43 close-out (09.6.2-T1, #205 merged), archived 2026-10-16
+
+- **Backend (Session 43, 09.6.2-T1 in review as PR #205).** Next in lane: **09.6.3-T1** (render orchestrator). Read the hand-overs in the 09.6.2-T1 Delivery notes (Session 43) before starting.
