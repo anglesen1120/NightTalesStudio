@@ -206,7 +206,7 @@ public sealed class QuotaLedgerTests(TestDatabase database) : IntegrationTest(da
         var options = new MutableYouTubeOptions(4);
         var metrics = new NightTalesMetrics();
         var observed = new List<double>();
-        using var listener = ListenForGauge(observed);
+        using var listener = ListenForGauge(observed, metrics);
         await using var db = Database.CreateAppDbContext(clock: _clock);
         var ledger = Ledger(db, options, metrics);
 
@@ -261,10 +261,11 @@ public sealed class QuotaLedgerTests(TestDatabase database) : IntegrationTest(da
     {
         var platform = await FreshPlatformAsync();
         var options = new MutableYouTubeOptions(4);
+        var metrics = new NightTalesMetrics();
         var observed = new List<double>();
-        using var listener = ListenForGauge(observed);
+        using var listener = ListenForGauge(observed, metrics);
         await using var db = Database.CreateAppDbContext(clock: _clock);
-        var ledger = Ledger(db, options);
+        var ledger = Ledger(db, options, metrics);
         var yesterday = (await ledger.TryReserveAsync(platform, Midday, Ct)).Value;
 
         // 20:00Z on the 16th is 12:00 PST on the 16th: a new Pacific quota day with one unit used.
@@ -312,14 +313,18 @@ public sealed class QuotaLedgerTests(TestDatabase database) : IntegrationTest(da
         ILogger<YouTubeQuotaLedger>? logger = null) =>
         new(db, options, metrics ?? new NightTalesMetrics(), _clock, logger ?? NullLogger<YouTubeQuotaLedger>.Instance);
 
-    /// <summary>Listens to the quota gauge: every value it records is appended to <paramref name="observed"/>.</summary>
-    private static MeterListener ListenForGauge(List<double> observed)
+    /// <summary>
+    /// Listens to the quota gauge of <paramref name="metrics"/> only: every value it records is appended to
+    /// <paramref name="observed"/>. Other test classes run in parallel and publish the same instrument name from their own
+    /// meters, so the listener must filter on the meter instance.
+    /// </summary>
+    private static MeterListener ListenForGauge(List<double> observed, NightTalesMetrics metrics)
     {
         var listener = new MeterListener
         {
             InstrumentPublished = (instrument, meterListener) =>
             {
-                if (instrument.Name == GaugeName)
+                if (instrument.Name == GaugeName && ReferenceEquals(instrument.Meter, metrics.Meter))
                 {
                     meterListener.EnableMeasurementEvents(instrument);
                 }
