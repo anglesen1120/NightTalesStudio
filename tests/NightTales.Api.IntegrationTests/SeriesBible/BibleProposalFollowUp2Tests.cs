@@ -138,7 +138,7 @@ public sealed class BibleProposalFollowUp2Tests(TestDatabase database) : Integra
         await BibleProposalJobHarness.InsertStoryApprovedAsync(Database, world, episode, ApprovalSource.Autopilot);
         await BibleProposalJobHarness.DeliverAndRunAsync(worker);
 
-        BibleProposalJobHarness.RunRows(Database, world.SeriesId).ShouldContain("|bible_proposal|system|succeeded|");
+        BibleProposalJobHarness.RunRows(Database, world.SeriesId).ShouldContain("|bible_proposal|autopilot|succeeded|");
         BibleProposalJobHarness.BibleColumns(Database, world.SeriesId).ShouldBe(
             "1|true|-",
             "no ops survive, so no proposal is staged, applied or versioned");
