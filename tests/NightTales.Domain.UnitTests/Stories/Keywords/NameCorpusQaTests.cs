@@ -9,9 +9,10 @@ namespace NightTales.Domain.UnitTests.Stories.Keywords;
 /// <summary>
 /// QA of <c>NameCorpus</c> (03.2.2-T1): the hostile-input and boundary rows the task file's Tests list does not
 /// cover — NFC/NFD and homoglyph forms, zero-width and ICU-refused code units, a Turkish current culture,
-/// full-width letters, a 1 MB text; the two-consecutive-token match at every pair position of a three-token run,
-/// punctuation, digits and apostrophes; the stop list's repeated head skip; and the reach of the CR-18 Title Case
-/// guard, including the missed-name false negative reported by this QA pass.
+/// full-width letters, a 1 MB text and the input caps; the two-consecutive-token match at every pair position of
+/// a three-token run, punctuation, digits and apostrophes; the stop list's repeated head skip; and the reach of
+/// the CR-18 Title Case guard, including the short mostly-capitalised title whose name is lost — a documented
+/// residual recorded as an open item for the TL, not a defect of this task.
 /// </summary>
 public sealed class NameCorpusQaTests
 {
@@ -105,14 +106,15 @@ public sealed class NameCorpusQaTests
     public void Fold_OneMegabyteTextAndSingleLongToken_Finish()
     {
         var singleToken = new string('a', 1_000_000);
-        NameCorpus.Fold(singleToken).Length.ShouldBe(1_000_000, "one token of 1 M letters folds to itself");
+        NameCorpus.Fold(singleToken).Length.ShouldBe(1_000_000, "Fold folds exactly what it is given; the caps are on From");
 
+        // From cuts each text at MaxTextChars before folding (P-1), so a 1 MB title stays linear and bounded.
         var filler = string.Join(' ', Enumerable.Repeat("lorem ipsum dolor sit amet", 40_000));
         filler.Length.ShouldBeGreaterThan(1_000_000);
 
-        var corpus = NameCorpus.From([filler + " The victim was Nguyen Van An near the river."]);
+        var corpus = NameCorpus.From(["The victim was Nguyen Van An near the river. " + filler]);
 
-        corpus.Matches("portrait of van an at dawn").ShouldBeTrue();
+        corpus.Matches("portrait of van an at dawn").ShouldBeTrue("the run sits inside the first MaxTextChars");
         corpus.Matches("portrait of lorem ipsum at dawn").ShouldBeFalse();
     }
 
@@ -171,11 +173,13 @@ public sealed class NameCorpusQaTests
     }
 
     [Fact]
-    public void From_Cr18Guard_BoundaryAndMissedName()
+    public void From_Cr18Guard_ShortMostlyCapitalisedTitle_IsADocumentedResidual()
     {
-        // The CR-18 guard counts tokens of >= 3 letters: 3 of 5 long tokens capitalised is exactly 60 %, so the
-        // whole text is skipped as a headline and its name is lost. Reported as a defect (QA 2026-10-15): the
-        // provider loads exactly these short sentence-case vi titles, and D11 makes them a name source.
+        // Documented residual (open item for the TL, not a defect of this task): the CR-18 guard counts tokens of
+        // >= 3 letters, so 3 of 5 long tokens capitalised is exactly 60 % and the whole TITLE is skipped as a
+        // headline and its name lost. The provider loads exactly these short sentence-case vi titles, and D11
+        // makes them a name source. Titles keep this behaviour; the two-argument overload is what keeps the
+        // majority-capitalised fact STATEMENTS (see NameCorpusTests).
         var skipped = NameCorpus.From(["Cảnh sát bắt Nguyễn Văn An"]);
 
         skipped.Matches("portrait of van an at dawn").ShouldBeFalse();
@@ -185,6 +189,9 @@ public sealed class NameCorpusQaTests
         var kept = NameCorpus.From(["Cảnh sát bắt tên Nguyễn Văn An"]);
 
         kept.Matches("portrait of van an at dawn").ShouldBeTrue();
+
+        // The same shape as a statement is not skipped at all (CR-18d).
+        NameCorpus.From([], ["Cảnh sát bắt Nguyễn Văn An"]).Matches("portrait of van an at dawn").ShouldBeTrue();
     }
 
     [Fact]
@@ -200,5 +207,86 @@ public sealed class NameCorpusQaTests
         NameCorpus.From(["The Night The Lights Went Out"])
             .Matches("the lights went out at midnight")
             .ShouldBeFalse();
+    }
+
+    [Fact]
+    public void From_TextLongerThanTheCap_IsCutAtMaxTextChars()
+    {
+        // P-1: each text is cut at MaxTextChars (2,000 UTF-16 units) before folding, so the corpus of one call is
+        // bounded whatever the caller hands in. A 1 MB text is cut and the run inside the cap is still found.
+        var filler = new string('x', 1_000_000);
+        filler.Length.ShouldBeGreaterThan(NameCorpus.MaxTextChars);
+
+        var inside = NameCorpus.From(["The victim was Nguyễn Văn An near Da Lat. " + filler]);
+
+        inside.Matches("portrait of van an at dawn").ShouldBeTrue("the run sits in the first MaxTextChars units");
+        inside.Matches("pine forest above da lat at dawn").ShouldBeTrue();
+
+        // Documented residual: a name placed beyond MaxTextChars is never collected.
+        var beyond = NameCorpus.From([filler + " The victim was Nguyễn Văn An near Da Lat."]);
+
+        beyond.Matches("portrait of van an at dawn").ShouldBeFalse("the name lies past the cap and is cut away");
+
+        // A text exactly at the cap is not cut at all.
+        const string tail = " Nguyễn Văn An is";
+        var exact = new string('x', NameCorpus.MaxTextChars - tail.Length) + tail;
+
+        exact.Length.ShouldBe(NameCorpus.MaxTextChars);
+        NameCorpus.From([exact]).Matches("portrait of van an at dawn").ShouldBeTrue("an at-cap text keeps its run");
+    }
+
+    [Fact]
+    public void From_TextsBeyondMaxTexts_AreIgnored()
+    {
+        // P-1: at most MaxTexts texts are read per call, so the text at index MaxTexts is never folded.
+        var texts = new List<string>(NameCorpus.MaxTexts + 1) { "Vụ án Nguyễn Văn An" };
+
+        for (var index = 1; index < NameCorpus.MaxTexts; index++)
+        {
+            // Lower-case filler: no run, so it cannot mask a pair the cap should have dropped.
+            texts.Add("mystery at the pier");
+        }
+
+        texts.Add("a suspect named Trần Văn Hùng was seen");
+        texts.Count.ShouldBe(NameCorpus.MaxTexts + 1);
+
+        var corpus = NameCorpus.From(texts);
+
+        corpus.Matches("portrait of van an at dawn").ShouldBeTrue("the first text is read");
+        corpus.Matches("portrait of tran van hung at dawn")
+            .ShouldBeFalse("the text at index MaxTexts is past the cap and ignored");
+
+        // The same ignored text is collected when it sits inside the cap.
+        texts[NameCorpus.MaxTexts] = "mystery at the pier";
+        texts[0] = "a suspect named Trần Văn Hùng was seen";
+
+        NameCorpus.From(texts).Matches("portrait of tran van hung at dawn").ShouldBeTrue();
+
+        // The budget is shared by the two-argument overload: titles first, then statements.
+        var titles = Enumerable.Repeat("mystery at the pier", NameCorpus.MaxTexts).ToList();
+
+        NameCorpus.From(titles, ["a suspect named Trần Văn Hùng was seen"])
+            .Matches("portrait of tran van hung at dawn")
+            .ShouldBeFalse("the statement is past the shared budget of MaxTexts texts");
+    }
+
+    [Fact]
+    public void From_AstralCharacterStraddlingTheCap_IsDroppedWholeAndDoesNotThrow()
+    {
+        // P-1: the cut is on a surrogate-pair boundary, so an astral character whose high surrogate is the last
+        // unit inside the cap is dropped whole — never left as a lone surrogate (nothing throws either way).
+        var straddling = new string('x', NameCorpus.MaxTextChars - 1) + "\U0001F600" + " Nguyễn Văn An";
+        straddling.Length.ShouldBeGreaterThan(NameCorpus.MaxTextChars);
+
+        NameCorpus.From([straddling])
+            .Matches("portrait of van an at dawn")
+            .ShouldBeFalse("the cut lands before the pair and the name past it is cut away");
+
+        // One unit shorter puts the boundary after the pair: the cut is not shifted and the name inside it is found.
+        var insideName = "Nguyễn Văn An " + new string('x', NameCorpus.MaxTextChars - 14) + "\U0001F600";
+
+        NameCorpus.From([insideName])
+            .Matches("portrait of van an at dawn")
+            .ShouldBeTrue("the whole pair is kept, so the cap is not pulled back a unit");
     }
 }

@@ -103,6 +103,42 @@ public sealed class RenderKeywordLinterQaTests
     }
 
     [Fact]
+    public void Lint_R2Failure_SkipsTheCorpusCheck()
+    {
+        // S4: a keyword whose only violation is the non-ASCII alphabet rule (R2) must be rewritten anyway, so
+        // the corpus check is skipped and no name issue is added; the ASCII rewrite of the same keyword (same
+        // folded name) is caught. "Vụ án Nguyễn Văn An" holds the run (van, an).
+        var nonAscii = RenderKeywordLinter.Lint(
+            new List<SegmentKeywords> { new("p:0", ["portrait of vãn an at dawn"]) },
+            CaseCorpus);
+
+        nonAscii.ShouldHaveSingleItem().RuleId.ShouldBe(StoryDraftValidator.KeywordInvalid);
+        nonAscii.ShouldAllBe(issue => issue.RuleId != RenderKeywordLinter.NameDetected);
+
+        var ascii = RenderKeywordLinter.Lint(
+            new List<SegmentKeywords> { new("p:0", ["portrait of van an at dawn"]) },
+            CaseCorpus);
+
+        ascii.ShouldHaveSingleItem().RuleId.ShouldBe(RenderKeywordLinter.NameDetected);
+    }
+
+    [Fact]
+    public void Lint_CombiningMarkFlood_FailsR2WithoutTheCorpusCheck()
+    {
+        // S4: 10,000 combining marks make R2 fail; the corpus check (which NFD-folds the raw keyword) is
+        // skipped, so the lint completes and yields only keyword_invalid. No timing assertion — completing is
+        // the point.
+        var flooded = "portrait of van an at dawn" + new string('\u0301', 10_000);
+
+        var issues = RenderKeywordLinter.Lint(
+            new List<SegmentKeywords> { new("p:0", [flooded]) },
+            CaseCorpus);
+
+        issues.ShouldHaveSingleItem().RuleId.ShouldBe(StoryDraftValidator.KeywordInvalid);
+        issues.ShouldAllBe(issue => issue.RuleId != RenderKeywordLinter.NameDetected);
+    }
+
+    [Fact]
     public void Lint_NullElementsNullKeywordsAndBlankKeywords_NeverThrow()
     {
         var segments = new List<SegmentKeywords>

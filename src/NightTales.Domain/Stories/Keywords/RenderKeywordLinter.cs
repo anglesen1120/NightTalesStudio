@@ -18,6 +18,12 @@ namespace NightTales.Domain.Stories.Keywords;
 /// CR-5: <see cref="KeywordRules"/> itself stays untouched; 03.2.2 only adds this check).
 /// </para>
 /// <para>
+/// The corpus check runs for a keyword that passes the rules and for every <see cref="KeywordRules"/> violation
+/// except R2 (<see cref="KeywordRules.NotEnglish"/>): a keyword whose only violation is the non-ASCII alphabet
+/// rule must be rewritten anyway, so the check is deferred to the next lint. That keeps the R2 path linear and
+/// never hands a non-ASCII flood to the corpus.
+/// </para>
+/// <para>
 /// Issues never carry the keyword, the matched name or any source text — only the rule id, the D22 address, the
 /// keyword's zero-based index inside its segment and, for the name rule, <c>run:&lt;n tokens&gt;</c> (D11; 03 §8 and
 /// 02 D19 keep keywords, titles and fact statements out of logs and params). The index rides as a final
@@ -108,7 +114,13 @@ public static class RenderKeywordLinter
                         KeywordRepairDirection));
                 }
 
-                if (names.Matches(keyword, out var runTokens))
+                // S4 (skip the corpus check when R2 already rejected the keyword): a keyword that fails the
+                // non-ASCII alphabet rule must be rewritten anyway and the check re-runs on the next lint.
+                // It also keeps a hostile combining-mark flood out of NameCorpus.Matches' NFD canonical
+                // reordering, which is quadratic in the number of combining marks of one word. Any other
+                // violation, and a valid keyword (RuleId stays empty), still get the corpus check.
+                if (violation.RuleId != KeywordRules.NotEnglish
+                    && names.Matches(keyword, out var runTokens))
                 {
                     issues.Add(ValidationIssue.Blocking(
                         NameDetected,
@@ -172,31 +184,17 @@ public static class RenderKeywordLinter
 
     /// <summary>
     /// The Evidence of one keyword issue: the 02 evidence with the keyword's zero-based index appended as the final
-    /// <c>;index:&lt;i&gt;</c> token (D10's <c>errors[].index</c>, read back by <see cref="TryGetKeywordIndex"/>). The
-    /// budget reserves room for the token before the fragment is cut, so the index is never lost to
-    /// <see cref="ValidationIssue.MaxEvidenceChars"/>.
+    /// <c>;index:&lt;i&gt;</c> token (D10's <c>errors[].index</c>, read back by <see cref="TryGetKeywordIndex"/>).
     /// </summary>
-    /// <param name="evidence">The 02 evidence (a rule id, or <c>run:&lt;n&gt;</c>).</param>
+    /// <param name="evidence">The 02 evidence: a <see cref="KeywordRules"/> rule id or <c>run:&lt;n&gt;</c>.</param>
     /// <param name="index">The zero-based keyword index inside its segment.</param>
-    /// <returns>The evidence plus the trailing index token, within <see cref="ValidationIssue.MaxEvidenceChars"/>.</returns>
-    private static string WithKeywordIndex(string evidence, int index)
-    {
-        var suffix = FormattableString.Invariant($";index:{index}");
-        var budget = ValidationIssue.MaxEvidenceChars - suffix.Length;
-        var prefix = ValidationIssue.Snip(evidence);
-        if (prefix.Length > budget)
-        {
-            var cut = budget;
-            if (char.IsHighSurrogate(prefix[cut - 1]) && char.IsLowSurrogate(prefix[cut]))
-            {
-                cut--;
-            }
-
-            prefix = prefix[..cut];
-        }
-
-        return prefix + suffix;
-    }
+    /// <returns>The evidence plus the trailing index token. The argument is only ever a rule id (the longest,
+    /// <c>keyword_meta_instruction</c>, is 24 chars) or <c>run:&lt;n&gt;</c>, and the suffix is at most 17 chars
+    /// (<c>;index:</c> plus ten digits), so the result stays far under
+    /// <see cref="ValidationIssue.MaxEvidenceChars"/> (200): the index can never be cut, and
+    /// <see cref="ValidationIssue.Blocking"/>'s clamp is a no-op here.</returns>
+    private static string WithKeywordIndex(string evidence, int index) =>
+        evidence + FormattableString.Invariant($";index:{index}");
 
     /// <summary>The 02 rule id the validator uses for a keyword that fails <see cref="KeywordRules"/> (one id, one
     /// mapping — 02 CR-5).</summary>

@@ -14,8 +14,18 @@ namespace NightTales.Domain.Stories.Keywords;
 /// <remarks>
 /// <para>
 /// Pure and deterministic: no I/O, no clock, no randomness. Every step is linear in the length of the input
-/// text, so a hostile or oversized title degrades the run's cost linearly and never quadratically, and a null
-/// text, a null sequence, a null or empty keyword and a whitespace-only text are all safe (no throw, no match).
+/// text — <em>given the caps below</em> — so a hostile or oversized title degrades the run's cost linearly and
+/// never quadratically, and a null text, a null sequence, a null or empty keyword and a whitespace-only text are
+/// all safe (no throw, no match).
+/// </para>
+/// <para>
+/// Both corpus-building overloads cap their untrusted input first: each text is cut at <see cref="MaxTextChars"/>
+/// UTF-16 units, on a surrogate-pair boundary, so the cut never leaves a lone surrogate, and one call reads at
+/// most <see cref="MaxTexts"/> texts. The real bounds are far smaller — a fetched source title is at most 300
+/// units (<c>FetchResultLimits.MaxLabelLength</c>) and a fact statement at most 600
+/// (<c>FactStatementRules.StatementMaxChars</c>) — so the caps never bite real data; they only stop a hostile
+/// title from making one episode's corpus arbitrarily large. The residual is that a name placed beyond
+/// <see cref="MaxTextChars"/> is never found; no real title reaches that far.
 /// </para>
 /// <para>
 /// Folding (<see cref="Fold"/>, D11): NFD, so a precomposed vi letter becomes its base letter plus combining
@@ -42,6 +52,13 @@ namespace NightTales.Domain.Stories.Keywords;
 /// <c>[A-Za-z' -]</c>), so that keyword is blocked whatever this corpus would say.
 /// </para>
 /// <para>
+/// Residual: this holds for fact statements and keywords, but a <em>source title</em> never reaches the corpus
+/// with a format char inside a name — the fetcher deletes <see cref="UnicodeCategory.Format"/> characters from a
+/// label before storing it (<c>FetchTaskResultValidator.CleanLabel</c>), so <c>"Nguyễn\u200BVăn"</c> is stored
+/// glued as one word and yields one token, not two. A title is therefore a weaker name source than a statement,
+/// and the corpus cannot recover a boundary the fetcher removed.
+/// </para>
+/// <para>
 /// A run is a maximal stretch of consecutive tokens whose first char is upper case (D11). Leading stop words
 /// (<see cref="StopWords"/>) are skipped from the head of a run — the rest must still hold at least
 /// <see cref="MinimumRunTokens"/> tokens — so <c>"The Old Mill"</c> yields <c>old mill</c> while
@@ -53,19 +70,37 @@ namespace NightTales.Domain.Stories.Keywords;
 /// description instead.
 /// </para>
 /// <para>
-/// The Title Case guard skips a whole text whose tokens of three or more letters are at least 60 % capitalised,
+/// The Title Case guard — reached through
+/// <see cref="From(IEnumerable{string}, IEnumerable{string})"/>, which applies it to the source titles only
+/// (CR-18d) — skips a whole text whose tokens of three or more letters are at least 60 % capitalised,
 /// the shape of an English headline (<c>"The Night The Lights Went Out"</c>) where every word pair would become
 /// a "name". The share is compared in integer arithmetic (<c>capitalised × 10 ≥ longTokens × 6</c>), and the guard
 /// only fires from <see cref="TitleCaseMinimumTokens"/> such tokens up: with fewer long tokens there is not enough
 /// evidence of a headline, which is what keeps a short sentence-case vi title such as <c>"Vụ án Nguyễn Văn An"</c>
 /// (two long tokens, both capitalised) in the corpus [DECISION, gap: D11 states the share alone, and the share
-/// alone would skip that corpus text and contradict the 03.2.2-T1 acceptance check].
+/// alone would skip that corpus text and contradict the 03.2.2-T1 acceptance check]. The mirror image is a
+/// residual: a short mostly-capitalised vi title (three of five long tokens capitalised, exactly 60 %) is skipped
+/// and its name lost — recorded as an open item for the TL, not a defect of this task. A fact statement is a
+/// sentence, skips the guard, and is the corpus's main name source.
 /// </para>
 /// </remarks>
 public sealed class NameCorpus
 {
     /// <summary>The fewest tokens a candidate run may hold (D11: runs of two or more).</summary>
     public const int MinimumRunTokens = 2;
+
+    /// <summary>
+    /// The most UTF-16 units one text contributes to the fold: a longer text is cut at this length, on a
+    /// surrogate-pair boundary, before it is folded (see the type remarks). 2,000 is far above the real source
+    /// title (300) and fact statement (600) bounds, so the cap never bites real data.
+    /// </summary>
+    public const int MaxTextChars = 2_000;
+
+    /// <summary>
+    /// The most texts one corpus-building call reads; the texts beyond it are ignored (see the type remarks),
+    /// so a caller that hands in an unbounded sequence cannot make the corpus arbitrarily large.
+    /// </summary>
+    public const int MaxTexts = 500;
 
     /// <summary>D11's Title Case share: at or above it, a text is a headline and is skipped.</summary>
     private const int TitleCaseSharePercent = 60;
@@ -102,24 +137,74 @@ public sealed class NameCorpus
     /// </summary>
     public static NameCorpus Empty { get; } = new(new Dictionary<(string, string), int>());
 
-    /// <summary>Folds the episode's texts and collects the token pairs of every candidate run.</summary>
+    /// <summary>Folds the episode's texts and collects the token pairs of every candidate run (D11's contract form).</summary>
     /// <param name="texts">The fetched source titles and approved fact statements; a null sequence or a null
-    /// element yields no pairs for it.</param>
+    /// element yields no pairs for it. At most <see cref="MaxTexts"/> texts are read and each is cut at
+    /// <see cref="MaxTextChars"/>.</param>
     /// <returns><see cref="Empty"/> when no pair was collected, the corpus otherwise.</returns>
+    /// <remarks>D11's Title Case guard applies to every text of this list; the provider calls the two-argument
+    /// overload instead, so the guard runs on the titles only.</remarks>
     public static NameCorpus From(IEnumerable<string> texts)
+    {
+        var bigrams = new Dictionary<(string, string), int>();
+        var read = 0;
+        AddTexts(bigrams, texts, applyTitleCaseGuard: true, ref read);
+
+        return bigrams.Count == 0 ? Empty : new NameCorpus(bigrams);
+    }
+
+    /// <summary>
+    /// Folds the episode's source <paramref name="titles"/> and its approved fact
+    /// <paramref name="statements"/> and collects the token pairs of every candidate run — the overload the
+    /// provider uses (CR-18d): D11's Title Case guard runs on the titles only, because it is the shape of a
+    /// headline, while a fact statement is a sentence and is the corpus's main name source.
+    /// </summary>
+    /// <param name="titles">The fetched source titles, guarded as headlines; a null sequence or a null element
+    /// yields no pairs for it.</param>
+    /// <param name="statements">The approved fact statements, never guarded; a null sequence or a null element
+    /// yields no pairs for it.</param>
+    /// <returns><see cref="Empty"/> when no pair was collected, the corpus otherwise.</returns>
+    /// <remarks>The texts read across both sequences share one budget of <see cref="MaxTexts"/>, titles first,
+    /// and each is cut at <see cref="MaxTextChars"/>.</remarks>
+    public static NameCorpus From(IEnumerable<string> titles, IEnumerable<string> statements)
+    {
+        var bigrams = new Dictionary<(string, string), int>();
+        var read = 0;
+        AddTexts(bigrams, titles, applyTitleCaseGuard: true, ref read);
+        AddTexts(bigrams, statements, applyTitleCaseGuard: false, ref read);
+
+        return bigrams.Count == 0 ? Empty : new NameCorpus(bigrams);
+    }
+
+    /// <summary>
+    /// Folds at most <see cref="MaxTexts"/> texts of one sequence into <paramref name="bigrams"/>; the shared
+    /// <paramref name="read"/> budget means a second sequence cannot push the call past the cap either.
+    /// </summary>
+    /// <param name="bigrams">The pairs collected so far, extended in place.</param>
+    /// <param name="texts">The sequence; null is ignored entirely.</param>
+    /// <param name="applyTitleCaseGuard">Whether D11's Title Case guard may skip a text of this sequence.</param>
+    /// <param name="read">The number of texts already read by this call; advanced per text.</param>
+    private static void AddTexts(
+        Dictionary<(string, string), int> bigrams,
+        IEnumerable<string>? texts,
+        bool applyTitleCaseGuard,
+        ref int read)
     {
         if (texts is null)
         {
-            return Empty;
+            return;
         }
 
-        var bigrams = new Dictionary<(string, string), int>();
         foreach (var text in texts)
         {
-            AddText(bigrams, text);
-        }
+            if (read >= MaxTexts)
+            {
+                return;
+            }
 
-        return bigrams.Count == 0 ? Empty : new NameCorpus(bigrams);
+            read++;
+            AddText(bigrams, text, applyTitleCaseGuard);
+        }
     }
 
     /// <summary>
@@ -244,11 +329,27 @@ public sealed class NameCorpus
         return false;
     }
 
-    /// <summary>Collects the pairs of one text, unless the text is a Title Case headline (D11).</summary>
-    private static void AddText(Dictionary<(string, string), int> bigrams, string text)
+    /// <summary>
+    /// Collects the pairs of one text, cut at <see cref="MaxTextChars"/> first; a text shorter than
+    /// <see cref="MinimumRunTokens"/> and — when <paramref name="applyTitleCaseGuard"/> is set — a Title Case
+    /// headline contribute nothing (D11).
+    /// </summary>
+    /// <param name="bigrams">The pairs collected so far, extended in place.</param>
+    /// <param name="text">The raw text; null, empty and whitespace-only contribute nothing.</param>
+    /// <param name="applyTitleCaseGuard">Whether D11's Title Case guard may skip this text.</param>
+    private static void AddText(
+        Dictionary<(string, string), int> bigrams,
+        string? text,
+        bool applyTitleCaseGuard)
     {
-        var tokens = FoldTokensCore(text);
-        if (tokens.Count < MinimumRunTokens || IsTitleCased(tokens))
+        var capped = Cap(text);
+        if (capped is null)
+        {
+            return;
+        }
+
+        var tokens = FoldTokensCore(capped);
+        if (tokens.Count < MinimumRunTokens || (applyTitleCaseGuard && IsTitleCased(tokens)))
         {
             return;
         }
@@ -329,6 +430,27 @@ public sealed class NameCorpus
 
     /// <summary>Whether a folded token opens with an upper-case letter (a digit never does).</summary>
     private static bool StartsUpper(string token) => char.IsUpper(token[0]);
+
+    /// <summary>
+    /// <paramref name="text"/> cut to at most <see cref="MaxTextChars"/> UTF-16 units, on a surrogate-pair
+    /// boundary so the cut never leaves a lone surrogate: a supplementary character straddling the cap is dropped
+    /// whole. Returns the input itself when it is already within the cap, so the common path allocates nothing;
+    /// null stays null.
+    /// </summary>
+    /// <param name="text">The raw text, or null.</param>
+    /// <returns>The text, no longer than <see cref="MaxTextChars"/> units.</returns>
+    private static string? Cap(string? text)
+    {
+        if (text is null || text.Length <= MaxTextChars)
+        {
+            return text;
+        }
+
+        // A high surrogate as the last kept unit means its pair straddles the cap: keep one unit less, so the
+        // result never ends in a lone high surrogate (which FoldTokensCore would then have to replace).
+        var cut = char.IsHighSurrogate(text[MaxTextChars - 1]) ? MaxTextChars - 1 : MaxTextChars;
+        return text[..cut];
+    }
 
     /// <summary>
     /// <paramref name="text"/> with every unit ICU refuses to normalise replaced by a space (see the type

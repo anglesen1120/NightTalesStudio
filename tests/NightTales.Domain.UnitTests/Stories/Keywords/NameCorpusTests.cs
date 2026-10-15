@@ -7,8 +7,9 @@ namespace NightTales.Domain.UnitTests.Stories.Keywords;
 
 /// <summary>
 /// <c>NameCorpus</c> (03 README D11, F10, G4; 03.2.2-T1 Tests list): the fold of vi and en names, the run
-/// extraction with its run-start stop list and Title Case guard, and the two-consecutive-token match — plus the
-/// hostile-input rows (NFC vs NFD, a zero-width or noncharacter unit, null texts, a very long text).
+/// extraction with its run-start stop list and Title Case guard (on source titles only, via the two-argument
+/// overload), the two-consecutive-token match and the input caps — plus the hostile-input rows (NFC vs NFD, a
+/// zero-width or noncharacter unit, null texts, a very long text).
 /// </summary>
 public sealed class NameCorpusTests
 {
@@ -133,23 +134,86 @@ public sealed class NameCorpusTests
     }
 
     [Fact]
+    public void From_StatementNamingTwoPeople_IsKeptByTheTwoArgumentOverloadOnly()
+    {
+        // A statement naming people is majority-capitalised — the shape of a headline — so the one-list overload
+        // skips it and loses both names. The two-argument overload keeps it: the guard is for source titles only
+        // (CR-18d, the S1/C-1 finding).
+        const string vietnamese = "Nạn nhân là Nguyễn Thị Lan và Trần Văn Hùng";
+
+        var viaOverload = NameCorpus.From([], [vietnamese]);
+
+        viaOverload.Matches("portrait of nguyen thi lan at dawn").ShouldBeTrue();
+        viaOverload.Matches("portrait of tran van hung at dawn").ShouldBeTrue();
+
+        NameCorpus.From([vietnamese])
+            .Matches("portrait of nguyen thi lan at dawn")
+            .ShouldBeFalse("7 of 8 long tokens are capitalised, so the one-list overload reads the statement as a headline");
+
+        // The English shape is the same: 6 of 9 long tokens capitalised.
+        const string english = "The suspects were Tran Van Binh and Le Thi Hoa";
+
+        NameCorpus.From([], [english]).Matches("portrait of tran van binh at dawn").ShouldBeTrue();
+        NameCorpus.From([english]).Matches("portrait of tran van binh at dawn").ShouldBeFalse();
+    }
+
+    [Fact]
+    public void From_StatementListingThreeNames_IsKeptByTheTwoArgumentOverload()
+    {
+        const string statement = "Các nghi phạm gồm Trần Văn Bình, Lê Thị Hoa và Phạm Minh Quân";
+
+        var corpus = NameCorpus.From([], [statement]);
+
+        corpus.Matches("portrait of tran van binh at dawn").ShouldBeTrue();
+        corpus.Matches("portrait of le thi hoa at dawn").ShouldBeTrue();
+        corpus.Matches("portrait of pham minh quan at dawn").ShouldBeTrue();
+    }
+
+    [Fact]
+    public void From_TitleCaseHeadlineAsTitle_IsSkippedByTheOverloadToo()
+    {
+        // CR-18d keeps the guard on the titles: an English headline yields nothing through the overload, while a
+        // sentence-case statement passed beside it is still collected.
+        var corpus = NameCorpus.From(
+            ["The Night The Lights Went Out"],
+            ["The body of Nguyễn Văn An was found near Đà Lạt."]);
+
+        corpus.Matches("the lights went out at midnight").ShouldBeFalse("the headline-shaped title is skipped");
+        corpus.Matches("portrait of van an at dawn").ShouldBeTrue("the statement beside it is kept");
+    }
+
+    [Fact]
     public void From_NullTextsAndNullElements_YieldEmpty()
     {
         // Hostile input: a null sequence and a null element contribute nothing and never throw.
         NameCorpus.From(null!).Matches("portrait of van an").ShouldBeFalse();
         NameCorpus.From([null!, "   ", string.Empty]).Matches("portrait of van an").ShouldBeFalse();
+
+        // The two-argument overload takes a null sequence on either side.
+        NameCorpus.From(null!, null!).Matches("portrait of van an").ShouldBeFalse();
+        NameCorpus.From(null!, ["Vụ án Nguyễn Văn An"]).Matches("portrait of van an").ShouldBeTrue();
+        NameCorpus.From([null!, "   "], ["The body of Nguyễn Văn An was found."]).Matches("portrait of van an").ShouldBeTrue();
     }
 
     [Fact]
-    public void From_VeryLongText_FinishesAndFindsTheName()
+    public void From_VeryLongText_IsCutAtTheCapAndStaysLinear()
     {
-        // The fold and the run scan are linear in the text, so a source title far over any real limit is not a
-        // quadratic trap (the statement limits of 02 bound the normal case; a fetched title does not).
+        // The fold and the run scan are linear in the text and the text is cut at MaxTextChars before folding,
+        // so a source title far over any real limit is neither a quadratic trap nor unbounded (the statement
+        // limits of 02 bound the normal case; a fetched title does not).
         var filler = string.Join(' ', Enumerable.Repeat("lorem ipsum dolor sit amet consectetur", 15_000));
-        var corpus = NameCorpus.From([filler + " The victim was Nguyễn Văn An near Da Lat."]);
+        filler.Length.ShouldBeGreaterThan(NameCorpus.MaxTextChars);
 
-        corpus.Matches("portrait of van an at dawn").ShouldBeTrue();
-        corpus.Matches("portrait of lorem ipsum dolor at dawn").ShouldBeFalse();
+        var inside = NameCorpus.From(["The victim was Nguyễn Văn An near Da Lat. " + filler]);
+
+        inside.Matches("portrait of van an at dawn").ShouldBeTrue("the run sits inside the first MaxTextChars units");
+        inside.Matches("pine forest above da lat at dawn").ShouldBeTrue();
+        inside.Matches("portrait of lorem ipsum dolor at dawn").ShouldBeFalse("the lower-case filler yields no run");
+
+        // Past the cap the text is cut, so a name that far out is never collected (residual, see the type remarks).
+        var beyond = NameCorpus.From([filler + " The victim was Nguyễn Văn An near Da Lat."]);
+
+        beyond.Matches("portrait of van an at dawn").ShouldBeFalse("the name lies past MaxTextChars and is cut away");
     }
 
     [Fact]

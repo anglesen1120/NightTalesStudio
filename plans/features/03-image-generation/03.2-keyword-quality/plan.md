@@ -52,8 +52,8 @@
 | `Domain/Rendering/Images/RenderImagePlan.cs` | `sealed record RenderImagePlan(IReadOnlyList<PlannedTerm> Terms, int ClipSeconds, int NeededImages, int MaxTerms, int TrimmedCount, IReadOnlyList<string> HintCodes)`; `PlannedTerm(int Slot, string Segment, string Keyword)` |
 | `Domain/Rendering/Images/RenderImagePlanner.cs` | `static RenderImagePlan Plan(RenderImagePlanInput input)` |
 | `Domain/Stories/Keywords/SegmentKeywords.cs` | `sealed record SegmentKeywords(string Segment, IReadOnlyList<string> Keywords)` |
-| `Domain/Stories/Keywords/NameCorpus.cs` | `sealed class NameCorpus { static NameCorpus From(IEnumerable<string> texts); static NameCorpus Empty; bool Matches(string keyword, out string matchedRun) }` |
-| `Domain/Stories/Keywords/RenderKeywordLinter.cs` | `static IReadOnlyList<ValidationIssue> Lint(IReadOnlyList<SegmentKeywords> segments, NameCorpus names)` |
+| `Domain/Stories/Keywords/NameCorpus.cs` | `sealed class NameCorpus { static NameCorpus From(IEnumerable<string> texts); static NameCorpus From(IEnumerable<string> titles, IEnumerable<string> statements); static NameCorpus Empty; bool Matches(string keyword); bool Matches(string keyword, out int matchedRunTokens) }` |
+| `Domain/Stories/Keywords/RenderKeywordLinter.cs` | `static IReadOnlyList<ValidationIssue> Lint(IReadOnlyList<SegmentKeywords> segments, NameCorpus names)`; `static bool TryGetKeywordIndex(ValidationIssue issue, out int index)` (CR-18b) |
 | `Application/Abstractions/Rendering/IImageCostEstimator.cs` | `CostBound WorstCase(Aspect aspect, int maxTerms, int priceVersion)` (implementation in Application, reads `IPriceCatalog`) |
 | `Application/Abstractions/Rendering/INameCorpusProvider.cs` | `ValueTask<NameCorpus> LoadAsync(Guid episodeId, CancellationToken ct)` |
 

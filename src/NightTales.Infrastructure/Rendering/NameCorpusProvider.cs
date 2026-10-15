@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using NightTales.Application.Abstractions.Persistence;
 using NightTales.Application.Abstractions.Rendering;
 using NightTales.Application.Features.Rendering;
+using NightTales.Application.Features.Research.Jobs;
 using NightTales.Domain.Episodes;
 using NightTales.Domain.Research;
 using NightTales.Domain.Series;
@@ -24,7 +25,16 @@ namespace NightTales.Infrastructure.Rendering;
 /// <para>
 /// The corpus carries ids, titles and statements only into memory — never into a log line: the class has
 /// no logger, so no name can reach the log (02 README D19). The three reads are one query each, never a
-/// per-row query, and the fact sheets hold at most 100 facts per episode (02 README limits).
+/// per-row query. The title count is one per fetched url source of the episode, bounded by the episode's source
+/// cap (<c>Sources:MaxPerEpisode</c>, default 10); the fact count is bounded by
+/// <see cref="FactSheetJobOptions.MaxMaxFacts"/> (the <c>facts.v1</c> ceiling of one approved version, 40); and
+/// the corpus reads at most <see cref="NameCorpus.MaxTexts"/> texts in total, so no read here is bounded by a
+/// Take.
+/// </para>
+/// <para>
+/// The corpus is built with <see cref="NameCorpus.From(IEnumerable{string}, IEnumerable{string})"/>, so D11's
+/// Title Case guard runs on the source titles only (CR-18d): a sentence-case fact statement is never skipped as
+/// a headline, which is what keeps a statement naming two people in the corpus.
 /// </para>
 /// </remarks>
 /// <param name="readDb">The scope's read model; it carries the tenant filter and never tracks.</param>
@@ -80,17 +90,19 @@ public sealed class NameCorpusProvider(IReadDb readDb, ImagesOptions options) : 
             .FirstOrDefaultAsync(ct)
             .ConfigureAwait(false);
 
-        var texts = new List<string>(titles.Count + (facts?.Count ?? 0));
-        texts.AddRange(titles);
-
+        // Titles and statements stay apart: the Title Case guard is for headlines and must not skip a fact
+        // statement (CR-18d), so the corpus is built through the two-argument overload.
+        var statements = new List<string>(facts?.Count ?? 0);
         if (facts is not null)
         {
             foreach (var fact in facts)
             {
-                texts.Add(fact.Statement);
+                statements.Add(fact.Statement);
             }
         }
 
-        return texts.Count == 0 ? NameCorpus.Empty : NameCorpus.From(texts);
+        return titles.Count == 0 && statements.Count == 0
+            ? NameCorpus.Empty
+            : NameCorpus.From(titles, statements);
     }
 }
