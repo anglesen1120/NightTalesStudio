@@ -254,6 +254,26 @@ public sealed class ImageCostEstimatorTests
         ImagesOptionsValidator.Validate(new ImagesOptions { PlaceholderTextInPer1MUsd = (decimal)rate }).Count.ShouldBe(valid ? 0 : 1);
 
     [Fact]
+    public void Options_LinterDefaultsToNameCorpusEnabled() =>
+        new ImagesOptions().Linter.NameCorpusEnabled.ShouldBeTrue("03 README D11: the name rule is on by default");
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void Options_NameCorpusEnabledSwitch_Passes(bool enabled) =>
+        ImagesOptionsValidator.Validate(new ImagesOptions { Linter = new ImagesLinterOptions { NameCorpusEnabled = enabled } })
+            .ShouldBeEmpty();
+
+    [Fact]
+    public void Options_NullLinter_IsReported()
+    {
+        // A nested sub-section can bind to null; the validation must answer with a message rather than throw.
+        var problems = ImagesOptionsValidator.Validate(new ImagesOptions { Linter = null! });
+
+        problems.ShouldHaveSingleItem().ShouldContain(nameof(ImagesOptions.Linter));
+    }
+
+    [Fact]
     public async Task WorstCase_WrongUnit_FallsBackToPlaceholder()
     {
         var image = new Dictionary<string, ImagePriceRate> { ["gpt-image-2"] = new("per_1m_tokens", 0.000001m) };
