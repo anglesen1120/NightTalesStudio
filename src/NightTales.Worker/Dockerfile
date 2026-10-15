@@ -19,6 +19,8 @@ RUN dotnet restore src/NightTales.Worker/NightTales.Worker.csproj --locked-mode
 
 COPY src/ src/
 COPY seed/ seed/
+# config/ holds the source-finder allow-list that NightTales.Infrastructure embeds by a literal path.
+COPY config/ config/
 RUN dotnet publish src/NightTales.Worker/NightTales.Worker.csproj -c Release -o /app --no-restore \
     -p:UseAppHost=false
 

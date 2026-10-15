@@ -32,7 +32,7 @@ public sealed class ResearchAllowListValidatorTests
     public void AllowList_Over100Approved_FailsStartup()
     {
         var sites = Enumerable.Range(0, 101)
-            .Select(i => (object)ResearchAllowListFixtures.ApprovedSite($"site{i}.example"))
+            .Select(i => (object)ResearchAllowListFixtures.ApprovedSite($"site{i}.example.org"))
             .ToArray();
         var json = ResearchAllowListFixtures.Document(sites);
 
@@ -43,7 +43,7 @@ public sealed class ResearchAllowListValidatorTests
     public void AllowList_Exactly100Approved_Passes()
     {
         var sites = Enumerable.Range(0, ResearchAllowListValidator.MaxApproved)
-            .Select(i => (object)ResearchAllowListFixtures.ApprovedSite($"site{i}.example"))
+            .Select(i => (object)ResearchAllowListFixtures.ApprovedSite($"site{i}.example.org"))
             .ToArray();
         var json = ResearchAllowListFixtures.Document(sites);
 

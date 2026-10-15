@@ -6,7 +6,7 @@ Related: feature plan `plans/features/02-story-writing/02.7-source-finder/plan.m
 
 ## 1. What the file is
 
-`config/source-finder/allowed-sites.v1.json` lists the research sites the source finder may search. It is tracked in git, embedded in the Worker image as a resource (no runtime disk reads), and validated at start-up. If validation fails, the host does not start.
+`config/source-finder/allowed-sites.v1.json` lists the research sites the source finder may search. It is tracked in git, embedded in the Api and Worker images as a resource (no runtime disk reads), and validated at start-up by the Api host only; the Worker is wired by 02.7.2-T3. If validation fails, the host does not start.
 
 ## 2. Schema
 
@@ -38,13 +38,13 @@ Related: feature plan `plans/features/02-story-writing/02.7-source-finder/plan.m
 | `language` | enum | `vi` \| `en` \| `any`. |
 | `category` | enum | `encyclopedia` \| `news` \| `court` \| `archive` \| `government` \| `culture`. |
 | `terms_url` | string | URL of the terms the basis quotes. |
-| `robots_checked` | boolean | See §6. |
+| `robots_checked` | boolean | See §9. |
 | `automated_access_basis` | string or null | Quoted clause + URL, or "official API/bulk-data permission" + URL. Required when `approved` (AL4). |
 | `status` | enum | `candidate` \| `approved` \| `rejected`. |
 | `reviewed_at` | ISO date or null | Required when `approved` (AL4). |
 | `reviewer` | string or null | Required when `approved` (AL4). |
 
-All entries shipped in the first PR are `candidate`. No entry is approved by code, by the plan or by an assistant.
+The first PR shipped with every entry `candidate`. On 2026-10-16 the owner approved six sites through the coordinator: `vi.wikipedia.org`, `vi.wikisource.org`, `congbao.chinhphu.vn`, `en.wikipedia.org`, `loc.gov` and `www.gov.uk`. The owner rejected `reuters.com`. The other 11 entries stay `candidate`. No entry is approved by code, by the plan or by an assistant.
 
 ## 3. Start-up rules
 
@@ -52,8 +52,8 @@ The host refuses to start when any rule fails. The failure names the rule id.
 
 | Rule | Check | Failure |
 |---|---|---|
-| AL1 | JSON parses and `version = 1`. | Host does not start. |
-| AL2 | `domain` has no scheme, path, port or trailing dot, and is lowercase punycode. | Host does not start. |
+| AL1 | JSON parses, `version = 1`, enum values (`language`, `category`, `status`) are valid, `reviewed_at` is an ISO date (`YYYY-MM-DD`) or null, no duplicate JSON members, and no extra or unknown members. | Host does not start. |
+| AL2 | `domain` has no scheme, path, port or trailing dot, and is lowercase punycode. Public-suffix entries are rejected (for example `gov.uk`; use `www.gov.uk`). IP-literal and reserved-suffix entries are rejected. | Host does not start. |
 | AL3 | No entry's host or registrable domain matches the Domain blocklist (D11). Example: `m.youtube.com` is refused. | Host does not start. |
 | AL4 | Every `approved` entry has non-empty `automated_access_basis`, `reviewed_at` and `reviewer`. | Host does not start. |
 | AL5 | At most 100 `approved` entries (W2). | Host does not start. |
@@ -70,6 +70,8 @@ Startup failure is the safety net. It does not replace review: a PR that passes 
 - `notvnexpress.net` does not match `vnexpress.net`.
 
 `Approved(lang)` returns the `approved` entries whose `language` equals `lang` or is `any`. `candidate` and `rejected` entries are never used for search.
+
+`IsAllowed` takes only canonical ASCII (punycode) input. Callers pass the normalised host of the URL (`SourceUrl.Host`). Input longer than 255 characters is not matched.
 
 The blocklist (D11) wins at every level: AL3 at start-up, and D11 again at extraction and at fetch. An approved entry does not unblock a blocked host.
 
@@ -143,3 +145,8 @@ The domain, clause and URL in this example are placeholders. Do not copy them in
 - [ ] Approved count after this PR is at most 100 (AL5); no duplicate domain (AL6).
 - [ ] The PR is a status change reviewed by the owner, and the checklist line `allow-list change: clause quoted` is ticked.
 - [ ] Start-up hash noted for the release (§5).
+
+## 13. Known limits
+
+- The Public Suffix List private section (for example `github.io`, `blogspot.com`) is not treated as a suffix. Never allow-list a multi-tenant host; allow-list only the specific site the owner has reviewed.
+- Owner-only approval is enforced by PR review only. There is no CODEOWNERS rule yet.

@@ -1,3 +1,4 @@
+using System.Text.Json;
 using NightTales.Domain.Common;
 using NightTales.Infrastructure.Research;
 using Shouldly;
@@ -7,13 +8,35 @@ namespace NightTales.Infrastructure.UnitTests.Research;
 
 public sealed class EmbeddedResearchAllowListTests
 {
-    /// <summary>The production blocklist, copied from <c>Fetcher:BlockedDomains</c> in <c>appsettings.json</c>.</summary>
-    private static readonly string[] ProductionBlockedDomains =
-    [
-        "youtube.com", "youtu.be", "youtube-nocookie.com", "tiktok.com", "facebook.com", "fb.watch", "fb.com",
-        "instagram.com", "threads.net", "x.com", "twitter.com", "t.co", "reddit.com", "vimeo.com", "dailymotion.com",
-        "twitch.tv", "bilibili.com", "zalo.me", "zingmp3.vn",
-    ];
+    /// <summary>The production blocklist, read from <c>Fetcher:BlockedDomains</c> in the Api's <c>appsettings.json</c>.</summary>
+    private static readonly string[] ProductionBlockedDomains = ReadProductionBlockedDomains();
+
+    private static string[] ReadProductionBlockedDomains()
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "NightTales.sln")))
+        {
+            dir = dir.Parent;
+        }
+
+        if (dir is null)
+        {
+            throw new InvalidOperationException("NightTales.sln was not found above the test output directory.");
+        }
+
+        var path = Path.Combine(dir.FullName, "src", "NightTales.Api", "appsettings.json");
+        using var doc = JsonDocument.Parse(
+            File.ReadAllBytes(path),
+            new JsonDocumentOptions { CommentHandling = JsonCommentHandling.Skip, AllowTrailingCommas = true });
+
+        var domains = new List<string>();
+        foreach (var element in doc.RootElement.GetProperty("Fetcher").GetProperty("BlockedDomains").EnumerateArray())
+        {
+            domains.Add(element.GetString()!);
+        }
+
+        return domains.ToArray();
+    }
 
     private static readonly string[] ViApproved = ["vi-only.example.org", "any.example.org"];
     private static readonly string[] EnApproved = ["en-only.example.org", "any.example.org"];

@@ -27,6 +27,8 @@ RUN dotnet restore src/NightTales.Api/NightTales.Api.csproj --locked-mode
 # output directory), so the publish needs it on disk.
 COPY src/ src/
 COPY seed/ seed/
+# config/ holds the source-finder allow-list that NightTales.Infrastructure embeds by a literal path.
+COPY config/ config/
 RUN dotnet publish src/NightTales.Api/NightTales.Api.csproj -c Release -o /app --no-restore \
     -p:OpenApiGenerateDocuments=false -p:UseAppHost=false
 

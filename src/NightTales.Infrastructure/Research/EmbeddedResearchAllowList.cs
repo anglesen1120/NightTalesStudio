@@ -1,5 +1,5 @@
-using System.Globalization;
 using System.Reflection;
+using System.Text;
 using NightTales.Application.Features.Research.SourceFinder;
 using NightTales.Domain.Common;
 using NightTales.Domain.Research;
@@ -15,7 +15,11 @@ public sealed class EmbeddedResearchAllowList : IResearchAllowList
     /// <summary>The logical name of the embedded file (see the Infrastructure csproj).</summary>
     public const string ResourceName = "NightTales.Infrastructure.Research.allowed-sites.v1.json";
 
-    private readonly IReadOnlyList<AllowedSite> _approved;
+    /// <summary>Raw input longer than this is rejected before any normalisation (perf P1, sec F3).</summary>
+    private const int MaxInputLength = 255;
+
+    private readonly (string Domain, string Suffix)[] _approvedHosts;
+    private readonly Dictionary<string, IReadOnlyList<AllowedSite>> _approvedByLanguage;
     private readonly DomainBlocklist _blocklist;
 
     /// <summary>Creates the allow-list over a validated snapshot.</summary>
@@ -25,7 +29,10 @@ public sealed class EmbeddedResearchAllowList : IResearchAllowList
     {
         ArgumentNullException.ThrowIfNull(snapshot);
         _blocklist = blocklist ?? throw new ArgumentNullException(nameof(blocklist));
-        _approved = snapshot.Sites.Where(s => s.Status == "approved").ToList();
+
+        var approved = snapshot.Sites.Where(s => s.Status == "approved").ToList();
+        _approvedHosts = approved.Select(s => (s.Domain, "." + s.Domain)).ToArray();
+        _approvedByLanguage = BuildByLanguage(approved);
         Hash = snapshot.Hash;
     }
 
@@ -54,15 +61,18 @@ public sealed class EmbeddedResearchAllowList : IResearchAllowList
     public IReadOnlyList<AllowedSite> Approved(Language language)
     {
         var code = language.ToString().ToLowerInvariant();
-        return _approved
-            .Where(s => s.Language == code || s.Language == "any")
-            .ToList();
+        return _approvedByLanguage.TryGetValue(code, out var sites) ? sites : Array.Empty<AllowedSite>();
     }
 
     /// <inheritdoc />
     public bool IsAllowed(string registrableOrHost)
     {
         ArgumentNullException.ThrowIfNull(registrableOrHost);
+
+        if (registrableOrHost.Length > MaxInputLength || !Ascii.IsValid(registrableOrHost))
+        {
+            return false;
+        }
 
         var host = registrableOrHost.Trim();
         if (host.EndsWith('.'))
@@ -71,31 +81,31 @@ public sealed class EmbeddedResearchAllowList : IResearchAllowList
         }
 
         host = host.ToLowerInvariant();
-        if (host.Any(c => c > 127))
-        {
-            try
-            {
-                host = new IdnMapping().GetAscii(host);
-            }
-            catch (ArgumentException)
-            {
-                return false;
-            }
-        }
-
         if (!ResearchHostGrammar.IsCanonicalHost(host) || _blocklist.IsBlocked(host))
         {
             return false;
         }
 
-        foreach (var site in _approved)
+        foreach (var (domain, suffix) in _approvedHosts)
         {
-            if (host == site.Domain || host.EndsWith("." + site.Domain, StringComparison.Ordinal))
+            if (host == domain || host.EndsWith(suffix, StringComparison.Ordinal))
             {
                 return true;
             }
         }
 
         return false;
+    }
+
+    private static Dictionary<string, IReadOnlyList<AllowedSite>> BuildByLanguage(IReadOnlyList<AllowedSite> approved)
+    {
+        var byLanguage = new Dictionary<string, IReadOnlyList<AllowedSite>>(StringComparer.Ordinal);
+        foreach (var language in Enum.GetValues<Language>())
+        {
+            var code = language.ToString().ToLowerInvariant();
+            byLanguage[code] = approved.Where(s => s.Language == code || s.Language == "any").ToList();
+        }
+
+        return byLanguage;
     }
 }

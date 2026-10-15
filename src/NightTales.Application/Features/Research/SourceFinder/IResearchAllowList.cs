@@ -22,7 +22,7 @@ public interface IResearchAllowList
     IReadOnlyList<AllowedSite> Approved(Language language);
 
     /// <summary>Whether <paramref name="registrableOrHost"/> is an approved domain or a subdomain of one.</summary>
-    /// <param name="registrableOrHost">A registrable domain or a host name.</param>
+    /// <param name="registrableOrHost">A registrable domain or a host name. Callers pass <c>SourceUrl.Host</c> (canonical ASCII punycode); any non-ASCII character returns <see langword="false"/>.</param>
     /// <returns><see langword="true"/> when an approved entry matches at a label boundary and the blocklist does not block it.</returns>
     bool IsAllowed(string registrableOrHost);
 

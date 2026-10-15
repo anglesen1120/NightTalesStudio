@@ -62,6 +62,7 @@ public sealed class ResearchAllowListQaTests
     [InlineData("10.0.0.1")]
     [InlineData("việt.wikipedia.org")]
     [InlineData("vі.wikipedia.org")] // Cyrillic і (U+0456) look-alike; punycodes to a different host
+    [InlineData("vi.wikipedia.org\u3000")] // non-ASCII ideographic space after an approved host
     [InlineData("vi.wikipedia.org.evil")]
     [InlineData("evilvi.wikipedia.org")]
     [InlineData("vnexpress.net.evil.com")]
@@ -112,6 +113,15 @@ public sealed class ResearchAllowListQaTests
     }
 
     [Fact]
+    public void IsAllowed_InputOver255CharactersBeforeTrim_False()
+    {
+        // The length guard runs on the raw input, so whitespace padding cannot bring a host under the bound.
+        var host = new string(' ', 250) + "vi.wikipedia.org";
+
+        Committed().IsAllowed(host).ShouldBeFalse();
+    }
+
+    [Fact]
     public void IsAllowed_ApprovedButBlockedHost_False()
     {
         // Blocklist wins at every level: a snapshot that somehow carries an approved, blocked host is refused.
@@ -154,12 +164,17 @@ public sealed class ResearchAllowListQaTests
     }
 
     [Fact]
-    public void Approved_CommittedList_ReturnsSameOrderEveryCall()
+    public void Approved_LoadedFromFile_KeepsFileOrder()
     {
-        var list = Committed();
+        // Three approved sites in non-alphabetical file order: Approved returns them in that order, not sorted.
+        var bytes = Bytes(ResearchAllowListFixtures.Document(
+            ResearchAllowListFixtures.ApprovedSite("c.example.org"),
+            ResearchAllowListFixtures.ApprovedSite("a.example.org"),
+            ResearchAllowListFixtures.ApprovedSite("b.example.org")));
 
-        list.Approved(Language.Vi).Select(s => s.Domain)
-            .ShouldBe(list.Approved(Language.Vi).Select(s => s.Domain));
+        var list = new EmbeddedResearchAllowList(ResearchAllowListFixtures.Validator().Validate(bytes), ResearchAllowListFixtures.NoBlocks);
+
+        list.Approved(Language.Vi).Select(s => s.Domain).ShouldBe(["c.example.org", "a.example.org", "b.example.org"]);
     }
 
     // ---- AL2: host grammar and public suffix ----
@@ -175,6 +190,10 @@ public sealed class ResearchAllowListQaTests
     [InlineData(".wikipedia.org")]
     [InlineData("việt.wikipedia.org")]
     [InlineData("vi..wikipedia.org")]
+    [InlineData("10.0.0.1")]
+    [InlineData("x.localhost")]
+    [InlineData("x.internal")]
+    [InlineData("x.home.arpa")]
     public void AL2_HostGrammarViolation_Fails(string domain)
         => ThrowsViolation(Bytes(Doc(GoodSite.Replace("vi.wikipedia.org", domain))))
             .ShouldViolate("AL2");
@@ -294,21 +313,12 @@ public sealed class ResearchAllowListQaTests
         => ResearchAllowListFixtures.ThrowsViolation(Doc(siteBody)).ShouldViolate("AL1");
 
     [Fact]
-    public void AL1_ByteOrderMarkPrefixedFile_FailsClosedOrParses()
+    public void AL1_ByteOrderMarkPrefixedFile_FailsWithAL1()
     {
-        // The committed file has no BOM. A BOM-prefixed copy must either parse or fail with AL1, never with another exception.
+        // The committed file has no BOM. A BOM-prefixed copy is refused, closed, as AL1 and never with another exception type.
         var bytes = new byte[] { 0xEF, 0xBB, 0xBF }.Concat(Bytes("{\"version\":1,\"sites\":[]}")).ToArray();
 
-        var error = Record.Exception(() => ResearchAllowListFixtures.Validator().Validate(bytes));
-
-        if (error is ResearchAllowListException exception)
-        {
-            exception.ShouldViolate("AL1");
-        }
-        else
-        {
-            error.ShouldBeNull();
-        }
+        ThrowsViolation(bytes).ShouldViolate("AL1");
     }
 
     // ---- AL4: approved entries need all three governance fields ----

@@ -49,6 +49,12 @@ public sealed class ResearchAllowListValidator
     };
     private static readonly HashSet<string> Statuses = new(StringComparer.Ordinal) { "candidate", "approved", "rejected" };
 
+    /// <summary>
+    /// AL2 reserved suffixes. Mirrors the private ReservedLabels and HasReservedSuffix in SourceUrl (Domain),
+    /// which Infrastructure cannot reach.
+    /// </summary>
+    private static readonly string[] ReservedSuffixes = ["localhost", "local", "localdomain", "internal", "lan", "intranet", "corp", "invalid", "test", "example", "onion", "home.arpa"];
+
     private readonly IPublicSuffixList _suffixes;
     private readonly DomainBlocklist _blocklist;
 
@@ -245,6 +251,18 @@ public sealed class ResearchAllowListValidator
             return;
         }
 
+        if (IsIpLiteral(entry.Domain))
+        {
+            violations.Add($"AL2: domain '{entry.Domain}' is an IP literal; list a host name instead.");
+            return;
+        }
+
+        if (HasReservedSuffix(entry.Domain))
+        {
+            violations.Add($"AL2: domain '{entry.Domain}' is under a reserved suffix (localhost, local, localdomain, internal, lan, intranet, corp, invalid, test, example, onion, home.arpa).");
+            return;
+        }
+
         var registrable = _suffixes.GetRegistrableDomain(entry.Domain);
         if (registrable is null)
         {
@@ -256,6 +274,25 @@ public sealed class ResearchAllowListValidator
         {
             violations.Add($"AL3: entry '{entry.Domain}' is on the domain blocklist (02 D11).");
         }
+    }
+
+    private static bool IsIpLiteral(string domain)
+    {
+        var lastLabel = domain[(domain.LastIndexOf('.') + 1)..];
+        return lastLabel.All(char.IsAsciiDigit);
+    }
+
+    private static bool HasReservedSuffix(string domain)
+    {
+        foreach (var suffix in ReservedSuffixes)
+        {
+            if (domain == suffix || domain.EndsWith("." + suffix, StringComparison.Ordinal))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static void CheckApprovedBasis(Entry entry, List<string> violations)

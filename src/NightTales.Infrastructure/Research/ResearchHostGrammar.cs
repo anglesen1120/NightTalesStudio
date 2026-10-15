@@ -20,8 +20,11 @@ internal static class ResearchHostGrammar
             return false;
         }
 
-        foreach (var label in host.Split('.'))
+        var rest = host.AsSpan();
+        while (true)
         {
+            var dot = rest.IndexOf('.');
+            var label = dot < 0 ? rest : rest[..dot];
             if (label.Length is 0 or > 63 || label[0] == '-' || label[^1] == '-')
             {
                 return false;
@@ -34,8 +37,13 @@ internal static class ResearchHostGrammar
                     return false;
                 }
             }
-        }
 
-        return true;
+            if (dot < 0)
+            {
+                return true;
+            }
+
+            rest = rest[(dot + 1)..];
+        }
     }
 }

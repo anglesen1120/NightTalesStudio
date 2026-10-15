@@ -8,10 +8,10 @@
       "category": "encyclopedia",
       "terms_url": "https://foundation.wikimedia.org/wiki/Policy:Terms_of_Use",
       "robots_checked": true,
-      "automated_access_basis": "Content licence: \"Nội dung văn bản của Wikipedia ... được cấp phép chính thức cho công chúng theo một hoặc một vài giấy phép tự do. Phần lớn văn bản của Wikipedia ... được cấp phép kép theo Giấy phép Creative Commons Ghi công–Chia sẻ tương tự phiên bản 4.0 Quốc tế (CC BY-SA) và Giấy phép Tài liệu Tự do GNU (GFDL)\" (https://vi.wikipedia.org/wiki/Wikipedia:B%E1%BA%A3n_quy%E1%BB%81n). Wikimedia Terms of Use: \"Share and Reuse our articles and other media under free and open licenses.\" (https://foundation.wikimedia.org/wiki/Policy:Terms_of_Use). robots.txt for * allows /wiki/ article paths. Send a descriptive User-Agent (https://foundation.wikimedia.org/wiki/Policy:Wikimedia_Foundation_User-Agent_Policy).",
+      "automated_access_basis": "Content licence: \"Nội dung văn bản của Wikipedia ... được cấp phép chính thức cho công chúng theo một hoặc một vài giấy phép tự do. Phần lớn văn bản của Wikipedia ... được cấp phép kép theo Giấy phép Creative Commons Ghi công–Chia sẻ tương tự phiên bản 4.0 Quốc tế (CC BY-SA) và Giấy phép Tài liệu Tự do GNU (GFDL)\" (https://vi.wikipedia.org/wiki/Wikipedia:B%E1%BA%A3n_quy%E1%BB%81n). Wikimedia Terms of Use: \"Share and Reuse our articles and other media under free and open licenses.\" (https://foundation.wikimedia.org/wiki/Policy:Terms_of_Use). robots.txt for * allows /wiki/ article paths. Send a descriptive User-Agent (https://foundation.wikimedia.org/wiki/Policy:Wikimedia_Foundation_User-Agent_Policy). Basis accepted by the owner (2026-10-16) as attribution-only / Terms of Use wording, not an explicit automated-access grant.",
       "status": "approved",
       "reviewed_at": "2026-10-16",
-      "reviewer": "owner (decision 2026-10-16, via coordinator; owner accepts the attribution-only and Terms of Use wording below as the basis)"
+      "reviewer": "owner (decision 2026-10-16, via coordinator)"
     },
     {
       "domain": "en.wikipedia.org",
@@ -20,10 +20,10 @@
       "category": "encyclopedia",
       "terms_url": "https://foundation.wikimedia.org/wiki/Policy:Terms_of_Use",
       "robots_checked": true,
-      "automated_access_basis": "Terms of Use: \"You generally must license your contributions and edits ... under a free and open license\"; automated use is prohibited only when \"abusive or disruptive of the services ... or have not been approved by the Wikimedia community\" (https://foundation.wikimedia.org/wiki/Policy:Terms_of_Use). Single-page fetch on a user's request with robots respected is neither. robots.txt for * allows article paths, no crawl-delay.",
+      "automated_access_basis": "Terms of Use: \"You generally must license your contributions and edits ... under a free and open license\"; automated use is prohibited only when \"abusive or disruptive of the services ... or have not been approved by the Wikimedia community\" (https://foundation.wikimedia.org/wiki/Policy:Terms_of_Use). Single-page fetch on a user's request with robots respected is neither. robots.txt for * allows article paths, no crawl-delay. Basis accepted by the owner (2026-10-16) as attribution-only / Terms of Use wording, not an explicit automated-access grant.",
       "status": "approved",
       "reviewed_at": "2026-10-16",
-      "reviewer": "owner (decision 2026-10-16, via coordinator; owner accepts the attribution-only and Terms of Use wording below as the basis)"
+      "reviewer": "owner (decision 2026-10-16, via coordinator)"
     },
     {
       "domain": "vnexpress.net",
@@ -119,7 +119,7 @@
       "automated_access_basis": "robots.txt: \"NOTICE: Collection of content, data and/or information from reuters.com through automated means is prohibited unless you have prior written consent from Reuters.\" and \"User-agent: * / Allow: /plus/ / Disallow: /\" (https://www.reuters.com/robots.txt). Terms page returned HTTP 401.",
       "status": "rejected",
       "reviewed_at": "2026-10-16",
-      "reviewer": "owner (decision 2026-10-16, via coordinator; owner accepts the attribution-only and Terms of Use wording below as the basis)"
+      "reviewer": "owner (decision 2026-10-16, via coordinator)"
     },
     {
       "domain": "theguardian.com",
@@ -140,10 +140,10 @@
       "category": "archive",
       "terms_url": "https://www.loc.gov/free-to-use/",
       "robots_checked": true,
-      "automated_access_basis": "\"Text is U.S. Government Work\" (page metadata, https://www.loc.gov/free-to-use/); the free-to-use page covers rights-free image sets only, no general automated-access clause was found. robots.txt for *: \"Crawl-Delay: 5\" (within the fetcher CrawlDelayMaxSeconds cap of 10) and Disallow: /cgi-bin/, /web_arch/, /search, /pictures/search, /myloc; article paths are not disallowed.",
+      "automated_access_basis": "\"Text is U.S. Government Work\" (page metadata, https://www.loc.gov/free-to-use/); the free-to-use page covers rights-free image sets only, no general automated-access clause was found. robots.txt for *: \"Crawl-Delay: 5\" (within the fetcher CrawlDelayMaxSeconds cap of 10) and Disallow: /cgi-bin/, /web_arch/, /search, /pictures/search, /myloc; article paths are not disallowed. Basis accepted by the owner (2026-10-16) as attribution-only / Terms of Use wording, not an explicit automated-access grant.",
       "status": "approved",
       "reviewed_at": "2026-10-16",
-      "reviewer": "owner (decision 2026-10-16, via coordinator; owner accepts the attribution-only and Terms of Use wording below as the basis)"
+      "reviewer": "owner (decision 2026-10-16, via coordinator)"
     },
     {
       "domain": "archives.gov",
@@ -176,10 +176,10 @@
       "category": "archive",
       "terms_url": "https://vi.wikisource.org/wiki/Wikisource:B%E1%BA%A3n_quy%E1%BB%81n",
       "robots_checked": true,
-      "automated_access_basis": "Content licence: \"Nếu không có ghi chú khác, thì tất cả những đóng góp của thành viên tại Wikisource đều được phát hành theo Giấy phép Creative Commons Ghi công/Chia sẻ tương tự và Giấy phép Tài liệu Tự do GNU\" (https://vi.wikisource.org/wiki/Wikisource:B%E1%BA%A3n_quy%E1%BB%81n). Each work must be checked on its own. robots.txt for * allows /wiki/ article paths.",
+      "automated_access_basis": "Content licence: \"Nếu không có ghi chú khác, thì tất cả những đóng góp của thành viên tại Wikisource đều được phát hành theo Giấy phép Creative Commons Ghi công/Chia sẻ tương tự và Giấy phép Tài liệu Tự do GNU\" (https://vi.wikisource.org/wiki/Wikisource:B%E1%BA%A3n_quy%E1%BB%81n). Each work must be checked on its own. robots.txt for * allows /wiki/ article paths. Basis accepted by the owner (2026-10-16) as attribution-only / Terms of Use wording, not an explicit automated-access grant.",
       "status": "approved",
       "reviewed_at": "2026-10-16",
-      "reviewer": "owner (decision 2026-10-16, via coordinator; owner accepts the attribution-only and Terms of Use wording below as the basis)"
+      "reviewer": "owner (decision 2026-10-16, via coordinator)"
     },
     {
       "domain": "congbao.chinhphu.vn",
@@ -188,10 +188,10 @@
       "category": "government",
       "terms_url": "https://congbao.chinhphu.vn/cong-bao.htm",
       "robots_checked": true,
-      "automated_access_basis": "Attribution-only clause, no licence grant: \"Ghi rõ nguồn 'congbao.chinhphu.vn' khi phát hành lại thông tin từ các nguồn này.\" (https://congbao.chinhphu.vn/cong-bao.htm). robots.txt: \"User-agent: * / Allow: /\".",
+      "automated_access_basis": "Attribution-only clause, no licence grant: \"Ghi rõ nguồn 'congbao.chinhphu.vn' khi phát hành lại thông tin từ các nguồn này.\" (https://congbao.chinhphu.vn/cong-bao.htm). robots.txt: \"User-agent: * / Allow: /\". Basis accepted by the owner (2026-10-16) as attribution-only / Terms of Use wording, not an explicit automated-access grant.",
       "status": "approved",
       "reviewed_at": "2026-10-16",
-      "reviewer": "owner (decision 2026-10-16, via coordinator; owner accepts the attribution-only and Terms of Use wording below as the basis)"
+      "reviewer": "owner (decision 2026-10-16, via coordinator)"
     },
     {
       "domain": "govinfo.gov",
@@ -212,10 +212,10 @@
       "category": "government",
       "terms_url": "https://www.nationalarchives.gov.uk/doc/open-government-licence/version/3/",
       "robots_checked": true,
-      "automated_access_basis": "Open Government Licence v3.0: \"You are encouraged to use and re-use the Information that is available under this licence freely and flexibly, with only a few conditions.\" Attribution is required (https://www.nationalarchives.gov.uk/doc/open-government-licence/version/3/). robots.txt for * disallows only /*/print$ and /search/all*.",
+      "automated_access_basis": "Open Government Licence v3.0: \"You are encouraged to use and re-use the Information that is available under this licence freely and flexibly, with only a few conditions.\" Attribution is required (https://www.nationalarchives.gov.uk/doc/open-government-licence/version/3/). robots.txt for * disallows only /*/print$ and /search/all*. Basis accepted by the owner (2026-10-16) as attribution-only / Terms of Use wording, not an explicit automated-access grant.",
       "status": "approved",
       "reviewed_at": "2026-10-16",
-      "reviewer": "owner (decision 2026-10-16, via coordinator; owner accepts the attribution-only and Terms of Use wording below as the basis)"
+      "reviewer": "owner (decision 2026-10-16, via coordinator)"
     }
   ]
 }
