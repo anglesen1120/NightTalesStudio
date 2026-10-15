@@ -122,11 +122,12 @@ public sealed class BibleProposalFollowUp2Tests(TestDatabase database) : Integra
     }
 
     /// <summary>
-    /// C6: an autopilot approval whose draft carries no ops applies nothing, writes no bible change and writes no
-    /// system-actor audit row. The run still settles as a success (one paid call).
+    /// C6: an autopilot approval whose draft carries no ops still gets the plan §7.1 step 6 fallback summary (the
+    /// story's own description), so the apply moves the version and writes exactly one system-actor audit row.
+    /// The run settles as a success with one paid call.
     /// </summary>
     [Fact]
-    public async Task StoryApproved_AutopilotWithNoOps_AppliesNothingAndWritesNoAuditRow()
+    public async Task StoryApproved_AutopilotWithNoModelOps_AppliesTheFallbackSummaryAndAuditsOnce()
     {
         var world = await BibleProposalJobHarness.SeedAsync(Database);
         var episode = await BibleProposalJobHarness.ApproveEpisodeAsync(Database, world);
@@ -140,9 +141,9 @@ public sealed class BibleProposalFollowUp2Tests(TestDatabase database) : Integra
 
         BibleProposalJobHarness.RunRows(Database, world.SeriesId).ShouldContain("|bible_proposal|autopilot|succeeded|");
         BibleProposalJobHarness.BibleColumns(Database, world.SeriesId).ShouldBe(
-            "1|true|-",
-            "no ops survive, so no proposal is staged, applied or versioned");
-        BibleProposalJobHarness.AutoAcceptAuditCount(Database, world.UserId).ShouldBe(0);
+            "2|true|-",
+            "the fallback summary is applied and the proposal cleared in the same step as the version bump");
+        BibleProposalJobHarness.AutoAcceptAuditCount(Database, world.UserId).ShouldBe(1);
         text.Requests.Count.ShouldBe(1);
     }
 
