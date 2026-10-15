@@ -166,6 +166,7 @@ WHERE NOT EXISTS (SELECT 1 FROM series_bibles b WHERE b.series_id = s.id);
 - Effect: `ApplyProposal` applies every op onto the **current** content — append-only, so no conflict by construction (F27) — bumps `version`, clears the proposal. Response 200 `{ version, etag }` + `ETag`.
 - Op semantics (`ApplyOps` in the Domain, reused by the autopilot auto-accept):
   - `AddSummary`: skip if a summary for that `episode_id` already exists (one summary per episode, invariant §3.2). Title/summary from the op; `structure`/`approved_at` filled from the episode's approved story version. If the op's summary is > 200 chars → truncate on a word boundary (never fail an accept for length).
+  - *Superseded (Notes R2, S42):* a same-episode `add_summary` replaces the existing summary; a summary for a different episode is kept, so each merged summary binds to its own `episode_id`. Content-op dedupe above is unchanged.
   - `AddCharacter` / `AddPlace` / `AddRule`: skip when `BibleOpNormalizer.Normalize(name|text)` already exists in the array (dedupe, F27) or when the array is already at its limit (§3.2). Skipped ops are counted and returned so the handler can log `applied` vs `skipped` (counts only).
   - No op kind updates or deletes; the narrator is never touched by ops ([DECISION] the model has no `set_narrator` op — narrator changes are a manual edit in 10.5.7).
   - Ids for new characters/places/rules = `max(existing numeric suffix) + 1`, per prefix, computed at apply time.
@@ -267,6 +268,7 @@ Job steps (`src/NightTales.Application/Features/SeriesBible/Jobs/ProposeBibleUpd
    - `ApprovalSource == user` → `SetProposal(proposal, episodeId)` (no version bump) + outbox `SeriesBibleProposalCreated`. The user accepts/dismisses in 10.5.7.
    - `ApprovalSource == autopilot` (fiction only) → `ApplyProposal()` immediately (version +1, no pending proposal), audit `series.bible_proposal_accepted` with `actor_type = system`, `data = { seriesId, fromVersion, toVersion, applied, skipped, proposedFromEpisodeId }`; outbox `SeriesBibleUpdated`. This is the F27 fix: autopilot fiction does not drift waiting for the owner.
    - Pending proposal from another episode → **merge**: `ops = existing.ops ++ new.ops` deduped (§4 U4 semantics), `based_on_version` stays at the current content version, `proposed_from_episode_id` becomes the newest episode id. No second paid call is needed for the merge itself. [DECISION] Merging (not replacing) because both episodes' facts are true; a replace would silently lose the first episode's summary. One pending proposal at a time (00 §6 stores it on the row).
+   - *Superseded in part (Notes R2, S42):* the merge trims content ops first and never drops a summary; `proposed_from_episode_id` still becomes the newest episode, and `basedOnVersion`/`proposedAt` are kept from the pending proposal.
 8. Settle: `IUsageMeter.RecordAsync` already wrote one `usage_records` row per call (own transaction, D14) with `operation = bible_proposal`; `ICreditLedger.SettleAsync(reservationId, ct)`; `generation_runs.status = succeeded`, `stage = done`, `cost_usd`, `finished_at`.
 
 Retries: Hangfire retry **0** for this job (same policy as the story job, D7/F23); a run left `running` by a crash is closed by `StaleGenerationSweeperJob` (02.2.2-T3; confirmed by TL ruling #3 to cover every `generation_runs.kind`, not only `story`).
@@ -307,7 +309,7 @@ Unit (`tests/NightTales.Domain.UnitTests/Series/Bible/`):
 | `BibleContentValidator_SummaryOver200_ReturnsTooLongError` | 201-char summary → `episode_summaries[0].summary: too_long` |
 | `BibleContentValidator_DuplicateRuleAfterNormalization_ReturnsDuplicate` | "Không  nói  tên." vs "không nói tên" → `duplicate` |
 | `BibleContentValidator_AngleBracketInName_ReturnsError` | `<b>` rejected (F36 rule reused) |
-| `ApplyProposal_AddSummaryForExistingEpisode_SkipsAndKeepsFirst` | one summary per episode |
+| `ApplyProposal_AddSummaryForExistingEpisode_SkipsAndKeepsFirst` | one summary per episode *(superseded, Notes R2 S42: a different episode's summary is kept; only a same-episode summary replaces)* |
 | `ApplyProposal_AddCharacterWithExistingNormalizedName_Skips` | dedupe by `BibleOpNormalizer` |
 | `ApplyProposal_AtCharacterLimit_SkipsOpWithoutThrowing` | skipped, not failed; `applied`/`skipped` counts |
 | `ApplyProposal_AssignsSequentialIds_NeverReuses` | `ch3` after a manual delete of `ch2` |

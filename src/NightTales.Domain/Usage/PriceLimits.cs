@@ -14,6 +14,21 @@ public sealed record PriceLimits(
     IReadOnlyDictionary<LengthTier, IReadOnlyDictionary<Language, LengthLimit>> Story)
 {
     /// <summary>
+    /// The <c>max_output_tokens</c> of the <c>bible_proposal</c> step (02 README D14/T56, 02.6.3-T2): the
+    /// output cap of the one paid call of a bible-proposal run, ruled at 1,200 tokens.
+    /// </summary>
+    /// <remarks>
+    /// It is the only ceiling the proposal call has, and it is read from the active price version alone: a
+    /// configuration key for it is refused (README T56), because a step's output cap belongs to the priced,
+    /// append-only record the run is costed with, not to a host's appsettings. A row written before this
+    /// block existed keeps the default.
+    /// </remarks>
+    public int BibleProposalMaxOutput { get; init; } = DefaultBibleProposalMaxOutput;
+
+    /// <summary>The ruled <c>bible_proposal.max_output_tokens</c> of a row written before the block existed.</summary>
+    public const int DefaultBibleProposalMaxOutput = 1_200;
+
+    /// <summary>
     /// The D4 table (02 README D4, T103 bands): token bands, segment bands and the writer/review/revision
     /// output caps, per tier × language. <c>trial/tools/LENGTH.v1.json</c> is the machine copy of the
     /// token and segment bands; the review and revision caps come from the D4 table (short 1,200/1,500,

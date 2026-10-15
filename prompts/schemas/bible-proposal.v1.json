@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "bible-proposal.v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["ops"],
+  "properties": {
+    "ops": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["kind", "summary", "name", "description", "text", "reason"],
+        "properties": {
+          "kind": { "enum": ["add_summary", "add_character", "add_place", "add_rule"] },
+          "summary": { "type": ["string", "null"] },
+          "name": { "type": ["string", "null"] },
+          "description": { "type": ["string", "null"] },
+          "text": { "type": ["string", "null"] },
+          "reason": { "type": ["string", "null"] }
+        }
+      }
+    }
+  }
+}

@@ -30,13 +30,20 @@ public sealed record BibleProposal(
 /// <param name="Description">The description of a character/place op; null otherwise.</param>
 /// <param name="Text">The text of a rule op; null otherwise.</param>
 /// <param name="Reason">The model's short reason for the op; never persisted as bible content.</param>
+/// <param name="EpisodeId">
+/// The episode an <see cref="BibleOpKind.AddSummary"/> op summarises. The proposal job stamps every summary op it
+/// builds, so a merge of two episodes keeps each summary on its own episode. Null only on a legacy op (stored before
+/// the stamp existed) and on a model candidate that has not been stamped yet; a legacy op binds to the proposal's
+/// <c>ProposedFromEpisodeId</c>. Omitted from the stored JSON when null, so the document shape is unchanged.
+/// </param>
 public sealed record BibleOp(
     BibleOpKind Kind,
     string? Summary,
     string? Name,
     string? Description,
     string? Text,
-    string? Reason);
+    string? Reason,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] Guid? EpisodeId = null);
 
 /// <summary>
 /// The op kinds a proposal may carry (02.6.3 plan §3.3). There is deliberately no update or delete kind and no

@@ -12,6 +12,7 @@ using NightTales.Application.Abstractions.Moderation;
 using NightTales.Application.Abstractions.Research;
 using NightTales.Application.Abstractions.Text;
 using NightTales.Application.Abstractions.Usage;
+using NightTales.Application.Features.SeriesBible.Abstractions;
 using NightTales.Application.Features.Stories.Writing;
 using OpenAI;
 using OpenAI.Responses;
@@ -78,9 +79,22 @@ public static class OpenAiServiceCollectionExtensions
         services.TryAddSingleton<IStoryWriter, OpenAiStoryWriter>();
 
         AddFactsExtractor(services);
+        AddBibleProposalGenerator(services);
         AddContentModerator(services);
 
         return services;
+    }
+
+    /// <summary>
+    /// 02.6.3-T2 (02 README D7/D21): the series-bible proposal generator over the same
+    /// <see cref="ITextClient"/>, the prompt catalog, the <c>Bible</c> section and the proposal step's bound.
+    /// Owns the one instrument the step raises; resolved by the proposal job and by nothing on the Api.
+    /// </summary>
+    /// <param name="services">The service collection.</param>
+    private static void AddBibleProposalGenerator(IServiceCollection services)
+    {
+        services.TryAddSingleton<OpenAiBibleProposalMetrics>();
+        services.TryAddSingleton<IBibleProposalGenerator, OpenAiBibleProposalGenerator>();
     }
 
     /// <summary>

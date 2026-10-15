@@ -31,6 +31,22 @@ public sealed class ClientRequestIdHandlerTests
     }
 
     [Fact]
+    public async Task ClientRequestIdHandler_BibleStep_UsesRunAndAttemptKey()
+    {
+        var run = new RunContext(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), null, new ReservationId(Guid.NewGuid()), GenerationTrigger.User, 1, "1");
+        var capture = new CaptureHandler();
+        using var invoker = new HttpMessageInvoker(new ClientRequestIdHandler { InnerHandler = capture });
+
+        using (TextCallScope.Push(run, TextStep.Bible))
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Post, "https://example.invalid/v1/responses");
+            using var response = await invoker.SendAsync(request, Ct);
+        }
+
+        capture.HeaderValues.ShouldBe([$"{run.GenerationRunId}:bible:1"]);
+    }
+
+    [Fact]
     public async Task ClientRequestIdHandler_NoScope_SetsNoHeader()
     {
         var capture = new CaptureHandler();

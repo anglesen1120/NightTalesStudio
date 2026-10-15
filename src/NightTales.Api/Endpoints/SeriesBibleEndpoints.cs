@@ -3,15 +3,18 @@ using Microsoft.AspNetCore.Mvc;
 using NightTales.Api.Http;
 using NightTales.Api.Http.Filters;
 using NightTales.Application.Features.SeriesBible;
+using NightTales.Application.Features.SeriesBible.Commands.AcceptBibleProposal;
+using NightTales.Application.Features.SeriesBible.Commands.DismissBibleProposal;
 using NightTales.Application.Features.SeriesBible.Commands.UpdateBible;
 using NightTales.Application.Features.SeriesBible.Queries.GetBible;
 
 namespace NightTales.Api.Endpoints;
 
 /// <summary>
-/// The series-bible routes of one series (02.6.3 plan §4 U1/U2, §5): read the <c>bible.v1</c> document and its
-/// pending proposal, and replace the document. Its ETag is <c>"sb-&lt;version&gt;"</c> (02 README D9), a strong tag
-/// of the row's own <c>version</c> column — not an <c>xmin</c>, so nothing else may add a second concurrency token.
+/// The series-bible routes of one series (02.6.3 plan §4 U1/U2/U3/U4, §5): read the <c>bible.v1</c> document and its
+/// pending proposal, replace the document, and resolve the proposal by accepting or dismissing it. Its ETag is
+/// <c>"sb-&lt;version&gt;"</c> (02 README D9), a strong tag of the row's own <c>version</c> column — not an
+/// <c>xmin</c>, so nothing else may add a second concurrency token.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -22,14 +25,20 @@ namespace NightTales.Api.Endpoints;
 /// <para>
 /// <c>PUT</c> takes the required <c>If-Match</c> (<see cref="RequireIfMatchExtensions.RequireIfMatch"/> — the 428
 /// <c>if_match_required</c> before the handler) and no <c>Idempotency-Key</c>: the ETag is the concurrency token, so
-/// a replay is a 412, never a second write. Dismissing and accepting a pending proposal belong to 02.6.3-T2 and are
-/// not mapped here.
+/// a replay is a 412, never a second write.
+/// </para>
+/// <para>
+/// The two proposal routes (02.6.3-T2) are the only <c>POST</c>s of the group and neither carries an <c>If-Match</c>
+/// or a body: the proposal is the stored row's, the ops are append-only, and a second call of either answers 409
+/// <c>bible_proposal_not_pending</c> rather than a silent no-op. The accept answers the same
+/// <c>{ version, etag }</c> shape the save does — it produces a content version — while the dismiss answers 204
+/// because it produces none.
 /// </para>
 /// <para>
 /// The read publishes the tag from the success value itself (<c>BibleDto.ETag</c>, <see cref="IHasETag"/>), so
 /// <see cref="ResultExtensions.ToHttpResult{T}(ErrorOr.ErrorOr{T}, HttpContext)"/> sets the <c>ETag</c> header and the body
-/// carries the identical quoted value the client sends back as its next <c>If-Match</c>. The write does the same:
-/// its success body names the version and the tag byte-identical to the header
+/// carries the identical quoted value the client sends back as its next <c>If-Match</c>. The two writes do the same:
+/// their success body names the version and the tag byte-identical to the header
 /// (<see cref="BibleUpdateResponse"/>), so either body and header is the exact <c>If-Match</c> the next save needs.
 /// </para>
 /// </remarks>
@@ -43,6 +52,12 @@ public static class SeriesBibleEndpoints
 
     /// <summary>Replaces the bible of the series in the route; the same address as the read with <c>PUT</c>.</summary>
     public const string PutRoute = GroupPrefix;
+
+    /// <summary>Accepts the pending proposal of the series' bible (02.6.3-T2, plan §4 U4).</summary>
+    public const string AcceptProposalRoute = GroupPrefix + "/proposal/accept";
+
+    /// <summary>Dismisses the pending proposal of the series' bible (02.6.3-T2, plan §4 U3).</summary>
+    public const string DismissProposalRoute = GroupPrefix + "/proposal/dismiss";
 
     /// <summary>
     /// The tag the routes carry (a plain name, never a dotted one: <c>ng-openapi-gen</c> cannot group a dotted tag).
@@ -76,6 +91,22 @@ public static class SeriesBibleEndpoints
             .ProducesProblem(StatusCodes.Status412PreconditionFailed)
             .ProducesProblem(StatusCodes.Status413PayloadTooLarge)
             .ProducesProblem(StatusCodes.Status428PreconditionRequired);
+
+        // Neither proposal route takes an If-Match: the ops are append-only, so an accept cannot conflict with a
+        // manual save, and a dismissal cannot damage anything (plan §4 U3/U4). Both are free (no ledger, no budget)
+        // and neither carries an Idempotency-Key — a repeat is answered 409 by the handler, which is the answer a
+        // client can act on: reload the bible and see who moved it.
+        bible.MapPost("/proposal/accept", AcceptProposalAsync)
+            .Produces<BibleUpdateResponse>(StatusCodes.Status200OK)
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status409Conflict);
+
+        bible.MapPost("/proposal/dismiss", DismissProposalAsync)
+            .Produces(StatusCodes.Status204NoContent)
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .ProducesProblem(StatusCodes.Status409Conflict);
 
         return routes;
     }
@@ -147,6 +178,53 @@ public static class SeriesBibleEndpoints
             new BibleUpdateResponse(value.Version, quoted),
             statusCode: StatusCodes.Status200OK);
     }
+
+    /// <summary>
+    /// <c>POST /api/v1/series/{id}/bible/proposal/accept</c> (02.6.3-T2, plan §4 U4): 200 with the version the
+    /// applied ops produced and its <c>ETag: "sb-&lt;version&gt;"</c>, or the documented 401/404/409
+    /// <c>bible_proposal_not_pending</c>.
+    /// </summary>
+    /// <remarks>
+    /// The body is the same <c>{ version, etag }</c> the save answers with, and the two are byte-identical: the
+    /// accept produces a content version exactly as a save does, so the client's next <c>If-Match</c> comes from the
+    /// same place. No <c>If-Match</c> is required and no body is read — the ops and the source episode are the
+    /// stored row's, never the request's.
+    /// </remarks>
+    private static async Task<IResult> AcceptProposalAsync(
+        Guid id,
+        ISender sender,
+        HttpContext http,
+        CancellationToken ct)
+    {
+        var result = await sender.Send(new AcceptBibleProposalCommand(id), ct).ConfigureAwait(false);
+        if (result.IsError)
+        {
+            return ProblemDetailsWriter.ToProblem(result.Errors, http);
+        }
+
+        var value = result.Value;
+        var quoted = value.ETag.StartsWith('"') ? value.ETag : $"\"{value.ETag}\"";
+        http.Response.Headers.ETag = quoted;
+
+        return Results.Json(
+            new BibleUpdateResponse(value.Version, quoted),
+            statusCode: StatusCodes.Status200OK);
+    }
+
+    /// <summary>
+    /// <c>POST /api/v1/series/{id}/bible/proposal/dismiss</c> (02.6.3-T2, plan §4 U3): 204 with no body and no
+    /// version change, or the documented 401/404/409 <c>bible_proposal_not_pending</c>.
+    /// </summary>
+    /// <remarks>
+    /// A dismissal writes no content version, so the route publishes no tag: the client re-reads the bible to learn
+    /// the version it still has. Nothing is read from the request, and the success carries no payload.
+    /// </remarks>
+    private static async Task<IResult> DismissProposalAsync(
+        Guid id,
+        ISender sender,
+        HttpContext http,
+        CancellationToken ct) =>
+        (await sender.Send(new DismissBibleProposalCommand(id), ct).ConfigureAwait(false)).ToNoContentResult(http);
 }
 
 /// <summary>

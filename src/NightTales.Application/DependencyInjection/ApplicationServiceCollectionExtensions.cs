@@ -8,6 +8,8 @@ using NightTales.Application.Features.Account.Legal;
 using NightTales.Application.Features.Research;
 using NightTales.Application.Features.Research.Jobs;
 using NightTales.Application.Features.SeriesBible;
+using NightTales.Application.Features.SeriesBible.Abstractions;
+using NightTales.Application.Features.SeriesBible.Jobs;
 using NightTales.Application.Features.Stories.Approval;
 using NightTales.Application.Features.Stories.Generation;
 using NightTales.Application.Features.Stories.Moderation;
@@ -68,6 +70,11 @@ public static class ApplicationServiceCollectionExtensions
         // 02.6.3-T1: the series bible's instruments; its two handlers inject them in both hosts.
         services.TryAddSingleton<SeriesBibleMetrics>();
 
+        // 02.6.3-T2: the one write path an accepted proposal takes — the manual accept command and the proposal
+        // job's autopilot auto-accept both go through it, so neither can grow a second way of applying ops.
+        // Scoped: it writes through the caller's tracked context, inside the caller's row lock and transaction.
+        services.TryAddScoped<IBibleProposalApplier, BibleProposalApplier>();
+
         // 05.1.2-T1 / 09.6.1-T1 (05 D6/D7): the subtitle-presets catalog embedded in the Domain assembly,
         // read once. The factory is lazy: it runs on the first resolution (the first RenderEpisode handler
         // construction), not at composition-root build time. A throwing factory caches nothing, so the next
@@ -116,6 +123,29 @@ public static class ApplicationServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(services);
 
         services.TryAddScoped<GenerateFactSheetPipeline>();
+
+        return services;
+    }
+
+    /// <summary>
+    /// Registers the series-bible proposal job's pipeline (02.6.3-T2, plan §7.1): the handler
+    /// <see cref="ProposeBibleUpdateHandler"/> resolves in its own scope, once the job has pinned the run's owner.
+    /// The Worker calls it, next to the outbox consumer that queues the run.
+    /// </summary>
+    /// <remarks>
+    /// Only the handler is registered here: every collaborator is owned by the layer that owns it — the generator
+    /// with the text client, the applier with the rest of this layer (the Api's accept route resolves it too, and
+    /// this method is Worker-only because the caps below are bound there), <c>Bible:Limits</c> and the audit,
+    /// ledger, price, prompt and moderation ports by persistence or the usage metering both hosts compose, and the
+    /// four op caps (<c>BibleProposalCaps</c>, bound from <c>Bible:Proposal</c>) by this root.
+    /// </remarks>
+    /// <param name="services">The composition root's service collection.</param>
+    /// <returns>The same collection, for chaining.</returns>
+    public static IServiceCollection AddBibleProposalGeneration(this IServiceCollection services)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+
+        services.TryAddScoped<ProposeBibleUpdateHandler>();
 
         return services;
     }

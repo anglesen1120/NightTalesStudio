@@ -15,6 +15,9 @@ using NightTales.Application.Features.Research.Fetcher;
 using NightTales.Application.Features.Research.Jobs;
 using NightTales.Application.Features.Research.Outbox;
 using NightTales.Application.Features.Research.Sources.Outbox;
+using NightTales.Application.Features.SeriesBible;
+using NightTales.Application.Features.SeriesBible.Abstractions;
+using NightTales.Application.Features.SeriesBible.Events;
 using NightTales.Application.Features.Stories.Jobs;
 using NightTales.Application.Features.Stories.Outbox;
 using NightTales.Application.Features.Stories.Review;
@@ -22,6 +25,7 @@ using NightTales.Application.Telemetry;
 using NightTales.Domain.Episodes.Events;
 using NightTales.Domain.Platform.Events;
 using NightTales.Domain.Research.Events;
+using NightTales.Domain.Series.Bible;
 using NightTales.Domain.Stories.Events;
 using NightTales.Domain.Stories.Generation.Events;
 using NightTales.Infrastructure.Compliance.Deletion;
@@ -240,6 +244,55 @@ public static class WorkerServiceCollectionExtensions
         services.AddOutboxHandler<FactSheetGenerationFailed, FactSheetGenerationFailedRealtimeHandler>();
         services.AddOutboxHandler<FactSheetSaved, FactSheetSavedRealtimeHandler>();
         services.AddOutboxHandler<FactSheetApproved, FactSheetApprovedRealtimeHandler>();
+
+        // 02.6.3-T2 (02 README D21, 02.6.3 plan §7.1): the bible-proposal consumer of `story_approved.v1`. The
+        // approval's `ApprovalSource` picks the branch — a user approval stages the ops as the series' pending
+        // proposal, an autopilot fiction approval applies them at once (F27, with a system-actor audit row) — and
+        // the paid call behind it is `ProposeBibleUpdateJob`, which the background-job scan of this root already
+        // registered from the Application assembly, with the deferred `BibleProposalHandoffJob` the handler
+        // schedules when another proposal of the same series is still open (one paid call per series at a time).
+        services.AddOutboxHandler<StoryApproved, StoryApprovedBibleProposalHandler>();
+
+        // The job's pipeline: `ProposeBibleUpdateJob` resolves the handler in its own scope, after it has pinned the
+        // run's owner — so the Application layer registers it beside the outbox consumer that queues the run. The
+        // Api never resolves it (its accept route takes the applier, which both roots get from
+        // `AddNightTalesApplication`), and the caps the handler takes are the `BibleProposalJobOptions` bound below.
+        services.AddBibleProposalGeneration();
+
+        // `Bible:Proposal` is read by both halves of this feature: the handler reads the kill switch through
+        // `IBibleProposalSwitch`, whose Worker implementation holds the `IOptionsMonitor` so the switch takes
+        // effect without a restart, and the job takes the four batch caps. This root binds the Application
+        // options class, because the Application layer cannot reference the Infrastructure class that binds the
+        // same section for the text adapter (nor `Microsoft.Extensions.Options` itself, which the architecture
+        // rule keeps out of that assembly). Every key has a default, so none is a required start-up key; a
+        // negative cap fails the boot.
+        services.AddOptions<BibleProposalJobOptions>()
+            .BindConfiguration(BibleProposalJobOptions.SectionName)
+            .Validate(
+                options => options.MaxOps >= 0
+                    && options.MaxCharacterOps >= 0
+                    && options.MaxPlaceOps >= 0
+                    && options.MaxRuleOps >= 0,
+                $"'{BibleProposalJobOptions.SectionName}' must hold non-negative op caps.")
+            .ValidateOnStart();
+        services.TryAddSingleton(provider => provider.GetRequiredService<IOptions<BibleProposalJobOptions>>().Value);
+
+        // The handler's view of that section: the switch is read live, so the rollback in the plan's §11 needs no
+        // restart, while the four caps below are the snapshot the job takes once.
+        services.TryAddSingleton<IBibleProposalSwitch, BibleProposalSwitch>();
+
+        // `BibleProposalCaps` is that value's four caps as the Domain record the post-filter and the merge guard
+        // take, so the Application layer never references the Infrastructure options class that binds the section.
+        services.TryAddSingleton(provider =>
+        {
+            var proposal = provider.GetRequiredService<IOptions<BibleProposalJobOptions>>().Value;
+
+            return new BibleProposalCaps(
+                MaxOps: proposal.MaxOps,
+                MaxCharacterOps: proposal.MaxCharacterOps,
+                MaxPlaceOps: proposal.MaxPlaceOps,
+                MaxRuleOps: proposal.MaxRuleOps);
+        });
 
         // 11.3.3-T1 (11 README D13/F09–F13): the render-node registry, the pinned-TLS connection factory,
         // the health cache, the drift/up instruments and the config seeder. The optional `RenderNodes`
