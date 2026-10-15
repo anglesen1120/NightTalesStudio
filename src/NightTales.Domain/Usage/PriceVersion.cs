@@ -90,6 +90,9 @@ public sealed class PriceVersion : ICreatedAt
 /// </summary>
 public static class PriceVersionJson
 {
+    /// <summary>The reserved top-level key of the proposal step's limits block (02.6.3-T2).</summary>
+    public const string BibleProposalKey = "bible_proposal";
+
     /// <summary>Serializes the limits document.</summary>
     public static string WriteLimits(PriceLimits limits)
     {
@@ -116,7 +119,11 @@ public static class PriceVersionJson
             story[Key(tier)] = cells;
         }
 
-        return new JsonObject { ["story"] = story }.ToJsonString();
+        return new JsonObject
+        {
+            ["story"] = story,
+            [BibleProposalKey] = new JsonObject { ["max_output_tokens"] = limits.BibleProposalMaxOutput },
+        }.ToJsonString();
     }
 
     /// <summary>Deserializes a stored limits document.</summary>
@@ -125,7 +132,9 @@ public static class PriceVersionJson
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(limitsJson);
 
-        var story = (JsonNode.Parse(limitsJson) as JsonObject)?["story"] as JsonObject
+        var root = JsonNode.Parse(limitsJson) as JsonObject
+            ?? throw new JsonException("price_versions.limits must be an object with a 'story' object.");
+        var story = root["story"] as JsonObject
             ?? throw new JsonException("price_versions.limits must be an object with a 'story' object.");
 
         var result = new Dictionary<LengthTier, IReadOnlyDictionary<Language, LengthLimit>>();
@@ -151,7 +160,13 @@ public static class PriceVersionJson
             result[tier] = cells;
         }
 
-        return new PriceLimits(result);
+        // 02.6.3-T2: the proposal step's own cap. A row written before the block existed keeps the ruled
+        // default, so a historical version stays readable (a usage_records.price_version is never rewritten).
+        var maxOutput = root[BibleProposalKey] is JsonObject bibleProposal
+            ? Int(bibleProposal, "max_output_tokens")
+            : PriceLimits.DefaultBibleProposalMaxOutput;
+
+        return new PriceLimits(result) { BibleProposalMaxOutput = maxOutput };
     }
 
     private static string Key<TEnum>(TEnum value)

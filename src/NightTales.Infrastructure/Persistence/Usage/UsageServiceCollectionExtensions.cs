@@ -61,6 +61,13 @@ public static class UsageServiceCollectionExtensions
         services.TryAddSingleton(provider => provider.GetRequiredService<IOptions<FactSheetCostOptions>>().Value);
         services.TryAddSingleton<IFactSheetCostEstimator, FactSheetCostEstimator>();
 
+        // 02.6.3-T2 (02 README D1/D14/T56): the worst-case bound of one bible-proposal run. Both hosts compose
+        // this method, exactly as they do for the story and fact-sheet bounds, so the Api needs no bible-specific
+        // registration. The step's output ceiling is not a key here: it is
+        // price_versions.limits.bible_proposal.max_output_tokens, which the estimator reads from the active price
+        // version (T56 forbids a configuration fallback for a step's cap).
+        services.TryAddSingleton<IBibleProposalCostEstimator, BibleProposalCostEstimator>();
+
         // 03.2.1-T1: the Images section (scene budget, D3) and the worst-case image bound (D8).
         services.AddOptions<ImagesOptions>()
             .BindConfiguration(ImagesOptions.SectionName)

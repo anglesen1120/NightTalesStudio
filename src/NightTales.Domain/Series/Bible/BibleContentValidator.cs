@@ -543,9 +543,15 @@ public static class BibleContentValidator
     /// tag-plane characters (U+E0000–U+E007F), the variation selector supplement (U+E0100–U+E01EF) and an
     /// unpaired surrogate.
     /// </summary>
+    /// <remarks>
+    /// Public because the proposal path needs this one set rather than a copy of it (02.6.3-T2):
+    /// <c>BibleProposalValidator</c> refuses an op holding one of these characters, so an op can never store text
+    /// the next manual PUT would refuse (02.6.3-T1 hand-over). A second implementation would be a second answer to
+    /// "what can be stored", which is exactly the drift this rule exists to prevent.
+    /// </remarks>
     /// <param name="text">The text to scan; null and empty carry none.</param>
     /// <returns>The offending <see cref="char"/>, or <see langword="null"/>.</returns>
-    private static char? FindUnsafeCharacter(string? text)
+    public static char? FindUnsafeCharacter(string? text)
     {
         if (string.IsNullOrEmpty(text))
         {

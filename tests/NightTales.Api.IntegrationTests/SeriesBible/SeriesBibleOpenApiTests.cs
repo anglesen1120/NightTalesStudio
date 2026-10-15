@@ -5,10 +5,12 @@ using Xunit;
 namespace NightTales.Api.IntegrationTests.SeriesBible;
 
 /// <summary>
-/// The published OpenAPI document must describe both bible routes (02.6.3-T1 acceptance): the required
+/// The published OpenAPI document must describe every bible route (02.6.3-T1 and -T2 acceptances): the required
 /// <c>If-Match</c> header on <c>PUT</c>, the <c>SeriesBible</c> tag, the documented error statuses, and the
 /// two content components — the write shape a request sends and the read shape a response answers — the
-/// schemas the SPA is generated from, so a rename here breaks the web build rather than a runtime parse.
+/// schemas the SPA is generated from, so a rename here breaks the web build rather than a runtime parse. The two
+/// proposal routes of 02.6.3-T2 are asserted to be one <c>POST</c> each with no precondition and their own
+/// documented statuses.
 /// </summary>
 /// <remarks>
 /// Like <c>OpenApiDocumentTests</c> this reads the document the Api build writes rather than booting a host, so
@@ -17,6 +19,13 @@ namespace NightTales.Api.IntegrationTests.SeriesBible;
 public sealed class SeriesBibleOpenApiTests
 {
     private const string Path = "/api/v1/series/{id}/bible";
+
+    /// <summary>The two proposal routes 02.6.3-T2 adds under the bible path (plan §5).</summary>
+    private static readonly string[] ProposalPaths =
+    [
+        Path + "/proposal/accept",
+        Path + "/proposal/dismiss",
+    ];
 
     private static readonly Lazy<JsonDocument> Document = new(ReadDocument);
 
@@ -27,7 +36,7 @@ public sealed class SeriesBibleOpenApiTests
     {
         var operations = OperationNames();
 
-        operations.ShouldBe(["get", "put"], "02.6.3-T1 maps exactly the read and the replace; accept/dismiss are T2");
+        operations.ShouldBe(["get", "put"], "the proposal routes hang under their own sub-paths, not on this one");
 
         foreach (var operation in new[] { "get", "put" })
         {
@@ -71,6 +80,67 @@ public sealed class SeriesBibleOpenApiTests
         foreach (var status in new[] { "200", "401", "404", "500" })
         {
             responses.TryGetProperty(status, out _).ShouldBeTrue($"GET bible documents {status}");
+        }
+    }
+
+    [Fact]
+    public void Proposal_routes_are_one_post_each_under_a_plain_tag()
+    {
+        foreach (var path in ProposalPaths)
+        {
+            var item = Root.GetProperty("paths").GetProperty(path);
+
+            item.EnumerateObject().Select(member => member.Name).ShouldBe(
+                ["post"],
+                $"{path} is mapped as one POST (plan §5)");
+
+            item.GetProperty("post").GetProperty("tags").EnumerateArray().Select(tag => tag.GetString())
+                .ShouldContain("SeriesBible", "a plain tag: ng-openapi-gen cannot group a dotted name");
+        }
+    }
+
+    [Fact]
+    public void Proposal_routes_document_their_statuses_and_ask_for_no_precondition()
+    {
+        // The accept produces a content version, so it answers the very body the PUT answers — the frozen
+        // { version, etag } a client reads its next If-Match from (plan §4 U4).
+        var accept = Root.GetProperty("paths").GetProperty(ProposalPaths[0]).GetProperty("post");
+        var acceptResponses = accept.GetProperty("responses");
+        foreach (var status in new[] { "200", "401", "404", "409" })
+        {
+            acceptResponses.TryGetProperty(status, out _).ShouldBeTrue($"the accept documents {status}");
+        }
+
+        var success = ResolveSchema(acceptResponses.GetProperty("200").GetProperty("content")
+            .GetProperty("application/json").GetProperty("schema"));
+        var properties = success.GetProperty("properties");
+        Types(properties.GetProperty("version")).ShouldContain("integer");
+        Types(properties.GetProperty("etag")).ShouldBe(["string"]);
+
+        // The dismiss writes no content version, so it answers 204 with no body at all.
+        var dismiss = Root.GetProperty("paths").GetProperty(ProposalPaths[1]).GetProperty("post");
+        var dismissResponses = dismiss.GetProperty("responses");
+        foreach (var status in new[] { "204", "401", "404", "409" })
+        {
+            dismissResponses.TryGetProperty(status, out _).ShouldBeTrue($"the dismiss documents {status}");
+        }
+
+        dismissResponses.GetProperty("204").TryGetProperty("content", out _).ShouldBeFalse("a 204 carries no body");
+
+        // Neither takes the write precondition: the ops are append-only and a dismissal cannot damage anything
+        // (plan §4 U3/U4), so neither route may advertise an If-Match.
+        foreach (var path in ProposalPaths)
+        {
+            var operation = Root.GetProperty("paths").GetProperty(path).GetProperty("post");
+            if (operation.TryGetProperty("parameters", out var parameters)
+                && parameters.ValueKind == JsonValueKind.Array)
+            {
+                var ifMatch = parameters.EnumerateArray()
+                    .Where(parameter => parameter.GetProperty("name").GetString() == "If-Match")
+                    .ToArray();
+
+                ifMatch.ShouldBeEmpty($"{path} must not ask for an If-Match");
+            }
         }
     }
 

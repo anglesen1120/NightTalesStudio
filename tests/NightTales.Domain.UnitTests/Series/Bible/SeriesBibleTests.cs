@@ -215,7 +215,7 @@ public sealed class SeriesBibleTests
         result.Applied[0].Reason.ShouldBe("vì sao");
         summary.EpisodeId.ShouldBe(EpisodeId);
         summary.Structure.ShouldBeSameAs(Structure, "structure is server-derived, never the client's");
-        summary.ApprovedAt.ShouldBe(source.ApprovedAt);
+        summary.ApprovedAt.ShouldBe(source[0].ApprovedAt);
 
         // Over-long text is truncated on a word boundary on the accept path, never refused (plan §4 U4).
         summary.Title.Length.ShouldBe(Limits.SummaryTitleChars);
@@ -568,7 +568,8 @@ public sealed class SeriesBibleTests
     /// </summary>
     private static BibleProposal Proposal(params BibleOp[] ops) => new(ops, SeriesBible.InitialVersion, Now);
 
-    private static BibleSummarySource Source() => new(EpisodeId, Structure, Now.AddDays(-1));
+    /// <summary>The summary sources a single-episode proposal is applied with.</summary>
+    private static IReadOnlyList<BibleSummarySource> Source() => [new(EpisodeId, Structure, Now.AddDays(-1))];
 
     private static BibleOp AddSummary(string? title = "Tập một", string? summary = "Một câu chuyện.", string? reason = null) =>
         new(BibleOpKind.AddSummary, summary, title, null, null, reason);

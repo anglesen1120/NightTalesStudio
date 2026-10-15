@@ -9,9 +9,9 @@ namespace NightTales.Application.Features.SeriesBible;
 /// </summary>
 /// <remarks>
 /// The envelope follows the camelCase of every other DTO of this layer; the op members keep their own
-/// names. The proposal's episode is the row's <c>proposed_from_episode_id</c>, which is also the episode
-/// an <c>add_summary</c> op belongs to, so <see cref="BibleProposalPreviewDto.SummaryForEpisodeId"/> is
-/// derived from it rather than repeated per op.
+/// names. The proposal's episode is the row's <c>proposed_from_episode_id</c>. An <c>add_summary</c> op names its
+/// own episode in <c>episode_id</c>; when that is omitted, the op belongs to <c>proposed_from_episode_id</c> (R2).
+/// <see cref="BibleProposalPreviewDto.SummaryForEpisodeId"/> is derived from the row rather than repeated per op.
 /// </remarks>
 /// <param name="BasedOnVersion">The content version the ops were computed against; it does not move while the proposal pends.</param>
 /// <param name="ProposedFromEpisodeId">The episode whose approval created or last merged this proposal, when the row records one.</param>
