@@ -1,4 +1,5 @@
 using System.Net;
+using System.Text.Json;
 using ErrorOr;
 using Microsoft.Extensions.Logging;
 using NightTales.Api.Http;
@@ -194,6 +195,82 @@ public sealed class ProblemMappingTests
         response.Metadata.ShouldNotBeNull();
         response.Metadata.ShouldNotContainKey("sql");
         response.Metadata["limit"].GetInt32().ShouldBe(20);
+    }
+
+    /// <summary>
+    /// <c>409 keywords_flagged</c> carries the <c>{ segment, index, rule }</c> object array the web
+    /// <c>keyword-flags.mapper</c> reads — not the <c>field → messages</c> object (03 D10, 09.6.1-T1).
+    /// </summary>
+    [Fact]
+    public async Task Map_KeywordsFlagged_EmitsErrorsAsObjectArray()
+    {
+        using var exchange = new ProblemExchange();
+        var errors = new List<Error>
+        {
+            Errors.KeywordsFlagged(
+            [
+                new KeywordFlag("p:3", 1, "keyword_name_detected"),
+                new KeywordFlag("hook", 0, "keyword_invalid"),
+            ]),
+        };
+
+        // The internal ProblemResponse DTO types errors as the field-group object, which the
+        // keywords_flagged array is not, so the body is read as raw JSON here.
+        await ProblemDetailsWriter.ToProblem(errors, exchange.Context).ExecuteAsync(exchange.Context);
+
+        exchange.StatusCode.ShouldBe(HttpStatusCode.Conflict);
+        using var document = JsonDocument.Parse(exchange.Body);
+        var root = document.RootElement;
+        root.GetProperty("code").GetString().ShouldBe(ErrorCodes.KeywordsFlagged);
+        root.GetProperty("status").GetInt32().ShouldBe(409);
+        var rows = root.GetProperty("errors");
+        rows.ValueKind.ShouldBe(JsonValueKind.Array);
+        rows.GetArrayLength().ShouldBe(2);
+        rows[0].GetProperty("segment").GetString().ShouldBe("p:3");
+        rows[0].GetProperty("index").GetInt32().ShouldBe(1);
+        rows[0].GetProperty("rule").GetString().ShouldBe("keyword_name_detected");
+        rows[1].GetProperty("rule").GetString().ShouldBe("keyword_invalid");
+
+        // The typed flags are consumed into errors[], never flattened into the body as a second member.
+        root.TryGetProperty("flags", out _).ShouldBeFalse();
+    }
+
+    /// <summary>The <c>no_scenes</c> synthetic row of an image plan with no renderable scene (03.2.2-T2).</summary>
+    [Fact]
+    public async Task Map_NoScenes_EmitsTheMetaRow()
+    {
+        using var exchange = new ProblemExchange();
+        List<Error> errors = [Errors.NoScenes()];
+
+        await ProblemDetailsWriter.ToProblem(errors, exchange.Context).ExecuteAsync(exchange.Context);
+
+        exchange.StatusCode.ShouldBe(HttpStatusCode.Conflict);
+        using var document = JsonDocument.Parse(exchange.Body);
+        var row = document.RootElement.GetProperty("errors")[0];
+        row.GetProperty("segment").GetString().ShouldBe("meta");
+        row.GetProperty("index").GetInt32().ShouldBe(0);
+        row.GetProperty("rule").GetString().ShouldBe(RenderErrorRules.NoScenes);
+    }
+
+    /// <summary>
+    /// The widening is scoped: a <c>validation_failed</c> body still carries the <c>field → messages</c>
+    /// object, byte-for-byte the shape it carried before (09.6.1-T1).
+    /// </summary>
+    [Fact]
+    public async Task Map_ValidationFailed_StillEmitsFieldGroupsObject()
+    {
+        using var exchange = new ProblemExchange();
+        List<Error> errors =
+        [
+            Error.Validation(ErrorCodes.ValidationFailed, "Title must not be empty.", Field("title")),
+        ];
+
+        await exchange.ExecuteAsync(ProblemDetailsWriter.ToProblem(errors, exchange.Context));
+
+        using var document = JsonDocument.Parse(exchange.Body);
+        var errorsElement = document.RootElement.GetProperty("errors");
+        errorsElement.ValueKind.ShouldBe(JsonValueKind.Object);
+        errorsElement.GetProperty("title")[0].GetString().ShouldBe("Title must not be empty.");
     }
 
     private static Dictionary<string, object> Field(string field) => new() { ["field"] = field };

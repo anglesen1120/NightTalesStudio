@@ -26,4 +26,13 @@ public static class ErrorMetadata
 
     /// <summary>The ceiling a request exceeded, so a client can see the limit it hit (09 README D14).</summary>
     public const string Limit = "limit";
+
+    /// <summary>
+    /// The structured keyword flags of a <c>keywords_flagged</c> answer (03 D10, 09.6.1-T1): an
+    /// <see cref="System.Collections.Generic.IReadOnlyList{T}"/> of <see cref="KeywordFlag"/> the
+    /// writer renders as the <c>errors[]</c> object array <c>{ segment, index, rule }</c>, instead of the
+    /// <c>field → messages</c> object the other 400 codes carry. It is consumed, never copied as a
+    /// top-level member, so the type behind it never has to be a bounded scalar.
+    /// </summary>
+    public const string Flags = "flags";
 }

@@ -129,6 +129,13 @@ public sealed class AppDbContext : IdentityDbContext<AppUser, AppRole, Guid>, IA
     /// </summary>
     public DbSet<MusicTrack> MusicTracks => Set<MusicTrack>();
 
+    /// <summary>
+    /// The render attempts of an episode of 09.6.1-T1 (table <c>render_jobs</c>, BD5/WF13, 00 §6): inserted by
+    /// <c>RenderEpisodeCommandHandler</c> and progressed by 09.6.3's submit/poll/ingest jobs on the same row.
+    /// <c>IUserOwned</c>, so the D10 tenant filter applies.
+    /// </summary>
+    public DbSet<RenderJob> RenderJobs => Set<RenderJob>();
+
     /// <summary>Infrastructure-only: the outbox rows the interceptor of 09.2.4-T1 writes.</summary>
     public DbSet<OutboxMessage> OutboxMessages => Set<OutboxMessage>();
 

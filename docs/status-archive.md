@@ -1079,3 +1079,20 @@ Earlier live rows for Plan13, hosting, skeleton, wave2 and wave3 already exist i
 ## Replaced by Session 43 close-out (09.6.2-T1, #205 merged), archived 2026-10-16
 
 - **Backend (Session 43, 09.6.2-T1 in review as PR #205).** Next in lane: **09.6.3-T1** (render orchestrator). Read the hand-overs in the 09.6.2-T1 Delivery notes (Session 43) before starting.
+
+## Replaced by Session 44 (09.6.1-T1 PR open), archived 2026-10-16
+
+- **STATUS Resume lines, replaced (verbatim):** `Backend (Session 43 closed)`, `Migrations`, `Backend (Session 41 closed)`; Open tasks rows `09.6.2-T1 H4 failure-code catalogue` and `Audit hand-over: approved-render-pointer`.
+
+- **Backend (Session 43 closed):** **09.6.2-T1** `MptRenderClient` + `RenderDownloadClient` + resilience pipeline + `AdapterErrorMapper` merged as #205 (`e8eb8cf6`, tip `4bc42db0`, code tip `b8bf0f8e`, `feature/09.6.2-T1-s43`, from `develop` `4aecc374`; no migration; CI refused: CI-01, owner treats as pass; local full gate `GATE_RC=0` on `b8bf0f8e`, the tip adds docs only; T3 gates closed; hand-overs H1/H3/H4/H5/P4 are the §Open tasks rows). Next in lane: **09.6.3-T1** (render orchestrator). Read the hand-overs in the 09.6.2-T1 Delivery notes (Session 43) before starting.
+- **Migrations** end `…20261003140736_02_SourcesAndFetchTasks` → `20261005092410_02_EpisodeApprovedAt` (02.3.2-T1) → `20261013183400_02_AddFactSheets` (02.5.3-T2, #184, on develop); `AddFactSheetsMigrationTests` owns `migrations[^1]`. Required `OpenAi:ApiKey` now for Worker **and** Api (dev: `OPENAI_API_KEY` via `tools/dev/up.sh`; `nts-wt/gate.sh` exports a non-secret placeholder).
+- **Backend (Session 41 closed):** **03.2.2-T1** `RenderKeywordLinter` + `NameCorpus` + `INameCorpusProvider` merged as #203 (`d9a6ce67`, tip `cbd8cf03`, `feature/03.2.2-T1-s41`, from `develop` `4aecc374`; no migration; 03 CR-17/CR-18, CR-18(a) accepted by COORDINATOR-DECISION #203; CI refused: CI-01, owner treats as pass; local full gate `GATE_RC=0` on `f02af074`, the tip adds docs only; T3 gates closed; open items are the §Open tasks row). Next in lane: **03.2.2-T2** (consumes `RenderKeywordLinter.TryGetKeywordIndex`, README D10 `errors[].index`) and **09.6.1-T1** (step 4 calls `INameCorpusProvider.LoadAsync` after authorising the episode; its `Depends on` lists 03.2.2-T1).
+
+| Task | Status | Note |
+|---|---|---|
+| Open item: 09.6.2-T1 H4 failure-code catalogue | **[OPEN]** owner: 09.6.1-T1 | Catalogue the extra detail codes listed in the task Delivery notes item 12 (`render_task_id_invalid`, `render_node_misconfigured`, `render_node_tls_failure`, `render_task_mismatch`, etc.). |
+| Audit hand-over: approved-render-pointer | **[OPEN]** owner: 09.6.1-T1 | SEC-4: `IStoryRenderInputProvider.GetAsync(storyVersionId)` checks neither approved pointer nor episode state. Immediately before the call, read `episodes.approved_story_version_id` under `LockEpisodeForUpdateAsync` (`FOR NO KEY UPDATE`); null → `episode_invalid_state`. (from 02.3.2-T1 #159) |
+
+## Session 44 Resume (moved 2026-10-16)
+
+- **Backend (Session 44, PR open):** **09.6.1-T1** `render_jobs` + `RenderJob` aggregate + `POST /api/v1/episodes/{id}/render` (`RenderEpisodeCommand`, `CreditOperation.Render`, `RecentMusicQuery`) on `feature/09.6.1-T1-s44` (from `develop` `7f2f0492`, merged develop `2e705533`; PR #207; CI refused: CI-01, owner treats as pass; full gate `GATE_RC=0` on `fd8b6090` (local); delta review closed (no P2; three P3 closed: keyword sanitiser tests, unused `NullRecentMusicQuery` deleted, null-keyword guard declined because `SegmentKeywords.Keywords` is non-nullable); QA, code, perf and security findings closed or open as §Open tasks OPEN-1 to OPEN-6 and NONCHAR-S44; H4 and approved-render-pointer closed). Next in lane: **09.6.3-T1** (render poller; consumes `RenderRequested`; read OPEN-1 first: queued/running worst-case bounds are not yet visible to `IBudgetGuard`). Then **03.2.2-T2** (reuses `Errors.KeywordsFlagged` / `Errors.NoScenes`). Read the 09.6.1-T1 Delivery notes (Session 44) before starting.

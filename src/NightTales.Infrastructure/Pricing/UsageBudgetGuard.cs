@@ -52,7 +52,8 @@ public sealed class UsageBudgetGuard(
             .ExecuteSqlInterpolatedAsync($"SELECT pg_advisory_xact_lock(hashtext('budget_guard'))", ct)
             .ConfigureAwait(false);
 
-        var now = clock.UtcNow.UtcDateTime;
+        var instant = clock.UtcNow;
+        var now = instant.UtcDateTime;
         var dayStart = new DateTimeOffset(now.Date, TimeSpan.Zero);
         var monthStart = new DateTimeOffset(now.Year, now.Month, 1, 0, 0, 0, TimeSpan.Zero);
 
@@ -61,12 +62,16 @@ public sealed class UsageBudgetGuard(
         var spentThisMonth = await SpentSinceAsync(monthStart, ct).ConfigureAwait(false);
 
         var bound = worstCaseUsd.WorstCaseUsd;
-        if (spentToday + open + bound > options.MaxPlatformCostUsdPerDay
-            || spentThisMonth + open + bound > options.MaxPlatformCostUsdPerMonth)
+        var dayBreached = spentToday + open + bound > options.MaxPlatformCostUsdPerDay;
+        var monthBreached = spentThisMonth + open + bound > options.MaxPlatformCostUsdPerMonth;
+        if (dayBreached || monthBreached)
         {
+            var resetAt = monthBreached ? monthStart.AddMonths(1) : dayStart.AddDays(1);
+
             return Error.Failure(
                 ErrorCodes.SpendCapReached,
-                "The platform's spending limit has been reached; try again later.");
+                "The platform's spending limit has been reached; try again later.",
+                new Dictionary<string, object> { [ErrorMetadata.RetryAfterSeconds] = SecondsUntil(resetAt, instant) });
         }
 
         return Result.Success;
@@ -82,5 +87,13 @@ public sealed class UsageBudgetGuard(
             .ConfigureAwait(false);
 
         return total ?? 0m;
+    }
+
+    private static int SecondsUntil(DateTimeOffset resetAt, DateTimeOffset now)
+    {
+        var ticks = (resetAt - now).Ticks;
+        var seconds = (ticks + TimeSpan.TicksPerSecond - 1) / TimeSpan.TicksPerSecond;
+
+        return (int)Math.Max(1L, seconds);
     }
 }

@@ -68,6 +68,12 @@ public sealed class EfUnitOfWork(AppDbContext database) : IUnitOfWork
     private const string ActiveEpisodeRunIndex = "ux_generation_runs_active_episode";
 
     /// <summary>
+    /// The partial unique index that allows one queued, submitted, running or ingesting render job per episode
+    /// (09.6.1-T1, D5): the backstop of two requests that both passed the episode state check.
+    /// </summary>
+    private const string ActiveRenderJobIndex = "ux_render_jobs_active_episode";
+
+    /// <summary>
     /// The stable description of a refused active run; the command already answers this situation with the
     /// 409 the caller is expecting, so the race must not surface as a 500 (02 README D2).
     /// </summary>
@@ -141,6 +147,14 @@ public sealed class EfUnitOfWork(AppDbContext database) : IUnitOfWork
 
             return ActiveRunConflict(exception);
         }
+        catch (DbUpdateException exception) when (IsActiveRenderJobViolation(exception))
+        {
+            // 09.6.1-T1 failure handling: the second of two concurrent renders of one episode loses at the insert;
+            // the reservation rolls back with the transaction, and the caller gets the concurrency 409, not a 500.
+            await TryRollbackAsync(cancellationToken).ConfigureAwait(false);
+
+            return Error.Conflict(code: ErrorCodes.ConcurrencyConflict, description: ConcurrencyDescription);
+        }
         catch (Exception exception) when (IsTransient(exception))
         {
             await TryRollbackAsync(cancellationToken).ConfigureAwait(false);
@@ -157,6 +171,9 @@ public sealed class EfUnitOfWork(AppDbContext database) : IUnitOfWork
     /// </summary>
     private static bool IsActiveEpisodeRunViolation(Exception exception) =>
         ProviderError(exception) is { SqlState: UniqueViolation, ConstraintName: ActiveEpisodeRunIndex };
+
+    private static bool IsActiveRenderJobViolation(Exception exception) =>
+        ProviderError(exception) is { SqlState: UniqueViolation, ConstraintName: ActiveRenderJobIndex };
 
     /// <summary>
     /// The 409 of a refused active run, named for the kind of run the request was queueing: the index is
