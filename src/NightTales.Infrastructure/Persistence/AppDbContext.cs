@@ -12,6 +12,7 @@ using NightTales.Domain.Compliance;
 using NightTales.Domain.Compliance.Deletion;
 using NightTales.Domain.Episodes;
 using NightTales.Domain.Platform;
+using NightTales.Domain.Publishing;
 using NightTales.Domain.Rendering;
 using NightTales.Domain.Rendering.Music;
 using NightTales.Domain.Research;
@@ -135,6 +136,12 @@ public sealed class AppDbContext : IdentityDbContext<AppUser, AppRole, Guid>, IA
     /// <c>IUserOwned</c>, so the D10 tenant filter applies.
     /// </summary>
     public DbSet<RenderJob> RenderJobs => Set<RenderJob>();
+
+    /// <summary>
+    /// The YouTube upload quota counter of 06.3.1-T1 (<c>platform_quota_usage</c>): written only by
+    /// <c>YouTubeQuotaLedger</c> through set-based SQL. A platform counter, so it is not <c>IUserOwned</c>.
+    /// </summary>
+    public DbSet<PlatformQuotaUsage> PlatformQuotaUsage => Set<PlatformQuotaUsage>();
 
     /// <summary>Infrastructure-only: the outbox rows the interceptor of 09.2.4-T1 writes.</summary>
     public DbSet<OutboxMessage> OutboxMessages => Set<OutboxMessage>();

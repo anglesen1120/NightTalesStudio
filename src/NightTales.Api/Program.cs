@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Http.Connections;
 using NightTales.Api;
 using NightTales.Api.DependencyInjection;
 using NightTales.Api.Endpoints;
+using NightTales.Api.Endpoints.Publishing;
 using NightTales.Api.Endpoints.Research;
 using NightTales.Api.Health;
 using NightTales.Api.Http;
@@ -348,6 +349,10 @@ try
     // 09.6.1-T1 (09 README BD5): POST /api/v1/episodes/{id}/render queues one render job for one approved
     // story. The route requires If-Match and Idempotency-Key and carries the paid policy.
     app.MapRenderingEndpoints();
+
+    // 06.3.1-T1 (06 README D9): GET /api/v1/publishing/youtube/eta reports the platform's remaining daily
+    // YouTube upload units. The route is gated by the youtube_publish feature flag and needs a session.
+    app.MapYouTubeEtaEndpoints();
 
     app.Run();
 }
