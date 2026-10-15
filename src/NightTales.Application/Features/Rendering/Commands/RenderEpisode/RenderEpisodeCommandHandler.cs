@@ -368,10 +368,10 @@ public sealed class RenderEpisodeCommandHandler(
     /// </summary>
     /// <param name="segments">The approved version's ordered scene keywords.</param>
     /// <returns>The same segments with each keyword sanitised.</returns>
-    private static IReadOnlyList<SegmentKeywords> SanitiseKeywords(IReadOnlyList<SegmentKeywords> segments) =>
+    private static List<SegmentKeywords> SanitiseKeywords(IReadOnlyList<SegmentKeywords> segments) =>
         segments.Select(segment => segment with
         {
-            Keywords = segment.Keywords?.Select(ReplaceNoncharacters).ToList(),
+            Keywords = segment.Keywords.Select(ReplaceNoncharacters).ToList(),
         }).ToList();
 
     /// <summary>
