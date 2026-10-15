@@ -3,3 +3,7 @@
 # Windows default for `text` files — would therefore break every hash at once and refuse start-up. Pin
 # the prompt tree to LF so the committed bytes are the bytes that are hashed, on every OS.
 prompts/** text eol=lf
+
+# 02.7.2-T1: `config/source-finder/allowed-sites.v1.json` is hashed as embedded bytes (`IResearchAllowList.Hash`), so
+# it is pinned to LF for the same reason as the prompt tree above.
+config/source-finder/*.json text eol=lf

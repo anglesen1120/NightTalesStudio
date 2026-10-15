@@ -68,6 +68,14 @@
   </ItemGroup>
 
   <!--
+    02.7.2-T1: the reviewed research allow-list is embedded, not copied, so the start-up hash covers the bytes that
+    ship (`EmbeddedResearchAllowList` reads it by this exact logical name). The file is owned by the owner review.
+  -->
+  <ItemGroup>
+    <EmbeddedResource Include="..\..\config\source-finder\allowed-sites.v1.json" LogicalName="NightTales.Infrastructure.Research.allowed-sites.v1.json" />
+  </ItemGroup>
+
+  <!--
     02.2.3-T1 (02 README D5, F22): the whole `prompts/` tree is embedded, so a deployment cannot ship
     without its prompts and `PromptCatalog` never reads a file. `LinkBase="Prompts"` makes every logical
     name `NightTales.Infrastructure.Prompts.<path with '/' replaced by '.'>`; the catalog resolves a

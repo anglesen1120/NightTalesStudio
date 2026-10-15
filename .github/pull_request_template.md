@@ -21,3 +21,7 @@
 - [ ] **Seed dataset:** a migration that adds a table also extends
       `tests/NightTales.Api.IntegrationTests/Migrations/SeedPrevious.cs`, so the next migration is exercised
       over data.
+
+## Research allow-list (required when this PR changes `config/source-finder/allowed-sites.v1.json`)
+
+- [ ] allow-list change: clause quoted
