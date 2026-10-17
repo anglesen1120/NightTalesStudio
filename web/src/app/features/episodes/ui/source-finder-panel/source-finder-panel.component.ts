@@ -36,7 +36,7 @@ export class SourceFinderPanelComponent {
   readonly clearError = output<void>();
   readonly query = new FormControl('', { nonNullable: true, validators: [Validators.maxLength(300)] });
   readonly panelId = 'source-finder-' + ++nextPanelId;
-  readonly empty = computed(() => this.completed() && !this.loading() && !this.running() && !this.finding() && !this.failedRun() && !this.errorKey() && !this.candidates().some(candidate => candidate.status === 'proposed'));
+  readonly empty = computed(() => this.completed() && !this.loading() && !this.running() && !this.finding() && !this.failedRun() && !this.errorKey() && this.candidates().length === 0);
   readonly retryRowId = computed(() => this.candidates().find(candidate => this.rowErrorKeys().get(candidate.id) === 'errors.source_fetch_limit_reached')?.id ?? null);
 
   submit(): void {
@@ -45,7 +45,7 @@ export class SourceFinderPanelComponent {
   }
 
   addCandidate(id: string): void {
-    if (this.busyId() === id || this.sourceLimitReached() || (this.retryRowId() === id && this.rowRetryAfterSec() !== null)) return;
+    if (this.busyId() === id || this.sourceLimitReached() || (this.retryRowId() === id && this.rowRetryAfterSec() !== null) || this.candidates().find(candidate => candidate.id === id)?.status !== 'proposed') return;
     this.add.emit(id);
   }
 

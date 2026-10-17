@@ -22,9 +22,10 @@
   @if (candidates().length > 0) {
     <ul class="candidate-list">
       @for (candidate of candidates(); track candidate.id) {
+        @let displayTitle = candidate.title?.trim() ? candidate.title : candidate.url;
         <li class="candidate-row" [attr.aria-busy]="busyId() === candidate.id">
           <div class="candidate-main">
-            <strong class="candidate-title" [title]="candidate.title ?? candidate.url">{{ candidate.title ?? candidate.url }}</strong>
+            <strong class="candidate-title" [title]="displayTitle">{{ displayTitle }}</strong>
             <span class="site-name">{{ candidate.siteName }}</span>
             <span class="candidate-url" [title]="candidate.url">{{ candidate.url }}</span>
           </div>

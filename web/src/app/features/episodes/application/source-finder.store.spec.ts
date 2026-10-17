@@ -439,11 +439,46 @@ describe('SourceFinderStore candidates', () => {
     expect(repo.candidatesCalls).toHaveLength(2);
   });
 
-  it("never stacks a second read while the episode's own read is still in flight", async () => {
+  it('picks up a candidate committed while its own read was open, with one trailing read per burst', async () => {
     vi.useFakeTimers();
-    const harness = setup({ realtime: new CoalescingRealtime() });
-    const { store, repo, realtime } = harness;
+    const realtime = new CoalescingRealtime();
+    const harness = setup({ realtime });
+    const { store, repo } = harness;
+    store.watch(EPISODE_ID);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(repo.candidatesCalls).toHaveLength(1);
+    expect(store.candidates()).toEqual([]);
+
+    // A read the server answers slowly.
+    const slow = deferred<readonly SourceCandidate[]>();
+    repo.scriptCandidates(() => slow.promise);
+    realtime.emit(EPISODE_ID);
+    await vi.advanceTimersByTimeAsync(COALESCE_WINDOW_MS);
+    expect(repo.candidatesCalls).toHaveLength(2);
+
+    // The server commits a candidate and announces it — twice — while that read is still open.
     repo.seed([candidate(1)]);
+    realtime.emit(EPISODE_ID);
+    realtime.emit(EPISODE_ID);
+    await vi.advanceTimersByTimeAsync(COALESCE_WINDOW_MS);
+    expect(repo.candidatesCalls).toHaveLength(2);
+
+    // The open read answers with the list as it was before the commit; the queued read is what picks the row up.
+    slow.resolve([]);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(repo.candidatesCalls).toHaveLength(3);
+    expect(store.candidates().map((row) => row.id)).toEqual(['candidate-1']);
+
+    // One trailing read per burst, and nothing polls.
+    await vi.advanceTimersByTimeAsync(COALESCE_WINDOW_MS * 4);
+    expect(repo.candidatesCalls).toHaveLength(3);
+  });
+
+  it('drops a queued read of the episode the page has left', async () => {
+    vi.useFakeTimers();
+    const realtime = new CoalescingRealtime();
+    const harness = setup({ realtime });
+    const { store, repo } = harness;
     store.watch(EPISODE_ID);
     await vi.advanceTimersByTimeAsync(0);
 
@@ -451,15 +486,18 @@ describe('SourceFinderStore candidates', () => {
     repo.scriptCandidates(() => slow.promise);
     realtime.emit(EPISODE_ID);
     await vi.advanceTimersByTimeAsync(COALESCE_WINDOW_MS);
-    expect(repo.candidatesCalls).toHaveLength(2);
-
     realtime.emit(EPISODE_ID);
     await vi.advanceTimersByTimeAsync(COALESCE_WINDOW_MS);
-    expect(repo.candidatesCalls).toHaveLength(2);
 
-    slow.resolve([candidate(1)]);
+    repo.seed([]);
+    store.watch(OTHER_EPISODE_ID);
     await vi.advanceTimersByTimeAsync(0);
-    expect(store.candidates().map((row) => row.id)).toEqual(['candidate-1']);
+    const afterSwitch = repo.candidatesCalls.length;
+    slow.resolve([]);
+    await vi.advanceTimersByTimeAsync(COALESCE_WINDOW_MS * 4);
+
+    // The read that was open for the old episode may end, but its queued follow-up never runs.
+    expect(repo.candidatesCalls).toHaveLength(afterSwitch);
   });
 
   it('fails the first read as the block error and swallows a background one', async () => {
@@ -595,6 +633,29 @@ describe('SourceFinderStore rows', () => {
     store.clearRowError('candidate-1');
     expect(store.rowErrors().has('candidate-1')).toBe(false);
     expect(store.rowErrors().get('candidate-2')?.code).toBe('not_found');
+  });
+
+  it('reports a candidate the server does not have on its own row, reloads the list and leaves the panel quiet', async () => {
+    const harness = setup();
+    const { store, repo, research } = harness;
+    repo.seed([candidate(1), candidate(2)]);
+    await watchAndSettle(harness);
+    repo.scriptAdd(() => rejected(appError('not_found', 404)));
+    repo.scriptDismiss(() => rejected(appError('not_found', 404)));
+
+    const addResult = await store.add(EPISODE_ID, 'candidate-1');
+    const dismissResult = await store.dismiss(EPISODE_ID, 'candidate-2');
+
+    expect(addResult.ok).toBe(false);
+    expect(dismissResult.ok).toBe(false);
+    expect(store.rowErrors().get('candidate-1')?.code).toBe('not_found');
+    expect(store.rowErrors().get('candidate-2')?.code).toBe('not_found');
+    // A 404 on a row is never the panel's message, and nothing was created so the page data is not re-read.
+    expect(store.error()).toBeNull();
+    expect(research.refreshCalls).toEqual([]);
+    expect(store.busyId()).toBeNull();
+    // Each refused row asks the server for the list again, and no other row is disturbed.
+    expect(repo.candidatesCalls).toHaveLength(3);
   });
 
   it('holds only the refused row for the wait a row 429 announces', async () => {

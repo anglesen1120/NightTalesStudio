@@ -91,11 +91,36 @@ describe('SourceFinderPanelComponent', () => {
     expect(rows[0]!.querySelector('a')?.getAttribute('href')).toBe(url);
     expect(rows[1]!.querySelector('strong')?.textContent).toBe(title); expect(root.querySelector('img')).toBeNull();
   });
+  it.each(['', '   ', '\t\n'])('falls back to the URL for an empty or whitespace-only title (%j)', async title => {
+    const item = candidate({ title });
+    const { root } = await setup('en', { candidates: [item] });
+    const heading = root.querySelector<HTMLElement>('li strong')!;
+    expect(heading.textContent).toBe(item.url); expect(heading.title).toBe(item.url);
+    expect(root.querySelector('li a')?.getAttribute('href')).toBe(item.url);
+  });
   it('shows added and dismissed text without row actions', async () => {
     const { root, copy } = await setup('en', { candidates: [candidate({ status: 'added' }), candidate({ id: 'dismissed', status: 'dismissed' })] });
     expect(root.querySelectorAll('li button')).toHaveLength(0); expect(root.textContent).toContain(copy.added); expect(root.textContent).toContain(copy.dismissed);
   });
-  it('shows zero proposed candidates as a successful empty state only after completion', async () => {
+  it.each(['added', 'dismissed'] as const)('keeps a completed %s row visible without showing an empty result or allowing Add', async status => {
+    const item = candidate({ status });
+    const { root, component, copy } = await setup('en', { completed: true, candidates: [item] });
+    const added = vi.spyOn(component.add, 'emit');
+    expect(root.querySelector('nts-empty-state')).toBeNull();
+    expect(root.querySelectorAll('li')).toHaveLength(1);
+    expect(root.querySelector('li')?.textContent).toContain(status === 'added' ? copy.added : copy.dismissed);
+    expect(root.querySelector('li button')).toBeNull();
+    component.addCandidate(item.id); expect(added).not.toHaveBeenCalled();
+  });
+  it('emits once for two rapid Add clicks when the first click marks the row busy', async () => {
+    const { root, component, fixture } = await setup('en', { candidates: [candidate()] });
+    const added = vi.spyOn(component.add, 'emit').mockImplementation(id => fixture.componentRef.setInput('busyId', id));
+    const button = root.querySelector<HTMLButtonElement>('li button')!;
+    button.click(); button.click();
+    expect(added.mock.calls).toEqual([['candidate-a']]);
+    await fixture.whenStable(); expect(button.getAttribute('aria-disabled')).toBe('true');
+  });
+  it('shows zero candidates as a successful empty state only after completion', async () => {
     const { root, copy } = await setup('en', { completed: true }); expect(root.querySelector('nts-empty-state')?.textContent).toContain(copy.empty); expect(root.querySelector('[role=alert]')).toBeNull();
   });
   it('renders failed-run recovery and emits a fresh user retry action', async () => {

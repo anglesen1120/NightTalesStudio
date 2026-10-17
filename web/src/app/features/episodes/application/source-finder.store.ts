@@ -98,8 +98,10 @@ export class SourceFinderStore {
   private subscription: RealtimeSubscription | null = null;
   private findIntent: IdempotencyIntent | null = null;
   private profileReloaded = false;
-  /** A candidates read is in flight: a realtime event that lands inside it adds nothing (see the subscription). */
+  /** A candidates read is in flight: an event that lands inside it queues one trailing read (see the subscription). */
   private candidatesInFlight = false;
+  /** An event asked for a read while one was in flight; the read's own end runs it once, and only if still current. */
+  private refetchQueued = false;
 
   constructor() {
     inject(DestroyRef).onDestroy(() => {
@@ -147,13 +149,18 @@ export class SourceFinderStore {
     this.findingState.set(false);
     this.loadingState.set(false);
     this.candidatesInFlight = false;
+    this.refetchQueued = false;
     if (this.visible()) void this.readCandidates(episodeId, true, false);
     this.subscription = this.realtime.subscribeEpisode(episodeId, () => {
       if (this.destroyed || this.requestGeneration !== generation || this.episode !== episodeId) return;
-      // One read at a time: an event that lands while this episode's own candidates read is still in flight adds
-      // nothing (that answer is at least as new as the event), so a burst never stacks a second GET. A background read
-      // is silent: its failure is not the page's error (the next event or the owner's own click reports afresh).
-      if (this.candidatesInFlight) return;
+      // A background read is silent: its failure is not the page's error (the next event or the owner's own click
+      // reports afresh). An event that lands while this episode's own read is still open is never lost: it asks for
+      // exactly one trailing read, which the read's own end runs, so a candidate the server committed in the meantime
+      // is picked up and a burst inside one read still costs one extra GET.
+      if (this.candidatesInFlight) {
+        this.refetchQueued = true;
+        return;
+      }
       void this.readCandidates(episodeId, false, true);
     });
   }
@@ -317,6 +324,12 @@ export class SourceFinderStore {
     } finally {
       this.candidatesInFlight = false;
       if (this.current(generation)) this.loadingState.set(false);
+      // The trailing read an event asked for while this one was open. It is generation-fenced (an episode switch, a
+      // reset or a new session discards it) and consumed once, so a burst never stacks GETs and nothing polls.
+      if (this.refetchQueued) {
+        this.refetchQueued = false;
+        if (this.current(generation) && this.episode === episodeId) void this.readCandidates(episodeId, false, true);
+      }
     }
   }
 
