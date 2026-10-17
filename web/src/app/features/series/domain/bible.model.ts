@@ -2,12 +2,6 @@
 // The camelCase mirror of the wire `BibleDto` (02.6.3 §3, D18/D13): no member the wire does not carry, and the
 // snake_case ↔ camelCase boundary is `data-access/bible.mapper.ts`, never this file.
 
-/** The version of the bible content schema the server writes on every save (`bible.v1`); clients never send it. */
-export const BIBLE_SCHEMA_VERSION = 'bible.v1';
-
-/** The server-assigned id prefix of each id-carrying array (02.6.3 §3.1, owner decision 2026-10-15). */
-export const BIBLE_ID_PREFIX = { character: 'ch', place: 'pl', rule: 'rl' } as const;
-
 /**
  * Field limits of `BibleContentValidator` (02.6.3 §3.2). The three id-carrying arrays cap at 30 and the form
  * disables its add button there; `episode_summaries` is unbounded server-side (the prompt reads the newest 50), so

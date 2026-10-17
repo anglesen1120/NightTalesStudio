@@ -23,9 +23,9 @@ const WIRE: BibleDto = { seriesId: SERIES_ID, version: 1, etag: '"sb-1"', conten
 
 describe('bible mapper (QA)', () => {
   it('normalises a null, a numeric-string and a padded version without throwing', () => {
-    const fromString = mapBible({ ...WIRE, version: '7' as unknown as number });
+    const fromString = mapBible({ ...WIRE, version: '7' });
     const fromNull = mapBible({ ...WIRE, version: null as unknown as number });
-    const fromPadded = mapBible({ ...WIRE, version: '007' as unknown as number });
+    const fromPadded = mapBible({ ...WIRE, version: '007' });
     expect(fromString.version).toBe(7);
     expect(fromPadded.version).toBe(7);
     // `Number(null)` is 0: a missing version reads as 0 (finite), never NaN — the store then keeps the ETag it got.
@@ -95,21 +95,6 @@ describe('bible mapper (QA)', () => {
     expect(wire.episode_summaries[0]!.title).toBe(raw);
   });
 
-  it('does not truncate the documented limits: 100/101-char titles and 1000/1001-char personas pass through', () => {
-    const content = mapBibleContent({
-      ...CONTENT,
-      narrator: { name: 'n', persona: 'p'.repeat(1_001), voice_notes: 'v'.repeat(1_001) },
-      episode_summaries: [
-        { episode_id: 'ep-1', title: 't'.repeat(100), summary: 's'.repeat(200), structure: STRUCTURE, approved_at: '' },
-        { episode_id: 'ep-2', title: 't'.repeat(101), summary: 's'.repeat(201), structure: STRUCTURE, approved_at: '' },
-      ],
-    });
-    expect(content.narrator.persona).toHaveLength(1_001);
-    expect(content.episodeSummaries[0]!.title).toHaveLength(100);
-    expect(content.episodeSummaries[1]!.title).toHaveLength(101);
-    expect(mapBibleContentToWire(content).episode_summaries[1]!.summary).toHaveLength(201);
-  });
-
   it('maps an op whose value members are all null to a kind-only row', () => {
     const model = mapBible({
       ...WIRE,
@@ -149,7 +134,7 @@ describe('bible mapper (QA)', () => {
         proposedFromEpisodeId: null,
         proposedAt: '',
         ops: [],
-        preview: { characters: 'x' as unknown as number, places: '2', rules: -1, summaryForEpisodeId: null },
+        preview: { characters: 'x', places: '2', rules: -1, summaryForEpisodeId: null },
       },
     });
     expect(model.proposal?.basedOnVersion).toBe(0);

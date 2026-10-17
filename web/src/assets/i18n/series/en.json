@@ -125,6 +125,6 @@
       "diffLabel": "Suggested bible changes", "added": "Added", "removed": "Removed"
     },
     "op": { "summary": "Summary", "character": "Character", "place": "Place", "rule": "Rule", "other": "Change" },
-    "dirty": { "title": "Leave without saving?", "body": "Your bible edits have not been saved.", "leave": "Discard edits", "stay": "Keep editing" }
+    "dirty": { "title": "Leave without saving?", "body": "Your bible edits have not been saved.", "leave": "Discard edits", "stay": "Keep editing", "acceptTitle": "Discard edits and accept the proposal?" }
   }
 }

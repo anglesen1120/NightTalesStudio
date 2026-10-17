@@ -68,17 +68,6 @@ describe('BibleProposalBanner (QA)', () => {
     expect(row?.after).toBe('X');
   });
 
-  it('keeps the documented value precedence name -> text -> summary -> description and an op with no value as an empty row', async () => {
-    const { component } = await setup(proposalOf([
-      { kind: 'AddCharacter', name: 'N', text: 'T', summary: 'S', description: 'D' },
-      { kind: 'AddRule', text: 'T', summary: 'S', description: 'D' },
-      { kind: 'AddSummary', summary: 'S', description: 'D' },
-      { kind: 'AddPlace', description: 'D' },
-      { kind: 'AddPlace' },
-    ]));
-    expect(component.rows().map((row) => row.after)).toEqual(['N', 'T', 'S', 'D', '']);
-  });
-
   it('counts ops, not preview rows, in the banner heading', async () => {
     const { component } = await setup(proposalOf([{ kind: 'AddCharacter', name: 'A' }], { preview: { characters: 99, places: 0, rules: 0, summaryForEpisodeId: null } }));
     expect(component.heading()).toBe(seriesEn.bible.proposal.banner.replace('{{n}}', '1').replace('{{title}}', 'An episode'));

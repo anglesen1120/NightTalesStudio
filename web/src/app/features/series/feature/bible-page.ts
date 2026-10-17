@@ -13,6 +13,7 @@ import type { ServerControlError } from '@core/errors';
 import { UnsavedWorkRegistry } from '@core/shell/unsaved-work';
 import { CharCounter, ConfirmDialog, EmptyState, ErrorState, FormErrorAlert, LoadingState, PageHeader } from '@shared/ui';
 import { BibleStore } from '../application/bible.store';
+import { BIBLE_LIMITS } from '../domain/bible.model';
 import type { BibleContent } from '../domain/bible.model';
 import { BibleSection } from '../ui/bible-section';
 import type { BibleEntryControls, BibleEntryForm, BibleSectionKind } from '../ui/bible-section';
@@ -22,6 +23,16 @@ type NarratorControls = { name: FormControl<string>; persona: FormControl<string
 type BibleForm = FormGroup<{ narrator: FormGroup<NarratorControls>; recurringCharacters: FormArray<BibleEntryForm>; places: FormArray<BibleEntryForm>; rules: FormArray<BibleEntryForm>; episodeSummaries: FormArray<BibleEntryForm> }>;
 interface FieldIssue { readonly pointer: string; readonly labelKey: string; readonly messageKey: string }
 const noAngleBrackets: ValidatorFn = (control: AbstractControl): ValidationErrors | null => typeof control.value === 'string' && /[<>]/.test(control.value) ? { angleBrackets: true } : null;
+
+/** Compare the JSON content, not mapper object identity or object-key insertion order. */
+function sameContent(left: unknown, right: unknown): boolean {
+  if (left === right) return true;
+  if (left === null || right === null || typeof left !== 'object' || typeof right !== 'object' || Array.isArray(left) !== Array.isArray(right)) return false;
+  const before = left as Record<string, unknown>;
+  const after = right as Record<string, unknown>;
+  const keys = Object.keys(before);
+  return keys.length === Object.keys(after).length && keys.every(key => Object.hasOwn(after, key) && sameContent(before[key], after[key]));
+}
 
 @Component({
   selector: 'nts-bible-page',
@@ -50,11 +61,12 @@ export class BiblePage {
   private baseline = '';
   private adoptedContent: BibleContent | null = null;
   private leavePrompt: Promise<boolean> | null = null;
+  private accepting = false;
   private generation = 0;
   readonly narratorFields = [
-    { name: 'name', labelKey: 'series.bible.narrator.name', max: 80 },
-    { name: 'persona', labelKey: 'series.bible.narrator.persona', max: 1000 },
-    { name: 'voiceNotes', labelKey: 'series.bible.narrator.voiceNotes', max: 1000 },
+    { name: 'name', labelKey: 'series.bible.narrator.name', max: BIBLE_LIMITS.narratorName },
+    { name: 'persona', labelKey: 'series.bible.narrator.persona', max: BIBLE_LIMITS.narratorPersona },
+    { name: 'voiceNotes', labelKey: 'series.bible.narrator.voiceNotes', max: BIBLE_LIMITS.narratorVoiceNotes },
   ] as const;
   readonly canSave = computed(() => {
     this.revision();
@@ -80,7 +92,8 @@ export class BiblePage {
     effect(() => {
       const bible = this.store.bible();
       if (this.store.loading() || this.store.saving() || this.store.committing()) return;
-      if (bible && bible.content !== this.adoptedContent) untracked(() => this.buildForm(bible.content));
+      // A refetch maps a fresh object even when Dismiss/409 did not change the server content.
+      if (bible && !sameContent(bible.content, this.adoptedContent)) untracked(() => this.buildForm(bible.content));
     });
     effect(onCleanup => {
       const form = this.form();
@@ -130,14 +143,14 @@ export class BiblePage {
   private buildForm(content: BibleContent): void {
     const text = (value: string, max: number, name = false): FormControl<string> => new FormControl(value, { nonNullable: true, validators: name ? [Validators.maxLength(max), noAngleBrackets] : [Validators.maxLength(max)] });
     const group = (controls: BibleEntryControls): BibleEntryForm => new FormGroup<BibleEntryControls>(controls);
-    const persona = text(content.narrator.persona, 1000);
+    const persona = text(content.narrator.persona, BIBLE_LIMITS.narratorPersona);
     persona.addValidators(control => typeof control.value === 'string' && control.value.trim().length > 0 ? null : { required: true }); persona.updateValueAndValidity();
     const form: BibleForm = new FormGroup({
-      narrator: new FormGroup({ name: text(content.narrator.name, 80, true), persona, voiceNotes: text(content.narrator.voiceNotes, 1000) }),
-      recurringCharacters: new FormArray(content.recurringCharacters.map(row => group({ id: text(row.id ?? '', 12), name: text(row.name, 60, true), description: text(row.description, 300), firstEpisodeId: text(row.firstEpisodeId ?? '', 36) }))),
-      places: new FormArray(content.places.map(row => group({ id: text(row.id ?? '', 12), name: text(row.name, 60, true), description: text(row.description, 300) }))),
-      rules: new FormArray(content.rules.map(row => group({ id: text(row.id ?? '', 12), text: text(row.text, 300) }))),
-      episodeSummaries: new FormArray(content.episodeSummaries.map(row => group({ episodeId: text(row.episodeId, 36), title: text(row.title, 100), summary: text(row.summary, 200) }))),
+      narrator: new FormGroup({ name: text(content.narrator.name, BIBLE_LIMITS.narratorName, true), persona, voiceNotes: text(content.narrator.voiceNotes, BIBLE_LIMITS.narratorVoiceNotes) }),
+      recurringCharacters: new FormArray(content.recurringCharacters.map(row => group({ id: text(row.id ?? '', 12), name: text(row.name, BIBLE_LIMITS.characterName, true), description: text(row.description, BIBLE_LIMITS.description), firstEpisodeId: text(row.firstEpisodeId ?? '', 36) }))),
+      places: new FormArray(content.places.map(row => group({ id: text(row.id ?? '', 12), name: text(row.name, BIBLE_LIMITS.placeName, true), description: text(row.description, BIBLE_LIMITS.description) }))),
+      rules: new FormArray(content.rules.map(row => group({ id: text(row.id ?? '', 12), text: text(row.text, BIBLE_LIMITS.ruleText) }))),
+      episodeSummaries: new FormArray(content.episodeSummaries.map(row => group({ episodeId: text(row.episodeId, 36), title: text(row.title, BIBLE_LIMITS.summaryTitle), summary: text(row.summary, BIBLE_LIMITS.summaryBody) }))),
     });
     this.adoptedContent = content;
     this.baseline = JSON.stringify(form.getRawValue());
@@ -147,10 +160,11 @@ export class BiblePage {
     const form = this.form();
     if (!form || this.store.saving() || this.store.committing() || this.store.loading()) return;
     const rows = kind === 'characters' ? form.controls.recurringCharacters : kind === 'places' ? form.controls.places : form.controls.rules;
-    if (rows.length >= 30) return;
+    const max = kind === 'characters' ? BIBLE_LIMITS.maxCharacters : kind === 'places' ? BIBLE_LIMITS.maxPlaces : BIBLE_LIMITS.maxRules;
+    if (rows.length >= max) return;
     clearServerErrors(rows);
     const control = (max: number, name = false): FormControl<string> => new FormControl('', { nonNullable: true, validators: name ? [Validators.maxLength(max), noAngleBrackets] : [Validators.maxLength(max)] });
-    rows.push(new FormGroup<BibleEntryControls>(kind === 'rules' ? { text: control(300) } : { name: control(60, true), description: control(300) }));
+    rows.push(new FormGroup<BibleEntryControls>(kind === 'rules' ? { text: control(BIBLE_LIMITS.ruleText) } : { name: control(kind === 'characters' ? BIBLE_LIMITS.characterName : BIBLE_LIMITS.placeName, true), description: control(BIBLE_LIMITS.description) }));
     form.markAsDirty();
   }
   removeEntry(kind: BibleSectionKind, index: number): void {
@@ -174,13 +188,41 @@ export class BiblePage {
     const id = this.seriesId();
     const generation = this.generation;
     const result = await this.store.save(id, content, bible.etag);
-    if (result.ok && !this.destroy.destroyed && generation === this.generation && id === this.seriesId()) this.saved.set(true);
+    if (result.ok && !this.destroy.destroyed && generation === this.generation && id === this.seriesId()) {
+      const savedBible = this.store.bible();
+      if (savedBible && this.form() === form) this.buildForm(savedBible.content);
+      this.saved.set(true);
+    }
   }
   async reload(): Promise<void> {
     if (this.store.loading() || this.store.saving() || this.store.committing()) return;
-    await this.store.load(this.seriesId());
+    const id = this.seriesId();
+    const generation = this.generation;
+    const editor = this.form();
+    await this.store.load(id);
+    const bible = this.store.bible();
+    if (bible && this.form() === editor && !this.store.error() && !this.destroy.destroyed && generation === this.generation && id === this.seriesId()) this.buildForm(bible.content);
   }
-  async acceptProposal(): Promise<void> { if (!this.store.saving() && !this.store.committing()) await this.store.acceptProposal(this.seriesId()); }
+  async acceptProposal(): Promise<void> {
+    if (this.accepting || this.store.loading() || this.store.saving() || this.store.committing()) return;
+    const id = this.seriesId();
+    const generation = this.generation;
+    const proposal = this.store.proposal();
+    if (!proposal) return;
+    this.accepting = true;
+    try {
+      const form = this.form();
+      if (this.hasUnsaved() || (form && JSON.stringify(form.getRawValue()) !== this.baseline)) {
+        const ref = this.dialog.confirm({ titleKey: 'series.bible.dirty.acceptTitle', bodyKey: 'series.bible.dirty.body', confirmLabelKey: 'series.bible.dirty.leave', cancelLabelKey: 'series.bible.dirty.stay', destructive: true }, { viewContainerRef: this.viewContainer });
+        if (!(await firstValueFrom(ref.afterClosed()))) return;
+      }
+      if (this.destroy.destroyed || generation !== this.generation || id !== this.seriesId() || proposal !== this.store.proposal() || this.store.loading() || this.store.saving() || this.store.committing()) return;
+      // Keep the draft until content actually changes: a 409/refetch must not discard it.
+      await this.store.acceptProposal(id);
+    } finally {
+      this.accepting = false;
+    }
+  }
   async dismissProposal(): Promise<void> { if (!this.store.saving() && !this.store.committing()) await this.store.dismissProposal(this.seriesId()); }
   controlErrorKey(control: FormControl<string>): string {
     const server = control.getError('server') as ServerControlError | undefined;

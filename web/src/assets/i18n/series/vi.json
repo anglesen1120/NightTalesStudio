@@ -125,6 +125,6 @@
       "diffLabel": "Các thay đổi đề xuất cho bộ nhớ", "added": "Đã thêm", "removed": "Đã xoá"
     },
     "op": { "summary": "Tóm tắt", "character": "Nhân vật", "place": "Địa điểm", "rule": "Quy tắc", "other": "Thay đổi" },
-    "dirty": { "title": "Rời trang khi chưa lưu?", "body": "Các chỉnh sửa bộ nhớ chưa được lưu.", "leave": "Bỏ chỉnh sửa", "stay": "Tiếp tục sửa" }
+    "dirty": { "title": "Rời trang khi chưa lưu?", "body": "Các chỉnh sửa bộ nhớ chưa được lưu.", "leave": "Bỏ chỉnh sửa", "stay": "Tiếp tục sửa", "acceptTitle": "Bỏ chỉnh sửa và chấp nhận đề xuất?" }
   }
 }

@@ -112,7 +112,11 @@ export class BibleStore {
     if (current !== null && current.seriesId === seriesId) {
       // The committed `{ version, etag }` of the response plus the content that was just stored: if the refetch
       // below fails, the page still carries the edits it saved. The refetch stays authoritative for server ids.
-      this.bibleState.set({ ...current, content, version: result.value.version, etag: result.value.etag });
+      // An empty write etag (the mapper's answer when neither the ETag header nor the body carries a valid tag) is
+      // never adopted: the owner-approved tag is the quoted `"sb-<version>"`, so the next If-Match stays valid even
+      // when the refetch fails.
+      const committedEtag = result.value.etag || `"sb-${result.value.version}"`;
+      this.bibleState.set({ ...current, content, version: result.value.version, etag: committedEtag });
     }
     await this.fetchAndAdopt(seriesId, series, request);
     if (this.isCurrent(request, series)) this.savingState.set(false);
@@ -178,22 +182,26 @@ export class BibleStore {
     return result;
   }
 
-  /** One `GET /series/{id}/bible` that publishes only while its generation is current, then the optional title. */
+  /**
+   * One `GET /series/{id}/bible` that publishes only while its generation is current. The optional title lookup starts
+   * after the publish and is NOT awaited: `load()`, `save()` and `commit()` clear their flags on the bible alone, so a
+   * slow `GET /episodes/{id}` never keeps the page loading, saving or committing.
+   */
   private async fetchAndAdopt(seriesId: string, series: number, request: number): Promise<Result<Bible>> {
     const result = await this.repository.get(seriesId);
     if (!this.isCurrent(request, series)) return result;
     if (!result.ok) return result;
     this.bibleState.set(result.value);
-    await this.resolveProposedTitle(result.value, series);
+    this.startProposedTitleLookup(result.value, series);
     return result;
   }
 
   /**
-   * The one title lookup of a pending proposal (P5). It runs only for a proposal with a `proposedFromEpisodeId`, at
-   * most once per episode id — a refetch after a save does not ask again, and a failure is never retried. A result
-   * of a superseded series/proposal is dropped.
+   * The one title lookup of a pending proposal (P5), fire-and-forget. It runs only for a proposal with a
+   * `proposedFromEpisodeId`, at most once per episode id: a refetch after a save does not ask again, and a failure is
+   * never retried or surfaced. A result of a superseded series/proposal is dropped.
    */
-  private async resolveProposedTitle(bible: Bible, series: number): Promise<void> {
+  private startProposedTitleLookup(bible: Bible, series: number): void {
     const episodeId = bible.proposal?.proposedFromEpisodeId ?? null;
     if (bible.proposal === null || episodeId === null) {
       this.proposedTitleState.set(null);
@@ -202,9 +210,20 @@ export class BibleStore {
     }
     if (this.titleLookupEpisodeId === episodeId) return;
     this.titleLookupEpisodeId = episodeId;
-    const title = await this.repository.getEpisodeTitle(episodeId);
-    if (series !== this.seriesGeneration || this.titleLookupEpisodeId !== episodeId) return;
-    this.proposedTitleState.set(title);
+    // A title of the previous proposal never stays on the banner while the new episode's title is still in flight.
+    this.proposedTitleState.set(null);
+    void this.lookUpProposedTitle(episodeId, series);
+  }
+
+  /** Awaits the title and publishes it only if its series and proposal are still current; every failure is silent. */
+  private async lookUpProposedTitle(episodeId: string, series: number): Promise<void> {
+    try {
+      const title = await this.repository.getEpisodeTitle(episodeId);
+      if (series !== this.seriesGeneration || this.titleLookupEpisodeId !== episodeId) return;
+      this.proposedTitleState.set(title);
+    } catch {
+      // P5: a failed lookup keeps the banner's no-title copy and is never retried.
+    }
   }
 
   /** Routes a failed write to the state its copy needs; the conflict never touches `bible` (acceptance: 412). */

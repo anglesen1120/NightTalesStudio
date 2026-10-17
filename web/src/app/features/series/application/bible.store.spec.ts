@@ -54,6 +54,11 @@ function loaded(value: Bible): Result<Bible> {
   return { ok: true, value };
 }
 
+/** Lets queued microtasks and a resolved title promise settle before a state assertion. */
+function flush(): Promise<void> {
+  return new Promise((settle) => setTimeout(settle, 0));
+}
+
 describe('BibleStore', () => {
   it('Load_StoresTheBibleWithoutIssuingATitleRequestForAProposallessBible', async () => {
     const { store, repo } = setup();
@@ -319,5 +324,121 @@ describe('BibleStore', () => {
 
     expect(store.bible()?.version).toBe(2);
     expect(store.loading()).toBe(false);
+  });
+
+  it('Load_TitleInFlight_PublishesTheBibleAndClearsLoadingBeforeTheTitleSettles', async () => {
+    const { store, repo } = setup();
+    const title = deferred<string | null>();
+    repo.getResult = loaded(bible({ proposal: bibleProposal() }));
+    repo.scriptTitle(() => title.promise);
+
+    await store.load(BIBLE_SERIES_ID);
+
+    expect(store.loading()).toBe(false);
+    expect(store.bible()?.proposal).not.toBeNull();
+    expect(store.proposedTitle()).toBeNull();
+
+    title.resolve('Tập đã duyệt');
+    await flush();
+    expect(store.proposedTitle()).toBe('Tập đã duyệt');
+  });
+
+  it('Save_TitleInFlightAfterTheRefetch_ClearsSavingAndPublishesTheTitleLater', async () => {
+    const { store, repo } = setup();
+    await store.load(BIBLE_SERIES_ID);
+    const title = deferred<string | null>();
+    repo.scriptGet(() => Promise.resolve(loaded(bible({ version: 2, etag: '"sb-2"', proposal: bibleProposal() }))));
+    repo.scriptTitle(() => title.promise);
+
+    const result = await store.save(BIBLE_SERIES_ID, bibleContent(), '"sb-1"');
+
+    expect(result.ok).toBe(true);
+    expect(store.saving()).toBe(false);
+    expect(store.bible()?.version).toBe(2);
+    expect(store.proposedTitle()).toBeNull();
+
+    title.resolve('Tập đã duyệt');
+    await flush();
+    expect(store.proposedTitle()).toBe('Tập đã duyệt');
+  });
+
+  it('Commit_TitleInFlightOfTheRefetchedProposal_ClearsCommittingAndDropsThePreviousTitle', async () => {
+    const { store, repo } = setup();
+    repo.getResult = loaded(bible({ proposal: bibleProposal() }));
+    await store.load(BIBLE_SERIES_ID);
+    expect(store.proposedTitle()).toBe('Tập đã duyệt');
+    const title = deferred<string | null>();
+    repo.scriptGet(() =>
+      Promise.resolve(
+        loaded(bible({ version: 2, etag: '"sb-2"', proposal: bibleProposal({ proposedFromEpisodeId: OTHER_EPISODE_ID }) })),
+      ),
+    );
+    repo.scriptTitle(() => title.promise);
+
+    const result = await store.acceptProposal(BIBLE_SERIES_ID);
+
+    expect(result.ok).toBe(true);
+    expect(store.committing()).toBe(false);
+    expect(store.proposedTitle()).toBeNull();
+
+    title.resolve('Tập mới');
+    await flush();
+    expect(store.proposedTitle()).toBe('Tập mới');
+  });
+
+  it('Load_TitleOfTheSeriesLeftBehind_IsDroppedWhileTheNewSeriesTitleLands', async () => {
+    const { store, repo } = setup();
+    const staleTitle = deferred<string | null>();
+    const newTitle = deferred<string | null>();
+    repo.getResult = loaded(bible({ proposal: bibleProposal() }));
+    repo.scriptTitle(() => staleTitle.promise);
+    await store.load(BIBLE_SERIES_ID);
+    repo.scriptGet(() =>
+      Promise.resolve(
+        loaded(bible({ seriesId: 'series-other', proposal: bibleProposal({ proposedFromEpisodeId: OTHER_EPISODE_ID }) })),
+      ),
+    );
+    repo.scriptTitle(() => newTitle.promise);
+    await store.load('series-other');
+
+    staleTitle.resolve('Tiêu đề cũ');
+    await flush();
+    expect(store.proposedTitle()).toBeNull();
+
+    newTitle.resolve('Tiêu đề mới');
+    await flush();
+    expect(store.proposedTitle()).toBe('Tiêu đề mới');
+  });
+
+  it('Load_TitleLookupThatRejects_StaysSilentAndIsNeverRetried', async () => {
+    const { store, repo } = setup();
+    repo.getResult = loaded(bible({ proposal: bibleProposal() }));
+    repo.scriptTitle(() => Promise.reject(new Error('title unavailable')));
+
+    await store.load(BIBLE_SERIES_ID);
+    await flush();
+
+    expect(store.loading()).toBe(false);
+    expect(store.error()).toBeNull();
+    expect(store.proposedTitle()).toBeNull();
+
+    await store.load(BIBLE_SERIES_ID);
+    expect(repo.titleCalls).toEqual([PROPOSING_EPISODE_ID]);
+  });
+
+  it('Save_EmptyWriteEtagIsReplacedByTheVersionTagSoTheNextSaveNeverSendsAnEmptyIfMatch', async () => {
+    const { store, repo } = setup();
+    await store.load(BIBLE_SERIES_ID);
+    repo.saveResult = { ok: true, value: { version: 2, etag: '' } };
+    repo.getResult = { ok: false, error: NETWORK_ERROR };
+
+    await store.save(BIBLE_SERIES_ID, bibleContent(), '"sb-1"');
+    expect(store.bible()?.etag).toBe('"sb-2"');
+
+    repo.saveResult = { ok: true, value: { version: 3, etag: '"sb-3"' } };
+    await store.save(BIBLE_SERIES_ID, bibleContent(), store.bible()!.etag);
+
+    expect(repo.saveCalls.map((call) => call.etag)).toEqual(['"sb-1"', '"sb-2"']);
+    expect(store.bible()?.etag).toBe('"sb-3"');
   });
 });

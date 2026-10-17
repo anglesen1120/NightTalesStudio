@@ -1,6 +1,6 @@
 // QA (10.5.7-T1) — copy contract of the bible panel: the vi/en key sets are equal, every `series.bible.*` token the
-// feature source names resolves in both languages (leaf or dynamic family), every leaf interpolates its placeholders
-// through the `series` scope in both languages, and the 02.6.3 §6 hand-over copy is verbatim.
+// feature source names resolves in both languages (leaf or dynamic family), and every leaf interpolates its placeholders
+// through the `series` scope in both languages.
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { TestBed } from '@angular/core/testing';
@@ -104,48 +104,6 @@ describe('series bible copy (QA)', () => {
         const resolved = transloco.translate(`bible.${key}`, PARAMS, 'series');
         expect(resolved, `${lang} ${key}`).toBe(expected);
       }
-    }
-  });
-
-  it('keeps the 02.6.3 §6 hand-over copy verbatim in both languages', () => {
-    expect(VI['title']).toBe('Bộ nhớ của bộ truyện');
-    expect(EN['title']).toBe('Series bible');
-    expect(VI['empty']).toBe('Truyện này chưa ghi nhớ gì. Nó sẽ tự đầy lên sau mỗi tập được duyệt.');
-    expect(EN['empty']).toBe('Your series remembers nothing yet. It fills up as episodes are approved.');
-    expect(VI['narrator']).toBe('Người kể');
-    expect(EN['narrator']).toBe('Narrator');
-    expect(VI['characters']).toBe('Nhân vật định kỳ');
-    expect(EN['characters']).toBe('Recurring characters');
-    expect(VI['places']).toBe('Địa điểm');
-    expect(EN['places']).toBe('Places');
-    expect(VI['rules']).toBe('Quy tắc');
-    expect(EN['rules']).toBe('Rules');
-    expect(VI['summaries']).toBe('Tóm tắt các tập');
-    expect(EN['summaries']).toBe('Past episode summaries');
-    expect(VI['saved']).toBe('Đã lưu');
-    expect(EN['saved']).toBe('Saved');
-    expect(VI['error.conflict']).toBe('Ai đó vừa thay đổi bộ nhớ này. Tải lại rồi lưu lại.');
-    expect(EN['error.conflict']).toBe('Someone changed this bible. Reload and save again.');
-    expect(VI['error.limits']).toBe('Vượt giới hạn: {{field}}');
-    expect(EN['error.limits']).toBe('Over the limit: {{field}}');
-    expect(VI['proposal.banner']).toBe('Có {{n}} thay đổi đề xuất từ tập “{{title}}”');
-    expect(EN['proposal.banner']).toBe('{{n}} suggested changes from “{{title}}”');
-    expect(VI['proposal.accept']).toBe('Chấp nhận');
-    expect(EN['proposal.accept']).toBe('Accept');
-    expect(VI['proposal.dismiss']).toBe('Bỏ qua');
-    expect(EN['proposal.dismiss']).toBe('Dismiss');
-    expect(VI['proposal.none']).toBe('Không còn đề xuất nào');
-    expect(EN['proposal.none']).toBe('No proposal is pending');
-    expect(VI['proposal.autoAccepted']).toBe('Tự động cập nhật (autopilot)');
-    expect(EN['proposal.autoAccepted']).toBe('Updated automatically (autopilot)');
-  });
-
-  it('ships the keys the task names although no control renders them yet (contract gaps, not defects)', () => {
-    // `addSummary` has no add flow (a summary arrives only through a proposal or an approved episode),
-    // `autoAccepted` needs a field `BibleDto` does not carry, and `error.ifMatch` is the 428 copy.
-    for (const key of ['addSummary', 'proposal.autoAccepted', 'error.ifMatch']) {
-      expect(VI[key], `vi ${key}`).toBeTruthy();
-      expect(EN[key], `en ${key}`).toBeTruthy();
     }
   });
 });

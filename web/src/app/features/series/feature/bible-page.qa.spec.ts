@@ -5,8 +5,9 @@ import { DeferBlockBehavior, TestBed } from '@angular/core/testing';
 import { ActivatedRoute, convertToParamMap, provideRouter } from '@angular/router';
 import { TranslocoTestingModule } from '@jsverse/transloco';
 import type { AbstractControl } from '@angular/forms';
-import { of } from 'rxjs';
-import { afterEach, describe, expect, it } from 'vitest';
+import { Subject, of } from 'rxjs';
+import type { Observable } from 'rxjs';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import coreEn from '../../../../assets/i18n/core/en.json';
 import coreVi from '../../../../assets/i18n/core/vi.json';
 import seriesEn from '../../../../assets/i18n/series/en.json';
@@ -18,6 +19,7 @@ import { ZONELESS_TEST_PROVIDERS } from '../../../testing/providers';
 import { BibleRepository } from '../application/bible.repository';
 import {
   BIBLE_CONFLICT,
+  BIBLE_PROPOSAL_GONE,
   BIBLE_SERIES_ID,
   FakeBibleRepository,
   bible,
@@ -29,18 +31,19 @@ import { BiblePage } from './bible-page';
 
 afterEach(() => TestBed.resetTestingModule());
 
-async function setup(repo = new FakeBibleRepository(), lang: 'vi' | 'en' = 'en') {
+async function setup(repo = new FakeBibleRepository(), lang: 'vi' | 'en' = 'en', confirmation: Observable<boolean> = of(true)) {
   const params = convertToParamMap({ id: BIBLE_SERIES_ID });
+  const confirm = vi.fn(() => ({ afterClosed: () => confirmation }));
   await TestBed.configureTestingModule({
     imports: [BiblePage, TranslocoTestingModule.forRoot({ langs: { en: { ...coreEn, series: seriesEn, errors: errorsEn }, vi: { ...coreVi, series: seriesVi, errors: errorsVi }, 'series/en': seriesEn, 'series/vi': seriesVi, 'errors/en': errorsEn, 'errors/vi': errorsVi }, translocoConfig: { availableLangs: ['vi', 'en'], defaultLang: lang, fallbackLang: lang, reRenderOnLangChange: true }, preloadLangs: true })],
-    providers: [...ZONELESS_TEST_PROVIDERS, provideRouter([]), { provide: BibleRepository, useValue: repo }, { provide: ActivatedRoute, useValue: { paramMap: of(params), snapshot: { paramMap: params } } }, { provide: ConfirmDialog, useValue: { confirm: () => ({ afterClosed: () => of(true) }) } }],
+    providers: [...ZONELESS_TEST_PROVIDERS, provideRouter([]), { provide: BibleRepository, useValue: repo }, { provide: ActivatedRoute, useValue: { paramMap: of(params), snapshot: { paramMap: params } } }, { provide: ConfirmDialog, useValue: { confirm } }],
     deferBlockBehavior: DeferBlockBehavior.Manual,
   }).compileComponents();
   const fixture = TestBed.createComponent(BiblePage);
   await fixture.whenStable();
   await expect.poll(() => repo.getCalls.length === 1 && !fixture.componentInstance.store.loading()).toBe(true);
   await fixture.whenStable();
-  return { fixture, component: fixture.componentInstance, repo, root: fixture.nativeElement as HTMLElement };
+  return { fixture, component: fixture.componentInstance, repo, root: fixture.nativeElement as HTMLElement, confirm };
 }
 
 /** `Promise.withResolvers` is not in this project's `lib` (ES2022); the same one-shot gate as the store spec. */
@@ -168,9 +171,9 @@ describe('BiblePage (QA form boundaries)', () => {
     expect('approvedAt' in content.episodeSummaries[0]!).toBe(false);
 
     // The refetch assigns the id and the rebuilt form carries it, while the existing row keeps its own.
-    expect(component.form()!.controls.recurringCharacters.at(1)!.controls.id?.value).toBe('ch7');
-    expect(component.form()!.controls.recurringCharacters.at(0)!.controls.id?.value).toBe('ch1');
-    expect(component.form()!.controls.recurringCharacters.at(1)!.controls.firstEpisodeId?.value ?? '').toBe('');
+    expect(component.form()!.controls.recurringCharacters.at(1).controls.id?.value).toBe('ch7');
+    expect(component.form()!.controls.recurringCharacters.at(0).controls.id?.value).toBe('ch1');
+    expect(component.form()!.controls.recurringCharacters.at(1).controls.firstEpisodeId?.value ?? '').toBe('');
   });
 
   it('binds an indexed server field error to its row control instead of the form-level alert', async () => {
@@ -202,9 +205,9 @@ describe('BiblePage (QA form boundaries)', () => {
     await component.save();
     await fixture.whenStable();
 
-    const row = component.form()!.controls.episodeSummaries.at(2)!;
+    const row = component.form()!.controls.episodeSummaries.at(2);
     expect(row.controls.episodeId!.hasError('server')).toBe(true);
-    expect(component.form()!.controls.rules.at(0)!.controls.text!.hasError('server')).toBe(true);
+    expect(component.form()!.controls.rules.at(0).controls.text!.hasError('server')).toBe(true);
     expect(component.unmappedKeys()).toEqual([]);
     expect(component.fieldIssues().map((issue) => issue.pointer)).toEqual(['episodeSummaries.2.episodeId', 'rules.0.text']);
     expect(component.fieldIssues().map((issue) => issue.messageKey)).toEqual(['series.bible.field.unknown_episode', 'series.bible.field.too_long']);
@@ -246,10 +249,10 @@ describe('BiblePage (QA form boundaries)', () => {
     expect(root.querySelector('#persona-required')?.textContent).toContain(seriesEn.bible.field.required);
   });
 
-  it('accepts the proposal after a 412 conflict and clears the conflict banner', async () => {
+  it('keeps the edit and conflict after a 412 when the accept discard confirmation is cancelled', async () => {
     const repo = new FakeBibleRepository();
     repo.getResult = { ok: true, value: bible({ proposal: bibleProposal() }) };
-    const { fixture, component, repo: fake } = await setup(repo);
+    const { fixture, component, repo: fake, confirm } = await setup(repo, 'en', of(false));
     controlOf(component, 'recurringCharacters.0.name').setValue('Bản chưa lưu');
     await settleDirty(fixture);
     fake.saveResult = { ok: false, error: BIBLE_CONFLICT };
@@ -258,14 +261,114 @@ describe('BiblePage (QA form boundaries)', () => {
     expect(component.store.conflict()).toBe(true);
     expect(component.canSave()).toBe(false);
 
-    fake.getResult = { ok: true, value: bible({ version: 2, etag: '"sb-2"', proposal: null }) };
     await component.acceptProposal();
     await fixture.whenStable();
 
-    expect(fake.acceptCalls).toEqual([BIBLE_SERIES_ID]);
-    expect(component.store.conflict()).toBe(false);
+    expect(confirm).toHaveBeenCalledOnce();
+    expect(fake.acceptCalls).toEqual([]);
+    expect(component.store.conflict()).toBe(true);
+    expect(component.store.proposal()).not.toBeNull();
+    expect(controlOf(component, 'recurringCharacters.0.name').value).toBe('Bản chưa lưu');
+    expect(component.dirty()).toBe(true);
+  });
+
+  it('keeps edits and dirty state after dismiss refetches unchanged content', async () => {
+    const repo = new FakeBibleRepository();
+    repo.getResult = { ok: true, value: bible({ proposal: bibleProposal() }) };
+    const { component, fixture, root, confirm } = await setup(repo);
+    const input = root.querySelector<HTMLInputElement>('fieldset.narrator input')!;
+    input.value = 'Unsaved narrator';
+    input.dispatchEvent(new Event('input'));
+    await settleDirty(fixture);
+    repo.getResult = { ok: true, value: bible({ content: bibleContent({ narrator: { persona: bibleContent().narrator.persona, voiceNotes: bibleContent().narrator.voiceNotes, name: bibleContent().narrator.name } }) }) };
+
+    await component.dismissProposal();
+    await fixture.whenStable();
+
+    expect(repo.dismissCalls).toEqual([BIBLE_SERIES_ID]);
+    expect(repo.getCalls).toHaveLength(2);
+    expect(controlOf(component, 'narrator.name').value).toBe('Unsaved narrator');
+    expect(component.dirty()).toBe(true);
+    expect(component.form()?.dirty).toBe(true);
     expect(component.store.proposal()).toBeNull();
+    expect(confirm).not.toHaveBeenCalled();
+  });
+
+  it('keeps edits after a confirmed accept returns 409 and refetches unchanged content', async () => {
+    const repo = new FakeBibleRepository();
+    repo.getResult = { ok: true, value: bible({ proposal: bibleProposal() }) };
+    const { component, fixture, confirm } = await setup(repo);
+    controlOf(component, 'narrator.name').setValue('Unsaved narrator');
+    await settleDirty(fixture);
+    repo.acceptResult = { ok: false, error: BIBLE_PROPOSAL_GONE };
+    repo.getResult = { ok: true, value: bible() };
+
+    await component.acceptProposal();
+    await fixture.whenStable();
+
+    expect(confirm).toHaveBeenCalledOnce();
+    expect(repo.acceptCalls).toEqual([BIBLE_SERIES_ID]);
+    expect(repo.getCalls).toHaveLength(2);
+    expect(controlOf(component, 'narrator.name').value).toBe('Unsaved narrator');
+    expect(component.dirty()).toBe(true);
+    expect(component.store.proposalGone()).toBe(true);
+  });
+
+  it.each(['vi', 'en'] as const)('waits for explicit discard confirmation before dirty accept in %s', async lang => {
+    const repo = new FakeBibleRepository();
+    repo.getResult = { ok: true, value: bible({ proposal: bibleProposal() }) };
+    const confirmation = new Subject<boolean>();
+    const { component, fixture, root, confirm } = await setup(repo, lang, confirmation);
+    const input = root.querySelector<HTMLInputElement>('fieldset.narrator input')!;
+    input.value = 'Unsaved narrator';
+    input.dispatchEvent(new Event('input'));
+    // Accept is protected even before the dirty debounce has fired.
+    const accepting = component.acceptProposal();
+    expect(confirm).toHaveBeenCalledOnce();
+    expect(repo.acceptCalls).toEqual([]);
+    expect(controlOf(component, 'narrator.name').value).toBe('Unsaved narrator');
+    await component.acceptProposal();
+    expect(confirm).toHaveBeenCalledOnce();
+    repo.getResult = { ok: true, value: bible({ version: 2, etag: '"sb-2"', content: bibleContent({ rules: [{ id: 'rl1', text: 'Accepted rule' }] }) }) };
+
+    confirmation.next(true);
+    confirmation.complete();
+    await accepting;
+    await fixture.whenStable();
+
+    expect(repo.acceptCalls).toEqual([BIBLE_SERIES_ID]);
+    expect(controlOf(component, 'narrator.name').value).toBe(bibleContent().narrator.name);
+    expect(controlOf(component, 'rules.0.text').value).toBe('Accepted rule');
+    expect(component.dirty()).toBe(false);
+  });
+
+  it('accepts a clean form without asking to discard edits and adopts the appended content', async () => {
+    const repo = new FakeBibleRepository();
+    repo.getResult = { ok: true, value: bible({ proposal: bibleProposal() }) };
+    const { component, fixture, confirm } = await setup(repo);
+    repo.getResult = { ok: true, value: bible({ version: 2, etag: '"sb-2"', content: bibleContent({ rules: [...bibleContent().rules, { id: 'rl2', text: 'Accepted rule' }] }) }) };
+
+    await component.acceptProposal();
+    await fixture.whenStable();
+
+    expect(confirm).not.toHaveBeenCalled();
+    expect(repo.acceptCalls).toEqual([BIBLE_SERIES_ID]);
+    expect(component.form()?.controls.rules.length).toBe(2);
+    expect(controlOf(component, 'rules.1.text').value).toBe('Accepted rule');
     expect(component.store.bible()?.version).toBe(2);
+    expect(component.store.proposal()).toBeNull();
+  });
+
+  it('explicit Reload discards local edits even when server content is unchanged', async () => {
+    const { component, fixture } = await setup();
+    controlOf(component, 'narrator.name').setValue('Unsaved narrator');
+    await settleDirty(fixture);
+
+    await component.reload();
+    await fixture.whenStable();
+
+    expect(controlOf(component, 'narrator.name').value).toBe(bibleContent().narrator.name);
+    expect(component.dirty()).toBe(false);
   });
 
   it('a second accept while the first is committing issues one request and disables the buttons', async () => {
