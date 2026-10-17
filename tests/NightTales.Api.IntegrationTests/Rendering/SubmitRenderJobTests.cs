@@ -19,6 +19,7 @@ using NightTales.Application.Rendering;
 using NightTales.Domain.Common;
 using NightTales.Domain.Episodes;
 using NightTales.Domain.Rendering;
+using NightTales.Domain.Series;
 using NightTales.Domain.Stories;
 using NightTales.Domain.Stories.Content;
 using NightTales.Domain.Usage;
@@ -158,17 +159,20 @@ public sealed class SubmitRenderJobTests(TestDatabase database) : IntegrationTes
     }
 
     [Fact]
-    public async Task Submit_QueueAlertFiresAt360Minutes()
+    public async Task Submit_QueueAlertFiresOnce_WhenTheQueueCrossesTheThreshold()
     {
         var world = await SeedAsync();
         var client = new FakeRenderClient();
 
-        // Queued 361 minutes ago (the id's own timestamp is the row's only creation stamp, WT49).
-        var jobId = SeedQueuedJob(world, Guid.CreateVersion7(Start.AddMinutes(-361)));
-        var selector = new FakeNodeSelector().EnqueueUnavailable();
+        // Queued exactly 360 minutes before the clock, so this delivery is the one that crosses
+        // Render:QueueAlertMinutes while the previous delivery instant (now - HealthPollSeconds) is still inside
+        // the threshold. The id's own timestamp is the row's only creation stamp (WT49).
+        var jobId = SeedQueuedJob(world, Guid.CreateVersion7(Start.AddMinutes(-360)));
+        var selector = new FakeNodeSelector().EnqueueUnavailable().EnqueueUnavailable();
         var sink = new CapturingLoggerProvider();
+        var clock = new FakeClock(Start);
 
-        await using var worker = await StartWorkerAsync(client, selector, sink);
+        await using var worker = await StartWorkerAsync(client, selector, sink, clock);
         await RunSubmitAsync(worker, jobId);
 
         worker.Jobs.Failures.ShouldBeEmpty();
@@ -177,6 +181,16 @@ public sealed class SubmitRenderJobTests(TestDatabase database) : IntegrationTes
         alert.Level.ShouldBe(LogLevel.Error);
         alert.Message.ShouldContain("render_queue_alert", Case.Sensitive);
         alert.Message.ShouldContain(Id(jobId), Case.Sensitive);
+
+        // The next delivery is one health cadence later and already past the threshold: the alarm has fired for
+        // the crossing, so a second line would be noise — 120 of them an hour per stuck job (F8).
+        clock.Advance(TimeSpan.FromSeconds(worker.Services.GetRequiredService<RenderNodesOptions>().HealthPollSeconds));
+        await RunSubmitAsync(worker, jobId);
+
+        worker.Jobs.Failures.ShouldBeEmpty();
+        sink.Entries.Count(entry => entry.EventId == SubmitRenderJob.QueueAlertEventId)
+            .ShouldBe(1, "a job queued past the threshold logs the crossing once, not on every reschedule");
+        SqlProbe.ScalarText(Database, $"SELECT status FROM render_jobs WHERE id = '{Id(jobId)}'").ShouldBe("queued");
     }
 
     [Fact]
@@ -284,6 +298,195 @@ public sealed class SubmitRenderJobTests(TestDatabase database) : IntegrationTes
         SqlProbe.ScalarText(Database,
                 $"SELECT status || '|' || coalesce(adapter_task_id, '-') || '|' || coalesce(submitted_at::text, '-') FROM render_jobs WHERE id = '{Id(jobId)}'")
             .ShouldBe("queued|-|-");
+    }
+
+    /// <summary>
+    /// A terminal adapter answer on the submit itself (F1/SEC-1): the row is still <c>queued</c> — no task was
+    /// ever adopted — but it must end anyway, or it would hold the episode and its reservation for good.
+    /// </summary>
+    /// <remarks>
+    /// The scripted answer is the shape the mapper gives a rotated node key (401 <c>Unauthorized</c>) or a body the
+    /// node refuses as a contract violation (400): a terminal <c>render_node_error</c> that asks for the operator
+    /// alarm. <c>render_node_error</c> is a transient D5 code, so the policy queues attempt 2 and the episode stays
+    /// <c>rendering</c>.
+    /// </remarks>
+    [Fact]
+    public async Task Submit_TerminalFailure_FailsTheQueuedRow_AndLeavesTheRetryVerdict()
+    {
+        var world = await SeedAsync();
+        var jobId = await RequestRenderAsync(world);
+        var node = await SeedNodeAsync(world.UserId);
+        var client = new FakeRenderClient();
+        var money = new RecordingWorkerMoney();
+
+        client.EnqueueFailure(RenderClientMethod.Submit, FakeRenderClient.Terminal("render_node_error", alert: true));
+        var selector = new FakeNodeSelector().Enqueue(node);
+        var sink = new CapturingLoggerProvider();
+
+        await using var worker = await StartWorkerAsync(client, selector, sink, money: money);
+        await worker.RunOutboxOnceAsync(Ct);
+        await worker.Jobs.RunPendingAsync(Ct);
+
+        worker.Jobs.Failures.ShouldBeEmpty("a terminal adapter answer ends the row, it is never thrown to Hangfire");
+        client.SubmitCalls.ShouldBe(1);
+        client.CancelCalls.ShouldBe(0, "the task was never accepted, so there is nothing to clean up");
+        sink.Entries.ShouldContain(entry => entry.EventId == 6196, "a terminal answer with Alert raises the operator alarm");
+
+        // The row failed without ever adopting a task: no poll instant, no adapter task, one verdict.
+        SqlProbe.ScalarText(
+                Database,
+                $"SELECT status || '|' || error_code || '|' || coalesce(adapter_task_id, '-') || '|' || coalesce(next_poll_at::text, '-') "
+                + $"FROM render_jobs WHERE id = '{Id(jobId)}'")
+            .ShouldBe("failed|render_node_error|-|-");
+
+        // Exactly one refund of this attempt's own reservation, one audit row, one render_failed.v1.
+        var reservationId = SqlProbe.ScalarText(Database, $"SELECT reservation_id FROM render_jobs WHERE id = '{Id(jobId)}'");
+        money.Refunds.ShouldBe([(Guid.Parse(reservationId), "render_failed")]);
+        SqlProbe.QueryStrings(
+                Database,
+                "SELECT action || '|' || (data->>'code') || '|' || (data->>'final') FROM audit_logs "
+                + $"WHERE entity_id = '{Id(jobId)}'")
+            .ShouldBe(["render.failed|render_node_error|false"]);
+        CountRenderFailedOutbox(world).ShouldBe(1L);
+        RenderFailedFinal(world).ShouldBe("false");
+
+        // A transient code on attempt 1: the policy queues attempt 2 and the episode stays rendering (WT28).
+        var rows = SqlProbe.QueryStrings(
+            Database,
+            $"SELECT id || '|' || attempt::text || '|' || status FROM render_jobs WHERE episode_id = '{Id(world.EpisodeId)}'");
+        rows.ShouldContain($"{Id(jobId)}|1|failed");
+        rows.ShouldContain(row => row.EndsWith("|2|queued", StringComparison.Ordinal),
+            "render_node_error is retryable, so a fresh attempt is queued");
+        SqlProbe.ScalarText(Database, $"SELECT status FROM episodes WHERE id = '{Id(world.EpisodeId)}'")
+            .ShouldBe("rendering", "a retry row keeps the episode rendering");
+    }
+
+    /// <summary>
+    /// The same terminal answer on the last automatic attempt: the verdict is final, so the episode comes back to
+    /// <c>story_approved</c>, no third attempt is queued and both the audit row and <c>render_failed.v1</c> say so.
+    /// </summary>
+    [Fact]
+    public async Task Submit_TerminalFailure_OnTheLastAttempt_IsFinal_AndReleasesTheEpisode()
+    {
+        var world = await SeedAsync();
+        var jobId = await RequestRenderAsync(world);
+        var node = await SeedNodeAsync(world.UserId);
+        var client = new FakeRenderClient();
+        var money = new RecordingWorkerMoney();
+
+        // Attempt 2 is the last one RenderRetryPolicy allows (MaxAttempts = 2).
+        SqlProbe.Execute(Database, $"UPDATE render_jobs SET attempt = 2 WHERE id = '{Id(jobId)}'");
+
+        client.EnqueueFailure(RenderClientMethod.Submit, FakeRenderClient.Terminal("render_node_error", alert: true));
+        var selector = new FakeNodeSelector().Enqueue(node);
+
+        await using var worker = await StartWorkerAsync(client, selector, money: money);
+        await worker.RunOutboxOnceAsync(Ct);
+        await worker.Jobs.RunPendingAsync(Ct);
+
+        worker.Jobs.Failures.ShouldBeEmpty();
+        SqlProbe.ScalarText(Database, $"SELECT status || '|' || error_code FROM render_jobs WHERE id = '{Id(jobId)}'")
+            .ShouldBe("failed|render_node_error");
+        money.Refunds.Count.ShouldBe(1);
+        SqlProbe.QueryStrings(
+                Database,
+                "SELECT action || '|' || (data->>'code') || '|' || (data->>'final') FROM audit_logs "
+                + $"WHERE entity_id = '{Id(jobId)}'")
+            .ShouldBe(["render.failed|render_node_error|true"]);
+        SqlProbe.ScalarText(
+                Database,
+                $"SELECT (data ? 'retryJobId')::text FROM audit_logs WHERE entity_id = '{Id(jobId)}'")
+            .ShouldBe("false", "a final verdict carries no retry row");
+        CountRenderFailedOutbox(world).ShouldBe(1L);
+        RenderFailedFinal(world).ShouldBe("true");
+        SqlProbe.Count(
+                Database,
+                $"SELECT count(*) FROM render_jobs WHERE episode_id = '{Id(world.EpisodeId)}'")
+            .ShouldBe(1L, "the attempt budget is spent: no third attempt is queued");
+        SqlProbe.ScalarText(Database, $"SELECT status FROM episodes WHERE id = '{Id(world.EpisodeId)}'")
+            .ShouldBe("story_approved", "a final failure hands the episode back to its owner");
+    }
+
+    /// <summary>
+    /// A transient adapter answer (F2): the row ends through the recorder instead of being thrown to Hangfire,
+    /// because a rethrow leaves the row <c>queued</c> once the attempts are spent — unrefunded, still in the
+    /// open-bounds sum, and still holding <c>ux_render_jobs_active_episode</c>.
+    /// </summary>
+    [Fact]
+    public async Task Submit_TransientFailure_EndsTheRow_InsteadOfThrowingToHangfire()
+    {
+        var world = await SeedAsync();
+        var jobId = await RequestRenderAsync(world);
+        var node = await SeedNodeAsync(world.UserId);
+        var client = new FakeRenderClient();
+        var money = new RecordingWorkerMoney();
+
+        client.EnqueueFailure(RenderClientMethod.Submit, FakeRenderClient.Transient("render_node_error"));
+        var selector = new FakeNodeSelector().Enqueue(node);
+        var sink = new CapturingLoggerProvider();
+
+        await using var worker = await StartWorkerAsync(client, selector, sink, money: money);
+        await worker.RunOutboxOnceAsync(Ct);
+        await worker.Jobs.RunPendingAsync(Ct);
+
+        worker.Jobs.Failures.ShouldBeEmpty("the attempt is ended in the job's own transaction, never rethrown");
+        client.SubmitCalls.ShouldBe(1);
+        sink.Entries.ShouldContain(entry => entry.EventId == 6198);
+        SqlProbe.ScalarText(Database, $"SELECT status || '|' || error_code FROM render_jobs WHERE id = '{Id(jobId)}'")
+            .ShouldBe("failed|render_node_error");
+        money.Refunds.Count.ShouldBe(1, "the reservation is refunded once, exactly as on the terminal path");
+        SqlProbe.QueryStrings(
+                Database,
+                "SELECT action || '|' || (data->>'code') || '|' || (data->>'final') FROM audit_logs "
+                + $"WHERE entity_id = '{Id(jobId)}'")
+            .ShouldBe(["render.failed|render_node_error|false"]);
+        SqlProbe.Count(
+                Database,
+                $"SELECT count(*) FROM render_jobs WHERE episode_id = '{Id(world.EpisodeId)}' AND attempt = 2 AND status = 'queued'")
+            .ShouldBe(1L);
+    }
+
+    /// <summary>
+    /// A recipe the submit body cannot be built from (F2's second half): the attempt fails at once with the
+    /// catalogued code and is never retried, because a rebuilt body would fail the same way.
+    /// </summary>
+    /// <remarks>
+    /// The stored params name a language the wire table does not know (<c>render_language_unknown</c> is the
+    /// precise reason in the log); the code the row and the events carry is the catalogued
+    /// <c>render_assembly_failed</c>, because 05 D5 has no code for a broken recipe.
+    /// </remarks>
+    [Fact]
+    public async Task Submit_RecipeCannotBeBuilt_FailsTerminal_WithoutSpendingARetry()
+    {
+        var world = await SeedAsync();
+        var jobId = SeedQueuedJob(world, Guid.CreateVersion7(), language: "xx");
+        var node = await SeedNodeAsync(world.UserId);
+        var client = new FakeRenderClient();
+        var money = new RecordingWorkerMoney();
+
+        var selector = new FakeNodeSelector().Enqueue(node);
+        var sink = new CapturingLoggerProvider();
+
+        await using var worker = await StartWorkerAsync(client, selector, sink, money: money);
+        await RunSubmitAsync(worker, jobId);
+
+        worker.Jobs.Failures.ShouldBeEmpty();
+        client.SubmitCalls.ShouldBe(0, "a recipe that cannot be built never reaches a node");
+        sink.Entries.ShouldContain(entry => entry.EventId == 6195 && entry.Message.Contains(SubmitRenderJob.LanguageUnknownCode, StringComparison.Ordinal));
+        SqlProbe.ScalarText(Database, $"SELECT status || '|' || error_code FROM render_jobs WHERE id = '{Id(jobId)}'")
+            .ShouldBe("failed|render_assembly_failed");
+        money.Refunds.Count.ShouldBe(1);
+        SqlProbe.QueryStrings(
+                Database,
+                "SELECT action || '|' || (data->>'code') || '|' || (data->>'final') FROM audit_logs "
+                + $"WHERE entity_id = '{Id(jobId)}'")
+            .ShouldBe(["render.failed|render_assembly_failed|true"]);
+        CountRenderFailedOutbox(world).ShouldBe(1L);
+        RenderFailedFinal(world).ShouldBe("true");
+        SqlProbe.Count(Database, $"SELECT count(*) FROM render_jobs WHERE episode_id = '{Id(world.EpisodeId)}'")
+            .ShouldBe(1L, "a broken recipe is deterministic, so it is never retried");
+        SqlProbe.ScalarText(Database, $"SELECT status FROM episodes WHERE id = '{Id(world.EpisodeId)}'")
+            .ShouldBe("story_approved");
     }
 
     [Fact]
@@ -416,13 +619,15 @@ public sealed class SubmitRenderJobTests(TestDatabase database) : IntegrationTes
     /// </summary>
     /// <param name="world">The approved world the row belongs to.</param>
     /// <param name="jobId">The version 7 id that carries the queued instant.</param>
+    /// <param name="attempt">The attempt number the row carries (2 for the last automatic attempt).</param>
+    /// <param name="language">The language the stored params name; an unknown one makes the recipe unbuildable.</param>
     /// <returns>The row's id.</returns>
-    private Guid SeedQueuedJob(World world, Guid jobId)
+    private Guid SeedQueuedJob(World world, Guid jobId, int attempt = 1, string language = "vi")
     {
         SqlProbe.Execute(Database,
             "INSERT INTO render_jobs (id, user_id, episode_id, story_version_id, reservation_id, status, stage, percent, params, attempt) "
             + $"VALUES ('{Id(jobId)}', '{Id(world.UserId)}', '{Id(world.EpisodeId)}', '{Id(world.VersionId)}', "
-            + $"'{Id(Guid.CreateVersion7())}', 'queued', '{RenderJob.QueuedStage}', 0, '{ParamsJson(world.VersionId)}'::jsonb, 1)");
+            + $"'{Id(Guid.CreateVersion7())}', 'queued', '{RenderJob.QueuedStage}', 0, '{ParamsJson(world.VersionId, language)}'::jsonb, {attempt})");
 
         return jobId;
     }
@@ -433,13 +638,14 @@ public sealed class SubmitRenderJobTests(TestDatabase database) : IntegrationTes
     /// submit job could not load the row at all.
     /// </summary>
     /// <param name="storyVersionId">The story version the params point at.</param>
+    /// <param name="language">The language name the params carry.</param>
     /// <returns>The JSON text the <c>params</c> column stores.</returns>
-    private static string ParamsJson(Guid storyVersionId) =>
+    private static string ParamsJson(Guid storyVersionId, string language = "vi") =>
         JsonSerializer.Serialize(new RenderParamsV1(
             RenderParamsV1.CurrentMapperVersion,
             storyVersionId,
             "landscape",
-            "vi",
+            language,
             "kokoro:test",
             Guid.CreateVersion7(),
             "style=test@0123abcd;neg=v1",
@@ -482,9 +688,11 @@ public sealed class SubmitRenderJobTests(TestDatabase database) : IntegrationTes
     private async Task<WorkerHost> StartWorkerAsync(
         FakeRenderClient client,
         FakeNodeSelector selector,
-        CapturingLoggerProvider? sink = null)
+        CapturingLoggerProvider? sink = null,
+        FakeClock? clock = null,
+        RecordingWorkerMoney? money = null)
     {
-        var host = new WorkerHost(Database, new FakeClock(Start))
+        var host = new WorkerHost(Database, clock ?? new FakeClock(Start))
             .ConfigureServices(services =>
             {
                 services.RemoveAll<IRenderClient>();
@@ -496,6 +704,21 @@ public sealed class SubmitRenderJobTests(TestDatabase database) : IntegrationTes
                 // binding of the same type (S4) wins, because TryAdd keeps the first registration.
                 services.TryAddSingleton(new RenderOptions());
                 services.TryAddSingleton(new RenderNodesOptions());
+
+                // The recorder the failure/retry assertions read: the refund by reservation id is what the
+                // terminal paths are proved on, and the three price/budget ports make the retry decision
+                // deterministic (the Worker's own catalog reads the database, the guard reads the open bounds).
+                if (money is not null)
+                {
+                    services.RemoveAll<ICreditLedger>();
+                    services.AddSingleton<ICreditLedger>(money);
+                    services.RemoveAll<IBudgetGuard>();
+                    services.AddSingleton<IBudgetGuard>(money);
+                    services.RemoveAll<IPriceCatalog>();
+                    services.AddSingleton<IPriceCatalog>(money);
+                    services.RemoveAll<IImageCostEstimator>();
+                    services.AddSingleton<IImageCostEstimator>(money);
+                }
 
                 if (sink is not null)
                 {
@@ -518,6 +741,22 @@ public sealed class SubmitRenderJobTests(TestDatabase database) : IntegrationTes
     }
 
     private static string Id(Guid value) => value.ToString("D", CultureInfo.InvariantCulture);
+
+    /// <summary>The <c>render_failed.v1</c> rows of this world: the render request's own row is a different type.</summary>
+    /// <param name="world">The test world.</param>
+    /// <returns>The row count.</returns>
+    private long CountRenderFailedOutbox(World world) =>
+        SqlProbe.Count(
+            Database,
+            $"SELECT count(*) FROM outbox_messages WHERE type = 'render_failed.v1' AND user_id = '{Id(world.UserId)}'");
+
+    /// <summary>The <c>final</c> member of the one <c>render_failed.v1</c> payload (WT28's retry verdict).</summary>
+    /// <param name="world">The test world.</param>
+    /// <returns>The serialized boolean, as text.</returns>
+    private string RenderFailedFinal(World world) =>
+        SqlProbe.ScalarText(
+            Database,
+            $"SELECT payload->>'final' FROM outbox_messages WHERE type = 'render_failed.v1' AND user_id = '{Id(world.UserId)}'");
 
     private sealed record World(Guid UserId, Guid SeriesId, Guid EpisodeId, Guid VersionId);
 
@@ -606,5 +845,65 @@ public sealed class SubmitRenderJobTests(TestDatabase database) : IntegrationTes
         /// <inheritdoc />
         public ValueTask<ErrorOr<Success>> RefundAsync(ReservationId reservationId, string reason, CancellationToken ct) =>
             ValueTask.FromResult<ErrorOr<Success>>(Result.Success);
+    }
+
+    /// <summary>
+    /// The four money ports one attempt's failure and retry need, as recorders: the failure recorder refunds
+    /// through <see cref="ICreditLedger"/>, and <see cref="RenderRetryPolicy"/> prices the next attempt through
+    /// the other three. Every answer succeeds, so whether a retry row appears depends only on the codes a test
+    /// scripts — the Worker's own catalogue and budget guard read the database.
+    /// </summary>
+    private sealed class RecordingWorkerMoney :
+        IPriceCatalog,
+        IImageCostEstimator,
+        IBudgetGuard,
+        ICreditLedger
+    {
+        /// <summary>Every refund the recorder issued, in order: the reservation id and its reason.</summary>
+        public List<(Guid ReservationId, string Reason)> Refunds { get; } = [];
+
+        /// <summary>The <c>excludingRunId</c> of every budget check, in order.</summary>
+        public List<Guid?> ExcludedRunIds { get; } = [];
+
+        /// <inheritdoc />
+        public Task<ErrorOr<PriceVersion>> GetActiveAsync(DateTimeOffset queuedAt, CancellationToken ct) =>
+            Task.FromResult<ErrorOr<PriceVersion>>(
+                PriceVersion.Create(1, Start.AddDays(-1), "{}", "{}", "hash", Start.AddDays(-1)));
+
+        /// <inheritdoc />
+        public Task<PriceVersion> GetAsync(int version, CancellationToken ct) => throw new NotSupportedException();
+
+        /// <inheritdoc />
+        public Task<CostBound> WorstCaseAsync(Aspect aspect, int maxTerms, int priceVersion, CancellationToken ct) =>
+            Task.FromResult(new CostBound(1.23m));
+
+        /// <inheritdoc />
+        public ValueTask<ErrorOr<Success>> CheckAsync(CostBound worstCaseUsd, CancellationToken ct, Guid? excludingRunId = null)
+        {
+            ExcludedRunIds.Add(excludingRunId);
+
+            return ValueTask.FromResult<ErrorOr<Success>>(Result.Success);
+        }
+
+        /// <inheritdoc />
+        public ValueTask<ErrorOr<ReservationId>> ReserveAsync(
+            Guid userId,
+            CreditOperation op,
+            Guid referenceId,
+            UsageBound bound,
+            CancellationToken ct) =>
+            ValueTask.FromResult<ErrorOr<ReservationId>>(new ReservationId(Guid.CreateVersion7()));
+
+        /// <inheritdoc />
+        public ValueTask<ErrorOr<Success>> SettleAsync(ReservationId reservationId, CancellationToken ct) =>
+            ValueTask.FromResult<ErrorOr<Success>>(Result.Success);
+
+        /// <inheritdoc />
+        public ValueTask<ErrorOr<Success>> RefundAsync(ReservationId reservationId, string reason, CancellationToken ct)
+        {
+            Refunds.Add((reservationId.Value, reason));
+
+            return ValueTask.FromResult<ErrorOr<Success>>(Result.Success);
+        }
     }
 }

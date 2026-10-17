@@ -42,14 +42,12 @@ namespace NightTales.Worker.Services;
 /// </remarks>
 /// <param name="scopeFactory">Creates the claim scope and the per-job scopes (09 README D11).</param>
 /// <param name="options">The bound <c>Render</c> section: the tick cadence, the batch cap and the parallelism bound.</param>
-/// <param name="metrics">The render instruments; the tick publishes the <c>render_jobs_active</c> snapshot through <see cref="RenderMetrics.SetActiveJobs"/> (BD12).</param>
 /// <param name="clock">The Worker's clock: the due instant is read from here, never from PostgreSQL's own <c>now()</c>, so a test's <c>FakeClock</c> decides what a tick can claim (09 D3/D13).</param>
 /// <param name="connectionString">The platform database the advisory-lock connection opens on.</param>
 /// <param name="logger">Tick, lock and per-job failures.</param>
 public sealed partial class RenderPollingService(
     IServiceScopeFactory scopeFactory,
     IOptions<RenderOptions> options,
-    RenderMetrics metrics,
     IClock clock,
     string connectionString,
     ILogger<RenderPollingService> logger) : BackgroundService
@@ -68,14 +66,6 @@ public sealed partial class RenderPollingService(
         + "WHERE status IN ('submitted', 'running') AND next_poll_at <= @now "
         + "ORDER BY next_poll_at "
         + "LIMIT @batch";
-
-    /// <summary>
-    /// The platform-wide count behind the <c>render_jobs_active</c> gauge: the four statuses BD5 counts as an
-    /// active render. It is read once per tick and published through <see cref="RenderMetrics.SetActiveJobs"/>,
-    /// so a scrape never issues a query (BD12).
-    /// </summary>
-    private const string ActiveCountSql =
-        "SELECT count(*) FROM render_jobs WHERE status IN ('queued', 'submitted', 'running', 'ingesting')";
 
     /// <summary>The lock command; <see cref="LockKey"/> is a constant, so no value is ever interpolated into SQL.</summary>
     private static readonly string TryLockSql = $"SELECT pg_try_advisory_lock(hashtext('{LockKey}'))";
@@ -114,9 +104,7 @@ public sealed partial class RenderPollingService(
         using var scope = scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<IAppDbContext>();
 
-        var (due, active) = await ReadAsync(db, cancellationToken);
-
-        metrics.SetActiveJobs(active);
+        var due = await ReadAsync(db, cancellationToken);
 
         if (due.Count > 0)
         {
@@ -179,23 +167,18 @@ public sealed partial class RenderPollingService(
     }
 
     /// <summary>
-    /// The claim statement and the active-job count on one short-lived connection: EF counts opens and closes,
-    /// so this pair balances whatever the scope's context did before (the same pattern as
-    /// <c>RenderJobNodeLoadReader</c>), and the connection is released before the jobs run.
+    /// The claim statement on one short-lived connection: EF counts opens and closes, so this call balances
+    /// whatever the scope's context did before (the same pattern as <c>RenderJobNodeLoadReader</c>), and the
+    /// connection is released before the jobs run.
     /// </summary>
-    private async Task<(List<ClaimedJob> Due, int Active)> ReadAsync(
-        IAppDbContext db,
-        CancellationToken cancellationToken)
+    private async Task<List<ClaimedJob>> ReadAsync(IAppDbContext db, CancellationToken cancellationToken)
     {
         var connection = db.Database.GetDbConnection();
         await db.Database.OpenConnectionAsync(cancellationToken);
 
         try
         {
-            var due = await ReadDueAsync(connection, cancellationToken);
-            var active = await ReadActiveCountAsync(connection, cancellationToken);
-
-            return (due, active);
+            return await ReadDueAsync(connection, cancellationToken);
         }
         finally
         {
@@ -220,16 +203,6 @@ public sealed partial class RenderPollingService(
         }
 
         return due;
-    }
-
-    /// <summary>Counts the rows <c>render_jobs_active</c> reports.</summary>
-    private static async Task<int> ReadActiveCountAsync(DbConnection connection, CancellationToken cancellationToken)
-    {
-        await using var command = connection.CreateCommand();
-        command.CommandText = ActiveCountSql;
-        command.CommandType = CommandType.Text;
-
-        return await command.ExecuteScalarAsync(cancellationToken) is long count ? (int)count : 0;
     }
 
     /// <summary>

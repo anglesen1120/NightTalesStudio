@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using ErrorOr;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
 using NightTales.Application.Abstractions.Money;
 using NightTales.Application.Abstractions.Persistence;
 using NightTales.Application.Abstractions.Rendering;
@@ -9,13 +10,14 @@ using NightTales.Application.Abstractions.Usage;
 using NightTales.Application.Features.Rendering;
 using NightTales.Application.Features.Stories;
 using NightTales.Application.Rendering;
-using NightTales.Application.Telemetry;
 using NightTales.Domain.Rendering;
 using NightTales.Domain.Rendering.Subtitles;
 using NightTales.Domain.Series;
 using NightTales.Domain.Stories;
 using NightTales.Domain.Stories.Content;
 using NightTales.Domain.Usage;
+using NightTales.Infrastructure.Persistence;
+using NightTales.Infrastructure.Persistence.Audit;
 using NightTales.TestKit;
 using NightTales.TestKit.Auth;
 using NightTales.TestKit.Builders;
@@ -66,6 +68,12 @@ public sealed class RenderRetryPolicyTests(TestDatabase database) : IntegrationT
         policy.ShouldRetry("image_moderated", attempt: 1).ShouldBeFalse();
         policy.ShouldRetry("story_moderated", attempt: 1).ShouldBeFalse();
         policy.ShouldRetry("render_quality_failed", attempt: 1).ShouldBeFalse("03 D7's quality failure is never retried");
+
+        // 03 D7's list outranks the classifier's per-outcome verdict: a moderated or quality-failed row is never
+        // re-rendered at the owner's cost, whatever a classifier says about the code (09.6.3-T1 F15).
+        policy.ShouldRetry("image_moderated", 1, outcomeRetryable: true).ShouldBeFalse();
+        policy.ShouldRetry("story_moderated", 1, outcomeRetryable: true).ShouldBeFalse();
+        policy.ShouldRetry("render_quality_failed", 1, outcomeRetryable: true).ShouldBeFalse();
     }
 
     [Fact]
@@ -115,6 +123,7 @@ public sealed class RenderRetryPolicyTests(TestDatabase database) : IntegrationT
         created.IsError.ShouldBeFalse();
         money.Calls.ShouldBe(["priceCatalog", "imageCostEstimator", "budgetGuard", "creditLedger"]);
         money.ExcludedRunIds.ShouldBe([world.RenderJobId], "the spend cap is re-checked without the failed job's own bound");
+        money.Refunds.ShouldBeEmpty("the retry never refunds: the failed attempt's own refund is the recorder's");
 
         var retry = created.Value;
         retry.Id.ShouldNotBe(world.RenderJobId);
@@ -167,6 +176,7 @@ public sealed class RenderRetryPolicyTests(TestDatabase database) : IntegrationT
         created.FirstError.Code.ShouldBe("budget_spend_cap");
         money.Calls.ShouldBe(["priceCatalog", "imageCostEstimator", "budgetGuard"]);
         money.Reserves.ShouldBeEmpty("nothing is reserved before the cap answered yes");
+        money.Refunds.ShouldBeEmpty("a refused retry does not touch the ledger at all");
         (await ScalarAsync($"SELECT count(*)::text FROM render_jobs WHERE episode_id = '{world.EpisodeId}'", Ct))
             .ShouldBe("1", "no retry row exists");
         (await ScalarAsync($"SELECT count(*)::text FROM outbox_messages WHERE user_id = '{world.UserId}'", Ct))
@@ -193,6 +203,61 @@ public sealed class RenderRetryPolicyTests(TestDatabase database) : IntegrationT
     }
 
     /// <summary>
+    /// WT51's other half (09.6.3-T1 F3/SEC-4): the owner asked for a cancel and the attempt then ended — here on
+    /// the 60-minute watchdog. A cancel-requested attempt is final, so the cancelled render is never re-run and
+    /// never re-charged: no retry row, no second reservation, one refund and one final <c>render.failed</c>.
+    /// </summary>
+    [Fact]
+    public async Task FailAsync_OnACancelRequestedJob_IsFinal_AndRefundsOnce()
+    {
+        var world = await SeedRunningAsync(cancelRequested: true);
+        var money = new RecordingMoney(Start);
+        using var db = Database.CreateAppDbContext(new TestCurrentUser { Id = world.UserId }, new FakeClock(Start));
+
+        var recorder = Recorder(db, money);
+        await using var transaction = await db.Database.BeginTransactionAsync(Ct);
+
+        var job = await db.RenderJobs.SingleAsync(candidate => candidate.Id == world.RenderJobId, Ct);
+        job.CancelRequestedAt.ShouldNotBeNull("the seed is a row the owner already asked to cancel");
+
+        // A retryable code with no classifier verdict: the static table alone would queue attempt 2.
+        var recorded = await recorder.FailAsync(job, "render_timeout", outcomeRetryable: null, Ct);
+
+        await db.SaveChangesAsync(Ct);
+        await transaction.CommitAsync(Ct);
+
+        recorded.IsError.ShouldBeFalse();
+        recorded.Value.FailureCode.ShouldBe("render_timeout");
+        recorded.Value.RetryCreated.ShouldBeFalse("a cancelled attempt is never retried");
+        recorded.Value.RetryJobId.ShouldBeNull();
+        recorded.Value.Final.ShouldBeTrue("the verdict is final, so the episode leaves rendering");
+
+        // Not one step of the retry's 03 D8 sequence ran: no price version, no budget re-check, no reservation.
+        money.Calls.ShouldBeEmpty("ShouldRetry is not even asked for a cancel-requested row");
+        money.Refunds.ShouldBe([(world.ReservationId, RenderFailureRecorder.RefundReason)]);
+
+        (await ScalarAsync($"SELECT count(*)::text FROM render_jobs WHERE episode_id = '{world.EpisodeId}'", Ct))
+            .ShouldBe("1", "the cancelled attempt is the episode's last row: no retry row exists");
+        (await ScalarAsync(
+                $"SELECT status || '|' || error_code || '|' || (cancel_requested_at IS NOT NULL)::text "
+                + $"FROM render_jobs WHERE id = '{world.RenderJobId}'",
+                Ct))
+            .ShouldBe("failed|render_timeout|true");
+        (await ScalarAsync(
+                "SELECT action || '|' || actor_type || '|' || (data->>'code') || '|' || (data->>'final') "
+                + $"FROM audit_logs WHERE entity_id = '{world.RenderJobId}'",
+                Ct))
+            .ShouldBe("render.failed|system|render_timeout|true", "one audit row, and it says final");
+        (await ScalarAsync(
+                $"SELECT count(*)::text FROM outbox_messages WHERE user_id = '{world.UserId}' "
+                + "AND type = 'render_failed.v1'",
+                Ct))
+            .ShouldBe("1", "render_failed.v1 is raised once, with Final = true");
+        (await ScalarAsync($"SELECT status FROM episodes WHERE id = '{world.EpisodeId}'", Ct))
+            .ShouldBe("story_approved", "a final failure returns the episode to story_approved (BD5, WT50)");
+    }
+
+    /// <summary>
     /// The policy over the ports a test drives: the pure table tests never reach the write model or the money
     /// ports, so they only have to exist.
     /// </summary>
@@ -207,15 +272,49 @@ public sealed class RenderRetryPolicyTests(TestDatabase database) : IntegrationT
             ports,
             ports,
             ports,
-            new ImagesOptions(),
-            new RenderMetrics(new NightTalesMetrics()));
+            new ImagesOptions());
     }
+
+    /// <summary>
+    /// The recorder under test over the test's own scope: the real audit writer (it refuses to write without the
+    /// caller's transaction, which the test opens), the real retry policy over the recorded money ports, and a
+    /// logger nobody reads.
+    /// </summary>
+    private static RenderFailureRecorder Recorder(AppDbContext db, RecordingMoney money) =>
+        new(
+            db,
+            new FakeClock(Start),
+            money,
+            Policy(db, money),
+            new EfAuditWriter(db),
+            NullLogger<RenderFailureRecorder>.Instance);
 
     private async Task<string> ScalarAsync(string sql, CancellationToken ct) =>
         (await Database.QueryStringsAsync(sql, ct)).Single();
 
     /// <summary>One owner with an episode, its story version and a <c>failed</c> render row of attempt 1.</summary>
-    private async Task<World> SeedFailedAsync(string code)
+    private async Task<World> SeedFailedAsync(string code) =>
+        await SeedAttemptAsync("failed", code, cancelRequested: false);
+
+    /// <summary>
+    /// The same world, but its one attempt is still <c>running</c> (a node is on it) and, when asked, the owner's
+    /// cancel is already requested — the state <see cref="RenderFailureRecorder.FailAsync"/>'s cancel rule is
+    /// about (F3/SEC-4). Its episode is put into <c>rendering</c> first, so the terminal transition back to
+    /// <c>story_approved</c> is the real one (the <c>PollRenderJobTests</c> seed shape).
+    /// </summary>
+    private async Task<World> SeedRunningAsync(bool cancelRequested)
+    {
+        var world = await SeedAttemptAsync("running", errorCode: null, cancelRequested: cancelRequested);
+
+        await Database.ExecuteAsync(
+            $"UPDATE episodes SET status = 'rendering' WHERE id = '{world.EpisodeId}'",
+            Ct);
+
+        return world;
+    }
+
+    /// <summary>One owner with an episode, its story version and one hand-written render row.</summary>
+    private async Task<World> SeedAttemptAsync(string status, string? errorCode, bool cancelRequested)
     {
         var actor = new TestCurrentUser();
         var user = await new UserBuilder(Database, actor).CreateAsync(ct: Ct);
@@ -248,12 +347,14 @@ public sealed class RenderRetryPolicyTests(TestDatabase database) : IntegrationT
 
         var jobId = Guid.CreateVersion7();
         var reservationId = Guid.CreateVersion7();
+        var code = errorCode is null ? "NULL" : $"'{errorCode}'";
+        var cancel = cancelRequested ? $"'{Start:O}'" : "NULL";
 
         await Database.ExecuteAsync(
             "INSERT INTO render_jobs (id, user_id, episode_id, story_version_id, reservation_id, status, stage, "
-            + "percent, params, attempt, error_code, next_poll_at) "
-            + $"VALUES ('{jobId}', '{user.Id}', '{episode.Id}', '{version.Id}', '{reservationId}', 'failed', "
-            + $"'{RenderJob.QueuedStage}', 0, '{ParamsJson(version.Id)}'::jsonb, 1, '{code}', NULL)",
+            + "percent, params, attempt, error_code, next_poll_at, cancel_requested_at) "
+            + $"VALUES ('{jobId}', '{user.Id}', '{episode.Id}', '{version.Id}', '{reservationId}', '{status}', "
+            + $"'{RenderJob.QueuedStage}', 0, '{ParamsJson(version.Id)}'::jsonb, 1, {code}, NULL, {cancel})",
             Ct);
 
         return new World(user.Id, episode.Id, version.Id, jobId, reservationId);
@@ -293,7 +394,8 @@ public sealed class RenderRetryPolicyTests(TestDatabase database) : IntegrationT
 
     /// <summary>
     /// The four money ports of one retry, recorded in one place: the order they are asked proves the 03 D8
-    /// sequence, and the reserve/refund lists prove which reservation the retry owns.
+    /// sequence, the reserve/refund lists prove which reservation the retry owns, and the refund list is what the
+    /// recorder's own tests assert on (the policy itself never refunds).
     /// </summary>
     private sealed class RecordingMoney(DateTimeOffset now) :
         IPriceCatalog,
@@ -306,6 +408,8 @@ public sealed class RenderRetryPolicyTests(TestDatabase database) : IntegrationT
         public List<Guid?> ExcludedRunIds { get; } = [];
 
         public List<(Guid UserId, CreditOperation Operation, Guid ReferenceId)> Reserves { get; } = [];
+
+        public List<(Guid ReservationId, string Reason)> Refunds { get; } = [];
 
         public ErrorOr<Success> Budget { get; init; } = Result.Success;
 
@@ -350,7 +454,11 @@ public sealed class RenderRetryPolicyTests(TestDatabase database) : IntegrationT
         public ValueTask<ErrorOr<Success>> SettleAsync(ReservationId reservationId, CancellationToken ct) =>
             throw new NotSupportedException();
 
-        public ValueTask<ErrorOr<Success>> RefundAsync(ReservationId reservationId, string reason, CancellationToken ct) =>
-            throw new NotSupportedException();
+        public ValueTask<ErrorOr<Success>> RefundAsync(ReservationId reservationId, string reason, CancellationToken ct)
+        {
+            Refunds.Add((reservationId.Value, reason));
+
+            return ValueTask.FromResult<ErrorOr<Success>>(Result.Success);
+        }
     }
 }

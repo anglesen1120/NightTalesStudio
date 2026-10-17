@@ -303,30 +303,44 @@ public sealed class RenderJobTests
     [Fact]
     public void ReschedulePoll_MovesTheClaimInstant_OnlyWhileThePollerWatches()
     {
+        // The distance is the caller's (BD7 step 3/6: `now + Render:PollSeconds`, or the adapter's own
+        // `Deferred.RetryAfter`), never the fixed PollInterval the two write paths use.
+        var interval = TimeSpan.FromSeconds(25);
         var job = Submitted();
         job.UpdateProgress("voice", 40, FixedNow).IsError.ShouldBeFalse();
         var later = FixedNow + TimeSpan.FromSeconds(30);
 
-        var again = job.ReschedulePoll(later);
+        var again = job.ReschedulePoll(later, interval);
 
         again.IsError.ShouldBeFalse();
         job.Stage.ShouldBe("voice", "the poll recorded no progress, so nothing but the claim instant moves");
         job.Percent.ShouldBe((short)40);
-        job.NextPollAt.ShouldBe(later + RenderJob.PollInterval);
+        job.NextPollAt.ShouldBe(later + interval);
 
         // The adapter's `deferred` answer on a job nobody reported progress for: the stage stays `queued` and only
         // the next poll moves, which is what keeps the claim query from re-reading the same oldest rows every tick.
         var fresh = Submitted();
-        fresh.ReschedulePoll(FixedNow).IsError.ShouldBeFalse();
+        fresh.ReschedulePoll(FixedNow, RenderJob.PollInterval).IsError.ShouldBeFalse();
         fresh.Stage.ShouldBe(RenderJob.QueuedStage);
         fresh.NextPollAt.ShouldBe(FixedNow + RenderJob.PollInterval);
 
+        // A non-positive interval is refused before the state is even looked at: it would pin the row at the same
+        // instant and spin every tick over it.
+        foreach (var refused in new[] { TimeSpan.Zero, TimeSpan.FromSeconds(-1) })
+        {
+            var invalid = Submitted().ReschedulePoll(FixedNow, refused);
+
+            invalid.IsError.ShouldBeTrue();
+            invalid.FirstError.Code.ShouldBe(RenderJob.ValidationFailedCode);
+            invalid.FirstError.Metadata!["field"].ShouldBe("interval");
+        }
+
         var queued = Create();
-        queued.ReschedulePoll(FixedNow).FirstError.Code.ShouldBe(RenderJob.InvalidStateCode);
+        queued.ReschedulePoll(FixedNow, interval).FirstError.Code.ShouldBe(RenderJob.InvalidStateCode);
 
         var ingesting = Submitted();
         ingesting.MarkIngesting(FixedNow).IsError.ShouldBeFalse();
-        var tooLate = ingesting.ReschedulePoll(FixedNow);
+        var tooLate = ingesting.ReschedulePoll(FixedNow, interval);
         tooLate.IsError.ShouldBeTrue();
         tooLate.FirstError.Code.ShouldBe(RenderJob.InvalidStateCode);
         ingesting.NextPollAt.ShouldBeNull();

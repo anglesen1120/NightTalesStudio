@@ -12,7 +12,16 @@ namespace NightTales.Application.Features.Rendering;
 /// row exists and the episode stays <c>rendering</c>.
 /// </param>
 /// <param name="RetryJobId">The <c>queued</c> retry row, or <c>null</c> when the attempt is final.</param>
-public sealed record RenderFailureResult(bool Final, Guid? RetryJobId);
+/// <param name="FailureCode">
+/// The 05 D5 outcome code the attempt was failed with, so a caller can label its own instrumentation without
+/// keeping a second copy of the code.
+/// </param>
+/// <param name="RetryCreated">
+/// <c>true</c> only when a retry row was really created for this failure (<c>RetryJobId is not null</c>): the
+/// caller counts the retry <em>after</em> it commits, so a counter is never incremented for a retry the commit
+/// discarded (a concurrent cancel wins the commit and the poller reads the row again next tick).
+/// </param>
+public sealed record RenderFailureResult(bool Final, Guid? RetryJobId, string FailureCode, bool RetryCreated);
 
 /// <summary>
 /// The one write path of a terminal render outcome (09.6.3-T1 steps 5 and 7, WT28/WT50/WT51): it fails the row,
@@ -32,6 +41,14 @@ public sealed record RenderFailureResult(bool Final, Guid? RetryJobId);
 /// <c>Cancel</c>, the episode back to <c>story_approved</c>, the refund, the audit row.
 /// </para>
 /// <para>
+/// <b>A cancel-requested attempt is never retried (WT51).</b> When the row already carries
+/// <c>CancelRequestedAt</c> — the owner asked the adapter to cancel, which is what happens on the 60-minute
+/// watchdog or on any outcome the adapter answers before it reports <c>cancelled</c> — the verdict is final
+/// whatever the code says: no retry row, no reservation of a second attempt, one refund and one
+/// <c>render_failed.v1</c> with <c>Final = true</c>. WT51 lets only the adapter's own <c>succeeded</c> win over
+/// a cancel; it never lets a cancelled render be re-run at the owner's expense.
+/// </para>
+/// <para>
 /// <b>Money.</b> A refund is by <c>reservation_id</c> and idempotent, so it is issued exactly once per
 /// terminal transition and a repeat is a success (WT50). A retry never reuses that reservation: its own row is
 /// created with the id <c>ReserveAsync</c> returned for it.
@@ -41,11 +58,14 @@ public interface IRenderFailureRecorder
 {
     /// <summary>
     /// Ends a render attempt with one of the 05 D5 outcome codes: fails the row, queues a retry when the policy
-    /// allows one, refunds the reservation once, records the audit row and raises <c>render_failed.v1</c>.
+    /// allows one, refunds the reservation once, records the audit row and raises <c>render_failed.v1</c>. A row
+    /// the owner already asked to cancel (<c>CancelRequestedAt</c> is set) is always final: it is never retried.
     /// </summary>
-    /// <param name="job">The tracked attempt; it must still be submitted, running or ingesting.</param>
+    /// <param name="job">The tracked attempt; it must still be queued, submitted, running or ingesting.</param>
     /// <param name="code">The 05 D5 outcome code the attempt is failed with.</param>
-    /// <param name="outcomeRetryable">The 03 classifier's per-outcome verdict, when it has one.</param>
+    /// <param name="outcomeRetryable">
+    /// The 03 classifier's per-outcome verdict, when it has one; it is not even asked for a cancel-requested row.
+    /// </param>
     /// <param name="ct">Cancels the reads and the reservation of the retry.</param>
     /// <returns>The retry verdict, or the typed error of the step that refused the failure itself.</returns>
     Task<ErrorOr<RenderFailureResult>> FailAsync(

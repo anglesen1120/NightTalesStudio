@@ -191,7 +191,6 @@ public sealed class RenderPollingServiceTests(TestDatabase database) : Integrati
         new(
             host.Services.GetRequiredService<IServiceScopeFactory>(),
             host.Services.GetRequiredService<IOptions<RenderOptions>>(),
-            host.Services.GetRequiredService<RenderMetrics>(),
             host.Services.GetRequiredService<IClock>(),
             host.Database.ConnectionString,
             NullLogger<RenderPollingService>.Instance);
@@ -215,8 +214,11 @@ public sealed class RenderPollingServiceTests(TestDatabase database) : Integrati
     /// Gives <paramref name="owner"/> a fresh episode with its story version and a <c>submitted</c>
     /// <c>render_jobs</c> row due at <paramref name="nextPollAt"/> (its own episode, because BD5's partial unique
     /// index allows one active render per episode). The row is written with raw SQL — the point here is the
-    /// poller's claim, not the command that would have created it — and its <c>worker_node_id</c> points at no
-    /// node, so <c>PollRenderJob</c> skips it with a logged warning instead of calling an adapter.
+    /// poller's claim, not the command that would have created it — and it deliberately carries no
+    /// <c>adapter_task_id</c> (and a <c>worker_node_id</c> that names no node), which is the one shape
+    /// <c>PollRenderJob</c> refuses to poll: it logs <c>poll_render_job_not_submitted</c> and leaves the row to
+    /// the watchdog, so no test here ever calls an adapter. A row that <em>did</em> carry an adapter task whose
+    /// node row is gone is the different case that ends terminally, as <c>render_node_error</c>.
     /// </summary>
     private async Task<Guid> SeedJobAsync(Owner owner, DateTimeOffset nextPollAt, CancellationToken ct)
     {

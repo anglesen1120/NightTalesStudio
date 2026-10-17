@@ -29,13 +29,27 @@ namespace NightTales.Application.Features.Rendering.Jobs;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>Three outcomes, one policy.</b> A deferred adapter answer (<c>adapter_capacity_full</c>,
-/// <c>adapter_node_unhealthy</c>) and "no dispatchable node" both reschedule a fresh delivery and return
-/// normally, so they spend none of the three attempts of <see cref="JobPolicyAttribute.Retries"/> (BD7,
-/// 11 T6); a terminal failure ends the row through <see cref="IRenderFailureRecorder"/> inside this job's own
-/// transaction; only a transient failure is rethrown, so Hangfire's retry is the retry (BD7, 05 D5). A submit
-/// that reached the adapter is idempotent by <c>render_job_id</c> plus the body's SHA-256 (05 D4), so the
-/// retry of a lost answer adopts the same task instead of creating a second one.
+/// <b>Two reschedules and four failures, one policy.</b> A deferred adapter answer
+/// (<c>adapter_capacity_full</c>, <c>adapter_node_unhealthy</c>) and "no dispatchable node" both reschedule a
+/// fresh delivery and return normally, so they spend no retry budget (BD7, 11 T6). Every failure — a terminal
+/// adapter answer, a transient one, an error the client's mapper does not know, and a recipe the submit body
+/// cannot be built from — ends the row through <see cref="IRenderFailureRecorder"/> inside this job's own
+/// transaction: the recorder refunds the reservation once, writes the audit row and raises
+/// <c>render_failed.v1</c>, and <c>RenderRetryPolicy</c> decides whether a fresh attempt follows (WT28/WT50).
+/// An adapter outcome is never rethrown to Hangfire, because a rethrow leaves the row <c>queued</c> for good
+/// once the attempts are spent: nothing refunds it, its bound stays in the open sum and
+/// <c>ux_render_jobs_active_episode</c> keeps the episode. A submit that reached the adapter is idempotent by
+/// <c>render_job_id</c> plus the body's SHA-256 (05 D4), so a retried delivery adopts the same task instead of
+/// creating a second one.
+/// </para>
+/// <para>
+/// <b>Where BD7's transport retries went.</b> The three retries of <see cref="JobPolicyAttribute.Retries"/>
+/// are spent <em>inside</em> the single <c>SubmitAsync</c> call: <c>MptRenderClient</c>'s pipeline retries an
+/// idempotent call with exponential backoff under a 30 s total timeout and a 10 s attempt timeout (BD6/WF08).
+/// A transient answer therefore means the transport budget is already gone, and this job spends no second loop
+/// on it — an in-job retry would multiply the pipeline's own attempts and hold the row lock across every one
+/// of them. The remaining <c>Retries = 3</c> covers the faults that are not the adapter's: a lost database
+/// connection on the commit, an activation failure.
 /// </para>
 /// <para>
 /// <b>The row is locked before the adapter call and re-checked after it</b> [RULED — README §B10 WT55]. A
@@ -110,6 +124,7 @@ public sealed partial class SubmitRenderJob(
         var storyInput = services.GetRequiredService<IStoryRenderInputProvider>();
         var presets = services.GetRequiredService<SubtitlePresetCatalog>();
         var failureRecorder = services.GetRequiredService<IRenderFailureRecorder>();
+        var metrics = services.GetRequiredService<RenderMetrics>();
 
         await unitOfWork.BeginAsync(cancellationToken).ConfigureAwait(false);
 
@@ -147,7 +162,7 @@ public sealed partial class SubmitRenderJob(
         {
             await unitOfWork.RollbackAsync(cancellationToken).ConfigureAwait(false);
 
-            AlertIfQueuedTooLong(job, now, render);
+            AlertIfQueuedTooLong(job, now, healthPoll, render);
             Reschedule(renderJobId, healthPoll, scheduler);
 
             return;
@@ -160,27 +175,49 @@ public sealed partial class SubmitRenderJob(
         var built = await BuildBodyAsync(db, storyInput, presets, job, cancellationToken).ConfigureAwait(false);
         if (built.IsError)
         {
-            // No 05 D5 outcome code covers a recipe that cannot be built, and RenderJob.Fail accepts only the
-            // ten catalogued ones, so the run is rethrown into Hangfire's retries and the operator alarm
-            // (11 D20 H14) with the code in the log rather than failed with a wrong code (open item).
-            await unitOfWork.RollbackAsync(cancellationToken).ConfigureAwait(false);
-
+            // A recipe that cannot be built is deterministic — a rebuilt body would fail the same way — so the
+            // attempt ends here. No 05 D5 code names a broken recipe; the closest catalogued one is
+            // render_assembly_failed (the render cannot be assembled), and outcomeRetryable: false stops the
+            // recorder from queuing a retry the recipe can never satisfy. The precise reason is in the log's code.
             LogRecipeInvalid(job.Id, built.FirstError.Code);
-            throw new InvalidOperationException(
-                $"The render submit body of job '{job.Id}' cannot be built ({built.FirstError.Code}).");
+
+            await RecordFailureAsync(
+                    failureRecorder,
+                    metrics,
+                    unitOfWork,
+                    job,
+                    RenderOutcomeCodes.RenderAssemblyFailed,
+                    outcomeRetryable: false,
+                    cancellationToken)
+                .ConfigureAwait(false);
+
+            return;
         }
 
-        // Step 4. The one adapter call. The node's URL and key stay inside the client (11 D13).
+        // Step 4. The one adapter call. The node's URL and key stay inside the client (11 D13), and the pipeline
+        // behind it already spent the transport retries (class remarks).
         var accepted = await client.SubmitAsync(node, built.Value, cancellationToken).ConfigureAwait(false);
 
         if (accepted.IsError)
         {
             if (!RenderClientErrors.TryGetFailure(accepted.FirstError, out var failure))
             {
-                await unitOfWork.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                // Fail closed: an error the client's mapper does not know is adapter drift, and rethrowing it
+                // would strand the row. It is recorded as the generic node failure so the refund, the audit row
+                // and the retry decision all run; the log names the code the client answered with.
+                LogUnmappedFailure(job.Id, accepted.FirstError.Code);
 
-                throw new InvalidOperationException(
-                    $"Submitting job '{job.Id}' failed with an unmapped error ('{accepted.FirstError.Code}').");
+                await RecordFailureAsync(
+                        failureRecorder,
+                        metrics,
+                        unitOfWork,
+                        job,
+                        DefaultRenderTerminalHooks.NodeErrorCode,
+                        outcomeRetryable: null,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+
+                return;
             }
 
             if (failure.Kind == RenderClientFailureKind.Deferred)
@@ -194,46 +231,45 @@ public sealed partial class SubmitRenderJob(
                     LogAdapterAlert(job.Id, failure.OutcomeCode, failure.Detail);
                 }
 
-                AlertIfQueuedTooLong(job, now, render);
-                Reschedule(renderJobId, failure.RetryAfter ?? healthPoll, scheduler);
+                var wait = failure.RetryAfter ?? healthPoll;
+                AlertIfQueuedTooLong(job, now, wait, render);
+                Reschedule(renderJobId, wait, scheduler);
 
                 return;
             }
+
+            var code = failure.OutcomeCode ?? DefaultRenderTerminalHooks.NodeErrorCode;
 
             if (failure.Kind == RenderClientFailureKind.TerminalFailure)
             {
                 // Step 6 (WT28/WT50): the recorder fails the row, refunds the reservation once, writes the audit
-                // row and raises render_failed.v1 — all inside this transaction, which commits below.
+                // row and raises render_failed.v1 — all inside this transaction, which the recorder's result
+                // commits. A terminal answer is the one shape an operator must be told about.
                 if (failure.Alert)
                 {
                     LogAdapterAlert(job.Id, failure.OutcomeCode, failure.Detail);
                 }
-
-                var failed = await failureRecorder
-                    .FailAsync(job, failure.OutcomeCode ?? DefaultRenderTerminalHooks.NodeErrorCode, null, cancellationToken)
-                    .ConfigureAwait(false);
-
-                if (failed.IsError)
-                {
-                    await unitOfWork.RollbackAsync(cancellationToken).ConfigureAwait(false);
-
-                    throw new InvalidOperationException(
-                        $"Recording the terminal failure of job '{job.Id}' failed ('{failed.FirstError.Code}').");
-                }
-
-                await CommitAsync(unitOfWork, job.Id, cancellationToken).ConfigureAwait(false);
-
-                return;
+            }
+            else
+            {
+                // TransientFailure, or an output kind a submit can never answer with (drift): either way the
+                // attempt ends here. Rethrowing would leave the row `queued` for good once Hangfire's attempts
+                // are spent, with its reservation unrefunded and its bound still open; RenderRetryPolicy instead
+                // decides whether attempt 2 follows, so BD7's ≤ 2 attempts still hold.
+                LogTransientFailure(job.Id, failure.OutcomeCode);
             }
 
-            // A transient answer is the only one the job's retry policy owns: rethrow so Hangfire's three
-            // attempts apply, and roll back first so no half-written effect of this run survives.
-            await unitOfWork.RollbackAsync(cancellationToken).ConfigureAwait(false);
+            await RecordFailureAsync(
+                    failureRecorder,
+                    metrics,
+                    unitOfWork,
+                    job,
+                    code,
+                    outcomeRetryable: null,
+                    cancellationToken)
+                .ConfigureAwait(false);
 
-            LogTransientFailure(job.Id, failure.OutcomeCode);
-
-            throw new InvalidOperationException(
-                $"The render node call of job '{job.Id}' failed transiently ('{failure.OutcomeCode}'); the job is retried.");
+            return;
         }
 
         // The stored adapter_task_id is the wire guid in its canonical form: the same string is what the status,
@@ -492,6 +528,53 @@ public sealed partial class SubmitRenderJob(
         }
     }
 
+    /// <summary>
+    /// Ends the attempt through the one failure path (WT28/WT50): the recorder fails the row, decides and
+    /// queues a retry, refunds the reservation once, writes the audit row and raises <c>render_failed.v1</c>
+    /// inside this job's own transaction, and this method commits it.
+    /// </summary>
+    /// <remarks>
+    /// The retry counter is fed <em>after</em> the commit, and only when a retry row was really created: a lost
+    /// commit discards that row, so counting before it would report a retry that does not exist (F10). A refusal
+    /// from the recorder is a programming error of this call site (a state the recorder cannot fail), and it is
+    /// rethrown for Hangfire's remaining attempts.
+    /// </remarks>
+    /// <param name="recorder">The one terminal-outcome write path.</param>
+    /// <param name="metrics">The retry counter.</param>
+    /// <param name="unitOfWork">The job's unit of work.</param>
+    /// <param name="job">The attempt being ended.</param>
+    /// <param name="code">The 05 D5 outcome code of this failure.</param>
+    /// <param name="outcomeRetryable">The retry verdict the caller already knows, when it knows one.</param>
+    /// <param name="ct">Cancels the recorder's reads and the commit.</param>
+    private static async Task RecordFailureAsync(
+        IRenderFailureRecorder recorder,
+        RenderMetrics metrics,
+        IUnitOfWork unitOfWork,
+        RenderJob job,
+        string code,
+        bool? outcomeRetryable,
+        CancellationToken ct)
+    {
+        var failed = await recorder
+            .FailAsync(job, code, outcomeRetryable, ct)
+            .ConfigureAwait(false);
+
+        if (failed.IsError)
+        {
+            await unitOfWork.RollbackAsync(ct).ConfigureAwait(false);
+
+            throw new InvalidOperationException(
+                $"Recording the failure of render job '{job.Id}' failed ('{failed.FirstError.Code}').");
+        }
+
+        await CommitAsync(unitOfWork, job.Id, ct).ConfigureAwait(false);
+
+        if (failed.Value.RetryCreated)
+        {
+            metrics.CountRetry(failed.Value.FailureCode);
+        }
+    }
+
     /// <summary>Schedules the next delivery of this job, outside the retry budget (BD7).</summary>
     /// <param name="renderJobId">The row to submit again.</param>
     /// <param name="delay">The wait before the next delivery.</param>
@@ -500,15 +583,23 @@ public sealed partial class SubmitRenderJob(
         scheduler.Schedule<SubmitRenderJob>((job, ct) => job.RunAsync(renderJobId, ct), delay);
 
     /// <summary>
-    /// Raises the queue alarm of 11 D20 H14 when the job has been <c>queued</c> longer than
-    /// <see cref="RenderOptions.QueueAlertMinutes"/>. It is a log line with a stable event id and ids only: no
-    /// content, no node and no params. It repeats on every reschedule past the threshold, which is the
-    /// "still no node" signal; the aggregate counter of 11.3.3-T2 is the dashboard's own reading.
+    /// Raises the queue alarm of 11 D20 H14 when the job crosses <see cref="RenderOptions.QueueAlertMinutes"/>
+    /// <c>queued</c>. It is a log line with a stable event id and ids only: no content, no node and no params.
     /// </summary>
+    /// <remarks>
+    /// The alarm fires on the one delivery that crosses the threshold, never on every delivery after it: a job
+    /// with no dispatchable node is offered again every <c>RenderNodes:HealthPollSeconds</c> (30 s), so a
+    /// repeating alarm would be 120 lines an hour of noise per stuck job (F8). The crossing is read as "the
+    /// previous delivery instant was still inside the threshold": the previous instant is this delivery's own
+    /// instant minus the wait it just scheduled, which is the cadence when the alarm is about a missing node and
+    /// the adapter's <c>Retry-After</c> when it is about a busy one. Nothing here counts attempts — the alarm
+    /// never spends retry budget, and the aggregate counter of 11.3.3-T2 is the dashboard's own reading.
+    /// </remarks>
     /// <param name="job">The queued attempt.</param>
     /// <param name="now">The clock's reading.</param>
+    /// <param name="wait">The distance to the delivery this call is scheduling.</param>
     /// <param name="options">The bound <c>Render</c> section.</param>
-    private void AlertIfQueuedTooLong(RenderJob job, DateTimeOffset now, RenderOptions options)
+    private void AlertIfQueuedTooLong(RenderJob job, DateTimeOffset now, TimeSpan wait, RenderOptions options)
     {
         if (!TryGetQueuedAt(job.Id, out var queuedAt))
         {
@@ -518,6 +609,14 @@ public sealed partial class SubmitRenderJob(
         var age = now - queuedAt;
         var threshold = TimeSpan.FromMinutes(options.QueueAlertMinutes);
         if (age < threshold)
+        {
+            return;
+        }
+
+        // The previous delivery instant was still inside the threshold, so this delivery is the crossing one —
+        // and the only one that logs. A job already past it when it is first offered (the threshold moved, or a
+        // backlog delayed the delivery) is not announced at all: the alarm reports the crossing, not the state.
+        if (age - wait >= threshold)
         {
             return;
         }
@@ -571,6 +670,12 @@ public sealed partial class SubmitRenderJob(
         Level = LogLevel.Warning,
         Message = "render_submit_adapter_alert renderJobId={RenderJobId} code={Code} detail={Detail}")]
     private partial void LogAdapterAlert(Guid renderJobId, string? code, string? detail);
+
+    [LoggerMessage(
+        EventId = 6197,
+        Level = LogLevel.Error,
+        Message = "render_submit_unmapped_failure renderJobId={RenderJobId} code={Code}")]
+    private partial void LogUnmappedFailure(Guid renderJobId, string code);
 
     [LoggerMessage(
         EventId = 6198,

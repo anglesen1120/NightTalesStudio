@@ -38,7 +38,11 @@ public sealed partial class RenderJob : AggregateRoot, IUserOwned
     /// <summary>The <c>stage</c> text of a row nobody has submitted yet (BD5's acceptance wording: <c>queued</c>).</summary>
     public const string QueuedStage = "queued";
 
-    /// <summary>BD7's poll cadence (<c>Render:PollSeconds</c>, 10 s): the distance <see cref="MarkSubmitted"/> stamps on <see cref="NextPollAt"/>.</summary>
+    /// <summary>
+    /// BD7's default poll cadence (<c>Render:PollSeconds</c>, 10 s): the distance <see cref="MarkSubmitted"/> and
+    /// <see cref="UpdateProgress"/> stamp on <see cref="NextPollAt"/>. <see cref="ReschedulePoll"/> takes the
+    /// interval from its caller instead, because the poller passes the adapter's own wait when it gave one.
+    /// </summary>
     public static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(10);
 
     /// <summary>
@@ -368,17 +372,33 @@ public sealed partial class RenderJob : AggregateRoot, IUserOwned
     /// stage and percent — goes through <see cref="UpdateProgress"/> (or no call at all), so without this method the
     /// row would keep its old <see cref="NextPollAt"/> and be re-claimed by every tick. The claim is
     /// <c>ORDER BY next_poll_at LIMIT PollBatchSize</c>, so those rows would also starve every job behind them.
+    /// <para>
+    /// The distance is the caller's, not <see cref="PollInterval"/>: BD7's step 3/6 stamps
+    /// <c>now + Render:PollSeconds</c>, and the adapter's own <c>Deferred.RetryAfter</c> wins over that cadence when
+    /// it gives one, so the poller passes the interval it is about to wait. <see cref="PollInterval"/> stays the
+    /// contract default of the two write paths (<see cref="MarkSubmitted"/>, <see cref="UpdateProgress"/>), which do
+    /// not know the bound section.
+    /// </para>
     /// </remarks>
     /// <param name="now">The Worker's clock reading.</param>
-    /// <returns><c>Success</c>, or the 409 of a row the poller is not watching.</returns>
-    public ErrorOr<Success> ReschedulePoll(DateTimeOffset now)
+    /// <param name="interval">The distance to the next poll; must be positive.</param>
+    /// <returns><c>Success</c>, the 400 of a non-positive interval, or the 409 of a row the poller is not watching.</returns>
+    public ErrorOr<Success> ReschedulePoll(DateTimeOffset now, TimeSpan interval)
     {
+        if (interval <= TimeSpan.Zero)
+        {
+            return Error.Validation(
+                ValidationFailedCode,
+                "A render poll interval must be positive.",
+                Field("interval"));
+        }
+
         if (Status is not (RenderJobStatus.Submitted or RenderJobStatus.Running))
         {
             return InvalidState("be polled again");
         }
 
-        NextPollAt = now + PollInterval;
+        NextPollAt = now + interval;
 
         return Result.Success;
     }
@@ -421,17 +441,29 @@ public sealed partial class RenderJob : AggregateRoot, IUserOwned
     }
 
     /// <summary>
-    /// Ends the attempt with one of the 05 D5 outcome codes: a submitted, running or ingesting row → <c>failed</c>.
+    /// Ends the attempt with one of the 05 D5 outcome codes: a <c>queued</c>, submitted, running or ingesting row →
+    /// <c>failed</c>.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// The code must be on <see cref="OutcomeCodes"/>; anything else is refused as <c>validation_failed</c> (400) rather
     /// than stored, so <c>render_jobs.error_code</c> can never hold an uncatalogued value. <see cref="ErrorMessage"/>
     /// is left empty by this method: the fixed D15 S4 sentence belongs to the node contract, and the node's raw error
     /// text is never stored (05 C8).
+    /// </para>
+    /// <para>
+    /// A <c>queued</c> row fails too (09.6.3-T1, WT55's aftermath): its submit never adopted an
+    /// <c>adapter_task_id</c>, either because no node was dispatchable, because the recipe could not be built, or
+    /// because the adapter answered a terminal failure to the submit itself. Without this the row would stay
+    /// <c>queued</c> forever, holding its <see cref="WorstCaseUsd"/> inside the open-bounds sum and keeping
+    /// <c>ux_render_jobs_active_episode</c> busy, while no refund of <see cref="ReservationId"/> could ever run
+    /// (<c>SubmitRenderJob</c> and <c>RenderFailureRecorder</c> are the one failure path). Every terminal state is
+    /// still refused, so one attempt records exactly one verdict.
+    /// </para>
     /// </remarks>
     /// <param name="code">The outcome code.</param>
     /// <param name="now">The Worker's clock reading.</param>
-    /// <returns><c>Success</c>, the 400 of an unknown code, or the 409 of a queued or terminal row.</returns>
+    /// <returns><c>Success</c>, the 400 of an unknown code, or the 409 of a terminal row.</returns>
     public ErrorOr<Success> Fail(string code, DateTimeOffset now)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(code);
@@ -441,7 +473,7 @@ public sealed partial class RenderJob : AggregateRoot, IUserOwned
             return Error.Validation(ValidationFailedCode, "The code is not a catalogued render outcome (05 D5).", Field("code"));
         }
 
-        if (Status is not (RenderJobStatus.Submitted or RenderJobStatus.Running or RenderJobStatus.Ingesting))
+        if (Status is not (RenderJobStatus.Queued or RenderJobStatus.Submitted or RenderJobStatus.Running or RenderJobStatus.Ingesting))
         {
             return InvalidState("fail");
         }

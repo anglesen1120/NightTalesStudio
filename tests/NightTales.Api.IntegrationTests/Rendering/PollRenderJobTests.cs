@@ -38,8 +38,11 @@ namespace NightTales.Api.IntegrationTests.Rendering;
 /// <summary>
 /// <see cref="PollRenderJob"/> (09 README BD7, BD11, WT28/WT45/WT50/WT51/WT54; 09.6.3-T1 steps 3-7) against a
 /// real database through the Worker host: the one status call per tick, the progress write and its realtime
-/// push, the timeout watchdog, the terminal branches (succeeded → ingest, failed → usage/classify/refund/audit
-/// and the retry verdict, cancelled → the only refund of a cancelled render), and the terminal-row skip.
+/// push, the <c>Render:MaxMinutes</c> watchdog (applied to a non-terminal answer only, with the best-effort
+/// adapter cancel and delete of the task it ends), the transient and deferred reschedules that keep a broken
+/// node from pinning the claim, the terminal branches (succeeded → ingest, failed → usage/classify/refund/audit
+/// and the retry verdict, cancelled → the only refund of a cancelled render), the refused bodies, and the
+/// terminal-row skip.
 /// </summary>
 /// <remarks>
 /// The job is called directly with the row id, exactly as <c>RenderPollingService</c> calls it, so nothing here
@@ -79,16 +82,95 @@ public sealed class PollRenderJobTests(TestDatabase database) : IntegrationTest(
         JsonSerializer.Serialize(pushed.Event).Length.ShouldBeLessThan(
             8 * 1024,
             "the serialized pg_notify body stays inside the 8 KB budget (WT54)");
+    }
 
-        // A status that moves backwards is not credible: the stored percent never decreases, so the attempt
-        // ends as a lost render instead of silently clamping.
+    [Fact]
+    public async Task Progress_RegressedPercent_IsIgnored_AndThePollContinues()
+    {
+        var world = await SeedJobAsync("running", "images", percent: 40);
+        var render = new FakeRenderClient();
+        await using var harness = await StartHostAsync(render);
+
+        // A status that moves backwards is a regressed report, not a lost render: failing it would refund a paid
+        // attempt and start a second paid one for a counter that moved backwards. The stored percent is kept,
+        // nothing is pushed, and the claim instant still moves so the row is not re-claimed by every tick (F6).
         render.EnqueueStatus(Status(world, RenderStates.Running, "images", 25));
 
         await PollAsync(harness.Host, world.RenderJobId);
 
-        AssertRow(world, status: "failed", stage: "images", percent: 40, errorCode: "render_lost");
+        AssertRow(world, status: "running", stage: "images", percent: 40);
         ScalarText("SELECT percent::text", world).ShouldBe("40", "UpdateProgress never decreases percent (AC5)");
-        harness.Money.Refunds.ShouldBe([(world.ReservationId, "render_failed")]);
+        ScalarBool("SELECT (next_poll_at = submitted_at + interval '10 seconds')::text", world).ShouldBeTrue(
+            "the poll keeps going: the claim instant moves");
+        harness.Notifier.Events.ShouldBeEmpty("a report that moved nothing pushes nothing");
+        harness.Money.Refunds.ShouldBeEmpty("a regressed report never fails a paid attempt");
+        SqlProbe.Count(Database, $"SELECT count(*) FROM render_jobs WHERE episode_id = '{world.EpisodeId}'")
+            .ShouldBe(1L, "and never queues a second paid attempt");
+    }
+
+    [Fact]
+    public async Task Transient_StatusAnswer_ReschedulesAndDoesNotThrow()
+    {
+        var world = await SeedJobAsync("running", "voice", percent: 20);
+        var render = new FakeRenderClient();
+        var sink = new CapturingLoggerProvider();
+        await using var harness = await StartHostAsync(render, sink: sink);
+
+        // A node that is down answers transient. A thrown tick would leave next_poll_at where it was, so the row
+        // would stay at the head of the claim on every tick, with a full exception line, and starve the healthy
+        // nodes' jobs once they are more than a batch (F4).
+        render.EnqueueFailure(
+            RenderClientMethod.GetStatus,
+            new RenderClientFailure(
+                RenderClientFailureKind.TransientFailure,
+                "render_node_error",
+                "scripted",
+                Alert: false,
+                RetryAfter: null));
+
+        var thrown = await CaptureAsync(PollAsync(harness.Host, world.RenderJobId));
+
+        thrown.ShouldBeNull("a transient answer is not an error of the poll");
+        render.StatusCalls.ShouldBe(1);
+        AssertRow(world, status: "running", stage: "voice", percent: 20);
+        ScalarBool("SELECT (next_poll_at = submitted_at + interval '10 seconds')::text", world).ShouldBeTrue(
+            "the transient answer moves the claim instant to the Render:PollSeconds cadence");
+        harness.Notifier.Events.ShouldBeEmpty();
+        harness.Money.Refunds.ShouldBeEmpty("the attempt is not failed: no refund and no retry");
+        (await ScalarAsync($"SELECT attempt::text FROM render_jobs WHERE id = '{world.RenderJobId}'")).ShouldBe("1");
+
+        // Exactly one warning, and it names the row and the code: no exception, and no stack trace (F4).
+        var transient = sink.Entries.Where(entry => entry.EventId == 6230).ToList();
+        transient.Count.ShouldBe(1);
+        transient[0].Level.ShouldBe(LogLevel.Warning);
+        transient[0].Message.ShouldContain(world.RenderJobId.ToString("D"), Case.Sensitive);
+        transient[0].Message.ShouldContain("render_node_error", Case.Sensitive);
+    }
+
+    [Fact]
+    public async Task Deferred_RetryAfterPastTheWatchdog_IsClampedToIt()
+    {
+        var world = await SeedJobAsync("running", "voice", percent: 20);
+        var render = new FakeRenderClient();
+        await using var harness = await StartHostAsync(render);
+
+        // Retry-After is header text: a node may ask for a week, but it may not park a row past the instant
+        // Render:MaxMinutes ends the attempt, or the watchdog could never fire on a node that keeps deferring
+        // (F13).
+        render.EnqueueFailure(
+            RenderClientMethod.GetStatus,
+            new RenderClientFailure(
+                RenderClientFailureKind.Deferred,
+                "adapter_capacity_full",
+                "scripted",
+                Alert: false,
+                RetryAfter: TimeSpan.FromDays(7)));
+
+        await PollAsync(harness.Host, world.RenderJobId);
+
+        AssertRow(world, status: "running", stage: "voice", percent: 20);
+        ScalarBool("SELECT (next_poll_at = submitted_at + interval '60 minutes')::text", world).ShouldBeTrue(
+            "a Retry-After past the watchdog horizon is clamped to it");
     }
 
     [Fact]
@@ -128,7 +210,8 @@ public sealed class PollRenderJobTests(TestDatabase database) : IntegrationTest(
         await PollAsync(harness.Host, world.RenderJobId);
 
         AssertRow(world, status: "running", stage: "voice", percent: 20);
-        ScalarBool("SELECT (next_poll_at > submitted_at)::text", world).ShouldBeTrue();
+        ScalarBool("SELECT (next_poll_at = submitted_at + interval '30 seconds')::text", world).ShouldBeTrue(
+            "a deferred answer moves the claim instant by its own bounded Retry-After (F13)");
         harness.Notifier.Events.ShouldBeEmpty();
         harness.Money.Refunds.ShouldBeEmpty();
         (await ScalarAsync($"SELECT attempt::text FROM render_jobs WHERE id = '{world.RenderJobId}'")).ShouldBe("1");
@@ -221,11 +304,19 @@ public sealed class PollRenderJobTests(TestDatabase database) : IntegrationTest(
         var render = new FakeRenderClient();
         await using var harness = await StartHostAsync(render);
 
+        // The adapter is asked first: the watchdog only ends an answer that is still non-terminal at the
+        // deadline, so a task that finished at minute 59 is recorded as what it is instead of being thrown away
+        // and re-rendered at full image cost (F5). This task is still running, so the attempt is over.
+        render.EnqueueStatus(Status(world, RenderStates.Running, "subtitles", 50));
+        render.EnqueueCancel(default);
+        render.EnqueueDelete(default);
+
         await PollAsync(harness.Host, world.RenderJobId);
 
-        // The watchdog answers before the node is even asked, and the same adapter task is never re-submitted.
-        render.StatusCalls.ShouldBe(0, "the watchdog is evaluated before the status call");
-        render.SubmitCalls.ShouldBe(0);
+        render.StatusCalls.ShouldBe(1, "the status answer is what decides the watchdog");
+        render.SubmitCalls.ShouldBe(0, "the same adapter task is never re-submitted");
+        render.CancelCalls.ShouldBe(1, "the task the node may still run is stopped, best effort (SEC-8)");
+        render.DeleteCalls.ShouldBe(1, "and its material is released, after the failure commit");
 
         AssertRow(world, status: "failed", stage: "subtitles", percent: 50, errorCode: "render_timeout");
         ScalarText("SELECT adapter_task_id", world).ShouldBe(world.TaskId.ToString());
@@ -250,6 +341,136 @@ public sealed class PollRenderJobTests(TestDatabase database) : IntegrationTest(
                 $"SELECT count(*) FROM render_jobs WHERE episode_id = '{world.EpisodeId}' "
                 + "AND status IN ('submitted','running')")
             .ShouldBe(0L);
+    }
+
+    [Fact]
+    public async Task Timeout_TaskThatFinishedBeforeThePoll_ItsAnswerWins()
+    {
+        // The row's own clock says the attempt is past Render:MaxMinutes, but the task finished: what the
+        // adapter answered is recorded as what it is, because the watchdog may never discard a finished render
+        // and re-render it at full image cost (F5, 05 D15 P7).
+        var world = await SeedJobAsync(
+            "running",
+            "images",
+            percent: 99,
+            submittedMinutesAgo: 61,
+            startedMinutesAgo: 60);
+        var render = new FakeRenderClient();
+        await using var harness = await StartHostAsync(render);
+
+        render.EnqueueStatus(Status(world, RenderStates.Succeeded, "done", 100));
+
+        await PollAsync(harness.Host, world.RenderJobId);
+
+        AssertRow(world, status: "ingesting", stage: "done", percent: 100);
+        harness.Ingest.Enqueued.ShouldBe([world.RenderJobId]);
+        harness.Money.Refunds.ShouldBeEmpty("a succeeded render is settled by the ingest, never refunded (WT51)");
+        render.CancelCalls.ShouldBe(0, "nothing is cancelled: the render finished");
+        render.DeleteCalls.ShouldBe(0);
+        SqlProbe.Count(Database, $"SELECT count(*) FROM render_jobs WHERE episode_id = '{world.EpisodeId}'")
+            .ShouldBe(1L, "a finished render never queues a retry row");
+    }
+
+    [Fact]
+    public async Task Refusal_OverLongStage_IsANodeError_NotAnEndlessCommitFailure()
+    {
+        var world = await SeedJobAsync("running", "voice", percent: 20);
+        var render = new FakeRenderClient();
+        await using var harness = await StartHostAsync(render);
+
+        // render_jobs.stage is varchar(32), so a longer adapter stage would be refused by the database on every
+        // tick and hold the row (and its bound) until the watchdog: the attempt ends as render_node_error
+        // instead, and the task it came from is cleaned up (F7/SEC-5).
+        render.EnqueueStatus(Status(world, RenderStates.Running, new string('i', 33), 40));
+        render.EnqueueCancel(default);
+        render.EnqueueDelete(default);
+
+        await PollAsync(harness.Host, world.RenderJobId);
+
+        AssertRow(world, status: "failed", stage: "voice", percent: 20, errorCode: "render_node_error");
+        harness.Notifier.Events.ShouldBeEmpty("the adapter's stage never reaches a client");
+        harness.Money.Refunds.ShouldBe([(world.ReservationId, "render_failed")]);
+        render.CancelCalls.ShouldBe(1, "a refused body still collects the task it came from");
+        render.DeleteCalls.ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task Refusal_StageOutsideTheWireShape_IsANodeError()
+    {
+        var world = await SeedJobAsync("running", "voice", percent: 20);
+        var render = new FakeRenderClient();
+        await using var harness = await StartHostAsync(render);
+
+        // The adapter's stage is stored verbatim and travels into a realtime payload, so a text outside the
+        // wire shape `^[a-z_]{1,32}$` is a body this job refuses: a state a misbehaving node invented is not a
+        // stage a client may see (SEC-5).
+        render.EnqueueStatus(Status(world, RenderStates.Running, "Images 50%", 40));
+        render.EnqueueCancel(default);
+        render.EnqueueDelete(default);
+
+        await PollAsync(harness.Host, world.RenderJobId);
+
+        AssertRow(world, status: "failed", stage: "voice", percent: 20, errorCode: "render_node_error");
+        harness.Notifier.Events.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task UnknownState_IsLoggedSanitised_AndEndsAsANodeError()
+    {
+        var world = await SeedJobAsync("running", "voice", percent: 20);
+        var render = new FakeRenderClient();
+        var sink = new CapturingLoggerProvider();
+        await using var harness = await StartHostAsync(render, sink: sink);
+
+        // A state 05.4.1-T2 does not define is adapter-supplied text: it ends the attempt as a node error, and
+        // the log line carries the fixed token instead of the node's own string, so a misbehaving node can
+        // neither forge a log line nor push text into one (SEC-6).
+        render.EnqueueStatus(Status(world, "Not A State\nrender_poll_fake", "voice", 40));
+
+        await PollAsync(harness.Host, world.RenderJobId);
+
+        AssertRow(world, status: "failed", stage: "voice", percent: 20, errorCode: "render_node_error");
+        var unknown = sink.Entries.Where(entry => entry.EventId == 6227).ToList();
+        unknown.Count.ShouldBe(1);
+        unknown[0].Message.ShouldContain("state=invalid", Case.Sensitive);
+        unknown[0].Message.ShouldNotContain("render_poll_fake", Case.Sensitive);
+        harness.Notifier.Events.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task Timeout_OnACancelRequestedRow_QueuesNoRetry()
+    {
+        // The owner cancelled this render and the adapter never answered cancelled: the watchdog ends it as
+        // render_timeout, and the verdict is final. A retry here would re-render and re-charge an episode its
+        // creator already cancelled (WT51, SEC-4).
+        var world = await SeedJobAsync(
+            "running",
+            "voice",
+            percent: 30,
+            cancelRequested: true,
+            submittedMinutesAgo: 61,
+            startedMinutesAgo: 60);
+        var render = new FakeRenderClient();
+        await using var harness = await StartHostAsync(render);
+        render.EnqueueStatus(Status(world, RenderStates.Running, "voice", 30));
+        render.EnqueueCancel(default);
+        render.EnqueueDelete(default);
+
+        await PollAsync(harness.Host, world.RenderJobId);
+
+        AssertRow(world, status: "failed", stage: "voice", percent: 30, errorCode: "render_timeout");
+        SqlProbe.Count(Database, $"SELECT count(*) FROM render_jobs WHERE episode_id = '{world.EpisodeId}'")
+            .ShouldBe(1L, "a cancelled render is never retried");
+        SqlProbe.QueryStrings(
+                Database,
+                "SELECT (data->>'final')::text FROM audit_logs "
+                + $"WHERE entity_id = '{world.RenderJobId}'")
+            .ShouldBe(["true"], "the cancellation makes the verdict final (WT50)");
+        harness.Money.Refunds.ShouldBe(
+            [(world.ReservationId, "render_failed")],
+            "the attempt is still refunded once");
+        CountOutbox(world).ShouldBe(1, "exactly one render_failed.v1 carries the final verdict");
+        EpisodeStatus(world).ShouldBe("story_approved", "the episode comes back to its creator");
     }
 
     [Fact]
@@ -332,7 +553,8 @@ public sealed class PollRenderJobTests(TestDatabase database) : IntegrationTest(
         var render = new FakeRenderClient();
         await using var harness = await StartHostAsync(render);
 
-        // The node answered about a task this row no longer owns (H2): never progress, always a lost render.
+        // The node answered about a task this row no longer owns (H2): never progress, always a lost render —
+        // and the task this row does own is stopped and released, best effort (SEC-8).
         render.EnqueueStatus(new RenderStatusV1(
             RenderNodeSchemas.RenderStatus,
             Guid.CreateVersion7(),
@@ -349,12 +571,16 @@ public sealed class PollRenderJobTests(TestDatabase database) : IntegrationTest(
             null,
             null,
             null));
+        render.EnqueueCancel(default);
+        render.EnqueueDelete(default);
 
         await PollAsync(harness.Host, world.RenderJobId);
 
         AssertRow(world, status: "failed", stage: "voice", percent: 30, errorCode: "render_lost");
         ScalarText("SELECT percent::text", world).ShouldBe("30", "another task's progress is never applied");
         harness.Notifier.Events.ShouldBeEmpty();
+        render.CancelCalls.ShouldBe(1);
+        render.DeleteCalls.ShouldBe(1);
     }
 
     [Fact]
@@ -392,6 +618,11 @@ public sealed class PollRenderJobTests(TestDatabase database) : IntegrationTest(
             instrument.Meter.Name)));
         listener.Start();
 
+        // The task is still running at the deadline, so the watchdog ends the attempt (F5).
+        render.EnqueueStatus(Status(world, RenderStates.Running, "subtitles", 50));
+        render.EnqueueCancel(default);
+        render.EnqueueDelete(default);
+
         await PollAsync(harness.Host, world.RenderJobId);
 
         var duration = durations.ShouldHaveSingleItem();
@@ -424,6 +655,10 @@ public sealed class PollRenderJobTests(TestDatabase database) : IntegrationTest(
         var render = new FakeRenderClient();
         await using var harness = await StartHostAsync(render);
 
+        render.EnqueueStatus(Status(world, RenderStates.Running, "assembling", 70));
+        render.EnqueueCancel(default);
+        render.EnqueueDelete(default);
+
         await PollAsync(harness.Host, world.RenderJobId);
 
         AssertRow(world, status: "failed", stage: "assembling", percent: 70, errorCode: "render_timeout");
@@ -450,6 +685,10 @@ public sealed class PollRenderJobTests(TestDatabase database) : IntegrationTest(
             Budget = Error.Failure("budget_spend_cap", "The platform spend cap is reached."),
         };
         await using var harness = await StartHostAsync(render, money: money);
+
+        render.EnqueueStatus(Status(world, RenderStates.Running, "subtitles", 50));
+        render.EnqueueCancel(default);
+        render.EnqueueDelete(default);
 
         await PollAsync(harness.Host, world.RenderJobId);
 

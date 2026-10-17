@@ -442,7 +442,6 @@ public static class WorkerServiceCollectionExtensions
         services.AddSingleton(provider => new RenderPollingService(
             provider.GetRequiredService<IServiceScopeFactory>(),
             provider.GetRequiredService<IOptions<RenderOptions>>(),
-            provider.GetRequiredService<RenderMetrics>(),
             provider.GetRequiredService<IClock>(),
             metricsConnectionString,
             provider.GetRequiredService<ILogger<RenderPollingService>>()));

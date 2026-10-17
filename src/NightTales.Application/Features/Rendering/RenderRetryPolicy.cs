@@ -31,6 +31,14 @@ namespace NightTales.Application.Features.Rendering;
 /// <c>RenderRequested</c>, whose outbox row is what queues <c>SubmitRenderJob</c> in this same transaction; the
 /// job is never enqueued directly (D11/D12).
 /// </para>
+/// <para>
+/// <b>The order is the recorder's, and it is not reordered here.</b> The failure recorder fails the row and
+/// creates this retry <em>before</em> it refunds the failed attempt, because the retry's budget re-check must
+/// still see the failed attempt's own bound in the open sum (it is excluded by id, never by absence). With the
+/// real credit ledger of 12.1/12.2 that looks a reservation up before the failed one is credited back, so an
+/// owner sitting exactly at their reserve limit can be refused this retry until the failed bound is refunded
+/// again — a documented consequence of the ordering (09.6.3-T1 F9, 12.2 hand-over), not a bug in the tables.
+/// </para>
 /// </remarks>
 /// <param name="db">The tracked write model the new row is added to.</param>
 /// <param name="clock">The clock the retry row and its reservation are stamped from.</param>
@@ -39,7 +47,6 @@ namespace NightTales.Application.Features.Rendering;
 /// <param name="budget">The platform spend cap, re-checked before the retry is queued (D1).</param>
 /// <param name="ledger">The credit ledger: the retry's own reservation comes from here.</param>
 /// <param name="imagesOptions">The <c>Images</c> section, for the reserve bound's token members.</param>
-/// <param name="metrics">The retry counter, incremented once per created retry row.</param>
 public sealed class RenderRetryPolicy(
     IAppDbContext db,
     IClock clock,
@@ -47,8 +54,7 @@ public sealed class RenderRetryPolicy(
     IImageCostEstimator images,
     IBudgetGuard budget,
     ICreditLedger ledger,
-    ImagesOptions imagesOptions,
-    RenderMetrics metrics) : IRenderRetryPolicy
+    ImagesOptions imagesOptions) : IRenderRetryPolicy
 {
     /// <summary>How many attempts one episode's render may reach: attempt 1, and one automatic retry.</summary>
     public const int MaxAttempts = 2;
@@ -111,8 +117,9 @@ public sealed class RenderRetryPolicy(
             .WorstCaseAsync(AspectOf(failed.Params.Aspect), failed.Params.ImagePlan.MaxTerms, priceVersion.Value.Version, ct)
             .ConfigureAwait(false);
 
-        // The failed attempt's own bound is not open any more (it was refunded before this ran), so the guard
-        // sums the other open work without it.
+        // The failed attempt's own bound is still open here (the recorder refunds it only after this runs), so the
+        // guard sums the other open work and this attempt's bound is excluded by id — which is what keeps the
+        // re-check honest without reordering the recorder's refund after the retry.
         var allowed = await budget.CheckAsync(bound, ct, failed.Id).ConfigureAwait(false);
         if (allowed.IsError)
         {
@@ -153,10 +160,9 @@ public sealed class RenderRetryPolicy(
 
         db.RenderJobs.Add(retry.Value);
 
-        // Counted here and only here: the instrument answers "how many retries were really queued", so a
-        // refused reservation or a spend cap that stopped the retry does not touch it.
-        metrics.CountRetry(code);
-
+        // render_retries_total is NOT counted here: the counter must answer "how many retries really committed",
+        // and this insert is inside the caller's transaction, which a commit conflict can still discard. The
+        // caller counts it after a successful commit, on the RenderFailureResult's RetryCreated (09.6.3-T1 F10).
         return retry.Value;
     }
 

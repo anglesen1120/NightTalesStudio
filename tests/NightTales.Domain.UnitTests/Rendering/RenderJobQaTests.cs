@@ -127,17 +127,48 @@ public sealed class RenderJobQaTests
     }
 
     [Fact]
-    public void Fail_OnAQueuedJob_IsInvalidState_AndLeavesNoErrorCode()
+    public void Fail_OnAQueuedJob_FailsItWithoutAnAdapterTask()
     {
+        // 09.6.3-T1 (WT55's aftermath): a submit that never adopted a task — no node, an unbuildable recipe, or a
+        // terminal adapter answer on the submit itself — fails its still-`queued` row so the reservation is
+        // refunded and the active-episode index is released. There is no adapter task and no submitted instant.
         var job = Create(1).Value;
 
-        var result = job.Fail("render_timeout", FixedNow);
+        var result = job.Fail("render_node_error", FixedNow);
 
-        result.IsError.ShouldBeTrue();
-        result.FirstError.Code.ShouldBe(RenderJob.InvalidStateCode);
-        job.Status.ShouldBe(RenderJobStatus.Queued);
-        job.ErrorCode.ShouldBeNull();
-        job.FinishedAt.ShouldBeNull();
+        result.IsError.ShouldBeFalse();
+        job.Status.ShouldBe(RenderJobStatus.Failed);
+        job.ErrorCode.ShouldBe("render_node_error");
+        job.ErrorMessage.ShouldBeNull();
+        job.FinishedAt.ShouldBe(FixedNow);
+        job.NextPollAt.ShouldBeNull();
+        job.AdapterTaskId.ShouldBeNull();
+        job.SubmittedAt.ShouldBeNull();
+    }
+
+    [Fact]
+    public void Fail_OnATerminalJob_IsInvalidState_AndLeavesTheFirstVerdict()
+    {
+        // One attempt records exactly one verdict: a failed, cancelled or succeeded row refuses a second Fail.
+        var failed = Create(1).Value;
+        failed.Fail("render_timeout", FixedNow).IsError.ShouldBeFalse();
+
+        var twice = failed.Fail("render_node_error", FixedNow + TimeSpan.FromMinutes(1));
+
+        twice.IsError.ShouldBeTrue();
+        twice.FirstError.Code.ShouldBe(RenderJob.InvalidStateCode);
+        failed.ErrorCode.ShouldBe("render_timeout");
+        failed.FinishedAt.ShouldBe(FixedNow);
+
+        var cancelled = Create(1).Value;
+        cancelled.Cancel(FixedNow).IsError.ShouldBeFalse();
+        cancelled.Fail("render_timeout", FixedNow).FirstError.Code.ShouldBe(RenderJob.InvalidStateCode);
+
+        var succeeded = Create(1).Value;
+        succeeded.MarkSubmitted("task-1", Guid.CreateVersion7(), FixedNow);
+        succeeded.MarkIngesting(FixedNow);
+        succeeded.Succeed(FixedNow);
+        succeeded.Fail("render_timeout", FixedNow).FirstError.Code.ShouldBe(RenderJob.InvalidStateCode);
     }
 
     [Theory]

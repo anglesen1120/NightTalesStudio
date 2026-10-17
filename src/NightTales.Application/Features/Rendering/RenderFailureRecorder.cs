@@ -26,6 +26,12 @@ namespace NightTales.Application.Features.Rendering;
 /// no retry follows, because a retry row means the episode is still <c>rendering</c>.
 /// </para>
 /// <para>
+/// <b>A cancel-requested row is never retried.</b> When the attempt carries <c>CancelRequestedAt</c> — the owner
+/// asked for the cancel and the adapter has not answered it yet — the verdict is final whatever the code is: the
+/// retry table is not consulted at all, so no second attempt is reserved and charged for an episode the owner
+/// cancelled (WT51, 09.6.3-T1 F3/SEC-4).
+/// </para>
+/// <para>
 /// <b>The refund never blocks the record.</b> The ledger call runs on its own 10-second budget (the
 /// <c>ProposeBibleUpdateHandler</c>/<c>GenerateFactSheetPipeline</c> precedent), so a shutdown or a slow ledger
 /// cannot skip the refund of a terminal attempt, and a failed refund is logged rather than thrown: the ledger is
@@ -89,8 +95,12 @@ public sealed partial class RenderFailureRecorder(
         // The retry decision, and the only place a retry row is created. A refusal (no active price version, a
         // spend cap, an insufficient balance) is not an error of this transition: it means the attempt is final
         // (03 D8/CR-4, WT50).
+        //
+        // A row the owner already asked to cancel is never retried (WT51): asking for a cancel ends the attempt
+        // whatever the adapter answers afterwards, so no second attempt is reserved for an episode the owner
+        // cancelled. ShouldRetry is not even asked.
         Guid? retryJobId = null;
-        if (retries.ShouldRetry(code, job.Attempt, outcomeRetryable))
+        if (job.CancelRequestedAt is null && retries.ShouldRetry(code, job.Attempt, outcomeRetryable))
         {
             var created = await retries.CreateRetryAsync(job, ct).ConfigureAwait(false);
             if (created.IsError)
@@ -139,7 +149,9 @@ public sealed partial class RenderFailureRecorder(
 
         LogFailed(job.Id, job.EpisodeId, code, job.Attempt, final, retryJobId);
 
-        return new RenderFailureResult(final, retryJobId);
+        // The caller counts the retry after it commits (RetryCreated), so a commit this row never reached cannot
+        // leave a counted retry behind (09.6.3-T1 F10).
+        return new RenderFailureResult(final, retryJobId, code, retryJobId is not null);
     }
 
     /// <inheritdoc />

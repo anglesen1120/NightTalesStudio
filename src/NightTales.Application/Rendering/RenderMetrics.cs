@@ -6,18 +6,20 @@ namespace NightTales.Application.Rendering;
 
 /// <summary>
 /// The render-pipeline instruments of 09.6.3-T1 (09 README BD12, 09.9.3 conventions): the retry counter this
-/// task adds, and the two render instruments <see cref="NightTalesMetrics"/> already owns.
+/// task adds, and the render-duration histogram of the poll path.
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>One meter.</b> <c>render_jobs_active</c> and <c>render_duration_seconds</c> are declared by
-/// <see cref="NightTalesMetrics"/>, so this class publishes them through it instead of creating a second
-/// instrument of the same name on a second meter — that would export every point twice. Only
-/// <c>render_retries_total</c> is new, and it is created on that same <see cref="NightTalesMetrics.Meter"/>.
+/// <b>One meter.</b> <c>render_duration_seconds</c> is declared by <see cref="NightTalesMetrics"/>, so this class
+/// publishes it through it instead of creating a second instrument of the same name on a second meter — that
+/// would export every point twice. Only <c>render_retries_total</c> is new, and it is created on that same
+/// <see cref="NightTalesMetrics.Meter"/>.
 /// </para>
 /// <para>
-/// The active-jobs gauge is event-driven: <see cref="SetActiveJobs"/> replaces the last published value, so a
-/// scrape never queries the database (BD12, Q1).
+/// <b>The <c>render_jobs_active</c> gauge is not here.</b> One writer owns it: the Worker's
+/// <c>RenderMetricsRefresher</c> publishes the platform-wide active count on its own timer through
+/// <see cref="NightTalesMetrics.ResetRenderJobsActive"/>. The poller used to publish a second, per-tick count of
+/// the same gauge with a different meaning; that second writer is gone (09.6.3-T1 P7).
 /// </para>
 /// </remarks>
 /// <param name="metrics">The host's single metrics instance.</param>
@@ -70,8 +72,4 @@ public sealed class RenderMetrics(NightTalesMetrics metrics)
 
         _retries.Add(1, new TagList { { CodeTag, code } });
     }
-
-    /// <summary>Publishes the last known count of render jobs that are queued, submitted, running or ingesting.</summary>
-    /// <param name="count">The count the Worker's poller read; the gauge reports it until the next publish.</param>
-    public void SetActiveJobs(int count) => metrics.ResetRenderJobsActive(count);
 }
