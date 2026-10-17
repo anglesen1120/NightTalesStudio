@@ -84,7 +84,8 @@ public sealed class PriceVersion : ICreatedAt
 
 /// <summary>
 /// The JSON codec of the <c>price_versions.limits</c> document (02 README D4/D14):
-/// <c>{"story": {"short": {"vi": {"min_tokens": 195, …, "writer": 2500, "review": 1200, "revision": 1500}, …}}}</c>.
+/// <c>{"story": {"short": {"vi": {"min_tokens": 195, …, "writer": 2500, "review": 1200, "revision": 1500}, …}},
+/// "bible_proposal": {"max_output_tokens": 1200}, "ideas": {"max_output_tokens": 1500}}</c>.
 /// Hand-written over <see cref="JsonNode"/> so the stored key names are the documented ones, not a
 /// serializer naming policy's idea of them; keys are written in enum order, so equal limits give equal bytes.
 /// </summary>
@@ -92,6 +93,9 @@ public static class PriceVersionJson
 {
     /// <summary>The reserved top-level key of the proposal step's limits block (02.6.3-T2).</summary>
     public const string BibleProposalKey = "bible_proposal";
+
+    /// <summary>The reserved top-level key of the idea-generation step's limits block (02.8.1-T1).</summary>
+    public const string IdeasKey = "ideas";
 
     /// <summary>Serializes the limits document.</summary>
     public static string WriteLimits(PriceLimits limits)
@@ -123,6 +127,7 @@ public static class PriceVersionJson
         {
             ["story"] = story,
             [BibleProposalKey] = new JsonObject { ["max_output_tokens"] = limits.BibleProposalMaxOutput },
+            [IdeasKey] = new JsonObject { ["max_output_tokens"] = limits.IdeasMaxOutput },
         }.ToJsonString();
     }
 
@@ -166,7 +171,16 @@ public static class PriceVersionJson
             ? Int(bibleProposal, "max_output_tokens")
             : PriceLimits.DefaultBibleProposalMaxOutput;
 
-        return new PriceLimits(result) { BibleProposalMaxOutput = maxOutput };
+        // 02.8.1-T1: the idea-generation step's cap, with the same historical-row rule.
+        var ideasMaxOutput = root[IdeasKey] is JsonObject ideas
+            ? Int(ideas, "max_output_tokens")
+            : PriceLimits.DefaultIdeasMaxOutput;
+
+        return new PriceLimits(result)
+        {
+            BibleProposalMaxOutput = maxOutput,
+            IdeasMaxOutput = ideasMaxOutput,
+        };
     }
 
     private static string Key<TEnum>(TEnum value)

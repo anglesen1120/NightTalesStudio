@@ -259,6 +259,12 @@ public static class WorkerServiceCollectionExtensions
         // `AddNightTalesApplication`), and the caps the handler takes are the `BibleProposalJobOptions` bound below.
         services.AddBibleProposalGeneration();
 
+        // 02.8.1-T1: the idea step of one autopilot slot (`IdeaPlanner`, plan §4 U1), which 02.8.3-T1's tick calls
+        // next to `MarkUsedAsync`. Worker-only like the proposal pipeline above, because its one paid call goes
+        // through `IIdeaGenerator`, composed with the OpenAI text adapter this root registers; the count, the
+        // ceiling and `IdeaLimits` come from `Autopilot:Ideas`, bound by persistence for both hosts.
+        services.AddIdeaGeneration();
+
         // `Bible:Proposal` is read by both halves of this feature: the handler reads the kill switch through
         // `IBibleProposalSwitch`, whose Worker implementation holds the `IOptionsMonitor` so the switch takes
         // effect without a restart, and the job takes the four batch caps. This root binds the Application

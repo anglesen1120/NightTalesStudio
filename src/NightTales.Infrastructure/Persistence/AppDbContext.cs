@@ -5,6 +5,7 @@ using NightTales.Application.Abstractions;
 using NightTales.Application.Abstractions.Persistence;
 using NightTales.Domain.Assets;
 using NightTales.Domain.Audit;
+using NightTales.Domain.Autopilot.Ideas;
 using NightTales.Domain.Catalog;
 using NightTales.Domain.Common;
 using NightTales.Domain.Communication;
@@ -83,6 +84,9 @@ public sealed class AppDbContext : IdentityDbContext<AppUser, AppRole, Guid>, IA
 
     /// <summary>The source candidates a find-sources run proposed for one episode (02.7.2-T2, table <c>source_candidates</c>); <c>IUserOwned</c>, so the D10 tenant filter applies.</summary>
     public DbSet<SourceCandidate> SourceCandidates => Set<SourceCandidate>();
+
+    /// <summary>The ideas an <c>ideas</c> run proposed for a series (02.8.1-T1, table <c>episode_ideas</c>); <c>IUserOwned</c>, so the D10 tenant filter applies.</summary>
+    public DbSet<EpisodeIdea> EpisodeIdeas => Set<EpisodeIdea>();
 
     /// <summary>
     /// The one bible row of a series (02.6.3-T1, table <c>series_bibles</c>): created with its series by

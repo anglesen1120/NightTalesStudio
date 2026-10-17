@@ -19,7 +19,7 @@ namespace NightTales.Api.IntegrationTests.Migrations;
 /// deferred 02 CR-29 fact-sheet foreign keys plus the sheet's own run key — all four composite
 /// <c>(column, user_id)</c> with the column-list <c>ON DELETE SET NULL</c> that keeps <c>user_id</c> — and
 /// PF-1's covering index for the newest run of an episode. 02.6.3-T1 appended a migration after this one, so
-/// this class no longer owns the last-migration check (<c>AddSourceCandidatesMigrationTests</c> does) and finds its
+/// this class no longer owns the last-migration check (<c>AddEpisodeIdeasMigrationTests</c> does) and finds its
 /// own migration by name everywhere.
 /// </summary>
 [Trait("Category", "Integration")]

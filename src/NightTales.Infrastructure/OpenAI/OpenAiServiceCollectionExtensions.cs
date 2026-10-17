@@ -12,8 +12,10 @@ using NightTales.Application.Abstractions.Moderation;
 using NightTales.Application.Abstractions.Research;
 using NightTales.Application.Abstractions.Text;
 using NightTales.Application.Abstractions.Usage;
+using NightTales.Application.Features.Autopilot.Ideas.Abstractions;
 using NightTales.Application.Features.SeriesBible.Abstractions;
 using NightTales.Application.Features.Stories.Writing;
+using NightTales.Infrastructure.Autopilot;
 using OpenAI;
 using OpenAI.Responses;
 using Polly;
@@ -80,6 +82,7 @@ public static class OpenAiServiceCollectionExtensions
 
         AddFactsExtractor(services);
         AddBibleProposalGenerator(services);
+        AddIdeaGenerator(services);
         AddContentModerator(services);
 
         return services;
@@ -95,6 +98,22 @@ public static class OpenAiServiceCollectionExtensions
     {
         services.TryAddSingleton<OpenAiBibleProposalMetrics>();
         services.TryAddSingleton<IBibleProposalGenerator, OpenAiBibleProposalGenerator>();
+    }
+
+    /// <summary>
+    /// 02.8.1-T1 (02 README D7/D21): the episode-idea generator over the same <see cref="ITextClient"/>, the
+    /// prompt catalog, the <c>Autopilot:Ideas</c> section and the step's bound. Owns the one instrument the step
+    /// raises and the bound that prices an absent usage report. The <c>Autopilot:Ideas</c> section itself and the
+    /// scoped readers are composed by <c>AddPersistence</c> (both hosts), so this method only adds the Worker-only
+    /// paid-call half.
+    /// </summary>
+    /// <param name="services">The service collection.</param>
+    private static void AddIdeaGenerator(IServiceCollection services)
+    {
+        services.TryAddSingleton<OpenAiIdeaMetrics>();
+        services.TryAddSingleton<IdeaCostEstimator>();
+        services.TryAddSingleton<IIdeaCostEstimator>(provider => provider.GetRequiredService<IdeaCostEstimator>());
+        services.TryAddSingleton<IIdeaGenerator, OpenAiIdeaGenerator>();
     }
 
     /// <summary>
