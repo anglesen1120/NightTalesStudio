@@ -41,6 +41,13 @@ export class ReviewPanelComponent {
     { key: 'length_fit', label: 'episodes.audit.score.length_fit' },
   ] as const;
 
+  protected addressLabel(address: SegmentAddress): { readonly key: string; readonly index: number | null } {
+    const parsed = address === 'meta' ? null : parseAddress(address);
+    return {
+      key: address === 'meta' ? 'episodes.annotations.meta' : `episodes.editor.segment.${parsed?.kind ?? 'paragraph'}`,
+      index: parsed?.kind === 'paragraph' && parsed.index !== null ? parsed.index + 1 : null,
+    };
+  }
   protected openSegment(address: SegmentAddress): void {
     if (address !== 'meta' && parseAddress(address) !== null) this.focusRequested.emit(address);
   }

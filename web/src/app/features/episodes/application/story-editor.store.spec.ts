@@ -399,6 +399,12 @@ describe('StoryEditorStore', () => {
     state.store.setSourcesExist(true);
     expect(state.store.similarityUnavailable()).toBe(false);
   });
+  it('similarityUnavailable_FalseForASnapshotWithoutAnAuditDocument', async () => {
+    const state = setup(storySnapshot({ similarityScore: null, auditReport: null }));
+    await state.store.load(EPISODE_ID);
+    state.store.setSourcesExist(true);
+    expect(state.store.similarityUnavailable()).toBe(false);
+  });
   it('similarityHighlights_FollowTheHintVerdict', async () => {
     const state = setup(storySnapshot({
       similarityScore: 0.4, qualityHints: [simHint(SIMILARITY_WARN_RULE)],

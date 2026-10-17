@@ -141,7 +141,8 @@ export class StoryEditorStore {
   /** Wired from the research store by the page (next wave): with no sources, no similarity UI is rendered at all. */
   private readonly sourcesExistState = signal(false);
   readonly sourcesExist = this.sourcesExistState.asReadonly();
-  readonly similarityUnavailable = computed(() => this.snapshot()?.similarityScore === null && this.sourcesExist());
+  /** A saved version (`StoryVersionDto`) carries neither an audit document nor a score: that is "not delivered", not "could not be checked". */
+  readonly similarityUnavailable = computed(() => this.snapshot()?.similarityScore === null && this.snapshot()?.auditReport !== null && this.sourcesExist());
   /** Advisory only (D9/D18): the client never blocks a save the server's validator would report. */
   readonly structureWarning = computed(() => {
     if (this.snapshot() === null) return false;

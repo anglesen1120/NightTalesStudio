@@ -82,8 +82,9 @@
               <li>
                 <p><strong>{{ (issue.severity === 'blocking' ? 'episodes.audit.blocking' : 'episodes.audit.advisory') | transloco }}</strong></p>
                 @if (issue.segment; as address) {
-                  @if (address !== 'meta') { <button type="button" (click)="openSegment(address)">{{ 'episodes.audit.openSegment' | transloco: { segment: address } }}</button> }
-                  @else { <p>{{ address }}</p> }
+                  @let label = addressLabel(address);
+                  @if (address !== 'meta') { <button type="button" (click)="openSegment(address)">{{ 'episodes.audit.openSegment' | transloco: { segment: label.index ?? (label.key | transloco) } }}</button> }
+                  @else { <p>{{ label.key | transloco }}</p> }
                 }
                 @if (issue.impact) { <p><strong>{{ 'episodes.audit.impact' | transloco }}:</strong> {{ issue.impact }}</p> }
                 <p><strong>{{ 'episodes.audit.evidence' | transloco }}:</strong> {{ issue.evidence }}</p>
