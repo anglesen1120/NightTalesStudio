@@ -83,6 +83,14 @@ export type { ApiV1EpisodesEpisodeIdSourcesSourceIdDelete$Params as ApiV1Episode
 export { apiV1EpisodesEpisodeIdSourcesSourceIdDelete as apiV1EpisodesEpisodeIdSourcesSourceIdDelete } from './fn/source-endpoints/api-v-1-episodes-episode-id-sources-source-id-delete';
 export type { ApiV1EpisodesEpisodeIdSourcesSourceIdRetryPost$Params as ApiV1EpisodesEpisodeIdSourcesSourceIdRetryPost$Params } from './fn/source-endpoints/api-v-1-episodes-episode-id-sources-source-id-retry-post';
 export { apiV1EpisodesEpisodeIdSourcesSourceIdRetryPost as apiV1EpisodesEpisodeIdSourcesSourceIdRetryPost } from './fn/source-endpoints/api-v-1-episodes-episode-id-sources-source-id-retry-post';
+export type { ApiV1EpisodesEpisodeIdSourcesFindPost$Params as ApiV1EpisodesEpisodeIdSourcesFindPost$Params } from './fn/source-finder-endpoints/api-v-1-episodes-episode-id-sources-find-post';
+export { apiV1EpisodesEpisodeIdSourcesFindPost as apiV1EpisodesEpisodeIdSourcesFindPost } from './fn/source-finder-endpoints/api-v-1-episodes-episode-id-sources-find-post';
+export type { ApiV1EpisodesEpisodeIdSourcesCandidatesGet$Params as ApiV1EpisodesEpisodeIdSourcesCandidatesGet$Params } from './fn/source-finder-endpoints/api-v-1-episodes-episode-id-sources-candidates-get';
+export { apiV1EpisodesEpisodeIdSourcesCandidatesGet as apiV1EpisodesEpisodeIdSourcesCandidatesGet } from './fn/source-finder-endpoints/api-v-1-episodes-episode-id-sources-candidates-get';
+export type { ApiV1EpisodesEpisodeIdSourcesCandidatesCandidateIdAddPost$Params as ApiV1EpisodesEpisodeIdSourcesCandidatesCandidateIdAddPost$Params } from './fn/source-finder-endpoints/api-v-1-episodes-episode-id-sources-candidates-candidate-id-add-post';
+export { apiV1EpisodesEpisodeIdSourcesCandidatesCandidateIdAddPost as apiV1EpisodesEpisodeIdSourcesCandidatesCandidateIdAddPost } from './fn/source-finder-endpoints/api-v-1-episodes-episode-id-sources-candidates-candidate-id-add-post';
+export type { ApiV1EpisodesEpisodeIdSourcesCandidatesCandidateIdDismissPost$Params as ApiV1EpisodesEpisodeIdSourcesCandidatesCandidateIdDismissPost$Params } from './fn/source-finder-endpoints/api-v-1-episodes-episode-id-sources-candidates-candidate-id-dismiss-post';
+export { apiV1EpisodesEpisodeIdSourcesCandidatesCandidateIdDismissPost as apiV1EpisodesEpisodeIdSourcesCandidatesCandidateIdDismissPost } from './fn/source-finder-endpoints/api-v-1-episodes-episode-id-sources-candidates-candidate-id-dismiss-post';
 export type { ApiV1SeriesIdBibleGet$Params as ApiV1SeriesIdBibleGet$Params } from './fn/series-bible/api-v-1-series-id-bible-get';
 export { apiV1SeriesIdBibleGet as apiV1SeriesIdBibleGet } from './fn/series-bible/api-v-1-series-id-bible-get';
 export type { ApiV1SeriesIdBiblePut$Params as ApiV1SeriesIdBiblePut$Params } from './fn/series-bible/api-v-1-series-id-bible-put';

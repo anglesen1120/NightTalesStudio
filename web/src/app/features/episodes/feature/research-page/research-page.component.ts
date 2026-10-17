@@ -7,14 +7,17 @@ import { AppErrorMapper, type Result } from '@core/errors';
 import { UnsavedWorkRegistry } from '@core/shell/unsaved-work';
 import { ConfirmDialog, ConflictDialog, EmptyState, ErrorState, LoadingState, PageHeader, RetryCountdown } from '@shared/ui';
 import { ResearchStore } from '../../application/research.store';
+import { SourceFinderStore } from '../../application/source-finder.store';
 import { EPISODE_GATE } from '../../application/episode-gate';
 import type { ResearchSource } from '../../domain/research.model';
 import { SourceAddFormComponent } from '../../ui/source-add-form/source-add-form.component';
 import { SourceRowComponent } from '../../ui/source-row/source-row.component';
 import { FactSheetPanelComponent } from '../../ui/fact-sheet-panel/fact-sheet-panel.component';
-@Component({ selector: 'nts-research-page', imports: [TranslocoPipe, RouterLink, PageHeader, LoadingState, ErrorState, EmptyState, RetryCountdown, SourceAddFormComponent, SourceRowComponent, FactSheetPanelComponent], providers: [ResearchStore, { provide: EPISODE_GATE, useFactory: () => inject(ResearchStore).gate }, provideTranslocoScope('episodes', 'errors')], templateUrl: './research-page.component.html', styleUrl: './research-page.component.scss', changeDetection: ChangeDetectionStrategy.OnPush, host: { '(window:beforeunload)': 'beforeUnload($event)' } })
+import { SourceFinderPanelComponent } from '../../ui/source-finder-panel/source-finder-panel.component';
+@Component({ selector: 'nts-research-page', imports: [TranslocoPipe, RouterLink, PageHeader, LoadingState, ErrorState, EmptyState, RetryCountdown, SourceAddFormComponent, SourceRowComponent, FactSheetPanelComponent, SourceFinderPanelComponent], providers: [ResearchStore, SourceFinderStore, { provide: EPISODE_GATE, useFactory: () => inject(ResearchStore).gate }, provideTranslocoScope('episodes', 'errors')], templateUrl: './research-page.component.html', styleUrl: './research-page.component.scss', changeDetection: ChangeDetectionStrategy.OnPush, host: { '(window:beforeunload)': 'beforeUnload($event)' } })
 export class ResearchPageComponent {
   readonly store = inject(ResearchStore);
+  readonly finder = inject(SourceFinderStore);
   private readonly route = inject(ActivatedRoute);
   private readonly params = toSignal(this.route.paramMap, { initialValue: this.route.snapshot.paramMap });
   readonly episodeId = computed(() => this.params().get('id') ?? this.route.parent?.snapshot.paramMap.get('id') ?? '');
@@ -33,6 +36,8 @@ export class ResearchPageComponent {
   readonly loadErrorKey = computed(() => { const error = this.store.error(); return error ? this.mapper.messageKey(error) : 'errors.unknown_error'; });
   readonly formErrorKey = computed(() => { const error = this.store.formError(); return error ? this.mapper.messageKey(error) : null; });
   readonly panelErrorKey = computed(() => { const error = this.store.panelError(); return error ? this.mapper.messageKey(error) : null; });
+  readonly finderErrorKey = computed(() => { const error = this.finder.error(); return error ? this.mapper.messageKey(error) : null; });
+  readonly finderRowErrorKeys = computed(() => new Map([...this.finder.rowErrors()].map(([id, error]) => [id, this.mapper.messageKey(error)])));
   readonly invalidFactIndexes = computed(() => {
     const error = this.store.panelError();
     if (error?.code !== 'fact_sheet_invalid_content') return [];
@@ -51,7 +56,7 @@ export class ResearchPageComponent {
   private shownConflict: object | null = null;
   private leavePrompt: Promise<boolean> | null = null;
   constructor() {
-    effect(() => { const id = this.episodeId(); if (id) untracked(() => { void this.store.load(id); this.store.watch(id); }); });
+    effect(() => { const id = this.episodeId(); if (id) untracked(() => { void this.store.load(id); this.store.watch(id); this.finder.watch(id); }); });
     effect(() => {
       const conflict = this.store.conflict();
       if (!conflict || conflict === this.shownConflict || this.store.savingFactSheet() || this.store.approvingFactSheet()) return;
@@ -112,4 +117,7 @@ export class ResearchPageComponent {
     if (outcome === 'saveAsNew' && source === 'save') await this.store.saveMineAsNewVersion(id);
   }
   run(action: 'generate' | 'save' | 'approve' | 'refresh'): void { if (action !== 'refresh' && this.retryBlocked()) return; const promise: Promise<Result<void>> = this.store[action](this.episodeId()); void promise; }
+  clearFinderRowRetry(): void {
+    for (const [id, error] of this.finder.rowErrors()) if (error.code === 'source_fetch_limit_reached') this.finder.clearRowError(id);
+  }
 }
