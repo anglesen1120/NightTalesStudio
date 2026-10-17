@@ -2,8 +2,13 @@ import { signal } from '@angular/core';
 import { DeferBlockBehavior, DeferBlockState, TestBed } from '@angular/core/testing';
 import { ActivatedRoute, convertToParamMap, provideRouter } from '@angular/router';
 import { of } from 'rxjs';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { AppError } from '@core/errors';
+import { SessionStore } from '@core/session';
+import { RealtimeService } from '@core/realtime';
+import { SourceFinderStore } from '../../application/source-finder.store';
+import { SourceFinderRepository } from '../../domain/source-finder.repository';
+import { FakeSourceFinderRepository } from '../../testing/fake-source-finder.repository';
 import { ConflictDialog, type ConflictDialogData } from '@shared/ui';
 import { EPISODE_GATE } from '../../application/episode-gate';
 import { ZONELESS_TEST_PROVIDERS } from '../../../../testing/providers';
@@ -22,18 +27,33 @@ class FakeResearchStore {
   clearFormError(){this.formError.set(null);this.formRateLimitSeconds.set(null);} clearFormRateLimit(){this.formError.set(null);this.formRateLimitSeconds.set(null);} clearPanelError(){this.panelError.set(null);this.rateLimitSeconds.set(null);} reset(){this.dirty.set(false);this.draft.set([]);this.factSheet.set(null);}
 }
 afterEach(() => TestBed.resetTestingModule());
-async function setup(lang:'vi'|'en'='en', store=new FakeResearchStore()) {
+async function setup(lang:'vi'|'en'='en', store=new FakeResearchStore(), features?: readonly string[]) {
   const params=convertToParamMap({id:'episode-a'});
   const dialogs:ConflictDialogData[]=[];
-  await TestBed.configureTestingModule({imports:[ResearchPageComponent,researchTranslations(lang)],providers:[...ZONELESS_TEST_PROVIDERS,provideRouter([]),{provide:ConflictDialog,useValue:{open:(data:ConflictDialogData)=>{dialogs.push(data);return {afterClosed:()=>of('cancel' as const)};}}},{provide:ActivatedRoute,useValue:{paramMap:of(params),snapshot:{paramMap:params},parent:null}}],deferBlockBehavior:DeferBlockBehavior.Manual})
-    .overrideComponent(ResearchPageComponent,{set:{providers:[{provide:ResearchStore,useValue:store},{provide:EPISODE_GATE,useValue:store.gate}]}}).compileComponents();
+  const finderRepo = new FakeSourceFinderRepository();
+  const finderCalls = { find: vi.spyOn(finderRepo, 'find'), candidates: vi.spyOn(finderRepo, 'candidates'), add: vi.spyOn(finderRepo, 'add'), dismiss: vi.spyOn(finderRepo, 'dismiss') };
+  const session = { generation: signal(0), hasFeature: (key: string) => features?.includes(key) ?? false };
+  await TestBed.configureTestingModule({imports:[ResearchPageComponent,researchTranslations(lang)],providers:[...ZONELESS_TEST_PROVIDERS,provideRouter([]),{provide:SessionStore,useValue:session},{provide:RealtimeService,useValue:{subscribeEpisode:()=>({unsubscribe:()=>undefined})}},{provide:SourceFinderRepository,useValue:finderRepo},{provide:ConflictDialog,useValue:{open:(data:ConflictDialogData)=>{dialogs.push(data);return {afterClosed:()=>of('cancel' as const)};}}},{provide:ActivatedRoute,useValue:{paramMap:of(params),snapshot:{paramMap:params},parent:null}}],deferBlockBehavior:DeferBlockBehavior.Manual})
+    .overrideComponent(ResearchPageComponent,{set:{providers:[{provide:ResearchStore,useValue:store},SourceFinderStore,{provide:EPISODE_GATE,useValue:store.gate}]}}).compileComponents();
   const fixture=TestBed.createComponent(ResearchPageComponent);
   await fixture.whenStable();
   for (const block of await fixture.getDeferBlocks()) await block.render(DeferBlockState.Complete);
   await fixture.whenStable();
-  return {fixture,store,dialogs,component:fixture.componentInstance,root:fixture.nativeElement as HTMLElement};
+  return {fixture,store,dialogs,finderRepo,finderCalls,component:fixture.componentInstance,root:fixture.nativeElement as HTMLElement};
 }
 describe('ResearchPageComponent',()=>{
+  it.each([{label:'off',features:[]},{label:'missing',features:undefined}])('has no finder DOM or repository traffic when features are $label',async ({features})=>{
+    const {root,finderCalls}=await setup('en',new FakeResearchStore(),features);
+    expect(root.querySelector('nts-source-finder-panel')).toBeNull();
+    for (const call of Object.values(finderCalls)) expect(call).not.toHaveBeenCalled();
+  });
+  it('mounts the finder between sources and fact sheet only with the flag on',async()=>{
+    const {root,finderCalls}=await setup('en',new FakeResearchStore(),['source_finder']);
+    const panel=root.querySelector('nts-source-finder-panel')!;
+    expect(panel).not.toBeNull();expect(finderCalls.candidates).toHaveBeenCalledTimes(1);expect(finderCalls.find).not.toHaveBeenCalled();
+    expect(root.querySelector('.source-section')!.compareDocumentPosition(panel) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(panel.compareDocumentPosition(root.querySelector('.fact-sheet-slot')!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
   it.each(['vi','en'] as const)('loads and watches once and announces the closed gate in %s',async lang=>{
     const {store,root}=await setup(lang);expect(store.loads).toEqual(['episode-a']);expect(store.watches).toEqual(['episode-a']);
     expect(root.querySelector('.gate[role=status]')?.textContent).toContain(researchCopies[lang].research.gate.writeStoryBlocked);

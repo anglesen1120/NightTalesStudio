@@ -32,7 +32,7 @@
   "series_topic_locked": "The topic cannot be changed while autopilot is on.",
   "story_generation_in_progress": "A story is already being written for this episode.",
   "fact_sheet_generation_in_progress": "A fact sheet is already being prepared for this episode.",
-  "find_sources_in_progress": "Sources are already being searched for this episode.",
+  "find_sources_in_progress": "A source search is already running for this episode.",
   "fact_sheet_required": "Approve a fact sheet first.",
   "story_sources_required": "To approve, add at least two fetched link sources and cite each one in at least one fact.",
   "story_fact_sheet_outdated": "The story does not match the latest approved fact sheet. Regenerate or edit it.",
