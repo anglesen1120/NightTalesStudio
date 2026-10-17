@@ -13,7 +13,18 @@
         @for (source of store.sources(); track source.id) { <li><nts-source-row [source]="source" [busy]="rowPending().has(source.id)" [retryBlocked]="retryBlocked()" [duplicate]="duplicateSource() === source.id" (retrySource)="sourceAction(source, 'retry')" (removeSource)="sourceAction(source, 'remove')" /></li> }
       </ul>
       @if (store.sources().length === 0) { <nts-empty-state titleKey="episodes.research.sources.empty" /> }
+      @if (finder.visible() && finder.running()) { <p>{{ 'episodes.sources.find.running' | transloco }}</p> }
     </section>
+    @if (finder.visible()) {
+      <nts-source-finder-panel
+        [candidates]="finder.candidates()" [running]="finder.running()" [failedRun]="finder.failedRun()"
+        [finding]="finder.finding()" [loading]="finder.loading()" [canFind]="finder.canFind()" [busyId]="finder.busyId()"
+        [completed]="store.generation()?.kind === 'find_sources' && store.generation()?.status === 'succeeded'"
+        [errorKey]="finderErrorKey()" [retryAfterSec]="finder.retryAfterSec()" [rowErrorKeys]="finderRowErrorKeys()"
+        [rowRetryAfterSec]="finder.rowRetryAfterSec()" [sourceLimitReached]="store.usedCount() >= store.maxCount()"
+        (find)="finder.find(episodeId(), $event ?? undefined)" (add)="finder.add(episodeId(), $event)" (dismiss)="finder.dismiss(episodeId(), $event)"
+        (retryElapsed)="finder.clearRetry()" (rowRetryElapsed)="clearFinderRowRetry()" (clearError)="finder.clearError()" />
+    }
     @if (store.loaded() && store.isTrueCrime()) {
       <div class="gate" role="status" [class.gate--open]="store.gate() === 'open'">
         <span aria-hidden="true">{{ store.gate() === 'open' ? '✓' : '!' }}</span>

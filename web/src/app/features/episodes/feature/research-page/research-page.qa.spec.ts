@@ -4,6 +4,10 @@ import { ActivatedRoute, convertToParamMap, provideRouter } from '@angular/route
 import { of } from 'rxjs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { AppError } from '@core/errors';
+import { SessionStore } from '@core/session';
+import { RealtimeService } from '@core/realtime';
+import { SourceFinderRepository } from '../../domain/source-finder.repository';
+import { FakeSourceFinderRepository } from '../../testing/fake-source-finder.repository';
 import { ConfirmDialog } from '@shared/ui';
 import { ZONELESS_TEST_PROVIDERS } from '../../../../testing/providers';
 import { ResearchStore } from '../../application/research.store';
@@ -87,6 +91,9 @@ async function setup(store: FakeResearchStore, dialog = confirmStub(true)) {
     providers: [
       ...ZONELESS_TEST_PROVIDERS,
       provideRouter([]),
+      { provide: SessionStore, useValue: { generation: signal(0), hasFeature: () => false } },
+      { provide: RealtimeService, useValue: { subscribeEpisode: () => ({ unsubscribe: () => undefined }) } },
+      { provide: SourceFinderRepository, useClass: FakeSourceFinderRepository },
       { provide: ConfirmDialog, useValue: dialog },
       { provide: ActivatedRoute, useValue: { paramMap: of(params), snapshot: { paramMap: params }, parent: null } },
     ],
