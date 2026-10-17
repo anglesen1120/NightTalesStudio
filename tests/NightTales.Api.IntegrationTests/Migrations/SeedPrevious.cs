@@ -363,6 +363,22 @@ internal static class SeedPrevious
                     'https://example.com/seed', 'https://example.com/seed', 'example.com', 'Seed candidate',
                     'Example', 1, 'added', '01920000-0000-7000-8000-000000000012', now(), now())
             """),
+        (
+            // 02.8.1-T1: the table the `_02_AddEpisodeIdeas` migration creates. Same rule as above: skipped
+            // while the previous schema lacks it, so the row lands only on a schema that has the table. It is
+            // a `proposed` idea of the seed series whose run is the seed run, and its `structure` is the flat
+            // document the canonical `IdeaJson` writes, so both same-owner keys and the jsonb NOT NULL column
+            // see real values.
+            "episode_ideas",
+            """
+            INSERT INTO episode_ideas (id, user_id, series_id, generation_run_id, title, logline, hook, setting,
+                                       structure, status, created_at, updated_at)
+            VALUES ('01920000-0000-7000-8000-00000000001a', '01920000-0000-7000-8000-000000000001',
+                    '01920000-0000-7000-8000-000000000002', '01920000-0000-7000-8000-00000000000f',
+                    'Seed idea', 'Seed logline', 'Seed hook', 'Seed setting',
+                    '{"sub_genre":"x","setting":"x","opening":"x","twist_type":"x","narrator_mode":"x","beats":["a","b","c"],"beat_signature":"a>b>c"}'::jsonb,
+                    'proposed', now(), now())
+            """),
     ];
 
     /// <summary>The tables the dataset covers, in insert order — the contract a feature migration extends.</summary>

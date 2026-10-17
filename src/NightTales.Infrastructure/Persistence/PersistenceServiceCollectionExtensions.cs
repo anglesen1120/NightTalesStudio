@@ -30,6 +30,7 @@ using NightTales.Infrastructure.Persistence.Seeding;
 using NightTales.Infrastructure.Persistence.UnitOfWork;
 using NightTales.Infrastructure.Realtime;
 using NightTales.Infrastructure.Bible;
+using NightTales.Infrastructure.Autopilot;
 using NightTales.Infrastructure.Time;
 
 namespace NightTales.Infrastructure.Persistence;
@@ -103,6 +104,11 @@ public static class PersistenceServiceCollectionExtensions
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IValidateOptions<BibleOptions>, BibleOptionsValidator>());
         services.TryAddSingleton(provider => provider.GetRequiredService<IOptions<BibleOptions>>().Value.Limits);
         services.TryAddScoped<IBibleSnapshotProvider, NightTales.Infrastructure.Bible.BibleSnapshotProvider>();
+
+        // 02.8.1-T1: the `Autopilot:Ideas` section, the Domain limits record and the scoped idea context/history
+        // readers. Both hosts compose persistence, so the same boot validation and the same tenant-filtered readers
+        // reach the Worker (which makes the paid call) and the Api/test harness (which never dispatches it).
+        services.AddAutopilotIdeas();
 
         // The default actor is anonymous, so a host that registers none sees no user-owned row — deny
         // by default (09 README D10). The Api replaces it with HttpCurrentUser and the Worker with
