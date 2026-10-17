@@ -339,9 +339,13 @@ Rules for any change that runs at start-up:
   bounds on start (including finite thresholds and `BlockAbove > WarnAbove`). Omitted `N:vi` / `N:en` keys keep
   the Domain defaults (vi 10 / en 8), and extra language keys bind normally. The missing-language warning
   (EventId 2600) covers programmatically built settings without those keys; scoring then falls back to the English N.
+  Both appsettings files set the values calibrated by 02.5.6-T2 (2026-10-17): `N` vi 14 / en 14, `WarnAbove` 0.02,
+  `BlockAbove` 0.97, `Perf:BudgetMs` 152. Configuration wins at run time; the Domain defaults (n 10 / 8, 0.05, 0.15, 500) are only the
+  fallback for a missing key. `Calibration_ConfigMatchesReport` keeps both files equal to the committed
+  `similarity-calibration-report.json`; re-run the calibration (task 02.5.6-T2 Delivery notes) when a trigger in the report's `rerunTriggers` fires.
   The fact-sheet keys of 02.5.3-T2 continue the same list: both appsettings files carry
   `Similarity:FactOverlapBlock` (the threshold above which a fact whose statement matches the text of the
-  sources it cites is dropped as a verbatim copy; it repeats the Domain default, so it is optional), and the
+  sources it cites is dropped as a verbatim copy; the live fact key, read through `SimilaritySettings` by `GenerateFactSheetPipeline`, set to the calibrated 0.05 in both files — the Domain default stays 0.15), and the
   Worker binds `FactSheet:Job:TimeoutSeconds` (the per-run deadline of `GenerateFactSheetJob`, optional with an
   in-code default, bounded 150–360 — the ceiling is the story stale-run sweeper window (`Story:Job:TimeoutSeconds` + grace), the floor is the free D12 moderation call plus the two adapter timeouts
   one run can need) as well as the `Facts:*` section (`Facts:MaxSources`, `Facts:PerSourceCharCap`,

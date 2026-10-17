@@ -1,0 +1,993 @@
+{
+  "generatedAt": "2026-10-17",
+  "sampleCount": 80,
+  "grid": [
+    6,
+    8,
+    10,
+    12,
+    14
+  ],
+  "cells": [
+    {
+      "class": "original",
+      "language": "vi",
+      "n": 6,
+      "mean": 0,
+      "p50": 0,
+      "min": 0,
+      "max": 0
+    },
+    {
+      "class": "original",
+      "language": "vi",
+      "n": 8,
+      "mean": 0,
+      "p50": 0,
+      "min": 0,
+      "max": 0
+    },
+    {
+      "class": "original",
+      "language": "vi",
+      "n": 10,
+      "mean": 0,
+      "p50": 0,
+      "min": 0,
+      "max": 0
+    },
+    {
+      "class": "original",
+      "language": "vi",
+      "n": 12,
+      "mean": 0,
+      "p50": 0,
+      "min": 0,
+      "max": 0
+    },
+    {
+      "class": "original",
+      "language": "vi",
+      "n": 14,
+      "mean": 0,
+      "p50": 0,
+      "min": 0,
+      "max": 0
+    },
+    {
+      "class": "shared_collocation",
+      "language": "vi",
+      "n": 6,
+      "mean": 0.023967,
+      "p50": 0.019473,
+      "min": 0.017766,
+      "max": 0.030817
+    },
+    {
+      "class": "shared_collocation",
+      "language": "vi",
+      "n": 8,
+      "mean": 0.011446,
+      "p50": 0.010804,
+      "min": 0.009383,
+      "max": 0.014085
+    },
+    {
+      "class": "shared_collocation",
+      "language": "vi",
+      "n": 10,
+      "mean": 0.004565,
+      "p50": 0.004261,
+      "min": 0.003527,
+      "max": 0.005427
+    },
+    {
+      "class": "shared_collocation",
+      "language": "vi",
+      "n": 12,
+      "mean": 0.001071,
+      "p50": 0.001328,
+      "min": 0,
+      "max": 0.001511
+    },
+    {
+      "class": "shared_collocation",
+      "language": "vi",
+      "n": 14,
+      "mean": 0,
+      "p50": 0,
+      "min": 0,
+      "max": 0
+    },
+    {
+      "class": "light_paraphrase",
+      "language": "vi",
+      "n": 6,
+      "mean": 0.158896,
+      "p50": 0.163265,
+      "min": 0.115385,
+      "max": 0.18107
+    },
+    {
+      "class": "light_paraphrase",
+      "language": "vi",
+      "n": 8,
+      "mean": 0.073855,
+      "p50": 0.072727,
+      "min": 0.04878,
+      "max": 0.1
+    },
+    {
+      "class": "light_paraphrase",
+      "language": "vi",
+      "n": 10,
+      "mean": 0.021717,
+      "p50": 0.022989,
+      "min": 0.008621,
+      "max": 0.03211
+    },
+    {
+      "class": "light_paraphrase",
+      "language": "vi",
+      "n": 12,
+      "mean": 0.001214,
+      "p50": 0,
+      "min": 0,
+      "max": 0.004854
+    },
+    {
+      "class": "light_paraphrase",
+      "language": "vi",
+      "n": 14,
+      "mean": 0,
+      "p50": 0,
+      "min": 0,
+      "max": 0
+    },
+    {
+      "class": "heavy_paraphrase",
+      "language": "vi",
+      "n": 6,
+      "mean": 0.056045,
+      "p50": 0.055046,
+      "min": 0.036145,
+      "max": 0.069498
+    },
+    {
+      "class": "heavy_paraphrase",
+      "language": "vi",
+      "n": 8,
+      "mean": 0.020622,
+      "p50": 0.016878,
+      "min": 0.012766,
+      "max": 0.028571
+    },
+    {
+      "class": "heavy_paraphrase",
+      "language": "vi",
+      "n": 10,
+      "mean": 0.006955,
+      "p50": 0.004525,
+      "min": 0,
+      "max": 0.012987
+    },
+    {
+      "class": "heavy_paraphrase",
+      "language": "vi",
+      "n": 12,
+      "mean": 0,
+      "p50": 0,
+      "min": 0,
+      "max": 0
+    },
+    {
+      "class": "heavy_paraphrase",
+      "language": "vi",
+      "n": 14,
+      "mean": 0,
+      "p50": 0,
+      "min": 0,
+      "max": 0
+    },
+    {
+      "class": "quoted_passage",
+      "language": "vi",
+      "n": 6,
+      "mean": 0.013864,
+      "p50": 0.010554,
+      "min": 0.008084,
+      "max": 0.019802
+    },
+    {
+      "class": "quoted_passage",
+      "language": "vi",
+      "n": 8,
+      "mean": 0.012318,
+      "p50": 0.009141,
+      "min": 0.006689,
+      "max": 0.0181
+    },
+    {
+      "class": "quoted_passage",
+      "language": "vi",
+      "n": 10,
+      "mean": 0.010591,
+      "p50": 0.007605,
+      "min": 0.00519,
+      "max": 0.016155
+    },
+    {
+      "class": "quoted_passage",
+      "language": "vi",
+      "n": 12,
+      "mean": 0.00866,
+      "p50": 0.005941,
+      "min": 0.003584,
+      "max": 0.013913
+    },
+    {
+      "class": "quoted_passage",
+      "language": "vi",
+      "n": 14,
+      "mean": 0.006481,
+      "p50": 0.004132,
+      "min": 0.001859,
+      "max": 0.011299
+    },
+    {
+      "class": "verbatim_paragraph",
+      "language": "vi",
+      "n": 6,
+      "mean": 0.088345,
+      "p50": 0.083535,
+      "min": 0.056946,
+      "max": 0.117128
+    },
+    {
+      "class": "verbatim_paragraph",
+      "language": "vi",
+      "n": 8,
+      "mean": 0.090431,
+      "p50": 0.085568,
+      "min": 0.057296,
+      "max": 0.12069
+    },
+    {
+      "class": "verbatim_paragraph",
+      "language": "vi",
+      "n": 10,
+      "mean": 0.092691,
+      "p50": 0.087719,
+      "min": 0.057567,
+      "max": 0.12465
+    },
+    {
+      "class": "verbatim_paragraph",
+      "language": "vi",
+      "n": 12,
+      "mean": 0.095217,
+      "p50": 0.090129,
+      "min": 0.057859,
+      "max": 0.12908
+    },
+    {
+      "class": "verbatim_paragraph",
+      "language": "vi",
+      "n": 14,
+      "mean": 0.098058,
+      "p50": 0.092846,
+      "min": 0.058175,
+      "max": 0.134069
+    },
+    {
+      "class": "verbatim_full",
+      "language": "vi",
+      "n": 6,
+      "mean": 0.989603,
+      "p50": 0.982507,
+      "min": 0.975904,
+      "max": 1
+    },
+    {
+      "class": "verbatim_full",
+      "language": "vi",
+      "n": 8,
+      "mean": 0.98992,
+      "p50": 0.981763,
+      "min": 0.977918,
+      "max": 1
+    },
+    {
+      "class": "verbatim_full",
+      "language": "vi",
+      "n": 10,
+      "mean": 0.989463,
+      "p50": 0.980952,
+      "min": 0.976898,
+      "max": 1
+    },
+    {
+      "class": "verbatim_full",
+      "language": "vi",
+      "n": 12,
+      "mean": 0.988961,
+      "p50": 0.980066,
+      "min": 0.975779,
+      "max": 1
+    },
+    {
+      "class": "verbatim_full",
+      "language": "vi",
+      "n": 14,
+      "mean": 0.988446,
+      "p50": 0.979239,
+      "min": 0.974545,
+      "max": 1
+    },
+    {
+      "class": "translated_copy",
+      "language": "vi",
+      "n": 6,
+      "mean": 0,
+      "p50": 0,
+      "min": 0,
+      "max": 0
+    },
+    {
+      "class": "translated_copy",
+      "language": "vi",
+      "n": 8,
+      "mean": 0,
+      "p50": 0,
+      "min": 0,
+      "max": 0
+    },
+    {
+      "class": "translated_copy",
+      "language": "vi",
+      "n": 10,
+      "mean": 0,
+      "p50": 0,
+      "min": 0,
+      "max": 0
+    },
+    {
+      "class": "translated_copy",
+      "language": "vi",
+      "n": 12,
+      "mean": 0,
+      "p50": 0,
+      "min": 0,
+      "max": 0
+    },
+    {
+      "class": "translated_copy",
+      "language": "vi",
+      "n": 14,
+      "mean": 0,
+      "p50": 0,
+      "min": 0,
+      "max": 0
+    },
+    {
+      "class": "fact_copied",
+      "language": "vi",
+      "n": 6,
+      "mean": 0.98212,
+      "p50": 0.965517,
+      "min": 0.962963,
+      "max": 1
+    },
+    {
+      "class": "fact_copied",
+      "language": "vi",
+      "n": 8,
+      "mean": 0.980741,
+      "p50": 0.962963,
+      "min": 0.96,
+      "max": 1
+    },
+    {
+      "class": "fact_copied",
+      "language": "vi",
+      "n": 10,
+      "mean": 0.979131,
+      "p50": 0.96,
+      "min": 0.956522,
+      "max": 1
+    },
+    {
+      "class": "fact_copied",
+      "language": "vi",
+      "n": 12,
+      "mean": 0.977226,
+      "p50": 0.956522,
+      "min": 0.952381,
+      "max": 1
+    },
+    {
+      "class": "fact_copied",
+      "language": "vi",
+      "n": 14,
+      "mean": 0.974937,
+      "p50": 0.952381,
+      "min": 0.947368,
+      "max": 1
+    },
+    {
+      "class": "fact_paraphrased",
+      "language": "vi",
+      "n": 6,
+      "mean": 0,
+      "p50": 0,
+      "min": 0,
+      "max": 0
+    },
+    {
+      "class": "fact_paraphrased",
+      "language": "vi",
+      "n": 8,
+      "mean": 0,
+      "p50": 0,
+      "min": 0,
+      "max": 0
+    },
+    {
+      "class": "fact_paraphrased",
+      "language": "vi",
+      "n": 10,
+      "mean": 0,
+      "p50": 0,
+      "min": 0,
+      "max": 0
+    },
+    {
+      "class": "fact_paraphrased",
+      "language": "vi",
+      "n": 12,
+      "mean": 0,
+      "p50": 0,
+      "min": 0,
+      "max": 0
+    },
+    {
+      "class": "fact_paraphrased",
+      "language": "vi",
+      "n": 14,
+      "mean": 0,
+      "p50": 0,
+      "min": 0,
+      "max": 0
+    },
+    {
+      "class": "original",
+      "language": "en",
+      "n": 6,
+      "mean": 0,
+      "p50": 0,
+      "min": 0,
+      "max": 0
+    },
+    {
+      "class": "original",
+      "language": "en",
+      "n": 8,
+      "mean": 0,
+      "p50": 0,
+      "min": 0,
+      "max": 0
+    },
+    {
+      "class": "original",
+      "language": "en",
+      "n": 10,
+      "mean": 0,
+      "p50": 0,
+      "min": 0,
+      "max": 0
+    },
+    {
+      "class": "original",
+      "language": "en",
+      "n": 12,
+      "mean": 0,
+      "p50": 0,
+      "min": 0,
+      "max": 0
+    },
+    {
+      "class": "original",
+      "language": "en",
+      "n": 14,
+      "mean": 0,
+      "p50": 0,
+      "min": 0,
+      "max": 0
+    },
+    {
+      "class": "shared_collocation",
+      "language": "en",
+      "n": 6,
+      "mean": 0.046475,
+      "p50": 0.037879,
+      "min": 0.026506,
+      "max": 0.069544
+    },
+    {
+      "class": "shared_collocation",
+      "language": "en",
+      "n": 8,
+      "mean": 0.018608,
+      "p50": 0.01269,
+      "min": 0.012579,
+      "max": 0.025097
+    },
+    {
+      "class": "shared_collocation",
+      "language": "en",
+      "n": 10,
+      "mean": 0.004979,
+      "p50": 0.004184,
+      "min": 0.002681,
+      "max": 0.007026
+    },
+    {
+      "class": "shared_collocation",
+      "language": "en",
+      "n": 12,
+      "mean": 0.000663,
+      "p50": 0,
+      "min": 0,
+      "max": 0.002653
+    },
+    {
+      "class": "shared_collocation",
+      "language": "en",
+      "n": 14,
+      "mean": 0,
+      "p50": 0,
+      "min": 0,
+      "max": 0
+    },
+    {
+      "class": "light_paraphrase",
+      "language": "en",
+      "n": 6,
+      "mean": 0.147303,
+      "p50": 0.124424,
+      "min": 0.110638,
+      "max": 0.181373
+    },
+    {
+      "class": "light_paraphrase",
+      "language": "en",
+      "n": 8,
+      "mean": 0.070275,
+      "p50": 0.054299,
+      "min": 0.04878,
+      "max": 0.09375
+    },
+    {
+      "class": "light_paraphrase",
+      "language": "en",
+      "n": 10,
+      "mean": 0.024487,
+      "p50": 0.022222,
+      "min": 0.015544,
+      "max": 0.036145
+    },
+    {
+      "class": "light_paraphrase",
+      "language": "en",
+      "n": 12,
+      "mean": 0.004493,
+      "p50": 0.005525,
+      "min": 0,
+      "max": 0.006494
+    },
+    {
+      "class": "light_paraphrase",
+      "language": "en",
+      "n": 14,
+      "mean": 0,
+      "p50": 0,
+      "min": 0,
+      "max": 0
+    },
+    {
+      "class": "heavy_paraphrase",
+      "language": "en",
+      "n": 6,
+      "mean": 0.026532,
+      "p50": 0.021739,
+      "min": 0.019324,
+      "max": 0.033816
+    },
+    {
+      "class": "heavy_paraphrase",
+      "language": "en",
+      "n": 8,
+      "mean": 0.003866,
+      "p50": 0,
+      "min": 0,
+      "max": 0.015464
+    },
+    {
+      "class": "heavy_paraphrase",
+      "language": "en",
+      "n": 10,
+      "mean": 0.001374,
+      "p50": 0,
+      "min": 0,
+      "max": 0.005495
+    },
+    {
+      "class": "heavy_paraphrase",
+      "language": "en",
+      "n": 12,
+      "mean": 0,
+      "p50": 0,
+      "min": 0,
+      "max": 0
+    },
+    {
+      "class": "heavy_paraphrase",
+      "language": "en",
+      "n": 14,
+      "mean": 0,
+      "p50": 0,
+      "min": 0,
+      "max": 0
+    },
+    {
+      "class": "quoted_passage",
+      "language": "en",
+      "n": 6,
+      "mean": 0.013395,
+      "p50": 0.012963,
+      "min": 0.008783,
+      "max": 0.016949
+    },
+    {
+      "class": "quoted_passage",
+      "language": "en",
+      "n": 8,
+      "mean": 0.01108,
+      "p50": 0.01004,
+      "min": 0.006676,
+      "max": 0.014652
+    },
+    {
+      "class": "quoted_passage",
+      "language": "en",
+      "n": 10,
+      "mean": 0.008391,
+      "p50": 0.006579,
+      "min": 0.00428,
+      "max": 0.011952
+    },
+    {
+      "class": "quoted_passage",
+      "language": "en",
+      "n": 12,
+      "mean": 0.005229,
+      "p50": 0.002415,
+      "min": 0.001531,
+      "max": 0.008734
+    },
+    {
+      "class": "quoted_passage",
+      "language": "en",
+      "n": 14,
+      "mean": 0.00254,
+      "p50": 0,
+      "min": 0,
+      "max": 0.005329
+    },
+    {
+      "class": "verbatim_paragraph",
+      "language": "en",
+      "n": 6,
+      "mean": 0.083915,
+      "p50": 0.080946,
+      "min": 0.079764,
+      "max": 0.092426
+    },
+    {
+      "class": "verbatim_paragraph",
+      "language": "en",
+      "n": 8,
+      "mean": 0.086404,
+      "p50": 0.082786,
+      "min": 0.082409,
+      "max": 0.096022
+    },
+    {
+      "class": "verbatim_paragraph",
+      "language": "en",
+      "n": 10,
+      "mean": 0.089236,
+      "p50": 0.08547,
+      "min": 0.08484,
+      "max": 0.100147
+    },
+    {
+      "class": "verbatim_paragraph",
+      "language": "en",
+      "n": 12,
+      "mean": 0.092489,
+      "p50": 0.088825,
+      "min": 0.087149,
+      "max": 0.104928
+    },
+    {
+      "class": "verbatim_paragraph",
+      "language": "en",
+      "n": 14,
+      "mean": 0.096267,
+      "p50": 0.091463,
+      "min": 0.089764,
+      "max": 0.110535
+    },
+    {
+      "class": "verbatim_full",
+      "language": "en",
+      "n": 6,
+      "mean": 0.991051,
+      "p50": 0.982517,
+      "min": 0.981685,
+      "max": 1
+    },
+    {
+      "class": "verbatim_full",
+      "language": "en",
+      "n": 8,
+      "mean": 0.990649,
+      "p50": 0.981752,
+      "min": 0.980843,
+      "max": 1
+    },
+    {
+      "class": "verbatim_full",
+      "language": "en",
+      "n": 10,
+      "mean": 0.990209,
+      "p50": 0.980916,
+      "min": 0.97992,
+      "max": 1
+    },
+    {
+      "class": "verbatim_full",
+      "language": "en",
+      "n": 12,
+      "mean": 0.989726,
+      "p50": 0.98,
+      "min": 0.978903,
+      "max": 1
+    },
+    {
+      "class": "verbatim_full",
+      "language": "en",
+      "n": 14,
+      "mean": 0.989193,
+      "p50": 0.978992,
+      "min": 0.977778,
+      "max": 1
+    },
+    {
+      "class": "translated_copy",
+      "language": "en",
+      "n": 6,
+      "mean": 0,
+      "p50": 0,
+      "min": 0,
+      "max": 0
+    },
+    {
+      "class": "translated_copy",
+      "language": "en",
+      "n": 8,
+      "mean": 0,
+      "p50": 0,
+      "min": 0,
+      "max": 0
+    },
+    {
+      "class": "translated_copy",
+      "language": "en",
+      "n": 10,
+      "mean": 0,
+      "p50": 0,
+      "min": 0,
+      "max": 0
+    },
+    {
+      "class": "translated_copy",
+      "language": "en",
+      "n": 12,
+      "mean": 0,
+      "p50": 0,
+      "min": 0,
+      "max": 0
+    },
+    {
+      "class": "translated_copy",
+      "language": "en",
+      "n": 14,
+      "mean": 0,
+      "p50": 0,
+      "min": 0,
+      "max": 0
+    },
+    {
+      "class": "fact_copied",
+      "language": "en",
+      "n": 6,
+      "mean": 0.843583,
+      "p50": 0.727273,
+      "min": 0.647059,
+      "max": 1
+    },
+    {
+      "class": "fact_copied",
+      "language": "en",
+      "n": 8,
+      "mean": 0.766667,
+      "p50": 0.6,
+      "min": 0.466667,
+      "max": 1
+    },
+    {
+      "class": "fact_copied",
+      "language": "en",
+      "n": 10,
+      "mean": 0.707265,
+      "p50": 0.444444,
+      "min": 0.384615,
+      "max": 1
+    },
+    {
+      "class": "fact_copied",
+      "language": "en",
+      "n": 12,
+      "mean": 0.630682,
+      "p50": 0.272727,
+      "min": 0.25,
+      "max": 1
+    },
+    {
+      "class": "fact_copied",
+      "language": "en",
+      "n": 14,
+      "mean": 0.545635,
+      "p50": 0.111111,
+      "min": 0.071429,
+      "max": 1
+    },
+    {
+      "class": "fact_paraphrased",
+      "language": "en",
+      "n": 6,
+      "mean": 0,
+      "p50": 0,
+      "min": 0,
+      "max": 0
+    },
+    {
+      "class": "fact_paraphrased",
+      "language": "en",
+      "n": 8,
+      "mean": 0,
+      "p50": 0,
+      "min": 0,
+      "max": 0
+    },
+    {
+      "class": "fact_paraphrased",
+      "language": "en",
+      "n": 10,
+      "mean": 0,
+      "p50": 0,
+      "min": 0,
+      "max": 0
+    },
+    {
+      "class": "fact_paraphrased",
+      "language": "en",
+      "n": 12,
+      "mean": 0,
+      "p50": 0,
+      "min": 0,
+      "max": 0
+    },
+    {
+      "class": "fact_paraphrased",
+      "language": "en",
+      "n": 14,
+      "mean": 0,
+      "p50": 0,
+      "min": 0,
+      "max": 0
+    }
+  ],
+  "chosen": {
+    "nVi": 14,
+    "nEn": 14,
+    "warnAbove": 0.02,
+    "blockAbove": 0.97,
+    "copiedFactThreshold": 0.05,
+    "perfBudgetMs": 152
+  },
+  "previous": {
+    "nVi": 14,
+    "nEn": 14,
+    "warnAbove": 0.02,
+    "blockAbove": 0.97,
+    "copiedFactThreshold": 0.05,
+    "perfBudgetMs": 152
+  },
+  "perf": {
+    "measuredP95Ms": 75.585,
+    "source": "tests/NightTales.Performance.Tests SimilarityPerfTests, macOS 27.0.1"
+  },
+  "translatedCopyResidual": "en source -\u003E vi story mean 0.000000; vi source -\u003E en story mean 0.000000. Cross-language translation copying is not detected (F18); mitigated by facts-only writer input (02.5.5).",
+  "dilution": [
+    {
+      "id": "vi-verbatim_paragraph-01",
+      "language": "vi",
+      "score": 0.134069
+    },
+    {
+      "id": "vi-verbatim_paragraph-02",
+      "language": "vi",
+      "score": 0.058175
+    },
+    {
+      "id": "vi-verbatim_paragraph-03",
+      "language": "vi",
+      "score": 0.092846
+    },
+    {
+      "id": "vi-verbatim_paragraph-04",
+      "language": "vi",
+      "score": 0.107143
+    },
+    {
+      "id": "en-verbatim_paragraph-01",
+      "language": "en",
+      "score": 0.089764
+    },
+    {
+      "id": "en-verbatim_paragraph-02",
+      "language": "en",
+      "score": 0.110535
+    },
+    {
+      "id": "en-verbatim_paragraph-03",
+      "language": "en",
+      "score": 0.091463
+    },
+    {
+      "id": "en-verbatim_paragraph-04",
+      "language": "en",
+      "score": 0.093306
+    }
+  ],
+  "warnings": [
+    "Expected dilution: verbatim_paragraph sample \u0027vi-verbatim_paragraph-01\u0027 scores 0.134069 below BlockAbove; the score is a share of the whole story, not of the paragraph.",
+    "Expected dilution: verbatim_paragraph sample \u0027vi-verbatim_paragraph-02\u0027 scores 0.058175 below BlockAbove; the score is a share of the whole story, not of the paragraph.",
+    "Expected dilution: verbatim_paragraph sample \u0027vi-verbatim_paragraph-03\u0027 scores 0.092846 below BlockAbove; the score is a share of the whole story, not of the paragraph.",
+    "Expected dilution: verbatim_paragraph sample \u0027vi-verbatim_paragraph-04\u0027 scores 0.107143 below BlockAbove; the score is a share of the whole story, not of the paragraph.",
+    "Expected dilution: verbatim_paragraph sample \u0027en-verbatim_paragraph-01\u0027 scores 0.089764 below BlockAbove; the score is a share of the whole story, not of the paragraph.",
+    "Expected dilution: verbatim_paragraph sample \u0027en-verbatim_paragraph-02\u0027 scores 0.110535 below BlockAbove; the score is a share of the whole story, not of the paragraph.",
+    "Expected dilution: verbatim_paragraph sample \u0027en-verbatim_paragraph-03\u0027 scores 0.091463 below BlockAbove; the score is a share of the whole story, not of the paragraph.",
+    "Expected dilution: verbatim_paragraph sample \u0027en-verbatim_paragraph-04\u0027 scores 0.093306 below BlockAbove; the score is a share of the whole story, not of the paragraph."
+  ],
+  "rerunTriggers": [
+    "Any change to TextNormalizer or Shingler: normalisation or windowing moves every score.",
+    "A change to the D4 token rule: a token is one whitespace-separated run after NFC normalisation.",
+    "A change to Similarity:MinTokens: the sample set is only scorable above it.",
+    "A new content language: the grid has no calibration for it.",
+    "Any edit to prompts/fixtures/similarity/sample-set.v1.json: the evidence no longer matches the fixture."
+  ]
+}
