@@ -12,5 +12,6 @@ export { AuthEndpointsClient } from './services/auth-endpoints-client';
 export { MeEndpointsClient } from './services/me-endpoints-client';
 export { SeriesEndpointsClient } from './services/series-endpoints-client';
 export { SourceEndpointsClient } from './services/source-endpoints-client';
+export { SourceFinderEndpointsClient } from './services/source-finder-endpoints-client';
 export { SeriesBibleClient } from './services/series-bible-client';
 export { HubEndpointsClient } from './services/hub-endpoints-client';

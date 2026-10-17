@@ -114,10 +114,32 @@
     }
   },
   "sources": {
+    "find": {
+      "title": "Tìm nguồn giúp tôi",
+      "button": "Tìm nguồn giúp tôi",
+      "running": "Đang tìm nguồn…",
+      "empty": "Không tìm thấy nguồn phù hợp trên các trang được phép. Hãy dán liên kết bạn tự tìm.",
+      "note": "Chỉ là gợi ý — hãy tự kiểm tra từng nguồn trước khi thêm.",
+      "queryLabel": "Nội dung cần tìm (không bắt buộc)",
+      "queryPlaceholder": "Tên, địa điểm hoặc chi tiết cần tìm",
+      "add": "Thêm",
+      "dismiss": "Bỏ qua",
+      "open": "Mở",
+      "added": "Đã thêm",
+      "dismissed": "Đã bỏ qua",
+      "run": "Thử tìm lại",
+      "openNewTab": "Mở nguồn từ {{site}} (mở trong tab mới)",
+      "addFromSite": "Thêm gợi ý từ {{site}}",
+      "dismissFromSite": "Bỏ qua gợi ý từ {{site}}",
+      "loading": "Đang tải gợi ý",
+      "rowAlreadyInList": "Liên kết này đã có trong danh sách nguồn phía trên.",
+      "sourceLimit": "Danh sách nguồn phía trên đã đầy. Hãy xoá một nguồn trước khi thêm nguồn khác."
+    },
     "error": {
       "source_url_invalid": "Nhập liên kết HTTP hoặc HTTPS hợp lệ.",
       "source_domain_not_allowed": "Tên miền này không được phép.",
       "source_unreachable": "Không thể truy cập nguồn này.",
+      "find_sources_generation_failed": "Không tìm được nguồn lúc này. Vui lòng thử lại sau.",
       "source_too_large": "Nguồn vượt quá kích thước được hỗ trợ.",
       "source_blocked_by_robots": "Trang này không cho phép truy cập tự động.",
       "source_unsupported_type": "Định dạng nguồn này chưa được hỗ trợ.",

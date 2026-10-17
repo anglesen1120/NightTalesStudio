@@ -114,10 +114,32 @@
     }
   },
   "sources": {
+    "find": {
+      "title": "Find sources for me",
+      "button": "Find sources for me",
+      "running": "Searching for sources…",
+      "empty": "No suitable sources on the allowed sites. Paste links you found yourself.",
+      "note": "Suggestions only — check each source before adding it.",
+      "queryLabel": "Search focus (optional)",
+      "queryPlaceholder": "A name, place or detail to look for",
+      "add": "Add",
+      "dismiss": "Dismiss",
+      "open": "Open",
+      "added": "Added",
+      "dismissed": "Dismissed",
+      "run": "Try searching again",
+      "openNewTab": "Open source from {{site}} (opens in a new tab)",
+      "addFromSite": "Add suggestion from {{site}}",
+      "dismissFromSite": "Dismiss suggestion from {{site}}",
+      "loading": "Loading suggestions",
+      "rowAlreadyInList": "This link is already in the sources list above.",
+      "sourceLimit": "The sources list above is full. Remove a source before adding another."
+    },
     "error": {
       "source_url_invalid": "Enter a valid HTTP or HTTPS link.",
       "source_domain_not_allowed": "This domain is not allowed.",
       "source_unreachable": "The source could not be reached.",
+      "find_sources_generation_failed": "Could not search for sources right now. Please try again later.",
       "source_too_large": "The source exceeds the supported size.",
       "source_blocked_by_robots": "This site does not allow automated access.",
       "source_unsupported_type": "This source format is not supported.",
