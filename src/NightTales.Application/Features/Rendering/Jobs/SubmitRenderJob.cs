@@ -83,6 +83,13 @@ public sealed partial class SubmitRenderJob(
     /// <summary>The event id of the <c>render_queue_alert</c> line (11 D20 H14).</summary>
     public const int QueueAlertEventId = 6192;
 
+    /// <summary>
+    /// The jitter tolerated when the queue alarm estimates the previous delivery's instant (F8): a real Hangfire
+    /// schedule and queue poll add a few seconds each to the wait a delivery was scheduled with, and without this
+    /// the crossing line would be dropped whenever a delivery arrived later than its own wait.
+    /// </summary>
+    public static readonly TimeSpan AlertSlack = TimeSpan.FromSeconds(15);
+
     /// <summary>The code returned when the stored params name a language the wire table does not know.</summary>
     public const string LanguageUnknownCode = "render_language_unknown";
 
@@ -587,13 +594,22 @@ public sealed partial class SubmitRenderJob(
     /// <c>queued</c>. It is a log line with a stable event id and ids only: no content, no node and no params.
     /// </summary>
     /// <remarks>
-    /// The alarm fires on the one delivery that crosses the threshold, never on every delivery after it: a job
-    /// with no dispatchable node is offered again every <c>RenderNodes:HealthPollSeconds</c> (30 s), so a
-    /// repeating alarm would be 120 lines an hour of noise per stuck job (F8). The crossing is read as "the
-    /// previous delivery instant was still inside the threshold": the previous instant is this delivery's own
-    /// instant minus the wait it just scheduled, which is the cadence when the alarm is about a missing node and
-    /// the adapter's <c>Retry-After</c> when it is about a busy one. Nothing here counts attempts — the alarm
-    /// never spends retry budget, and the aggregate counter of 11.3.3-T2 is the dashboard's own reading.
+    /// The alarm is <em>bounded</em>, never per reschedule: a job with no dispatchable node is offered again
+    /// every <c>RenderNodes:HealthPollSeconds</c> (30 s), so a repeating alarm would be 120 lines an hour of
+    /// noise per stuck job (F8). The crossing is read as "the previous delivery instant was still inside the
+    /// threshold", and the previous instant is taken as this delivery's own instant minus the wait it just
+    /// scheduled — the cadence when the alarm is about a missing node, the adapter's <c>Retry-After</c> when it
+    /// is about a busy one.
+    /// <para>
+    /// <see cref="AlertSlack"/> widens that window by the delivery jitter of a real Hangfire schedule or queue
+    /// poll (a few seconds each), because a delivery that arrives later than the wait it was scheduled with would
+    /// otherwise push the estimated previous instant past the threshold and drop the crossing line entirely. The
+    /// trade-off is the other direction: the delivery that follows the crossing by no more than
+    /// <c>wait + AlertSlack</c> may log a duplicate. The alarm stays bounded either way — each delivery advances
+    /// the instant, so no line is ever written once the age passes <c>threshold + wait + AlertSlack</c> — and a
+    /// duplicate is cheaper than a missing operator signal. Nothing here counts attempts: the alarm never spends
+    /// retry budget, and the aggregate counter of 11.3.3-T2 is the dashboard's own reading.
+    /// </para>
     /// </remarks>
     /// <param name="job">The queued attempt.</param>
     /// <param name="now">The clock's reading.</param>
@@ -613,10 +629,11 @@ public sealed partial class SubmitRenderJob(
             return;
         }
 
-        // The previous delivery instant was still inside the threshold, so this delivery is the crossing one —
-        // and the only one that logs. A job already past it when it is first offered (the threshold moved, or a
-        // backlog delayed the delivery) is not announced at all: the alarm reports the crossing, not the state.
-        if (age - wait >= threshold)
+        // The estimated previous delivery instant, with the jitter of a real delivery tolerated: this delivery
+        // logs when it was still inside the threshold. A job already past it by more than the window when it is
+        // first offered (the threshold moved, or a backlog delayed the delivery) is not announced at all: the
+        // alarm reports the crossing, not the state.
+        if (age - wait - AlertSlack >= threshold)
         {
             return;
         }
@@ -671,9 +688,9 @@ public sealed partial class SubmitRenderJob(
         Message = "render_submit_adapter_alert renderJobId={RenderJobId} code={Code} detail={Detail}")]
     private partial void LogAdapterAlert(Guid renderJobId, string? code, string? detail);
 
-    // 6197 is taken by LoggingRenderIngestEnqueuer.LogIngestNotWired (IRenderIngestEnqueuer.cs) and 6200-6202 by
-    // RenderPollingService, so this one line of the submit sits in the gap above them (6203 stays free for the
-    // poller's next line).
+    // 6197 is taken by LoggingRenderIngestEnqueuer.LogIngestNotWired (IRenderIngestEnqueuer.cs), and 6200-6202 by
+    // RenderPollingService while RenderFailureRecorder uses 6210-6215 and PollRenderJob 6220-6231, so this one
+    // line of the submit sits in the gap above the poller.
     [LoggerMessage(
         EventId = 6204,
         Level = LogLevel.Error,

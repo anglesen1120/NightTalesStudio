@@ -168,9 +168,10 @@ public sealed class SubmitRenderJobTests(TestDatabase database) : IntegrationTes
         // Render:QueueAlertMinutes while the previous delivery instant (now - HealthPollSeconds) is still inside
         // the threshold. The id's own timestamp is the row's only creation stamp (WT49).
         var jobId = SeedQueuedJob(world, Guid.CreateVersion7(Start.AddMinutes(-360)));
-        var selector = new FakeNodeSelector().EnqueueUnavailable().EnqueueUnavailable();
+        var selector = new FakeNodeSelector().EnqueueUnavailable().EnqueueUnavailable().EnqueueUnavailable();
         var sink = new CapturingLoggerProvider();
         var clock = new FakeClock(Start);
+        var healthPoll = TimeSpan.FromSeconds(new RenderNodesOptions().HealthPollSeconds);
 
         await using var worker = await StartWorkerAsync(client, selector, sink, clock);
         await RunSubmitAsync(worker, jobId);
@@ -182,14 +183,25 @@ public sealed class SubmitRenderJobTests(TestDatabase database) : IntegrationTes
         alert.Message.ShouldContain("render_queue_alert", Case.Sensitive);
         alert.Message.ShouldContain(Id(jobId), Case.Sensitive);
 
-        // The next delivery is one health cadence later and already past the threshold: the alarm has fired for
-        // the crossing, so a second line would be noise — 120 of them an hour per stuck job (F8).
-        clock.Advance(TimeSpan.FromSeconds(worker.Services.GetRequiredService<RenderNodesOptions>().HealthPollSeconds));
+        // One health cadence later the job is still queued and still past the threshold. The crossing window is
+        // widened by SubmitRenderJob.AlertSlack (F8: a real delivery arrives a few seconds after the wait it was
+        // scheduled with, and a missed operator line is worse than a repeated one), so this delivery may
+        // legitimately repeat the line — but never once per reschedule: the window closes.
+        clock.Advance(healthPoll);
+        await RunSubmitAsync(worker, jobId);
+
+        worker.Jobs.Failures.ShouldBeEmpty();
+        var afterSecond = sink.Entries.Count(entry => entry.EventId == SubmitRenderJob.QueueAlertEventId);
+        afterSecond.ShouldBeInRange(1, 2, "the widened crossing window tolerates at most one duplicate line");
+
+        // The third delivery is another cadence later: the crossing is more than wait + AlertSlack behind, so the
+        // alarm is over and every later delivery of this stuck job logs nothing.
+        clock.Advance(healthPoll);
         await RunSubmitAsync(worker, jobId);
 
         worker.Jobs.Failures.ShouldBeEmpty();
         sink.Entries.Count(entry => entry.EventId == SubmitRenderJob.QueueAlertEventId)
-            .ShouldBe(1, "a job queued past the threshold logs the crossing once, not on every reschedule");
+            .ShouldBe(afterSecond, "the alarm is bounded, never a line per reschedule");
         SqlProbe.ScalarText(Database, $"SELECT status FROM render_jobs WHERE id = '{Id(jobId)}'").ShouldBe("queued");
     }
 
@@ -320,7 +332,7 @@ public sealed class SubmitRenderJobTests(TestDatabase database) : IntegrationTes
         var money = new RecordingWorkerMoney();
 
         client.EnqueueFailure(RenderClientMethod.Submit, Terminal("render_node_error", alert: true));
-        var selector = new FakeNodeSelector().Enqueue(node);
+        var selector = new FakeNodeSelector().Enqueue(node).Enqueue(node);
         var sink = new CapturingLoggerProvider();
 
         await using var worker = await StartWorkerAsync(client, selector, sink, money: money);
@@ -359,6 +371,43 @@ public sealed class SubmitRenderJobTests(TestDatabase database) : IntegrationTes
             "render_node_error is retryable, so a fresh attempt is queued");
         SqlProbe.ScalarText(Database, $"SELECT status FROM episodes WHERE id = '{Id(world.EpisodeId)}'")
             .ShouldBe("rendering", "a retry row keeps the episode rendering");
+
+        await DrainRetryDeliveryAsync(worker, client, world);
+        SqlProbe.ScalarText(Database, $"SELECT status FROM episodes WHERE id = '{Id(world.EpisodeId)}'")
+            .ShouldBe("story_approved", "the drained retry is the last attempt, so the episode comes back");
+    }
+
+    /// <summary>
+    /// Runs the delivery the failure recorder just queued for an attempt 2 row, the way the Worker would.
+    /// </summary>
+    /// <remarks>
+    /// A test of this class must leave no open row and no undelivered <c>render_requested.v1</c>: the class shares
+    /// one database, so a queued retry row stays in the platform-wide open-bound sum that
+    /// <c>Budget:MaxPlatformCostUsdPerDay</c> compares against (which would fail a later test's render command with
+    /// <c>spend_cap_reached</c>), and its outbox row would be delivered inside the next test's window, spending
+    /// that test's scripted node answer. The second attempt is final, so nothing is left behind.
+    /// </remarks>
+    /// <param name="worker">The started Worker host.</param>
+    /// <param name="client">The fake node client; this scripts its second submit answer.</param>
+    /// <param name="world">The test world.</param>
+    private async Task DrainRetryDeliveryAsync(WorkerHost worker, FakeRenderClient client, World world)
+    {
+        client.EnqueueFailure(RenderClientMethod.Submit, Terminal("render_node_error", alert: false));
+
+        await worker.RunOutboxOnceAsync(Ct);
+        await worker.Jobs.RunPendingAsync(Ct);
+
+        worker.Jobs.Failures.ShouldBeEmpty("the retry delivery ends its row the same way the first one did");
+        SqlProbe.Count(
+                Database,
+                $"SELECT count(*) FROM render_jobs WHERE episode_id = '{Id(world.EpisodeId)}' "
+                + "AND status IN ('queued','submitted','running','ingesting')")
+            .ShouldBe(0L, "the retry attempt is terminal, so this test leaves no open row behind");
+        SqlProbe.Count(
+                Database,
+                $"SELECT count(*) FROM outbox_messages WHERE type = 'render_requested.v1' "
+                + $"AND processed_at IS NULL AND user_id = '{Id(world.UserId)}'")
+            .ShouldBe(0L, "and no render request for the next test in this class to deliver");
     }
 
     /// <summary>
@@ -422,7 +471,7 @@ public sealed class SubmitRenderJobTests(TestDatabase database) : IntegrationTes
         var money = new RecordingWorkerMoney();
 
         client.EnqueueFailure(RenderClientMethod.Submit, Transient("render_node_error"));
-        var selector = new FakeNodeSelector().Enqueue(node);
+        var selector = new FakeNodeSelector().Enqueue(node).Enqueue(node);
         var sink = new CapturingLoggerProvider();
 
         await using var worker = await StartWorkerAsync(client, selector, sink, money: money);
@@ -444,6 +493,8 @@ public sealed class SubmitRenderJobTests(TestDatabase database) : IntegrationTes
                 Database,
                 $"SELECT count(*) FROM render_jobs WHERE episode_id = '{Id(world.EpisodeId)}' AND attempt = 2 AND status = 'queued'")
             .ShouldBe(1L);
+
+        await DrainRetryDeliveryAsync(worker, client, world);
     }
 
     /// <summary>
@@ -890,9 +941,15 @@ public sealed class SubmitRenderJobTests(TestDatabase database) : IntegrationTes
         /// <inheritdoc />
         public Task<PriceVersion> GetAsync(int version, CancellationToken ct) => throw new NotSupportedException();
 
+        /// <summary>
+        /// A realistic worst-case render bound: the retry row stores this in <c>render_jobs.worst_case_usd</c> and
+        /// it lands in the platform-wide open-bound sum the real <c>UsageBudgetGuard</c> compares against
+        /// <c>Budget:MaxPlatformCostUsdPerDay</c> (3 USD by default). The class shares one database, so a large
+        /// sentinel here would fail another test's render command with <c>spend_cap_reached</c>.
+        /// </summary>
         /// <inheritdoc />
         public Task<CostBound> WorstCaseAsync(Aspect aspect, int maxTerms, int priceVersion, CancellationToken ct) =>
-            Task.FromResult(new CostBound(1.23m));
+            Task.FromResult(new CostBound(0.01m));
 
         /// <inheritdoc />
         public ValueTask<ErrorOr<Success>> CheckAsync(CostBound worstCaseUsd, CancellationToken ct, Guid? excludingRunId = null)
