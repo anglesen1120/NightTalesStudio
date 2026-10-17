@@ -5,6 +5,8 @@ using NightTales.Application.Abstractions.Compliance;
 using NightTales.Application.Abstractions.Research;
 using NightTales.Application.Abstractions.Stories;
 using NightTales.Application.Features.Account.Legal;
+using NightTales.Application.Features.Autopilot.Ideas;
+using NightTales.Application.Features.Autopilot.Ideas.Abstractions;
 using NightTales.Application.Features.Research;
 using NightTales.Application.Features.Research.Jobs;
 using NightTales.Application.Features.Research.Sources;
@@ -153,6 +155,29 @@ public static class ApplicationServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(services);
 
         services.TryAddScoped<ProposeBibleUpdateHandler>();
+
+        return services;
+    }
+
+    /// <summary>
+    /// Registers the idea step of one autopilot slot (02.8.1-T1, plan §4 U1): the planner and the instruments of
+    /// its batch. The Worker calls it, next to the job that runs a tick.
+    /// </summary>
+    /// <remarks>
+    /// Worker-only, like <see cref="AddBibleProposalGeneration"/>: the planner's one paid call goes through
+    /// <c>IIdeaGenerator</c>, which is composed with the OpenAI text adapter (<c>AddOpenAiTextClient</c>), and the
+    /// Api has no text client. Everything else the planner takes is registered by persistence
+    /// (<c>Autopilot:Ideas</c>: the count, the ceiling and <c>IdeaLimits</c>, as their plain values) or by the
+    /// usage metering both hosts compose, so this method adds only the two types of this feature.
+    /// </remarks>
+    /// <param name="services">The composition root's service collection.</param>
+    /// <returns>The same collection, for chaining.</returns>
+    public static IServiceCollection AddIdeaGeneration(this IServiceCollection services)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+
+        services.TryAddSingleton<IdeaMetrics>();
+        services.TryAddScoped<IIdeaPlanner, IdeaPlanner>();
 
         return services;
     }
