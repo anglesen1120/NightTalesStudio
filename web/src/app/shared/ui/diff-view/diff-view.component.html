@@ -13,6 +13,9 @@
             @if (row.kind !== 'remove') {
               <ins data-kind="insert"><span aria-hidden="true">+ </span><span class="sr-only">{{ addedLabel() }}: </span>{{ row.after }}</ins>
             }
+            @if (row.reason) {
+              <span class="diff__reason">{{ row.reason }}</span>
+            }
           </dd>
         </div>
       }

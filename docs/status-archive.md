@@ -4,6 +4,14 @@ History moved out of STATUS.md to keep the live file small. The initial archive 
 
 ## Resume-here history (Current/Previous blocks, Next actions)
 
+### Superseded web Next (Session 40) line (2026-10-17, replaced when Session 48 opened the 10.5.7-T1 PR)
+
+Replaced text (verbatim):
+
+- **Web next:** Session 40 closed: **10.5.5-T1** research page (`/episodes/:id/research`: sources, fetch status, fact-sheet editor, approve) merged as #201 (`c275b0bb`, tip `0c923711`, Session 40, `feature/10.5.5-T1-s40`, from `develop` `fe319b42`, code tip `32b26e35`; CI refused: CI-01, owner treats as pass; local web gate — all 9 `web.yml` steps — exit 0 on the code tip; T3 gates closed; no migration; closes the 10.5.6-T1 research deep link and the 10.5.2-T1 `/episodes/:id/research` + `EPISODE_GATE` hand-over; open items are §Open tasks rows). Lane next: **10.5.7-T1** (series bible panel + proposal diff; `Depends on` includes **02.6.3-T2**, merged as #213; needs the `web/openapi.json` re-pin through the coordinator) and **10.5.8-T1** (find-sources; `Depends on` **02.7.2-T2**, not merged) — both wait on the backend lane; then **10.10.2-T1** render / "Make video" (bind to `videoBlocked()` + `ApprovalStore`, never `keywordFlags().length`).
+
+Outcome: 10.5.7-T1 (series bible panel + proposal diff) is delivered on `feature/10.5.7-T1-s48` (Session 48, PR #TBD, from `develop` `be4d36f5`): `/series/:id/bible`, the `web/openapi.json` re-pin from `develop` `be4d36f5` (BIBLE-11 web half closed), the add-only `DiffRow.reason` reuse of the shared `DiffView` (D11), and no add-summary UI (02.6.3 U2: edit/remove only). The Resume web-next line now carries this lane and names 10.5.8-T1 and 10.10.2-T1 as the remaining web lanes.
+
 ### Superseded backend Next Session 47 PR-open line (2026-10-16, replaced when #215 merged as 81b87a78)
 
 Replaced text (verbatim):

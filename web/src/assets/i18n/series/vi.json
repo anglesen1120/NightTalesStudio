@@ -89,4 +89,42 @@
     "archivedBody": "Không thể sửa, tạo tập hoặc bật tự động trong giai đoạn này. Mọi dữ liệu vẫn đọc được.",
     "notFound": "Không tìm thấy series", "notFoundBody": "Series không tồn tại hoặc không thuộc tài khoản này.", "backToList": "Về danh sách series"
   }
+  ,
+  "bible": {
+    "title": "Bộ nhớ của bộ truyện",
+    "subtitle": "Giữ giọng kể, tên riêng và quy tắc xuyên suốt các tập.",
+    "empty": "Truyện này chưa ghi nhớ gì. Nó sẽ tự đầy lên sau mỗi tập được duyệt.",
+    "narrator": "Người kể", "characters": "Nhân vật định kỳ", "places": "Địa điểm", "rules": "Quy tắc", "summaries": "Tóm tắt các tập",
+    "saved": "Đã lưu", "save": "Lưu sổ chuyện", "saving": "Đang lưu…", "reload": "Tải lại",
+    "addCharacter": "Thêm nhân vật", "addPlace": "Thêm địa điểm", "addRule": "Thêm quy tắc", "addSummary": "Thêm tóm tắt",
+    "remove": "Xoá", "sectionEmpty": "Chưa có mục nào.", "limitReached": "Đã đạt giới hạn 30 mục.",
+    "narrator.name": "Tên", "narrator.persona": "Chân dung người kể", "narrator.voiceNotes": "Ghi chú giọng kể",
+    "entry": { "name": "Tên", "description": "Mô tả" },
+    "rule": { "text": "Quy tắc" }, "character": { "firstEpisode": "Tập xuất hiện đầu tiên" },
+    "summary": { "title": "Tên tập", "body": "Tóm tắt" },
+    "version": "Phiên bản {{version}}",
+    "error": {
+      "conflict": "Ai đó vừa thay đổi bộ nhớ này. Tải lại rồi lưu lại.",
+      "ifMatch": "Không lưu được bộ nhớ. Hãy tải lại và thử lại.",
+      "limits": "Vượt giới hạn: {{field}}"
+    },
+    "field": {
+      "too_many": "Quá nhiều mục.", "too_long": "Trường này quá dài.", "duplicate": "Mục này bị trùng.",
+      "unknown_episode": "Tập này không phải tập đã duyệt của bộ truyện.",
+      "invalidName": "Tên không được chứa < hoặc >.", "invalid": "Hãy kiểm tra trường này.", "required": "Điền chân dung người kể trước khi lưu."
+    },
+    "conflict": { "reload": "Tải bản mới nhất (bỏ các sửa đổi chưa lưu)" },
+    "proposal": {
+      "banner": "Có {{n}} thay đổi đề xuất từ tập “{{title}}”", "bannerNoTitle": "Có {{n}} thay đổi đề xuất",
+      "accept": "Chấp nhận", "dismiss": "Bỏ qua", "none": "Không còn đề xuất nào",
+      "autoAccepted": "Tự động cập nhật (autopilot)", "more": "Lý do",
+      "intro": "Đọc từng thay đổi trước khi nhập vào sổ chuyện.",
+      "baseVersion": "Dựa trên phiên bản {{base}}; phiên bản hiện tại {{current}}.",
+      "dismissTitle": "Bỏ qua đề xuất này?", "dismissBody": "Các thay đổi đề xuất sẽ không được thêm vào bộ nhớ.",
+      "loading": "Đang tải các thay đổi đề xuất…", "diffError": "Không hiển thị được các thay đổi đề xuất.",
+      "diffLabel": "Các thay đổi đề xuất cho bộ nhớ", "added": "Đã thêm", "removed": "Đã xoá"
+    },
+    "op": { "summary": "Tóm tắt", "character": "Nhân vật", "place": "Địa điểm", "rule": "Quy tắc", "other": "Thay đổi" },
+    "dirty": { "title": "Rời trang khi chưa lưu?", "body": "Các chỉnh sửa bộ nhớ chưa được lưu.", "leave": "Bỏ chỉnh sửa", "stay": "Tiếp tục sửa", "acceptTitle": "Bỏ chỉnh sửa và chấp nhận đề xuất?" }
+  }
 }
