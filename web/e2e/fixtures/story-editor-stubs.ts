@@ -828,7 +828,7 @@ export const SELF_REVIEW_COPY = {
     showWhy: episodesVi.audit.showWhy,
     why: episodesVi.audit.why,
     noChecks: episodesVi.audit.noChecks,
-    openSegment: (address: string): string => episodesVi.audit.openSegment.replace('{{segment}}', address),
+    openSegment: (paragraphNumber: number): string => episodesVi.audit.openSegment.replace('{{segment}}', String(paragraphNumber)),
     similarityHeading: episodesVi.similarity.heading,
     similarityNote: episodesVi.similarity.note,
     similarityScore: (percent: string): string => episodesVi.similarity.score.replace('{{percent}}', percent),
@@ -860,7 +860,7 @@ export const SELF_REVIEW_COPY = {
     showWhy: episodesEn.audit.showWhy,
     why: episodesEn.audit.why,
     noChecks: episodesEn.audit.noChecks,
-    openSegment: (address: string): string => episodesEn.audit.openSegment.replace('{{segment}}', address),
+    openSegment: (paragraphNumber: number): string => episodesEn.audit.openSegment.replace('{{segment}}', String(paragraphNumber)),
     similarityHeading: episodesEn.similarity.heading,
     similarityNote: episodesEn.similarity.note,
     similarityScore: (percent: string): string => episodesEn.similarity.score.replace('{{percent}}', percent),
@@ -1088,7 +1088,7 @@ export async function selfReviewPanelFlow(page: Page, lang: E2eLang): Promise<vo
   // The literal `<b>` markers stay text: interpolation only, no innerHTML, no element.
   await expect(blocking.locator('b')).toHaveCount(0);
   await expect(blocking).toContainText(SELF_REVIEW_EVIDENCE);
-  await expect(blocking.getByRole('button', { name: C.openSegment('p:1'), exact: true })).toBeVisible();
+  await expect(blocking.getByRole('button', { name: C.openSegment(2), exact: true })).toBeVisible();
 
   // The taste issue's payload claimed `blocking`; it is rendered — and counted — as advisory.
   const taste = why.locator('li').filter({ hasText: SELF_REVIEW_TASTE_EVIDENCE });
