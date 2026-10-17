@@ -168,3 +168,36 @@ describe('draft segment diff', () => {
       .toEqual(['title', 'p:2', 'meta']);
   });
 });
+
+describe('annotation merge against the self-review payload', () => {
+  it('rendersAFlattenedReviewIssueOnce_SoTheInlineListLengthEqualsTheHintCount', () => {
+    // A `model_review` issue already arrives inside `qualityHints` (02.3.4-T2:42): merging the audit document again
+    // would render every review issue twice, so the merge input is the hint set and nothing else.
+    const hints = [
+      hint({ ruleId: 'Q-REV-01', segment: 'p:1', severity: 'blocking', kind: 'objective' }),
+      hint({ ruleId: 'Q-REV-02', segment: 'p:2', severity: 'advisory', kind: 'taste' }),
+    ];
+    const items = mergeAnnotations(hints, []);
+    expect(items).toHaveLength(hints.length);
+    expect(items.map((item) => item.ruleId)).toEqual(['Q-REV-01', 'Q-REV-02']);
+  });
+
+  it('neverTurnsASimilarityShareIntoAStandaloneAnnotation_TheQSIMHintIsTheAnnotation', () => {
+    // `similarity.segments[]` carries `p:3`, and only the `Q-SIM-01` hint (at `meta`) may produce a row.
+    const items = mergeAnnotations([hint({ ruleId: 'Q-SIM-01', segment: 'meta', messageKey: 'quality.similarity_warn' })], []);
+    expect(items.map((item) => [item.address, item.placement])).toEqual([['meta', 'panel']]);
+    expect(items.some((item) => item.address === 'p:3')).toBe(false);
+    expect(mergeAnnotations([], [])).toEqual([]);
+  });
+
+  it('collapsesDuplicateAddressAndRulePairs_AndAddsNoRowBeyondAHintOrAKeywordFlag', () => {
+    const items = mergeAnnotations(
+      [hint({ ruleId: 'dup', segment: 'p:1' }), hint({ ruleId: 'dup', segment: 'p:1' }), hint({ ruleId: 'Q-SIM-02', segment: 'meta' })],
+      [flag({ address: 'p:2', index: 0, rule: 'no_scenes' }), flag({ address: 'p:2', index: 0, rule: 'no_scenes' })],
+    );
+    expect(items.filter((item) => item.address === 'p:1')).toHaveLength(1);
+    expect(items.filter((item) => item.source === 'keyword')).toHaveLength(1);
+    expect(items).toHaveLength(3);
+    expect(items.every((item) => item.source === 'hint' || item.source === 'keyword')).toBe(true);
+  });
+});

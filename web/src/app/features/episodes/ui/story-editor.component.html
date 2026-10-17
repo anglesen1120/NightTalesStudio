@@ -18,6 +18,7 @@
     <nts-segment-editor
       [viewModel]="viewModel().title"
       [annotations]="annotationViews().inline.get('title') ?? emptyAnnotations"
+      [similarityLevel]="similarityHighlights().get('title') ?? null"
       [flaggedChips]="annotationViews().flaggedChips.get('title') ?? emptyFlags"
       [limitHit]="viewModel().keywordLimitHit === viewModel().title.segKey"
       (intent)="forward($event)"
@@ -25,6 +26,7 @@
     <nts-segment-editor
       [viewModel]="viewModel().hook"
       [annotations]="annotationViews().inline.get('hook') ?? emptyAnnotations"
+      [similarityLevel]="similarityHighlights().get('hook') ?? null"
       [flaggedChips]="annotationViews().flaggedChips.get('hook') ?? emptyFlags"
       [limitHit]="viewModel().keywordLimitHit === viewModel().hook.segKey"
       (intent)="forward($event)"
@@ -32,6 +34,7 @@
     <nts-paragraph-list
       [paragraphs]="viewModel().paragraphs"
       [annotationViews]="annotationViews()"
+      [similarityHighlights]="similarityHighlights()"
       [readOnly]="viewModel().readOnly"
       [keywordLimitHit]="viewModel().keywordLimitHit"
       (intent)="forward($event)"
@@ -39,6 +42,7 @@
     <nts-segment-editor
       [viewModel]="viewModel().ending"
       [annotations]="annotationViews().inline.get('ending') ?? emptyAnnotations"
+      [similarityLevel]="similarityHighlights().get('ending') ?? null"
       [flaggedChips]="annotationViews().flaggedChips.get('ending') ?? emptyFlags"
       [limitHit]="viewModel().keywordLimitHit === viewModel().ending.segKey"
       (intent)="forward($event)"

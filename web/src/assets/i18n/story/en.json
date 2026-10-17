@@ -1,4 +1,9 @@
 {
+  "similarity": {
+    "block": "The story is too close to a source to approve. Rewrite the overlapping segments.",
+    "unavailable": "Similarity could not be checked against the sources.",
+    "warn": "The story is close to a source. Review the overlapping segments."
+  },
   "generation": {
     "stage": {
       "writing": "Writing the script…",

@@ -1,32 +1,28 @@
 :host { display: block; min-width: 0; }
 .story-review-page { display: flex; flex-direction: column; gap: var(--nts-space-5); width: 100%; max-width: 80rem; min-width: 0; }
 .story-review-page__notice { display: flex; flex-direction: column; gap: var(--nts-space-3); padding: var(--nts-space-4); border-inline-start: var(--nts-space-1) solid var(--nts-color-primary); background: var(--nts-color-primary-soft); }
-.story-review-page__notice h2, .story-review-page__notice p { margin: 0; }
+.story-review-page__notice :is(h2, p) { margin: 0; }
 .story-review-page__notice h2 { font-size: var(--nts-type-title-size); line-height: var(--nts-type-title-line); }
-/* Informational, not blocking: the changed-elsewhere notice keeps the plain surface and never takes focus. */
 .story-review-page__notice--remote { border-inline-start-color: var(--nts-color-outline); background: var(--nts-color-surface-variant); }
 .story-review-page__diff { margin: 0; padding-inline-start: var(--nts-space-5); }
 .story-review-page__actions { display: flex; flex-wrap: wrap; gap: var(--nts-space-3); }
-.story-review-page__actions button { min-height: var(--nts-target-min); padding: var(--nts-space-2) var(--nts-space-4); border: 1px solid var(--nts-color-control-outline); border-radius: var(--nts-radius-control); background: var(--nts-color-surface-variant); color: var(--nts-color-on-surface-muted); font: inherit; }
+.story-review-page__actions button, .story-review-page__control { min-height: var(--nts-target-min); padding: var(--nts-space-2) var(--nts-space-4); border: 1px solid var(--nts-color-control-outline); border-radius: var(--nts-radius-control); background: var(--nts-color-surface); color: var(--nts-color-on-surface); font: inherit; }
+.story-review-page__actions button { background: var(--nts-color-surface-variant); color: var(--nts-color-on-surface-muted); }
+.story-review-page__control { cursor: pointer; }
 .story-review-page__workspace { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--nts-space-5); min-width: 0; }
 .story-review-page__workspace > * { min-width: 0; }
-.story-review-page__versions-toggle { min-height: var(--nts-target-min); padding: var(--nts-space-2) var(--nts-space-4); border: 1px solid var(--nts-color-control-outline); border-radius: var(--nts-radius-control); background: var(--nts-color-surface); color: var(--nts-color-on-surface); font: inherit; cursor: pointer; }
-.story-review-page__versions-toggle:hover { background: var(--nts-color-surface-variant); }
-.story-review-page__versions-toggle:focus-visible { outline: var(--nts-space-1) solid var(--nts-color-focus); outline-offset: var(--nts-space-1); }
+.story-review-page__versions-toggle:hover, .story-review-page__reopen:hover:not(:disabled) { background: var(--nts-color-surface-variant); }
+.story-review-page__control:focus-visible { outline: var(--nts-space-1) solid var(--nts-color-focus); outline-offset: var(--nts-space-1); }
 .story-review-page__approval-action { display: flex; flex-direction: column; gap: var(--nts-space-2); min-width: 0; }
 .story-review-page__approval-action p { margin: 0; max-width: 45ch; color: var(--nts-color-on-surface-muted); }
-.story-review-page__approve, .story-review-page__reopen { min-height: var(--nts-target-min); padding: var(--nts-space-2) var(--nts-space-4); border: 1px solid var(--nts-color-control-outline); border-radius: var(--nts-radius-control); background: var(--nts-color-surface); color: var(--nts-color-on-surface); font: inherit; cursor: pointer; }
 .story-review-page__approve { background: var(--nts-color-primary); color: var(--nts-color-on-primary); border-color: var(--nts-color-primary); }
-.story-review-page__approve:hover:not(:disabled) { text-decoration: underline; }
-.story-review-page__reopen:hover:not(:disabled) { background: var(--nts-color-surface-variant); }
-.story-review-page__approve:active:not(:disabled), .story-review-page__reopen:active:not(:disabled) { text-decoration: underline; }
-.story-review-page__approve:focus-visible, .story-review-page__reopen:focus-visible { outline: var(--nts-space-1) solid var(--nts-color-focus); outline-offset: var(--nts-space-1); }
-.story-review-page__approve:disabled, .story-review-page__reopen:disabled { background: var(--nts-color-surface-variant); color: var(--nts-color-on-surface-muted); border-color: var(--nts-color-control-outline); cursor: not-allowed; }
-.story-review-page__research-link { display: inline-flex; align-items: center; min-height: var(--nts-target-min, 24px); color: var(--nts-color-primary); }
+.story-review-page__approve:hover:not(:disabled), :is(.story-review-page__approve, .story-review-page__reopen):active:not(:disabled) { text-decoration: underline; }
+:is(.story-review-page__approve, .story-review-page__reopen):disabled { background: var(--nts-color-surface-variant); color: var(--nts-color-on-surface-muted); border-color: var(--nts-color-control-outline); cursor: not-allowed; }
+.story-review-page__link { display: inline-flex; align-items: center; min-height: var(--nts-target-min, 24px); color: var(--nts-color-primary); }
 .story-review-page__gate { display: grid; gap: var(--nts-space-2); padding: var(--nts-space-3); border-inline-start: var(--nts-space-1) solid var(--nts-color-error); border-radius: var(--nts-radius-control); background: var(--nts-color-surface-variant); }
-.story-review-page__gate-copy, .story-review-page__gate-reason { margin: 0; max-width: var(--nts-measure); overflow-wrap: anywhere; }
+:is(.story-review-page__gate-copy, .story-review-page__gate-reason) { margin: 0; max-width: var(--nts-measure); overflow-wrap: anywhere; }
 .story-review-page__gate-reason { color: var(--nts-color-on-surface-muted); }
-.story-review-page__gate-link { justify-self: start; display: inline-flex; align-items: center; min-height: var(--nts-target-min, 24px); color: var(--nts-color-primary); }
+.story-review-page__gate-link { justify-self: start; }
 .story-review-page__announcement { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 @media (min-width: 80rem) { .story-review-page__workspace--versions { grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); } }
 @media (max-width: 30rem) {

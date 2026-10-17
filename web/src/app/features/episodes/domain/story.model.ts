@@ -1,5 +1,6 @@
 export type { SegmentAddress } from '@shared/util/segment-address';
 import type { SegmentAddress } from '@shared/util/segment-address';
+import type { AuditReport } from './audit.model';
 
 export interface StorySegment { readonly segKey: string; readonly text: string; readonly keywords: readonly string[]; readonly factRefs: readonly unknown[] }
 export interface StoryParagraph extends StorySegment { readonly beat: string }
@@ -24,7 +25,7 @@ export interface Attestation {
   readonly acceptedAt: string | null;
 }
 
-export interface StorySnapshot { readonly versionId: string; readonly version: number; readonly etag: string; readonly source: string; readonly wordCount: number; readonly content: StoryDraftWire; readonly qualityHints: readonly QualityHint[]; readonly attestation: Attestation | null }
+export interface StorySnapshot { readonly versionId: string; readonly version: number; readonly etag: string; readonly source: string; readonly wordCount: number; readonly content: StoryDraftWire; readonly qualityHints: readonly QualityHint[]; readonly auditReport: AuditReport | null; readonly similarityScore: number | null; readonly attestation: Attestation | null }
 
 /** What an approve or a reopen answers: the episode's new story status and the ETag of that state. */
 export interface ApprovalOutcome { readonly status: string; readonly etag: string }

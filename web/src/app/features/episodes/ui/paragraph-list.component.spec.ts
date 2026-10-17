@@ -12,6 +12,10 @@ import episodesVi from '../../../../assets/i18n/episodes/vi.json';
 import episodesEn from '../../../../assets/i18n/episodes/en.json';
 import { ParagraphListComponent } from './paragraph-list.component';
 import type { SegmentEditorViewModel, StoryEditorIntent } from './story-editor.view-model';
+import type { SegmentAddress } from '@shared/util/segment-address';
+import { SegmentEditorComponent } from './segment-editor.component';
+import qualityVi from '../../../../assets/i18n/quality/vi.json';
+import qualityEn from '../../../../assets/i18n/quality/en.json';
 
 class FakeAnnouncer {
   readonly messages: { readonly text: string; readonly focusAddress: string | null; readonly focusText: string | null }[] = [];
@@ -29,7 +33,7 @@ function paragraphs(): readonly SegmentEditorViewModel[] {
 
 async function setup(pointerReorder = true, lang: 'vi' | 'en' = 'vi', applyMoves = true): Promise<ParagraphListFixture> {
   const translations = TranslocoTestingModule.forRoot({
-    langs: { vi: episodesVi, en: episodesEn, 'episodes/vi': episodesVi, 'episodes/en': episodesEn },
+    langs: { vi: episodesVi, en: episodesEn, 'episodes/vi': episodesVi, 'episodes/en': episodesEn, 'quality/vi': qualityVi, 'quality/en': qualityEn },
     translocoConfig: { availableLangs: ['vi', 'en'], defaultLang: lang, fallbackLang: lang, reRenderOnLangChange: true }, preloadLangs: true,
   });
   const announcer = new FakeAnnouncer();
@@ -69,6 +73,19 @@ function drop({ fixture }: ParagraphListFixture, from: number, to: number, insid
 afterEach(() => TestBed.resetTestingModule());
 
 describe('ParagraphListComponent', () => {
+  it.each([true, false])('plumbs the mapped similarity level with pointer reorder %s', async (pointer) => {
+    const { fixture, root } = await setup(pointer);
+    fixture.componentRef.setInput('similarityHighlights', new Map<SegmentAddress, 'warn' | 'block'>([['p:1', 'block']]));
+    fixture.detectChanges(); await fixture.whenStable();
+    const segments = fixture.debugElement.queryAll(By.directive(SegmentEditorComponent))
+      .map((element) => element.componentInstance as SegmentEditorComponent);
+    expect(segments.map((segment) => segment.similarityLevel())).toEqual([null, 'block', null]);
+    expect(root.querySelectorAll('.segment-editor--similarity-block')).toHaveLength(1);
+    fixture.componentRef.setInput('similarityHighlights', new Map<SegmentAddress, 'warn' | 'block'>([['p:0', 'warn']]));
+    fixture.detectChanges(); await fixture.whenStable();
+    expect(segments.map((segment) => segment.similarityLevel())).toEqual(['warn', null, null]);
+  });
+
   it('emits a drop move and preserves the paragraph node, beat and chips at its new address', async () => {
     const result = await setup();
     const { fixture, root, intents, announcer } = result;

@@ -1,3 +1,4 @@
+import type { AuditReport, ReviewIssue, SimilaritySection } from '../domain/audit.model';
 import type { ApprovalOutcome, Attestation, AttestationAcceptance, StoryDraftWire, StorySnapshot } from '../domain/story.model';
 import { StoryRepository } from '../domain/story.repository';
 
@@ -56,5 +57,23 @@ export function approvalOutcome(overrides: Partial<ApprovalOutcome> = {}): Appro
 }
 
 export function storySnapshot(overrides: Partial<StorySnapshot> = {}): StorySnapshot {
-  return { versionId: '33333333-3333-4333-8333-333333333333', version: 1, etag: '"sv-33333333-3333-4333-8333-333333333333"', source: 'generated', wordCount: 18, content: storyContent(), qualityHints: [], attestation: null, ...overrides };
+  return {
+    versionId: '33333333-3333-4333-8333-333333333333', version: 1, etag: '"sv-33333333-3333-4333-8333-333333333333"', source: 'generated', wordCount: 18,
+    content: storyContent(), qualityHints: [], auditReport: null, similarityScore: null, attestation: null, ...overrides,
+  };
+}
+
+/** One recorded review issue for the expanded "why" panel; the default is a blocking objective finding. */
+export function reviewIssue(overrides: Partial<ReviewIssue> = {}): ReviewIssue {
+  return { id: 'M1', type: 'ear_rule', kind: 'objective', severity: 'blocking', segment: 'hook', impact: null, evidence: 'test evidence', repairDirection: null, ...overrides };
+}
+
+/** The `audit.v1` document as the client reads it; every block absent by default. */
+export function auditReport(overrides: Partial<AuditReport> = {}): AuditReport {
+  return { modelReview: null, revision: null, similarity: null, ...overrides };
+}
+
+/** One overlapping source segment by default (`02.5.6-T1` shape). */
+export function similaritySection(overrides: Partial<SimilaritySection> = {}): SimilaritySection {
+  return { score: 0.21, corpus: 'sources', segments: [{ segment: 'p:1', share: 0.21 }], ...overrides };
 }

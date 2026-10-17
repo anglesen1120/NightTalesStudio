@@ -4,6 +4,7 @@ import { TranslocoPipe, provideTranslocoScope } from '@jsverse/transloco';
 import { SegmentEditorComponent } from './segment-editor.component';
 import type { InlineAnnotationViewModel } from '@shared/ui';
 import type { SegmentEditorViewModel, StoryEditorIntent } from './story-editor.view-model';
+import type { SimilarityLevel } from '../domain/audit.model';
 
 @Component({
   selector: 'nts-paragraph-card',
@@ -21,6 +22,7 @@ export class ParagraphCardComponent {
   readonly pointerReorder = input(true);
   readonly limitHit = input(false);
   readonly annotations = input<readonly InlineAnnotationViewModel[]>([]);
+  readonly similarityLevel = input<SimilarityLevel | null>(null);
   readonly flaggedChips = input<ReadonlyMap<number, { readonly annotationId: string; readonly messageKey: string }>>(new Map());
   readonly intent = output<StoryEditorIntent>();
   protected readonly locked = computed(() => this.readOnly() || this.viewModel().readOnly);

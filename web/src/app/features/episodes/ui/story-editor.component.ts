@@ -3,6 +3,7 @@ import { TranslocoPipe, provideTranslocoScope } from '@jsverse/transloco';
 import { parseAddress } from '@shared/util/segment-address';
 import type { SegmentAddress } from '@shared/util/segment-address';
 import type { InlineAnnotationViewModel } from '@shared/ui';
+import type { SimilarityLevel } from '../domain/audit.model';
 import { AnnotationPanelComponent } from './annotation-panel.component';
 import { EMPTY_ANNOTATION_VIEWS } from './annotation.view-model';
 import type { AnnotationViews } from './annotation.view-model';
@@ -37,6 +38,7 @@ export class StoryEditorComponent {
   readonly viewModel = input.required<StoryEditorViewModel>();
   readonly segmentTexts = input.required<SegmentTexts>();
   readonly annotationViews = input<AnnotationViews>(EMPTY_ANNOTATION_VIEWS);
+  readonly similarityHighlights = input<ReadonlyMap<SegmentAddress, SimilarityLevel>>(new Map());
   readonly announcement = input<StoryEditorAnnouncement | null>(null);
   /** `@for` source: an empty list renders nothing, a new `sequence` re-creates the announced node. */
   protected readonly announcementQueue = computed<readonly StoryEditorAnnouncement[]>(() => {

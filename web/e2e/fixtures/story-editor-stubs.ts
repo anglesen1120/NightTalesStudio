@@ -9,9 +9,15 @@ import episodesEn from '../../src/assets/i18n/episodes/en.json' with { type: 'js
 import episodesVi from '../../src/assets/i18n/episodes/vi.json' with { type: 'json' };
 import errorsEn from '../../src/assets/i18n/errors/en.json' with { type: 'json' };
 import errorsVi from '../../src/assets/i18n/errors/vi.json' with { type: 'json' };
+import qualityEn from '../../src/assets/i18n/quality/en.json' with { type: 'json' };
+import qualityVi from '../../src/assets/i18n/quality/vi.json' with { type: 'json' };
+import storyEn from '../../src/assets/i18n/story/en.json' with { type: 'json' };
+import storyVi from '../../src/assets/i18n/story/vi.json' with { type: 'json' };
+import type { SourceListItemDto } from '../../src/app/shared/api/models/source-list-item-dto';
 import { expectA11yClean, waitForOverlayAnimationEnd } from './axe';
 import { expect } from './csp.fixture';
 import { episodeDetail, EPISODE_ID, SERIES_ID, stubEpisodes, watchPrivacy } from './episodes-stubs';
+import { researchSource, stubResearch, type ResearchServer } from './research-stubs';
 import { fulfilJson, problem, type E2eLang } from './series-stubs';
 
 export const EDITOR_PATH = `/episodes/${EPISODE_ID}`;
@@ -786,4 +792,462 @@ export async function narrow360ActionWrapFlow(page: Page, lang: E2eLang): Promis
     expect(box.x + box.width, `the ${what} button must stay inside the 360 px viewport`).toBeLessThanOrEqual(360);
   }
   expect(await noHorizontalOverflow(page)).toBe(true);
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// 10.5.3-T2 self-review panel, "automatically corrected once" badge and similarity highlights.
+// `episodes-self-review.spec.ts` (vi) and `episodes-self-review-en.spec.ts` (en) run the same scenarios through these
+// helpers, so both locales share one implementation of each acceptance bullet. Every payload here is a stubbed
+// `currentStory`: `auditReport` is the verbatim `audit.v1` document in its snake_case wire shape, `qualityHints` is the
+// flattened `local.issues ++ model_review.issues` set (02.3.4-T2:42) plus the 02.5.6 similarity hint, and the page is
+// expected to read all of it from the detail read it already makes.
+// ---------------------------------------------------------------------------------------------------------------
+
+/**
+ * Copy for the panel, the badge and the similarity note, read from the shipped bundles so a copy or key change fails
+ * these specs instead of drifting. Placeholders are formatted here with the same values the components interpolate.
+ */
+export const SELF_REVIEW_COPY = {
+  vi: {
+    badge: storyVi.generation.revised.badge,
+    heading: episodesVi.audit.heading,
+    blocking: episodesVi.audit.blocking,
+    advisory: episodesVi.audit.advisory,
+    drift: episodesVi.audit.drift,
+    scores: episodesVi.audit.scores,
+    dimension: episodesVi.audit.dimension,
+    scoreValue: episodesVi.audit.scoreValue,
+    dimensions: [
+      episodesVi.audit.score.hook, episodesVi.audit.score.pacing, episodesVi.audit.score.atmosphere,
+      episodesVi.audit.score.natural_language, episodesVi.audit.score.originality, episodesVi.audit.score.factual_care,
+      episodesVi.audit.score.length_fit,
+    ],
+    impact: episodesVi.audit.impact,
+    evidence: episodesVi.audit.evidence,
+    repair: episodesVi.audit.repair,
+    showWhy: episodesVi.audit.showWhy,
+    why: episodesVi.audit.why,
+    noChecks: episodesVi.audit.noChecks,
+    openSegment: (address: string): string => episodesVi.audit.openSegment.replace('{{segment}}', address),
+    similarityHeading: episodesVi.similarity.heading,
+    similarityNote: episodesVi.similarity.note,
+    similarityScore: (percent: string): string => episodesVi.similarity.score.replace('{{percent}}', percent),
+    segmentShare: (label: string, percent: string): string =>
+      episodesVi.similarity.segmentShare.replace('{{segment}}', label).replace('{{percent}}', percent),
+    similarityWarn: qualityVi.similarity_warn,
+    similarityBlocked: qualityVi.similarity_blocked,
+    warn: storyVi.similarity.warn,
+    block: storyVi.similarity.block,
+    unavailable: storyVi.similarity.unavailable,
+  },
+  en: {
+    badge: storyEn.generation.revised.badge,
+    heading: episodesEn.audit.heading,
+    blocking: episodesEn.audit.blocking,
+    advisory: episodesEn.audit.advisory,
+    drift: episodesEn.audit.drift,
+    scores: episodesEn.audit.scores,
+    dimension: episodesEn.audit.dimension,
+    scoreValue: episodesEn.audit.scoreValue,
+    dimensions: [
+      episodesEn.audit.score.hook, episodesEn.audit.score.pacing, episodesEn.audit.score.atmosphere,
+      episodesEn.audit.score.natural_language, episodesEn.audit.score.originality, episodesEn.audit.score.factual_care,
+      episodesEn.audit.score.length_fit,
+    ],
+    impact: episodesEn.audit.impact,
+    evidence: episodesEn.audit.evidence,
+    repair: episodesEn.audit.repair,
+    showWhy: episodesEn.audit.showWhy,
+    why: episodesEn.audit.why,
+    noChecks: episodesEn.audit.noChecks,
+    openSegment: (address: string): string => episodesEn.audit.openSegment.replace('{{segment}}', address),
+    similarityHeading: episodesEn.similarity.heading,
+    similarityNote: episodesEn.similarity.note,
+    similarityScore: (percent: string): string => episodesEn.similarity.score.replace('{{percent}}', percent),
+    segmentShare: (label: string, percent: string): string =>
+      episodesEn.similarity.segmentShare.replace('{{segment}}', label).replace('{{percent}}', percent),
+    similarityWarn: qualityEn.similarity_warn,
+    similarityBlocked: qualityEn.similarity_blocked,
+    warn: storyEn.similarity.warn,
+    block: storyEn.similarity.block,
+    unavailable: storyEn.similarity.unavailable,
+  },
+} as const;
+
+/** A version id for the revised snapshot, distinct from the stored/fresh/saved ids of the editor flows. */
+export const SELF_REVIEW_VERSION_ID = '88888888-8888-4888-8888-888888888888';
+/** The blocking objective issue's evidence: literal markup the panel must render as text, never as an element. */
+export const SELF_REVIEW_EVIDENCE = 'Draft line: <b>x</b> stays plain text.';
+/** The taste issue arrives claiming `blocking`; the client (and the server) clamp it to advisory. */
+const SELF_REVIEW_TASTE_EVIDENCE = 'Repeated wording in the opening.';
+const SELF_REVIEW_DRIFT_EVIDENCE = 'Paragraph 2 changed after the automatic fix.';
+const SELF_REVIEW_BLOCKING_IMPACT = 'The paragraph reads as a list of beats.';
+const SELF_REVIEW_BLOCKING_REPAIR = 'Keep at most two scenes.';
+/** The seven rubric scores, in `SCORE_DIMENSIONS` order; every row asserts one cell below. */
+const SELF_REVIEW_SCORES = { hook: 3, pacing: 4, atmosphere: 2, natural_language: 5, originality: 3, factual_care: 4, length_fit: 2 } as const;
+
+/** One `audit.v1` `model_review.issues[]` row (`kind`, `severity`, `repair_direction` are the wire names). */
+function reviewIssue(options: {
+  readonly id: string; readonly type: string; readonly kind: 'objective' | 'taste'; readonly severity: 'blocking' | 'advisory';
+  readonly segment: string; readonly impact: string; readonly evidence: string; readonly repairDirection: string | null;
+}): Record<string, unknown> {
+  return {
+    id: options.id, type: options.type, kind: options.kind, severity: options.severity, segment: options.segment,
+    impact: options.impact, evidence: options.evidence, repair_direction: options.repairDirection,
+  };
+}
+
+const BLOCKING_ISSUE = reviewIssue({
+  id: 'review-p1-keyword_count_per_segment', type: 'keyword_count_per_segment', kind: 'objective', severity: 'blocking',
+  segment: 'p:1', impact: SELF_REVIEW_BLOCKING_IMPACT, evidence: SELF_REVIEW_EVIDENCE, repairDirection: SELF_REVIEW_BLOCKING_REPAIR,
+});
+const TASTE_ISSUE = reviewIssue({
+  id: 'review-hook-repetitive_phrasing', type: 'repetitive_phrasing', kind: 'taste', severity: 'blocking',
+  segment: 'hook', impact: 'The opening reads as a repeat.', evidence: SELF_REVIEW_TASTE_EVIDENCE, repairDirection: null,
+});
+/** The revision's own advisory drift finding: review #2 claims it, so it is what the expanded panel lists. */
+const DRIFT_ISSUE = reviewIssue({
+  id: 'review-revision-drift', type: 'revision_drift', kind: 'objective', severity: 'advisory', segment: 'p:1',
+  impact: 'The automatic fix may have drifted.', evidence: SELF_REVIEW_DRIFT_EVIDENCE, repairDirection: 'Review the fixed paragraph.',
+});
+
+export interface SelfReviewSeedOptions {
+  /** The similarity hint the hint set carries: `Q-SIM-01` warns, `Q-SIM-02` blocks (the client never re-derives it). */
+  readonly verdict?: 'warn' | 'block';
+  /** `currentStory.similarityScore`; `null` means "not scorable" and shows `story.similarity.unavailable` when sources exist. */
+  readonly similarityScore?: number | null;
+  /** The recorded `similarity.segments[]` overlap; defaults to the single `p:1` row at 21%. */
+  readonly segments?: readonly { readonly segment: string; readonly share: number }[];
+  /** `false` drops `auditReport` entirely (soft 02.6.2-T1: empty panel, no badge, no error). */
+  readonly audit?: boolean;
+}
+
+/** The verbatim `audit.v1` document this task reads: review #1, the applied revision with review #2, and similarity. */
+export function selfReviewAuditReport(options: SelfReviewSeedOptions = {}): Record<string, unknown> {
+  const similarityScore = options.similarityScore === undefined ? 0.21 : options.similarityScore;
+  return {
+    model_review: {
+      model: 'e2e-review-model', prompt_version: 'review.v1', stale: false, scores: SELF_REVIEW_SCORES,
+      issues: [BLOCKING_ISSUE, TASTE_ISSUE], real_world_claims: [],
+    },
+    revision: {
+      applied: true,
+      fixed_issue_ids: ['review-p1-keyword_count_per_segment'],
+      parent_version_id: STORED_VERSION_ID,
+      drift: { changed_segments: ['p:1'], unflagged_changed: [], added_findings: [] },
+      review_after: { scores: SELF_REVIEW_SCORES, issues: [BLOCKING_ISSUE, TASTE_ISSUE, DRIFT_ISSUE] },
+    },
+    similarity: {
+      score: similarityScore, n: 14, corpus: 'sources',
+      segments: options.segments ?? [{ segment: 'p:1', share: 0.21 }],
+    },
+  };
+}
+
+/**
+ * The flattened `qualityHints` set. The two review hints mirror their recorded issue (`segment`, `kind`, severity,
+ * evidence, repair direction) so the panel's `partial` note never fires for a payload that agrees with itself; the
+ * similarity hint is the ONLY source of the highlight verdict (`Q-SIM-01` warn / `Q-SIM-02` block).
+ */
+export function selfReviewHints(options: SelfReviewSeedOptions = {}): readonly CurrentStoryDto['qualityHints'][number][] {
+  const blocked = (options.verdict ?? 'warn') === 'block';
+  return [
+    {
+      ruleId: 'keyword_count_per_segment', messageKey: 'quality.keyword_count_per_segment', evidence: SELF_REVIEW_EVIDENCE,
+      kind: 'objective', severity: 'blocking', segment: 'p:1', repairDirection: SELF_REVIEW_BLOCKING_REPAIR,
+      measured: null, threshold: null,
+    },
+    {
+      ruleId: 'repetitive_phrasing', messageKey: 'quality.repetitive_phrasing', evidence: SELF_REVIEW_TASTE_EVIDENCE,
+      kind: 'taste', severity: 'advisory', segment: 'hook', repairDirection: null, measured: null, threshold: null,
+    },
+    {
+      ruleId: blocked ? 'Q-SIM-02' : 'Q-SIM-01', messageKey: blocked ? 'quality.similarity_blocked' : 'quality.similarity_warn',
+      evidence: '', kind: 'objective', severity: blocked ? 'blocking' : 'advisory', segment: 'meta',
+      repairDirection: null, measured: null, threshold: null,
+    },
+  ];
+}
+
+/** A `story_review` episode whose current version is `source = revised`, carrying the seeded review payload. */
+export function selfReviewDetail(options: SelfReviewSeedOptions = {}): EpisodeDetailDto {
+  const similarityScore = options.similarityScore === undefined ? 0.21 : options.similarityScore;
+  return editorDetail({
+    currentStory: {
+      ...storySnapshot(STORY_CONTENT, SELF_REVIEW_VERSION_ID, 2),
+      // No audit document means no revision either (soft 02.6.2-T1): the version reads as a plain manual one, so the
+      // empty-state case can also prove that no badge is rendered.
+      source: options.audit === false ? 'manual' : 'revised',
+      auditReport: options.audit === false ? null : selfReviewAuditReport(options),
+      similarityScore,
+      qualityHints: [...selfReviewHints(options)],
+    },
+  });
+}
+
+interface SelfReviewWorld {
+  readonly api: StoryEditorStubs;
+  readonly server: ResearchServer;
+}
+
+/**
+ * Registers the read-only gate read (10.5.5-T1: `/sources`, `/fact-sheet`, `/episodes/{id}`, `/series/{id}`) BEFORE the
+ * story stubs, so `stubStoryEditor`'s detail route answers the editor's own reads (Playwright resolves the most
+ * recently registered matching route first) and the page's gate sees the seeded source list.
+ */
+async function openSelfReview(
+  page: Page, lang: E2eLang,
+  options: { readonly detail?: EpisodeDetailDto; readonly sources?: readonly SourceListItemDto[] } = {},
+): Promise<SelfReviewWorld> {
+  const server = await stubResearch(page, {
+    sources: options.sources ?? [researchSource(1)], sheet: null, generating: false, requests: [],
+  });
+  const api = await openEditor(page, lang, { detail: options.detail ?? selfReviewDetail() });
+  return { api, server };
+}
+
+const reviewPanel = (page: Page): Locator => page.locator('nts-review-panel');
+const panelBody = (page: Page): Locator => reviewPanel(page).locator('.review-panel__body');
+
+/** Scrolls the panel into view (its body is `@defer (on viewport)`, same as the annotation panel) and waits for it. */
+async function openPanelBody(page: Page): Promise<Locator> {
+  const panel = reviewPanel(page);
+  await panel.scrollIntoViewIfNeeded();
+  await expect(panelBody(page)).toBeVisible();
+  return panel;
+}
+
+/**
+ * Task file acceptance 1/2/3/5/6/7/12 (vi + en): the revised badge, the derived counts, the seven-row score table with
+ * its caption, the expanded "why" panel rendering evidence/impact/repair as TEXT (a taste issue stays advisory), the
+ * drift note, and the similarity panel row plus the inline `quality.similarity_warn` note on paragraph 2.
+ */
+export async function selfReviewPanelFlow(page: Page, lang: E2eLang): Promise<void> {
+  const C = SELF_REVIEW_COPY[lang];
+  const L = EDITOR_COPY[lang];
+  await openSelfReview(page, lang);
+
+  // (1) The revised version shows the shared badge, eager in the page header, described by the drift note.
+  const badge = page.locator('nts-revised-badge .revised-badge');
+  await expect(badge).toHaveText(C.badge);
+  await expect(badge).toHaveAttribute('role', 'note');
+  await expect(badge).toHaveAttribute('aria-describedby', 'story-review-audit-drift');
+  await expect(page.locator('#story-review-audit-drift')).toHaveText(C.drift);
+
+  // (2) The panel is a named region (its section carries `episodes.audit.heading`) with the derived counts.
+  await expect(page.getByRole('region', { name: C.heading, exact: true })).toBeVisible();
+  const counts = reviewPanel(page).locator('.review-panel__counts');
+  await expect(counts).toContainText(`${C.blocking}: 1`);
+  await expect(counts).toContainText(`${C.advisory}: 2`);
+
+  const panel = await openPanelBody(page);
+
+  // (3) The scores are a real table: a caption, two column headers and seven row headers.
+  const table = panel.getByRole('table');
+  await expect(table).toBeVisible();
+  await expect(table.locator('caption')).toHaveText(C.scores);
+  await expect(table.getByRole('columnheader')).toHaveText([C.dimension, C.scoreValue]);
+  await expect(table.getByRole('rowheader')).toHaveText([...C.dimensions]);
+  await expect(table.getByRole('cell')).toHaveText(['3', '4', '2', '5', '3', '4', '2']);
+  // `model_review.stale` is false, so the stale marker is not rendered next to the scores.
+  await expect(page.locator('#story-review-audit-stale')).toHaveCount(0);
+
+  // (4) Similarity: the overall share, the overlapping address with its percentage and the server's warn copy.
+  const similarity = panel.locator('.review-panel__similarity');
+  await expect(similarity.getByRole('heading', { name: C.similarityHeading, exact: true })).toBeVisible();
+  await expect(similarity).toContainText(C.similarityScore('21'));
+  const row = similarity.getByRole('button', { name: C.segmentShare('2', '21'), exact: true });
+  await expect(row).toBeVisible();
+  await expect(similarity.locator('li').filter({ hasText: C.segmentShare('2', '21') })).toContainText(C.warn);
+  await expect(similarity).toContainText(C.similarityNote);
+
+  // (5) The same verdict reaches paragraph 2 as a text note plus the quiet outline (decoration only).
+  const note = page.locator('#seg-p-1-similarity');
+  await expect(note).toHaveText(C.similarityWarn);
+  await expect(page.locator('textarea[data-segment="p:1"]')).toHaveAttribute('aria-describedby', /seg-p-1-similarity/);
+  await expect(segmentGroup(page, L.paragraph(2))).toHaveClass(/segment-editor--similarity-warn/);
+
+  // (6) The why disclosure is a real control and the recorded review renders evidence/impact/repair as text.
+  const disclosure = panel.locator('.review-panel__disclosure');
+  await expect(disclosure).toHaveText(C.showWhy);
+  await expect(disclosure).toHaveAttribute('aria-controls', 'story-review-audit-why');
+  await disclosure.click();
+  await expect(disclosure).toHaveAttribute('aria-expanded', 'true');
+  const why = page.locator('#story-review-audit-why');
+  await expect(why).toBeVisible();
+  await expect(why).toHaveAttribute('aria-label', C.why);
+
+  const blocking = why.locator('li').filter({ hasText: SELF_REVIEW_EVIDENCE });
+  await expect(blocking).toHaveCount(1);
+  await expect(blocking).toContainText(C.blocking);
+  await expect(blocking).toContainText(`${C.impact}:`);
+  await expect(blocking).toContainText(SELF_REVIEW_BLOCKING_IMPACT);
+  await expect(blocking).toContainText(`${C.evidence}:`);
+  await expect(blocking).toContainText(`${C.repair}:`);
+  await expect(blocking).toContainText(SELF_REVIEW_BLOCKING_REPAIR);
+  // The literal `<b>` markers stay text: interpolation only, no innerHTML, no element.
+  await expect(blocking.locator('b')).toHaveCount(0);
+  await expect(blocking).toContainText(SELF_REVIEW_EVIDENCE);
+  await expect(blocking.getByRole('button', { name: C.openSegment('p:1'), exact: true })).toBeVisible();
+
+  // The taste issue's payload claimed `blocking`; it is rendered — and counted — as advisory.
+  const taste = why.locator('li').filter({ hasText: SELF_REVIEW_TASTE_EVIDENCE });
+  await expect(taste).toContainText(C.advisory);
+  await expect(taste).not.toContainText(C.blocking);
+  // The revision's drift finding is listed as an advisory issue too.
+  await expect(why.locator('li').filter({ hasText: SELF_REVIEW_DRIFT_EVIDENCE })).toContainText(C.advisory);
+}
+
+/** Task file acceptance 6 (blocked variant): a `Q-SIM-02` hint set renders the blocked copy, never a re-derived verdict. */
+export async function selfReviewBlockedVariantFlow(page: Page, lang: E2eLang): Promise<void> {
+  const C = SELF_REVIEW_COPY[lang];
+  const L = EDITOR_COPY[lang];
+  await openSelfReview(page, lang, { detail: selfReviewDetail({ verdict: 'block' }) });
+
+  const panel = await openPanelBody(page);
+  const similarity = panel.locator('.review-panel__similarity');
+  const row = similarity.locator('li').filter({ hasText: C.segmentShare('2', '21') });
+  await expect(row).toContainText(C.block);
+  await expect(row).not.toContainText(C.warn);
+
+  const note = page.locator('#seg-p-1-similarity');
+  await expect(note).toHaveText(C.similarityBlocked);
+  await expect(note).not.toHaveText(C.similarityWarn);
+  await expect(segmentGroup(page, L.paragraph(2))).toHaveClass(/segment-editor--similarity-block/);
+}
+
+/** Task file acceptance 8: no `auditReport` means an empty state, no badge and no error — never a `0` count claim. */
+export async function selfReviewEmptyAuditFlow(page: Page, lang: E2eLang): Promise<void> {
+  const C = SELF_REVIEW_COPY[lang];
+  await openSelfReview(page, lang, { detail: selfReviewDetail({ audit: false, similarityScore: null }) });
+
+  await expect(page.locator('nts-revised-badge')).toHaveCount(0);
+  await expect(page.locator('nts-error-state')).toHaveCount(0);
+  await expect(page.locator('#story-review-audit-drift')).toHaveCount(0);
+
+  const panel = await openPanelBody(page);
+  await expect(panel.locator('.review-panel__counts')).toHaveCount(0);
+  await expect(panel.locator('.review-panel__empty')).toHaveText(C.noChecks);
+  await expect(panel.getByRole('table')).toHaveCount(0);
+
+  await panel.locator('.review-panel__disclosure').click();
+  await expect(page.locator('#story-review-audit-why')).toContainText(C.noChecks);
+  // No highlight was invented from the missing document.
+  await expect(page.locator('#seg-p-1-similarity')).toHaveCount(0);
+}
+
+/** Task file acceptance 7 (first half): a `null` score with sources shows the verbatim copy and marks nothing. */
+export async function selfReviewUnavailableFlow(page: Page, lang: E2eLang): Promise<void> {
+  const C = SELF_REVIEW_COPY[lang];
+  await openSelfReview(page, lang, { detail: selfReviewDetail({ similarityScore: null, segments: [] }) });
+
+  const panel = await openPanelBody(page);
+  const similarity = panel.locator('.review-panel__similarity');
+  await expect(similarity).toContainText(C.unavailable);
+  await expect(similarity.locator('li')).toHaveCount(0);
+  await expect(page.locator('#seg-p-1-similarity')).toHaveCount(0);
+  await expect(page.locator('.segment-editor--similarity-warn, .segment-editor--similarity-block')).toHaveCount(0);
+}
+
+/** Task file acceptance 7 (second half): with no sources at all, nothing similarity-related is rendered. */
+export async function selfReviewNoSourcesFlow(page: Page, lang: E2eLang): Promise<void> {
+  const C = SELF_REVIEW_COPY[lang];
+  const { server } = await openSelfReview(page, lang, { sources: [] });
+  // The page only reports "sources exist" once the gate read has completed (`ResearchStore.loaded()`), which needs both
+  // research reads; wait for them plus a bounded quiet window so an absent block is a real absence, not an early
+  // assertion made while `sourcesExist` is still false for lack of readiness.
+  const researchGets = (suffix: string): number =>
+    server.requests.filter((request) => new URL(request.url()).pathname.endsWith(suffix)).length;
+  await expect.poll(() => researchGets('/sources')).toBe(1);
+  await expect.poll(() => researchGets('/fact-sheet')).toBe(1);
+
+  const panel = await openPanelBody(page);
+  await page.waitForTimeout(500);
+  await expect(panel.locator('.review-panel__similarity')).toHaveCount(0);
+  await expect(panel).not.toContainText(C.similarityHeading);
+  await expect(page.locator('#seg-p-1-similarity')).toHaveCount(0);
+  // The review half of the panel is unaffected: sources only gate the similarity view.
+  await expect(panel.getByRole('table')).toBeVisible();
+}
+
+/** Task file acceptance 9: a reorder keeps the highlight and its note on the same text (store remap, end to end). */
+export async function selfReviewReorderFlow(page: Page, lang: E2eLang): Promise<void> {
+  const C = SELF_REVIEW_COPY[lang];
+  const L = EDITOR_COPY[lang];
+  const S = EDITOR_STRUCTURE_COPY[lang];
+  await openSelfReview(page, lang);
+
+  const before = await paragraphValues(page);
+  const moved = before[1];
+  expect(moved, 'the seeded story has four paragraphs').toBeDefined();
+  await expect(page.locator('#seg-p-1-similarity')).toHaveText(C.similarityWarn);
+
+  await page.getByRole('button', { name: S.moveUpAt(2), exact: true }).click();
+  await expect.poll(() => paragraphValues(page)).toEqual([before[1], before[0], before[2], before[3]]);
+
+  // The note follows its text to the new address; the old address keeps none.
+  await expect(page.locator('textarea[data-segment="p:0"]')).toHaveValue(moved ?? '');
+  await expect(page.locator('#seg-p-0-similarity')).toHaveText(C.similarityWarn);
+  await expect(page.locator('textarea[data-segment="p:0"]')).toHaveAttribute('aria-describedby', /seg-p-0-similarity/);
+  await expect(page.locator('#seg-p-1-similarity')).toHaveCount(0);
+  await expect(segmentGroup(page, L.paragraph(1))).toHaveClass(/segment-editor--similarity-warn/);
+  await expect(segmentGroup(page, L.paragraph(2))).not.toHaveClass(/segment-editor--similarity-(?:warn|block)/);
+
+  // ... and the panel row is re-keyed the same way.
+  const panel = await openPanelBody(page);
+  const similarity = panel.locator('.review-panel__similarity');
+  await expect(similarity.getByRole('button', { name: C.segmentShare('1', '21'), exact: true })).toBeVisible();
+  await expect(similarity.getByRole('button', { name: C.segmentShare('2', '21'), exact: true })).toHaveCount(0);
+}
+
+/** Task file acceptance 11: axe-clean with the score table and the expanded "why" panel visible. */
+export async function selfReviewA11yFlow(page: Page, lang: E2eLang): Promise<void> {
+  await openSelfReview(page, lang);
+  const panel = await openPanelBody(page);
+  await panel.locator('.review-panel__disclosure').click();
+  await expect(page.locator('#story-review-audit-why')).toBeVisible();
+  await expect(panel.getByRole('table')).toBeVisible();
+  await expectA11yClean(page);
+  // A second scan restricted to the panel proves the table and its row headers are clean on their own.
+  await expectA11yClean(page, { include: ['nts-review-panel'] });
+}
+
+/** Task file acceptance 11: the panel fits the 360 px viewport with no horizontal overflow. */
+export async function selfReviewNarrow360Flow(page: Page, lang: E2eLang): Promise<void> {
+  await page.setViewportSize({ width: 360, height: 800 });
+  await openSelfReview(page, lang);
+  const panel = reviewPanel(page);
+  await panel.scrollIntoViewIfNeeded();
+  await expect(panelBody(page)).toBeVisible();
+
+  expect(await noHorizontalOverflow(page)).toBe(true);
+  const overflow = await panel.evaluate((node) => node.scrollWidth - node.clientWidth);
+  expect(overflow, 'the review panel must fit the 360 px viewport').toBeLessThanOrEqual(0);
+  const box = await panel.boundingBox();
+  expect(box, 'the review panel must be laid out').not.toBeNull();
+  expect(box!.x).toBeGreaterThanOrEqual(0);
+  expect(box!.x + box!.width).toBeLessThanOrEqual(360);
+  await expectA11yClean(page);
+}
+
+/**
+ * Task file acceptance 10: rendering the panel adds no detail read. The baseline is the two reads the editor already
+ * makes — its own detail read and the read-only gate's (10.5.5-T1 hand-over); every panel interaction after that must
+ * leave the count alone.
+ */
+export async function selfReviewNoExtraRequestFlow(page: Page, lang: E2eLang): Promise<void> {
+  const { api, server } = await openSelfReview(page, lang);
+  await expect.poll(() => api.detailGets.length, { message: 'editor detail read + the read-only gate read' }).toBe(2);
+  await expect.poll(() => server.requests.filter((request) => new URL(request.url()).pathname.endsWith('/sources')).length).toBe(1);
+  const baseline = api.detailGets.length;
+
+  const panel = await openPanelBody(page);
+  await expect(panel.getByRole('table')).toBeVisible();
+  await panel.locator('.review-panel__disclosure').click();
+  await expect(page.locator('#story-review-audit-why')).toBeVisible();
+  // A bounded quiet window (the same settle the editor specs use): a straggling read would surface here.
+  await page.waitForTimeout(650);
+
+  expect(api.detailGets.length, 'the panel renders from the already-loaded payload').toBe(baseline);
+  expect(await panel.getByRole('rowheader').count()).toBe(7);
 }
