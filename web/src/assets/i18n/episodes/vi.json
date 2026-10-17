@@ -1,4 +1,39 @@
 {
+  "audit": {
+    "advisory": "Nên xem",
+    "blocking": "Cần sửa",
+    "dimension": "Tiêu chí",
+    "drift": "Bản tự sửa có thể đã lệch — hãy xem lại các đoạn được sửa",
+    "evidence": "Dẫn chứng",
+    "heading": "Tự đánh giá",
+    "hideWhy": "Ẩn chi tiết đánh giá",
+    "impact": "Ảnh hưởng",
+    "noChecks": "Chưa có kiểm tra nào được ghi nhận",
+    "noIssues": "Không ghi nhận vấn đề trong lần đánh giá này",
+    "openSegment": "Mở đoạn {{segment}}",
+    "partial": "Bản đánh giá đã ghi nhận khác với các gợi ý hiện tại. Số lượng được tính theo gợi ý đang hiển thị trong trình sửa.",
+    "repair": "Hướng sửa",
+    "score": {
+      "atmosphere": "Không khí",
+      "factual_care": "Độ cẩn trọng về dữ kiện",
+      "hook": "Mở đầu",
+      "length_fit": "Độ dài phù hợp",
+      "natural_language": "Ngôn ngữ tự nhiên",
+      "originality": "Tính nguyên bản",
+      "pacing": "Nhịp kể"
+    },
+    "scoreValue": "Điểm (1–5)",
+    "scores": "Điểm đánh giá",
+    "showWhy": "Xem chi tiết đánh giá",
+    "why": "Chi tiết đánh giá đã ghi nhận"
+  },
+  "similarity": {
+    "heading": "Giống nguồn",
+    "note": "Đây là gợi ý, bạn vẫn có thể duyệt nếu không bị chặn",
+    "pastEpisodes": "Mức trùng với các tập trước chỉ mang tính tham khảo.",
+    "score": "Mức trùng tổng thể: {{percent}}%",
+    "segmentShare": "Đoạn {{segment}} — {{percent}}%"
+  },
   "list": {
     "title": "Tập phim",
     "subtitle": "Theo dõi tập phim từ ý tưởng đến lúc đăng.",

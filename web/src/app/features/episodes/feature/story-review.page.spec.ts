@@ -1,5 +1,5 @@
-import { ChangeDetectionStrategy, Component, input, output, signal } from '@angular/core';
-import { TestBed } from '@angular/core/testing';
+import { ChangeDetectionStrategy, Component, computed, input, output, signal } from '@angular/core';
+import { DeferBlockBehavior, DeferBlockState, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { ActivatedRoute, Router, convertToParamMap, provideRouter } from '@angular/router';
 import { TRANSLOCO_LOADER, TranslocoService, TranslocoTestingModule } from '@jsverse/transloco';
@@ -8,6 +8,7 @@ import { MatSnackBar, type MatSnackBarDismiss } from '@angular/material/snack-ba
 import { BehaviorSubject, firstValueFrom, of, Subject, type Observable } from 'rxjs';
 import { afterEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 import { AppErrorMapper } from '@core/errors';
+import { RealtimeService } from '@core/realtime';
 import { SessionApi, SessionStore } from '@core/session';
 import { FakeSessionApi } from '@core/session/testing/fake-session.api';
 import { ConfirmDialog, ConflictDialog } from '@shared/ui';
@@ -21,6 +22,16 @@ import coreEn from '../../../../assets/i18n/core/en.json';
 import episodesEn from '../../../../assets/i18n/episodes/en.json';
 import errorsEn from '../../../../assets/i18n/errors/en.json';
 import qualityEn from '../../../../assets/i18n/quality/en.json';
+import storyVi from '../../../../assets/i18n/story/vi.json';
+import storyEn from '../../../../assets/i18n/story/en.json';
+import { countBySeverity, highlightMap, whyIssues } from '../domain/audit.model';
+import { ReviewPanelComponent } from '../ui/review-panel.component';
+import { ResearchStore } from '../application/research.store';
+import type { ResearchSource } from '../domain/research.model';
+import { EpisodesRepository } from '../domain/episodes.repository';
+import { FakeEpisodesRepository } from '../testing/fake-episodes.repository';
+import { FakeEpisodeRealtime } from '../testing/fake-episode-realtime';
+import { mergeAnnotations } from '../application/annotation-merge';
 import { EpisodeDetailStore } from '../application/episode-detail.store';
 import { StoryEditorStore } from '../application/story-editor.store';
 import { ApprovalStore } from '../application/approval.store';
@@ -28,7 +39,7 @@ import { VersionsStore } from '../application/versions.store';
 import { fakeVersionsStore } from '../testing/fake-versions.store';
 import { fakeResearchStore, fakeResearchStoreProviders } from '../testing/fake-research.store';
 import { StoryRepository } from '../domain/story.repository';
-import { FakeStoryRepository, attestation } from '../testing/fake-story.repository';
+import { FakeStoryRepository, attestation, auditReport, reviewIssue, similaritySection } from '../testing/fake-story.repository';
 import { ApproveDialogComponent } from '../ui/approve-dialog/approve-dialog.component';
 import { ReopenDialogComponent } from '../ui/reopen-dialog/reopen-dialog.component';
 import type { SegmentAnnotation } from '../domain/annotation.model';
@@ -51,10 +62,10 @@ class VersionsPanelProbe {
 }
 
 /** The scopes the default test module loads: omitting one (see `createPage`) is how a spec exercises its failed load. */
-const TRANSLATIONS: Record<string, Translation> = { vi: coreVi, 'core/vi': coreVi, 'episodes/vi': episodesVi, 'errors/vi': errorsVi, 'quality/vi': qualityVi };
+const TRANSLATIONS: Record<string, Translation> = { vi: coreVi, 'core/vi': coreVi, 'episodes/vi': episodesVi, 'errors/vi': errorsVi, 'quality/vi': qualityVi, 'story/vi': storyVi };
 /** Both languages, so a spec can switch the active language and prove which copy is frozen and which re-renders. */
 const BILINGUAL: Record<string, Translation> = {
-  ...TRANSLATIONS, en: coreEn, 'core/en': coreEn, 'episodes/en': episodesEn, 'errors/en': errorsEn, 'quality/en': qualityEn,
+  ...TRANSLATIONS, en: coreEn, 'core/en': coreEn, 'episodes/en': episodesEn, 'errors/en': errorsEn, 'quality/en': qualityEn, 'story/en': storyEn,
 };
 
 /** Builds the testing module for a given set of loaded scopes; `langs` is exactly what the loader can resolve. */
@@ -88,6 +99,7 @@ const translations = translationsModule(TRANSLATIONS);
 
 const snapshot: StorySnapshot = {
   versionId: 'version-1', version: 1, etag: '"sv-version-1"', source: 'edited', wordCount: 18, qualityHints: [], attestation: null,
+  auditReport: null, similarityScore: null,
   content: {
     title: 'Chuyến xe cuối',
     hook: { text: 'Mở đầu', keywords: ['Mưa'], fact_refs: [] },
@@ -118,8 +130,22 @@ function fakeStoryStore() {
   // The choices the page asked the store to resolve, in order: the assertion surface for every conflict flow.
   const conflictChoices: string[] = [];
   const conflict = signal<true | null>(null);
+  const current = signal<StorySnapshot>(snapshot);
+  const hints = computed(() => current().qualityHints);
+  const audit = computed(() => current().auditReport);
+  const revision = computed(() => audit()?.revision ?? null);
+  const reviewBlock = computed(() => audit()?.modelReview ?? null);
+  const similarity = computed(() => audit()?.similarity ?? null);
+  const sourcesExist = signal(false);
   return {
-    loading: signal(false), generating: signal(false), generationError: signal(null), canGenerate: signal(false), error: signal<{ readonly status: number } | null>(null), snapshot: signal(snapshot), title: signal(snapshot.content.title), hook: signal(snapshot.content.hook.text),
+    loading: signal(false), generating: signal(false), generationError: signal(null), canGenerate: signal(false), error: signal<{ readonly status: number } | null>(null), snapshot: current, title: signal(snapshot.content.title), hook: signal(snapshot.content.hook.text),
+    hints, audit, reviewBlock, revision, similarity, sourcesExist,
+    setSourcesExist: vi.fn((exists: boolean) => sourcesExist.set(exists)),
+    reviewCounts: computed(() => countBySeverity(hints())), whyIssues: computed(() => whyIssues(audit())),
+    revisedBadge: computed(() => current().source === 'revised' || revision()?.applied === true),
+    driftNote: computed(() => revision()?.drift === true || whyIssues(audit()).some((issue) => issue.type === 'revision_drift')),
+    similarityHighlights: computed(() => highlightMap(similarity(), hints())),
+    similarityUnavailable: computed(() => current().similarityScore === null && sourcesExist()),
     ending: signal(snapshot.content.ending.text), meta: signal({ title: snapshot.content.title, description: snapshot.content.description, tags: snapshot.content.tags, contentWarnings: snapshot.content.content_warnings, structure: null }),
     paragraphs, hookKeywords: signal(snapshot.content.hook.keywords), endingKeywords: signal(snapshot.content.ending.keywords), hookKey: signal('hook-key'), endingKey: signal('ending-key'),
     segmentTokens: signal(new Map([['title', 3], ['hook', 2], ['p:0', 2], ['p:1', 2], ['p:2', 2], ['p:3', 2], ['ending', 1], ['meta', 5]])),
@@ -233,6 +259,7 @@ async function createPage(options: { readonly langs?: Record<string, Translation
   const storyStore = fakeStoryStore();
   const versions = fakeVersionsStore();
   const repo = new FakeStoryRepository();
+  const research = fakeResearchStore();
   const params = new BehaviorSubject(convertToParamMap({ id: 'episode-1' }));
   const query = convertToParamMap(options.panel ? { panel: 'versions' } : {});
   const snack = fakeSnackBar();
@@ -241,6 +268,7 @@ async function createPage(options: { readonly langs?: Record<string, Translation
   const confirm = vi.fn(() => ({ afterClosed: () => of(true) }));
   const testbed = TestBed.configureTestingModule({
     imports: [StoryReviewPage, translationsModule(options.langs ?? TRANSLATIONS)],
+    deferBlockBehavior: DeferBlockBehavior.Manual,
     providers: [
       ...ZONELESS_TEST_PROVIDERS,
       provideRouter([{ path: 'login', children: [] }]),
@@ -262,15 +290,233 @@ async function createPage(options: { readonly langs?: Record<string, Translation
       { provide: EpisodeDetailStore, useValue: detailStore },
       { provide: StoryEditorStore, useValue: storyStore },
       { provide: VersionsStore, useValue: versions },
-      ...fakeResearchStoreProviders(fakeResearchStore()),
+      ...fakeResearchStoreProviders(research),
       ApprovalStore,
     ] },
   }).compileComponents();
   const fixture = TestBed.createComponent(StoryReviewPage);
   fixture.detectChanges();
   await fixture.whenStable();
-  return { fixture, storyStore, detailStore, repo, params, approval: fixture.debugElement.injector.get(ApprovalStore), versions, snack, dialogs, confirm, transloco: TestBed.inject(TranslocoService) };
+  return { fixture, storyStore, detailStore, repo, params, research, approval: fixture.debugElement.injector.get(ApprovalStore), versions, snack, dialogs, confirm, transloco: TestBed.inject(TranslocoService) };
 }
+
+const reviewSource: ResearchSource = {
+  id: 'source-1', kind: 'user_note', url: null, registrableDomain: null, noteText: 'Source note', status: 'fetched',
+  errorCode: null, errorMessageKey: null, httpStatus: null, title: null, finalUrl: null, contentType: null,
+  textChars: 11, isCited: true, createdAt: '2026-10-01T00:00:00Z', fetchedAt: null,
+};
+
+function reviewedSnapshot(overrides: Partial<StorySnapshot> = {}): StorySnapshot {
+  const issue = reviewIssue({ id: 'M1', segment: 'p:3', evidence: 'Recorded draft', repairDirection: 'Use a concrete image.' });
+  return {
+    ...snapshot, source: 'revised', similarityScore: 0.21,
+    qualityHints: [
+      { ruleId: 'Q-HOOK-01', kind: 'objective', severity: 'blocking', segment: 'p:3', messageKey: 'quality.hook_short', evidence: issue.evidence, repairDirection: issue.repairDirection },
+      { ruleId: 'Q-SIM-01', kind: 'objective', severity: 'advisory', segment: 'meta', messageKey: 'quality.similarity_warn', evidence: 'similarity', repairDirection: null },
+    ],
+    auditReport: auditReport({
+      modelReview: { stale: true, issues: [issue], scores: { hook: 1, pacing: 2, atmosphere: 3, natural_language: 4, originality: 5, factual_care: 4, length_fit: 3 } },
+      revision: { applied: true, drift: true, reason: null },
+      similarity: similaritySection({ segments: [{ segment: 'p:3', share: 0.21 }] }),
+    }),
+    ...overrides,
+  };
+}
+
+describe('StoryReviewPage self-review wiring', () => {
+  it.each(['vi', 'en'] as const)('places the revised badge in header reading order and links eager drift/stale explanations in %s', async (lang) => {
+    const { fixture, storyStore, transloco } = await createPage({ langs: BILINGUAL });
+    transloco.setActiveLang(lang);
+    storyStore.snapshot.set(reviewedSnapshot());
+    fixture.detectChanges(); await fixture.whenStable();
+    const root = fixture.nativeElement as HTMLElement;
+    const badge = root.querySelector('nts-revised-badge span')!;
+    expect(badge.textContent).toContain((lang === 'vi' ? storyVi : storyEn).generation.revised.badge);
+    expect(root.querySelector('h1')!.compareDocumentPosition(badge) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
+    expect(badge.compareDocumentPosition(root.querySelector('nts-review-panel')!) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
+    expect(badge.getAttribute('aria-describedby')).toBe('story-review-audit-drift story-review-audit-stale');
+    expect(root.querySelector('#story-review-audit-drift')).not.toBeNull();
+    expect(root.querySelector('#story-review-audit-stale')).not.toBeNull();
+    expect(root.querySelector('nts-revised-badge a')).toBeNull();
+    expect(root.querySelector('nts-review-panel table')).toBeNull();
+  });
+
+  it.each(['generated', 'edited'])('omits the badge and drift note for %s without a revision', async (source) => {
+    const { fixture, storyStore } = await createPage();
+    storyStore.snapshot.set({ ...snapshot, source });
+    fixture.detectChanges(); await fixture.whenStable();
+    const root = fixture.nativeElement as HTMLElement;
+    expect(root.querySelector('nts-revised-badge')).toBeNull();
+    expect(root.querySelector('#story-review-audit-drift')).toBeNull();
+  });
+
+  it('removes dangling badge explanations when neither drift nor stale remains', async () => {
+    const { fixture, storyStore } = await createPage();
+    storyStore.snapshot.set(reviewedSnapshot({ auditReport: auditReport({ modelReview: { stale: false, scores: null, issues: [] } }) }));
+    fixture.detectChanges(); await fixture.whenStable();
+    expect((fixture.nativeElement as HTMLElement).querySelector('nts-revised-badge span')?.hasAttribute('aria-describedby')).toBe(false);
+  });
+
+  it('counts flattened hints, renders each inline once and keeps the raw audit only in the deferred why panel', async () => {
+    const { fixture, storyStore } = await createPage();
+    const current = reviewedSnapshot();
+    storyStore.snapshot.set(current);
+    storyStore.annotations.set(mergeAnnotations(current.qualityHints, []));
+    fixture.detectChanges(); await fixture.whenStable();
+    const root = fixture.nativeElement as HTMLElement;
+    const panel = fixture.debugElement.query(By.directive(ReviewPanelComponent)).componentInstance as ReviewPanelComponent;
+    expect(panel.counts()).toEqual({ blocking: 1, advisory: 1 });
+    expect(panel.partial()).toBe(false);
+    expect(root.querySelector('.review-panel__counts')?.textContent).toContain(`${episodesVi.audit.blocking}: 1`);
+    expect(root.querySelector('nts-review-panel section')?.getAttribute('aria-label')).toBe(episodesVi.audit.heading);
+    expect(root.querySelector('textarea[data-segment="p:3"]')?.closest('nts-segment-editor')?.querySelectorAll('nts-inline-annotation')).toHaveLength(1);
+    expect(root.querySelector('nts-review-panel nts-inline-annotation')).toBeNull();
+    const [block] = await fixture.getDeferBlocks();
+    await block!.render(DeferBlockState.Complete); await fixture.whenStable();
+    expect(root.querySelectorAll('nts-review-panel tbody th[scope="row"]')).toHaveLength(7);
+    expect(root.querySelector('nts-review-panel tbody td')?.textContent).toBe('1');
+    expect(root.querySelector('nts-review-panel table')?.getAttribute('aria-describedby')).toBe('story-review-audit-stale');
+    root.querySelector<HTMLButtonElement>('.review-panel__disclosure')!.click();
+    fixture.detectChanges(); await fixture.whenStable();
+    expect(root.querySelector('#story-review-audit-why')?.textContent).toContain('Use a concrete image.');
+    expect(root.querySelector('nts-review-panel [aria-live]')).toBeNull();
+  });
+
+  it('shows partial only when a recorded issue is missing from the flattened hints and never synthesizes inline rows', async () => {
+    const { fixture, storyStore } = await createPage();
+    storyStore.snapshot.set(reviewedSnapshot({ qualityHints: [] }));
+    fixture.detectChanges(); await fixture.whenStable();
+    const panel = fixture.debugElement.query(By.directive(ReviewPanelComponent)).componentInstance as ReviewPanelComponent;
+    expect(panel.partial()).toBe(true);
+    expect(panel.counts()).toEqual({ blocking: 0, advisory: 0 });
+    expect((fixture.nativeElement as HTMLElement).querySelectorAll('nts-inline-annotation')).toHaveLength(0);
+  });
+
+  it('passes no current review as an empty panel rather than a zero-issue claim', async () => {
+    const { fixture } = await createPage();
+    const [block] = await fixture.getDeferBlocks();
+    await block!.render(DeferBlockState.Complete); await fixture.whenStable();
+    const root = fixture.nativeElement as HTMLElement;
+    expect(root.querySelector('.review-panel__counts')).toBeNull();
+    expect(root.querySelector('.review-panel__empty')?.textContent).toBe(episodesVi.audit.noChecks);
+    root.querySelector<HTMLButtonElement>('.review-panel__disclosure')!.click();
+    fixture.detectChanges(); await fixture.whenStable();
+    expect(root.querySelector('#story-review-audit-why')?.textContent?.trim()).toBe(episodesVi.audit.noChecks);
+  });
+
+  it('uses the existing research list to show only the server-addressed similarity note and focuses its paragraph', async () => {
+    const { fixture, storyStore, research } = await createPage();
+    storyStore.snapshot.set(reviewedSnapshot());
+    research.setSources([reviewSource]);
+    fixture.detectChanges(); await fixture.whenStable();
+    const root = fixture.nativeElement as HTMLElement;
+    const panel = fixture.debugElement.query(By.directive(ReviewPanelComponent)).componentInstance as ReviewPanelComponent;
+    const editor = fixture.debugElement.query(By.directive(StoryEditorComponent)).componentInstance as StoryEditorComponent;
+    expect(storyStore.setSourcesExist).toHaveBeenLastCalledWith(true);
+    expect(panel.similarityRows()).toEqual([{ address: 'p:3', share: 0.21, level: 'warn', addressLabelKey: 'episodes.editor.segment.paragraph', addressLabelIndex: 4, addressText: null }]);
+    expect(root.querySelectorAll('.segment-editor--similarity-warn')).toHaveLength(1);
+    const target = root.querySelector<HTMLTextAreaElement>('textarea[data-segment="p:3"]')!;
+    expect(target.closest('nts-segment-editor')?.querySelector('.segment-editor__similarity')?.textContent).toBe(qualityVi.similarity_warn);
+    const levels = editor.similarityHighlights();
+    storyStore.paragraphs()[0]!.text.set('A keystroke elsewhere');
+    fixture.detectChanges(); await fixture.whenStable();
+    expect(editor.similarityHighlights()).toBe(levels);
+    const focus = vi.spyOn(editor, 'focusSegment');
+    panel.focusRequested.emit('p:3');
+    expect(focus).toHaveBeenCalledWith('p:3');
+    expect(document.activeElement).toBe(target);
+    research.setSources([]);
+    fixture.detectChanges(); await fixture.whenStable();
+    expect(storyStore.setSourcesExist).toHaveBeenLastCalledWith(false);
+    expect(panel.similarityRows()).toEqual([]);
+    expect(panel.similarityScore()).toBeNull();
+    expect(panel.similarityUnavailable()).toBe(false);
+    expect(root.querySelector('.segment-editor__similarity')).toBeNull();
+  });
+
+  it('uses Q-SIM-02 rather than score thresholds and treats past-episode shares as informational', async () => {
+    const { fixture, storyStore, research } = await createPage();
+    const current = reviewedSnapshot();
+    research.setSources([reviewSource]);
+    storyStore.snapshot.set({ ...current, similarityScore: 0.001, qualityHints: [{ ...current.qualityHints[1]!, ruleId: 'Q-SIM-02', messageKey: 'quality.similarity_blocked' }] });
+    fixture.detectChanges(); await fixture.whenStable();
+    const panel = fixture.debugElement.query(By.directive(ReviewPanelComponent)).componentInstance as ReviewPanelComponent;
+    expect(panel.similarityRows()[0]?.level).toBe('block');
+    expect((fixture.nativeElement as HTMLElement).querySelectorAll('.segment-editor--similarity-block')).toHaveLength(1);
+    storyStore.snapshot.set({ ...current, auditReport: auditReport({ similarity: similaritySection({ corpus: 'past_episodes', segments: [{ segment: 'p:3', share: 0.21 }] }) }) });
+    fixture.detectChanges(); await fixture.whenStable();
+    expect(panel.similarityRows()[0]?.level).toBeNull();
+    expect((fixture.nativeElement as HTMLElement).querySelector('.segment-editor__similarity')).toBeNull();
+  });
+
+  it('shows unavailable only with sources and never marks an unscorable snapshot', async () => {
+    const { fixture, storyStore, research } = await createPage();
+    storyStore.snapshot.set(reviewedSnapshot({ similarityScore: null }));
+    research.setSources([reviewSource]);
+    fixture.detectChanges(); await fixture.whenStable();
+    const panel = fixture.debugElement.query(By.directive(ReviewPanelComponent)).componentInstance as ReviewPanelComponent;
+    expect(panel.similarityUnavailable()).toBe(true);
+    expect(panel.similarityRows()).toEqual([]);
+    expect((fixture.nativeElement as HTMLElement).querySelector('.segment-editor__similarity')).toBeNull();
+    const [block] = await fixture.getDeferBlocks();
+    await block!.render(DeferBlockState.Complete); await fixture.whenStable();
+    expect((fixture.nativeElement as HTMLElement).querySelector('.review-panel__similarity')?.textContent).toContain(storyVi.similarity.unavailable);
+    research.setSources([]);
+    fixture.detectChanges(); await fixture.whenStable();
+    expect((fixture.nativeElement as HTMLElement).querySelector('.review-panel__similarity')).toBeNull();
+  });
+
+  it('withholds the previous research list during an episode gate load and clears the audit on a fresh version', async () => {
+    const { fixture, storyStore, research } = await createPage();
+    research.setSources([reviewSource]);
+    storyStore.snapshot.set(reviewedSnapshot());
+    fixture.detectChanges(); await fixture.whenStable();
+    expect(storyStore.sourcesExist()).toBe(true);
+    research.setLoaded(false);
+    fixture.detectChanges(); await fixture.whenStable();
+    expect(storyStore.sourcesExist()).toBe(false);
+    expect((fixture.nativeElement as HTMLElement).querySelector('.segment-editor__similarity')).toBeNull();
+    research.setLoaded(true);
+    fixture.detectChanges(); await fixture.whenStable();
+    expect(storyStore.sourcesExist()).toBe(true);
+    storyStore.snapshot.set({ ...snapshot, versionId: 'version-fresh' });
+    fixture.detectChanges(); await fixture.whenStable();
+    const panel = fixture.debugElement.query(By.directive(ReviewPanelComponent)).componentInstance as ReviewPanelComponent;
+    expect(panel.hasAudit()).toBe(false);
+    expect(panel.scores()).toBeNull();
+    expect(panel.similarityRows()).toEqual([]);
+    expect((fixture.nativeElement as HTMLElement).querySelector('nts-revised-badge')).toBeNull();
+    expect((fixture.nativeElement as HTMLElement).querySelector('#story-review-audit-stale')).toBeNull();
+  });
+
+  it('adds no repository request on load through the real editor/detail stores and reuses one gate load', async () => {
+    const episodes = new FakeEpisodesRepository().scriptGet(() => Promise.resolve({ ...detail, currentStory: reviewedSnapshot() }));
+    const stories = new FakeStoryRepository();
+    const research = fakeResearchStore();
+    const params = convertToParamMap({ id: detail.id }), query = convertToParamMap({});
+    await TestBed.configureTestingModule({
+      imports: [StoryReviewPage, translations], deferBlockBehavior: DeferBlockBehavior.Manual,
+      providers: [
+        ...ZONELESS_TEST_PROVIDERS, provideRouter([]),
+        { provide: ActivatedRoute, useValue: { paramMap: of(params), queryParamMap: of(query), snapshot: { paramMap: params, queryParamMap: query } } },
+        { provide: EpisodesRepository, useValue: episodes }, { provide: StoryRepository, useValue: stories },
+        { provide: RealtimeService, useValue: new FakeEpisodeRealtime() },
+        { provide: SessionApi, useValue: new FakeSessionApi() },
+      ],
+    }).overrideComponent(StoryReviewPage, {
+      set: { providers: [EpisodeDetailStore, StoryEditorStore, { provide: ApprovalStore, useValue: fakeApprovalStore() }, { provide: VersionsStore, useValue: fakeVersionsStore() }, ...fakeResearchStoreProviders(research)] },
+    }).compileComponents();
+    const fixture = TestBed.createComponent(StoryReviewPage);
+    fixture.detectChanges(); await fixture.whenStable(); fixture.detectChanges(); await fixture.whenStable();
+    expect(episodes.getCalls).toEqual([{ episodeId: detail.id, userAction: true }]);
+    expect(research.loadedEpisodeIds).toEqual([detail.id]);
+    expect(stories.calls).toHaveLength(0);
+    expect(stories.approveCalls).toHaveLength(0);
+    expect(stories.reopenCalls).toHaveLength(0);
+    expect(episodes.calls).toHaveLength(0);
+    expect(fixture.debugElement.injector.get(ResearchStore)).toBe(research);
+  });
+});
 
 afterEach(() => TestBed.resetTestingModule());
 

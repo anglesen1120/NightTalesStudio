@@ -8,6 +8,7 @@ import { onEmit } from '@shared/ui/testing/on-emit';
 import { ZONELESS_TEST_PROVIDERS } from '../../../testing/providers';
 import episodesVi from '../../../../assets/i18n/episodes/vi.json';
 import errorsVi from '../../../../assets/i18n/errors/vi.json';
+import qualityVi from '../../../../assets/i18n/quality/vi.json';
 import { StoryEditorComponent } from './story-editor.component';
 import type { SegmentEditorViewModel, StoryEditorViewModel } from './story-editor.view-model';
 import { SceneStripComponent } from './scene-strip.component';
@@ -18,7 +19,7 @@ import { buildAnnotationViews } from './annotation.view-model';
 import type { SegmentAnnotation } from '../domain/annotation.model';
 
 const translations = TranslocoTestingModule.forRoot({
-  langs: { vi: episodesVi, 'episodes/vi': episodesVi, 'errors/vi': errorsVi },
+  langs: { vi: episodesVi, 'episodes/vi': episodesVi, 'errors/vi': errorsVi, 'quality/vi': qualityVi },
   translocoConfig: { availableLangs: ['vi'], defaultLang: 'vi', fallbackLang: 'vi', reRenderOnLangChange: true },
   preloadLangs: true,
 });
@@ -57,6 +58,29 @@ async function setup(vm = viewModel()) {
 afterEach(() => TestBed.resetTestingModule());
 
 describe('StoryEditorComponent', () => {
+  it('passes similarity levels by address through every editor without rebuilding the map on a text edit', async () => {
+    const initial = viewModel();
+    const { fixture, root, texts } = await setup(initial);
+    const highlights = new Map<SegmentAddress, 'warn' | 'block'>([['hook', 'warn'], ['p:1', 'block'], ['ending', 'warn']]);
+    fixture.componentRef.setInput('similarityHighlights', highlights);
+    fixture.detectChanges(); await fixture.whenStable();
+    const levels = (): Record<string, string | null> => Object.fromEntries(fixture.debugElement.queryAll(By.directive(SegmentEditorComponent))
+      .map((element) => {
+        const segment = element.componentInstance as SegmentEditorComponent;
+        return [segment.viewModel().address, segment.similarityLevel()];
+      }));
+    expect(levels()).toEqual({ title: null, hook: 'warn', 'p:0': null, 'p:1': 'block', ending: 'warn' });
+    expect(root.querySelectorAll('.segment-editor__similarity')).toHaveLength(3);
+    texts.get('p:0')!.set('Typed text');
+    fixture.componentRef.setInput('viewModel', { ...initial, paragraphs: [{ ...initial.paragraphs[0]!, text: 'Typed text' }, initial.paragraphs[1]!] });
+    fixture.detectChanges(); await fixture.whenStable();
+    expect(fixture.componentInstance.similarityHighlights()).toBe(highlights);
+    expect(levels()['p:1']).toBe('block');
+    fixture.componentRef.setInput('similarityHighlights', new Map());
+    fixture.detectChanges(); await fixture.whenStable();
+    expect(root.querySelector('.segment-editor__similarity')).toBeNull();
+  });
+
   it('renders beats as read-only context and one textarea for every paragraph', async () => {
     const { root } = await setup();
     expect(root.textContent).toContain('Nhịp: Gieo chuyện');

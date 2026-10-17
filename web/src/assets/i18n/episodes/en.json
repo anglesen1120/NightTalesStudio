@@ -1,4 +1,39 @@
 {
+  "audit": {
+    "advisory": "Worth a look",
+    "blocking": "Must fix",
+    "dimension": "Dimension",
+    "drift": "The automatic fix may have drifted — review the fixed paragraphs",
+    "evidence": "Evidence",
+    "heading": "Self-review",
+    "hideWhy": "Hide review details",
+    "impact": "Impact",
+    "noChecks": "No checks recorded",
+    "noIssues": "No issues recorded in this review",
+    "openSegment": "Open segment {{segment}}",
+    "partial": "The recorded review differs from the current hints. Counts reflect the hints shown in the editor.",
+    "repair": "Repair direction",
+    "score": {
+      "atmosphere": "Atmosphere",
+      "factual_care": "Factual care",
+      "hook": "Hook",
+      "length_fit": "Length fit",
+      "natural_language": "Natural language",
+      "originality": "Originality",
+      "pacing": "Pacing"
+    },
+    "scoreValue": "Score (1–5)",
+    "scores": "Scores",
+    "showWhy": "Show review details",
+    "why": "Recorded review details"
+  },
+  "similarity": {
+    "heading": "Similar to a source",
+    "note": "This is a hint; you can still approve unless it is blocked",
+    "pastEpisodes": "Overlap with past episodes is shown for information only.",
+    "score": "Overall overlap: {{percent}}%",
+    "segmentShare": "Segment {{segment}} — {{percent}}%"
+  },
   "list": {
     "title": "Episodes",
     "subtitle": "Track every episode from idea to publish.",

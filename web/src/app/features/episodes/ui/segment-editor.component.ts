@@ -4,12 +4,13 @@ import { InlineAnnotationComponent, SegmentChipsComponent } from '@shared/ui';
 import type { InlineAnnotationViewModel } from '@shared/ui';
 import { parseAddress } from '@shared/util/segment-address';
 import type { SegmentAddress } from '@shared/util/segment-address';
+import type { SimilarityLevel } from '../domain/audit.model';
 import type { StoryEditorIntent, SegmentEditorViewModel } from './story-editor.view-model';
 
 @Component({
   selector: 'nts-segment-editor',
   imports: [TranslocoPipe, SegmentChipsComponent, InlineAnnotationComponent],
-  providers: [provideTranslocoScope('episodes', 'errors')],
+  providers: [provideTranslocoScope('episodes', 'errors', 'quality')],
   templateUrl: './segment-editor.component.html',
   styleUrl: './segment-editor.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -18,6 +19,7 @@ export class SegmentEditorComponent {
   readonly viewModel = input.required<SegmentEditorViewModel>();
   readonly limitHit = input(false);
   readonly annotations = input<readonly InlineAnnotationViewModel[]>([]);
+  readonly similarityLevel = input<SimilarityLevel | null>(null);
   readonly flaggedChips = input<ReadonlyMap<number, { readonly annotationId: string; readonly messageKey: string }>>(new Map());
   readonly intent = output<StoryEditorIntent>();
 
@@ -25,9 +27,11 @@ export class SegmentEditorComponent {
   protected readonly labelId = computed(() => `${this.controlId()}-label`);
   protected readonly counterId = computed(() => `${this.controlId()}-counter`);
   protected readonly errorId = computed(() => `${this.controlId()}-errors`);
+  protected readonly similarityNoteId = computed(() => `${this.controlId()}-similarity`);
   protected readonly describedBy = computed(() => [
     this.counterId(),
     ...(this.viewModel().errorKeys.length > 0 ? [this.errorId()] : []),
+    ...(this.similarityLevel() !== null ? [this.similarityNoteId()] : []),
     ...this.annotations().map((annotation) => annotation.id),
   ].join(' '));
   protected readonly editableKey = computed(() => {

@@ -1,4 +1,9 @@
 {
+  "similarity": {
+    "block": "Kịch bản quá giống nguồn, không thể duyệt. Hãy viết lại các đoạn bị trùng.",
+    "unavailable": "Chưa kiểm tra được mức độ giống với nguồn.",
+    "warn": "Kịch bản khá giống nguồn. Hãy xem lại các đoạn bị trùng."
+  },
   "generation": {
     "stage": {
       "writing": "Đang viết kịch bản…",

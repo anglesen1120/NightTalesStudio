@@ -1,4 +1,4 @@
-<section class="segment-editor" role="group" [attr.aria-labelledby]="labelId()" [class.segment-editor--read-only]="viewModel().readOnly">
+<section class="segment-editor" role="group" [attr.aria-labelledby]="labelId()" [class.segment-editor--read-only]="viewModel().readOnly" [class.segment-editor--similarity-warn]="similarityLevel() === 'warn'" [class.segment-editor--similarity-block]="similarityLevel() === 'block'">
   <div class="segment-editor__heading">
     <label [id]="labelId()" [for]="controlId()">
       {{ viewModel().labelKey | transloco }}@if (viewModel().labelIndex !== null) { {{ viewModel().labelIndex }} }
@@ -7,6 +7,9 @@
       <span class="segment-editor__beat"><span>{{ 'episodes.editor.beat' | transloco }}:</span> {{ beat }}</span>
     }
   </div>
+  @if (similarityLevel(); as level) {
+    <p class="segment-editor__similarity" [id]="similarityNoteId()">{{ (level === 'block' ? 'quality.similarity_blocked' : 'quality.similarity_warn') | transloco }}</p>
+  }
 
   <textarea
     [id]="controlId()"

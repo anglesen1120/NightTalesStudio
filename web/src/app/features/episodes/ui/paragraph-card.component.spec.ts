@@ -5,6 +5,8 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { ZONELESS_TEST_PROVIDERS } from '../../../testing/providers';
 import episodesVi from '../../../../assets/i18n/episodes/vi.json';
 import episodesEn from '../../../../assets/i18n/episodes/en.json';
+import qualityVi from '../../../../assets/i18n/quality/vi.json';
+import qualityEn from '../../../../assets/i18n/quality/en.json';
 import { ParagraphCardComponent } from './paragraph-card.component';
 import type { SegmentEditorViewModel, StoryEditorIntent } from './story-editor.view-model';
 
@@ -15,7 +17,7 @@ function paragraph(index: number, readOnly = false): SegmentEditorViewModel {
 
 async function setup(index = 2, count = 4, readOnly = false, lang: 'vi' | 'en' = 'vi') {
   const translations = TranslocoTestingModule.forRoot({
-    langs: { vi: episodesVi, en: episodesEn, 'episodes/vi': episodesVi, 'episodes/en': episodesEn },
+    langs: { vi: episodesVi, en: episodesEn, 'episodes/vi': episodesVi, 'episodes/en': episodesEn, 'quality/vi': qualityVi, 'quality/en': qualityEn },
     translocoConfig: { availableLangs: ['vi', 'en'], defaultLang: lang, fallbackLang: lang, reRenderOnLangChange: true }, preloadLangs: true,
   });
   await TestBed.configureTestingModule({ imports: [ParagraphCardComponent, translations], providers: ZONELESS_TEST_PROVIDERS }).compileComponents();
@@ -33,6 +35,20 @@ async function setup(index = 2, count = 4, readOnly = false, lang: 'vi' | 'en' =
 afterEach(() => TestBed.resetTestingModule());
 
 describe('ParagraphCardComponent', () => {
+  it('passes a similarity level to the segment editor and removes the note when cleared', async () => {
+    const { fixture, root } = await setup();
+    fixture.componentRef.setInput('similarityLevel', 'warn');
+    fixture.detectChanges(); await fixture.whenStable();
+    const area = root.querySelector('textarea')!;
+    expect(root.querySelector('.segment-editor--similarity-warn')).not.toBeNull();
+    expect(root.querySelector('.segment-editor__similarity')?.textContent).toBe(qualityVi.similarity_warn);
+    expect(area.getAttribute('aria-describedby')).toContain('similarity');
+    fixture.componentRef.setInput('similarityLevel', null);
+    fixture.detectChanges(); await fixture.whenStable();
+    expect(root.querySelector('.segment-editor__similarity')).toBeNull();
+    expect(area.getAttribute('aria-describedby')).not.toContain('similarity');
+  });
+
   for (const [lang, up, down, handle, del, delAt] of [
     ['vi', 'Lên: đoạn 3', 'Xuống: đoạn 3', 'Kéo để di chuyển', 'Xoá đoạn', 'Xoá đoạn 3'],
     ['en', 'Move up: paragraph 3', 'Move down: paragraph 3', 'Drag to move', 'Delete paragraph', 'Delete paragraph 3'],

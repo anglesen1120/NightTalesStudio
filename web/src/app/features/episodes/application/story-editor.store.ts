@@ -10,6 +10,8 @@ import { SessionStore } from '@core/session';
 import { addressForParagraph, parseAddress, parsePointerAddress, remapAfterInsert, remapAfterRemove, remapAfterReorder } from '@shared/util/segment-address';
 import type { SegmentAddress } from '@shared/util/segment-address';
 import { fromContent, serialize, toContent } from '../domain/story-codec';
+import { REVISION_DRIFT_TYPE, countBySeverity, highlightMap, whyIssues } from '../domain/audit.model';
+import type { ReviewCounts, SimilaritySection, SimilaritySegment } from '../domain/audit.model';
 import type { QualityHint, StoryDraft, StoryMetadata, StorySegment, StorySnapshot } from '../domain/story.model';
 import type { KeywordFlag, SegmentAnnotation } from '../domain/annotation.model';
 import { diffSegmentAddresses, mergeAnnotations } from './annotation-merge';
@@ -116,6 +118,31 @@ export class StoryEditorStore {
   readonly annotationCount = computed(() => this.annotations().length);
   /** Set once per successful save response (after the response snapshot is applied); `null` on load/adopt/clear. */
   readonly annotationAnnouncement = signal<{ readonly count: number; readonly sequence: number } | null>(null);
+  /**
+   * The self-review, revision and similarity of the current version (10.5.3-T2). They read the same `currentStory`
+   * payload as the hints — no extra request — and are re-derived on every snapshot swap (adopt, save response, clear),
+   * so a late detail result for another episode or session can never leave them behind.
+   */
+  readonly audit = computed(() => this.snapshot()?.auditReport ?? null);
+  readonly reviewBlock = computed(() => this.audit()?.modelReview ?? null);
+  readonly revision = computed(() => this.audit()?.revision ?? null);
+  /** The similarity section with its addresses re-keyed like the hints; `null` at the baseline when there is none. */
+  private readonly similarityOverrides = signal<SimilaritySection | null>(null);
+  readonly similarity = computed(() => this.similarityOverrides() ?? this.audit()?.similarity ?? null);
+  /** Counts come from `qualityHints` only — the set the reader sees inline; CR-7 has no per-severity count field. */
+  readonly reviewCounts = computed<ReviewCounts>(() => countBySeverity(this.hints()));
+  /** Only a version whose `source` is `revised` earns the badge: an edit keeps `revision` forward in the audit document (the edited text is no longer the corrected one). */
+  readonly revisedBadge = computed(() => this.snapshot()?.source === 'revised');
+  /** The recorded review issues of the expanded "why" panel ONLY: they already arrive inline inside `qualityHints`. */
+  readonly whyIssues = computed(() => whyIssues(this.audit()));
+  readonly driftNote = computed(() => this.revision()?.drift === true || this.whyIssues().some((issue) => issue.type === REVISION_DRIFT_TYPE));
+  /** `address → warn|block` from the server's hint verdict, never re-derived from the raw score. */
+  readonly similarityHighlights = computed(() => highlightMap(this.similarity(), this.hints()));
+  /** Wired from the research store by the page (next wave): with no sources, no similarity UI is rendered at all. */
+  private readonly sourcesExistState = signal(false);
+  readonly sourcesExist = this.sourcesExistState.asReadonly();
+  /** A saved version (`StoryVersionDto`) carries neither an audit document nor a score: that is "not delivered", not "could not be checked". */
+  readonly similarityUnavailable = computed(() => this.snapshot()?.similarityScore === null && this.snapshot()?.auditReport !== null && this.sourcesExist());
   /** Advisory only (D9/D18): the client never blocks a save the server's validator would report. */
   readonly structureWarning = computed(() => {
     if (this.snapshot() === null) return false;
@@ -156,6 +183,8 @@ export class StoryEditorStore {
   private bufferedHints: readonly QualityHint[] = [];
   /** Keyword flags of that same paragraph: they leave `keywordFlags` with their text and share the buffer's lifetime. */
   private bufferedFlags: readonly KeywordFlag[] = [];
+  /** Similarity segments of that same paragraph: a highlight never outlives its text, and returns with it. */
+  private bufferedSimilarity: readonly SimilaritySegment[] = [];
   /** Monotonic counter so a live region re-announces even when the count is unchanged across saves. */
   private announcementSequence = 0;
   /** The ETag already surfaced (or dismissed) as a remote change: a repeat never re-raises the same one. */
@@ -198,6 +227,16 @@ export class StoryEditorStore {
 
   hasUnsavedChanges(): boolean {
     return this.snapshot() !== null && serialize(this.buildDraft()) !== this.baselineJson();
+  }
+
+  /**
+   * Whether the episode has sources the story could overlap (a url source or a fact sheet). The page reads it from the
+   * research store, and `similarityUnavailable` needs it: without sources nothing similarity-related is shown at all.
+   * A write after destroy or a session change is ignored, like every other late result.
+   */
+  setSourcesExist(value: boolean): void {
+    if (!this.active()) return;
+    this.sourcesExistState.set(value);
   }
 
   async generateStory(): Promise<void> {
@@ -562,15 +601,26 @@ export class StoryEditorStore {
       const target = map(flag.address);
       if (target === null) buffered.push(flag); else flags.push(target === flag.address ? flag : { ...flag, address: target });
     }
+    // The similarity segments ride the same map: a highlight follows its paragraph through a move, a delete and an
+    // undo, and the removed paragraph's own segment waits in the buffer, exactly like a hint.
+    const section = this.similarity();
+    const segments: SimilaritySegment[] = [];
+    const bufferedSegments: SimilaritySegment[] = [];
+    for (const row of section?.segments ?? []) {
+      const target = map(row.segment);
+      if (target === null) bufferedSegments.push(row); else segments.push(target === row.segment ? row : { ...row, segment: target });
+    }
     // A buffered paragraph comes back at its own removed index (`undoRemove`), so its hints stay keyed to that index:
     // a move reorders the live paragraphs only and never re-keys the buffer; `insert` (undo) returns them untouched.
-    if (kind === 'remove') { this.bufferedHints = dropped; this.bufferedFlags = buffered; }
+    if (kind === 'remove') { this.bufferedHints = dropped; this.bufferedFlags = buffered; this.bufferedSimilarity = bufferedSegments; }
     if (kind === 'insert') {
       hints.push(...this.bufferedHints); this.bufferedHints = [];
       flags.push(...this.bufferedFlags); this.bufferedFlags = [];
+      segments.push(...this.bufferedSimilarity); this.bufferedSimilarity = [];
     }
     this.hintOverrides.set(hints);
     this.keywordFlags.set(flags.slice(0, MAX_KEYWORD_FLAGS));
+    this.similarityOverrides.set(section === null ? null : { ...section, segments });
   }
 
   /** The order moved away from (or back to) the baseline order: re-derive the flag and commit the change as an edit. */
@@ -601,6 +651,7 @@ export class StoryEditorStore {
     this.removedState.set(null);
     this.bufferedHints = [];
     this.bufferedFlags = [];
+    this.bufferedSimilarity = [];
   }
 
   private buildDraft(): StoryDraft {
@@ -639,6 +690,7 @@ export class StoryEditorStore {
     this.baselineKeys = draft.paragraphs.map((paragraph) => paragraph.segKey);
     // The server's hints describe the order it just acknowledged: the local remap starts over from them.
     this.hintOverrides.set(null);
+    this.similarityOverrides.set(null);
     this.recomputeStructural();
   }
 
@@ -698,6 +750,8 @@ export class StoryEditorStore {
     this.keywordFlags.set([]); this.setConflictDiff(null); this.conflictBusy.set(false);
     this.remoteChange.set(null); this.announcedEtag = null; this.annotationAnnouncement.set(null);
     this.clearRemoved(); this.hintOverrides.set(null); this.baselineKeys = []; this.structuralChanged.set(false);
+    // The audit view belongs to the snapshot: with it gone, so are the similarity remap and the sources flag.
+    this.similarityOverrides.set(null); this.sourcesExistState.set(false);
   }
   private teardown(): void {
     this.generateIntent = null; this.generating.set(false); this.generationError.set(null);
