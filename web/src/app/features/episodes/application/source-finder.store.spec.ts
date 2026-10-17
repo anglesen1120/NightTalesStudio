@@ -38,11 +38,12 @@ function flush(): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, 0));
 }
 
-function deferred<T>(): { readonly promise: Promise<T>; resolve(value: T): void } {
+function deferred<T>(): { readonly promise: Promise<T>; resolve(value: T): void; fail(cause: unknown): void } {
   // Same reason as `flush`: `Promise.withResolvers` is not in the project's lib.
   let resolve!: (value: T) => void;
-  const promise = new Promise<T>((settle) => { resolve = settle; });
-  return { promise, resolve };
+  let fail!: (cause: unknown) => void;
+  const promise = new Promise<T>((settle, refuse) => { resolve = settle; fail = refuse; });
+  return { promise, resolve, fail };
 }
 
 function meSummary(): MeSummary {
@@ -56,10 +57,24 @@ function meSummary(): MeSummary {
 class FakeResearchStore {
   readonly generation = signal<EpisodeGeneration | null>(null);
   readonly refreshCalls: string[] = [];
+  private refreshGate: Promise<void> | null = null;
+  private refreshFailure: Error | null = null;
 
-  refresh(episodeId: string): Promise<Result<void>> {
+  /** Holds `refresh` open: the spec that proves a click is held until the page data shows the run needs it slow. */
+  holdRefresh(gate: Promise<void>): void {
+    this.refreshGate = gate;
+  }
+
+  /** Makes the page re-read fail: a search that already landed must not turn that into its own error. */
+  failRefresh(cause: Error): void {
+    this.refreshFailure = cause;
+  }
+
+  async refresh(episodeId: string): Promise<Result<void>> {
     this.refreshCalls.push(episodeId);
-    return Promise.resolve({ ok: true, value: undefined });
+    if (this.refreshGate !== null) await this.refreshGate;
+    if (this.refreshFailure !== null) throw this.refreshFailure;
+    return { ok: true, value: undefined };
   }
 
   run(state: { kind: string; status: string; errorCode?: string | null }): void {
@@ -213,6 +228,32 @@ describe('SourceFinderStore flag gate', () => {
 
     expect(store.visible()).toBe(false);
     expect(store.rowErrors().size).toBe(0);
+  });
+
+  it('owes the first read to the flag arriving after the page armed the block, once per episode', async () => {
+    const harness = setup({ features: [] });
+    const { store, repo, features } = harness;
+    store.watch(EPISODE_ID);
+    await flush();
+    TestBed.tick();
+
+    // Hidden: nothing goes out, and the trigger reads nothing on its own.
+    expect(repo.candidatesCalls).toEqual([]);
+    expect(store.visible()).toBe(false);
+
+    features.set(['source_finder']);
+    TestBed.tick();
+    await flush();
+
+    expect(repo.candidatesCalls).toEqual([{ episodeId: EPISODE_ID, userAction: true }]);
+
+    // Once per episode: no trigger loop, no polling, and re-arming the same episode reads nothing again.
+    TestBed.tick();
+    await flush();
+    store.watch(EPISODE_ID);
+    TestBed.tick();
+    await flush();
+    expect(repo.candidatesCalls).toHaveLength(1);
   });
 });
 
@@ -378,6 +419,101 @@ describe('SourceFinderStore search', () => {
     expect(store.failedRun()).toBe(false);
     expect(store.running()).toBe(false);
   });
+
+  it('mints a new key when the owner edits the query, so a kept key never carries a different body', async () => {
+    const harness = setup();
+    const { store, repo } = harness;
+    await watchAndSettle(harness);
+    repo.scriptFind(() => rejected(appError('network_error', 0)));
+    repo.scriptFind(() => rejected(appError('network_error', 0)));
+    repo.scriptFind(() => rejected(appError('network_error', 0)));
+
+    await store.find(EPISODE_ID, 'bronze');
+    // A transport retry of the same intent replays the same key.
+    await store.find(EPISODE_ID, 'bronze');
+    expect(repo.findCalls[1]!.key).toBe(repo.findCalls[0]!.key);
+
+    // Editing the query is a different intent: the kept key is settled instead of being re-sent with a new body.
+    await store.find(EPISODE_ID, 'silver');
+    expect(repo.findCalls[2]!.query).toBe('silver');
+    expect(repo.findCalls[2]!.key).not.toBe(repo.findCalls[1]!.key);
+  });
+
+  it("ignores a late answer of the episode the page has left and keeps the current episode's intent", async () => {
+    const harness = setup();
+    const { store, repo, me } = harness;
+    const slow = deferred<void>();
+    repo.scriptFind(() => slow.promise);
+    store.watch(EPISODE_ID);
+    await flush();
+    const first = store.find(EPISODE_ID, 'first');
+    await flush();
+    expect(repo.findCalls).toHaveLength(1);
+
+    // The page moves on; its own search fails on the transport, so that intent stays open for a retry.
+    store.watch(OTHER_EPISODE_ID);
+    await flush();
+    repo.scriptFind(() => rejected(appError('network_error', 0)));
+    await store.find(OTHER_EPISODE_ID, 'second');
+    const keptKey = repo.findCalls[1]!.key;
+
+    // The first episode's answer lands last, as a flag that went off: it may neither hide the block nor drop the intent.
+    slow.fail(appError('feature_disabled', 404, { kind: 'feature_disabled' }));
+    await first;
+    await flush();
+
+    expect(store.visible()).toBe(true);
+    expect(me.calls).toBe(0);
+
+    repo.scriptFind(() => rejected(appError('network_error', 0)));
+    await store.find(OTHER_EPISODE_ID, 'second');
+    expect(repo.findCalls[2]!.key).toBe(keptKey);
+  });
+
+  it('holds the click until the page data shows the run, so the released button cannot start a second one', async () => {
+    const harness = setup();
+    const { store, repo, research } = harness;
+    await watchAndSettle(harness);
+    const refresh = deferred<void>();
+    research.holdRefresh(refresh.promise);
+
+    const pending = store.find(EPISODE_ID, 'bronze');
+    await flush();
+
+    // The 202 landed, but the run is not in the page's own state yet: the click is still held.
+    expect(repo.findCalls).toHaveLength(1);
+    expect(store.finding()).toBe(true);
+    expect(store.canFind()).toBe(false);
+
+    const second = await store.find(EPISODE_ID, 'bronze');
+    expect(second.ok).toBe(false);
+    expect(repo.findCalls).toHaveLength(1);
+    expect(store.error()).toBeNull();
+
+    research.run({ kind: 'find_sources', status: 'running' });
+    refresh.resolve();
+    await pending;
+    await flush();
+
+    expect(research.refreshCalls).toEqual([EPISODE_ID]);
+    expect(store.finding()).toBe(false);
+    expect(store.running()).toBe(true);
+  });
+
+  it('does not turn a failed page re-read into a search error', async () => {
+    const harness = setup();
+    const { store, repo, research } = harness;
+    await watchAndSettle(harness);
+    research.failRefresh(new Error('page data unavailable'));
+
+    const result = await store.find(EPISODE_ID);
+
+    expect(research.refreshCalls).toEqual([EPISODE_ID]);
+    expect(repo.findCalls).toHaveLength(1);
+    expect(result.ok).toBe(true);
+    expect(store.error()).toBeNull();
+    expect(store.finding()).toBe(false);
+  });
 });
 
 describe('SourceFinderStore candidates', () => {
@@ -498,6 +634,57 @@ describe('SourceFinderStore candidates', () => {
 
     // The read that was open for the old episode may end, but its queued follow-up never runs.
     expect(repo.candidatesCalls).toHaveLength(afterSwitch);
+  });
+
+  it('keeps the newer rows when a read of the same episode answers late', async () => {
+    const harness = setup();
+    const { store, repo, research } = harness;
+    const slow = deferred<readonly SourceCandidate[]>();
+    repo.scriptCandidates(() => slow.promise);
+    store.watch(EPISODE_ID);
+    await flush();
+    expect(repo.candidatesCalls).toHaveLength(1);
+
+    // The owner adds a row while that first read is still open: the 201 is the newer truth about the list.
+    repo.seed([candidate(1, { status: 'added', sourceId: 'source-1' })]);
+    await store.add(EPISODE_ID, 'candidate-1');
+    expect(research.refreshCalls).toEqual([EPISODE_ID]);
+
+    // The older answer — the list as it was before the add — lands last: it may not undo the newer rows.
+    slow.resolve([candidate(1, { status: 'proposed' })]);
+    await flush();
+
+    expect(store.candidates()[0]!.status).toBe('added');
+    expect(repo.candidatesCalls).toHaveLength(2);
+  });
+
+  it('never lets a read of the episode the page has left end the current read', async () => {
+    const harness = setup();
+    const { store, repo } = harness;
+    const abandoned = deferred<readonly SourceCandidate[]>();
+    repo.scriptCandidates(() => abandoned.promise);
+    store.watch(EPISODE_ID);
+    await flush();
+
+    const current = deferred<readonly SourceCandidate[]>();
+    repo.scriptCandidates(() => current.promise);
+    store.watch(OTHER_EPISODE_ID);
+    await flush();
+    expect(repo.candidatesCalls).toHaveLength(2);
+
+    // The abandoned episode's answer lands while the current read is still open: it owns neither rows nor lock.
+    abandoned.resolve([candidate(1)]);
+    await flush();
+    expect(store.candidates()).toEqual([]);
+
+    // So an event for the current episode queues behind its own read instead of starting a third one.
+    harness.realtime.emit(OTHER_EPISODE_ID);
+    await flush();
+    expect(repo.candidatesCalls).toHaveLength(2);
+
+    current.resolve([]);
+    await flush();
+    expect(repo.candidatesCalls).toHaveLength(3);
   });
 
   it('fails the first read as the block error and swallows a background one', async () => {

@@ -127,7 +127,6 @@
       "open": "Open",
       "added": "Added",
       "dismissed": "Dismissed",
-      "refresh": "Refresh suggestions",
       "run": "Try searching again",
       "openNewTab": "Open source from {{site}} (opens in a new tab)",
       "addFromSite": "Add suggestion from {{site}}",

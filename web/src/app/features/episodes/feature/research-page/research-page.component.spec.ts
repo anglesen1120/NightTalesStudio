@@ -15,10 +15,11 @@ import { ZONELESS_TEST_PROVIDERS } from '../../../../testing/providers';
 import { ResearchStore } from '../../application/research.store';
 import { researchCopy, researchCopies, researchTranslations, source, fact, sheet } from '../../testing/research-ui.testing';
 import type { Fact, FactSheet, ResearchSource, SourceLimits } from '../../domain/research.model';
+import type { EpisodeGeneration } from '../../domain/episode.model';
 import { ResearchPageComponent } from './research-page.component';
 class FakeResearchStore {
   readonly sources=signal<readonly ResearchSource[]>([]); readonly limits=signal<SourceLimits|null>(null); readonly factSheet=signal<FactSheet|null>(null); readonly draft=signal<readonly (Fact & {readonly clientKey:string})[]>([]);
-  readonly loaded=signal(true); readonly loading=signal(false); readonly refreshing=signal(false); readonly generation=signal(null); readonly running=signal(false); readonly pendingCount=signal(0); readonly urlCount=signal(0); readonly canAddUrl=signal(true); readonly usedCount=signal(0); readonly maxCount=signal(10); readonly canGenerate=signal(false); readonly canSave=signal(false); readonly canApprove=signal(false); readonly dirty=signal(false); readonly isApproved=signal(false); readonly gate=signal('sheet_not_approved'); readonly isTrueCrime=signal(true); readonly savingFactSheet=signal(false); readonly approvingFactSheet=signal(false); readonly generating=signal(false);
+  readonly loaded=signal(true); readonly loading=signal(false); readonly refreshing=signal(false); readonly generation=signal<EpisodeGeneration|null>(null); readonly running=signal(false); readonly pendingCount=signal(0); readonly urlCount=signal(0); readonly canAddUrl=signal(true); readonly usedCount=signal(0); readonly maxCount=signal(10); readonly canGenerate=signal(false); readonly canSave=signal(false); readonly canApprove=signal(false); readonly dirty=signal(false); readonly isApproved=signal(false); readonly gate=signal('sheet_not_approved'); readonly isTrueCrime=signal(true); readonly savingFactSheet=signal(false); readonly approvingFactSheet=signal(false); readonly generating=signal(false);
   readonly error=signal<AppError|null>(null); readonly formError=signal<AppError|null>(null); readonly panelError=signal<AppError|null>(null); readonly conflict=signal<{etag:string}|null>(null); readonly rateLimitSeconds=signal<number|null>(null);
   readonly formRateLimitSeconds=signal<number|null>(null); readonly conflictSource=signal<'save'|'approve'|'edit'|null>(null);
   loads:string[]=[]; watches:string[]=[]; refreshes=0;
@@ -53,6 +54,17 @@ describe('ResearchPageComponent',()=>{
     expect(panel).not.toBeNull();expect(finderCalls.candidates).toHaveBeenCalledTimes(1);expect(finderCalls.find).not.toHaveBeenCalled();
     expect(root.querySelector('.source-section')!.compareDocumentPosition(panel) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(panel.compareDocumentPosition(root.querySelector('.fact-sheet-slot')!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+  it('keeps the sources-section running copy visible without a second live announcement',async()=>{
+    const store=new FakeResearchStore();
+    store.generation.set({kind:'find_sources',status:'running',stage:'queued',errorCode:null,startedAt:null,processingPaused:null});
+    const {root}=await setup('en',store,['source_finder']);
+    const copies=[...root.querySelectorAll('p')].filter(element=>element.textContent?.trim()===researchCopy.sources.find.running);
+    expect(copies).toHaveLength(2);
+    const sourceCopy=copies.find(element=>element.closest('.source-section'))!;
+    expect(sourceCopy.getAttribute('role')).toBeNull();expect(sourceCopy.closest('[aria-live]')).toBeNull();
+    const panelCopy=copies.find(element=>element.closest('nts-source-finder-panel'))!;
+    expect(panelCopy.getAttribute('role')).toBe('status');expect(panelCopy.closest('[aria-live]')?.getAttribute('aria-live')).toBe('polite');
   });
   it.each(['vi','en'] as const)('loads and watches once and announces the closed gate in %s',async lang=>{
     const {store,root}=await setup(lang);expect(store.loads).toEqual(['episode-a']);expect(store.watches).toEqual(['episode-a']);

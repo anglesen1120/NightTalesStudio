@@ -13,7 +13,7 @@
         @for (source of store.sources(); track source.id) { <li><nts-source-row [source]="source" [busy]="rowPending().has(source.id)" [retryBlocked]="retryBlocked()" [duplicate]="duplicateSource() === source.id" (retrySource)="sourceAction(source, 'retry')" (removeSource)="sourceAction(source, 'remove')" /></li> }
       </ul>
       @if (store.sources().length === 0) { <nts-empty-state titleKey="episodes.research.sources.empty" /> }
-      @if (finder.visible() && finder.running()) { <p role="status" aria-live="polite">{{ 'episodes.sources.find.running' | transloco }}</p> }
+      @if (finder.visible() && finder.running()) { <p>{{ 'episodes.sources.find.running' | transloco }}</p> }
     </section>
     @if (finder.visible()) {
       <nts-source-finder-panel

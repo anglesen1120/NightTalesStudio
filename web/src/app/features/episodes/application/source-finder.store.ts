@@ -24,9 +24,11 @@ const ALREADY_HANDLED = 'source_candidate_not_proposed';
  * episode-level and its state lives in `EpisodeDetail.generation`, which `ResearchStore` owns and reads: this store
  * never keeps a run of its own, so a reloaded page still shows "searching" from the server's own state.
  *
- * Reads: `watch` (the initial load and the coalesced realtime refetch) is the only trigger — no polling, no timer of
- * this store's own (the 250 ms window belongs to `RealtimeService`). Every answer is fenced by the request generation
- * of the episode it belongs to, so a late answer of an episode or a session the page has left is dropped whole.
+ * Reads: `watch` (the initial load when the flag is already known and the coalesced realtime refetch), the visibility
+ * trigger (the initial load when the flag arrives later, once per episode) and this store's own row actions are the
+ * only triggers — no polling, no timer of this store's own (the 250 ms window belongs to `RealtimeService`). Every
+ * answer is fenced by the request generation of the episode it belongs to and by the read token that names the newest
+ * read, so a late answer of an episode or a session the page has left is dropped whole.
  */
 @Injectable()
 export class SourceFinderStore {
@@ -97,11 +99,21 @@ export class SourceFinderStore {
   private requestGeneration = 0;
   private subscription: RealtimeSubscription | null = null;
   private findIntent: IdempotencyIntent | null = null;
+  /** The query the open intent was minted for: a different one is a different intent (and so a different key). */
+  private findQuery: string | null = null;
   private profileReloaded = false;
-  /** A candidates read is in flight: an event that lands inside it queues one trailing read (see the subscription). */
+  /** The episode this store has already started its first read for: the trigger below reads once per episode. */
+  private initialReadEpisode: string | null = null;
+  /**
+   * Names the newest candidates read at any moment. Two reads can overlap across an episode switch (`watch` starts the
+   * new episode's read while the old one is still open), so only the newest token may apply rows or end the flags: an
+   * older read's answer and an older read's `finally` belong to the episode the page has left.
+   */
+  private readToken = 0;
+  /** A candidates read is in flight: a request that lands inside it queues one trailing read (see `requestCandidates`). */
   private candidatesInFlight = false;
-  /** An event asked for a read while one was in flight; the read's own end runs it once, and only if still current. */
-  private refetchQueued = false;
+  /** The request asked for while a read was open; the read's own end runs it once, and only if still current. */
+  private refetchQueued: { readonly userAction: boolean; readonly silent: boolean } | null = null;
 
   constructor() {
     inject(DestroyRef).onDestroy(() => {
@@ -110,6 +122,15 @@ export class SourceFinderStore {
       this.subscription?.unsubscribe();
       this.subscription = null;
       this.findIntent = null;
+    });
+    effect(() => {
+      // The flag arrives with `/me`, which can resolve after the page armed this store, so the first read is owed the
+      // moment the block becomes visible. Reading `visible()` here is what arms this trigger; while it is false nothing
+      // goes out at all, and the per-episode marker is what keeps this from running twice for one episode.
+      if (!this.visible()) return;
+      const episodeId = this.episode;
+      if (episodeId === null) return;
+      untracked(() => this.ensureInitialRead(episodeId));
     });
     effect(() => {
       // A run of this episode that is not (or no longer) a failure is this click's own outcome, so the message of the
@@ -124,8 +145,9 @@ export class SourceFinderStore {
   /**
    * Arms the block for one episode: the first candidates read (only when the block is visible) and the realtime
    * subscription that refetches them. Idempotent per episode, so the page's own effect may call it as often as it
-   * re-evaluates. Events and every (re)connect resync arrive coalesced from `RealtimeService` (one call per 250 ms
-   * per episode), and a call that lands while this store's own read is in flight is dropped rather than stacked.
+   * re-evaluates. Events and every (re)connect resync arrive coalesced from `RealtimeService` (one call per 250 ms per
+   * episode), and a request that lands while this store's own read is in flight queues one trailing read rather than
+   * stacking a second GET (see `requestCandidates`).
    */
   watch(episodeId: string): void {
     if (episodeId === '' || this.destroyed) return;
@@ -143,25 +165,24 @@ export class SourceFinderStore {
     this.retryAfterState.set(null);
     this.rowRetryAfterState.set(null);
     this.findIntent = null;
+    this.findQuery = null;
     this.newFindState.set(false);
     // Nothing of the episode left over may gate this one: a find that was in flight when the page moved is stale, and
     // its own `finally` is generation-fenced, so these flags are the block's, not the old request's.
     this.findingState.set(false);
     this.loadingState.set(false);
     this.candidatesInFlight = false;
-    this.refetchQueued = false;
-    if (this.visible()) void this.readCandidates(episodeId, true, false);
+    this.refetchQueued = null;
+    // One first read and one `/me` re-read are owed per episode: a later `feature_disabled` on the new episode asks for
+    // the profile again (the server may have granted the flag back with it).
+    this.initialReadEpisode = null;
+    this.profileReloaded = false;
+    if (this.visible()) this.ensureInitialRead(episodeId);
     this.subscription = this.realtime.subscribeEpisode(episodeId, () => {
       if (this.destroyed || this.requestGeneration !== generation || this.episode !== episodeId) return;
       // A background read is silent: its failure is not the page's error (the next event or the owner's own click
-      // reports afresh). An event that lands while this episode's own read is still open is never lost: it asks for
-      // exactly one trailing read, which the read's own end runs, so a candidate the server committed in the meantime
-      // is picked up and a burst inside one read still costs one extra GET.
-      if (this.candidatesInFlight) {
-        this.refetchQueued = true;
-        return;
-      }
-      void this.readCandidates(episodeId, false, true);
+      // reports afresh).
+      this.requestCandidates(episodeId, false, true);
     });
   }
 
@@ -177,27 +198,53 @@ export class SourceFinderStore {
     this.findingState.set(true);
     this.errorState.set(null);
     this.newFindState.set(true);
-    if (this.findIntent === null) this.findIntent = this.keys.begin('source.find');
+    // An open intent describes the search it was minted for: a retry of that search replays the same key, while a
+    // different query is a different intent, so the kept key is settled here instead of carrying a body it never had
+    // (the server answers 422 `idempotency_key_reused` for a reused key whose body changed).
+    if (this.findIntent !== null && this.findQuery !== sent) {
+      this.findIntent.settle();
+      this.findIntent = null;
+    }
+    if (this.findIntent === null) {
+      this.findIntent = this.keys.begin('source.find');
+      this.findQuery = sent;
+    }
     const intent = this.findIntent;
     const generation = this.requestGeneration;
     try {
       await this.repo.find(episodeId, sent, intent);
       intent.settle();
-      this.findIntent = null;
+      if (this.findIntent === intent) {
+        this.findIntent = null;
+        this.findQuery = null;
+      }
       if (!this.current(generation) || this.episode !== episodeId) return this.refused();
       // A landed search ends the wait a previous 429 announced.
       this.capturePanelRetry(null);
+      // The 202 is the server's answer, not yet the episode's state: `running` only turns true once the page's own data
+      // is re-read, so the click is held until that read is done — otherwise the button would be live again while the
+      // block still looks idle, and a second click would start a second run. The re-read is this click's bookkeeping:
+      // a failure of it is not a search failure, so it never becomes the block's error.
+      try {
+        await this.research.refresh(episodeId);
+      } catch {
+        // The search itself landed; the block's run state catches up on the next read or event.
+      }
       return { ok: true, value: undefined };
     } catch (cause) {
       const error = this.toError(cause);
       // A transport failure (status 0) is the one retryable answer: the key stays open so the next click replays it.
       if (error.status !== 0) {
         intent.settle();
-        this.findIntent = null;
+        if (this.findIntent === intent) {
+          this.findIntent = null;
+          this.findQuery = null;
+        }
       }
-      // D14/O1: a flag that went off is not a failure — the block hides, the profile is re-read, nothing is shown.
+      // D14/O1: a flag that went off is not a failure — the block hides, the profile is re-read, nothing is shown. Only
+      // the episode this store still shows may hide it: a late answer of the episode the page has left changes nothing.
       if (error.code === FEATURE_DISABLED) {
-        this.hide();
+        if (this.current(generation) && this.episode === episodeId) this.hide();
         return { ok: false, error };
       }
       if (this.current(generation) && this.episode === episodeId) {
@@ -224,10 +271,12 @@ export class SourceFinderStore {
       await this.repo.add(episodeId, candidateId);
       if (!this.current(generation) || this.episode !== episodeId) return this.refused();
       await this.research.refresh(episodeId);
-      await this.readCandidates(episodeId, false, true);
+      // The row's new state comes from the server, so it is read after the page's own data — through the one entry point,
+      // which queues it behind a candidates read that is still open instead of racing it.
+      this.requestCandidates(episodeId, false, true);
       return { ok: true, value: undefined };
     } catch (cause) {
-      return { ok: false, error: await this.failRowAction(cause, episodeId, generation, candidateId) };
+      return { ok: false, error: this.failRowAction(cause, episodeId, generation, candidateId) };
     } finally {
       if (this.current(generation)) this.busyIdState.set(null);
     }
@@ -249,7 +298,7 @@ export class SourceFinderStore {
         rows.map((row) => (row.id === candidateId ? { ...row, status: 'dismissed' as const } : row)));
       return { ok: true, value: undefined };
     } catch (cause) {
-      return { ok: false, error: await this.failRowAction(cause, episodeId, generation, candidateId) };
+      return { ok: false, error: this.failRowAction(cause, episodeId, generation, candidateId) };
     } finally {
       if (this.current(generation)) this.busyIdState.set(null);
     }
@@ -280,6 +329,7 @@ export class SourceFinderStore {
   /** Drops every read, error and intent of this instance (a leave, a logout, a session end). */
   reset(): void {
     this.requestGeneration += 1;
+    this.readToken += 1;
     this.episode = null;
     this.candidatesState.set([]);
     this.errorState.set(null);
@@ -292,7 +342,32 @@ export class SourceFinderStore {
     this.newFindState.set(false);
     this.hiddenState.set(false);
     this.findIntent = null;
+    this.findQuery = null;
     this.profileReloaded = false;
+    this.initialReadEpisode = null;
+    this.candidatesInFlight = false;
+    this.refetchQueued = null;
+  }
+
+  /**
+   * The one way a candidates read is asked for. While this episode's read is open the request is queued instead of
+   * stacked — the newest request decides how the trailing read runs, so nothing races two answers into one list — and
+   * while the block is hidden (or the flag is off) no request exists at all.
+   */
+  private requestCandidates(episodeId: string, userAction: boolean, silent: boolean): void {
+    if (!this.visible() || this.destroyed || this.episode !== episodeId) return;
+    if (this.candidatesInFlight) {
+      this.refetchQueued = { userAction, silent };
+      return;
+    }
+    void this.readCandidates(episodeId, userAction, silent);
+  }
+
+  /** The flip of `visible()` to true owes this episode one read; the marker is what keeps the trigger from looping. */
+  private ensureInitialRead(episodeId: string): void {
+    if (this.destroyed || this.episode !== episodeId || this.initialReadEpisode === episodeId) return;
+    this.initialReadEpisode = episodeId;
+    this.requestCandidates(episodeId, true, false);
   }
 
   /**
@@ -301,6 +376,7 @@ export class SourceFinderStore {
    */
   private async readCandidates(episodeId: string, userAction: boolean, silent: boolean): Promise<boolean> {
     if (!this.visible() || this.destroyed) return false;
+    const token = ++this.readToken;
     this.candidatesInFlight = true;
     const generation = this.requestGeneration;
     if (!silent) {
@@ -309,12 +385,14 @@ export class SourceFinderStore {
     }
     try {
       const rows = await this.repo.candidates(episodeId, { userAction });
-      if (!this.current(generation) || this.episode !== episodeId) return false;
+      // Only the newest read may apply rows: an older answer (an episode the page has left, a read this one replaced)
+      // is at best as new as what the list already shows, and a just-added row must never revert to its older state.
+      if (token !== this.readToken || !this.current(generation) || this.episode !== episodeId) return false;
       this.candidatesState.set(rows);
       return true;
     } catch (cause) {
       const error = this.toError(cause);
-      if (!this.current(generation) || this.episode !== episodeId) return false;
+      if (token !== this.readToken || !this.current(generation) || this.episode !== episodeId) return false;
       if (error.code === FEATURE_DISABLED) {
         this.hide();
         return false;
@@ -322,13 +400,16 @@ export class SourceFinderStore {
       if (!silent) this.errorState.set(error);
       return false;
     } finally {
-      this.candidatesInFlight = false;
-      if (this.current(generation)) this.loadingState.set(false);
-      // The trailing read an event asked for while this one was open. It is generation-fenced (an episode switch, a
-      // reset or a new session discards it) and consumed once, so a burst never stacks GETs and nothing polls.
-      if (this.refetchQueued) {
-        this.refetchQueued = false;
-        if (this.current(generation) && this.episode === episodeId) void this.readCandidates(episodeId, false, true);
+      // The flags belong to the newest read only: an older read ending late must not release a lock or consume a queue
+      // that the current read owns (that is how a queued refetch was lost before).
+      if (token === this.readToken) {
+        this.candidatesInFlight = false;
+        if (this.current(generation)) this.loadingState.set(false);
+        const queued = this.refetchQueued;
+        this.refetchQueued = null;
+        if (queued !== null && this.current(generation) && this.episode === episodeId) {
+          this.requestCandidates(episodeId, queued.userAction, queued.silent);
+        }
       }
     }
   }
@@ -338,7 +419,7 @@ export class SourceFinderStore {
    * an unknown or foreign row is the server's business (the list is re-read, no error is raised), and anything else
    * becomes that row's own error, leaving every other row live.
    */
-  private async failRowAction(cause: unknown, episodeId: string, generation: number, candidateId: string): Promise<AppError> {
+  private failRowAction(cause: unknown, episodeId: string, generation: number, candidateId: string): AppError {
     const error = this.toError(cause);
     if (!this.current(generation) || this.episode !== episodeId) return error;
     if (error.code === FEATURE_DISABLED) {
@@ -347,14 +428,14 @@ export class SourceFinderStore {
     }
     // Already added or dismissed (in another tab): the row refreshes to the server's state instead of a second error.
     if (error.code === ALREADY_HANDLED) {
-      await this.readCandidates(episodeId, false, true);
+      this.requestCandidates(episodeId, false, true);
       return error;
     }
     this.setRowError(candidateId, error);
     this.captureRowRetry(error);
     // A row the server no longer has (another episode's candidate, a stale id): the list is the answer, and the row
     // still says what happened until the read drops it.
-    if (error.status === 404) await this.readCandidates(episodeId, false, true);
+    if (error.status === 404) this.requestCandidates(episodeId, false, true);
     return error;
   }
 

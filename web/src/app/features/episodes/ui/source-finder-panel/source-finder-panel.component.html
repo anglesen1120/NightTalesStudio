@@ -30,7 +30,9 @@
             <span class="candidate-url" [title]="candidate.url">{{ candidate.url }}</span>
           </div>
           <div class="candidate-actions">
-            <a [href]="candidate.url" target="_blank" rel="noopener noreferrer" [attr.aria-label]="'episodes.sources.find.openNewTab' | transloco: { site: candidate.siteName }">{{ 'episodes.sources.find.open' | transloco }}</a>
+            @if (canOpen(candidate.url)) {
+              <a [href]="candidate.url" target="_blank" rel="noopener noreferrer" [attr.aria-label]="'episodes.sources.find.openNewTab' | transloco: { site: candidate.siteName }">{{ 'episodes.sources.find.open' | transloco }}</a>
+            }
             @if (candidate.status === 'proposed') {
               <button type="button" [attr.aria-disabled]="busyId() === candidate.id || sourceLimitReached() || (retryRowId() === candidate.id && rowRetryAfterSec() !== null)" [attr.aria-label]="'episodes.sources.find.addFromSite' | transloco: { site: candidate.siteName }" [attr.aria-describedby]="rowErrorKeys().has(candidate.id) ? panelId + '-error-' + candidate.id : null" (click)="addCandidate(candidate.id)">{{ 'episodes.sources.find.add' | transloco }}</button>
               <button type="button" [attr.aria-disabled]="busyId() === candidate.id" [attr.aria-label]="'episodes.sources.find.dismissFromSite' | transloco: { site: candidate.siteName }" [attr.aria-describedby]="rowErrorKeys().has(candidate.id) ? panelId + '-error-' + candidate.id : null" (click)="dismissCandidate(candidate.id)">{{ 'episodes.sources.find.dismiss' | transloco }}</button>

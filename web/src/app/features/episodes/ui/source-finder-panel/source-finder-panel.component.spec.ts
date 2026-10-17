@@ -91,6 +91,27 @@ describe('SourceFinderPanelComponent', () => {
     expect(rows[0]!.querySelector('a')?.getAttribute('href')).toBe(url);
     expect(rows[1]!.querySelector('strong')?.textContent).toBe(title); expect(root.querySelector('img')).toBeNull();
   });
+  it.each([
+    { url: 'mailto:report@example.com', openable: false },
+    { url: 'ftp://example.com/report', openable: false },
+    { url: 'javascript:alert(1)', openable: false },
+    { url: 'https://example.com/report', openable: true },
+    { url: 'HTTP://example.com/report', openable: true },
+  ])('allows Open only for HTTP(S) URLs: $url', async ({ url, openable }) => {
+    const { root, component } = await setup('en', { candidates: [candidate({ url })] });
+    const row = root.querySelector('li')!;
+    expect(row.querySelector('.candidate-url')?.textContent).toBe(url);
+    const link = row.querySelector('a');
+    if (openable) {
+      expect(link?.getAttribute('href')).toBe(url);
+      expect(link?.getAttribute('target')).toBe('_blank');
+      expect(link?.getAttribute('rel')).toBe('noopener noreferrer');
+    } else { expect(link).toBeNull(); }
+    const added = vi.spyOn(component.add, 'emit'); const dismissed = vi.spyOn(component.dismiss, 'emit');
+    const buttons = row.querySelectorAll<HTMLButtonElement>('button'); expect(buttons).toHaveLength(2);
+    buttons[0]!.click(); buttons[1]!.click();
+    expect(added.mock.calls).toEqual([['candidate-a']]); expect(dismissed.mock.calls).toEqual([['candidate-a']]);
+  });
   it.each(['', '   ', '\t\n'])('falls back to the URL for an empty or whitespace-only title (%j)', async title => {
     const item = candidate({ title });
     const { root } = await setup('en', { candidates: [item] });

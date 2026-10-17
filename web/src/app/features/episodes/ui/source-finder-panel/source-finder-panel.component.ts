@@ -5,6 +5,7 @@ import { EmptyState, LoadingState, RetryCountdown } from '@shared/ui';
 import type { SourceCandidate } from '../../domain/source-candidate.model';
 
 let nextPanelId = 0;
+const OPENABLE_URL = /^https?:\/\//i;
 
 @Component({
   selector: 'nts-source-finder-panel',
@@ -38,6 +39,8 @@ export class SourceFinderPanelComponent {
   readonly panelId = 'source-finder-' + ++nextPanelId;
   readonly empty = computed(() => this.completed() && !this.loading() && !this.running() && !this.finding() && !this.failedRun() && !this.errorKey() && this.candidates().length === 0);
   readonly retryRowId = computed(() => this.candidates().find(candidate => this.rowErrorKeys().get(candidate.id) === 'errors.source_fetch_limit_reached')?.id ?? null);
+
+  canOpen(url: string): boolean { return OPENABLE_URL.test(url); }
 
   submit(): void {
     if (!this.canFind() || this.running() || this.finding() || this.retryAfterSec() !== null || this.query.invalid) return;
