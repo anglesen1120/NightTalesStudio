@@ -1,4 +1,3 @@
-using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using ErrorOr;
@@ -269,8 +268,9 @@ public sealed partial class ApproveStoryCommandHandler(
         "The keyword check could not be completed; retry the approval.");
 
     /// <summary>
-    /// The version's keywords in the D22 story order the linter reads: <c>hook</c>, <c>p:&lt;i&gt;</c> per
-    /// paragraph, then <c>ending</c> (03 §4, CR-13), mirroring the reader of <c>StoryRenderInputProvider</c>.
+    /// The version's keywords in the D22 story order the linter reads — the <see cref="SegmentAddress"/>
+    /// addresses <c>hook</c>, <c>p:&lt;i&gt;</c> per paragraph, then <c>ending</c> (03 §4, CR-13) — mirroring the
+    /// reader of <c>StoryRenderInputProvider</c>.
     /// That provider is not reused here: it resolves the approved pointer row itself, while this path already
     /// holds the version being approved and must lint that one, not the approved one.
     /// </summary>
@@ -279,15 +279,15 @@ public sealed partial class ApproveStoryCommandHandler(
     private static SegmentKeywords[] Segments(StoryContentV1 content)
     {
         var segments = new SegmentKeywords[content.Paragraphs.Count + 2];
-        segments[0] = new SegmentKeywords("hook", content.Hook.Keywords);
+        segments[0] = new SegmentKeywords(SegmentAddress.Hook, content.Hook.Keywords);
         for (var index = 0; index < content.Paragraphs.Count; index++)
         {
             segments[index + 1] = new SegmentKeywords(
-                "p:" + index.ToString(CultureInfo.InvariantCulture),
+                SegmentAddress.Paragraph(index),
                 content.Paragraphs[index].Keywords);
         }
 
-        segments[^1] = new SegmentKeywords("ending", content.Ending.Keywords);
+        segments[^1] = new SegmentKeywords(SegmentAddress.Ending, content.Ending.Keywords);
         return segments;
     }
 

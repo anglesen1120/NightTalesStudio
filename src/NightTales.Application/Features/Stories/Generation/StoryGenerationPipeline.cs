@@ -52,6 +52,12 @@ namespace NightTales.Application.Features.Stories.Generation;
 /// counted and refunded, and that terminal write uses its own fresh token: the expired deadline token is never reused.
 /// </para>
 /// <para>
+/// <b>Name corpus (03.2.2-T2).</b> The run's one name-corpus read happens right after the episode is loaded and
+/// authorised and before step 0, so a failing read ends the run before the writer, the first paid call, and never as a
+/// silent lint against an empty corpus. <see cref="RunState.Names"/> therefore has no empty default: the checker
+/// throws instead of running without the corpus.
+/// </para>
+/// <para>
 /// <b>Revision (02.6.2-T1, D21 step 5).</b> When review #1 holds a blocking objective issue, <see cref="RevisionPolicy"/>
 /// approves exactly one pass: the revise call is validated, moderated and reviewed again (review #2) before its output can
 /// become current. A spend cap at the revision gate, an invalid, unchanged or flagged revise output, a run deadline too
@@ -191,6 +197,17 @@ public sealed partial class StoryGenerationPipeline(
 
     private async Task ExecuteAsync(RunState s, CancellationToken ct)
     {
+        // The one name-corpus read of the run (03 D11, 03.2.2-T2), first thing: the episode was loaded and
+        // authorised in this scope by RunAsync, so the read happens right after that and before step 0, step 0b
+        // and the writer, the first paid call. It stays unconditional and uncaught, so a failing read ends the run
+        // fail-closed before any spend instead of linting against an empty corpus; fiction is the provider's own
+        // decision and an empty corpus is not evidence of a clean draft. The provider reads the episode's own
+        // research straight from the database (the approved fact sheet and the fetched URL source titles), which
+        // no stage of this run produces, so no stage ordering constrains the load. The worker scope is pinned to
+        // the episode's owner before this pipeline is resolved (GenerateStoryJob), so the read is not empty by
+        // scope. Every checker call below — CheckDraft on the written draft and on a revision — lints against it.
+        s.Names = await nameCorpus.LoadAsync(s.Episode.Id, ct).ConfigureAwait(false);
+
         if (!await PrepareAsync(s, ct).ConfigureAwait(false))
         {
             return;
@@ -238,12 +255,6 @@ public sealed partial class StoryGenerationPipeline(
 
         var similarity = await ScoreSimilarityAsync(s, written.Draft, ct).ConfigureAwait(false);
         AppendSimilarityIssue(s.LocalIssues, similarity);
-
-        // The one name-corpus read of the run (03 D11, 03.2.2-T2): it happens after the episode is loaded and
-        // authorised in this scope, every checker call below lints against it, and a read failure propagates —
-        // the run fails rather than silently linting against an empty corpus. The worker scope is pinned to the
-        // episode's owner before this pipeline is resolved (GenerateStoryJob), so the read is not empty by scope.
-        s.Names = await nameCorpus.LoadAsync(s.Episode.Id, ct).ConfigureAwait(false);
 
         // The local checker runs once per saved row, on that row's own draft and similarity (02.6.2-T1 step 6).
         var originalReport = CheckDraft(s, written.Draft, similarity, hasUrlSources, s.ModerationCategories, review.Validated is null);
@@ -1200,15 +1211,25 @@ public sealed partial class StoryGenerationPipeline(
 
     // The local checker report of one draft, computed on that draft's own content (02.6.2-T1 step 6): each saved row
     // carries the report of the draft it describes, and the drift check compares two of them. The image plan is
-    // per draft (its own keywords and size); the name corpus is the run's one read, loaded by ExecuteAsync.
+    // per draft (its own keywords and size); the name corpus is the run's one read, assigned by ExecuteAsync before
+    // the first paid call and before any draft exists, so every call here finds it.
     private QualityReport CheckDraft(
         RunState s,
         StoryContentV1 draft,
         SimilarityOutcome similarity,
         bool hasUrlSources,
         IReadOnlyList<string>? moderationCategories,
-        bool modelReviewStale) =>
-        checker.Check(
+        bool modelReviewStale)
+    {
+        // Fail-closed: a null corpus means a checker call was ordered before the run's one corpus load, which is a
+        // coding error rather than an empty corpus, so the check cannot run. Never lint against an empty corpus here.
+        // The message carries no keyword, name or draft text (03 §8, 02 D19).
+        if (s.Names is not { } names)
+        {
+            throw new InvalidOperationException("The name corpus must be loaded before a draft can be checked.");
+        }
+
+        return checker.Check(
             draft,
             new StoryCheckContext(
                 s.Topic,
@@ -1223,7 +1244,8 @@ public sealed partial class StoryGenerationPipeline(
                 moderationCategories,
                 ModelReviewStale: modelReviewStale,
                 StoryCheckInputs.PlanFor(draft, s.Language, s.Episode.LengthTier),
-                s.Names));
+                names));
+    }
 
     private static string BuildAudit(
         RunState s,
@@ -1667,9 +1689,12 @@ public sealed partial class StoryGenerationPipeline(
 
         /// <summary>
         /// The one name-corpus read of the run (03 D11, 03.2.2-T2): every checker call lints against it, and it is
-        /// loaded once per run rather than per draft, because both scored rows belong to the same episode.
+        /// loaded once per run rather than per draft, because both scored rows belong to the same episode. It is
+        /// null until <c>ExecuteAsync</c> assigns it before the first paid call, and <c>CheckDraft</c> throws on a
+        /// null instead of linting against an empty corpus, so a checker call ordered before the load cannot
+        /// silently skip the name rule.
         /// </summary>
-        public NameCorpus Names { get; set; } = NameCorpus.Empty;
+        public NameCorpus? Names { get; set; }
 
         public long StartedAt { get; } = Stopwatch.GetTimestamp();
 

@@ -447,6 +447,9 @@ public sealed class StoryQualityChecker
             orders[view.Address] = view.Order;
         }
 
+        // The approve and render paths lint with the default rules (the 2-argument overload); this call passes the
+        // run's rules, but the rules reach it only through the R2 alphabet skip, and that alphabet is fixed, so the
+        // name verdicts read below cannot drift from the ones those two callers see.
         foreach (var linted in RenderKeywordLinter.Lint(keywords, ctx.Names, ctx.Rules))
         {
             if (linted.RuleId != RenderKeywordLinter.NameDetected)
