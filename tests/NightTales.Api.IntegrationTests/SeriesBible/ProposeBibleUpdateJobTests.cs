@@ -164,7 +164,11 @@ public sealed class ProposeBibleUpdateJobTests(TestDatabase database) : Integrat
             Usage);
         await using var worker = await BibleProposalJobHarness.StartWorkerAsync(Database, text);
 
-        (await BibleProposalJobHarness.DeliverAsync(worker)).ShouldBe(2, "both rows are due");
+        // The class remark's isolation rule applied to the dispatcher: the claim reads the whole class database, so
+        // what is asserted is this test's own two rows — both due before the single dispatch, both taken by it.
+        UnprocessedStoryApproved(world.UserId).ShouldBe(2, "both deliveries of the episode are due");
+        await BibleProposalJobHarness.DeliverAsync(worker);
+        UnprocessedStoryApproved(world.UserId).ShouldBe(0, "the single dispatch claimed both deliveries");
         await BibleProposalJobHarness.RunJobsUntilQuietAsync(worker);
 
         BibleProposalJobHarness.RunCount(Database, world.SeriesId).ShouldBe(1);
@@ -641,6 +645,19 @@ public sealed class ProposeBibleUpdateJobTests(TestDatabase database) : Integrat
     }
 
     // ------------------------------------------------------------- helpers
+
+    /// <summary>
+    /// How many <c>story_approved.v1</c> rows of <paramref name="userId"/> this class's shared database still
+    /// holds unprocessed. The delivery claim reads the whole database, so a count of what it took is only this
+    /// test's own if it is scoped to the ids the test seeded.
+    /// </summary>
+    /// <param name="userId">The world the rows belong to.</param>
+    /// <returns>The number of that world's unprocessed approval rows.</returns>
+    private int UnprocessedStoryApproved(Guid userId) =>
+        (int)SqlProbe.Count(
+            Database,
+            "SELECT count(*) FROM outbox_messages WHERE type = 'story_approved.v1' "
+            + $"AND user_id = '{userId}' AND processed_at IS NULL");
 
     /// <summary>The D6 answer of the scripted call: the ops the model proposed, in its own order.</summary>
     /// <param name="ops">The ops.</param>
