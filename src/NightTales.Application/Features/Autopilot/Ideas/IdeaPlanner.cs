@@ -422,15 +422,16 @@ public sealed partial class IdeaPlanner(
 
             return IdeaErrors.EpisodeAlreadyUsed;
         }
-        catch (DbUpdateException exception) when (EpisodeIdeaConflict.IsEpisodeUniqueViolation(exception))
+        catch (Exception exception) when (EpisodeIdeaConflict.IsEpisodeUniqueViolation(exception))
         {
             // UX_episode_ideas_episode: the episode already has an idea. The same 409 class as a refused
-            // transition, answered instead of reaching the caller's job as a 500.
+            // transition, answered instead of reaching the caller's job as a 500. The type is Exception because the
+            // ExecuteUpdate above raises the provider's refusal raw, without a DbUpdateException around it.
             LogMarkUsedRefused(ideaId, IdeaErrors.EpisodeAlreadyUsed.Code);
 
             return IdeaErrors.EpisodeAlreadyUsed;
         }
-        catch (DbUpdateException exception) when (EpisodeIdeaConflict.IsEpisodeForeignKeyViolation(exception))
+        catch (Exception exception) when (EpisodeIdeaConflict.IsEpisodeForeignKeyViolation(exception))
         {
             // The episode is not this idea's owner's — another user's row, or one that was deleted in between — so
             // the same-owner key refused the link instead of it leaking across tenants. That is the answer a read

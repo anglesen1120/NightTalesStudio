@@ -14,8 +14,11 @@ namespace NightTales.Application.Features.Autopilot.Ideas;
 /// <remarks>
 /// The SQLSTATE and the constraint name are read off the provider's <see cref="DbException"/> through the BCL
 /// only — this layer must not reference Npgsql (the shape of <c>BibleProposalRunConflict</c> and
-/// <c>FactSheetFlushConflict</c>). It is public because the unit tests of this feature exercise it and this
-/// solution has no <c>InternalsVisibleTo</c>.
+/// <c>FactSheetFlushConflict</c>). The parameter is <see cref="Exception"/>, not <see cref="DbUpdateException"/>,
+/// because the same write reaches the provider two ways: a <c>SaveChanges</c> wraps the error in a
+/// <see cref="DbUpdateException"/>, while the <c>ExecuteUpdate</c> of <c>MarkUsedAsync</c> raises it raw. The
+/// walk over <see cref="Exception.InnerException"/> covers both. It is public because the unit tests of this
+/// feature exercise it and this solution has no <c>InternalsVisibleTo</c>.
 /// </remarks>
 public static class EpisodeIdeaConflict
 {
@@ -45,10 +48,10 @@ public static class EpisodeIdeaConflict
     /// Whether the flush was refused by <see cref="EpisodeUniqueIndex"/>. A refusal naming any other constraint
     /// is a defect this layer must not hide and is left to the caller's unit of work (it propagates).
     /// </summary>
-    /// <param name="exception">The save's <see cref="DbUpdateException"/>.</param>
+    /// <param name="exception">The refused statement's exception — see the type's remarks for the two shapes.</param>
     /// <returns><c>true</c> when the episode-uniqueness index was the one refused.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="exception"/> is <see langword="null"/>.</exception>
-    public static bool IsEpisodeUniqueViolation(DbUpdateException exception)
+    public static bool IsEpisodeUniqueViolation(Exception exception)
     {
         ArgumentNullException.ThrowIfNull(exception);
 
@@ -61,10 +64,10 @@ public static class EpisodeIdeaConflict
     /// naming any other constraint is a defect this layer must not hide and is left to the caller's unit of work
     /// (it propagates).
     /// </summary>
-    /// <param name="exception">The save's <see cref="DbUpdateException"/>.</param>
+    /// <param name="exception">The refused statement's exception — see the type's remarks for the two shapes.</param>
     /// <returns><c>true</c> when the same-owner episode key was the one refused.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="exception"/> is <see langword="null"/>.</exception>
-    public static bool IsEpisodeForeignKeyViolation(DbUpdateException exception)
+    public static bool IsEpisodeForeignKeyViolation(Exception exception)
     {
         ArgumentNullException.ThrowIfNull(exception);
 
@@ -76,7 +79,7 @@ public static class EpisodeIdeaConflict
     /// <paramref name="constraint"/>. The pair is read off the provider's <see cref="DbException"/> through the
     /// BCL only: this layer must not reference Npgsql.
     /// </summary>
-    private static bool WasRefusedBy(DbUpdateException exception, string sqlState, string constraint)
+    private static bool WasRefusedBy(Exception exception, string sqlState, string constraint)
     {
         for (Exception? current = exception; current is not null; current = current.InnerException)
         {

@@ -1,4 +1,5 @@
 using ErrorOr;
+using NightTales.Application.Abstractions.Text;
 using NightTales.Application.Common.Errors;
 using NightTales.Domain.Autopilot.Ideas;
 using NightTales.TestKit;

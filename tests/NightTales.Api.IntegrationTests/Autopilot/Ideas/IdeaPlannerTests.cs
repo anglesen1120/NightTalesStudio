@@ -516,7 +516,7 @@ public sealed class IdeaPlannerTests(TestDatabase database) : IntegrationTest(da
         var pick = await ProposeAsync(worker, run);
 
         pick.IsError.ShouldBeFalse();
-        var call = text.Requests.ShouldHaveSingleItem();
+        var call = IdeaCalls(text).ShouldHaveSingleItem();
         call.UserDataJson.Contains(fetchedTitle, StringComparison.Ordinal)
             .ShouldBeFalse("a fetched title may not reach the provider (D19)");
         call.UserDataJson.Contains("bbc.co.uk", StringComparison.Ordinal)

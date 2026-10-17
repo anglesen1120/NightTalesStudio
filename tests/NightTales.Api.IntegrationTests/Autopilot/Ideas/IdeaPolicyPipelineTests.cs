@@ -80,6 +80,7 @@ public sealed class IdeaPolicyPipelineTests(TestDatabase database) : Integration
 
         IdeaOutcome(Database, banned).ShouldStartWith(
             $"rejected|{IdeaRejectionReason.PolicyBannedTheme}",
+            Case.Sensitive,
             "a theme of the series in the candidate's own text is the free, deterministic rejection");
         pick.Value.IdeaId.ShouldBe(
             clean,
@@ -273,7 +274,7 @@ public sealed class IdeaPolicyPipelineTests(TestDatabase database) : Integration
         moderator.Calls.ShouldBe(1, "the endpoint is asked once per batch at most: it just failed");
         ModerationRows(Database, world.UserId).ShouldBeEmpty("nothing was flagged, so there is no evidence to keep");
         tags.Count(IdeaMetrics.ModerationUnavailableTotalName).ShouldBe(1, "the outage is counted whatever the fail mode decides");
-        sink.AllText().ShouldContain("idea_policy_moderation_unavailable", "and it is visible in the run's own log");
+        sink.AllText().ShouldContain("idea_policy_moderation_unavailable", Case.Sensitive, "and it is visible in the run's own log");
         sink.AllText().ShouldContain("failClosed=False");
     }
 
@@ -336,7 +337,7 @@ public sealed class IdeaPolicyPipelineTests(TestDatabase database) : Integration
         pick.IsError.ShouldBeFalse();
         moderator.Calls.ShouldBe(0, "the switch is the endpoint's own off-ramp");
         IdeaOutcome(Database, IdeaIdOf(Database, world.SeriesId, "Ý tưởng chạm chủ đề cấm"))
-            .ShouldStartWith($"rejected|{IdeaRejectionReason.PolicyBannedTheme}", "the free check is not switched off with it");
+            .ShouldStartWith($"rejected|{IdeaRejectionReason.PolicyBannedTheme}", Case.Sensitive, "the free check is not switched off with it");
         pick.Value.IdeaId.ShouldBe(IdeaIdOf(Database, world.SeriesId, "Ý tưởng sạch sẽ"));
         UsageCount(Database, world.UserId).ShouldBe(2, "the ideas call and the judge call, nothing else");
     }
@@ -380,9 +381,9 @@ public sealed class IdeaPolicyPipelineTests(TestDatabase database) : Integration
         IdeaOutcome(Database, IdeaIdOf(Database, world.SeriesId, "ZQX-TITLE-BANNED"))
             .ShouldStartWith($"rejected|{IdeaRejectionReason.PolicyBannedTheme}");
         DataObjectContains(NoveltyCalls(text).ShouldHaveSingleItem(), "ZQX-TITLE-KEPT").ShouldBeTrue("the judge's data object carries the candidate");
-        JudgeReason(Database, kept).ShouldContain("ZQX-JUDGE-REASON", "the reason is stored as server-side data of the novelty document");
+        JudgeReason(Database, kept).ShouldContain("ZQX-JUDGE-REASON", Case.Sensitive, "the reason is stored as server-side data of the novelty document");
         var logged = sink.AllText();
-        logged.ShouldContain("idea_planner_picked", "the sink observed the run's own log events");
+        logged.ShouldContain("idea_planner_picked", Case.Sensitive, "the sink observed the run's own log events");
 
         string[] content =
         [

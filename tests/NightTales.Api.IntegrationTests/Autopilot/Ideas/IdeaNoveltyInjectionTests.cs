@@ -1,4 +1,6 @@
 using NightTales.Api.IntegrationTests.Persistence;
+using NightTales.Application.Abstractions.Text;
+using NightTales.Domain.Common;
 using NightTales.Domain.Series;
 using NightTales.TestKit;
 using NightTales.TestKit.Database;
@@ -82,7 +84,7 @@ public sealed class IdeaNoveltyInjectionTests(TestDatabase database) : Integrati
             fixture.Canary,
             Case.Sensitive,
             $"D19: the {fixture.Id} payload is model material and may never reach a log line");
-        IdeaOutcome(Database, pick.Value.IdeaId).ShouldStartWith("picked|-", "the scripted reading still decided the batch");
+        IdeaOutcome(Database, pick.Value.IdeaId).ShouldStartWith("picked|-", Case.Sensitive, "the scripted reading still decided the batch");
     }
 
     /// <summary>
@@ -111,7 +113,7 @@ public sealed class IdeaNoveltyInjectionTests(TestDatabase database) : Integrati
 
         pick.IsError.ShouldBeFalse();
         var stored = JudgeReason(Database, pick.Value.IdeaId);
-        stored.ShouldStartWith(canary, "the reason the row keeps is the judge's own text");
+        stored.ShouldStartWith(canary, Case.Sensitive, "the reason the row keeps is the judge's own text");
         stored.Length.ShouldBe(300, "the cap is the column-side contract the checker owns");
         stored.ShouldNotContain("\u0007", Case.Sensitive, "a control character is dropped before the row is written");
         sink.AllText().ShouldNotContain(canary, Case.Sensitive, "D19: the reason is server-side data, never a log line");

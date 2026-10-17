@@ -977,6 +977,22 @@ internal static class IdeaPlannerHarness
             $"SELECT id::text FROM episode_ideas WHERE series_id = '{Pg(seriesId)}' AND title = '{Quote(title)}'"));
 
     /// <summary>
+    /// The id of the idea row of the series that carries this title and is <b>not</b> <paramref name="other"/>: a
+    /// test that seeds a pending copy of an earlier run carries two rows under one title by construction, which
+    /// <see cref="IdeaIdOf"/> cannot tell apart.
+    /// </summary>
+    /// <param name="database">The class database.</param>
+    /// <param name="seriesId">The series.</param>
+    /// <param name="title">The idea's title, carried by both rows.</param>
+    /// <param name="other">The row to leave out.</param>
+    /// <returns>The other row's id.</returns>
+    internal static Guid IdeaIdOfOther(TestDatabase database, Guid seriesId, string title, Guid other) =>
+        Guid.Parse(SqlProbe.ScalarText(
+            database,
+            $"SELECT id::text FROM episode_ideas WHERE series_id = '{Pg(seriesId)}' AND title = '{Quote(title)}'" +
+            $" AND id <> '{Pg(other)}'"));
+
+    /// <summary>
     /// One stored <c>novelty</c> document's readings: the lexical score, the judge's score, the episode the judge
     /// named, and the lexical pass' overlap kind and id. A null half prints <c>null</c>, a number without its
     /// trailing zeros.

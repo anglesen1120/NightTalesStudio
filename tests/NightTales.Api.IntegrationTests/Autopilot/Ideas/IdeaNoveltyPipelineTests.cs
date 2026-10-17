@@ -120,7 +120,9 @@ public sealed class IdeaNoveltyPipelineTests(TestDatabase database) : Integratio
         var copied = IdeaIdOf(Database, world.SeriesId, "Bản sao cũ");
         var fresh = IdeaIdOf(Database, world.SeriesId, "Ý tưởng mới toanh");
 
-        IdeaOutcome(Database, copied).ShouldBe("rejected|novelty_lexical|0.83|1");
+        IdeaOutcome(Database, copied).ShouldBe(
+            "rejected|novelty_lexical|0.425|1",
+            "freshness is 1 − max(lexical, judge) = 1 − 1 for a copy, so the score is 0.30 × 1 + 0.25 × 0.5");
         NoveltyScores(Database, copied).ShouldBe($"1|0.1|null|episode|{Pg(copy)}");
         IdeaOutcome(Database, fresh).ShouldBe("picked|-|0.75|0.2");
         pick.Value.IdeaId.ShouldBe(fresh, "a lexically blocked candidate can never win the pick");
@@ -152,7 +154,7 @@ public sealed class IdeaNoveltyPipelineTests(TestDatabase database) : Integratio
         var atThreshold = IdeaIdOf(Database, world.SeriesId, "Ý tưởng đúng ngưỡng");
         var above = IdeaIdOf(Database, world.SeriesId, "Ý tưởng vượt ngưỡng");
 
-        IdeaOutcome(Database, atThreshold).ShouldStartWith("picked|-", "0.70 is not above the 0.70 ceiling");
+        IdeaOutcome(Database, atThreshold).ShouldStartWith("picked|-", Case.Sensitive, "0.70 is not above the 0.70 ceiling");
         IdeaOutcome(Database, above).ShouldStartWith("rejected|novelty_judge");
         NoveltyScores(Database, above).ShouldBe("0|0.71|null|null|null");
         pick.Value.IdeaId.ShouldBe(atThreshold);
@@ -371,7 +373,7 @@ public sealed class IdeaNoveltyPipelineTests(TestDatabase database) : Integratio
 
         result.IsError.ShouldBeTrue();
         result.FirstError.Code.ShouldBe(ErrorCodes.IdeasNoIdea);
-        result.FirstError.Description.ShouldContain(IdeaRejectionReason.NoveltyLexical, "one reason each, so the tie breaks alphabetically");
+        result.FirstError.Description.ShouldContain(IdeaRejectionReason.NoveltyLexical, Case.Sensitive, "one reason each, so the tie breaks alphabetically");
         IdeaCount(Database, world.SeriesId).ShouldBe(2, "the batch is stored whole, rejected or not");
         IdeaOutcome(Database, IdeaIdOf(Database, world.SeriesId, "Ý tưởng chạm chủ đề cấm"))
             .ShouldStartWith("rejected|policy_banned_theme");
@@ -436,8 +438,8 @@ public sealed class IdeaNoveltyPipelineTests(TestDatabase database) : Integratio
 
         pick.IsError.ShouldBeFalse();
         IdeaOutcome(Database, IdeaIdOf(Database, world.SeriesId, "Bản sao cũ"))
-            .ShouldEndWith("|1", "the lexical reading 1.0 is larger than the judge's 0.1");
-        IdeaOutcome(Database, pick.Value.IdeaId).ShouldEndWith("|0.42", "the judge's reading is larger than the lexical 0");
+            .ShouldEndWith("|1", Case.Sensitive, "the lexical reading 1.0 is larger than the judge's 0.1");
+        IdeaOutcome(Database, pick.Value.IdeaId).ShouldEndWith("|0.42", Case.Sensitive, "the judge's reading is larger than the lexical 0");
         pick.Value.Similarity.ShouldBe(0.42m);
     }
 
@@ -465,7 +467,7 @@ public sealed class IdeaNoveltyPipelineTests(TestDatabase database) : Integratio
         var pick = await ProposeAsync(worker, run);
 
         pick.IsError.ShouldBeFalse();
-        var copy = IdeaIdOf(Database, world.SeriesId, "Bản sao cũ");
+        var copy = IdeaIdOfOther(Database, world.SeriesId, "Bản sao cũ", pending);
         IdeaOutcome(Database, copy).ShouldStartWith("rejected|novelty_lexical");
         NoveltyScores(Database, copy).ShouldBe($"1|0.1|null|pending_idea|{Pg(pending)}");
         NoveltyCorpusCounts(Database, copy).ShouldBe("0|1", "the corpus saw the earlier run's pending idea");
@@ -637,7 +639,7 @@ public sealed class IdeaNoveltyPipelineTests(TestDatabase database) : Integratio
         var check = guard.Checks.ShouldHaveSingleItem();
         check.Bound.WorstCaseUsd.ShouldBe(0.22m, "the checker asks the judge's own bound, not the generation step's");
         check.ExcludingRunId.ShouldBe(run.GenerationRunId, "the run's own reserved bound stays out of the sum");
-        UsageCount(Database, world.UserId).ShouldBe(1);
+        UsageCount(Database, world.UserId).ShouldBe(2, "the ideas call and the one judge attempt that was dispatched before the cap refused its retry (D14)");
         IdeaCount(Database, world.SeriesId).ShouldBe(0);
     }
 
@@ -749,12 +751,13 @@ public sealed class IdeaNoveltyPipelineTests(TestDatabase database) : Integratio
         pick.IsError.ShouldBeFalse("the payload cannot turn a valid answer into a failure");
         var judge = NoveltyCalls(text).ShouldHaveSingleItem();
         judge.SystemPrompt.ShouldNotContain(fixture.Canary);
-        DataObjectContains(judge, fixture.Canary).ShouldBeTrue("the payload travels as material of the data object");
 
-        // Both the corpus read and the data object cap a summary at 200 characters, so the payload travels as the
-        // same prefix of itself.
-        var expected = fixture.Value.Length <= 200 ? fixture.Value : fixture.Value[..200];
-        DataObjectArrayText(judge, "past_episodes", 0, "summary").ShouldBe(expected);
+        // Both the corpus read and the data object cap a summary at 200 characters, and the payload is longer than
+        // that, so what travels is its prefix: the canary sits past the cut by construction, and the instruction
+        // half of the payload — the positive control — is what the next two assertions pin exactly.
+        var travelled = fixture.Value.Length <= 200 ? fixture.Value : fixture.Value[..200];
+        DataObjectContains(judge, travelled).ShouldBeTrue("the payload travels as material of the data object");
+        DataObjectArrayText(judge, "past_episodes", 0, "summary").ShouldBe(travelled);
         NoveltyJudgePresence(Database, pick.Value.IdeaId).ShouldBe("judge", "the scripted reading decided the batch");
         pick.Value.Similarity.ShouldBe(0.5m);
     }

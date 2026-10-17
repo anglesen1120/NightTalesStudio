@@ -34,7 +34,10 @@ public sealed class IdeaNoveltyCheckerTests
     public async Task AllCandidatesLexicallyBlocked_SkipsTheJudge()
     {
         var candidate = Candidate(title: "The lighthouse keeper's double", logline: "A keeper sees himself arrive.");
-        var episode = Episode(title: candidate.Title, summary: candidate.Logline);
+
+        // The pass scores `title + logline + setting` against an entry built as `title + summary`, so the entry
+        // has to spell all three texts for the copy to be exact.
+        var episode = Episode(title: candidate.Title, summary: $"{candidate.Logline} {candidate.Setting}");
         var judge = new StubJudge();
 
         var result = await CheckAsync(

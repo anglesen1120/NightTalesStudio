@@ -11,7 +11,9 @@ namespace NightTales.Infrastructure.Autopilot;
 /// Registers what the idea-generation step needs from Infrastructure (02.8.1-T1 plan §7.1): the
 /// <c>Autopilot:Ideas</c> section bound and validated on start, the Domain limits record and the Application's
 /// planner options as plain singletons, and the scoped context/history readers. 02.8.1-T2 adds the same for
-/// <c>Autopilot:Ideas:{Novelty,Weights,Policy}</c>, the corpus reader and the two Application checkers.
+/// <c>Autopilot:Ideas:{Novelty,Weights,Policy}</c> and the corpus reader; the two Application checkers stay with
+/// the planner in <c>AddIdeaGeneration</c>, because only the Worker's host has the judge and the instrument they
+/// take.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -75,16 +77,16 @@ public static class AutopilotIdeasServiceCollectionExtensions
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IValidateOptions<IdeaWeightsOptions>, IdeaWeightsValidator>());
 
-        // The Application checkers take the plain values, exactly like the planner options above, because
-        // Application cannot reference Infrastructure's options types; the corpus reader is scoped with the read
-        // model it queries, and the two checkers are scoped with the planner that drives them.
+        // The Application readers take the plain values, exactly like the planner options above, because
+        // Application cannot reference Infrastructure's options types, and the corpus reader is scoped with the
+        // read model it queries. The two 02.8.1-T2 checkers are NOT registered here: they are the paid idea step's
+        // own half (they take the Worker's `IIdeaNoveltyJudge` and `IdeaMetrics`), so they belong next to the
+        // planner in `AddIdeaGeneration` — the Api host, which this method also serves, has neither.
         services.TryAddSingleton(provider => provider.GetRequiredService<IOptions<IdeaNoveltyOptions>>().Value);
         services.TryAddSingleton(provider => provider.GetRequiredService<IOptions<IdeaPolicyOptions>>().Value);
         services.TryAddSingleton(provider => provider.GetRequiredService<IOptions<IdeaWeightsOptions>>().Value.ToWeights());
 
         services.TryAddScoped<IIdeaCorpusProvider, IdeaCorpusProvider>();
-        services.TryAddScoped<IIdeaNoveltyChecker, IdeaNoveltyChecker>();
-        services.TryAddScoped<IIdeaPolicyChecker, IdeaPolicyChecker>();
 
         return services;
     }
