@@ -413,7 +413,7 @@ describe('StoryReviewPage self-review wiring', () => {
     const panel = fixture.debugElement.query(By.directive(ReviewPanelComponent)).componentInstance as ReviewPanelComponent;
     const editor = fixture.debugElement.query(By.directive(StoryEditorComponent)).componentInstance as StoryEditorComponent;
     expect(storyStore.setSourcesExist).toHaveBeenLastCalledWith(true);
-    expect(panel.similarityRows()).toEqual([{ address: 'p:3', share: 0.21, level: 'warn', addressLabelKey: 'episodes.editor.segment.paragraph', addressLabelIndex: 4 }]);
+    expect(panel.similarityRows()).toEqual([{ address: 'p:3', share: 0.21, level: 'warn', addressLabelKey: 'episodes.editor.segment.paragraph', addressLabelIndex: 4, addressText: null }]);
     expect(root.querySelectorAll('.segment-editor--similarity-warn')).toHaveLength(1);
     const target = root.querySelector<HTMLTextAreaElement>('textarea[data-segment="p:3"]')!;
     expect(target.closest('nts-segment-editor')?.querySelector('.segment-editor__similarity')?.textContent).toBe(qualityVi.similarity_warn);

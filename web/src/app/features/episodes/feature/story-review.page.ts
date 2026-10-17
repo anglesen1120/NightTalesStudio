@@ -187,9 +187,9 @@ export class StoryReviewPage {
       const parsed = segment === 'meta' ? null : parseAddress(segment);
       return {
         address: segment, share, level: levels.get(segment) ?? null,
-        addressLabelKey: segment === 'meta' ? 'episodes.annotations.meta'
-          : parsed === null ? 'episodes.annotations.unresolved' : `episodes.editor.segment.${parsed.kind}`,
+        addressLabelKey: segment === 'meta' ? 'episodes.annotations.meta' : `episodes.editor.segment.${parsed?.kind ?? 'paragraph'}`,
         addressLabelIndex: parsed?.kind === 'paragraph' && parsed.index !== null ? parsed.index + 1 : null,
+        addressText: segment !== 'meta' && parsed === null ? segment : null,
       };
     });
   });

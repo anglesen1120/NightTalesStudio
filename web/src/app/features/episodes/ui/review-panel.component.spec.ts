@@ -21,7 +21,7 @@ const model: ReviewPanelViewModel = {
   counts: { blocking: 2, advisory: 3 },
   scores: { hook: 1, pacing: 2, atmosphere: 3, natural_language: 4, originality: 5, factual_care: 4, length_fit: null },
   stale: false, whyIssues: [objective], driftNote: false,
-  similarityRows: [{ address: 'p:3', share: 0.21, level: 'warn', addressLabelKey: 'episodes.editor.segment.paragraph', addressLabelIndex: 4 }], similarityCorpus: 'sources', similarityScore: 0.1,
+  similarityRows: [{ address: 'p:3', share: 0.21, level: 'warn', addressLabelKey: 'episodes.editor.segment.paragraph', addressLabelIndex: 4, addressText: null }], similarityCorpus: 'sources', similarityScore: 0.1,
   similarityUnavailable: false, hasAudit: true, partial: false,
 };
 async function setup(overrides: Partial<ReviewPanelViewModel> = {}, render = true) {
@@ -82,11 +82,17 @@ describe('ReviewPanelComponent', () => {
   });
 
   it('renders past-episode overlaps as informational even if a row carries a block level', async () => {
-    const { root } = await setup({ similarityCorpus: 'past_episodes', similarityRows: [{ address: 'p:3', share: 0.21, level: 'block', addressLabelKey: 'episodes.editor.segment.paragraph', addressLabelIndex: 4 }] });
+    const { root } = await setup({ similarityCorpus: 'past_episodes', similarityRows: [{ address: 'p:3', share: 0.21, level: 'block', addressLabelKey: 'episodes.editor.segment.paragraph', addressLabelIndex: 4, addressText: null }] });
     expect(root.textContent).toContain(episodesEn.similarity.pastEpisodes);
     expect(root.textContent).toContain('Segment 4 — 21%');
     expect(root.textContent).not.toContain(storyEn.similarity.block);
     expect(root.textContent).not.toContain(storyEn.similarity.warn);
+  });
+
+  it('shows the raw address as plain text for a similarity row that does not parse', async () => {
+    const { root } = await setup({ similarityRows: [{ address: 'x:9' as never, share: 0.5, level: null, addressLabelKey: 'episodes.editor.segment.paragraph', addressLabelIndex: null, addressText: 'x:9' }] });
+    expect(root.textContent).toContain('Segment x:9 — 50%');
+    expect([...root.querySelectorAll('button')].some((button) => button.textContent?.includes('x:9'))).toBe(false);
   });
 
   it('renders unavailable copy without segment claims, and no similarity UI for empty inputs', async () => {

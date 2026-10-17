@@ -347,8 +347,10 @@ describe('StoryEditorStore', () => {
     await state.store.load(EPISODE_ID);
     expect(state.store.revisedBadge()).toBe(true);
     expect(state.store.revision()).toBeNull();
-    await reload(state, storySnapshot({ source: 'generated', auditReport: auditReport({ revision: { applied: true, drift: false, reason: null }, modelReview: { stale: false, scores: null, issues: [] } }) }));
-    expect(state.store.revisedBadge()).toBe(true);
+    await reload(state, storySnapshot({ source: 'edited', auditReport: auditReport({ revision: { applied: true, drift: false, reason: null }, modelReview: { stale: false, scores: null, issues: [] } }) }));
+    expect(state.store.revisedBadge()).toBe(false);
+    await reload(state, storySnapshot({ source: 'generated', auditReport: auditReport({ revision: { applied: true, drift: false, reason: null } }) }));
+    expect(state.store.revisedBadge()).toBe(false);
   });
   it('revisedBadge_FalseWithoutRevision', async () => {
     const state = setup(storySnapshot({ source: 'edited' }));
@@ -462,7 +464,7 @@ describe('StoryEditorStore', () => {
   });
   it('noExtraRequestOnLoad', async () => {
     const state = await loaded(storySnapshot({
-      similarityScore: 0.21, qualityHints: [simHint(SIMILARITY_WARN_RULE)],
+      source: 'revised', similarityScore: 0.21, qualityHints: [simHint(SIMILARITY_WARN_RULE)],
       auditReport: auditReport({
         modelReview: { stale: false, scores: null, issues: [reviewIssue()] },
         revision: { applied: true, drift: false, reason: null },

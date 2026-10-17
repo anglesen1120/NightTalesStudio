@@ -9,6 +9,8 @@ export interface SimilarityHighlightViewModel {
   readonly level: SimilarityLevel | null;
   readonly addressLabelKey: string;
   readonly addressLabelIndex: number | null;
+  /** The raw address of a row that does not parse: shown as text, never a link. */
+  readonly addressText: string | null;
 }
 
 export interface ReviewPanelViewModel {

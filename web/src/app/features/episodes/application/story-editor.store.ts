@@ -131,8 +131,8 @@ export class StoryEditorStore {
   readonly similarity = computed(() => this.similarityOverrides() ?? this.audit()?.similarity ?? null);
   /** Counts come from `qualityHints` only — the set the reader sees inline; CR-7 has no per-severity count field. */
   readonly reviewCounts = computed<ReviewCounts>(() => countBySeverity(this.hints()));
-  /** The version `source` is authoritative; `revision.applied` is the fallback the audit document may carry alone. */
-  readonly revisedBadge = computed(() => this.snapshot()?.source === 'revised' || this.revision()?.applied === true);
+  /** Only a version whose `source` is `revised` earns the badge: an edit keeps `revision` forward in the audit document (the edited text is no longer the corrected one). */
+  readonly revisedBadge = computed(() => this.snapshot()?.source === 'revised');
   /** The recorded review issues of the expanded "why" panel ONLY: they already arrive inline inside `qualityHints`. */
   readonly whyIssues = computed(() => whyIssues(this.audit()));
   readonly driftNote = computed(() => this.revision()?.drift === true || this.whyIssues().some((issue) => issue.type === REVISION_DRIFT_TYPE));

@@ -49,8 +49,8 @@
               <ul>
                 @for (row of similarityRows(); track $index) {
                   <li>
-                    @let segmentName = row.addressLabelIndex ?? (row.addressLabelKey | transloco);
-                    @if (row.address !== 'meta') {
+                    @let segmentName = row.addressText ?? row.addressLabelIndex ?? (row.addressLabelKey | transloco);
+                    @if (row.address !== 'meta' && row.addressText === null) {
                       <button type="button" (click)="openSegment(row.address)">{{ 'episodes.similarity.segmentShare' | transloco: { segment: segmentName, percent: (row.share * 100 | number: '1.0-1') } }}</button>
                     } @else {
                       <span>{{ 'episodes.similarity.segmentShare' | transloco: { segment: segmentName, percent: (row.share * 100 | number: '1.0-1') } }}</span>
