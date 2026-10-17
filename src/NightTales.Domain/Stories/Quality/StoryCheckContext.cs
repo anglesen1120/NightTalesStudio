@@ -2,6 +2,7 @@ using NightTales.Domain.Episodes;
 using NightTales.Domain.Rendering.Images;
 using NightTales.Domain.Series;
 using NightTales.Domain.Stories.Content;
+using NightTales.Domain.Stories.Keywords;
 using NightTales.Domain.Stories.Length;
 
 namespace NightTales.Domain.Stories.Quality;
@@ -22,6 +23,12 @@ namespace NightTales.Domain.Stories.Quality;
 /// <param name="ModerationCategories">The categories the draft-stage moderation flagged, or null/empty when it did not flag.</param>
 /// <param name="ModelReviewStale">Whether the stored model review no longer describes this text (F25).</param>
 /// <param name="Plan">The render image plan whose hint codes surface as advisory hints (03 CR-14), or null.</param>
+/// <param name="Names">
+/// The episode's real-person name corpus (03 README D11), loaded by the caller through
+/// <c>INameCorpusProvider</c>; <see cref="NameCorpus.Empty"/> is the only value for fiction with no research. An
+/// empty corpus is <em>not</em> evidence that the draft is clean: a caller that skips the load turns the name
+/// rule off silently, so pass this parameter from the loaded corpus, never to dodge the load.
+/// </param>
 /// <param name="ModerationUnavailable">
 /// Whether there is no usable moderation verdict for this text (a carried-over verdict that was never obtained, or an
 /// audit report that could not be read). It fails closed: Q-MOD-01 blocks until the moderator has re-checked the text.
@@ -39,4 +46,5 @@ public sealed record StoryCheckContext(
     IReadOnlyList<string>? ModerationCategories,
     bool ModelReviewStale,
     RenderImagePlan? Plan,
+    NameCorpus Names,
     bool ModerationUnavailable = false);

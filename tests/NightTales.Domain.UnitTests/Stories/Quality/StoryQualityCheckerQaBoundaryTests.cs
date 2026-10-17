@@ -4,6 +4,7 @@ using System.Text.Json;
 using NightTales.Domain.Episodes;
 using NightTales.Domain.Series;
 using NightTales.Domain.Stories.Content;
+using NightTales.Domain.Stories.Keywords;
 using NightTales.Domain.Stories.Quality;
 using NightTales.Domain.Usage;
 using Shouldly;
@@ -676,6 +677,6 @@ public sealed class StoryQualityCheckerQaBoundaryTests
         bool stale = false)
     {
         var rules = new StoryRules();
-        return new StoryCheckContext(topic, tier, length ? rules.Length : null, rules, factCount, titles ?? [], hasUrlSources, score, verdict, moderation, stale, null);
+        return new StoryCheckContext(topic, tier, length ? rules.Length : null, rules, factCount, titles ?? [], hasUrlSources, score, verdict, moderation, stale, null, NameCorpus.Empty);
     }
 }

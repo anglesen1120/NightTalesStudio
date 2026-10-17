@@ -207,6 +207,7 @@ internal sealed class RevisionWorld
             budgetGuard: budget ?? new FakeBudgetGuard(),
             estimator: estimator ?? new FixedRevisionEstimator(),
             checker: new StoryQualityChecker(),
+            nameCorpus: new EmptyNameCorpusProvider(),
             jobOptions: jobOptions ?? new StoryJobOptions(),
             reviewOptions: new StoryReviewOptions { Enabled = reviewEnabled },
             revisionOptions: new StoryRevisionOptions
