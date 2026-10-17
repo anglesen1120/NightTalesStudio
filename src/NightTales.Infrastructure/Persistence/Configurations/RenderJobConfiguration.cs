@@ -23,7 +23,8 @@ namespace NightTales.Infrastructure.Persistence.Configurations;
 /// </para>
 /// <para>
 /// <c>reservation_id</c> is <c>NOT NULL</c> and has no foreign key: the reservation lives in the credit ledger, not in
-/// a table of this schema (W2 CR-14, WT50).
+/// a table of this schema (W2 CR-14, WT50). <c>worst_case_usd</c> is the <c>numeric(12,6)</c> bound that reservation
+/// was taken for (03 D8); the open-bounds reader of 02.2.2-T2 sums it with the generation runs' bound.
 /// </para>
 /// <para>
 /// <c>params</c> keeps <see cref="RenderJob.Params"/> typed (the poller's submit of 09.6.3-T1 reads
@@ -70,6 +71,15 @@ internal sealed class RenderJobConfiguration : IEntityTypeConfiguration<RenderJo
         builder.Property(job => job.ErrorCode).HasMaxLength(64);
         builder.Property(job => job.ErrorMessage).HasMaxLength(2_000);
         builder.Property(job => job.ReservationId).IsRequired();
+
+        // The reserved bound of the attempt (03 D8), summed by the open-bounds reader beside the generation runs
+        // (02.2.2-T2). The store default is 0 for the rows that predate the column: render was not live when
+        // `_09_AddRenderJobWorstCaseUsd` ran, so every existing row was an unconsumed attempt (the domain refuses
+        // a negative value, and OpenBoundsReader's own rule of a non-negative bound is what keeps the sum sane).
+        builder.Property(job => job.WorstCaseUsd)
+            .HasPrecision(12, 6)
+            .IsRequired()
+            .HasDefaultValue(0m);
 
         builder.Property(job => job.Params)
             .HasConversion(new RenderParamsJsonConverter())

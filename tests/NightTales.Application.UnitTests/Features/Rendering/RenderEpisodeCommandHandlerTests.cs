@@ -189,6 +189,30 @@ public sealed class RenderEpisodeCommandHandlerTests(TestDatabase database) : In
     }
 
     [Fact]
+    public async Task WorstCaseUsd_StoresTheReservedBound()
+    {
+        var seed = await SeedAsync();
+        var ports = PortsFor(seed);
+        await using var db = Open(seed.UserId);
+        var handler = Handler(db, ports);
+
+        var result = await handler.Handle(Command(seed, ETags.Episode(seed.EpisodeVersion)), Ct);
+        result.IsError.ShouldBeFalse();
+        await db.SaveChangesAsync(Ct);
+
+        // The estimator's bound (the fake answers 1.23) is what the reservation was taken for, so the row carries
+        // the same number: the open-bounds reader sums exactly the amount the budget guard already checked
+        // (02.2.2-T2, 09.6.3-T1). The reservation does not carry the figure back, so the bound is the only source.
+        var stored = (await Database.QueryStringsAsync(
+            $"SELECT worst_case_usd::text FROM render_jobs WHERE id = '{result.Value.RenderJobId}'", Ct)).Single();
+        stored.ShouldBe("1.230000");
+
+        await using var read = Open(seed.UserId);
+        var job = await read.RenderJobs.AsNoTracking().SingleAsync(row => row.Id == result.Value.RenderJobId, Ct);
+        job.WorstCaseUsd.ShouldBe(1.23m);
+    }
+
+    [Fact]
     public async Task Params_ContainsNoContent_Fields()
     {
         var seed = await SeedAsync();

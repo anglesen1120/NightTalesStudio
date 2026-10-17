@@ -14,7 +14,7 @@ namespace NightTales.Api.IntegrationTests.Migrations;
 /// The <c>_13_DataDeletionRequests</c> migration (13.3.1-T1, 13 README D4/YR13): the table, its three CHECKs, its four
 /// indexes — above all the open-request unique index with <c>user_id</c> first and <c>NULLS NOT DISTINCT</c>, verified
 /// here on PostgreSQL 17 — and no foreign key to <c>users</c>. Another migration followed it
-/// (<c>_02_AddEpisodeIdeas</c> owns the last-migration <c>Down</c> check), so this class finds its own
+/// (<c>_09_AddRenderJobWorstCaseUsd</c> owns the last-migration <c>Down</c> check), so this class finds its own
 /// migration by name, like <c>PriceVersionsMigrationTests</c>.
 /// </summary>
 [Trait("Category", "Integration")]

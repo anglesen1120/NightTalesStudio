@@ -4,6 +4,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using NightTales.Application.Abstractions;
 using NightTales.Application.Abstractions.Jobs;
@@ -11,6 +12,7 @@ using NightTales.Application.Abstractions.Outbox;
 using NightTales.Application.DependencyInjection;
 using NightTales.Application.Features.Assets.Jobs;
 using NightTales.Application.Features.Episodes.Outbox;
+using NightTales.Application.Features.Rendering;
 using NightTales.Application.Features.Research.Fetcher;
 using NightTales.Application.Features.Research.Jobs;
 using NightTales.Application.Features.Research.Outbox;
@@ -21,7 +23,9 @@ using NightTales.Application.Features.SeriesBible.Events;
 using NightTales.Application.Features.Stories.Jobs;
 using NightTales.Application.Features.Stories.Outbox;
 using NightTales.Application.Features.Stories.Review;
+using NightTales.Application.Rendering;
 using NightTales.Application.Telemetry;
+using NightTales.Domain.Common;
 using NightTales.Domain.Episodes.Events;
 using NightTales.Domain.Platform.Events;
 using NightTales.Domain.Research.Events;
@@ -42,6 +46,7 @@ using NightTales.Infrastructure.Security;
 using NightTales.Infrastructure.Storage;
 using NightTales.Worker.Health;
 using NightTales.Worker.Rendering;
+using NightTales.Worker.Services;
 
 namespace NightTales.Worker.DependencyInjection;
 
@@ -76,6 +81,18 @@ public static class WorkerServiceCollectionExtensions
     /// </remarks>
     public static readonly Func<IServiceProvider, IHostedService> NodeHealthPollerFactory =
         provider => provider.GetRequiredService<NodeHealthPoller>();
+
+    /// <summary>
+    /// The factory of the hosted descriptor that runs the render poller (09.6.3-T1, 09 README BD7): it
+    /// resolves the poller singleton, so a test drives the very instance the loop owns through
+    /// <c>RenderPollingService.TickAsync</c>.
+    /// </summary>
+    /// <remarks>
+    /// A named field for the same reason as <see cref="OutboxDispatcherLoopFactory"/>:
+    /// <see cref="WithoutRenderPollingService"/> finds exactly this descriptor by reference.
+    /// </remarks>
+    public static readonly Func<IServiceProvider, IHostedService> RenderPollingServiceFactory =
+        provider => provider.GetRequiredService<RenderPollingService>();
 
     /// <summary>Registers everything the Worker needs except the Hangfire server.</summary>
     /// <param name="services">The service collection of the host.</param>
@@ -400,6 +417,37 @@ public static class WorkerServiceCollectionExtensions
         services.AddSingleton<RenderMetricsRefresher>();
         services.AddSingleton<IHostedService>(provider => provider.GetRequiredService<RenderMetricsRefresher>());
 
+        // 09.6.3-T1 (09 README BD7, WF07/W12): the render submit/poll graph the Worker runs — the jobs, the
+        // retry policy, the failure recorder, the render instruments and the `render_requested.v1` consumer
+        // that queues SubmitRenderJob. It is composed only here: the Api never schedules jobs (D12).
+        services.AddRenderJobs();
+
+        // The `Render` cadence and bounds of that graph. Every key has a default; an out-of-range value fails
+        // the boot (the checks live in Application as `ImagesOptions`'s do), and the bound value is exposed as
+        // the snapshot the poller and the jobs take.
+        services.AddOptions<RenderOptions>()
+            .BindConfiguration(RenderOptions.SectionName)
+            .ValidateOnStart();
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IValidateOptions<RenderOptions>, RenderOptionsValidation>());
+        services.TryAddSingleton(provider => provider.GetRequiredService<IOptions<RenderOptions>>().Value);
+
+        // `SubmitRenderJob` reschedules a render after `RenderNodes:HealthPollSeconds` when no node is
+        // dispatchable, so the bound value of that section is exposed the same way.
+        services.TryAddSingleton(provider => provider.GetRequiredService<IOptions<RenderNodesOptions>>().Value);
+
+        // 09.6.3-T1 (BD7, WF07/W12): the poller is a BackgroundService, not a Hangfire recurring job — a
+        // sub-minute cron is not reliable. It is a singleton hosted through that instance, so a host and the
+        // harness resolve the very poller the loop owns; its advisory-lock connection opens on the same
+        // platform database as the node poller's guard (`NodeHealthPollerLock`).
+        services.AddSingleton(provider => new RenderPollingService(
+            provider.GetRequiredService<IServiceScopeFactory>(),
+            provider.GetRequiredService<IOptions<RenderOptions>>(),
+            provider.GetRequiredService<RenderMetrics>(),
+            provider.GetRequiredService<IClock>(),
+            metricsConnectionString,
+            provider.GetRequiredService<ILogger<RenderPollingService>>()));
+        services.AddSingleton<IHostedService>(RenderPollingServiceFactory);
+
         return services;
     }
 
@@ -458,6 +506,34 @@ public static class WorkerServiceCollectionExtensions
     }
 
     /// <summary>
+    /// Drops the hosted render poller from <paramref name="services"/> and leaves the poller singleton in
+    /// place (09.6.3-T1): the harness drives one tick through <c>RenderPollingService.TickAsync</c>, so the
+    /// <c>Render:PollSeconds</c> loop must never start — a started loop would claim real jobs and call the
+    /// adapter against a clock no test controls.
+    /// </summary>
+    /// <remarks>
+    /// The same reason as <see cref="WithoutOutboxDispatcherLoop"/>: the descriptor has to go before the host
+    /// is built, because <c>BackgroundService.StartAsync</c> schedules the loop and its first tick runs
+    /// immediately.
+    /// </remarks>
+    /// <param name="services">The service collection of the host.</param>
+    public static IServiceCollection WithoutRenderPollingService(this IServiceCollection services)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+
+        var poller = services.FirstOrDefault(descriptor =>
+            descriptor.ServiceType == typeof(IHostedService)
+            && ReferenceEquals(descriptor.ImplementationFactory, RenderPollingServiceFactory));
+
+        if (poller is not null)
+        {
+            services.Remove(poller);
+        }
+
+        return services;
+    }
+
+    /// <summary>
     /// Adds the single Hangfire server of the platform (09.2.6 plan §7): one server on every queue,
     /// with the worker counts and poll intervals of the <c>Jobs</c> section. Production calls this from
     /// <c>Program.cs</c>; the test harness calls it only in real-server mode (D13).
@@ -474,5 +550,24 @@ public static class WorkerServiceCollectionExtensions
             options.WorkerCount = jobs.TotalWorkerCount;
             options.SchedulePollingInterval = TimeSpan.FromSeconds(jobs.SchedulePollSeconds);
         });
+    }
+}
+
+/// <summary>Fails the start-up on an invalid <c>Render</c> section (09.6.3-T1), with every problem listed.</summary>
+/// <remarks>
+/// The checks live in Application (<see cref="RenderOptionsValidator"/>, the <c>ImagesOptionsValidator</c>
+/// precedent) because that assembly cannot reference <c>Microsoft.Extensions.Options</c>; this is the
+/// <see cref="IValidateOptions{T}"/> adapter of the Worker's composition root.
+/// </remarks>
+internal sealed class RenderOptionsValidation : IValidateOptions<RenderOptions>
+{
+    /// <inheritdoc />
+    public ValidateOptionsResult Validate(string? name, RenderOptions options)
+    {
+        var problems = RenderOptionsValidator.Validate(options);
+
+        return problems.Count == 0
+            ? ValidateOptionsResult.Success
+            : ValidateOptionsResult.Fail(problems.Select(problem => $"{RenderOptions.SectionName}: {problem}"));
     }
 }

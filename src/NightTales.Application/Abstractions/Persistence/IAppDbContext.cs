@@ -135,6 +135,19 @@ public interface IAppDbContext
     Task LockEpisodeForUpdateAsync(Guid episodeId, CancellationToken cancellationToken);
 
     /// <summary>
+    /// Takes the row lock of the current user's render job (<c>SELECT … FOR NO KEY UPDATE</c>, 09.6.3-T1 WT55) as the
+    /// first statement of a job's transaction, so the status read, the adapter call and the status write of two
+    /// concurrent attempts cannot interleave. <c>SubmitRenderJob</c> takes it before the adapter call and re-reads
+    /// the row after it: a cancel that landed in between is then seen, and the adapter task is cancelled and deleted
+    /// at once instead of being marked submitted. Like <see cref="LockEpisodeForUpdateAsync"/> it matches only rows
+    /// owned by the scope's user, so another user's id, an unknown id and an anonymous scope lock nothing; the
+    /// tenant-filtered load that follows is what answers 404.
+    /// </summary>
+    /// <param name="renderJobId">The render job to lock.</param>
+    /// <param name="cancellationToken">Cancels the statement.</param>
+    Task LockRenderJobForUpdateAsync(Guid renderJobId, CancellationToken cancellationToken);
+
+    /// <summary>
     /// Takes a shared row lock on the current user's series (<c>SELECT … FOR SHARE</c>, 02.2.2-T2 SEC-2) so the
     /// <c>Topic</c> a command reads cannot change under it: a concurrent topic edit (an <c>UPDATE</c>, which needs
     /// the exclusive lock) waits until the surrounding transaction ends. Like <see cref="LockEpisodeForUpdateAsync"/>

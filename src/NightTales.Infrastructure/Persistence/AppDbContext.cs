@@ -215,6 +215,14 @@ public sealed class AppDbContext : IdentityDbContext<AppUser, AppRole, Guid>, IA
             : Task.CompletedTask;
 
     /// <inheritdoc />
+    public Task LockRenderJobForUpdateAsync(Guid renderJobId, CancellationToken cancellationToken) =>
+        CurrentUserId is { } userId
+            ? Database.ExecuteSqlInterpolatedAsync(
+                $"SELECT id FROM render_jobs WHERE id = {renderJobId} AND user_id = {userId} FOR NO KEY UPDATE",
+                cancellationToken)
+            : Task.CompletedTask;
+
+    /// <inheritdoc />
     public Task LockSeriesForShareAsync(Guid seriesId, CancellationToken cancellationToken) =>
         CurrentUserId is { } userId
             ? Database.ExecuteSqlInterpolatedAsync(

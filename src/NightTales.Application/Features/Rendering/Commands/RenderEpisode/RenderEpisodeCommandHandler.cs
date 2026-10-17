@@ -265,7 +265,9 @@ public sealed class RenderEpisodeCommandHandler(
 
         // Step 10. The reservation, keyed by the job id so the ingest can settle exactly it (W2 CR-2, B10
         // WT50). render_jobs stores no token columns and the phase-P ledger meters cost only, so the token
-        // members of UsageBound are the documented placeholder estimate of the planned images (03 D8).
+        // members of UsageBound are the documented placeholder estimate of the planned images (03 D8). The row
+        // stores the same bound as worst_case_usd (09.6.3-T1), so the open-bounds reader keeps counting this
+        // render against the platform cap while it is open.
         var renderJobId = Guid.CreateVersion7();
         var usageBound = new UsageBound(
             bound.WorstCaseUsd,
@@ -288,6 +290,7 @@ public sealed class RenderEpisodeCommandHandler(
             episode.Id,
             storyVersionId,
             reservation.Value.Value,
+            bound.WorstCaseUsd,
             renderParams,
             attempt: 1,
             now);

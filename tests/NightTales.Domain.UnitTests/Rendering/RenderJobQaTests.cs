@@ -31,6 +31,7 @@ public sealed class RenderJobQaTests
             field == "episode_id" ? empty : some,
             field == "story_version_id" ? empty : some,
             field == "reservation_id" ? empty : some,
+            1.25m,
             Params(),
             1,
             FixedNow);
@@ -49,6 +50,34 @@ public sealed class RenderJobQaTests
 
         result.IsError.ShouldBeTrue();
         result.FirstError.Code.ShouldBe(RenderJob.ValidationFailedCode);
+    }
+
+    [Fact]
+    public void Create_RejectsANegativeWorstCaseUsd()
+    {
+        // A bound is a sum of money: a value below zero is refused as a validation error rather than clamped, so no
+        // row can ever shrink the open total the platform spend cap reads (02.2.2-T2, 09.6.3-T1). The rows are a loop
+        // rather than `InlineData` because attribute metadata carries no decimal.
+        foreach (var worstCaseUsd in new[] { -0.000001m, -1m, -1234.567890m })
+        {
+            var result = Create(1, worstCaseUsd);
+
+            result.IsError.ShouldBeTrue($"the bound {worstCaseUsd} is below zero");
+            result.FirstError.Code.ShouldBe(RenderJob.ValidationFailedCode);
+            result.FirstError.Metadata!.ShouldContainKeyAndValue("field", "worst_case_usd");
+        }
+    }
+
+    [Fact]
+    public void Create_AcceptsAZeroBound_AndTheStoredScale()
+    {
+        // 0 is the documented bound of an attempt that reserved nothing, and it is also the store default of the
+        // rows that predate the column: the domain must accept it, not treat it as "missing" (09.6.3-T1).
+        Create(1, 0m).IsError.ShouldBeFalse();
+
+        // numeric(12,6)'s own scale is the widest the column holds, so the upper edge of the mapping is 999999.999999.
+        var bound = Create(1, 999_999.999999m).Value;
+        bound.WorstCaseUsd.ShouldBe(999_999.999999m);
     }
 
     [Fact]
@@ -156,8 +185,17 @@ public sealed class RenderJobQaTests
         return job;
     }
 
-    private static ErrorOr<RenderJob> Create(int attempt) =>
-        RenderJob.Create(Guid.CreateVersion7(), UserId, EpisodeId, StoryVersionId, Guid.CreateVersion7(), Params(), attempt, FixedNow);
+    private static ErrorOr<RenderJob> Create(int attempt, decimal worstCaseUsd = 1.25m) =>
+        RenderJob.Create(
+            Guid.CreateVersion7(),
+            UserId,
+            EpisodeId,
+            StoryVersionId,
+            Guid.CreateVersion7(),
+            worstCaseUsd,
+            Params(),
+            attempt,
+            FixedNow);
 
     private static RenderParamsV1 Params() =>
         new(
