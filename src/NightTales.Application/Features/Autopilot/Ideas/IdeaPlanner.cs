@@ -5,6 +5,7 @@ using Microsoft.Extensions.Logging;
 using NightTales.Application.Abstractions.Moderation;
 using NightTales.Application.Abstractions.Persistence;
 using NightTales.Application.Abstractions.Text;
+using NightTales.Application.Abstractions.Usage;
 using NightTales.Application.Features.Autopilot.Ideas.Abstractions;
 using NightTales.Domain.Autopilot.Ideas;
 using NightTales.Domain.Common;
@@ -29,14 +30,21 @@ namespace NightTales.Application.Features.Autopilot.Ideas;
 /// <b>Ownership (task file [DECISION]).</b> The caller owns the <c>generation_runs</c> row — it creates it,
 /// reserves the credit, checks the budget and records the outcome — and this planner never touches it. The
 /// planner owns <c>episode_ideas</c> and writes it with one <see cref="IAppDbContext.SaveChangesAsync"/>: the
-/// whole batch is stored or none of it is, and a caller that already opened a transaction still owns the commit.
-/// The paid call meters itself, one <c>usage_records</c> row per call (<c>operation = idea</c>), because the
-/// generator sees the call's outcome (D14).
+/// whole batch is stored or none of it is, in the scope's own unit of work. <b>The caller commits the run row
+/// and holds no open transaction across this call</b>: a paid provider call of up to two attempts runs inside
+/// it, so an open transaction here would pin a database connection and the run row's locks for the call's whole
+/// duration. The paid call meters itself, one <c>usage_records</c> row per call (<c>operation = idea</c>),
+/// because the generator sees the call's outcome (D14).
 /// </para>
 /// <para>
-/// <b>Claims and retries.</b> D7 allows one retry, and only for an output the schema or the validator refused:
-/// <c>attempt = 2</c> is the second and last call of the run, so a run makes at most two paid calls in total.
-/// Hangfire does not retry the caller's job (<c>Retries = 0</c>); a crash leaves the run to the sweeper.
+/// <b>Claims and retries.</b> D7 allows one retry, and only for a <c>TextCallInvalidOutput</c>, the outcome of
+/// an answer the strict schema or the client refused. A stop at <c>max_output_tokens</c> would repeat the same
+/// truncation, so it fails on the first call, and an <c>Ok</c> draft with no valid candidate fails
+/// <c>ideas_invalid_output</c> without a second call, because that answer was complete and only its content was
+/// refused. <c>attempt = 2</c> is the second and last call of the run, so a run makes at most two paid calls in
+/// total, and the second one passes <see cref="IBudgetGuard"/> again: the caller's admission reserved one
+/// dispatch, not two. Hangfire does not retry the caller's job (<c>Retries = 0</c>); a crash leaves the run to
+/// the sweeper.
 /// </para>
 /// <para>
 /// <b>Tenant isolation.</b> The series is resolved here and checked against the run's owner explicitly — both the
@@ -53,6 +61,8 @@ namespace NightTales.Application.Features.Autopilot.Ideas;
 /// <param name="clock">The clock every stamp of a new idea row is taken from.</param>
 /// <param name="contexts">Reads the series material of the batch: topic, language, tone, banned themes, bible, history and notes.</param>
 /// <param name="generator">The one paid call of the run, its retry included; it meters its own usage row (D14).</param>
+/// <param name="budgetGuard">The platform spend cap, re-checked before the run's second paid dispatch (D1: "before every paid dispatch").</param>
+/// <param name="costEstimator">The worst case of one ideas call: the bound the retry's re-check is made with.</param>
 /// <param name="moderationEvents">The one writer of <c>moderation_events</c> (D12): a refusal on this run writes one row.</param>
 /// <param name="limits">The configured field limits <see cref="IdeaValidator"/> enforces.</param>
 /// <param name="options">The configured batch size and its ceiling (<c>Autopilot:Ideas</c>).</param>
@@ -63,6 +73,8 @@ public sealed partial class IdeaPlanner(
     IClock clock,
     IIdeaContextProvider contexts,
     IIdeaGenerator generator,
+    IBudgetGuard budgetGuard,
+    IIdeaCostEstimator costEstimator,
     IModerationEventWriter moderationEvents,
     IdeaLimits limits,
     IdeaPlannerOptions options,
@@ -103,6 +115,12 @@ public sealed partial class IdeaPlanner(
     /// <summary>The failure detail of a second output the schema or the validator refused.</summary>
     private const string DetailInvalidOutputTwice = "invalid_output_twice";
 
+    /// <summary>The failure detail of an output cut short by the ruled <c>max_output_tokens</c> (no retry: D7).</summary>
+    private const string DetailInvalidOutputMaxTokens = "invalid_output_max_tokens";
+
+    /// <summary>The failure detail of a retry the platform spend cap refused before dispatch (D1).</summary>
+    private const string DetailSpendCapReached = "spend_cap_reached";
+
     /// <summary>The failure detail of a text-call outcome this table does not name (D7's unmodelled failure).</summary>
     private const string DetailUnmappedOutcome = "unmapped_outcome";
 
@@ -134,9 +152,12 @@ public sealed partial class IdeaPlanner(
         var context = await contexts.GetAsync(seriesId, ct).ConfigureAwait(false);
 
         // The prompt's continuity memory is the bible's own summaries; the history titles stand in for them only
-        // when the bible is absent, so the same text is never paid for twice (task file [DECISION]).
+        // when the bible carries none, so the same text is never paid for twice (task file [DECISION]). The test
+        // is the summaries and not the snapshot itself (C5): a young series' bible holds a persona, a character or
+        // a rule long before its first approved episode is summarised, and that snapshot — the normal state of a
+        // series at this stage — would otherwise send no continuity memory at all.
         var recentEpisodes = new List<EpisodeSummaryRef>();
-        if (context.Bible is null)
+        if (context.Bible is null || context.Bible.EpisodeSummaries.Count == 0)
         {
             recentEpisodes.AddRange(
                 context.History.Select(episode => new EpisodeSummaryRef(episode.Title, null)));
@@ -178,8 +199,9 @@ public sealed partial class IdeaPlanner(
 
         db.EpisodeIdeas.AddRange(ideas);
 
-        // One SaveChanges is one transaction: the batch is stored whole or not at all. A caller that opened its
-        // own transaction (02.8.3-T1 inserts the run row first) still owns the commit, and this write joins it.
+        // One SaveChanges is one transaction: the batch is stored whole or not at all. The caller has already
+        // committed its run row before this call (the contract on ProposeAndPickAsync), so this write joins no
+        // open transaction and is this step's only unit of work.
         await db.SaveChangesAsync(ct).ConfigureAwait(false);
 
         metrics.Candidates(IdeaMetrics.ProposedOutcome, ideas.Count);
@@ -216,6 +238,23 @@ public sealed partial class IdeaPlanner(
             LogIdeaNotFound(ideaId);
 
             return IdeaErrors.IdeaNotFound;
+        }
+
+        // SEC-4: the composite key ties the link to the owner, not to the series, so an episode of another series
+        // of the same owner would pass it and corrupt this series' corpus — the run log and 02.8.4's guard both
+        // read ideas per series. The episode is therefore resolved inside the idea's own series, through the
+        // scope's tenant-filtered model: the unknown, another user's and another series' episode all answer the
+        // same not_found, so this check is no oracle (09 README D10). The same-owner key stays as the last line
+        // of defence for the rows that race with this read.
+        var episodeInSeries = await db.Episodes
+            .AsNoTracking()
+            .AnyAsync(candidate => candidate.Id == episodeId && candidate.SeriesId == idea.SeriesId, ct)
+            .ConfigureAwait(false);
+        if (!episodeInSeries)
+        {
+            LogMarkUsedRefused(ideaId, IdeaErrors.EpisodeNotFound.Code);
+
+            return IdeaErrors.EpisodeNotFound;
         }
 
         var marked = idea.MarkUsed(episodeId, clock);
@@ -300,14 +339,43 @@ public sealed partial class IdeaPlanner(
 
                 case TextCallInvalidOutput<IdeasV1> invalid:
                     LogInvalidOutput(runId, attempt, invalid.RuleIds.Count);
-                    if (attempt == 1)
+
+                    // C2, the precedent's rule (ProposeBibleUpdateHandler): a stop at `max_output_tokens` would
+                    // repeat the same truncation at the same cap, so it is final on the first call.
+                    var truncated = invalid.RuleIds.Contains(TextCallInvalidOutput<IdeasV1>.MaxOutputTokensExceeded);
+                    if (attempt == 1 && !truncated)
                     {
-                        // D7's one retry. The second refusal is final: the run has no idea (the failure table's
-                        // "zero valid candidates").
+                        // D7's one retry, which is the run's second paid dispatch: the caller's admission reserved
+                        // the first one, so the platform cap is re-checked here with this call's own worst case
+                        // before the second call is bought (D1: the guard runs before every paid dispatch). The
+                        // run's own bound is excluded exactly as the admission-time check excludes it
+                        // (ProposeBibleUpdateHandler): the reservation already covers it, so only this dispatch's
+                        // worst case is added, and naming the run reads no generation_runs row.
+                        var bound = await costEstimator
+                            .WorstCaseAsync(request.Run.PriceVersion, ct)
+                            .ConfigureAwait(false);
+                        if (bound.IsError)
+                        {
+                            // No usable price version or no shipped prompt: fail closed, never dispatch unbounded.
+                            LogFailed(runId, bound.FirstError.Code);
+
+                            return bound.Errors;
+                        }
+
+                        var allowed = await budgetGuard
+                            .CheckAsync(new CostBound(bound.Value.WorstCaseUsd), ct, request.Run.GenerationRunId)
+                            .ConfigureAwait(false);
+                        if (allowed.IsError)
+                        {
+                            LogFailed(runId, DetailSpendCapReached);
+
+                            return IdeaErrors.SpendCapReached;
+                        }
+
                         continue;
                     }
 
-                    LogFailed(runId, DetailInvalidOutputTwice);
+                    LogFailed(runId, truncated ? DetailInvalidOutputMaxTokens : DetailInvalidOutputTwice);
 
                     return IdeaErrors.InvalidOutput;
 

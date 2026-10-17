@@ -39,9 +39,11 @@ public sealed class EpisodeIdea : Entity, IUserOwned, IAuditable
     public const int RejectedReasonMaxChars = IdeaRejectionReason.MaxLength;
 
     /// <summary>
-    /// The code of marking an idea that is not picked as used (409). It equals
-    /// <c>ErrorCodes.IdeaInvalidState</c>, which the Domain may not reference; the Domain unit test
-    /// <c>EpisodeIdea_InvalidStateCode_MatchesTheErrorCatalogue</c> keeps the two equal.
+    /// The code of marking an idea that is not picked as used (409). The Domain spells the literal because it
+    /// may not reference <c>ErrorCodes</c> (D1: ErrorOr is its only package); the
+    /// <c>ErrorCodes.IdeaInvalidState</c> constant and its 409 catalogue row are deferred to 02.8.1-T2, and the
+    /// join test that keeps the two equal lands with them. Until then
+    /// <c>EpisodeIdea_InvalidStateCode_IsThePlannedCatalogueCode</c> pins this literal to the plan's code.
     /// </summary>
     public const string InvalidStateCode = "idea_invalid_state";
 

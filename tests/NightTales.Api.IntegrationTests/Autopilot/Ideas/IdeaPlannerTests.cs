@@ -1,10 +1,13 @@
 using System.Text.Json;
+using ErrorOr;
 using NightTales.Application.Abstractions.Text;
+using NightTales.Application.Abstractions.Usage;
 using NightTales.Application.Common.Errors;
 using NightTales.Application.Features.Autopilot.Ideas;
 using NightTales.Application.Features.Autopilot.Ideas.Abstractions;
 using NightTales.Domain.Autopilot.Ideas;
 using NightTales.Domain.Series;
+using NightTales.Domain.Series.Bible;
 using NightTales.TestKit;
 using NightTales.TestKit.Database;
 using NightTales.TestKit.Text;
@@ -192,7 +195,15 @@ public sealed class IdeaPlannerTests(TestDatabase database) : IntegrationTest(da
         var text = new FakeTextClient()
             .Enqueue(TextStep.Ideas, TextCallResult<IdeasV1>.InvalidOutput(Model, Usage, "req-fake", [TextCallInvalidOutput<IdeasV1>.SchemaInvalid]))
             .Enqueue(TextStep.Ideas, TextCallResult<IdeasV1>.InvalidOutput(Model, Usage, "req-fake", [TextCallInvalidOutput<IdeasV1>.MaxOutputTokensExceeded]));
-        await using var worker = await StartWorkerAsync(Database, text, count: 1);
+
+        // The retry re-checks the platform cap (C1) and the real guard sums the whole platform's spend, so its
+        // answer inside a shared class database is not a test fact: the allowed answer is pinned with a stub.
+        await using var worker = await StartWorkerAsync(
+            Database,
+            text,
+            count: 1,
+            guard: new StubBudgetGuard(allowed: true),
+            estimator: new StubIdeaCostEstimator(new UsageBound(0.25m, 1_000, 1_500)));
 
         var result = await ProposeAsync(worker, run);
 
@@ -583,5 +594,137 @@ public sealed class IdeaPlannerTests(TestDatabase database) : IntegrationTest(da
         {
             UsageCount(Database, world.UserId).ShouldBe(0, "no request was sent, so nothing can have been billed (SEC-1)");
         }
+    }
+
+    /// <summary>
+    /// C2 (plan §7.1, the <c>ProposeBibleUpdateHandler</c> rule the reviewer cited): a first answer the client
+    /// stopped at the ruled <c>max_output_tokens</c> is final — the same cap would cut the same text — so the run
+    /// fails on the first call with <c>ideas_invalid_output</c> and only one paid call is ever made.
+    /// </summary>
+    [Fact]
+    public async Task IdeaPlanner_MaxOutputTokensExceeded_IsNotRetried()
+    {
+        var world = await SeedAsync(Database);
+        var run = await CreateRunAsync(Database, world);
+        var text = new FakeTextClient()
+            .Enqueue(TextStep.Ideas, TextCallResult<IdeasV1>.InvalidOutput(Model, Usage, "req-fake", [TextCallInvalidOutput<IdeasV1>.MaxOutputTokensExceeded]))
+            .EnqueueOk(TextStep.Ideas, IdeaBatch(Idea("Không bao giờ được gọi")), Usage);
+        await using var worker = await StartWorkerAsync(Database, text, count: 1);
+
+        var result = await ProposeAsync(worker, run);
+
+        result.IsError.ShouldBeTrue();
+        result.FirstError.Code.ShouldBe(ErrorCodes.IdeasInvalidOutput);
+        text.Requests.Count.ShouldBe(1, "a truncated answer is final on the first call (C2)");
+        text.Requests[0].Run.Attempt.ShouldBe(1);
+        UsageCount(Database, world.UserId).ShouldBe(1, "the one dispatched call is metered");
+        IdeaCount(Database, world.SeriesId).ShouldBe(0);
+    }
+
+    /// <summary>
+    /// C1 (D1: "before every paid dispatch"): the retry is the run's second paid dispatch, which the caller's
+    /// admission reserved nothing for, so the platform cap is checked again with this call's own worst case before
+    /// the second call is bought. A refusal answers <c>spend_cap_reached</c> and no second call is made.
+    /// </summary>
+    [Fact]
+    public async Task IdeaPlanner_SpendCapRefusedBeforeTheRetry_ReturnsSpendCapReached()
+    {
+        var world = await SeedAsync(Database);
+        var run = await CreateRunAsync(Database, world);
+        var text = new FakeTextClient()
+            .Enqueue(TextStep.Ideas, TextCallResult<IdeasV1>.InvalidOutput(Model, Usage, "req-fake", [TextCallInvalidOutput<IdeasV1>.SchemaInvalid]))
+            .EnqueueOk(TextStep.Ideas, IdeaBatch(Idea("Không bao giờ được gọi")), Usage);
+        var guard = new StubBudgetGuard(allowed: false);
+        var estimator = new StubIdeaCostEstimator(new UsageBound(0.25m, 1_000, 1_500));
+        await using var worker = await StartWorkerAsync(Database, text, count: 1, guard: guard, estimator: estimator);
+
+        var result = await ProposeAsync(worker, run);
+
+        result.IsError.ShouldBeTrue();
+        result.FirstError.Code.ShouldBe(ErrorCodes.SpendCapReached);
+        text.Requests.Count.ShouldBe(1, "the refused retry was never dispatched");
+        var check = guard.Checks.ShouldHaveSingleItem();
+        check.Bound.WorstCaseUsd.ShouldBe(0.25m, "the estimator's bound is what the guard is asked about");
+        check.ExcludingRunId.ShouldBe(run.GenerationRunId, "the run's own already-reserved bound is left out of the sum");
+        UsageCount(Database, world.UserId).ShouldBe(1, "the refused retry is not metered");
+        IdeaCount(Database, world.SeriesId).ShouldBe(0);
+    }
+
+    /// <summary>
+    /// C5: a bible that carries an entity but no episode summary yet — a young series' normal state — no longer
+    /// silences the continuity memory: the approved episodes' titles still travel as the top-level
+    /// <c>recent_episodes</c> next to the bible's own keys.
+    /// </summary>
+    [Fact]
+    public async Task IdeaPlanner_BibleWithoutSummaries_StillSendsTheHistory()
+    {
+        var world = await SeedAsync(Database);
+        var historyWorld = new NightTales.Api.IntegrationTests.SeriesBible.World(world.UserId, world.SeriesId);
+        await NightTales.Api.IntegrationTests.SeriesBible.SeriesBibleHarness
+            .SeedApprovedEpisodeAsync(Database, historyWorld);
+
+        var expectedTitle = NightTales.Api.IntegrationTests.Persistence.SqlProbe.ScalarText(
+            Database,
+            $"""
+             SELECT sv.title FROM episodes e JOIN story_versions sv ON sv.id = e.approved_story_version_id
+             WHERE e.series_id = '{Pg(world.SeriesId)}'
+             """);
+        expectedTitle.ShouldNotBeNullOrWhiteSpace("the seeded history really carries a title");
+
+        await SeedBibleAsync(Database, world, BibleWithEntitiesOnly());
+
+        var run = await CreateRunAsync(Database, world);
+        var text = new FakeTextClient().EnqueueOk(TextStep.Ideas, IdeaBatch(Idea("Ý tưởng nhớ các tập trước")), Usage);
+        await using var worker = await StartWorkerAsync(Database, text, count: 1);
+
+        var pick = await ProposeAsync(worker, run);
+
+        pick.IsError.ShouldBeFalse();
+        using var document = JsonDocument.Parse(text.Requests.ShouldHaveSingleItem().UserDataJson);
+        document.RootElement.TryGetProperty("bible", out var bible).ShouldBeTrue("the bible carries entities");
+        bible.GetProperty("rules").GetArrayLength().ShouldBe(1);
+        document.RootElement.GetProperty("recent_episodes")[0].GetProperty("title").GetString().ShouldBe(expectedTitle);
+    }
+
+    /// <summary>
+    /// A bible with entities but no episode summary yet (C5): a narrator and one rule, and no
+    /// <c>episode_summaries</c> — the state a series is in long before its first episode is approved.
+    /// </summary>
+    private static SeriesBibleContent BibleWithEntitiesOnly() =>
+        new(
+            SeriesBibleContent.V1,
+            new BibleNarrator("Trần Văn Kể", "kể chuyện đêm", "giọng chậm, ấm"),
+            [],
+            [],
+            [new BibleRule("rl1", "Không bao giờ nói tên thật của người thật.")],
+            []);
+
+    /// <summary>
+    /// A hand-written spend cap (no mocking library): it records every check and answers what the test set, so a
+    /// refusal is exact instead of depending on the platform's real spend and open bounds.
+    /// </summary>
+    private sealed class StubBudgetGuard(bool allowed) : IBudgetGuard
+    {
+        /// <summary>What the planner asked, in order: the bound and the run it excluded.</summary>
+        internal List<(CostBound Bound, Guid? ExcludingRunId)> Checks { get; } = [];
+
+        /// <inheritdoc />
+        public ValueTask<ErrorOr<Success>> CheckAsync(CostBound worstCaseUsd, CancellationToken ct, Guid? excludingRunId = null)
+        {
+            Checks.Add((worstCaseUsd, excludingRunId));
+
+            return allowed
+                ? ValueTask.FromResult<ErrorOr<Success>>(Result.Success)
+                : ValueTask.FromResult<ErrorOr<Success>>(
+                    Error.Failure(ErrorCodes.SpendCapReached, "The stub guard refuses every dispatch."));
+        }
+    }
+
+    /// <summary>A hand-written estimator, so the retry's re-check does not depend on the price catalogue.</summary>
+    private sealed class StubIdeaCostEstimator(UsageBound bound) : IIdeaCostEstimator
+    {
+        /// <inheritdoc />
+        public Task<ErrorOr<UsageBound>> WorstCaseAsync(string priceVersion, CancellationToken ct) =>
+            Task.FromResult<ErrorOr<UsageBound>>(bound);
     }
 }

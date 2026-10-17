@@ -12,11 +12,13 @@ namespace NightTales.Domain.Autopilot.Ideas;
 /// <remarks>
 /// <para>
 /// The four text caps are the <c>varchar</c> widths of the table (see <see cref="IdeaLimits"/>), a text must
-/// be non-blank, and no text may carry a markup marker, a list marker or an angle bracket. The beat list must
-/// be inside the schema's 3–8 band, every name must be one of the six D3 beats, the outline must not repeat a
-/// beat immediately and must carry at least one <c>twist</c> or <c>reveal</c>. The five structure values must
-/// be non-empty. Nothing here scores, dedupes or policy-checks a candidate — those are 02.8.1-T2's and
-/// 02.8.4-T1's steps.
+/// be non-blank and printable — no control character, line or paragraph separator, Unicode format character
+/// or unpaired surrogate — and it may carry no markup marker, list marker or angle bracket. The beat list
+/// must be inside the schema's 3–8 band, every name must be one of the six D3 beats, the outline must not
+/// repeat a beat immediately and must carry at least one <c>twist</c> or <c>reveal</c>. The five structure
+/// values must be non-empty, printable, free of angle brackets, markup and URLs, and at most
+/// <see cref="IdeaLimits.StructureValueChars"/> code points; their vocabulary is 02.8.4-T1's check. Nothing
+/// here scores, dedupes or policy-checks a candidate — those are 02.8.1-T2's and 02.8.4-T1's steps.
 /// </para>
 /// <para>
 /// Lengths are counted in Unicode code points, not UTF-16 units, because Postgres measures a
@@ -37,8 +39,23 @@ public static class IdeaValidator
     /// <summary>The field is absent or whitespace only.</summary>
     public const string Empty = "empty";
 
-    /// <summary>The value carries an angle bracket (the D3/F36 metadata rule); the detail is <c>angle_bracket</c>.</summary>
+    /// <summary>
+    /// The value carries a character or marker the rule refuses — an angle bracket, a markup or list marker,
+    /// an unprintable character or a URL. The detail names the violation and never carries the text (D19).
+    /// </summary>
     public const string InvalidStructure = "invalid_structure";
+
+    /// <summary>The detail of an angle bracket in a text field or a structure value: <c>angle_bracket</c>.</summary>
+    public const string AngleBracket = "angle_bracket";
+
+    /// <summary>
+    /// The detail of an unprintable or malformed character: <c>control_char</c>. It covers a control
+    /// character, U+2028/U+2029, a Unicode format character and an unpaired surrogate.
+    /// </summary>
+    public const string ControlChar = "control_char";
+
+    /// <summary>The detail of a URL in a structure value: <c>url</c>.</summary>
+    public const string Url = "url";
 
     /// <summary>The outline has fewer beats than its band allows; the detail is the minimum.</summary>
     public const string TooFew = "too_few";
@@ -93,7 +110,7 @@ public static class IdeaValidator
         ValidateText(errors, "hook", candidate.Hook, limits.HookChars);
         ValidateText(errors, "setting", candidate.Setting, limits.SettingChars);
         ValidateBeats(errors, candidate.Beats, limits);
-        ValidateStructure(errors, candidate.Structure);
+        ValidateStructure(errors, candidate.Structure, limits);
 
         return errors;
     }
@@ -122,7 +139,10 @@ public static class IdeaValidator
         return valid;
     }
 
-    /// <summary>Validates one of the four text fields: non-blank, free of markup and angle brackets, then inside its cap.</summary>
+    /// <summary>
+    /// Validates one of the four text fields: non-blank, printable, free of markup and angle brackets, then
+    /// inside its cap.
+    /// </summary>
     private static void ValidateText(List<IdeaFieldError> errors, string field, string? value, int maxChars)
     {
         if (string.IsNullOrWhiteSpace(value))
@@ -131,9 +151,15 @@ public static class IdeaValidator
             return;
         }
 
+        if (HasUnprintable(value))
+        {
+            errors.Add(new IdeaFieldError(field, InvalidStructure, ControlChar));
+            return;
+        }
+
         if (value.Contains('<') || value.Contains('>'))
         {
-            errors.Add(new IdeaFieldError(field, InvalidStructure, "angle_bracket"));
+            errors.Add(new IdeaFieldError(field, InvalidStructure, AngleBracket));
             return;
         }
 
@@ -197,8 +223,11 @@ public static class IdeaValidator
         }
     }
 
-    /// <summary>Validates the five structure values: each must be present and non-blank.</summary>
-    private static void ValidateStructure(List<IdeaFieldError> errors, StoryStructureTags? structure)
+    /// <summary>
+    /// Validates the five structure values: each must be present, printable, free of angle brackets, markup and
+    /// URLs, and inside <see cref="IdeaLimits.StructureValueChars"/> code points.
+    /// </summary>
+    private static void ValidateStructure(List<IdeaFieldError> errors, StoryStructureTags? structure, IdeaLimits limits)
     {
         if (structure is null)
         {
@@ -206,21 +235,103 @@ public static class IdeaValidator
             return;
         }
 
-        AddStructureValue(errors, "structure.sub_genre", structure.SubGenre);
-        AddStructureValue(errors, "structure.setting", structure.Setting);
-        AddStructureValue(errors, "structure.opening", structure.Opening);
-        AddStructureValue(errors, "structure.twist_type", structure.TwistType);
-        AddStructureValue(errors, "structure.narrator_mode", structure.NarratorMode);
+        AddStructureValue(errors, "structure.sub_genre", structure.SubGenre, limits.StructureValueChars);
+        AddStructureValue(errors, "structure.setting", structure.Setting, limits.StructureValueChars);
+        AddStructureValue(errors, "structure.opening", structure.Opening, limits.StructureValueChars);
+        AddStructureValue(errors, "structure.twist_type", structure.TwistType, limits.StructureValueChars);
+        AddStructureValue(errors, "structure.narrator_mode", structure.NarratorMode, limits.StructureValueChars);
     }
 
-    /// <summary>Adds <c>empty</c> when one structure value is absent or whitespace only.</summary>
-    private static void AddStructureValue(List<IdeaFieldError> errors, string field, string? value)
+    /// <summary>
+    /// Validates one structure value: present, printable, free of angle brackets, markup and URLs, then inside
+    /// <paramref name="maxChars"/> code points. Its vocabulary is 02.8.4-T1's check, so a value such as
+    /// <c>other:thể loại mới</c> passes here.
+    /// </summary>
+    private static void AddStructureValue(List<IdeaFieldError> errors, string field, string? value, int maxChars)
     {
         if (string.IsNullOrWhiteSpace(value))
         {
             errors.Add(new IdeaFieldError(field, Empty, null));
+            return;
+        }
+
+        if (HasUnprintable(value))
+        {
+            errors.Add(new IdeaFieldError(field, InvalidStructure, ControlChar));
+            return;
+        }
+
+        if (value.Contains('<') || value.Contains('>'))
+        {
+            errors.Add(new IdeaFieldError(field, InvalidStructure, AngleBracket));
+            return;
+        }
+
+        if (IdeaText.FindStructureMarkup(value) is { } marker)
+        {
+            errors.Add(new IdeaFieldError(field, InvalidStructure, marker));
+            return;
+        }
+
+        if (HasUrl(value))
+        {
+            errors.Add(new IdeaFieldError(field, InvalidStructure, Url));
+            return;
+        }
+
+        if (CodePointCount(value) > maxChars)
+        {
+            errors.Add(new IdeaFieldError(field, TooLong, Limit(maxChars)));
         }
     }
+
+    /// <summary>
+    /// Whether <paramref name="text"/> carries a character an idea field may not hold: a control character
+    /// (<see cref="char.IsControl(char)"/>), a line or paragraph separator (U+2028/U+2029), a Unicode format
+    /// character (category <c>Cf</c>: zero-width spaces and joiners, bidi marks and overrides, the byte-order
+    /// mark, the soft hyphen) or an unpaired surrogate.
+    /// </summary>
+    /// <remarks>
+    /// Every <c>Cf</c> character is refused, the emoji zero-width joiner U+200D included: an idea is plain
+    /// narration prose, nothing downstream needs a joined emoji sequence, and a joiner or a bidi override that
+    /// survives into the prompt, the stored row or a review is invisible. Variation selectors are <c>Mn</c>
+    /// (combining marks) and stay allowed, as do the combining diacritics NFD Vietnamese text carries.
+    /// </remarks>
+    private static bool HasUnprintable(string text)
+    {
+        for (var index = 0; index < text.Length; index++)
+        {
+            var character = text[index];
+
+            if (char.IsControl(character)
+                || character is '\u2028' or '\u2029'
+                || CharUnicodeInfo.GetUnicodeCategory(character) == UnicodeCategory.Format)
+            {
+                return true;
+            }
+
+            if (char.IsHighSurrogate(character))
+            {
+                if (index + 1 >= text.Length || !char.IsLowSurrogate(text[index + 1]))
+                {
+                    return true;
+                }
+
+                index++;
+            }
+            else if (char.IsLowSurrogate(character))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>Whether a structure value carries a URL: a scheme separator or a leading <c>www.</c>.</summary>
+    private static bool HasUrl(string value) =>
+        value.Contains("://", StringComparison.Ordinal)
+        || value.StartsWith("www.", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>The number of Unicode code points, which is what a Postgres <c>varchar</c> length counts.</summary>
     private static int CodePointCount(string text)

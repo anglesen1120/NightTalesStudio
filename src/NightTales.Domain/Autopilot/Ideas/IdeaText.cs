@@ -23,6 +23,13 @@ public static class IdeaText
     /// <summary>The emphasis, code-font and heading markers (<c>*</c>, <c>_</c>, <c>`</c>, <c>#</c>).</summary>
     public static IReadOnlySet<char> Markers { get; } = new HashSet<char> { '*', '_', '`', '#' };
 
+    /// <summary>The markers a structure value may not carry: <see cref="Markers"/> without <c>_</c>.</summary>
+    /// <remarks>
+    /// The D3 vocabulary values are snake_case (<c>haunted_house</c>, <c>first_person</c>), so an underscore is
+    /// part of a value rather than emphasis, and the five structure values are checked against this set.
+    /// </remarks>
+    public static IReadOnlySet<char> StructureMarkers { get; } = new HashSet<char> { '*', '`', '#' };
+
     /// <summary>Whether <paramref name="text"/> carries a marker <see cref="FindMarkup"/> refuses.</summary>
     /// <param name="text">The text to scan; <see langword="null"/> and empty carry none.</param>
     /// <returns>True when <see cref="FindMarkup"/> finds something.</returns>
@@ -41,7 +48,23 @@ public static class IdeaText
     /// </remarks>
     /// <param name="text">The text to scan; <see langword="null"/> and empty carry none.</param>
     /// <returns>The marker, or <see langword="null"/>.</returns>
-    public static string? FindMarkup(string? text)
+    public static string? FindMarkup(string? text) => FindMarkup(text, Markers);
+
+    /// <summary>
+    /// The first marker a structure value may not carry, or <see langword="null"/>: the rule of
+    /// <see cref="FindMarkup"/> over <see cref="StructureMarkers"/>, so <c>_</c> is allowed.
+    /// </summary>
+    /// <param name="text">The text to scan; <see langword="null"/> and empty carry none.</param>
+    /// <returns>The marker, or <see langword="null"/>.</returns>
+    public static string? FindStructureMarkup(string? text) => FindMarkup(text, StructureMarkers);
+
+    /// <summary>
+    /// The markup rule of one marker set: a line-leading list marker first, then a marker character.
+    /// </summary>
+    /// <param name="text">The text to scan; <see langword="null"/> and empty carry none.</param>
+    /// <param name="markers">The marker characters this rule refuses.</param>
+    /// <returns>The marker, or <see langword="null"/>.</returns>
+    private static string? FindMarkup(string? text, IReadOnlySet<char> markers)
     {
         if (string.IsNullOrEmpty(text))
         {
@@ -55,7 +78,7 @@ public static class IdeaText
 
         foreach (var character in text)
         {
-            if (Markers.Contains(character))
+            if (markers.Contains(character))
             {
                 return character.ToString();
             }

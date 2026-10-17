@@ -32,6 +32,17 @@ public sealed record IdeaLimits(
     int MinBeats = 3,
     int MaxBeats = 8)
 {
+    /// <summary>
+    /// The longest one of the five structure values; 40 code points, the bound the idea prompt promises.
+    /// </summary>
+    /// <remarks>
+    /// Unlike the four text caps this is not a configuration key: a structure value lives inside the
+    /// <c>structure</c> <c>jsonb</c> document rather than in a column of its own, the prompt and the strict
+    /// schema state the same number, and the vocabulary check that could make it configurable is 02.8.4-T1's.
+    /// The property has no setter, so the options binder cannot reach it and no host can widen it.
+    /// </remarks>
+    public int StructureValueChars { get; } = 40;
+
     /// <summary>Whether every limit is positive and the beat band is not inverted; a bound is unusable otherwise.</summary>
     public bool IsValid =>
         TitleChars > 0

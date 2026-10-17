@@ -34,10 +34,16 @@ namespace NightTales.Infrastructure.Autopilot;
 /// <param name="prices">The price versions, addressed by the run's own number.</param>
 /// <param name="prompts">Supplies the <c>ideas/generate.v1</c> step prompt, whose incoming tokens are the system prefix.</param>
 /// <param name="configuration">The <c>OpenAi:Models:Ideas</c> model and the data-object budget.</param>
+/// <remarks>
+/// It is the production <see cref="IIdeaCostEstimator"/>: the caller's admission checks the platform cap with
+/// this bound before it queues the run, and the planner checks it again before the run's second (retry) dispatch,
+/// which the admission's reservation does not cover — naming the run so its already-reserved bound stays out of
+/// the sum, exactly as the admission-time check does.
+/// </remarks>
 public sealed class IdeaCostEstimator(
     IPriceCatalog prices,
     IPromptCatalog prompts,
-    IConfiguration configuration)
+    IConfiguration configuration) : IIdeaCostEstimator
 {
     /// <summary>The model of the step when <c>OpenAi:Models:Ideas</c> is absent (02 plan §OpenAI adapter).</summary>
     public const string DefaultModel = "gpt-6-luna";

@@ -9,6 +9,7 @@ using NightTales.Application.Abstractions;
 using NightTales.Application.Abstractions.Money;
 using NightTales.Application.Abstractions.Persistence;
 using NightTales.Application.Abstractions.Text;
+using NightTales.Application.Abstractions.Usage;
 using NightTales.Application.Features.Autopilot.Ideas;
 using NightTales.Application.Features.Autopilot.Ideas.Abstractions;
 using NightTales.Domain.Autopilot.Ideas;
@@ -41,11 +42,14 @@ namespace NightTales.Api.IntegrationTests.Autopilot.Ideas;
 /// <remarks>
 /// <para>
 /// Deliberately <b>not</b> replacing <see cref="IIdeaGenerator"/>, <see cref="IIdeaPlanner"/> or
-/// <see cref="IIdeaContextProvider"/>: only <see cref="ITextClient"/> is scripted, so what these tests drive is
-/// the production graph — the DataObject the generator builds, the prompt catalogue and the price version it
-/// reads, the D14 meter inside it, the D7 outcome mapping of the planner, the real <c>IdeaValidator</c>, the
-/// real context provider (bible, approved-episode history, research notes from the database) and the real
-/// EF/persistence of <c>episode_ideas</c>. The paid provider edge is the one thing no test may reach.
+/// <see cref="IIdeaContextProvider"/> on the normal path: only <see cref="ITextClient"/> is scripted, so what
+/// these tests drive is the production graph — the DataObject the generator builds, the prompt catalogue and the
+/// price version it reads, the D14 meter inside it, the D7 outcome mapping of the planner, the real
+/// <c>IdeaValidator</c>, the real context provider (bible, approved-episode history, research notes from the
+/// database) and the real EF/persistence of <c>episode_ideas</c>. Single tests pin one boundary each — the
+/// context provider's count, the spend cap (C1) and the cost estimator — because those answers belong to the
+/// platform's spend and the price catalogue, not to this feature. The paid provider edge is the one thing no
+/// test may reach.
 /// </para>
 /// <para>
 /// <b>The caller owns the run.</b> Mirrors the production caller (02.8.3-T1): the harness creates the
@@ -118,6 +122,21 @@ internal static class IdeaPlannerHarness
             .CreateAsync(world.UserId, world.SeriesId, ct: Ct);
 
         return episode.Id;
+    }
+
+    /// <summary>
+    /// Seeds a second series of the same owner, for the one integrity case the composite key cannot catch: an
+    /// episode that belongs to this user but not to the idea's series (SEC-4).
+    /// </summary>
+    /// <param name="database">The class database.</param>
+    /// <param name="world">The world whose owner the second series belongs to.</param>
+    /// <returns>The second series' id.</returns>
+    internal static async Task<Guid> SeedOtherSeriesAsync(TestDatabase database, World world)
+    {
+        var series = await new SeriesBuilder(database, new TestCurrentUser { Id = world.UserId }, new FakeClock(Start))
+            .CreateAsync(world.UserId, topic: Topic.Ghost, language: Language.Vi, ct: Ct);
+
+        return series.Id;
     }
 
     /// <summary>
@@ -299,12 +318,19 @@ internal static class IdeaPlannerHarness
     /// <param name="text">The scripted provider edge; its outcomes are queued before the host starts.</param>
     /// <param name="count">The <c>Autopilot:Ideas:Count</c> the host binds, when a test needs one fixed.</param>
     /// <param name="contexts">A replacement context provider, for the one test that needs an out-of-range count.</param>
+    /// <param name="guard">
+    /// A replacement budget guard, for the one test that needs a deterministic refusal: the real guard reads the
+    /// platform's spend and the open bounds, which a test cannot pin. A hand-written fake keeps the assertion exact.
+    /// </param>
+    /// <param name="estimator">A replacement cost estimator, so a guard test does not depend on the price catalogue.</param>
     /// <returns>The started host; the caller disposes it.</returns>
     internal static async Task<WorkerHost> StartWorkerAsync(
         TestDatabase database,
         FakeTextClient text,
         int? count = null,
-        IIdeaContextProvider? contexts = null)
+        IIdeaContextProvider? contexts = null,
+        IBudgetGuard? guard = null,
+        IIdeaCostEstimator? estimator = null)
     {
         var host = new WorkerHost(database, new FakeClock(Start)).ConfigureServices(services =>
         {
@@ -315,6 +341,18 @@ internal static class IdeaPlannerHarness
             {
                 services.RemoveAll<IIdeaContextProvider>();
                 services.AddSingleton(contexts);
+            }
+
+            if (guard is not null)
+            {
+                services.RemoveAll<IBudgetGuard>();
+                services.AddSingleton(guard);
+            }
+
+            if (estimator is not null)
+            {
+                services.RemoveAll<IIdeaCostEstimator>();
+                services.AddSingleton(estimator);
             }
         });
 

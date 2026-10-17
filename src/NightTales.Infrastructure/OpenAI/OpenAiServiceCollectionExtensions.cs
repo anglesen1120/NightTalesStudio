@@ -112,6 +112,7 @@ public static class OpenAiServiceCollectionExtensions
     {
         services.TryAddSingleton<OpenAiIdeaMetrics>();
         services.TryAddSingleton<IdeaCostEstimator>();
+        services.TryAddSingleton<IIdeaCostEstimator>(provider => provider.GetRequiredService<IdeaCostEstimator>());
         services.TryAddSingleton<IIdeaGenerator, OpenAiIdeaGenerator>();
     }
 

@@ -69,6 +69,14 @@ public static class IdeaErrors
         Error.Failure(ErrorCodes.ProviderFundsExhausted, "The provider account has no funds left.");
 
     /// <summary>
+    /// The run stopped on <c>spend_cap_reached</c> (02 README D1): the platform cap refused the second paid
+    /// dispatch the D7 retry would have made, so no second call was made. The caller records the outcome of its
+    /// run exactly like a provider one.
+    /// </summary>
+    public static Error SpendCapReached { get; } =
+        Error.Failure(ErrorCodes.SpendCapReached, "The platform spend cap refused another generation attempt.");
+
+    /// <summary>
     /// 409: the episode already has an idea — the partial unique index <c>UX_episode_ideas_episode</c> refused the
     /// write — or this idea cannot be used (it is not picked, or it is already used). The two are one class of
     /// answer: the state of the idea/episode pair does not allow the transition. 02.8.3-T1 treats it as a bug

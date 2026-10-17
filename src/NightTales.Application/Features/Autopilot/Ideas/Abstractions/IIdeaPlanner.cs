@@ -58,8 +58,15 @@ public sealed record IdeaPick(
 /// <para>
 /// The returned errors are the D7 mapping: <c>ideas_invalid_output</c>, <c>ideas_moderated</c>,
 /// <c>ideas_generation_failed</c> and the shared <c>provider_funds_exhausted</c> (02.8.3 pauses the series on
-/// the last one). Tenant isolation is explicit: a series that is not the run owner's answers
-/// <c>not_found</c>, like every other read of another user's row (09 README D10).
+/// the last one), plus <c>spend_cap_reached</c> when the platform cap refuses the retry's second dispatch.
+/// Tenant isolation is explicit: a series that is not the run owner's answers <c>not_found</c>, like every other
+/// read of another user's row (09 README D10).
+/// </para>
+/// <para>
+/// <b>Transaction contract.</b> The caller must commit the <c>generation_runs</c> row and hold no open
+/// transaction across this call: a paid provider call, up to two attempts, runs inside it, so an open
+/// transaction would pin a connection and the run row's locks for its whole duration. The step's own write is
+/// one <c>SaveChangesAsync</c> in the caller's scope.
 /// </para>
 /// </remarks>
 public interface IIdeaPlanner
@@ -84,9 +91,10 @@ public interface IIdeaPlanner
     /// <returns>
     /// The pick — the first valid candidate — or the typed outcome the caller records on the run:
     /// <c>not_found</c> (the series is unknown or another user's), <c>ideas_invalid_output</c> (no valid
-    /// candidate after the one retry), <c>ideas_moderated</c> (the provider refused the call; one
-    /// <c>moderation_events</c> row with <c>stage = ideas</c> is written), <c>provider_funds_exhausted</c>, or
-    /// <c>ideas_generation_failed</c>.
+    /// candidate after the one retry, or a first answer cut short by <c>max_output_tokens</c>, which is not
+    /// retried), <c>ideas_moderated</c> (the provider refused the call; one <c>moderation_events</c> row with
+    /// <c>stage = ideas</c> is written), <c>provider_funds_exhausted</c>, <c>spend_cap_reached</c> (the platform
+    /// cap refused the retry) or <c>ideas_generation_failed</c>.
     /// </returns>
     ValueTask<ErrorOr<IdeaPick>> ProposeAndPickAsync(Guid seriesId, DateTimeOffset slotAt, RunContext run, CancellationToken ct);
 

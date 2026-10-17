@@ -69,8 +69,9 @@ public static class IdeaOperations
 /// <para>
 /// <see cref="RecentEpisodes"/> is deliberately empty when <see cref="Bible"/> carries summaries: the idea
 /// prompt reads <c>bible.episode_summaries</c>, and sending the same text twice would pay for it twice
-/// (task file [DECISION]). It is filled from <c>IEpisodeStructureHistory</c> only when the bible is empty or
-/// absent, so a series whose bible is somehow empty still avoids repeats.
+/// (task file [DECISION]). It is filled from <c>IEpisodeStructureHistory</c> whenever the bible is absent or
+/// carries no summary at all — a young series' normal state, whose bible has entities long before its first
+/// episode is summarised — so such a series still avoids repeats.
 /// </para>
 /// <para>
 /// <see cref="RequiredTags"/> and <see cref="ForbiddenTags"/> are always <see langword="null"/> in 02.8.1-T1:

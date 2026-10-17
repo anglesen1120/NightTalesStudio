@@ -180,4 +180,35 @@ public sealed class IdeaPlannerMarkUsedTests(TestDatabase database) : Integratio
 
         IdeaState(Database, idea).ShouldBe("picked|-", "the cross-tenant link was refused, the idea is not consumed");
     }
+
+    /// <summary>
+    /// SEC-4: the same-owner key ties the link to the owner, not to the series, so an episode of another series of
+    /// the same user would pass it and corrupt this series' corpus. The planner resolves the episode inside the
+    /// idea's own series first and answers the same <c>not_found</c> a lookup would, leaving the idea <c>picked</c>
+    /// and writing nothing the caller's flush could replay.
+    /// </summary>
+    [Fact]
+    public async Task MarkUsed_EpisodeOfAnotherSeries_ReturnsNotFound()
+    {
+        var world = await SeedAsync(Database);
+        var otherSeries = await SeedOtherSeriesAsync(Database, world);
+        var run = await CreateRunAsync(Database, world);
+        var foreignEpisode = await SeedEpisodeAsync(Database, world with { SeriesId = otherSeries });
+        var idea = await SeedPickedIdeaAsync(Database, world, run.GenerationRunId, "Ý tưởng của series này");
+
+        await using var worker = await StartWorkerAsync(Database, new FakeTextClient());
+
+        using (var scope = OpenScope(worker, world.UserId))
+        {
+            var result = await scope.Planner.MarkUsedAsync(idea, foreignEpisode, Ct);
+
+            result.IsError.ShouldBeTrue();
+            result.FirstError.Code.ShouldBe(ErrorCodes.NotFound);
+            result.FirstError.Type.ShouldBe(ErrorType.NotFound, "another series of the same owner reads as no episode");
+
+            await scope.Db.SaveChangesAsync(Ct);
+        }
+
+        IdeaState(Database, idea).ShouldBe("picked|-", "the refused link left the idea untouched");
+    }
 }

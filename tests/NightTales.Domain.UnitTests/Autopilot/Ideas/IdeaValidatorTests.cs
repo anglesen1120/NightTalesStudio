@@ -156,18 +156,20 @@ public sealed class IdeaValidatorTests
     }
 
     [Theory]
-    [InlineData("- Một dòng")]
-    [InlineData("* Một dòng")]
-    [InlineData("+ Một dòng")]
-    [InlineData("1. Một dòng")]
-    [InlineData("12. Một dòng")]
-    [InlineData("Dòng đầu\n- Dòng hai")]
-    public void IdeaValidator_ListMarker_DropsCandidate(string title)
+    [InlineData("- Một dòng", "list_marker")]
+    [InlineData("* Một dòng", "list_marker")]
+    [InlineData("+ Một dòng", "list_marker")]
+    [InlineData("1. Một dòng", "list_marker")]
+    [InlineData("12. Một dòng", "list_marker")]
+    // A later line can only be reached through a line break, and every line break is a control character, so
+    // the charset rule reports the break itself before the bullet on the next line is ever the detail.
+    [InlineData("Dòng đầu\n- Dòng hai", IdeaValidator.ControlChar)]
+    public void IdeaValidator_ListMarker_DropsCandidate(string title, string detail)
     {
         var errors = IdeaValidator.Validate(Candidate(title: title), Limits);
 
         errors.Count.ShouldBe(1);
-        errors[0].ShouldBe(new IdeaFieldError("title", IdeaValidator.InvalidStructure, "list_marker"));
+        errors[0].ShouldBe(new IdeaFieldError("title", IdeaValidator.InvalidStructure, detail));
     }
 
     [Fact]
@@ -321,6 +323,135 @@ public sealed class IdeaValidatorTests
         errors[2].ShouldBe(new IdeaFieldError("setting", IdeaValidator.InvalidStructure, "angle_bracket"));
     }
 
+    /// <summary>The four text fields the character rule covers.</summary>
+    private static readonly string[] TextFields = ["title", "logline", "hook", "setting"];
+
+    /// <summary>The five structure values the character rule covers, as their JSON paths.</summary>
+    private static readonly string[] StructureFields =
+    [
+        "structure.sub_genre", "structure.setting", "structure.opening", "structure.twist_type",
+        "structure.narrator_mode",
+    ];
+
+    /// <summary>Every field the character rule covers: the four text fields and the five structure values.</summary>
+    private static readonly string[] CharacterFields = [.. TextFields, .. StructureFields];
+
+    /// <summary>
+    /// Every character an idea field must refuse: C0/C1 controls (NUL, tab, LF, CR, DEL, NEL), the line and
+    /// paragraph separators, format characters (zero-width space and joiner, the right-to-left override, the
+    /// soft hyphen, the byte-order mark) and one lone high and one lone low surrogate.
+    /// </summary>
+    private static readonly string[] Unprintable =
+    [
+        "\0", "\t", "\n", "\r", "\u007F", "\u0085", "\u2028", "\u2029", "\u00AD", "\u200B", "\u200D", "\u202E",
+        "\uFEFF", "\uD800", "\uDC00",
+    ];
+
+    /// <summary>The cross product of <see cref="CharacterFields"/> and <see cref="Unprintable"/>.</summary>
+    /// <returns>One row per field and character.</returns>
+    public static TheoryData<string, string> UnprintableInEveryField()
+    {
+        var data = new TheoryData<string, string>();
+        foreach (var field in CharacterFields)
+        {
+            foreach (var character in Unprintable)
+            {
+                data.Add(field, character);
+            }
+        }
+
+        return data;
+    }
+
+    /// <summary>Each structure value against each rule: a URL, an angle bracket and two markup markers.</summary>
+    /// <returns>One row per field and violation.</returns>
+    public static TheoryData<string, string, string> StructureValueViolations()
+    {
+        var data = new TheoryData<string, string, string>();
+        foreach (var field in StructureFields)
+        {
+            data.Add(field, "http://x", IdeaValidator.Url);
+            data.Add(field, "www.x.com", IdeaValidator.Url);
+            data.Add(field, "<b>", IdeaValidator.AngleBracket);
+            data.Add(field, "*x*", "*");
+            data.Add(field, "#x", "#");
+        }
+
+        return data;
+    }
+
+    [Theory]
+    [MemberData(nameof(UnprintableInEveryField))]
+    public void IdeaValidator_UnprintableCharacter_DropsCandidate(string field, string character)
+    {
+        // Embedded in prose, so the value is never whitespace-only: the drop is the character rule's, not the
+        // blank rule's.
+        var errors = ErrorsFor(field, "Đêm" + character + "dài");
+
+        errors.Count.ShouldBe(1);
+        errors[0].ShouldBe(new IdeaFieldError(field, IdeaValidator.InvalidStructure, IdeaValidator.ControlChar));
+    }
+
+    [Theory]
+    [InlineData("Đêm định mệnh tại nhà sông")] // NFC
+    [InlineData("\u0110e\u0302m \u0111i\u0323nh")] // NFD: combining diacritics (Mn) are allowed
+    [InlineData("Đêm nay có ma \U0001F47B gõ cửa")] // an astral emoji, one valid surrogate pair
+    [InlineData("Đêm nay \u2764\uFE0F gõ cửa")] // a variation selector (Mn) stays allowed
+    public void IdeaValidator_PrintableProse_ReturnsNoErrors(string title)
+    {
+        IdeaValidator.Validate(Candidate(title: title), Limits).ShouldBeEmpty();
+    }
+
+    [Fact]
+    public void IdeaValidator_EmojiJoinerSequence_DropsCandidate()
+    {
+        // The documented decision: every Cf character is refused, the emoji zero-width joiner U+200D included,
+        // so a joined sequence is not a way around the rule.
+        var errors = IdeaValidator.Validate(Candidate(title: "Đêm \U0001F468\u200D\U0001F469 gõ cửa"), Limits);
+
+        errors.Count.ShouldBe(1);
+        errors[0].ShouldBe(new IdeaFieldError("title", IdeaValidator.InvalidStructure, IdeaValidator.ControlChar));
+    }
+
+    [Fact]
+    public void IdeaValidator_StructureValueExactlyForty_ReturnsNoErrors()
+    {
+        var value = new string('g', Limits.StructureValueChars);
+
+        IdeaValidator.Validate(Candidate(tags: Tags(subGenre: value)), Limits).ShouldBeEmpty();
+    }
+
+    [Fact]
+    public void IdeaValidator_StructureValueOverForty_DropsCandidate()
+    {
+        var errors = IdeaValidator.Validate(
+            Candidate(tags: Tags(subGenre: new string('g', Limits.StructureValueChars + 1))),
+            Limits);
+
+        errors.Count.ShouldBe(1);
+        errors[0].ShouldBe(new IdeaFieldError("structure.sub_genre", IdeaValidator.TooLong, "40"));
+    }
+
+    [Theory]
+    [InlineData("other:thể loại mới")]
+    [InlineData("other:found footage")]
+    public void IdeaValidator_OtherStructureValue_ReturnsNoErrors(string value)
+    {
+        // The D3 `other:<text>` shape is vocabulary, which 02.8.4-T1 owns: here it only has to stay inside the
+        // character, markup, URL and length rules.
+        IdeaValidator.Validate(Candidate(tags: Tags(subGenre: value)), Limits).ShouldBeEmpty();
+    }
+
+    [Theory]
+    [MemberData(nameof(StructureValueViolations))]
+    public void IdeaValidator_StructureValueViolation_DropsCandidate(string field, string value, string detail)
+    {
+        var errors = ErrorsFor(field, value);
+
+        errors.Count.ShouldBe(1);
+        errors[0].ShouldBe(new IdeaFieldError(field, IdeaValidator.InvalidStructure, detail));
+    }
+
     [Fact]
     public void IdeaValidator_SomeCandidatesInvalid_ReturnsOnlyTheValidOnes()
     {
@@ -431,6 +562,25 @@ public sealed class IdeaValidatorTests
             setting ?? "Căn nhà gỗ bên dòng sông quê",
             tags ?? Tags(),
             beats ?? ShortOutline);
+
+    /// <summary>The validator's errors for <paramref name="value"/> placed in the named field.</summary>
+    /// <param name="field">One of <see cref="CharacterFields"/> or <see cref="StructureFields"/>.</param>
+    /// <param name="value">The value to place in that field.</param>
+    /// <returns>The errors of the candidate built with that value in that field.</returns>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="field"/> is not a field the validator covers.</exception>
+    private static IReadOnlyList<IdeaFieldError> ErrorsFor(string field, string value) => field switch
+    {
+        "title" => IdeaValidator.Validate(Candidate(title: value), Limits),
+        "logline" => IdeaValidator.Validate(Candidate(logline: value), Limits),
+        "hook" => IdeaValidator.Validate(Candidate(hook: value), Limits),
+        "setting" => IdeaValidator.Validate(Candidate(setting: value), Limits),
+        "structure.sub_genre" => IdeaValidator.Validate(Candidate(tags: Tags(subGenre: value)), Limits),
+        "structure.setting" => IdeaValidator.Validate(Candidate(tags: Tags(setting: value)), Limits),
+        "structure.opening" => IdeaValidator.Validate(Candidate(tags: Tags(opening: value)), Limits),
+        "structure.twist_type" => IdeaValidator.Validate(Candidate(tags: Tags(twistType: value)), Limits),
+        "structure.narrator_mode" => IdeaValidator.Validate(Candidate(tags: Tags(narratorMode: value)), Limits),
+        _ => throw new ArgumentOutOfRangeException(nameof(field), field, "Not a field the validator covers."),
+    };
 
     /// <summary>A complete D3 structure block; every argument overrides one value.</summary>
     private static StoryStructureTags Tags(

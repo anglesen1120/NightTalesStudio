@@ -147,9 +147,11 @@ public static class IdeaDataObjectJson
             request.Count,
             EmptyToNull(request.BannedThemes),
             bible,
-            // Plan §7.1: the bible's own summaries are the continuity memory; the top-level list exists only for
-            // a series whose bible is empty, so the same text is never sent twice (cost and cache prefix).
-            bible is null ? Episodes(request.RecentEpisodes) : null,
+            // Plan §7.1: the bible's own summaries are the continuity memory; the top-level list exists only when
+            // the bible carries none, so the same text is never paid for twice (cost and cache prefix). A bible
+            // that has a persona, a character or a rule but no summary yet — a young series' normal state — still
+            // sends the history titles (C5).
+            bible is null || bible.RecentEpisodes.Count == 0 ? Episodes(request.RecentEpisodes) : null,
             RequiredTags(request.RequiredTags),
             ForbiddenTags(request.ForbiddenTags),
             ResearchNotes(request.ResearchNotes));
@@ -214,7 +216,7 @@ public static class IdeaDataObjectJson
         return new IdeaDataBible(narrator, characters, places, rules, episodes);
     }
 
-    /// <summary>The episode history of an empty bible; <see langword="null"/> when there is none.</summary>
+    /// <summary>The episode history of a bible without summaries; <see langword="null"/> when there is none.</summary>
     private static IdeaDataEpisode[]? Episodes(IReadOnlyList<EpisodeSummaryRef>? summaries)
     {
         if (summaries is null || summaries.Count == 0)

@@ -110,6 +110,22 @@ public sealed class IdeaDataObjectTests
     }
 
     [Fact]
+    public void Build_BibleWithEntitiesButNoSummaries_SendsTheHistoryFallback()
+    {
+        // C5: a young series' bible carries a rule long before its first episode is summarised, and the history
+        // fallback must not wait for the whole snapshot to be empty — the model would get no continuity memory.
+        var root = JsonDocument.Parse(
+            IdeaDataObjectJson.Build(
+                Request(
+                    bible: Bible(["Never name a village."]),
+                    recentEpisodes: [new EpisodeSummaryRef("Tập đã duyệt trước đó", null)])))
+            .RootElement;
+
+        root.GetProperty("bible").GetProperty("rules")[0].GetString().ShouldBe("Never name a village.");
+        root.GetProperty("recent_episodes")[0].GetProperty("title").GetString().ShouldBe("Tập đã duyệt trước đó");
+    }
+
+    [Fact]
     public void Build_NoCandidate_Throws()
     {
         Should.Throw<ArgumentOutOfRangeException>(() => IdeaDataObjectJson.Build(Request(count: 0)));
