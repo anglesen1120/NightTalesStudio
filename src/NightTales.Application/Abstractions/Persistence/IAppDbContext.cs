@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using NightTales.Domain.Assets;
+using NightTales.Domain.Autopilot.Ideas;
 using NightTales.Domain.Catalog;
 using NightTales.Domain.Common;
 using NightTales.Domain.Communication;
@@ -62,6 +63,9 @@ public interface IAppDbContext
 
     /// <summary>The source candidates a find-sources run proposed for one episode (02.7.2-T2, <c>source_candidates</c>); <c>IUserOwned</c>, so the D10 tenant filter applies.</summary>
     DbSet<SourceCandidate> SourceCandidates { get; }
+
+    /// <summary>The ideas an <c>ideas</c> run proposed for a series (02.8.1-T1, <c>episode_ideas</c>): written by <c>IdeaPlanner.ProposeAndPickAsync</c>, which is also the only writer of the rows' statuses; <c>IUserOwned</c>, so the D10 tenant filter applies.</summary>
+    DbSet<EpisodeIdea> EpisodeIdeas { get; }
 
     /// <summary>The legal deletion duties of 13.3.1-T1 (<c>data_deletion_requests</c>); <c>IUserOwned</c>, so the D10 tenant filter applies.</summary>
     DbSet<DeletionRequest> DeletionRequests { get; }

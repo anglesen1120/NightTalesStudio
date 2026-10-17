@@ -362,6 +362,122 @@ namespace NightTales.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("NightTales.Domain.Autopilot.Ideas.EpisodeIdea", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid?>("EpisodeId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("episode_id");
+
+                    b.Property<Guid>("GenerationRunId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("generation_run_id");
+
+                    b.Property<string>("Hook")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)")
+                        .HasColumnName("hook");
+
+                    b.Property<string>("Logline")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)")
+                        .HasColumnName("logline");
+
+                    b.Property<string>("Novelty")
+                        .HasColumnType("jsonb")
+                        .HasColumnName("novelty");
+
+                    b.Property<string>("RejectedReason")
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)")
+                        .HasColumnName("rejected_reason");
+
+                    b.Property<decimal?>("Score")
+                        .HasPrecision(5, 4)
+                        .HasColumnType("numeric(5,4)")
+                        .HasColumnName("score");
+
+                    b.Property<Guid>("SeriesId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("series_id");
+
+                    b.Property<string>("Setting")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)")
+                        .HasColumnName("setting");
+
+                    b.Property<decimal?>("Similarity")
+                        .HasPrecision(5, 4)
+                        .HasColumnType("numeric(5,4)")
+                        .HasColumnName("similarity");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("status");
+
+                    b.Property<string>("Structure")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("structure");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("title");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_episode_ideas");
+
+                    b.HasIndex("EpisodeId")
+                        .IsUnique()
+                        .HasDatabaseName("UX_episode_ideas_episode")
+                        .HasFilter("\"episode_id\" IS NOT NULL");
+
+                    b.HasIndex("GenerationRunId")
+                        .HasDatabaseName("IX_episode_ideas_generation_run");
+
+                    b.HasIndex("UserId")
+                        .HasDatabaseName("ix_episode_ideas_user_id");
+
+                    b.HasIndex("EpisodeId", "UserId")
+                        .HasDatabaseName("ix_episode_ideas_episode_id_user_id");
+
+                    b.HasIndex("GenerationRunId", "UserId")
+                        .HasDatabaseName("ix_episode_ideas_generation_run_id_user_id");
+
+                    b.HasIndex("SeriesId", "UserId")
+                        .HasDatabaseName("ix_episode_ideas_series_id_user_id");
+
+                    b.HasIndex("SeriesId", "Status", "CreatedAt")
+                        .IsDescending(false, false, true)
+                        .HasDatabaseName("IX_episode_ideas_series_status_created");
+
+                    b.ToTable("episode_ideas", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_episode_ideas_status", "\"status\" IN ('picked', 'proposed', 'rejected', 'used')");
+                        });
+                });
+
             modelBuilder.Entity("NightTales.Domain.Catalog.StyleTemplate", b =>
                 {
                     b.Property<Guid>("Id")
@@ -3156,6 +3272,39 @@ namespace NightTales.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
                         .HasConstraintName("fk_assets_episodes_episode_id_user_id");
+                });
+
+            modelBuilder.Entity("NightTales.Domain.Autopilot.Ideas.EpisodeIdea", b =>
+                {
+                    b.HasOne("NightTales.Infrastructure.Persistence.AppUser", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_episode_ideas_asp_net_users_user_id");
+
+                    b.HasOne("NightTales.Domain.Episodes.Episode", null)
+                        .WithMany()
+                        .HasForeignKey("EpisodeId", "UserId")
+                        .HasPrincipalKey("Id", "UserId")
+                        .OnDelete(DeleteBehavior.SetNull)
+                        .HasConstraintName("fk_episode_ideas_episodes_episode_id_user_id");
+
+                    b.HasOne("NightTales.Domain.Stories.Generation.GenerationRun", null)
+                        .WithMany()
+                        .HasForeignKey("GenerationRunId", "UserId")
+                        .HasPrincipalKey("Id", "UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_episode_ideas_generation_runs_generation_run_id_user_id");
+
+                    b.HasOne("NightTales.Domain.Series.Series", null)
+                        .WithMany()
+                        .HasForeignKey("SeriesId", "UserId")
+                        .HasPrincipalKey("Id", "UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_episode_ideas_series_series_id_user_id");
                 });
 
             modelBuilder.Entity("NightTales.Domain.Compliance.ModerationEvent", b =>

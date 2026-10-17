@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "ideas.v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["ideas"],
+  "properties": {
+    "ideas": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 10,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["title", "logline", "hook", "setting", "structure", "beats"],
+        "properties": {
+          "title": { "type": "string" },
+          "logline": { "type": "string" },
+          "hook": { "type": "string" },
+          "setting": { "type": "string" },
+          "structure": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["sub_genre", "setting", "opening", "twist_type", "narrator_mode"],
+            "properties": {
+              "sub_genre": { "type": "string" },
+              "setting": { "type": "string" },
+              "opening": { "type": "string" },
+              "twist_type": { "type": "string" },
+              "narrator_mode": { "enum": ["first_person", "third_person"] }
+            }
+          },
+          "beats": {
+            "type": "array",
+            "minItems": 3,
+            "maxItems": 8,
+            "items": { "enum": ["setup", "build_up", "clue", "twist", "reveal", "aftermath"] }
+          }
+        }
+      }
+    }
+  }
+}

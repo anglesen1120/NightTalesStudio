@@ -29,6 +29,21 @@ public sealed record PriceLimits(
     public const int DefaultBibleProposalMaxOutput = 1_200;
 
     /// <summary>
+    /// The <c>max_output_tokens</c> of the <c>ideas</c> step (02 README D14/T56, 02.8.1-T1): the output cap of
+    /// the one paid call of an idea-generation run, ruled at 1,500 tokens.
+    /// </summary>
+    /// <remarks>
+    /// Like the proposal's cap it is the only ceiling the call has and is read from the run's price version
+    /// alone: a configuration fallback is refused (README T56), because a step's output cap belongs to the
+    /// priced, append-only record the run is costed with. A row written before this block existed keeps the
+    /// default.
+    /// </remarks>
+    public int IdeasMaxOutput { get; init; } = DefaultIdeasMaxOutput;
+
+    /// <summary>The ruled <c>ideas.max_output_tokens</c> of a row written before the block existed.</summary>
+    public const int DefaultIdeasMaxOutput = 1_500;
+
+    /// <summary>
     /// The D4 table (02 README D4, T103 bands): token bands, segment bands and the writer/review/revision
     /// output caps, per tier × language. <c>trial/tools/LENGTH.v1.json</c> is the machine copy of the
     /// token and segment bands; the review and revision caps come from the D4 table (short 1,200/1,500,
