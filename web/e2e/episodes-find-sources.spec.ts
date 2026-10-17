@@ -185,7 +185,8 @@ for (const lang of ['vi', 'en'] as const) {
 
       await push(world, 'running');
       await expect(panel.locator('.running')).toContainText(c.sources.find.running);
-      await expect(page.locator('.source-section [role=status]')).toContainText(c.sources.find.running);
+      await expect(page.locator('.source-section')).toContainText(c.sources.find.running);
+      await expect(page.locator('[role=status]', { hasText: c.sources.find.running })).toHaveCount(1);
       await expect(runButton(page, lang)).toBeDisabled();
 
       const hostile = '<img src=x onerror=alert(1)>';
@@ -251,7 +252,8 @@ for (const lang of ['vi', 'en'] as const) {
       await expect(page.getByRole('heading', { name: c.research.title, exact: true })).toBeVisible();
       await expect(panel).toBeVisible();
       await expect(panel.locator('.running')).toContainText(c.sources.find.running);
-      await expect(page.locator('.source-section [role=status]')).toContainText(c.sources.find.running);
+      await expect(page.locator('.source-section')).toContainText(c.sources.find.running);
+      await expect(page.locator('[role=status]', { hasText: c.sources.find.running })).toHaveCount(1);
       await expect(runButton(page, lang)).toBeDisabled();
       await expectA11yClean(page);
     });

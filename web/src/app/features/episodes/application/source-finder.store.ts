@@ -173,10 +173,8 @@ export class SourceFinderStore {
     this.loadingState.set(false);
     this.candidatesInFlight = false;
     this.refetchQueued = null;
-    // One first read and one `/me` re-read are owed per episode: a later `feature_disabled` on the new episode asks for
-    // the profile again (the server may have granted the flag back with it).
+    // One first read is owed per episode.
     this.initialReadEpisode = null;
-    this.profileReloaded = false;
     if (this.visible()) this.ensureInitialRead(episodeId);
     this.subscription = this.realtime.subscribeEpisode(episodeId, () => {
       if (this.destroyed || this.requestGeneration !== generation || this.episode !== episodeId) return;
