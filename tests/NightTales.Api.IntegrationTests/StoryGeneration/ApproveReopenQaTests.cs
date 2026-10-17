@@ -715,11 +715,15 @@ public sealed class ApproveReopenQaTests(TestDatabase database) : IntegrationTes
         return new World(user.Id, episode.Id, version.Id);
     }
 
+    /// <summary>
+    /// The short approve fixture: every segment keyword is a keyword-rules phrase of 3 to 12 words, because the
+    /// approve path runs <c>RenderKeywordLinter</c> over the version being approved (03.2.2-T2).
+    /// </summary>
     private static StoryContentV1 SimpleDraft() => new(
         StoryTitle,
-        new StorySegmentV1("An old house stood by the river.", ["old house"], []),
-        [new StorySegmentV1("A visitor heard footsteps in the empty hallway.", ["empty hallway"], [], "setup")],
-        new StorySegmentV1("At dawn the visitor left the house.", ["dawn"], []),
+        new StorySegmentV1("An old house stood by the river.", ["old house by the river"], []),
+        [new StorySegmentV1("A visitor heard footsteps in the empty hallway.", ["empty hallway at night"], [], "setup")],
+        new StorySegmentV1("At dawn the visitor left the house.", ["quiet dawn by the river"], []),
         "A fictional story.", ["ghost"], ["supernatural"],
         new StoryStructureV1("ghost", "old house", "footsteps", "visitor", "first_person"));
 

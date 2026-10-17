@@ -10,6 +10,7 @@ using NightTales.Application.Abstractions.Usage;
 using NightTales.Application.Common;
 using NightTales.Application.Common.Errors;
 using NightTales.Application.Features.Catalog;
+using NightTales.Application.Features.Rendering;
 using NightTales.Domain.Catalog;
 using NightTales.Domain.Common;
 using NightTales.Domain.Episodes;
@@ -153,7 +154,7 @@ public sealed class RenderEpisodeCommandHandler(
         // Step 3. The D3 script bound, in code points after NFC normalisation (04 V1, CR-3). The lower bound
         // belongs to the 02 approval gate, which only approves a body of 1-20000 code points. Noncharacters are
         // replaced first: ICU throws on one, and the token count of Step 5 normalises the same text (SEC2).
-        var body = ReplaceNoncharacters(story.Value.Body ?? string.Empty);
+        var body = KeywordLintMapping.ReplaceNoncharacters(story.Value.Body ?? string.Empty);
         if (CountScriptCodePoints(body) > MaxScriptCodePoints)
         {
             return Errors.ValidationFailed(
@@ -164,11 +165,11 @@ public sealed class RenderEpisodeCommandHandler(
         // Step 4. The corpus read happens only now that the episode is loaded and authorised in this scope; an
         // empty corpus is not evidence of a clean episode (03 D11). Every issue Lint returns is blocking.
         var corpus = await nameCorpus.LoadAsync(episode.Id, cancellationToken).ConfigureAwait(false);
-        var segments = SanitiseKeywords(story.Value.Segments);
+        var segments = KeywordLintMapping.SanitiseKeywords(story.Value.Segments);
         var issues = RenderKeywordLinter.Lint(segments, corpus);
         if (issues.Count > 0)
         {
-            return Errors.KeywordsFlagged(ToFlags(issues));
+            return Errors.KeywordsFlagged(KeywordLintMapping.ToFlags(issues));
         }
 
         // Step 5. The image plan. The rates of ImagePlanOptions are the documented defaults, because
@@ -314,26 +315,6 @@ public sealed class RenderEpisodeCommandHandler(
     }
 
     /// <summary>
-    /// Maps the linter's blocking issues to the D10 <c>errors[]</c> rows, reading the keyword index the linter
-    /// carries in <see cref="ValidationIssue.Evidence"/> back out (03.2.2-T1, CR-18b). No issue text, keyword
-    /// or name leaves this method: a row is the D22 segment address, the index and the rule id.
-    /// </summary>
-    /// <param name="issues">The blocking issues of one lint, in segment and then keyword order.</param>
-    /// <returns>One row per issue; a missing index carrier becomes 0.</returns>
-    private static KeywordFlag[] ToFlags(IReadOnlyList<ValidationIssue> issues)
-    {
-        var flags = new KeywordFlag[issues.Count];
-        for (var index = 0; index < issues.Count; index++)
-        {
-            var issue = issues[index];
-            _ = RenderKeywordLinter.TryGetKeywordIndex(issue, out var keywordIndex);
-            flags[index] = new KeywordFlag(issue.Segment, keywordIndex, issue.RuleId);
-        }
-
-        return flags;
-    }
-
-    /// <summary>
     /// The code points of <paramref name="body"/> after the NFC normalisation of D3/04 V1, so the limit is
     /// counted on the text the submit sends.
     /// </summary>
@@ -360,50 +341,6 @@ public sealed class RenderEpisodeCommandHandler(
         }
 
         return count;
-    }
-
-    /// <summary>
-    /// The segments with every noncharacter replaced by a space in each keyword, so the linter and the planner never
-    /// normalise one; ICU throws on a noncharacter (SEC2).
-    /// </summary>
-    /// <param name="segments">The approved version's ordered scene keywords.</param>
-    /// <returns>The same segments with each keyword sanitised.</returns>
-    private static List<SegmentKeywords> SanitiseKeywords(IReadOnlyList<SegmentKeywords> segments) =>
-        segments.Select(segment => segment with
-        {
-            Keywords = segment.Keywords.Select(ReplaceNoncharacters).ToList(),
-        }).ToList();
-
-    /// <summary>
-    /// <paramref name="text"/> with every noncharacter replaced by a space. Unpaired surrogates stay: the Domain
-    /// normaliser already replaces them, and a space there would split a token that counts as one today (SEC2).
-    /// Returns the input itself when there is no noncharacter.
-    /// </summary>
-    /// <param name="text">The text to sanitise.</param>
-    /// <returns>The text without a noncharacter.</returns>
-    private static string ReplaceNoncharacters(string text)
-    {
-        StringBuilder? builder = null;
-        for (var index = 0; index < text.Length; index++)
-        {
-            var width = char.IsHighSurrogate(text[index]) && index + 1 < text.Length && char.IsLowSurrogate(text[index + 1])
-                ? 2
-                : 1;
-            var codePoint = width == 2 ? char.ConvertToUtf32(text[index], text[index + 1]) : text[index];
-            if (BibleOpNormalizer.IsNoncharacter(codePoint))
-            {
-                builder ??= new StringBuilder(text.Length).Append(text, 0, index);
-                builder.Append(' ');
-            }
-            else
-            {
-                builder?.Append(text, index, width);
-            }
-
-            index += width - 1;
-        }
-
-        return builder?.ToString() ?? text;
     }
 
     /// <summary>

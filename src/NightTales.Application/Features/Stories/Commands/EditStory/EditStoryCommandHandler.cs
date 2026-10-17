@@ -5,6 +5,7 @@ using Mediator;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using NightTales.Application.Abstractions.Persistence;
+using NightTales.Application.Abstractions.Rendering;
 using NightTales.Application.Abstractions.Usage;
 using NightTales.Application.Common.Errors;
 using NightTales.Application.Features.Stories.Moderation;
@@ -12,8 +13,10 @@ using NightTales.Application.Features.Stories.Quality;
 using NightTales.Domain.Common;
 using NightTales.Domain.Episodes;
 using NightTales.Domain.Research;
+using NightTales.Domain.Rendering.Images;
 using NightTales.Domain.Stories;
 using NightTales.Domain.Stories.Content;
+using NightTales.Domain.Stories.Keywords;
 using NightTales.Domain.Stories.Length;
 using NightTales.Domain.Stories.Quality;
 
@@ -40,6 +43,7 @@ namespace NightTales.Application.Features.Stories.Commands.EditStory;
 /// </remarks>
 /// <param name="db">The tracked write model; the pipeline saves and commits it.</param>
 /// <param name="checker">The local quality checker (02.3.4-T1).</param>
+/// <param name="nameCorpus">The episode's real-person corpus, read once per save (03 D11, 03.2.2-T2).</param>
 /// <param name="moderation">The unmetered D12 draft moderation helper.</param>
 /// <param name="prices">The active price version, which carries the D4 length limits.</param>
 /// <param name="clock">The command's clock reading.</param>
@@ -47,6 +51,7 @@ namespace NightTales.Application.Features.Stories.Commands.EditStory;
 public sealed partial class EditStoryCommandHandler(
     IAppDbContext db,
     StoryQualityChecker checker,
+    INameCorpusProvider nameCorpus,
     StoryDraftModeration moderation,
     IPriceCatalog prices,
     IClock clock,
@@ -130,12 +135,27 @@ public sealed partial class EditStoryCommandHandler(
                 cancellationToken)
             .ConfigureAwait(false);
 
+        // The two checker inputs the draft cannot supply itself (03.2.2-T2). The corpus read happens once,
+        // after every early exit passed, and is shared by both check sites below; a read failure is not
+        // caught here, so a transient DB failure stays the documented 503 (09 D5) instead of the check
+        // silently running against an empty corpus (03 D11).
+        var names = await nameCorpus.LoadAsync(episode.Id, cancellationToken).ConfigureAwait(false);
+        var plan = StoryCheckInputs.PlanFor(command.Content, series.Language, episode.LengthTier);
+
         // Step 5: a canonically equal story is not saved; the caller gets the current version and the same ETag.
         if (previousContentRead && StoryContentComparer.CanonicalEquals(command.Content, previousContent))
         {
             var unchangedReport = checker.Check(
                 command.Content,
-                CheckContext(series, episode.LengthTier, rules, hasUrlSources, previousAudit, ReviewIsStale(previousAudit)));
+                CheckContext(
+                    series,
+                    episode.LengthTier,
+                    rules,
+                    hasUrlSources,
+                    previousAudit,
+                    ReviewIsStale(previousAudit),
+                    plan,
+                    names));
             return ToDto(previous, unchangedReport);
         }
 
@@ -166,7 +186,15 @@ public sealed partial class EditStoryCommandHandler(
 
         var report = checker.Check(
             command.Content,
-            CheckContext(series, episode.LengthTier, rules, hasUrlSources, checkedAudit, modelReviewStale: true));
+            CheckContext(
+                series,
+                episode.LengthTier,
+                rules,
+                hasUrlSources,
+                checkedAudit,
+                modelReviewStale: true,
+                plan,
+                names));
         var contentJson = StoryContentJson.Write(command.Content, StoryContentJson.ReadFactSources(previous.Content));
         var auditJson = BuildAuditReport(previousAudit, report, (JsonObject)checkedAudit["moderation"]!);
 
@@ -209,7 +237,9 @@ public sealed partial class EditStoryCommandHandler(
         StoryRules rules,
         bool hasUrlSources,
         JsonObject? previousAudit,
-        bool modelReviewStale)
+        bool modelReviewStale,
+        RenderImagePlan? plan,
+        NameCorpus names)
     {
         var categories = ModerationCategoriesOf(previousAudit);
         return new(
@@ -224,7 +254,8 @@ public sealed partial class EditStoryCommandHandler(
             SimilarityVerdict.Pass,
             categories,
             modelReviewStale,
-            null,
+            plan,
+            names,
             categories.Contains(StoryQualityChecker.UnspecifiedModerationCategory));
     }
 

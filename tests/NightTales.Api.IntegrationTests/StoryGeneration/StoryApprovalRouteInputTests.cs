@@ -383,11 +383,13 @@ public sealed class StoryApprovalRouteInputTests(TestDatabase database) : Integr
         var series = await new SeriesBuilder(Database, actor).CreateAsync(user.Id, ct: Ct);
         var episode = await new EpisodeBuilder(Database, actor)
             .CreateAsync(user.Id, series.Id, lengthTier: LengthTier.Short, status: EpisodeStatus.StoryReview, ct: Ct);
+        // Every segment keyword is a keyword-rules phrase of 3 to 12 words: the approve path runs
+        // RenderKeywordLinter over the version being approved (03.2.2-T2).
         var draft = new StoryContentV1(
             "The house by the river",
-            new StorySegmentV1("An old house stood by the river.", ["old house"], []),
-            [new StorySegmentV1("A visitor heard footsteps in the empty hallway.", ["empty hallway"], [], "setup")],
-            new StorySegmentV1("At dawn the visitor left the house.", ["dawn"], []),
+            new StorySegmentV1("An old house stood by the river.", ["old house by the river"], []),
+            [new StorySegmentV1("A visitor heard footsteps in the empty hallway.", ["empty hallway at night"], [], "setup")],
+            new StorySegmentV1("At dawn the visitor left the house.", ["quiet dawn by the river"], []),
             "A fictional story.", ["ghost"], ["supernatural"],
             new StoryStructureV1("ghost", "old house", "footsteps", "visitor", "first_person"));
         var version = StoryVersion.Create(user.Id, episode.Id, 1, StoryVersionSource.Generated,

@@ -8,6 +8,7 @@
   "keyword_total_above_cap": "Tổng số từ khoá vượt giới hạn của hạng này",
   "keyword_invalid": "Từ khoá không hợp lệ (phải là tiếng Anh, 3–12 từ)",
   "keyword_duplicate": "Từ khoá bị lặp giữa các phân đoạn",
+  "keyword_name_detected": "Cảnh này nêu tên người thật. Hãy tả nơi chốn hoặc đồ vật thay vào đó.",
   "repeated_sentence": "Có câu bị lặp lại",
   "repetitive_phrasing": "Cách diễn đạt bị lặp nhiều",
   "possible_real_name": "Có thể có tên người thật — hãy kiểm tra nguồn",

@@ -2,6 +2,7 @@ using NightTales.Domain.Episodes;
 using NightTales.Domain.Rendering.Images;
 using NightTales.Domain.Series;
 using NightTales.Domain.Stories.Content;
+using NightTales.Domain.Stories.Keywords;
 using NightTales.Domain.Stories.Quality;
 using Shouldly;
 using Xunit;
@@ -537,6 +538,7 @@ public sealed class StoryQualityCheckerTests
             verdict,
             moderation,
             stale,
-            plan);
+            plan,
+            NameCorpus.Empty);
     }
 }
