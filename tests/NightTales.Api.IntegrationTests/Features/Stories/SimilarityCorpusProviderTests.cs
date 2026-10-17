@@ -236,7 +236,8 @@ public sealed class SimilarityCorpusProviderTests(TestDatabase database) : Integ
     }
 
     [Theory]
-    [InlineData("Similarity:BlockAbove", "0.05")]
+    // BlockAbove must exceed WarnAbove; the calibrated WarnAbove is 0.02 (02.5.6-T2), so 0.01 is invalid.
+    [InlineData("Similarity:BlockAbove", "0.01")]
     [InlineData("Similarity:N:vi", "1")]
     public void Startup_InvalidSimilarityConfiguration_FailsWithANamedError(string key, string value)
     {
