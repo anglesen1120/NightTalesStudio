@@ -286,6 +286,46 @@ public sealed class SubmitRenderJobTests(TestDatabase database) : IntegrationTes
             .ShouldBe("queued|-|-");
     }
 
+    [Fact]
+    public async Task Submit_NeverLogsTheNodeBaseUrlOrItsKey()
+    {
+        var world = await SeedAsync();
+        var jobId = await RequestRenderAsync(world);
+
+        // The node the selector hands the job carries a URL and a key hint that must never reach a log line.
+        // The URL is plain http: an https node row must carry a pinned fingerprint (WorkerNode.Diagnose), and
+        // the pinning is not what this test is about.
+        const string Node = "render-node-secret-4f2a.example";
+        var node = await SeedNodeAsync(world.UserId, $"http://{Node}:8443/");
+        SqlProbe.Execute(
+            Database,
+            $"UPDATE worker_nodes SET api_key_hint = 'canary-hint-aaaa' WHERE id = '{Id(node.Id)}'");
+
+        var client = new FakeRenderClient();
+        client.EnqueueFailure(
+            RenderClientMethod.Submit,
+            new RenderClientFailure(
+                RenderClientFailureKind.Deferred,
+                "adapter_capacity_full",
+                "scripted",
+                Alert: true,
+                RetryAfter: TimeSpan.FromSeconds(30)));
+        var selector = new FakeNodeSelector().Enqueue(node);
+        var sink = new CapturingLoggerProvider();
+
+        await using var worker = await StartWorkerAsync(client, selector, sink);
+        await worker.RunOutboxOnceAsync(Ct);
+        await worker.Jobs.RunPendingAsync(Ct);
+
+        // 6196 is the adapter alert of SubmitRenderJob: the alerting path is the one that logs most.
+        sink.Entries.ShouldContain(entry => entry.EventId == 6196, "the adapter alert is one of the lines under test");
+        var messages = sink.Entries.Select(entry => entry.Message).ToList();
+        messages.ShouldAllBe(message => !message.Contains(Node, StringComparison.Ordinal));
+        messages.ShouldAllBe(message => !message.Contains("canary-hint-aaaa", StringComparison.Ordinal));
+        messages.ShouldAllBe(message => !message.Contains("8443", StringComparison.Ordinal));
+        messages.ShouldContain(message => message.Contains(Id(jobId), StringComparison.Ordinal));
+    }
+
     /// <summary>Seeds an owner with a series, an approved episode and the price version every paid step needs.</summary>
     /// <returns>The seeded ids.</returns>
     private async Task<World> SeedAsync()
@@ -352,13 +392,14 @@ public sealed class SubmitRenderJobTests(TestDatabase database) : IntegrationTes
 
     /// <summary>Inserts a real <c>worker_nodes</c> row, so the submitted row's foreign key is satisfiable.</summary>
     /// <param name="userId">The owner the seeding context runs as (the table is global).</param>
+    /// <param name="baseUrl">The node's URL; a redaction test gives it a canary host.</param>
     /// <returns>The node the selector hands the job.</returns>
-    private async Task<WorkerNode> SeedNodeAsync(Guid userId)
+    private async Task<WorkerNode> SeedNodeAsync(Guid userId, string baseUrl = "http://render-node.example/")
     {
         await using var db = Database.CreateAppDbContext(new TestCurrentUser { Id = userId }, new FakeClock(Start));
         var node = WorkerNode.Create(
             $"submit-job-{Guid.NewGuid():N}",
-            new Uri("http://render-node.example/"),
+            new Uri(baseUrl),
             capacity: 2,
             tlsCertSha256: null,
             gpuModel: null).Value;

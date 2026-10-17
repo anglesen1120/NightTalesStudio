@@ -1,8 +1,11 @@
+using System.Diagnostics.Metrics;
 using System.Globalization;
+using System.Text;
 using System.Text.Json;
 using ErrorOr;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging;
 using NightTales.Api.IntegrationTests.Persistence;
 using NightTales.Application.Abstractions.Money;
 using NightTales.Application.Abstractions.Realtime;
@@ -11,6 +14,8 @@ using NightTales.Application.Abstractions.Usage;
 using NightTales.Application.Features.Rendering;
 using NightTales.Application.Features.Rendering.Jobs;
 using NightTales.Application.Features.Stories;
+using NightTales.Application.Rendering;
+using NightTales.Application.Telemetry;
 using NightTales.Domain.Rendering;
 using NightTales.Domain.Rendering.Subtitles;
 using NightTales.Domain.Series;
@@ -352,6 +357,327 @@ public sealed class PollRenderJobTests(TestDatabase database) : IntegrationTest(
         harness.Notifier.Events.ShouldBeEmpty();
     }
 
+    [Fact]
+    public async Task Metrics_TerminalTimeout_ObservesDurationAndCountsRetryOnTheSingleMeter()
+    {
+        var world = await SeedJobAsync("running", "subtitles", percent: 50, submittedMinutesAgo: 61, startedMinutesAgo: 60);
+        var render = new FakeRenderClient();
+        await using var harness = await StartHostAsync(render);
+        var host = harness.Host.Services.GetRequiredService<NightTalesMetrics>();
+
+        // The listener is attached to the host's own meter instance: a second Meter of the same name would
+        // export every render series twice, so a measurement that never arrives here is the defect (AC8).
+        var durations = new List<(string Name, string Stage, string Outcome, double Value, string Meter)>();
+        var counts = new List<(string Name, string Code, long Value, string Meter)>();
+        using var listener = new MeterListener
+        {
+            InstrumentPublished = (instrument, self) =>
+            {
+                if (ReferenceEquals(instrument.Meter, host.Meter))
+                {
+                    self.EnableMeasurementEvents(instrument);
+                }
+            },
+        };
+        listener.SetMeasurementEventCallback<double>((instrument, value, tags, _) => durations.Add((
+            instrument.Name,
+            TagOf(tags, NightTalesMetrics.StageTag),
+            TagOf(tags, NightTalesMetrics.OutcomeTag),
+            value,
+            instrument.Meter.Name)));
+        listener.SetMeasurementEventCallback<long>((instrument, value, tags, _) => counts.Add((
+            instrument.Name,
+            TagOf(tags, RenderMetrics.CodeTag),
+            value,
+            instrument.Meter.Name)));
+        listener.Start();
+
+        await PollAsync(harness.Host, world.RenderJobId);
+
+        var duration = durations.ShouldHaveSingleItem();
+        duration.Name.ShouldBe(NightTalesMetrics.RenderDurationName);
+        duration.Stage.ShouldBe("subtitles", "the bounded stage label, never the adapter's own text");
+        duration.Outcome.ShouldBe(RenderMetrics.OutcomeTimeout);
+        duration.Value.ShouldBe(3600d, "the attempt ran from its started_at to the watchdog");
+        duration.Meter.ShouldBe(NightTalesMetrics.MeterName, "the instrument lives on the host's single meter");
+
+        // render_timeout is transient, so this poll also queued attempt 2 and the retry counter moved once.
+        var retry = counts.ShouldHaveSingleItem();
+        retry.Name.ShouldBe(RenderMetrics.RetriesInstrumentName);
+        retry.Code.ShouldBe("render_timeout");
+        retry.Value.ShouldBe(1L, "one retry row was created, so the counter moved exactly once");
+        retry.Meter.ShouldBe(NightTalesMetrics.MeterName);
+    }
+
+    [Fact]
+    public async Task Terminal_Failed_AttemptTwo_TransientCode_IsFinal()
+    {
+        // The same code and the same adapter answer as the timeout test, on the last attempt: the budget is
+        // spent, so the verdict is final and no third row may appear (AC7, AC10).
+        var world = await SeedJobAsync(
+            "running",
+            "assembling",
+            percent: 70,
+            submittedMinutesAgo: 61,
+            startedMinutesAgo: 60,
+            attempt: 2);
+        var render = new FakeRenderClient();
+        await using var harness = await StartHostAsync(render);
+
+        await PollAsync(harness.Host, world.RenderJobId);
+
+        AssertRow(world, status: "failed", stage: "assembling", percent: 70, errorCode: "render_timeout");
+        harness.Money.Refunds.ShouldBe([(world.ReservationId, "render_failed")]);
+
+        SqlProbe.Count(Database, $"SELECT count(*) FROM render_jobs WHERE episode_id = '{world.EpisodeId}'")
+            .ShouldBe(1L, "attempt 2 is the last one: a transient code does not queue a third attempt");
+        SqlProbe.QueryStrings(
+                Database,
+                "SELECT (data->>'final')::text || '|' || (data ? 'retryJobId')::text FROM audit_logs "
+                + $"WHERE entity_id = '{world.RenderJobId}'")
+            .ShouldBe(["true|false"], "the audit row carries the final verdict of a spent budget");
+        CountOutbox(world).ShouldBe(1);
+        EpisodeStatus(world).ShouldBe("story_approved", "with no retry the episode comes back to the creator");
+    }
+
+    [Fact]
+    public async Task Terminal_Failed_RetryRefusedByTheBudgetGuard_IsFinal()
+    {
+        var world = await SeedJobAsync("running", "subtitles", percent: 50, submittedMinutesAgo: 61, startedMinutesAgo: 60);
+        var render = new FakeRenderClient();
+        var money = new RecordingMoney
+        {
+            Budget = Error.Failure("budget_spend_cap", "The platform spend cap is reached."),
+        };
+        await using var harness = await StartHostAsync(render, money: money);
+
+        await PollAsync(harness.Host, world.RenderJobId);
+
+        // The retry re-checks the cap even for a code the table retries, and the failed attempt's own bound is
+        // excluded from that check (the row is already in the transaction, 03 D8/CR-4).
+        money.ExcludedRunIds.ShouldBe([world.RenderJobId]);
+        AssertRow(world, status: "failed", stage: "subtitles", percent: 50, errorCode: "render_timeout");
+        money.Refunds.ShouldBe(
+            [(world.ReservationId, "render_failed")],
+            "a refused retry is not an error of the failure: the attempt is still refunded once");
+
+        SqlProbe.Count(Database, $"SELECT count(*) FROM render_jobs WHERE episode_id = '{world.EpisodeId}'")
+            .ShouldBe(1L, "a refused retry creates no row");
+        SqlProbe.QueryStrings(
+                Database,
+                "SELECT (data->>'final')::text || '|' || (data ? 'retryJobId')::text FROM audit_logs "
+                + $"WHERE entity_id = '{world.RenderJobId}'")
+            .ShouldBe(["true|false"], "the refused retry makes the verdict final (WT50)");
+        CountOutbox(world).ShouldBe(1);
+        EpisodeStatus(world).ShouldBe("story_approved");
+    }
+
+    [Fact]
+    public async Task Progress_ConcurrentCancelWins_AndTheNextTickSettlesIt()
+    {
+        var world = await SeedJobAsync("running", "voice", percent: 20);
+        var render = new FakeRenderClient();
+        await using var harness = await StartHostAsync(render);
+
+        // A cancel that commits while the status call is in flight: the poll path takes no row lock (BD7), so
+        // the xmin concurrency token is what refuses the progress write instead of overwriting the cancel. The
+        // outer update fires once: a second one would bump the row again and refuse the settling tick too.
+        var cancelled = false;
+        render.OnStatus = (_, _) =>
+        {
+            if (!cancelled)
+            {
+                cancelled = true;
+
+                SqlProbe.Execute(
+                    Database,
+                    $"UPDATE render_jobs SET cancel_requested_at = '{Start:O}'::timestamptz "
+                    + $"WHERE id = '{world.RenderJobId}'");
+            }
+
+            return ValueTask.CompletedTask;
+        };
+        render.EnqueueStatus(Status(world, RenderStates.Running, "images", 40));
+
+        var refused = await Should.ThrowAsync<InvalidOperationException>(
+            () => PollAsync(harness.Host, world.RenderJobId));
+
+        refused.Message.ShouldContain("concurrency_conflict", Case.Sensitive);
+        AssertRow(world, status: "running", stage: "voice", percent: 20);
+        ScalarText("SELECT (cancel_requested_at IS NOT NULL)::text", world)
+            .ShouldBe("true", "the cancel survives the refused progress write");
+        harness.Money.Refunds.ShouldBeEmpty();
+
+        // The next tick re-polls the row the poller still owns and settles it: the refund happens once, here.
+        render.EnqueueStatus(Status(world, RenderStates.Cancelled, "voice", 20));
+
+        await PollAsync(harness.Host, world.RenderJobId);
+
+        AssertRow(world, status: "cancelled", stage: "voice", percent: 20);
+        harness.Money.Refunds.ShouldBe([(world.ReservationId, "render_cancelled")]);
+        CountAudit(world).ShouldBe(1);
+        EpisodeStatus(world).ShouldBe("story_approved");
+    }
+
+    [Fact]
+    public async Task Terminal_Cancelled_TwoConcurrentTicks_CommitOnceAndRefundByReservation()
+    {
+        var world = await SeedJobAsync("running", "voice", percent: 30);
+        var render = new FakeRenderClient();
+        await using var harness = await StartHostAsync(render);
+
+        // Both ticks read the row before either settles it: the barrier holds each one inside the status call
+        // until the other arrived, so both see the terminal cancelled answer (the poll path takes no row lock).
+        var arrival = new Arrival(2);
+        render.OnStatus = (_, _) => new ValueTask(arrival.SignalAsync());
+        render.EnqueueStatus(Status(world, RenderStates.Cancelled, "voice", 30));
+
+        var outcomes = await Task.WhenAll(
+            CaptureAsync(PollAsync(harness.Host, world.RenderJobId)),
+            CaptureAsync(PollAsync(harness.Host, world.RenderJobId)));
+
+        render.StatusCalls.ShouldBe(2, "both ticks really reached the adapter with the same row");
+        outcomes.Count(outcome => outcome is null).ShouldBe(1, "exactly one tick commits the settlement");
+        var refused = outcomes.Single(outcome => outcome is not null);
+        refused.ShouldBeOfType<InvalidOperationException>();
+        refused!.Message.ShouldContain("concurrency_conflict", Case.Sensitive);
+
+        // The durable effect is one cancelled row and one audit row, and every refund call names the same
+        // reservation — which is what makes the ledger's per-reservation refund exactly-once (WT50/WT51).
+        AssertRow(world, status: "cancelled", stage: "voice", percent: 30);
+        CountAudit(world).ShouldBe(1);
+        harness.Money.Refunds.ShouldNotBeEmpty();
+        harness.Money.Refunds.Select(refund => refund.ReservationId).Distinct().ShouldBe([world.ReservationId]);
+        EpisodeStatus(world).ShouldBe("story_approved");
+    }
+
+    [Fact]
+    public async Task Progress_EventPayload_IsStageAndPercentOnly_InsideTheWireCap()
+    {
+        var world = await SeedJobAsync("running", "voice", percent: 20);
+        var render = new FakeRenderClient();
+        await using var harness = await StartHostAsync(render);
+
+        render.EnqueueStatus(Status(world, RenderStates.Running, "images", 40));
+
+        await PollAsync(harness.Host, world.RenderJobId);
+
+        var pushed = harness.Notifier.Events.ShouldHaveSingleItem();
+
+        // The real wire body, not a re-serialization of the record: this is what pg_notify carries (AC12).
+        var payload = RealtimePayload.Build(pushed.UserId, pushed.Event);
+        Encoding.UTF8.GetByteCount(payload).ShouldBeLessThan(
+            RealtimePayload.MaxBytes,
+            "the NOTIFY body stays inside the 8 KB cap (WT54)");
+
+        using var document = JsonDocument.Parse(payload);
+        var root = document.RootElement;
+        root.EnumerateObject().Select(property => property.Name)
+            .ShouldBe(["userId", "event", "ids", "data"], ignoreOrder: true);
+        root.GetProperty("event").GetString().ShouldBe("render_progress");
+
+        var data = root.GetProperty("data");
+        data.EnumerateObject().Select(property => property.Name)
+            .ShouldBe(["stage", "percent"], "the payload carries the stage and the percent and no other member");
+        data.GetProperty("stage").GetString().ShouldBe("images");
+        data.GetProperty("percent").GetInt16().ShouldBe((short)40);
+    }
+
+    [Fact]
+    public async Task Poll_NeverLogsTheNodeBaseUrlOrItsKey()
+    {
+        var world = await SeedJobAsync("running", "voice", percent: 20);
+        var render = new FakeRenderClient();
+        var sink = new CapturingLoggerProvider();
+        await using var harness = await StartHostAsync(render, sink: sink);
+
+        // The row's node carries a URL and a key that must never reach a log line (11 D13, 09.6.3 notes).
+        const string Node = "render-node-secret-4f2a.example";
+        SqlProbe.Execute(
+            Database,
+            "UPDATE worker_nodes SET base_url = 'https://" + Node + ":8443/', api_key_hint = 'canary-hint-aaaa', "
+            + "api_key_ciphertext = '\\x00ff'::bytea WHERE id = '" + world.NodeId + "'");
+
+        // The alerting deferred answer and then a terminal failure: the two paths that log the most.
+        render.EnqueueFailure(
+            RenderClientMethod.GetStatus,
+            new RenderClientFailure(
+                RenderClientFailureKind.Deferred,
+                "adapter_capacity_full",
+                "scripted",
+                Alert: true,
+                RetryAfter: TimeSpan.FromSeconds(30)));
+
+        await PollAsync(harness.Host, world.RenderJobId);
+
+        render.EnqueueStatus(Status(world, RenderStates.Failed, "voice", 20));
+
+        await PollAsync(harness.Host, world.RenderJobId);
+
+        var messages = sink.Entries.Select(entry => entry.Message).ToList();
+        sink.Entries.ShouldContain(entry => entry.EventId == 6228, "the adapter alert is one of the lines under test");
+        sink.Entries.ShouldContain(entry => entry.EventId == 6211, "and so is the terminal failure record");
+        messages.ShouldAllBe(message => !message.Contains(Node, StringComparison.Ordinal));
+        messages.ShouldAllBe(message => !message.Contains("canary-hint-aaaa", StringComparison.Ordinal));
+        messages.ShouldAllBe(message => !message.Contains("8443", StringComparison.Ordinal));
+        messages.ShouldContain(message => message.Contains(world.RenderJobId.ToString("D"), StringComparison.Ordinal));
+    }
+
+    /// <summary>Reads one string tag off a measurement, or the empty string when the tag is absent.</summary>
+    private static string TagOf(ReadOnlySpan<KeyValuePair<string, object?>> tags, string key)
+    {
+        foreach (var tag in tags)
+        {
+            if (string.Equals(tag.Key, key, StringComparison.Ordinal))
+            {
+                return tag.Value as string ?? string.Empty;
+            }
+        }
+
+        return string.Empty;
+    }
+
+    /// <summary>The outcome of one poll that is expected to throw, or <c>null</c> when it completed.</summary>
+    private static async Task<Exception?> CaptureAsync(Task poll)
+    {
+        try
+        {
+            await poll;
+
+            return null;
+        }
+        catch (Exception exception)
+        {
+            return exception;
+        }
+    }
+
+    /// <summary>
+    /// Holds <paramref name="expected"/> concurrent polls inside one hook until all of them arrived, so a test
+    /// can make two ticks read the same row before either settles it. A poll that never arrives fails loudly
+    /// instead of hanging (<see cref="Task.WaitAsync(TimeSpan)"/>).
+    /// </summary>
+    private sealed class Arrival(int expected)
+    {
+        private readonly Lock _gate = new();
+        private readonly TaskCompletionSource _release = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private int _arrived;
+
+        public Task SignalAsync()
+        {
+            lock (_gate)
+            {
+                _arrived++;
+                if (_arrived >= expected)
+                {
+                    _release.TrySetResult();
+                }
+            }
+
+            return _release.Task.WaitAsync(TimeSpan.FromSeconds(30));
+        }
+    }
+
     /// <summary>The ids one seeded poll world carries, plus the adapter task the row submitted.</summary>
     private sealed record World(
         Guid UserId,
@@ -367,9 +693,17 @@ public sealed class PollRenderJobTests(TestDatabase database) : IntegrationTest(
     /// <see cref="FakeRenderClient"/>, the realtime push, the ingest enqueue, the 03.4.2-T1 hooks and the four
     /// money ports are recorders. Nothing else about the composition root is changed.
     /// </summary>
-    private async Task<Harness> StartHostAsync(FakeRenderClient render, RecordingHooks? hooks = null)
+    /// <param name="render">The scripted node client.</param>
+    /// <param name="hooks">The 03.4.2-T1 extension point; the default classifies as <c>render_node_error</c>.</param>
+    /// <param name="money">The money ports; a test that scripts a budget or a refund verdict passes its own.</param>
+    /// <param name="sink">A log sink, for the tests that assert what a job never logs.</param>
+    private async Task<Harness> StartHostAsync(
+        FakeRenderClient render,
+        RecordingHooks? hooks = null,
+        RecordingMoney? money = null,
+        CapturingLoggerProvider? sink = null)
     {
-        var harness = new Harness(render, hooks ?? new RecordingHooks());
+        var harness = new Harness(render, hooks ?? new RecordingHooks(), money ?? new RecordingMoney());
 
         var host = new WorkerHost(Database, new FakeClock(Start))
             .WithSetting("Render:PollSeconds", "10")
@@ -393,6 +727,11 @@ public sealed class PollRenderJobTests(TestDatabase database) : IntegrationTest(
                 services.AddSingleton<IPriceCatalog>(harness.Money);
                 services.RemoveAll<IImageCostEstimator>();
                 services.AddSingleton<IImageCostEstimator>(harness.Money);
+
+                if (sink is not null)
+                {
+                    services.AddLogging(logging => logging.AddProvider(sink));
+                }
             });
 
         await host.StartAsync(Ct);
@@ -436,7 +775,8 @@ public sealed class PollRenderJobTests(TestDatabase database) : IntegrationTest(
         short percent,
         bool cancelRequested = false,
         int submittedMinutesAgo = 0,
-        int startedMinutesAgo = 0)
+        int startedMinutesAgo = 0,
+        int attempt = 1)
     {
         var actor = new TestCurrentUser();
         var user = await new UserBuilder(Database, actor).CreateAsync(ct: Ct);
@@ -490,7 +830,7 @@ public sealed class PollRenderJobTests(TestDatabase database) : IntegrationTest(
             + "percent, params, attempt, worker_node_id, adapter_task_id, submitted_at, started_at, next_poll_at, "
             + "cancel_requested_at) "
             + $"VALUES ('{jobId}', '{user.Id}', '{episode.Id}', '{version.Id}', '{reservationId}', '{status}', "
-            + $"'{stage}', {percent}, '{ParamsJson(version.Id)}'::jsonb, 1, '{nodeId}', '{taskId}', "
+            + $"'{stage}', {percent}, '{ParamsJson(version.Id)}'::jsonb, {attempt}, '{nodeId}', '{taskId}', "
             + $"'{submittedAt:O}', '{startedAt:O}', '{Start:O}', "
             + (cancelRequested ? $"'{Start:O}'" : "NULL")
             + ")",
@@ -566,7 +906,7 @@ public sealed class PollRenderJobTests(TestDatabase database) : IntegrationTest(
         new StoryStructureV1("ghost", "riverside", "a misty dawn", "the narrator", "first_person"));
 
     /// <summary>The host and the recorders every test asserts on.</summary>
-    private sealed class Harness(FakeRenderClient render, RecordingHooks hooks)
+    private sealed class Harness(FakeRenderClient render, RecordingHooks hooks, RecordingMoney money)
     {
         public WorkerHost Host { get; set; } = null!;
 
@@ -578,7 +918,7 @@ public sealed class PollRenderJobTests(TestDatabase database) : IntegrationTest(
 
         public RecordingIngestEnqueuer Ingest { get; } = new();
 
-        public RecordingMoney Money { get; } = new();
+        public RecordingMoney Money { get; } = money;
 
         public async ValueTask DisposeAsync() => await Host.DisposeAsync();
     }
@@ -638,6 +978,9 @@ public sealed class PollRenderJobTests(TestDatabase database) : IntegrationTest(
     {
         public List<(Guid ReservationId, string Reason)> Refunds { get; } = [];
 
+        /// <summary>The <c>excludingRunId</c> of every budget check, in order.</summary>
+        public List<Guid?> ExcludedRunIds { get; } = [];
+
         public ErrorOr<Success> Budget { get; init; } = Result.Success;
 
         public Task<ErrorOr<PriceVersion>> GetActiveAsync(DateTimeOffset queuedAt, CancellationToken ct) =>
@@ -649,8 +992,12 @@ public sealed class PollRenderJobTests(TestDatabase database) : IntegrationTest(
         public Task<CostBound> WorstCaseAsync(Aspect aspect, int maxTerms, int priceVersion, CancellationToken ct) =>
             Task.FromResult(new CostBound(1.23m));
 
-        public ValueTask<ErrorOr<Success>> CheckAsync(CostBound worstCaseUsd, CancellationToken ct, Guid? excludingRunId = null) =>
-            ValueTask.FromResult(Budget);
+        public ValueTask<ErrorOr<Success>> CheckAsync(CostBound worstCaseUsd, CancellationToken ct, Guid? excludingRunId = null)
+        {
+            ExcludedRunIds.Add(excludingRunId);
+
+            return ValueTask.FromResult(Budget);
+        }
 
         public ValueTask<ErrorOr<ReservationId>> ReserveAsync(
             Guid userId,
@@ -668,6 +1015,49 @@ public sealed class PollRenderJobTests(TestDatabase database) : IntegrationTest(
             Refunds.Add((reservationId.Value, reason));
 
             return ValueTask.FromResult<ErrorOr<Success>>(Result.Success);
+        }
+    }
+
+    /// <summary>One line as the sink saw it: the structured message is what a redaction test greps.</summary>
+    /// <param name="EventId">The id the <c>LoggerMessage</c> declared.</param>
+    /// <param name="Level">The level the line was written at.</param>
+    /// <param name="Message">The rendered message.</param>
+    private sealed record LogEntry(int EventId, LogLevel Level, string Message);
+
+    /// <summary>
+    /// A log provider that keeps every line of every category: the only way to assert what a job never writes
+    /// (the node's base URL and its key), since the harness replaces real ports rather than the logger.
+    /// </summary>
+    private sealed class CapturingLoggerProvider : ILoggerProvider
+    {
+        public List<LogEntry> Entries { get; } = [];
+
+        public ILogger CreateLogger(string categoryName) => new Sink(this);
+
+        public void Dispose()
+        {
+        }
+
+        private sealed class Sink(CapturingLoggerProvider owner) : ILogger
+        {
+            public IDisposable? BeginScope<TState>(TState state)
+                where TState : notnull =>
+                null;
+
+            public bool IsEnabled(LogLevel logLevel) => true;
+
+            public void Log<TState>(
+                LogLevel logLevel,
+                EventId eventId,
+                TState state,
+                Exception? exception,
+                Func<TState, Exception?, string> formatter)
+            {
+                lock (owner.Entries)
+                {
+                    owner.Entries.Add(new LogEntry(eventId.Id, logLevel, formatter(state, exception)));
+                }
+            }
         }
     }
 }

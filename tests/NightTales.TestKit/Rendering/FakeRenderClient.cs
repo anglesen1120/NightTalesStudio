@@ -52,6 +52,9 @@ public sealed record RenderClientCall(
 /// window in which the real adapter has accepted a task while the job's row may still change: a test sets
 /// <see cref="WriteModel"/> to the caller's <see cref="IAppDbContext"/> and mutates the tracked row there (for
 /// example <c>row.RequestCancel(now)</c> then <c>row.Cancel(now)</c>) to exercise the re-check.
+/// <see cref="OnStatus"/> is the same window on the poll path (<c>PollRenderJob</c>), which takes no row lock:
+/// a test writes the row from another connection there, or blocks both polls of a concurrent-tick test until
+/// they have read the row.
 /// </para>
 /// <para>
 /// <b>Thread safety.</b> The queues, the counters and the call log are guarded by one lock, because the poller
@@ -85,6 +88,14 @@ public sealed class FakeRenderClient : IRenderClient
     /// to change the row while the adapter call is "in flight" (the WT55 race).
     /// </summary>
     public Func<WorkerNode, AdapterSubmitRequestV1, ValueTask>? OnSubmit { get; set; }
+
+    /// <summary>
+    /// Runs after the status call is recorded and before its scripted answer is returned: the hook a test uses
+    /// to write the row from another connection while the poll is in flight — the poll path takes no row lock,
+    /// so its commit loses to a concurrent cancel — or to hold two polls at the same point so both read the row
+    /// before either settles it.
+    /// </summary>
+    public Func<WorkerNode, string, ValueTask>? OnStatus { get; set; }
 
     /// <summary>Every call, in order.</summary>
     public IReadOnlyList<RenderClientCall> Calls
@@ -290,19 +301,28 @@ public sealed class FakeRenderClient : IRenderClient
     }
 
     /// <inheritdoc />
-    public Task<ErrorOr<RenderStatusV1>> GetStatusAsync(WorkerNode node, string taskId, CancellationToken ct)
+    public async Task<ErrorOr<RenderStatusV1>> GetStatusAsync(WorkerNode node, string taskId, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(node);
         ArgumentException.ThrowIfNullOrWhiteSpace(taskId);
         ct.ThrowIfCancellationRequested();
 
+        ErrorOr<RenderStatusV1> answer;
         lock (_gate)
         {
             _statusCalls++;
             _calls.Add(new RenderClientCall(RenderClientMethod.GetStatus, node, taskId, Body: null));
-
-            return Task.FromResult(Next(_statuses, ref _lastStatus, RenderClientMethod.GetStatus));
+            answer = Next(_statuses, ref _lastStatus, RenderClientMethod.GetStatus);
         }
+
+        if (OnStatus is { } onStatus)
+        {
+            await onStatus(node, taskId).ConfigureAwait(false);
+        }
+
+        ct.ThrowIfCancellationRequested();
+
+        return answer;
     }
 
     /// <inheritdoc />
