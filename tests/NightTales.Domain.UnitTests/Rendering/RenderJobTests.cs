@@ -340,7 +340,11 @@ public sealed class RenderJobTests
 
         early.IsError.ShouldBeTrue();
         early.FirstError.Code.ShouldBe(RenderJob.InvalidStateCode);
-        queued.DomainEvents.ShouldBeEmpty("a queued job has no terminal failure to report");
+
+        // The only event on the job is the one Create raised (BD5 step 10): a queued job has no terminal failure
+        // to report, so the refused call must not have added a second event of its own.
+        queued.DomainEvents.ShouldHaveSingleItem().ShouldBeOfType<RenderRequested>();
+        queued.DomainEvents.OfType<RenderFailed>().ShouldBeEmpty();
 
         var job = Submitted();
         job.Fail("render_node_error", FixedNow).IsError.ShouldBeFalse();

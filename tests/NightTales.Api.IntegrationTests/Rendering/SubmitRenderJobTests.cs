@@ -258,6 +258,11 @@ public sealed class SubmitRenderJobTests(TestDatabase database) : IntegrationTes
         var client = new FakeRenderClient();
         var taskId = Guid.CreateVersion7();
         client.EnqueueSubmit(FakeRenderClient.Accepted(taskId));
+
+        // The task the adapter accepted has to be taken off the node again: both cleanup calls answer success
+        // (the fake refuses an unexpected call rather than inventing an answer).
+        client.EnqueueCancel(Result.Success);
+        client.EnqueueDelete(Result.Success);
         var selector = new FakeNodeSelector().Enqueue(node);
 
         // A cancel requested before the job ran: the row is still queued, so the job submits, and the re-check
@@ -376,10 +381,31 @@ public sealed class SubmitRenderJobTests(TestDatabase database) : IntegrationTes
         SqlProbe.Execute(Database,
             "INSERT INTO render_jobs (id, user_id, episode_id, story_version_id, reservation_id, status, stage, percent, params, attempt) "
             + $"VALUES ('{Id(jobId)}', '{Id(world.UserId)}', '{Id(world.EpisodeId)}', '{Id(world.VersionId)}', "
-            + $"'{Id(Guid.CreateVersion7())}', 'queued', '{RenderJob.QueuedStage}', 0, '{{\"schema\":\"render-params.v1\",\"music\":null}}'::jsonb, 1)");
+            + $"'{Id(Guid.CreateVersion7())}', 'queued', '{RenderJob.QueuedStage}', 0, '{ParamsJson(world.VersionId)}'::jsonb, 1)");
 
         return jobId;
     }
+
+    /// <summary>
+    /// A complete <c>render-params.v1</c> document (05 D11): every member of <see cref="RenderParamsV1"/> is
+    /// <c>[JsonRequired]</c>, so the column's converter refuses a row whose <c>params</c> omitted one — and the
+    /// submit job could not load the row at all.
+    /// </summary>
+    /// <param name="storyVersionId">The story version the params point at.</param>
+    /// <returns>The JSON text the <c>params</c> column stores.</returns>
+    private static string ParamsJson(Guid storyVersionId) =>
+        JsonSerializer.Serialize(new RenderParamsV1(
+            RenderParamsV1.CurrentMapperVersion,
+            storyVersionId,
+            "landscape",
+            "vi",
+            "kokoro:test",
+            Guid.CreateVersion7(),
+            "style=test@0123abcd;neg=v1",
+            new ImagePlanSummary(3, 1, 2, 1, 0, [], ["paragraph:1"], "style=test@0123abcd;neg=v1"),
+            new SubtitlesParams(true, "landscape@1"),
+            null,
+            3));
 
     /// <summary>Creates the job row the production way: <c>POST /api/v1/episodes/{id}/render</c>.</summary>
     /// <param name="world">The approved episode to render.</param>

@@ -58,7 +58,7 @@ public sealed class RenderPollingServiceTests(TestDatabase database) : Integrati
 
         var clock = new FakeClock(Start);
         var owner = await SeedOwnerAsync(Ct);
-        await SeedJobAsync(owner, Start, Ct);
+        var jobId = await SeedJobAsync(owner, Start, Ct);
 
         var pins = new RecordingPins();
         await using var host = await StartHostAsync(clock, pins);
@@ -79,14 +79,20 @@ public sealed class RenderPollingServiceTests(TestDatabase database) : Integrati
         }
 
         (await poller.TickAsync(Ct)).ShouldBeTrue("the lock is free again, so this instance polls");
-        pins.Pins.Count.ShouldBe(1);
-        pins.Pins[0].UserId.ShouldBe(owner.UserId, "the claim carries the job owner, and the scope is pinned to it");
+
+        // The one claimed job is pinned twice: the poller's dispatch scope (BD7) and the scope PollRenderJob
+        // opens for its own unit of work, which it pins before it resolves any AppDbContext (D10). Both pins
+        // carry the job's owner, and the scope is pinned to it.
+        pins.Pins.Count.ShouldBe(2);
+        pins.Pins.ShouldAllBe(pin => pin.UserId == owner.UserId);
+        pins.Pins[0].VisibleJobIds.ShouldBe([jobId], "the pinned scope sees the owner's row and no other tenant's");
+        pins.Pins[1].VisibleJobIds.ShouldBe([jobId]);
 
         // A second instance inside this process never polls while the first holds the lock for the loop's
         // lifetime: the advisory lock is session-scoped, so the two do not share it.
         using var second = SecondInstance(host);
         (await second.TickAsync(Ct)).ShouldBeFalse("the first instance holds the lock in this process too");
-        pins.Pins.Count.ShouldBe(1, "only the advisory-lock winner ever claims a job");
+        pins.Pins.Count.ShouldBe(2, "only the advisory-lock winner ever claims a job");
     }
 
     [Fact]
@@ -95,7 +101,9 @@ public sealed class RenderPollingServiceTests(TestDatabase database) : Integrati
         // Same reason as the lock test: the claim is cross-tenant, so no other test's rows may be due here.
         ResetJobs();
 
-        var clock = new FakeClock(Start);
+        // Only the two oldest rows are due at the clock's instant (Start + 45 s): betaDue polls 30 s in,
+        // alphaSecond a minute in and betaFuture a day in.
+        var clock = new FakeClock(Start.AddSeconds(45));
         var alpha = await SeedOwnerAsync(Ct);
         var beta = await SeedOwnerAsync(Ct);
 
@@ -111,24 +119,36 @@ public sealed class RenderPollingServiceTests(TestDatabase database) : Integrati
 
         (await poller.TickAsync(Ct)).ShouldBeTrue();
 
-        pins.Pins.Count.ShouldBe(2, "one tick claims at most Render:PollBatchSize jobs");
+        // One tick claims at most Render:PollBatchSize jobs, oldest next_poll_at first. Every claimed job is
+        // pinned twice (the poller's dispatch scope and the job's own unit-of-work scope), and with
+        // Render:PollParallelism = 1 the two jobs run one after the other, so the pins stay in claim order.
         pins.Pins.Select(pin => pin.UserId).ShouldBe(
-            [alpha.UserId, beta.UserId],
+            [alpha.UserId, alpha.UserId, beta.UserId, beta.UserId],
             customMessage: "the batch is the oldest due rows, in next_poll_at order");
-        pins.MaxActive.ShouldBe(1, "Render:PollParallelism bounds how many jobs run at once");
+        pins.MaxActive.ShouldBe(2, "one job at a time holds both of its pins (Render:PollParallelism = 1)");
 
         // Cross-tenant: the pinned scope runs the production tenant filter, so it sees exactly its owner's rows
         // and never the other tenant's.
         pins.Pins[0].VisibleJobIds.ShouldBe([alphaFirst, alphaSecond], ignoreOrder: true);
-        pins.Pins[1].VisibleJobIds.ShouldBe([betaDue, betaFuture], ignoreOrder: true);
+        pins.Pins[2].VisibleJobIds.ShouldBe([betaDue, betaFuture], ignoreOrder: true);
 
         // The one due row the batch left behind is claimed by the next tick; the row that is not due yet is not.
+        // A poll moves the claim instant of every row it touched (RenderJob.ReschedulePoll), and the seeded rows
+        // carry no adapter task, so this test moves those two claim instants itself.
+        SqlProbe.Execute(
+            Database,
+            $"UPDATE render_jobs SET next_poll_at = '{Start.AddMinutes(5):O}' "
+            + $"WHERE id IN ('{alphaFirst}', '{betaDue}')");
+
+        clock.Set(Start.AddMinutes(2));
+
         (await poller.TickAsync(Ct)).ShouldBeTrue();
 
-        pins.Pins.Count.ShouldBe(3);
-        pins.Pins[2].UserId.ShouldBe(alpha.UserId);
-        pins.Pins[2].VisibleJobIds.ShouldBe([alphaFirst, alphaSecond], ignoreOrder: true);
-        pins.MaxActive.ShouldBe(1, "every tick keeps the same parallelism bound");
+        pins.Pins.Count.ShouldBe(6, "the third due row is claimed by the next tick, with its two pins");
+        pins.Pins[4].UserId.ShouldBe(alpha.UserId);
+        pins.Pins[4].VisibleJobIds.ShouldBe([alphaFirst, alphaSecond], ignoreOrder: true);
+        pins.Pins[5].VisibleJobIds.ShouldBe([alphaFirst, alphaSecond], ignoreOrder: true);
+        pins.MaxActive.ShouldBe(2, "every tick keeps the same parallelism bound");
     }
 
     /// <summary>

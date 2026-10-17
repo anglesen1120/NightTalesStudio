@@ -238,8 +238,13 @@ public sealed class PollRenderJobTests(TestDatabase database) : IntegrationTest(
             $"SELECT (next_poll_at IS NULL)::text FROM render_jobs WHERE id = '{world.RenderJobId}'")
             .ShouldBe("true", "a failed row is never claimed again");
 
-        // The poller's claim is status-based, so a terminal row stays out of it.
-        SqlProbe.Count(Database, "SELECT count(*) FROM render_jobs WHERE status IN ('submitted','running')").ShouldBe(0);
+        // The poller's claim is status-based, so neither the timed-out row (failed) nor the queued retry is in it.
+        // Scoped to this episode: the other tests of this class and their rows share the database.
+        SqlProbe.Count(
+                Database,
+                $"SELECT count(*) FROM render_jobs WHERE episode_id = '{world.EpisodeId}' "
+                + "AND status IN ('submitted','running')")
+            .ShouldBe(0L);
     }
 
     [Fact]
@@ -476,7 +481,7 @@ public sealed class PollRenderJobTests(TestDatabase database) : IntegrationTest(
         await Database.ExecuteAsync(
             "INSERT INTO worker_nodes (id, name, base_url, capacity, state, last_heartbeat_at, gpu_model, "
             + "tls_cert_sha256, created_at, updated_at) "
-            + $"VALUES ('{nodeId}', 'poll-node-{nodeId:N}'[1:20], 'https://127.0.0.1:8443', 2, 'active', now(), "
+            + $"VALUES ('{nodeId}', 'poll-node-{nodeId:N}', 'https://127.0.0.1:8443', 2, 'active', now(), "
             + "'RTX 4090', '0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF', now(), now())",
             Ct);
 
