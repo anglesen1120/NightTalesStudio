@@ -1,0 +1,58 @@
+<nts-page-header titleKey="series.bible.title" subtitleKey="series.bible.subtitle" [backHref]="'/series/' + seriesId()">
+  <button actions mat-flat-button type="submit" form="bible-form" [disabled]="!canSave()">{{ (store.saving() ? 'series.bible.saving' : 'series.bible.save') | transloco }}</button>
+</nts-page-header>
+<p class="saved" role="status" aria-live="polite">@if (saved()) { {{ 'series.bible.saved' | transloco }} }</p>
+@if (store.loading() && !form()) {
+  <nts-loading-state />
+} @else if (!store.bible() && store.error()) {
+  <nts-error-state [bodyKey]="errorKey()" [traceId]="store.error()?.traceId ?? undefined" retryLabelKey="series.bible.reload" (retry)="reload()" />
+  <a mat-button routerLink="/series">{{ 'series.detail.backToList' | transloco }}</a>
+} @else if (form(); as editor) {
+  @if (store.bible(); as bible) {
+    <p class="version">{{ 'series.bible.version' | transloco: { version: bible.version } }}</p>
+    @if (store.proposal(); as proposal) {
+      <nts-bible-proposal-banner [proposal]="proposal" [version]="bible.version" [proposedTitle]="store.proposedTitle()" [pending]="store.committing() || store.saving()" (accept)="acceptProposal()" (dismiss)="dismissProposal()" />
+    }
+  }
+  @if (store.proposalGone()) { <p role="status">{{ 'series.bible.proposal.none' | transloco }}</p> }
+  @if (store.conflict()) {
+    <div class="conflict" role="alert">
+      <p>{{ 'series.bible.error.conflict' | transloco }}</p>
+      <button mat-stroked-button type="button" [disabled]="store.loading()" (click)="reload()">{{ 'series.bible.conflict.reload' | transloco }}</button>
+    </div>
+  }
+  @if (isEmpty()) { <nts-empty-state titleKey="series.bible.title" bodyKey="series.bible.empty" /> }
+  <form id="bible-form" [formGroup]="editor" (ngSubmit)="save()" [attr.aria-busy]="store.saving()" [attr.data-revision]="revision()">
+    <nts-form-error-alert [error]="formError()" [unmappedKeys]="unmappedKeys()" />
+    @if (fieldIssues().length) {
+      <ul class="field-issues" role="alert">
+        @for (issue of fieldIssues(); track issue.pointer) {
+          <li>{{ 'series.bible.error.limits' | transloco: { field: issue.labelKey | transloco } }} — {{ issue.messageKey | transloco }}</li>
+        }
+      </ul>
+    }
+    <div class="folios">
+      <fieldset class="narrator" formGroupName="narrator" [disabled]="store.saving() || store.committing() || store.loading()">
+        <legend>{{ 'series.bible.narrator' | transloco }}</legend>
+        @for (field of narratorFields; track field.name) {
+          @let control = editor.controls.narrator.controls[field.name];
+          <mat-form-field appearance="outline">
+            <mat-label>{{ field.labelKey | transloco }}</mat-label>
+            @if (field.name === 'name') {
+              <input matInput [formControlName]="field.name" [maxlength]="field.max" [attr.aria-describedby]="'narrator-' + field.name + '-count'" />
+            } @else {
+              <textarea matInput [formControlName]="field.name" [maxlength]="field.max" rows="4" [required]="field.name === 'persona'" [attr.aria-describedby]="'narrator-' + field.name + '-count' + (field.name === 'persona' ? ' persona-required' : '')"></textarea>
+            }
+            <mat-hint><nts-char-counter [id]="'narrator-' + field.name + '-count'" [value]="control.value.length" [max]="field.max" /></mat-hint>
+            @if (control.invalid) { <mat-error>{{ controlErrorKey(control) | transloco }}</mat-error> }
+          </mat-form-field>
+        }
+        @if (editor.controls.narrator.controls.persona.hasError('required')) { <p id="persona-required" class="required-hint">{{ 'series.bible.field.required' | transloco }}</p> }
+      </fieldset>
+      <nts-bible-section kind="characters" [rows]="editor.controls.recurringCharacters" [disabled]="store.saving() || store.committing() || store.loading()" (add)="addEntry('characters')" (remove)="removeEntry('characters', $event)" />
+      <nts-bible-section kind="places" [rows]="editor.controls.places" [disabled]="store.saving() || store.committing() || store.loading()" (add)="addEntry('places')" (remove)="removeEntry('places', $event)" />
+      <nts-bible-section kind="rules" [rows]="editor.controls.rules" [disabled]="store.saving() || store.committing() || store.loading()" (add)="addEntry('rules')" (remove)="removeEntry('rules', $event)" />
+      <nts-bible-section kind="summaries" [rows]="editor.controls.episodeSummaries" [disabled]="store.saving() || store.committing() || store.loading()" (remove)="removeEntry('summaries', $event)" />
+    </div>
+  </form>
+}
