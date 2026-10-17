@@ -64,7 +64,16 @@ public sealed class IdeaStructureTests
         var json = IdeaJson.Serialize(structure);
         var read = IdeaJson.DeserializeStructure(json);
 
-        read.ShouldBeEquivalentTo(structure);
+        // Field by field rather than ShouldBeEquivalentTo: the stored document's `beats` deserialise to a
+        // List while the candidate's outline is a read-only array, and the object-equivalence comparer
+        // reports those two as different objects even though every element is equal.
+        read.Tags.SubGenre.ShouldBe(structure.Tags.SubGenre);
+        read.Tags.Setting.ShouldBe(structure.Tags.Setting);
+        read.Tags.Opening.ShouldBe(structure.Tags.Opening);
+        read.Tags.TwistType.ShouldBe(structure.Tags.TwistType);
+        read.Tags.NarratorMode.ShouldBe(structure.Tags.NarratorMode);
+        read.Tags.Beats.ShouldBe(structure.Tags.Beats);
+        read.Beats.ShouldBe(structure.Beats);
         read.BeatSignature.ShouldBe("setup>clue>twist>reveal");
         IdeaJson.Serialize(read).ShouldBe(json, "stored == round-tripped");
     }
@@ -78,7 +87,10 @@ public sealed class IdeaStructureTests
             "{\"sub_genre\":\"haunted_house\",\"setting\":\"riverside_house\",\"opening\":\"night\","
             + "\"twist_type\":\"twin\",\"narrator_mode\":\"first_person\",\"beats\":",
             Case.Sensitive);
-        json.ShouldEndWith("\"beat_signature\":\"setup>clue>twist>reveal\"}", Case.Sensitive);
+        // The `>` of the signature is escaped by the default (HTML-safe) encoder, which is the stored
+        // text's business rather than the value's: the document still reads back as `setup>clue>twist>reveal`.
+        json.ShouldEndWith("\"beat_signature\":\"setup\\u003Eclue\\u003Etwist\\u003Ereveal\"}", Case.Sensitive);
+        IdeaJson.DeserializeStructure(json).BeatSignature.ShouldBe("setup>clue>twist>reveal");
         json.ShouldNotContain("\"tags\"", Case.Sensitive, "the document is flat (plan §3.1), never nested");
     }
 

@@ -6,36 +6,31 @@ using Xunit;
 namespace NightTales.Domain.UnitTests.Autopilot.Ideas;
 
 /// <summary>
-/// The reason vocabulary of <c>episode_ideas.rejected_reason</c> (02.8.1 plan §3.1): one source of truth for
-/// the ten stored values, each inside the column's width.
+/// The <c>rejected_reason</c> vocabulary (02.8.1 plan §3.1): exactly ten snake_case constants, each inside
+/// the <c>varchar(40)</c> column and each unique, so the run log can group rejections by reason and the
+/// EF configuration can take the column width from <see cref="IdeaRejectionReason.MaxLength"/>.
 /// </summary>
 public sealed class IdeaRejectionReasonTests
 {
     [Fact]
     public void IdeaRejectionReason_AllReasons_FitTheColumn()
     {
-        IdeaRejectionReason.MaxLength.ShouldBe(40);
+        var reasons = Reasons();
 
-        var tooLong = Reasons()
-            .Where(reason => reason.Length > IdeaRejectionReason.MaxLength)
-            .ToList();
-
-        tooLong.ShouldBeEmpty($"rejected_reason is varchar({IdeaRejectionReason.MaxLength})");
+        reasons.Count.ShouldBe(10, "the plan §3.1 list");
+        IdeaRejectionReason.MaxLength.ShouldBe(40, "the rejected_reason varchar(40)");
+        reasons.ShouldAllBe(reason => reason.Length <= IdeaRejectionReason.MaxLength);
     }
 
     [Fact]
-    public void IdeaRejectionReason_AllReasons_AreDistinct()
-    {
-        var reasons = Reasons();
-
-        reasons.ShouldBeUnique();
-        reasons.Count.ShouldBe(10, "the plan §3.1 list");
-    }
+    public void IdeaRejectionReason_AllReasons_AreUnique() =>
+        Reasons().ShouldBeUnique();
 
     [Fact]
     public void IdeaRejectionReason_AllReasons_AreSnakeCase()
     {
-        Reasons().ShouldAllBe(reason => reason == reason.ToLowerInvariant() && !reason.Contains(' '));
+        // The stored vocabulary is lowercase ASCII with underscores only — no uppercase, digits or spaces.
+        Reasons().ShouldAllBe(reason => reason.All(character => (character >= 'a' && character <= 'z') || character == '_'));
     }
 
     [Theory]

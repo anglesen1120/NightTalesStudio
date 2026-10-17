@@ -29,13 +29,15 @@ public static class IdeaText
     public static bool ContainsMarkup(string? text) => FindMarkup(text) is not null;
 
     /// <summary>
-    /// The first marker <paramref name="text"/> carries, or <see langword="null"/>: one of
-    /// <see cref="Markers"/>, or a line starting with a bullet (<c>-</c>, <c>*</c>, <c>+</c> and a space) or
-    /// with <c>&lt;digits&gt;. </c>.
+    /// The first marker <paramref name="text"/> carries, or <see langword="null"/>: a line starting with a
+    /// bullet (<c>-</c>, <c>*</c>, <c>+</c> and a space) or with <c>&lt;digits&gt;. </c>, else one of
+    /// <see cref="Markers"/>.
     /// </summary>
     /// <remarks>
     /// The returned value is the <see cref="IdeaFieldError.Detail"/> of the violation, never a fragment of
-    /// the text (D19): the marker itself, or <c>list_marker</c>.
+    /// the text (D19): the marker itself, or <c>list_marker</c>. A bulleted line reports
+    /// <c>list_marker</c> whatever its bullet is, so a leading <c>*</c> is the list's rule and not the
+    /// emphasis one; the marker character is reported only when it is not a bullet.
     /// </remarks>
     /// <param name="text">The text to scan; <see langword="null"/> and empty carry none.</param>
     /// <returns>The marker, or <see langword="null"/>.</returns>
@@ -46,6 +48,11 @@ public static class IdeaText
             return null;
         }
 
+        if (HasListMarker(text))
+        {
+            return "list_marker";
+        }
+
         foreach (var character in text)
         {
             if (Markers.Contains(character))
@@ -54,7 +61,7 @@ public static class IdeaText
             }
         }
 
-        return HasListMarker(text) ? "list_marker" : null;
+        return null;
     }
 
     /// <summary>Whether any line of <paramref name="text"/> starts with a bullet or an ordered-list marker.</summary>

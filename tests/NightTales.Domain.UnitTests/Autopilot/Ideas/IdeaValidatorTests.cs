@@ -6,13 +6,20 @@ using Xunit;
 namespace NightTales.Domain.UnitTests.Autopilot.Ideas;
 
 /// <summary>
-/// The per-candidate rules of 02.8.1 plan §3.2 (<see cref="IdeaValidator"/>): every limit as its own field
-/// error, the boundary of each cap, the markup and beat rules, and the batch path where an all-invalid batch
-/// yields no candidate for the run to persist.
+/// 02.8.1 plan §9 (unit): every §3.2 rule of <see cref="IdeaValidator"/> is a field error the caller drops
+/// the candidate for, and the batch path returns only the valid candidates. The character caps are counted
+/// in Unicode code points, the same measure a Postgres <c>varchar</c> uses.
 /// </summary>
 public sealed class IdeaValidatorTests
 {
     private static readonly IdeaLimits Limits = new();
+
+    /// <summary>A valid three-beat outline (one <c>twist</c>), shared so no constant array is rebuilt per call.</summary>
+    private static readonly string[] ShortOutline = ["setup", "clue", "twist"];
+
+    /// <summary>A nine-beat outline (one over <see cref="IdeaLimits.MaxBeats"/>), for the too-many boundary.</summary>
+    private static readonly string[] LongOutline =
+        ["setup", "build_up", "clue", "twist", "reveal", "aftermath", "clue", "twist", "reveal"];
 
     [Fact]
     public void IdeaValidator_ValidCandidate_ReturnsNoErrors()
@@ -31,40 +38,33 @@ public sealed class IdeaValidatorTests
     [Fact]
     public void IdeaValidator_TitleOver100_DropsCandidate()
     {
-        var title = new string('t', Limits.TitleChars + 1);
-
-        var errors = IdeaValidator.Validate(Candidate(title: title), Limits);
+        var errors = IdeaValidator.Validate(Candidate(title: new string('t', Limits.TitleChars + 1)), Limits);
 
         errors.Count.ShouldBe(1);
         errors[0].ShouldBe(new IdeaFieldError("title", IdeaValidator.TooLong, "100"));
     }
 
     [Fact]
-    public void IdeaValidator_TitleCountsCodePointsNotUtf16Units()
+    public void IdeaValidator_TitleCountsCodePoints_NotUtf16Units()
     {
-        // A 101-character title of astral characters is 101 characters to the varchar(100) column but 202
-        // UTF-16 units to string.Length, so the rule must refuse it while the 100-character one stays valid.
-        var atTheCap = string.Concat(Enumerable.Repeat("😀", Limits.TitleChars));
-        var overTheCap = string.Concat(Enumerable.Repeat("😀", Limits.TitleChars + 1));
+        // One astral character is one code point (one Postgres varchar unit) but two UTF-16 chars: counting
+        // string.Length would reject a title the column accepts.
+        var title = new string('t', Limits.TitleChars - 1) + "\U0001F47B";
 
-        IdeaValidator.Validate(Candidate(title: atTheCap), Limits).ShouldBeEmpty();
-        IdeaValidator.Validate(Candidate(title: overTheCap), Limits)[0].Field.ShouldBe("title");
+        IdeaValidator.Validate(Candidate(title: title), Limits).ShouldBeEmpty();
     }
 
     [Fact]
     public void IdeaValidator_LoglineExactly300_ReturnsNoErrors()
     {
-        var logline = new string('l', Limits.LoglineChars);
-
-        IdeaValidator.Validate(Candidate(logline: logline), Limits).ShouldBeEmpty();
+        IdeaValidator.Validate(Candidate(logline: new string('l', Limits.LoglineChars)), Limits)
+            .ShouldBeEmpty();
     }
 
     [Fact]
     public void IdeaValidator_LoglineOver300_DropsCandidate()
     {
-        var logline = new string('l', Limits.LoglineChars + 1);
-
-        var errors = IdeaValidator.Validate(Candidate(logline: logline), Limits);
+        var errors = IdeaValidator.Validate(Candidate(logline: new string('l', Limits.LoglineChars + 1)), Limits);
 
         errors.Count.ShouldBe(1);
         errors[0].ShouldBe(new IdeaFieldError("logline", IdeaValidator.TooLong, "300"));
@@ -82,7 +82,8 @@ public sealed class IdeaValidatorTests
     [Fact]
     public void IdeaValidator_SettingExactly120_ReturnsNoErrors()
     {
-        IdeaValidator.Validate(Candidate(setting: new string('s', Limits.SettingChars)), Limits).ShouldBeEmpty();
+        IdeaValidator.Validate(Candidate(setting: new string('s', Limits.SettingChars)), Limits)
+            .ShouldBeEmpty();
     }
 
     [Fact]
@@ -95,81 +96,113 @@ public sealed class IdeaValidatorTests
     }
 
     [Theory]
-    [InlineData(null)]
     [InlineData("")]
     [InlineData("   ")]
-    public void IdeaValidator_BlankTitle_DropsCandidate(string? title)
+    public void IdeaValidator_BlankTitle_DropsCandidate(string title)
     {
-        var errors = IdeaValidator.Validate(Candidate(title: title!), Limits);
+        var errors = IdeaValidator.Validate(Candidate(title: title), Limits);
 
         errors.Count.ShouldBe(1);
         errors[0].ShouldBe(new IdeaFieldError("title", IdeaValidator.Empty, null));
     }
 
-    [Fact]
-    public void IdeaValidator_BlankHookAndSetting_ReportBothFields()
+    [Theory]
+    [InlineData("logline")]
+    [InlineData("hook")]
+    [InlineData("setting")]
+    public void IdeaValidator_BlankField_DropsCandidate(string field)
     {
-        var errors = IdeaValidator.Validate(Candidate(hook: " ", setting: ""), Limits);
+        var candidate = field switch
+        {
+            "logline" => Candidate(logline: " "),
+            "hook" => Candidate(hook: " "),
+            _ => Candidate(setting: " "),
+        };
 
-        errors.Select(error => error.Field).ShouldBe(["hook", "setting"]);
-        errors.ShouldAllBe(error => error.Code == IdeaValidator.Empty);
+        var errors = IdeaValidator.Validate(candidate, Limits);
+
+        errors.Count.ShouldBe(1);
+        errors[0].ShouldBe(new IdeaFieldError(field, IdeaValidator.Empty, null));
     }
 
     [Fact]
     public void IdeaValidator_AngleBracketInLogline_DropsCandidate()
     {
-        var errors = IdeaValidator.Validate(Candidate(logline: "Căn nhà <script> bên sông"), Limits);
+        var errors = IdeaValidator.Validate(Candidate(logline: "Một đêm <định mệnh> tại nhà sông."), Limits);
 
         errors.Count.ShouldBe(1);
         errors[0].ShouldBe(new IdeaFieldError("logline", IdeaValidator.InvalidStructure, "angle_bracket"));
     }
 
-    [Fact]
-    public void IdeaValidator_AngleBracketInHook_DropsCandidate()
-    {
-        var errors = IdeaValidator.Validate(Candidate(hook: "Người kể > kẻ nghe"), Limits);
-
-        errors.Count.ShouldBe(1);
-        errors[0].ShouldBe(new IdeaFieldError("hook", IdeaValidator.InvalidStructure, "angle_bracket"));
-    }
-
     [Theory]
-    [InlineData("Tiêu đề *in đậm*")]
-    [InlineData("Tiêu đề _nghiêng_")]
-    [InlineData("Tiêu đề `mã`")]
-    [InlineData("Tiêu đề #mục")]
-    public void IdeaValidator_EmphasisOrHeadingMarker_DropsCandidate(string title)
+    [InlineData("Tiêu đề *lỗi*", "*")]
+    [InlineData("Tiêu đề _lỗi_", "_")]
+    [InlineData("Tiêu đề `lỗi`", "`")]
+    public void IdeaValidator_EmphasisMarker_DropsCandidate(string title, string marker)
     {
         var errors = IdeaValidator.Validate(Candidate(title: title), Limits);
 
         errors.Count.ShouldBe(1);
-        errors[0].Field.ShouldBe("title");
-        errors[0].Code.ShouldBe(IdeaValidator.InvalidStructure);
-        errors[0].Detail.ShouldNotBeNullOrEmpty();
+        errors[0].ShouldBe(new IdeaFieldError("title", IdeaValidator.InvalidStructure, marker));
     }
 
-    [Theory]
-    [InlineData("- mở đầu\n- kết thúc")]
-    [InlineData("Mở đầu:\n* gợi ý")]
-    [InlineData("Các bước:\n1. bước một")]
-    public void IdeaValidator_ListMarker_DropsCandidate(string logline)
+    [Fact]
+    public void IdeaValidator_HeadingMarker_DropsCandidate()
     {
-        var errors = IdeaValidator.Validate(Candidate(logline: logline), Limits);
+        var errors = IdeaValidator.Validate(Candidate(title: "# Chương một"), Limits);
 
         errors.Count.ShouldBe(1);
-        errors[0].ShouldBe(new IdeaFieldError("logline", IdeaValidator.InvalidStructure, "list_marker"));
+        errors[0].ShouldBe(new IdeaFieldError("title", IdeaValidator.InvalidStructure, "#"));
     }
 
     [Theory]
-    [InlineData("Người kể chuyện (phần 2) trở về")]
-    [InlineData("Căn nhà bên sông [không tên]")]
-    [InlineData("Câu chuyện có thật, không hư cấu")]
-    [InlineData("Số 3 đường Nguyễn Trãi")]
-    public void IdeaValidator_OrdinaryProse_ReturnsNoErrors(string logline)
+    [InlineData("- Một dòng")]
+    [InlineData("* Một dòng")]
+    [InlineData("+ Một dòng")]
+    [InlineData("1. Một dòng")]
+    [InlineData("12. Một dòng")]
+    [InlineData("Dòng đầu\n- Dòng hai")]
+    public void IdeaValidator_ListMarker_DropsCandidate(string title)
     {
-        // Brackets, parentheses and a number followed by a space are prose, not markup: the narrower marker
-        // set must not refuse them (a story segment is checked by the D3 rule, an idea title is not).
-        IdeaValidator.Validate(Candidate(logline: logline), Limits).ShouldBeEmpty();
+        var errors = IdeaValidator.Validate(Candidate(title: title), Limits);
+
+        errors.Count.ShouldBe(1);
+        errors[0].ShouldBe(new IdeaFieldError("title", IdeaValidator.InvalidStructure, "list_marker"));
+    }
+
+    [Fact]
+    public void IdeaValidator_ParenthesesBracketsAndUrls_AreAllowed()
+    {
+        // The idea rule is narrower than the story draft's: brackets, parentheses and URLs are not markdown
+        // emphasis and would refuse ordinary Vietnamese prose (02.8.1 §3.2 names only the markers).
+        var candidate = Candidate(
+            title: "Đêm (phần 2)",
+            logline: "Một câu chuyện [đã kể] về www.demkhuya.vn");
+
+        IdeaValidator.Validate(candidate, Limits).ShouldBeEmpty();
+    }
+
+    [Fact]
+    public void IdeaValidator_BeatsExactlyThree_ReturnsNoErrors()
+    {
+        IdeaValidator.Validate(Candidate(beats: ShortOutline), Limits).ShouldBeEmpty();
+    }
+
+    [Fact]
+    public void IdeaValidator_BeatsWithoutTwist_DropsCandidate()
+    {
+        var errors = IdeaValidator.Validate(
+            Candidate(beats: ["setup", "build_up", "clue"]),
+            Limits);
+
+        errors.Count.ShouldBe(1);
+        errors[0].ShouldBe(new IdeaFieldError("beats", IdeaValidator.BeatMissingTurn, "twist"));
+    }
+
+    [Fact]
+    public void IdeaValidator_RevealInsteadOfTwist_ReturnsNoErrors()
+    {
+        IdeaValidator.Validate(Candidate(beats: ["setup", "clue", "reveal"]), Limits).ShouldBeEmpty();
     }
 
     [Theory]
@@ -187,60 +220,9 @@ public sealed class IdeaValidatorTests
     }
 
     [Fact]
-    public void IdeaValidator_BeatsWithoutTwist_DropsCandidate()
+    public void IdeaValidator_BeatsAtEightAndNonAdjacentRepeat_ReturnsNoErrors()
     {
-        var errors = IdeaValidator.Validate(Candidate(beats: ["setup", "build_up", "clue"]), Limits);
-
-        errors.Count.ShouldBe(1);
-        errors[0].ShouldBe(new IdeaFieldError("beats", IdeaValidator.BeatMissingTurn, "twist"));
-    }
-
-    [Theory]
-    [InlineData("reveal")]
-    [InlineData("twist")]
-    public void IdeaValidator_BeatsWithOneTurn_ReturnsNoErrors(string turn)
-    {
-        IdeaValidator.Validate(Candidate(beats: ["setup", "clue", turn]), Limits).ShouldBeEmpty();
-    }
-
-    [Fact]
-    public void IdeaValidator_BeatsImmediateRepetition_DropsCandidate()
-    {
-        var errors = IdeaValidator.Validate(Candidate(beats: ["setup", "clue", "clue", "twist"]), Limits);
-
-        errors.Count.ShouldBe(1);
-        errors[0].ShouldBe(new IdeaFieldError("beats[2]", IdeaValidator.BeatRepeated, "clue"));
-    }
-
-    [Fact]
-    public void IdeaValidator_RepeatedBeatNotAdjacent_ReturnsNoErrors()
-    {
-        // The rule is "no immediate repetition", not "no repetition": a setup…twist…setup outline is legal.
-        IdeaValidator.Validate(Candidate(beats: ["setup", "twist", "setup", "reveal"]), Limits).ShouldBeEmpty();
-    }
-
-    [Fact]
-    public void IdeaValidator_UnknownBeatName_DropsCandidate()
-    {
-        var errors = IdeaValidator.Validate(Candidate(beats: ["setup", "clue", "denouement"]), Limits);
-
-        errors.Count.ShouldBe(1);
-        errors[0].ShouldBe(new IdeaFieldError("beats[2]", IdeaValidator.BeatInvalid, "denouement"));
-    }
-
-    [Fact]
-    public void IdeaValidator_BeatOutsideTheSixD3Names_DropsCandidate()
-    {
-        // "build-up" is not the D3 value ("build_up"), so the vocabulary is exact, not fuzzy.
-        var errors = IdeaValidator.Validate(Candidate(beats: ["setup", "build-up", "twist"]), Limits);
-
-        errors.Count.ShouldBe(1);
-        errors[0].Code.ShouldBe(IdeaValidator.BeatInvalid);
-    }
-
-    [Fact]
-    public void IdeaValidator_BeatsExactlyEight_ReturnsNoErrors()
-    {
+        // Eight is inside the band, and a beat may repeat as long as two identical beats are not adjacent.
         IdeaValidator.Validate(
             Candidate(beats: ["setup", "build_up", "clue", "twist", "reveal", "aftermath", "clue", "twist"]),
             Limits)
@@ -250,9 +232,7 @@ public sealed class IdeaValidatorTests
     [Fact]
     public void IdeaValidator_BeatsOverEight_DropsCandidate()
     {
-        var beats = new[] { "setup", "build_up", "clue", "twist", "reveal", "aftermath", "clue", "twist", "reveal" };
-
-        var errors = IdeaValidator.Validate(Candidate(beats: beats), Limits);
+        var errors = IdeaValidator.Validate(Candidate(beats: LongOutline), Limits);
 
         errors.Count.ShouldBe(1);
         errors[0].ShouldBe(new IdeaFieldError("beats", IdeaValidator.TooMany, "8"));
@@ -268,45 +248,83 @@ public sealed class IdeaValidatorTests
     }
 
     [Fact]
-    public void IdeaValidator_EmptyStructureValue_DropsCandidate()
+    public void IdeaValidator_BeatsImmediateRepetition_DropsCandidate()
     {
         var errors = IdeaValidator.Validate(
-            Candidate(tags: Tags(subGenre: "  ", narratorMode: "")),
+            Candidate(beats: ["setup", "clue", "clue", "twist"]),
             Limits);
 
-        errors.Select(error => error.Field).ShouldBe(["structure.sub_genre", "structure.narrator_mode"]);
-        errors.ShouldAllBe(error => error.Code == IdeaValidator.Empty);
+        errors.Count.ShouldBe(1);
+        errors[0].ShouldBe(new IdeaFieldError("beats[2]", IdeaValidator.BeatRepeated, "clue"));
     }
 
     [Fact]
-    public void IdeaValidator_MalformedLimits_ReportsOneLimitError()
+    public void IdeaValidator_UnknownBeat_DropsCandidate()
     {
-        var errors = IdeaValidator.Validate(Candidate(), new IdeaLimits(MinBeats: 8, MaxBeats: 3));
+        var errors = IdeaValidator.Validate(
+            Candidate(beats: ["setup", "dance", "twist"]),
+            Limits);
 
         errors.Count.ShouldBe(1);
-        errors[0].ShouldBe(new IdeaFieldError(IdeaValidator.LimitsField, IdeaValidator.InvalidLimits, null));
+        errors[0].ShouldBe(new IdeaFieldError("beats[1]", IdeaValidator.BeatInvalid, "dance"));
     }
 
     [Fact]
-    public void IdeaValidator_AllCandidatesInvalid_ReturnsEmpty()
+    public void IdeaValidator_BlankBeat_DropsCandidate()
     {
-        // The caller path of plan §4 U1 step 4: every candidate has at least one violation, so the run has
-        // nothing to persist and fails ideas_invalid_output.
-        var candidates = new List<IdeaCandidate>
-        {
-            Candidate(title: new string('t', Limits.TitleChars + 1)),
-            Candidate(logline: "Căn nhà <script>"),
-            Candidate(beats: ["setup", "clue", "clue", "twist"]),
-            Candidate(tags: Tags(setting: string.Empty)),
-        };
+        var errors = IdeaValidator.Validate(
+            Candidate(beats: ["setup", " ", "twist"]),
+            Limits);
 
-        IdeaValidator.Valid(candidates, Limits).ShouldBeEmpty();
+        errors.Count.ShouldBe(1);
+        errors[0].ShouldBe(new IdeaFieldError("beats[1]", IdeaValidator.BeatInvalid, " "));
+    }
+
+    [Fact]
+    public void IdeaValidator_NullStructure_DropsCandidate()
+    {
+        var candidate = Candidate() with { Structure = null! };
+
+        var errors = IdeaValidator.Validate(candidate, Limits);
+
+        errors.Count.ShouldBe(1);
+        errors[0].ShouldBe(new IdeaFieldError("structure", IdeaValidator.Empty, null));
+    }
+
+    [Fact]
+    public void IdeaValidator_EmptyStructureValues_DropsCandidate()
+    {
+        var candidate = Candidate(
+            tags: new StoryStructureTags(" ", "riverside_house", "night", "twin", "", []));
+
+        var errors = IdeaValidator.Validate(candidate, Limits);
+
+        errors.Count.ShouldBe(2);
+        errors[0].ShouldBe(new IdeaFieldError("structure.sub_genre", IdeaValidator.Empty, null));
+        errors[1].ShouldBe(new IdeaFieldError("structure.narrator_mode", IdeaValidator.Empty, null));
+    }
+
+    [Fact]
+    public void IdeaValidator_MultipleViolations_ReportsEveryFieldInOrder()
+    {
+        var candidate = Candidate(
+            title: "Ok",
+            logline: " ",
+            hook: new string('h', Limits.HookChars + 1),
+            setting: "<x>");
+
+        var errors = IdeaValidator.Validate(candidate, Limits);
+
+        errors.Count.ShouldBe(3);
+        errors[0].ShouldBe(new IdeaFieldError("logline", IdeaValidator.Empty, null));
+        errors[1].ShouldBe(new IdeaFieldError("hook", IdeaValidator.TooLong, "300"));
+        errors[2].ShouldBe(new IdeaFieldError("setting", IdeaValidator.InvalidStructure, "angle_bracket"));
     }
 
     [Fact]
     public void IdeaValidator_SomeCandidatesInvalid_ReturnsOnlyTheValidOnes()
     {
-        var valid = Candidate(title: "Tiêu đề hợp lệ");
+        var valid = Candidate();
         var invalid = Candidate(title: "Tiêu đề *lỗi*");
 
         var survivors = IdeaValidator.Valid([invalid, valid], Limits);
@@ -316,28 +334,51 @@ public sealed class IdeaValidatorTests
     }
 
     [Fact]
-    public void IdeaValidator_NullCandidateOrLimits_Throws()
+    public void IdeaValidator_AllCandidatesInvalid_ReturnsEmpty()
+    {
+        // The caller's ideas_invalid_output path: every candidate carries at least one violation.
+        var candidates = new[]
+        {
+            Candidate(title: new string('t', Limits.TitleChars + 1)),
+            Candidate(beats: ["setup", "clue", "climax"]),
+        };
+
+        IdeaValidator.Valid(candidates, Limits).ShouldBeEmpty();
+    }
+
+    [Fact]
+    public void IdeaValidator_InvertedLimits_ReturnsOneLimitsError()
+    {
+        var limits = new IdeaLimits { MinBeats = 9, MaxBeats = 3 };
+
+        var errors = IdeaValidator.Validate(Candidate(), limits);
+
+        errors.Count.ShouldBe(1);
+        errors[0].ShouldBe(new IdeaFieldError(IdeaValidator.LimitsField, IdeaValidator.InvalidLimits, null));
+    }
+
+    [Fact]
+    public void IdeaValidator_NullArguments_Throw()
     {
         Should.Throw<ArgumentNullException>(() => IdeaValidator.Validate(null!, Limits));
         Should.Throw<ArgumentNullException>(() => IdeaValidator.Validate(Candidate(), null!));
         Should.Throw<ArgumentNullException>(() => IdeaValidator.Valid(null!, Limits));
     }
 
-    /// <summary>A valid candidate; every argument overrides one field so a test names only its own violation.</summary>
     private static IdeaCandidate Candidate(
-        string title = "Căn nhà bên sông",
-        string logline = "Một người trở về căn nhà cũ và nghe tiếng gọi lúc nửa đêm.",
-        string hook = "Tiếng gọi chỉ cất lên khi đèn tắt.",
-        string setting = "Căn nhà gỗ hai tầng bên sông, đêm mưa.",
+        string? title = null,
+        string? logline = null,
+        string? hook = null,
+        string? setting = null,
         StoryStructureTags? tags = null,
         IReadOnlyList<string>? beats = null) =>
         new(
-            title,
-            logline,
-            hook,
-            setting,
+            title ?? "Đêm định mệnh tại nhà sông",
+            logline ?? "Một người trở về căn nhà cũ và nghe thấy tiếng gọi lúc nửa đêm.",
+            hook ?? "Tiếng gõ cửa vang lên đúng ba lần, như mọi đêm.",
+            setting ?? "Căn nhà gỗ bên dòng sông quê",
             tags ?? Tags(),
-            beats ?? ["setup", "clue", "twist"]);
+            beats ?? ShortOutline);
 
     /// <summary>A complete D3 structure block; every argument overrides one value.</summary>
     private static StoryStructureTags Tags(
@@ -350,5 +391,5 @@ public sealed class IdeaValidatorTests
 
     /// <summary><paramref name="count"/> beats of a valid outline, for the too-few boundary.</summary>
     private static IReadOnlyList<string> Beats(int count) =>
-        [.. new[] { "setup", "clue", "twist" }.Take(count)];
+        [.. ShortOutline.Take(count)];
 }

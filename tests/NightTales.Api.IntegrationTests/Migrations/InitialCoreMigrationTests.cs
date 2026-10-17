@@ -43,6 +43,7 @@ public sealed class InitialCoreMigrationTests(TestDatabase database) : Integrati
         "data_deletion_requests",
         "data_protection_keys",
         "email_messages",
+        "episode_ideas",
         "episodes",
         "fact_sheets",
         "feature_flags",

@@ -35,6 +35,9 @@ public sealed class TenantForeignKeyTests(TestDatabase database) : IntegrationTe
         "assets.episode_id,user_id->episodes(id,user_id)",
         "autopilot_runs.episode_id,user_id->episodes(id,user_id)",
         "autopilot_runs.series_id,user_id->series(id,user_id)",
+        "episode_ideas.episode_id,user_id->episodes(id,user_id)",
+        "episode_ideas.generation_run_id,user_id->generation_runs(id,user_id)",
+        "episode_ideas.series_id,user_id->series(id,user_id)",
         "episodes.approved_story_version_id,user_id->story_versions(id,user_id)",
         "episodes.current_story_version_id,user_id->story_versions(id,user_id)",
         "episodes.final_video_asset_id,user_id->assets(id,user_id)",
@@ -70,13 +73,16 @@ public sealed class TenantForeignKeyTests(TestDatabase database) : IntegrationTe
 
     /// <summary>
     /// Every nullable <c>ON DELETE SET NULL</c> foreign key in the schema, in constraint-name order: the
-    /// four same-owner ones, whose column list <c>InitialCore</c> writes with raw SQL because EF cannot emit
-    /// it (a plain <c>SET NULL</c> would null <c>user_id</c> too and fail on the first delete of a parent),
-    /// plus 09.3.2-T1's self-reference, which needs no column list and no same-owner rule.
+    /// same-owner ones (<c>InitialCore</c>'s four plus 02.8.1-T1's <c>episode_ideas</c> key), whose column
+    /// list the migration writes with raw SQL because EF cannot emit it (a plain <c>SET NULL</c> would null
+    /// <c>user_id</c> too and fail on the first delete of a parent), plus 09.3.2-T1's self-reference, which
+    /// needs no column list and no same-owner rule.
     /// </summary>
     private static readonly string[] NullableSameOwnerDefinitions =
     [
         "fk_autopilot_runs_episodes_episode_id_user_id|FOREIGN KEY (episode_id, user_id) "
+        + "REFERENCES episodes(id, user_id) ON DELETE SET NULL (episode_id)",
+        "fk_episode_ideas_episodes_episode_id_user_id|FOREIGN KEY (episode_id, user_id) "
         + "REFERENCES episodes(id, user_id) ON DELETE SET NULL (episode_id)",
         "fk_episodes_assets_final_video_asset_id_user_id|FOREIGN KEY (final_video_asset_id, user_id) "
         + "REFERENCES assets(id, user_id) ON DELETE SET NULL (final_video_asset_id)",

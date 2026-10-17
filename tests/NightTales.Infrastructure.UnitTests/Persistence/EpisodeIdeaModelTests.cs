@@ -29,7 +29,7 @@ public sealed class EpisodeIdeaModelTests
     /// <summary>The series-status-created index' direction per key: <c>created_at DESC</c> (plan §3.1).</summary>
     private static readonly bool[] SeriesStatusCreatedDescending = [false, false, true];
 
-    /// <summary>The plan §3.1 column list, in the order the entity declares it.</summary>
+    /// <summary>The plan §3.1 column list, compared as a set.</summary>
     private static readonly string[] Columns =
     [
         "id",
@@ -52,16 +52,18 @@ public sealed class EpisodeIdeaModelTests
     ];
 
     [Fact]
-    public void EpisodeIdea_IsTheEpisodeIdeasTable_WithThePlansColumnsInOrder()
+    public void EpisodeIdea_IsTheEpisodeIdeasTable_WithThePlansColumns()
     {
         var entity = EpisodeIdeaEntity();
 
         entity.GetTableName().ShouldBe("episode_ideas");
         entity.FindPrimaryKey()!.Properties.Select(property => property.Name).ShouldBe(["Id"]);
 
-        // Snake_case is the only naming this test has to trust the UseSnakeCaseNamingConvention call for:
-        // the migration's column order is this list (the source_candidates precedent).
-        entity.GetProperties().Select(property => property.GetColumnName()!).ShouldBe(Columns);
+        // Snake_case is the only naming this test has to trust the UseSnakeCaseNamingConvention call for.
+        // The set is the contract; EF's GetProperties() order is not (the migration's physical order is
+        // whatever AddEpisodeIdeas emits, the source_candidates precedent).
+        entity.GetProperties().Select(property => property.GetColumnName()!)
+            .ShouldBe(Columns, ignoreOrder: true, customMessage: "the plan §3.1 columns of episode_ideas");
     }
 
     [Fact]
@@ -84,10 +86,11 @@ public sealed class EpisodeIdeaModelTests
         status.GetValueConverter().ShouldNotBeNull();
         status.GetValueConverter()!.ProviderClrType.ShouldBe(typeof(string));
 
-        // CHECK constraints are DDL, so the runtime (read-optimized) model drops them.
+        // CHECK constraints are DDL, so the runtime (read-optimized) model drops them. EnumSnakeCase
+        // orders the listed values ordinal, so the closed set reads picked/proposed/rejected/used.
         EpisodeIdeaDesignEntity().GetCheckConstraints()
             .ShouldContain(constraint => constraint.Name == "ck_episode_ideas_status"
-                && constraint.Sql.Contains("('proposed', 'picked', 'rejected', 'used')", StringComparison.Ordinal));
+                && constraint.Sql.Contains("('picked', 'proposed', 'rejected', 'used')", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -109,7 +112,9 @@ public sealed class EpisodeIdeaModelTests
         {
             var score = Property(name);
 
-            score.ClrType.ShouldBe(typeof(decimal));
+            // Plan §3.1's numeric(5,4) column is covered by a nullable decimal: no measurement before the
+            // pick (the series_bibles.proposed_content precedent for a null-until-later column).
+            score.ClrType.ShouldBe(typeof(decimal?));
             score.GetPrecision().ShouldBe(5);
             score.GetScale().ShouldBe(4);
             score.IsNullable.ShouldBeTrue();
