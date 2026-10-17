@@ -290,7 +290,7 @@ public sealed class ApproveStory_KeywordsFlaggedTests(TestDatabase database) : I
         ["documentary"],
         new StoryStructureV1("case", "old house", "a knock", "the narrator", "first_person"));
 
-    private static Task<HttpResponseMessage> ApproveAsync(HttpClient client, World world, string? body, string? tag = null)
+    private static async Task<HttpResponseMessage> ApproveAsync(HttpClient client, World world, string? body, string? tag = null)
     {
         using var request = new HttpRequestMessage(HttpMethod.Post, $"/api/v1/episodes/{world.EpisodeId}/story/approve");
         if (body is not null)
@@ -300,7 +300,7 @@ public sealed class ApproveStory_KeywordsFlaggedTests(TestDatabase database) : I
 
         request.Headers.TryAddWithoutValidation("If-Match", tag ?? StoryEtag.For(world.VersionId));
 
-        return client.SendAsync(request, Ct);
+        return await client.SendAsync(request, Ct);
     }
 
     private static async Task<ProblemResponse> ProblemAsync(HttpResponseMessage response) =>

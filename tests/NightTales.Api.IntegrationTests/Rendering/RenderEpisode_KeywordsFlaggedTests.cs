@@ -67,11 +67,12 @@ public sealed class RenderEpisode_KeywordsFlaggedTests(TestDatabase database) : 
     [Fact]
     public async Task Render_FactSheetGainedNameAfterApprove_Returns409()
     {
-        var world = await SeedAsync(Topic.TrueCrime, NamingKeyword, NamelessStatement, emptyKeywords: false);
+        var world = await SeedAsync(Topic.TrueCrime, NamingKeyword, NamelessStatement, emptyKeywords: false, reviewable: true);
         using var factory = Factory();
         using var client = factory.ClientFor(world.UserId);
 
-        // The approval sees a corpus without a single name run, so the story passes the lint (03 D10/CR-14).
+        // The approval runs the production chain over a corpus without a single name run, so the story passes
+        // the lint (03 D10/CR-14) and really reaches story_approved before the render below.
         using (var approved = await ApproveAsync(client, world))
         {
             approved.StatusCode.ShouldBe(HttpStatusCode.OK, await approved.Content.ReadAsStringAsync(Ct));
@@ -177,16 +178,20 @@ public sealed class RenderEpisode_KeywordsFlaggedTests(TestDatabase database) : 
             .WithSetting("Budget:MaxPlatformCostUsdPerMonth", "100000");
 
     /// <summary>
-    /// One owner, a series of <paramref name="topic"/> and an approved episode. With
-    /// <paramref name="factStatement"/> the episode carries two fetched sources and the approved fact sheet the
-    /// version is pinned to; <paramref name="emptyKeywords"/> stores a draft whose segments carry no keyword.
+    /// One owner, a series of <paramref name="topic"/> and an episode. With <paramref name="factStatement"/> the
+    /// episode carries two fetched sources and the approved fact sheet the version is pinned to;
+    /// <paramref name="emptyKeywords"/> stores a draft whose segments carry no keyword. The episode is seeded
+    /// already approved, unless <paramref name="reviewable"/> leaves it in <c>story_review</c> with its current
+    /// version pointer set, so a test's own approve call runs the production chain instead of the idempotent
+    /// replay of an already approved episode (02 D8 stage 1).
     /// </summary>
     /// <param name="topic">The series topic; only true crime builds a corpus.</param>
     /// <param name="paragraphKeyword">The second paragraph's keyword, the linter's input.</param>
     /// <param name="factStatement">The approved sheet's first statement, or null for no sheet at all.</param>
     /// <param name="emptyKeywords">Whether every segment's keyword list is empty.</param>
+    /// <param name="reviewable">Whether to leave the episode to be approved by the test rather than approving it here.</param>
     /// <returns>The seeded ids.</returns>
-    private async Task<World> SeedAsync(Topic topic, string paragraphKeyword, string? factStatement, bool emptyKeywords)
+    private async Task<World> SeedAsync(Topic topic, string paragraphKeyword, string? factStatement, bool emptyKeywords, bool reviewable = false)
     {
         var actor = new TestCurrentUser();
         var user = await new UserBuilder(Database, actor).CreateAsync(ct: Ct);
@@ -245,7 +250,9 @@ public sealed class RenderEpisode_KeywordsFlaggedTests(TestDatabase database) : 
 
         SqlProbe.Execute(
             Database,
-            $"UPDATE episodes SET status = 'story_approved', approved_story_version_id = '{version.Id}', approved_at = '{Start:O}' WHERE id = '{episode.Id}'");
+            reviewable
+                ? $"UPDATE episodes SET current_story_version_id = '{version.Id}' WHERE id = '{episode.Id}'"
+                : $"UPDATE episodes SET status = 'story_approved', approved_story_version_id = '{version.Id}', approved_at = '{Start:O}' WHERE id = '{episode.Id}'");
 
         return new World(user.Id, episode.Id, version.Id, sheetId, sources);
     }
