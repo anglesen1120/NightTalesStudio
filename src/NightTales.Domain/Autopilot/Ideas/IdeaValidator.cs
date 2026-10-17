@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text;
 using NightTales.Domain.Stories.Content;
 using NightTales.Domain.Stories.Structure;
 
@@ -287,30 +288,31 @@ public static class IdeaValidator
 
     /// <summary>
     /// Whether <paramref name="text"/> carries a character an idea field may not hold: a control character
-    /// (<see cref="char.IsControl(char)"/>), a line or paragraph separator (U+2028/U+2029), a Unicode format
+    /// (<see cref="Rune.IsControl(Rune)"/>), a line or paragraph separator (U+2028/U+2029), a Unicode format
     /// character (category <c>Cf</c>: zero-width spaces and joiners, bidi marks and overrides, the byte-order
-    /// mark, the soft hyphen) or an unpaired surrogate.
+    /// mark, the soft hyphen, the astral tag and musical-symbol characters) or an unpaired surrogate.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// Every <c>Cf</c> character is refused, the emoji zero-width joiner U+200D included: an idea is plain
-    /// narration prose, nothing downstream needs a joined emoji sequence, and a joiner or a bidi override that
+    /// narration prose, nothing downstream needs a joined emoji sequence, and a joiner or bidi override that
     /// survives into the prompt, the stored row or a review is invisible. Variation selectors are <c>Mn</c>
     /// (combining marks) and stay allowed, as do the combining diacritics NFD Vietnamese text carries.
+    /// </para>
+    /// <para>
+    /// The category rule walks <see cref="Rune"/> values, because <see cref="char"/> cannot see the category of
+    /// an astral character: the tag characters (U+E0001, U+E0020–U+E007F), the musical format controls
+    /// (U+1D173–U+1D17A) and the Egyptian format controls (U+13430–U+13438) are <c>Cf</c> above the BMP and
+    /// would pass a per-<see cref="char"/> scan. Lone surrogates are checked separately, at the <see cref="char"/>
+    /// level: <see cref="string.EnumerateRunes"/> yields U+FFFD for a malformed pair, so a rune loop alone could
+    /// not tell an unpaired surrogate from a literal U+FFFD the text really carried, which stays allowed.
+    /// </para>
     /// </remarks>
     private static bool HasUnprintable(string text)
     {
         for (var index = 0; index < text.Length; index++)
         {
-            var character = text[index];
-
-            if (char.IsControl(character)
-                || character is '\u2028' or '\u2029'
-                || CharUnicodeInfo.GetUnicodeCategory(character) == UnicodeCategory.Format)
-            {
-                return true;
-            }
-
-            if (char.IsHighSurrogate(character))
+            if (char.IsHighSurrogate(text[index]))
             {
                 if (index + 1 >= text.Length || !char.IsLowSurrogate(text[index + 1]))
                 {
@@ -319,7 +321,17 @@ public static class IdeaValidator
 
                 index++;
             }
-            else if (char.IsLowSurrogate(character))
+            else if (char.IsLowSurrogate(text[index]))
+            {
+                return true;
+            }
+        }
+
+        foreach (var rune in text.EnumerateRunes())
+        {
+            if (Rune.IsControl(rune)
+                || rune.Value is 0x2028 or 0x2029
+                || Rune.GetUnicodeCategory(rune) == UnicodeCategory.Format)
             {
                 return true;
             }
@@ -328,10 +340,13 @@ public static class IdeaValidator
         return false;
     }
 
-    /// <summary>Whether a structure value carries a URL: a scheme separator or a leading <c>www.</c>.</summary>
+    /// <summary>
+    /// Whether a structure value carries a URL: a scheme separator or a <c>www.</c> host anywhere in the value,
+    /// so a bare <c>see www.x.com</c> is refused as well as a leading <c>www.</c>.
+    /// </summary>
     private static bool HasUrl(string value) =>
         value.Contains("://", StringComparison.Ordinal)
-        || value.StartsWith("www.", StringComparison.OrdinalIgnoreCase);
+        || value.Contains("www.", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>The number of Unicode code points, which is what a Postgres <c>varchar</c> length counts.</summary>
     private static int CodePointCount(string text)

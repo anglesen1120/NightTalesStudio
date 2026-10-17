@@ -338,13 +338,14 @@ public sealed class IdeaValidatorTests
 
     /// <summary>
     /// Every character an idea field must refuse: C0/C1 controls (NUL, tab, LF, CR, DEL, NEL), the line and
-    /// paragraph separators, format characters (zero-width space and joiner, the right-to-left override, the
-    /// soft hyphen, the byte-order mark) and one lone high and one lone low surrogate.
+    /// paragraph separators, BMP format characters (zero-width space and joiner, the right-to-left override, the
+    /// soft hyphen, the byte-order mark), astral format characters (the language tag U+E0001 and the tag
+    /// character U+E0041) and one lone high and one lone low surrogate.
     /// </summary>
     private static readonly string[] Unprintable =
     [
         "\0", "\t", "\n", "\r", "\u007F", "\u0085", "\u2028", "\u2029", "\u00AD", "\u200B", "\u200D", "\u202E",
-        "\uFEFF", "\uD800", "\uDC00",
+        "\uFEFF", "\U000E0001", "\U000E0041", "\uD800", "\uDC00",
     ];
 
     /// <summary>The cross product of <see cref="CharacterFields"/> and <see cref="Unprintable"/>.</summary>
@@ -372,6 +373,7 @@ public sealed class IdeaValidatorTests
         {
             data.Add(field, "http://x", IdeaValidator.Url);
             data.Add(field, "www.x.com", IdeaValidator.Url);
+            data.Add(field, "see www.x.com", IdeaValidator.Url);
             data.Add(field, "<b>", IdeaValidator.AngleBracket);
             data.Add(field, "*x*", "*");
             data.Add(field, "#x", "#");
@@ -397,6 +399,7 @@ public sealed class IdeaValidatorTests
     [InlineData("\u0110e\u0302m \u0111i\u0323nh")] // NFD: combining diacritics (Mn) are allowed
     [InlineData("Đêm nay có ma \U0001F47B gõ cửa")] // an astral emoji, one valid surrogate pair
     [InlineData("Đêm nay \u2764\uFE0F gõ cửa")] // a variation selector (Mn) stays allowed
+    [InlineData("Đêm \uFFFD gõ cửa")] // a literal replacement character is text, not a malformed pair
     public void IdeaValidator_PrintableProse_ReturnsNoErrors(string title)
     {
         IdeaValidator.Validate(Candidate(title: title), Limits).ShouldBeEmpty();
