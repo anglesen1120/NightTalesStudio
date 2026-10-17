@@ -8,6 +8,7 @@ using NightTales.Application.Abstractions.Persistence;
 using NightTales.Application.Abstractions.Realtime;
 using NightTales.Application.Abstractions.Rendering;
 using NightTales.Application.Rendering;
+using NightTales.Domain.Common;
 using NightTales.Domain.Rendering;
 using NightTales.RenderNode.Contract;
 

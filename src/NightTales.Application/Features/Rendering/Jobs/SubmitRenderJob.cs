@@ -428,8 +428,8 @@ public sealed partial class SubmitRenderJob(
                 stylePromptVersion,
                 ImagePlanSummary.From(plan, stylePromptVersion),
                 stored.Subtitles,
-                stored.Music is { } music
-                    ? new MusicChoice(music.TrackId, track!.FileName, music.BgmVolume)
+                stored.Music is { } musicChoice
+                    ? new MusicChoice(musicChoice.TrackId, track!.FileName, musicChoice.BgmVolume)
                     : null,
                 stored.Music?.Attribution,
                 stored.ClipSeconds));

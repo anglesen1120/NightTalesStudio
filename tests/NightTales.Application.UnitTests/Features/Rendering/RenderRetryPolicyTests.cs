@@ -7,10 +7,12 @@ using NightTales.Application.Abstractions.Persistence;
 using NightTales.Application.Abstractions.Rendering;
 using NightTales.Application.Abstractions.Usage;
 using NightTales.Application.Features.Rendering;
+using NightTales.Application.Features.Stories;
 using NightTales.Application.Rendering;
 using NightTales.Application.Telemetry;
 using NightTales.Domain.Rendering;
 using NightTales.Domain.Rendering.Subtitles;
+using NightTales.Domain.Series;
 using NightTales.Domain.Stories;
 using NightTales.Domain.Stories.Content;
 using NightTales.Domain.Usage;
@@ -273,7 +275,7 @@ public sealed class RenderRetryPolicyTests(TestDatabase database) : IntegrationT
             "kokoro:test",
             Guid.CreateVersion7(),
             "style=test@0123abcd;neg=v1",
-            new ImagePlanSummary(3, 1, 2, 1, 0, [], ["paragraph:1"]),
+            new ImagePlanSummary(3, 1, 2, 1, 0, [], ["paragraph:1"], "style=test@0123abcd;neg=v1"),
             new SubtitlesParams(true, "landscape@1"),
             null,
             3));

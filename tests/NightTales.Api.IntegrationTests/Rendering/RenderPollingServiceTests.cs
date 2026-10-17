@@ -253,7 +253,7 @@ public sealed class RenderPollingServiceTests(TestDatabase database) : Integrati
             "kokoro:test",
             Guid.CreateVersion7(),
             "style=test@0123abcd;neg=v1",
-            new ImagePlanSummary(3, 1, 2, 1, 0, [], ["paragraph:1"]),
+            new ImagePlanSummary(3, 1, 2, 1, 0, [], ["paragraph:1"], "style=test@0123abcd;neg=v1"),
             new SubtitlesParams(true, "landscape@1"),
             null,
             3));

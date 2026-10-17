@@ -14,6 +14,7 @@ using NightTales.Application.Abstractions.Rendering;
 using NightTales.Application.Abstractions.Usage;
 using NightTales.Application.Common;
 using NightTales.Application.Features.Rendering.Jobs;
+using NightTales.Application.Features.Stories;
 using NightTales.Application.Rendering;
 using NightTales.Domain.Common;
 using NightTales.Domain.Episodes;
@@ -202,7 +203,7 @@ public sealed class SubmitRenderJobTests(TestDatabase database) : IntegrationTes
 
         worker.Jobs.Failures.ShouldBeEmpty("a deferred answer is never a failure");
         client.SubmitCalls.ShouldBe(1);
-        var reschedule = worker.Jobs.Enqueued.Last();
+        var reschedule = worker.Jobs.Enqueued[^1];
         reschedule.JobType.ShouldBe(nameof(SubmitRenderJob));
         reschedule.Delay.ShouldBe(retryAfter, "the adapter's own wait wins over the health cadence");
 
@@ -237,7 +238,7 @@ public sealed class SubmitRenderJobTests(TestDatabase database) : IntegrationTes
 
         worker.Jobs.Failures.ShouldBeEmpty();
         client.SubmitCalls.ShouldBe(1);
-        worker.Jobs.Enqueued.Last().Delay.ShouldBe(TimeSpan.FromSeconds(healthPoll));
+        worker.Jobs.Enqueued[^1].Delay.ShouldBe(TimeSpan.FromSeconds(healthPoll));
         SqlProbe.ScalarText(Database, $"SELECT status FROM render_jobs WHERE id = '{Id(jobId)}'").ShouldBe("queued");
 
         // The scheduled delivery runs on the health cadence; this time the node accepts.

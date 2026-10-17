@@ -10,8 +10,10 @@ using NightTales.Application.Abstractions.Rendering;
 using NightTales.Application.Abstractions.Usage;
 using NightTales.Application.Features.Rendering;
 using NightTales.Application.Features.Rendering.Jobs;
+using NightTales.Application.Features.Stories;
 using NightTales.Domain.Rendering;
 using NightTales.Domain.Rendering.Subtitles;
+using NightTales.Domain.Series;
 using NightTales.Domain.Stories;
 using NightTales.Domain.Stories.Content;
 using NightTales.Domain.Usage;
@@ -514,7 +516,7 @@ public sealed class PollRenderJobTests(TestDatabase database) : IntegrationTest(
         SqlProbe.ScalarText(Database, $"{select} FROM render_jobs WHERE id = '{world.RenderJobId}'");
 
     private bool ScalarBool(string select, World world) =>
-        bool.Parse(ScalarText(select, world), CultureInfo.InvariantCulture);
+        bool.Parse(ScalarText(select, world));
 
     private async Task<string> ScalarAsync(string sql) =>
         (await Database.QueryStringsAsync(sql, Ct)).Single();
@@ -542,7 +544,7 @@ public sealed class PollRenderJobTests(TestDatabase database) : IntegrationTest(
             "kokoro:test",
             Guid.CreateVersion7(),
             "style=test@0123abcd;neg=v1",
-            new ImagePlanSummary(3, 1, 2, 1, 0, [], ["paragraph:1"]),
+            new ImagePlanSummary(3, 1, 2, 1, 0, [], ["paragraph:1"], "style=test@0123abcd;neg=v1"),
             new SubtitlesParams(true, "landscape@1"),
             null,
             3));
@@ -660,7 +662,7 @@ public sealed class PollRenderJobTests(TestDatabase database) : IntegrationTest(
         {
             Refunds.Add((reservationId.Value, reason));
 
-            return ValueTask.FromResult(Result.Success);
+            return ValueTask.FromResult<ErrorOr<Success>>(Result.Success);
         }
     }
 }
