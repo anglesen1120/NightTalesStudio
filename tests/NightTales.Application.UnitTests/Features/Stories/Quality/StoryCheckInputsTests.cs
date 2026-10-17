@@ -2,7 +2,10 @@ using NightTales.Application.Features.Stories.Quality;
 using NightTales.Domain.Common;
 using NightTales.Domain.Episodes;
 using NightTales.Domain.Rendering.Images;
+using NightTales.Domain.Series;
 using NightTales.Domain.Stories.Content;
+using NightTales.Domain.Stories.Keywords;
+using NightTales.Domain.Stories.Quality;
 using Shouldly;
 using Xunit;
 
@@ -78,6 +81,40 @@ public sealed class StoryCheckInputsTests
 
         plan.Terms.ShouldBeEmpty();
         plan.HintCodes.ShouldContain(RenderImagePlanner.ScenesSparse);
+    }
+
+    [Fact]
+    public void PlanFor_TrimmedHint_ReachesTheStoredAuditIssuesAsAdvisory()
+    {
+        // AC4's chain below the wire: the edit path plans the draft, the checker turns the plan's hint code into an
+        // issue (Q-SCENE-01), and the D22 projection the handler persists stores it as an advisory row of
+        // audit_report.local.issues (EditStoryCommandHandler.BuildAuditReport serialises exactly this projection).
+        var draft = Draft(hookKeywords: 2, bodyKeywords: 6, endingKeywords: 2);
+        var plan = StoryCheckInputs.PlanFor(draft, Language.Vi, LengthTier.Short).ShouldNotBeNull();
+        plan.HintCodes.ShouldContain(RenderImagePlanner.ScenesTrimmed);
+
+        var rules = new StoryRules();
+        var report = new StoryQualityChecker().Check(
+            draft,
+            new StoryCheckContext(
+                Topic.Ghost,
+                LengthTier.Short,
+                rules.Length,
+                rules,
+                0,
+                [],
+                false,
+                null,
+                SimilarityVerdict.Pass,
+                null,
+                false,
+                plan,
+                NameCorpus.Empty));
+
+        var hint = report.ToAuditIssues().Single(issue => issue.Rule == StoryQualityChecker.ScenesTrimmed);
+        hint.Severity.ShouldBe("advisory");
+        hint.Kind.ShouldBe("objective");
+        hint.Segment.ShouldBe("meta");
     }
 
     /// <summary>A 60-token draft with the given keyword count in each of its three segments.</summary>

@@ -61,6 +61,15 @@ public sealed class ApproveStory_KeywordsFlaggedTests(TestDatabase database) : I
     /// <summary>A valid keyword with no name run, for the fiction case.</summary>
     private const string PlaceKeyword = "Da lat hillside market";
 
+    /// <summary>A valid keyword whose folded tokens repeat the statement's <c>nguyen van</c> run in the hook.</summary>
+    private const string HookNamingKeyword = "nguyen van by the river";
+
+    /// <summary>
+    /// A <c>content</c> document that parses as JSON but is not a <c>story.v1</c> draft (every required member is
+    /// missing), which is how a version written under an older schema reads.
+    /// </summary>
+    private const string UnreadableContent = """{"schema_version":"story.v1"}""";
+
     private static readonly DateTimeOffset Start = new(2026, 10, 17, 9, 0, 0, TimeSpan.Zero);
 
     private static CancellationToken Ct => TestContextToken.Value;
@@ -138,6 +147,85 @@ public sealed class ApproveStory_KeywordsFlaggedTests(TestDatabase database) : I
     }
 
     [Fact]
+    public async Task Approve_NameInHookAndParagraph_Returns409WithBothRowsInStoryOrder()
+    {
+        // Two flagged segments, one in the hook and one in the second paragraph. The rows must come back in the
+        // D22 story order the handler's Segments() builds (hook, p:0, p:1, ending) — the order the UI chips the
+        // scenes in — and never in corpus or alphabetical order.
+        var world = await SeedAsync(
+            Topic.TrueCrime, NamingKeyword, namingSheet: true, staleModeration: false, hookKeyword: HookNamingKeyword);
+        using var factory = Factory();
+        using var client = factory.ClientFor(world.UserId);
+        using var response = await ApproveAsync(client, world, Attestation);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.Conflict, await response.Content.ReadAsStringAsync(Ct));
+        var text = await response.Content.ReadAsStringAsync(Ct);
+        using var document = JsonDocument.Parse(text);
+        var flags = document.RootElement.GetProperty("errors").EnumerateArray().ToArray();
+
+        flags.Length.ShouldBe(2);
+        flags[0].GetProperty("segment").GetString().ShouldBe("hook");
+        flags[0].GetProperty("index").GetInt32().ShouldBe(0);
+        flags[0].GetProperty("rule").GetString().ShouldBe(RenderKeywordLinter.NameDetected);
+        flags[1].GetProperty("segment").GetString().ShouldBe("p:1");
+        flags[1].GetProperty("index").GetInt32().ShouldBe(0);
+        flags[1].GetProperty("rule").GetString().ShouldBe(RenderKeywordLinter.NameDetected);
+
+        // Two rows still carry no keyword, name or statement text (03 §8, 02 D19).
+        text.ShouldNotContain(HookNamingKeyword);
+        text.ShouldNotContain(NamingKeyword);
+        text.ShouldNotContain("nguyen");
+        text.ShouldNotContain(NamingStatement);
+        AssertNothingApproved(world);
+    }
+
+    [Fact]
+    public async Task Approve_SecondKeywordOfASegment_Returns409WithIndexOne()
+    {
+        // The row's index is the keyword's position inside its segment, read back from the linter's ;index:<i>
+        // Evidence carrier (03.2.2-T1 CR-18b). Every other fixture flags the first keyword of its segment, so a
+        // mapping that dropped the carrier and always wrote 0 would still pass them; this one cannot.
+        var world = await SeedAsync(
+            Topic.TrueCrime,
+            "lantern on the stair",
+            namingSheet: true,
+            staleModeration: false,
+            extraParagraphKeyword: NamingKeyword);
+        using var factory = Factory();
+        using var client = factory.ClientFor(world.UserId);
+        using var response = await ApproveAsync(client, world, Attestation);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.Conflict, await response.Content.ReadAsStringAsync(Ct));
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync(Ct));
+        var flags = document.RootElement.GetProperty("errors").EnumerateArray().ToArray();
+
+        flags.Length.ShouldBe(1);
+        flags[0].GetProperty("segment").GetString().ShouldBe("p:1");
+        flags[0].GetProperty("index").GetInt32().ShouldBe(1);
+        flags[0].GetProperty("rule").GetString().ShouldBe(RenderKeywordLinter.NameDetected);
+        AssertNothingApproved(world);
+    }
+
+    [Fact]
+    public async Task Approve_ContentUnreadable_Returns503_NotAnApproval()
+    {
+        // A version whose stored content is not readable as a story.v1 draft: the lint cannot be evaluated, so the
+        // handler fails closed. This is the case the keyword step introduces: without it the same request would
+        // have been approved from the body/title columns alone.
+        var world = await SeedAsync(Topic.Ghost, PlaceKeyword, namingSheet: false, staleModeration: false);
+        BreakStoredContent(world);
+        using var factory = Factory();
+        using var client = factory.ClientFor(world.UserId);
+        using var response = await ApproveAsync(client, world, Attestation);
+
+        response.StatusCode.ShouldBe(HttpStatusCode.ServiceUnavailable, await response.Content.ReadAsStringAsync(Ct));
+        var problem = await ProblemAsync(response);
+        problem.Code.ShouldBe("service_unavailable");
+        problem.Type.ShouldBe("https://nighttales.app/errors/service_unavailable");
+        AssertNothingApproved(world);
+    }
+
+    [Fact]
     public async Task Approve_NameCorpusLoadFails_Returns503()
     {
         var world = await SeedAsync(Topic.TrueCrime, NamingKeyword, namingSheet: true, staleModeration: false);
@@ -153,6 +241,13 @@ public sealed class ApproveStory_KeywordsFlaggedTests(TestDatabase database) : I
         problem.Type.ShouldBe("https://nighttales.app/errors/service_unavailable");
         AssertNothingApproved(world);
     }
+
+    /// <summary>Rewrites the version's stored content into a document that is JSON but not a <c>story.v1</c> draft.</summary>
+    /// <param name="world">The world whose version becomes unreadable.</param>
+    private void BreakStoredContent(World world) =>
+        SqlProbe.Execute(
+            Database,
+            $"UPDATE story_versions SET content = '{UnreadableContent}'::jsonb WHERE id = '{world.VersionId}'");
 
     private ApiFactory Factory(FakeContentModerator? moderator = null, INameCorpusProvider? corpus = null) =>
         new ApiFactory(Database, new FakeClock(Start))
@@ -182,8 +277,16 @@ public sealed class ApproveStory_KeywordsFlaggedTests(TestDatabase database) : I
     /// <param name="paragraphKeyword">The second paragraph's keyword, the linter's input.</param>
     /// <param name="namingSheet">Whether to seed the naming approved sheet and its two sources.</param>
     /// <param name="staleModeration">Whether the stored verdict needs a refresh (stage 7 would run).</param>
+    /// <param name="hookKeyword">The hook's keyword, which the linter reads first.</param>
+    /// <param name="extraParagraphKeyword">A second keyword for the same paragraph, so a flag can carry a non-zero index.</param>
     /// <returns>The seeded ids.</returns>
-    private async Task<World> SeedAsync(Topic topic, string paragraphKeyword, bool namingSheet, bool staleModeration)
+    private async Task<World> SeedAsync(
+        Topic topic,
+        string paragraphKeyword,
+        bool namingSheet,
+        bool staleModeration,
+        string hookKeyword = "quiet riverside morning",
+        string? extraParagraphKeyword = null)
     {
         var actor = new TestCurrentUser();
         var user = await new UserBuilder(Database, actor).CreateAsync(ct: Ct);
@@ -216,7 +319,7 @@ public sealed class ApproveStory_KeywordsFlaggedTests(TestDatabase database) : I
             similarity = 0m;
         }
 
-        var draft = Draft(paragraphKeyword);
+        var draft = Draft(paragraphKeyword, hookKeyword, extraParagraphKeyword);
         var version = StoryVersion.Create(
             user.Id,
             episode.Id,
@@ -276,19 +379,30 @@ public sealed class ApproveStory_KeywordsFlaggedTests(TestDatabase database) : I
     /// keyword carrying the name run the corpus stores.
     /// </summary>
     /// <param name="paragraphKeyword">The second paragraph's keyword.</param>
+    /// <param name="hookKeyword">The hook's keyword.</param>
+    /// <param name="extraParagraphKeyword">An optional second keyword after <paramref name="paragraphKeyword"/>.</param>
     /// <returns>The content document the version stores.</returns>
-    private static StoryContentV1 Draft(string paragraphKeyword) => new(
-        "The house by the river",
-        new StorySegmentV1("The night was quiet.", ["quiet riverside morning"], []),
-        [
-            new StorySegmentV1("A knock woke the narrator.", ["empty corridor at dawn"], [], "setup"),
-            new StorySegmentV1("Nobody stood outside.", [paragraphKeyword], [], "turn"),
-        ],
-        new StorySegmentV1("Cold morning light returned.", ["cold morning light"], []),
-        "A quiet true-crime story.",
-        ["case", "night"],
-        ["documentary"],
-        new StoryStructureV1("case", "old house", "a knock", "the narrator", "first_person"));
+    private static StoryContentV1 Draft(string paragraphKeyword, string hookKeyword, string? extraParagraphKeyword = null)
+    {
+        var turnKeywords = new List<string> { paragraphKeyword };
+        if (extraParagraphKeyword is not null)
+        {
+            turnKeywords.Add(extraParagraphKeyword);
+        }
+
+        return new StoryContentV1(
+            "The house by the river",
+            new StorySegmentV1("The night was quiet.", [hookKeyword], []),
+            [
+                new StorySegmentV1("A knock woke the narrator.", ["empty corridor at dawn"], [], "setup"),
+                new StorySegmentV1("Nobody stood outside.", turnKeywords, [], "turn"),
+            ],
+            new StorySegmentV1("Cold morning light returned.", ["cold morning light"], []),
+            "A quiet true-crime story.",
+            ["case", "night"],
+            ["documentary"],
+            new StoryStructureV1("case", "old house", "a knock", "the narrator", "first_person"));
+    }
 
     private static async Task<HttpResponseMessage> ApproveAsync(HttpClient client, World world, string? body, string? tag = null)
     {

@@ -2,9 +2,16 @@ using System.Net;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using ErrorOr;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using NightTales.Api.IntegrationTests.Harness;
+using NightTales.Api.IntegrationTests.Http;
 using NightTales.Api.IntegrationTests.Persistence;
 using NightTales.Api.IntegrationTests.StoryGeneration;
+using NightTales.Application.Abstractions.Money;
+using NightTales.Application.Abstractions.Rendering;
+using NightTales.Application.Abstractions.Usage;
 using NightTales.Application.Common.Errors;
 using NightTales.Application.Features.Stories;
 using NightTales.Domain.Catalog;
@@ -22,6 +29,7 @@ using NightTales.TestKit.Auth;
 using NightTales.TestKit.Builders;
 using NightTales.TestKit.Database;
 using NightTales.TestKit.Time;
+using Npgsql;
 using Shouldly;
 using Xunit;
 
@@ -68,7 +76,8 @@ public sealed class RenderEpisode_KeywordsFlaggedTests(TestDatabase database) : 
     public async Task Render_FactSheetGainedNameAfterApprove_Returns409()
     {
         var world = await SeedAsync(Topic.TrueCrime, NamingKeyword, NamelessStatement, emptyKeywords: false, reviewable: true);
-        using var factory = Factory();
+        var ledger = new RecordingLedger();
+        using var factory = Factory(ledger: ledger);
         using var client = factory.ClientFor(world.UserId);
 
         // The approval runs the production chain over a corpus without a single name run, so the story passes
@@ -95,13 +104,17 @@ public sealed class RenderEpisode_KeywordsFlaggedTests(TestDatabase database) : 
         flags[0].GetProperty("index").GetInt32().ShouldBe(0);
         flags[0].GetProperty("rule").GetString().ShouldBe(RenderKeywordLinter.NameDetected);
         AssertNothingRendered(world);
+
+        // The refusal sits before the reserve: the ledger was never asked (03.2.2 §1 step 3, AC2's "no reserve").
+        ledger.ReserveCalls.ShouldBe(0);
     }
 
     [Fact]
     public async Task Render_NoScenes_Returns409NoScenes()
     {
         var world = await SeedAsync(Topic.Ghost, CleanKeyword, factStatement: null, emptyKeywords: true);
-        using var factory = Factory();
+        var ledger = new RecordingLedger();
+        using var factory = Factory(ledger: ledger);
         using var client = factory.ClientFor(world.UserId);
 
         using var response = await RenderAsync(client, world.EpisodeId, Etag(world.EpisodeId), "render-no-scenes");
@@ -115,6 +128,7 @@ public sealed class RenderEpisode_KeywordsFlaggedTests(TestDatabase database) : 
         flags[0].GetProperty("index").GetInt32().ShouldBe(0);
         flags[0].GetProperty("rule").GetString().ShouldBe(RenderErrorRules.NoScenes);
         AssertNothingRendered(world);
+        ledger.ReserveCalls.ShouldBe(0);
     }
 
     [Fact]
@@ -172,10 +186,112 @@ public sealed class RenderEpisode_KeywordsFlaggedTests(TestDatabase database) : 
         text.ShouldNotContain(NamingStatement);
     }
 
-    private ApiFactory Factory() =>
+    [Fact]
+    public async Task Render_NameCorpusLoadFails_Returns503_NoRenderJob()
+    {
+        // The corpus read is the render's own precondition (03 D11): a transient failure must never be read as
+        // "nothing flagged". The episode keeps its approval, no job row and no reserve are written, and the answer
+        // is the documented 503 (09 README D5), not a 500 or a pass.
+        var world = await SeedAsync(Topic.TrueCrime, CleanKeyword, NamelessStatement, emptyKeywords: false);
+        using var factory = Factory(corpus: new UnavailableCorpusProvider());
+        using var client = factory.ClientFor(world.UserId);
+        using var response = await RenderAsync(client, world.EpisodeId, Etag(world.EpisodeId), "render-corpus-fails");
+
+        response.StatusCode.ShouldBe(HttpStatusCode.ServiceUnavailable, await response.Content.ReadAsStringAsync(Ct));
+        var problem = await ProblemAsync(response);
+        problem.Code.ShouldBe(ErrorCodes.ServiceUnavailable);
+        problem.Type.ShouldBe("https://nighttales.app/errors/service_unavailable");
+        AssertNothingRendered(world);
+    }
+
+    [Fact]
+    public async Task Render_ContentUnreadable_FailsClosedWithoutQueueing()
+    {
+        // A version whose stored content is JSON but not a story.v1 draft. StoryRenderInputProvider (09.6.1) throws
+        // on it, so the pipeline answers 500 internal_error rather than D5's 503 — QA finding F-1, pre-existing in
+        // the provider and out of this task's scope. The invariant this test pins is the fail-closed one: no
+        // render_jobs row, no outbox message and no reserve for a story the linter never saw.
+        var world = await SeedAsync(Topic.TrueCrime, CleanKeyword, NamelessStatement, emptyKeywords: false);
+        BreakStoredContent(world);
+        using var factory = Factory();
+        using var client = factory.ClientFor(world.UserId);
+        using var response = await RenderAsync(client, world.EpisodeId, Etag(world.EpisodeId), "render-unreadable");
+
+        response.StatusCode.ShouldBe(HttpStatusCode.InternalServerError, await response.Content.ReadAsStringAsync(Ct));
+        (await ProblemAsync(response)).Code.ShouldBe(ErrorCodes.InternalError);
+        AssertNothingRendered(world);
+    }
+
+    private ApiFactory Factory(ICreditLedger? ledger = null, INameCorpusProvider? corpus = null) =>
         new ApiFactory(Database, new FakeClock(Start))
             .WithSetting("Budget:MaxPlatformCostUsdPerDay", "1000")
-            .WithSetting("Budget:MaxPlatformCostUsdPerMonth", "100000");
+            .WithSetting("Budget:MaxPlatformCostUsdPerMonth", "100000")
+            .WithServices(services =>
+            {
+                if (ledger is not null)
+                {
+                    services.RemoveAll<ICreditLedger>();
+                    services.AddSingleton(ledger);
+                }
+
+                if (corpus is not null)
+                {
+                    services.RemoveAll<INameCorpusProvider>();
+                    services.AddSingleton(corpus);
+                }
+            });
+
+    /// <summary>Rewrites the version's stored content into a document that is JSON but not a <c>story.v1</c> draft.</summary>
+    /// <param name="world">The world whose version becomes unreadable.</param>
+    private void BreakStoredContent(World world) =>
+        SqlProbe.Execute(
+            Database,
+            $$"""UPDATE story_versions SET content = '{"schema_version":"story.v1"}'::jsonb WHERE id = '{{world.VersionId}}'""");
+
+    private static async Task<ProblemResponse> ProblemAsync(HttpResponseMessage response) =>
+        JsonSerializer.Deserialize<ProblemResponse>(await response.Content.ReadAsStringAsync(Ct), ProblemResponse.Options)!;
+
+    /// <summary>The corpus read of a database that answers with a transient failure (SQLSTATE 40P01).</summary>
+    private sealed class UnavailableCorpusProvider : INameCorpusProvider
+    {
+        /// <inheritdoc />
+        public ValueTask<NameCorpus> LoadAsync(Guid episodeId, CancellationToken ct)
+        {
+            ct.ThrowIfCancellationRequested();
+            throw new PostgresException("The name corpus read failed.", "ERROR", "ERROR", "40P01");
+        }
+    }
+
+    /// <summary>
+    /// A ledger that counts its reserves: the phase-P production ledger writes nothing (metering only), so a
+    /// queue refused before the reserve can only be shown by the port never being called.
+    /// </summary>
+    private sealed class RecordingLedger : ICreditLedger
+    {
+        /// <summary>How often the command reserved credits.</summary>
+        public int ReserveCalls { get; private set; }
+
+        /// <inheritdoc />
+        public ValueTask<ErrorOr<ReservationId>> ReserveAsync(
+            Guid userId,
+            CreditOperation op,
+            Guid referenceId,
+            UsageBound bound,
+            CancellationToken ct)
+        {
+            ct.ThrowIfCancellationRequested();
+            ReserveCalls++;
+            return ValueTask.FromResult<ErrorOr<ReservationId>>(new ReservationId(Guid.CreateVersion7()));
+        }
+
+        /// <inheritdoc />
+        public ValueTask<ErrorOr<Success>> SettleAsync(ReservationId reservationId, CancellationToken ct) =>
+            ValueTask.FromResult<ErrorOr<Success>>(Result.Success);
+
+        /// <inheritdoc />
+        public ValueTask<ErrorOr<Success>> RefundAsync(ReservationId reservationId, string reason, CancellationToken ct) =>
+            ValueTask.FromResult<ErrorOr<Success>>(Result.Success);
+    }
 
     /// <summary>
     /// One owner, a series of <paramref name="topic"/> and an episode. With <paramref name="factStatement"/> the

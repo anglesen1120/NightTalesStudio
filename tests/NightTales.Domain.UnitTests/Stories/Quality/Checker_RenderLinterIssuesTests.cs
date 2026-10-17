@@ -175,6 +175,55 @@ public sealed class Checker_RenderLinterIssuesTests
         }
     }
 
+    [Fact]
+    public void Checker_PartialDraftWithNullSegmentsAndNullKeywordLists_NeverThrows()
+    {
+        // An edited draft can arrive half-built (02.3.4-T1: the check never throws for a malformed draft): a null
+        // paragraph element, a null hook/ending segment and keyword lists that are null rather than empty. The name
+        // rule hands the linter an empty list for each of those and keeps linting the segment that does have
+        // keywords, so a null list can neither fault the check nor turn the rule off for the rest of the draft.
+        var draft = new StoryContentV1(
+            "A quiet night",
+            new StorySegmentV1(Prose(20, 1), null!, []),
+            [
+                null!,
+                new StorySegmentV1(Prose(60, 1000), ["portrait of van an at dawn"], []),
+                new StorySegmentV1(Prose(60, 1100), null!, []),
+            ],
+            new StorySegmentV1(Prose(20, 9000), null!, []),
+            "A short story.",
+            ["ghost"],
+            [],
+            new StoryStructureV1("sub", "setting", "opening", "twist", "first_person"));
+
+        var report = Should.NotThrow(() => Checker.Check(draft, Context(CaseCorpus)));
+
+        // The one segment whose keyword list is a list is still linted; the null ones contribute no issue and no
+        // exception, and the address the surviving issue carries is the segment's own (p:1).
+        var issue = report.Issues.Single(candidate => candidate.RuleId == StoryQualityChecker.KeywordNameDetected);
+        issue.Segment.ShouldBe("p:1");
+        issue.Severity.ShouldBe(QualitySeverity.Blocking);
+    }
+
+    [Fact]
+    public void Checker_KeywordFailingTheAlphabetRule_IsNotNameFlagged()
+    {
+        // 03.2.2-T1 S4 and 03.2.2-T2's hand-over note: the corpus check is deferred for a keyword that already fails
+        // R2, because such a keyword must be rewritten anyway (the validator refuses to save it). So a name run
+        // spelled with Vietnamese diacritics raises no Q-KW-05 here — a reader must not see a name blocker for a
+        // keyword the save path rejects with its own 02 issue.
+        var draft = Draft(
+            ["old lantern in fog"],
+            ["dusty attic with trunk"],
+            ["nguyễn văn an lúc bình minh"],
+            ["quiet chapel at dawn"],
+            ["broken bridge in rain"]);
+
+        var report = Checker.Check(draft, Context(CaseCorpus));
+
+        report.Issues.ShouldNotContain(issue => issue.RuleId == StoryQualityChecker.KeywordNameDetected);
+    }
+
     // ---- fixtures ----
 
     /// <summary>
