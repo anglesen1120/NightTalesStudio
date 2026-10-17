@@ -30,9 +30,11 @@ public sealed class SimilarityPerfTests
             source.Text.Length.ShouldBe(CorpusChars);
         }
 
-        var options = SimilarityOptions.For(Language.Vi, new SimilaritySettings());
-        options.N.ShouldBe(10);
-        var (budgetMs, budgetSource) = ReadBudget();
+        var (budgetMs, configuredN, budgetSource) = ReadBudget();
+        var settings = new SimilaritySettings();
+        settings.N["vi"] = configuredN;
+        var options = SimilarityOptions.For(Language.Vi, settings);
+        options.N.ShouldBe(configuredN);
         SimilarityResult? result = null;
         for (var run = 0; run < 3; run++)
         {
@@ -146,7 +148,7 @@ public sealed class SimilarityPerfTests
         }
     }
 
-    private static (int BudgetMs, string Source) ReadBudget()
+    private static (int BudgetMs, int ViN, string Source) ReadBudget()
     {
         var directory = new DirectoryInfo(AppContext.BaseDirectory);
         while (!File.Exists(Path.Combine(directory.FullName, "NightTales.sln")))
@@ -159,13 +161,18 @@ public sealed class SimilarityPerfTests
         using var document = JsonDocument.Parse(
             stream,
             new JsonDocumentOptions { CommentHandling = JsonCommentHandling.Skip, AllowTrailingCommas = true });
-        if (document.RootElement.TryGetProperty("Similarity", out var similarity)
-            && similarity.TryGetProperty("Perf", out var perf)
-            && perf.TryGetProperty("BudgetMs", out var budget))
+        var defaults = new SimilaritySettings();
+        if (!document.RootElement.TryGetProperty("Similarity", out var similarity))
         {
-            return (budget.GetInt32(), "appsettings");
+            return (defaults.Perf.BudgetMs, defaults.N["vi"], "default_missing_key");
         }
 
-        return (new SimilaritySettings().Perf.BudgetMs, "default_missing_key");
+        // The budget is only meaningful at the n production runs with, so n comes from the same file (02.5.6-T2).
+        var viN = similarity.TryGetProperty("N", out var nSection) && nSection.TryGetProperty("vi", out var vi)
+            ? vi.GetInt32()
+            : defaults.N["vi"];
+        return similarity.TryGetProperty("Perf", out var perf) && perf.TryGetProperty("BudgetMs", out var budget)
+            ? (budget.GetInt32(), viN, "appsettings")
+            : (defaults.Perf.BudgetMs, viN, "default_missing_key");
     }
 }

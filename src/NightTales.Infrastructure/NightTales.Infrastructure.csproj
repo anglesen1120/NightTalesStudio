@@ -88,5 +88,6 @@
   -->
   <ItemGroup>
     <EmbeddedResource Include="../../prompts/**" LinkBase="Prompts" WithCulture="false" />
+    <EmbeddedResource Remove="../../prompts/fixtures/similarity/**" />
   </ItemGroup>
 </Project>
