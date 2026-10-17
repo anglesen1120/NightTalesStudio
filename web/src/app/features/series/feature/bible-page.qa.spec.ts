@@ -22,6 +22,7 @@ import {
   BIBLE_PROPOSAL_GONE,
   BIBLE_SERIES_ID,
   FakeBibleRepository,
+  NETWORK_ERROR,
   bible,
   bibleContent,
   bibleProposal,
@@ -292,6 +293,40 @@ describe('BiblePage (QA form boundaries)', () => {
     expect(component.form()?.dirty).toBe(true);
     expect(component.store.proposal()).toBeNull();
     expect(confirm).not.toHaveBeenCalled();
+  });
+
+  it('keeps new edits after a save refetch fails and dismiss refetches equivalent optional fields', async () => {
+    const repo = new FakeBibleRepository();
+    repo.getResult = { ok: true, value: bible({ proposal: bibleProposal(), content: bibleContent({ recurringCharacters: [{ name: 'Lan', description: 'Neighbour' }], places: [], rules: [], episodeSummaries: [] }) }) };
+    const { component, fixture, root } = await setup(repo);
+    controlOf(component, 'narrator.name').setValue('Saved narrator');
+    await settleDirty(fixture);
+    repo.scriptGet(() => Promise.resolve({ ok: false, error: NETWORK_ERROR }));
+
+    await component.save();
+    await fixture.whenStable();
+
+    expect(repo.saveCalls).toHaveLength(1);
+    expect(repo.getCalls).toHaveLength(2);
+    expect(component.saved()).toBe(true);
+    expect(component.dirty()).toBe(false);
+    const committed = repo.saveCalls[0]!.content;
+    expect(committed.recurringCharacters[0]).not.toHaveProperty('id');
+    expect(committed.recurringCharacters[0]).not.toHaveProperty('firstEpisodeId');
+    const input = root.querySelector<HTMLInputElement>('fieldset.narrator input')!;
+    input.value = 'New unsaved narrator';
+    input.dispatchEvent(new Event('input'));
+    await settleDirty(fixture);
+    repo.getResult = { ok: true, value: bible({ version: 2, etag: '"sb-2"', content: { ...committed, recurringCharacters: committed.recurringCharacters.map(row => ({ ...row, id: undefined, firstEpisodeId: undefined })) } }) };
+
+    await component.dismissProposal();
+    await fixture.whenStable();
+
+    expect(repo.dismissCalls).toEqual([BIBLE_SERIES_ID]);
+    expect(repo.getCalls).toHaveLength(3);
+    expect(controlOf(component, 'narrator.name').value).toBe('New unsaved narrator');
+    expect(component.dirty()).toBe(true);
+    expect(component.form()?.dirty).toBe(true);
   });
 
   it('keeps edits after a confirmed accept returns 409 and refetches unchanged content', async () => {

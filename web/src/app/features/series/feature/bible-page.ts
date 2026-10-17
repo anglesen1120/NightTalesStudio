@@ -24,14 +24,14 @@ type BibleForm = FormGroup<{ narrator: FormGroup<NarratorControls>; recurringCha
 interface FieldIssue { readonly pointer: string; readonly labelKey: string; readonly messageKey: string }
 const noAngleBrackets: ValidatorFn = (control: AbstractControl): ValidationErrors | null => typeof control.value === 'string' && /[<>]/.test(control.value) ? { angleBrackets: true } : null;
 
-/** Compare the JSON content, not mapper object identity or object-key insertion order. */
+/** Compare JSON content independent of object-key order; omitted and undefined-valued keys are equivalent. */
 function sameContent(left: unknown, right: unknown): boolean {
   if (left === right) return true;
   if (left === null || right === null || typeof left !== 'object' || typeof right !== 'object' || Array.isArray(left) !== Array.isArray(right)) return false;
   const before = left as Record<string, unknown>;
   const after = right as Record<string, unknown>;
-  const keys = Object.keys(before);
-  return keys.length === Object.keys(after).length && keys.every(key => Object.hasOwn(after, key) && sameContent(before[key], after[key]));
+  const keys = Object.keys(before).filter(key => before[key] !== undefined);
+  return keys.length === Object.keys(after).filter(key => after[key] !== undefined).length && keys.every(key => Object.hasOwn(after, key) && sameContent(before[key], after[key]));
 }
 
 @Component({
