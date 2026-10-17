@@ -14,7 +14,9 @@ namespace NightTales.Infrastructure.Autopilot;
 /// <summary>
 /// The worst-case price of one idea-generation call (02 README D1/D14/T56, 02.8.1-T1 plan §7.1): the one paid
 /// call at its own <c>max_output_tokens</c> from the run's price version, at that version's model rates with the
-/// long-context surcharge.
+/// long-context surcharge. 02.8.1-T2 adds <see cref="NoveltyWorstCaseAsync"/>, the same bound for the
+/// <c>novelty</c> judge call, priced with <c>OpenAi:Models:Novelty</c> and capped by
+/// <c>limits.novelty.max_output_tokens</c>.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -123,6 +125,85 @@ public sealed class IdeaCostEstimator(
         return new UsageBound(cost, input, maxOutput);
     }
 
+    /// <summary>The worst-case bound of one idea-novelty judge call of <paramref name="priceVersion"/>.</summary>
+    /// <remarks>
+    /// The same shape as <see cref="WorstCaseAsync"/>, for the <c>novelty</c> step of the same run (02.8.1-T2):
+    /// the judge's system prompt is the incoming prefix, the data object is bounded by
+    /// <c>Story:Prompt:MaxDataObjectBytes</c>, and the output ceiling is the version's own
+    /// <c>limits.novelty.max_output_tokens</c>. The model it is priced with is <c>OpenAi:Models:Novelty</c>,
+    /// because the judge call's model is the adapter's novel step key, not the generation step's.
+    /// </remarks>
+    /// <param name="priceVersion">The run's <c>price_versions.version</c> as text (<c>RunContext.PriceVersion</c>).</param>
+    /// <param name="ct">Cancels the lookup.</param>
+    /// <returns>
+    /// The bound, or <c>price_catalog_empty</c> when the run names no usable version and <c>prompt_not_shipped</c>
+    /// when the release does not carry the novelty step prompt (the call is not dispatched either way).
+    /// </returns>
+    public async Task<ErrorOr<UsageBound>> NoveltyWorstCaseAsync(string priceVersion, CancellationToken ct)
+    {
+        if (!int.TryParse(priceVersion, NumberStyles.None, CultureInfo.InvariantCulture, out var number) || number <= 0)
+        {
+            return Error.Failure(
+                ErrorCodes.PriceCatalogEmpty,
+                "The run names no price version, so the novelty call has neither rates nor its ruled output ceiling.");
+        }
+
+        PriceVersion version;
+        try
+        {
+            version = await prices.GetAsync(number, ct).ConfigureAwait(false);
+        }
+        catch (KeyNotFoundException)
+        {
+            return Error.Failure(
+                ErrorCodes.PriceCatalogEmpty,
+                "The run's price version does not exist, so the novelty call has neither rates nor its ruled output ceiling.");
+        }
+
+        int promptChars;
+        try
+        {
+            promptChars = prompts.GetStepPrompt(PromptStep.Novelty).Length;
+        }
+        catch (PromptCatalogException exception)
+        {
+            return Error.Failure(ErrorCodes.PromptNotShipped, exception.Message);
+        }
+
+        var rates = version.ParseRates();
+        var limits = version.ParseLimits();
+
+        var maxDataObjectBytes = configuration.GetValue(
+            PromptDataBudget.ConfigurationKey,
+            PromptDataBudget.DefaultMaxDataObjectBytes);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxDataObjectBytes);
+        var inputBytes = (BytesPerChar * promptChars) + maxDataObjectBytes;
+        var input = (int)((inputBytes + BytesPerEstimatedToken - 1) / BytesPerEstimatedToken);
+        var maxOutput = limits.NoveltyMaxOutput;
+        if (maxOutput <= 0)
+        {
+            // A stored row with a zero cap would send max_output_tokens = 0: fail closed, never call.
+            throw new InvalidOperationException("The price version's 'novelty.max_output_tokens' must be positive.");
+        }
+
+        var cost = TextCostCalculator.Compute(
+            rates.RatesFor(NoveltyModel),
+            input,
+            0,
+            input,
+            maxOutput,
+            rates.SurchargeThresholdTokens)
+            ?? throw new InvalidOperationException("The calculator returned no cost for a bounded call.");
+
+        return new UsageBound(cost, input, maxOutput);
+    }
+
     /// <summary>The configured model of the step, with the adapter's absent-key default.</summary>
     public string Model => configuration[ModelKey] is { Length: > 0 } model ? model : DefaultModel;
+
+    /// <summary>Where the novelty step's model is configured, with the adapter's own spelling.</summary>
+    public static string NoveltyModelKey => $"OpenAi:Models:{TextStep.Novelty}";
+
+    /// <summary>The configured model of the novelty step, with the adapter's absent-key default.</summary>
+    public string NoveltyModel => configuration[NoveltyModelKey] is { Length: > 0 } model ? model : DefaultModel;
 }

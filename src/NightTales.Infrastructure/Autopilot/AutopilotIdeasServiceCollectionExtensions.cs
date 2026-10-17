@@ -10,7 +10,8 @@ namespace NightTales.Infrastructure.Autopilot;
 /// <summary>
 /// Registers what the idea-generation step needs from Infrastructure (02.8.1-T1 plan §7.1): the
 /// <c>Autopilot:Ideas</c> section bound and validated on start, the Domain limits record and the Application's
-/// planner options as plain singletons, and the scoped context/history readers.
+/// planner options as plain singletons, and the scoped context/history readers. 02.8.1-T2 adds the same for
+/// <c>Autopilot:Ideas:{Novelty,Weights,Policy}</c>, the corpus reader and the two Application checkers.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -52,6 +53,38 @@ public static class AutopilotIdeasServiceCollectionExtensions
 
         services.TryAddScoped<IIdeaContextProvider, IdeaContextProvider>();
         services.TryAddScoped<IEpisodeStructureHistory, EpisodeStructureHistory>();
+
+        // 02.8.1-T2: the novelty thresholds with the corpus cap, the pick weights and the content-policy
+        // pre-check. Three more sections of the same feature, each validated on start for the same reason as the
+        // count above: an impossible threshold or weight would silently decide every pick of a paid run.
+        services.AddOptions<IdeaNoveltyOptions>()
+            .BindConfiguration(IdeaNoveltyOptions.SectionName)
+            .ValidateOnStart();
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IValidateOptions<IdeaNoveltyOptions>, IdeaNoveltyOptionsValidator>());
+
+        services.AddOptions<IdeaPolicyOptions>()
+            .BindConfiguration(IdeaPolicyOptions.SectionName)
+            .ValidateOnStart();
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IValidateOptions<IdeaPolicyOptions>, IdeaPolicyOptionsValidator>());
+
+        services.AddOptions<IdeaWeights>()
+            .BindConfiguration(IdeaWeightsValidator.SectionName)
+            .ValidateOnStart();
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<IValidateOptions<IdeaWeights>, IdeaWeightsValidator>());
+
+        // The Application checkers take the plain values, exactly like the planner options above, because
+        // Application cannot reference Infrastructure's options types; the corpus reader is scoped with the read
+        // model it queries, and the two checkers are scoped with the planner that drives them.
+        services.TryAddSingleton(provider => provider.GetRequiredService<IOptions<IdeaNoveltyOptions>>().Value);
+        services.TryAddSingleton(provider => provider.GetRequiredService<IOptions<IdeaPolicyOptions>>().Value);
+        services.TryAddSingleton(provider => provider.GetRequiredService<IOptions<IdeaWeights>>().Value);
+
+        services.TryAddScoped<IIdeaCorpusProvider, IdeaCorpusProvider>();
+        services.TryAddScoped<IIdeaNoveltyChecker, IdeaNoveltyChecker>();
+        services.TryAddScoped<IIdeaPolicyChecker, IdeaPolicyChecker>();
 
         return services;
     }

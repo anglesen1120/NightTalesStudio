@@ -11,6 +11,7 @@ using NightTales.Domain.Autopilot.Ideas;
 using NightTales.Domain.Common;
 using NightTales.Domain.Compliance;
 using NightTales.Domain.Series;
+using NightTales.Domain.Stories.Similarity;
 
 namespace NightTales.Application.Features.Autopilot.Ideas;
 
@@ -64,6 +65,12 @@ namespace NightTales.Application.Features.Autopilot.Ideas;
 /// <param name="budgetGuard">The platform spend cap, re-checked before the run's second paid dispatch (D1: "before every paid dispatch").</param>
 /// <param name="costEstimator">The worst case of one ideas call: the bound the retry's re-check is made with.</param>
 /// <param name="moderationEvents">The one writer of <c>moderation_events</c> (D12): a refusal on this run writes one row.</param>
+/// <param name="corpusProvider">Reads the series' approved episodes and pending ideas, the batch's own new rows excluded (02.8.1-T2).</param>
+/// <param name="noveltyChecker">The lexical pass and the batch's one judge call (02.8.1-T2).</param>
+/// <param name="policyChecker">The banned-theme, moderation and framing pre-check (02.8.1-T2).</param>
+/// <param name="noveltyOptions">The novelty thresholds and corpus bound (<c>Autopilot:Ideas:Novelty</c>).</param>
+/// <param name="policyOptions">The policy switches and keyword data (<c>Autopilot:Ideas:Policy</c>).</param>
+/// <param name="weights">The score's weights (<c>Autopilot:Ideas:Weights</c>): the ranking the pick comes from.</param>
 /// <param name="limits">The configured field limits <see cref="IdeaValidator"/> enforces.</param>
 /// <param name="options">The configured batch size and its ceiling (<c>Autopilot:Ideas</c>).</param>
 /// <param name="metrics">The feature's instruments: what happened to each candidate of the batch.</param>
@@ -76,6 +83,12 @@ public sealed partial class IdeaPlanner(
     IBudgetGuard budgetGuard,
     IIdeaCostEstimator costEstimator,
     IModerationEventWriter moderationEvents,
+    IIdeaCorpusProvider corpusProvider,
+    IIdeaNoveltyChecker noveltyChecker,
+    IIdeaPolicyChecker policyChecker,
+    IdeaNoveltyOptions noveltyOptions,
+    IdeaPolicyOptions policyOptions,
+    IdeaWeights weights,
     IdeaLimits limits,
     IdeaPlannerOptions options,
     IdeaMetrics metrics,
@@ -89,40 +102,10 @@ public sealed partial class IdeaPlanner(
         JsonNamingPolicy.SnakeCaseLower.ConvertName(nameof(Topic.TrueCrime));
 
     /// <summary>
-    /// The score and the similarity 02.8.1-T1 answers: the conservative placeholder of a batch nothing has scored
-    /// yet. 02.8.1-T2 replaces both with the weighted score and <c>max(lexical, judge)</c>.
+    /// The variety penalty 02.8.1-T2 passes (task Decision 2): 02.8.4-T1's guard computes the real one between
+    /// the policy pre-check and the scoring, and until it is wired the penalty is neutral.
     /// </summary>
-    private const decimal Unscored = 0m;
-
-    /// <summary>The write budget of the refusal evidence, which must survive a caller that gave up (class 3).</summary>
-    private static readonly TimeSpan ModerationWriteTimeout = TimeSpan.FromSeconds(30);
-
-    /// <summary>The failure detail of a provider that answered 5xx or timed out past its retry budget.</summary>
-    private const string DetailProviderUnavailable = "provider_unavailable";
-
-    /// <summary>The failure detail of a provider that refused the request with a non-retryable status.</summary>
-    private const string DetailProviderError = "provider_error";
-
-    /// <summary>The failure detail of a provider that failed before its call was dispatched.</summary>
-    private const string DetailUnexpected = "unexpected_error";
-
-    /// <summary>The failure detail of a provider that refused or filtered the call (D12's refusal).</summary>
-    private const string DetailProviderRefused = "provider_refused";
-
-    /// <summary>The failure detail of a provider account with no funds left (never metered, D7).</summary>
-    private const string DetailFundsExhausted = "funds_exhausted";
-
-    /// <summary>The failure detail of a second output the schema or the validator refused.</summary>
-    private const string DetailInvalidOutputTwice = "invalid_output_twice";
-
-    /// <summary>The failure detail of an output cut short by the ruled <c>max_output_tokens</c> (no retry: D7).</summary>
-    private const string DetailInvalidOutputMaxTokens = "invalid_output_max_tokens";
-
-    /// <summary>The failure detail of a retry the platform spend cap refused before dispatch (D1).</summary>
-    private const string DetailSpendCapReached = "spend_cap_reached";
-
-    /// <summary>The failure detail of a text-call outcome this table does not name (D7's unmodelled failure).</summary>
-    private const string DetailUnmappedOutcome = "unmapped_outcome";
+    private const decimal VarietyPenalty = 0m;
 
     /// <inheritdoc />
     public async ValueTask<ErrorOr<IdeaPick>> ProposeAndPickAsync(
@@ -191,11 +174,122 @@ public sealed partial class IdeaPlanner(
             return IdeaErrors.InvalidOutput;
         }
 
+        // The batch's rows are created BEFORE the corpus is read, because their ids are what the corpus must
+        // exclude: they are `proposed` rows of this very run, and a corpus that carried them would make every
+        // candidate its own closest neighbour. They join the context only at the end, so a run that stops here
+        // stores nothing.
         var ideas = new List<EpisodeIdea>(survivors.Count);
+        var slots = new List<(Guid IdeaId, IdeaCandidate Candidate)>(survivors.Count);
         foreach (var candidate in survivors)
         {
-            ideas.Add(EpisodeIdea.CreateProposed(seriesId, run.UserId, run.GenerationRunId, candidate, clock));
+            var idea = EpisodeIdea.CreateProposed(seriesId, run.UserId, run.GenerationRunId, candidate, clock);
+            ideas.Add(idea);
+            slots.Add((idea.Id, candidate));
         }
+
+        var corpus = await corpusProvider
+            .GetAsync(seriesId, [.. ideas.Select(idea => idea.Id)], ct)
+            .ConfigureAwait(false);
+
+        var measured = await noveltyChecker
+            .CheckAsync(slots, corpus, context.Language, context.Topic, run, ct)
+            .ConfigureAwait(false);
+        if (measured.IsError)
+        {
+            return measured.Errors;
+        }
+
+        var verdicts = await policyChecker
+            .CheckAsync(slots, new IdeaPolicyContext(context.Topic, context.BannedThemes), run, ct)
+            .ConfigureAwait(false);
+
+        // The seam 02.8.4-T1 plugs into: novelty, then the policy pre-check, then the variety penalty, then the
+        // score. Every candidate of the batch is scored and stored, rejected or not, because the run log shows
+        // the whole pool and the calibration histograms need the readings of the ones that lost.
+        var novelty = measured.Value.ByIdeaId;
+        var signals = new IdeaSignals[slots.Count];
+        var details = new IdeaNoveltyDetail[slots.Count];
+        var scores = new decimal[slots.Count];
+        var reasons = new string?[slots.Count];
+        var eligible = new decimal?[slots.Count];
+        var research = new bool[slots.Count];
+
+        for (var index = 0; index < slots.Count; index++)
+        {
+            var signal = novelty[slots[index].IdeaId];
+            var verdict = verdicts.ByIdeaId[slots[index].IdeaId];
+            var judge = signal.Judge;
+
+            signals[index] = judge is null
+                ? IdeaSignals.LexicalOnly(signal.LexicalScore, VarietyPenalty)
+                : new IdeaSignals(signal.LexicalScore, judge.Score, judge.Fit, judge.HookStrength, VarietyPenalty);
+            details[index] = new IdeaNoveltyDetail(
+                new IdeaNoveltyLexical(
+                    signal.LexicalScore,
+                    OverlapKind(signal.LexicalOverlapId, corpus),
+                    signal.LexicalOverlapId),
+                judge is null
+                    ? null
+                    : new IdeaNoveltyJudge(
+                        judge.Score,
+                        judge.Fit,
+                        judge.HookStrength,
+                        judge.Reason,
+                        judge.MaxOverlapEpisodeId),
+                new IdeaNoveltyCorpus(
+                    corpus.Episodes.Count,
+                    corpus.PendingIdeas.Count,
+                    SimilarityOptions.NFor(context.Language)));
+            research[index] = verdict.RequiresResearch;
+            scores[index] = IdeaScorer.Score(signals[index], weights);
+
+            // The two raw readings decide the rejection, never the weighted score: the lexical ceiling first (it
+            // is free and it is what the whole batch shares), then the judge's own score, then the policy's
+            // verdict. A candidate that survives all three is eligible for the pick.
+            reasons[index] = signal.LexicalScore > noveltyOptions.EffectiveLexicalMax
+                ? IdeaRejectionReason.NoveltyLexical
+                : judge is not null && judge.Score > noveltyOptions.EffectiveJudgeMax
+                    ? IdeaRejectionReason.NoveltyJudge
+                    : verdict.RejectReason;
+            eligible[index] = reasons[index] is null ? scores[index] : null;
+        }
+
+        var winner = IdeaScorer.PickIndex(eligible);
+        if (winner is null)
+        {
+            // Every candidate was rejected by a rule, so the run has no idea to offer. The most common reason
+            // travels with the error (deterministic: highest count, then alphabetical) so 02.8.3 records and
+            // alerts on a code rather than on nothing. Nothing is stored: a run that picked no idea has no pool
+            // to show, which is what the run log answers for it.
+            var reason = IdeaRejectionSummary.MostCommon(reasons)!;
+            LogNoIdea(run.GenerationRunId, seriesId, survivors.Count, reason);
+            metrics.Candidates(reason, survivors.Count);
+
+            return IdeaErrors.NoIdea(reason);
+        }
+
+        for (var index = 0; index < ideas.Count; index++)
+        {
+            // Every row keeps its measurements, whatever its status: the components the pick was ranked on and
+            // the novelty document the calibration reader opens.
+            ideas[index].SetSignals(scores[index], Similarity(signals[index]), details[index], clock);
+        }
+
+        foreach (var pair in reasons.Select((reason, index) => (Reason: reason, Index: index)))
+        {
+            if (pair.Index == winner.Value)
+            {
+                ideas[pair.Index].MarkPicked(scores[pair.Index], clock);
+                continue;
+            }
+
+            // A candidate that broke no rule lost the ranking: `not_best` is the reason the run log shows for it.
+            var reason = pair.Reason ?? IdeaRejectionReason.NotBest;
+            ideas[pair.Index].MarkRejected(reason, clock);
+            metrics.Candidates(reason, 1);
+        }
+
+        metrics.Candidates(IdeaMetrics.PickedOutcome, 1);
 
         db.EpisodeIdeas.AddRange(ideas);
 
@@ -204,33 +298,61 @@ public sealed partial class IdeaPlanner(
         // open transaction and is this step's only unit of work.
         await db.SaveChangesAsync(ct).ConfigureAwait(false);
 
-        metrics.Candidates(IdeaMetrics.ProposedOutcome, ideas.Count);
-        metrics.Candidates(IdeaMetrics.PickedOutcome, 1);
-
-        // T1's pick: the first valid candidate, unscored (plan §4 U1 step 10 has the pick before 02.8.1-T2's
-        // ranking exists). The row's own status stays `proposed`: only the scoring step picks a row.
+        var picked = survivors[winner.Value];
         var pick = new IdeaPick(
-            ideas[0].Id,
-            survivors[0].Title,
-            survivors[0].Logline,
-            survivors[0].Hook,
-            survivors[0].Setting,
-            survivors[0].Structure,
-            RequiresResearch: string.Equals(context.Topic, TrueCrimeTopic, StringComparison.Ordinal),
-            Score: Unscored,
-            Similarity: Unscored);
+            ideas[winner.Value].Id,
+            picked.Title,
+            picked.Logline,
+            picked.Hook,
+            picked.Setting,
+            picked.Structure,
+            // T1's topic rule stays (IDEA-S52-6) and the framing the pre-check measured joins it: a true-crime
+            // series always needs research, whatever the idea says.
+            RequiresResearch: research[winner.Value]
+                || string.Equals(context.Topic, TrueCrimeTopic, StringComparison.Ordinal),
+            Score: scores[winner.Value],
+            Similarity: Similarity(signals[winner.Value]));
 
         LogPicked(run.GenerationRunId, seriesId, pick.IdeaId, survivors.Count, batch.Count);
 
         return pick;
     }
 
+    /// <summary>
+    /// The similarity the run log shows: the larger of the two raw readings, which is the reading the stricter
+    /// threshold answers to (plan §3.4, task Design "Novelty").
+    /// </summary>
+    /// <param name="signals">The candidate's measured signals.</param>
+    /// <returns><c>max(lexical, judge)</c>, 0…1.</returns>
+    private static decimal Similarity(IdeaSignals signals) =>
+        Math.Max(signals.LexicalScore, signals.JudgeScore);
+
+    /// <summary>
+    /// The corpus kind of the row the lexical pass named, as the stored document reports it: an approved episode
+    /// or a pending idea of the same series.
+    /// </summary>
+    /// <param name="overlapId">The corpus row's id, or <see langword="null"/> when nothing overlapped.</param>
+    /// <param name="corpus">The corpus that was measured.</param>
+    /// <returns><c>episode</c>, <c>pending_idea</c>, or <see langword="null"/>.</returns>
+    private static string? OverlapKind(Guid? overlapId, NoveltyCorpus corpus)
+    {
+        if (overlapId is not { } id)
+        {
+            return null;
+        }
+
+        return corpus.Episodes.Any(episode => episode.EpisodeId == id)
+            ? IdeaNoveltyKind.Episode
+            : IdeaNoveltyKind.PendingIdea;
+    }
+
     /// <inheritdoc />
     public async ValueTask<ErrorOr<Success>> MarkUsedAsync(Guid ideaId, Guid episodeId, CancellationToken ct)
     {
-        // The tenant filter of the caller's scope is what hides another user's idea (09 README D10); the row is
-        // read tracked, because the transition below is its write.
+        // The tenant filter of the caller's scope is what hides another user's idea (09 README D10). The row is
+        // read as a guard (and for its series), not as the write: the transition below is one atomic UPDATE.
         var idea = await db.EpisodeIdeas
+            .AsNoTracking()
             .SingleOrDefaultAsync(candidate => candidate.Id == ideaId, ct)
             .ConfigureAwait(false);
         if (idea is null)
@@ -257,26 +379,55 @@ public sealed partial class IdeaPlanner(
             return IdeaErrors.EpisodeNotFound;
         }
 
-        var marked = idea.MarkUsed(episodeId, clock);
-        if (marked.IsError)
-        {
-            // Not picked (or already used): the 409 the Domain spells. Nothing is written, and no provider
-            // constraint is reached, because the transition was refused before the update.
-            LogMarkUsedRefused(ideaId, marked.FirstError.Code);
-
-            return marked;
-        }
-
         try
         {
-            await db.SaveChangesAsync(ct).ConfigureAwait(false);
+            // The transition is ONE atomic conditional update (IDEA-S52-3, contract Decision 8): the WHERE clause
+            // is the domain rule — `MarkUsed`'s `picked` requirement plus the `episode_id IS NULL` guard the
+            // partial unique index enforces one level down — and the affected row count is the answer. Two
+            // concurrent calls with different episodes therefore cannot both win, and nothing is tracked, so a
+            // refused flush leaves nothing for the caller's own write to replay. The precedent is the stale-run
+            // claim of the story generation pipeline (<c>StoryGenerationPipeline</c>).
+            var affected = await db.EpisodeIdeas
+                .Where(candidate => candidate.Id == ideaId
+                    && candidate.Status == IdeaStatus.Picked
+                    && candidate.EpisodeId == null)
+                .ExecuteUpdateAsync(
+                    setters => setters
+                        .SetProperty(candidate => candidate.Status, IdeaStatus.Used)
+                        .SetProperty(candidate => candidate.EpisodeId, episodeId)
+                        .SetProperty(candidate => candidate.UpdatedAt, clock.UtcNow),
+                    ct)
+                .ConfigureAwait(false);
+            if (affected == 1)
+            {
+                return Result.Success;
+            }
+
+            // 0 rows: the row moved under this call — it was rejected, or another call linked it first — or it
+            // vanished. The re-read is what tells those apart, and both answers stay inside the codes this
+            // operation already returns (09 README D10): a row that is gone is the same not_found a lookup gives,
+            // and a row that can no longer be used is the 409 the state machine spells.
+            var status = await db.EpisodeIdeas
+                .AsNoTracking()
+                .Where(candidate => candidate.Id == ideaId)
+                .Select(candidate => (IdeaStatus?)candidate.Status)
+                .SingleOrDefaultAsync(ct)
+                .ConfigureAwait(false);
+            if (status is null)
+            {
+                LogIdeaNotFound(ideaId);
+
+                return IdeaErrors.IdeaNotFound;
+            }
+
+            LogMarkUsedRefused(ideaId, IdeaErrors.EpisodeAlreadyUsed.Code);
+
+            return IdeaErrors.EpisodeAlreadyUsed;
         }
         catch (DbUpdateException exception) when (EpisodeIdeaConflict.IsEpisodeUniqueViolation(exception))
         {
-            // The episode already has an idea: UX_episode_ideas_episode refused the update, which is the same
-            // 409 class as the refused transition one level up. The refusal is recovered before it is answered, so
-            // the caller's own flush (the run outcome) cannot replay the UPDATE the constraint just rejected.
-            await RecoverAsync(idea, ct).ConfigureAwait(false);
+            // UX_episode_ideas_episode: the episode already has an idea. The same 409 class as a refused
+            // transition, answered instead of reaching the caller's job as a 500.
             LogMarkUsedRefused(ideaId, IdeaErrors.EpisodeAlreadyUsed.Code);
 
             return IdeaErrors.EpisodeAlreadyUsed;
@@ -286,31 +437,11 @@ public sealed partial class IdeaPlanner(
             // The episode is not this idea's owner's — another user's row, or one that was deleted in between — so
             // the same-owner key refused the link instead of it leaking across tenants. That is the answer a read
             // of that episode would have given (09 README D10), not a conflict and not a 500.
-            await RecoverAsync(idea, ct).ConfigureAwait(false);
             LogMarkUsedRefused(ideaId, IdeaErrors.EpisodeNotFound.Code);
 
             return IdeaErrors.EpisodeNotFound;
         }
-
-        return Result.Success;
     }
-
-    /// <summary>
-    /// Resets the entry a refused flush left <c>Modified</c> to the row the database still holds, so the caller's
-    /// own <c>SaveChanges</c> cannot replay the UPDATE the provider just refused.
-    /// </summary>
-    /// <remarks>
-    /// <c>EntityEntry.ReloadAsync</c> is the recovery this layer already uses after a refused flush
-    /// (<c>ProposeBibleUpdateHandler.FreshAsync</c>, <c>GenerateFactSheetPipeline.FreshAsync</c>): it re-reads the
-    /// one entry and leaves every other tracked entity alone — clearing the tracker would drop the caller's pending
-    /// work with it, and assigning <c>EntityEntry.State</c> is banned outside the admin feature (02.2.2 plan §3.2).
-    /// A row that vanished in between leaves the entry detached, which the caller's flush then ignores.
-    /// </remarks>
-    /// <param name="idea">The idea whose update was refused.</param>
-    /// <param name="ct">Cancels the re-read.</param>
-    /// <returns>A task that completes when the entry matches the committed row again.</returns>
-    private async ValueTask RecoverAsync(EpisodeIdea idea, CancellationToken ct) =>
-        await Context.Entry(idea).ReloadAsync(ct).ConfigureAwait(false);
 
     /// <summary>
     /// Makes the one call of the run, with the single D7 retry an invalid output earns: two attempts at most, the
@@ -342,7 +473,7 @@ public sealed partial class IdeaPlanner(
 
                     // C2, the precedent's rule (ProposeBibleUpdateHandler): a stop at `max_output_tokens` would
                     // repeat the same truncation at the same cap, so it is final on the first call.
-                    var truncated = invalid.RuleIds.Contains(TextCallInvalidOutput<IdeasV1>.MaxOutputTokensExceeded);
+                    var truncated = IdeaCallFaults.IsTruncated(invalid);
                     if (attempt == 1 && !truncated)
                     {
                         // D7's one retry, which is the run's second paid dispatch: the caller's admission reserved
@@ -367,7 +498,7 @@ public sealed partial class IdeaPlanner(
                             .ConfigureAwait(false);
                         if (allowed.IsError)
                         {
-                            LogFailed(runId, DetailSpendCapReached);
+                            LogFailed(runId, IdeaCallFaults.SpendCapReached);
 
                             return IdeaErrors.SpendCapReached;
                         }
@@ -375,7 +506,9 @@ public sealed partial class IdeaPlanner(
                         continue;
                     }
 
-                    LogFailed(runId, truncated ? DetailInvalidOutputMaxTokens : DetailInvalidOutputTwice);
+                    LogFailed(
+                        runId,
+                        truncated ? IdeaCallFaults.InvalidOutputMaxTokens : IdeaCallFaults.InvalidOutputTwice);
 
                     return IdeaErrors.InvalidOutput;
 
@@ -383,29 +516,31 @@ public sealed partial class IdeaPlanner(
                     // TL ruling #3 (2026-09-24): a refusal on the run's own paid call writes one
                     // moderation_events row with `stage = kind` — distinct from 02.8.1-T2's per-candidate
                     // pre-check, which writes `stage = brief`.
-                    await WriteModerationEventAsync(request.Run, moderated.Categories).ConfigureAwait(false);
-                    LogFailed(runId, DetailProviderRefused);
+                    await IdeaCallFaults
+                        .WriteRefusalAsync(moderationEvents, request.Run, moderated.Categories)
+                        .ConfigureAwait(false);
+                    LogFailed(runId, IdeaCallFaults.ProviderRefused);
 
                     return IdeaErrors.Moderated;
 
                 case TextCallFundsExhausted<IdeasV1>:
-                    LogFailed(runId, DetailFundsExhausted);
+                    LogFailed(runId, IdeaCallFaults.FundsExhausted);
 
                     return IdeaErrors.ProviderFundsExhausted;
 
                 case TextCallUnavailable<IdeasV1>:
-                    LogFailed(runId, DetailProviderUnavailable);
+                    LogFailed(runId, IdeaCallFaults.ProviderUnavailable);
 
                     return IdeaErrors.GenerationFailed;
 
                 case TextCallProviderError<IdeasV1> error:
-                    LogFailed(runId, error.Status == 0 ? DetailUnexpected : DetailProviderError);
+                    LogFailed(runId, error.Status == 0 ? IdeaCallFaults.Unexpected : IdeaCallFaults.ProviderError);
 
                     return IdeaErrors.GenerationFailed;
 
                 default:
                     // D7's unmodelled failure is still a failed generation, never a crash of the caller's job.
-                    LogFailed(runId, DetailUnmappedOutcome);
+                    LogFailed(runId, IdeaCallFaults.UnmappedOutcome);
 
                     return IdeaErrors.GenerationFailed;
             }
@@ -465,29 +600,11 @@ public sealed partial class IdeaPlanner(
         return survivors;
     }
 
-    /// <summary>
-    /// Writes the one <c>moderation_events</c> row of a refused run (D12, TL ruling #3), on its own budget and
-    /// its own scope — the writer swallows its own failures, so the evidence never changes the run's outcome.
-    /// </summary>
-    /// <param name="run">The run the refusal belongs to; it is series-level, so the episode is null.</param>
-    /// <param name="categories">The flagged categories when the provider named them; empty otherwise.</param>
-    /// <returns>A task that completes when the row is saved or the failure is logged.</returns>
-    private async ValueTask WriteModerationEventAsync(RunContext run, IReadOnlyList<string> categories)
-    {
-        using var terminal = new CancellationTokenSource(ModerationWriteTimeout);
-        await moderationEvents
-            .WriteAsync(
-                run.UserId,
-                run.EpisodeId,
-                ModerationSource.OpenaiText,
-                ModerationStage.Ideas,
-                categories,
-                // D19: the refusal is about our own prompt and the model's answer, and neither may be stored as
-                // evidence text — the categories and the run are the whole record.
-                ownText: null,
-                terminal.Token)
-            .ConfigureAwait(false);
-    }
+    [LoggerMessage(
+        EventId = 6368,
+        Level = LogLevel.Warning,
+        Message = "idea_planner_no_idea runId={RunId} seriesId={SeriesId} candidates={Candidates} reason={Reason}")]
+    private partial void LogNoIdea(Guid runId, Guid seriesId, int candidates, string reason);
 
     /// <summary>
     /// The number of ideas this run asks for: the context's count, clamped to <c>1…MaxCount</c>. A context that
@@ -512,14 +629,6 @@ public sealed partial class IdeaPlanner(
     /// <returns>The ceiling.</returns>
     private int EffectiveMaxCount() =>
         options.MaxCount > 0 ? options.MaxCount : IdeaPlannerOptions.DefaultMaxCount;
-
-    /// <summary>
-    /// The context of the run's tracked DbContext, needed only where a failed flush left an entity in a state the
-    /// caller's own write must not inherit.
-    /// </summary>
-    private DbContext Context =>
-        db as DbContext
-        ?? throw new InvalidOperationException("The idea planner needs the EF Core context behind IAppDbContext.");
 
     [LoggerMessage(
         EventId = 6360,

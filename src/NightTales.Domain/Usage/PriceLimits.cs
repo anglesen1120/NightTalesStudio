@@ -44,6 +44,21 @@ public sealed record PriceLimits(
     public const int DefaultIdeasMaxOutput = 1_500;
 
     /// <summary>
+    /// The <c>max_output_tokens</c> of the <c>novelty</c> step (02 README D14/T56, 02.8.1-T2): the output cap of
+    /// the one paid judge call of an ideas run, ruled at 400 tokens.
+    /// </summary>
+    /// <remarks>
+    /// Like the ideas cap it is the only ceiling the call has and is read from the run's price version alone: a
+    /// configuration fallback is refused (README T56), because a step's output cap belongs to the priced,
+    /// append-only record the run is costed with. The block is additive (02.8.1-T2), so a row written before it
+    /// existed keeps the default.
+    /// </remarks>
+    public int NoveltyMaxOutput { get; init; } = DefaultNoveltyMaxOutput;
+
+    /// <summary>The ruled <c>novelty.max_output_tokens</c> of a row written before the block existed.</summary>
+    public const int DefaultNoveltyMaxOutput = 400;
+
+    /// <summary>
     /// The D4 table (02 README D4, T103 bands): token bands, segment bands and the writer/review/revision
     /// output caps, per tier × language. <c>trial/tools/LENGTH.v1.json</c> is the machine copy of the
     /// token and segment bands; the review and revision caps come from the D4 table (short 1,200/1,500,

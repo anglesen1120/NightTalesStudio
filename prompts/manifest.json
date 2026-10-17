@@ -13,6 +13,10 @@
       "version": "v1",
       "sha256": "81be7efc541dd37cbdd0d74ddee956e75cfa7fc22b892eb3f5907540d59332ba"
     },
+    "ideas/novelty.v1.md": {
+      "version": "v1",
+      "sha256": "18bd97f9249cb14f248e75fb6ed51876407afa237180afaa7d9603124ee231c5"
+    },
     "review/v1.md": {
       "version": "v1",
       "sha256": "68b5c06c071c0d6153943876bc6c64bf542bac39507a01dc7d260698e4ac4bea"
@@ -32,6 +36,10 @@
     "schemas/ideas.v1.json": {
       "version": "v1",
       "sha256": "951218b54528cf95ce7c07e97f4db4af0ff93d8d3e8cecf65a66ed90df0bdafd"
+    },
+    "schemas/novelty.v1.json": {
+      "version": "v1",
+      "sha256": "86d122272d18cb49777fdf31159d35d01ba5ec441573bf0303936497fd670675"
     },
     "schemas/review.v1.json": {
       "version": "v1",

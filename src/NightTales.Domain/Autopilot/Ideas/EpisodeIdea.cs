@@ -161,13 +161,25 @@ public sealed class EpisodeIdea : Entity, IUserOwned, IAuditable
     /// Marks the idea as the run's pick and stores the score it won with:
     /// <see cref="IdeaStatus.Proposed"/> → <see cref="IdeaStatus.Picked"/>.
     /// </summary>
+    /// <remarks>
+    /// Picking an already picked idea with the same score is a no-op, so a retried scoring step — the
+    /// at-least-once delivery of the run's own pipeline — answers the same way instead of failing the run;
+    /// a different score on a picked row is a programming error, because the first score is the one the run
+    /// log showed.
+    /// </remarks>
     /// <param name="score">The weighted score of 02.8.1 plan §3.4, already clamped to 0…1.</param>
     /// <param name="clock">The scoring step's clock reading.</param>
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="score"/> is outside 0…1.</exception>
-    /// <exception cref="InvalidOperationException">The idea is rejected or used, or already picked.</exception>
+    /// <exception cref="InvalidOperationException">The idea is rejected or used, or already picked with another score.</exception>
     public void MarkPicked(decimal score, IClock clock)
     {
         EnsureScore(score, nameof(score));
+
+        if (Status == IdeaStatus.Picked && Score == score)
+        {
+            return;
+        }
+
         RequireStatus(IdeaStatus.Proposed, "picked");
         ArgumentNullException.ThrowIfNull(clock);
 

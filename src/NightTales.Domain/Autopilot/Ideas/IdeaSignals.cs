@@ -22,6 +22,30 @@ public sealed record IdeaSignals(
     decimal VarietyPenalty)
 {
     /// <summary>
+    /// The measured inputs of a candidate whose judge call degraded (02.8.1 plan §4 U2, task Design
+    /// "Novelty" degradation): the lexical score decides freshness, and the judge's absent fit and hook
+    /// take the neutral values the plan prescribes.
+    /// </summary>
+    /// <remarks>
+    /// A judge that fails — invalid output after its retry, a provider error, an outage — is not a reason
+    /// to fail the run, so the batch keeps scoring on what it did measure. The neutral values are exactly
+    /// the plan's: <c>JudgeScore = 0</c> so freshness becomes <c>1 − lexical</c>, <c>JudgeFit = 1.0</c> so
+    /// an idea the judge never saw is not punished for fit, and <c>JudgeHookStrength = 0.5</c> so the hook
+    /// component is neutral rather than rewarding or punishing an unmeasured hook. Stating them here keeps
+    /// the scorer one expression and one source for the degradation.
+    /// </remarks>
+    /// <param name="lexicalScore">The lexical similarity to the corpus, 0…1 (0 when nothing overlapped).</param>
+    /// <param name="varietyPenalty">The variety guard's penalty for this candidate, 0…1 (0 in 02.8.1-T2, where the guard is not wired).</param>
+    /// <returns>The signals the scorer reads for a judge-degraded candidate.</returns>
+    public static IdeaSignals LexicalOnly(decimal lexicalScore, decimal varietyPenalty) =>
+        new(
+            lexicalScore,
+            JudgeScore: 0m,
+            JudgeFit: 1m,
+            JudgeHookStrength: 0.5m,
+            VarietyPenalty: varietyPenalty);
+
+    /// <summary>
     /// The clamp the scorer (<c>IdeaScorer</c>, 02.8.1-T2) applies to its weighted sum: <paramref name="value"/> limited to
     /// 0…1.
     /// </summary>

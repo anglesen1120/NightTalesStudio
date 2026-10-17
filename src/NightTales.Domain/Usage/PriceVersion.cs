@@ -97,6 +97,9 @@ public static class PriceVersionJson
     /// <summary>The reserved top-level key of the idea-generation step's limits block (02.8.1-T1).</summary>
     public const string IdeasKey = "ideas";
 
+    /// <summary>The reserved top-level key of the idea-novelty judge step's limits block (02.8.1-T2).</summary>
+    public const string NoveltyKey = "novelty";
+
     /// <summary>Serializes the limits document.</summary>
     public static string WriteLimits(PriceLimits limits)
     {
@@ -128,6 +131,7 @@ public static class PriceVersionJson
             ["story"] = story,
             [BibleProposalKey] = new JsonObject { ["max_output_tokens"] = limits.BibleProposalMaxOutput },
             [IdeasKey] = new JsonObject { ["max_output_tokens"] = limits.IdeasMaxOutput },
+            [NoveltyKey] = new JsonObject { ["max_output_tokens"] = limits.NoveltyMaxOutput },
         }.ToJsonString();
     }
 
@@ -176,10 +180,16 @@ public static class PriceVersionJson
             ? Int(ideas, "max_output_tokens")
             : PriceLimits.DefaultIdeasMaxOutput;
 
+        // 02.8.1-T2: the novelty judge step's cap, additive and with the same historical-row rule.
+        var noveltyMaxOutput = root[NoveltyKey] is JsonObject novelty
+            ? Int(novelty, "max_output_tokens")
+            : PriceLimits.DefaultNoveltyMaxOutput;
+
         return new PriceLimits(result)
         {
             BibleProposalMaxOutput = maxOutput,
             IdeasMaxOutput = ideasMaxOutput,
+            NoveltyMaxOutput = noveltyMaxOutput,
         };
     }
 

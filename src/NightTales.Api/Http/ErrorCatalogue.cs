@@ -153,6 +153,9 @@ public static class ErrorCatalogue
             [ErrorCodes.AutopilotAuthorizationRequired] = StatusCodes.Status409Conflict,
             [ErrorCodes.AutopilotTopicLocked] = StatusCodes.Status409Conflict,
             [ErrorCodes.AutopilotPauseReasonActive] = StatusCodes.Status409Conflict,
+
+            // 02.8.1-T2's idea state machine: an idea that is not `picked` cannot be linked to an episode.
+            [ErrorCodes.IdeaInvalidState] = StatusCodes.Status409Conflict,
             [ErrorCodes.KeywordsFlagged] = StatusCodes.Status409Conflict,
             [ErrorCodes.ChannelAlreadyConnected] = StatusCodes.Status409Conflict,
             [ErrorCodes.ChannelReauthRequired] = StatusCodes.Status409Conflict,
@@ -278,6 +281,7 @@ public static class ErrorCatalogue
             ErrorCodes.IdeasInvalidOutput,
             ErrorCodes.IdeasModerated,
             ErrorCodes.IdeasGenerationFailed,
+            ErrorCodes.IdeasNoIdea,
             ErrorCodes.FindSourcesGenerationFailed,
             ErrorCodes.SourceUnreachable,
             ErrorCodes.SourceTooLarge,

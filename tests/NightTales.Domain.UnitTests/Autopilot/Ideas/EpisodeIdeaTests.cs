@@ -141,6 +141,30 @@ public sealed class EpisodeIdeaTests
     }
 
     [Fact]
+    public void MarkPicked_TwiceWithTheSameScore_IsANoOp()
+    {
+        var clock = new FakeClock(Now);
+        var idea = Idea(clock: clock);
+        idea.MarkPicked(0.8125m, clock);
+        clock.Advance(TimeSpan.FromMinutes(6));
+
+        idea.MarkPicked(0.8125m, clock);
+
+        idea.Status.ShouldBe(IdeaStatus.Picked);
+        idea.Score.ShouldBe(0.8125m);
+        idea.UpdatedAt.ShouldBe(Now, "a repeated transition writes nothing");
+    }
+
+    [Fact]
+    public void MarkPicked_UsedIdeaWithTheSameScore_Throws()
+    {
+        var idea = Used();
+
+        Should.Throw<InvalidOperationException>(() => idea.MarkPicked(0.8m, new FakeClock(Now)));
+        idea.Status.ShouldBe(IdeaStatus.Used, "the no-op never reaches past the picked status");
+    }
+
+    [Fact]
     public void MarkRejected_Proposed_RejectsWithTheReason()
     {
         var clock = new FakeClock(Now);

@@ -721,10 +721,23 @@ public sealed class IdeaPlannerTests(TestDatabase database) : IntegrationTest(da
     }
 
     /// <summary>A hand-written estimator, so the retry's re-check does not depend on the price catalogue.</summary>
-    private sealed class StubIdeaCostEstimator(UsageBound bound) : IIdeaCostEstimator
+    /// <param name="bound">The bound the ideas step's guard sees.</param>
+    /// <param name="noveltyBound">The bound the judge's guard sees; the ideas bound unless a test sets its own.</param>
+    private sealed class StubIdeaCostEstimator(UsageBound bound, UsageBound? noveltyBound = null)
+        : IIdeaCostEstimator
     {
+        /// <summary>
+        /// The bound the novelty judge's guard is checked with (02.8.1-T2): the same as the ideas bound by
+        /// default, because most tests care that a refusal propagates, not which step's number it carries.
+        /// </summary>
+        internal UsageBound NoveltyBound { get; } = noveltyBound ?? bound;
+
         /// <inheritdoc />
         public Task<ErrorOr<UsageBound>> WorstCaseAsync(string priceVersion, CancellationToken ct) =>
             Task.FromResult<ErrorOr<UsageBound>>(bound);
+
+        /// <inheritdoc />
+        public Task<ErrorOr<UsageBound>> NoveltyWorstCaseAsync(string priceVersion, CancellationToken ct) =>
+            Task.FromResult<ErrorOr<UsageBound>>(NoveltyBound);
     }
 }
