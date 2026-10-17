@@ -28,6 +28,12 @@ import { buildStoryEditorViewModel } from '../ui/story-editor.view-model';
 import type { SegmentTexts, StoryEditorIntent, StoryEditorViewModel } from '../ui/story-editor.view-model';
 import { buildAnnotationViews } from '../ui/annotation.view-model';
 import type { AnnotationViewOptions, AnnotationViews } from '../ui/annotation.view-model';
+import type { SimilarityLevel } from '../domain/audit.model';
+import { ReviewPanelComponent } from '../ui/review-panel.component';
+import type { SimilarityHighlightViewModel } from '../ui/review-panel.view-model';
+import { RevisedBadgeComponent } from '../ui/revised-badge.component';
+
+const NO_SIMILARITY_HIGHLIGHTS: ReadonlyMap<SegmentAddress, SimilarityLevel> = new Map();
 
 const ACTION_KEYS: Readonly<Record<string, string>> = {
   generate_story: 'episodes.editor.action.generate_story',
@@ -72,7 +78,7 @@ function isScopeLoaded(loaded: LoadedScope, language: string): boolean {
 
 @Component({
   selector: 'nts-story-review-page',
-  imports: [TranslocoPipe, RouterLink, EmptyState, ErrorState, FormErrorAlert, LoadingState, PageHeader, StatusChip, StoryEditorComponent, VersionsPanelHostComponent, ApproveDialogComponent, ReopenDialogComponent],
+  imports: [TranslocoPipe, RouterLink, EmptyState, ErrorState, FormErrorAlert, LoadingState, PageHeader, StatusChip, StoryEditorComponent, VersionsPanelHostComponent, ApproveDialogComponent, ReopenDialogComponent, ReviewPanelComponent, RevisedBadgeComponent],
   providers: [EpisodeDetailStore, StoryEditorStore, ApprovalStore, VersionsStore, ResearchStore, { provide: EPISODE_GATE, useFactory: () => inject(ResearchStore).gate }, provideTranslocoScope('episodes', 'errors', 'quality')],
   templateUrl: './story-review.page.html',
   styleUrl: './story-review.page.scss',
@@ -163,6 +169,43 @@ export class StoryReviewPage {
     ...this.store.paragraphs().map((paragraph, index) => [addressForParagraph(index), paragraph.text] as const),
     ['ending', this.store.ending],
   ]));
+  protected readonly reviewDescriptionId = computed(() => {
+    const ids = [
+      ...(this.store.driftNote() ? ['story-review-audit-drift'] : []),
+      ...(this.store.reviewBlock()?.stale ? ['story-review-audit-stale'] : []),
+    ];
+    return ids.length === 0 ? null : ids.join(' ');
+  });
+  /** Snapshot/hint/source signals only: typing never rebuilds the address map. */
+  protected readonly similarityHighlights = computed(() =>
+    this.store.sourcesExist() && !this.store.similarityUnavailable() && this.store.similarity()?.corpus !== 'past_episodes'
+      ? this.store.similarityHighlights() : NO_SIMILARITY_HIGHLIGHTS);
+  protected readonly similarityRows = computed<readonly SimilarityHighlightViewModel[]>(() => {
+    if (!this.store.sourcesExist() || this.store.similarityUnavailable()) return [];
+    const levels = this.similarityHighlights();
+    return (this.store.similarity()?.segments ?? []).map(({ segment, share }) => {
+      const parsed = segment === 'meta' ? null : parseAddress(segment);
+      return {
+        address: segment, share, level: levels.get(segment) ?? null,
+        addressLabelKey: segment === 'meta' ? 'episodes.annotations.meta' : `episodes.editor.segment.${parsed?.kind ?? 'paragraph'}`,
+        addressLabelIndex: parsed?.kind === 'paragraph' && parsed.index !== null ? parsed.index + 1 : null,
+        addressText: segment !== 'meta' && parsed === null ? segment : null,
+      };
+    });
+  });
+  /**
+   * Only a recorded issue missing from the flattened hints proves disagreement. Extra local/checker hints are normal;
+   * audit ids are not hint rule ids, so neither total counts nor an invented id mapping can establish a discrepancy.
+   */
+  protected readonly reviewPartial = computed(() => {
+    const review = this.store.reviewBlock();
+    if (review === null) return false;
+    const hints = this.store.snapshot()?.qualityHints ?? [];
+    return this.store.whyIssues().some((issue) => !hints.some((hint) =>
+      hint.segment === issue.segment && hint.kind === issue.kind &&
+      (hint.kind === 'taste' ? 'advisory' : hint.severity) === issue.severity &&
+      hint.evidence === issue.evidence && hint.repairDirection === issue.repairDirection));
+  });
   /**
    * One options object for the builder. `hasKey` asks the live service: `translate` hands a key back when the active
    * language cannot resolve it — a scope that has not loaded, or an entry the language lacks — so an unknown rule id
@@ -348,6 +391,10 @@ export class StoryReviewPage {
         address: formatAddress(parsed.kind, parsed.index ?? undefined),
         sequence: ++this.focusSequence,
       });
+    });
+    effect(() => {
+      const hasSources = this.store.snapshot() !== null && this.research.loaded() && this.research.sources().length > 0;
+      untracked(() => this.store.setSourcesExist(hasSources));
     });
     this.destroyRef.onDestroy(() => {
       this.closeApprovalConflict?.();

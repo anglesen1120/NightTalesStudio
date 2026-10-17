@@ -3,6 +3,7 @@ import type { Provider, Signal } from '@angular/core';
 import { EPISODE_GATE } from '../application/episode-gate';
 import type { GateState } from '../domain/episode-gate';
 import { ResearchStore } from '../application/research.store';
+import type { ResearchSource } from '../domain/research.model';
 
 /**
  * The editor-side stand-in for the component-owned research store: the story page reads its gate and one `load()`.
@@ -11,6 +12,10 @@ import { ResearchStore } from '../application/research.store';
  */
 export interface FakeResearchStore {
   readonly gate: Signal<GateState>;
+  readonly sources: Signal<readonly ResearchSource[]>;
+  readonly loaded: Signal<boolean>;
+  setLoaded: (loaded: boolean) => void;
+  setSources: (sources: readonly ResearchSource[]) => void;
   readonly formRateLimitSeconds: Signal<number | null>;
   readonly rateLimitSeconds: Signal<number | null>;
   readonly conflictSource: Signal<'save' | 'approve' | 'edit' | null>;
@@ -22,9 +27,15 @@ export interface FakeResearchStore {
 
 export function fakeResearchStore(initial: GateState = 'open'): FakeResearchStore {
   const gate = signal<GateState>(initial);
+  const sources = signal<readonly ResearchSource[]>([]);
+  const loaded = signal(true);
   const loadedEpisodeIds: string[] = [];
   return {
     gate: computed(() => gate()),
+    sources: sources.asReadonly(),
+    loaded: loaded.asReadonly(),
+    setLoaded: (value) => loaded.set(value),
+    setSources: (value) => sources.set(value),
     formRateLimitSeconds: signal<number | null>(null).asReadonly(),
     rateLimitSeconds: signal<number | null>(null).asReadonly(),
     conflictSource: signal<'save' | 'approve' | 'edit' | null>(null).asReadonly(),

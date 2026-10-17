@@ -1,0 +1,101 @@
+<section class="review-panel" [attr.aria-label]="'episodes.audit.heading' | transloco">
+  <header class="review-panel__header">
+    <h2>{{ 'episodes.audit.heading' | transloco }}</h2>
+    @if (hasAudit()) {
+      <p class="review-panel__counts">
+        <span>{{ 'episodes.audit.blocking' | transloco }}: <strong>{{ counts().blocking }}</strong></span>
+        <span>{{ 'episodes.audit.advisory' | transloco }}: <strong>{{ counts().advisory }}</strong></span>
+      </p>
+    }
+  </header>
+  @if (driftNote()) {
+    <p class="review-panel__note" [id]="idPrefix() + '-drift'">{{ 'episodes.audit.drift' | transloco }}</p>
+  }
+  @if (stale()) {
+    <p class="review-panel__note" [id]="idPrefix() + '-stale'">{{ 'quality.model_review_stale' | transloco }}</p>
+  }
+  @defer (on viewport) {
+    <div class="review-panel__body">
+      @if (!hasAudit()) {
+        <p class="review-panel__empty">{{ 'episodes.audit.noChecks' | transloco }}</p>
+      }
+      @if (partial()) {
+        <p class="review-panel__note">{{ 'episodes.audit.partial' | transloco }}</p>
+      }
+      <div class="review-panel__overview">
+        @if (scores(); as scoreValues) {
+          <table [attr.aria-describedby]="stale() ? idPrefix() + '-stale' : null">
+            <caption>{{ 'episodes.audit.scores' | transloco }}</caption>
+            <thead><tr><th scope="col">{{ 'episodes.audit.dimension' | transloco }}</th><th scope="col">{{ 'episodes.audit.scoreValue' | transloco }}</th></tr></thead>
+            <tbody>
+              @for (dimension of scoreDimensions; track dimension.key) {
+                <tr><th scope="row">{{ dimension.label | transloco }}</th><td>{{ scoreValues[dimension.key] ?? '—' }}</td></tr>
+              }
+            </tbody>
+          </table>
+        }
+        @if (showSimilarity()) {
+          <section class="review-panel__similarity" [attr.aria-label]="'episodes.similarity.heading' | transloco">
+            <h3>{{ 'episodes.similarity.heading' | transloco }}</h3>
+            @if (similarityUnavailable()) {
+              <p>{{ 'story.similarity.unavailable' | transloco }}</p>
+            } @else {
+              @if (similarityScore() !== null) {
+                <p>{{ 'episodes.similarity.score' | transloco: { percent: ((similarityScore() ?? 0) * 100 | number: '1.0-1') } }}</p>
+              }
+              @if (similarityCorpus() === 'past_episodes') {
+                <p>{{ 'episodes.similarity.pastEpisodes' | transloco }}</p>
+              }
+              <ul>
+                @for (row of similarityRows(); track $index) {
+                  <li>
+                    @let segmentName = row.addressText ?? row.addressLabelIndex ?? (row.addressLabelKey | transloco);
+                    @if (row.address !== 'meta' && row.addressText === null) {
+                      <button type="button" (click)="openSegment(row.address)">{{ 'episodes.similarity.segmentShare' | transloco: { segment: segmentName, percent: (row.share * 100 | number: '1.0-1') } }}</button>
+                    } @else {
+                      <span>{{ 'episodes.similarity.segmentShare' | transloco: { segment: segmentName, percent: (row.share * 100 | number: '1.0-1') } }}</span>
+                    }
+                    @if (similarityCorpus() !== 'past_episodes' && row.level) {
+                      <p>{{ (row.level === 'block' ? 'story.similarity.block' : 'story.similarity.warn') | transloco }}</p>
+                    }
+                  </li>
+                }
+              </ul>
+              @if (similarityCorpus() !== 'past_episodes') {
+                <p class="review-panel__muted">{{ 'episodes.similarity.note' | transloco }}</p>
+              }
+            }
+          </section>
+        }
+      </div>
+      <button class="review-panel__disclosure" type="button" [attr.aria-expanded]="whyExpanded()" [attr.aria-controls]="whyId()" (click)="whyExpanded.set(!whyExpanded())">
+        {{ (whyExpanded() ? 'episodes.audit.hideWhy' : 'episodes.audit.showWhy') | transloco }}
+      </button>
+      <section [id]="whyId()" [hidden]="!whyExpanded()" [attr.aria-label]="'episodes.audit.why' | transloco">
+        @if (!hasAudit()) {
+          <p>{{ 'episodes.audit.noChecks' | transloco }}</p>
+        } @else if (whyIssues().length === 0) {
+          <p>{{ 'episodes.audit.noIssues' | transloco }}</p>
+        } @else {
+          <ul class="review-panel__issues">
+            @for (issue of whyIssues(); track $index) {
+              <li>
+                <p><strong>{{ (issue.severity === 'blocking' ? 'episodes.audit.blocking' : 'episodes.audit.advisory') | transloco }}</strong></p>
+                @if (issue.segment; as address) {
+                  @let label = addressLabel(address);
+                  @if (address !== 'meta') { <button type="button" (click)="openSegment(address)">{{ 'episodes.audit.openSegment' | transloco: { segment: label.index ?? (label.key | transloco) } }}</button> }
+                  @else { <p>{{ label.key | transloco }}</p> }
+                }
+                @if (issue.impact) { <p><strong>{{ 'episodes.audit.impact' | transloco }}:</strong> {{ issue.impact }}</p> }
+                <p><strong>{{ 'episodes.audit.evidence' | transloco }}:</strong> {{ issue.evidence }}</p>
+                @if (issue.repairDirection) { <p><strong>{{ 'episodes.audit.repair' | transloco }}:</strong> {{ issue.repairDirection }}</p> }
+              </li>
+            }
+          </ul>
+        }
+      </section>
+    </div>
+  } @placeholder {
+    <div class="review-panel__placeholder" aria-hidden="true"></div>
+  }
+</section>

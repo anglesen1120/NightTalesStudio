@@ -7,13 +7,14 @@ import { RealtimeService } from '@core/realtime';
 import { SessionStore } from '@core/session';
 import { vi } from 'vitest';
 import { ZONELESS_TEST_PROVIDERS } from '../../../testing/providers';
-import type { StorySnapshot } from '../domain/story.model';
+import type { QualityHint, StorySnapshot } from '../domain/story.model';
 import type { EpisodeDetail } from '../domain/episode.model';
+import { REVISION_DRIFT_TYPE, SIMILARITY_BLOCK_RULE, SIMILARITY_WARN_RULE } from '../domain/audit.model';
 import { EpisodesRepository } from '../domain/episodes.repository';
 import { StoryRepository } from '../domain/story.repository';
 import { FakeEpisodeRealtime } from '../testing/fake-episode-realtime';
 import { EPISODE_ID, FakeEpisodesRepository, episodeDetail } from '../testing/fake-episodes.repository';
-import { FakeStoryRepository, storyContent, storySnapshot } from '../testing/fake-story.repository';
+import { FakeStoryRepository, auditReport, reviewIssue, similaritySection, storyContent, storySnapshot } from '../testing/fake-story.repository';
 import { EpisodeDetailStore } from './episode-detail.store';
 import { StoryEditorStore } from './story-editor.store';
 
@@ -59,6 +60,19 @@ async function conflict(state: EditorTestState): Promise<void> {
   edit(state.store);
   state.stories.scriptSave(() => rejected(appError('story_version_conflict', 412)));
   await state.store.saveVersion();
+}
+/** The similarity verdict hints of `02.5.6-T1` arrive inside `qualityHints` at the `meta` address. */
+function simHint(ruleId: string): QualityHint {
+  return {
+    ruleId, severity: 'advisory', kind: 'objective', segment: 'meta',
+    messageKey: ruleId === SIMILARITY_BLOCK_RULE ? 'quality.similarity_blocked' : 'quality.similarity_warn',
+    evidence: 'similarity', repairDirection: null,
+  };
+}
+/** Load another snapshot into the same store (episode switch or a fresh detail response). */
+function reload(state: EditorTestState, snapshot: StorySnapshot | null): Promise<void> {
+  state.episodes.scriptGet(() => Promise.resolve(episodeDetail({ currentStory: snapshot, hasCurrentStory: snapshot !== null, nextActions: ['edit_story'], status: 'story_review' })));
+  return state.store.load(EPISODE_ID);
 }
 
 describe('StoryEditorStore', () => {
@@ -327,5 +341,151 @@ describe('StoryEditorStore', () => {
     state.episodes.scriptGet(() => Promise.resolve(episodeDetail({ currentStory: storySnapshot(), nextActions: ['edit_story'] })));
     state.realtime.resync(); vi.advanceTimersByTime(250); await settle();
     expect(state.store.error()).toBe(saveError); expect(state.store.formErrors()).toBe(formErrors); expect(state.store.paragraphs()).toBe(paragraphs);
+  });
+  it('revisedBadge_TrueForRevisedSource', async () => {
+    const state = setup(storySnapshot({ source: 'revised' }));
+    await state.store.load(EPISODE_ID);
+    expect(state.store.revisedBadge()).toBe(true);
+    expect(state.store.revision()).toBeNull();
+    await reload(state, storySnapshot({ source: 'edited', auditReport: auditReport({ revision: { applied: true, drift: false, reason: null }, modelReview: { stale: false, scores: null, issues: [] } }) }));
+    expect(state.store.revisedBadge()).toBe(false);
+    await reload(state, storySnapshot({ source: 'generated', auditReport: auditReport({ revision: { applied: true, drift: false, reason: null } }) }));
+    expect(state.store.revisedBadge()).toBe(false);
+  });
+  it('revisedBadge_FalseWithoutRevision', async () => {
+    const state = setup(storySnapshot({ source: 'edited' }));
+    await state.store.load(EPISODE_ID);
+    expect(state.store.revisedBadge()).toBe(false);
+    await reload(state, storySnapshot({ source: 'generated', auditReport: auditReport({ revision: { applied: false, drift: false, reason: 'revision_invalid_output' } }) }));
+    expect(state.store.revisedBadge()).toBe(false);
+    expect(state.store.revision()?.reason).toBe('revision_invalid_output');
+  });
+  it('driftNote_FromRevisionDriftIssue', async () => {
+    const drift = reviewIssue({ id: 'd1', type: REVISION_DRIFT_TYPE, severity: 'advisory', segment: 'meta' });
+    const state = setup(storySnapshot({ auditReport: auditReport({ modelReview: { stale: false, scores: null, issues: [drift] } }) }));
+    await state.store.load(EPISODE_ID);
+    expect(state.store.driftNote()).toBe(true);
+    expect(state.store.whyIssues().map((issue) => issue.type)).toEqual([REVISION_DRIFT_TYPE]);
+    await reload(state, storySnapshot({ auditReport: auditReport({ modelReview: { stale: false, scores: null, issues: [reviewIssue()] } }) }));
+    expect(state.store.driftNote()).toBe(false);
+    await reload(state, storySnapshot({ auditReport: auditReport({ revision: { applied: true, drift: true, reason: null } }) }));
+    expect(state.store.driftNote()).toBe(true);
+    await reload(state, storySnapshot());
+    expect(state.store.driftNote()).toBe(false);
+  });
+  it('auditReportMissing_LeavesThePanelEmpty', async () => {
+    const { store } = await loaded(storySnapshot({ auditReport: null, similarityScore: null }));
+    expect(store.audit()).toBeNull();
+    expect(store.reviewBlock()).toBeNull();
+    expect(store.revision()).toBeNull();
+    expect(store.similarity()).toBeNull();
+    expect(store.whyIssues()).toEqual([]);
+    expect(store.revisedBadge()).toBe(false);
+    expect(store.driftNote()).toBe(false);
+    expect(store.reviewCounts()).toEqual({ blocking: 0, advisory: 0 });
+    expect(store.similarityHighlights().size).toBe(0);
+  });
+  it('similarityUnavailable_OnlyWhenSimilarityScoreIsNullAndSourcesExist', async () => {
+    const state = setup(storySnapshot({ similarityScore: null, auditReport: auditReport({ similarity: similaritySection({ score: null, segments: [] }) }) }));
+    await state.store.load(EPISODE_ID);
+    expect(state.store.similarityUnavailable()).toBe(false);
+    state.store.setSourcesExist(true);
+    expect(state.store.sourcesExist()).toBe(true);
+    expect(state.store.similarityUnavailable()).toBe(true);
+    state.store.setSourcesExist(false);
+    expect(state.store.similarityUnavailable()).toBe(false);
+    await reload(state, storySnapshot({ similarityScore: 0.31, auditReport: auditReport({ similarity: similaritySection({ score: 0.31 }) }) }));
+    expect(state.store.similarityUnavailable()).toBe(false);
+    state.store.setSourcesExist(true);
+    expect(state.store.similarityUnavailable()).toBe(false);
+  });
+  it('similarityUnavailable_FalseForASnapshotWithoutAnAuditDocument', async () => {
+    const state = setup(storySnapshot({ similarityScore: null, auditReport: null }));
+    await state.store.load(EPISODE_ID);
+    state.store.setSourcesExist(true);
+    expect(state.store.similarityUnavailable()).toBe(false);
+  });
+  it('similarityHighlights_FollowTheHintVerdict', async () => {
+    const state = setup(storySnapshot({
+      similarityScore: 0.4, qualityHints: [simHint(SIMILARITY_WARN_RULE)],
+      auditReport: auditReport({ similarity: similaritySection({ score: 0.4, segments: [{ segment: 'p:1', share: 0.21 }, { segment: 'hook', share: 0.05 }] }) }),
+    }));
+    await state.store.load(EPISODE_ID);
+    expect([...state.store.similarityHighlights()]).toEqual([['p:1', 'warn'], ['hook', 'warn']]);
+    await reload(state, storySnapshot({
+      similarityScore: 0.4, qualityHints: [simHint(SIMILARITY_WARN_RULE), simHint(SIMILARITY_BLOCK_RULE)],
+      auditReport: auditReport({ similarity: similaritySection({ score: 0.4, segments: [{ segment: 'p:1', share: 0.21 }] }) }),
+    }));
+    expect([...state.store.similarityHighlights().values()]).toEqual(['block']);
+    await reload(state, storySnapshot({
+      similarityScore: 0.4, qualityHints: [],
+      auditReport: auditReport({ similarity: similaritySection({ score: 0.4, segments: [{ segment: 'p:1', share: 0.21 }] }) }),
+    }));
+    expect(state.store.similarityHighlights().size).toBe(0);
+    await reload(state, storySnapshot({ similarityScore: 0.4, qualityHints: [simHint(SIMILARITY_WARN_RULE)], auditReport: auditReport() }));
+    expect(state.store.similarity()).toBeNull();
+    expect(state.store.similarityHighlights().size).toBe(0);
+  });
+  it('highlights_RemapAfterReorder', async () => {
+    const hintOnP2 = { ...simHint(SIMILARITY_WARN_RULE), ruleId: 'Q-REP-02', segment: 'p:2' as const };
+    const { store } = await loaded(storySnapshot({
+      qualityHints: [simHint(SIMILARITY_WARN_RULE), hintOnP2],
+      auditReport: auditReport({ similarity: similaritySection({ segments: [{ segment: 'p:2', share: 0.2 }, { segment: 'hook', share: 0.1 }] }) }),
+    }));
+    expect([...store.similarityHighlights().keys()].sort()).toEqual(['hook', 'p:2']);
+    // A delete hides the highlight together with its paragraph, and the undo brings both back.
+    store.removeParagraph(2);
+    expect([...store.similarityHighlights().keys()].sort()).toEqual(['hook']);
+    store.undoRemove();
+    expect([...store.similarityHighlights().keys()].sort()).toEqual(['hook', 'p:2']);
+    // A move re-keys the highlight and the review hint with the text they point at.
+    const moved = store.paragraphs()[2];
+    if (moved === undefined) throw new Error('Missing paragraph');
+    store.moveTo(2, 0);
+    expect(store.paragraphs().indexOf(moved)).toBe(0);
+    expect([...store.similarityHighlights().keys()].sort()).toEqual(['hook', 'p:0']);
+    expect(store.hints().find((hint) => hint.ruleId === 'Q-REP-02')?.segment).toBe('p:0');
+    store.moveTo(0, 2);
+    expect([...store.similarityHighlights().keys()].sort()).toEqual(['hook', 'p:2']);
+    expect(store.hints().find((hint) => hint.ruleId === 'Q-REP-02')?.segment).toBe('p:2');
+    expect(store.annotations().filter((annotation) => annotation.address === 'p:2')).toHaveLength(1);
+  });
+  it('auditSignals_ClearOnEpisodeAndSessionChange', async () => {
+    const state = setup(storySnapshot({
+      source: 'revised', similarityScore: 0.4, qualityHints: [simHint(SIMILARITY_WARN_RULE)],
+      auditReport: auditReport({ modelReview: { stale: true, scores: null, issues: [reviewIssue()] }, revision: { applied: true, drift: true, reason: null }, similarity: similaritySection() }),
+    }));
+    await state.store.load(EPISODE_ID);
+    state.store.setSourcesExist(true);
+    expect(state.store.revisedBadge()).toBe(true);
+    expect(state.store.similarityHighlights().size).toBe(1);
+    state.sessionGeneration.update((value) => value + 1);
+    TestBed.tick();
+    expect(state.store.audit()).toBeNull();
+    expect(state.store.similarity()).toBeNull();
+    expect(state.store.sourcesExist()).toBe(false);
+    expect(state.store.similarityHighlights().size).toBe(0);
+    expect(state.store.revisedBadge()).toBe(false);
+    expect(state.store.whyIssues()).toEqual([]);
+  });
+  it('noExtraRequestOnLoad', async () => {
+    const state = await loaded(storySnapshot({
+      source: 'revised', similarityScore: 0.21, qualityHints: [simHint(SIMILARITY_WARN_RULE)],
+      auditReport: auditReport({
+        modelReview: { stale: false, scores: null, issues: [reviewIssue()] },
+        revision: { applied: true, drift: false, reason: null },
+        similarity: similaritySection(),
+      }),
+    }));
+    expect(state.episodes.getCalls).toEqual([{ episodeId: EPISODE_ID, userAction: true }]);
+    expect(state.stories.calls).toHaveLength(0);
+    expect(state.store.audit()?.modelReview?.issues).toHaveLength(1);
+    expect(state.store.reviewCounts()).toEqual({ blocking: 0, advisory: 1 });
+    expect(state.store.revisedBadge()).toBe(true);
+    expect(state.store.similarityHighlights().size).toBe(1);
+    expect(state.store.similarityUnavailable()).toBe(false);
+    expect(state.store.whyIssues()).toHaveLength(1);
+    expect(state.episodes.getCalls).toHaveLength(1);
+    expect(state.stories.calls).toHaveLength(0);
   });
 });

@@ -31,6 +31,7 @@ const translations = TranslocoTestingModule.forRoot({
 
 const snapshot: StorySnapshot = {
   versionId: 'version-1', version: 1, etag: '"sv-version-1"', source: 'edited', wordCount: 18, qualityHints: [], attestation: null,
+  auditReport: null, similarityScore: null,
   content: {
     title: 'Chuyến xe cuối',
     hook: { text: 'Mở đầu', keywords: ['Mưa'], fact_refs: [] },
@@ -68,6 +69,8 @@ function fakeStoryStore(dirty: boolean) {
     annotationAnnouncement: signal<{ readonly count: number; readonly sequence: number } | null>(null),
     fieldErrors: signal({}), formErrors: signal<readonly string[]>([]), keywordLimitHit: signal<string | null>(null), readOnly: signal(false), invalidState: signal(false),
     removed: signal(null), dirty: signal(dirty), structureWarning: signal(false),
+    reviewCounts: signal({ blocking: 0, advisory: 0 }), reviewBlock: signal(null), whyIssues: signal<readonly unknown[]>([]), driftNote: signal(false), revisedBadge: signal(false),
+    similarity: signal(null), similarityHighlights: signal(new Map()), similarityUnavailable: signal(false), sourcesExist: signal(false), setSourcesExist: vi.fn(),
     hasUnsavedChanges: vi.fn(() => dirty), discardDraft: vi.fn(), moveTo: vi.fn(() => true), removeParagraph: vi.fn(() => true), undoRemove: vi.fn(() => null),
     load: vi.fn(() => Promise.resolve()), setText: vi.fn(), setSegmentText: vi.fn(), addKeyword: vi.fn(), updateKeyword: vi.fn(), removeKeyword: vi.fn(), setMeta: vi.fn(),
     saveVersion: vi.fn(() => Promise.resolve()), resolveConflict: vi.fn(() => Promise.resolve()),

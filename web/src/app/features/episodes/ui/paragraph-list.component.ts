@@ -8,6 +8,8 @@ import { EMPTY_ANNOTATION_VIEWS } from './annotation.view-model';
 import type { AnnotationViews } from './annotation.view-model';
 import type { InlineAnnotationViewModel } from '@shared/ui';
 import type { SegmentEditorViewModel, StoryEditorIntent } from './story-editor.view-model';
+import type { SegmentAddress } from '@shared/util/segment-address';
+import type { SimilarityLevel } from '../domain/audit.model';
 
 @Component({
   selector: 'nts-paragraph-list',
@@ -22,6 +24,7 @@ export class ParagraphListComponent {
   readonly readOnly = input(false);
   readonly keywordLimitHit = input<string | null>(null);
   readonly annotationViews = input<AnnotationViews>(EMPTY_ANNOTATION_VIEWS);
+  readonly similarityHighlights = input<ReadonlyMap<SegmentAddress, SimilarityLevel>>(new Map());
   protected readonly emptyAnnotations: readonly InlineAnnotationViewModel[] = [];
   protected readonly emptyFlags: ReadonlyMap<number, { readonly annotationId: string; readonly messageKey: string }> = new Map();
   // Buttons use the same path when the optional pointer enhancement is absent.

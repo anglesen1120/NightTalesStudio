@@ -33,6 +33,8 @@ textarea:read-only { background: var(--nts-color-surface-variant); cursor: text;
 textarea:focus-visible { outline: 2px solid var(--nts-color-focus); outline-offset: var(--nts-space-1); }
 .segment-editor__counter { margin: 0; color: var(--nts-color-on-surface-muted); font-size: var(--nts-type-caption-size); }
 .segment-editor__errors { margin: 0; padding-inline-start: var(--nts-space-5); color: var(--nts-color-error); }
+.segment-editor--similarity-warn, .segment-editor--similarity-block { box-shadow: inset 2px 0 var(--nts-color-warn); }
+.segment-editor__similarity { margin: 0; color: var(--nts-color-on-surface); padding-inline-start: var(--nts-space-3); border-inline-start: 2px solid var(--nts-color-warn); }
 @media (max-width: 30rem) {
   .segment-editor { padding: var(--nts-space-4); }
   textarea { min-height: 10rem; }
