@@ -7,6 +7,7 @@ using NightTales.Application.Abstractions.Stories;
 using NightTales.Application.Features.Account.Legal;
 using NightTales.Application.Features.Research;
 using NightTales.Application.Features.Research.Jobs;
+using NightTales.Application.Features.Research.Sources;
 using NightTales.Application.Features.SeriesBible;
 using NightTales.Application.Features.SeriesBible.Abstractions;
 using NightTales.Application.Features.SeriesBible.Jobs;
@@ -74,6 +75,12 @@ public static class ApplicationServiceCollectionExtensions
         // job's autopilot auto-accept both go through it, so neither can grow a second way of applying ops.
         // Scoped: it writes through the caller's tracked context, inside the caller's row lock and transaction.
         services.TryAddScoped<IBibleProposalApplier, BibleProposalApplier>();
+
+        // 02.7.2-T2 (R7): the one write path of a url source — the episode lock, the state gate, the URL and cap
+        // checks and the inserts — so POST /sources and the candidate add command (which must not send a nested
+        // AddSourceCommand) cannot drift apart. Scoped: it writes through the caller's tracked context, inside the
+        // caller's row lock and transaction.
+        services.TryAddScoped<ISourceAdder, SourceAdder>();
 
         // 05.1.2-T1 / 09.6.1-T1 (05 D6/D7): the subtitle-presets catalog embedded in the Domain assembly,
         // read once. The factory is lazy: it runs on the first resolution (the first RenderEpisode handler

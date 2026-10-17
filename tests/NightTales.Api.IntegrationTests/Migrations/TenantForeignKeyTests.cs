@@ -55,6 +55,9 @@ public sealed class TenantForeignKeyTests(TestDatabase database) : IntegrationTe
         "series_autopilot_authorizations.series_id,user_id->series(id,user_id)",
         "series_bibles.proposed_from_episode_id,user_id->episodes(id,user_id)",
         "series_bibles.series_id,user_id->series(id,user_id)",
+        "source_candidates.episode_id,user_id->episodes(id,user_id)",
+        "source_candidates.generation_run_id,user_id->generation_runs(id,user_id)",
+        "source_candidates.source_id,user_id->story_sources(id,user_id)",
         "story_sources.episode_id,user_id->episodes(id,user_id)",
         "story_versions.episode_id,user_id->episodes(id,user_id)",
         "story_versions.fact_sheet_id,user_id->fact_sheets(id,user_id)",
@@ -286,6 +289,28 @@ public sealed class TenantForeignKeyTests(TestDatabase database) : IntegrationTe
             + "percent, params, attempt) VALUES (gen_random_uuid(), '{b}', '{ep_b}', '{version_a}', "
             + "gen_random_uuid(), 'succeeded', 'done', 100, '{}'::jsonb, 1)"
         },
+        {
+            "source_candidates.episode_id",
+            "INSERT INTO source_candidates (id, user_id, episode_id, generation_run_id, url, normalized_url, "
+            + "registrable_domain, site_name, rank, status, created_at, updated_at) VALUES (gen_random_uuid(), "
+            + "'{b}', '{ep_a}', '{run_b}', 'https://b.example/candidate-episode', "
+            + "'https://b.example/candidate-episode', 'b.example', 'Intruder site', 1, 'proposed', now(), now())"
+        },
+        {
+            "source_candidates.generation_run_id",
+            "INSERT INTO source_candidates (id, user_id, episode_id, generation_run_id, url, normalized_url, "
+            + "registrable_domain, site_name, rank, status, created_at, updated_at) VALUES (gen_random_uuid(), "
+            + "'{b}', '{ep_b}', '{run_a}', 'https://b.example/candidate-run', "
+            + "'https://b.example/candidate-run', 'b.example', 'Intruder site', 2, 'proposed', now(), now())"
+        },
+        {
+            "source_candidates.source_id",
+            "INSERT INTO source_candidates (id, user_id, episode_id, generation_run_id, url, normalized_url, "
+            + "registrable_domain, site_name, rank, status, source_id, created_at, updated_at) VALUES "
+            + "(gen_random_uuid(), '{b}', '{ep_b}', '{run_b}', 'https://b.example/candidate-source', "
+            + "'https://b.example/candidate-source', 'b.example', 'Intruder site', 3, 'added', '{source_a}', "
+            + "now(), now())"
+        },
     };
 
     [Theory]
@@ -483,6 +508,23 @@ public sealed class TenantForeignKeyTests(TestDatabase database) : IntegrationTe
 
         var template = await seriesBuilder.EnsureStyleTemplateAsync(ct: ct);
 
+        // 02.7.2-T2: the two parents of source_candidates' remaining same-owner keys — a finished story run of
+        // the intruder and a pending url source of user A. `cancelled` keeps the active-run index out of the way.
+        var runB = Guid.CreateVersion7();
+        SqlProbe.Execute(
+            Database,
+            $"INSERT INTO generation_runs (id, user_id, series_id, episode_id, kind, \"trigger\", status, stage, "
+            + $"worst_case_usd, queued_at, created_at, updated_at) VALUES ('{runB}', '{intruder.Id}', "
+            + $"'{seriesB.Id}', '{episodeB.Id}', 'story', 'user', 'cancelled', 'queued', 0, now(), now(), now())");
+
+        var sourceA = Guid.CreateVersion7();
+        SqlProbe.Execute(
+            Database,
+            $"INSERT INTO story_sources (id, user_id, episode_id, kind, url, normalized_url, registrable_domain, "
+            + $"status, created_at) VALUES ('{sourceA}', '{owner.Id}', '{episodeA.Id}', 'url', "
+            + $"'https://cross-tenant.example/a', 'https://cross-tenant.example/a', 'cross-tenant.example', "
+            + $"'pending', now())");
+
         return new Fixtures(
             owner.Id,
             intruder.Id,
@@ -496,7 +538,9 @@ public sealed class TenantForeignKeyTests(TestDatabase database) : IntegrationTe
             runA,
             authorizationA,
             factSheetA,
-            template.Id);
+            template.Id,
+            runB,
+            sourceA);
     }
 
     private static string Fill(string insert, Fixtures fixtures) => insert
@@ -507,7 +551,9 @@ public sealed class TenantForeignKeyTests(TestDatabase database) : IntegrationTe
         .Replace("{ep_a}", fixtures.EpisodeA.ToString(), StringComparison.Ordinal)
         .Replace("{ep_b}", fixtures.EpisodeB.ToString(), StringComparison.Ordinal)
         .Replace("{run_a}", fixtures.GenerationRunA.ToString(), StringComparison.Ordinal)
+        .Replace("{run_b}", fixtures.GenerationRunB.ToString(), StringComparison.Ordinal)
         .Replace("{fs_a}", fixtures.FactSheetA.ToString(), StringComparison.Ordinal)
+        .Replace("{source_a}", fixtures.SourceA.ToString(), StringComparison.Ordinal)
         .Replace("{asset_a}", fixtures.AssetA.ToString(), StringComparison.Ordinal)
         .Replace("{version_a}", fixtures.StoryVersionA.ToString(), StringComparison.Ordinal)
         .Replace("{version_b}", fixtures.StoryVersionB.ToString(), StringComparison.Ordinal)
@@ -530,5 +576,7 @@ public sealed class TenantForeignKeyTests(TestDatabase database) : IntegrationTe
         Guid GenerationRunA,
         Guid AuthorizationA,
         Guid FactSheetA,
-        Guid StyleTemplate);
+        Guid StyleTemplate,
+        Guid GenerationRunB,
+        Guid SourceA);
 }

@@ -348,6 +348,21 @@ internal static class SeedPrevious
             INSERT INTO platform_quota_usage (platform, quota_day, units_used, units_limit, created_at, updated_at)
             VALUES ('youtube', DATE '2026-10-15', 0, 10000, now(), now())
             """),
+        (
+            // 02.7.2-T2: the table the `_02_AddSourceCandidates` migration creates. Same rule as above: skipped while
+            // the previous schema lacks it, so the row lands only on a schema that has the table. It is an `added`
+            // candidate of the seed episode, pointing at the seed run and the seed source, so both same-owner keys and
+            // the `status = 'added'` ⇔ `source_id IS NOT NULL` CHECK see real values.
+            "source_candidates",
+            """
+            INSERT INTO source_candidates (id, user_id, episode_id, generation_run_id, url, normalized_url,
+                                           registrable_domain, title, site_name, rank, status, source_id, created_at,
+                                           updated_at)
+            VALUES ('01920000-0000-7000-8000-000000000019', '01920000-0000-7000-8000-000000000001',
+                    '01920000-0000-7000-8000-000000000004', '01920000-0000-7000-8000-00000000000f',
+                    'https://example.com/seed', 'https://example.com/seed', 'example.com', 'Seed candidate',
+                    'Example', 1, 'added', '01920000-0000-7000-8000-000000000012', now(), now())
+            """),
     ];
 
     /// <summary>The tables the dataset covers, in insert order — the contract a feature migration extends.</summary>

@@ -4,13 +4,21 @@ History moved out of STATUS.md to keep the live file small. The initial archive 
 
 ## Resume-here history (Current/Previous blocks, Next actions)
 
+### Superseded web Next (Session 48 PR-open) line (2026-10-17, replaced when #217 merged as cc505ba5)
+
+Replaced text (verbatim):
+
+- **Web next:** Session 48: **10.5.7-T1** series bible panel + proposal diff in PR #217 (Session 48, `feature/10.5.7-T1-s48`, from `develop` `be4d36f5`; web lane; `/series/:id/bible`; `web/openapi.json` re-pinned from `develop` `be4d36f5` — BIBLE-11 web half closed; shared `DiffRow` gained an optional add-only `reason` (README D11 reuse of `DiffView`); no add-summary UI by design (02.6.3 U2: edit/remove only); local web gate `exit 0 on `5387e2bc` (lint, i18n:check, api:gen:check, test:ci 3085 tests, test:tools, legal:gen:check, build, budget:gzip, csp:gen)`; CI: billing refusal CI-01 to be confirmed, owner treats as pass; open items in the task §Notes Delivery notes and §Open findings). Lane next: **10.5.8-T1** (find-sources; `Depends on` **02.7.2-T2**, not merged) and **10.10.2-T1** render / "Make video" (bind to `videoBlocked()` + `ApprovalStore`, never `keywordFlags().length`).
+
+Outcome: 10.5.7-T1 merged as #217 (`cc505ba5`, tip `76f91212`, Session 48) by the coordinator; `git merge-base --is-ancestor 76f912127e3ad4d9062cb3700120b5ece4df29ba origin/develop` true; CI refused (billing, CI-01, owner treats as pass); local web gate exit 0 on the code tip `5387e2bc` (the tip `76f91212` adds docs only). The Resume web-next line now shows the merge and keeps the lane pointer (10.5.8-T1, 10.10.2-T1).
+
 ### Superseded web Next (Session 40) line (2026-10-17, replaced when Session 48 opened the 10.5.7-T1 PR)
 
 Replaced text (verbatim):
 
 - **Web next:** Session 40 closed: **10.5.5-T1** research page (`/episodes/:id/research`: sources, fetch status, fact-sheet editor, approve) merged as #201 (`c275b0bb`, tip `0c923711`, Session 40, `feature/10.5.5-T1-s40`, from `develop` `fe319b42`, code tip `32b26e35`; CI refused: CI-01, owner treats as pass; local web gate — all 9 `web.yml` steps — exit 0 on the code tip; T3 gates closed; no migration; closes the 10.5.6-T1 research deep link and the 10.5.2-T1 `/episodes/:id/research` + `EPISODE_GATE` hand-over; open items are §Open tasks rows). Lane next: **10.5.7-T1** (series bible panel + proposal diff; `Depends on` includes **02.6.3-T2**, merged as #213; needs the `web/openapi.json` re-pin through the coordinator) and **10.5.8-T1** (find-sources; `Depends on` **02.7.2-T2**, not merged) — both wait on the backend lane; then **10.10.2-T1** render / "Make video" (bind to `videoBlocked()` + `ApprovalStore`, never `keywordFlags().length`).
 
-Outcome: 10.5.7-T1 (series bible panel + proposal diff) is delivered on `feature/10.5.7-T1-s48` (Session 48, PR #TBD, from `develop` `be4d36f5`): `/series/:id/bible`, the `web/openapi.json` re-pin from `develop` `be4d36f5` (BIBLE-11 web half closed), the add-only `DiffRow.reason` reuse of the shared `DiffView` (D11), and no add-summary UI (02.6.3 U2: edit/remove only). The Resume web-next line now carries this lane and names 10.5.8-T1 and 10.10.2-T1 as the remaining web lanes.
+Outcome: 10.5.7-T1 (series bible panel + proposal diff) is delivered on `feature/10.5.7-T1-s48` (Session 48, PR #217, from `develop` `be4d36f5`): `/series/:id/bible`, the `web/openapi.json` re-pin from `develop` `be4d36f5` (BIBLE-11 web half closed), the add-only `DiffRow.reason` reuse of the shared `DiffView` (D11), and no add-summary UI (02.6.3 U2: edit/remove only). The Resume web-next line now carries this lane and names 10.5.8-T1 and 10.10.2-T1 as the remaining web lanes.
 
 ### Superseded backend Next Session 47 PR-open line (2026-10-16, replaced when #215 merged as 81b87a78)
 
@@ -1141,6 +1149,16 @@ Earlier live rows for Plan13, hosting, skeleton, wave2 and wave3 already exist i
 ## Replaced by Session 42 close-out (02.6.3-T2, #213 merged), archived 2026-10-16
 
 - **Next (backend, start here):** Session 42 **02.6.3-T2** proposal job on `StoryApproved` + accept/dismiss (`POST /api/v1/series/{id}/bible/proposal/accept|dismiss`, no If-Match) + autopilot auto-accept on `feature/02.6.3-T2-s42`: PR #213, tip `cb8bed25`, gate `GATE_RC=0 on cb8bed25 (remote, Ubuntu arm64; later commits add docs only)`; in review, not merged. The row lock is taken in accept, dismiss, PUT and the proposal job (BIBLE-4 b closed). BIBLE-4 (a) `first_episode_id` stamping stays OPEN: no writer found in T2 src. Next backend after merge: **02.6.3-T3**; web **10.5.7-T1** consumes the GET/PUT and accept/dismiss wire.
+
+## Replaced by Session 49 (02.7.2-T2), archived 2026-10-17
+
+- **Next (backend, Session 47 closed):** **02.7.2-T1** allow-list governance merged as #215 (`81b87a78`, tip `5ec6d3b8`; no migration, no route; `config/source-finder/allowed-sites.v1.json` embedded, 18 entries: 6 approved, 1 rejected, 11 candidate; CI refused: CI-01, owner treats as pass; local full `gate.sh` `GATE_RC=0` on `9935a783` with develop `e87a7e21` merged). Lane next: **02.7.2-T2** (find-sources command, candidates, endpoints; zero approved gives 404 `feature_disabled`, AL-S47-1), then **02.7.2-T3** (runner; Worker blocklist wiring, AL-S47-2). Open items: §Open tasks AL-S47-1 to AL-S47-7.
+
+Open-tasks row closed by 02.7.2-T2 (S49):
+
+| AL-S47-1 zero approved entries → `feature_disabled` | **[OPEN]** owner: 02.7.2-T2 | Start-up only logs a warning when no entry is approved; `FindSourcesCommand` must return 404 `feature_disabled` (from 02.7.2-T1 #215, S47). |
+
+Closed by `FindSourcesCommandHandler.cs` (no approved allow-list site for the series language → 404 `feature_disabled`), tests `FindSources_FlagOnZeroApprovedEntries_Returns404FeatureDisabled` and `FindSources_SeriesLanguageHasNoApprovedSite_Returns404FeatureDisabled_EvenWhenOtherLanguageIsApproved`.
 
 ## Replaced by Session 50 owner decisions (02.5.6-T2, PR open), archived 2026-10-17
 
