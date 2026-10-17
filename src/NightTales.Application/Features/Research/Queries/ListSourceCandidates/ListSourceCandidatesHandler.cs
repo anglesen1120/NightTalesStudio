@@ -22,6 +22,12 @@ namespace NightTales.Application.Features.Research.Queries.ListSourceCandidates;
 public sealed class ListSourceCandidatesHandler(IReadDb readDb)
     : IQueryHandler<ListSourceCandidatesQuery, ErrorOr<SourceCandidateListDto>>
 {
+    /// <summary>
+    /// Defence-in-depth bound on one episode's list: each find run adds at most 10 rows, but repeated runs only
+    /// grow the list by the caller's own paid searches.
+    /// </summary>
+    private const int MaxCandidates = 200;
+
     /// <inheritdoc />
     public async ValueTask<ErrorOr<SourceCandidateListDto>> Handle(
         ListSourceCandidatesQuery query,
@@ -44,6 +50,7 @@ public sealed class ListSourceCandidatesHandler(IReadDb readDb)
             .OrderByDescending(candidate => candidate.CreatedAt)
             .ThenBy(candidate => candidate.Rank)
             .ThenBy(candidate => candidate.Id)
+            .Take(MaxCandidates)
             .Select(candidate => new
             {
                 candidate.Id,

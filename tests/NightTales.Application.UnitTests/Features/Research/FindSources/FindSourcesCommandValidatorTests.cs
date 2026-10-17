@@ -50,6 +50,36 @@ public sealed class FindSourcesCommandValidatorTests
     }
 
     [Fact]
+    public void FindSourcesValidator_RawQueryPastTheRawCap_FailsBeforeNormalising()
+    {
+        // 2001 raw characters that would strip down to one stored character: refused on the raw length alone, so a
+        // request-body-sized query never reaches the stripping allocation.
+        var raw = string.Concat(new string('\u200B', FindSourcesCommand.RawQueryMaxChars), "q");
+
+        var result = Validator.Validate(Command(raw));
+
+        result.IsValid.ShouldBeFalse();
+        result.Errors.ShouldContain(error => error.ErrorMessage == "query_too_long");
+    }
+
+    [Fact]
+    public void FindSourcesValidator_RawQueryAtTheRawCapWithNoiseOnly_IsValid()
+    {
+        var raw = string.Concat(new string('q', FindSourcesCommand.MaxQueryLength), new string('\u200B', FindSourcesCommand.RawQueryMaxChars - FindSourcesCommand.MaxQueryLength));
+
+        raw.Length.ShouldBe(FindSourcesCommand.RawQueryMaxChars);
+        Validator.Validate(Command(raw)).IsValid.ShouldBeTrue();
+    }
+
+    [Fact]
+    public void FindSourcesCommand_ToString_NeverPrintsTheQuery()
+    {
+        const string Marker = "qry-marker-7f3a9c";
+
+        Command(Marker).ToString().ShouldNotContain(Marker);
+    }
+
+    [Fact]
     public void FindSourcesValidator_NoQuery_IsValid()
     {
         Validator.Validate(Command(null)).IsValid.ShouldBeTrue("the job derives the query when the caller types none");

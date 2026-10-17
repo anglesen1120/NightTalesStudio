@@ -44,9 +44,29 @@ public sealed record FindSourcesCommand(
     /// <summary>The longest stored query, after trimming and control-character stripping (02.7 plan §3).</summary>
     public const int MaxQueryLength = Episode.MaxSourceFindQueryChars;
 
+    /// <summary>
+    /// The longest raw query the validator normalises: a longer body is refused before any stripping allocates, so
+    /// the cost of <see cref="NormalizeQuery"/> is bounded by this value rather than by the request body cap.
+    /// </summary>
+    public const int RawQueryMaxChars = 2000;
+
     /// <summary>What the handler queued; set by the handler, read by the audit behaviour.</summary>
     [JsonIgnore]
     public FindSourcesOutcome? Outcome { get; set; }
+
+    /// <summary>
+    /// Prints the ids only: the compiler-generated member list would include <see cref="Query"/>, and the query
+    /// never reaches a log line, an exception message or a debugger string (02 README D19).
+    /// </summary>
+    /// <param name="builder">The record's string builder.</param>
+    /// <returns><see langword="true"/>, because members were printed.</returns>
+    private bool PrintMembers(System.Text.StringBuilder builder)
+    {
+        ArgumentNullException.ThrowIfNull(builder);
+
+        builder.Append(CultureInfo.InvariantCulture, $"EpisodeId = {EpisodeId}, Trigger = {Trigger}");
+        return true;
+    }
 
     /// <summary>
     /// The shape rule of the typed query: no control, format or line-separator characters, then trimmed, and

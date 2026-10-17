@@ -28,9 +28,12 @@ public sealed class FindSourcesCommandValidator : AbstractValidator<FindSourcesC
         RuleFor(command => command.EpisodeId).NotEmpty();
 
         // The bound applies to the stored value, not the raw one: leading control characters and padding do not
-        // push an otherwise acceptable query over the limit.
+        // push an otherwise acceptable query over the limit. A raw value past RawQueryMaxChars is refused first,
+        // so the stripping never allocates for a request-body-sized string.
         RuleFor(command => command.Query)
-            .Must(query => FindSourcesCommand.NormalizeQuery(query) is not { Length: > FindSourcesCommand.MaxQueryLength })
+            .Must(query => query is null
+                || (query.Length <= FindSourcesCommand.RawQueryMaxChars
+                    && FindSourcesCommand.NormalizeQuery(query) is not { Length: > FindSourcesCommand.MaxQueryLength }))
             .WithMessage("query_too_long");
 
         RuleFor(command => command.IdempotencyKey)

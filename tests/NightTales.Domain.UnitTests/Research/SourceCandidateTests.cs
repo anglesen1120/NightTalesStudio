@@ -119,7 +119,7 @@ public sealed class SourceCandidateTests
     }
 
     [Fact]
-    public void MarkAdded_FromDismissed_Fails()
+    public void SourceCandidate_MarkAdded_FromDismissed_Fails()
     {
         var candidate = Candidate();
         candidate.Dismiss().IsError.ShouldBeFalse();

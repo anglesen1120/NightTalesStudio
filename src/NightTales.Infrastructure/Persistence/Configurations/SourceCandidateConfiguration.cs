@@ -76,7 +76,9 @@ internal sealed class SourceCandidateConfiguration : IEntityTypeConfiguration<So
             .HasDatabaseName("ux_source_candidates_episode_url")
             .IsUnique();
 
-        // The list query: one episode's candidates, optionally by status, in citation order (plan §5).
+        // Per-episode candidate lookups by status in citation order (plan §5). The list endpoint orders by
+        // created_at desc, rank asc and reads <= tens of rows, so it sorts after the episode prefix; this index
+        // serves the status filter and the citation-order scan the plan names.
         builder.HasIndex(candidate => new { candidate.EpisodeId, candidate.Status, candidate.Rank })
             .HasDatabaseName("ix_source_candidates_episode_status_rank");
 

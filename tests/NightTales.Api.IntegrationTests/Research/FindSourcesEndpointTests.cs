@@ -278,6 +278,125 @@ public sealed class FindSourcesEndpointTests(TestDatabase database) : Integratio
         CountRuns(world).ShouldBe(0);
     }
 
+    [Fact]
+    public async Task FindSources_ArchivedSeries_Returns409SeriesArchived_TakesNoRunAndNoReservation()
+    {
+        var world = await SeedAsync();
+        SqlProbe.Execute(Database, $"UPDATE series SET archived_at = now() WHERE id = '{world.SeriesId}'");
+        var ledger = new RecordingLedger();
+        using var factory = ApprovedOnlyFactory(Language.Vi, ledger);
+        using var client = factory.ClientFor(world.UserId);
+
+        using var response = await FindAsync(client, world.EpisodeId, "archived-k");
+
+        response.StatusCode.ShouldBe(HttpStatusCode.Conflict, await response.Content.ReadAsStringAsync(Ct));
+        (await ReadProblemAsync(response)).Code.ShouldBe("series_archived");
+        CountRuns(world).ShouldBe(0, "an archived series is refused before a run row is written");
+        OutboxCount(world).ShouldBe(0);
+        ledger.Reservations.ShouldBeEmpty("an archived series is refused before any credit is reserved");
+    }
+
+    [Fact]
+    public async Task FindSources_ReusedKeyWithDifferentQuery_Returns422_AndNoSecondRun()
+    {
+        var world = await SeedAsync();
+        using var factory = ApprovedOnlyFactory(Language.Vi);
+        using var client = factory.ClientFor(world.UserId);
+
+        using var first = await FindAsync(client, world.EpisodeId, "reuse-k", query: "first query");
+        using var reused = await FindAsync(client, world.EpisodeId, "reuse-k", query: "a different query");
+
+        first.StatusCode.ShouldBe(HttpStatusCode.Accepted, await first.Content.ReadAsStringAsync(Ct));
+        reused.StatusCode.ShouldBe(
+            HttpStatusCode.UnprocessableEntity,
+            await reused.Content.ReadAsStringAsync(Ct));
+        (await ReadProblemAsync(reused)).Code.ShouldBe("idempotency_key_reused");
+        CountRuns(world).ShouldBe(1, "the reused key must not queue a second run");
+        OutboxCount(world).ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task FindSources_SeriesLanguageHasNoApprovedSite_Returns404FeatureDisabled_EvenWhenOtherLanguageIsApproved()
+    {
+        var world = await SeedAsync(language: Language.En);
+        using var factory = ApprovedOnlyFactory(Language.Vi);
+        using var client = factory.ClientFor(world.UserId);
+
+        using var response = await FindAsync(client, world.EpisodeId, "en-k");
+
+        response.StatusCode.ShouldBe(HttpStatusCode.NotFound, await response.Content.ReadAsStringAsync(Ct));
+        (await ReadProblemAsync(response)).Code.ShouldBe("feature_disabled");
+        CountRuns(world).ShouldBe(0);
+        OutboxCount(world).ShouldBe(0);
+    }
+
+    [Fact]
+    public async Task FindSources_SeriesLanguageHasApprovedSite_Returns202_PositiveControl()
+    {
+        var world = await SeedAsync(language: Language.Vi);
+        using var factory = ApprovedOnlyFactory(Language.Vi);
+        using var client = factory.ClientFor(world.UserId);
+
+        using var response = await FindAsync(client, world.EpisodeId, "vi-k");
+
+        response.StatusCode.ShouldBe(HttpStatusCode.Accepted, await response.Content.ReadAsStringAsync(Ct));
+        CountRuns(world).ShouldBe(1);
+        OutboxCount(world).ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task FindSources_StoryReviewEpisode_Returns202()
+    {
+        var world = await SeedAsync(status: EpisodeStatus.StoryReview);
+        using var factory = ApprovedOnlyFactory(Language.Vi);
+        using var client = factory.ClientFor(world.UserId);
+
+        using var response = await FindAsync(client, world.EpisodeId, "review-k");
+
+        response.StatusCode.ShouldBe(HttpStatusCode.Accepted, await response.Content.ReadAsStringAsync(Ct));
+        CountRuns(world).ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task FindSources_QueryExactly300Chars_Returns202()
+    {
+        var world = await SeedAsync();
+        using var factory = ApprovedOnlyFactory(Language.Vi);
+        using var client = factory.ClientFor(world.UserId);
+
+        using var response = await FindAsync(client, world.EpisodeId, "q300-k", query: new string('q', 300));
+
+        response.StatusCode.ShouldBe(HttpStatusCode.Accepted, await response.Content.ReadAsStringAsync(Ct));
+        CountRuns(world).ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task FindSources_WhitespaceOnlyQuery_Returns202_AsIfNoQuery()
+    {
+        var world = await SeedAsync();
+        using var factory = ApprovedOnlyFactory(Language.Vi);
+        using var client = factory.ClientFor(world.UserId);
+
+        using var response = await FindAsync(client, world.EpisodeId, "blank-k", query: "   ");
+
+        response.StatusCode.ShouldBe(HttpStatusCode.Accepted, await response.Content.ReadAsStringAsync(Ct));
+        CountRuns(world).ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task FindSources_UnknownEpisode_Returns404NotFound()
+    {
+        var world = await SeedAsync();
+        using var factory = ApprovedOnlyFactory(Language.Vi);
+        using var client = factory.ClientFor(world.UserId);
+
+        using var response = await FindAsync(client, Guid.CreateVersion7(), "missing-k");
+
+        response.StatusCode.ShouldBe(HttpStatusCode.NotFound, await response.Content.ReadAsStringAsync(Ct));
+        (await ReadProblemAsync(response)).Code.ShouldBe("not_found");
+        CountRuns(world).ShouldBe(0);
+    }
+
     private ApiFactory NewFactory(bool flagOn = false, Action<IServiceCollection>? configure = null) =>
         new ApiFactory(Database, new FakeClock(Start))
             .WithSetting("Budget:MaxPlatformCostUsdPerDay", "1000")
@@ -294,6 +413,21 @@ public sealed class FindSourcesEndpointTests(TestDatabase database) : Integratio
                 }
 
                 configure?.Invoke(services);
+            });
+
+    private ApiFactory ApprovedOnlyFactory(Language approvedFor, RecordingLedger? ledger = null) =>
+        NewFactory(
+            flagOn: true,
+            configure: services =>
+            {
+                services.RemoveAll<IResearchAllowList>();
+                services.AddSingleton<IResearchAllowList>(new ApprovedOnlyFor(approvedFor));
+
+                if (ledger is not null)
+                {
+                    services.RemoveAll<ICreditLedger>();
+                    services.AddSingleton<ICreditLedger>(ledger);
+                }
             });
 
     private static Task<HttpResponseMessage> FindAsync(
@@ -327,6 +461,11 @@ public sealed class FindSourcesEndpointTests(TestDatabase database) : Integratio
         SqlProbe.Count(
             Database,
             $"SELECT count(*) FROM generation_runs WHERE episode_id = '{world.EpisodeId}' AND kind = 'find_sources'");
+
+    private long OutboxCount(World world) =>
+        SqlProbe.Count(
+            Database,
+            $"SELECT count(*) FROM outbox_messages WHERE type = '{OutboxType}' AND user_id = '{world.UserId}'");
 
     private async Task<World> SeedAsync(
         EpisodeStatus status = EpisodeStatus.Draft,
@@ -385,6 +524,19 @@ public sealed class FindSourcesEndpointTests(TestDatabase database) : Integratio
     private sealed class EmptyAllowList : IResearchAllowList
     {
         public IReadOnlyList<AllowedSite> Approved(Language language) => [];
+
+        public bool IsAllowed(string registrableOrHost) => false;
+
+        public string Hash => string.Empty;
+    }
+
+    /// <summary>Approves one site for exactly one language and nothing for the other, so the gate is per language.</summary>
+    private sealed class ApprovedOnlyFor(Language language) : IResearchAllowList
+    {
+        public IReadOnlyList<AllowedSite> Approved(Language requested) =>
+            requested == language
+                ? [new AllowedSite("www.example.org", "Example", requested.ToString().ToLowerInvariant(), "news", "approved")]
+                : [];
 
         public bool IsAllowed(string registrableOrHost) => false;
 
