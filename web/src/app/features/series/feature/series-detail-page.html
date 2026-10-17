@@ -16,6 +16,7 @@
     @if (series.archivedAt === null) {
       <a [routerLink]="['/series', series.id]" [queryParams]="{ tab: 'autopilot' }" [attr.aria-current]="tab() === 'autopilot' ? 'page' : null">{{ 'series.detail.autopilot' | transloco }}</a>
     } @else { <span aria-disabled="true">{{ 'series.detail.autopilot' | transloco }}</span> }
+    <a [routerLink]="['/series', series.id, 'bible']">{{ 'series.bible.title' | transloco }}</a>
   </nav>
   @if (tab() === 'overview' || series.archivedAt !== null) {
     <section class="series-detail__summary" aria-labelledby="series-summary-title">

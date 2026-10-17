@@ -1,0 +1,16 @@
+:host { display: block; min-width: 0; }
+.folios { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--nts-space-5); align-items: start; padding: var(--nts-space-5); background: var(--nts-color-sheet); border: 1px solid var(--nts-color-line); border-radius: var(--nts-radius-sheet); }
+.narrator { min-width: 0; margin: 0; padding: var(--nts-space-4) 0 0; border: 0; border-top: var(--nts-space-1) solid var(--nts-color-ink); }
+legend { padding: 0; font-size: var(--nts-type-title-size); line-height: var(--nts-type-title-line); font-weight: var(--nts-type-title-weight); }
+mat-form-field { display: block; width: 100%; margin-bottom: var(--nts-space-4); }
+textarea { resize: vertical; }
+.version { color: var(--nts-color-muted); font-variant-numeric: tabular-nums; }
+.saved { min-block-size: calc(var(--nts-type-body-size) * var(--nts-type-body-line)); color: var(--nts-color-success); }
+nts-bible-proposal-banner, nts-empty-state, nts-form-error-alert, .conflict { display: block; margin-bottom: var(--nts-space-5); }
+.conflict { padding: var(--nts-space-4); border: 1px solid var(--nts-color-error); border-inline-start-width: var(--nts-space-1); border-radius: var(--nts-radius-sheet); background: var(--nts-color-surface); }
+.conflict p, .field-issues, .required-hint { font-size: var(--nts-type-body-size); line-height: var(--nts-type-body-line); overflow-wrap: anywhere; }
+.field-issues, .required-hint { color: var(--nts-color-error); }
+button, a[mat-button] { min-height: var(--nts-target-min); }
+@media (min-width: 768px) { .folios { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (min-width: 1280px) { .folios { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 599px) { .folios { padding: var(--nts-space-3); } }

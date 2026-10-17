@@ -1186,6 +1186,182 @@
         }
       }
     },
+    "/api/v1/episodes/{id}/render": {
+      "post": {
+        "tags": [
+          "RenderingEndpoints"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RenderJobAcceptedDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "Precondition Failed",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Unprocessable Entity",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "Precondition Required",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too Many Requests",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service Unavailable",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/publishing/youtube/eta": {
+      "get": {
+        "tags": [
+          "YouTubeEtaEndpoints"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/YouTubeEtaDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/auth/register": {
       "post": {
         "tags": [
@@ -2438,6 +2614,290 @@
         }
       }
     },
+    "/api/v1/series/{id}/bible": {
+      "get": {
+        "tags": [
+          "SeriesBible"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BibleDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "SeriesBible"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "If-Match",
+            "in": "header",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/UpdateBibleRequest"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BibleUpdateResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "412": {
+            "description": "Precondition Failed",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Payload Too Large",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "Precondition Required",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/series/{id}/bible/proposal/accept": {
+      "post": {
+        "tags": [
+          "SeriesBible"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BibleUpdateResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/series/{id}/bible/proposal/dismiss": {
+      "post": {
+        "tags": [
+          "SeriesBible"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/hubs/ticket": {
       "post": {
         "tags": [
@@ -2619,6 +3079,507 @@
               "string"
             ],
             "format": "date-time"
+          }
+        }
+      },
+      "BibleCharacterV1": {
+        "required": [
+          "id",
+          "name",
+          "description",
+          "first_episode_id"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "name": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "description": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "first_episode_id": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          }
+        }
+      },
+      "BibleContentResponseV1": {
+        "required": [
+          "schema_version",
+          "narrator",
+          "recurring_characters",
+          "places",
+          "rules",
+          "episode_summaries"
+        ],
+        "type": "object",
+        "properties": {
+          "schema_version": {
+            "type": "string"
+          },
+          "narrator": {
+            "$ref": "#/components/schemas/BibleNarratorV1"
+          },
+          "recurring_characters": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BibleCharacterV1"
+            }
+          },
+          "places": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BiblePlaceV1"
+            }
+          },
+          "rules": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BibleRuleV1"
+            }
+          },
+          "episode_summaries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BibleEpisodeSummaryResponseV1"
+            }
+          }
+        }
+      },
+      "BibleContentV1": {
+        "required": [
+          "schema_version",
+          "narrator",
+          "recurring_characters",
+          "places",
+          "rules",
+          "episode_summaries"
+        ],
+        "type": "object",
+        "properties": {
+          "schema_version": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "narrator": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/BibleNarratorV1"
+              }
+            ]
+          },
+          "recurring_characters": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/BibleCharacterV1"
+            }
+          },
+          "places": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/BiblePlaceV1"
+            }
+          },
+          "rules": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/BibleRuleV1"
+            }
+          },
+          "episode_summaries": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/BibleEpisodeSummaryV1"
+            }
+          }
+        }
+      },
+      "BibleDto": {
+        "required": [
+          "seriesId",
+          "version",
+          "etag",
+          "content",
+          "proposal"
+        ],
+        "type": "object",
+        "properties": {
+          "seriesId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "version": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "etag": {
+            "type": "string"
+          },
+          "content": {
+            "$ref": "#/components/schemas/BibleContentResponseV1"
+          },
+          "proposal": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/BibleProposalDto"
+              }
+            ]
+          }
+        }
+      },
+      "BibleEpisodeSummaryResponseV1": {
+        "required": [
+          "episode_id",
+          "title",
+          "summary",
+          "structure",
+          "approved_at"
+        ],
+        "type": "object",
+        "properties": {
+          "episode_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "title": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "structure": {
+            "$ref": "#/components/schemas/BibleStructureV1"
+          },
+          "approved_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "BibleEpisodeSummaryV1": {
+        "required": [
+          "episode_id",
+          "title",
+          "summary"
+        ],
+        "type": "object",
+        "properties": {
+          "episode_id": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
+          "title": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "summary": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "BibleNarratorV1": {
+        "required": [
+          "name",
+          "persona",
+          "voice_notes"
+        ],
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "persona": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "voice_notes": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "BibleOpDto": {
+        "required": [
+          "kind",
+          "summary",
+          "name",
+          "description",
+          "text",
+          "reason"
+        ],
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "summary": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "name": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "description": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "text": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "reason": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "BiblePlaceV1": {
+        "required": [
+          "id",
+          "name",
+          "description"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "name": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "description": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "BibleProposalDto": {
+        "required": [
+          "basedOnVersion",
+          "proposedFromEpisodeId",
+          "proposedAt",
+          "ops",
+          "preview"
+        ],
+        "type": "object",
+        "properties": {
+          "basedOnVersion": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "proposedFromEpisodeId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
+          "proposedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "ops": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BibleOpDto"
+            }
+          },
+          "preview": {
+            "$ref": "#/components/schemas/BibleProposalPreviewDto"
+          }
+        }
+      },
+      "BibleProposalPreviewDto": {
+        "required": [
+          "characters",
+          "places",
+          "rules",
+          "summaryForEpisodeId"
+        ],
+        "type": "object",
+        "properties": {
+          "characters": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "places": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "rules": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "summaryForEpisodeId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          }
+        }
+      },
+      "BibleRuleV1": {
+        "required": [
+          "id",
+          "text"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "text": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "BibleStructureV1": {
+        "required": [
+          "sub_genre",
+          "opening",
+          "twist_type",
+          "setting",
+          "narrator_mode",
+          "beats"
+        ],
+        "type": "object",
+        "properties": {
+          "sub_genre": {
+            "type": "string"
+          },
+          "opening": {
+            "type": "string"
+          },
+          "twist_type": {
+            "type": "string"
+          },
+          "setting": {
+            "type": "string"
+          },
+          "narrator_mode": {
+            "type": "string"
+          },
+          "beats": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "BibleUpdateResponse": {
+        "required": [
+          "version",
+          "etag"
+        ],
+        "type": "object",
+        "properties": {
+          "version": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "etag": {
+            "type": "string"
           }
         }
       },
@@ -3951,6 +4912,22 @@
           }
         }
       },
+      "RenderJobAcceptedDto": {
+        "required": [
+          "renderJobId",
+          "status"
+        ],
+        "type": "object",
+        "properties": {
+          "renderJobId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "type": "string"
+          }
+        }
+      },
       "RenderJobSummaryDto": {
         "required": [
           "renderJobId",
@@ -4836,6 +5813,17 @@
           "true_crime"
         ]
       },
+      "UpdateBibleRequest": {
+        "required": [
+          "content"
+        ],
+        "type": "object",
+        "properties": {
+          "content": {
+            "$ref": "#/components/schemas/BibleContentV1"
+          }
+        }
+      },
       "UpdateMeRequest": {
         "required": [
           "displayName",
@@ -4990,6 +5978,30 @@
             ]
           }
         }
+      },
+      "YouTubeEtaDto": {
+        "required": [
+          "available",
+          "nextSlotAt"
+        ],
+        "type": "object",
+        "properties": {
+          "available": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "nextSlotAt": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          }
+        }
       }
     }
   },
@@ -5013,6 +6025,12 @@
       "name": "EpisodeVideoEndpoints"
     },
     {
+      "name": "RenderingEndpoints"
+    },
+    {
+      "name": "YouTubeEtaEndpoints"
+    },
+    {
       "name": "AuthEndpoints"
     },
     {
@@ -5023,6 +6041,9 @@
     },
     {
       "name": "SourceEndpoints"
+    },
+    {
+      "name": "SeriesBible"
     },
     {
       "name": "HubEndpoints"

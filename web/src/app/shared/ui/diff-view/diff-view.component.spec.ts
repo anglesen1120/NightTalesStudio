@@ -56,7 +56,7 @@ describe('DiffViewComponent', () => {
     const { fixture, root, results } = await setup();
     fixture.componentRef.setInput('mode', 'rows');
     fixture.componentRef.setInput('rows', [
-      { kind: 'add', label: 'added-row', after: '<b>safe</b>' },
+      { kind: 'add', label: 'added-row', after: '<b>safe</b>', reason: '<i>because</i>' },
       { kind: 'remove', label: 'removed-row', before: 'before' },
       { kind: 'change', label: 'changed-row', before: 'old', after: 'new' },
     ]);
@@ -67,6 +67,9 @@ describe('DiffViewComponent', () => {
     expect(root.querySelector('[data-kind="change"] del')?.textContent).toContain('old');
     expect(root.querySelector('[data-kind="change"] ins')?.textContent).toContain('new');
     expect(root.querySelector('b')).toBeNull();
+    expect(root.querySelector('i')).toBeNull();
+    expect(root.querySelector('.diff__reason')?.textContent).toBe('<i>because</i>');
+    expect(root.querySelectorAll('.diff__reason')).toHaveLength(1);
     expect(results.at(-1)).toMatchObject({ added: 2, removed: 2, truncated: false });
   });
 
