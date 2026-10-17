@@ -60,6 +60,9 @@ public interface IAppDbContext
     /// <summary>The versioned fact sheets of one episode (02.5.3-T2, <c>fact_sheets</c>); <c>IUserOwned</c>, so the D10 tenant filter applies.</summary>
     DbSet<FactSheet> FactSheets { get; }
 
+    /// <summary>The source candidates a find-sources run proposed for one episode (02.7.2-T2, <c>source_candidates</c>); <c>IUserOwned</c>, so the D10 tenant filter applies.</summary>
+    DbSet<SourceCandidate> SourceCandidates { get; }
+
     /// <summary>The legal deletion duties of 13.3.1-T1 (<c>data_deletion_requests</c>); <c>IUserOwned</c>, so the D10 tenant filter applies.</summary>
     DbSet<DeletionRequest> DeletionRequests { get; }
 

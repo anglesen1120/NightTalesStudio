@@ -24,7 +24,7 @@ namespace NightTales.Api.IntegrationTests.Migrations;
 /// unique <c>series_id</c> index and its two jsonb documents, the same-owner composite keys to <c>series</c>
 /// and to the episode a proposal came from, and the backfill that gives every series which predates the
 /// migration its one empty <c>bible.v1</c> row. 09.6.1-T1 appended a migration after this one, so this class
-/// no longer owns the last-migration check (<c>AddPlatformQuotaUsageMigrationTests</c> does) and finds its own
+/// no longer owns the last-migration check (<c>AddSourceCandidatesMigrationTests</c> does) and finds its own
 /// migration by name everywhere.
 /// </summary>
 [Trait("Category", "Integration")]

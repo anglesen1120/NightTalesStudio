@@ -16,8 +16,9 @@ namespace NightTales.Api.IntegrationTests.Migrations;
 /// The <c>_06_PlatformQuotaUsage</c> migration (06.3.1-T1): the <c>platform_quota_usage</c> counter table, one row per
 /// platform and Pacific quota day. The composite primary key <c>(platform, quota_day)</c> is its only index, and the
 /// three CHECKs reject a negative count, a non-positive limit and an unknown platform. The migration finds itself by
-/// name, because its timestamp is generated when the migration is added. This is the newest migration, so this class
-/// owns the last-migration check (<c>migrations[^1]</c>); the older migration tests find themselves by name.
+/// name, because its timestamp is generated when the migration is added. 02.7.2-T2 appended a migration after this one,
+/// so this class no longer owns the last-migration check (<c>AddSourceCandidatesMigrationTests</c> does) and finds its
+/// own migration by name everywhere.
 /// </summary>
 [Trait("Category", "Integration")]
 [Trait("Category", "Migration")]
@@ -48,11 +49,13 @@ public sealed class AddPlatformQuotaUsageMigrationTests(TestDatabase database) :
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
     [Fact]
-    public async Task Migration_IsTheLastOne_AndModelHasNoPendingChange()
+    public async Task Migration_IsPresent_AndModelHasNoPendingChange()
     {
         await using var context = Database.CreateAppDbContext();
         var migrations = context.Database.GetMigrations().Order(StringComparer.Ordinal).ToList();
-        migrations[^1].ShouldEndWith("_" + MigrationName);
+        // 02.7.2-T2 appended a migration after this one, so this class no longer owns the last-migration
+        // check (the newest migration's own test does); it still proves its own migration is compiled in.
+        migrations.ShouldContain(name => name.EndsWith("_" + MigrationName, StringComparison.Ordinal));
 
         context.Database.HasPendingModelChanges().ShouldBeFalse(
             "an entity change without a migration must fail here (run `dotnet ef migrations add`)");
