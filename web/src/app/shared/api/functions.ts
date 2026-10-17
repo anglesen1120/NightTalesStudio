@@ -35,6 +35,10 @@ export type { ApiV1StyleTemplatesGet$Params as ApiV1StyleTemplatesGet$Params } f
 export { apiV1StyleTemplatesGet as apiV1StyleTemplatesGet } from './fn/catalog-endpoints/api-v-1-style-templates-get';
 export type { ApiV1EpisodesIdVideoUrlGet$Params as ApiV1EpisodesIdVideoUrlGet$Params } from './fn/episode-video-endpoints/api-v-1-episodes-id-video-url-get';
 export { apiV1EpisodesIdVideoUrlGet as apiV1EpisodesIdVideoUrlGet } from './fn/episode-video-endpoints/api-v-1-episodes-id-video-url-get';
+export type { ApiV1EpisodesIdRenderPost$Params as ApiV1EpisodesIdRenderPost$Params } from './fn/rendering-endpoints/api-v-1-episodes-id-render-post';
+export { apiV1EpisodesIdRenderPost as apiV1EpisodesIdRenderPost } from './fn/rendering-endpoints/api-v-1-episodes-id-render-post';
+export type { ApiV1PublishingYoutubeEtaGet$Params as ApiV1PublishingYoutubeEtaGet$Params } from './fn/you-tube-eta-endpoints/api-v-1-publishing-youtube-eta-get';
+export { apiV1PublishingYoutubeEtaGet as apiV1PublishingYoutubeEtaGet } from './fn/you-tube-eta-endpoints/api-v-1-publishing-youtube-eta-get';
 export type { ApiV1AuthLoginPost$Params as ApiV1AuthLoginPost$Params } from './fn/auth-endpoints/api-v-1-auth-login-post';
 export { apiV1AuthLoginPost as apiV1AuthLoginPost } from './fn/auth-endpoints/api-v-1-auth-login-post';
 export type { ApiV1AuthLoginMfaPost$Params as ApiV1AuthLoginMfaPost$Params } from './fn/auth-endpoints/api-v-1-auth-login-mfa-post';
@@ -79,5 +83,13 @@ export type { ApiV1EpisodesEpisodeIdSourcesSourceIdDelete$Params as ApiV1Episode
 export { apiV1EpisodesEpisodeIdSourcesSourceIdDelete as apiV1EpisodesEpisodeIdSourcesSourceIdDelete } from './fn/source-endpoints/api-v-1-episodes-episode-id-sources-source-id-delete';
 export type { ApiV1EpisodesEpisodeIdSourcesSourceIdRetryPost$Params as ApiV1EpisodesEpisodeIdSourcesSourceIdRetryPost$Params } from './fn/source-endpoints/api-v-1-episodes-episode-id-sources-source-id-retry-post';
 export { apiV1EpisodesEpisodeIdSourcesSourceIdRetryPost as apiV1EpisodesEpisodeIdSourcesSourceIdRetryPost } from './fn/source-endpoints/api-v-1-episodes-episode-id-sources-source-id-retry-post';
+export type { ApiV1SeriesIdBibleGet$Params as ApiV1SeriesIdBibleGet$Params } from './fn/series-bible/api-v-1-series-id-bible-get';
+export { apiV1SeriesIdBibleGet as apiV1SeriesIdBibleGet } from './fn/series-bible/api-v-1-series-id-bible-get';
+export type { ApiV1SeriesIdBiblePut$Params as ApiV1SeriesIdBiblePut$Params } from './fn/series-bible/api-v-1-series-id-bible-put';
+export { apiV1SeriesIdBiblePut as apiV1SeriesIdBiblePut } from './fn/series-bible/api-v-1-series-id-bible-put';
+export type { ApiV1SeriesIdBibleProposalAcceptPost$Params as ApiV1SeriesIdBibleProposalAcceptPost$Params } from './fn/series-bible/api-v-1-series-id-bible-proposal-accept-post';
+export { apiV1SeriesIdBibleProposalAcceptPost as apiV1SeriesIdBibleProposalAcceptPost } from './fn/series-bible/api-v-1-series-id-bible-proposal-accept-post';
+export type { ApiV1SeriesIdBibleProposalDismissPost$Params as ApiV1SeriesIdBibleProposalDismissPost$Params } from './fn/series-bible/api-v-1-series-id-bible-proposal-dismiss-post';
+export { apiV1SeriesIdBibleProposalDismissPost as apiV1SeriesIdBibleProposalDismissPost } from './fn/series-bible/api-v-1-series-id-bible-proposal-dismiss-post';
 export type { ApiV1HubsTicketPost$Params as ApiV1HubsTicketPost$Params } from './fn/hub-endpoints/api-v-1-hubs-ticket-post';
 export { apiV1HubsTicketPost as apiV1HubsTicketPost } from './fn/hub-endpoints/api-v-1-hubs-ticket-post';
