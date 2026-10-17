@@ -663,6 +663,7 @@ public sealed class StoryGenerationQaTests(TestDatabase database) : IntegrationT
                 new FakeBudgetGuard(),
                 new FixedEstimator(),
                 new StoryQualityChecker(),
+                new EmptyNameCorpusProvider(),
                 new StoryJobOptions { TimeoutSeconds = timeoutSeconds, TimeoutSecondsLong = timeoutSeconds },
                 new StoryReviewOptions { Enabled = reviewEnabled },
                 new StoryRevisionOptions { Enabled = false },

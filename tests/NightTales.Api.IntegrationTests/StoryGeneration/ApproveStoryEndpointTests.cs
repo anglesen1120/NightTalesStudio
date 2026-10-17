@@ -547,11 +547,15 @@ public sealed partial class ApproveStoryEndpointTests(TestDatabase database) : I
         return report.ToJsonString();
     }
 
+    /// <summary>
+    /// The approval fixture: every segment keyword is a keyword-rules phrase of 3 to 12 words, because the
+    /// approve path runs <c>RenderKeywordLinter</c> over the version being approved (03.2.2-T2).
+    /// </summary>
     private static StoryContentV1 Draft() => new(
         "The house by the river",
-        new StorySegmentV1("The night was quiet.", ["house by the river", "quiet night"], []),
-        [new StorySegmentV1("A knock woke the narrator.", ["wooden door"], [], "setup")],
-        new StorySegmentV1("Nobody stood outside.", ["empty path"], []),
+        new StorySegmentV1("The night was quiet.", ["house by the river", "quiet night by the river"], []),
+        [new StorySegmentV1("A knock woke the narrator.", ["wooden door of the old house"], [], "setup")],
+        new StorySegmentV1("Nobody stood outside.", ["empty path by the river"], []),
         "A quiet ghost story.", ["ghost", "night"], ["supernatural"],
         new StoryStructureV1("ghost", "old house", "a knock", "the narrator", "first_person"));
 

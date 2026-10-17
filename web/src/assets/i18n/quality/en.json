@@ -8,6 +8,7 @@
   "keyword_total_above_cap": "Total keywords exceed this tier's cap",
   "keyword_invalid": "Keyword is invalid (English, 3–12 words)",
   "keyword_duplicate": "Keyword is duplicated across segments",
+  "keyword_name_detected": "This scene names a real person. Describe the place or object instead.",
   "repeated_sentence": "A sentence is repeated",
   "repetitive_phrasing": "Phrasing repeats too much",
   "possible_real_name": "Possible real name — check the sources",
