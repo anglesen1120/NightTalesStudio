@@ -82,4 +82,39 @@ public sealed class IdeaBannedThemesTests
         matched.Count.ShouldBe(1);
         matched[0].ShouldBe(Suicide);
     }
+
+    /// <summary>
+    /// A format character (Cf) or a combining mark (Mn) hidden inside a word never splits it (task failure-table
+    /// evasion): <c>su\u200Bicide</c> is <c>suicide</c> and <c>kill\u0334er</c> is <c>killer</c>. The whole-word
+    /// rule survives the absorption: the character cannot join two words into a theme either.
+    /// </summary>
+    [Fact]
+    public void IdeaBannedThemes_InvisibleCharactersInsideAWordDoNotHideTheTheme()
+    {
+        var zeroWidthSpace = IdeaBannedThemes.Match("Chuyện su\u200Bicide ở làng", ["suicide"]);
+        zeroWidthSpace.Count.ShouldBe(1, "a zero-width space (Cf) inside the word is ignored, not a separator");
+        zeroWidthSpace[0].ShouldBe("suicide");
+
+        var combiningMark = IdeaBannedThemes.Match("The kill\u0334er left", ["killer"]);
+        combiningMark.Count.ShouldBe(1, "a combining mark (Mn) is absorbed by the word it follows");
+        combiningMark[0].ShouldBe("killer");
+
+        // A soft hyphen and a bidi mark are the same kind of ignorable character; a tag character too.
+        IdeaBannedThemes.Match("mu\u00ADrder", ["murder"]).Count.ShouldBe(1);
+        IdeaBannedThemes.Match("mur\u200Fder", ["murder"]).Count.ShouldBe(1);
+
+        // Whole-word semantics are preserved: an invisible character cannot join two words into a theme,
+        // and a theme that is a slice of a longer word still does not match.
+        IdeaBannedThemes.Match("Cà ma\u200Bma", ["ma"]).ShouldBeEmpty("mama is still not ma");
+        IdeaBannedThemes.Match("Chuyện su\u200Bicide ở làng", ["cide"]).ShouldBeEmpty("a slice of suicide is not suicide");
+    }
+
+    /// <summary>Normal Vietnamese text is untouched: both NFC and NFD still match (the marks compose, not absorb).</summary>
+    [Fact]
+    public void IdeaBannedThemes_NfcAndNfdVietnameseStillMatchWithTheJoinerRule()
+    {
+        IdeaBannedThemes.Match("Chuyện tự tử ở làng".Normalize(NormalizationForm.FormC), [Suicide]).Count.ShouldBe(1);
+        IdeaBannedThemes.Match("Chuyện tự tử ở làng".Normalize(NormalizationForm.FormD), [Suicide]).Count.ShouldBe(1);
+        IdeaBannedThemes.Match("Chuyện tự tử ở làng", [Suicide.Normalize(NormalizationForm.FormD)]).Count.ShouldBe(1);
+    }
 }

@@ -29,8 +29,8 @@ public sealed record NoveltySignals(decimal LexicalScore, Guid? LexicalOverlapId
 /// at 300 characters and stripped of control characters before it is stored, and it is never logged (D19).
 /// </remarks>
 /// <param name="Score">How similar the judge found the idea to the past, clamped to 0…1 (1 = the same story already told).</param>
-/// <param name="Fit">How well the idea fits the series' topic, clamped to 0…1; 0.5 when the judge degraded the batch.</param>
-/// <param name="HookStrength">The judge's reading of the hook, clamped to 0…1; 0.5 when the batch degraded.</param>
+/// <param name="Fit">How well the idea fits the series' topic, clamped to 0…1; a value only the judge reports, for a candidate its answer covered. When an answered batch's answer carries no row for this candidate the planner substitutes the neutral 0.5 (<see cref="IdeaSignals.Unjudged"/>), and a whole-batch degradation has no judge row at all and keeps <see cref="IdeaSignals.LexicalOnly"/>'s fit of 1.0.</param>
+/// <param name="HookStrength">The judge's reading of the hook, clamped to 0…1; the planner substitutes the neutral 0.5 when an answered batch's answer carried no row for this candidate (<see cref="IdeaSignals.Unjudged"/>) and, for the same value, when the whole batch degraded (<see cref="IdeaSignals.LexicalOnly"/>).</param>
 /// <param name="MaxOverlapEpisodeId">The past episode the judge named, or <see langword="null"/>.</param>
 /// <param name="Reason">The judge's justification, trimmed, capped and sanitised for storage.</param>
 public sealed record NoveltyJudge(
@@ -50,9 +50,15 @@ public sealed record NoveltyJudge(
 /// lexical score alone and still store a complete <c>novelty</c> document for every row. A candidate the
 /// answer did not score is judged too (a null judge is legal), and one score row may not cost another
 /// candidate its verdict. <see cref="JudgeUsed"/> is the caller's <c>judge_used</c> flag: <see langword="false"/>
-/// when the batch made no call (every candidate was blocked lexically) and <see langword="true"/> once a call
-/// was made, whatever it answered or degraded to.
+/// when the batch made no call (every candidate was blocked lexically) or when the call degraded, and
+/// <see langword="true"/> once an answer was consumed — it is the answer's rows, not the attempt's, that the
+/// flag reports.
 /// </remarks>
 /// <param name="ByIdeaId">The signals keyed by the batch's idea ids.</param>
-/// <param name="JudgeUsed">Whether a judge call was made for this batch, degraded or not.</param>
+/// <param name="JudgeUsed">Whether the batch's answer was consumed: <see langword="true"/> when the call
+/// answered and its rows were applied, <see langword="false"/> when no call was made or the call degraded. It is
+/// what tells a batch whose judge was lost for every candidate together (all of them take
+/// <see cref="IdeaSignals.LexicalOnly"/>'s neutrals, ranking unaffected) from a batch that was answered and left
+/// one candidate out of the answer (that candidate takes <see cref="IdeaSignals.Unjudged"/>'s neutral fit and
+/// cannot outrank the judged ones on it).</param>
 public sealed record NoveltyBatchResult(IReadOnlyDictionary<Guid, NoveltySignals> ByIdeaId, bool JudgeUsed);

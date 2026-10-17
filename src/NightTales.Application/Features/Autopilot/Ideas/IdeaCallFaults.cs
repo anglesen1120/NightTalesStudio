@@ -10,12 +10,18 @@ namespace NightTales.Application.Features.Autopilot.Ideas;
 /// run's one retry, and the refusal evidence a <c>Moderated</c> outcome writes (D12, TL ruling 2026-09-24).
 /// </summary>
 /// <remarks>
+/// <para>
 /// The ideas call and the novelty-judge call answer to the same failure table (task file "Failure handling"), so
 /// both must name a fault the same way and evidence a refusal the same way: one <c>moderation_events</c> row with
 /// <c>stage = ideas</c> — never <c>brief</c>, which is the per-candidate pre-check — and never with the model's
 /// own text as evidence (D19). Kept in one place so the two call sites cannot drift on either.
+/// </para>
+/// <para>
+/// Public because the novelty judge of <c>NightTales.Infrastructure</c> reports one of these faults and the unit
+/// tests exercise them: this solution has no <c>InternalsVisibleTo</c>.
+/// </para>
 /// </remarks>
-internal static class IdeaCallFaults
+public static class IdeaCallFaults
 {
     /// <summary>The failure detail of a provider that answered 5xx or timed out past its retry budget.</summary>
     public const string ProviderUnavailable = "provider_unavailable";
@@ -38,6 +44,13 @@ internal static class IdeaCallFaults
     /// <summary>The failure detail of an output cut short by the ruled <c>max_output_tokens</c> (no retry: D7).</summary>
     public const string InvalidOutputMaxTokens = "invalid_output_max_tokens";
 
+    /// <summary>
+    /// The failure detail of a judge call whose data object is over <c>Story:Prompt:MaxDataObjectBytes</c> even
+    /// after the corpus was trimmed to fit (02.8.1-T2): the batch degrades, no request is sent and no retry is
+    /// made, because the retry would build the very same object.
+    /// </summary>
+    public const string DataObjectTooLarge = "data_object_too_large";
+
     /// <summary>The failure detail of a retry the platform spend cap refused before dispatch (D1).</summary>
     public const string SpendCapReached = "spend_cap_reached";
 
@@ -57,6 +70,31 @@ internal static class IdeaCallFaults
     public static bool IsTruncated<TDraft>(TextCallInvalidOutput<TDraft> invalid)
         where TDraft : class =>
         invalid.RuleIds.Contains(TextCallInvalidOutput<TDraft>.MaxOutputTokensExceeded);
+
+    /// <summary>
+    /// Whether an invalid output is final on the first answer, i.e. whether a second dispatch would be refused
+    /// the same way. Two refusals are final: an output cut at <c>max_output_tokens</c>, which D7 says is retried
+    /// only to be cut at the same cap again, and a data object over <c>Story:Prompt:MaxDataObjectBytes</c>
+    /// (02.8.1-T2), which the next attempt would build identically.
+    /// </summary>
+    /// <typeparam name="TDraft">The document type of the refused call.</typeparam>
+    /// <param name="invalid">The refused output's outcome.</param>
+    /// <returns><see langword="true"/> when the refusal is final on the first call.</returns>
+    public static bool IsFinalOutput<TDraft>(TextCallInvalidOutput<TDraft> invalid)
+        where TDraft : class =>
+        IsTruncated(invalid) || invalid.RuleIds.Contains(DataObjectTooLarge);
+
+    /// <summary>The failure detail one invalid output is logged with, once it earns no further retry.</summary>
+    /// <typeparam name="TDraft">The document type of the refused call.</typeparam>
+    /// <param name="invalid">The refused output's outcome.</param>
+    /// <returns>The closed detail code of the refusal.</returns>
+    public static string InvalidOutputDetail<TDraft>(TextCallInvalidOutput<TDraft> invalid)
+        where TDraft : class =>
+        IsTruncated(invalid)
+            ? InvalidOutputMaxTokens
+            : invalid.RuleIds.Contains(DataObjectTooLarge)
+                ? DataObjectTooLarge
+                : InvalidOutputTwice;
 
     /// <summary>
     /// Writes the one <c>moderation_events</c> row of a paid call the provider refused or filtered, on its own

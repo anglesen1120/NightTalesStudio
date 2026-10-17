@@ -14,10 +14,15 @@ namespace NightTales.Infrastructure.Autopilot;
 /// <remarks>
 /// <para>
 /// <b>Episodes.</b> The read is one statement with the limit, the order and the projection in SQL
-/// (<c>episodes JOIN story_versions</c> on <c>approved_story_version_id</c>, owner-qualified): only
-/// <c>id</c>, <c>title</c> and <c>content-&gt;&gt;'description'</c> cut to
-/// <see cref="NoveltyDataObjectJson.SummaryMaxChars"/> travel, never the whole <c>story.v1</c> document, and
-/// drafts or reopened episodes (no <c>approved_story_version_id</c>) are unreachable by the join. The order is
+/// (<c>episodes JOIN story_versions</c> on <c>approved_story_version_id</c>, owner-qualified):
+/// the ordered join is narrowed to the newest <c>LIMIT</c> versions by a subquery that selects their ids and
+/// titles only, and the <c>content-&gt;&gt;'description'</c> cut to
+/// <see cref="NoveltyDataObjectJson.SummaryMaxChars"/> is projected for those rows alone, joining the versions
+/// back by id with the same <c>created_at DESC, id DESC</c> order repeated outside. So only <c>id</c>,
+/// <c>title</c> and the 200-character summary travel and, more to the point, only the selected versions'
+/// <c>story.v1</c> documents are read at all: no usable index can serve the <c>created_at</c> order, and a
+/// projection applied before the sort would detoast every approved episode of the series. Drafts or reopened
+/// episodes (no <c>approved_story_version_id</c>) are unreachable by the join. The order is
 /// <c>created_at DESC, id DESC</c>: the version's creation is the only ordering a row is guaranteed to have,
 /// and the UUIDv7 id breaks a tie deterministically, so the 1-based <c>past_episodes</c> indices the judge sees
 /// are stable for one call.
@@ -59,15 +64,23 @@ public sealed class IdeaCorpusProvider(ReadDbContext database, IdeaNoveltyOption
 
         var episodes = await database.Database
             .SqlQuery<CorpusEpisode>($"""
-                SELECT e.id AS episode_id,
-                       sv.title AS title,
+                SELECT t.episode_id AS episode_id,
+                       t.title AS title,
                        coalesce(left(sv.content->>'description', {NoveltyDataObjectJson.SummaryMaxChars}), '') AS summary
-                FROM episodes e
-                JOIN story_versions sv ON sv.id = e.approved_story_version_id AND sv.user_id = e.user_id
-                WHERE e.user_id = {userId}
-                  AND e.series_id = {seriesId}
-                ORDER BY sv.created_at DESC, sv.id DESC
-                LIMIT {limit}
+                FROM (
+                    SELECT e.id AS episode_id,
+                           sv.id AS version_id,
+                           sv.title AS title,
+                           sv.created_at AS created_at
+                    FROM episodes e
+                    JOIN story_versions sv ON sv.id = e.approved_story_version_id AND sv.user_id = e.user_id
+                    WHERE e.user_id = {userId}
+                      AND e.series_id = {seriesId}
+                    ORDER BY sv.created_at DESC, sv.id DESC
+                    LIMIT {limit}
+                ) t
+                JOIN story_versions sv ON sv.id = t.version_id
+                ORDER BY t.created_at DESC, t.version_id DESC
                 """)
             .ToListAsync(ct)
             .ConfigureAwait(false);

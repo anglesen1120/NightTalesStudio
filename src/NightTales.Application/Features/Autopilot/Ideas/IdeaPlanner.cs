@@ -1,4 +1,3 @@
-using System.Text.Json;
 using ErrorOr;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -10,22 +9,28 @@ using NightTales.Application.Features.Autopilot.Ideas.Abstractions;
 using NightTales.Domain.Autopilot.Ideas;
 using NightTales.Domain.Common;
 using NightTales.Domain.Compliance;
-using NightTales.Domain.Series;
 using NightTales.Domain.Stories.Similarity;
 
 namespace NightTales.Application.Features.Autopilot.Ideas;
 
 /// <summary>
-/// The idea step of one autopilot slot (02.8.1-T1 plan §4 U1, steps 1, 3, 4, 5 and 10): read the series context,
-/// make the paid call, validate the batch, persist every survivor as <c>proposed</c> and answer the first one as
-/// the pick.
+/// The idea step of one autopilot slot (02.8.1-T2 plan §4 U1): read the series context, make the one paid ideas
+/// call, read the corpus, run the one lexical pass and the batch's one judge call, pre-check the content policy,
+/// score and reject every candidate, pick the best and store the whole batch in one transaction.
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>Scope of T1.</b> The variety steering, the novelty check, the content-policy pre-check, the scoring and the
-/// rejection of the losing candidates are 02.8.1-T2's and 02.8.4-T1's steps, so nothing here scores: the pick is
-/// the first valid candidate in the model's order, and every survivor of the validity and duplicate rules is
-/// stored <c>proposed</c>, including the ones T2 will later reject, because the run log shows the whole pool.
+/// <b>The pipeline (02.8.1-T2).</b> The batch is validated and its survivor rows are created <c>proposed</c>
+/// before the corpus is read, because their ids are what the corpus excludes. Then, in order: the corpus of the
+/// series' approved episodes and pending ideas (<see cref="IIdeaCorpusProvider"/>), one lexical shingle pass over
+/// every candidate together with the batch's <b>one</b> judge call (<see cref="IIdeaNoveltyChecker"/>; no call at
+/// all when every candidate is already rejected lexically), the content-policy pre-check
+/// (<see cref="IIdeaPolicyChecker"/>: banned themes, the moderator and the true-crime research flag), and the
+/// weighted score of every candidate (<c>IdeaScorer</c>). The pick is the highest-scoring candidate no rule
+/// rejected, or <c>ideas_no_idea</c> carrying the most common rejection reason when every candidate was rejected.
+/// Every row keeps its measurements whether it won or lost, and the whole batch is stored with one
+/// <see cref="IAppDbContext.SaveChangesAsync"/>. The caller then marks the pick used (<c>MarkUsedAsync</c>) when
+/// the episode consumes it.
 /// </para>
 /// <para>
 /// <b>Ownership (task file [DECISION]).</b> The caller owns the <c>generation_runs</c> row — it creates it,
@@ -92,13 +97,6 @@ public sealed partial class IdeaPlanner(
     IdeaMetrics metrics,
     ILogger<IdeaPlanner> logger) : IIdeaPlanner
 {
-    /// <summary>
-    /// The series topic whose ideas are angles rather than stories (F33), in the snake_case spelling the prompt's
-    /// control keys use.
-    /// </summary>
-    private static readonly string TrueCrimeTopic =
-        JsonNamingPolicy.SnakeCaseLower.ConvertName(nameof(Topic.TrueCrime));
-
     /// <summary>
     /// The variety penalty 02.8.1-T2 passes (task Decision 2): 02.8.4-T1's guard computes the real one between
     /// the policy pre-check and the scoring, and until it is wired the penalty is neutral.
@@ -206,6 +204,12 @@ public sealed partial class IdeaPlanner(
         // score. Every candidate of the batch is scored and stored, rejected or not, because the run log shows
         // the whole pool and the calibration histograms need the readings of the ones that lost.
         var novelty = measured.Value.ByIdeaId;
+
+        // A batch whose answer carried no usable row at all has no measured candidate to protect, so every
+        // candidate of it stays on the whole-batch neutrals (LexicalOnly, fit 1.0): that is today's behaviour and
+        // its ranking is unaffected either way. The neutral fit of Unjudged applies only beside a measured
+        // candidate (F6/S3).
+        var anyJudged = novelty.Values.Any(signal => signal.Judge is not null);
         var signals = new IdeaSignals[slots.Count];
         var details = new IdeaNoveltyDetail[slots.Count];
         var scores = new decimal[slots.Count];
@@ -219,9 +223,17 @@ public sealed partial class IdeaPlanner(
             var verdict = verdicts.ByIdeaId[slots[index].IdeaId];
             var judge = signal.Judge;
 
-            signals[index] = judge is null
-                ? IdeaSignals.LexicalOnly(signal.LexicalScore, VarietyPenalty)
-                : new IdeaSignals(signal.LexicalScore, judge.Score, judge.Fit, judge.HookStrength, VarietyPenalty);
+            // A candidate with no judge reading is neutral, but not identically so: a batch whose call degraded
+            // lost the judge for every candidate together, so it keeps LexicalOnly's fit of 1.0 and its own
+            // ranking is unaffected; a batch the judge did answer, but whose answer carried no usable row for
+            // this candidate, must not hand that candidate the generous 1.0 — fit is the score's second-largest
+            // weight, and an unmeasured 1.0 would let it outrank candidates the judge did measure on the very
+            // component it never answered about. That one candidate takes the neutral 0.5 instead (F6/S3).
+            signals[index] = judge is not null
+                ? new IdeaSignals(signal.LexicalScore, judge.Score, judge.Fit, judge.HookStrength, VarietyPenalty)
+                : anyJudged
+                    ? IdeaSignals.Unjudged(signal.LexicalScore, VarietyPenalty)
+                    : IdeaSignals.LexicalOnly(signal.LexicalScore, VarietyPenalty);
             details[index] = new IdeaNoveltyDetail(
                 new IdeaNoveltyLexical(
                     signal.LexicalScore,
@@ -307,7 +319,7 @@ public sealed partial class IdeaPlanner(
             // T1's topic rule stays (IDEA-S52-6) and the framing the pre-check measured joins it: a true-crime
             // series always needs research, whatever the idea says.
             RequiresResearch: research[winner.Value]
-                || string.Equals(context.Topic, TrueCrimeTopic, StringComparison.Ordinal),
+                || string.Equals(context.Topic, IdeaPolicyContext.TrueCrimeTopic, StringComparison.Ordinal),
             Score: scores[winner.Value],
             Similarity: Similarity(signals[winner.Value]));
 

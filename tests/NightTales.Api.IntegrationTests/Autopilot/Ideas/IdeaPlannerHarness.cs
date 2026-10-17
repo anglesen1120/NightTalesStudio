@@ -448,6 +448,20 @@ internal static class IdeaPlannerHarness
             text.EnqueueOk(TextStep.Novelty, new NoveltyV1([]), Usage);
         }
 
+        // 02.8.1-T2 F1: the checker clears the platform cap before EVERY judge dispatch, attempt 1 included, and
+        // this class database carries every earlier test's own history — each `CreateRunAsync` leaves a queued run
+        // whose $0.25 worst case counts as an open bound, and every metered call counts as spend. With the shipped
+        // $3/day cap the suite would refuse a late test for that history rather than for anything the test
+        // asserts, so the idea harness lifts the two caps (the guard itself stays the real one, exactly as
+        // `RevisionStepTests` and the story suites do). A test that pins the cap's own behaviour passes its own
+        // `guard` and is unaffected either way.
+        host.WithSetting(
+                $"{BudgetOptions.SectionName}:{nameof(BudgetOptions.MaxPlatformCostUsdPerDay)}",
+                "1000")
+            .WithSetting(
+                $"{BudgetOptions.SectionName}:{nameof(BudgetOptions.MaxPlatformCostUsdPerMonth)}",
+                "100000");
+
         await host.StartAsync(Ct);
 
         return host;
@@ -1145,7 +1159,13 @@ internal static class IdeaPlannerHarness
     /// A hand-written spend cap (no mocking library): it records every check and answers what the test set, so a
     /// refusal is exact instead of depending on the platform's real spend and open bounds.
     /// </summary>
-    internal sealed class StubBudgetGuard(bool allowed) : IBudgetGuard
+    /// <param name="allowed">Whether every check is admitted.</param>
+    /// <param name="allowedChecks">
+    /// How many of the first checks are admitted, whatever <paramref name="allowed"/> says; the rest are refused.
+    /// It is what pins the batch's <em>second</em> check (the one before the judge's retry) now that the first one
+    /// is checked as well (02.8.1-T2 F1).
+    /// </param>
+    internal sealed class StubBudgetGuard(bool allowed, int? allowedChecks = null) : IBudgetGuard
     {
         /// <summary>What the planner asked, in order: the bound and the run it excluded.</summary>
         internal List<(CostBound Bound, Guid? ExcludingRunId)> Checks { get; } = [];
@@ -1155,7 +1175,9 @@ internal static class IdeaPlannerHarness
         {
             Checks.Add((worstCaseUsd, excludingRunId));
 
-            return allowed
+            var admitted = allowedChecks is { } budget ? Checks.Count <= budget : allowed;
+
+            return admitted
                 ? ValueTask.FromResult<ErrorOr<Success>>(Result.Success)
                 : ValueTask.FromResult<ErrorOr<Success>>(
                     Error.Failure(ErrorCodes.SpendCapReached, "The stub guard refuses every dispatch."));

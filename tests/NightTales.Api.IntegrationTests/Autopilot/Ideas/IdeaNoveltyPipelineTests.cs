@@ -614,17 +614,16 @@ public sealed class IdeaNoveltyPipelineTests(TestDatabase database) : Integratio
     }
 
     /// <summary>
-    /// The judge's retry is a second paid dispatch, so the platform cap is re-checked with <b>the judge's own</b>
-    /// bound before it is bought: a refusal answers <c>spend_cap_reached</c>, no second call is made and the batch
-    /// is not stored.
+    /// The batch's <b>first</b> judge dispatch is a paid call no admission reserved (the admission reserved the
+    /// ideas call), so the platform cap is checked with <b>the judge's own</b> bound before it too: a refusal
+    /// answers <c>spend_cap_reached</c>, the judge is never called, and nothing is stored (F1/S1).
     /// </summary>
     [Fact]
-    public async Task ProposeAndPick_SpendCapRefusedBeforeTheJudgeRetry_ReturnsSpendCapReached()
+    public async Task ProposeAndPick_SpendCapRefusedBeforeTheJudgeDispatch_ReturnsSpendCapReached()
     {
         var world = await SeedAsync(Database);
         var run = await CreateRunAsync(Database, world);
         var text = new FakeTextClient().EnqueueOk(TextStep.Ideas, IdeaBatch(DistinctIdea("Ý tưởng không được chấm")), Usage);
-        text.Enqueue(TextStep.Novelty, TextCallResult<NoveltyV1>.InvalidOutput(Model, Usage, "req-fake", [TextCallInvalidOutput<NoveltyV1>.SchemaInvalid]));
         var guard = new StubBudgetGuard(allowed: false);
         var estimator = new StubIdeaCostEstimator(
             new UsageBound(0.11m, 1_000, 1_500),
@@ -635,12 +634,86 @@ public sealed class IdeaNoveltyPipelineTests(TestDatabase database) : Integratio
 
         result.IsError.ShouldBeTrue();
         result.FirstError.Code.ShouldBe(ErrorCodes.SpendCapReached);
-        NoveltyCalls(text).Count.ShouldBe(1, "the refused retry was never dispatched");
+        text.Calls(TextStep.Novelty).ShouldBe(0, "the refused dispatch was never made");
         var check = guard.Checks.ShouldHaveSingleItem();
         check.Bound.WorstCaseUsd.ShouldBe(0.22m, "the checker asks the judge's own bound, not the generation step's");
         check.ExcludingRunId.ShouldBe(run.GenerationRunId, "the run's own reserved bound stays out of the sum");
+        UsageCount(Database, world.UserId).ShouldBe(1, "only the ideas call was ever billed");
+        IdeaCount(Database, world.SeriesId).ShouldBe(0);
+    }
+
+    /// <summary>
+    /// The judge's retry is a second paid dispatch, so the platform cap is re-checked before it as well — with the
+    /// same judge bound and the same excluded run — and a refusal there answers <c>spend_cap_reached</c>, makes no
+    /// second call and stores nothing (F1/S1).
+    /// </summary>
+    [Fact]
+    public async Task ProposeAndPick_SpendCapRefusedBeforeTheJudgeRetry_ReturnsSpendCapReached()
+    {
+        var world = await SeedAsync(Database);
+        var run = await CreateRunAsync(Database, world);
+        var text = new FakeTextClient().EnqueueOk(TextStep.Ideas, IdeaBatch(DistinctIdea("Ý tưởng không được chấm")), Usage);
+        text.Enqueue(TextStep.Novelty, TextCallResult<NoveltyV1>.InvalidOutput(Model, Usage, "req-fake", [TextCallInvalidOutput<NoveltyV1>.SchemaInvalid]));
+        var guard = new StubBudgetGuard(allowed: true, allowedChecks: 1);
+        var estimator = new StubIdeaCostEstimator(
+            new UsageBound(0.11m, 1_000, 1_500),
+            noveltyBound: new UsageBound(0.22m, 400, 400));
+        await using var worker = await StartWorkerAsync(Database, text, count: 1, guard: guard, estimator: estimator);
+
+        var result = await ProposeAsync(worker, run);
+
+        result.IsError.ShouldBeTrue();
+        result.FirstError.Code.ShouldBe(ErrorCodes.SpendCapReached);
+        NoveltyCalls(text).Count.ShouldBe(1, "the refused retry was never dispatched");
+        guard.Checks.Count.ShouldBe(2, "one check before each dispatch");
+        guard.Checks.ShouldAllBe(check => check.Bound.WorstCaseUsd == 0.22m && check.ExcludingRunId == run.GenerationRunId);
         UsageCount(Database, world.UserId).ShouldBe(2, "the ideas call and the one judge attempt that was dispatched before the cap refused its retry (D14)");
         IdeaCount(Database, world.SeriesId).ShouldBe(0);
+    }
+
+    /// <summary>
+    /// A batch the judge answered but left a candidate out of: the omitted candidate must not be handed the
+    /// generous neutral values of a <b>whole</b> degradation (fit 1.0), because fit is the score's second-largest
+    /// weight and an unmeasured 1.0 would let it outrank candidates the judge did measure. It takes the neutral
+    /// 0.5 — so the candidate the judge scored wins here, where the old 1.0 would have won the pick for the one it
+    /// never scored (F6/S3).
+    /// </summary>
+    [Fact]
+    public async Task ProposeAndPick_JudgeOmitsOneCandidate_TheOmittedOneDoesNotWinOnFit()
+    {
+        var world = await SeedAsync(Database);
+        var run = await CreateRunAsync(Database, world);
+        var text = new FakeTextClient().EnqueueOk(
+            TextStep.Ideas,
+            IdeaBatch(
+                DistinctIdea("Ứng viên được chấm"),
+                DistinctIdea("Ứng viên bị bỏ quên"),
+                DistinctIdea("Ứng viên khác")),
+            Usage);
+        text.EnqueueOk(
+            TextStep.Novelty,
+            NoveltyBatch(JudgeRow(0, 0.05m, fit: 1m), JudgeRow(2, 0.05m, fit: 0.1m)),
+            Usage);
+        await using var worker = await StartWorkerAsync(Database, text, count: 3);
+
+        var pick = await ProposeAsync(worker, run);
+
+        pick.IsError.ShouldBeFalse(pick.Errors.Count > 0 ? pick.FirstError.Description : null);
+        text.Calls(TextStep.Novelty).ShouldBe(1);
+
+        var judged = IdeaIdOf(Database, world.SeriesId, "Ứng viên được chấm");
+        var omitted = IdeaIdOf(Database, world.SeriesId, "Ứng viên bị bỏ quên");
+
+        NoveltyJudgePresence(Database, omitted).ShouldBe("judge-null", "an index no row mentions leaves the candidate unjudged");
+
+        // The judged candidate: 0.45 × (1 − 0.05) + 0.30 × 1.0 + 0.25 × 0.5 = 0.8525.
+        pick.Value.IdeaId.ShouldBe(judged);
+        pick.Value.Score.ShouldBe(0.8525m);
+        IdeaOutcome(Database, judged).ShouldBe("picked|-|0.8525|0.05");
+
+        // The omitted one: 0.45 × (1 − 0) + 0.30 × 0.5 + 0.25 × 0.5 = 0.725. With the whole-batch degradation's
+        // fit of 1.0 it would have scored 0.875 and taken the pick from a candidate the judge did measure.
+        IdeaOutcome(Database, omitted).ShouldBe("rejected|not_best|0.725|0");
     }
 
     /// <summary>

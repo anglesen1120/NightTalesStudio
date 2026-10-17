@@ -183,13 +183,13 @@ public sealed partial class IdeaPolicyChecker(
     }
 
     [LoggerMessage(
-        EventId = 6343,
+        EventId = 6372,
         Level = LogLevel.Warning,
         Message = "idea_policy_moderation_unavailable runId={RunId} failClosed={FailClosed}")]
     private partial void LogUnavailable(Guid runId, bool failClosed);
 
     [LoggerMessage(
-        EventId = 6344,
+        EventId = 6373,
         Level = LogLevel.Information,
         Message = "idea_policy_batch runId={RunId} candidates={Candidates} banned={Banned} flagged={Flagged} requiresResearch={RequiresResearch} unavailable={Unavailable}")]
     private partial void LogBatch(Guid runId, int candidates, int banned, int flagged, int requiresResearch, bool unavailable);

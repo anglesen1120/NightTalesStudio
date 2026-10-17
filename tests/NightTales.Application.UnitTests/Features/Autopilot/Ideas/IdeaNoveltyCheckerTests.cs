@@ -250,20 +250,69 @@ public sealed class IdeaNoveltyCheckerTests
     }
 
     /// <summary>
-    /// The retry's re-check refuses the platform cap: the error propagates before the second dispatch is bought, so
-    /// the judge sees exactly the one call the caller's admission already reserved.
+    /// The batch's <b>first</b> judge dispatch is a paid call the caller's admission never reserved (it reserved
+    /// the ideas call only), so the platform cap is asked before it: a refusal propagates the run's spend-cap
+    /// error and the judge is never called at all — nothing is bought and nothing has to be stored (F1/S1).
+    /// </summary>
+    [Fact]
+    public async Task SpendCapRefusedBeforeTheFirstDispatch_PropagatesWithoutACall()
+    {
+        var run = Run();
+        var judge = new StubJudge(Row(index: 0, score: 0.2m, overlap: null));
+        var guard = new StubBudgetGuard(allowed: false);
+
+        var result = await CheckAsync([Candidate(title: "A")], EmptyCorpus, judge: judge, guard: guard, run: run);
+
+        result.IsError.ShouldBeTrue();
+        result.FirstError.Code.ShouldBe(IdeaErrors.SpendCapReached.Code);
+        judge.Requests.ShouldBeEmpty("the refused dispatch was never made");
+
+        var check = guard.Checks.ShouldHaveSingleItem();
+        check.Bound.WorstCaseUsd.ShouldBe(0.01m, "the judge's own bound, not the generation step's");
+        check.ExcludingRunId.ShouldBe(run.GenerationRunId, "the run's reserved bound stays out of the open sum");
+    }
+
+    /// <summary>
+    /// The retry is the run's second judge dispatch: the cap is checked again before it, with the same bound and
+    /// the same excluded run, and a refusal there propagates the run's spend-cap error without a second call.
     /// </summary>
     [Fact]
     public async Task SpendCapRefusedBeforeTheRetry_PropagatesWithoutASecondCall()
     {
+        var run = Run();
         var judge = new StubJudge(TextCallResult<NoveltyV1>.InvalidOutput(Model, null, "req-1", ["schema"]));
-        var guard = new StubBudgetGuard(allowed: false);
+        var guard = new StubBudgetGuard(allowed: true, allowedChecks: 1);
 
-        var result = await CheckAsync([Candidate(title: "A")], EmptyCorpus, judge: judge, guard: guard);
+        var result = await CheckAsync([Candidate(title: "A")], EmptyCorpus, judge: judge, guard: guard, run: run);
 
         result.IsError.ShouldBeTrue();
         result.FirstError.Code.ShouldBe(IdeaErrors.SpendCapReached.Code);
-        judge.Requests.Count.ShouldBe(1);
+        judge.Requests.Count.ShouldBe(1, "the refused retry was never dispatched");
+        guard.Checks.Count.ShouldBe(2, "one check before each dispatch");
+        guard.Checks.ShouldAllBe(check => check.Bound.WorstCaseUsd == 0.01m && check.ExcludingRunId == run.GenerationRunId);
+    }
+
+    /// <summary>
+    /// A data object the judge refused as over its byte ceiling is final on the first answer — the retry would
+    /// build the very same object — so the batch degrades at once instead of paying for a second refusal, and the
+    /// run survives the paid call that came before it (F2/S2).
+    /// </summary>
+    [Fact]
+    public async Task OversizeDataObject_DoesNotRetry_AndDegradesToLexicalOnly()
+    {
+        var judge = new StubJudge(TextCallResult<NoveltyV1>.InvalidOutput(
+            Model,
+            null,
+            "req-1",
+            [IdeaCallFaults.DataObjectTooLarge]));
+        var guard = new StubBudgetGuard(allowed: true);
+
+        var result = await CheckAsync([Candidate(title: "A")], EmptyCorpus, judge: judge, guard: guard);
+
+        result.IsError.ShouldBeFalse("the judge degrades, never the run");
+        result.Value.JudgeUsed.ShouldBeFalse();
+        InOrder(result.Value).Single().Judge.ShouldBeNull();
+        judge.Requests.Count.ShouldBe(1, "the same object would be refused again");
         guard.Checks.Count.ShouldBe(1);
     }
 
@@ -273,12 +322,14 @@ public sealed class IdeaNoveltyCheckerTests
     {
         var judge = new StubJudge(TextCallResult<NoveltyV1>.InvalidOutput(Model, null, "req-1", ["schema"]));
         var estimator = new StubEstimator(Error.Failure(ErrorCodes.PriceCatalogEmpty, "no version"));
+        var guard = new StubBudgetGuard(allowed: true);
 
-        var result = await CheckAsync([Candidate(title: "A")], EmptyCorpus, judge: judge, estimator: estimator);
+        var result = await CheckAsync([Candidate(title: "A")], EmptyCorpus, judge: judge, estimator: estimator, guard: guard);
 
         result.IsError.ShouldBeTrue();
         result.FirstError.Code.ShouldBe(ErrorCodes.PriceCatalogEmpty);
-        judge.Requests.Count.ShouldBe(1);
+        judge.Requests.ShouldBeEmpty("the bound is resolved before the dispatch, so nothing is sent");
+        guard.Checks.ShouldBeEmpty("a call that cannot be costed is never checked against the cap");
     }
 
     /// <summary>
@@ -297,6 +348,23 @@ public sealed class IdeaNoveltyCheckerTests
         stored.Length.ShouldBe(300);
         stored.ShouldNotContain("\u0007");
         stored.ShouldNotContain("\u2028");
+    }
+
+    /// <summary>
+    /// The reason is stored server-side, so the characters that can hide or reorder text are dropped with the
+    /// control ones: the bidi override U+202E, the zero-width space and joiner, and the tag characters of the
+    /// astral plane (U+E0041), which are walked as one character rather than as their surrogate pair (S4).
+    /// </summary>
+    [Fact]
+    public async Task ReasonWithFormatCharacters_DropsThem()
+    {
+        var judge = new StubJudge(
+            Row(index: 0, score: 0.2m, overlap: null, reason: "đúng\u202e\u200b\u200d\U000E0041 vậy"));
+
+        var result = await CheckAsync([Candidate(title: "A")], EmptyCorpus, judge: judge);
+
+        var stored = InOrder(result.Value).Single().Judge!.Reason;
+        stored.ShouldBe("đúng vậy");
     }
 
     /// <summary>Out-of-range numbers from a provider that ignored its own schema are clamped, never saved as-is.</summary>
@@ -358,7 +426,8 @@ public sealed class IdeaNoveltyCheckerTests
         IdeaNoveltyOptions? options = null,
         Language language = Language.En,
         string topic = "supernatural",
-        IReadOnlyList<Guid>? ideaIds = null)
+        IReadOnlyList<Guid>? ideaIds = null,
+        RunContext? run = null)
     {
         var checker = new IdeaNoveltyChecker(
             options ?? new IdeaNoveltyOptions(),
@@ -378,7 +447,7 @@ public sealed class IdeaNoveltyCheckerTests
                 corpus,
                 language,
                 topic,
-                Run(),
+                run ?? Run(),
                 CancellationToken.None)
             .AsTask();
     }
@@ -449,7 +518,9 @@ public sealed class IdeaNoveltyCheckerTests
     }
 
     /// <summary>A hand-written spend cap: it records every check and answers what the test set.</summary>
-    private sealed class StubBudgetGuard(bool allowed) : IBudgetGuard
+    /// <param name="allowed">Whether every check is admitted.</param>
+    /// <param name="allowedChecks">How many of the first checks are admitted, whatever <paramref name="allowed"/> says; the rest are refused.</param>
+    private sealed class StubBudgetGuard(bool allowed, int? allowedChecks = null) : IBudgetGuard
     {
         /// <summary>What the checker asked, in order.</summary>
         internal List<(CostBound Bound, Guid? ExcludingRunId)> Checks { get; } = [];
@@ -461,8 +532,9 @@ public sealed class IdeaNoveltyCheckerTests
             Guid? excludingRunId = null)
         {
             Checks.Add((worstCaseUsd, excludingRunId));
+            var admitted = allowedChecks is { } budget ? Checks.Count <= budget : allowed;
 
-            return ValueTask.FromResult(allowed
+            return ValueTask.FromResult(admitted
                 ? (ErrorOr<Success>)Result.Success
                 : Error.Failure(ErrorCodes.SpendCapReached, "The stub guard refuses every dispatch."));
         }

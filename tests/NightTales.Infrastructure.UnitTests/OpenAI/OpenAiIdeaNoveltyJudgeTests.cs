@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text;
+using System.Text.Json;
 using ErrorOr;
 using Microsoft.Extensions.Configuration;
 using NightTales.Application.Abstractions.Money;
@@ -168,17 +169,105 @@ public sealed class OpenAiIdeaNoveltyJudgeTests
         rig.Meter.Items.ShouldBeEmpty();
     }
 
+    /// <summary>
+    /// The byte ceiling trims the corpus and never the batch: whole past episodes go, oldest first, and the call
+    /// is still made with what fits — the batch is judged, not failed (F2/S2).
+    /// </summary>
     [Fact]
-    public async Task NoveltyJudge_AnOversizedDataObject_ThrowsBeforeTheCall()
+    public async Task NoveltyJudge_OversizeDataObject_TrimsTheOldestEpisodesAndStillCalls()
+    {
+        var scores = Scores();
+        var client = new FakeTextClient().EnqueueOk(TextStep.Novelty, scores);
+
+        // Three episodes longer than the batch, so the corpus is what the ceiling cuts.
+        var request = Request() with
+        {
+            PastEpisodes =
+            [
+                new CorpusEpisode(Guid.CreateVersion7(), "Tập 0", new string('x', 600)),
+                new CorpusEpisode(Guid.CreateVersion7(), "Tập 1", new string('x', 600)),
+                new CorpusEpisode(Guid.CreateVersion7(), "Tập 2", new string('x', 600)),
+            ],
+        };
+        var newestOnly = Encoding.UTF8.GetByteCount(
+            NoveltyDataObjectJson.Build(request with { PastEpisodes = request.PastEpisodes.Take(1).ToArray() }));
+        Encoding.UTF8.GetByteCount(NoveltyDataObjectJson.Build(request)).ShouldBeGreaterThan(newestOnly);
+
+        var rig = new Rig(client, maxDataObjectBytes: newestOnly);
+
+        var result = await rig.Judge.JudgeAsync(request, Ct);
+
+        result.ShouldBeOfType<TextCallOk<NoveltyV1>>().Draft.ShouldBeSameAs(scores);
+
+        var call = rig.Fake.Requests.ShouldHaveSingleItem();
+        Encoding.UTF8.GetByteCount(call.UserDataJson).ShouldBeLessThanOrEqualTo(newestOnly);
+
+        var root = JsonDocument.Parse(call.UserDataJson).RootElement;
+        root.GetProperty("past_episodes").GetArrayLength().ShouldBe(1, "the two oldest episodes did not fit");
+        root.GetProperty("past_episodes")[0].GetProperty("index").GetInt32().ShouldBe(1);
+        root.GetProperty("past_episodes")[0].GetProperty("title").GetString().ShouldBe("Tập 0", "the newest episode is the one kept");
+        root.GetProperty("ideas").GetArrayLength().ShouldBe(2, "the batch is what the call is for");
+        rig.Meter.Items.ShouldHaveSingleItem();
+    }
+
+    /// <summary>
+    /// 200 long Vietnamese episodes: the corpus is trimmed to the ceiling and the call still goes out, so a series
+    /// with a real history is judged on the newest of it rather than failing the run (F2/S2).
+    /// </summary>
+    [Fact]
+    public async Task NoveltyJudge_TwoHundredLongVietnameseEpisodes_TrimsTheCorpusAndStillCalls()
+    {
+        var scores = Scores();
+        var client = new FakeTextClient().EnqueueOk(TextStep.Novelty, scores);
+        var request = Request() with
+        {
+            PastEpisodes =
+            [
+                .. Enumerable.Range(0, 200).Select(index => new CorpusEpisode(
+                    Guid.CreateVersion7(),
+                    $"Tập {index} về ngôi nhà bên sông",
+                    string.Concat(Enumerable.Repeat("Một câu chuyện rất dài về ngôi nhà cũ bên bờ sông. ", 4)))),
+            ],
+        };
+        var ceiling = PromptDataBudget.DefaultMaxDataObjectBytes;
+        Encoding.UTF8.GetByteCount(NoveltyDataObjectJson.Build(request)).ShouldBeGreaterThan(ceiling);
+
+        var rig = new Rig(client);
+
+        var result = await rig.Judge.JudgeAsync(request, Ct);
+
+        result.ShouldBeOfType<TextCallOk<NoveltyV1>>().Draft.ShouldBeSameAs(scores);
+
+        var call = rig.Fake.Requests.ShouldHaveSingleItem();
+        Encoding.UTF8.GetByteCount(call.UserDataJson).ShouldBeLessThanOrEqualTo(ceiling);
+
+        var root = JsonDocument.Parse(call.UserDataJson).RootElement;
+        var sent = root.GetProperty("past_episodes").GetArrayLength();
+        sent.ShouldBeGreaterThan(0, "the corpus is trimmed, never dropped");
+        sent.ShouldBeLessThan(200);
+        root.GetProperty("past_episodes")[0].GetProperty("title").GetString().ShouldBe("Tập 0 về ngôi nhà bên sông");
+        root.GetProperty("past_episodes")[sent - 1].GetProperty("index").GetInt32().ShouldBe(sent, "the 1-based indices cover what was sent");
+        root.GetProperty("ideas").GetArrayLength().ShouldBe(2);
+        rig.Meter.Items.ShouldHaveSingleItem();
+    }
+
+    /// <summary>
+    /// A batch that is over the ceiling on its own cannot be made to fit by dropping anything the model may read,
+    /// so the call is refused the way a provider refusal is reported: the checker degrades the batch on its
+    /// lexical signals and the run survives the paid ideas call that came before it (F2/S2).
+    /// </summary>
+    [Fact]
+    public async Task NoveltyJudge_CandidatesAloneOverTheCeiling_DegradesWithoutACall()
     {
         var client = new FakeTextClient();
         var rig = new Rig(client, maxDataObjectBytes: 64);
 
-        var exception = await Should.ThrowAsync<IdeaDataObjectTooLargeException>(
-            async () => await rig.Judge.JudgeAsync(Request(), Ct));
+        var result = await rig.Judge.JudgeAsync(Request(), Ct);
 
-        exception.MaxBytes.ShouldBe(64);
-        exception.ByteCount.ShouldBeGreaterThan(64);
+        var refused = result.ShouldBeOfType<TextCallInvalidOutput<NoveltyV1>>();
+        refused.RuleIds.ShouldBe([IdeaCallFaults.DataObjectTooLarge]);
+        refused.RuleIds.ShouldBe(["data_object_too_large"], "a closed detail code, never a provider message");
+        refused.Model.ShouldBe(rig.Estimator.NoveltyModel, "the refusal names the step's own model");
         rig.Fake.Requests.ShouldBeEmpty();
         rig.Meter.Items.ShouldBeEmpty();
     }

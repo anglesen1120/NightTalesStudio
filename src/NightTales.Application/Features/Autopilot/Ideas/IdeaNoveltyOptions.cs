@@ -4,9 +4,9 @@ namespace NightTales.Application.Features.Autopilot.Ideas;
 
 /// <summary>
 /// The novelty thresholds and the corpus bound of the idea step (02.8.1-T2, task Design "Novelty"):
-/// <c>Autopilot:Ideas:Novelty</c>. Bound like <see cref="IdeaPlannerOptions"/> — the section is bound twice on
-/// purpose, because the Infrastructure corpus provider and the Application checker are two owners that must
-/// agree on the same keys, and each reads only the keys it owns.
+/// <c>Autopilot:Ideas:Novelty</c>. The section is bound once and registered as a singleton value, so the
+/// Infrastructure corpus provider and the Application checker and planner read the same instance and cannot
+/// disagree on the keys.
 /// </summary>
 public sealed class IdeaNoveltyOptions
 {

@@ -49,8 +49,8 @@ public sealed record PolicyBatchResult(IReadOnlyDictionary<Guid, PolicyVerdict> 
 /// <remarks>
 /// Built by the caller from the series' settings and the endpoint's topic filter, so the checker reads no
 /// database and its tests are pure. <see cref="BannedThemes"/> holds the configured forms as they arrive (the
-/// match is whole-word, case- and diacritic-insensitive and reports the matched original form) and both lists
-/// are owner text, never logged (D19).
+/// match is whole-word and case-insensitive — both sides are NFC-normalised with their diacritics kept — and
+/// reports the matched original form) and both lists are owner text, never logged (D19).
 /// </remarks>
 /// <param name="Topic">The series' narrative topic, snake_case; <c>true_crime</c> is what arms the framing check.</param>
 /// <param name="BannedThemes">The theme forms the candidate text must not contain; empty when none are configured.</param>

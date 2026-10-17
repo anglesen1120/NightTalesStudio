@@ -20,15 +20,17 @@ namespace NightTales.Application.Features.Autopilot.Ideas.Abstractions;
 /// <see cref="NoveltyBatchResult.JudgeUsed"/> stays <see langword="false"/>.
 /// </para>
 /// <para>
-/// <b>One retry, then degrade (D7, plan §4 U2).</b> A <c>TextCallInvalidOutput</c> that is not an output cut at
-/// <c>max_output_tokens</c> earns the run's second and last call, under <c>attempt = 2</c> and behind
-/// <see cref="IBudgetGuard"/> re-checked with the novelty call's own worst case (D1: before every paid
-/// dispatch), exactly as the ideas call does. Whatever the retry answers, and every other failure — a provider
-/// error, an outage, a refusal — <b>degrades the judge and never the batch</b>: the lexical scores stand, the
-/// signals take <see cref="IdeaSignals.LexicalOnly"/>'s neutral components, and the checker answers success.
-/// The two failures that are <b>not</b> a degrade-and-continue are the ones that mean the run must stop: a
-/// <c>ProviderFundsExhausted</c> (the account cannot pay for anything more) and the platform spend cap's
-/// refusal, which propagate as the run's error before anything is stored.
+/// <b>One retry, then degrade (D7, plan §4 U2).</b> A <c>TextCallInvalidOutput</c> that is neither an output cut
+/// at <c>max_output_tokens</c> nor a data object over <c>Story:Prompt:MaxDataObjectBytes</c> earns the run's
+/// second and last call, under <c>attempt = 2</c>. Both of those refusals are final on the first answer — the
+/// retry would be cut at the same cap or build the very same object — so they degrade at once. Every dispatch,
+/// the retry included, resolves the novelty call's own worst case and clears <see cref="IBudgetGuard"/> with it
+/// before it is sent (D1: before every paid dispatch), exactly as the ideas call does. Whatever an attempt
+/// answers, and every other failure — a provider error, an outage, a refusal — <b>degrades the judge and never
+/// the batch</b>: the lexical scores stand, the signals take <see cref="IdeaSignals.LexicalOnly"/>'s neutral
+/// components, and the checker answers success. The two failures that are <b>not</b> a degrade-and-continue are
+/// the ones that mean the run must stop: a <c>ProviderFundsExhausted</c> (the account cannot pay for anything
+/// more) and the platform spend cap's refusal, which propagate as the run's error before anything is stored.
 /// </para>
 /// <para>
 /// <b>Defensive mapping (Decision 10).</b> The answer is a list of rows keyed by the candidate's 0-based

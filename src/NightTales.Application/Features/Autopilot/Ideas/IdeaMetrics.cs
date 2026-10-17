@@ -33,12 +33,6 @@ public sealed class IdeaMetrics : IDisposable
     /// <summary>The tag naming the candidate's outcome: a status wire value or a rejection reason.</summary>
     public const string OutcomeTagName = "outcome";
 
-    /// <summary>
-    /// The outcome of a candidate the run persisted, in the <c>proposed</c> status (02.8.1-T1: every survivor of
-    /// the validity and duplicate rules).
-    /// </summary>
-    public static readonly string ProposedOutcome = JsonNamingPolicy.SnakeCaseLower.ConvertName(nameof(IdeaStatus.Proposed));
-
     /// <summary>The outcome of the candidate the run answered as its pick.</summary>
     public static readonly string PickedOutcome = JsonNamingPolicy.SnakeCaseLower.ConvertName(nameof(IdeaStatus.Picked));
 

@@ -66,6 +66,33 @@ public sealed class IdeaCorpusProviderTests(TestDatabase database) : Integration
         corpus.Episodes.Count.ShouldBe(1);
     }
 
+    /// <summary>
+    /// The cap picks the newest approved versions, in order, when the series has more of them than the limit:
+    /// the narrow-id subquery orders and cuts first, and the description projection runs on those rows alone
+    /// without disturbing their order or identity.
+    /// </summary>
+    [Fact]
+    public async Task GetAsync_MoreApprovedVersionsThanTheCap_ReturnsExactlyTheNewestInOrder()
+    {
+        var world = await SeriesBibleHarness.SeedAsync(Database);
+
+        // Five approved episodes, one hour apart, each with its own summary, so order and identity are both checkable.
+        var episodes = new Guid[5];
+        for (var index = 0; index < episodes.Length; index++)
+        {
+            episodes[index] = await SeriesBibleHarness.SeedApprovedEpisodeAsync(Database, world);
+            SetVersion(Database, episodes[index], Start.AddHours(index), $"Summary number {index}.");
+        }
+
+        var corpus = await Provider(world.UserId, corpusEpisodes: 3).GetAsync(world.SeriesId, [], Ct);
+
+        corpus.Episodes.Count.ShouldBe(3, "the corpus is cut to Autopilot:Ideas:Novelty:CorpusEpisodes");
+        corpus.Episodes.Select(episode => episode.EpisodeId)
+            .ShouldBe([episodes[4], episodes[3], episodes[2]], "story_versions.created_at DESC, newest first");
+        corpus.Episodes.Select(episode => episode.Summary)
+            .ShouldBe(["Summary number 4.", "Summary number 3.", "Summary number 2."]);
+    }
+
     [Fact]
     public async Task GetAsync_AnotherSeriesOrOwner_IsNeverReturned()
     {

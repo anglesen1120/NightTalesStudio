@@ -1,4 +1,5 @@
 using System.Buffers;
+using System.Globalization;
 using System.Text;
 
 namespace NightTales.Domain.Autopilot.Ideas;
@@ -19,8 +20,14 @@ namespace NightTales.Domain.Autopilot.Ideas;
 /// <para>
 /// Matching is whole-word on the token sequence: a theme's tokens must appear as a contiguous run of the
 /// candidate's tokens, so the theme <c>ma</c> does not match <c>mama</c> — the false positive the task's
-/// failure table names. Tokens are maximal runs of Unicode letters and digits, so a punctuation-only or
-/// combining-only difference never joins two words.
+/// failure table names. A token is a maximal run of Unicode letters and digits, but a format character
+/// (Cf: a zero-width space, a soft hyphen, a bidi mark, a tag character) or a combining mark (Mn/Mc/Me)
+/// <b>never</b> separates two of them: it is absorbed into the word around it and contributes no characters
+/// of its own, so a zero-width character hidden inside <c>suicide</c> cannot hide the theme. NFC composes the
+/// Vietnamese diacritics into their base letters before the scan, so a precomposed <c>tự tử</c> keeps its
+/// marks; a mark that survives NFC has no base to compose with and is dropped the same way a format character
+/// is (no NFKC, no confusable folding: a fold that redraws the letters would ban a word the operator never
+/// listed).
 /// </para>
 /// <para>
 /// This type also hosts the policy token primitives (<see cref="NormalizePolicyText"/>,
@@ -104,10 +111,19 @@ public static class IdeaBannedThemes
     /// The words of a normalised text: maximal runs of Unicode letters and digits, with their offsets.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// Runs are decoded per <see cref="Rune"/>, so an astral letter is one character of one token, and a
     /// malformed UTF-16 code unit is a separator rather than token content. Nothing here is a regular
     /// expression: the scan is linear in the text and has no backtracking, which is what makes it safe over
     /// model output of any shape.
+    /// </para>
+    /// <para>
+    /// A format character (Cf) or a combining mark (Mn/Mc/Me) is <b>not</b> a separator: inside a word it is
+    /// dropped from the token's characters and the word continues on the far side of it, so a zero-width space
+    /// in <c>suicide</c> or a stray mark in <c>killer</c> cannot split the word into pieces a theme would miss;
+    /// before any word it starts none of its own. A punctuation or a space still ends the token, so
+    /// <c>ma</c> never matches <c>mama</c>.
+    /// </para>
     /// </remarks>
     /// <param name="normalized">A text from <see cref="NormalizePolicyText"/>.</param>
     /// <returns>The tokens in text order.</returns>
@@ -117,34 +133,55 @@ public static class IdeaBannedThemes
         ArgumentNullException.ThrowIfNull(normalized);
 
         var tokens = new List<PolicyToken>();
+        var word = new StringBuilder();
         var start = -1;
+        var end = -1;
         var offset = 0;
         while (offset < normalized.Length)
         {
             var status = Rune.DecodeFromUtf16(normalized.AsSpan(offset), out var rune, out var consumed);
+            var step = status == OperationStatus.Done ? consumed : 1;
+
             if (status == OperationStatus.Done && Rune.IsLetterOrDigit(rune))
             {
                 if (start < 0)
                 {
                     start = offset;
                 }
+
+                word.Append(normalized.AsSpan(offset, consumed));
+                end = offset + step;
             }
-            else if (start >= 0)
+            else if (start >= 0 && (status != OperationStatus.Done || !IsWordJoiner(rune)))
             {
-                tokens.Add(new PolicyToken(normalized[start..offset], start));
+                tokens.Add(new PolicyToken(word.ToString(), start, end));
+                word.Clear();
                 start = -1;
+                end = -1;
             }
 
-            offset += status == OperationStatus.Done ? consumed : 1;
+            offset += step;
         }
 
         if (start >= 0)
         {
-            tokens.Add(new PolicyToken(normalized[start..], start));
+            tokens.Add(new PolicyToken(word.ToString(), start, end));
         }
 
         return tokens;
     }
+
+    /// <summary>
+    /// Whether a character is absorbed into the word around it instead of separating two of them: a Unicode
+    /// format character (Cf) or a combining mark (Mn/Mc/Me).
+    /// </summary>
+    /// <param name="rune">One decoded character that is not a letter or a digit.</param>
+    /// <returns><see langword="true"/> when the character neither starts nor ends a token.</returns>
+    private static bool IsWordJoiner(Rune rune) =>
+        Rune.GetUnicodeCategory(rune) is UnicodeCategory.Format
+            or UnicodeCategory.NonSpacingMark
+            or UnicodeCategory.SpacingCombiningMark
+            or UnicodeCategory.EnclosingMark;
 
     /// <summary>Whether <paramref name="tokens"/> contains <paramref name="needle"/> as a contiguous run.</summary>
     /// <param name="tokens">The candidate's tokens.</param>
@@ -191,16 +228,15 @@ public static class IdeaBannedThemes
         return true;
     }
 
-    /// <summary>One word of a policy text: its characters and where they start in the normalised text.</summary>
+    /// <summary>One word of a policy text: its characters and where they sit in the normalised text.</summary>
     /// <remarks>
-    /// The offset is what lets <see cref="IdeaTrueCrimeFraming"/> measure how far apart a dated incident
-    /// and a crime noun are without re-scanning the text.
+    /// The offsets are what let <see cref="IdeaTrueCrimeFraming"/> measure how far apart a dated incident
+    /// and a crime noun are without re-scanning the text. <see cref="End"/> is tracked rather than derived
+    /// from <see cref="Text"/>'s length, because a word-joining character between the two (<see
+    /// cref="TokenizePolicyText"/>) takes up room in the text without appearing in the token.
     /// </remarks>
-    /// <param name="Text">The token's characters.</param>
-    /// <param name="Start">The token's offset in the normalised text.</param>
-    internal readonly record struct PolicyToken(string Text, int Start)
-    {
-        /// <summary>The offset just past the token's last character.</summary>
-        internal int End => Start + Text.Length;
-    }
+    /// <param name="Text">The token's letters and digits; a format character or combining mark inside the word is not part of it.</param>
+    /// <param name="Start">The offset of the token's first character in the normalised text.</param>
+    /// <param name="End">The offset just past the token's last character of its own.</param>
+    internal readonly record struct PolicyToken(string Text, int Start, int End);
 }

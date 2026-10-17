@@ -1,4 +1,3 @@
-using System.Text;
 using Microsoft.Extensions.Configuration;
 using NightTales.Application.Abstractions.Prompts;
 using NightTales.Application.Abstractions.Text;
@@ -39,9 +38,12 @@ namespace NightTales.Infrastructure.OpenAI;
 /// The bound is resolved <em>before</em> the call, once: it carries the step's ruled output ceiling
 /// (<c>price_versions.limits.novelty.max_output_tokens</c> — never a configuration fallback, 02 README T56) and the
 /// same bound then prices the usage row (D1/D14), so the cap the reservation was taken at and the cap the
-/// request sends can never disagree. A missing price version, an unshipped prompt or a data object over
-/// <c>Story:Prompt:MaxDataObjectBytes</c> is an ordering/invariant error at this boundary: the call is not
-/// dispatched and the failure is thrown rather than sent with unbounded or uncosted content.
+/// request sends can never disagree. A missing price version or an unshipped prompt is an ordering/invariant
+/// error at this boundary: the call is not dispatched and the failure is thrown rather than sent uncosted.
+/// A data object over <c>Story:Prompt:MaxDataObjectBytes</c> is not: the corpus is trimmed to fit (oldest
+/// episode first) and, when even the candidates alone are over the ceiling, the call is refused with the
+/// <c>data_object_too_large</c> refusal the checker already degrades on — an object this server built must never
+/// fail the job that paid for the ideas call before it.
 /// </para>
 /// <para>
 /// D19: this class holds no logger — the client's log line carries identifiers, token counts and the mapped
@@ -72,22 +74,28 @@ public sealed class OpenAiIdeaNoveltyJudge(
                 $"A novelty call cannot be dispatched without its D1 bound and its ruled max_output_tokens: {bound.FirstError.Code}.");
         }
 
-        var json = NoveltyDataObjectJson.Build(request);
         var maxBytes = configuration.GetValue(
             PromptDataBudget.ConfigurationKey,
             PromptDataBudget.DefaultMaxDataObjectBytes);
-        var bytes = Encoding.UTF8.GetByteCount(json);
-        if (bytes > maxBytes)
+        var fitted = NoveltyDataObjectJson.BuildFitting(request, maxBytes);
+        if (fitted is null)
         {
-            // Fail closed instead of truncating: a cut corpus would silently change what the judge compares against.
-            throw new IdeaDataObjectTooLargeException(bytes, maxBytes);
+            // Not even the candidates fit the ceiling and they are never cut, so nothing can be sent: refusing
+            // the call as the provider would leaves the batch to degrade on its lexical signals, and no exception
+            // reaches the caller's job over an object this server built (F2/S2). The paid ideas call of the run
+            // has already been made; a corpus that is too large is not a reason to fail it.
+            return TextCallResult<NoveltyV1>.InvalidOutput(
+                estimator.NoveltyModel,
+                usage: null,
+                requestId: null,
+                [IdeaCallFaults.DataObjectTooLarge]);
         }
 
         var call = new TextCallRequest(
             request.Run,
             TextStep.Novelty,
             Localise(catalog.GetStepPrompt(PromptStep.Novelty), LanguageName(request.Language)),
-            json,
+            fitted.Json,
             NoveltyPrompts.SchemaName,
             catalog.GetSchema(NoveltyPrompts.SchemaFile),
             bound.Value.MaxOutputTokens,

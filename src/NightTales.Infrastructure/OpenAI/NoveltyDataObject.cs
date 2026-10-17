@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text;
 using System.Text.Encodings.Web;
 using System.Text.Json;
@@ -58,14 +59,20 @@ public sealed record NoveltyDataEpisode(int Index, string Title, string Summary)
 /// <remarks>
 /// <para>
 /// The property order is the declaration order — control keys, then the batch, then the corpus — so the
-/// riskiest text sits last. Nothing here truncates the serialised object: the judge refuses an object over
-/// <c>Story:Prompt:MaxDataObjectBytes</c> instead of silently dropping content.
+/// riskiest text sits last. The batch itself is never cut: it is what the model is asked to score. An object
+/// over <c>Story:Prompt:MaxDataObjectBytes</c> is instead trimmed by dropping whole past episodes, oldest
+/// first, from the corpus' newest-first order — the corpus is the one part a judge can lose without being asked
+/// a different question — and the survivors keep their 1-based <c>past_episodes[].index</c>.
+/// <see cref="BuildFitting"/> answers <see langword="null"/> when not even the candidates alone fit, and the
+/// judge then refuses the call the way it refuses an answer the provider rejected: the batch degrades, and no
+/// exception reaches the caller's job.
 /// </para>
 /// <para>
 /// The candidate and episode texts are model- or owner-written and are therefore treated as untrusted (D19):
-/// each is NFC-normalised, has its control characters dropped and is capped at the width its source contract
-/// pins before it is serialised, so a stray control byte or an over-long field cannot change the shape of the
-/// document. The JSON encoder escapes whatever is left, so no text can ever leave its string value.
+/// each is NFC-normalised, has its control characters and its Unicode format characters dropped and is capped
+/// at the width its source contract pins before it is serialised, so a stray control byte, a bidi override or
+/// an over-long field cannot change the shape of the document. The JSON encoder escapes whatever is left, so no
+/// text can ever leave its string value.
 /// </para>
 /// </remarks>
 public static class NoveltyDataObjectJson
@@ -89,7 +96,7 @@ public static class NoveltyDataObjectJson
         Encoder = JavaScriptEncoder.Create(UnicodeRanges.All),
     };
 
-    /// <summary>Builds and serialises the data object of one judge call.</summary>
+    /// <summary>Serialises the data object of one judge call with the whole corpus.</summary>
     /// <param name="request">The run, the series' control values, the batch and the corpus.</param>
     /// <returns>The one data object, the exact string the client sends.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="request"/> is <see langword="null"/>.</exception>
@@ -97,6 +104,58 @@ public static class NoveltyDataObjectJson
     {
         ArgumentNullException.ThrowIfNull(request);
 
+        return Serialise(request, Ideas(request), Episodes(request.PastEpisodes));
+    }
+
+    /// <summary>
+    /// Builds and serialises the data object of one judge call within a byte ceiling, dropping the corpus'
+    /// <b>oldest</b> past episodes until it fits: the references the model answers with are 1-based positions
+    /// into the list it received, so what is sent must stay a prefix of the newest-first corpus for every index
+    /// it reads to resolve.
+    /// </summary>
+    /// <param name="request">The run, the series' control values, the batch and the corpus.</param>
+    /// <param name="maxBytes">The ceiling (<c>Story:Prompt:MaxDataObjectBytes</c>).</param>
+    /// <returns>
+    /// The fitted object, or <see langword="null"/> when not even the candidates alone fit the ceiling — nothing
+    /// may be dropped without changing what the model is asked, so the caller refuses the call.
+    /// </returns>
+    /// <exception cref="ArgumentNullException"><paramref name="request"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="maxBytes"/> is not positive.</exception>
+    public static FittedDataObject? BuildFitting(NoveltyJudgeRequest request, int maxBytes)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxBytes);
+
+        var ideas = Ideas(request);
+        var episodes = Episodes(request.PastEpisodes);
+        var sent = episodes.Length;
+        var json = Serialise(request, ideas, episodes);
+
+        while (Encoding.UTF8.GetByteCount(json) > maxBytes)
+        {
+            if (sent == 0)
+            {
+                // The candidates alone are over the ceiling: they are never cut, so the call cannot be sent.
+                return null;
+            }
+
+            sent--;
+            json = Serialise(request, ideas, episodes.AsSpan(0, sent));
+        }
+
+        return new FittedDataObject(json, sent);
+    }
+
+    /// <summary>The data object and the part of the corpus it carries.</summary>
+    /// <param name="Json">The exact string the client sends.</param>
+    /// <param name="EpisodesSent">How many of the request's past episodes it carries, from the newest.</param>
+    public sealed record FittedDataObject(string Json, int EpisodesSent);
+
+    /// <summary>The batch's candidates, cleaned and addressed by their 0-based batch index.</summary>
+    /// <param name="request">The run, the series' control values, the batch and the corpus.</param>
+    /// <returns>The candidates of the data object.</returns>
+    private static NoveltyDataIdea[] Ideas(NoveltyJudgeRequest request)
+    {
         var ideas = new NoveltyDataIdea[request.Ideas.Count];
         for (var index = 0; index < ideas.Length; index++)
         {
@@ -109,25 +168,44 @@ public static class NoveltyDataObjectJson
                 Clean(candidate.Setting, Caps.SettingChars));
         }
 
-        var episodes = new NoveltyDataEpisode[request.PastEpisodes.Count];
-        for (var index = 0; index < episodes.Length; index++)
+        return ideas;
+    }
+
+    /// <summary>The corpus' past episodes, cleaned and addressed by their 1-based position in this list.</summary>
+    /// <param name="episodes">The corpus, newest first.</param>
+    /// <returns>The past episodes of the data object.</returns>
+    private static NoveltyDataEpisode[] Episodes(IReadOnlyList<CorpusEpisode> episodes)
+    {
+        var mapped = new NoveltyDataEpisode[episodes.Count];
+        for (var index = 0; index < mapped.Length; index++)
         {
-            var episode = request.PastEpisodes[index];
+            var episode = episodes[index];
             // 1-based: the judge answers `max_overlap_episode_id` as an index into this list (task Design).
-            episodes[index] = new NoveltyDataEpisode(
+            mapped[index] = new NoveltyDataEpisode(
                 index + 1,
                 Clean(episode.Title, EpisodeTitleMaxChars),
                 Clean(episode.Summary, SummaryMaxChars));
         }
 
-        var dataObject = new NoveltyDataObject(ScoreIdeasTask, request.Language, request.Topic, ideas, episodes);
-
-        return JsonSerializer.Serialize(dataObject, Options);
+        return mapped;
     }
+
+    /// <summary>Writes the one document of the control values, the batch and the episodes that fit.</summary>
+    /// <param name="request">The run, the series' control values, the batch and the corpus.</param>
+    /// <param name="ideas">The cleaned batch.</param>
+    /// <param name="episodes">The cleaned episodes to carry, from the newest.</param>
+    /// <returns>The serialised document.</returns>
+    private static string Serialise(
+        NoveltyJudgeRequest request,
+        NoveltyDataIdea[] ideas,
+        ReadOnlySpan<NoveltyDataEpisode> episodes) =>
+        JsonSerializer.Serialize(
+            new NoveltyDataObject(ScoreIdeasTask, request.Language, request.Topic, ideas, episodes.ToArray()),
+            Options);
 
     /// <summary>
     /// Normalises, de-controls and caps one untrusted text: NFC via <see cref="StoryText.Normalize"/> (which also
-    /// replaces unpaired surrogates), control characters dropped, then a surrogate-safe cut at
+    /// replaces unpaired surrogates), control and format characters dropped, then a surrogate-safe cut at
     /// <paramref name="maxChars"/>.
     /// </summary>
     /// <param name="text">The model- or owner-written text; <see langword="null"/> reads as empty.</param>
@@ -141,23 +219,42 @@ public static class NoveltyDataObjectJson
         }
 
         var normalised = StoryText.Normalize(text);
-        var stripped = normalised.Any(char.IsControl) ? Drop(normalised) : normalised;
 
-        return IdeaDataObjectJson.TruncateNote(stripped, maxChars);
+        return IdeaDataObjectJson.TruncateNote(Drop(normalised), maxChars);
     }
 
-    /// <summary>Drops every control character, keeping the rest of the text in order.</summary>
+    /// <summary>
+    /// Drops the characters that must never reach the model, keeping the rest of the text in order: the control
+    /// characters (a raw NUL or a stray C0 byte) and the Unicode format characters
+    /// (<see cref="UnicodeCategory.Format"/>) — the bidi overrides such as U+202E, the zero-width space and
+    /// joiner families, and the tag characters of the astral plane (U+E0000…U+E007F) that can carry a hidden
+    /// instruction inside a summary an owner approved. The walk is by <see cref="Rune"/>, so a character outside
+    /// the BMP is judged as one character rather than as its surrogate pair.
+    /// </summary>
+    /// <param name="text">The text to clean.</param>
+    /// <returns>The same instance when nothing needed dropping.</returns>
     private static string Drop(string text)
     {
-        var builder = new StringBuilder(text.Length);
-        foreach (var character in text)
+        StringBuilder? builder = null;
+        var keptFrom = 0;
+        var walked = 0;
+
+        foreach (var rune in text.EnumerateRunes())
         {
-            if (!char.IsControl(character))
+            var length = rune.Utf16SequenceLength;
+
+            if (Rune.IsControl(rune) || Rune.GetUnicodeCategory(rune) == UnicodeCategory.Format)
             {
-                builder.Append(character);
+                // The text kept so far is copied in before the dropped character, so the builder holds the whole
+                // surviving text rather than only its tail.
+                builder ??= new StringBuilder(text.Length);
+                builder.Append(text, keptFrom, walked - keptFrom);
+                keptFrom = walked + length;
             }
+
+            walked += length;
         }
 
-        return builder.ToString();
+        return builder is null ? text : builder.Append(text, keptFrom, walked - keptFrom).ToString();
     }
 }

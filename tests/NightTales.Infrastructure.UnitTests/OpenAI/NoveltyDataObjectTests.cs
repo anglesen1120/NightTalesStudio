@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text;
 using System.Text.Json;
 using NightTales.Application.Abstractions.Money;
 using NightTales.Application.Abstractions.Text;
@@ -110,15 +111,86 @@ public sealed class NoveltyDataObjectTests
             .GetProperty("ideas")[0].GetProperty("title").GetString().ShouldBe("Căn nhà");
     }
 
+    /// <summary>
+    /// The Unicode format characters are dropped like the control ones: a bidi override (U+202E), a zero-width
+    /// space and a tag character of the astral plane (U+E0041, a surrogate pair) cannot ride in a candidate's
+    /// title or an owner-approved summary to reorder the text or hide an instruction inside it (S4).
+    /// </summary>
+    [Fact]
+    public void Build_DropsFormatCharactersIncludingAstralTagCharacters()
+    {
+        var json = Build(
+            ["Ý tưởng\u202e\u200b", "Idea two"],
+            [("Tập một", "Một chuyện\u200d thật\U000E0041.")]);
+
+        var root = JsonDocument.Parse(json).RootElement;
+
+        root.GetProperty("ideas")[0].GetProperty("title").GetString().ShouldBe("Ý tưởng");
+        root.GetProperty("past_episodes")[0].GetProperty("summary").GetString().ShouldBe("Một chuyện thật.");
+        json.ShouldNotContain("\u202e");
+        json.ShouldNotContain("\u200b");
+        json.ShouldNotContain("\u200d");
+        json.ShouldNotContain("\U000E0041");
+    }
+
+    /// <summary>
+    /// The byte ceiling trims the corpus and never the batch: whole past episodes go, oldest first, so what is
+    /// sent stays a prefix of the newest-first corpus and the single 1-based index the judge may answer with
+    /// still names the episode it was shown.
+    /// </summary>
+    [Fact]
+    public void BuildFitting_DropsTheOldestEpisodesUntilTheObjectFits()
+    {
+        var request = Request(
+            ["Idea one"],
+            [("Tập mới", new string('x', 600)), ("Tập cũ hơn", new string('x', 600)), ("Tập cũ nhất", new string('x', 600))]);
+        var newestOnly = NoveltyDataObjectJson.Build(request with { PastEpisodes = request.PastEpisodes.Take(1).ToArray() });
+        var budget = Encoding.UTF8.GetByteCount(newestOnly);
+        Encoding.UTF8.GetByteCount(NoveltyDataObjectJson.Build(request)).ShouldBeGreaterThan(budget);
+
+        var fitted = NoveltyDataObjectJson.BuildFitting(request, budget);
+
+        fitted.ShouldNotBeNull();
+        fitted.EpisodesSent.ShouldBe(1, "the third episode had to go for the object to fit");
+        Encoding.UTF8.GetByteCount(fitted.Json).ShouldBeLessThanOrEqualTo(budget);
+
+        var root = JsonDocument.Parse(fitted.Json).RootElement;
+        root.GetProperty("past_episodes").GetArrayLength().ShouldBe(1);
+        root.GetProperty("past_episodes")[0].GetProperty("index").GetInt32().ShouldBe(1);
+        root.GetProperty("past_episodes")[0].GetProperty("title").GetString().ShouldBe("Tập mới", "the newest episode is the one kept");
+        root.GetProperty("ideas").GetArrayLength().ShouldBe(1, "the batch is what the call is for: it is never cut");
+    }
+
+    /// <summary>
+    /// A ceiling the candidates alone already exceed cannot be met by dropping anything a model may read: the
+    /// caller is told so and refuses the call, instead of an exception escaping over a paid run (F2/S2).
+    /// </summary>
+    [Fact]
+    public void BuildFitting_CandidatesAloneOverTheCeiling_AnswersNull()
+    {
+        var request = Request(["Idea one"], []);
+        var whole = NoveltyDataObjectJson.Build(request);
+        var atTheCeiling = NoveltyDataObjectJson.BuildFitting(request, Encoding.UTF8.GetByteCount(whole));
+
+        atTheCeiling.ShouldNotBeNull("the object is exactly at the ceiling, and only a larger one is refused");
+        atTheCeiling.EpisodesSent.ShouldBe(0);
+        NoveltyDataObjectJson.BuildFitting(request, Encoding.UTF8.GetByteCount(whole) - 1).ShouldBeNull();
+    }
+
     private static string Build(
         IReadOnlyList<string> titles,
         IReadOnlyList<(string Title, string Summary)> episodes) =>
-        NoveltyDataObjectJson.Build(new NoveltyJudgeRequest(
+        NoveltyDataObjectJson.Build(Request(titles, episodes));
+
+    private static NoveltyJudgeRequest Request(
+        IReadOnlyList<string> titles,
+        IReadOnlyList<(string Title, string Summary)> episodes) =>
+        new(
             Run(),
             "vi",
             "ghost",
             Candidates(titles),
-            [.. episodes.Select(episode => new CorpusEpisode(Guid.CreateVersion7(), episode.Title, episode.Summary))]));
+            [.. episodes.Select(episode => new CorpusEpisode(Guid.CreateVersion7(), episode.Title, episode.Summary))]);
 
     private static string BuildWithEpisodeId(Guid episodeId) =>
         NoveltyDataObjectJson.Build(new NoveltyJudgeRequest(

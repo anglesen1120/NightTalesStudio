@@ -78,4 +78,14 @@ public sealed class IdeaTrueCrimeFramingTests
         IdeaTrueCrimeFraming.RequiresResearch("In 1974 the murderer confessed", [], ["murder"])
             .ShouldBeFalse();
     }
+
+    /// <summary>The shared tokenizer absorbs a hidden format character or combining mark, so it cannot hide either signal.</summary>
+    [Fact]
+    public void IdeaTrueCrimeFraming_InvisibleCharactersDoNotHideTheSignal()
+    {
+        IdeaTrueCrimeFraming.RequiresResearch("A case based on a true\u200B story", FramingEn, [])
+            .ShouldBeTrue("a zero-width space inside a framing phrase is ignored");
+        IdeaTrueCrimeFraming.RequiresResearch("The mur\u00ADder of 1974", [], ["murder"])
+            .ShouldBeTrue("a soft hyphen inside a crime noun is ignored, and the year is still near it");
+    }
 }

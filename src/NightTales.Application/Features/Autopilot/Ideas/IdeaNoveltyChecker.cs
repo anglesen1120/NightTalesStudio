@@ -1,3 +1,5 @@
+using System.Globalization;
+using System.Text;
 using ErrorOr;
 using Microsoft.Extensions.Logging;
 using NightTales.Application.Abstractions.Moderation;
@@ -25,10 +27,16 @@ namespace NightTales.Application.Features.Autopilot.Ideas;
 /// </para>
 /// <para>
 /// <b>The judge never fails the run.</b> Whatever the one retry answers, and whatever a provider error, an
-/// outage or a refusal answers, the batch degrades to lexical-only signals: the lexical scores stand and the
-/// judge's absent components take <see cref="IdeaSignals.LexicalOnly"/>'s neutral values. Only a
-/// <c>ProviderFundsExhausted</c> and the platform spend cap's refusal stop the run, because both mean the
-/// account cannot pay for anything more.
+/// outage or a refusal answers — a data object the judge refuses as over its byte ceiling included — the batch
+/// degrades to lexical-only signals: the lexical scores stand and the judge's absent components take
+/// <see cref="IdeaSignals.LexicalOnly"/>'s neutral values. Only a <c>ProviderFundsExhausted</c> and the platform
+/// spend cap's refusal stop the run, because both mean the account cannot pay for anything more.
+/// </para>
+/// <para>
+/// <b>Every dispatch is checked before it is bought.</b> The caller's admission reserved the ideas call, so each
+/// judge dispatch — attempt 1 and the one retry — resolves the judge's own worst case and asks
+/// <see cref="IBudgetGuard"/> with it (D1: before every paid dispatch), which is what keeps the platform cap the
+/// last word on a run admitted just underneath it.
 /// </para>
 /// <para>
 /// <b>Nothing the model wrote reaches a log line or a tag.</b> Scores are numbers, the counts are counts, and the
@@ -38,8 +46,8 @@ namespace NightTales.Application.Features.Autopilot.Ideas;
 /// </remarks>
 /// <param name="options">The thresholds (<c>Autopilot:Ideas:Novelty</c>): they decide both the rejection and whether the judge call is worth making.</param>
 /// <param name="judge">The one paid call of the batch; it meters its own usage row (D14).</param>
-/// <param name="budgetGuard">The platform spend cap, re-checked before the batch's second judge dispatch (D1).</param>
-/// <param name="costEstimator">The worst case of one judge call: the bound the retry's re-check is made with.</param>
+/// <param name="budgetGuard">The platform spend cap, re-checked before every judge dispatch (D1).</param>
+/// <param name="costEstimator">The worst case of one judge call: the bound each dispatch's cap check is made with.</param>
 /// <param name="moderationEvents">The one writer of <c>moderation_events</c> (D12): a refused judge call writes one row.</param>
 /// <param name="metrics">The calibration histograms of the two scores.</param>
 /// <param name="logger">The outcome log of the pass.</param>
@@ -125,7 +133,8 @@ public sealed partial class IdeaNoveltyChecker(
     /// <summary>
     /// Makes the batch's judge call, with the single D7 retry an invalid output earns: two attempts at most, the
     /// second under <c>attempt = 2</c>, which is what the D7 correlation id
-    /// (<c>{generationRunId}:novelty:{attempt}</c>) and the run's attempt counter read.
+    /// (<c>{generationRunId}:novelty:{attempt}</c>) and the run's attempt counter read. Each attempt is a paid
+    /// dispatch of its own, so each one resolves its bound and clears the platform cap before it is sent (D1).
     /// </summary>
     /// <param name="batch">The candidates, in the batch's order.</param>
     /// <param name="corpus">The corpus that was measured; its episodes are what the judge may name by index.</param>
@@ -147,6 +156,31 @@ public sealed partial class IdeaNoveltyChecker(
 
         for (var attempt = 1; ; attempt++)
         {
+            // D1: every paid dispatch is checked, this batch's first one included — the caller's admission
+            // reserved the ideas call, never the judge's. The bound is resolved first (a run with no usable price
+            // version or no shipped prompt fails closed rather than dispatching uncosted), then the platform cap
+            // is asked with this dispatch's own worst case and the run's own id, which the guard leaves out of
+            // the open sum. A refusal is the run's spend-cap error: nothing is stored.
+            var bound = await costEstimator
+                .NoveltyWorstCaseAsync(run.PriceVersion, ct)
+                .ConfigureAwait(false);
+            if (bound.IsError)
+            {
+                LogFailed(runId, bound.FirstError.Code);
+
+                return bound.Errors;
+            }
+
+            var allowed = await budgetGuard
+                .CheckAsync(new CostBound(bound.Value.WorstCaseUsd), ct, runId)
+                .ConfigureAwait(false);
+            if (allowed.IsError)
+            {
+                LogFailed(runId, IdeaCallFaults.SpendCapReached);
+
+                return IdeaErrors.SpendCapReached;
+            }
+
             var request = new NoveltyJudgeRequest(
                 run with { Attempt = attempt },
                 WireLanguage(lang),
@@ -165,40 +199,16 @@ public sealed partial class IdeaNoveltyChecker(
                     LogInvalidOutput(runId, attempt, invalid.RuleIds.Count);
 
                     // The precedent's rule (IdeaPlanner.GenerateAsync, ProposeBibleUpdateHandler): a stop at
-                    // `max_output_tokens` would repeat the same truncation at the same cap, so it is final on the
-                    // first call. Any other refusal earns D7's one retry, which is the run's second paid dispatch
-                    // and therefore re-checks the platform cap with this call's own worst case (D1).
-                    if (attempt == 1 && !IdeaCallFaults.IsTruncated(invalid))
+                    // `max_output_tokens` would repeat the same truncation at the same cap, and a data object the
+                    // judge refused as too large is built identically on the next attempt, so both are final on
+                    // the first call. Any other refusal earns D7's one retry, which is the run's second paid
+                    // dispatch and carries its own bound and guard check (the top of this loop).
+                    if (attempt == 1 && !IdeaCallFaults.IsFinalOutput(invalid))
                     {
-                        var bound = await costEstimator
-                            .NoveltyWorstCaseAsync(run.PriceVersion, ct)
-                            .ConfigureAwait(false);
-                        if (bound.IsError)
-                        {
-                            // No usable price version or no shipped prompt: fail closed, never dispatch unbounded.
-                            LogFailed(runId, bound.FirstError.Code);
-
-                            return bound.Errors;
-                        }
-
-                        var allowed = await budgetGuard
-                            .CheckAsync(new CostBound(bound.Value.WorstCaseUsd), ct, runId)
-                            .ConfigureAwait(false);
-                        if (allowed.IsError)
-                        {
-                            LogFailed(runId, IdeaCallFaults.SpendCapReached);
-
-                            return IdeaErrors.SpendCapReached;
-                        }
-
                         continue;
                     }
 
-                    LogFailed(
-                        runId,
-                        IdeaCallFaults.IsTruncated(invalid)
-                            ? IdeaCallFaults.InvalidOutputMaxTokens
-                            : IdeaCallFaults.InvalidOutputTwice);
+                    LogFailed(runId, IdeaCallFaults.InvalidOutputDetail(invalid));
 
                     return (JudgeOutcome.Degraded, []);
 
@@ -300,7 +310,7 @@ public sealed partial class IdeaNoveltyChecker(
     private static Guid? ResolveEpisodeId(string? index, NoveltyCorpus corpus)
     {
         if (string.IsNullOrWhiteSpace(index)
-            || !int.TryParse(index, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var position)
+            || !int.TryParse(index, NumberStyles.Integer, CultureInfo.InvariantCulture, out var position)
             || position < 1
             || position > corpus.Episodes.Count)
         {
@@ -314,14 +324,14 @@ public sealed partial class IdeaNoveltyChecker(
 
     /// <summary>
     /// Turns the judge's justification into storable server-side data: control characters and lone surrogates
-    /// replaced (a raw NUL or a lone surrogate fails the save), trimmed and cut to
-    /// <see cref="ReasonMaxChars"/> without splitting a surrogate pair.
+    /// replaced (a raw NUL or a lone surrogate fails the save), the Unicode format characters dropped, then
+    /// trimmed and cut to <see cref="ReasonMaxChars"/> without splitting a surrogate pair.
     /// </summary>
     /// <param name="reason">The model's reason.</param>
     /// <returns>The text the <c>novelty</c> document carries.</returns>
     private static string Reason(string? reason)
     {
-        var cleaned = TextSafety.Clean(reason).Trim();
+        var cleaned = DropFormats(TextSafety.Clean(reason)).Trim();
         if (cleaned.Length <= ReasonMaxChars)
         {
             return cleaned;
@@ -330,6 +340,40 @@ public sealed partial class IdeaNoveltyChecker(
         var length = char.IsHighSurrogate(cleaned[ReasonMaxChars - 1]) ? ReasonMaxChars - 1 : ReasonMaxChars;
 
         return cleaned[..length];
+    }
+
+    /// <summary>
+    /// Drops the Unicode format characters (<see cref="UnicodeCategory.Format"/>) of a stored text: the bidi
+    /// overrides and isolates (U+202E and its family), the zero-width space and joiner characters, and the tag
+    /// characters of the astral plane (U+E0000…U+E007F) that can carry a hidden instruction inside text a model
+    /// or an owner wrote. The walk is by <see cref="Rune"/>, so a character outside the BMP is judged as one
+    /// character rather than as its surrogate pair.
+    /// </summary>
+    /// <param name="text">The text to clean; it has already been through <see cref="TextSafety.Clean"/>.</param>
+    /// <returns>The same instance when nothing was dropped.</returns>
+    private static string DropFormats(string text)
+    {
+        StringBuilder? builder = null;
+        var keptFrom = 0;
+        var walked = 0;
+
+        foreach (var rune in text.EnumerateRunes())
+        {
+            var length = rune.Utf16SequenceLength;
+
+            if (Rune.GetUnicodeCategory(rune) == UnicodeCategory.Format)
+            {
+                // The text kept so far is copied in before the dropped character, so the builder holds the whole
+                // surviving text rather than only its tail.
+                builder ??= new StringBuilder(text.Length);
+                builder.Append(text, keptFrom, walked - keptFrom);
+                keptFrom = walked + length;
+            }
+
+            walked += length;
+        }
+
+        return builder is null ? text : builder.Append(text, keptFrom, walked - keptFrom).ToString();
     }
 
     /// <summary>The corpus entries both passes measure against, each with the kind the stored document reports.</summary>
@@ -372,19 +416,19 @@ public sealed partial class IdeaNoveltyChecker(
     }
 
     [LoggerMessage(
-        EventId = 6340,
+        EventId = 6369,
         Level = LogLevel.Warning,
         Message = "idea_novelty_invalid_output runId={RunId} attempt={Attempt} rules={Rules}")]
     private partial void LogInvalidOutput(Guid runId, int attempt, int rules);
 
     [LoggerMessage(
-        EventId = 6341,
+        EventId = 6370,
         Level = LogLevel.Warning,
         Message = "idea_novelty_failed runId={RunId} detail={Detail}")]
     private partial void LogFailed(Guid runId, string detail);
 
     [LoggerMessage(
-        EventId = 6342,
+        EventId = 6371,
         Level = LogLevel.Information,
         Message = "idea_novelty_batch runId={RunId} candidates={Candidates} episodes={Episodes} pendingIdeas={PendingIdeas} judgeUsed={JudgeUsed}")]
     private partial void LogPass(Guid runId, int candidates, int episodes, int pendingIdeas, bool judgeUsed);
