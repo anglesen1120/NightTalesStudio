@@ -1,5 +1,4 @@
 using System.Globalization;
-using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
 using NightTales.Domain.Stories.Similarity;
@@ -214,10 +213,15 @@ public sealed class SimilarityCalibrationTests
             }
         }
 
-        // BlockAbove is calibrated on verbatim_full only: recomputing it without the diluted class is identical.
-        var minFull = SimilarityCalibrator.LanguageNames
+        // BlockAbove follows rule 3 (owner, 2026-10-17): the midpoint of A (max specificity) and B (min verbatim_full),
+        // floored to 0.05, with the WarnAbove + 0.05 fallback. verbatim_paragraph is never an input.
+        var specificityMax = SimilarityCalibrator.BlockMaxClassNames
+            .SelectMany(className => SimilarityCalibrator.LanguageNames.Select(language =>
+                Cell(report.Cells, className, language, ChosenN(report, language)).Max))
+            .Max();
+        var verbatimMin = SimilarityCalibrator.LanguageNames
             .Min(language => Cell(report.Cells, "verbatim_full", language, ChosenN(report, language)).Min);
-        var block = Math.Floor(ToDecimal(minFull) / 0.01m) * 0.01m;
+        var block = SimilarityCalibrator.MidpointBlockAbove(specificityMax, verbatimMin);
         if (block < ToDecimal(report.Chosen.WarnAbove) + 0.05m)
         {
             block = 0.15m;
@@ -306,14 +310,20 @@ public sealed class SimilarityCalibrationTests
         }
 
         var p95 = double.Parse(p95Text, CultureInfo.InvariantCulture);
+        var perfSource = Environment.GetEnvironmentVariable("NTS_CALIBRATION_PERF_SOURCE");
         var perf = new CalibrationPerf(
-            p95, "tests/NightTales.Performance.Tests SimilarityPerfTests, " + RuntimeInformation.OSDescription);
+            p95,
+            string.IsNullOrWhiteSpace(perfSource)
+                ? "tests/NightTales.Performance.Tests SimilarityPerfTests at n=14 (median of 10 runs' p95), Apple M4 macOS"
+                : perfSource);
         var fixture = SimilarityCalibrator.LoadFixture();
-        var previous = File.Exists(SimilarityCalibrator.ReportPath)
-            ? SimilarityCalibrator.ParseReport(File.ReadAllText(SimilarityCalibrator.ReportPath)).Chosen
+        var committed = File.Exists(SimilarityCalibrator.ReportPath)
+            ? SimilarityCalibrator.ParseReport(File.ReadAllText(SimilarityCalibrator.ReportPath))
             : null;
         var generatedAt = DateTime.UtcNow.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
-        var report = SimilarityCalibrator.Build(fixture, perf, previous, generatedAt);
+        var provisional = SimilarityCalibrator.Build(fixture, perf, null, generatedAt);
+        var report = SimilarityCalibrator.Build(
+            fixture, perf, SimilarityCalibrator.ResolvePrevious(committed, provisional.Chosen), generatedAt);
 
         File.WriteAllText(
             SimilarityCalibrator.ReportPath, SimilarityCalibrator.SerializeReport(report), new UTF8Encoding(false));

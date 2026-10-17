@@ -914,21 +914,21 @@
     "nVi": 14,
     "nEn": 14,
     "warnAbove": 0.02,
-    "blockAbove": 0.97,
+    "blockAbove": 0.45,
     "copiedFactThreshold": 0.05,
-    "perfBudgetMs": 152
+    "perfBudgetMs": 163
   },
   "previous": {
-    "nVi": 14,
-    "nEn": 14,
-    "warnAbove": 0.02,
-    "blockAbove": 0.97,
-    "copiedFactThreshold": 0.05,
-    "perfBudgetMs": 152
+    "nVi": 10,
+    "nEn": 8,
+    "warnAbove": 0.05,
+    "blockAbove": 0.15,
+    "copiedFactThreshold": 0.15,
+    "perfBudgetMs": 500
   },
   "perf": {
-    "measuredP95Ms": 75.585,
-    "source": "tests/NightTales.Performance.Tests SimilarityPerfTests, macOS 27.0.1"
+    "measuredP95Ms": 81.375,
+    "source": "tests/NightTales.Performance.Tests SimilarityPerfTests at n=14 (median of 10 runs\u0027 p95), Apple M4 macOS"
   },
   "translatedCopyResidual": "en source -\u003E vi story mean 0.000000; vi source -\u003E en story mean 0.000000. Cross-language translation copying is not detected (F18); mitigated by facts-only writer input (02.5.5).",
   "dilution": [

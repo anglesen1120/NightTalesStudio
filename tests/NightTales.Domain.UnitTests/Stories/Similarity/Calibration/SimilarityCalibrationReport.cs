@@ -116,6 +116,10 @@ internal static class SimilarityCalibrator
     internal static readonly IReadOnlyList<string> SpecificityClassNames =
         ["original", "shared_collocation", "light_paraphrase", "quoted_passage"];
 
+    /// <summary>The classes whose maximum forms A in rule 3 (owner amendment, 2026-10-17): the four non-copy classes plus heavy_paraphrase.</summary>
+    internal static readonly IReadOnlyList<string> BlockMaxClassNames =
+        ["original", "shared_collocation", "light_paraphrase", "quoted_passage", "heavy_paraphrase"];
+
     /// <summary>The two content languages, in the order cells are reported.</summary>
     internal static readonly IReadOnlyList<string> LanguageNames = ["vi", "en"];
 
@@ -127,6 +131,23 @@ internal static class SimilarityCalibrator
         "A new content language: the grid has no calibration for it.",
         "Any edit to prompts/fixtures/similarity/sample-set.v1.json: the evidence no longer matches the fixture.",
     ];
+
+    /// <summary>The choices before 02.5.6-T2: the shingle defaults and the live config defaults.</summary>
+    internal static readonly CalibrationChoice Baseline = new(10, 8, 0.05, 0.15, 0.15, 500);
+
+    /// <summary>
+    /// The <c>previous</c> block of a new report: the committed <c>previous</c> while the new choice equals the committed
+    /// choice, the committed <c>chosen</c> when the choice moved, and <see cref="Baseline"/> when nothing is committed.
+    /// </summary>
+    internal static CalibrationChoice ResolvePrevious(CalibrationReport? committed, CalibrationChoice newChosen)
+    {
+        if (committed is null)
+        {
+            return Baseline;
+        }
+
+        return committed.Chosen == newChosen ? (committed.Previous ?? Baseline) : committed.Chosen;
+    }
 
     private static readonly JsonSerializerOptions ReportJson = new()
     {
@@ -342,15 +363,30 @@ internal static class SimilarityCalibrator
         var warnRaw = SpecificityClassNames
             .SelectMany(className => LanguageNames.Select(language => Max(cells, className, language, ChosenN(language, nVi, nEn))))
             .Max();
-        var warn = Math.Max(0.02m, RoundUp(warnRaw, 0.01m));
+        var specificityMax = BlockMaxClassNames
+            .SelectMany(className => LanguageNames.Select(language => Max(cells, className, language, ChosenN(language, nVi, nEn))))
+            .Max();
+        var verbatimMin = LanguageNames.Min(language => Min(cells, "verbatim_full", language, ChosenN(language, nVi, nEn)));
 
-        var blockRaw = LanguageNames.Min(language => Min(cells, "verbatim_full", language, ChosenN(language, nVi, nEn)));
-        var block = RoundDown(blockRaw, 0.01m);
-        if (block < warn + 0.05m)
+        // D1: a language without a qualifying n keeps both defaults; they are never derived from data.
+        decimal warn;
+        decimal block;
+        if (LanguageNames.Any(language => !HasCandidate(cells, language)))
         {
-            warnings.Add(
-                $"BlockAbove would be {block.ToString("0.##", CultureInfo.InvariantCulture)}, below WarnAbove + 0.05; kept 0.15. The sample set does not separate the classes.");
+            warnings.Add("No n qualifies for at least one language; WarnAbove and BlockAbove kept at the defaults 0.05 / 0.15.");
+            warn = 0.05m;
             block = 0.15m;
+        }
+        else
+        {
+            warn = Math.Max(0.02m, RoundUp(warnRaw, 0.01m));
+            block = MidpointBlockAbove(specificityMax, verbatimMin);
+            if (block < warn + 0.05m)
+            {
+                warnings.Add(
+                    $"BlockAbove would be {block.ToString("0.##", CultureInfo.InvariantCulture)}, below WarnAbove + 0.05; kept 0.15. The sample set does not separate the classes.");
+                block = 0.15m;
+            }
         }
 
         var maxParaphrased = LanguageNames.Max(language => Max(cells, "fact_paraphrased", language, ChosenN(language, nVi, nEn)));
@@ -359,12 +395,19 @@ internal static class SimilarityCalibrator
         if (maxParaphrased >= minCopied)
         {
             warnings.Add(
-                "The fact classes overlap (max fact_paraphrased >= min fact_copied); kept the CopiedFactThreshold default of 0.5.");
-            fact = 0.5m;
+                "The fact classes overlap (max fact_paraphrased >= min fact_copied); kept the live Similarity:FactOverlapBlock default of 0.15.");
+            fact = 0.15m;
         }
         else
         {
             fact = RoundUp((maxParaphrased + minCopied) / 2d, 0.05m);
+        }
+
+        // CODE-4: production flags only overlaps above the threshold, so a fact at exactly minCopied would be missed.
+        if ((double)fact >= minCopied)
+        {
+            warnings.Add(
+                $"CopiedFactThreshold {fact.ToString("0.##", CultureInfo.InvariantCulture)} is not below min fact_copied {minCopied.ToString("F6", CultureInfo.InvariantCulture)}; a copied fact at the threshold would not be flagged.");
         }
 
         var chosen = new CalibrationChoice(
@@ -490,6 +533,16 @@ internal static class SimilarityCalibrator
         var best = specificity.Values.Min();
         return specificity.Where(pair => pair.Value == best).Select(static pair => pair.Key).Max();
     }
+
+    private static bool HasCandidate(IReadOnlyList<CalibrationCell> cells, string language) =>
+        Grid.Any(n => Min(cells, "verbatim_full", language, n) >= 0.9);
+
+    /// <summary>
+    /// Owner rule 3 (2026-10-17): BlockAbove is the midpoint of A (the max specificity score) and B (the min
+    /// verbatim_full score) at the chosen n, rounded down to the next 0.05.
+    /// </summary>
+    internal static decimal MidpointBlockAbove(double specificityMax, double verbatimMin) =>
+        RoundDown((specificityMax + verbatimMin) / 2d, 0.05m);
 
     private static int ChosenN(string language, int nVi, int nEn) => language == "vi" ? nVi : nEn;
 
