@@ -319,7 +319,7 @@ public sealed class SubmitRenderJobTests(TestDatabase database) : IntegrationTes
         var client = new FakeRenderClient();
         var money = new RecordingWorkerMoney();
 
-        client.EnqueueFailure(RenderClientMethod.Submit, FakeRenderClient.Terminal("render_node_error", alert: true));
+        client.EnqueueFailure(RenderClientMethod.Submit, Terminal("render_node_error", alert: true));
         var selector = new FakeNodeSelector().Enqueue(node);
         var sink = new CapturingLoggerProvider();
 
@@ -377,7 +377,7 @@ public sealed class SubmitRenderJobTests(TestDatabase database) : IntegrationTes
         // Attempt 2 is the last one RenderRetryPolicy allows (MaxAttempts = 2).
         SqlProbe.Execute(Database, $"UPDATE render_jobs SET attempt = 2 WHERE id = '{Id(jobId)}'");
 
-        client.EnqueueFailure(RenderClientMethod.Submit, FakeRenderClient.Terminal("render_node_error", alert: true));
+        client.EnqueueFailure(RenderClientMethod.Submit, Terminal("render_node_error", alert: true));
         var selector = new FakeNodeSelector().Enqueue(node);
 
         await using var worker = await StartWorkerAsync(client, selector, money: money);
@@ -421,7 +421,7 @@ public sealed class SubmitRenderJobTests(TestDatabase database) : IntegrationTes
         var client = new FakeRenderClient();
         var money = new RecordingWorkerMoney();
 
-        client.EnqueueFailure(RenderClientMethod.Submit, FakeRenderClient.Transient("render_node_error"));
+        client.EnqueueFailure(RenderClientMethod.Submit, Transient("render_node_error"));
         var selector = new FakeNodeSelector().Enqueue(node);
         var sink = new CapturingLoggerProvider();
 
@@ -741,6 +741,23 @@ public sealed class SubmitRenderJobTests(TestDatabase database) : IntegrationTes
     }
 
     private static string Id(Guid value) => value.ToString("D", CultureInfo.InvariantCulture);
+
+    /// <summary>
+    /// A terminal adapter answer as the job's own client reports it, wrapped for the fake's
+    /// <c>EnqueueFailure</c> (the real client produces this shape through <c>AdapterErrorMapper</c>: a 401, a 400
+    /// contract violation, a 409 idempotency conflict or a 413 all become a terminal <c>render_node_error</c>).
+    /// </summary>
+    /// <param name="code">The 05 D5 outcome code.</param>
+    /// <param name="alert">Whether the answer asks for the operator alarm.</param>
+    /// <returns>The failure to script.</returns>
+    private static RenderClientFailure Terminal(string code, bool alert) =>
+        new(RenderClientFailureKind.TerminalFailure, code, "scripted", alert, RetryAfter: null);
+
+    /// <summary>A transient adapter answer as the job's own client reports it (a transport error, a timeout, a 5xx).</summary>
+    /// <param name="code">The 05 D5 outcome code.</param>
+    /// <returns>The failure to script.</returns>
+    private static RenderClientFailure Transient(string code) =>
+        new(RenderClientFailureKind.TransientFailure, code, "scripted", Alert: false, RetryAfter: null);
 
     /// <summary>The <c>render_failed.v1</c> rows of this world: the render request's own row is a different type.</summary>
     /// <param name="world">The test world.</param>

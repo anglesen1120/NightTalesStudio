@@ -671,8 +671,11 @@ public sealed partial class SubmitRenderJob(
         Message = "render_submit_adapter_alert renderJobId={RenderJobId} code={Code} detail={Detail}")]
     private partial void LogAdapterAlert(Guid renderJobId, string? code, string? detail);
 
+    // 6197 is taken by LoggingRenderIngestEnqueuer.LogIngestNotWired (IRenderIngestEnqueuer.cs) and 6200-6202 by
+    // RenderPollingService, so this one line of the submit sits in the gap above them (6203 stays free for the
+    // poller's next line).
     [LoggerMessage(
-        EventId = 6197,
+        EventId = 6204,
         Level = LogLevel.Error,
         Message = "render_submit_unmapped_failure renderJobId={RenderJobId} code={Code}")]
     private partial void LogUnmappedFailure(Guid renderJobId, string code);
