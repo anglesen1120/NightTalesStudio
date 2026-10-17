@@ -64,6 +64,50 @@ public sealed class EpisodeIdeaConflictTests
     public void IsEpisodeUniqueViolation_Null_Throws() =>
         Should.Throw<ArgumentNullException>(() => EpisodeIdeaConflict.IsEpisodeUniqueViolation(null!));
 
+    [Fact]
+    public void IsEpisodeForeignKeyViolation_EpisodeForeignKey_IsANotFound() =>
+        EpisodeIdeaConflict
+            .IsEpisodeForeignKeyViolation(new DbUpdateException(
+                "The save failed.",
+                new StubDbException("23503", EpisodeIdeaConflict.EpisodeForeignKey)))
+            .ShouldBeTrue();
+
+    [Fact]
+    public void IsEpisodeForeignKeyViolation_NestedRefusal_IsANotFound() =>
+        EpisodeIdeaConflict
+            .IsEpisodeForeignKeyViolation(new DbUpdateException(
+                "The save failed.",
+                new InvalidOperationException(
+                    "wrapped",
+                    new StubDbException("23503", EpisodeIdeaConflict.EpisodeForeignKey))))
+            .ShouldBeTrue();
+
+    [Fact]
+    public void IsEpisodeForeignKeyViolation_EpisodeIndex_IsNotANotFound() =>
+        EpisodeIdeaConflict
+            .IsEpisodeForeignKeyViolation(new DbUpdateException(
+                "The save failed.",
+                new StubDbException("23505", EpisodeIdeaConflict.EpisodeForeignKey)))
+            .ShouldBeFalse("the same constraint name under another SQLSTATE is not a foreign-key refusal");
+
+    [Fact]
+    public void IsEpisodeForeignKeyViolation_SeriesForeignKey_IsNotANotFound() =>
+        EpisodeIdeaConflict
+            .IsEpisodeForeignKeyViolation(new DbUpdateException(
+                "The save failed.",
+                new StubDbException("23503", "fk_episode_ideas_series_series_id_user_id")))
+            .ShouldBeFalse("only the episode key answers not_found for the episode");
+
+    [Fact]
+    public void IsEpisodeForeignKeyViolation_NoConstraintName_IsNotANotFound() =>
+        EpisodeIdeaConflict
+            .IsEpisodeForeignKeyViolation(new DbUpdateException("The save failed.", new StubDbException("23503", null)))
+            .ShouldBeFalse();
+
+    [Fact]
+    public void IsEpisodeForeignKeyViolation_Null_Throws() =>
+        Should.Throw<ArgumentNullException>(() => EpisodeIdeaConflict.IsEpisodeForeignKeyViolation(null!));
+
     /// <summary>A provider exception carrying only the SQLSTATE and the constraint Npgsql records in <c>Data</c>.</summary>
     private sealed class StubDbException : DbException
     {

@@ -4,6 +4,7 @@ using NightTales.Application.Common.Errors;
 using NightTales.Application.Features.Autopilot.Ideas;
 using NightTales.Application.Features.Autopilot.Ideas.Abstractions;
 using NightTales.Domain.Autopilot.Ideas;
+using NightTales.Domain.Series;
 using NightTales.TestKit;
 using NightTales.TestKit.Database;
 using NightTales.TestKit.Text;
@@ -325,5 +326,262 @@ public sealed class IdeaPlannerTests(TestDatabase database) : IntegrationTest(da
         over.Requests.Count.ShouldBe(1);
         DataObjectCount(over.Requests[0]).ShouldBe(ceiling, "the request asks for the ceiling, never for the mis-bound count");
         IdeaCount(Database, world.SeriesId).ShouldBe(ceiling, "candidates beyond the ceiling are dropped before validation");
+    }
+
+    /// <summary>
+    /// The two keys of <c>series.autopilot_settings</c> 02.8.3-T1 owns (TL ruling #3): the owner's tone and banned
+    /// themes are read defensively and travel in the one data object exactly as written.
+    /// </summary>
+    [Fact]
+    public async Task IdeaPlanner_AutopilotSettings_ToneAndBannedThemes_ReachTheDataObject()
+    {
+        var world = await SeedAsync(
+            Database,
+            autopilotSettings: """{"tone":"điềm tĩnh, lạnh sống lưng","banned_themes":["tự tử","trẻ em bị hại"]}""");
+        var run = await CreateRunAsync(Database, world);
+        var text = new FakeTextClient().EnqueueOk(TextStep.Ideas, IdeaBatch(Idea("Ý tưởng có tone")), Usage);
+        await using var worker = await StartWorkerAsync(Database, text, count: 1);
+
+        var pick = await ProposeAsync(worker, run);
+
+        pick.IsError.ShouldBeFalse();
+        using var document = JsonDocument.Parse(text.Requests.ShouldHaveSingleItem().UserDataJson);
+        document.RootElement.GetProperty("tone").GetString().ShouldBe("điềm tĩnh, lạnh sống lưng");
+        document.RootElement.GetProperty("banned_themes").EnumerateArray().Select(theme => theme.GetString())
+            .ShouldBe(["tự tử", "trẻ em bị hại"]);
+    }
+
+    /// <summary>
+    /// The failure table's defensive read (TL ruling #3): a settings document the current schema has not written
+    /// yet — absent, a non-object, a malformed entry — is <c>null</c>/empty, never an error, so the prompt omits the
+    /// two keys and the run still proposes.
+    /// </summary>
+    /// <param name="settings">The stored <c>autopilot_settings</c> document (the column is <c>jsonb</c>, so it is
+    /// always valid JSON; a shape the reader does not know is what it must survive).</param>
+    /// <param name="expectedTheme">The one theme the document really carries, or <c>null</c>.</param>
+    [Theory]
+    [InlineData(null, null)]
+    [InlineData("\"tone\"", null)]
+    [InlineData("[]", null)]
+    [InlineData("{}", null)]
+    [InlineData("""{"tone":"   ","banned_themes":[]}""", null)]
+    [InlineData("""{"tone":42,"banned_themes":[7,"ok"]}""", "ok")]
+    public async Task IdeaPlanner_UnusableAutopilotSettings_OmitTheKeysWithoutFailing(
+        string? settings,
+        string? expectedTheme)
+    {
+        var world = await SeedAsync(Database, autopilotSettings: settings);
+        var run = await CreateRunAsync(Database, world);
+        var text = new FakeTextClient().EnqueueOk(TextStep.Ideas, IdeaBatch(Idea("Ý tưởng không cần settings")), Usage);
+        await using var worker = await StartWorkerAsync(Database, text, count: 1);
+
+        var pick = await ProposeAsync(worker, run);
+
+        pick.IsError.ShouldBeFalse("a settings document the schema does not own yet is never an error");
+        using var document = JsonDocument.Parse(text.Requests.ShouldHaveSingleItem().UserDataJson);
+        document.RootElement.TryGetProperty("tone", out _).ShouldBeFalse();
+        if (expectedTheme is null)
+        {
+            document.RootElement.TryGetProperty("banned_themes", out _).ShouldBeFalse();
+        }
+        else
+        {
+            document.RootElement.GetProperty("banned_themes").EnumerateArray().Select(theme => theme.GetString())
+                .ShouldBe([expectedTheme]);
+        }
+    }
+
+    /// <summary>
+    /// The settings contract's own bounds (02.8.3-T1, TL ruling #3) are applied when the document is read: a
+    /// hand-written row cannot grow the data object past a 120-character tone or 20 banned themes of 60 characters.
+    /// </summary>
+    [Fact]
+    public async Task IdeaPlanner_OversizedAutopilotSettings_AreClampedToTheSettingsContract()
+    {
+        var longTone = new string('t', 130);
+        var longThemes = Enumerable.Range(1, 25).Select(index => $"{index}-{new string('x', 80)}");
+        var world = await SeedAsync(
+            Database,
+            autopilotSettings: JsonSerializer.Serialize(new { tone = longTone, banned_themes = longThemes }));
+        var run = await CreateRunAsync(Database, world);
+        var text = new FakeTextClient().EnqueueOk(TextStep.Ideas, IdeaBatch(Idea("Ý tưởng có settings dài")), Usage);
+        await using var worker = await StartWorkerAsync(Database, text, count: 1);
+
+        var pick = await ProposeAsync(worker, run);
+
+        pick.IsError.ShouldBeFalse();
+        using var document = JsonDocument.Parse(text.Requests.ShouldHaveSingleItem().UserDataJson);
+        document.RootElement.GetProperty("tone").GetString()!.Length.ShouldBe(120);
+        var themes = document.RootElement.GetProperty("banned_themes").EnumerateArray()
+            .Select(theme => theme.GetString()!).ToArray();
+        themes.Length.ShouldBe(20);
+        themes.ShouldAllBe(theme => theme.Length <= 60);
+    }
+
+    /// <summary>
+    /// F33's angle path: a <c>true_crime</c> series is the one topic whose pick is flagged
+    /// <c>RequiresResearch</c> (the facts arrive later from sources), and the control key travels snake_case.
+    /// </summary>
+    [Fact]
+    public async Task IdeaPlanner_TrueCrimeTopic_FlagsThePickAsRequiringResearch()
+    {
+        var world = await SeedAsync(Database, Topic.TrueCrime);
+        var run = await CreateRunAsync(Database, world);
+        var text = new FakeTextClient().EnqueueOk(TextStep.Ideas, IdeaBatch(Idea("Một góc nhìn chưa kể")), Usage);
+        await using var worker = await StartWorkerAsync(Database, text, count: 1);
+
+        var pick = await ProposeAsync(worker, run);
+
+        pick.IsError.ShouldBeFalse();
+        pick.Value.RequiresResearch.ShouldBeTrue("a true_crime idea is an angle plus research questions (F33)");
+        DataObjectText(text.Requests[0], "topic").ShouldBe("true_crime");
+    }
+
+    /// <summary>
+    /// The dedupe key is deliberately smaller than T2's novelty normaliser (plan §4 U1 step 4): two titles are the
+    /// same idea when they read the same, so their case and spacing may not differ, but their letters must — two
+    /// Vietnamese titles differing only by diacritics are two ideas.
+    /// </summary>
+    [Fact]
+    public async Task IdeaPlanner_TitlesDifferingOnlyByDiacritics_AreTwoIdeas()
+    {
+        var world = await SeedAsync(Database);
+        var run = await CreateRunAsync(Database, world);
+        var text = new FakeTextClient().EnqueueOk(
+            TextStep.Ideas,
+            IdeaBatch(Idea("Chuyện cũ ở làng"), Idea("Chuyen cu o lang")),
+            Usage);
+        await using var worker = await StartWorkerAsync(Database, text, count: 2);
+
+        var pick = await ProposeAsync(worker, run);
+
+        pick.IsError.ShouldBeFalse();
+        IdeaCount(Database, world.SeriesId).ShouldBe(2, "diacritics are letters: neither title is a duplicate");
+    }
+
+    /// <summary>
+    /// The same title written in NFD (a decomposed Vietnamese string, what a paste or another tool can produce) and
+    /// in NFC is one idea: the key normalises to NFC first, so the composition of the input never splits a batch.
+    /// </summary>
+    [Fact]
+    public async Task IdeaPlanner_NfdAndNfcTitlesOfTheSameText_AreOneIdea()
+    {
+        var world = await SeedAsync(Database);
+        var run = await CreateRunAsync(Database, world);
+        var composed = "Chuyện cũ ở làng";
+        var decomposed = composed.Normalize(System.Text.NormalizationForm.FormD);
+        decomposed.ShouldNotBe(composed, "the fixture really is a decomposed spelling");
+
+        var text = new FakeTextClient().EnqueueOk(TextStep.Ideas, IdeaBatch(Idea(composed), Idea(decomposed)), Usage);
+        await using var worker = await StartWorkerAsync(Database, text, count: 2);
+
+        var pick = await ProposeAsync(worker, run);
+
+        pick.IsError.ShouldBeFalse();
+        IdeaCount(Database, world.SeriesId).ShouldBe(1, "the later spelling of the same title is the duplicate");
+    }
+
+    /// <summary>
+    /// D19: a <c>url</c> source of the series contributes nothing to the data object — its extracted text is never
+    /// read and neither its title nor its URL may travel — while the owner's own notes still do.
+    /// </summary>
+    [Fact]
+    public async Task IdeaPlanner_UrlSource_ContributesNoNoteNoTitleAndNoUrl()
+    {
+        const string fetchedTitle = "Canary: the 1974 archive page title";
+        var world = await SeedAsync(Database);
+        var episode = await SeedEpisodeAsync(Database, world);
+        await SeedNoteAsync(Database, world, episode, "Ghi chú của chủ series.");
+        await SeedUrlSourceAsync(Database, world, episode, fetchedTitle);
+        var run = await CreateRunAsync(Database, world);
+        var text = new FakeTextClient().EnqueueOk(TextStep.Ideas, IdeaBatch(Idea("Ý tưởng khi có nguồn url")), Usage);
+        await using var worker = await StartWorkerAsync(Database, text, count: 1);
+
+        var pick = await ProposeAsync(worker, run);
+
+        pick.IsError.ShouldBeFalse();
+        var call = text.Requests.ShouldHaveSingleItem();
+        call.UserDataJson.Contains(fetchedTitle, StringComparison.Ordinal)
+            .ShouldBeFalse("a fetched title may not reach the provider (D19)");
+        call.UserDataJson.Contains("bbc.co.uk", StringComparison.Ordinal)
+            .ShouldBeFalse("no URL may reach the provider (D6)");
+        call.UserDataJson.Contains("text.txt", StringComparison.Ordinal)
+            .ShouldBeFalse("the extracted-text key is never read, only the note row is");
+
+        using var document = JsonDocument.Parse(call.UserDataJson);
+        var notes = document.RootElement.GetProperty("research_notes");
+        notes.GetArrayLength().ShouldBe(1, "only the user's own note is a note");
+        notes[0].GetProperty("kind").GetString().ShouldBe("user_note");
+        notes[0].GetProperty("text").GetString().ShouldBe("Ghi chú của chủ series.");
+    }
+
+    /// <summary>
+    /// The failure table's empty-bible row end to end: a series with no bible row sends no <c>bible</c> key and
+    /// its approved-episode history as the top-level <c>recent_episodes</c>, so a series whose bible is somehow
+    /// empty still avoids repeating itself.
+    /// </summary>
+    [Fact]
+    public async Task IdeaPlanner_SeriesWithoutABible_SendsTheHistoryInstead()
+    {
+        var world = await SeedAsync(Database);
+        var historyWorld = new NightTales.Api.IntegrationTests.SeriesBible.World(world.UserId, world.SeriesId);
+        await NightTales.Api.IntegrationTests.SeriesBible.SeriesBibleHarness
+            .SeedApprovedEpisodeAsync(Database, historyWorld);
+
+        var expectedTitle = NightTales.Api.IntegrationTests.Persistence.SqlProbe.ScalarText(
+            Database,
+            $"""
+             SELECT sv.title FROM episodes e JOIN story_versions sv ON sv.id = e.approved_story_version_id
+             WHERE e.series_id = '{Pg(world.SeriesId)}'
+             """);
+        expectedTitle.ShouldNotBeNullOrWhiteSpace("the seeded history really carries a title");
+
+        var run = await CreateRunAsync(Database, world);
+        var text = new FakeTextClient().EnqueueOk(TextStep.Ideas, IdeaBatch(Idea("Ý tưởng không cần bible")), Usage);
+        await using var worker = await StartWorkerAsync(Database, text, count: 1);
+
+        var pick = await ProposeAsync(worker, run);
+
+        pick.IsError.ShouldBeFalse();
+        using var document = JsonDocument.Parse(text.Requests.ShouldHaveSingleItem().UserDataJson);
+        document.RootElement.TryGetProperty("bible", out _).ShouldBeFalse("a series without a bible sends no bible key");
+        document.RootElement.GetProperty("recent_episodes")[0].GetProperty("title").GetString().ShouldBe(expectedTitle);
+    }
+
+    /// <summary>
+    /// The D7 outcome table's remaining rows: a provider account out of funds is the caller's pause code and is
+    /// never metered, and an unavailable provider or a provider error is a generation failure — every one of them
+    /// an answer, never a crash of the caller's job, and none of them earns the one retry (that is for a refused
+    /// output only).
+    /// </summary>
+    /// <param name="outcome">The scripted provider outcome.</param>
+    /// <param name="expectedCode">The error code the planner must answer.</param>
+    [Theory]
+    [InlineData("funds", ErrorCodes.ProviderFundsExhausted)]
+    [InlineData("unavailable", ErrorCodes.IdeasGenerationFailed)]
+    [InlineData("provider-error", ErrorCodes.IdeasGenerationFailed)]
+    public async Task IdeaPlanner_ProviderOutcome_MapsToTheD7Error(string outcome, string expectedCode)
+    {
+        var world = await SeedAsync(Database);
+        var run = await CreateRunAsync(Database, world);
+        var scripted = outcome switch
+        {
+            "funds" => TextCallResult<IdeasV1>.ProviderFundsExhausted(Model, "req-fake"),
+            "unavailable" => TextCallResult<IdeasV1>.ProviderUnavailable(Model, "req-fake"),
+            _ => TextCallResult<IdeasV1>.ProviderError(Model, 500, "req-fake"),
+        };
+        var text = new FakeTextClient().Enqueue(TextStep.Ideas, scripted);
+        await using var worker = await StartWorkerAsync(Database, text, count: 1);
+
+        var pick = await ProposeAsync(worker, run);
+
+        pick.IsError.ShouldBeTrue();
+        pick.FirstError.Code.ShouldBe(expectedCode);
+        IdeaCount(Database, world.SeriesId).ShouldBe(0);
+        text.Requests.Count.ShouldBe(1, "only a refused output may be retried (D7)");
+        if (outcome == "funds")
+        {
+            UsageCount(Database, world.UserId).ShouldBe(0, "no request was sent, so nothing can have been billed (SEC-1)");
+        }
     }
 }

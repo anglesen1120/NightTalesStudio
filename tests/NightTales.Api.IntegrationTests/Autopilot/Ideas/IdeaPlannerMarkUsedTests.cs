@@ -1,5 +1,6 @@
 using ErrorOr;
 using NightTales.Application.Common.Errors;
+using NightTales.Application.Features.Autopilot.Ideas;
 using NightTales.Domain.Autopilot.Ideas;
 using NightTales.TestKit;
 using NightTales.TestKit.Database;
@@ -143,5 +144,40 @@ public sealed class IdeaPlannerMarkUsedTests(TestDatabase database) : Integratio
 
         IdeaState(Database, foreign).ShouldBe("picked|-", "the other user's idea is untouched");
         RunCount(Database, other.SeriesId).ShouldBe(1);
+    }
+
+    /// <summary>
+    /// Another user's episode cannot be linked even through the caller's own idea: the same-owner key
+    /// (<c>episode_id, user_id</c> → <c>episodes (id, user_id)</c>) refuses the write, so a cross-tenant link is
+    /// impossible and the idea is left <c>picked</c>. The refusal surfaces as the same <c>not_found</c> a lookup of
+    /// that episode would answer — never a 409 and never a raw provider error — so the planner maps it through
+    /// <see cref="EpisodeIdeaConflict.IsEpisodeForeignKeyViolation"/> and recovers the entry before the caller's
+    /// own flush.
+    /// </summary>
+    [Fact]
+    public async Task MarkUsed_AnotherUsersEpisode_CannotBeLinked()
+    {
+        var world = await SeedAsync(Database);
+        var other = await SeedAsync(Database);
+        var run = await CreateRunAsync(Database, world);
+        var foreignEpisode = await SeedEpisodeAsync(Database, other);
+        var idea = await SeedPickedIdeaAsync(Database, world, run.GenerationRunId, "Ý tưởng của tôi");
+
+        await using var worker = await StartWorkerAsync(Database, new FakeTextClient());
+
+        using (var scope = OpenScope(worker, world.UserId))
+        {
+            var result = await scope.Planner.MarkUsedAsync(idea, foreignEpisode, Ct);
+
+            result.IsError.ShouldBeTrue();
+            result.FirstError.Code.ShouldBe(ErrorCodes.NotFound);
+            result.FirstError.Type.ShouldBe(ErrorType.NotFound, "no leak: not a conflict, not a forbidden");
+
+            // The refused link was attached to the caller's own tracked model; its flush must not replay it.
+            await scope.Db.SaveChangesAsync(Ct);
+            await scope.Db.SaveChangesAsync(Ct);
+        }
+
+        IdeaState(Database, idea).ShouldBe("picked|-", "the cross-tenant link was refused, the idea is not consumed");
     }
 }

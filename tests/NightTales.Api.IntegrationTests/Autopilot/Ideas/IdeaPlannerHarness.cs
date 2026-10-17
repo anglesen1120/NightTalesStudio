@@ -22,6 +22,7 @@ using NightTales.Domain.Usage;
 using NightTales.TestKit.Auth;
 using NightTales.TestKit.Builders;
 using NightTales.TestKit.Database;
+using NightTales.TestKit.Research;
 using NightTales.TestKit.Text;
 using NightTales.TestKit.Threading;
 using NightTales.TestKit.Time;
@@ -132,6 +133,43 @@ internal static class IdeaPlannerHarness
     {
         var source = StorySource.CreateNote(Guid.CreateVersion7(), world.UserId, episodeId, text, Start);
         source.IsError.ShouldBeFalse();
+
+        await using var db = database.CreateAppDbContext(new TestCurrentUser { Id = world.UserId }, new FakeClock(Start));
+        db.StorySources.Add(source.Value);
+        await db.SaveChangesAsync(Ct);
+
+        return source.Value.Id;
+    }
+
+    /// <summary>
+    /// Inserts one fetched <c>url</c> source of the episode, with a title and an extracted-text key, the way the
+    /// fetcher leaves one: it is the source kind an idea run must read nothing from (D19 — the extracted text is
+    /// never read and a URL source contributes no note at all).
+    /// </summary>
+    /// <param name="database">The class database.</param>
+    /// <param name="world">The world.</param>
+    /// <param name="episodeId">The episode the source belongs to.</param>
+    /// <param name="title">The title the fetcher extracted, which must not reach the data object.</param>
+    /// <returns>The source id.</returns>
+    internal static async Task<Guid> SeedUrlSourceAsync(
+        TestDatabase database,
+        World world,
+        Guid episodeId,
+        string title)
+    {
+        var parsed = SourceUrl.Parse("https://www.bbc.co.uk/news/story-1234", new FakePublicSuffixList());
+        parsed.IsError.ShouldBeFalse();
+
+        var source = StorySource.CreateUrl(Guid.CreateVersion7(), world.UserId, episodeId, parsed.Value, Start);
+        source.IsError.ShouldBeFalse();
+        source.Value.MarkFetched(
+            parsed.Value.Value,
+            title,
+            "text/plain",
+            new string('a', 64),
+            $"sources/{episodeId:D}/text.txt",
+            textChars: 500,
+            Start);
 
         await using var db = database.CreateAppDbContext(new TestCurrentUser { Id = world.UserId }, new FakeClock(Start));
         db.StorySources.Add(source.Value);

@@ -365,6 +365,58 @@ public sealed class IdeaValidatorTests
         Should.Throw<ArgumentNullException>(() => IdeaValidator.Valid(null!, Limits));
     }
 
+    [Fact]
+    public void IdeaValidator_StructureValuesOutsideTheVocabulary_AreAcceptedHere()
+    {
+        // The D3 tag→vocabulary mapping (`other:<text>`) is 02.2.1-T1's shared mapper, not this layer (plan §3.2):
+        // the validator's only structure rule is "present and non-blank", so an unknown-but-non-empty tag is not a
+        // candidate drop and the mapping's own validation stays the single source of truth.
+        var candidate = Candidate(
+            tags: new StoryStructureTags(
+                "not_a_vocab_sub_genre",
+                "not_a_vocab_setting",
+                "not_a_vocab_opening",
+                "not_a_vocab_twist",
+                "first_person",
+                []));
+
+        IdeaValidator.Validate(candidate, Limits).ShouldBeEmpty();
+    }
+
+    [Fact]
+    public void IdeaValidator_HookExactly300_ReturnsNoErrors()
+    {
+        IdeaValidator.Validate(Candidate(hook: new string('h', Limits.HookChars)), Limits)
+            .ShouldBeEmpty();
+    }
+
+    [Fact]
+    public void IdeaValidator_TitleAtTheCapInVietnamese_IsAccepted()
+    {
+        // 10 x 10 precomposed Vietnamese characters: one code point each, exactly at the varchar(100) width, so
+        // every diacritic is a character of the column and none of them costs a second one.
+        var title = string.Concat(Enumerable.Repeat("chuyện cũ ", 10));
+
+        title.Length.ShouldBe(100);
+        IdeaValidator.Validate(Candidate(title: title), Limits).ShouldBeEmpty();
+    }
+
+    [Fact]
+    public void IdeaValidator_DecomposedVietnameseTitle_CountsEveryCodePoint()
+    {
+        // The same 40 characters in NFD are 120 code points (each diacritic is a combining mark of its own), which
+        // is what a Postgres varchar(100) would refuse: the cap is code points, never the composed spelling.
+        var composed = string.Concat(Enumerable.Repeat("ệ", 40));
+        var decomposed = composed.Normalize(System.Text.NormalizationForm.FormD);
+        decomposed.Length.ShouldBe(120, "the fixture really is decomposed");
+
+        IdeaValidator.Validate(Candidate(title: composed), Limits).ShouldBeEmpty();
+        var errors = IdeaValidator.Validate(Candidate(title: decomposed), Limits);
+
+        errors.Count.ShouldBe(1);
+        errors[0].ShouldBe(new IdeaFieldError("title", IdeaValidator.TooLong, "100"));
+    }
+
     private static IdeaCandidate Candidate(
         string? title = null,
         string? logline = null,

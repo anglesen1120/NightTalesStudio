@@ -33,6 +33,14 @@ public static class IdeaErrors
         Error.NotFound(ErrorCodes.NotFound, "The episode idea does not exist.");
 
     /// <summary>
+    /// 404: the episode the outcome asked to link is unknown, or it belongs to another user — the same-owner key
+    /// <c>fk_episode_ideas_episodes_episode_id_user_id</c> refused the link. It reads exactly like a lookup of that
+    /// episode, so a cross-tenant link is never observable (09 README D10).
+    /// </summary>
+    public static Error EpisodeNotFound { get; } =
+        Error.NotFound(ErrorCodes.NotFound, "The episode does not exist.");
+
+    /// <summary>
     /// The run failed <c>ideas_invalid_output</c> (README D8): the model answered twice with something the strict
     /// schema or <c>IdeaValidator</c> refused, and no valid candidate survived.
     /// </summary>

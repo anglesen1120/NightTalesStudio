@@ -235,18 +235,43 @@ public sealed partial class IdeaPlanner(
         catch (DbUpdateException exception) when (EpisodeIdeaConflict.IsEpisodeUniqueViolation(exception))
         {
             // The episode already has an idea: UX_episode_ideas_episode refused the update, which is the same
-            // 409 class as the refused transition one level up. The row is left `Modified` in the caller's
-            // tracked context by the failed flush, and the caller's own SaveChanges (the run outcome) must not
-            // replay it, so exactly this entry is detached — a ChangeTracker.Clear() would drop the caller's
-            // pending work with it.
-            Context.Entry(idea).State = EntityState.Detached;
+            // 409 class as the refused transition one level up. The refusal is recovered before it is answered, so
+            // the caller's own flush (the run outcome) cannot replay the UPDATE the constraint just rejected.
+            await RecoverAsync(idea, ct).ConfigureAwait(false);
             LogMarkUsedRefused(ideaId, IdeaErrors.EpisodeAlreadyUsed.Code);
 
             return IdeaErrors.EpisodeAlreadyUsed;
         }
+        catch (DbUpdateException exception) when (EpisodeIdeaConflict.IsEpisodeForeignKeyViolation(exception))
+        {
+            // The episode is not this idea's owner's — another user's row, or one that was deleted in between — so
+            // the same-owner key refused the link instead of it leaking across tenants. That is the answer a read
+            // of that episode would have given (09 README D10), not a conflict and not a 500.
+            await RecoverAsync(idea, ct).ConfigureAwait(false);
+            LogMarkUsedRefused(ideaId, IdeaErrors.EpisodeNotFound.Code);
+
+            return IdeaErrors.EpisodeNotFound;
+        }
 
         return Result.Success;
     }
+
+    /// <summary>
+    /// Resets the entry a refused flush left <c>Modified</c> to the row the database still holds, so the caller's
+    /// own <c>SaveChanges</c> cannot replay the UPDATE the provider just refused.
+    /// </summary>
+    /// <remarks>
+    /// <c>EntityEntry.ReloadAsync</c> is the recovery this layer already uses after a refused flush
+    /// (<c>ProposeBibleUpdateHandler.FreshAsync</c>, <c>GenerateFactSheetPipeline.FreshAsync</c>): it re-reads the
+    /// one entry and leaves every other tracked entity alone — clearing the tracker would drop the caller's pending
+    /// work with it, and assigning <c>EntityEntry.State</c> is banned outside the admin feature (02.2.2 plan §3.2).
+    /// A row that vanished in between leaves the entry detached, which the caller's flush then ignores.
+    /// </remarks>
+    /// <param name="idea">The idea whose update was refused.</param>
+    /// <param name="ct">Cancels the re-read.</param>
+    /// <returns>A task that completes when the entry matches the committed row again.</returns>
+    private async ValueTask RecoverAsync(EpisodeIdea idea, CancellationToken ct) =>
+        await Context.Entry(idea).ReloadAsync(ct).ConfigureAwait(false);
 
     /// <summary>
     /// Makes the one call of the run, with the single D7 retry an invalid output earns: two attempts at most, the
