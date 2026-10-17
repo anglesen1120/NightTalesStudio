@@ -8,6 +8,7 @@ using NightTales.Application.Abstractions.Rendering;
 using NightTales.Application.Abstractions.Usage;
 using NightTales.Application.Features.Rendering;
 using NightTales.Application.Features.Research.GenerateFactSheet;
+using NightTales.Application.Features.Research.SourceFinder;
 using NightTales.Infrastructure.Money;
 using NightTales.Infrastructure.Persistence.Queries;
 using NightTales.Infrastructure.Persistence.Seeding;
@@ -68,6 +69,26 @@ public static class UsageServiceCollectionExtensions
         // version (T56 forbids a configuration fallback for a step's cap).
         services.TryAddSingleton<IBibleProposalCostEstimator, BibleProposalCostEstimator>();
 
+        // 02.7.2-T2 (02 README D1/D14/T56, 02.7 plan §7): the worst-case bound of one source-search run — the finder
+        // call at the `SourceFinder` ceilings plus MaxSearchCalls times the version's flat web_search_call fee. Both
+        // hosts compose this method, so the Api needs no source-finder-specific registration. The model follows
+        // OpenAi:Models:Finder, as the other steps follow theirs; the section's own Model is the absent-key default.
+        // The call's max_output_tokens is the ruled 2,000 (T12), read from the estimator until
+        // price_versions.limits.finder ships with 02.7.2-T3.
+        services.AddOptions<FindSourcesCostOptions>()
+            .BindConfiguration(FindSourcesCostOptions.SectionName)
+            .PostConfigure<IConfiguration>((options, configuration) =>
+            {
+                if (configuration["OpenAi:Models:Finder"] is { Length: > 0 } model)
+                {
+                    options.Model = model;
+                }
+            })
+            .ValidateOnStart();
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IValidateOptions<FindSourcesCostOptions>, FindSourcesCostOptionsValidation>());
+        services.TryAddSingleton(provider => provider.GetRequiredService<IOptions<FindSourcesCostOptions>>().Value);
+        services.TryAddSingleton<IFindSourcesCostEstimator, FindSourcesCostEstimator>();
+
         // 03.2.1-T1: the Images section (scene budget, D3) and the worst-case image bound (D8).
         services.AddOptions<ImagesOptions>()
             .BindConfiguration(ImagesOptions.SectionName)
@@ -120,6 +141,23 @@ internal sealed class ImagesOptionsValidation : IValidateOptions<ImagesOptions>
         return problems.Count == 0
             ? ValidateOptionsResult.Success
             : ValidateOptionsResult.Fail(problems.Select(problem => $"{ImagesOptions.SectionName}: {problem}"));
+    }
+}
+
+/// <summary>
+/// Fails the start-up on an invalid <c>SourceFinder</c> section (02.7.2-T2), with every problem listed: the
+/// estimator turns <c>MaxSearchCalls</c> and <c>MaxInputBytes</c> into the money the run reserves, so an
+/// out-of-bound value must never reach a request. Application owns the checks; this is the
+/// <see cref="IValidateOptions{T}"/> adapter, as for <c>ImagesOptionsValidator</c>.
+/// </summary>
+internal sealed class FindSourcesCostOptionsValidation : IValidateOptions<FindSourcesCostOptions>
+{
+    /// <inheritdoc />
+    public ValidateOptionsResult Validate(string? name, FindSourcesCostOptions options)
+    {
+        var problems = FindSourcesCostOptionsValidator.Validate(options);
+
+        return problems.Count == 0 ? ValidateOptionsResult.Success : ValidateOptionsResult.Fail(problems);
     }
 }
 

@@ -81,6 +81,9 @@ public sealed class AppDbContext : IdentityDbContext<AppUser, AppRole, Guid>, IA
     /// <summary>The versioned fact sheets of one episode (02.5.3-T2, table <c>fact_sheets</c>); <c>IUserOwned</c>, so the D10 tenant filter applies.</summary>
     public DbSet<FactSheet> FactSheets => Set<FactSheet>();
 
+    /// <summary>The source candidates a find-sources run proposed for one episode (02.7.2-T2, table <c>source_candidates</c>); <c>IUserOwned</c>, so the D10 tenant filter applies.</summary>
+    public DbSet<SourceCandidate> SourceCandidates => Set<SourceCandidate>();
+
     /// <summary>
     /// The one bible row of a series (02.6.3-T1, table <c>series_bibles</c>): created with its series by
     /// <c>CreateSeriesHandler</c> in the same transaction, replaced in place by

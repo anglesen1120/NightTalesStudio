@@ -72,7 +72,7 @@ internal static class SourceHandlerHarness
     }
 
     internal static AddSourceHandler AddHandler(AppDbContext db, Guid userId, DateTimeOffset? now = null, SourcesOptions? options = null)
-        => new(db, new TestCurrentUser { Id = userId }, new FakeClock(now ?? Now), new FakePublicSuffixList(), Blocklist, options ?? new SourcesOptions());
+        => new(new SourceAdder(db, new TestCurrentUser { Id = userId }, new FakeClock(now ?? Now), new FakePublicSuffixList(), Blocklist, options ?? new SourcesOptions()));
 
     internal static async Task<int> CountSourcesAsync(TestDatabase database, Scope scope, CancellationToken ct)
     {

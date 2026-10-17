@@ -15,7 +15,7 @@ namespace NightTales.Api.IntegrationTests.Migrations;
 /// <summary>
 /// The <c>_02_SourcesAndFetchTasks</c> migration (02.5.1-T1, 02.5.1 plan §3.2): both tables, their CHECKs and the index set
 /// 02.5.2-T2's lease SQL depends on — above all the partial unique index of one live task per source and the same-owner
-/// cascade keys. This class finds its migration by name; AddPlatformQuotaUsageMigrationTests owns the
+/// cascade keys. This class finds its migration by name; AddSourceCandidatesMigrationTests owns the
 /// last-migration check (<c>migrations[^1]</c>).
 /// </summary>
 [Trait("Category", "Integration")]
