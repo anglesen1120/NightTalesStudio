@@ -14,6 +14,7 @@ using NightTales.Application.Abstractions.Similarity;
 using NightTales.Application.Abstractions.Text;
 using NightTales.Application.Abstractions.Usage;
 using NightTales.Application.Abstractions.Persistence;
+using NightTales.Application.Abstractions.Rendering;
 using NightTales.Application.Common.Errors;
 using NightTales.Application.Features.SeriesBible.Abstractions;
 using NightTales.Application.Features.Stories.Facts;
@@ -30,6 +31,7 @@ using NightTales.Domain.Stories.Content;
 using NightTales.Domain.Series;
 using NightTales.Domain.Series.Bible;
 using NightTales.Domain.Stories.Generation;
+using NightTales.Domain.Stories.Keywords;
 using NightTales.Domain.Stories.Quality;
 using NightTales.Domain.Stories.Review;
 using NightTales.Domain.Stories.Similarity;
@@ -71,6 +73,7 @@ public sealed partial class StoryGenerationPipeline(
     IBudgetGuard budgetGuard,
     IStoryCostEstimator estimator,
     StoryQualityChecker checker,
+    INameCorpusProvider nameCorpus,
     StoryJobOptions jobOptions,
     StoryReviewOptions reviewOptions,
     StoryRevisionOptions revisionOptions,
@@ -235,6 +238,12 @@ public sealed partial class StoryGenerationPipeline(
 
         var similarity = await ScoreSimilarityAsync(s, written.Draft, ct).ConfigureAwait(false);
         AppendSimilarityIssue(s.LocalIssues, similarity);
+
+        // The one name-corpus read of the run (03 D11, 03.2.2-T2): it happens after the episode is loaded and
+        // authorised in this scope, every checker call below lints against it, and a read failure propagates —
+        // the run fails rather than silently linting against an empty corpus. The worker scope is pinned to the
+        // episode's owner before this pipeline is resolved (GenerateStoryJob), so the read is not empty by scope.
+        s.Names = await nameCorpus.LoadAsync(s.Episode.Id, ct).ConfigureAwait(false);
 
         // The local checker runs once per saved row, on that row's own draft and similarity (02.6.2-T1 step 6).
         var originalReport = CheckDraft(s, written.Draft, similarity, hasUrlSources, s.ModerationCategories, review.Validated is null);
@@ -1190,7 +1199,8 @@ public sealed partial class StoryGenerationPipeline(
     }
 
     // The local checker report of one draft, computed on that draft's own content (02.6.2-T1 step 6): each saved row
-    // carries the report of the draft it describes, and the drift check compares two of them.
+    // carries the report of the draft it describes, and the drift check compares two of them. The image plan is
+    // per draft (its own keywords and size); the name corpus is the run's one read, loaded by ExecuteAsync.
     private QualityReport CheckDraft(
         RunState s,
         StoryContentV1 draft,
@@ -1212,7 +1222,8 @@ public sealed partial class StoryGenerationPipeline(
                 similarity.Verdict,
                 moderationCategories,
                 ModelReviewStale: modelReviewStale,
-                null));
+                StoryCheckInputs.PlanFor(draft, s.Language, s.Episode.LengthTier),
+                s.Names));
 
     private static string BuildAudit(
         RunState s,
@@ -1653,6 +1664,12 @@ public sealed partial class StoryGenerationPipeline(
 
         /// <summary>The one corpus read of the run (A4), shared by both scored rows.</summary>
         public CorpusLoad? Corpus { get; set; }
+
+        /// <summary>
+        /// The one name-corpus read of the run (03 D11, 03.2.2-T2): every checker call lints against it, and it is
+        /// loaded once per run rather than per draft, because both scored rows belong to the same episode.
+        /// </summary>
+        public NameCorpus Names { get; set; } = NameCorpus.Empty;
 
         public long StartedAt { get; } = Stopwatch.GetTimestamp();
 

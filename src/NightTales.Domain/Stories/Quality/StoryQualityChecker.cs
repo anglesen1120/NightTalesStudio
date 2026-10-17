@@ -13,13 +13,16 @@ namespace NightTales.Domain.Stories.Quality;
 /// its <see cref="StoryCheckContext"/> into a deterministic, ordered <see cref="QualityReport"/>. No I/O, no clock, no
 /// randomness; issues are ordered by rule id (ordinal), then segment position, so <c>audit_report.local.issues</c>
 /// is stable and diffable. The report carries our own draft fragments (≤ 200 chars) and numbers only, never
-/// source text, fact statements or URLs. The checker emits hints and never gates approve: blocking authority stays
-/// with <see cref="StoryDraftValidator"/>, the D12 moderation gate and the true-crime gates.
+/// source text, fact statements or URLs. The checker itself never gates approve: it reports what the UI reads,
+/// including the 03 D10/D11 blocking objective Q-KW-05 real-name rule and the 03 CR-14 advisory plan hints.
 /// </summary>
 /// <remarks>
 /// It never throws on a malformed draft: every rule treats a null segment, list or text as empty. The
-/// markup and metadata rules reuse <see cref="StoryDraftValidator"/> (one definition of D3), and the length rules
-/// read the same token rule as <see cref="StoryText"/>.
+/// markup and metadata rules reuse <see cref="StoryDraftValidator"/> (one definition of D3), the length rules
+/// read the same token rule as <see cref="StoryText"/>, and the real-name rule reuses
+/// <see cref="RenderKeywordLinter"/> over <see cref="StoryCheckContext.Names"/> (Q-KW-05). Blocking authority
+/// stays with <see cref="StoryDraftValidator"/>, the D12 moderation gate, the true-crime gates and the linter
+/// step of approve and render.
 /// </remarks>
 public sealed class StoryQualityChecker
 {
@@ -52,6 +55,9 @@ public sealed class StoryQualityChecker
 
     /// <summary>A keyword repeats across segments.</summary>
     public const string KeywordDuplicate = "Q-KW-04";
+
+    /// <summary>A keyword repeats two consecutive tokens of a real-person name from the episode's own research (03 D11).</summary>
+    public const string KeywordNameDetected = "Q-KW-05";
 
     /// <summary>A long sentence repeats.</summary>
     public const string RepeatedSentence = "Q-REP-01";
@@ -120,6 +126,7 @@ public sealed class StoryQualityChecker
         [KeywordTotalAboveCap] = "quality.keyword_total_above_cap",
         [KeywordInvalid] = "quality.keyword_invalid",
         [KeywordDuplicate] = "quality.keyword_duplicate",
+        [KeywordNameDetected] = "quality.keyword_name_detected",
         [RepeatedSentence] = "quality.repeated_sentence",
         [RepetitivePhrasing] = "quality.repetitive_phrasing",
         [PossibleRealName] = "quality.possible_real_name",
@@ -193,6 +200,7 @@ public sealed class StoryQualityChecker
         CheckLength(ctx, tokens, paragraphCount + 2, issues);
         CheckHook(content, issues);
         CheckKeywords(segments, ctx, keywordTotal, issues);
+        CheckRenderKeywordNames(segments, ctx, issues);
         CheckRepeatedSentences(segments, issues);
         var shingleShare = CheckShingles(segments, issues);
         CheckTrueCrime(segments, ctx, issues);
@@ -421,6 +429,41 @@ public sealed class StoryQualityChecker
                     keywordTotal,
                     cap), MetaOrder));
             }
+        }
+    }
+
+    private static void CheckRenderKeywordNames(List<SegmentView> segments, StoryCheckContext ctx, List<(QualityIssue, int)> issues)
+    {
+        // 03 D10/D11 and CR-14: the render linter runs over the draft's keywords in story order. Only its name rule
+        // becomes a quality issue: the 02 KeywordRules condition is already Q-KW-03 (advisory) here and blocks the
+        // save in the validator, so re-emitting keyword_invalid would duplicate it with a different severity. The
+        // linter's Evidence (a rule id, or run:<n>, plus ;index:<i>) is carried verbatim — never keyword or name
+        // text (03 §8, 02 D19).
+        var keywords = new List<SegmentKeywords>(segments.Count);
+        var orders = new Dictionary<string, int>(segments.Count, StringComparer.Ordinal);
+        foreach (var view in segments)
+        {
+            keywords.Add(new SegmentKeywords(view.Address, view.Segment?.Keywords ?? []));
+            orders[view.Address] = view.Order;
+        }
+
+        foreach (var linted in RenderKeywordLinter.Lint(keywords, ctx.Names, ctx.Rules))
+        {
+            if (linted.RuleId != RenderKeywordLinter.NameDetected)
+            {
+                continue;
+            }
+
+            // The rule id, message and severity are Q-KW-05's own; the D22 address and the Evidence come from the
+            // linter, so the chip, D10's errors[] and this issue agree on segment and keyword index.
+            issues.Add((Make(
+                KeywordNameDetected,
+                QualitySeverity.Blocking,
+                QualityKind.Objective,
+                linted.Segment,
+                linted.Evidence,
+                linted.RepairDirection),
+                orders.TryGetValue(linted.Segment, out var order) ? order : MetaOrder));
         }
     }
 

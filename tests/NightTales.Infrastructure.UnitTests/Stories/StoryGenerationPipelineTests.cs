@@ -929,6 +929,7 @@ public sealed class StoryGenerationPipelineTests(TestDatabase database) : Integr
                 budget ?? Budget,
                 new FixedEstimator(),
                 new StoryQualityChecker(),
+                new EmptyNameCorpusProvider(),
                 new StoryJobOptions { TimeoutSeconds = timeoutSeconds, TimeoutSecondsLong = timeoutSeconds },
                 new StoryReviewOptions { Enabled = reviewEnabled },
                 new StoryRevisionOptions { Enabled = false },

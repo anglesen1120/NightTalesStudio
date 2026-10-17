@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using ErrorOr;
@@ -7,7 +8,9 @@ using Microsoft.Extensions.Logging;
 using NightTales.Application.Abstractions;
 using NightTales.Application.Abstractions.Audit;
 using NightTales.Application.Abstractions.Persistence;
+using NightTales.Application.Abstractions.Rendering;
 using NightTales.Application.Common.Errors;
+using NightTales.Application.Features.Rendering;
 using NightTales.Application.Features.Stories.Approval;
 using NightTales.Application.Features.Stories.Generation;
 using NightTales.Application.Features.Stories.Moderation;
@@ -15,18 +18,42 @@ using NightTales.Domain.Audit;
 using NightTales.Domain.Common;
 using NightTales.Domain.Episodes;
 using NightTales.Domain.Series;
+using NightTales.Domain.Stories.Content;
+using NightTales.Domain.Stories.Keywords;
 using NightTales.Domain.Stories.Quality;
 
 namespace NightTales.Application.Features.Stories.Commands.ApproveStory;
 
-/// <summary>Locks and approves the reviewed version in the fixed D8/D9/D12 precondition order.</summary>
+/// <summary>
+/// Locks and approves the reviewed version in the fixed D8/D9/D12 precondition order, with the 03 D10 keyword
+/// lint as its last precondition.
+/// </summary>
 /// <remarks>
+/// <para>
 /// The command pipeline owns the transaction. A refreshed blocking verdict is tracked but an error result rolls
 /// it back along with all approval changes; a later attempt rechecks it. No independent write-back transaction.
+/// </para>
+/// <para>
+/// The preconditions run in one fixed order and never reorder: the idempotent already-approved success, the
+/// state check, If-Match (428/412), the gate's stages 3-6, the 03 D10 keyword lint against the episode's
+/// <see cref="NameCorpus"/> (03 D11), and only then stage 7 (the moderation refresh) and the state change. The
+/// lint sits after If-Match so a stale tab still gets its 412, and before every write so a story that names a
+/// real person can never be approved. Only the lint's issues are read: neither a keyword nor a person's name
+/// leaves this handler (03 §8, 02 D19).
+/// </para>
 /// </remarks>
+/// <param name="db">The tracked write model; the command pipeline owns its transaction.</param>
+/// <param name="gate">The injected gate, which owns the precondition stages 3-6.</param>
+/// <param name="nameCorpus">The episode's real-person corpus (03 D11); legitimately empty for fiction.</param>
+/// <param name="moderation">The draft moderation refresh of stage 7.</param>
+/// <param name="audit">The audit writer of the true-crime attestation row.</param>
+/// <param name="currentUser">The actor the attestation audit row is written for.</param>
+/// <param name="clock">The command's clock reading.</param>
+/// <param name="logger">The approval warnings.</param>
 public sealed partial class ApproveStoryCommandHandler(
     IAppDbContext db,
     IStoryApprovalGate gate,
+    INameCorpusProvider nameCorpus,
     StoryDraftModeration moderation,
     IAuditWriter audit,
     ICurrentUser currentUser,
@@ -101,6 +128,29 @@ public sealed partial class ApproveStoryCommandHandler(
         if (gated.IsError)
         {
             return gated.Errors;
+        }
+
+        // Keyword lint (03 D10/CR-14, 03.2.2-T2): it runs on the version being approved, after the gate's
+        // stages 3-6 and before the moderation refresh, the state change and the audit row below, so a
+        // stale tab still gets its 428/412 and a story that names a real person is never approved. The corpus is
+        // the episode's own research (03 D11); fiction is the provider's decision, not this handler's, so the
+        // load is unconditional and an empty corpus is not evidence of a clean story. The load is not caught:
+        // a corpus read failure is transient and the D5 pipeline answers it as a 503, never as a pass.
+        var corpus = await nameCorpus.LoadAsync(episode.Id, cancellationToken).ConfigureAwait(false);
+
+        // Fail closed, like the refresh below: the lint cannot be evaluated over content that cannot be read,
+        // so the approval stays retryable rather than silently passing the check.
+        if (!StoryContentJson.TryReadStored(version.Content, out var story))
+        {
+            return KeywordCheckUnavailable();
+        }
+
+        // Only the issues are read. ToFlags maps each one to its D22 segment address, keyword index and rule id,
+        // so no keyword and no person's name can reach the 409 body or a log line (03 §8, 02 D19).
+        var lintIssues = RenderKeywordLinter.Lint(KeywordLintMapping.SanitiseKeywords(Segments(story)), corpus);
+        if (lintIssues.Count > 0)
+        {
+            return Errors.KeywordsFlagged(KeywordLintMapping.ToFlags(lintIssues));
         }
 
         // Stage 7: a missing full report is also unknown evidence and requires one fresh check (owner ruling).
@@ -209,6 +259,37 @@ public sealed partial class ApproveStoryCommandHandler(
     private static Error InvalidState() => Error.Conflict(ErrorCodes.EpisodeInvalidState, "The episode cannot be approved in its current state.");
 
     private static Error Moderated() => Error.Conflict(ErrorCodes.StoryModerated, "The story must have a fresh nonblocking moderation verdict before approval.");
+
+    /// <summary>
+    /// Fail closed when the keyword lint cannot be evaluated: the same 503 the gate answers for a precondition it
+    /// cannot complete, so a client retries the approval instead of reading a keyword verdict it never got.
+    /// </summary>
+    private static Error KeywordCheckUnavailable() => Error.Failure(
+        ErrorCodes.ServiceUnavailable,
+        "The keyword check could not be completed; retry the approval.");
+
+    /// <summary>
+    /// The version's keywords in the D22 story order the linter reads: <c>hook</c>, <c>p:&lt;i&gt;</c> per
+    /// paragraph, then <c>ending</c> (03 §4, CR-13), mirroring the reader of <c>StoryRenderInputProvider</c>.
+    /// That provider is not reused here: it resolves the approved pointer row itself, while this path already
+    /// holds the version being approved and must lint that one, not the approved one.
+    /// </summary>
+    /// <param name="content">The stored draft of the version being approved.</param>
+    /// <returns>The ordered segments; a segment with no keyword is still addressed, in order.</returns>
+    private static SegmentKeywords[] Segments(StoryContentV1 content)
+    {
+        var segments = new SegmentKeywords[content.Paragraphs.Count + 2];
+        segments[0] = new SegmentKeywords("hook", content.Hook.Keywords);
+        for (var index = 0; index < content.Paragraphs.Count; index++)
+        {
+            segments[index + 1] = new SegmentKeywords(
+                "p:" + index.ToString(CultureInfo.InvariantCulture),
+                content.Paragraphs[index].Keywords);
+        }
+
+        segments[^1] = new SegmentKeywords("ending", content.Ending.Keywords);
+        return segments;
+    }
 
     private static JsonObject? ReadReport(string? json)
     {
