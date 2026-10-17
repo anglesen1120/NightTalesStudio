@@ -38,8 +38,8 @@ public sealed class IdeaPlannerTests(TestDatabase database) : IntegrationTest(da
 {
     /// <summary>
     /// The acceptance check's manual smoke: one run for a seeded series persists every candidate the model
-    /// proposed as <c>proposed</c>, each naming the caller's run and carrying the stored outline signature, and
-    /// the pick is the first candidate.
+    /// proposed, each naming the caller's run and carrying the stored outline signature and its scored status,
+    /// and the pick is the first of the tied candidates.
     /// </summary>
     [Fact]
     public async Task ProposeAndPick_PersistsAllCandidates()
@@ -55,39 +55,43 @@ public sealed class IdeaPlannerTests(TestDatabase database) : IntegrationTest(da
         var pick = await ProposeAsync(worker, run);
 
         pick.IsError.ShouldBeFalse(pick.Errors.Count > 0 ? pick.FirstError.Description : null);
-        pick.Value.Title.ShouldBe("Căn nhà cuối hành lang", "T1's pick is the first valid candidate in the model's order");
+        pick.Value.Title.ShouldBe("Căn nhà cuối hành lang", "the first valid candidate wins the pick's tie of equal scores");
         pick.Value.RequiresResearch.ShouldBeFalse("a ghost series' idea is a story, not an angle (F33)");
-        pick.Value.Score.ShouldBe(0m, "nothing has scored the batch before 02.8.1-T2");
+        pick.Value.Score.ShouldBe(0.875m, "the neutral judge's degradation: freshness 1 − 0, fit 1.0 and hook 0.5 (02.8.1-T2)");
+        pick.Value.Similarity.ShouldBe(0m, "an empty corpus and no judge reading: nothing overlapped");
 
         IdeaCount(Database, world.SeriesId).ShouldBe(3);
         IdeasOfRun(Database, world.SeriesId, run.GenerationRunId)
             .ShouldBe(3, "every persisted candidate names the run the caller created");
-        IdeaState(Database, pick.Value.IdeaId).ShouldBe("proposed|-", "the pick is a persisted row, still proposed");
+        IdeaState(Database, pick.Value.IdeaId).ShouldBe("picked|-", "the batch's winner is stored picked (02.8.1-T2)");
 
         // The acceptance check's manual-smoke query and the run log projection (plan §5), as the set of rows: every
-        // row of one batch carries the same FakeClock stamp, so the persistence order is not a contract.
+        // row of one batch carries the same FakeClock stamp, so the persistence order is not a contract. From
+        // 02.8.1-T2 the batch is stored scored: one picked row and the losers rejected.
         Render(ManualSmokeRows(Database, world.SeriesId)).ShouldBe(
-            "Bức ảnh cũ|proposed|setup>clue>twist"
-            + " || Căn nhà cuối hành lang|proposed|setup>clue>twist"
-            + " || Tiếng gõ trong đêm|proposed|setup>clue>twist",
+            "Bức ảnh cũ|rejected|setup>clue>twist"
+            + " || Căn nhà cuối hành lang|picked|setup>clue>twist"
+            + " || Tiếng gõ trong đêm|rejected|setup>clue>twist",
             "the acceptance check's manual-smoke query: title, status, stored beat signature");
         Render(IdeaRows(Database, world.SeriesId)).ShouldBe(
-            "Bức ảnh cũ|proposed|true|true|setup>clue>twist"
-            + " || Căn nhà cuối hành lang|proposed|true|true|setup>clue>twist"
-            + " || Tiếng gõ trong đêm|proposed|true|true|setup>clue>twist");
+            "Bức ảnh cũ|rejected|true|true|setup>clue>twist"
+            + " || Căn nhà cuối hành lang|picked|true|true|setup>clue>twist"
+            + " || Tiếng gõ trong đêm|rejected|true|true|setup>clue>twist");
 
-        // One paid call, and the caller's run row is untouched by the planner.
-        text.Requests.Count.ShouldBe(1);
+        // Two paid calls from 02.8.1-T2 — the generation call and the batch's one judge call — and the caller's
+        // run row is untouched by the planner either way.
+        text.Requests.Count.ShouldBe(2, "the generation call and the batch's one judge call (02.8.1-T2)");
         text.Requests[0].Step.ShouldBe(TextStep.Ideas);
         text.Requests[0].Run.GenerationRunId.ShouldBe(run.GenerationRunId);
         text.Requests[0].Run.Attempt.ShouldBe(1);
+        NoveltyCalls(text).ShouldHaveSingleItem();
         RunCount(Database, world.SeriesId).ShouldBe(1);
         RunRow(Database, world.SeriesId).ShouldStartWith($"{Pg(run.GenerationRunId)}|ideas|queued|queued|-");
     }
 
     /// <summary>
     /// The selection rule of plan §4 U1 step 4: a candidate <c>IdeaValidator</c> refuses is dropped, and the
-    /// valid ones around it are all persisted <c>proposed</c>, in the model's order.
+    /// valid ones around it are persisted and scored (02.8.1-T2): the first of them is picked, the other rejected.
     /// </summary>
     [Fact]
     public async Task IdeaPlanner_PersistsAllValidCandidatesAsProposed()
@@ -108,8 +112,8 @@ public sealed class IdeaPlannerTests(TestDatabase database) : IntegrationTest(da
         pick.IsError.ShouldBeFalse();
         IdeaCount(Database, world.SeriesId).ShouldBe(2, "the invalid candidate is dropped, not repaired");
         Render(IdeaRows(Database, world.SeriesId)).ShouldBe(
-            "Ý tưởng hợp lệ thứ hai|proposed|true|true|setup>clue>twist"
-            + " || Ý tưởng hợp lệ thứ nhất|proposed|true|true|setup>clue>twist");
+            "Ý tưởng hợp lệ thứ hai|rejected|true|true|setup>clue>twist"
+            + " || Ý tưởng hợp lệ thứ nhất|picked|true|true|setup>clue>twist");
         pick.Value.Title.ShouldBe("Ý tưởng hợp lệ thứ nhất");
     }
 
@@ -131,8 +135,8 @@ public sealed class IdeaPlannerTests(TestDatabase database) : IntegrationTest(da
         pick.IsError.ShouldBeFalse();
         IdeaCount(Database, world.SeriesId).ShouldBe(2);
         Render(IdeaRows(Database, world.SeriesId)).ShouldBe(
-            "Tiêu đề cuối|proposed|true|true|setup>clue>twist"
-            + " || Tiêu đề đầu|proposed|true|true|setup>clue>twist");
+            "Tiêu đề cuối|rejected|true|true|setup>clue>twist"
+            + " || Tiêu đề đầu|picked|true|true|setup>clue>twist");
     }
 
     /// <summary>
@@ -155,8 +159,8 @@ public sealed class IdeaPlannerTests(TestDatabase database) : IntegrationTest(da
         pick.IsError.ShouldBeFalse();
         IdeaCount(Database, world.SeriesId).ShouldBe(2, "the later duplicate is dropped");
         Render(IdeaRows(Database, world.SeriesId)).ShouldBe(
-            "Chuyện cũ|proposed|true|true|setup>clue>twist"
-            + " || Một chuyện khác|proposed|true|true|setup>clue>twist");
+            "Chuyện cũ|picked|true|true|setup>clue>twist"
+            + " || Một chuyện khác|rejected|true|true|setup>clue>twist");
     }
 
     /// <summary>
@@ -244,8 +248,8 @@ public sealed class IdeaPlannerTests(TestDatabase database) : IntegrationTest(da
     }
 
     /// <summary>
-    /// D14: the one paid call of a run is metered by the generator itself, once, under <c>operation = idea</c>,
-    /// with a NULL episode (the run is series-level) and a positive cost.
+    /// D14: the paid calls of a run are metered by the calls themselves, one row each, under
+    /// <c>operation = idea</c>, with a NULL episode (the run is series-level) and a positive cost.
     /// </summary>
     [Fact]
     public async Task IdeaPlanner_RecordsUsageWithOperationIdea()
@@ -258,10 +262,11 @@ public sealed class IdeaPlannerTests(TestDatabase database) : IntegrationTest(da
         var pick = await ProposeAsync(worker, run);
 
         pick.IsError.ShouldBeFalse();
-        UsageCount(Database, world.UserId).ShouldBe(1, "one row per call, written inside the generator");
+        UsageCount(Database, world.UserId).ShouldBe(2, "one row per call: the generation call and the batch's judge call");
+        var ideaRow = $"idea|true|true|{ActivePriceVersion(Database)}|false";
         UsageRows(Database, world.UserId).ShouldBe(
-            $"idea|true|true|{ActivePriceVersion(Database)}|false",
-            "operation = idea, episode_id IS NULL, cost_usd > 0, priced (not estimated)");
+            $"{ideaRow} || {ideaRow}",
+            "both calls are operation = idea, episode_id IS NULL, cost_usd > 0, priced (not estimated)");
         IdeaCount(Database, world.SeriesId).ShouldBe(1);
     }
 
@@ -334,8 +339,8 @@ public sealed class IdeaPlannerTests(TestDatabase database) : IntegrationTest(da
         var pick = await ProposeAsync(worker, run);
 
         pick.IsError.ShouldBeFalse();
-        over.Requests.Count.ShouldBe(1);
-        DataObjectCount(over.Requests[0]).ShouldBe(ceiling, "the request asks for the ceiling, never for the mis-bound count");
+        var ideasCall = IdeaCalls(over).ShouldHaveSingleItem();
+        DataObjectCount(ideasCall).ShouldBe(ceiling, "the request asks for the ceiling, never for the mis-bound count");
         IdeaCount(Database, world.SeriesId).ShouldBe(ceiling, "candidates beyond the ceiling are dropped before validation");
     }
 
@@ -356,7 +361,7 @@ public sealed class IdeaPlannerTests(TestDatabase database) : IntegrationTest(da
         var pick = await ProposeAsync(worker, run);
 
         pick.IsError.ShouldBeFalse();
-        using var document = JsonDocument.Parse(text.Requests.ShouldHaveSingleItem().UserDataJson);
+        using var document = JsonDocument.Parse(IdeaCalls(text).ShouldHaveSingleItem().UserDataJson);
         document.RootElement.GetProperty("tone").GetString().ShouldBe("điềm tĩnh, lạnh sống lưng");
         document.RootElement.GetProperty("banned_themes").EnumerateArray().Select(theme => theme.GetString())
             .ShouldBe(["tự tử", "trẻ em bị hại"]);
@@ -389,7 +394,7 @@ public sealed class IdeaPlannerTests(TestDatabase database) : IntegrationTest(da
         var pick = await ProposeAsync(worker, run);
 
         pick.IsError.ShouldBeFalse("a settings document the schema does not own yet is never an error");
-        using var document = JsonDocument.Parse(text.Requests.ShouldHaveSingleItem().UserDataJson);
+        using var document = JsonDocument.Parse(IdeaCalls(text).ShouldHaveSingleItem().UserDataJson);
         document.RootElement.TryGetProperty("tone", out _).ShouldBeFalse();
         if (expectedTheme is null)
         {
@@ -421,7 +426,7 @@ public sealed class IdeaPlannerTests(TestDatabase database) : IntegrationTest(da
         var pick = await ProposeAsync(worker, run);
 
         pick.IsError.ShouldBeFalse();
-        using var document = JsonDocument.Parse(text.Requests.ShouldHaveSingleItem().UserDataJson);
+        using var document = JsonDocument.Parse(IdeaCalls(text).ShouldHaveSingleItem().UserDataJson);
         document.RootElement.GetProperty("tone").GetString()!.Length.ShouldBe(120);
         var themes = document.RootElement.GetProperty("banned_themes").EnumerateArray()
             .Select(theme => theme.GetString()!).ToArray();
@@ -554,7 +559,7 @@ public sealed class IdeaPlannerTests(TestDatabase database) : IntegrationTest(da
         var pick = await ProposeAsync(worker, run);
 
         pick.IsError.ShouldBeFalse();
-        using var document = JsonDocument.Parse(text.Requests.ShouldHaveSingleItem().UserDataJson);
+        using var document = JsonDocument.Parse(IdeaCalls(text).ShouldHaveSingleItem().UserDataJson);
         document.RootElement.TryGetProperty("bible", out _).ShouldBeFalse("a series without a bible sends no bible key");
         document.RootElement.GetProperty("recent_episodes")[0].GetProperty("title").GetString().ShouldBe(expectedTitle);
     }
@@ -680,7 +685,7 @@ public sealed class IdeaPlannerTests(TestDatabase database) : IntegrationTest(da
         var pick = await ProposeAsync(worker, run);
 
         pick.IsError.ShouldBeFalse();
-        using var document = JsonDocument.Parse(text.Requests.ShouldHaveSingleItem().UserDataJson);
+        using var document = JsonDocument.Parse(IdeaCalls(text).ShouldHaveSingleItem().UserDataJson);
         document.RootElement.TryGetProperty("bible", out var bible).ShouldBeTrue("the bible carries entities");
         bible.GetProperty("rules").GetArrayLength().ShouldBe(1);
         document.RootElement.GetProperty("recent_episodes")[0].GetProperty("title").GetString().ShouldBe(expectedTitle);

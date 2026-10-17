@@ -3,12 +3,15 @@ using Microsoft.Extensions.Logging.Abstractions;
 using NightTales.Application.Abstractions.Moderation;
 using NightTales.Application.Abstractions.Text;
 using NightTales.Application.Abstractions.Usage;
+using NightTales.Application.Common.Errors;
 using NightTales.Application.Features.Autopilot.Ideas;
 using NightTales.Application.Features.Autopilot.Ideas.Abstractions;
 using NightTales.Domain.Autopilot.Ideas;
 using NightTales.Domain.Common;
+using NightTales.Domain.Compliance;
 using NightTales.Domain.Stories.Structure;
 using Shouldly;
+using Xunit;
 
 namespace NightTales.Application.UnitTests.Features.Autopilot.Ideas;
 
@@ -114,7 +117,7 @@ public sealed class IdeaNoveltyCheckerTests
 
         var result = await CheckAsync([Candidate(title: "A")], new NoveltyCorpus([first, second], []), judge: judge);
 
-        InOrder(result.Value).Single().Judge!.MaxOverlapEpisodeId.ShouldBe(second.Id);
+        InOrder(result.Value).Single().Judge!.MaxOverlapEpisodeId.ShouldBe(second.EpisodeId);
     }
 
     /// <summary>
@@ -315,7 +318,7 @@ public sealed class IdeaNoveltyCheckerTests
         var batch = new[] { Candidate(title: "A"), Candidate(title: "B") };
         var episodes = new[] { Episode("E1", "S1"), Episode("E2", "S2") };
 
-        await CheckAsync(batch, new NoveltyCorpus(episodes, []) , judge: judge, language: Language.Vi, topic: "true_crime");
+        await CheckAsync(batch, new NoveltyCorpus(episodes, []), judge: judge, language: Language.Vi, topic: "true_crime");
 
         var request = judge.Requests.Single();
         request.Ideas.Count.ShouldBe(2);
@@ -380,14 +383,18 @@ public sealed class IdeaNoveltyCheckerTests
     private static IReadOnlyList<NoveltySignals> InOrder(NoveltyBatchResult result) =>
         [.. result.ByIdeaId.Values];
 
-    private static NoveltyScoreV1 Row(
+    private static TextCallResult<NoveltyV1> Row(
         int index,
         decimal score,
         string? overlap,
         decimal fit = 0.5m,
         decimal hook = 0.5m,
         string reason = "closest to the second episode") =>
-        new(index, overlap, score, fit, hook, reason);
+        TextCallResult<NoveltyV1>.Ok(
+            new NoveltyV1([new NoveltyScoreV1(index, overlap, score, fit, hook, reason)]),
+            Model,
+            null,
+            "req-row");
 
     private static IdeaCandidate Candidate(
         string title,
@@ -474,7 +481,7 @@ public sealed class IdeaNoveltyCheckerTests
     private sealed class StubEventWriter : IModerationEventWriter
     {
         /// <summary>Every row the checker asked for, in order.</summary>
-        internal List<(Guid UserId, Guid? EpisodeId, ModerationSource Source, ModerationStage Stage, IReadOnlyList<string> Categories, string? OwnText)> Writes { get; } = [];
+        internal List<(Guid UserId, Guid? EpisodeId, ModerationSource Source, ModerationStage Stage, IReadOnlyCollection<string> Categories, string? OwnText)> Writes { get; } = [];
 
         /// <inheritdoc />
         public Task WriteAsync(
@@ -482,7 +489,7 @@ public sealed class IdeaNoveltyCheckerTests
             Guid? episodeId,
             ModerationSource source,
             ModerationStage stage,
-            IReadOnlyList<string> categories,
+            IReadOnlyCollection<string> categories,
             string? ownText,
             CancellationToken ct)
         {

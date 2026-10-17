@@ -69,7 +69,6 @@ namespace NightTales.Application.Features.Autopilot.Ideas;
 /// <param name="noveltyChecker">The lexical pass and the batch's one judge call (02.8.1-T2).</param>
 /// <param name="policyChecker">The banned-theme, moderation and framing pre-check (02.8.1-T2).</param>
 /// <param name="noveltyOptions">The novelty thresholds and corpus bound (<c>Autopilot:Ideas:Novelty</c>).</param>
-/// <param name="policyOptions">The policy switches and keyword data (<c>Autopilot:Ideas:Policy</c>).</param>
 /// <param name="weights">The score's weights (<c>Autopilot:Ideas:Weights</c>): the ranking the pick comes from.</param>
 /// <param name="limits">The configured field limits <see cref="IdeaValidator"/> enforces.</param>
 /// <param name="options">The configured batch size and its ceiling (<c>Autopilot:Ideas</c>).</param>
@@ -87,7 +86,6 @@ public sealed partial class IdeaPlanner(
     IIdeaNoveltyChecker noveltyChecker,
     IIdeaPolicyChecker policyChecker,
     IdeaNoveltyOptions noveltyOptions,
-    IdeaPolicyOptions policyOptions,
     IdeaWeights weights,
     IdeaLimits limits,
     IdeaPlannerOptions options,
@@ -133,6 +131,7 @@ public sealed partial class IdeaPlanner(
         }
 
         var context = await contexts.GetAsync(seriesId, ct).ConfigureAwait(false);
+        var language = Enum.Parse<Language>(context.Language, ignoreCase: true);
 
         // The prompt's continuity memory is the bible's own summaries; the history titles stand in for them only
         // when the bible carries none, so the same text is never paid for twice (task file [DECISION]). The test
@@ -192,7 +191,7 @@ public sealed partial class IdeaPlanner(
             .ConfigureAwait(false);
 
         var measured = await noveltyChecker
-            .CheckAsync(slots, corpus, context.Language, context.Topic, run, ct)
+            .CheckAsync(slots, corpus, language, context.Topic, run, ct)
             .ConfigureAwait(false);
         if (measured.IsError)
         {
@@ -239,7 +238,7 @@ public sealed partial class IdeaPlanner(
                 new IdeaNoveltyCorpus(
                     corpus.Episodes.Count,
                     corpus.PendingIdeas.Count,
-                    SimilarityOptions.NFor(context.Language)));
+                    SimilarityOptions.NFor(language)));
             research[index] = verdict.RequiresResearch;
             scores[index] = IdeaScorer.Score(signals[index], weights);
 
@@ -255,48 +254,47 @@ public sealed partial class IdeaPlanner(
         }
 
         var winner = IdeaScorer.PickIndex(eligible);
-        if (winner is null)
-        {
-            // Every candidate was rejected by a rule, so the run has no idea to offer. The most common reason
-            // travels with the error (deterministic: highest count, then alphabetical) so 02.8.3 records and
-            // alerts on a code rather than on nothing. Nothing is stored: a run that picked no idea has no pool
-            // to show, which is what the run log answers for it.
-            var reason = IdeaRejectionSummary.MostCommon(reasons)!;
-            LogNoIdea(run.GenerationRunId, seriesId, survivors.Count, reason);
-            metrics.Candidates(reason, survivors.Count);
-
-            return IdeaErrors.NoIdea(reason);
-        }
 
         for (var index = 0; index < ideas.Count; index++)
         {
             // Every row keeps its measurements, whatever its status: the components the pick was ranked on and
             // the novelty document the calibration reader opens.
             ideas[index].SetSignals(scores[index], Similarity(signals[index]), details[index], clock);
-        }
 
-        foreach (var pair in reasons.Select((reason, index) => (Reason: reason, Index: index)))
-        {
-            if (pair.Index == winner.Value)
+            if (index == winner)
             {
-                ideas[pair.Index].MarkPicked(scores[pair.Index], clock);
+                ideas[index].MarkPicked(scores[index], clock);
                 continue;
             }
 
             // A candidate that broke no rule lost the ranking: `not_best` is the reason the run log shows for it.
-            var reason = pair.Reason ?? IdeaRejectionReason.NotBest;
-            ideas[pair.Index].MarkRejected(reason, clock);
+            var reason = reasons[index] ?? IdeaRejectionReason.NotBest;
+            ideas[index].MarkRejected(reason, clock);
             metrics.Candidates(reason, 1);
         }
 
-        metrics.Candidates(IdeaMetrics.PickedOutcome, 1);
+        if (winner is not null)
+        {
+            metrics.Candidates(IdeaMetrics.PickedOutcome, 1);
+        }
 
         db.EpisodeIdeas.AddRange(ideas);
 
         // One SaveChanges is one transaction: the batch is stored whole or not at all. The caller has already
         // committed its run row before this call (the contract on ProposeAndPickAsync), so this write joins no
-        // open transaction and is this step's only unit of work.
+        // open transaction and is this step's only unit of work. A batch every rule rejected is stored too: the
+        // run log shows the whole pool with each candidate's reason.
         await db.SaveChangesAsync(ct).ConfigureAwait(false);
+
+        if (winner is null)
+        {
+            // The run has no idea to offer. The most common reason travels with the error (deterministic: highest
+            // count, then alphabetical) so 02.8.3 records and alerts on a code rather than on nothing.
+            var commonReason = IdeaRejectionSummary.MostCommon(reasons.OfType<string>())!;
+            LogNoIdea(run.GenerationRunId, seriesId, survivors.Count, commonReason);
+
+            return IdeaErrors.NoIdea(commonReason);
+        }
 
         var picked = survivors[winner.Value];
         var pick = new IdeaPick(

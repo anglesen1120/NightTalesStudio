@@ -18,6 +18,16 @@ public sealed class FakeTextClient : ITextClient
     /// <summary>Every request received, in order.</summary>
     public IReadOnlyList<TextCallRequest> Requests => _requests;
 
+    /// <summary>How many requests of one step the fake has received.</summary>
+    /// <param name="step">The step to count.</param>
+    /// <returns>The number of calls of that step.</returns>
+    public int Calls(TextStep step) => _requests.Count(request => request.Step == step);
+
+    /// <summary>How many outcomes are still queued for one step, i.e. how many of its calls never happened.</summary>
+    /// <param name="step">The step to inspect.</param>
+    /// <returns>The number of unconsumed outcomes of that step.</returns>
+    public int Queued(TextStep step) => _scripts.TryGetValue(step, out var queue) ? queue.Count : 0;
+
     /// <summary>Queues the outcome of the next call of <paramref name="step"/>.</summary>
     /// <typeparam name="T">The output document type the call asks for.</typeparam>
     /// <param name="step">The step the outcome answers.</param>

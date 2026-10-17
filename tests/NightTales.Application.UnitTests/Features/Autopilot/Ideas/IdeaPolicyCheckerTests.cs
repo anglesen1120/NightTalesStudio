@@ -3,8 +3,10 @@ using NightTales.Application.Abstractions.Moderation;
 using NightTales.Application.Abstractions.Text;
 using NightTales.Application.Features.Autopilot.Ideas;
 using NightTales.Domain.Autopilot.Ideas;
+using NightTales.Domain.Compliance;
 using NightTales.Domain.Stories.Structure;
 using Shouldly;
+using Xunit;
 
 namespace NightTales.Application.UnitTests.Features.Autopilot.Ideas;
 
@@ -312,7 +314,7 @@ public sealed class IdeaPolicyCheckerTests
     private sealed class StubEventWriter : IModerationEventWriter
     {
         /// <summary>Every row the policy asked for, in order.</summary>
-        internal List<(Guid UserId, Guid? EpisodeId, ModerationSource Source, ModerationStage Stage, IReadOnlyList<string> Categories, string? OwnText)> Writes { get; } = [];
+        internal List<(Guid UserId, Guid? EpisodeId, ModerationSource Source, ModerationStage Stage, IReadOnlyCollection<string> Categories, string? OwnText)> Writes { get; } = [];
 
         /// <inheritdoc />
         public Task WriteAsync(
@@ -320,7 +322,7 @@ public sealed class IdeaPolicyCheckerTests
             Guid? episodeId,
             ModerationSource source,
             ModerationStage stage,
-            IReadOnlyList<string> categories,
+            IReadOnlyCollection<string> categories,
             string? ownText,
             CancellationToken ct)
         {

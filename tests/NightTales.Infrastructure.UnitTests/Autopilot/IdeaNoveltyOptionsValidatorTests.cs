@@ -79,15 +79,15 @@ public sealed class IdeaNoveltyOptionsValidatorTests
     [Fact]
     public void Weights_EveryWeight_IsARatio()
     {
-        new IdeaWeightsValidator().Validate(null, new IdeaWeights()).Succeeded.ShouldBeTrue();
+        new IdeaWeightsValidator().Validate(null, new IdeaWeightsOptions()).Succeeded.ShouldBeTrue();
 
         // Zero disables a component (the rollback recipe sets Variety to 0), so it stays legal.
-        new IdeaWeightsValidator().Validate(null, new IdeaWeights(Variety: 0m)).Succeeded.ShouldBeTrue();
+        new IdeaWeightsValidator().Validate(null, new IdeaWeightsOptions { Variety = 0m }).Succeeded.ShouldBeTrue();
 
-        new IdeaWeightsValidator().Validate(null, new IdeaWeights(Variety: -0.01m)).Failed.ShouldBeTrue();
-        new IdeaWeightsValidator().Validate(null, new IdeaWeights(Novelty: 1.01m)).Failed.ShouldBeTrue();
+        new IdeaWeightsValidator().Validate(null, new IdeaWeightsOptions { Variety = -0.01m }).Failed.ShouldBeTrue();
+        new IdeaWeightsValidator().Validate(null, new IdeaWeightsOptions { Novelty = 1.01m }).Failed.ShouldBeTrue();
         new IdeaWeightsValidator()
-            .Validate(null, new IdeaWeights { Fit = 2m })
+            .Validate(null, new IdeaWeightsOptions { Fit = 2m })
             .Failures.ShouldNotBeNull()
             .ShouldContain(failure => failure.Contains("Fit", StringComparison.Ordinal));
     }

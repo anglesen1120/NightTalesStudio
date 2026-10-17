@@ -1,7 +1,10 @@
 using Microsoft.Extensions.Logging;
 using NightTales.Application.Abstractions.Moderation;
+using NightTales.Application.Abstractions.Text;
+using NightTales.Application.Features.Autopilot.Ideas.Abstractions;
 using NightTales.Application.Features.Stories.Generation;
 using NightTales.Domain.Autopilot.Ideas;
+using NightTales.Domain.Compliance;
 
 namespace NightTales.Application.Features.Autopilot.Ideas;
 

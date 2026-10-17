@@ -10,11 +10,11 @@ namespace NightTales.TestKit.Fixtures;
 /// </summary>
 /// <param name="Id">The fixture id; also the file name without extension.</param>
 /// <param name="Language">The content language of the run the payload is injected into, <c>vi</c> or <c>en</c>.</param>
-/// <param name="Field">The material slot of the data object: <c>brief</c>, <c>bible.summary</c>, <c>facts[0].statement</c> or <c>avoid_plots[0]</c> for the writer, a path inside <c>story</c> (or <c>issues</c>) for the review and revision steps, a path inside the bible-proposal data object (<c>bible.recent_episodes[0].summary</c>, <c>bible.rules[0]</c>) for <c>bible</c>, a path inside the ideas data object (<c>bible.recent_episodes[0].title</c>, <c>research_notes[0].text</c>) for <c>ideas</c>; control keys (<c>structure_plan</c>, ids) take vocabulary values only and are never a payload slot.</param>
+/// <param name="Field">The material slot of the data object: <c>brief</c>, <c>bible.summary</c>, <c>facts[0].statement</c> or <c>avoid_plots[0]</c> for the writer, a path inside <c>story</c> (or <c>issues</c>) for the review and revision steps, a path inside the bible-proposal data object (<c>bible.recent_episodes[0].summary</c>, <c>bible.rules[0]</c>) for <c>bible</c>, a path inside the ideas data object (<c>bible.recent_episodes[0].title</c>, <c>research_notes[0].text</c>) for <c>ideas</c>, a path inside the novelty-judge data object (<c>ideas[0].logline</c>, <c>past_episodes[0].summary</c>) for <c>novelty</c> (02.8.1-T2); control keys (<c>structure_plan</c>, ids) take vocabulary values only and are never a payload slot.</param>
 /// <param name="Value">The hostile text.</param>
 /// <param name="Canary">A unique token embedded in <see cref="Value"/>; it must never appear in model output.</param>
 /// <param name="Expect">The output expectations, used by the live fixture tests.</param>
-/// <param name="Step">The pipeline step whose data object receives the payload: <c>writer</c> (default, the 02.2.3-T2 fixtures), <c>review</c> (02.6.1-T1, <see cref="Field"/> is then a path inside <c>story</c>), <c>revision</c> (02.6.2-T1, <see cref="Field"/> is then a path inside <c>story</c> or <c>issues</c>), <c>bible</c> (02.6.3-T2, <see cref="Field"/> is then a path inside the bible-proposal data object) or <c>ideas</c> (02.8.1-T1, <see cref="Field"/> is then a path inside the ideas data object).</param>
+/// <param name="Step">The pipeline step whose data object receives the payload: <c>writer</c> (default, the 02.2.3-T2 fixtures), <c>review</c> (02.6.1-T1, <see cref="Field"/> is then a path inside <c>story</c>), <c>revision</c> (02.6.2-T1, <see cref="Field"/> is then a path inside <c>story</c> or <c>issues</c>), <c>bible</c> (02.6.3-T2, <see cref="Field"/> is then a path inside the bible-proposal data object) or <c>ideas</c> (02.8.1-T1, <see cref="Field"/> is then a path inside the ideas data object) or <c>novelty</c> (02.8.1-T2, <see cref="Field"/> is then a path inside the novelty-judge data object).</param>
 public sealed record InjectionFixture(
     string Id,
     string Language,
@@ -35,6 +35,15 @@ public sealed record InjectionFixture(
 
     /// <summary>The <see cref="Step"/> of the idea-generation fixtures.</summary>
     public const string IdeasStep = "ideas";
+
+    /// <summary>The <see cref="Step"/> of the idea-novelty judge fixtures (02.8.1-T2).</summary>
+    public const string NoveltyStep = "novelty";
+
+    /// <summary>The fixture whose payload lands in the judge's <c>ideas[0].logline</c> (02.8.1-T2).</summary>
+    public const string NoveltyLoglineFixture = "ideas-novelty-logline-instructions";
+
+    /// <summary>The fixture whose payload lands in the judge's <c>past_episodes[0].summary</c> (02.8.1-T2).</summary>
+    public const string NoveltyPastEpisodeFixture = "ideas-novelty-past-episode-instructions";
 
     private static readonly JsonSerializerOptions Options = new(JsonSerializerDefaults.Web);
 

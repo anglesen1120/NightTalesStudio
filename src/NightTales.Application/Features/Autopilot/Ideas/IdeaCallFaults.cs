@@ -1,5 +1,6 @@
 using NightTales.Application.Abstractions.Moderation;
 using NightTales.Application.Abstractions.Text;
+using NightTales.Domain.Compliance;
 
 namespace NightTales.Application.Features.Autopilot.Ideas;
 

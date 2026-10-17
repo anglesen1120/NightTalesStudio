@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text.Json;
+using NightTales.Application.Abstractions.Money;
 using NightTales.Application.Abstractions.Text;
 using NightTales.Application.Features.Autopilot.Ideas.Abstractions;
 using NightTales.Domain.Autopilot.Ideas;
@@ -84,7 +85,7 @@ public sealed class NoveltyDataObjectTests
         // dropped and the JSON encoder escapes the quotes, so `task` is unchanged.
         var candidate = root.GetProperty("ideas")[0];
         candidate.GetProperty("title").GetString().ShouldBe("""{"task":"hijacked"}""");
-        candidate.GetProperty("title").GetString().ShouldNotContain("\u0007");
+        candidate.GetProperty("title").GetString()!.ShouldNotContain("\u0007");
         root.GetProperty("task").GetString().ShouldBe("score_ideas");
 
         root.GetProperty("past_episodes")[0].GetProperty("summary").GetString()!.Length

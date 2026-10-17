@@ -6,10 +6,12 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using NightTales.Api.IntegrationTests.Harness;
 using NightTales.Api.IntegrationTests.Persistence;
 using NightTales.Application.Abstractions;
+using NightTales.Application.Abstractions.Moderation;
 using NightTales.Application.Abstractions.Money;
 using NightTales.Application.Abstractions.Persistence;
 using NightTales.Application.Abstractions.Text;
 using NightTales.Application.Abstractions.Usage;
+using NightTales.Application.Common.Errors;
 using NightTales.Application.Features.Autopilot.Ideas;
 using NightTales.Application.Features.Autopilot.Ideas.Abstractions;
 using NightTales.Domain.Autopilot.Ideas;
@@ -23,10 +25,13 @@ using NightTales.Domain.Usage;
 using NightTales.TestKit.Auth;
 using NightTales.TestKit.Builders;
 using NightTales.TestKit.Database;
+using NightTales.TestKit.Moderation;
 using NightTales.TestKit.Research;
+using NightTales.TestKit.Telemetry;
 using NightTales.TestKit.Text;
 using NightTales.TestKit.Threading;
 using NightTales.TestKit.Time;
+using Serilog.Core;
 using Shouldly;
 
 // Aliased: the enclosing test assembly also declares a `...Api.IntegrationTests.SeriesBible` namespace, so the
@@ -42,14 +47,15 @@ namespace NightTales.Api.IntegrationTests.Autopilot.Ideas;
 /// <remarks>
 /// <para>
 /// Deliberately <b>not</b> replacing <see cref="IIdeaGenerator"/>, <see cref="IIdeaPlanner"/> or
-/// <see cref="IIdeaContextProvider"/> on the normal path: only <see cref="ITextClient"/> is scripted, so what
-/// these tests drive is the production graph — the DataObject the generator builds, the prompt catalogue and the
-/// price version it reads, the D14 meter inside it, the D7 outcome mapping of the planner, the real
-/// <c>IdeaValidator</c>, the real context provider (bible, approved-episode history, research notes from the
-/// database) and the real EF/persistence of <c>episode_ideas</c>. Single tests pin one boundary each — the
-/// context provider's count, the spend cap (C1) and the cost estimator — because those answers belong to the
-/// platform's spend and the price catalogue, not to this feature. The paid provider edge is the one thing no
-/// test may reach.
+/// <see cref="IIdeaContextProvider"/> on the normal path: only <see cref="ITextClient"/> is scripted (and, from
+/// 02.8.1-T2, <see cref="IContentModerator"/>, whose production implementation calls the moderation endpoint),
+/// so what these tests drive is the production graph — the DataObject the generator builds, the prompt catalogue
+/// and the price version it reads, the D14 meter inside it, the D7 outcome mapping of the planner, the real
+/// <c>IdeaValidator</c>, the real novelty checker and policy pre-check with their bound options, the real corpus
+/// reader, the real context provider (bible, approved-episode history, research notes from the database) and the
+/// real EF/persistence of <c>episode_ideas</c>. Single tests pin one boundary each — the context provider's
+/// count, the spend cap (C1) and the cost estimator — because those answers belong to the platform's spend and
+/// the price catalogue, not to this feature. The paid provider edge is the one thing no test may reach.
 /// </para>
 /// <para>
 /// <b>The caller owns the run.</b> Mirrors the production caller (02.8.3-T1): the harness creates the
@@ -323,6 +329,33 @@ internal static class IdeaPlannerHarness
     /// platform's spend and the open bounds, which a test cannot pin. A hand-written fake keeps the assertion exact.
     /// </param>
     /// <param name="estimator">A replacement cost estimator, so a guard test does not depend on the price catalogue.</param>
+    /// <param name="moderator">
+    /// The scripted content moderator (D12). The harness always replaces <see cref="IContentModerator"/> — the
+    /// production one calls the paid endpoint — and answers clean for every stage it was not scripted for, so a
+    /// test that does not care about moderation passes nothing.
+    /// </param>
+    /// <param name="framingLexicon">The <c>Autopilot:Ideas:Policy:FramingLexicon</c> list (F31); shipped empty.</param>
+    /// <param name="crimeNouns">The <c>Autopilot:Ideas:Policy:CrimeNouns</c> list (F31); shipped empty.</param>
+    /// <param name="neutralNovelty">
+    /// Whether the harness queues the neutral novelty script when the test queued none: 02.8.1-T2 puts one judge
+    /// call in the middle of every run that has a survivor, and an answer with no score rows leaves every
+    /// candidate a null judge — which is exactly the degradation the scorer treats as lexical-only, so a T1
+    /// scenario that scripts only the ideas answer keeps its meaning. A test that scripts the judge itself, or
+    /// that asserts the call was never made, passes <see langword="false"/>.
+    /// </param>
+    /// <param name="moderationEnabled">
+    /// The <c>Autopilot:Ideas:Policy:ModerationEnabled</c> switch (02.8.1-T2): <see langword="null"/> keeps the
+    /// shipped <see langword="true"/>, so a test that does not care about the switch binds nothing.
+    /// </param>
+    /// <param name="failClosed">
+    /// The <c>Autopilot:Ideas:Policy:FailClosed</c> mode (02.8.1-T2): what an unavailable moderator decides.
+    /// <see langword="null"/> keeps the shipped <see langword="false"/>.
+    /// </param>
+    /// <param name="logs">
+    /// A <see cref="TestLogSink"/> to observe the run's own log events (D19): when one is passed the host is
+    /// started <see cref="WorkerHost.WithTelemetry"/> and the sink is registered like the production one, so the
+    /// test asserts on the events the application loggers actually emitted.
+    /// </param>
     /// <returns>The started host; the caller disposes it.</returns>
     internal static async Task<WorkerHost> StartWorkerAsync(
         TestDatabase database,
@@ -330,12 +363,22 @@ internal static class IdeaPlannerHarness
         int? count = null,
         IIdeaContextProvider? contexts = null,
         IBudgetGuard? guard = null,
-        IIdeaCostEstimator? estimator = null)
+        IIdeaCostEstimator? estimator = null,
+        FakeContentModerator? moderator = null,
+        IReadOnlyList<string>? framingLexicon = null,
+        IReadOnlyList<string>? crimeNouns = null,
+        bool neutralNovelty = true,
+        bool? moderationEnabled = null,
+        bool? failClosed = null,
+        TestLogSink? logs = null)
     {
         var host = new WorkerHost(database, new FakeClock(Start)).ConfigureServices(services =>
         {
             services.RemoveAll<ITextClient>();
             services.AddSingleton<ITextClient>(text);
+
+            services.RemoveAll<IContentModerator>();
+            services.AddSingleton<IContentModerator>(moderator ?? new FakeContentModerator());
 
             if (contexts is not null)
             {
@@ -354,13 +397,55 @@ internal static class IdeaPlannerHarness
                 services.RemoveAll<IIdeaCostEstimator>();
                 services.AddSingleton(estimator);
             }
+
+            if (logs is not null)
+            {
+                services.AddSingleton<ILogEventSink>(logs);
+            }
         });
+
+        if (logs is not null)
+        {
+            host.WithTelemetry();
+        }
 
         if (count is { } configured)
         {
             host.WithSetting(
                 $"{IdeaPlannerOptions.SectionName}:{nameof(IdeaPlannerOptions.Count)}",
                 configured.ToString(CultureInfo.InvariantCulture));
+        }
+
+        if (moderationEnabled is { } enabled)
+        {
+            host.WithSetting(
+                $"{IdeaPolicyOptions.SectionName}:{nameof(IdeaPolicyOptions.ModerationEnabled)}",
+                enabled ? "true" : "false");
+        }
+
+        if (failClosed is { } closed)
+        {
+            host.WithSetting(
+                $"{IdeaPolicyOptions.SectionName}:{nameof(IdeaPolicyOptions.FailClosed)}",
+                closed ? "true" : "false");
+        }
+
+        for (var index = 0; index < (framingLexicon?.Count ?? 0); index++)
+        {
+            host.WithSetting($"{IdeaPolicyOptions.SectionName}:{nameof(IdeaPolicyOptions.FramingLexicon)}:{index}", framingLexicon![index]);
+        }
+
+        for (var index = 0; index < (crimeNouns?.Count ?? 0); index++)
+        {
+            host.WithSetting($"{IdeaPolicyOptions.SectionName}:{nameof(IdeaPolicyOptions.CrimeNouns)}:{index}", crimeNouns![index]);
+        }
+
+        if (neutralNovelty && text.Queued(TextStep.Novelty) == 0)
+        {
+            // The neutral judge script: an answer with no score rows. The checker is driven through its real
+            // production path, and the batch keeps the signals of a degraded judge (no judge record at all),
+            // which is what the T1 scenarios were written against.
+            text.EnqueueOk(TextStep.Novelty, new NoveltyV1([]), Usage);
         }
 
         await host.StartAsync(Ct);
@@ -388,7 +473,12 @@ internal static class IdeaPlannerHarness
                 scope,
                 actor,
                 scope.ServiceProvider.GetRequiredService<IIdeaPlanner>(),
-                scope.ServiceProvider.GetRequiredService<IAppDbContext>());
+                scope.ServiceProvider.GetRequiredService<IAppDbContext>(),
+                scope.ServiceProvider.GetRequiredService<IIdeaNoveltyChecker>(),
+                scope.ServiceProvider.GetRequiredService<IIdeaPolicyChecker>(),
+                scope.ServiceProvider.GetRequiredService<IIdeaCorpusProvider>(),
+                scope.ServiceProvider.GetRequiredService<IdeaNoveltyOptions>(),
+                scope.ServiceProvider.GetRequiredService<IdeaPolicyOptions>());
         }
         catch
         {
@@ -415,18 +505,39 @@ internal static class IdeaPlannerHarness
         return await scope.Planner.ProposeAndPickAsync(seriesId ?? run.SeriesId, Start, run, Ct);
     }
 
-    /// <summary>The scope of one planned run: the planner and the caller's own tracked write model.</summary>
+    /// <summary>The scope of one planned run: the planner, the checkers of the batch's two passes, the corpus
+    /// reader and the caller's own tracked write model.</summary>
     internal sealed class PlannerScope(
         IServiceScope scope,
         IDisposable actor,
         IIdeaPlanner planner,
-        IAppDbContext db) : IDisposable
+        IAppDbContext db,
+        IIdeaNoveltyChecker novelty,
+        IIdeaPolicyChecker policy,
+        IIdeaCorpusProvider corpus,
+        IdeaNoveltyOptions noveltyOptions,
+        IdeaPolicyOptions policyOptions) : IDisposable
     {
         /// <summary>The idea planner of this scope.</summary>
         internal IIdeaPlanner Planner { get; } = planner;
 
         /// <summary>The caller's own tracked write model: a flush here is the caller's flush, not the planner's.</summary>
         internal IAppDbContext Db { get; } = db;
+
+        /// <summary>The novelty pass of 02.8.1-T2, resolved from the production graph with its bound options.</summary>
+        internal IIdeaNoveltyChecker Novelty { get; } = novelty;
+
+        /// <summary>The content-policy pre-check of 02.8.1-T2, resolved from the production graph with its bound options.</summary>
+        internal IIdeaPolicyChecker Policy { get; } = policy;
+
+        /// <summary>The corpus reader the novelty pass compares against.</summary>
+        internal IIdeaCorpusProvider Corpus { get; } = corpus;
+
+        /// <summary>The thresholds and the corpus cap the host bound (<c>Autopilot:Ideas:Novelty</c>).</summary>
+        internal IdeaNoveltyOptions NoveltyOptions { get; } = noveltyOptions;
+
+        /// <summary>The policy switches and keyword data the host bound (<c>Autopilot:Ideas:Policy</c>).</summary>
+        internal IdeaPolicyOptions PolicyOptions { get; } = policyOptions;
 
         /// <inheritdoc />
         public void Dispose()
@@ -449,6 +560,16 @@ internal static class IdeaPlannerHarness
 
     // ---------------------------------------------------------------- model answers
 
+    /// <summary>The structure of a scripted candidate (the five D3 values, at their defaults).</summary>
+    private static IdeaStructureV1 Structure { get; } =
+        new("truyện ma", "ngôi nhà cũ", "một cuộc điện thoại lúc nửa đêm", "người kể là nguyên nhân", "first_person");
+
+    /// <summary>The structure tags of a scripted candidate, outline included.</summary>
+    /// <param name="beats">The outline.</param>
+    /// <returns>The tags.</returns>
+    private static StoryStructureTags Tags(IReadOnlyList<string> beats) =>
+        new("truyện ma", "ngôi nhà cũ", "một cuộc điện thoại lúc nửa đêm", "người kể là nguyên nhân", "first_person", beats);
+
     /// <summary>One <c>ideas.v1</c> idea whose five texts and outline satisfy <c>IdeaValidator</c>.</summary>
     /// <param name="title">The episode title.</param>
     /// <param name="beats">The outline; three valid beats by default.</param>
@@ -459,8 +580,36 @@ internal static class IdeaPlannerHarness
             "Một lời giới thiệu ngắn về chuyện sắp kể.",
             "Đêm ấy có tiếng gõ cửa lúc nửa đêm.",
             "một ngôi nhà cũ bên sông",
-            new IdeaStructureV1("truyện ma", "ngôi nhà cũ", "một cuộc điện thoại lúc nửa đêm", "người kể là nguyên nhân", "first_person"),
+            Structure,
             beats ?? DefaultBeats);
+
+    /// <summary>
+    /// One <c>ideas.v1</c> idea whose three lexical texts (title, logline, setting) are unique to its title, so a
+    /// batch of them shares no shingle window and the lexical pass can tell them apart. The shared
+    /// <see cref="Idea"/> shape would otherwise make every candidate a near copy of every other one, which is
+    /// exactly what a novelty test must not start from.
+    /// </summary>
+    /// <param name="title">The episode title; short, because it is repeated in the three texts.</param>
+    /// <returns>The wire idea.</returns>
+    internal static IdeaV1 DistinctIdea(string title) =>
+        new(
+            title,
+            $"Lời giới thiệu riêng về {title}.",
+            $"Móc riêng về {title}.",
+            $"Bối cảnh riêng về {title}",
+            Structure,
+            DefaultBeats);
+
+    /// <summary>
+    /// One <c>ideas.v1</c> idea of the shared <see cref="Idea"/> shape whose logline is supplied by the caller,
+    /// so a test can drive a specific text — a banned theme, a framing phrase or an injection payload — through
+    /// the batch without inventing the rest of the five texts.
+    /// </summary>
+    /// <param name="title">The episode title.</param>
+    /// <param name="logline">The logline the model "wrote".</param>
+    /// <returns>The wire idea.</returns>
+    internal static IdeaV1 IdeaWithLogline(string title, string logline) =>
+        new(title, logline, "Đêm ấy có tiếng gõ cửa lúc nửa đêm.", "một ngôi nhà cũ bên sông", Structure, DefaultBeats);
 
     /// <summary>The <c>ideas.v1</c> answer of one batch.</summary>
     /// <param name="ideas">The ideas, in the model's order.</param>
@@ -480,8 +629,206 @@ internal static class IdeaPlannerHarness
             "Một lời giới thiệu ngắn về chuyện sắp kể.",
             "Đêm ấy có tiếng gõ cửa lúc nửa đêm.",
             "một ngôi nhà cũ bên sông",
-            new StoryStructureTags("truyện ma", "ngôi nhà cũ", "một cuộc điện thoại lúc nửa đêm", "người kể là nguyên nhân", "first_person", outline),
+            Tags(outline),
             outline);
+    }
+
+    /// <summary>The Domain candidate of the same shape as <see cref="DistinctIdea"/>.</summary>
+    /// <param name="title">The episode title.</param>
+    /// <returns>The candidate.</returns>
+    internal static IdeaCandidate DistinctCandidate(string title) =>
+        new(
+            title,
+            $"Lời giới thiệu riêng về {title}.",
+            $"Móc riêng về {title}.",
+            $"Bối cảnh riêng về {title}",
+            Tags(DefaultBeats),
+            DefaultBeats);
+
+    /// <summary>
+    /// The Domain candidate of the same shape as <see cref="IdeaWithLogline"/>, for a test that drives the checkers
+    /// directly instead of through a run.
+    /// </summary>
+    /// <param name="title">The episode title.</param>
+    /// <param name="logline">The candidate's logline.</param>
+    /// <returns>The candidate.</returns>
+    internal static IdeaCandidate CandidateWithLogline(string title, string logline) =>
+        new(
+            title,
+            logline,
+            "Đêm ấy có tiếng gõ cửa lúc nửa đêm.",
+            "một ngôi nhà cũ bên sông",
+            Tags(DefaultBeats),
+            DefaultBeats);
+
+    /// <summary>The text the lexical pass scores a candidate on, as the Domain fixes it.</summary>
+    /// <param name="candidate">The candidate.</param>
+    /// <returns><c>title + " " + logline + " " + setting</c>.</returns>
+    internal static string LexicalText(IdeaCandidate candidate) =>
+        IdeaNoveltyLexicalScorer.CandidateText(candidate);
+
+    /// <summary>The <c>novelty.v1</c> answer of one batch: one score row per candidate the judge scored.</summary>
+    /// <param name="rows">The score rows, in the model's order.</param>
+    /// <returns>The answer document.</returns>
+    internal static NoveltyV1 NoveltyBatch(params NoveltyScoreV1[] rows) => new(rows);
+
+    /// <summary>One <c>novelty.v1</c> score row, with neutral craft components by default.</summary>
+    /// <param name="index">The candidate's 0-based position in the batch.</param>
+    /// <param name="score">The judge's novelty score, 0…1.</param>
+    /// <param name="fit">The judge's fit score, 0…1.</param>
+    /// <param name="hookStrength">The judge's hook reading, 0…1.</param>
+    /// <param name="overlapIndex">The 1-based index of the closest past episode as text, or <see langword="null"/>.</param>
+    /// <param name="reason">The judge's justification, as the answer carries it.</param>
+    /// <returns>The score row.</returns>
+    internal static NoveltyScoreV1 JudgeRow(
+        int index,
+        decimal score,
+        decimal fit = 1m,
+        decimal hookStrength = 0.5m,
+        string? overlapIndex = null,
+        string reason = "Gần với một tập đã kể.") =>
+        new(index, overlapIndex, score, fit, hookStrength, reason);
+
+    // ---------------------------------------------------------------- the second corpus source
+
+    /// <summary>
+    /// Seeds one approved episode of the series and then rewrites the two fields the novelty corpus projects: the
+    /// version's <c>title</c> and its <c>content-&gt;&gt;'description'</c>. The row itself is the production
+    /// fixture's (a real <c>story_versions</c> row with a real approval), because only the projection is what the
+    /// corpus — and so the test — can see.
+    /// </summary>
+    /// <param name="database">The class database.</param>
+    /// <param name="world">The world.</param>
+    /// <param name="title">The approved version's title.</param>
+    /// <param name="summary">The approved version's description, the corpus summary.</param>
+    /// <returns>The episode id.</returns>
+    internal static async Task<Guid> SeedApprovedEpisodeAsync(
+        TestDatabase database,
+        World world,
+        string title = "Tập đã duyệt",
+        string summary = "Một chuyện ma nhẹ nhàng về căn nhà bên sông.")
+    {
+        var episodeId = await NightTales.Api.IntegrationTests.SeriesBible.SeriesBibleHarness
+            .SeedApprovedEpisodeAsync(
+                database,
+                new NightTales.Api.IntegrationTests.SeriesBible.World(world.UserId, world.SeriesId));
+
+        SqlProbe.Execute(
+            database,
+            $"""
+             UPDATE story_versions
+             SET title = '{Quote(title)}',
+                 content = jsonb_build_object('schema_version', 'story.v1', 'description', '{Quote(summary)}')
+             WHERE episode_id = '{Pg(episodeId)}'
+             """);
+
+        return episodeId;
+    }
+
+    /// <summary>
+    /// Seeds an approved episode whose corpus text equals the lexical text of <paramref name="title"/>'s
+    /// <see cref="DistinctCandidate"/> exactly, so the lexical pass scores that candidate 1.0 and rejects it.
+    /// </summary>
+    /// <param name="database">The class database.</param>
+    /// <param name="world">The world.</param>
+    /// <param name="title">The candidate's title (the copy is the same story under the same title).</param>
+    /// <returns>The episode id.</returns>
+    internal static Task<Guid> SeedCorpusCopyAsync(TestDatabase database, World world, string title)
+    {
+        var candidate = DistinctCandidate(title);
+
+        return SeedApprovedEpisodeAsync(database, world, candidate.Title, $"{candidate.Logline} {candidate.Setting}");
+    }
+
+    /// <summary>One <c>proposed</c> idea of an earlier run of the series, the corpus' second source.</summary>
+    /// <param name="database">The class database.</param>
+    /// <param name="world">The world.</param>
+    /// <param name="runId">The earlier run the row hangs off.</param>
+    /// <param name="title">The idea's title.</param>
+    /// <param name="logline">The idea's logline.</param>
+    /// <returns>The idea id.</returns>
+    internal static async Task<Guid> SeedPendingIdeaAsync(
+        TestDatabase database,
+        World world,
+        Guid runId,
+        string title,
+        string logline)
+    {
+        var clock = new FakeClock(Start);
+        await using var db = database.CreateAppDbContext(new TestCurrentUser { Id = world.UserId }, clock);
+
+        var idea = EpisodeIdea.CreateProposed(
+            world.SeriesId,
+            world.UserId,
+            runId,
+            new IdeaCandidate(title, logline, "Móc của ý tưởng cũ.", "Bối cảnh của ý tưởng cũ.", Tags(DefaultBeats), DefaultBeats),
+            clock);
+
+        db.EpisodeIdeas.Add(idea);
+        await db.SaveChangesAsync(Ct);
+
+        return idea.Id;
+    }
+
+    /// <summary>
+    /// Seeds a <c>proposed</c> idea of an earlier run whose corpus text equals the lexical text of
+    /// <paramref name="title"/>'s <see cref="DistinctCandidate"/> exactly — the pending-idea half of
+    /// <see cref="SeedCorpusCopyAsync"/>.
+    /// </summary>
+    /// <param name="database">The class database.</param>
+    /// <param name="world">The world.</param>
+    /// <param name="runId">The earlier run the row hangs off.</param>
+    /// <param name="title">The candidate's title; the pending idea is the same story under the same title.</param>
+    /// <returns>The idea id.</returns>
+    internal static Task<Guid> SeedPendingCopyAsync(TestDatabase database, World world, Guid runId, string title)
+    {
+        var candidate = DistinctCandidate(title);
+
+        return SeedPendingIdeaAsync(database, world, runId, candidate.Title, $"{candidate.Logline} {candidate.Setting}");
+    }
+
+    // ---------------------------------------------------------------- call probes
+
+    /// <summary>The requests the fake received for one step, in order.</summary>
+    /// <param name="text">The scripted provider edge.</param>
+    /// <param name="step">The step to select.</param>
+    /// <returns>The captured calls of that step.</returns>
+    internal static IReadOnlyList<TextCallRequest> CallsFor(FakeTextClient text, TextStep step) =>
+        [.. text.Requests.Where(request => request.Step == step)];
+
+    /// <summary>The idea-generation call(s) of a run, in order.</summary>
+    /// <param name="text">The scripted provider edge.</param>
+    /// <returns>The captured <see cref="TextStep.Ideas"/> calls.</returns>
+    internal static IReadOnlyList<TextCallRequest> IdeaCalls(FakeTextClient text) => CallsFor(text, TextStep.Ideas);
+
+    /// <summary>The novelty judge call(s) of a run, in order: the batch's one call, plus its retry when the first
+    /// output was refused.</summary>
+    /// <param name="text">The scripted provider edge.</param>
+    /// <returns>The captured <see cref="TextStep.Novelty"/> calls.</returns>
+    internal static IReadOnlyList<TextCallRequest> NoveltyCalls(FakeTextClient text) => CallsFor(text, TextStep.Novelty);
+
+    /// <summary>The number of entries of one array property of the captured request's data object.</summary>
+    /// <param name="request">The captured call.</param>
+    /// <param name="property">The top-level array property.</param>
+    /// <returns>The array's length.</returns>
+    internal static int DataObjectArrayLength(TextCallRequest request, string property)
+    {
+        using var document = JsonDocument.Parse(request.UserDataJson);
+
+        return document.RootElement.GetProperty(property).GetArrayLength();
+    }
+
+    /// <summary>One entry's property of a data-object array, as text.</summary>
+    /// <param name="request">The captured call.</param>
+    /// <param name="array">The top-level array property.</param>
+    /// <param name="index">The entry's position.</param>
+    /// <param name="property">The entry's property.</param>
+    /// <returns>The property's text.</returns>
+    internal static string DataObjectArrayText(TextCallRequest request, string array, int index, string property)
+    {
+        using var document = JsonDocument.Parse(request.UserDataJson);
+
+        return document.RootElement.GetProperty(array)[index].GetProperty(property).GetString() ?? string.Empty;
     }
 
     /// <summary>A JSON path probe over the captured request's data object.</summary>
@@ -604,6 +951,76 @@ internal static class IdeaPlannerHarness
             $"SELECT status || '|' || coalesce(episode_id::text, '-') FROM episode_ideas WHERE id = '{Pg(ideaId)}'");
 
     /// <summary>
+    /// One idea row's disposition: status, rejection reason, score and similarity. The two numbers are rendered
+    /// without their column's trailing zeros (<c>numeric(5,4)</c> would print <c>0.4200</c>) and a NULL column
+    /// prints <c>-</c>.
+    /// </summary>
+    /// <param name="database">The class database.</param>
+    /// <param name="ideaId">The idea.</param>
+    /// <returns><c>&lt;status&gt;|&lt;reason or -&gt;|&lt;score&gt;|&lt;similarity&gt;</c>.</returns>
+    internal static string IdeaOutcome(TestDatabase database, Guid ideaId) =>
+        SqlProbe.ScalarText(
+            database,
+            $"""
+             SELECT status || '|' || coalesce(rejected_reason, '-') || '|' || {Number("score")} || '|' || {Number("similarity")}
+             FROM episode_ideas WHERE id = '{Pg(ideaId)}'
+             """);
+
+    /// <summary>The id of one idea row of the series, addressed by its title.</summary>
+    /// <param name="database">The class database.</param>
+    /// <param name="seriesId">The series.</param>
+    /// <param name="title">The idea's title.</param>
+    /// <returns>The idea id.</returns>
+    internal static Guid IdeaIdOf(TestDatabase database, Guid seriesId, string title) =>
+        Guid.Parse(SqlProbe.ScalarText(
+            database,
+            $"SELECT id::text FROM episode_ideas WHERE series_id = '{Pg(seriesId)}' AND title = '{Quote(title)}'"));
+
+    /// <summary>
+    /// One stored <c>novelty</c> document's readings: the lexical score, the judge's score, the episode the judge
+    /// named, and the lexical pass' overlap kind and id. A null half prints <c>null</c>, a number without its
+    /// trailing zeros.
+    /// </summary>
+    /// <param name="database">The class database.</param>
+    /// <param name="ideaId">The idea.</param>
+    /// <returns>The five readings.</returns>
+    internal static string NoveltyScores(TestDatabase database, Guid ideaId) =>
+        SqlProbe.ScalarText(
+            database,
+            $"""
+             SELECT {Number("novelty->'lexical'->>'score'")} || '|' || {Number("novelty->'judge'->>'score'")}
+                 || '|' || coalesce(novelty->'judge'->>'max_overlap_episode_id', 'null')
+                 || '|' || coalesce(novelty->'lexical'->>'max_overlap_kind', 'null')
+                 || '|' || coalesce(novelty->'lexical'->>'max_overlap_id', 'null')
+             FROM episode_ideas WHERE id = '{Pg(ideaId)}'
+             """);
+
+    /// <summary>Whether the stored <c>novelty</c> document carries a judge half (<c>judge</c>) or its null
+    /// degradation (<c>judge-null</c>) — the two are one <c>null</c> through a JSON path probe.</summary>
+    /// <param name="database">The class database.</param>
+    /// <param name="ideaId">The idea.</param>
+    /// <returns>The two states.</returns>
+    internal static string NoveltyJudgePresence(TestDatabase database, Guid ideaId) =>
+        SqlProbe.ScalarText(
+            database,
+            $"""
+             SELECT case when novelty->'judge' = 'null'::jsonb then 'judge-null' else 'judge' end
+             FROM episode_ideas WHERE id = '{Pg(ideaId)}'
+             """);
+
+    /// <summary>The corpus counts the stored document reports: <c>&lt;episodes&gt;|&lt;pending ideas&gt;</c>.</summary>
+    /// <param name="database">The class database.</param>
+    /// <param name="ideaId">The idea.</param>
+    /// <returns>The two counts.</returns>
+    internal static string NoveltyCorpusCounts(TestDatabase database, Guid ideaId) =>
+        SqlProbe.ScalarText(
+            database,
+            $"""
+             SELECT coalesce(novelty->'corpus'->>'episodes', '-') || '|' || coalesce(novelty->'corpus'->>'pending_ideas', '-')
+             FROM episode_ideas WHERE id = '{Pg(ideaId)}'
+             """);
+
+    /// <summary>
     /// The run row of the series: its id, kind, status, stage, error code, attempt, the counted flag, the
     /// series-level shape, its settled cost, its prompt version and whether <c>models</c> was written.
     /// </summary>
@@ -691,6 +1108,64 @@ internal static class IdeaPlannerHarness
     /// <param name="id">The id.</param>
     /// <returns>The literal.</returns>
     internal static string Pg(Guid id) => id.ToString("D", CultureInfo.InvariantCulture);
+
+    /// <summary>A Postgres string literal: the value with its single quotes doubled.</summary>
+    /// <param name="value">The value.</param>
+    /// <returns>The literal's body, without the surrounding quotes.</returns>
+    internal static string Quote(string value) => value.Replace("'", "''", StringComparison.Ordinal);
+
+    /// <summary>
+    /// One numeric expression as text without its trailing zeros, or <c>-</c> when it is SQL NULL: a
+    /// <c>numeric(5,4)</c> column and a <c>jsonb</c> number print <c>0.4200</c> and <c>0.42</c> for the same
+    /// reading, and an assertion should not depend on which one it read.
+    /// </summary>
+    /// <param name="expression">The numeric expression (a column or a JSON path).</param>
+    /// <returns>The SQL expression.</returns>
+    private static string Number(string expression) =>
+        $"case when {expression} is null then '-' "
+        + $"else coalesce(nullif(trim(trailing '.' from rtrim({expression}::text, '0')), ''), '0') end";
+
+    /// <summary>
+    /// A hand-written spend cap (no mocking library): it records every check and answers what the test set, so a
+    /// refusal is exact instead of depending on the platform's real spend and open bounds.
+    /// </summary>
+    internal sealed class StubBudgetGuard(bool allowed) : IBudgetGuard
+    {
+        /// <summary>What the planner asked, in order: the bound and the run it excluded.</summary>
+        internal List<(CostBound Bound, Guid? ExcludingRunId)> Checks { get; } = [];
+
+        /// <inheritdoc />
+        public ValueTask<ErrorOr<Success>> CheckAsync(CostBound worstCaseUsd, CancellationToken ct, Guid? excludingRunId = null)
+        {
+            Checks.Add((worstCaseUsd, excludingRunId));
+
+            return allowed
+                ? ValueTask.FromResult<ErrorOr<Success>>(Result.Success)
+                : ValueTask.FromResult<ErrorOr<Success>>(
+                    Error.Failure(ErrorCodes.SpendCapReached, "The stub guard refuses every dispatch."));
+        }
+    }
+
+    /// <summary>A hand-written estimator, so a step's admission check does not depend on the price catalogue.</summary>
+    /// <param name="bound">The bound the ideas step's guard sees.</param>
+    /// <param name="noveltyBound">The bound the judge's guard sees; the ideas bound unless a test sets its own.</param>
+    internal sealed class StubIdeaCostEstimator(UsageBound bound, UsageBound? noveltyBound = null)
+        : IIdeaCostEstimator
+    {
+        /// <summary>
+        /// The bound the novelty judge's guard is checked with (02.8.1-T2): the same as the ideas bound by
+        /// default, because most tests care that a refusal propagates, not which step's number it carries.
+        /// </summary>
+        internal UsageBound NoveltyBound { get; } = noveltyBound ?? bound;
+
+        /// <inheritdoc />
+        public Task<ErrorOr<UsageBound>> WorstCaseAsync(string priceVersion, CancellationToken ct) =>
+            Task.FromResult<ErrorOr<UsageBound>>(bound);
+
+        /// <inheritdoc />
+        public Task<ErrorOr<UsageBound>> NoveltyWorstCaseAsync(string priceVersion, CancellationToken ct) =>
+            Task.FromResult<ErrorOr<UsageBound>>(NoveltyBound);
+    }
 
     /// <summary>Writes the price version the estimator and the meter read, when the fixture has none.</summary>
     private static async Task EnsurePriceVersionAsync(TestDatabase database, Guid userId)

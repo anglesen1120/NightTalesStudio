@@ -69,18 +69,18 @@ public static class AutopilotIdeasServiceCollectionExtensions
         services.TryAddEnumerable(
             ServiceDescriptor.Singleton<IValidateOptions<IdeaPolicyOptions>, IdeaPolicyOptionsValidator>());
 
-        services.AddOptions<IdeaWeights>()
+        services.AddOptions<IdeaWeightsOptions>()
             .BindConfiguration(IdeaWeightsValidator.SectionName)
             .ValidateOnStart();
         services.TryAddEnumerable(
-            ServiceDescriptor.Singleton<IValidateOptions<IdeaWeights>, IdeaWeightsValidator>());
+            ServiceDescriptor.Singleton<IValidateOptions<IdeaWeightsOptions>, IdeaWeightsValidator>());
 
         // The Application checkers take the plain values, exactly like the planner options above, because
         // Application cannot reference Infrastructure's options types; the corpus reader is scoped with the read
         // model it queries, and the two checkers are scoped with the planner that drives them.
         services.TryAddSingleton(provider => provider.GetRequiredService<IOptions<IdeaNoveltyOptions>>().Value);
         services.TryAddSingleton(provider => provider.GetRequiredService<IOptions<IdeaPolicyOptions>>().Value);
-        services.TryAddSingleton(provider => provider.GetRequiredService<IOptions<IdeaWeights>>().Value);
+        services.TryAddSingleton(provider => provider.GetRequiredService<IOptions<IdeaWeightsOptions>>().Value.ToWeights());
 
         services.TryAddScoped<IIdeaCorpusProvider, IdeaCorpusProvider>();
         services.TryAddScoped<IIdeaNoveltyChecker, IdeaNoveltyChecker>();

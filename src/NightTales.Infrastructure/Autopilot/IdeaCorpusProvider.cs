@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using NightTales.Application.Features.Autopilot.Ideas.Abstractions;
 using NightTales.Application.Features.Autopilot.Ideas;
 using NightTales.Domain.Autopilot.Ideas;
+using NightTales.Infrastructure.OpenAI;
 using NightTales.Infrastructure.Persistence;
 
 namespace NightTales.Infrastructure.Autopilot;

@@ -71,6 +71,29 @@ public sealed class IdeaPolicyOptionsValidator : IValidateOptions<IdeaPolicyOpti
 }
 
 /// <summary>
+/// The bindable shape of <c>Autopilot:Ideas:Weights</c>: <c>IdeaWeights</c> is an immutable Domain record the options
+/// system cannot construct, so the section binds here and the registered <c>IdeaWeights</c> is built from it.
+/// </summary>
+public sealed class IdeaWeightsOptions
+{
+    /// <summary>The weight of the novelty term.</summary>
+    public decimal Novelty { get; set; } = new IdeaWeights().Novelty;
+
+    /// <summary>The weight of the fit term.</summary>
+    public decimal Fit { get; set; } = new IdeaWeights().Fit;
+
+    /// <summary>The weight of the hook term.</summary>
+    public decimal Hook { get; set; } = new IdeaWeights().Hook;
+
+    /// <summary>The weight of the variety penalty.</summary>
+    public decimal Variety { get; set; } = new IdeaWeights().Variety;
+
+    /// <summary>The Domain weights this section configures.</summary>
+    /// <returns>The immutable weights the scorer reads.</returns>
+    public IdeaWeights ToWeights() => new(Novelty, Fit, Hook, Variety);
+}
+
+/// <summary>
 /// Validates <c>Autopilot:Ideas:Weights</c> on start (02.8.1-T2 plan §3.4): every weight is a 0..1 ratio.
 /// </summary>
 /// <remarks>
@@ -78,21 +101,21 @@ public sealed class IdeaPolicyOptionsValidator : IValidateOptions<IdeaPolicyOpti
 /// not be one, because <c>IdeaScorer.Score</c> clamps the weighted sum. A negative or above-one weight is the
 /// configuration mistake this catches before a paid run picks a candidate with it.
 /// </remarks>
-public sealed class IdeaWeightsValidator : IValidateOptions<IdeaWeights>
+public sealed class IdeaWeightsValidator : IValidateOptions<IdeaWeightsOptions>
 {
     /// <summary>The section every message names.</summary>
     public const string SectionName = "Autopilot:Ideas:Weights";
 
     /// <inheritdoc />
-    public ValidateOptionsResult Validate(string? name, IdeaWeights options)
+    public ValidateOptionsResult Validate(string? name, IdeaWeightsOptions options)
     {
         ArgumentNullException.ThrowIfNull(options);
 
         var failures = new List<string>();
-        AddRatio(failures, nameof(IdeaWeights.Novelty), options.Novelty);
-        AddRatio(failures, nameof(IdeaWeights.Fit), options.Fit);
-        AddRatio(failures, nameof(IdeaWeights.Hook), options.Hook);
-        AddRatio(failures, nameof(IdeaWeights.Variety), options.Variety);
+        AddRatio(failures, nameof(IdeaWeightsOptions.Novelty), options.Novelty);
+        AddRatio(failures, nameof(IdeaWeightsOptions.Fit), options.Fit);
+        AddRatio(failures, nameof(IdeaWeightsOptions.Hook), options.Hook);
+        AddRatio(failures, nameof(IdeaWeightsOptions.Variety), options.Variety);
 
         return failures.Count == 0 ? ValidateOptionsResult.Success : ValidateOptionsResult.Fail(failures);
     }

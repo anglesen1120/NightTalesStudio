@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text;
 using ErrorOr;
 using Microsoft.Extensions.Configuration;
+using NightTales.Application.Abstractions.Money;
 using NightTales.Application.Abstractions.Prompts;
 using NightTales.Application.Abstractions.Text;
 using NightTales.Application.Abstractions.Usage;
