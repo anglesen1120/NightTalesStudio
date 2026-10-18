@@ -13,6 +13,7 @@ using NightTales.Application.Abstractions.Identity;
 using NightTales.Application.Common.Errors;
 using NightTales.Application.Features.Publishing.Channels.Commands.CompleteYouTubeConnect;
 using NightTales.Application.Features.Publishing.Channels.Commands.ConnectYouTube;
+using NightTales.Application.Features.Publishing.Channels.Queries.ListChannels;
 using NightTales.Domain.Common;
 using NightTales.Domain.Publishing;
 
@@ -128,6 +129,16 @@ public static class PublishingEndpoints
             .ProducesProblem(StatusCodes.Status500InternalServerError)
             .ProducesProblem(StatusCodes.Status503ServiceUnavailable);
 
+        // 06.1.2-T2 (06 README D4/D6): the account's own connections — the one source the channels page reads.
+        // Authenticated and flag-gated like the connect route, with no re-auth (it reads, it does not write) and
+        // no idempotency key or If-Match (no state changes, D15).
+        channels.MapGet(string.Empty, ListChannelsAsync)
+            .RequireFeature(FeatureKey)
+            .RequireAuthorization()
+            .Produces<ChannelListResponse>(StatusCodes.Status200OK)
+            .ProducesProblem(StatusCodes.Status401Unauthorized)
+            .ProducesProblem(StatusCodes.Status404NotFound);
+
         channels.MapGet(CallbackRoute, CompleteConnectAsync)
             .RequireFeature(FeatureKey)
             .AllowAnonymous()
@@ -180,6 +191,37 @@ public static class PublishingEndpoints
         return Results.Json(
             new ConnectChannelResponse(response.AuthorizationUrl, response.ExpiresAt),
             statusCode: StatusCodes.Status200OK);
+    }
+
+    /// <summary>
+    /// <c>GET /api/v1/channels</c>: 200 with <c>{ items: [...] }</c> — the caller's own connections, newest
+    /// first — or the mapped error problem when the query fails (06.1.2-T2 task §Endpoint, 06 README D4/D6).
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// One tenant-filtered statement in <c>ListChannelsHandler</c>; this method only wraps the list in the
+    /// <see cref="ChannelListResponse"/> envelope and writes it. The envelope is built here, not in the
+    /// Application layer: <c>items</c> is 09 README D6's wire convention, and the query answers the DTO list
+    /// itself.
+    /// </para>
+    /// <para>
+    /// No ETag, no <c>If-Match</c>, no paging (D15/D6): the resource is read-only here, and a user has a handful
+    /// of connections. An authenticated caller with the flag off answers 404 <c>feature_disabled</c> — the
+    /// feature filter runs before the handler, and <c>RequireAuthorization</c> answers 401 for an anonymous one.
+    /// </para>
+    /// </remarks>
+    /// <param name="sender">The Mediator sender.</param>
+    /// <param name="http">The request, for the problem details of a failed query.</param>
+    /// <param name="ct">The request cancellation token.</param>
+    private static async Task<IResult> ListChannelsAsync(ISender sender, HttpContext http, CancellationToken ct)
+    {
+        var result = await sender
+            .Send(new ListChannelsQuery(), ct)
+            .ConfigureAwait(false);
+
+        return result.IsError
+            ? result.ToHttpResult(http)
+            : Results.Json(new ChannelListResponse(result.Value), statusCode: StatusCodes.Status200OK);
     }
 
     /// <summary>

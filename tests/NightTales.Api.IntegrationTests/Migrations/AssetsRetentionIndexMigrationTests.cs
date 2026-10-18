@@ -12,8 +12,9 @@ namespace NightTales.Api.IntegrationTests.Migrations;
 /// <summary>
 /// The <c>_09_AssetsRetentionIndex</c> migration (09.7.3-T1, index only): the partial due-assets index reaches a
 /// fresh database, the audit keyset index of 09.3.6-T1 is in place for the sweep's scan, the model has no pending
-/// change, and the <c>Down</c> drops the new index. Later migrations followed it (<c>_06_OAuthStates</c> owns the
-/// last-migration check, <c>migrations[^1]</c>), so this class finds its own migration by name.
+/// change, and the <c>Down</c> drops the new index. Later migrations followed it (06.1.2-T2's
+/// <c>_06_ChannelConnections</c> owns the last-migration check, <c>migrations[^1]</c>), so this class finds its
+/// own migration by name.
 /// </summary>
 [Trait("Category", "Integration")]
 [Trait("Category", "Migration")]

@@ -25,7 +25,9 @@ namespace NightTales.Infrastructure.Persistence.UnitOfWork;
 /// <see cref="DbUpdateException"/> that wraps one, which is how <c>SaveChangesAsync</c> reports it —
 /// and a constraint refusal of the command's <c>audit_logs</c> row both become
 /// <c>service_unavailable</c> (503), because a change is never recorded without its audit row
-/// (09.3.6-T1 failure handling). Every mapping rolls the transaction back first.
+/// (09.3.6-T1 failure handling). Every mapping rolls the transaction back first. A partial unique index a
+/// command's own pre-check already covers — 02's active run, 09.6.1's render job, 06's one live connection per
+/// channel — keeps the conflict status its failure table fixes instead of becoming a 500.
 /// </para>
 /// </remarks>
 public sealed class EfUnitOfWork(AppDbContext database) : IUnitOfWork
@@ -72,6 +74,21 @@ public sealed class EfUnitOfWork(AppDbContext database) : IUnitOfWork
     /// (09.6.1-T1, D5): the backstop of two requests that both passed the episode state check.
     /// </summary>
     private const string ActiveRenderJobIndex = "ux_render_jobs_active_episode";
+
+    /// <summary>
+    /// The partial unique index that allows one live connection per Google channel
+    /// (<c>WHERE status &lt;&gt; 'revoked'</c>, 06 README D18): the authority for 06's "one owner per channel"
+    /// rule, which is what a second account connecting the same channel loses to.
+    /// </summary>
+    private const string ChannelAccountIndex = "ux_channel_connections_account";
+
+    /// <summary>
+    /// The stable description of a refused live connection (06.1.2-T2): the same 409
+    /// <c>channel_already_connected</c> the connect writer answers when its own locked read finds the other
+    /// owner, so the race and the ordinary case read identically to the caller.
+    /// </summary>
+    private const string ChannelAlreadyConnectedDescription =
+        "This account already has a live connection for that channel.";
 
     /// <summary>
     /// The stable description of a refused active run; the command already answers this situation with the
@@ -155,6 +172,18 @@ public sealed class EfUnitOfWork(AppDbContext database) : IUnitOfWork
 
             return Error.Conflict(code: ErrorCodes.ConcurrencyConflict, description: ConcurrencyDescription);
         }
+        catch (DbUpdateException exception) when (IsChannelAlreadyConnectedViolation(exception))
+        {
+            // 06.1.2-T2 failure handling: two accounts connecting the same channel both read "no live row" and
+            // both insert; the partial unique index refuses the second, so the loser gets the already-connected
+            // 409 06.1.2-T1's callback maps to its fixed redirect — and never a raw 500 from the provider
+            // exception. The winner's row is untouched by the rollback below.
+            await TryRollbackAsync(cancellationToken).ConfigureAwait(false);
+
+            return Error.Conflict(
+                code: ErrorCodes.ChannelAlreadyConnected,
+                description: ChannelAlreadyConnectedDescription);
+        }
         catch (Exception exception) when (IsTransient(exception))
         {
             await TryRollbackAsync(cancellationToken).ConfigureAwait(false);
@@ -174,6 +203,9 @@ public sealed class EfUnitOfWork(AppDbContext database) : IUnitOfWork
 
     private static bool IsActiveRenderJobViolation(Exception exception) =>
         ProviderError(exception) is { SqlState: UniqueViolation, ConstraintName: ActiveRenderJobIndex };
+
+    private static bool IsChannelAlreadyConnectedViolation(Exception exception) =>
+        ProviderError(exception) is { SqlState: UniqueViolation, ConstraintName: ChannelAccountIndex };
 
     /// <summary>
     /// The 409 of a refused active run, named for the kind of run the request was queueing: the index is

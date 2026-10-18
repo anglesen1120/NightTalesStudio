@@ -42,6 +42,7 @@ using NightTales.Infrastructure.Persistence;
 using NightTales.Infrastructure.Persistence.Flags;
 using NightTales.Infrastructure.Persistence.Outbox;
 using NightTales.Infrastructure.Persistence.Usage;
+using NightTales.Infrastructure.Publishing;
 using NightTales.Infrastructure.Rendering;
 using NightTales.Infrastructure.Security;
 using NightTales.Infrastructure.Storage;
@@ -143,6 +144,13 @@ public static class WorkerServiceCollectionExtensions
         // and the same DP_KEK as the Api (11 §10:284), so a token the Api protected — a channel
         // connection, a settings secret — is readable here, and each purpose stays isolated.
         services.AddNightTalesDataProtection(configuration);
+
+        // 06.1.2-T2: the `channel_connections` store, its row lock and the refresh-under-lock token path
+        // (`channel_connection_changed.v1` itself needs no registration here: the outbox catalogue is the
+        // `[OutboxEvent]` scan of `OutboxEventRegistry`, and nothing in this wave consumes the event yet).
+        // Only the store is registered: `YouTube:Clients` is an Api-only section, so the OAuth client graph
+        // arrives with the upload wiring of 06.2.3, which is the first job to resolve `ITokenService`.
+        services.AddChannelConnections();
 
         // 09.2.3-T1 (09 README D10): the Worker's actor is the scoped system context. Every user-owned
         // row stays invisible until a handler calls ISystemContext.For(userId), and both interfaces
