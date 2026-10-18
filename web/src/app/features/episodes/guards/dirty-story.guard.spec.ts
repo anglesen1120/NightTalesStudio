@@ -16,6 +16,9 @@ import errorsVi from '../../../../assets/i18n/errors/vi.json';
 import { EpisodeDetailStore } from '../application/episode-detail.store';
 import { MakeVideoStore } from '../application/make-video.store';
 import { RenderTimelineStore } from '../application/render-timeline.store';
+import { VideoReviewStore } from '../application/video-review.store';
+import { SessionApi } from '@core/session';
+import { FakeSessionApi } from '@core/session/testing/fake-session.api';
 import { StoryEditorStore } from '../application/story-editor.store';
 import { ApprovalStore } from '../application/approval.store';
 import { VersionsStore } from '../application/versions.store';
@@ -25,6 +28,8 @@ import { fakeResearchStore, fakeResearchStoreProviders } from '../testing/fake-r
 import type { EpisodeDetail } from '../domain/episode.model';
 import { RenderRepository } from '../domain/render.repository';
 import { FakeRenderRepository } from '../testing/fake-render.repository';
+import { VideoReviewRepository } from '../domain/video-review.repository';
+import { FakeVideoReviewRepository } from '../testing/fake-video-review.repository';
 import type { StorySnapshot } from '../domain/story.model';
 import { StoryReviewPage } from '../feature/story-review.page';
 import { dirtyStoryGuard } from './dirty-story.guard';
@@ -113,7 +118,9 @@ async function setup(dirty: boolean, answer: boolean | null) {
       { provide: RealtimeService, useValue: new FakeEpisodeRealtime() },
       // The page provides the render timeline store and the make-video store (10.6.1-T2); both read the render port.
       { provide: RenderRepository, useValue: new FakeRenderRepository() },
+      { provide: VideoReviewRepository, useValue: new FakeVideoReviewRepository() },
       { provide: ConflictDialog, useValue: { open: vi.fn() } },
+      { provide: SessionApi, useValue: new FakeSessionApi() },
       { provide: ConfirmDialog, useValue: { confirm: leave } },
       { provide: MatSnackBar, useValue: { open: vi.fn(() => ({ onAction: () => of(undefined), dismiss: vi.fn() })) } },
     ],
@@ -123,6 +130,7 @@ async function setup(dirty: boolean, answer: boolean | null) {
       { provide: StoryEditorStore, useValue: storyStore },
       RenderTimelineStore,
       MakeVideoStore,
+      VideoReviewStore,
       { provide: VersionsStore, useValue: fakeVersionsStore() },
       { provide: ApprovalStore, useValue: fakeApprovalStore() },
       ...fakeResearchStoreProviders(fakeResearchStore()),

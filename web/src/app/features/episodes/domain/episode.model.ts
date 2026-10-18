@@ -75,6 +75,22 @@ export interface EpisodeGeneration {
   readonly processingPaused: string | null;
 }
 
+/**
+ * The finished video as `GET /episodes/{id}` reports it (09.5.3-T1, WD4): asset metadata only — never a media URL
+ * (09.7.2-T1 owns the signed URL endpoint). The counts arrive as `(number | string)` on the wire and are mapped to
+ * numbers, so nothing here is a raw wire string.
+ */
+export interface FinalVideoAsset {
+  readonly assetId: string;
+  readonly contentType: string;
+  /** `size_bytes`: always a number on the wire (integer or numeric string); an unusable value is not a size. */
+  readonly sizeBytes: number;
+  /** `duration_sec`: `null` when the asset row carries none. */
+  readonly durationSec: number | null;
+  readonly retentionUntil: string | null;
+  readonly sha256: string;
+}
+
 export interface EpisodeDetail {
   readonly id: string;
   readonly seriesId: string;
@@ -89,6 +105,17 @@ export interface EpisodeDetail {
   readonly nextActions: readonly string[];
   /** The newest render job (F5/F6): `null` when the episode has never rendered. Mapping lives in the episode mapper. */
   readonly renderJob: RenderJob | null;
+  /**
+   * The episode's own title, or `null` when the server has none (C8). Optional on the model because every
+   * fixture that predates 10.6.2-T1 builds a detail literal without it; the repository always maps it.
+   */
+  readonly title?: string | null;
+  /**
+   * The final asset of a reviewed render (WD4), metadata only: the video-review view reads its size/duration/retention
+   * and the download builds its file name from the title. `null`/absent — a race or a hand-inserted row, and the
+   * publication projections of 10.7.4-T1 — hides the metadata block and lets the URL read 404 into `errors.not_found`.
+   */
+  readonly finalVideo?: FinalVideoAsset | null;
 }
 
 export interface SeriesSummary {

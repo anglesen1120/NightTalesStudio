@@ -1,0 +1,11 @@
+:host { position: fixed; inset: 0; z-index: 1000; display: grid; place-items: center; padding: var(--nts-space-4); }
+.backdrop { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; background: var(--nts-color-scrim); }
+nts-confirm-dialog { position: relative; min-width: 0; max-width: 100%; }
+.dialog-body { display: grid; gap: var(--nts-space-3); min-width: 0; }
+textarea { box-sizing: border-box; width: 100%; min-height: var(--nts-space-8); resize: vertical; padding: var(--nts-space-3); border: 1px solid var(--nts-color-control-outline); border-radius: var(--nts-radius-control); background: var(--nts-color-surface); color: var(--nts-color-on-surface); font: inherit; }
+textarea:focus-visible, input:focus-visible { outline: var(--nts-space-1) solid var(--nts-color-focus); outline-offset: var(--nts-space-1); }
+fieldset { display: grid; gap: var(--nts-space-2); min-width: 0; border: 0; padding: 0; margin: 0; }
+legend { margin-block-end: var(--nts-space-2); }
+.radio { display: flex; align-items: center; gap: var(--nts-space-2); min-height: var(--nts-target-min); }
+p { margin: 0; max-width: var(--nts-measure); overflow-wrap: anywhere; }
+.error, .field-error { color: var(--nts-color-error); }

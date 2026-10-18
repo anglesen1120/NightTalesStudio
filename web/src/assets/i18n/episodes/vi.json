@@ -1,5 +1,41 @@
 {
   "render": {
+    "review": {
+      "heading": "Xem lại video",
+      "approve": "Duyệt video",
+      "approve.title": "Duyệt video?",
+      "approve.note": "Ghi chú cho phiên bản này (không bắt buộc)",
+      "approve.body": "Tập phim sẽ sẵn sàng để đăng.",
+      "reject": "Từ chối — sửa kịch bản",
+      "reject.title": "Từ chối video",
+      "reject.reason": "Lý do (bắt buộc, tối đa 500 ký tự)",
+      "reject.target": "Bước tiếp theo",
+      "reject.targetStory": "Sửa lời thoại rồi dựng lại",
+      "reject.targetReRender": "Dựng lại ngay từ kịch bản hiện tại",
+      "reject.body": "Video sẽ không được đăng và tập phim quay lại bước bạn chọn.",
+      "reMake": "Dựng lại video",
+      "reMake.title": "Dựng lại video?",
+      "reMake.body": "Một lần dựng mới sẽ bắt đầu ngay.",
+      "download": "Tải MP4",
+      "urlFailed": "Không tải được video — thử lại",
+      "hints": "Ghi chú chất lượng",
+      "hints.none": "Không có ghi chú chất lượng",
+      "advisory": "Chỉ là gợi ý, bạn vẫn có thể duyệt",
+      "noCaptions": "Phụ đề tiếng Việt đã được gắn sẵn trong video",
+      "expiresAt": "Liên kết xem hết hạn lúc {{time}} và sẽ tự làm mới",
+      "retry": "Thử tải lại video",
+      "fieldInvalid": "Nhập nội dung không quá 500 ký tự. Lý do từ chối không được để trống.",
+      "size": "Dung lượng tệp",
+      "duration": "Thời lượng",
+      "retentionUntil": "Video cuối được lưu đến {{time}}."
+    },
+    "quality": {
+      "subtitleSyncSuspect": "Phụ đề có thể chưa khớp với thời gian lời đọc",
+      "subtitleCuesLong": "Một số phụ đề hiển thị trên màn hình khá lâu",
+      "musicNone": "Video không có nhạc nền",
+      "scenesTrimmed": "Một số cảnh đã được lược bớt",
+      "scenesSparse": "Hơi ít cảnh cho video này"
+    },
     "make": {
       "action": "Tạo video",
       "retry": "Thử lại tạo video",
