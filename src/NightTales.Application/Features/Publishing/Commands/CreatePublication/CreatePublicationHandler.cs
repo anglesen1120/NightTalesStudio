@@ -127,7 +127,8 @@ public sealed partial class CreatePublicationHandler(
         // text this command stores: a title is measured trimmed and stored trimmed, and a tag is either
         // non-blank after trimming or refused as a tag.
         var title = command.Title.Trim();
-        var tags = command.Tags.Select(tag => tag.Trim()).ToList();
+        // A JSON null element deserializes to a null string: treat it as blank so the domain refuses it (400), never an NRE (500).
+        var tags = command.Tags.Select(tag => (tag ?? string.Empty).Trim()).ToList();
         var description = YouTubeMetadataRules.AppendAttribution(command.Description.Trim(), attribution);
 
         var valid = YouTubeMetadataRules.Validate(
