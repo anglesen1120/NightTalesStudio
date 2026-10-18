@@ -249,7 +249,13 @@ public sealed partial class StoryGateEvaluator(
                 var similarityOptions = SimilarityOptions.For(series.Language, similaritySettings);
 
                 corpusMax = corpus.Count;
-                if (corpus.Count > 0 && SimilarityScorer.IsScorable(storyText, corpus, similarityOptions))
+                if (corpus.Count == 0)
+                {
+                    // The series' first episode has no past episode to repeat: similarity 0 is a fact, not an unknown
+                    // (an unreadable corpus is the exception above and never reaches here).
+                    pastEpisodeSimilarity = 0m;
+                }
+                else if (SimilarityScorer.IsScorable(storyText, corpus, similarityOptions))
                 {
                     pastEpisodeSimilarity = (decimal)Math.Round(
                         SimilarityScorer.Score(storyText, corpus, similarityOptions).Score,

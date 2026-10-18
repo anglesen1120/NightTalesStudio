@@ -29,9 +29,10 @@ namespace NightTales.Application.Features.Autopilot.Gates;
 /// <b>The member names are the document's.</b> Every key read here is the <c>JsonPropertyName</c> of
 /// <see cref="RenderQualityReportV1"/> (D10's frozen names, pinned by the D14 fixtures); the tests feed the parser a
 /// report the type itself serialised, so a rename in the type fails them instead of silently degrading to "owner
-/// review". The <c>images</c> block is 03.4.2-T1's (§3.3 of its plan) and is read the same defensive way: its
-/// absence leaves both image counts null, because "the images could not be judged" must never read as "no image was
-/// lost".
+/// review". The <c>images</c> block is 03.4.2-T1's (§3.3 of its plan) and is read the same defensive way: only a
+/// block that carries <em>both</em> counts yields them, because check 7 adds them together — an absent or
+/// half-written block leaves both counts null, since "the images could not be judged" must never read as "no image
+/// was lost".
 /// </para>
 /// <para>
 /// <b>Nothing here touches the database.</b> The caller loads the rows under its own tenant scope
@@ -125,7 +126,8 @@ public sealed partial class VideoGateInputFactory(ILogger<VideoGateInputFactory>
     /// The facts, or <see langword="null"/> when there is no document, it is not a JSON object, it is unreadable, or
     /// its <c>schema</c> is not <c>render-quality.v1</c> — every one of which fails check 1 and closes the checks
     /// that read a member. A document that parses yields facts whose members are null wherever the document omitted
-    /// or mistyped them.
+    /// or mistyped them, and both image counts are null unless the <c>images</c> block carries <b>both</b> of them
+    /// (check 7 adds them, so a half-read block is an unknown sum and its own check fails closed).
     /// </returns>
     public QualityReportFacts? ParseQualityReport(string? qualityReportJson)
     {
@@ -161,10 +163,24 @@ public sealed partial class VideoGateInputFactory(ILogger<VideoGateInputFactory>
             return null;
         }
 
+        // The images block is 03.4.2-T1's (§3.3 of its plan) and always carries both members, so a block that
+        // carries only one of them is a half-written document: check 7's sum is unknown, and a known skipped
+        // count beside an unknown moderated count must not read as a smaller number of failed scenes.
         var images = document[ImagesMember] as JsonObject;
+        int? skippedScenes = null;
+        int? moderatedImages = null;
         if (images is null)
         {
             LogImagesBlockAbsent();
+        }
+        else if (images[ImagesSkippedMember] is JsonArray skipped && IntOf(images[ImagesModeratedCountMember]) is { } moderated)
+        {
+            skippedScenes = skipped.Count;
+            moderatedImages = moderated;
+        }
+        else
+        {
+            LogImagesBlockIncomplete();
         }
 
         return new QualityReportFacts(
@@ -176,8 +192,8 @@ public sealed partial class VideoGateInputFactory(ILogger<VideoGateInputFactory>
             Height: IntOf(document[HeightMember]),
             SubtitlesPresent: FlagOf(document[SubtitlesPresentMember]),
             Sha256: StringOf(document[Sha256Member]),
-            SkippedSceneCount: images?[ImagesSkippedMember] is JsonArray skipped ? skipped.Count : null,
-            ModeratedImageCount: images is null ? null : IntOf(images[ImagesModeratedCountMember]),
+            SkippedSceneCount: skippedScenes,
+            ModeratedImageCount: moderatedImages,
             Hints: ReadHints(document[HintsMember]));
     }
 
@@ -296,6 +312,12 @@ public sealed partial class VideoGateInputFactory(ILogger<VideoGateInputFactory>
         Level = LogLevel.Debug,
         Message = "A stored quality report carries no images block; the video gate fails its failed-scenes check closed.")]
     private partial void LogImagesBlockAbsent();
+
+    [LoggerMessage(
+        EventId = 6496,
+        Level = LogLevel.Warning,
+        Message = "A stored quality report carries an images block without both counts; the video gate fails its failed-scenes check closed.")]
+    private partial void LogImagesBlockIncomplete();
 
     [LoggerMessage(
         EventId = 6494,

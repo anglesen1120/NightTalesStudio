@@ -411,15 +411,15 @@ public sealed partial class AutopilotApprovalService(
         GateStoryEvidence evidence) =>
         JsonSerializer.Serialize(new Dictionary<string, object?>(StringComparer.Ordinal)
         {
-            ["run_id"] = runId,
-            ["episode_id"] = episodeId,
+            ["runId"] = runId,
+            ["episodeId"] = episodeId,
             ["attempt"] = result.Attempt,
             ["mode"] = GateMode.Live.ToWire(),
             ["checks"] = CheckProjection(result.Checks),
             ["failures"] = result.Failures,
-            ["mean_review_score"] = CheckValue(result.Checks, StoryGateCheckIds.SelfReviewMeanScore),
-            ["source_similarity"] = evidence.SourceSimilarity,
-            ["past_episode_similarity"] = evidence.PastEpisodeSimilarity,
+            ["meanReviewScore"] = CheckValue(result.Checks, StoryGateCheckIds.SelfReviewMeanScore),
+            ["sourceSimilarity"] = evidence.SourceSimilarity,
+            ["pastEpisodeSimilarity"] = evidence.PastEpisodeSimilarity,
         });
 
     /// <summary>The video approval's audit projection: ids and the numbers the checks measured (D13).</summary>
@@ -430,15 +430,15 @@ public sealed partial class AutopilotApprovalService(
     private static string VideoData(Guid runId, Guid episodeId, VideoGateResult result) =>
         JsonSerializer.Serialize(new Dictionary<string, object?>(StringComparer.Ordinal)
         {
-            ["run_id"] = runId,
-            ["episode_id"] = episodeId,
-            ["render_job_id"] = result.RenderJobId,
-            ["asset_id"] = result.AssetId,
+            ["runId"] = runId,
+            ["episodeId"] = episodeId,
+            ["renderJobId"] = result.RenderJobId,
+            ["assetId"] = result.AssetId,
             ["mode"] = GateMode.Live.ToWire(),
             ["checks"] = CheckProjection(result.Checks),
             ["failures"] = result.Failures,
             ["loudness"] = CheckValue(result.Checks, VideoGateCheckIds.Loudness),
-            ["duration_sec"] = CheckValue(result.Checks, VideoGateCheckIds.Duration),
+            ["durationSec"] = CheckValue(result.Checks, VideoGateCheckIds.Duration),
         });
 
     private static List<Dictionary<string, object?>> CheckProjection(IReadOnlyList<GateCheck> checks)

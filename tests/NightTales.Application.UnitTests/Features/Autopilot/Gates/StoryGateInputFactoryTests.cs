@@ -363,7 +363,11 @@ public sealed class StoryGateInputFactoryTests
         reading.Value.StoryText.ShouldNotBeNull();
     }
 
-    /// <summary>An unreadable content document yields no text at all, so check 11 fails and the gate moderates nothing.</summary>
+    /// <summary>
+    /// An unreadable content document yields no text at all: the past-episode similarity has nothing to score and
+    /// its check fails closed, while the length check (11) still answers from the stored <c>word_count</c>, which
+    /// the document never carried in the first place.
+    /// </summary>
     [Fact]
     public async Task StoryGateInputFactory_UnreadableContent_FailsClosed()
     {
@@ -374,7 +378,7 @@ public sealed class StoryGateInputFactoryTests
         reading.Value.StoryText.ShouldBeNull();
 
         StoryGateRules.Evaluate(Compose(reading.Value), AutopilotGateProfile.Defaults)
-            .Failures.ShouldContain(StoryGateCheckIds.LengthInRange);
+            .Failures.ShouldContain(StoryGateCheckIds.SimilarityPastEpisodes);
     }
 
     /// <summary>

@@ -294,8 +294,8 @@ public sealed class StoryGateInputFactory(IPriceCatalog prices)
         }
     }
 
-    // Null on an unreadable document, which is the state the caller treats as "no content": check 11 already
-    // failed, so a missing story text can never turn a check into a silent pass.
+    // Null on an unreadable document, which is the state the caller treats as "no content": the similarity and
+    // moderation checks that read the story text fail closed, and the gate moderates nothing.
     private static StoryContentV1? ReadContent(string content) =>
         StoryContentJson.TryReadStored(content, out var parsed) ? parsed : null;
 
@@ -332,8 +332,11 @@ public sealed class StoryGateInputFactory(IPriceCatalog prices)
             ? after
             : review;
 
-        var localIssues = root[LocalMember] as JsonObject;
-        var issues = ReadIssues(localIssues?[IssuesMember], selected?[IssuesMember]);
+        var localBlock = root[LocalMember] as JsonObject;
+        // The `local` node itself is handed over, not its `issues` member: a block that is present but is not an
+        // object could not be read, so its issues are unknown (null) and check 4 fails closed instead of reading an
+        // empty list as "the editor found nothing".
+        var issues = ReadIssues(root[LocalMember], selected?[IssuesMember]);
         var moderation = ReadModeration(root[ModerationMember]);
 
         return new AuditReading(
@@ -350,7 +353,7 @@ public sealed class StoryGateInputFactory(IPriceCatalog prices)
                 RevisionApplied: revision is null ? false : applied),
             moderation,
             ReadRealWorld(review),
-            CountKeywordViolations(localIssues?[IssuesMember]));
+            CountKeywordViolations(localBlock?[IssuesMember]));
     }
 
     // The stored moderation block's value for checks 7 and the check-6 fallback. StoryDraftModeration owns the
@@ -415,9 +418,24 @@ public sealed class StoryGateInputFactory(IPriceCatalog prices)
 
     // local.issues ∪ the selected review's issues (plan §3.1 check 4). Null means "not readable" and fails the
     // check closed; an entry whose severity or kind is unreadable is carried as an empty string, which the Domain
-    // rule reads as "not taste" — i.e. it counts, so a malformed issue can never open the gate.
-    private static List<GateIssueFacts>? ReadIssues(JsonNode? local, JsonNode? review)
+    // rule reads as "not taste" — i.e. it counts, so a malformed issue can never open the gate. A `local` block
+    // that is present but is not an object is itself unreadable: its issues are unknown, not an empty list.
+    private static List<GateIssueFacts>? ReadIssues(JsonNode? localBlock, JsonNode? review)
     {
+        JsonNode? local;
+        if (localBlock is null)
+        {
+            local = null;
+        }
+        else if (localBlock is JsonObject block)
+        {
+            local = block[IssuesMember];
+        }
+        else
+        {
+            return null;
+        }
+
         if ((local is not null && local is not JsonArray) || (review is not null && review is not JsonArray))
         {
             return null;

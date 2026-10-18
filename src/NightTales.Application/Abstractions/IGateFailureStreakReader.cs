@@ -3,16 +3,17 @@ using NightTales.Domain.Series.Autopilot;
 namespace NightTales.Application.Abstractions;
 
 /// <summary>
-/// The gate-failure streak of one series (02.8.2 plan §3.5, consumed by 02.8.3-T4): the number of consecutive
-/// most-recent terminal <c>autopilot_runs</c> whose outcome is <c>gate_failed</c>, plus the series' latest run.
+/// The gate-failure streak of one series (02.8.2 plan §3.5, consumed by 02.8.3-T4): how many of the two most recent
+/// terminal <c>autopilot_runs</c> failed the gate, which is 0 unless every one of them did, plus the series' latest run.
 /// </summary>
 /// <remarks>
 /// <para>
 /// The streak is derived, never stored: 02.8.3-T4 pauses a series when it reaches its bound, so a column would be
 /// a second source of truth for the same fact. A run is terminal when its <c>outcome</c> is not null (02.8.3-T1
 /// writes it when the state machine stops); a run still in flight is <em>skipped</em> rather than counted, and a
-/// terminal run that did not fail ends the count. The count also stops at the reader's own window — the plan's
-/// <c>LIMIT 2</c> — so it answers 0, 1 or 2.
+/// terminal run that did not fail ends the streak: a <c>published</c> run in between two failures is not a run of
+/// two failures, so the answer is 0. The count also stops at the reader's own window — the plan's <c>LIMIT 2</c> —
+/// so it answers 0, 1 or 2.
 /// </para>
 /// <para>
 /// The read is scoped to one owner by the caller's system context (the D10 tenant filter), so a series of another
@@ -23,8 +24,8 @@ namespace NightTales.Application.Abstractions;
 public interface IGateFailureStreakReader
 {
     /// <summary>
-    /// The number of consecutive most-recent terminal runs of <paramref name="seriesId"/> that failed the gate,
-    /// up to the reader's window; 0 when the series' newest terminal run did not fail.
+    /// How many of the two most recent terminal runs of <paramref name="seriesId"/> failed the gate, up to the
+    /// reader's window; 0 when any of those runs did not fail the gate (or the series has no terminal run).
     /// </summary>
     /// <param name="seriesId">The series; the caller's scope is what limits the rows to its owner.</param>
     /// <param name="ct">The caller's cancellation token.</param>

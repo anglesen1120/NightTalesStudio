@@ -40,18 +40,16 @@ public sealed class GateFailureStreakReader(IAppDbContext db) : IGateFailureStre
 
         var outcomes = await NewestTerminalOutcomesAsync(seriesId, StreakWindow, ct).ConfigureAwait(false);
 
-        var streak = 0;
-        foreach (var outcome in outcomes)
+        // A terminal run that did not fail the gate ends the streak, so the answer is the window itself and only
+        // when every run in it failed: `… gate_failed, published, gate_failed …` is not a run of two failures, and
+        // the task acceptance wants 0 for it — the pause rule of 02.8.3-T4 must see a run of failures, not the
+        // newest failure alone.
+        if (outcomes.Count == 0 || outcomes.Exists(outcome => outcome != AutopilotRunOutcome.GateFailed))
         {
-            if (outcome != AutopilotRunOutcome.GateFailed)
-            {
-                break;
-            }
-
-            streak++;
+            return 0;
         }
 
-        return streak;
+        return outcomes.Count;
     }
 
     /// <inheritdoc />
