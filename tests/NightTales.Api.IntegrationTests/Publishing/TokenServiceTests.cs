@@ -309,46 +309,98 @@ public sealed class TokenServiceTests(TestDatabase database) : IntegrationTest(d
 
         const string reconnectAccess = "canary-reconnect-access-token";
         const string reconnectRefresh = "canary-reconnect-refresh-token";
+        var reconnectExpiry = harness.Clock.UtcNow.AddHours(1);
 
-        // The reader refreshes under the row lock while the reconnect writes a new pair under the same lock:
-        // whichever wins, the other waits and then reads the committed row — never a pair half-written by the
-        // other writer, and never a lost update.
-        var reader = harness.GetAccessTokenAsync(seeded.Id, Ct);
-        var writer = harness.ReconnectAsync(
+        // The writer takes the row lock, writes the reconnect's pair and keeps the unit of work open: the pair is
+        // invisible to every other session until the commit below, and the lock is what parks the reader instead
+        // of letting it read the row mid-write.
+        var locked = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var writer = harness.ReconnectHoldingTheLockAsync(
             seeded,
             reconnectAccess,
             reconnectRefresh,
-            harness.Clock.UtcNow.AddHours(1),
+            reconnectExpiry,
+            locked,
+            release,
             Ct);
 
-        await Task.WhenAll(reader, writer);
-        var result = await reader;
-
-        result.IsError.ShouldBeFalse($"the reader waits for the lock and re-reads a committed row: {result.FirstError}");
-
-        SqlProbe.Count(harness.Database, $"SELECT count(*) FROM channel_connections WHERE id = '{seeded.Id}'")
-            .ShouldBe(1L, "both writers target one row; neither of them inserts a second");
-
-        var row = await harness.RowAsync(seeded.Id, Ct);
-        harness.Protector.TryUnprotect(seeded.Id.ToString(), row.AccessTokenEnc!, out var access).ShouldBeTrue();
-        harness.Protector.TryUnprotect(seeded.Id.ToString(), row.RefreshTokenEnc!, out var refresh).ShouldBeTrue();
-
-        // The pair on the row belongs to exactly one writer's generation — the reconnect's pair, or the pair
-        // Google answered — and a mix of the two is the half-updated row this test forbids.
-        var pairs = new List<(string Access, string Refresh)> { (reconnectAccess, reconnectRefresh) };
-        foreach (var issued in harness.Google.IssuedAccessTokens)
+        try
         {
-            pairs.Add((issued, issued.Replace("access", "refresh", StringComparison.Ordinal)));
+            await locked.Task.WaitAsync(Ct);
+
+            var reader = harness.GetAccessTokenAsync(seeded.Id, Ct);
+
+            // Deterministic, and the lock regression detector: the reader's locked read is parked in
+            // pg_stat_activity on the writer's row lock. Without that lock it would find the row free and return
+            // within milliseconds instead of queueing.
+            await WaitForTheReaderToQueueOnTheRowLockAsync(harness.Database, Ct);
+            reader.IsCompleted.ShouldBeFalse(
+                "the reader must wait for the writer's row lock, never read the pair mid-write");
+
+            release.TrySetResult();
+
+            await writer.WaitAsync(Ct);
+            var result = await reader;
+
+            result.IsError.ShouldBeFalse($"the reader waits for the lock and re-reads a committed row: {result.FirstError}");
+            result.Value.AccessToken.ShouldBe(
+                reconnectAccess,
+                "the reconnect committed first, so the reader reads the reconnect's token and not the seeded one");
+            result.Value.ExpiresAt.ShouldBe(reconnectExpiry);
+            harness.Google.TokenRequestCount.ShouldBe(
+                0,
+                "the reconnect's pair is fresh, so the reader that waited must not spend a refresh of its own");
+
+            SqlProbe.Count(harness.Database, $"SELECT count(*) FROM channel_connections WHERE id = '{seeded.Id}'")
+                .ShouldBe(1L, "both writers target one row; neither of them inserts a second");
+
+            var row = await harness.RowAsync(seeded.Id, Ct);
+            row.Status.ShouldBe("active");
+            row.TokenExpiresAt.ShouldBe(reconnectExpiry);
+            harness.Protector.TryUnprotect(seeded.Id.ToString(), row.AccessTokenEnc!, out var access).ShouldBeTrue();
+            harness.Protector.TryUnprotect(seeded.Id.ToString(), row.RefreshTokenEnc!, out var refresh).ShouldBeTrue();
+
+            // The committed pair is the reconnect's from end to end: it never mixes with the pair the seed wrote.
+            access.ShouldBe(reconnectAccess);
+            refresh.ShouldBe(reconnectRefresh);
+            row.RefreshTokenEnc.ShouldNotBe(seeded.RefreshTokenEnc);
+        }
+        finally
+        {
+            // A failed assertion above must not leave the writer holding the row lock.
+            release.TrySetResult();
+        }
+    }
+
+    /// <summary>
+    /// Waits, with a bounded real-time deadline (never the fake clock), for a session to be parked in
+    /// <c>pg_stat_activity</c> on a lock while running a <c>channel_connections</c> statement — the reader of the
+    /// interleave test queued behind the reconnect's row lock. A row lock that is never taken is exactly the case
+    /// that makes this time out, so the poll doubles as the regression check.
+    /// </summary>
+    /// <param name="database">The class database, whose sessions the probe reads.</param>
+    /// <param name="cancellationToken">Cancels the bounded wait.</param>
+    private static async Task WaitForTheReaderToQueueOnTheRowLockAsync(
+        TestDatabase database,
+        CancellationToken cancellationToken)
+    {
+        var deadline = DateTimeOffset.UtcNow.AddSeconds(15);
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            var waiting = SqlProbe.Count(
+                database,
+                "SELECT count(*) FROM pg_stat_activity WHERE wait_event_type = 'Lock' "
+                + "AND datname = current_database() AND query LIKE '%channel_connections%'");
+            if (waiting > 0)
+            {
+                return;
+            }
+
+            await Task.Delay(20, cancellationToken);
         }
 
-        pairs.ShouldContain(
-            (access!, refresh!),
-            "the access and refresh ciphertexts must come from one writer, never from two");
-
-        // The reader's own answer is a whole token of one of those generations too.
-        var expected = new List<string> { reconnectAccess };
-        expected.AddRange(harness.Google.IssuedAccessTokens);
-        expected.ShouldContain(result.Value.AccessToken);
+        throw new TimeoutException("The reader never queued on the reconnect's channel_connections row lock.");
     }
 
     /// <summary>
@@ -476,19 +528,28 @@ public sealed class TokenServiceTests(TestDatabase database) : IntegrationTest(d
         }
 
         /// <summary>
-        /// Writes a reconnect to <paramref name="seed"/>'s row the way the connect writer does: a unit of work
-        /// around the account's locked read and one <c>Reconnect</c>, committed together.
+        /// Writes a reconnect to <paramref name="seed"/>'s row the way the connect writer does — a unit of work
+        /// around the account's locked read and one <c>Reconnect</c> — and then <em>holds</em> the row lock: the
+        /// unit stays uncommitted until <paramref name="release"/> is set, so the pair it wrote is invisible to
+        /// every other session and a reader that touches the row can only queue behind it.
         /// </summary>
         /// <param name="seed">The row to reconnect.</param>
-        /// <param name="accessToken">The plaintext access token to store.</param>
-        /// <param name="refreshToken">The plaintext refresh token to store.</param>
-        /// <param name="tokenExpiresAt">The new expiry.</param>
+        /// <param name="accessToken">The plaintext access token the reconnect stores.</param>
+        /// <param name="refreshToken">The plaintext refresh token the reconnect stores.</param>
+        /// <param name="tokenExpiresAt">The new expiry — fresh, so the reader that waited needs no Google call.</param>
+        /// <param name="locked">
+        /// Completed once the row lock is held and the new pair is written, still uncommitted: the signal that a
+        /// reader started afterwards can only queue.
+        /// </param>
+        /// <param name="release">Completed by the test to let the reconnect commit and drop the lock.</param>
         /// <param name="cancellationToken">Cancels the write.</param>
-        internal async Task ReconnectAsync(
+        internal async Task ReconnectHoldingTheLockAsync(
             SeededConnection seed,
             string accessToken,
             string refreshToken,
             DateTimeOffset tokenExpiresAt,
+            TaskCompletionSource locked,
+            TaskCompletionSource release,
             CancellationToken cancellationToken)
         {
             var scope = NewScopeWithPinnedUser(out var pin);
@@ -511,6 +572,12 @@ public sealed class TokenServiceTests(TestDatabase database) : IntegrationTest(d
                     seed.Scope,
                     row.OAuthClientId,
                     Clock.UtcNow);
+
+                // The row lock is held and the new pair is tracked but uncommitted: from here on the caller of
+                // this method owns the moment that releases both.
+                locked.SetResult();
+
+                await release.Task.WaitAsync(cancellationToken);
 
                 var committed = await unitOfWork.CommitAsync(cancellationToken);
                 committed.IsError.ShouldBeFalse($"the reconnect must commit: {committed.FirstError}");

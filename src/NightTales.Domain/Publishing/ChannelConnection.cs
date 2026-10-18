@@ -57,9 +57,11 @@ public enum ChannelConnectionStatus
 /// them owns its columns: <see cref="Connect"/>/<see cref="Reconnect"/>/<see cref="MarkRefreshed"/> write the
 /// token pair, <see cref="Revoke"/> is the only path that nulls the pair, <see cref="RefreshFromApi"/> writes
 /// <see cref="DisplayName"/>/<see cref="LastVerifiedAt"/> only, and <see cref="PurgeYouTubeData"/> is the only
-/// path that nulls the identity. <c>revoked</c> is terminal apart from <see cref="Reconnect"/>: every other
-/// state change refuses a revoked row, which is what keeps a revoked row's token columns <c>NULL</c> and keeps
-/// its <c>(platform, external_account_id)</c> pair out of the partial unique index.
+/// path that nulls the identity. <c>revoked</c> is terminal for every method, <see cref="Reconnect"/> included:
+/// a revoked row has lost its tokens and left the partial unique index, so the next connect of that channel is a
+/// <em>new</em> row rather than a revival of this one, and a purged row has lost the identity a reconnect would
+/// rewrite. The caller's locked read excludes revoked rows; <see cref="Reconnect"/>'s own guard is what keeps the
+/// aggregate and that read in step (06.1.2-T2 failure table).
 /// </para>
 /// <para>
 /// The type deliberately does not override <c>ToString</c>: the default (the type name) cannot leak a token,
@@ -220,11 +222,19 @@ public sealed class ChannelConnection : AggregateRoot, IUserOwned
     }
 
     /// <summary>
-    /// Rewrites the same row after a second successful callback for the same channel (06 README D3, YR11): the
-    /// id, the platform, the owner and <c>connected_at</c> stay, the tokens are replaced by the new pair
+    /// Rewrites a still-live row after a second successful callback for the same channel (06 README D3, YR11):
+    /// the id, the platform, the owner and <c>connected_at</c> stay, the tokens are replaced by the new pair
     /// (protected under that same id), the client is re-pinned to the state's client, and the row becomes
-    /// <see cref="ChannelConnectionStatus.Active"/> again — this is the one path back out of <c>revoked</c>.
+    /// <see cref="ChannelConnectionStatus.Active"/> again — the same in-place rewrite that recovers an
+    /// <c>expired</c>/<c>error</c> grant.
     /// </summary>
+    /// <remarks>
+    /// The row must still be a live one: a <c>revoked</c> row left <c>ux_channel_connections_account</c> and lost
+    /// its tokens, so the caller writes a <em>new</em> connection for that channel instead of reviving this one,
+    /// and a purged row has no identity left to rewrite. The caller's locked read
+    /// (<c>LockLiveByAccountAsync</c>) already excludes revoked rows; this guard is what keeps the aggregate and
+    /// that read in step (06.1.2-T2 failure table).
+    /// </remarks>
     /// <param name="displayName">The title Google reported this time; a renamed channel wins.</param>
     /// <param name="accessTokenEnc">The new protected access token; required.</param>
     /// <param name="refreshTokenEnc">The new protected refresh token; required.</param>
@@ -233,6 +243,9 @@ public sealed class ChannelConnection : AggregateRoot, IUserOwned
     /// <param name="oauthClientId">The client that minted the new code (YR11); required.</param>
     /// <param name="now">The command's clock reading; also the new <c>last_verified_at</c>.</param>
     /// <exception cref="ArgumentException">A token, the title, the scope or the client id is blank.</exception>
+    /// <exception cref="InvalidOperationException">
+    /// The row is <c>revoked</c>, or it has already lost its identity to <see cref="PurgeYouTubeData"/>.
+    /// </exception>
     public void Reconnect(
         string displayName,
         string accessTokenEnc,
@@ -247,6 +260,8 @@ public sealed class ChannelConnection : AggregateRoot, IUserOwned
         RequireText(refreshTokenEnc, nameof(refreshTokenEnc));
         RequireText(scope, nameof(scope));
         RequireText(oauthClientId, nameof(oauthClientId));
+
+        EnsureReconnectable(nameof(Reconnect));
 
         DisplayName = displayName;
         AccessTokenEnc = accessTokenEnc;
@@ -306,8 +321,8 @@ public sealed class ChannelConnection : AggregateRoot, IUserOwned
     /// <param name="now">The refresh moment; also the new <c>last_verified_at</c>.</param>
     /// <exception cref="ArgumentException">A token is blank.</exception>
     /// <exception cref="InvalidOperationException">
-    /// The row is <c>revoked</c>: a revoked connection becomes <c>active</c> only through
-    /// <see cref="Reconnect"/>, whose locked read is what re-establishes the ownership handshake.
+    /// The row is <c>revoked</c>: a revoked connection is never revived — the next connect of its channel writes a
+    /// new row — so rotating the stored pair must not bring this one back to <c>active</c>.
     /// </exception>
     public void MarkRefreshed(
         string accessTokenEnc,
@@ -411,16 +426,33 @@ public sealed class ChannelConnection : AggregateRoot, IUserOwned
     }
 
     /// <summary>
-    /// The one guard every state change but <see cref="Reconnect"/> shares: a revoked row's token columns are
-    /// <c>NULL</c> and its <c>(platform, external_account_id)</c> pair must stay out of the partial unique index,
-    /// so no other transition may move its status off <c>revoked</c>.
+    /// The guard every state change shares: a revoked row's token columns are <c>NULL</c> and its
+    /// <c>(platform, external_account_id)</c> pair must stay out of the partial unique index, so no transition may
+    /// move its status off <c>revoked</c>. <see cref="Reconnect"/> answers to <see cref="EnsureReconnectable"/>
+    /// instead, which refuses a revoked row for the same reason and a purged one besides.
     /// </summary>
     private void EnsureNotRevoked(string operation)
     {
         if (Status == ChannelConnectionStatus.Revoked)
         {
             throw new InvalidOperationException(
-                $"A revoked channel connection is terminal: {operation} refuses it, and only Reconnect revives the row.");
+                $"A revoked channel connection is terminal: {operation} refuses it, and the next connect of the channel writes a new row.");
+        }
+    }
+
+    /// <summary>
+    /// The guard <see cref="Reconnect"/> owns alone: the row it rewrites must still be a live one. A
+    /// <c>revoked</c> row left <c>ux_channel_connections_account</c> and lost its tokens, and a row purged by
+    /// <see cref="PurgeYouTubeData"/> lost its identity, so neither is a row a reconnect may write — the caller's
+    /// locked read (<c>LockLiveByAccountAsync</c>, which filters <c>status &lt;&gt; 'revoked'</c>) already answers
+    /// <see langword="null"/> for both and inserts a new row instead (06.1.2-T2 failure table).
+    /// </summary>
+    private void EnsureReconnectable(string operation)
+    {
+        if (Status == ChannelConnectionStatus.Revoked || ExternalAccountId is null)
+        {
+            throw new InvalidOperationException(
+                $"A revoked or purged channel connection is never reconnected: {operation} refuses it, and the caller writes a new connection for the channel instead.");
         }
     }
 }

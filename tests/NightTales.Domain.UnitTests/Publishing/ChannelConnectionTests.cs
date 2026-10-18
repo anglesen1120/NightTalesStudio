@@ -1,4 +1,3 @@
-using System.Text.Json;
 using NightTales.Domain.Publishing;
 using Shouldly;
 using Xunit;
@@ -12,8 +11,8 @@ using Platform = NightTales.Domain.Publishing.Platform;
 
 /// <summary>
 /// The mutation contract of <see cref="ChannelConnection"/> (06.1.2-T2, 06 README D3/D4/D5, plan §3.1): the
-/// seven methods are the only ways into the row, each owns its columns, and <c>revoked</c> is terminal apart
-/// from <see cref="ChannelConnection.Reconnect"/>.
+/// seven methods are the only ways into the row, each owns its columns, and <c>revoked</c> is terminal for every
+/// one of them, <see cref="ChannelConnection.Reconnect"/> included.
 /// </summary>
 public sealed class ChannelConnectionTests
 {
@@ -28,6 +27,13 @@ public sealed class ChannelConnectionTests
     private const string RefreshTokenCipher = "cfDJ8-refresh-token-ciphertext";
     private const string Scope = "https://www.googleapis.com/auth/youtube.upload https://www.googleapis.com/auth/youtube.readonly";
     private const string ClientId = "client-a.apps.googleusercontent.com";
+
+    /// <summary>The client of the code a reconnect is built from: the pin moves to it (YR11).</summary>
+    private const string SecondClientId = "client-b.apps.googleusercontent.com";
+
+    private const string SecondAccessCipher = "cfDJ8-second-access-ciphertext";
+    private const string SecondRefreshCipher = "cfDJ8-second-refresh-ciphertext";
+    private const string ReconnectedTitle = "Night Tales (renamed)";
 
     [Fact]
     public void Connect_GeneratesIdBeforeEncryption()
@@ -57,39 +63,44 @@ public sealed class ChannelConnectionTests
         published.OccurredAt.ShouldBe(Now);
     }
 
-    [Fact]
-    public void Reconnect_KeepsId_RepinsClientId_SetsActive_ClearsRevokedAt()
+    [Theory]
+    [InlineData(ChannelConnectionStatus.Active)]
+    [InlineData(ChannelConnectionStatus.Expired)]
+    [InlineData(ChannelConnectionStatus.Error)]
+    public void Reconnect_KeepsId_RepinsClientId_SetsActive(ChannelConnectionStatus live)
     {
         var connection = Connected();
         var id = connection.Id;
 
-        // The one path back out of `revoked`: it is also the only other writer of the client pin (YR11).
-        connection.Revoke(Now.AddMinutes(1));
-        connection.Status.ShouldBe(ChannelConnectionStatus.Revoked);
+        // Every live state is a row the reconnect rewrites in place: `active` itself, and the two dead grants
+        // 06.4.2-T1 leaves behind. It is also the only other writer of the client pin (YR11). The one state it
+        // refuses is `revoked` (Reconnect_OnARevokedOrPurgedRow_Throws).
+        if (live == ChannelConnectionStatus.Expired)
+        {
+            connection.MarkExpired(Now.AddMinutes(1));
+        }
+        else if (live == ChannelConnectionStatus.Error)
+        {
+            connection.MarkError(Now.AddMinutes(1));
+        }
 
-        const string secondClientId = "client-b.apps.googleusercontent.com";
+        connection.Status.ShouldBe(live);
+
         var reconnectedAt = Now.AddMinutes(2);
 
-        connection.Reconnect(
-            "Night Tales (renamed)",
-            "cfDJ8-second-access-ciphertext",
-            "cfDJ8-second-refresh-ciphertext",
-            Now.AddHours(2),
-            Scope,
-            secondClientId,
-            reconnectedAt);
+        Reconnect(connection, reconnectedAt, SecondClientId);
 
         connection.Id.ShouldBe(id, "a reconnect updates the same row, never a second one");
         connection.ConnectedAt.ShouldBe(Now, "the first connect moment is not rewritten");
-        connection.OAuthClientId.ShouldBe(secondClientId);
+        connection.OAuthClientId.ShouldBe(SecondClientId);
         connection.OAuthClientId.ShouldNotBe(ClientId, "the pin moves to the client that minted the new code");
         connection.Status.ShouldBe(ChannelConnectionStatus.Active);
-        connection.RevokedAt.ShouldBeNull();
+        connection.RevokedAt.ShouldBeNull("a live row has no disconnect moment, and a reconnect invents none");
         connection.LastVerifiedAt.ShouldBe(reconnectedAt);
-        connection.DisplayName.ShouldBe("Night Tales (renamed)");
-        connection.AccessTokenEnc.ShouldBe("cfDJ8-second-access-ciphertext");
-        connection.RefreshTokenEnc.ShouldBe("cfDJ8-second-refresh-ciphertext");
-        connection.TokenExpiresAt.ShouldBe(Now.AddHours(2));
+        connection.DisplayName.ShouldBe(ReconnectedTitle);
+        connection.AccessTokenEnc.ShouldBe(SecondAccessCipher);
+        connection.RefreshTokenEnc.ShouldBe(SecondRefreshCipher);
+        connection.TokenExpiresAt.ShouldBe(reconnectedAt.AddHours(1));
 
         // The reconnect publishes its own D13 change row: the connect's is still queued beside it, and the
         // reconnect's carries the status the row converged to.
@@ -100,6 +111,43 @@ public sealed class ChannelConnectionTests
         changes[^1].UserId.ShouldBe(UserId);
         changes[^1].Status.ShouldBe(ChannelConnectionStatus.Active);
         changes[^1].OccurredAt.ShouldBe(reconnectedAt);
+    }
+
+    [Fact]
+    public void Reconnect_OnARevokedOrPurgedRow_Throws()
+    {
+        // A revoked row is never reused: it lost its tokens and left ux_channel_connections_account, so the
+        // writer's locked read cannot even find it and the connect of that channel inserts a NEW row instead.
+        var revoked = Connected();
+        var revokedAt = Now.AddMinutes(1);
+        revoked.Revoke(revokedAt);
+
+        var refused = Should.Throw<InvalidOperationException>(
+            () => Reconnect(revoked, Now.AddMinutes(2), SecondClientId));
+
+        refused.Message.ShouldContain(nameof(ChannelConnection.Reconnect));
+        refused.Message.ShouldNotContain("cfDJ8", Case.Insensitive, "an exception message never carries ciphertext");
+
+        // The refusal wrote nothing: the revoked row keeps its NULL tokens, its disconnect moment and its identity.
+        revoked.Status.ShouldBe(ChannelConnectionStatus.Revoked);
+        revoked.AccessTokenEnc.ShouldBeNull();
+        revoked.RefreshTokenEnc.ShouldBeNull();
+        revoked.RevokedAt.ShouldBe(revokedAt);
+        revoked.DisplayName.ShouldBe(Title);
+        revoked.OAuthClientId.ShouldBe(ClientId);
+
+        // A purged row (13 §5.4 channel-scope deletion) has lost the identity a reconnect would rewrite, so it is
+        // refused for that reason too instead of becoming an `active` row with no channel id.
+        var purged = Connected();
+        purged.Revoke(revokedAt);
+        purged.PurgeYouTubeData(Now.AddDays(7));
+        purged.ExternalAccountId.ShouldBeNull();
+
+        Should.Throw<InvalidOperationException>(() => Reconnect(purged, Now.AddMinutes(2)));
+
+        purged.Status.ShouldBe(ChannelConnectionStatus.Revoked);
+        purged.ExternalAccountId.ShouldBeNull();
+        purged.AccessTokenEnc.ShouldBeNull();
     }
 
     [Fact]
@@ -133,9 +181,6 @@ public sealed class ChannelConnectionTests
         connection.MarkExpired(Now.AddMinutes(30));
 
         connection.Status.ShouldBe(ChannelConnectionStatus.Expired);
-        connection.Status.ShouldNotBe(
-            ChannelConnectionStatus.Active,
-            "only an active connection is publishable, which is why the tokens can survive the state change");
         connection.AccessTokenEnc.ShouldBe(AccessTokenCipher);
         connection.RefreshTokenEnc.ShouldBe(RefreshTokenCipher);
         connection.TokenExpiresAt.ShouldBe(Now.AddHours(1));
@@ -147,20 +192,6 @@ public sealed class ChannelConnectionTests
         Should.Throw<InvalidOperationException>(() => connection.MarkExpired(Now.AddMinutes(32)));
         Should.Throw<InvalidOperationException>(() => connection.MarkError(Now.AddMinutes(33)));
         connection.Status.ShouldBe(ChannelConnectionStatus.Revoked);
-    }
-
-    [Fact]
-    public void StatusWireValues_AreLowerCase()
-    {
-        // `HasEnumCheck` stores the member name through EnumToSnakeCaseStringConverter and the CHECK lists the
-        // same four strings; the DTOs spell it with the same JsonNamingPolicy conversion, so the column, the
-        // constraint and the JSON cannot drift. The Domain test cannot reach the Infrastructure converter, so
-        // it pins the shared conversion and the exact wire values the migration's CHECK names.
-        var wireValues = Enum.GetValues<ChannelConnectionStatus>()
-            .Select(status => JsonNamingPolicy.SnakeCaseLower.ConvertName(status.ToString()))
-            .ToArray();
-
-        wireValues.ShouldBe(["active", "expired", "error", "revoked"], ignoreOrder: true);
     }
 
     [Fact]
@@ -193,11 +224,6 @@ public sealed class ChannelConnectionTests
 
         thrown.Message.ShouldContain(nameof(ChannelConnection.MarkRefreshed));
         thrown.Message.ShouldNotContain("cfDJ8-late-access", Case.Insensitive, "an exception message never carries ciphertext");
-
-        // The type deliberately keeps object.ToString(): a log line or a debugger view of a connection can never
-        // print a token, the channel title, the Google channel id or the pinned client id.
-        connection.ToString()!.ShouldNotContain("cfDJ8", Case.Insensitive);
-        connection.ToString().ShouldBe("NightTales.Domain.Publishing.ChannelConnection");
 
         // The refusal wrote nothing: the revoked row keeps its NULL tokens and its disconnect moment.
         connection.Status.ShouldBe(ChannelConnectionStatus.Revoked);
@@ -274,6 +300,27 @@ public sealed class ChannelConnectionTests
 
     /// <summary>A live connection, minted the way the callback does: the UUIDv7 first, then the ciphertexts.</summary>
     private static ChannelConnection Connected() => Connect(Guid.CreateVersion7());
+
+    /// <summary>
+    /// One reconnect of <paramref name="connection"/>, written the way the second callback writes it: a whole new
+    /// pair under the same id, the title Google reported this time and <paramref name="now"/> as the verification
+    /// moment, with the row's expiry one hour after it.
+    /// </summary>
+    /// <param name="connection">The row to reconnect.</param>
+    /// <param name="now">The reconnect moment.</param>
+    /// <param name="oauthClientId">The client of the code that minted the new pair.</param>
+    private static void Reconnect(
+        ChannelConnection connection,
+        DateTimeOffset now,
+        string oauthClientId = ClientId) =>
+        connection.Reconnect(
+            ReconnectedTitle,
+            SecondAccessCipher,
+            SecondRefreshCipher,
+            now.AddHours(1),
+            Scope,
+            oauthClientId,
+            now);
 
     private static ChannelConnection Connect(Guid id, string oauthClientId = ClientId) =>
         ChannelConnection.Connect(

@@ -12,8 +12,8 @@ using Platform = NightTales.Domain.Publishing.Platform;
 /// <summary>
 /// QA exploratory and boundary pass over <see cref="ChannelConnection"/> (06.1.2-T2): the negative half of the
 /// seven-method contract that <see cref="ChannelConnectionTests"/> does not exercise — every transition that
-/// has to refuse a revoked row, the single way back out of <c>revoked</c>, the missing truncation of an
-/// over-long identity, and the blank-input refusals.
+/// has to refuse a revoked row (including <c>Reconnect</c>: a revoked row is never reused), the missing
+/// truncation of an over-long identity, and the blank-input refusals.
 /// </summary>
 /// <remarks>
 /// These tests were added by the independent QA agent of session 61; they assert observed behaviour of the
@@ -95,37 +95,58 @@ public sealed class ChannelConnectionQaTests
     }
 
     /// <summary>
-    /// <c>Reconnect</c> is the documented one path back out of <c>revoked</c>: the same row, the new pair, the
-    /// re-pinned client, no disconnect moment. The 06.1.2-T2 handler never reaches this state (its locked read
-    /// excludes revoked rows, so the row it would revive is a fresh insert), so this pins the domain contract
-    /// the 06.4.x callers rely on rather than a production path.
+    /// <c>Reconnect</c> refuses a row that is no longer live: a <c>revoked</c> row lost its tokens and left
+    /// <c>ux_channel_connections_account</c>, and a purged row lost the identity a reconnect would rewrite. The
+    /// 06.1.2-T2 writer never asks for this — its locked read filters <c>status &lt;&gt; 'revoked'</c>, so the
+    /// connect of that channel inserts a new row (<c>Reconnect_AfterRevoke_SameAccountSameChannel_CreatesANewRow</c>
+    /// in the Api tests) — so this pins the domain guard that keeps the aggregate in step with that read.
     /// </summary>
     [Fact]
-    public void Reconnect_OnARevokedRow_IsTheOnePathBackToActive()
+    public void Reconnect_OnARevokedOrPurgedRow_IsRefused()
     {
-        var connection = Connected();
+        var revoked = Connected();
         var revokedAt = Now.AddMinutes(5);
-        connection.Revoke(revokedAt);
+        revoked.Revoke(revokedAt);
 
-        var reconnectedAt = Now.AddDays(1);
-        connection.Reconnect(
+        var refused = Should.Throw<InvalidOperationException>(() => revoked.Reconnect(
             "Renamed at Google",
             "new-access-cipher",
             "new-refresh-cipher",
-            reconnectedAt.AddHours(1),
+            Now.AddDays(1).AddHours(1),
             Scope,
             "client-b.apps.googleusercontent.com",
-            reconnectedAt);
+            Now.AddDays(1)));
 
-        connection.Status.ShouldBe(ChannelConnectionStatus.Active);
-        connection.RevokedAt.ShouldBeNull();
-        connection.AccessTokenEnc.ShouldBe("new-access-cipher");
-        connection.RefreshTokenEnc.ShouldBe("new-refresh-cipher");
-        connection.TokenExpiresAt.ShouldBe(reconnectedAt.AddHours(1));
-        connection.LastVerifiedAt.ShouldBe(reconnectedAt);
-        connection.OAuthClientId.ShouldBe("client-b.apps.googleusercontent.com");
-        connection.ConnectedAt.ShouldBe(Now, "a reconnect keeps the first connect moment");
-        connection.Id.ShouldNotBe(Guid.Empty);
+        refused.Message.ShouldContain(nameof(ChannelConnection.Reconnect));
+
+        // The refusal wrote nothing: the revoked row keeps its NULL tokens, its disconnect moment and the identity
+        // the disconnect left it, instead of becoming an `active` row again.
+        revoked.Status.ShouldBe(ChannelConnectionStatus.Revoked);
+        revoked.AccessTokenEnc.ShouldBeNull();
+        revoked.RefreshTokenEnc.ShouldBeNull();
+        revoked.RevokedAt.ShouldBe(revokedAt);
+        revoked.ExternalAccountId.ShouldBe(ChannelId);
+        revoked.ConnectedAt.ShouldBe(Now);
+
+        // A purged row (13 §5.4 channel-scope deletion) has no identity left for a reconnect to rewrite, so it is
+        // the same refusal rather than an `active` row with no channel id.
+        var purged = Connected();
+        purged.Revoke(revokedAt);
+        purged.PurgeYouTubeData(Now.AddDays(7));
+        purged.ExternalAccountId.ShouldBeNull();
+
+        Should.Throw<InvalidOperationException>(() => purged.Reconnect(
+            Title,
+            "new-access-cipher",
+            "new-refresh-cipher",
+            Now.AddDays(1).AddHours(1),
+            Scope,
+            ClientId,
+            Now.AddDays(1)));
+
+        purged.Status.ShouldBe(ChannelConnectionStatus.Revoked);
+        purged.AccessTokenEnc.ShouldBeNull();
+        purged.ExternalAccountId.ShouldBeNull();
     }
 
     /// <summary>
