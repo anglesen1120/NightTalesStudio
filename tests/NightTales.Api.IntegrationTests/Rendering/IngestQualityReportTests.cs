@@ -98,7 +98,7 @@ public sealed class IngestQualityReportTests(TestDatabase database) : Integratio
         thrown.ShouldBeAssignableTo<InvalidOperationException>().Message.ShouldContain("InvalidOperationException");
         thrown.Message.ShouldNotContain("terminal hook refused");
         harness.IngestLines().ShouldContain(
-            entry => entry.EventId == 6374
+            entry => entry.EventId == 6390
                 && entry.Message.Contains($"renderJobId={world.RenderJobId}", StringComparison.Ordinal)
                 && entry.Message.Contains("stage=done", StringComparison.Ordinal)
                 && entry.Message.Contains("kind=InvalidOperationException", StringComparison.Ordinal)

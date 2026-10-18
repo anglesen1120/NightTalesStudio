@@ -1699,11 +1699,11 @@ internal sealed class IngestHarness : IAsyncDisposable
     public string[] TempFiles() =>
         Directory.Exists(TempDirectory) ? Directory.GetFiles(TempDirectory) : [];
 
-    /// <summary>The lines of the ingest itself (its 6300-6339, 6359 and 6374 event-id block), without the host's
+    /// <summary>The lines of the ingest itself (its 6300-6339, 6359 and 6390 event-id block), without the host's
     /// own start-up noise.</summary>
     /// <returns>The ingest's lines, in order.</returns>
     public IReadOnlyList<IngestLogEntry> IngestLines() =>
-        [.. Logs.Entries.Where(entry => entry.EventId is >= 6300 and <= 6339 or 6359 or 6374)];
+        [.. Logs.Entries.Where(entry => entry.EventId is >= 6300 and <= 6339 or 6359 or 6390)];
 
     /// <summary>Runs the ingest of <paramref name="renderJobId"/> the way the scheduler does: in its own scope.</summary>
     /// <param name="renderJobId">The <c>render_jobs</c> row.</param>

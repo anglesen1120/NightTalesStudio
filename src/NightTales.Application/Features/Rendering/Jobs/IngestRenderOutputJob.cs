@@ -1837,6 +1837,6 @@ public sealed partial class IngestRenderOutputJob(
     /// <param name="stage">The histogram stage the failure happened in.</param>
     /// <param name="kind">The exception's type name.</param>
     /// <param name="exception">The failure itself, stack included.</param>
-    [LoggerMessage(EventId = 6374, Level = LogLevel.Warning, Message = "render_ingest_attempt_failed renderJobId={RenderJobId} stage={Stage} kind={Kind}")]
+    [LoggerMessage(EventId = 6390, Level = LogLevel.Warning, Message = "render_ingest_attempt_failed renderJobId={RenderJobId} stage={Stage} kind={Kind}")]
     private partial void LogAttemptFailed(Guid renderJobId, string stage, string kind, Exception exception);
 }
