@@ -129,6 +129,15 @@ public interface IAppDbContext
     DbSet<OAuthState> OAuthStates { get; }
 
     /// <summary>
+    /// The connected YouTube channels of 06.1.2-T2 (<c>channel_connections</c>): the upsert of
+    /// <c>IConnectChannelConnection</c>, the refresh-under-lock read of <c>ITokenService</c> and the
+    /// <c>GET /channels</c> list all go through it. <c>IUserOwned</c>, so the D10 tenant filter applies, and
+    /// exactly one live row per <c>(platform, external_account_id)</c> is enforced by the partial unique index
+    /// (<c>WHERE status &lt;&gt; 'revoked'</c>).
+    /// </summary>
+    DbSet<ChannelConnection> ChannelConnections { get; }
+
+    /// <summary>
     /// Takes the row lock of the current user's episode (<c>SELECT … FOR NO KEY UPDATE</c>, 02.2.2 plan §4 U6) as the
     /// first statement of a command's transaction, so the status read, the daily count and the run insert of two
     /// concurrent generate calls serialise on the episode. The lock is held until the surrounding transaction

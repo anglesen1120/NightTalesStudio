@@ -293,7 +293,8 @@ public sealed partial class CompleteYouTubeConnectHandler(
                     channel.Value,
                     tokens.Value,
                     claim.OAuthClientId,
-                    now),
+                    now,
+                    command.Info),
                 cancellationToken)
             .ConfigureAwait(false);
         if (connected.IsError)
@@ -315,7 +316,7 @@ public sealed partial class CompleteYouTubeConnectHandler(
                 cancellationToken)
             .ConfigureAwait(false);
 
-        LogConnected(claim.UserId, connected.Value, channel.Value.Id, claim.OAuthClientId);
+        LogConnected(claim.UserId, connected.Value.ConnectionId, channel.Value.Id, claim.OAuthClientId);
 
         return ConnectYouTubeOutcome.Connected;
     }
@@ -409,7 +410,7 @@ public sealed partial class CompleteYouTubeConnectHandler(
     private static AuditEntry Entry(
         CompleteYouTubeConnectCommand command,
         Guid userId,
-        Guid connectionId,
+        ConnectChannelOutcome outcome,
         string platform,
         string oauthClientId,
         string externalAccountId,
@@ -422,9 +423,9 @@ public sealed partial class CompleteYouTubeConnectHandler(
             Category: Category.Publishing,
             Visibility: Visibility.Internal,
             EntityType: ChannelConnectionEntityType,
-            EntityId: connectionId,
+            EntityId: outcome.ConnectionId,
             DataJson: JsonSerializer.Serialize(
-                new ChannelConnectedData(platform, oauthClientId, externalAccountId, Reconnected: false),
+                new ChannelConnectedData(platform, oauthClientId, externalAccountId, outcome.Reconnected),
                 DataJson),
             Ip: ParseIp(command.Info.Ip),
             UserAgent: Truncate(command.Info.UserAgent),
@@ -447,11 +448,10 @@ public sealed partial class CompleteYouTubeConnectHandler(
     /// </summary>
     /// <remarks>
     /// <para>
-    /// <c>Reconnected</c> is the one value this handler cannot observe: 06.1.2-T2's frozen port answers the
-    /// connection id only (<c>ErrorOr&lt;Guid&gt;</c>), so a reconnect and a first connect are
-    /// indistinguishable here. It is written as <c>false</c> and recorded as a GAP with its fix: the port's
-    /// answer must carry the fact (a <c>ConnectChannelConnectionResult(Guid ConnectionId, bool
-    /// Reconnected)</c>) before this field can be truthful.
+    /// <c>Reconnected</c> is the writer's own answer (06 CR-22): it is <see langword="true"/> exactly when
+    /// <c>ConnectChannelConnectionHandler</c> took the row lock, found a live row of this account and updated it
+    /// instead of inserting — one fact observed inside the same unit of work, never an assumption of the
+    /// callback.
     /// </para>
     /// <para>
     /// <c>oauthClientId</c> is pinned by name: the camel-case policy in use lowercases only the first

@@ -1,0 +1,7 @@
+Subject: Đã kết nối kênh YouTube
+
+Xin chào {{displayName}},
+
+Kênh YouTube {{channelTitle}} đã được kết nối với Night Tales vào lúc {{occurredAt}}, từ thiết bị {{device}}.
+
+Nếu không phải bạn, hãy kiểm tra bảo mật tài khoản tại {{securityLink}}.

@@ -157,6 +157,14 @@ public sealed class AppDbContext : IdentityDbContext<AppUser, AppRole, Guid>, IA
     /// </summary>
     public DbSet<OAuthState> OAuthStates => Set<OAuthState>();
 
+    /// <summary>
+    /// The connected YouTube channels of 06.1.2-T2 (<c>channel_connections</c>): upserted by
+    /// <c>ConnectChannelConnectionHandler</c>, locked and token-rotated by <c>TokenService</c>, and read by
+    /// <c>ListChannelsHandler</c> and the upload/quota paths. <c>IUserOwned</c>, so the D10 tenant filter
+    /// applies; both token columns hold <c>ITokenProtector</c> ciphertext, never a plaintext token.
+    /// </summary>
+    public DbSet<ChannelConnection> ChannelConnections => Set<ChannelConnection>();
+
     /// <summary>Infrastructure-only: the outbox rows the interceptor of 09.2.4-T1 writes.</summary>
     public DbSet<OutboxMessage> OutboxMessages => Set<OutboxMessage>();
 
