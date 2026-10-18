@@ -335,7 +335,7 @@ public sealed partial class IdeaPlanner(
         // The complement of that count: a candidate the cap penalised *without* blocking, its pick included. A
         // blocked candidate keeps its soft violations, so counting every positive penalty would count it in both
         // `variety_penalty_total` and `variety_rejections_total`; only a candidate no rule rejected is counted.
-        var varietyPenalties = decisions.Count((decision, index) => reasons[index] is null && decision.Penalty > 0m);
+        var varietyPenalties = Enumerable.Range(0, decisions.Length).Count(index => reasons[index] is null && decisions[index].Penalty > 0m);
 
         for (var index = 0; index < ideas.Count; index++)
         {
