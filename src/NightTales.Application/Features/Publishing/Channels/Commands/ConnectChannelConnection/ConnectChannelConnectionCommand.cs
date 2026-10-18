@@ -25,8 +25,7 @@ namespace NightTales.Application.Features.Publishing.Channels.Commands.ConnectCh
 /// </remarks>
 /// <param name="Request">The account, the channel, the tokens and the pinned client.</param>
 [NotAudited(
-    "06.1.2-T1's callback writes publishing.channel_connected itself, once per successful connect, through "
-    + "IAuditWriter (task §Handlers step 10); this write is only ever reached inside that flow, so a pipeline "
-    + "row here would double-count one connect.")]
+    "06.1.2-T1's callback writes publishing.channel_connected itself: this write is only reachable inside "
+    + "that flow, so a pipeline row would double-count one connect.")]
 public sealed record ConnectChannelConnectionCommand(ConnectChannelConnectionRequest Request)
     : ICommand<ErrorOr<ConnectChannelOutcome>>;

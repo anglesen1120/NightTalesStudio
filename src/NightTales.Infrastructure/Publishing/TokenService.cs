@@ -74,7 +74,7 @@ public sealed class TokenService(
     /// <summary>
     /// How much life an access token must still have to be handed out as it is: below it the token is refreshed
     /// first, so a caller never starts a long upload with a token that expires mid-flight (06.1.2-T2 §"Token
-    /// access"). The boundary is inclusive — exactly five minutes left is already refreshed.
+    /// access"). The boundary is inclusive — exactly five minutes left is still handed out as it is.
     /// </summary>
     private static readonly TimeSpan RefreshWindow = TimeSpan.FromMinutes(5);
 

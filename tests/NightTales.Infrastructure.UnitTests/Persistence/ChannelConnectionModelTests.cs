@@ -18,8 +18,9 @@ namespace NightTales.Infrastructure.UnitTests.Persistence;
 /// The two indexes are the whole of README D18. <c>ux_channel_connections_account</c> is the partial unique
 /// index that makes "one live owner per Google channel" a storage fact — and the upsert's read path — and its
 /// <c>WHERE status &lt;&gt; 'revoked'</c> predicate is what lets another user connect the channel after a
-/// revoke; <c>ix_channel_connections_user_id</c> serves the tenant-filtered <c>GET /channels</c> list. The
-/// snapshot-drift check (<c>dotnet ef migrations has-pending-model-changes</c>) is a separate, later test.
+/// revoke; <c>ix_channel_connections_user_id</c> serves the tenant-filtered <c>GET /channels</c> list.
+/// <c>Model_SnapshotHasNoPendingChanges</c> pins the snapshot-drift check
+/// (<c>dotnet ef migrations has-pending-model-changes</c>) from the model alone, with no database.
 /// </remarks>
 public sealed class ChannelConnectionModelTests
 {
@@ -49,6 +50,21 @@ public sealed class ChannelConnectionModelTests
         index.GetFilter().ShouldBeNull("the tenant list covers every status, revoked rows included");
     }
 
+    /// <summary>
+    /// The drift check of README D20 at the unit level: the model this context builds must be exactly the one
+    /// the migrations' snapshot was generated from (EF 10 <c>HasPendingModelChanges</c> compares the two with
+    /// <c>IMigrationsModelDiffer</c>), or the next <c>dotnet ef migrations add</c> would scaffold a migration
+    /// for a change nobody made. No connection is opened — the differ reads the model and the snapshot.
+    /// </summary>
+    [Fact]
+    public void Model_SnapshotHasNoPendingChanges()
+    {
+        using var context = new AppDbContext(Options(), new AnonymousCurrentUser());
+
+        context.Database.HasPendingModelChanges().ShouldBeFalse(
+            "an entity change without a migration must fail here (run `dotnet ef migrations add` and commit it)");
+    }
+
     private static IReadOnlyEntityType Connection() => Model().FindEntityType(typeof(ChannelConnection))!;
 
     /// <summary>
@@ -57,12 +73,12 @@ public sealed class ChannelConnectionModelTests
     /// </summary>
     private static IModel Model()
     {
-        var options = new DbContextOptionsBuilder<AppDbContext>()
-            .UseNpgsql(ProbeContexts.UnusedConnectionString)
-            .UseSnakeCaseNamingConvention()
-            .Options;
-
-        using var context = new AppDbContext(options, new AnonymousCurrentUser());
+        using var context = new AppDbContext(Options(), new AnonymousCurrentUser());
         return context.Model;
     }
+
+    private static DbContextOptions<AppDbContext> Options() => new DbContextOptionsBuilder<AppDbContext>()
+        .UseNpgsql(ProbeContexts.UnusedConnectionString)
+        .UseSnakeCaseNamingConvention()
+        .Options;
 }

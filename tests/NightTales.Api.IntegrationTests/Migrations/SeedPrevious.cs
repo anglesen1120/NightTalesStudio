@@ -395,6 +395,25 @@ internal static class SeedPrevious
                     '01920000-0000-7000-8000-00000000001c', 'seed-nonce-hash-aaaa',
                     now(), now() + interval '10 minutes')
             """),
+        (
+            // 06.1.2-T2: the table the `_06_ChannelConnections` migration creates. Same rule as above: skipped
+            // while the previous schema lacks it, so the row lands only on a schema that has the table. It is one
+            // live connection of the seed user as the connect path writes it — both tokens as
+            // `ITokenProtector` ciphertext, the OAuth client that minted the code pinned, the channel identity
+            // filled — so every later migration is exercised over a publishable row that is also the only member
+            // of the partial unique index `ux_channel_connections_account`. It needs no parent beyond `users`:
+            // the table has no foreign key at all, because the row outlives the account (13 §5.4).
+            "channel_connections",
+            """
+            INSERT INTO channel_connections (id, user_id, platform, external_account_id, display_name, status,
+                                             access_token_enc, refresh_token_enc, token_expires_at, scope,
+                                             oauth_client_id, last_verified_at, connected_at)
+            VALUES ('01920000-0000-7000-8000-00000000001d', '01920000-0000-7000-8000-000000000001', 'youtube',
+                    'seed-channel', 'Seed channel', 'active', 'seed-access-token-enc', 'seed-refresh-token-enc',
+                    now() + interval '1 hour',
+                    'https://www.googleapis.com/auth/youtube.upload https://www.googleapis.com/auth/youtube.readonly',
+                    'seed-client', now(), now())
+            """),
     ];
 
     /// <summary>The tables the dataset covers, in insert order — the contract a feature migration extends.</summary>

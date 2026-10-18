@@ -36,8 +36,9 @@ namespace NightTales.Api.IntegrationTests.Publishing;
 /// The task file's Tests table fixes the names below; the extra rows it does not carry are the post-claim
 /// failure cases it lists under failure handling (a queue failure and a channel conflict, both writing their
 /// rows before they fail), a writer that throws mid-unit, the positive control that shows those same rows
-/// commit on the success path, a host with no writer registered (D-2's production default), and the
-/// anonymous connect of acceptance check 2.
+/// commit on the success path, a host whose writer registration is absent (R13/F2 — 06.1.2-T2 registers the
+/// real one, so the port has to be removed to model that host), the reconnect whose audit row records
+/// <c>reconnected = true</c> (06 CR-22), and the anonymous connect of acceptance check 2.
 /// </para>
 /// </remarks>
 /// <param name="database">The class database, a migrated copy of the run's template.</param>
@@ -243,9 +244,9 @@ public sealed class ConnectChannelTests(TestDatabase database) : IntegrationTest
         data.RootElement.GetProperty("platform").GetString().ShouldBe("youtube");
         data.RootElement.GetProperty("oauthClientId").GetString().ShouldBe(harness.Google.Options.ActiveClientId);
         data.RootElement.GetProperty("externalAccountId").GetString().ShouldBe(harness.Google.Options.Channel.Id);
-        var reconnected = data.RootElement.GetProperty("reconnected");
-        (reconnected.ValueKind is JsonValueKind.True or JsonValueKind.False)
-            .ShouldBeTrue("the row carries a boolean reconnected, not a null or a string");
+        data.RootElement.GetProperty("reconnected").GetBoolean().ShouldBeFalse(
+            "this connect inserted a row, and the audit records the writer's own answer — a first connect is "
+            + "never a reconnect (06 CR-22)");
         data.RootElement.EnumerateObject().Select(property => property.Name).Order().ShouldBe(
             ExpectedConnectionAuditMembers);
 
@@ -256,6 +257,33 @@ public sealed class ConnectChannelTests(TestDatabase database) : IntegrationTest
         // The failed paths keep asserting zero, so a writer that leaves a row behind after a failed attempt
         // still fails this suite. The connect e-mail is T2's step as well (the stand-in only queues it when a
         // test switches it on), so it is asserted on the failure paths, not here.
+    }
+
+    [Fact]
+    public async Task Callback_Reconnect_RedirectsAndTheAuditRecordsReconnectedTrue()
+    {
+        await using var harness = await ConnectChannelHarness.StartAsync(Database, Ct);
+
+        // 06 CR-22: `data.reconnected` is the writer's own answer, not a value the callback assumes — the
+        // stand-in answers what 06.1.2-T2's writer answers when this account already has a live row for the
+        // channel (a second callback for the same channel reconnects it), and the audit row must carry that
+        // answer. A callback that hard-coded `false` (the shape before the port change) reddens here. The
+        // writer's own insert-versus-reconnect decision is asserted in ConnectChannelConnectionHandlerTests.
+        harness.Connection.Reconnected = true;
+
+        var connect = await harness.ConnectAsync(Ct);
+        var code = await harness.AuthorizeAsync(connect.AuthorizationUrl, Ct);
+
+        using var response = await harness.CallbackAsync(code, connect.State, connect.NonceCookie, Ct);
+
+        await AssertRedirectAsync(response, "/channels?connected=youtube");
+        harness.Connection.CallCount.ShouldBe(1);
+        harness.AuditRows().ShouldBe(1);
+
+        using var data = JsonDocument.Parse(harness.AuditData());
+        data.RootElement.GetProperty("reconnected").GetBoolean().ShouldBeTrue(
+            "a reconnect is the writer's answer, and the audit row records it instead of a hard-coded false");
+        data.RootElement.GetProperty("externalAccountId").GetString().ShouldBe(harness.Google.Options.Channel.Id);
     }
 
     [Fact]
@@ -632,10 +660,14 @@ public sealed class ConnectChannelTests(TestDatabase database) : IntegrationTest
     [Fact]
     public async Task Callback_NoWriterRegistered_RedirectsOauthExchangeFailedBeforeTheExchange()
     {
-        // The production default until 06.1.2-T2 lands (D-2): the handler resolves its writer before it spends
-        // the code, so a host without one answers the fixed redirect and never calls Google (R13/F2). The
-        // state is already spent by then: the claim is unit of work #1 and cannot be undone.
-        await using var harness = await ConnectChannelHarness.StartAsync(Database, Ct, connectChannelWriter: false);
+        // A host whose port is absent — 06.1.2-T2 registers the production writer, so this has to remove the
+        // registration rather than rely on its absence: the handler resolves its writer before it spends the
+        // code, so such a host answers the fixed redirect and never calls Google (R13/F2). The state is
+        // already spent by then: the claim is unit of work #1 and cannot be undone.
+        await using var harness = await ConnectChannelHarness.StartAsync(
+            Database,
+            Ct,
+            channelWriter: ConnectChannelHarness.ConnectChannelWriter.None);
         var connect = await harness.ConnectAsync(Ct);
         var code = await harness.AuthorizeAsync(connect.AuthorizationUrl, Ct);
 
