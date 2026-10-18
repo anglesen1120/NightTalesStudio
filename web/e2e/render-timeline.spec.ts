@@ -1219,14 +1219,24 @@ async function cancelAffordanceFlow(page: Page, lang: E2eLang): Promise<void> {
 /** Acceptance 9 (stubbed): each refusal refetches once, and the honest server state wins over an error banner. */
 async function cancelRefusalFlow(page: Page, lang: E2eLang): Promise<void> {
   const errors = ACTION_ERRORS[lang];
-  const refusals = [
-    // The render already ingested: the honest state is a job that can no longer be cancelled.
-    { code: 'episode_invalid_state', status: 409, next: jobDetail('ingesting', ['cancel']), shown: true },
+  // The cancel error is associated with the job it refused: it stays while the refetched detail still shows that same
+  // cancellable job, and is dropped once the job is gone or reports a status the server would refuse a cancel in.
+  const refusals: readonly {
+    readonly code: keyof ActionErrorCopy;
+    readonly status: number;
+    readonly next: EpisodeDetailDto;
+    readonly state: 'banner' | 'ingesting' | 'approved';
+  }[] = [
+    // Another tab's cancel raced, and the read still returns this job cancellable: the mapped copy stays against it.
+    { code: 'concurrency_conflict', status: 409, next: jobDetail('running', ['cancel']), state: 'banner' },
+    // The render already ingested: the same job comes back in a status the server refuses, so the banner is dropped
+    // and the timeline shows that state — there is no cancel affordance left for the error to sit beside.
+    { code: 'episode_invalid_state', status: 409, next: jobDetail('ingesting', ['cancel']), state: 'ingesting' },
     // Another tab cancelled first: the job is gone, so the page returns to the approved view without a banner.
-    { code: 'concurrency_conflict', status: 409, next: approvedDetail(), shown: false },
+    { code: 'concurrency_conflict', status: 409, next: approvedDetail(), state: 'approved' },
     // Not this user's job (or already gone): the same honest state, and no copy left over a job that no longer exists.
-    { code: 'not_found', status: 404, next: approvedDetail(), shown: false },
-  ] as const;
+    { code: 'not_found', status: 404, next: approvedDetail(), state: 'approved' },
+  ];
   for (const refusal of refusals) {
     const api = await openActionPage(page, lang, { detail: stateDetail('queued') });
     const settled = await settleActionReads(page, api);
@@ -1239,8 +1249,14 @@ async function cancelRefusalFlow(page: Page, lang: E2eLang): Promise<void> {
     await expect.poll(() => api.cancels.length, { message: `${refusal.code} is one DELETE` }).toBe(1);
     await expect.poll(() => api.detailGets(), { message: `${refusal.code} refetches the episode once` }).toBe(settled + 1);
     await expectNoFurtherReads(page, api, settled + 1);
-    if (refusal.shown) {
+    if (refusal.state === 'banner') {
       await expect(cancelError(page)).toContainText(errors[refusal.code]);
+      await expect(cancelButton(page), 'the job the server refused is still cancellable').toBeEnabled();
+    } else if (refusal.state === 'ingesting') {
+      await expect(timeline(page)).toBeVisible();
+      await expect(activeStage(page), 'the timeline shows the job the server reported').toContainText(RENDER_COPY[lang].stage.ingesting);
+      await expect(cancelButton(page), 'no cancel affordance for a job the server reports as ingesting').toHaveCount(0);
+      await expect(page.locator('body')).not.toContainText(errors[refusal.code]);
     } else {
       await expect(makeButton(page), 'the episode is back in the approved view').toBeVisible();
       await expect(page.locator('body')).not.toContainText(errors[refusal.code]);
