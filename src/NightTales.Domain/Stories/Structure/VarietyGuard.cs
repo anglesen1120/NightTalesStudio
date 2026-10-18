@@ -198,9 +198,10 @@ public static class VarietyGuard
     /// required values, and the batch's over-cap values unioned with the ones this candidate already violated.
     /// </summary>
     /// <remarks>
-    /// Merging the candidate's own soft violations into the forbidden arrays is what stops the writer from
-    /// reusing a saturated value the candidate happened to pick: the plan is derived from the history at
-    /// generation time, so it is built here again rather than persisted on the idea.
+    /// The union is defensive: it is a no-op while the violations derive from the batch, because every soft
+    /// violation is a value already on the batch's own <see cref="VarietyBatchAssessment.SuggestedForbidden"/>
+    /// list (R2 only penalises a value the batch already forbids). Widening the arrays only matters for a caller
+    /// that hands in a decision whose violations did not come from <see cref="AssessBatch"/>.
     /// </remarks>
     /// <param name="batch">The assessment of the current history.</param>
     /// <param name="decision">The decision taken for the picked idea.</param>

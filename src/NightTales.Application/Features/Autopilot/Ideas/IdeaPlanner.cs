@@ -322,8 +322,7 @@ public sealed partial class IdeaPlanner(
         // The candidates the guard's own rules actually rejected, counted per rule: a candidate whose earlier rule
         // (novelty or the policy) also named a reason keeps that reason, so the guard is credited only for its own
         // blocks, and the reason it is credited under is one of the closed `IdeaRejectionReason` constants — never
-        // text (D19). A positive penalty is counted for every candidate that carried it, its pick included: a
-        // penalty is a ranking input, not an outcome.
+        // text (D19).
         var varietyBlocks = new Dictionary<string, int>(StringComparer.Ordinal);
         foreach (var reason in reasons)
         {
@@ -333,7 +332,10 @@ public sealed partial class IdeaPlanner(
             }
         }
 
-        var varietyPenalties = decisions.Count(decision => decision.Penalty > 0m);
+        // The complement of that count: a candidate the cap penalised *without* blocking, its pick included. A
+        // blocked candidate keeps its soft violations, so counting every positive penalty would count it in both
+        // `variety_penalty_total` and `variety_rejections_total`; only a candidate no rule rejected is counted.
+        var varietyPenalties = decisions.Count((decision, index) => reasons[index] is null && decision.Penalty > 0m);
 
         for (var index = 0; index < ideas.Count; index++)
         {

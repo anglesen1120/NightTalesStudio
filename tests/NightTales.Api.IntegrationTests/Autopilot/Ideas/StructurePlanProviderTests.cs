@@ -196,6 +196,25 @@ public sealed class StructurePlanProviderTests(TestDatabase database) : Integrat
         history.LastSeriesId.ShouldBe(world.SeriesId, "the read is scoped to the idea's own series");
     }
 
+    /// <summary>
+    /// The window is clamped to the idea context's own history cap (<c>IdeaContextProvider.HistoryCount</c>): a
+    /// wider <c>WindowK</c> cannot reach here through the boot validator, but a hand-built options instance must
+    /// still not turn the bounded read into an unbounded one.
+    /// </summary>
+    [Fact]
+    public async Task StructurePlanProvider_WindowWiderThanTheIdeaContextCap_IsClampedToTheCap()
+    {
+        var world = await SeriesBibleHarness.SeedAsync(Database);
+        var episodeId = await SeedUsedIdeaAsync(Database, world, OwnTags(IdeaSetting), IdeaBeats);
+        var history = new CountingHistory([]);
+
+        _ = await Provider(world.UserId, Options(windowK: 1_000_000, templateWindowK: 5), history)
+            .GetForEpisodeAsync(episodeId, Ct);
+
+        history.Calls.ShouldBe(1, "one bounded read, never a query per episode");
+        history.LastMax.ShouldBe(IdeaContextProvider.HistoryCount, "the read is clamped to the idea context history cap");
+    }
+
     /// <summary>The provider over the class database, scoped to one owner exactly as a request scope is.</summary>
     private StructurePlanProvider Provider(Guid userId, VarietyOptions? options = null, IEpisodeStructureHistory? history = null) =>
         new(

@@ -406,16 +406,18 @@ public sealed class IdeaVarietyMetricsTests(TestDatabase database) : Integration
 {
     /// <summary>
     /// One run, both counters: the rule that blocked a candidate (the closed rejection code, never free text) and
-    /// the count of candidates the cap penalised without blocking, both visible in the run's own log as well.
+    /// the count of candidates the cap penalised <em>without</em> blocking, both visible in the run's own log. One
+    /// candidate here is both penalised and blocked, and must count as a rejection only.
     /// </summary>
     [Fact]
     public async Task ProposeAndPick_VarietyCounters_AreClosedAndRuleTagged()
     {
         var world = await SeedAsync(Database);
 
-        // The window: one episode carries the template the blocked candidate repeats (its opening and twist are at
-        // 1 of 10, under the cap, so that candidate is blocked and not penalised), four carry the opening the
-        // other candidate uses (4 of 10 is over the cap, so that one is penalised and not blocked).
+        // The window: four episodes carry the opening and the twist the blocked candidate repeats (4 of 10 and 9
+        // of 10, both over the cap, so it is blocked by the template rule and penalised at once), five more carry
+        // the twist alone, and the other candidate uses the same opening (4 of 10, over the cap) with its own
+        // twist — penalised without being blocked.
         var window = new List<(string SubGenre, string Setting, string Opening, string Twist)>
         {
             (MaHocDuong, BenhVienBoHoang, TimLaiDoVat, LoiNguyen),
@@ -446,7 +448,7 @@ public sealed class IdeaVarietyMetricsTests(TestDatabase database) : Integration
         var text = new FakeTextClient().EnqueueOk(
             TextStep.Ideas,
             IdeaBatch(
-                IdeaWithStructure("Ý tưởng lặp mẫu", CleanSubGenre, TimLaiDoVat, LoiNguyen, CanHoThue),
+                IdeaWithStructure("Ý tưởng lặp mẫu", CleanSubGenre, HotOpening, TrungHop, CanHoThue),
                 IdeaWithStructure("Ý tưởng quá tải", CleanSubGenre, HotOpening, CleanTwist, CanHoThue)),
             Usage);
         text.EnqueueOk(TextStep.Novelty, NoveltyBatch(JudgeRow(0, 0.3m, fit: 0.8m, hookStrength: 0.6m), JudgeRow(1, 0.3m, fit: 0.8m, hookStrength: 0.6m)), Usage);
@@ -461,7 +463,11 @@ public sealed class IdeaVarietyMetricsTests(TestDatabase database) : Integration
         counters.Tagged(IdeaMetrics.VarietyRejectionsTotalName, IdeaMetrics.RuleTagName, IdeaRejectionReason.VarietyTemplateRepeat)
             .ShouldBe(1, "one candidate was blocked by the template rule");
         counters.Sum(IdeaMetrics.VarietyRejectionsTotalName).ShouldBe(1, "and nothing was counted under any other rule");
-        counters.Sum(IdeaMetrics.VarietyPenaltiesTotalName).ShouldBe(1, "only the capped candidate carried a penalty");
+        // Both candidates carried a penalty — the blocked one 0.75 (its opening and twist are over the cap), the
+        // picked one 0.5 — but `variety_penalty_total` is "penalised WITHOUT blocking": the blocked candidate's
+        // penalty is the exact delta the counter must exclude.
+        counters.Sum(IdeaMetrics.VarietyPenaltiesTotalName)
+            .ShouldBe(1, "the blocked candidate's penalty is not counted, only the one the cap penalised without blocking");
         sink.AllText().ShouldContain("idea_planner_variety", Case.Sensitive, "the run's own log carries the counts and the closed rule code");
         sink.AllText().ShouldContain(IdeaRejectionReason.VarietyTemplateRepeat, Case.Sensitive);
         sink.AllText().ShouldContain("penalties=1", Case.Sensitive);

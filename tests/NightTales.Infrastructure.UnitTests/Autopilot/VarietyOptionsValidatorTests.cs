@@ -72,6 +72,28 @@ public sealed class VarietyOptionsValidatorTests
         result.Failures.ShouldNotBeNull().ShouldContain(failure => failure.Contains("WindowK", StringComparison.Ordinal));
     }
 
+    [Theory]
+    [InlineData(51)]
+    [InlineData(1_000_000)]
+    public void Variety_WindowK_AboveTheHistoryCap_Fails(int windowK)
+    {
+        // The idea step assesses exactly the rows its context carries (IdeaContextProvider.HistoryCount), so a
+        // wider window would silently assess fewer entries than the story-time plan reads.
+        var result = new VarietyOptionsValidator().Validate(null, new VarietyOptionsSection { WindowK = windowK });
+
+        result.Failed.ShouldBeTrue();
+        result.Failures.ShouldNotBeNull().ShouldContain(failure => failure.Contains("WindowK", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Variety_WindowK_AtTheHistoryCap_IsLegal()
+    {
+        var result = new VarietyOptionsValidator()
+            .Validate(null, new VarietyOptionsSection { WindowK = IdeaContextProvider.HistoryCount });
+
+        result.Succeeded.ShouldBeTrue();
+    }
+
     [Fact]
     public void Variety_TemplateWindowK_WiderThanTheWindow_Fails()
     {

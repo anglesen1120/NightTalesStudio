@@ -22,9 +22,10 @@ namespace NightTales.Infrastructure.Autopilot;
 /// </para>
 /// <para>
 /// The history is read once, newest first, capped at the wider of the guard's two windows
-/// (<c>max(WindowK, TemplateWindowK)</c>), through the same <see cref="IEpisodeStructureHistory"/> the idea step
-/// fills from — the plan is rebuilt from the live window rather than reused from the idea, so it stays fresh when
-/// the series approves an episode between the idea and the story.
+/// (<c>max(WindowK, TemplateWindowK)</c>, never more than the idea context's own history cap,
+/// <see cref="IdeaContextProvider.HistoryCount"/>), through the same <see cref="IEpisodeStructureHistory"/> the
+/// idea step fills from — the plan is rebuilt from the live window rather than reused from the idea, so it stays
+/// fresh when the series approves an episode between the idea and the story.
 /// </para>
 /// <para>
 /// The result is steering only: the provider never rejects (the hard blocks belong to the idea step) and it still
@@ -56,8 +57,10 @@ public sealed class StructurePlanProvider(
             return null;
         }
 
-        // One bounded read, newest first: the guard's window is the wider of the two window sizes.
-        var window = Math.Max(options.WindowK, options.TemplateWindowK);
+        // One bounded read, newest first: the guard's window is the wider of the two window sizes, clamped to the
+        // idea context's own history cap so a hand-built (unvalidated) options instance cannot ask the reader for
+        // more rows than the idea step ever assessed, nor an unbounded read.
+        var window = Math.Min(Math.Max(options.WindowK, options.TemplateWindowK), IdeaContextProvider.HistoryCount);
         var recent = await history.GetRecentAsync(idea.SeriesId, window, ct).ConfigureAwait(false);
 
         var batch = VarietyGuard.AssessBatch(recent, options);
