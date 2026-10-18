@@ -253,7 +253,7 @@ public sealed class YouTubeMetadataRulesTests
         var appended = YouTubeMetadataRules.AppendAttribution(Description, "Kai Engel - Snowmen");
 
         appended.ShouldBe(Description + AttributionTail + "Kai Engel - Snowmen");
-        appended.ShouldStartWith(Description, "the owner's text is never rewritten");
+        appended.ShouldStartWith(Description);
     }
 
     [Fact]

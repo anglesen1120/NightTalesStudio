@@ -107,10 +107,12 @@ internal sealed class PublicationConfiguration : IEntityTypeConfiguration<Public
     {
         builder.ToTable(
             "publications",
-            table => table
-                .HasCheckConstraint("ck_publications_platform", PlatformCheck)
-                .HasCheckConstraint("ck_publications_privacy", PrivacyCheck)
-                .HasCheckConstraint("ck_publications_consent_source", ConsentSourceCheck));
+            table =>
+            {
+                table.HasCheckConstraint("ck_publications_platform", PlatformCheck);
+                table.HasCheckConstraint("ck_publications_privacy", PrivacyCheck);
+                table.HasCheckConstraint("ck_publications_consent_source", ConsentSourceCheck);
+            });
 
         builder.HasKey(publication => publication.Id);
 

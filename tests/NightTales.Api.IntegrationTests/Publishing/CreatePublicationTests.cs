@@ -73,7 +73,7 @@ public sealed class CreatePublicationTests(TestDatabase database) : IntegrationT
     [Fact]
     public async Task Create_ReadyEpisode_Returns201WithLocationEtagAndTheListRow()
     {
-        var world = await SeedAsync();
+        var world = await SeedAsync(renderJob: false);
         await SetFlagAsync(true);
         using var factory = NewFactory(auditStatus: YouTubeAuditStatuses.Approved);
         using var client = factory.ClientFor(world.UserId);
@@ -81,9 +81,11 @@ public sealed class CreatePublicationTests(TestDatabase database) : IntegrationT
         using var response = await PostAsync(client, world, Body(world, privacy: "public"));
         var (body, json) = await ReadCreatedAsync(response);
 
-        // 09.1.4-T1's ToCreatedResult: the Location is the list the row can be read back from.
+        // 09.1.4-T1's ToCreatedResult: the Location is the relative path of the list the row can be read
+        // back from (the ToString precedent of EpisodeEndpointsTests), never an absolute URI.
         response.Headers.Location.ShouldNotBeNull();
-        response.Headers.Location!.AbsolutePath.ShouldBe($"{EpisodesRoute}/{world.EpisodeId}/publications");
+        response.Headers.Location!.ToString().ShouldBe($"{EpisodesRoute}/{world.EpisodeId}/publications");
+        response.Headers.Location.IsAbsoluteUri.ShouldBeFalse();
 
         var xmin = PublicationXmin(body.Id);
         uint.Parse(xmin, CultureInfo.InvariantCulture).ShouldBeGreaterThan(0u);

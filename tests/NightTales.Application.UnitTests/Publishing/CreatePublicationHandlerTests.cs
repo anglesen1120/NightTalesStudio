@@ -1,6 +1,7 @@
 using ErrorOr;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using NightTales.Application.Features.Publishing.Commands.CreatePublication;
 using NightTales.Application.Features.Publishing.Dtos;
 using NightTales.Application.Publishing;
@@ -54,7 +55,11 @@ public sealed class CreatePublicationHandlerTests(TestDatabase database) : Integ
         // leaves ((now + 3h) - 120min = now + 1h < now + 2h), so YR1 refuses the create outright.
         var refused = await NewSceneAsync(autopilotSettings: """{"veto_window_hours":12}""", withRenderJob: false);
 
-        var tooLate = await CreateAsync(refused, publishAt: Now.AddHours(3), authorizationId: Guid.CreateVersion7());
+        // The authorization must be a real, unrevoked row: the revoked-authorization check of step 6 runs
+        // before YR1, so a fabricated id would answer on autopilotAuthorizationId instead of publishAt.
+        var authorizationId = await SeedAuthorizationAsync(refused);
+
+        var tooLate = await CreateAsync(refused, publishAt: Now.AddHours(3), authorizationId: authorizationId);
 
         tooLate.IsError.ShouldBeTrue();
         tooLate.FirstError.Type.ShouldBe(ErrorOr.ErrorType.Validation);
@@ -62,7 +67,7 @@ public sealed class CreatePublicationHandlerTests(TestDatabase database) : Integ
         (await PublicationCountAsync(refused)).ShouldBe(0);
 
         // The same settings with room to spare: the ceiling is what shortens the window, not the 12 hours.
-        var shortened = await CreateAsync(refused, publishAt: Now.AddHours(6), authorizationId: Guid.CreateVersion7());
+        var shortened = await CreateAsync(refused, publishAt: Now.AddHours(6), authorizationId: authorizationId);
 
         shortened.IsError.ShouldBeFalse();
         shortened.Value.VetoEndsAt.ShouldBe(Now.AddHours(4));
@@ -80,8 +85,12 @@ public sealed class CreatePublicationHandlerTests(TestDatabase database) : Integ
         created.Value.PreAudit.ShouldBeTrue();
         created.Value.RequestedPrivacy.ShouldBe("public");
 
-        // And with an approved client the submitted value is stored as such, with no stamp at all.
-        var approved = await CreateAsync(scene, privacy: "public", auditStatus: YouTubeAuditStatuses.Approved);
+        // And with an approved client the submitted value is stored as such, with no stamp at all. The arm
+        // needs its own episode: one live row per (episode, platform) is the partial unique index of D18, so a
+        // second create on the scene above would be refused as a duplicate before the privacy is even stored.
+        var approvedScene = await NewSceneAsync(withRenderJob: false);
+
+        var approved = await CreateAsync(approvedScene, privacy: "public", auditStatus: YouTubeAuditStatuses.Approved);
 
         approved.IsError.ShouldBeFalse();
         approved.Value.Privacy.ShouldBe("public");
@@ -135,7 +144,7 @@ public sealed class CreatePublicationHandlerTests(TestDatabase database) : Integ
         (await PublicationCountAsync(scene)).ShouldBe(1);
 
         // Control: once the live row left the index's predicate, the episode may be published again.
-        await database.ExecuteAsync(
+        await Database.ExecuteAsync(
             $"UPDATE publications SET status = 'cancelled' WHERE episode_id = '{scene.EpisodeId:D}'",
             TestContext.Current.CancellationToken);
 
@@ -246,7 +255,8 @@ public sealed class CreatePublicationHandlerTests(TestDatabase database) : Integ
         Guid UserId,
         TestCurrentUser CurrentUser,
         Guid EpisodeId,
-        Guid ConnectionId);
+        Guid ConnectionId,
+        Guid SeriesId);
 
     /// <summary>
     /// Seeds one user, series, episode, connection and (optionally) the render job whose params carry
@@ -264,24 +274,44 @@ public sealed class CreatePublicationHandlerTests(TestDatabase database) : Integ
         var userId = Guid.CreateVersion7();
         var currentUser = new TestCurrentUser { Id = userId };
 
-        await new UserBuilder(database, currentUser).CreateAsync(userId, ct: ct);
+        await new UserBuilder(Database, currentUser).CreateAsync(userId, ct: ct);
 
-        var series = await new SeriesBuilder(database, currentUser)
+        var series = await new SeriesBuilder(Database, currentUser)
             .CreateAsync(userId, autopilotSettings: autopilotSettings, ct: ct);
 
-        var episode = await new EpisodeBuilder(database, currentUser)
+        var episode = await new EpisodeBuilder(Database, currentUser)
             .CreateAsync(userId, series.Id, status: episodeStatus, ct: ct);
 
-        var connection = await new ChannelConnectionBuilder(database, currentUser)
+        var connection = await new ChannelConnectionBuilder(Database, currentUser)
             .CreateAsync(userId, connectionStatus, ct: ct);
 
         if (withRenderJob)
         {
-            await new RenderJobBuilder(database, currentUser)
+            await new RenderJobBuilder(Database, currentUser)
                 .CreateAsync(userId, episode.Id, attribution, withMusic, ct: ct);
         }
 
-        return new Scene(userId, currentUser, episode.Id, connection.Id);
+        return new Scene(userId, currentUser, episode.Id, connection.Id, series.Id);
+    }
+
+    /// <summary>
+    /// One live (or revoked) autopilot authorization of the scene's series, written straight into 02's table:
+    /// the handler only reads it, and 02.8.3-T2 owns every write on that path (the same insert the API
+    /// integration test's <c>SeedAuthorizationAsync</c> performs).
+    /// </summary>
+    private async Task<Guid> SeedAuthorizationAsync(Scene scene, bool revoked = false)
+    {
+        var id = Guid.CreateVersion7();
+        var stamp = $"'{Now:O}'::timestamptz";
+
+        await Database.ExecuteAsync(
+            "INSERT INTO series_autopilot_authorizations (id, user_id, series_id, version, text_version, "
+            + "text_hash, topic, cadence, privacy_status, accepted_at, revoked_at, created_at, updated_at) "
+            + $"VALUES ('{id}', '{scene.UserId}', '{scene.SeriesId}', 1, 'pc.v1', '{new string('a', 64)}', "
+            + $"'ghost', 'daily', 'public', {stamp}, {(revoked ? stamp : "NULL")}, {stamp}, {stamp})",
+            TestContext.Current.CancellationToken);
+
+        return id;
     }
 
     /// <summary>Sends the command the way the route would, through the handler under test.</summary>
@@ -299,7 +329,7 @@ public sealed class CreatePublicationHandlerTests(TestDatabase database) : Integ
         var actor = asUser ?? scene;
         var clock = new FakeClock(Now);
 
-        await using var context = database.CreateAppDbContext(actor.CurrentUser, clock);
+        await using var context = Database.CreateAppDbContext(actor.CurrentUser, clock);
         await using var transaction = await context.Database.BeginTransactionAsync(ct);
 
         var command = new CreatePublicationCommand(
@@ -335,7 +365,7 @@ public sealed class CreatePublicationHandlerTests(TestDatabase database) : Integ
     /// <summary>The number of publication rows the scene's episode carries.</summary>
     private async Task<int> PublicationCountAsync(Scene scene)
     {
-        var rows = await database.QueryStringsAsync(
+        var rows = await Database.QueryStringsAsync(
             $"SELECT count(*)::text FROM publications WHERE episode_id = '{scene.EpisodeId:D}'",
             TestContext.Current.CancellationToken);
 

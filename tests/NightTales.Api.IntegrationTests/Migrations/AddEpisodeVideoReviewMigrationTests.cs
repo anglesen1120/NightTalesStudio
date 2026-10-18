@@ -17,7 +17,9 @@ namespace NightTales.Api.IntegrationTests.Migrations;
 /// The <c>_09_EpisodeVideoReview</c> migration (09.7.1-T1, 09 CR-48): the two nullable video-review columns of
 /// <c>episodes</c> — <c>ready_at timestamptz</c> and <c>video_reject_reason varchar(500)</c>. <c>Up</c> is
 /// expand-only (two <c>AddColumn</c>s, no data change, no backfill) and <c>Down</c> drops exactly those two
-/// columns. The class owns the last-migration check for the new tip.
+/// columns. 06.2.1-T1 appended <c>_06_Publications</c> after it, so the newest migration's test
+/// (<c>AddPublicationsMigrationTests</c>) owns the last-migration check (<c>migrations[^1]</c>) and this class
+/// finds its own migration by name.
 /// </summary>
 /// <remarks>
 /// A column-adding migration is proved the way <c>EpisodeApprovedAtMigrationTests</c> proves its own: the schema
@@ -42,11 +44,13 @@ public sealed class AddEpisodeVideoReviewMigrationTests(TestDatabase database) :
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
     [Fact]
-    public async Task Migration_IsTheLastOne_AndModelHasNoPendingChange()
+    public async Task Migration_IsApplied_AndModelHasNoPendingChange()
     {
         await using var context = Database.CreateAppDbContext();
         var migrations = context.Database.GetMigrations().Order(StringComparer.Ordinal).ToList();
-        migrations[^1].ShouldEndWith("_" + MigrationName);
+        // 06.2.1-T1 appended a migration after this one, so this class no longer owns the last-migration
+        // check (the newest migration's own test does); it still proves its own migration is compiled in.
+        migrations.ShouldContain(name => name.EndsWith("_" + MigrationName, StringComparison.Ordinal));
 
         context.Database.HasPendingModelChanges().ShouldBeFalse(
             "an entity change without a migration must fail here (run `dotnet ef migrations add`)");

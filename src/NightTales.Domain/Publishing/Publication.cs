@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using ErrorOr;
 using NightTales.Domain.Common;
 
@@ -84,6 +85,8 @@ public sealed class Publication : AggregateRoot, IUserOwned, IAuditable
     /// <see cref="Platform.YouTube"/> rather than typed twice, so the enum, the column and its <c>CHECK</c> cannot
     /// drift.
     /// </summary>
+    [SuppressMessage("Performance", "CA1822:Mark members as static",
+        Justification = "A per-row column value (the partial unique keys on it); 07 adds tiktok rows, so it stays an instance member.")]
     public string Platform => PlatformType.YouTube.ToWire();
 
     /// <summary>The row's state; see <see cref="PublicationStatus"/> for the transitions each member allows.</summary>
@@ -170,6 +173,8 @@ public sealed class Publication : AggregateRoot, IUserOwned, IAuditable
     /// Whether the video is declared as made for kids: always <see langword="false"/> (D6 — Night Tales content is
     /// not directed at children), so the declaration can never be flipped by a client.
     /// </summary>
+    [SuppressMessage("Performance", "CA1822:Mark members as static",
+        Justification = "A per-row column value mapped through a shadow property; it must stay an instance member so a client can never write it.")]
     public bool SelfDeclaredMadeForKids => false;
 
     /// <summary>
