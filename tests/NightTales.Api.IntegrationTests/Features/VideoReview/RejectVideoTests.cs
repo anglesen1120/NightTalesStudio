@@ -153,14 +153,16 @@ public sealed class RejectVideoTests(TestDatabase database) : IntegrationTest(da
         var body = ReRenderBody($"The lead is off model {Canary}");
         const string key = "reject-rerender-repeat";
 
-        using var first = await RejectVideoAsync(client, world.EpisodeId, Etag(world.EpisodeId), body, key);
+        var etag = Etag(world.EpisodeId);
+        using var first = await RejectVideoAsync(client, world.EpisodeId, etag, body, key);
         first.StatusCode.ShouldBe(HttpStatusCode.Accepted, await first.Content.ReadAsStringAsync(Ct));
         var firstBody = await first.Content.ReadAsStringAsync(Ct);
-        var firstEtag = (await BodyAsync(first)).GetProperty("etag").GetString();
 
-        // The retry carries the same key: it replays the stored 202 instead of rejecting a second time, so
-        // nothing moved, no second event was raised and no second audit row was written.
-        using var second = await RejectVideoAsync(client, world.EpisodeId, firstEtag, body, key);
+        // A network retry resends the same request (same key, same If-Match): it replays the stored 202
+        // instead of rejecting a second time, so nothing moved, no second event was raised and no second
+        // audit row was written. (The request hash covers If-Match, so a retry with a different tag is a
+        // different request and is refused as `idempotency_key_reused`, like every idempotent command.)
+        using var second = await RejectVideoAsync(client, world.EpisodeId, etag, body, key);
 
         second.StatusCode.ShouldBe(HttpStatusCode.Accepted, await second.Content.ReadAsStringAsync(Ct));
         (await second.Content.ReadAsStringAsync(Ct)).ShouldBe(firstBody, "the stored response is replayed verbatim");

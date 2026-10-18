@@ -117,7 +117,10 @@ public sealed class EpisodeApprovedAtMigrationTests(TestDatabase database) : Int
             // table that existed before this migration must survive its Down.
             await migrator.MigrateAsync(migrations[own - 1], Ct);
 
-            (await EpisodeColumnsAsync()).ShouldBe(columnsBefore.Where(column => column != "approved_at").ToList());
+            // 09_EpisodeVideoReview (09.7.1-T1) adds `ready_at` and `video_reject_reason` later: the linear Down
+            // reverts them too, and the re-Up below stops at this migration, so neither column is expected.
+            (await EpisodeColumnsAsync()).ShouldBe(
+                columnsBefore.Where(column => column is not ("approved_at" or "ready_at" or "video_reject_reason")).ToList());
             (await EpisodeDataAsync(episode.Id)).ShouldBe(before);
             var tablesAfter = await Database.QueryStringsAsync(
                 "SELECT tablename FROM pg_tables WHERE schemaname = 'public' ORDER BY tablename", Ct);
@@ -130,7 +133,8 @@ public sealed class EpisodeApprovedAtMigrationTests(TestDatabase database) : Int
 
             await migrator.MigrateAsync(migrations[own], Ct);
 
-            (await EpisodeColumnsAsync()).ShouldBe(columnsBefore);
+            (await EpisodeColumnsAsync()).ShouldBe(
+                columnsBefore.Where(column => column is not ("ready_at" or "video_reject_reason")).ToList());
             (await EpisodeDataAsync(episode.Id)).ShouldBe(before);
             (await Database.QueryStringsAsync(
                 $"SELECT (approved_at IS NULL)::text FROM episodes WHERE id = '{episode.Id}'", Ct)).ShouldBe(["true"]);
@@ -142,7 +146,7 @@ public sealed class EpisodeApprovedAtMigrationTests(TestDatabase database) : Int
     }
 
     private Task<IReadOnlyList<string>> EpisodeDataAsync(Guid episodeId) => Database.QueryStringsAsync(
-        $"SELECT (to_jsonb(e) - 'approved_at')::text FROM episodes e WHERE id = '{episodeId}'", Ct);
+        $"SELECT (to_jsonb(e) - 'approved_at' - 'ready_at' - 'video_reject_reason')::text FROM episodes e WHERE id = '{episodeId}'", Ct);
 
     private Task<IReadOnlyList<string>> EpisodeColumnsAsync() => Database.QueryStringsAsync(
         "SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'episodes' "
