@@ -4,6 +4,14 @@ History moved out of STATUS.md to keep the live file small. The initial archive 
 
 ## Resume-here history (Current/Previous blocks, Next actions)
 
+### Superseded Session 57 wording (2026-10-18, replaced by the 09.6.3-T2 close-out)
+
+Replaced text (verbatim):
+
+- Resume bullet heading: `- **Backend (Session 57, PR #243 open):**`
+- Plan-09 Progress cell: `09.6.3-T2 **PR #243 open** (Session 57) |`
+- Open tasks row 09.6.3-T2 status start: `| 09.6.3-T2 render output ingest | **PR #243 open** (Session 57, `
+
 ### Session 57 note (2026-10-18, 09.6.3-T2 PR opened)
 
 Replaced in place, not moved (kept live, amended): the Session 55 backend bullet in STATUS.md — its poller sentence gained "(lifted by 09.6.3-T2, PR #243)" and its trailing sentence `Next (backend): 09.6.3-T2 (ingest + `IngestRenderOutputJob`).` was dropped, because the Session 57 bullet now carries the lane's current state. The Session 50 Resume bullet was moved by the Session 61 block below (same text, not repeated here). The 09.6.2-T1 H1 row and the render-ingest-enqueuer row say closed.
