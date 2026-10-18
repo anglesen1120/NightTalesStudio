@@ -66,6 +66,11 @@ internal static class AllowLists
             "NightTales.Infrastructure.Persistence.Queries.SystemWorkQuery",
             "NightTales.Infrastructure.Pricing.UsageBudgetGuard",
             "NightTales.Infrastructure.Pricing.GenerationRunOpenBoundsReader",
+            // 06.1.2-T2: the two locked reads of ChannelConnectionLocker. The by-id read carries the owner
+            // predicate itself (an anonymous scope answers null) and the by-account read must see the live row
+            // of a channel whoever owns it, because its caller is 06.1.2-T1's anonymous callback, which cannot
+            // be tenant-pinned; the connect write checks row.UserId before anything is written.
+            "NightTales.Infrastructure.Publishing.ChannelConnectionLocker",
         };
 
     /// <summary>Job method parameters that may be <c>string</c> (README D12).</summary>

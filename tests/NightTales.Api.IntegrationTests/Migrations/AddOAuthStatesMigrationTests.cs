@@ -17,7 +17,9 @@ namespace NightTales.Api.IntegrationTests.Migrations;
 /// single-use connect attempt per row, claimed by one atomic statement from an anonymous callback. <c>Up</c> is
 /// expand-only — one <c>CreateTable</c>, its unique <c>state_hash</c> index and the
 /// <c>(user_id, created_at DESC)</c> purge index, no other schema change — and <c>Down</c> drops the table and
-/// nothing else. The class owns the last-migration check for the new tip.
+/// nothing else. 06.1.2-T2 appended <c>_06_ChannelConnections</c> after it, so the newest migration's test
+/// (<c>AddChannelConnectionsMigrationTests</c>) owns the last-migration check (<c>migrations[^1]</c>) and this
+/// class finds its own migration by name.
 /// </summary>
 [Trait("Category", "Integration")]
 [Trait("Category", "Migration")]
@@ -56,11 +58,13 @@ public sealed class AddOAuthStatesMigrationTests(TestDatabase database) : Integr
     private static CancellationToken Ct => TestContext.Current.CancellationToken;
 
     [Fact]
-    public async Task Migration_IsTheLastOne_AndModelHasNoPendingChange()
+    public async Task Migration_IsPresent_AndModelHasNoPendingChange()
     {
         await using var context = Database.CreateAppDbContext();
         var migrations = context.Database.GetMigrations().Order(StringComparer.Ordinal).ToList();
-        migrations[^1].ShouldEndWith("_" + MigrationName);
+        // 06.1.2-T2 appended a migration after this one, so this class no longer owns the last-migration
+        // check (the newest migration's own test does); it still proves its own migration is compiled in.
+        migrations.ShouldContain(name => name.EndsWith("_" + MigrationName, StringComparison.Ordinal));
 
         context.Database.HasPendingModelChanges().ShouldBeFalse(
             "an entity change without a migration must fail here (run `dotnet ef migrations add`)");

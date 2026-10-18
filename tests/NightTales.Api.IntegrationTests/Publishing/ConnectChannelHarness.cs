@@ -4,6 +4,7 @@ using System.Text.Json;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using NightTales.Api.IntegrationTests.Auth;
 using NightTales.Api.IntegrationTests.Persistence;
 using NightTales.Application.Abstractions.Persistence;
@@ -11,6 +12,7 @@ using NightTales.Application.Abstractions.Security;
 using NightTales.Infrastructure.Persistence;
 using NightTales.Infrastructure.Persistence.Entities;
 using ErrorOr;
+using NightTales.Application.Features.Publishing.Channels;
 using NightTales.Application.Features.Publishing.Channels.Commands.CompleteYouTubeConnect;
 using NightTales.Infrastructure.Security;
 using NightTales.TestKit.Api;
@@ -37,6 +39,25 @@ namespace NightTales.Api.IntegrationTests.Publishing;
 /// </remarks>
 internal sealed class ConnectChannelHarness : IAsyncDisposable
 {
+    /// <summary>
+    /// Which <see cref="IConnectChannelConnection"/> the host resolves for one harness world.
+    /// </summary>
+    /// <remarks>
+    /// 06.1.2-T2 registers the real writer (the callback's unit #2 opens it), so "the port is missing" is no
+    /// longer the production default and has to be asked for explicitly.
+    /// </remarks>
+    internal enum ConnectChannelWriter
+    {
+        /// <summary>06.1.2-T1's stand-in: scripted answers, the call log, no row beyond its marker.</summary>
+        Fake,
+
+        /// <summary>The production registration, left alone: 06.1.2-T2's real connect write.</summary>
+        Production,
+
+        /// <summary>No writer at all — a misconfigured host, the case <c>R13</c> covers.</summary>
+        None,
+    }
+
     /// <summary>The connect route of the 06.1.2-T1 table (platform as the route parameter).</summary>
     internal const string ConnectRoute = "/api/v1/channels/youtube/connect";
 
@@ -102,7 +123,11 @@ internal sealed class ConnectChannelHarness : IAsyncDisposable
     /// <summary>The user's refresh family: the token's <c>sid</c> and the callback's liveness check.</summary>
     internal Guid FamilyId { get; }
 
-    /// <summary>The channel hand-off stand-in; <c>CallCount</c> is "one connection row" until T2 lands.</summary>
+    /// <summary>
+    /// The channel hand-off stand-in. Its <c>CallCount</c> is the connection-row probe of the default world
+    /// (<see cref="ConnectChannelWriter.Fake"/>); a <see cref="ConnectChannelWriter.Production"/> world leaves
+    /// it at zero and reads the real <c>channel_connections</c> row instead.
+    /// </summary>
     internal FakeConnectChannelState Connection { get; }
 
     /// <summary>The e-mail sender stand-in, so a rollback can be asserted on a real row.</summary>
@@ -131,9 +156,17 @@ internal sealed class ConnectChannelHarness : IAsyncDisposable
     /// <param name="logSink">A sink the host logs through, for the redaction check.</param>
     /// <param name="resolver">A resolver stand-in, for the two catalogue codes the connect route maps.</param>
     /// <param name="envelope">A callback-handler stand-in answering this, for the endpoint's envelope split.</param>
-    /// <param name="connectChannelWriter">
-    /// Whether the host gets the writer stand-in. False leaves <see cref="IConnectChannelConnection"/>
-    /// unregistered, which is the production default until 06.1.2-T2 lands (D-2) and the case R13 covers.
+    /// <param name="channelWriter">
+    /// Which writer the host resolves: 06.1.2-T1's stand-in
+    /// (<see cref="ConnectChannelWriter.Fake"/>, the default), the production registration 06.1.2-T2 added
+    /// (<see cref="ConnectChannelWriter.Production"/>), or none at all
+    /// (<see cref="ConnectChannelWriter.None"/>), which is a host whose port is absent — the case <c>R13</c>
+    /// covers and the reason that case now has to remove the registration instead of relying on its absence.
+    /// </param>
+    /// <param name="realEmailSender">
+    /// Whether the production <c>IEmailSender</c> stays in place: the default is the stand-in, and a test that
+    /// asserts the real <c>email_messages</c> row and its <c>email_requested.v1</c> event (06.1.2-T2's own
+    /// connect e-mail) asks for the real one.
     /// </param>
     internal static async Task<ConnectChannelHarness> StartAsync(
         TestDatabase database,
@@ -145,7 +178,8 @@ internal sealed class ConnectChannelHarness : IAsyncDisposable
         TestLogSink? logSink = null,
         FakeOAuthClientResolver? resolver = null,
         ErrorOr<ConnectYouTubeOutcome>? envelope = null,
-        bool connectChannelWriter = true)
+        ConnectChannelWriter channelWriter = ConnectChannelWriter.Fake,
+        bool realEmailSender = false)
     {
         var clock = new FakeClock();
 
@@ -166,12 +200,25 @@ internal sealed class ConnectChannelHarness : IAsyncDisposable
         var email = new FakeEmailSenderState();
 
         var factory = new ApiFactory(database, clock)
-            .WithFakeGoogle(google)
-            .WithFakeEmailSender(email);
+            .WithFakeGoogle(google);
 
-        if (connectChannelWriter)
+        if (!realEmailSender)
         {
-            factory = factory.WithFakeConnectChannel(connection);
+            factory = factory.WithFakeEmailSender(email);
+        }
+
+        switch (channelWriter)
+        {
+            case ConnectChannelWriter.Fake:
+                factory = factory.WithFakeConnectChannel(connection);
+                break;
+            case ConnectChannelWriter.None:
+                // The port is registered in production now, so "no writer" is the registration being absent.
+                factory = factory.WithServices(services => services.RemoveAll<IConnectChannelConnection>());
+                break;
+            case ConnectChannelWriter.Production:
+            default:
+                break;
         }
 
         if (logSink is not null)

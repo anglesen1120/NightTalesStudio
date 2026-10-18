@@ -4,6 +4,40 @@ History moved out of STATUS.md to keep the live file small. The initial archive 
 
 ## Resume-here history (Current/Previous blocks, Next actions)
 
+### Superseded Session 61 rows (2026-10-18, replaced when the 06.1.2-T2 PR opened)
+
+Replaced text (verbatim):
+
+Resume bullet (Session 50 closed; moved out to keep the Resume block at 15 bullets):
+
+- **Backend (Session 50 closed):** **02.5.6-T2** similarity threshold calibration merged as #221 (`94b640f2`, tip `e6a6dc9e`, code tip `c214c06e`, from `develop` `be4d36f5`, merged develop `3bf0d380` and `82d2fe31`; no migration, no route, no job; CI refused: CI-01 (`build-test` job `117380902460`, billing annotation), owner treats as pass; final full remote gate `GATE_RC=0` on `2f50b903` (Ubuntu arm64), the tip adds docs only; T2 gates closed: QA, code review, perf+security review, one `judge_batch` triage, delta review PASS). An 80-sample fixture, an offline harness and a committed report, by the decision rules 1–6 (rule 3 amended by the owner 2026-10-17): `Similarity:N` vi/en 10/8 → 14/14, `WarnAbove` 0.05 → 0.02, `BlockAbove` 0.15 → 0.45, fact threshold (both keys) → 0.05, `Perf:BudgetMs` 500 → 163 (`appsettings.json` of Api and Worker). Live behaviour change: the fact-sheet verbatim-copy rule drops a fact scoring above 0.05 (was 0.15) at n = 14; facts under 14 tokens are never dropped (CAL-S50-6). Open items: §Open tasks `CAL-S50-1`…`CAL-S50-6` (partial copying between 0.02 and 0.45 only warns, dead key, perf load, recalibrate, F18, short facts), each with a hand-over in the 02.8.2-T3, 02.5.3-T2 or 02.5.6-T2 Notes. Lane next: the TL assigns CAL-S50-3/-4; **02.8.2-T3** reads the 0.02 / 0.45 values.
+
+Migrations bullet (the tail that changed):
+
+- **Migrations** end `…20261003140736_02_SourcesAndFetchTasks` → `20261005092410_02_EpisodeApprovedAt` (02.3.2-T1) → `20261013183400_02_AddFactSheets` (02.5.3-T2, #184, on develop) → `20261015182230_09_RenderJobs` (09.6.1-T1, merged #207, on develop) → `20261015195749_06_PlatformQuotaUsage` (06.3.1-T1, merged #211, on develop) → `20261017094508_02_AddSourceCandidates` (02.7.2-T2, merged #219, on develop) → `20261017115143_02_AddEpisodeIdeas` (02.8.1-T1, merged #225, on develop) → `20261017140732_09_AddRenderJobWorstCaseUsd` (09.6.3-T1, merged #231, on develop) → `20261018092757_06_OAuthStates` (06.1.2-T1, PR #237, on `feature/06.1.2-T1-s58`, not yet on develop); `AddOAuthStatesMigrationTests` owns `migrations[^1]`. Required `OpenAi:ApiKey` now for Worker **and** Api (dev: `OPENAI_API_KEY` via `tools/dev/up.sh`; `nts-wt/gate.sh` exports a non-secret placeholder).
+
+Plans-not-started line (plan 06 had merged its first task #237 and now runs 06.1.2-T2):
+
+Plans 06, 07, 08, 12: not started. Plan 10: Stage A (foundation) merged as #122; Stage B (10.2.x core) next. Order: `plans/features/README.md`.
+
+Open tasks row 06.1.2-T1 `reconnected` (closed by 06 CR-22):
+
+| 06.1.2-T1 `reconnected` is always `false` in the audit data | **[OPEN]** owner: 06.1.2-T2 | `publishing.channel_connected.data.reconnected` is written `false` unconditionally: T2's port answers `ErrorOr<Guid>` (`IConnectChannelConnection.ConnectAsync`), so a reconnect and a first connect are indistinguishable in the handler. T2 returns an outcome type (connection id + reconnected) or lets T1 re-read. (Session 58) |
+
+Open tasks row 06.1.2-T1 D13 outbox row and connect e-mail (closed by 06.1.2-T2):
+
+| 06.1.2-T1 D13 outbox row + connect e-mail are T2's | **[OPEN]** owner: 06.1.2-T2 | The `channel_connection_changed.v1` outbox row and the connect e-mail sit inside unit #2 in `IConnectChannelConnection`, i.e. 06.1.2-T2's; the T1 task-file step-10 wording reads as if T1 owned them — fix the wording in the T2 task file. (Session 58) |
+
+Open tasks row 06.1.2-T1 → T2 writer contract (closed for rollback/no-flush; the orphaned-grant revoke stays with 06.4.1-T1 / 06.2.3-T3):
+
+| 06.1.2-T1 → T2 writer contract (rollback, no flush) | **[OPEN]** owner: 06.1.2-T2 (revoke path: 06.4.1-T1 / 06.2.3-T3) | The writer must not `SaveChanges`/`ExecuteUpdate` before success and must answer errors, never throw, so unit #2 rolls back (`IConnectChannelConnection` remarks): a refusal thrown inside the transaction aborts Npgsql (25P02) and moves the 23505 mapping out of `EfUnitOfWork`. An orphaned Google grant (exchange succeeded, writer failed or refused) is not revoked here — 06.4.1-T1 / 06.2.3-T3 own the revoke. (Session 58) |
+
+Open tasks row 06.1.2-T1 `youtube_publish` stays OFF (rewritten: on only if every 06.1.2-T2 Acceptance check passes, owner decision after the merge):
+
+| 06.1.2-T1 `youtube_publish` stays OFF | **[OPEN]** owner: 06.1.2-T2 | The flag must stay off until T2 merges: with no production `IConnectChannelConnection` a completed callback can only answer `oauth_exchange_failed` (the writer is resolved before the exchange, so the code is not spent). While off, both routes answer 404 `feature_disabled`. (Session 58) |
+
+Outcome: 06.1.2-T2 (Session 61) replaced the migration tail, the plans-not-started line and the four §Open tasks rows above; the three closed items are replaced by evidence rows and the flag row now waits on the owner after the merge. S50's bullet left the Resume block to keep it at 15 bullets. Also amended outside STATUS.md in the same change: `plans/features/06-youtube-posting/06.1-connect/06.1.2-T2-channel-connection.md` (Step 1 / Performance / Step 2 / failure table → the shipped owner-agnostic allow-listed read and the `23505` backstop, 06 CR-22; query signature and Outputs paths; the `S61 review` Notes; the domain test list after the S61 CODE-3 renames), `plans/features/06-youtube-posting/06.1-connect/plan.md` (invariant 1, the tenant-isolation row, UC2 step 8/9, the revoked-row invariant) and `plans/features/06-youtube-posting/README.md` (§4 06 CR-22 and the S13 row: a second allow-listed `IgnoreQueryFilters` site).
+
 ### Superseded Session 60 rows (2026-10-18, replaced at the Session 60 close-out)
 
 Replaced text (verbatim):

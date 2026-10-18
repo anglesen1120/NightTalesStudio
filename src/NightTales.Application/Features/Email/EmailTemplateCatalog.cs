@@ -147,6 +147,11 @@ public static class EmailTemplateCatalog
 
             // 02.8.2-T1.
             ["autopilot_owner_action_required"] = new(["seriesTitle", "episodeTitle", "slot", "failedChecks", "deepLink"]),
+
+            // 06.1.2-T2: a channel was connected to the account. `securityLink` is a static path the
+            // producer supplies, so the template is not token-bearing: no minter and no `link` key
+            // (09 README §B10 WT17/WT30).
+            ["channel_connected"] = new(["displayName", "channelTitle", "occurredAt", "device", "securityLink"]),
         };
 
     /// <summary>The definition of <paramref name="template"/>, or <see langword="null"/> when it is unknown.</summary>

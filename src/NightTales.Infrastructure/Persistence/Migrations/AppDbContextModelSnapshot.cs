@@ -942,6 +942,91 @@ namespace NightTales.Infrastructure.Persistence.Migrations
                     b.ToTable("feature_flags", (string)null);
                 });
 
+            modelBuilder.Entity("NightTales.Domain.Publishing.ChannelConnection", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("AccessTokenEnc")
+                        .HasColumnType("text")
+                        .HasColumnName("access_token_enc");
+
+                    b.Property<DateTimeOffset>("ConnectedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("connected_at");
+
+                    b.Property<string>("DisplayName")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("display_name");
+
+                    b.Property<string>("ExternalAccountId")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("external_account_id");
+
+                    b.Property<DateTimeOffset?>("LastVerifiedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("last_verified_at");
+
+                    b.Property<string>("OAuthClientId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)")
+                        .HasColumnName("oauth_client_id");
+
+                    b.Property<string>("Platform")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("platform");
+
+                    b.Property<string>("RefreshTokenEnc")
+                        .HasColumnType("text")
+                        .HasColumnName("refresh_token_enc");
+
+                    b.Property<DateTimeOffset?>("RevokedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("revoked_at");
+
+                    b.Property<string>("Scope")
+                        .IsRequired()
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)")
+                        .HasColumnName("scope");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("status");
+
+                    b.Property<DateTimeOffset>("TokenExpiresAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("token_expires_at");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_channel_connections");
+
+                    b.HasIndex("UserId")
+                        .HasDatabaseName("ix_channel_connections_user_id");
+
+                    b.HasIndex("Platform", "ExternalAccountId")
+                        .IsUnique()
+                        .HasDatabaseName("ux_channel_connections_account")
+                        .HasFilter("status <> 'revoked'");
+
+                    b.ToTable("channel_connections", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_channel_connections_platform", "platform IN ('youtube','tiktok')");
+
+                            t.HasCheckConstraint("ck_channel_connections_status", "\"status\" IN ('active', 'error', 'expired', 'revoked')");
+                        });
+                });
+
             modelBuilder.Entity("NightTales.Domain.Publishing.OAuthState", b =>
                 {
                     b.Property<Guid>("Id")

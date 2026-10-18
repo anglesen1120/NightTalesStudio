@@ -1,0 +1,7 @@
+Subject: YouTube channel connected
+
+Hello {{displayName}},
+
+YouTube channel {{channelTitle}} was connected to Night Tales at {{occurredAt}} from {{device}}.
+
+If this wasn't you, review your account security at {{securityLink}}.

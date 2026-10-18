@@ -69,6 +69,13 @@ public sealed class FakeConnectChannelState
     /// <summary>The connection id a successful hand-off returns.</summary>
     public Guid ConnectionId { get; set; } = Guid.CreateVersion7();
 
+    /// <summary>
+    /// What the hand-off answers as <c>ConnectChannelOutcome.Reconnected</c> — the value 06.1.2-T1's audit row
+    /// records as <c>data.reconnected</c> (06 CR-22). Defaults to <see langword="false"/>, the first-connect
+    /// answer.
+    /// </summary>
+    public bool Reconnected { get; set; }
+
     /// <summary>Every hand-off the fake received, in arrival order.</summary>
     public IReadOnlyList<ConnectChannelConnectionRequest> Calls
     {
@@ -141,7 +148,7 @@ public sealed class FakeConnectChannelConnection(
     private static readonly Guid MarkerUserId = Guid.Empty;
 
     /// <inheritdoc />
-    public async Task<ErrorOr<Guid>> ConnectAsync(ConnectChannelConnectionRequest request, CancellationToken ct)
+    public async Task<ErrorOr<ConnectChannelOutcome>> ConnectAsync(ConnectChannelConnectionRequest request, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(request);
 
@@ -178,7 +185,7 @@ public sealed class FakeConnectChannelConnection(
             return Error.Conflict(ErrorCodes.ChannelAlreadyConnected);
         }
 
-        return state.ConnectionId;
+        return new ConnectChannelOutcome(state.ConnectionId, state.Reconnected);
     }
 
     /// <summary>

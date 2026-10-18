@@ -683,10 +683,14 @@ public sealed class ConnectChannelQaTests(TestDatabase database) : IntegrationTe
     [Fact]
     public async Task Callback_WithoutAChannelWriter_RefusesBeforeSpendingTheCodeAtGoogle()
     {
-        // The production default until 06.1.2-T2 registers the port (D-2), probed here independently of the
-        // task suite's own case: the handler resolves the writer before the exchange, so no grant is minted at
-        // Google that this deployment could neither store nor revoke, and the state is already spent.
-        await using var harness = await ConnectChannelHarness.StartAsync(Database, Ct, connectChannelWriter: false);
+        // A host whose port is absent — 06.1.2-T2 registers the production writer, so the case has to remove
+        // the registration — probed here independently of the task suite's own case: the handler resolves the
+        // writer before the exchange, so no grant is minted at Google that this deployment could neither store
+        // nor revoke, and the state is already spent.
+        await using var harness = await ConnectChannelHarness.StartAsync(
+            Database,
+            Ct,
+            channelWriter: ConnectChannelHarness.ConnectChannelWriter.None);
         var connect = await harness.ConnectAsync(Ct);
         var code = await harness.AuthorizeAsync(connect.AuthorizationUrl, Ct);
 
