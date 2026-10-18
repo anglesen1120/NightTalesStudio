@@ -138,6 +138,15 @@ public interface IAppDbContext
     DbSet<ChannelConnection> ChannelConnections { get; }
 
     /// <summary>
+    /// The publications of 06.2.1-T1 (<c>publications</c>, 06 README D6/D20): the create command inserts one, the
+    /// episode detail's summary query reads the user's own rows, and the consent/cancel/upload paths of 06.2.x
+    /// mutate it. <c>IUserOwned</c> (D8), so the D10 tenant filter applies, and the partial unique index
+    /// <c>ux_publications_active_episode_platform</c> makes "one live publication per episode and platform" a
+    /// storage fact.
+    /// </summary>
+    DbSet<Publication> Publications { get; }
+
+    /// <summary>
     /// Takes the row lock of the current user's episode (<c>SELECT … FOR NO KEY UPDATE</c>, 02.2.2 plan §4 U6) as the
     /// first statement of a command's transaction, so the status read, the daily count and the run insert of two
     /// concurrent generate calls serialise on the episode. The lock is held until the surrounding transaction

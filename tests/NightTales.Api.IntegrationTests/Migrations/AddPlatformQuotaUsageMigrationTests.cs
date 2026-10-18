@@ -16,9 +16,9 @@ namespace NightTales.Api.IntegrationTests.Migrations;
 /// The <c>_06_PlatformQuotaUsage</c> migration (06.3.1-T1): the <c>platform_quota_usage</c> counter table, one row per
 /// platform and Pacific quota day. The composite primary key <c>(platform, quota_day)</c> is its only index, and the
 /// three CHECKs reject a negative count, a non-positive limit and an unknown platform. Later migrations appended
-/// after this one (02.7.2-T2, 06.1.2-T1, 06.1.2-T2), so this class no longer owns the last-migration check (the
-/// newest migration's own test does); it finds its own migration by name, because its timestamp is generated when
-/// the migration is added.
+/// after this one (02.7.2-T2, 06.1.2-T1, 06.1.2-T2, 06.2.1-T1), so this class no longer owns the last-migration
+/// check (the newest migration's own test does); it finds its own migration by name, because its timestamp is
+/// generated when the migration is added.
 /// </summary>
 [Trait("Category", "Integration")]
 [Trait("Category", "Migration")]

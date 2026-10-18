@@ -1145,6 +1145,170 @@ namespace NightTales.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("NightTales.Domain.Publishing.Publication", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid?>("AutopilotAuthorizationId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("autopilot_authorization_id");
+
+                    b.Property<Guid>("ChannelConnectionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("channel_connection_id");
+
+                    b.Property<DateTimeOffset?>("ConsentAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("consent_at");
+
+                    b.Property<string>("ConsentSource")
+                        .HasColumnType("text")
+                        .HasColumnName("consent_source");
+
+                    b.Property<string>("ConsentTextVersion")
+                        .HasColumnType("text")
+                        .HasColumnName("consent_text_version");
+
+                    b.Property<bool>("ContainsSyntheticMedia")
+                        .HasColumnType("boolean")
+                        .HasColumnName("contains_synthetic_media");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("description");
+
+                    b.Property<Guid>("EpisodeId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("episode_id");
+
+                    b.Property<string>("ErrorCode")
+                        .HasColumnType("text")
+                        .HasColumnName("error_code");
+
+                    b.Property<string>("ExternalPostId")
+                        .HasColumnType("text")
+                        .HasColumnName("external_post_id");
+
+                    b.Property<string>("ExternalUrl")
+                        .HasColumnType("text")
+                        .HasColumnName("external_url");
+
+                    b.Property<DateTimeOffset?>("NextAttemptAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("next_attempt_at");
+
+                    b.Property<string>("PlatformPayloadJson")
+                        .HasColumnType("jsonb")
+                        .HasColumnName("platform_payload");
+
+                    b.Property<string>("Privacy")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("privacy");
+
+                    b.Property<DateTimeOffset?>("PublishAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("publish_at");
+
+                    b.Property<DateTimeOffset?>("PublishedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("published_at");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("status");
+
+                    b.PrimitiveCollection<List<string>>("Tags")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("text[]")
+                        .HasColumnName("tags")
+                        .HasDefaultValueSql("'{}'::text[]");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("title");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("user_id");
+
+                    b.Property<uint>("Version")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
+                    b.Property<DateTimeOffset?>("VetoEndsAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("veto_ends_at");
+
+                    b.Property<DateTimeOffset?>("VetoNoticeSentAt")
+                        .HasColumnType("timestamptz")
+                        .HasColumnName("veto_notice_sent_at");
+
+                    b.Property<string>("platform")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("text")
+                        .HasColumnName("platform");
+
+                    b.Property<bool>("self_declared_made_for_kids")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false)
+                        .HasColumnName("self_declared_made_for_kids");
+
+                    b.HasKey("Id")
+                        .HasName("pk_publications");
+
+                    b.HasIndex("AutopilotAuthorizationId")
+                        .HasDatabaseName("ix_publications_autopilot_authorization_id");
+
+                    b.HasIndex("ChannelConnectionId")
+                        .HasDatabaseName("ix_publications_channel_connection_id");
+
+                    b.HasIndex("EpisodeId", "UserId")
+                        .HasDatabaseName("ix_publications_episode_id_user_id");
+
+                    b.HasIndex("EpisodeId", "platform")
+                        .IsUnique()
+                        .HasDatabaseName("ux_publications_active_episode_platform")
+                        .HasFilter("status NOT IN ('failed','cancelled')");
+
+                    b.HasIndex("Status", "NextAttemptAt")
+                        .HasDatabaseName("ix_publications_status_next_attempt_at")
+                        .HasFilter("status IN ('awaiting_consent','scheduled','uploading','processing')");
+
+                    b.HasIndex("UserId", "CreatedAt")
+                        .IsDescending(false, true)
+                        .HasDatabaseName("ix_publications_user_id_created_at");
+
+                    b.ToTable("publications", null, t =>
+                        {
+                            t.HasCheckConstraint("ck_publications_consent_source", "consent_source IN ('user','autopilot')");
+
+                            t.HasCheckConstraint("ck_publications_platform", "platform IN ('youtube','tiktok')");
+
+                            t.HasCheckConstraint("ck_publications_privacy", "privacy IN ('public','unlisted','private')");
+
+                            t.HasCheckConstraint("ck_publications_status", "\"status\" IN ('awaiting_consent', 'cancelled', 'failed', 'processing', 'published', 'scheduled', 'uploading')");
+                        });
+                });
+
             modelBuilder.Entity("NightTales.Domain.Rendering.Music.MusicTrack", b =>
                 {
                     b.Property<Guid>("Id")
@@ -3530,6 +3694,37 @@ namespace NightTales.Infrastructure.Persistence.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_episodes_series_series_id_user_id");
+                });
+
+            modelBuilder.Entity("NightTales.Domain.Publishing.Publication", b =>
+                {
+                    b.HasOne("NightTales.Domain.Series.Autopilot.SeriesAutopilotAuthorization", null)
+                        .WithMany()
+                        .HasForeignKey("AutopilotAuthorizationId")
+                        .OnDelete(DeleteBehavior.SetNull)
+                        .HasConstraintName("fk_publications_series_autopilot_authorizations_autopilot_auth");
+
+                    b.HasOne("NightTales.Domain.Publishing.ChannelConnection", null)
+                        .WithMany()
+                        .HasForeignKey("ChannelConnectionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_publications_channel_connections_channel_connection_id");
+
+                    b.HasOne("NightTales.Infrastructure.Persistence.AppUser", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_publications_asp_net_users_user_id");
+
+                    b.HasOne("NightTales.Domain.Episodes.Episode", null)
+                        .WithMany()
+                        .HasForeignKey("EpisodeId", "UserId")
+                        .HasPrincipalKey("Id", "UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_publications_episodes_episode_id_user_id");
                 });
 
             modelBuilder.Entity("NightTales.Domain.Rendering.RenderJob", b =>

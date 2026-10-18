@@ -112,9 +112,10 @@ public sealed class EpisodeApprovedAtMigrationTests(TestDatabase database) : Int
             // one, so a table a later migration adds is gone with it. `fact_sheets` and `series_bibles` are the
             // two later migrations' tables (02_AddFactSheets, 02_AddSeriesBible), `render_jobs` is 09_RenderJobs
             // and `platform_quota_usage` is 06_PlatformQuotaUsage, `source_candidates` is 02_AddSourceCandidates,
-            // `episode_ideas` is 02_AddEpisodeIdeas, `oauth_states` is 06_OAuthStates and `channel_connections`
-            // is 06_ChannelConnections: all applied after 02_EpisodeApprovedAt, so the loop skips them. Every
-            // table that existed before this migration must survive its Down.
+            // `episode_ideas` is 02_AddEpisodeIdeas, `oauth_states` is 06_OAuthStates, `channel_connections`
+            // is 06_ChannelConnections and `publications` is 06_Publications: all applied after
+            // 02_EpisodeApprovedAt, so the loop skips them. Every table that existed before this migration must
+            // survive its Down.
             await migrator.MigrateAsync(migrations[own - 1], Ct);
 
             // 09_EpisodeVideoReview (09.7.1-T1) adds `ready_at` and `video_reject_reason` later: the linear Down
@@ -126,7 +127,8 @@ public sealed class EpisodeApprovedAtMigrationTests(TestDatabase database) : Int
                 "SELECT tablename FROM pg_tables WHERE schemaname = 'public' ORDER BY tablename", Ct);
             foreach (var table in tablesBefore.Where(table
                 => table is not ("fact_sheets" or "series_bibles" or "render_jobs" or "platform_quota_usage"
-                    or "source_candidates" or "episode_ideas" or "oauth_states" or "channel_connections")))
+                    or "source_candidates" or "episode_ideas" or "oauth_states" or "channel_connections"
+                    or "publications")))
             {
                 tablesAfter.ShouldContain(table, "Down removes only approved_at; it must not drop a table");
             }

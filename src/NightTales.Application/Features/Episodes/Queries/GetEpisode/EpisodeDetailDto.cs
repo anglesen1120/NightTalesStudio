@@ -23,7 +23,7 @@ namespace NightTales.Application.Features.Episodes.Queries.GetEpisode;
 /// Extension points, in this one DTO and this one projection — never a second route (09.5.3 plan §Steps
 /// 6): <see cref="RenderJob"/> gains <c>images</c> from 03.4.2-T1. <see cref="CurrentStory"/> and
 /// <see cref="Generation"/> carry the stored story and latest generation run (02 CR-7). 06.2.1-T1
-/// fills <see cref="Publications"/> from its own sequential query; until then that member is null in P.
+/// fills <see cref="Publications"/> from its own sequential query (06.2.1-T1); an episode with no publication row keeps that member null.
 /// </para>
 /// </remarks>
 /// <param name="Id">The episode id.</param>
@@ -42,7 +42,7 @@ namespace NightTales.Application.Features.Episodes.Queries.GetEpisode;
 /// the block stays <see langword="null"/> until 09.6.1-T1 lands <c>render_jobs</c>).
 /// </param>
 /// <param name="FinalVideo">The metadata of the video asset <c>episodes.final_video_asset_id</c> points at, or null; never a media URL.</param>
-/// <param name="Publications">The publication summary, or <see langword="null"/> in P (06 owns the table).</param>
+/// <param name="Publications">The publication summary, or <see langword="null"/> when the episode has no publication row (06.2.1-T1).</param>
 /// <param name="Generation">The latest generation run, or null when none exists.</param>
 /// <param name="CurrentStory">The current stored story, or null before its first version.</param>
 public sealed record EpisodeDetailDto(
