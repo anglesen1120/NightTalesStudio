@@ -5,9 +5,10 @@ namespace NightTales.TestKit.Google;
 
 /// <summary>
 /// What <see cref="FakeGoogleServer"/> answers and which OAuth clients it knows (README D19): the two
-/// client identities a test can pin a state row to, the channel <c>channels.list</c> returns, and the
-/// failure switches (<c>invalid_grant</c>/<c>invalid_client</c>/<c>unauthorized_client</c>, a token
-/// endpoint 500, a channels status, a missing refresh token).
+/// client identities a test can pin a state row to, the channel <c>channels.list</c> returns, the per-id
+/// processing states <c>videos.list</c> returns, and the failure switches
+/// (<c>invalid_grant</c>/<c>invalid_client</c>/<c>unauthorized_client</c>, a token endpoint 500, a channels
+/// status, a missing refresh token).
 /// </summary>
 /// <remarks>
 /// The values are deliberately low-entropy canaries: a real client id or secret never appears in git
@@ -17,11 +18,17 @@ namespace NightTales.TestKit.Google;
 /// </remarks>
 public sealed class FakeGoogleOptions
 {
+    /// <summary>The client id the host's <c>YouTube:ActiveClientId</c> points at by default.</summary>
+    public const string DefaultClientId = "canary-oauth-client-primary";
+
+    /// <summary>The default client's secret, resolved through the secret port.</summary>
+    public const string DefaultClientSecret = "canary-oauth-primary-aaaa";
+
     /// <summary>The client the host's <c>YouTube:ActiveClientId</c> is pointed at.</summary>
-    public string ActiveClientId { get; set; } = "canary-oauth-client-primary";
+    public string ActiveClientId { get; set; } = DefaultClientId;
 
     /// <summary>The <see cref="ActiveClientId"/> client's secret, resolved through the secret port.</summary>
-    public string ActiveClientSecret { get; set; } = "canary-oauth-primary-aaaa";
+    public string ActiveClientSecret { get; set; } = DefaultClientSecret;
 
     /// <summary>A second client, so a test can prove the exchange uses the client pinned to the state row.</summary>
     public string SecondClientId { get; set; } = "canary-oauth-client-secondary";
@@ -60,6 +67,19 @@ public sealed class FakeGoogleOptions
     public bool OmitRefreshToken { get; set; }
 
     /// <summary>
+    /// The <c>expires_in</c> every successful token answer claims. A test sets it to an absurd value to prove the
+    /// client bounds an untrusted lifetime instead of throwing out of its typed error model (SEC-6).
+    /// </summary>
+    public long ExpiresInSeconds { get; set; } = 3600;
+
+    /// <summary>
+    /// The <c>videos.list?part=status</c> row of every id the fake knows (06.2.3-T1): keyed by video id, so a
+    /// test configures exactly the processing states it asserts and every id it did <em>not</em> configure stays
+    /// absent from the answer, the way Google reports an unknown id.
+    /// </summary>
+    public Dictionary<string, FakeVideoStatus> VideoStatuses { get; } = new(StringComparer.Ordinal);
+
+    /// <summary>
     /// When set, the <c>scope</c> every token response names, instead of the scope the authorization request
     /// asked for — Google's granular consent. Set it to a subset (the upload scope only) for a partial grant,
     /// or to <see cref="string.Empty"/> for a response that granted nothing; F9's comparison treats both as a
@@ -78,3 +98,14 @@ public sealed class FakeGoogleOptions
         _ => null,
     };
 }
+
+/// <summary>One <c>videos.list?part=status</c> row of <see cref="FakeGoogleOptions.VideoStatuses"/>.</summary>
+/// <param name="UploadStatus">Google's <c>status.uploadStatus</c> (<c>uploaded</c>, <c>processed</c>, <c>failed</c>, <c>rejected</c>).</param>
+/// <param name="FailureReason">Google's <c>status.failureReason</c>, omitted from the answer when null.</param>
+/// <param name="RejectionReason">Google's <c>status.rejectionReason</c>, omitted from the answer when null.</param>
+/// <param name="PrivacyStatus">Google's <c>status.privacyStatus</c>.</param>
+public sealed record FakeVideoStatus(
+    string UploadStatus,
+    string? FailureReason = null,
+    string? RejectionReason = null,
+    string? PrivacyStatus = "private");

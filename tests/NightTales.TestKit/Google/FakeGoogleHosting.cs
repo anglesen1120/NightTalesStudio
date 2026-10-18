@@ -51,6 +51,47 @@ public static class FakeGoogleHosting
     public const string SecondarySecretKey = "YOUTUBE_CLIENT_SECRET_SECONDARY";
 
     /// <summary>
+    /// The <c>YouTube</c> configuration that points a host at <paramref name="server"/>: the four endpoints, both
+    /// client identities with their secrets under the configuration keys their references resolve to, the scopes,
+    /// the redirect URI, the PKCE switch, and — added by 06.2.3-T1 — the resumable-upload root and the chunk size.
+    /// </summary>
+    /// <remarks>
+    /// One dictionary for every composition: the connect harness configures a <see cref="ApiFactory"/> with it and
+    /// the upload tests configure a bare host, so an endpoint this product adds is wired in exactly one place.
+    /// </remarks>
+    /// <param name="server">The started fake; every endpoint comes from its bound address.</param>
+    /// <param name="chunkSizeBytes">The <c>YouTube:Upload:ChunkSizeBytes</c> to bind.</param>
+    public static IReadOnlyDictionary<string, string?> SettingsFor(
+        FakeGoogleServer server,
+        int chunkSizeBytes = 1024 * 1024)
+    {
+        ArgumentNullException.ThrowIfNull(server);
+
+        var options = server.Options;
+
+        return new Dictionary<string, string?>(StringComparer.Ordinal)
+        {
+            ["YouTube:ActiveClientId"] = options.ActiveClientId,
+            [$"YouTube:Clients:{options.ActiveClientId}:SecretRef"] = PrimarySecretRef,
+            [PrimarySecretKey] = options.ActiveClientSecret,
+            [$"YouTube:Clients:{options.SecondClientId}:SecretRef"] = SecondarySecretRef,
+            [SecondarySecretKey] = options.SecondClientSecret,
+            ["YouTube:AuthorizationEndpoint"] = server.AuthorizationEndpoint.ToString(),
+            ["YouTube:TokenEndpoint"] = server.TokenEndpoint.ToString(),
+            ["YouTube:RevokeEndpoint"] = server.RevokeEndpoint.ToString(),
+            ["YouTube:ApiBaseUrl"] = server.ApiBaseUrl.ToString(),
+            ["YouTube:UploadBaseUrl"] = server.UploadBaseUrl.ToString(),
+            ["YouTube:Upload:ChunkSizeBytes"] = chunkSizeBytes.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            ["YouTube:RedirectUri"] = RedirectUri,
+            ["YouTube:Pkce"] = "true",
+            ["YouTube:OAuthStateMinutes"] = "10",
+            ["YouTube:Http:TimeoutSeconds"] = "15",
+            ["YouTube:Scopes:0"] = UploadScope,
+            ["YouTube:Scopes:1"] = ReadonlyScope,
+        };
+    }
+
+    /// <summary>
     /// Points every <c>YouTube</c> endpoint at <paramref name="server"/>, registers both client identities
     /// through their <c>SecretRef</c> and carries each secret under the configuration key that reference
     /// resolves to (the configuration secret provider's last-segment rule), and runs the host in
@@ -59,33 +100,33 @@ public static class FakeGoogleHosting
     /// <param name="factory">The factory to configure.</param>
     /// <param name="server">The started fake.</param>
     /// <param name="activeClientId">The active client id; the primary client when null.</param>
+    /// <param name="chunkSizeBytes">
+    /// The <c>YouTube:Upload:ChunkSizeBytes</c> the host runs with. The default is 1 MiB rather than the
+    /// production 10 MiB (G8), so a modest test payload spans several chunks and the resumable protocol is
+    /// actually exercised; a test that needs another size passes it here.
+    /// </param>
     public static ApiFactory WithFakeGoogle(
         this ApiFactory factory,
         FakeGoogleServer server,
-        string? activeClientId = null)
+        string? activeClientId = null,
+        int chunkSizeBytes = 1024 * 1024)
     {
         ArgumentNullException.ThrowIfNull(factory);
         ArgumentNullException.ThrowIfNull(server);
 
-        var options = server.Options;
+        factory.WithEnvironment(Environments.Development);
 
-        return factory
-            .WithEnvironment(Environments.Development)
-            .WithSetting("YouTube:ActiveClientId", activeClientId ?? options.ActiveClientId)
-            .WithSetting($"YouTube:Clients:{options.ActiveClientId}:SecretRef", PrimarySecretRef)
-            .WithSetting(PrimarySecretKey, options.ActiveClientSecret)
-            .WithSetting($"YouTube:Clients:{options.SecondClientId}:SecretRef", SecondarySecretRef)
-            .WithSetting(SecondarySecretKey, options.SecondClientSecret)
-            .WithSetting("YouTube:AuthorizationEndpoint", server.AuthorizationEndpoint.ToString())
-            .WithSetting("YouTube:TokenEndpoint", server.TokenEndpoint.ToString())
-            .WithSetting("YouTube:RevokeEndpoint", server.RevokeEndpoint.ToString())
-            .WithSetting("YouTube:ApiBaseUrl", server.ApiBaseUrl.ToString())
-            .WithSetting("YouTube:RedirectUri", RedirectUri)
-            .WithSetting("YouTube:Pkce", "true")
-            .WithSetting("YouTube:OAuthStateMinutes", "10")
-            .WithSetting("YouTube:Http:TimeoutSeconds", "15")
-            .WithSetting("YouTube:Scopes:0", UploadScope)
-            .WithSetting("YouTube:Scopes:1", ReadonlyScope);
+        foreach (var (key, value) in SettingsFor(server, chunkSizeBytes))
+        {
+            factory.WithSetting(key, value);
+        }
+
+        if (activeClientId is not null)
+        {
+            factory.WithSetting("YouTube:ActiveClientId", activeClientId);
+        }
+
+        return factory;
     }
 
     /// <summary>

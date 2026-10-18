@@ -751,6 +751,9 @@ Replaced 2026-09-30 (7):
 
 - **Current (2026-09-30 (6)).** `develop` @ `ec75a22` (#50 merged). 09.2.2-T2 (InitialCore, composite FKs, migration CI job) → **PR #51**; 09.2.3-T1 (tenant filter, ICurrentUser, ISystemContext, SystemWorkQuery) → **PR #52** (this STATUS rides on #52). Both T3-gated (QA → code/perf/security → fixes); trial merge of both on `ec75a22`: 321/321 incl. integration on PG17. Merge in either order.
 
+- **Replaced Resume bullet (Session 62, 2026-10-19), verbatim:**
+  - **Backend (Session 55 closed, merged #231 → `develop` `5f6f5e79`):** **09.6.3-T1** render submit/poll jobs: `SubmitRenderJob` (row lock + re-check, node pick, recipe), `RenderPollingService` (advisory-lock poller, batch 50 x parallelism 4), `PollRenderJob` (progress, timeout, terminal), `RenderRetryPolicy` + `RenderFailureRecorder`, migration `20261017140732_09_AddRenderJobWorstCaseUsd` (closes OPEN-1/OPEN-6). **Do not enable the poller in production before 09.6.3-T2 (lifted by 09.6.3-T2, PR #243)** (job parks in `ingesting`; Audit hand-over: render-ingest-enqueuer, **[CLOSED]** by 09.6.3-T2, PR #243). T3 gates closed; CI refused (billing, CI-01, owner treats as pass); local gate `GATE_RC=0` on `6dfb604c` (local full, macOS, 9204 tests).
+
 ## Per-plan evidence tables (as of 2026-09-30)
 
 ### Plan 01 — Environment setup (29 tasks)
