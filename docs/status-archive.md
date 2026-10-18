@@ -4,6 +4,14 @@ History moved out of STATUS.md to keep the live file small. The initial archive 
 
 ## Resume-here history (Current/Previous blocks, Next actions)
 
+### Superseded backend Next (Session 49 closed) line (2026-10-18, replaced when the Session 58 PR opened)
+
+Replaced text (verbatim):
+
+- **Next (backend, Session 49 closed):** **02.7.2-T2** find-sources command, `source_candidates` + migration `20261017094508_02_AddSourceCandidates`, `POST /api/v1/episodes/{id}/sources/find` and list/add/dismiss candidate endpoints merged as #219 (`3bf0d380`, tip `b555df79`, code tip `d11ed17f`, from `develop` `be4d36f5`, merged develop `e8ead328`; CI refused: CI-01 (`build-test` job `117377030778`, 0 steps, billing annotation), owner treats as pass; local full `gate.sh` `GATE_RC=0` on `2e8c5f88` (8595 tests, 0 failed), the tip adds docs only; T3 gates closed). AL-S47-1 is closed (no approved site for the series language gives 404 `feature_disabled`). The `source_finder` flag seeds disabled: keep it OFF until **02.7.2-T3** ships the runner and the Worker handler of `SourceFindRequested` (S49-1). The migration lane is free. Lane next: **02.7.2-T3** (AL-S47-2); web **10.5.8-T1** also needs the `web/openapi.json` re-pin (coordinator). Open items: §Open tasks S49-1 to S49-6, FLAKE-S49 and AL-S47-2 to AL-S47-7.
+
+Outcome: 02.7.2-T2 is merged (#219, `3bf0d380`, Session 49); the line moved here only to keep the Resume block short, and the backend lane pointer is now the Session 58 bullet (**06.1.2-T1** → **06.1.2-T2**). Its open items stay as §Open tasks rows S49-1…S49-6 and AL-S47-2…AL-S47-7, and FLAKE-S49 stays in §Open findings.
+
 ### Superseded web Next (Session 59 PR-open) line (2026-10-18, replaced when #235 merged as 994f9cce)
 
 Replaced text (verbatim):
