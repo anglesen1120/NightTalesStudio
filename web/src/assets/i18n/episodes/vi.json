@@ -1,5 +1,22 @@
 {
   "render": {
+    "make": {
+      "action": "Tạo video",
+      "retry": "Thử lại tạo video",
+      "confirm": {
+        "title": "Tạo video cho tập này?",
+        "body": "Video sẽ được tạo từ kịch bản đã duyệt. Bạn có thể theo dõi tiến độ tại đây."
+      },
+      "blockedKeywords": "Hãy sửa các từ khóa hình ảnh bị đánh dấu trong kịch bản trước khi tạo video.",
+      "inProgress": "Đang bắt đầu tạo video…"
+    },
+    "cancel": {
+      "action": "Hủy dựng video",
+      "title": "Hủy dựng video này?",
+      "body": "Video sẽ dừng dựng khi máy chủ xác nhận yêu cầu hủy. Kịch bản đã duyệt của bạn vẫn được giữ lại.",
+      "confirm": "Hủy dựng video",
+      "busy": "Đang hủy…"
+    },
     "timeline": {
       "heading": "Đang dựng video",
       "percent": "{{percent}}%",

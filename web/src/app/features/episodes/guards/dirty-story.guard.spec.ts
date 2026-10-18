@@ -14,6 +14,7 @@ import coreVi from '../../../../assets/i18n/core/vi.json';
 import episodesVi from '../../../../assets/i18n/episodes/vi.json';
 import errorsVi from '../../../../assets/i18n/errors/vi.json';
 import { EpisodeDetailStore } from '../application/episode-detail.store';
+import { MakeVideoStore } from '../application/make-video.store';
 import { RenderTimelineStore } from '../application/render-timeline.store';
 import { StoryEditorStore } from '../application/story-editor.store';
 import { ApprovalStore } from '../application/approval.store';
@@ -22,6 +23,8 @@ import { fakeVersionsStore } from '../testing/fake-versions.store';
 import { FakeEpisodeRealtime } from '../testing/fake-episode-realtime';
 import { fakeResearchStore, fakeResearchStoreProviders } from '../testing/fake-research.store';
 import type { EpisodeDetail } from '../domain/episode.model';
+import { RenderRepository } from '../domain/render.repository';
+import { FakeRenderRepository } from '../testing/fake-render.repository';
 import type { StorySnapshot } from '../domain/story.model';
 import { StoryReviewPage } from '../feature/story-review.page';
 import { dirtyStoryGuard } from './dirty-story.guard';
@@ -108,6 +111,8 @@ async function setup(dirty: boolean, answer: boolean | null) {
       { provide: AppErrorMapper, useValue: { messageKey: () => 'errors.story_invalid_content' } },
       // The page provides the render timeline store, which is the only thing here that reads the socket (D11/WR4).
       { provide: RealtimeService, useValue: new FakeEpisodeRealtime() },
+      // The page provides the render timeline store and the make-video store (10.6.1-T2); both read the render port.
+      { provide: RenderRepository, useValue: new FakeRenderRepository() },
       { provide: ConflictDialog, useValue: { open: vi.fn() } },
       { provide: ConfirmDialog, useValue: { confirm: leave } },
       { provide: MatSnackBar, useValue: { open: vi.fn(() => ({ onAction: () => of(undefined), dismiss: vi.fn() })) } },
@@ -117,6 +122,7 @@ async function setup(dirty: boolean, answer: boolean | null) {
       { provide: EpisodeDetailStore, useValue: detailStore },
       { provide: StoryEditorStore, useValue: storyStore },
       RenderTimelineStore,
+      MakeVideoStore,
       { provide: VersionsStore, useValue: fakeVersionsStore() },
       { provide: ApprovalStore, useValue: fakeApprovalStore() },
       ...fakeResearchStoreProviders(fakeResearchStore()),

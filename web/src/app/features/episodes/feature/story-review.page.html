@@ -9,6 +9,17 @@
       (retry)="retry()"
     />
   } @else if (episode(); as detail) {
+    @if (makeVideoErrorKey(); as makeErrorKey) {
+      <div class="story-review-page__make-error" role="alert">
+        <p>{{ makeErrorKey | transloco }}</p>
+        @if (makeVideoTrace(); as trace) {
+          <p class="story-review-page__make-error-trace" [title]="trace.params.traceId">{{ trace.key | transloco: trace.params }}</p>
+        }
+        @if (makeVideo.retryAfterSec(); as seconds) {
+          <nts-retry-countdown [seconds]="seconds" />
+        }
+      </div>
+    }
     @if (renderView()) {
       <nts-page-header [title]="store.title() || undefined" titleKey="episodes.editor.pageTitle" backHref="/episodes">
         <nts-status-chip actions [statusKey]="detail.status" appearance="neutral" />
@@ -23,6 +34,7 @@
           [episodeId]="detail.id"
           [canEditScenes]="approval.canReopen()"
           (editScenes)="openReopen()"
+          (retry)="makeVideo.makeVideo()"
         />
       } @else {
         <nts-render-timeline
@@ -32,6 +44,10 @@
           [elapsedSec]="renderStore.elapsedSec()"
           [waitingForSlot]="renderStore.waitingForSlot()"
           [showEmailNotice]="renderStore.active()"
+          [cancellable]="renderStore.cancellable()"
+          [cancelling]="renderStore.cancelling()"
+          [cancelErrorKey]="cancelErrorKey()"
+          (cancelRequest)="renderStore.cancel()"
         />
       }
     } @else if (detail.currentStory === null) {
@@ -72,9 +88,14 @@
             @if (approvalSaveHint()) { <p id="approval-save-hint">{{ 'episodes.editor.approvalSaveHint' | transloco }}</p> }
           </div>
         } @else if (approval.status() === 'story_approved') {
-          <button #reopenTrigger actions type="button" class="story-review-page__reopen story-review-page__control" [disabled]="!approval.canReopen()" [attr.aria-disabled]="!approval.canReopen()" (click)="openReopen(reopenTrigger)">
-            {{ 'episodes.editor.action.reopen_story' | transloco }}
-          </button>
+          <div actions class="story-review-page__approval-action story-review-page__approval-action--row">
+            @if (makeVideo.labelKey(); as makeLabelKey) {
+              <nts-make-video-button [disabled]="!makeVideo.canMakeVideo()" [busy]="makeVideo.submitting()" [labelKey]="makeLabelKey" [reasonKey]="makeVideo.reasonKey()" (request)="makeVideo.makeVideo()" />
+            }
+            <button #reopenTrigger type="button" class="story-review-page__reopen story-review-page__control" [disabled]="!approval.canReopen()" [attr.aria-disabled]="!approval.canReopen()" (click)="openReopen(reopenTrigger)">
+              {{ 'episodes.editor.action.reopen_story' | transloco }}
+            </button>
+          </div>
         }
       </nts-page-header>
 

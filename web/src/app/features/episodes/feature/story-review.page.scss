@@ -14,6 +14,9 @@
 .story-review-page__versions-toggle:hover, .story-review-page__reopen:hover:not(:disabled) { background: var(--nts-color-surface-variant); }
 .story-review-page__control:focus-visible { outline: var(--nts-space-1) solid var(--nts-color-focus); outline-offset: var(--nts-space-1); }
 .story-review-page__approval-action { display: flex; flex-direction: column; gap: var(--nts-space-2); min-width: 0; }
+/* The approved header's two live controls sit in one row and wrap on a narrow phone; the column above is for the
+   approve button and its save hint. */
+.story-review-page__approval-action--row { flex-direction: row; flex-wrap: wrap; align-items: flex-start; }
 .story-review-page__approval-action p { margin: 0; max-width: 45ch; color: var(--nts-color-on-surface-muted); }
 .story-review-page__approve { background: var(--nts-color-primary); color: var(--nts-color-on-primary); border-color: var(--nts-color-primary); }
 .story-review-page__approve:hover:not(:disabled), :is(.story-review-page__approve, .story-review-page__reopen):active:not(:disabled) { text-decoration: underline; }
@@ -23,6 +26,9 @@
 :is(.story-review-page__gate-copy, .story-review-page__gate-reason) { margin: 0; max-width: var(--nts-measure); overflow-wrap: anywhere; }
 .story-review-page__gate-reason { color: var(--nts-color-on-surface-muted); }
 .story-review-page__gate-link { justify-self: start; }
+.story-review-page__make-error { display: grid; gap: var(--nts-space-2); padding: var(--nts-space-3); border-inline-start: var(--nts-space-1) solid var(--nts-color-error); border-radius: var(--nts-radius-control); background: var(--nts-color-surface-variant); }
+.story-review-page__make-error p { margin: 0; max-width: var(--nts-measure); overflow-wrap: anywhere; }
+.story-review-page__make-error-trace { color: var(--nts-color-on-surface-muted); }
 .story-review-page__announcement { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 @media (min-width: 80rem) { .story-review-page__workspace--versions { grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); } }
 @media (max-width: 30rem) {
