@@ -34,5 +34,13 @@
   @if (showEmailNotice()) {
     <div class="notice"><p>{{ 'episodes.render.timeline.emailNotice' | transloco }}</p><p>{{ 'episodes.render.timeline.leave' | transloco }}</p></div>
   }
-  <p class="sr-only" aria-live="polite" aria-atomic="true">@if (activeKey(); as key) { {{ 'episodes.render.timeline.announce' | transloco: { stage: ('episodes.render.stage.' + key | transloco) } }}@if (activeSubStep(); as subStep) { — {{ 'episodes.render.subStep.' + subStep | transloco }} } }</p>
+  @if (cancellable()) {
+    <div class="cancel-actions">
+      <button mat-stroked-button class="cancel-button" type="button" data-testid="render-cancel" [disableRipple]="true" [attr.aria-disabled]="cancelling() ? 'true' : null" [attr.aria-busy]="cancelling() ? 'true' : null" (click)="onCancel($event)">{{ (cancelling() ? 'episodes.render.cancel.busy' : 'episodes.render.cancel.action') | transloco }}</button>
+    </div>
+  }
+  @if (cancelErrorKey(); as errorKey) {
+    <p class="cancel-error" role="alert">{{ errorKey | transloco }}</p>
+  }
+  <p class="sr-only" aria-live="polite" aria-atomic="true">@if (activeKey(); as key) { {{ 'episodes.render.timeline.announce' | transloco: { stage: ('episodes.render.stage.' + key | transloco) } }}@if (activeSubStep(); as subStep) { — {{ 'episodes.render.subStep.' + subStep | transloco }} } }@if (cancelling()) { {{ 'episodes.render.cancel.busy' | transloco }} }</p>
 </section>

@@ -12,6 +12,8 @@ import { StrictHttpResponse } from '../strict-http-response';
 
 import { apiV1EpisodesIdRenderPost } from '../fn/rendering-endpoints/api-v-1-episodes-id-render-post';
 import { ApiV1EpisodesIdRenderPost$Params } from '../fn/rendering-endpoints/api-v-1-episodes-id-render-post';
+import { apiV1RenderJobsIdDelete } from '../fn/rendering-endpoints/api-v-1-render-jobs-id-delete';
+import { ApiV1RenderJobsIdDelete$Params } from '../fn/rendering-endpoints/api-v-1-render-jobs-id-delete';
 import { RenderJobAcceptedDto } from '../models/render-job-accepted-dto';
 
 @Injectable({ providedIn: 'root' })
@@ -44,6 +46,33 @@ export class RenderingEndpointsClient extends BaseService {
     const resp = this.apiV1EpisodesIdRenderPost$Response(params, context);
     return resp.pipe(
       map((r: StrictHttpResponse<RenderJobAcceptedDto>): RenderJobAcceptedDto => r.body)
+    );
+  }
+
+  /** Path part for operation `apiV1RenderJobsIdDelete()` */
+  static readonly ApiV1RenderJobsIdDeletePath = '/api/v1/render-jobs/{id}';
+
+  /**
+   * This method provides access to the full `HttpResponse`, allowing access to response headers.
+   * To access only the response body, use `apiV1RenderJobsIdDelete()` instead.
+   *
+   * This method doesn't expect any request body.
+   */
+  apiV1RenderJobsIdDelete$Response(params: ApiV1RenderJobsIdDelete$Params, context?: HttpContext): Observable<StrictHttpResponse<void>> {
+    const obs = apiV1RenderJobsIdDelete(this.http, this.rootUrl, params, context);
+    return obs;
+  }
+
+  /**
+   * This method provides access only to the response body.
+   * To access the full response (for headers, for example), `apiV1RenderJobsIdDelete$Response()` instead.
+   *
+   * This method doesn't expect any request body.
+   */
+  apiV1RenderJobsIdDelete(params: ApiV1RenderJobsIdDelete$Params, context?: HttpContext): Observable<void> {
+    const resp = this.apiV1RenderJobsIdDelete$Response(params, context);
+    return resp.pipe(
+      map((r: StrictHttpResponse<void>): void => r.body)
     );
   }
 

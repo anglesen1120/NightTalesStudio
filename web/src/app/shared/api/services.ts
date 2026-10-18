@@ -15,3 +15,4 @@ export { SourceEndpointsClient } from './services/source-endpoints-client';
 export { SourceFinderEndpointsClient } from './services/source-finder-endpoints-client';
 export { SeriesBibleClient } from './services/series-bible-client';
 export { HubEndpointsClient } from './services/hub-endpoints-client';
+export { PublishingEndpointsClient } from './services/publishing-endpoints-client';

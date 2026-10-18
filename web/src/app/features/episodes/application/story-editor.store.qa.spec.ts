@@ -17,6 +17,8 @@ import episodesVi from '../../../../assets/i18n/episodes/vi.json';
 import errorsVi from '../../../../assets/i18n/errors/vi.json';
 import type { EpisodeDetail } from '../domain/episode.model';
 import { EpisodesRepository } from '../domain/episodes.repository';
+import { RenderRepository } from '../domain/render.repository';
+import { FakeRenderRepository } from '../testing/fake-render.repository';
 import type { StoryDraftWire, StorySnapshot } from '../domain/story.model';
 import { StoryRepository } from '../domain/story.repository';
 import { StoryVersionRepository } from '../domain/story-version.repository';
@@ -64,6 +66,8 @@ function providers(h: Harness) {
     // port needs a fake here even though these specs never open the panel.
     { provide: StoryVersionRepository, useValue: new FakeStoryVersionRepository() },
     { provide: RealtimeService, useValue: h.realtime }, { provide: SessionStore, useValue: { generation: h.sessionGeneration } },
+    // The page provides the render timeline store and the make-video store (10.6.1-T2); both read the render port.
+    { provide: RenderRepository, useValue: new FakeRenderRepository() },
     { provide: APP_ERROR_DEV_MODE, useValue: false },
   ];
 }
