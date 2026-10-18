@@ -35,8 +35,9 @@ namespace NightTales.Api.IntegrationTests.Publishing;
 /// <para>
 /// The task file's Tests table fixes the names below; the extra rows it does not carry are the post-claim
 /// failure cases it lists under failure handling (a queue failure and a channel conflict, both writing their
-/// rows before they fail), a writer that throws mid-unit, a host with no writer registered (D-2's production
-/// default), and the anonymous connect of acceptance check 2.
+/// rows before they fail), a writer that throws mid-unit, the positive control that shows those same rows
+/// commit on the success path, a host with no writer registered (D-2's production default), and the
+/// anonymous connect of acceptance check 2.
 /// </para>
 /// </remarks>
 /// <param name="database">The class database, a migrated copy of the run's template.</param>
@@ -558,6 +559,30 @@ public sealed class ConnectChannelTests(TestDatabase database) : IntegrationTest
         harness.Email.Calls[0].UserId.ShouldBe(harness.User.Id);
         harness.Connection.CallCount.ShouldBe(1);
         AssertSpentWithoutRows(harness, connect.State);
+    }
+
+    [Fact]
+    public async Task Callback_ConnectedWithWriterRows_KeepsTheMarkerAndTheEmailRow()
+    {
+        await using var harness = await ConnectChannelHarness.StartAsync(Database, Ct);
+        var connect = await harness.ConnectAsync(Ct);
+        var code = await harness.AuthorizeAsync(connect.AuthorizationUrl, Ct);
+
+        // The positive control of the rollback cases (N3): the same writer mode that leaves rows behind before
+        // a failure must leave them committed when the flow succeeds, otherwise their zero assertions would
+        // pass whether or not the stand-in ever wrote anything.
+        harness.Connection.WriteBeforeAnswering = true;
+
+        using var response = await harness.CallbackAsync(code, connect.State, connect.NonceCookie, Ct);
+
+        await AssertRedirectAsync(response, "/channels?connected=youtube");
+        harness.MarkerRows().ShouldBe(
+            1,
+            "the writer's marker row — the connection stand-in until channel_connections exists — commits with the flow");
+        harness.EmailRows().ShouldBe(1, "and so does the connect e-mail row it queues");
+        harness.OutboxRows().ShouldBe(1, "the e-mail row's email_requested.v1 event commits with it");
+        harness.AuditRows().ShouldBe(1);
+        harness.StateValueFor("used_at", connect.State).ShouldNotBeNullOrEmpty();
     }
 
     [Fact]

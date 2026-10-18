@@ -84,11 +84,14 @@ public static class YouTubeOptionsValidator
             }
         }
 
-        if (!Uri.TryCreate(options.RedirectUri, UriKind.Absolute, out _))
+        // Absolute AND http/https: a rooted path such as "/api/v1/.../callback" can parse as an absolute URI on
+        // Unix (as a file URI), which Google would then be handed as the redirect target.
+        if (!Uri.TryCreate(options.RedirectUri, UriKind.Absolute, out var redirectUri)
+            || !IsHttpScheme(redirectUri.Scheme))
         {
             problems.Add(
-                $"'{YouTubeOptions.SectionName}:{nameof(YouTubeOptions.RedirectUri)}' must be an absolute URI: "
-                + "Google answers the callback here and rejects an unusable one.");
+                $"'{YouTubeOptions.SectionName}:{nameof(YouTubeOptions.RedirectUri)}' must be an absolute http or "
+                + "https URI: Google answers the callback here and rejects an unusable one.");
         }
 
         if (options.Http.TimeoutSeconds < MinHttpTimeoutSeconds
@@ -133,6 +136,14 @@ public static class YouTubeOptionsValidator
     /// </summary>
     private static bool IsWellFormedSecretRef(string secretRef) =>
         secretRef.All(character => char.IsAsciiLetterOrDigit(character) || character is '_' or '/' or '-');
+
+    /// <summary>
+    /// Whether <paramref name="scheme"/> is <c>http</c> or <c>https</c>: the only two schemes a Google OAuth
+    /// redirect URI can use, and the check that rules out a rooted path parsed as a <c>file</c> URI.
+    /// </summary>
+    private static bool IsHttpScheme(string scheme) =>
+        string.Equals(scheme, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase)
+        || string.Equals(scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
     /// Whether <paramref name="scopes"/> is the frozen pair: both scopes present, each exactly once, and

@@ -32,10 +32,13 @@ namespace NightTales.Application.Features.Publishing.Channels.Commands.CompleteY
 /// <b>Two units of work, and the second spans the write only.</b> Unit #1 is the atomic
 /// <c>UPDATE … RETURNING</c> claim, committed by the handler before any Google call, so a replayed callback
 /// can never claim the row again whatever happens next; a crash between the two units burns the state and
-/// creates nothing, which is harmless, while a replayable state is not. Everything between the two units —
-/// the family read, the verifier unprotect, the client and the writer resolution, the code exchange, the
-/// scope check, the refresh-token check and the channel read — runs with <em>no transaction open</em>, so
-/// no pooled connection carries an <c>idle in transaction</c> backend across Google's two round trips (P1).
+/// creates nothing, which is harmless, while a replayable state is not. The family liveness read is the one
+/// database step of that stretch, and it runs <em>inside</em> unit #1, before the commit that releases the
+/// scope's connection (<c>EfRefreshTokenService.EnsureConnectionOpenAsync</c> raw-opens it and nothing closes
+/// it again, so a read after the commit would pin a pooled connection for the rest of the request). What is
+/// left between the units — the verifier unprotect, the client and writer resolution, the code exchange, the
+/// scope check, the refresh-token check and the channel read — touches the database not at all, so no pooled
+/// connection is held, and no <c>idle in transaction</c> backend exists, across Google's two round trips (P1).
 /// Unit #2 is opened immediately before <c>IConnectChannelConnection.ConnectAsync</c> and holds the
 /// connection row, the audit row and the connect's outbox and e-mail rows, so the write and its records
 /// commit together or vanish together.
@@ -142,6 +145,19 @@ public sealed partial class CompleteYouTubeConnectHandler(
                 .ConfigureAwait(false)
             : null;
 
+        // The session-family liveness read happens INSIDE unit #1 (P1), before the commit that releases this
+        // scope's connection. It is the only database step between the claim and the first Google call that
+        // runs outside a transaction, and it opens the connection raw
+        // (EfRefreshTokenService.EnsureConnectionOpenAsync: it calls OpenAsync and nothing closes it again),
+        // so doing it here is what keeps a pooled connection from being pinned across the two Google round
+        // trips, which may take up to 2 x YouTube:Http:TimeoutSeconds. It runs only when the request could
+        // reach Google at all — a claimed state, this browser's nonce, a code to exchange — and its answer
+        // keeps its place in the order of the checks below.
+        var nonceMatches = claim is not null && NonceMatches(command.BrowserNonce, claim.BrowserNonceHash);
+        var family = claim is not null && nonceMatches && command.Code is { Length: > 0 }
+            ? await families.GetReauthStateAsync(claim.RefreshFamilyId, cancellationToken).ConfigureAwait(false)
+            : default;
+
         var claimed = await unitOfWork.CommitAsync(cancellationToken).ConfigureAwait(false);
         if (claimed.IsError)
         {
@@ -156,15 +172,16 @@ public sealed partial class CompleteYouTubeConnectHandler(
         }
 
         // From here on every failure is an ErrorOr error and no transaction is open: unit #1's commit closed
-        // the pipeline's first one, and unit #2 is opened further down, immediately before the write (P1).
-        // UnitOfWorkBehavior rolls back only when the response is an error, which is exactly why these
-        // answers are errors rather than the success-typed outcomes of the earlier shape (R1/F1/R11).
+        // the pipeline's first one and released this scope's connection, and nothing below touches the
+        // database again until unit #2 is opened immediately before the write (P1). UnitOfWorkBehavior rolls
+        // back only when the response is an error, which is exactly why these answers are errors rather than
+        // the success-typed outcomes of the earlier shape (R1/F1/R11).
         if (claim is null)
         {
             return Refuse("state-not-claimed");
         }
 
-        if (!NonceMatches(command.BrowserNonce, claim.BrowserNonceHash))
+        if (!nonceMatches)
         {
             // A connect started in another browser (or in another tab profile) cannot finish here. The state
             // is already claimed, so it stays spent; this is the one failure the design deliberately makes
@@ -183,10 +200,8 @@ public sealed partial class CompleteYouTubeConnectHandler(
             return Refuse("no-code");
         }
 
-        // The family read needs no transaction (EfRefreshTokenService.GetReauthStateAsync,
-        // requireTransaction: false), so it happens here with none open.
-        var family = await families.GetReauthStateAsync(claim.RefreshFamilyId, cancellationToken)
-            .ConfigureAwait(false);
+        // Read above, inside unit #1, under exactly the `nonceMatches && code present` predicate that guards
+        // this line, so it is always the family of a state whose flow can still reach Google.
         if (family.IsError)
         {
             LogFamilyReadFailed(claim.RefreshFamilyId, family.FirstError.Code);
@@ -267,7 +282,7 @@ public sealed partial class CompleteYouTubeConnectHandler(
         }
 
         // ---- Unit of work #2: opened here, immediately before the write, so the transaction spans the
-        // write and its records only and no pooled connection sits idle across the Google round trips (P1).
+        // write and its records only, and the pooled connection is out of the pool for that span alone (P1).
         await unitOfWork.BeginAsync(cancellationToken).ConfigureAwait(false);
 
         var connected = await writer

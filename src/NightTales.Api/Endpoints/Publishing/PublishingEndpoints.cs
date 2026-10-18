@@ -207,10 +207,11 @@ public static class PublishingEndpoints
     /// pipeline's error text, and the failure is already logged by <c>LoggingBehavior</c>.
     /// </para>
     /// <para>
-    /// A thrown exception is caught here for the same reason: the state is already spent, so the browser
-    /// must still land on the fixed failure redirect rather than on a 500 body. Only the exception's type is
-    /// logged, and only <see cref="OperationCanceledException"/> is rethrown, because cancellation (the
-    /// bounded token, or shutdown) is a mechanism rather than a flow outcome (R5).
+    /// A thrown exception is caught here for the same reason: the state is already spent, so the browser must
+    /// still land on the fixed failure redirect rather than on a 500 body. Only the exception's type is
+    /// logged. <see cref="OperationCanceledException"/> is rethrown only when the host is stopping or the
+    /// caller aborted, where nobody is left to read a redirect; the bounded post-claim timeout, whose browser
+    /// is still waiting, takes the same fixed-redirect branch as any other failure (R5, N2).
     /// </para>
     /// </remarks>
     /// <param name="platform">The platform from the route; only <c>youtube</c> exists in P (07 owns TikTok, S).</param>
@@ -265,16 +266,20 @@ public static class PublishingEndpoints
                     bounded.Token)
                 .ConfigureAwait(false);
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException) when (IsGoingAway(lifetime, http))
         {
-            // The shutdown or the bounded timeout, not the caller: the pipeline has rolled unit of work #2
-            // back, so the fixed redirect is the honest answer. Cancellation is not an exception to hide.
+            // Shutdown, or the browser navigating away: nobody is left to receive the fixed redirect, and the
+            // pipeline has already rolled unit of work #2 back. This is the only cancellation that is
+            // rethrown. The bounded PostClaimTimeout is NOT this case — the browser is still waiting there, so
+            // it falls into the branch below and gets the fixed failure redirect.
             throw;
         }
         catch (Exception exception)
         {
             // By type only (09 README D17, FetcherEndpoints precedent): the exception's message may hold a
-            // URL, a statement or a token response, so the record never carries it (R5).
+            // URL, a statement or a token response, so the record never carries it (R5). The bounded
+            // PostClaimTimeout lands here too, and the state is already spent either way: the fixed failure
+            // redirect is the honest answer, with the cookie and the two headers already on the response.
             CallbackUnhandled(
                 http.RequestServices.GetRequiredService<ILoggerFactory>()
                     .CreateLogger("NightTales.Api.Publishing.Callback"),
@@ -284,7 +289,10 @@ public static class PublishingEndpoints
             return Results.Redirect(ErrorRedirectPrefix + ErrorCodes.OauthExchangeFailed);
         }
 
-        var outcome = result.IsError ? FailureOutcome(result.Errors) : ConnectYouTubeOutcome.Connected;
+        // The handler's own answer, never a blind `Connected` (N1): a member other than Connected would map to
+        // its own constant arm below rather than silently reading as a successful connect. Today the handler
+        // returns Connected alone, which the arch rule pins.
+        var outcome = result.IsError ? FailureOutcome(result.Errors) : result.Value;
 
         return Results.Redirect(outcome switch
         {
@@ -295,6 +303,16 @@ public static class PublishingEndpoints
             _ => ErrorRedirectPrefix + ErrorCodes.OauthExchangeFailed,
         });
     }
+
+    /// <summary>
+    /// Whether the cancellation that ended a callback came from the host stopping or from the caller going
+    /// away: only then is there nobody left to receive a redirect, so only then is the exception rethrown. The
+    /// bounded post-claim timeout is a flow outcome instead, because its browser is still waiting (N2).
+    /// </summary>
+    /// <param name="lifetime">The host's lifetime.</param>
+    /// <param name="http">The request.</param>
+    private static bool IsGoingAway(IHostApplicationLifetime lifetime, HttpContext http) =>
+        lifetime.ApplicationStopping.IsCancellationRequested || http.RequestAborted.IsCancellationRequested;
 
     /// <summary>
     /// The outcome of the <c>ErrorOr</c> error the handler (or the pipeline's own commit mapping) returned:

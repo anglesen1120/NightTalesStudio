@@ -17,10 +17,11 @@ namespace NightTales.Domain.Publishing;
 /// </para>
 /// <para>
 /// The state is single use: the callback claims it with one atomic statement that mirrors
-/// <see cref="Claim"/> — <c>UPDATE … WHERE state_hash = @h AND used_at IS NULL AND expires_at &gt; @now
-/// RETURNING …</c> committed in its own unit of work before any Google call. A crash right after that commit
-/// burns the state and creates nothing: the user restarts the connect, which is harmless, while a replayable
-/// state is not.
+/// <see cref="Claim"/> — <c>UPDATE … WHERE state_hash = @h AND platform = @platform AND used_at IS NULL
+/// AND expires_at &gt; @now RETURNING …</c> committed in its own unit of work before any Google call. The
+/// platform is part of the predicate so a state minted for one platform's route can never be completed on
+/// another's (F8). A crash right after that commit burns the state and creates nothing: the user restarts the
+/// connect, which is harmless, while a replayable state is not.
 /// </para>
 /// </remarks>
 public sealed class OAuthState : AggregateRoot
