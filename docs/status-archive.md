@@ -4,6 +4,14 @@ History moved out of STATUS.md to keep the live file small. The initial archive 
 
 ## Resume-here history (Current/Previous blocks, Next actions)
 
+### Superseded Session 64 wording (2026-10-19, replaced by the 09.7.1-T1 delivery)
+
+Replaced text (verbatim):
+
+- Resume bullet moved out to keep the block at 15 bullets:
+  `- **Backend (Session 57 closed, merged #243 → `develop` `aac70e21`):** **09.6.3-T2** render output ingest: `IngestRenderOutputJob` (queue render, Retries=5; status check; `MarkIngesting` committed before the download; streamed download to an owner-only temp file with a size cap, incremental SHA-256 and bytes/content-type verification by the consumer; blob PUT outside the DB transaction at `media/{userId}/{episodeId}/{renderJobId}/{video|subtitles}.{mp4|srt}`; one final transaction: row lock + committed-status re-read, assets, merged `quality_report`, episode final video, job succeeded, audit, outbox `render_succeeded.v1`, settle by reservation id as the last statement before commit; adapter DELETE after commit; every adapter outcome ends in-job on the last attempt through `RenderFailureRecorder` with one refund by reservation id; quality fail -> `render_quality_failed`, no retry; blobs of failed/cancelled endings deleted), `SchedulerRenderIngestEnqueuer` (replaces `LoggingRenderIngestEnqueuer`, EventId 6197 removed), `IJobAttempt`/`AmbientJobAttempt` + Hangfire `JobAttemptFilter`, `RenderIngestOptions` + validator (`Render:Ingest:*`), `Assets:UnapprovedRetentionDays`, `IRenderTerminalHooks.MergeImagesAsync`/`RecordKeptVideoAsync`, `RenderSucceeded` in Domain `Rendering`; no migration, no public route, `openapi.json` unchanged. T3 gates closed; gate `GATE_RC=0` on `9bdf9ca5` (remote, Ubuntu arm64; the tip adds docs only); CI refused (billing, CI-01, owner treats as pass). **The poller may be enabled in production after this lands.** Open items S57-1..S57-10 (§Open findings).`
+- Migrations bullet clause: ``AddChannelConnectionsMigrationTests` owns `migrations[^1]` (was `AddOAuthStatesMigrationTests`, which now declares the later migration in its skip list).`
+
 ### Superseded Session 57 wording (2026-10-18, replaced by the 09.6.3-T2 close-out)
 
 Replaced text (verbatim):
